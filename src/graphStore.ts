@@ -129,10 +129,6 @@ export function buildGraphNodeSpatialIndex(
   return { bucketSize, buckets, nodeBucketKeysById, nodeBoundsById, queryState: { mark: 0, seenById: new Map() } };
 }
 
-function patchNodeSpatialIndex(index: GraphNodeSpatialIndex, previousNode: ModelNode, nextNode: ModelNode): GraphNodeSpatialIndex {
-  return patchNodeSpatialIndexMany(index, [{ previousNode, nextNode }]);
-}
-
 function patchNodeSpatialIndexMany(
   index: GraphNodeSpatialIndex,
   updates: readonly { previousNode: ModelNode; nextNode: ModelNode }[]

@@ -92,7 +92,6 @@ import {
   validateTopology,
   validateTwoTerminalVoltageBaseConsistency,
   validateVoltageSetpointDeviations,
-  getTerminalNormal,
   getTerminalPoint,
   getRouteEndpointNormal,
   getBusTerminalType,
@@ -6666,7 +6665,7 @@ describe("power system model", () => {
     const blockingSegment =
       beforePoints
         .slice(1, -1)
-        .map((point, index) => ({ a: beforePoints[index + 1], b: beforePoints[index + 2] }))
+        .map((_, index) => ({ a: beforePoints[index + 1], b: beforePoints[index + 2] }))
         .find(({ a, b }) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) > 160) ??
       { a: { x: 480, y: 140 }, b: { x: 640, y: 140 } };
     const movedBlocker = {
@@ -7206,6 +7205,7 @@ describe("power system model", () => {
     )[0];
 
     expect(rebuilt[0]).not.toBe(edge);
+    expect(route?.points.length ?? 0).toBeGreaterThanOrEqual(2);
     expect(validateConnectionEdgeRoute([source, bus], rebuilt, edge.id, { width: 900, height: 620 }).ok).toBe(true);
   });
 

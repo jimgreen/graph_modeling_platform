@@ -18,7 +18,7 @@ import {
   inferESection,
   isDoubleContainerTerminalAssociation
 } from "./model";
-import type { ImageAsset, OrthogonalAxis } from "./App";
+import type { OrthogonalAxis } from "./App";
 import {
   CONTAINER_TERMINAL_ASSOCIATION_OPTIONS,
   CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION,

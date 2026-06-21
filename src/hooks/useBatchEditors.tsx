@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { DeviceParameterDefinition, DeviceParameterEnumOption, DeviceParameterEnumValueType, ModelLayer, ModelNode, SavedSchemeRecord, DeviceTemplate, DeviceStateDefinition } from "../model";
+import type { DeviceParameterDefinition, DeviceParameterEnumOption, ModelLayer, ModelNode, SavedSchemeRecord, DeviceTemplate, DeviceStateDefinition } from "../model";
 import type { ProjectMeasurementConfig } from "../measurements";
 import type { BatchCommonParamRow, BatchCommonMeasurementGroupRow, BatchCommonMeasurementGroupKey, BatchCommonParamPatch } from "../App";
 
@@ -11,11 +11,9 @@ import {
   isStaticButtonCapableKind,
   flattenSavedSchemes,
   DEFAULT_MODEL_LAYER_ID,
-  getEParameterKeys,
   getTemplateStateDefinitions,
 } from "../model";
 
-import { measurementGroupsForNode } from "../measurements";
 import { normalizeNodeLabelDisplayMode } from "../nodeLabelUtils";
 
 import {
@@ -27,8 +25,6 @@ import {
   serializeStaticButtonTargetLayerIds,
   resolveStaticButtonTargetLayers,
   isColorParamKey,
-  canBatchEditParam,
-  isBatchGraphCommonParamKey,
   paramOptionsForSection,
   definitionRowIsEnum,
   enumValuesForRow,
@@ -98,8 +94,6 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     batchCommonPropertyRowCount,
     layers,
     schemes,
-    projectMeasurements,
-    nodeDoubleClickDraft,
     setNodeDoubleClickDraft,
     updateParam,
     applyBatchCommonParam,
@@ -107,7 +101,6 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     applyBatchCommonMeasurementGroupSetting,
     assignSelectedNodesToModelLayer,
     updateSelectedNode,
-    requireEditMode,
     libraryTemplateByKind,
   } = params;
 

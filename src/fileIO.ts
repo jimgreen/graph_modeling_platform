@@ -42,13 +42,6 @@ export type WritableDirectoryHandle = {
   getFileHandle: (name: string, options?: { create?: boolean }) => Promise<DirectoryFileHandle>;
 };
 
-type DirectoryPickerWindow = Window & {
-  showDirectoryPicker?: (options?: {
-    id?: string;
-    mode?: "read" | "readwrite";
-  }) => Promise<WritableDirectoryHandle>;
-};
-
 export type TextSaveOptions = {
   filename: string;
   text: string;

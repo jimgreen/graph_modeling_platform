@@ -7,28 +7,17 @@ import {
   getDeviceGlyphVariant,
   getDeviceStrokeColor,
   getDeviceStrokeWidth,
-  getNodeScaleX,
-  getNodeScaleY,
   getSwitchVisualState,
-  getTerminalPoint,
-  isBusNode,
   isRoutableLineDeviceKind,
-  isStaticButtonCapableKind,
   isStaticNode,
-  pointsToOrthogonalPath,
-  terminalRenderLocalPoint,
-  terminalStubSegment,
-  terminalStubStrokeWidth,
-  terminalTypeColor
+  pointsToOrthogonalPath
 } from "./model";
-import { escapeXml, formatSvgNumber, svgImageContentMarkup, svgStrokeDashArray } from "./svgUtils";
+import { formatSvgNumber, svgStrokeDashArray } from "./svgUtils";
 import {
   DEVICE_GLYPH_DESIGN_LONGEST_SIDE,
   deviceStateVisualToken,
   estimateSvgTextWidth,
-  nodeCounterTransformMatrix,
   renderBusGlyphRect,
-  resolveStateVisualImageHref,
   routableLineDeviceRenderLocalPoints,
   stateVisualText,
   staticConnectorMarker,

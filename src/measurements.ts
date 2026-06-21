@@ -1,4 +1,4 @@
-import { getNodeScaleX, getNodeScaleY, getSafeNodeScaleX, getSafeNodeScaleY, inferESection, type ModelNode } from "./model";
+import { getSafeNodeScaleX, getSafeNodeScaleY, inferESection, type ModelNode } from "./model";
 import { finiteNumber, degreesToRadians } from "./formatUtils";
 import { clampNumber } from "./canvasViewport";
 

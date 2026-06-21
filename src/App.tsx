@@ -5595,8 +5595,6 @@ const canvasResizeHandles = (
     </g>
   );
 Object.assign(__appScope, { canvasResizeHandles });
-const __renderT0 = performance.now();
 const __appView = renderAppView(__appScope);
-const __renderElapsed = (performance.now() - __renderT0).toFixed(2);
 return __appView;
 }

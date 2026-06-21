@@ -3,8 +3,6 @@
 import type { CSSProperties } from "react";
 import {
   DEFAULT_DEVICE_LABEL_FONT_SIZE,
-  getNodeScaleX,
-  getNodeScaleY,
   getSafeNodeScaleX,
   getSafeNodeScaleY,
   isStaticNode,

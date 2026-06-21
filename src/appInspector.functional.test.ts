@@ -1,4 +1,4 @@
-import { describe, expect, test, vi, beforeEach, afterEach } from "vitest";
+import { describe, expect, test } from "vitest";
 
 // 真正的功能测试 - 使用 React Testing Library 验证用户交互和业务规则
 

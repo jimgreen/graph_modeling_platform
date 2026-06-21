@@ -4507,10 +4507,6 @@ export function getTerminalDisplayColor(
     : terminalTypeColor(terminal.type, palette);
 }
 
-function findTerminalType(node: Pick<ModelNode, "kind" | "terminals" | "params"> | undefined, terminalId?: string): TerminalType | undefined {
-  return findDisplayTerminal(node, terminalId)?.type;
-}
-
 export function getConnectionStrokeColor(
   edge: Pick<Edge, "id" | "sourceId" | "targetId" | "sourceTerminalId" | "targetTerminalId">,
   nodeById: ReadonlyMap<string, Pick<ModelNode, "kind" | "terminals" | "params">>,
@@ -6753,10 +6749,6 @@ function routableLineStoredPathSafetyForRouteUpdate(
       nodes.filter((candidate) => candidate.id !== node.id && blockerNodeIds.has(candidate.id))
     )
   });
-}
-
-function unsafeRoutableLineStoredPath(node: ModelNode, nodes: ModelNode[]) {
-  return routableLineStoredPathSafety(node, nodes).unsafe;
 }
 
 export function repairUnsafeRoutableLineDeviceRoutes(nodes: ModelNode[], bounds?: CanvasBounds): ModelNode[] {
@@ -12195,14 +12187,6 @@ function isOrthogonalDirectSegment(a: Point, b: Point) {
   return Math.round(a.x) === Math.round(b.x) || Math.round(a.y) === Math.round(b.y);
 }
 
-function directSegmentMatchesTerminalNormal(a: Point, b: Point, node: ModelNode, terminalId?: string) {
-  if (samePoint(a, b)) {
-    return true;
-  }
-  const normal = getTerminalNormal(node, terminalId);
-  return isOrthogonalDirectSegment(a, b) && routeSegmentMatchesNormal(a, b, normal);
-}
-
 function directSegmentClearOfNodeBodies(a: Point, b: Point, nodes: ModelNode[], excludedNodeIds: Set<string>) {
   return nodes.every((node) =>
     excludedNodeIds.has(node.id) ||
@@ -12220,43 +12204,6 @@ function normalAxisDistance(from: Point, to: Point, normal: Point) {
     return (to.y - from.y) * Math.sign(normal.y);
   }
   return 0;
-}
-
-// Devices may leave the terminal on its outward stub before turning toward a bus.
-function routedBusSlideEndpointPoint(options: {
-  busNode: ModelNode;
-  originalBusNode: ModelNode;
-  movingNode: ModelNode;
-  movingTerminalId?: string;
-  movingPoint: Point;
-  nodes: ModelNode[];
-  nextNodes?: ModelNode[];
-}): Point | null {
-  const normal = getTerminalNormal(options.movingNode, options.movingTerminalId);
-  const referencePoint = {
-    x: Math.round(options.movingPoint.x + normal.x * ROUTE_ENDPOINT_STUB_LENGTH),
-    y: Math.round(options.movingPoint.y + normal.y * ROUTE_ENDPOINT_STUB_LENGTH)
-  };
-  if (normalAxisDistance(options.movingPoint, referencePoint, normal) <= 0) {
-    return null;
-  }
-  const candidateBusPoint = projectPointToBusCenterline(options.busNode, referencePoint);
-  if (
-    !candidateBusPoint ||
-    normalAxisDistance(options.movingPoint, candidateBusPoint, normal) <= 0 ||
-    !isOrthogonalDirectSegment(referencePoint, candidateBusPoint)
-  ) {
-    return null;
-  }
-  const excludedNodeIds = new Set([options.busNode.id, options.originalBusNode.id, options.movingNode.id]);
-  const nextNodes = options.nextNodes ?? options.nodes;
-  if (
-    !directSegmentClearOfNodeBodies(options.movingPoint, referencePoint, nextNodes, excludedNodeIds) ||
-    !directSegmentClearOfNodeBodies(referencePoint, candidateBusPoint, nextNodes, excludedNodeIds)
-  ) {
-    return null;
-  }
-  return candidateBusPoint;
 }
 
 export function resolveStraightBusSlideEndpointToPoint(options: {
@@ -13560,47 +13507,6 @@ function pointNearRouteTerminal(point: Point, segment: Segment) {
   return false;
 }
 
-function overlapAmount(a: Segment, b: Segment) {
-  if (a.orientation !== b.orientation) {
-    return 0;
-  }
-  if (a.orientation === "horizontal" && a.a.y === b.a.y) {
-    const left = clampNumber(b.b.x, Math.min(a.a.x, a.b.x), b.a.x);
-    const right = Math.min(Math.max(a.a.x, a.b.x), Math.max(b.a.x, b.b.x));
-    return Math.max(0, right - left);
-  }
-  if (a.orientation === "vertical" && a.a.x === b.a.x) {
-    const top = clampNumber(b.b.y, Math.min(a.a.y, a.b.y), b.a.y);
-    const bottom = Math.min(Math.max(a.a.y, a.b.y), Math.max(b.a.y, b.b.y));
-    return Math.max(0, bottom - top);
-  }
-  return 0;
-}
-
-function separateOverlaps(routes: RoutedEdge[]): RoutedEdge[] {
-  return routes.map((route, routeIndex) => {
-    if (routeIndex === 0) {
-      return route;
-    }
-    const previousSegments = routes.slice(0, routeIndex).flatMap((item, index) => getSegments(item.edgeId, index, item.points));
-    const currentSegments = getSegments(route.edgeId, routeIndex, route.points);
-    const hasOverlap = currentSegments.some((segment) =>
-      previousSegments.some((previous) => overlapAmount(segment, previous) > 18)
-    );
-    if (!hasOverlap || route.points.length <= 4) {
-      return route;
-    }
-    const offset = 12 * ((routeIndex % 2 === 0 ? 1 : -1) * Math.ceil(routeIndex / 2));
-    const points = route.points.map((point, index) => {
-      if (index === 0 || index === 1 || index === route.points.length - 1 || index === route.points.length - 2) {
-        return point;
-      }
-      return { x: point.x, y: point.y + offset };
-    });
-    return { ...route, points: orthogonalizeRoute(points) };
-  });
-}
-
 function uniqueSorted(values: number[]) {
   return [...new Set(values.map((value) => Math.round(value)))].sort((a, b) => a - b);
 }
@@ -14230,23 +14136,6 @@ function routeBoundsFromPoints(points: Point[]) {
     top: Math.min(...ys),
     bottom: Math.max(...ys)
   };
-}
-
-function routeHasEndpointOuterDetour(route: Point[], start: Point, end: Point) {
-  const endpointBox = {
-    left: Math.min(start.x, end.x),
-    right: Math.max(start.x, end.x),
-    top: Math.min(start.y, end.y),
-    bottom: Math.max(start.y, end.y)
-  };
-  const routeBox = routeBoundsFromPoints(route);
-  const margin = ROUTE_ENDPOINT_STUB_LENGTH;
-  return (
-    routeBox.left < endpointBox.left - margin ||
-    routeBox.right > endpointBox.right + margin ||
-    routeBox.top < endpointBox.top - margin ||
-    routeBox.bottom > endpointBox.bottom + margin
-  );
 }
 
 function routeStaysWithinEndpointStubEnvelope(
