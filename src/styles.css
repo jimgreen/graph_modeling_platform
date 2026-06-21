@@ -2165,7 +2165,8 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   stroke-width: 2.5;
   stroke-linecap: round;
   stroke-linejoin: round;
-  pointer-events: none;
+  pointer-events: stroke;
+  cursor: pointer;
 }
 
 .routable-line-endpoint-handle {

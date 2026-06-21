@@ -201,18 +201,10 @@ export function createFindEditableRouteSegmentIndex(__appScope: Record<string, a
   return (routePoints: Point[], point: Point) => {
   const { routeSegmentPointerDistance, sameOptionalPoint } = __appScope;
     const candidates = routePoints
-      .slice(1, -2)
-      .map((from, offset) => {
-        const segmentIndex = offset + 1;
-        const to = routePoints[segmentIndex + 1];
-        return { from, to, segmentIndex };
-      })
+      .slice(0, -1)
+      .map((from, segmentIndex) => ({ from, to: routePoints[segmentIndex + 1], segmentIndex }))
       .filter(({ from, to }) => to && !sameOptionalPoint(from, to) && (from.x === to.x || from.y === to.y));
-    const fallbackCandidates = candidates.length > 0
-      ? candidates
-      : routePoints.slice(0, -1).map((from, segmentIndex) => ({ from, to: routePoints[segmentIndex + 1], segmentIndex }))
-        .filter(({ from, to }) => to && !sameOptionalPoint(from, to) && (from.x === to.x || from.y === to.y));
-    return fallbackCandidates.reduce<{ index: number; distance: number } | null>((nearest, candidate) => {
+    return candidates.reduce<{ index: number; distance: number } | null>((nearest, candidate) => {
       const distance = routeSegmentPointerDistance(point, candidate.from, candidate.to);
       return !nearest || distance < nearest.distance ? { index: candidate.segmentIndex, distance } : nearest;
     }, null)?.index ?? -1;
@@ -280,7 +272,7 @@ export function createInsertManualBendAtPoint(__appScope: Record<string, any>) {
     }
     pushUndoSnapshot();
     const nextPoints = insertOrthogonalRouteBend(routePoints, segmentIndex, clickPoint, canvasBounds);
-    setEdgeManualPoints(edgeId, routeManualPoints(nextPoints));
+    setEdgeManualPoints(edgeId, routeManualPoints(nextPoints), nextPoints);
   };
 }
 
@@ -425,7 +417,7 @@ export function createDeleteManualBendPoint(__appScope: Record<string, any>) {
     }
     pushUndoSnapshot();
     const nextPoints = routePoints.filter((_, index) => index !== routePointIndex);
-    setEdgeManualPoints(edgeId, routeManualPoints(nextPoints));
+    setEdgeManualPoints(edgeId, routeManualPoints(nextPoints), nextPoints);
   };
 }
 

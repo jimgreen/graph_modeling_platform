@@ -4780,19 +4780,32 @@ export function createOpenElementTreeItemContextMenu(__appScope: Record<string, 
 }
 
 export function createSetEdgeManualPoints(__appScope: Record<string, any>) {
-  return (edgeId: string, manualPoints: Point[]) => {
+  return (edgeId: string, manualPoints: Point[], routePoints?: Point[]) => {
   const { edgeById, markRouteEdgesDirty, markStoredRouteEdgesDirty, patchGraphEdges, requireEditMode, sameOptionalPointList } = __appScope;
     if (!requireEditMode("修改连接线路径")) {
       return;
     }
     const normalizedManualPoints = manualPoints.map((point) => ({ x: Math.round(point.x), y: Math.round(point.y) }));
+    const normalizedRoutePoints = routePoints?.map((point) => ({ x: Math.round(point.x), y: Math.round(point.y) }));
     const edge = edgeById.get(edgeId);
-    if (!edge || sameOptionalPointList(edge.manualPoints, normalizedManualPoints)) {
+    if (
+      !edge ||
+      (
+        sameOptionalPointList(edge.manualPoints, normalizedManualPoints) &&
+        (!normalizedRoutePoints || sameOptionalPointList(edge.routePoints, normalizedRoutePoints))
+      )
+    ) {
       return;
     }
     markRouteEdgesDirty([edgeId]);
     markStoredRouteEdgesDirty([edgeId]);
-    patchGraphEdges([{ ...edge, manualPoints: normalizedManualPoints }]);
+    const nextEdge = { ...edge, manualPoints: normalizedManualPoints };
+    if (normalizedRoutePoints) {
+      nextEdge.routePoints = normalizedRoutePoints;
+    } else {
+      delete nextEdge.routePoints;
+    }
+    patchGraphEdges([nextEdge]);
   };
 }
 
@@ -4820,7 +4833,7 @@ export function createFinishManualPathDrag(__appScope: Record<string, any>) {
           }
         }
       } else if (manualPathDrag.edgeId) {
-        setEdgeManualPoints(manualPathDrag.edgeId, routeManualPoints(manualPathDrag.previewRoutePoints));
+        setEdgeManualPoints(manualPathDrag.edgeId, routeManualPoints(manualPathDrag.previewRoutePoints), manualPathDrag.previewRoutePoints);
       }
     }
     setManualPathDrag(null);

@@ -225,6 +225,36 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
   } = scope;
 
+  const routableLineRouteEventPoint = (event) => {
+    if (!svgRef.current) {
+      return undefined;
+    }
+    const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
+    lastCanvasPointerRef.current = pointer;
+    updateMouseStatus(pointer);
+    return pointer;
+  };
+
+  const openSelectedRoutableLineRouteContextMenu = (event, node, routePoints) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!isEditMode || !activeLayerNodeIdSet.has(node.id)) {
+      return;
+    }
+    canvasInteractionRef.current = true;
+    projectListPointerInsideRef.current = false;
+    const pointer = routableLineRouteEventPoint(event);
+    selectCanvasGraphics([node.id], [], { scope: "direct" });
+    openGraphicContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      target: "node",
+      canvasPoint: pointer,
+      nodeId: node.id,
+      routePoints: routePoints.map((point) => ({ ...point }))
+    });
+  };
+
   return (
     <>
         <section className="canvas-frame" ref={canvasFrameRef} tabIndex={-1} onPointerEnter={focusCanvasKeyboardShortcutHost} onPointerMove={focusCanvasKeyboardShortcutHost} style={{
@@ -1055,7 +1085,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         !routableLineEndpointDrag &&
         !dragGhostRoutableLineNodeIdSet.has(selectedRoutableLineManualPathRoute.node.id) &&
         (<g className="routable-line-manual-path-layer" data-node-id={selectedRoutableLineManualPathRoute.node.id}>
-                <path d={selectedRoutableLineManualPathRoute.path} className="routable-line-manual-path-preview"/>
+                <path d={selectedRoutableLineManualPathRoute.path} className="routable-line-manual-path-preview" onPointerDown={(event) => handleRoutableLineNodePathPointerDown(event, selectedRoutableLineManualPathRoute.node)} onContextMenu={(event) => openSelectedRoutableLineRouteContextMenu(event, selectedRoutableLineManualPathRoute.node, selectedRoutableLineManualPathRoute.points)}/>
                 {selectedRoutableLineManualPathRoute.points.slice(1).map((point, index) => {
                 const from = selectedRoutableLineManualPathRoute.points[index];
                 const segmentIndex = index;
@@ -1063,7 +1093,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                     return null;
                 }
                 const orientation = from.y === point.y ? "horizontal" : "vertical";
-                return (<path key={`routable-line-segment-${segmentIndex}`} d={`M ${from.x} ${from.y} L ${point.x} ${point.y}`} className={`manual-segment-handle ${orientation}`} onPointerDown={(event) => startRoutableLineSegmentDrag(event, selectedRoutableLineManualPathRoute.node, segmentIndex, orientation, selectedRoutableLineManualPathRoute.points)}/>);
+                return (<path key={`routable-line-segment-${segmentIndex}`} d={`M ${from.x} ${from.y} L ${point.x} ${point.y}`} className={`manual-segment-handle ${orientation}`} onPointerDown={(event) => startRoutableLineSegmentDrag(event, selectedRoutableLineManualPathRoute.node, segmentIndex, orientation, selectedRoutableLineManualPathRoute.points)} onContextMenu={(event) => openSelectedRoutableLineRouteContextMenu(event, selectedRoutableLineManualPathRoute.node, selectedRoutableLineManualPathRoute.points)}/>);
             })}
                 {selectedRoutableLineManualPathRoute.points.slice(1, -1).map((point, index) => {
                 const routePointIndex = index + 1;

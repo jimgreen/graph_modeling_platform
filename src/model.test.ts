@@ -2259,6 +2259,64 @@ describe("power system model", () => {
     expect(routeBendCountForTest(routePoints)).toBeGreaterThan(1);
   });
 
+  test("removes unnecessary preserved doglegs when a routable line endpoint moves to a simpler path", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const loadBase = createDefaultNode("ac-load", { x: 335, y: 666 });
+    const load = {
+      ...loadBase,
+      id: "dogleg-line-load",
+      terminals: [
+        { ...loadBase.terminals[0], anchor: { x: 0.5, y: 0 } },
+        ...loadBase.terminals.slice(1)
+      ]
+    };
+    const breaker = { ...createDefaultNode("ac-box-breaker", { x: 860, y: 168 }), id: "dogleg-line-breaker" };
+    const start = getTerminalPoint(load, "t1");
+    const oldEnd = { x: 733, y: 168 };
+    const end = getTerminalPoint(breaker, "t1");
+    const preservedLaneY = 392;
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      start,
+      oldEnd,
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(load, "t1"),
+        target: { nodeId: "old-target", terminalId: "t1" }
+      }
+    );
+    const doglegLine = setRoutableLineDeviceCanvasPoints(line, [
+      start,
+      { x: 556, y: start.y },
+      { x: 556, y: preservedLaneY },
+      { x: 652, y: preservedLaneY },
+      { x: 652, y: oldEnd.y },
+      oldEnd
+    ]);
+
+    const updated = setRoutableLineDeviceEndpointsPreservingRoute(
+      doglegLine,
+      start,
+      end,
+      {
+        source: routableLineDeviceEndpointRefForNode(load, "t1"),
+        target: routableLineDeviceEndpointRefForNode(breaker, "t1")
+      },
+      new Map([
+        [load.id, load],
+        [breaker.id, breaker]
+      ]),
+      { width: 1600, height: 900 }
+    );
+    const routePoints = routableLineDeviceCanvasPoints(updated);
+
+    expect(routePoints[0]).toEqual(start);
+    expect(routePoints[routePoints.length - 1]).toEqual(end);
+    expect(routePoints.some((point) => point.y === preservedLaneY)).toBe(false);
+    expect(routeBendCountForTest(routePoints)).toBeLessThanOrEqual(2);
+    expectOrthogonalSegments(routePoints);
+  });
+
   test("adds endpoint stubs when a two-point routable line moves against a bus", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
     const source = { ...createDefaultNode("ac-source", { x: 120, y: 260 }), id: "short-line-source" };
@@ -2855,6 +2913,48 @@ describe("power system model", () => {
     for (let index = 2; index < points.length; index += 1) {
       expect(segmentIntersectsNodeBody(points[index - 1], points[index], source)).toBe(false);
     }
+  });
+
+  test("keeps routable line-like bus endpoint routes on the endpoint normal when avoiding nearby blockers", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 1000, y: 1080 }),
+      id: "source-bus",
+      size: { width: 520, height: 16 }
+    };
+    const target = {
+      ...createDefaultNode("ac-three-winding-transformer", { x: 1240, y: 430 }),
+      id: "target-transformer"
+    };
+    const blocker = {
+      ...createDefaultNode("static-rect", { x: 1190, y: 1052 }),
+      id: "nearby-route-blocker",
+      size: { width: 360, height: 90 }
+    };
+    const start = projectPointToBusCenterline(bus, { x: 1040, y: bus.position.y });
+    const end = getTerminalPoint(target, "t2");
+    const line = createRoutableLineDeviceFromEndpoints(
+      template!,
+      start,
+      end,
+      "layer-a",
+      {
+        source: routableLineDeviceEndpointRefForNode(bus, "t1", start),
+        target: routableLineDeviceEndpointRefForNode(target, "t2")
+      }
+    );
+
+    const routed = routeRoutableLineDevice(line, [bus, target, blocker, line], { width: 1800, height: 1300 });
+    const points = routableLineDeviceCanvasPoints(routed);
+    const firstSegmentNormal = {
+      x: Math.sign(points[1].x - points[0].x),
+      y: Math.sign(points[1].y - points[0].y)
+    };
+
+    expectOrthogonalSegments(points);
+    expect(firstSegmentNormal).toEqual(getRouteEndpointNormal(bus, start, end, "t1"));
+    expect(Math.max(...points.map((point) => point.y))).toBeLessThanOrEqual(start.y);
+    expect(routeBendCountForTest(points)).toBeLessThanOrEqual(4);
   });
 
   test("reroutes screenshot-like routable line devices away from the source device body", () => {
@@ -6791,6 +6891,58 @@ describe("power system model", () => {
 
     expect(rebuilt[0]).toBe(edge);
     expect(rebuilt[0].manualPoints).toEqual(manualPoints);
+  });
+
+  test("removes stale U-shaped connection pockets after a connected device moves", () => {
+    const loadBase = withHiddenDeviceLabel(createDefaultNode("ac-load", { x: 300, y: 300 }));
+    const load = {
+      ...loadBase,
+      id: "u-pocket-load",
+      terminals: [
+        { ...loadBase.terminals[0], anchor: { x: 1, y: 0.5 } },
+        ...loadBase.terminals.slice(1)
+      ]
+    };
+    const breaker = withHiddenDeviceLabel({ ...createDefaultNode("ac-box-breaker", { x: 900, y: 300 }), id: "u-pocket-breaker" });
+    const movedBreaker = { ...breaker, position: { x: 880, y: 300 } };
+    const sourcePoint = getTerminalPoint(load, "t1");
+    const oldTargetPoint = getTerminalPoint(breaker, "t1");
+    const movedTargetPoint = getTerminalPoint(movedBreaker, "t1");
+    const stalePocketY = sourcePoint.y + 280;
+    const routePoints = [
+      sourcePoint,
+      { x: sourcePoint.x + 80, y: sourcePoint.y },
+      { x: sourcePoint.x + 80, y: stalePocketY },
+      { x: oldTargetPoint.x - 80, y: stalePocketY },
+      { x: oldTargetPoint.x - 80, y: oldTargetPoint.y },
+      oldTargetPoint
+    ];
+    const edge: Edge = {
+      id: "stale-u-pocket-connection",
+      sourceId: load.id,
+      targetId: breaker.id,
+      sourceTerminalId: "t1",
+      targetTerminalId: "t1",
+      manualPoints: routePoints.slice(1, -1).map((point) => ({ ...point })),
+      routePoints: routePoints.map((point) => ({ ...point }))
+    };
+
+    const rebuilt = rebuildExternalConnectionRoutesForMovedNodes(
+      [load, movedBreaker],
+      [edge],
+      [breaker.id],
+      { width: 1400, height: 700 },
+      [edge],
+      { preserveManualPoints: true }
+    );
+    const rebuiltRoutePoints = rebuilt[0].routePoints ?? [];
+
+    expect(rebuilt[0]).not.toBe(edge);
+    expect(rebuiltRoutePoints[0]).toEqual(sourcePoint);
+    expect(rebuiltRoutePoints[rebuiltRoutePoints.length - 1]).toEqual(movedTargetPoint);
+    expect(rebuiltRoutePoints.some((point) => point.y === stalePocketY)).toBe(false);
+    expect(routeBendCountForTest(rebuiltRoutePoints)).toBeLessThanOrEqual(2);
+    expectOrthogonalSegments(rebuiltRoutePoints);
   });
 
   test("preserves connection manual route geometry when only the device endpoint moves against a bus", () => {
