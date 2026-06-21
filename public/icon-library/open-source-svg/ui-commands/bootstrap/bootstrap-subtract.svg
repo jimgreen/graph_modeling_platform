@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-subtract" viewBox="0 0 16 16" color="#2563eb" role="img" aria-labelledby="bootstrap-subtract-title bootstrap-subtract-desc">
+  <title id="bootstrap-subtract-title">subtract</title>
+  <desc id="bootstrap-subtract-desc">通用命令 - Bootstrap Icons - subtract - MIT</desc>
+  <path fill="currentColor" d="M0 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2h2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2H2a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1z"/>
+</svg>

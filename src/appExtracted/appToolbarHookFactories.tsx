@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { clampNumber } from "../canvasViewport";
+import { mergeBuiltinSharedIconAssets } from "../sharedIconLibrary";
 
 export function createOpenNodeDoubleClickEditor(__appScope: Record<string, any>) {
   return (node: ModelNode) => {
@@ -2774,11 +2775,9 @@ export function createAppHookCallback84(__appScope: Record<string, any>) {
     }
     if (!imageLibraryInitializedRef.current) {
       imageLibraryInitializedRef.current = true;
-      const localAssets = localImageAssetsFromStorage();
-      if (localAssets.length > 0) {
-        setImageAssetList(localAssets);
-        setImageAssets((current) => ({ ...imageAssetsToMap(localAssets), ...current }));
-      }
+      const localAssets = mergeBuiltinSharedIconAssets(localImageAssetsFromStorage());
+      setImageAssetList(localAssets);
+      setImageAssets((current) => ({ ...imageAssetsToMap(localAssets), ...current }));
       void refreshImageFolders();
     }
     void refreshImagesForFolder(activeImageFolderId);
@@ -4308,13 +4307,60 @@ export function createAppHookCallback139(__appScope: Record<string, any>) {
 
 export function createAppHookCallback140(__appScope: Record<string, any>) {
   return () => {
-  const { activeProjectKey, backgroundProjectId, backgroundProjectRecord, scheduleIdleWork, setBackgroundPageRenderReady } = __appScope;
+  const {
+    activeProjectKey,
+    backgroundProjectId,
+    backgroundProjectRecord,
+    fetchBackendProjectRecord,
+    findSchemeForProject,
+    savedProjectRecordIsSummary,
+    schemePathForProject,
+    setBackgroundPageRenderReady,
+    setSchemes,
+    suppressNextBackendSchemeSyncRef,
+    upsertSavedProjectInScheme,
+    writeOperationLog
+  } = __appScope;
     if (!backgroundProjectId || backgroundProjectId === activeProjectKey || !backgroundProjectRecord) {
       setBackgroundPageRenderReady(false);
       return;
     }
-    setBackgroundPageRenderReady(false);
-    return scheduleIdleWork(() => setBackgroundPageRenderReady(true), 80, 1500);
+    if (typeof savedProjectRecordIsSummary === "function" && savedProjectRecordIsSummary(backgroundProjectRecord)) {
+      setBackgroundPageRenderReady(false);
+      const ownerScheme = findSchemeForProject(backgroundProjectRecord.id);
+      const schemePath = schemePathForProject(backgroundProjectRecord.id);
+      if (!ownerScheme || schemePath.length === 0) {
+        writeOperationLog(`读取背景页面失败：${backgroundProjectRecord.name}`);
+        return;
+      }
+      let cancelled = false;
+      void fetchBackendProjectRecord(schemePath, backgroundProjectRecord.name)
+        .then((loadedProject) => {
+          if (cancelled) {
+            return;
+          }
+          const fullRecord = {
+            ...loadedProject,
+            id: backgroundProjectRecord.id || loadedProject.id,
+            name: loadedProject.name || backgroundProjectRecord.name
+          };
+          suppressNextBackendSchemeSyncRef.current = true;
+          setSchemes((current) => upsertSavedProjectInScheme(current, ownerScheme.id, fullRecord));
+          writeOperationLog(`加载背景页面：${fullRecord.name}`);
+        })
+        .catch((error) => {
+          if (cancelled) {
+            return;
+          }
+          const message = error instanceof Error ? error.message : `读取背景页面失败：${backgroundProjectRecord.name}`;
+          window.alert(message);
+          writeOperationLog(`读取背景页面失败：${backgroundProjectRecord.name}`);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+    setBackgroundPageRenderReady(true);
   };
 }
 

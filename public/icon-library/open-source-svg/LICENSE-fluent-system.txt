@@ -1,0 +1,5 @@
+Fluent UI System Icons
+
+Package: @fluentui/svg-icons@1.1.330
+Repository: https://github.com/microsoft/fluentui-system-icons
+License declared by package.json: MIT

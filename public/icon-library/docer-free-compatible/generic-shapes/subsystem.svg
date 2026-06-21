@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#7c3aed" role="img" aria-labelledby="subsystem-title subsystem-desc">
+  <title id="subsystem-title">子系统</title>
+  <desc id="subsystem-desc">通用图形 - subsystem, module</desc>
+  <g>
+<rect x="12" y="18" width="22" height="18" rx="3" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <rect x="30" y="28" width="22" height="18" rx="3" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M34 24h12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M18 42h12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

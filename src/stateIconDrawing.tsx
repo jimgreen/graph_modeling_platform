@@ -2,7 +2,8 @@ import type { CSSProperties, ReactNode } from "react";
 import type {
   DeviceStateDefinition,
   DeviceStateVisual,
-  DeviceTemplate
+  DeviceTemplate,
+  Point
 } from "./model";
 import { getTemplateStateDefinitions, normalizeDeviceStateDefinitions } from "./model";
 import { escapeXml, formatSvgNumber } from "./svgUtils";
@@ -14,8 +15,10 @@ export type StateVisualShapeKind =
   | "valve-open"
   | "valve-closed"
   | "line"
+  | "polyline"
   | "point"
   | "triangle"
+  | "rectangle"
   | "square"
   | "hexagon"
   | "polygon"
@@ -26,6 +29,21 @@ export type StateVisualShapeKind =
   | "text"
   | "imported-svg"
   | "image";
+
+export type StateIconLineCapKind =
+  | "none"
+  | "arrow"
+  | "circle"
+  | "triangle"
+  | "square";
+
+export const STATE_ICON_LINE_CAP_OPTIONS: Array<{ value: StateIconLineCapKind; label: string }> = [
+  { value: "none", label: "无" },
+  { value: "arrow", label: "箭头" },
+  { value: "circle", label: "圆形" },
+  { value: "triangle", label: "三角" },
+  { value: "square", label: "四方" }
+];
 
 export type StateIconDrawingElement = {
   id: string;
@@ -40,6 +58,15 @@ export type StateIconDrawingElement = {
   fillColor: string;
   textColor: string;
   text: string;
+  strokeStyle?: "solid" | "dashed" | "dotted";
+  fontFamily?: string;
+  fontSize?: number;
+  fontWeight?: string;
+  fontStyle?: string;
+  startCap?: StateIconLineCapKind;
+  endCap?: StateIconLineCapKind;
+  points?: Point[];
+  terminalIndex?: number;
   svgSource?: string;
   imageHref?: string;
   imageScale?: number;
@@ -294,12 +321,16 @@ export function stateVisualShapeLabel(kind: StateVisualShapeKind) {
       return "阀关";
     case "line":
       return "线";
+    case "polyline":
+      return "折线";
     case "point":
       return "点";
     case "triangle":
       return "三角";
+    case "rectangle":
+      return "矩形";
     case "square":
-      return "四方";
+      return "正方型";
     case "hexagon":
       return "六角";
     case "polygon":
@@ -313,7 +344,7 @@ export function stateVisualShapeLabel(kind: StateVisualShapeKind) {
     case "arc":
       return "圆弧";
     case "text":
-      return "文字";
+      return "文本框";
     case "imported-svg":
       return "SVG";
     case "image":
@@ -347,14 +378,20 @@ export function generateStateVisualShapeImage(kind: StateVisualShapeKind, row: D
     case "line":
       body = `<path d="M 42 80 H 198" fill="none" stroke="${escapeXml(stroke)}" stroke-width="10" stroke-linecap="round"/>`;
       break;
+    case "polyline":
+      body = `<path d="M 42 118 L 120 42 L 198 118" fill="none" stroke="${escapeXml(stroke)}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>`;
+      break;
     case "point":
       body = `<circle cx="120" cy="80" r="18" fill="${escapeXml(stroke)}"/>`;
       break;
     case "triangle":
       body = `<path d="M 120 34 L 190 122 H 50 Z" ${common}/>`;
       break;
+    case "rectangle":
+      body = `<rect x="52" y="50" width="136" height="60" rx="4" ${common}/>`;
+      break;
     case "square":
-      body = `<rect x="64" y="34" width="112" height="92" rx="4" ${common}/>`;
+      body = `<rect x="74" y="34" width="92" height="92" rx="4" ${common}/>`;
       break;
     case "hexagon":
       body = `<path d="M 82 34 H 158 L 198 80 L 158 126 H 82 L 42 80 Z" ${common}/>`;
@@ -403,6 +440,126 @@ export function visibleStateIconColor(fallback: string, ...values: Array<string 
   return fallback;
 }
 
+function isTransparentStateIconColor(value: string | undefined | null) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return !normalized || normalized === "transparent" || normalized === "none";
+}
+
+function normalizeStateIconLineCapKind(value: string | undefined | null): StateIconLineCapKind {
+  return STATE_ICON_LINE_CAP_OPTIONS.some((option) => option.value === value)
+    ? value as StateIconLineCapKind
+    : "none";
+}
+
+function stateIconStrokeDashArray(strokeStyle: StateIconDrawingElement["strokeStyle"], strokeWidth: number) {
+  const width = Math.max(1, strokeWidth);
+  if (strokeStyle === "dashed") {
+    return `${formatSvgNumber(width * 3)} ${formatSvgNumber(width * 1.8)}`;
+  }
+  if (strokeStyle === "dotted") {
+    return `${formatSvgNumber(width * 0.2)} ${formatSvgNumber(width * 1.8)}`;
+  }
+  return "";
+}
+
+function stateIconLineCapMarkerId(elementId: string, position: "start" | "end", cap: StateIconLineCapKind) {
+  return `cap-${elementId.replace(/[^a-zA-Z0-9_-]/g, "")}-${position}-${cap}`;
+}
+
+function stateIconLineCapMarkerMarkup(
+  element: StateIconDrawingElement,
+  position: "start" | "end",
+  capValue: string | undefined,
+  stroke: string
+) {
+  const cap = normalizeStateIconLineCapKind(capValue);
+  if (cap === "none") {
+    return "";
+  }
+  const id = escapeXml(stateIconLineCapMarkerId(element.id, position, cap));
+  if (cap === "arrow") {
+    return `<marker id="${id}" viewBox="-6 -6 12 12" refX="5" refY="0" markerWidth="7" markerHeight="7" orient="auto-start-reverse" markerUnits="strokeWidth"><path d="M -4 -4 L 5 0 L -4 4 Z" fill="${stroke}"/></marker>`;
+  }
+  if (cap === "circle") {
+    return `<marker id="${id}" viewBox="-5 -5 10 10" refX="0" refY="0" markerWidth="6" markerHeight="6" orient="auto" markerUnits="strokeWidth"><circle cx="0" cy="0" r="3.2" fill="${stroke}"/></marker>`;
+  }
+  if (cap === "triangle") {
+    return `<marker id="${id}" viewBox="-5 -5 10 10" refX="0" refY="0" markerWidth="6" markerHeight="6" orient="auto" markerUnits="strokeWidth"><path d="M 0 -4 L 4 4 L -4 4 Z" fill="${stroke}"/></marker>`;
+  }
+  return `<marker id="${id}" viewBox="-5 -5 10 10" refX="0" refY="0" markerWidth="6" markerHeight="6" orient="auto" markerUnits="strokeWidth"><rect x="-3.4" y="-3.4" width="6.8" height="6.8" fill="${stroke}"/></marker>`;
+}
+
+function stateIconLineCapMarkerAttrs(element: StateIconDrawingElement) {
+  const startCap = normalizeStateIconLineCapKind(element.startCap);
+  const endCap = normalizeStateIconLineCapKind(element.endCap);
+  return [
+    startCap !== "none" ? `marker-start="url(#${escapeXml(stateIconLineCapMarkerId(element.id, "start", startCap))})"` : "",
+    endCap !== "none" ? `marker-end="url(#${escapeXml(stateIconLineCapMarkerId(element.id, "end", endCap))})"` : ""
+  ].filter(Boolean).join(" ");
+}
+
+function stateIconLineCapMarkerDefs(element: StateIconDrawingElement, stroke: string) {
+  const markers = [
+    stateIconLineCapMarkerMarkup(element, "start", element.startCap, stroke),
+    stateIconLineCapMarkerMarkup(element, "end", element.endCap, stroke)
+  ].filter(Boolean).join("");
+  return markers ? `<defs>${markers}</defs>` : "";
+}
+
+function normalizedStateIconPolylinePoints(element: StateIconDrawingElement) {
+  const points = (element.points ?? [])
+    .map((point) => ({
+      x: Number(point.x),
+      y: Number(point.y)
+    }))
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+  return points.length >= 2 ? points : null;
+}
+
+function stateIconPolylineLocalPoints(element: StateIconDrawingElement, width: number, height: number) {
+  const normalizedPoints = normalizedStateIconPolylinePoints(element);
+  if (normalizedPoints) {
+    return normalizedPoints.map((point) => ({
+      x: point.x * width,
+      y: point.y * height
+    }));
+  }
+  const hw = width / 2;
+  const hh = height / 2;
+  return [
+    { x: -hw, y: hh * 0.72 },
+    { x: 0, y: -hh * 0.72 },
+    { x: hw, y: hh * 0.72 }
+  ];
+}
+
+function stateIconPolylinePathData(points: readonly Point[]) {
+  return points
+    .map((point, index) => `${index === 0 ? "M" : "L"} ${formatSvgNumber(point.x)} ${formatSvgNumber(point.y)}`)
+    .join(" ");
+}
+
+function stateIconPolylinePointsAttribute(points: readonly Point[]) {
+  return points
+    .map((point) => `${formatSvgNumber(point.x)},${formatSvgNumber(point.y)}`)
+    .join(" ");
+}
+
+function parseStateIconPolylinePointsAttribute(value: string) {
+  const points = value
+    .trim()
+    .split(/\s+/u)
+    .map((item) => {
+      const [rawX, rawY] = item.split(",");
+      return {
+        x: Number.parseFloat(rawX ?? ""),
+        y: Number.parseFloat(rawY ?? "")
+      };
+    })
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+  return points.length >= 2 ? points : null;
+}
+
 export function createStateIconDrawingElement(kind: StateVisualShapeKind, row?: DeviceDefinitionStateDraftRow | null): StateIconDrawingElement {
   const strokeColor = visibleStateIconColor("#2563eb", row?.strokeColor, row?.color);
   return {
@@ -410,14 +567,17 @@ export function createStateIconDrawingElement(kind: StateVisualShapeKind, row?: 
     kind,
     x: 120,
     y: 80,
-    width: kind === "point" ? 28 : kind === "line" || kind === "arc" ? 128 : 76,
-    height: kind === "point" ? 28 : kind === "line" ? 24 : kind === "arc" ? 70 : 58,
+    width: kind === "point" ? 28 : kind === "line" || kind === "polyline" || kind === "arc" ? 128 : kind === "rectangle" ? 96 : kind === "square" ? 68 : 76,
+    height: kind === "point" ? 28 : kind === "line" ? 24 : kind === "polyline" || kind === "arc" ? 70 : kind === "square" ? 68 : 58,
     rotation: 0,
     strokeWidth: 6,
     strokeColor,
-    fillColor: kind === "line" || kind === "arc" || kind === "text" ? "transparent" : (row?.fillColor.trim() || "transparent"),
+    fillColor: kind === "line" || kind === "polyline" || kind === "arc" || kind === "text" ? "transparent" : (row?.fillColor.trim() || "transparent"),
     textColor: visibleStateIconColor("#111827", row?.textColor, row?.color, strokeColor),
     text: row?.text.trim() || row?.icon.trim() || stateVisualShapeLabel(kind),
+    strokeStyle: "solid",
+    startCap: "none",
+    endCap: "none",
     svgSource: "",
     imageHref: "",
     imageScale: 1,
@@ -462,6 +622,13 @@ function readSvgMarkupNumber(markup: string, name: string, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function stateIconDrawingTerminalOwnershipFromMarkup(markup: string): Pick<StateIconDrawingElement, "terminalIndex"> | Record<string, never> {
+  const terminalIndex = readSvgMarkupNumber(markup, "data-terminal-index", Number.NaN);
+  return Number.isInteger(terminalIndex) && terminalIndex >= 0
+    ? { terminalIndex }
+    : {};
+}
+
 function parseStateIconDrawingGeneratedTransform(markup: string) {
   const transform = readSvgMarkupAttribute(markup, "transform");
   const translateMatch = /translate\(\s*([-+]?\d*\.?\d+(?:e[-+]?\d+)?)\s*(?:,|\s)\s*([-+]?\d*\.?\d+(?:e[-+]?\d+)?)?\s*\)/i.exec(transform);
@@ -503,10 +670,21 @@ function createStateIconDrawingElementsFromGeneratedSvgSource(source: string, fi
   if (groups.length === 0) {
     return null;
   }
+  const rootOpen = generatedStateIconRootOpenMarkup(source);
+  const viewBox = readSvgMarkupAttribute(rootOpen, "viewBox") || "0 0 240 160";
   const restored = groups.map((group, index) =>
     createStateIconDrawingElementFromGeneratedGroupMarkup(group, `${fileName || "SVG"}-${index + 1}`)
   );
-  return restored.every(Boolean) ? (restored as StateIconDrawingElement[]) : null;
+  return restored.map((element, index) =>
+    element ?? {
+      ...createImportedStateIconElement(
+        "imported-svg",
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${escapeXml(viewBox)}">${groups[index]}</svg>`,
+        `${fileName || "SVG"}-${index + 1}`
+      ),
+      ...stateIconDrawingTerminalOwnershipFromMarkup(groups[index])
+    }
+  );
 }
 
 export function createStateIconDrawingElementFromGeneratedGroupMarkup(
@@ -521,6 +699,7 @@ export function createStateIconDrawingElementFromGeneratedGroupMarkup(
   if (!transform) {
     return null;
   }
+  const terminalOwnership = stateIconDrawingTerminalOwnershipFromMarkup(trimmed);
   const svgMarkup = firstSvgMarkupInGeneratedGroup(trimmed);
   if (svgMarkup) {
     const svgOpen = /<svg\b([^>]*)>/i.exec(svgMarkup)?.[1] ?? "";
@@ -536,7 +715,8 @@ export function createStateIconDrawingElementFromGeneratedGroupMarkup(
       y: transform.y,
       width,
       height,
-      rotation: transform.rotation
+      rotation: transform.rotation,
+      ...terminalOwnership
     };
   }
   const imageOpen = /<image\b([^>]*)>/i.exec(trimmed)?.[1] ?? "";
@@ -551,7 +731,27 @@ export function createStateIconDrawingElementFromGeneratedGroupMarkup(
       y: transform.y,
       width,
       height,
-      rotation: transform.rotation
+      rotation: transform.rotation,
+      ...terminalOwnership
+    };
+  }
+  const polylinePoints = parseStateIconPolylinePointsAttribute(readSvgMarkupAttribute(trimmed, "data-polyline-points"));
+  const pathOpen = /<path\b([^>]*)>/i.exec(trimmed)?.[1] ?? "";
+  if (polylinePoints && pathOpen) {
+    return {
+      ...createStateIconDrawingElement("polyline"),
+      x: transform.x,
+      y: transform.y,
+      width: Math.max(1, readSvgMarkupNumber(trimmed, "data-polyline-width", 128)),
+      height: Math.max(1, readSvgMarkupNumber(trimmed, "data-polyline-height", 70)),
+      rotation: transform.rotation,
+      strokeWidth: Math.max(0, readSvgMarkupNumber(pathOpen, "stroke-width", 6)),
+      strokeColor: readSvgMarkupAttribute(pathOpen, "stroke") || "#2563eb",
+      fillColor: "transparent",
+      points: polylinePoints,
+      startCap: normalizeStateIconLineCapKind(readSvgMarkupAttribute(trimmed, "data-start-cap")),
+      endCap: normalizeStateIconLineCapKind(readSvgMarkupAttribute(trimmed, "data-end-cap")),
+      ...terminalOwnership
     };
   }
   const circleOpen = /<circle\b([^>]*)>/i.exec(trimmed)?.[1] ?? "";
@@ -566,7 +766,8 @@ export function createStateIconDrawingElementFromGeneratedGroupMarkup(
       rotation: transform.rotation,
       strokeWidth: Math.max(0, readSvgMarkupNumber(circleOpen, "stroke-width", 6)),
       strokeColor: readSvgMarkupAttribute(circleOpen, "stroke") || "#2563eb",
-      fillColor: readSvgMarkupAttribute(circleOpen, "fill") || "transparent"
+      fillColor: readSvgMarkupAttribute(circleOpen, "fill") || "transparent",
+      ...terminalOwnership
     };
   }
   return null;
@@ -692,8 +893,24 @@ export function stateIconSvgReactAttributes(element: Element) {
                                         ? "stopOpacity"
                                         : name === "fill-opacity"
                                           ? "fillOpacity"
-                                          : name === "stroke-opacity"
-                                            ? "strokeOpacity"
+                                            : name === "stroke-opacity"
+                                              ? "strokeOpacity"
+                                              : name === "marker-start"
+                                                ? "markerStart"
+                                                : name === "marker-end"
+                                                  ? "markerEnd"
+                                                  : name === "marker-mid"
+                                                    ? "markerMid"
+                                                    : name === "marker-width"
+                                                      ? "markerWidth"
+                                                      : name === "marker-height"
+                                                        ? "markerHeight"
+                                                        : name === "marker-units"
+                                                          ? "markerUnits"
+                                                          : name === "refx"
+                                                            ? "refX"
+                                                            : name === "refy"
+                                                              ? "refY"
                                             : name;
     props[propName] = attribute.value;
   }
@@ -746,6 +963,8 @@ export function stateIconSvgNodeToReact(element: Element, key: string): ReactNod
       return <tspan key={key} {...props}>{children}</tspan>;
     case "defs":
       return <defs key={key} {...props}>{children}</defs>;
+    case "marker":
+      return <marker key={key} {...props}>{children}</marker>;
     case "clipPath":
       return <clipPath key={key} {...props}>{children}</clipPath>;
     case "linearGradient":
@@ -787,24 +1006,28 @@ export function createEditableStateIconElementsFromSvgSource(
   const generatedElements = parsed.editableChildren.map((child, index) =>
     createStateIconDrawingElementFromGeneratedGroupMarkup(child.outerHTML, `${fileName || "SVG"}-${index + 1}`)
   );
-  if (generatedElements.some(Boolean)) {
-    return parsed.editableChildren.map((child, index) =>
-      generatedElements[index] ?? createImportedStateIconElement(
-        "imported-svg",
-        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${escapeXml(parsed.viewBox)}">${parsed.supportMarkup}${child.outerHTML}</svg>`,
-        `${fileName || "SVG"}-${index + 1}`
-      )
-    );
-  }
-  if (parsed.editableChildren.length <= 1) {
-    return [createImportedStateIconElement("imported-svg", stateIconSvgElementSource(source) || source, fileName)];
-  }
-  return parsed.editableChildren.map((child, index) =>
-    createImportedStateIconElement(
+  const importedElementFromGeneratedChild = (child: Element, index: number) => ({
+    ...createImportedStateIconElement(
       "imported-svg",
       `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${escapeXml(parsed.viewBox)}">${parsed.supportMarkup}${child.outerHTML}</svg>`,
       `${fileName || "SVG"}-${index + 1}`
-    )
+    ),
+    ...stateIconDrawingTerminalOwnershipFromMarkup(child.outerHTML)
+  });
+  if (generatedElements.some(Boolean)) {
+    return parsed.editableChildren.map((child, index) =>
+      generatedElements[index] ?? importedElementFromGeneratedChild(child, index)
+    );
+  }
+  if (parsed.editableChildren.length <= 1) {
+    const child = parsed.editableChildren[0];
+    return [{
+      ...createImportedStateIconElement("imported-svg", stateIconSvgElementSource(source) || source, fileName),
+      ...(child ? stateIconDrawingTerminalOwnershipFromMarkup(child.outerHTML) : {})
+    }];
+  }
+  return parsed.editableChildren.map((child, index) =>
+    importedElementFromGeneratedChild(child, index)
   );
 }
 
@@ -844,11 +1067,15 @@ export function stateIconDrawingElementMarkup(element: StateIconDrawingElement) 
   const fill = escapeXml(element.fillColor || "transparent");
   const textFill = escapeXml(element.textColor || element.strokeColor || "#111827");
   const sw = formatSvgNumber(Math.max(0, element.strokeWidth));
+  const dashArray = stateIconStrokeDashArray(element.strokeStyle, Math.max(0, element.strokeWidth));
+  const dashAttr = dashArray ? ` stroke-dasharray="${escapeXml(dashArray)}"` : "";
   const w = Math.max(1, element.width);
   const h = Math.max(1, element.height);
   const hw = w / 2;
   const hh = h / 2;
-  const common = `fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"`;
+  const common = `fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"${dashAttr} vector-effect="non-scaling-stroke"`;
+  const lineCapDefs = stateIconLineCapMarkerDefs(element, stroke);
+  const lineCapAttrs = stateIconLineCapMarkerAttrs(element);
   let body = "";
   switch (element.kind) {
     case "imported-svg": {
@@ -877,13 +1104,19 @@ export function stateIconDrawingElementMarkup(element: StateIconDrawingElement) 
       body = `<path d="M ${formatSvgNumber(-hw)} ${formatSvgNumber(-hh)} L 0 0 L ${formatSvgNumber(-hw)} ${formatSvgNumber(hh)} Z M ${formatSvgNumber(hw)} ${formatSvgNumber(-hh)} L 0 0 L ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} Z" ${common}/><path d="M ${formatSvgNumber(-hw * 0.55)} ${formatSvgNumber(-hh * 0.9)} L ${formatSvgNumber(hw * 0.55)} ${formatSvgNumber(hh * 0.9)} M ${formatSvgNumber(hw * 0.55)} ${formatSvgNumber(-hh * 0.9)} L ${formatSvgNumber(-hw * 0.55)} ${formatSvgNumber(hh * 0.9)}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/>`;
       break;
     case "line":
-      body = `<path d="M ${formatSvgNumber(-hw)} 0 H ${formatSvgNumber(hw)}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/>`;
+      body = `${lineCapDefs}<path d="M ${formatSvgNumber(-hw)} 0 H ${formatSvgNumber(hw)}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"${dashAttr}${lineCapAttrs ? ` ${lineCapAttrs}` : ""}/>`;
+      break;
+    case "polyline":
+      body = `${lineCapDefs}<path d="${stateIconPolylinePathData(stateIconPolylineLocalPoints(element, w, h))}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"${dashAttr}${lineCapAttrs ? ` ${lineCapAttrs}` : ""}/>`;
       break;
     case "point":
       body = `<circle cx="0" cy="0" r="${formatSvgNumber(Math.min(w, h) / 2)}" fill="${stroke}"/>`;
       break;
     case "triangle":
       body = `<path d="M 0 ${formatSvgNumber(-hh)} L ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} H ${formatSvgNumber(-hw)} Z" ${common}/>`;
+      break;
+    case "rectangle":
+      body = `<rect x="${formatSvgNumber(-hw)}" y="${formatSvgNumber(-hh)}" width="${formatSvgNumber(w)}" height="${formatSvgNumber(h)}" rx="2" ${common}/>`;
       break;
     case "square":
       body = `<rect x="${formatSvgNumber(-hw)}" y="${formatSvgNumber(-hh)}" width="${formatSvgNumber(w)}" height="${formatSvgNumber(h)}" rx="2" ${common}/>`;
@@ -898,22 +1131,33 @@ export function stateIconDrawingElementMarkup(element: StateIconDrawingElement) 
       body = `<circle cx="0" cy="0" r="${formatSvgNumber(Math.min(w, h) / 2)}" ${common}/>`;
       break;
     case "semicircle":
-      body = `<path d="M ${formatSvgNumber(-hw)} ${formatSvgNumber(hh)} A ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} 0 0 1 ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} Z" ${common}/>`;
+      if (lineCapAttrs) {
+        body = `${lineCapDefs}${isTransparentStateIconColor(element.fillColor) ? "" : `<path d="M ${formatSvgNumber(-hw)} ${formatSvgNumber(hh)} A ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} 0 0 1 ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} Z" fill="${fill}" stroke="none"/>`}<path d="M ${formatSvgNumber(-hw)} ${formatSvgNumber(hh)} A ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} 0 0 1 ${formatSvgNumber(hw)} ${formatSvgNumber(hh)}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"${dashAttr} ${lineCapAttrs}/>`;
+      } else {
+        body = `<path d="M ${formatSvgNumber(-hw)} ${formatSvgNumber(hh)} A ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} 0 0 1 ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} Z" ${common}/>`;
+      }
       break;
     case "ellipse":
       body = `<ellipse cx="0" cy="0" rx="${formatSvgNumber(hw)}" ry="${formatSvgNumber(hh)}" ${common}/>`;
       break;
     case "arc":
-      body = `<path d="M ${formatSvgNumber(-hw)} ${formatSvgNumber(hh * 0.6)} A ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} 0 0 1 ${formatSvgNumber(hw)} ${formatSvgNumber(hh * 0.6)}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/>`;
+      body = `${lineCapDefs}<path d="M ${formatSvgNumber(-hw)} ${formatSvgNumber(hh * 0.6)} A ${formatSvgNumber(hw)} ${formatSvgNumber(hh)} 0 0 1 ${formatSvgNumber(hw)} ${formatSvgNumber(hh * 0.6)}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"${dashAttr}${lineCapAttrs ? ` ${lineCapAttrs}` : ""}/>`;
       break;
     case "text":
-      body = `<text x="0" y="0" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei" font-size="${formatSvgNumber(Math.max(8, h))}" font-weight="800" fill="${textFill}">${escapeXml(element.text || "文字")}</text>`;
+      body = `${isTransparentStateIconColor(element.fillColor) ? "" : `<rect x="${formatSvgNumber(-hw)}" y="${formatSvgNumber(-hh)}" width="${formatSvgNumber(w)}" height="${formatSvgNumber(h)}" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"${dashAttr}/>`}<text x="0" y="0" text-anchor="middle" dominant-baseline="middle" font-family="${escapeXml(element.fontFamily || "Arial, Microsoft YaHei")}" font-size="${formatSvgNumber(Math.max(8, element.fontSize ?? h))}" font-weight="${escapeXml(element.fontWeight || "800")}" font-style="${escapeXml(element.fontStyle || "normal")}" fill="${textFill}">${escapeXml(element.text || "文字")}</text>`;
       break;
     default:
       body = `<circle cx="0" cy="0" r="${formatSvgNumber(Math.min(w, h) / 2)}" ${common}/>`;
       break;
   }
-  return `<g transform="translate(${formatSvgNumber(element.x)} ${formatSvgNumber(element.y)}) rotate(${formatSvgNumber(element.rotation)})">${body}</g>`;
+  const terminalAttr = Number.isInteger(element.terminalIndex) && (element.terminalIndex ?? -1) >= 0
+    ? ` data-terminal-index="${formatSvgNumber(element.terminalIndex ?? 0)}"`
+    : "";
+  const polylinePoints = element.kind === "polyline" ? normalizedStateIconPolylinePoints(element) : null;
+  const polylineAttr = polylinePoints
+    ? ` data-polyline-points="${escapeXml(stateIconPolylinePointsAttribute(polylinePoints))}" data-polyline-width="${formatSvgNumber(w)}" data-polyline-height="${formatSvgNumber(h)}" data-start-cap="${escapeXml(normalizeStateIconLineCapKind(element.startCap))}" data-end-cap="${escapeXml(normalizeStateIconLineCapKind(element.endCap))}"`
+    : "";
+  return `<g${terminalAttr}${polylineAttr} transform="translate(${formatSvgNumber(element.x)} ${formatSvgNumber(element.y)}) rotate(${formatSvgNumber(element.rotation)})">${body}</g>`;
 }
 
 export function stateIconDrawingToImage(elements: readonly StateIconDrawingElement[]) {
@@ -953,12 +1197,66 @@ export function stateIconDrawingElementPreviewNode(element: StateIconDrawingElem
   const h = Math.max(1, element.height);
   const hw = w / 2;
   const hh = h / 2;
+  const dashArray = stateIconStrokeDashArray(element.strokeStyle, sw);
+  const startCap = normalizeStateIconLineCapKind(element.startCap);
+  const endCap = normalizeStateIconLineCapKind(element.endCap);
+  const startMarkerId = stateIconLineCapMarkerId(element.id, "start", startCap);
+  const endMarkerId = stateIconLineCapMarkerId(element.id, "end", endCap);
+  const lineMarkerProps = {
+    markerStart: startCap !== "none" ? `url(#${startMarkerId})` : undefined,
+    markerEnd: endCap !== "none" ? `url(#${endMarkerId})` : undefined
+  };
+  const lineStrokeProps = {
+    fill: "none",
+    stroke,
+    strokeWidth: sw,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    strokeDasharray: dashArray || undefined,
+    ...lineMarkerProps
+  };
+  const renderLineCapMarker = (position: "start" | "end", cap: StateIconLineCapKind) => {
+    if (cap === "none") {
+      return null;
+    }
+    const markerId = position === "start" ? startMarkerId : endMarkerId;
+    if (cap === "arrow") {
+      return (
+        <marker key={markerId} id={markerId} viewBox="-6 -6 12 12" refX={5} refY={0} markerWidth={7} markerHeight={7} orient="auto-start-reverse" markerUnits="strokeWidth">
+          <path d="M -4 -4 L 5 0 L -4 4 Z" fill={stroke} />
+        </marker>
+      );
+    }
+    if (cap === "circle") {
+      return (
+        <marker key={markerId} id={markerId} viewBox="-5 -5 10 10" refX={0} refY={0} markerWidth={6} markerHeight={6} orient="auto" markerUnits="strokeWidth">
+          <circle cx={0} cy={0} r={3.2} fill={stroke} />
+        </marker>
+      );
+    }
+    if (cap === "triangle") {
+      return (
+        <marker key={markerId} id={markerId} viewBox="-5 -5 10 10" refX={0} refY={0} markerWidth={6} markerHeight={6} orient="auto" markerUnits="strokeWidth">
+          <path d="M 0 -4 L 4 4 L -4 4 Z" fill={stroke} />
+        </marker>
+      );
+    }
+    return (
+      <marker key={markerId} id={markerId} viewBox="-5 -5 10 10" refX={0} refY={0} markerWidth={6} markerHeight={6} orient="auto" markerUnits="strokeWidth">
+        <rect x={-3.4} y={-3.4} width={6.8} height={6.8} fill={stroke} />
+      </marker>
+    );
+  };
+  const lineCapMarkers = startCap !== "none" || endCap !== "none"
+    ? <defs>{renderLineCapMarker("start", startCap)}{renderLineCapMarker("end", endCap)}</defs>
+    : null;
   const common = {
     fill,
     stroke,
     strokeWidth: sw,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
+    strokeDasharray: dashArray || undefined,
     vectorEffect: "non-scaling-stroke" as const
   };
   switch (element.kind) {
@@ -1036,11 +1334,15 @@ export function stateIconDrawingElementPreviewNode(element: StateIconDrawingElem
         </>
       );
     case "line":
-      return <path d={`M ${-hw} 0 H ${hw}`} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" />;
+      return <>{lineCapMarkers}<path d={`M ${-hw} 0 H ${hw}`} {...lineStrokeProps} /></>;
+    case "polyline":
+      return <>{lineCapMarkers}<path d={stateIconPolylinePathData(stateIconPolylineLocalPoints(element, w, h))} {...lineStrokeProps} /></>;
     case "point":
       return <circle cx={0} cy={0} r={Math.min(w, h) / 2} fill={stroke} />;
     case "triangle":
       return <path d={`M 0 ${-hh} L ${hw} ${hh} H ${-hw} Z`} {...common} />;
+    case "rectangle":
+      return <rect x={-hw} y={-hh} width={w} height={h} rx={2} {...common} />;
     case "square":
       return <rect x={-hw} y={-hh} width={w} height={h} rx={2} {...common} />;
     case "hexagon":
@@ -1050,16 +1352,25 @@ export function stateIconDrawingElementPreviewNode(element: StateIconDrawingElem
     case "circle":
       return <circle cx={0} cy={0} r={Math.min(w, h) / 2} {...common} />;
     case "semicircle":
-      return <path d={`M ${-hw} ${hh} A ${hw} ${hh} 0 0 1 ${hw} ${hh} Z`} {...common} />;
+      return startCap !== "none" || endCap !== "none" ? (
+        <>
+          {lineCapMarkers}
+          {!isTransparentStateIconColor(element.fillColor) && <path d={`M ${-hw} ${hh} A ${hw} ${hh} 0 0 1 ${hw} ${hh} Z`} fill={fill} stroke="none" />}
+          <path d={`M ${-hw} ${hh} A ${hw} ${hh} 0 0 1 ${hw} ${hh}`} {...lineStrokeProps} />
+        </>
+      ) : <path d={`M ${-hw} ${hh} A ${hw} ${hh} 0 0 1 ${hw} ${hh} Z`} {...common} />;
     case "ellipse":
       return <ellipse cx={0} cy={0} rx={hw} ry={hh} {...common} />;
     case "arc":
-      return <path d={`M ${-hw} ${hh * 0.6} A ${hw} ${hh} 0 0 1 ${hw} ${hh * 0.6}`} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" />;
+      return <>{lineCapMarkers}<path d={`M ${-hw} ${hh * 0.6} A ${hw} ${hh} 0 0 1 ${hw} ${hh * 0.6}`} {...lineStrokeProps} /></>;
     case "text":
       return (
-        <text x={0} y={0} textAnchor="middle" dominantBaseline="middle" fontFamily="Arial, Microsoft YaHei" fontSize={Math.max(8, h)} fontWeight={800} fill={textFill}>
-          {element.text || "文字"}
-        </text>
+        <>
+          {!isTransparentStateIconColor(element.fillColor) && <rect x={-hw} y={-hh} width={w} height={h} rx={4} fill={fill} stroke={stroke} strokeWidth={sw} strokeDasharray={dashArray || undefined} />}
+          <text x={0} y={0} textAnchor="middle" dominantBaseline="middle" fontFamily={element.fontFamily || "Arial, Microsoft YaHei"} fontSize={Math.max(8, element.fontSize ?? h)} fontWeight={element.fontWeight || 800} fontStyle={element.fontStyle || "normal"} fill={textFill}>
+            {element.text || "文字"}
+          </text>
+        </>
       );
     default:
       return <circle cx={0} cy={0} r={Math.min(w, h) / 2} {...common} />;

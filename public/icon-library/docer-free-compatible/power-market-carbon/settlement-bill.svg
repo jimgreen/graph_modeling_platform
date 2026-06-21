@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#475569" role="img" aria-labelledby="settlement-bill-title settlement-bill-desc">
+  <title id="settlement-bill-title">结算单</title>
+  <desc id="settlement-bill-desc">电力市场与碳管理 - settlement, bill</desc>
+  <g>
+<path d="M18 10h28v44H18z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 22h16M24 30h16M24 38h10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="39" y="43" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="12" font-weight="700" fill="currentColor">￥</text>
+  </g>
+</svg>

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="line-md-align-left-title line-md-align-left-desc">
+  <title id="line-md-align-left-title">align left</title>
+  <desc id="line-md-align-left-desc">画布工具 - Line MD - align-left - MIT</desc>
+	<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+		<path fill="currentColor" d="M4 5h13" stroke-dasharray="16">
+			<animate attributeName="stroke-dashoffset" dur="0.3s" fill="freeze" values="16;0" />
+		</path>
+		<path fill="currentColor" d="M4 10h10" stroke-dasharray="12" stroke-dashoffset="12">
+			<animate attributeName="stroke-dashoffset" begin="0.3s" dur="0.2s" fill="freeze" to="0" />
+		</path>
+		<path fill="currentColor" d="M4 15h16" stroke-dasharray="18" stroke-dashoffset="18">
+			<animate attributeName="stroke-dashoffset" begin="0.5s" dur="0.3s" fill="freeze" to="0" />
+		</path>
+		<path fill="currentColor" d="M4 20h13" stroke-dasharray="16" stroke-dashoffset="16">
+			<animate attributeName="stroke-dashoffset" begin="0.8s" dur="0.3s" fill="freeze" to="0" />
+		</path>
+	</g>
+</svg>

@@ -1,0 +1,19 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-bluetooth-x"
+ color="#2563eb" role="img" aria-labelledby="tabler-bluetooth-x-title tabler-bluetooth-x-desc">
+  <title id="tabler-bluetooth-x-title">bluetooth x</title>
+  <desc id="tabler-bluetooth-x-desc">通信与控制 - Tabler Icons - bluetooth-x - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M7 8l10 8l-5 4v-16l1 .802m0 6.396l-6 4.802" />
+  <path fill="currentColor" d="M16 6l4 4" />
+  <path fill="currentColor" d="M20 6l-4 4" />
+</svg>

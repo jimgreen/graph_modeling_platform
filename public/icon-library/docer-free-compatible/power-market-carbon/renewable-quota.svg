@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#f59e0b" role="img" aria-labelledby="renewable-quota-title renewable-quota-desc">
+  <title id="renewable-quota-title">新能源配额</title>
+  <desc id="renewable-quota-desc">电力市场与碳管理 - renewable, quota</desc>
+  <g>
+<circle cx="24" cy="28" r="8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 8v8M24 40v8M4 28h8M36 28h8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M42 18h10v28H42z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="47" y="32" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="10" font-weight="700" fill="currentColor">%</text>
+  </g>
+</svg>

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="line-md-home-title line-md-home-desc">
+  <title id="line-md-home-title">home</title>
+  <desc id="line-md-home-desc">配电环节 - Line MD - home - MIT</desc>
+	<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+		<path fill="currentColor" d="M4.5 21.5h15" stroke-dasharray="18">
+			<animate attributeName="stroke-dashoffset" dur="0.3s" fill="freeze" values="18;0" />
+		</path>
+		<path fill="currentColor" d="M4.5 21.5v-13.5M19.5 21.5v-13.5" stroke-dasharray="16" stroke-dashoffset="16">
+			<animate attributeName="stroke-dashoffset" begin="0.3s" dur="0.3s" fill="freeze" to="0" />
+		</path>
+		<path fill="currentColor" d="M2 10l10 -8l10 8" stroke-dasharray="28" stroke-dashoffset="28">
+			<animate attributeName="stroke-dashoffset" begin="0.6s" dur="0.4s" fill="freeze" to="0" />
+		</path>
+		<path fill="currentColor" d="M9.5 21.5v-9h5v9" stroke-dasharray="26" stroke-dashoffset="26">
+			<animate attributeName="stroke-dashoffset" begin="0.9s" dur="0.6s" fill="freeze" to="0" />
+		</path>
+	</g>
+</svg>

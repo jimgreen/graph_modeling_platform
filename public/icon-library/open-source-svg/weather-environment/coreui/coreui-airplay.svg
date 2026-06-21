@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" color="#2563eb" role="img" aria-labelledby="coreui-airplay-title coreui-airplay-desc">
+  <title id="coreui-airplay-title">airplay</title>
+  <desc id="coreui-airplay-desc">气象环境 - CoreUI Icons - airplay - MIT</desc>
+  <path fill="var(--ci-primary-color, currentColor)" d="M464 47H48a32.036 32.036 0 0 0-32 32v297a32.036 32.036 0 0 0 32 32h76.448l24.89-32H48V79h416l.02 297H362.662l24.89 32H464a32.036 32.036 0 0 0 32-32V79a32.036 32.036 0 0 0-32-32" class="ci-primary"/>
+  <path fill="var(--ci-primary-color, currentColor)" d="M98.834 496h314.332L256 293.939Zm65.431-32L256 346.061 347.735 464Z" class="ci-primary"/>
+</svg>

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="line-md-water-title line-md-water-desc">
+  <title id="line-md-water-title">water</title>
+  <desc id="line-md-water-desc">能源通用 - Line MD - water - MIT</desc>
+	<path d="M12 5c0 0 5 6 5 9c0 2.76 -2.24 5 -5 5M12 5c0 0 -5 6 -5 9c0 2.76 2.24 5 5 5" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="22">
+		<animate attributeName="stroke-dashoffset" dur="0.5s" fill="freeze" values="22;0" />
+	</path>
+</svg>

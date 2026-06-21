@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#16a34a" role="img" aria-labelledby="cost-title cost-desc">
+  <title id="cost-title">成本</title>
+  <desc id="cost-desc">运营管理 - cost, money</desc>
+  <g>
+<circle cx="32" cy="32" r="18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="32" y="31" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="18" font-weight="700" fill="currentColor">￥</text><path d="M22 48h20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

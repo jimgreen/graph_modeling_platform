@@ -1,0 +1,20 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-computer"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-computer-title lucide-computer-desc">
+  <title id="lucide-computer-title">computer</title>
+  <desc id="lucide-computer-desc">云与基础设施 - Lucide - computer - ISC</desc>
+  <rect fill="currentColor" width="14" height="8" x="5" y="2" rx="2" />
+  <rect fill="currentColor" width="20" height="8" x="2" y="14" rx="2" />
+  <path fill="currentColor" d="M6 18h2" />
+  <path fill="currentColor" d="M12 18h6" />
+</svg>

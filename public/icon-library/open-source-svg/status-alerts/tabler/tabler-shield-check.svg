@@ -1,0 +1,18 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-shield-check"
+ color="#2563eb" role="img" aria-labelledby="tabler-shield-check-title tabler-shield-check-desc">
+  <title id="tabler-shield-check-title">shield check</title>
+  <desc id="tabler-shield-check-desc">状态告警 - Tabler Icons - shield-check - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M11.46 20.846a12 12 0 0 1 -7.96 -14.846a12 12 0 0 0 8.5 -3a12 12 0 0 0 8.5 3a12 12 0 0 1 -.09 7.06" />
+  <path fill="currentColor" d="M15 19l2 2l4 -4" />
+</svg>

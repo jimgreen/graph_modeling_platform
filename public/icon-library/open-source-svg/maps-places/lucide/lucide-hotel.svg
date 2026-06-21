@@ -1,0 +1,26 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-hotel"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-hotel-title lucide-hotel-desc">
+  <title id="lucide-hotel-title">hotel</title>
+  <desc id="lucide-hotel-desc">地图地点 - Lucide - hotel - ISC</desc>
+  <path fill="currentColor" d="M10 22v-6.57" />
+  <path fill="currentColor" d="M12 11h.01" />
+  <path fill="currentColor" d="M12 7h.01" />
+  <path fill="currentColor" d="M14 15.43V22" />
+  <path fill="currentColor" d="M15 16a5 5 0 0 0-6 0" />
+  <path fill="currentColor" d="M16 11h.01" />
+  <path fill="currentColor" d="M16 7h.01" />
+  <path fill="currentColor" d="M8 11h.01" />
+  <path fill="currentColor" d="M8 7h.01" />
+  <rect fill="currentColor" x="4" y="2" width="16" height="20" rx="2" />
+</svg>

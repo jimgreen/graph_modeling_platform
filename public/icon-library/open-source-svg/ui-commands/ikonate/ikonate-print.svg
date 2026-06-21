@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="ikonate-print-title ikonate-print-desc">
+  <title id="ikonate-print-title">print</title>
+  <desc id="ikonate-print-desc">通用命令 - Ikonate - print - MIT</desc>
+    <polygon fill="currentColor" points="17 14 17 21 7 21 7 14"/>
+    <polygon fill="currentColor" points="17 3 17 9 7 9 7 3"/>
+    <polyline points="7 18 3 18 3 9 3 9 21 9 21 18 17 18"/>
+</svg>

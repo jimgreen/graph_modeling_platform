@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="humbleicons-code-title humbleicons-code-desc">
+  <title id="humbleicons-code-title">code</title>
+  <desc id="humbleicons-code-desc">开发工具 - Humbleicons - code - MIT</desc>
+  <g stroke="currentColor" stroke-linecap="round" stroke-width="2">
+    <path fill="currentColor" stroke-linejoin="round" d="M7 8l-4 4 4 4" />
+    <path fill="currentColor" d="M10.5 18l3-12" />
+    <path fill="currentColor" stroke-linejoin="round" d="M17 8l4 4-4 4" />
+  </g>
+</svg>

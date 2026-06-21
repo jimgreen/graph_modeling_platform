@@ -1,0 +1,20 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-printer-check"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-printer-check-title lucide-printer-check-desc">
+  <title id="lucide-printer-check-title">printer check</title>
+  <desc id="lucide-printer-check-desc">通用命令 - Lucide - printer-check - ISC</desc>
+  <path fill="currentColor" d="M13.5 22H7a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v.5" />
+  <path fill="currentColor" d="m16 19 2 2 4-4" />
+  <path fill="currentColor" d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v2" />
+  <path fill="currentColor" d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6" />
+</svg>

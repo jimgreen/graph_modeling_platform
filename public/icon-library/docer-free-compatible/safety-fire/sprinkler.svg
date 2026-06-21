@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#0284c7" role="img" aria-labelledby="sprinkler-title sprinkler-desc">
+  <title id="sprinkler-title">喷淋</title>
+  <desc id="sprinkler-desc">安全消防 - sprinkler, fire</desc>
+  <g>
+<path d="M24 14h16v8H24z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M32 22L32 32" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 36l-6 8M28 38l-2 10M36 38l2 10M44 36l6 8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

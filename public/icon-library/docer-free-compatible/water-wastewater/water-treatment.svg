@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#06b6d4" role="img" aria-labelledby="water-treatment-title water-treatment-desc">
+  <title id="water-treatment-title">净水处理</title>
+  <desc id="water-treatment-desc">水务环保 - water, treatment</desc>
+  <g>
+<rect x="14" y="18" width="36" height="28" rx="6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 30h20M22 38h20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M32 10c5 6 8 10 8 15a8 8 0 0 1-16 0c0-5 3-9 8-15z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

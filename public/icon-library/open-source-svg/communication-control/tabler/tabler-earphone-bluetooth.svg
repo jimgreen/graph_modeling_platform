@@ -1,0 +1,19 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-earphone-bluetooth"
+ color="#2563eb" role="img" aria-labelledby="tabler-earphone-bluetooth-title tabler-earphone-bluetooth-desc">
+  <title id="tabler-earphone-bluetooth-title">earphone bluetooth</title>
+  <desc id="tabler-earphone-bluetooth-desc">通信与控制 - Tabler Icons - earphone-bluetooth - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M6.57 12.77a6.9 6.9 0 0 1 -.57 -2.77a7 7 0 0 1 14 0" />
+  <path fill="currentColor" d="M9 16l-1 1" />
+  <path fill="currentColor" d="M10.83 19.83l6.36 -6.37a1 1 0 0 0 0 -1.41l-4.19 -4.24a1 1 0 0 0 -1.41 0l-6.42 6.36a4 4 0 0 0 0 5.66a4 4 0 0 0 5.66 0" />
+</svg>

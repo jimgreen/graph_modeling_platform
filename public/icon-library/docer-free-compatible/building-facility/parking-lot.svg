@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#2563eb" role="img" aria-labelledby="parking-lot-title parking-lot-desc">
+  <title id="parking-lot-title">停车场</title>
+  <desc id="parking-lot-desc">建筑与设施 - parking</desc>
+  <g>
+<rect x="14" y="12" width="36" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="32" y="32" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="22" font-weight="700" fill="currentColor">P</text><path d="M18 52L46 52" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

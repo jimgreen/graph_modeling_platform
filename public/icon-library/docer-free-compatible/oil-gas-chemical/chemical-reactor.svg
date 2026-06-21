@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#7c3aed" role="img" aria-labelledby="chemical-reactor-title chemical-reactor-desc">
+  <title id="chemical-reactor-title">反应釜</title>
+  <desc id="chemical-reactor-desc">油气化工 - reactor, chemical</desc>
+  <g>
+<rect x="20" y="16" width="24" height="34" rx="8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M32 10L32 16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M26 10L38 10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 34h16M28 24l8 20M36 24l-8 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

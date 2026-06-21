@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#0284c7" role="img" aria-labelledby="lubrication-title lubrication-desc">
+  <title id="lubrication-title">润滑</title>
+  <desc id="lubrication-desc">检修工具 - lubrication</desc>
+  <g>
+<path d="M26 12h12v12l8 20a8 8 0 0 1-8 10H26a8 8 0 0 1-8-10l8-20z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 42h16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M32 30c5 6 8 10 8 14a8 8 0 0 1-16 0c0-4 3-8 8-14z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

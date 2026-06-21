@@ -1,0 +1,8 @@
+<svg width="24" height="24" viewBox="0 0 24 24" stroke-width="1.5" fill="none" xmlns="http://www.w3.org/2000/svg" color="#2563eb" role="img" aria-labelledby="iconoir-horizontal-merge-title iconoir-horizontal-merge-desc">
+  <title id="iconoir-horizontal-merge-title">horizontal merge</title>
+  <desc id="iconoir-horizontal-merge-desc">开发工具 - Iconoir - horizontal-merge - MIT</desc>
+<path d="M22 12H14M14 12L17.5 8.5M14 12L17.5 15.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M2 12H10M10 12L6.5 8.5M10 12L6.5 15.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M10 21L10 3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M14 21L14 3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

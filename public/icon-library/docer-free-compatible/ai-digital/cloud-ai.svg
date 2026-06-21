@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#2563eb" role="img" aria-labelledby="cloud-ai-title cloud-ai-desc">
+  <title id="cloud-ai-title">云端AI</title>
+  <desc id="cloud-ai-desc">AI与数字化 - cloud, ai</desc>
+  <g>
+<path d="M18 42h28a8 8 0 0 0 0-16 14 14 0 0 0-27-4A10 10 0 0 0 18 42z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="34" y="33" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="11" font-weight="700" fill="currentColor">AI</text>
+  </g>
+</svg>

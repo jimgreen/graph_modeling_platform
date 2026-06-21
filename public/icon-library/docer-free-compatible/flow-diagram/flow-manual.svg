@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#ea580c" role="img" aria-labelledby="flow-manual-title flow-manual-desc">
+  <title id="flow-manual-title">人工操作</title>
+  <desc id="flow-manual-desc">流程图与业务图 - flow, manual</desc>
+  <g>
+<path d="M14 18h36l-6 28H20z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="32" y="32" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="13" font-weight="700" fill="currentColor">手</text>
+  </g>
+</svg>

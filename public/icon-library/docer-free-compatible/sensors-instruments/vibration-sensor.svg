@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#7c3aed" role="img" aria-labelledby="vibration-sensor-title vibration-sensor-desc">
+  <title id="vibration-sensor-title">振动传感器</title>
+  <desc id="vibration-sensor-desc">传感仪表 - vibration, sensor</desc>
+  <g>
+<circle cx="32" cy="32" r="8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 22c-5 6-5 14 0 20M48 22c5 6 5 14 0 20M22 18c-4 8-4 20 0 28M42 18c4 8 4 20 0 28" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

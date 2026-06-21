@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#f97316" role="img" aria-labelledby="step-up-transformer-title step-up-transformer-desc">
+  <title id="step-up-transformer-title">升压变压器</title>
+  <desc id="step-up-transformer-desc">发电环节 - step-up, transformer, 升压</desc>
+  <g>
+<rect x="16" y="14" width="32" height="38" rx="4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 22h16M24 42h16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M32 14v38" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="32" y="33" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="7" font-weight="700" fill="currentColor">transformer</text>
+  </g>
+</svg>

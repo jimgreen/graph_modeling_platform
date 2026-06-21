@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="line-md-turn-slight-left-title line-md-turn-slight-left-desc">
+  <title id="line-md-turn-slight-left-title">turn slight left</title>
+  <desc id="line-md-turn-slight-left-desc">用电环节 - Line MD - turn-slight-left - MIT</desc>
+	<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+		<path fill="currentColor" d="M14 19v-7l-7 -7" stroke-dasharray="20">
+			<animate attributeName="stroke-dashoffset" dur="0.5s" fill="freeze" values="20;0" />
+		</path>
+		<path fill="currentColor" d="M7 5h4M7 5v4" stroke-dasharray="6" stroke-dashoffset="6">
+			<animate attributeName="stroke-dashoffset" begin="0.5s" dur="0.2s" fill="freeze" to="0" />
+		</path>
+	</g>
+</svg>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#dc2626" role="img" aria-labelledby="fault-repair-title fault-repair-desc">
+  <title id="fault-repair-title">故障修复</title>
+  <desc id="fault-repair-desc">检修工具 - fault, repair</desc>
+  <g>
+<circle cx="32" cy="32" r="18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 24l16 16M40 24L24 40" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 48l8-8M48 16l-8 8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

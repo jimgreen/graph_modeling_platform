@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#06b6d4" role="img" aria-labelledby="hydrogen-leak-sensor-title hydrogen-leak-sensor-desc">
+  <title id="hydrogen-leak-sensor-title">氢泄漏传感器</title>
+  <desc id="hydrogen-leak-sensor-desc">氢能场景 - leak, sensor, 泄漏</desc>
+  <g>
+<path d="M10 34h44" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M44 24l10 10-10 10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><rect x="16" y="18" width="24" height="24" rx="4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="32" y="33" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="7" font-weight="700" fill="currentColor">sensor</text>
+  </g>
+</svg>

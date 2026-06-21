@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#64748b" role="img" aria-labelledby="screwdriver-tool-title screwdriver-tool-desc">
+  <title id="screwdriver-tool-title">螺丝刀</title>
+  <desc id="screwdriver-tool-desc">检修工具 - screwdriver, tool</desc>
+  <g>
+<path d="M42 10l12 12-8 8-12-12z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M34 18L12 40v12h12l22-22" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

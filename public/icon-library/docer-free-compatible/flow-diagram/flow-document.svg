@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#0ea5e9" role="img" aria-labelledby="flow-document-title flow-document-desc">
+  <title id="flow-document-title">流程文档</title>
+  <desc id="flow-document-desc">流程图与业务图 - flow, document</desc>
+  <g>
+<path d="M16 12h32v34c-10-6-18 6-32 0z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 24L40 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 32L36 32" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

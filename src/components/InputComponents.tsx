@@ -9,8 +9,6 @@ const HEX_COLOR_INPUT_PATTERN = /^#[0-9a-f]{6}$/i;
 export const colorInputValue = (value: string, fallback = "#ffffff") =>
   HEX_COLOR_INPUT_PATTERN.test(value) ? value : fallback;
 
-const COLOR_INPUT_COMMIT_DELAY_MS = 220;
-
 export type DeferredColorInputProps = {
   value: string;
   fallback?: string;
@@ -35,17 +33,8 @@ export function DeferredColorInput({
   const draftRef = useRef(normalizedValue);
   const committedRef = useRef(normalizedValue);
   const onCommitRef = useRef(onCommit);
-  const commitTimerRef = useRef<number | null>(null);
-
-  const clearCommitTimer = () => {
-    if (commitTimerRef.current !== null) {
-      window.clearTimeout(commitTimerRef.current);
-      commitTimerRef.current = null;
-    }
-  };
 
   const commitDraft = (nextValue: string) => {
-    clearCommitTimer();
     const nextColor = colorInputValue(nextValue, normalizedValue);
     draftRef.current = nextColor;
     setDraft(nextColor);
@@ -57,12 +46,12 @@ export function DeferredColorInput({
 
   const queueDraftCommit = (event: { currentTarget: HTMLInputElement }) => {
     const nextValue = event.currentTarget.value;
+    if (!disabled) {
+      commitDraft(nextValue);
+      return;
+    }
     draftRef.current = nextValue;
     setDraft(nextValue);
-    clearCommitTimer();
-    if (!disabled) {
-      commitTimerRef.current = window.setTimeout(() => commitDraft(nextValue), COLOR_INPUT_COMMIT_DELAY_MS);
-    }
   };
 
   useEffect(() => {
@@ -70,13 +59,10 @@ export function DeferredColorInput({
   }, [onCommit]);
 
   useEffect(() => {
-    clearCommitTimer();
     committedRef.current = normalizedValue;
     draftRef.current = normalizedValue;
     setDraft(normalizedValue);
   }, [normalizedValue]);
-
-  useEffect(() => () => clearCommitTimer(), []);
 
   return (
     <input
@@ -93,7 +79,6 @@ export function DeferredColorInput({
         if (event.key === "Enter") {
           commitDraft(event.currentTarget.value);
         } else if (event.key === "Escape") {
-          clearCommitTimer();
           draftRef.current = committedRef.current;
           setDraft(committedRef.current);
         }

@@ -1,0 +1,5 @@
+Eva Icons
+
+Package: eva-icons@1.1.3
+Repository: https://github.com/akveo/eva-icons
+License declared by package.json: MIT

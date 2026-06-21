@@ -1,0 +1,20 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-wifi"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-wifi-title lucide-wifi-desc">
+  <title id="lucide-wifi-title">wifi</title>
+  <desc id="lucide-wifi-desc">协作通信 - Lucide - wifi - ISC</desc>
+  <path fill="currentColor" d="M12 20h.01" />
+  <path fill="currentColor" d="M2 8.82a15 15 0 0 1 20 0" />
+  <path fill="currentColor" d="M5 12.859a10 10 0 0 1 14 0" />
+  <path fill="currentColor" d="M8.5 16.429a5 5 0 0 1 7 0" />
+</svg>

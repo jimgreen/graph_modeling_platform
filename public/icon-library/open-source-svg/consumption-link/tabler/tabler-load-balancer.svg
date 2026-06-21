@@ -1,0 +1,27 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-load-balancer"
+ color="#2563eb" role="img" aria-labelledby="tabler-load-balancer-title tabler-load-balancer-desc">
+  <title id="tabler-load-balancer-title">load balancer</title>
+  <desc id="tabler-load-balancer-desc">用电环节 - Tabler Icons - load-balancer - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M9 13a3 3 0 1 0 6 0a3 3 0 1 0 -6 0" />
+  <path fill="currentColor" d="M11 20a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />
+  <path fill="currentColor" d="M12 16v3" />
+  <path fill="currentColor" d="M12 10v-7" />
+  <path fill="currentColor" d="M9 6l3 -3l3 3" />
+  <path fill="currentColor" d="M12 10v-7" />
+  <path fill="currentColor" d="M9 6l3 -3l3 3" />
+  <path fill="currentColor" d="M14.894 12.227l6.11 -2.224" />
+  <path fill="currentColor" d="M17.159 8.21l3.845 1.793l-1.793 3.845" />
+  <path fill="currentColor" d="M9.101 12.214l-6.075 -2.211" />
+  <path fill="currentColor" d="M6.871 8.21l-3.845 1.793l1.793 3.845" />
+</svg>

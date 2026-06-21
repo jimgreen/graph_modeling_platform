@@ -1,0 +1,8 @@
+<svg width="24" height="24" viewBox="0 0 24 24" stroke-width="1.5" fill="none" xmlns="http://www.w3.org/2000/svg" color="#2563eb" role="img" aria-labelledby="iconoir-home-table-title iconoir-home-table-desc">
+  <title id="iconoir-home-table-title">home table</title>
+  <desc id="iconoir-home-table-desc">数据图表 - Iconoir - home-table - MIT</desc>
+<path d="M4 7L4 17" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M1 7L23 7" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M4 10L20 10" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M20 7L20 17" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

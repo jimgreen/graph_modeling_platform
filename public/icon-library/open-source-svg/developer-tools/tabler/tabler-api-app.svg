@@ -1,0 +1,20 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-api-app"
+ color="#2563eb" role="img" aria-labelledby="tabler-api-app-title tabler-api-app-desc">
+  <title id="tabler-api-app-title">api app</title>
+  <desc id="tabler-api-app-desc">开发工具 - Tabler Icons - api-app - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M12 15h-6.5a2.5 2.5 0 1 1 0 -5h.5" />
+  <path fill="currentColor" d="M15 12v6.5a2.5 2.5 0 1 1 -5 0v-.5" />
+  <path fill="currentColor" d="M12 9h6.5a2.5 2.5 0 1 1 0 5h-.5" />
+  <path fill="currentColor" d="M9 12v-6.5a2.5 2.5 0 0 1 5 0v.5" />
+</svg>

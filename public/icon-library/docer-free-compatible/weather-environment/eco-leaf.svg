@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#16a34a" role="img" aria-labelledby="eco-leaf-title eco-leaf-desc">
+  <title id="eco-leaf-title">绿色环保</title>
+  <desc id="eco-leaf-desc">气象与环境 - eco, leaf</desc>
+  <g>
+<path d="M14 48C16 28 30 16 52 12c-2 22-14 36-38 36z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 46c10-10 20-18 32-28" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

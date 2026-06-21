@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#2563eb" role="img" aria-labelledby="electric-motor-title electric-motor-desc">
+  <title id="electric-motor-title">电动机</title>
+  <desc id="electric-motor-desc">工业负荷 - motor, load</desc>
+  <g>
+<circle cx="32" cy="32" r="18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="32" y="32" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="18" font-weight="700" fill="currentColor">M</text><path d="M8 32L14 32" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M50 32L56 32" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

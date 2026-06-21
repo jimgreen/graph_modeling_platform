@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#475569" role="img" aria-labelledby="wrench-tool-title wrench-tool-desc">
+  <title id="wrench-tool-title">扳手</title>
+  <desc id="wrench-tool-desc">检修工具 - wrench, tool</desc>
+  <g>
+<path d="M42 12a10 10 0 0 0-12 12L14 40l10 10 16-16a10 10 0 0 0 12-12l-8 8-6-6z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

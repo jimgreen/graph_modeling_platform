@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#f59e0b" role="img" aria-labelledby="ev-parking-space-title ev-parking-space-desc">
+  <title id="ev-parking-space-title">充电车位</title>
+  <desc id="ev-parking-space-desc">民商用能源 - ev, parking, 车位</desc>
+  <g>
+<circle cx="32" cy="32" r="20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 38a13 13 0 0 1 24 0" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M32 32l10-8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="32" y="33" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="7" font-weight="700" fill="currentColor">parking</text>
+  </g>
+</svg>

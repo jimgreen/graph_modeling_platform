@@ -1,0 +1,18 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-code"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-code-title lucide-code-desc">
+  <title id="lucide-code-title">code</title>
+  <desc id="lucide-code-desc">开发工具 - Lucide - code - ISC</desc>
+  <path fill="currentColor" d="m16 18 6-6-6-6" />
+  <path fill="currentColor" d="m8 6-6 6 6 6" />
+</svg>

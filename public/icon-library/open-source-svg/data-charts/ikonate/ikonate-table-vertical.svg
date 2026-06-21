@@ -1,0 +1,9 @@
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" color="#2563eb" role="img" aria-labelledby="ikonate-table-vertical-title ikonate-table-vertical-desc">
+  <title id="ikonate-table-vertical-title">table vertical</title>
+  <desc id="ikonate-table-vertical-desc">数据图表 - Ikonate - table-vertical - MIT</desc>
+	<rect fill="currentColor" x="3" y="2" width="18" height="20"/>
+	<line x1="12" y1="2" x2="12" y2="22"/>
+	<line x1="21" y1="7" x2="3" y2="7"/>
+	<line x1="21" y1="17" x2="3" y2="17"/>
+	<line x1="21" y1="12" x2="3" y2="12"/>
+</svg>

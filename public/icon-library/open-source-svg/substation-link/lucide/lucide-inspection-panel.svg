@@ -1,0 +1,21 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-inspection-panel"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-inspection-panel-title lucide-inspection-panel-desc">
+  <title id="lucide-inspection-panel-title">inspection panel</title>
+  <desc id="lucide-inspection-panel-desc">变电环节 - Lucide - inspection-panel - ISC</desc>
+  <rect fill="currentColor" width="18" height="18" x="3" y="3" rx="2" />
+  <path fill="currentColor" d="M7 7h.01" />
+  <path fill="currentColor" d="M17 7h.01" />
+  <path fill="currentColor" d="M7 17h.01" />
+  <path fill="currentColor" d="M17 17h.01" />
+</svg>

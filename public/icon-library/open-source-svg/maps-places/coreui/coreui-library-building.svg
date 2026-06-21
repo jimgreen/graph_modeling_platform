@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" color="#2563eb" role="img" aria-labelledby="coreui-library-building-title coreui-library-building-desc">
+  <title id="coreui-library-building-title">library building</title>
+  <desc id="coreui-library-building-desc">地图地点 - CoreUI Icons - library-building - MIT</desc>
+  <path fill="var(--ci-primary-color, currentColor)" d="M247.759 14.358 16 125.946V184h480v-58.362ZM464 152H48v-5.946l200.241-96.412L464 146.362ZM16 496h480V392H16Zm32-72h416v40H48Zm24-216h32v160H72zm336 0h32v160h-32zm-224 0h32v160h-32zm112 0h32v160h-32z" class="ci-primary"/>
+</svg>

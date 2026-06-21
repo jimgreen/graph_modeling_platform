@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#0284c7" role="img" aria-labelledby="water-intake-title water-intake-desc">
+  <title id="water-intake-title">取水口</title>
+  <desc id="water-intake-desc">水务环保 - water, intake</desc>
+  <g>
+<path d="M12 46c5-4 10-4 15 0s10 4 15 0 5-4 10 0" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 54c5-4 10-4 15 0s10 4 15 0 5-4 10 0" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M32 10v28M24 30l8 8 8-8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

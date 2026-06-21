@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" color="#2563eb" role="img" aria-labelledby="coreui-align-left-title coreui-align-left-desc">
+  <title id="coreui-align-left-title">align left</title>
+  <desc id="coreui-align-left-desc">画布工具 - CoreUI Icons - align-left - MIT</desc>
+  <path fill="var(--ci-primary-color, currentColor)" d="M16 64h480v32H16zm0 88h328v32H16zm0 88h480v32H16zm0 88h328v32H16zm0 88h480v32H16z" class="ci-primary"/>
+</svg>

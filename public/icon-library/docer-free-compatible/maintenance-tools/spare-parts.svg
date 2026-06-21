@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#0f766e" role="img" aria-labelledby="spare-parts-title spare-parts-desc">
+  <title id="spare-parts-title">备品备件</title>
+  <desc id="spare-parts-desc">检修工具 - spare, parts</desc>
+  <g>
+<path d="M18 20l14-8 14 8v24l-14 8-14-8z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 20l14 8 14-8M32 28v24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="32" cy="32" r="4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

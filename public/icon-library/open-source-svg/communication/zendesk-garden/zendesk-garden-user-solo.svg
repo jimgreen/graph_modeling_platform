@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" focusable="false" viewBox="0 0 16 16" color="#2563eb" role="img" aria-labelledby="zendesk-garden-user-solo-title zendesk-garden-user-solo-desc">
+  <title id="zendesk-garden-user-solo-title">user solo</title>
+  <desc id="zendesk-garden-user-solo-desc">协作通信 - Zendesk Garden Icons - user-solo - Apache-2.0</desc>
+  <g fill="none" stroke="currentColor">
+    <circle fill="currentColor" cx="8" cy="5" r="3.5"/>
+    <path fill="currentColor" stroke-linecap="round" d="M2.5 15.5c.3-2.8 2.6-5 5.5-5s5.2 2.2 5.5 5"/>
+  </g>
+</svg>

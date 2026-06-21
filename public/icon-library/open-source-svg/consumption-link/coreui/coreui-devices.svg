@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" color="#2563eb" role="img" aria-labelledby="coreui-devices-title coreui-devices-desc">
+  <title id="coreui-devices-title">devices</title>
+  <desc id="coreui-devices-desc">用电环节 - CoreUI Icons - devices - MIT</desc>
+  <path fill="var(--ci-primary-color, currentColor)" d="M472 232h-48V120a24.03 24.03 0 0 0-24-24H40a24.03 24.03 0 0 0-24 24v246a24.03 24.03 0 0 0 24 24h172v50h-60v32h152v-32h-60v-50h92v58a24.027 24.027 0 0 0 24 24h112a24.027 24.027 0 0 0 24-24V256a24.027 24.027 0 0 0-24-24m-136 24v102H48V128h344v104h-32a24.027 24.027 0 0 0-24 24m128 184h-96V264h96Z" class="ci-primary"/>
+</svg>

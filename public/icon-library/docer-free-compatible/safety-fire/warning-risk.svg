@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#eab308" role="img" aria-labelledby="warning-risk-title warning-risk-desc">
+  <title id="warning-risk-title">风险警示</title>
+  <desc id="warning-risk-desc">安全消防 - warning, risk</desc>
+  <g>
+<path d="M32 10l24 42H8z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M32 24L32 38" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="32" cy="45" r="1.8" fill="currentColor" stroke="none"/>
+  </g>
+</svg>

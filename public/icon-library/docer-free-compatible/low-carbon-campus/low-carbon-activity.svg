@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#059669" role="img" aria-labelledby="low-carbon-activity-title low-carbon-activity-desc">
+  <title id="low-carbon-activity-title">低碳活动</title>
+  <desc id="low-carbon-activity-desc">低碳校园 - low-carbon, activity, 活动</desc>
+  <g>
+<path d="M10 34h44" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M44 24l10 10-10 10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><rect x="16" y="18" width="24" height="24" rx="4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="32" y="33" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="7" font-weight="700" fill="currentColor">activity</text>
+  </g>
+</svg>

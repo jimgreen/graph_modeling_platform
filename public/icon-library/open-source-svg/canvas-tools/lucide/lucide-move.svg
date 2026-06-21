@@ -1,0 +1,22 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-move"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-move-title lucide-move-desc">
+  <title id="lucide-move-title">move</title>
+  <desc id="lucide-move-desc">画布工具 - Lucide - move - ISC</desc>
+  <path fill="currentColor" d="M12 2v20" />
+  <path fill="currentColor" d="m15 19-3 3-3-3" />
+  <path fill="currentColor" d="m19 9 3 3-3 3" />
+  <path fill="currentColor" d="M2 12h20" />
+  <path fill="currentColor" d="m5 9-3 3 3 3" />
+  <path fill="currentColor" d="m9 5 3-3 3 3" />
+</svg>

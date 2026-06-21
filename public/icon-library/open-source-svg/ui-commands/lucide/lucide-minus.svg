@@ -1,0 +1,17 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-minus"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-minus-title lucide-minus-desc">
+  <title id="lucide-minus-title">minus</title>
+  <desc id="lucide-minus-desc">通用命令 - Lucide - minus - ISC</desc>
+  <path fill="currentColor" d="M5 12h14" />
+</svg>

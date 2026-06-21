@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#dc2626" role="img" aria-labelledby="rectification-loop-title rectification-loop-desc">
+  <title id="rectification-loop-title">整改闭环</title>
+  <desc id="rectification-loop-desc">合规与风险 - rectification, loop, 闭环</desc>
+  <g>
+<circle cx="32" cy="32" r="20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 38a13 13 0 0 1 24 0" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M32 32l10-8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="32" y="33" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="7" font-weight="700" fill="currentColor">loop</text>
+  </g>
+</svg>

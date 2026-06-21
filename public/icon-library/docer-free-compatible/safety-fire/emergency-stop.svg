@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#dc2626" role="img" aria-labelledby="emergency-stop-title emergency-stop-desc">
+  <title id="emergency-stop-title">急停按钮</title>
+  <desc id="emergency-stop-desc">安全消防 - emergency, stop</desc>
+  <g>
+<circle cx="32" cy="32" r="20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><rect x="22" y="22" width="20" height="20" rx="3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="32" y="33" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="8" font-weight="700" fill="currentColor">STOP</text>
+  </g>
+</svg>

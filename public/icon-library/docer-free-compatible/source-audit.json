@@ -1,0 +1,26 @@
+{
+  "checkedAt": "2026-06-21T22:19:18.429Z",
+  "docerSourcesChecked": [
+    {
+      "url": "https://docer.wps.cn/?redirect-from=wwwdocer#/home",
+      "result": "public page reachable; page loads icon marketplace resources from WPS CDN"
+    },
+    {
+      "url": "https://docer-api.wps.cn/proxy/icon/icon/v4/tags_rec",
+      "result": "anonymous API returned icon tag names, including 免费"
+    },
+    {
+      "url": "https://docer-api.wps.cn/proxy/icon/icon/v5/info?id=21601071",
+      "result": "anonymous API exposed a sample SVG storage_url, but the item carried privilege_name=docer_icon"
+    },
+    {
+      "url": "https://docer-api.wps.cn/proxy/icon/icon/v4/mbs?collection_mb_id=21601298",
+      "result": "sample collection returned free_count=0 and vip_count=12"
+    },
+    {
+      "url": "https://www.wps.cn/privacy/clean_docer/",
+      "result": "WPS Docer service agreement states that digital works' intellectual property is not transferred to users and out-of-scope usage requires written authorization from the rights holder."
+    }
+  ],
+  "decision": "No rights-unclear Docer SVG asset is copied into this repository. Generated SVG files are original project assets; actual Docer assets may be copied only when metadata or authorization explicitly allows repository redistribution."
+}

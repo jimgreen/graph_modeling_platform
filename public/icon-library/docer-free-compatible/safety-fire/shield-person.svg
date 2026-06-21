@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#2563eb" role="img" aria-labelledby="shield-person-title shield-person-desc">
+  <title id="shield-person-title">人员防护</title>
+  <desc id="shield-person-desc">安全消防 - shield, person</desc>
+  <g>
+<path d="M32 10l18 8v14c0 12-7 19-18 22-11-3-18-10-18-22V18z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="32" cy="28" r="4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 42c2-7 14-7 16 0" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" color="#2563eb" role="img" aria-labelledby="coreui-copy-title coreui-copy-desc">
+  <title id="coreui-copy-title">copy</title>
+  <desc id="coreui-copy-desc">通用命令 - CoreUI Icons - copy - MIT</desc>
+  <path fill="var(--ci-primary-color, currentColor)" d="M408 432h-32v32H112V136h32v-32H80v392h328z" class="ci-primary"/>
+  <path fill="var(--ci-primary-color, currentColor)" d="M176 16v384h320V153.373L358.627 16Zm288 352H208V48h104v152h152Zm0-200H344V48h1.372L464 166.627Z" class="ci-primary"/>
+</svg>

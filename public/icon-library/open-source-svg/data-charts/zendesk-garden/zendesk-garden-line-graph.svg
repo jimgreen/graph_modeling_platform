@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" focusable="false" viewBox="0 0 16 16" color="#2563eb" role="img" aria-labelledby="zendesk-garden-line-graph-title zendesk-garden-line-graph-desc">
+  <title id="zendesk-garden-line-graph-title">line graph</title>
+  <desc id="zendesk-garden-line-graph-desc">数据图表 - Zendesk Garden Icons - line-graph - Apache-2.0</desc>
+  <g fill="none" stroke="currentColor">
+    <rect fill="currentColor" width="15" height="13" x=".5" y="1.5" rx=".5" ry=".5"/>
+    <path fill="currentColor" stroke-linejoin="round" d="M.5 12.5l3-4.5 2 3 4-6 3 4.5 3-4.5"/>
+  </g>
+</svg>

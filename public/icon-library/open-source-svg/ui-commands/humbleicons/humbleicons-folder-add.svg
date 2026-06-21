@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="humbleicons-folder-add-title humbleicons-folder-add-desc">
+  <title id="humbleicons-folder-add-title">folder add</title>
+  <desc id="humbleicons-folder-add-desc">通用命令 - Humbleicons - folder-add - MIT</desc>
+  <g stroke="currentColor" stroke-width="2">
+    <path fill="currentColor" stroke-linejoin="round" d="M3 18V6a2 2 0 012-2h4.539a2 2 0 011.562.75L12.2 6.126a1 1 0 00.78.375H20a1 1 0 011 1V18a1 1 0 01-1 1H4a1 1 0 01-1-1z" />
+    <path fill="currentColor" stroke-linecap="round" d="M9.5 12.5h5" />
+    <path fill="currentColor" stroke-linecap="round" d="M12 15v-5" />
+  </g>
+</svg>

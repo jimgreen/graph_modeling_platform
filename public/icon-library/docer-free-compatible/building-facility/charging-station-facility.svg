@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#16a34a" role="img" aria-labelledby="charging-station-facility-title charging-station-facility-desc">
+  <title id="charging-station-facility-title">充电站</title>
+  <desc id="charging-station-facility-desc">建筑与设施 - charging, station</desc>
+  <g>
+<path d="M12 26l20-14 20 14v26H12z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><rect x="22" y="30" width="12" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M40 30h5l3 5v10c0 4-5 4-5 0v-7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

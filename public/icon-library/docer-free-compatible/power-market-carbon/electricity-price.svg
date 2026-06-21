@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#16a34a" role="img" aria-labelledby="electricity-price-title electricity-price-desc">
+  <title id="electricity-price-title">电价</title>
+  <desc id="electricity-price-desc">电力市场与碳管理 - price, electricity, market</desc>
+  <g>
+<circle cx="32" cy="32" r="18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="28" y="31" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="16" font-weight="700" fill="currentColor">￥</text><path d="M37 20v24M32 28h10M32 36h10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

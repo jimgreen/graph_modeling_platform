@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#64748b" role="img" aria-labelledby="camera-monitor-title camera-monitor-desc">
+  <title id="camera-monitor-title">视频监控</title>
+  <desc id="camera-monitor-desc">自动化通信 - camera, monitor</desc>
+  <g>
+<rect x="12" y="22" width="26" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M38 27l12-6v18l-12-6z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="22" cy="30" r="4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 46L44 46" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

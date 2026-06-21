@@ -1,0 +1,23 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-utility-pole"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-utility-pole-title lucide-utility-pole-desc">
+  <title id="lucide-utility-pole-title">utility pole</title>
+  <desc id="lucide-utility-pole-desc">电力电网 - Lucide - utility-pole - ISC</desc>
+  <path fill="currentColor" d="M12 2v20" />
+  <path fill="currentColor" d="M2 5h20" />
+  <path fill="currentColor" d="M3 3v2" />
+  <path fill="currentColor" d="M7 3v2" />
+  <path fill="currentColor" d="M17 3v2" />
+  <path fill="currentColor" d="M21 3v2" />
+  <path fill="currentColor" d="m19 5-7 7-7-7" />
+</svg>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#2563eb" role="img" aria-labelledby="cloud-platform-title cloud-platform-desc">
+  <title id="cloud-platform-title">云平台</title>
+  <desc id="cloud-platform-desc">自动化通信 - cloud, platform</desc>
+  <g>
+<path d="M18 42h28a8 8 0 0 0 0-16 14 14 0 0 0-27-4A10 10 0 0 0 18 42z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M28 34h8M32 30v8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

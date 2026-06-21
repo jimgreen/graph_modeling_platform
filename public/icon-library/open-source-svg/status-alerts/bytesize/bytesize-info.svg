@@ -1,0 +1,6 @@
+<svg id="i-info" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" color="#2563eb" role="img" aria-labelledby="bytesize-info-title bytesize-info-desc">
+  <title id="bytesize-info-title">info</title>
+  <desc id="bytesize-info-desc">状态告警 - Bytesize Icons - info - MIT</desc>
+    <path fill="currentColor" d="M16 14 L16 23 M16 8 L16 10" />
+    <circle fill="currentColor" cx="16" cy="16" r="14" />
+</svg>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" id="flag-icons-ne" viewBox="0 0 640 480" color="#2563eb" role="img" aria-labelledby="flag-icons-ne-title flag-icons-ne-desc">
+  <title id="flag-icons-ne-title">ne</title>
+  <desc id="flag-icons-ne-desc">国家地区旗帜 - Flag Icons - ne - MIT</desc>
+  <path fill="#0db02b" d="M0 0h640v480H0z"/>
+  <path fill="#fff" d="M0 0h640v320H0z"/>
+  <path fill="#e05206" d="M0 0h640v160H0z"/>
+  <circle cx="320" cy="240" r="68" fill="#e05206"/>
+</svg>

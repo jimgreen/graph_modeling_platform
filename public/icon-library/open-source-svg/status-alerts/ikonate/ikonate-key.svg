@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="ikonate-key-title ikonate-key-desc">
+  <title id="ikonate-key-title">key</title>
+  <desc id="ikonate-key-desc">状态告警 - Ikonate - key - MIT</desc>
+    <polyline points="21 16 21 12 12 12"/>
+    <circle fill="currentColor" cx="7" cy="12" r="4"/>
+    <path fill="currentColor" d="M17,15 L17,12"/>
+</svg>

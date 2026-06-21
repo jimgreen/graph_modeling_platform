@@ -1,0 +1,20 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-align-vertical-distribute-end"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-align-vertical-distribute-end-title lucide-align-vertical-distribute-end-desc">
+  <title id="lucide-align-vertical-distribute-end-title">align vertical distribute end</title>
+  <desc id="lucide-align-vertical-distribute-end-desc">画布工具 - Lucide - align-vertical-distribute-end - ISC</desc>
+  <rect fill="currentColor" width="14" height="6" x="5" y="14" rx="2" />
+  <rect fill="currentColor" width="10" height="6" x="7" y="4" rx="2" />
+  <path fill="currentColor" d="M2 20h20" />
+  <path fill="currentColor" d="M2 10h20" />
+</svg>

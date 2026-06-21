@@ -1,0 +1,20 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-pdf"
+ color="#2563eb" role="img" aria-labelledby="tabler-pdf-title tabler-pdf-desc">
+  <title id="tabler-pdf-title">pdf</title>
+  <desc id="tabler-pdf-desc">文件文档 - Tabler Icons - pdf - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M10 8v8h2a2 2 0 0 0 2 -2v-4a2 2 0 0 0 -2 -2h-2" />
+  <path fill="currentColor" d="M3 12h2a2 2 0 1 0 0 -4h-2v8" />
+  <path fill="currentColor" d="M17 12h3" />
+  <path fill="currentColor" d="M21 8h-4v8" />
+</svg>

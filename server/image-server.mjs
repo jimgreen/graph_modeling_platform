@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
-import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzip } from "node:zlib";
 import { promisify } from "node:util";
@@ -21,6 +21,7 @@ const measurementConfigPath = join(settingsDataDir, "measurement-config.json");
 const deviceLibraryDataDir = resolve(repoRoot, "data", "device-library");
 const deviceLibraryPath = join(deviceLibraryDataDir, "library.json");
 const maxImageBodyBytes = 16 * 1024 * 1024;
+const maxIconLibraryImportBodyBytes = 128 * 1024 * 1024;
 const maxSchemeBodyBytes = 64 * 1024 * 1024;
 const maxSchemeZipBodyBytes = 256 * 1024 * 1024;
 const maxColorConfigBodyBytes = 1024 * 1024;
@@ -163,6 +164,10 @@ const mimeExt = {
   "image/gif": ".gif",
   "image/svg+xml": ".svg"
 };
+
+const imageMimeByExtension = Object.fromEntries(Object.entries(mimeExt).map(([mimeType, extension]) => [extension, mimeType]));
+const iconLibraryArchiveExtensions = new Set([".docx", ".pptx", ".vsdx", ".wps", ".dps", ".zip"]);
+const maxIconLibraryExtractedAssets = 500;
 
 const stringifyJson = (value) => JSON.stringify(value, null, 2);
 
@@ -756,6 +761,17 @@ function parseDataUrl(dataUrl) {
     throw new Error("只支持 PNG、JPEG、WEBP、GIF、SVG 图片。");
   }
   return { mimeType, bytes: Buffer.from(match[2], "base64") };
+}
+
+function parseGenericDataUrl(dataUrl, fallbackMimeType = "application/octet-stream") {
+  const match = /^data:([^;,]+)?;base64,(.+)$/u.exec(dataUrl);
+  if (!match) {
+    throw new Error("文件数据格式无效。");
+  }
+  return {
+    mimeType: match[1] || fallbackMimeType,
+    bytes: Buffer.from(match[2], "base64")
+  };
 }
 
 function safeName(name) {
@@ -2226,6 +2242,115 @@ function imageCountsByFolder(manifest) {
   return counts;
 }
 
+function createImageManifestItem({ name, mimeType, bytes, folderId }) {
+  const id = `img-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return {
+    id,
+    name: safeName(name),
+    folderId,
+    mimeType,
+    size: bytes.length,
+    filename: `${id}${mimeExt[mimeType]}`,
+    createdAt: new Date().toISOString()
+  };
+}
+
+async function writeImageAssetFile(item, bytes) {
+  await writeFile(join(imageDataDir, item.filename), bytes);
+}
+
+function iconLibraryEntryMimeType(entryName) {
+  const extension = extname(entryName).toLowerCase();
+  return imageMimeByExtension[extension] || "";
+}
+
+function iconLibrarySourceName(fileName) {
+  return safeFilePart(String(fileName || "导入图标库").replace(/\.[^.]+$/u, ""), "导入图标库");
+}
+
+function iconLibraryEntryDisplayName(entryName, sourceName) {
+  const fileName = safeName(basename(entryName) || "图标");
+  return safeName(`${sourceName}-${fileName}`);
+}
+
+export function extractIconLibraryImageEntries(buffer, fileName = "导入图标库") {
+  const sourceName = iconLibrarySourceName(fileName);
+  const zip = new AdmZip(buffer);
+  const entries = [];
+  const skipped = [];
+  for (const entry of zip.getEntries()) {
+    if (entry.isDirectory || entries.length >= maxIconLibraryExtractedAssets) {
+      continue;
+    }
+    const mimeType = iconLibraryEntryMimeType(entry.entryName);
+    if (!mimeType) {
+      continue;
+    }
+    const bytes = entry.getData();
+    if (bytes.length <= 0 || bytes.length > maxImageBodyBytes) {
+      skipped.push(entry.entryName);
+      continue;
+    }
+    entries.push({
+      name: iconLibraryEntryDisplayName(entry.entryName, sourceName),
+      mimeType,
+      bytes,
+      entryName: entry.entryName
+    });
+  }
+  return {
+    entries,
+    skippedCount: skipped.length
+  };
+}
+
+async function handleImportIconLibrary(request, response) {
+  const payload = await readJsonBody(request, maxIconLibraryImportBodyBytes, "图标库文件过大，最大支持 128MB。");
+  const { dataUrl, name } = payload;
+  if (typeof dataUrl !== "string") {
+    sendError(response, 400, "缺少图标库文件数据。");
+    return;
+  }
+  const fileName = safeName(name || "导入图标库");
+  const fileExtension = extname(fileName).toLowerCase();
+  if (!iconLibraryArchiveExtensions.has(fileExtension)) {
+    sendError(response, 400, "只支持从 DOCX、PPTX、VSDX、WPS、DPS 或 ZIP 文件中抽取图标。");
+    return;
+  }
+  const { bytes } = parseGenericDataUrl(dataUrl);
+  let extracted;
+  try {
+    extracted = extractIconLibraryImageEntries(bytes, fileName);
+  } catch {
+    sendError(response, 400, "图标库文件不是有效的压缩容器。");
+    return;
+  }
+  const folderId = await resolveFolderId(typeof payload.folderId === "string" ? payload.folderId : "root");
+  const items = [];
+  for (const entry of extracted.entries) {
+    const item = createImageManifestItem({
+      name: entry.name,
+      mimeType: entry.mimeType,
+      bytes: entry.bytes,
+      folderId
+    });
+    await writeImageAssetFile(item, entry.bytes);
+    items.push(item);
+  }
+  if (items.length === 0) {
+    sendError(response, 400, "未在文件中找到可直接显示的 SVG、PNG、JPEG、WEBP 或 GIF 图标。");
+    return;
+  }
+  await ensureStore();
+  const manifest = await readManifest();
+  await writeManifest([...items, ...manifest]);
+  sendJson(response, 201, {
+    ok: true,
+    assets: items.map(publicAsset),
+    skippedCount: extracted.skippedCount
+  });
+}
+
 async function handleUpload(request, response) {
   const payload = await readJsonBody(request, maxImageBodyBytes, "图片过大，最大支持 16MB。");
   const { dataUrl, name } = payload;
@@ -2235,19 +2360,9 @@ async function handleUpload(request, response) {
   }
   const { mimeType, bytes } = parseDataUrl(dataUrl);
   const folderId = await resolveFolderId(typeof payload.folderId === "string" ? payload.folderId : "root");
-  const id = `img-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  const filename = `${id}${mimeExt[mimeType]}`;
   await ensureStore();
-  await writeFile(join(imageDataDir, filename), bytes);
-  const item = {
-    id,
-    name: safeName(name),
-    folderId,
-    mimeType,
-    size: bytes.length,
-    filename,
-    createdAt: new Date().toISOString()
-  };
+  const item = createImageManifestItem({ name, mimeType, bytes, folderId });
+  await writeImageAssetFile(item, bytes);
   const manifest = await readManifest();
   await writeManifest([item, ...manifest]);
   sendJson(response, 201, publicAsset(item));
@@ -2503,6 +2618,9 @@ export function createImageServer({ port = 5174, host = "127.0.0.1" } = {}) {
     }],
     ["POST /api/images", async ({ request, response }) => {
       await handleUpload(request, response);
+    }],
+    ["POST /api/icon-library/import", async ({ request, response }) => {
+      await handleImportIconLibrary(request, response);
     }],
     ["GET /api/image-folders", async ({ request, response }) => {
       const folders = await readImageFolders();

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="humbleicons-layers-title humbleicons-layers-desc">
+  <title id="humbleicons-layers-title">layers</title>
+  <desc id="humbleicons-layers-desc">画布工具 - Humbleicons - layers - MIT</desc>
+  <g stroke="currentColor" stroke-linejoin="round" stroke-width="2">
+    <path fill="currentColor" d="M4 8l8-4 8 4-8 4-8-4z" />
+    <path fill="currentColor" stroke-linecap="round" d="M4 12l8 4 8-4" />
+    <path fill="currentColor" stroke-linecap="round" d="M4 16l8 4 8-4" />
+  </g>
+</svg>

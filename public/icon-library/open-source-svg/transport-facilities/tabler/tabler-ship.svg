@@ -1,0 +1,20 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-ship"
+ color="#2563eb" role="img" aria-labelledby="tabler-ship-title tabler-ship-desc">
+  <title id="tabler-ship-title">ship</title>
+  <desc id="tabler-ship-desc">交通设施 - Tabler Icons - ship - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M2 20a2.4 2.4 0 0 0 2 1a2.4 2.4 0 0 0 2 -1a2.4 2.4 0 0 1 2 -1a2.4 2.4 0 0 1 2 1a2.4 2.4 0 0 0 2 1a2.4 2.4 0 0 0 2 -1a2.4 2.4 0 0 1 2 -1a2.4 2.4 0 0 1 2 1a2.4 2.4 0 0 0 2 1a2.4 2.4 0 0 0 2 -1" />
+  <path fill="currentColor" d="M4 18l-1 -5h18l-2 4" />
+  <path fill="currentColor" d="M5 13v-6h8l4 6" />
+  <path fill="currentColor" d="M7 7v-4h-1" />
+</svg>

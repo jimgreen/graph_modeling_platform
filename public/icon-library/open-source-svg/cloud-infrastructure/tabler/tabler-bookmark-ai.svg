@@ -1,0 +1,20 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-bookmark-ai"
+ color="#2563eb" role="img" aria-labelledby="tabler-bookmark-ai-title tabler-bookmark-ai-desc">
+  <title id="tabler-bookmark-ai-title">bookmark ai</title>
+  <desc id="tabler-bookmark-ai-desc">云与基础设施 - Tabler Icons - bookmark-ai - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M10.02 18.32l-4.02 2.68v-14a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v4.5" />
+  <path fill="currentColor" d="M14 21v-4a2 2 0 1 1 4 0v4" />
+  <path fill="currentColor" d="M14 19h4" />
+  <path fill="currentColor" d="M21 15v6" />
+</svg>

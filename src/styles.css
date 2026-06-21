@@ -3317,6 +3317,10 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
 }
 
+.image-picker-dialog.icon-library {
+  width: min(980px, calc(100vw - 48px));
+}
+
 .node-double-click-dialog {
   position: relative;
   display: grid;
@@ -3517,6 +3521,68 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .image-picker-actions select {
   color: #334155;
   background: #ffffff;
+}
+
+.image-picker-filters {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(220px, 1fr) auto auto;
+  gap: 8px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.image-picker-filters label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.image-picker-filters select,
+.image-picker-filters input {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 10px;
+  color: #0f172a;
+  background: #ffffff;
+  font-size: 13px;
+}
+
+.image-picker-filters button {
+  min-height: 32px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 12px;
+  color: #334155;
+  background: #ffffff;
+  white-space: nowrap;
+}
+
+.image-picker-filters button:disabled {
+  color: #94a3b8;
+  background: #f8fafc;
+  cursor: not-allowed;
+}
+
+.image-picker-filters span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .image-picker-filters {
+    grid-template-columns: 1fr;
+  }
 }
 
 .unsaved-change-dialog {
@@ -4882,7 +4948,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   align-content: stretch;
   height: 100%;
   overflow: hidden;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .device-state-pager-header {
@@ -5206,7 +5272,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .state-icon-drawing-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 320px);
+  grid-template-columns: minmax(0, 1fr) minmax(330px, 360px);
   gap: 7px;
   min-width: 0;
   min-height: 0;
@@ -5220,6 +5286,26 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   gap: 6px;
   min-width: 0;
   min-height: 0;
+}
+
+.state-icon-drawing-state-tabs {
+  flex-wrap: nowrap;
+  overflow: hidden;
+  min-height: 28px;
+  padding: 1px 0;
+}
+
+.state-icon-drawing-state-tabs button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.state-icon-small-icon-button {
+  width: 26px;
+  min-width: 26px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
 }
 
 .state-icon-drawing-canvas {
@@ -5244,8 +5330,13 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   background: #ffffff;
 }
 
+.state-icon-drawing-inline.tool-active .state-icon-drawing-canvas svg,
+.state-icon-drawing-inline.drawing-active .state-icon-drawing-canvas svg {
+  cursor: crosshair;
+}
+
 .state-icon-drawing-canvas-bg {
-  fill: #ffffff;
+  pointer-events: none;
 }
 
 .state-icon-drawing-element {
@@ -5262,10 +5353,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .state-icon-drawing-icon-frame {
-  fill: none;
-  stroke: #94a3b8;
-  stroke-width: 1.2;
-  stroke-dasharray: 6 4;
   vector-effect: non-scaling-stroke;
   pointer-events: none;
 }
@@ -5305,7 +5392,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .state-icon-drawing-side {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   gap: 6px;
   min-width: 0;
   min-height: 0;
@@ -5313,6 +5400,8 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .state-icon-drawing-library,
+.state-icon-drawing-state-info,
+.state-icon-drawing-frame-panel,
 .state-icon-drawing-layers,
 .state-icon-drawing-properties {
   display: grid;
@@ -5331,10 +5420,12 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .state-icon-drawing-properties {
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .state-icon-drawing-library > span,
+.state-icon-drawing-state-info > strong,
+.state-icon-drawing-frame-panel > strong,
 .state-icon-drawing-layers > span,
 .state-icon-drawing-layers label > span {
   color: #334155;
@@ -5363,11 +5454,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   gap: 3px;
 }
 
-.state-icon-drawing-library > div:not(.state-icon-drawing-import-actions) {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
 .state-icon-drawing-library > .state-icon-drawing-import-actions {
   display: flex;
   flex-wrap: nowrap;
@@ -5378,7 +5464,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   grid-row: auto;
   grid-template-columns: auto auto minmax(0, 1fr);
   align-items: center;
-  gap: 5px;
+  gap: 5px 7px;
   padding: 5px 7px;
   background: #f8fbff;
 }
@@ -5387,12 +5473,47 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   white-space: nowrap;
 }
 
-.device-state-pager > .state-icon-drawing-library > div:not(.state-icon-drawing-import-actions) {
+.state-icon-library-tabs {
   display: flex;
-  flex-wrap: nowrap;
+  align-items: center;
   gap: 4px;
   min-width: 0;
   overflow: hidden;
+}
+
+.state-icon-library-tab {
+  flex: 0 0 auto;
+  min-height: 25px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.state-icon-library-tab.active {
+  border-color: #2563eb;
+  color: #1d4ed8;
+  background: #dbeafe;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.28);
+}
+
+.state-icon-library-panel {
+  display: grid;
+  grid-column: 1 / -1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.state-icon-basic-tool-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.device-state-pager > .state-icon-drawing-library .state-icon-basic-tool-actions {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 1px;
 }
 
 .state-icon-drawing-library .state-icon-import-button,
@@ -5402,6 +5523,75 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   height: 25px;
   min-height: 25px;
   padding: 0;
+}
+
+.state-icon-drawing-library .state-icon-tool-button.active {
+  border-color: #2563eb;
+  color: #1d4ed8;
+  background: #dbeafe;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.32);
+}
+
+.state-icon-static-template-library {
+  display: grid;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 0;
+}
+
+.state-icon-static-template-groups {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 10px;
+  max-height: none;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0 2px 2px 0;
+}
+
+.state-icon-static-template-group {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 5px;
+  min-width: max-content;
+}
+
+.state-icon-static-template-group > span {
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.state-icon-static-template-group > div {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.state-icon-drawing-library .state-icon-static-template-button {
+  width: 34px;
+  min-width: 34px;
+  height: 30px;
+  min-height: 30px;
+  padding: 2px;
+}
+
+.state-icon-drawing-library .state-icon-static-template-button.active {
+  border-color: #2563eb;
+  color: #1d4ed8;
+  background: #eff6ff;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.32);
+}
+
+.state-icon-static-template-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
 
 .state-icon-tool-icon {
@@ -5442,9 +5632,16 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   line-height: 1.1;
 }
 
+.state-icon-drawing-property-title span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
 .state-icon-drawing-property-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px 5px;
   min-width: 0;
 }
@@ -5459,7 +5656,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .state-icon-drawing-property-grid .state-icon-drawing-compact-field {
-  width: 68px;
+  width: 76px;
   max-width: 100%;
   justify-self: start;
 }
@@ -5504,14 +5701,64 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .state-icon-drawing-property-grid .state-icon-drawing-text-compact-field {
-  width: 150px;
+  width: 100%;
   max-width: 100%;
-  justify-self: start;
+  justify-self: stretch;
+}
+
+.state-icon-context-menu {
+  position: fixed;
+  z-index: 1800;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(92px, 1fr));
+  gap: 3px;
+  width: 224px;
+  max-height: min(72vh, 520px);
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #ffffff;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.18);
+}
+
+.state-icon-context-menu span {
+  grid-column: 1 / -1;
+  padding: 4px 4px 1px;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.state-icon-context-menu button {
+  justify-content: flex-start;
+  min-height: 24px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: #0f172a;
+  background: #ffffff;
+  font-size: 11px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.state-icon-context-menu button:hover,
+.state-icon-context-menu button:focus-visible {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  outline: none;
+}
+
+.state-icon-context-menu button:disabled {
+  color: #94a3b8;
+  background: #f8fafc;
+  cursor: not-allowed;
 }
 
 @media (max-width: 1280px) {
   .state-icon-drawing-layout {
-    grid-template-columns: minmax(0, 1fr) minmax(280px, 300px);
+    grid-template-columns: minmax(0, 1fr) minmax(310px, 330px);
   }
 
   .state-icon-drawing-side {
@@ -6657,6 +6904,10 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   gap: 10px;
 }
 
+.image-picker-dialog.icon-library .image-asset-list {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+
 .image-asset-option {
   display: grid;
   gap: 7px;
@@ -6678,9 +6929,9 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .image-asset-option img {
   width: 100%;
   aspect-ratio: 4 / 3;
-  object-fit: cover;
+  object-fit: contain;
   border-radius: 6px;
-  background: #e2e8f0;
+  background: #ffffff;
 }
 
 .image-asset-option span {

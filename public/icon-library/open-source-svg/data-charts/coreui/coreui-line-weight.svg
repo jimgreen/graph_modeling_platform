@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" color="#2563eb" role="img" aria-labelledby="coreui-line-weight-title coreui-line-weight-desc">
+  <title id="coreui-line-weight-title">line weight</title>
+  <desc id="coreui-line-weight-desc">数据图表 - CoreUI Icons - line-weight - MIT</desc>
+  <path fill="var(--ci-primary-color, currentColor)" d="M16 464h480v32H16zm0-32h480v-80H16Zm32-48h416v16H48Zm-32-64h480V208H16Zm32-80h416v48H48Zm-32-64h480V16H16ZM48 48h416v96H48Z" class="ci-primary"/>
+</svg>

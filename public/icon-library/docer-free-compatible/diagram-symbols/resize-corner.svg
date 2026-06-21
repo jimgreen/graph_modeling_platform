@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#7c3aed" role="img" aria-labelledby="resize-corner-title resize-corner-desc">
+  <title id="resize-corner-title">尺寸调整</title>
+  <desc id="resize-corner-desc">图形符号扩展 - resize</desc>
+  <g>
+<rect x="14" y="14" width="36" height="36" rx="2" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M34 44h10V34M28 36l8-8M34 28h2v2" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

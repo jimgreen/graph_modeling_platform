@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#0f766e" role="img" aria-labelledby="hospital-facility-title hospital-facility-desc">
+  <title id="hospital-facility-title">医院设施</title>
+  <desc id="hospital-facility-desc">公共服务设施 - hospital, facility, 医院</desc>
+  <g>
+<path d="M12 28l20-14 20 14v24H12z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><rect x="22" y="34" width="20" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="32" y="33" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="7" font-weight="700" fill="currentColor">facility</text>
+  </g>
+</svg>

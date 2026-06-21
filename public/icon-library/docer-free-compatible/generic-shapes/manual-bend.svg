@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#ea580c" role="img" aria-labelledby="manual-bend-title manual-bend-desc">
+  <title id="manual-bend-title">人工拐点</title>
+  <desc id="manual-bend-desc">通用图形 - bend, route, line</desc>
+  <g>
+<path d="M12 20h20v24h20" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="32" cy="20" r="4" fill="currentColor"/>
+          <circle cx="32" cy="44" r="4" fill="currentColor"/>
+  </g>
+</svg>

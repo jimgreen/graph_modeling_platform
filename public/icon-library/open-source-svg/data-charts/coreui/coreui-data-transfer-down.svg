@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" color="#2563eb" role="img" aria-labelledby="coreui-data-transfer-down-title coreui-data-transfer-down-desc">
+  <title id="coreui-data-transfer-down-title">data transfer down</title>
+  <desc id="coreui-data-transfer-down-desc">数据图表 - CoreUI Icons - data-transfer-down - MIT</desc>
+  <path fill="var(--ci-primary-color, currentColor)" d="M16 464h480v32H16zm379.313-164.687-22.626-22.626L280 369.373V16h-32v353.373l-92.687-92.686-22.626 22.626L264 430.627z" class="ci-primary"/>
+</svg>

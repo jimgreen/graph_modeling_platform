@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#0891b2" role="img" aria-labelledby="humidity-sensor-title humidity-sensor-desc">
+  <title id="humidity-sensor-title">湿度传感器</title>
+  <desc id="humidity-sensor-desc">传感仪表 - humidity, sensor</desc>
+  <g>
+<path d="M32 10c10 12 16 21 16 30a16 16 0 0 1-32 0c0-9 6-18 16-30z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 42c3 4 13 4 16 0" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

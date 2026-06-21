@@ -1,6 +1,347 @@
 // @ts-nocheck
 import { clampNumber } from "../canvasViewport";
 
+const STATE_ICON_DRAFT_FRAME = {
+  strokeStyle: "dashed",
+  strokeWidth: 1.2,
+  strokeColor: "#94a3b8",
+  fillColor: "#ffffff"
+};
+
+const STATE_ICON_LINE_SHAPE_KINDS = new Set(["line", "polyline", "arc", "semicircle"]);
+const STATE_ICON_CLOSED_SHAPE_KINDS = new Set(["point", "triangle", "rectangle", "square", "hexagon", "polygon", "circle", "semicircle", "ellipse", "text"]);
+const STATE_ICON_STATIC_TEMPLATE_SECTION_ORDER = [
+  "StaticTextSymbol",
+  "StaticConnectorSymbol",
+  "StaticBasicShape",
+  "StaticMediaSymbol",
+  "StaticFlowNode",
+  "StaticContainerSymbol",
+  "StaticAnnotationSymbol",
+  "StaticButton"
+];
+const STATE_ICON_STATIC_TEMPLATE_SECTIONS_COVERED_BY_BASIC_TOOLS = new Set([
+  "StaticTextSymbol",
+  "StaticConnectorSymbol",
+  "StaticBasicShape"
+]);
+
+const STATE_ICON_EDITABLE_STATIC_KIND_BY_TEMPLATE_KIND: Record<string, StateVisualShapeKind> = {
+  "static-text": "text",
+  "static-line": "line",
+  "static-straight-connector": "line",
+  "static-arrow-connector": "line",
+  "static-double-arrow-connector": "line",
+  "static-polyline": "polyline",
+  "static-elbow-connector": "polyline",
+  "static-circle": "circle",
+  "static-ellipse": "ellipse",
+  "static-rect": "rectangle",
+  "static-point": "point",
+  "static-ring": "point",
+  "static-hexagon": "hexagon",
+  "static-triangle": "triangle"
+};
+
+function stateIconBaseStaticTemplateKind(kind: string) {
+  return String(kind ?? "").replace(/-vertical$/, "");
+}
+
+function stateIconStaticTemplateParam(template: any, key: string, fallback = "") {
+  return String(template?.params?.[key] ?? fallback ?? "").trim();
+}
+
+function stateIconStaticTemplateNumberParam(template: any, key: string, fallback: number) {
+  const parsed = Number.parseFloat(stateIconStaticTemplateParam(template, key));
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function stateIconStaticTemplateStrokeStyle(template: any): "solid" | "dashed" | "dotted" {
+  const value = stateIconStaticTemplateParam(template, "strokeStyle", "solid");
+  return value === "dashed" || value === "dotted" ? value : "solid";
+}
+
+function stateIconLineCapFromStaticMarker(value: string | undefined | null) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "arrow") {
+    return "arrow";
+  }
+  if (normalized === "dot" || normalized === "circle") {
+    return "circle";
+  }
+  if (normalized === "triangle") {
+    return "triangle";
+  }
+  if (normalized === "square" || normalized === "rect" || normalized === "rectangle") {
+    return "square";
+  }
+  return "none";
+}
+
+export function createStateIconDrawingElementFromStaticTemplate(__appScope: Record<string, any>, template: any, row?: any) {
+  const {
+    createImportedStateIconElement,
+    createStateIconDrawingElement,
+    createTemplateDefaultStateIconImage,
+    svgSourceFromDataUrl
+  } = __appScope;
+  const baseKind = stateIconBaseStaticTemplateKind(template?.kind);
+  const editableKind = STATE_ICON_EDITABLE_STATIC_KIND_BY_TEMPLATE_KIND[baseKind];
+  const size = template?.size ?? {};
+  const templateWidth = Math.max(1, Number(size.width) || 96);
+  const templateHeight = Math.max(1, Number(size.height) || 64);
+  if (editableKind) {
+    const base = createStateIconDrawingElement(editableKind, row);
+    const text = stateIconStaticTemplateParam(template, "text", template?.label ?? base.text);
+    const fillColor = stateIconStaticTemplateParam(template, "fillColor", base.fillColor);
+    const strokeColor = stateIconStaticTemplateParam(template, "strokeColor", base.strokeColor);
+    const textColor = stateIconStaticTemplateParam(template, "textColor", base.textColor);
+    const element = {
+      ...base,
+      width: templateWidth,
+      height: templateHeight,
+      strokeWidth: Math.max(0, stateIconStaticTemplateNumberParam(template, "lineWidth", base.strokeWidth)),
+      strokeColor: strokeColor || base.strokeColor,
+      fillColor: fillColor || base.fillColor,
+      textColor: textColor || base.textColor,
+      text: text || template?.label || base.text,
+      strokeStyle: stateIconStaticTemplateStrokeStyle(template),
+      fontFamily: stateIconStaticTemplateParam(template, "fontFamily", base.fontFamily ?? "Arial, Microsoft YaHei"),
+      fontSize: Math.max(1, stateIconStaticTemplateNumberParam(template, "fontSize", base.fontSize ?? 16)),
+      fontWeight: stateIconStaticTemplateParam(template, "fontWeight", base.fontWeight ?? "400"),
+      fontStyle: stateIconStaticTemplateParam(template, "fontStyle", base.fontStyle ?? "normal"),
+      startCap: stateIconLineCapFromStaticMarker(stateIconStaticTemplateParam(template, "markerStart", base.startCap ?? "none")),
+      endCap: stateIconLineCapFromStaticMarker(stateIconStaticTemplateParam(template, "markerEnd", base.endCap ?? "none"))
+    };
+    if (baseKind === "static-ring") {
+      return {
+        ...element,
+        fillColor: "transparent",
+        strokeWidth: Math.max(1, element.strokeWidth)
+      };
+    }
+    return element;
+  }
+  const renderedImage = createTemplateDefaultStateIconImage(__appScope, template, {
+    size: { width: templateWidth, height: templateHeight },
+    label: template?.label ?? ""
+  });
+  const svgSource = svgSourceFromDataUrl(renderedImage);
+  return {
+    ...createImportedStateIconElement(svgSource ? "imported-svg" : "image", svgSource || renderedImage, template?.label ?? template?.kind ?? "静态图元"),
+    width: templateWidth,
+    height: templateHeight,
+    text: template?.label ?? template?.kind ?? "静态图元"
+  };
+}
+
+function stateIconDrawingSelectedIds(dialog: any) {
+  return dialog?.selectedElementIds?.length > 0
+    ? dialog.selectedElementIds
+    : [dialog?.selectedElementId].filter(Boolean);
+}
+
+function pushStateIconDrawingHistorySnapshot(historyRef: any, elements: any[]) {
+  if (!historyRef) {
+    return;
+  }
+  const snapshot = elements.map((element) => ({ ...element }));
+  historyRef.current = [...(historyRef.current ?? []), snapshot].slice(-80);
+}
+
+function cloneStateIconDrawingElements(elements: any[], createId: () => string, offset = { x: 12, y: 12 }) {
+  return elements.map((element) => ({
+    ...element,
+    id: createId(),
+    x: element.x + offset.x,
+    y: element.y + offset.y
+  }));
+}
+
+function stateIconDrawingElementBounds(element: any) {
+  const width = Math.max(1, Number(element.width) || 1);
+  const height = Math.max(1, Number(element.height) || 1);
+  return {
+    left: element.x - width / 2,
+    right: element.x + width / 2,
+    top: element.y - height / 2,
+    bottom: element.y + height / 2,
+    centerX: element.x,
+    centerY: element.y,
+    width,
+    height
+  };
+}
+
+function stateIconDrawingSelectionBounds(elements: any[]) {
+  if (elements.length === 0) {
+    return null;
+  }
+  const bounds = elements.map(stateIconDrawingElementBounds);
+  const left = Math.min(...bounds.map((item) => item.left));
+  const right = Math.max(...bounds.map((item) => item.right));
+  const top = Math.min(...bounds.map((item) => item.top));
+  const bottom = Math.max(...bounds.map((item) => item.bottom));
+  return {
+    left,
+    right,
+    top,
+    bottom,
+    centerX: (left + right) / 2,
+    centerY: (top + bottom) / 2
+  };
+}
+
+function stateIconDrawingFrameDashArray(frame: any) {
+  const width = Math.max(1, Number(frame?.strokeWidth) || 1);
+  if (frame?.strokeStyle === "dotted") {
+    return `${width * 0.2} ${width * 2}`;
+  }
+  if (frame?.strokeStyle === "dashed") {
+    return `${width * 5} ${width * 3}`;
+  }
+  return undefined;
+}
+
+function clampStateIconDrawingPoint(point: Point) {
+  return {
+    x: clampNumber(point.x, 0, 240),
+    y: clampNumber(point.y, 0, 160)
+  };
+}
+
+function sameStateIconDrawingPoint(left: Point, right: Point) {
+  return Math.abs(left.x - right.x) < 0.01 && Math.abs(left.y - right.y) < 0.01;
+}
+
+function appendDistinctStateIconDrawingPoint(points: readonly Point[], point: Point) {
+  const nextPoint = clampStateIconDrawingPoint(point);
+  const lastPoint = points[points.length - 1];
+  return lastPoint && sameStateIconDrawingPoint(lastPoint, nextPoint)
+    ? points.map(clampStateIconDrawingPoint)
+    : [...points.map(clampStateIconDrawingPoint), nextPoint];
+}
+
+function stateIconDrawingPolylineElementFromPoints(element: any, points: readonly Point[]) {
+  const clampedPoints = points.map(clampStateIconDrawingPoint);
+  const drawPoints = clampedPoints.length >= 2
+    ? clampedPoints
+    : clampedPoints.length === 1
+      ? [clampedPoints[0], clampedPoints[0]]
+      : [{ x: 120, y: 80 }, { x: 120, y: 80 }];
+  const left = Math.min(...drawPoints.map((point) => point.x));
+  const right = Math.max(...drawPoints.map((point) => point.x));
+  const top = Math.min(...drawPoints.map((point) => point.y));
+  const bottom = Math.max(...drawPoints.map((point) => point.y));
+  const width = Math.max(1, right - left);
+  const height = Math.max(1, bottom - top);
+  const center = {
+    x: left + width / 2,
+    y: top + height / 2
+  };
+  return {
+    ...element,
+    x: center.x,
+    y: center.y,
+    width,
+    height,
+    rotation: 0,
+    points: drawPoints.map((point) => ({
+      x: (point.x - center.x) / width,
+      y: (point.y - center.y) / height
+    }))
+  };
+}
+
+function stateIconDrawingElementFromPoints(element: any, startPoint: Point, currentPoint: Point) {
+  const start = clampStateIconDrawingPoint(startPoint);
+  const current = clampStateIconDrawingPoint(currentPoint);
+  const dx = current.x - start.x;
+  const dy = current.y - start.y;
+  const absWidth = Math.abs(dx);
+  const absHeight = Math.abs(dy);
+  const center = {
+    x: start.x + dx / 2,
+    y: start.y + dy / 2
+  };
+  if (element.kind === "line") {
+    const length = Math.max(1, Math.hypot(dx, dy));
+    return {
+      ...element,
+      x: center.x,
+      y: center.y,
+      width: length,
+      height: Math.max(12, element.height),
+      rotation: Math.atan2(dy, dx || 0.000001) * 180 / Math.PI
+    };
+  }
+  if (element.kind === "polyline") {
+    return stateIconDrawingPolylineElementFromPoints(element, [start, current]);
+  }
+  if (element.kind === "point") {
+    const size = Math.max(8, absWidth, absHeight);
+    return {
+      ...element,
+      x: center.x,
+      y: center.y,
+      width: size,
+      height: size
+    };
+  }
+  if (element.kind === "circle" || element.kind === "square" || element.kind === "semicircle") {
+    const size = Math.max(1, absWidth, absHeight);
+    const end = {
+      x: start.x + (dx < 0 ? -size : size),
+      y: start.y + (dy < 0 ? -size : size)
+    };
+    return {
+      ...element,
+      x: start.x + (end.x - start.x) / 2,
+      y: start.y + (end.y - start.y) / 2,
+      width: size,
+      height: size
+    };
+  }
+  const minimumWidth = element.kind === "text" ? 24 : 1;
+  const minimumHeight = element.kind === "text" ? 16 : 1;
+  return {
+    ...element,
+    x: center.x,
+    y: center.y,
+    width: Math.max(minimumWidth, absWidth),
+    height: Math.max(minimumHeight, absHeight)
+  };
+}
+
+function finishStateIconDrawingDraft(current: any, historyRef: any) {
+  if (!current?.drawingDraft) {
+    return current;
+  }
+  const draft = current.drawingDraft;
+  let element = draft.element;
+  if (draft.kind === "polyline") {
+    const draftPoints = draft.points?.length ? draft.points : [draft.start];
+    const finalPoint = draft.current ?? draftPoints[draftPoints.length - 1] ?? draft.start;
+    const finalPoints = appendDistinctStateIconDrawingPoint(draftPoints, finalPoint);
+    if (finalPoints.length < 2) {
+      return current;
+    }
+    element = stateIconDrawingPolylineElementFromPoints(draft.element, finalPoints);
+  } else {
+    element = stateIconDrawingElementFromPoints(draft.element, draft.start, draft.current ?? draft.start);
+  }
+  pushStateIconDrawingHistorySnapshot(historyRef, current.elements);
+  return {
+    ...current,
+    elements: [...current.elements, element],
+    selectedElementId: element.id,
+    selectedElementIds: [element.id],
+    pendingElementKind: undefined,
+    pendingStaticTemplate: undefined,
+    drawingDraft: undefined
+  };
+}
+
 function createTemplateDefaultStateIconImage(__appScope: Record<string, any>, template: any, options: Record<string, any> = {}) {
   if (!template) {
     return "";
@@ -1349,44 +1690,137 @@ export function createExportSchemeRecord(__appScope: Record<string, any>) {
 
 export function createChooseImage(__appScope: Record<string, any>) {
   return (event: ChangeEvent<HTMLInputElement>) => {
-  const { activeImageFolderId, imageTarget, refreshImageFolders, requireEditMode, saveImageAsset, setImageAssetList, setImageAssets, uploadBackendImage } = __appScope;
+  const { activeImageFolderId, imageTarget, importBackendIconLibraryFile, refreshImageFolders, requireEditMode, saveImageAsset, setImageAssetList, setImageAssets, uploadBackendImage } = __appScope;
     if (!requireEditMode("上传图片")) {
       event.target.value = "";
       return;
     }
-    const file = event.target.files?.[0];
-    if (!file || !imageTarget) {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (files.length === 0 || !imageTarget) {
       return;
     }
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const imageData = String(reader.result ?? "");
-      let asset: ImageAsset;
-      try {
-        asset = await uploadBackendImage(file.name, imageData, activeImageFolderId);
-      } catch (error) {
-        window.alert(error instanceof Error ? error.message : "上传图片到后台失败。");
-        const fallbackId = `asset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        saveImageAsset(fallbackId, imageData);
-        asset = { id: fallbackId, name: file.name || "本地图片", folderId: activeImageFolderId, url: imageData };
+    const readFileAsDataUrl = (file: File) =>
+      new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result ?? ""));
+        reader.onerror = () => reject(reader.error ?? new Error("读取图片失败。"));
+        reader.readAsDataURL(file);
+      });
+    void (async () => {
+      const nextAssets: ImageAsset[] = [];
+      const nextAssetMap: Record<string, string> = {};
+      for (const file of files) {
+        const lowerName = file.name.toLowerCase();
+        const isIconArchive = /\.(docx|pptx|vsdx|wps|dps|zip)$/iu.test(lowerName);
+        let imageData = "";
+        try {
+          imageData = await readFileAsDataUrl(file);
+        } catch (error) {
+          window.alert(error instanceof Error ? error.message : `读取 ${file.name || "图片"} 失败。`);
+          continue;
+        }
+        if (isIconArchive) {
+          try {
+            const importedAssets = await importBackendIconLibraryFile(file.name, imageData, activeImageFolderId);
+            nextAssets.push(...importedAssets);
+            for (const asset of importedAssets) {
+              nextAssetMap[asset.id] = asset.url;
+            }
+          } catch (error) {
+            window.alert(error instanceof Error ? error.message : `导入 ${file.name || "图标库"} 失败。`);
+          }
+          continue;
+        }
+        let asset: ImageAsset;
+        try {
+          asset = await uploadBackendImage(file.name, imageData, activeImageFolderId);
+        } catch (error) {
+          window.alert(error instanceof Error ? error.message : `上传 ${file.name || "图片"} 到后台失败。`);
+          const fallbackId = `asset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          saveImageAsset(fallbackId, imageData);
+          asset = { id: fallbackId, name: file.name || "本地图片", folderId: activeImageFolderId, url: imageData };
+        }
+        nextAssets.push(asset);
+        nextAssetMap[asset.id] = asset.url;
       }
-      setImageAssetList((current) => [asset, ...current.filter((item) => item.id !== asset.id)]);
-      setImageAssets((current) => ({ ...current, [asset.id]: asset.url }));
+      if (nextAssets.length > 0) {
+        setImageAssetList((current) => [...nextAssets, ...current.filter((item) => !nextAssets.some((asset) => asset.id === item.id))]);
+        setImageAssets((current) => ({ ...current, ...nextAssetMap }));
+      }
       void refreshImageFolders();
-      event.target.value = "";
-    };
-    reader.readAsDataURL(file);
+    })();
   };
 }
 
 export function createApplyExistingImage(__appScope: Record<string, any>) {
-  return (assetId: string) => {
-  const { imageAssets, imageTarget, pushUndoSnapshot, requireEditMode, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setImageTarget, updateGraphNodeById } = __appScope;
+  return async (assetId: string) => {
+  const { createEditableStateIconElementsFromSvgSource, createImportedStateIconElement, imageAssetList, imageAssets, imageTarget, libraryTemplateByKind, pushUndoSnapshot, requireEditMode, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setImageTarget, setStateIconDrawingDialog, startLibraryDevicePlacement, stateIconDrawingHistoryRef, svgSourceFromDataUrl, updateGraphNodeById, writeOperationLog } = __appScope;
     if (!requireEditMode("应用图片")) {
       return;
     }
-    const imageData = imageAssets[assetId];
+    const asset = imageAssetList.find((item: ImageAsset) => item.id === assetId);
+    const imageData = imageAssets[assetId] ?? asset?.url;
     if (!imageTarget || !imageData) {
+      return;
+    }
+    if (imageTarget.kind === "canvasIcon") {
+      const baseTemplate = libraryTemplateByKind.get("static-image");
+      if (!baseTemplate) {
+        window.alert("未找到静态图片图元定义，无法插入图标。");
+        return;
+      }
+      const iconTemplate = {
+        ...baseTemplate,
+        label: asset?.name || baseTemplate.label || "图标",
+        params: {
+          ...baseTemplate.params,
+          text: asset?.name || baseTemplate.params?.text || "",
+          backgroundImage: imageData,
+          backgroundImageAssetId: assetId
+        }
+      };
+      startLibraryDevicePlacement(iconTemplate);
+      setImageTarget(null);
+      writeOperationLog?.(`从图标库选择图标：${asset?.name || assetId}`);
+      return;
+    }
+    if (imageTarget.kind === "stateIconDrawing") {
+      const assetName = asset?.name || assetId;
+      const lowerName = assetName.toLowerCase();
+      const isSvg = asset?.mimeType === "image/svg+xml" || lowerName.endsWith(".svg") || imageData.startsWith("data:image/svg+xml");
+      let importedElements: StateIconDrawingElement[] = [];
+      if (isSvg) {
+        let svgSource = svgSourceFromDataUrl(imageData);
+        if (!svgSource) {
+          try {
+            svgSource = await fetch(imageData).then((response) => response.ok ? response.text() : "");
+          } catch {
+            svgSource = "";
+          }
+        }
+        importedElements = svgSource
+          ? createEditableStateIconElementsFromSvgSource(svgSource, assetName, { preserveImportedSvg: true })
+          : [createImportedStateIconElement("image", imageData, assetName)];
+      } else {
+        importedElements = [createImportedStateIconElement("image", imageData, assetName)];
+      }
+      const selectedElementId = importedElements[0]?.id ?? "";
+      setStateIconDrawingDialog((current: any) =>
+        current
+          ? (pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements), {
+              ...current,
+              elements: [...current.elements, ...importedElements],
+              selectedElementId,
+              selectedElementIds: selectedElementId ? [selectedElementId] : [],
+              pendingElementKind: undefined,
+              pendingStaticTemplate: undefined,
+              drawingDraft: undefined
+            })
+          : current
+      );
+      setImageTarget(null);
+      writeOperationLog?.(`从图标库导入元件图案：${assetName}`);
       return;
     }
     pushUndoSnapshot();
@@ -1411,6 +1845,10 @@ export function createClearSelectedImage(__appScope: Record<string, any>) {
       return;
     }
     if (!imageTarget) {
+      return;
+    }
+    if (imageTarget.kind === "canvasIcon" || imageTarget.kind === "stateIconDrawing") {
+      setImageTarget(null);
       return;
     }
     pushUndoSnapshot();
@@ -2812,7 +3250,7 @@ export function createChooseStateVisualImage(__appScope: Record<string, any>) {
 
 export function createChooseStateIconDrawingImport(__appScope: Record<string, any>) {
   return (event: ChangeEvent<HTMLInputElement>) => {
-  const { activeImageFolderId, createEditableStateIconElementsFromSvgSource, createImportedStateIconElement, refreshImageFolders, requireEditMode, setImageAssetList, setImageAssets, setStateIconDrawingDialog, stateIconDrawingImportMode, uploadBackendImage } = __appScope;
+  const { activeImageFolderId, createEditableStateIconElementsFromSvgSource, createImportedStateIconElement, refreshImageFolders, requireEditMode, setImageAssetList, setImageAssets, setStateIconDrawingDialog, stateIconDrawingHistoryRef, stateIconDrawingImportMode, uploadBackendImage } = __appScope;
     if (!requireEditMode("导入绘制图形")) {
       event.target.value = "";
       return;
@@ -2827,12 +3265,15 @@ export function createChooseStateIconDrawingImport(__appScope: Record<string, an
       const selectedElementId = importedElements[0]?.id ?? "";
       setStateIconDrawingDialog((current) =>
         current
-          ? {
+          ? (pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements), {
               ...current,
               elements: [...current.elements, ...importedElements],
               selectedElementId,
-              selectedElementIds: selectedElementId ? [selectedElementId] : []
-            }
+              selectedElementIds: selectedElementId ? [selectedElementId] : [],
+              pendingElementKind: undefined,
+              pendingStaticTemplate: undefined,
+              drawingDraft: undefined
+            })
           : current
       );
     };
@@ -2866,28 +3307,28 @@ export function createChooseStateIconDrawingImport(__appScope: Record<string, an
 
 export function createUpdateStateIconDrawingElement(__appScope: Record<string, any>) {
   return (elementId: string, patch: Partial<StateIconDrawingElement>) => {
-  const { setStateIconDrawingDialog } = __appScope;
+  const { setStateIconDrawingDialog, stateIconDrawingHistoryRef } = __appScope;
     setStateIconDrawingDialog((current) =>
       current
-        ? {
+        ? (pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements), {
             ...current,
             elements: current.elements.map((element) => (element.id === elementId ? { ...element, ...patch } : element))
-          }
+          })
         : current
     );
   };
 }
 
 export function createUpdateStateIconDrawingElements(__appScope: Record<string, any>) {
-  return (elementIds: readonly string[], updater: (element: StateIconDrawingElement) => StateIconDrawingElement) => {
-  const { setStateIconDrawingDialog } = __appScope;
+  return (elementIds: readonly string[], updater: (element: StateIconDrawingElement) => StateIconDrawingElement, options: { recordHistory?: boolean } = {}) => {
+  const { setStateIconDrawingDialog, stateIconDrawingHistoryRef } = __appScope;
     const idSet = new Set(elementIds);
     setStateIconDrawingDialog((current) =>
       current
-        ? {
+        ? (options.recordHistory ? pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements) : undefined, {
             ...current,
             elements: current.elements.map((element) => (idSet.has(element.id) ? updater(element) : element))
-          }
+          })
         : current
     );
   };
@@ -2936,9 +3377,10 @@ export function createStateIconDrawingSelection(__appScope: Record<string, any>)
 
 export function createStartStateIconDrawingDrag(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGElement>, elementId: string, mode: StateIconDrawingDragMode) => {
-  const { setStateIconDrawingDialog, stateIconDrawingDragRef, stateIconDrawingPointer } = __appScope;
+  const { setStateIconDrawingContextMenu, setStateIconDrawingDialog, stateIconDrawingDragRef, stateIconDrawingHistoryRef, stateIconDrawingPointer } = __appScope;
     event.preventDefault();
     event.stopPropagation();
+    setStateIconDrawingContextMenu(null);
     (event.currentTarget.closest(".state-icon-drawing-inline") as HTMLElement | null)?.focus();
     const append = event.shiftKey || event.ctrlKey || event.metaKey;
     let dragIds: string[] = [elementId];
@@ -2959,6 +3401,9 @@ export function createStartStateIconDrawingDrag(__appScope: Record<string, any>)
           : [elementId];
       dragIds = selectedElementIds;
       startElements = current.elements.filter((element) => selectedElementIds.includes(element.id)).map((element) => ({ ...element }));
+      if (startElements.length > 0) {
+        pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements);
+      }
       center = startElements.length === 1
         ? { x: startElements[0].x, y: startElements[0].y }
         : {
@@ -3035,7 +3480,8 @@ export function createStopStateIconDrawingDrag(__appScope: Record<string, any>) 
 
 export function createDeleteSelectedStateIconDrawingElements(__appScope: Record<string, any>) {
   return () => {
-  const { setStateIconDrawingDialog } = __appScope;
+  const { setStateIconDrawingContextMenu, setStateIconDrawingDialog, stateIconDrawingHistoryRef } = __appScope;
+    setStateIconDrawingContextMenu(null);
     setStateIconDrawingDialog((current) => {
       if (!current) {
         return current;
@@ -3044,6 +3490,7 @@ export function createDeleteSelectedStateIconDrawingElements(__appScope: Record<
       if (selectedIds.length === 0) {
         return current;
       }
+      pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements);
       const selectedSet = new Set(selectedIds);
       const elements = current.elements.filter((element) => !selectedSet.has(element.id));
       return {
@@ -3058,40 +3505,100 @@ export function createDeleteSelectedStateIconDrawingElements(__appScope: Record<
 
 export function createStateIconDrawingKeyDown(__appScope: Record<string, any>) {
   return (event: ReactKeyboardEvent<HTMLElement>) => {
-  const { deleteSelectedStateIconDrawingElements } = __appScope;
-    if (event.key !== "Delete" && event.key !== "Backspace") {
-      return;
-    }
+  const { deleteSelectedStateIconDrawingElements, setStateIconDrawingContextMenu, setStateIconDrawingDialog, stateIconDrawingClipboardRef, stateIconDrawingDialog, stateIconDrawingElementId, stateIconDrawingHistoryRef } = __appScope;
     const target = event.target as HTMLElement | null;
     if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
       return;
     }
-    event.preventDefault();
-    deleteSelectedStateIconDrawingElements();
+    if (event.key === "Enter" && stateIconDrawingDialog?.drawingDraft) {
+      event.preventDefault();
+      setStateIconDrawingContextMenu(null);
+      setStateIconDrawingDialog((current) => finishStateIconDrawingDraft(current, stateIconDrawingHistoryRef));
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+      event.preventDefault();
+      setStateIconDrawingContextMenu(null);
+      setStateIconDrawingDialog((current) => {
+        if (!current || !stateIconDrawingHistoryRef.current?.length) {
+          return current;
+        }
+        const previous = stateIconDrawingHistoryRef.current[stateIconDrawingHistoryRef.current.length - 1];
+        stateIconDrawingHistoryRef.current = stateIconDrawingHistoryRef.current.slice(0, -1);
+        const selectedElementId = previous.some((element) => element.id === current.selectedElementId) ? current.selectedElementId : previous[0]?.id ?? "";
+        return {
+          ...current,
+          elements: previous.map((element) => ({ ...element })),
+          selectedElementId,
+          selectedElementIds: current.selectedElementIds.filter((id) => previous.some((element) => element.id === id))
+        };
+      });
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
+      event.preventDefault();
+      setStateIconDrawingDialog((current) => {
+        if (!current) {
+          return current;
+        }
+        const selectedSet = new Set(stateIconDrawingSelectedIds(current));
+        stateIconDrawingClipboardRef.current = current.elements.filter((element) => selectedSet.has(element.id)).map((element) => ({ ...element }));
+        return current;
+      });
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
+      event.preventDefault();
+      setStateIconDrawingContextMenu(null);
+      setStateIconDrawingDialog((current) => {
+        const clipboard = stateIconDrawingClipboardRef.current ?? [];
+        if (!current || clipboard.length === 0) {
+          return current;
+        }
+        pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements);
+        const pasted = cloneStateIconDrawingElements(clipboard, stateIconDrawingElementId);
+        return {
+          ...current,
+          elements: [...current.elements, ...pasted],
+          selectedElementId: pasted[pasted.length - 1]?.id ?? "",
+          selectedElementIds: pasted.map((element) => element.id)
+        };
+      });
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
+      event.preventDefault();
+      setStateIconDrawingContextMenu(null);
+      setStateIconDrawingDialog((current) => current ? {
+        ...current,
+        selectedElementId: current.elements[current.elements.length - 1]?.id ?? "",
+        selectedElementIds: current.elements.map((element) => element.id)
+      } : current);
+      return;
+    }
+    if (event.key === "Delete" || event.key === "Backspace") {
+      event.preventDefault();
+      deleteSelectedStateIconDrawingElements();
+    }
   };
 }
 
 export function createAddStateIconDrawingElement(__appScope: Record<string, any>) {
   return (kind: StateVisualShapeKind) => {
-  const { createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionStateDraftRows, isDefaultStatePageId, setStateIconDrawingDialog } = __appScope;
+  const { setStateIconDrawingContextMenu, setStateIconDrawingDialog } = __appScope;
+    setStateIconDrawingContextMenu(null);
     setStateIconDrawingDialog((current) => {
       if (!current) {
         return current;
       }
-      const row =
-        isDefaultStatePageId(current.target.rowId)
-          ? current.target.scope === "definition"
-            ? defaultStateDraftRow(definitionStateDraftRows, definitionDefaultStateVisualDraft())
-            : defaultStateDraftRow(customDeviceDraft.stateDefinitions, customDeviceDefaultStateVisualDraft())
-          : current.target.scope === "definition"
-            ? definitionStateDraftRows.find((item) => item.id === current.target.rowId)
-            : customDeviceDraft.stateDefinitions.find((item) => item.id === current.target.rowId);
-      const element = createStateIconDrawingElement(kind, row);
       return {
         ...current,
-        elements: [...current.elements, element],
-        selectedElementId: element.id,
-        selectedElementIds: [element.id]
+        elementLibraryTab: "basic",
+        pendingElementKind: kind,
+        pendingStaticTemplate: undefined,
+        drawingDraft: undefined,
+        selectedElementId: "",
+        selectedElementIds: []
       };
     });
   };
@@ -3099,11 +3606,13 @@ export function createAddStateIconDrawingElement(__appScope: Record<string, any>
 
 export function createDeleteStateIconDrawingElement(__appScope: Record<string, any>) {
   return (elementId: string) => {
-  const { setStateIconDrawingDialog } = __appScope;
+  const { setStateIconDrawingContextMenu, setStateIconDrawingDialog, stateIconDrawingHistoryRef } = __appScope;
+    setStateIconDrawingContextMenu(null);
     setStateIconDrawingDialog((current) => {
       if (!current) {
         return current;
       }
+      pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements);
       const elements = current.elements.filter((element) => element.id !== elementId);
       return {
         ...current,
@@ -3117,17 +3626,20 @@ export function createDeleteStateIconDrawingElement(__appScope: Record<string, a
 
 export function createOpenStateIconDrawingDialog(__appScope: Record<string, any>) {
   return (target: StateIconDrawingTarget) => {
-  const { createStateIconDrawingInitialElements, customDeviceDraft, definitionStateDraftRows, imageAssets, setStateIconDrawingDialog } = __appScope;
+  const { createStateIconDrawingInitialElements, customDeviceDraft, definitionStateDraftRows, imageAssets, setStateIconDrawingContextMenu, setStateIconDrawingDialog, stateIconDrawingHistoryRef } = __appScope;
     const row =
       target.scope === "definition"
         ? definitionStateDraftRows.find((item) => item.id === target.rowId)
         : customDeviceDraft.stateDefinitions.find((item) => item.id === target.rowId);
     const initial = createStateIconDrawingInitialElements(row, imageAssets);
+    stateIconDrawingHistoryRef.current = [];
+    setStateIconDrawingContextMenu(null);
     setStateIconDrawingDialog({
       target,
       elements: initial,
       selectedElementId: initial[0]?.id ?? "",
-      selectedElementIds: initial[0]?.id ? [initial[0].id] : []
+      selectedElementIds: initial[0]?.id ? [initial[0].id] : [],
+      frame: { ...STATE_ICON_DRAFT_FRAME }
     });
   };
 }
@@ -4048,7 +4560,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       hideDefaultPage?: boolean;
     }
   ) => {
-  const { BufferedTextInput, DEFAULT_STATE_PAGE_ID, DeferredColorInput, activeStateDraftRow, addStateIconDrawingElement, button, circle, customDeviceDefaultStateVisualDraft, defaultStateDraftRow, definitionDefaultStateVisualDraft, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, image, isDefaultStatePageId, label, line, nonDefaultStateDraftRows, rect, setStateIconDrawingDialog, setStateIconDrawingImportMode, small, span, stateIconDrawingDialog, stateIconDrawingImportInputRef, stateIconDrawingKeyDown, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, text, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
+  const { BufferedTextInput, COMPONENT_TYPE_LABELS, DEFAULT_STATE_PAGE_ID, DEVICE_LIBRARY, DeferredColorInput, MemoDeviceGlyph, STATE_ICON_LINE_CAP_OPTIONS, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, addStateIconDrawingElement, appendNonDefaultStateDraftRow, button, circle, colorPalette, createNodeFromTemplate, createStateDraftRowFromDefaultVisual, createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, customDraftTerminalTypes, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionVisualDraft, definitionVisualTerminalTypes, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, image, isDefaultStatePageId, label, line, nextNonDefaultStateIndex, nodeGeometryTransform, nonDefaultStateDraftRows, rect, resolveTemplateComponentType, setCustomDeviceDraft, setDefinitionStateDraftRows, setImageTarget, setStateIconDrawingContextMenu, setStateIconDrawingDialog, setStateIconDrawingImportMode, small, span, stateDraftRowId, stateIconDrawingClipboardRef, stateIconDrawingContextMenu, stateIconDrawingDialog, stateIconDrawingElementId, stateIconDrawingHistoryRef, stateIconDrawingImportInputRef, stateIconDrawingKeyDown, stateIconDrawingPointer, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, terminalColor, text, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
     const hideDefaultPage = handlers.hideDefaultPage === true;
     const displayRows = hideDefaultPage ? rows : nonDefaultStateDraftRows(rows);
     const defaultVisual = handlers.drawingScope === "definition"
@@ -4124,6 +4636,12 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
               <path d="M5 18L19 6" />
             </svg>
           );
+        case "polyline":
+          return (
+            <svg className="state-icon-tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 17L11 7L20 17" />
+            </svg>
+          );
         case "point":
           return (
             <svg className="state-icon-tool-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -4134,6 +4652,12 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
           return (
             <svg className="state-icon-tool-icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 5l8 14H4z" />
+            </svg>
+          );
+        case "rectangle":
+          return (
+            <svg className="state-icon-tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="4.5" y="7" width="15" height="10" rx="1.5" />
             </svg>
           );
         case "square":
@@ -4191,10 +4715,104 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
           return null;
       }
     };
+    const stateIconBasicToolKinds = [
+      "switch-open",
+      "switch-closed",
+      "valve-open",
+      "valve-closed",
+      "line",
+      "polyline",
+      "point",
+      "triangle",
+      "rectangle",
+      "square",
+      "hexagon",
+      "polygon",
+      "circle",
+      "semicircle",
+      "ellipse",
+      "arc",
+      "text"
+    ] as StateVisualShapeKind[];
+    const staticTemplateGroups = (() => {
+      const groups = new Map<string, any[]>();
+      for (const template of DEVICE_LIBRARY ?? []) {
+        if (template.attributeLibrary !== "静态图元" && !String(template.kind ?? "").startsWith("static-")) {
+          continue;
+        }
+        const section = resolveTemplateComponentType ? resolveTemplateComponentType(template) : stateIconStaticTemplateParam(template, "component_type", "StaticBasicShape");
+        if (STATE_ICON_STATIC_TEMPLATE_SECTIONS_COVERED_BY_BASIC_TOOLS.has(section)) {
+          continue;
+        }
+        groups.set(section, [...(groups.get(section) ?? []), template]);
+      }
+      return Array.from(groups.entries())
+        .sort(([left], [right]) => {
+          const leftIndex = STATE_ICON_STATIC_TEMPLATE_SECTION_ORDER.indexOf(left);
+          const rightIndex = STATE_ICON_STATIC_TEMPLATE_SECTION_ORDER.indexOf(right);
+          const normalizedLeft = leftIndex >= 0 ? leftIndex : STATE_ICON_STATIC_TEMPLATE_SECTION_ORDER.length;
+          const normalizedRight = rightIndex >= 0 ? rightIndex : STATE_ICON_STATIC_TEMPLATE_SECTION_ORDER.length;
+          return normalizedLeft - normalizedRight || left.localeCompare(right);
+        })
+        .map(([section, templates]) => ({
+          section,
+          label: COMPONENT_TYPE_LABELS?.[section] ?? section,
+          templates
+        }));
+    })();
+    const renderStaticTemplateToolIcon = (template: any) => {
+      if (!createNodeFromTemplate || !MemoDeviceGlyph || !nodeGeometryTransform) {
+        return renderStateIconDrawingToolIcon("rectangle");
+      }
+      const preview = createNodeFromTemplate(template, { x: 0, y: 0 });
+      const width = Math.max(72, Number(preview?.size?.width) || 72);
+      const height = Math.max(48, Number(preview?.size?.height) || 48);
+      const padding = 18;
+      return (
+        <svg
+          className="state-icon-static-template-icon"
+          viewBox={`${formatSvgNumber(-width / 2 - padding)} ${formatSvgNumber(-height / 2 - padding)} ${formatSvgNumber(width + padding * 2)} ${formatSvgNumber(height + padding * 2)}`}
+          aria-hidden="true"
+        >
+          <g transform={nodeGeometryTransform(preview)}>
+            <MemoDeviceGlyph node={preview} colorPalette={colorPalette} stateVisual={null} />
+          </g>
+        </svg>
+      );
+    };
+    const addStateIconStaticTemplate = (template: any) => {
+      if (!drawingReady) {
+        return;
+      }
+      setStateIconDrawingContextMenu(null);
+      setStateIconDrawingDialog((current) => current ? {
+        ...current,
+        elementLibraryTab: "static",
+        pendingElementKind: undefined,
+        pendingStaticTemplate: template,
+        drawingDraft: undefined,
+        selectedElementId: "",
+        selectedElementIds: []
+      } : current);
+    };
+    const setStateIconElementLibraryTab = (tab: "basic" | "static") => {
+      if (!drawingReady) {
+        return;
+      }
+      setStateIconDrawingContextMenu(null);
+      setStateIconDrawingDialog((current) => current ? {
+        ...current,
+        elementLibraryTab: tab,
+        pendingElementKind: tab === "basic" ? current.pendingElementKind : undefined,
+        pendingStaticTemplate: tab === "static" ? current.pendingStaticTemplate : undefined,
+        drawingDraft: undefined
+      } : current);
+    };
     const renderStateIconDrawingLibrary = () => {
       if (!activeDrawingTarget) {
         return null;
       }
+      const activeElementLibraryTab = stateIconDrawingDialog?.elementLibraryTab ?? (stateIconDrawingDialog?.pendingStaticTemplate ? "static" : "basic");
       return (
         <div className="state-icon-drawing-library" aria-label="添加图案">
           <span>添加图案</span>
@@ -4231,42 +4849,550 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
             >
               {renderStateIconDrawingImportIcon("image")}
             </button>
+            <button
+              type="button"
+              disabled={!drawingReady}
+              onClick={() => {
+                if (!drawingReady) {
+                  return;
+                }
+                setImageTarget({ kind: "stateIconDrawing" });
+              }}
+              className="state-icon-import-button"
+              aria-label="从图标库选择"
+              title="从图标库选择"
+            >
+              {renderStateIconDrawingImportIcon("image")}
+            </button>
           </div>
-          <div>
-            {([
-              "switch-open",
-              "switch-closed",
-              "valve-open",
-              "valve-closed",
-              "line",
-              "point",
-              "triangle",
-              "square",
-              "hexagon",
-              "polygon",
-              "circle",
-              "semicircle",
-              "ellipse",
-              "arc",
-              "text"
-            ] as StateVisualShapeKind[]).map((kind) => (
-              <button
-                key={kind}
-                type="button"
-                className="state-icon-tool-button"
-                disabled={!drawingReady}
-                aria-label={stateVisualShapeLabel(kind)}
-                title={stateVisualShapeLabel(kind)}
-                onClick={() => addStateIconDrawingElement(kind)}
-              >
-                {renderStateIconDrawingToolIcon(kind)}
-              </button>
-            ))}
+          <div className="state-icon-library-tabs" role="tablist" aria-label="图案来源切换">
+            <button
+              type="button"
+              className={`state-icon-library-tab ${activeElementLibraryTab === "basic" ? "active" : ""}`}
+              disabled={!drawingReady}
+              role="tab"
+              aria-selected={activeElementLibraryTab === "basic"}
+              onClick={() => setStateIconElementLibraryTab("basic")}
+            >
+              基础元素
+            </button>
+            <button
+              type="button"
+              className={`state-icon-library-tab ${activeElementLibraryTab === "static" ? "active" : ""}`}
+              disabled={!drawingReady}
+              role="tab"
+              aria-selected={activeElementLibraryTab === "static"}
+              onClick={() => setStateIconElementLibraryTab("static")}
+            >
+              静态图元库
+            </button>
+          </div>
+          <div className="state-icon-library-panel">
+            {activeElementLibraryTab === "basic" ? (
+              <div className="state-icon-basic-tool-actions" role="tabpanel" aria-label="基础元素">
+                {stateIconBasicToolKinds.map((kind) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    className={`state-icon-tool-button ${stateIconDrawingDialog?.pendingElementKind === kind ? "active" : ""}`}
+                    disabled={!drawingReady}
+                    aria-label={stateVisualShapeLabel(kind)}
+                    title={stateVisualShapeLabel(kind)}
+                    onClick={() => addStateIconDrawingElement(kind)}
+                  >
+                    {renderStateIconDrawingToolIcon(kind)}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="state-icon-static-template-library" role="tabpanel" aria-label="静态图元库">
+                <div className="state-icon-static-template-groups">
+                  {staticTemplateGroups.map((group) => (
+                    <div key={group.section} className="state-icon-static-template-group">
+                      <span>{group.label}</span>
+                      <div>
+                        {group.templates.map((template) => (
+                          <button
+                            key={template.kind}
+                            type="button"
+                            className={`state-icon-static-template-button ${stateIconDrawingDialog?.pendingStaticTemplate?.kind === template.kind ? "active" : ""}`}
+                            disabled={!drawingReady}
+                            aria-label={template.label}
+                            title={`${template.label} / ${group.label}`}
+                            onClick={() => addStateIconStaticTemplate(template)}
+                          >
+                            {renderStaticTemplateToolIcon(template)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       );
     };
-    const renderStateIconDrawingInline = (stateFields?: ReactNode) => {
+    const selectedStateRow = isDefaultStatePage ? defaultRow : activeRow;
+    const selectedStateRowId = isDefaultStatePage ? DEFAULT_STATE_PAGE_ID : activeRow?.id ?? "";
+    const stateIconDrawingTerminalDraft = handlers.drawingScope === "definition" ? definitionVisualDraft : customDeviceDraft;
+    const stateIconDrawingTerminalTypes = handlers.drawingScope === "definition" ? definitionVisualTerminalTypes : customDraftTerminalTypes;
+    const stateIconDrawingTerminalLabels = Array.isArray(stateIconDrawingTerminalDraft?.terminalLabels)
+      ? stateIconDrawingTerminalDraft.terminalLabels
+      : [];
+    const stateIconDrawingTerminalCount = Math.max(
+      0,
+      Number(stateIconDrawingTerminalDraft?.terminalCount) || (Array.isArray(stateIconDrawingTerminalTypes) ? stateIconDrawingTerminalTypes.length : 0) || 0
+    );
+    const stateIconDrawingTerminalOptions = Array.from({ length: stateIconDrawingTerminalCount }, (_, index) => {
+      const type = (Array.isArray(stateIconDrawingTerminalTypes) ? stateIconDrawingTerminalTypes[index] : "") || stateIconDrawingTerminalDraft?.terminalType || "ac";
+      const typeLabel = TERMINAL_TYPE_LIBRARY_LABELS?.[type] ?? type;
+      const customLabel = String(stateIconDrawingTerminalLabels[index] ?? "").trim();
+      return {
+        index,
+        type,
+        label: customLabel || `${typeLabel}端${index + 1}`,
+        color: terminalColor ? terminalColor(type, colorPalette) : "#2563eb"
+      };
+    });
+    const stateIconDrawingTerminalPatch = (value: string) => {
+      if (value === "") {
+        return { terminalIndex: undefined };
+      }
+      const terminalIndex = Number.parseInt(value, 10);
+      if (!Number.isInteger(terminalIndex) || terminalIndex < 0) {
+        return { terminalIndex: undefined };
+      }
+      const option = stateIconDrawingTerminalOptions.find((item) => item.index === terminalIndex);
+      const color = option?.color || "";
+      return color
+        ? { terminalIndex, strokeColor: color, textColor: color }
+        : { terminalIndex };
+    };
+    const stateIconDrawingRowForDialog = (dialog: any) => {
+      if (isDefaultStatePageId(dialog.target.rowId)) {
+        return dialog.target.scope === "definition"
+          ? defaultStateDraftRow(definitionStateDraftRows, definitionDefaultStateVisualDraft())
+          : defaultStateDraftRow(customDeviceDraft.stateDefinitions, customDeviceDefaultStateVisualDraft());
+      }
+      return dialog.target.scope === "definition"
+        ? definitionStateDraftRows.find((item) => item.id === dialog.target.rowId)
+        : customDeviceDraft.stateDefinitions.find((item) => item.id === dialog.target.rowId);
+    };
+    const cancelStateIconDrawingCanvasDraft = () => {
+      const active = Boolean(stateIconDrawingDialog?.pendingElementKind || stateIconDrawingDialog?.pendingStaticTemplate || stateIconDrawingDialog?.drawingDraft);
+      if (!active) {
+        return false;
+      }
+      setStateIconDrawingContextMenu(null);
+      setStateIconDrawingDialog((current) => current ? {
+        ...current,
+        pendingElementKind: undefined,
+        pendingStaticTemplate: undefined,
+        drawingDraft: undefined
+      } : current);
+      return true;
+    };
+    const handleStateIconDrawingCanvasPointerDown = (event: PointerEvent<SVGSVGElement>) => {
+      if (event.button !== 0 || !stateIconDrawingDialog?.target) {
+        return false;
+      }
+      const active = Boolean(stateIconDrawingDialog.pendingElementKind || stateIconDrawingDialog.pendingStaticTemplate || stateIconDrawingDialog.drawingDraft);
+      if (!active) {
+        return false;
+      }
+      (event.currentTarget.closest(".state-icon-drawing-inline") as HTMLElement | null)?.focus();
+      const point = stateIconDrawingPointer(event);
+      setStateIconDrawingContextMenu(null);
+      setStateIconDrawingDialog((current) => {
+        if (!current) {
+          return current;
+        }
+        if (current.drawingDraft) {
+          if (current.drawingDraft.kind === "polyline") {
+            const committedPoint = clampStateIconDrawingPoint(point);
+            const draftPoints = current.drawingDraft.points?.length
+              ? current.drawingDraft.points
+              : [current.drawingDraft.start];
+            const nextPoints = appendDistinctStateIconDrawingPoint(draftPoints, committedPoint);
+            const nextElement = stateIconDrawingPolylineElementFromPoints(current.drawingDraft.element, nextPoints);
+            if (event.detail < 2) {
+              return {
+                ...current,
+                drawingDraft: {
+                  ...current.drawingDraft,
+                  points: nextPoints,
+                  current: committedPoint,
+                  element: nextElement
+                }
+              };
+            }
+            if (nextPoints.length < 2) {
+              return current;
+            }
+            return finishStateIconDrawingDraft({
+              ...current,
+              drawingDraft: {
+                ...current.drawingDraft,
+                points: nextPoints,
+                current: committedPoint,
+                element: nextElement
+              }
+            }, stateIconDrawingHistoryRef);
+          }
+          const element = stateIconDrawingElementFromPoints(current.drawingDraft.element, current.drawingDraft.start, point);
+          pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements);
+          return {
+            ...current,
+            elements: [...current.elements, element],
+            selectedElementId: element.id,
+            selectedElementIds: [element.id],
+            pendingElementKind: undefined,
+            pendingStaticTemplate: undefined,
+            drawingDraft: undefined
+          };
+        }
+        if (!current.pendingElementKind && !current.pendingStaticTemplate) {
+          return current;
+        }
+        const row = stateIconDrawingRowForDialog(current);
+        const baseElement = current.pendingStaticTemplate
+          ? createStateIconDrawingElementFromStaticTemplate(__appScope, current.pendingStaticTemplate, row)
+          : createStateIconDrawingElement(current.pendingElementKind, row);
+        const startPoint = clampStateIconDrawingPoint(point);
+        const element = baseElement.kind === "polyline"
+          ? stateIconDrawingPolylineElementFromPoints(baseElement, [startPoint])
+          : stateIconDrawingElementFromPoints(baseElement, startPoint, startPoint);
+        return {
+          ...current,
+          selectedElementId: "",
+          selectedElementIds: [],
+          drawingDraft: {
+            kind: baseElement.kind,
+            start: startPoint,
+            current: startPoint,
+            points: baseElement.kind === "polyline" ? [startPoint] : undefined,
+            element
+          }
+        };
+      });
+      return true;
+    };
+    const updateStateIconDrawingCanvasDraft = (event: PointerEvent<SVGSVGElement>) => {
+      if (!stateIconDrawingDialog?.drawingDraft) {
+        return false;
+      }
+      const point = stateIconDrawingPointer(event);
+      setStateIconDrawingDialog((current) => {
+        if (!current?.drawingDraft) {
+          return current;
+        }
+        const currentPoint = clampStateIconDrawingPoint(point);
+        if (current.drawingDraft.kind === "polyline") {
+          const draftPoints = current.drawingDraft.points?.length
+            ? current.drawingDraft.points
+            : [current.drawingDraft.start];
+          const previewPoints = appendDistinctStateIconDrawingPoint(draftPoints, currentPoint);
+          return {
+            ...current,
+            drawingDraft: {
+              ...current.drawingDraft,
+              current: currentPoint,
+              element: stateIconDrawingPolylineElementFromPoints(current.drawingDraft.element, previewPoints)
+            }
+          };
+        }
+        return {
+          ...current,
+          drawingDraft: {
+            ...current.drawingDraft,
+            current: currentPoint,
+            element: stateIconDrawingElementFromPoints(current.drawingDraft.element, current.drawingDraft.start, currentPoint)
+          }
+        };
+      });
+      return true;
+    };
+    const setStateIconFramePatch = (patch: Record<string, any>) => {
+      setStateIconDrawingDialog((current) =>
+        current
+          ? {
+              ...current,
+              frame: {
+                ...STATE_ICON_DRAFT_FRAME,
+                ...(current.frame ?? {}),
+                ...patch
+              }
+            }
+          : current
+      );
+    };
+    const copySelectedStateIconElements = () => {
+      if (!stateIconDrawingDialog) {
+        return;
+      }
+      const selectedSet = new Set(stateIconDrawingSelectedIds(stateIconDrawingDialog));
+      stateIconDrawingClipboardRef.current = stateIconDrawingDialog.elements.filter((element) => selectedSet.has(element.id)).map((element) => ({ ...element }));
+      setStateIconDrawingContextMenu(null);
+    };
+    const pasteStateIconElements = (point?: Point) => {
+      setStateIconDrawingDialog((current) => {
+        const clipboard = stateIconDrawingClipboardRef.current ?? [];
+        if (!current || clipboard.length === 0) {
+          return current;
+        }
+        pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements);
+        const sourceBounds = stateIconDrawingSelectionBounds(clipboard);
+        const offset = point && sourceBounds
+          ? { x: point.x - sourceBounds.centerX, y: point.y - sourceBounds.centerY }
+          : { x: 12, y: 12 };
+        const pasted = cloneStateIconDrawingElements(clipboard, stateIconDrawingElementId, offset);
+        return {
+          ...current,
+          elements: [...current.elements, ...pasted],
+          selectedElementId: pasted[pasted.length - 1]?.id ?? "",
+          selectedElementIds: pasted.map((element) => element.id)
+        };
+      });
+      setStateIconDrawingContextMenu(null);
+    };
+    const updateSelectedStateIconElements = (updater: (element: StateIconDrawingElement, selected: StateIconDrawingElement[]) => StateIconDrawingElement) => {
+      setStateIconDrawingDialog((current) => {
+        if (!current) {
+          return current;
+        }
+        const selectedIds = stateIconDrawingSelectedIds(current);
+        if (selectedIds.length === 0) {
+          return current;
+        }
+        const selectedSet = new Set(selectedIds);
+        const selected = current.elements.filter((element) => selectedSet.has(element.id));
+        pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements);
+        return {
+          ...current,
+          elements: current.elements.map((element) => selectedSet.has(element.id) ? updater(element, selected) : element)
+        };
+      });
+      setStateIconDrawingContextMenu(null);
+    };
+    const reorderSelectedStateIconElements = (mode: "front" | "back" | "forward" | "backward") => {
+      setStateIconDrawingDialog((current) => {
+        if (!current) {
+          return current;
+        }
+        const selectedIds = stateIconDrawingSelectedIds(current);
+        if (selectedIds.length === 0) {
+          return current;
+        }
+        const selectedSet = new Set(selectedIds);
+        const selected = current.elements.filter((element) => selectedSet.has(element.id));
+        const rest = current.elements.filter((element) => !selectedSet.has(element.id));
+        pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements);
+        if (mode === "front") {
+          return { ...current, elements: [...rest, ...selected] };
+        }
+        if (mode === "back") {
+          return { ...current, elements: [...selected, ...rest] };
+        }
+        const next = [...current.elements];
+        if (mode === "forward") {
+          for (let index = next.length - 2; index >= 0; index -= 1) {
+            if (selectedSet.has(next[index].id) && !selectedSet.has(next[index + 1].id)) {
+              [next[index], next[index + 1]] = [next[index + 1], next[index]];
+            }
+          }
+        } else {
+          for (let index = 1; index < next.length; index += 1) {
+            if (selectedSet.has(next[index].id) && !selectedSet.has(next[index - 1].id)) {
+              [next[index], next[index - 1]] = [next[index - 1], next[index]];
+            }
+          }
+        }
+        return { ...current, elements: next };
+      });
+      setStateIconDrawingContextMenu(null);
+    };
+    const alignSelectedStateIconElements = (mode: "left" | "center" | "right" | "top" | "middle" | "bottom" | "same-width" | "same-height" | "same-size") => {
+      updateSelectedStateIconElements((element, selected) => {
+        const bounds = stateIconDrawingSelectionBounds(selected);
+        const reference = selected[0];
+        if (!bounds || !reference) {
+          return element;
+        }
+        const itemBounds = stateIconDrawingElementBounds(element);
+        if (mode === "left") return { ...element, x: bounds.left + itemBounds.width / 2 };
+        if (mode === "center") return { ...element, x: bounds.centerX };
+        if (mode === "right") return { ...element, x: bounds.right - itemBounds.width / 2 };
+        if (mode === "top") return { ...element, y: bounds.top + itemBounds.height / 2 };
+        if (mode === "middle") return { ...element, y: bounds.centerY };
+        if (mode === "bottom") return { ...element, y: bounds.bottom - itemBounds.height / 2 };
+        if (mode === "same-width") return { ...element, width: reference.width };
+        if (mode === "same-height") return { ...element, height: reference.height };
+        return { ...element, width: reference.width, height: reference.height };
+      });
+    };
+    const distributeSelectedStateIconElements = (axis: "x" | "y") => {
+      setStateIconDrawingDialog((current) => {
+        if (!current) {
+          return current;
+        }
+        const selectedIds = stateIconDrawingSelectedIds(current);
+        if (selectedIds.length < 3) {
+          return current;
+        }
+        const selectedSet = new Set(selectedIds);
+        const selected = current.elements.filter((element) => selectedSet.has(element.id)).sort((a, b) => axis === "x" ? a.x - b.x : a.y - b.y);
+        const first = selected[0];
+        const last = selected[selected.length - 1];
+        const step = ((axis === "x" ? last.x - first.x : last.y - first.y) || 0) / Math.max(1, selected.length - 1);
+        const nextById = new Map(selected.map((element, index) => [
+          element.id,
+          axis === "x" ? { ...element, x: first.x + step * index } : { ...element, y: first.y + step * index }
+        ]));
+        pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements);
+        return {
+          ...current,
+          elements: current.elements.map((element) => nextById.get(element.id) ?? element)
+        };
+      });
+      setStateIconDrawingContextMenu(null);
+    };
+    const mirrorSelectedStateIconElements = (axis: "x" | "y") => {
+      updateSelectedStateIconElements((element, selected) => {
+        const bounds = stateIconDrawingSelectionBounds(selected);
+        if (!bounds) {
+          return element;
+        }
+        return axis === "x"
+          ? { ...element, x: bounds.centerX - (element.x - bounds.centerX), rotation: -element.rotation }
+          : { ...element, y: bounds.centerY - (element.y - bounds.centerY), rotation: -element.rotation };
+      });
+    };
+    const duplicateStateIconStatePage = (rowId: string) => {
+      const source = isDefaultStatePageId(rowId)
+        ? defaultRow
+        : rows.find((row) => row.id === rowId) ?? null;
+      if (!source) {
+        return;
+      }
+      const nextIndex = nextNonDefaultStateIndex(rows);
+      const nextRow = {
+        ...createStateDraftRowFromDefaultVisual(source, {
+          value: String(nextIndex),
+          name: `状态${nextIndex}`
+        }),
+        id: stateDraftRowId()
+      };
+      if (handlers.drawingScope === "definition") {
+        setDefinitionStateDraftRows((current) => appendNonDefaultStateDraftRow(current, defaultVisual, nextRow));
+      } else {
+        setCustomDeviceDraft((current) => ({
+          ...current,
+          stateDefinitions: appendNonDefaultStateDraftRow(current.stateDefinitions, defaultVisual, nextRow),
+          error: ""
+        }));
+      }
+      setActiveRowId(nextRow.id);
+      setStateIconDrawingContextMenu(null);
+    };
+    const renderStateIconTabs = () => (
+      <div className="device-state-tabs state-icon-drawing-state-tabs" role="tablist" aria-label="状态分页">
+        {!hideDefaultPage && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={isDefaultStatePage}
+            className={isDefaultStatePage ? "active" : ""}
+            onClick={() => setActiveRowId(DEFAULT_STATE_PAGE_ID)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              setStateIconDrawingContextMenu({ x: event.clientX, y: event.clientY, kind: "state", rowId: DEFAULT_STATE_PAGE_ID });
+            }}
+          >
+            默认状态
+          </button>
+        )}
+        {displayRows.map((row, index) => {
+          const active = activeRow?.id === row.id;
+          return (
+            <button
+              key={row.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              className={active ? "active" : ""}
+              onClick={() => setActiveRowId(row.id)}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                setStateIconDrawingContextMenu({ x: event.clientX, y: event.clientY, kind: "state", rowId: row.id });
+              }}
+            >
+              {row.name.trim() || `状态${index + 1}`}
+            </button>
+          );
+        })}
+        <button type="button" className="device-state-add-tab state-icon-small-icon-button" onClick={handlers.add} aria-label="新增状态" title="新增状态">+</button>
+      </div>
+    );
+    const renderStateIconDrawingContextMenu = () => {
+      if (!stateIconDrawingContextMenu || !drawingReady) {
+        return null;
+      }
+      const selectedCount = stateIconDrawingSelectedIds(stateIconDrawingDialog).length;
+      const clipboardReady = (stateIconDrawingClipboardRef.current ?? []).length > 0;
+      const rowIsDefault = stateIconDrawingContextMenu.kind === "state" && isDefaultStatePageId(stateIconDrawingContextMenu.rowId ?? "");
+      const menuButton = (label: string, onClick: () => void, disabled = false) => (
+        <button type="button" disabled={disabled} onClick={onClick}>{label}</button>
+      );
+      return (
+        <div
+          className="state-icon-context-menu"
+          style={{ left: stateIconDrawingContextMenu.x, top: stateIconDrawingContextMenu.y }}
+          onPointerDown={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          {stateIconDrawingContextMenu.kind === "state" ? (
+            <>
+              {menuButton("复制到新状态", () => duplicateStateIconStatePage(stateIconDrawingContextMenu.rowId ?? selectedStateRowId))}
+              {menuButton("删除状态", () => {
+                const rowId = stateIconDrawingContextMenu.rowId ?? "";
+                if (!isDefaultStatePageId(rowId)) {
+                  handlers.remove(rowId);
+                  setStateIconDrawingContextMenu(null);
+                }
+              }, rowIsDefault)}
+            </>
+          ) : (
+            <>
+              {menuButton("复制", copySelectedStateIconElements, selectedCount === 0)}
+              {menuButton("粘贴", () => pasteStateIconElements(stateIconDrawingContextMenu.pastePoint), !clipboardReady)}
+              {menuButton("删除", deleteSelectedStateIconDrawingElements, selectedCount === 0)}
+              <span>层级</span>
+              {menuButton("置顶", () => reorderSelectedStateIconElements("front"), selectedCount === 0)}
+              {menuButton("上移", () => reorderSelectedStateIconElements("forward"), selectedCount === 0)}
+              {menuButton("下移", () => reorderSelectedStateIconElements("backward"), selectedCount === 0)}
+              {menuButton("置底", () => reorderSelectedStateIconElements("back"), selectedCount === 0)}
+              <span>对齐</span>
+              {menuButton("左对齐", () => alignSelectedStateIconElements("left"), selectedCount < 2)}
+              {menuButton("水平居中", () => alignSelectedStateIconElements("center"), selectedCount < 2)}
+              {menuButton("右对齐", () => alignSelectedStateIconElements("right"), selectedCount < 2)}
+              {menuButton("上对齐", () => alignSelectedStateIconElements("top"), selectedCount < 2)}
+              {menuButton("垂直居中", () => alignSelectedStateIconElements("middle"), selectedCount < 2)}
+              {menuButton("下对齐", () => alignSelectedStateIconElements("bottom"), selectedCount < 2)}
+              {menuButton("水平等距", () => distributeSelectedStateIconElements("x"), selectedCount < 3)}
+              {menuButton("垂直等距", () => distributeSelectedStateIconElements("y"), selectedCount < 3)}
+              {menuButton("同宽", () => alignSelectedStateIconElements("same-width"), selectedCount < 2)}
+              {menuButton("同高", () => alignSelectedStateIconElements("same-height"), selectedCount < 2)}
+              {menuButton("同宽高", () => alignSelectedStateIconElements("same-size"), selectedCount < 2)}
+              {menuButton("水平镜像", () => mirrorSelectedStateIconElements("x"), selectedCount === 0)}
+              {menuButton("垂直镜像", () => mirrorSelectedStateIconElements("y"), selectedCount === 0)}
+            </>
+          )}
+        </div>
+      );
+    };
+    const renderStateIconDrawingInline = () => {
       if (!activeDrawingTarget) {
         return null;
       }
@@ -4281,28 +5407,87 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         ? stateIconDrawingDialog.selectedElementIds
         : [stateIconDrawingDialog.selectedElementId].filter(Boolean);
       const selectedLayerId = stateIconDrawingDialog.selectedElementId || selectedIds[0] || "";
+      const frame = { ...STATE_ICON_DRAFT_FRAME, ...(stateIconDrawingDialog.frame ?? {}) };
+      const frameDashArray = stateIconDrawingFrameDashArray(frame);
+      const previewElements = stateIconDrawingDialog.drawingDraft
+        ? [...stateIconDrawingDialog.elements, stateIconDrawingDialog.drawingDraft.element]
+        : stateIconDrawingDialog.elements;
       return (
-        <div className="state-icon-drawing-inline" onKeyDown={stateIconDrawingKeyDown} tabIndex={-1} aria-label="图案编辑区">
+        <div
+          className={`state-icon-drawing-inline ${stateIconDrawingDialog.pendingElementKind || stateIconDrawingDialog.pendingStaticTemplate ? "tool-active" : ""} ${stateIconDrawingDialog.drawingDraft ? "drawing-active" : ""}`}
+          onKeyDown={stateIconDrawingKeyDown}
+          tabIndex={-1}
+          aria-label="图案编辑区"
+          onPointerDown={() => setStateIconDrawingContextMenu(null)}
+        >
           <div className="state-icon-drawing-layout">
             <div className="state-icon-drawing-main">
-              {stateFields}
+              {renderStateIconTabs()}
               <div className="state-icon-drawing-canvas">
                 <svg
                   ref={stateIconDrawingSvgRef}
                   viewBox="0 0 240 160"
                   role="img"
                   aria-label="图案绘制预览"
-                  onPointerMove={dragStateIconDrawingSelection}
-                  onPointerUp={stopStateIconDrawingDrag}
-                  onPointerCancel={stopStateIconDrawingDrag}
+                  onPointerDownCapture={(event) => {
+                    if (handleStateIconDrawingCanvasPointerDown(event)) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }
+                  }}
+                  onPointerMove={(event) => {
+                    if (updateStateIconDrawingCanvasDraft(event)) {
+                      event.preventDefault();
+                      return;
+                    }
+                    dragStateIconDrawingSelection(event);
+                  }}
+                  onDoubleClick={(event) => {
+                    if (!stateIconDrawingDialog.drawingDraft) {
+                      return;
+                    }
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setStateIconDrawingContextMenu(null);
+                    setStateIconDrawingDialog((current) => finishStateIconDrawingDraft(current, stateIconDrawingHistoryRef));
+                  }}
+                  onPointerUp={(event) => {
+                    if (!stateIconDrawingDialog.drawingDraft) {
+                      stopStateIconDrawingDrag(event);
+                    }
+                  }}
+                  onPointerCancel={(event) => {
+                    if (!stateIconDrawingDialog.drawingDraft) {
+                      stopStateIconDrawingDrag(event);
+                    }
+                  }}
+                  onContextMenuCapture={(event) => {
+                    if (stateIconDrawingDialog.pendingElementKind || stateIconDrawingDialog.pendingStaticTemplate || stateIconDrawingDialog.drawingDraft) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      cancelStateIconDrawingCanvasDraft();
+                    }
+                  }}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    if (cancelStateIconDrawingCanvasDraft()) {
+                      event.stopPropagation();
+                      return;
+                    }
+                    const point = stateIconDrawingPointer(event);
+                    setStateIconDrawingContextMenu({ x: event.clientX, y: event.clientY, kind: "canvas", pastePoint: point });
+                  }}
                   onPointerDown={(event) => {
+                    if (stateIconDrawingDialog.pendingElementKind || stateIconDrawingDialog.pendingStaticTemplate || stateIconDrawingDialog.drawingDraft) {
+                      return;
+                    }
                     (event.currentTarget.closest(".state-icon-drawing-inline") as HTMLElement | null)?.focus();
                     setStateIconDrawingDialog((current) => current ? { ...current, selectedElementId: "", selectedElementIds: [] } : current);
                   }}
                 >
-                  <rect x="0" y="0" width="240" height="160" rx="10" className="state-icon-drawing-canvas-bg" />
+                  <rect x="0" y="0" width="240" height="160" rx="10" className="state-icon-drawing-canvas-bg" fill={frame.fillColor} />
                   <image
-                    href={stateIconDrawingToImage(stateIconDrawingDialog.elements)}
+                    href={stateIconDrawingToImage(previewElements)}
                     x="0"
                     y="0"
                     width="240"
@@ -4317,6 +5502,10 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                     height="160"
                     rx="6"
                     className="state-icon-drawing-icon-frame"
+                    fill="none"
+                    stroke={frame.strokeColor}
+                    strokeWidth={frame.strokeWidth}
+                    strokeDasharray={frameDashArray}
                   />
                   {stateIconDrawingDialog.elements.map((element) => {
                     const selected = selectedIds.includes(element.id);
@@ -4328,6 +5517,13 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                         className={`state-icon-drawing-element ${selected ? "selected" : ""}`}
                         transform={`translate(${formatSvgNumber(element.x)} ${formatSvgNumber(element.y)}) rotate(${formatSvgNumber(element.rotation)})`}
                         onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "move")}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          const append = event.shiftKey || event.ctrlKey || event.metaKey;
+                          stateIconDrawingSelection(element.id, append);
+                          setStateIconDrawingContextMenu({ x: event.clientX, y: event.clientY, kind: "element", elementId: element.id });
+                        }}
                       >
                         <rect x={formatSvgNumber(-halfWidth)} y={formatSvgNumber(-halfHeight)} width={formatSvgNumber(element.width)} height={formatSvgNumber(element.height)} className="state-icon-drawing-hitbox" />
                         {selected && (
@@ -4345,6 +5541,50 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
               </div>
             </div>
             <div className="state-icon-drawing-side">
+              <div className="state-icon-drawing-state-info">
+                <strong>状态信息</strong>
+                {selectedStateRow && (
+                  <div className="state-icon-drawing-property-grid">
+                    <label>
+                      状态值
+                      <BufferedTextInput value={selectedStateRow.value} onCommit={(value) => handlers.update(selectedStateRowId, { value })} />
+                    </label>
+                    <label>
+                      状态名称
+                      <BufferedTextInput value={selectedStateRow.name} onCommit={(value) => handlers.update(selectedStateRowId, { name: value })} />
+                    </label>
+                  </div>
+                )}
+              </div>
+              <div className="state-icon-drawing-frame-panel">
+                <strong>操作边框</strong>
+                <div className="state-icon-drawing-property-grid">
+                  <label>
+                    线型
+                    <select value={frame.strokeStyle} onChange={(event) => setStateIconFramePatch({ strokeStyle: event.target.value })}>
+                      <option value="solid">实线</option>
+                      <option value="dashed">虚线</option>
+                      <option value="dotted">点线</option>
+                    </select>
+                  </label>
+                  <label className="state-icon-drawing-compact-field">
+                    线宽
+                    <BufferedTextInput type="number" min="0" value={frame.strokeWidth} onCommit={(nextValue) => setStateIconFramePatch({ strokeWidth: Math.max(0, Number(nextValue) || 0) })} />
+                  </label>
+                  <label>
+                    线色
+                    <div className="state-icon-drawing-color-field">
+                      <DeferredColorInput value={frame.strokeColor} fallback="#94a3b8" onCommit={(value) => setStateIconFramePatch({ strokeColor: value })} />
+                    </div>
+                  </label>
+                  <label>
+                    背景
+                    <div className="state-icon-drawing-color-field">
+                      <DeferredColorInput value={frame.fillColor} fallback="#ffffff" onCommit={(value) => setStateIconFramePatch({ fillColor: value })} />
+                    </div>
+                  </label>
+                </div>
+              </div>
               <div className="state-icon-drawing-layers">
                 <label>
                   <span>图案图层</span>
@@ -4383,25 +5623,13 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                   }
                   const visibleStrokeColor = visibleStateIconColor("#2563eb", selected.strokeColor);
                   const visibleTextColor = visibleStateIconColor("#111827", selected.textColor, selected.strokeColor);
+                  const isLineShape = STATE_ICON_LINE_SHAPE_KINDS.has(selected.kind);
+                  const isClosedShape = STATE_ICON_CLOSED_SHAPE_KINDS.has(selected.kind);
                   return (
                     <>
                       <div className="state-icon-drawing-property-title">
                         <strong>{stateVisualShapeLabel(selected.kind)}</strong>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const ids = stateIconDrawingDialog.selectedElementIds.length > 0
-                              ? stateIconDrawingDialog.selectedElementIds
-                              : [selected.id];
-                            if (ids.length > 1) {
-                              deleteSelectedStateIconDrawingElements();
-                            } else {
-                              deleteStateIconDrawingElement(selected.id);
-                            }
-                          }}
-                        >
-                          {stateIconDrawingDialog.selectedElementIds.length > 1 ? "删除选中" : "删除图案"}
-                        </button>
+                        <span>{stateIconDrawingSelectedIds(stateIconDrawingDialog).length > 1 ? `${stateIconDrawingSelectedIds(stateIconDrawingDialog).length} 个元素` : "选中元素"}</span>
                       </div>
                       <div className="state-icon-drawing-property-grid">
                         <label className="state-icon-drawing-compact-field">
@@ -4429,23 +5657,98 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                           <BufferedTextInput type="number" min="0" value={selected.strokeWidth} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { strokeWidth: Math.max(0, Number(nextValue) || 0) })} />
                         </label>
                         <label>
+                          线型
+                          <select value={selected.strokeStyle ?? "solid"} onChange={(event) => updateStateIconDrawingElement(selected.id, { strokeStyle: event.target.value })}>
+                            <option value="solid">实线</option>
+                            <option value="dashed">虚线</option>
+                            <option value="dotted">点线</option>
+                          </select>
+                        </label>
+                        <label>
+                          所属端子
+                          <select
+                            value={Number.isInteger(selected.terminalIndex) && selected.terminalIndex >= 0 ? String(selected.terminalIndex) : ""}
+                            onChange={(event) => updateStateIconDrawingElement(selected.id, stateIconDrawingTerminalPatch(event.target.value))}
+                          >
+                            <option value="">无</option>
+                            {stateIconDrawingTerminalOptions.map((option) => (
+                              <option key={option.index} value={option.index}>
+                                {option.index + 1}. {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
                           线色
                           <div className="state-icon-drawing-color-field">
                             <DeferredColorInput value={visibleStrokeColor} fallback="#2563eb" onCommit={(value) => updateStateIconDrawingElement(selected.id, { strokeColor: value })} />
                           </div>
                         </label>
-                        <label>
-                          填充
-                          <div className="state-icon-drawing-color-field">
-                            <DeferredColorInput value={selected.fillColor} fallback="#ffffff" onCommit={(value) => updateStateIconDrawingElement(selected.id, { fillColor: value })} />
-                          </div>
-                        </label>
-                        <label>
+                        {isLineShape && (
+                          <>
+                            <label>
+                              起点端型
+                              <select value={selected.startCap ?? "none"} onChange={(event) => updateStateIconDrawingElement(selected.id, { startCap: event.target.value })}>
+                                {STATE_ICON_LINE_CAP_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                              </select>
+                            </label>
+                            <label>
+                              终点端型
+                              <select value={selected.endCap ?? "none"} onChange={(event) => updateStateIconDrawingElement(selected.id, { endCap: event.target.value })}>
+                                {STATE_ICON_LINE_CAP_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                              </select>
+                            </label>
+                          </>
+                        )}
+                        {isClosedShape && (
+                          <label>
+                            填充
+                            <div className="state-icon-drawing-color-field">
+                              <DeferredColorInput value={selected.fillColor} fallback="#ffffff" onCommit={(value) => updateStateIconDrawingElement(selected.id, { fillColor: value })} />
+                            </div>
+                          </label>
+                        )}
+                        {selected.kind === "text" && (
+                          <>
+                            <label>
+                              文本颜色
+                              <div className="state-icon-drawing-color-field">
+                                <DeferredColorInput value={visibleTextColor} fallback="#111827" onCommit={(value) => updateStateIconDrawingElement(selected.id, { textColor: value })} />
+                              </div>
+                            </label>
+                            <label>
+                              字体
+                              <BufferedTextInput value={selected.fontFamily ?? "Arial, Microsoft YaHei"} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { fontFamily: nextValue })} />
+                            </label>
+                            <label className="state-icon-drawing-compact-field">
+                              字号
+                              <BufferedTextInput type="number" min="8" value={selected.fontSize ?? selected.height} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { fontSize: Math.max(8, Number(nextValue) || 8) })} />
+                            </label>
+                            <label>
+                              字重
+                              <select value={String(selected.fontWeight ?? "800")} onChange={(event) => updateStateIconDrawingElement(selected.id, { fontWeight: event.target.value })}>
+                                <option value="400">常规</option>
+                                <option value="700">加粗</option>
+                                <option value="800">特粗</option>
+                              </select>
+                            </label>
+                            <label>
+                              字型
+                              <select value={selected.fontStyle ?? "normal"} onChange={(event) => updateStateIconDrawingElement(selected.id, { fontStyle: event.target.value })}>
+                                <option value="normal">常规</option>
+                                <option value="italic">斜体</option>
+                              </select>
+                            </label>
+                          </>
+                        )}
+                        {selected.kind !== "text" && (
+                          <label>
                           文本颜色
                           <div className="state-icon-drawing-color-field">
                             <DeferredColorInput value={visibleTextColor} fallback="#111827" onCommit={(value) => updateStateIconDrawingElement(selected.id, { textColor: value })} />
                           </div>
-                        </label>
+                          </label>
+                        )}
                         <label className="state-icon-drawing-text-field state-icon-drawing-text-compact-field">
                           文字
                           <BufferedTextInput value={selected.text} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { text: nextValue })} />
@@ -4479,77 +5782,14 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
     return (
       <section className={`device-state-pager ${hideDefaultPage ? "hide-default-state" : ""}`} aria-label="状态分页">
         {renderStateIconDrawingLibrary()}
-        <div className="device-state-pager-header">
-          <div className="device-state-tabs" role="tablist" aria-label="状态分页">
-            {!hideDefaultPage && (
-              <button
-                type="button"
-                role="tab"
-                aria-selected={isDefaultStatePage}
-                className={isDefaultStatePage ? "active" : ""}
-                onClick={() => setActiveRowId(DEFAULT_STATE_PAGE_ID)}
-              >
-                默认状态
-              </button>
-            )}
-            {displayRows.map((row, index) => {
-              const active = activeRow?.id === row.id;
-              return (
-                <button
-                  key={row.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  className={active ? "active" : ""}
-                  onClick={() => setActiveRowId(row.id)}
-                >
-                  {row.name.trim() || row.value.trim() || `状态${index + 1}`}
-                </button>
-              );
-            })}
-            <button type="button" className="device-state-add-tab" onClick={handlers.add}>新增状态</button>
-            {activeRow && !isDefaultStatePage && (
-              <button type="button" className="device-state-delete-tab" onClick={() => handlers.remove(activeRow.id)}>删除状态</button>
-            )}
-          </div>
-          <span className="device-state-shared-note" title="尺寸大小和端子位置由所有状态分页共享">共享尺寸/端子</span>
-        </div>
-        {isDefaultStatePage ? (
+        {isDefaultStatePage || activeRow ? (
           <>
-            {defaultRow && (
-              renderStateIconDrawingInline(
-                <div className="device-state-page-fields device-state-default-fields">
-                  <label>
-                    状态值
-                    <BufferedTextInput value={defaultRow.value} onCommit={(value) => handlers.update(DEFAULT_STATE_PAGE_ID, { value })} />
-                  </label>
-                  <label>
-                    状态名称
-                    <BufferedTextInput value={defaultRow.name} onCommit={(value) => handlers.update(DEFAULT_STATE_PAGE_ID, { name: value })} />
-                  </label>
-                </div>
-              )
-            )}
-            {!defaultRow && renderStateIconDrawingInline()}
-          </>
-        ) : activeRow ? (
-          <>
-            {renderStateIconDrawingInline(
-              <div className="device-state-page-fields">
-                <label>
-                  状态值
-                  <BufferedTextInput value={activeRow.value} onCommit={(value) => handlers.update(activeRow.id, { value })} />
-                </label>
-                <label>
-                  状态名称
-                  <BufferedTextInput value={activeRow.name} onCommit={(value) => handlers.update(activeRow.id, { name: value })} />
-                </label>
-              </div>
-            )}
+            {renderStateIconDrawingInline()}
             <div className="custom-device-actions device-state-actions">
               {handlers.saveStateVisuals && <button type="button" onClick={handlers.saveStateVisuals}>{handlers.saveStateVisualsLabel ?? "保存状态样式"}</button>}
               {handlers.reset && <button type="button" onClick={handlers.reset}>{handlers.resetLabel ?? "恢复状态页"}</button>}
             </div>
+            {renderStateIconDrawingContextMenu()}
           </>
         ) : (
           <div className="device-state-empty">

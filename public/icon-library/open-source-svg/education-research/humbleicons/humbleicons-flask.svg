@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="humbleicons-flask-title humbleicons-flask-desc">
+  <title id="humbleicons-flask-title">flask</title>
+  <desc id="humbleicons-flask-desc">教育科研 - Humbleicons - flask - MIT</desc>
+  <g stroke="currentColor" stroke-width="2">
+    <path fill="currentColor" stroke-linejoin="round" d="M9.5 10V4h5v6l4.743 5.174A2.88 2.88 0 0117.12 20H6.88a2.88 2.88 0 01-2.123-4.826L9.5 10z" />
+    <path fill="currentColor" stroke-linecap="round" d="M8.5 4h7" />
+    <path fill="currentColor" d="M6 14c3.5 2 4 0 6 0s2.5 2 6 0" />
+  </g>
+</svg>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="humbleicons-plus-title humbleicons-plus-desc">
+  <title id="humbleicons-plus-title">plus</title>
+  <desc id="humbleicons-plus-desc">通用命令 - Humbleicons - plus - MIT</desc>
+  <g stroke="currentColor" stroke-linecap="round" stroke-width="2">
+    <path fill="currentColor" d="M12 19V5" />
+    <path fill="currentColor" d="M19 12H5" />
+  </g>
+</svg>

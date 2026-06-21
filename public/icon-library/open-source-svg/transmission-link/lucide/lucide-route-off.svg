@@ -1,0 +1,23 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-route-off"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-route-off-title lucide-route-off-desc">
+  <title id="lucide-route-off-title">route off</title>
+  <desc id="lucide-route-off-desc">输电环节 - Lucide - route-off - ISC</desc>
+  <circle fill="currentColor" cx="6" cy="19" r="3" />
+  <path fill="currentColor" d="M9 19h8.5c.4 0 .9-.1 1.3-.2" />
+  <path fill="currentColor" d="M5.2 5.2A3.5 3.53 0 0 0 6.5 12H12" />
+  <path fill="currentColor" d="m2 2 20 20" />
+  <path fill="currentColor" d="M21 15.3a3.5 3.5 0 0 0-3.3-3.3" />
+  <path fill="currentColor" d="M15 5h-4.3" />
+  <circle fill="currentColor" cx="18" cy="5" r="3" />
+</svg>

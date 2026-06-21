@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#4f46e5" role="img" aria-labelledby="city-dashboard-title city-dashboard-desc">
+  <title id="city-dashboard-title">城市看板</title>
+  <desc id="city-dashboard-desc">智慧城市 - city, dashboard</desc>
+  <g>
+<rect x="12" y="14" width="40" height="30" rx="4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 36V24M30 36V20M40 36V28" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 52L40 52" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M32 44L32 52" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

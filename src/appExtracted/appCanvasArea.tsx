@@ -60,7 +60,8 @@ function areCanvasPropsEqual(prevProps: any, nextProps: any) {
   const dataKeys = [
     'visibleNodes', 'visibleEdges', 'selectedNodeIdSet', 'selectedEdgeIds',
     'marquee', 'connectPreviewDom', 'routableLinePreview', 'resizeSizeHint',
-    'draggingDelta', 'connectSource', 'libraryPlacement'
+    'draggingDelta', 'connectSource', 'libraryPlacement',
+    'canvasBackgroundColor', 'canvasBackgroundImageUrl', 'backgroundPageRender'
   ];
 
   for (const key of dataKeys) {

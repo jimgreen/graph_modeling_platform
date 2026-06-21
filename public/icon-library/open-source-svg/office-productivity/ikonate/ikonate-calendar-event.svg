@@ -1,0 +1,9 @@
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" color="#2563eb" role="img" aria-labelledby="ikonate-calendar-event-title ikonate-calendar-event-desc">
+  <title id="ikonate-calendar-event-title">calendar event</title>
+  <desc id="ikonate-calendar-event-desc">办公效率 - Ikonate - calendar-event - MIT</desc>
+	<path fill="currentColor" d="M3 5H21V21H3V5Z"/>
+	<path fill="currentColor" d="M21 9H3"/>
+	<path fill="currentColor" d="M7 5V3"/>
+	<path fill="currentColor" d="M17 5V3"/>
+	<rect fill="currentColor" x="15" y="15" width="2" height="2"/>
+</svg>

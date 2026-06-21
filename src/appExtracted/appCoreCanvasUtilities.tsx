@@ -1517,7 +1517,9 @@ export type ImageFolder = {
 export type ImageTarget =
   | { kind: "node"; nodeId: string }
   | { kind: "nodeForeground"; nodeId: string }
-  | { kind: "canvas" };
+  | { kind: "canvas" }
+  | { kind: "canvasIcon" }
+  | { kind: "stateIconDrawing" };
 
 export type NodeDoubleClickDialogKind = "interaction" | "text" | "device";
 
@@ -1574,6 +1576,31 @@ export type StateIconDrawingDialogState = {
   elements: StateIconDrawingElement[];
   selectedElementId: string;
   selectedElementIds: string[];
+  elementLibraryTab?: "basic" | "static";
+  pendingElementKind?: StateVisualShapeKind;
+  pendingStaticTemplate?: DeviceTemplate;
+  drawingDraft?: {
+    kind: StateVisualShapeKind;
+    start: Point;
+    current: Point;
+    points?: Point[];
+    element: StateIconDrawingElement;
+  };
+  frame?: {
+    strokeStyle: "solid" | "dashed" | "dotted";
+    strokeWidth: number;
+    strokeColor: string;
+    fillColor: string;
+  };
+};
+
+export type StateIconDrawingContextMenuState = {
+  x: number;
+  y: number;
+  kind: "canvas" | "element" | "state";
+  elementId?: string;
+  rowId?: string;
+  pastePoint?: Point;
 };
 
 export type StateIconDrawingDragMode = "move" | "resize" | "rotate";
@@ -3869,4 +3896,13 @@ export async function uploadBackendImage(fileName: string, dataUrl: string, fold
     "上传图片到后台失败。",
     backendJsonRequest("POST", JSON.stringify({ name: fileName, dataUrl, folderId }))
   );
+}
+
+export async function importBackendIconLibraryFile(fileName: string, dataUrl: string, folderId = "root"): Promise<ImageAsset[]> {
+  const payload = await fetchBackendJson<{ assets?: ImageAsset[] }>(
+    "/api/icon-library/import",
+    "导入图标库文件失败。",
+    backendJsonRequest("POST", JSON.stringify({ name: fileName, dataUrl, folderId }))
+  );
+  return Array.isArray(payload.assets) ? payload.assets : [];
 }

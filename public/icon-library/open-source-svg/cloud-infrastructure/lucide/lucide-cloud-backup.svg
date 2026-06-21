@@ -1,0 +1,19 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-cloud-backup"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-cloud-backup-title lucide-cloud-backup-desc">
+  <title id="lucide-cloud-backup-title">cloud backup</title>
+  <desc id="lucide-cloud-backup-desc">云与基础设施 - Lucide - cloud-backup - ISC</desc>
+  <path fill="currentColor" d="M21 15.251A4.5 4.5 0 0 0 17.5 8h-1.79A7 7 0 1 0 3 13.607" />
+  <path fill="currentColor" d="M7 11v4h4" />
+  <path fill="currentColor" d="M8 19a5 5 0 0 0 9-3 4.5 4.5 0 0 0-4.5-4.5 4.82 4.82 0 0 0-3.41 1.41L7 15" />
+</svg>

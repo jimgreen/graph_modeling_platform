@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="ikonate-undo-title ikonate-undo-desc">
+  <title id="ikonate-undo-title">undo</title>
+  <desc id="ikonate-undo-desc">通用命令 - Ikonate - undo - MIT</desc>
+    <path fill="currentColor" d="M8 15H3v-5"/>
+    <path fill="currentColor" d="M5 13c5-5 12.575-4.275 16 1"/>
+    <path fill="currentColor" stroke-linecap="round" d="M3 15l2-2"/>
+</svg>

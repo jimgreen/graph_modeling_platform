@@ -1,0 +1,5 @@
+Sargam Icons
+
+Package: sargam-icons@1.6.7
+Repository: https://github.com/planetabhi/sargam-icons
+License declared by package.json: MIT

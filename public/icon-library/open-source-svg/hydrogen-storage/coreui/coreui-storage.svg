@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" color="#2563eb" role="img" aria-labelledby="coreui-storage-title coreui-storage-desc">
+  <title id="coreui-storage-title">storage</title>
+  <desc id="coreui-storage-desc">氢能储能 - CoreUI Icons - storage - MIT</desc>
+  <path fill="var(--ci-primary-color, currentColor)" d="M16 48v416h480V48Zm448 384H48v-96h416Zm0-128H48v-96h416ZM48 176V80h416v96Z" class="ci-primary"/>
+  <path fill="var(--ci-primary-color, currentColor)" d="M80 112h32v32H80zm0 128h32v32H80zm0 128h32v32H80z" class="ci-primary"/>
+</svg>

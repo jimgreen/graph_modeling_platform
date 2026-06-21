@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#0891b2" role="img" aria-labelledby="electrolyzer-power-supply-title electrolyzer-power-supply-desc">
+  <title id="electrolyzer-power-supply-title">电解槽电源</title>
+  <desc id="electrolyzer-power-supply-desc">氢能工艺设备 - electrolyzer, power, 电源</desc>
+  <g>
+<path d="M12 28l20-14 20 14v24H12z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><rect x="22" y="34" width="20" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="32" y="33" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="7" font-weight="700" fill="currentColor">power</text>
+  </g>
+</svg>

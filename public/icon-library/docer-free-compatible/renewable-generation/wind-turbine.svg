@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#0ea5e9" role="img" aria-labelledby="wind-turbine-title wind-turbine-desc">
+  <title id="wind-turbine-title">风力发电机</title>
+  <desc id="wind-turbine-desc">新能源与发电 - wind, turbine, renewable</desc>
+  <g>
+<circle cx="32" cy="25" r="3" fill="currentColor"/>
+          <path d="M32 28v26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M32 25l-3-16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M34 26l15 5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M30 26L18 37" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M23 54h18" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

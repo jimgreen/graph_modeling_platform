@@ -8,12 +8,28 @@ import {
   createSchemeArchiveBuffer,
   deleteSchemeProjectRecord,
   deleteSchemeRecordDirectory,
+  extractIconLibraryImageEntries,
   importSchemeArchiveBuffer,
   readSchemeProjectRecord,
   readSchemesFromFiles,
   saveSchemeProjectRecord,
   saveSchemeRecordDirectory
 } from "./image-server.mjs";
+
+describe("icon library import", () => {
+  test("extracts browser-displayable icons from Office-style archives", () => {
+    const zip = new AdmZip();
+    zip.addFile("ppt/media/image1.png", Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    zip.addFile("ppt/media/image2.svg", Buffer.from("<svg viewBox=\"0 0 10 10\"><rect width=\"10\" height=\"10\"/></svg>", "utf-8"));
+    zip.addFile("ppt/media/vector.emf", Buffer.from("emf", "utf-8"));
+
+    const result = extractIconLibraryImageEntries(zip.toBuffer(), "电力图标.pptx");
+
+    expect(result.entries).toHaveLength(2);
+    expect(result.entries.map((entry) => entry.mimeType).sort()).toEqual(["image/png", "image/svg+xml"]);
+    expect(result.entries[0].name).toContain("电力图标");
+  });
+});
 
 describe("scheme file persistence", () => {
   test("reads scheme directories as lightweight project summaries by default", async () => {

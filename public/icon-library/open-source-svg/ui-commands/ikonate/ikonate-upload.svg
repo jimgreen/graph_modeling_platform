@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="ikonate-upload-title ikonate-upload-desc">
+  <title id="ikonate-upload-title">upload</title>
+  <desc id="ikonate-upload-desc">通用命令 - Ikonate - upload - MIT</desc>
+    <path fill="currentColor" d="M12,4 L12,17"/>
+    <polyline points="7 8 12 3 17 8"/>
+    <path fill="currentColor" d="M20,21 L4,21"/>
+</svg>

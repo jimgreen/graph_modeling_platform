@@ -1,0 +1,5 @@
+Zondicons
+
+Package: zondicons@1.2.0
+Repository: https://www.zondicons.com/
+License declared by package.json: CC-BY-4.0

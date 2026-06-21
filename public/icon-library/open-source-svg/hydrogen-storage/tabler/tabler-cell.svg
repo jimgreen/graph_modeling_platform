@@ -1,0 +1,19 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-cell"
+ color="#2563eb" role="img" aria-labelledby="tabler-cell-title tabler-cell-desc">
+  <title id="tabler-cell-title">cell</title>
+  <desc id="tabler-cell-desc">氢能储能 - Tabler Icons - cell - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M8 4l-4 2v5l4 2l4 -2v-5l-4 -2" />
+  <path fill="currentColor" d="M12 11l4 2l4 -2v-5l-4 -2l-4 2" />
+  <path fill="currentColor" d="M8 13v5l4 2l4 -2v-5" />
+</svg>

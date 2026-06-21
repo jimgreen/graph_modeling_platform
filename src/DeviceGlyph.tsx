@@ -145,14 +145,49 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     const dashArray = svgStrokeDashArray(node.params.strokeStyle);
     const cornerRadius = staticNumericParam(node, "cornerRadius", 8, 0);
     const accentColor = node.params.accentColor || staticStroke;
+    const explicitAccentColor = node.params.accentColor?.trim();
+    const simpleAccentVisible = Boolean(explicitAccentColor && explicitAccentColor !== "transparent" && explicitAccentColor !== "none");
     const hasStaticText = Boolean(node.params.text?.trim());
-    if (node.kind === "static-text") {
-      if (!renderText) {
+    const staticPaintVisible = (value: string) => Boolean(value && value !== "transparent" && value !== "none");
+    const renderSimpleAccentRule = (width: number, height: number) => simpleAccentVisible
+      ? (
+        <path
+          d={`M ${-width / 2 + 8} ${height / 2 - 6} H ${width / 2 - 8}`}
+          stroke={accentColor}
+          strokeWidth={Math.max(1, lineWidth)}
+          strokeLinecap="round"
+        />
+      )
+      : null;
+    const renderStaticTextBoxFrame = (width: number, height: number) => {
+      const hasVisibleBox =
+        staticPaintVisible(staticFill) ||
+        (lineWidth > 0 && staticPaintVisible(staticStroke)) ||
+        simpleAccentVisible;
+      if (!hasVisibleBox) {
         return null;
       }
+      return (
+        <g>
+          <rect
+            x={-width / 2}
+            y={-height / 2}
+            width={width}
+            height={height}
+            rx={cornerRadius}
+            fill={staticFill}
+            stroke={lineWidth > 0 ? staticStroke : "transparent"}
+            strokeWidth={lineWidth}
+            strokeDasharray={dashArray}
+          />
+          {renderSimpleAccentRule(width, height)}
+        </g>
+      );
+    };
+    if (node.kind === "static-text") {
       const fontSize = miniature ? 18 : Number(node.params.fontSize || 24);
       const textLines = (miniature ? "文" : staticSymbolTextValue(node, node.name)).split(/\r?\n/);
-      return uprightText(
+      const textContent = uprightText(
         node,
         0,
         -((textLines.length - 1) * fontSize * 0.6),
@@ -175,6 +210,19 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
           ))}
         </>
       );
+      if (!renderGeometry) {
+        return renderText ? textContent : null;
+      }
+      const frame = renderStaticTextBoxFrame(w, h);
+      if (!renderText) {
+        return frame;
+      }
+      return (
+        <g>
+          {frame}
+          {textContent}
+        </g>
+      );
     }
     if (node.kind === "static-line") {
       const points = staticDrawPointsForNode(node, [{ x: -w / 2, y: 0 }, { x: w / 2, y: 0 }]);
@@ -193,6 +241,21 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     }
     if (node.kind === "static-ellipse") {
       return renderGeometry ? <ellipse cx="0" cy="0" rx={w / 2} ry={h / 2} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} /> : null;
+    }
+    if (node.kind === "static-rect") {
+      if (mode === "text") {
+        return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      return (
+        <g>
+          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={cornerRadius} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} />
+          {renderSimpleAccentRule(w, h)}
+          {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
+        </g>
+      );
     }
     if (node.kind === "static-image") {
       if (mode === "text") {

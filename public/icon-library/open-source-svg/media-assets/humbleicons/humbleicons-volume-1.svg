@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="humbleicons-volume-1-title humbleicons-volume-1-desc">
+  <title id="humbleicons-volume-1-title">volume 1</title>
+  <desc id="humbleicons-volume-1-desc">媒体素材 - Humbleicons - volume-1 - MIT</desc>
+  <g stroke="currentColor" stroke-width="2">
+    <path fill="currentColor" stroke-linejoin="round" d="M8 9H5v6h3l5 4V5L8 9z" />
+    <path fill="currentColor" stroke-linecap="round" d="M17 8a5.657 5.657 0 010 8" />
+  </g>
+</svg>

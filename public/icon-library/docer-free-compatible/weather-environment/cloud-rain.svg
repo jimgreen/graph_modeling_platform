@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#0284c7" role="img" aria-labelledby="cloud-rain-title cloud-rain-desc">
+  <title id="cloud-rain-title">降雨</title>
+  <desc id="cloud-rain-desc">气象与环境 - rain, cloud</desc>
+  <g>
+<path d="M18 34h28a8 8 0 0 0 0-16 13 13 0 0 0-25-3A9 9 0 0 0 18 34z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 42L20 50" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M34 42L30 50" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M44 42L40 50" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

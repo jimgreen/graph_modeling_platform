@@ -1,0 +1,5 @@
+<svg id="i-print" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" color="#2563eb" role="img" aria-labelledby="bytesize-print-title bytesize-print-desc">
+  <title id="bytesize-print-title">print</title>
+  <desc id="bytesize-print-desc">通用命令 - Bytesize Icons - print - MIT</desc>
+    <path fill="currentColor" d="M7 25 L2 25 2 9 30 9 30 25 25 25 M7 19 L7 30 25 30 25 19 Z M25 9 L25 2 7 2 7 9 M22 14 L25 14" />
+</svg>

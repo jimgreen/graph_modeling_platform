@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" color="#2563eb" role="img" aria-labelledby="coreui-list-filter-title coreui-list-filter-desc">
+  <title id="coreui-list-filter-title">list filter</title>
+  <desc id="coreui-list-filter-desc">电力电子 - CoreUI Icons - list-filter - MIT</desc>
+  <path fill="var(--ci-primary-color, currentColor)" d="M96 197.333h320v32H96zm72 101.334h176v32H168zM216 400h80v32h-80zM48 96h416v32H48z" class="ci-primary"/>
+</svg>

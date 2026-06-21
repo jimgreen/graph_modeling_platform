@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="humbleicons-camera-video-title humbleicons-camera-video-desc">
+  <title id="humbleicons-camera-video-title">camera video</title>
+  <desc id="humbleicons-camera-video-desc">媒体素材 - Humbleicons - camera-video - MIT</desc>
+  <g stroke="currentColor" stroke-width="2">
+    <path fill="currentColor" d="M16 16V8a1 1 0 00-1-1H5a1 1 0 00-1 1v8a1 1 0 001 1h10a1 1 0 001-1z" />
+    <path fill="currentColor" stroke-linejoin="round" d="M20 7l-4 3v4l4 3V7z" />
+  </g>
+</svg>

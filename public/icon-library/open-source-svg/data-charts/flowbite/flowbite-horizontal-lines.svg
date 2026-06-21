@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="flowbite-horizontal-lines-title flowbite-horizontal-lines-desc">
+  <title id="flowbite-horizontal-lines-title">horizontal lines</title>
+  <desc id="flowbite-horizontal-lines-desc">数据图表 - Flowbite Icons - horizontal-lines - MIT</desc>
+  <path stroke="currentColor" stroke-linecap="round" stroke-width="2" d="M5 12h14"/>
+  <path stroke="currentColor" stroke-linecap="round" d="M6 9.5h12m-12-2h12m-12-2h12m-12 13h12m-12-2h12m-12-2h12"/>
+</svg>

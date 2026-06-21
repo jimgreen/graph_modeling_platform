@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#475569" role="img" aria-labelledby="flow-database-title flow-database-desc">
+  <title id="flow-database-title">流程数据库</title>
+  <desc id="flow-database-desc">流程图与业务图 - flow, database</desc>
+  <g>
+<path d="M18 18c0-5 28-5 28 0v28c0 5-28 5-28 0z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 18c0 5 28 5 28 0M18 32c0 5 28 5 28 0" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

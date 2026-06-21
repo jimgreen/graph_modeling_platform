@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#2563eb" role="img" aria-labelledby="layer-stack-symbol-title layer-stack-symbol-desc">
+  <title id="layer-stack-symbol-title">图层堆叠</title>
+  <desc id="layer-stack-symbol-desc">图形符号扩展 - layer, stack</desc>
+  <g>
+<path d="M32 12l22 12-22 12-22-12z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 34l20 10 20-10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 44l20 10 20-10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

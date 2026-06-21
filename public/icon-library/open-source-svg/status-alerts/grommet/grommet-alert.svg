@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="grommet-alert-title grommet-alert-desc">
+  <title id="grommet-alert-title">alert</title>
+  <desc id="grommet-alert-desc">状态告警 - Grommet Icons - alert - Apache-2.0</desc>
+  <path fill="none" stroke="#000" stroke-width="2" d="M12,17 L12,19 M12,10 L12,16 M12,3 L2,22 L22,22 L12,3 Z"/>
+</svg>

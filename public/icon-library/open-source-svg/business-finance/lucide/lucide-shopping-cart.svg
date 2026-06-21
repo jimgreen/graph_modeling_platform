@@ -1,0 +1,19 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-shopping-cart"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-shopping-cart-title lucide-shopping-cart-desc">
+  <title id="lucide-shopping-cart-title">shopping cart</title>
+  <desc id="lucide-shopping-cart-desc">业务金融 - Lucide - shopping-cart - ISC</desc>
+  <circle fill="currentColor" cx="8" cy="21" r="1" />
+  <circle fill="currentColor" cx="19" cy="21" r="1" />
+  <path fill="currentColor" d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" />
+</svg>

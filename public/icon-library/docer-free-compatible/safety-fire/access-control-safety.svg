@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#4f46e5" role="img" aria-labelledby="access-control-safety-title access-control-safety-desc">
+  <title id="access-control-safety-title">门禁安全</title>
+  <desc id="access-control-safety-desc">安全消防 - access, control</desc>
+  <g>
+<rect x="18" y="14" width="28" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="38" cy="34" r="2" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 24h10v8H24z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M28 24v-4a5 5 0 0 1 10 0v4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

@@ -1,0 +1,22 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-code-ai"
+ color="#2563eb" role="img" aria-labelledby="tabler-code-ai-title tabler-code-ai-desc">
+  <title id="tabler-code-ai-title">code ai</title>
+  <desc id="tabler-code-ai-desc">开发工具 - Tabler Icons - code-ai - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M7 8l-4 4l4 4" />
+  <path fill="currentColor" d="M17 8l3.111 3.111" />
+  <path fill="currentColor" d="M14 4l-2.175 8.7" />
+  <path fill="currentColor" d="M14 21v-4a2 2 0 1 1 4 0v4" />
+  <path fill="currentColor" d="M14 19h4" />
+  <path fill="currentColor" d="M21 15v6" />
+</svg>

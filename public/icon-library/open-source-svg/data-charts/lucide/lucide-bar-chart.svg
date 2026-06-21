@@ -1,0 +1,19 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-bar-chart"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-bar-chart-title lucide-bar-chart-desc">
+  <title id="lucide-bar-chart-title">bar chart</title>
+  <desc id="lucide-bar-chart-desc">数据图表 - Lucide - bar-chart - ISC</desc>
+  <path fill="currentColor" d="M5 21v-6" />
+  <path fill="currentColor" d="M12 21V9" />
+  <path fill="currentColor" d="M19 21V3" />
+</svg>

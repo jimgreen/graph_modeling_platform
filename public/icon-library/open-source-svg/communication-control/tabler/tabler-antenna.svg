@@ -1,0 +1,22 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-antenna"
+ color="#2563eb" role="img" aria-labelledby="tabler-antenna-title tabler-antenna-desc">
+  <title id="tabler-antenna-title">antenna</title>
+  <desc id="tabler-antenna-desc">通信与控制 - Tabler Icons - antenna - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M20 4v8" />
+  <path fill="currentColor" d="M16 4.5v7" />
+  <path fill="currentColor" d="M12 5v16" />
+  <path fill="currentColor" d="M8 5.5v5" />
+  <path fill="currentColor" d="M4 6v4" />
+  <path fill="currentColor" d="M20 8h-16" />
+</svg>

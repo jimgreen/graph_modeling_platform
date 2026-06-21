@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-battery-low" viewBox="0 0 16 16" color="#2563eb" role="img" aria-labelledby="bootstrap-battery-low-title bootstrap-battery-low-desc">
+  <title id="bootstrap-battery-low-title">battery low</title>
+  <desc id="bootstrap-battery-low-desc">能源通用 - Bootstrap Icons - battery-low - MIT</desc>
+  <path fill="currentColor" d="M2 6h2v4H2z"/>
+  <path fill="currentColor" d="M2 4a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm10 1a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zm4 3a1.5 1.5 0 0 1-1.5 1.5v-3A1.5 1.5 0 0 1 16 8"/>
+</svg>

@@ -1,0 +1,21 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-line-scan"
+ color="#2563eb" role="img" aria-labelledby="tabler-line-scan-title tabler-line-scan-desc">
+  <title id="tabler-line-scan-title">line scan</title>
+  <desc id="tabler-line-scan-desc">数据图表 - Tabler Icons - line-scan - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M7 12h10" />
+  <path fill="currentColor" d="M3 7v-2a2 2 0 0 1 2 -2h2" />
+  <path fill="currentColor" d="M3 17v2a2 2 0 0 0 2 2h2" />
+  <path fill="currentColor" d="M17 3h2a2 2 0 0 1 2 2v2" />
+  <path fill="currentColor" d="M17 21h2a2 2 0 0 0 2 -2v-2" />
+</svg>

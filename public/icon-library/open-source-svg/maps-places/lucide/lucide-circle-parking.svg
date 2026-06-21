@@ -1,0 +1,18 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-circle-parking"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-circle-parking-title lucide-circle-parking-desc">
+  <title id="lucide-circle-parking-title">circle parking</title>
+  <desc id="lucide-circle-parking-desc">地图地点 - Lucide - circle-parking - ISC</desc>
+  <circle fill="currentColor" cx="12" cy="12" r="10" />
+  <path fill="currentColor" d="M9 17V7h4a3 3 0 0 1 0 6H9" />
+</svg>

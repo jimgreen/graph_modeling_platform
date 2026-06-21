@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#06b6d4" role="img" aria-labelledby="level-meter-title level-meter-desc">
+  <title id="level-meter-title">液位计</title>
+  <desc id="level-meter-desc">传感仪表 - level, meter</desc>
+  <g>
+<rect x="24" y="12" width="16" height="40" rx="8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 34h16M24 42h16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M44 16v32M48 20v24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

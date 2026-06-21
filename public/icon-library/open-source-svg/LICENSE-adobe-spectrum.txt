@@ -1,0 +1,5 @@
+Adobe Spectrum CSS Icons
+
+Package: @adobe/spectrum-css@3.0.0
+Repository: https://github.com/adobe/spectrum-css
+License declared by package.json: Apache-2.0

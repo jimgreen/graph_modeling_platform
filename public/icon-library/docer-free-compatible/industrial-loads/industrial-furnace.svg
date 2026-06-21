@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#dc2626" role="img" aria-labelledby="industrial-furnace-title industrial-furnace-desc">
+  <title id="industrial-furnace-title">工业炉</title>
+  <desc id="industrial-furnace-desc">工业负荷 - furnace, heat</desc>
+  <g>
+<rect x="16" y="16" width="32" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 43c-2-5 3-8 5-12 2 5 8 6 6 12 4-2 7 1 7 4 0 4-4 6-10 6s-10-2-10-6c0-2 1-3 2-4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 16L44 16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

@@ -1,0 +1,22 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-router"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-router-title lucide-router-desc">
+  <title id="lucide-router-title">router</title>
+  <desc id="lucide-router-desc">通信与控制 - Lucide - router - ISC</desc>
+  <rect fill="currentColor" width="20" height="8" x="2" y="14" rx="2" />
+  <path fill="currentColor" d="M6.01 18H6" />
+  <path fill="currentColor" d="M10.01 18H10" />
+  <path fill="currentColor" d="M15 10v4" />
+  <path fill="currentColor" d="M17.84 7.17a4 4 0 0 0-5.66 0" />
+  <path fill="currentColor" d="M20.66 4.34a8 8 0 0 0-11.31 0" />
+</svg>

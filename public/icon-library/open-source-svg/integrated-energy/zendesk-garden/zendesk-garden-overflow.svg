@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" focusable="false" viewBox="0 0 16 16" color="#2563eb" role="img" aria-labelledby="zendesk-garden-overflow-title zendesk-garden-overflow-desc">
+  <title id="zendesk-garden-overflow-title">overflow</title>
+  <desc id="zendesk-garden-overflow-desc">综合能源 - Zendesk Garden Icons - overflow - Apache-2.0</desc>
+  <g fill="currentColor">
+    <circle fill="currentColor" cx="2.5" cy="8" r="1.5"/>
+    <circle fill="currentColor" cx="8" cy="8" r="1.5"/>
+    <circle fill="currentColor" cx="13.5" cy="8" r="1.5"/>
+  </g>
+</svg>

@@ -18,6 +18,12 @@ export function renderAppView(__appScope: Record<string, any>) {
     templateMenu
   } = __appScope;
   const { dragging } = __appScope;
+  const {
+    imagePickerCategoryFilter,
+    imagePickerSearchQuery,
+    setImagePickerCategoryFilter,
+    setImagePickerSearchQuery
+  } = __appScope;
   const { customDevicePreviewNode } = __appScope;
   const renderCustomDevicePreviewContent = () => {
     if (customDevicePreviewNode) {
@@ -75,6 +81,65 @@ export function renderAppView(__appScope: Record<string, any>) {
   };
   const customDeviceHasTerminals = customDeviceDraft.terminalCount > 0;
   const visibleCustomDeviceDialogView = customDeviceDialogView === "terminals" && !customDeviceHasTerminals ? "icon" : customDeviceDialogView;
+  const imagePickerTitle =
+    imageTarget?.kind === "canvas"
+      ? "选择模型背景图片"
+      : imageTarget?.kind === "nodeForeground"
+        ? "选择设备前景图片"
+        : imageTarget?.kind === "canvasIcon"
+          ? "分类图标库"
+          : imageTarget?.kind === "stateIconDrawing"
+            ? "选择元件图标素材"
+            : "选择设备图片";
+  const imagePickerHint =
+    imageTarget?.kind === "canvasIcon"
+      ? "可导入 SVG/图片，或从 DOCX、PPTX、VSDX、WPS、DPS 文件中抽取可显示图标；选择后在大画布绘制静态图片图元。"
+      : imageTarget?.kind === "stateIconDrawing"
+        ? "可导入 SVG/图片，或从 DOCX、PPTX、VSDX、WPS、DPS 文件中抽取可显示图标；选择后插入当前元件图标编辑区。"
+        : "本地图片会先上传到后台图片库；请再从后台可用图片列表中选择应用。";
+  const imagePickerCanClear = imageTarget && imageTarget.kind !== "canvasIcon" && imageTarget.kind !== "stateIconDrawing";
+  const imagePickerFolderNameById = new Map((imageFolders ?? []).map((folder) => [folder.id, folder.name]));
+  const imagePickerAssetCategory = (asset: any) => {
+    const assetName = String(asset?.name ?? "").trim();
+    const separatedParts = assetName.split(/\s+\/\s+/u).map((part) => part.trim()).filter(Boolean);
+    if (separatedParts.length > 1) {
+      return separatedParts.slice(0, -1).join(" / ");
+    }
+    const folderName = imagePickerFolderNameById.get(asset?.folderId);
+    if (folderName && asset?.folderId !== "root") {
+      return folderName;
+    }
+    return String(asset?.mimeType ?? "").includes("svg") || String(asset?.filename ?? "").toLowerCase().endsWith(".svg")
+      ? "SVG图标"
+      : "图片素材";
+  };
+  const imagePickerCategoryOptions = Array.from(new Set((imageAssetList ?? []).map((asset) => imagePickerAssetCategory(asset)))).sort((left, right) =>
+    left.localeCompare(right, "zh-Hans-CN")
+  );
+  const imagePickerActiveCategoryFilter = imagePickerCategoryOptions.includes(imagePickerCategoryFilter) ? imagePickerCategoryFilter : "";
+  const normalizedImagePickerSearchQuery = String(imagePickerSearchQuery ?? "").trim().toLowerCase();
+  const filteredImageAssetList = (imageAssetList ?? []).filter((asset) => {
+    const category = imagePickerAssetCategory(asset);
+    if (imagePickerActiveCategoryFilter && category !== imagePickerActiveCategoryFilter) {
+      return false;
+    }
+    if (!normalizedImagePickerSearchQuery) {
+      return true;
+    }
+    const folderName = imagePickerFolderNameById.get(asset?.folderId) ?? "";
+    const haystack = [
+      asset?.name,
+      asset?.filename,
+      asset?.id,
+      asset?.folderId,
+      asset?.mimeType,
+      category,
+      folderName
+    ]
+      .map((value) => String(value ?? "").toLowerCase())
+      .join(" ");
+    return haystack.includes(normalizedImagePickerSearchQuery);
+  });
   return (<div className={`app-shell ${isBrowseMode ? "browse-mode" : "edit-mode"} left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${topologyWarningPanelResize ? "topology-warning-panel-resizing" : ""} ${nodeDoubleClickDialogDrag || nodeDoubleClickDialogResize ? "node-double-click-dialog-moving" : ""} ${deviceLibraryDialogDrag || deviceLibraryDialogResize ? "device-library-dialog-moving" : ""} ${canvasResizeDrag ? "canvas-resizing" : ""}`} style={appShellStyle}>
       {renderSidePanelEdgeTrigger("left")}
       {renderSidePanelEdgeTrigger("right")}
@@ -149,6 +214,9 @@ export function renderAppView(__appScope: Record<string, any>) {
           </button>
           <button className={`topbar-primary-button ${deviceLabelsVisible ? "active" : ""}`} onClick={() => setDeviceLabelsVisible((current) => !current)} title={deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识"} aria-label={deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识"}>
             <Type size={16}/>
+          </button>
+          <button className="topbar-primary-button" onClick={() => setImageTarget({ kind: "canvasIcon" })} disabled={isBrowseMode} title="分类图标库" aria-label="分类图标库">
+            <FolderOpen size={16}/>
           </button>
           {ENABLE_REACT_FLOW_PREVIEW && (<button className="topbar-primary-button react-flow-preview-button" onClick={() => setReactFlowPreviewOpen(true)} title="React Flow 预览" aria-label="React Flow 预览">
               <Route size={16}/>
@@ -249,7 +317,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                 </button>
               </div>
             </div>
-            <input ref={imageInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseImage}/>
+            <input ref={imageInputRef} type="file" accept="image/*,.svg,image/svg+xml,.docx,.pptx,.vsdx,.wps,.dps,.zip" hidden multiple onChange={chooseImage}/>
             <input ref={customDeviceImageInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseCustomDeviceBackground}/>
             <input ref={definitionTemplateIconInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseDefinitionTemplateIcon}/>
             <input ref={stateVisualImageInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseStateVisualImage}/>
@@ -2354,11 +2422,11 @@ export function renderAppView(__appScope: Record<string, any>) {
         </div>)}
       {renderNodeDoubleClickDialog()}
       {imageTarget && (<div className="image-picker-backdrop" onPointerDown={() => setImageTarget(null)}>
-          <section className="image-picker-dialog" onPointerDown={(event) => event.stopPropagation()}>
+          <section className={`image-picker-dialog ${imageTarget.kind === "canvasIcon" || imageTarget.kind === "stateIconDrawing" ? "icon-library" : ""}`} onPointerDown={(event) => event.stopPropagation()}>
             <div className="image-picker-title">
               <div>
-                <h2>{imageTarget.kind === "canvas" ? "选择模型背景图片" : imageTarget.kind === "nodeForeground" ? "选择设备前景图片" : "选择设备图片"}</h2>
-                <p>本地图片会先上传到后台图片库；请再从后台可用图片列表中选择应用。</p>
+                <h2>{imagePickerTitle}</h2>
+                <p>{imagePickerHint}</p>
               </div>
               <button onClick={() => setImageTarget(null)}>关闭</button>
             </div>
@@ -2371,11 +2439,46 @@ export function renderAppView(__appScope: Record<string, any>) {
               <button onClick={createImageFolder} disabled={isBrowseMode}>新建文件夹</button>
               <button onClick={renameImageFolder} disabled={isBrowseMode || activeImageFolderId === "root"}>重命名</button>
               <button onClick={deleteImageFolder} disabled={isBrowseMode || activeImageFolderId === "root"}>删除文件夹</button>
-              <button onClick={() => imageInputRef.current?.click()} disabled={isBrowseMode}>上传本地图片到后台</button>
-              <button onClick={clearSelectedImage} disabled={isBrowseMode}>取消当前图片</button>
+              <button onClick={() => imageInputRef.current?.click()} disabled={isBrowseMode}>导入图标文件到分类</button>
+              {imagePickerCanClear && <button onClick={clearSelectedImage} disabled={isBrowseMode}>取消当前图片</button>}
             </div>
+            {imageAssetList.length > 0 && (
+              <div className="image-picker-filters" role="search" aria-label="图标筛选检索">
+                <label>
+                  分类
+                  <select value={imagePickerActiveCategoryFilter} onChange={(event) => setImagePickerCategoryFilter(event.target.value)}>
+                    <option value="">全部分类</option>
+                    {imagePickerCategoryOptions.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  检索
+                  <input
+                    type="search"
+                    value={imagePickerSearchQuery}
+                    placeholder="搜索名称/文件名/分类"
+                    onChange={(event) => setImagePickerSearchQuery(event.target.value)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImagePickerCategoryFilter("");
+                    setImagePickerSearchQuery("");
+                  }}
+                  disabled={!imagePickerActiveCategoryFilter && !imagePickerSearchQuery}
+                >
+                  清空
+                </button>
+                <span>{filteredImageAssetList.length} / {imageAssetList.length}</span>
+              </div>
+            )}
             <div className="image-asset-list">
-              {imageAssetList.length === 0 ? (<p className="image-empty">后台暂无图片，请先加载本地图片。</p>) : (imageAssetList.map((asset, index) => (<button key={asset.id} className="image-asset-option" disabled={isBrowseMode} onClick={() => applyExistingImage(asset.id)}>
+              {imageAssetList.length === 0 ? (<p className="image-empty">后台暂无图片，请先加载本地图片。</p>) : filteredImageAssetList.length === 0 ? (<p className="image-empty">没有匹配的图标，请调整分类或搜索关键字。</p>) : (filteredImageAssetList.map((asset, index) => (<button key={asset.id} className="image-asset-option" disabled={isBrowseMode} onClick={() => applyExistingImage(asset.id)} title={asset.name || asset.filename || `后台图片 ${index + 1}`}>
                     <img src={imageAssets[asset.id] ?? asset.url} alt={asset.name || `后台图片 ${index + 1}`}/>
                     <span>{asset.name || `后台图片 ${index + 1}`}</span>
                   </button>)))}

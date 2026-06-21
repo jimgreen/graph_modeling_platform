@@ -1,0 +1,21 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-signal"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-signal-title lucide-signal-desc">
+  <title id="lucide-signal-title">signal</title>
+  <desc id="lucide-signal-desc">通信与控制 - Lucide - signal - ISC</desc>
+  <path fill="currentColor" d="M2 20h.01" />
+  <path fill="currentColor" d="M7 20v-4" />
+  <path fill="currentColor" d="M12 20v-8" />
+  <path fill="currentColor" d="M17 20V8" />
+  <path fill="currentColor" d="M22 4v16" />
+</svg>

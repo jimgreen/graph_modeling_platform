@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#dc2626" role="img" aria-labelledby="disconnector-open-title disconnector-open-desc">
+  <title id="disconnector-open-title">刀闸开断</title>
+  <desc id="disconnector-open-desc">电力设备 - disconnector, switch, open</desc>
+  <g>
+<path d="M12 36h14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M40 36h12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M26 36l14-18" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="26" cy="36" r="3" fill="currentColor"/>
+          <circle cx="40" cy="36" r="3" fill="currentColor"/>
+  </g>
+</svg>

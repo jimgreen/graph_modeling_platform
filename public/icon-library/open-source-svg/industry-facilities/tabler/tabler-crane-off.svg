@@ -1,0 +1,24 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-crane-off"
+ color="#2563eb" role="img" aria-labelledby="tabler-crane-off-title tabler-crane-off-desc">
+  <title id="tabler-crane-off-title">crane off</title>
+  <desc id="tabler-crane-off-desc">工业设施 - Tabler Icons - crane-off - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M6 21h6" />
+  <path fill="currentColor" d="M9 21v-12" />
+  <path fill="currentColor" d="M9 5v-2l-1 1" />
+  <path fill="currentColor" d="M6 6l-3 3h6" />
+  <path fill="currentColor" d="M13 9h8" />
+  <path fill="currentColor" d="M9 3l10 6" />
+  <path fill="currentColor" d="M17 9v4a2 2 0 0 1 2 2m-2 2a2 2 0 0 1 -2 -2" />
+  <path fill="currentColor" d="M3 3l18 18" />
+</svg>

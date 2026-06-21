@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" color="#2563eb" role="img" aria-labelledby="coreui-flag-alt-title coreui-flag-alt-desc">
+  <title id="coreui-flag-alt-title">flag alt</title>
+  <desc id="coreui-flag-alt-desc">状态告警 - CoreUI Icons - flag-alt - MIT</desc>
+  <path fill="var(--ci-primary-color, currentColor)" d="M64 16v480h32V360h352v-37.238L363.841 208 448 93.238V56H96V16Zm348.159 72-88 120 88 120H96V88Z" class="ci-primary"/>
+</svg>

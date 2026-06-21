@@ -1,0 +1,20 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-bike"
+ color="#2563eb" role="img" aria-labelledby="tabler-bike-title tabler-bike-desc">
+  <title id="tabler-bike-title">bike</title>
+  <desc id="tabler-bike-desc">交通设施 - Tabler Icons - bike - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M2 18a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
+  <path fill="currentColor" d="M16 18a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
+  <path fill="currentColor" d="M12 19v-4l-3 -3l5 -4l2 3h3" />
+  <path fill="currentColor" d="M13.007 5a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+</svg>

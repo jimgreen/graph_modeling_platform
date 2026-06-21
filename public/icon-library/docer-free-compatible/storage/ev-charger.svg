@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#2563eb" role="img" aria-labelledby="ev-charger-title ev-charger-desc">
+  <title id="ev-charger-title">充电桩</title>
+  <desc id="ev-charger-desc">储能 - EV, charger, storage</desc>
+  <g>
+<rect x="18" y="12" width="22" height="40" rx="4" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M24 20h10v10H24z" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M40 24h5l3 5v13c0 4-5 4-5 0V31" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M29 36l-4 7h7l-4 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

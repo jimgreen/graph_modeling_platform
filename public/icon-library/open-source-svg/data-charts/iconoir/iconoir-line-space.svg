@@ -1,0 +1,8 @@
+<svg width="24" height="24" viewBox="0 0 24 24" stroke-width="1.5" fill="none" xmlns="http://www.w3.org/2000/svg" color="#2563eb" role="img" aria-labelledby="iconoir-line-space-title iconoir-line-space-desc">
+  <title id="iconoir-line-space-title">line space</title>
+  <desc id="iconoir-line-space-desc">数据图表 - Iconoir - line-space - MIT</desc>
+<path d="M11 6H21" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M11 12H21" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M11 18H21" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M5 19V5M5 19L3 16.5M5 19L7 16.5M5 5L3 7M5 5L7 7" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

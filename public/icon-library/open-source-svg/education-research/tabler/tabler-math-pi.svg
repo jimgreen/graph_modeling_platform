@@ -1,0 +1,19 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-math-pi"
+ color="#2563eb" role="img" aria-labelledby="tabler-math-pi-title tabler-math-pi-desc">
+  <title id="tabler-math-pi-title">math pi</title>
+  <desc id="tabler-math-pi-desc">教育科研 - Tabler Icons - math-pi - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M7 20v-16" />
+  <path fill="currentColor" d="M17 4v16" />
+  <path fill="currentColor" d="M20 4h-16" />
+</svg>

@@ -1,0 +1,10 @@
+{
+  "generatedAt": "2026-06-21T22:19:38.744Z",
+  "packageName": "@fluentui/svg-icons",
+  "packageVersion": "1.1.330",
+  "packageSpec": "@fluentui/svg-icons@1.1.330",
+  "license": "MIT",
+  "sourceRepository": "https://github.com/microsoft/fluentui-system-icons",
+  "packageRegistry": "https://www.npmjs.com/package/%40fluentui%2Fsvg-icons",
+  "decision": "Used Microsoft Fluent UI System Icons from the MIT-licensed @fluentui/svg-icons package. Microsoft Office application brand icons and proprietary Office built-in icon assets were not copied."
+}

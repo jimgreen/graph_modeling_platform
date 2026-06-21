@@ -1,0 +1,21 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-hospital"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-hospital-title lucide-hospital-desc">
+  <title id="lucide-hospital-title">hospital</title>
+  <desc id="lucide-hospital-desc">医疗安全 - Lucide - hospital - ISC</desc>
+  <path fill="currentColor" d="M12 7v4" />
+  <path fill="currentColor" d="M14 21v-3a2 2 0 0 0-4 0v3" />
+  <path fill="currentColor" d="M14 9h-4" />
+  <path fill="currentColor" d="M18 11h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h2" />
+  <path fill="currentColor" d="M18 21V5a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16" />
+</svg>

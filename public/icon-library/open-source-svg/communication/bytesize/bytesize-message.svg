@@ -1,0 +1,5 @@
+<svg id="i-msg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" color="#2563eb" role="img" aria-labelledby="bytesize-message-title bytesize-message-desc">
+  <title id="bytesize-message-title">message</title>
+  <desc id="bytesize-message-desc">协作通信 - Bytesize Icons - message - MIT</desc>
+    <path fill="currentColor" d="M2 4 L30 4 30 22 16 22 8 29 8 22 2 22 Z" />
+</svg>

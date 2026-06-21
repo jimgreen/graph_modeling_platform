@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="line-md-paint-drop-title line-md-paint-drop-desc">
+  <title id="line-md-paint-drop-title">paint drop</title>
+  <desc id="line-md-paint-drop-desc">媒体素材 - Line MD - paint-drop - MIT</desc>
+	<path d="M12 3c0 0 7 6 7 12c0 2 -1 6 -7 6M12 3c0 0 -7 6 -7 12c0 2 1 6 7 6" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="28">
+		<animate attributeName="stroke-dashoffset" dur="0.6s" fill="freeze" values="28;0" />
+	</path>
+</svg>

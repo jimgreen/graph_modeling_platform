@@ -1,0 +1,7 @@
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" color="#2563eb" role="img" aria-labelledby="ikonate-chat-warning-title ikonate-chat-warning-desc">
+  <title id="ikonate-chat-warning-title">chat warning</title>
+  <desc id="ikonate-chat-warning-desc">状态告警 - Ikonate - chat-warning - MIT</desc>
+	<path fill="currentColor" d="M12 7V11"/>
+	<path fill="currentColor" d="M21 4V17H13L7 21V17H3V4H21Z"/>
+	<line x1="12" y1="14" x2="12" y2="14"></line>
+</svg>

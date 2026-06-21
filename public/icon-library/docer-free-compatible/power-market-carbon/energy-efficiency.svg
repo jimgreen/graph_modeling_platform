@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#84cc16" role="img" aria-labelledby="energy-efficiency-title energy-efficiency-desc">
+  <title id="energy-efficiency-title">能效</title>
+  <desc id="energy-efficiency-desc">电力市场与碳管理 - energy, efficiency</desc>
+  <g>
+<circle cx="32" cy="32" r="20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M32 14l-8 20h8l-4 16 14-24h-8z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 44c8 6 20 6 28 0" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#0891b2" role="img" aria-labelledby="flow-preparation-title flow-preparation-desc">
+  <title id="flow-preparation-title">流程准备</title>
+  <desc id="flow-preparation-desc">流程图与业务图 - flow, preparation</desc>
+  <g>
+<path d="M20 16h24l10 16-10 16H20L10 32z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="32" y="32" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="12" font-weight="700" fill="currentColor">R</text>
+  </g>
+</svg>

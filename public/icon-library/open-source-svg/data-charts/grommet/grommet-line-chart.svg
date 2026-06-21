@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="grommet-line-chart-title grommet-line-chart-desc">
+  <title id="grommet-line-chart-title">line chart</title>
+  <desc id="grommet-line-chart-desc">数据图表 - Grommet Icons - line-chart - Apache-2.0</desc>
+  <path fill="none" stroke="#000" stroke-width="2" d="M1,16 L8,9 L13,14 L23,4 M0,22 L23.999,22 M16,4 L23,4 L23,11"/>
+</svg>

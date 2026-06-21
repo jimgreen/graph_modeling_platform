@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" color="#2563eb" role="img" aria-labelledby="coreui-space-bar-title coreui-space-bar-desc">
+  <title id="coreui-space-bar-title">space bar</title>
+  <desc id="coreui-space-bar-desc">数据图表 - CoreUI Icons - space-bar - MIT</desc>
+  <path fill="var(--ci-primary-color, currentColor)" d="M40 288v128h424V288h-32v96H72v-96z" class="ci-primary"/>
+</svg>

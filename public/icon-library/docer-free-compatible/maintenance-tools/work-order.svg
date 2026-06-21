@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#334155" role="img" aria-labelledby="work-order-title work-order-desc">
+  <title id="work-order-title">检修工单</title>
+  <desc id="work-order-desc">检修工具 - work-order</desc>
+  <g>
+<rect x="16" y="12" width="32" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 24h16M24 32h16M24 40h10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M36 48l4 4 8-10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

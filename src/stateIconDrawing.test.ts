@@ -7,6 +7,7 @@ import {
   appendNonDefaultStateDraftRow,
   createEditableStateIconElementsFromSvgSource,
   createImportedStateIconElement,
+  createStateIconDrawingElement,
   createStateDraftRow,
   createStateDraftRowFromDefaultVisual,
   createStateIconDrawingElementFromGeneratedGroupMarkup,
@@ -15,6 +16,8 @@ import {
   nextNonDefaultStateIndex,
   nonDefaultStateDraftRows,
   normalizeStatePageId,
+  stateVisualShapeLabel,
+  svgSourceFromDataUrl,
   stateIconDrawingToImage,
   upsertDefaultStateDraftRow
 } from "./stateIconDrawing";
@@ -22,7 +25,10 @@ import { DEVICE_LIBRARY } from "./model";
 import { APP_STATIC_SCOPE } from "./appExtracted/appStaticScope";
 import {
   createAddCustomDeviceStateDraftRow,
+  createAddStateIconDrawingElement,
   createAddDefinitionStateDraftRow,
+  createStateIconDrawingKeyDown,
+  createStateIconDrawingElementFromStaticTemplate,
   createCustomDeviceDefaultStateVisualDraft,
   createSelectCustomComponentTemplate
 } from "./appExtracted/appDeviceDefinitionFactories";
@@ -104,6 +110,145 @@ describe("default device state draft rows", () => {
     expect(firstState.text).toBe("默认");
     expect(firstState.strokeColor).toBe("#0f172a");
     expect(secondIndex).toBe(2);
+  });
+
+  test("selecting a state icon drawing tool does not add an element until the canvas is clicked", () => {
+    let dialog: any = {
+      target: { scope: "definition", rowId: DEFAULT_STATE_PAGE_ID },
+      elements: [],
+      selectedElementId: "",
+      selectedElementIds: []
+    };
+    const addElement = createAddStateIconDrawingElement({
+      createStateIconDrawingElement,
+      customDeviceDefaultStateVisualDraft: () => ({}),
+      customDeviceDraft: { stateDefinitions: [] },
+      defaultStateDraftRow,
+      definitionDefaultStateVisualDraft: () => ({}),
+      definitionStateDraftRows: [],
+      isDefaultStatePageId,
+      setStateIconDrawingContextMenu: () => {},
+      setStateIconDrawingDialog: (updater: any) => {
+        dialog = typeof updater === "function" ? updater(dialog) : updater;
+      },
+      stateIconDrawingHistoryRef: { current: [] }
+    });
+
+    addElement("rectangle" as any);
+
+    expect(dialog.elements).toEqual([]);
+    expect(dialog.elementLibraryTab).toBe("basic");
+    expect(dialog.pendingElementKind).toBe("rectangle");
+    expect(dialog.drawingDraft).toBeUndefined();
+  });
+
+  test("selecting a built-in state icon tool clears the pending static template", () => {
+    let dialog: any = {
+      target: { scope: "definition", rowId: DEFAULT_STATE_PAGE_ID },
+      elements: [],
+      selectedElementId: "",
+      selectedElementIds: [],
+      pendingStaticTemplate: { kind: "static-rect", label: "方框" }
+    };
+    const addElement = createAddStateIconDrawingElement({
+      setStateIconDrawingContextMenu: () => {},
+      setStateIconDrawingDialog: (updater: any) => {
+        dialog = typeof updater === "function" ? updater(dialog) : updater;
+      }
+    });
+
+    addElement("circle" as any);
+
+    expect(dialog.elements).toEqual([]);
+    expect(dialog.elementLibraryTab).toBe("basic");
+    expect(dialog.pendingElementKind).toBe("circle");
+    expect(dialog.pendingStaticTemplate).toBeUndefined();
+    expect(dialog.drawingDraft).toBeUndefined();
+  });
+
+  test("pressing Enter commits an in-progress state icon polyline drawing", () => {
+    const polyline = createStateIconDrawingElement("polyline" as any);
+    let prevented = false;
+    let contextMenuCleared = false;
+    let dialog: any = {
+      target: { scope: "definition", rowId: DEFAULT_STATE_PAGE_ID },
+      elements: [],
+      selectedElementId: "",
+      selectedElementIds: [],
+      pendingElementKind: "polyline",
+      drawingDraft: {
+        kind: "polyline",
+        start: { x: 20, y: 24 },
+        current: { x: 120, y: 80 },
+        points: [
+          { x: 20, y: 24 },
+          { x: 78, y: 40 }
+        ],
+        element: polyline
+      }
+    };
+    const handleKeyDown = createStateIconDrawingKeyDown({
+      deleteSelectedStateIconDrawingElements: () => {},
+      setStateIconDrawingContextMenu: (next: any) => {
+        contextMenuCleared = next === null;
+      },
+      setStateIconDrawingDialog: (updater: any) => {
+        dialog = typeof updater === "function" ? updater(dialog) : updater;
+      },
+      stateIconDrawingClipboardRef: { current: [] },
+      stateIconDrawingDialog: dialog,
+      stateIconDrawingElementId: () => "copied",
+      stateIconDrawingHistoryRef: { current: [] }
+    });
+
+    handleKeyDown({
+      key: "Enter",
+      ctrlKey: false,
+      metaKey: false,
+      target: null,
+      preventDefault: () => {
+        prevented = true;
+      }
+    } as any);
+
+    expect(prevented).toBe(true);
+    expect(contextMenuCleared).toBe(true);
+    expect(dialog.elements).toHaveLength(1);
+    expect(dialog.elements[0].kind).toBe("polyline");
+    expect(dialog.elements[0].points).toHaveLength(3);
+    expect(dialog.selectedElementId).toBe(polyline.id);
+    expect(dialog.selectedElementIds).toEqual([polyline.id]);
+    expect(dialog.pendingElementKind).toBeUndefined();
+    expect(dialog.drawingDraft).toBeUndefined();
+  });
+
+  test("converts model static templates into reusable state icon drawing elements", () => {
+    const staticTextTemplate = DEVICE_LIBRARY.find((item) => item.kind === "static-text");
+    const staticButtonTemplate = DEVICE_LIBRARY.find((item) => item.kind === "static-button");
+    expect(staticTextTemplate).toBeTruthy();
+    expect(staticButtonTemplate).toBeTruthy();
+    if (!staticTextTemplate || !staticButtonTemplate) {
+      return;
+    }
+    const renderedSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160"><rect x="20" y="20" width="200" height="120"/></svg>`;
+    const scope = {
+      createImportedStateIconElement,
+      createStateIconDrawingElement,
+      createTemplateDefaultStateIconImage: () => `data:image/svg+xml;utf8,${encodeURIComponent(renderedSvg)}`,
+      svgSourceFromDataUrl
+    };
+
+    const textElement = createStateIconDrawingElementFromStaticTemplate(scope, staticTextTemplate);
+    const buttonElement = createStateIconDrawingElementFromStaticTemplate(scope, staticButtonTemplate);
+
+    expect(textElement.kind).toBe("text");
+    expect(textElement.text).toBe("文字");
+    expect(textElement.width).toBe(staticTextTemplate.size.width);
+    expect(textElement.height).toBe(staticTextTemplate.size.height);
+    expect(buttonElement.kind).toBe("imported-svg");
+    expect(buttonElement.svgSource).toContain("<rect");
+    expect(buttonElement.width).toBe(staticButtonTemplate.size.width);
+    expect(buttonElement.height).toBe(staticButtonTemplate.size.height);
   });
 
   test("uses the selected template glyph instead of the generated placeholder for an edited component default state", () => {
@@ -447,6 +592,43 @@ describe("default device state draft rows", () => {
     expect(restored[0].svgSource).not.toContain('viewBox="0 0 240 160"');
   });
 
+  test("keeps terminal ownership metadata when saving and restoring generated drawing elements", () => {
+    const element = {
+      ...createStateIconDrawingElement("circle"),
+      id: "terminal-owned-circle",
+      x: 120,
+      y: 80,
+      terminalIndex: 1
+    } as any;
+    const imageSource = decodeURIComponent(stateIconDrawingToImage([element]).split(",")[1] ?? "");
+    const groupMarkup = imageSource.match(/<g\b[\s\S]*<\/g>/)?.[0] ?? "";
+
+    const restored = createStateIconDrawingElementFromGeneratedGroupMarkup(groupMarkup, "端子图案");
+
+    expect(imageSource).toContain('data-terminal-index="1"');
+    expect(restored).toMatchObject({
+      kind: "circle",
+      terminalIndex: 1
+    });
+  });
+
+  test("keeps terminal ownership metadata when generated layers fall back to imported SVG elements", () => {
+    const element = {
+      ...createStateIconDrawingElement("line"),
+      id: "terminal-owned-line",
+      terminalIndex: 0
+    } as any;
+    const imageSource = decodeURIComponent(stateIconDrawingToImage([element]).split(",")[1] ?? "");
+
+    const restored = createEditableStateIconElementsFromSvgSource(imageSource, "端子线");
+
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toMatchObject({
+      kind: "imported-svg",
+      terminalIndex: 0
+    });
+  });
+
   test("keeps externally imported SVG as one drawing element", () => {
     const imported = createEditableStateIconElementsFromSvgSource(
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="4" y="4" width="56" height="56"/><circle cx="32" cy="32" r="16"/><text x="32" y="36">A</text></svg>',
@@ -462,5 +644,90 @@ describe("default device state draft rows", () => {
     expect(imported[0].svgSource).toContain("<rect");
     expect(imported[0].svgSource).toContain("<circle");
     expect(imported[0].svgSource).toContain("<text");
+  });
+
+  test("exports configurable endpoint caps for line drawing shapes", () => {
+    const elements = (["line", "polyline", "arc", "semicircle"] as const).map((kind, index) => ({
+      ...createStateIconDrawingElement(kind),
+      id: `cap-${kind}`,
+      x: 120,
+      y: 30 + index * 34,
+      startCap: index % 2 === 0 ? "arrow" as const : "circle" as const,
+      endCap: index % 2 === 0 ? "square" as const : "triangle" as const
+    }));
+
+    const imageSource = decodeURIComponent(stateIconDrawingToImage(elements).split(",")[1] ?? "");
+
+    expect(imageSource).toContain('id="cap-cap-line-start-arrow"');
+    expect(imageSource).toContain('id="cap-cap-line-end-square"');
+    expect(imageSource).toContain('id="cap-cap-polyline-start-circle"');
+    expect(imageSource).toContain('id="cap-cap-polyline-end-triangle"');
+    expect(imageSource).toContain('id="cap-cap-arc-start-arrow"');
+    expect(imageSource).toContain('id="cap-cap-arc-end-square"');
+    expect(imageSource).toContain('id="cap-cap-semicircle-start-circle"');
+    expect(imageSource).toContain('id="cap-cap-semicircle-end-triangle"');
+    expect(imageSource).toContain('marker-start="url(#cap-cap-line-start-arrow)"');
+    expect(imageSource).toContain('marker-end="url(#cap-cap-semicircle-end-triangle)"');
+  });
+
+  test("exports polyline drawing elements with all clicked bend points", () => {
+    const element = {
+      ...createStateIconDrawingElement("polyline"),
+      id: "multi-bend-polyline",
+      x: 120,
+      y: 80,
+      width: 120,
+      height: 80,
+      points: [
+        { x: -0.5, y: -0.5 },
+        { x: -0.25, y: 0.25 },
+        { x: 0.15, y: -0.15 },
+        { x: 0.5, y: 0.5 }
+      ]
+    } as any;
+
+    const imageSource = decodeURIComponent(stateIconDrawingToImage([element]).split(",")[1] ?? "");
+
+    expect(imageSource).toContain('data-polyline-points="-0.5,-0.5 -0.25,0.25 0.15,-0.15 0.5,0.5"');
+    expect(imageSource).toContain('d="M -60 -40 L -30 20 L 18 -12 L 60 40"');
+  });
+
+  test("exports fill colors for closed drawing shapes and text boxes", () => {
+    const elements = (["circle", "polygon", "ellipse", "text"] as const).map((kind, index) => ({
+      ...createStateIconDrawingElement(kind),
+      id: `fill-${kind}`,
+      x: 60 + index * 36,
+      y: 80,
+      fillColor: index === 3 ? "#fff4cc" : "#dbeafe",
+      strokeColor: "#1d4ed8",
+      text: kind === "text" ? "TXT" : kind
+    }));
+
+    const imageSource = decodeURIComponent(stateIconDrawingToImage(elements).split(",")[1] ?? "");
+
+    expect(imageSource).toContain('<circle');
+    expect(imageSource).toContain('fill="#dbeafe"');
+    expect(imageSource).toContain('<ellipse');
+    expect(imageSource).toContain('<rect');
+    expect(imageSource).toContain('fill="#fff4cc"');
+    expect(imageSource).toContain('>TXT</text>');
+  });
+
+  test("creates rectangle and square as distinct common drawing shapes", () => {
+    const rectangle = createStateIconDrawingElement("rectangle" as any);
+    const square = createStateIconDrawingElement("square");
+    const imageSource = decodeURIComponent(stateIconDrawingToImage([
+      { ...rectangle, id: "common-rectangle", strokeColor: "#1d4ed8", fillColor: "#dbeafe" },
+      { ...square, id: "common-square", strokeColor: "#1d4ed8", fillColor: "#fff4cc" }
+    ] as any).split(",")[1] ?? "");
+
+    expect(stateVisualShapeLabel("rectangle" as any)).toBe("矩形");
+    expect(stateVisualShapeLabel("square")).toBe("正方型");
+    expect(rectangle.width).toBeGreaterThan(rectangle.height);
+    expect(square.width).toBe(square.height);
+    expect(imageSource).toContain('width="96"');
+    expect(imageSource).toContain('height="58"');
+    expect(imageSource).toContain('width="68"');
+    expect(imageSource).toContain('height="68"');
   });
 });

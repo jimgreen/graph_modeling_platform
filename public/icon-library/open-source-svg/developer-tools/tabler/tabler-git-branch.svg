@@ -1,0 +1,22 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-git-branch"
+ color="#2563eb" role="img" aria-labelledby="tabler-git-branch-title tabler-git-branch-desc">
+  <title id="tabler-git-branch-title">git branch</title>
+  <desc id="tabler-git-branch-desc">开发工具 - Tabler Icons - git-branch - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M5 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+  <path fill="currentColor" d="M5 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+  <path fill="currentColor" d="M15 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+  <path fill="currentColor" d="M7 8l0 8" />
+  <path fill="currentColor" d="M9 18h6a2 2 0 0 0 2 -2v-5" />
+  <path fill="currentColor" d="M14 14l3 -3l3 3" />
+</svg>

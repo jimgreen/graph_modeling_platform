@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#0284c7" role="img" aria-labelledby="hydro-generator-title hydro-generator-desc">
+  <title id="hydro-generator-title">水电机组</title>
+  <desc id="hydro-generator-desc">新能源与发电 - hydro, generator, water</desc>
+  <g>
+<circle cx="32" cy="25" r="13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M32 12v13l10 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M14 44c5-4 10-4 15 0s10 4 15 0 5-4 10 0" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M14 52c5-4 10-4 15 0s10 4 15 0 5-4 10 0" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

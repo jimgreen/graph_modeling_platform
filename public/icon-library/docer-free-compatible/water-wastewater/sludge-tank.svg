@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#a16207" role="img" aria-labelledby="sludge-tank-title sludge-tank-desc">
+  <title id="sludge-tank-title">污泥池</title>
+  <desc id="sludge-tank-desc">水务环保 - sludge, tank</desc>
+  <g>
+<rect x="16" y="18" width="32" height="32" rx="10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 36c4-3 8-3 12 0s8 3 12 0" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="26" cy="42" r="2" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="38" cy="43" r="2" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

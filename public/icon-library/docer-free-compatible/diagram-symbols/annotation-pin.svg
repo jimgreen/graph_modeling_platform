@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#f59e0b" role="img" aria-labelledby="annotation-pin-title annotation-pin-desc">
+  <title id="annotation-pin-title">标注图钉</title>
+  <desc id="annotation-pin-desc">图形符号扩展 - annotation, pin</desc>
+  <g>
+<path d="M22 12h20l-4 14 8 8H18l8-8z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M32 34L32 54" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

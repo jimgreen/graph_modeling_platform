@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" color="#2563eb" role="img" aria-labelledby="coreui-level-down-title coreui-level-down-desc">
+  <title id="coreui-level-down-title">level down</title>
+  <desc id="coreui-level-down-desc">用电环节 - CoreUI Icons - level-down - MIT</desc>
+  <path fill="var(--ci-primary-color, currentColor)" d="m171.313 348.686-22.626 22.628L272 494.627l123.313-123.313-22.626-22.628L288 433.373V96H72v32h184v305.373z" class="ci-primary"/>
+</svg>

@@ -1,0 +1,22 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-book-open-text"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-book-open-text-title lucide-book-open-text-desc">
+  <title id="lucide-book-open-text-title">book open text</title>
+  <desc id="lucide-book-open-text-desc">文件文档 - Lucide - book-open-text - ISC</desc>
+  <path fill="currentColor" d="M12 7v14" />
+  <path fill="currentColor" d="M16 12h2" />
+  <path fill="currentColor" d="M16 8h2" />
+  <path fill="currentColor" d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" />
+  <path fill="currentColor" d="M6 12h2" />
+  <path fill="currentColor" d="M6 8h2" />
+</svg>

@@ -1,0 +1,23 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-rv-truck"
+ color="#2563eb" role="img" aria-labelledby="tabler-rv-truck-title tabler-rv-truck-desc">
+  <title id="tabler-rv-truck-title">rv truck</title>
+  <desc id="tabler-rv-truck-desc">交通设施 - Tabler Icons - rv-truck - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M5 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+  <path fill="currentColor" d="M15 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+  <path fill="currentColor" d="M9 17h6" />
+  <path fill="currentColor" d="M19 17h1a1 1 0 0 0 1 -1v-4.528a2 2 0 0 0 -.211 -.894l-.96 -1.92a3 3 0 0 0 -2.683 -1.658h-11.146a3 3 0 0 0 -3 3v6a1 1 0 0 0 1 1h1" />
+  <path fill="currentColor" d="M3 12h18" />
+  <path fill="currentColor" d="M15 12v-5" />
+  <path fill="currentColor" d="M6 5.5a1.5 1.5 0 0 1 1.5 -1.5h7a1.5 1.5 0 0 1 1.5 1.5a1.5 1.5 0 0 1 -1.5 1.5h-7a1.5 1.5 0 0 1 -1.5 -1.5" />
+</svg>

@@ -1,0 +1,18 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-mouse"
+ color="#2563eb" role="img" aria-labelledby="tabler-mouse-title tabler-mouse-desc">
+  <title id="tabler-mouse-title">mouse</title>
+  <desc id="tabler-mouse-desc">画布工具 - Tabler Icons - mouse - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M6 7a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v10a4 4 0 0 1 -4 4h-4a4 4 0 0 1 -4 -4l0 -10" />
+  <path fill="currentColor" d="M12 7l0 4" />
+</svg>

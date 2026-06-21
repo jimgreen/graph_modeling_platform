@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" focusable="false" viewBox="0 0 16 16" color="#2563eb" role="img" aria-labelledby="zendesk-garden-x-circle-title zendesk-garden-x-circle-desc">
+  <title id="zendesk-garden-x-circle-title">x circle</title>
+  <desc id="zendesk-garden-x-circle-desc">状态告警 - Zendesk Garden Icons - x-circle - Apache-2.0</desc>
+  <g fill="none" stroke="currentColor">
+    <circle fill="currentColor" cx="7.5" cy="8.5" r="7"/>
+    <path fill="currentColor" stroke-linecap="round" d="M4.5 11.5l6-6m0 6l-6-6"/>
+  </g>
+</svg>

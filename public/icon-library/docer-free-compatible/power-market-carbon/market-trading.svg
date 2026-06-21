@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#2563eb" role="img" aria-labelledby="market-trading-title market-trading-desc">
+  <title id="market-trading-title">市场交易</title>
+  <desc id="market-trading-desc">电力市场与碳管理 - market, trading</desc>
+  <g>
+<path d="M12 42h40" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 42V26h8v16M30 42V18h8v24M42 42V30h8v12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 18l10-6 12 8 10-8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

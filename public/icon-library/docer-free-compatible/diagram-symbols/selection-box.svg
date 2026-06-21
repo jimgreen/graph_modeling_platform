@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#2563eb" role="img" aria-labelledby="selection-box-title selection-box-desc">
+  <title id="selection-box-title">选择框</title>
+  <desc id="selection-box-desc">图形符号扩展 - selection</desc>
+  <g>
+<rect x="14" y="14" width="36" height="36" rx="2" fill="none" stroke="currentColor" stroke-width="2.4" stroke-dasharray="5 4"/><rect x="10" y="10" width="8" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><rect x="46" y="46" width="8" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

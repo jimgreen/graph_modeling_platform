@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" color="#2563eb" role="img" aria-labelledby="coreui-external-link-title coreui-external-link-desc">
+  <title id="coreui-external-link-title">external link</title>
+  <desc id="coreui-external-link-desc">协作通信 - CoreUI Icons - external-link - MIT</desc>
+  <path fill="var(--ci-primary-color, currentColor)" d="M400 464H48V104h192V72H16v424h416V272h-32z" class="ci-primary"/>
+  <path fill="var(--ci-primary-color, currentColor)" d="M304 16v32h137.373L188.687 300.687l22.626 22.626L464 70.627V208h32V16z" class="ci-primary"/>
+</svg>

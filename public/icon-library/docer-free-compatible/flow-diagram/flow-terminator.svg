@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#16a34a" role="img" aria-labelledby="flow-terminator-title flow-terminator-desc">
+  <title id="flow-terminator-title">开始结束</title>
+  <desc id="flow-terminator-desc">流程图与业务图 - flow, terminator</desc>
+  <g>
+<rect x="12" y="22" width="40" height="20" rx="10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="32" y="32" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="9" font-weight="700" fill="currentColor">END</text>
+  </g>
+</svg>

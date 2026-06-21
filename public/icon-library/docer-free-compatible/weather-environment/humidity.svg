@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#06b6d4" role="img" aria-labelledby="humidity-title humidity-desc">
+  <title id="humidity-title">湿度</title>
+  <desc id="humidity-desc">气象与环境 - humidity</desc>
+  <g>
+<path d="M32 10c12 14 18 24 18 32a18 18 0 0 1-36 0c0-8 6-18 18-32z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 42c2 5 10 7 16 2" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

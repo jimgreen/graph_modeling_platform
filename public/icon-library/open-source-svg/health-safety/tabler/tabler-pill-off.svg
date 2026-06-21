@@ -1,0 +1,19 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-pill-off"
+ color="#2563eb" role="img" aria-labelledby="tabler-pill-off-title tabler-pill-off-desc">
+  <title id="tabler-pill-off-title">pill off</title>
+  <desc id="tabler-pill-off-desc">医疗安全 - Tabler Icons - pill-off - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M10.495 6.505l2 -2a4.95 4.95 0 0 1 7 7l-2 2m-2 2l-4 4a4.95 4.95 0 0 1 -7 -7l4 -4" />
+  <path fill="currentColor" d="M8.5 8.5l7 7" />
+  <path fill="currentColor" d="M3 3l18 18" />
+</svg>

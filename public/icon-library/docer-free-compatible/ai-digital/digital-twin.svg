@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#4f46e5" role="img" aria-labelledby="digital-twin-title digital-twin-desc">
+  <title id="digital-twin-title">数字孪生</title>
+  <desc id="digital-twin-desc">AI与数字化 - digital, twin</desc>
+  <g>
+<rect x="12" y="18" width="18" height="28" rx="3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><rect x="34" y="18" width="18" height="28" rx="3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M30 28h4M30 36h4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="21" y="32" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="10" font-weight="700" fill="currentColor">A</text><text x="43" y="32" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="10" font-weight="700" fill="currentColor">B</text>
+  </g>
+</svg>

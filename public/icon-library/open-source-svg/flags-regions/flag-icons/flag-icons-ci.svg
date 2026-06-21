@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" id="flag-icons-ci" viewBox="0 0 640 480" color="#2563eb" role="img" aria-labelledby="flag-icons-ci-title flag-icons-ci-desc">
+  <title id="flag-icons-ci-title">ci</title>
+  <desc id="flag-icons-ci-desc">国家地区旗帜 - Flag Icons - ci - MIT</desc>
+  <g fill-rule="evenodd">
+    <path fill="#00cd00" d="M426.8 0H640v480H426.8z"/>
+    <path fill="#ff9a00" d="M0 0h212.9v480H0z"/>
+    <path fill="#fff" d="M212.9 0h214v480h-214z"/>
+  </g>
+</svg>

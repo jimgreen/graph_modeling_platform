@@ -1,0 +1,24 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-film"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-film-title lucide-film-desc">
+  <title id="lucide-film-title">film</title>
+  <desc id="lucide-film-desc">媒体素材 - Lucide - film - ISC</desc>
+  <rect fill="currentColor" width="18" height="18" x="3" y="3" rx="2" />
+  <path fill="currentColor" d="M7 3v18" />
+  <path fill="currentColor" d="M3 7.5h4" />
+  <path fill="currentColor" d="M3 12h18" />
+  <path fill="currentColor" d="M3 16.5h4" />
+  <path fill="currentColor" d="M17 3v18" />
+  <path fill="currentColor" d="M17 7.5h4" />
+  <path fill="currentColor" d="M17 16.5h4" />
+</svg>

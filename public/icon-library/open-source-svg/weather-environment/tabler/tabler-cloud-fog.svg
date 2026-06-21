@@ -1,0 +1,18 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-cloud-fog"
+ color="#2563eb" role="img" aria-labelledby="tabler-cloud-fog-title tabler-cloud-fog-desc">
+  <title id="tabler-cloud-fog-title">cloud fog</title>
+  <desc id="tabler-cloud-fog-desc">气象环境 - Tabler Icons - cloud-fog - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M7 16a4.6 4.4 0 0 1 0 -9a5 4.5 0 0 1 11 2h1a3.5 3.5 0 0 1 0 7h-12" />
+  <path fill="currentColor" d="M5 20l14 0" />
+</svg>
