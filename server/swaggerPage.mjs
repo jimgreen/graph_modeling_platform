@@ -6,8 +6,9 @@
 // examples: [{ label, params: { <pathParamName>: <v>, "q_<queryName>": <v>, "__body__": <obj|str> } }]
 //   每个接口至少 1 个示例，Try-it 下拉切换示例自动填充输入框。
 //   真实数据取自 data/schemes：方案「默认方案」(子「1-1」)，模型如「未命名模型」「线路」等。
-const SP_DEFAULT = encodeURIComponent(JSON.stringify(["默认方案"]));
-const SP_SUB = encodeURIComponent(JSON.stringify(["默认方案", "1-1"]));
+//   注意：示例值存原始值（未编码），buildUrl 统一负责 encodeURIComponent，避免双重编码。
+const SP_DEFAULT = JSON.stringify(["默认方案"]);
+const SP_SUB = JSON.stringify(["默认方案", "1-1"]);
 const PNG_1X1 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
 const ENDPOINTS = [
@@ -51,7 +52,7 @@ const ENDPOINTS = [
     { label: "保存空方案树（会清空，慎用）", params: { __body__: { schemes: [] } } }
   ]},
   { group: "方案（内部）", method: "GET", path: "/api/schemes/project", desc: "读取单个模型", query: [{ name: "schemePath", desc: "方案路径" }, { name: "name", desc: "模型名（或 projectName）" }], response: "{ok:true,project}", examples: [
-    { label: "读「未命名模型」", params: { q_schemePath: SP_DEFAULT, q_name: "未命名模型" } },
+    { label: "读「图元连接」", params: { q_schemePath: SP_DEFAULT, q_name: "图元连接" } },
     { label: "读「线路」", params: { q_schemePath: SP_DEFAULT, q_name: "线路" } }
   ]},
   { group: "方案（内部）", method: "PUT", path: "/api/schemes/project", desc: "保存模型", body: { schemePath: ["默认方案"], name: "模型1", project: {} }, response: "{ok:true,project,savedAt}", examples: [
@@ -103,11 +104,11 @@ const ENDPOINTS = [
     { label: "导出「默认方案」", params: { q_schemePath: SP_DEFAULT } }
   ]},
   { group: "v1 方案域", method: "GET", path: "/api/v1/schemes/model/json", desc: "模型 project JSON", query: [{ name: "schemePath", desc: "方案路径" }, { name: "name", desc: "模型名" }], response: "{ok:true,data:{project}}", examples: [
-    { label: "「未命名模型」JSON", params: { q_schemePath: SP_DEFAULT, q_name: "未命名模型" } },
+    { label: "「图元连接」JSON", params: { q_schemePath: SP_DEFAULT, q_name: "图元连接" } },
     { label: "「线路」JSON", params: { q_schemePath: SP_DEFAULT, q_name: "线路" } }
   ]},
   { group: "v1 方案域", method: "GET", path: "/api/v1/schemes/model/svg", desc: "模型 SVG", query: [{ name: "schemePath", desc: "方案路径" }, { name: "name", desc: "模型名" }], response: "<image/svg+xml>", examples: [
-    { label: "「未命名模型」SVG", params: { q_schemePath: SP_DEFAULT, q_name: "未命名模型" } },
+    { label: "「线路」SVG", params: { q_schemePath: SP_DEFAULT, q_name: "线路" } },
     { label: "「图元连接」SVG", params: { q_schemePath: SP_DEFAULT, q_name: "图元连接" } }
   ]},
 
@@ -164,6 +165,9 @@ const ENDPOINTS = [
   ]}
 ];
 
+// 导出供测试复用（swigger.examples.test.mjs 遍历验证）
+export const SWIGGER_ENDPOINTS = ENDPOINTS;
+
 const METHOD_COLORS = {
   GET: "#61affe",
   POST: "#49cc90",
@@ -215,6 +219,7 @@ export function renderSwaggerHtml() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>API Swigger — /api/ 接口文档</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #2b3a42; }
@@ -245,6 +250,23 @@ export function renderSwaggerHtml() {
   .param-table th { color: #6b7d8a; font-weight: 600; }
   .param-name { font-family: Consolas, monospace; color: #2b6cb0; }
   pre { background: #1e293b; color: #e2e8f0; padding: 10px 12px; border-radius: 4px; font-size: 12px; overflow-x: auto; margin: 0; font-family: Consolas, monospace; }
+  pre code.hljs { background: transparent; padding: 0; font-family: Consolas, monospace; }
+  /* 可折叠 JSON 树 */
+  .json-tree { font-family: Consolas, monospace; font-size: 12px; background: #1e293b; color: #e2e8f0; padding: 10px 12px; border-radius: 4px; overflow-x: auto; line-height: 1.6; white-space: pre-wrap; word-break: break-all; }
+  .json-tree .jt-row { display: block; }
+  .json-tree .jt-toggle { cursor: pointer; user-select: none; color: #8fb3d9; margin-right: 4px; display: inline-block; min-width: 12px; }
+  .json-tree .jt-toggle:hover { color: #fff; }
+  .json-tree .jt-key { color: #79c0ff; }
+  .json-tree .jt-str { color: #a5d6a7; }
+  .json-tree .jt-num { color: #f6c177; }
+  .json-tree .jt-bool { color: #f0883e; }
+  .json-tree .jt-null { color: #98a2b3; }
+  .json-tree .jt-punct { color: #cbd5e0; }
+  .json-tree .jt-count { color: #6b7d8a; font-size: 11px; margin-left: 4px; }
+  .json-tree .jt-children.collapsed { display: none; }
+  .jt-toolbar { margin-bottom: 4px; }
+  .jt-toolbar button { background: #2b3a42; color: #cbd5e0; border: 1px solid #475569; border-radius: 3px; padding: 2px 8px; font-size: 11px; cursor: pointer; margin-right: 4px; }
+  .jt-toolbar button:hover { background: #3a4a52; }
   .try-row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-top: 8px; }
   .try-row input, .try-row textarea { padding: 6px 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 13px; font-family: Consolas, monospace; }
   .try-row input { min-width: 140px; }
@@ -253,6 +275,11 @@ export function renderSwaggerHtml() {
   button.send:hover { background: #2c5282; }
   button.send:disabled { background: #a0aec0; cursor: not-allowed; }
   .result { margin-top: 10px; }
+  .result-section { margin-bottom: 12px; }
+  .result-label { font-size: 12px; color: #2b6cb0; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .req-meta { font-size: 12px; color: #6b7d8a; margin-bottom: 4px; white-space: pre-wrap; word-break: break-all; font-family: Consolas, monospace; }
+  pre.req-body:empty { display: none; }
+  pre.req-body { margin-top: 4px; }
   .result-meta { font-size: 12px; color: #6b7d8a; margin-bottom: 4px; }
   .img-preview { max-width: 100%; max-height: 320px; border: 1px solid #e4e8eb; border-radius: 4px; margin-top: 6px; }
   .arrow { color: #cbd5e0; transition: transform 0.2s; }
@@ -270,9 +297,83 @@ export function renderSwaggerHtml() {
     ${groupCardsHtml}
   </main>
 </div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script>
   const ENDPOINTS = ${endpointsJson};
   const METHOD_COLORS = ${JSON.stringify(METHOD_COLORS)};
+  // 代码高亮：highlight.js
+  function highlightCode(codeEl, text, lang) {
+    codeEl.textContent = text;
+    codeEl.className = "hljs" + (lang ? " language-" + lang : "");
+    try { if (window.hljs) window.hljs.highlightElement(codeEl); } catch {}
+  }
+
+  // 可折叠 JSON 树：深层级默认折叠，配「折叠全部/展开全部」
+  function renderJsonTree(container, value, label) {
+    const toolbar = document.createElement("div");
+    toolbar.className = "jt-toolbar";
+    const collapseAll = document.createElement("button"); collapseAll.type = "button"; collapseAll.textContent = "折叠全部";
+    const expandAll = document.createElement("button"); expandAll.type = "button"; expandAll.textContent = "展开全部";
+    toolbar.appendChild(collapseAll); toolbar.appendChild(expandAll);
+    if (label) { const lab = document.createElement("span"); lab.style.cssText = "font-size:12px;color:#6b7d8a;margin-left:4px;"; lab.textContent = label; toolbar.appendChild(lab); }
+    container.innerHTML = "";
+    container.appendChild(toolbar);
+
+    const tree = document.createElement("div"); tree.className = "json-tree";
+    tree.appendChild(buildJsonNode(value, "", 0));
+    container.appendChild(tree);
+
+    collapseAll.onclick = () => tree.querySelectorAll(".jt-children").forEach((c) => c.classList.add("collapsed"));
+    expandAll.onclick = () => tree.querySelectorAll(".jt-children").forEach((c) => c.classList.remove("collapsed"));
+  }
+
+  function buildJsonNode(value, key, depth) {
+    const row = document.createElement("div"); row.className = "jt-row";
+    row.style.paddingLeft = (depth * 16) + "px";
+
+    if (value === null) {
+      if (key) { const k = document.createElement("span"); k.className = "jt-key"; k.textContent = '"' + key + '": '; row.appendChild(k); }
+      const v = document.createElement("span"); v.className = "jt-null"; v.textContent = "null"; row.appendChild(v);
+      return row;
+    }
+    const isArr = Array.isArray(value);
+    const isObj = typeof value === "object";
+    if (!isObj) {
+      if (key) { const k = document.createElement("span"); k.className = "jt-key"; k.textContent = '"' + key + '": '; row.appendChild(k); }
+      const v = document.createElement("span");
+      if (typeof value === "string") { v.className = "jt-str"; v.textContent = '"' + value + '"'; }
+      else if (typeof value === "number") { v.className = "jt-num"; v.textContent = String(value); }
+      else if (typeof value === "boolean") { v.className = "jt-bool"; v.textContent = String(value); }
+      else { v.textContent = String(value); }
+      row.appendChild(v);
+      return row;
+    }
+
+    const childCount = Object.keys(value).length;
+    const open = document.createElement("span"); open.className = "jt-toggle"; open.textContent = "▼";
+    if (key) { const k = document.createElement("span"); k.className = "jt-key"; k.textContent = '"' + key + '": '; row.appendChild(k); }
+    const openBrace = document.createElement("span"); openBrace.className = "jt-punct"; openBrace.textContent = isArr ? "[" : "{"; row.appendChild(open); row.appendChild(openBrace);
+    const count = document.createElement("span"); count.className = "jt-count"; count.textContent = childCount + " 项"; row.appendChild(count);
+
+    const children = document.createElement("div"); children.className = "jt-children";
+    // 深度 ≥2 默认折叠（顶层与第一层展开，深层收起，避免长响应刷屏）
+    if (depth >= 2) children.classList.add("collapsed");
+    Object.keys(value).forEach((k) => { children.appendChild(buildJsonNode(value[k], isArr ? "" : k, depth + 1)); });
+
+    const closeRow = document.createElement("div"); closeRow.className = "jt-row";
+    closeRow.style.paddingLeft = (depth * 16) + "px";
+    const closeBrace = document.createElement("span"); closeBrace.className = "jt-punct"; closeBrace.textContent = isArr ? "]" : "}"; closeRow.appendChild(closeBrace);
+
+    const wrap = document.createElement("span");
+    open.onclick = () => {
+      const collapsed = children.classList.toggle("collapsed");
+      open.textContent = collapsed ? "▶" : "▼";
+    };
+
+    const frag = document.createDocumentFragment();
+    frag.appendChild(row); frag.appendChild(children); frag.appendChild(closeRow);
+    return frag;
+  }
 
   // 折叠/展开
   document.querySelectorAll(".card-head").forEach((head) => {
@@ -297,27 +398,68 @@ export function renderSwaggerHtml() {
     const card = btn.closest(".card");
     const inputs = card.querySelectorAll("input[data-key], textarea[data-key]");
     const params = {};
-    inputs.forEach((i) => { params[i.dataset.key] = i.value; });
+    // path/query 参数：trim + 去掉首尾引号（避免从响应里连引号复制粘贴导致编码异常）
+    inputs.forEach((i) => {
+      const key = i.dataset.key;
+      if (key === "__body__") {
+        params[key] = i.value;
+        return;
+      }
+      let v = i.value.trim();
+      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+        v = v.slice(1, -1).trim();
+      }
+      params[key] = v;
+    });
     const url = buildUrl(ep, params);
-    const resultDiv = card.querySelector(".result");
+    const reqMeta = card.querySelector(".req-meta");
+    const reqBody = card.querySelector(".req-body");
     const metaDiv = card.querySelector(".result-meta");
     const bodyDiv = card.querySelector(".result-body");
     btn.disabled = true;
     btn.textContent = "请求中...";
     try {
       const opts = { method: ep.method };
+      let reqBodyText = "";
       if (ep.body && (ep.method === "POST" || ep.method === "PUT" || ep.method === "DELETE")) {
-        const bodyText = params["__body__"] || "";
-        if (bodyText) {
+        reqBodyText = params["__body__"] || "";
+        if (reqBodyText) {
           // 判断是否 JSON
-          if (bodyText.trim().startsWith("{") || bodyText.trim().startsWith("[")) {
+          if (reqBodyText.trim().startsWith("{") || reqBodyText.trim().startsWith("[")) {
             opts.headers = { "content-type": "application/json" };
-            opts.body = bodyText;
+            opts.body = reqBodyText;
           } else {
-            opts.body = bodyText; // 原始（如二进制占位）
+            opts.body = reqBodyText; // 原始（如二进制占位）
           }
         }
       }
+      // 渲染 Request：请求行 + headers + 参数列表（path/query 可读展示）
+      const headerLines = Object.entries(opts.headers || {}).map(([k, v]) => k + ": " + v).join("\\n");
+      const pathLines = (ep.pathParams || []).map((p) => "  " + p.name + " = " + (params[p.name] || "") + "  (path)").join("\\n");
+      const queryLines = (ep.query || []).map((q) => "  " + q.name + " = " + (params["q_" + q.name] || "") + "  (query)").join("\\n");
+      let reqText = ep.method + " " + url;
+      if (headerLines) reqText += "\\n" + headerLines;
+      if (pathLines || queryLines) {
+        reqText += "\\n\\n参数:";
+        if (pathLines) reqText += "\\n" + pathLines;
+        if (queryLines) reqText += "\\n" + queryLines;
+      }
+      reqMeta.textContent = reqText;
+      // body：JSON 高亮展示（非 JSON 原样高亮）
+      reqBody.innerHTML = "";
+      if (reqBodyText) {
+        const code = document.createElement("code");
+        try {
+          const parsed = JSON.parse(reqBodyText);
+          highlightCode(code, JSON.stringify(parsed, null, 2), "json");
+        } catch {
+          highlightCode(code, reqBodyText, "");
+        }
+        reqBody.appendChild(code);
+      }
+      // 清空上次 Response
+      metaDiv.textContent = "";
+      bodyDiv.innerHTML = "";
       const res = await fetch(url, opts);
       metaDiv.textContent = "HTTP " + res.status + " · " + (res.headers.get("content-type") || "");
       const ct = (res.headers.get("content-type") || "").toLowerCase();
@@ -327,16 +469,28 @@ export function renderSwaggerHtml() {
         bodyDiv.innerHTML = '<img class="img-preview" src="' + u + '">';
       } else if (ct.includes("image/svg") || ct.includes("text/plain") || ct.includes("text/html")) {
         const text = await res.text();
-        bodyDiv.innerHTML = "<pre>" + escapeHtmlJs(text) + "</pre>";
+        const pre = document.createElement("pre");
+        const code = document.createElement("code");
+        const lang = ct.includes("image/svg") ? "xml" : (ct.includes("text/html") ? "html" : "plaintext");
+        highlightCode(code, text, lang);
+        pre.appendChild(code);
+        bodyDiv.innerHTML = ""; bodyDiv.appendChild(pre);
       } else if (ct.includes("application/zip")) {
         const blob = await res.blob();
         bodyDiv.innerHTML = '<a href="' + URL.createObjectURL(blob) + '" download="export.zip">下载 ZIP (' + Math.round(blob.size / 1024) + ' KB)</a>';
       } else {
         const text = await res.text();
+        bodyDiv.innerHTML = "";
         try {
-          bodyDiv.innerHTML = "<pre>" + escapeHtmlJs(JSON.stringify(JSON.parse(text), null, 2)) + "</pre>";
+          const parsed = JSON.parse(text);
+          // JSON 响应渲染为可折叠树
+          renderJsonTree(bodyDiv, parsed);
         } catch {
-          bodyDiv.innerHTML = "<pre>" + escapeHtmlJs(text) + "</pre>";
+          const pre = document.createElement("pre");
+          const code = document.createElement("code");
+          highlightCode(code, text, "plaintext");
+          pre.appendChild(code);
+          bodyDiv.appendChild(pre);
         }
       }
     } catch (e) {
@@ -425,8 +579,14 @@ function renderCard(ep, idx) {
         <div class="try-row"><button class="send" onclick="sendRequest(this, ENDPOINTS[${idx}])">发送请求</button></div>
       </div>
       <div class="result">
-        <div class="result-meta"></div>
-        <div class="result-body"></div>
+        <div class="result-section"><div class="result-label">Request</div>
+          <div class="req-meta"></div>
+          <pre class="req-body"></pre>
+        </div>
+        <div class="result-section"><div class="result-label">Response</div>
+          <div class="result-meta"></div>
+          <div class="result-body"></div>
+        </div>
       </div>
     </div>
   </div>`;

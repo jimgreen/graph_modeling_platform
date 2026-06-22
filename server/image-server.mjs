@@ -10,15 +10,17 @@ import AdmZip from "adm-zip";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = resolve(__dirname, "..");
-const imageDataDir = resolve(repoRoot, "data", "images");
+// 数据根目录：默认 repo data/，可用 GRAPH_MODEL_DATA_DIR 覆盖（测试隔离用 tmpdir）
+const dataRoot = process.env.GRAPH_MODEL_DATA_DIR ? resolve(process.env.GRAPH_MODEL_DATA_DIR) : resolve(repoRoot, "data");
+const imageDataDir = join(dataRoot, "images");
 const manifestPath = join(imageDataDir, "manifest.json");
 const imageFoldersPath = join(imageDataDir, "folders.json");
-const schemeDataDir = resolve(repoRoot, "data", "schemes");
+const schemeDataDir = join(dataRoot, "schemes");
 const schemeTrashDir = join(schemeDataDir, "trash");
-const settingsDataDir = resolve(repoRoot, "data", "settings");
+const settingsDataDir = join(dataRoot, "settings");
 const colorConfigPath = join(settingsDataDir, "color-config.json");
 const measurementConfigPath = join(settingsDataDir, "measurement-config.json");
-const deviceLibraryDataDir = resolve(repoRoot, "data", "device-library");
+const deviceLibraryDataDir = join(dataRoot, "device-library");
 const deviceLibraryPath = join(deviceLibraryDataDir, "library.json");
 const maxImageBodyBytes = 16 * 1024 * 1024;
 const maxIconLibraryImportBodyBytes = 128 * 1024 * 1024;
