@@ -44,7 +44,7 @@ const defaultVoltageUnit = "kV";
 const defaultCurrentUnit = "A";
 const defaultPowerBaseValue = 100;
 const defaultStaticComponentType = "StaticBasicShape";
-const staticComponentTypeByKind = {
+export const staticComponentTypeByKind = {
   "static-text": "StaticTextSymbol",
   "static-date": "StaticTextSymbol",
   "static-time": "StaticTextSymbol",
@@ -93,7 +93,7 @@ const staticComponentTypeByKind = {
 function staticComponentTypeForKind(kind) {
   return staticComponentTypeByKind[String(kind ?? "")] ?? defaultStaticComponentType;
 }
-const eSectionColumns = {
+export const eSectionColumns = {
   StaticTextSymbol: [],
   StaticMediaSymbol: [],
   StaticBasicShape: [],
@@ -387,7 +387,7 @@ async function ensureSchemeStore() {
   await mkdir(join(schemeDataDir, "files"), { recursive: true });
 }
 
-async function readSchemes(options = {}) {
+export async function readSchemes(options = {}) {
   return readSchemesFromFiles(options);
 }
 
@@ -566,7 +566,7 @@ function normalizeMeasurementConfig(payload) {
   return { measurementTypes, deviceProfiles };
 }
 
-async function readMeasurementConfig() {
+export async function readMeasurementConfig() {
   const parsed = await readOptionalJsonStoreFile(settingsDataDir, measurementConfigPath);
   if (parsed) {
     return {
@@ -611,7 +611,7 @@ function normalizeDeviceLibraryConfig(payload) {
   };
 }
 
-async function readDeviceLibraryConfig() {
+export async function readDeviceLibraryConfig() {
   const parsed = await readOptionalJsonStoreFile(deviceLibraryDataDir, deviceLibraryPath);
   if (parsed) {
     return {
@@ -1720,7 +1720,7 @@ ${rowsMarkup}
 </g>`;
 }
 
-function buildSvgFile(project, measurementConfig = { measurementTypes: [], deviceProfiles: [] }, options = {}) {
+export function buildSvgFile(project, measurementConfig = { measurementTypes: [], deviceProfiles: [] }, options = {}) {
   const width = Number(project.canvasWidth ?? 1920);
   const height = Number(project.canvasHeight ?? 1024);
   const nodes = Array.isArray(project.nodes) ? project.nodes : [];
@@ -2608,8 +2608,93 @@ async function handleSaveDeviceLibrary(request, response) {
   sendJson(response, 200, { ok: true, ...normalized });
 }
 
-export function createImageServer({ port = 5174, host = "127.0.0.1" } = {}) {
+const staticAssetMimeTypes = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".mjs": "application/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".map": "application/json; charset=utf-8"
+};
+
+function isPathInsideStaticRoot(targetPath, staticRoot) {
+  const relativePath = relative(staticRoot, targetPath);
+  return Boolean(relativePath) && !relativePath.startsWith("..") && !isAbsolute(relativePath);
+}
+
+// prod 静态资源托管：dist/ 存在时，非 /api、/ws 请求走静态文件 + SPA fallback。
+// dev 模式 staticRoot 为空，跳过（Vite 自处理前端）。
+async function serveStaticAsset(request, response, url, staticRoot) {
+  if (!staticRoot) {
+    return false;
+  }
+  const pathname = url.pathname;
+  // /api、/ws 不走静态托管
+  if (pathname === "/ws" || pathname.startsWith("/api/")) {
+    return false;
+  }
+  const safePathname = pathname === "/" ? "/index.html" : pathname;
+  const filePath = join(staticRoot, safePathname);
+  if (!isPathInsideStaticRoot(filePath, staticRoot)) {
+    sendError(response, 404, "资源不存在。");
+    return true;
+  }
+  try {
+    const info = await stat(filePath);
+    if (info.isFile()) {
+      const ext = extname(filePath).toLowerCase();
+      response.writeHead(200, {
+        "content-type": staticAssetMimeTypes[ext] ?? "application/octet-stream",
+        "cache-control": "public, max-age=0, must-revalidate",
+        ...accessControlHeaders
+      });
+      createReadStream(filePath).pipe(response);
+      return true;
+    }
+  } catch {
+    // 文件不存在，fall through 到 SPA fallback
+  }
+  // SPA fallback：未命中文件的非越界请求返回 index.html（越界已在上方拦截）
+  const indexPath = join(staticRoot, "index.html");
+  try {
+    const info = await stat(indexPath);
+    if (info.isFile()) {
+      response.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-cache",
+        ...accessControlHeaders
+      });
+      createReadStream(indexPath).pipe(response);
+      return true;
+    }
+  } catch {
+    // index.html 不存在，交还调用方返 404
+  }
+  return false;
+}
+
+export async function createImageServer({ port = 5174, host = "127.0.0.1", staticRoot } = {}) {
   const exactRouteHandlers = new Map([
+    ["GET /swigger", async ({ response }) => {
+      const { renderSwaggerHtml } = await import("./swaggerPage.mjs");
+      const html = renderSwaggerHtml();
+      response.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-cache",
+        ...accessControlHeaders
+      });
+      response.end(html);
+    }],
     ["GET /api/images", async ({ url, request, response }) => {
       const manifest = await readManifest();
       const folderId = url.searchParams.get("folderId");
@@ -2709,6 +2794,16 @@ export function createImageServer({ port = 5174, host = "127.0.0.1" } = {}) {
       }
     }
   ];
+
+  // 运行时态 WS 桥接：客户端注册表 + /ws 升级 + fetch 拉取
+  const { createRuntimeRegistry } = await import("./runtimeRegistry.mjs");
+  const { attachRuntimeWebSocket } = await import("./runtimeWs.mjs");
+  const { createV1RuntimeRoutes } = await import("./apiV1Runtime.mjs");
+  const runtimeRegistry = createRuntimeRegistry();
+  // runtimeWs 在 server 创建后挂载（attachRuntimeWebSocket 需要 server.on("upgrade")）
+  let runtimeWs = null;
+  let v1RuntimeRoutes = [];
+
   const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
@@ -2732,11 +2827,36 @@ export function createImageServer({ port = 5174, host = "127.0.0.1" } = {}) {
           return;
         }
       }
+      // /api/v1/* 第三方只读路由（动态加载避开循环依赖）
+      if (url.pathname.startsWith("/api/v1/")) {
+        const { v1SchemeRoutes } = await import("./apiV1Schemes.mjs");
+        const { v1LibraryRoutes } = await import("./apiV1Library.mjs");
+        const v1Routes = [...v1SchemeRoutes, ...v1LibraryRoutes, ...v1RuntimeRoutes];
+        for (const route of v1Routes) {
+          if (route.method !== request.method) {
+            continue;
+          }
+          const match = route.pattern.exec(url.pathname);
+          if (match) {
+            await route.handle({ request, response, url, match });
+            return;
+          }
+        }
+      }
+      // 路由未命中：prod 模式尝试静态资源托管（dev 模式 staticRoot 为空，跳过返 404）
+      const served = await serveStaticAsset(request, response, url, staticRoot);
+      if (served) {
+        return;
+      }
       sendError(response, 404, "接口不存在。");
     } catch (error) {
       sendError(response, 500, error instanceof Error ? error.message : "后端处理失败。");
     }
   });
+  // server 创建后挂载运行时态 WS 桥接（需 server.on("upgrade")）
+  runtimeWs = attachRuntimeWebSocket(server, runtimeRegistry);
+  v1RuntimeRoutes = createV1RuntimeRoutes(runtimeWs);
+
   return new Promise((resolveServer) => {
     server.listen(port, host, () => resolveServer(server));
   });
@@ -2745,6 +2865,16 @@ export function createImageServer({ port = 5174, host = "127.0.0.1" } = {}) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.IMAGE_SERVER_PORT ?? 5174);
   const host = process.env.IMAGE_SERVER_HOST ?? "127.0.0.1";
-  await createImageServer({ port, host });
+  // prod 模式：dist/ 存在则托管静态资源（同端口同源）。dev 模式由 dev.mjs 单独跑 Vite。
+  const staticRoot = resolve(repoRoot, "dist");
+  let staticRootArg;
+  try {
+    if ((await stat(staticRoot)).isDirectory()) {
+      staticRootArg = staticRoot;
+    }
+  } catch {
+    // dist/ 不存在（dev 或未构建），不托管静态资源
+  }
+  await createImageServer({ port, host, staticRoot: staticRootArg });
   console.log(`Image backend listening at http://${host}:${port}`);
 }
