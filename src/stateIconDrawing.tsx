@@ -1166,6 +1166,10 @@ export function stateIconDrawingToImage(elements: readonly StateIconDrawingEleme
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
+export function stateIconDrawingPreviewNeedsDirectElementRender(elements: readonly StateIconDrawingElement[]) {
+  return elements.some((element) => element.kind === "image" && String(element.imageHref ?? "").trim());
+}
+
 export function stateIconDrawingElementPreviewImage(element: StateIconDrawingElement) {
   const w = Math.max(1, element.width);
   const h = Math.max(1, element.height);

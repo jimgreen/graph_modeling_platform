@@ -6,6 +6,8 @@ import {
   createRouteSegmentPointerDistance,
   createStateIconDrawingKeyDown,
   createStartStateIconDrawingDrag,
+  imageLibraryFileMatchesImportKind,
+  imageLibraryImportKindForInput,
   normalizeStateIconDrawingFontSize,
   stateIconDrawingElementIdsInRect
 } from "./appExtracted/appDeviceDefinitionFactories";
@@ -13,6 +15,21 @@ import { createSetEdgeManualPoints } from "./appExtracted/appProjectCanvasFactor
 import { Point } from "./model";
 
 describe("manual bend interaction helpers", () => {
+  test("separates external image imports from document icon extraction imports", () => {
+    expect(imageLibraryImportKindForInput({ dataset: { imageImportKind: "image" } } as any)).toBe("image");
+    expect(imageLibraryImportKindForInput({ dataset: { imageImportKind: "archive" } } as any)).toBe("archive");
+    expect(imageLibraryImportKindForInput({ dataset: {} } as any)).toBe("mixed");
+
+    expect(imageLibraryFileMatchesImportKind("switch.svg", "image")).toBe(true);
+    expect(imageLibraryFileMatchesImportKind("diagram.png", "image")).toBe(true);
+    expect(imageLibraryFileMatchesImportKind("icons.pptx", "image")).toBe(false);
+    expect(imageLibraryFileMatchesImportKind("icons.pptx", "archive")).toBe(true);
+    expect(imageLibraryFileMatchesImportKind("icons.zip", "archive")).toBe(true);
+    expect(imageLibraryFileMatchesImportKind("diagram.png", "archive")).toBe(false);
+    expect(imageLibraryFileMatchesImportKind("diagram.png", "mixed")).toBe(true);
+    expect(imageLibraryFileMatchesImportKind("icons.pptx", "mixed")).toBe(true);
+  });
+
   test("computes state icon drawing smart alignment guides for moved elements", () => {
     const moving = {
       id: "moving",

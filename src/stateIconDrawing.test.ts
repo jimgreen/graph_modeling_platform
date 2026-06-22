@@ -18,6 +18,7 @@ import {
   normalizeStatePageId,
   stateVisualShapeLabel,
   svgSourceFromDataUrl,
+  stateIconDrawingPreviewNeedsDirectElementRender,
   stateIconDrawingToImage,
   upsertDefaultStateDraftRow
 } from "./stateIconDrawing";
@@ -644,6 +645,20 @@ describe("default device state draft rows", () => {
     expect(imported[0].svgSource).toContain("<rect");
     expect(imported[0].svgSource).toContain("<circle");
     expect(imported[0].svgSource).toContain("<text");
+  });
+
+  test("directly renders state icon previews that contain bitmap image layers", () => {
+    const line = createStateIconDrawingElement("line");
+    const svgLayer = createImportedStateIconElement(
+      "imported-svg",
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 12h16"/></svg>',
+      "line.svg"
+    );
+    const emptyImage = createImportedStateIconElement("image", "", "empty.png");
+    const imageLayer = createImportedStateIconElement("image", "/api/images/icon.png", "icon.png");
+
+    expect(stateIconDrawingPreviewNeedsDirectElementRender([line, svgLayer, emptyImage])).toBe(false);
+    expect(stateIconDrawingPreviewNeedsDirectElementRender([line, imageLayer])).toBe(true);
   });
 
   test("exports configurable endpoint caps for line drawing shapes", () => {

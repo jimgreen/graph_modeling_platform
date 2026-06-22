@@ -1899,6 +1899,29 @@ export function createExportSchemeRecord(__appScope: Record<string, any>) {
   };
 }
 
+export type ImageLibraryImportKind = "image" | "archive" | "mixed";
+
+const IMAGE_LIBRARY_ARCHIVE_FILE_PATTERN = /\.(docx|pptx|vsdx|wps|dps|zip)$/iu;
+const IMAGE_LIBRARY_IMAGE_FILE_PATTERN = /\.(svg|png|jpe?g|gif|webp|bmp|ico)$/iu;
+
+export function imageLibraryImportKindForInput(input?: { dataset?: { imageImportKind?: string } } | null): ImageLibraryImportKind {
+  const kind = input?.dataset?.imageImportKind;
+  return kind === "image" || kind === "archive" ? kind : "mixed";
+}
+
+export function imageLibraryFileMatchesImportKind(fileName: string, importKind: ImageLibraryImportKind) {
+  const normalizedName = String(fileName ?? "").trim().toLowerCase();
+  const isArchive = IMAGE_LIBRARY_ARCHIVE_FILE_PATTERN.test(normalizedName);
+  const isImage = IMAGE_LIBRARY_IMAGE_FILE_PATTERN.test(normalizedName);
+  if (importKind === "archive") {
+    return isArchive;
+  }
+  if (importKind === "image") {
+    return isImage;
+  }
+  return isArchive || isImage;
+}
+
 export function createChooseImage(__appScope: Record<string, any>) {
   return (event: ChangeEvent<HTMLInputElement>) => {
   const { activeImageFolderId, imageTarget, importBackendIconLibraryFile, refreshImageFolders, requireEditMode, saveImageAsset, setImageAssetList, setImageAssets, uploadBackendImage } = __appScope;
@@ -1907,6 +1930,7 @@ export function createChooseImage(__appScope: Record<string, any>) {
       return;
     }
     const files = Array.from(event.target.files ?? []);
+    const importKind = imageLibraryImportKindForInput(event.currentTarget ?? event.target);
     event.target.value = "";
     if (files.length === 0 || !imageTarget) {
       return;
@@ -1923,7 +1947,13 @@ export function createChooseImage(__appScope: Record<string, any>) {
       const nextAssetMap: Record<string, string> = {};
       for (const file of files) {
         const lowerName = file.name.toLowerCase();
-        const isIconArchive = /\.(docx|pptx|vsdx|wps|dps|zip)$/iu.test(lowerName);
+        const isIconArchive = IMAGE_LIBRARY_ARCHIVE_FILE_PATTERN.test(lowerName);
+        if (!imageLibraryFileMatchesImportKind(lowerName, importKind)) {
+          window.alert(importKind === "archive"
+            ? `“${file.name || "所选文件"}”不是 DOCX/PPTX/VSDX/WPS/DPS/ZIP 图标抽取文件，请使用外部图片入口导入图片。`
+            : `“${file.name || "所选文件"}”不是 SVG/PNG/JPG 等图片文件，请使用文档/ZIP 入口抽取图标。`);
+          continue;
+        }
         let imageData = "";
         try {
           imageData = await readFileAsDataUrl(file);
@@ -4799,7 +4829,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       hideDefaultPage?: boolean;
     }
   ) => {
-  const { BufferedTextInput, COMPONENT_TYPE_LABELS, DEFAULT_STATE_PAGE_ID, DEVICE_LIBRARY, DeferredColorInput, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, MemoDeviceGlyph, STATE_ICON_LINE_CAP_OPTIONS, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, addStateIconDrawingElement, appendNonDefaultStateDraftRow, button, circle, colorPalette, createNodeFromTemplate, createStateDraftRowFromDefaultVisual, createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, customDraftTerminalTypes, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionVisualDraft, definitionVisualTerminalTypes, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, image, isDefaultStatePageId, label, line, nextNonDefaultStateIndex, nodeGeometryTransform, nonDefaultStateDraftRows, rect, resolveTemplateComponentType, setCustomDeviceDraft, setDefinitionStateDraftRows, setImageTarget, setStateIconDrawingContextMenu, setStateIconDrawingDialog, setStateIconDrawingImportMode, small, span, stateDraftRowId, stateIconDrawingClipboardRef, stateIconDrawingContextMenu, stateIconDrawingDialog, stateIconDrawingElementId, stateIconDrawingHistoryRef, stateIconDrawingImportInputRef, stateIconDrawingKeyDown, stateIconDrawingPointer, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, terminalColor, text, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
+  const { BufferedTextInput, COMPONENT_TYPE_LABELS, DEFAULT_STATE_PAGE_ID, DEVICE_LIBRARY, DeferredColorInput, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, MemoDeviceGlyph, STATE_ICON_LINE_CAP_OPTIONS, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, addStateIconDrawingElement, appendNonDefaultStateDraftRow, button, circle, colorPalette, createNodeFromTemplate, createStateDraftRowFromDefaultVisual, createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, customDraftTerminalTypes, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionVisualDraft, definitionVisualTerminalTypes, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, image, isDefaultStatePageId, label, line, nextNonDefaultStateIndex, nodeGeometryTransform, nonDefaultStateDraftRows, rect, resolveTemplateComponentType, setCustomDeviceDraft, setDefinitionStateDraftRows, setImageTarget, setStateIconDrawingContextMenu, setStateIconDrawingDialog, setStateIconDrawingImportMode, small, span, stateDraftRowId, stateIconDrawingClipboardRef, stateIconDrawingContextMenu, stateIconDrawingDialog, stateIconDrawingElementId, stateIconDrawingElementPreviewNode, stateIconDrawingHistoryRef, stateIconDrawingImportInputRef, stateIconDrawingKeyDown, stateIconDrawingPointer, stateIconDrawingPreviewNeedsDirectElementRender, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, terminalColor, text, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
     const hideDefaultPage = handlers.hideDefaultPage === true;
     const displayRows = hideDefaultPage ? rows : nonDefaultStateDraftRows(rows);
     const defaultVisual = handlers.drawingScope === "definition"
@@ -5730,6 +5760,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       const previewElements = stateIconDrawingDialog.drawingDraft
         ? [...stateIconDrawingDialog.elements, stateIconDrawingDialog.drawingDraft.element]
         : stateIconDrawingDialog.elements;
+      const directPreviewElements = stateIconDrawingPreviewNeedsDirectElementRender(previewElements);
       const stateIconDrawingSmartGuides = stateIconDrawingDialog.smartAlignmentGuides ?? [];
       const stateIconDrawingMarqueeRect = stateIconDrawingDialog.marquee
         ? stateIconDrawingRectFromPoints(stateIconDrawingDialog.marquee.start, stateIconDrawingDialog.marquee.current)
@@ -5833,15 +5864,25 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                   }}
                 >
                   <rect x="0" y="0" width="240" height="160" rx="10" className="state-icon-drawing-canvas-bg" fill={frame.fillColor} />
-                  <image
-                    href={stateIconDrawingToImage(previewElements)}
-                    x="0"
-                    y="0"
-                    width="240"
-                    height="160"
-                    preserveAspectRatio="xMidYMid meet"
-                    className="state-icon-drawing-composite-preview"
-                  />
+                  {directPreviewElements ? previewElements.map((element, index) => (
+                    <g
+                      key={`preview-${element.id}-${index}`}
+                      className="state-icon-drawing-direct-preview"
+                      transform={`translate(${formatSvgNumber(element.x)} ${formatSvgNumber(element.y)}) rotate(${formatSvgNumber(element.rotation)})`}
+                    >
+                      {stateIconDrawingElementPreviewNode(element)}
+                    </g>
+                  )) : (
+                    <image
+                      href={stateIconDrawingToImage(previewElements)}
+                      x="0"
+                      y="0"
+                      width="240"
+                      height="160"
+                      preserveAspectRatio="xMidYMid meet"
+                      className="state-icon-drawing-composite-preview"
+                    />
+                  )}
                   <rect
                     x="0"
                     y="0"

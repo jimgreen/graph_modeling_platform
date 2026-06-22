@@ -566,6 +566,7 @@ const initialIndexedNodes = useMemo(createAppHookCallback2(__appScope), [initial
 const initialDeviceLibrary = useMemo(() => readLocalDeviceLibraryPersistencePayload(), []); Object.assign(__appScope, { initialDeviceLibrary });
 const svgRef = useRef<SVGSVGElement | null>(null); Object.assign(__appScope, { svgRef });
 const imageInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { imageInputRef });
+const imageArchiveInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { imageArchiveInputRef });
 const customDeviceImageInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { customDeviceImageInputRef });
 const definitionTemplateIconInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { definitionTemplateIconInputRef });
 const stateVisualImageInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { stateVisualImageInputRef });
@@ -1219,6 +1220,8 @@ const [imageFolders, setImageFolders] = useState<ImageFolder[]>([{ id: "root", n
 Object.assign(__appScope, { imageFolders, setImageFolders });
 const [activeImageFolderId, setActiveImageFolderId] = useState("root");
 Object.assign(__appScope, { activeImageFolderId, setActiveImageFolderId });
+const [imagePickerSourceFilter, setImagePickerSourceFilter] = useState("");
+Object.assign(__appScope, { imagePickerSourceFilter, setImagePickerSourceFilter });
 const [imagePickerCategoryFilter, setImagePickerCategoryFilter] = useState("");
 Object.assign(__appScope, { imagePickerCategoryFilter, setImagePickerCategoryFilter });
 const [imagePickerSearchQuery, setImagePickerSearchQuery] = useState("");

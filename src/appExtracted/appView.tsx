@@ -96,8 +96,10 @@ export function renderAppView(__appScope: Record<string, any>) {
   const {
     imagePickerCategoryFilter,
     imagePickerSearchQuery,
+    imagePickerSourceFilter,
     setImagePickerCategoryFilter,
-    setImagePickerSearchQuery
+    setImagePickerSearchQuery,
+    setImagePickerSourceFilter
   } = __appScope;
   const { customDevicePreviewNode } = __appScope;
   const renderCustomDevicePreviewContent = () => {
@@ -168,11 +170,20 @@ export function renderAppView(__appScope: Record<string, any>) {
             : "选择设备图片";
   const imagePickerHint =
     imageTarget?.kind === "canvasIcon"
-      ? "可导入 SVG/图片，或从 DOCX、PPTX、VSDX、WPS、DPS 文件中抽取可显示图标；选择后在大画布绘制静态图片图元。"
+      ? "内置 SVG 通过下方列表选择；外部 SVG/PNG 和文档/ZIP 抽取分开导入。选择后在大画布绘制静态图片图元。"
       : imageTarget?.kind === "stateIconDrawing"
-        ? "可导入 SVG/图片，或从 DOCX、PPTX、VSDX、WPS、DPS 文件中抽取可显示图标；选择后插入当前元件图标编辑区。"
+        ? "内置 SVG 通过下方列表选择；外部 SVG/PNG 和文档/ZIP 抽取分开导入。选择后插入当前元件图标编辑区。"
         : "本地图片会先上传到后台图片库；请再从后台可用图片列表中选择应用。";
   const imagePickerCanClear = imageTarget && imageTarget.kind !== "canvasIcon" && imageTarget.kind !== "stateIconDrawing";
+  const imagePickerUsesIconSources = imageTarget?.kind === "canvasIcon" || imageTarget?.kind === "stateIconDrawing";
+  const imagePickerActiveSourceFilter = imagePickerUsesIconSources && imagePickerSourceFilter === "external" ? "external" : "builtin";
+  const imagePickerIsBuiltinAsset = (asset: any) =>
+    asset?.createdAt === "builtin" ||
+    String(asset?.folderId ?? "") === "builtin-shared-icons" ||
+    String(asset?.id ?? "").startsWith("builtin-shared-icon-");
+  const sourceFilteredImageAssetList = imagePickerUsesIconSources
+    ? (imageAssetList ?? []).filter((asset) => imagePickerActiveSourceFilter === "builtin" ? imagePickerIsBuiltinAsset(asset) : !imagePickerIsBuiltinAsset(asset))
+    : (imageAssetList ?? []);
   const imagePickerFolderNameById = new Map((imageFolders ?? []).map((folder) => [folder.id, folder.name]));
   const imagePickerAssetCategory = (asset: any) => {
     const assetName = String(asset?.name ?? "").trim();
@@ -188,12 +199,12 @@ export function renderAppView(__appScope: Record<string, any>) {
       ? "SVG图标"
       : "图片素材";
   };
-  const imagePickerCategoryOptions = Array.from(new Set((imageAssetList ?? []).map((asset) => imagePickerAssetCategory(asset)))).sort((left, right) =>
+  const imagePickerCategoryOptions = Array.from(new Set(sourceFilteredImageAssetList.map((asset) => imagePickerAssetCategory(asset)))).sort((left, right) =>
     left.localeCompare(right, "zh-Hans-CN")
   );
   const imagePickerActiveCategoryFilter = imagePickerCategoryOptions.includes(imagePickerCategoryFilter) ? imagePickerCategoryFilter : "";
   const normalizedImagePickerSearchQuery = String(imagePickerSearchQuery ?? "").trim().toLowerCase();
-  const filteredImageAssetList = (imageAssetList ?? []).filter((asset) => {
+  const filteredImageAssetList = sourceFilteredImageAssetList.filter((asset) => {
     const category = imagePickerAssetCategory(asset);
     if (imagePickerActiveCategoryFilter && category !== imagePickerActiveCategoryFilter) {
       return false;
@@ -392,7 +403,8 @@ export function renderAppView(__appScope: Record<string, any>) {
                 </button>
               </div>
             </div>
-            <input ref={imageInputRef} type="file" accept="image/*,.svg,image/svg+xml,.docx,.pptx,.vsdx,.wps,.dps,.zip" hidden multiple onChange={chooseImage}/>
+            <input ref={imageInputRef} type="file" accept="image/*,.svg,image/svg+xml" data-image-import-kind="image" hidden multiple onChange={chooseImage}/>
+            <input ref={__appScope.imageArchiveInputRef} type="file" accept=".docx,.pptx,.vsdx,.wps,.dps,.zip" data-image-import-kind="archive" hidden multiple onChange={chooseImage}/>
             <input ref={customDeviceImageInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseCustomDeviceBackground}/>
             <input ref={definitionTemplateIconInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseDefinitionTemplateIcon}/>
             <input ref={stateVisualImageInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseStateVisualImage}/>
@@ -2515,11 +2527,30 @@ export function renderAppView(__appScope: Record<string, any>) {
               <button onClick={createImageFolder} disabled={isBrowseMode}>新建文件夹</button>
               <button onClick={renameImageFolder} disabled={isBrowseMode || activeImageFolderId === "root"}>重命名</button>
               <button onClick={deleteImageFolder} disabled={isBrowseMode || activeImageFolderId === "root"}>删除文件夹</button>
-              <button onClick={() => imageInputRef.current?.click()} disabled={isBrowseMode}>导入图标文件到分类</button>
+              <button onClick={() => {
+                setImagePickerSourceFilter("external");
+                imageInputRef.current?.click();
+              }} disabled={isBrowseMode}>导入外部 SVG/PNG</button>
+              <button onClick={() => {
+                setImagePickerSourceFilter("external");
+                __appScope.imageArchiveInputRef.current?.click();
+              }} disabled={isBrowseMode}>从文档/ZIP 抽取</button>
               {imagePickerCanClear && <button onClick={clearSelectedImage} disabled={isBrowseMode}>取消当前图片</button>}
             </div>
             {imageAssetList.length > 0 && (
               <div className="image-picker-filters" role="search" aria-label="图标筛选检索">
+                {imagePickerUsesIconSources && (
+                  <label>
+                    来源
+                    <select value={imagePickerActiveSourceFilter} onChange={(event) => {
+                      setImagePickerSourceFilter(event.target.value);
+                      setImagePickerCategoryFilter("");
+                    }}>
+                      <option value="builtin">内置 SVG</option>
+                      <option value="external">外部导入</option>
+                    </select>
+                  </label>
+                )}
                 <label>
                   分类
                   <select value={imagePickerActiveCategoryFilter} onChange={(event) => setImagePickerCategoryFilter(event.target.value)}>
@@ -2543,18 +2574,19 @@ export function renderAppView(__appScope: Record<string, any>) {
                 <button
                   type="button"
                   onClick={() => {
+                    setImagePickerSourceFilter("");
                     setImagePickerCategoryFilter("");
                     setImagePickerSearchQuery("");
                   }}
-                  disabled={!imagePickerActiveCategoryFilter && !imagePickerSearchQuery}
+                  disabled={(!imagePickerUsesIconSources || imagePickerActiveSourceFilter === "builtin") && !imagePickerActiveCategoryFilter && !imagePickerSearchQuery}
                 >
                   清空
                 </button>
-                <span>{filteredImageAssetList.length} / {imageAssetList.length}</span>
+                <span>{filteredImageAssetList.length} / {sourceFilteredImageAssetList.length}</span>
               </div>
             )}
             <div className="image-asset-list">
-              {imageAssetList.length === 0 ? (<p className="image-empty">后台暂无图片，请先加载本地图片。</p>) : filteredImageAssetList.length === 0 ? (<p className="image-empty">没有匹配的图标，请调整分类或搜索关键字。</p>) : (filteredImageAssetList.map((asset, index) => (<button key={asset.id} className="image-asset-option" disabled={isBrowseMode} onClick={() => applyExistingImage(asset.id)} title={asset.name || asset.filename || `后台图片 ${index + 1}`}>
+              {imageAssetList.length === 0 ? (<p className="image-empty">后台暂无图片，请先加载本地图片。</p>) : sourceFilteredImageAssetList.length === 0 ? (<p className="image-empty">{imagePickerUsesIconSources && imagePickerActiveSourceFilter === "external" ? "暂无外部导入图标，请使用上方外部导入按钮。" : "暂无可用图标。"}</p>) : filteredImageAssetList.length === 0 ? (<p className="image-empty">没有匹配的图标，请调整来源、分类或搜索关键字。</p>) : (filteredImageAssetList.map((asset, index) => (<button key={asset.id} className="image-asset-option" disabled={isBrowseMode} onClick={() => applyExistingImage(asset.id)} title={asset.name || asset.filename || `后台图片 ${index + 1}`}>
                     <img src={imageAssets[asset.id] ?? asset.url} alt={asset.name || `后台图片 ${index + 1}`}/>
                     <span>{asset.name || `后台图片 ${index + 1}`}</span>
                   </button>)))}

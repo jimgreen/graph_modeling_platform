@@ -3525,7 +3525,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .image-picker-filters {
   display: grid;
-  grid-template-columns: minmax(180px, 240px) minmax(220px, 1fr) auto auto;
+  grid-template-columns: minmax(128px, 160px) minmax(160px, 220px) minmax(220px, 1fr) auto auto;
   gap: 8px;
   align-items: end;
   padding: 10px;
@@ -5352,6 +5352,10 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   pointer-events: none;
 }
 
+.state-icon-drawing-direct-preview {
+  pointer-events: none;
+}
+
 .state-icon-drawing-icon-frame {
   vector-effect: non-scaling-stroke;
   pointer-events: none;
@@ -6951,8 +6955,8 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .image-picker-dialog.icon-library .image-asset-list {
-  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+  gap: 4px;
 }
 
 .image-asset-option {
@@ -6983,12 +6987,13 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .image-picker-dialog.icon-library .image-asset-option img {
   width: 100%;
+  border-radius: 4px;
 }
 
 .image-picker-dialog.icon-library .image-asset-option {
   gap: 0;
-  padding: 4px;
-  border-radius: 6px;
+  padding: 3px;
+  border-radius: 5px;
 }
 
 .image-picker-dialog.icon-library .image-asset-option span {
