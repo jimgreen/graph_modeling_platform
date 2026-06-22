@@ -376,19 +376,12 @@ export function serializeSnapshot(appScope: Record<string, any>): V1Result<{
   });
 }
 
-/** runtime.svg → SVG 字符串（优先用 svgRef 序列化，回退 buildSvgDocument） */
+/** runtime.svg → SVG 字符串（优先 buildSvgDocument 自包含输出，回退 svgRef 序列化） */
 export function serializeSvg(appScope: Record<string, any>): V1Result<string> {
   return wrap(() => {
     if (noActiveModel(appScope)) return errNoActive();
-    // 优先用 svgRef.current 序列化当前可视 SVG
-    const svgRef = appScope.svgRef;
-    if (svgRef?.current && typeof XMLSerializer !== "undefined") {
-      const svgStr = new XMLSerializer().serializeToString(svgRef.current);
-      if (svgStr) {
-        return { ok: true, data: svgStr };
-      }
-    }
-    // 回退 buildSvgDocument
+    // 优先 buildSvgDocument：与「导出 SVG」按钮一致，内联样式、自包含、不依赖外部 CSS。
+    // svgRef 序列化会带 class 名但丢失外部样式表，独立查看时样式全失。
     const buildSvgDoc = appScope.buildSvgDocument;
     const nodes = appScope.nodes ?? [];
     const edges = appScope.edges ?? [];
@@ -398,11 +391,24 @@ export function serializeSvg(appScope: Record<string, any>): V1Result<string> {
         width: cb.width ?? 800,
         height: cb.height ?? 600,
         backgroundColor: appScope.canvasBackgroundColor,
+        backgroundImage: appScope.canvasBackgroundImageUrl,
         colorDisplayMode: appScope.colorDisplayMode,
         colorPalette: appScope.colorPalette,
-        deviceTemplates: appScope.libraryTemplates
+        deviceTemplates: appScope.libraryTemplates,
+        layers: appScope.layers,
+        activeLayerId: appScope.activeLayerId,
+        measurements: appScope.projectMeasurements,
+        measurementConfig: appScope.measurementConfig
       });
       return { ok: true, data: String(svgStr) };
+    }
+    // 回退：svgRef 序列化（移除背景元素，避免黑底）
+    const svgRef = appScope.svgRef;
+    if (svgRef?.current && typeof XMLSerializer !== "undefined") {
+      const clone = svgRef.current.cloneNode(true) as SVGSVGElement;
+      clone.querySelectorAll("[data-canvas-background]").forEach((el) => el.remove());
+      const svgStr = new XMLSerializer().serializeToString(clone);
+      if (svgStr) return { ok: true, data: svgStr };
     }
     return { ok: false, error: { code: "internal", message: "无法序列化 SVG" } };
   });

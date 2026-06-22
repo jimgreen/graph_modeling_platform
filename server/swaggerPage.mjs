@@ -276,7 +276,10 @@ export function renderSwaggerHtml() {
   button.send:disabled { background: #a0aec0; cursor: not-allowed; }
   .result { margin-top: 10px; }
   .result-section { margin-bottom: 12px; }
-  .result-label { font-size: 12px; color: #2b6cb0; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .result-label { font-size: 12px; color: #2b6cb0; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+  .copy-btn { font-size: 11px; font-weight: 600; color: #2b6cb0; background: #eef4fb; border: 1px solid #c3d6ee; border-radius: 3px; padding: 1px 8px; cursor: pointer; text-transform: none; letter-spacing: 0; }
+  .copy-btn:hover { background: #dce8f7; }
+  .copy-btn.copied { color: #fff; background: #22c55e; border-color: #22c55e; }
   .req-meta { font-size: 12px; color: #6b7d8a; margin-bottom: 4px; white-space: pre-wrap; word-break: break-all; font-family: Consolas, monospace; }
   pre.req-body:empty { display: none; }
   pre.req-body { margin-top: 4px; }
@@ -460,6 +463,7 @@ export function renderSwaggerHtml() {
       // 清空上次 Response
       metaDiv.textContent = "";
       bodyDiv.innerHTML = "";
+      bodyDiv.removeAttribute("data-raw-text");
       const res = await fetch(url, opts);
       metaDiv.textContent = "HTTP " + res.status + " · " + (res.headers.get("content-type") || "");
       const ct = (res.headers.get("content-type") || "").toLowerCase();
@@ -469,6 +473,7 @@ export function renderSwaggerHtml() {
         bodyDiv.innerHTML = '<img class="img-preview" src="' + u + '">';
       } else if (ct.includes("image/svg") || ct.includes("text/plain") || ct.includes("text/html")) {
         const text = await res.text();
+        bodyDiv.dataset.rawText = text;
         const pre = document.createElement("pre");
         const code = document.createElement("code");
         const lang = ct.includes("image/svg") ? "xml" : (ct.includes("text/html") ? "html" : "plaintext");
@@ -483,9 +488,11 @@ export function renderSwaggerHtml() {
         bodyDiv.innerHTML = "";
         try {
           const parsed = JSON.parse(text);
-          // JSON 响应渲染为可折叠树
+          // JSON 响应渲染为可折叠树；原始格式化文本存 dataset 供复制
+          bodyDiv.dataset.rawText = JSON.stringify(parsed, null, 2);
           renderJsonTree(bodyDiv, parsed);
         } catch {
+          bodyDiv.dataset.rawText = text;
           const pre = document.createElement("pre");
           const code = document.createElement("code");
           highlightCode(code, text, "plaintext");
@@ -504,6 +511,31 @@ export function renderSwaggerHtml() {
 
   function escapeHtmlJs(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+
+  // 复制 Response 内容到剪贴板：优先 dataset.rawText（原始响应文本），回退 innerText。
+  async function copyResponse(btn) {
+    const section = btn.closest(".result-section");
+    const bodyDiv = section.querySelector(".result-body");
+    let text = bodyDiv?.dataset?.rawText || bodyDiv?.innerText || "";
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // 回退 execCommand
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed"; ta.style.opacity = "0";
+        document.body.appendChild(ta); ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      } catch { return; }
+    }
+    const orig = btn.textContent;
+    btn.textContent = "已复制";
+    btn.classList.add("copied");
+    setTimeout(() => { btn.textContent = orig; btn.classList.remove("copied"); }, 1500);
   }
 
   // 示例下拉：选中示例 → 填充该卡片所有输入框（path/query/body）
@@ -525,6 +557,7 @@ export function renderSwaggerHtml() {
 
   window.sendRequest = send;
   window.applyExample = applyExample;
+  window.copyResponse = copyResponse;
 </script>
 </body>
 </html>`;
@@ -583,7 +616,7 @@ function renderCard(ep, idx) {
           <div class="req-meta"></div>
           <pre class="req-body"></pre>
         </div>
-        <div class="result-section"><div class="result-label">Response</div>
+        <div class="result-section"><div class="result-label">Response <button type="button" class="copy-btn" onclick="copyResponse(this)" title="复制响应内容到剪贴板">复制</button></div>
           <div class="result-meta"></div>
           <div class="result-body"></div>
         </div>

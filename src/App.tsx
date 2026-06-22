@@ -538,6 +538,10 @@ export function App() {
   __renderCount.current++;
   const __currentRender = __renderCount.current;
   const __appScope: Record<string, any> = {};
+// 稳定 ref 持有当前渲染的 __appScope，供空依赖 useEffect（如 runtime WS）闭包读取最新状态。
+// __appScope 每帧重建，直接闭包捕获会冻结在首次渲染（activeProjectKey 等永远为旧值）。
+const __appScopeRef = useRef(__appScope);
+__appScopeRef.current = __appScope;
 Object.assign(__appScope, APP_STATIC_SCOPE);
 const initialSavedSchemes = useMemo<SavedSchemeRecord[]>(() => [], []); Object.assign(__appScope, { initialSavedSchemes });
 const initialProjectSources = useMemo(createAppHookCallback1(__appScope), []);
@@ -5622,16 +5626,24 @@ Object.assign(__appScope, { canvasResizeHandles });
 
 // 运行时态 WS 客户端：连入 server /ws，注册 clientId，响应 server 的 fetch 拉取。
 // 第三方 /api/v1/runtime/* 经此桥接获取前端运行时态（snapshot/tab/selection/model/devices/e-file/svg/screenshot）。
-// __appScope 为稳定引用，fetch 发生时读取最新属性。
+// __appScope 每帧重建，用 __appScopeRef 读最新引用，避免闭包冻结在首次渲染。
+const [runtimeWsStatus, setRuntimeWsStatus] = useState<"connecting" | "open" | "closed">("connecting");
+const [runtimeWsBlinkSeq, setRuntimeWsBlinkSeq] = useState(0);
+const [runtimeWsClientId, setRuntimeWsClientId] = useState("");
+Object.assign(__appScope, { runtimeWsStatus, runtimeWsBlinkSeq, runtimeWsClientId });
 useEffect(() => {
-  const snapshotHandler = createRuntimeSnapshotHandler(__appScope);
-  const screenshotHandler = createRuntimeScreenshotHandler(__appScope);
+  const snapshotHandler = (resource: any, params?: any) => createRuntimeSnapshotHandler(__appScopeRef.current)(resource, params);
+  const screenshotHandler = (params: any) => createRuntimeScreenshotHandler(__appScopeRef.current)(params);
   const client = createRuntimeWsClient(async (resource, params) => {
     if (resource === "runtime.screenshot") {
       return screenshotHandler(params as { width?: number; height?: number });
     }
     return snapshotHandler(resource as any, params);
+  }, {
+    onStatusChange: (s) => setRuntimeWsStatus(s),
+    onActivity: () => setRuntimeWsBlinkSeq((n) => n + 1)
   });
+  setRuntimeWsClientId(client.clientId);
   client.connect();
   return () => {
     client.close();

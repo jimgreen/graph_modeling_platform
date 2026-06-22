@@ -42,8 +42,16 @@ export async function rasterizeSvg(
   width: number,
   height: number
 ): Promise<string> {
-  // 序列化 SVG 为字符串
-  const svgString = new XMLSerializer().serializeToString(svgEl);
+  // clone SVG 并移除画布背景元素（data-canvas-background），使截图透明背景。
+  const clone = svgEl.cloneNode(true) as SVGSVGElement;
+  clone.querySelectorAll("[data-canvas-background]").forEach((el) => el.remove());
+  // 显式设置 width/height/xmlns，避免序列化后浏览器 rasterize 时尺寸异常或填黑底。
+  clone.setAttribute("width", String(width));
+  clone.setAttribute("height", String(height));
+  if (!clone.getAttribute("xmlns")) {
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  }
+  const svgString = new XMLSerializer().serializeToString(clone);
   const svgBlob = new Blob([svgString], {
     type: "image/svg+xml;charset=utf-8",
   });
@@ -63,6 +71,7 @@ export async function rasterizeSvg(
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("无法获取 canvas 2d 上下文。");
     ctx.scale(dpr, dpr);
+    // 不填底色，保持 PNG 透明背景
     ctx.drawImage(img, 0, 0, width, height);
     const dataUrl = canvas.toDataURL("image/png");
     return dataUrl.slice("data:image/png;base64,".length);

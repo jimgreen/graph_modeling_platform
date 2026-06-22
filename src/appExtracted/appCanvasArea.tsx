@@ -576,8 +576,8 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                 <path d="M 25 0 L 0 0 0 25" fill="none" stroke="#cbd5e1" strokeWidth="0.8"/>
               </pattern>
             </defs>
-            <rect width={canvasRenderBounds.width} height={canvasRenderBounds.height} fill={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND}/>
-            {canvasBackgroundImageUrl && (<image href={canvasBackgroundImageUrl} x="0" y="0" width={canvasRenderBounds.width} height={canvasRenderBounds.height} preserveAspectRatio="xMidYMid slice" pointerEvents="none"/>)}
+            <rect data-canvas-background width={canvasRenderBounds.width} height={canvasRenderBounds.height} fill={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND}/>
+            {canvasBackgroundImageUrl && (<image data-canvas-background href={canvasBackgroundImageUrl} x="0" y="0" width={canvasRenderBounds.width} height={canvasRenderBounds.height} preserveAspectRatio="xMidYMid slice" pointerEvents="none"/>)}
             <rect width={canvasRenderBounds.width} height={canvasRenderBounds.height} fill="url(#large-grid)"/>
             <rect className="canvas-boundary" x="0" y="0" width={canvasRenderBounds.width} height={canvasRenderBounds.height}/>
             {renderReadonlyBackgroundPage()}

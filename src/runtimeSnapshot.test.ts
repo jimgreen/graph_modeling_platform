@@ -237,8 +237,8 @@ describe("serializeSnapshot", () => {
 });
 
 describe("serializeSvg", () => {
-  it("svgRef 可用时返回 SVG 字符串", () => {
-    // mock svgRef.current 含 XMLSerializer 可序列化的对象
+  it("优先 buildSvgDocument 返回自包含 SVG", () => {
+    // buildSvgDocument 与导出按钮一致，内联样式；svgRef 序列化仅作回退
     const mockSvgElement = { nodeType: 1, tagName: "svg" };
     const scope = mockScope({
       svgRef: { current: mockSvgElement }
@@ -246,14 +246,32 @@ describe("serializeSvg", () => {
     const res = serializeSvg(scope);
     expect(res.ok).toBe(true);
     if (!res.ok) return;
-    expect(typeof res.data).toBe("string");
+    expect(res.data).toBe("<svg>mock</svg>");
   });
 
-  it("svgRef 不可用时回退 buildSvgDocument", () => {
-    const res = serializeSvg(mockScope());
-    expect(res.ok).toBe(true);
-    if (!res.ok) return;
-    expect(res.data).toBe("<svg>mock</svg>");
+  it("buildSvgDocument 不可用时回退 svgRef 序列化（node 环境无 DOM 则 internal）", () => {
+    // node 测试环境无真 SVGSVGElement/cloneNode，回退分支会抛错 → internal
+    const mockSvgElement = { nodeType: 1, tagName: "svg" };
+    const scope = mockScope({
+      buildSvgDocument: undefined,
+      svgRef: { current: mockSvgElement }
+    });
+    const res = serializeSvg(scope);
+    // 有 XMLSerializer 则返回 string，无则 internal（node 环境通常无）
+    if (typeof XMLSerializer !== "undefined") {
+      expect(res.ok).toBe(true);
+    } else {
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.error.code).toBe("internal");
+    }
+  });
+
+  it("buildSvgDocument 与 svgRef 均不可用 → internal", () => {
+    const res = serializeSvg(mockScope({ buildSvgDocument: undefined, svgRef: { current: null } }));
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.code).toBe("internal");
   });
 });
 

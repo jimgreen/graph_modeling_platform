@@ -32,6 +32,8 @@ export type FetchHandler = (
 export type RuntimeWsClientOptions = {
   url?: string;
   onStatusChange?: (status: "connecting" | "open" | "closed") => void;
+  // 收发任意消息时触发（用于指示灯闪烁）
+  onActivity?: () => void;
 };
 
 export function createRuntimeWsClient(fetchHandler: FetchHandler, options: RuntimeWsClientOptions = {}) {
@@ -41,12 +43,19 @@ export function createRuntimeWsClient(fetchHandler: FetchHandler, options: Runti
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let closed = false;
   const statusChange = options.onStatusChange ?? (() => {});
+  const activity = options.onActivity ?? (() => {});
 
   function resolveUrl(): string {
     if (options.url) {
       return options.url;
     }
-    // 同源同端口：当前页面 host + /ws
+    // dev：vite (5173) 的 /ws WS 代理不稳定（升级常 pending），直连 image-server。
+    // prod：同源同端口走 /ws。
+    if (import.meta.env && import.meta.env.DEV) {
+      const devPort = (import.meta.env as any).VITE_IMAGE_SERVER_PORT ?? "5174";
+      const devHost = window.location.hostname || "127.0.0.1";
+      return `ws://${devHost}:${devPort}/ws`;
+    }
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     return `${proto}//${window.location.host}/ws`;
   }
@@ -56,6 +65,7 @@ export function createRuntimeWsClient(fetchHandler: FetchHandler, options: Runti
     pingTimer = setInterval(() => {
       if (ws?.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "ping" }));
+        activity();
       }
     }, PING_INTERVAL_MS);
   }
@@ -78,6 +88,7 @@ export function createRuntimeWsClient(fetchHandler: FetchHandler, options: Runti
           data: result.ok ? result.data : undefined,
           error: result.ok ? undefined : result.error
         }));
+        activity();
       }
     } catch (error) {
       if (ws?.readyState === WebSocket.OPEN) {
@@ -87,6 +98,7 @@ export function createRuntimeWsClient(fetchHandler: FetchHandler, options: Runti
           ok: false,
           error: { code: "fetch-failed", message: error instanceof Error ? error.message : "前端拉取失败。" }
         }));
+        activity();
       }
     }
   }
@@ -101,10 +113,12 @@ export function createRuntimeWsClient(fetchHandler: FetchHandler, options: Runti
     ws.onopen = () => {
       statusChange("open");
       ws?.send(JSON.stringify({ type: "register", clientId }));
+      activity();
       startPing();
     };
 
     ws.onmessage = (event) => {
+      activity();
       let message: any;
       try {
         message = JSON.parse(String(event.data));
