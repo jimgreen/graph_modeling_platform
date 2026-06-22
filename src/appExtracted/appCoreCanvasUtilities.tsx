@@ -1586,6 +1586,12 @@ export type StateIconDrawingDialogState = {
     points?: Point[];
     element: StateIconDrawingElement;
   };
+  smartAlignmentGuides?: SmartAlignmentGuide[];
+  marquee?: {
+    start: Point;
+    current: Point;
+    append: boolean;
+  };
   frame?: {
     strokeStyle: "solid" | "dashed" | "dotted";
     strokeWidth: number;

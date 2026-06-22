@@ -25,6 +25,12 @@ const STATE_ICON_STATIC_TEMPLATE_SECTIONS_COVERED_BY_BASIC_TOOLS = new Set([
   "StaticConnectorSymbol",
   "StaticBasicShape"
 ]);
+const STATE_ICON_DRAWING_FRAME_WIDTH = 240;
+const STATE_ICON_DRAWING_FRAME_HEIGHT = 160;
+const STATE_ICON_DRAWING_FRAME_GUIDE_RATIOS = [1 / 4, 1 / 3, 1 / 2, 2 / 3, 3 / 4];
+const STATE_ICON_DRAWING_SMART_ALIGNMENT_TOLERANCE = 3;
+const STATE_ICON_DRAWING_SMART_ALIGNMENT_GUIDE_PADDING = 8;
+const STATE_ICON_DRAWING_MIN_FONT_SIZE = 8;
 
 const STATE_ICON_EDITABLE_STATIC_KIND_BY_TEMPLATE_KIND: Record<string, StateVisualShapeKind> = {
   "static-text": "text",
@@ -158,6 +164,40 @@ function cloneStateIconDrawingElements(elements: any[], createId: () => string, 
   }));
 }
 
+export function normalizeStateIconDrawingFontSize(value: unknown, fallback: unknown = STATE_ICON_DRAWING_MIN_FONT_SIZE) {
+  const fallbackNumber = Number(fallback);
+  const fallbackSize = Number.isFinite(fallbackNumber)
+    ? Math.max(STATE_ICON_DRAWING_MIN_FONT_SIZE, Math.floor(fallbackNumber))
+    : STATE_ICON_DRAWING_MIN_FONT_SIZE;
+  if (typeof value === "string" && value.trim() === "") {
+    return fallbackSize;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallbackSize;
+  }
+  return Math.max(STATE_ICON_DRAWING_MIN_FONT_SIZE, Math.floor(parsed));
+}
+
+function cutStateIconDrawingSelection(current: any, clipboardRef: any, historyRef: any) {
+  if (!current) {
+    return current;
+  }
+  const selectedIds = stateIconDrawingSelectedIds(current);
+  if (selectedIds.length === 0) {
+    return current;
+  }
+  const selectedSet = new Set(selectedIds);
+  clipboardRef.current = current.elements.filter((element) => selectedSet.has(element.id)).map((element) => ({ ...element }));
+  pushStateIconDrawingHistorySnapshot(historyRef, current.elements);
+  return {
+    ...current,
+    elements: current.elements.filter((element) => !selectedSet.has(element.id)),
+    selectedElementId: "",
+    selectedElementIds: []
+  };
+}
+
 function stateIconDrawingElementBounds(element: any) {
   const width = Math.max(1, Number(element.width) || 1);
   const height = Math.max(1, Number(element.height) || 1);
@@ -189,6 +229,177 @@ function stateIconDrawingSelectionBounds(elements: any[]) {
     bottom,
     centerX: (left + right) / 2,
     centerY: (top + bottom) / 2
+  };
+}
+
+function stateIconDrawingRectFromPoints(start: Point, current: Point) {
+  return {
+    left: Math.min(start.x, current.x),
+    right: Math.max(start.x, current.x),
+    top: Math.min(start.y, current.y),
+    bottom: Math.max(start.y, current.y)
+  };
+}
+
+function stateIconDrawingBoundsIntersectRect(bounds: any, rect: any) {
+  return bounds.right >= rect.left && bounds.left <= rect.right && bounds.bottom >= rect.top && bounds.top <= rect.bottom;
+}
+
+export function stateIconDrawingElementIdsInRect(elements: any[], rect: { left: number; right: number; top: number; bottom: number }) {
+  return elements
+    .filter((element) => stateIconDrawingBoundsIntersectRect(stateIconDrawingElementBounds(element), rect))
+    .map((element) => element.id);
+}
+
+function stateIconDrawingBoundsAnchors(bounds: any, axis: "x" | "y") {
+  return axis === "x"
+    ? [
+        { key: "start", value: bounds.left, priority: 1 },
+        { key: "center", value: bounds.centerX, priority: 0 },
+        { key: "end", value: bounds.right, priority: 1 }
+      ]
+    : [
+        { key: "start", value: bounds.top, priority: 1 },
+        { key: "center", value: bounds.centerY, priority: 0 },
+        { key: "end", value: bounds.bottom, priority: 1 }
+      ];
+}
+
+function translatedStateIconDrawingBounds(bounds: any, delta: Point) {
+  return {
+    ...bounds,
+    left: bounds.left + delta.x,
+    right: bounds.right + delta.x,
+    top: bounds.top + delta.y,
+    bottom: bounds.bottom + delta.y,
+    centerX: bounds.centerX + delta.x,
+    centerY: bounds.centerY + delta.y
+  };
+}
+
+function bestStateIconDrawingAlignmentSnap(axis: "x" | "y", movedBounds: any, candidates: any[], threshold: number) {
+  let best: any = null;
+  const movedAnchors = stateIconDrawingBoundsAnchors(movedBounds, axis);
+  for (const candidate of candidates) {
+    const candidateAnchors = candidate.anchors
+      ? (candidate.anchors[axis] ?? [])
+      : stateIconDrawingBoundsAnchors(candidate.bounds, axis);
+    for (const movedAnchor of movedAnchors) {
+      for (const candidateAnchor of candidateAnchors) {
+        const adjustment = candidateAnchor.value - movedAnchor.value;
+        const distance = Math.abs(adjustment);
+        const priority = movedAnchor.priority + candidateAnchor.priority;
+        if (distance > threshold) {
+          continue;
+        }
+        if (best && (distance > best.distance || (distance === best.distance && priority >= best.priority))) {
+          continue;
+        }
+        const guide = axis === "x"
+          ? {
+              id: `state-icon-vertical:${candidate.id}:${candidateAnchor.key}:${movedAnchor.key}`,
+              orientation: "vertical",
+              position: candidateAnchor.value,
+              start: Math.min(movedBounds.top, candidate.bounds.top) - STATE_ICON_DRAWING_SMART_ALIGNMENT_GUIDE_PADDING,
+              end: Math.max(movedBounds.bottom, candidate.bounds.bottom) + STATE_ICON_DRAWING_SMART_ALIGNMENT_GUIDE_PADDING
+            }
+          : {
+              id: `state-icon-horizontal:${candidate.id}:${candidateAnchor.key}:${movedAnchor.key}`,
+              orientation: "horizontal",
+              position: candidateAnchor.value,
+              start: Math.min(movedBounds.left, candidate.bounds.left) - STATE_ICON_DRAWING_SMART_ALIGNMENT_GUIDE_PADDING,
+              end: Math.max(movedBounds.right, candidate.bounds.right) + STATE_ICON_DRAWING_SMART_ALIGNMENT_GUIDE_PADDING
+            };
+        best = { adjustment, distance, priority, guide };
+      }
+    }
+  }
+  return best;
+}
+
+function stateIconDrawingFrameAlignmentCandidates() {
+  const verticalCandidates = STATE_ICON_DRAWING_FRAME_GUIDE_RATIOS.map((ratio) => {
+    const x = STATE_ICON_DRAWING_FRAME_WIDTH * ratio;
+    return {
+      id: `frame-x-${ratio}`,
+      bounds: {
+        left: x,
+        right: x,
+        top: 0,
+        bottom: STATE_ICON_DRAWING_FRAME_HEIGHT,
+        centerX: x,
+        centerY: STATE_ICON_DRAWING_FRAME_HEIGHT / 2
+      },
+      anchors: {
+        x: [{ key: `frame-${ratio}`, value: x, priority: 2 }],
+        y: []
+      }
+    };
+  });
+  const horizontalCandidates = STATE_ICON_DRAWING_FRAME_GUIDE_RATIOS.map((ratio) => {
+    const y = STATE_ICON_DRAWING_FRAME_HEIGHT * ratio;
+    return {
+      id: `frame-y-${ratio}`,
+      bounds: {
+        left: 0,
+        right: STATE_ICON_DRAWING_FRAME_WIDTH,
+        top: y,
+        bottom: y,
+        centerX: STATE_ICON_DRAWING_FRAME_WIDTH / 2,
+        centerY: y
+      },
+      anchors: {
+        x: [],
+        y: [{ key: `frame-${ratio}`, value: y, priority: 2 }]
+      }
+    };
+  });
+  return [...verticalCandidates, ...horizontalCandidates];
+}
+
+export function createComputeStateIconDrawingSmartAlignmentSnap(__appScope: Record<string, any>) {
+  return ({
+    elements,
+    selectedIds,
+    startElements,
+    delta,
+    threshold = STATE_ICON_DRAWING_SMART_ALIGNMENT_TOLERANCE
+  }: {
+    elements: StateIconDrawingElement[];
+    selectedIds: readonly string[];
+    startElements: StateIconDrawingElement[];
+    delta: Point;
+    threshold?: number;
+  }) => {
+  const { smartAlignmentEnabled } = __appScope;
+    if (!smartAlignmentEnabled || selectedIds.length === 0 || startElements.length === 0) {
+      return { delta, guides: [] };
+    }
+    const selectedSet = new Set(selectedIds);
+    const startBounds = stateIconDrawingSelectionBounds(startElements);
+    if (!startBounds) {
+      return { delta, guides: [] };
+    }
+    const candidates = [
+      ...elements
+      .filter((element) => !selectedSet.has(element.id))
+      .map((element) => ({ id: element.id, bounds: stateIconDrawingElementBounds(element) })),
+      ...stateIconDrawingFrameAlignmentCandidates()
+    ];
+    if (candidates.length === 0) {
+      return { delta, guides: [] };
+    }
+    const movedBounds = translatedStateIconDrawingBounds(startBounds, delta);
+    const xSnap = bestStateIconDrawingAlignmentSnap("x", movedBounds, candidates, threshold);
+    const ySnap = bestStateIconDrawingAlignmentSnap("y", movedBounds, candidates, threshold);
+    const guides = [xSnap?.guide, ySnap?.guide].filter(Boolean);
+    return {
+      delta: {
+        x: delta.x + (xSnap?.adjustment ?? 0),
+        y: delta.y + (ySnap?.adjustment ?? 0)
+      },
+      guides
+    };
   };
 }
 
@@ -3378,6 +3589,9 @@ export function createStateIconDrawingSelection(__appScope: Record<string, any>)
 export function createStartStateIconDrawingDrag(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGElement>, elementId: string, mode: StateIconDrawingDragMode) => {
   const { setStateIconDrawingContextMenu, setStateIconDrawingDialog, stateIconDrawingDragRef, stateIconDrawingHistoryRef, stateIconDrawingPointer } = __appScope;
+    if (event.button !== 0) {
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     setStateIconDrawingContextMenu(null);
@@ -3413,7 +3627,8 @@ export function createStartStateIconDrawingDrag(__appScope: Record<string, any>)
       return {
         ...current,
         selectedElementId: selectedElementIds[selectedElementIds.length - 1] ?? "",
-        selectedElementIds
+        selectedElementIds,
+        smartAlignmentGuides: []
       };
     });
     if (startElements.length === 0) {
@@ -3426,7 +3641,7 @@ export function createStartStateIconDrawingDrag(__appScope: Record<string, any>)
 
 export function createDragStateIconDrawingSelection(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGSVGElement>) => {
-  const { stateIconDrawingDragRef, stateIconDrawingPointer, updateStateIconDrawingElements } = __appScope;
+  const { computeStateIconDrawingSmartAlignmentSnap, setStateIconDrawingDialog, stateIconDrawingDragRef, stateIconDrawingPointer, updateStateIconDrawingElements } = __appScope;
     const drag = stateIconDrawingDragRef.current;
     if (!drag) {
       return;
@@ -3436,9 +3651,26 @@ export function createDragStateIconDrawingSelection(__appScope: Record<string, a
     const dx = point.x - drag.start.x;
     const dy = point.y - drag.start.y;
     if (drag.mode === "move") {
-      updateStateIconDrawingElements(drag.elementIds, (element) => {
-        const startElement = drag.startElements.find((item) => item.id === element.id);
-        return startElement ? { ...element, x: startElement.x + dx, y: startElement.y + dy } : element;
+      setStateIconDrawingDialog((current) => {
+        if (!current) {
+          return current;
+        }
+        const snap = computeStateIconDrawingSmartAlignmentSnap
+          ? computeStateIconDrawingSmartAlignmentSnap({
+              elements: current.elements,
+              selectedIds: drag.elementIds,
+              startElements: drag.startElements,
+              delta: { x: dx, y: dy }
+            })
+          : { delta: { x: dx, y: dy }, guides: [] };
+        return {
+          ...current,
+          elements: current.elements.map((element) => {
+            const startElement = drag.startElements.find((item) => item.id === element.id);
+            return startElement ? { ...element, x: startElement.x + snap.delta.x, y: startElement.y + snap.delta.y } : element;
+          }),
+          smartAlignmentGuides: snap.guides
+        };
       });
       return;
     }
@@ -3472,8 +3704,9 @@ export function createDragStateIconDrawingSelection(__appScope: Record<string, a
 
 export function createStopStateIconDrawingDrag(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGSVGElement>) => {
-  const { stateIconDrawingDragRef } = __appScope;
+  const { setStateIconDrawingDialog, stateIconDrawingDragRef } = __appScope;
     stateIconDrawingDragRef.current = null;
+    setStateIconDrawingDialog?.((current: any) => current ? { ...current, smartAlignmentGuides: [] } : current);
     event.currentTarget.releasePointerCapture?.(event.pointerId);
   };
 }
@@ -3545,6 +3778,12 @@ export function createStateIconDrawingKeyDown(__appScope: Record<string, any>) {
         stateIconDrawingClipboardRef.current = current.elements.filter((element) => selectedSet.has(element.id)).map((element) => ({ ...element }));
         return current;
       });
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "x") {
+      event.preventDefault();
+      setStateIconDrawingContextMenu(null);
+      setStateIconDrawingDialog((current) => cutStateIconDrawingSelection(current, stateIconDrawingClipboardRef, stateIconDrawingHistoryRef));
       return;
     }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
@@ -4560,7 +4799,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       hideDefaultPage?: boolean;
     }
   ) => {
-  const { BufferedTextInput, COMPONENT_TYPE_LABELS, DEFAULT_STATE_PAGE_ID, DEVICE_LIBRARY, DeferredColorInput, MemoDeviceGlyph, STATE_ICON_LINE_CAP_OPTIONS, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, addStateIconDrawingElement, appendNonDefaultStateDraftRow, button, circle, colorPalette, createNodeFromTemplate, createStateDraftRowFromDefaultVisual, createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, customDraftTerminalTypes, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionVisualDraft, definitionVisualTerminalTypes, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, image, isDefaultStatePageId, label, line, nextNonDefaultStateIndex, nodeGeometryTransform, nonDefaultStateDraftRows, rect, resolveTemplateComponentType, setCustomDeviceDraft, setDefinitionStateDraftRows, setImageTarget, setStateIconDrawingContextMenu, setStateIconDrawingDialog, setStateIconDrawingImportMode, small, span, stateDraftRowId, stateIconDrawingClipboardRef, stateIconDrawingContextMenu, stateIconDrawingDialog, stateIconDrawingElementId, stateIconDrawingHistoryRef, stateIconDrawingImportInputRef, stateIconDrawingKeyDown, stateIconDrawingPointer, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, terminalColor, text, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
+  const { BufferedTextInput, COMPONENT_TYPE_LABELS, DEFAULT_STATE_PAGE_ID, DEVICE_LIBRARY, DeferredColorInput, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, MemoDeviceGlyph, STATE_ICON_LINE_CAP_OPTIONS, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, addStateIconDrawingElement, appendNonDefaultStateDraftRow, button, circle, colorPalette, createNodeFromTemplate, createStateDraftRowFromDefaultVisual, createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, customDraftTerminalTypes, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionVisualDraft, definitionVisualTerminalTypes, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, image, isDefaultStatePageId, label, line, nextNonDefaultStateIndex, nodeGeometryTransform, nonDefaultStateDraftRows, rect, resolveTemplateComponentType, setCustomDeviceDraft, setDefinitionStateDraftRows, setImageTarget, setStateIconDrawingContextMenu, setStateIconDrawingDialog, setStateIconDrawingImportMode, small, span, stateDraftRowId, stateIconDrawingClipboardRef, stateIconDrawingContextMenu, stateIconDrawingDialog, stateIconDrawingElementId, stateIconDrawingHistoryRef, stateIconDrawingImportInputRef, stateIconDrawingKeyDown, stateIconDrawingPointer, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, terminalColor, text, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
     const hideDefaultPage = handlers.hideDefaultPage === true;
     const displayRows = hideDefaultPage ? rows : nonDefaultStateDraftRows(rows);
     const defaultVisual = handlers.drawingScope === "definition"
@@ -5114,6 +5353,53 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       });
       return true;
     };
+    const updateStateIconDrawingMarquee = (event: PointerEvent<SVGSVGElement>) => {
+      if (!stateIconDrawingDialog?.marquee) {
+        return false;
+      }
+      const point = clampStateIconDrawingPoint(stateIconDrawingPointer(event));
+      setStateIconDrawingDialog((current) => current?.marquee ? {
+        ...current,
+        marquee: {
+          ...current.marquee,
+          current: point
+        }
+      } : current);
+      return true;
+    };
+    const finishStateIconDrawingMarquee = (event: PointerEvent<SVGSVGElement>) => {
+      if (!stateIconDrawingDialog?.marquee) {
+        return false;
+      }
+      const point = clampStateIconDrawingPoint(stateIconDrawingPointer(event));
+      setStateIconDrawingDialog((current) => {
+        if (!current?.marquee) {
+          return current;
+        }
+        const rect = stateIconDrawingRectFromPoints(current.marquee.start, point);
+        const selectedByRect = stateIconDrawingElementIdsInRect(current.elements, rect);
+        const currentSelection = current.selectedElementIds.length > 0 ? current.selectedElementIds : [current.selectedElementId].filter(Boolean);
+        const selectedElementIds = current.marquee.append
+          ? Array.from(new Set([...currentSelection, ...selectedByRect]))
+          : selectedByRect;
+        return {
+          ...current,
+          selectedElementId: selectedElementIds[selectedElementIds.length - 1] ?? "",
+          selectedElementIds,
+          marquee: undefined
+        };
+      });
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+      return true;
+    };
+    const cancelStateIconDrawingMarquee = (event: PointerEvent<SVGSVGElement>) => {
+      if (!stateIconDrawingDialog?.marquee) {
+        return false;
+      }
+      setStateIconDrawingDialog((current) => current?.marquee ? { ...current, marquee: undefined } : current);
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+      return true;
+    };
     const setStateIconFramePatch = (patch: Record<string, any>) => {
       setStateIconDrawingDialog((current) =>
         current
@@ -5134,6 +5420,10 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       }
       const selectedSet = new Set(stateIconDrawingSelectedIds(stateIconDrawingDialog));
       stateIconDrawingClipboardRef.current = stateIconDrawingDialog.elements.filter((element) => selectedSet.has(element.id)).map((element) => ({ ...element }));
+      setStateIconDrawingContextMenu(null);
+    };
+    const cutSelectedStateIconElements = () => {
+      setStateIconDrawingDialog((current) => cutStateIconDrawingSelection(current, stateIconDrawingClipboardRef, stateIconDrawingHistoryRef));
       setStateIconDrawingContextMenu(null);
     };
     const pasteStateIconElements = (point?: Point) => {
@@ -5345,6 +5635,19 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       const menuButton = (label: string, onClick: () => void, disabled = false) => (
         <button type="button" disabled={disabled} onClick={onClick}>{label}</button>
       );
+      const menuSubmenu = (label: string, children: React.ReactNode, disabled = false) => (
+        <div className={`state-icon-context-submenu ${disabled ? "disabled" : ""}`}>
+          <button type="button" className="state-icon-context-submenu-trigger" disabled={disabled} aria-haspopup="menu" aria-expanded="false">
+            <span>{label}</span>
+            <span className="state-icon-context-submenu-arrow" aria-hidden="true">&gt;</span>
+          </button>
+          {!disabled && (
+            <div className="state-icon-context-submenu-panel" role="menu">
+              {children}
+            </div>
+          )}
+        </div>
+      );
       return (
         <div
           className="state-icon-context-menu"
@@ -5366,27 +5669,42 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
           ) : (
             <>
               {menuButton("复制", copySelectedStateIconElements, selectedCount === 0)}
+              {menuButton("剪切", cutSelectedStateIconElements, selectedCount === 0)}
               {menuButton("粘贴", () => pasteStateIconElements(stateIconDrawingContextMenu.pastePoint), !clipboardReady)}
               {menuButton("删除", deleteSelectedStateIconDrawingElements, selectedCount === 0)}
-              <span>层级</span>
-              {menuButton("置顶", () => reorderSelectedStateIconElements("front"), selectedCount === 0)}
-              {menuButton("上移", () => reorderSelectedStateIconElements("forward"), selectedCount === 0)}
-              {menuButton("下移", () => reorderSelectedStateIconElements("backward"), selectedCount === 0)}
-              {menuButton("置底", () => reorderSelectedStateIconElements("back"), selectedCount === 0)}
-              <span>对齐</span>
-              {menuButton("左对齐", () => alignSelectedStateIconElements("left"), selectedCount < 2)}
-              {menuButton("水平居中", () => alignSelectedStateIconElements("center"), selectedCount < 2)}
-              {menuButton("右对齐", () => alignSelectedStateIconElements("right"), selectedCount < 2)}
-              {menuButton("上对齐", () => alignSelectedStateIconElements("top"), selectedCount < 2)}
-              {menuButton("垂直居中", () => alignSelectedStateIconElements("middle"), selectedCount < 2)}
-              {menuButton("下对齐", () => alignSelectedStateIconElements("bottom"), selectedCount < 2)}
-              {menuButton("水平等距", () => distributeSelectedStateIconElements("x"), selectedCount < 3)}
-              {menuButton("垂直等距", () => distributeSelectedStateIconElements("y"), selectedCount < 3)}
-              {menuButton("同宽", () => alignSelectedStateIconElements("same-width"), selectedCount < 2)}
-              {menuButton("同高", () => alignSelectedStateIconElements("same-height"), selectedCount < 2)}
-              {menuButton("同宽高", () => alignSelectedStateIconElements("same-size"), selectedCount < 2)}
-              {menuButton("水平镜像", () => mirrorSelectedStateIconElements("x"), selectedCount === 0)}
-              {menuButton("垂直镜像", () => mirrorSelectedStateIconElements("y"), selectedCount === 0)}
+              {menuSubmenu("层级操作", (
+                <>
+                  {menuButton("置顶", () => reorderSelectedStateIconElements("front"))}
+                  {menuButton("上移", () => reorderSelectedStateIconElements("forward"))}
+                  {menuButton("下移", () => reorderSelectedStateIconElements("backward"))}
+                  {menuButton("置底", () => reorderSelectedStateIconElements("back"))}
+                </>
+              ), selectedCount === 0)}
+              {menuSubmenu("对齐操作", (
+                <>
+                  {menuButton("左对齐", () => alignSelectedStateIconElements("left"))}
+                  {menuButton("水平居中", () => alignSelectedStateIconElements("center"))}
+                  {menuButton("右对齐", () => alignSelectedStateIconElements("right"))}
+                  {menuButton("上对齐", () => alignSelectedStateIconElements("top"))}
+                  {menuButton("垂直居中", () => alignSelectedStateIconElements("middle"))}
+                  {menuButton("下对齐", () => alignSelectedStateIconElements("bottom"))}
+                </>
+              ), selectedCount < 2)}
+              {menuSubmenu("排列操作", (
+                <>
+                  {menuButton("水平等距", () => distributeSelectedStateIconElements("x"), selectedCount < 3)}
+                  {menuButton("垂直等距", () => distributeSelectedStateIconElements("y"), selectedCount < 3)}
+                  {menuButton("同宽", () => alignSelectedStateIconElements("same-width"))}
+                  {menuButton("同高", () => alignSelectedStateIconElements("same-height"))}
+                  {menuButton("同宽高", () => alignSelectedStateIconElements("same-size"))}
+                </>
+              ), selectedCount < 2)}
+              {menuSubmenu("镜像操作", (
+                <>
+                  {menuButton("水平镜像", () => mirrorSelectedStateIconElements("x"))}
+                  {menuButton("垂直镜像", () => mirrorSelectedStateIconElements("y"))}
+                </>
+              ), selectedCount === 0)}
             </>
           )}
         </div>
@@ -5412,6 +5730,10 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       const previewElements = stateIconDrawingDialog.drawingDraft
         ? [...stateIconDrawingDialog.elements, stateIconDrawingDialog.drawingDraft.element]
         : stateIconDrawingDialog.elements;
+      const stateIconDrawingSmartGuides = stateIconDrawingDialog.smartAlignmentGuides ?? [];
+      const stateIconDrawingMarqueeRect = stateIconDrawingDialog.marquee
+        ? stateIconDrawingRectFromPoints(stateIconDrawingDialog.marquee.start, stateIconDrawingDialog.marquee.current)
+        : null;
       return (
         <div
           className={`state-icon-drawing-inline ${stateIconDrawingDialog.pendingElementKind || stateIconDrawingDialog.pendingStaticTemplate ? "tool-active" : ""} ${stateIconDrawingDialog.drawingDraft ? "drawing-active" : ""}`}
@@ -5440,6 +5762,10 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                       event.preventDefault();
                       return;
                     }
+                    if (updateStateIconDrawingMarquee(event)) {
+                      event.preventDefault();
+                      return;
+                    }
                     dragStateIconDrawingSelection(event);
                   }}
                   onDoubleClick={(event) => {
@@ -5453,11 +5779,19 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                   }}
                   onPointerUp={(event) => {
                     if (!stateIconDrawingDialog.drawingDraft) {
+                      if (finishStateIconDrawingMarquee(event)) {
+                        event.preventDefault();
+                        return;
+                      }
                       stopStateIconDrawingDrag(event);
                     }
                   }}
                   onPointerCancel={(event) => {
                     if (!stateIconDrawingDialog.drawingDraft) {
+                      if (cancelStateIconDrawingMarquee(event)) {
+                        event.preventDefault();
+                        return;
+                      }
                       stopStateIconDrawingDrag(event);
                     }
                   }}
@@ -5481,8 +5815,21 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                     if (stateIconDrawingDialog.pendingElementKind || stateIconDrawingDialog.pendingStaticTemplate || stateIconDrawingDialog.drawingDraft) {
                       return;
                     }
+                    if (event.button !== 0) {
+                      return;
+                    }
                     (event.currentTarget.closest(".state-icon-drawing-inline") as HTMLElement | null)?.focus();
-                    setStateIconDrawingDialog((current) => current ? { ...current, selectedElementId: "", selectedElementIds: [] } : current);
+                    const point = clampStateIconDrawingPoint(stateIconDrawingPointer(event));
+                    const append = event.shiftKey || event.ctrlKey || event.metaKey;
+                    setStateIconDrawingDialog((current) => current ? {
+                      ...current,
+                      marquee: {
+                        start: point,
+                        current: point,
+                        append
+                      }
+                    } : current);
+                    event.currentTarget.setPointerCapture?.(event.pointerId);
                   }}
                 >
                   <rect x="0" y="0" width="240" height="160" rx="10" className="state-icon-drawing-canvas-bg" fill={frame.fillColor} />
@@ -5507,6 +5854,27 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                     strokeWidth={frame.strokeWidth}
                     strokeDasharray={frameDashArray}
                   />
+                  {stateIconDrawingSmartGuides.map((guide) => (
+                    <line
+                      key={guide.id}
+                      className={`smart-alignment-guide smart-alignment-guide-${guide.orientation} state-icon-drawing-smart-guide`}
+                      x1={guide.orientation === "vertical" ? guide.position : guide.start}
+                      y1={guide.orientation === "vertical" ? guide.start : guide.position}
+                      x2={guide.orientation === "vertical" ? guide.position : guide.end}
+                      y2={guide.orientation === "vertical" ? guide.end : guide.position}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  ))}
+                  {stateIconDrawingMarqueeRect && (
+                    <rect
+                      className="marquee-box state-icon-drawing-marquee"
+                      x={stateIconDrawingMarqueeRect.left}
+                      y={stateIconDrawingMarqueeRect.top}
+                      width={stateIconDrawingMarqueeRect.right - stateIconDrawingMarqueeRect.left}
+                      height={stateIconDrawingMarqueeRect.bottom - stateIconDrawingMarqueeRect.top}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  )}
                   {stateIconDrawingDialog.elements.map((element) => {
                     const selected = selectedIds.includes(element.id);
                     const halfWidth = Math.max(1, element.width) / 2;
@@ -5520,8 +5888,6 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                         onContextMenu={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
-                          const append = event.shiftKey || event.ctrlKey || event.metaKey;
-                          stateIconDrawingSelection(element.id, append);
                           setStateIconDrawingContextMenu({ x: event.clientX, y: event.clientY, kind: "element", elementId: element.id });
                         }}
                       >
@@ -5625,6 +5991,19 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                   const visibleTextColor = visibleStateIconColor("#111827", selected.textColor, selected.strokeColor);
                   const isLineShape = STATE_ICON_LINE_SHAPE_KINDS.has(selected.kind);
                   const isClosedShape = STATE_ICON_CLOSED_SHAPE_KINDS.has(selected.kind);
+                  const fontFamilyValue = selected.fontFamily ?? "Arial, Microsoft YaHei";
+                  const baseFontFamilyOptions = Array.isArray(FONT_FAMILY_OPTIONS)
+                    ? FONT_FAMILY_OPTIONS
+                    : ["Arial", "Microsoft YaHei", "SimSun", "KaiTi", "SimHei"];
+                  const fontFamilyOptions = Array.from(new Set([
+                    "Arial, Microsoft YaHei",
+                    ...baseFontFamilyOptions,
+                    fontFamilyValue
+                  ].filter(Boolean)));
+                  const fontFamilyOptionLabels = {
+                    "Arial, Microsoft YaHei": "Arial / 微软雅黑",
+                    ...(FONT_FAMILY_OPTION_LABELS ?? {})
+                  };
                   return (
                     <>
                       <div className="state-icon-drawing-property-title">
@@ -5718,11 +6097,31 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                             </label>
                             <label>
                               字体
-                              <BufferedTextInput value={selected.fontFamily ?? "Arial, Microsoft YaHei"} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { fontFamily: nextValue })} />
+                              <select value={fontFamilyValue} onChange={(event) => updateStateIconDrawingElement(selected.id, { fontFamily: event.target.value })}>
+                                {fontFamilyOptions.map((fontFamily) => (
+                                  <option key={fontFamily} value={fontFamily} style={{ fontFamily }}>
+                                    {fontFamilyOptionLabels[fontFamily] ?? fontFamily}
+                                  </option>
+                                ))}
+                              </select>
                             </label>
                             <label className="state-icon-drawing-compact-field">
                               字号
-                              <BufferedTextInput type="number" min="8" value={selected.fontSize ?? selected.height} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { fontSize: Math.max(8, Number(nextValue) || 8) })} />
+                              <BufferedTextInput
+                                type="number"
+                                min={STATE_ICON_DRAWING_MIN_FONT_SIZE}
+                                step={1}
+                                inputMode="numeric"
+                                value={normalizeStateIconDrawingFontSize(selected.fontSize ?? selected.height)}
+                                onKeyDown={(event) => {
+                                  if ([".", "-", "+", "e", "E"].includes(event.key)) {
+                                    event.preventDefault();
+                                  }
+                                }}
+                                onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, {
+                                  fontSize: normalizeStateIconDrawingFontSize(nextValue, selected.fontSize ?? selected.height)
+                                })}
+                              />
                             </label>
                             <label>
                               字重
