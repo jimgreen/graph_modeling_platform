@@ -4,8 +4,8 @@ This directory contains a curated, categorized set of SVG icons from license-cle
 
 Output:
 
-- Total icons: 11012
-- Source libraries: 53
+- Total icons: 4946
+- Source libraries: 52
 - Categories: 34
 - Search: `search-index.json` provides a flat searchable index; `index.html` provides browser-side keyword/category/source/license filtering.
 - Styling: SVGs are normalized to use `currentColor` when the source shape does not specify fill or stroke.
@@ -27,7 +27,6 @@ Sources:
 - Ant Design Icons: `@ant-design/icons-svg@4.4.2`, MIT
 - Material Design Icons: `@mdi/svg@7.4.47`, Apache-2.0
 - CoreUI Icons: `@coreui/icons@3.1.0`, MIT
-- Fluent UI System Icons: `@fluentui/svg-icons@1.1.330`, MIT
 - Carbon Icons: `@carbon/icons@11.82.0`, Apache-2.0
 - Teenyicons: `teenyicons@0.4.1`, MIT
 - Jam Icons: `jam-icons@2.0.0`, MIT
@@ -69,40 +68,40 @@ Sources:
 
 Categories:
 
-- `ui-commands`: 通用命令 (739)
-- `canvas-tools`: 画布工具 (615)
-- `files-documents`: 文件文档 (551)
-- `data-charts`: 数据图表 (567)
-- `status-alerts`: 状态告警 (664)
-- `communication`: 协作通信 (670)
-- `media-assets`: 媒体素材 (495)
-- `developer-tools`: 开发工具 (376)
-- `energy-generic`: 能源通用 (503)
-- `weather-environment`: 气象环境 (327)
-- `power-grid-electrical`: 电力电网 (127)
-- `generation-link`: 发电环节 (97)
-- `transmission-link`: 输电环节 (199)
-- `substation-link`: 变电环节 (140)
-- `distribution-link`: 配电环节 (314)
-- `consumption-link`: 用电环节 (416)
-- `renewable-generation`: 风光水发电 (93)
-- `thermal-heating`: 火电供热 (82)
-- `hydrogen-storage`: 氢能储能 (100)
+- `ui-commands`: 通用命令 (410)
+- `canvas-tools`: 画布工具 (307)
+- `files-documents`: 文件文档 (325)
+- `data-charts`: 数据图表 (277)
+- `status-alerts`: 状态告警 (269)
+- `communication`: 协作通信 (342)
+- `media-assets`: 媒体素材 (218)
+- `developer-tools`: 开发工具 (183)
+- `energy-generic`: 能源通用 (216)
+- `weather-environment`: 气象环境 (110)
+- `power-grid-electrical`: 电力电网 (47)
+- `generation-link`: 发电环节 (57)
+- `transmission-link`: 输电环节 (11)
+- `substation-link`: 变电环节 (47)
+- `distribution-link`: 配电环节 (146)
+- `consumption-link`: 用电环节 (80)
+- `renewable-generation`: 风光水发电 (66)
+- `thermal-heating`: 火电供热 (41)
+- `hydrogen-storage`: 氢能储能 (35)
 - `new-energy-equipment`: 新能源设备 (1)
-- `power-electronics`: 电力电子 (480)
-- `cooling-heating-energy`: 冷热能源 (200)
-- `gas-energy`: 燃气能源 (28)
-- `integrated-energy`: 综合能源 (94)
-- `communication-control`: 通信与控制 (193)
-- `industry-facilities`: 工业设施 (68)
-- `cloud-infrastructure`: 云与基础设施 (240)
-- `health-safety`: 医疗安全 (339)
-- `business-finance`: 业务金融 (479)
-- `education-research`: 教育科研 (233)
-- `flags-regions`: 国家地区旗帜 (298)
-- `office-productivity`: 办公效率 (628)
-- `maps-places`: 地图地点 (312)
-- `transport-facilities`: 交通设施 (344)
+- `power-electronics`: 电力电子 (56)
+- `cooling-heating-energy`: 冷热能源 (65)
+- `gas-energy`: 燃气能源 (23)
+- `integrated-energy`: 综合能源 (27)
+- `communication-control`: 通信与控制 (116)
+- `industry-facilities`: 工业设施 (35)
+- `cloud-infrastructure`: 云与基础设施 (107)
+- `health-safety`: 医疗安全 (169)
+- `business-finance`: 业务金融 (205)
+- `education-research`: 教育科研 (73)
+- `flags-regions`: 国家地区旗帜 (290)
+- `office-productivity`: 办公效率 (258)
+- `maps-places`: 地图地点 (178)
+- `transport-facilities`: 交通设施 (156)
 
 Rebuild:
 

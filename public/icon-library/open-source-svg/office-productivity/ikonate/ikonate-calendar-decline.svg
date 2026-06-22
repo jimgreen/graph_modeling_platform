@@ -1,0 +1,10 @@
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" color="#2563eb" role="img" aria-labelledby="ikonate-calendar-decline-title ikonate-calendar-decline-desc">
+  <title id="ikonate-calendar-decline-title">calendar decline</title>
+  <desc id="ikonate-calendar-decline-desc">办公效率 - Ikonate - calendar-decline - MIT</desc>
+	<path fill="currentColor" d="M3 5H21V21H3V5Z"/>
+	<path fill="currentColor" d="M21 9H3"/>
+	<path fill="currentColor" d="M7 5V3"/>
+	<path fill="currentColor" d="M17 5V3"/>
+	<path fill="currentColor" d="M15 18L8.99999 12"/>
+	<path fill="currentColor" d="M15 12L9 18"/>
+</svg>

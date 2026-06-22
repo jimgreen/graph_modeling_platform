@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" color="#2563eb" role="img" aria-labelledby="coreui-calendar-check-title coreui-calendar-check-desc">
+  <title id="coreui-calendar-check-title">calendar check</title>
+  <desc id="coreui-calendar-check-desc">通用命令 - CoreUI Icons - calendar-check - MIT</desc>
+  <path fill="var(--ci-primary-color, currentColor)" d="M472 96h-88V40h-32v56H160V40h-32v56H40a24.03 24.03 0 0 0-24 24v336a24.03 24.03 0 0 0 24 24h432a24.03 24.03 0 0 0 24-24V120a24.03 24.03 0 0 0-24-24m-8 352H48V128h80v40h32v-40h192v40h32v-40h80Z" class="ci-primary"/>
+  <path fill="var(--ci-primary-color, currentColor)" d="m243.397 313.373-54.385-54.385-22.627 22.628 77.012 77.011 125.615-125.615-22.628-22.627z" class="ci-primary"/>
+</svg>

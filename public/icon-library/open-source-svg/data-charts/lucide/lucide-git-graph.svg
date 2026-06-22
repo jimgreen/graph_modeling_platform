@@ -1,0 +1,22 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-git-graph"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-git-graph-title lucide-git-graph-desc">
+  <title id="lucide-git-graph-title">git graph</title>
+  <desc id="lucide-git-graph-desc">数据图表 - Lucide - git-graph - ISC</desc>
+  <circle fill="currentColor" cx="5" cy="6" r="3" />
+  <path fill="currentColor" d="M5 9v6" />
+  <circle fill="currentColor" cx="5" cy="18" r="3" />
+  <path fill="currentColor" d="M12 3v18" />
+  <circle fill="currentColor" cx="19" cy="6" r="3" />
+  <path fill="currentColor" d="M16 15.7A9 9 0 0 0 19 9" />
+</svg>

@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#ea580c" role="img" aria-labelledby="gas-leak-title gas-leak-desc">
   <title id="gas-leak-title">气体泄漏</title>
-  <desc id="gas-leak-desc">安全消防 - gas, leak</desc>
+  <desc id="gas-leak-desc">安全消防 - 复用 燃气能源 / leak</desc>
+  <g transform="translate(8 8) scale(2)">
+<path fill="currentColor" d="M6,3H3V6A3,3 0 0,0 6,3M14,3H12A9,9 0 0,1 3,12V14C9.08,14 14,9.07 14,3M10,3H8A5,5 0 0,1 3,8V10A7,7 0 0,0 10,3M10,21H12A9,9 0 0,1 21,12V10A11,11 0 0,0 10,21M18,21H21V18A3,3 0 0,0 18,21M14,21H16A5,5 0 0,1 21,16V14A7,7 0 0,0 14,21Z" />
+  </g>
   <g>
-<rect x="18" y="24" width="18" height="24" rx="4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M36 32h8c6 0 6 8 0 8h-4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M46 18c-4 3-4 6 0 9M52 16c-5 5-5 10 0 15" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M46 46h14v14H46z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="54" cy="54" r="1.35" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M54 54L51 48" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="50" cy="51" r="1.1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 </svg>

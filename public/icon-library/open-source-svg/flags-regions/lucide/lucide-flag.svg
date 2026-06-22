@@ -1,0 +1,17 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-flag"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-flag-title lucide-flag-desc">
+  <title id="lucide-flag-title">flag</title>
+  <desc id="lucide-flag-desc">国家地区旗帜 - Lucide - flag - ISC</desc>
+  <path fill="currentColor" d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528" />
+</svg>

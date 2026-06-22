@@ -1,6 +1,6 @@
 # Docer Free Compatible Icon Library
 
-This directory contains editable SVG icons generated for the graph modeling platform.
+This directory contains editable SVG icons curated for the graph modeling platform.
 
 Important source note:
 
@@ -8,6 +8,7 @@ Important source note:
 - Public anonymous endpoints exposed icon tags and some SVG storage URLs.
 - The probed SVG sample belonged to the `docer_icon` privilege set, and the sample collection reported `free_count=0`.
 - To avoid copying assets without verified reuse rights, the SVG files in this directory are original project assets, not copied Docer files.
+- Detailed equipment icons prefer existing local open-source / Fluent / base Docer-compatible icons instead of compact generated placeholders.
 
 Generated output:
 

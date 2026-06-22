@@ -1,12 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#be123c" role="img" aria-labelledby="heat-pump-title heat-pump-desc">
   <title id="heat-pump-title">热泵</title>
-  <desc id="heat-pump-desc">热力设备 - heat-pump, thermal</desc>
+  <desc id="heat-pump-desc">热力设备 - 复用 火电供热 / heat_pump_balance</desc>
+  <g transform="translate(8 56) scale(0.05)">
+<path fill="currentColor" d="M193-258.96q-33-32.96-33-80.04v-357h60v357q0 22 15.5 37.5t37.57 15.5q22.07 0 37-15.5T325-339v-244q0-47.08 32.94-80.04 32.94-32.96 80-32.96t79.56 32.96Q550-630.08 550-583v244q0 22 15.5 37.5t37.57 15.5q22.07 0 37-15.5T655-339v-287q0-45.83 32.08-77.92Q719.17-736 765-736h80l-57-57 42-43 130 130-130 129-42-43 58-56h-81q-21.25 0-35.62 14.37Q715-647.25 715-626v287q0 47.08-32.74 80.04Q649.53-226 602.76-226 556-226 523-258.96q-33-32.96-33-80.04v-244q0-22-14.93-37.5t-37-15.5q-22.07 0-37.57 15.5T385-583v244q0 47.08-32.74 80.04Q319.53-226 272.76-226 226-226 193-258.96ZM100-96q-24.75 0-42.37-17.63Q40-131.25 40-156v-335h880v335q0 24.75-17.62 42.37Q884.75-96 860-96H100Zm0-60h760v-275H100v275Zm760-275H100h760Z"/>
+  </g>
   <g>
-<rect x="14" y="18" width="36" height="28" rx="5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M22 32h20" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M34 24l8 8-8 8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M22 22c-3 4 3 6 0 10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M22 36c-3 4 3 6 0 10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M46 46h14v14H46z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="48" cy="47" r="1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M48 47L49 55" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="50" cy="51" r="1.1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 </svg>

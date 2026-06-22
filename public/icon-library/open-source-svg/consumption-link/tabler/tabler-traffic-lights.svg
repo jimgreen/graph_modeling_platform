@@ -1,0 +1,20 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-traffic-lights"
+ color="#2563eb" role="img" aria-labelledby="tabler-traffic-lights-title tabler-traffic-lights-desc">
+  <title id="tabler-traffic-lights-title">traffic lights</title>
+  <desc id="tabler-traffic-lights-desc">用电环节 - Tabler Icons - traffic-lights - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M7 7a5 5 0 0 1 5 -5a5 5 0 0 1 5 5v10a5 5 0 0 1 -5 5a5 5 0 0 1 -5 -5l0 -10" />
+  <path fill="currentColor" d="M11 7a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />
+  <path fill="currentColor" d="M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />
+  <path fill="currentColor" d="M11 17a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />
+</svg>

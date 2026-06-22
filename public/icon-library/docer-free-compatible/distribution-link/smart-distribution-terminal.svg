@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#0f766e" role="img" aria-labelledby="smart-distribution-terminal-title smart-distribution-terminal-desc">
   <title id="smart-distribution-terminal-title">智能配电终端</title>
-  <desc id="smart-distribution-terminal-desc">配电环节 - smart, terminal, 终端</desc>
+  <desc id="smart-distribution-terminal-desc">配电环节 - 复用 配电环节 / terminal-box</desc>
+  <g transform="translate(8 8) scale(2)">
+<path fill="currentColor" d="M3 3H21C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3ZM4 5V19H20V5H4ZM12 15H18V17H12V15ZM8.66685 12L5.83842 9.17157L7.25264 7.75736L11.4953 12L7.25264 16.2426L5.83842 14.8284L8.66685 12Z"/>
+  </g>
   <g>
-<circle cx="16" cy="24" r="5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="48" cy="24" r="5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="32" cy="46" r="5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 26l8 16M43 26l-8 16M21 24h22" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="32" y="33" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="7" font-weight="700" fill="currentColor">terminal</text>
+<path d="M46 46h14v14H46z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="51" cy="54" r="1.35" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M51 54L52 52" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="53" cy="52" r="1.1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 </svg>

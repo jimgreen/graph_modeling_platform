@@ -1,0 +1,24 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-route-scan"
+ color="#2563eb" role="img" aria-labelledby="tabler-route-scan-title tabler-route-scan-desc">
+  <title id="tabler-route-scan-title">route scan</title>
+  <desc id="tabler-route-scan-desc">地图地点 - Tabler Icons - route-scan - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M3 7v-2a2 2 0 0 1 2 -2h2" />
+  <path fill="currentColor" d="M3 17v2a2 2 0 0 0 2 2h2" />
+  <path fill="currentColor" d="M17 3h2a2 2 0 0 1 2 2v2" />
+  <path fill="currentColor" d="M17 21h2a2 2 0 0 0 2 -2v-2" />
+  <path fill="currentColor" d="M7 12v-3h3" />
+  <path fill="currentColor" d="M14 9h3v3" />
+  <path fill="currentColor" d="M7 9l4.414 4.414a2 2 0 0 1 .586 1.414v2.172" />
+  <path fill="currentColor" d="M17 9l-4.414 4.414a2 2 0 0 0 -.586 1.414v2.172" />
+</svg>

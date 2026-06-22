@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" focusable="false" viewBox="0 0 16 16" color="#2563eb" role="img" aria-labelledby="zendesk-garden-monitor-title zendesk-garden-monitor-desc">
-  <title id="zendesk-garden-monitor-title">monitor</title>
-  <desc id="zendesk-garden-monitor-desc">发电环节 - Zendesk Garden Icons - monitor - Apache-2.0</desc>
-  <g fill="none" stroke="currentColor">
-    <rect fill="currentColor" width="15" height="10" x=".5" y=".5" rx=".5" ry=".5"/>
-    <path fill="currentColor" stroke-linecap="round" d="M11.5 15.5a3.54 3.54 0 00-7 0"/>
-  </g>
-</svg>

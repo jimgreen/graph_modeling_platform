@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="humbleicons-info-circle-title humbleicons-info-circle-desc">
-  <title id="humbleicons-info-circle-title">info circle</title>
-  <desc id="humbleicons-info-circle-desc">状态告警 - Humbleicons - info-circle - MIT</desc>
-  <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 11h1v5.5m0 0h1.5m-1.5 0h-1.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9.5-4v-.5h.5V8h-.5Z"/>
-</svg>

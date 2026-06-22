@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#7c3aed" role="img" aria-labelledby="gas-cylinder-title gas-cylinder-desc">
   <title id="gas-cylinder-title">气瓶</title>
-  <desc id="gas-cylinder-desc">科研实验设施 - gas, cylinder, 气瓶</desc>
+  <desc id="gas-cylinder-desc">科研实验设施 - 复用 氢能储能 / gas-cylinder</desc>
+  <g transform="translate(8 8) scale(2)">
+<path fill="currentColor" d="M16,9V14L16,20A2,2 0 0,1 14,22H10A2,2 0 0,1 8,20V14L8,9C8,7.14 9.27,5.57 11,5.13V4H9V2H15V4H13V5.13C14.73,5.57 16,7.14 16,9Z" />
+  </g>
   <g>
-<circle cx="32" cy="32" r="20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 38a13 13 0 0 1 24 0" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M32 32l10-8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="32" y="33" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="7" font-weight="700" fill="currentColor">cylinder</text>
+<path d="M46 46h14v14H46z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="48" cy="44" r="0.65" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M48 44L49 41" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="48" r="1.1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 </svg>

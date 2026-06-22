@@ -1528,6 +1528,29 @@ const categoryPatterns = {
   ],
 };
 
+const categoryDenyPatterns = {
+  "generation-link": [/_arrow_/i],
+  "transmission-link": [
+    /^arrow_/i,
+    /_arrow_/i,
+    /^pipeline_arrow_curve_down$/i,
+    /^edit_line/i,
+    /^line_horizontal/i,
+    /^network_adapter$/i,
+    /^star_line/i,
+  ],
+  "substation-link": [/^keyboard_/i, /^panel_(bottom|left|right|top)/i],
+  "distribution-link": [/^arrow_/i, /_arrow_/i, /^chevron_/i, /^keyboard_/i],
+  "energy-control": [/^xbox/i],
+  "power-electronics": [/^filter(_|$)/i],
+  "meteorology-environment": [
+    /air_(balloon|horn|traffic)/i,
+    /hot_air_balloon/i,
+    /snow(boarding|mobile|shoeing)/i,
+    /t_shirt_air/i,
+  ],
+};
+
 const sourceAudit = {
   generatedAt: new Date().toISOString(),
   packageName,
@@ -1599,18 +1622,55 @@ function escapeXml(value) {
     .replaceAll('"', "&quot;");
 }
 
+function nameTokens(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/([a-z])(\d)/g, "$1_$2")
+    .replace(/(\d)([a-z])/g, "$1_$2")
+    .split(/[^a-z0-9]+/g)
+    .filter(Boolean);
+}
+
+function tokenMatchesPattern(tokens, pattern) {
+  const patternTokens = nameTokens(pattern);
+  if (patternTokens.length === 0) {
+    return false;
+  }
+  return tokens.some((_, index) =>
+    patternTokens.every((patternToken, offset) => tokens[index + offset] === patternToken),
+  );
+}
+
 function categoryMatchScore(sourceName, patterns) {
-  const normalized = `_${String(sourceName).toLowerCase().replace(/[-\s]+/g, "_")}_`;
+  const tokens = nameTokens(sourceName);
   let score = 0;
   for (const pattern of patterns) {
-    const token = String(pattern).toLowerCase().replace(/[-\s]+/g, "_");
-    if (normalized.includes(`_${token}_`)) {
-      score += 6;
-    } else if (normalized.includes(token)) {
-      score += 2;
+    if (tokenMatchesPattern(tokens, pattern)) {
+      score += nameTokens(pattern).length > 1 ? 6 : 4;
     }
   }
   return score;
+}
+
+function categoryRejectsSourceName(sourceName, patterns = []) {
+  if (!patterns.length) {
+    return false;
+  }
+
+  const rawName = String(sourceName || "").toLowerCase();
+  const normalizedName = rawName.replace(/[-\s]+/g, "_");
+  const tokens = nameTokens(sourceName);
+  return patterns.some((pattern) => {
+    if (pattern instanceof RegExp) {
+      pattern.lastIndex = 0;
+      if (pattern.test(rawName)) {
+        return true;
+      }
+      pattern.lastIndex = 0;
+      return pattern.test(normalizedName);
+    }
+    return tokenMatchesPattern(tokens, pattern);
+  });
 }
 
 function iconComplexity(sourceName) {
@@ -1669,6 +1729,21 @@ function normalizeSvg(svg, icon, category, pickedSize) {
     /<svg\b([^>]*)>/i,
     `<svg$1>\n  <title id="${icon.id}-title">${title}</title>\n  <desc id="${icon.id}-desc">${description}</desc>`,
   );
+}
+
+function duplicateSvgKey(svg) {
+  return String(svg || "")
+    .replace(/<\?xml[^>]*>\s*/gi, "")
+    .replace(/<title\b[^>]*>[\s\S]*?<\/title>\s*/gi, "")
+    .replace(/<desc\b[^>]*>[\s\S]*?<\/desc>\s*/gi, "")
+    .replace(/<text\b[^>]*>[\s\S]*?<\/text>\s*/gi, "")
+    .replace(/\bid="[^"]*"/gi, "")
+    .replace(/\baria-labelledby="[^"]*"/gi, "")
+    .replace(/\bcolor="[^"]*"/gi, "")
+    .replace(/#[0-9a-f]{3,8}/gi, "#color")
+    .replace(/\bcurrentcolor\b/gi, "currentColor")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function findIconFile(iconsDir, sourceName) {
@@ -1933,7 +2008,7 @@ const manifest = {
   label: "Office Fluent 兼容图标库",
   generatedAt: sourceAudit.generatedAt,
   sourcePolicy:
-    "使用 MIT 许可的 Microsoft Fluent UI System Icons；未复制 Microsoft Office 品牌图标或专有 Office 内置图标。",
+    "使用 MIT 许可的 Microsoft Fluent UI System Icons；未复制 Microsoft Office 品牌图标或专有 Office 内置图标；同一个 Fluent 源图标只保留一次，避免跨分类重复。",
   packageName,
   packageVersion,
   root: "/icon-library/office-fluent-compatible",
@@ -1943,6 +2018,7 @@ const manifest = {
 const availableIcons = await listAvailableRegularIcons(iconsDir);
 const availableBySourceName = new Map(availableIcons.map((icon) => [icon.sourceName, icon]));
 const usedSourceNames = new Set();
+const emittedGlobalSvgKeys = new Set();
 
 for (const category of categories) {
   const categoryDir = path.join(outputDir, category.id);
@@ -1958,6 +2034,9 @@ for (const category of categories) {
   const selected = [];
   const selectedNames = new Set();
   for (const [sourceName, name] of category.icons) {
+    if (usedSourceNames.has(sourceName)) {
+      continue;
+    }
     const iconFile = availableBySourceName.get(sourceName);
     if (!iconFile) {
       throw new Error(`Missing Fluent UI icon: ${sourceName}`);
@@ -1968,8 +2047,10 @@ for (const category of categories) {
   }
 
   const patterns = categoryPatterns[category.id] || [];
+  const denyPatterns = categoryDenyPatterns[category.id] || [];
   const candidates = availableIcons
     .filter((iconFile) => !selectedNames.has(iconFile.sourceName) && !usedSourceNames.has(iconFile.sourceName))
+    .filter((iconFile) => !categoryRejectsSourceName(iconFile.sourceName, denyPatterns))
     .map((iconFile) => ({
       ...iconFile,
       name: displayNameForSource(iconFile.sourceName),
@@ -1997,10 +2078,22 @@ for (const category of categories) {
 
   selected.sort((a, b) => `${a.pickedBy}:${a.sourceName}`.localeCompare(`${b.pickedBy}:${b.sourceName}`, "en"));
 
+  const emittedSvgKeys = new Set();
   for (const iconFile of selected) {
     const id = iconFile.sourceName.replaceAll("_", "-");
 
     const sourceSvg = await readFile(iconFile.filePath, "utf8");
+    const svgKey = duplicateSvgKey(sourceSvg);
+    if (svgKey && emittedSvgKeys.has(svgKey)) {
+      continue;
+    }
+    if (svgKey && emittedGlobalSvgKeys.has(svgKey)) {
+      continue;
+    }
+    if (svgKey) {
+      emittedSvgKeys.add(svgKey);
+      emittedGlobalSvgKeys.add(svgKey);
+    }
     const icon = { id, name: iconFile.name, sourceName: iconFile.sourceName };
     const fileName = `${id}.svg`;
     const outputPath = path.join(categoryDir, fileName);

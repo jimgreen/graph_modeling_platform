@@ -1,0 +1,22 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-line-style"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-line-style-title lucide-line-style-desc">
+  <title id="lucide-line-style-title">line style</title>
+  <desc id="lucide-line-style-desc">数据图表 - Lucide - line-style - ISC</desc>
+  <path fill="currentColor" d="M11 5h2" />
+  <path fill="currentColor" d="M15 12h6" />
+  <path fill="currentColor" d="M19 5h2" />
+  <path fill="currentColor" d="M3 12h6" />
+  <path fill="currentColor" d="M3 19h18" />
+  <path fill="currentColor" d="M3 5h2" />
+</svg>

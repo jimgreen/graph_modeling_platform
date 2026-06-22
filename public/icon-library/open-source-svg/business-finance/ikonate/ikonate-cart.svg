@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="ikonate-cart-title ikonate-cart-desc">
-  <title id="ikonate-cart-title">cart</title>
-  <desc id="ikonate-cart-desc">业务金融 - Ikonate - cart - MIT</desc>
-    <path fill="currentColor" d="M6 6h15l-1.5 9h-12z"/>
-    <circle fill="currentColor" cx="9" cy="19" r="1"/>
-    <circle fill="currentColor" cx="18" cy="19" r="1"/>
-    <path fill="currentColor" d="M6 6H3"/>
-</svg>

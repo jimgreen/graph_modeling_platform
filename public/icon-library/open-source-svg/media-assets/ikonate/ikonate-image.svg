@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="ikonate-image-title ikonate-image-desc">
-  <title id="ikonate-image-title">image</title>
-  <desc id="ikonate-image-desc">媒体素材 - Ikonate - image - MIT</desc>
-    <rect fill="currentColor" width="18" height="18" x="3" y="3"/>
-    <path fill="currentColor" stroke-linecap="round" d="M3 14l4-4 11 11"/>
-    <circle fill="currentColor" cx="13.5" cy="7.5" r="2.5"/>
-    <path fill="currentColor" stroke-linecap="round" d="M13.5 16.5L21 9"/>
-</svg>

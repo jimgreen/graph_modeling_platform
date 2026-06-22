@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="humbleicons-times-circle-title humbleicons-times-circle-desc">
-  <title id="humbleicons-times-circle-title">times circle</title>
-  <desc id="humbleicons-times-circle-desc">办公效率 - Humbleicons - times-circle - MIT</desc>
-  <g stroke="currentColor" stroke-width="2">
-    <path fill="currentColor" d="M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" />
-    <path fill="currentColor" stroke-linecap="round" d="M9 15L15 9M15 15L9 9" />
-  </g>
-</svg>

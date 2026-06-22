@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-cash-stack" viewBox="0 0 16 16" color="#2563eb" role="img" aria-labelledby="bootstrap-cash-stack-title bootstrap-cash-stack-desc">
+  <title id="bootstrap-cash-stack-title">cash stack</title>
+  <desc id="bootstrap-cash-stack-desc">画布工具 - Bootstrap Icons - cash-stack - MIT</desc>
+  <path fill="currentColor" d="M1 3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1zm7 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4"/>
+  <path fill="currentColor" d="M0 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1zm3 0a2 2 0 0 1-2 2v4a2 2 0 0 1 2 2h10a2 2 0 0 1 2-2V7a2 2 0 0 1-2-2z"/>
+</svg>

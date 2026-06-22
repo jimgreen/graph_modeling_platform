@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" focusable="false" viewBox="0 0 16 16" color="#2563eb" role="img" aria-labelledby="zendesk-garden-voicemail-title zendesk-garden-voicemail-desc">
-  <title id="zendesk-garden-voicemail-title">voicemail</title>
-  <desc id="zendesk-garden-voicemail-desc">协作通信 - Zendesk Garden Icons - voicemail - Apache-2.0</desc>
-  <g fill="none" stroke="currentColor">
-    <circle fill="currentColor" cx="3.5" cy="7.5" r="3"/>
-    <circle fill="currentColor" cx="12.5" cy="7.5" r="3"/>
-    <path fill="currentColor" d="M3.5 10.5h9"/>
-  </g>
-</svg>

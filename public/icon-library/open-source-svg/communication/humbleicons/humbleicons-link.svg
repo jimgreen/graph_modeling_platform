@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="humbleicons-link-title humbleicons-link-desc">
-  <title id="humbleicons-link-title">link</title>
-  <desc id="humbleicons-link-desc">协作通信 - Humbleicons - link - MIT</desc>
-  <g stroke="currentColor" stroke-linecap="round" stroke-width="2">
-    <path fill="currentColor" d="M12 17l-1.5 1.5a3.536 3.536 0 01-5 0v0a3.536 3.536 0 010-5l3-3a3.536 3.536 0 015 0v0" />
-    <path fill="currentColor" d="M12 7l1.5-1.5a3.536 3.536 0 015 0v0a3.536 3.536 0 010 5l-3 3a3.536 3.536 0 01-5 0v0" />
-  </g>
-</svg>

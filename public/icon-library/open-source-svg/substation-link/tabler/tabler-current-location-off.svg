@@ -1,0 +1,23 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-current-location-off"
+ color="#2563eb" role="img" aria-labelledby="tabler-current-location-off-title tabler-current-location-off-desc">
+  <title id="tabler-current-location-off-title">current location off</title>
+  <desc id="tabler-current-location-off-desc">变电环节 - Tabler Icons - current-location-off - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M14.685 10.661c-.3 -.6 -.795 -1.086 -1.402 -1.374m-3.397 .584a3 3 0 1 0 4.24 4.245" />
+  <path fill="currentColor" d="M6.357 6.33a8 8 0 1 0 11.301 11.326m1.642 -2.378a8 8 0 0 0 -10.597 -10.569" />
+  <path fill="currentColor" d="M12 2v2" />
+  <path fill="currentColor" d="M12 20v2" />
+  <path fill="currentColor" d="M20 12h2" />
+  <path fill="currentColor" d="M2 12h2" />
+  <path fill="currentColor" d="M3 3l18 18" />
+</svg>

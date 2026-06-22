@@ -1,0 +1,21 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-scale"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-scale-title lucide-scale-desc">
+  <title id="lucide-scale-title">scale</title>
+  <desc id="lucide-scale-desc">画布工具 - Lucide - scale - ISC</desc>
+  <path fill="currentColor" d="M12 3v18" />
+  <path fill="currentColor" d="m19 8 3 8a5 5 0 0 1-6 0zV7" />
+  <path fill="currentColor" d="M3 7h1a17 17 0 0 0 8-2 17 17 0 0 0 8 2h1" />
+  <path fill="currentColor" d="m5 8 3 8a5 5 0 0 1-6 0zV7" />
+  <path fill="currentColor" d="M7 21h10" />
+</svg>

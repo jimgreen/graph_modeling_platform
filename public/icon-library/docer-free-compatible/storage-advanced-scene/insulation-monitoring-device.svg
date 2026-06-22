@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#22c55e" role="img" aria-labelledby="insulation-monitoring-device-title insulation-monitoring-device-desc">
   <title id="insulation-monitoring-device-title">绝缘监测</title>
-  <desc id="insulation-monitoring-device-desc">储能细分设备 - insulation, monitor, 绝缘</desc>
+  <desc id="insulation-monitoring-device-desc">储能细分设备 - 复用 导航视图 / search_shield</desc>
+  <g transform="translate(8 8) scale(2.4)">
+<path fill="currentColor" d="M5.12 10.04c.2-.2.56-.2.76 0 .5.48 1.48 1.25 2.68 1.4.24.04.44.22.44.45v2.1c0 2.85-2.78 3.88-3.39 4.07a.37.37 0 0 1-.22 0C4.79 17.86 2 16.84 2 14v-2.11c0-.23.2-.41.44-.44a5.07 5.07 0 0 0 2.68-1.41ZM9.5 3a6.5 6.5 0 0 1 4.94 10.73l3.41 3.42a.5.5 0 0 1-.63.76l-.07-.06-3.42-3.41A6.47 6.47 0 0 1 9.57 16c.15-.31.26-.65.33-1.02A5.47 5.47 0 0 0 15 9.5a5.5 5.5 0 1 0-11 0v.17c-.27.22-.6.43-.96.58C3.02 10 3 9.75 3 9.5A6.5 6.5 0 0 1 9.5 3Z"/>
+  </g>
   <g>
-<path d="M10 34h44" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M44 24l10 10-10 10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><rect x="16" y="18" width="24" height="24" rx="4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="32" y="33" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="7" font-weight="700" fill="currentColor">monitor</text>
+<path d="M46 46h14v14H46z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="50" cy="53" r="1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M50 53L49 54" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="55" cy="53" r="1.1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 </svg>

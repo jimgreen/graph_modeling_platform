@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="line-md-close-title line-md-close-desc">
-  <title id="line-md-close-title">close</title>
-  <desc id="line-md-close-desc">通用命令 - Line MD - close - MIT</desc>
-	<path d="M12 12l7 7M12 12l-7 -7M12 12l-7 7M12 12l7 -7" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="12">
-		<animate attributeName="stroke-dashoffset" dur="0.4s" fill="freeze" values="12;0" />
-	</path>
-</svg>

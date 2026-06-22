@@ -1,0 +1,18 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-checks"
+ color="#2563eb" role="img" aria-labelledby="tabler-checks-title tabler-checks-desc">
+  <title id="tabler-checks-title">checks</title>
+  <desc id="tabler-checks-desc">通用命令 - Tabler Icons - checks - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M7 12l5 5l10 -10" />
+  <path fill="currentColor" d="M2 12l5 5m5 -5l5 -5" />
+</svg>

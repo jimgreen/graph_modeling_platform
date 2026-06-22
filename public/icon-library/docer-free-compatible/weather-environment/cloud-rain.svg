@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#0284c7" role="img" aria-labelledby="cloud-rain-title cloud-rain-desc">
   <title id="cloud-rain-title">降雨</title>
-  <desc id="cloud-rain-desc">气象与环境 - rain, cloud</desc>
+  <desc id="cloud-rain-desc">气象与环境 - 复用 气象环境 / cloud-rain-wind</desc>
+  <g transform="translate(8 8) scale(2)">
+<path fill="currentColor" d="M19.825 17c4.495-3.16.475-7.73-3.706-7.73C13.296-1.732-3.265 7.368 4.074 15.662m8.45 3.283-1.044-4.89m5.044 6.89-1.044-4.89m-6.956.89-1.044-4.89"/>
+  </g>
   <g>
-<path d="M18 34h28a8 8 0 0 0 0-16 13 13 0 0 0-25-3A9 9 0 0 0 18 34z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 42L20 50" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M34 42L30 50" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M44 42L40 50" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M46 46h14v14H46z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="50" cy="53" r="1.35" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M50 53L52 49" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="55" cy="51" r="1.1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 </svg>

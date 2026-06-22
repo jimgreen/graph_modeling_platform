@@ -631,6 +631,8 @@ const sources = [
   },
 ];
 
+const activeSources = sources.filter((source) => source.id !== "fluent-system");
+
 const categories = [
   {
     id: "ui-commands",
@@ -916,6 +918,13 @@ const categories = [
       "eco",
       "leaf",
     ],
+    denyPatterns: [
+      /air[-_ ]?(balloon|horn|traffic)/i,
+      /balloon[-_ ]?hot[-_ ]?air/i,
+      /hot[-_ ]?air[-_ ]?balloon/i,
+      /snow(boarding|mobile|shoeing)/i,
+      /t[-_ ]?shirt[-_ ]?air/i,
+    ],
   },
   {
     id: "power-grid-electrical",
@@ -948,6 +957,27 @@ const categories = [
       "zap",
       "lightning",
     ],
+    denyPatterns: [
+      /^arrow[-_ ]/i,
+      /^nintendo[-_ ]?switch$/i,
+      /auto[-_ ]?transmission/i,
+      /eiffel[-_ ]?tower/i,
+      /(beijing|berlin|dallas|osaka|paris|shanghai|stuttgart)[-_ ].*tower/i,
+      /(broadcast|cell|communications|computer|control|desktop|radio|signal)[-_ ]tower/i,
+      /tower[-_ ](beach|broadcast|cell|control|no[-_ ]?access|observation)/i,
+      /observation[-_ ]tower/i,
+      /(bus|truck|razor)[-_ ]electric/i,
+      /(electric[-_ ])?(bike|moped|rickshaw|scooter)/i,
+      /brain[-_ ]electricity/i,
+      /city[-_ ]?switch/i,
+      /dance[-_ ]?pole/i,
+      /domain[-_ ]?switch/i,
+      /letter[-_ ]?switch/i,
+      /sign[-_ ]?pole/i,
+      /frost[-_ ]?tower/i,
+      /switch[-_ ]?(access|account|left|vertical)/i,
+      /transmission[-_ ]?lte/i,
+    ],
   },
   {
     id: "generation-link",
@@ -978,6 +1008,7 @@ const categories = [
       "meter",
       "monitor",
     ],
+    denyPatterns: [/[-_ ]arrow[-_ ]/i, /blood[-_ ]?pressure/i],
   },
   {
     id: "transmission-link",
@@ -993,10 +1024,6 @@ const categories = [
       "pole",
       "grid",
       "network",
-      "route",
-      "road",
-      "map",
-      "location",
       "insulator",
       "ground",
       "lightning",
@@ -1007,6 +1034,19 @@ const categories = [
       "sync",
       "branch",
       "hvdc",
+    ],
+    denyPatterns: [
+      /road/i,
+      /location[-_ ]?heart/i,
+      /location[-_ ]?marina/i,
+      /drone[-_ ]?delivery/i,
+      /(beijing|berlin|dallas|osaka|paris|shanghai|stuttgart)[-_ ].*tower/i,
+      /source[-_ ]?branch/i,
+      /auto[-_ ]?transmission/i,
+      /frost[-_ ]?tower/i,
+      /(broadcast|cell|communications|computer|control|desktop|radio|signal)[-_ ]tower/i,
+      /tower[-_ ](broadcast|cell|control)/i,
+      /transmission[-_ ]?lte/i,
     ],
   },
   {
@@ -1036,6 +1076,25 @@ const categories = [
       "flash",
       "plug",
     ],
+    denyPatterns: [
+      /^keyboard[-_ ]/i,
+      /account[-_ ]?settings/i,
+      /airplane[-_ ]?settings/i,
+      /air[-_ ]?traffic[-_ ]?control/i,
+      /devops/i,
+      /fraud/i,
+      /kubernetes/i,
+      /movie[-_ ].*settings/i,
+      /^nintendo[-_ ]?switch$/i,
+      /panel[-_ ]?(bottom|left|right|top)/i,
+      /panel[-_ ]?(expansion|open)/i,
+      /pest[-_ ]?control/i,
+      /settings/i,
+      /settings[-_ ]?voice/i,
+      /side[-_ ]?panel/i,
+      /source[-_ ]?control/i,
+      /switch[-_ ]?(access|account|left)/i,
+    ],
   },
   {
     id: "distribution-link",
@@ -1064,6 +1123,17 @@ const categories = [
       "tool",
       "home",
       "building",
+    ],
+    denyPatterns: [
+      /^arrow[-_ ]/i,
+      /[-_ ]arrow[-_ ]/i,
+      /^chevron[-_ ]/i,
+      /^keyboard[-_ ]/i,
+      /home[-_ ]?repair[-_ ]?service/i,
+      /medicine[-_ ]?box/i,
+      /bounding[-_ ]?box/i,
+      /heart[-_ ]?box/i,
+      /box\d*[-_ ]?heart/i,
     ],
   },
   {
@@ -1096,6 +1166,7 @@ const categories = [
       "dashboard",
       "monitor",
     ],
+    denyPatterns: [/f1[-_ ]?pit/i, /food[-_ ]?journey/i, /financial[-_ ]?customer/i, /sign[-_ ]?stop/i],
   },
   {
     id: "renewable-generation",
@@ -1153,6 +1224,15 @@ const categories = [
       "plant",
       "chimney",
     ],
+    denyPatterns: [
+      /hot[-_ ]?dog/i,
+      /food[-_ ]?hot[-_ ]?dog/i,
+      /cup[-_ ]?hot/i,
+      /bowl[-_ ]?hot/i,
+      /build[-_ ]?and[-_ ]?deploy[-_ ]?pipeline/i,
+      /devops/i,
+      /cicd/i,
+    ],
   },
   {
     id: "hydrogen-storage",
@@ -1161,7 +1241,6 @@ const categories = [
     patterns: [
       "hydrogen",
       "fuel",
-      "cell",
       "battery",
       "batteries",
       "charge",
@@ -1179,6 +1258,27 @@ const categories = [
       "flash",
       "bolt",
       "zap",
+    ],
+    denyPatterns: [
+      /blood[-_ ]?cells?/i,
+      /block[-_ ]?storage/i,
+      /cancer/i,
+      /cell[-_ ]?signal/i,
+      /container[-_ ]?microservices/i,
+      /deploying[-_ ]?containers/i,
+      /diving/i,
+      /flash[-_ ]?storage/i,
+      /hyper[-_ ]?protect[-_ ]?containers/i,
+      /ibm[-_ ].*(containers?|storage)/i,
+      /managing[-_ ]?containers/i,
+      /object[-_ ]?storage/i,
+      /offline[-_ ]?storage/i,
+      /storage[-_ ]?(domain|pool|product|request|systems)/i,
+      /virtual[-_ ]?storage/i,
+      /scuba/i,
+      /sd[-_ ]?storage/i,
+      /shirt[-_ ]?tank/i,
+      /tape[-_ ]?storage/i,
     ],
   },
   {
@@ -1212,6 +1312,17 @@ const categories = [
       "green",
       "eco",
     ],
+    denyPatterns: [
+      /block[-_ ]?storage/i,
+      /flash[-_ ]?storage/i,
+      /ibm[-_ ].*storage/i,
+      /object[-_ ]?storage/i,
+      /offline[-_ ]?storage/i,
+      /sd[-_ ]?storage/i,
+      /storage[-_ ]?(domain|pool|product|request|systems)/i,
+      /tape[-_ ]?storage/i,
+      /virtual[-_ ]?storage/i,
+    ],
   },
   {
     id: "power-electronics",
@@ -1242,6 +1353,28 @@ const categories = [
       "flash",
       "bolt",
       "zap",
+    ],
+    denyPatterns: [
+      /^filter($|[-_ ])/i,
+      /^filters?$/i,
+      /(form|global|list)[-_ ]?filters?/i,
+      /washington[-_ ]?dc/i,
+      /(account|airplane|calendar|keyboard|movie)[-_ ].*(filter|settings)/i,
+      /ac[-_ ]?unit/i,
+      /air[-_ ]?traffic[-_ ]?control/i,
+      /bed[-_ ]?pulse/i,
+      /electronics[-_ ]?store/i,
+      /game[-_ ]?controller/i,
+      /handheld[-_ ]?controller/i,
+      /heart[-_ ]?pulse/i,
+      /missing[-_ ]?controller/i,
+      /pulse[-_ ]?oximeter/i,
+      /^dc$/i,
+      /settings[-_ ]?(power|voice)/i,
+      /power[-_ ]?settings/i,
+      /stadia[-_ ]?controller/i,
+      /^controller$/i,
+      /controller[-_ ]?(classic|fast|gen|next|off|paus|play|record|retro|stop)/i,
     ],
   },
   {
@@ -1274,6 +1407,7 @@ const categories = [
       "gauge",
       "load",
     ],
+    denyPatterns: [/ice[-_ ]?cream/i],
   },
   {
     id: "gas-energy",
@@ -1304,6 +1438,7 @@ const categories = [
       "shield",
       "warning",
     ],
+    denyPatterns: [/blood[-_ ]?pressure/i, /diving/i, /scuba/i, /shirt[-_ ]?tank/i],
   },
   {
     id: "integrated-energy",
@@ -1334,6 +1469,17 @@ const categories = [
       "carbon",
       "eco",
       "plant",
+    ],
+    denyPatterns: [
+      /currency[-_ ]?exchange/i,
+      /cash[-_ ]?flow/i,
+      /contractual[-_ ]?flow/i,
+      /carbon[-_ ]?for[-_ ]?ibm/i,
+      /db2[-_ ]?genius/i,
+      /player[-_ ]?flow/i,
+      /traffic[-_ ]?flow/i,
+      /money[-_ ]?exchange/i,
+      /exchange[-_ ]?(cny|funds)/i,
     ],
   },
   {
@@ -1463,6 +1609,7 @@ const categories = [
       "aed",
       "defibrillator",
     ],
+    denyPatterns: [/airline/i, /hair[-_ ]?care/i],
   },
   {
     id: "business-finance",
@@ -1532,6 +1679,17 @@ const categories = [
     label: "国家地区旗帜",
     description: "国家、地区、国际组织和区域旗帜 SVG，用于地图、区域、项目归属和国际化展示。",
     patterns: ["flag", "flags", "country", "region", "regions", "world", "global", "international"],
+    denyPatterns: [
+      /mailbox/i,
+      /cross[-_ ]country/i,
+      /diving[-_ ]scuba/i,
+      /flight[-_ ]international/i,
+      /world[-_ ]trade/i,
+      /cics/i,
+      /global[-_ ](markets|partner|loan|pandemic)/i,
+      /global[-_ ](currency|filters|strategy)/i,
+      /soil[-_ ]moisture[-_ ]global/i,
+    ],
   },
   {
     id: "office-productivity",
@@ -1641,6 +1799,7 @@ const categories = [
       "aerialway",
       "barrier",
     ],
+    denyPatterns: [/paper[-_ ]?plane/i],
   },
 ];
 
@@ -1703,23 +1862,94 @@ async function listFiles(dir) {
   return files;
 }
 
+function nameTokens(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/([a-z])(\d)/g, "$1-$2")
+    .replace(/(\d)([a-z])/g, "$1-$2")
+    .replace(/[_\s]+/g, "-")
+    .split(/-+/)
+    .filter(Boolean);
+}
+
+const safeCompoundTokenMatchers = new Map([
+  ["bolt", /^(bolt|thunderbolt)$/],
+  ["cloud", /^cloud(s|y|ed)?$/],
+  ["eco", /^eco(system)?$/],
+  ["file", /^file(s)?$/],
+  ["heat", /^(heat|heated|heating)$/],
+  ["ice", /^(ice|icing)$/],
+  ["image", /^image(s)?$/],
+  ["leaf", /^(leaf|leaves)$/],
+  ["meter", /^(meter|meters|speedometer)$/],
+  ["phone", /^(phone|telephone|smartphone)$/],
+  ["print", /^(print|printer)$/],
+  ["rain", /^rain(y|drop)?$/],
+  ["snow", /^snow(\d+|flake|plow|mobile|shoeing|boarding|density|heavy)?$/],
+  ["sun", /^(sun|sunny|sunrise|sunset)$/],
+  ["water", /^(water|waterfall)$/],
+  ["wind", /^(wind|windy)$/],
+]);
+
+function tokenMatchesPattern(tokens, pattern) {
+  const patternTokens = nameTokens(pattern);
+  if (patternTokens.length === 0) {
+    return false;
+  }
+  if (patternTokens.length > 1) {
+    return tokens.some((_, index) =>
+      patternTokens.every((patternToken, offset) => tokens[index + offset] === patternToken),
+    );
+  }
+
+  const patternToken = patternTokens[0];
+  const matcher = safeCompoundTokenMatchers.get(patternToken);
+  return tokens.some((token) => {
+    if (token === patternToken || token === `${patternToken}s` || `${token}s` === patternToken) {
+      return true;
+    }
+    return matcher ? matcher.test(token) : false;
+  });
+}
+
 function categoryMatchScore(name, patterns) {
-  const normalized = `-${name.toLowerCase().replace(/[_\s]+/g, "-")}-`;
+  const tokens = nameTokens(name);
   let score = 0;
   for (const pattern of patterns) {
-    const token = pattern.toLowerCase().replace(/[_\s]+/g, "-");
-    if (normalized.includes(`-${token}-`)) {
-      score += 4;
-    } else if (normalized.includes(token)) {
-      score += 1;
+    if (tokenMatchesPattern(tokens, pattern)) {
+      score += nameTokens(pattern).length > 1 ? 6 : 4;
     }
   }
   return score;
 }
 
+function categoryRejectsName(name, patterns = []) {
+  if (!patterns.length) {
+    return false;
+  }
+
+  const rawName = String(name || "").toLowerCase();
+  const normalizedName = rawName.replace(/[_\s]+/g, "-");
+  const tokens = nameTokens(name);
+  return patterns.some((pattern) => {
+    if (pattern instanceof RegExp) {
+      pattern.lastIndex = 0;
+      if (pattern.test(rawName)) {
+        return true;
+      }
+      pattern.lastIndex = 0;
+      return pattern.test(normalizedName);
+    }
+    return tokenMatchesPattern(tokens, pattern);
+  });
+}
+
 function classifyIcon(name) {
   let best = null;
   for (const category of categories) {
+    if (categoryRejectsName(name, category.denyPatterns)) {
+      continue;
+    }
     const score = categoryMatchScore(name, category.patterns);
     if (score > 0 && (!best || score > best.score)) {
       best = { category, score };
@@ -1740,9 +1970,84 @@ function iconFamily(name) {
   return tokens[0] || name.toLowerCase();
 }
 
+const ignoredSemanticTokens = new Set([
+  "alt",
+  "big",
+  "bold",
+  "circle",
+  "duotone",
+  "filled",
+  "fill",
+  "light",
+  "line",
+  "linear",
+  "o",
+  "outline",
+  "outlined",
+  "rect",
+  "rectangle",
+  "regular",
+  "round",
+  "rounded",
+  "sharp",
+  "small",
+  "solid",
+  "square",
+  "thin",
+  "tone",
+  "two",
+]);
+
+const semanticTokenAliases = new Map([
+  ["add", "plus"],
+  ["checkmark", "check"],
+  ["checked", "check"],
+  ["cancel", "close"],
+  ["dismiss", "close"],
+  ["multiply", "close"],
+  ["times", "close"],
+  ["x", "close"],
+  ["xmark", "close"],
+  ["remove", "minus"],
+  ["subtract", "minus"],
+  ["trash", "delete"],
+  ["bin", "delete"],
+  ["pencil", "edit"],
+  ["printer", "print"],
+  ["redoalt", "redo"],
+  ["undoalt", "undo"],
+]);
+
+function semanticIconKey(name) {
+  const normalized = String(name || "")
+    .toLowerCase()
+    .replace(/checkmark\d*/g, "check")
+    .replace(/\b(\d+k|\d+)\b/g, " ");
+  const tokens = normalized
+    .split(/[-_\s]+/)
+    .map((token) => semanticTokenAliases.get(token) || token)
+    .filter((token) => token && !ignoredSemanticTokens.has(token) && !/^\d+$/.test(token) && !/^\d+k$/.test(token));
+  return [...new Set(tokens)].sort((a, b) => a.localeCompare(b, "en")).join("-");
+}
+
 function isUsableSvg(svg) {
   const text = String(svg || "").trim();
   return text !== "undefined" && /<svg\b/i.test(text) && /<\/svg>/i.test(text);
+}
+
+function duplicateSvgKey(svg) {
+  return String(svg || "")
+    .replace(/<\?xml[^>]*>\s*/gi, "")
+    .replace(/<title\b[^>]*>[\s\S]*?<\/title>\s*/gi, "")
+    .replace(/<desc\b[^>]*>[\s\S]*?<\/desc>\s*/gi, "")
+    .replace(/<text\b[^>]*>[\s\S]*?<\/text>\s*/gi, "")
+    .replace(/\bid="[^"]*"/gi, "")
+    .replace(/\baria-labelledby="[^"]*"/gi, "")
+    .replace(/\bcolor="[^"]*"/gi, "")
+    .replace(/#[0-9a-f]{3,8}/gi, "#color")
+    .replace(/\bcurrentcolor\b/gi, "currentColor")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function normalizeSvg(svg, icon) {
@@ -2075,9 +2380,9 @@ const manifest = {
   generatedAt: new Date().toISOString(),
   root: "/icon-library/open-source-svg",
   sourcePolicy:
-    "仅使用官方 npm 包中的开源 SVG；保留源库版本、许可和 LICENSE 文件；过滤明显品牌/logo 图标。",
+    "仅使用官方 npm 包中的开源 SVG；保留源库版本、许可和 LICENSE 文件；过滤明显品牌/logo 图标；同一分类内按语义键保留一个代表图标，避免重复展示。",
   maxIconsPerSourceCategory,
-  sources: sources.map((source) => ({
+  sources: activeSources.map((source) => ({
     id: source.id,
     label: source.label,
     packageSpec: source.packageSpec,
@@ -2093,7 +2398,11 @@ const manifest = {
   })),
 };
 
-for (const source of sources) {
+const selectedSemanticKeysByCategory = new Map(categories.map((category) => [category.id, new Set()]));
+const selectedSvgKeysByCategory = new Map(categories.map((category) => [category.id, new Set()]));
+const selectedSvgKeysGlobal = new Set();
+
+for (const source of activeSources) {
   const safePackageDir = slug(source.packageSpec);
   const packDir = path.join(sourcePackDir, safePackageDir);
   const extractDir = path.join(sourceExtractDir, safePackageDir);
@@ -2176,6 +2485,11 @@ for (const source of sources) {
       if (usedForSource.has(iconFile.sourceName)) {
         continue;
       }
+      const semanticKey = semanticIconKey(iconFile.sourceName);
+      const selectedSemanticKeys = selectedSemanticKeysByCategory.get(category.id);
+      if (semanticKey && selectedSemanticKeys?.has(semanticKey)) {
+        continue;
+      }
       const family = iconFamily(iconFile.sourceName);
       if (!source.disableFamilyLimit && (familyCounts.get(family) || 0) >= 2) {
         continue;
@@ -2184,7 +2498,22 @@ for (const source of sources) {
       if (!isUsableSvg(sourceSvg)) {
         continue;
       }
+      const svgKey = duplicateSvgKey(sourceSvg);
+      const selectedSvgKeys = selectedSvgKeysByCategory.get(category.id);
+      if (svgKey && selectedSvgKeys?.has(svgKey)) {
+        continue;
+      }
+      if (svgKey && selectedSvgKeysGlobal.has(svgKey)) {
+        continue;
+      }
       usedForSource.add(iconFile.sourceName);
+      if (semanticKey) {
+        selectedSemanticKeys?.add(semanticKey);
+      }
+      if (svgKey) {
+        selectedSvgKeys?.add(svgKey);
+        selectedSvgKeysGlobal.add(svgKey);
+      }
       familyCounts.set(family, (familyCounts.get(family) || 0) + 1);
       selectedForCategory += 1;
 

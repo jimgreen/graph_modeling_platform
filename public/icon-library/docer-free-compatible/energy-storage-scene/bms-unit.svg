@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#16a34a" role="img" aria-labelledby="bms-unit-title bms-unit-desc">
   <title id="bms-unit-title">BMS单元</title>
-  <desc id="bms-unit-desc">储能场景 - bms, battery, BMS</desc>
+  <desc id="bms-unit-desc">储能场景 - 复用 状态安全 / battery_checkmark</desc>
+  <g transform="translate(8 8) scale(2)">
+<path fill="currentColor" d="M17 6a3 3 0 0 1 3 3v1h1a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1h-1v1a3 3 0 0 1-3 3h-4.17c.11-.48.17-.98.17-1.5h4c.78 0 1.42-.6 1.5-1.36V9c0-.78-.6-1.42-1.36-1.5H5c-.78 0-1.42.6-1.5 1.36v1.87c-.55.29-1.06.65-1.5 1.08V9a3 3 0 0 1 3-3h12Zm-5 10.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0Zm-2.15-2.35a.5.5 0 0 0-.7 0L5.5 17.79l-1.65-1.64a.5.5 0 0 0-.7.7l2 2c.2.2.5.2.7 0l4-4a.5.5 0 0 0 0-.7Z"/>
+  </g>
   <g>
-<circle cx="16" cy="24" r="5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="48" cy="24" r="5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="32" cy="46" r="5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 26l8 16M43 26l-8 16M21 24h22" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="32" y="33" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="7" font-weight="700" fill="currentColor">battery</text>
+<path d="M46 46h14v14H46z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="54" cy="44" r="0.65" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M54 44L44 42" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="48" cy="43" r="1.1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 </svg>

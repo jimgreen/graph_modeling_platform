@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="humbleicons-flag-title humbleicons-flag-desc">
-  <title id="humbleicons-flag-title">flag</title>
-  <desc id="humbleicons-flag-desc">状态告警 - Humbleicons - flag - MIT</desc>
-  <g stroke="currentColor" stroke-linecap="round" stroke-width="2">
-    <path fill="currentColor" d="M6 5v15" />
-    <path fill="currentColor" stroke-linejoin="round" d="M13 5.5V4H7a1 1 0 00-1 1v8h7v1.5h7v-9h-7zm0 0v3" />
-  </g>
-</svg>

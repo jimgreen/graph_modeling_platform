@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="ikonate-notebook-title ikonate-notebook-desc">
-  <title id="ikonate-notebook-title">notebook</title>
-  <desc id="ikonate-notebook-desc">文件文档 - Ikonate - notebook - MIT</desc>
-    <path fill="currentColor" d="M9 8h5"/>
-    <path fill="currentColor" d="M18 3v18H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h12z"/>
-    <path fill="currentColor" d="M5 19v-1a1 1 0 0 1 1-1h12"/>
-</svg>

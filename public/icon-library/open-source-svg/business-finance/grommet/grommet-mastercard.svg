@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="grommet-mastercard-title grommet-mastercard-desc">
-  <title id="grommet-mastercard-title">mastercard</title>
-  <desc id="grommet-mastercard-desc">业务金融 - Grommet Icons - mastercard - Apache-2.0</desc>
-  <g fill="none" fill-rule="evenodd">
-    <circle cx="7" cy="12" r="7" fill="#EA001B"/>
-    <circle cx="17" cy="12" r="7" fill="#FFA200" fill-opacity=".8"/>
-  </g>
-</svg>

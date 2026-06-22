@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#a16207" role="img" aria-labelledby="dust-title dust-desc">
   <title id="dust-title">粉尘</title>
-  <desc id="dust-desc">气象与环境 - dust, environment</desc>
+  <desc id="dust-desc">气象与环境 - 复用 气象环境 / windy-dust</desc>
+  <g transform="translate(8 8) scale(1.5)">
+<path fill="currentColor" d="M23,28a5.0057,5.0057,0,0,1-5-5h2a3,3,0,1,0,3-3H22V18h1a5,5,0,0,1,0,10Z"/><path fill="currentColor" d="M16 18H20V20H16z"/><path fill="currentColor" d="M10 18H14V20H10z"/><path fill="currentColor" d="M4 18H8V20H4z"/><path fill="currentColor" d="M21,15H20V13h1a3,3,0,1,0-3-3H16a5,5,0,1,1,5,5Z"/><path fill="currentColor" d="M14 13H18V15H14z"/><path fill="currentColor" d="M8 13H12V15H8z"/>
+  </g>
   <g>
-<circle cx="18" cy="24" r="3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="30" cy="20" r="2" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="44" cy="26" r="3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="24" cy="38" r="2" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="40" cy="42" r="2" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 50h40" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M46 46h14v14H46z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="51" cy="44" r="0.65" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M51 44L48 47" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="47" cy="49" r="1.1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 </svg>

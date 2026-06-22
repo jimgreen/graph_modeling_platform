@@ -1,0 +1,6 @@
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" color="#2563eb" role="img" aria-labelledby="ikonate-chat-remove-title ikonate-chat-remove-desc">
+  <title id="ikonate-chat-remove-title">chat remove</title>
+  <desc id="ikonate-chat-remove-desc">通用命令 - Ikonate - chat-remove - MIT</desc>
+	<path fill="currentColor" d="M15 10H9"/>
+	<path fill="currentColor" d="M21 4V17H13L7 21V17H3V4H21Z"/>
+</svg>

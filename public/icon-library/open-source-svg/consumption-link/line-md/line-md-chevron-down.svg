@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="line-md-chevron-down-title line-md-chevron-down-desc">
-  <title id="line-md-chevron-down-title">chevron down</title>
-  <desc id="line-md-chevron-down-desc">用电环节 - Line MD - chevron-down - MIT</desc>
-	<path d="M12 16l-7 -7M12 16l7 -7" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="12">
-		<animate attributeName="stroke-dashoffset" dur="0.4s" fill="freeze" values="12;0" />
-	</path>
-</svg>

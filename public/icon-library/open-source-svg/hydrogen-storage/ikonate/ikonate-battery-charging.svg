@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" color="#2563eb" role="img" aria-labelledby="ikonate-battery-charging-title ikonate-battery-charging-desc">
-  <title id="ikonate-battery-charging-title">battery charging</title>
-  <desc id="ikonate-battery-charging-desc">氢能储能 - Ikonate - battery-charging - MIT</desc>
-    <path fill="currentColor" d="M21 14v-4"/>
-    <path fill="currentColor" d="M20 6H4v12h16z"/>
-    <polyline points="12 9 14 12 10 12 12 15"/>
-</svg>

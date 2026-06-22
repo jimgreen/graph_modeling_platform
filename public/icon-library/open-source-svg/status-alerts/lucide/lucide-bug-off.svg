@@ -1,0 +1,28 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-bug-off"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-bug-off-title lucide-bug-off-desc">
+  <title id="lucide-bug-off-title">bug off</title>
+  <desc id="lucide-bug-off-desc">状态告警 - Lucide - bug-off - ISC</desc>
+  <path fill="currentColor" d="M12 20v-8" />
+  <path fill="currentColor" d="M12.656 7H14a4 4 0 0 1 4 4v1.344" />
+  <path fill="currentColor" d="M14.12 3.88 16 2" />
+  <path fill="currentColor" d="M17.123 17.123A6 6 0 0 1 6 14v-3a4 4 0 0 1 1.72-3.287" />
+  <path fill="currentColor" d="m2 2 20 20" />
+  <path fill="currentColor" d="M21 5a4 4 0 0 1-3.55 3.97" />
+  <path fill="currentColor" d="M22 13h-3.344" />
+  <path fill="currentColor" d="M3 21a4 4 0 0 1 3.81-4" />
+  <path fill="currentColor" d="M3 5a4 4 0 0 0 3.55 3.97" />
+  <path fill="currentColor" d="M6 13H2" />
+  <path fill="currentColor" d="m8 2 1.88 1.88" />
+  <path fill="currentColor" d="M9.712 4.06A3 3 0 0 1 15 6v1.13" />
+</svg>

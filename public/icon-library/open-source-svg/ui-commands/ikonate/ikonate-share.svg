@@ -1,7 +1,0 @@
-<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" color="#2563eb" role="img" aria-labelledby="ikonate-share-title ikonate-share-desc">
-  <title id="ikonate-share-title">share</title>
-  <desc id="ikonate-share-desc">通用命令 - Ikonate - share - MIT</desc>
-	<path fill="currentColor" d="M12 14V6"/>
-	<path fill="currentColor" d="M9 8L12 5L15 8"/>
-	<path fill="currentColor" d="M5 13V18H19V13"/>
-</svg>

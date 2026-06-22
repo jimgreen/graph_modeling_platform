@@ -1,0 +1,20 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-map-pins"
+ color="#2563eb" role="img" aria-labelledby="tabler-map-pins-title tabler-map-pins-desc">
+  <title id="tabler-map-pins-title">map pins</title>
+  <desc id="tabler-map-pins-desc">地图地点 - Tabler Icons - map-pins - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M10.828 9.828a4 4 0 1 0 -5.656 0l2.828 2.829l2.828 -2.829" />
+  <path fill="currentColor" d="M8 7l0 .01" />
+  <path fill="currentColor" d="M18.828 17.828a4 4 0 1 0 -5.656 0l2.828 2.829l2.828 -2.829" />
+  <path fill="currentColor" d="M16 15l0 .01" />
+</svg>

@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#22c55e" role="img" aria-labelledby="charge-discharge-strategy-title charge-discharge-strategy-desc">
   <title id="charge-discharge-strategy-title">充放电策略</title>
-  <desc id="charge-discharge-strategy-desc">储能细分设备 - charge, strategy, 策略</desc>
+  <desc id="charge-discharge-strategy-desc">储能细分设备 - 复用 画布工具 / strategy-move</desc>
+  <g transform="translate(8 8) scale(1.5)">
+<path fill="currentColor" d="M26,31.36H7c-0.199,0-0.36-0.161-0.36-0.36v-1.75c0-2.542,2.068-4.61,4.61-4.61h0.167l-1.739-3.479	c-0.058-0.115-0.049-0.253,0.022-0.36l5.536-8.305L7.31,13.854c-0.157,0.027-0.312-0.052-0.383-0.194l-1.25-2.5	c-0.075-0.149-0.037-0.331,0.091-0.438l7.5-6.25c0.064-0.054,0.146-0.083,0.23-0.083h2.14v-3.39c0-0.133,0.073-0.254,0.189-0.317	c0.116-0.062,0.258-0.056,0.369,0.017l4.631,3.066c1.604,1.594,3.53,3.521,3.53,7.802V21c0,0.078-0.025,0.153-0.072,0.216	L21.72,24.64h0.03c2.542,0,4.61,2.068,4.61,4.61V31C26.36,31.199,26.199,31.36,26,31.36z M7.36,30.64h18.28v-1.39	c0-2.145-1.745-3.89-3.89-3.89h-10.5c-2.145,0-3.89,1.745-3.89,3.89C7.36,29.25,7.36,30.64,7.36,30.64z M12.223,24.64h8.598	l2.819-3.76v-1.52H21v-0.72h2.64v-3.28H21v-0.72h2.64v-3.072c0-0.07,0-0.14-0.001-0.208H21v-0.72h2.606	c-0.247-3.336-1.825-4.914-3.23-6.319L16.36,1.669V4.75c0,0.199-0.161,0.36-0.36,0.36h-2.37l-7.18,5.984L7.453,13.1l8.486-1.455	c0.145-0.023,0.285,0.039,0.363,0.159c0.079,0.121,0.078,0.276-0.002,0.396l-5.883,8.826L12.223,24.64z"/>
+  </g>
   <g>
-<rect x="16" y="14" width="32" height="38" rx="4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 22h16M24 42h16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M32 14v38" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="32" y="33" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="7" font-weight="700" fill="currentColor">strategy</text>
+<path d="M46 46h14v14H46z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="54" cy="41" r="1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M54 41L43 43" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="48" cy="44" r="1.1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 </svg>

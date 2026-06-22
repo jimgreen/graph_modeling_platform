@@ -1,0 +1,20 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-flag-x"
+ color="#2563eb" role="img" aria-labelledby="tabler-flag-x-title tabler-flag-x-desc">
+  <title id="tabler-flag-x-title">flag x</title>
+  <desc id="tabler-flag-x-desc">国家地区旗帜 - Tabler Icons - flag-x - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M13.533 15.028a4.988 4.988 0 0 1 -1.533 -1.028a5 5 0 0 0 -7 0v-9a5 5 0 0 1 7 0a5 5 0 0 0 7 0v8.5" />
+  <path fill="currentColor" d="M5 21v-7" />
+  <path fill="currentColor" d="M22 22l-5 -5" />
+  <path fill="currentColor" d="M17 22l5 -5" />
+</svg>

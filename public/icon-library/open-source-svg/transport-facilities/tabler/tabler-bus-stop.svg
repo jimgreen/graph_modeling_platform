@@ -1,0 +1,24 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-bus-stop"
+ color="#2563eb" role="img" aria-labelledby="tabler-bus-stop-title tabler-bus-stop-desc">
+  <title id="tabler-bus-stop-title">bus stop</title>
+  <desc id="tabler-bus-stop-desc">交通设施 - Tabler Icons - bus-stop - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M3 4a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1l0 -4" />
+  <path fill="currentColor" d="M16 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+  <path fill="currentColor" d="M10 5h7c2.761 0 5 3.134 5 7v5h-2" />
+  <path fill="currentColor" d="M16 17h-8" />
+  <path fill="currentColor" d="M16 5l1.5 7h4.5" />
+  <path fill="currentColor" d="M9.5 10h7.5" />
+  <path fill="currentColor" d="M12 5v5" />
+  <path fill="currentColor" d="M5 9v11" />
+</svg>

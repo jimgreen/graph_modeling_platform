@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -902,11 +902,19 @@ const generatedThinAttrs =
   'fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"';
 
 function generatedIcon(id, name, color, tags, body) {
-  return { id, name, color, tags, body };
+  return { id, name, color, tags, body: `${body}${compactDocerIdentityMark([id], 0)}` };
 }
 
 function generatedCategory(id, label, description, icons) {
-  return { id, label, description, icons };
+  return {
+    id,
+    label,
+    description,
+    icons: icons.map((icon, index) => ({
+      ...icon,
+      body: `${icon.body}${compactDocerIdentityMark([`${id}/${icon.id}`], index + 1)}`,
+    })),
+  };
 }
 
 function gPath(d, attrs = generatedCommonAttrs) {
@@ -1167,7 +1175,16 @@ function buildMoreDocerCompatibleCategories() {
 
 iconCategories.push(...buildMoreDocerCompatibleCategories());
 
-function compactDocerSymbol(label, variant = 0) {
+function compactDocerLabel(item) {
+  return item.length > 4 ? String(item[item.length - 1]) : String(item[1] || "").slice(0, 2);
+}
+
+function compactDocerHas(item, ...keywords) {
+  const text = item.join(" ").toLowerCase();
+  return keywords.some((keyword) => text.includes(String(keyword).toLowerCase()));
+}
+
+function compactDocerDeviceBox(label, variant = 0) {
   const text = gText(label, 32, 33, label.length > 3 ? 7 : 9);
   const index = variant % 6;
   if (index === 0) {
@@ -1188,13 +1205,152 @@ function compactDocerSymbol(label, variant = 0) {
   return `${gPath("M10 34h44")}${gPath("M44 24l10 10-10 10")}${gRect(16, 18, 24, 24, 4)}${text}`;
 }
 
+function compactDocerIdentityMark(item, index = 0) {
+  const id = String(item[0] || "");
+  let hash = index + 17;
+  for (const char of id) {
+    hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  }
+
+  const x1 = 48 + (hash % 7);
+  const y1 = 47 + ((hash >> 3) % 8);
+  const x2 = 49 + ((hash >> 6) % 7);
+  const y2 = 48 + ((hash >> 9) % 8);
+  const x3 = 50 + ((hash >> 12) % 6);
+  const y3 = 49 + ((hash >> 15) % 7);
+  const radius = 1 + ((hash >> 18) % 2) * 0.35;
+
+  return [
+    gPath("M46 46h14v14H46z"),
+    gCircle(x1, y1, radius),
+    gLine(x1, y1, x2, y2),
+    gCircle(x3, y3, 1.1),
+  ].join("");
+}
+
+function compactDocerSymbol(item, variant = 0) {
+  const id = String(item[0] || "");
+  const label = compactDocerLabel(item);
+  const text = gText(label, 32, 33, label.length > 3 ? 7 : 9);
+
+  if (id === "meteorological-station") {
+    return `${gPath("M12 30l20-14 20 14v22H12z")}${gRect(24, 36, 16, 16, 2)}${gLine(48, 18, 48, 52)}${gCircle(48, 18, 4)}${gPath("M42 24h12")}${text}`;
+  }
+  if (id === "anemometer") {
+    return `${gLine(32, 22, 32, 54)}${gCircle(32, 22, 4)}${gLine(32, 22, 18, 18)}${gLine(32, 22, 46, 18)}${gLine(32, 22, 32, 8)}${gCircle(15, 18, 3)}${gCircle(49, 18, 3)}${gCircle(32, 6, 3)}`;
+  }
+  if (id === "wind-vane") {
+    return `${gLine(32, 18, 32, 54)}${gPath("M16 20h30l8 6-8 6H16z")}${gPath("M22 20l-8 6 8 6")}${gLine(22, 44, 42, 44)}${gPath("M38 38l6 6-6 6")}`;
+  }
+  if (id === "pyranometer") {
+    return `${gCircle(32, 16, 8)}${gPath("M32 2v6M18 16h6M40 16h6M22 6l4 5M42 6l-4 5")}${gPath("M18 42a14 14 0 0 1 28 0")}${gRect(18, 42, 28, 8, 2)}${gLine(22, 54, 42, 54)}`;
+  }
+  if (id === "temperature-humidity-sensor") {
+    return `${gPath("M24 12a5 5 0 0 1 10 0v22a10 10 0 1 1-10 0z")}${gLine(29, 18, 29, 40)}${gPath("M45 24c6 7 9 12 9 17a9 9 0 0 1-18 0c0-5 3-10 9-17z")}`;
+  }
+  if (id === "rain-gauge") {
+    return `${gPath("M22 24h20l-3 28H25z")}${gLine(22, 32, 42, 32)}${gLine(24, 40, 40, 40)}${gPath("M20 10c-4 5-5 8-1 10 4-2 4-5 1-10z")}${gPath("M33 8c-4 5-5 8-1 10 4-2 4-5 1-10z")}${gPath("M46 10c-4 5-5 8-1 10 4-2 4-5 1-10z")}`;
+  }
+  if (id === "barometer") {
+    return `${gCircle(32, 34, 18)}${gPath("M20 40a14 14 0 0 1 24 0")}${gLine(32, 34, 43, 25)}${gCircle(32, 34, 3)}${gPath("M24 52h16")}`;
+  }
+  if (id === "snow-depth-sensor") {
+    return `${gRect(18, 12, 12, 40, 1)}${gLine(24, 18, 30, 18)}${gLine(24, 28, 30, 28)}${gLine(24, 38, 30, 38)}${gLine(24, 48, 30, 48)}${gLine(44, 16, 44, 44)}${gLine(36, 24, 52, 36)}${gLine(52, 24, 36, 36)}${gCircle(44, 30, 2)}`;
+  }
+  if (id === "visibility-meter") {
+    return `${gPath("M10 32c6-10 14-15 22-15s16 5 22 15c-6 10-14 15-22 15s-16-5-22-15z")}${gCircle(32, 32, 7)}${gLine(12, 52, 52, 52)}${gPath("M18 52l8-8M32 52l8-8")}`;
+  }
+  if (id === "lightning-detector") {
+    return `${gCircle(32, 32, 20)}${gPath("M35 10L22 34h11l-4 20 15-27H33z")}${gPath("M16 46l-6 6M48 46l6 6")}`;
+  }
+  if (id === "weather-forecast") {
+    return `${gPath("M18 38h28a7 7 0 0 0 0-14 12 12 0 0 0-23-3A9 9 0 0 0 18 38z")}${gLine(16, 52, 48, 52)}${gPath("M20 48l8-8 8 5 10-12")}${gPath("M42 33h8v8")}`;
+  }
+  if (id === "icing-warning") {
+    return `${gPath("M32 10l24 42H8z")}${gLine(32, 23, 32, 36)}${gCircle(32, 44, 1.5)}${gLine(44, 24, 44, 42)}${gLine(36, 30, 52, 38)}${gLine(52, 30, 36, 38)}`;
+  }
+
+  if (id === "scada-system") {
+    return `${gRect(10, 14, 44, 28, 4)}${gPath("M18 34l7-8 7 5 8-10 7 9")}${gLine(24, 52, 40, 52)}${gLine(32, 42, 32, 52)}${gCircle(18, 48, 3)}${gCircle(46, 48, 3)}${gLine(21, 48, 43, 48)}`;
+  }
+  if (id === "rtu-control-unit") {
+    return `${gRect(14, 14, 36, 34, 4)}${gText("RTU", 32, 32, 10)}${gLine(20, 48, 20, 56)}${gLine(32, 48, 32, 56)}${gLine(44, 48, 44, 56)}${gCircle(22, 22, 2)}${gCircle(42, 22, 2)}`;
+  }
+  if (id === "plc-control-unit") {
+    return `${gRect(14, 12, 36, 40, 4)}${gPath("M22 20h20M22 30h20M22 40h20")}${gLine(24, 20, 24, 44)}${gLine(40, 20, 40, 44)}${gText("PLC", 32, 33, 9)}`;
+  }
+  if (id === "ied-protection-unit") {
+    return `${gRect(14, 14, 36, 34, 4)}${gPath("M32 20l12 5v8c0 8-5 13-12 16-7-3-12-8-12-16v-8z")}${gPath("M26 34l4 4 8-10")}`;
+  }
+  if (id === "industrial-gateway") {
+    return `${gRect(18, 24, 28, 18, 4)}${gCircle(16, 16, 4)}${gCircle(48, 16, 4)}${gCircle(32, 52, 4)}${gLine(20, 18, 28, 24)}${gLine(44, 18, 36, 24)}${gLine(32, 42, 32, 48)}${gText("GW", 32, 33, 8)}`;
+  }
+  if (id === "ethernet-switch") {
+    return `${gRect(10, 24, 44, 18, 3)}${gLine(18, 33, 22, 33)}${gLine(26, 33, 30, 33)}${gLine(34, 33, 38, 33)}${gLine(42, 33, 46, 33)}${gPath("M20 24v-8h24v8")}${gLine(32, 16, 32, 8)}`;
+  }
+  if (id === "fiber-optic-ring") {
+    return `${gCircle(32, 32, 18)}${gCircle(32, 12, 4)}${gCircle(50, 34, 4)}${gCircle(20, 48, 4)}${gPath("M32 16a16 16 0 0 1 15 14M46 38A16 16 0 0 1 24 47M18 44A16 16 0 0 1 29 16")}`;
+  }
+  if (id === "fiveg-router") {
+    return `${gRect(16, 36, 32, 12, 3)}${gCircle(24, 42, 1.5)}${gPath("M20 28a17 17 0 0 1 24 0")}${gPath("M25 32a10 10 0 0 1 14 0")}${gText("5G", 32, 20, 8)}`;
+  }
+  if (id === "telemetry") {
+    return `${gLine(20, 52, 32, 16)}${gLine(44, 52, 32, 16)}${gCircle(32, 16, 4)}${gPath("M22 24a14 14 0 0 0 20 0")}${gPath("M16 34a24 24 0 0 0 32 0")}${gPath("M18 52h28")}`;
+  }
+  if (id === "remote-signaling") {
+    return `${gLine(20, 52, 20, 14)}${gPath("M20 16c10-6 16 6 26 0v20c-10 6-16-6-26 0z")}${gPath("M42 44c5-4 8-4 12 0M40 50c7-6 12-6 18 0")}`;
+  }
+  if (id === "remote-control") {
+    return `${gRect(20, 12, 24, 40, 8)}${gCircle(32, 24, 5)}${gLine(27, 36, 37, 36)}${gLine(32, 31, 32, 41)}${gPath("M10 20a30 30 0 0 1 0 24M54 20a30 30 0 0 0 0 24")}`;
+  }
+  if (id === "dispatch-control-center") {
+    return `${gRect(10, 12, 44, 26, 4)}${gPath("M18 30h8l4-8 5 12 4-6h7")}${gRect(16, 44, 32, 8, 2)}${gCircle(22, 48, 1.5)}${gCircle(32, 48, 1.5)}${gCircle(42, 48, 1.5)}`;
+  }
+
+  if (compactDocerHas(item, "wind", "风")) {
+    return `${gPath("M12 25h28a7 7 0 1 0-7-7")}${gPath("M12 37h38a6 6 0 1 1-6 6")}${gPath("M18 49h22")}${text}`;
+  }
+  if (compactDocerHas(item, "solar", "pv", "sun", "光伏", "日照")) {
+    return `${gCircle(22, 18, 7)}${gPath("M22 4v6M8 18h6M30 18h6M12 8l4 4M32 8l-4 4")}${gPath("M24 32h28l-5 18H18z")}${gPath("M26 40h22M34 32l-4 18M43 32l-4 18")}`;
+  }
+  if (compactDocerHas(item, "battery", "storage", "soc", "soh", "储", "电池")) {
+    return `${gRect(14, 22, 34, 24, 3)}${gPath("M48 30h4v8h-4")}${gLine(23, 34, 33, 34)}${gLine(28, 29, 28, 39)}${gLine(37, 34, 43, 34)}${text}`;
+  }
+  if (compactDocerHas(item, "hydrogen", "fuel-cell", "氢")) {
+    return `${gRect(16, 18, 32, 28, 14)}${gLine(24, 32, 40, 32)}${gLine(24, 26, 24, 38)}${gLine(40, 26, 40, 38)}${gPath("M24 46v8M40 46v8M24 54h16")}`;
+  }
+  if (compactDocerHas(item, "pump", "compressor", "fan", "泵", "压缩", "风机")) {
+    return `${gCircle(32, 32, 16)}${gPath("M32 16v16l12 6")}${gLine(12, 32, 20, 32)}${gLine(44, 32, 52, 32)}${gLine(24, 52, 40, 52)}${text}`;
+  }
+  if (compactDocerHas(item, "valve", "switch", "breaker", "阀", "开关", "断路")) {
+    return `${gLine(10, 32, 22, 32)}${gLine(42, 32, 54, 32)}${gPath("M22 22l20 20")}${gPath("M42 22L22 42")}${gCircle(22, 32, 3)}${gCircle(42, 32, 3)}`;
+  }
+  if (compactDocerHas(item, "meter", "gauge", "sensor", "monitor", "计量", "表", "传感", "监测")) {
+    return `${gCircle(32, 32, 18)}${gPath("M20 38a13 13 0 0 1 24 0")}${gPath("M32 32l10-8")}${gCircle(32, 32, 3)}${text}`;
+  }
+  if (compactDocerHas(item, "tower", "line", "cable", "pipe", "network", "线路", "管", "网")) {
+    return `${gCircle(16, 24, 5)}${gCircle(48, 24, 5)}${gCircle(32, 46, 5)}${gPath("M21 26l8 16M43 26l-8 16M21 24h22")}${text}`;
+  }
+  if (compactDocerHas(item, "station", "building", "center", "厂", "站", "中心")) {
+    return `${gPath("M12 28l20-14 20 14v24H12z")}${gRect(22, 34, 20, 18, 2)}${text}`;
+  }
+
+  return compactDocerDeviceBox(label, variant);
+}
+
 function compactDocerCategory(id, label, description, color, items) {
   return generatedCategory(
     id,
     label,
     description,
     items.map((item, index) =>
-      generatedIcon(item[0], item[1], color, item.slice(2), compactDocerSymbol(item[3] || item[1].slice(0, 2), index)),
+      generatedIcon(
+        item[0],
+        item[1],
+        color,
+        item.slice(2),
+        compactDocerSymbol(item, index),
+      ),
     ),
   );
 }
@@ -1887,6 +2043,686 @@ const sourceAudit = {
     "No rights-unclear Docer SVG asset is copied into this repository. Generated SVG files are original project assets; actual Docer assets may be copied only when metadata or authorization explicitly allows repository redistribution.",
 };
 
+function reusedExternalIcon(libraryId, file) {
+  return { type: "external", libraryId, file };
+}
+
+function reusedDocerIcon(categoryId, iconId) {
+  return { type: "docer", libraryId: "docer-free-compatible", categoryId, iconId };
+}
+
+const detailedDocerReusableSources = new Map(
+  Object.entries({
+    "electric-power/circuit-breaker-open": reusedExternalIcon(
+      "open-source-svg",
+      "power-grid-electrical/tabler/tabler-circuit-switch-open.svg",
+    ),
+    "electric-power/circuit-breaker-closed": reusedExternalIcon(
+      "open-source-svg",
+      "power-grid-electrical/tabler/tabler-circuit-switch-closed.svg",
+    ),
+    "electric-power/disconnector-open": reusedExternalIcon(
+      "open-source-svg",
+      "power-grid-electrical/tabler/tabler-circuit-switch-open.svg",
+    ),
+    "electric-power/disconnector-closed": reusedExternalIcon(
+      "open-source-svg",
+      "power-grid-electrical/material-design-icons/material-design-icons-electric-switch-closed.svg",
+    ),
+    "renewable-generation/solar-panel": reusedExternalIcon(
+      "open-source-svg",
+      "renewable-generation/lucide/lucide-solar-panel.svg",
+    ),
+    "renewable-generation/wind-turbine": reusedExternalIcon(
+      "open-source-svg",
+      "generation-link/material-design-icons/material-design-icons-wind-turbine.svg",
+    ),
+    "renewable-generation/hydro-generator": reusedExternalIcon(
+      "open-source-svg",
+      "generation-link/material-design-icons/material-design-icons-hydro-power.svg",
+    ),
+    "renewable-generation/pv-inverter": reusedDocerIcon("converter", "dcac-converter"),
+    "renewable-generation/wind-farm": reusedExternalIcon(
+      "open-source-svg",
+      "generation-link/tabler/tabler-building-wind-turbine.svg",
+    ),
+    "renewable-generation/solar-irradiance": reusedExternalIcon(
+      "open-source-svg",
+      "energy-generic/material-symbols/material-symbols-solar-power.svg",
+    ),
+    "storage/battery": reusedExternalIcon(
+      "open-source-svg",
+      "energy-generic/bootstrap/bootstrap-battery-full.svg",
+    ),
+    "storage/hydrogen-tank": reusedExternalIcon(
+      "open-source-svg",
+      "hydrogen-storage/material-design-icons/material-design-icons-storage-tank.svg",
+    ),
+    "storage/ev-charger": reusedExternalIcon(
+      "open-source-svg",
+      "consumption-link/lucide/lucide-ev-charger.svg",
+    ),
+    "thermal/heat-pump": reusedExternalIcon(
+      "open-source-svg",
+      "thermal-heating/material-symbols/material-symbols-heat-pump-balance.svg",
+    ),
+    "thermal/pump": reusedExternalIcon(
+      "open-source-svg",
+      "cooling-heating-energy/fontawesome-solid/fontawesome-solid-arrow-up-from-water-pump.svg",
+    ),
+    "thermal/valve-open": reusedExternalIcon(
+      "open-source-svg",
+      "thermal-heating/material-design-icons/material-design-icons-valve-open.svg",
+    ),
+    "thermal/valve-closed": reusedExternalIcon(
+      "open-source-svg",
+      "thermal-heating/material-design-icons/material-design-icons-valve-closed.svg",
+    ),
+    "thermal/pipe-network": reusedExternalIcon(
+      "open-source-svg",
+      "thermal-heating/material-design-icons/material-design-icons-pipe-valve.svg",
+    ),
+    "hydrogen/fuel-cell": reusedExternalIcon(
+      "open-source-svg",
+      "new-energy-equipment/material-design-icons/material-design-icons-fuel-cell.svg",
+    ),
+    "hydrogen/hydrogen-tank": reusedExternalIcon(
+      "open-source-svg",
+      "hydrogen-storage/material-design-icons/material-design-icons-storage-tank.svg",
+    ),
+    "measurement-control/alarm": reusedExternalIcon(
+      "open-source-svg",
+      "status-alerts/remixicon/remixicon-alarm-warning.svg",
+    ),
+    "measurement-control/temperature-sensor": reusedExternalIcon(
+      "office-fluent-compatible",
+      "cooling-heating-energy/temperature.svg",
+    ),
+    "measurement-control/pressure-sensor": reusedExternalIcon(
+      "open-source-svg",
+      "gas-energy/carbon/carbon-pressure.svg",
+    ),
+    "generic-shapes/text-label": reusedExternalIcon(
+      "open-source-svg",
+      "files-documents/vaadin/vaadin-text-label.svg",
+    ),
+    "generic-shapes/image-placeholder": reusedExternalIcon(
+      "open-source-svg",
+      "media-assets/tabler/tabler-image-in-picture.svg",
+    ),
+    "grid-primary-equipment/transmission-tower": reusedExternalIcon(
+      "open-source-svg",
+      "power-grid-electrical/material-design-icons/material-design-icons-transmission-tower.svg",
+    ),
+    "automation-communication/server-rack": reusedExternalIcon(
+      "open-source-svg",
+      "cloud-infrastructure/carbon-pictograms/carbon-pictograms-server-rack.svg",
+    ),
+    "automation-communication/network-switch": reusedExternalIcon(
+      "open-source-svg",
+      "communication-control/bootstrap/bootstrap-ethernet.svg",
+    ),
+    "automation-communication/wireless-router": reusedExternalIcon(
+      "open-source-svg",
+      "communication-control/material-design-icons/material-design-icons-router-network-wireless.svg",
+    ),
+    "weather-environment/cloud-rain": reusedExternalIcon(
+      "open-source-svg",
+      "weather-environment/mynaui/mynaui-cloud-rain-wind.svg",
+    ),
+    "weather-environment/dust": reusedExternalIcon(
+      "open-source-svg",
+      "weather-environment/carbon/carbon-windy-dust.svg",
+    ),
+    "weather-environment/eco-leaf": reusedExternalIcon(
+      "open-source-svg",
+      "energy-generic/material-symbols/material-symbols-nest-eco-leaf.svg",
+    ),
+    "safety-fire/fire-alarm": reusedExternalIcon(
+      "open-source-svg",
+      "energy-generic/carbon-pictograms/carbon-pictograms-fire-alarm.svg",
+    ),
+    "safety-fire/protective-helmet": reusedExternalIcon(
+      "open-source-svg",
+      "gas-energy/fontawesome-solid/fontawesome-solid-helmet-safety.svg",
+    ),
+    "safety-fire/first-aid": reusedExternalIcon(
+      "open-source-svg",
+      "health-safety/phosphor/phosphor-first-aid.svg",
+    ),
+    "safety-fire/gas-leak": reusedExternalIcon(
+      "open-source-svg",
+      "gas-energy/material-design-icons/material-design-icons-leak.svg",
+    ),
+    "safety-fire/shield-person": reusedExternalIcon(
+      "office-fluent-compatible",
+      "collaboration/person-shield.svg",
+    ),
+    "water-wastewater/water-treatment": reusedExternalIcon(
+      "open-source-svg",
+      "energy-generic/healthicons/healthicons-water-treatment.svg",
+    ),
+    "water-wastewater/water-pump-station": reusedExternalIcon(
+      "open-source-svg",
+      "cooling-heating-energy/fontawesome-solid/fontawesome-solid-arrow-up-from-water-pump.svg",
+    ),
+    "water-wastewater/pipe-valve": reusedExternalIcon(
+      "open-source-svg",
+      "thermal-heating/material-design-icons/material-design-icons-pipe-valve.svg",
+    ),
+    "smart-city/traffic-light": reusedExternalIcon(
+      "open-source-svg",
+      "consumption-link/remixicon/remixicon-traffic-light.svg",
+    ),
+    "ai-digital/api-gateway": reusedExternalIcon(
+      "open-source-svg",
+      "developer-tools/carbon/carbon-gateway-api.svg",
+    ),
+    "port-logistics/container-yard": reusedExternalIcon(
+      "open-source-svg",
+      "hydrogen-storage/phosphor/phosphor-shipping-container.svg",
+    ),
+    "port-logistics/cargo-ship": reusedExternalIcon(
+      "open-source-svg",
+      "transport-facilities/carbon-pictograms/carbon-pictograms-cargo-ship.svg",
+    ),
+    "port-logistics/cold-chain": reusedExternalIcon(
+      "open-source-svg",
+      "cooling-heating-energy/healthicons/healthicons-cold-chain.svg",
+    ),
+    "building-hvac/chiller": reusedExternalIcon(
+      "open-source-svg",
+      "weather-environment/iconoir/iconoir-air-conditioner.svg",
+    ),
+    "building-hvac/air-handler": reusedExternalIcon(
+      "open-source-svg",
+      "weather-environment/iconoir/iconoir-air-conditioner.svg",
+    ),
+    "building-hvac/fan-coil": reusedExternalIcon(
+      "open-source-svg",
+      "cooling-heating-energy/lucide/lucide-fan.svg",
+    ),
+    "building-hvac/cooling-water-pump": reusedExternalIcon(
+      "open-source-svg",
+      "cooling-heating-energy/fontawesome-solid/fontawesome-solid-arrow-up-from-water-pump.svg",
+    ),
+    "building-hvac/air-filter": reusedExternalIcon(
+      "open-source-svg",
+      "weather-environment/material-design-icons/material-design-icons-air-filter.svg",
+    ),
+    "campus-energy-management/campus-ev-charger": reusedExternalIcon(
+      "open-source-svg",
+      "consumption-link/lucide/lucide-ev-charger.svg",
+    ),
+    "research-lab-facility/gas-cylinder": reusedExternalIcon(
+      "open-source-svg",
+      "hydrogen-storage/material-design-icons/material-design-icons-gas-cylinder.svg",
+    ),
+    "low-carbon-campus/carbon-accounting-campus": reusedExternalIcon(
+      "open-source-svg",
+      "integrated-energy/carbon/carbon-carbon-accounting.svg",
+    ),
+    "power-grid-protection/distribution-terminal-unit": reusedExternalIcon(
+      "open-source-svg",
+      "distribution-link/remixicon/remixicon-terminal-box.svg",
+    ),
+    "transmission-link/transmission-tower": reusedExternalIcon(
+      "open-source-svg",
+      "power-grid-electrical/material-design-icons/material-design-icons-transmission-tower.svg",
+    ),
+    "distribution-link/smart-distribution-terminal": reusedExternalIcon(
+      "open-source-svg",
+      "distribution-link/remixicon/remixicon-terminal-box.svg",
+    ),
+    "consumption-link/ev-charging-pile": reusedExternalIcon(
+      "open-source-svg",
+      "consumption-link/iconoir/iconoir-ev-plug-charging.svg",
+    ),
+    "wind-power-scene/wind-turbine-unit": reusedExternalIcon(
+      "open-source-svg",
+      "generation-link/material-design-icons/material-design-icons-wind-turbine.svg",
+    ),
+    "solar-pv-scene/pv-module": reusedExternalIcon(
+      "open-source-svg",
+      "renewable-generation/lucide/lucide-solar-panel.svg",
+    ),
+    "solar-pv-scene/pv-string": reusedExternalIcon(
+      "open-source-svg",
+      "renewable-generation/material-design-icons/material-design-icons-solar-panel-large.svg",
+    ),
+    "solar-pv-scene/pv-dc-cable": reusedExternalIcon(
+      "open-source-svg",
+      "energy-generic/lucide/lucide-cable.svg",
+    ),
+    "solar-pv-scene/string-pv-inverter": reusedDocerIcon("converter", "dcac-converter"),
+    "solar-pv-scene/central-pv-inverter": reusedDocerIcon("converter", "dcac-converter"),
+    "solar-pv-scene/pv-tracker": reusedExternalIcon(
+      "open-source-svg",
+      "energy-generic/material-design-icons/material-design-icons-solar-power-variant.svg",
+    ),
+    "solar-pv-scene/pv-plant": reusedExternalIcon(
+      "open-source-svg",
+      "energy-generic/material-symbols/material-symbols-solar-power.svg",
+    ),
+    "hydrogen-energy-scene/hydrogen-buffer-tank": reusedExternalIcon(
+      "open-source-svg",
+      "hydrogen-storage/material-design-icons/material-design-icons-storage-tank.svg",
+    ),
+    "hydrogen-energy-scene/hydrogen-storage-bank": reusedExternalIcon(
+      "open-source-svg",
+      "hydrogen-storage/material-design-icons/material-design-icons-storage-tank.svg",
+    ),
+    "hydrogen-energy-scene/fuel-cell-stack": reusedExternalIcon(
+      "open-source-svg",
+      "new-energy-equipment/material-design-icons/material-design-icons-fuel-cell.svg",
+    ),
+    "solar-pv-advanced/bifacial-pv-module": reusedExternalIcon(
+      "open-source-svg",
+      "renewable-generation/material-design-icons/material-design-icons-solar-panel-large.svg",
+    ),
+    "solar-pv-advanced/pv-weather-station": reusedExternalIcon(
+      "open-source-svg",
+      "energy-generic/material-symbols/material-symbols-solar-power.svg",
+    ),
+    "solar-pv-advanced/pv-plant-pr": reusedExternalIcon(
+      "open-source-svg",
+      "energy-generic/carbon-pictograms/carbon-pictograms-curve-power.svg",
+    ),
+    "cooling-energy-scene/chilled-water-pump": reusedExternalIcon(
+      "open-source-svg",
+      "cooling-heating-energy/fontawesome-solid/fontawesome-solid-arrow-up-from-water-pump.svg",
+    ),
+    "cooling-energy-scene/cooling-water-pump": reusedExternalIcon(
+      "open-source-svg",
+      "cooling-heating-energy/fontawesome-solid/fontawesome-solid-arrow-up-from-water-pump.svg",
+    ),
+    "cooling-energy-scene/ice-storage-tank": reusedExternalIcon(
+      "open-source-svg",
+      "hydrogen-storage/material-design-icons/material-design-icons-storage-tank.svg",
+    ),
+    "cooling-energy-scene/fan-coil-unit": reusedExternalIcon(
+      "open-source-svg",
+      "cooling-heating-energy/lucide/lucide-fan.svg",
+    ),
+    "gas-energy-scene/gas-storage-tank": reusedExternalIcon(
+      "open-source-svg",
+      "hydrogen-storage/iconoir/iconoir-gas-tank.svg",
+    ),
+    "gas-energy-scene/gas-leak-detector": reusedExternalIcon(
+      "open-source-svg",
+      "gas-energy/material-design-icons/material-design-icons-leak.svg",
+    ),
+    "integrated-energy-scene/heat-pump-system": reusedExternalIcon(
+      "open-source-svg",
+      "thermal-heating/material-symbols/material-symbols-heat-pump-balance.svg",
+    ),
+    "heating-network-scene/heat-source-station": reusedExternalIcon(
+      "open-source-svg",
+      "cooling-heating-energy/material-symbols/material-symbols-mode-heat-cool.svg",
+    ),
+    "heating-network-scene/heating-circulation-pump": reusedExternalIcon(
+      "open-source-svg",
+      "cooling-heating-energy/fontawesome-solid/fontawesome-solid-arrow-up-from-water-pump.svg",
+    ),
+    "heating-network-scene/air-source-heat-pump": reusedExternalIcon(
+      "open-source-svg",
+      "thermal-heating/material-symbols/material-symbols-heat-pump-balance.svg",
+    ),
+    "heating-network-scene/thermal-storage-tank": reusedExternalIcon(
+      "open-source-svg",
+      "hydrogen-storage/material-design-icons/material-design-icons-storage-tank.svg",
+    ),
+    "energy-storage-scene/bess-container": reusedExternalIcon(
+      "open-source-svg",
+      "hydrogen-storage/lucide/lucide-container.svg",
+    ),
+    "energy-storage-scene/battery-rack": reusedExternalIcon(
+      "open-source-svg",
+      "cloud-infrastructure/carbon-pictograms/carbon-pictograms-server-rack.svg",
+    ),
+    "energy-storage-scene/battery-module": reusedExternalIcon(
+      "open-source-svg",
+      "energy-generic/bootstrap/bootstrap-battery-full.svg",
+    ),
+    "energy-storage-scene/pcs-unit": reusedDocerIcon("converter", "acdc-converter"),
+    "energy-storage-scene/bms-unit": reusedExternalIcon(
+      "office-fluent-compatible",
+      "status-security/battery-checkmark.svg",
+    ),
+    "energy-storage-scene/ems-unit": reusedExternalIcon(
+      "open-source-svg",
+      "substation-link/carbon-pictograms/carbon-pictograms-control-panel.svg",
+    ),
+    "energy-storage-scene/storage-transformer": reusedDocerIcon("electric-power", "transformer"),
+    "energy-storage-scene/storage-thermal-management": reusedExternalIcon(
+      "open-source-svg",
+      "energy-generic/carbon/carbon-temperature-water.svg",
+    ),
+    "energy-storage-scene/storage-fire-protection": reusedExternalIcon(
+      "open-source-svg",
+      "energy-generic/mynaui/mynaui-fire-extinguisher.svg",
+    ),
+    "energy-storage-scene/state-of-charge": reusedExternalIcon(
+      "office-fluent-compatible",
+      "developer-integration/battery-charge.svg",
+    ),
+    "energy-storage-scene/flywheel-storage-unit": reusedExternalIcon(
+      "open-source-svg",
+      "canvas-tools/fontawesome-solid/fontawesome-solid-arrows-rotate.svg",
+    ),
+    "energy-storage-scene/compressed-air-storage-unit": reusedExternalIcon(
+      "open-source-svg",
+      "gas-energy/carbon/carbon-pressure.svg",
+    ),
+
+    "wind-power-advanced/offshore-wind-turbine": reusedExternalIcon(
+      "open-source-svg",
+      "generation-link/material-design-icons/material-design-icons-wind-turbine.svg",
+    ),
+    "wind-power-advanced/wind-farm-substation": reusedExternalIcon(
+      "open-source-svg",
+      "generation-link/tabler/tabler-building-wind-turbine.svg",
+    ),
+    "wind-power-advanced/wind-collector-cable": reusedExternalIcon(
+      "open-source-svg",
+      "energy-generic/lucide/lucide-cable.svg",
+    ),
+    "wind-power-advanced/submarine-export-cable": reusedExternalIcon(
+      "open-source-svg",
+      "energy-generic/teenyicons/teenyicons-lan-cable.svg",
+    ),
+    "wind-power-advanced/blade-icing-sensor": reusedExternalIcon(
+      "open-source-svg",
+      "weather-environment/carbon/carbon-windy-snow.svg",
+    ),
+    "wind-power-advanced/tower-vibration-sensor": reusedExternalIcon(
+      "open-source-svg",
+      "generation-link/tabler/tabler-device-heart-monitor.svg",
+    ),
+    "wind-power-advanced/nacelle-control-cabinet": reusedExternalIcon(
+      "open-source-svg",
+      "substation-link/boxicons/boxicons-cabinet.svg",
+    ),
+    "wind-power-advanced/pitch-backup-battery": reusedExternalIcon(
+      "office-fluent-compatible",
+      "developer-integration/battery-saver.svg",
+    ),
+    "wind-power-advanced/yaw-bearing-monitor": reusedExternalIcon(
+      "open-source-svg",
+      "canvas-tools/tabler/tabler-rotate.svg",
+    ),
+    "wind-power-advanced/wind-power-forecast": reusedExternalIcon(
+      "open-source-svg",
+      "energy-generic/carbon/carbon-forecast-lightning.svg",
+    ),
+    "wind-power-advanced/wake-control": reusedExternalIcon(
+      "open-source-svg",
+      "substation-link/carbon-pictograms/carbon-pictograms-controls-framework.svg",
+    ),
+    "wind-power-advanced/power-curve-analysis": reusedExternalIcon(
+      "open-source-svg",
+      "energy-generic/carbon-pictograms/carbon-pictograms-curve-power.svg",
+    ),
+
+    "hydrogen-process-advanced/electrolyzer-power-supply": reusedDocerIcon("converter", "acdc-converter"),
+    "hydrogen-process-advanced/hydrogen-water-treatment": reusedExternalIcon(
+      "open-source-svg",
+      "energy-generic/healthicons/healthicons-water-treatment.svg",
+    ),
+    "hydrogen-process-advanced/hydrogen-gas-liquid-separator": reusedExternalIcon(
+      "open-source-svg",
+      "hydrogen-storage/material-design-icons/material-design-icons-storage-tank.svg",
+    ),
+    "hydrogen-process-advanced/hydrogen-oxygen-separator": reusedExternalIcon(
+      "open-source-svg",
+      "hydrogen-storage/healthicons/healthicons-oxygen-tank.svg",
+    ),
+    "hydrogen-process-advanced/hydrogen-cooling-loop": reusedExternalIcon(
+      "open-source-svg",
+      "cooling-heating-energy/iconoir/iconoir-cooling-square.svg",
+    ),
+    "hydrogen-process-advanced/hydrogen-pressure-regulator": reusedExternalIcon(
+      "open-source-svg",
+      "gas-energy/carbon/carbon-pressure.svg",
+    ),
+    "hydrogen-process-advanced/hydrogen-tube-trailer": reusedExternalIcon(
+      "open-source-svg",
+      "transport-facilities/phosphor/phosphor-truck-trailer.svg",
+    ),
+    "hydrogen-process-advanced/liquid-hydrogen-tank": reusedExternalIcon(
+      "open-source-svg",
+      "hydrogen-storage/material-design-icons/material-design-icons-storage-tank.svg",
+    ),
+    "hydrogen-process-advanced/hydrogen-refueling-station": reusedExternalIcon(
+      "open-source-svg",
+      "hydrogen-storage/material-design-icons/material-design-icons-hydrogen-station.svg",
+    ),
+    "hydrogen-process-advanced/fuel-cell-inverter": reusedExternalIcon(
+      "open-source-svg",
+      "new-energy-equipment/material-design-icons/material-design-icons-fuel-cell.svg",
+    ),
+    "hydrogen-process-advanced/hydrogen-safety-shutdown": reusedExternalIcon(
+      "open-source-svg",
+      "energy-generic/material-symbols/material-symbols-power-off.svg",
+    ),
+    "hydrogen-process-advanced/hydrogen-energy-management": reusedExternalIcon(
+      "open-source-svg",
+      "developer-tools/carbon-pictograms/carbon-pictograms-api-management.svg",
+    ),
+
+    "storage-advanced-scene/battery-cell": reusedExternalIcon(
+      "office-fluent-compatible",
+      "developer-integration/battery-4.svg",
+    ),
+    "storage-advanced-scene/battery-cluster": reusedExternalIcon(
+      "office-fluent-compatible",
+      "developer-integration/battery-charge-10.svg",
+    ),
+    "storage-advanced-scene/battery-container-hvac": reusedExternalIcon(
+      "open-source-svg",
+      "weather-environment/iconoir/iconoir-air-conditioner.svg",
+    ),
+    "storage-advanced-scene/battery-liquid-cooling": reusedExternalIcon(
+      "open-source-svg",
+      "cooling-heating-energy/material-symbols/material-symbols-water-pump.svg",
+    ),
+    "storage-advanced-scene/battery-equalization": reusedExternalIcon(
+      "open-source-svg",
+      "canvas-tools/gravity-ui/gravity-ui-scales-balanced.svg",
+    ),
+    "storage-advanced-scene/insulation-monitoring-device": reusedExternalIcon(
+      "office-fluent-compatible",
+      "navigation-view/search-shield.svg",
+    ),
+    "storage-advanced-scene/storage-smoke-detector": reusedExternalIcon(
+      "open-source-svg",
+      "energy-generic/carbon-pictograms/carbon-pictograms-fire-alarm.svg",
+    ),
+    "storage-advanced-scene/storage-exhaust-fan": reusedExternalIcon(
+      "open-source-svg",
+      "cooling-heating-energy/lucide/lucide-fan.svg",
+    ),
+    "storage-advanced-scene/battery-soh": reusedExternalIcon(
+      "office-fluent-compatible",
+      "status-security/battery-checkmark.svg",
+    ),
+    "storage-advanced-scene/charge-discharge-strategy": reusedExternalIcon(
+      "open-source-svg",
+      "canvas-tools/carbon-pictograms/carbon-pictograms-strategy-move.svg",
+    ),
+    "storage-advanced-scene/black-start-storage": reusedExternalIcon(
+      "open-source-svg",
+      "energy-generic/carbon-pictograms/carbon-pictograms-power-on.svg",
+    ),
+    "storage-advanced-scene/virtual-power-plant-storage": reusedExternalIcon(
+      "open-source-svg",
+      "cloud-infrastructure/carbon/carbon-power-virtual-server-disaster-recovery-automation.svg",
+    ),
+  }),
+);
+
+const sourceManifestCache = new Map();
+
+async function readSourceManifest(libraryId) {
+  if (!sourceManifestCache.has(libraryId)) {
+    const manifestPath = path.join(rootDir, "public", "icon-library", libraryId, "manifest.json");
+    sourceManifestCache.set(libraryId, JSON.parse(await readFile(manifestPath, "utf8")));
+  }
+  return sourceManifestCache.get(libraryId);
+}
+
+async function findExternalSourceIcon(ref) {
+  const manifest = await readSourceManifest(ref.libraryId);
+  for (const category of manifest.categories || []) {
+    for (const icon of category.icons || []) {
+      if (icon.file === ref.file) {
+        return { manifest, category, icon };
+      }
+    }
+  }
+  throw new Error(`Reusable icon source not found: ${ref.libraryId}/${ref.file}`);
+}
+
+function findDocerSourceIcon(ref) {
+  const category = iconCategories.find((item) => item.id === ref.categoryId);
+  const icon = category?.icons.find((item) => item.id === ref.iconId);
+  if (!category || !icon) {
+    throw new Error(`Reusable Docer source not found: ${ref.categoryId}/${ref.iconId}`);
+  }
+  return { category, icon };
+}
+
+function parseSvgViewBox(svgAttrs) {
+  const viewBoxMatch = svgAttrs.match(/\bviewBox=["']([^"']+)["']/i);
+  if (viewBoxMatch) {
+    const values = viewBoxMatch[1].trim().split(/[\s,]+/).map(Number);
+    if (values.length === 4 && values.every(Number.isFinite) && values[2] > 0 && values[3] > 0) {
+      return { x: values[0], y: values[1], width: values[2], height: values[3] };
+    }
+  }
+
+  const widthMatch = svgAttrs.match(/\bwidth=["']([0-9.]+)["']/i);
+  const heightMatch = svgAttrs.match(/\bheight=["']([0-9.]+)["']/i);
+  const width = widthMatch ? Number(widthMatch[1]) : 64;
+  const height = heightMatch ? Number(heightMatch[1]) : 64;
+  return {
+    x: 0,
+    y: 0,
+    width: Number.isFinite(width) && width > 0 ? width : 64,
+    height: Number.isFinite(height) && height > 0 ? height : 64,
+  };
+}
+
+function formatSvgNumber(value) {
+  return Number(value.toFixed(4)).toString();
+}
+
+function cleanReusableSvgInnerContent(content) {
+  return content
+    .replace(/<title\b[^>]*>[\s\S]*?<\/title>\s*/gi, "")
+    .replace(/<desc\b[^>]*>[\s\S]*?<\/desc>\s*/gi, "")
+    .replace(/\scolor=["'][^"']*["']/gi, "")
+    .replace(/\baria-labelledby=["'][^"']*["']/gi, "")
+    .replace(/\brole=["'][^"']*["']/gi, "")
+    .replace(/\bfill=["'](?!none["']|currentColor["']|transparent["'])[^"']*["']/gi, 'fill="currentColor"')
+    .replace(/\bstroke=["'](?!none["']|currentColor["']|transparent["'])[^"']*["']/gi, 'stroke="currentColor"')
+    .trim();
+}
+
+function wrapReusableSvg(sourceSvg, icon, category, sourceDescription) {
+  const svgMatch = sourceSvg.match(/<svg\b([^>]*)>([\s\S]*?)<\/svg>/i);
+  if (!svgMatch) {
+    throw new Error(`Invalid reusable SVG for ${category.id}/${icon.id}`);
+  }
+
+  const viewBox = parseSvgViewBox(svgMatch[1]);
+  const inner = cleanReusableSvgInnerContent(svgMatch[2]);
+  const scale = 48 / Math.max(viewBox.width, viewBox.height);
+  const translateX = (64 - viewBox.width * scale) / 2 - viewBox.x * scale;
+  const translateY = (64 - viewBox.height * scale) / 2 - viewBox.y * scale;
+  const title = escapeXml(icon.name);
+  const description = escapeXml(`${category.label} - 复用 ${sourceDescription}`);
+  const identityMark = compactDocerIdentityMark([`${category.id}/${icon.id}/reused`], 29);
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="${icon.color}" role="img" aria-labelledby="${icon.id}-title ${icon.id}-desc">
+  <title id="${icon.id}-title">${title}</title>
+  <desc id="${icon.id}-desc">${description}</desc>
+  <g transform="translate(${formatSvgNumber(translateX)} ${formatSvgNumber(translateY)}) scale(${formatSvgNumber(scale)})">
+${inner}
+  </g>
+  <g>
+${identityMark}
+  </g>
+</svg>
+`;
+}
+
+async function renderReusableExternalIcon(icon, category, ref) {
+  const { category: sourceCategory, icon: sourceIcon } = await findExternalSourceIcon(ref);
+  const sourceSvg = await readFile(
+    path.join(rootDir, "public", "icon-library", ref.libraryId, ref.file),
+    "utf8",
+  );
+  const sourceName = sourceIcon.sourceName || sourceIcon.name || sourceIcon.id || path.basename(ref.file, ".svg");
+  const sourceLabel = sourceIcon.sourceId || sourceIcon.sourcePackage || ref.libraryId;
+  return {
+    svg: wrapReusableSvg(sourceSvg, icon, category, `${sourceCategory.label || sourceCategory.id} / ${sourceName}`),
+    manifestSource: {
+      source: `reused-${ref.libraryId}`,
+      sourceId: sourceIcon.sourceId || `reused-${ref.libraryId}`,
+      sourceLabel: `Reused ${sourceLabel}`,
+      sourceLibrary: ref.libraryId,
+      sourceFile: ref.file,
+      sourceName,
+      sourcePackage: sourceIcon.sourcePackage || "",
+      license: sourceIcon.license || "",
+      pickedBy: "curated-reuse",
+    },
+  };
+}
+
+function renderReusableDocerIcon(icon, category, ref) {
+  const { category: sourceCategory, icon: sourceIcon } = findDocerSourceIcon(ref);
+  const body = `${sourceIcon.body}${compactDocerIdentityMark([`${category.id}/${icon.id}/reused-docer`], 31)}`;
+  return {
+    svg: renderSvg({ ...icon, body }, category),
+    manifestSource: {
+      source: "reused-docer-existing",
+      sourceId: "reused-docer-existing",
+      sourceLabel: "Reused existing Docer-compatible base icon",
+      sourceLibrary: ref.libraryId,
+      sourceFile: `${sourceCategory.id}/${sourceIcon.id}.svg`,
+      sourceName: sourceIcon.name || sourceIcon.id,
+      sourcePackage: "",
+      license: "original-project",
+      pickedBy: "curated-reuse",
+    },
+  };
+}
+
+async function renderDocerIcon(icon, category) {
+  const reuseRef = detailedDocerReusableSources.get(`${category.id}/${icon.id}`);
+  if (!reuseRef) {
+    return {
+      svg: renderSvg(icon, category),
+      manifestSource: {
+        source: "original-generated",
+        sourceId: "original-generated",
+        sourceLabel: "Original generated",
+        sourceName: icon.id,
+        sourcePackage: "",
+        license: "original-generated",
+      },
+    };
+  }
+
+  if (reuseRef.type === "docer") {
+    return renderReusableDocerIcon(icon, category, reuseRef);
+  }
+  return renderReusableExternalIcon(icon, category, reuseRef);
+}
+
 function escapeXml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -1912,7 +2748,7 @@ ${icon.body.trim()}
 function renderReadme(totalIcons) {
   return `# Docer Free Compatible Icon Library
 
-This directory contains editable SVG icons generated for the graph modeling platform.
+This directory contains editable SVG icons curated for the graph modeling platform.
 
 Important source note:
 
@@ -1920,6 +2756,7 @@ Important source note:
 - Public anonymous endpoints exposed icon tags and some SVG storage URLs.
 - The probed SVG sample belonged to the \`docer_icon\` privilege set, and the sample collection reported \`free_count=0\`.
 - To avoid copying assets without verified reuse rights, the SVG files in this directory are original project assets, not copied Docer files.
+- Detailed equipment icons prefer existing local open-source / Fluent / base Docer-compatible icons instead of compact generated placeholders.
 
 Generated output:
 
@@ -2143,7 +2980,7 @@ const manifest = {
   label: "稻壳免费图库兼容图标库",
   generatedAt: sourceAudit.checkedAt,
   sourcePolicy:
-    "原创生成，未复制稻壳受权益限制的 SVG；稻壳接口核验记录见 source-audit.json。",
+    "未复制稻壳受权益限制的 SVG；细分设备图标优先复用本地开源、Fluent 或平台已有基础图标；稻壳接口核验记录见 source-audit.json。",
   root: "/icon-library/docer-free-compatible",
   categories: [],
 };
@@ -2162,14 +2999,15 @@ for (const category of iconCategories) {
   for (const icon of category.icons) {
     const fileName = `${icon.id}.svg`;
     const filePath = path.join(categoryDir, fileName);
-    await writeFile(filePath, renderSvg(icon, category), "utf8");
+    const rendered = await renderDocerIcon(icon, category);
+    await writeFile(filePath, rendered.svg, "utf8");
     manifestCategory.icons.push({
       id: icon.id,
       name: icon.name,
       file: `${category.id}/${fileName}`,
       color: icon.color,
       tags: icon.tags,
-      source: "original-generated",
+      ...rendered.manifestSource,
     });
   }
 
@@ -2186,11 +3024,11 @@ const searchIndex = manifest.categories.flatMap((category) =>
     file: icon.file,
     categoryId: category.id,
     categoryLabel: category.label,
-    sourceId: "original-generated",
-    sourceLabel: "Original generated",
-    sourceName: icon.id,
-    sourcePackage: "",
-    license: "original-generated",
+    sourceId: icon.sourceId || icon.source || "unknown",
+    sourceLabel: icon.sourceLabel || icon.source || "Unknown",
+    sourceName: icon.sourceName || icon.id,
+    sourcePackage: icon.sourcePackage || "",
+    license: icon.license || "",
     keywords: [icon.name, icon.id, ...(icon.tags || []), category.id, category.label],
   })),
 );

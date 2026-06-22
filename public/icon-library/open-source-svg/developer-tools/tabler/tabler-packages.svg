@@ -1,0 +1,25 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-packages"
+ color="#2563eb" role="img" aria-labelledby="tabler-packages-title tabler-packages-desc">
+  <title id="tabler-packages-title">packages</title>
+  <desc id="tabler-packages-desc">开发工具 - Tabler Icons - packages - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M7 16.5l-5 -3l5 -3l5 3v5.5l-5 3l0 -5.5" />
+  <path fill="currentColor" d="M2 13.5v5.5l5 3" />
+  <path fill="currentColor" d="M7 16.545l5 -3.03" />
+  <path fill="currentColor" d="M17 16.5l-5 -3l5 -3l5 3v5.5l-5 3l0 -5.5" />
+  <path fill="currentColor" d="M12 19l5 3" />
+  <path fill="currentColor" d="M17 16.5l5 -3" />
+  <path fill="currentColor" d="M12 13.5v-5.5l-5 -3l5 -3l5 3v5.5" />
+  <path fill="currentColor" d="M7 5.03v5.455" />
+  <path fill="currentColor" d="M12 8l5 -3" />
+</svg>

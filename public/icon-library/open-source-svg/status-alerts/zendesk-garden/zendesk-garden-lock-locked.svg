@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" focusable="false" viewBox="0 0 16 16" color="#2563eb" role="img" aria-labelledby="zendesk-garden-lock-locked-title zendesk-garden-lock-locked-desc">
-  <title id="zendesk-garden-lock-locked-title">lock locked</title>
-  <desc id="zendesk-garden-lock-locked-desc">状态告警 - Zendesk Garden Icons - lock-locked - Apache-2.0</desc>
-  <g fill="none" stroke="currentColor">
-    <rect fill="currentColor" width="11" height="8" x="2.5" y="7.5" rx=".5" ry=".5"/>
-    <path fill="currentColor" d="M4.5 7.5V4a3.5 3.5 0 017 0v3.5"/>
-  </g>
-</svg>

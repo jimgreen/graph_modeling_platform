@@ -1,0 +1,23 @@
+<!-- @license lucide-static v1.21.0 - ISC -->
+<svg
+  class="lucide lucide-tower-control"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+ color="#2563eb" role="img" aria-labelledby="lucide-tower-control-title lucide-tower-control-desc">
+  <title id="lucide-tower-control-title">tower control</title>
+  <desc id="lucide-tower-control-desc">变电环节 - Lucide - tower-control - ISC</desc>
+  <path fill="currentColor" d="M18.2 12.27 20 6H4l1.8 6.27a1 1 0 0 0 .95.73h10.5a1 1 0 0 0 .96-.73Z" />
+  <path fill="currentColor" d="M8 13v9" />
+  <path fill="currentColor" d="M16 22v-9" />
+  <path fill="currentColor" d="m9 6 1 7" />
+  <path fill="currentColor" d="m15 6-1 7" />
+  <path fill="currentColor" d="M12 6V2" />
+  <path fill="currentColor" d="M13 2h-2" />
+</svg>

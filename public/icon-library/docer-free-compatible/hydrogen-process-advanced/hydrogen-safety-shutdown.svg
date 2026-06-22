@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#0891b2" role="img" aria-labelledby="hydrogen-safety-shutdown-title hydrogen-safety-shutdown-desc">
   <title id="hydrogen-safety-shutdown-title">氢安全切断</title>
-  <desc id="hydrogen-safety-shutdown-desc">氢能工艺设备 - safety, shutdown, 切断</desc>
+  <desc id="hydrogen-safety-shutdown-desc">氢能工艺设备 - 复用 能源通用 / power_off</desc>
+  <g transform="translate(8 56) scale(0.05)">
+<path fill="currentColor" d="M382-120v-118L240-394v-215q0-25 17-42.5t41-17.5l60 60h-58v191l142 155.7v82.3h76v-82l49-54L67-816l42-42 750 750-42 42-207-207-32 35v118H382Zm310-240-32-32v-217H443L342-710v-130h60v171h156v-171h60v201l-30-30h72q24.75 0 42.38 17.62Q720-633.75 720-609v217l-28 32ZM553-499Zm-114 55Z"/>
+  </g>
   <g>
-<circle cx="16" cy="24" r="5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="48" cy="24" r="5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="32" cy="46" r="5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 26l8 16M43 26l-8 16M21 24h22" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="32" y="33" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="7" font-weight="700" fill="currentColor">shutdown</text>
+<path d="M46 46h14v14H46z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="48" cy="52" r="1.35" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M48 52L55 49" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="52" cy="49" r="1.1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 </svg>

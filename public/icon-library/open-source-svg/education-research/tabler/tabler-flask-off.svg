@@ -1,0 +1,20 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-flask-off"
+ color="#2563eb" role="img" aria-labelledby="tabler-flask-off-title tabler-flask-off-desc">
+  <title id="tabler-flask-off-title">flask off</title>
+  <desc id="tabler-flask-off-desc">教育科研 - Tabler Icons - flask-off - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M9 3h6" />
+  <path fill="currentColor" d="M13 9h1" />
+  <path fill="currentColor" d="M10 3v3m-.268 3.736l-3.732 10.264a.7 .7 0 0 0 .5 1h11a.7 .7 0 0 0 .5 -1l-1.143 -3.142m-2.288 -6.294l-.569 -1.564v-6" />
+  <path fill="currentColor" d="M3 3l18 18" />
+</svg>

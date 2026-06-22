@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#334155" role="img" aria-labelledby="traffic-light-title traffic-light-desc">
   <title id="traffic-light-title">交通信号灯</title>
-  <desc id="traffic-light-desc">智慧城市 - traffic, light</desc>
+  <desc id="traffic-light-desc">智慧城市 - 复用 用电环节 / traffic-light</desc>
+  <g transform="translate(8 8) scale(2)">
+<path fill="currentColor" d="M7 4V3C7 2.44772 7.44772 2 8 2H16C16.5523 2 17 2.44772 17 3V4H20C20 6.5 17.5 7.5 17 7.5V10H20C20 12.5 17.5 13.5 17 13.5V16H20C20 18.5 17.5 19.5 17 19.5V21C17 21.5523 16.5523 22 16 22H8C7.44772 22 7 21.5523 7 21V19.5C6.5 19.5 4 18.5 4 16H7V13.5C6.5 13.5 4 12.5 4 10H7V7.5C6.5 7.5 4 6.5 4 4H7ZM12 20C13.1046 20 14 19.1046 14 18C14 16.8954 13.1046 16 12 16C10.8954 16 10 16.8954 10 18C10 19.1046 10.8954 20 12 20ZM12 14C13.1046 14 14 13.1046 14 12C14 10.8954 13.1046 10 12 10C10.8954 10 10 10.8954 10 12C10 13.1046 10.8954 14 12 14ZM12 8C13.1046 8 14 7.10457 14 6C14 4.89543 13.1046 4 12 4C10.8954 4 10 4.89543 10 6C10 7.10457 10.8954 8 12 8Z"/>
+  </g>
   <g>
-<rect x="24" y="10" width="16" height="36" rx="6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="32" cy="19" r="3" fill="currentColor" stroke="none"/><circle cx="32" cy="28" r="3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="32" cy="37" r="3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M32 46L32 56" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M46 46h14v14H46z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="49" cy="40" r="1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M49 40L49 41" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="48" cy="44" r="1.1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 </svg>

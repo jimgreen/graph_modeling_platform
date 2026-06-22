@@ -1,0 +1,22 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-git-pull-request"
+ color="#2563eb" role="img" aria-labelledby="tabler-git-pull-request-title tabler-git-pull-request-desc">
+  <title id="tabler-git-pull-request-title">git pull request</title>
+  <desc id="tabler-git-pull-request-desc">开发工具 - Tabler Icons - git-pull-request - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M4 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+  <path fill="currentColor" d="M4 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+  <path fill="currentColor" d="M16 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+  <path fill="currentColor" d="M6 8l0 8" />
+  <path fill="currentColor" d="M11 6h5a2 2 0 0 1 2 2v8" />
+  <path fill="currentColor" d="M14 9l-3 -3l3 -3" />
+</svg>

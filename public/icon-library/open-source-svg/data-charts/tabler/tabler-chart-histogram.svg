@@ -1,0 +1,22 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-chart-histogram"
+ color="#2563eb" role="img" aria-labelledby="tabler-chart-histogram-title tabler-chart-histogram-desc">
+  <title id="tabler-chart-histogram-title">chart histogram</title>
+  <desc id="tabler-chart-histogram-desc">数据图表 - Tabler Icons - chart-histogram - MIT</desc>
+  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M3 3v18h18" />
+  <path fill="currentColor" d="M20 18v3" />
+  <path fill="currentColor" d="M16 16v5" />
+  <path fill="currentColor" d="M12 13v8" />
+  <path fill="currentColor" d="M8 16v5" />
+  <path fill="currentColor" d="M3 11c6 0 5 -5 9 -5s3 5 9 5" />
+</svg>

@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#059669" role="img" aria-labelledby="carbon-accounting-campus-title carbon-accounting-campus-desc">
   <title id="carbon-accounting-campus-title">校园碳核算</title>
-  <desc id="carbon-accounting-campus-desc">低碳校园 - carbon, accounting, 核算</desc>
+  <desc id="carbon-accounting-campus-desc">低碳校园 - 复用 综合能源 / carbon-accounting</desc>
+  <g transform="translate(8 8) scale(1.5)">
+<path fill="currentColor" d="M29,26H23V22a2.002,2.002,0,0,1,2-2h2V18H23V16h4a2.0023,2.0023,0,0,1,2,2v2a2.0023,2.0023,0,0,1-2,2H25v2h4Z"/><path fill="currentColor" d="M19,22H15a2.0023,2.0023,0,0,1-2-2V10a2.002,2.002,0,0,1,2-2h4a2.002,2.002,0,0,1,2,2V20A2.0023,2.0023,0,0,1,19,22ZM15,10V20h4V10Z"/><path fill="currentColor" d="M11,22H5a2.0023,2.0023,0,0,1-2-2V10A2.002,2.002,0,0,1,5,8h6v2H5V20h6Z"/>
+  </g>
   <g>
-<path d="M12 28l20-14 20 14v24H12z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><rect x="22" y="34" width="20" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><text x="32" y="33" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Microsoft YaHei, sans-serif" font-size="7" font-weight="700" fill="currentColor">accounting</text>
+<path d="M46 46h14v14H46z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="50" cy="41" r="1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M50 41L44 48" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="47" cy="43" r="1.1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 </svg>
