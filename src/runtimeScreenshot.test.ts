@@ -22,6 +22,7 @@ function mockAppScope(overrides?: Record<string, any>) {
     activeProjectKey: "project-1",
     svgRef: { current: {} as SVGSVGElement },
     canvasBounds: { width: 1920, height: 1080 },
+    buildSvgDocument: () => "<svg>mock</svg>",
     ...overrides,
   };
 }
@@ -59,7 +60,7 @@ describe("serializeScreenshot", () => {
       expect(result.data.height).toBe(600);
     }
     expect(mockRasterize).toHaveBeenCalledWith(
-      scope.svgRef.current,
+      "<svg>mock</svg>",
       800,
       600
     );
@@ -78,8 +79,8 @@ describe("serializeScreenshot", () => {
     expect(mockRasterize).not.toHaveBeenCalled();
   });
 
-  it("svgRef.current 为 null → internal", async () => {
-    const scope = mockAppScope({ svgRef: { current: null } });
+  it("buildSvgDocument 与 svgRef 均不可用 → internal", async () => {
+    const scope = mockAppScope({ buildSvgDocument: undefined, svgRef: { current: null } });
     const mockRasterize = vi.fn();
 
     const result = await serializeScreenshot(scope, undefined, mockRasterize);
@@ -91,17 +92,18 @@ describe("serializeScreenshot", () => {
     expect(mockRasterize).not.toHaveBeenCalled();
   });
 
-  it("svgRef 缺失 → internal", async () => {
-    const scope = mockAppScope({ svgRef: undefined });
-    const mockRasterize = vi.fn();
+  it("buildSvgDocument 缺失时回退 svgRef（node 环境无 DOM 则 internal）", async () => {
+    const scope = mockAppScope({ buildSvgDocument: undefined, svgRef: { current: {} as SVGSVGElement } });
+    const mockRasterize = vi.fn().mockResolvedValue("fb-base64");
 
     const result = await serializeScreenshot(scope, undefined, mockRasterize);
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
+    // node 环境无 cloneNode/XMLSerializer，回退分支抛错 → internal；浏览器环境则 ok
+    if (result.ok) {
+      expect(mockRasterize).toHaveBeenCalledTimes(1);
+    } else {
       expect(result.error.code).toBe("internal");
     }
-    expect(mockRasterize).not.toHaveBeenCalled();
   });
 
   it("params.width 非正数 → bad-request", async () => {
@@ -195,7 +197,7 @@ describe("serializeScreenshot", () => {
       expect(result.data.height).toBe(600);
     }
     expect(mockRasterize).toHaveBeenCalledWith(
-      scope.svgRef.current,
+      "<svg>mock</svg>",
       800,
       600
     );

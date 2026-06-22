@@ -34,24 +34,15 @@ export interface ScreenshotParams {
 }
 
 /**
- * 核心 SVG → PNG rasterize 函数。
- * 在浏览器环境中将 SVGSVGElement 序列化 → data URL → Image → 离屏 canvas → PNG base64。
+ * 核心 SVG 字符串 → PNG rasterize 函数。
+ * 在浏览器环境中将自包含 SVG 字符串 → Blob → Image → 离屏 canvas → PNG base64。
+ * canvas 不填底色，保持 PNG 透明背景。
  */
-export async function rasterizeSvg(
-  svgEl: SVGSVGElement,
+export async function rasterizeSvgString(
+  svgString: string,
   width: number,
   height: number
 ): Promise<string> {
-  // clone SVG 并移除画布背景元素（data-canvas-background），使截图透明背景。
-  const clone = svgEl.cloneNode(true) as SVGSVGElement;
-  clone.querySelectorAll("[data-canvas-background]").forEach((el) => el.remove());
-  // 显式设置 width/height/xmlns，避免序列化后浏览器 rasterize 时尺寸异常或填黑底。
-  clone.setAttribute("width", String(width));
-  clone.setAttribute("height", String(height));
-  if (!clone.getAttribute("xmlns")) {
-    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-  }
-  const svgString = new XMLSerializer().serializeToString(clone);
   const svgBlob = new Blob([svgString], {
     type: "image/svg+xml;charset=utf-8",
   });
@@ -81,6 +72,26 @@ export async function rasterizeSvg(
 }
 
 /**
+ * 兼容：从 SVGSVGElement rasterize。clone 后移除背景元素 + 显式宽高，再调 rasterizeSvgString。
+ * 注意：实时 DOM 的 SVG 依赖外部 CSS class 样式，rasterize 后样式丢失。优先用 buildSvgDocument 生成自包含 SVG。
+ */
+export async function rasterizeSvg(
+  svgEl: SVGSVGElement,
+  width: number,
+  height: number
+): Promise<string> {
+  const clone = svgEl.cloneNode(true) as SVGSVGElement;
+  clone.querySelectorAll("[data-canvas-background]").forEach((el) => el.remove());
+  clone.setAttribute("width", String(width));
+  clone.setAttribute("height", String(height));
+  if (!clone.getAttribute("xmlns")) {
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  }
+  const svgString = new XMLSerializer().serializeToString(clone);
+  return rasterizeSvgString(svgString, width, height);
+}
+
+/**
  * 校验 params 中的可选 width/height。
  * 若提供则须为正整数，否则返回 bad-request 错误。
  */
@@ -104,20 +115,25 @@ function validateParams(
 }
 
 /**
- * 主函数：校验活动模型 → 取 svgRef → 取宽高 → rasterizeSvg → 信封。
+ * 主函数：校验活动模型 → 生成自包含 SVG → rasterize → 信封。
+ *
+ * 优先用 buildSvgDocument 生成自包含 SVG（与「导出 SVG」一致，内联样式），
+ * 避免实时 DOM 的 class 样式在 rasterize 时丢失导致渲染异常（黑底）。
+ * backgroundColor 传 "transparent" 保持 PNG 透明背景。
+ * 回退：svgRef.current 经 rasterizeSvg（clone + 移除背景元素）。
  *
  * @param appScope - __appScope 对象（Record<string, any>）
  * @param params   - 可选截图参数
- * @param rasterize - 可注入的 rasterize 实现（默认 rasterizeSvg），便于单测
+ * @param rasterize - 可注入的 rasterize 实现（默认 rasterizeSvgString），便于单测
  */
 export async function serializeScreenshot(
   appScope: Record<string, any>,
   params?: ScreenshotParams,
   rasterize: (
-    svgEl: SVGSVGElement,
+    svgString: string,
     width: number,
     height: number
-  ) => Promise<string> = rasterizeSvg
+  ) => Promise<string> = rasterizeSvgString
 ): Promise<ScreenshotResult> {
   try {
     // 1. 校验活动模型
@@ -134,29 +150,61 @@ export async function serializeScreenshot(
     if ("error" in validated) return validated;
     const { width: paramWidth, height: paramHeight } = validated;
 
-    // 3. 取 SVG 元素
-    const svgRef: { current: SVGSVGElement | null } | undefined =
-      appScope.svgRef;
-    if (!svgRef || !svgRef.current) {
-      return {
-        ok: false,
-        error: {
-          code: "internal",
-          message: "SVG DOM 不可用，无法截图。",
-        },
-      };
-    }
-
-    // 4. 确定分辨率：params 优先，否则取 canvasBounds
+    // 3. 确定分辨率：params 优先，否则取 canvasBounds
     const canvasBounds: { width: number; height: number } | undefined =
       appScope.canvasBounds;
     const width = paramWidth ?? canvasBounds?.width ?? 800;
     const height = paramHeight ?? canvasBounds?.height ?? 600;
 
+    // 4. 生成自包含 SVG 字符串（优先 buildSvgDocument，回退 svgRef 序列化）
+    const buildSvgDoc = appScope.buildSvgDocument;
+    const nodes = appScope.nodes ?? [];
+    const edges = appScope.edges ?? [];
+    let svgString: string | null = null;
+    if (typeof buildSvgDoc === "function") {
+      // backgroundColor: transparent 保持 PNG 透明背景
+      svgString = String(
+        buildSvgDoc(nodes, edges, {
+          width,
+          height,
+          backgroundColor: "transparent",
+          backgroundImage: appScope.canvasBackgroundImageUrl,
+          colorDisplayMode: appScope.colorDisplayMode,
+          colorPalette: appScope.colorPalette,
+          deviceTemplates: appScope.libraryTemplates,
+          layers: appScope.layers,
+          activeLayerId: appScope.activeLayerId,
+          measurements: appScope.projectMeasurements,
+          measurementConfig: appScope.measurementConfig
+        })
+      );
+    } else {
+      // 回退：svgRef clone 移除背景元素
+      const svgRef: { current: SVGSVGElement | null } | undefined =
+        appScope.svgRef;
+      if (!svgRef || !svgRef.current) {
+        return {
+          ok: false,
+          error: {
+            code: "internal",
+            message: "SVG DOM 不可用，无法截图。",
+          },
+        };
+      }
+      const clone = svgRef.current.cloneNode(true) as SVGSVGElement;
+      clone.querySelectorAll("[data-canvas-background]").forEach((el) => el.remove());
+      clone.setAttribute("width", String(width));
+      clone.setAttribute("height", String(height));
+      if (!clone.getAttribute("xmlns")) {
+        clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      }
+      svgString = new XMLSerializer().serializeToString(clone);
+    }
+
     // 5. Rasterize
     let base64: string;
     try {
-      base64 = await rasterize(svgRef.current, width, height);
+      base64 = await rasterize(svgString, width, height);
     } catch (rasterizeErr: unknown) {
       const message =
         rasterizeErr instanceof Error
