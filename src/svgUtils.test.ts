@@ -31,6 +31,35 @@ describe("svg image content markup", () => {
     expect(markup).not.toContain('href="data:image/svg+xml');
   });
 
+  test("keeps the full root svg body when inline svg contains nested svg elements", () => {
+    const source = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160">',
+      '<g transform="translate(20 20)">',
+      '<svg x="-12" y="-12" width="24" height="24" viewBox="0 0 24 24">',
+      '<rect x="6" y="6" width="12" height="12"/>',
+      "</svg>",
+      "</g>",
+      '<text class="after-nested-svg" x="120" y="140">label after nested svg</text>',
+      "</svg>"
+    ].join("");
+    const href = `data:image/svg+xml;utf8,${encodeURIComponent(source)}`;
+
+    const markup = svgImageContentMarkup(href, {
+      x: -75,
+      y: -46,
+      width: 150,
+      height: 92,
+      preserveAspectRatio: "xMidYMid slice",
+      className: "node-background-image"
+    });
+
+    expect(markup).toContain('<svg x="-12" y="-12" width="24" height="24" viewBox="0 0 24 24">');
+    expect(markup).toContain('class="after-nested-svg"');
+    expect(markup).toContain("label after nested svg");
+    expect(markup).toContain("</g><text");
+    expect(markup.endsWith("</svg>")).toBe(true);
+  });
+
   test("inlines cached backend image refs inside svg data urls", () => {
     const source = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10">',

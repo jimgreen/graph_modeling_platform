@@ -231,7 +231,7 @@ export function inlineSvgRootMarkup(
       .replace(/^\s*<!doctype[\s\S]*?>/iu, "")
       .trim()
   );
-  const match = source.match(/<svg\b([^>]*)>([\s\S]*?)<\/svg\s*>/iu);
+  const match = source.match(/<svg\b([^>]*)>([\s\S]*)<\/svg\s*>/iu);
   if (!match) {
     return "";
   }
