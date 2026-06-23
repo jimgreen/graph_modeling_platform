@@ -5,6 +5,10 @@ import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as 
 /* 颜色输入 */
 
 const HEX_COLOR_INPUT_PATTERN = /^#[0-9a-f]{6}$/i;
+const TRANSPARENT_COLOR_VALUE = "transparent";
+
+const isTransparentColorValue = (value: string | undefined) =>
+  String(value ?? "").trim().toLowerCase() === TRANSPARENT_COLOR_VALUE;
 
 export const colorInputValue = (value: string, fallback = "#ffffff") =>
   HEX_COLOR_INPUT_PATTERN.test(value) ? value : fallback;
@@ -28,14 +32,17 @@ export function DeferredColorInput({
   "aria-label": ariaLabel,
   onCommit
 }: DeferredColorInputProps) {
-  const normalizedValue = colorInputValue(value, fallback);
+  const normalizedFallback = colorInputValue(fallback, "#ffffff");
+  const normalizedValue = colorInputValue(value, normalizedFallback);
+  const transparent = isTransparentColorValue(value);
+  const normalizedCommittedValue = transparent ? TRANSPARENT_COLOR_VALUE : normalizedValue;
   const [draft, setDraft] = useState(normalizedValue);
   const draftRef = useRef(normalizedValue);
-  const committedRef = useRef(normalizedValue);
+  const committedRef = useRef(normalizedCommittedValue);
   const onCommitRef = useRef(onCommit);
 
-  const commitDraft = (nextValue: string) => {
-    const nextColor = colorInputValue(nextValue, normalizedValue);
+  const commitColor = (nextValue: string) => {
+    const nextColor = colorInputValue(nextValue, normalizedFallback);
     draftRef.current = nextColor;
     setDraft(nextColor);
     if (nextColor !== committedRef.current) {
@@ -44,10 +51,21 @@ export function DeferredColorInput({
     }
   };
 
+  const commitTransparent = () => {
+    if (disabled) {
+      return;
+    }
+    if (committedRef.current === TRANSPARENT_COLOR_VALUE) {
+      return;
+    }
+    committedRef.current = TRANSPARENT_COLOR_VALUE;
+    onCommitRef.current(TRANSPARENT_COLOR_VALUE);
+  };
+
   const queueDraftCommit = (event: { currentTarget: HTMLInputElement }) => {
     const nextValue = event.currentTarget.value;
     if (!disabled) {
-      commitDraft(nextValue);
+      commitColor(nextValue);
       return;
     }
     draftRef.current = nextValue;
@@ -59,31 +77,44 @@ export function DeferredColorInput({
   }, [onCommit]);
 
   useEffect(() => {
-    committedRef.current = normalizedValue;
+    committedRef.current = normalizedCommittedValue;
     draftRef.current = normalizedValue;
     setDraft(normalizedValue);
-  }, [normalizedValue]);
+  }, [normalizedCommittedValue, normalizedValue]);
 
   return (
-    <input
-      type="color"
-      value={draft}
-      disabled={disabled}
-      className={className}
-      title={title}
-      aria-label={ariaLabel}
-      onInput={queueDraftCommit}
-      onChange={queueDraftCommit}
-      onBlur={() => commitDraft(draftRef.current)}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") {
-          commitDraft(event.currentTarget.value);
-        } else if (event.key === "Escape") {
-          draftRef.current = committedRef.current;
-          setDraft(committedRef.current);
-        }
-      }}
-    />
+    <span className={`deferred-color-input ${transparent ? "transparent" : ""} ${disabled ? "disabled" : ""}`}>
+      <input
+        type="color"
+        value={draft}
+        disabled={disabled}
+        className={className}
+        title={transparent ? "当前为透明色，选择颜色可恢复为实色" : title}
+        aria-label={ariaLabel}
+        onInput={queueDraftCommit}
+        onChange={queueDraftCommit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            commitColor(event.currentTarget.value);
+          } else if (event.key === "Escape") {
+            const restoredValue = committedRef.current === TRANSPARENT_COLOR_VALUE ? normalizedValue : committedRef.current;
+            draftRef.current = restoredValue;
+            setDraft(restoredValue);
+          }
+        }}
+      />
+      <button
+        type="button"
+        className="deferred-color-transparent-button"
+        disabled={disabled}
+        title="设置为透明色"
+        aria-label={ariaLabel ? `${ariaLabel}设为透明色` : "设置为透明色"}
+        aria-pressed={transparent}
+        onClick={commitTransparent}
+      >
+        无
+      </button>
+    </span>
   );
 }
 

@@ -5693,11 +5693,52 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   justify-self: start;
 }
 
+.state-icon-drawing-properties {
+  gap: 4px;
+  padding: 6px;
+}
+
+.state-icon-drawing-properties .state-icon-drawing-property-title {
+  min-height: 18px;
+  gap: 4px;
+}
+
+.state-icon-drawing-properties .state-icon-drawing-property-title strong {
+  font-size: 13px;
+}
+
+.state-icon-drawing-properties .state-icon-drawing-property-title span {
+  font-size: 10px;
+}
+
+.state-icon-drawing-properties .state-icon-drawing-property-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 3px 5px;
+}
+
+.state-icon-drawing-properties .state-icon-drawing-property-grid label {
+  gap: 1px;
+  font-size: 9px;
+  line-height: 1.05;
+}
+
+.state-icon-drawing-properties .state-icon-drawing-property-grid .state-icon-drawing-compact-field {
+  width: 100%;
+  justify-self: stretch;
+}
+
 .state-icon-drawing-property-grid input,
 .state-icon-drawing-property-grid select,
 .state-icon-drawing-property-grid textarea {
   width: 100%;
   min-width: 0;
+}
+
+.state-icon-drawing-properties .state-icon-drawing-property-grid input,
+.state-icon-drawing-properties .state-icon-drawing-property-grid select {
+  min-height: 24px;
+  padding-top: 2px;
+  padding-bottom: 2px;
 }
 
 .state-icon-drawing-property-grid textarea {
@@ -5728,8 +5769,29 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   gap: 4px;
 }
 
+.state-icon-drawing-properties .state-icon-drawing-color-field {
+  width: 100%;
+}
+
+.state-icon-drawing-frame-panel .state-icon-drawing-property-grid {
+  grid-template-columns: minmax(72px, 1fr) 64px 30px 30px;
+  align-items: end;
+}
+
+.state-icon-drawing-frame-panel .state-icon-drawing-property-grid label {
+  white-space: nowrap;
+}
+
+.state-icon-drawing-frame-panel .state-icon-drawing-property-grid .state-icon-drawing-compact-field {
+  width: 64px;
+}
+
 .state-icon-drawing-text-field {
   grid-column: span 2;
+}
+
+.state-icon-drawing-properties .state-icon-drawing-text-field {
+  grid-column: span 4;
 }
 
 .state-icon-drawing-property-grid .state-icon-drawing-text-compact-field {
@@ -6463,6 +6525,80 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   background: #eff6ff;
 }
 
+.deferred-color-input {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  min-width: 32px;
+  height: 28px;
+  min-height: 28px;
+  isolation: isolate;
+  vertical-align: middle;
+}
+
+.deferred-color-input input[type="color"] {
+  position: relative;
+  z-index: 1;
+}
+
+.deferred-color-input.transparent::before {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border-radius: 5px;
+  background:
+    linear-gradient(45deg, #cbd5e1 25%, transparent 25%, transparent 75%, #cbd5e1 75%),
+    linear-gradient(45deg, #cbd5e1 25%, transparent 25%, transparent 75%, #cbd5e1 75%),
+    #ffffff;
+  background-position: 0 0, 5px 5px, 0 0;
+  background-size: 10px 10px;
+  pointer-events: none;
+}
+
+.deferred-color-input.transparent input[type="color"] {
+  opacity: 0.55;
+}
+
+.deferred-color-transparent-button,
+.color-field .deferred-color-transparent-button {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  min-height: 16px;
+  padding: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  color: #475569;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.22);
+  font-size: 9px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.deferred-color-transparent-button:hover:not(:disabled),
+.deferred-color-transparent-button:focus-visible {
+  border-color: #60a5fa;
+  color: #1d4ed8;
+  background: #eff6ff;
+  outline: none;
+}
+
+.deferred-color-transparent-button[aria-pressed="true"] {
+  border-color: #1d4ed8;
+  color: #ffffff;
+  background: #2563eb;
+}
+
 .image-field-actions {
   grid-template-columns: minmax(0, 1fr) auto auto;
 }
@@ -6988,8 +7124,9 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .image-picker-dialog.catalog-icon-library .image-asset-list {
-  grid-template-columns: repeat(auto-fill, minmax(86px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(52px, 58px));
+  justify-content: start;
+  gap: 6px;
 }
 
 .image-picker-dialog.icon-library.external-icon-library .image-asset-list {
@@ -7054,7 +7191,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .image-picker-dialog.catalog-icon-library .image-asset-option span {
-  display: block;
+  display: none;
 }
 
 .icon-library-browser {
@@ -7076,28 +7213,26 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .image-picker-dialog.catalog-icon-library .image-asset-option {
-  justify-items: stretch;
-  gap: 5px;
-  min-height: 104px;
-  padding: 6px;
+  justify-items: center;
+  align-items: center;
+  gap: 0;
+  min-height: 0;
+  width: 58px;
+  height: 58px;
+  padding: 5px;
   border-radius: 6px;
 }
 
 .image-picker-dialog.catalog-icon-library .image-asset-option img {
   width: 100%;
-  height: 58px;
+  height: 100%;
   aspect-ratio: auto;
   object-fit: contain;
   border-radius: 4px;
 }
 
 .image-picker-dialog.catalog-icon-library .image-asset-option small {
-  overflow: hidden;
-  color: #64748b;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  font-weight: 650;
+  display: none;
 }
 
 .icon-library-load-more {
@@ -7998,6 +8133,25 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   line-height: 1;
   align-self: center;
   white-space: nowrap;
+}
+
+.param-table .color-field .deferred-color-input {
+  width: 28px;
+  min-width: 28px;
+  height: var(--param-table-control-height);
+  min-height: var(--param-table-control-height);
+}
+
+.param-table .color-field .deferred-color-transparent-button {
+  right: -4px;
+  bottom: -4px;
+  width: 14px;
+  min-width: 14px;
+  height: 14px;
+  min-height: 14px;
+  border-radius: 999px;
+  padding: 0;
+  font-size: 8px;
 }
 
 .param-table button svg {

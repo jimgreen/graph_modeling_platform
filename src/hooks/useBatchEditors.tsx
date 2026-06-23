@@ -3,7 +3,7 @@ import type { DeviceParameterDefinition, DeviceParameterEnumOption, ModelLayer, 
 import type { ProjectMeasurementConfig } from "../measurements";
 import type { BatchCommonParamRow, BatchCommonMeasurementGroupRow, BatchCommonMeasurementGroupKey, BatchCommonParamPatch } from "../App";
 
-import { DeferredColorInput, BufferedTextInput, colorInputValue } from "../components/InputComponents";
+import { DeferredColorInput, BufferedTextInput } from "../components/InputComponents";
 import { StaticButtonLayerMultiSelect } from "../components/StaticButtonComponents";
 
 import {
@@ -119,10 +119,9 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     Object.fromEntries(statusStatesForNode(node).map((state) => [state.value, state.name || state.value]));
 
   const renderColorEditor = (key: string, value: string, fallback = "#ffffff"): ReactNode => {
-    const colorValue = colorInputValue(value, fallback);
     return (
       <div className="color-field with-none">
-        <DeferredColorInput value={colorValue} fallback={fallback} disabled={isBrowseMode} onCommit={(nextValue: string) => updateParam(key, nextValue)} />
+        <DeferredColorInput value={value} fallback={fallback} disabled={isBrowseMode} onCommit={(nextValue: string) => updateParam(key, nextValue)} />
         <BufferedTextInput
           value={value === "transparent" ? "无颜色" : value || ""}
           disabled={isBrowseMode}
@@ -270,10 +269,9 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
   };
 
   const renderNodeDoubleClickColorEditor = (node: ModelNode, key: string, value: string, fallback = "#ffffff"): ReactNode => {
-    const colorValue = colorInputValue(value, fallback);
     return (
       <div className="color-field with-none">
-        <DeferredColorInput value={colorValue} fallback={fallback} disabled={isBrowseMode} onCommit={(nextValue: string) => updateNodeDoubleClickDraftParam(node.id, key, nextValue)} />
+        <DeferredColorInput value={value} fallback={fallback} disabled={isBrowseMode} onCommit={(nextValue: string) => updateNodeDoubleClickDraftParam(node.id, key, nextValue)} />
         <BufferedTextInput
           value={value === "transparent" ? "无颜色" : value || ""}
           disabled={isBrowseMode}
@@ -311,11 +309,10 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
 
   const renderBatchCommonColorParamEditor = (row: BatchCommonParamRow): ReactNode => {
     const value = row.mixed ? "" : row.value;
-    const colorValue = colorInputValue(value, "#334155");
     return (
       <div className="color-field with-none">
         <DeferredColorInput
-          value={colorValue}
+          value={value}
           fallback="#334155"
           disabled={isBrowseMode}
           onCommit={(nextValue: string) => applyBatchCommonParam(row.key, nextValue)}
@@ -541,7 +538,7 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     return (
       <div className="color-field with-none">
         <DeferredColorInput
-          value={colorInputValue(value, fallback)}
+          value={value}
           fallback={fallback}
           disabled={isBrowseMode}
           aria-label={row.label}
