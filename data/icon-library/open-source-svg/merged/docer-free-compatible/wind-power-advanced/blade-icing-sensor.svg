@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#0284c7" role="img" aria-labelledby="blade-icing-sensor-title blade-icing-sensor-desc">
+  <title id="blade-icing-sensor-title">叶片覆冰传感器</title>
+  <desc id="blade-icing-sensor-desc">风电细分设备 - 复用 气象环境 / windy-snow</desc>
+  <g transform="translate(8 8) scale(1.5)">
+<path fill="currentColor" d="M25,28a5.0057,5.0057,0,0,1-5-5h2a3,3,0,1,0,3-3H6V18H25a5,5,0,0,1,0,10Z"/><path fill="currentColor" d="M23,15H10V13H23a3,3,0,1,0-3-3H18a5,5,0,1,1,5,5Z"/><path fill="currentColor" d="M11 23H13V25H11z"/><path fill="currentColor" d="M13 25H15V27H13z"/><path fill="currentColor" d="M15 27H17V29H15z"/><path fill="currentColor" d="M15 23H17V25H15z"/><path fill="currentColor" d="M11 27H13V29H11z"/><path fill="currentColor" d="M6 4H8V6H6z"/><path fill="currentColor" d="M8 6H10V8H8z"/><path fill="currentColor" d="M10 8H12V10H10z"/><path fill="currentColor" d="M10 4H12V6H10z"/><path fill="currentColor" d="M6 8H8V10H6z"/><path fill="currentColor" d="M2 26H4V28H2z"/><path fill="currentColor" d="M4 28H6V30H4z"/><path fill="currentColor" d="M6 30H8V32H6z"/><path fill="currentColor" d="M6 26H8V28H6z"/><path fill="currentColor" d="M2 30H4V32H2z"/>
+  </g>
+  <g>
+<path d="M46 46h14v14H46z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="52" cy="46" r="1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M52 46L44 43" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="45" cy="45" r="1.1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

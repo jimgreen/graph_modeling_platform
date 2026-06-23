@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#ea580c" role="img" aria-labelledby="thermal-generator-title thermal-generator-desc">
+  <title id="thermal-generator-title">火力发电机</title>
+  <desc id="thermal-generator-desc">新能源与发电 - thermal, generator, coal</desc>
+  <g>
+<path d="M16 48h32" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M18 48V28l10 6V26l10 8V24l10 7v17" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M20 20c3-6 0-8 4-13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M31 20c3-6 0-8 4-13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M42 20c3-6 0-8 4-13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

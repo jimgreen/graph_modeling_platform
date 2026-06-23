@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#2563eb" role="img" aria-labelledby="image-placeholder-title image-placeholder-desc">
+  <title id="image-placeholder-title">图片</title>
+  <desc id="image-placeholder-desc">通用图形 - 复用 媒体素材 / image-in-picture</desc>
+  <g transform="translate(8 8) scale(2)">
+<path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M13 15c-2 0 -5 1 -5 5" />
+  <path fill="currentColor" d="M4 13a2 2 0 0 1 2 -2h5a2 2 0 0 1 2 2v5a2 2 0 0 1 -2 2h-5a2 2 0 0 1 -2 -2l0 -5" />
+  <path fill="currentColor" d="M4 7v-2a1 1 0 0 1 1 -1h2" />
+  <path fill="currentColor" d="M11 4h2" />
+  <path fill="currentColor" d="M17 4h2a1 1 0 0 1 1 1v2" />
+  <path fill="currentColor" d="M20 11v2" />
+  <path fill="currentColor" d="M20 17v2a1 1 0 0 1 -1 1h-2" />
+  </g>
+  <g>
+<path d="M46 46h14v14H46z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="52" cy="41" r="1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M52 41L47 44" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="45" r="1.1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

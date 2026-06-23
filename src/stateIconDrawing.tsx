@@ -148,33 +148,17 @@ export function defaultStateDraftRow(
   rows: readonly DeviceDefinitionStateDraftRow[],
   defaultVisual: Partial<DeviceStateDefinition> = {}
 ): DeviceDefinitionStateDraftRow {
-  const row = rows[0];
   const base = createStateDraftRow(defaultVisual);
-  if (row) {
-    return {
-      ...row,
-      icon: row.icon || base.icon,
-      image: row.image || base.image,
-      imageAssetId: row.imageAssetId || base.imageAssetId,
-      text: row.text || base.text,
-      color: row.color || base.color,
-      fillColor: row.fillColor || base.fillColor,
-      strokeColor: row.strokeColor || base.strokeColor,
-      textColor: row.textColor || base.textColor,
-      backgroundImage: row.backgroundImage || base.backgroundImage,
-      backgroundImageAssetId: row.backgroundImageAssetId || base.backgroundImageAssetId
-    };
-  }
   return {
     ...base,
     id: DEFAULT_STATE_PAGE_ID,
-    value: DEFAULT_STATE_VALUE,
-    name: DEFAULT_STATE_NAME
+    value: base.value || DEFAULT_STATE_VALUE,
+    name: base.name || DEFAULT_STATE_NAME
   };
 }
 
 export function nonDefaultStateDraftRows(rows: readonly DeviceDefinitionStateDraftRow[]) {
-  return rows.slice(1);
+  return rows;
 }
 
 export function nextNonDefaultStateIndex(rows: readonly DeviceDefinitionStateDraftRow[]) {
@@ -203,15 +187,9 @@ export function upsertDefaultStateDraftRow(
   defaultVisual: Partial<DeviceStateDefinition>,
   patch: Partial<DeviceDefinitionStateDraftRow>
 ): DeviceDefinitionStateDraftRow[] {
-  const current = rows[0];
-  const nextDefault = current
-    ? { ...defaultStateDraftRow(rows, defaultVisual), ...patch, id: current.id }
-    : createStateDraftRowFromDefaultVisual(defaultVisual, {
-        value: DEFAULT_STATE_VALUE,
-        name: DEFAULT_STATE_NAME,
-        ...patch
-      });
-  return [nextDefault, ...rows.slice(1)];
+  void defaultVisual;
+  void patch;
+  return [...rows];
 }
 
 export function appendNonDefaultStateDraftRow(
@@ -219,16 +197,8 @@ export function appendNonDefaultStateDraftRow(
   defaultVisual: Partial<DeviceStateDefinition>,
   row: DeviceDefinitionStateDraftRow
 ): DeviceDefinitionStateDraftRow[] {
-  if (rows.length > 0) {
-    return [...rows, row];
-  }
-  return [
-    createStateDraftRowFromDefaultVisual(defaultVisual, {
-      value: DEFAULT_STATE_VALUE,
-      name: DEFAULT_STATE_NAME
-    }),
-    row
-  ];
+  void defaultVisual;
+  return [...rows, row];
 }
 
 export function createDefinitionStateDraftRows(template: DeviceTemplate): DeviceDefinitionStateDraftRow[] {
@@ -301,9 +271,6 @@ export function activeStateDraftRow(rows: readonly DeviceDefinitionStateDraftRow
 
 export function normalizeStatePageId(rows: readonly DeviceDefinitionStateDraftRow[], activeRowId: string) {
   if (isDefaultStatePageId(activeRowId)) {
-    return DEFAULT_STATE_PAGE_ID;
-  }
-  if (rows[0]?.id === activeRowId) {
     return DEFAULT_STATE_PAGE_ID;
   }
   return rows.some((row) => row.id === activeRowId) ? activeRowId : DEFAULT_STATE_PAGE_ID;

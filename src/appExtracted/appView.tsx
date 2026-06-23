@@ -114,21 +114,45 @@ export function renderAppView(__appScope: Record<string, any>) {
   } = __appScope;
   const { customDevicePreviewNode } = __appScope;
   const renderCustomDevicePreviewContent = () => {
-    if (customDevicePreviewNode) {
-      const previewStateVisual = customStatePreviewVisual ?? resolveNodeStateVisual(customDevicePreviewNode);
-      return (
-        <g transform={nodeGeometryTransform(customDevicePreviewNode)}>
-          <MemoDeviceGlyph node={customDevicePreviewNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={previewStateVisual}/>
-          <MemoDeviceGlyph node={customDevicePreviewNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={previewStateVisual}/>
-        </g>
-      );
-    }
+    const fallbackPreviewNode = {
+      id: "custom-device-preview-fallback",
+      kind: "custom-device-preview",
+      name: customDeviceDraft.componentName.trim() || customDeviceDraft.componentType || "Unit",
+      layerId: DEFAULT_MODEL_LAYER_ID,
+      nodeNumber: "",
+      acTopologyNode: 0,
+      dcTopologyNode: 0,
+      position: { x: 0, y: 0 },
+      size: { width: customDevicePreviewWidth, height: customDevicePreviewHeight },
+      rotation: 0,
+      scale: 1,
+      scaleX: 1,
+      scaleY: 1,
+      terminals: [],
+      params: {
+        fillColor: "transparent",
+        strokeColor: "transparent",
+        lineWidth: "0",
+        backgroundImage: "",
+        backgroundImageAssetId: "",
+        foregroundImage: "",
+        foregroundImageAssetId: ""
+      }
+    };
+    const previewNode = customDevicePreviewNode ?? fallbackPreviewNode;
+    const previewStateVisual = customStatePreviewVisual ?? resolveNodeStateVisual(previewNode);
+    const previewImageHref = customDevicePreviewImage;
+    const previewForegroundHref = customDevicePreviewNode ? nodeForegroundImage(customDevicePreviewNode) : "";
     return (
       <>
-        <image href={customDevicePreviewImage} x={-customDevicePreviewWidth / 2} y={-customDevicePreviewHeight / 2} width={customDevicePreviewWidth} height={customDevicePreviewHeight} preserveAspectRatio="xMidYMid slice"/>
-        {customStatePreviewText && (<text className="custom-device-state-preview-text" x="0" y="0" fill={customStatePreviewVisual?.textColor || customStatePreviewVisual?.color || "#1d4ed8"}>
-            {customStatePreviewText}
-          </text>)}
+        <g className="node-geometry" transform={nodeGeometryTransform(previewNode)}>
+          <MemoDeviceGlyph node={previewNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={previewStateVisual}/>
+          <MemoDeviceGlyph node={previewNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={previewStateVisual}/>
+        </g>
+        {renderNodePreviewImageContent(previewNode, "custom-device-preview-clip", {
+          imageHref: previewImageHref,
+          foregroundImageHref: previewForegroundHref
+        })}
       </>
     );
   };
@@ -2293,15 +2317,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                 update: updateCustomDeviceStateDraftRow,
                 add: addCustomDeviceStateDraftRow,
                 remove: deleteCustomDeviceStateDraftRow,
-                drawingScope: "custom",
-                preview: !customDefaultStateSelected ? (<div className="custom-device-preview">
-                  <div className="custom-device-preview-stage">
-                    <svg className="custom-device-anchor-preview" viewBox={`${formatSvgNumber(-customDevicePreviewWidth / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(-customDevicePreviewHeight / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(customDevicePreviewWidth + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)} ${formatSvgNumber(customDevicePreviewHeight + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)}`} role="img" aria-label="自定义元件状态预览">
-                      {renderCustomDevicePreviewContent()}
-                      <rect className="custom-device-preview-frame" x={-customDevicePreviewWidth / 2} y={-customDevicePreviewHeight / 2} width={customDevicePreviewWidth} height={customDevicePreviewHeight} rx="8"/>
-                    </svg>
-                  </div>
-                </div>) : undefined
+                drawingScope: "custom"
             })}
             {customDefaultStateSelected && visibleCustomDeviceDialogView === "terminals" && <div className="custom-device-preview">
               <div className="custom-device-preview-stage">

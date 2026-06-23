@@ -2569,11 +2569,11 @@ export function createUpdateCustomDeviceTerminalAnchor(__appScope: Record<string
 
 export function createUpdateCustomDeviceStateDraftRow(__appScope: Record<string, any>) {
   return (rowId: string, patch: Partial<DeviceDefinitionStateDraftRow>) => {
-  const { customDeviceDefaultStateVisualDraft, isDefaultStatePageId, setCustomDeviceDraft, upsertDefaultStateDraftRow } = __appScope;
+  const { isDefaultStatePageId, setCustomDeviceDraft } = __appScope;
     setCustomDeviceDraft((current) => ({
       ...current,
       stateDefinitions: isDefaultStatePageId(rowId)
-        ? upsertDefaultStateDraftRow(current.stateDefinitions, customDeviceDefaultStateVisualDraft(), patch)
+        ? current.stateDefinitions
         : current.stateDefinitions.map((row) => (row.id === rowId ? { ...row, ...patch } : row)),
       error: ""
     }));
@@ -2582,7 +2582,7 @@ export function createUpdateCustomDeviceStateDraftRow(__appScope: Record<string,
 
 export function createAddCustomDeviceStateDraftRow(__appScope: Record<string, any>) {
   return () => {
-  const { appendNonDefaultStateDraftRow, createStateDraftRowFromDefaultVisual, customDeviceDefaultStateVisualDraft, defaultStateDraftRow, isDefaultStatePageId, nextNonDefaultStateIndex, setCustomDeviceDraft, setCustomDeviceStatePageId, stateDraftRowId, stateIconDrawingDialog, stateIconDrawingInlineImage, upsertDefaultStateDraftRow } = __appScope;
+  const { appendNonDefaultStateDraftRow, createStateDraftRowFromDefaultVisual, customDeviceDefaultStateVisualDraft, defaultStateDraftRow, isDefaultStatePageId, nextNonDefaultStateIndex, setCustomDeviceDraft, setCustomDeviceStatePageId, stateDraftRowId, stateIconDrawingDialog, stateIconDrawingInlineImage } = __appScope;
     const defaultVisual = customDeviceDefaultStateVisualDraft();
     const rowId = stateDraftRowId();
     const inlineDefaultStateIconPatch =
@@ -2594,23 +2594,24 @@ export function createAddCustomDeviceStateDraftRow(__appScope: Record<string, an
             backgroundImageAssetId: ""
           }
         : null;
+    const sourceDefaultVisual = inlineDefaultStateIconPatch
+      ? { ...defaultVisual, ...inlineDefaultStateIconPatch }
+      : defaultVisual;
     setCustomDeviceDraft((current) => ({
       ...current,
       backgroundImage: inlineDefaultStateIconPatch ? stateIconDrawingInlineImage : current.backgroundImage,
       backgroundImageAssetId: inlineDefaultStateIconPatch ? "" : current.backgroundImageAssetId,
       stateDefinitions: (() => {
-        const sourceRows = inlineDefaultStateIconPatch
-          ? upsertDefaultStateDraftRow(current.stateDefinitions, defaultVisual, inlineDefaultStateIconPatch)
-          : current.stateDefinitions;
+        const sourceRows = current.stateDefinitions;
         const nextIndex = nextNonDefaultStateIndex(sourceRows);
         const row = {
-          ...createStateDraftRowFromDefaultVisual(defaultStateDraftRow(sourceRows, defaultVisual), {
+          ...createStateDraftRowFromDefaultVisual(defaultStateDraftRow(sourceRows, sourceDefaultVisual), {
             value: String(nextIndex),
             name: `状态${nextIndex}`
           }),
           id: rowId
         };
-        return appendNonDefaultStateDraftRow(sourceRows, defaultVisual, row);
+        return appendNonDefaultStateDraftRow(sourceRows, sourceDefaultVisual, row);
       })(),
       error: ""
     }));
@@ -2623,7 +2624,7 @@ export function createDeleteCustomDeviceStateDraftRow(__appScope: Record<string,
   const { setCustomDeviceDraft } = __appScope;
     setCustomDeviceDraft((current) => ({
       ...current,
-      stateDefinitions: current.stateDefinitions.filter((row, index) => index === 0 || row.id !== rowId),
+      stateDefinitions: current.stateDefinitions.filter((row) => row.id !== rowId),
       error: ""
     }));
   };
@@ -3026,10 +3027,10 @@ export function createDeleteDefinitionDraftRow(__appScope: Record<string, any>) 
 
 export function createUpdateDefinitionStateDraftRow(__appScope: Record<string, any>) {
   return (rowId: string, patch: Partial<DeviceDefinitionStateDraftRow>) => {
-  const { definitionDefaultStateVisualDraft, isDefaultStatePageId, setDefinitionDraftError, setDefinitionStateDraftRows, upsertDefaultStateDraftRow } = __appScope;
+  const { isDefaultStatePageId, setDefinitionDraftError, setDefinitionStateDraftRows } = __appScope;
     setDefinitionStateDraftRows((current) =>
       isDefaultStatePageId(rowId)
-        ? upsertDefaultStateDraftRow(current, definitionDefaultStateVisualDraft(), patch)
+        ? current
         : current.map((row) => (row.id === rowId ? { ...row, ...patch } : row))
     );
     setDefinitionDraftError("");
@@ -3038,7 +3039,7 @@ export function createUpdateDefinitionStateDraftRow(__appScope: Record<string, a
 
 export function createAddDefinitionStateDraftRow(__appScope: Record<string, any>) {
   return () => {
-  const { appendNonDefaultStateDraftRow, createStateDraftRowFromDefaultVisual, defaultStateDraftRow, definitionDefaultStateVisualDraft, isDefaultStatePageId, nextNonDefaultStateIndex, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId, stateDraftRowId, stateIconDrawingDialog, stateIconDrawingInlineImage, upsertDefaultStateDraftRow } = __appScope;
+  const { appendNonDefaultStateDraftRow, createStateDraftRowFromDefaultVisual, defaultStateDraftRow, definitionDefaultStateVisualDraft, isDefaultStatePageId, nextNonDefaultStateIndex, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId, stateDraftRowId, stateIconDrawingDialog, stateIconDrawingInlineImage } = __appScope;
     const defaultVisual = definitionDefaultStateVisualDraft();
     const rowId = stateDraftRowId();
     const inlineDefaultStateIconPatch =
@@ -3050,19 +3051,20 @@ export function createAddDefinitionStateDraftRow(__appScope: Record<string, any>
             backgroundImageAssetId: ""
           }
         : null;
+    const sourceDefaultVisual = inlineDefaultStateIconPatch
+      ? { ...defaultVisual, ...inlineDefaultStateIconPatch }
+      : defaultVisual;
     setDefinitionStateDraftRows((current) => {
-      const sourceRows = inlineDefaultStateIconPatch
-        ? upsertDefaultStateDraftRow(current, defaultVisual, inlineDefaultStateIconPatch)
-        : current;
+      const sourceRows = current;
       const nextIndex = nextNonDefaultStateIndex(sourceRows);
       const row = {
-        ...createStateDraftRowFromDefaultVisual(defaultStateDraftRow(sourceRows, defaultVisual), {
+        ...createStateDraftRowFromDefaultVisual(defaultStateDraftRow(sourceRows, sourceDefaultVisual), {
           value: String(nextIndex),
           name: `状态${nextIndex}`
         }),
         id: rowId
       };
-      return appendNonDefaultStateDraftRow(sourceRows, defaultVisual, row);
+      return appendNonDefaultStateDraftRow(sourceRows, sourceDefaultVisual, row);
     });
     setDefinitionStatePageId(rowId);
     setDefinitionDraftError("");
@@ -3075,7 +3077,7 @@ export function createDeleteDefinitionStateDraftRow(__appScope: Record<string, a
     if (!requireEditMode("修改状态定义")) {
       return;
     }
-    setDefinitionStateDraftRows((current) => current.filter((row, index) => index === 0 || row.id !== rowId));
+    setDefinitionStateDraftRows((current) => current.filter((row) => row.id !== rowId));
     setDefinitionDraftError("");
   };
 }
@@ -3137,21 +3139,20 @@ export function createSaveDeviceDefinitionStateVisualDraft(__appScope: Record<st
     }
     const stateDefinitions = stateValidation.states;
     const activeStateValue = activeStateDraftRow(definitionStateDraftRows, definitionStatePageId)?.value.trim() ?? "";
-    const defaultStatusValue = stateDefinitions[0]?.value ?? "";
     if (selectedDefinitionTemplate.custom) {
       setCustomDeviceTemplates((current) =>
-        current.map((template) =>
-          template.kind === selectedDefinitionTemplate.kind
-            ? {
+        current.map((template) => {
+          if (template.kind !== selectedDefinitionTemplate.kind) {
+            return template;
+          }
+          const { status, ...templateParams } = template.params;
+          void status;
+          return {
                 ...template,
-                params: {
-                  ...template.params,
-                  ...(defaultStatusValue ? { status: defaultStatusValue } : {})
-                },
+                params: templateParams,
                 stateDefinitions
-              }
-            : template
-        )
+              };
+        })
       );
     } else {
       setDeviceDefinitionOverrides((current) => {
@@ -3161,10 +3162,7 @@ export function createSaveDeviceDefinitionStateVisualDraft(__appScope: Record<st
           [selectedDefinitionTemplate.kind]: {
             ...existingOverride,
             kind: selectedDefinitionTemplate.kind,
-            params: {
-              ...(existingOverride?.params ?? {}),
-              ...(defaultStatusValue ? { status: defaultStatusValue } : {})
-            },
+            params: existingOverride?.params ?? {},
             stateDefinitions,
             updatedAt: new Date().toISOString()
           }
@@ -3201,7 +3199,6 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
     }
     const stateDefinitions = stateValidation.states;
     const activeStateValue = activeStateDraftRow(definitionStateDraftRows, definitionStatePageId)?.value.trim() ?? "";
-    const defaultStatusValue = stateDefinitions[0]?.value ?? "";
     const terminalTypes = definitionVisualDraft.terminalTypes.slice(0, definitionVisualDraft.terminalCount);
     const terminalLabels = definitionVisualDraft.terminalLabels.slice(0, definitionVisualDraft.terminalCount).map((label, index) => {
       const type = terminalTypes[index] ?? selectedDefinitionTemplate.terminalType;
@@ -3214,18 +3211,21 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
     };
     const backgroundParams = {
       backgroundImage: definitionVisualDraft.backgroundImage,
-      backgroundImageAssetId: definitionVisualDraft.backgroundImageAssetId,
-      ...(defaultStatusValue ? { status: defaultStatusValue } : {})
+      backgroundImageAssetId: definitionVisualDraft.backgroundImageAssetId
     };
     if (selectedDefinitionTemplate.custom) {
       setCustomDeviceTemplates((current) =>
-        current.map((template) =>
-          template.kind === selectedDefinitionTemplate.kind
-            ? {
+        current.map((template) => {
+          if (template.kind !== selectedDefinitionTemplate.kind) {
+            return template;
+          }
+          const { status, ...templateParams } = template.params;
+          void status;
+          return {
                 ...template,
                 size,
                 params: {
-                  ...template.params,
+                  ...templateParams,
                   ...backgroundParams
                 },
                 terminalType: terminalTypes[0] ?? template.terminalType,
@@ -3234,9 +3234,8 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
                 terminalLabels,
                 terminalAnchors,
                 stateDefinitions
-              }
-            : template
-        )
+              };
+        })
       );
     } else {
       setDeviceDefinitionOverrides((current) => {
@@ -4683,8 +4682,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
         strokeColor: "transparent",
         lineWidth: "0",
         backgroundImage,
-        backgroundImageAssetId,
-        ...(stateDefinitions[0]?.value ? { status: stateDefinitions[0].value } : {})
+        backgroundImageAssetId
       },
       terminalType: terminalTypes[0] ?? "ac",
       terminalCount: terminalTypes.length,
@@ -4842,8 +4840,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
           ...(existingOverride?.params ?? {}),
           component_type: componentType,
           backgroundImage,
-          backgroundImageAssetId,
-          ...(stateDefinitions[0]?.value ? { status: stateDefinitions[0].value } : {})
+          backgroundImageAssetId
         },
         size,
         terminalType: terminalTypes[0] ?? template.terminalType,
@@ -4902,7 +4899,6 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       remove: (rowId: string) => void;
       reset?: () => void;
       resetLabel?: string;
-      preview?: ReactNode;
       saveStateVisuals?: () => void;
       saveStateVisualsLabel?: string;
       drawingScope?: "definition" | "custom";
@@ -6037,7 +6033,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
             <div className="state-icon-drawing-side">
               <div className="state-icon-drawing-state-info">
                 <strong>状态信息</strong>
-                {selectedStateRow && (
+                {!isDefaultStatePage && selectedStateRow && (
                   <div className="state-icon-drawing-property-grid">
                     <label>
                       状态值
@@ -6331,7 +6327,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
 
 export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<string, any>) {
   return (template: DeviceTemplate) => {
-  const { BufferedTextInput, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN, DEFAULT_STATE_PAGE_ID, Fragment, MemoDeviceGlyph, TERMINAL_TYPE_LIBRARY_LABELS, addDefinitionStateDraftRow, button, circle, colorPalette, createDefinitionStateDraftRows, createDefinitionVisualDraft, createNodeFromTemplate, customDeviceTerminalAnchorValue, definitionDraftError, definitionStateDraftRows, definitionStatePageId, definitionStatePreviewVisual, definitionTemplateIconInputRef, definitionTerminalAnchorDragIndex, definitionTerminalConnectorSegment, definitionVisualDraft, definitionVisualPreviewHeight, definitionVisualPreviewImage, definitionVisualPreviewWidth, definitionVisualTerminalAnchors, definitionVisualTerminalTypes, deleteDefinitionStateDraftRow, div, formatCustomDeviceTerminalAnchorValue, formatSvgNumber, g, image, isDefaultStatePageId, label, line, nodeGeometryTransform, openStateIconDrawingDialog, p, rect, renderStateVisualPager, resolveNodeStateVisual, saveDeviceDefinitionStateVisualDraft, saveDeviceDefinitionVisualDraft, section, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId, setDefinitionTerminalAnchorDragIndex, setDefinitionVisualDraft, setStateImageUploadTarget, small, span, stateVisualImageInputRef, stateVisualText, strong, terminalColor, text, title, updateDefinitionStateDraftRow, updateDefinitionTerminalAnchor, updateDefinitionTerminalAnchorFromPreview } = __appScope;
+  const { BufferedTextInput, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN, DEFAULT_STATE_PAGE_ID, Fragment, MemoDeviceGlyph, SvgMarkupChunk, TERMINAL_TYPE_LIBRARY_LABELS, addDefinitionStateDraftRow, button, circle, colorDisplayMode, colorPalette, createDefinitionStateDraftRows, createDefinitionVisualDraft, createNodeFromTemplate, customDeviceTerminalAnchorValue, definitionDraftError, definitionStateDraftRows, definitionStatePageId, definitionStatePreviewVisual, definitionTemplateIconInputRef, definitionTerminalAnchorDragIndex, definitionTerminalConnectorSegment, definitionVisualDraft, definitionVisualPreviewHeight, definitionVisualPreviewImage, definitionVisualPreviewWidth, definitionVisualTerminalAnchors, definitionVisualTerminalTypes, deleteDefinitionStateDraftRow, div, formatCustomDeviceTerminalAnchorValue, formatSvgNumber, g, image, isBusNode, isDefaultStatePageId, isStaticNode, label, line, nodeForegroundImage, nodeGeometryTransform, nodeImageContentTransform, openStateIconDrawingDialog, p, rect, renderStateVisualPager, resolveNodeStateVisual, saveDeviceDefinitionStateVisualDraft, saveDeviceDefinitionVisualDraft, section, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId, setDefinitionTerminalAnchorDragIndex, setDefinitionVisualDraft, setStateImageUploadTarget, small, span, stateVisualImageInputRef, strong, svgImageContentMarkup, terminalColor, text, title, updateDefinitionStateDraftRow, updateDefinitionTerminalAnchor, updateDefinitionTerminalAnchorFromPreview } = __appScope;
     if (!definitionVisualDraft) {
       return null;
     }
@@ -6340,6 +6336,7 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
       size: definitionVisualDraft.size,
       params: {
         ...template.params,
+        ...(definitionStatePreviewVisual?.value !== undefined && definitionStatePreviewVisual.value !== "" ? { status: definitionStatePreviewVisual.value } : {}),
         backgroundImage: "",
         backgroundImageAssetId: ""
       },
@@ -6347,11 +6344,93 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
       terminalCount: definitionVisualDraft.terminalCount,
       terminalTypes: definitionVisualTerminalTypes,
       terminalLabels: definitionVisualDraft.terminalLabels.slice(0, definitionVisualDraft.terminalCount),
-      terminalAnchors: definitionVisualTerminalAnchors
+      terminalAnchors: definitionVisualTerminalAnchors,
+      stateDefinitions: definitionStateDraftRows
     };
     const previewNode = createNodeFromTemplate(visualTemplate, { x: 0, y: 0 });
-    const definitionStatePreviewText = stateVisualText(definitionStatePreviewVisual);
     const definitionDefaultStateSelected = isDefaultStatePageId(definitionStatePageId);
+    const renderDefinitionVisualPreviewContent = (clipId: string) => {
+      const previewStateVisual = definitionStatePreviewVisual ?? resolveNodeStateVisual(previewNode);
+      const previewImageHref = definitionVisualPreviewImage;
+      const previewForegroundHref = nodeForegroundImage(previewNode);
+      const previewIsBus = isBusNode(previewNode);
+      const previewIsStatic = isStaticNode(previewNode);
+      return (
+        <>
+          {!previewIsBus && (previewImageHref || previewForegroundHref) && (
+            <clipPath id={clipId}>
+              <rect
+                x={-previewNode.size.width / 2}
+                y={-previewNode.size.height / 2}
+                width={previewNode.size.width}
+                height={previewNode.size.height}
+                rx="8"
+              />
+            </clipPath>
+          )}
+          <g className="node-geometry" transform={nodeGeometryTransform(previewNode)}>
+            <MemoDeviceGlyph node={previewNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={previewStateVisual} />
+            <MemoDeviceGlyph node={previewNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={previewStateVisual} />
+          </g>
+          {!previewIsBus && (previewImageHref || previewForegroundHref) && (
+            <g className="node-upright-content" transform={nodeImageContentTransform(previewNode)}>
+              {previewImageHref && previewIsStatic && (
+                <SvgMarkupChunk
+                  className="node-background-image-markup"
+                  markup={svgImageContentMarkup(previewImageHref, {
+                    x: -previewNode.size.width / 2,
+                    y: -previewNode.size.height / 2,
+                    width: previewNode.size.width,
+                    height: previewNode.size.height,
+                    preserveAspectRatio: "xMidYMid slice",
+                    clipPath: `url(#${clipId})`,
+                    className: "node-background-image"
+                  })}
+                />
+              )}
+              {previewImageHref && !previewIsStatic && (
+                <rect
+                  x={-previewNode.size.width / 2}
+                  y={-previewNode.size.height / 2}
+                  width={previewNode.size.width}
+                  height={previewNode.size.height}
+                  rx="8"
+                  className="node-image-cover"
+                />
+              )}
+              {previewImageHref && !previewIsStatic && (
+                <SvgMarkupChunk
+                  className="node-background-image-markup"
+                  markup={svgImageContentMarkup(previewImageHref, {
+                    x: -previewNode.size.width / 2,
+                    y: -previewNode.size.height / 2,
+                    width: previewNode.size.width,
+                    height: previewNode.size.height,
+                    preserveAspectRatio: "xMidYMid slice",
+                    clipPath: `url(#${clipId})`,
+                    className: "node-background-image"
+                  })}
+                />
+              )}
+              {previewForegroundHref && (
+                <SvgMarkupChunk
+                  className="node-foreground-image-markup"
+                  markup={svgImageContentMarkup(previewForegroundHref, {
+                    x: -previewNode.size.width / 2,
+                    y: -previewNode.size.height / 2,
+                    width: previewNode.size.width,
+                    height: previewNode.size.height,
+                    preserveAspectRatio: "xMidYMid slice",
+                    clipPath: `url(#${clipId})`,
+                    className: "node-foreground-image"
+                  })}
+                />
+              )}
+            </g>
+          )}
+        </>
+      );
+    };
     return (
       <section className="device-definition-visual-panel">
         {definitionVisualDraft.error && <p className="custom-device-error">{definitionVisualDraft.error}</p>}
@@ -6363,51 +6442,6 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
           saveStateVisuals: saveDeviceDefinitionStateVisualDraft,
           saveStateVisualsLabel: "保存状态样式",
           drawingScope: "definition",
-          preview: !definitionDefaultStateSelected ? (
-            <div className="custom-device-preview device-definition-visual-preview">
-              <div className="custom-device-preview-stage">
-                <svg
-                  className="custom-device-anchor-preview device-definition-anchor-preview"
-                  viewBox={`${formatSvgNumber(-definitionVisualPreviewWidth / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(-definitionVisualPreviewHeight / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(definitionVisualPreviewWidth + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)} ${formatSvgNumber(definitionVisualPreviewHeight + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)}`}
-                  role="img"
-                  aria-label="状态预览"
-                >
-                  {definitionVisualPreviewImage ? (
-                    <image
-                      href={definitionVisualPreviewImage}
-                      x={-definitionVisualPreviewWidth / 2}
-                      y={-definitionVisualPreviewHeight / 2}
-                      width={definitionVisualPreviewWidth}
-                      height={definitionVisualPreviewHeight}
-                      preserveAspectRatio="xMidYMid slice"
-                    />
-                  ) : (
-                    <g transform={nodeGeometryTransform(previewNode)}>
-                      <MemoDeviceGlyph node={previewNode} miniature colorPalette={colorPalette} stateVisual={definitionStatePreviewVisual ?? resolveNodeStateVisual(previewNode)} />
-                    </g>
-                  )}
-                  {definitionVisualPreviewImage && definitionStatePreviewText && (
-                    <text
-                      className="custom-device-state-preview-text"
-                      x="0"
-                      y="0"
-                      fill={definitionStatePreviewVisual?.textColor || definitionStatePreviewVisual?.color || "#1d4ed8"}
-                    >
-                      {definitionStatePreviewText}
-                    </text>
-                  )}
-                  <rect
-                    className="custom-device-preview-frame"
-                    x={-definitionVisualPreviewWidth / 2}
-                    y={-definitionVisualPreviewHeight / 2}
-                    width={definitionVisualPreviewWidth}
-                    height={definitionVisualPreviewHeight}
-                    rx="8"
-                  />
-                </svg>
-              </div>
-            </div>
-          ) : undefined,
           reset: () => {
             const stateRows = createDefinitionStateDraftRows(template);
             setDefinitionStateDraftRows(stateRows);
@@ -6524,30 +6558,7 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
                 setDefinitionTerminalAnchorDragIndex(null);
               }}
             >
-              {definitionVisualPreviewImage ? (
-                <image
-                  href={definitionVisualPreviewImage}
-                  x={-definitionVisualPreviewWidth / 2}
-                  y={-definitionVisualPreviewHeight / 2}
-                  width={definitionVisualPreviewWidth}
-                  height={definitionVisualPreviewHeight}
-                  preserveAspectRatio="xMidYMid slice"
-                />
-              ) : (
-                <g transform={nodeGeometryTransform(previewNode)}>
-                  <MemoDeviceGlyph node={previewNode} miniature colorPalette={colorPalette} stateVisual={definitionStatePreviewVisual ?? resolveNodeStateVisual(previewNode)} />
-                </g>
-              )}
-              {definitionVisualPreviewImage && definitionStatePreviewText && (
-                <text
-                  className="custom-device-state-preview-text"
-                  x="0"
-                  y="0"
-                  fill={definitionStatePreviewVisual?.textColor || definitionStatePreviewVisual?.color || "#1d4ed8"}
-                >
-                  {definitionStatePreviewText}
-                </text>
-              )}
+              {renderDefinitionVisualPreviewContent("definition-default-preview-clip")}
               <rect
                 className="custom-device-preview-frame"
                 x={-definitionVisualPreviewWidth / 2}

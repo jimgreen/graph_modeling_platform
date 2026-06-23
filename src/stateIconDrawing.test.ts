@@ -45,20 +45,20 @@ describe("default device state draft rows", () => {
     expect(row.image).toBe("default.svg");
   });
 
-  test("keeps the first state definition as the editable default state", () => {
+  test("keeps the default visual separate from state value 0", () => {
     const first = createStateDraftRow({ value: "1", name: "运行", image: "run.svg" });
     const second = createStateDraftRow({ value: "0", name: "停运" });
     const row = defaultStateDraftRow([first, second], { image: "fallback.svg" });
 
-    expect(row.id).toBe(first.id);
-    expect(row.value).toBe("1");
-    expect(row.name).toBe("运行");
-    expect(row.image).toBe("run.svg");
-    expect(nonDefaultStateDraftRows([first, second])).toEqual([second]);
-    expect(normalizeStatePageId([first, second], first.id)).toBe(DEFAULT_STATE_PAGE_ID);
+    expect(row.id).toBe(DEFAULT_STATE_PAGE_ID);
+    expect(row.value).toBe(DEFAULT_STATE_VALUE);
+    expect(row.name).toBe(DEFAULT_STATE_NAME);
+    expect(row.image).toBe("fallback.svg");
+    expect(nonDefaultStateDraftRows([first, second])).toEqual([first, second]);
+    expect(normalizeStatePageId([first, second], first.id)).toBe(first.id);
   });
 
-  test("inherits the default visual when the first state has no explicit icon", () => {
+  test("uses default visual instead of inheriting from the first state page", () => {
     const first = createStateDraftRow({ value: "0", name: "默认" });
     const row = defaultStateDraftRow([first], {
       image: "default.svg",
@@ -66,50 +66,49 @@ describe("default device state draft rows", () => {
       strokeColor: "#123456"
     });
 
-    expect(row.value).toBe("0");
-    expect(row.name).toBe("默认");
+    expect(row.id).toBe(DEFAULT_STATE_PAGE_ID);
+    expect(row.value).toBe(DEFAULT_STATE_VALUE);
+    expect(row.name).toBe(DEFAULT_STATE_NAME);
     expect(row.image).toBe("default.svg");
     expect(row.text).toBe("D");
     expect(row.strokeColor).toBe("#123456");
   });
 
-  test("upserts the default row before non-default state pages", () => {
+  test("does not store the default visual inside real state pages", () => {
     const second = createStateDraftRow({ value: "1", name: "状态1" });
     const withDefault = appendNonDefaultStateDraftRow([], { image: "default.svg" }, second);
     const updated = upsertDefaultStateDraftRow(withDefault, { image: "fallback.svg" }, { value: "2", name: "默认运行" });
 
-    expect(withDefault).toHaveLength(2);
-    expect(withDefault[0].value).toBe(DEFAULT_STATE_VALUE);
-    expect(withDefault[0].name).toBe(DEFAULT_STATE_NAME);
-    expect(withDefault[0].image).toBe("default.svg");
-    expect(withDefault[1]).toBe(second);
-    expect(updated[0].id).toBe(withDefault[0].id);
-    expect(updated[0].value).toBe("2");
-    expect(updated[0].name).toBe("默认运行");
-    expect(updated[1]).toBe(second);
+    expect(withDefault).toHaveLength(1);
+    expect(withDefault[0]).toBe(second);
+    expect(updated).toEqual(withDefault);
   });
 
   test("numbers new states from state 1 and copies the default state visual", () => {
-    const defaultRow = createStateDraftRow({
+    const stateZero = createStateDraftRow({
       value: "0",
       name: "状态0",
-      image: "default-state.svg",
-      text: "默认",
+      image: "state-zero.svg",
+      text: "状态0",
       strokeColor: "#0f172a"
     });
-    const firstIndex = nextNonDefaultStateIndex([defaultRow]);
-    const firstState = createStateDraftRowFromDefaultVisual(defaultStateDraftRow([defaultRow]), {
+    const firstIndex = nextNonDefaultStateIndex([stateZero]);
+    const firstState = createStateDraftRowFromDefaultVisual(defaultStateDraftRow([stateZero], {
+      image: "default-state.svg",
+      text: "默认",
+      strokeColor: "#334155"
+    }), {
       value: String(firstIndex),
       name: `状态${firstIndex}`
     });
-    const secondIndex = nextNonDefaultStateIndex([defaultRow, firstState]);
+    const secondIndex = nextNonDefaultStateIndex([stateZero, firstState]);
 
     expect(firstIndex).toBe(1);
     expect(firstState.value).toBe("1");
     expect(firstState.name).toBe("状态1");
     expect(firstState.image).toBe("default-state.svg");
     expect(firstState.text).toBe("默认");
-    expect(firstState.strokeColor).toBe("#0f172a");
+    expect(firstState.strokeColor).toBe("#334155");
     expect(secondIndex).toBe(2);
   });
 
@@ -379,19 +378,19 @@ describe("default device state draft rows", () => {
   });
 
   test("adds a custom component state from the latest default state icon", () => {
-    const staleDefaultRow = createStateDraftRow({ value: "0", name: "状态0", image: "old-default.svg" });
-    const latestDefaultRow = createStateDraftRow({ value: "0", name: "状态0", image: "latest-default.svg" });
+    const staleStateRow = createStateDraftRow({ value: "0", name: "状态0", image: "old-state.svg" });
+    const latestStateRow = createStateDraftRow({ value: "0", name: "状态0", image: "latest-state.svg" });
     let draft: any = {
-      stateDefinitions: [latestDefaultRow],
+      stateDefinitions: [latestStateRow],
       error: "old error"
     };
     let activePageId = "";
     const addState = createAddCustomDeviceStateDraftRow({
       appendNonDefaultStateDraftRow,
       createStateDraftRowFromDefaultVisual,
-      customDeviceDefaultStateVisualDraft: () => ({ image: "fallback-default.svg" }),
+      customDeviceDefaultStateVisualDraft: () => ({ image: "latest-default.svg" }),
       customDeviceDraft: {
-        stateDefinitions: [staleDefaultRow]
+        stateDefinitions: [staleStateRow]
       },
       defaultStateDraftRow,
       nextNonDefaultStateIndex,
@@ -418,17 +417,17 @@ describe("default device state draft rows", () => {
   });
 
   test("adds a definition state from the latest default state icon", () => {
-    const staleDefaultRow = createStateDraftRow({ value: "0", name: "状态0", image: "old-definition.svg" });
-    const latestDefaultRow = createStateDraftRow({ value: "0", name: "状态0", image: "latest-definition.svg" });
-    let rows = [latestDefaultRow];
+    const staleStateRow = createStateDraftRow({ value: "0", name: "状态0", image: "old-state.svg" });
+    const latestStateRow = createStateDraftRow({ value: "0", name: "状态0", image: "latest-state.svg" });
+    let rows = [latestStateRow];
     let activePageId = "";
     let draftError = "old error";
     const addState = createAddDefinitionStateDraftRow({
       appendNonDefaultStateDraftRow,
       createStateDraftRowFromDefaultVisual,
       defaultStateDraftRow,
-      definitionDefaultStateVisualDraft: () => ({ image: "fallback-definition.svg" }),
-      definitionStateDraftRows: [staleDefaultRow],
+      definitionDefaultStateVisualDraft: () => ({ image: "latest-definition.svg" }),
+      definitionStateDraftRows: [staleStateRow],
       nextNonDefaultStateIndex,
       setDefinitionDraftError: (next: string) => {
         draftError = next;
@@ -456,9 +455,9 @@ describe("default device state draft rows", () => {
   });
 
   test("adds a custom component state from the active default icon drawing", () => {
-    const oldDefaultRow = createStateDraftRow({ value: "0", name: "状态0", image: "old-default.svg" });
+    const oldStateRow = createStateDraftRow({ value: "0", name: "状态0", image: "old-state.svg" });
     let draft: any = {
-      stateDefinitions: [oldDefaultRow],
+      stateDefinitions: [oldStateRow],
       error: "old error"
     };
     let activePageId = "";
@@ -487,10 +486,7 @@ describe("default device state draft rows", () => {
 
     expect(draft.stateDefinitions).toHaveLength(2);
     expect(draft.stateDefinitions[0]).toMatchObject({
-      image: "inline-default.svg",
-      imageAssetId: "",
-      backgroundImage: "",
-      backgroundImageAssetId: ""
+      image: "old-state.svg"
     });
     expect(draft.stateDefinitions[1]).toMatchObject({
       id: "state-from-inline",
@@ -502,8 +498,8 @@ describe("default device state draft rows", () => {
   });
 
   test("adds a definition state from the active default icon drawing", () => {
-    const oldDefaultRow = createStateDraftRow({ value: "0", name: "状态0", image: "old-definition.svg" });
-    let rows = [oldDefaultRow];
+    const oldStateRow = createStateDraftRow({ value: "0", name: "状态0", image: "old-state.svg" });
+    let rows = [oldStateRow];
     let activePageId = "";
     const addState = createAddDefinitionStateDraftRow({
       appendNonDefaultStateDraftRow,
@@ -531,10 +527,7 @@ describe("default device state draft rows", () => {
 
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({
-      image: "inline-definition.svg",
-      imageAssetId: "",
-      backgroundImage: "",
-      backgroundImageAssetId: ""
+      image: "old-state.svg"
     });
     expect(rows[1]).toMatchObject({
       id: "definition-state-from-inline",

@@ -1,8 +1,8 @@
 export const ICON_LIBRARY_CATALOG_URL = "/icon-library/catalog.json";
 export const ICON_LIBRARY_PAGE_SIZE = 120;
 
-const CATALOG_CACHE_KEY = "graph-modeling-platform:icon-library:catalog:v1";
-const MANIFEST_CACHE_KEY_PREFIX = "graph-modeling-platform:icon-library:manifest:v1:";
+const CATALOG_CACHE_KEY = "graph-modeling-platform:icon-library:catalog:v2";
+const MANIFEST_CACHE_KEY_PREFIX = "graph-modeling-platform:icon-library:manifest:v2:";
 
 export type IconLibraryCatalogCategory = {
   id: string;
@@ -32,9 +32,14 @@ export type IconLibraryManifestIcon = {
   file: string;
   color?: string;
   tags?: string[];
+  sourceId?: string;
+  sourceLabel?: string;
   source?: string;
   sourceName?: string;
   sourcePackage?: string;
+  originalLibraryId?: string;
+  originalLibraryLabel?: string;
+  originalFile?: string;
   license?: string;
 };
 
@@ -222,9 +227,14 @@ export function flattenIconLibraryManifest(
         libraryLabel,
         category.id,
         category.label,
+        icon.sourceId,
+        icon.sourceLabel,
         icon.source,
         icon.sourceName,
         icon.sourcePackage,
+        icon.originalLibraryId,
+        icon.originalLibraryLabel,
+        icon.originalFile,
         icon.license,
         ...tags
       ]

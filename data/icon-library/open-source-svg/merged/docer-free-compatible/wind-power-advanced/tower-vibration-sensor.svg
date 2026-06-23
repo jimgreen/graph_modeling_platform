@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#0284c7" role="img" aria-labelledby="tower-vibration-sensor-title tower-vibration-sensor-desc">
+  <title id="tower-vibration-sensor-title">塔筒振动监测</title>
+  <desc id="tower-vibration-sensor-desc">风电细分设备 - 复用 发电环节 / device-heart-monitor</desc>
+  <g transform="translate(8 8) scale(2)">
+<path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M4 6a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2l0 -12" />
+  <path fill="currentColor" d="M4 9h6l1 -2l2 4l1 -2h6" />
+  <path fill="currentColor" d="M4 14h16" />
+  <path fill="currentColor" d="M14 17v.01" />
+  <path fill="currentColor" d="M17 17v.01" />
+  </g>
+  <g>
+<path d="M46 46h14v14H46z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="53" cy="46" r="0.65" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M53 46L43 48" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="45" cy="45" r="1.1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

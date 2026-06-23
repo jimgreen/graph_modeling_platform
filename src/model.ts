@@ -960,7 +960,7 @@ export function defaultDeviceStatusValue(template: Pick<DeviceTemplate, "kind" |
     return normalized;
   }
   if (Array.isArray(template.stateDefinitions)) {
-    return states[0]?.value ?? "";
+    return "";
   }
   const baseKind = baseDeviceKind(template.kind);
   if (baseKind.includes("ground-disconnector")) {
@@ -5141,6 +5141,12 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   const withStatusDefault = (params: Record<string, string>) => {
     if (isStaticKind(templateKind)) {
       return params;
+    }
+    const templateExplicitStatus = normalizeDeviceStateValue(template.params?.status);
+    if (Array.isArray(template.stateDefinitions) && template.stateDefinitions.length > 0 && !templateExplicitStatus) {
+      const { status, ...rest } = params;
+      void status;
+      return rest;
     }
     const states = getTemplateStateDefinitions({ ...template, params });
     const defaultStatus = defaultDeviceStatusValue({ ...template, params }) || "1";

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#dc2626" role="img" aria-labelledby="disconnector-open-title disconnector-open-desc">
+  <title id="disconnector-open-title">刀闸开断</title>
+  <desc id="disconnector-open-desc">电力设备 - 复用 电力电网 / circuit-switch-open</desc>
+  <g transform="translate(8 8) scale(2)">
+<path stroke="none" d="M0 0h24v24H0z" fill="none" />
+  <path fill="currentColor" d="M2 12h2" />
+  <path fill="currentColor" d="M20 12h2" />
+  <path fill="currentColor" d="M4 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+  <path fill="currentColor" d="M16 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+  <path fill="currentColor" d="M7.5 10.5l7.5 -5.5" />
+  </g>
+  <g>
+<path d="M46 46h14v14H46z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="52" cy="49" r="1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M52 49L55 49" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="55" cy="52" r="1.1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

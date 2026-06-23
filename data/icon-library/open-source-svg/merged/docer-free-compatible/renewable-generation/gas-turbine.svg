@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#be123c" role="img" aria-labelledby="gas-turbine-title gas-turbine-desc">
+  <title id="gas-turbine-title">燃气轮机</title>
+  <desc id="gas-turbine-desc">新能源与发电 - gas, turbine, generator</desc>
+  <g>
+<path d="M12 40h40" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M16 40c4-16 12-24 24-24h8c-3 10-2 18 4 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M24 40c3-8 8-12 16-12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M17 50h30" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

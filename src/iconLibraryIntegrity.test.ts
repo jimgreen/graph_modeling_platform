@@ -6,12 +6,15 @@ const rootDir = path.resolve(__dirname, "..");
 const iconLibraryDir = path.join(rootDir, "data", "icon-library");
 
 type IconManifest = {
+  totalIcons?: number;
   categories: Array<{
     id: string;
     icons: Array<{
       id: string;
       name: string;
       file: string;
+      sourceId?: string;
+      originalLibraryId?: string;
       sourceName?: string;
       source?: string;
     }>;
@@ -19,7 +22,8 @@ type IconManifest = {
 };
 
 type IconCatalog = {
-  libraries: Array<{ id: string }>;
+  totalIcons?: number;
+  libraries: Array<{ id: string; totalIcons?: number }>;
 };
 
 function readJson<T>(filePath: string): T {
@@ -86,6 +90,23 @@ function normalizedSvgStructure(svg: string) {
 }
 
 describe("generated icon library integrity", () => {
+  it("exposes Docer and Office Fluent icons through one unified open-source catalog", () => {
+    const catalog = readJson<IconCatalog>(path.join(iconLibraryDir, "catalog.json"));
+    const manifest = readJson<IconManifest>(
+      path.join(iconLibraryDir, "open-source-svg", "manifest.json"),
+    );
+    const icons = manifest.categories.flatMap((category) => category.icons || []);
+    const sources = new Set(icons.map((icon) => icon.originalLibraryId || icon.sourceId || icon.source).filter(Boolean));
+
+    expect(catalog.libraries.map((library) => library.id)).toEqual(["open-source-svg"]);
+    expect(catalog.totalIcons).toBe(icons.length);
+    expect(catalog.libraries[0]?.totalIcons).toBe(icons.length);
+    expect(manifest.totalIcons).toBe(icons.length);
+    expect(icons.length).toBeGreaterThan(7000);
+    expect(sources).toContain("docer-free-compatible");
+    expect(sources).toContain("office-fluent-compatible");
+  });
+
   it("does not keep duplicate command icons with the same semantic meaning", () => {
     const manifest = readJson<IconManifest>(
       path.join(iconLibraryDir, "open-source-svg", "manifest.json"),

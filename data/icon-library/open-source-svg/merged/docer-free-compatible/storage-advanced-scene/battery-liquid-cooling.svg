@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#22c55e" role="img" aria-labelledby="battery-liquid-cooling-title battery-liquid-cooling-desc">
+  <title id="battery-liquid-cooling-title">电池液冷</title>
+  <desc id="battery-liquid-cooling-desc">储能细分设备 - 复用 冷热能源 / water_pump</desc>
+  <g transform="translate(8 56) scale(0.05)">
+<path fill="currentColor" d="M100-260h207q-29-23-52-53.5T218-380H100v120Zm535.5-64.5Q700-389 700-480t-64.5-155.5Q571-700 480-700t-155.5 64.5Q260-571 260-480t64.5 155.5Q389-260 480-260t155.5-64.5ZM742-580h118v-120H653q29 23 52 53.5t37 66.5ZM40-160v-320h60v40h103q-2-10-2.5-19.5T200-480q0-117 81.5-198.5T480-760h380v-40h60v320h-60v-40H757q2 10 2.5 19.5t.5 20.5q0 117-81.5 198.5T480-200H100v40H40Zm60-100v-120 120Zm760-320v-120 120ZM480-480Zm-49.5 83.5Q410-417 410-446q0-23 7-39t31-52l32-47 32 47q24 36 31 52t7 39q0 29-20.5 49.5T480-376q-29 0-49.5-20.5Z"/>
+  </g>
+  <g>
+<path d="M46 46h14v14H46z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="54" cy="40" r="0.65" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M54 40L49 42" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="50" cy="44" r="1.1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

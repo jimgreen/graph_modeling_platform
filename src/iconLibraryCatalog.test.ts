@@ -75,6 +75,41 @@ describe("icon library catalog utilities", () => {
     expect(icons[0].searchText).toContain("source");
   });
 
+  test("includes merged source metadata in icon search text", () => {
+    const icons = flattenIconLibraryManifest(
+      {
+        name: "open-source-svg",
+        label: "开源 SVG",
+        root: "/icon-library/open-source-svg",
+        categories: [
+          {
+            id: "commands",
+            label: "常用命令",
+            icons: [
+              {
+                id: "office-add",
+                name: "Add",
+                file: "merged/office-fluent-compatible/commands/add.svg",
+                sourceId: "office-fluent-compatible",
+                sourceLabel: "Office Fluent 兼容图标库",
+                originalLibraryId: "office-fluent-compatible",
+                originalLibraryLabel: "Office Fluent 兼容图标库"
+              } as any
+            ]
+          }
+        ]
+      },
+      {
+        id: "open-source-svg",
+        label: "开源 SVG",
+        root: "/icon-library/open-source-svg"
+      }
+    );
+
+    expect(icons[0].searchText).toContain("office-fluent-compatible");
+    expect(icons[0].searchText).toContain("office fluent 兼容图标库");
+  });
+
   test("lists categories for all libraries or one selected library", () => {
     expect(iconLibraryCategoriesForSelection(catalog, "docer-free-compatible").map((category) => category.label)).toEqual([
       "电力设备",

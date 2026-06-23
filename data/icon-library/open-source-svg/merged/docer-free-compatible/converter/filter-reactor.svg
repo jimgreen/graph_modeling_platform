@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#475569" role="img" aria-labelledby="filter-reactor-title filter-reactor-desc">
+  <title id="filter-reactor-title">滤波电抗器</title>
+  <desc id="filter-reactor-desc">变流器 - reactor, filter</desc>
+  <g>
+<path d="M10 32h8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M46 32h8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M18 32c0-8 8-8 8 0s8 8 8 0 8-8 8 0 8 8 8 0" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

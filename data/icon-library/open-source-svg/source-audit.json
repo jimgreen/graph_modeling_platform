@@ -1,460 +1,143 @@
 {
-  "generatedAt": "2026-06-22T06:54:42.840Z",
-  "outputDir": "public\\icon-library\\open-source-svg",
-  "totalIcons": 4946,
-  "policy": "仅使用官方 npm 包中的开源 SVG；保留源库版本、许可和 LICENSE 文件；过滤明显品牌/logo 图标；同一分类内按语义键保留一个代表图标，避免重复展示。",
-  "sources": [
-    {
-      "id": "lucide",
-      "label": "Lucide",
-      "packageSpec": "lucide-static@1.21.0",
-      "packageName": "lucide-static",
-      "license": "ISC",
-      "repository": "https://github.com/lucide-icons/lucide"
-    },
-    {
-      "id": "tabler",
-      "label": "Tabler Icons",
-      "packageSpec": "@tabler/icons@3.44.0",
-      "packageName": "@tabler/icons",
-      "license": "MIT",
-      "repository": "https://github.com/tabler/tabler-icons"
-    },
-    {
-      "id": "bootstrap",
-      "label": "Bootstrap Icons",
-      "packageSpec": "bootstrap-icons@1.13.1",
-      "packageName": "bootstrap-icons",
-      "license": "MIT",
-      "repository": "https://github.com/twbs/icons"
-    },
-    {
-      "id": "phosphor",
-      "label": "Phosphor Icons",
-      "packageSpec": "@phosphor-icons/core@2.1.1",
-      "packageName": "@phosphor-icons/core",
-      "license": "MIT",
-      "repository": "https://github.com/phosphor-icons/core"
-    },
-    {
-      "id": "primer-octicons",
-      "label": "Primer Octicons",
-      "packageSpec": "@primer/octicons@19.28.1",
-      "packageName": "@primer/octicons",
-      "license": "MIT",
-      "repository": "https://github.com/primer/octicons"
-    },
-    {
-      "id": "material-symbols",
-      "label": "Material Symbols",
-      "packageSpec": "@material-symbols/svg-400@0.45.2",
-      "packageName": "@material-symbols/svg-400",
-      "license": "Apache-2.0",
-      "repository": "https://github.com/google/material-design-icons"
-    },
-    {
-      "id": "feather",
-      "label": "Feather Icons",
-      "packageSpec": "feather-icons@4.29.2",
-      "packageName": "feather-icons",
-      "license": "MIT",
-      "repository": "https://github.com/feathericons/feather"
-    },
-    {
-      "id": "iconoir",
-      "label": "Iconoir",
-      "packageSpec": "iconoir@7.11.1",
-      "packageName": "iconoir",
-      "license": "MIT",
-      "repository": "https://github.com/iconoir-icons/iconoir"
-    },
-    {
-      "id": "remixicon",
-      "label": "Remix Icon",
-      "packageSpec": "remixicon@4.9.1",
-      "packageName": "remixicon",
-      "license": "Apache-2.0",
-      "repository": "https://github.com/Remix-Design/RemixIcon"
-    },
-    {
-      "id": "eva-icons",
-      "label": "Eva Icons",
-      "packageSpec": "eva-icons@1.1.3",
-      "packageName": "eva-icons",
-      "license": "MIT",
-      "repository": "https://github.com/akveo/eva-icons"
-    },
-    {
-      "id": "ionicons",
-      "label": "Ionicons",
-      "packageSpec": "ionicons@8.0.13",
-      "packageName": "ionicons",
-      "license": "MIT",
-      "repository": "https://github.com/ionic-team/ionicons"
-    },
-    {
-      "id": "ant-design-icons",
-      "label": "Ant Design Icons",
-      "packageSpec": "@ant-design/icons-svg@4.4.2",
-      "packageName": "@ant-design/icons-svg",
-      "license": "MIT",
-      "repository": "https://github.com/ant-design/ant-design-icons"
-    },
-    {
-      "id": "material-design-icons",
-      "label": "Material Design Icons",
-      "packageSpec": "@mdi/svg@7.4.47",
-      "packageName": "@mdi/svg",
-      "license": "Apache-2.0",
-      "repository": "https://github.com/Templarian/MaterialDesign-SVG"
-    },
-    {
-      "id": "coreui",
-      "label": "CoreUI Icons",
-      "packageSpec": "@coreui/icons@3.1.0",
-      "packageName": "@coreui/icons",
-      "license": "MIT",
-      "repository": "https://github.com/coreui/coreui-icons"
-    },
-    {
-      "id": "carbon",
-      "label": "Carbon Icons",
-      "packageSpec": "@carbon/icons@11.82.0",
-      "packageName": "@carbon/icons",
-      "license": "Apache-2.0",
-      "repository": "https://github.com/carbon-design-system/carbon"
-    },
-    {
-      "id": "teenyicons",
-      "label": "Teenyicons",
-      "packageSpec": "teenyicons@0.4.1",
-      "packageName": "teenyicons",
-      "license": "MIT",
-      "repository": "https://github.com/teenyicons/teenyicons"
-    },
-    {
-      "id": "jam-icons",
-      "label": "Jam Icons",
-      "packageSpec": "jam-icons@2.0.0",
-      "packageName": "jam-icons",
-      "license": "MIT",
-      "repository": "https://github.com/michaelampr/jam"
-    },
-    {
-      "id": "bytesize",
-      "label": "Bytesize Icons",
-      "packageSpec": "bytesize-icons@1.4.0",
-      "packageName": "bytesize-icons",
-      "license": "MIT",
-      "repository": "https://github.com/danklammer/bytesize-icons"
-    },
-    {
-      "id": "simple-line-icons",
-      "label": "Simple Line Icons",
-      "packageSpec": "simple-line-icons@2.5.5",
-      "packageName": "simple-line-icons",
-      "license": "MIT",
-      "repository": "https://github.com/thesabbir/simple-line-icons"
-    },
-    {
-      "id": "line-md",
-      "label": "Line MD",
-      "packageSpec": "line-md@3.0.5",
-      "packageName": "line-md",
-      "license": "MIT",
-      "repository": "https://github.com/cyberalien/line-md"
-    },
-    {
-      "id": "heroicons",
-      "label": "Heroicons",
-      "packageSpec": "heroicons@2.2.0",
-      "packageName": "heroicons",
-      "license": "MIT",
-      "repository": "https://github.com/tailwindlabs/heroicons"
-    },
-    {
-      "id": "flowbite",
-      "label": "Flowbite Icons",
-      "packageSpec": "flowbite-icons@1.5.0",
-      "packageName": "flowbite-icons",
-      "license": "MIT",
-      "repository": "https://github.com/themesberg/flowbite-icons"
-    },
-    {
-      "id": "mono-icons",
-      "label": "Mono Icons",
-      "packageSpec": "mono-icons@1.3.1",
-      "packageName": "mono-icons",
-      "license": "MIT",
-      "repository": "https://github.com/mono-company/mono-icons"
-    },
-    {
-      "id": "majesticons",
-      "label": "Majesticons",
-      "packageSpec": "majesticons@2.1.2",
-      "packageName": "majesticons",
-      "license": "MIT",
-      "repository": "https://github.com/halfmage/majesticons"
-    },
-    {
-      "id": "zondicons",
-      "label": "Zondicons",
-      "packageSpec": "zondicons@1.2.0",
-      "packageName": "zondicons",
-      "license": "CC-BY-4.0",
-      "repository": "https://www.zondicons.com/"
-    },
-    {
-      "id": "boxicons",
-      "label": "Boxicons",
-      "packageSpec": "boxicons@2.1.4",
-      "packageName": "boxicons",
-      "license": "(CC-BY-4.0 OR OFL-1.1 OR MIT)",
-      "repository": "https://github.com/atisawd/boxicons"
-    },
-    {
-      "id": "fontawesome-solid",
-      "label": "Font Awesome Free Solid",
-      "packageSpec": "@fortawesome/fontawesome-free@7.2.0",
-      "packageName": "@fortawesome/fontawesome-free",
-      "license": "(CC-BY-4.0 AND OFL-1.1 AND MIT)",
-      "repository": "https://github.com/FortAwesome/Font-Awesome"
-    },
-    {
-      "id": "fontawesome-regular",
-      "label": "Font Awesome Free Regular",
-      "packageSpec": "@fortawesome/fontawesome-free@7.2.0",
-      "packageName": "@fortawesome/fontawesome-free",
-      "license": "(CC-BY-4.0 AND OFL-1.1 AND MIT)",
-      "repository": "https://github.com/FortAwesome/Font-Awesome"
-    },
-    {
-      "id": "eos-icons",
-      "label": "EOS Icons",
-      "packageSpec": "eos-icons@5.4.0",
-      "packageName": "eos-icons",
-      "license": "MIT",
-      "repository": "https://gitlab.com/SUSE-UIUX/eos-icons"
-    },
-    {
-      "id": "pixelarticons",
-      "label": "Pixelarticons",
-      "packageSpec": "pixelarticons@2.1.2",
-      "packageName": "pixelarticons",
-      "license": "MIT",
-      "repository": "https://github.com/halfmage/pixelarticons"
-    },
-    {
-      "id": "evil-icons",
-      "label": "Evil Icons",
-      "packageSpec": "evil-icons@1.10.1",
-      "packageName": "evil-icons",
-      "license": "MIT",
-      "repository": "https://github.com/outpunk/evil-icons"
-    },
-    {
-      "id": "maki",
-      "label": "Mapbox Maki",
-      "packageSpec": "@mapbox/maki@8.2.0",
-      "packageName": "@mapbox/maki",
-      "license": "CC0-1.0",
-      "repository": "https://github.com/mapbox/maki"
-    },
-    {
-      "id": "vaadin",
-      "label": "Vaadin Icons",
-      "packageSpec": "@vaadin/icons@25.1.4",
-      "packageName": "@vaadin/icons",
-      "license": "Apache-2.0",
-      "repository": "https://github.com/vaadin/web-components"
-    },
-    {
-      "id": "gravity-ui",
-      "label": "Gravity UI Icons",
-      "packageSpec": "@gravity-ui/icons@2.18.0",
-      "packageName": "@gravity-ui/icons",
-      "license": "MIT",
-      "repository": "https://github.com/gravity-ui/icons"
-    },
-    {
-      "id": "humbleicons",
-      "label": "Humbleicons",
-      "packageSpec": "humbleicons@1.21.0",
-      "packageName": "humbleicons",
-      "license": "MIT",
-      "repository": "https://github.com/zraly/humbleicons"
-    },
-    {
-      "id": "vscode-codicons",
-      "label": "VS Code Codicons",
-      "packageSpec": "@vscode/codicons@0.0.45",
-      "packageName": "@vscode/codicons",
-      "license": "CC-BY-4.0",
-      "repository": "https://github.com/microsoft/vscode-codicons"
-    },
-    {
-      "id": "carbon-pictograms",
-      "label": "Carbon Pictograms",
-      "packageSpec": "@carbon/pictograms@12.78.0",
-      "packageName": "@carbon/pictograms",
-      "license": "Apache-2.0",
-      "repository": "https://github.com/carbon-design-system/carbon"
-    },
-    {
-      "id": "open-iconic",
-      "label": "Open Iconic",
-      "packageSpec": "open-iconic@1.1.1",
-      "packageName": "open-iconic",
-      "license": "MIT",
-      "repository": "https://github.com/iconic/open-iconic"
-    },
-    {
-      "id": "healthicons",
-      "label": "Healthicons",
-      "packageSpec": "healthicons@2.0.0",
-      "packageName": "healthicons",
-      "license": "MIT",
-      "repository": "https://github.com/resolvetosavelives/healthicons"
-    },
-    {
-      "id": "entypo",
-      "label": "Entypo",
-      "packageSpec": "entypo@2.2.1",
-      "packageName": "entypo",
-      "license": "ISC",
-      "repository": "https://github.com/hypermodules/entypo"
-    },
-    {
-      "id": "grommet",
-      "label": "Grommet Icons",
-      "packageSpec": "grommet-icons@4.14.0",
-      "packageName": "grommet-icons",
-      "license": "Apache-2.0",
-      "repository": "https://github.com/grommet/grommet-icons"
-    },
-    {
-      "id": "sargam",
-      "label": "Sargam Icons",
-      "packageSpec": "sargam-icons@1.6.7",
-      "packageName": "sargam-icons",
-      "license": "MIT",
-      "repository": "https://github.com/planetabhi/sargam-icons"
-    },
-    {
-      "id": "ikonate",
-      "label": "Ikonate",
-      "packageSpec": "ikonate@1.1.1",
-      "packageName": "ikonate",
-      "license": "MIT",
-      "repository": "https://github.com/eucalyptuss/ikonate"
-    },
-    {
-      "id": "uiw",
-      "label": "UIW Icons",
-      "packageSpec": "@uiw/icons@2.6.10",
-      "packageName": "@uiw/icons",
-      "license": "MIT",
-      "repository": "https://github.com/uiwjs/icons"
-    },
-    {
-      "id": "mynaui",
-      "label": "Mynaui Icons",
-      "packageSpec": "@mynaui/icons@0.4.3",
-      "packageName": "@mynaui/icons",
-      "license": "MIT",
-      "repository": "https://github.com/praveenjuge/mynaui-icons"
-    },
-    {
-      "id": "patternfly",
-      "label": "PatternFly Icons",
-      "packageSpec": "@patternfly/icons@1.0.3",
-      "packageName": "@patternfly/icons",
-      "license": "MIT",
-      "repository": "https://github.com/patternfly/patternfly-icons"
-    },
-    {
-      "id": "flag-icons",
-      "label": "Flag Icons",
-      "packageSpec": "flag-icons@7.5.0",
-      "packageName": "flag-icons",
-      "license": "MIT",
-      "repository": "https://github.com/lipis/flag-icons"
-    },
-    {
-      "id": "govicons",
-      "label": "Gov Icons",
-      "packageSpec": "govicons@1.6.0",
-      "packageName": "govicons",
-      "license": "(OFL-1.1 AND MIT)",
-      "repository": "https://github.com/540co/govicons"
-    },
-    {
-      "id": "zendesk-garden",
-      "label": "Zendesk Garden Icons",
-      "packageSpec": "@zendeskgarden/svg-icons@8.4.0",
-      "packageName": "@zendeskgarden/svg-icons",
-      "license": "Apache-2.0",
-      "repository": "https://github.com/zendeskgarden/svg-icons"
-    },
-    {
-      "id": "map-icons",
-      "label": "Map Icons",
-      "packageSpec": "map-icons@3.0.3",
-      "packageName": "map-icons",
-      "license": "ISC",
-      "repository": "https://github.com/scottdejonge/Map-Icons"
-    },
-    {
-      "id": "adobe-spectrum",
-      "label": "Adobe Spectrum CSS Icons",
-      "packageSpec": "@adobe/spectrum-css@3.0.0",
-      "packageName": "@adobe/spectrum-css",
-      "license": "Apache-2.0",
-      "repository": "https://github.com/adobe/spectrum-css"
-    },
-    {
-      "id": "weather-underground",
-      "label": "Weather Underground Icons",
-      "packageSpec": "weather-underground-icons@1.0.0",
-      "packageName": "weather-underground-icons",
-      "license": "(MIT OR GPL-3.0)",
-      "repository": "https://github.com/manifestinteractive/weather-underground-icons"
-    }
+  "generatedAt": "2026-06-23T06:31:05.588Z",
+  "targetLibraryId": "open-source-svg",
+  "mergedLibraryIds": [
+    "docer-free-compatible",
+    "office-fluent-compatible"
   ],
+  "totalIcons": 7862,
+  "mergeSummary": {
+    "copied": 2916,
+    "skippedDuplicates": 0,
+    "byLibrary": {
+      "docer-free-compatible": {
+        "copied": 796,
+        "skippedDuplicates": 0
+      },
+      "office-fluent-compatible": {
+        "copied": 2120,
+        "skippedDuplicates": 0
+      }
+    }
+  },
   "categoryCounts": {
-    "ui-commands": 410,
-    "canvas-tools": 307,
-    "files-documents": 325,
-    "data-charts": 277,
-    "status-alerts": 269,
-    "communication": 342,
-    "media-assets": 218,
-    "developer-tools": 183,
-    "energy-generic": 216,
-    "weather-environment": 110,
-    "power-grid-electrical": 47,
-    "generation-link": 57,
-    "transmission-link": 11,
-    "substation-link": 47,
-    "distribution-link": 146,
-    "consumption-link": 80,
-    "renewable-generation": 66,
-    "thermal-heating": 41,
-    "hydrogen-storage": 35,
-    "new-energy-equipment": 1,
-    "power-electronics": 56,
-    "cooling-heating-energy": 65,
-    "gas-energy": 23,
-    "integrated-energy": 27,
-    "communication-control": 116,
-    "industry-facilities": 35,
-    "cloud-infrastructure": 107,
-    "health-safety": 169,
-    "business-finance": 205,
-    "education-research": 73,
-    "flags-regions": 290,
+    "security-compliance": 5,
+    "safety-fire": 12,
     "office-productivity": 258,
-    "maps-places": 178,
-    "transport-facilities": 156
+    "substation-link": 59,
+    "converter": 8,
+    "forms-tables": 24,
+    "measurement-control": 8,
+    "commands": 223,
+    "storage": 8,
+    "energy-storage-scene": 12,
+    "storage-advanced-scene": 12,
+    "sensors-instruments": 12,
+    "navigation-view": 222,
+    "maps-places": 243,
+    "low-carbon-campus": 12,
+    "power-grid-electrical": 47,
+    "power-electronics": 57,
+    "power-electronics-control": 12,
+    "power-electronics-scene": 12,
+    "electric-power": 10,
+    "power-market-carbon": 12,
+    "power-grid-protection": 12,
+    "grid-primary-equipment": 12,
+    "generation-link": 69,
+    "wind-power-scene": 12,
+    "wind-power-advanced": 12,
+    "renewable-generation": 74,
+    "port-logistics": 12,
+    "industrial-loads": 12,
+    "industry-facilities": 35,
+    "public-service-facilities": 12,
+    "cooling-energy-scene": 12,
+    "heating-network-scene": 12,
+    "solar-pv-scene": 12,
+    "solar-pv-advanced": 12,
+    "rail-transit-energy": 12,
+    "flags-regions": 290,
+    "marine-offshore-energy": 12,
+    "compliance-risk": 12,
+    "canvas-tools": 307,
+    "canvas-modeling": 58,
+    "meeting-devices": 5,
+    "thermal-power-scene": 12,
+    "thermal-heating": 41,
+    "utility-metering-billing": 12,
+    "maintenance-tools": 12,
+    "building-hvac": 12,
+    "building-facility": 12,
+    "transport-facilities": 181,
+    "teaching-training": 12,
+    "education-research": 103,
+    "developer-tools": 183,
+    "developer-integration": 90,
+    "research-lab-facility": 12,
+    "mining-metallurgy": 12,
+    "integrated-energy-scene": 12,
+    "cooling-heating-energy": 68,
+    "retail-commerce": 1,
+    "flow-diagram": 12,
+    "workflow-automation": 17,
+    "media-assets": 300,
+    "residential-commercial-energy": 12,
+    "energy-utilities": 39,
+    "energy-generic": 216,
+    "energy-finance-assets": 12,
+    "agriculture-rural-energy": 12,
+    "distribution-link": 158,
+    "weather-environment": 122,
+    "meteorology-scada-scene": 12,
+    "hydrogen": 6,
+    "hydrogen-energy-scene": 12,
+    "hydrogen-storage": 35,
+    "hydrogen-process-advanced": 12,
+    "gas-energy": 23,
+    "gas-energy-scene": 12,
+    "thermal": 8,
+    "devices-hardware": 76,
+    "lab-testing": 12,
+    "transmission-link": 24,
+    "data-charts": 466,
+    "data-governance": 12,
+    "digital-operations": 12,
+    "hydro-power-scene": 12,
+    "water-wastewater": 12,
+    "communication-power": 12,
+    "communication-control-scene": 12,
+    "communication-network": 7,
+    "communication-control": 116,
+    "ui-commands": 410,
+    "generic-shapes": 8,
+    "diagram-symbols": 12,
+    "documents-files": 223,
+    "files-documents": 325,
+    "formatting": 210,
+    "accessibility-inclusion": 14,
+    "campus-energy-management": 12,
+    "communication": 342,
+    "collaboration": 224,
+    "advanced-renewables": 12,
+    "new-energy-equipment": 1,
+    "business-finance": 280,
+    "health-safety": 169,
+    "health-wellness": 14,
+    "emergency-resilience": 12,
+    "consumption-link": 92,
+    "mail-calendar": 11,
+    "oil-gas-chemical": 12,
+    "cloud-infrastructure": 107,
+    "cloud-ai-infrastructure": 26,
+    "business-operation": 12,
+    "operations-maintenance": 7,
+    "smart-city": 12,
+    "status-security": 146,
+    "status-alerts": 269,
+    "asset-logistics": 7,
+    "automation-communication": 12,
+    "integrated-energy": 27,
+    "ai-digital": 12
   }
 }

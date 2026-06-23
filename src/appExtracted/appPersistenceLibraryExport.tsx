@@ -1374,7 +1374,12 @@ export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[]
     .map((item) => {
       const template = item as DeviceTemplate;
       const rawParams = template.params ?? {};
-      const params = Object.fromEntries(Object.entries(rawParams).filter(([key]) => key !== ALLOW_RESIZE_TRANSFORM_PARAM));
+      const stateDefinitions = normalizeDeviceStateDefinitions(template.stateDefinitions ?? []);
+      const params = Object.fromEntries(
+        Object.entries(rawParams).filter(([key]) =>
+          key !== ALLOW_RESIZE_TRANSFORM_PARAM && !(key === "status" && stateDefinitions.length > 0)
+        )
+      );
       return {
         ...template,
         kind: String(template.kind ?? ""),
@@ -1392,7 +1397,7 @@ export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[]
         allowResizeTransform: templateAllowsResizeTransform({ ...template, params: rawParams }),
         custom: true,
         parameterDefinitions: normalizeDefinitionRows(template.parameterDefinitions ?? []),
-        stateDefinitions: normalizeDeviceStateDefinitions(template.stateDefinitions ?? [])
+        stateDefinitions
       };
     })
     .filter((item) => item.kind.trim() && item.label.trim());

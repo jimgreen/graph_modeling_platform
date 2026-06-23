@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const iconLibraryDir = path.join(rootDir, "data", "icon-library");
+const mergedCompatibilityLibraryDirs = new Set(["docer-free-compatible", "office-fluent-compatible"]);
 
 function escapeXml(value) {
   return String(value ?? "")
@@ -28,6 +29,7 @@ async function readJson(filePath) {
 const libraryDirs = (await readdir(iconLibraryDir, { withFileTypes: true }))
   .filter((entry) => entry.isDirectory())
   .map((entry) => entry.name)
+  .filter((name) => !mergedCompatibilityLibraryDirs.has(name))
   .sort((a, b) => a.localeCompare(b, "en"));
 
 const libraries = [];

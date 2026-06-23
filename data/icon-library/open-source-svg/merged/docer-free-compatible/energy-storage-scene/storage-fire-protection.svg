@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#16a34a" role="img" aria-labelledby="storage-fire-protection-title storage-fire-protection-desc">
+  <title id="storage-fire-protection-title">储能消防</title>
+  <desc id="storage-fire-protection-desc">储能场景 - 复用 能源通用 / fire-extinguisher</desc>
+  <g transform="translate(8 8) scale(2)">
+<path fill="currentColor" d="M14.5 6.5V3m0 0 3-1m-3 1c0-.545-.455-1-1-1h-2c-.545 0-1 .455-1 1m0 0v3.5m0-3.5c-3.963 0-5 2.39-5 6m3 9h8m-2-14 3 1m-1 5v10c0 1.09-.91 2-2 2h-4c-1.09 0-2-.91-2-2V10c0-4.93 8-5.227 8 0"/>
+  </g>
+  <g>
+<path d="M46 46h14v14H46z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="48" cy="48" r="1.35" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M48 48L50 55" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="55" cy="51" r="1.1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

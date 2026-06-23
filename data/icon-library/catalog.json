@@ -1,117 +1,21 @@
 {
   "name": "icon-library",
   "label": "SVG 图标资源总库",
-  "generatedAt": "2026-06-22T07:01:30.839Z",
+  "generatedAt": "2026-06-23T06:31:13.774Z",
   "totalIcons": 7862,
   "libraries": [
     {
-      "id": "docer-free-compatible",
-      "label": "稻壳免费图库兼容图标库",
-      "root": "/icon-library/docer-free-compatible",
-      "totalIcons": 796,
-      "sourcePolicy": "未复制稻壳受权益限制的 SVG；细分设备图标优先复用本地开源、Fluent 或平台已有基础图标；稻壳接口核验记录见 source-audit.json。",
+      "id": "open-source-svg",
+      "label": "开源 SVG 综合图标库",
+      "root": "/icon-library/open-source-svg",
+      "totalIcons": 7862,
+      "sourcePolicy": "仅使用官方 npm 包中的开源 SVG；保留源库版本、许可和 LICENSE 文件；过滤明显品牌/logo 图标；同一分类内按语义键保留一个代表图标，避免重复展示。 已将 Docer 兼容图标与 Office Fluent 兼容图标合并到 open-source-svg 统一检索；旧目录仅保留历史 URL 兼容。",
       "categories": [
         {
-          "id": "electric-power",
-          "label": "电力设备",
-          "description": "电网、母线、变压器、开关、负荷等图上建模常用电力元件。",
-          "count": 10
-        },
-        {
-          "id": "converter",
-          "label": "变流器",
-          "description": "AC/DC、DC/AC、DC/DC、AC/AC 以及整流、逆变类电力电子设备。",
-          "count": 8
-        },
-        {
-          "id": "renewable-generation",
-          "label": "新能源与发电",
-          "description": "光伏、风电、水电、火电、柴油机等电源类图标。",
-          "count": 8
-        },
-        {
-          "id": "storage",
-          "label": "储能",
-          "description": "电池、超级电容、储氢、储热、飞轮等储能设备。",
-          "count": 8
-        },
-        {
-          "id": "thermal",
-          "label": "热力设备",
-          "description": "锅炉、换热器、热泵、水泵、阀门、冷却塔等热力系统元件。",
-          "count": 8
-        },
-        {
-          "id": "hydrogen",
-          "label": "氢能",
-          "description": "电解槽、燃料电池、储氢、压缩机、加氢站等氢能系统元件。",
-          "count": 6
-        },
-        {
-          "id": "measurement-control",
-          "label": "测控保护",
-          "description": "表计、传感器、保护、通信、控制器等测控类图标。",
-          "count": 8
-        },
-        {
-          "id": "generic-shapes",
-          "label": "通用图形",
-          "description": "文本、图片、容器、标注、方向、区域等通用绘图元素。",
-          "count": 8
-        },
-        {
-          "id": "grid-primary-equipment",
-          "label": "电网一次设备",
-          "description": "互感器、避雷器、电容器、开关柜、电缆终端等一次设备图标。",
-          "count": 12
-        },
-        {
-          "id": "industrial-loads",
-          "label": "工业负荷",
-          "description": "电机、风机、压缩机、输送线、炉窑、机械臂等工业用能负荷。",
-          "count": 12
-        },
-        {
-          "id": "automation-communication",
-          "label": "自动化通信",
-          "description": "服务器、网关、交换机、RTU、IED、HMI、摄像头和通信链路。",
-          "count": 12
-        },
-        {
-          "id": "flow-diagram",
-          "label": "流程图与业务图",
-          "description": "处理、判断、数据库、文档、延迟、连接点等通用流程图图元。",
-          "count": 12
-        },
-        {
-          "id": "building-facility",
-          "label": "建筑与设施",
-          "description": "厂房、站房、仓库、数据中心、实验室、泵房和充电站等设施图标。",
-          "count": 12
-        },
-        {
-          "id": "weather-environment",
-          "label": "气象与环境",
-          "description": "日照、云雨、风、雪、温湿度、粉尘、碳排和环保类图标。",
-          "count": 12
-        },
-        {
-          "id": "business-operation",
-          "label": "运营管理",
-          "description": "看板、报表、成本、合同、日程、任务、审批、库存等运营类图标。",
-          "count": 12
-        },
-        {
-          "id": "diagram-symbols",
-          "label": "图形符号扩展",
-          "description": "常用线框、徽章、方向、注释、分组和图层类符号。",
-          "count": 12
-        },
-        {
-          "id": "power-market-carbon",
-          "label": "电力市场与碳管理",
-          "description": "电价、交易、碳排、绿证、收益、结算和能效管理类图标。",
-          "count": 12
+          "id": "security-compliance",
+          "label": "安全合规",
+          "description": "盾牌、锁、证书、签名、合规、权限、风险和审计类图标。",
+          "count": 5
         },
         {
           "id": "safety-fire",
@@ -120,261 +24,51 @@
           "count": 12
         },
         {
-          "id": "maintenance-tools",
-          "label": "检修工具",
-          "description": "扳手、螺丝刀、工具箱、校验、备件、润滑、清洁和工单处理图标。",
-          "count": 12
-        },
-        {
-          "id": "sensors-instruments",
-          "label": "传感仪表",
-          "description": "压力、流量、液位、振动、温湿度、气体、红外和电能质量仪表。",
-          "count": 12
-        },
-        {
-          "id": "water-wastewater",
-          "label": "水务环保",
-          "description": "取水、净水、污水、沉淀、加药、过滤、排放和水泵站图标。",
-          "count": 12
-        },
-        {
-          "id": "oil-gas-chemical",
-          "label": "油气化工",
-          "description": "油罐、天然气、压缩机、反应釜、换热、管廊、火炬和化学品图标。",
-          "count": 12
-        },
-        {
-          "id": "smart-city",
-          "label": "智慧城市",
-          "description": "路灯、摄像头、停车、垃圾、消防栓、井盖、基站和城市感知图标。",
-          "count": 12
-        },
-        {
-          "id": "ai-digital",
-          "label": "AI与数字化",
-          "description": "AI、算法、模型、数据流、数字孪生、边缘计算、API和自动化编排图标。",
-          "count": 12
-        },
-        {
-          "id": "rail-transit-energy",
-          "label": "轨道交通能源",
-          "description": "牵引站、接触网、车辆、站台、再生制动和轨交控制类图标。",
-          "count": 12
-        },
-        {
-          "id": "port-logistics",
-          "label": "港口与物流",
-          "description": "岸电、岸桥、堆场、冷链、装卸、仓储和物流通关类图标。",
-          "count": 12
-        },
-        {
-          "id": "building-hvac",
-          "label": "建筑暖通",
-          "description": "冷机、空调箱、风机盘管、冷热水环路、VAV 和楼宇能源管理图标。",
-          "count": 12
-        },
-        {
-          "id": "agriculture-rural-energy",
-          "label": "农业与乡村能源",
-          "description": "温室、灌溉、粮仓、沼气、生物质、农光互补和乡村微网图标。",
-          "count": 12
-        },
-        {
-          "id": "communication-power",
-          "label": "通信电源",
-          "description": "通信站址、电源柜、整流、后备电池、光纤节点、微波链路和站点监控图标。",
-          "count": 12
-        },
-        {
-          "id": "energy-finance-assets",
-          "label": "能源资产金融",
-          "description": "资产台账、合同价格、绿证、结算、补贴、投资收益和风险管理图标。",
-          "count": 12
-        },
-        {
-          "id": "lab-testing",
-          "label": "实验检测",
-          "description": "测试台、示波器、分析仪、绝缘测试、继保测试和实验报告图标。",
-          "count": 12
-        },
-        {
-          "id": "emergency-resilience",
-          "label": "应急韧性",
-          "description": "应急电源、移动变电站、抢修、防汛、指挥、备供和黑启动图标。",
-          "count": 12
-        },
-        {
-          "id": "mining-metallurgy",
-          "label": "矿山冶金",
-          "description": "矿井、破碎、输送、球磨、烧结、高炉、电炉、连铸和尾矿库图标。",
-          "count": 12
-        },
-        {
-          "id": "marine-offshore-energy",
-          "label": "海洋与海上能源",
-          "description": "海上风电、海缆、升压站、平台、浮式基础、潮汐和海水制氢图标。",
-          "count": 12
-        },
-        {
-          "id": "advanced-renewables",
-          "label": "新能源扩展",
-          "description": "跟踪支架、汇流箱、组串逆变、储能舱、氢储能和新能源预测图标。",
-          "count": 12
-        },
-        {
-          "id": "digital-operations",
-          "label": "数字运维",
-          "description": "工单、巡检、缺陷、告警压缩、知识库、移动作业和远程专家图标。",
-          "count": 12
-        },
-        {
-          "id": "data-governance",
-          "label": "数据治理",
-          "description": "数据目录、血缘、质量、主数据、脱敏、权限、审计和归档图标。",
-          "count": 12
-        },
-        {
-          "id": "residential-commercial-energy",
-          "label": "民商用能源",
-          "description": "户用光伏、家庭储能、充电车位、商超冷链、园区能耗和楼宇账单图标。",
-          "count": 12
-        },
-        {
-          "id": "power-electronics-control",
-          "label": "电力电子控制",
-          "description": "门极驱动、PWM、滤波、直流母线、软启动、SVG/APF 和保护控制图标。",
-          "count": 12
-        },
-        {
-          "id": "compliance-risk",
-          "label": "合规与风险",
-          "description": "许可证、审计、策略、权限、加密、隐私、风险矩阵和整改闭环图标。",
-          "count": 12
-        },
-        {
-          "id": "campus-energy-management",
-          "label": "校园能源管理",
-          "description": "校园微网、楼宇分项、宿舍负荷、教室照明、冷热站和校园充电图标。",
-          "count": 12
-        },
-        {
-          "id": "research-lab-facility",
-          "label": "科研实验设施",
-          "description": "实验楼、通风柜、气瓶、危化品柜、实验排风、洁净室和实验电源图标。",
-          "count": 12
-        },
-        {
-          "id": "public-service-facilities",
-          "label": "公共服务设施",
-          "description": "医院、学校、图书馆、体育馆、食堂、停车、公共厕所和市政服务图标。",
-          "count": 12
-        },
-        {
-          "id": "teaching-training",
-          "label": "教学培训",
-          "description": "课程、考试、实训台、仿真、课件、在线学习、证书和实验教学图标。",
-          "count": 12
-        },
-        {
-          "id": "utility-metering-billing",
-          "label": "计量计费",
-          "description": "电水气热分表、预付费、账单、结算、费用分摊和异常用量图标。",
-          "count": 12
-        },
-        {
-          "id": "low-carbon-campus",
-          "label": "低碳校园",
-          "description": "碳核算、绿电、碳汇、减排项目、能效诊断、低碳活动和碳中和路径图标。",
-          "count": 12
-        },
-        {
-          "id": "power-grid-protection",
-          "label": "电力与保护控制",
-          "description": "变电、配电、继电保护、馈线自动化、电能质量和电网控制图标。",
-          "count": 12
-        },
-        {
-          "id": "generation-link",
-          "label": "发电环节",
-          "description": "发电机组、励磁、调速、厂用电、并网点、AGC、AVC、机组监控和发电侧计量图标。",
-          "count": 12
-        },
-        {
-          "id": "transmission-link",
-          "label": "输电环节",
-          "description": "输电线路、铁塔、导线、绝缘子、避雷器、OPGW、线路保护、巡检和高压直流图标。",
-          "count": 12
+          "id": "office-productivity",
+          "label": "办公效率",
+          "description": "日历、时间、任务、列表、书签、标签、笔记、简报和办公流程。",
+          "count": 258
         },
         {
           "id": "substation-link",
           "label": "变电环节",
-          "description": "主变、母线、断路器、隔离开关、接地刀闸、互感器、避雷器、间隔和站控层图标。",
-          "count": 12
+          "description": "变电站、变压器、母线、断路器、隔离开关、互感器、保护屏柜和站控设备类图标。",
+          "count": 59
         },
         {
-          "id": "distribution-link",
-          "label": "配电环节",
-          "description": "环网柜、开闭所、箱变、柱上开关、配变、分支箱、电缆分接箱、台区和配网自动化图标。",
-          "count": 12
+          "id": "converter",
+          "label": "变流器",
+          "description": "AC/DC、DC/AC、DC/DC、AC/AC 以及整流、逆变类电力电子设备。",
+          "count": 8
         },
         {
-          "id": "consumption-link",
-          "label": "用电环节",
-          "description": "用户变、进线柜、负荷、计量、充电桩、楼宇、工厂、需求响应和能效管理图标。",
-          "count": 12
+          "id": "forms-tables",
+          "label": "表单表格",
+          "description": "表单、复选框、表格、扫描表格、文本框和结构化录入图标。",
+          "count": 24
         },
         {
-          "id": "wind-power-scene",
-          "label": "风电场景",
-          "description": "风机、叶片、塔筒、偏航、变桨、集电线路、测风塔和风电场控制图标。",
-          "count": 12
+          "id": "measurement-control",
+          "label": "测控保护",
+          "description": "表计、传感器、保护、通信、控制器等测控类图标。",
+          "count": 8
         },
         {
-          "id": "hydro-power-scene",
-          "label": "水电场景",
-          "description": "大坝、进水口、压力钢管、水轮机、调速器、励磁、尾水和抽蓄图标。",
-          "count": 12
+          "id": "commands",
+          "label": "常用命令",
+          "description": "新增、删除、复制、粘贴、保存、撤销、下载、上传等 Office 常用操作。",
+          "count": 223
         },
         {
-          "id": "thermal-power-scene",
-          "label": "火电场景",
-          "description": "锅炉、汽轮机、发电机、冷凝器、给水泵、煤磨、脱硫脱硝和烟囱图标。",
-          "count": 12
-        },
-        {
-          "id": "solar-pv-scene",
-          "label": "光伏场景",
-          "description": "组件、组串、汇流箱、逆变器、跟踪支架、辐照传感器和光伏电站图标。",
-          "count": 12
-        },
-        {
-          "id": "hydrogen-energy-scene",
-          "label": "氢能场景",
-          "description": "电解槽、整流电源、压缩、纯化、干燥、储氢、加氢和燃料电池图标。",
-          "count": 12
+          "id": "storage",
+          "label": "储能",
+          "description": "电池、超级电容、储氢、储热、飞轮等储能设备。",
+          "count": 8
         },
         {
           "id": "energy-storage-scene",
           "label": "储能场景",
           "description": "电池舱、电池架、PCS、BMS、EMS、热管理、消防、SOC、飞轮和压缩空气储能图标。",
-          "count": 12
-        },
-        {
-          "id": "wind-power-advanced",
-          "label": "风电细分设备",
-          "description": "海上风电、升压站、集电海缆、偏航变桨、覆冰、振动、尾流和功率曲线图标。",
-          "count": 12
-        },
-        {
-          "id": "solar-pv-advanced",
-          "label": "光伏细分设备",
-          "description": "双面组件、优化器、组串监测、直流拉弧、PID、跟踪控制、清洗和汇流监测图标。",
-          "count": 12
-        },
-        {
-          "id": "hydrogen-process-advanced",
-          "label": "氢能工艺设备",
-          "description": "制氢、纯化、压缩、储运、加氢、燃料电池、氢安全和氢能控制图标。",
           "count": 12
         },
         {
@@ -384,9 +78,123 @@
           "count": 12
         },
         {
+          "id": "sensors-instruments",
+          "label": "传感仪表",
+          "description": "压力、流量、液位、振动、温湿度、气体、红外和电能质量仪表。",
+          "count": 12
+        },
+        {
+          "id": "navigation-view",
+          "label": "导航视图",
+          "description": "搜索、筛选、设置、更多、缩放、全屏、左右面板、网格和图层等视图控制。",
+          "count": 222
+        },
+        {
+          "id": "maps-places",
+          "label": "地图地点",
+          "description": "地图、定位、建筑、道路、桥梁、园区、医院、学校和公共设施图标。",
+          "count": 243
+        },
+        {
+          "id": "low-carbon-campus",
+          "label": "低碳校园",
+          "description": "碳核算、绿电、碳汇、减排项目、能效诊断、低碳活动和碳中和路径图标。",
+          "count": 12
+        },
+        {
+          "id": "power-grid-electrical",
+          "label": "电力电网",
+          "description": "电网、输配电、变电、开关、线缆、插头、回路、电压和电气控制类图标。",
+          "count": 47
+        },
+        {
+          "id": "power-electronics",
+          "label": "电力电子",
+          "description": "整流、逆变、变流、DC/DC、AC/DC、滤波、补偿、柔直、并网和功率控制类图标。",
+          "count": 57
+        },
+        {
+          "id": "power-electronics-control",
+          "label": "电力电子控制",
+          "description": "门极驱动、PWM、滤波、直流母线、软启动、SVG/APF 和保护控制图标。",
+          "count": 12
+        },
+        {
           "id": "power-electronics-scene",
           "label": "电力电子设备",
           "description": "整流、逆变、变流、SVG、STATCOM、MMC、柔直、DC/DC和电能质量治理图标。",
+          "count": 12
+        },
+        {
+          "id": "electric-power",
+          "label": "电力设备",
+          "description": "电网、母线、变压器、开关、负荷等图上建模常用电力元件。",
+          "count": 10
+        },
+        {
+          "id": "power-market-carbon",
+          "label": "电力市场与碳管理",
+          "description": "电价、交易、碳排、绿证、收益、结算和能效管理类图标。",
+          "count": 12
+        },
+        {
+          "id": "power-grid-protection",
+          "label": "电力与保护控制",
+          "description": "变电、配电、继电保护、馈线自动化、电能质量和电网控制图标。",
+          "count": 12
+        },
+        {
+          "id": "grid-primary-equipment",
+          "label": "电网一次设备",
+          "description": "互感器、避雷器、电容器、开关柜、电缆终端等一次设备图标。",
+          "count": 12
+        },
+        {
+          "id": "generation-link",
+          "label": "发电环节",
+          "description": "发电、电厂、发电机、燃料、水务、日照、机组监控、并网和发电计量类图标。",
+          "count": 69
+        },
+        {
+          "id": "wind-power-scene",
+          "label": "风电场景",
+          "description": "风机、叶片、塔筒、偏航、变桨、集电线路、测风塔和风电场控制图标。",
+          "count": 12
+        },
+        {
+          "id": "wind-power-advanced",
+          "label": "风电细分设备",
+          "description": "海上风电、升压站、集电海缆、偏航变桨、覆冰、振动、尾流和功率曲线图标。",
+          "count": 12
+        },
+        {
+          "id": "renewable-generation",
+          "label": "风光水发电",
+          "description": "风电、光伏、水电、可再生能源、电站、组件、叶片、水资源和清洁能源类图标。",
+          "count": 74
+        },
+        {
+          "id": "port-logistics",
+          "label": "港口与物流",
+          "description": "岸电、岸桥、堆场、冷链、装卸、仓储和物流通关类图标。",
+          "count": 12
+        },
+        {
+          "id": "industrial-loads",
+          "label": "工业负荷",
+          "description": "电机、风机、压缩机、输送线、炉窑、机械臂等工业用能负荷。",
+          "count": 12
+        },
+        {
+          "id": "industry-facilities",
+          "label": "工业设施",
+          "description": "工业、制造、厂站、生产、仓储、农业、矿山和基础设施类图标。",
+          "count": 35
+        },
+        {
+          "id": "public-service-facilities",
+          "label": "公共服务设施",
+          "description": "医院、学校、图书馆、体育馆、食堂、停车、公共厕所和市政服务图标。",
           "count": 12
         },
         {
@@ -396,9 +204,141 @@
           "count": 12
         },
         {
-          "id": "gas-energy-scene",
-          "label": "燃气与气网",
-          "description": "燃气门站、调压、计量、管线、压缩、储气、燃机、燃气锅炉和气体检测图标。",
+          "id": "heating-network-scene",
+          "label": "供热场景",
+          "description": "热源、换热站、循环泵、板换、蓄热罐、热网、阀室、热表和热泵图标。",
+          "count": 12
+        },
+        {
+          "id": "solar-pv-scene",
+          "label": "光伏场景",
+          "description": "组件、组串、汇流箱、逆变器、跟踪支架、辐照传感器和光伏电站图标。",
+          "count": 12
+        },
+        {
+          "id": "solar-pv-advanced",
+          "label": "光伏细分设备",
+          "description": "双面组件、优化器、组串监测、直流拉弧、PID、跟踪控制、清洗和汇流监测图标。",
+          "count": 12
+        },
+        {
+          "id": "rail-transit-energy",
+          "label": "轨道交通能源",
+          "description": "牵引站、接触网、车辆、站台、再生制动和轨交控制类图标。",
+          "count": 12
+        },
+        {
+          "id": "flags-regions",
+          "label": "国家地区旗帜",
+          "description": "国家、地区、国际组织和区域旗帜 SVG，用于地图、区域、项目归属和国际化展示。",
+          "count": 290
+        },
+        {
+          "id": "marine-offshore-energy",
+          "label": "海洋与海上能源",
+          "description": "海上风电、海缆、升压站、平台、浮式基础、潮汐和海水制氢图标。",
+          "count": 12
+        },
+        {
+          "id": "compliance-risk",
+          "label": "合规与风险",
+          "description": "许可证、审计、策略、权限、加密、隐私、风险矩阵和整改闭环图标。",
+          "count": 12
+        },
+        {
+          "id": "canvas-tools",
+          "label": "画布工具",
+          "description": "选择、移动、旋转、缩放、裁剪、对齐、网格、图层、绘制等画布操作。",
+          "count": 307
+        },
+        {
+          "id": "canvas-modeling",
+          "label": "画布建模",
+          "description": "移动、旋转、尺寸、选择、对齐、图层、面板和建模画布辅助图标。",
+          "count": 58
+        },
+        {
+          "id": "meeting-devices",
+          "label": "会议与终端",
+          "description": "会议室设备、麦克风、扬声器、耳机、视频、电话和桌面终端图标。",
+          "count": 5
+        },
+        {
+          "id": "thermal-power-scene",
+          "label": "火电场景",
+          "description": "锅炉、汽轮机、发电机、冷凝器、给水泵、煤磨、脱硫脱硝和烟囱图标。",
+          "count": 12
+        },
+        {
+          "id": "thermal-heating",
+          "label": "火电供热",
+          "description": "火电、燃气、锅炉、蒸汽、热力、管网、阀门、泵、温度和供热设施类图标。",
+          "count": 41
+        },
+        {
+          "id": "utility-metering-billing",
+          "label": "计量计费",
+          "description": "电水气热分表、预付费、账单、结算、费用分摊和异常用量图标。",
+          "count": 12
+        },
+        {
+          "id": "maintenance-tools",
+          "label": "检修工具",
+          "description": "扳手、螺丝刀、工具箱、校验、备件、润滑、清洁和工单处理图标。",
+          "count": 12
+        },
+        {
+          "id": "building-hvac",
+          "label": "建筑暖通",
+          "description": "冷机、空调箱、风机盘管、冷热水环路、VAV 和楼宇能源管理图标。",
+          "count": 12
+        },
+        {
+          "id": "building-facility",
+          "label": "建筑与设施",
+          "description": "厂房、站房、仓库、数据中心、实验室、泵房和充电站等设施图标。",
+          "count": 12
+        },
+        {
+          "id": "transport-facilities",
+          "label": "交通设施",
+          "description": "车辆、公交、轨道、航空、船舶、充电、燃料和交通服务设施图标。",
+          "count": 181
+        },
+        {
+          "id": "teaching-training",
+          "label": "教学培训",
+          "description": "课程、考试、实训台、仿真、课件、在线学习、证书和实验教学图标。",
+          "count": 12
+        },
+        {
+          "id": "education-research",
+          "label": "教育科研",
+          "description": "图书、学校、课程、实验、公式、白板、毕业、科研和知识表达图标。",
+          "count": 103
+        },
+        {
+          "id": "developer-tools",
+          "label": "开发工具",
+          "description": "代码、终端、分支、提交、接口、服务、插件、命令行和调试工具。",
+          "count": 183
+        },
+        {
+          "id": "developer-integration",
+          "label": "开发集成",
+          "description": "代码、分支、调试、控制台、插件、USB、电池、电力和网络连接。",
+          "count": 90
+        },
+        {
+          "id": "research-lab-facility",
+          "label": "科研实验设施",
+          "description": "实验楼、通风柜、气瓶、危化品柜、实验排风、洁净室和实验电源图标。",
+          "count": 12
+        },
+        {
+          "id": "mining-metallurgy",
+          "label": "矿山冶金",
+          "description": "矿井、破碎、输送、球磨、烧结、高炉、电炉、连铸和尾矿库图标。",
           "count": 12
         },
         {
@@ -408,158 +348,10 @@
           "count": 12
         },
         {
-          "id": "heating-network-scene",
-          "label": "供热场景",
-          "description": "热源、换热站、循环泵、板换、蓄热罐、热网、阀室、热表和热泵图标。",
-          "count": 12
-        },
-        {
-          "id": "meteorology-scada-scene",
-          "label": "气象监测场景",
-          "description": "气象站、测风、辐照、温湿度、雨量、气压、雪深、能见度和预报图标。",
-          "count": 12
-        },
-        {
-          "id": "communication-control-scene",
-          "label": "通信控制场景",
-          "description": "SCADA、RTU、PLC、IED、网关、交换机、5G、光纤、遥测遥信和控制中心图标。",
-          "count": 12
-        }
-      ],
-      "sources": []
-    },
-    {
-      "id": "office-fluent-compatible",
-      "label": "Office Fluent 兼容图标库",
-      "root": "/icon-library/office-fluent-compatible",
-      "totalIcons": 2120,
-      "sourcePolicy": "使用 MIT 许可的 Microsoft Fluent UI System Icons；未复制 Microsoft Office 品牌图标或专有 Office 内置图标；同一个 Fluent 源图标只保留一次，避免跨分类重复。",
-      "categories": [
-        {
-          "id": "commands",
-          "label": "常用命令",
-          "description": "新增、删除、复制、粘贴、保存、撤销、下载、上传等 Office 常用操作。",
-          "count": 223
-        },
-        {
-          "id": "navigation-view",
-          "label": "导航视图",
-          "description": "搜索、筛选、设置、更多、缩放、全屏、左右面板、网格和图层等视图控制。",
-          "count": 222
-        },
-        {
-          "id": "documents-files",
-          "label": "文档文件",
-          "description": "文档、文件夹、PDF、表格、图片文档、压缩包和归档类图标。",
-          "count": 223
-        },
-        {
-          "id": "formatting",
-          "label": "文字排版",
-          "description": "粗体、斜体、下划线、字体、颜色、对齐、项目符号和编号等文本编辑图标。",
-          "count": 210
-        },
-        {
-          "id": "data-charts",
-          "label": "数据图表",
-          "description": "表格、图表、数据库、计算器和数据可视化图标。",
-          "count": 189
-        },
-        {
-          "id": "collaboration",
-          "label": "协作通信",
-          "description": "邮件、日历、人员、聊天、通话、会议、云、链接和附件。",
-          "count": 224
-        },
-        {
-          "id": "media-assets",
-          "label": "媒体素材",
-          "description": "图片、相机、视频、音频、麦克风、播放控制等素材处理图标。",
-          "count": 82
-        },
-        {
-          "id": "status-security",
-          "label": "状态安全",
-          "description": "成功、错误、告警、信息、锁、盾牌、密钥和安全状态。",
-          "count": 146
-        },
-        {
-          "id": "developer-integration",
-          "label": "开发集成",
-          "description": "代码、分支、调试、控制台、插件、USB、电池、电力和网络连接。",
-          "count": 90
-        },
-        {
-          "id": "canvas-modeling",
-          "label": "画布建模",
-          "description": "移动、旋转、尺寸、选择、对齐、图层、面板和建模画布辅助图标。",
-          "count": 58
-        },
-        {
-          "id": "maps-places",
-          "label": "地图地点",
-          "description": "地图、定位、建筑、道路、停车、园区和公共设施等地点类 Office 风格图标。",
-          "count": 65
-        },
-        {
-          "id": "transport-facilities",
-          "label": "交通设施",
-          "description": "车辆、公交、道路、停车、航空、船舶、充电和运输设施图标。",
-          "count": 25
-        },
-        {
-          "id": "business-finance",
-          "label": "业务金融",
-          "description": "成本、付款、合同、库存、票据、目标、组织和经营管理类图标。",
-          "count": 75
-        },
-        {
-          "id": "devices-hardware",
-          "label": "设备硬件",
-          "description": "服务器、设备、传感器、打印、扫描、相机、插件、电池和硬件连接图标。",
-          "count": 76
-        },
-        {
-          "id": "energy-utilities",
-          "label": "能源公用事业",
-          "description": "电力、电池、插头、燃气、水务、天气、环保和公用事业设施图标。",
-          "count": 39
-        },
-        {
-          "id": "cloud-ai-infrastructure",
-          "label": "云与AI基础设施",
-          "description": "云、服务器、数据库、机器人、AI、自动化、网络和数据基础设施图标。",
-          "count": 26
-        },
-        {
-          "id": "security-compliance",
-          "label": "安全合规",
-          "description": "盾牌、锁、证书、签名、合规、权限、风险和审计类图标。",
-          "count": 5
-        },
-        {
-          "id": "education-research",
-          "label": "教育科研",
-          "description": "图书、课程、实验、公式、白板、毕业、研究和知识表达图标。",
-          "count": 30
-        },
-        {
-          "id": "health-wellness",
-          "label": "医疗健康",
-          "description": "医生、患者、心率、急救、药品、健康数据和医疗服务图标。",
-          "count": 14
-        },
-        {
-          "id": "workflow-automation",
-          "label": "流程自动化",
-          "description": "任务、流程图、分支、路由、审批、扫描、二维码和自动化处理图标。",
-          "count": 17
-        },
-        {
-          "id": "accessibility-inclusion",
-          "label": "无障碍与包容",
-          "description": "无障碍、人员支持、社区协作、可访问性状态和人群服务图标。",
-          "count": 14
+          "id": "cooling-heating-energy",
+          "label": "冷热能源",
+          "description": "供冷、供热、冷热源、冷机、热泵、冷却塔、水泵、温度、冷热负荷和冷热计量类图标。",
+          "count": 68
         },
         {
           "id": "retail-commerce",
@@ -568,188 +360,34 @@
           "count": 1
         },
         {
-          "id": "mail-calendar",
-          "label": "邮件日程",
-          "description": "邮件、收件箱、日历、会议日程、同步、提醒和办公计划图标。",
-          "count": 11
+          "id": "flow-diagram",
+          "label": "流程图与业务图",
+          "description": "处理、判断、数据库、文档、延迟、连接点等通用流程图图元。",
+          "count": 12
         },
         {
-          "id": "meeting-devices",
-          "label": "会议与终端",
-          "description": "会议室设备、麦克风、扬声器、耳机、视频、电话和桌面终端图标。",
-          "count": 5
-        },
-        {
-          "id": "forms-tables",
-          "label": "表单表格",
-          "description": "表单、复选框、表格、扫描表格、文本框和结构化录入图标。",
-          "count": 24
-        },
-        {
-          "id": "operations-maintenance",
-          "label": "运营维护",
-          "description": "扳手、工具箱、运维工具、数据工具、人员工具和趋势维修图标。",
-          "count": 7
-        },
-        {
-          "id": "campus-education",
-          "label": "校园教育",
-          "description": "图书、白板、毕业、课件、实验、公式、证书和校园教学科研图标。",
-          "count": 0
-        },
-        {
-          "id": "public-sector",
-          "label": "公共服务",
-          "description": "政府建筑、公共机构、位置、服务人群、安全确认、证书和支持服务图标。",
-          "count": 0
-        },
-        {
-          "id": "asset-logistics",
-          "label": "资产与物流",
-          "description": "箱体、库存、条码、二维码、运输车辆、单据、表格和任务跟踪图标。",
-          "count": 7
-        },
-        {
-          "id": "field-service",
-          "label": "现场服务",
-          "description": "现场检修、定位、电话、拍照、扫码、工单、日程和工具箱服务图标。",
-          "count": 0
-        },
-        {
-          "id": "energy-control",
-          "label": "能源与控制",
-          "description": "电源、电池、插头、闪电、同步、控制台、设置、数据和能量控制类 Fluent 图标。",
-          "count": 0
-        },
-        {
-          "id": "generation-link",
-          "label": "发电环节",
-          "description": "发电厂、发电电源、燃料、水务、日照、电池、并网、计量和发电侧控制类 Fluent 图标。",
-          "count": 0
-        },
-        {
-          "id": "transmission-link",
-          "label": "输电环节",
-          "description": "输电线路、杆塔、通道、网络、同步、拓扑、走廊和线路状态类 Fluent 图标。",
-          "count": 1
-        },
-        {
-          "id": "substation-link",
-          "label": "变电环节",
-          "description": "变电站、母线、屏柜、间隔、开关状态、保护、计量和站控层通用 Fluent 图标。",
-          "count": 0
-        },
-        {
-          "id": "distribution-link",
-          "label": "配电环节",
-          "description": "配电设备、分支、台区、馈线自动化、位置、网络状态和检修运维类 Fluent 图标。",
-          "count": 0
-        },
-        {
-          "id": "consumption-link",
-          "label": "用电环节",
-          "description": "用户、楼宇、家庭、负荷、电表、充电、能效、需求响应和用电监测类 Fluent 图标。",
-          "count": 0
-        },
-        {
-          "id": "new-energy-equipment",
-          "label": "新能源设备",
-          "description": "风电、光伏、氢能、储能及新能源场站监控相关的通用 Fluent 图标。",
-          "count": 0
-        },
-        {
-          "id": "power-electronics",
-          "label": "电力电子",
-          "description": "整流、逆变、变流、滤波、柔直、并网控制和电能质量相关的通用 Fluent 图标。",
-          "count": 1
-        },
-        {
-          "id": "cooling-heating-energy",
-          "label": "冷热能源",
-          "description": "供冷、供热、冷源、热源、温度、水系统、能源站和冷热负荷相关的通用 Fluent 图标。",
-          "count": 3
-        },
-        {
-          "id": "gas-energy",
-          "label": "燃气能源",
-          "description": "燃气、气网、燃机、燃气锅炉、调压计量和气体安全相关的通用 Fluent 图标。",
-          "count": 0
-        },
-        {
-          "id": "integrated-energy",
-          "label": "综合能源",
-          "description": "冷、热、电、气多能互补、综合能源站、能量枢纽和多能流调度相关的通用 Fluent 图标。",
-          "count": 0
-        },
-        {
-          "id": "meteorology-environment",
-          "label": "气象与环境",
-          "description": "晴雨、云、雪、雾、雷暴、湿度、温度、水务和天气环境类 Fluent 图标。",
-          "count": 0
-        },
-        {
-          "id": "communication-network",
-          "label": "通信网络",
-          "description": "WiFi、蜂窝、虚拟网络、信号、对讲、通信安全和云同步类 Fluent 图标。",
-          "count": 7
-        }
-      ],
-      "sources": []
-    },
-    {
-      "id": "open-source-svg",
-      "label": "开源 SVG 综合图标库",
-      "root": "/icon-library/open-source-svg",
-      "totalIcons": 4946,
-      "sourcePolicy": "仅使用官方 npm 包中的开源 SVG；保留源库版本、许可和 LICENSE 文件；过滤明显品牌/logo 图标；同一分类内按语义键保留一个代表图标，避免重复展示。",
-      "categories": [
-        {
-          "id": "ui-commands",
-          "label": "通用命令",
-          "description": "新增、删除、复制、粘贴、保存、导入导出、撤销重做等常用操作。",
-          "count": 410
-        },
-        {
-          "id": "canvas-tools",
-          "label": "画布工具",
-          "description": "选择、移动、旋转、缩放、裁剪、对齐、网格、图层、绘制等画布操作。",
-          "count": 307
-        },
-        {
-          "id": "files-documents",
-          "label": "文件文档",
-          "description": "文件、文件夹、PDF、压缩包、归档、图片文档、表格文档等资源。",
-          "count": 325
-        },
-        {
-          "id": "data-charts",
-          "label": "数据图表",
-          "description": "表格、数据库、曲线、柱状图、饼图、统计分析和计算类图标。",
-          "count": 277
-        },
-        {
-          "id": "status-alerts",
-          "label": "状态告警",
-          "description": "成功、失败、警告、信息、锁定、权限、安全和异常状态。",
-          "count": 269
-        },
-        {
-          "id": "communication",
-          "label": "协作通信",
-          "description": "用户、组织、邮件、消息、电话、会议、云、链接、附件和网络通信。",
-          "count": 342
+          "id": "workflow-automation",
+          "label": "流程自动化",
+          "description": "任务、流程图、分支、路由、审批、扫描、二维码和自动化处理图标。",
+          "count": 17
         },
         {
           "id": "media-assets",
           "label": "媒体素材",
           "description": "图片、相机、视频、音频、麦克风、音量、颜色、画笔和调色板。",
-          "count": 218
+          "count": 300
         },
         {
-          "id": "developer-tools",
-          "label": "开发工具",
-          "description": "代码、终端、分支、提交、接口、服务、插件、命令行和调试工具。",
-          "count": 183
+          "id": "residential-commercial-energy",
+          "label": "民商用能源",
+          "description": "户用光伏、家庭储能、充电车位、商超冷链、园区能耗和楼宇账单图标。",
+          "count": 12
+        },
+        {
+          "id": "energy-utilities",
+          "label": "能源公用事业",
+          "description": "电力、电池、插头、燃气、水务、天气、环保和公用事业设施图标。",
+          "count": 39
         },
         {
           "id": "energy-generic",
@@ -758,58 +396,46 @@
           "count": 216
         },
         {
-          "id": "weather-environment",
-          "label": "气象环境",
-          "description": "天气、日照、云雨、雪雾、雷暴、风、湿度、空气和环境监测类图标。",
-          "count": 110
+          "id": "energy-finance-assets",
+          "label": "能源资产金融",
+          "description": "资产台账、合同价格、绿证、结算、补贴、投资收益和风险管理图标。",
+          "count": 12
         },
         {
-          "id": "power-grid-electrical",
-          "label": "电力电网",
-          "description": "电网、输配电、变电、开关、线缆、插头、回路、电压和电气控制类图标。",
-          "count": 47
-        },
-        {
-          "id": "generation-link",
-          "label": "发电环节",
-          "description": "发电、电厂、发电机、燃料、水务、日照、机组监控、并网和发电计量类图标。",
-          "count": 57
-        },
-        {
-          "id": "transmission-link",
-          "label": "输电环节",
-          "description": "输电线路、铁塔、导线、杆塔、绝缘、避雷、通道、巡检和高压直流类图标。",
-          "count": 11
-        },
-        {
-          "id": "substation-link",
-          "label": "变电环节",
-          "description": "变电站、变压器、母线、断路器、隔离开关、互感器、保护屏柜和站控设备类图标。",
-          "count": 47
+          "id": "agriculture-rural-energy",
+          "label": "农业与乡村能源",
+          "description": "温室、灌溉、粮仓、沼气、生物质、农光互补和乡村微网图标。",
+          "count": 12
         },
         {
           "id": "distribution-link",
           "label": "配电环节",
           "description": "配电网、馈线、环网柜、箱变、分支箱、台区、低压柜、自动化终端和故障定位类图标。",
-          "count": 146
+          "count": 158
         },
         {
-          "id": "consumption-link",
-          "label": "用电环节",
-          "description": "用户侧、负荷、电表、楼宇、工厂、居民、充电桩、需求响应、能效和用电监测类图标。",
-          "count": 80
+          "id": "weather-environment",
+          "label": "气象环境",
+          "description": "天气、日照、云雨、雪雾、雷暴、风、湿度、空气和环境监测类图标。",
+          "count": 122
         },
         {
-          "id": "renewable-generation",
-          "label": "风光水发电",
-          "description": "风电、光伏、水电、可再生能源、电站、组件、叶片、水资源和清洁能源类图标。",
-          "count": 66
+          "id": "meteorology-scada-scene",
+          "label": "气象监测场景",
+          "description": "气象站、测风、辐照、温湿度、雨量、气压、雪深、能见度和预报图标。",
+          "count": 12
         },
         {
-          "id": "thermal-heating",
-          "label": "火电供热",
-          "description": "火电、燃气、锅炉、蒸汽、热力、管网、阀门、泵、温度和供热设施类图标。",
-          "count": 41
+          "id": "hydrogen",
+          "label": "氢能",
+          "description": "电解槽、燃料电池、储氢、压缩机、加氢站等氢能系统元件。",
+          "count": 6
+        },
+        {
+          "id": "hydrogen-energy-scene",
+          "label": "氢能场景",
+          "description": "电解槽、整流电源、压缩、纯化、干燥、储氢、加氢和燃料电池图标。",
+          "count": 12
         },
         {
           "id": "hydrogen-storage",
@@ -818,22 +444,10 @@
           "count": 35
         },
         {
-          "id": "new-energy-equipment",
-          "label": "新能源设备",
-          "description": "风电、光伏、氢能、储能、新能源场站、并网、预测、监测和能量管理类图标。",
-          "count": 1
-        },
-        {
-          "id": "power-electronics",
-          "label": "电力电子",
-          "description": "整流、逆变、变流、DC/DC、AC/DC、滤波、补偿、柔直、并网和功率控制类图标。",
-          "count": 56
-        },
-        {
-          "id": "cooling-heating-energy",
-          "label": "冷热能源",
-          "description": "供冷、供热、冷热源、冷机、热泵、冷却塔、水泵、温度、冷热负荷和冷热计量类图标。",
-          "count": 65
+          "id": "hydrogen-process-advanced",
+          "label": "氢能工艺设备",
+          "description": "制氢、纯化、压缩、储运、加氢、燃料电池、氢安全和氢能控制图标。",
+          "count": 12
         },
         {
           "id": "gas-energy",
@@ -842,10 +456,82 @@
           "count": 23
         },
         {
-          "id": "integrated-energy",
-          "label": "综合能源",
-          "description": "冷、热、电、气多能互补，综合能源站、能量枢纽、CCHP、多能流、碳能协同和能源调度类图标。",
-          "count": 27
+          "id": "gas-energy-scene",
+          "label": "燃气与气网",
+          "description": "燃气门站、调压、计量、管线、压缩、储气、燃机、燃气锅炉和气体检测图标。",
+          "count": 12
+        },
+        {
+          "id": "thermal",
+          "label": "热力设备",
+          "description": "锅炉、换热器、热泵、水泵、阀门、冷却塔等热力系统元件。",
+          "count": 8
+        },
+        {
+          "id": "devices-hardware",
+          "label": "设备硬件",
+          "description": "服务器、设备、传感器、打印、扫描、相机、插件、电池和硬件连接图标。",
+          "count": 76
+        },
+        {
+          "id": "lab-testing",
+          "label": "实验检测",
+          "description": "测试台、示波器、分析仪、绝缘测试、继保测试和实验报告图标。",
+          "count": 12
+        },
+        {
+          "id": "transmission-link",
+          "label": "输电环节",
+          "description": "输电线路、铁塔、导线、杆塔、绝缘、避雷、通道、巡检和高压直流类图标。",
+          "count": 24
+        },
+        {
+          "id": "data-charts",
+          "label": "数据图表",
+          "description": "表格、数据库、曲线、柱状图、饼图、统计分析和计算类图标。",
+          "count": 466
+        },
+        {
+          "id": "data-governance",
+          "label": "数据治理",
+          "description": "数据目录、血缘、质量、主数据、脱敏、权限、审计和归档图标。",
+          "count": 12
+        },
+        {
+          "id": "digital-operations",
+          "label": "数字运维",
+          "description": "工单、巡检、缺陷、告警压缩、知识库、移动作业和远程专家图标。",
+          "count": 12
+        },
+        {
+          "id": "hydro-power-scene",
+          "label": "水电场景",
+          "description": "大坝、进水口、压力钢管、水轮机、调速器、励磁、尾水和抽蓄图标。",
+          "count": 12
+        },
+        {
+          "id": "water-wastewater",
+          "label": "水务环保",
+          "description": "取水、净水、污水、沉淀、加药、过滤、排放和水泵站图标。",
+          "count": 12
+        },
+        {
+          "id": "communication-power",
+          "label": "通信电源",
+          "description": "通信站址、电源柜、整流、后备电池、光纤节点、微波链路和站点监控图标。",
+          "count": 12
+        },
+        {
+          "id": "communication-control-scene",
+          "label": "通信控制场景",
+          "description": "SCADA、RTU、PLC、IED、网关、交换机、5G、光纤、遥测遥信和控制中心图标。",
+          "count": 12
+        },
+        {
+          "id": "communication-network",
+          "label": "通信网络",
+          "description": "WiFi、蜂窝、虚拟网络、信号、对讲、通信安全和云同步类 Fluent 图标。",
+          "count": 7
         },
         {
           "id": "communication-control",
@@ -854,16 +540,82 @@
           "count": 116
         },
         {
-          "id": "industry-facilities",
-          "label": "工业设施",
-          "description": "工业、制造、厂站、生产、仓储、农业、矿山和基础设施类图标。",
-          "count": 35
+          "id": "ui-commands",
+          "label": "通用命令",
+          "description": "新增、删除、复制、粘贴、保存、导入导出、撤销重做等常用操作。",
+          "count": 410
         },
         {
-          "id": "cloud-infrastructure",
-          "label": "云与基础设施",
-          "description": "云、服务器、数据中心、存储、计算、网络、安全、AI 和运维基础设施图标。",
-          "count": 107
+          "id": "generic-shapes",
+          "label": "通用图形",
+          "description": "文本、图片、容器、标注、方向、区域等通用绘图元素。",
+          "count": 8
+        },
+        {
+          "id": "diagram-symbols",
+          "label": "图形符号扩展",
+          "description": "常用线框、徽章、方向、注释、分组和图层类符号。",
+          "count": 12
+        },
+        {
+          "id": "documents-files",
+          "label": "文档文件",
+          "description": "文档、文件夹、PDF、表格、图片文档、压缩包和归档类图标。",
+          "count": 223
+        },
+        {
+          "id": "files-documents",
+          "label": "文件文档",
+          "description": "文件、文件夹、PDF、压缩包、归档、图片文档、表格文档等资源。",
+          "count": 325
+        },
+        {
+          "id": "formatting",
+          "label": "文字排版",
+          "description": "粗体、斜体、下划线、字体、颜色、对齐、项目符号和编号等文本编辑图标。",
+          "count": 210
+        },
+        {
+          "id": "accessibility-inclusion",
+          "label": "无障碍与包容",
+          "description": "无障碍、人员支持、社区协作、可访问性状态和人群服务图标。",
+          "count": 14
+        },
+        {
+          "id": "campus-energy-management",
+          "label": "校园能源管理",
+          "description": "校园微网、楼宇分项、宿舍负荷、教室照明、冷热站和校园充电图标。",
+          "count": 12
+        },
+        {
+          "id": "communication",
+          "label": "协作通信",
+          "description": "用户、组织、邮件、消息、电话、会议、云、链接、附件和网络通信。",
+          "count": 342
+        },
+        {
+          "id": "collaboration",
+          "label": "协作通信",
+          "description": "邮件、日历、人员、聊天、通话、会议、云、链接和附件。",
+          "count": 224
+        },
+        {
+          "id": "advanced-renewables",
+          "label": "新能源扩展",
+          "description": "跟踪支架、汇流箱、组串逆变、储能舱、氢储能和新能源预测图标。",
+          "count": 12
+        },
+        {
+          "id": "new-energy-equipment",
+          "label": "新能源设备",
+          "description": "风电、光伏、氢能、储能、新能源场站、并网、预测、监测和能量管理类图标。",
+          "count": 1
+        },
+        {
+          "id": "business-finance",
+          "label": "业务金融",
+          "description": "资金、支付、票据、合同、购物、库存、目标、奖励和经营管理类图标。",
+          "count": 280
         },
         {
           "id": "health-safety",
@@ -872,40 +624,100 @@
           "count": 169
         },
         {
-          "id": "business-finance",
-          "label": "业务金融",
-          "description": "资金、支付、票据、合同、购物、库存、目标、奖励和经营管理类图标。",
-          "count": 205
+          "id": "health-wellness",
+          "label": "医疗健康",
+          "description": "医生、患者、心率、急救、药品、健康数据和医疗服务图标。",
+          "count": 14
         },
         {
-          "id": "education-research",
-          "label": "教育科研",
-          "description": "图书、学校、课程、实验、公式、白板、毕业、科研和知识表达图标。",
-          "count": 73
+          "id": "emergency-resilience",
+          "label": "应急韧性",
+          "description": "应急电源、移动变电站、抢修、防汛、指挥、备供和黑启动图标。",
+          "count": 12
         },
         {
-          "id": "flags-regions",
-          "label": "国家地区旗帜",
-          "description": "国家、地区、国际组织和区域旗帜 SVG，用于地图、区域、项目归属和国际化展示。",
-          "count": 290
+          "id": "consumption-link",
+          "label": "用电环节",
+          "description": "用户侧、负荷、电表、楼宇、工厂、居民、充电桩、需求响应、能效和用电监测类图标。",
+          "count": 92
         },
         {
-          "id": "office-productivity",
-          "label": "办公效率",
-          "description": "日历、时间、任务、列表、书签、标签、笔记、简报和办公流程。",
-          "count": 258
+          "id": "mail-calendar",
+          "label": "邮件日程",
+          "description": "邮件、收件箱、日历、会议日程、同步、提醒和办公计划图标。",
+          "count": 11
         },
         {
-          "id": "maps-places",
-          "label": "地图地点",
-          "description": "地图、定位、建筑、道路、桥梁、园区、医院、学校和公共设施图标。",
-          "count": 178
+          "id": "oil-gas-chemical",
+          "label": "油气化工",
+          "description": "油罐、天然气、压缩机、反应釜、换热、管廊、火炬和化学品图标。",
+          "count": 12
         },
         {
-          "id": "transport-facilities",
-          "label": "交通设施",
-          "description": "车辆、公交、轨道、航空、船舶、充电、燃料和交通服务设施图标。",
-          "count": 156
+          "id": "cloud-infrastructure",
+          "label": "云与基础设施",
+          "description": "云、服务器、数据中心、存储、计算、网络、安全、AI 和运维基础设施图标。",
+          "count": 107
+        },
+        {
+          "id": "cloud-ai-infrastructure",
+          "label": "云与AI基础设施",
+          "description": "云、服务器、数据库、机器人、AI、自动化、网络和数据基础设施图标。",
+          "count": 26
+        },
+        {
+          "id": "business-operation",
+          "label": "运营管理",
+          "description": "看板、报表、成本、合同、日程、任务、审批、库存等运营类图标。",
+          "count": 12
+        },
+        {
+          "id": "operations-maintenance",
+          "label": "运营维护",
+          "description": "扳手、工具箱、运维工具、数据工具、人员工具和趋势维修图标。",
+          "count": 7
+        },
+        {
+          "id": "smart-city",
+          "label": "智慧城市",
+          "description": "路灯、摄像头、停车、垃圾、消防栓、井盖、基站和城市感知图标。",
+          "count": 12
+        },
+        {
+          "id": "status-security",
+          "label": "状态安全",
+          "description": "成功、错误、告警、信息、锁、盾牌、密钥和安全状态。",
+          "count": 146
+        },
+        {
+          "id": "status-alerts",
+          "label": "状态告警",
+          "description": "成功、失败、警告、信息、锁定、权限、安全和异常状态。",
+          "count": 269
+        },
+        {
+          "id": "asset-logistics",
+          "label": "资产与物流",
+          "description": "箱体、库存、条码、二维码、运输车辆、单据、表格和任务跟踪图标。",
+          "count": 7
+        },
+        {
+          "id": "automation-communication",
+          "label": "自动化通信",
+          "description": "服务器、网关、交换机、RTU、IED、HMI、摄像头和通信链路。",
+          "count": 12
+        },
+        {
+          "id": "integrated-energy",
+          "label": "综合能源",
+          "description": "冷、热、电、气多能互补，综合能源站、能量枢纽、CCHP、多能流、碳能协同和能源调度类图标。",
+          "count": 27
+        },
+        {
+          "id": "ai-digital",
+          "label": "AI与数字化",
+          "description": "AI、算法、模型、数据流、数字孪生、边缘计算、API和自动化编排图标。",
+          "count": 12
         }
       ],
       "sources": [

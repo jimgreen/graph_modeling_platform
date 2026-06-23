@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" color="#dc2626" role="img" aria-labelledby="boiler-title boiler-desc">
+  <title id="boiler-title">锅炉</title>
+  <desc id="boiler-desc">热力设备 - boiler, heat</desc>
+  <g>
+<rect x="16" y="18" width="32" height="34" rx="6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M24 18v-6h16v6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M24 40c-3-4 0-8 4-10 0 4 6 5 4 10 4-2 8 1 8 5 0 5-4 7-8 7s-8-2-8-7c0-2 1-4 2-5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

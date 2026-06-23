@@ -1354,8 +1354,9 @@ describe("power system model", () => {
     };
 
     const node = createNodeFromTemplate(template, { x: 100, y: 100 });
-    expect(node.params.status).toBe("0");
+    expect(node.params.status).toBeUndefined();
     expect(node.params.run_stat).toBe("运行");
+    expect(resolveDeviceStateVisual(template, node)).toBeNull();
 
     const visual = resolveDeviceStateVisual(template, { ...node, params: { ...node.params, status: "2" } });
     expect(visual).toMatchObject({
