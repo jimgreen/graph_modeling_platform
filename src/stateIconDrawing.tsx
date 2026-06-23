@@ -74,6 +74,10 @@ export type StateIconDrawingElement = {
   cropY?: number;
 };
 
+export type StateIconDrawingToImageOptions = {
+  resolveImageHref?: (href: string) => string | undefined | null;
+};
+
 export type DeviceDefinitionStateDraftRow = DeviceStateDefinition & {
   id: string;
   value: string;
@@ -1062,7 +1066,10 @@ export function stateIconDrawingSvgElementMarkup(source: string, x: number, y: n
   return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" viewBox="${escapeXml(parsed.viewBox)}" preserveAspectRatio="xMidYMid meet">${parsed.body}</svg>`;
 }
 
-export function stateIconDrawingElementMarkup(element: StateIconDrawingElement) {
+export function stateIconDrawingElementMarkup(
+  element: StateIconDrawingElement,
+  options: StateIconDrawingToImageOptions = {}
+) {
   const stroke = escapeXml(element.strokeColor || "#2563eb");
   const fill = escapeXml(element.fillColor || "transparent");
   const textFill = escapeXml(element.textColor || element.strokeColor || "#111827");
@@ -1083,7 +1090,8 @@ export function stateIconDrawingElementMarkup(element: StateIconDrawingElement) 
       break;
     }
     case "image": {
-      const href = element.imageHref || "";
+      const rawHref = element.imageHref || "";
+      const href = rawHref ? (options.resolveImageHref?.(rawHref) || rawHref) : "";
       const clipId = `clip-${element.id.replace(/[^a-zA-Z0-9_-]/g, "")}`;
       const scale = Math.max(0.05, element.imageScale ?? 1);
       body = href
@@ -1160,8 +1168,11 @@ export function stateIconDrawingElementMarkup(element: StateIconDrawingElement) 
   return `<g${terminalAttr}${polylineAttr} transform="translate(${formatSvgNumber(element.x)} ${formatSvgNumber(element.y)}) rotate(${formatSvgNumber(element.rotation)})">${body}</g>`;
 }
 
-export function stateIconDrawingToImage(elements: readonly StateIconDrawingElement[]) {
-  const body = elements.map(stateIconDrawingElementMarkup).join("");
+export function stateIconDrawingToImage(
+  elements: readonly StateIconDrawingElement[],
+  options: StateIconDrawingToImageOptions = {}
+) {
+  const body = elements.map((element) => stateIconDrawingElementMarkup(element, options)).join("");
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">${body}</svg>`;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }

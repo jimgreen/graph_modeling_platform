@@ -1,6 +1,11 @@
 // @ts-nocheck
 import { useState } from "react";
 import { MemoizedCanvasArea } from "./appCanvasArea";
+import {
+  ICON_LIBRARY_PAGE_SIZE,
+  iconLibraryCategoriesForSelection,
+  visibleIconLibraryIcons
+} from "../iconLibraryCatalog";
 
 // 运行时态 WS 指示灯：open=绿、connecting=黄、closed=灰；收发消息时闪烁一次。
 // runtimeWsBlinkSeq 递增 → key 变化 → 重放 blink 动画。
@@ -94,9 +99,15 @@ export function renderAppView(__appScope: Record<string, any>) {
   } = __appScope;
   const { dragging } = __appScope;
   const {
+    applyIconLibraryCatalogIcon,
+    deleteImageAssetFromContextMenu,
+    iconLibraryPicker,
+    imageAssetContextMenu,
     imagePickerCategoryFilter,
     imagePickerSearchQuery,
     imagePickerSourceFilter,
+    setIconLibraryPicker,
+    setImageAssetContextMenu,
     setImagePickerCategoryFilter,
     setImagePickerSearchQuery,
     setImagePickerSourceFilter
@@ -158,6 +169,7 @@ export function renderAppView(__appScope: Record<string, any>) {
   };
   const customDeviceHasTerminals = customDeviceDraft.terminalCount > 0;
   const visibleCustomDeviceDialogView = customDeviceDialogView === "terminals" && !customDeviceHasTerminals ? "icon" : customDeviceDialogView;
+  const imagePickerUsesCatalogSource = imageTarget?.kind === "stateIconDrawing" && imageTarget.sourceMode === "catalogOnly";
   const imagePickerTitle =
     imageTarget?.kind === "canvas"
       ? "选择模型背景图片"
@@ -165,18 +177,35 @@ export function renderAppView(__appScope: Record<string, any>) {
         ? "选择设备前景图片"
         : imageTarget?.kind === "canvasIcon"
           ? "分类图标库"
+          : imagePickerUsesCatalogSource
+            ? "分类图标"
           : imageTarget?.kind === "stateIconDrawing"
             ? "选择元件图标素材"
             : "选择设备图片";
   const imagePickerHint =
     imageTarget?.kind === "canvasIcon"
-      ? "内置 SVG 通过下方列表选择；外部 SVG/PNG 和文档/ZIP 抽取分开导入。选择后在大画布绘制静态图片图元。"
-      : imageTarget?.kind === "stateIconDrawing"
-        ? "内置 SVG 通过下方列表选择；外部 SVG/PNG 和文档/ZIP 抽取分开导入。选择后插入当前元件图标编辑区。"
+      ? "内置 SVG 通过下方列表选择；外部 SVG/PNG 可直接导入，文档图片/图标导入会抽取图片并将可识别矢量图形转成 SVG 素材。"
+      : imageTarget?.kind === "stateIconDrawing" && imageTarget.sourceMode === "builtinOnly"
+        ? "从内置 SVG 分类中选择图标，选择后插入当前元件图标编辑区。"
+      : imageTarget?.kind === "stateIconDrawing" && imageTarget.sourceMode === "externalOnly"
+          ? "从已导入的外部 SVG/PNG 分类中选择图标，选择后插入当前元件图标编辑区。"
+        : imagePickerUsesCatalogSource
+          ? "从 icon-library 按图库和分类检索 SVG 图标；清单按需加载并缓存，选择后插入当前元件图标编辑区。"
+          : imageTarget?.kind === "stateIconDrawing"
+            ? "内置 SVG 通过下方列表选择；外部 SVG/PNG 可直接导入，文档图片/图标导入会抽取图片并将可识别矢量图形转成 SVG 素材。"
         : "本地图片会先上传到后台图片库；请再从后台可用图片列表中选择应用。";
   const imagePickerCanClear = imageTarget && imageTarget.kind !== "canvasIcon" && imageTarget.kind !== "stateIconDrawing";
-  const imagePickerUsesIconSources = imageTarget?.kind === "canvasIcon" || imageTarget?.kind === "stateIconDrawing";
-  const imagePickerActiveSourceFilter = imagePickerUsesIconSources && imagePickerSourceFilter === "external" ? "external" : "builtin";
+  const imagePickerUsesIconSources = imageTarget?.kind === "canvasIcon" || (imageTarget?.kind === "stateIconDrawing" && !imagePickerUsesCatalogSource);
+  const imagePickerLockedSourceMode = imageTarget?.kind === "stateIconDrawing" ? imageTarget.sourceMode ?? "" : "";
+  const imagePickerSourceLocked = imagePickerLockedSourceMode === "builtinOnly" || imagePickerLockedSourceMode === "externalOnly" || imagePickerLockedSourceMode === "catalogOnly";
+  const imagePickerShowsLibraryActions = !imagePickerUsesCatalogSource && (!imagePickerSourceLocked || imagePickerLockedSourceMode === "externalOnly");
+  const imagePickerActiveSourceFilter = imagePickerUsesIconSources
+    ? imagePickerLockedSourceMode === "externalOnly"
+      ? "external"
+      : imagePickerLockedSourceMode === "builtinOnly"
+        ? "builtin"
+        : imagePickerSourceFilter === "external" ? "external" : "builtin"
+    : "builtin";
   const imagePickerIsBuiltinAsset = (asset: any) =>
     asset?.createdAt === "builtin" ||
     String(asset?.folderId ?? "") === "builtin-shared-icons" ||
@@ -226,6 +255,31 @@ export function renderAppView(__appScope: Record<string, any>) {
       .join(" ");
     return haystack.includes(normalizedImagePickerSearchQuery);
   });
+  const imagePickerDialogClassName = [
+    "image-picker-dialog",
+    imagePickerUsesIconSources ? "icon-library" : "",
+    imagePickerUsesCatalogSource ? "icon-library catalog-icon-library" : "",
+    imagePickerUsesIconSources && imagePickerActiveSourceFilter === "external" ? "external-icon-library" : "",
+    imagePickerSourceLocked ? "source-locked-icon-library" : ""
+  ].filter(Boolean).join(" ");
+  const iconLibraryCatalog = iconLibraryPicker?.catalog ?? null;
+  const iconLibraryLibraries = iconLibraryCatalog?.libraries ?? [];
+  const iconLibrarySelectedLibraryId = iconLibraryPicker?.selectedLibraryId ?? "";
+  const iconLibraryCategoryOptions = iconLibraryCategoriesForSelection(iconLibraryCatalog, iconLibrarySelectedLibraryId);
+  const iconLibraryVisibleResult = visibleIconLibraryIcons(
+    iconLibraryPicker?.entries ?? [],
+    {
+      libraryId: iconLibrarySelectedLibraryId,
+      categoryKey: iconLibraryPicker?.selectedCategoryKey ?? "",
+      query: iconLibraryPicker?.searchQuery ?? ""
+    },
+    iconLibraryPicker?.visibleCount ?? ICON_LIBRARY_PAGE_SIZE
+  );
+  const iconLibraryRequestedTotal =
+    iconLibrarySelectedLibraryId
+      ? iconLibraryLibraries.find((library) => library.id === iconLibrarySelectedLibraryId)?.totalIcons
+      : iconLibraryCatalog?.totalIcons;
+  const iconLibraryLoadedText = `${iconLibraryVisibleResult.total} / ${iconLibraryPicker?.entries?.length ?? 0}${typeof iconLibraryRequestedTotal === "number" ? ` / ${iconLibraryRequestedTotal}` : ""}`;
   return (<div className={`app-shell ${isBrowseMode ? "browse-mode" : "edit-mode"} left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${topologyWarningPanelResize ? "topology-warning-panel-resizing" : ""} ${nodeDoubleClickDialogDrag || nodeDoubleClickDialogResize ? "node-double-click-dialog-moving" : ""} ${deviceLibraryDialogDrag || deviceLibraryDialogResize ? "device-library-dialog-moving" : ""} ${canvasResizeDrag ? "canvas-resizing" : ""}`} style={appShellStyle}>
       {renderSidePanelEdgeTrigger("left")}
       {renderSidePanelEdgeTrigger("right")}
@@ -404,7 +458,7 @@ export function renderAppView(__appScope: Record<string, any>) {
               </div>
             </div>
             <input ref={imageInputRef} type="file" accept="image/*,.svg,image/svg+xml" data-image-import-kind="image" hidden multiple onChange={chooseImage}/>
-            <input ref={__appScope.imageArchiveInputRef} type="file" accept=".docx,.pptx,.vsdx,.wps,.dps,.zip" data-image-import-kind="archive" hidden multiple onChange={chooseImage}/>
+            <input ref={__appScope.imageArchiveInputRef} type="file" accept=".docx,.docm,.pptx,.pptm,.ppsx,.ppsm,.xlsx,.xlsm,.vsdx,.wps,.dps,.zip" data-image-import-kind="archive" hidden multiple onChange={chooseImage}/>
             <input ref={customDeviceImageInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseCustomDeviceBackground}/>
             <input ref={definitionTemplateIconInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseDefinitionTemplateIcon}/>
             <input ref={stateVisualImageInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseStateVisualImage}/>
@@ -2509,48 +2563,186 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {renderNodeDoubleClickDialog()}
-      {imageTarget && (<div className="image-picker-backdrop" onPointerDown={() => setImageTarget(null)}>
-          <section className={`image-picker-dialog ${imageTarget.kind === "canvasIcon" || imageTarget.kind === "stateIconDrawing" ? "icon-library" : ""}`} onPointerDown={(event) => event.stopPropagation()}>
+      {imageTarget && (<div className="image-picker-backdrop" onPointerDown={() => {
+          setImageAssetContextMenu(null);
+          setImageTarget(null);
+        }}>
+          <section className={imagePickerDialogClassName} onPointerDown={(event) => {
+            setImageAssetContextMenu(null);
+            event.stopPropagation();
+          }}>
             <div className="image-picker-title">
               <div>
                 <h2>{imagePickerTitle}</h2>
                 <p>{imagePickerHint}</p>
               </div>
-              <button onClick={() => setImageTarget(null)}>关闭</button>
-            </div>
-            <div className="image-picker-actions">
-              <select value={activeImageFolderId} onChange={(event) => setActiveImageFolderId(event.target.value)}>
-                {imageFolders.map((folder) => (<option key={folder.id} value={folder.id}>
-                    {folder.name}{typeof folder.imageCount === "number" ? ` (${folder.imageCount})` : ""}
-                  </option>))}
-              </select>
-              <button onClick={createImageFolder} disabled={isBrowseMode}>新建文件夹</button>
-              <button onClick={renameImageFolder} disabled={isBrowseMode || activeImageFolderId === "root"}>重命名</button>
-              <button onClick={deleteImageFolder} disabled={isBrowseMode || activeImageFolderId === "root"}>删除文件夹</button>
               <button onClick={() => {
-                setImagePickerSourceFilter("external");
-                imageInputRef.current?.click();
-              }} disabled={isBrowseMode}>导入外部 SVG/PNG</button>
-              <button onClick={() => {
-                setImagePickerSourceFilter("external");
-                __appScope.imageArchiveInputRef.current?.click();
-              }} disabled={isBrowseMode}>从文档/ZIP 抽取</button>
-              {imagePickerCanClear && <button onClick={clearSelectedImage} disabled={isBrowseMode}>取消当前图片</button>}
+                setImageAssetContextMenu(null);
+                setImageTarget(null);
+              }}>关闭</button>
             </div>
-            {imageAssetList.length > 0 && (
-              <div className="image-picker-filters" role="search" aria-label="图标筛选检索">
-                {imagePickerUsesIconSources && (
+            {imagePickerShowsLibraryActions && (
+              <div className="image-picker-actions">
+                <select value={activeImageFolderId} onChange={(event) => setActiveImageFolderId(event.target.value)}>
+                  {imageFolders.map((folder) => (<option key={folder.id} value={folder.id}>
+                      {folder.name}{typeof folder.imageCount === "number" ? ` (${folder.imageCount})` : ""}
+                    </option>))}
+                </select>
+                <button onClick={createImageFolder} disabled={isBrowseMode}>新建文件夹</button>
+                <button onClick={renameImageFolder} disabled={isBrowseMode || activeImageFolderId === "root"}>重命名</button>
+                <button onClick={deleteImageFolder} disabled={isBrowseMode || activeImageFolderId === "root"}>删除文件夹</button>
+                <button onClick={() => {
+                  setImagePickerSourceFilter("external");
+                  imageInputRef.current?.click();
+                }} disabled={isBrowseMode}>导入外部 SVG/PNG</button>
+                <button onClick={() => {
+                  setImagePickerSourceFilter("external");
+                  __appScope.imageArchiveInputRef.current?.click();
+                }} disabled={isBrowseMode}>导入文档图片/图标</button>
+                {imagePickerCanClear && <button onClick={clearSelectedImage} disabled={isBrowseMode}>取消当前图片</button>}
+              </div>
+            )}
+            {imagePickerUsesCatalogSource ? (
+              <div className="icon-library-browser">
+                <div className="image-picker-filters icon-library-browser-filters" role="search" aria-label="分类图标筛选检索">
                   <label>
-                    来源
-                    <select value={imagePickerActiveSourceFilter} onChange={(event) => {
-                      setImagePickerSourceFilter(event.target.value);
-                      setImagePickerCategoryFilter("");
-                    }}>
-                      <option value="builtin">内置 SVG</option>
-                      <option value="external">外部导入</option>
+                    图库
+                    <select
+                      value={iconLibrarySelectedLibraryId}
+                      onChange={(event) => {
+                        const nextLibraryId = event.target.value;
+                        setIconLibraryPicker((current: any) => ({
+                          ...current,
+                          selectedLibraryId: nextLibraryId,
+                          selectedCategoryKey: "",
+                          visibleCount: ICON_LIBRARY_PAGE_SIZE
+                        }));
+                      }}
+                      disabled={!iconLibraryCatalog}
+                    >
+                      <option value="">全部图库</option>
+                      {iconLibraryLibraries.map((library: any) => (
+                        <option key={library.id} value={library.id}>
+                          {library.label}{typeof library.totalIcons === "number" ? ` (${library.totalIcons})` : ""}
+                        </option>
+                      ))}
                     </select>
                   </label>
+                  <label>
+                    分类
+                    <select
+                      value={iconLibraryPicker?.selectedCategoryKey ?? ""}
+                      onChange={(event) => {
+                        setIconLibraryPicker((current: any) => ({
+                          ...current,
+                          selectedCategoryKey: event.target.value,
+                          visibleCount: ICON_LIBRARY_PAGE_SIZE
+                        }));
+                      }}
+                      disabled={!iconLibraryCatalog}
+                    >
+                      <option value="">全部分类</option>
+                      {iconLibraryCategoryOptions.map((category: any) => (
+                        <option key={category.key} value={category.key}>
+                          {category.label}{typeof category.count === "number" ? ` (${category.count})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    检索
+                    <input
+                      type="search"
+                      value={iconLibraryPicker?.searchQuery ?? ""}
+                      placeholder="搜索名称/标签/来源"
+                      onChange={(event) => {
+                        const nextQuery = event.target.value;
+                        setIconLibraryPicker((current: any) => ({
+                          ...current,
+                          searchQuery: nextQuery,
+                          visibleCount: ICON_LIBRARY_PAGE_SIZE
+                        }));
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIconLibraryPicker((current: any) => ({
+                        ...current,
+                        selectedLibraryId: current.catalog?.libraries?.[0]?.id ?? "",
+                        selectedCategoryKey: "",
+                        searchQuery: "",
+                        visibleCount: ICON_LIBRARY_PAGE_SIZE
+                      }));
+                    }}
+                    disabled={!iconLibrarySelectedLibraryId && !(iconLibraryPicker?.selectedCategoryKey) && !(iconLibraryPicker?.searchQuery)}
+                  >
+                    清空
+                  </button>
+                  <span>{iconLibraryLoadedText}</span>
+                </div>
+                {iconLibraryPicker?.status === "error" ? (
+                  <p className="image-empty">{iconLibraryPicker.error || "读取分类图标库失败。"}</p>
+                ) : !iconLibraryCatalog ? (
+                  <p className="image-empty">正在加载分类图标库目录...</p>
+                ) : iconLibraryPicker?.status === "loading" && iconLibraryVisibleResult.visible.length === 0 ? (
+                  <p className="image-empty">正在按需加载图标清单...</p>
+                ) : iconLibraryVisibleResult.visible.length === 0 ? (
+                  <p className="image-empty">没有匹配的分类图标，请调整图库、分类或搜索关键字。</p>
+                ) : (
+                  <>
+                    <div className="image-asset-list icon-library-catalog-list">
+                      {iconLibraryVisibleResult.visible.map((icon: any, index: number) => (
+                        <button
+                          key={icon.id}
+                          className="image-asset-option icon-library-catalog-option"
+                          disabled={isBrowseMode}
+                          onClick={() => applyIconLibraryCatalogIcon(icon.id)}
+                          title={`${icon.libraryLabel} / ${icon.categoryLabel} / ${icon.name}`}
+                        >
+                          <img src={icon.url} alt={icon.name || `分类图标 ${index + 1}`} loading="lazy"/>
+                          <span>{icon.name || `分类图标 ${index + 1}`}</span>
+                          <small>{icon.categoryLabel}</small>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="icon-library-load-more">
+                      <span>
+                        已显示 {iconLibraryVisibleResult.visible.length} / {iconLibraryVisibleResult.total}
+                        {iconLibraryPicker?.status === "loading" ? "，正在加载..." : ""}
+                      </span>
+                      {iconLibraryVisibleResult.hasMore && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIconLibraryPicker((current: any) => ({
+                              ...current,
+                              visibleCount: (current.visibleCount || ICON_LIBRARY_PAGE_SIZE) + ICON_LIBRARY_PAGE_SIZE
+                            }));
+                          }}
+                        >
+                          加载更多
+                        </button>
+                      )}
+                    </div>
+                  </>
                 )}
+              </div>
+            ) : imageAssetList.length > 0 && (
+              <div className={`image-picker-filters ${imagePickerSourceLocked ? "source-locked" : ""}`} role="search" aria-label="图标筛选检索">
+                {!imagePickerSourceLocked && imagePickerUsesIconSources && (
+                    <label>
+                      来源
+                      <select value={imagePickerActiveSourceFilter} onChange={(event) => {
+                        setImagePickerSourceFilter(event.target.value);
+                        setImagePickerCategoryFilter("");
+                      }}>
+                        <option value="builtin">内置 SVG</option>
+                        <option value="external">外部导入</option>
+                      </select>
+                    </label>
+                  )}
                 <label>
                   分类
                   <select value={imagePickerActiveCategoryFilter} onChange={(event) => setImagePickerCategoryFilter(event.target.value)}>
@@ -2562,35 +2754,70 @@ export function renderAppView(__appScope: Record<string, any>) {
                     ))}
                   </select>
                 </label>
-                <label>
-                  检索
-                  <input
-                    type="search"
-                    value={imagePickerSearchQuery}
-                    placeholder="搜索名称/文件名/分类"
-                    onChange={(event) => setImagePickerSearchQuery(event.target.value)}
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setImagePickerSourceFilter("");
-                    setImagePickerCategoryFilter("");
-                    setImagePickerSearchQuery("");
-                  }}
-                  disabled={(!imagePickerUsesIconSources || imagePickerActiveSourceFilter === "builtin") && !imagePickerActiveCategoryFilter && !imagePickerSearchQuery}
-                >
-                  清空
-                </button>
+                {!imagePickerSourceLocked && (
+                  <>
+                    <label>
+                      检索
+                      <input
+                        type="search"
+                        value={imagePickerSearchQuery}
+                        placeholder="搜索名称/文件名/分类"
+                        onChange={(event) => setImagePickerSearchQuery(event.target.value)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setImagePickerSourceFilter("");
+                        setImagePickerCategoryFilter("");
+                        setImagePickerSearchQuery("");
+                      }}
+                      disabled={(!imagePickerUsesIconSources || imagePickerActiveSourceFilter === "builtin") && !imagePickerActiveCategoryFilter && !imagePickerSearchQuery}
+                    >
+                      清空
+                    </button>
+                  </>
+                )}
                 <span>{filteredImageAssetList.length} / {sourceFilteredImageAssetList.length}</span>
               </div>
             )}
-            <div className="image-asset-list">
-              {imageAssetList.length === 0 ? (<p className="image-empty">后台暂无图片，请先加载本地图片。</p>) : sourceFilteredImageAssetList.length === 0 ? (<p className="image-empty">{imagePickerUsesIconSources && imagePickerActiveSourceFilter === "external" ? "暂无外部导入图标，请使用上方外部导入按钮。" : "暂无可用图标。"}</p>) : filteredImageAssetList.length === 0 ? (<p className="image-empty">没有匹配的图标，请调整来源、分类或搜索关键字。</p>) : (filteredImageAssetList.map((asset, index) => (<button key={asset.id} className="image-asset-option" disabled={isBrowseMode} onClick={() => applyExistingImage(asset.id)} title={asset.name || asset.filename || `后台图片 ${index + 1}`}>
+            {!imagePickerUsesCatalogSource && (<div className="image-asset-list">
+              {imageAssetList.length === 0 ? (<p className="image-empty">后台暂无图片，请先加载本地图片。</p>) : sourceFilteredImageAssetList.length === 0 ? (<p className="image-empty">{imagePickerUsesIconSources && imagePickerActiveSourceFilter === "external" ? "暂无外部导入图标，请使用上方外部导入按钮。" : "暂无可用图标。"}</p>) : filteredImageAssetList.length === 0 ? (<p className="image-empty">没有匹配的图标，请调整来源、分类或搜索关键字。</p>) : (filteredImageAssetList.map((asset, index) => {
+                const canDeleteImageAsset = !isBrowseMode && !imagePickerIsBuiltinAsset(asset) && (!imagePickerUsesIconSources || imagePickerActiveSourceFilter === "external");
+                return (<button key={asset.id} className="image-asset-option" disabled={isBrowseMode} onClick={() => {
+                    setImageAssetContextMenu(null);
+                    applyExistingImage(asset.id);
+                  }} onContextMenu={(event) => {
+                    if (!canDeleteImageAsset) {
+                      return;
+                    }
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setImageAssetContextMenu({
+                      assetId: asset.id,
+                      x: Math.max(8, Math.min(event.clientX, window.innerWidth - 148)),
+                      y: Math.max(8, Math.min(event.clientY, window.innerHeight - 52))
+                    });
+                  }} title={asset.name || asset.filename || `后台图片 ${index + 1}`}>
                     <img src={imageAssets[asset.id] ?? asset.url} alt={asset.name || `后台图片 ${index + 1}`}/>
                     <span>{asset.name || `后台图片 ${index + 1}`}</span>
-                  </button>)))}
-            </div>
+                  </button>);
+              }))}
+            </div>)}
+            {!imagePickerUsesCatalogSource && imageAssetContextMenu && (
+              <div
+                className="context-menu image-asset-context-menu"
+                role="menu"
+                style={{ left: imageAssetContextMenu.x, top: imageAssetContextMenu.y }}
+                onPointerDown={(event) => event.stopPropagation()}
+                onContextMenu={(event) => event.preventDefault()}
+              >
+                <button type="button" role="menuitem" onClick={deleteImageAssetFromContextMenu} disabled={isBrowseMode}>
+                  <Trash2 size={14} aria-hidden="true"/>
+                  删除
+                </button>
+              </div>
+            )}
           </section>
         </div>)}
     </div>);

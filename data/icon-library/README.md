@@ -1,6 +1,6 @@
 # SVG Icon Library Catalog
 
-This directory is the unified entry for all generated SVG icon libraries.
+This directory is the unified entry for all generated SVG icon libraries. The backend serves it at `/icon-library/...` so existing frontend icon URLs remain stable.
 
 Output:
 

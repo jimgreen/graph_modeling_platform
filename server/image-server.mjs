@@ -22,6 +22,7 @@ const colorConfigPath = join(settingsDataDir, "color-config.json");
 const measurementConfigPath = join(settingsDataDir, "measurement-config.json");
 const deviceLibraryDataDir = join(dataRoot, "device-library");
 const deviceLibraryPath = join(deviceLibraryDataDir, "library.json");
+const iconLibraryDataDir = join(dataRoot, "icon-library");
 const maxImageBodyBytes = 16 * 1024 * 1024;
 const maxIconLibraryImportBodyBytes = 128 * 1024 * 1024;
 const maxSchemeBodyBytes = 64 * 1024 * 1024;
@@ -167,8 +168,24 @@ const mimeExt = {
   "image/svg+xml": ".svg"
 };
 
-const imageMimeByExtension = Object.fromEntries(Object.entries(mimeExt).map(([mimeType, extension]) => [extension, mimeType]));
-const iconLibraryArchiveExtensions = new Set([".docx", ".pptx", ".vsdx", ".wps", ".dps", ".zip"]);
+const imageMimeByExtension = {
+  ...Object.fromEntries(Object.entries(mimeExt).map(([mimeType, extension]) => [extension, mimeType])),
+  ".jpeg": "image/jpeg"
+};
+const iconLibraryArchiveExtensions = new Set([
+  ".docx",
+  ".docm",
+  ".pptx",
+  ".pptm",
+  ".ppsx",
+  ".ppsm",
+  ".xlsx",
+  ".xlsm",
+  ".vsdx",
+  ".wps",
+  ".dps",
+  ".zip"
+]);
 const maxIconLibraryExtractedAssets = 500;
 
 const stringifyJson = (value) => JSON.stringify(value, null, 2);
@@ -2267,19 +2284,173 @@ function iconLibraryEntryMimeType(entryName) {
 }
 
 function iconLibrarySourceName(fileName) {
-  return safeFilePart(String(fileName || "导入图标库").replace(/\.[^.]+$/u, ""), "导入图标库");
+  return safeFilePart(String(fileName || "导入文档图片").replace(/\.[^.]+$/u, ""), "导入文档图片");
 }
 
 function iconLibraryEntryDisplayName(entryName, sourceName) {
-  const fileName = safeName(basename(entryName) || "图标");
+  const fileName = safeName(basename(entryName) || "图片");
   return safeName(`${sourceName}-${fileName}`);
 }
 
-export function extractIconLibraryImageEntries(buffer, fileName = "导入图标库") {
+function iconLibraryGeneratedSvgDisplayName(sourceName, index) {
+  return safeName(`${sourceName}-矢量图标-${String(index).padStart(3, "0")}.svg`);
+}
+
+function officeXmlAttributeValue(markup, name) {
+  const match = String(markup ?? "").match(new RegExp(`\\b${name}="([^"]*)"`, "iu"));
+  return match ? match[1] : "";
+}
+
+function officeXmlNumberAttribute(markup, name, fallback = 0) {
+  const value = Number(officeXmlAttributeValue(markup, name));
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function officeXmlPathPoints(markup) {
+  return Array.from(String(markup ?? "").matchAll(/<a:pt\b([^>]*)\/?>/giu), (match) => ({
+    x: officeXmlNumberAttribute(match[1], "x"),
+    y: officeXmlNumberAttribute(match[1], "y")
+  }));
+}
+
+function officeXmlColorFromMarkup(markup, fallback) {
+  const srgbMatch = String(markup ?? "").match(/<a:srgbClr\b[^>]*\bval="([0-9a-f]{6})"/iu);
+  if (srgbMatch) {
+    return `#${srgbMatch[1].toLowerCase()}`;
+  }
+  const schemeMatch = String(markup ?? "").match(/<a:schemeClr\b[^>]*\bval="([^"]+)"/iu);
+  const schemeColors = {
+    bg1: "#ffffff",
+    tx1: "#111827",
+    bg2: "#f8fafc",
+    tx2: "#334155",
+    accent1: "#2563eb",
+    accent2: "#16a34a",
+    accent3: "#f59e0b",
+    accent4: "#dc2626",
+    accent5: "#7c3aed",
+    accent6: "#0891b2"
+  };
+  return schemeMatch ? schemeColors[schemeMatch[1]] ?? fallback : fallback;
+}
+
+function officeXmlFillColor(shapeMarkup) {
+  const fillMatch = String(shapeMarkup ?? "").match(/<a:solidFill\b[\s\S]*?<\/a:solidFill>/iu);
+  if (fillMatch) {
+    return officeXmlColorFromMarkup(fillMatch[0], "#111827");
+  }
+  return /<a:noFill\b/iu.test(shapeMarkup) ? "none" : "#111827";
+}
+
+function officeXmlStrokeColor(shapeMarkup) {
+  const lineMatch = String(shapeMarkup ?? "").match(/<a:ln\b[\s\S]*?<\/a:ln>/iu);
+  if (!lineMatch || /<a:noFill\b/iu.test(lineMatch[0])) {
+    return "none";
+  }
+  return officeXmlColorFromMarkup(lineMatch[0], "none");
+}
+
+function officeXmlPathData(pathBody) {
+  const commands = [];
+  for (const match of String(pathBody ?? "").matchAll(/<a:(moveTo|lnTo|cubicBezTo|quadBezTo)\b[^>]*>([\s\S]*?)<\/a:\1>|<a:close\b[^>]*\/?>/giu)) {
+    if (match[0].startsWith("<a:close")) {
+      commands.push("Z");
+      continue;
+    }
+    const command = match[1];
+    const points = officeXmlPathPoints(match[2]);
+    if (command === "moveTo" && points.length >= 1) {
+      commands.push(`M ${formatSvgNumber(points[0].x)} ${formatSvgNumber(points[0].y)}`);
+    } else if (command === "lnTo" && points.length >= 1) {
+      commands.push(`L ${formatSvgNumber(points[0].x)} ${formatSvgNumber(points[0].y)}`);
+    } else if (command === "cubicBezTo" && points.length >= 3) {
+      commands.push(`C ${formatSvgNumber(points[0].x)} ${formatSvgNumber(points[0].y)} ${formatSvgNumber(points[1].x)} ${formatSvgNumber(points[1].y)} ${formatSvgNumber(points[2].x)} ${formatSvgNumber(points[2].y)}`);
+    } else if (command === "quadBezTo" && points.length >= 2) {
+      commands.push(`Q ${formatSvgNumber(points[0].x)} ${formatSvgNumber(points[0].y)} ${formatSvgNumber(points[1].x)} ${formatSvgNumber(points[1].y)}`);
+    }
+  }
+  return commands.join(" ");
+}
+
+function officeCustomGeometryToSvg(customGeometryMarkup, shapeMarkup) {
+  const pathMarkups = Array.from(String(customGeometryMarkup ?? "").matchAll(/<a:path\b([^>]*)>([\s\S]*?)<\/a:path>/giu));
+  const svgPaths = [];
+  let viewBoxWidth = 0;
+  let viewBoxHeight = 0;
+  for (const pathMatch of pathMarkups) {
+    const attributes = pathMatch[1] ?? "";
+    const body = pathMatch[2] ?? "";
+    const pathData = officeXmlPathData(body);
+    if (!pathData) {
+      continue;
+    }
+    const width = officeXmlNumberAttribute(attributes, "w");
+    const height = officeXmlNumberAttribute(attributes, "h");
+    viewBoxWidth = Math.max(viewBoxWidth, width);
+    viewBoxHeight = Math.max(viewBoxHeight, height);
+    svgPaths.push(pathData);
+  }
+  if (svgPaths.length === 0) {
+    return null;
+  }
+  if (viewBoxWidth <= 0 || viewBoxHeight <= 0) {
+    const points = officeXmlPathPoints(customGeometryMarkup);
+    viewBoxWidth = Math.max(1, ...points.map((point) => point.x));
+    viewBoxHeight = Math.max(1, ...points.map((point) => point.y));
+  }
+  const fill = officeXmlFillColor(shapeMarkup);
+  const stroke = officeXmlStrokeColor(shapeMarkup);
+  const strokeAttribute = stroke === "none" ? "" : ` stroke="${escapeSvgAttribute(stroke)}" stroke-width="${formatSvgNumber(Math.max(1, Math.min(viewBoxWidth, viewBoxHeight) / 80))}" stroke-linejoin="round"`;
+  const body = svgPaths
+    .map((pathData) => `<path d="${escapeSvgAttribute(pathData)}" fill="${escapeSvgAttribute(fill)}"${strokeAttribute}/>`)
+    .join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${formatSvgNumber(viewBoxWidth)} ${formatSvgNumber(viewBoxHeight)}">${body}</svg>`;
+}
+
+function officeXmlLooksLikeDocumentDrawing(entryName) {
+  const normalizedName = String(entryName ?? "").replace(/\\/g, "/").toLowerCase();
+  return (
+    normalizedName.endsWith(".xml") &&
+    !normalizedName.includes("/_rels/") &&
+    /^(ppt|word|xl)\//u.test(normalizedName) &&
+    !normalizedName.includes("/theme/")
+  );
+}
+
+function extractOfficeVectorSvgEntries(zip, sourceName, remainingSlots) {
+  const entries = [];
+  for (const entry of zip.getEntries()) {
+    if (entry.isDirectory || entries.length >= remainingSlots || !officeXmlLooksLikeDocumentDrawing(entry.entryName)) {
+      continue;
+    }
+    const xml = entry.getData().toString("utf-8");
+    for (const match of xml.matchAll(/<a:custGeom\b[\s\S]*?<\/a:custGeom>/giu)) {
+      if (entries.length >= remainingSlots) {
+        break;
+      }
+      const contextStart = Math.max(0, match.index - 2200);
+      const contextEnd = Math.min(xml.length, match.index + match[0].length + 2200);
+      const svg = officeCustomGeometryToSvg(match[0], xml.slice(contextStart, contextEnd));
+      if (!svg) {
+        continue;
+      }
+      entries.push({
+        name: iconLibraryGeneratedSvgDisplayName(sourceName, entries.length + 1),
+        mimeType: "image/svg+xml",
+        bytes: Buffer.from(svg, "utf-8"),
+        entryName: `${entry.entryName}#vector-${entries.length + 1}`
+      });
+    }
+  }
+  return entries;
+}
+
+export function extractIconLibraryImageEntries(buffer, fileName = "导入文档图片") {
   const sourceName = iconLibrarySourceName(fileName);
   const zip = new AdmZip(buffer);
   const entries = [];
   const skipped = [];
+  const seenHashes = new Set();
   for (const entry of zip.getEntries()) {
     if (entry.isDirectory || entries.length >= maxIconLibraryExtractedAssets) {
       continue;
@@ -2293,12 +2464,29 @@ export function extractIconLibraryImageEntries(buffer, fileName = "导入图标�
       skipped.push(entry.entryName);
       continue;
     }
+    const hash = createHash("sha1").update(bytes).digest("hex");
+    if (seenHashes.has(hash)) {
+      continue;
+    }
+    seenHashes.add(hash);
     entries.push({
       name: iconLibraryEntryDisplayName(entry.entryName, sourceName),
       mimeType,
       bytes,
       entryName: entry.entryName
     });
+  }
+  for (const vectorEntry of extractOfficeVectorSvgEntries(zip, sourceName, maxIconLibraryExtractedAssets - entries.length)) {
+    if (vectorEntry.bytes.length <= 0 || vectorEntry.bytes.length > maxImageBodyBytes) {
+      skipped.push(vectorEntry.entryName);
+      continue;
+    }
+    const hash = createHash("sha1").update(vectorEntry.bytes).digest("hex");
+    if (seenHashes.has(hash)) {
+      continue;
+    }
+    seenHashes.add(hash);
+    entries.push(vectorEntry);
   }
   return {
     entries,
@@ -2307,16 +2495,16 @@ export function extractIconLibraryImageEntries(buffer, fileName = "导入图标�
 }
 
 async function handleImportIconLibrary(request, response) {
-  const payload = await readJsonBody(request, maxIconLibraryImportBodyBytes, "图标库文件过大，最大支持 128MB。");
+  const payload = await readJsonBody(request, maxIconLibraryImportBodyBytes, "文档图片导入文件过大，最大支持 128MB。");
   const { dataUrl, name } = payload;
   if (typeof dataUrl !== "string") {
-    sendError(response, 400, "缺少图标库文件数据。");
+    sendError(response, 400, "缺少文档图片导入文件数据。");
     return;
   }
-  const fileName = safeName(name || "导入图标库");
+  const fileName = safeName(name || "导入文档图片");
   const fileExtension = extname(fileName).toLowerCase();
   if (!iconLibraryArchiveExtensions.has(fileExtension)) {
-    sendError(response, 400, "只支持从 DOCX、PPTX、VSDX、WPS、DPS 或 ZIP 文件中抽取图标。");
+    sendError(response, 400, "只支持从 DOCX、PPTX、XLSX、VSDX、WPS、DPS 或 ZIP 文件中导入图片素材。");
     return;
   }
   const { bytes } = parseGenericDataUrl(dataUrl);
@@ -2324,7 +2512,7 @@ async function handleImportIconLibrary(request, response) {
   try {
     extracted = extractIconLibraryImageEntries(bytes, fileName);
   } catch {
-    sendError(response, 400, "图标库文件不是有效的压缩容器。");
+    sendError(response, 400, "文档图片导入文件不是有效的压缩容器。");
     return;
   }
   const folderId = await resolveFolderId(typeof payload.folderId === "string" ? payload.folderId : "root");
@@ -2340,7 +2528,7 @@ async function handleImportIconLibrary(request, response) {
     items.push(item);
   }
   if (items.length === 0) {
-    sendError(response, 400, "未在文件中找到可直接显示的 SVG、PNG、JPEG、WEBP 或 GIF 图标。");
+    sendError(response, 400, "未在文件中找到可直接显示的 SVG、PNG、JPEG、WEBP 或 GIF 图片素材。");
     return;
   }
   await ensureStore();
@@ -2441,6 +2629,18 @@ async function handleDownload(id, response) {
     "access-control-allow-origin": "*"
   });
   createReadStream(join(imageDataDir, item.filename)).pipe(response);
+}
+
+async function handleDeleteImageAsset(id, response) {
+  const manifest = await readManifest();
+  const item = manifest.find((entry) => entry.id === id);
+  if (!item) {
+    sendError(response, 404, "图片不存在。");
+    return;
+  }
+  await writeManifest(manifest.filter((entry) => entry.id !== id));
+  await rm(join(imageDataDir, item.filename), { force: true });
+  sendJson(response, 200, { ok: true });
 }
 
 async function handleSaveSchemes(request, response) {
@@ -2634,6 +2834,44 @@ function isPathInsideStaticRoot(targetPath, staticRoot) {
   return Boolean(relativePath) && !relativePath.startsWith("..") && !isAbsolute(relativePath);
 }
 
+async function serveIconLibraryAsset(request, response, url) {
+  if (request.method !== "GET" || (url.pathname !== "/icon-library" && !url.pathname.startsWith("/icon-library/"))) {
+    return false;
+  }
+  const relativeUrlPath =
+    url.pathname === "/icon-library" || url.pathname === "/icon-library/" ? "index.html" : url.pathname.slice("/icon-library/".length);
+  let decodedPath;
+  try {
+    decodedPath = decodeURIComponent(relativeUrlPath);
+  } catch {
+    sendError(response, 404, "资源不存在。");
+    return true;
+  }
+  const filePath = resolve(iconLibraryDataDir, decodedPath);
+  if (!isPathInsideStaticRoot(filePath, iconLibraryDataDir)) {
+    sendError(response, 404, "资源不存在。");
+    return true;
+  }
+  try {
+    const info = await stat(filePath);
+    if (!info.isFile()) {
+      sendError(response, 404, "资源不存在。");
+      return true;
+    }
+    const ext = extname(filePath).toLowerCase();
+    response.writeHead(200, {
+      "content-type": staticAssetMimeTypes[ext] ?? "application/octet-stream",
+      "cache-control": "no-cache",
+      ...accessControlHeaders
+    });
+    createReadStream(filePath).pipe(response);
+    return true;
+  } catch {
+    sendError(response, 404, "资源不存在。");
+    return true;
+  }
+}
+
 // prod 静态资源托管：dist/ 存在时，非 /api、/ws 请求走静态文件 + SPA fallback。
 // dev 模式 staticRoot 为空，跳过（Vite 自处理前端）。
 async function serveStaticAsset(request, response, url, staticRoot) {
@@ -2794,6 +3032,13 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
       handle: async ({ match, response }) => {
         await handleDownload(match[1], response);
       }
+    },
+    {
+      method: "DELETE",
+      pattern: /^\/api\/images\/([^/]+)$/u,
+      handle: async ({ match, response }) => {
+        await handleDeleteImageAsset(match[1], response);
+      }
     }
   ];
 
@@ -2812,6 +3057,10 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
       if (request.method === "OPTIONS") {
         response.writeHead(204, accessControlHeaders);
         response.end();
+        return;
+      }
+      const servedIconLibraryAsset = await serveIconLibraryAsset(request, response, url);
+      if (servedIconLibraryAsset) {
         return;
       }
       const exactRouteHandler = exactRouteHandlers.get(`${request.method} ${url.pathname}`);

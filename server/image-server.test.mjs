@@ -29,6 +29,63 @@ describe("icon library import", () => {
     expect(result.entries.map((entry) => entry.mimeType).sort()).toEqual(["image/png", "image/svg+xml"]);
     expect(result.entries[0].name).toContain("电力图标");
   });
+
+  test("extracts jpeg images with Office .jpeg extension from pptx archives", () => {
+    const zip = new AdmZip();
+    zip.addFile("ppt/media/image1.jpeg", Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+
+    const result = extractIconLibraryImageEntries(zip.toBuffer(), "现场照片.pptx");
+
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0]).toMatchObject({
+      mimeType: "image/jpeg",
+      entryName: "ppt/media/image1.jpeg"
+    });
+  });
+
+  test("converts Office custom geometry icons into saved SVG assets", () => {
+    const zip = new AdmZip();
+    zip.addFile(
+      "ppt/slides/slide1.xml",
+      Buffer.from(
+        `
+        <p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+          <p:cSld>
+            <p:spTree>
+              <p:sp>
+                <p:spPr>
+                  <a:solidFill><a:srgbClr val="1F2937"/></a:solidFill>
+                  <a:custGeom>
+                    <a:pathLst>
+                      <a:path w="100000" h="80000">
+                        <a:moveTo><a:pt x="50000" y="0"/></a:moveTo>
+                        <a:lnTo><a:pt x="100000" y="80000"/></a:lnTo>
+                        <a:lnTo><a:pt x="0" y="80000"/></a:lnTo>
+                        <a:close/>
+                      </a:path>
+                    </a:pathLst>
+                  </a:custGeom>
+                </p:spPr>
+              </p:sp>
+            </p:spTree>
+          </p:cSld>
+        </p:sld>
+        `,
+        "utf-8"
+      )
+    );
+
+    const result = extractIconLibraryImageEntries(zip.toBuffer(), "文档图标.pptx");
+
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0].mimeType).toBe("image/svg+xml");
+    expect(result.entries[0].name).toContain("矢量图标");
+    const svg = result.entries[0].bytes.toString("utf-8");
+    expect(svg).toContain("<svg");
+    expect(svg).toContain("<path");
+    expect(svg).toContain("M 50000 0");
+    expect(svg).toContain("#1f2937");
+  });
 });
 
 describe("scheme file persistence", () => {

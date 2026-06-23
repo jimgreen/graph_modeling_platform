@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const outputDir = path.join(rootDir, "public", "icon-library", "docer-free-compatible");
+const outputDir = path.join(rootDir, "data", "icon-library", "docer-free-compatible");
 
 const commonAttrs =
   'fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"';
@@ -2565,7 +2565,7 @@ const sourceManifestCache = new Map();
 
 async function readSourceManifest(libraryId) {
   if (!sourceManifestCache.has(libraryId)) {
-    const manifestPath = path.join(rootDir, "public", "icon-library", libraryId, "manifest.json");
+    const manifestPath = path.join(rootDir, "data", "icon-library", libraryId, "manifest.json");
     sourceManifestCache.set(libraryId, JSON.parse(await readFile(manifestPath, "utf8")));
   }
   return sourceManifestCache.get(libraryId);
@@ -2661,7 +2661,7 @@ ${identityMark}
 async function renderReusableExternalIcon(icon, category, ref) {
   const { category: sourceCategory, icon: sourceIcon } = await findExternalSourceIcon(ref);
   const sourceSvg = await readFile(
-    path.join(rootDir, "public", "icon-library", ref.libraryId, ref.file),
+    path.join(rootDir, "data", "icon-library", ref.libraryId, ref.file),
     "utf8",
   );
   const sourceName = sourceIcon.sourceName || sourceIcon.name || sourceIcon.id || path.basename(ref.file, ".svg");

@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const rootDir = path.resolve(__dirname, "..");
-const iconLibraryDir = path.join(rootDir, "public", "icon-library");
+const iconLibraryDir = path.join(rootDir, "data", "icon-library");
 
 type IconManifest = {
   categories: Array<{

@@ -2,7 +2,7 @@
 // 打真实请求测图片/方案/配置 CRUD + 错误码（400/404/409）。
 // 动态 import：在设 env 后加载 image-server.mjs，确保 dataRoot 指向 tmpdir。
 
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, test, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
@@ -48,6 +48,33 @@ async function fetchJson(pathname, opts = {}) {
 
 const PNG_1X1 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 const SP_A = encodeURIComponent(JSON.stringify(["方案A"]));
+
+describe("图标库静态资源 /icon-library", () => {
+  test("serves icon library files from the data directory while blocking path traversal", async () => {
+    const iconLibraryDir = join(dataDir, "icon-library");
+    await mkdir(join(iconLibraryDir, "open-source-svg", "power"), { recursive: true });
+    await writeFile(join(iconLibraryDir, "catalog.json"), "{\"name\":\"icon-library\"}", "utf-8");
+    await writeFile(
+      join(iconLibraryDir, "open-source-svg", "power", "bus.svg"),
+      "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\"><path d=\"M1 5h8\"/></svg>",
+      "utf-8"
+    );
+
+    const catalog = await fetch(`${baseUrl}/icon-library/catalog.json`);
+    expect(catalog.status).toBe(200);
+    expect(catalog.headers.get("content-type")).toContain("application/json");
+    expect(await catalog.json()).toMatchObject({ name: "icon-library" });
+
+    const svg = await fetch(`${baseUrl}/icon-library/open-source-svg/power/bus.svg`);
+    expect(svg.status).toBe(200);
+    expect(svg.headers.get("content-type")).toContain("image/svg+xml");
+    expect(svg.headers.get("cache-control")).toBe("no-cache");
+    expect(await svg.text()).toContain("<svg");
+
+    const traversal = await fetch(`${baseUrl}/icon-library/%2e%2e/settings/measurement-config.json`);
+    expect(traversal.status).toBe(404);
+  });
+});
 
 // ============ 图片资源 ============
 describe("图片资源 /api/images & /api/image-folders", () => {
@@ -98,6 +125,24 @@ describe("图片资源 /api/images & /api/image-folders", () => {
   test("GET /api/images/{id} 不存在 → 404", async () => {
     const { status } = await fetchJson("/api/images/nope-id");
     expect(status).toBe(404);
+  });
+
+  test("DELETE /api/images/{id} 删除图片资源", async () => {
+    const up = await fetchJson("/api/images", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ dataUrl: PNG_1X1, name: "待删除.png" })
+    });
+    expect(up.status).toBe(201);
+
+    const deleted = await fetchJson(`/api/images/${up.json.id}`, { method: "DELETE" });
+    expect(deleted.status).toBe(200);
+    expect(deleted.json.ok).toBe(true);
+
+    const list = await fetchJson("/api/images");
+    expect(list.json.some((item) => item.id === up.json.id)).toBe(false);
+    const download = await fetch(`${baseUrl}/api/images/${up.json.id}`);
+    expect(download.status).toBe(404);
   });
 
   test("图片文件夹 CRUD", async () => {

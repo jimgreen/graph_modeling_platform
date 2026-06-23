@@ -15,7 +15,7 @@ import { createSetEdgeManualPoints } from "./appExtracted/appProjectCanvasFactor
 import { Point } from "./model";
 
 describe("manual bend interaction helpers", () => {
-  test("separates external image imports from document icon extraction imports", () => {
+  test("separates external image imports from document image and icon imports", () => {
     expect(imageLibraryImportKindForInput({ dataset: { imageImportKind: "image" } } as any)).toBe("image");
     expect(imageLibraryImportKindForInput({ dataset: { imageImportKind: "archive" } } as any)).toBe("archive");
     expect(imageLibraryImportKindForInput({ dataset: {} } as any)).toBe("mixed");
@@ -24,6 +24,9 @@ describe("manual bend interaction helpers", () => {
     expect(imageLibraryFileMatchesImportKind("diagram.png", "image")).toBe(true);
     expect(imageLibraryFileMatchesImportKind("icons.pptx", "image")).toBe(false);
     expect(imageLibraryFileMatchesImportKind("icons.pptx", "archive")).toBe(true);
+    expect(imageLibraryFileMatchesImportKind("icons.pptm", "archive")).toBe(true);
+    expect(imageLibraryFileMatchesImportKind("icons.docm", "archive")).toBe(true);
+    expect(imageLibraryFileMatchesImportKind("icons.xlsx", "archive")).toBe(true);
     expect(imageLibraryFileMatchesImportKind("icons.zip", "archive")).toBe(true);
     expect(imageLibraryFileMatchesImportKind("diagram.png", "archive")).toBe(false);
     expect(imageLibraryFileMatchesImportKind("diagram.png", "mixed")).toBe(true);

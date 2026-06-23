@@ -2770,7 +2770,7 @@ export function createAppHookCallback83(__appScope: Record<string, any>) {
 export function createAppHookCallback84(__appScope: Record<string, any>) {
   return () => {
   const { activeImageFolderId, imageAssetsToMap, imageLibraryInitializedRef, imageTarget, localImageAssetsFromStorage, refreshImageFolders, refreshImagesForFolder, setImageAssetList, setImageAssets } = __appScope;
-    if (!imageTarget) {
+    if (!imageTarget || imageTarget.sourceMode === "catalogOnly") {
       return;
     }
     if (!imageLibraryInitializedRef.current) {

@@ -17,9 +17,9 @@ graph_modeling_platform/
 │   └── *.ts/tsx        # 核心模型、状态、工具、运行时态桥接
 ├── server/             # 后端服务（见 server/AGENTS.md）
 ├── scripts/            # 一次性分析/修复脚本（非运行时依赖）
-├── public/             # 静态资源 + 图标库
+├── public/             # Vite 静态资源
 ├── docs/               # 第三方 API 设计/需求/工作流文档
-├── data/               # 运行时数据（图片库、方案库、配置），git 忽略
+├── data/               # 运行时数据；icon-library 图标库在此版本跟踪
 └── index.html          # 前端入口
 ```
 
@@ -94,7 +94,7 @@ pnpm preview
 | 事项 | 说明 |
 |------|------|
 | 端口冲突 | 默认前端 5173，后端 5174，确保端口可用 |
-| 数据目录 | `data/` 在运行时创建，git 忽略 |
+| 数据目录 | `data/` 主要为运行时数据并默认忽略；`data/icon-library/` 是版本跟踪的图标库 |
 | 代理配置 | Vite 代理 `/api`、`/ws` 到后端服务 |
 | 环境变量 | `IMAGE_SERVER_PORT` 可自定义后端端口；`GRAPH_MODEL_DATA_DIR` 覆盖数据根目录 |
 | WS 指示灯 | 前端右上角 RT-WS 指示灯显示运行时态 WS 状态，点击复制 clientId |

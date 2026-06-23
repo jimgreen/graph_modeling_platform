@@ -142,7 +142,7 @@ export function stripUnsafeInlineSvgMarkup(value: string) {
 
 export function inlineSvgRootMarkup(
   href: string,
-  options: { x: number; y: number; width: number; height: number; className: string; preserveAspectRatio?: string }
+  options: { x: number; y: number; width: number; height: number; className: string; preserveAspectRatio?: string; clipPath?: string }
 ) {
   const source = stripUnsafeInlineSvgMarkup(
     decodeSvgImageSource(href)
@@ -168,12 +168,13 @@ export function inlineSvgRootMarkup(
       : ` viewBox="0 0 ${formatSvgNumber(width)} ${formatSvgNumber(height)}"`;
   const preservedAttributes = filteredRootAttributes ? ` ${filteredRootAttributes}` : "";
   const inlineClassName = ["export-inline-svg-image", options.className].filter(Boolean).join(" ");
-  return `<svg class="${escapeXml(inlineClassName)}" x="${formatSvgNumber(options.x)}" y="${formatSvgNumber(options.y)}" width="${formatSvgNumber(options.width)}" height="${formatSvgNumber(options.height)}" preserveAspectRatio="${escapeXml(options.preserveAspectRatio ?? "xMidYMid slice")}"${viewBoxAttribute}${preservedAttributes}>${body}</svg>`;
+  const clipPathAttribute = options.clipPath ? ` clip-path="${escapeXml(options.clipPath)}"` : "";
+  return `<svg class="${escapeXml(inlineClassName)}" x="${formatSvgNumber(options.x)}" y="${formatSvgNumber(options.y)}" width="${formatSvgNumber(options.width)}" height="${formatSvgNumber(options.height)}" preserveAspectRatio="${escapeXml(options.preserveAspectRatio ?? "xMidYMid slice")}"${clipPathAttribute}${viewBoxAttribute}${preservedAttributes}>${body}</svg>`;
 }
 
 export function svgImageContentMarkup(
   href: string,
-  options: { x: number; y: number; width: number; height: number; className?: string; preserveAspectRatio?: string }
+  options: { x: number; y: number; width: number; height: number; className?: string; preserveAspectRatio?: string; clipPath?: string }
 ) {
   if (!href) {
     return "";
@@ -184,7 +185,8 @@ export function svgImageContentMarkup(
     return inlineSvg;
   }
   const classAttribute = className ? ` class="${escapeXml(className)}"` : "";
-  return `<image href="${escapeXml(href)}" x="${formatSvgNumber(options.x)}" y="${formatSvgNumber(options.y)}" width="${formatSvgNumber(options.width)}" height="${formatSvgNumber(options.height)}" preserveAspectRatio="${escapeXml(options.preserveAspectRatio ?? "xMidYMid slice")}"${classAttribute}/>`;
+  const clipPathAttribute = options.clipPath ? ` clip-path="${escapeXml(options.clipPath)}"` : "";
+  return `<image href="${escapeXml(href)}" x="${formatSvgNumber(options.x)}" y="${formatSvgNumber(options.y)}" width="${formatSvgNumber(options.width)}" height="${formatSvgNumber(options.height)}" preserveAspectRatio="${escapeXml(options.preserveAspectRatio ?? "xMidYMid slice")}"${clipPathAttribute}${classAttribute}/>`;
 }
 
 /* React 元素 → SVG 标记 */

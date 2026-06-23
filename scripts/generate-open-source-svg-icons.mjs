@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const outputDir = path.join(rootDir, "public", "icon-library", "open-source-svg");
+const outputDir = path.join(rootDir, "data", "icon-library", "open-source-svg");
 const tempDir = path.join(rootDir, "tmp", "open-source-svg-icons");
 const sourcePackDir = path.join(tempDir, "pack");
 const sourceExtractDir = path.join(tempDir, "extract");

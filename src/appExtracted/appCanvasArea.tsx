@@ -170,7 +170,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     resolveNodeStateVisual, resolveConnectPreviewPoint, resolveRoutableLinePreviewPoint,
     sameOptionalPoint, pointsToOrthogonalPath,
     routableLineDeviceCanvasPoints, routableLineDeviceRenderLocalPoints,
-    formatSvgNumber,
+    formatSvgNumber, svgImageContentMarkup,
     appendConnectPreviewManualPoint, appendRoutableLinePreviewManualPoint,
     appendStaticDrawingPoint, insertManualBendFromEdgePath, insertManualBendFromPointer,
     deleteManualBendPoint, deleteRoutableLineBendPoint,
@@ -942,10 +942,10 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                       </g>)}
                   </g>
                   {!nodeIsBus && (imageHref || foregroundImageHref) && (<g className="node-upright-content" transform={nodeImageContentTransform(node)}>
-                      {imageHref && nodeIsStatic && (<image href={imageHref} x={-node.size.width / 2} y={-node.size.height / 2} width={node.size.width} height={node.size.height} preserveAspectRatio="xMidYMid slice" clipPath={`url(#clip-${node.id})`} className="node-background-image"/>)}
+                      {imageHref && nodeIsStatic && (<SvgMarkupChunk className="node-background-image-markup" markup={svgImageContentMarkup(imageHref, { x: -node.size.width / 2, y: -node.size.height / 2, width: node.size.width, height: node.size.height, preserveAspectRatio: "xMidYMid slice", clipPath: `url(#clip-${node.id})`, className: "node-background-image" })}/>)}
                       {imageHref && !nodeIsStatic && (<rect x={-node.size.width / 2} y={-node.size.height / 2} width={node.size.width} height={node.size.height} rx="8" className="node-image-cover"/>)}
-                      {imageHref && !nodeIsStatic && (<image href={imageHref} x={-node.size.width / 2} y={-node.size.height / 2} width={node.size.width} height={node.size.height} preserveAspectRatio="xMidYMid slice" clipPath={`url(#clip-${node.id})`} className="node-background-image"/>)}
-                      {foregroundImageHref && (<image href={foregroundImageHref} x={-node.size.width / 2} y={-node.size.height / 2} width={node.size.width} height={node.size.height} preserveAspectRatio="xMidYMid slice" clipPath={`url(#clip-${node.id})`} className="node-foreground-image"/>)}
+                      {imageHref && !nodeIsStatic && (<SvgMarkupChunk className="node-background-image-markup" markup={svgImageContentMarkup(imageHref, { x: -node.size.width / 2, y: -node.size.height / 2, width: node.size.width, height: node.size.height, preserveAspectRatio: "xMidYMid slice", clipPath: `url(#clip-${node.id})`, className: "node-background-image" })}/>)}
+                      {foregroundImageHref && (<SvgMarkupChunk className="node-foreground-image-markup" markup={svgImageContentMarkup(foregroundImageHref, { x: -node.size.width / 2, y: -node.size.height / 2, width: node.size.width, height: node.size.height, preserveAspectRatio: "xMidYMid slice", clipPath: `url(#clip-${node.id})`, className: "node-foreground-image" })}/>)}
                     </g>)}
                   {uprightSelectionOutlineRect && (<rect className="node-upright-selection-outline" x={uprightSelectionOutlineRect.x} y={uprightSelectionOutlineRect.y} width={uprightSelectionOutlineRect.width} height={uprightSelectionOutlineRect.height} rx="4"/>)}
                   {nodeLabelVisible && (<g className={`node-device-label ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${nodeLabelIsVertical ? "vertical" : "horizontal"}`} data-node-id={node.id} data-label-owner="device" transform={nodeLabelTransform(node)} onPointerDown={isEditMode ? (event) => startNodeLabelDrag(event, node) : undefined}>

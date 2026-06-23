@@ -1901,7 +1901,7 @@ export function createExportSchemeRecord(__appScope: Record<string, any>) {
 
 export type ImageLibraryImportKind = "image" | "archive" | "mixed";
 
-const IMAGE_LIBRARY_ARCHIVE_FILE_PATTERN = /\.(docx|pptx|vsdx|wps|dps|zip)$/iu;
+const IMAGE_LIBRARY_ARCHIVE_FILE_PATTERN = /\.(docx|docm|pptx|pptm|ppsx|ppsm|xlsx|xlsm|vsdx|wps|dps|zip)$/iu;
 const IMAGE_LIBRARY_IMAGE_FILE_PATTERN = /\.(svg|png|jpe?g|gif|webp|bmp|ico)$/iu;
 
 export function imageLibraryImportKindForInput(input?: { dataset?: { imageImportKind?: string } } | null): ImageLibraryImportKind {
@@ -1950,8 +1950,8 @@ export function createChooseImage(__appScope: Record<string, any>) {
         const isIconArchive = IMAGE_LIBRARY_ARCHIVE_FILE_PATTERN.test(lowerName);
         if (!imageLibraryFileMatchesImportKind(lowerName, importKind)) {
           window.alert(importKind === "archive"
-            ? `“${file.name || "所选文件"}”不是 DOCX/PPTX/VSDX/WPS/DPS/ZIP 图标抽取文件，请使用外部图片入口导入图片。`
-            : `“${file.name || "所选文件"}”不是 SVG/PNG/JPG 等图片文件，请使用文档/ZIP 入口抽取图标。`);
+            ? `“${file.name || "所选文件"}”不是 DOCX/PPTX/XLSX/VSDX/WPS/DPS/ZIP 文档图片导入文件，请使用外部图片入口直接导入图片。`
+            : `“${file.name || "所选文件"}”不是 SVG/PNG/JPG 等图片文件，请使用文档图片/图标入口导入文档中的图片和矢量图标素材。`);
           continue;
         }
         let imageData = "";
@@ -1969,7 +1969,7 @@ export function createChooseImage(__appScope: Record<string, any>) {
               nextAssetMap[asset.id] = asset.url;
             }
           } catch (error) {
-            window.alert(error instanceof Error ? error.message : `导入 ${file.name || "图标库"} 失败。`);
+            window.alert(error instanceof Error ? error.message : `导入 ${file.name || "文档图片"} 失败。`);
           }
           continue;
         }
@@ -2076,6 +2076,55 @@ export function createApplyExistingImage(__appScope: Record<string, any>) {
       );
     }
     setImageTarget(null);
+  };
+}
+
+export function createApplyIconLibraryCatalogIcon(__appScope: Record<string, any>) {
+  return async (iconEntryId: string) => {
+  const { createEditableStateIconElementsFromSvgSource, createImportedStateIconElement, iconLibraryPicker, imageTarget, requireEditMode, setImageTarget, setStateIconDrawingDialog, stateIconDrawingHistoryRef, writeOperationLog } = __appScope;
+    if (!requireEditMode("选择分类图标")) {
+      return;
+    }
+    if (!imageTarget || imageTarget.kind !== "stateIconDrawing") {
+      return;
+    }
+    const entry = iconLibraryPicker?.entries?.find((item: any) => item.id === iconEntryId);
+    if (!entry) {
+      window.alert("未找到所选分类图标，请刷新后重试。");
+      return;
+    }
+    let svgSource = "";
+    try {
+      const response = await fetch(entry.url);
+      svgSource = response.ok ? await response.text() : "";
+    } catch {
+      svgSource = "";
+    }
+    if (!svgSource) {
+      window.alert("读取分类图标失败。");
+      return;
+    }
+    const assetName = `${entry.libraryLabel || entry.libraryId} / ${entry.categoryLabel || entry.categoryId} / ${entry.name || entry.iconId}`;
+    const importedElements = createEditableStateIconElementsFromSvgSource(svgSource, assetName, { preserveImportedSvg: true });
+    const fallbackElements = importedElements.length > 0
+      ? importedElements
+      : [createImportedStateIconElement("imported-svg", svgSource, assetName)];
+    const selectedElementId = fallbackElements[0]?.id ?? "";
+    setStateIconDrawingDialog((current: any) =>
+      current
+        ? (pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements), {
+            ...current,
+            elements: [...current.elements, ...fallbackElements],
+            selectedElementId,
+            selectedElementIds: selectedElementId ? [selectedElementId] : [],
+            pendingElementKind: undefined,
+            pendingStaticTemplate: undefined,
+            drawingDraft: undefined
+          })
+        : current
+    );
+    setImageTarget(null);
+    writeOperationLog?.(`从分类图标库导入元件图案：${assetName}`);
   };
 }
 
@@ -3914,13 +3963,44 @@ export function createOpenStateIconDrawingDialog(__appScope: Record<string, any>
 }
 
 export function createApplyStateIconDrawingDialog(__appScope: Record<string, any>) {
-  return () => {
-  const { setStateIconDrawingDialog, stateIconDrawingDialog, stateIconDrawingToImage, updateCustomDeviceStateDraftRow, updateDefinitionStateDraftRow } = __appScope;
+  return async () => {
+  const { backendImageIdFromHref, fetchBackendImageDataUrl, imageAssetList, imageAssets, isImageDataUrl, setStateIconDrawingDialog, stateIconDrawingDialog, stateIconDrawingToImage, updateCustomDeviceStateDraftRow, updateDefinitionStateDraftRow } = __appScope;
     if (!stateIconDrawingDialog || stateIconDrawingDialog.elements.length === 0) {
       return;
     }
+    const assetById = new Map((imageAssetList ?? []).map((asset: ImageAsset) => [asset.id, asset]));
+    const resolvedHrefByRawHref = new Map<string, string>();
+    await Promise.all(stateIconDrawingDialog.elements.map(async (element: any) => {
+      const rawHref = String(element?.kind === "image" ? element.imageHref ?? "" : "").trim();
+      if (!rawHref || isImageDataUrl(rawHref)) {
+        return;
+      }
+      const id = backendImageIdFromHref(rawHref);
+      if (!id) {
+        return;
+      }
+      const cachedHref = imageAssets?.[id] ?? "";
+      if (isImageDataUrl(cachedHref)) {
+        resolvedHrefByRawHref.set(rawHref, cachedHref);
+        return;
+      }
+      if (typeof fetchBackendImageDataUrl !== "function") {
+        return;
+      }
+      const asset = { ...(assetById.get(id) ?? { id, name: id, url: rawHref }) };
+      asset.url = asset.url || rawHref;
+      try {
+        const dataUrl = await fetchBackendImageDataUrl(asset);
+        if (isImageDataUrl(dataUrl)) {
+          resolvedHrefByRawHref.set(rawHref, dataUrl);
+        }
+      } catch {
+        // 单张后台图片读取失败时保留原始 href，避免阻断元件定义保存。
+      }
+    }));
+    const resolveImageHref = (href: string) => resolvedHrefByRawHref.get(href) || href;
     const patch: Partial<DeviceDefinitionStateDraftRow> = {
-      image: stateIconDrawingToImage(stateIconDrawingDialog.elements),
+      image: stateIconDrawingToImage(stateIconDrawingDialog.elements, { resolveImageHref }),
       imageAssetId: "",
       backgroundImage: "",
       backgroundImageAssetId: ""
@@ -4829,7 +4909,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       hideDefaultPage?: boolean;
     }
   ) => {
-  const { BufferedTextInput, COMPONENT_TYPE_LABELS, DEFAULT_STATE_PAGE_ID, DEVICE_LIBRARY, DeferredColorInput, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, MemoDeviceGlyph, STATE_ICON_LINE_CAP_OPTIONS, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, addStateIconDrawingElement, appendNonDefaultStateDraftRow, button, circle, colorPalette, createNodeFromTemplate, createStateDraftRowFromDefaultVisual, createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, customDraftTerminalTypes, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionVisualDraft, definitionVisualTerminalTypes, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, image, isDefaultStatePageId, label, line, nextNonDefaultStateIndex, nodeGeometryTransform, nonDefaultStateDraftRows, rect, resolveTemplateComponentType, setCustomDeviceDraft, setDefinitionStateDraftRows, setImageTarget, setStateIconDrawingContextMenu, setStateIconDrawingDialog, setStateIconDrawingImportMode, small, span, stateDraftRowId, stateIconDrawingClipboardRef, stateIconDrawingContextMenu, stateIconDrawingDialog, stateIconDrawingElementId, stateIconDrawingElementPreviewNode, stateIconDrawingHistoryRef, stateIconDrawingImportInputRef, stateIconDrawingKeyDown, stateIconDrawingPointer, stateIconDrawingPreviewNeedsDirectElementRender, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, terminalColor, text, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
+  const { BufferedTextInput, COMPONENT_TYPE_LABELS, DEFAULT_STATE_PAGE_ID, DEVICE_LIBRARY, DeferredColorInput, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, MemoDeviceGlyph, STATE_ICON_LINE_CAP_OPTIONS, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, addStateIconDrawingElement, appendNonDefaultStateDraftRow, button, circle, colorPalette, createNodeFromTemplate, createStateDraftRowFromDefaultVisual, createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, customDraftTerminalTypes, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionVisualDraft, definitionVisualTerminalTypes, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, image, isDefaultStatePageId, label, line, nextNonDefaultStateIndex, nodeGeometryTransform, nonDefaultStateDraftRows, rect, resolveTemplateComponentType, setCustomDeviceDraft, setDefinitionStateDraftRows, setImagePickerCategoryFilter, setImagePickerSearchQuery, setImagePickerSourceFilter, setImageTarget, setStateIconDrawingContextMenu, setStateIconDrawingDialog, small, span, stateDraftRowId, stateIconDrawingClipboardRef, stateIconDrawingContextMenu, stateIconDrawingDialog, stateIconDrawingElementId, stateIconDrawingElementPreviewNode, stateIconDrawingHistoryRef, stateIconDrawingKeyDown, stateIconDrawingPointer, stateIconDrawingPreviewNeedsDirectElementRender, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, terminalColor, text, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
     const hideDefaultPage = handlers.hideDefaultPage === true;
     const displayRows = hideDefaultPage ? rows : nonDefaultStateDraftRows(rows);
     const defaultVisual = handlers.drawingScope === "definition"
@@ -5093,14 +5173,16 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                 if (!drawingReady) {
                   return;
                 }
-                setStateIconDrawingImportMode("svg");
-                stateIconDrawingImportInputRef.current?.click();
+                setImagePickerSourceFilter("builtin");
+                setImagePickerCategoryFilter("");
+                setImagePickerSearchQuery("");
+                setImageTarget({ kind: "stateIconDrawing", sourceMode: "builtinOnly" });
               }}
-              className="state-icon-import-button"
-              aria-label="导入SVG"
-              title="导入SVG"
+              className="state-icon-import-button state-icon-import-text-button"
+              aria-label="内置图标"
+              title="内置图标"
             >
-              {renderStateIconDrawingImportIcon("svg")}
+              内置图标
             </button>
             <button
               type="button"
@@ -5109,14 +5191,16 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                 if (!drawingReady) {
                   return;
                 }
-                setStateIconDrawingImportMode("image");
-                stateIconDrawingImportInputRef.current?.click();
+                setImagePickerSourceFilter("");
+                setImagePickerCategoryFilter("");
+                setImagePickerSearchQuery("");
+                setImageTarget({ kind: "stateIconDrawing", sourceMode: "catalogOnly" });
               }}
-              className="state-icon-import-button"
-              aria-label="导入图片"
-              title="导入图片"
+              className="state-icon-import-button state-icon-import-text-button"
+              aria-label="分类图标"
+              title="分类图标"
             >
-              {renderStateIconDrawingImportIcon("image")}
+              分类图标
             </button>
             <button
               type="button"
@@ -5125,13 +5209,16 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                 if (!drawingReady) {
                   return;
                 }
-                setImageTarget({ kind: "stateIconDrawing" });
+                setImagePickerSourceFilter("external");
+                setImagePickerCategoryFilter("");
+                setImagePickerSearchQuery("");
+                setImageTarget({ kind: "stateIconDrawing", sourceMode: "externalOnly" });
               }}
-              className="state-icon-import-button"
-              aria-label="从图标库选择"
-              title="从图标库选择"
+              className="state-icon-import-button state-icon-import-text-button"
+              aria-label="外部图标"
+              title="外部图标"
             >
-              {renderStateIconDrawingImportIcon("image")}
+              外部图标
             </button>
           </div>
           <div className="state-icon-library-tabs" role="tablist" aria-label="图案来源切换">
@@ -6633,7 +6720,7 @@ export function createRenderGraphTemplatePreview(__appScope: Record<string, any>
 
 export function createRenderLibraryTemplateButton(__appScope: Record<string, any>) {
   return (item: DeviceTemplate, section: string) => {
-  const { MemoDeviceGlyph, button, cancelLibraryPlacement, clipPath, colorPalette, componentLibraryDisplayMode, createNodeFromTemplate, defs, formatSvgNumber, g, hideLibraryFlyout, image, isBrowseMode, isBusNode, isEditMode, libraryPreviewByKind, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, rect, resolveNodeStateVisual, startLibraryDevicePlacement, svg } = __appScope;
+  const { MemoDeviceGlyph, SvgMarkupChunk, button, cancelLibraryPlacement, clipPath, colorPalette, componentLibraryDisplayMode, createNodeFromTemplate, defs, formatSvgNumber, g, hideLibraryFlyout, image, isBrowseMode, isBusNode, isEditMode, libraryPreviewByKind, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, rect, resolveNodeStateVisual, startLibraryDevicePlacement, svg, svgImageContentMarkup } = __appScope;
     const preview = libraryPreviewByKind.get(item.kind) ?? createNodeFromTemplate(item, { x: 0, y: 0 });
     const libraryPreviewImageHref = nodeImage(preview);
     const libraryPreviewForegroundHref = nodeForegroundImage(preview);
@@ -6692,27 +6779,31 @@ export function createRenderLibraryTemplateButton(__appScope: Record<string, any
           {libraryPreviewHasImage && (
             <g className="library-preview-image-wrap" transform={nodeImageContentTransform(preview)}>
               {libraryPreviewImageHref && (
-                <image
-                  href={libraryPreviewImageHref}
-                  x={-preview.size.width / 2}
-                  y={-preview.size.height / 2}
-                  width={preview.size.width}
-                  height={preview.size.height}
-                  preserveAspectRatio="xMidYMid meet"
-                  clipPath={`url(#${libraryPreviewClipId})`}
-                  className="library-preview-image"
+                <SvgMarkupChunk
+                  className="library-preview-image-markup"
+                  markup={svgImageContentMarkup(libraryPreviewImageHref, {
+                    x: -preview.size.width / 2,
+                    y: -preview.size.height / 2,
+                    width: preview.size.width,
+                    height: preview.size.height,
+                    preserveAspectRatio: "xMidYMid meet",
+                    clipPath: `url(#${libraryPreviewClipId})`,
+                    className: "library-preview-image"
+                  })}
                 />
               )}
               {libraryPreviewForegroundHref && (
-                <image
-                  href={libraryPreviewForegroundHref}
-                  x={-preview.size.width / 2}
-                  y={-preview.size.height / 2}
-                  width={preview.size.width}
-                  height={preview.size.height}
-                  preserveAspectRatio="xMidYMid meet"
-                  clipPath={`url(#${libraryPreviewClipId})`}
-                  className="library-preview-image library-preview-foreground-image"
+                <SvgMarkupChunk
+                  className="library-preview-image-markup"
+                  markup={svgImageContentMarkup(libraryPreviewForegroundHref, {
+                    x: -preview.size.width / 2,
+                    y: -preview.size.height / 2,
+                    width: preview.size.width,
+                    height: preview.size.height,
+                    preserveAspectRatio: "xMidYMid meet",
+                    clipPath: `url(#${libraryPreviewClipId})`,
+                    className: "library-preview-image library-preview-foreground-image"
+                  })}
                 />
               )}
             </g>

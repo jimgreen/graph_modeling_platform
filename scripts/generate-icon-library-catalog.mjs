@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const iconLibraryDir = path.join(rootDir, "public", "icon-library");
+const iconLibraryDir = path.join(rootDir, "data", "icon-library");
 
 function escapeXml(value) {
   return String(value ?? "")

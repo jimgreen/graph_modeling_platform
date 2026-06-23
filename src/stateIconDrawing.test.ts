@@ -167,6 +167,18 @@ describe("default device state draft rows", () => {
     expect(dialog.drawingDraft).toBeUndefined();
   });
 
+  test("can inline backend image references when composing a state icon image", () => {
+    const imageElement = createImportedStateIconElement("image", "/api/images/icon-a", "后台图标");
+
+    const image = stateIconDrawingToImage([imageElement], {
+      resolveImageHref: (href) => href === "/api/images/icon-a" ? "data:image/png;base64,aWNvbg==" : href
+    });
+    const svgSource = svgSourceFromDataUrl(image);
+
+    expect(svgSource).toContain('href="data:image/png;base64,aWNvbg=="');
+    expect(svgSource).not.toContain('href="/api/images/icon-a"');
+  });
+
   test("pressing Enter commits an in-progress state icon polyline drawing", () => {
     const polyline = createStateIconDrawingElement("polyline" as any);
     let prevented = false;

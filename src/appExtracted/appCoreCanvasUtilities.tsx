@@ -1519,7 +1519,7 @@ export type ImageTarget =
   | { kind: "nodeForeground"; nodeId: string }
   | { kind: "canvas" }
   | { kind: "canvasIcon" }
-  | { kind: "stateIconDrawing" };
+  | { kind: "stateIconDrawing"; sourceMode?: "builtinOnly" | "externalOnly" | "catalogOnly" };
 
 export type NodeDoubleClickDialogKind = "interaction" | "text" | "device";
 
@@ -3896,6 +3896,12 @@ export async function fetchAllBackendImages(): Promise<ImageAsset[]> {
   return fetchBackendJson<ImageAsset[]>("/api/images", "读取后台图片列表失败。");
 }
 
+export async function deleteBackendImageAsset(assetId: string): Promise<void> {
+  await fetchBackendJson<{ ok?: boolean }>(`/api/images/${encodeURIComponent(assetId)}`, "删除图片资源失败。", {
+    method: "DELETE"
+  });
+}
+
 export async function uploadBackendImage(fileName: string, dataUrl: string, folderId = "root"): Promise<ImageAsset> {
   return fetchBackendJson<ImageAsset>(
     "/api/images",
@@ -3907,7 +3913,7 @@ export async function uploadBackendImage(fileName: string, dataUrl: string, fold
 export async function importBackendIconLibraryFile(fileName: string, dataUrl: string, folderId = "root"): Promise<ImageAsset[]> {
   const payload = await fetchBackendJson<{ assets?: ImageAsset[] }>(
     "/api/icon-library/import",
-    "导入图标库文件失败。",
+    "导入文档图片/图标素材失败。",
     backendJsonRequest("POST", JSON.stringify({ name: fileName, dataUrl, folderId }))
   );
   return Array.isArray(payload.assets) ? payload.assets : [];

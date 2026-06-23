@@ -56,6 +56,10 @@ export default defineConfig({
         target: `http://127.0.0.1:${process.env.IMAGE_SERVER_PORT ?? "5174"}`,
         changeOrigin: true
       },
+      "/icon-library": {
+        target: `http://127.0.0.1:${process.env.IMAGE_SERVER_PORT ?? "5174"}`,
+        changeOrigin: true
+      },
       "/ws": {
         target: `http://127.0.0.1:${process.env.IMAGE_SERVER_PORT ?? "5174"}`,
         ws: true,
