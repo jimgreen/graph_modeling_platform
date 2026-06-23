@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { svgImageContentMarkup } from "./svgUtils";
+import { decodeSvgImageSource, inlineBackendImageRefsInSvgDataUrl, svgImageContentMarkup } from "./svgUtils";
 
 describe("svg image content markup", () => {
   test("renders svg data urls as inline svg so nested images remain visible", () => {
@@ -23,10 +23,99 @@ describe("svg image content markup", () => {
     });
 
     expect(markup).toContain("<svg");
+    expect(markup).toContain('<g clip-path="url(#clip-node)">');
     expect(markup).toContain('class="export-inline-svg-image node-background-image"');
-    expect(markup).toContain('clip-path="url(#clip-node)"');
+    expect(markup).not.toContain('<svg class="export-inline-svg-image node-background-image" x="-10" y="-5" width="20" height="10" preserveAspectRatio="xMidYMid meet" clip-path=');
     expect(markup).toContain('href="/api/images/nested-symbol"');
     expect(markup).toContain('class="inline-shape"');
     expect(markup).not.toContain('href="data:image/svg+xml');
+  });
+
+  test("inlines cached backend image refs inside svg data urls", () => {
+    const source = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10">',
+      '<image href="/api/images/icon-a?cache=1" x="1" y="2" width="8" height="6"/>',
+      '<image xlink:href="/api/images/icon-b" x="11" y="2" width="8" height="6"/>',
+      "</svg>"
+    ].join("");
+    const href = `data:image/svg+xml;utf8,${encodeURIComponent(source)}`;
+
+    const result = inlineBackendImageRefsInSvgDataUrl(href, {
+      "icon-a": "data:image/png;base64,aWNvbi1h",
+      "icon-b": "/api/images/icon-b"
+    });
+    const decoded = decodeSvgImageSource(result);
+
+    expect(decoded).toContain('href="data:image/png;base64,aWNvbi1h"');
+    expect(decoded).not.toContain("/api/images/icon-a");
+    expect(decoded).toContain('xlink:href="/api/images/icon-b"');
+  });
+
+  test("prefixes internal ids when the same svg is inlined more than once", () => {
+    const source = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">',
+      '<defs>',
+      '<clipPath id="clip-shape"><rect x="2" y="2" width="20" height="20"/></clipPath>',
+      '<linearGradient id="fill-gradient"><stop offset="0" stop-color="#fff"/></linearGradient>',
+      '<symbol id="symbol-shape"><circle cx="12" cy="12" r="6"/></symbol>',
+      "</defs>",
+      '<use href="#symbol-shape" fill="url(#fill-gradient)" clip-path="url(#clip-shape)"/>',
+      "</svg>"
+    ].join("");
+    const href = `data:image/svg+xml;utf8,${encodeURIComponent(source)}`;
+
+    const first = svgImageContentMarkup(href, {
+      x: -12,
+      y: -12,
+      width: 24,
+      height: 24,
+      clipPath: "url(#clip-first)",
+      className: "node-background-image"
+    });
+    const second = svgImageContentMarkup(href, {
+      x: -18,
+      y: -18,
+      width: 36,
+      height: 36,
+      clipPath: "url(#clip-second)",
+      className: "node-background-image"
+    });
+    const combined = `${first}${second}`;
+
+    const ids = Array.from(combined.matchAll(/\sid="([^"]+)"/gu), (match) => match[1]);
+    expect(ids).toHaveLength(6);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(combined).not.toContain('id="clip-shape"');
+    expect(combined).not.toContain('href="#symbol-shape"');
+    expect(combined).not.toContain("url(#fill-gradient)");
+    expect(combined).not.toContain("url(#clip-shape)");
+    expect(combined).toMatch(/href="#inline-svg-[^"]+-symbol-shape"/u);
+    expect(combined).toMatch(/fill="url\(#inline-svg-[^"]+-fill-gradient\)"/u);
+    expect(combined).toMatch(/clip-path="url\(#inline-svg-[^"]+-clip-shape\)"/u);
+  });
+
+  test("keeps internal ids unique for repeated inline svg without an outer clip path", () => {
+    const source = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">',
+      '<defs><clipPath id="icon-clip"><rect x="0" y="0" width="20" height="20"/></clipPath></defs>',
+      '<circle cx="10" cy="10" r="8" clip-path="url(#icon-clip)"/>',
+      "</svg>"
+    ].join("");
+    const href = `data:image/svg+xml;utf8,${encodeURIComponent(source)}`;
+    const options = {
+      x: -10,
+      y: -10,
+      width: 20,
+      height: 20,
+      className: "export-node-image"
+    };
+
+    const combined = `${svgImageContentMarkup(href, options)}${svgImageContentMarkup(href, options)}`;
+    const ids = Array.from(combined.matchAll(/\sid="([^"]+)"/gu), (match) => match[1]);
+
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+    expect(combined).not.toContain('id="icon-clip"');
+    expect(combined).not.toContain('clip-path="url(#icon-clip)"');
   });
 });
