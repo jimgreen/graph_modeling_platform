@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { clampNumber } from "../canvasViewport";
+import { stateIconSvgVisibleViewBox } from "../stateIconDrawing";
 
 const STATE_ICON_DRAFT_FRAME = {
   strokeStyle: "dashed",
@@ -2096,6 +2097,31 @@ export function createApplyExistingImage(__appScope: Record<string, any>) {
   };
 }
 
+function stateIconDrawingImportedSvgSelectionFrame(element: any) {
+  if (element?.kind !== "imported-svg" || !element.svgSource) {
+    return null;
+  }
+  const [x, y, width, height] = stateIconSvgVisibleViewBox(element.svgSource)
+    .split(/\s+/u)
+    .map((value) => Number.parseFloat(value));
+  if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) {
+    return null;
+  }
+  const elementWidth = Math.max(1, Number(element.width) || 1);
+  const elementHeight = Math.max(1, Number(element.height) || 1);
+  const scale = Math.min(elementWidth / width, elementHeight / height);
+  const fittedWidth = width * scale;
+  const fittedHeight = height * scale;
+  return {
+    x: -fittedWidth / 2,
+    y: -fittedHeight / 2,
+    width: fittedWidth,
+    height: fittedHeight,
+    halfWidth: fittedWidth / 2,
+    halfHeight: fittedHeight / 2
+  };
+}
+
 export function createApplyIconLibraryCatalogIcon(__appScope: Record<string, any>) {
   return async (iconEntryId: string) => {
   const { createEditableStateIconElementsFromSvgSource, createImportedStateIconElement, iconLibraryPicker, imageTarget, requireEditMode, setImageTarget, setStateIconDrawingDialog, stateIconDrawingHistoryRef, writeOperationLog } = __appScope;
@@ -2538,17 +2564,19 @@ export function createSnapCustomDeviceTerminalAnchor(__appScope: Record<string, 
 
 export function createCustomDeviceTerminalConnectorSegment(__appScope: Record<string, any>) {
   return (anchor: Point) => {
-  const { CUSTOM_DEVICE_TERMINAL_PREVIEW_OUTWARD_OFFSET, customDevicePreviewHeight, customDevicePreviewWidth, projectCustomDeviceTerminalAnchorToBoundary } = __appScope;
+  const { customDevicePreviewHeight, customDevicePreviewWidth, projectCustomDeviceTerminalAnchorToBoundary } = __appScope;
     const boundaryAnchor = projectCustomDeviceTerminalAnchorToBoundary(anchor);
     const from = {
       x: boundaryAnchor.x * customDevicePreviewWidth,
       y: boundaryAnchor.y * customDevicePreviewHeight
     };
+    const outwardOffsetX = customDevicePreviewWidth / 6;
+    const outwardOffsetY = customDevicePreviewHeight / 6;
     if (Math.abs(boundaryAnchor.x) >= Math.abs(boundaryAnchor.y)) {
       return {
         from,
         to: {
-          x: from.x + Math.sign(boundaryAnchor.x || 1) * CUSTOM_DEVICE_TERMINAL_PREVIEW_OUTWARD_OFFSET,
+          x: from.x + Math.sign(boundaryAnchor.x || 1) * outwardOffsetX,
           y: from.y
         },
       };
@@ -2557,7 +2585,7 @@ export function createCustomDeviceTerminalConnectorSegment(__appScope: Record<st
       from,
       to: {
         x: from.x,
-        y: from.y + Math.sign(boundaryAnchor.y || 1) * CUSTOM_DEVICE_TERMINAL_PREVIEW_OUTWARD_OFFSET
+        y: from.y + Math.sign(boundaryAnchor.y || 1) * outwardOffsetY
       }
     };
   };
@@ -2716,17 +2744,19 @@ export function createSnapDefinitionTerminalAnchor(__appScope: Record<string, an
 
 export function createDefinitionTerminalConnectorSegment(__appScope: Record<string, any>) {
   return (anchor: Point) => {
-  const { CUSTOM_DEVICE_TERMINAL_PREVIEW_OUTWARD_OFFSET, definitionVisualPreviewHeight, definitionVisualPreviewWidth, projectCustomDeviceTerminalAnchorToBoundary } = __appScope;
+  const { definitionVisualPreviewHeight, definitionVisualPreviewWidth, projectCustomDeviceTerminalAnchorToBoundary } = __appScope;
     const boundaryAnchor = projectCustomDeviceTerminalAnchorToBoundary(anchor);
     const from = {
       x: boundaryAnchor.x * definitionVisualPreviewWidth,
       y: boundaryAnchor.y * definitionVisualPreviewHeight
     };
+    const outwardOffsetX = definitionVisualPreviewWidth / 6;
+    const outwardOffsetY = definitionVisualPreviewHeight / 6;
     if (Math.abs(boundaryAnchor.x) >= Math.abs(boundaryAnchor.y)) {
       return {
         from,
         to: {
-          x: from.x + Math.sign(boundaryAnchor.x || 1) * CUSTOM_DEVICE_TERMINAL_PREVIEW_OUTWARD_OFFSET,
+          x: from.x + Math.sign(boundaryAnchor.x || 1) * outwardOffsetX,
           y: from.y
         },
       };
@@ -2735,7 +2765,7 @@ export function createDefinitionTerminalConnectorSegment(__appScope: Record<stri
       from,
       to: {
         x: from.x,
-        y: from.y + Math.sign(boundaryAnchor.y || 1) * CUSTOM_DEVICE_TERMINAL_PREVIEW_OUTWARD_OFFSET
+        y: from.y + Math.sign(boundaryAnchor.y || 1) * outwardOffsetY
       }
     };
   };
@@ -6020,6 +6050,14 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                     const selected = selectedIds.includes(element.id);
                     const halfWidth = Math.max(1, element.width) / 2;
                     const halfHeight = Math.max(1, element.height) / 2;
+                    const selectionFrame = stateIconDrawingImportedSvgSelectionFrame(element) ?? {
+                      x: -halfWidth,
+                      y: -halfHeight,
+                      width: Math.max(1, element.width),
+                      height: Math.max(1, element.height),
+                      halfWidth,
+                      halfHeight
+                    };
                     return (
                       <g
                         key={element.id}
@@ -6035,10 +6073,10 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                         <rect x={formatSvgNumber(-halfWidth)} y={formatSvgNumber(-halfHeight)} width={formatSvgNumber(element.width)} height={formatSvgNumber(element.height)} className="state-icon-drawing-hitbox" />
                         {selected && (
                           <>
-                            <rect x={formatSvgNumber(-halfWidth)} y={formatSvgNumber(-halfHeight)} width={formatSvgNumber(element.width)} height={formatSvgNumber(element.height)} className="state-icon-drawing-selection-box" />
-                            <circle cx={formatSvgNumber(halfWidth)} cy={formatSvgNumber(halfHeight)} r="5" className="state-icon-drawing-resize-handle" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize")} />
-                            <line x1="0" y1={formatSvgNumber(-halfHeight)} x2="0" y2={formatSvgNumber(-halfHeight - 16)} className="state-icon-drawing-rotate-stem" />
-                            <circle cx="0" cy={formatSvgNumber(-halfHeight - 20)} r="5" className="state-icon-drawing-rotate-handle" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "rotate")} />
+                            <rect x={formatSvgNumber(selectionFrame.x)} y={formatSvgNumber(selectionFrame.y)} width={formatSvgNumber(selectionFrame.width)} height={formatSvgNumber(selectionFrame.height)} className="state-icon-drawing-selection-box" />
+                            <circle cx={formatSvgNumber(selectionFrame.halfWidth)} cy={formatSvgNumber(selectionFrame.halfHeight)} r="5" className="state-icon-drawing-resize-handle" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize")} />
+                            <line x1="0" y1={formatSvgNumber(-selectionFrame.halfHeight)} x2="0" y2={formatSvgNumber(-selectionFrame.halfHeight - 16)} className="state-icon-drawing-rotate-stem" />
+                            <circle cx="0" cy={formatSvgNumber(-selectionFrame.halfHeight - 20)} r="5" className="state-icon-drawing-rotate-handle" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "rotate")} />
                           </>
                         )}
                       </g>
@@ -6368,7 +6406,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
 
 export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<string, any>) {
   return (template: DeviceTemplate) => {
-  const { BufferedTextInput, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN, DEFAULT_STATE_PAGE_ID, Fragment, MemoDeviceGlyph, SvgMarkupChunk, TERMINAL_TYPE_LIBRARY_LABELS, addDefinitionStateDraftRow, button, circle, colorDisplayMode, colorPalette, createDefinitionStateDraftRows, createDefinitionVisualDraft, createNodeFromTemplate, customDeviceTerminalAnchorValue, definitionDraftError, definitionStateDraftRows, definitionStatePageId, definitionStatePreviewVisual, definitionTemplateIconInputRef, definitionTerminalAnchorDragIndex, definitionTerminalConnectorSegment, definitionVisualDraft, definitionVisualPreviewHeight, definitionVisualPreviewImage, definitionVisualPreviewWidth, definitionVisualTerminalAnchors, definitionVisualTerminalTypes, deleteDefinitionStateDraftRow, div, formatCustomDeviceTerminalAnchorValue, formatSvgNumber, g, image, isBusNode, isDefaultStatePageId, isStaticNode, label, line, nodeForegroundImage, nodeGeometryTransform, nodeImageContentTransform, openStateIconDrawingDialog, p, rect, renderStateVisualPager, resolveNodeStateVisual, saveDeviceDefinitionStateVisualDraft, saveDeviceDefinitionVisualDraft, section, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId, setDefinitionTerminalAnchorDragIndex, setDefinitionVisualDraft, setStateImageUploadTarget, small, span, stateVisualImageInputRef, strong, svgImageContentMarkup, terminalColor, text, title, updateDefinitionStateDraftRow, updateDefinitionTerminalAnchor, updateDefinitionTerminalAnchorFromPreview } = __appScope;
+  const { BufferedTextInput, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, DEFAULT_STATE_PAGE_ID, Fragment, MemoDeviceGlyph, SvgMarkupChunk, TERMINAL_TYPE_LIBRARY_LABELS, addDefinitionStateDraftRow, button, circle, colorDisplayMode, colorPalette, createDefinitionStateDraftRows, createDefinitionVisualDraft, createNodeFromTemplate, customDeviceTerminalAnchorValue, definitionDraftError, definitionStateDraftRows, definitionStatePageId, definitionStatePreviewVisual, definitionTemplateIconInputRef, definitionTerminalAnchorDragIndex, definitionTerminalConnectorSegment, definitionVisualDraft, definitionVisualPreviewHeight, definitionVisualPreviewImage, definitionVisualPreviewWidth, definitionVisualTerminalAnchors, definitionVisualTerminalTypes, deleteDefinitionStateDraftRow, div, formatCustomDeviceTerminalAnchorValue, formatSvgNumber, g, image, isBusNode, isDefaultStatePageId, isStaticNode, label, line, nodeForegroundImage, nodeGeometryTransform, nodeImageContentTransform, openStateIconDrawingDialog, p, rect, renderStateVisualPager, resolveNodeStateVisual, saveDeviceDefinitionStateVisualDraft, saveDeviceDefinitionVisualDraft, section, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId, setDefinitionTerminalAnchorDragIndex, setDefinitionVisualDraft, setStateImageUploadTarget, small, span, stateVisualImageInputRef, strong, svgImageContentMarkup, terminalColor, text, title, updateDefinitionStateDraftRow, updateDefinitionTerminalAnchor, updateDefinitionTerminalAnchorFromPreview } = __appScope;
     if (!definitionVisualDraft) {
       return null;
     }
@@ -6389,41 +6427,60 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
       stateDefinitions: definitionStateDraftRows
     };
     const previewNode = createNodeFromTemplate(visualTemplate, { x: 0, y: 0 });
+    const previewFrameNode = {
+      ...previewNode,
+      size: { width: definitionVisualPreviewWidth, height: definitionVisualPreviewHeight }
+    };
+    const definitionTerminalPreviewMarginX = definitionVisualPreviewWidth / 6;
+    const definitionTerminalPreviewMarginY = definitionVisualPreviewHeight / 6;
+    const definitionTerminalPreviewViewBox = {
+      x: -definitionVisualPreviewWidth / 2 - definitionTerminalPreviewMarginX,
+      y: -definitionVisualPreviewHeight / 2 - definitionTerminalPreviewMarginY,
+      width: definitionVisualPreviewWidth + definitionTerminalPreviewMarginX * 2,
+      height: definitionVisualPreviewHeight + definitionTerminalPreviewMarginY * 2
+    };
     const definitionDefaultStateSelected = isDefaultStatePageId(definitionStatePageId);
     const renderDefinitionVisualPreviewContent = (clipId: string) => {
-      const previewStateVisual = definitionStatePreviewVisual ?? resolveNodeStateVisual(previewNode);
+      const previewStateVisual = definitionStatePreviewVisual ?? resolveNodeStateVisual(previewFrameNode);
       const previewImageHref = definitionVisualPreviewImage;
-      const previewForegroundHref = nodeForegroundImage(previewNode);
-      const previewIsBus = isBusNode(previewNode);
-      const previewIsStatic = isStaticNode(previewNode);
+      const previewForegroundHref = nodeForegroundImage(previewFrameNode);
+      const previewIsBus = isBusNode(previewFrameNode);
+      const previewIsStatic = isStaticNode(previewFrameNode);
+      const previewUsesStateImage = Boolean(
+        definitionStatePreviewVisual?.image ||
+        definitionStatePreviewVisual?.imageAssetId ||
+        definitionStatePreviewVisual?.backgroundImage ||
+        definitionStatePreviewVisual?.backgroundImageAssetId
+      );
+      const previewPreserveAspectRatio = previewUsesStateImage ? "xMidYMid meet" : "xMidYMid slice";
       return (
         <>
           {!previewIsBus && (previewImageHref || previewForegroundHref) && (
             <clipPath id={clipId}>
               <rect
-                x={-previewNode.size.width / 2}
-                y={-previewNode.size.height / 2}
-                width={previewNode.size.width}
-                height={previewNode.size.height}
+                x={-previewFrameNode.size.width / 2}
+                y={-previewFrameNode.size.height / 2}
+                width={previewFrameNode.size.width}
+                height={previewFrameNode.size.height}
                 rx="8"
               />
             </clipPath>
           )}
-          <g className="node-geometry" transform={nodeGeometryTransform(previewNode)}>
-            <MemoDeviceGlyph node={previewNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={previewStateVisual} />
-            <MemoDeviceGlyph node={previewNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={previewStateVisual} />
+          <g className="node-geometry" transform={nodeGeometryTransform(previewFrameNode)}>
+            <MemoDeviceGlyph node={previewFrameNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={previewStateVisual} />
+            <MemoDeviceGlyph node={previewFrameNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={previewStateVisual} />
           </g>
           {!previewIsBus && (previewImageHref || previewForegroundHref) && (
-            <g className="node-upright-content" transform={nodeImageContentTransform(previewNode)}>
+            <g className="node-upright-content" transform={nodeImageContentTransform(previewFrameNode)}>
               {previewImageHref && previewIsStatic && (
                 <SvgMarkupChunk
                   className="node-background-image-markup"
                   markup={svgImageContentMarkup(previewImageHref, {
-                    x: -previewNode.size.width / 2,
-                    y: -previewNode.size.height / 2,
-                    width: previewNode.size.width,
-                    height: previewNode.size.height,
-                    preserveAspectRatio: "xMidYMid slice",
+                    x: -previewFrameNode.size.width / 2,
+                    y: -previewFrameNode.size.height / 2,
+                    width: previewFrameNode.size.width,
+                    height: previewFrameNode.size.height,
+                    preserveAspectRatio: previewPreserveAspectRatio,
                     clipPath: `url(#${clipId})`,
                     className: "node-background-image"
                   })}
@@ -6431,10 +6488,10 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
               )}
               {previewImageHref && !previewIsStatic && (
                 <rect
-                  x={-previewNode.size.width / 2}
-                  y={-previewNode.size.height / 2}
-                  width={previewNode.size.width}
-                  height={previewNode.size.height}
+                  x={-previewFrameNode.size.width / 2}
+                  y={-previewFrameNode.size.height / 2}
+                  width={previewFrameNode.size.width}
+                  height={previewFrameNode.size.height}
                   rx="8"
                   className="node-image-cover"
                 />
@@ -6443,11 +6500,11 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
                 <SvgMarkupChunk
                   className="node-background-image-markup"
                   markup={svgImageContentMarkup(previewImageHref, {
-                    x: -previewNode.size.width / 2,
-                    y: -previewNode.size.height / 2,
-                    width: previewNode.size.width,
-                    height: previewNode.size.height,
-                    preserveAspectRatio: "xMidYMid slice",
+                    x: -previewFrameNode.size.width / 2,
+                    y: -previewFrameNode.size.height / 2,
+                    width: previewFrameNode.size.width,
+                    height: previewFrameNode.size.height,
+                    preserveAspectRatio: previewPreserveAspectRatio,
                     clipPath: `url(#${clipId})`,
                     className: "node-background-image"
                   })}
@@ -6457,11 +6514,11 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
                 <SvgMarkupChunk
                   className="node-foreground-image-markup"
                   markup={svgImageContentMarkup(previewForegroundHref, {
-                    x: -previewNode.size.width / 2,
-                    y: -previewNode.size.height / 2,
-                    width: previewNode.size.width,
-                    height: previewNode.size.height,
-                    preserveAspectRatio: "xMidYMid slice",
+                    x: -previewFrameNode.size.width / 2,
+                    y: -previewFrameNode.size.height / 2,
+                    width: previewFrameNode.size.width,
+                    height: previewFrameNode.size.height,
+                    preserveAspectRatio: previewPreserveAspectRatio,
                     clipPath: `url(#${clipId})`,
                     className: "node-foreground-image"
                   })}
@@ -6577,7 +6634,7 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
           <div className="custom-device-preview-stage">
             <svg
               className="custom-device-anchor-preview device-definition-anchor-preview"
-              viewBox={`${formatSvgNumber(-definitionVisualPreviewWidth / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(-definitionVisualPreviewHeight / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN)} ${formatSvgNumber(definitionVisualPreviewWidth + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)} ${formatSvgNumber(definitionVisualPreviewHeight + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2)}`}
+              viewBox={`${formatSvgNumber(definitionTerminalPreviewViewBox.x)} ${formatSvgNumber(definitionTerminalPreviewViewBox.y)} ${formatSvgNumber(definitionTerminalPreviewViewBox.width)} ${formatSvgNumber(definitionTerminalPreviewViewBox.height)}`}
               role="img"
               aria-label="修改元件图标和端子位置预览"
               onPointerMove={(event) => {

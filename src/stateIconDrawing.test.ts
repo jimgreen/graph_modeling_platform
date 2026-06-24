@@ -598,6 +598,26 @@ describe("default device state draft rows", () => {
     expect(restored[0].svgSource).not.toContain('viewBox="0 0 240 160"');
   });
 
+  test("applies edited stroke attributes to imported SVG layers", () => {
+    const importedElement = {
+      ...createImportedStateIconElement(
+        "imported-svg",
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80"><rect x="20" y="10" width="40" height="40" stroke="#000000" stroke-width="12" fill="none"/></svg>',
+        "方框"
+      ),
+      id: "styled-imported-svg",
+      strokeColor: "#ef4444",
+      strokeWidth: 3,
+      strokeStyle: "dashed" as const
+    };
+
+    const imageSource = decodeURIComponent(stateIconDrawingToImage([importedElement]).split(",")[1] ?? "");
+
+    expect(imageSource).toContain("stroke:#ef4444 !important");
+    expect(imageSource).toContain("stroke-width:3 !important");
+    expect(imageSource).toContain("stroke-dasharray:9 5.4 !important");
+  });
+
   test("keeps terminal ownership metadata when saving and restoring generated drawing elements", () => {
     const element = {
       ...createStateIconDrawingElement("circle"),

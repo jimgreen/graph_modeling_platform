@@ -2547,7 +2547,7 @@ export function createRenderNodePreviewImageContent(__appScope: Record<string, a
   return (
     node: ModelNode,
     clipId: string,
-    options: { imageHref?: string; foregroundImageHref?: string; className?: string } = {}
+    options: { imageHref?: string; foregroundImageHref?: string; className?: string; preserveAspectRatio?: string } = {}
   ) => {
   const { SvgMarkupChunk, g, isBusNode, isStaticNode, nodeForegroundImage, nodeImage, nodeImageContentTransform, rect, svgImageContentMarkup } = __appScope;
     const imageHref = options.imageHref ?? nodeImage(node);
@@ -2586,7 +2586,7 @@ export function createRenderNodePreviewImageContent(__appScope: Record<string, a
                 y: -node.size.height / 2,
                 width: node.size.width,
                 height: node.size.height,
-                preserveAspectRatio: "xMidYMid slice",
+                preserveAspectRatio: options.preserveAspectRatio ?? "xMidYMid slice",
                 clipPath,
                 className: "node-background-image"
               })}
@@ -2600,7 +2600,7 @@ export function createRenderNodePreviewImageContent(__appScope: Record<string, a
                 y: -node.size.height / 2,
                 width: node.size.width,
                 height: node.size.height,
-                preserveAspectRatio: "xMidYMid slice",
+                preserveAspectRatio: options.preserveAspectRatio ?? "xMidYMid slice",
                 clipPath,
                 className: "node-foreground-image"
               })}

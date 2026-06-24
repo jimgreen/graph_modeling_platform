@@ -69,13 +69,29 @@ describe("graph template library filtering", () => {
 
   test("keeps the custom terminal preview icon scale independent from terminal handles", () => {
     const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const graphMeasurementSource = readFileSync(new URL("./appExtracted/appGraphMeasurementFactories.tsx", import.meta.url), "utf8");
+    const deviceDefinitionSource = readFileSync(new URL("./appExtracted/appDeviceDefinitionFactories.tsx", import.meta.url), "utf8");
     const terminalPreviewMatch = appViewSource.match(
-      /const customDeviceTerminalPreviewViewBox = \{[\s\S]*?height: customDevicePreviewHeight \+ CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN \* 2\s*\};/u
+      /const customDeviceTerminalPreviewViewBox = \{[\s\S]*?height: customDevicePreviewHeight \+ customDeviceTerminalPreviewMarginY \* 2\s*\};/u
     );
 
     expect(appViewSource).toContain("customDeviceTerminalPreviewClipId");
     expect(appViewSource).toContain("renderCustomDevicePreviewContent(customDeviceTerminalPreviewClipId)");
-    expect(terminalPreviewMatch?.[0]).toContain("-customDevicePreviewWidth / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN");
+    expect(appViewSource).toContain("const customDeviceTerminalPreviewMarginX = customDevicePreviewWidth / 6");
+    expect(appViewSource).toContain("const customDeviceTerminalPreviewMarginY = customDevicePreviewHeight / 6");
+    expect(appViewSource).toContain("const previewFrameNode = {");
+    expect(appViewSource).toContain("size: { width: customDevicePreviewWidth, height: customDevicePreviewHeight }");
+    expect(appViewSource).toContain("renderNodePreviewImageContent(previewFrameNode, clipId");
+    expect(appViewSource).toContain('preserveAspectRatio: previewUsesStateImage ? "xMidYMid meet" : undefined');
+    expect(graphMeasurementSource).toContain('preserveAspectRatio: options.preserveAspectRatio ?? "xMidYMid slice"');
+    expect(deviceDefinitionSource).toContain("size: { width: definitionVisualPreviewWidth, height: definitionVisualPreviewHeight }");
+    expect(deviceDefinitionSource).toContain("nodeGeometryTransform(previewFrameNode)");
+    expect(deviceDefinitionSource).toContain('const previewPreserveAspectRatio = previewUsesStateImage ? "xMidYMid meet" : "xMidYMid slice"');
+    expect(deviceDefinitionSource).toContain("const definitionTerminalPreviewMarginX = definitionVisualPreviewWidth / 6");
+    expect(deviceDefinitionSource).toContain("const definitionTerminalPreviewMarginY = definitionVisualPreviewHeight / 6");
+    expect(deviceDefinitionSource).toContain("const outwardOffsetX = customDevicePreviewWidth / 6");
+    expect(deviceDefinitionSource).toContain("const outwardOffsetY = definitionVisualPreviewHeight / 6");
+    expect(terminalPreviewMatch?.[0]).toContain("-customDevicePreviewWidth / 2 - customDeviceTerminalPreviewMarginX");
     expect(terminalPreviewMatch?.[0]).not.toContain("customDeviceTerminalConnectorSegment(anchor)");
   });
 });

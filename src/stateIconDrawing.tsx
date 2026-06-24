@@ -78,6 +78,12 @@ export type StateIconDrawingToImageOptions = {
   resolveImageHref?: (href: string) => string | undefined | null;
 };
 
+type StateIconSvgStyleOverride = {
+  stroke: string;
+  strokeWidth: number;
+  dashArray: string;
+};
+
 export type DeviceDefinitionStateDraftRow = DeviceStateDefinition & {
   id: string;
   value: string;
@@ -431,6 +437,27 @@ function stateIconStrokeDashArray(strokeStyle: StateIconDrawingElement["strokeSt
     return `${formatSvgNumber(width * 0.2)} ${formatSvgNumber(width * 1.8)}`;
   }
   return "";
+}
+
+function stateIconSvgStyleOverrideCss(override: StateIconSvgStyleOverride) {
+  const dashRule = override.dashArray
+    ? `stroke-dasharray:${escapeXml(override.dashArray)} !important;`
+    : "stroke-dasharray:none !important;";
+  return `path,line,polyline,polygon,rect,circle,ellipse{stroke:${escapeXml(override.stroke)} !important;stroke-width:${formatSvgNumber(Math.max(0, override.strokeWidth))} !important;${dashRule}vector-effect:non-scaling-stroke !important;}`;
+}
+
+function stateIconSvgFallbackParts(source: string) {
+  const svgSource = source.trim();
+  const openMatch = /^<svg\b([^>]*)>/iu.exec(svgSource);
+  const closeIndex = svgSource.toLowerCase().lastIndexOf("</svg>");
+  if (!openMatch || closeIndex < 0) {
+    return null;
+  }
+  const open = openMatch[1] ?? "";
+  const body = svgSource.slice(openMatch[0].length, closeIndex);
+  const viewBox = readSvgMarkupAttribute(open, "viewBox") ||
+    `0 0 ${formatSvgNumber(readSvgMarkupNumber(open, "width", 240))} ${formatSvgNumber(readSvgMarkupNumber(open, "height", 160))}`;
+  return { viewBox, body };
 }
 
 function stateIconLineCapMarkerId(elementId: string, position: "start" | "end", cap: StateIconLineCapKind) {
@@ -801,6 +828,36 @@ export function stateIconSvgElementSource(source: string) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${escapeXml(parsed.viewBox)}">${parsed.body}</svg>`;
 }
 
+export function stateIconSvgVisibleViewBox(source: string) {
+  const parsed = parseStateIconSvgSource(source);
+  if (!parsed) {
+    return stateIconSvgFallbackParts(source)?.viewBox ?? "";
+  }
+  if (typeof document === "undefined") {
+    return parsed.viewBox;
+  }
+  try {
+    const host = document.createElement("div");
+    host.style.position = "absolute";
+    host.style.left = "-10000px";
+    host.style.top = "-10000px";
+    host.style.width = "0";
+    host.style.height = "0";
+    host.style.overflow = "hidden";
+    host.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${escapeXml(parsed.viewBox)}">${parsed.supportMarkup}${parsed.editableChildren.map((child) => child.outerHTML).join("")}</svg>`;
+    document.body.appendChild(host);
+    const svg = host.querySelector("svg") as SVGSVGElement | null;
+    const box = svg?.getBBox();
+    host.remove();
+    if (box && box.width > 0 && box.height > 0) {
+      return `${formatSvgNumber(box.x)} ${formatSvgNumber(box.y)} ${formatSvgNumber(box.width)} ${formatSvgNumber(box.height)}`;
+    }
+  } catch {
+    // Fall back to the declared SVG viewBox when rendered geometry cannot be measured.
+  }
+  return parsed.viewBox;
+}
+
 export function parseSvgStyleAttribute(value: string) {
   const style: CSSProperties = {};
   for (const declaration of value.split(";")) {
@@ -816,7 +873,11 @@ export function parseSvgStyleAttribute(value: string) {
   return style;
 }
 
-export function stateIconSvgReactAttributes(element: Element) {
+function stateIconSvgElementAcceptsStyleOverride(tag: string) {
+  return ["path", "line", "polyline", "polygon", "rect", "circle", "ellipse"].includes(tag);
+}
+
+export function stateIconSvgReactAttributes(element: Element, override?: StateIconSvgStyleOverride) {
   const props: Record<string, string | CSSProperties> = {};
   for (const attribute of Array.from(element.attributes)) {
     const name = attribute.name;
@@ -885,10 +946,23 @@ export function stateIconSvgReactAttributes(element: Element) {
                                             : name;
     props[propName] = attribute.value;
   }
+  if (override && stateIconSvgElementAcceptsStyleOverride(element.tagName)) {
+    const style = typeof props.style === "object" && props.style
+      ? { ...(props.style as CSSProperties) }
+      : {};
+    delete style.stroke;
+    delete style.strokeWidth;
+    delete style.strokeDasharray;
+    props.style = style;
+    props.stroke = override.stroke;
+    props.strokeWidth = formatSvgNumber(Math.max(0, override.strokeWidth));
+    props.strokeDasharray = override.dashArray || "none";
+    props.vectorEffect = "non-scaling-stroke";
+  }
   return props;
 }
 
-export function stateIconSvgNodeChildren(element: Element, keyPrefix: string): ReactNode[] {
+export function stateIconSvgNodeChildren(element: Element, keyPrefix: string, override?: StateIconSvgStyleOverride): ReactNode[] {
   return Array.from(element.childNodes).flatMap((child, index) => {
     if (child.nodeType === Node.TEXT_NODE) {
       const text = child.textContent ?? "";
@@ -901,14 +975,14 @@ export function stateIconSvgNodeChildren(element: Element, keyPrefix: string): R
     if (["script", "foreignObject"].includes(node.tagName)) {
       return [];
     }
-    return [stateIconSvgNodeToReact(node, `${keyPrefix}-${index}`)];
+    return [stateIconSvgNodeToReact(node, `${keyPrefix}-${index}`, override)];
   });
 }
 
-export function stateIconSvgNodeToReact(element: Element, key: string): ReactNode {
+export function stateIconSvgNodeToReact(element: Element, key: string, override?: StateIconSvgStyleOverride): ReactNode {
   const tag = element.tagName;
-  const props = stateIconSvgReactAttributes(element);
-  const children = stateIconSvgNodeChildren(element, key);
+  const props = stateIconSvgReactAttributes(element, override);
+  const children = stateIconSvgNodeChildren(element, key, override);
   switch (tag) {
     case "svg":
       return <svg key={key} {...props}>{children}</svg>;
@@ -953,12 +1027,12 @@ export function stateIconSvgNodeToReact(element: Element, key: string): ReactNod
   }
 }
 
-export function stateIconSvgSourceToReactNodes(source: string) {
+export function stateIconSvgSourceToReactNodes(source: string, override?: StateIconSvgStyleOverride) {
   const parsed = parseStateIconSvgSource(source);
   if (!parsed) {
     return null;
   }
-  return parsed.editableChildren.map((child, index) => stateIconSvgNodeToReact(child, `svg-node-${index}`));
+  return parsed.editableChildren.map((child, index) => stateIconSvgNodeToReact(child, `svg-node-${index}`, override));
 }
 
 export function createEditableStateIconElementsFromSvgSource(
@@ -1022,15 +1096,28 @@ export function svgSourceToDataUrl(source?: string) {
   return svg ? `data:image/svg+xml;utf8,${encodeURIComponent(svg)}` : "";
 }
 
-export function stateIconDrawingSvgElementMarkup(source: string, x: number, y: number, width: number, height: number) {
+export function stateIconDrawingSvgElementMarkup(
+  source: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  override?: StateIconSvgStyleOverride
+) {
   const parsed = parseStateIconSvgSource(source);
   if (!parsed || !parsed.body) {
+    const fallback = stateIconSvgFallbackParts(source);
+    if (fallback?.body) {
+      const styleOverride = override ? `<style>${stateIconSvgStyleOverrideCss(override)}</style>` : "";
+      return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" viewBox="${escapeXml(fallback.viewBox)}" preserveAspectRatio="xMidYMid meet">${styleOverride}${fallback.body}</svg>`;
+    }
     const href = svgSourceToDataUrl(source);
     return href
       ? `<image href="${escapeXml(href)}" x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" preserveAspectRatio="xMidYMid meet"/>`
       : "";
   }
-  return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" viewBox="${escapeXml(parsed.viewBox)}" preserveAspectRatio="xMidYMid meet">${parsed.body}</svg>`;
+  const styleOverride = override ? `<style>${stateIconSvgStyleOverrideCss(override)}</style>` : "";
+  return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" viewBox="${escapeXml(stateIconSvgVisibleViewBox(source))}" preserveAspectRatio="xMidYMid meet">${styleOverride}${parsed.body}</svg>`;
 }
 
 export function stateIconDrawingElementMarkup(
@@ -1053,7 +1140,11 @@ export function stateIconDrawingElementMarkup(
   let body = "";
   switch (element.kind) {
     case "imported-svg": {
-      body = stateIconDrawingSvgElementMarkup(element.svgSource ?? "", -hw, -hh, w, h);
+      body = stateIconDrawingSvgElementMarkup(element.svgSource ?? "", -hw, -hh, w, h, {
+        stroke,
+        strokeWidth: Math.max(0, element.strokeWidth),
+        dashArray
+      });
       break;
     }
     case "image": {
@@ -1248,14 +1339,15 @@ export function stateIconDrawingElementPreviewNode(element: StateIconDrawingElem
         const href = svgSourceToDataUrl(element.svgSource);
         return href ? <image href={href} x={-hw} y={-hh} width={w} height={h} preserveAspectRatio="xMidYMid meet" /> : null;
       }
-      const nodes = stateIconSvgSourceToReactNodes(element.svgSource ?? "");
+      const override = { stroke, strokeWidth: sw, dashArray };
+      const nodes = stateIconSvgSourceToReactNodes(element.svgSource ?? "", override);
       return (
         <svg
           x={-hw}
           y={-hh}
           width={w}
           height={h}
-          viewBox={parsed.viewBox}
+          viewBox={stateIconSvgVisibleViewBox(element.svgSource ?? "")}
           preserveAspectRatio="xMidYMid meet"
         >
           {nodes}
