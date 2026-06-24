@@ -1220,6 +1220,10 @@ const [stateImageUploadTarget, setStateImageUploadTarget] = useState<StateImageU
 Object.assign(__appScope, { stateImageUploadTarget, setStateImageUploadTarget });
 const [stateIconDrawingDialog, setStateIconDrawingDialog] = useState<StateIconDrawingDialogState | null>(null);
 Object.assign(__appScope, { stateIconDrawingDialog, setStateIconDrawingDialog });
+const [stateIconDrawingImageVisibleFrames, setStateIconDrawingImageVisibleFrames] = useState<Record<string, { x: number; y: number; width: number; height: number }>>({});
+Object.assign(__appScope, { stateIconDrawingImageVisibleFrames, setStateIconDrawingImageVisibleFrames });
+const [stateIconDrawingSvgVisibleFrames, setStateIconDrawingSvgVisibleFrames] = useState<Record<string, { x: number; y: number; width: number; height: number }>>({});
+Object.assign(__appScope, { stateIconDrawingSvgVisibleFrames, setStateIconDrawingSvgVisibleFrames });
 const [stateIconDrawingContextMenu, setStateIconDrawingContextMenu] = useState<StateIconDrawingContextMenuState | null>(null);
 Object.assign(__appScope, { stateIconDrawingContextMenu, setStateIconDrawingContextMenu });
 const [stateIconDrawingImportMode, setStateIconDrawingImportMode] = useState<"svg" | "image">("svg");

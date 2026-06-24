@@ -847,7 +847,53 @@ export function stateIconSvgVisibleViewBox(source: string) {
     host.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${escapeXml(parsed.viewBox)}">${parsed.supportMarkup}${parsed.editableChildren.map((child) => child.outerHTML).join("")}</svg>`;
     document.body.appendChild(host);
     const svg = host.querySelector("svg") as SVGSVGElement | null;
-    const box = svg?.getBBox();
+    const rootMatrix = svg?.getScreenCTM();
+    const leafBoxes: Array<{ left: number; right: number; top: number; bottom: number }> = [];
+    const visibleShapeSelector = "path,line,polyline,polygon,rect,circle,ellipse,text,use";
+    svg?.querySelectorAll(visibleShapeSelector).forEach((element) => {
+      if (!(element instanceof SVGGraphicsElement) || element.closest("defs,clipPath,mask,marker,pattern,symbol")) {
+        return;
+      }
+      const style = window.getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden" || Number.parseFloat(style.opacity || "1") === 0) {
+        return;
+      }
+      const strokeWidth = Number.parseFloat(style.strokeWidth || element.getAttribute("stroke-width") || "0") || 0;
+      const fillHidden = style.fill === "none" || style.fill === "transparent" || style.fill === "rgba(0, 0, 0, 0)";
+      const strokeHidden = style.stroke === "none" || style.stroke === "transparent" || style.stroke === "rgba(0, 0, 0, 0)" || strokeWidth <= 0;
+      if (fillHidden && strokeHidden) {
+        return;
+      }
+      const matrix = element.getScreenCTM();
+      if (!rootMatrix || !matrix) {
+        return;
+      }
+      const box = element.getBBox();
+      if (!box || box.width <= 0 || box.height <= 0) {
+        return;
+      }
+      const toRoot = rootMatrix.inverse().multiply(matrix);
+      const corners = [
+        new DOMPoint(box.x, box.y),
+        new DOMPoint(box.x + box.width, box.y),
+        new DOMPoint(box.x + box.width, box.y + box.height),
+        new DOMPoint(box.x, box.y + box.height)
+      ].map((point) => point.matrixTransform(toRoot));
+      leafBoxes.push({
+        left: Math.min(...corners.map((point) => point.x)),
+        right: Math.max(...corners.map((point) => point.x)),
+        top: Math.min(...corners.map((point) => point.y)),
+        bottom: Math.max(...corners.map((point) => point.y))
+      });
+    });
+    const box = leafBoxes.length > 0
+      ? {
+          x: Math.min(...leafBoxes.map((item) => item.left)),
+          y: Math.min(...leafBoxes.map((item) => item.top)),
+          width: Math.max(...leafBoxes.map((item) => item.right)) - Math.min(...leafBoxes.map((item) => item.left)),
+          height: Math.max(...leafBoxes.map((item) => item.bottom)) - Math.min(...leafBoxes.map((item) => item.top))
+        }
+      : svg?.getBBox();
     host.remove();
     if (box && box.width > 0 && box.height > 0) {
       return `${formatSvgNumber(box.x)} ${formatSvgNumber(box.y)} ${formatSvgNumber(box.width)} ${formatSvgNumber(box.height)}`;
@@ -1261,7 +1307,10 @@ export function stateIconDrawingElementPreviewImage(element: StateIconDrawingEle
   };
 }
 
-export function stateIconDrawingElementPreviewNode(element: StateIconDrawingElement) {
+export function stateIconDrawingElementPreviewNode(
+  element: StateIconDrawingElement,
+  options: { onImageLoad?: (element: StateIconDrawingElement, event: any) => void } = {}
+) {
   const stroke = element.strokeColor || "#2563eb";
   const fill = element.fillColor || "transparent";
   const textFill = element.textColor || element.strokeColor || "#111827";
@@ -1373,6 +1422,7 @@ export function stateIconDrawingElementPreviewNode(element: StateIconDrawingElem
             height={h * scale}
             preserveAspectRatio="xMidYMid slice"
             clipPath={`url(#${clipId})`}
+            onLoad={(event) => options.onImageLoad?.(element, event)}
           />
         </>
       ) : null;

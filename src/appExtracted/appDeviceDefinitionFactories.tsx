@@ -4952,7 +4952,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       hideDefaultPage?: boolean;
     }
   ) => {
-  const { BufferedTextInput, COMPONENT_TYPE_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, DEFAULT_STATE_PAGE_ID, DEVICE_LIBRARY, DeferredColorInput, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, MemoDeviceGlyph, STATE_ICON_LINE_CAP_OPTIONS, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, addStateIconDrawingElement, appendNonDefaultStateDraftRow, button, circle, colorPalette, createNodeFromTemplate, createStateDraftRowFromDefaultVisual, createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, customDeviceTerminalAnchorDragIndex, customDeviceTerminalAnchorValue, customDeviceTerminalAnchors, customDraftTerminalTypes, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionTerminalAnchorDragIndex, definitionVisualDraft, definitionVisualTerminalAnchors, definitionVisualTerminalTypes, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, image, isDefaultStatePageId, label, line, nextNonDefaultStateIndex, nodeGeometryTransform, nonDefaultStateDraftRows, projectCustomDeviceTerminalAnchorToBoundary, rect, resolveTemplateComponentType, setCustomDeviceDraft, setCustomDeviceTerminalAnchorDragIndex, setDefinitionStateDraftRows, setDefinitionTerminalAnchorDragIndex, setImagePickerCategoryFilter, setImagePickerSearchQuery, setImagePickerSourceFilter, setImageTarget, setStateIconDrawingContextMenu, setStateIconDrawingDialog, small, span, stateDraftRowId, stateIconDrawingClipboardRef, stateIconDrawingContextMenu, stateIconDrawingDialog, stateIconDrawingElementId, stateIconDrawingElementPreviewNode, stateIconDrawingHistoryRef, stateIconDrawingKeyDown, stateIconDrawingPointer, stateIconDrawingPreviewNeedsDirectElementRender, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, terminalColor, text, updateCustomDeviceTerminalAnchor, updateDefinitionTerminalAnchor, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
+  const { BufferedTextInput, COMPONENT_TYPE_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, DEFAULT_STATE_PAGE_ID, DEVICE_LIBRARY, DeferredColorInput, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, MemoDeviceGlyph, STATE_ICON_LINE_CAP_OPTIONS, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, addStateIconDrawingElement, appendNonDefaultStateDraftRow, button, circle, colorPalette, createNodeFromTemplate, createStateDraftRowFromDefaultVisual, createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, customDeviceTerminalAnchorDragIndex, customDeviceTerminalAnchorValue, customDeviceTerminalAnchors, customDraftTerminalTypes, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionTerminalAnchorDragIndex, definitionVisualDraft, definitionVisualTerminalAnchors, definitionVisualTerminalTypes, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, image, isDefaultStatePageId, label, line, nextNonDefaultStateIndex, nodeGeometryTransform, nonDefaultStateDraftRows, projectCustomDeviceTerminalAnchorToBoundary, rect, resolveTemplateComponentType, setCustomDeviceDraft, setCustomDeviceTerminalAnchorDragIndex, setDefinitionStateDraftRows, setDefinitionTerminalAnchorDragIndex, setImagePickerCategoryFilter, setImagePickerSearchQuery, setImagePickerSourceFilter, setImageTarget, setStateIconDrawingContextMenu, setStateIconDrawingDialog, setStateIconDrawingImageVisibleFrames, setStateIconDrawingSvgVisibleFrames, small, span, stateDraftRowId, stateIconDrawingClipboardRef, stateIconDrawingContextMenu, stateIconDrawingDialog, stateIconDrawingElementId, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, stateIconDrawingHistoryRef, stateIconDrawingImageVisibleFrames, stateIconDrawingKeyDown, stateIconDrawingPointer, stateIconDrawingPreviewNeedsDirectElementRender, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingSvgVisibleFrames, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, terminalColor, text, updateCustomDeviceTerminalAnchor, updateDefinitionTerminalAnchor, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
     const hideDefaultPage = handlers.hideDefaultPage === true;
     const displayRows = hideDefaultPage ? rows : nonDefaultStateDraftRows(rows);
     const defaultVisual = handlers.drawingScope === "definition"
@@ -5509,6 +5509,192 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
           })}
         </g>
       );
+    };
+    const stateIconImageVisibleFrameKey = (element: any) =>
+      `${element.id}:${element.imageHref ?? ""}:${element.width}:${element.height}:${element.imageScale ?? 1}:${element.cropX ?? 0}:${element.cropY ?? 0}`;
+    const updateStateIconImageVisibleFrame = (element: any, event: any) => {
+      if (element?.kind !== "image" || !setStateIconDrawingImageVisibleFrames) {
+        return;
+      }
+      const imageHref = String(element.imageHref ?? "");
+      if (!imageHref) {
+        return;
+      }
+      const key = stateIconImageVisibleFrameKey(element);
+      const sourceImage = new Image();
+      sourceImage.crossOrigin = "anonymous";
+      sourceImage.onload = () => {
+        const sourceWidth = sourceImage.naturalWidth || sourceImage.width;
+        const sourceHeight = sourceImage.naturalHeight || sourceImage.height;
+        if (!sourceWidth || !sourceHeight) {
+          return;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = sourceWidth;
+        canvas.height = sourceHeight;
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        if (!context) {
+          return;
+        }
+        context.drawImage(sourceImage, 0, 0, sourceWidth, sourceHeight);
+        const pixels = context.getImageData(0, 0, sourceWidth, sourceHeight).data;
+        let left = sourceWidth;
+        let right = -1;
+        let top = sourceHeight;
+        let bottom = -1;
+        for (let y = 0; y < sourceHeight; y += 1) {
+          for (let x = 0; x < sourceWidth; x += 1) {
+            const alpha = pixels[(y * sourceWidth + x) * 4 + 3];
+            if (alpha <= 8) {
+              continue;
+            }
+            left = Math.min(left, x);
+            right = Math.max(right, x);
+            top = Math.min(top, y);
+            bottom = Math.max(bottom, y);
+          }
+        }
+        if (right < left || bottom < top) {
+          return;
+        }
+        const elementWidth = Math.max(1, Number(element.width) || 1);
+        const elementHeight = Math.max(1, Number(element.height) || 1);
+        const renderWidth = elementWidth * Math.max(0.05, Number(element.imageScale) || 1);
+        const renderHeight = elementHeight * Math.max(0.05, Number(element.imageScale) || 1);
+        const imageScale = Math.max(renderWidth / sourceWidth, renderHeight / sourceHeight);
+        const drawnWidth = sourceWidth * imageScale;
+        const drawnHeight = sourceHeight * imageScale;
+        const imageX = -elementWidth / 2 + (Number(element.cropX) || 0) + (renderWidth - drawnWidth) / 2;
+        const imageY = -elementHeight / 2 + (Number(element.cropY) || 0) + (renderHeight - drawnHeight) / 2;
+        const frame = {
+          x: Math.max(-elementWidth / 2, imageX + left * imageScale),
+          y: Math.max(-elementHeight / 2, imageY + top * imageScale),
+          width: Math.min(elementWidth / 2, imageX + (right + 1) * imageScale) - Math.max(-elementWidth / 2, imageX + left * imageScale),
+          height: Math.min(elementHeight / 2, imageY + (bottom + 1) * imageScale) - Math.max(-elementHeight / 2, imageY + top * imageScale)
+        };
+        if (frame.width <= 0 || frame.height <= 0) {
+          return;
+        }
+        setStateIconDrawingImageVisibleFrames((current: Record<string, any>) => {
+          const previous = current[key];
+          if (
+            previous &&
+            Math.abs(previous.x - frame.x) < 0.1 &&
+            Math.abs(previous.y - frame.y) < 0.1 &&
+            Math.abs(previous.width - frame.width) < 0.1 &&
+            Math.abs(previous.height - frame.height) < 0.1
+          ) {
+            return current;
+          }
+          return { ...current, [key]: frame };
+        });
+      };
+      sourceImage.src = event?.currentTarget?.href?.baseVal || imageHref;
+    };
+    const stateIconDrawingImageSelectionFrame = (element: any) => {
+      if (element?.kind !== "image") {
+        return null;
+      }
+      const frame = stateIconDrawingImageVisibleFrames?.[stateIconImageVisibleFrameKey(element)];
+      if (!frame || frame.width <= 0 || frame.height <= 0) {
+        return null;
+      }
+      return {
+        ...frame,
+        halfWidth: frame.x + frame.width,
+        halfHeight: frame.y + frame.height
+      };
+    };
+    const stateIconSvgVisibleFrameKey = (element: any) =>
+      `${element.id}:${element.svgSource ?? ""}:${element.width}:${element.height}:${element.strokeWidth}:${element.strokeColor ?? ""}:${element.strokeStyle ?? ""}`;
+    const updateStateIconSvgVisibleFrame = (element: any, event: any) => {
+      if (element?.kind !== "imported-svg" || !setStateIconDrawingSvgVisibleFrames) {
+        return;
+      }
+      const measurement = stateIconDrawingElementPreviewImage(element);
+      if (!measurement?.href) {
+        return;
+      }
+      const key = stateIconSvgVisibleFrameKey(element);
+      const sourceImage = new Image();
+      sourceImage.onload = () => {
+        const sourceWidth = sourceImage.naturalWidth || sourceImage.width;
+        const sourceHeight = sourceImage.naturalHeight || sourceImage.height;
+        if (!sourceWidth || !sourceHeight) {
+          return;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = sourceWidth;
+        canvas.height = sourceHeight;
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        if (!context) {
+          return;
+        }
+        context.drawImage(sourceImage, 0, 0, sourceWidth, sourceHeight);
+        const pixels = context.getImageData(0, 0, sourceWidth, sourceHeight).data;
+        let left = sourceWidth;
+        let right = -1;
+        let top = sourceHeight;
+        let bottom = -1;
+        for (let y = 0; y < sourceHeight; y += 1) {
+          for (let x = 0; x < sourceWidth; x += 1) {
+            const alpha = pixels[(y * sourceWidth + x) * 4 + 3];
+            if (alpha <= 8) {
+              continue;
+            }
+            left = Math.min(left, x);
+            right = Math.max(right, x);
+            top = Math.min(top, y);
+            bottom = Math.max(bottom, y);
+          }
+        }
+        if (right < left || bottom < top) {
+          return;
+        }
+        const elementWidth = Math.max(1, Number(element.width) || 1);
+        const elementHeight = Math.max(1, Number(element.height) || 1);
+        const paddingX = (-measurement.x) - elementWidth / 2;
+        const paddingY = (-measurement.y) - elementHeight / 2;
+        const scaleX = measurement.width / sourceWidth;
+        const scaleY = measurement.height / sourceHeight;
+        const frame = {
+          x: left * scaleX - paddingX - elementWidth / 2,
+          y: top * scaleY - paddingY - elementHeight / 2,
+          width: (right - left + 1) * scaleX,
+          height: (bottom - top + 1) * scaleY
+        };
+        if (frame.width <= 0 || frame.height <= 0) {
+          return;
+        }
+        setStateIconDrawingSvgVisibleFrames((current: Record<string, any>) => {
+          const previous = current[key];
+          if (
+            previous &&
+            Math.abs(previous.x - frame.x) < 0.1 &&
+            Math.abs(previous.y - frame.y) < 0.1 &&
+            Math.abs(previous.width - frame.width) < 0.1 &&
+            Math.abs(previous.height - frame.height) < 0.1
+          ) {
+            return current;
+          }
+          return { ...current, [key]: frame };
+        });
+      };
+      sourceImage.src = event?.currentTarget?.href?.baseVal || measurement.href;
+    };
+    const stateIconDrawingSvgSelectionFrame = (element: any) => {
+      if (element?.kind !== "imported-svg") {
+        return null;
+      }
+      const frame = stateIconDrawingSvgVisibleFrames?.[stateIconSvgVisibleFrameKey(element)];
+      if (!frame || frame.width <= 0 || frame.height <= 0) {
+        return null;
+      }
+      return {
+        ...frame,
+        halfWidth: frame.x + frame.width,
+        halfHeight: frame.y + frame.height
+      };
     };
     const stateIconDrawingTerminalPatch = (value: string) => {
       if (value === "") {
@@ -6169,7 +6355,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                       className="state-icon-drawing-direct-preview"
                       transform={`translate(${formatSvgNumber(element.x)} ${formatSvgNumber(element.y)}) rotate(${formatSvgNumber(element.rotation)})`}
                     >
-                      {stateIconDrawingElementPreviewNode(element)}
+                      {stateIconDrawingElementPreviewNode(element, { onImageLoad: updateStateIconImageVisibleFrame })}
                     </g>
                   )) : (
                     <image
@@ -6182,6 +6368,26 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                       className="state-icon-drawing-composite-preview"
                     />
                   )}
+                  {previewElements.map((element) => {
+                    if (element.kind !== "imported-svg") {
+                      return null;
+                    }
+                    const measurement = stateIconDrawingElementPreviewImage(element);
+                    return (
+                      <image
+                        key={`svg-measure-${element.id}`}
+                        href={measurement.href}
+                        x="-10000"
+                        y="-10000"
+                        width="1"
+                        height="1"
+                        opacity="0"
+                        pointerEvents="none"
+                        aria-hidden="true"
+                        onLoad={(event) => updateStateIconSvgVisibleFrame(element, event)}
+                      />
+                    );
+                  })}
                   <rect
                     x={stateIconHasTerminals ? stateIconTerminalFrame.x : 0}
                     y={stateIconHasTerminals ? stateIconTerminalFrame.y : 0}
@@ -6220,7 +6426,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                     const selected = selectedIds.includes(element.id);
                     const halfWidth = Math.max(1, element.width) / 2;
                     const halfHeight = Math.max(1, element.height) / 2;
-                    const selectionFrame = stateIconDrawingImportedSvgSelectionFrame(element) ?? {
+                    const selectionFrame = stateIconDrawingImageSelectionFrame(element) ?? stateIconDrawingSvgSelectionFrame(element) ?? stateIconDrawingImportedSvgSelectionFrame(element) ?? {
                       x: -halfWidth,
                       y: -halfHeight,
                       width: Math.max(1, element.width),
