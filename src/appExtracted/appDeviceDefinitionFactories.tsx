@@ -5454,14 +5454,6 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       }
       return (
         <g className="state-icon-terminal-base-layer">
-          <rect
-            className="custom-device-preview-frame state-icon-terminal-inner-frame"
-            x={stateIconTerminalFrame.x}
-            y={stateIconTerminalFrame.y}
-            width={stateIconTerminalFrame.width}
-            height={stateIconTerminalFrame.height}
-            rx="8"
-          />
           {stateIconTerminalDragIndex !== null && stateIconTerminalDragIndex !== undefined && (
             <>
               {CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES.map((guideValue, guideIndex) => {
@@ -6389,17 +6381,28 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                     );
                   })}
                   <rect
-                    x={stateIconHasTerminals ? stateIconTerminalFrame.x : 0}
-                    y={stateIconHasTerminals ? stateIconTerminalFrame.y : 0}
-                    width={stateIconHasTerminals ? stateIconTerminalFrame.width : 240}
-                    height={stateIconHasTerminals ? stateIconTerminalFrame.height : 160}
+                    x="0"
+                    y="0"
+                    width="240"
+                    height="160"
                     rx="6"
-                    className="state-icon-drawing-icon-frame"
+                    className="state-icon-drawing-icon-frame state-icon-drawing-outer-frame"
                     fill="none"
                     stroke={frame.strokeColor}
                     strokeWidth={frame.strokeWidth}
                     strokeDasharray={frameDashArray}
                   />
+                  {stateIconHasTerminals && (
+                    <rect
+                      x={stateIconTerminalFrame.x}
+                      y={stateIconTerminalFrame.y}
+                      width={stateIconTerminalFrame.width}
+                      height={stateIconTerminalFrame.height}
+                      rx="6"
+                      className="state-icon-drawing-icon-frame state-icon-drawing-inner-frame"
+                      fill="none"
+                    />
+                  )}
                   {renderStateIconTerminalLayer(true)}
                   {stateIconDrawingSmartGuides.map((guide) => (
                     <line

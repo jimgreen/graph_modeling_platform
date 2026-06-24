@@ -5382,6 +5382,12 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   pointer-events: none;
 }
 
+.state-icon-drawing-inner-frame {
+  stroke: #f97316;
+  stroke-width: 1.5;
+  stroke-dasharray: 5 3;
+}
+
 .state-icon-terminal-base-layer,
 .state-icon-terminal-inner-frame,
 .state-icon-terminal-connector {
