@@ -179,6 +179,23 @@ export function normalizeStateIconDrawingFontSize(value: unknown, fallback: unkn
   return Math.max(STATE_ICON_DRAWING_MIN_FONT_SIZE, Math.floor(parsed));
 }
 
+export function formatStateIconDrawingNumber(value: unknown, fallback = 0) {
+  const parsed = Number(value);
+  const fallbackNumber = Number(fallback);
+  const safeFallback = Number.isFinite(fallbackNumber) ? fallbackNumber : 0;
+  return (Number.isFinite(parsed) ? parsed : safeFallback).toFixed(2);
+}
+
+export function normalizeStateIconDrawingStrokeWidth(value: unknown, fallback = 0) {
+  const parsed = Number(value);
+  const fallbackNumber = Number(fallback);
+  const safeFallback = Number.isFinite(fallbackNumber) ? fallbackNumber : 0;
+  if (!Number.isFinite(parsed)) {
+    return Math.max(0, Math.round(safeFallback));
+  }
+  return Math.max(0, Math.round(parsed));
+}
+
 function cutStateIconDrawingSelection(current: any, clipboardRef: any, historyRef: any) {
   if (!current) {
     return current;
@@ -6059,7 +6076,19 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                   </label>
                   <label className="state-icon-drawing-compact-field">
                     线宽
-                    <BufferedTextInput type="number" min="0" value={frame.strokeWidth} onCommit={(nextValue) => setStateIconFramePatch({ strokeWidth: Math.max(0, Number(nextValue) || 0) })} />
+                    <BufferedTextInput
+                      type="number"
+                      min="0"
+                      step={1}
+                      inputMode="numeric"
+                      value={normalizeStateIconDrawingStrokeWidth(frame.strokeWidth)}
+                      onKeyDown={(event) => {
+                        if ([".", "-", "+", "e", "E"].includes(event.key)) {
+                          event.preventDefault();
+                        }
+                      }}
+                      onCommit={(nextValue) => setStateIconFramePatch({ strokeWidth: normalizeStateIconDrawingStrokeWidth(nextValue, frame.strokeWidth) })}
+                    />
                   </label>
                   <label>
                     线色
@@ -6137,27 +6166,39 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                       <div className="state-icon-drawing-property-grid">
                         <label className="state-icon-drawing-compact-field">
                           X
-                          <BufferedTextInput type="number" value={selected.x} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { x: Number(nextValue) || 0 })} />
+                          <BufferedTextInput type="number" step="0.01" value={formatStateIconDrawingNumber(selected.x)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { x: Number(nextValue) || 0 })} />
                         </label>
                         <label className="state-icon-drawing-compact-field">
                           Y
-                          <BufferedTextInput type="number" value={selected.y} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { y: Number(nextValue) || 0 })} />
+                          <BufferedTextInput type="number" step="0.01" value={formatStateIconDrawingNumber(selected.y)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { y: Number(nextValue) || 0 })} />
                         </label>
                         <label className="state-icon-drawing-compact-field">
                           宽
-                          <BufferedTextInput type="number" min="1" value={selected.width} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { width: Math.max(1, Number(nextValue) || 1) })} />
+                          <BufferedTextInput type="number" min="1" step="0.01" value={formatStateIconDrawingNumber(selected.width, 1)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { width: Math.max(1, Number(nextValue) || 1) })} />
                         </label>
                         <label className="state-icon-drawing-compact-field">
                           高
-                          <BufferedTextInput type="number" min="1" value={selected.height} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { height: Math.max(1, Number(nextValue) || 1) })} />
+                          <BufferedTextInput type="number" min="1" step="0.01" value={formatStateIconDrawingNumber(selected.height, 1)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { height: Math.max(1, Number(nextValue) || 1) })} />
                         </label>
                         <label className="state-icon-drawing-compact-field">
                           角度
-                          <BufferedTextInput type="number" value={selected.rotation} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { rotation: Number(nextValue) || 0 })} />
+                          <BufferedTextInput type="number" step="0.01" value={formatStateIconDrawingNumber(selected.rotation)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { rotation: Number(nextValue) || 0 })} />
                         </label>
                         <label className="state-icon-drawing-compact-field">
                           粗细
-                          <BufferedTextInput type="number" min="0" value={selected.strokeWidth} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { strokeWidth: Math.max(0, Number(nextValue) || 0) })} />
+                          <BufferedTextInput
+                            type="number"
+                            min="0"
+                            step={1}
+                            inputMode="numeric"
+                            value={normalizeStateIconDrawingStrokeWidth(selected.strokeWidth)}
+                            onKeyDown={(event) => {
+                              if ([".", "-", "+", "e", "E"].includes(event.key)) {
+                                event.preventDefault();
+                              }
+                            }}
+                            onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { strokeWidth: normalizeStateIconDrawingStrokeWidth(nextValue, selected.strokeWidth) })}
+                          />
                         </label>
                         <label>
                           线型
@@ -6280,15 +6321,15 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                           <>
                             <label>
                               图片缩放
-                              <BufferedTextInput type="number" min="0.05" step="0.05" value={selected.imageScale ?? 1} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { imageScale: Math.max(0.05, Number(nextValue) || 0.05) })} />
+                              <BufferedTextInput type="number" min="0.05" step="0.01" value={formatStateIconDrawingNumber(selected.imageScale ?? 1, 1)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { imageScale: Math.max(0.05, Number(nextValue) || 0.05) })} />
                             </label>
                             <label>
                               裁剪X
-                              <BufferedTextInput type="number" value={selected.cropX ?? 0} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { cropX: Number(nextValue) || 0 })} />
+                              <BufferedTextInput type="number" step="0.01" value={formatStateIconDrawingNumber(selected.cropX ?? 0)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { cropX: Number(nextValue) || 0 })} />
                             </label>
                             <label>
                               裁剪Y
-                              <BufferedTextInput type="number" value={selected.cropY ?? 0} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { cropY: Number(nextValue) || 0 })} />
+                              <BufferedTextInput type="number" step="0.01" value={formatStateIconDrawingNumber(selected.cropY ?? 0)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { cropY: Number(nextValue) || 0 })} />
                             </label>
                           </>
                         )}

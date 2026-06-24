@@ -6,9 +6,11 @@ import {
   createRouteSegmentPointerDistance,
   createStateIconDrawingKeyDown,
   createStartStateIconDrawingDrag,
+  formatStateIconDrawingNumber,
   imageLibraryFileMatchesImportKind,
   imageLibraryImportKindForInput,
   normalizeStateIconDrawingFontSize,
+  normalizeStateIconDrawingStrokeWidth,
   stateIconDrawingElementIdsInRect
 } from "./appExtracted/appDeviceDefinitionFactories";
 import { createSetEdgeManualPoints } from "./appExtracted/appProjectCanvasFactories";
@@ -221,6 +223,15 @@ describe("manual bend interaction helpers", () => {
     expect(normalizeStateIconDrawingFontSize("0", 14)).toBe(8);
     expect(normalizeStateIconDrawingFontSize("-4", 14)).toBe(8);
     expect(normalizeStateIconDrawingFontSize("", 18.7)).toBe(18);
+  });
+
+  test("formats state icon drawing geometry values and integer stroke widths", () => {
+    expect(formatStateIconDrawingNumber(59.73719)).toBe("59.74");
+    expect(formatStateIconDrawingNumber("91.86669")).toBe("91.87");
+    expect(formatStateIconDrawingNumber("", 0)).toBe("0.00");
+    expect(normalizeStateIconDrawingStrokeWidth(1.2)).toBe(1);
+    expect(normalizeStateIconDrawingStrokeWidth("1.8")).toBe(2);
+    expect(normalizeStateIconDrawingStrokeWidth("-3")).toBe(0);
   });
 
   test("finds endpoint-adjacent route segments when adding a manual bend", () => {

@@ -66,4 +66,16 @@ describe("graph template library filtering", () => {
     expect(templateButtonMatch?.[0]).toContain("clearLibraryFlyoutCloseTimer()");
     expect(templateButtonMatch?.[0]).toContain("setHoveredGraphTemplateType(template.typeName)");
   });
+
+  test("keeps the custom terminal preview icon scale independent from terminal handles", () => {
+    const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const terminalPreviewMatch = appViewSource.match(
+      /const customDeviceTerminalPreviewViewBox = \{[\s\S]*?height: customDevicePreviewHeight \+ CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN \* 2\s*\};/u
+    );
+
+    expect(appViewSource).toContain("customDeviceTerminalPreviewClipId");
+    expect(appViewSource).toContain("renderCustomDevicePreviewContent(customDeviceTerminalPreviewClipId)");
+    expect(terminalPreviewMatch?.[0]).toContain("-customDevicePreviewWidth / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN");
+    expect(terminalPreviewMatch?.[0]).not.toContain("customDeviceTerminalConnectorSegment(anchor)");
+  });
 });

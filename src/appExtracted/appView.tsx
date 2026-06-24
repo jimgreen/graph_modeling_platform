@@ -113,7 +113,7 @@ export function renderAppView(__appScope: Record<string, any>) {
     setImagePickerSourceFilter
   } = __appScope;
   const { customDevicePreviewNode } = __appScope;
-  const renderCustomDevicePreviewContent = () => {
+  const renderCustomDevicePreviewContent = (clipId = "custom-device-preview-clip") => {
     const fallbackPreviewNode = {
       id: "custom-device-preview-fallback",
       kind: "custom-device-preview",
@@ -149,17 +149,13 @@ export function renderAppView(__appScope: Record<string, any>) {
           <MemoDeviceGlyph node={previewNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={previewStateVisual}/>
           <MemoDeviceGlyph node={previewNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={previewStateVisual}/>
         </g>
-        {renderNodePreviewImageContent(previewNode, "custom-device-preview-clip", {
+        {renderNodePreviewImageContent(previewNode, clipId, {
           imageHref: previewImageHref,
           foregroundImageHref: previewForegroundHref
         })}
       </>
     );
   };
-  const customDeviceTerminalPreviewPadding = Math.min(
-    CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN,
-    Math.max(8, Math.min(customDevicePreviewWidth, customDevicePreviewHeight) * 0.04)
-  );
   const keepTemplateContextMenuFlyoutOpen = (typeName?: string) => {
     if (!typeName) {
       return;
@@ -167,29 +163,13 @@ export function renderAppView(__appScope: Record<string, any>) {
     clearLibraryFlyoutCloseTimer();
     setHoveredGraphTemplateType(typeName);
   };
-  const customDeviceTerminalPreviewAnchorRadius = 8;
-  const customDeviceTerminalPreviewBounds = customDeviceTerminalAnchors.reduce(
-    (bounds, anchor) => {
-      const segment = customDeviceTerminalConnectorSegment(anchor);
-      return {
-        minX: Math.min(bounds.minX, segment.from.x, segment.to.x - customDeviceTerminalPreviewAnchorRadius),
-        minY: Math.min(bounds.minY, segment.from.y, segment.to.y - customDeviceTerminalPreviewAnchorRadius),
-        maxX: Math.max(bounds.maxX, segment.from.x, segment.to.x + customDeviceTerminalPreviewAnchorRadius),
-        maxY: Math.max(bounds.maxY, segment.from.y, segment.to.y + customDeviceTerminalPreviewAnchorRadius)
-      };
-    },
-    {
-      minX: -customDevicePreviewWidth / 2,
-      minY: -customDevicePreviewHeight / 2,
-      maxX: customDevicePreviewWidth / 2,
-      maxY: customDevicePreviewHeight / 2
-    }
-  );
+  const customDeviceTerminalPreviewClipKey = customDeviceDraft.componentType || customDeviceDraft.componentName || "draft";
+  const customDeviceTerminalPreviewClipId = `custom-device-terminal-preview-clip-${customDeviceTerminalPreviewClipKey.replace(/[^A-Za-z0-9_-]/g, "-")}`;
   const customDeviceTerminalPreviewViewBox = {
-    x: customDeviceTerminalPreviewBounds.minX - customDeviceTerminalPreviewPadding,
-    y: customDeviceTerminalPreviewBounds.minY - customDeviceTerminalPreviewPadding,
-    width: Math.max(1, customDeviceTerminalPreviewBounds.maxX - customDeviceTerminalPreviewBounds.minX + customDeviceTerminalPreviewPadding * 2),
-    height: Math.max(1, customDeviceTerminalPreviewBounds.maxY - customDeviceTerminalPreviewBounds.minY + customDeviceTerminalPreviewPadding * 2)
+    x: -customDevicePreviewWidth / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN,
+    y: -customDevicePreviewHeight / 2 - CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN,
+    width: customDevicePreviewWidth + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2,
+    height: customDevicePreviewHeight + CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN * 2
   };
   const customDeviceHasTerminals = customDeviceDraft.terminalCount > 0;
   const visibleCustomDeviceDialogView = customDeviceDialogView === "terminals" && !customDeviceHasTerminals ? "icon" : customDeviceDialogView;
@@ -2337,7 +2317,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                     }
                     setCustomDeviceTerminalAnchorDragIndex(null);
                 }}>
-                  {renderCustomDevicePreviewContent()}
+                  {renderCustomDevicePreviewContent(customDeviceTerminalPreviewClipId)}
                   <rect className="custom-device-preview-frame" x={-customDevicePreviewWidth / 2} y={-customDevicePreviewHeight / 2} width={customDevicePreviewWidth} height={customDevicePreviewHeight} rx="8"/>
                   {customDefaultStateSelected && customDeviceTerminalAnchorDragIndex !== null && (<>
                       {CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES.map((guideValue, guideIndex) => {

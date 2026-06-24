@@ -5293,7 +5293,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .state-icon-drawing-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(330px, 360px);
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 240px);
   gap: 7px;
   min-width: 0;
   min-height: 0;
@@ -5737,6 +5737,8 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .state-icon-drawing-properties .state-icon-drawing-property-grid input,
 .state-icon-drawing-properties .state-icon-drawing-property-grid select {
   min-height: 24px;
+  padding-left: 5px;
+  padding-right: 5px;
   padding-top: 2px;
   padding-bottom: 2px;
 }
@@ -5898,7 +5900,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 @media (max-width: 1280px) {
   .state-icon-drawing-layout {
-    grid-template-columns: minmax(0, 1fr) minmax(310px, 330px);
+    grid-template-columns: minmax(0, 1fr) minmax(206px, 220px);
   }
 
   .state-icon-drawing-side {
