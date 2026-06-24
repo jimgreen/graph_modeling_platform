@@ -694,7 +694,7 @@ export type CustomComponentTreeSelection =
   | { kind: "componentType"; attributeLibraryName: AttributeLibrary; section: string }
   | { kind: "component"; attributeLibraryName: AttributeLibrary; section: string; templateKind: string };
 
-export type CustomDeviceDialogView = "terminals" | "icon" | "parameters" | "measurements";
+export type CustomDeviceDialogView = "icon" | "parameters" | "measurements";
 
 export type CustomDeviceDefinitionMode = "create" | "edit";
 

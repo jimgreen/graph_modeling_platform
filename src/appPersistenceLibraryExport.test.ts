@@ -67,31 +67,22 @@ describe("graph template library filtering", () => {
     expect(templateButtonMatch?.[0]).toContain("setHoveredGraphTemplateType(template.typeName)");
   });
 
-  test("keeps the custom terminal preview icon scale independent from terminal handles", () => {
+  test("merges terminal anchors into the state icon editor base layer", () => {
     const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
-    const graphMeasurementSource = readFileSync(new URL("./appExtracted/appGraphMeasurementFactories.tsx", import.meta.url), "utf8");
+    const appCoreSource = readFileSync(new URL("./appExtracted/appCoreCanvasUtilities.tsx", import.meta.url), "utf8");
     const deviceDefinitionSource = readFileSync(new URL("./appExtracted/appDeviceDefinitionFactories.tsx", import.meta.url), "utf8");
-    const terminalPreviewMatch = appViewSource.match(
-      /const customDeviceTerminalPreviewViewBox = \{[\s\S]*?height: customDevicePreviewHeight \+ customDeviceTerminalPreviewMarginY \* 2\s*\};/u
-    );
 
-    expect(appViewSource).toContain("customDeviceTerminalPreviewClipId");
-    expect(appViewSource).toContain("renderCustomDevicePreviewContent(customDeviceTerminalPreviewClipId)");
-    expect(appViewSource).toContain("const customDeviceTerminalPreviewMarginX = customDevicePreviewWidth / 6");
-    expect(appViewSource).toContain("const customDeviceTerminalPreviewMarginY = customDevicePreviewHeight / 6");
-    expect(appViewSource).toContain("const previewFrameNode = {");
-    expect(appViewSource).toContain("size: { width: customDevicePreviewWidth, height: customDevicePreviewHeight }");
-    expect(appViewSource).toContain("renderNodePreviewImageContent(previewFrameNode, clipId");
-    expect(appViewSource).toContain('preserveAspectRatio: previewUsesStateImage ? "xMidYMid meet" : undefined');
-    expect(graphMeasurementSource).toContain('preserveAspectRatio: options.preserveAspectRatio ?? "xMidYMid slice"');
-    expect(deviceDefinitionSource).toContain("size: { width: definitionVisualPreviewWidth, height: definitionVisualPreviewHeight }");
-    expect(deviceDefinitionSource).toContain("nodeGeometryTransform(previewFrameNode)");
-    expect(deviceDefinitionSource).toContain('const previewPreserveAspectRatio = previewUsesStateImage ? "xMidYMid meet" : "xMidYMid slice"');
-    expect(deviceDefinitionSource).toContain("const definitionTerminalPreviewMarginX = definitionVisualPreviewWidth / 6");
-    expect(deviceDefinitionSource).toContain("const definitionTerminalPreviewMarginY = definitionVisualPreviewHeight / 6");
-    expect(deviceDefinitionSource).toContain("const outwardOffsetX = customDevicePreviewWidth / 6");
-    expect(deviceDefinitionSource).toContain("const outwardOffsetY = definitionVisualPreviewHeight / 6");
-    expect(terminalPreviewMatch?.[0]).toContain("-customDevicePreviewWidth / 2 - customDeviceTerminalPreviewMarginX");
-    expect(terminalPreviewMatch?.[0]).not.toContain("customDeviceTerminalConnectorSegment(anchor)");
+    expect(appCoreSource).toContain('export type CustomDeviceDialogView = "icon" | "parameters" | "measurements"');
+    expect(appViewSource).not.toContain("setCustomDeviceDialogView(\"terminals\")");
+    expect(appViewSource).not.toContain(">端子定义<");
+    expect(appViewSource).toContain('visibleCustomDeviceDialogView === "icon" ?');
+    expect(appViewSource).toContain("customDeviceDraft.terminalCount > 0 && <div className=\"custom-terminal-grid\"");
+    expect(deviceDefinitionSource).toContain("const stateIconTerminalFrame = {");
+    expect(deviceDefinitionSource).toContain("x: STATE_ICON_DRAWING_FRAME_WIDTH / 8");
+    expect(deviceDefinitionSource).toContain("width: STATE_ICON_DRAWING_FRAME_WIDTH * 3 / 4");
+    expect(deviceDefinitionSource).toContain("className=\"custom-device-preview-frame state-icon-terminal-inner-frame\"");
+    expect(deviceDefinitionSource).toContain("className=\"custom-device-terminal-connector state-icon-terminal-connector\"");
+    expect(deviceDefinitionSource).toContain("className={`custom-device-terminal-anchor state-icon-terminal-anchor");
+    expect(deviceDefinitionSource).toContain("definitionVisualDraft.terminalCount > 0 && <div className=\"custom-terminal-grid device-definition-terminal-grid\"");
   });
 });

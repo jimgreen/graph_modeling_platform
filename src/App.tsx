@@ -1041,7 +1041,7 @@ const [templateDraftName, setTemplateDraftName] = useState("");
 Object.assign(__appScope, { templateDraftName, setTemplateDraftName });
 const [customDeviceDialogOpen, setCustomDeviceDialogOpen] = useState(false);
 Object.assign(__appScope, { customDeviceDialogOpen, setCustomDeviceDialogOpen });
-const [customDeviceDialogView, setCustomDeviceDialogView] = useState<CustomDeviceDialogView>("terminals");
+const [customDeviceDialogView, setCustomDeviceDialogView] = useState<CustomDeviceDialogView>("icon");
 Object.assign(__appScope, { customDeviceDialogView, setCustomDeviceDialogView });
 const [customDeviceDefinitionMode, setCustomDeviceDefinitionMode] = useState<CustomDeviceDefinitionMode>("create");
 Object.assign(__appScope, { customDeviceDefinitionMode, setCustomDeviceDefinitionMode });
@@ -4409,8 +4409,7 @@ Object.assign(__appScope, { stateIconDrawingDraftRowForTarget });
 const stateIconDrawingInlineTarget =
     deviceDefinitionDialogOpen && deviceDefinitionView === "visual"
       ? { scope: "definition" as const, rowId: definitionStatePageId }
-      : customDeviceDialogOpen &&
-          (customDeviceDialogView === "icon" || (customDeviceDialogView === "terminals" && customDeviceDraft.terminalCount <= 0))
+      : customDeviceDialogOpen && customDeviceDialogView === "icon"
         ? { scope: "custom" as const, rowId: customIconStatePageId }
         : null;
 Object.assign(__appScope, { stateIconDrawingInlineTarget });

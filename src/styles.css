@@ -5382,6 +5382,20 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   pointer-events: none;
 }
 
+.state-icon-terminal-base-layer,
+.state-icon-terminal-inner-frame,
+.state-icon-terminal-connector {
+  pointer-events: none;
+}
+
+.state-icon-terminal-anchor-layer {
+  pointer-events: none;
+}
+
+.state-icon-terminal-anchor circle {
+  pointer-events: auto;
+}
+
 .state-icon-drawing-selection-box {
   fill: none;
   stroke: #2563eb;

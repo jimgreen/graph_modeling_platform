@@ -174,18 +174,7 @@ export function renderAppView(__appScope: Record<string, any>) {
     clearLibraryFlyoutCloseTimer();
     setHoveredGraphTemplateType(typeName);
   };
-  const customDeviceTerminalPreviewClipKey = customDeviceDraft.componentType || customDeviceDraft.componentName || "draft";
-  const customDeviceTerminalPreviewClipId = `custom-device-terminal-preview-clip-${customDeviceTerminalPreviewClipKey.replace(/[^A-Za-z0-9_-]/g, "-")}`;
-  const customDeviceTerminalPreviewMarginX = customDevicePreviewWidth / 6;
-  const customDeviceTerminalPreviewMarginY = customDevicePreviewHeight / 6;
-  const customDeviceTerminalPreviewViewBox = {
-    x: -customDevicePreviewWidth / 2 - customDeviceTerminalPreviewMarginX,
-    y: -customDevicePreviewHeight / 2 - customDeviceTerminalPreviewMarginY,
-    width: customDevicePreviewWidth + customDeviceTerminalPreviewMarginX * 2,
-    height: customDevicePreviewHeight + customDeviceTerminalPreviewMarginY * 2
-  };
-  const customDeviceHasTerminals = customDeviceDraft.terminalCount > 0;
-  const visibleCustomDeviceDialogView = customDeviceDialogView === "terminals" && !customDeviceHasTerminals ? "icon" : customDeviceDialogView;
+  const visibleCustomDeviceDialogView = customDeviceDialogView;
   const imagePickerUsesCatalogSource = imageTarget?.kind === "stateIconDrawing" && imageTarget.sourceMode === "catalogOnly";
   const imagePickerTitle =
     imageTarget?.kind === "canvas"
@@ -2284,19 +2273,13 @@ export function renderAppView(__appScope: Record<string, any>) {
               </label>
               <label className="custom-device-terminal-count-field">
                 端子数量
-                <BufferedTextInput type="number" min="0" max={MAX_CUSTOM_DEVICE_TERMINALS} value={customDeviceDraft.terminalCount} disabled={visibleCustomDeviceDialogView === "terminals" && !customDefaultStateSelected} onCommit={(value) => updateCustomDraftTerminalCount(Number(value))}/>
+                <BufferedTextInput type="number" min="0" max={MAX_CUSTOM_DEVICE_TERMINALS} value={customDeviceDraft.terminalCount} onCommit={(value) => updateCustomDraftTerminalCount(Number(value))}/>
               </label>
             </div>
             <div className="device-definition-tabs custom-device-tabs" role="tablist" aria-label="元件定义内容切换">
               <button type="button" className={visibleCustomDeviceDialogView === "icon" ? "active" : ""} onClick={() => setCustomDeviceDialogView("icon")}>
                 图标定义
               </button>
-              {customDeviceHasTerminals && <button type="button" className={visibleCustomDeviceDialogView === "terminals" ? "active" : ""} onClick={() => {
-                setCustomDeviceDialogView("terminals");
-                setCustomDeviceStatePageId("");
-              }}>
-                端子定义
-              </button>}
               <button type="button" className={visibleCustomDeviceDialogView === "parameters" ? "active" : ""} onClick={() => setCustomDeviceDialogView("parameters")}>
                 参数定义
               </button>
@@ -2305,77 +2288,14 @@ export function renderAppView(__appScope: Record<string, any>) {
               </button>
             </div>
             <div className={`custom-device-tab-panel custom-device-tab-panel-${visibleCustomDeviceDialogView}`}>
-            {visibleCustomDeviceDialogView === "terminals" || visibleCustomDeviceDialogView === "icon" ? (<>
-            {visibleCustomDeviceDialogView === "icon" && renderStateVisualPager(customDeviceDraft.stateDefinitions, customDeviceStatePageId, setCustomDeviceStatePageId, {
+            {visibleCustomDeviceDialogView === "icon" ? (<>
+            {renderStateVisualPager(customDeviceDraft.stateDefinitions, customDeviceStatePageId, setCustomDeviceStatePageId, {
                 update: updateCustomDeviceStateDraftRow,
                 add: addCustomDeviceStateDraftRow,
                 remove: deleteCustomDeviceStateDraftRow,
                 drawingScope: "custom"
             })}
-            {customDefaultStateSelected && visibleCustomDeviceDialogView === "terminals" && <div className="custom-device-preview">
-              <div className="custom-device-preview-stage">
-                <svg className="custom-device-anchor-preview" viewBox={`${formatSvgNumber(customDeviceTerminalPreviewViewBox.x)} ${formatSvgNumber(customDeviceTerminalPreviewViewBox.y)} ${formatSvgNumber(customDeviceTerminalPreviewViewBox.width)} ${formatSvgNumber(customDeviceTerminalPreviewViewBox.height)}`} role="img" aria-label="自定义元件图标和端子位置预览" onPointerMove={(event) => {
-                    if (!customDefaultStateSelected || customDeviceTerminalAnchorDragIndex === null) {
-                        return;
-                    }
-                    updateCustomDeviceTerminalAnchorFromPreview(customDeviceTerminalAnchorDragIndex, event.currentTarget, event);
-                }} onPointerUp={(event) => {
-                    if (customDeviceTerminalAnchorDragIndex !== null && event.currentTarget.hasPointerCapture(event.pointerId)) {
-                        event.currentTarget.releasePointerCapture(event.pointerId);
-                    }
-                    setCustomDeviceTerminalAnchorDragIndex(null);
-                }} onPointerCancel={(event) => {
-                    if (customDeviceTerminalAnchorDragIndex !== null && event.currentTarget.hasPointerCapture(event.pointerId)) {
-                        event.currentTarget.releasePointerCapture(event.pointerId);
-                    }
-                    setCustomDeviceTerminalAnchorDragIndex(null);
-                }}>
-                  {renderCustomDevicePreviewContent(customDeviceTerminalPreviewClipId)}
-                  <rect className="custom-device-preview-frame" x={-customDevicePreviewWidth / 2} y={-customDevicePreviewHeight / 2} width={customDevicePreviewWidth} height={customDevicePreviewHeight} rx="8"/>
-                  {customDefaultStateSelected && customDeviceTerminalAnchorDragIndex !== null && (<>
-                      {CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES.map((guideValue, guideIndex) => {
-                        const activeAnchor = customDeviceTerminalAnchors[customDeviceTerminalAnchorDragIndex];
-                        const active = Boolean(activeAnchor &&
-                            (Math.abs(customDeviceTerminalAnchorValue(activeAnchor.x) - guideValue) <= 1 / CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION ||
-                                Math.abs(customDeviceTerminalAnchorValue(activeAnchor.y) - guideValue) <= 1 / CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION));
-                        return (<Fragment key={`custom-terminal-guide-${guideIndex}`}>
-                            <line className={`custom-device-terminal-guide ${active ? "active" : ""}`} x1={guideValue * customDevicePreviewWidth} y1={-customDevicePreviewHeight / 2} x2={guideValue * customDevicePreviewWidth} y2={customDevicePreviewHeight / 2}/>
-                            <line className={`custom-device-terminal-guide ${active ? "active" : ""}`} x1={-customDevicePreviewWidth / 2} y1={guideValue * customDevicePreviewHeight} x2={customDevicePreviewWidth / 2} y2={guideValue * customDevicePreviewHeight}/>
-                          </Fragment>);
-                    })}
-                    </>)}
-                  {customDefaultStateSelected && customDeviceTerminalAnchors.map((anchor, index) => {
-                    const terminalType = customDeviceDraft.terminalTypes[index] ?? "ac";
-                    const segment = customDeviceTerminalConnectorSegment(anchor);
-                    return (<line key={`custom-terminal-connector-${index}`} className="custom-device-terminal-connector" x1={segment.from.x} y1={segment.from.y} x2={segment.to.x} y2={segment.to.y} style={{ "--terminal-color": terminalColor(terminalType, colorPalette) } as CSSProperties}/>);
-                })}
-                  {customDefaultStateSelected && customDeviceTerminalAnchors.map((anchor, index) => {
-                    const terminalType = customDeviceDraft.terminalTypes[index] ?? "ac";
-                    const segment = customDeviceTerminalConnectorSegment(anchor);
-                    const x = segment.to.x;
-                    const y = segment.to.y;
-                    const dragging = customDeviceTerminalAnchorDragIndex === index;
-                    return (<g key={`custom-terminal-anchor-${index}`} className={`custom-device-terminal-anchor ${dragging ? "dragging" : ""}`} transform={`translate(${formatSvgNumber(x)} ${formatSvgNumber(y)})`} style={{ "--terminal-color": terminalColor(terminalType, colorPalette) } as CSSProperties}>
-                        <circle r="8" onPointerDown={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            const svg = event.currentTarget.ownerSVGElement;
-                            if (!svg) {
-                                return;
-                            }
-                            setCustomDeviceTerminalAnchorDragIndex(index);
-                            svg.setPointerCapture(event.pointerId);
-                            updateCustomDeviceTerminalAnchorFromPreview(index, svg, event);
-                        }}>
-                          <title>{`拖动调整端子${index + 1}位置`}</title>
-                        </circle>
-                        <text x="0" y="0">{index + 1}</text>
-                      </g>);
-                })}
-                </svg>
-              </div>
-            </div>}
-            {customDefaultStateSelected && visibleCustomDeviceDialogView === "terminals" && <div className="custom-terminal-grid" style={{ "--custom-terminal-count": Math.max(1, customDeviceDraft.terminalCount) } as CSSProperties}>
+            {customDeviceDraft.terminalCount > 0 && <div className="custom-terminal-grid" style={{ "--custom-terminal-count": Math.max(1, customDeviceDraft.terminalCount) } as CSSProperties}>
               {Array.from({ length: customDeviceDraft.terminalCount }).map((_, index) => {
                     const terminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
                     const terminalAssociations = normalizeContainerTerminalAssociations(terminalTypes, customDeviceDraft.terminalAssociations, customDeviceDraft.terminalCount);
