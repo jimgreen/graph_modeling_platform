@@ -793,6 +793,34 @@ describe("default device state draft rows", () => {
     expect(imageSource).toContain("stroke-dasharray:9 5.4 !important");
   });
 
+  test("preserves imported SVG stroke widths when no edited stroke width is set", () => {
+    const importedElement = createImportedStateIconElement(
+      "imported-svg",
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80"><path d="M 10 10 H 90" stroke="#000000" stroke-width="4" fill="none"/></svg>',
+      "线段"
+    );
+
+    const imageSource = decodeURIComponent(stateIconDrawingToImage([importedElement]).split(",")[1] ?? "");
+
+    expect(importedElement.strokeWidth).toBe(0);
+    expect(imageSource).toContain('stroke-width="4"');
+    expect(imageSource).not.toContain("stroke-width:0 !important");
+  });
+
+  test("strips generated zero-width SVG style overrides from restored imported layers", () => {
+    const importedElement = createImportedStateIconElement(
+      "imported-svg",
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="-33 -33 66 54"><style>path,line,polyline,polygon,rect,circle,ellipse{stroke:#2563eb !important;stroke-width:0 !important;stroke-dasharray:none !important;vector-effect:non-scaling-stroke !important;}</style><g fill="#ffffff" stroke="#2563eb" stroke-width="2.2"><path d="M -22 -12 H 22 V 14 H -22 Z"/></g></svg>',
+      "交流开关"
+    );
+
+    const imageSource = decodeURIComponent(stateIconDrawingToImage([importedElement]).split(",")[1] ?? "");
+
+    expect(importedElement.svgSource).not.toContain("stroke-width:0 !important");
+    expect(imageSource).toContain('stroke-width="2.2"');
+    expect(imageSource).not.toContain("stroke-width:0 !important");
+  });
+
   test("keeps terminal ownership metadata when saving and restoring generated drawing elements", () => {
     const element = {
       ...createStateIconDrawingElement("circle"),

@@ -478,6 +478,21 @@ function stateIconSvgStyleOverrideCss(override: StateIconSvgStyleOverride) {
   return `path,line,polyline,polygon,rect,circle,ellipse{stroke:${escapeXml(override.stroke)} !important;stroke-width:${formatSvgNumber(Math.max(0, override.strokeWidth))} !important;${dashRule}vector-effect:non-scaling-stroke !important;}`;
 }
 
+function isGeneratedZeroStrokeSvgStyleOverride(css: string) {
+  const normalized = css.replace(/\s+/gu, "").toLowerCase();
+  return (
+    normalized.includes("path,line,polyline,polygon,rect,circle,ellipse{") &&
+    normalized.includes("stroke-width:0!important") &&
+    normalized.includes("vector-effect:non-scaling-stroke!important")
+  );
+}
+
+function stripGeneratedZeroStrokeSvgStyleOverrides(source: string) {
+  return source.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/giu, (markup, css) =>
+    isGeneratedZeroStrokeSvgStyleOverride(String(css ?? "")) ? "" : markup
+  );
+}
+
 function stateIconSvgFallbackParts(source: string) {
   const svgSource = source.trim();
   const openMatch = /^<svg\b([^>]*)>/iu.exec(svgSource);
@@ -621,6 +636,9 @@ export function createImportedStateIconElement(
   source: string,
   fileName: string
 ): StateIconDrawingElement {
+  const normalizedSvgSource = kind === "imported-svg"
+    ? stripGeneratedZeroStrokeSvgStyleOverrides(source)
+    : "";
   return {
     ...createStateIconDrawingElement(kind),
     width: 120,
@@ -628,7 +646,7 @@ export function createImportedStateIconElement(
     strokeWidth: 0,
     fillColor: "transparent",
     text: fileName || stateVisualShapeLabel(kind),
-    svgSource: kind === "imported-svg" ? source : "",
+    svgSource: normalizedSvgSource,
     imageHref: kind === "image" ? source : "",
     imageScale: 1,
     cropX: 0,
@@ -1221,7 +1239,7 @@ export function stateIconDrawingSvgElementMarkup(
   if (!parsed || !parsed.body) {
     const fallback = stateIconSvgFallbackParts(source);
     if (fallback?.body) {
-      const styleOverride = override ? `<style>${stateIconSvgStyleOverrideCss(override)}</style>` : "";
+      const styleOverride = override && override.strokeWidth > 0 ? `<style>${stateIconSvgStyleOverrideCss(override)}</style>` : "";
       return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" viewBox="${escapeXml(fallback.viewBox)}" preserveAspectRatio="xMidYMid meet">${styleOverride}${fallback.body}</svg>`;
     }
     const href = svgSourceToDataUrl(source);
@@ -1229,7 +1247,7 @@ export function stateIconDrawingSvgElementMarkup(
       ? `<image href="${escapeXml(href)}" x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" preserveAspectRatio="xMidYMid meet"/>`
       : "";
   }
-  const styleOverride = override ? `<style>${stateIconSvgStyleOverrideCss(override)}</style>` : "";
+  const styleOverride = override && override.strokeWidth > 0 ? `<style>${stateIconSvgStyleOverrideCss(override)}</style>` : "";
   return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" viewBox="${escapeXml(stateIconSvgVisibleViewBox(source))}" preserveAspectRatio="xMidYMid meet">${styleOverride}${parsed.body}</svg>`;
 }
 
