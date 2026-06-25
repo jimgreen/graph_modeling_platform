@@ -76,6 +76,15 @@ export type StateIconDrawingElement = {
 
 export type StateIconDrawingToImageOptions = {
   resolveImageHref?: (href: string) => string | undefined | null;
+  frame?: Partial<StateIconDrawingFrame>;
+  frameHasTerminals?: boolean;
+};
+
+export type StateIconDrawingFrame = {
+  strokeStyle: "solid" | "dashed" | "dotted";
+  strokeWidth: number;
+  strokeColor: string;
+  fillColor: string;
 };
 
 type StateIconSvgStyleOverride = {
@@ -437,6 +446,25 @@ function stateIconStrokeDashArray(strokeStyle: StateIconDrawingElement["strokeSt
     return `${formatSvgNumber(width * 0.2)} ${formatSvgNumber(width * 1.8)}`;
   }
   return "";
+}
+
+export function stateIconDrawingFrameRect(hasTerminals: boolean) {
+  return hasTerminals
+    ? { x: 30, y: 20, width: 180, height: 120, rx: 8 }
+    : { x: 0, y: 0, width: 240, height: 160, rx: 10 };
+}
+
+function stateIconDrawingFrameMarkup(frame: Partial<StateIconDrawingFrame> | undefined, hasTerminals: boolean) {
+  if (!frame) {
+    return "";
+  }
+  const strokeWidth = Math.max(0, Number(frame.strokeWidth) || 0);
+  const fill = String(frame.fillColor ?? "").trim() || "transparent";
+  const stroke = String(frame.strokeColor ?? "").trim() || "transparent";
+  const dashArray = stateIconStrokeDashArray(frame.strokeStyle, strokeWidth);
+  const dashAttr = dashArray ? ` stroke-dasharray="${escapeXml(dashArray)}"` : "";
+  const rect = stateIconDrawingFrameRect(hasTerminals);
+  return `<rect data-state-icon-frame="true" x="${formatSvgNumber(rect.x)}" y="${formatSvgNumber(rect.y)}" width="${formatSvgNumber(rect.width)}" height="${formatSvgNumber(rect.height)}" rx="${formatSvgNumber(rect.rx)}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"${dashAttr} vector-effect="non-scaling-stroke"/>`;
 }
 
 function stateIconSvgStyleOverrideCss(override: StateIconSvgStyleOverride) {
@@ -1274,8 +1302,9 @@ export function stateIconDrawingToImage(
   elements: readonly StateIconDrawingElement[],
   options: StateIconDrawingToImageOptions = {}
 ) {
+  const frameMarkup = stateIconDrawingFrameMarkup(options.frame, options.frameHasTerminals === true);
   const body = elements.map((element) => stateIconDrawingElementMarkup(element, options)).join("");
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">${body}</svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">${frameMarkup}${body}</svg>`;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 

@@ -2596,6 +2596,10 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   pointer-events: none;
 }
 
+.node-image-cover.terminal-reserved-area {
+  fill: transparent;
+}
+
 .diagram-node.selected .node-hitbox {
   stroke: #1d4ed8;
   stroke-width: 3;

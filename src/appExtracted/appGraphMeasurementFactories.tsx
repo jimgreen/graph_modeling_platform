@@ -745,7 +745,7 @@ export function createRenderMultiNodeDragOverlay(__appScope: Record<string, any>
                       width={node.size.width}
                       height={node.size.height}
                       rx="8"
-                      className="node-image-cover"
+                      className={`node-image-cover ${node.terminals.length > 0 ? "terminal-reserved-area" : ""}`}
                     />
                   )}
                   {imageHref && !isStaticNode(node) && (
@@ -991,7 +991,7 @@ export function createRenderGroupTransformPhotoPreview(__appScope: Record<string
                         width={node.size.width}
                         height={node.size.height}
                         rx="8"
-                        className="node-image-cover"
+                        className={`node-image-cover ${node.terminals.length > 0 ? "terminal-reserved-area" : ""}`}
                       />
                     )}
                     {imageHref && !isStaticNode(node) && (
@@ -2575,7 +2575,7 @@ export function createRenderNodePreviewImageContent(__appScope: Record<string, a
               width={node.size.width}
               height={node.size.height}
               rx="8"
-              className="node-image-cover"
+              className={`node-image-cover ${node.terminals.length > 0 ? "terminal-reserved-area" : ""}`}
             />
           )}
           {imageHref && (
@@ -2630,7 +2630,7 @@ export function createBuildNodePreviewImageMarkup(__appScope: Record<string, any
       ? `<clipPath id="${escapeXml(clipId)}"><rect x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="8"/></clipPath>`
       : "";
     const imageCoverMarkup = !isStaticNode(node)
-      ? `<rect x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="8" class="node-image-cover"/>`
+      ? `<rect x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" rx="8" class="node-image-cover${node.terminals.length > 0 ? " terminal-reserved-area" : ""}"/>`
       : "";
     const imageContentOptions = {
       x: -node.size.width / 2,
@@ -3671,17 +3671,61 @@ export function createPushNodeOnlyUndoSnapshot(__appScope: Record<string, any>) 
 
 export function createSyncExistingNodesWithTemplateDefinitions(__appScope: Record<string, any>) {
   return (
-    template: Pick<DeviceTemplate, "parameterDefinitions">,
+    template: Pick<DeviceTemplate, "parameterDefinitions"> & Partial<Pick<DeviceTemplate, "terminalType" | "terminalCount" | "terminalTypes" | "terminalLabels" | "terminalAnchors">>,
     previousDefinitions: readonly DeviceParameterDefinition[] | undefined,
     matchesNode: (node: ModelNode) => boolean
   ) => {
-  const { nodes, patchGraphNodes, pushUndoSnapshot, reconcileNodeParamsWithTemplateDefinitions, undoScopeForGraphPatch } = __appScope;
+  const { createNodeFromTemplate, nodes, patchGraphNodes, pushUndoSnapshot, reconcileNodeParamsWithTemplateDefinitions, undoScopeForGraphPatch } = __appScope;
     const nodeUpdates: ModelNode[] = [];
+    const syncNodeTerminals = (node: ModelNode) => {
+      if (!createNodeFromTemplate || !Number.isFinite(Number(template.terminalCount))) {
+        return node;
+      }
+      const terminalCount = Math.max(0, Math.round(Number(template.terminalCount) || 0));
+      const terminalTemplate = {
+        kind: node.kind,
+        label: node.label,
+        attributeLibrary: "",
+        size: node.size,
+        params: node.params,
+        terminalType: template.terminalType ?? template.terminalTypes?.[0] ?? node.terminals[0]?.type ?? "ac",
+        terminalCount,
+        terminalTypes: template.terminalTypes?.slice(0, terminalCount),
+        terminalLabels: template.terminalLabels?.slice(0, terminalCount),
+        terminalAnchors: template.terminalAnchors?.slice(0, terminalCount)
+      };
+      const expectedTerminals = createNodeFromTemplate(terminalTemplate, { x: node.x, y: node.y }).terminals;
+      const terminals = expectedTerminals.map((expected, index) => {
+        const current = node.terminals[index];
+        if (!current) {
+          return expected;
+        }
+        return {
+          ...expected,
+          nodeNumber: current.nodeNumber,
+          vbase: current.type === expected.type ? current.vbase : expected.vbase
+        };
+      });
+      const changed =
+        terminals.length !== node.terminals.length ||
+        terminals.some((terminal, index) => {
+          const current = node.terminals[index];
+          return !current ||
+            current.id !== terminal.id ||
+            current.label !== terminal.label ||
+            current.type !== terminal.type ||
+            current.nodeNumber !== terminal.nodeNumber ||
+            current.vbase !== terminal.vbase ||
+            current.anchor.x !== terminal.anchor.x ||
+            current.anchor.y !== terminal.anchor.y;
+        });
+      return changed ? { ...node, terminals } : node;
+    };
     for (const node of nodes) {
       if (!matchesNode(node)) {
         continue;
       }
-      const reconciled = reconcileNodeParamsWithTemplateDefinitions(node, template, previousDefinitions);
+      const reconciled = syncNodeTerminals(reconcileNodeParamsWithTemplateDefinitions(node, template, previousDefinitions));
       if (reconciled !== node) {
         nodeUpdates.push(reconciled);
       }

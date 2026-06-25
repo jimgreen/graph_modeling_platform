@@ -1706,6 +1706,18 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
   if (glyphVariant === "custom-device" || node.params[CUSTOM_DEVICE_TEMPLATE_KEY] === "1") {
     const label = node.name || node.kind;
     const abbreviation = label.slice(0, 4).toUpperCase();
+    const hasTerminalReservedArea = node.terminals.length > 0;
+    const hasImageVisual = Boolean(
+      node.params.backgroundImage ||
+      node.params.backgroundImageAssetId ||
+      stateVisual?.image ||
+      stateVisual?.imageAssetId ||
+      stateVisual?.backgroundImage ||
+      stateVisual?.backgroundImageAssetId
+    );
+    const baseRectFill = hasTerminalReservedArea && hasImageVisual
+      ? "transparent"
+      : node.params.fillColor || "#f8fafc";
     if (mode === "text") {
       return uprightText(node, 0, -2, { fill: stroke, fontSize: miniature ? 10 : 15, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, abbreviation);
     }
@@ -1714,7 +1726,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     }
     return (
       <g fill="none" stroke="none">
-        <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="6" fill={node.params.fillColor || "#f8fafc"} />
+        <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="6" fill={baseRectFill} />
         {renderText && uprightText(node, 0, -2, { fill: stroke, fontSize: miniature ? 10 : 15, fontWeight: "800", textAnchor: "middle", dominantBaseline: "middle" }, abbreviation)}
       </g>
     );

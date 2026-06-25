@@ -163,6 +163,7 @@ import {
   normalizeModelLayers,
   normalizeDeviceIndexCounters,
   normalizeNodeTerminalsByTemplate,
+  normalizeNodeTerminalsWithTemplate,
   normalizeProjectLayers,
   normalizeModelGroups,
   orderNodesByModelLayer,
@@ -512,7 +513,7 @@ import {
 } from "./staticRenderUtils";
 import { DeviceGlyph, MemoDeviceGlyph, SvgMarkupChunk } from "./DeviceGlyph";
 import { buildSvgNodeLabelMarkup, svgDisplayAttribute, exportSvgSafeId, exportSvgLayerId, exportSvgUniqueId, exportSvgLayerScriptMarkup, exportDeviceMetadataAttributes, exportMeasurementGroupMetadataAttributes, exportMeasurementItemMetadataAttributes, exportMeasurementGroupBackgroundColor, exportMeasurementGroupBorderColor, exportMeasurementGroupBorderWidth, exportMeasurementGroupBorderDashArray, exportMeasurementGroupAnchorPoint, exportMeasurementGroupLocalOffset, exportMeasurementGroupMetrics, buildExportMeasurementGroupMarkup } from "./svgExportUtils";
-import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_PAGE_ID, isDefaultStatePageId, createStateDraftRow, createStateDraftRowFromDefaultVisual, defaultStateDraftRow, createDefinitionStateDraftRows, normalizeStateDraftRows, validateStateDraftRows, stateVisualFromDraftRow, activeStateDraftRow, normalizeStatePageId, stateDraftImageValue, stateVisualShapeLabel, generateStateVisualShapeImage, stateIconDrawingElementId, visibleStateIconColor, createStateIconDrawingElement, createImportedStateIconElement, svgSourceFromDataUrl, parseStateIconSvgSource, stateIconSvgElementSource, parseSvgStyleAttribute, stateIconSvgReactAttributes, stateIconSvgNodeChildren, stateIconSvgNodeToReact, stateIconSvgSourceToReactNodes, createEditableStateIconElementsFromSvgSource, createStateIconDrawingInitialElements, svgSourceToDataUrl, stateIconDrawingSvgElementMarkup, stateIconDrawingElementMarkup, stateIconDrawingToImage, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "./stateIconDrawing";
+import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_PAGE_ID, isDefaultStatePageId, createStateDraftRow, createStateDraftRowFromDefaultVisual, defaultStateDraftRow, createDefinitionStateDraftRows, normalizeStateDraftRows, validateStateDraftRows, stateVisualFromDraftRow, activeStateDraftRow, normalizeStatePageId, stateDraftImageValue, stateVisualShapeLabel, generateStateVisualShapeImage, stateIconDrawingElementId, visibleStateIconColor, createStateIconDrawingElement, createImportedStateIconElement, svgSourceFromDataUrl, parseStateIconSvgSource, stateIconSvgElementSource, parseSvgStyleAttribute, stateIconSvgReactAttributes, stateIconSvgNodeChildren, stateIconSvgNodeToReact, stateIconSvgSourceToReactNodes, createEditableStateIconElementsFromSvgSource, createStateIconDrawingInitialElements, svgSourceToDataUrl, stateIconDrawingSvgElementMarkup, stateIconDrawingElementMarkup, stateIconDrawingToImage, stateIconDrawingFrameRect, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "./stateIconDrawing";
 import { fallbackComponentTypeForAttributeLibrary, resolveTemplateComponentType, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, isReservedDeviceDefinitionParamName, createDefinitionDraftRows, normalizeCustomDeviceTerminalAnchorCoordinate, projectCustomDeviceTerminalAnchorToBoundary, customDeviceTerminalAnchorKey, hasOverlappingCustomDeviceTerminalAnchors, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, createCustomDeviceDraftFromTemplate, createDefinitionVisualDraft, defaultContainerAssociationForTerminalType, isAssociationAllowedForTerminal, normalizeContainerTerminalAssociations, customDefaultDefinitions, generateCustomDeviceImage, customDeviceImageWithTerminalConnectors, customDeviceGeneratedDefaultImageCandidates, syncInheritedCustomDeviceStateVisuals, parseCustomDefinitions, screenToSvgPoint, primaryOrthogonalAxis, constrainPointToOrthogonalAxis } from "./customDeviceUtils";
 import { useBatchEditors } from "./hooks/useBatchEditors";
 import { APP_STATIC_SCOPE } from "./appExtracted/appStaticScope";
@@ -551,6 +552,7 @@ export function App() {
 const __appScopeRef = useRef(__appScope);
 __appScopeRef.current = __appScope;
 Object.assign(__appScope, APP_STATIC_SCOPE);
+Object.assign(__appScope, { stateIconDrawingFrameRect });
 const initialSavedSchemes = useMemo<SavedSchemeRecord[]>(() => [], []); Object.assign(__appScope, { initialSavedSchemes });
 const initialProjectSources = useMemo(createAppHookCallback1(__appScope), []);
 const initialDraft = initialProjectSources.draft; Object.assign(__appScope, { initialDraft });
@@ -1570,6 +1572,24 @@ const libraryTemplates = useMemo<DeviceTemplate[]>(
   );
 Object.assign(__appScope, { libraryTemplates });
 const libraryTemplateByKind = useMemo(() => new Map(libraryTemplates.map((template) => [template.kind, template])), [libraryTemplates]); Object.assign(__appScope, { libraryTemplateByKind });
+useEffect(() => {
+    if (nodes.length === 0 || libraryTemplateByKind.size === 0) {
+      return;
+    }
+    let changed = false;
+    const normalizedNodes = nodes.map((node) => {
+      const normalized = normalizeNodeTerminalsWithTemplate(node, libraryTemplateByKind.get(node.kind));
+      if (normalized !== node) {
+        changed = true;
+      }
+      return normalized;
+    });
+    if (!changed) {
+      return;
+    }
+    suppressNextGraphDirtyRef.current = true;
+    setGraphArrays(normalizedNodes, edges);
+  }, [edges, libraryTemplateByKind, nodes]);
 const resolveNodeStateVisual = createResolveNodeStateVisual(__appScope); Object.assign(__appScope, { resolveNodeStateVisual });
 useEffect(createAppHookCallback15(__appScope), [customDeviceDraft.stateDefinitions, customDeviceStatePageId]);
 useEffect(createAppHookCallback16(__appScope), [definitionStateDraftRows, definitionStatePageId]);
@@ -4459,9 +4479,19 @@ const resolveStateIconDrawingImageHref = (href: string) => {
     return href;
   };
 Object.assign(__appScope, { resolveStateIconDrawingImageHref });
+const stateIconDrawingInlineHasTerminals = stateIconDrawingDialog
+    ? stateIconDrawingDialog.target.scope === "definition"
+      ? (Number(definitionVisualDraft?.terminalCount) || definitionVisualTerminalTypes.length) > 0
+      : (Number(customDeviceDraft.terminalCount) || customDraftTerminalTypes.length) > 0
+    : false;
+Object.assign(__appScope, { stateIconDrawingInlineHasTerminals });
 const stateIconDrawingInlineImage = stateIconDrawingDialog
     ? stateIconDrawingDialog.elements.length > 0
-      ? stateIconDrawingToImage(stateIconDrawingDialog.elements, { resolveImageHref: resolveStateIconDrawingImageHref })
+      ? stateIconDrawingToImage(stateIconDrawingDialog.elements, {
+          resolveImageHref: resolveStateIconDrawingImageHref,
+          frame: stateIconDrawingDialog.frame,
+          frameHasTerminals: stateIconDrawingInlineHasTerminals
+        })
       : ""
     : "";
 Object.assign(__appScope, { stateIconDrawingInlineImage });
@@ -4488,7 +4518,18 @@ useEffect(() => {
       setStateIconDrawingContextMenu(null);
       stateIconDrawingInitialImageRef.current = {
         key: targetKey,
-        image: initial.length > 0 ? stateIconDrawingToImage(initial, { resolveImageHref: resolveStateIconDrawingImageHref }) : ""
+        image: initial.length > 0 ? stateIconDrawingToImage(initial, {
+          resolveImageHref: resolveStateIconDrawingImageHref,
+          frame: {
+            strokeStyle: "dashed",
+            strokeWidth: 1.2,
+            strokeColor: "#94a3b8",
+            fillColor: "#ffffff"
+          },
+          frameHasTerminals: stateIconDrawingInlineTarget.scope === "definition"
+            ? (Number(definitionVisualDraft?.terminalCount) || definitionVisualTerminalTypes.length) > 0
+            : (Number(customDeviceDraft.terminalCount) || customDraftTerminalTypes.length) > 0
+        }) : ""
       };
       return {
         target: stateIconDrawingInlineTarget,

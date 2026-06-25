@@ -168,6 +168,7 @@ import {
   resolveActiveModelLayerId,
   normalizeScaleValue,
   normalizeNodeTerminalsByTemplate,
+  normalizeNodeTerminalsWithTemplate,
   normalizeVoltageBaseInput,
   normalizeViewBoxToCanvas,
   prepareConnectionEdgeForCommit,
@@ -1782,6 +1783,89 @@ describe("power system model", () => {
       { x: 0, y: -0.5 },
       { x: 0, y: 0.5 }
     ]);
+  });
+
+  test("creates node terminals from terminalCount instead of stale terminalTypes slots", () => {
+    const template: DeviceTemplate = {
+      kind: "custom-stale-terminal-slots",
+      label: "旧端子槽位设备",
+      attributeLibrary: "交流设备",
+      size: { width: 104, height: 64 },
+      params: {
+        component_type: "CustomStaleTerminalSlots"
+      },
+      terminalType: "ac",
+      terminalCount: 2,
+      terminalTypes: ["ac", "dc", "heat", "h2", "ac", "dc", "heat", "h2"],
+      terminalLabels: ["左端", "右端", "旧端3", "旧端4"],
+      terminalAnchors: [
+        { x: -0.5, y: 0 },
+        { x: 0.5, y: 0 },
+        { x: 0, y: -0.5 },
+        { x: 0, y: 0.5 }
+      ]
+    };
+
+    const node = createNodeFromTemplate(template, { x: 0, y: 0 });
+
+    expect(node.terminals).toHaveLength(2);
+    expect(node.terminals.map((terminal) => terminal.id)).toEqual(["t1", "t2"]);
+    expect(node.terminals.map((terminal) => terminal.type)).toEqual(["ac", "dc"]);
+    expect(node.terminals.map((terminal) => terminal.label)).toEqual(["左端", "右端"]);
+    expect(node.terminals.map((terminal) => terminal.anchor)).toEqual([
+      { x: -0.5, y: 0 },
+      { x: 0.5, y: 0 }
+    ]);
+  });
+
+  test("normalizes saved nodes by trimming terminals that exceed the template count", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.terminalCount === 2 && !isRoutableLineDeviceKind(item.kind))!;
+    const node = createNodeFromTemplate(template, { x: 0, y: 0 });
+    const staleNode = {
+      ...node,
+      terminals: [
+        ...node.terminals,
+        { ...node.terminals[0], id: "t3", label: "旧端3", anchor: { x: 0, y: -0.5 } },
+        { ...node.terminals[1], id: "t4", label: "旧端4", anchor: { x: 0, y: 0.5 } }
+      ]
+    };
+
+    const normalized = normalizeNodeTerminalsByTemplate(staleNode);
+
+    expect(normalized.terminals).toHaveLength(template.terminalCount);
+    expect(normalized.terminals.map((terminal) => terminal.id)).toEqual(["t1", "t2"]);
+  });
+
+  test("normalizes saved nodes against a custom template instead of keeping stale terminal slots", () => {
+    const template: DeviceTemplate = {
+      kind: "custom-template-with-stale-saved-node",
+      label: "自定义端子裁剪设备",
+      attributeLibrary: "交流设备",
+      size: { width: 104, height: 64 },
+      params: {
+        component_type: "CustomTemplateWithStaleSavedNode"
+      },
+      terminalType: "ac",
+      terminalCount: 2,
+      terminalTypes: ["ac", "dc"],
+      terminalLabels: ["左端", "右端"],
+      terminalAnchors: [
+        { x: -0.5, y: 0 },
+        { x: 0.5, y: 0 }
+      ]
+    };
+    const node = createNodeFromTemplate({
+      ...template,
+      terminalCount: 8,
+      terminalTypes: ["ac", "dc", "heat", "h2", "ac", "dc", "heat", "h2"]
+    }, { x: 0, y: 0 });
+
+    const normalized = normalizeNodeTerminalsWithTemplate(node, template);
+
+    expect(node.terminals).toHaveLength(8);
+    expect(normalized.terminals).toHaveLength(2);
+    expect(normalized.terminals.map((terminal) => terminal.type)).toEqual(["ac", "dc"]);
+    expect(normalized.terminals.map((terminal) => terminal.label)).toEqual(["左端", "右端"]);
   });
 
   test("places converter elements under AC/DC device library groups", () => {

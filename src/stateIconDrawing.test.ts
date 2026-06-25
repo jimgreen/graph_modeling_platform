@@ -235,6 +235,48 @@ describe("default device state draft rows", () => {
     expect(svgSource).not.toContain('href="/api/images/icon-a"');
   });
 
+  test("draws frame background and border inside the inner area when terminals exist", () => {
+    const element = createStateIconDrawingElement("triangle" as any);
+    const image = stateIconDrawingToImage([element], {
+      frameHasTerminals: true,
+      frame: {
+        strokeStyle: "dashed",
+        strokeWidth: 2,
+        strokeColor: "#2563eb",
+        fillColor: "#c0392b"
+      }
+    });
+    const svgSource = svgSourceFromDataUrl(image);
+
+    expect(svgSource).toContain('data-state-icon-frame="true"');
+    expect(svgSource).toContain('x="30"');
+    expect(svgSource).toContain('y="20"');
+    expect(svgSource).toContain('width="180"');
+    expect(svgSource).toContain('height="120"');
+    expect(svgSource).toContain('fill="#c0392b"');
+    expect(svgSource).toContain('stroke="#2563eb"');
+  });
+
+  test("draws frame background and border on the outer area when no terminals exist", () => {
+    const element = createStateIconDrawingElement("triangle" as any);
+    const image = stateIconDrawingToImage([element], {
+      frameHasTerminals: false,
+      frame: {
+        strokeStyle: "solid",
+        strokeWidth: 1,
+        strokeColor: "#111827",
+        fillColor: "#ffffff"
+      }
+    });
+    const svgSource = svgSourceFromDataUrl(image);
+
+    expect(svgSource).toContain('data-state-icon-frame="true"');
+    expect(svgSource).toContain('x="0"');
+    expect(svgSource).toContain('y="0"');
+    expect(svgSource).toContain('width="240"');
+    expect(svgSource).toContain('height="160"');
+  });
+
   test("pressing Enter commits an in-progress state icon polyline drawing", () => {
     const polyline = createStateIconDrawingElement("polyline" as any);
     let prevented = false;

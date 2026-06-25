@@ -7189,21 +7189,25 @@ export function createTerminals(type: TerminalType, count: number): Terminal[] {
 }
 
 function createTemplateTerminals(template: DeviceTemplate): Terminal[] {
-  if (!template.terminalTypes?.length) {
-    return createTerminals(template.terminalType, template.terminalCount).map((terminal, index) => ({
+  const baseTerminals = createTerminals(template.terminalType, template.terminalCount);
+  const terminalTypes = template.terminalTypes?.slice(0, baseTerminals.length);
+  if (!terminalTypes?.length) {
+    return baseTerminals.map((terminal, index) => ({
       ...terminal,
       label: template.terminalLabels?.[index] ?? terminal.label,
       anchor: template.terminalAnchors?.[index] ?? terminal.anchor
     }));
   }
-  const anchors = createTerminals(template.terminalType, template.terminalTypes.length);
-  return template.terminalTypes.map((type, index) => ({
-    ...anchors[index],
-    label: template.terminalLabels?.[index] ?? terminalLabelForType(type, index),
-    anchor: template.terminalAnchors?.[index] ?? anchors[index].anchor,
-    type,
-    vbase: defaultTerminalVbase(type)
-  }));
+  return baseTerminals.map((terminal, index) => {
+    const type = terminalTypes[index] ?? template.terminalType;
+    return {
+      ...terminal,
+      label: template.terminalLabels?.[index] ?? terminalLabelForType(type, index),
+      anchor: template.terminalAnchors?.[index] ?? terminal.anchor,
+      type,
+      vbase: defaultTerminalVbase(type)
+    };
+  });
 }
 
 const BUS_TERMINAL_TYPE_BY_KIND: Partial<Record<string, TerminalType>> = {
@@ -7256,20 +7260,31 @@ function virtualBusTerminal(node: Pick<ModelNode, "kind" | "terminals">, termina
   };
 }
 
-export function normalizeNodeTerminalsByTemplate(node: ModelNode): ModelNode {
+export function normalizeNodeTerminalsWithTemplate(node: ModelNode, template: DeviceTemplate | undefined): ModelNode {
   const normalizedNode = normalizeRoutableLineDeviceStrokeWidthParam(node);
-  const template = DEVICE_LIBRARY_BY_KIND.get(normalizedNode.kind);
   if (!template || normalizedNode.terminals.length === 0) {
     return normalizedNode;
   }
   let changed = false;
   const expectedTypes = templateTerminalTypes(template);
   const shouldNormalizeTerminalAnchors = expectedTypes.length > 1;
-  const terminals = normalizedNode.terminals.map((terminal, index) => {
-    const expectedType = expectedTypes[index];
-    const expectedLabel = template.terminalLabels?.[index] ?? (expectedType ? terminalLabelForType(expectedType, index) : undefined);
-    const expectedAnchor = shouldNormalizeTerminalAnchors ? template.terminalAnchors?.[index] : undefined;
+  const expectedTerminals = createTemplateTerminals(template);
+  if (expectedTerminals.length !== normalizedNode.terminals.length) {
+    changed = true;
+  }
+  const terminals = expectedTerminals.map((expectedTerminal, index) => {
+    const terminal = normalizedNode.terminals[index] ?? expectedTerminal;
+    const expectedType = expectedTerminal.type;
+    const expectedLabel = expectedTerminal.label;
+    const expectedAnchor = shouldNormalizeTerminalAnchors ? expectedTerminal.anchor : undefined;
     let nextTerminal = terminal;
+    if (terminal.id !== expectedTerminal.id) {
+      changed = true;
+      nextTerminal = {
+        ...nextTerminal,
+        id: expectedTerminal.id
+      };
+    }
     if (expectedType && terminal.type !== expectedType) {
       changed = true;
       const shouldResetVbase = isImplicitTerminalVbaseForType(terminal.vbase, terminal.type);
@@ -7298,6 +7313,10 @@ export function normalizeNodeTerminalsByTemplate(node: ModelNode): ModelNode {
     return nextTerminal;
   });
   return changed ? { ...normalizedNode, terminals } : normalizedNode;
+}
+
+export function normalizeNodeTerminalsByTemplate(node: ModelNode): ModelNode {
+  return normalizeNodeTerminalsWithTemplate(node, DEVICE_LIBRARY_BY_KIND.get(node.kind));
 }
 
 export function terminalStubSegment(

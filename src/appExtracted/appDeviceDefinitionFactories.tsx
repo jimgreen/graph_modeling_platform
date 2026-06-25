@@ -4074,7 +4074,7 @@ export function createOpenStateIconDrawingDialog(__appScope: Record<string, any>
 
 export function createApplyStateIconDrawingDialog(__appScope: Record<string, any>) {
   return async () => {
-  const { backendImageIdFromHref, fetchBackendImageDataUrl, imageAssetList, imageAssets, isImageDataUrl, setStateIconDrawingDialog, stateIconDrawingDialog, stateIconDrawingToImage, updateCustomDeviceStateDraftRow, updateDefinitionStateDraftRow } = __appScope;
+  const { backendImageIdFromHref, customDeviceDraft, customDraftTerminalTypes, definitionVisualDraft, definitionVisualTerminalTypes, fetchBackendImageDataUrl, imageAssetList, imageAssets, isImageDataUrl, setStateIconDrawingDialog, stateIconDrawingDialog, stateIconDrawingToImage, updateCustomDeviceStateDraftRow, updateDefinitionStateDraftRow } = __appScope;
     if (!stateIconDrawingDialog || stateIconDrawingDialog.elements.length === 0) {
       return;
     }
@@ -4109,8 +4109,15 @@ export function createApplyStateIconDrawingDialog(__appScope: Record<string, any
       }
     }));
     const resolveImageHref = (href: string) => resolvedHrefByRawHref.get(href) || href;
+    const frameHasTerminals = stateIconDrawingDialog.target.scope === "definition"
+      ? (Number(definitionVisualDraft?.terminalCount) || (Array.isArray(definitionVisualTerminalTypes) ? definitionVisualTerminalTypes.length : 0)) > 0
+      : (Number(customDeviceDraft?.terminalCount) || (Array.isArray(customDraftTerminalTypes) ? customDraftTerminalTypes.length : 0)) > 0;
     const patch: Partial<DeviceDefinitionStateDraftRow> = {
-      image: stateIconDrawingToImage(stateIconDrawingDialog.elements, { resolveImageHref }),
+      image: stateIconDrawingToImage(stateIconDrawingDialog.elements, {
+        resolveImageHref,
+        frame: stateIconDrawingDialog.frame,
+        frameHasTerminals
+      }),
       imageAssetId: "",
       backgroundImage: "",
       backgroundImageAssetId: ""
@@ -4944,7 +4951,14 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     );
     const previousDefinitions = getTemplateParameterDefinitions(template);
     syncExistingNodesWithTemplateDefinitions(
-      { parameterDefinitions: definitions },
+      {
+        parameterDefinitions: definitions,
+        terminalType: terminalTypes[0] ?? template.terminalType,
+        terminalCount: terminalTypes.length,
+        terminalTypes,
+        terminalLabels,
+        terminalAnchors
+      },
       previousDefinitions,
       (node) => node.kind === template.kind
     );
@@ -5025,7 +5039,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       hideDefaultPage?: boolean;
     }
   ) => {
-  const { BufferedTextInput, COMPONENT_TYPE_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, DEFAULT_STATE_PAGE_ID, DEVICE_LIBRARY, DeferredColorInput, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, MemoDeviceGlyph, STATE_ICON_LINE_CAP_OPTIONS, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, addStateIconDrawingElement, appendNonDefaultStateDraftRow, button, circle, colorPalette, createNodeFromTemplate, createStateDraftRowFromDefaultVisual, createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, customDeviceTerminalAnchorDragIndex, customDeviceTerminalAnchorValue, customDeviceTerminalAnchors, customDraftTerminalTypes, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionTerminalAnchorDragIndex, definitionVisualDraft, definitionVisualTerminalAnchors, definitionVisualTerminalTypes, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, image, isDefaultStatePageId, label, line, nextNonDefaultStateIndex, nodeGeometryTransform, nonDefaultStateDraftRows, projectCustomDeviceTerminalAnchorToBoundary, rect, resolveTemplateComponentType, setCustomDeviceDraft, setCustomDeviceTerminalAnchorDragIndex, setDefinitionStateDraftRows, setDefinitionTerminalAnchorDragIndex, setImagePickerCategoryFilter, setImagePickerSearchQuery, setImagePickerSourceFilter, setImageTarget, setStateIconDrawingContextMenu, setStateIconDrawingDialog, setStateIconDrawingImageVisibleFrames, setStateIconDrawingSvgVisibleFrames, small, span, stateDraftRowId, stateIconDrawingClipboardRef, stateIconDrawingContextMenu, stateIconDrawingDialog, stateIconDrawingElementId, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, stateIconDrawingHistoryRef, stateIconDrawingImageVisibleFrames, stateIconDrawingKeyDown, stateIconDrawingPointer, stateIconDrawingPreviewNeedsDirectElementRender, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingSvgVisibleFrames, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, terminalColor, text, updateCustomDeviceTerminalAnchor, updateDefinitionTerminalAnchor, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
+  const { BufferedTextInput, COMPONENT_TYPE_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, DEFAULT_STATE_PAGE_ID, DEVICE_LIBRARY, DeferredColorInput, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, MemoDeviceGlyph, STATE_ICON_LINE_CAP_OPTIONS, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, addStateIconDrawingElement, appendNonDefaultStateDraftRow, button, circle, colorPalette, createNodeFromTemplate, createStateDraftRowFromDefaultVisual, createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, customDeviceTerminalAnchorDragIndex, customDeviceTerminalAnchorValue, customDeviceTerminalAnchors, customDraftTerminalTypes, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionTerminalAnchorDragIndex, definitionVisualDraft, definitionVisualTerminalAnchors, definitionVisualTerminalTypes, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, image, isDefaultStatePageId, label, line, nextNonDefaultStateIndex, nodeGeometryTransform, nonDefaultStateDraftRows, projectCustomDeviceTerminalAnchorToBoundary, rect, resolveTemplateComponentType, setCustomDeviceDraft, setCustomDeviceTerminalAnchorDragIndex, setDefinitionStateDraftRows, setDefinitionTerminalAnchorDragIndex, setImagePickerCategoryFilter, setImagePickerSearchQuery, setImagePickerSourceFilter, setImageTarget, setStateIconDrawingContextMenu, setStateIconDrawingDialog, setStateIconDrawingImageVisibleFrames, setStateIconDrawingSvgVisibleFrames, small, span, stateDraftRowId, stateIconDrawingClipboardRef, stateIconDrawingContextMenu, stateIconDrawingDialog, stateIconDrawingElementId, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, stateIconDrawingFrameRect, stateIconDrawingHistoryRef, stateIconDrawingImageVisibleFrames, stateIconDrawingKeyDown, stateIconDrawingPointer, stateIconDrawingPreviewNeedsDirectElementRender, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingSvgVisibleFrames, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, terminalColor, text, updateCustomDeviceTerminalAnchor, updateDefinitionTerminalAnchor, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
     const hideDefaultPage = handlers.hideDefaultPage === true;
     const displayRows = hideDefaultPage ? rows : nonDefaultStateDraftRows(rows);
     const defaultVisual = handlers.drawingScope === "definition"
@@ -6353,6 +6367,11 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       const selectedLayerId = stateIconDrawingDialog.selectedElementId || selectedIds[0] || "";
       const frame = { ...STATE_ICON_DRAFT_FRAME, ...(stateIconDrawingDialog.frame ?? {}) };
       const frameDashArray = stateIconDrawingFrameDashArray(frame);
+      const frameRect = stateIconDrawingFrameRect
+        ? stateIconDrawingFrameRect(stateIconHasTerminals)
+        : stateIconHasTerminals
+          ? { x: 30, y: 20, width: 180, height: 120, rx: 8 }
+          : { x: 0, y: 0, width: 240, height: 160, rx: 10 };
       const previewElements = stateIconDrawingDialog.drawingDraft
         ? [...stateIconDrawingDialog.elements, stateIconDrawingDialog.drawingDraft.element]
         : stateIconDrawingDialog.elements;
@@ -6472,9 +6491,31 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                     event.currentTarget.setPointerCapture?.(event.pointerId);
                   }}
                 >
-                  <rect x="0" y="0" width="240" height="160" rx="10" className="state-icon-drawing-canvas-bg" fill={frame.fillColor} />
+                  <rect
+                    x={formatSvgNumber(frameRect.x)}
+                    y={formatSvgNumber(frameRect.y)}
+                    width={formatSvgNumber(frameRect.width)}
+                    height={formatSvgNumber(frameRect.height)}
+                    rx={formatSvgNumber(frameRect.rx)}
+                    className="state-icon-drawing-canvas-bg"
+                    fill={frame.fillColor}
+                  />
                   {renderStateIconOuterFrameLayer()}
                   {renderStateIconTerminalBaseLayer()}
+                  <rect
+                    x={formatSvgNumber(frameRect.x)}
+                    y={formatSvgNumber(frameRect.y)}
+                    width={formatSvgNumber(frameRect.width)}
+                    height={formatSvgNumber(frameRect.height)}
+                    rx={formatSvgNumber(frameRect.rx)}
+                    className="state-icon-drawing-operation-frame"
+                    fill="none"
+                    stroke={frame.strokeColor}
+                    strokeWidth={Math.max(0, Number(frame.strokeWidth) || 0)}
+                    strokeDasharray={frameDashArray}
+                    vectorEffect="non-scaling-stroke"
+                    pointerEvents="none"
+                  />
                   {directPreviewElements ? previewElements.map((element, index) => (
                     <g
                       key={`preview-${element.id}-${index}`}
@@ -6982,7 +7023,7 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
                   width={previewFrameNode.size.width}
                   height={previewFrameNode.size.height}
                   rx="8"
-                  className="node-image-cover"
+                  className={`node-image-cover ${previewFrameNode.terminals.length > 0 ? "terminal-reserved-area" : ""}`}
                 />
               )}
               {previewImageHref && !previewIsStatic && (

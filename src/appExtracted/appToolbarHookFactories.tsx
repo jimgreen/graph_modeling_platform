@@ -597,7 +597,7 @@ export function createRenderReadonlyBackgroundPage(__appScope: Record<string, an
                         width={node.size.width}
                         height={node.size.height}
                         rx="8"
-                        className="node-image-cover"
+                        className={`node-image-cover ${node.terminals.length > 0 ? "terminal-reserved-area" : ""}`}
                       />
                     )}
                     {imageHref && !isStaticNode(node) && (
