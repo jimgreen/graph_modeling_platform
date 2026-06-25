@@ -1075,7 +1075,7 @@ export function stateIconSvgReactAttributes(element: Element, override?: StateIc
                                             : name;
     props[propName] = attribute.value;
   }
-  if (override && stateIconSvgElementAcceptsStyleOverride(element.tagName)) {
+  if (override && override.strokeWidth > 0 && stateIconSvgElementAcceptsStyleOverride(element.tagName)) {
     const style = typeof props.style === "object" && props.style
       ? { ...(props.style as CSSProperties) }
       : {};

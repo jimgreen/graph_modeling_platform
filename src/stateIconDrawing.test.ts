@@ -19,6 +19,7 @@ import {
   normalizeStatePageId,
   normalizeStateDraftRows,
   stateVisualShapeLabel,
+  stateIconSvgReactAttributes,
   svgSourceFromDataUrl,
   stateIconDrawingPreviewNeedsDirectElementRender,
   stateIconDrawingToImage,
@@ -819,6 +820,29 @@ describe("default device state draft rows", () => {
     expect(importedElement.svgSource).not.toContain("stroke-width:0 !important");
     expect(imageSource).toContain('stroke-width="2.2"');
     expect(imageSource).not.toContain("stroke-width:0 !important");
+  });
+
+  test("preserves imported SVG stroke widths in direct preview rendering when no edited stroke width is set", () => {
+    const pathElement = {
+      tagName: "path",
+      attributes: [
+        { name: "d", value: "M 10 10 H 90" },
+        { name: "stroke", value: "#000000" },
+        { name: "stroke-width", value: "4" },
+        { name: "fill", value: "none" }
+      ]
+    } as any;
+
+    const props = stateIconSvgReactAttributes(pathElement, {
+      stroke: "#2563eb",
+      strokeWidth: 0,
+      dashArray: ""
+    } as any);
+
+    expect(props.stroke).toBe("#000000");
+    expect(props.strokeWidth).toBe("4");
+    expect(props.fill).toBe("none");
+    expect(props.vectorEffect).toBeUndefined();
   });
 
   test("keeps terminal ownership metadata when saving and restoring generated drawing elements", () => {
