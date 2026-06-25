@@ -33,7 +33,7 @@ import {
   createCustomDeviceDefaultStateVisualDraft,
   createSelectCustomComponentTemplate
 } from "./appExtracted/appDeviceDefinitionFactories";
-import { createCustomDeviceDraftFromTemplate, generateCustomDeviceImage, resolveTemplateComponentType } from "./customDeviceUtils";
+import { createCustomDeviceDraftFromTemplate, customDeviceImageWithTerminalConnectors, generateCustomDeviceImage, resolveTemplateComponentType } from "./customDeviceUtils";
 
 describe("default device state draft rows", () => {
   test("uses a synthetic default row when no state definitions exist", () => {
@@ -72,6 +72,63 @@ describe("default device state draft rows", () => {
     expect(row.image).toBe("default.svg");
     expect(row.text).toBe("D");
     expect(row.strokeColor).toBe("#123456");
+  });
+
+  test("persists custom device terminal connector lines inside svg images", () => {
+    const image = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160"><style>line{stroke-width:0 !important}</style><rect width="240" height="160"/></svg>'
+    );
+    const withConnectors = customDeviceImageWithTerminalConnectors(
+      image,
+      ["ac", "dc"],
+      [
+        { x: -0.5, y: 0 },
+        { x: 0.5, y: 0 }
+      ]
+    );
+    const source = svgSourceFromDataUrl(withConnectors);
+
+    expect(source).toContain('data-custom-device-persisted-terminal-connectors="true"');
+    expect(source).toContain('x1="0" y1="80" x2="30" y2="80"');
+    expect(source).toContain('x1="240" y1="80" x2="210" y2="80"');
+    expect(source).toContain("stroke-width:2 !important");
+    expect(source).not.toContain("<circle");
+  });
+
+  test("does not duplicate persisted terminal connector lines when saving repeatedly", () => {
+    const image = generateCustomDeviceImage("Unit", ["ac"]);
+    const first = customDeviceImageWithTerminalConnectors(image, ["ac"], [{ x: 0, y: -0.5 }]);
+    const second = customDeviceImageWithTerminalConnectors(first, ["ac"], [{ x: 0, y: 0.5 }]);
+    const source = svgSourceFromDataUrl(second);
+
+    expect(source.match(/data-custom-device-persisted-terminal-connectors="true"/g)).toHaveLength(1);
+    expect(source).not.toContain('x1="120" y1="0" x2="120" y2="20"');
+    expect(source).toContain('x1="120" y1="160" x2="120" y2="140"');
+  });
+
+  test("removes obsolete persisted terminal anchor circles when rewriting the definition image", () => {
+    const source = '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160"><g data-custom-device-persisted-terminals="true"><line x1="0" y1="80" x2="30" y2="80"/><circle cx="0" cy="80" r="7"/></g></svg>';
+    const image = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(source);
+    const rewritten = svgSourceFromDataUrl(customDeviceImageWithTerminalConnectors(image, ["ac"], [{ x: 0.5, y: 0 }]));
+
+    expect(rewritten).not.toContain('data-custom-device-persisted-terminals="true"');
+    expect(rewritten).not.toContain("<circle");
+    expect(rewritten).toContain('data-custom-device-persisted-terminal-connectors="true"');
+    expect(rewritten).toContain('x1="240" y1="80" x2="210" y2="80"');
+  });
+
+  test("wraps non-svg custom device images so terminal connector lines are saved with the definition", () => {
+    const withConnectors = customDeviceImageWithTerminalConnectors(
+      "/api/images/background-asset",
+      ["ac"],
+      [{ x: -0.5, y: 0.25 }]
+    );
+    const source = svgSourceFromDataUrl(withConnectors);
+
+    expect(source).toContain('<image href="/api/images/background-asset"');
+    expect(source).toContain('data-custom-device-persisted-terminal-connectors="true"');
+    expect(source).toContain('x1="0" y1="110" x2="30" y2="110"');
+    expect(source).not.toContain("<circle");
   });
 
   test("does not store the default visual inside real state pages", () => {
@@ -672,7 +729,7 @@ describe("default device state draft rows", () => {
     expect(imported[0].svgSource).toContain("<text");
   });
 
-  test("directly renders state icon previews that contain bitmap image layers", () => {
+  test("directly renders state icon previews that contain imported SVG or bitmap image layers", () => {
     const line = createStateIconDrawingElement("line");
     const svgLayer = createImportedStateIconElement(
       "imported-svg",
@@ -682,7 +739,8 @@ describe("default device state draft rows", () => {
     const emptyImage = createImportedStateIconElement("image", "", "empty.png");
     const imageLayer = createImportedStateIconElement("image", "/api/images/icon.png", "icon.png");
 
-    expect(stateIconDrawingPreviewNeedsDirectElementRender([line, svgLayer, emptyImage])).toBe(false);
+    expect(stateIconDrawingPreviewNeedsDirectElementRender([line, emptyImage])).toBe(false);
+    expect(stateIconDrawingPreviewNeedsDirectElementRender([line, svgLayer, emptyImage])).toBe(true);
     expect(stateIconDrawingPreviewNeedsDirectElementRender([line, imageLayer])).toBe(true);
   });
 

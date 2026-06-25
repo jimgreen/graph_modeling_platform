@@ -160,6 +160,7 @@ export function svgLengthNumber(value: string) {
 export function stripUnsafeInlineSvgMarkup(value: string) {
   return value
     .replace(/<script\b[\s\S]*?<\/script>/giu, "")
+    .replace(/<style\b[\s\S]*?<\/style>/giu, "")
     .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/giu, "")
     .replace(/\s+(?:href|xlink:href)\s*=\s*(?:"javascript:[^"]*"|'javascript:[^']*')/giu, "");
 }

@@ -1018,7 +1018,7 @@ export function stateIconSvgNodeChildren(element: Element, keyPrefix: string, ov
       return [];
     }
     const node = child as Element;
-    if (["script", "foreignObject"].includes(node.tagName)) {
+    if (["script", "foreignObject", "style"].includes(node.tagName)) {
       return [];
     }
     return [stateIconSvgNodeToReact(node, `${keyPrefix}-${index}`, override)];
@@ -1064,8 +1064,6 @@ export function stateIconSvgNodeToReact(element: Element, key: string, override?
       return <radialGradient key={key} {...props}>{children}</radialGradient>;
     case "stop":
       return <stop key={key} {...props} />;
-    case "style":
-      return <style key={key} {...props}>{element.textContent ?? ""}</style>;
     case "image":
       return <image key={key} {...props} />;
     default:
@@ -1282,7 +1280,10 @@ export function stateIconDrawingToImage(
 }
 
 export function stateIconDrawingPreviewNeedsDirectElementRender(elements: readonly StateIconDrawingElement[]) {
-  return elements.some((element) => element.kind === "image" && String(element.imageHref ?? "").trim());
+  return elements.some((element) =>
+    element.kind === "imported-svg" ||
+    (element.kind === "image" && String(element.imageHref ?? "").trim())
+  );
 }
 
 export function stateIconDrawingElementPreviewImage(element: StateIconDrawingElement) {

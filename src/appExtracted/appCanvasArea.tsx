@@ -976,9 +976,9 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                 const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
                 return hideFixedTerminal ? null : (<g key={terminal.id} transform={terminalControlTransform(renderPoint.x, renderPoint.y)}>
                           <line className={`terminal-stub ${terminal.type} ${disabled ? "disabled" : ""}`} strokeDasharray={terminalStubDashArray} style={{
-                        stroke: disabled ? "#cbd5e1" : terminalDisplayColor,
-                        strokeWidth: terminalStubStrokeWidth(node, terminal)
-                    }} x1={stub.from.x} y1={stub.from.y} x2={stub.to.x} y2={stub.to.y}/>
+                        "--terminal-stub-color": disabled ? "#cbd5e1" : terminalDisplayColor,
+                        "--terminal-stub-width": terminalStubStrokeWidth(node, terminal)
+                    } as CSSProperties} x1={stub.from.x} y1={stub.from.y} x2={stub.to.x} y2={stub.to.y}/>
                           <circle className={`terminal-dot ${terminal.type} ${overlapped ? "overlapped" : ""} ${disabled ? "disabled" : ""}`} style={{ "--terminal-color": terminalDisplayColor } as CSSProperties} cx="0" cy="0" r={overlapped ? 7.2 : 6} onPointerDown={isEditMode ? (event) => handleTerminalPointerDown(event, node, terminal.id) : undefined}>
                             <title>{`${terminal.label} / ${terminal.type.toUpperCase()}`}</title>
                           </circle>

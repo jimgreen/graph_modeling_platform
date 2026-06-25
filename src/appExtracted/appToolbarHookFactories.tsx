@@ -3510,7 +3510,7 @@ export function createAppHookCallback109(__appScope: Record<string, any>) {
 
 export function createAppHookCallback110(__appScope: Record<string, any>) {
   return () => {
-  const { activeLayerEdges, activeLayerNodes, cancelInteractiveStaticDrawing, cancelLibraryPlacement, canvasBounds, canvasInteractionRef, canvasPointerKeyboardShortcutAvailability, clearRecordSelection, connectPreviewPointRef, connectSource, copySelectedRecord, copySelection, cutSelection, deleteProjectRecord, deleteSchemeRecord, deleteSelectedGraphicsFromCanvas, deleteSelectedRecords, findSavedSchemeById, finishInteractiveStaticDrawing, hideLibraryFlyout, hoveredAttributeLibraryComponentType, isEditMode, isGlobalSaveShortcut, keyboardMoveStepForViewBox, lastCanvasPointerRef, libraryPlacement, lockConnectPreviewAxis, lockRoutableLinePreviewAxis, nudgeSelectionByKeyboard, pasteSelectedRecord, pasteSelection, projectById, projectListPointerInsideRef, recordClipboard, releaseConnectPreviewAxisLock, releaseKeyboardMoveKey, releaseRoutableLinePreviewAxisLock, resetConnectPreviewState, resetRoutableLinePreviewState, resolveKeyboardShortcutScope, routableLinePlacement, routableLinePreviewPointRef, saveCurrentProject, schemes, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, setCanvasSelectionScope, setConnectSource, setMode, setRewiring, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, staticDrawing, switchInspectorTabForCanvasSelection, undoLastOperation, viewBox, writeOperationLog } = __appScope;
+  const { activeLayerEdges, activeLayerNodes, cancelInteractiveStaticDrawing, cancelLibraryPlacement, canvasBounds, canvasInteractionRef, canvasPointerKeyboardShortcutAvailability, clearRecordSelection, connectPreviewPointRef, connectSource, copySelectedRecord, copySelection, customDeviceDialogOpen, cutSelection, deleteProjectRecord, deleteSchemeRecord, deleteSelectedGraphicsFromCanvas, deleteSelectedRecords, findSavedSchemeById, finishInteractiveStaticDrawing, hideLibraryFlyout, hoveredAttributeLibraryComponentType, isEditMode, isGlobalSaveShortcut, keyboardMoveStepForViewBox, lastCanvasPointerRef, libraryPlacement, lockConnectPreviewAxis, lockRoutableLinePreviewAxis, nudgeSelectionByKeyboard, pasteSelectedRecord, pasteSelection, projectById, projectListPointerInsideRef, recordClipboard, releaseConnectPreviewAxisLock, releaseKeyboardMoveKey, releaseRoutableLinePreviewAxisLock, resetConnectPreviewState, resetRoutableLinePreviewState, resolveKeyboardShortcutScope, routableLinePlacement, routableLinePreviewPointRef, saveCurrentProject, saveCustomDeviceDefinitionDialog, schemes, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, setCanvasSelectionScope, setConnectSource, setMode, setRewiring, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, staticDrawing, switchInspectorTabForCanvasSelection, undoLastOperation, viewBox, writeOperationLog } = __appScope;
     const handleGlobalSaveKeyDown = (event: KeyboardEvent) => {
       if (!isGlobalSaveShortcut(event)) {
         return;
@@ -3518,6 +3518,8 @@ export function createAppHookCallback110(__appScope: Record<string, any>) {
       event.preventDefault();
       if (!isEditMode) {
         writeOperationLog("浏览模式下不能保存，请先切换到编辑模式");
+      } else if (customDeviceDialogOpen) {
+        saveCustomDeviceDefinitionDialog({ closeAfterSave: false });
       } else {
         void saveCurrentProject();
       }

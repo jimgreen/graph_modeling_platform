@@ -1082,7 +1082,7 @@ export function createOpenGroupDeviceDefinitionDialog(__appScope: Record<string,
 
 export function createConfirmCreateDeviceFromGroup(__appScope: Record<string, any>) {
   return () => {
-  const { DEFAULT_STATE_PAGE_ID, MAX_CUSTOM_DEVICE_TERMINALS, activeGroupById, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, ensureCustomComponentTreeExpanded, groupDeviceDefinitionDialog, isValidComponentTypeName, normalizeAttributeLibraryName, normalizeComponentTypeName, normalizeContainerTerminalAssociations, prepareMeasurementConfigDraft, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode, setCustomDeviceDialogOpen, setCustomDeviceDialogView, setCustomDeviceDraft, setCustomDeviceStatePageId, setDeviceLibraryDialogLayouts, setEditingCustomDeviceKind, setGroupDeviceDefinitionDialog, setSelectedDefinitionKind, writeOperationLog } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, MAX_CUSTOM_DEVICE_TERMINALS, activeGroupById, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, ensureCustomComponentTreeExpanded, groupDeviceDefinitionDialog, isValidComponentTypeName, normalizeAttributeLibraryName, normalizeComponentTypeName, normalizeContainerTerminalAssociations, prepareMeasurementConfigDraft, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode, setCustomDeviceDialogOpen, setCustomDeviceDialogView, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceStatePageId, setDeviceLibraryDialogLayouts, setEditingCustomDeviceKind, setGroupDeviceDefinitionDialog, setSelectedDefinitionKind, writeOperationLog } = __appScope;
     if (!groupDeviceDefinitionDialog) {
       return;
     }
@@ -1110,7 +1110,7 @@ export function createConfirmCreateDeviceFromGroup(__appScope: Record<string, an
     setCustomDeviceDefinitionMode("create");
     setCustomDeviceDialogView("terminals");
     setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
-    setCustomDeviceDraft({
+    const nextDraft = {
       ...createEmptyCustomDeviceDraft(attributeLibraryName),
       componentType,
       componentName: sourceGroup?.name ?? "",
@@ -1127,9 +1127,11 @@ export function createConfirmCreateDeviceFromGroup(__appScope: Record<string, an
       terminalAssociations: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => terminalAssociations[index] ?? "ac-load") as ContainerTerminalAssociationValue[],
       isContainer: groupDeviceDefinitionDialog.terminals.length > 0,
       error: ""
-    });
+    };
+    setCustomDeviceDraft(nextDraft);
     setGroupDeviceDefinitionDialog(null);
     prepareMeasurementConfigDraft();
+    setCustomDeviceDraftCleanBaseline(nextDraft);
     setDeviceLibraryDialogLayouts((current: Record<string, any>) => {
       const { custom: _custom, ...rest } = current;
       return rest;

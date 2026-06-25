@@ -110,6 +110,31 @@ describe("SVG export", () => {
     expect(svg).toContain('href="maint.svg"');
   });
 
+  test("exports custom device terminal stubs to the inner three-quarter drawing frame", () => {
+    const template: DeviceTemplate = {
+      ...DEVICE_LIBRARY.find((item) => item.kind === "ac-switch")!,
+      kind: "custom-export-terminal-stub" as DeviceKind,
+      label: "导出端子连接线",
+      custom: true,
+      size: { width: 160, height: 120 },
+      terminalCount: 1,
+      terminalTypes: ["ac"],
+      terminalAnchors: [{ x: -0.5, y: 0 }],
+      params: { component_type: "ACSwitch" }
+    };
+    const node = {
+      ...createNodeFromTemplate(template, { x: 140, y: 120 }),
+      id: "custom-terminal-stub-node"
+    };
+
+    const svg = buildSvgDocument([node], [], { width: 300, height: 240, deviceTemplates: [template] });
+    const terminalStubLine = svg.split("\n").find((line) => line.includes("export-terminal-stub ac")) ?? "";
+    const expectedStubLength = node.size.width / 8 + 4;
+
+    expect(terminalStubLine).toContain(`x1="${expectedStubLength}"`);
+    expect(terminalStubLine).toContain('x2="0"');
+  });
+
   test("exports template-compatible root, defs, typed layers and unique ids", () => {
     const generator = { ...createDefaultNode("ac-source", { x: 120, y: 140 }), id: "source-1" };
     const load = { ...createDefaultNode("ac-load", { x: 280, y: 140 }), id: "load-1" };

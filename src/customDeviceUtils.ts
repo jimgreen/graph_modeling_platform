@@ -32,7 +32,7 @@ import {
 } from "./App";
 import type { CustomDeviceDraft, DeviceDefinitionDraftRow, DeviceDefinitionVisualDraft } from "./App";
 import { createDefinitionStateDraftRows, customParamId, deviceDefinitionRowId } from "./stateIconDrawing";
-import { escapeXml } from "./svgUtils";
+import { decodeSvgImageSource, escapeXml, formatSvgNumber } from "./svgUtils";
 import { clampNumber } from "./canvasViewport";
 
 export function fallbackComponentTypeForAttributeLibrary(attributeLibraryName: string) {
@@ -254,6 +254,74 @@ export function generateCustomDeviceImage(label: string, terminalTypes: Terminal
   const safeLabel = escapeXml(label || "Unit");
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160"><rect width="240" height="160" rx="18" fill="#f8fafc"/><circle cx="70" cy="80" r="38" fill="${color}" fill-opacity="0.14"/><path d="M48 80h44M70 58v44" stroke="${color}" stroke-width="9" stroke-linecap="round"/><text x="132" y="77" font-family="Arial, Microsoft YaHei" font-size="22" font-weight="700" fill="#0f172a">${safeLabel}</text><text x="132" y="104" font-family="Arial" font-size="15" fill="${color}">${terminalTypes.map((type) => type.toUpperCase()).join(" / ")}</text></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+const CUSTOM_DEVICE_IMAGE_WIDTH = 240;
+const CUSTOM_DEVICE_IMAGE_HEIGHT = 160;
+const CUSTOM_DEVICE_IMAGE_INNER_WIDTH = CUSTOM_DEVICE_IMAGE_WIDTH * 3 / 4;
+const CUSTOM_DEVICE_IMAGE_INNER_HEIGHT = CUSTOM_DEVICE_IMAGE_HEIGHT * 3 / 4;
+const CUSTOM_DEVICE_PERSISTED_TERMINAL_GROUP_ATTR = `data-custom-device-persisted-terminal-connectors="true"`;
+const CUSTOM_DEVICE_PERSISTED_TERMINAL_GROUP_PATTERN =
+  /<g\b(?=[^>]*\bdata-custom-device-(?:persisted-terminals|persisted-terminal-connectors|terminal-connectors)\s*=\s*(?:"true"|'true'))[^>]*>[\s\S]*?<\/g>/giu;
+
+function customDeviceTerminalConnectorGeometry(anchor: Point) {
+  const boundary = projectCustomDeviceTerminalAnchorToBoundary(anchor);
+  const centerX = CUSTOM_DEVICE_IMAGE_WIDTH / 2;
+  const centerY = CUSTOM_DEVICE_IMAGE_HEIGHT / 2;
+  const innerX = centerX + boundary.x * CUSTOM_DEVICE_IMAGE_INNER_WIDTH;
+  const innerY = centerY + boundary.y * CUSTOM_DEVICE_IMAGE_INNER_HEIGHT;
+  const horizontalSide = Math.abs(boundary.x) >= Math.abs(boundary.y);
+  const outerX = horizontalSide
+    ? boundary.x < 0 ? 0 : CUSTOM_DEVICE_IMAGE_WIDTH
+    : innerX;
+  const outerY = horizontalSide
+    ? innerY
+    : boundary.y < 0 ? 0 : CUSTOM_DEVICE_IMAGE_HEIGHT;
+  return { outerX, outerY, innerX, innerY };
+}
+
+function customDeviceTerminalConnectorLineMarkup(type: TerminalType, anchor: Point) {
+  const { outerX, outerY, innerX, innerY } = customDeviceTerminalConnectorGeometry(anchor);
+  const color = terminalColor(type);
+  return `<line x1="${formatSvgNumber(outerX)}" y1="${formatSvgNumber(outerY)}" x2="${formatSvgNumber(innerX)}" y2="${formatSvgNumber(innerY)}" style="stroke:${escapeXml(color)} !important;stroke-width:2 !important;stroke-linecap:round !important;vector-effect:non-scaling-stroke !important" fill="none" pointer-events="none"/>`;
+}
+
+function customDevicePersistedTerminalMarkup(terminalTypes: readonly TerminalType[], terminalAnchors: readonly Point[]) {
+  const terminals = terminalTypes
+    .map((type, index) => terminalAnchors[index]
+      ? customDeviceTerminalConnectorLineMarkup(type, terminalAnchors[index])
+      : "")
+    .filter(Boolean)
+    .join("");
+  return terminals ? `<g ${CUSTOM_DEVICE_PERSISTED_TERMINAL_GROUP_ATTR} pointer-events="none">${terminals}</g>` : "";
+}
+
+function svgDataUrlFromSource(source: string) {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(source)}`;
+}
+
+export function customDeviceImageWithTerminalConnectors(
+  image: string,
+  terminalTypes: readonly TerminalType[],
+  terminalAnchors: readonly Point[]
+) {
+  const href = String(image ?? "").trim();
+  const persistedTerminals = customDevicePersistedTerminalMarkup(terminalTypes, terminalAnchors);
+  if (!href || !persistedTerminals) {
+    return href;
+  }
+  const source = decodeSvgImageSource(href);
+  if (source) {
+    const cleanSource = source.replace(CUSTOM_DEVICE_PERSISTED_TERMINAL_GROUP_PATTERN, "");
+    if (/<\/svg\s*>/iu.test(cleanSource)) {
+      return svgDataUrlFromSource(cleanSource.replace(/<\/svg\s*>/iu, `${persistedTerminals}</svg>`));
+    }
+  }
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${CUSTOM_DEVICE_IMAGE_WIDTH}" height="${CUSTOM_DEVICE_IMAGE_HEIGHT}" viewBox="0 0 ${CUSTOM_DEVICE_IMAGE_WIDTH} ${CUSTOM_DEVICE_IMAGE_HEIGHT}">` +
+    `<image href="${escapeXml(href)}" x="0" y="0" width="${CUSTOM_DEVICE_IMAGE_WIDTH}" height="${CUSTOM_DEVICE_IMAGE_HEIGHT}" preserveAspectRatio="xMidYMid meet"/>` +
+    `${persistedTerminals}</svg>`;
+  return svgDataUrlFromSource(svg);
 }
 
 export const customDeviceGeneratedDefaultImageCandidates = (

@@ -60,6 +60,32 @@ describe("svg image content markup", () => {
     expect(markup.endsWith("</svg>")).toBe(true);
   });
 
+  test("strips embedded style tags from inline svg images so global selectors cannot leak", () => {
+    const source = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">',
+      "<style>path,line{stroke-width:0!important;stroke:transparent!important}</style>",
+      '<path d="M4 12h16" stroke="currentColor" stroke-width="2"/>',
+      '<line x1="12" y1="4" x2="12" y2="20" stroke="currentColor" stroke-width="2"/>',
+      "</svg>"
+    ].join("");
+    const href = `data:image/svg+xml;utf8,${encodeURIComponent(source)}`;
+
+    const markup = svgImageContentMarkup(href, {
+      x: -12,
+      y: -12,
+      width: 24,
+      height: 24,
+      preserveAspectRatio: "xMidYMid meet",
+      className: "node-background-image"
+    });
+
+    expect(markup).toContain("<svg");
+    expect(markup).not.toContain("<style");
+    expect(markup).not.toContain("stroke-width:0");
+    expect(markup).toContain('<path d="M4 12h16"');
+    expect(markup).toContain('<line x1="12" y1="4"');
+  });
+
   test("inlines cached backend image refs inside svg data urls", () => {
     const source = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10">',

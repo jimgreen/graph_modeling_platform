@@ -3293,6 +3293,27 @@ describe("power system model", () => {
     });
   });
 
+  test("connects custom device terminals back to the inner three-quarter drawing frame", () => {
+    const size = { width: 160, height: 120 };
+
+    expect(terminalStubSegment({ anchor: { x: -0.5, y: 0 } }, 1, 1, 24, "custom-test" as DeviceKind, size)).toEqual({
+      from: { x: 24, y: 0 },
+      to: { x: 0, y: 0 }
+    });
+    expect(terminalStubSegment({ anchor: { x: 0.5, y: 0 } }, 1, 1, 24, "custom-test" as DeviceKind, size)).toEqual({
+      from: { x: -24, y: 0 },
+      to: { x: 0, y: 0 }
+    });
+    expect(terminalStubSegment({ anchor: { x: 0, y: -0.5 } }, 1, 1, 24, "custom-test" as DeviceKind, size)).toEqual({
+      from: { x: 0, y: 19 },
+      to: { x: 0, y: 0 }
+    });
+    expect(terminalStubSegment({ anchor: { x: 0, y: 0.5 } }, 1, 1, 24, "custom-test" as DeviceKind, size)).toEqual({
+      from: { x: 0, y: -19 },
+      to: { x: 0, y: 0 }
+    });
+  });
+
   test("extends electric load terminal stubs to the smaller vertical load body", () => {
     const stubStartPoint = (node: ModelNode, terminal = node.terminals[0]) => {
       const renderPoint = terminalRenderLocalPoint(terminal, node.size, 1, 1, node.kind);

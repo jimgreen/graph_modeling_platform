@@ -7430,6 +7430,9 @@ function terminalStubVisibleBoundaryDistance(
   const scaled = (value: number) => value * glyphScale;
 
   if (axis === "x") {
+    if (glyphVariant === "custom-device") {
+      return fullRectDistance * 3 / 4;
+    }
     if (glyphVariant === "ac-generator" || glyphVariant === "dc-generator") {
       return Math.min(size.width, size.height) * 0.37;
     }
@@ -7526,6 +7529,9 @@ function terminalStubVisibleBoundaryDistance(
     return terminal.anchor.y < 0
       ? scaled(Math.abs(topY - windingRadius - 20))
       : scaled(bottomY + windingRadius + 10);
+  }
+  if (glyphVariant === "custom-device") {
+    return fullRectDistance * 3 / 4;
   }
   if (glyphVariant === "ground-disconnector-vertical") {
     return scaled(h / 2 - 8);

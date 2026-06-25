@@ -3,8 +3,10 @@ import { describe, expect, test } from "vitest";
 import {
   filterGraphTemplatesByType,
   graphTemplateTypeList,
-  groupGraphTemplatesByType
+  groupGraphTemplatesByType,
+  normalizeCustomDeviceTemplates
 } from "./appExtracted/appPersistenceLibraryExport";
+import { svgSourceFromDataUrl } from "./stateIconDrawing";
 
 const sampleGraphTemplate = (id: string, typeName: string, name: string) => ({
   id,
@@ -80,9 +82,49 @@ describe("graph template library filtering", () => {
     expect(deviceDefinitionSource).toContain("const stateIconTerminalFrame = {");
     expect(deviceDefinitionSource).toContain("x: STATE_ICON_DRAWING_FRAME_WIDTH / 8");
     expect(deviceDefinitionSource).toContain("width: STATE_ICON_DRAWING_FRAME_WIDTH * 3 / 4");
-    expect(deviceDefinitionSource).toContain("className=\"custom-device-preview-frame state-icon-terminal-inner-frame\"");
+    expect(deviceDefinitionSource).toContain("const renderStateIconOuterFrameLayer = () =>");
+    expect(deviceDefinitionSource).toContain("const renderStateIconTerminalBaseLayer = () =>");
+    expect(deviceDefinitionSource).toContain("className=\"state-icon-drawing-icon-frame state-icon-drawing-inner-frame\"");
+    expect(deviceDefinitionSource).toContain("className=\"state-icon-drawing-icon-frame state-icon-drawing-outer-frame\"");
     expect(deviceDefinitionSource).toContain("className=\"custom-device-terminal-connector state-icon-terminal-connector\"");
     expect(deviceDefinitionSource).toContain("className={`custom-device-terminal-anchor state-icon-terminal-anchor");
+    expect(deviceDefinitionSource.indexOf("{renderStateIconOuterFrameLayer()}")).toBeLessThan(
+      deviceDefinitionSource.indexOf("{renderStateIconTerminalBaseLayer()}")
+    );
+    expect(deviceDefinitionSource.indexOf("{renderStateIconTerminalBaseLayer()}")).toBeLessThan(
+      deviceDefinitionSource.indexOf("directPreviewElements ? previewElements.map")
+    );
     expect(deviceDefinitionSource).toContain("definitionVisualDraft.terminalCount > 0 && <div className=\"custom-terminal-grid device-definition-terminal-grid\"");
+  });
+
+  test("normalizes saved custom device templates with persisted terminal connector lines", () => {
+    const [template] = normalizeCustomDeviceTemplates([
+      {
+        kind: "custom-existing",
+        label: "Existing",
+        attributeLibrary: "交流设备",
+        size: { width: 104, height: 64 },
+        params: {
+          component_type: "Existing",
+          backgroundImage: "data:image/svg+xml;charset=utf-8," + encodeURIComponent(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160"><rect width="240" height="160"/></svg>'
+          ),
+          backgroundImageAssetId: ""
+        },
+        terminalType: "ac",
+        terminalCount: 2,
+        terminalTypes: ["ac", "dc"],
+        terminalAnchors: [
+          { x: -0.5, y: 0 },
+          { x: 0.5, y: 0 }
+        ]
+      }
+    ]);
+    const source = svgSourceFromDataUrl(template.params.backgroundImage);
+
+    expect(source).toContain('data-custom-device-persisted-terminal-connectors="true"');
+    expect(source).toContain('x1="0" y1="80" x2="30" y2="80"');
+    expect(source).toContain('x1="240" y1="80" x2="210" y2="80"');
+    expect(source).not.toContain("<circle");
   });
 });

@@ -33,6 +33,46 @@ const STATE_ICON_DRAWING_SMART_ALIGNMENT_TOLERANCE = 3;
 const STATE_ICON_DRAWING_SMART_ALIGNMENT_GUIDE_PADDING = 8;
 const STATE_ICON_DRAWING_MIN_FONT_SIZE = 8;
 
+export function customDeviceDraftDirtyToken(draft: CustomDeviceDraft, anchors: readonly Point[] = [], measurementConfig: PlatformMeasurementConfig | null = null) {
+  const terminalCount = Math.max(0, Math.round(draft.terminalCount || 0));
+  return JSON.stringify({
+    draft: {
+      ...draft,
+      error: "",
+      terminalTypes: draft.terminalTypes.slice(0, terminalCount),
+      terminalLabels: draft.terminalLabels.slice(0, terminalCount),
+      terminalAnchors: anchors.slice(0, terminalCount).map((anchor) => ({ x: anchor.x, y: anchor.y })),
+      terminalRoles: draft.terminalRoles.slice(0, terminalCount),
+      terminalAssociations: draft.terminalAssociations.slice(0, terminalCount)
+    },
+    measurementConfig
+  });
+}
+
+export function createSetCustomDeviceDraftCleanBaseline(__appScope: Record<string, any>) {
+  return (draft: CustomDeviceDraft, anchors?: readonly Point[]) => {
+  const { createDefaultCustomDeviceTerminalAnchors, customDeviceDraftCleanTokenRef, measurementConfigDraft, measurementConfigDraftRef } = __appScope;
+    const nextAnchors = anchors ?? createDefaultCustomDeviceTerminalAnchors(draft.terminalCount, draft.terminalAnchors);
+    customDeviceDraftCleanTokenRef.current = customDeviceDraftDirtyToken(
+      draft,
+      nextAnchors,
+      measurementConfigDraftRef.current ?? measurementConfigDraft ?? null
+    );
+  };
+}
+
+export function createCustomDeviceDraftHasUnsavedChanges(__appScope: Record<string, any>) {
+  return () => {
+  const { customDeviceDraft, customDeviceDraftCleanTokenRef, customDeviceTerminalAnchors, measurementConfigDraft, measurementConfigDraftRef } = __appScope;
+    const currentToken = customDeviceDraftDirtyToken(
+      customDeviceDraft,
+      customDeviceTerminalAnchors,
+      measurementConfigDraftRef.current ?? measurementConfigDraft ?? null
+    );
+    return customDeviceDraftCleanTokenRef.current !== currentToken;
+  };
+}
+
 const STATE_ICON_EDITABLE_STATIC_KIND_BY_TEMPLATE_KIND: Record<string, StateVisualShapeKind> = {
   "static-text": "text",
   "static-line": "line",
@@ -2941,7 +2981,8 @@ export function createStopDeviceLibraryDialogEvent(__appScope: Record<string, an
 
 export function createOpenDeviceDefinitionDialog(__appScope: Record<string, any>) {
   return () => {
-  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, createCustomDeviceDraftFromTemplate, ensureCustomComponentTreeExpanded, libraryTemplates, normalizeAttributeLibraryName, prepareMeasurementConfigDraft, requireEditMode, resolveTemplateComponentType, selectedCustomComponentTemplate, selectedDefinitionTemplate, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode, setCustomDeviceDialogOpen, setCustomDeviceDialogView, setCustomDeviceDraft, setCustomDeviceSaveMessage, setCustomDeviceStatePageId, setDefinitionDraftSection, setDeviceDefinitionDialogOpen, setDeviceLibraryDialogLayouts, setEditingCustomDeviceKind, setSelectedDefinitionKind } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, createCustomDeviceDraftFromTemplate, ensureCustomComponentTreeExpanded, libraryTemplates, normalizeAttributeLibraryName, prepareMeasurementConfigDraft, requireEditMode, resolveTemplateComponentType, selectedCustomComponentTemplate, selectedDefinitionTemplate, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode, setCustomDeviceDialogOpen, setCustomDeviceDialogView, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceStatePageId, setDefinitionDraftSection, setDeviceDefinitionDialogOpen, setDeviceLibraryDialogLayouts, setEditingCustomDeviceKind, setSelectedDefinitionKind } = __appScope;
+    let openedDraft: CustomDeviceDraft | null = null;
     if (!requireEditMode("元件定义")) {
       return;
     }
@@ -2959,10 +3000,14 @@ export function createOpenDeviceDefinitionDialog(__appScope: Record<string, any>
       setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
       setCustomDeviceSaveMessage("");
       const nextDraft = createCustomDeviceDraftFromTemplate(template, section);
+      openedDraft = template.custom ? nextDraft : { ...nextDraft, error: "" };
       setCustomDeviceDialogView("icon");
-      setCustomDeviceDraft(template.custom ? nextDraft : { ...nextDraft, error: "" });
+      setCustomDeviceDraft(openedDraft);
     }
     prepareMeasurementConfigDraft();
+    if (openedDraft) {
+      setCustomDeviceDraftCleanBaseline(openedDraft);
+    }
     setDeviceDefinitionDialogOpen(false);
     setDeviceLibraryDialogLayouts((current: Record<string, any>) => {
       const { custom: _custom, ...rest } = current;
@@ -3126,6 +3171,25 @@ export function createDeleteDefinitionStateDraftRow(__appScope: Record<string, a
     }
     setDefinitionStateDraftRows((current) => current.filter((row) => row.id !== rowId));
     setDefinitionDraftError("");
+  };
+}
+
+export function createRequestCloseCustomDeviceDialog(__appScope: Record<string, any>) {
+  return () => {
+  const { closeCustomDeviceDialog, customDeviceDraftHasUnsavedChanges, saveCustomDeviceDefinitionDialog } = __appScope;
+    if (!customDeviceDraftHasUnsavedChanges()) {
+      closeCustomDeviceDialog();
+      return;
+    }
+    const shouldSave = window.confirm("元件定义有未保存修改，是否保存后关闭？\n确定：保存并关闭\n取消：不保存");
+    if (shouldSave) {
+      saveCustomDeviceDefinitionDialog({ closeAfterSave: true });
+      return;
+    }
+    const shouldDiscard = window.confirm("不保存修改并关闭元件定义？");
+    if (shouldDiscard) {
+      closeCustomDeviceDialog();
+    }
   };
 }
 
@@ -4136,7 +4200,7 @@ export function createSelectCustomComponentType(__appScope: Record<string, any>)
 
 export function createSelectCustomComponentTemplate(__appScope: Record<string, any>) {
   return (template: DeviceTemplate, sectionName?: string) => {
-  const { DEFAULT_STATE_PAGE_ID, createCustomDeviceDraftFromTemplate, customComponentSelectionFrameRef, customComponentSelectionRequestRef, customDeviceDefinitionMode, ensureCustomComponentTreeExpanded, normalizeAttributeLibraryName, normalizeComponentTypeName, resolveTemplateComponentType, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceSaveMessage, setCustomDeviceStatePageId, setDefinitionDraftSection, setEditingCustomDeviceKind, setSelectedDefinitionKind } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, createCustomDeviceDraftFromTemplate, customComponentSelectionFrameRef, customComponentSelectionRequestRef, customDeviceDefinitionMode, ensureCustomComponentTreeExpanded, normalizeAttributeLibraryName, normalizeComponentTypeName, resolveTemplateComponentType, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceStatePageId, setDefinitionDraftSection, setEditingCustomDeviceKind, setSelectedDefinitionKind } = __appScope;
     if (sectionName === undefined) {
       sectionName = resolveTemplateComponentType(template);
     }
@@ -4159,12 +4223,13 @@ export function createSelectCustomComponentTemplate(__appScope: Record<string, a
     setEditingCustomDeviceKind(template.custom ? template.kind : "");
     setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
     setCustomDeviceDraft(editableDraft);
+    setCustomDeviceDraftCleanBaseline(editableDraft);
   };
 }
 
 export function createStartCustomComponentCreate(__appScope: Record<string, any>) {
   return () => {
-  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, createEmptyCustomDeviceDraft, customComponentTreeSelection, defaultComponentTypeForAttributeLibrary, normalizeAttributeLibraryName, requireEditMode, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode, setCustomDeviceDialogView, setCustomDeviceDraft, setCustomDeviceSaveMessage, setCustomDeviceStatePageId, setEditingCustomDeviceKind, setSelectedDefinitionKind } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, createEmptyCustomDeviceDraft, customComponentTreeSelection, defaultComponentTypeForAttributeLibrary, normalizeAttributeLibraryName, requireEditMode, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode, setCustomDeviceDialogView, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceStatePageId, setEditingCustomDeviceKind, setSelectedDefinitionKind } = __appScope;
     if (!requireEditMode("新建元件")) {
       return;
     }
@@ -4188,6 +4253,7 @@ export function createStartCustomComponentCreate(__appScope: Record<string, any>
     };
     setCustomDeviceDialogView("icon");
     setCustomDeviceDraft(nextDraft);
+    setCustomDeviceDraftCleanBaseline(nextDraft);
   };
 }
 
@@ -4622,7 +4688,7 @@ export function createNextCustomTemplateKind(__appScope: Record<string, any>) {
 
 export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) {
   return (options: { closeAfterSave?: boolean } = {}) => {
-  const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, closeCustomDeviceDialog, customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceTemplates, customDeviceTerminalAnchors, defaultComponentTypeForAttributeLibrary, editingCustomDeviceKind, ensureCustomComponentTreeExpanded, generateCustomDeviceImage, hasOverlappingCustomDeviceTerminalAnchors, isReservedDeviceDefinitionParamName, isValidComponentTypeName, nextCustomTemplateKind, normalizeAttributeLibraryName, normalizeComponentTypeName, normalizeContainerTerminalAssociations, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, requireEditMode, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceSaveMessage, setCustomDeviceTemplates, setEditingCustomDeviceKind, setExpandedAttributeLibraries, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
+  const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, closeCustomDeviceDialog, customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTemplates, customDeviceTerminalAnchors, defaultComponentTypeForAttributeLibrary, editingCustomDeviceKind, ensureCustomComponentTreeExpanded, generateCustomDeviceImage, hasOverlappingCustomDeviceTerminalAnchors, isReservedDeviceDefinitionParamName, isValidComponentTypeName, nextCustomTemplateKind, normalizeAttributeLibraryName, normalizeComponentTypeName, normalizeContainerTerminalAssociations, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, requireEditMode, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceTemplates, setEditingCustomDeviceKind, setExpandedAttributeLibraries, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
     if (!requireEditMode("保存元件")) {
       return;
     }
@@ -4696,8 +4762,10 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       setCustomDeviceDraft((current) => ({ ...current, error: stateValidation.error }));
       return;
     }
-    const backgroundImage =
+    const terminalAnchors = customDeviceTerminalAnchors.slice(0, terminalTypes.length).map((anchor) => ({ ...anchor }));
+    const rawBackgroundImage =
       customDeviceDraft.backgroundImage || generateCustomDeviceImage(componentLabel, terminalTypes.length > 0 ? terminalTypes : ["ac"]);
+    const backgroundImage = customDeviceImageWithTerminalConnectors(rawBackgroundImage, terminalTypes, terminalAnchors);
     const backgroundImageAssetId = customDeviceDraft.backgroundImageAssetId && backgroundImage === `/api/images/${customDeviceDraft.backgroundImageAssetId}`
       ? customDeviceDraft.backgroundImageAssetId
       : "";
@@ -4738,7 +4806,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       terminalLabels: customDeviceDraft.terminalLabels.slice(0, terminalTypes.length).map(
         (label, index) => label.trim() || `${TERMINAL_TYPE_LIBRARY_LABELS[terminalTypes[index]] ?? terminalTypes[index]}端${index + 1}`
       ),
-      terminalAnchors: customDeviceTerminalAnchors.slice(0, terminalTypes.length).map((anchor) => ({ ...anchor })),
+      terminalAnchors,
       isContainer: customDeviceDraft.isContainer,
       allowResizeTransform: customDeviceDraft.allowResizeTransform === "1",
       custom: true,
@@ -4764,7 +4832,9 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
     ensureCustomComponentTreeExpanded(attributeLibraryName, componentType);
     setCustomComponentTreeSelection({ kind: "component", attributeLibraryName, section: componentType, templateKind: customKind });
     setEditingCustomDeviceKind(customKind);
-    setCustomDeviceDraft((current) => ({ ...current, error: "" }));
+    const cleanDraft = { ...customDeviceDraft, backgroundImage, backgroundImageAssetId, error: "" };
+    setCustomDeviceDraft((current) => ({ ...current, backgroundImage, backgroundImageAssetId, error: "" }));
+    setCustomDeviceDraftCleanBaseline(cleanDraft, terminalAnchors);
     setCustomDeviceSaveMessage(`自定义元件已保存：${componentLabel}`);
     writeOperationLog(`保存自定义元件：${componentLabel}`);
     if (options.closeAfterSave) {
@@ -4775,7 +4845,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
 
 export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Record<string, any>) {
   return (template: DeviceTemplate, options: { closeAfterSave?: boolean } = {}) => {
-  const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, closeCustomDeviceDialog, customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceTerminalAnchors, deviceDefinitionOverrideForTemplate, deviceDefinitionOverrides, getTemplateParameterDefinitions, hasOverlappingCustomDeviceTerminalAnchors, isReservedDeviceDefinitionParamName, isValidComponentTypeName, normalizeComponentTypeName, normalizeContainerTerminalAssociations, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, requireEditMode, setCustomDeviceDraft, setCustomDeviceSaveMessage, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
+  const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, closeCustomDeviceDialog, customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTerminalAnchors, deviceDefinitionOverrideForTemplate, deviceDefinitionOverrides, getTemplateParameterDefinitions, hasOverlappingCustomDeviceTerminalAnchors, isReservedDeviceDefinitionParamName, isValidComponentTypeName, normalizeComponentTypeName, normalizeContainerTerminalAssociations, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, requireEditMode, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
     if (!requireEditMode("保存元件定义")) {
       return;
     }
@@ -4847,7 +4917,8 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       setCustomDeviceDraft((current) => ({ ...current, error: stateValidation.error }));
       return;
     }
-    const backgroundImage = customDeviceDraft.backgroundImage;
+    const terminalAnchors = customDeviceTerminalAnchors.slice(0, terminalTypes.length).map((anchor) => ({ ...anchor }));
+    const backgroundImage = customDeviceImageWithTerminalConnectors(customDeviceDraft.backgroundImage, terminalTypes, terminalAnchors);
     const backgroundImageAssetId = customDeviceDraft.backgroundImageAssetId && backgroundImage === `/api/images/${customDeviceDraft.backgroundImageAssetId}`
       ? customDeviceDraft.backgroundImageAssetId
       : "";
@@ -4894,7 +4965,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
         terminalCount: terminalTypes.length,
         terminalTypes,
         terminalLabels,
-        terminalAnchors: customDeviceTerminalAnchors.slice(0, terminalTypes.length).map((anchor) => ({ ...anchor })),
+        terminalAnchors,
         terminalRoles: customDeviceDraft.terminalRoles.slice(0, terminalTypes.length),
         terminalAssociations: customDeviceDraft.isContainer ? terminalAssociations : undefined,
         isContainer: customDeviceDraft.isContainer,
@@ -4909,7 +4980,9 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       success: `元件定义已保存到后台：${template.label}`,
       failure: `元件定义已保存到本地，后台保存失败：${template.label}`
     });
-    setCustomDeviceDraft((current) => ({ ...current, size, terminalLabels, error: "" }));
+    const cleanDraft = { ...customDeviceDraft, backgroundImage, backgroundImageAssetId, size, terminalLabels, error: "" };
+    setCustomDeviceDraft((current) => ({ ...current, backgroundImage, backgroundImageAssetId, size, terminalLabels, error: "" }));
+    setCustomDeviceDraftCleanBaseline(cleanDraft, terminalAnchors);
     setCustomDeviceSaveMessage(`元件定义已保存：${template.label}`);
     writeOperationLog(`保存元件定义：${template.label}`);
     if (options.closeAfterSave) {
@@ -5407,7 +5480,24 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       setStateIconTerminalDragIndex?.(null);
       return true;
     };
-    const renderStateIconTerminalLayer = (anchorsOverPreview = false) => {
+    const renderStateIconOuterFrameLayer = () => (
+      <g className="state-icon-outer-frame-layer">
+        <rect
+          x="0.75"
+          y="0.75"
+          width="238.5"
+          height="158.5"
+          rx="6"
+          className="state-icon-drawing-icon-frame state-icon-drawing-outer-frame"
+          fill="none"
+          stroke="#2563eb"
+          strokeWidth={1.5}
+          strokeDasharray="6 4"
+          vectorEffect="non-scaling-stroke"
+        />
+      </g>
+    );
+    const renderStateIconTerminalBaseLayer = () => {
       if (!stateIconHasTerminals) {
         return null;
       }
@@ -5415,8 +5505,72 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       if (anchors.length === 0) {
         return null;
       }
-      if (anchorsOverPreview) {
-        return (
+      return (
+        <g className="state-icon-terminal-base-layer">
+          <rect
+            x={stateIconTerminalFrame.x}
+            y={stateIconTerminalFrame.y}
+            width={stateIconTerminalFrame.width}
+            height={stateIconTerminalFrame.height}
+            rx="6"
+            className="state-icon-drawing-icon-frame state-icon-drawing-inner-frame"
+            fill="none"
+            stroke="#f97316"
+            strokeWidth={1.5}
+            strokeDasharray="5 3"
+            vectorEffect="non-scaling-stroke"
+          />
+          {stateIconTerminalDragIndex !== null && stateIconTerminalDragIndex !== undefined && (
+            <>
+              {CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES.map((guideValue, guideIndex) => {
+                const activeAnchor = anchors[stateIconTerminalDragIndex];
+                const active = Boolean(
+                  activeAnchor &&
+                  (Math.abs(customDeviceTerminalAnchorValue(activeAnchor.x) - guideValue) <= 1 / CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION ||
+                    Math.abs(customDeviceTerminalAnchorValue(activeAnchor.y) - guideValue) <= 1 / CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION)
+                );
+                return (
+                  <g key={`state-icon-terminal-guide-${guideIndex}`}>
+                    <line
+                      className={`custom-device-terminal-guide ${active ? "active" : ""}`}
+                      x1={stateIconTerminalFrame.centerX + guideValue * stateIconTerminalFrame.width}
+                      y1={stateIconTerminalFrame.y}
+                      x2={stateIconTerminalFrame.centerX + guideValue * stateIconTerminalFrame.width}
+                      y2={stateIconTerminalFrame.y + stateIconTerminalFrame.height}
+                    />
+                    <line
+                      className={`custom-device-terminal-guide ${active ? "active" : ""}`}
+                      x1={stateIconTerminalFrame.x}
+                      y1={stateIconTerminalFrame.centerY + guideValue * stateIconTerminalFrame.height}
+                      x2={stateIconTerminalFrame.x + stateIconTerminalFrame.width}
+                      y2={stateIconTerminalFrame.centerY + guideValue * stateIconTerminalFrame.height}
+                    />
+                  </g>
+                );
+              })}
+            </>
+          )}
+          <g className="state-icon-terminal-connector-layer">
+            {anchors.map((anchor, index) => {
+              const terminalType = stateIconTerminalAnchorType(index);
+              const segment = stateIconTerminalConnectorSegment(anchor);
+              return (
+                <line
+                  key={`state-icon-terminal-anchor-connector-${index}`}
+                  className="custom-device-terminal-connector state-icon-terminal-connector"
+                  x1={segment.from.x}
+                  y1={segment.from.y}
+                  x2={segment.to.x}
+                  y2={segment.to.y}
+                  stroke={terminalColor(terminalType, colorPalette)}
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  vectorEffect="non-scaling-stroke"
+                  style={{ "--terminal-color": terminalColor(terminalType, colorPalette) } as CSSProperties}
+                />
+              );
+            })}
+          </g>
           <g className="state-icon-terminal-anchor-layer">
             {anchors.map((anchor, index) => {
               const terminalType = stateIconTerminalAnchorType(index);
@@ -5450,60 +5604,11 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
               );
             })}
           </g>
-        );
-      }
-      return (
-        <g className="state-icon-terminal-base-layer">
-          {stateIconTerminalDragIndex !== null && stateIconTerminalDragIndex !== undefined && (
-            <>
-              {CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES.map((guideValue, guideIndex) => {
-                const activeAnchor = anchors[stateIconTerminalDragIndex];
-                const active = Boolean(
-                  activeAnchor &&
-                  (Math.abs(customDeviceTerminalAnchorValue(activeAnchor.x) - guideValue) <= 1 / CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION ||
-                    Math.abs(customDeviceTerminalAnchorValue(activeAnchor.y) - guideValue) <= 1 / CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION)
-                );
-                return (
-                  <g key={`state-icon-terminal-guide-${guideIndex}`}>
-                    <line
-                      className={`custom-device-terminal-guide ${active ? "active" : ""}`}
-                      x1={stateIconTerminalFrame.centerX + guideValue * stateIconTerminalFrame.width}
-                      y1={stateIconTerminalFrame.y}
-                      x2={stateIconTerminalFrame.centerX + guideValue * stateIconTerminalFrame.width}
-                      y2={stateIconTerminalFrame.y + stateIconTerminalFrame.height}
-                    />
-                    <line
-                      className={`custom-device-terminal-guide ${active ? "active" : ""}`}
-                      x1={stateIconTerminalFrame.x}
-                      y1={stateIconTerminalFrame.centerY + guideValue * stateIconTerminalFrame.height}
-                      x2={stateIconTerminalFrame.x + stateIconTerminalFrame.width}
-                      y2={stateIconTerminalFrame.centerY + guideValue * stateIconTerminalFrame.height}
-                    />
-                  </g>
-                );
-              })}
-            </>
-          )}
-          {anchors.map((anchor, index) => {
-            const terminalType = stateIconTerminalAnchorType(index);
-            const segment = stateIconTerminalConnectorSegment(anchor);
-            return (
-              <line
-                key={`state-icon-terminal-connector-${index}`}
-                className="custom-device-terminal-connector state-icon-terminal-connector"
-                x1={segment.from.x}
-                y1={segment.from.y}
-                x2={segment.to.x}
-                y2={segment.to.y}
-                style={{ "--terminal-color": terminalColor(terminalType, colorPalette) } as CSSProperties}
-              />
-            );
-          })}
         </g>
       );
     };
     const stateIconImageVisibleFrameKey = (element: any) =>
-      `${element.id}:${element.imageHref ?? ""}:${element.width}:${element.height}:${element.imageScale ?? 1}:${element.cropX ?? 0}:${element.cropY ?? 0}`;
+      `${element.id}:${element.imageHref ?? ""}:${element.imageScale ?? 1}:${element.cropX ?? 0}:${element.cropY ?? 0}`;
     const updateStateIconImageVisibleFrame = (element: any, event: any) => {
       if (element?.kind !== "image" || !setStateIconDrawingImageVisibleFrames) {
         return;
@@ -5562,7 +5667,9 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
           x: Math.max(-elementWidth / 2, imageX + left * imageScale),
           y: Math.max(-elementHeight / 2, imageY + top * imageScale),
           width: Math.min(elementWidth / 2, imageX + (right + 1) * imageScale) - Math.max(-elementWidth / 2, imageX + left * imageScale),
-          height: Math.min(elementHeight / 2, imageY + (bottom + 1) * imageScale) - Math.max(-elementHeight / 2, imageY + top * imageScale)
+          height: Math.min(elementHeight / 2, imageY + (bottom + 1) * imageScale) - Math.max(-elementHeight / 2, imageY + top * imageScale),
+          basisWidth: elementWidth,
+          basisHeight: elementHeight
         };
         if (frame.width <= 0 || frame.height <= 0) {
           return;
@@ -5574,7 +5681,9 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
             Math.abs(previous.x - frame.x) < 0.1 &&
             Math.abs(previous.y - frame.y) < 0.1 &&
             Math.abs(previous.width - frame.width) < 0.1 &&
-            Math.abs(previous.height - frame.height) < 0.1
+            Math.abs(previous.height - frame.height) < 0.1 &&
+            Math.abs((previous.basisWidth ?? elementWidth) - frame.basisWidth) < 0.1 &&
+            Math.abs((previous.basisHeight ?? elementHeight) - frame.basisHeight) < 0.1
           ) {
             return current;
           }
@@ -5591,14 +5700,24 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       if (!frame || frame.width <= 0 || frame.height <= 0) {
         return null;
       }
+      const basisWidth = Math.max(1, Number(frame.basisWidth) || Number(element.width) || 1);
+      const basisHeight = Math.max(1, Number(frame.basisHeight) || Number(element.height) || 1);
+      const scaleX = Math.max(1, Number(element.width) || 1) / basisWidth;
+      const scaleY = Math.max(1, Number(element.height) || 1) / basisHeight;
+      const scaledFrame = {
+        x: frame.x * scaleX,
+        y: frame.y * scaleY,
+        width: frame.width * scaleX,
+        height: frame.height * scaleY
+      };
       return {
-        ...frame,
-        halfWidth: frame.x + frame.width,
-        halfHeight: frame.y + frame.height
+        ...scaledFrame,
+        halfWidth: scaledFrame.x + scaledFrame.width,
+        halfHeight: scaledFrame.y + scaledFrame.height
       };
     };
     const stateIconSvgVisibleFrameKey = (element: any) =>
-      `${element.id}:${element.svgSource ?? ""}:${element.width}:${element.height}:${element.strokeWidth}:${element.strokeColor ?? ""}:${element.strokeStyle ?? ""}`;
+      `${element.id}:${element.svgSource ?? ""}:${element.strokeWidth}:${element.strokeColor ?? ""}:${element.strokeStyle ?? ""}`;
     const updateStateIconSvgVisibleFrame = (element: any, event: any) => {
       if (element?.kind !== "imported-svg" || !setStateIconDrawingSvgVisibleFrames) {
         return;
@@ -5653,7 +5772,9 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
           x: left * scaleX - paddingX - elementWidth / 2,
           y: top * scaleY - paddingY - elementHeight / 2,
           width: (right - left + 1) * scaleX,
-          height: (bottom - top + 1) * scaleY
+          height: (bottom - top + 1) * scaleY,
+          basisWidth: elementWidth,
+          basisHeight: elementHeight
         };
         if (frame.width <= 0 || frame.height <= 0) {
           return;
@@ -5665,7 +5786,9 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
             Math.abs(previous.x - frame.x) < 0.1 &&
             Math.abs(previous.y - frame.y) < 0.1 &&
             Math.abs(previous.width - frame.width) < 0.1 &&
-            Math.abs(previous.height - frame.height) < 0.1
+            Math.abs(previous.height - frame.height) < 0.1 &&
+            Math.abs((previous.basisWidth ?? elementWidth) - frame.basisWidth) < 0.1 &&
+            Math.abs((previous.basisHeight ?? elementHeight) - frame.basisHeight) < 0.1
           ) {
             return current;
           }
@@ -5682,10 +5805,20 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       if (!frame || frame.width <= 0 || frame.height <= 0) {
         return null;
       }
+      const basisWidth = Math.max(1, Number(frame.basisWidth) || Number(element.width) || 1);
+      const basisHeight = Math.max(1, Number(frame.basisHeight) || Number(element.height) || 1);
+      const scaleX = Math.max(1, Number(element.width) || 1) / basisWidth;
+      const scaleY = Math.max(1, Number(element.height) || 1) / basisHeight;
+      const scaledFrame = {
+        x: frame.x * scaleX,
+        y: frame.y * scaleY,
+        width: frame.width * scaleX,
+        height: frame.height * scaleY
+      };
       return {
-        ...frame,
-        halfWidth: frame.x + frame.width,
-        halfHeight: frame.y + frame.height
+        ...scaledFrame,
+        halfWidth: scaledFrame.x + scaledFrame.width,
+        halfHeight: scaledFrame.y + scaledFrame.height
       };
     };
     const stateIconDrawingTerminalPatch = (value: string) => {
@@ -6340,7 +6473,8 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                   }}
                 >
                   <rect x="0" y="0" width="240" height="160" rx="10" className="state-icon-drawing-canvas-bg" fill={frame.fillColor} />
-                  {renderStateIconTerminalLayer(false)}
+                  {renderStateIconOuterFrameLayer()}
+                  {renderStateIconTerminalBaseLayer()}
                   {directPreviewElements ? previewElements.map((element, index) => (
                     <g
                       key={`preview-${element.id}-${index}`}
@@ -6380,30 +6514,6 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                       />
                     );
                   })}
-                  <rect
-                    x="0"
-                    y="0"
-                    width="240"
-                    height="160"
-                    rx="6"
-                    className="state-icon-drawing-icon-frame state-icon-drawing-outer-frame"
-                    fill="none"
-                    stroke={frame.strokeColor}
-                    strokeWidth={frame.strokeWidth}
-                    strokeDasharray={frameDashArray}
-                  />
-                  {stateIconHasTerminals && (
-                    <rect
-                      x={stateIconTerminalFrame.x}
-                      y={stateIconTerminalFrame.y}
-                      width={stateIconTerminalFrame.width}
-                      height={stateIconTerminalFrame.height}
-                      rx="6"
-                      className="state-icon-drawing-icon-frame state-icon-drawing-inner-frame"
-                      fill="none"
-                    />
-                  )}
-                  {renderStateIconTerminalLayer(true)}
                   {stateIconDrawingSmartGuides.map((guide) => (
                     <line
                       key={guide.id}
@@ -6437,6 +6547,14 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                       halfWidth,
                       halfHeight
                     };
+                    const hitboxFrame = element.kind === "image" || element.kind === "imported-svg"
+                      ? selectionFrame
+                      : {
+                          x: -halfWidth,
+                          y: -halfHeight,
+                          width: Math.max(1, element.width),
+                          height: Math.max(1, element.height)
+                        };
                     return (
                       <g
                         key={element.id}
@@ -6449,7 +6567,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                           setStateIconDrawingContextMenu({ x: event.clientX, y: event.clientY, kind: "element", elementId: element.id });
                         }}
                       >
-                        <rect x={formatSvgNumber(-halfWidth)} y={formatSvgNumber(-halfHeight)} width={formatSvgNumber(element.width)} height={formatSvgNumber(element.height)} className="state-icon-drawing-hitbox" />
+                        <rect x={formatSvgNumber(hitboxFrame.x)} y={formatSvgNumber(hitboxFrame.y)} width={formatSvgNumber(hitboxFrame.width)} height={formatSvgNumber(hitboxFrame.height)} className="state-icon-drawing-hitbox" />
                         {selected && (
                           <>
                             <rect x={formatSvgNumber(selectionFrame.x)} y={formatSvgNumber(selectionFrame.y)} width={formatSvgNumber(selectionFrame.width)} height={formatSvgNumber(selectionFrame.height)} className="state-icon-drawing-selection-box" />

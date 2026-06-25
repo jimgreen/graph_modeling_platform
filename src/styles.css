@@ -2343,6 +2343,21 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   outline: none;
 }
 
+.canvas-floating-toolbar button svg {
+  display: block;
+  color: currentColor;
+  stroke: currentColor !important;
+  stroke-width: 2 !important;
+  fill: none !important;
+  pointer-events: none;
+}
+
+.canvas-floating-toolbar button svg * {
+  stroke: currentColor !important;
+  stroke-width: 2 !important;
+  fill: none !important;
+}
+
 .edge-toolbar button:hover:not(:disabled),
 .edge-toolbar button:focus-visible {
   border-color: #fecaca;
@@ -2779,30 +2794,30 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .terminal-stub {
-  stroke: #64748b;
-  stroke-width: 2;
-  stroke-linecap: round;
+  stroke: var(--terminal-stub-color, #64748b) !important;
+  stroke-width: var(--terminal-stub-width, 2) !important;
+  stroke-linecap: round !important;
   pointer-events: none;
 }
 
 .terminal-stub.ac {
-  stroke: #2563eb;
+  stroke: var(--terminal-stub-color, #2563eb) !important;
 }
 
 .terminal-stub.dc {
-  stroke: #0f766e;
+  stroke: var(--terminal-stub-color, #0f766e) !important;
 }
 
 .terminal-stub.h2 {
-  stroke: #7c3aed;
+  stroke: var(--terminal-stub-color, #7c3aed) !important;
 }
 
 .terminal-stub.heat {
-  stroke: #dc2626;
+  stroke: var(--terminal-stub-color, #dc2626) !important;
 }
 
 .terminal-stub.disabled {
-  stroke: #cbd5e1;
+  stroke: #cbd5e1 !important;
 }
 
 .terminal-dot {
@@ -5382,14 +5397,21 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   pointer-events: none;
 }
 
-.state-icon-drawing-inner-frame {
-  stroke: #f97316;
-  stroke-width: 1.5;
-  stroke-dasharray: 5 3;
+.state-icon-drawing-outer-frame {
+  stroke: #2563eb !important;
+  stroke-width: 1.5 !important;
+  stroke-dasharray: 6 4 !important;
 }
 
+.state-icon-drawing-inner-frame {
+  stroke: #f97316 !important;
+  stroke-width: 1.5 !important;
+  stroke-dasharray: 5 3 !important;
+}
+
+.state-icon-outer-frame-layer,
 .state-icon-terminal-base-layer,
-.state-icon-terminal-inner-frame,
+.state-icon-terminal-connector-layer,
 .state-icon-terminal-connector {
   pointer-events: none;
 }
@@ -6287,9 +6309,9 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .custom-device-terminal-connector {
-  stroke: var(--terminal-color, #2563eb);
-  stroke-width: 2;
-  stroke-linecap: round;
+  stroke: var(--terminal-color, #2563eb) !important;
+  stroke-width: 2 !important;
+  stroke-linecap: round !important;
   vector-effect: non-scaling-stroke;
   pointer-events: none;
 }
