@@ -107,6 +107,7 @@ export type DeviceDefinitionStateDraftRow = DeviceStateDefinition & {
   textColor: string;
   backgroundImage: string;
   backgroundImageAssetId: string;
+  imageCleared: string;
 };
 
 export function customParamId() {
@@ -145,7 +146,8 @@ export function createStateDraftRow(definition: Partial<DeviceStateDefinition> =
     strokeColor: String(definition.strokeColor ?? "").trim(),
     textColor: String(definition.textColor ?? "").trim(),
     backgroundImage: String(definition.backgroundImage ?? "").trim(),
-    backgroundImageAssetId: String(definition.backgroundImageAssetId ?? "").trim()
+    backgroundImageAssetId: String(definition.backgroundImageAssetId ?? "").trim(),
+    imageCleared: String(definition.imageCleared ?? "").trim()
   };
 }
 
@@ -234,7 +236,8 @@ export function normalizeStateDraftRows(rows: readonly DeviceDefinitionStateDraf
       strokeColor: row.strokeColor,
       textColor: row.textColor,
       backgroundImage: row.backgroundImage,
-      backgroundImageAssetId: row.backgroundImageAssetId
+      backgroundImageAssetId: row.backgroundImageAssetId,
+      imageCleared: row.imageCleared
     }))
   );
 }
@@ -253,7 +256,8 @@ export function validateStateDraftRows(rows: readonly DeviceDefinitionStateDraft
       row.strokeColor,
       row.textColor,
       row.backgroundImage,
-      row.backgroundImageAssetId
+      row.backgroundImageAssetId,
+      row.imageCleared
     ].some((value) => String(value ?? "").trim())
   );
   for (const row of populatedRows) {
@@ -655,6 +659,21 @@ function stateIconDrawingTerminalOwnershipFromMarkup(markup: string): Pick<State
     : {};
 }
 
+function stateIconDrawingStrokeStyleFromMarkup(markup: string): StateIconDrawingElement["strokeStyle"] {
+  const dashArray = readSvgMarkupAttribute(markup, "stroke-dasharray").trim();
+  if (!dashArray) {
+    return "solid";
+  }
+  const parts = dashArray
+    .split(/[,\s]+/u)
+    .map((part) => Number.parseFloat(part))
+    .filter((value) => Number.isFinite(value));
+  if (parts.length >= 2 && parts[0] <= parts[1] * 0.25) {
+    return "dotted";
+  }
+  return "dashed";
+}
+
 function parseStateIconDrawingGeneratedTransform(markup: string) {
   const transform = readSvgMarkupAttribute(markup, "transform");
   const translateMatch = /translate\(\s*([-+]?\d*\.?\d+(?:e[-+]?\d+)?)\s*(?:,|\s)\s*([-+]?\d*\.?\d+(?:e[-+]?\d+)?)?\s*\)/i.exec(transform);
@@ -793,6 +812,24 @@ export function createStateIconDrawingElementFromGeneratedGroupMarkup(
       strokeWidth: Math.max(0, readSvgMarkupNumber(circleOpen, "stroke-width", 6)),
       strokeColor: readSvgMarkupAttribute(circleOpen, "stroke") || "#2563eb",
       fillColor: readSvgMarkupAttribute(circleOpen, "fill") || "transparent",
+      ...terminalOwnership
+    };
+  }
+  const rectOpen = /<rect\b([^>]*)>/i.exec(trimmed)?.[1] ?? "";
+  if (rectOpen) {
+    const width = Math.max(1, readSvgMarkupNumber(rectOpen, "width", 96));
+    const height = Math.max(1, readSvgMarkupNumber(rectOpen, "height", 58));
+    return {
+      ...createStateIconDrawingElement(Math.abs(width - height) < 0.001 ? "square" : "rectangle"),
+      x: transform.x,
+      y: transform.y,
+      width,
+      height,
+      rotation: transform.rotation,
+      strokeWidth: Math.max(0, readSvgMarkupNumber(rectOpen, "stroke-width", 6)),
+      strokeColor: readSvgMarkupAttribute(rectOpen, "stroke") || "#2563eb",
+      fillColor: readSvgMarkupAttribute(rectOpen, "fill") || "transparent",
+      strokeStyle: stateIconDrawingStrokeStyleFromMarkup(rectOpen),
       ...terminalOwnership
     };
   }
@@ -1120,7 +1157,8 @@ export function createEditableStateIconElementsFromSvgSource(
     return createStateIconDrawingElementsFromGeneratedSvgSource(source, fileName) ??
       [createImportedStateIconElement("imported-svg", stateIconSvgElementSource(source) || source, fileName)];
   }
-  const generatedElements = parsed.editableChildren.map((child, index) =>
+  const editableChildren = parsed.editableChildren.filter((child) => child.getAttribute("data-state-icon-frame") !== "true");
+  const generatedElements = editableChildren.map((child, index) =>
     createStateIconDrawingElementFromGeneratedGroupMarkup(child.outerHTML, `${fileName || "SVG"}-${index + 1}`)
   );
   const importedElementFromGeneratedChild = (child: Element, index: number) => ({
@@ -1132,18 +1170,18 @@ export function createEditableStateIconElementsFromSvgSource(
     ...stateIconDrawingTerminalOwnershipFromMarkup(child.outerHTML)
   });
   if (generatedElements.some(Boolean)) {
-    return parsed.editableChildren.map((child, index) =>
+    return editableChildren.map((child, index) =>
       generatedElements[index] ?? importedElementFromGeneratedChild(child, index)
     );
   }
-  if (parsed.editableChildren.length <= 1) {
-    const child = parsed.editableChildren[0];
+  if (editableChildren.length <= 1) {
+    const child = editableChildren[0];
     return [{
       ...createImportedStateIconElement("imported-svg", stateIconSvgElementSource(source) || source, fileName),
       ...(child ? stateIconDrawingTerminalOwnershipFromMarkup(child.outerHTML) : {})
     }];
   }
-  return parsed.editableChildren.map((child, index) =>
+  return editableChildren.map((child, index) =>
     importedElementFromGeneratedChild(child, index)
   );
 }
@@ -1153,6 +1191,9 @@ export function createStateIconDrawingInitialElements(
   assets: Record<string, string>
 ) {
   const visual = stateVisualFromDraftRow(row);
+  if (visual?.imageCleared) {
+    return [];
+  }
   const imageHref = resolveStateVisualImageHref(visual, assets).trim();
   if (imageHref) {
     const svgSource = svgSourceFromDataUrl(imageHref);

@@ -127,6 +127,7 @@ export function createEmptyCustomDeviceDraft(attributeLibraryName = "交流设�
     componentName: "",
     backgroundImage: "",
     backgroundImageAssetId: "",
+    backgroundImageCleared: "",
     size: { width: 104, height: 64 },
     allowResizeTransform: "0",
     terminalCount: 2,
@@ -170,6 +171,7 @@ export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, se
     componentName: template.label,
     backgroundImage: template.params.backgroundImage ?? "",
     backgroundImageAssetId: template.params.backgroundImageAssetId ?? "",
+    backgroundImageCleared: template.params.backgroundImageCleared ?? "",
     size: { ...template.size },
     allowResizeTransform: templateResizeTransformValue(template),
     terminalCount,
@@ -192,6 +194,7 @@ export function createDefinitionVisualDraft(template: DeviceTemplate): DeviceDef
   return {
     backgroundImage: template.params.backgroundImage ?? "",
     backgroundImageAssetId: template.params.backgroundImageAssetId ?? "",
+    backgroundImageCleared: template.params.backgroundImageCleared ?? "",
     size: {
       width: Math.max(1, Math.round(template.size.width || 104)),
       height: Math.max(1, Math.round(template.size.height || 64))

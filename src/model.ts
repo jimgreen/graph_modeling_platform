@@ -287,6 +287,7 @@ export type DeviceStateDefinition = {
   textColor?: string;
   backgroundImage?: string;
   backgroundImageAssetId?: string;
+  imageCleared?: string;
 };
 
 export type DeviceStateVisual = DeviceStateDefinition & {
@@ -893,7 +894,8 @@ function cloneDeviceStateDefinition(definition: DeviceStateDefinition): DeviceSt
     ...(definition.strokeColor ? { strokeColor: definition.strokeColor } : {}),
     ...(definition.textColor ? { textColor: definition.textColor } : {}),
     ...(definition.backgroundImage ? { backgroundImage: definition.backgroundImage } : {}),
-    ...(definition.backgroundImageAssetId ? { backgroundImageAssetId: definition.backgroundImageAssetId } : {})
+    ...(definition.backgroundImageAssetId ? { backgroundImageAssetId: definition.backgroundImageAssetId } : {}),
+    ...(definition.imageCleared ? { imageCleared: definition.imageCleared } : {})
   };
 }
 
@@ -917,7 +919,7 @@ export function normalizeDeviceStateDefinitions(value: unknown): DeviceStateDefi
       value: stateValue,
       name: String(source.name ?? stateValue).trim() || stateValue
     };
-    for (const key of ["icon", "image", "imageAssetId", "text", "color", "fillColor", "strokeColor", "textColor", "backgroundImage", "backgroundImageAssetId"] as const) {
+    for (const key of ["icon", "image", "imageAssetId", "text", "color", "fillColor", "strokeColor", "textColor", "backgroundImage", "backgroundImageAssetId", "imageCleared"] as const) {
       const text = String(source[key] ?? "").trim();
       if (text) {
         state[key] = text;

@@ -5463,7 +5463,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .state-icon-drawing-side {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 6px;
   min-width: 0;
   min-height: 0;
@@ -5472,8 +5472,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .state-icon-drawing-library,
 .state-icon-drawing-state-info,
-.state-icon-drawing-frame-panel,
-.state-icon-drawing-layers,
 .state-icon-drawing-properties {
   display: grid;
   align-content: start;
@@ -5485,41 +5483,89 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   background: #fbfdff;
 }
 
-.state-icon-drawing-layers {
-  min-height: 0;
-}
-
 .state-icon-drawing-properties {
   min-height: 0;
   overflow: auto;
 }
 
+.state-icon-drawing-tab-panel {
+  min-height: 0;
+  overflow: auto;
+}
+
+.state-icon-drawing-side-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  min-width: 0;
+}
+
+.state-icon-drawing-side-tabs button {
+  min-width: 0;
+  height: 28px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.state-icon-drawing-side-tabs button.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.state-icon-drawing-property-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.state-icon-drawing-property-table th,
+.state-icon-drawing-property-table td {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 5px 0;
+  vertical-align: middle;
+}
+
+.state-icon-drawing-property-table tr:last-child th,
+.state-icon-drawing-property-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.state-icon-drawing-property-table th {
+  width: 72px;
+  padding-right: 8px;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 800;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.state-icon-drawing-property-table td {
+  min-width: 0;
+}
+
+.state-icon-drawing-property-table input,
+.state-icon-drawing-property-table select,
+.state-icon-drawing-property-table textarea {
+  width: 100%;
+  min-width: 0;
+}
+
 .state-icon-drawing-library > span,
 .state-icon-drawing-state-info > strong,
-.state-icon-drawing-frame-panel > strong,
-.state-icon-drawing-layers > span,
-.state-icon-drawing-layers label > span {
+.state-icon-drawing-frame-panel > strong {
   color: #334155;
   font-size: 11px;
   font-weight: 850;
 }
 
-.state-icon-drawing-layers label {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-}
-
-.state-icon-drawing-layers select {
-  display: block;
-  width: 100%;
-  min-width: 0;
-  justify-content: flex-start;
-  text-align: left;
-}
-
 .state-icon-drawing-library > div,
-.state-icon-drawing-layers > div {
+.state-icon-drawing-frame-panel > div {
   display: flex;
   flex-wrap: wrap;
   gap: 3px;
@@ -5681,21 +5727,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   stroke-linecap: round;
   stroke-linejoin: round;
   pointer-events: none;
-}
-
-.state-icon-drawing-layers > div {
-  display: grid;
-}
-
-.state-icon-drawing-layers button {
-  justify-content: flex-start;
-  text-align: left;
-}
-
-.state-icon-drawing-layers button.active {
-  border-color: #2563eb;
-  color: #1d4ed8;
-  background: #eff6ff;
 }
 
 .state-icon-drawing-property-title {

@@ -2552,6 +2552,17 @@ export function createOpenBlankProjectLibraryContextMenu(__appScope: Record<stri
 export function createCustomDeviceDefaultStateVisualDraft(__appScope: Record<string, any>) {
   return (): Partial<DeviceStateDefinition> => {
   const { customDeviceDraft, customDevicePreviewLabel, customDevicePreviewSourceTemplate, customDraftTerminalTypes, generateCustomDeviceImage, selectedCustomComponentTemplate, selectedDefinitionTemplate } = __appScope;
+    if (customDeviceDraft.backgroundImageCleared) {
+      return {
+        image: "",
+        imageAssetId: "",
+        imageCleared: "1",
+        color: "",
+        fillColor: "transparent",
+        strokeColor: "transparent",
+        textColor: ""
+      };
+    }
     const sourceTemplate = customDevicePreviewSourceTemplate ?? selectedCustomComponentTemplate ?? selectedDefinitionTemplate;
     const templateImage = !customDeviceDraft.backgroundImage && !customDeviceDraft.backgroundImageAssetId
       ? createTemplateDefaultStateIconImage(__appScope, sourceTemplate, {
@@ -2572,6 +2583,7 @@ export function createCustomDeviceDefaultStateVisualDraft(__appScope: Record<str
     return {
       image,
       imageAssetId,
+      imageCleared: "",
       color: "",
       fillColor: "transparent",
       strokeColor: "transparent",
@@ -2660,6 +2672,13 @@ export function createUpdateCustomDeviceStateDraftRow(__appScope: Record<string,
       stateDefinitions: isDefaultStatePageId(rowId)
         ? current.stateDefinitions
         : current.stateDefinitions.map((row) => (row.id === rowId ? { ...row, ...patch } : row)),
+      ...(isDefaultStatePageId(rowId)
+        ? {
+            backgroundImage: patch.image ?? patch.backgroundImage ?? current.backgroundImage,
+            backgroundImageAssetId: patch.imageAssetId ?? patch.backgroundImageAssetId ?? current.backgroundImageAssetId,
+            backgroundImageCleared: patch.imageCleared ?? current.backgroundImageCleared
+          }
+        : {}),
       error: ""
     }));
   };
@@ -2676,7 +2695,8 @@ export function createAddCustomDeviceStateDraftRow(__appScope: Record<string, an
             image: stateIconDrawingInlineImage,
             imageAssetId: "",
             backgroundImage: "",
-            backgroundImageAssetId: ""
+            backgroundImageAssetId: "",
+            imageCleared: stateIconDrawingInlineImage ? "" : "1"
           }
         : null;
     const sourceDefaultVisual = inlineDefaultStateIconPatch
@@ -2686,6 +2706,7 @@ export function createAddCustomDeviceStateDraftRow(__appScope: Record<string, an
       ...current,
       backgroundImage: inlineDefaultStateIconPatch ? stateIconDrawingInlineImage : current.backgroundImage,
       backgroundImageAssetId: inlineDefaultStateIconPatch ? "" : current.backgroundImageAssetId,
+      backgroundImageCleared: inlineDefaultStateIconPatch ? inlineDefaultStateIconPatch.imageCleared : current.backgroundImageCleared,
       stateDefinitions: (() => {
         const sourceRows = current.stateDefinitions;
         const nextIndex = nextNonDefaultStateIndex(sourceRows);
@@ -2738,6 +2759,17 @@ export function createDefinitionDefaultStateVisualDraft(__appScope: Record<strin
   return (): Partial<DeviceStateDefinition> => {
   const { definitionVisualDraft, selectedDefinitionTemplate } = __appScope;
     const params = selectedDefinitionTemplate?.params ?? {};
+    if (definitionVisualDraft?.backgroundImageCleared || params.backgroundImageCleared) {
+      return {
+        image: "",
+        imageAssetId: "",
+        imageCleared: "1",
+        color: params.foregroundColor || "",
+        fillColor: params.fillColor || "",
+        strokeColor: params.strokeColor || "",
+        textColor: params.textColor || ""
+      };
+    }
     const sourceImage = definitionVisualDraft?.backgroundImage || params.backgroundImage || "";
     const sourceImageAssetId = definitionVisualDraft?.backgroundImageAssetId || params.backgroundImageAssetId || "";
     const templateImage = !sourceImage && !sourceImageAssetId
@@ -2752,6 +2784,7 @@ export function createDefinitionDefaultStateVisualDraft(__appScope: Record<strin
     return {
       image: sourceImage || templateImage,
       imageAssetId: sourceImageAssetId && sourceImage === `/api/images/${sourceImageAssetId}` ? sourceImageAssetId : sourceImage ? "" : sourceImageAssetId,
+      imageCleared: "",
       color: params.foregroundColor || "",
       fillColor: params.fillColor || "",
       strokeColor: params.strokeColor || "",
@@ -3119,12 +3152,25 @@ export function createDeleteDefinitionDraftRow(__appScope: Record<string, any>) 
 
 export function createUpdateDefinitionStateDraftRow(__appScope: Record<string, any>) {
   return (rowId: string, patch: Partial<DeviceDefinitionStateDraftRow>) => {
-  const { isDefaultStatePageId, setDefinitionDraftError, setDefinitionStateDraftRows } = __appScope;
+  const { isDefaultStatePageId, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionVisualDraft } = __appScope;
     setDefinitionStateDraftRows((current) =>
       isDefaultStatePageId(rowId)
         ? current
         : current.map((row) => (row.id === rowId ? { ...row, ...patch } : row))
     );
+    if (isDefaultStatePageId(rowId)) {
+      setDefinitionVisualDraft((current) =>
+        current
+          ? {
+              ...current,
+              backgroundImage: patch.image ?? patch.backgroundImage ?? current.backgroundImage,
+              backgroundImageAssetId: patch.imageAssetId ?? patch.backgroundImageAssetId ?? current.backgroundImageAssetId,
+              backgroundImageCleared: patch.imageCleared ?? current.backgroundImageCleared,
+              error: ""
+            }
+          : current
+      );
+    }
     setDefinitionDraftError("");
   };
 }
@@ -3140,7 +3186,8 @@ export function createAddDefinitionStateDraftRow(__appScope: Record<string, any>
             image: stateIconDrawingInlineImage,
             imageAssetId: "",
             backgroundImage: "",
-            backgroundImageAssetId: ""
+            backgroundImageAssetId: "",
+            imageCleared: stateIconDrawingInlineImage ? "" : "1"
           }
         : null;
     const sourceDefaultVisual = inlineDefaultStateIconPatch
@@ -3322,7 +3369,8 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
     };
     const backgroundParams = {
       backgroundImage: definitionVisualDraft.backgroundImage,
-      backgroundImageAssetId: definitionVisualDraft.backgroundImageAssetId
+      backgroundImageAssetId: definitionVisualDraft.backgroundImageAssetId,
+      backgroundImageCleared: definitionVisualDraft.backgroundImageCleared
     };
     if (selectedDefinitionTemplate.custom) {
       setCustomDeviceTemplates((current) =>
@@ -3557,6 +3605,7 @@ export function createChooseCustomDeviceBackground(__appScope: Record<string, an
         ...current,
         backgroundImage: asset?.url ?? imageData,
         backgroundImageAssetId: asset?.id ?? "",
+        backgroundImageCleared: "",
         error: ""
       }));
       setCustomDeviceSaveMessage(asset ? "图标已上传到后台，保存自定义设备后生效。" : "图标已设置为本地预览，保存自定义设备后生效。");
@@ -3596,6 +3645,7 @@ export function createChooseDefinitionTemplateIcon(__appScope: Record<string, an
               ...current,
               backgroundImage: asset?.url ?? imageData,
               backgroundImageAssetId: asset?.id ?? "",
+              backgroundImageCleared: "",
               error: ""
             }
           : current
@@ -3636,7 +3686,8 @@ export function createChooseStateVisualImage(__appScope: Record<string, any>) {
         image: asset?.url ?? imageData,
         imageAssetId: asset?.id ?? "",
         backgroundImage: "",
-        backgroundImageAssetId: ""
+        backgroundImageAssetId: "",
+        imageCleared: ""
       };
       if (target.scope === "definition") {
         updateDefinitionStateDraftRow(target.rowId, patch);
@@ -4074,8 +4125,8 @@ export function createOpenStateIconDrawingDialog(__appScope: Record<string, any>
 
 export function createApplyStateIconDrawingDialog(__appScope: Record<string, any>) {
   return async () => {
-  const { backendImageIdFromHref, customDeviceDraft, customDraftTerminalTypes, definitionVisualDraft, definitionVisualTerminalTypes, fetchBackendImageDataUrl, imageAssetList, imageAssets, isImageDataUrl, setStateIconDrawingDialog, stateIconDrawingDialog, stateIconDrawingToImage, updateCustomDeviceStateDraftRow, updateDefinitionStateDraftRow } = __appScope;
-    if (!stateIconDrawingDialog || stateIconDrawingDialog.elements.length === 0) {
+  const { backendImageIdFromHref, customDeviceDraft, customDraftTerminalTypes, definitionVisualDraft, definitionVisualTerminalTypes, fetchBackendImageDataUrl, imageAssetList, imageAssets, isDefaultStatePageId, isImageDataUrl, setDefinitionVisualDraft, setStateIconDrawingDialog, stateIconDrawingDialog, stateIconDrawingToImage, updateCustomDeviceStateDraftRow, updateDefinitionStateDraftRow } = __appScope;
+    if (!stateIconDrawingDialog) {
       return;
     }
     const assetById = new Map((imageAssetList ?? []).map((asset: ImageAsset) => [asset.id, asset]));
@@ -4112,16 +4163,35 @@ export function createApplyStateIconDrawingDialog(__appScope: Record<string, any
     const frameHasTerminals = stateIconDrawingDialog.target.scope === "definition"
       ? (Number(definitionVisualDraft?.terminalCount) || (Array.isArray(definitionVisualTerminalTypes) ? definitionVisualTerminalTypes.length : 0)) > 0
       : (Number(customDeviceDraft?.terminalCount) || (Array.isArray(customDraftTerminalTypes) ? customDraftTerminalTypes.length : 0)) > 0;
+    const image = stateIconDrawingDialog.elements.length > 0
+      ? stateIconDrawingToImage(stateIconDrawingDialog.elements, {
+          resolveImageHref,
+          frame: stateIconDrawingDialog.frame,
+          frameHasTerminals
+        })
+      : "";
     const patch: Partial<DeviceDefinitionStateDraftRow> = {
-      image: stateIconDrawingToImage(stateIconDrawingDialog.elements, {
-        resolveImageHref,
-        frame: stateIconDrawingDialog.frame,
-        frameHasTerminals
-      }),
+      image,
       imageAssetId: "",
       backgroundImage: "",
-      backgroundImageAssetId: ""
+      backgroundImageAssetId: "",
+      imageCleared: image ? "" : "1"
     };
+    if (isDefaultStatePageId(stateIconDrawingDialog.target.rowId) && stateIconDrawingDialog.target.scope === "definition") {
+      setDefinitionVisualDraft((current) =>
+        current
+          ? {
+              ...current,
+              backgroundImage: image,
+              backgroundImageAssetId: "",
+              backgroundImageCleared: patch.imageCleared ?? "",
+              error: ""
+            }
+          : current
+      );
+      setStateIconDrawingDialog(null);
+      return;
+    }
     if (stateIconDrawingDialog.target.scope === "definition") {
       updateDefinitionStateDraftRow(stateIconDrawingDialog.target.rowId, patch);
     } else {
@@ -4770,8 +4840,9 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       return;
     }
     const terminalAnchors = customDeviceTerminalAnchors.slice(0, terminalTypes.length).map((anchor) => ({ ...anchor }));
-    const rawBackgroundImage =
-      customDeviceDraft.backgroundImage || generateCustomDeviceImage(componentLabel, terminalTypes.length > 0 ? terminalTypes : ["ac"]);
+    const rawBackgroundImage = customDeviceDraft.backgroundImageCleared
+      ? ""
+      : customDeviceDraft.backgroundImage || generateCustomDeviceImage(componentLabel, terminalTypes.length > 0 ? terminalTypes : ["ac"]);
     const backgroundImage = customDeviceImageWithTerminalConnectors(rawBackgroundImage, terminalTypes, terminalAnchors);
     const backgroundImageAssetId = customDeviceDraft.backgroundImageAssetId && backgroundImage === `/api/images/${customDeviceDraft.backgroundImageAssetId}`
       ? customDeviceDraft.backgroundImageAssetId
@@ -4804,7 +4875,8 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
         strokeColor: "transparent",
         lineWidth: "0",
         backgroundImage,
-        backgroundImageAssetId
+        backgroundImageAssetId,
+        backgroundImageCleared: customDeviceDraft.backgroundImageCleared
       },
       terminalType: terminalTypes[0] ?? "ac",
       terminalCount: terminalTypes.length,
@@ -4925,7 +4997,9 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       return;
     }
     const terminalAnchors = customDeviceTerminalAnchors.slice(0, terminalTypes.length).map((anchor) => ({ ...anchor }));
-    const backgroundImage = customDeviceImageWithTerminalConnectors(customDeviceDraft.backgroundImage, terminalTypes, terminalAnchors);
+    const backgroundImage = customDeviceDraft.backgroundImageCleared
+      ? ""
+      : customDeviceImageWithTerminalConnectors(customDeviceDraft.backgroundImage, terminalTypes, terminalAnchors);
     const backgroundImageAssetId = customDeviceDraft.backgroundImageAssetId && backgroundImage === `/api/images/${customDeviceDraft.backgroundImageAssetId}`
       ? customDeviceDraft.backgroundImageAssetId
       : "";
@@ -4972,7 +5046,8 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
           ...(existingOverride?.params ?? {}),
           component_type: componentType,
           backgroundImage,
-          backgroundImageAssetId
+          backgroundImageAssetId,
+          backgroundImageCleared: customDeviceDraft.backgroundImageCleared
         },
         size,
         terminalType: terminalTypes[0] ?? template.terminalType,
@@ -6364,7 +6439,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       const selectedIds = stateIconDrawingDialog.selectedElementIds.length > 0
         ? stateIconDrawingDialog.selectedElementIds
         : [stateIconDrawingDialog.selectedElementId].filter(Boolean);
-      const selectedLayerId = stateIconDrawingDialog.selectedElementId || selectedIds[0] || "";
+      const sidePanelTab = stateIconDrawingDialog.sidePanelTab === "selected" ? "selected" : "global";
       const frame = { ...STATE_ICON_DRAFT_FRAME, ...(stateIconDrawingDialog.frame ?? {}) };
       const frameDashArray = stateIconDrawingFrameDashArray(frame);
       const frameRect = stateIconDrawingFrameRect
@@ -6624,93 +6699,93 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
               </div>
             </div>
             <div className="state-icon-drawing-side">
-              <div className="state-icon-drawing-state-info">
-                <strong>状态信息</strong>
-                {!isDefaultStatePage && selectedStateRow && (
-                  <div className="state-icon-drawing-property-grid">
-                    <label>
-                      状态值
-                      <BufferedTextInput value={selectedStateRow.value} onCommit={(value) => handlers.update(selectedStateRowId, { value })} />
-                    </label>
-                    <label>
-                      状态名称
-                      <BufferedTextInput value={selectedStateRow.name} onCommit={(value) => handlers.update(selectedStateRowId, { name: value })} />
-                    </label>
-                  </div>
-                )}
+              <div className="state-icon-drawing-side-tabs" role="tablist" aria-label="图案属性页面">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={sidePanelTab === "global"}
+                  className={sidePanelTab === "global" ? "active" : ""}
+                  onClick={() => setStateIconDrawingDialog((current) => current ? { ...current, sidePanelTab: "global" } : current)}
+                >
+                  全局信息
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={sidePanelTab === "selected"}
+                  className={sidePanelTab === "selected" ? "active" : ""}
+                  onClick={() => setStateIconDrawingDialog((current) => current ? { ...current, sidePanelTab: "selected" } : current)}
+                >
+                  选中图元
+                </button>
               </div>
-              <div className="state-icon-drawing-frame-panel">
-                <strong>操作边框</strong>
-                <div className="state-icon-drawing-property-grid">
-                  <label>
-                    线型
-                    <select value={frame.strokeStyle} onChange={(event) => setStateIconFramePatch({ strokeStyle: event.target.value })}>
-                      <option value="solid">实线</option>
-                      <option value="dashed">虚线</option>
-                      <option value="dotted">点线</option>
-                    </select>
-                  </label>
-                  <label className="state-icon-drawing-compact-field">
-                    线宽
-                    <BufferedTextInput
-                      type="number"
-                      min="0"
-                      step={1}
-                      inputMode="numeric"
-                      value={normalizeStateIconDrawingStrokeWidth(frame.strokeWidth)}
-                      onKeyDown={(event) => {
-                        if ([".", "-", "+", "e", "E"].includes(event.key)) {
-                          event.preventDefault();
-                        }
-                      }}
-                      onCommit={(nextValue) => setStateIconFramePatch({ strokeWidth: normalizeStateIconDrawingStrokeWidth(nextValue, frame.strokeWidth) })}
-                    />
-                  </label>
-                  <label>
-                    线色
-                    <div className="state-icon-drawing-color-field">
-                      <DeferredColorInput value={frame.strokeColor} fallback="#94a3b8" onCommit={(value) => setStateIconFramePatch({ strokeColor: value })} />
-                    </div>
-                  </label>
-                  <label>
-                    背景
-                    <div className="state-icon-drawing-color-field">
-                      <DeferredColorInput value={frame.fillColor} fallback="#ffffff" onCommit={(value) => setStateIconFramePatch({ fillColor: value })} />
-                    </div>
-                  </label>
+              {sidePanelTab === "global" && (
+                <div className="state-icon-drawing-state-info state-icon-drawing-tab-panel" role="tabpanel">
+                  <strong>全局信息</strong>
+                  <table className="state-icon-drawing-property-table">
+                    <tbody>
+                      {!isDefaultStatePage && selectedStateRow && (
+                        <>
+                          <tr>
+                            <th>状态值</th>
+                            <td><BufferedTextInput value={selectedStateRow.value} onCommit={(value) => handlers.update(selectedStateRowId, { value })} /></td>
+                          </tr>
+                          <tr>
+                            <th>状态名称</th>
+                            <td><BufferedTextInput value={selectedStateRow.name} onCommit={(value) => handlers.update(selectedStateRowId, { name: value })} /></td>
+                          </tr>
+                        </>
+                      )}
+                      <tr>
+                        <th>边框线型</th>
+                        <td>
+                          <select value={frame.strokeStyle} onChange={(event) => setStateIconFramePatch({ strokeStyle: event.target.value })}>
+                            <option value="solid">实线</option>
+                            <option value="dashed">虚线</option>
+                            <option value="dotted">点线</option>
+                          </select>
+                        </td>
+                      </tr>
+                      <tr>
+                        <th>边框线宽</th>
+                        <td>
+                          <BufferedTextInput
+                            type="number"
+                            min="0"
+                            step={1}
+                            inputMode="numeric"
+                            value={normalizeStateIconDrawingStrokeWidth(frame.strokeWidth)}
+                            onKeyDown={(event) => {
+                              if ([".", "-", "+", "e", "E"].includes(event.key)) {
+                                event.preventDefault();
+                              }
+                            }}
+                            onCommit={(nextValue) => setStateIconFramePatch({ strokeWidth: normalizeStateIconDrawingStrokeWidth(nextValue, frame.strokeWidth) })}
+                          />
+                        </td>
+                      </tr>
+                      <tr>
+                        <th>边框线色</th>
+                        <td>
+                          <div className="state-icon-drawing-color-field">
+                            <DeferredColorInput value={frame.strokeColor} fallback="#94a3b8" onCommit={(value) => setStateIconFramePatch({ strokeColor: value })} />
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <th>背景</th>
+                        <td>
+                          <div className="state-icon-drawing-color-field">
+                            <DeferredColorInput value={frame.fillColor} fallback="#ffffff" onCommit={(value) => setStateIconFramePatch({ fillColor: value })} />
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
-              </div>
-              <div className="state-icon-drawing-layers">
-                <label>
-                  <span>图案图层</span>
-                  <select
-                    value={selectedLayerId}
-                    disabled={stateIconDrawingDialog.elements.length === 0}
-                    onChange={(event) => {
-                      const elementId = event.target.value;
-                      if (elementId) {
-                        stateIconDrawingSelection(elementId, false);
-                        return;
-                      }
-                      setStateIconDrawingDialog((current) => current ? { ...current, selectedElementId: "", selectedElementIds: [] } : current);
-                    }}
-                  >
-                    {stateIconDrawingDialog.elements.length === 0 ? (
-                      <option value="">暂无图案</option>
-                    ) : (
-                      <>
-                        <option value="">未选择图案</option>
-                        {stateIconDrawingDialog.elements.map((element, index) => (
-                          <option key={element.id} value={element.id}>
-                            {index + 1}. {stateVisualShapeLabel(element.kind)}
-                          </option>
-                        ))}
-                      </>
-                    )}
-                  </select>
-                </label>
-              </div>
-              <div className="state-icon-drawing-properties">
+              )}
+              {sidePanelTab === "selected" && (
+                <div className="state-icon-drawing-properties state-icon-drawing-tab-panel" role="tabpanel">
                 {(() => {
                   const selected = stateIconDrawingDialog.elements.find((element) => element.id === stateIconDrawingDialog.selectedElementId) ?? null;
                   if (!selected) {
@@ -6739,181 +6814,210 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                         <strong>{stateVisualShapeLabel(selected.kind)}</strong>
                         <span>{stateIconDrawingSelectedIds(stateIconDrawingDialog).length > 1 ? `${stateIconDrawingSelectedIds(stateIconDrawingDialog).length} 个元素` : "选中元素"}</span>
                       </div>
-                      <div className="state-icon-drawing-property-grid">
-                        <label className="state-icon-drawing-compact-field">
-                          X
-                          <BufferedTextInput type="number" step="0.01" value={formatStateIconDrawingNumber(selected.x)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { x: Number(nextValue) || 0 })} />
-                        </label>
-                        <label className="state-icon-drawing-compact-field">
-                          Y
-                          <BufferedTextInput type="number" step="0.01" value={formatStateIconDrawingNumber(selected.y)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { y: Number(nextValue) || 0 })} />
-                        </label>
-                        <label className="state-icon-drawing-compact-field">
-                          宽
-                          <BufferedTextInput type="number" min="1" step="0.01" value={formatStateIconDrawingNumber(selected.width, 1)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { width: Math.max(1, Number(nextValue) || 1) })} />
-                        </label>
-                        <label className="state-icon-drawing-compact-field">
-                          高
-                          <BufferedTextInput type="number" min="1" step="0.01" value={formatStateIconDrawingNumber(selected.height, 1)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { height: Math.max(1, Number(nextValue) || 1) })} />
-                        </label>
-                        <label className="state-icon-drawing-compact-field">
-                          角度
-                          <BufferedTextInput type="number" step="0.01" value={formatStateIconDrawingNumber(selected.rotation)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { rotation: Number(nextValue) || 0 })} />
-                        </label>
-                        <label className="state-icon-drawing-compact-field">
-                          粗细
-                          <BufferedTextInput
-                            type="number"
-                            min="0"
-                            step={1}
-                            inputMode="numeric"
-                            value={normalizeStateIconDrawingStrokeWidth(selected.strokeWidth)}
-                            onKeyDown={(event) => {
-                              if ([".", "-", "+", "e", "E"].includes(event.key)) {
-                                event.preventDefault();
-                              }
-                            }}
-                            onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { strokeWidth: normalizeStateIconDrawingStrokeWidth(nextValue, selected.strokeWidth) })}
-                          />
-                        </label>
-                        <label>
-                          线型
-                          <select value={selected.strokeStyle ?? "solid"} onChange={(event) => updateStateIconDrawingElement(selected.id, { strokeStyle: event.target.value })}>
-                            <option value="solid">实线</option>
-                            <option value="dashed">虚线</option>
-                            <option value="dotted">点线</option>
-                          </select>
-                        </label>
-                        <label>
-                          所属端子
-                          <select
-                            value={Number.isInteger(selected.terminalIndex) && selected.terminalIndex >= 0 ? String(selected.terminalIndex) : ""}
-                            onChange={(event) => updateStateIconDrawingElement(selected.id, stateIconDrawingTerminalPatch(event.target.value))}
-                          >
-                            <option value="">无</option>
-                            {stateIconDrawingTerminalOptions.map((option) => (
-                              <option key={option.index} value={option.index}>
-                                {option.index + 1}. {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label>
-                          线色
-                          <div className="state-icon-drawing-color-field">
-                            <DeferredColorInput value={visibleStrokeColor} fallback="#2563eb" onCommit={(value) => updateStateIconDrawingElement(selected.id, { strokeColor: value })} />
-                          </div>
-                        </label>
+                      <table className="state-icon-drawing-property-table">
+                        <tbody>
+                        <tr>
+                          <th>X</th>
+                          <td><BufferedTextInput type="number" step="0.01" value={formatStateIconDrawingNumber(selected.x)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { x: Number(nextValue) || 0 })} /></td>
+                        </tr>
+                        <tr>
+                          <th>Y</th>
+                          <td><BufferedTextInput type="number" step="0.01" value={formatStateIconDrawingNumber(selected.y)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { y: Number(nextValue) || 0 })} /></td>
+                        </tr>
+                        <tr>
+                          <th>宽</th>
+                          <td><BufferedTextInput type="number" min="1" step="0.01" value={formatStateIconDrawingNumber(selected.width, 1)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { width: Math.max(1, Number(nextValue) || 1) })} /></td>
+                        </tr>
+                        <tr>
+                          <th>高</th>
+                          <td><BufferedTextInput type="number" min="1" step="0.01" value={formatStateIconDrawingNumber(selected.height, 1)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { height: Math.max(1, Number(nextValue) || 1) })} /></td>
+                        </tr>
+                        <tr>
+                          <th>角度</th>
+                          <td><BufferedTextInput type="number" step="0.01" value={formatStateIconDrawingNumber(selected.rotation)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { rotation: Number(nextValue) || 0 })} /></td>
+                        </tr>
+                        <tr>
+                          <th>粗细</th>
+                          <td>
+                            <BufferedTextInput
+                              type="number"
+                              min="0"
+                              step={1}
+                              inputMode="numeric"
+                              value={normalizeStateIconDrawingStrokeWidth(selected.strokeWidth)}
+                              onKeyDown={(event) => {
+                                if ([".", "-", "+", "e", "E"].includes(event.key)) {
+                                  event.preventDefault();
+                                }
+                              }}
+                              onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { strokeWidth: normalizeStateIconDrawingStrokeWidth(nextValue, selected.strokeWidth) })}
+                            />
+                          </td>
+                        </tr>
+                        <tr>
+                          <th>线型</th>
+                          <td>
+                            <select value={selected.strokeStyle ?? "solid"} onChange={(event) => updateStateIconDrawingElement(selected.id, { strokeStyle: event.target.value })}>
+                              <option value="solid">实线</option>
+                              <option value="dashed">虚线</option>
+                              <option value="dotted">点线</option>
+                            </select>
+                          </td>
+                        </tr>
+                        <tr>
+                          <th>所属端子</th>
+                          <td>
+                            <select
+                              value={Number.isInteger(selected.terminalIndex) && selected.terminalIndex >= 0 ? String(selected.terminalIndex) : ""}
+                              onChange={(event) => updateStateIconDrawingElement(selected.id, stateIconDrawingTerminalPatch(event.target.value))}
+                            >
+                              <option value="">无</option>
+                              {stateIconDrawingTerminalOptions.map((option) => (
+                                <option key={option.index} value={option.index}>
+                                  {option.index + 1}. {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                        </tr>
+                        <tr>
+                          <th>线色</th>
+                          <td>
+                            <div className="state-icon-drawing-color-field">
+                              <DeferredColorInput value={visibleStrokeColor} fallback="#2563eb" onCommit={(value) => updateStateIconDrawingElement(selected.id, { strokeColor: value })} />
+                            </div>
+                          </td>
+                        </tr>
                         {isLineShape && (
                           <>
-                            <label>
-                              起点端型
-                              <select value={selected.startCap ?? "none"} onChange={(event) => updateStateIconDrawingElement(selected.id, { startCap: event.target.value })}>
-                                {STATE_ICON_LINE_CAP_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                              </select>
-                            </label>
-                            <label>
-                              终点端型
-                              <select value={selected.endCap ?? "none"} onChange={(event) => updateStateIconDrawingElement(selected.id, { endCap: event.target.value })}>
-                                {STATE_ICON_LINE_CAP_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                              </select>
-                            </label>
+                            <tr>
+                              <th>起点端型</th>
+                              <td>
+                                <select value={selected.startCap ?? "none"} onChange={(event) => updateStateIconDrawingElement(selected.id, { startCap: event.target.value })}>
+                                  {STATE_ICON_LINE_CAP_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                </select>
+                              </td>
+                            </tr>
+                            <tr>
+                              <th>终点端型</th>
+                              <td>
+                                <select value={selected.endCap ?? "none"} onChange={(event) => updateStateIconDrawingElement(selected.id, { endCap: event.target.value })}>
+                                  {STATE_ICON_LINE_CAP_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                </select>
+                              </td>
+                            </tr>
                           </>
                         )}
                         {isClosedShape && (
-                          <label>
-                            填充
-                            <div className="state-icon-drawing-color-field">
-                              <DeferredColorInput value={selected.fillColor} fallback="#ffffff" onCommit={(value) => updateStateIconDrawingElement(selected.id, { fillColor: value })} />
-                            </div>
-                          </label>
+                          <tr>
+                            <th>填充</th>
+                            <td>
+                              <div className="state-icon-drawing-color-field">
+                                <DeferredColorInput value={selected.fillColor} fallback="#ffffff" onCommit={(value) => updateStateIconDrawingElement(selected.id, { fillColor: value })} />
+                              </div>
+                            </td>
+                          </tr>
                         )}
                         {selected.kind === "text" && (
                           <>
-                            <label>
-                              文本颜色
-                              <div className="state-icon-drawing-color-field">
-                                <DeferredColorInput value={visibleTextColor} fallback="#111827" onCommit={(value) => updateStateIconDrawingElement(selected.id, { textColor: value })} />
-                              </div>
-                            </label>
-                            <label>
-                              字体
-                              <select value={fontFamilyValue} onChange={(event) => updateStateIconDrawingElement(selected.id, { fontFamily: event.target.value })}>
-                                {fontFamilyOptions.map((fontFamily) => (
-                                  <option key={fontFamily} value={fontFamily} style={{ fontFamily }}>
-                                    {fontFamilyOptionLabels[fontFamily] ?? fontFamily}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                            <label className="state-icon-drawing-compact-field">
-                              字号
-                              <BufferedTextInput
-                                type="number"
-                                min={STATE_ICON_DRAWING_MIN_FONT_SIZE}
-                                step={1}
-                                inputMode="numeric"
-                                value={normalizeStateIconDrawingFontSize(selected.fontSize ?? selected.height)}
-                                onKeyDown={(event) => {
-                                  if ([".", "-", "+", "e", "E"].includes(event.key)) {
-                                    event.preventDefault();
-                                  }
-                                }}
-                                onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, {
-                                  fontSize: normalizeStateIconDrawingFontSize(nextValue, selected.fontSize ?? selected.height)
-                                })}
-                              />
-                            </label>
-                            <label>
-                              字重
-                              <select value={String(selected.fontWeight ?? "800")} onChange={(event) => updateStateIconDrawingElement(selected.id, { fontWeight: event.target.value })}>
-                                <option value="400">常规</option>
-                                <option value="700">加粗</option>
-                                <option value="800">特粗</option>
-                              </select>
-                            </label>
-                            <label>
-                              字型
-                              <select value={selected.fontStyle ?? "normal"} onChange={(event) => updateStateIconDrawingElement(selected.id, { fontStyle: event.target.value })}>
-                                <option value="normal">常规</option>
-                                <option value="italic">斜体</option>
-                              </select>
-                            </label>
+                            <tr>
+                              <th>文本颜色</th>
+                              <td>
+                                <div className="state-icon-drawing-color-field">
+                                  <DeferredColorInput value={visibleTextColor} fallback="#111827" onCommit={(value) => updateStateIconDrawingElement(selected.id, { textColor: value })} />
+                                </div>
+                              </td>
+                            </tr>
+                            <tr>
+                              <th>字体</th>
+                              <td>
+                                <select value={fontFamilyValue} onChange={(event) => updateStateIconDrawingElement(selected.id, { fontFamily: event.target.value })}>
+                                  {fontFamilyOptions.map((fontFamily) => (
+                                    <option key={fontFamily} value={fontFamily} style={{ fontFamily }}>
+                                      {fontFamilyOptionLabels[fontFamily] ?? fontFamily}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                            </tr>
+                            <tr>
+                              <th>字号</th>
+                              <td>
+                                <BufferedTextInput
+                                  type="number"
+                                  min={STATE_ICON_DRAWING_MIN_FONT_SIZE}
+                                  step={1}
+                                  inputMode="numeric"
+                                  value={normalizeStateIconDrawingFontSize(selected.fontSize ?? selected.height)}
+                                  onKeyDown={(event) => {
+                                    if ([".", "-", "+", "e", "E"].includes(event.key)) {
+                                      event.preventDefault();
+                                    }
+                                  }}
+                                  onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, {
+                                    fontSize: normalizeStateIconDrawingFontSize(nextValue, selected.fontSize ?? selected.height)
+                                  })}
+                                />
+                              </td>
+                            </tr>
+                            <tr>
+                              <th>字重</th>
+                              <td>
+                                <select value={String(selected.fontWeight ?? "800")} onChange={(event) => updateStateIconDrawingElement(selected.id, { fontWeight: event.target.value })}>
+                                  <option value="400">常规</option>
+                                  <option value="700">加粗</option>
+                                  <option value="800">特粗</option>
+                                </select>
+                              </td>
+                            </tr>
+                            <tr>
+                              <th>字型</th>
+                              <td>
+                                <select value={selected.fontStyle ?? "normal"} onChange={(event) => updateStateIconDrawingElement(selected.id, { fontStyle: event.target.value })}>
+                                  <option value="normal">常规</option>
+                                  <option value="italic">斜体</option>
+                                </select>
+                              </td>
+                            </tr>
                           </>
                         )}
                         {selected.kind !== "text" && (
-                          <label>
-                          文本颜色
-                          <div className="state-icon-drawing-color-field">
-                            <DeferredColorInput value={visibleTextColor} fallback="#111827" onCommit={(value) => updateStateIconDrawingElement(selected.id, { textColor: value })} />
-                          </div>
-                          </label>
+                          <tr>
+                            <th>文本颜色</th>
+                            <td>
+                              <div className="state-icon-drawing-color-field">
+                                <DeferredColorInput value={visibleTextColor} fallback="#111827" onCommit={(value) => updateStateIconDrawingElement(selected.id, { textColor: value })} />
+                              </div>
+                            </td>
+                          </tr>
                         )}
-                        <label className="state-icon-drawing-text-field state-icon-drawing-text-compact-field">
-                          文字
-                          <BufferedTextInput value={selected.text} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { text: nextValue })} />
-                        </label>
+                        <tr>
+                          <th>文字</th>
+                          <td><BufferedTextInput value={selected.text} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { text: nextValue })} /></td>
+                        </tr>
                         {selected.kind === "image" && (
                           <>
-                            <label>
-                              图片缩放
-                              <BufferedTextInput type="number" min="0.05" step="0.01" value={formatStateIconDrawingNumber(selected.imageScale ?? 1, 1)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { imageScale: Math.max(0.05, Number(nextValue) || 0.05) })} />
-                            </label>
-                            <label>
-                              裁剪X
-                              <BufferedTextInput type="number" step="0.01" value={formatStateIconDrawingNumber(selected.cropX ?? 0)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { cropX: Number(nextValue) || 0 })} />
-                            </label>
-                            <label>
-                              裁剪Y
-                              <BufferedTextInput type="number" step="0.01" value={formatStateIconDrawingNumber(selected.cropY ?? 0)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { cropY: Number(nextValue) || 0 })} />
-                            </label>
+                            <tr>
+                              <th>图片缩放</th>
+                              <td><BufferedTextInput type="number" min="0.05" step="0.01" value={formatStateIconDrawingNumber(selected.imageScale ?? 1, 1)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { imageScale: Math.max(0.05, Number(nextValue) || 0.05) })} /></td>
+                            </tr>
+                            <tr>
+                              <th>裁剪X</th>
+                              <td><BufferedTextInput type="number" step="0.01" value={formatStateIconDrawingNumber(selected.cropX ?? 0)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { cropX: Number(nextValue) || 0 })} /></td>
+                            </tr>
+                            <tr>
+                              <th>裁剪Y</th>
+                              <td><BufferedTextInput type="number" step="0.01" value={formatStateIconDrawingNumber(selected.cropY ?? 0)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { cropY: Number(nextValue) || 0 })} /></td>
+                            </tr>
                           </>
                         )}
-                      </div>
+                        </tbody>
+                      </table>
                     </>
                   );
                 })()}
               </div>
+              )}
             </div>
           </div>
         </div>

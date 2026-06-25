@@ -8,6 +8,7 @@ import {
   createEditableStateIconElementsFromSvgSource,
   createImportedStateIconElement,
   createStateIconDrawingElement,
+  createStateIconDrawingInitialElements,
   createStateDraftRow,
   createStateDraftRowFromDefaultVisual,
   createStateIconDrawingElementFromGeneratedGroupMarkup,
@@ -16,6 +17,7 @@ import {
   nextNonDefaultStateIndex,
   nonDefaultStateDraftRows,
   normalizeStatePageId,
+  normalizeStateDraftRows,
   stateVisualShapeLabel,
   svgSourceFromDataUrl,
   stateIconDrawingPreviewNeedsDirectElementRender,
@@ -72,6 +74,19 @@ describe("default device state draft rows", () => {
     expect(row.image).toBe("default.svg");
     expect(row.text).toBe("D");
     expect(row.strokeColor).toBe("#123456");
+  });
+
+  test("preserves explicit cleared state visuals", () => {
+    const row = createStateDraftRow({ value: "0", name: "清空", imageCleared: "1" });
+
+    expect(row.imageCleared).toBe("1");
+    expect(normalizeStateDraftRows([row])[0]?.imageCleared).toBe("1");
+  });
+
+  test("does not create fallback drawing elements for explicitly cleared visuals", () => {
+    const row = createStateDraftRow({ value: "0", name: "清空", imageCleared: "1" });
+
+    expect(createStateIconDrawingInitialElements(row, {})).toEqual([]);
   });
 
   test("persists custom device terminal connector lines inside svg images", () => {
@@ -695,6 +710,67 @@ describe("default device state draft rows", () => {
     });
     expect(restored[0].svgSource).toContain('viewBox="-72 -32 144 64"');
     expect(restored[0].svgSource).not.toContain('viewBox="0 0 240 160"');
+  });
+
+  test("does not restore generated frame markup as an editable drawing element", () => {
+    const element = {
+      ...createStateIconDrawingElement("circle"),
+      id: "circle-with-frame",
+      x: 120,
+      y: 80
+    };
+    const imageSource = decodeURIComponent(stateIconDrawingToImage([element], {
+      frameHasTerminals: true,
+      frame: {
+        strokeStyle: "dashed",
+        strokeWidth: 1,
+        strokeColor: "#64748b",
+        fillColor: "transparent"
+      }
+    }).split(",")[1] ?? "");
+
+    const restored = createEditableStateIconElementsFromSvgSource(imageSource, "状态0");
+
+    expect(imageSource).toContain('data-state-icon-frame="true"');
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toMatchObject({ kind: "circle" });
+  });
+
+  test("restores generated rectangle drawing elements after saving and reopening", () => {
+    const rectangle = {
+      ...createStateIconDrawingElement("rectangle"),
+      id: "saved-rectangle",
+      x: 118,
+      y: 112,
+      width: 132,
+      height: 32,
+      strokeWidth: 5,
+      strokeColor: "#4361ee",
+      fillColor: "transparent"
+    };
+    const imageSource = decodeURIComponent(stateIconDrawingToImage([rectangle], {
+      frameHasTerminals: true,
+      frame: {
+        strokeStyle: "dashed",
+        strokeWidth: 1,
+        strokeColor: "#64748b",
+        fillColor: "transparent"
+      }
+    }).split(",")[1] ?? "");
+
+    const restored = createEditableStateIconElementsFromSvgSource(imageSource, "状态0");
+
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toMatchObject({
+      kind: "rectangle",
+      x: 118,
+      y: 112,
+      width: 132,
+      height: 32,
+      strokeWidth: 5,
+      strokeColor: "#4361ee",
+      fillColor: "transparent"
+    });
   });
 
   test("applies edited stroke attributes to imported SVG layers", () => {

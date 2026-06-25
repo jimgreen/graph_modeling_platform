@@ -1705,6 +1705,7 @@ export type CustomDeviceDraft = {
   componentName: string;
   backgroundImage: string;
   backgroundImageAssetId: string;
+  backgroundImageCleared: string;
   size: { width: number; height: number };
   allowResizeTransform: string;
   terminalCount: number;
@@ -1722,6 +1723,7 @@ export type CustomDeviceDraft = {
 export type DeviceDefinitionVisualDraft = {
   backgroundImage: string;
   backgroundImageAssetId: string;
+  backgroundImageCleared: string;
   size: { width: number; height: number };
   terminalCount: number;
   terminalTypes: TerminalType[];

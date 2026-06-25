@@ -4549,12 +4549,14 @@ useEffect(() => {
     customDeviceDialogView,
     customDeviceDraft.backgroundImage,
     customDeviceDraft.backgroundImageAssetId,
+    customDeviceDraft.backgroundImageCleared,
     customDeviceDraft.stateDefinitions,
     customDeviceDraft.terminalCount,
     customIconStatePageId,
     customDeviceStatePageId,
     definitionVisualDraft?.backgroundImage,
     definitionVisualDraft?.backgroundImageAssetId,
+    definitionVisualDraft?.backgroundImageCleared,
     definitionStateDraftRows,
     definitionStatePageId,
     deviceDefinitionDialogOpen,
@@ -4584,7 +4586,8 @@ useEffect(() => {
         }
         const imageFieldsAlreadySynced =
           definitionVisualDraft.backgroundImage === stateIconDrawingInlineImage &&
-          !definitionVisualDraft.backgroundImageAssetId;
+          !definitionVisualDraft.backgroundImageAssetId &&
+          (definitionVisualDraft.backgroundImageCleared ?? "") === (stateIconDrawingInlineImage ? "" : "1");
         if (imageFieldsAlreadySynced) {
           return;
         }
@@ -4594,6 +4597,7 @@ useEffect(() => {
                 ...current,
                 backgroundImage: stateIconDrawingInlineImage,
                 backgroundImageAssetId: "",
+                backgroundImageCleared: stateIconDrawingInlineImage ? "" : "1",
                 error: ""
               }
             : current
@@ -4601,7 +4605,8 @@ useEffect(() => {
       } else {
         const imageFieldsAlreadySynced =
           customDeviceDraft.backgroundImage === stateIconDrawingInlineImage &&
-          !customDeviceDraft.backgroundImageAssetId;
+          !customDeviceDraft.backgroundImageAssetId &&
+          (customDeviceDraft.backgroundImageCleared ?? "") === (stateIconDrawingInlineImage ? "" : "1");
         if (imageFieldsAlreadySynced) {
           return;
         }
@@ -4609,6 +4614,7 @@ useEffect(() => {
           ...current,
           backgroundImage: stateIconDrawingInlineImage,
           backgroundImageAssetId: "",
+          backgroundImageCleared: stateIconDrawingInlineImage ? "" : "1",
           error: ""
         }));
       }
@@ -4625,7 +4631,8 @@ useEffect(() => {
       (row.image ?? "") === stateIconDrawingInlineImage &&
       !row.imageAssetId &&
       !row.backgroundImage &&
-      !row.backgroundImageAssetId;
+      !row.backgroundImageAssetId &&
+      (row.imageCleared ?? "") === (stateIconDrawingInlineImage ? "" : "1");
     if (imageFieldsAlreadySynced) {
       return;
     }
@@ -4633,7 +4640,8 @@ useEffect(() => {
       image: stateIconDrawingInlineImage,
       imageAssetId: "",
       backgroundImage: "",
-      backgroundImageAssetId: ""
+      backgroundImageAssetId: "",
+      imageCleared: stateIconDrawingInlineImage ? "" : "1"
     };
     if (stateIconDrawingDialog.target.scope === "definition") {
       updateDefinitionStateDraftRow(stateIconDrawingDialog.target.rowId, stateIconDrawingInlinePatch);
