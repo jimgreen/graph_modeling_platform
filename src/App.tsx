@@ -4814,8 +4814,25 @@ const renderTemplateLibraryPanel = () => (
               value={mode}
               checked={templateLibraryDisplayMode === mode}
               onChange={() => setTemplateLibraryDisplayMode(mode)}
+              onClick={() => {
+                // 已选中时重复点击：切换折叠层全部展开/全部收缩
+                if (templateLibraryDisplayMode !== mode) return;
+                setExpandedGraphTemplateTypes((current) =>
+                  current.length === 0 ? [...displayedGraphTemplateTypes] : []
+                );
+              }}
             />
             <span>{label}</span>
+            {templateLibraryDisplayMode === mode && (() => {
+              // 当前选中模式：图标反映折叠层全部展开/全部收缩
+              const total = displayedGraphTemplateTypes.length;
+              if (total === 0) return null;
+              const allExpanded = expandedGraphTemplateTypes.length >= total;
+              const allCollapsed = expandedGraphTemplateTypes.length === 0;
+              if (allExpanded) return <ChevronDown size={12} aria-hidden="true" />;
+              if (allCollapsed) return <ChevronRight size={12} aria-hidden="true" />;
+              return null;
+            })()}
           </label>
         ))}
       </div>
