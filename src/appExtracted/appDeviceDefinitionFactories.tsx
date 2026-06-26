@@ -628,6 +628,7 @@ function createTemplateDefaultStateIconImage(__appScope: Record<string, any>, te
     Array.from({ length: terminalCount }, () => template.terminalType ?? "ac")
   ).slice(0, terminalCount);
   const terminalTypes = sourceTerminalTypes.length > 0 ? sourceTerminalTypes : [template.terminalType ?? "ac"];
+  const explicitStatus = options.status !== undefined && options.status !== null && String(options.status) !== "";
   const visualTemplate = {
     ...template,
     label: options.label || template.label,
@@ -637,6 +638,9 @@ function createTemplateDefaultStateIconImage(__appScope: Record<string, any>, te
       backgroundImage: "",
       backgroundImageAssetId: ""
     },
+    ...(explicitStatus
+      ? { params: { ...template.params, status: String(options.status), backgroundImage: "", backgroundImageAssetId: "" } }
+      : {}),
     terminalType: terminalTypes[0] ?? template.terminalType,
     terminalCount,
     terminalTypes,
@@ -644,15 +648,98 @@ function createTemplateDefaultStateIconImage(__appScope: Record<string, any>, te
     terminalAnchors: (options.terminalAnchors ?? template.terminalAnchors ?? []).slice(0, terminalCount)
   };
   const node = createNodeFromTemplate(visualTemplate, { x: 0, y: 0 });
-  const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette, stateVisual: null }));
-  const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette, stateVisual: null }));
+  if (explicitStatus) {
+    node.params = { ...node.params, status: String(options.status) };
+  }
+  const stateVisual = options.stateVisual ?? null;
+  const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette, stateVisual }));
+  const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette, stateVisual }));
   const padding = 12;
   const viewBoxX = -width / 2 - padding;
   const viewBoxY = -height / 2 - padding;
   const viewBoxWidth = width + padding * 2;
   const viewBoxHeight = height + padding * 2;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="${formatSvgNumber(viewBoxX)} ${formatSvgNumber(viewBoxY)} ${formatSvgNumber(viewBoxWidth)} ${formatSvgNumber(viewBoxHeight)}"><g transform="${escapeXml(nodeGeometryTransform(node))}">${glyphMarkup}${glyphTextMarkup}</g></svg>`;
+  const drawingWidth = 240;
+  const drawingHeight = 160;
+  const contentWidth = terminalCount > 0 ? drawingWidth * 3 / 4 : drawingWidth;
+  const contentHeight = terminalCount > 0 ? drawingHeight * 3 / 4 : drawingHeight;
+  const contentCenterX = drawingWidth / 2;
+  const contentCenterY = drawingHeight / 2;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${formatSvgNumber(drawingWidth)}" height="${formatSvgNumber(drawingHeight)}" viewBox="0 0 ${formatSvgNumber(drawingWidth)} ${formatSvgNumber(drawingHeight)}">` +
+    `<g data-state-icon-layer-width="${formatSvgNumber(contentWidth)}" data-state-icon-layer-height="${formatSvgNumber(contentHeight)}" transform="translate(${formatSvgNumber(contentCenterX)} ${formatSvgNumber(contentCenterY)})">` +
+    `<svg x="${formatSvgNumber(-contentWidth / 2)}" y="${formatSvgNumber(-contentHeight / 2)}" width="${formatSvgNumber(contentWidth)}" height="${formatSvgNumber(contentHeight)}" viewBox="${formatSvgNumber(viewBoxX)} ${formatSvgNumber(viewBoxY)} ${formatSvgNumber(viewBoxWidth)} ${formatSvgNumber(viewBoxHeight)}" preserveAspectRatio="xMidYMid meet">` +
+    `<g transform="${escapeXml(nodeGeometryTransform(node))}">${glyphMarkup}${glyphTextMarkup}</g>` +
+    `</svg></g></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function isGeneratedTemplateDefaultStateIconImage(value: unknown) {
+  const image = String(value ?? "");
+  if (!image.startsWith("data:image/svg+xml")) {
+    return false;
+  }
+  const payload = image.includes(",") ? image.slice(image.indexOf(",") + 1) : image;
+  try {
+    const decoded = decodeURIComponent(payload);
+    return (
+      decoded.includes("data-state-icon-layer-width") ||
+      decoded.includes("data-state-icon-layer-height") ||
+      decoded.includes("data-custom-device-persisted-terminal-connectors") ||
+      (
+        decoded.includes('width="240"') &&
+        decoded.includes('height="160"') &&
+        decoded.includes('d="M -64 0 H 64"') &&
+        decoded.includes(">文本框</text>")
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
+function clearGeneratedDefinitionVisualDraftImage(template: any, draft: any) {
+  if (!template || template.custom || !draft || !isGeneratedTemplateDefaultStateIconImage(draft.backgroundImage)) {
+    return draft;
+  }
+  return {
+    ...draft,
+    backgroundImage: "",
+    backgroundImageAssetId: "",
+    backgroundImageCleared: ""
+  };
+}
+
+function createDefinitionStateDraftRowsWithDefaultImages(__appScope: Record<string, any>, template: any) {
+  const { createDefinitionStateDraftRows, imageAssets = {} } = __appScope;
+  const rows = createDefinitionStateDraftRows(template);
+  if (!template || template.custom) {
+    return rows;
+  }
+  return rows.map((row: any) => {
+    const imageAssetHref = row.imageAssetId ? imageAssets[row.imageAssetId] : "";
+    const backgroundImageAssetHref = row.backgroundImageAssetId ? imageAssets[row.backgroundImageAssetId] : "";
+    const hasCustomStateImage = Boolean(
+      (row.image && !isGeneratedTemplateDefaultStateIconImage(row.image)) ||
+      (row.imageAssetId && !isGeneratedTemplateDefaultStateIconImage(imageAssetHref)) ||
+      (row.backgroundImage && !isGeneratedTemplateDefaultStateIconImage(row.backgroundImage)) ||
+      (row.backgroundImageAssetId && !isGeneratedTemplateDefaultStateIconImage(backgroundImageAssetHref)) ||
+      row.imageCleared
+    );
+    if (hasCustomStateImage) {
+      return row;
+    }
+    const image = createTemplateDefaultStateIconImage(__appScope, template, {
+      status: row.value,
+      stateVisual: row
+    });
+    return {
+      ...row,
+      image,
+      imageAssetId: "",
+      imageCleared: image ? "" : "1"
+    };
+  });
 }
 
 export function createOpenEdgeContextMenu(__appScope: Record<string, any>) {
@@ -2770,8 +2857,13 @@ export function createDefinitionDefaultStateVisualDraft(__appScope: Record<strin
         textColor: params.textColor || ""
       };
     }
-    const sourceImage = definitionVisualDraft?.backgroundImage || params.backgroundImage || "";
-    const sourceImageAssetId = definitionVisualDraft?.backgroundImageAssetId || params.backgroundImageAssetId || "";
+    const rawSourceImage = definitionVisualDraft?.backgroundImage || params.backgroundImage || "";
+    const sourceImage = selectedDefinitionTemplate && !selectedDefinitionTemplate.custom && isGeneratedTemplateDefaultStateIconImage(rawSourceImage)
+      ? ""
+      : rawSourceImage;
+    const sourceImageAssetId = sourceImage
+      ? definitionVisualDraft?.backgroundImageAssetId || params.backgroundImageAssetId || ""
+      : "";
     const templateImage = !sourceImage && !sourceImageAssetId
       ? createTemplateDefaultStateIconImage(__appScope, selectedDefinitionTemplate, {
           size: definitionVisualDraft?.size,
@@ -2886,8 +2978,9 @@ export function createUpdateDefinitionTerminalAnchorFromPreview(__appScope: Reco
 
 export function createLoadDefinitionTemplateDraft(__appScope: Record<string, any>) {
   return (template: DeviceTemplate) => {
-  const { DEFAULT_STATE_PAGE_ID, attributeLibraryComponentTypeKey, createDefinitionDraftRows, createDefinitionStateDraftRows, createDefinitionVisualDraft, normalizeAttributeLibraryName, resolveTemplateComponentType, setCollapsedDefinitionComponentTypes, setDefinitionDraftError, setDefinitionDraftRows, setDefinitionDraftSection, setDefinitionStateDraftRows, setDefinitionStatePageId, setDefinitionTerminalAnchorDragIndex, setDefinitionVisualDraft, setExpandedDefinitionGroups, setSelectedDefinitionKind } = __appScope;
-    const stateRows = createDefinitionStateDraftRows(template);
+  const { DEFAULT_STATE_PAGE_ID, attributeLibraryComponentTypeKey, createDefinitionDraftRows, createDefinitionVisualDraft, normalizeAttributeLibraryName, resolveTemplateComponentType, setCollapsedDefinitionComponentTypes, setDefinitionDraftError, setDefinitionDraftRows, setDefinitionDraftSection, setDefinitionStateDraftRows, setDefinitionStatePageId, setDefinitionTerminalAnchorDragIndex, setDefinitionVisualDraft, setExpandedDefinitionGroups, setSelectedDefinitionKind } = __appScope;
+    const stateRows = createDefinitionStateDraftRowsWithDefaultImages(__appScope, template);
+    const visualDraft = clearGeneratedDefinitionVisualDraftImage(template, createDefinitionVisualDraft(template));
     setSelectedDefinitionKind(template.kind);
     const group = normalizeAttributeLibraryName(template.attributeLibrary);
     const componentType = resolveTemplateComponentType(template);
@@ -2898,7 +2991,7 @@ export function createLoadDefinitionTemplateDraft(__appScope: Record<string, any
     setDefinitionStatePageId(DEFAULT_STATE_PAGE_ID);
     setDefinitionDraftSection(componentType);
     setDefinitionDraftError("");
-    setDefinitionVisualDraft(createDefinitionVisualDraft(template));
+    setDefinitionVisualDraft(visualDraft);
     setDefinitionTerminalAnchorDragIndex(null);
   };
 }
@@ -3367,10 +3460,11 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
       width: Math.max(1, Math.round(definitionVisualDraft.size.width || selectedDefinitionTemplate.size.width || 104)),
       height: Math.max(1, Math.round(definitionVisualDraft.size.height || selectedDefinitionTemplate.size.height || 64))
     };
+    const hasGeneratedDefinitionBackground = !selectedDefinitionTemplate.custom && isGeneratedTemplateDefaultStateIconImage(definitionVisualDraft.backgroundImage);
     const backgroundParams = {
-      backgroundImage: definitionVisualDraft.backgroundImage,
-      backgroundImageAssetId: definitionVisualDraft.backgroundImageAssetId,
-      backgroundImageCleared: definitionVisualDraft.backgroundImageCleared
+      backgroundImage: hasGeneratedDefinitionBackground ? "" : definitionVisualDraft.backgroundImage,
+      backgroundImageAssetId: hasGeneratedDefinitionBackground ? "" : definitionVisualDraft.backgroundImageAssetId,
+      backgroundImageCleared: hasGeneratedDefinitionBackground ? "" : definitionVisualDraft.backgroundImageCleared
     };
     if (selectedDefinitionTemplate.custom) {
       setCustomDeviceTemplates((current) =>
@@ -3426,7 +3520,7 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
       });
     }
     const nextStateRows = stateDefinitions.map((definition) => createStateDraftRow(definition));
-    setDefinitionVisualDraft((current) => current ? { ...current, size, terminalLabels, terminalAnchors, error: "" } : current);
+    setDefinitionVisualDraft((current) => current ? { ...current, size, terminalLabels, terminalAnchors, ...backgroundParams, error: "" } : current);
     setDefinitionStateDraftRows(nextStateRows);
     setDefinitionStatePageId(nextStateRows.find((row) => row.value === activeStateValue)?.id ?? DEFAULT_STATE_PAGE_ID);
     setDefinitionTerminalAnchorDragIndex(null);
@@ -4291,9 +4385,15 @@ export function createSelectCustomComponentTemplate(__appScope: Record<string, a
       customComponentSelectionFrameRef.current = null;
     }
     const nextDraft = createCustomDeviceDraftFromTemplate(template, section);
+    const nextStateDefinitions = template.custom || typeof __appScope.createDefinitionStateDraftRows !== "function"
+      ? nextDraft.stateDefinitions
+      : createDefinitionStateDraftRowsWithDefaultImages(__appScope, template);
+    const draftWithStateVisuals = nextStateDefinitions === nextDraft.stateDefinitions
+      ? nextDraft
+      : { ...nextDraft, stateDefinitions: nextStateDefinitions };
     const editableDraft = customDeviceDefinitionMode === "edit" && !template.custom
-      ? { ...nextDraft, error: "" }
-      : nextDraft;
+      ? { ...draftWithStateVisuals, error: "" }
+      : draftWithStateVisuals;
     setSelectedDefinitionKind(template.kind);
     setDefinitionDraftSection(section);
     setCustomComponentTreeSelection({ kind: "component", attributeLibraryName, section, templateKind: template.kind });
@@ -5111,10 +5211,12 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       saveStateVisuals?: () => void;
       saveStateVisualsLabel?: string;
       drawingScope?: "definition" | "custom";
+      definitionTemplate?: any;
+      terminalGeometryTemplate?: any;
       hideDefaultPage?: boolean;
     }
   ) => {
-  const { BufferedTextInput, COMPONENT_TYPE_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, DEFAULT_STATE_PAGE_ID, DEVICE_LIBRARY, DeferredColorInput, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, MemoDeviceGlyph, STATE_ICON_LINE_CAP_OPTIONS, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, addStateIconDrawingElement, appendNonDefaultStateDraftRow, button, circle, colorPalette, createNodeFromTemplate, createStateDraftRowFromDefaultVisual, createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, customDeviceTerminalAnchorDragIndex, customDeviceTerminalAnchorValue, customDeviceTerminalAnchors, customDraftTerminalTypes, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionTerminalAnchorDragIndex, definitionVisualDraft, definitionVisualTerminalAnchors, definitionVisualTerminalTypes, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, image, isDefaultStatePageId, label, line, nextNonDefaultStateIndex, nodeGeometryTransform, nonDefaultStateDraftRows, projectCustomDeviceTerminalAnchorToBoundary, rect, resolveTemplateComponentType, setCustomDeviceDraft, setCustomDeviceTerminalAnchorDragIndex, setDefinitionStateDraftRows, setDefinitionTerminalAnchorDragIndex, setImagePickerCategoryFilter, setImagePickerSearchQuery, setImagePickerSourceFilter, setImageTarget, setStateIconDrawingContextMenu, setStateIconDrawingDialog, setStateIconDrawingImageVisibleFrames, setStateIconDrawingSvgVisibleFrames, small, span, stateDraftRowId, stateIconDrawingClipboardRef, stateIconDrawingContextMenu, stateIconDrawingDialog, stateIconDrawingElementId, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, stateIconDrawingFrameRect, stateIconDrawingHistoryRef, stateIconDrawingImageVisibleFrames, stateIconDrawingKeyDown, stateIconDrawingPointer, stateIconDrawingPreviewNeedsDirectElementRender, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingSvgVisibleFrames, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, terminalColor, text, updateCustomDeviceTerminalAnchor, updateDefinitionTerminalAnchor, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
+  const { BufferedTextInput, COMPONENT_TYPE_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, DEFAULT_STATE_PAGE_ID, DEVICE_LIBRARY, DeferredColorInput, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, MemoDeviceGlyph, STATE_ICON_LINE_CAP_OPTIONS, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, addStateIconDrawingElement, appendNonDefaultStateDraftRow, button, circle, colorPalette, createNodeFromTemplate, createStateDraftRowFromDefaultVisual, createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, customDeviceTerminalAnchorDragIndex, customDeviceTerminalAnchorValue, customDeviceTerminalAnchors, customDraftTerminalTypes, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionTerminalAnchorDragIndex, definitionVisualDraft, definitionVisualTerminalAnchors, definitionVisualTerminalTypes, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, getNodeScaleX, getNodeScaleY, image, isDefaultStatePageId, label, line, nextNonDefaultStateIndex, nodeGeometryTransform, nonDefaultStateDraftRows, projectCustomDeviceTerminalAnchorToBoundary, rect, resolveTemplateComponentType, selectedDefinitionTemplate, setCustomDeviceDraft, setCustomDeviceTerminalAnchorDragIndex, setDefinitionStateDraftRows, setDefinitionTerminalAnchorDragIndex, setImagePickerCategoryFilter, setImagePickerSearchQuery, setImagePickerSourceFilter, setImageTarget, setStateIconDrawingContextMenu, setStateIconDrawingDialog, setStateIconDrawingImageVisibleFrames, setStateIconDrawingSvgVisibleFrames, small, span, stateDraftRowId, stateIconDrawingClipboardRef, stateIconDrawingContextMenu, stateIconDrawingDialog, stateIconDrawingElementId, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, stateIconDrawingFrameRect, stateIconDrawingHistoryRef, stateIconDrawingImageVisibleFrames, stateIconDrawingKeyDown, stateIconDrawingPointer, stateIconDrawingPreviewNeedsDirectElementRender, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingSvgVisibleFrames, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, terminalColor, terminalRenderLocalPoint, terminalStubSegment, terminalStubStrokeWidth, text, updateCustomDeviceTerminalAnchor, updateDefinitionTerminalAnchor, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
     const hideDefaultPage = handlers.hideDefaultPage === true;
     const displayRows = hideDefaultPage ? rows : nonDefaultStateDraftRows(rows);
     const defaultVisual = handlers.drawingScope === "definition"
@@ -5532,10 +5634,86 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
     const stateIconTerminalDragIndex = handlers.drawingScope === "definition" ? definitionTerminalAnchorDragIndex : customDeviceTerminalAnchorDragIndex;
     const setStateIconTerminalDragIndex = handlers.drawingScope === "definition" ? setDefinitionTerminalAnchorDragIndex : setCustomDeviceTerminalAnchorDragIndex;
     const updateStateIconTerminalAnchor = handlers.drawingScope === "definition" ? updateDefinitionTerminalAnchor : updateCustomDeviceTerminalAnchor;
+    const stateIconGeometryTemplate = handlers.terminalGeometryTemplate
+      ?? handlers.definitionTemplate
+      ?? (handlers.drawingScope === "definition" ? selectedDefinitionTemplate : null);
+    const stateIconUsesCanvasTerminalGeometry = Boolean(
+      handlers.drawingScope &&
+      stateIconGeometryTemplate &&
+      !stateIconGeometryTemplate.custom &&
+      stateIconDrawingTerminalDraft &&
+      createNodeFromTemplate &&
+      terminalRenderLocalPoint &&
+      terminalStubSegment
+    );
+    const stateIconCanvasTerminalNode = stateIconUsesCanvasTerminalGeometry
+      ? createNodeFromTemplate({
+          ...stateIconGeometryTemplate,
+          size: stateIconDrawingTerminalDraft.size,
+          terminalCount: stateIconDrawingTerminalCount,
+          terminalTypes: stateIconDrawingTerminalTypes,
+          terminalLabels: stateIconDrawingTerminalLabels,
+          terminalAnchors: stateIconTerminalAnchors
+        }, { x: 0, y: 0 })
+      : null;
+    const stateIconCanvasTerminalContent = (() => {
+      if (!stateIconCanvasTerminalNode) {
+        return null;
+      }
+      const size = stateIconCanvasTerminalNode.size ?? { width: 104, height: 64 };
+      const radians = ((Number(stateIconCanvasTerminalNode.rotation) || 0) * Math.PI) / 180;
+      const cos = Math.cos(radians);
+      const sin = Math.sin(radians);
+      const rawWidth = Math.max(1, Number(size.width) * Math.abs(getNodeScaleX ? getNodeScaleX(stateIconCanvasTerminalNode) : 1));
+      const rawHeight = Math.max(1, Number(size.height) * Math.abs(getNodeScaleY ? getNodeScaleY(stateIconCanvasTerminalNode) : 1));
+      const rotatedWidth = Math.abs(rawWidth * cos) + Math.abs(rawHeight * sin);
+      const rotatedHeight = Math.abs(rawWidth * sin) + Math.abs(rawHeight * cos);
+      const viewBoxWidth = Math.max(1, rotatedWidth + 24);
+      const viewBoxHeight = Math.max(1, rotatedHeight + 24);
+      const scale = Math.min(stateIconTerminalFrame.width / viewBoxWidth, stateIconTerminalFrame.height / viewBoxHeight);
+      return {
+        node: stateIconCanvasTerminalNode,
+        scale: Number.isFinite(scale) && scale > 0 ? scale : 1,
+        centerX: stateIconTerminalFrame.centerX,
+        centerY: stateIconTerminalFrame.centerY
+      };
+    })();
     const stateIconTerminalAnchorType = (index: number) =>
       (Array.isArray(stateIconDrawingTerminalTypes) ? stateIconDrawingTerminalTypes[index] : "") || stateIconDrawingTerminalDraft?.terminalType || "ac";
+    const stateIconDisplayedBoundaryAnchor = (anchor: Point) => {
+      const sourceAnchor = projectCustomDeviceTerminalAnchorToBoundary(anchor);
+      const node = stateIconCanvasTerminalContent?.node;
+      if (!node) {
+        return sourceAnchor;
+      }
+      const scaleSignX = Math.sign(getNodeScaleX ? getNodeScaleX(node) : 1) || 1;
+      const scaleSignY = Math.sign(getNodeScaleY ? getNodeScaleY(node) : 1) || 1;
+      const radians = ((Number(node.rotation) || 0) * Math.PI) / 180;
+      const cos = Math.cos(radians);
+      const sin = Math.sin(radians);
+      return projectCustomDeviceTerminalAnchorToBoundary({
+        x: sourceAnchor.x * scaleSignX * cos - sourceAnchor.y * scaleSignY * sin,
+        y: sourceAnchor.x * scaleSignX * sin + sourceAnchor.y * scaleSignY * cos
+      });
+    };
+    const stateIconSourceBoundaryAnchorFromDisplayed = (anchor: Point) => {
+      const displayedAnchor = projectCustomDeviceTerminalAnchorToBoundary(anchor);
+      const node = stateIconCanvasTerminalContent?.node;
+      if (!node) {
+        return displayedAnchor;
+      }
+      const scaleSignX = Math.sign(getNodeScaleX ? getNodeScaleX(node) : 1) || 1;
+      const scaleSignY = Math.sign(getNodeScaleY ? getNodeScaleY(node) : 1) || 1;
+      const radians = ((Number(node.rotation) || 0) * Math.PI) / 180;
+      const cos = Math.cos(radians);
+      const sin = Math.sin(radians);
+      return projectCustomDeviceTerminalAnchorToBoundary({
+        x: (displayedAnchor.x * cos + displayedAnchor.y * sin) * scaleSignX,
+        y: (-displayedAnchor.x * sin + displayedAnchor.y * cos) * scaleSignY
+      });
+    };
     const stateIconTerminalConnectorSegment = (anchor: Point) => {
-      const boundaryAnchor = projectCustomDeviceTerminalAnchorToBoundary(anchor);
+      const boundaryAnchor = stateIconDisplayedBoundaryAnchor(anchor);
       const from = {
         x: stateIconTerminalFrame.centerX + boundaryAnchor.x * stateIconTerminalFrame.width,
         y: stateIconTerminalFrame.centerY + boundaryAnchor.y * stateIconTerminalFrame.height
@@ -5557,7 +5735,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         x: (point.x - stateIconTerminalFrame.centerX) / stateIconTerminalFrame.width,
         y: (point.y - stateIconTerminalFrame.centerY) / stateIconTerminalFrame.height
       });
-      updateStateIconTerminalAnchor(index, nextAnchor);
+      updateStateIconTerminalAnchor(index, stateIconSourceBoundaryAnchorFromDisplayed(nextAnchor));
     };
     const finishStateIconTerminalDrag = (event: PointerEvent<SVGSVGElement>) => {
       if (stateIconTerminalDragIndex === null || stateIconTerminalDragIndex === undefined) {
@@ -5593,6 +5771,66 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       const anchors = Array.isArray(stateIconTerminalAnchors) ? stateIconTerminalAnchors.slice(0, stateIconDrawingTerminalCount) : [];
       if (anchors.length === 0) {
         return null;
+      }
+      if (stateIconCanvasTerminalContent) {
+        return (
+          <g className="state-icon-terminal-base-layer state-icon-terminal-canvas-geometry-layer">
+            <g className="state-icon-terminal-connector-layer">
+              {anchors.map((anchor, index) => {
+                const segment = stateIconTerminalConnectorSegment(anchor);
+                const terminalType = stateIconTerminalAnchorType(index);
+                return (
+                  <line
+                    key={`state-icon-terminal-canvas-connector-${index}`}
+                    className="custom-device-terminal-connector state-icon-terminal-connector"
+                    x1={segment.from.x}
+                    y1={segment.from.y}
+                    x2={segment.to.x}
+                    y2={segment.to.y}
+                    stroke={terminalColor(terminalType, colorPalette)}
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    vectorEffect="non-scaling-stroke"
+                    style={{ "--terminal-color": terminalColor(terminalType, colorPalette) } as CSSProperties}
+                  />
+                );
+              })}
+            </g>
+            <g className="state-icon-terminal-anchor-layer">
+              {anchors.map((anchor, index) => {
+                const segment = stateIconTerminalConnectorSegment(anchor);
+                const terminalType = stateIconTerminalAnchorType(index);
+                const dragging = stateIconTerminalDragIndex === index;
+                return (
+                  <g
+                    key={`state-icon-terminal-canvas-anchor-${index}`}
+                    className={`custom-device-terminal-anchor state-icon-terminal-anchor ${dragging ? "dragging" : ""}`}
+                    transform={`translate(${formatSvgNumber(segment.to.x)} ${formatSvgNumber(segment.to.y)})`}
+                    style={{ "--terminal-color": terminalColor(terminalType, colorPalette) } as CSSProperties}
+                  >
+                    <circle
+                      r="7"
+                      onPointerDown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const svg = event.currentTarget.ownerSVGElement;
+                        if (!svg) {
+                          return;
+                        }
+                        setStateIconTerminalDragIndex?.(index);
+                        svg.setPointerCapture?.(event.pointerId);
+                        updateStateIconTerminalAnchorFromDrawing(index, event as unknown as PointerEvent<SVGSVGElement>);
+                      }}
+                    >
+                      <title>{`拖动调整端子${index + 1}位置`}</title>
+                    </circle>
+                    <text x="0" y="0">{index + 1}</text>
+                  </g>
+                );
+              })}
+            </g>
+          </g>
+        );
       }
       return (
         <g className="state-icon-terminal-base-layer">
@@ -7174,8 +7412,9 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
           saveStateVisuals: saveDeviceDefinitionStateVisualDraft,
           saveStateVisualsLabel: "保存状态样式",
           drawingScope: "definition",
+          definitionTemplate: template,
           reset: () => {
-            const stateRows = createDefinitionStateDraftRows(template);
+            const stateRows = createDefinitionStateDraftRowsWithDefaultImages(__appScope, template);
             setDefinitionStateDraftRows(stateRows);
             setDefinitionStatePageId(DEFAULT_STATE_PAGE_ID);
             setDefinitionDraftError("");
@@ -7252,8 +7491,8 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
               <button
                 type="button"
                 onClick={() => {
-                  const stateRows = createDefinitionStateDraftRows(template);
-                  setDefinitionVisualDraft(createDefinitionVisualDraft(template));
+                  const stateRows = createDefinitionStateDraftRowsWithDefaultImages(__appScope, template);
+                  setDefinitionVisualDraft(clearGeneratedDefinitionVisualDraftImage(template, createDefinitionVisualDraft(template)));
                   setDefinitionStateDraftRows(stateRows);
                   setDefinitionStatePageId(DEFAULT_STATE_PAGE_ID);
                   setDefinitionDraftError("");

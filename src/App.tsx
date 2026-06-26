@@ -513,7 +513,7 @@ import {
 } from "./staticRenderUtils";
 import { DeviceGlyph, MemoDeviceGlyph, SvgMarkupChunk } from "./DeviceGlyph";
 import { buildSvgNodeLabelMarkup, svgDisplayAttribute, exportSvgSafeId, exportSvgLayerId, exportSvgUniqueId, exportSvgLayerScriptMarkup, exportDeviceMetadataAttributes, exportMeasurementGroupMetadataAttributes, exportMeasurementItemMetadataAttributes, exportMeasurementGroupBackgroundColor, exportMeasurementGroupBorderColor, exportMeasurementGroupBorderWidth, exportMeasurementGroupBorderDashArray, exportMeasurementGroupAnchorPoint, exportMeasurementGroupLocalOffset, exportMeasurementGroupMetrics, buildExportMeasurementGroupMarkup } from "./svgExportUtils";
-import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_PAGE_ID, isDefaultStatePageId, createStateDraftRow, createStateDraftRowFromDefaultVisual, defaultStateDraftRow, createDefinitionStateDraftRows, normalizeStateDraftRows, validateStateDraftRows, stateVisualFromDraftRow, activeStateDraftRow, normalizeStatePageId, stateDraftImageValue, stateVisualShapeLabel, generateStateVisualShapeImage, stateIconDrawingElementId, visibleStateIconColor, createStateIconDrawingElement, createImportedStateIconElement, svgSourceFromDataUrl, parseStateIconSvgSource, stateIconSvgElementSource, parseSvgStyleAttribute, stateIconSvgReactAttributes, stateIconSvgNodeChildren, stateIconSvgNodeToReact, stateIconSvgSourceToReactNodes, createEditableStateIconElementsFromSvgSource, createStateIconDrawingInitialElements, svgSourceToDataUrl, stateIconDrawingSvgElementMarkup, stateIconDrawingElementMarkup, stateIconDrawingToImage, stateIconDrawingFrameRect, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "./stateIconDrawing";
+import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_PAGE_ID, isDefaultStatePageId, createStateDraftRow, createStateDraftRowFromDefaultVisual, defaultStateDraftRow, createDefinitionStateDraftRows, normalizeStateDraftRows, validateStateDraftRows, stateVisualFromDraftRow, activeStateDraftRow, normalizeStatePageId, stateDraftImageValue, stateIconDrawingDraftSourceImage, stateIconDrawingInlineNeedsDraftReload, stateIconDrawingInlineCanPersistDraft, stateVisualShapeLabel, generateStateVisualShapeImage, stateIconDrawingElementId, visibleStateIconColor, createStateIconDrawingElement, createImportedStateIconElement, svgSourceFromDataUrl, parseStateIconSvgSource, stateIconSvgElementSource, parseSvgStyleAttribute, stateIconSvgReactAttributes, stateIconSvgNodeChildren, stateIconSvgNodeToReact, stateIconSvgSourceToReactNodes, createEditableStateIconElementsFromSvgSource, createStateIconDrawingInitialElements, svgSourceToDataUrl, stateIconDrawingSvgElementMarkup, stateIconDrawingElementMarkup, stateIconDrawingToImage, stateIconDrawingFrameRect, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "./stateIconDrawing";
 import { fallbackComponentTypeForAttributeLibrary, resolveTemplateComponentType, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, isReservedDeviceDefinitionParamName, createDefinitionDraftRows, normalizeCustomDeviceTerminalAnchorCoordinate, projectCustomDeviceTerminalAnchorToBoundary, customDeviceTerminalAnchorKey, hasOverlappingCustomDeviceTerminalAnchors, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, createCustomDeviceDraftFromTemplate, createDefinitionVisualDraft, defaultContainerAssociationForTerminalType, isAssociationAllowedForTerminal, normalizeContainerTerminalAssociations, customDefaultDefinitions, generateCustomDeviceImage, customDeviceImageWithTerminalConnectors, customDeviceGeneratedDefaultImageCandidates, syncInheritedCustomDeviceStateVisuals, parseCustomDefinitions, screenToSvgPoint, primaryOrthogonalAxis, constrainPointToOrthogonalAxis } from "./customDeviceUtils";
 import { useBatchEditors } from "./hooks/useBatchEditors";
 import { APP_STATIC_SCOPE } from "./appExtracted/appStaticScope";
@@ -585,7 +585,7 @@ const stateIconDrawingSvgRef = useRef<SVGSVGElement | null>(null); Object.assign
 const stateIconDrawingDragRef = useRef<StateIconDrawingDragState | null>(null); Object.assign(__appScope, { stateIconDrawingDragRef });
 const stateIconDrawingHistoryRef = useRef<StateIconDrawingElement[][]>([]); Object.assign(__appScope, { stateIconDrawingHistoryRef });
 const stateIconDrawingClipboardRef = useRef<StateIconDrawingElement[]>([]); Object.assign(__appScope, { stateIconDrawingClipboardRef });
-const stateIconDrawingInitialImageRef = useRef<{ key: string; image: string } | null>(null);
+const stateIconDrawingInitialImageRef = useRef<{ key: string; image: string; sourceImage: string } | null>(null);
 const modelImportInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { modelImportInputRef });
 const modelImportTargetSchemeIdRef = useRef<string>(""); Object.assign(__appScope, { modelImportTargetSchemeIdRef });
 const schemeImportInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { schemeImportInputRef });
@@ -4505,19 +4505,32 @@ useEffect(() => {
     }
     const targetKey = stateIconDrawingInlineTargetKey;
     setStateIconDrawingDialog((current) => {
-      if (
+      const row = stateIconDrawingDraftRowForTarget(stateIconDrawingInlineTarget);
+      const draftSourceImage = stateIconDrawingDraftSourceImage(row, imageAssets);
+      const initialSnapshot = stateIconDrawingInitialImageRef.current;
+      const targetMatches = Boolean(
         current?.target.scope === stateIconDrawingInlineTarget.scope &&
-        current.target.rowId === stateIconDrawingInlineTarget.rowId &&
-        stateIconDrawingInitialImageRef.current?.key === targetKey
+        current.target.rowId === stateIconDrawingInlineTarget.rowId
+      );
+      if (
+        initialSnapshot &&
+        !stateIconDrawingInlineNeedsDraftReload({
+          targetMatches,
+          keyMatches: initialSnapshot.key === targetKey,
+          initialImage: initialSnapshot.image,
+          inlineImage: stateIconDrawingInlineImage,
+          initialSourceImage: initialSnapshot.sourceImage,
+          draftSourceImage
+        })
       ) {
         return current;
       }
-      const row = stateIconDrawingDraftRowForTarget(stateIconDrawingInlineTarget);
       const initial = createStateIconDrawingInitialElements(row, imageAssets);
       stateIconDrawingHistoryRef.current = [];
       setStateIconDrawingContextMenu(null);
       stateIconDrawingInitialImageRef.current = {
         key: targetKey,
+        sourceImage: draftSourceImage,
         image: initial.length > 0 ? stateIconDrawingToImage(initial, {
           resolveImageHref: resolveStateIconDrawingImageHref,
           frame: {
@@ -4562,6 +4575,7 @@ useEffect(() => {
     deviceDefinitionDialogOpen,
     deviceDefinitionView,
     imageAssets,
+    stateIconDrawingInlineImage,
     stateIconDrawingInlineTargetKey,
     stateIconDrawingInlineTarget?.rowId,
     stateIconDrawingInlineTarget?.scope
@@ -4570,13 +4584,21 @@ useEffect(() => {
     if (!stateIconDrawingDialog) {
       return;
     }
-    const targetKey =
+    const targetMatches = Boolean(
       stateIconDrawingInlineTarget &&
       stateIconDrawingDialog.target.scope === stateIconDrawingInlineTarget.scope &&
       stateIconDrawingDialog.target.rowId === stateIconDrawingInlineTarget.rowId
-        ? stateIconDrawingInlineTargetKey
-        : `${stateIconDrawingDialog.target.scope}:${stateIconDrawingDialog.target.rowId}`;
-    if (stateIconDrawingInitialImageRef.current?.key === targetKey && stateIconDrawingInitialImageRef.current.image === stateIconDrawingInlineImage) {
+    );
+    const initialSnapshot = stateIconDrawingInitialImageRef.current;
+    if (
+      !initialSnapshot ||
+      !stateIconDrawingInlineCanPersistDraft({
+        targetMatches,
+        keyMatches: initialSnapshot.key === stateIconDrawingInlineTargetKey,
+        initialImage: initialSnapshot.image,
+        inlineImage: stateIconDrawingInlineImage
+      })
+    ) {
       return;
     }
     if (isDefaultStatePageId(stateIconDrawingDialog.target.rowId)) {

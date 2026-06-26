@@ -4,6 +4,7 @@ import {
   DEFAULT_STATE_NAME,
   DEFAULT_STATE_PAGE_ID,
   DEFAULT_STATE_VALUE,
+  activeStateDraftRow,
   appendNonDefaultStateDraftRow,
   createEditableStateIconElementsFromSvgSource,
   createImportedStateIconElement,
@@ -22,10 +23,21 @@ import {
   stateIconSvgReactAttributes,
   svgSourceFromDataUrl,
   stateIconDrawingPreviewNeedsDirectElementRender,
+  stateIconDrawingDraftSourceImage,
+  stateIconDrawingInlineCanPersistDraft,
+  stateIconDrawingInlineNeedsDraftReload,
   stateIconDrawingToImage,
   upsertDefaultStateDraftRow
 } from "./stateIconDrawing";
-import { DEVICE_LIBRARY } from "./model";
+import {
+  DEVICE_LIBRARY,
+  createNodeFromTemplate,
+  getNodeScaleX,
+  getNodeScaleY,
+  terminalRenderLocalPoint,
+  terminalStubSegment,
+  terminalStubStrokeWidth
+} from "./model";
 import { APP_STATIC_SCOPE } from "./appExtracted/appStaticScope";
 import {
   createAddCustomDeviceStateDraftRow,
@@ -34,11 +46,128 @@ import {
   createStateIconDrawingKeyDown,
   createStateIconDrawingElementFromStaticTemplate,
   createCustomDeviceDefaultStateVisualDraft,
+  createDefinitionDefaultStateVisualDraft,
+  createLoadDefinitionTemplateDraft,
+  createRenderStateVisualPager,
+  createRenderDeviceDefinitionVisualPanel,
   createSelectCustomComponentTemplate
 } from "./appExtracted/appDeviceDefinitionFactories";
-import { createCustomDeviceDraftFromTemplate, customDeviceImageWithTerminalConnectors, generateCustomDeviceImage, resolveTemplateComponentType } from "./customDeviceUtils";
+import { createCustomDeviceDraftFromTemplate, customDeviceImageWithTerminalConnectors, generateCustomDeviceImage, projectCustomDeviceTerminalAnchorToBoundary, resolveTemplateComponentType } from "./customDeviceUtils";
 
 describe("default device state draft rows", () => {
+  test("resolves the source image used to initialize state icon drawing", () => {
+    const assetHref = "data:image/svg+xml;utf8,%3Csvg%20viewBox%3D%220%200%2010%2010%22%2F%3E";
+    const directHref = "data:image/svg+xml;utf8,%3Csvg%20viewBox%3D%220%200%2020%2020%22%2F%3E";
+    const row = createStateDraftRow({
+      value: "0",
+      name: "打开",
+      image: directHref,
+      imageAssetId: "state-asset"
+    });
+
+    expect(stateIconDrawingDraftSourceImage(row, { "state-asset": assetHref })).toBe(assetHref);
+    expect(stateIconDrawingDraftSourceImage({ ...row, imageCleared: "1" }, { "state-asset": assetHref })).toBe("");
+  });
+
+  test("reloads inline state icon drawing only for external draft image changes", () => {
+    const unchanged = {
+      targetMatches: true,
+      keyMatches: true,
+      initialImage: "serialized-old-drawing",
+      inlineImage: "serialized-old-drawing",
+      initialSourceImage: "old-row-image.svg",
+      draftSourceImage: "old-row-image.svg"
+    };
+
+    expect(stateIconDrawingInlineNeedsDraftReload(unchanged)).toBe(false);
+    expect(stateIconDrawingInlineNeedsDraftReload({
+      ...unchanged,
+      draftSourceImage: "regenerated-model-glyph.svg"
+    })).toBe(true);
+    expect(stateIconDrawingInlineNeedsDraftReload({
+      ...unchanged,
+      inlineImage: "user-edited-drawing.svg",
+      draftSourceImage: "regenerated-model-glyph.svg"
+    })).toBe(false);
+    expect(stateIconDrawingInlineNeedsDraftReload({
+      ...unchanged,
+      targetMatches: false
+    })).toBe(true);
+  });
+
+  test("does not persist stale inline drawing when the target key has changed", () => {
+    expect(stateIconDrawingInlineCanPersistDraft({
+      targetMatches: true,
+      keyMatches: false,
+      initialImage: "old-template-image.svg",
+      inlineImage: "old-template-image.svg"
+    })).toBe(false);
+
+    expect(stateIconDrawingInlineCanPersistDraft({
+      targetMatches: false,
+      keyMatches: true,
+      initialImage: "old-template-image.svg",
+      inlineImage: "edited-image.svg"
+    })).toBe(false);
+
+    expect(stateIconDrawingInlineCanPersistDraft({
+      targetMatches: true,
+      keyMatches: true,
+      initialImage: "old-template-image.svg",
+      inlineImage: "edited-image.svg"
+    })).toBe(true);
+
+    expect(stateIconDrawingInlineCanPersistDraft({
+      targetMatches: true,
+      keyMatches: true,
+      initialImage: "old-template-image.svg",
+      inlineImage: "old-template-image.svg"
+    })).toBe(false);
+  });
+
+  const findElementByText = (node: any, text: string): any => {
+    if (!node || typeof node !== "object") {
+      return null;
+    }
+    if (node.type === "button" && node.props?.children === text) {
+      return node;
+    }
+    const children = node.props?.children;
+    const childList = Array.isArray(children) ? children : [children];
+    for (const child of childList) {
+      const found = findElementByText(child, text);
+      if (found) {
+        return found;
+      }
+    }
+    return null;
+  };
+
+  const findElementsByClassName = (node: any, className: string): any[] => {
+    if (!node || typeof node !== "object") {
+      return [];
+    }
+    const ownClassName = typeof node.props?.className === "string" ? node.props.className : "";
+    const ownMatches = ownClassName.split(/\s+/).includes(className) ? [node] : [];
+    const children = node.props?.children;
+    const childList = Array.isArray(children) ? children : [children];
+    return ownMatches.concat(childList.flatMap((child) => findElementsByClassName(child, className)));
+  };
+
+  const pointFromTranslate = (transform: string) => {
+    const match = /translate\(([-\d.]+)[ ,]+([-\d.]+)\)/.exec(transform);
+    expect(match).toBeTruthy();
+    return {
+      x: Number(match?.[1] ?? 0),
+      y: Number(match?.[2] ?? 0)
+    };
+  };
+
+  const decodeSvgDataUrl = (value: string) => {
+    const payload = value.includes(",") ? value.slice(value.indexOf(",") + 1) : value;
+    return decodeURIComponent(payload);
+  };
+
   test("uses a synthetic default row when no state definitions exist", () => {
     const row = defaultStateDraftRow([], { image: "default.svg" });
 
@@ -401,6 +530,609 @@ describe("default device state draft rows", () => {
     expect(defaultVisual.image).not.toBe(placeholderImage);
   });
 
+  test("loads built-in binary state pages with status-specific default state images", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-breaker");
+    expect(template).toBeTruthy();
+    if (!template) {
+      return;
+    }
+    let stateRows: any[] = [];
+    const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
+      DEFAULT_STATE_PAGE_ID,
+      DeviceGlyph: ({ node, stateVisual }: any) => `<path data-status="${node.params.status}" data-state="${stateVisual?.value ?? ""}"/>`,
+      attributeLibraryComponentTypeKey: (group: string, componentType: string) => `${group}:${componentType}`,
+      colorDisplayMode: "energy",
+      colorPalette: {},
+      createDefinitionDraftRows: () => [],
+      createDefinitionStateDraftRows: () => [
+        createStateDraftRow({ value: "0", name: "打开/开断" }),
+        createStateDraftRow({ value: "1", name: "闭合" })
+      ],
+      createDefinitionVisualDraft: () => ({}),
+      createNodeFromTemplate: (sourceTemplate: any) => ({
+        kind: sourceTemplate.kind,
+        size: sourceTemplate.size,
+        rotation: sourceTemplate.rotation ?? 0,
+        params: sourceTemplate.params
+      }),
+      escapeXml: (value: string) => value,
+      formatSvgNumber: (value: number) => String(value),
+      nodeGeometryTransform: () => "",
+      normalizeAttributeLibraryName: (value: string) => value,
+      renderSvgElementMarkup: (markup: string) => markup,
+      resolveTemplateComponentType: () => "ACBreak",
+      setCollapsedDefinitionComponentTypes: (updater: any) => {
+        updater([]);
+      },
+      setDefinitionDraftError: () => undefined,
+      setDefinitionDraftRows: () => undefined,
+      setDefinitionDraftSection: () => undefined,
+      setDefinitionStateDraftRows: (rows: any[]) => {
+        stateRows = rows;
+      },
+      setDefinitionStatePageId: () => undefined,
+      setDefinitionTerminalAnchorDragIndex: () => undefined,
+      setDefinitionVisualDraft: () => undefined,
+      setExpandedDefinitionGroups: (updater: any) => {
+        updater([]);
+      },
+      setSelectedDefinitionKind: () => undefined
+    });
+
+    loadDefinitionTemplateDraft(template);
+
+    expect(stateRows).toHaveLength(2);
+    expect(stateRows[0].value).toBe("0");
+    expect(stateRows[0].image).toMatch(/^data:image\/svg\+xml/);
+    expect(decodeSvgDataUrl(stateRows[0].image)).toContain('data-status="0"');
+    expect(decodeSvgDataUrl(stateRows[0].image)).toContain('data-state="0"');
+    expect(stateRows[1].value).toBe("1");
+    expect(stateRows[1].image).toMatch(/^data:image\/svg\+xml/);
+    expect(decodeSvgDataUrl(stateRows[1].image)).toContain('data-status="1"');
+    expect(decodeSvgDataUrl(stateRows[1].image)).toContain('data-state="1"');
+  });
+
+  test("loads built-in binary state pages with model-glyph images for each status", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-breaker");
+    expect(template).toBeTruthy();
+    if (!template) {
+      return;
+    }
+    let stateRows: any[] = [];
+    const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
+      DEFAULT_STATE_PAGE_ID,
+      DeviceGlyph: ({ node, stateVisual }: any) => `<path data-status="${node.params.status}" data-state="${stateVisual?.value ?? ""}"/>`,
+      attributeLibraryComponentTypeKey: (group: string, componentType: string) => `${group}:${componentType}`,
+      colorDisplayMode: "energy",
+      colorPalette: {},
+      createDefinitionDraftRows: () => [],
+      createDefinitionStateDraftRows: () => [
+        createStateDraftRow({ value: "0", name: "打开/开断" }),
+        createStateDraftRow({ value: "1", name: "闭合" })
+      ],
+      createDefinitionVisualDraft: () => ({
+        size: { ...template.size },
+        terminalCount: template.terminalCount,
+        terminalTypes: [],
+        terminalLabels: [],
+        terminalAnchors: template.terminalAnchors ?? [],
+        backgroundImage: "",
+        backgroundImageAssetId: "",
+        backgroundImageCleared: "",
+        error: ""
+      }),
+      createNodeFromTemplate: (sourceTemplate: any) => ({
+        kind: sourceTemplate.kind,
+        size: sourceTemplate.size,
+        rotation: sourceTemplate.rotation ?? 0,
+        params: sourceTemplate.params
+      }),
+      escapeXml: (value: string) => value,
+      formatSvgNumber: (value: number) => String(value),
+      nodeGeometryTransform: () => "",
+      normalizeAttributeLibraryName: (value: string) => value,
+      renderSvgElementMarkup: (markup: string) => markup,
+      resolveTemplateComponentType: () => "ACBreak",
+      setCollapsedDefinitionComponentTypes: (updater: any) => {
+        updater([]);
+      },
+      setDefinitionDraftError: () => undefined,
+      setDefinitionDraftRows: () => undefined,
+      setDefinitionDraftSection: () => undefined,
+      setDefinitionStateDraftRows: (rows: any[]) => {
+        stateRows = rows;
+      },
+      setDefinitionStatePageId: () => undefined,
+      setDefinitionTerminalAnchorDragIndex: () => undefined,
+      setDefinitionVisualDraft: () => undefined,
+      setExpandedDefinitionGroups: (updater: any) => {
+        updater([]);
+      },
+      setSelectedDefinitionKind: () => undefined
+    });
+
+    loadDefinitionTemplateDraft(template);
+
+    expect(stateRows).toHaveLength(2);
+    expect(stateRows[0].value).toBe("0");
+    expect(stateRows[0].image).toMatch(/^data:image\/svg\+xml/);
+    expect(decodeSvgDataUrl(stateRows[0].image)).toContain('data-status="0"');
+    expect(decodeSvgDataUrl(stateRows[0].image)).toContain('data-state="0"');
+    expect(stateRows[1].value).toBe("1");
+    expect(stateRows[1].image).toMatch(/^data:image\/svg\+xml/);
+    expect(decodeSvgDataUrl(stateRows[1].image)).toContain('data-status="1"');
+    expect(decodeSvgDataUrl(stateRows[1].image)).toContain('data-state="1"');
+  });
+
+  test("loads built-in breaker state pages with the model canvas open and closed glyph paths", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-breaker");
+    expect(template).toBeTruthy();
+    if (!template) {
+      return;
+    }
+    let stateRows: any[] = [];
+    const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
+      ...APP_STATIC_SCOPE,
+      setCollapsedDefinitionComponentTypes: (updater: any) => {
+        updater([]);
+      },
+      setDefinitionDraftError: () => undefined,
+      setDefinitionDraftRows: () => undefined,
+      setDefinitionDraftSection: () => undefined,
+      setDefinitionStateDraftRows: (rows: any[]) => {
+        stateRows = rows;
+      },
+      setDefinitionStatePageId: () => undefined,
+      setDefinitionTerminalAnchorDragIndex: () => undefined,
+      setDefinitionVisualDraft: () => undefined,
+      setExpandedDefinitionGroups: (updater: any) => {
+        updater([]);
+      },
+      setSelectedDefinitionKind: () => undefined
+    });
+
+    loadDefinitionTemplateDraft(template);
+
+    const openSvg = decodeSvgDataUrl(stateRows.find((row) => row.value === "0")?.image ?? "");
+    const closedSvg = decodeSvgDataUrl(stateRows.find((row) => row.value === "1")?.image ?? "");
+    expect(openSvg).toContain('d="M -8 8 L 8 -8"');
+    expect(openSvg).not.toContain('d="M -10 0 H 10"');
+    expect(closedSvg).toContain('d="M -10 0 H 10"');
+    expect(closedSvg).not.toContain('d="M -8 8 L 8 -8"');
+  });
+
+  test("loads built-in switch, disconnector, and breaker state pages with distinct status glyphs", () => {
+    const binaryKinds = [
+      "ac-switch",
+      "dc-switch",
+      "ac-ground-disconnector",
+      "ac-ground-disconnector-vertical",
+      "ac-breaker",
+      "ac-box-breaker",
+      "dc-breaker"
+    ];
+
+    for (const kind of binaryKinds) {
+      const template = DEVICE_LIBRARY.find((item) => item.kind === kind);
+      expect(template).toBeTruthy();
+      if (!template) {
+        continue;
+      }
+      let stateRows: any[] = [];
+      const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
+        ...APP_STATIC_SCOPE,
+        setCollapsedDefinitionComponentTypes: (updater: any) => {
+          updater([]);
+        },
+        setDefinitionDraftError: () => undefined,
+        setDefinitionDraftRows: () => undefined,
+        setDefinitionDraftSection: () => undefined,
+        setDefinitionStateDraftRows: (rows: any[]) => {
+          stateRows = rows;
+        },
+        setDefinitionStatePageId: () => undefined,
+        setDefinitionTerminalAnchorDragIndex: () => undefined,
+        setDefinitionVisualDraft: () => undefined,
+        setExpandedDefinitionGroups: (updater: any) => {
+          updater([]);
+        },
+        setSelectedDefinitionKind: () => undefined
+      });
+
+      loadDefinitionTemplateDraft(template);
+
+      const openSvg = decodeSvgDataUrl(stateRows.find((row) => row.value === "0")?.image ?? "");
+      const closedSvg = decodeSvgDataUrl(stateRows.find((row) => row.value === "1")?.image ?? "");
+      expect(openSvg).toMatch(/^<svg\b/);
+      expect(closedSvg).toMatch(/^<svg\b/);
+      expect(openSvg).not.toBe(closedSvg);
+    }
+  });
+
+  test("refreshes stale generated fallback drawings on built-in breaker state pages", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-breaker");
+    expect(template).toBeTruthy();
+    if (!template) {
+      return;
+    }
+    const staleFallbackImage = stateIconDrawingToImage([
+      createStateIconDrawingElement("line"),
+      createStateIconDrawingElement("text")
+    ]);
+    let stateRows: any[] = [];
+    const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
+      ...APP_STATIC_SCOPE,
+      imageAssets: {
+        staleFallback: staleFallbackImage
+      },
+      createDefinitionStateDraftRows: () => [
+        createStateDraftRow({ value: "0", name: "打开/开断", image: staleFallbackImage }),
+        createStateDraftRow({ value: "1", name: "闭合", imageAssetId: "staleFallback" })
+      ],
+      setCollapsedDefinitionComponentTypes: (updater: any) => {
+        updater([]);
+      },
+      setDefinitionDraftError: () => undefined,
+      setDefinitionDraftRows: () => undefined,
+      setDefinitionDraftSection: () => undefined,
+      setDefinitionStateDraftRows: (rows: any[]) => {
+        stateRows = rows;
+      },
+      setDefinitionStatePageId: () => undefined,
+      setDefinitionTerminalAnchorDragIndex: () => undefined,
+      setDefinitionVisualDraft: () => undefined,
+      setExpandedDefinitionGroups: (updater: any) => {
+        updater([]);
+      },
+      setSelectedDefinitionKind: () => undefined
+    });
+
+    loadDefinitionTemplateDraft(template);
+
+    const openSvg = decodeSvgDataUrl(stateRows.find((row) => row.value === "0")?.image ?? "");
+    const closedSvg = decodeSvgDataUrl(stateRows.find((row) => row.value === "1")?.image ?? "");
+    expect(openSvg).toContain('d="M -8 8 L 8 -8"');
+    expect(openSvg).not.toContain('M -64 0 H 64');
+    expect(closedSvg).toContain('d="M -10 0 H 10"');
+    expect(closedSvg).not.toContain('M -64 0 H 64');
+  });
+
+  test("removes generated default device SVG images from built-in binary state pages", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-breaker");
+    expect(template).toBeTruthy();
+    if (!template) {
+      return;
+    }
+    let stateRows: any[] = [];
+    const generatedImage = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160"><g data-state-icon-layer-width="180" data-state-icon-layer-height="120"></g></svg>'
+    )}`;
+    const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
+      DEFAULT_STATE_PAGE_ID,
+      attributeLibraryComponentTypeKey: (group: string, componentType: string) => `${group}:${componentType}`,
+      createDefinitionDraftRows: () => [],
+      createDefinitionStateDraftRows: () => [
+        createStateDraftRow({ value: "0", name: "打开/开断", image: generatedImage }),
+        createStateDraftRow({ value: "1", name: "闭合" })
+      ],
+      createDefinitionVisualDraft: () => ({}),
+      normalizeAttributeLibraryName: (value: string) => value,
+      resolveTemplateComponentType: () => "ACBreak",
+      setCollapsedDefinitionComponentTypes: (updater: any) => {
+        updater([]);
+      },
+      setDefinitionDraftError: () => undefined,
+      setDefinitionDraftRows: () => undefined,
+      setDefinitionDraftSection: () => undefined,
+      setDefinitionStateDraftRows: (rows: any[]) => {
+        stateRows = rows;
+      },
+      setDefinitionStatePageId: () => undefined,
+      setDefinitionTerminalAnchorDragIndex: () => undefined,
+      setDefinitionVisualDraft: () => undefined,
+      setExpandedDefinitionGroups: (updater: any) => {
+        updater([]);
+      },
+      setSelectedDefinitionKind: () => undefined
+    });
+
+    loadDefinitionTemplateDraft(template);
+
+    expect(stateRows[0].image).toBe("");
+    expect(stateRows[0].imageAssetId).toBe("");
+    expect(stateRows[1].image).toBe("");
+  });
+
+  test("removes generated terminal connector background images from built-in definition drafts", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "two-port-heat-load-vertical");
+    expect(template).toBeTruthy();
+    if (!template) {
+      return;
+    }
+    const generatedImage = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160"><g data-custom-device-persisted-terminal-connectors="true"><line x1="0" y1="80" x2="30" y2="80"/></g></svg>'
+    )}`;
+    let visualDraft: any = null;
+    const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
+      DEFAULT_STATE_PAGE_ID,
+      attributeLibraryComponentTypeKey: (group: string, componentType: string) => `${group}:${componentType}`,
+      createDefinitionDraftRows: () => [],
+      createDefinitionStateDraftRows: () => [],
+      createDefinitionVisualDraft: () => ({
+        backgroundImage: generatedImage,
+        backgroundImageAssetId: "stale",
+        backgroundImageCleared: "",
+        size: { ...template.size },
+        terminalCount: template.terminalCount,
+        terminalTypes: template.terminalTypes ?? [],
+        terminalLabels: template.terminalLabels ?? [],
+        terminalAnchors: template.terminalAnchors ?? [],
+        error: ""
+      }),
+      normalizeAttributeLibraryName: (value: string) => value,
+      resolveTemplateComponentType: () => "HeatLoad2",
+      setCollapsedDefinitionComponentTypes: (updater: any) => {
+        updater([]);
+      },
+      setDefinitionDraftError: () => undefined,
+      setDefinitionDraftRows: () => undefined,
+      setDefinitionDraftSection: () => undefined,
+      setDefinitionStateDraftRows: () => undefined,
+      setDefinitionStatePageId: () => undefined,
+      setDefinitionTerminalAnchorDragIndex: () => undefined,
+      setDefinitionVisualDraft: (draft: any) => {
+        visualDraft = draft;
+      },
+      setExpandedDefinitionGroups: (updater: any) => {
+        updater([]);
+      },
+      setSelectedDefinitionKind: () => undefined
+    });
+
+    loadDefinitionTemplateDraft(template);
+
+    expect(visualDraft.backgroundImage).toBe("");
+    expect(visualDraft.backgroundImageAssetId).toBe("");
+    expect(visualDraft.backgroundImageCleared).toBe("");
+  });
+
+  test("ignores generated terminal connector background images for built-in default visuals", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "two-port-heat-load-vertical");
+    expect(template).toBeTruthy();
+    if (!template) {
+      return;
+    }
+    const generatedImage = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160"><g data-custom-device-persisted-terminal-connectors="true"><line x1="0" y1="80" x2="30" y2="80"/></g></svg>'
+    )}`;
+    const defaultVisual = createDefinitionDefaultStateVisualDraft({
+      definitionVisualDraft: {
+        backgroundImage: generatedImage,
+        backgroundImageAssetId: "",
+        backgroundImageCleared: "",
+        size: { ...template.size },
+        terminalCount: template.terminalCount,
+        terminalTypes: template.terminalTypes ?? [],
+        terminalLabels: template.terminalLabels ?? [],
+        terminalAnchors: template.terminalAnchors ?? []
+      },
+      selectedDefinitionTemplate: {
+        ...template,
+        params: {
+          ...template.params,
+          backgroundImage: generatedImage
+        }
+      }
+    })();
+
+    expect(defaultVisual.image).not.toBe(generatedImage);
+    expect(defaultVisual.imageAssetId).toBe("");
+  });
+
+  test("restoring a built-in definition visual keeps generated terminal connector images cleared", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "two-port-heat-load-vertical");
+    expect(template).toBeTruthy();
+    if (!template) {
+      return;
+    }
+    const generatedImage = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160"><g data-custom-device-persisted-terminal-connectors="true"><line x1="0" y1="80" x2="30" y2="80"/></g></svg>'
+    )}`;
+    let restoredDraft: any = null;
+    let restoredRows: any[] = [];
+    let restoredPageId = "";
+    let restoredError = "old";
+    const renderPanel = createRenderDeviceDefinitionVisualPanel({
+      DEFAULT_STATE_PAGE_ID,
+      BufferedTextInput: "input",
+      TERMINAL_TYPE_LIBRARY_LABELS: {},
+      createDefinitionStateDraftRows: () => [
+        createStateDraftRow({ value: "0", name: "打开", image: generatedImage }),
+        createStateDraftRow({ value: "1", name: "闭合" })
+      ],
+      createDefinitionVisualDraft: () => ({
+        backgroundImage: generatedImage,
+        backgroundImageAssetId: "stale",
+        backgroundImageCleared: "",
+        size: { ...template.size },
+        terminalCount: 0,
+        terminalTypes: [],
+        terminalLabels: [],
+        terminalAnchors: [],
+        error: ""
+      }),
+      createNodeFromTemplate: (sourceTemplate: any) => ({
+        ...sourceTemplate,
+        params: sourceTemplate.params ?? {},
+        terminals: [],
+        rotation: sourceTemplate.rotation ?? 0
+      }),
+      definitionDraftError: "",
+      definitionStateDraftRows: [],
+      definitionStatePageId: DEFAULT_STATE_PAGE_ID,
+      definitionStatePreviewVisual: null,
+      definitionTemplateIconInputRef: { current: null },
+      definitionVisualDraft: {
+        backgroundImage: "",
+        backgroundImageAssetId: "",
+        backgroundImageCleared: "",
+        size: { ...template.size },
+        terminalCount: 0,
+        terminalTypes: [],
+        terminalLabels: [],
+        terminalAnchors: [],
+        error: ""
+      },
+      definitionVisualPreviewHeight: template.size.height,
+      definitionVisualPreviewImage: "",
+      definitionVisualPreviewWidth: template.size.width,
+      definitionVisualTerminalAnchors: [],
+      definitionVisualTerminalTypes: [],
+      isDefaultStatePageId,
+      renderStateVisualPager: () => null,
+      setDefinitionDraftError: (value: string) => {
+        restoredError = value;
+      },
+      setDefinitionStateDraftRows: (rows: any[]) => {
+        restoredRows = rows;
+      },
+      setDefinitionStatePageId: (pageId: string) => {
+        restoredPageId = pageId;
+      },
+      setDefinitionVisualDraft: (draft: any) => {
+        restoredDraft = draft;
+      }
+    });
+
+    const panel = renderPanel(template);
+    const restoreButton = findElementByText(panel, "恢复当前元件状态");
+    expect(restoreButton).toBeTruthy();
+
+    restoreButton.props.onClick();
+
+    expect(restoredDraft.backgroundImage).toBe("");
+    expect(restoredDraft.backgroundImageAssetId).toBe("");
+    expect(restoredDraft.backgroundImageCleared).toBe("");
+    expect(restoredRows).toHaveLength(2);
+    expect(restoredRows[0].image).toBe("");
+    expect(restoredPageId).toBe(DEFAULT_STATE_PAGE_ID);
+    expect(restoredError).toBe("");
+  });
+
+  test("renders built-in vertical template terminals on the editor outer frame", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "two-port-heat-load-vertical");
+    expect(template).toBeTruthy();
+    if (!template) {
+      return;
+    }
+    const draft = createCustomDeviceDraftFromTemplate(template);
+    const renderPager = createRenderStateVisualPager({
+      DEFAULT_STATE_PAGE_ID,
+      DEVICE_LIBRARY: [],
+      BufferedTextInput: "input",
+      DeferredColorInput: "input",
+      FONT_FAMILY_OPTIONS: [],
+      FONT_FAMILY_OPTION_LABELS: {},
+      STATE_ICON_LINE_CAP_OPTIONS: [],
+      TERMINAL_TYPE_LIBRARY_LABELS: {},
+      activeStateDraftRow,
+      addStateIconDrawingElement: () => undefined,
+      appendNonDefaultStateDraftRow,
+      colorPalette: {},
+      createNodeFromTemplate,
+      createStateDraftRowFromDefaultVisual,
+      createStateIconDrawingElement,
+      customDeviceDefaultStateVisualDraft: () => ({}),
+      customDeviceDraft: draft,
+      customDeviceTerminalAnchorDragIndex: null,
+      customDeviceTerminalAnchorValue: (value: number) => value,
+      customDeviceTerminalAnchors: draft.terminalAnchors,
+      customDraftTerminalTypes: draft.terminalTypes,
+      defaultStateDraftRow,
+      definitionDefaultStateVisualDraft: () => ({}),
+      definitionTerminalAnchorDragIndex: null,
+      definitionVisualDraft: null,
+      definitionVisualTerminalAnchors: [],
+      definitionVisualTerminalTypes: [],
+      deleteSelectedStateIconDrawingElements: () => undefined,
+      deleteStateIconDrawingElement: () => undefined,
+      dragStateIconDrawingSelection: () => undefined,
+      formatSvgNumber: (value: number) => String(Math.round(value * 1000) / 1000),
+      getNodeScaleX,
+      getNodeScaleY,
+      isDefaultStatePageId,
+      nextNonDefaultStateIndex,
+      nonDefaultStateDraftRows,
+      projectCustomDeviceTerminalAnchorToBoundary,
+      resolveTemplateComponentType,
+      selectedDefinitionTemplate: null,
+      setCustomDeviceDraft: () => undefined,
+      setCustomDeviceTerminalAnchorDragIndex: () => undefined,
+      setDefinitionStateDraftRows: () => undefined,
+      setDefinitionTerminalAnchorDragIndex: () => undefined,
+      setImagePickerCategoryFilter: () => undefined,
+      setImagePickerSearchQuery: () => undefined,
+      setImagePickerSourceFilter: () => undefined,
+      setImageTarget: () => undefined,
+      setStateIconDrawingContextMenu: () => undefined,
+      setStateIconDrawingDialog: () => undefined,
+      setStateIconDrawingImageVisibleFrames: () => undefined,
+      setStateIconDrawingSvgVisibleFrames: () => undefined,
+      stateDraftRowId: () => "state-copy",
+      stateIconDrawingClipboardRef: { current: [] },
+      stateIconDrawingContextMenu: null,
+      stateIconDrawingDialog: {
+        target: { scope: "custom", rowId: DEFAULT_STATE_PAGE_ID },
+        elements: [],
+        selectedElementId: "",
+        selectedElementIds: []
+      },
+      stateIconDrawingElementPreviewImage: () => null,
+      stateIconDrawingElementPreviewNode: () => null,
+      stateIconDrawingFrameRect: (hasTerminals: boolean) =>
+        hasTerminals ? { x: 30, y: 20, width: 180, height: 120, rx: 8 } : { x: 0, y: 0, width: 240, height: 160, rx: 10 },
+      stateIconDrawingHistoryRef: { current: [] },
+      stateIconDrawingImageVisibleFrames: {},
+      stateIconDrawingKeyDown: () => undefined,
+      stateIconDrawingPointer: () => ({ x: 0, y: 0 }),
+      stateIconDrawingPreviewNeedsDirectElementRender: () => false,
+      stateIconDrawingSvgRef: { current: null },
+      stateIconDrawingSvgVisibleFrames: {},
+      stateIconDrawingToImage: () => "",
+      stateVisualShapeLabel: (kind: string) => kind,
+      startStateIconDrawingDrag: () => undefined,
+      stopStateIconDrawingDrag: () => undefined,
+      terminalColor: () => "#2563eb",
+      terminalRenderLocalPoint,
+      terminalStubSegment,
+      terminalStubStrokeWidth,
+      updateCustomDeviceTerminalAnchor: () => undefined,
+      updateDefinitionTerminalAnchor: () => undefined,
+      updateStateIconDrawingElement: () => undefined,
+      visibleStateIconColor: () => "#2563eb"
+    });
+
+    const tree = renderPager(draft.stateDefinitions, DEFAULT_STATE_PAGE_ID, () => undefined, {
+      update: () => undefined,
+      add: () => undefined,
+      remove: () => undefined,
+      drawingScope: "custom",
+      terminalGeometryTemplate: template
+    } as any);
+
+    const geometryLayers = findElementsByClassName(tree, "state-icon-terminal-canvas-geometry-layer");
+    expect(geometryLayers).toHaveLength(1);
+    const anchorPoints = findElementsByClassName(geometryLayers[0], "state-icon-terminal-anchor").map((node) =>
+      pointFromTranslate(String(node.props?.transform ?? ""))
+    );
+    expect(anchorPoints).toHaveLength(2);
+    expect(Math.abs(anchorPoints[0].x - anchorPoints[1].x)).toBeLessThan(1);
+    expect(Math.abs(anchorPoints[0].x - 120)).toBeLessThan(1);
+    expect(Math.abs(anchorPoints[1].x - 120)).toBeLessThan(1);
+    expect(Math.min(...anchorPoints.map((point) => point.y))).toBeCloseTo(0, 5);
+    expect(Math.max(...anchorPoints.map((point) => point.y))).toBeCloseTo(160, 5);
+  });
+
   test("selecting a component template immediately replaces the edited device draft", () => {
     const staticTextTemplate = DEVICE_LIBRARY.find((item) => item.kind === "static-text");
     const hydrogenCompressorTemplate = DEVICE_LIBRARY.find((item) => item.kind === "hydrogen-compressor");
@@ -490,6 +1222,48 @@ describe("default device state draft rows", () => {
         (globalThis as any).window = previousWindow;
       }
     }
+  });
+
+  test("selecting a built-in breaker component loads model glyphs for state 0 and state 1", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-breaker");
+    expect(template).toBeTruthy();
+    if (!template) {
+      return;
+    }
+
+    let draft: any = null;
+    const selectTemplate = createSelectCustomComponentTemplate({
+      ...APP_STATIC_SCOPE,
+      DEFAULT_STATE_PAGE_ID,
+      createCustomDeviceDraftFromTemplate,
+      customComponentSelectionFrameRef: { current: null },
+      customComponentSelectionRequestRef: { current: 0 },
+      customDeviceDefinitionMode: "edit",
+      ensureCustomComponentTreeExpanded: () => undefined,
+      imageAssets: {},
+      normalizeAttributeLibraryName: (value: string) => value,
+      normalizeComponentTypeName: (value: string) => value,
+      resolveTemplateComponentType,
+      setCustomComponentTreeSelection: () => undefined,
+      setCustomDeviceDraft: (next: any) => {
+        draft = typeof next === "function" ? next(draft) : next;
+      },
+      setCustomDeviceDraftCleanBaseline: () => undefined,
+      setCustomDeviceSaveMessage: () => undefined,
+      setCustomDeviceStatePageId: () => undefined,
+      setDefinitionDraftSection: () => undefined,
+      setEditingCustomDeviceKind: () => undefined,
+      setSelectedDefinitionKind: () => undefined
+    });
+
+    selectTemplate(template);
+
+    const openSvg = decodeSvgDataUrl(draft.stateDefinitions.find((row: any) => row.value === "0")?.image ?? "");
+    const closedSvg = decodeSvgDataUrl(draft.stateDefinitions.find((row: any) => row.value === "1")?.image ?? "");
+    expect(openSvg).toContain('d="M -8 8 L 8 -8"');
+    expect(openSvg).not.toContain('M -64 0 H 64');
+    expect(closedSvg).toContain('d="M -10 0 H 10"');
+    expect(closedSvg).not.toContain('M -64 0 H 64');
   });
 
   test("adds a custom component state from the latest default state icon", () => {
@@ -711,6 +1485,22 @@ describe("default device state draft rows", () => {
     });
     expect(restored[0].svgSource).toContain('viewBox="-72 -32 144 64"');
     expect(restored[0].svgSource).not.toContain('viewBox="0 0 240 160"');
+  });
+
+  test("restores generated default device SVG layers at the explicit inner content size", () => {
+    const generatedSource = '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160"><g transform="translate(120 80)"><svg x="-90" y="-60" width="180" height="120" viewBox="-68 -45 136 90" preserveAspectRatio="xMidYMid meet"><g><path d="M -40 0 H 40" stroke="#dc2626" stroke-width="4" fill="none"/></g></svg></g></svg>';
+
+    const restored = createEditableStateIconElementsFromSvgSource(generatedSource, "双端热荷");
+
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toMatchObject({
+      kind: "imported-svg",
+      x: 120,
+      y: 80,
+      width: 180,
+      height: 120
+    });
+    expect(restored[0].svgSource).toContain('viewBox="-68 -45 136 90"');
   });
 
   test("does not restore generated frame markup as an editable drawing element", () => {

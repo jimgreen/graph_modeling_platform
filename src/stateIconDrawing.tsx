@@ -299,6 +299,46 @@ export function stateDraftImageValue(row: DeviceDefinitionStateDraftRow) {
   return row.image || row.backgroundImage;
 }
 
+export function stateIconDrawingDraftSourceImage(
+  row: DeviceDefinitionStateDraftRow | null | undefined,
+  assets: Record<string, string> = {}
+) {
+  const visual = stateVisualFromDraftRow(row);
+  if (!visual || visual.imageCleared) {
+    return "";
+  }
+  return resolveStateVisualImageHref(visual, assets).trim();
+}
+
+export function stateIconDrawingInlineNeedsDraftReload(options: {
+  targetMatches: boolean;
+  keyMatches: boolean;
+  initialImage: string;
+  inlineImage: string;
+  initialSourceImage: string;
+  draftSourceImage: string;
+}) {
+  if (!options.targetMatches || !options.keyMatches) {
+    return true;
+  }
+  if (options.initialImage !== options.inlineImage) {
+    return false;
+  }
+  return options.initialSourceImage !== options.draftSourceImage;
+}
+
+export function stateIconDrawingInlineCanPersistDraft(options: {
+  targetMatches: boolean;
+  keyMatches: boolean;
+  initialImage: string;
+  inlineImage: string;
+}) {
+  if (!options.targetMatches || !options.keyMatches) {
+    return false;
+  }
+  return options.initialImage !== options.inlineImage;
+}
+
 export function stateVisualShapeLabel(kind: StateVisualShapeKind) {
   switch (kind) {
     case "switch-open":
@@ -707,6 +747,19 @@ function parseStateIconDrawingGeneratedTransform(markup: string) {
 }
 
 function firstSvgMarkupInGeneratedGroup(markup: string) {
+  if (typeof DOMParser !== "undefined") {
+    try {
+      const document = new DOMParser().parseFromString(`<svg xmlns="http://www.w3.org/2000/svg">${markup}</svg>`, "image/svg+xml");
+      if (!document.querySelector("parsererror")) {
+        const nestedSvg = document.querySelector("g > svg");
+        if (nestedSvg?.outerHTML) {
+          return nestedSvg.outerHTML;
+        }
+      }
+    } catch {
+      // Fall through to the markup scan used in non-DOM runtimes.
+    }
+  }
   return /<svg\b[\s\S]*<\/svg>/i.exec(markup)?.[0] ?? "";
 }
 
@@ -725,7 +778,35 @@ function generatedStateIconTopLevelGroupMarkups(source: string) {
   if (!generatedStateIconRootOpenMarkup(source)) {
     return [];
   }
-  return source.match(/<g\b[^>]*\btransform\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)[\s\S]*?<\/g>/gi) ?? [];
+  const groups: string[] = [];
+  const tagPattern = /<\/?g\b[^>]*>/gi;
+  let depth = 0;
+  let startIndex = -1;
+  let startTag = "";
+  let match: RegExpExecArray | null;
+  while ((match = tagPattern.exec(source))) {
+    const tag = match[0];
+    const isClosing = /^<\//u.test(tag);
+    if (isClosing) {
+      if (depth > 0) {
+        depth -= 1;
+        if (depth === 0 && startIndex >= 0) {
+          if (/\btransform\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/iu.test(startTag)) {
+            groups.push(source.slice(startIndex, tagPattern.lastIndex));
+          }
+          startIndex = -1;
+          startTag = "";
+        }
+      }
+      continue;
+    }
+    if (depth === 0) {
+      startIndex = match.index;
+      startTag = tag;
+    }
+    depth += 1;
+  }
+  return groups;
 }
 
 function createStateIconDrawingElementsFromGeneratedSvgSource(source: string, fileName: string) {
@@ -766,8 +847,8 @@ export function createStateIconDrawingElementFromGeneratedGroupMarkup(
   const svgMarkup = firstSvgMarkupInGeneratedGroup(trimmed);
   if (svgMarkup) {
     const svgOpen = /<svg\b([^>]*)>/i.exec(svgMarkup)?.[1] ?? "";
-    const width = Math.max(1, readSvgMarkupNumber(svgOpen, "width", 120));
-    const height = Math.max(1, readSvgMarkupNumber(svgOpen, "height", 88));
+    const width = Math.max(1, readSvgMarkupNumber(trimmed, "data-state-icon-layer-width", readSvgMarkupNumber(svgOpen, "width", 120)));
+    const height = Math.max(1, readSvgMarkupNumber(trimmed, "data-state-icon-layer-height", readSvgMarkupNumber(svgOpen, "height", 88)));
     return {
       ...createImportedStateIconElement(
         "imported-svg",
