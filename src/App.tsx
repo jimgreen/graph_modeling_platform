@@ -4937,8 +4937,35 @@ const renderLibraryPanel = () => (
               value={mode}
               checked={componentLibraryDisplayMode === mode}
               onChange={() => setComponentLibraryDisplayMode(mode)}
+              onClick={() => {
+                // 已选中时重复点击：切换折叠层全部展开/全部收缩
+                if (componentLibraryDisplayMode !== mode) return;
+                if (mode === "expanded") {
+                  setCollapsedExpandedModeAttributeLibraries((current) =>
+                    current.length === 0 ? [...displayedAttributeLibraries] : []
+                  );
+                } else {
+                  setExpandedAttributeLibraries((current) =>
+                    current.length === 0 ? [...displayedAttributeLibraries] : []
+                  );
+                }
+              }}
             />
             <span>{label}</span>
+            {componentLibraryDisplayMode === mode && (() => {
+              // 当前选中模式：图标反映折叠层全部展开/全部收缩
+              const total = displayedAttributeLibraries.length;
+              if (total === 0) return null;
+              const allCollapsed = mode === "expanded"
+                ? collapsedExpandedModeAttributeLibraries.length >= total
+                : expandedAttributeLibraries.length === 0;
+              const allExpanded = mode === "expanded"
+                ? collapsedExpandedModeAttributeLibraries.length === 0
+                : expandedAttributeLibraries.length >= total;
+              if (allExpanded) return <ChevronDown size={12} aria-hidden="true" />;
+              if (allCollapsed) return <ChevronRight size={12} aria-hidden="true" />;
+              return null;
+            })()}
           </label>
         ))}
       </div>
