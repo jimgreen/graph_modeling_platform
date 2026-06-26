@@ -2456,19 +2456,46 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
         </button>
         <span className="custom-component-tree-actions-note">先选属性/类型/元件</span>
       </div>
-      <div className="dialog-tree-search">
-        <Search size={14} aria-hidden="true" />
-        <input
-          value={searchQuery}
-          onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="搜索属性库/元件类型/元件"
-          aria-label="搜索元件结构"
-        />
-        {searchQuery && (
-          <button type="button" aria-label="清空元件结构搜索" title="清空" onClick={() => onSearchChange("")}>
-            <X size={13} />
-          </button>
-        )}
+      <div className="custom-component-tree-search-row">
+        <div className="dialog-tree-search">
+          <Search size={14} aria-hidden="true" />
+          <input
+            value={searchQuery}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="搜索属性库/元件类型/元件"
+            aria-label="搜索元件结构"
+          />
+          {searchQuery && (
+            <button type="button" aria-label="清空元件结构搜索" title="清空" onClick={() => onSearchChange("")}>
+              <X size={13} />
+            </button>
+          )}
+        </div>
+        {(() => {
+          // 切换折叠层全部展开/全部收缩
+          const total = libraries.length;
+          if (total === 0) return null;
+          const allExpanded = collapsedLibraries.size === 0;
+          return (
+            <button
+              type="button"
+              className="custom-component-tree-toggle-all"
+              aria-label={allExpanded ? "全部收缩" : "全部展开"}
+              title={allExpanded ? "全部收缩" : "全部展开"}
+              onClick={() => {
+                if (allExpanded) {
+                  setCollapsedLibraries(new Set(libraries));
+                  setCollapsedTypes(new Set());
+                } else {
+                  setCollapsedLibraries(new Set());
+                  setCollapsedTypes(new Set());
+                }
+              }}
+            >
+              {allExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+          );
+        })()}
       </div>
       <div className="custom-component-manager-tree dialog-compact-tree" role="tree">
         {libraries.length > 0 ? libraries.map((group) => {
