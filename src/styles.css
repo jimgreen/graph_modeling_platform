@@ -7436,7 +7436,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   --element-tree-guide: #d8dee8;
   --element-tree-row-hover: #f5f7fa;
   --element-tree-selected-bg: #eef2f6;
-  --element-tree-selected-accent: #64748b;
+  --element-tree-selected-accent: #f59e0b;
   display: grid;
   align-content: start;
   gap: 5px;
