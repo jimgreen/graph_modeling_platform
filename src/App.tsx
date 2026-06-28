@@ -3615,8 +3615,8 @@ const mirrorSelectedNodes = createMirrorSelectedNodes(__appScope); Object.assign
 const updateCanvasSize = createUpdateCanvasSize(__appScope); Object.assign(__appScope, { updateCanvasSize });
 // 收紧画布到刚好包裹所有设备：以内容包围盒尺寸重设画布，复用 updateCanvasSize（含 editMode 守卫、undo、超出节点夹紧）
 const shrinkCanvasToFitContent = () => {
-  const { calculateModelContentSize, edges, nodes, routedEdges, updateCanvasSize, CANVAS_AUTO_EXPAND_PADDING } = __appScope;
-  const contentSize = calculateModelContentSize(nodes, edges, routedEdges, CANVAS_AUTO_EXPAND_PADDING);
+  const { calculateModelContentSize, edges, nodes, routedEdges, updateCanvasSize } = __appScope;
+  const contentSize = calculateModelContentSize(nodes, edges, routedEdges, 0);
   updateCanvasSize(contentSize.width, contentSize.height);
 };
 Object.assign(__appScope, { shrinkCanvasToFitContent });
