@@ -5851,20 +5851,20 @@ describe("power system model", () => {
     expect(keyboardMoveStepForViewBox({ x: 0, y: 0, width: 1000, height: 800 }, bounds, 25)).toBe(25);
   });
 
-  test("allows canvas edges to be panned to the center of the SVG view box", () => {
+  test("allows canvas to be freely dragged without position clamping", () => {
     const bounds = { width: 1980, height: 1024 };
 
     expect(normalizeViewBoxToCanvas({ x: -900, y: -700, width: 1200, height: 800 }, bounds)).toMatchObject({
-      x: -600,
-      y: -400
+      x: -900,
+      y: -700
     });
     expect(normalizeViewBoxToCanvas({ x: 1600, y: 900, width: 1200, height: 800 }, bounds)).toMatchObject({
-      x: 1380,
-      y: 624
+      x: 1600,
+      y: 900
     });
     expect(normalizeViewBoxToCanvas({ x: -2000, y: 1000, width: 3000, height: 1800 }, bounds)).toMatchObject({
-      x: -1500,
-      y: 124
+      x: -2000,
+      y: 1000
     });
   });
 

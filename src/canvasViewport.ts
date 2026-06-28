@@ -125,11 +125,8 @@ export function clampCanvasNoScrollOffset(
   if (scrollActive || viewportSize <= 0 || displaySize <= 0) {
     return 0;
   }
-  const firstEdgePosition = viewportSize * CANVAS_SCROLL_EDGE_VIEWPORT_RATIO;
-  const secondEdgePosition = viewportSize * (1 - CANVAS_SCROLL_EDGE_VIEWPORT_RATIO) - displaySize;
-  const minLeft = Math.min(firstEdgePosition, secondEdgePosition);
-  const maxLeft = Math.max(firstEdgePosition, secondEdgePosition);
-  return clampNumber(baseOffset + offset, minLeft, maxLeft) - baseOffset;
+  // ponytail: 移除范围限制，画布可自由拖动到任意位置甚至超出视口
+  return offset;
 }
 
 export function canvasFullViewBoxFromBounds(bounds: CanvasBounds): CanvasViewBox {

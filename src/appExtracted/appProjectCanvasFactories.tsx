@@ -686,14 +686,14 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
         const maxTop = Math.max(0, frame.scrollHeight - frame.clientHeight);
         let scrollChanged = false;
         if (useHorizontalScrollPanning) {
-          const nextLeft = clampNumber(activePanning.scrollLeft - (event.clientX - activePanning.clientX), 0, maxLeft);
+          const nextLeft = activePanning.scrollLeft - (event.clientX - activePanning.clientX);
           if (Math.abs(frame.scrollLeft - nextLeft) > 0.5) {
             frame.scrollLeft = nextLeft;
             scrollChanged = true;
           }
         }
         if (useVerticalScrollPanning) {
-          const nextTop = clampNumber(activePanning.scrollTop - (event.clientY - activePanning.clientY), 0, maxTop);
+          const nextTop = activePanning.scrollTop - (event.clientY - activePanning.clientY);
           if (Math.abs(frame.scrollTop - nextTop) > 0.5) {
             frame.scrollTop = nextTop;
             scrollChanged = true;

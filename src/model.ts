@@ -7035,15 +7035,7 @@ export function modelGeometryInsideCanvasBounds(
 }
 
 export function normalizeViewBoxToCanvas(box: ViewBox, bounds: CanvasBounds): ViewBox {
-  const minX = -box.width / 2;
-  const maxX = bounds.width - box.width / 2;
-  const minY = -box.height / 2;
-  const maxY = bounds.height - box.height / 2;
-  return {
-    ...box,
-    x: clampNumber(box.x, minX, maxX),
-    y: clampNumber(box.y, minY, maxY)
-  };
+  return box;
 }
 
 export function canvasResizeBoundsFromPointerDrag(
