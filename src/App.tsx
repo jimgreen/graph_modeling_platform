@@ -55,6 +55,7 @@ import {
   Save,
   ScanSearch,
   Search,
+  Shrink,
   Trash2,
   Type,
   Underline,
@@ -3612,6 +3613,13 @@ const applyLayerAssignmentDialog = createApplyLayerAssignmentDialog(__appScope);
 const rotateSelectedLayoutUnits = createRotateSelectedLayoutUnits(__appScope); Object.assign(__appScope, { rotateSelectedLayoutUnits });
 const mirrorSelectedNodes = createMirrorSelectedNodes(__appScope); Object.assign(__appScope, { mirrorSelectedNodes });
 const updateCanvasSize = createUpdateCanvasSize(__appScope); Object.assign(__appScope, { updateCanvasSize });
+// 收紧画布到刚好包裹所有设备：以内容包围盒尺寸重设画布，复用 updateCanvasSize（含 editMode 守卫、undo、超出节点夹紧）
+const shrinkCanvasToFitContent = () => {
+  const { calculateModelContentSize, edges, nodes, routedEdges, updateCanvasSize, CANVAS_AUTO_EXPAND_PADDING } = __appScope;
+  const contentSize = calculateModelContentSize(nodes, edges, routedEdges, CANVAS_AUTO_EXPAND_PADDING);
+  updateCanvasSize(contentSize.width, contentSize.height);
+};
+Object.assign(__appScope, { shrinkCanvasToFitContent });
 const commitCanvasSizeDraft = createCommitCanvasSizeDraft(__appScope); Object.assign(__appScope, { commitCanvasSizeDraft });
 const resetCanvasSizeDraft = createResetCanvasSizeDraft(__appScope); Object.assign(__appScope, { resetCanvasSizeDraft });
 const handleCanvasSizeBlur = createHandleCanvasSizeBlur(__appScope); Object.assign(__appScope, { handleCanvasSizeBlur });

@@ -130,7 +130,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     groupSelectedGraphics, ungroupSelectedGraphics, assignSelectedNodesToModelLayer,
     toggleSelectedNodeLabelDisplay, clearLibraryPlacementPreview, clearRecordSelection,
     clearStaticButtonFeedback, centerSelectedInView, fitViewToSelection,
-    fitWholeCanvasToFrame, zoomViewportAtCenter, tidySelectedEdgeRoute,
+    fitWholeCanvasToFrame, zoomViewportAtCenter, tidySelectedEdgeRoute, shrinkCanvasToFitContent,
     cancelLibraryPlacement, cancelModifierSelectionPress,
     setCanvasSelectionScope, setConnectSource, setContextMarqueeSelection,
     setContextMenu,
@@ -184,7 +184,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     SCALE_HANDLE_CONFIGS, GROUP_SCALE_HANDLE_CONFIGS,
     Copy, Grid2X2, Group, Layers, Layers2, LocateFixed, MapIcon,
     Maximize2, MemoDeviceGlyph, Minus, Plus, RotateCcw, Route,
-    ScanSearch, Scissors, Trash2, Type, Ungroup, X,
+    ScanSearch, Scissors, Shrink, Trash2, Type, Ungroup, X,
     SvgMarkupChunk,
     nodeById, detailedViewportNodes, nodeImage, nodeForegroundImage,
     nodeGeometryTransform, nodeImageContentTransform,
@@ -1287,6 +1287,9 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
             </button>
             <button type="button" className={minimapVisible ? "active" : ""} title={minimapVisible ? "隐藏小地图" : "显示小地图"} aria-label={minimapVisible ? "隐藏小地图" : "显示小地图"} onClick={() => setMinimapVisible((current) => !current)}>
               <MapIcon size={16}/>
+            </button>
+            <button type="button" title="收紧画布" aria-label="收紧画布" onClick={shrinkCanvasToFitContent}>
+              <Shrink size={16}/>
             </button>
           </div>
           {minimapVisible && (<div className="canvas-minimap" aria-label="鸟瞰导航">

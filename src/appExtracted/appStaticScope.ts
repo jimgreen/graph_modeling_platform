@@ -11,7 +11,7 @@ import {
   ChevronsDown, ChevronsUp, CircleDot, Copy, Delete, Dot, Download, EyeOff, File, FileInput, FileJson,
   FlipHorizontal, FlipVertical, FolderOpen, Frame, Grid2X2, Group, Icon, Italic, Layers, Layers2, LocateFixed,
   Map, MapIcon, Maximize2, Minus, MousePointer2, Paintbrush, Palette, PanelLeftOpen, PanelRightOpen, Pencil,
-  Pin, Plus, Pointer, RotateCcw, RotateCw, Route, Save, ScanSearch, Scissors, Search, Sparkles, Terminal,
+  Pin, Plus, Pointer, RotateCcw, RotateCw, Route, Save, ScanSearch, Scissors, Search, Shrink, Sparkles, Terminal,
   Text, Trash2, Type, Underline, Undo2, Ungroup, X, Zap, ZapOff
 } from "lucide-react";
 
@@ -22,7 +22,7 @@ const LucideReactScope = {
   ChevronsDown, ChevronsUp, CircleDot, Copy, Delete, Dot, Download, EyeOff, File, FileInput, FileJson,
   FlipHorizontal, FlipVertical, FolderOpen, Frame, Grid2X2, Group, Icon, Italic, Layers, Layers2, LocateFixed,
   Map, MapIcon, Maximize2, Minus, MousePointer2, Paintbrush, Palette, PanelLeftOpen, PanelRightOpen, Pencil,
-  Pin, Plus, Pointer, RotateCcw, RotateCw, Route, Save, ScanSearch, Scissors, Search, Sparkles, Terminal,
+  Pin, Plus, Pointer, RotateCcw, RotateCw, Route, Save, ScanSearch, Scissors, Search, Shrink, Sparkles, Terminal,
   Text, Trash2, Type, Underline, Undo2, Ungroup, X, Zap, ZapOff
 };
 import * as ModelScope from "../model";
