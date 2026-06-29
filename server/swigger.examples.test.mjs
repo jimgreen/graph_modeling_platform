@@ -60,7 +60,7 @@ async function fetchExample(ep, ex) {
   return { status: res.status, headers: res.headers, text, json, url };
 }
 
-// ---- runtime WS 客户端：注册并响应 fetch ----
+// ---- runtime WS 客户端：注册并响应 fetch + command ----
 // 按 resource 返回最小可序列化 data，满足各 runtime 接口断言
 function runtimeResponder(resource, params) {
   switch (resource) {
@@ -85,6 +85,30 @@ function runtimeResponder(resource, params) {
   }
 }
 
+// command 响应：按 name 返回最小回执，满足控制域示例断言
+function commandResponder(name, params) {
+  switch (name) {
+    case "control.device.add":
+      return { ok: true, data: { id: "n-test" } };
+    case "control.scheme.create":
+      return { ok: true, data: { id: "s-test", name: params.name || "新方案", path: [params.name || "新方案"] } };
+    case "control.model.create":
+      return { ok: true, data: { id: "m-test", name: params.name || "新模型", schemeId: "s1" } };
+    case "control.devices.select":
+      return { ok: true, data: { selectedIds: params.ids || [] } };
+    case "control.devices.group":
+      return { ok: true, data: { groupId: "g-test", name: "组合1" } };
+    case "control.device.delete":
+      return { ok: true, data: { deletedIds: params.ids || ["n1"] } };
+    case "control.device.property.update":
+      return { ok: true, data: { id: params.id, category: params.category, patched: Object.keys(params.patch || {}) } };
+    case "control.save":
+      return { ok: true, data: { saved: true, scope: params.scope } };
+    default:
+      return { ok: false, error: { code: "unknown-command", message: `unknown command: ${name}` } };
+  }
+}
+
 function connectRuntimeClient() {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl);
@@ -101,6 +125,16 @@ function connectRuntimeClient() {
         const env = runtimeResponder(msg.resource, msg.params || {});
         ws.send(JSON.stringify({
           type: "fetch-response",
+          requestId: msg.requestId,
+          ok: env.ok,
+          data: env.ok ? env.data : undefined,
+          error: env.ok ? undefined : env.error
+        }));
+      }
+      if (msg.type === "command") {
+        const env = commandResponder(msg.name, msg.params || {});
+        ws.send(JSON.stringify({
+          type: "command-response",
           requestId: msg.requestId,
           ok: env.ok,
           data: env.ok ? env.data : undefined,
@@ -232,6 +266,16 @@ function expectFor(ep, ex) {
   if (p === "/api/v1/library/measurements") return { status: 200, check: (r) => expect(r.json.data.measurementTypes).toBeInstanceOf(Array) };
   if (p === "/api/v1/library/device-definitions") return { status: 200, check: (r) => expect(r.json.data).toBeTruthy() };
   if (p === "/api/v1/library/templates") return { status: 200, check: (r) => expect(r.json.data).toBeTruthy() };
+
+  // v1 控制台域（经 WS 下发前端，测试 WS 客户端模拟回执）
+  if (p === "/api/v1/control/device/add") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };
+  if (p === "/api/v1/control/scheme/create") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };
+  if (p === "/api/v1/control/model/create") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };
+  if (p === "/api/v1/control/devices/select") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.selectedIds).toBeInstanceOf(Array); } };
+  if (p === "/api/v1/control/devices/group") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.groupId).toBeTruthy(); } };
+  if (p === "/api/v1/control/device/delete") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.deletedIds).toBeInstanceOf(Array); } };
+  if (p === "/api/v1/control/device/property/update") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };
+  if (p === "/api/v1/control/save") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.saved).toBe(true); } };
 
   throw new Error(`未定义期望: ${ep.method} ${p} (示例: ${label})`);
 }

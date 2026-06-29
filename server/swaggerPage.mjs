@@ -162,6 +162,39 @@ const ENDPOINTS = [
   ]},
   { group: "v1 运行时态", method: "GET", path: "/api/v1/runtime/e-file", desc: "E 文件文本", query: [{ name: "clientId", desc: "可选" }], response: "<text/plain，attachment>", examples: [
     { label: "E 文件", params: {} }
+  ]},
+
+  // ---- v1 控制台域（经 WS 下发前端 __appScope，写操作 no-store）----
+  { group: "控制台", method: "POST", path: "/api/v1/control/device/add", desc: "新增图元（经 WS 到前端，压 undo 栈不自动落盘）", query: [{ name: "clientId", desc: "可选" }], body: { kind: "busbar", x: 100, y: 200, attrs: { name: "母线1" } }, response: "{ok:true,data:{id}}", examples: [
+    { label: "新增母排", params: { __body__: { kind: "busbar", x: 100, y: 200 } } },
+    { label: "新增带 attrs override", params: { __body__: { kind: "busbar", x: 0, y: 0, attrs: { name: "自定义母线", rotation: 45 } } } }
+  ]},
+  { group: "控制台", method: "POST", path: "/api/v1/control/scheme/create", desc: "新建方案（经 WS 到前端，不压栈不落盘）", query: [{ name: "clientId", desc: "可选" }], body: { name: "新方案", parentSchemeId: "" }, response: "{ok:true,data:{id,name,path}}", examples: [
+    { label: "新建顶级方案", params: { __body__: { name: "新方案" } } },
+    { label: "新建子方案", params: { __body__: { name: "子方案", parentSchemeId: "parent-id" } } }
+  ]},
+  { group: "控制台", method: "POST", path: "/api/v1/control/model/create", desc: "新建模型（经 WS 到前端，不压栈不落盘）", query: [{ name: "clientId", desc: "可选" }], body: { name: "新模型", schemeId: "" }, response: "{ok:true,data:{id,name,schemeId}}", examples: [
+    { label: "新建到默认方案", params: { __body__: { name: "新模型" } } }
+  ]},
+  { group: "控制台", method: "POST", path: "/api/v1/control/devices/select", desc: "选中图元（set/add/toggle 三模式）", query: [{ name: "clientId", desc: "可选" }], body: { ids: ["n1", "n2"], mode: "set" }, response: "{ok:true,data:{selectedIds}}", examples: [
+    { label: "替换选中", params: { __body__: { ids: ["n1", "n2"], mode: "set" } } },
+    { label: "追加选中", params: { __body__: { ids: ["n3"], mode: "add" } } },
+    { label: "切换选中", params: { __body__: { ids: ["n1"], mode: "toggle" } } }
+  ]},
+  { group: "控制台", method: "POST", path: "/api/v1/control/devices/group", desc: "组合当前选中图元（至少 2 个，压 undo 栈）", query: [{ name: "clientId", desc: "可选" }], body: {}, response: "{ok:true,data:{groupId,name}}", examples: [
+    { label: "组合当前选中", params: { __body__: {} } }
+  ]},
+  { group: "控制台", method: "POST", path: "/api/v1/control/device/delete", desc: "删除图元（ids 缺省取当前选中，压 undo 栈）", query: [{ name: "clientId", desc: "可选" }], body: { ids: ["n1"] }, response: "{ok:true,data:{deletedIds}}", examples: [
+    { label: "删除指定图元", params: { __body__: { ids: ["n1", "n2"] } } },
+    { label: "删除当前选中", params: { __body__: {} } }
+  ]},
+  { group: "控制台", method: "POST", path: "/api/v1/control/device/property/update", desc: "修改图元属性（graphic/model 合并，measurement 暂未实现，压 undo 栈）", query: [{ name: "clientId", desc: "可选" }], body: { id: "n1", category: "graphic", patch: { rotation: 90 } }, response: "{ok:true,data:{id,category,patched}}", examples: [
+    { label: "修改图形属性", params: { __body__: { id: "n1", category: "graphic", patch: { rotation: 90, x: 200 } } } },
+    { label: "修改模型参数", params: { __body__: { id: "n1", category: "model", patch: { params: { rating: 100 } } } } }
+  ]},
+  { group: "控制台", method: "POST", path: "/api/v1/control/save", desc: "显式落盘（currentModel 保存当前模型，schemeTree 保存方案树，不压栈）", query: [{ name: "clientId", desc: "可选" }], body: { scope: "currentModel" }, response: "{ok:true,data:{saved:true,scope}}", examples: [
+    { label: "保存当前模型", params: { __body__: { scope: "currentModel" } } },
+    { label: "保存方案树", params: { __body__: { scope: "schemeTree" } } }
   ]}
 ];
 
