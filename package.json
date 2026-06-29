@@ -10,6 +10,7 @@
     "build": "tsc -b && vite build",
     "audit:icons": "node scripts/audit-icon-library-quality.mjs",
     "test": "vitest run",
+    "test:e2e": "vitest run --config vite.e2e.config.ts",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
