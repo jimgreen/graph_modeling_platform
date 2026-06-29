@@ -3046,10 +3046,12 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
   const { createRuntimeRegistry } = await import("./runtimeRegistry.mjs");
   const { attachRuntimeWebSocket } = await import("./runtimeWs.mjs");
   const { createV1RuntimeRoutes } = await import("./apiV1Runtime.mjs");
+  const { createV1ControlRoutes } = await import("./apiV1Control.mjs");
   const runtimeRegistry = createRuntimeRegistry();
   // runtimeWs 在 server 创建后挂载（attachRuntimeWebSocket 需要 server.on("upgrade")）
   let runtimeWs = null;
   let v1RuntimeRoutes = [];
+  let v1ControlRoutes = [];
 
   const server = createServer(async (request, response) => {
     try {
@@ -3082,7 +3084,7 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
       if (url.pathname.startsWith("/api/v1/")) {
         const { v1SchemeRoutes } = await import("./apiV1Schemes.mjs");
         const { v1LibraryRoutes } = await import("./apiV1Library.mjs");
-        const v1Routes = [...v1SchemeRoutes, ...v1LibraryRoutes, ...v1RuntimeRoutes];
+        const v1Routes = [...v1SchemeRoutes, ...v1LibraryRoutes, ...v1RuntimeRoutes, ...v1ControlRoutes];
         for (const route of v1Routes) {
           if (route.method !== request.method) {
             continue;
@@ -3107,6 +3109,7 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
   // server 创建后挂载运行时态 WS 桥接（需 server.on("upgrade")）
   runtimeWs = attachRuntimeWebSocket(server, runtimeRegistry);
   v1RuntimeRoutes = createV1RuntimeRoutes(runtimeWs);
+  v1ControlRoutes = createV1ControlRoutes(runtimeWs);
 
   return new Promise((resolveServer) => {
     server.listen(port, host, () => resolveServer(server));
