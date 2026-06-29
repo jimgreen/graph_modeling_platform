@@ -309,6 +309,34 @@ export function renderAppView(__appScope: Record<string, any>) {
         <div className="left-panel-content">
           {leftPanelContent}
         </div>
+        <div className="left-panel-footer">
+          <span className="id-copy-cell" title="点击复制方案 ID" onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            navigator.clipboard.writeText(activeSchemeKey || "—").then(() => {
+              const toast = document.createElement("span");
+              toast.className = "id-copy-toast";
+              toast.textContent = "已复制";
+              toast.style.position = "fixed";
+              toast.style.left = (rect.left + rect.width / 2) + "px";
+              toast.style.top = (rect.top - 8) + "px";
+              document.body.appendChild(toast);
+              setTimeout(() => toast.remove(), 1000);
+            });
+          }}>方案: {activeSchemeKey || "—"}</span>
+          <span className="id-copy-cell" title="点击复制模型 ID" onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            navigator.clipboard.writeText(activeProjectKey || "—").then(() => {
+              const toast = document.createElement("span");
+              toast.className = "id-copy-toast";
+              toast.textContent = "已复制";
+              toast.style.position = "fixed";
+              toast.style.left = (rect.left + rect.width / 2) + "px";
+              toast.style.top = (rect.top - 8) + "px";
+              document.body.appendChild(toast);
+              setTimeout(() => toast.remove(), 1000);
+            });
+          }}>模型: {activeProjectKey || "—"}</span>
+        </div>
       </aside>
 
       <main className="workspace" onPointerEnter={hideAutoPanelsFromWorkspace}>
