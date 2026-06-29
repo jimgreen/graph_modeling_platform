@@ -37,3 +37,72 @@ export function createProgrammaticAddDevice(__appScope: Record<string, any>) {
     return { id: node.id };
   };
 }
+
+// 新建方案：name 必填，parentSchemeId 指定时校验同级重名。
+// 复用 createSavedScheme/insertChildSavedScheme，绕过 prompt/editMode/落盘（落盘由独立 control.save 指令）。
+// 经 WS control.scheme.create 指令调用。
+export function createProgrammaticCreateScheme(__appScope: Record<string, any>) {
+  return (name: string, parentSchemeId?: string) => {
+    const { createSavedScheme, hasSameName, insertChildSavedScheme, savedChildSchemeNames, schemePathForScheme, schemes, selectSingleScheme, setSchemes } = __appScope;
+    if (!name || typeof name !== "string" || !name.trim()) {
+      const e: any = new Error("name 必填。");
+      e.code = "bad-request";
+      throw e;
+    }
+    if (parentSchemeId && hasSameName(name, savedChildSchemeNames(schemes, parentSchemeId))) {
+      const e: any = new Error("方案名称重复，无法新建方案。");
+      e.code = "bad-request";
+      throw e;
+    }
+    const record = createSavedScheme(name);
+    const parentPath = parentSchemeId ? schemePathForScheme(parentSchemeId) : [];
+    const recordPath = [...parentPath, record.name];
+    setSchemes((current: any) => insertChildSavedScheme(current, parentSchemeId || "", record));
+    selectSingleScheme(record.id);
+    return { id: record.id, name: record.name, path: recordPath };
+  };
+}
+
+// 新建模型：name 必填，schemeId 缺省取 schemes[0]。复用 createSavedProject/upsertSavedProjectInScheme，
+// 绕过 prompt/editMode/落盘（落盘由独立 control.save 指令）。经 WS control.model.create 指令调用。
+export function createProgrammaticCreateBlankProject(__appScope: Record<string, any>) {
+  return (name: string, schemeId?: string) => {
+    const { DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_BACKGROUND, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, DEFAULT_CURRENT_UNIT, DEFAULT_POWER_BASE_VALUE, createSavedProject, findSavedSchemeById, hasSameName, requestLoadSavedProject, schemePathForScheme, schemes, selectSingleProject, setSchemes, upsertSavedProjectInScheme } = __appScope;
+    if (!name || typeof name !== "string" || !name.trim()) {
+      const e: any = new Error("name 必填。");
+      e.code = "bad-request";
+      throw e;
+    }
+    const resolvedSchemeId = schemeId ?? schemes[0]?.id;
+    const targetScheme = findSavedSchemeById(schemes, resolvedSchemeId) ?? schemes[0];
+    if (!targetScheme) {
+      const e: any = new Error("无可用方案，请先创建方案");
+      e.code = "bad-request";
+      throw e;
+    }
+    if (hasSameName(name, targetScheme.projects.map((project: any) => project.name))) {
+      const e: any = new Error("模型名称重复，无法新建模型。");
+      e.code = "bad-request";
+      throw e;
+    }
+    const record = createSavedProject(name, {
+      version: 1,
+      name,
+      canvasWidth: DEFAULT_CANVAS_WIDTH,
+      canvasHeight: DEFAULT_CANVAS_HEIGHT,
+      allowAutoExpandCanvas: true,
+      canvasBackgroundColor: DEFAULT_CANVAS_BACKGROUND,
+      powerUnit: DEFAULT_POWER_UNIT,
+      voltageUnit: DEFAULT_VOLTAGE_UNIT,
+      currentUnit: DEFAULT_CURRENT_UNIT,
+      powerBaseValue: DEFAULT_POWER_BASE_VALUE,
+      deviceIndexCounters: {},
+      nodes: [],
+      edges: []
+    });
+    setSchemes((current: any) => upsertSavedProjectInScheme(current, targetScheme.id, record));
+    selectSingleProject(targetScheme.id, record.id);
+    requestLoadSavedProject(record, targetScheme.id);
+    return { id: record.id, name: record.name, schemeId: targetScheme.id };
+  };
+}

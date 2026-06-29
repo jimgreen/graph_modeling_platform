@@ -80,12 +80,58 @@ export async function handleControlDeviceAdd({ request, url, response }, ctx) {
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.device.add", params));
 }
 
+// /api/v1/control/scheme/create —— 新建方案
+// body: { name, parentSchemeId? } → 回执 { id, name, path }
+export async function handleControlSchemeCreate({ request, url, response }, ctx) {
+  let payload;
+  try {
+    payload = await readJsonBody(request);
+  } catch {
+    sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
+    return;
+  }
+  const { name, parentSchemeId } = payload ?? {};
+  if (!name || typeof name !== "string" || !name.trim()) {
+    sendV1Error(response, "bad-request", "name 必填。");
+    return;
+  }
+  const params = { name };
+  if (parentSchemeId !== undefined) {
+    params.parentSchemeId = parentSchemeId;
+  }
+  await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.scheme.create", params));
+}
+
+// /api/v1/control/model/create —— 新建模型
+// body: { name, schemeId? } → 回执 { id, name, schemeId }
+export async function handleControlModelCreate({ request, url, response }, ctx) {
+  let payload;
+  try {
+    payload = await readJsonBody(request);
+  } catch {
+    sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
+    return;
+  }
+  const { name, schemeId } = payload ?? {};
+  if (!name || typeof name !== "string" || !name.trim()) {
+    sendV1Error(response, "bad-request", "name 必填。");
+    return;
+  }
+  const params = { name };
+  if (schemeId !== undefined) {
+    params.schemeId = schemeId;
+  }
+  await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.model.create", params));
+}
+
 // 构造 v1 控制台路由表。ctx = { sendCommandToClient }
 // handle 签名：({ request, response, url, match }, ctx) => Promise<void>
 export function createV1ControlRoutes(ctx) {
   const wrap = (handler) => ({ request, response, url, match }) =>
     handler({ request, response, url }, ctx);
   return [
-    { method: "POST", pattern: /^\/api\/v1\/control\/device\/add\/?$/u, handle: wrap(handleControlDeviceAdd) }
+    { method: "POST", pattern: /^\/api\/v1\/control\/device\/add\/?$/u, handle: wrap(handleControlDeviceAdd) },
+    { method: "POST", pattern: /^\/api\/v1\/control\/scheme\/create\/?$/u, handle: wrap(handleControlSchemeCreate) },
+    { method: "POST", pattern: /^\/api\/v1\/control\/model\/create\/?$/u, handle: wrap(handleControlModelCreate) }
   ];
 }

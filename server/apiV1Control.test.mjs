@@ -153,3 +153,85 @@ describe("/api/v1/control/device/add", () => {
     ws.close();
   }, 10000);
 });
+
+describe("/api/v1/control/scheme/create", () => {
+  test("成功新建 → 200 {ok:true,data:{id,name,path}}", async () => {
+    const ws = await connectCommandResponder("c1", (name, params) => {
+      expect(name).toBe("control.scheme.create");
+      expect(params).toMatchObject({ name: "方案1", parentSchemeId: "p1" });
+      return { ok: true, data: { id: "s1", name: "方案1", path: ["方案1"] } };
+    });
+    const { status, json } = await postV1("/api/v1/control/scheme/create", { name: "方案1", parentSchemeId: "p1" });
+    expect(status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.data).toEqual({ id: "s1", name: "方案1", path: ["方案1"] });
+    ws.close();
+  });
+
+  test("缺 name → 400 bad-request（不下发指令）", async () => {
+    const { status, json } = await postV1("/api/v1/control/scheme/create", { parentSchemeId: "p1" });
+    expect(status).toBe(400);
+    expect(json.ok).toBe(false);
+    expect(json.error.code).toBe("bad-request");
+  });
+
+  test("无在线客户端 → 503 no-online-client", async () => {
+    const { status, json } = await postV1("/api/v1/control/scheme/create", { name: "方案1" });
+    expect(status).toBe(503);
+    expect(json.error.code).toBe("no-online-client");
+  });
+
+  test("前端返失败 → 透传 error code", async () => {
+    const ws = await connectCommandResponder("c1", () => ({
+      ok: false,
+      error: { code: "bad-request", message: "方案名称重复，无法新建方案。" }
+    }));
+    const { status, json } = await postV1("/api/v1/control/scheme/create", { name: "重复" });
+    expect(status).toBe(400);
+    expect(json.ok).toBe(false);
+    expect(json.error.code).toBe("bad-request");
+    expect(json.error.message).toBe("方案名称重复，无法新建方案。");
+    ws.close();
+  });
+});
+
+describe("/api/v1/control/model/create", () => {
+  test("成功新建 → 200 {ok:true,data:{id,name,schemeId}}", async () => {
+    const ws = await connectCommandResponder("c1", (name, params) => {
+      expect(name).toBe("control.model.create");
+      expect(params).toMatchObject({ name: "模型1", schemeId: "s1" });
+      return { ok: true, data: { id: "m1", name: "模型1", schemeId: "s1" } };
+    });
+    const { status, json } = await postV1("/api/v1/control/model/create", { name: "模型1", schemeId: "s1" });
+    expect(status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.data).toEqual({ id: "m1", name: "模型1", schemeId: "s1" });
+    ws.close();
+  });
+
+  test("缺 name → 400 bad-request（不下发指令）", async () => {
+    const { status, json } = await postV1("/api/v1/control/model/create", { schemeId: "s1" });
+    expect(status).toBe(400);
+    expect(json.ok).toBe(false);
+    expect(json.error.code).toBe("bad-request");
+  });
+
+  test("无在线客户端 → 503 no-online-client", async () => {
+    const { status, json } = await postV1("/api/v1/control/model/create", { name: "模型1" });
+    expect(status).toBe(503);
+    expect(json.error.code).toBe("no-online-client");
+  });
+
+  test("前端返失败 → 透传 error code", async () => {
+    const ws = await connectCommandResponder("c1", () => ({
+      ok: false,
+      error: { code: "bad-request", message: "无可用方案，请先创建方案" }
+    }));
+    const { status, json } = await postV1("/api/v1/control/model/create", { name: "模型1" });
+    expect(status).toBe(400);
+    expect(json.ok).toBe(false);
+    expect(json.error.code).toBe("bad-request");
+    expect(json.error.message).toBe("无可用方案，请先创建方案");
+    ws.close();
+  });
+});
