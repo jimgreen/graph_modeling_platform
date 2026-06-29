@@ -321,6 +321,7 @@ export function renderSwaggerHtml() {
   pre.req-body:empty { display: none; }
   pre.req-body { margin-top: 4px; }
   .result-meta { font-size: 12px; color: #6b7d8a; margin-bottom: 4px; }
+  .result-body { max-height: 500px; overflow-y: auto; }
   .img-preview { max-width: 100%; max-height: 320px; border: 1px solid #e4e8eb; border-radius: 4px; margin-top: 6px; }
   .arrow { color: #cbd5e0; transition: transform 0.2s; }
   .card.open .arrow { transform: rotate(90deg); }
