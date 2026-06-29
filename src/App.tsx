@@ -33,6 +33,7 @@ import {
   Group,
   Italic,
   Scissors,
+  Eye,
   EyeOff,
   LocateFixed,
   Map as MapIcon,
