@@ -333,7 +333,8 @@ export function renderAppView(__appScope: Record<string, any>) {
             <span className="id-copy-cell" title="点击复制模型 ID" onClick={(e) => {
               const rect = e.currentTarget.getBoundingClientRect();
               const raw = activeProjectKey || "";
-              const id = raw ? decodeURIComponent(raw.replace(/^[^:]+:/, "")) : "—";
+              const stripped = raw.replace(/^[^:]+:/, "").split("/").pop() || "";
+              const id = stripped ? decodeURIComponent(stripped) : "—";
               navigator.clipboard.writeText(id).then(() => {
                 const toast = document.createElement("span");
                 toast.className = "id-copy-toast";
@@ -344,7 +345,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                 document.body.appendChild(toast);
                 setTimeout(() => toast.remove(), 1000);
               });
-            }}>{activeProjectKey ? decodeURIComponent(activeProjectKey.replace(/^[^:]+:/, "")) : "—"}</span>
+            }}>{activeProjectKey ? decodeURIComponent((activeProjectKey.replace(/^[^:]+:/, "").split("/").pop() || "")) : "—"}</span>
           </span>
         </div>
       </aside>

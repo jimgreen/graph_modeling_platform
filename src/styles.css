@@ -506,6 +506,7 @@ button:disabled {
 .left-panel-footer {
   display: flex;
   flex-shrink: 0;
+  flex-wrap: nowrap;
   gap: 12px;
   padding: 6px 10px;
   border-top: 1px solid #e2e8f0;
@@ -518,10 +519,12 @@ button:disabled {
 
 .left-panel-footer-item {
   display: inline-flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 4px;
   min-width: 0;
   flex: 1 1 0;
+  white-space: nowrap;
 }
 
 .left-panel-footer-label {
