@@ -14,6 +14,7 @@
 | `appView.tsx` | `renderAppView(__appScope)`：渲染 topbar/画布/面板/弹窗整体视图；含 RT-WS 指示灯组件 |
 | `appCanvasArea.tsx` | 画布区域渲染（SVG `<rect data-canvas-background>` 背景层、网格、节点、边、resize handles） |
 | `appCanvasInteractionFactories.tsx` | 画布交互工厂（指针/拖拽/连接预览） |
+| `appControlFactories.tsx` | 控制台写操作程序化方法（9 工厂：add/select/group/delete/update/save/scheme/model/template），经 WS 指令调用，绕过 UI 对话框 |
 | `appCoreCanvasUtilities.tsx` | 画布核心工具（坐标变换、命中检测、`DEFAULT_CANVAS_BACKGROUND` 等常量） |
 | `appDeviceDefinitionFactories.tsx` | 设备定义工厂（含 `buildSvgDocument` 导出 SVG 调用） |
 | `appGraphMeasurementFactories.tsx` | 图形量测工厂 |

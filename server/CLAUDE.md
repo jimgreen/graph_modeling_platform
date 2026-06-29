@@ -18,6 +18,7 @@
 | `apiV1Runtime.mjs` | v1 运行时态端点（clients/model/devices/selection/tabs/screenshot/svg/e-file），经 WS 透传 |
 | `apiV1Schemes.mjs` | v1 方案域只读端点（hierarchy/models/export/model json/svg） |
 | `apiV1Library.mjs` | v1 图元库域只读端点（categories/devices/measurements/device-definitions/templates） |
+| `apiV1Control.mjs` | v1 控制台写操作端点（9 端点：device/scheme/model/select/group/delete/update/save/template），经 WS 下发到前端 __appScope |
 | `v1Response.mjs` | v1 信封工具：sendV1Json / sendV1JsonNoStore / 错误码→HTTP 状态映射 |
 | `schemePath.mjs` | schemePath 编解码工具（`encodeURIComponent(JSON.stringify([...]))`） |
 | `swaggerPage.mjs` | /swigger 自包含 HTML：接口元数据 + highlight.js + 可折叠 JSON 树 + 复制按钮；导出 `SWIGGER_ENDPOINTS` 供测试 |

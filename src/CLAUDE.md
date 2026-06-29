@@ -16,7 +16,7 @@
 | `model.ts` | 核心类型定义（DeviceKind、拓扑结构、E 格式导出） |
 | `graphStore.ts` / `routeStore.ts` / `selectionActions.ts` | 图形/路由/选择状态与操作 |
 | `keyboardShortcuts.ts` / `sidePanelVisibility.ts` | 键盘快捷键 / 侧栏显隐 |
-| `runtimeWsClient.ts` | 前端 WS 客户端：注册 clientId、ping 心跳、响应 server fetch；dev 直连 5174 |
+| `runtimeWsClient.ts` | 前端 WS 客户端：注册 clientId、ping 心跳、响应 server fetch + command；dev 直连 5174 |
 | `runtimeSnapshot.ts` | 运行时态序列化（model/devices/selection/tab/snapshot/svg），供 WS fetchHandler |
 | `runtimeScreenshot.ts` | 画布截图：buildSvgDocument → rasterizeSvgString → PNG base64 |
 | `svgExportUtils.ts` / `svgUtils.ts` | SVG 导出与工具 |

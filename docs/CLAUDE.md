@@ -14,6 +14,9 @@
 | `DESIGN_THIRD_PARTY_API.md` | 第三方 API 设计（三域 + 运行时态 WS 桥接） |
 | `REQUIREMENTS_THIRD_PARTY_API.md` | 第三方 API 需求 |
 | `WORKFLOW_THIRD_PARTY_API.md` | 第三方 API 工作流 |
+| `DESIGN_SWIGGER_CONTROL_API.md` | 控制台写操作 API 设计（9 端点 + WS 双向指令） |
+| `REQUIREMENTS_SWIGGER_CONTROL_API.md` | 控制台写操作 API 需求 |
+| `WORKFLOW_SWIGGER_CONTROL_API.md` | 控制台写操作 API 工作流（T1-T15 任务分解） |
 
 ## Subdirectories
 

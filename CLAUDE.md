@@ -16,6 +16,7 @@ graph_modeling_platform/
 │   ├── hooks/          # 自定义 Hook
 │   └── *.ts/tsx        # 核心模型、状态、工具、运行时态桥接
 ├── server/             # 后端服务（见 server/AGENTS.md）
+├── e2e/                # Playwright 端到端测试（真实浏览器 + WS 指令通道）
 ├── scripts/            # 一次性分析/修复脚本（非运行时依赖）
 ├── public/             # Vite 静态资源
 ├── docs/               # 第三方 API 设计/需求/工作流文档
@@ -31,7 +32,7 @@ graph_modeling_platform/
 | React 主组件 | `src/App.tsx` | 应用主逻辑（含 __appScope 装配） |
 | 视图渲染 | `src/appExtracted/appView.tsx` | topbar/画布/面板渲染 |
 | 后端 API | `server/image-server.mjs` | 图片/方案/配置 REST + /swigger |
-| 第三方 v1 API | `server/apiV1*.mjs` | 只读信封 API（schemes/library/runtime） |
+| 第三方 v1 API | `server/apiV1*.mjs` | 只读信封 API（schemes/library/runtime）+ 控制台写操作（control） |
 | 运行时态桥接 | `server/runtimeWs.mjs` + `src/runtimeWsClient.ts` | WS 桥接前端 |
 | 接口文档页 | `server/swaggerPage.mjs` → `/swigger` | 在线接口文档与测试 |
 | 测试文件 | `src/*.test.ts` / `server/*.test.mjs` | Vitest（与源文件同目录） |
@@ -47,6 +48,7 @@ graph_modeling_platform/
 | attachRuntimeWebSocket | 函数 | server/runtimeWs.mjs | /ws 升级 + 客户端注册表 |
 | createRuntimeWsClient | 函数 | src/runtimeWsClient.ts | 前端 WS 客户端 |
 | buildSvgDocument | 函数 | src/appExtracted/appPersistenceLibraryExport.tsx | 自包含 SVG 导出 |
+| createProgrammaticAddDevice | 函数 | src/appExtracted/appControlFactories.tsx | 控制台写操作工厂（9 方法） |
 | renderSwaggerHtml | 函数 | server/swaggerPage.mjs | /swigger 页面 HTML |
 
 ## 约定
@@ -67,6 +69,7 @@ graph_modeling_platform/
 | __appScope 装配 | App.tsx 每帧重建 `__appScope` 对象并 `Object.assign` 当前状态；空依赖 useEffect 需经 `__appScopeRef` 读最新引用 |
 | 双服务器架构 | 开发时同时运行 Vite (5173) + Image Server (5174)；前端 WS dev 期直连 5174 |
 | 运行时态桥接 | 第三方 `/api/v1/runtime/*` 经 WS 向前端 fetch 运行时态（model/devices/selection/screenshot/svg/e-file） |
+| WS 双向指令通道 | 第三方 `/api/v1/control/*` 写操作经 WS 下发 command 到前端 `__appScope` 程序化方法，前端回 command-response |
 | E 格式导出 | 支持电力系统 E 格式数据导出 |
 | /swigger 自包含 | 接口文档页内嵌元数据 + highlight.js + 可折叠 JSON 树，无外部 JS 依赖（除 CDN） |
 
@@ -79,8 +82,11 @@ pnpm dev
 # 构建
 pnpm build
 
-# 测试
+# 测试（单元 + 集成）
 pnpm vitest run
+
+# E2E 测试（Playwright，需浏览器）
+pnpm test:e2e
 
 # 类型检查
 pnpm tsc --noEmit
