@@ -506,7 +506,7 @@ button:disabled {
 .left-panel-footer {
   display: flex;
   flex-shrink: 0;
-  gap: 8px;
+  gap: 4px;
   padding: 6px 10px;
   border-top: 1px solid #e2e8f0;
   background: #f8fafc;
@@ -514,6 +514,11 @@ button:disabled {
   color: #64748b;
   align-items: center;
   overflow: hidden;
+}
+
+.left-panel-footer-label {
+  flex-shrink: 0;
+  color: #64748b;
 }
 
 .left-panel-footer .id-copy-cell {

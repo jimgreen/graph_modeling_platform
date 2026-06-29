@@ -310,6 +310,7 @@ export function renderAppView(__appScope: Record<string, any>) {
           {leftPanelContent}
         </div>
         <div className="left-panel-footer">
+          <span className="left-panel-footer-label">方案：</span>
           <span className="id-copy-cell" title="点击复制方案 ID" onClick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             const id = activeSchemeKey ? decodeURIComponent(activeSchemeKey) : "—";
@@ -324,6 +325,7 @@ export function renderAppView(__appScope: Record<string, any>) {
               setTimeout(() => toast.remove(), 1000);
             });
           }}>{activeSchemeKey ? decodeURIComponent(activeSchemeKey) : "—"}</span>
+          <span className="left-panel-footer-label">模型：</span>
           <span className="id-copy-cell" title="点击复制模型 ID" onClick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             const id = activeProjectKey ? decodeURIComponent(activeProjectKey) : "—";
