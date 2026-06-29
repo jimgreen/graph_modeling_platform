@@ -420,3 +420,53 @@ describe("/api/v1/control/save", () => {
     expect(json.error.code).toBe("no-online-client");
   });
 });
+
+describe("/api/v1/control/template/saveFromSelection", () => {
+  test("成功保存 → 200 {ok:true,data:{templateKind}}", async () => {
+    const ws = await connectCommandResponder("c1", (name, params) => {
+      expect(name).toBe("control.template.saveFromSelection");
+      expect(params).toMatchObject({ name: "测试模板", componentType: "test_device" });
+      return { ok: true, data: { templateKind: "custom-test_device-1" } };
+    });
+    const { status, json } = await postV1("/api/v1/control/template/saveFromSelection", {
+      name: "测试模板", componentType: "test_device"
+    });
+    expect(status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.data.templateKind).toBe("custom-test_device-1");
+    ws.close();
+  });
+
+  test("含 attributeLibraryName → 透传", async () => {
+    const ws = await connectCommandResponder("c1", (_name, params) => {
+      expect(params.attributeLibraryName).toBe("直流设备");
+      return { ok: true, data: { templateKind: "custom-test-1" } };
+    });
+    const { status, json } = await postV1("/api/v1/control/template/saveFromSelection", {
+      name: "模板", componentType: "test", attributeLibraryName: "直流设备"
+    });
+    expect(status).toBe(200);
+    expect(json.data.templateKind).toBe("custom-test-1");
+    ws.close();
+  });
+
+  test("缺 name → 400 bad-request", async () => {
+    const { status, json } = await postV1("/api/v1/control/template/saveFromSelection", { componentType: "test" });
+    expect(status).toBe(400);
+    expect(json.error.code).toBe("bad-request");
+  });
+
+  test("缺 componentType → 400 bad-request", async () => {
+    const { status, json } = await postV1("/api/v1/control/template/saveFromSelection", { name: "模板" });
+    expect(status).toBe(400);
+    expect(json.error.code).toBe("bad-request");
+  });
+
+  test("无在线客户端 → 503 no-online-client", async () => {
+    const { status, json } = await postV1("/api/v1/control/template/saveFromSelection", {
+      name: "模板", componentType: "test"
+    });
+    expect(status).toBe(503);
+    expect(json.error.code).toBe("no-online-client");
+  });
+});

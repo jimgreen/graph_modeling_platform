@@ -195,6 +195,10 @@ const ENDPOINTS = [
   { group: "控制台", method: "POST", path: "/api/v1/control/save", desc: "显式落盘（currentModel 保存当前模型，schemeTree 保存方案树，不压栈）", query: [{ name: "clientId", desc: "可选" }], body: { scope: "currentModel" }, response: "{ok:true,data:{saved:true,scope}}", examples: [
     { label: "保存当前模型", params: { __body__: { scope: "currentModel" } } },
     { label: "保存方案树", params: { __body__: { scope: "schemeTree" } } }
+  ]},
+  { group: "控制台", method: "POST", path: "/api/v1/control/template/saveFromSelection", desc: "从选中组合保存为模板（自动推导端子+图标，不经草稿对话框）", query: [{ name: "clientId", desc: "可选" }], body: { name: "新模板", componentType: "custom_device" }, response: "{ok:true,data:{templateKind}}", examples: [
+    { label: "保存选中组合为模板", params: { __body__: { name: "组合模板", componentType: "combined_device" } } },
+    { label: "指定属性库", params: { __body__: { name: "直流模板", componentType: "dc_device", attributeLibraryName: "直流设备" } } }
   ]}
 ];
 

@@ -218,6 +218,32 @@ export async function handleControlSave({ request, url, response }, ctx) {
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.save", { scope }));
 }
 
+// /api/v1/control/template/saveFromSelection —— 从选中组合保存为模板
+// body: { name, componentType, attributeLibraryName? } → 回执 { templateKind }
+export async function handleControlTemplateSaveFromSelection({ request, url, response }, ctx) {
+  let payload;
+  try {
+    payload = await readJsonBody(request);
+  } catch {
+    sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
+    return;
+  }
+  const { name, componentType, attributeLibraryName } = payload ?? {};
+  if (!name || typeof name !== "string" || !name.trim()) {
+    sendV1Error(response, "bad-request", "name 必填。");
+    return;
+  }
+  if (!componentType || typeof componentType !== "string" || !componentType.trim()) {
+    sendV1Error(response, "bad-request", "componentType 必填。");
+    return;
+  }
+  const params = { name, componentType };
+  if (attributeLibraryName !== undefined) {
+    params.attributeLibraryName = attributeLibraryName;
+  }
+  await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.template.saveFromSelection", params));
+}
+
 // 构造 v1 控制台路由表。ctx = { sendCommandToClient }
 // handle 签名：({ request, response, url, match }, ctx) => Promise<void>
 export function createV1ControlRoutes(ctx) {
@@ -231,6 +257,7 @@ export function createV1ControlRoutes(ctx) {
     { method: "POST", pattern: /^\/api\/v1\/control\/devices\/group\/?$/u, handle: wrap(handleControlDevicesGroup) },
     { method: "POST", pattern: /^\/api\/v1\/control\/device\/delete\/?$/u, handle: wrap(handleControlDeviceDelete) },
     { method: "POST", pattern: /^\/api\/v1\/control\/device\/property\/update\/?$/u, handle: wrap(handleControlDevicePropertyUpdate) },
-    { method: "POST", pattern: /^\/api\/v1\/control\/save\/?$/u, handle: wrap(handleControlSave) }
+    { method: "POST", pattern: /^\/api\/v1\/control\/save\/?$/u, handle: wrap(handleControlSave) },
+    { method: "POST", pattern: /^\/api\/v1\/control\/template\/saveFromSelection\/?$/u, handle: wrap(handleControlTemplateSaveFromSelection) }
   ];
 }

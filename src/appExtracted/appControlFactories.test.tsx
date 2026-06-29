@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { createProgrammaticAddDevice, createProgrammaticCreateScheme, createProgrammaticCreateBlankProject, createProgrammaticSelectDevices, createProgrammaticGroupSelected, createProgrammaticDeleteDevices, createProgrammaticUpdateDeviceProperty, createProgrammaticSave } from "./appControlFactories";
+import { createProgrammaticAddDevice, createProgrammaticCreateScheme, createProgrammaticCreateBlankProject, createProgrammaticSelectDevices, createProgrammaticGroupSelected, createProgrammaticDeleteDevices, createProgrammaticUpdateDeviceProperty, createProgrammaticSave, createProgrammaticSaveSelectionAsTemplate } from "./appControlFactories";
 import { DEVICE_LIBRARY_BY_KIND, createSavedScheme, createSavedProject } from "../model";
 
 // mock __appScope：捕获 pushUndoSnapshot 调用与 setNodes 追加的节点
@@ -583,6 +583,108 @@ describe("programmaticSave", () => {
       save("unknown");
     } catch (e: any) {
       expect(e.code).toBe("bad-request");
+    }
+  });
+});
+
+// mock __appScope for saveSelectionAsTemplate
+function createSaveTemplateMockScope() {
+  const calls: { persisted: boolean; templatesSet: any } = { persisted: false, templatesSet: null };
+  const nodes = [
+    { id: "n1", kind: "busbar", position: { x: 0, y: 0 }, terminals: [{ id: "t1", type: "ac", anchor: { x: 0, y: 0 } }] },
+    { id: "n2", kind: "busbar", position: { x: 100, y: 0 }, terminals: [{ id: "t2", type: "ac", anchor: { x: 100, y: 0 } }] }
+  ];
+  const edges: any[] = [];
+  const groups = [{ id: "g1", name: "组合1", nodeIds: ["n1", "n2"], edgeIds: [] }];
+  return {
+    scope: {
+      MAX_CUSTOM_DEVICE_TERMINALS: 16,
+      TERMINAL_TYPE_LIBRARY_LABELS: { ac: "交流" },
+      activeLayerGroups: groups,
+      activeSelectedGroupIds: ["g1"],
+      buildCanvasClipboard: () => ({ nodes: nodes.map((n) => ({ ...n })), edges: [] }),
+      canAddTemplateFromSelection: true,
+      canvasClipboardBounds: () => ({ left: 0, top: 0, right: 100, bottom: 50 }),
+      cloneGraphTemplateClipboard: (c: any) => c,
+      createGroupDeviceIconSvg: () => "data:image/svg+xml;base64,xxx",
+      customDeviceTemplates: [],
+      defaultComponentTypeForAttributeLibrary: () => "default_type",
+      edges,
+      groupDeviceExternalTerminals: () => [
+        { type: "ac", anchor: { x: 0, y: 0 }, association: "ac-source", label: "端子1" },
+        { type: "ac", anchor: { x: 100, y: 0 }, association: "ac-load", label: "端子2" }
+      ],
+      groupExpandedCanvasSelection: { nodeIds: ["n1", "n2"], edgeIds: [] },
+      isValidComponentTypeName: (s: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(s),
+      nextCustomTemplateKind: (ct: string) => `custom-${ct}-1`,
+      normalizeAttributeLibraryName: (s: string) => s || "交流设备",
+      normalizeComponentTypeName: (s: string) => s,
+      normalizeContainerTerminalAssociations: (types: string[], assocs: string[]) => assocs,
+      persistDeviceLibraryChange: () => { calls.persisted = true; },
+      routedEdges: [],
+      setCustomDeviceTemplates: (t: any) => { calls.templatesSet = t; },
+      visibleEdges: edges,
+      visibleNodes: nodes,
+      createDefaultCustomDeviceTerminalAnchors: (count: number, anchors: any[]) => anchors || []
+    },
+    calls
+  };
+}
+
+describe("programmaticSaveSelectionAsTemplate", () => {
+  test("合法参数 → 返回 templateKind + 持久化", () => {
+    const { scope, calls } = createSaveTemplateMockScope();
+    const save = createProgrammaticSaveSelectionAsTemplate(scope);
+    const result = save({ name: "测试模板", componentType: "test_device" });
+    expect(result.templateKind).toBe("custom-test_device-1");
+    expect(calls.persisted).toBe(true);
+    expect(calls.templatesSet).not.toBeNull();
+    expect(calls.templatesSet).toHaveLength(1);
+    expect(calls.templatesSet[0].label).toBe("测试模板");
+  });
+
+  test("缺 name 抛 bad-request", () => {
+    const { scope } = createSaveTemplateMockScope();
+    const save = createProgrammaticSaveSelectionAsTemplate(scope);
+    expect(() => save({ name: "", componentType: "test" })).toThrow(/name 必填/);
+    try {
+      save({ name: "", componentType: "test" });
+    } catch (e: any) {
+      expect(e.code).toBe("bad-request");
+    }
+  });
+
+  test("缺 componentType 抛 bad-request", () => {
+    const { scope } = createSaveTemplateMockScope();
+    const save = createProgrammaticSaveSelectionAsTemplate(scope);
+    expect(() => save({ name: "模板", componentType: "" })).toThrow(/componentType 必填/);
+    try {
+      save({ name: "模板", componentType: "" });
+    } catch (e: any) {
+      expect(e.code).toBe("bad-request");
+    }
+  });
+
+  test("非法 componentType 抛 bad-request", () => {
+    const { scope } = createSaveTemplateMockScope();
+    const save = createProgrammaticSaveSelectionAsTemplate(scope);
+    expect(() => save({ name: "模板", componentType: "123invalid" })).toThrow(/合法英文名称/);
+    try {
+      save({ name: "模板", componentType: "123invalid" });
+    } catch (e: any) {
+      expect(e.code).toBe("bad-request");
+    }
+  });
+
+  test("未选中组合抛 control-failed", () => {
+    const { scope } = createSaveTemplateMockScope();
+    scope.canAddTemplateFromSelection = false;
+    const save = createProgrammaticSaveSelectionAsTemplate(scope);
+    expect(() => save({ name: "模板", componentType: "test" })).toThrow(/选中一个图元组合/);
+    try {
+      save({ name: "模板", componentType: "test" });
+    } catch (e: any) {
+      expect(e.code).toBe("control-failed");
     }
   });
 });

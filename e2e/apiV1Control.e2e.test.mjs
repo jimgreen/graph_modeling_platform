@@ -206,3 +206,34 @@ describe("control/save e2e", () => {
     expect(json.error.code).toBe("bad-request");
   }, 120000);
 });
+
+describe("control/template/saveFromSelection e2e", () => {
+  test("未选中组合 → 前端返 control-failed", async () => {
+    const { page, baseUrl, imageBaseUrl } = env;
+    const clientId = await loadFrontendAndWaitOnline(page, baseUrl, imageBaseUrl);
+
+    const res = await fetch(`${imageBaseUrl}/api/v1/control/template/saveFromSelection?clientId=${clientId}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "测试模板", componentType: "test_device" })
+    });
+    const json = await res.json();
+    expect(res.status).toBe(500);
+    expect(json.ok).toBe(false);
+    expect(json.error.code).toBe("control-failed");
+  }, 120000);
+
+  test("缺 name → 400 bad-request（server 端校验）", async () => {
+    const { page, baseUrl, imageBaseUrl } = env;
+    const clientId = await loadFrontendAndWaitOnline(page, baseUrl, imageBaseUrl);
+
+    const res = await fetch(`${imageBaseUrl}/api/v1/control/template/saveFromSelection?clientId=${clientId}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ componentType: "test_device" })
+    });
+    const json = await res.json();
+    expect(res.status).toBe(400);
+    expect(json.error.code).toBe("bad-request");
+  }, 120000);
+});

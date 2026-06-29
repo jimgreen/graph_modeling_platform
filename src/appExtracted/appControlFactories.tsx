@@ -292,3 +292,132 @@ export function createProgrammaticSave(__appScope: Record<string, any>) {
     return { saved: true, scope };
   };
 }
+
+// 从当前选中组合保存为模板：name 必填，componentType 必填，attributeLibraryName 可选。
+// 复用现有端子推导+图标生成逻辑（buildCanvasClipboard/groupDeviceExternalTerminals/createGroupDeviceIconSvg），
+// 构造 DeviceTemplate 后直接 persistDeviceLibraryChange 落盘。经 WS control.template.saveFromSelection 指令调用。
+export function createProgrammaticSaveSelectionAsTemplate(__appScope: Record<string, any>) {
+  return (opts: { name: string; componentType: string; attributeLibraryName?: string }) => {
+    const {
+      MAX_CUSTOM_DEVICE_TERMINALS,
+      TERMINAL_TYPE_LIBRARY_LABELS,
+      activeLayerGroups, activeSelectedGroupIds,
+      buildCanvasClipboard, canAddTemplateFromSelection, canvasClipboardBounds,
+      cloneGraphTemplateClipboard, createGroupDeviceIconSvg, customDeviceTemplates,
+      defaultComponentTypeForAttributeLibrary, edges, groupDeviceExternalTerminals,
+      groupExpandedCanvasSelection, isValidComponentTypeName,
+      nextCustomTemplateKind, normalizeAttributeLibraryName, normalizeComponentTypeName,
+      normalizeContainerTerminalAssociations, persistDeviceLibraryChange,
+      routedEdges, setCustomDeviceTemplates, visibleEdges, visibleNodes,
+      createDefaultCustomDeviceTerminalAnchors
+    } = __appScope;
+
+    // 校验参数
+    const { name, componentType: rawComponentType, attributeLibraryName: rawAttributeLibraryName } = opts;
+    if (!name || typeof name !== "string" || !name.trim()) {
+      const e: any = new Error("name 必填。");
+      e.code = "bad-request";
+      throw e;
+    }
+    const componentType = normalizeComponentTypeName(rawComponentType);
+    if (!componentType) {
+      const e: any = new Error("componentType 必填。");
+      e.code = "bad-request";
+      throw e;
+    }
+    if (!isValidComponentTypeName(componentType)) {
+      const e: any = new Error("componentType 须为合法英文名称。");
+      e.code = "bad-request";
+      throw e;
+    }
+
+    // 校验选中状态
+    if (!canAddTemplateFromSelection) {
+      const e: any = new Error("请先选中一个图元组合。");
+      e.code = "control-failed";
+      throw e;
+    }
+
+    // 构建 clipboard
+    const clipboard = buildCanvasClipboard(
+      visibleNodes,
+      visibleEdges,
+      routedEdges,
+      groupExpandedCanvasSelection.nodeIds,
+      groupExpandedCanvasSelection.edgeIds,
+      activeLayerGroups,
+      { expandGroups: true }
+    );
+    const bounds = canvasClipboardBounds(clipboard);
+    if (!bounds || (clipboard.nodes.length === 0 && clipboard.edges.length === 0)) {
+      const e: any = new Error("当前组合无可定义为元件的图元。");
+      e.code = "control-failed";
+      throw e;
+    }
+
+    // 提取端子
+    const terminals = groupDeviceExternalTerminals(clipboard, edges);
+    if (terminals.length > MAX_CUSTOM_DEVICE_TERMINALS) {
+      const e: any = new Error(`端子数 ${terminals.length} 超过上限 ${MAX_CUSTOM_DEVICE_TERMINALS}。`);
+      e.code = "control-failed";
+      throw e;
+    }
+
+    // 生成图标 + 尺寸
+    const iconImage = createGroupDeviceIconSvg(clipboard);
+    const size = {
+      width: Math.max(1, Math.round(bounds.right - bounds.left)),
+      height: Math.max(1, Math.round(bounds.bottom - bounds.top))
+    };
+
+    // 构造模板
+    const attributeLibraryName = normalizeAttributeLibraryName(rawAttributeLibraryName || "交流设备");
+    const terminalTypes = terminals.map((t: any) => t.type);
+    const terminalAssociations = normalizeContainerTerminalAssociations(
+      terminalTypes,
+      terminals.map((t: any) => t.association),
+      terminalTypes.length
+    );
+    const terminalAnchors = createDefaultCustomDeviceTerminalAnchors(
+      terminals.length,
+      terminals.map((t: any) => t.anchor)
+    );
+    const terminalLabels = terminals.map(
+      (t: any, i: number) => t.label?.trim() || `${TERMINAL_TYPE_LIBRARY_LABELS[terminalTypes[i]] ?? terminalTypes[i]}端${i + 1}`
+    );
+    const customKind = nextCustomTemplateKind(componentType);
+    const template = {
+      kind: customKind,
+      label: name.trim(),
+      attributeLibrary: attributeLibraryName,
+      size,
+      params: {
+        component_type: componentType,
+        fillColor: "transparent",
+        strokeColor: "transparent",
+        lineWidth: "0",
+        backgroundImage: iconImage,
+        backgroundImageAssetId: "",
+        backgroundImageCleared: ""
+      },
+      terminalType: terminalTypes[0] ?? "ac",
+      terminalCount: terminalTypes.length,
+      terminalTypes,
+      terminalAssociations: terminalTypes.length > 0 ? terminalAssociations : undefined,
+      terminalLabels,
+      terminalAnchors,
+      isContainer: terminalTypes.length > 0,
+      allowResizeTransform: true,
+      custom: true,
+      parameterDefinitions: [],
+      stateDefinitions: []
+    };
+    const nextTemplates = [...customDeviceTemplates, template];
+    setCustomDeviceTemplates(nextTemplates);
+    persistDeviceLibraryChange({ customDeviceTemplates: nextTemplates }, {
+      success: `模板已保存到后台：${name}`,
+      failure: `模板保存到本地，后台保存失败：${name}`
+    });
+    return { templateKind: customKind };
+  };
+}

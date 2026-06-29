@@ -104,6 +104,8 @@ function commandResponder(name, params) {
       return { ok: true, data: { id: params.id, category: params.category, patched: Object.keys(params.patch || {}) } };
     case "control.save":
       return { ok: true, data: { saved: true, scope: params.scope } };
+    case "control.template.saveFromSelection":
+      return { ok: true, data: { templateKind: `custom-${params.componentType || "device"}-1` } };
     default:
       return { ok: false, error: { code: "unknown-command", message: `unknown command: ${name}` } };
   }
@@ -276,6 +278,7 @@ function expectFor(ep, ex) {
   if (p === "/api/v1/control/device/delete") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.deletedIds).toBeInstanceOf(Array); } };
   if (p === "/api/v1/control/device/property/update") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };
   if (p === "/api/v1/control/save") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.saved).toBe(true); } };
+  if (p === "/api/v1/control/template/saveFromSelection") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.templateKind).toBeTruthy(); } };
 
   throw new Error(`未定义期望: ${ep.method} ${p} (示例: ${label})`);
 }
