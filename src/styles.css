@@ -506,7 +506,7 @@ button:disabled {
 .left-panel-footer {
   display: flex;
   flex-shrink: 0;
-  gap: 4px;
+  gap: 12px;
   padding: 6px 10px;
   border-top: 1px solid #e2e8f0;
   background: #f8fafc;
@@ -516,15 +516,24 @@ button:disabled {
   overflow: hidden;
 }
 
+.left-panel-footer-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 0;
+}
+
 .left-panel-footer-label {
   flex-shrink: 0;
   color: #64748b;
+  white-space: nowrap;
 }
 
 .left-panel-footer .id-copy-cell {
   flex: 1 1 0;
   min-width: 0;
-  text-align: center;
+  text-align: left;
   font-size: 11px;
   padding: 2px 6px;
 }

@@ -310,36 +310,42 @@ export function renderAppView(__appScope: Record<string, any>) {
           {leftPanelContent}
         </div>
         <div className="left-panel-footer">
-          <span className="left-panel-footer-label">方案：</span>
-          <span className="id-copy-cell" title="点击复制方案 ID" onClick={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            const id = activeSchemeKey ? decodeURIComponent(activeSchemeKey) : "—";
-            navigator.clipboard.writeText(id).then(() => {
-              const toast = document.createElement("span");
-              toast.className = "id-copy-toast";
-              toast.textContent = "已复制";
-              toast.style.position = "fixed";
-              toast.style.left = (rect.left + rect.width / 2) + "px";
-              toast.style.top = (rect.top - 8) + "px";
-              document.body.appendChild(toast);
-              setTimeout(() => toast.remove(), 1000);
-            });
-          }}>{activeSchemeKey ? decodeURIComponent(activeSchemeKey) : "—"}</span>
-          <span className="left-panel-footer-label">模型：</span>
-          <span className="id-copy-cell" title="点击复制模型 ID" onClick={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            const id = activeProjectKey ? decodeURIComponent(activeProjectKey) : "—";
-            navigator.clipboard.writeText(id).then(() => {
-              const toast = document.createElement("span");
-              toast.className = "id-copy-toast";
-              toast.textContent = "已复制";
-              toast.style.position = "fixed";
-              toast.style.left = (rect.left + rect.width / 2) + "px";
-              toast.style.top = (rect.top - 8) + "px";
-              document.body.appendChild(toast);
-              setTimeout(() => toast.remove(), 1000);
-            });
-          }}>{activeProjectKey ? decodeURIComponent(activeProjectKey) : "—"}</span>
+          <span className="left-panel-footer-item">
+            <span className="left-panel-footer-label">方案：</span>
+            <span className="id-copy-cell" title="点击复制方案 ID" onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              const raw = activeSchemeKey || "";
+              const id = raw ? decodeURIComponent(raw.replace(/^[^:]+:/, "")) : "—";
+              navigator.clipboard.writeText(id).then(() => {
+                const toast = document.createElement("span");
+                toast.className = "id-copy-toast";
+                toast.textContent = "已复制";
+                toast.style.position = "fixed";
+                toast.style.left = (rect.left + rect.width / 2) + "px";
+                toast.style.top = (rect.top - 8) + "px";
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 1000);
+              });
+            }}>{activeSchemeKey ? decodeURIComponent(activeSchemeKey.replace(/^[^:]+:/, "")) : "—"}</span>
+          </span>
+          <span className="left-panel-footer-item">
+            <span className="left-panel-footer-label">模型：</span>
+            <span className="id-copy-cell" title="点击复制模型 ID" onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              const raw = activeProjectKey || "";
+              const id = raw ? decodeURIComponent(raw.replace(/^[^:]+:/, "")) : "—";
+              navigator.clipboard.writeText(id).then(() => {
+                const toast = document.createElement("span");
+                toast.className = "id-copy-toast";
+                toast.textContent = "已复制";
+                toast.style.position = "fixed";
+                toast.style.left = (rect.left + rect.width / 2) + "px";
+                toast.style.top = (rect.top - 8) + "px";
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 1000);
+              });
+            }}>{activeProjectKey ? decodeURIComponent(activeProjectKey.replace(/^[^:]+:/, "")) : "—"}</span>
+          </span>
         </div>
       </aside>
 
