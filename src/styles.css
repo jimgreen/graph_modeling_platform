@@ -8218,6 +8218,35 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   cursor: default;
 }
 
+.param-table .id-copy-cell {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  color: #334155;
+  background: #f1f5f9;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 2px 8px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  user-select: all;
+}
+
+.param-table .id-copy-cell:hover {
+  background: #e2e8f0;
+  border-color: #cbd5e1;
+}
+
+.param-table .id-copy-cell[data-copied="1"] {
+  color: #16a34a;
+  background: #dcfce7;
+  border-color: #bbf7d0;
+}
+
 .param-table input:disabled,
 .param-table select:disabled,
 .param-table textarea:disabled {

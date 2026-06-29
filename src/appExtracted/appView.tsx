@@ -787,6 +787,24 @@ export function renderAppView(__appScope: Record<string, any>) {
                   <table className="param-table">
                   <tbody>
                     <tr>
+                      {batchEditors.renderChineseParamHeader("graph_id", "ID")}
+                      <td>
+                        <span
+                          className="id-copy-cell"
+                          title="点击复制 ID"
+                          onClick={() => {
+                            navigator.clipboard.writeText(inspectorSelectedNode.id).then(() => {
+                              const target = event?.currentTarget as HTMLElement | null;
+                              if (target) {
+                                target.dataset.copied = "1";
+                                setTimeout(() => { target.dataset.copied = ""; }, 1200);
+                              }
+                            });
+                          }}
+                        >{inspectorSelectedNode.id}</span>
+                      </td>
+                    </tr>
+                    <tr>
                       {batchEditors.renderChineseParamHeader("graph_x", "X坐标")}
                       <td><BufferedTextInput type="number" value={Math.round(inspectorSelectedNode.position.x)} onCommit={(nextValue) => updateSelectedNode({ position: { ...inspectorSelectedNode.position, x: Number(nextValue) } })}/></td>
                     </tr>
