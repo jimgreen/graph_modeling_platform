@@ -124,6 +124,34 @@ export async function handleControlModelCreate({ request, url, response }, ctx) 
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.model.create", params));
 }
 
+// /api/v1/control/devices/select —— 选中图元
+// body: { ids: string[], mode?: "set" | "add" | "toggle" } → 回执 { selectedIds }
+export async function handleControlDevicesSelect({ request, url, response }, ctx) {
+  let payload;
+  try {
+    payload = await readJsonBody(request);
+  } catch {
+    sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
+    return;
+  }
+  const { ids, mode } = payload ?? {};
+  if (!Array.isArray(ids)) {
+    sendV1Error(response, "bad-request", "ids 须为字符串数组。");
+    return;
+  }
+  const params = { ids };
+  if (mode !== undefined) {
+    params.mode = mode;
+  }
+  await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.devices.select", params));
+}
+
+// /api/v1/control/devices/group —— 将当前选中图元组合
+// 无 body → 回执 { groupId, name }
+export async function handleControlDevicesGroup({ url, response }, ctx) {
+  await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.devices.group", {}));
+}
+
 // 构造 v1 控制台路由表。ctx = { sendCommandToClient }
 // handle 签名：({ request, response, url, match }, ctx) => Promise<void>
 export function createV1ControlRoutes(ctx) {
@@ -132,6 +160,8 @@ export function createV1ControlRoutes(ctx) {
   return [
     { method: "POST", pattern: /^\/api\/v1\/control\/device\/add\/?$/u, handle: wrap(handleControlDeviceAdd) },
     { method: "POST", pattern: /^\/api\/v1\/control\/scheme\/create\/?$/u, handle: wrap(handleControlSchemeCreate) },
-    { method: "POST", pattern: /^\/api\/v1\/control\/model\/create\/?$/u, handle: wrap(handleControlModelCreate) }
+    { method: "POST", pattern: /^\/api\/v1\/control\/model\/create\/?$/u, handle: wrap(handleControlModelCreate) },
+    { method: "POST", pattern: /^\/api\/v1\/control\/devices\/select\/?$/u, handle: wrap(handleControlDevicesSelect) },
+    { method: "POST", pattern: /^\/api\/v1\/control\/devices\/group\/?$/u, handle: wrap(handleControlDevicesGroup) }
   ];
 }

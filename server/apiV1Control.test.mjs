@@ -235,3 +235,65 @@ describe("/api/v1/control/model/create", () => {
     ws.close();
   });
 });
+
+describe("/api/v1/control/devices/select", () => {
+  test("成功选中 → 200 {ok:true,data:{selectedIds}}", async () => {
+    const ws = await connectCommandResponder("c1", (name, params) => {
+      expect(name).toBe("control.devices.select");
+      expect(params.ids).toEqual(["n1", "n2"]);
+      expect(params.mode).toBe("set");
+      return { ok: true, data: { selectedIds: ["n1", "n2"] } };
+    });
+    const { status, json } = await postV1("/api/v1/control/devices/select", { ids: ["n1", "n2"], mode: "set" });
+    expect(status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.data.selectedIds).toEqual(["n1", "n2"]);
+    ws.close();
+  });
+
+  test("缺 ids → 400 bad-request（不下发指令）", async () => {
+    const { status, json } = await postV1("/api/v1/control/devices/select", { mode: "set" });
+    expect(status).toBe(400);
+    expect(json.ok).toBe(false);
+    expect(json.error.code).toBe("bad-request");
+  });
+
+  test("无在线客户端 → 503 no-online-client", async () => {
+    const { status, json } = await postV1("/api/v1/control/devices/select", { ids: ["n1"] });
+    expect(status).toBe(503);
+    expect(json.error.code).toBe("no-online-client");
+  });
+});
+
+describe("/api/v1/control/devices/group", () => {
+  test("成功组合 → 200 {ok:true,data:{groupId,name}}", async () => {
+    const ws = await connectCommandResponder("c1", (name) => {
+      expect(name).toBe("control.devices.group");
+      return { ok: true, data: { groupId: "g1", name: "组合1" } };
+    });
+    const { status, json } = await postV1("/api/v1/control/devices/group", {});
+    expect(status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.data.groupId).toBe("g1");
+    expect(json.data.name).toBe("组合1");
+    ws.close();
+  });
+
+  test("无在线客户端 → 503 no-online-client", async () => {
+    const { status, json } = await postV1("/api/v1/control/devices/group", {});
+    expect(status).toBe(503);
+    expect(json.error.code).toBe("no-online-client");
+  });
+
+  test("前端返 control-failed → 透传 error code", async () => {
+    const ws = await connectCommandResponder("c1", () => ({
+      ok: false,
+      error: { code: "control-failed", message: "至少选中 2 个图元方可组合。" }
+    }));
+    const { status, json } = await postV1("/api/v1/control/devices/group", {});
+    expect(status).toBe(500);
+    expect(json.ok).toBe(false);
+    expect(json.error.code).toBe("control-failed");
+    ws.close();
+  });
+});

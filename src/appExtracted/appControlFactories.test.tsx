@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { createProgrammaticAddDevice, createProgrammaticCreateScheme, createProgrammaticCreateBlankProject } from "./appControlFactories";
+import { createProgrammaticAddDevice, createProgrammaticCreateScheme, createProgrammaticCreateBlankProject, createProgrammaticSelectDevices, createProgrammaticGroupSelected } from "./appControlFactories";
 import { DEVICE_LIBRARY_BY_KIND, createSavedScheme, createSavedProject } from "../model";
 
 // mock __appScope：捕获 pushUndoSnapshot 调用与 setNodes 追加的节点
@@ -258,6 +258,147 @@ describe("programmaticCreateBlankProject", () => {
       createBlankProject("模型");
     } catch (e: any) {
       expect(e.code).toBe("bad-request");
+    }
+  });
+});
+
+// mock __appScope for selectDevices：捕获 setSelectedNodeIds 调用
+function createSelectMockScope(initialSelected: string[] = []) {
+  const calls: { selectedIds: string[] | null } = { selectedIds: null };
+  return {
+    scope: {
+      selectedNodeIds: initialSelected,
+      setSelectedNodeIds: (ids: string[]) => {
+        calls.selectedIds = ids;
+      }
+    },
+    calls
+  };
+}
+
+describe("programmaticSelectDevices", () => {
+  test("set 模式直接替换选中", () => {
+    const { scope, calls } = createSelectMockScope(["old1"]);
+    const select = createProgrammaticSelectDevices(scope);
+    const result = select(["a", "b"]);
+    expect(result.selectedIds).toEqual(["a", "b"]);
+    expect(calls.selectedIds).toEqual(["a", "b"]);
+  });
+
+  test("add 模式合并去重", () => {
+    const { scope, calls } = createSelectMockScope(["a", "b"]);
+    const select = createProgrammaticSelectDevices(scope);
+    const result = select(["b", "c"], "add");
+    expect(result.selectedIds).toEqual(["a", "b", "c"]);
+    expect(calls.selectedIds).toEqual(["a", "b", "c"]);
+  });
+
+  test("toggle 模式切换：存在则移除，不存在则加入", () => {
+    const { scope, calls } = createSelectMockScope(["a", "b"]);
+    const select = createProgrammaticSelectDevices(scope);
+    const result = select(["b", "c"], "toggle");
+    expect(result.selectedIds).toEqual(["a", "c"]);
+    expect(calls.selectedIds).toEqual(["a", "c"]);
+  });
+
+  test("缺省 mode 为 set", () => {
+    const { scope } = createSelectMockScope(["old"]);
+    const select = createProgrammaticSelectDevices(scope);
+    const result = select(["x"]);
+    expect(result.selectedIds).toEqual(["x"]);
+  });
+
+  test("非数组 ids 抛 bad-request", () => {
+    const { scope } = createSelectMockScope();
+    const select = createProgrammaticSelectDevices(scope);
+    expect(() => select("not-array" as any)).toThrow(/ids 须为字符串数组/);
+    try {
+      select("not-array" as any);
+    } catch (e: any) {
+      expect(e.code).toBe("bad-request");
+    }
+  });
+
+  test("未知 mode 抛 bad-request", () => {
+    const { scope } = createSelectMockScope();
+    const select = createProgrammaticSelectDevices(scope);
+    expect(() => select(["a"], "unknown" as any)).toThrow(/未知选中模式/);
+    try {
+      select(["a"], "unknown" as any);
+    } catch (e: any) {
+      expect(e.code).toBe("bad-request");
+    }
+  });
+});
+
+// mock __appScope for groupSelected：模拟 createCanvasGroupFromSelection + setGroups 等
+function createGroupMockScope(selectedNodeIds: string[] = [], selectedEdgeIds: string[] = []) {
+  const calls: { undo: boolean; groupsSet: any; selectionScope: string | null; selectedNodeIds: string[] | null } = {
+    undo: false,
+    groupsSet: null,
+    selectionScope: null,
+    selectedNodeIds: null
+  };
+  const nodes = selectedNodeIds.map((id) => ({ id, kind: "static-text" }));
+  const edges: any[] = [];
+  const groups: any[] = [];
+  return {
+    scope: {
+      activeSelectedNodeIds: selectedNodeIds,
+      activeSelectedEdgeIds: selectedEdgeIds,
+      groups,
+      nodes,
+      edges,
+      createCanvasGroupFromSelection: (_groups: any, nodeIds: string[], edgeIds: string[], createId: () => string) => {
+        if (nodeIds.length + edgeIds.length < 2) return { groups: [..._groups], group: null };
+        const id = createId();
+        const group = { id, name: "组合1", nodeIds, edgeIds };
+        return { groups: [..._groups, group], group };
+      },
+      normalizeModelGroups: (g: any) => g,
+      pushUndoSnapshot: () => { calls.undo = true; },
+      setGroups: (g: any) => { calls.groupsSet = g; },
+      setCanvasSelectionScope: (s: string) => { calls.selectionScope = s; },
+      setSelectedNodeIds: (ids: string[]) => { calls.selectedNodeIds = ids; },
+      setSelectedEdgeId: () => {},
+      setSelectedEdgeIds: () => {},
+      expandSelectionByGroups: (_groups: any, nodeIds: string[], edgeIds: string[]) => ({ nodeIds, edgeIds })
+    },
+    calls
+  };
+}
+
+describe("programmaticGroupSelected", () => {
+  test("选中 >=2 图元 → 组合成功返回 {groupId,name} + 压栈 + setGroups", () => {
+    const { scope, calls } = createGroupMockScope(["n1", "n2"]);
+    const group = createProgrammaticGroupSelected(scope);
+    const result = group();
+    expect(result.groupId).toBeTruthy();
+    expect(result.name).toBe("组合1");
+    expect(calls.undo).toBe(true);
+    expect(calls.groupsSet).not.toBeNull();
+    expect(calls.selectionScope).toBe("group");
+  });
+
+  test("选中 <2 图元抛 control-failed", () => {
+    const { scope } = createGroupMockScope(["n1"]);
+    const group = createProgrammaticGroupSelected(scope);
+    expect(() => group()).toThrow(/至少选中 2 个图元/);
+    try {
+      group();
+    } catch (e: any) {
+      expect(e.code).toBe("control-failed");
+    }
+  });
+
+  test("空选中抛 control-failed", () => {
+    const { scope } = createGroupMockScope();
+    const group = createProgrammaticGroupSelected(scope);
+    expect(() => group()).toThrow(/至少选中 2 个图元/);
+    try {
+      group();
+    } catch (e: any) {
+      expect(e.code).toBe("control-failed");
     }
   });
 });

@@ -90,3 +90,52 @@ describe("control.device/add e2e", () => {
     expect(json.error.code).toBe("no-online-client");
   }, 120000);
 });
+
+describe("control.devices/select e2e", () => {
+  test("选中图元 → 通道打通返回 selectedIds", async () => {
+    const { page, baseUrl, imageBaseUrl } = env;
+    const clientId = await loadFrontendAndWaitOnline(page, baseUrl, imageBaseUrl);
+
+    const res = await fetch(`${imageBaseUrl}/api/v1/control/devices/select?clientId=${clientId}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids: ["fake-id-1", "fake-id-2"], mode: "set" })
+    });
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.data.selectedIds).toEqual(["fake-id-1", "fake-id-2"]);
+  }, 120000);
+
+  test("非数组 ids → 400 bad-request", async () => {
+    const { page, baseUrl, imageBaseUrl } = env;
+    const clientId = await loadFrontendAndWaitOnline(page, baseUrl, imageBaseUrl);
+
+    const res = await fetch(`${imageBaseUrl}/api/v1/control/devices/select?clientId=${clientId}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids: "not-array" })
+    });
+    const json = await res.json();
+    expect(res.status).toBe(400);
+    expect(json.error.code).toBe("bad-request");
+  }, 120000);
+});
+
+describe("control.devices/group e2e", () => {
+  test("无选中 → 前端返 control-failed（透传 error code）", async () => {
+    const { page, baseUrl, imageBaseUrl } = env;
+    const clientId = await loadFrontendAndWaitOnline(page, baseUrl, imageBaseUrl);
+
+    const res = await fetch(`${imageBaseUrl}/api/v1/control/devices/group?clientId=${clientId}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({})
+    });
+    const json = await res.json();
+    expect(res.status).toBe(500);
+    expect(json.ok).toBe(false);
+    expect(json.error.code).toBe("control-failed");
+    expect(json.error.message).toMatch(/至少选中 2 个图元/);
+  }, 120000);
+});
