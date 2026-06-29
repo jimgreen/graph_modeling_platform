@@ -5938,6 +5938,29 @@ Object.assign(__appScope, { runtimeWsStatus, runtimeWsBlinkSeq, runtimeWsClientI
 useEffect(() => {
   const snapshotHandler = (resource: any, params?: any) => createRuntimeSnapshotHandler(__appScopeRef.current)(resource, params);
   const screenshotHandler = (params: any) => createRuntimeScreenshotHandler(__appScopeRef.current)(params);
+  // 写指令分发：name → __appScope 上的 programmatic* 方法。
+  // 方法逐个在 T4+ 装配到 __appScope；未装配时返 unknown-command，不阻断通道骨架。
+  const commandHandler = async (name: string, params: any) => {
+    const scope = __appScopeRef.current as any;
+    const dispatch: Record<string, (p: any) => unknown> = {
+      "control.scheme.create": (p) => scope.programmaticCreateScheme?.(p.name, p.parentSchemeId),
+      "control.model.create": (p) => scope.programmaticCreateBlankProject?.(p.name, p.schemeId),
+      "control.devices.select": (p) => scope.programmaticSelectDevices?.(p.ids, p.mode),
+      "control.devices.group": () => scope.programmaticGroupSelected?.(),
+      "control.template.saveFromSelection": (p) => scope.programmaticSaveSelectionAsTemplate?.(p),
+      "control.device.property.update": (p) => scope.programmaticUpdateDeviceProperty?.(p.id, p.category, p.patch),
+      "control.device.add": (p) => scope.programmaticAddDevice?.(p.kind, p.x, p.y, p.attrs),
+      "control.device.delete": (p) => scope.programmaticDeleteDevices?.(p.ids),
+      "control.save": (p) => scope.programmaticSave?.(p.scope)
+    };
+    const handler = dispatch[name];
+    if (!handler) {
+      const e: any = new Error(`未知指令：${name}`);
+      e.code = "unknown-command";
+      throw e;
+    }
+    return handler(params ?? {});
+  };
   const client = createRuntimeWsClient(async (resource, params) => {
     if (resource === "runtime.screenshot") {
       return screenshotHandler(params as { width?: number; height?: number });
@@ -5945,7 +5968,8 @@ useEffect(() => {
     return snapshotHandler(resource as any, params);
   }, {
     onStatusChange: (s) => setRuntimeWsStatus(s),
-    onActivity: () => setRuntimeWsBlinkSeq((n) => n + 1)
+    onActivity: () => setRuntimeWsBlinkSeq((n) => n + 1),
+    commandHandler
   });
   setRuntimeWsClientId(client.clientId);
   client.connect();

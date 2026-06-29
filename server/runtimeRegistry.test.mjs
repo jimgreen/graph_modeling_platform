@@ -1,5 +1,5 @@
 import { describe, expect, test, vi, beforeEach, afterEach } from "vitest";
-import { createRuntimeRegistry, NoOnlineClientError, FetchTimeoutError } from "./runtimeRegistry.mjs";
+import { createRuntimeRegistry, NoOnlineClientError, FetchTimeoutError, CommandTimeoutError } from "./runtimeRegistry.mjs";
 
 // 注册表纯逻辑测试，不依赖 WS。sendFetch 用 mock。
 function createMockSend() {
@@ -151,5 +151,98 @@ describe("runtimeRegistry fetch 拉取", () => {
     await promise;
     const entry = reg.getClient("c1");
     expect(entry.pendingFetches.size).toBe(0);
+  });
+});
+
+describe("runtimeRegistry command 指令通道", () => {
+  test("commandFromClient 发 command 消息并等响应", async () => {
+    const reg = createRuntimeRegistry();
+    reg.register("c1", () => {});
+    const mockSend = createMockSend();
+    const promise = reg.commandFromClient("c1", "cmd1", "control.device.add", { kind: "busbar" }, mockSend.send);
+    expect(mockSend.sent).toHaveLength(1);
+    expect(mockSend.sent[0].message).toMatchObject({
+      type: "command",
+      requestId: "cmd1",
+      name: "control.device.add",
+      params: { kind: "busbar" }
+    });
+    reg.resolveCommand("c1", "cmd1", true, { id: "n1" }, null);
+    const data = await promise;
+    expect(data).toEqual({ id: "n1" });
+  });
+
+  test("commandFromClient 前端返失败时 reject 带 code", async () => {
+    const reg = createRuntimeRegistry();
+    reg.register("c1", () => {});
+    const mockSend = createMockSend();
+    const promise = reg.commandFromClient("c1", "cmd2", "control.device.add", {}, mockSend.send);
+    reg.resolveCommand("c1", "cmd2", false, null, { code: "bad-request", message: "kind 必填" });
+    await expect(promise).rejects.toMatchObject({ code: "bad-request", message: "kind 必填" });
+  });
+
+  test("commandFromClient 无在线客户端抛 NoOnlineClientError", async () => {
+    const reg = createRuntimeRegistry();
+    await expect(
+      reg.commandFromClient("c1", "cmd3", "control.device.add", {}, () => {})
+    ).rejects.toThrow(NoOnlineClientError);
+  });
+
+  test("commandFromClient 超时 reject CommandTimeoutError", async () => {
+    const reg = createRuntimeRegistry();
+    reg.register("c1", () => {});
+    vi.useFakeTimers();
+    try {
+      const mockSend = createMockSend();
+      const promise = reg.commandFromClient("c1", "cmd4", "control.device.add", {}, mockSend.send);
+      vi.advanceTimersByTime(6000);
+      await expect(promise).rejects.toThrow(CommandTimeoutError);
+      await expect(promise).rejects.toMatchObject({ code: "ws-timeout", command: "control.device.add" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("客户端断线时 reject 所有 pending command", async () => {
+    const reg = createRuntimeRegistry();
+    reg.register("c1", () => {});
+    const mockSend = createMockSend();
+    const promise = reg.commandFromClient("c1", "cmd5", "control.device.add", {}, mockSend.send);
+    reg.unregister("c1");
+    await expect(promise).rejects.toThrow(NoOnlineClientError);
+  });
+
+  test("resolveCommand 未知 requestId 返 false", () => {
+    const reg = createRuntimeRegistry();
+    reg.register("c1", () => {});
+    expect(reg.resolveCommand("c1", "unknown", true, {}, null)).toBe(false);
+  });
+
+  test("command 完成后 pending 清理", async () => {
+    const reg = createRuntimeRegistry();
+    reg.register("c1", () => {});
+    const mockSend = createMockSend();
+    const promise = reg.commandFromClient("c1", "cmd6", "control.device.add", {}, mockSend.send);
+    reg.resolveCommand("c1", "cmd6", true, {}, null);
+    await promise;
+    const entry = reg.getClient("c1");
+    expect(entry.pendingCommands.size).toBe(0);
+  });
+
+  test("fetch 与 command 通道独立，requestId 不互相干扰", async () => {
+    const reg = createRuntimeRegistry();
+    reg.register("c1", () => {});
+    const mockSend = createMockSend();
+    // 用相同 requestId 发不同通道，验证互不串扰
+    const fetchPromise = reg.fetchFromClient("c1", "dup", "runtime.snapshot", {}, mockSend.send);
+    const commandPromise = reg.commandFromClient("c1", "dup", "control.device.add", {}, mockSend.send);
+    // resolveCommand 不应影响 fetch 的 pending
+    expect(reg.resolveCommand("c1", "dup", true, { id: "n1" }, null)).toBe(true);
+    const cmdData = await commandPromise;
+    expect(cmdData).toEqual({ id: "n1" });
+    // fetch 仍 pending，再用 resolveFetch 解决
+    expect(reg.resolveFetch("c1", "dup", { model: "m1" }, null)).toBe(true);
+    const fetchData = await fetchPromise;
+    expect(fetchData).toEqual({ model: "m1" });
   });
 });

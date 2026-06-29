@@ -187,6 +187,86 @@ describe("runtimeWsClient fetch 响应", () => {
   });
 });
 
+describe("runtimeWsClient command 指令响应", () => {
+  test("收到 command 调 commandHandler 并回 command-response(data)", async () => {
+    const commandHandler = vi.fn(async () => ({ id: "n1" }));
+    const client = createRuntimeWsClient(async () => ({ ok: true, data: {} }), { commandHandler });
+    client.connect();
+    const ws = mockWs.instances[0];
+    ws.triggerOpen();
+    ws.triggerMessage({ type: "command", requestId: "c1", name: "control.device.add", params: { kind: "busbar" } });
+    await Promise.resolve();
+    await Promise.resolve();
+    const response = ws.sent.map((s) => JSON.parse(s)).find((m) => m.type === "command-response");
+    expect(response).toMatchObject({ type: "command-response", requestId: "c1", ok: true, data: { id: "n1" } });
+    expect(commandHandler).toHaveBeenCalledWith("control.device.add", { kind: "busbar" });
+    client.close();
+  });
+
+  test("commandHandler 抛错回传 control-failed", async () => {
+    const commandHandler = vi.fn(async () => {
+      throw new Error("kind 必填");
+    });
+    const client = createRuntimeWsClient(async () => ({ ok: true, data: {} }), { commandHandler });
+    client.connect();
+    const ws = mockWs.instances[0];
+    ws.triggerOpen();
+    ws.triggerMessage({ type: "command", requestId: "c2", name: "control.device.add", params: {} });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    const response = ws.sent.map((s) => JSON.parse(s)).find((m) => m.type === "command-response");
+    expect(response).toMatchObject({ ok: false, error: { code: "control-failed", message: "kind 必填" } });
+    client.close();
+  });
+
+  test("commandHandler 抛带 code 的错回传该 code", async () => {
+    const commandHandler = vi.fn(async () => {
+      const e: any = new Error("重复");
+      e.code = "bad-request";
+      throw e;
+    });
+    const client = createRuntimeWsClient(async () => ({ ok: true, data: {} }), { commandHandler });
+    client.connect();
+    const ws = mockWs.instances[0];
+    ws.triggerOpen();
+    ws.triggerMessage({ type: "command", requestId: "c3", name: "control.scheme.create", params: {} });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    const response = ws.sent.map((s) => JSON.parse(s)).find((m) => m.type === "command-response");
+    expect(response).toMatchObject({ ok: false, error: { code: "bad-request" } });
+    client.close();
+  });
+
+  test("未注册 commandHandler 回传 unknown-command", async () => {
+    const client = createRuntimeWsClient(async () => ({ ok: true, data: {} }));
+    client.connect();
+    const ws = mockWs.instances[0];
+    ws.triggerOpen();
+    ws.triggerMessage({ type: "command", requestId: "c4", name: "control.device.add", params: {} });
+    await Promise.resolve();
+    await Promise.resolve();
+    const response = ws.sent.map((s) => JSON.parse(s)).find((m) => m.type === "command-response");
+    expect(response).toMatchObject({ ok: false, error: { code: "unknown-command" } });
+    client.close();
+  });
+
+  test("commandHandler 同步返回也正常回执", async () => {
+    const commandHandler = vi.fn(() => ({ id: "sync" }));
+    const client = createRuntimeWsClient(async () => ({ ok: true, data: {} }), { commandHandler });
+    client.connect();
+    const ws = mockWs.instances[0];
+    ws.triggerOpen();
+    ws.triggerMessage({ type: "command", requestId: "c5", name: "control.devices.select", params: {} });
+    await Promise.resolve();
+    await Promise.resolve();
+    const response = ws.sent.map((s) => JSON.parse(s)).find((m) => m.type === "command-response");
+    expect(response).toMatchObject({ ok: true, data: { id: "sync" } });
+    client.close();
+  });
+});
+
 describe("runtimeWsClient 重连", () => {
   test("onclose 后定时重连", () => {
     vi.useFakeTimers();

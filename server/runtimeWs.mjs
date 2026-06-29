@@ -84,6 +84,18 @@ export function attachRuntimeWebSocket(server, registry) {
         );
         return;
       }
+      if (message.type === "command-response") {
+        const requestId = String(message.requestId ?? "");
+        const ok = Boolean(message.ok);
+        registry.resolveCommand(
+          clientId,
+          requestId,
+          ok,
+          ok ? message.data : null,
+          ok ? null : { code: message.error?.code ?? "control-failed", message: message.error?.message }
+        );
+        return;
+      }
       // 未知消息类型忽略
     });
 
@@ -128,5 +140,13 @@ export function attachRuntimeWebSocket(server, registry) {
     return registry.listClients();
   }
 
-  return { wss, registry, fetchFromClient, listClients };
+  // 供 v1 control handler 调用：向客户端下发写指令并等待 command-response
+  async function sendCommandToClient(clientId, name, params = {}) {
+    const requestId = generateRequestId();
+    return registry.commandFromClient(clientId, requestId, name, params, (entry, message) => {
+      entry.send(message);
+    });
+  }
+
+  return { wss, registry, fetchFromClient, sendCommandToClient, listClients };
 }

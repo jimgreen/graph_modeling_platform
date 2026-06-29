@@ -29,14 +29,23 @@ export type FetchHandler = (
   params: Record<string, unknown>
 ) => Promise<{ ok: true; data: unknown } | { ok: false; error: { code: string; message: string } }>;
 
+// 写指令处理器：name 分发到 __appScope 程序化方法。返回 data 或抛错。
+export type CommandHandler = (
+  name: string,
+  params: Record<string, unknown>
+) => Promise<unknown> | unknown;
+
 export type RuntimeWsClientOptions = {
   url?: string;
   onStatusChange?: (status: "connecting" | "open" | "closed") => void;
   // 收发任意消息时触发（用于指示灯闪烁）
   onActivity?: () => void;
+  // 写指令处理器（可选）。未提供时所有指令回执 unknown-command。
+  commandHandler?: CommandHandler;
 };
 
 export function createRuntimeWsClient(fetchHandler: FetchHandler, options: RuntimeWsClientOptions = {}) {
+  const commandHandler = options.commandHandler;
   const clientId = getOrCreateClientId();
   let ws: WebSocket | null = null;
   let pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -103,6 +112,33 @@ export function createRuntimeWsClient(fetchHandler: FetchHandler, options: Runti
     }
   }
 
+  async function handleCommand(message: { requestId: string; name: string; params: Record<string, unknown> }) {
+    const sendResponse = (ok: boolean, data?: unknown, error?: { code: string; message: string }) => {
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: "command-response",
+          requestId: message.requestId,
+          ok,
+          data: ok ? data : undefined,
+          error: ok ? undefined : error
+        }));
+        activity();
+      }
+    };
+    try {
+      if (!commandHandler) {
+        sendResponse(false, undefined, { code: "unknown-command", message: "未注册指令处理器。" });
+        return;
+      }
+      const data = await commandHandler(message.name, message.params ?? {});
+      sendResponse(true, data);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "前端指令失败。";
+      const code = (error as any)?.code ?? "control-failed";
+      sendResponse(false, undefined, { code, message: errorMessage });
+    }
+  }
+
   function connect() {
     if (closed) {
       return;
@@ -130,6 +166,9 @@ export function createRuntimeWsClient(fetchHandler: FetchHandler, options: Runti
       }
       if (message.type === "fetch") {
         void handleFetch(message);
+      }
+      if (message.type === "command") {
+        void handleCommand(message);
       }
       // registered / pong / 其他忽略
     };

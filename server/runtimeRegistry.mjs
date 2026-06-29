@@ -39,6 +39,43 @@ export class FetchTimeoutError extends Error {
   }
 }
 
+// 指令通道超时（与 fetch 通道同构，复用 FETCH_TIMEOUT_MS）
+export class CommandTimeoutError extends Error {
+  constructor(command) {
+    super(`指令 ${command} 超时。`);
+    this.name = "CommandTimeoutError";
+    this.code = "ws-timeout";
+    this.command = command;
+  }
+}
+
+// pending command：server 向客户端发 command 后等 command-response
+// 与 createPendingFetch 同构，超时抛 CommandTimeoutError
+function createPendingCommand(requestId, name) {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  const timer = setTimeout(() => {
+    reject(new CommandTimeoutError(name));
+  }, FETCH_TIMEOUT_MS);
+  return {
+    requestId,
+    name,
+    promise,
+    resolve: (data) => {
+      clearTimeout(timer);
+      resolve(data);
+    },
+    reject: (error) => {
+      clearTimeout(timer);
+      reject(error);
+    }
+  };
+}
+
 export class NoOnlineClientError extends Error {
   constructor() {
     super("无在线客户端。");
@@ -61,7 +98,8 @@ export function createRuntimeRegistry() {
       send, // (message) => void，由 WS 层注入
       registeredAt: now(),
       lastActiveAt: now(),
-      pendingFetches: new Map() // requestId -> pending
+      pendingFetches: new Map(), // requestId -> pending fetch
+      pendingCommands: new Map() // requestId -> pending command
     };
     clients.set(clientId, entry);
     return entry;
@@ -72,8 +110,11 @@ export function createRuntimeRegistry() {
     if (!entry) {
       return;
     }
-    // 拒绝所有等待中的 fetch
+    // 拒绝所有等待中的 fetch 与 command
     for (const pending of entry.pendingFetches.values()) {
+      pending.reject(new NoOnlineClientError());
+    }
+    for (const pending of entry.pendingCommands.values()) {
       pending.reject(new NoOnlineClientError());
     }
     clients.delete(clientId);
@@ -166,6 +207,40 @@ export function createRuntimeRegistry() {
     return true;
   }
 
+  // 向客户端下发写指令并等待 command-response（与 fetchFromClient 同构）。
+  // sendCommand：由 WS 层注入，(entry, message) => void
+  // requestId 由调用方（WS 层）生成
+  async function commandFromClient(clientId, requestId, name, params, sendCommand) {
+    const entry = resolveClient(clientId);
+    const pending = createPendingCommand(requestId, name);
+    entry.pendingCommands.set(requestId, pending);
+    sendCommand(entry, { type: "command", requestId, name, params });
+    try {
+      const data = await pending.promise;
+      return data;
+    } finally {
+      entry.pendingCommands.delete(requestId);
+    }
+  }
+
+  // WS 层收到 command-response 时调用
+  function resolveCommand(clientId, requestId, ok, data, error) {
+    const entry = clients.get(clientId);
+    if (!entry) {
+      return false;
+    }
+    const pending = entry.pendingCommands.get(requestId);
+    if (!pending) {
+      return false;
+    }
+    if (!ok) {
+      pending.reject(Object.assign(new Error(error?.message ?? "前端指令失败。"), { code: error?.code ?? "control-failed" }));
+    } else {
+      pending.resolve(data);
+    }
+    return true;
+  }
+
   return {
     register,
     unregister,
@@ -176,6 +251,8 @@ export function createRuntimeRegistry() {
     resolveClient,
     fetchFromClient,
     resolveFetch,
+    commandFromClient,
+    resolveCommand,
     _clients: clients
   };
 }
