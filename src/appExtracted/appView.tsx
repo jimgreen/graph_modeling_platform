@@ -793,11 +793,15 @@ export function renderAppView(__appScope: Record<string, any>) {
                           className="id-copy-cell"
                           title="点击复制 ID"
                           onClick={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect();
                             navigator.clipboard.writeText(inspectorSelectedNode.id).then(() => {
                               const toast = document.createElement("span");
                               toast.className = "id-copy-toast";
                               toast.textContent = "已复制";
-                              e.currentTarget.appendChild(toast);
+                              toast.style.position = "fixed";
+                              toast.style.left = (rect.left + rect.width / 2) + "px";
+                              toast.style.top = (rect.top + rect.height / 2) + "px";
+                              document.body.appendChild(toast);
                               setTimeout(() => toast.remove(), 1000);
                             });
                           }}
