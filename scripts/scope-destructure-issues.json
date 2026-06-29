@@ -1,0 +1,8667 @@
+[
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createUpdateSingleNodeDragImperativePreview",
+    "vars": [
+      "dragState",
+      "previewDelta"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createStartDraggingState",
+    "vars": [
+      "nextDragging"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createFlushConnectPreviewDom",
+    "vars": [
+      "path",
+      "targetPoint"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createSetConnectPreviewDom",
+    "vars": [
+      "path",
+      "targetPoint"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createApplyConnectPreviewState",
+    "vars": [
+      "point",
+      "ready",
+      "sourceOverride",
+      "target",
+      "targetPoint"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createScheduleConnectPreviewPoint",
+    "vars": [
+      "point",
+      "ready",
+      "targetPoint"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createApplyRoutableLinePreviewState",
+    "vars": [
+      "current",
+      "placementOverride",
+      "point",
+      "target",
+      "targetPoint"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createScheduleRoutableLinePreviewPoint",
+    "vars": [
+      "point"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createLockRoutableLinePreviewAxis",
+    "vars": [
+      "nodeId",
+      "point",
+      "terminalId"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createAppendRoutableLinePreviewManualPoint",
+    "vars": [
+      "manualPoints",
+      "point"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createResolveRoutableLinePreviewPoint",
+    "vars": [
+      "ctrlKey",
+      "event",
+      "point",
+      "shiftKey"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createResetRoutableLinePreviewState",
+    "vars": [
+      "current",
+      "path",
+      "targetPoint"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createScheduleRewirePreviewPoint",
+    "vars": [
+      "current",
+      "dropTarget",
+      "point",
+      "previewPoint",
+      "rewiring"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createLockConnectPreviewAxis",
+    "vars": [
+      "nodeId",
+      "point",
+      "terminalId"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createAppendConnectPreviewManualPoint",
+    "vars": [
+      "manualPoints",
+      "point"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createResolveConnectPreviewPoint",
+    "vars": [
+      "ctrlKey",
+      "event",
+      "point",
+      "shiftKey"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createBoundedDeltaForNodes",
+    "vars": [
+      "bounds",
+      "nodeIds",
+      "originalPositions"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createBoundedDeltaForMultiNodeInteractiveMove",
+    "vars": [
+      "delta",
+      "dragState",
+      "max",
+      "min",
+      "value"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createNodeMoveGeometryInsideCanvas",
+    "vars": [
+      "DraggingState",
+      "affectedEdgesForMove",
+      "bounds",
+      "delta",
+      "edgeIds",
+      "node",
+      "nodeIds",
+      "originalEdgePoints",
+      "originalPositions",
+      "originalRoutePoints",
+      "position",
+      "route"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createNearestBoundarySafeDelta",
+    "vars": [
+      "delta",
+      "fallbackDelta",
+      "isSafeDelta",
+      "requestedDelta"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createBoundedDeltaForMoveGeometry",
+    "vars": [
+      "DraggingState",
+      "affectedEdgesForMove",
+      "bounds",
+      "delta",
+      "edgeIds",
+      "fallbackDelta",
+      "nodeIds",
+      "originalEdgePoints",
+      "originalPositions",
+      "originalRoutePoints"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createCommitSafeDeltaForDraggingState",
+    "vars": [
+      "dragState"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createCanvasBoundsForMovedNodeDelta",
+    "vars": [
+      "nodeIds",
+      "originalPositions",
+      "position"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createDragBoundsForSmartAlignment",
+    "vars": [
+      "delta",
+      "dragState"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createTerminalOutflowAnchorsForSmartAlignmentDrag",
+    "vars": [
+      "delta",
+      "dragState"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createComputeSmartAlignmentSnap",
+    "vars": [
+      "anchorValue",
+      "axisLocked",
+      "delta",
+      "dragState",
+      "end",
+      "maxBottom",
+      "maxRight",
+      "minLeft",
+      "minTop",
+      "movementDelta",
+      "node",
+      "orientation",
+      "position",
+      "sorted",
+      "start",
+      "threshold",
+      "value"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createComputeNodeDragPreviewDelta",
+    "vars": [
+      "ctrlKey",
+      "dragState",
+      "point",
+      "shiftKey"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createComputeNodeDragDelta",
+    "vars": [
+      "ctrlKey",
+      "dragState",
+      "point",
+      "shiftKey"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createApplyNodeDragMove",
+    "vars": [
+      "ctrlKey",
+      "currentDelta",
+      "historyCaptured",
+      "point",
+      "renderPreview",
+      "shiftKey"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createScheduleNodeDragMove",
+    "vars": [
+      "ctrlKey",
+      "point",
+      "shiftKey"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createFlushPendingNodeDragMove",
+    "vars": [
+      "renderPreview"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createRequestEnterBrowseMode",
+    "vars": [
+      "kind",
+      "label"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createFinishDraggingMove",
+    "vars": [
+      "actionLabel",
+      "activeDragging",
+      "moveDelta",
+      "snapTarget"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createFinishNodeDrag",
+    "vars": [
+      "moveDelta"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createFinishTransformDrag",
+    "vars": [
+      "current",
+      "edge",
+      "edgeUpserts",
+      "node",
+      "position",
+      "snapRotation"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createApplyKeyboardMoveDelta",
+    "vars": [
+      "currentDelta",
+      "historyCaptured",
+      "logBoundary",
+      "renderPreview",
+      "requestedDelta"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createFlushPendingKeyboardMove",
+    "vars": [
+      "renderPreview"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createKeyboardMoveActiveFrameDelta",
+    "vars": [
+      "elapsedMs"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createAppendPendingKeyboardMoveDelta",
+    "vars": [
+      "delta"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createScheduleKeyboardNudgeFrame",
+    "vars": [
+      "scheduleKeyboardNudgeFrame",
+      "timestamp"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createReleaseKeyboardMoveKey",
+    "vars": [
+      "key"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createStartKeyboardMoveSession",
+    "vars": [
+      "affectedEdges",
+      "edge",
+      "edgeIds",
+      "manualPoints",
+      "nodeIds",
+      "originalEdgePoints",
+      "originalPositions",
+      "originalRouteBounds",
+      "originalRoutePoints",
+      "overlayPreview",
+      "point",
+      "renderInitial",
+      "routePoints",
+      "selection",
+      "singleNodeDragCache",
+      "source",
+      "sourcePoint",
+      "startPoint",
+      "targetPoint"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createNudgeSelectionByKeyboard",
+    "vars": [
+      "key",
+      "performance",
+      "repeated"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createMoveSelection",
+    "vars": [
+      "edge",
+      "moveDelta",
+      "nodeId"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createUndoScopeForNodeFootprintPatch",
+    "vars": [
+      "edge",
+      "nextNode",
+      "nodeId"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createUpdateSelectedNode",
+    "vars": [
+      "current",
+      "edge",
+      "edgeUpserts",
+      "patch",
+      "position"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createCommitNodeFootprintUpdates",
+    "vars": [
+      "current",
+      "edge",
+      "edgeUpserts",
+      "node",
+      "nodeUpdates",
+      "options"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createAssignSelectedNodesToModelLayer",
+    "vars": [
+      "item",
+      "layerId",
+      "nodeId"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createOpenLayerAssignmentDialog",
+    "vars": [
+      "layer",
+      "layerId",
+      "nodeId"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createRotateSelectedLayoutUnits",
+    "vars": [
+      "current",
+      "direction",
+      "edge",
+      "edgeUpserts",
+      "node"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createMirrorSelectedNodes",
+    "vars": [
+      "axis",
+      "current",
+      "edge",
+      "edgeUpserts",
+      "node"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createUpdateCanvasSize",
+    "vars": [
+      "edge",
+      "nextHeight",
+      "nextWidth",
+      "node",
+      "position"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createCommitCanvasSizeDraft",
+    "vars": [
+      "draft"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createResetCanvasSizeDraft",
+    "vars": [
+      "height",
+      "width"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createHandleCanvasSizeKeyDown",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createUpdateParam",
+    "vars": [
+      "_labelDisplayMode",
+      "_labelVisible",
+      "key",
+      "params",
+      "value"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createApplyBatchCommonParamPatch",
+    "vars": [
+      "BatchCommonParamPatch",
+      "edge",
+      "index",
+      "key",
+      "node",
+      "nodeId",
+      "operationLabel",
+      "params",
+      "patchForNode",
+      "patchKey",
+      "patchValue"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createApplyBatchCommonParam",
+    "vars": [
+      "_labelDisplayMode",
+      "_labelVisible",
+      "key",
+      "value"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createApplyBatchCommonMeasurementGroupSetting",
+    "vars": [
+      "current",
+      "group",
+      "groups",
+      "key",
+      "value",
+      "version"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createCommitElementTreeNodeIdentity",
+    "vars": [
+      "draftKey",
+      "field",
+      "idx",
+      "name",
+      "nodeId",
+      "params",
+      "value"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createCommitElementTreeContainerChildParam",
+    "vars": [
+      "draftKey",
+      "key",
+      "nodeId",
+      "params",
+      "value"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createTerminalVbaseFallback",
+    "vars": [
+      "node",
+      "terminalIndex"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createUpdateTerminalVbase",
+    "vars": [
+      "node",
+      "terminal",
+      "terminalId",
+      "terminals",
+      "value",
+      "vbase"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createRenderParamHeader",
+    "vars": [
+      "className",
+      "displayName",
+      "key",
+      "title"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createRenderNodeDoubleClickDeviceParamRows",
+    "vars": [
+      "item",
+      "key",
+      "name",
+      "nextValue",
+      "node",
+      "onCommit",
+      "readOnly"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createRememberNodeDoubleClickDialogGuard",
+    "vars": [
+      "dialog",
+      "key",
+      "performance",
+      "time"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createSuppressNodeDoubleClickDialogEvent",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createStopNodeDoubleClickDialogEvent",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createCurrentNodeDoubleClickDialogRect",
+    "vars": [
+      "height",
+      "left",
+      "top",
+      "width"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createStartNodeDoubleClickDialogDrag",
+    "vars": [
+      "event",
+      "startClientX",
+      "startClientY",
+      "startHeight",
+      "startLeft",
+      "startTop",
+      "startWidth"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createStartNodeDoubleClickDialogResize",
+    "vars": [
+      "event",
+      "startClientX",
+      "startClientY",
+      "startHeight",
+      "startLeft",
+      "startTop",
+      "startWidth"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createConfirmNodeDoubleClickDialog",
+    "vars": [
+      "name",
+      "params"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createRenderNodeDoubleClickDialog",
+    "vars": [
+      "aria",
+      "className",
+      "containerViewId",
+      "current",
+      "event",
+      "height",
+      "key",
+      "label",
+      "labelledby",
+      "left",
+      "modal",
+      "onClick",
+      "onDoubleClick",
+      "onLostPointerCapture",
+      "onPointerCancel",
+      "onPointerDown",
+      "onPointerUp",
+      "orientation",
+      "patch",
+      "ref",
+      "role",
+      "style",
+      "top",
+      "updateNode",
+      "updateParam",
+      "value",
+      "view",
+      "width"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createContextMenuPlacement",
+    "vars": [
+      "menu"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createContextMenuStyle",
+    "vars": [
+      "left",
+      "maxHeight",
+      "maxWidth",
+      "menu",
+      "overflowY",
+      "top"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createContextMenuClassName",
+    "vars": [
+      "menu"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createStopSidePanelEventPropagation",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createSetSidePanelMode",
+    "vars": [
+      "mode",
+      "side"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createPointerClientTargetInside",
+    "vars": [
+      "event",
+      "selector"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createPointerInsideElementRect",
+    "vars": [
+      "element",
+      "event",
+      "padding"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createUpdateAutoPanelVisibility",
+    "vars": [
+      "current",
+      "event",
+      "side"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createOpenMeasurementEditorForNode",
+    "vars": [
+      "group",
+      "node",
+      "nodeId",
+      "scope"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createHandleSidePanelPointerLeave",
+    "vars": [
+      "event",
+      "side"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createHideAutoPanelsFromWorkspace",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createAppendDistinctStaticDrawingPoint",
+    "vars": [
+      "point",
+      "points"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createRenderStaticBoxDrawingPreview",
+    "vars": [
+      "className",
+      "height",
+      "index",
+      "key",
+      "mode",
+      "node",
+      "point",
+      "stateVisual",
+      "transform",
+      "width"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createStartInteractiveStaticDrawing",
+    "vars": [
+      "kind",
+      "points",
+      "previewPoint",
+      "startPoint",
+      "template"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createFinishInteractiveStaticDrawing",
+    "vars": [
+      "finalPoint"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createAppendStaticDrawingPoint",
+    "vars": [
+      "forceFinish",
+      "point",
+      "points",
+      "previewPoint"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createUpdateInteractiveStaticDrawingPreview",
+    "vars": [
+      "current",
+      "point"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createRenderInteractiveStaticDrawingPreview",
+    "vars": [
+      "className",
+      "index",
+      "key",
+      "point"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createStartLibraryDevicePlacement",
+    "vars": [
+      "kind",
+      "previewPoint",
+      "source",
+      "template"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createStartLibraryGraphTemplatePlacement",
+    "vars": [
+      "kind",
+      "previewPoint",
+      "template"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createUpdateLibraryPlacementPreview",
+    "vars": [
+      "current",
+      "point"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createClearLibraryPlacementPreview",
+    "vars": [
+      "current",
+      "previewPoint"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createPlaceLibraryDeviceAtPoint",
+    "vars": [
+      "edge",
+      "layerId",
+      "pointerPosition",
+      "template"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createCommitLibraryPlacementAtPoint",
+    "vars": [
+      "point"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createRenderLibraryPlacementPreview",
+    "vars": [
+      "className",
+      "item",
+      "key",
+      "layerId",
+      "mode",
+      "node",
+      "stateVisual",
+      "transform"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createStartSidePanelResize",
+    "vars": [
+      "event",
+      "side",
+      "startWidth",
+      "startX"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createStartCanvasResize",
+    "vars": [
+      "edge",
+      "event",
+      "minBounds",
+      "startClientX",
+      "startClientY",
+      "startDisplayHeight",
+      "startDisplayOffsetX",
+      "startDisplayOffsetY",
+      "startDisplayWidth",
+      "startHeight",
+      "startHorizontalScrollbarsActive",
+      "startScrollLeft",
+      "startScrollSurfaceHeight",
+      "startScrollSurfaceWidth",
+      "startScrollTop",
+      "startVerticalScrollbarsActive",
+      "startWidth",
+      "unitsPerCssX",
+      "unitsPerCssY"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createStartCanvasResizeFromRightOverlay",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createStartCanvasResizeFromLeftOverlay",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createStartCanvasResizeFromBottomOverlay",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createStartCanvasResizeFromTopOverlay",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createStartStatusbarResize",
+    "vars": [
+      "event",
+      "startHeight",
+      "startY"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createCurrentTopologyWarningPanelRect",
+    "vars": [
+      "height",
+      "left",
+      "top",
+      "width"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createStartTopologyWarningPanelDrag",
+    "vars": [
+      "event",
+      "left",
+      "startClientX",
+      "startClientY",
+      "startLeft",
+      "startTop",
+      "top"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createStartTopologyWarningPanelResize",
+    "vars": [
+      "event",
+      "left",
+      "startClientX",
+      "startClientY",
+      "startHeight",
+      "startLeft",
+      "startTop",
+      "startWidth",
+      "top"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createRenderSidePanelModeControls",
+    "vars": [
+      "SidePanelMode",
+      "aria",
+      "className",
+      "icon",
+      "key",
+      "onClick",
+      "option",
+      "role",
+      "side",
+      "size",
+      "title"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createRenderSidePanelEdgeTrigger",
+    "vars": [
+      "aria",
+      "className",
+      "event",
+      "onClick",
+      "onPointerDown",
+      "onPointerEnter",
+      "side",
+      "size",
+      "title"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createNormalizeStaticBoxDimension",
+    "vars": [
+      "fallback",
+      "max",
+      "value"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createToLocalNodePoint",
+    "vars": [
+      "node",
+      "point"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createSingleTransformNodeUpdate",
+    "vars": [
+      "drag",
+      "point",
+      "position",
+      "rotation",
+      "scale",
+      "scaleX",
+      "scaleY",
+      "snapRotation",
+      "store"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createSignedScaleFromRotatedHandleDelta",
+    "vars": [
+      "baseNode",
+      "drag",
+      "localScaleKind",
+      "point"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createSignedScaleFromUprightHandleDelta",
+    "vars": [
+      "baseNode",
+      "drag",
+      "localScaleKind",
+      "point"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createProportionalSignedScaleFromHandleDelta",
+    "vars": [
+      "baseNode",
+      "deltaX",
+      "deltaY",
+      "drag",
+      "handleXDirection",
+      "handleYDirection",
+      "height",
+      "point",
+      "scale",
+      "scaleX",
+      "scaleY",
+      "width"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createProportionalSignedScaleFromUprightHandleDelta",
+    "vars": [
+      "baseNode",
+      "deltaX",
+      "deltaY",
+      "drag",
+      "handleXDirection",
+      "handleYDirection",
+      "height",
+      "point",
+      "scale",
+      "scaleX",
+      "scaleY",
+      "width"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createCurrentStoredRoutePointsForEdge",
+    "vars": [
+      "bounds",
+      "edge",
+      "point"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createBuildMirrorLayoutUnitEdgeUpdates",
+    "vars": [
+      "Edge",
+      "axis",
+      "currentEdges",
+      "manualPoints",
+      "point",
+      "sourcePoint",
+      "targetPoint",
+      "units"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createBuildRotateLayoutUnitEdgeUpdates",
+    "vars": [
+      "Edge",
+      "currentEdges",
+      "degrees",
+      "manualPoints",
+      "point",
+      "sourcePoint",
+      "targetPoint",
+      "units"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createBuildGroupTransformEdgeUpdates",
+    "vars": [
+      "drag",
+      "manualPoints",
+      "options",
+      "point",
+      "route",
+      "routePoint",
+      "snapRotation",
+      "sourcePoint",
+      "store",
+      "targetPoint"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createOverlayEdgeUpdatesForTransform",
+    "vars": [
+      "edge",
+      "edgeUpdates",
+      "sourceEdges"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createStartGroupTransformDrag",
+    "vars": [
+      "ScaleHandleKind",
+      "bounds",
+      "edgeIds",
+      "event",
+      "group",
+      "groupId",
+      "handleXDirection",
+      "handleYDirection",
+      "kind",
+      "nodeIds",
+      "originalEdgeRoutes",
+      "originalNodes",
+      "proportionalScale",
+      "rotationStartPoint",
+      "unit"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createStartSingleTransformDrag",
+    "vars": [
+      "ScaleHandleKind",
+      "event",
+      "handle",
+      "handleXDirection",
+      "handleYDirection",
+      "kind",
+      "node",
+      "nodeId",
+      "originalNode",
+      "rotationStartPoint"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createStartGroupMoveDrag",
+    "vars": [
+      "affectedEdges",
+      "edge",
+      "edgeIds",
+      "event",
+      "kind",
+      "manualPoints",
+      "nodeId",
+      "nodeIds",
+      "originalEdgePoints",
+      "originalPositions",
+      "originalRouteBounds",
+      "originalRoutePoints",
+      "overlayPreview",
+      "routePoints",
+      "selection",
+      "singleNodeDragCache",
+      "source",
+      "sourcePoint",
+      "startPoint",
+      "targetPoint",
+      "unit"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createBuildGroupTransformNodeUpdates",
+    "vars": [
+      "drag",
+      "options",
+      "point",
+      "position",
+      "rotation",
+      "scale",
+      "scaleX",
+      "scaleY",
+      "snapRotation",
+      "store"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createRotateLayoutUnitNodeUpdates",
+    "vars": [
+      "ModelNode",
+      "degrees",
+      "position",
+      "rotation",
+      "store",
+      "units"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createMirrorLayoutUnitNodeUpdates",
+    "vars": [
+      "ModelNode",
+      "axis",
+      "position",
+      "rotation",
+      "scaleX",
+      "scaleY",
+      "store",
+      "units"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createBusAnchorFromEvent",
+    "vars": [
+      "event",
+      "node"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createBusAnchorFromPoint",
+    "vars": [
+      "node",
+      "point"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createIsPointOnBus",
+    "vars": [
+      "node",
+      "point"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createIsPointNearBus",
+    "vars": [
+      "node",
+      "point",
+      "tolerance"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createFindRewireTargetAtPoint",
+    "vars": [
+      "point",
+      "state"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createFindConnectTargetAtPoint",
+    "vars": [
+      "point"
+    ]
+  },
+  {
+    "file": "appCanvasInteractionFactories.tsx",
+    "function": "createFindRoutableLineEndpointTargetAtPoint",
+    "vars": [
+      "TerminalType",
+      "excludedNodeId",
+      "options",
+      "point"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createOpenEdgeContextMenu",
+    "vars": [
+      "canvasPoint",
+      "edgeId",
+      "event",
+      "point",
+      "routePoints",
+      "target"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createCaptureCanvasPointer",
+    "vars": [
+      "pointerId"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createStartManualSegmentDrag",
+    "vars": [
+      "clientX",
+      "clientY",
+      "edgeId",
+      "event",
+      "kind",
+      "orientation",
+      "originalManualPoints",
+      "originalRoutePoints",
+      "point",
+      "routePoints",
+      "segmentIndex",
+      "startPoint"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createStartManualPointDrag",
+    "vars": [
+      "clientX",
+      "clientY",
+      "edgeId",
+      "event",
+      "kind",
+      "originalManualPoints",
+      "originalRoutePoints",
+      "point",
+      "pointIndex",
+      "routePoints",
+      "startPoint"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createRouteSegmentPointerDistance",
+    "vars": [
+      "point"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createFindEditableRouteSegmentIndex",
+    "vars": [
+      "candidate",
+      "index",
+      "nearest",
+      "offset",
+      "point",
+      "routePoints"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createFindConnectionRouteHitAtPoint",
+    "vars": [
+      "bottom",
+      "candidate",
+      "distance",
+      "edgeId",
+      "first",
+      "left",
+      "point",
+      "right",
+      "route",
+      "routeOrder",
+      "routePoints",
+      "second",
+      "segmentIndex",
+      "top"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createInsertManualBendAtPoint",
+    "vars": [
+      "clickPoint",
+      "edgeId",
+      "routePoints",
+      "segmentIndex"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createInsertManualBendFromPointer",
+    "vars": [
+      "clickPoint",
+      "edgeId",
+      "routePoints"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createInsertManualBendFromEdgePath",
+    "vars": [
+      "edgeId",
+      "event",
+      "routePoints"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createHandleEdgePathPointerDown",
+    "vars": [
+      "clientX",
+      "clientY",
+      "edgeId",
+      "event",
+      "kind",
+      "routePoints"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createDeleteManualBendPoint",
+    "vars": [
+      "edgeId",
+      "index",
+      "routePointIndex",
+      "routePoints"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createSetRoutableLineManualPathPoints",
+    "vars": [
+      "nodeId",
+      "routePoints"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createInsertRoutableLineBendAtPoint",
+    "vars": [
+      "clickPoint",
+      "nodeId",
+      "routePoints",
+      "segmentIndex"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createInsertRoutableLineBendFromPointer",
+    "vars": [
+      "clickPoint",
+      "nodeId",
+      "routePoints"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createStartRoutableLineSegmentDrag",
+    "vars": [
+      "event",
+      "kind",
+      "node",
+      "nodeId",
+      "orientation",
+      "originalManualPoints",
+      "originalRoutePoints",
+      "point",
+      "routePoints",
+      "scope",
+      "segmentIndex",
+      "startPoint"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createStartRoutableLinePointDrag",
+    "vars": [
+      "event",
+      "kind",
+      "node",
+      "nodeId",
+      "originalManualPoints",
+      "originalRoutePoints",
+      "point",
+      "pointIndex",
+      "routePoints",
+      "scope",
+      "startPoint"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createDeleteRoutableLineBendPoint",
+    "vars": [
+      "index",
+      "nodeId",
+      "routePointIndex",
+      "routePoints"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createStartConnectFromTerminal",
+    "vars": [
+      "node",
+      "nodeId",
+      "point",
+      "terminalId"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createHandleTerminalPointerDown",
+    "vars": [
+      "event",
+      "kind",
+      "manualPoints",
+      "movingEndpoint",
+      "movingNode",
+      "movingTerminalId",
+      "node",
+      "nodeId",
+      "point",
+      "preserveManualRouteDisplay",
+      "sourceId",
+      "sourcePoint",
+      "sourceTerminalId",
+      "targetId",
+      "targetPoint",
+      "targetTerminalId",
+      "terminalId"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createSvgExportReferencedImageHrefById",
+    "vars": [
+      "assetId",
+      "href"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createLoadSvgImageExportPathById",
+    "vars": [
+      "ImageAsset",
+      "href",
+      "name",
+      "url"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createExportSvg",
+    "vars": [
+      "backgroundColor",
+      "backgroundImage",
+      "description",
+      "deviceTemplates",
+      "extensions",
+      "filename",
+      "measurements",
+      "mime",
+      "text"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createExportEFile",
+    "vars": [
+      "description",
+      "extensions",
+      "filename",
+      "mime",
+      "text",
+      "warning"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createIsProjectFilePayload",
+    "vars": [
+      "value"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createCreateImportedSchemeRecord",
+    "vars": [
+      "childPayload",
+      "createImportedSchemeRecord",
+      "error",
+      "fileName",
+      "index",
+      "projectPayload",
+      "text"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createExportProjectRecordFile",
+    "vars": [
+      "description",
+      "extensions",
+      "filename",
+      "mime",
+      "project",
+      "text"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createExportCurrentModelFile",
+    "vars": [
+      "description",
+      "extensions",
+      "filename",
+      "mime",
+      "text"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createOpenModelImportFilePicker",
+    "vars": [
+      "targetSchemeId"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createOpenSchemeImportFilePicker",
+    "vars": [
+      "parentSchemeId"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createMergeImportedSchemeIntoExisting",
+    "vars": [
+      "SavedProjectRecord",
+      "SavedSchemeRecord",
+      "child",
+      "children",
+      "current",
+      "existingScheme",
+      "importedChild",
+      "importedProject",
+      "importedScheme",
+      "mergeImportedSchemeIntoExisting",
+      "name",
+      "project",
+      "projects",
+      "updatedAt"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createCommitImportedSchemeRecord",
+    "vars": [
+      "current",
+      "importedScheme",
+      "parentSchemeId"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createApplyBackendSchemeArchiveImport",
+    "vars": [
+      "current",
+      "fallbackName",
+      "payload"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createImportSchemeFile",
+    "vars": [
+      "duplicateSchemeId",
+      "duplicateSchemeName",
+      "error",
+      "event",
+      "importFile",
+      "importedName",
+      "importedPath",
+      "scheme",
+      "targetParentSchemeId"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createCommitImportedModelRecord",
+    "vars": [
+      "current",
+      "error",
+      "importedRecord",
+      "targetScheme"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createImportModelFile",
+    "vars": [
+      "duplicateProjectId",
+      "duplicateProjectName",
+      "error",
+      "event",
+      "project",
+      "targetSchemeId"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createResolveDuplicateSchemeImport",
+    "vars": [
+      "action",
+      "current",
+      "error",
+      "mode",
+      "name",
+      "targetName",
+      "updatedAt"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createResolveDuplicateModelImport",
+    "vars": [
+      "action",
+      "name",
+      "project"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createExportSchemeRecord",
+    "vars": [
+      "error",
+      "scheme"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createChooseImage",
+    "vars": [
+      "FileReader",
+      "ImageAsset",
+      "current",
+      "error",
+      "event",
+      "folderId",
+      "item",
+      "name",
+      "url"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createApplyExistingImage",
+    "vars": [
+      "assetId",
+      "backgroundImage",
+      "backgroundImageAssetId",
+      "foregroundImage",
+      "foregroundImageAssetId",
+      "node",
+      "params"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createClearSelectedImage",
+    "vars": [
+      "backgroundImage",
+      "backgroundImageAssetId",
+      "foregroundImage",
+      "foregroundImageAssetId",
+      "node",
+      "params"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createClearSelectedImageForNode",
+    "vars": [
+      "backgroundImage",
+      "backgroundImageAssetId",
+      "foregroundImage",
+      "foregroundImageAssetId",
+      "node",
+      "nodeId",
+      "params",
+      "target"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createCreateImageFolder",
+    "vars": [
+      "error"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createRenameImageFolder",
+    "vars": [
+      "error",
+      "item"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createDeleteImageFolder",
+    "vars": [
+      "error",
+      "item"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createStartProjectRecordDrag",
+    "vars": [
+      "event",
+      "projectId"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createStartSchemeRecordDrag",
+    "vars": [
+      "event",
+      "schemeId"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createRenderProjectSchemeNode",
+    "vars": [
+      "aria",
+      "child",
+      "className",
+      "depth",
+      "draggable",
+      "event",
+      "expanded",
+      "key",
+      "label",
+      "onClick",
+      "onContextMenu",
+      "onDoubleClick",
+      "onDragEnd",
+      "onDragOver",
+      "onDragStart",
+      "onDrop",
+      "onKeyDown",
+      "project",
+      "role",
+      "scheme",
+      "selected",
+      "size",
+      "style",
+      "tabIndex"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createOpenBlankProjectLibraryContextMenu",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createCustomDeviceDefaultStateVisualDraft",
+    "vars": [
+      "color",
+      "fillColor",
+      "strokeColor",
+      "textColor"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createSnapCustomDeviceTerminalAnchor",
+    "vars": [
+      "anchor",
+      "candidate",
+      "tolerance",
+      "value"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createCustomDeviceTerminalConnectorSegment",
+    "vars": [
+      "anchor"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createUpdateCustomDeviceTerminalAnchor",
+    "vars": [
+      "current",
+      "error",
+      "index",
+      "patch"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createUpdateCustomDeviceStateDraftRow",
+    "vars": [
+      "current",
+      "error",
+      "patch",
+      "row",
+      "rowId",
+      "stateDefinitions"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createAddCustomDeviceStateDraftRow",
+    "vars": [
+      "current",
+      "error",
+      "name",
+      "stateDefinitions",
+      "value"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createDeleteCustomDeviceStateDraftRow",
+    "vars": [
+      "current",
+      "error",
+      "row",
+      "rowId",
+      "stateDefinitions"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createUpdateCustomDeviceTerminalAnchorFromPreview",
+    "vars": [
+      "event",
+      "index",
+      "svg"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createDefinitionDefaultStateVisualDraft",
+    "vars": [
+      "color",
+      "fillColor",
+      "image",
+      "imageAssetId",
+      "strokeColor",
+      "textColor"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createSnapDefinitionTerminalAnchor",
+    "vars": [
+      "anchor",
+      "candidate",
+      "tolerance",
+      "value"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createDefinitionTerminalConnectorSegment",
+    "vars": [
+      "anchor"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createUpdateDefinitionTerminalAnchor",
+    "vars": [
+      "current",
+      "error",
+      "index",
+      "patch"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createUpdateDefinitionTerminalAnchorFromPreview",
+    "vars": [
+      "event",
+      "index",
+      "svg"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createLoadDefinitionTemplateDraft",
+    "vars": [
+      "current",
+      "item",
+      "template"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createCurrentDeviceLibraryDialogRect",
+    "vars": [
+      "height",
+      "kind",
+      "left",
+      "top",
+      "width"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createDeviceLibraryDialogStyle",
+    "vars": [
+      "height",
+      "kind",
+      "left",
+      "top",
+      "width"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createStartDeviceLibraryDialogDrag",
+    "vars": [
+      "current",
+      "event",
+      "kind",
+      "startClientX",
+      "startClientY",
+      "startHeight",
+      "startLeft",
+      "startTop",
+      "startWidth"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createStartDeviceLibraryDialogResize",
+    "vars": [
+      "current",
+      "event",
+      "kind",
+      "startClientX",
+      "startClientY",
+      "startHeight",
+      "startLeft",
+      "startTop",
+      "startWidth"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createStopDeviceLibraryDialogEvent",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createOpenDeviceDefinitionDialog",
+    "vars": [
+      "error",
+      "kind",
+      "templateKind"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createToggleDefinitionGroup",
+    "vars": [
+      "attributeLibrary",
+      "current",
+      "item"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createToggleDefinitionComponentType",
+    "vars": [
+      "attributeLibrary",
+      "componentType",
+      "current",
+      "item"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createToggleElementTreeGroup",
+    "vars": [
+      "current",
+      "item",
+      "typeKey"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createToggleElementTreeDeviceGroup",
+    "vars": [
+      "current",
+      "deviceKey",
+      "item"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createUpdateDefinitionDraftRow",
+    "vars": [
+      "current",
+      "patch",
+      "row",
+      "rowId"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createAddDefinitionDraftRow",
+    "vars": [
+      "cnName",
+      "current",
+      "enName",
+      "typicalValue",
+      "valueType"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createDeleteDefinitionDraftRow",
+    "vars": [
+      "current",
+      "row",
+      "rowId"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createUpdateDefinitionStateDraftRow",
+    "vars": [
+      "current",
+      "patch",
+      "row",
+      "rowId"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createAddDefinitionStateDraftRow",
+    "vars": [
+      "current",
+      "name",
+      "value"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createDeleteDefinitionStateDraftRow",
+    "vars": [
+      "current",
+      "row",
+      "rowId"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createUpdateSelectedDefinitionResizePermission",
+    "vars": [
+      "allowResizeTransform",
+      "current",
+      "kind",
+      "template",
+      "updatedAt",
+      "value"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createSaveDeviceDefinitionStateVisualDraft",
+    "vars": [
+      "current",
+      "definition",
+      "kind",
+      "row",
+      "template",
+      "updatedAt"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createSaveDeviceDefinitionVisualDraft",
+    "vars": [
+      "allowResizeTransform",
+      "anchor",
+      "backgroundImage",
+      "backgroundImageAssetId",
+      "current",
+      "definition",
+      "error",
+      "height",
+      "index",
+      "isContainer",
+      "kind",
+      "label",
+      "parameterDefinitions",
+      "params",
+      "row",
+      "template",
+      "terminalAssociations",
+      "terminalCount",
+      "terminalRoles",
+      "terminalType",
+      "updatedAt",
+      "width"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createSaveDeviceDefinitionDraft",
+    "vars": [
+      "acc",
+      "allowResizeTransform",
+      "component_type",
+      "current",
+      "enumOptions",
+      "enumValues",
+      "kind",
+      "node",
+      "parameterDefinitions",
+      "stateDefinitions",
+      "typicalValue",
+      "updatedAt",
+      "valueType"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createResetDeviceDefinitionDraft",
+    "vars": [
+      "current"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createUpdateCustomDraftTerminalCount",
+    "vars": [
+      "current",
+      "error",
+      "terminalAnchors",
+      "terminalCount",
+      "value"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createChooseCustomDeviceBackground",
+    "vars": [
+      "FileReader",
+      "backgroundImage",
+      "backgroundImageAssetId",
+      "current",
+      "error",
+      "event",
+      "item"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createChooseDefinitionTemplateIcon",
+    "vars": [
+      "FileReader",
+      "backgroundImage",
+      "backgroundImageAssetId",
+      "current",
+      "error",
+      "event",
+      "item"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createChooseStateVisualImage",
+    "vars": [
+      "FileReader",
+      "backgroundImage",
+      "backgroundImageAssetId",
+      "current",
+      "error",
+      "event",
+      "image",
+      "imageAssetId",
+      "item"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createChooseStateIconDrawingImport",
+    "vars": [
+      "FileReader",
+      "current",
+      "elements",
+      "event",
+      "selectedElementIds"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createUpdateStateIconDrawingElement",
+    "vars": [
+      "current",
+      "element",
+      "elementId",
+      "elements",
+      "patch"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createUpdateStateIconDrawingElements",
+    "vars": [
+      "StateIconDrawingElement",
+      "current",
+      "element",
+      "elementIds",
+      "elements",
+      "updater"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createStateIconDrawingPointer",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createStateIconDrawingSelection",
+    "vars": [
+      "append",
+      "current",
+      "elementId",
+      "selectedElementId"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createStartStateIconDrawingDrag",
+    "vars": [
+      "current",
+      "element",
+      "elementId",
+      "elementIds",
+      "event",
+      "mode",
+      "selectedElementId",
+      "sum"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createDragStateIconDrawingSelection",
+    "vars": [
+      "element",
+      "event",
+      "height",
+      "item",
+      "rotation",
+      "width"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createStopStateIconDrawingDrag",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createDeleteSelectedStateIconDrawingElements",
+    "vars": [
+      "current",
+      "element",
+      "selectedElementId",
+      "selectedElementIds"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createStateIconDrawingKeyDown",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createAddStateIconDrawingElement",
+    "vars": [
+      "current",
+      "elements",
+      "item",
+      "kind",
+      "selectedElementId",
+      "selectedElementIds"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createDeleteStateIconDrawingElement",
+    "vars": [
+      "current",
+      "element",
+      "elementId",
+      "selectedElementId",
+      "selectedElementIds"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createOpenStateIconDrawingDialog",
+    "vars": [
+      "elements",
+      "item",
+      "selectedElementId",
+      "selectedElementIds",
+      "target"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createApplyStateIconDrawingDialog",
+    "vars": [
+      "backgroundImage",
+      "backgroundImageAssetId",
+      "image",
+      "imageAssetId"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createEnsureCustomComponentTreeExpanded",
+    "vars": [
+      "attributeLibraryName",
+      "componentType",
+      "current"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createSelectCustomAttributeLibrary",
+    "vars": [
+      "attributeLibraryName",
+      "componentName",
+      "componentType",
+      "current",
+      "error",
+      "expand",
+      "kind",
+      "options"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createSelectCustomComponentType",
+    "vars": [
+      "attributeLibraryName",
+      "componentName",
+      "componentType",
+      "current",
+      "error",
+      "expand",
+      "kind",
+      "options",
+      "sectionName"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createSelectCustomComponentTemplate",
+    "vars": [
+      "current",
+      "error",
+      "kind",
+      "sectionName",
+      "template",
+      "templateKind"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createStartCustomComponentCreate",
+    "vars": [
+      "componentName",
+      "componentType",
+      "error",
+      "kind"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createNextCustomAttributeLibraryName",
+    "vars": [
+      "group"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createCreateCustomAttributeLibrary",
+    "vars": [
+      "componentType",
+      "current",
+      "error",
+      "group",
+      "kind"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createDeleteCustomAttributeLibrary",
+    "vars": [
+      "componentType",
+      "current",
+      "error",
+      "group",
+      "section",
+      "targetAttributeLibraryName",
+      "template"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createNextCustomComponentTypeName",
+    "vars": [
+      "componentType"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createCreateCustomComponentType",
+    "vars": [
+      "current",
+      "error",
+      "item",
+      "kind",
+      "name",
+      "section"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createDeleteCustomComponentType",
+    "vars": [
+      "attributeLibraryName",
+      "current",
+      "error",
+      "item",
+      "section",
+      "targetSection",
+      "template"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createRenameSelectedCustomDeviceTreeItem",
+    "vars": [
+      "attributeLibrary",
+      "componentName",
+      "componentType",
+      "component_type",
+      "current",
+      "error",
+      "group",
+      "item",
+      "label",
+      "name",
+      "params",
+      "section"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createDeleteSelectedCustomDeviceTreeItem",
+    "vars": [
+      "attributeLibraryName",
+      "componentName",
+      "current",
+      "error",
+      "item",
+      "kind",
+      "section"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createNextCustomTemplateKind",
+    "vars": [
+      "componentType",
+      "template"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createSaveCustomDeviceTemplate",
+    "vars": [
+      "allowResizeTransform",
+      "anchor",
+      "attributeLibrary",
+      "closeAfterSave",
+      "cnName",
+      "component_type",
+      "current",
+      "custom",
+      "definition",
+      "enName",
+      "enumOptions",
+      "enumValues",
+      "error",
+      "failure",
+      "fillColor",
+      "index",
+      "isContainer",
+      "item",
+      "kind",
+      "label",
+      "lineWidth",
+      "node",
+      "options",
+      "parameterDefinitions",
+      "params",
+      "row",
+      "section",
+      "size",
+      "strokeColor",
+      "success",
+      "templateKind",
+      "terminalAnchors",
+      "terminalCount",
+      "terminalLabels",
+      "terminalType",
+      "typicalValue",
+      "valueType"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createSaveBuiltinDeviceDefinitionFromCustomDraft",
+    "vars": [
+      "allowResizeTransform",
+      "anchor",
+      "closeAfterSave",
+      "cnName",
+      "component_type",
+      "current",
+      "definition",
+      "enName",
+      "enumOptions",
+      "enumValues",
+      "error",
+      "failure",
+      "height",
+      "index",
+      "isContainer",
+      "item",
+      "kind",
+      "label",
+      "node",
+      "options",
+      "parameterDefinitions",
+      "params",
+      "row",
+      "success",
+      "template",
+      "terminalAnchors",
+      "terminalCount",
+      "terminalRoles",
+      "terminalType",
+      "typicalValue",
+      "updatedAt",
+      "valueType",
+      "width"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createSaveCustomDeviceDefinitionDialog",
+    "vars": [
+      "closeAfterSave",
+      "options"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createRenderStateVisualPager",
+    "vars": [
+      "activeRowId",
+      "add",
+      "aria",
+      "backgroundImage",
+      "backgroundImageAssetId",
+      "className",
+      "color",
+      "drawStateIcon",
+      "fallback",
+      "fillColor",
+      "handlers",
+      "icon",
+      "image",
+      "imageAssetId",
+      "index",
+      "key",
+      "name",
+      "onClick",
+      "onCommit",
+      "patch",
+      "placeholder",
+      "preview",
+      "remove",
+      "reset",
+      "resetLabel",
+      "role",
+      "row",
+      "rowId",
+      "rows",
+      "saveStateVisuals",
+      "saveStateVisualsLabel",
+      "selected",
+      "setActiveRowId",
+      "strokeColor",
+      "style",
+      "text",
+      "textColor",
+      "title",
+      "update",
+      "uploadStateImage",
+      "value"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createRenderDeviceDefinitionVisualPanel",
+    "vars": [
+      "SVG",
+      "add",
+      "anchor",
+      "aria",
+      "backgroundImage",
+      "backgroundImageAssetId",
+      "className",
+      "current",
+      "drawStateIcon",
+      "error",
+      "event",
+      "fill",
+      "guideIndex",
+      "guideValue",
+      "height",
+      "href",
+      "index",
+      "key",
+      "length",
+      "max",
+      "min",
+      "miniature",
+      "node",
+      "onClick",
+      "onCommit",
+      "onPointerCancel",
+      "onPointerDown",
+      "onPointerMove",
+      "onPointerUp",
+      "params",
+      "preserveAspectRatio",
+      "preview",
+      "remove",
+      "reset",
+      "resetLabel",
+      "role",
+      "rowId",
+      "saveStateVisuals",
+      "saveStateVisualsLabel",
+      "scope",
+      "size",
+      "stateVisual",
+      "step",
+      "style",
+      "template",
+      "terminalAnchors",
+      "terminalCount",
+      "terminalLabels",
+      "terminalTypes",
+      "transform",
+      "update",
+      "uploadStateImage",
+      "value",
+      "viewBox",
+      "width"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createRenderGraphTemplatePreview",
+    "vars": [
+      "aria",
+      "className",
+      "fill",
+      "hidden",
+      "item",
+      "key",
+      "miniature",
+      "node",
+      "stateVisual",
+      "stroke",
+      "strokeLinecap",
+      "strokeLinejoin",
+      "strokeWidth",
+      "template",
+      "transform",
+      "viewBox"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createRenderLibraryTemplateButton",
+    "vars": [
+      "aria",
+      "className",
+      "disabled",
+      "draggable",
+      "event",
+      "height",
+      "hidden",
+      "href",
+      "item",
+      "key",
+      "miniature",
+      "node",
+      "onClick",
+      "onContextMenu",
+      "onDragStart",
+      "preserveAspectRatio",
+      "section",
+      "stateVisual",
+      "title",
+      "transform",
+      "viewBox",
+      "width"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createRenderLibraryFlyout",
+    "vars": [
+      "className",
+      "componentTypeKey",
+      "flyoutListKey",
+      "group",
+      "item",
+      "onMouseEnter",
+      "onMouseLeave",
+      "ref",
+      "style",
+      "typeGroup"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createLodNodeFromEvent",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createLodTerminalIdFromEvent",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createHandleLodNodePointerDown",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appDeviceDefinitionFactories.tsx",
+    "function": "createHandleLodNodeContextMenu",
+    "vars": [
+      "canvasPoint",
+      "event",
+      "nodeId",
+      "routePoints",
+      "target"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createSetNodes",
+    "vars": [
+      "current",
+      "value"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createSetEdges",
+    "vars": [
+      "current",
+      "value"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createSetGraphArrays",
+    "vars": [
+      "current",
+      "nextEdges",
+      "nextNodes"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createPatchGraphNodes",
+    "vars": [
+      "current",
+      "nodeUpdates"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createPatchGraphEdges",
+    "vars": [
+      "current",
+      "edgeUpdates"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createUpdateGraphNodeById",
+    "vars": [
+      "ModelNode",
+      "current",
+      "nodeId",
+      "updater"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createSetSchemes",
+    "vars": [
+      "value"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createUpdateSmartAlignmentGuides",
+    "vars": [
+      "guides"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createSetCanvasPanning",
+    "vars": [
+      "next"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createSetContextMarqueeSelection",
+    "vars": [
+      "next"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createOpenGraphicContextMenu",
+    "vars": [
+      "menu"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createSetOperationLogText",
+    "vars": [
+      "nextLog"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createEdgeListForNodeIds",
+    "vars": [
+      "Edge",
+      "extraEdgeIds",
+      "nodeIds"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createBuildSingleNodeDragCache",
+    "vars": [
+      "SingleNodeDragPreviewEndpoint",
+      "affectedEdges",
+      "color",
+      "edgeId",
+      "edgeIds",
+      "endMoves",
+      "nodeId",
+      "nodeIds",
+      "snapEdges",
+      "sourceNormal",
+      "startMoves",
+      "targetNormal"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createOrderedNodeFromList",
+    "vars": [
+      "node",
+      "nodeId",
+      "sourceNodes"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createOrderedNodesForIds",
+    "vars": [
+      "nodeIds",
+      "sourceNodes"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createAddRoutingNodesForConnectionEdge",
+    "vars": [
+      "bottom",
+      "edge",
+      "left",
+      "right",
+      "scopedNodes",
+      "sourceNodes",
+      "top"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createRoutingNodesForConnectionEdge",
+    "vars": [
+      "ModelNode",
+      "edge",
+      "sourceNodes"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createRoutingNodesForConnectionEdges",
+    "vars": [
+      "ModelNode",
+      "candidateEdges",
+      "extraNodeIds",
+      "sourceNodes"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createCachedConnectionStrokeColor",
+    "vars": [
+      "edge"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createConnectionLineStyle",
+    "vars": [
+      "edgeId"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createMeasurementGroupAnchorPoint",
+    "vars": [
+      "absolute",
+      "group",
+      "node",
+      "terminal"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createMeasurementGroupLocalOffset",
+    "vars": [
+      "group",
+      "node"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createMeasurementGroupCanvasPosition",
+    "vars": [
+      "group",
+      "node"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createMeasurementGroupRenderMetrics",
+    "vars": [
+      "config",
+      "fontSize",
+      "group",
+      "item",
+      "node",
+      "row"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createIncludeMeasurementGroupBounds",
+    "vars": [
+      "bottom",
+      "box",
+      "includeBox",
+      "left",
+      "node",
+      "right",
+      "top"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createBuildMeasurementGroupMarkup",
+    "vars": [
+      "absolute",
+      "group",
+      "index",
+      "node",
+      "options",
+      "row"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createBuildRoutableLineDragGhostRoutesForNodeIds",
+    "vars": [
+      "color",
+      "edgeId",
+      "nodeIds",
+      "path",
+      "routableLineNodeId"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createBuildMultiNodeDragOverlayPreview",
+    "vars": [
+      "MultiNodeDragOverlayPreview",
+      "absolute",
+      "affectedEdgesForDrag",
+      "bottom",
+      "box",
+      "clip",
+      "dragNodeIds",
+      "draggedEdgeIds",
+      "edgeId",
+      "left",
+      "movedBusNodeIds",
+      "movedNodeIds",
+      "movingEdgeIds",
+      "originalPositionsForDrag",
+      "originalRoutePointsForDrag",
+      "position",
+      "right",
+      "simplifiedMarkup",
+      "top"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createRenderMultiNodeDragOverlay",
+    "vars": [
+      "__html",
+      "bounds",
+      "className",
+      "dangerouslySetInnerHTML",
+      "draggedEdgeIds",
+      "dynamicEdgePreviewEdges",
+      "edgeRoutes",
+      "element",
+      "ghostRoutes",
+      "height",
+      "href",
+      "key",
+      "mode",
+      "movedBusNodeIds",
+      "movedNodeIds",
+      "nodeId",
+      "preserveAspectRatio",
+      "ref",
+      "route",
+      "stateVisual",
+      "stroke",
+      "strokeDasharray",
+      "strokeWidth",
+      "style",
+      "terminal",
+      "transform",
+      "width"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createGroupTransformPreviewNodeFromSnapshot",
+    "vars": [
+      "node",
+      "position",
+      "rotation",
+      "scale",
+      "scaleX",
+      "scaleY"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createRenderGroupTransformPhotoPreview",
+    "vars": [
+      "className",
+      "color",
+      "height",
+      "href",
+      "key",
+      "lineId",
+      "mode",
+      "nodeId",
+      "position",
+      "preserveAspectRatio",
+      "rotation",
+      "route",
+      "scale",
+      "scaleX",
+      "scaleY",
+      "stateVisual",
+      "stroke",
+      "strokeDasharray",
+      "strokeWidth",
+      "style",
+      "terminal",
+      "transform",
+      "width"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createRenderSingleTransformRotateOriginGhost",
+    "vars": [
+      "className",
+      "height",
+      "mode",
+      "position",
+      "rotation",
+      "scale",
+      "scaleX",
+      "scaleY",
+      "stateVisual",
+      "transform",
+      "width"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createRenderTransformRotationTrajectory",
+    "vars": [
+      "className"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createRenderBoundaryBusInternalConnector",
+    "vars": [
+      "className",
+      "key",
+      "node",
+      "point",
+      "strokeDasharray",
+      "strokeWidth"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createCollectCurrentModelVoltageColorKeys",
+    "vars": [
+      "sourceNodes",
+      "terminal",
+      "terminalIndex"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createNearestVoltageColor",
+    "vars": [
+      "color",
+      "entry",
+      "key",
+      "left",
+      "missingKey",
+      "right",
+      "targetType",
+      "targetVoltageParts",
+      "voltage",
+      "voltageColors"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createFillMissingVoltageColorRows",
+    "vars": [
+      "palette",
+      "sourceKeys"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createToggleColorDisplayMode",
+    "vars": [
+      "current",
+      "nextMode"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createResetEnergyColors",
+    "vars": [
+      "current",
+      "energy"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createResetVoltageColors",
+    "vars": [
+      "current",
+      "voltage"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createUpdateEnergyColor",
+    "vars": [
+      "color",
+      "current",
+      "energy"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createSetVoltageColorRows",
+    "vars": [
+      "color",
+      "current",
+      "key",
+      "result",
+      "row",
+      "rows"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createUpdateVoltageColorRow",
+    "vars": [
+      "color",
+      "patch",
+      "row",
+      "rowKey",
+      "voltage"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createDeleteVoltageColorRow",
+    "vars": [
+      "row",
+      "rowKey"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createAddVoltageColorRow",
+    "vars": [
+      "color",
+      "item",
+      "row"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createResolveNodeStateVisual",
+    "vars": [
+      "node"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createStatusStatesForNode",
+    "vars": [
+      "node"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createNodeKindAllowsResizeTransform",
+    "vars": [
+      "kind"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createScheduleLibraryFlyoutClose",
+    "vars": [
+      "componentTypeKey",
+      "current",
+      "group"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createLibraryFlyoutStyle",
+    "vars": [
+      "key",
+      "visibility"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createFitLibraryFlyoutsToVisibleArea",
+    "vars": [
+      "element",
+      "key"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createToggleAttributeLibrary",
+    "vars": [
+      "current",
+      "group",
+      "item"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createToggleAttributeLibraryComponentType",
+    "vars": [
+      "attributeLibraryName",
+      "current",
+      "item",
+      "sectionName"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createResolveConfiguredBackgroundLayerIds",
+    "vars": [
+      "configuredLayerIds",
+      "layer",
+      "layerId",
+      "projectId"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createToggleBackgroundLayer",
+    "vars": [
+      "current",
+      "item",
+      "layerId"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createElementTreeItemChildren",
+    "vars": [
+      "ElementTreeChildItem",
+      "componentType",
+      "idx",
+      "item",
+      "label",
+      "name",
+      "nameKey",
+      "relationKeys",
+      "row",
+      "terminalLabels",
+      "view"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createUpdateElementTreeDraft",
+    "vars": [
+      "current",
+      "key",
+      "value"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createClearElementTreeDraft",
+    "vars": [
+      "current",
+      "key"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createElementTreeCommittedDraftValue",
+    "vars": [
+      "key"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createCommitElementTreeInputOnEnter",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createMarkBusTerminalSyncDirty",
+    "vars": [
+      "nodeIds"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createBusNodeIdsFromEdges",
+    "vars": [
+      "edgeItems"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createMarkBusTerminalSyncDirtyForEdges",
+    "vars": [
+      "edgeCollections"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createBusTerminalSyncNodeIdsForGraphPatch",
+    "vars": [
+      "edge",
+      "edgeDeleteIds",
+      "edgeUpserts",
+      "movedNodeIds",
+      "previousCandidateEdges"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createSynchronizePendingBusTerminalsWithGraphStore",
+    "vars": [
+      "affectedBusIds",
+      "bottom",
+      "edgeId",
+      "edgeUpserts",
+      "first",
+      "index",
+      "left",
+      "nodeId",
+      "nodeUpdates",
+      "right",
+      "second",
+      "store",
+      "top"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createApplyCanvasPanningVisualOffset",
+    "vars": [
+      "nextOffset"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createMarkCanvasBoundsScrollSyncPending",
+    "vars": [
+      "height",
+      "left",
+      "top",
+      "width"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createCanvasBoundsForGraphContent",
+    "vars": [
+      "baseBounds",
+      "contentEdges",
+      "contentNodes",
+      "contentRoutes",
+      "height",
+      "padding",
+      "width"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createApplyCanvasBounds",
+    "vars": [
+      "bounds",
+      "current",
+      "height",
+      "options",
+      "originShift",
+      "preserveScrollAnchor",
+      "width"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createRejectAutoCanvasExpansionForContent",
+    "vars": [
+      "bounds",
+      "contentEdges",
+      "contentNodes",
+      "contentRoutes"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createCanvasBoundsForAutoExpandedGraphContent",
+    "vars": [
+      "baseBounds",
+      "contentEdges",
+      "contentNodes",
+      "contentRoutes",
+      "padding"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createTranslateStoredEdgeGeometryBy",
+    "vars": [
+      "edge",
+      "manualPoints",
+      "point",
+      "routePoints",
+      "shift",
+      "sourcePoint",
+      "targetPoint"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createShiftCachedRoutesForCanvasOrigin",
+    "vars": [
+      "originShift",
+      "route"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createLeftTopCanvasOriginShiftForContent",
+    "vars": [
+      "contentEdges",
+      "contentNodes",
+      "contentRoutes",
+      "padding",
+      "value"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createMinimumCanvasBoundsForResizeEdge",
+    "vars": [
+      "edge",
+      "height",
+      "width"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createClampNodePositionToExpandableBounds",
+    "vars": [
+      "bounds",
+      "node",
+      "position"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createClampPointToExpandableBounds",
+    "vars": [
+      "bounds",
+      "point"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createClampEdgeGeometryToExpandableBounds",
+    "vars": [
+      "bounds",
+      "edge",
+      "index",
+      "point"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createCanvasNoScrollOffsetForCanvasResizeAnchor",
+    "vars": [
+      "drag",
+      "nextBounds"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createSetCanvasFrameScrollPosition",
+    "vars": [
+      "frame",
+      "left",
+      "top"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createCenterCanvasFrameScrollPosition",
+    "vars": [
+      "frame"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createSyncCanvasFrameScrollToViewBox",
+    "vars": [
+      "affectsX",
+      "affectsY",
+      "anchorScrollLeft",
+      "anchorScrollTop",
+      "boundsScrollAnchor",
+      "canvasBounds",
+      "current",
+      "currentRect",
+      "currentScrollLeft",
+      "currentScrollTop",
+      "desiredRect",
+      "height",
+      "horizontalScrollbarsActive",
+      "maxScrollLeft",
+      "maxScrollTop",
+      "targetScrollLeft",
+      "targetScrollTop",
+      "targetViewBox",
+      "verticalScrollbarsActive",
+      "width"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createSyncCanvasFrameScrollToCanvasResizeCommitAnchor",
+    "vars": [
+      "anchor",
+      "canvasBounds",
+      "current",
+      "currentScrollLeft",
+      "currentScrollTop",
+      "currentViewBox",
+      "desiredRect",
+      "edge",
+      "height",
+      "horizontalScrollbarsActive",
+      "left",
+      "scrollLeft",
+      "scrollTop",
+      "top",
+      "verticalScrollbarsActive",
+      "width"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createSyncCanvasFrameScrollToWheelAnchor",
+    "vars": [
+      "anchor",
+      "current",
+      "left",
+      "top"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createCurrentViewBoxFromCanvasFrameScroll",
+    "vars": [
+      "canvasBounds",
+      "currentViewBox",
+      "horizontalScrollbarsActive",
+      "maxScrollLeft",
+      "maxScrollTop",
+      "scrollLeft",
+      "scrollTop",
+      "verticalScrollbarsActive"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createScheduleCanvasVisibleViewBoxUpdate",
+    "vars": [
+      "current"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createHandleCanvasFrameScroll",
+    "vars": [
+      "boundsScrollSyncPending",
+      "programmaticScroll"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createUpdateCanvasFrameViewportSize",
+    "vars": [
+      "current",
+      "height",
+      "width"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createNodeImage",
+    "vars": [
+      "node"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createRenderNodePreviewImageContent",
+    "vars": [
+      "className",
+      "clipId",
+      "height",
+      "href",
+      "node",
+      "options",
+      "preserveAspectRatio",
+      "transform",
+      "width"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createBuildNodePreviewImageMarkup",
+    "vars": [
+      "className",
+      "clip",
+      "clipId",
+      "node",
+      "options"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createBuildConnectPreviewPath",
+    "vars": [
+      "manualPoints",
+      "point",
+      "preserveManualRouteDisplay",
+      "source",
+      "sourceId",
+      "sourceTerminalId",
+      "target",
+      "targetId",
+      "targetPoint",
+      "targetTerminalId"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createBuildRoutableLinePreviewPath",
+    "vars": [
+      "placement",
+      "point",
+      "sourceId",
+      "sourceTerminalId",
+      "target",
+      "targetId",
+      "targetPoint",
+      "targetTerminalId"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createPatchStoredRouteStoreForEdgeIds",
+    "vars": [
+      "RoutedEdge",
+      "bounds",
+      "boundsToQuery",
+      "edgeIds",
+      "first",
+      "options",
+      "replaceChanged",
+      "routeNodes",
+      "second",
+      "store"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createMarkRouteEdgesDirty",
+    "vars": [
+      "edgeIds"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createMarkStoredRouteEdgesDirty",
+    "vars": [
+      "edgeIds"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createEdgeListsHaveSameOrder",
+    "vars": [
+      "nextEdges",
+      "previousEdges"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createEdgeReferenceDiffIds",
+    "vars": [
+      "nextEdges",
+      "previousEdges"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createDirtyEdgeIdsAfterMove",
+    "vars": [
+      "extraEdgeIds",
+      "movedNodeIds",
+      "nextEdges",
+      "previousEdges"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createDirtyEdgeIdsForMovedLocalRoutes",
+    "vars": [
+      "DraggingState",
+      "originalRoutePoints",
+      "selectedEdgeIds"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createDirtyEdgeIdsAfterBulkMove",
+    "vars": [
+      "extraEdgeIds",
+      "legacyDirtyCount",
+      "movedNodeIds",
+      "nextEdges",
+      "previousEdges",
+      "routeCachePatchedEdgeIds"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createLogBulkMoveCommitStats",
+    "vars": [
+      "boundaryEdges",
+      "bulkPlanMs",
+      "busSyncMs",
+      "candidateEdges",
+      "canvasBoundsMs",
+      "deferredRepairCandidates",
+      "dirtyMs",
+      "edgePatchMs",
+      "graphPatchMs",
+      "internalEdges",
+      "kind",
+      "markDirtyMs",
+      "movedNodes",
+      "oldDeferredRepairCandidates",
+      "oldRouteDirty",
+      "routableLineUpdates",
+      "routeCacheMs",
+      "routeCachePatched",
+      "routeDirty",
+      "stats",
+      "storedRouteDirty",
+      "syncRepairMs",
+      "totalMs"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createBuildMovedNodeUpdates",
+    "vars": [
+      "bounds",
+      "delta",
+      "nodeIds",
+      "originalPositions",
+      "position"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createNextNodesForMovedGraphCommit",
+    "vars": [
+      "movedNodeIds",
+      "movedNodeUpdates",
+      "store"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createEdgePatchFromCandidateEdges",
+    "vars": [
+      "edge",
+      "nextCandidateEdges",
+      "previousCandidateEdges"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createGraphStorePatchStillCurrent",
+    "vars": [
+      "edgeDeleteIds",
+      "edgeUpserts",
+      "nodeUpdates",
+      "store"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createShouldRunSynchronousMoveBlockerRepair",
+    "vars": [
+      "edge",
+      "movedNodeIds",
+      "nextCandidateEdges",
+      "previousCandidateEdges"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createPatchSingleTerminalAnchorFromPoint",
+    "vars": [
+      "current",
+      "edge",
+      "edgeUpserts",
+      "movingEndpoint",
+      "nodeId",
+      "nodeUpdates",
+      "nodes",
+      "originalMovingPoint",
+      "point",
+      "terminal",
+      "terminalId",
+      "terminals"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createRebuildEdgeUpdatesAfterNodeGeometryChange",
+    "vars": [
+      "changedNodeIds",
+      "currentEdges",
+      "edge",
+      "nextNodes",
+      "preservedEdgeIds"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createRebuildEdgesAfterNodeGeometryChange",
+    "vars": [
+      "changedNodeIds",
+      "currentEdges",
+      "edge",
+      "nextNodes",
+      "preservedEdgeIds"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createStoredRouteEndpointMatchPoint",
+    "vars": [
+      "endpointPoint",
+      "node",
+      "storedEndpoint",
+      "terminalId"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createEndpointMatchedRoutePointsForEdge",
+    "vars": [
+      "edge",
+      "point",
+      "routePoints"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createEdgeWithFrozenBusEndpointPoints",
+    "vars": [
+      "edge",
+      "routePoints",
+      "sourcePoint",
+      "targetPoint"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createPreviewStoredRoutePointsForEdge",
+    "vars": [
+      "edge",
+      "end",
+      "point",
+      "start"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createRememberPersistedSchemesPayload",
+    "vars": [
+      "normalizedSchemesPayload"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createRefreshSchemesFromBackendDirectory",
+    "vars": [
+      "backendSchemes",
+      "current",
+      "reason",
+      "scheme",
+      "schemeId"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createHandleBackendSchemeMutationFailure",
+    "vars": [
+      "error",
+      "reason"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createSaveSchemeTreeToBackend",
+    "vars": [
+      "parentPath",
+      "pathPrefix",
+      "previousPath",
+      "previousSchemePath",
+      "record",
+      "scheme"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createPersistSchemeTreeToBackend",
+    "vars": [
+      "error",
+      "parentPath",
+      "previousSchemePath",
+      "reason",
+      "scheme"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createReplaceSchemeTreeInBackend",
+    "vars": [
+      "error",
+      "parentPath",
+      "previousSchemePath",
+      "reason",
+      "scheme"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createPersistRefreshRecoveryNow",
+    "vars": [
+      "savedAt"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createSelectSingleScheme",
+    "vars": [
+      "schemeId"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createSelectSingleProject",
+    "vars": [
+      "projectId",
+      "schemeId"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createToggleSchemeSelection",
+    "vars": [
+      "current",
+      "schemeId"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createToggleProjectSelection",
+    "vars": [
+      "current",
+      "projectId",
+      "schemeId"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createUndoGraphSnapshotPatchPlan",
+    "vars": [
+      "mode",
+      "snapshot",
+      "store"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createApplyUndoGraphSnapshot",
+    "vars": [
+      "current",
+      "snapshot"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createPushUndoSnapshot",
+    "vars": [
+      "current",
+      "deepModelSnapshot",
+      "graphPatchScope",
+      "markDirty"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createUniqueUndoScopeIds",
+    "vars": [
+      "ids"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createPushNodeOnlyUndoSnapshot",
+    "vars": [
+      "nodeId"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createSyncExistingNodesWithTemplateDefinitions",
+    "vars": [
+      "matchesNode",
+      "previousDefinitions",
+      "template"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createUpdateMeasurementConfig",
+    "vars": [
+      "PlatformMeasurementConfig",
+      "current",
+      "updater"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createSaveMeasurementConfigDialog",
+    "vars": [
+      "measurementTypeDuplicateMessage"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createUpdateMeasurementType",
+    "vars": [
+      "current",
+      "item",
+      "measurementTypes",
+      "patch",
+      "typeId"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createAddMeasurementType",
+    "vars": [
+      "current",
+      "defaultColor",
+      "defaultDecimals",
+      "defaultFontFamily",
+      "defaultFontSize",
+      "defaultFontWeight",
+      "defaultUnit",
+      "defaultVisible",
+      "key",
+      "measurementTypes",
+      "shortLabel",
+      "valueType"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createDeleteMeasurementType",
+    "vars": [
+      "current",
+      "deviceProfiles",
+      "item",
+      "items",
+      "measurementTypes",
+      "profile",
+      "typeId"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createSetMeasurementProfileItems",
+    "vars": [
+      "current",
+      "deviceKind",
+      "deviceProfiles",
+      "items",
+      "profile"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createCreateMeasurementProfileItem",
+    "vars": [
+      "associatedField",
+      "defaultVisible",
+      "measurementTypeId",
+      "name",
+      "position"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createAddMeasurementProfileItem",
+    "vars": [
+      "deviceKind"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createUpdateMeasurementProfileItem",
+    "vars": [
+      "deviceKind",
+      "index",
+      "item",
+      "itemIndex",
+      "patch"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createDeleteMeasurementProfileItem",
+    "vars": [
+      "deviceKind",
+      "index",
+      "itemIndex"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createMoveMeasurementProfileItem",
+    "vars": [
+      "deviceKind",
+      "direction",
+      "index"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createUpdateProjectMeasurementsWithUndo",
+    "vars": [
+      "ProjectMeasurementConfig",
+      "current",
+      "logText",
+      "updater"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createAddDefaultMeasurementsToNode",
+    "vars": [
+      "current",
+      "node"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createRemoveMeasurementsFromNode",
+    "vars": [
+      "current",
+      "node"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createMeasurementGroupShellOffsetForNode",
+    "vars": [
+      "item",
+      "node",
+      "offset",
+      "terminalId"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createMeasurementSourcePointForNodeItem",
+    "vars": [
+      "item",
+      "node",
+      "terminalId"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createMeasurementTypeOptionsForMeasurementGroup",
+    "vars": [
+      "group",
+      "item",
+      "node"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createCreateMeasurementItemForNode",
+    "vars": [
+      "associatedField",
+      "decimalsOverride",
+      "existingItems",
+      "item",
+      "labelOverride",
+      "measurementTypeId",
+      "name",
+      "node",
+      "role",
+      "styleOverride",
+      "terminalId",
+      "unitOverride",
+      "visible"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createUpdateMeasurementGroupById",
+    "vars": [
+      "MeasurementGroup",
+      "current",
+      "group",
+      "groupId",
+      "groups",
+      "logText",
+      "updater",
+      "version"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createUpdateSelectedMeasurementGroup",
+    "vars": [
+      "MeasurementGroup",
+      "group",
+      "logText",
+      "updater"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createUpdateSelectedMeasurementGroups",
+    "vars": [
+      "MeasurementGroup",
+      "current",
+      "group",
+      "groups",
+      "logText",
+      "updater",
+      "version"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createAddMeasurementItemToGroup",
+    "vars": [
+      "current",
+      "group",
+      "items",
+      "node"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createAddMeasurementItemToNode",
+    "vars": [
+      "node"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createUpdateMeasurementItem",
+    "vars": [
+      "MeasurementItemBinding",
+      "group",
+      "groupId",
+      "item",
+      "itemId",
+      "items",
+      "logText",
+      "updater"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createRemoveMeasurementItem",
+    "vars": [
+      "group",
+      "groupId",
+      "item",
+      "itemId",
+      "items"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createCreateMeasurementEditorGroupForPosition",
+    "vars": [
+      "node",
+      "template",
+      "terminalId"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createUpdateMeasurementEditorGroupSettings",
+    "vars": [
+      "MeasurementGroup",
+      "current",
+      "drafts",
+      "group",
+      "updater"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createUpdateMeasurementEditorDraftItem",
+    "vars": [
+      "MeasurementItemBinding",
+      "current",
+      "drafts",
+      "group",
+      "groupId",
+      "item",
+      "itemId",
+      "items",
+      "updater"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createAddMeasurementEditorDraftItem",
+    "vars": [
+      "current",
+      "drafts",
+      "group",
+      "items",
+      "node"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createRemoveMeasurementEditorDraftItem",
+    "vars": [
+      "current",
+      "drafts",
+      "group",
+      "groupId",
+      "item",
+      "itemId",
+      "items"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createMoveMeasurementEditorDraftItem",
+    "vars": [
+      "current",
+      "direction",
+      "drafts",
+      "group",
+      "groupId",
+      "item",
+      "itemId"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createUpdateMeasurementEditorDraftItemPosition",
+    "vars": [
+      "candidate",
+      "current",
+      "group",
+      "itemId",
+      "items",
+      "node",
+      "sourceGroupId",
+      "sourcePoint",
+      "terminalIdValue"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createDuplicateMeasurementEditorItemNames",
+    "vars": [
+      "drafts"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createConfirmMeasurementEditorDialog",
+    "vars": [
+      "current",
+      "group",
+      "groups",
+      "item",
+      "items",
+      "name",
+      "nodeId",
+      "version"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createRenderSelectedNodeMeasurementTable",
+    "vars": [
+      "MeasurementGroup",
+      "aria",
+      "backgroundColor",
+      "borderColor",
+      "borderStyle",
+      "borderWidth",
+      "candidate",
+      "className",
+      "color",
+      "current",
+      "decimalsOverride",
+      "disabled",
+      "event",
+      "fallback",
+      "fontSize",
+      "group",
+      "groupIndex",
+      "item",
+      "itemIndex",
+      "key",
+      "label",
+      "labelOverride",
+      "labelVisible",
+      "layout",
+      "max",
+      "measurementTypeId",
+      "min",
+      "nextValue",
+      "node",
+      "onChange",
+      "onClick",
+      "onCommit",
+      "placeholder",
+      "sourcePoint",
+      "step",
+      "styleOverride",
+      "unitOverride",
+      "unitVisible",
+      "value",
+      "visible"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createBeginMeasurementDrag",
+    "vars": [
+      "event",
+      "group",
+      "groupId",
+      "historyCaptured",
+      "pointerId",
+      "startOffset"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createUpdateMeasurementDrag",
+    "vars": [
+      "anchor",
+      "current",
+      "event",
+      "group",
+      "groups",
+      "historyCaptured",
+      "version"
+    ]
+  },
+  {
+    "file": "appGraphMeasurementFactories.tsx",
+    "function": "createFinishMeasurementDrag",
+    "vars": [
+      "pointerId"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createCommitRoutableLineDevice",
+    "vars": [
+      "edge",
+      "manualPoints",
+      "node",
+      "source",
+      "target",
+      "template"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createStartRoutableLineFromTerminal",
+    "vars": [
+      "node",
+      "point",
+      "terminalId"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createFinishRoutableLineToTarget",
+    "vars": [
+      "manualPoints",
+      "target"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createUpdateRoutableLineEndpointDrag",
+    "vars": [
+      "current",
+      "dropTarget",
+      "dropTargetPoint",
+      "excludedNodeId",
+      "point",
+      "previewPoint"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createStartRoutableLineEndpointDrag",
+    "vars": [
+      "endpoint",
+      "event",
+      "node",
+      "nodeId",
+      "pointerId"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createFinishRoutableLineEndpointDrag",
+    "vars": [
+      "node",
+      "source"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createCommitNewConnectionEdge",
+    "vars": [
+      "current",
+      "edgeUpserts",
+      "newEdge",
+      "node",
+      "preserveManualRouteDisplay",
+      "routePoints",
+      "sourceName",
+      "targetName"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createFinishConnectToTarget",
+    "vars": [
+      "endpointPoint",
+      "manualPoints",
+      "sourceId",
+      "sourcePoint",
+      "sourceTerminalId",
+      "target",
+      "targetId",
+      "targetPoint",
+      "targetTerminalId"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createFinishRewiring",
+    "vars": [
+      "event",
+      "movingEndpoint",
+      "movingNode",
+      "movingTerminalId",
+      "routePoint",
+      "sourceId",
+      "sourcePoint",
+      "sourceTerminalId",
+      "targetId",
+      "targetPoint",
+      "targetTerminalId"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createHandleDrop",
+    "vars": [
+      "event",
+      "item"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createHandleRoutableLineNodePointerDown",
+    "vars": [
+      "event",
+      "kind",
+      "node",
+      "nodeId",
+      "scope"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createHandleNodePointerDown",
+    "vars": [
+      "affectedEdges",
+      "edge",
+      "edgeIds",
+      "event",
+      "kind",
+      "manualPoints",
+      "node",
+      "nodeId",
+      "nodeIds",
+      "originalEdgePoints",
+      "originalPositions",
+      "originalRouteBounds",
+      "originalRoutePoints",
+      "overlayPreview",
+      "routePoints",
+      "scope",
+      "selection",
+      "singleNodeDragCache",
+      "source",
+      "sourcePoint",
+      "startPoint",
+      "targetPoint"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createHandleRoutableLineNodePathPointerDown",
+    "vars": [
+      "event",
+      "node"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createHandlePointerMove",
+    "vars": [
+      "ModelNode",
+      "_labelRotation",
+      "_labelX",
+      "_labelY",
+      "current",
+      "event",
+      "historyCaptured",
+      "item",
+      "params",
+      "points",
+      "position",
+      "rotation",
+      "scale",
+      "scaleX",
+      "scaleY",
+      "start"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createFinishCanvasPanning",
+    "vars": [
+      "current"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createStartCanvasPanning",
+    "vars": [
+      "canvasOffset",
+      "clientX",
+      "clientY",
+      "event",
+      "horizontalScrollMode",
+      "scrollLeft",
+      "scrollTop",
+      "verticalScrollMode",
+      "viewBox"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createHandleCanvasPointerDownCapture",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createClientPointInsideRenderedCanvas",
+    "vars": [
+      "clientX",
+      "clientY"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createFocusCanvasKeyboardShortcutHost",
+    "vars": [
+      "event",
+      "preventScroll"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createWheelZoomAnchorFromClient",
+    "vars": [
+      "clientX",
+      "clientY",
+      "cursorOffsetX",
+      "cursorOffsetY",
+      "point"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createFlushPendingWheelZoom",
+    "vars": [
+      "current",
+      "nextHeight",
+      "nextWidth"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createScheduleWheelZoom",
+    "vars": [
+      "anchor",
+      "zoomFactor"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createZoomCanvasFromWheelEvent",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createHandleWheel",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createRunContextMenuAction",
+    "vars": [
+      "action"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createReadjustMovedBusConnectionRoutes",
+    "vars": [
+      "bounds",
+      "candidateEdges",
+      "movedNodeIds",
+      "nextNodes",
+      "node"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createCommitLayoutNodePositions",
+    "vars": [
+      "arranged",
+      "edge",
+      "layoutNodeIds",
+      "nodeId",
+      "options",
+      "readjustBusEndpoints"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createApplySelectedNodeLayout",
+    "vars": [
+      "ModelNode",
+      "currentLayoutUnits",
+      "currentNodes",
+      "layoutNodes",
+      "minimumUnitCount",
+      "unit"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createAutoSpreadCanvasGraphics",
+    "vars": [
+      "bounds",
+      "isTransformableNode",
+      "node",
+      "padding",
+      "unit"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createAutoAlignCanvasGraphics",
+    "vars": [
+      "isTransformableNode",
+      "node",
+      "readjustBusEndpoints",
+      "unit"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createDefaultVoltageBaseTerminalValues",
+    "vars": [
+      "terminal"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createDefaultVoltageBaseTerminalKey",
+    "vars": [
+      "terminal"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createSetVoltageBaseTerminalValue",
+    "vars": [
+      "current",
+      "nodeId",
+      "terminalId",
+      "value"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createMergeVoltageBaseSetResults",
+    "vars": [
+      "ModelNode",
+      "changedNodeIds",
+      "first",
+      "nodeUpdates",
+      "nodes",
+      "second",
+      "targetNodeIds"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createVoltageBaseSetResultForScope",
+    "vars": [
+      "scope"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createConfirmVoltageBaseSetDialog",
+    "vars": [
+      "item"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createConnectionRedrawViewportBounds",
+    "vars": [
+      "bottom",
+      "left",
+      "right",
+      "top"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createConnectionRedrawEdgeIdsForScope",
+    "vars": [
+      "edge",
+      "edgeId",
+      "index",
+      "list",
+      "scope"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createConnectionRedrawLineNodeIdsForScope",
+    "vars": [
+      "scope"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createConnectionRedrawTargetsForScope",
+    "vars": [
+      "scope",
+      "total"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createRedrawConnectionRoutes",
+    "vars": [
+      "edge",
+      "node",
+      "scope",
+      "targetCount",
+      "targetEdgeIds",
+      "targetLineNodeIds"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createAlignSelected",
+    "vars": [
+      "bottom",
+      "currentLayoutUnits",
+      "currentNodes",
+      "direction",
+      "horizontal",
+      "left",
+      "right",
+      "top",
+      "vertical"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createDistributeSelected",
+    "vars": [
+      "currentLayoutUnits",
+      "currentNodes",
+      "direction"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createToggleSchemeExpanded",
+    "vars": [
+      "current",
+      "schemeId"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createPromptUniqueRecordName",
+    "vars": [
+      "defaultName",
+      "duplicateMessage",
+      "emptyMessage",
+      "existingNames",
+      "promptText"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createCloneProjectRecordForPaste",
+    "vars": [
+      "existingProjectId",
+      "name",
+      "project"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createSchemePathForScheme",
+    "vars": [
+      "schemeId",
+      "sourceSchemes"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createSchemePathForProject",
+    "vars": [
+      "projectId",
+      "sourceSchemes"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createSchemePathForRecord",
+    "vars": [
+      "scheme"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createCloneSchemeRecord",
+    "vars": [
+      "existingNames",
+      "scheme",
+      "suffix"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createCloneSchemeRecordWithName",
+    "vars": [
+      "name",
+      "scheme"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createCloneSchemeRecordForPaste",
+    "vars": [
+      "SavedProjectRecord",
+      "SavedSchemeRecord",
+      "child",
+      "cloneSchemeRecordForPaste",
+      "current",
+      "existingScheme",
+      "item",
+      "name",
+      "project",
+      "scheme"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createClearActiveProjectDisplay",
+    "vars": [
+      "height",
+      "logMessage",
+      "path",
+      "targetPoint",
+      "width"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createLoadSavedProject",
+    "vars": [
+      "height",
+      "nodes",
+      "project",
+      "schemeId",
+      "width"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createLoadSavedProjectRecord",
+    "vars": [
+      "current",
+      "error",
+      "name",
+      "project",
+      "schemeId",
+      "sourceSchemes"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createRequestUnsavedChangeAction",
+    "vars": [
+      "action"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createRequestLoadSavedProject",
+    "vars": [
+      "kind",
+      "label",
+      "project",
+      "schemeId"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createResolveUnsavedChangeAction",
+    "vars": [
+      "resolution"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createCreateSchemeRecord",
+    "vars": [
+      "current",
+      "error",
+      "parentSchemeId"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createRenameSchemeRecord",
+    "vars": [
+      "current",
+      "error",
+      "scheme"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createDuplicateSchemeRecord",
+    "vars": [
+      "current",
+      "scheme"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createDeleteSchemeRecord",
+    "vars": [
+      "error",
+      "item",
+      "scheme"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createDeleteSelectedRecords",
+    "vars": [
+      "current",
+      "error",
+      "project",
+      "schemeId",
+      "schemePath",
+      "updatedSchemes"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createCopyProjectRecord",
+    "vars": [
+      "kind",
+      "project"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createCopySchemeRecord",
+    "vars": [
+      "kind",
+      "scheme"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createPasteSchemeClipboardRecord",
+    "vars": [
+      "current",
+      "duplicateName",
+      "duplicateSchemeId",
+      "kind",
+      "parentSchemeId",
+      "scheme",
+      "targetParentSchemeId"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createPasteProjectClipboardRecord",
+    "vars": [
+      "current",
+      "duplicateName",
+      "duplicateProjectId",
+      "error",
+      "kind",
+      "project",
+      "targetSchemeId"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createCommitProjectRecordMove",
+    "vars": [
+      "current",
+      "error",
+      "item",
+      "name",
+      "options",
+      "overwriteProjectId",
+      "projectId",
+      "targetSchemeId",
+      "updatedAt"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createResolveRecordPasteConflict",
+    "vars": [
+      "action",
+      "current",
+      "error",
+      "overwriteProjectId",
+      "overwriteSchemeId",
+      "project",
+      "scheme"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createMoveProjectRecordToScheme",
+    "vars": [
+      "duplicateName",
+      "duplicateProjectId",
+      "kind",
+      "project",
+      "projectId",
+      "schemeId",
+      "sourceSchemeId",
+      "targetSchemeId"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createMoveSchemeRecordToScheme",
+    "vars": [
+      "current",
+      "duplicateName",
+      "duplicateSchemeId",
+      "error",
+      "kind",
+      "scheme",
+      "schemeId",
+      "targetSchemeId"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createSaveActiveProjectPointer",
+    "vars": [
+      "draftProjectId",
+      "draftSchemeId",
+      "sourceSchemes"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createSetActiveLayer",
+    "vars": [
+      "current",
+      "layer",
+      "layerId",
+      "visible"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createNextDefaultModelLayerName",
+    "vars": [
+      "layer"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createAddModelLayer",
+    "vars": [
+      "current"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createClearLayerNameDraft",
+    "vars": [
+      "current",
+      "layerId"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createCommitModelLayerName",
+    "vars": [
+      "current",
+      "draftName",
+      "item",
+      "layerId",
+      "name"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createHandleLayerNameInputKeyDown",
+    "vars": [
+      "event",
+      "layer"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createToggleModelLayerVisibility",
+    "vars": [
+      "current",
+      "item",
+      "layerId",
+      "visible"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createSetAllModelLayersVisibility",
+    "vars": [
+      "index",
+      "item",
+      "visible"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createMoveModelLayer",
+    "vars": [
+      "current",
+      "direction",
+      "layer",
+      "layerId"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createDeleteModelLayer",
+    "vars": [
+      "current",
+      "edge",
+      "item",
+      "layerId",
+      "node",
+      "visible"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createRenderDeviceDefinitionMeasurementPanel",
+    "vars": [
+      "associatedField",
+      "className",
+      "colSpan",
+      "defaultVisible",
+      "disabled",
+      "event",
+      "index",
+      "item",
+      "itemIndex",
+      "key",
+      "label",
+      "length",
+      "measurementTypeId",
+      "name",
+      "nextValue",
+      "onChange",
+      "onClick",
+      "onCommit",
+      "option",
+      "placeholder",
+      "position",
+      "target",
+      "value"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createRenderMeasurementConfigDialog",
+    "vars": [
+      "aria",
+      "className",
+      "defaultColor",
+      "defaultDecimals",
+      "defaultFontSize",
+      "defaultUnit",
+      "defaultVisible",
+      "disabled",
+      "event",
+      "fallback",
+      "key",
+      "label",
+      "labelledby",
+      "max",
+      "min",
+      "modal",
+      "name",
+      "nextValue",
+      "onChange",
+      "onClick",
+      "onCommit",
+      "onLostPointerCapture",
+      "onPointerCancel",
+      "onPointerDown",
+      "onPointerUp",
+      "orientation",
+      "readOnly",
+      "ref",
+      "role",
+      "shortLabel",
+      "size",
+      "style",
+      "title",
+      "value"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createRenderMeasurementEditorDialog",
+    "vars": [
+      "MeasurementGroup",
+      "aria",
+      "backgroundColor",
+      "borderColor",
+      "borderStyle",
+      "borderWidth",
+      "candidate",
+      "className",
+      "colSpan",
+      "color",
+      "current",
+      "decimalsOverride",
+      "disabled",
+      "event",
+      "fallback",
+      "fontSize",
+      "group",
+      "groupId",
+      "item",
+      "itemIndex",
+      "key",
+      "labelOverride",
+      "labelVisible",
+      "labelledby",
+      "layout",
+      "max",
+      "measurementTypeId",
+      "min",
+      "modal",
+      "name",
+      "nextValue",
+      "onChange",
+      "onClick",
+      "onCommit",
+      "onPointerDown",
+      "placeholder",
+      "role",
+      "row",
+      "rowIndex",
+      "sourcePoint",
+      "step",
+      "styleOverride",
+      "terminalIndex",
+      "title",
+      "unitOverride",
+      "unitVisible",
+      "value",
+      "visible"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createSaveCurrentProject",
+    "vars": [
+      "SavedProjectRecord",
+      "error",
+      "name",
+      "project",
+      "targetId",
+      "updatedAt"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createRenameProjectRecord",
+    "vars": [
+      "current",
+      "error",
+      "item",
+      "project"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createDuplicateProjectRecord",
+    "vars": [
+      "current",
+      "error",
+      "item",
+      "project"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createDuplicateSelectedProjectRecords",
+    "vars": [
+      "error",
+      "updatedSchemes"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createDuplicateSelectedSchemeRecords",
+    "vars": [
+      "SavedSchemeRecord"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createDeleteProjectRecord",
+    "vars": [
+      "current",
+      "error",
+      "project"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createCreateBlankProject",
+    "vars": [
+      "allowAutoExpandCanvas",
+      "canvasBackgroundColor",
+      "canvasHeight",
+      "canvasWidth",
+      "current",
+      "currentUnit",
+      "deviceIndexCounters",
+      "edges",
+      "error",
+      "nodes",
+      "powerBaseValue",
+      "powerUnit",
+      "preferredSchemeId",
+      "project",
+      "version",
+      "voltageUnit"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createLocateTopologyError",
+    "vars": [
+      "error",
+      "height",
+      "width"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createRunTopologyCalculation",
+    "vars": [
+      "error",
+      "includeVoltageSetpointDeviations",
+      "message",
+      "state"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createGetEdgeEndpointPoint",
+    "vars": [
+      "edge",
+      "endpoint"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createCenterViewOnPoint",
+    "vars": [
+      "height",
+      "point",
+      "width"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createViewportCenterAnchorForPoint",
+    "vars": [
+      "cursorOffsetX",
+      "cursorOffsetY",
+      "point"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createSetViewBoxAtViewportCenter",
+    "vars": [
+      "nextViewBox",
+      "point"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createCenterViewBoxOnPoint",
+    "vars": [
+      "height",
+      "point",
+      "width"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createCenterViewOnPointAtZoom",
+    "vars": [
+      "nextHeight",
+      "nextWidth",
+      "point",
+      "zoomPercent"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createZoomViewportAtCenter",
+    "vars": [
+      "current",
+      "nextHeight",
+      "nextWidth",
+      "zoomFactor"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createResetViewportZoom",
+    "vars": [
+      "current",
+      "nextHeight",
+      "nextWidth"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createFitWholeCanvasFromBlankDoubleClick",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createFitViewToBounds",
+    "vars": [
+      "bounds",
+      "height",
+      "maxZoomPercent",
+      "padding",
+      "width"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createFocusElementTreeItem",
+    "vars": [
+      "item",
+      "openDeviceTab"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createJumpToElementTreeItem",
+    "vars": [
+      "item"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createOpenElementTreeItemContextMenu",
+    "vars": [
+      "event",
+      "item",
+      "source",
+      "target"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createSetEdgeManualPoints",
+    "vars": [
+      "edgeId",
+      "manualPoints",
+      "point"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createRouteManualPoints",
+    "vars": [
+      "point",
+      "routePoints"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createTidySelectedEdgeRoute",
+    "vars": [
+      "edge",
+      "index"
+    ]
+  },
+  {
+    "file": "appProjectCanvasFactories.tsx",
+    "function": "createTidyRoutableLineRoute",
+    "vars": [
+      "node",
+      "nodeId"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createRequestCanvasFrameCenter",
+    "vars": [
+      "current"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createUndoLastOperation",
+    "vars": [
+      "current",
+      "layer"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createRouteForCurrentEdgeSave",
+    "vars": [
+      "edge",
+      "edgeId",
+      "path",
+      "point",
+      "points"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createCurrentProject",
+    "vars": [
+      "measurements",
+      "name",
+      "version"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createAdjustSelectedDisplayLayer",
+    "vars": [
+      "action",
+      "back",
+      "front",
+      "lower",
+      "raise"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createWriteOperationLog",
+    "vars": [
+      "hour12",
+      "message"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createRequireEditMode",
+    "vars": [
+      "action"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createPersistDeviceLibraryChange",
+    "vars": [
+      "failure",
+      "messages",
+      "overrides",
+      "success"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createPersistTemplateLibraryChange",
+    "vars": [
+      "failure",
+      "overrides",
+      "success"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createConnectionCommitFailureMessage",
+    "vars": [
+      "issue",
+      "issues",
+      "message"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createSwitchInspectorTabForCanvasSelection",
+    "vars": [
+      "edgeIds",
+      "nodeIds",
+      "source"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createSelectCanvasGraphics",
+    "vars": [
+      "edgeIds",
+      "nodeIds",
+      "options"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createSetModifierSelectionPress",
+    "vars": [
+      "next"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createToggleNodeSelectionFromModifierClick",
+    "vars": [
+      "node",
+      "nodeId"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createToggleEdgeSelectionFromModifierClick",
+    "vars": [
+      "edge",
+      "edgeId"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createToggleSelectionFromModifierClick",
+    "vars": [
+      "edgeId",
+      "edgeIds",
+      "nodeId",
+      "nodeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createRestoreCanvasSelectionSnapshot",
+    "vars": [
+      "snapshot"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createRestoreCanvasSelectionSnapshotWithInspector",
+    "vars": [
+      "snapshot",
+      "source"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createStartModifierSelectionPress",
+    "vars": [
+      "currentPoint",
+      "event",
+      "kind",
+      "moved",
+      "pointerId",
+      "startClientX",
+      "startClientY",
+      "startPoint",
+      "target"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createFinishModifierSelectionPress",
+    "vars": [
+      "pointerId"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createStartNodeLabelDrag",
+    "vars": [
+      "event",
+      "kind",
+      "node",
+      "nodeId",
+      "pointerId",
+      "scaleX",
+      "scaleY",
+      "scope",
+      "startOffset",
+      "startPoint"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createStartNodeLabelRotateDrag",
+    "vars": [
+      "center",
+      "event",
+      "kind",
+      "node",
+      "nodeId",
+      "pointerId",
+      "scope",
+      "startRotation"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createFinishNodeLabelDrag",
+    "vars": [
+      "_labelX",
+      "_labelY",
+      "params",
+      "previousNodes"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createFinishNodeLabelRotateDrag",
+    "vars": [
+      "_labelRotation",
+      "params",
+      "previousNodes"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createSetSelectedNodeLabelDisplayMode",
+    "vars": [
+      "_labelDisplayMode",
+      "_labelVisible",
+      "item",
+      "mode",
+      "nodeId",
+      "params"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createToggleSelectedNodeLabelDisplay",
+    "vars": [
+      "nodeId"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createCopySelection",
+    "vars": [
+      "expandGroups"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createCutSelection",
+    "vars": [
+      "current",
+      "edge",
+      "expandGroups",
+      "hasSelectedEdge",
+      "selectedNodeCount"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createPasteSelection",
+    "vars": [
+      "current",
+      "edge",
+      "layerId",
+      "manualPoints",
+      "node",
+      "point",
+      "position",
+      "routePoints",
+      "sourcePoint"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createCreateGraphTemplateType",
+    "vars": [
+      "current",
+      "item"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createCreateGroupDeviceIconSvg",
+    "vars": [
+      "charset",
+      "clipboard",
+      "data",
+      "image",
+      "item",
+      "mode",
+      "node",
+      "utf",
+      "xml"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createGroupDeviceTerminalAnchor",
+    "vars": [
+      "bounds",
+      "point"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createGroupDeviceTerminalSortKey",
+    "vars": [
+      "terminal"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createGroupDeviceTerminalAssociationFor",
+    "vars": [
+      "node",
+      "terminal",
+      "terminalIndex"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createGroupDeviceExternalTerminals",
+    "vars": [
+      "anchor",
+      "association",
+      "clipboard",
+      "item",
+      "label",
+      "left",
+      "right",
+      "sourceEdges",
+      "sourceNodeId",
+      "sourceTerminalId"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createValidateGroupDeviceIconReplacement",
+    "vars": [
+      "length",
+      "message",
+      "target",
+      "terminal",
+      "terminals",
+      "valid"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createReplaceBuiltinDeviceIconOverride",
+    "vars": [
+      "backgroundImage",
+      "backgroundImageAssetId",
+      "current",
+      "groupIcon",
+      "kind",
+      "params",
+      "targetTemplate",
+      "updatedAt"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createOpenGroupDeviceDefinitionDialog",
+    "vars": [
+      "expandGroups",
+      "height",
+      "iconImage",
+      "mode",
+      "sourceGroupId",
+      "sourceSize",
+      "targetKind",
+      "width"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createConfirmCreateDeviceFromGroup",
+    "vars": [
+      "backgroundImage",
+      "backgroundImageAssetId",
+      "componentName",
+      "index",
+      "kind",
+      "length",
+      "section",
+      "size",
+      "terminal",
+      "terminalAnchors",
+      "terminalCount"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createConfirmReplaceDeviceIconFromGroup",
+    "vars": [
+      "backgroundImage",
+      "backgroundImageAssetId",
+      "current",
+      "error",
+      "params",
+      "template"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createOpenAddTemplateDialog",
+    "vars": [
+      "expandGroups",
+      "height",
+      "sourceGroupId",
+      "sourceSize",
+      "width"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createConfirmAddGraphTemplate",
+    "vars": [
+      "clipboard",
+      "createdAt",
+      "current",
+      "item",
+      "sourceSize",
+      "updatedAt"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createDropGraphTemplate",
+    "vars": [
+      "current",
+      "edge",
+      "layerId",
+      "manualPoints",
+      "node",
+      "point",
+      "pointerPosition",
+      "position",
+      "routePoints",
+      "sourcePoint",
+      "targetPoint",
+      "template"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createFinishMarqueeSelectionFromPoints",
+    "vars": [
+      "current",
+      "start"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createStartContextMarqueeSelection",
+    "vars": [
+      "current",
+      "start"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createOpenFilterSelectionDialog",
+    "vars": [
+      "nodeId"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createToggleFilterSelectionType",
+    "vars": [
+      "current",
+      "item",
+      "itemKey",
+      "typeKey"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createToggleFilterSelectionItem",
+    "vars": [
+      "current",
+      "item",
+      "itemKey"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createConfirmFilterSelectionDialog",
+    "vars": [
+      "node",
+      "scope"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createDeleteSelection",
+    "vars": [
+      "current",
+      "edgeId"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createDeleteSelectedGraphicsFromCanvas",
+    "vars": [
+      "hasSelectedEdge",
+      "selectedNodeCount"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createManualPointDeltaForEdge",
+    "vars": [
+      "delta",
+      "deltas",
+      "edge",
+      "sum"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createRoutePreserveEdgeIdsForMovedNodes",
+    "vars": [
+      "candidateEdges",
+      "edge",
+      "movedNodeIds",
+      "requestedEdgeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createRouteSnapshotEdgesForMove",
+    "vars": [
+      "candidateEdges",
+      "edge",
+      "movedNodeIds",
+      "selectedEdgeIdsInput"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createRouteTouchesExpandedBoxes",
+    "vars": [
+      "bottom",
+      "box",
+      "boxes",
+      "left",
+      "points",
+      "right",
+      "top"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createBoundsForNodeSet",
+    "vars": [
+      "bottom",
+      "left",
+      "movedIds",
+      "padding",
+      "positions",
+      "right",
+      "sourceNodes",
+      "top"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createMergeNodeUpdateLists",
+    "vars": [
+      "baseUpdates",
+      "extraUpdates"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createMergeUniqueEdgesById",
+    "vars": [
+      "firstEdges",
+      "secondEdges"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createCompleteNodeListForPartialPatch",
+    "vars": [
+      "nextNodes",
+      "node",
+      "previousNodes"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createIsWholeActiveLayerMove",
+    "vars": [
+      "nodeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createInternalMoveEdgeIdsForMovedNodes",
+    "vars": [
+      "candidateEdges",
+      "movedNodeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createExternalMoveCandidateEdges",
+    "vars": [
+      "candidateEdges",
+      "edge",
+      "internalMovedEdgeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createInternalMoveCandidateEdges",
+    "vars": [
+      "candidateEdges",
+      "edge",
+      "internalMovedEdgeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createTranslateInternalMoveCandidateEdges",
+    "vars": [
+      "candidateEdges",
+      "delta",
+      "edge",
+      "internalMovedEdgeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createTranslateWholeMoveCandidateEdges",
+    "vars": [
+      "candidateEdges",
+      "delta",
+      "edge",
+      "movedNodeIds",
+      "selectedEdgeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createInternalRoutableLineNodeUpdatesForMove",
+    "vars": [
+      "delta",
+      "movedNodeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createRoutableLineRouteCandidateIdsForMovedNodes",
+    "vars": [
+      "bounds",
+      "candidate",
+      "movedNodeIds",
+      "nextNodes",
+      "originalPositions",
+      "positions",
+      "previousNodes",
+      "sourceNodes"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createRebuildRoutableLineNodeUpdatesForChangedNodes",
+    "vars": [
+      "bounds",
+      "changedNodeIds",
+      "movedNodeIds",
+      "nextNodes",
+      "originalPositions",
+      "previousNodes"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createScheduleDeferredRoutableLineRouteRepair",
+    "vars": [
+      "current",
+      "effectiveCanvasBounds",
+      "expectedNodeUpdates",
+      "movedNodeIds",
+      "originalPositions",
+      "previousNodes"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createLocalRouteOptimizationEdges",
+    "vars": [
+      "candidateEdges",
+      "edge",
+      "movedNodeIds",
+      "nextNodes",
+      "originalPositions",
+      "previousNodes",
+      "selectedEdgeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createLocalRouteOptimizationCandidateEdges",
+    "vars": [
+      "Edge",
+      "bounds",
+      "directCandidateEdges",
+      "movedNodeIds",
+      "nextNodes",
+      "originalPositions",
+      "previousNodes",
+      "selectedEdgeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createRoutePointsForMovedNodeBlockers",
+    "vars": [
+      "DraggingState",
+      "baseRoutePoints",
+      "bottom",
+      "bounds",
+      "candidate",
+      "candidateEdges",
+      "left",
+      "movedNodeIds",
+      "nextNodes",
+      "right",
+      "top"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createRoutePointsForMovedEdgesBlockedByStationaryNodes",
+    "vars": [
+      "DraggingState",
+      "baseRoutePoints",
+      "bounds",
+      "candidateEdges",
+      "movedNodeIds",
+      "nextNodes",
+      "node"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createRoutePointsNearOriginalMovedNodes",
+    "vars": [
+      "DraggingState",
+      "baseRoutePoints",
+      "bottom",
+      "bounds",
+      "box",
+      "candidate",
+      "candidateEdges",
+      "left",
+      "movedNodeIds",
+      "node",
+      "originalPositions",
+      "position",
+      "previousNodes",
+      "right",
+      "top"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createAdjustEdgesAfterNodeMove",
+    "vars": [
+      "DraggingState",
+      "ModelNode",
+      "bounds",
+      "currentEdges",
+      "deltasByNode",
+      "edge",
+      "manualPoints",
+      "movedNodeIds",
+      "movingEndpoint",
+      "nextNodes",
+      "nextSourceNode",
+      "nextTargetNode",
+      "nodeId",
+      "originalEdgePoints",
+      "originalRoutePoints",
+      "point",
+      "position",
+      "preserveRouteEdgeIds",
+      "sourceNode",
+      "sourcePoint",
+      "targetNode",
+      "targetPoint"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createRebuildSingleAffectedConnectionRoute",
+    "vars": [
+      "candidateEdges",
+      "edge",
+      "movedNodeIds",
+      "nextNodes",
+      "searchEdges",
+      "selectedEdgeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createSynchronousEdgeAdjustmentCandidates",
+    "vars": [
+      "DraggingState",
+      "candidateEdges",
+      "edge",
+      "movedBusNodeIdsInput",
+      "movedNodeIds",
+      "originalRoutePoints",
+      "selectedEdgeIdsInput"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createShouldAdjustEdgeSynchronouslyAfterMove",
+    "vars": [
+      "DraggingState",
+      "edge",
+      "movedBusNodeIds",
+      "movedNodeIds",
+      "originalRoutePoints",
+      "selectedEdgeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createMergeAdjustedCandidateEdges",
+    "vars": [
+      "adjustedCandidateEdges",
+      "candidateEdges",
+      "edge"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createTerminalReconcileNodeScope",
+    "vars": [
+      "bounds",
+      "movedNodeIds",
+      "next",
+      "nextNodes",
+      "previous",
+      "previousNodes"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createFinalizeMovedNodeEdgesFast",
+    "vars": [
+      "_first",
+      "_second",
+      "candidateEdges",
+      "index",
+      "item",
+      "localCandidateEdges",
+      "movedNodeIds",
+      "nextNodes",
+      "previousNodes"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createOptimizeMovedNodeEdgeRoutes",
+    "vars": [
+      "DraggingState",
+      "candidateEdges",
+      "edges",
+      "forcedRerouteEdgeIds",
+      "movedNodeIds",
+      "nextNodes",
+      "originalRoutePoints",
+      "precomputedBlockedRoutePoints",
+      "routePoints",
+      "routeSearchEdges",
+      "selectedEdgeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createShouldRunDeferredMoveOptimization",
+    "vars": [
+      "blockedEdgeIds",
+      "candidateEdges",
+      "movedNodeIds",
+      "selectedEdgeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createScheduleMovedEdgeOptimization",
+    "vars": [
+      "DraggingState",
+      "Edge",
+      "ModelNode",
+      "current",
+      "edgeDeleteIds",
+      "edgeUpserts",
+      "expectedPatch",
+      "fastEdges",
+      "moveCandidateEdges",
+      "movedNodeIds",
+      "nextNodes",
+      "nodeUpdates",
+      "originalPositions",
+      "originalRoutePoints",
+      "previousNodes",
+      "selectedEdgeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createScheduleDeferredMovedConnectionRepair",
+    "vars": [
+      "DraggingState",
+      "Edge",
+      "ModelNode",
+      "candidateEdges",
+      "current",
+      "edgeDeleteIds",
+      "edgeUpserts",
+      "effectiveCanvasBounds",
+      "expectedPatch",
+      "movedNodeIds",
+      "nodeUpdates",
+      "options",
+      "originalPositions",
+      "originalRoutePoints",
+      "previousNodesForMove",
+      "selectedEdgeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createMoveRouteRepairSeedEdges",
+    "vars": [
+      "DraggingState",
+      "candidateEdges",
+      "edge",
+      "movedNodeIds",
+      "nodeId",
+      "originalRoutePoints",
+      "selectedEdgeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createLightweightMovedEndpointRoute",
+    "vars": [
+      "bounds",
+      "edge",
+      "movedNodeIds",
+      "nextNodes",
+      "point",
+      "previousRoute",
+      "routePoints",
+      "sourceDelta",
+      "targetDelta"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createPatchCachedRoutesForHighFanoutMove",
+    "vars": [
+      "bounds",
+      "committedCandidateEdges",
+      "movedNodeIds",
+      "nextNodes",
+      "previousCandidateEdges"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createPatchCachedRoutesForBulkTranslation",
+    "vars": [
+      "delta",
+      "durationMs",
+      "edgeIds",
+      "performance",
+      "route"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createPatchCachedRoutesForWholeMove",
+    "vars": [
+      "candidateEdges",
+      "delta",
+      "movedNodeIds",
+      "selectedEdgeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createPatchCachedRoutesForInternalMove",
+    "vars": [
+      "candidateEdges",
+      "delta",
+      "internalMovedEdgeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createStoredRouteDirtyIdsForMove",
+    "vars": [
+      "dirtyEdgeIds",
+      "routeCachePatchedEdgeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createBuildBulkMovePlan",
+    "vars": [
+      "BulkMovePlan",
+      "DraggingState",
+      "committedCandidateEdges",
+      "committedNextNodes",
+      "internalEdgeIds",
+      "internalMovedEdgeIds",
+      "legacyDeferredRepairCandidateCount",
+      "movedNodeIds",
+      "originalPositions",
+      "originalRoutePoints",
+      "previousNodes",
+      "selectedEdgeIds",
+      "wholeLayerMove"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createCommitFastMovedGraphPatches",
+    "vars": [
+      "DraggingState",
+      "boundaryEdgeCount",
+      "candidateEdgeCount",
+      "candidateEdges",
+      "current",
+      "deferredRepairCandidateCount",
+      "durationMs",
+      "edgeDeleteIds",
+      "edgeUpserts",
+      "effectiveCanvasBounds",
+      "internalEdgeCount",
+      "kind",
+      "legacyDeferredRepairCandidateCount",
+      "legacyRouteDirtyCount",
+      "movedNodeCount",
+      "movedNodeIds",
+      "movedNodeUpdates",
+      "nextNodes",
+      "node",
+      "nodeUpdates",
+      "options",
+      "originalPositions",
+      "originalRoutePoints",
+      "performance",
+      "previousCandidateEdges",
+      "previousNodes",
+      "reconcileTerminalConnections",
+      "routableLineUpdateCount",
+      "routeCachePatchedCount",
+      "routeDirtyCount",
+      "selectedEdgeIds",
+      "storedRouteDirtyCount"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createUpdateMouseStatus",
+    "vars": [
+      "point"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createUpdateMultiNodeDragOverlayTransform",
+    "vars": [
+      "delta"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createShowImperativeMultiNodeDragOverlay",
+    "vars": [
+      "markup"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createBuildSingleNodeDragPreviewNodeMarkup",
+    "vars": [
+      "dragState",
+      "mode"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createShowImperativeSingleNodeDragPreview",
+    "vars": [
+      "dragState"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createCssSelectorEscape",
+    "vars": [
+      "value"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createClearImperativeSingleNodeDragOriginLines",
+    "vars": [
+      "element"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createSetImperativeSingleNodeDragOriginLines",
+    "vars": [
+      "dragState",
+      "element"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createSetImperativeSingleNodeDragOrigin",
+    "vars": [
+      "nodeId"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createBindCanvasNodeElement",
+    "vars": [
+      "element",
+      "nodeId"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createSingleNodeDragPreviewNodeFor",
+    "vars": [
+      "delta",
+      "dragState",
+      "nodeId",
+      "position"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createSingleNodeDragRelevantEdges",
+    "vars": [
+      "dragState",
+      "edge"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createSingleNodeDragPreviewBounds",
+    "vars": [
+      "delta",
+      "dragState"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createSingleNodeDragEdgeTouchesBounds",
+    "vars": [
+      "bounds",
+      "delta",
+      "dragState",
+      "edge"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createSingleNodeDragViewportLocalEdgesByScan",
+    "vars": [
+      "bounds",
+      "delta",
+      "dragState",
+      "edgesToCheck",
+      "localLimit"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createSingleNodeDragScopedEdges",
+    "vars": [
+      "delta",
+      "dragState",
+      "previewEdges",
+      "snapEdges"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createSimpleOrthogonalDragPreviewPoints",
+    "vars": [
+      "end",
+      "start"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createRoutableLineIdsConnectedToNodeIds",
+    "vars": [
+      "nodeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createRoutableLineEndpointPreviewRoutePoints",
+    "vars": [
+      "bounds",
+      "end",
+      "previewNodeById",
+      "refs",
+      "sourceId",
+      "sourcePoint",
+      "sourceTerminalId",
+      "start",
+      "targetId",
+      "targetPoint",
+      "targetTerminalId"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createBuildRoutableLinePreviewRoutesForNodeUpdates",
+    "vars": [
+      "baseNodeById",
+      "bounds",
+      "changedNodeIds",
+      "color",
+      "edgeId",
+      "nodeUpdates",
+      "options",
+      "path",
+      "routableLineNodeId"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createBuildRoutableLineEndpointPreviewNodeUpdates",
+    "vars": [
+      "baseNodeById",
+      "canvasBounds",
+      "changedNodeIds",
+      "nodeUpdates",
+      "sourceNodes"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createBuildTranslatedInternalRoutableLineDragPreviewRoutes",
+    "vars": [
+      "color",
+      "delta",
+      "dragState",
+      "edgeId",
+      "movedNodeIds",
+      "path",
+      "point",
+      "routableLineNodeId"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createBuildRoutableLineDragPreviewRoutes",
+    "vars": [
+      "delta",
+      "dragState",
+      "nodeId",
+      "route"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createBuildCachedSingleNodeDragPreviewRoutes",
+    "vars": [
+      "cache",
+      "color",
+      "delta",
+      "edgeId",
+      "nextEnd",
+      "nextStart",
+      "path",
+      "previewEdges",
+      "routePoints",
+      "sourceDelta",
+      "sourceNormal",
+      "targetDelta",
+      "targetNormal"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createBuildDragPreviewEndpointPoints",
+    "vars": [
+      "delta",
+      "dragState",
+      "draggedEdgeIds",
+      "edge",
+      "movedBusIds",
+      "movedNodeIds"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createConnectionEndpointPreviewRoutePoints",
+    "vars": [
+      "edge",
+      "endpoints",
+      "sourcePoint",
+      "targetPoint"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createBuildLightweightNodeDragPreviewRoutes",
+    "vars": [
+      "delta",
+      "dragState",
+      "edge",
+      "edgeId",
+      "nextEnd",
+      "nextStart",
+      "nodeId",
+      "path",
+      "routePoints",
+      "scopedPreviewEdges",
+      "sourceDelta",
+      "sourceNormal",
+      "targetDelta",
+      "targetNormal"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createBuildLightweightNodeDragPreviewRouteMarkup",
+    "vars": [
+      "delta",
+      "dragState",
+      "route",
+      "scopedPreviewEdges"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createSyncImperativeNodeDragPreviewPaths",
+    "vars": [
+      "color",
+      "connection",
+      "data",
+      "drag",
+      "edge",
+      "edgePreview",
+      "line",
+      "none",
+      "preview",
+      "routes"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createUpdateNodeDragLightweightEdgePreview",
+    "vars": [
+      "dragState",
+      "previewDelta",
+      "scopedPreviewEdges"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createSingleNodeDragInteractionNodes",
+    "vars": [
+      "ModelNode",
+      "bottom",
+      "box",
+      "delta",
+      "dragState",
+      "left",
+      "right",
+      "scopedSnapEdges",
+      "top"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createMultiNodeDragInteractionNodes",
+    "vars": [
+      "ModelNode",
+      "bottom",
+      "box",
+      "delta",
+      "dragState",
+      "left",
+      "right",
+      "top"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createUpdateImperativeNodeDragDropHint",
+    "vars": [
+      "snapTarget",
+      "terminal"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createFindSingleNodeDragSnapTargetAtDelta",
+    "vars": [
+      "delta",
+      "dragState",
+      "scopedSnapEdges"
+    ]
+  },
+  {
+    "file": "appSelectionDragFactories.tsx",
+    "function": "createFindMultiNodeDragSnapTargetAtDelta",
+    "vars": [
+      "delta",
+      "dragState"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createOpenNodeDoubleClickEditor",
+    "vars": [
+      "key",
+      "kind",
+      "node",
+      "nodeId",
+      "performance",
+      "time"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createHandleLodNodeDoubleClick",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createClampFloatingToolbarPosition",
+    "vars": [
+      "height",
+      "width"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createToolbarOverlapArea",
+    "vars": [
+      "first",
+      "second"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createCanvasRectToSurfaceCssRect",
+    "vars": [
+      "bottom",
+      "left",
+      "padding",
+      "rect",
+      "right",
+      "top"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createRotateControlAvoidRectFromCanvasPoints",
+    "vars": [
+      "bottom",
+      "left",
+      "point",
+      "points",
+      "right",
+      "top"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createPlaceFloatingToolbar",
+    "vars": [
+      "avoidRect",
+      "avoidRects",
+      "bottom",
+      "candidate",
+      "candidates",
+      "drift",
+      "first",
+      "height",
+      "index",
+      "left",
+      "overlap",
+      "right",
+      "scale",
+      "second",
+      "top",
+      "total",
+      "width"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createRenderMeasurementGroup",
+    "vars": [
+      "className",
+      "data",
+      "device",
+      "dominantBaseline",
+      "event",
+      "fill",
+      "fontFamily",
+      "fontSize",
+      "fontStyle",
+      "fontWeight",
+      "group",
+      "height",
+      "idx",
+      "index",
+      "item",
+      "key",
+      "kind",
+      "measurement",
+      "name",
+      "onPointerDown",
+      "point",
+      "role",
+      "row",
+      "source",
+      "stroke",
+      "strokeDasharray",
+      "strokeWidth",
+      "terminal",
+      "textDecoration",
+      "transform",
+      "unit",
+      "width"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createHandleMinimapNavigate",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createSetStaticButtonFeedback",
+    "vars": [
+      "nodeId",
+      "state"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createClearStaticButtonFeedback",
+    "vars": [
+      "current",
+      "nodeId"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createBeginStaticButtonPointerFeedback",
+    "vars": [
+      "clientX",
+      "clientY",
+      "event",
+      "moved",
+      "node",
+      "nodeId"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createResolveStaticButtonTargetProject",
+    "vars": [
+      "item",
+      "node"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createExecuteStaticButtonCommand",
+    "vars": [
+      "command"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createExecuteStaticButtonAction",
+    "vars": [
+      "current",
+      "item",
+      "layer",
+      "node",
+      "visible"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createHandleStaticButtonClick",
+    "vars": [
+      "current",
+      "event",
+      "node"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createBeginReadonlyBackgroundStaticButtonPointerFeedback",
+    "vars": [
+      "event",
+      "node"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createRenderReadonlyBackgroundPage",
+    "vars": [
+      "aria",
+      "button",
+      "className",
+      "data",
+      "device",
+      "dominantBaseline",
+      "event",
+      "fill",
+      "height",
+      "href",
+      "idx",
+      "index",
+      "key",
+      "kind",
+      "label",
+      "mode",
+      "name",
+      "node",
+      "onClick",
+      "onContextMenu",
+      "onPointerDown",
+      "onPointerEnter",
+      "onPointerLeave",
+      "onPointerUp",
+      "owner",
+      "preserveAspectRatio",
+      "route",
+      "segment",
+      "stateVisual",
+      "stroke",
+      "strokeDasharray",
+      "strokeWidth",
+      "style",
+      "terminal",
+      "textAnchor",
+      "transform",
+      "width"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback1",
+    "vars": [
+      "draft",
+      "recoveredFromRefresh"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback4",
+    "vars": [
+      "current",
+      "height",
+      "width"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback6",
+    "vars": [
+      "Edge",
+      "edgeIdSet",
+      "first",
+      "index",
+      "nodeById",
+      "nodeIdSet",
+      "nodeSpatialIndex",
+      "second"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback7",
+    "vars": [
+      "Edge",
+      "nodeId",
+      "terminalId"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback8",
+    "vars": [
+      "node"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback9",
+    "vars": [
+      "FilterSelectionTypeOption",
+      "count",
+      "first",
+      "item",
+      "items",
+      "label",
+      "nodeIds",
+      "option",
+      "second"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback12",
+    "vars": [
+      "BatchCommonParamRow",
+      "definitions",
+      "first",
+      "item",
+      "key",
+      "label",
+      "mixed",
+      "node",
+      "nodeId",
+      "second",
+      "value"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback13",
+    "vars": [
+      "group",
+      "key",
+      "label",
+      "mixed",
+      "node",
+      "nodeId",
+      "value"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback14",
+    "vars": [
+      "child",
+      "children",
+      "project",
+      "projects",
+      "scheme"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback20",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback21",
+    "vars": [
+      "attributeLibraryName",
+      "item",
+      "sectionName"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback22",
+    "vars": [
+      "item"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback23",
+    "vars": [
+      "item"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback24",
+    "vars": [
+      "current",
+      "layer",
+      "visible"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback25",
+    "vars": [
+      "current",
+      "edgeId",
+      "nodeId"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback27",
+    "vars": [
+      "node",
+      "nodeId",
+      "title"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback28",
+    "vars": [
+      "edges",
+      "layerSignature",
+      "nodes",
+      "revision"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback29",
+    "vars": [
+      "includeContainerChildren",
+      "signature"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback30",
+    "vars": [
+      "edgeId",
+      "nodeId"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback31",
+    "vars": [
+      "child",
+      "deviceGroup",
+      "deviceGroups",
+      "group",
+      "item",
+      "items"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback32",
+    "vars": [
+      "current",
+      "key",
+      "value"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback33",
+    "vars": [
+      "current"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback34",
+    "vars": [
+      "current",
+      "edge",
+      "edgeUpserts",
+      "node",
+      "nodeUpdates"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback35",
+    "vars": [
+      "current",
+      "key"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback36",
+    "vars": [
+      "current",
+      "end",
+      "item",
+      "key",
+      "start"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback37",
+    "vars": [
+      "block",
+      "inline"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback38",
+    "vars": [
+      "current"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback40",
+    "vars": [
+      "current"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback44",
+    "vars": [
+      "boundsScrollSyncPending",
+      "skipNextScrollSync"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback45",
+    "vars": [
+      "passive"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback46",
+    "vars": [
+      "height",
+      "width"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback47",
+    "vars": [
+      "item"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback51",
+    "vars": [
+      "edges",
+      "layerSignature",
+      "nodes",
+      "routeGeometryRevision"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback53",
+    "vars": [
+      "RoutedEdge",
+      "preserveManualRouteDisplay",
+      "refreshCrossingArcs",
+      "routes",
+      "store"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback56",
+    "vars": [
+      "RoutedEdge"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback57",
+    "vars": [
+      "ModelNode",
+      "first",
+      "nodeId",
+      "second"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback58",
+    "vars": [
+      "isTransformableNode",
+      "node"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback59",
+    "vars": [
+      "endpoint",
+      "nodeId"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback60",
+    "vars": [
+      "edgeId",
+      "movingEndpoint",
+      "movingPoint",
+      "path",
+      "point",
+      "points",
+      "sourceId",
+      "sourcePoint",
+      "sourceTerminalId",
+      "targetId",
+      "targetPoint",
+      "targetTerminalId"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback61",
+    "vars": [
+      "node",
+      "nodeId",
+      "path",
+      "source",
+      "target"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback62",
+    "vars": [
+      "edgeId",
+      "nodeId",
+      "path",
+      "points"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback63",
+    "vars": [
+      "node",
+      "path"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback64",
+    "vars": [
+      "edge",
+      "edgeId",
+      "movingEndpoint",
+      "nextSourceNode",
+      "nextTargetNode",
+      "nodes",
+      "originalMovingPoint",
+      "path",
+      "points"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback65",
+    "vars": [
+      "ModelNode",
+      "position"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback66",
+    "vars": [
+      "bottom",
+      "box",
+      "left",
+      "node",
+      "right",
+      "top"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback67",
+    "vars": [
+      "ModelNode"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback68",
+    "vars": [
+      "current"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback69",
+    "vars": [
+      "contact",
+      "group",
+      "terminal"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback70",
+    "vars": [
+      "terminal"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback72",
+    "vars": [
+      "edgeId",
+      "path",
+      "route",
+      "routePoint"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback75",
+    "vars": [
+      "color",
+      "edge",
+      "edgeId",
+      "path"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback76",
+    "vars": [
+      "view"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback77",
+    "vars": [
+      "backendSchemes",
+      "current",
+      "scheme",
+      "schemeId"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback78",
+    "vars": [
+      "backendColorConfig"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback79",
+    "vars": [
+      "backendDeviceLibrary"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback80",
+    "vars": [
+      "backendMeasurementConfig"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback84",
+    "vars": [
+      "current"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback86",
+    "vars": [
+      "current",
+      "scheme"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback87",
+    "vars": [
+      "capture",
+      "event",
+      "passive"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback88",
+    "vars": [
+      "capture",
+      "event"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback89",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback90",
+    "vars": [
+      "capture",
+      "event"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback92",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback97",
+    "vars": [
+      "current"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback99",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback100",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback101",
+    "vars": [
+      "current",
+      "desiredRect",
+      "edge",
+      "event",
+      "height",
+      "left",
+      "node",
+      "originShift",
+      "preserveScrollAnchor",
+      "top",
+      "width"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback102",
+    "vars": [
+      "event"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback103",
+    "vars": [
+      "event",
+      "left",
+      "top"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback104",
+    "vars": [
+      "event",
+      "left",
+      "top"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback105",
+    "vars": [
+      "event",
+      "height",
+      "left",
+      "top",
+      "width"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback106",
+    "vars": [
+      "event",
+      "height",
+      "left",
+      "top",
+      "width"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback107",
+    "vars": [
+      "current",
+      "event",
+      "height",
+      "left",
+      "top",
+      "width"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback108",
+    "vars": [
+      "current",
+      "event",
+      "height",
+      "left",
+      "top",
+      "width"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback109",
+    "vars": [
+      "capture",
+      "event"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback110",
+    "vars": [
+      "capture",
+      "edge",
+      "event",
+      "isCanvasInteractionActive",
+      "isCanvasPointerUnblocked",
+      "isCanvasTarget",
+      "isProjectListPointerInside",
+      "node",
+      "points"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback113",
+    "vars": [
+      "current",
+      "message",
+      "state"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback121",
+    "vars": [
+      "left",
+      "right",
+      "value"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback122",
+    "vars": [
+      "node"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback123",
+    "vars": [
+      "index",
+      "node",
+      "nodeId",
+      "nodeName",
+      "terminal",
+      "terminalId",
+      "terminalLabel",
+      "terminalType",
+      "value"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback124",
+    "vars": [
+      "scope"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback125",
+    "vars": [
+      "row"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback126",
+    "vars": [
+      "scope"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback127",
+    "vars": [
+      "libraries",
+      "types"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback128",
+    "vars": [
+      "limit"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback130",
+    "vars": [
+      "node"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback133",
+    "vars": [
+      "chunkSize",
+      "inactiveLayerGraphic",
+      "item",
+      "itemKey",
+      "itemMarkup",
+      "itemTokens",
+      "keyPrefix",
+      "route"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback134",
+    "vars": [
+      "chunkSize",
+      "itemKey",
+      "itemMarkup",
+      "itemTokens",
+      "keyPrefix",
+      "node"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback135",
+    "vars": [
+      "nodeId"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback136",
+    "vars": [
+      "points"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback138",
+    "vars": [
+      "index"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback139",
+    "vars": [
+      "index"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback141",
+    "vars": [
+      "backgroundColor",
+      "backgroundImageUrl",
+      "height",
+      "project",
+      "transform",
+      "width"
+    ]
+  },
+  {
+    "file": "appToolbarHookFactories.tsx",
+    "function": "createAppHookCallback142",
+    "vars": [
+      "Edge",
+      "backgroundEdges",
+      "backgroundNodes",
+      "edge",
+      "edgeById",
+      "layer",
+      "node",
+      "nodeById",
+      "refreshCrossingArcs",
+      "visible"
+    ]
+  }
+]

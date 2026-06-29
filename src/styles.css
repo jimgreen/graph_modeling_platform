@@ -8219,6 +8219,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .param-table .id-copy-cell {
+  position: relative;
   display: inline-block;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11px;
@@ -8228,11 +8229,11 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   border-radius: 4px;
   padding: 2px 8px;
   max-width: 100%;
-  overflow: hidden;
+  overflow: visible;
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  transition: background-color 120ms ease, border-color 120ms ease;
   user-select: all;
 }
 
@@ -8241,10 +8242,19 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   border-color: #cbd5e1;
 }
 
-.param-table .id-copy-cell[data-copied="1"] {
-  color: #16a34a;
-  background: #dcfce7;
-  border-color: #bbf7d0;
+.param-table .id-copy-toast {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: #16a34a;
+  color: #fff;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 10;
 }
 
 .param-table input:disabled,

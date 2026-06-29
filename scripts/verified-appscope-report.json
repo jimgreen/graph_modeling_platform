@@ -1,0 +1,3734 @@
+{
+  "summary": {
+    "appScopeMountCount": 1455,
+    "appImportCount": 1976,
+    "appViewDestructureCount": 925,
+    "appCanvasAreaDestructureCount": 367
+  },
+  "verifiedMissing": [
+    {
+      "variable": "ALLOW_RESIZE_TRANSFORM_PARAM",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 866,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "AlignCenterHorizontal",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 146,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "AlignCenterVertical",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 163,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "AlignEndHorizontal",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 171,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "AlignEndVertical",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 155,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "AlignHorizontalDistributeCenter",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 175,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "AlignStartHorizontal",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 167,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "AlignStartVertical",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 151,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "AlignVerticalDistributeCenter",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 179,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "ArrowDown",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 131,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "ArrowUp",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 127,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Bell",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 95,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Bold",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 627,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "BoxSelect",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 922,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "BufferedTextInput",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 340,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "BufferedTextarea",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 696,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "CONNECTION_REDRAW_SCOPE_LABELS",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1370,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "CONTAINER_TERMINAL_ASSOCIATION_OPTIONS",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 2114,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "CURRENT_UNIT_OPTIONS",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 470,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 2060,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 2051,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 2054,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 2009,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Cable",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 907,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "ChevronDown",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 75,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "ChevronRight",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 953,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "ChevronsDown",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 139,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "ChevronsUp",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 135,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "CircleDot",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1014,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Copy",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 934,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "CustomComponentManagerTree",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1910,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "DEFAULT_CANVAS_BACKGROUND",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 365,
+      "inApp": "imported",
+      "appDefinitionLine": 747
+    },
+    {
+      "variable": "DEFAULT_COLOR_PALETTE",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1616,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "DEFAULT_DEVICE_LABEL_FONT_SIZE",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 608,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "DEFAULT_MODEL_LAYER_ID",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 575,
+      "inApp": "imported",
+      "appDefinitionLine": 728
+    },
+    {
+      "variable": "DEFAULT_POWER_BASE_VALUE",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 481,
+      "inApp": "imported",
+      "appDefinitionLine": 763
+    },
+    {
+      "variable": "DeferredColorInput",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 365,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Download",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 216,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "ELECTRIC_COLOR_TYPES",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1642,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "ELECTRIC_COLOR_TYPE_LABELS",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1642,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "ENABLE_REACT_FLOW_PREVIEW",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 109,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "ENERGY_COLOR_ROWS",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1615,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "EyeOff",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 82,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "FileInput",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 946,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "FileJson",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 219,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "FlipHorizontal",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 199,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "FlipVertical",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 203,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "FolderOpen",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1130,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Fragment",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 668,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Grid2X2",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 92,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Group",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 115,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Italic",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 630,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Layers",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 73,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Layers2",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 122,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "MAX_CANVAS_HEIGHT",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 346,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "MAX_CANVAS_WIDTH",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 340,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "MAX_CUSTOM_DEVICE_TERMINALS",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1979,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "MIN_CANVAS_HEIGHT",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 346,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "MIN_CANVAS_WIDTH",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 340,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "MemoDeviceGlyph",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 20,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "PARAM_LABELS",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 845,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "PARAM_VALUE_TYPE_OPTIONS",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1854,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "POWER_UNIT_OPTIONS",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 448,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Paintbrush",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 101,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Palette",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 104,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Pencil",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 82,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Plus",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1009,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "READONLY_E_PARAM_KEYS",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 874,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "ReactFlowPreview",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1575,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "RotateCcw",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 191,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "RotateCw",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 186,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Route",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 110,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "STATIC_ROUTE_AVOIDANCE_PARAM",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 686,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Save",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 98,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "ScanSearch",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 926,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Scissors",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 938,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Search",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1674,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Suspense",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1585,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "TERMINAL_TYPE_LIBRARY_LABELS",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1445,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "TERMINAL_TYPE_OPTIONS",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1771,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "TOPOLOGY_WARNING_PAGE_SIZE",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 258,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "TextStyleToggleButton",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 626,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Trash2",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 917,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Type",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 107,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Underline",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 633,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Undo2",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 930,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Ungroup",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 118,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "VOLTAGE_BASE_CLEAR_SCOPES",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1338,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "VOLTAGE_BASE_CLEAR_SCOPE_LABELS",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1343,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "VOLTAGE_BASE_SET_SCOPES",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1310,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "VOLTAGE_BASE_SET_SCOPE_LABELS",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1315,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "VOLTAGE_UNIT_OPTIONS",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 459,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "X",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 232,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Zap",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 951,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "ZapOff",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 961,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "activeVoltageBaseTerminalKey",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1295,
+      "inApp": "defined",
+      "appDefinitionLine": 3707
+    },
+    {
+      "variable": "allowAutoExpandCanvas",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 350,
+      "inApp": "defined",
+      "appDefinitionLine": 745
+    },
+    {
+      "variable": "attributeLibraryComponentTypeKey",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1692,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "attributeLibraryOptionClass",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1935,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "backgroundLayerIds",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 430,
+      "inApp": "defined",
+      "appDefinitionLine": 755
+    },
+    {
+      "variable": "backgroundProjectId",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 399,
+      "inApp": "defined",
+      "appDefinitionLine": 753
+    },
+    {
+      "variable": "canvasBackgroundColor",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 362,
+      "inApp": "defined",
+      "appDefinitionLine": 747
+    },
+    {
+      "variable": "canvasBackgroundImage",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 383,
+      "inApp": "defined",
+      "appDefinitionLine": 749
+    },
+    {
+      "variable": "colorDisplayMode",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 20,
+      "inApp": "defined",
+      "appDefinitionLine": 2403
+    },
+    {
+      "variable": "colorPalette",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 20,
+      "inApp": "defined",
+      "appDefinitionLine": 2403
+    },
+    {
+      "variable": "componentTypeDisplayParts",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1694,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "componentTypeOptionClass",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1733,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "connectSource",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 299,
+      "inApp": "defined",
+      "appDefinitionLine": 2403
+    },
+    {
+      "variable": "currentUnit",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 464,
+      "inApp": "defined",
+      "appDefinitionLine": 761
+    },
+    {
+      "variable": "customDeviceDraft",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1907,
+      "inApp": "defined",
+      "appDefinitionLine": 1659
+    },
+    {
+      "variable": "customParamId",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 2284,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "defaultBackgroundLayerIdsForProject",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 408,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "defaultContainerAssociationForTerminalType",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 2124,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "definitionDraftSection",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1728,
+      "inApp": "defined",
+      "appDefinitionLine": 1667
+    },
+    {
+      "variable": "deviceDefinitionKeyForTemplate",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1884,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "filterSelectionTreeLabel",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1550,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "findSavedSchemeById",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1134,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "formatInspectorScaleValue",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 556,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "formatSvgNumber",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 2009,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "generateCustomDeviceImage",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 2021,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "getContainerTerminalAssociationSourceIndex",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 2111,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "getEParamValue",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 868,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "getEParameterKeys",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 859,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "getNodeScaleX",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 556,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "getNodeScaleY",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 559,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "image",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 27,
+      "inApp": "defined",
+      "appDefinitionLine": 1196
+    },
+    {
+      "variable": "imageAssetList",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 2538,
+      "inApp": "defined",
+      "appDefinitionLine": 1204
+    },
+    {
+      "variable": "imageAssets",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 2539,
+      "inApp": "defined",
+      "appDefinitionLine": 5075
+    },
+    {
+      "variable": "isBlockingTopologyValidationError",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 245,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "isBuiltInAttributeLibrary",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1934,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "isBuiltInComponentType",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1728,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "isBusNode",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 663,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "isContainerTerminalAssociationDependent",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 2112,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "isDoubleContainerTerminalAssociation",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 2123,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "isStaticBoxLikeNode",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 530,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "isStaticNode",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 501,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "layers",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 576,
+      "inApp": "defined",
+      "appDefinitionLine": 726
+    },
+    {
+      "variable": "nodeGeometryTransform",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 19,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "nodeLabelDisplayMode",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 584,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "nodeLabelOffset",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 651,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "nodeLabelTextAnchor",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 641,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "normalizeAttributeLibraryName",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1410,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "normalizeComponentTypeName",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1884,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "normalizeContainerTerminalAssociations",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 2110,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "normalizeDefinitionRowEnumFields",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1843,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "normalizeNodeLabelRotation",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 614,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "paramOptionsForSection",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 842,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "parameterValueTypeLabelForDefinitionRow",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 2202,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "parseCustomDefinitions",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 860,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "powerBaseValue",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 475,
+      "inApp": "defined",
+      "appDefinitionLine": 763
+    },
+    {
+      "variable": "powerUnit",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 442,
+      "inApp": "defined",
+      "appDefinitionLine": 757
+    },
+    {
+      "variable": "projectName",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1260,
+      "inApp": "defined",
+      "appDefinitionLine": 734
+    },
+    {
+      "variable": "renderEnumValuesEditor",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1863,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "renderTypicalValueEditor",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1860,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "resolveTemplateComponentType",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1433,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "schemes",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1134,
+      "inApp": "defined",
+      "appDefinitionLine": 1517
+    },
+    {
+      "variable": "select",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 352,
+      "inApp": "defined",
+      "appDefinitionLine": 773
+    },
+    {
+      "variable": "sourceSelectClassName",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1728,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "stateIconDrawingToImage",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 2319,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "stateVisualShapeLabel",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 2374,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "staticNodeParticipatesInRoutingAvoidance",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 688,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "templateResizeTransformValue",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1762,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "terminalColor",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 801,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "terminalVoltageBaseNumber",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 677,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "visibleStateIconColor",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 2392,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "voltageBaseClearDialogOpen",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1328,
+      "inApp": "defined",
+      "appDefinitionLine": 3713
+    },
+    {
+      "variable": "voltageBaseSetDialogOpen",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1275,
+      "inApp": "defined",
+      "appDefinitionLine": 3707
+    },
+    {
+      "variable": "voltageBaseSetMode",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1288,
+      "inApp": "defined",
+      "appDefinitionLine": 3707
+    },
+    {
+      "variable": "voltageBaseSetValue",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 1290,
+      "inApp": "defined",
+      "appDefinitionLine": 3707
+    },
+    {
+      "variable": "voltageUnit",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 453,
+      "inApp": "defined",
+      "appDefinitionLine": 759
+    },
+    {
+      "variable": "__appScope",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "usageLine": 4,
+      "inApp": "defined",
+      "appDefinitionLine": 535
+    },
+    {
+      "variable": "dragging",
+      "file": "appView.tsx",
+      "destructureLine": 13,
+      "usageLine": 2078,
+      "inApp": "defined",
+      "appDefinitionLine": 1873
+    },
+    {
+      "variable": "canvasBackgroundColor",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 87,
+      "inApp": "defined",
+      "appDefinitionLine": 747
+    },
+    {
+      "variable": "connectSource",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 17,
+      "inApp": "defined",
+      "appDefinitionLine": 2403
+    },
+    {
+      "variable": "manualPathDrag",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 21,
+      "inApp": "defined",
+      "appDefinitionLine": 2537
+    },
+    {
+      "variable": "transformDrag",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 20,
+      "inApp": "defined",
+      "appDefinitionLine": 2665
+    },
+    {
+      "variable": "isGroupTransformDrag",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 92,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "rewiring",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 19,
+      "inApp": "defined",
+      "appDefinitionLine": 621
+    },
+    {
+      "variable": "routableLinePlacement",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 19,
+      "inApp": "defined",
+      "appDefinitionLine": 2417
+    },
+    {
+      "variable": "routableLineEndpointDrag",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 20,
+      "inApp": "defined",
+      "appDefinitionLine": 2419
+    },
+    {
+      "variable": "hasCanvasSelectionModifier",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 21,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "isRepeatedEdgePointerClick",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 21,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "screenToSvgPoint",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 130,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "getMovableRouteSegmentIndexes",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 133,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "getNodeScaleX",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 134,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "getNodeScaleY",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 134,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "getTerminalDisplayColor",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 134,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "busEndpointColor",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 141,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "scaleHandleCursorClass",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 141,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "svgStrokeDashArray",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 141,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "terminalStubSegment",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 142,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "terminalStubStrokeWidth",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 142,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "terminalRenderLocalPoint",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 142,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "nodeLabelShouldRender",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 143,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "nodeLabelText",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 143,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "nodeLabelTextAnchor",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 144,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "nodeLabelVertical",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 144,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "nodeLabelVerticalSegments",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 144,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "nodeLabelVerticalTokenY",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 145,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "nodeLabelVerticalTokenStyle",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 145,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "nodeLabelTextStyle",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 146,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "nodeLabelTransform",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 146,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "nodeUsesUprightStaticSelectionOutline",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 147,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "nodeUprightSelectionOutlineRect",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 147,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "isBusNode",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 148,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "isStaticNode",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 148,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "isRoutableLineDeviceKind",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 148,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "canConnectTerminals",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 149,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "isCanvasGraphicContextMenuTarget",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 150,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "isStaticBoxLikeNode",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 151,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "pointsToOrthogonalPath",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 153,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "routableLineDeviceCanvasPoints",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 154,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "routableLineDeviceRenderLocalPoints",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 154,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "formatSvgNumber",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 155,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "CANVAS_MINIMAP_WIDTH",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 164,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "CANVAS_MINIMAP_HEIGHT",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 164,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "DEFAULT_CANVAS_BACKGROUND",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 164,
+      "inApp": "imported",
+      "appDefinitionLine": 747
+    },
+    {
+      "variable": "TRANSFORM_ROTATE_STEM_START",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 165,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "TRANSFORM_ROTATE_STEM_END",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 165,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "TRANSFORM_ROTATE_HANDLE_GAP",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 165,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "SCALE_HANDLE_CONFIGS",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 166,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "GROUP_SCALE_HANDLE_CONFIGS",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 166,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Copy",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 167,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Grid2X2",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 167,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Group",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 167,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Layers",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 167,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Layers2",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 167,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "LocateFixed",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 167,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "MapIcon",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 167,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Maximize2",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 168,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "MemoDeviceGlyph",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 168,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Minus",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 168,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Plus",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 168,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "RotateCcw",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 168,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Route",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 168,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "ScanSearch",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 169,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Scissors",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 169,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Trash2",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 169,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Type",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 169,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "Ungroup",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 169,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "X",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 169,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "SvgMarkupChunk",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 170,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "nodeGeometryTransform",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 172,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "nodeImageContentTransform",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 172,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "nodeLabelFontSize",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 173,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "nodeRotateHandleControlPoints",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 173,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "nodeScaleHandleControlPoint",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 173,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "nodeUprightRotateHandleControlPoints",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 174,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "selectionRectCenter",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 183,
+      "inApp": "imported",
+      "appDefinitionLine": -1
+    },
+    {
+      "variable": "activeLayerId",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 184,
+      "inApp": "defined",
+      "appDefinitionLine": 728
+    },
+    {
+      "variable": "activeProjectKey",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 185,
+      "inApp": "defined",
+      "appDefinitionLine": 769
+    },
+    {
+      "variable": "activeSchemeKey",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 185,
+      "inApp": "defined",
+      "appDefinitionLine": 771
+    },
+    {
+      "variable": "colorDisplayMode",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 196,
+      "inApp": "defined",
+      "appDefinitionLine": 2403
+    },
+    {
+      "variable": "colorPalette",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 196,
+      "inApp": "defined",
+      "appDefinitionLine": 2403
+    },
+    {
+      "variable": "dragging",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 205,
+      "inApp": "defined",
+      "appDefinitionLine": 1873
+    },
+    {
+      "variable": "next",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "usageLine": 8,
+      "inApp": "defined",
+      "appDefinitionLine": 2007
+    }
+  ],
+  "falsePositives": [
+    {
+      "variable": "const",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "CANVAS_MINIMAP_HEIGHT",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "CANVAS_MINIMAP_WIDTH",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "GROUP_SCALE_HANDLE_CONFIGS",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "LocateFixed",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "MapIcon",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "Maximize2",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "Minus",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "SCALE_HANDLE_CONFIGS",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "SvgMarkupChunk",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "TRANSFORM_ROTATE_HANDLE_GAP",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "TRANSFORM_ROTATE_STEM_END",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "TRANSFORM_ROTATE_STEM_START",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "activeImageFolderId",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "activeLayerId",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "activeProjectKey",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "activeSchemeKey",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "aside",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "busEndpointColor",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "button",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "canConnectTerminals",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "canvasClipboard",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "canvasResizeDrag",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "canvasSizeDraft",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "circle",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "clipPath",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "code",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "collapsedCustomComponentTreeLibraries",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "collapsedCustomComponentTreeTypes",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "collapsedDefinitionComponentTypes",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "colorPaletteDialogOpen",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "colorPaletteDraft",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "colorPaletteTab",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "connectionRedrawDialogOpen",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "connectionRedrawScope",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "contextMarqueeSelection",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "contextMenu",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "customComponentTreeSearchQuery",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "customComponentTreeSelection",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "customDeviceDefinitionMode",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "customDeviceDialogOpen",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "customDeviceDialogView",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "customDeviceSaveMessage",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "customDeviceStatePageId",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "customDeviceTerminalAnchorDragIndex",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "datalist",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "definitionDraftError",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "definitionDraftRows",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "definitionDraftSectionEditing",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "defs",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "deviceDefinitionDialogOpen",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "deviceDefinitionSearchQuery",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "deviceDefinitionView",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "deviceLabelsVisible",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "deviceLibraryDialogDrag",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "deviceLibraryDialogLayouts",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "deviceLibraryDialogResize",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "div",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "em",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "expandedDefinitionGroups",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "filterSelectionDialogOpen",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "filterSelectionTypeKeys",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "footer",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "g",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "getMovableRouteSegmentIndexes",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "getTerminalDisplayColor",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "groupDeviceDefinitionDialog",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "h1",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "h2",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "h3",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "hasCanvasSelectionModifier",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "header",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "imageFolders",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "imageTarget",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "img",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "inspectorTab",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "isCanvasGraphicContextMenuTarget",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "isGroupTransformDrag",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "isRepeatedEdgePointerClick",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "isRoutableLineDeviceKind",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "layerAssignmentDialogOpen",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "layerAssignmentTargetId",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "leftPanelMode",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "leftPanelTab",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "libraryPlacement",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "line",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "main",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "manualPathDrag",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "marquee",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "minimapVisible",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "mode",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "nodeDoubleClickDialogDrag",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "nodeDoubleClickDialogResize",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "nodeImageContentTransform",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "nodeLabelDrag",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "nodeLabelFontSize",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "nodeLabelRotateDrag",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "nodeLabelShouldRender",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "nodeLabelText",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "nodeLabelTextStyle",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "nodeLabelTransform",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "nodeLabelVertical",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "nodeLabelVerticalSegments",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "nodeLabelVerticalTokenStyle",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "nodeLabelVerticalTokenY",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "nodeRotateHandleControlPoints",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "nodeScaleHandleControlPoint",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "nodeUprightRotateHandleControlPoints",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "nodeUprightSelectionOutlineRect",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "nodeUsesUprightStaticSelectionOutline",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "p",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "panning",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "path",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "pattern",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "pendingModelImportConflict",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "pendingRecordPasteConflict",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "pendingSchemeImportConflict",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "pendingUnsavedAction",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "pointsToOrthogonalPath",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "polyline",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "projectMenu",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "reactFlowPreviewOpen",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "recordClipboard",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "rect",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "rewiring",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "rightPanelMode",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "routableLineDeviceCanvasPoints",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "routableLineDeviceRenderLocalPoints",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "routableLineEndpointDrag",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "routableLinePlacement",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "routableLinePreview",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "scaleHandleCursorClass",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "screenToSvgPoint",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "selectedDeviceInfoView",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "selectionRectCenter",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "setActiveImageFolderId",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setActiveVoltageBaseTerminalKey",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setAllowAutoExpandCanvas",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setBackgroundLayerIds",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setBackgroundProjectId",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setCanvasBackgroundColor",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setCanvasBackgroundImage",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setCanvasBackgroundImageAssetId",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setCanvasSelectionScope",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "setColorPaletteDialogOpen",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setColorPaletteTab",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setConnectSource",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "setConnectionRedrawDialogOpen",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setConnectionRedrawScope",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setContainerParamViewId",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setContextMenu",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "setCurrentUnit",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setCustomComponentTreeSearchQuery",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setCustomComponentTreeSelection",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setCustomDeviceDialogView",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setCustomDeviceDraft",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setCustomDeviceStatePageId",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setCustomDeviceTerminalAnchorDragIndex",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setDefinitionDraftError",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setDefinitionDraftSection",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setDefinitionDraftSectionEditing",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setDeviceDefinitionSearchQuery",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setDeviceDefinitionView",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setDeviceLabelsVisible",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setFilterSelectionDialogOpen",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setFilterSelectionTypeKeys",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setGroupDeviceDefinitionDialog",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setImageTarget",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setInspectorTab",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setLayerAssignmentDialogOpen",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setLayerAssignmentTargetId",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setLeftPanelTab",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setMarquee",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "setMinimapVisible",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "setMode",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "setPowerBaseValue",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setPowerUnit",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setReactFlowPreviewOpen",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setRewiring",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "setRoutableLineEndpointDrag",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "setRoutableLinePlacement",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "setSelectedDeviceInfoView",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setSelectedEdgeId",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "setSelectedEdgeIds",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "setSelectedNodeIds",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "setSelectedProjectId",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "setSelectedProjectIds",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "setSelectedSchemeId",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "setSelectedSchemeIds",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "setSmartAlignmentEnabled",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setStateIconDrawingDialog",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setStateIconDrawingImportMode",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setStateImageUploadTarget",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setTemplateDraftName",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setTemplateDraftType",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setTerminalPress",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "setTopologyWarningPage",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setTopologyWarningPanelClosed",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setVoltageBaseClearDialogOpen",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setVoltageBaseClearScope",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setVoltageBaseSetDialogOpen",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setVoltageBaseSetScope",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setVoltageBaseSetValue",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setVoltageColorVisibility",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setVoltageUnit",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "sidePanelResize",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "small",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "smartAlignmentEnabled",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "smartAlignmentGuides",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "span",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "stateIconDrawingDialog",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "staticButtonVisual",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "staticDrawing",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "statusbarResize",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "strong",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "svgStrokeDashArray",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "table",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "tbody",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "td",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "templateDialog",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "templateDraftName",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "templateDraftType",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "terminalRenderLocalPoint",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "terminalStubSegment",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "terminalStubStrokeWidth",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "text",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "th",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "thead",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "title",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "topology",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "topologyErrors",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "topologyStatus",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "topologyWarningPanelClosed",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "topologyWarningPanelResize",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "tr",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "transformDrag",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "undoStack",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "voltageBaseClearScope",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "voltageBaseSetScope",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "voltageColorVisibility",
+      "file": "appView.tsx",
+      "destructureLine": 5,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "const",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "staticDrawing",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "libraryPlacement",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "contextMarqueeSelection",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "panning",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "mode",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "nodeLabelDrag",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "nodeLabelRotateDrag",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setCanvasSelectionScope",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setConnectSource",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setContextMenu",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setMarquee",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setMinimapVisible",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setMode",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setRewiring",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setRoutableLineEndpointDrag",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setRoutableLinePlacement",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setSelectedEdgeId",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setSelectedEdgeIds",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setSelectedNodeIds",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setSelectedProjectId",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setSelectedProjectIds",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setSelectedSchemeId",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setSelectedSchemeIds",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "setTerminalPress",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "routableLinePreview",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "marquee",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "minimapVisible",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "deviceLabelsVisible",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "smartAlignmentGuides",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "staticButtonVisual",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "eslint",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "disable",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "line",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    },
+    {
+      "variable": "typescript",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "no",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "unused",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "vars",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在解构后没有被使用"
+    },
+    {
+      "variable": "scope",
+      "file": "appCanvasArea.tsx",
+      "destructureLine": 218,
+      "reason": "变量在 App.tsx 中既没有导入也没有定义"
+    }
+  ]
+}
