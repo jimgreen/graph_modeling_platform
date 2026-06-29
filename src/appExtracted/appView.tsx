@@ -792,13 +792,11 @@ export function renderAppView(__appScope: Record<string, any>) {
                         <span
                           className="id-copy-cell"
                           title="点击复制 ID"
-                          onClick={() => {
+                          onClick={(event) => {
                             navigator.clipboard.writeText(inspectorSelectedNode.id).then(() => {
-                              const target = event?.currentTarget as HTMLElement | null;
-                              if (target) {
-                                target.dataset.copied = "1";
-                                setTimeout(() => { target.dataset.copied = ""; }, 1200);
-                              }
+                              const target = event.currentTarget as HTMLElement;
+                              target.dataset.copied = "1";
+                              setTimeout(() => { target.dataset.copied = ""; }, 1200);
                             });
                           }}
                         >{inspectorSelectedNode.id}</span>
