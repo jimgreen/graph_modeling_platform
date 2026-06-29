@@ -200,6 +200,24 @@ export async function handleControlDevicePropertyUpdate({ request, url, response
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.device.property.update", { id, category, patch }));
 }
 
+// /api/v1/control/save —— 显式落盘
+// body: { scope: "currentModel"|"schemeTree" } → 回执 { saved: true, scope }
+export async function handleControlSave({ request, url, response }, ctx) {
+  let payload;
+  try {
+    payload = await readJsonBody(request);
+  } catch {
+    sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
+    return;
+  }
+  const { scope } = payload ?? {};
+  if (scope !== "currentModel" && scope !== "schemeTree") {
+    sendV1Error(response, "bad-request", "scope 须为 currentModel 或 schemeTree。");
+    return;
+  }
+  await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.save", { scope }));
+}
+
 // 构造 v1 控制台路由表。ctx = { sendCommandToClient }
 // handle 签名：({ request, response, url, match }, ctx) => Promise<void>
 export function createV1ControlRoutes(ctx) {
@@ -212,6 +230,7 @@ export function createV1ControlRoutes(ctx) {
     { method: "POST", pattern: /^\/api\/v1\/control\/devices\/select\/?$/u, handle: wrap(handleControlDevicesSelect) },
     { method: "POST", pattern: /^\/api\/v1\/control\/devices\/group\/?$/u, handle: wrap(handleControlDevicesGroup) },
     { method: "POST", pattern: /^\/api\/v1\/control\/device\/delete\/?$/u, handle: wrap(handleControlDeviceDelete) },
-    { method: "POST", pattern: /^\/api\/v1\/control\/device\/property\/update\/?$/u, handle: wrap(handleControlDevicePropertyUpdate) }
+    { method: "POST", pattern: /^\/api\/v1\/control\/device\/property\/update\/?$/u, handle: wrap(handleControlDevicePropertyUpdate) },
+    { method: "POST", pattern: /^\/api\/v1\/control\/save\/?$/u, handle: wrap(handleControlSave) }
   ];
 }

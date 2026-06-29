@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { createProgrammaticAddDevice, createProgrammaticCreateScheme, createProgrammaticCreateBlankProject, createProgrammaticSelectDevices, createProgrammaticGroupSelected, createProgrammaticDeleteDevices, createProgrammaticUpdateDeviceProperty } from "./appControlFactories";
+import { createProgrammaticAddDevice, createProgrammaticCreateScheme, createProgrammaticCreateBlankProject, createProgrammaticSelectDevices, createProgrammaticGroupSelected, createProgrammaticDeleteDevices, createProgrammaticUpdateDeviceProperty, createProgrammaticSave } from "./appControlFactories";
 import { DEVICE_LIBRARY_BY_KIND, createSavedScheme, createSavedProject } from "../model";
 
 // mock __appScope：捕获 pushUndoSnapshot 调用与 setNodes 追加的节点
@@ -538,6 +538,49 @@ describe("programmaticUpdateDeviceProperty", () => {
     expect(() => update("", "graphic", {})).toThrow(/id 必填/);
     try {
       update("", "graphic", {});
+    } catch (e: any) {
+      expect(e.code).toBe("bad-request");
+    }
+  });
+});
+
+// mock __appScope for save：捕获 saveCurrentProject / saveSchemeTreeToBackend 调用
+function createSaveMockScope() {
+  const calls: { currentModel: boolean; schemeTree: boolean } = { currentModel: false, schemeTree: false };
+  return {
+    scope: {
+      saveCurrentProject: () => { calls.currentModel = true; },
+      saveSchemeTreeToBackend: () => { calls.schemeTree = true; }
+    },
+    calls
+  };
+}
+
+describe("programmaticSave", () => {
+  test("scope=currentModel 调 saveCurrentProject → 返回 {saved:true,scope}", () => {
+    const { scope, calls } = createSaveMockScope();
+    const save = createProgrammaticSave(scope);
+    const result = save("currentModel");
+    expect(result).toEqual({ saved: true, scope: "currentModel" });
+    expect(calls.currentModel).toBe(true);
+    expect(calls.schemeTree).toBe(false);
+  });
+
+  test("scope=schemeTree 调 saveSchemeTreeToBackend → 返回 {saved:true,scope}", () => {
+    const { scope, calls } = createSaveMockScope();
+    const save = createProgrammaticSave(scope);
+    const result = save("schemeTree");
+    expect(result).toEqual({ saved: true, scope: "schemeTree" });
+    expect(calls.schemeTree).toBe(true);
+    expect(calls.currentModel).toBe(false);
+  });
+
+  test("未知 scope 抛 bad-request", () => {
+    const { scope } = createSaveMockScope();
+    const save = createProgrammaticSave(scope);
+    expect(() => save("unknown")).toThrow(/未知保存范围/);
+    try {
+      save("unknown");
     } catch (e: any) {
       expect(e.code).toBe("bad-request");
     }

@@ -375,3 +375,48 @@ describe("/api/v1/control/device/property/update", () => {
     expect(json.error.code).toBe("no-online-client");
   });
 });
+
+describe("/api/v1/control/save", () => {
+  test("scope=currentModel → 200 {ok:true,data:{saved:true,scope}}", async () => {
+    const ws = await connectCommandResponder("c1", (name, params) => {
+      expect(name).toBe("control.save");
+      expect(params.scope).toBe("currentModel");
+      return { ok: true, data: { saved: true, scope: "currentModel" } };
+    });
+    const { status, json } = await postV1("/api/v1/control/save", { scope: "currentModel" });
+    expect(status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.data.saved).toBe(true);
+    expect(json.data.scope).toBe("currentModel");
+    ws.close();
+  });
+
+  test("scope=schemeTree → 200", async () => {
+    const ws = await connectCommandResponder("c1", (name, params) => {
+      expect(params.scope).toBe("schemeTree");
+      return { ok: true, data: { saved: true, scope: "schemeTree" } };
+    });
+    const { status, json } = await postV1("/api/v1/control/save", { scope: "schemeTree" });
+    expect(status).toBe(200);
+    expect(json.data.scope).toBe("schemeTree");
+    ws.close();
+  });
+
+  test("非法 scope → 400 bad-request（不下发指令）", async () => {
+    const { status, json } = await postV1("/api/v1/control/save", { scope: "invalid" });
+    expect(status).toBe(400);
+    expect(json.error.code).toBe("bad-request");
+  });
+
+  test("缺 scope → 400 bad-request", async () => {
+    const { status, json } = await postV1("/api/v1/control/save", {});
+    expect(status).toBe(400);
+    expect(json.error.code).toBe("bad-request");
+  });
+
+  test("无在线客户端 → 503 no-online-client", async () => {
+    const { status, json } = await postV1("/api/v1/control/save", { scope: "currentModel" });
+    expect(status).toBe(503);
+    expect(json.error.code).toBe("no-online-client");
+  });
+});

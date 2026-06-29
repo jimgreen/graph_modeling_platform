@@ -273,3 +273,22 @@ export function createProgrammaticUpdateDeviceProperty(__appScope: Record<string
     return { id, category, patched: Object.keys(patch) };
   };
 }
+
+// 显式落盘：scope="currentModel" 调 saveCurrentProject，scope="schemeTree" 调 saveSchemeTreeToBackend。
+// 不压 undo 栈（C-5）。经 WS control.save 指令调用。
+export function createProgrammaticSave(__appScope: Record<string, any>) {
+  return (scope: string) => {
+    const { saveCurrentProject, saveSchemeTreeToBackend } = __appScope;
+    if (scope !== "currentModel" && scope !== "schemeTree") {
+      const e: any = new Error(`未知保存范围：${scope}`);
+      e.code = "bad-request";
+      throw e;
+    }
+    if (scope === "currentModel") {
+      saveCurrentProject();
+    } else {
+      saveSchemeTreeToBackend();
+    }
+    return { saved: true, scope };
+  };
+}

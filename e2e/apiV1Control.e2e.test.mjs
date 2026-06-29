@@ -174,3 +174,35 @@ describe("control.device/property/update e2e", () => {
     expect(json.error.code).toBe("not-found");
   }, 120000);
 });
+
+describe("control/save e2e", () => {
+  test("scope=currentModel → 通道打通返回 {saved:true}", async () => {
+    const { page, baseUrl, imageBaseUrl } = env;
+    const clientId = await loadFrontendAndWaitOnline(page, baseUrl, imageBaseUrl);
+
+    const res = await fetch(`${imageBaseUrl}/api/v1/control/save?clientId=${clientId}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ scope: "currentModel" })
+    });
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.data.saved).toBe(true);
+    expect(json.data.scope).toBe("currentModel");
+  }, 120000);
+
+  test("非法 scope → 400 bad-request", async () => {
+    const { page, baseUrl, imageBaseUrl } = env;
+    const clientId = await loadFrontendAndWaitOnline(page, baseUrl, imageBaseUrl);
+
+    const res = await fetch(`${imageBaseUrl}/api/v1/control/save?clientId=${clientId}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ scope: "invalid" })
+    });
+    const json = await res.json();
+    expect(res.status).toBe(400);
+    expect(json.error.code).toBe("bad-request");
+  }, 120000);
+});
