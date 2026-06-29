@@ -174,6 +174,32 @@ export async function handleControlDeviceDelete({ request, url, response }, ctx)
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.device.delete", params));
 }
 
+// /api/v1/control/device/property/update —— 修改图元属性
+// body: { id, category: "graphic"|"model"|"measurement", patch } → 回执 { id, category, patched }
+export async function handleControlDevicePropertyUpdate({ request, url, response }, ctx) {
+  let payload;
+  try {
+    payload = await readJsonBody(request);
+  } catch {
+    sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
+    return;
+  }
+  const { id, category, patch } = payload ?? {};
+  if (!id || typeof id !== "string") {
+    sendV1Error(response, "bad-request", "id 必填。");
+    return;
+  }
+  if (!category || typeof category !== "string") {
+    sendV1Error(response, "bad-request", "category 必填。");
+    return;
+  }
+  if (!patch || typeof patch !== "object") {
+    sendV1Error(response, "bad-request", "patch 须为对象。");
+    return;
+  }
+  await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.device.property.update", { id, category, patch }));
+}
+
 // 构造 v1 控制台路由表。ctx = { sendCommandToClient }
 // handle 签名：({ request, response, url, match }, ctx) => Promise<void>
 export function createV1ControlRoutes(ctx) {
@@ -185,6 +211,7 @@ export function createV1ControlRoutes(ctx) {
     { method: "POST", pattern: /^\/api\/v1\/control\/model\/create\/?$/u, handle: wrap(handleControlModelCreate) },
     { method: "POST", pattern: /^\/api\/v1\/control\/devices\/select\/?$/u, handle: wrap(handleControlDevicesSelect) },
     { method: "POST", pattern: /^\/api\/v1\/control\/devices\/group\/?$/u, handle: wrap(handleControlDevicesGroup) },
-    { method: "POST", pattern: /^\/api\/v1\/control\/device\/delete\/?$/u, handle: wrap(handleControlDeviceDelete) }
+    { method: "POST", pattern: /^\/api\/v1\/control\/device\/delete\/?$/u, handle: wrap(handleControlDeviceDelete) },
+    { method: "POST", pattern: /^\/api\/v1\/control\/device\/property\/update\/?$/u, handle: wrap(handleControlDevicePropertyUpdate) }
   ];
 }

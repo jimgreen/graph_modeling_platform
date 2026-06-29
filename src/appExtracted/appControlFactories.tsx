@@ -223,3 +223,53 @@ export function createProgrammaticDeleteDevices(__appScope: Record<string, any>)
     return { deletedIds: targetNodeIds };
   };
 }
+
+// 修改图元属性：id 必填，category 为 "graphic"|"model"|"measurement"，patch 为要合并的字段。
+// graphic/model 类别通过 updateGraphNodeById 合并到节点（params 深合，其他浅合）；
+// measurement 类别暂不支持（抛 not-implemented）。压 undo 栈（C-5）。
+// 经 WS control.device.property.update 指令调用。
+export function createProgrammaticUpdateDeviceProperty(__appScope: Record<string, any>) {
+  return (id: string, category: string, patch: Record<string, any>) => {
+    const { updateGraphNodeById, pushUndoSnapshot, nodes } = __appScope;
+    if (!id || typeof id !== "string") {
+      const e: any = new Error("id 必填。");
+      e.code = "bad-request";
+      throw e;
+    }
+    if (!patch || typeof patch !== "object") {
+      const e: any = new Error("patch 须为对象。");
+      e.code = "bad-request";
+      throw e;
+    }
+    const nodeExists = (nodes as any[]).some((n) => n.id === id);
+    if (!nodeExists) {
+      const e: any = new Error(`图元 ${id} 不存在。`);
+      e.code = "not-found";
+      throw e;
+    }
+    if (category === "measurement") {
+      const e: any = new Error("量测属性修改暂未实现。");
+      e.code = "not-implemented";
+      throw e;
+    }
+    if (category !== "graphic" && category !== "model") {
+      const e: any = new Error(`未知属性类别：${category}`);
+      e.code = "bad-request";
+      throw e;
+    }
+    pushUndoSnapshot();
+    updateGraphNodeById(id, (node: any) => {
+      const next = { ...node };
+      for (const key of Object.keys(patch)) {
+        const value = patch[key];
+        if (key === "params" && next.params && typeof value === "object") {
+          next.params = { ...next.params, ...value };
+        } else {
+          next[key] = value;
+        }
+      }
+      return next;
+    });
+    return { id, category, patched: Object.keys(patch) };
+  };
+}

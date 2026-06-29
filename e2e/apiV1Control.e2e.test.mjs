@@ -157,3 +157,20 @@ describe("control.device/delete e2e", () => {
     expect(json.error.message).toMatch(/无可删除图元/);
   }, 120000);
 });
+
+describe("control.device/property/update e2e", () => {
+  test("不存在图元 → 前端返 not-found（透传 error code）", async () => {
+    const { page, baseUrl, imageBaseUrl } = env;
+    const clientId = await loadFrontendAndWaitOnline(page, baseUrl, imageBaseUrl);
+
+    const res = await fetch(`${imageBaseUrl}/api/v1/control/device/property/update?clientId=${clientId}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: "nonexistent", category: "graphic", patch: { rotation: 90 } })
+    });
+    const json = await res.json();
+    expect(res.status).toBe(404);
+    expect(json.ok).toBe(false);
+    expect(json.error.code).toBe("not-found");
+  }, 120000);
+});

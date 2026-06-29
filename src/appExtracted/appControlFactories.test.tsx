@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { createProgrammaticAddDevice, createProgrammaticCreateScheme, createProgrammaticCreateBlankProject, createProgrammaticSelectDevices, createProgrammaticGroupSelected, createProgrammaticDeleteDevices } from "./appControlFactories";
+import { createProgrammaticAddDevice, createProgrammaticCreateScheme, createProgrammaticCreateBlankProject, createProgrammaticSelectDevices, createProgrammaticGroupSelected, createProgrammaticDeleteDevices, createProgrammaticUpdateDeviceProperty } from "./appControlFactories";
 import { DEVICE_LIBRARY_BY_KIND, createSavedScheme, createSavedProject } from "../model";
 
 // mock __appScope：捕获 pushUndoSnapshot 调用与 setNodes 追加的节点
@@ -470,6 +470,76 @@ describe("programmaticDeleteDevices", () => {
       del();
     } catch (e: any) {
       expect(e.code).toBe("control-failed");
+    }
+  });
+});
+
+// mock __appScope for updateDeviceProperty
+function createUpdateMockScope(nodeIds: string[] = []) {
+  const calls: { undo: boolean; updatedNode: any } = { undo: false, updatedNode: null };
+  const nodes = nodeIds.map((id) => ({ id, kind: "static-text", name: "orig", params: { a: 1 } }));
+  return {
+    scope: {
+      nodes,
+      updateGraphNodeById: (id: string, updater: (n: any) => any) => {
+        calls.updatedNode = updater(nodes.find((n) => n.id === id));
+      },
+      pushUndoSnapshot: () => { calls.undo = true; }
+    },
+    calls
+  };
+}
+
+describe("programmaticUpdateDeviceProperty", () => {
+  test("graphic 类别合并字段 → 返回 patched 键列表 + 压栈", () => {
+    const { scope, calls } = createUpdateMockScope(["n1"]);
+    const update = createProgrammaticUpdateDeviceProperty(scope);
+    const result = update("n1", "graphic", { rotation: 90, name: "新名称" });
+    expect(result.id).toBe("n1");
+    expect(result.category).toBe("graphic");
+    expect(result.patched).toEqual(["rotation", "name"]);
+    expect(calls.undo).toBe(true);
+    expect(calls.updatedNode.rotation).toBe(90);
+    expect(calls.updatedNode.name).toBe("新名称");
+  });
+
+  test("model 类别 params 深合", () => {
+    const { scope, calls } = createUpdateMockScope(["n1"]);
+    const update = createProgrammaticUpdateDeviceProperty(scope);
+    update("n1", "model", { params: { b: 2 } });
+    expect(calls.updatedNode.params).toEqual({ a: 1, b: 2 });
+  });
+
+  test("图元不存在抛 not-found", () => {
+    const { scope } = createUpdateMockScope(["n1"]);
+    const update = createProgrammaticUpdateDeviceProperty(scope);
+    expect(() => update("nonexistent", "graphic", { x: 0 })).toThrow(/不存在/);
+    try {
+      update("nonexistent", "graphic", { x: 0 });
+    } catch (e: any) {
+      expect(e.code).toBe("not-found");
+    }
+  });
+
+  test("measurement 类别抛 not-implemented", () => {
+    const { scope } = createUpdateMockScope(["n1"]);
+    const update = createProgrammaticUpdateDeviceProperty(scope);
+    expect(() => update("n1", "measurement", { x: 0 })).toThrow(/暂未实现/);
+    try {
+      update("n1", "measurement", { x: 0 });
+    } catch (e: any) {
+      expect(e.code).toBe("not-implemented");
+    }
+  });
+
+  test("id 缺省抛 bad-request", () => {
+    const { scope } = createUpdateMockScope(["n1"]);
+    const update = createProgrammaticUpdateDeviceProperty(scope);
+    expect(() => update("", "graphic", {})).toThrow(/id 必填/);
+    try {
+      update("", "graphic", {});
+    } catch (e: any) {
+      expect(e.code).toBe("bad-request");
     }
   });
 });

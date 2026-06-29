@@ -336,3 +336,42 @@ describe("/api/v1/control/device/delete", () => {
     expect(json.error.code).toBe("no-online-client");
   });
 });
+
+describe("/api/v1/control/device/property/update", () => {
+  test("成功修改 → 200 {ok:true,data:{id,category,patched}}", async () => {
+    const ws = await connectCommandResponder("c1", (name, params) => {
+      expect(name).toBe("control.device.property.update");
+      expect(params).toMatchObject({ id: "n1", category: "graphic", patch: { rotation: 90 } });
+      return { ok: true, data: { id: "n1", category: "graphic", patched: ["rotation"] } };
+    });
+    const { status, json } = await postV1("/api/v1/control/device/property/update", { id: "n1", category: "graphic", patch: { rotation: 90 } });
+    expect(status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.data.id).toBe("n1");
+    ws.close();
+  });
+
+  test("缺 id → 400 bad-request", async () => {
+    const { status, json } = await postV1("/api/v1/control/device/property/update", { category: "graphic", patch: { x: 0 } });
+    expect(status).toBe(400);
+    expect(json.error.code).toBe("bad-request");
+  });
+
+  test("缺 category → 400 bad-request", async () => {
+    const { status, json } = await postV1("/api/v1/control/device/property/update", { id: "n1", patch: { x: 0 } });
+    expect(status).toBe(400);
+    expect(json.error.code).toBe("bad-request");
+  });
+
+  test("缺 patch → 400 bad-request", async () => {
+    const { status, json } = await postV1("/api/v1/control/device/property/update", { id: "n1", category: "graphic" });
+    expect(status).toBe(400);
+    expect(json.error.code).toBe("bad-request");
+  });
+
+  test("无在线客户端 → 503 no-online-client", async () => {
+    const { status, json } = await postV1("/api/v1/control/device/property/update", { id: "n1", category: "graphic", patch: { x: 0 } });
+    expect(status).toBe(503);
+    expect(json.error.code).toBe("no-online-client");
+  });
+});
