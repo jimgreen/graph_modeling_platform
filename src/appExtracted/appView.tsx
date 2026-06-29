@@ -312,7 +312,8 @@ export function renderAppView(__appScope: Record<string, any>) {
         <div className="left-panel-footer">
           <span className="id-copy-cell" title="点击复制方案 ID" onClick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
-            navigator.clipboard.writeText(activeSchemeKey || "—").then(() => {
+            const id = activeSchemeKey ? decodeURIComponent(activeSchemeKey) : "—";
+            navigator.clipboard.writeText(id).then(() => {
               const toast = document.createElement("span");
               toast.className = "id-copy-toast";
               toast.textContent = "已复制";
@@ -322,10 +323,11 @@ export function renderAppView(__appScope: Record<string, any>) {
               document.body.appendChild(toast);
               setTimeout(() => toast.remove(), 1000);
             });
-          }}>方案: {activeSchemeKey || "—"}</span>
+          }}>{activeSchemeKey ? decodeURIComponent(activeSchemeKey) : "—"}</span>
           <span className="id-copy-cell" title="点击复制模型 ID" onClick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
-            navigator.clipboard.writeText(activeProjectKey || "—").then(() => {
+            const id = activeProjectKey ? decodeURIComponent(activeProjectKey) : "—";
+            navigator.clipboard.writeText(id).then(() => {
               const toast = document.createElement("span");
               toast.className = "id-copy-toast";
               toast.textContent = "已复制";
@@ -335,7 +337,7 @@ export function renderAppView(__appScope: Record<string, any>) {
               document.body.appendChild(toast);
               setTimeout(() => toast.remove(), 1000);
             });
-          }}>模型: {activeProjectKey || "—"}</span>
+          }}>{activeProjectKey ? decodeURIComponent(activeProjectKey) : "—"}</span>
         </div>
       </aside>
 
