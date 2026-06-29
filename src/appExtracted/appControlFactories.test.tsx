@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { createProgrammaticAddDevice, createProgrammaticCreateScheme, createProgrammaticCreateBlankProject, createProgrammaticSelectDevices, createProgrammaticGroupSelected } from "./appControlFactories";
+import { createProgrammaticAddDevice, createProgrammaticCreateScheme, createProgrammaticCreateBlankProject, createProgrammaticSelectDevices, createProgrammaticGroupSelected, createProgrammaticDeleteDevices } from "./appControlFactories";
 import { DEVICE_LIBRARY_BY_KIND, createSavedScheme, createSavedProject } from "../model";
 
 // mock __appScope：捕获 pushUndoSnapshot 调用与 setNodes 追加的节点
@@ -397,6 +397,77 @@ describe("programmaticGroupSelected", () => {
     expect(() => group()).toThrow(/至少选中 2 个图元/);
     try {
       group();
+    } catch (e: any) {
+      expect(e.code).toBe("control-failed");
+    }
+  });
+});
+
+// mock __appScope for deleteDevices：模拟 deleteNodesWithConnectedEdges + setters
+function createDeleteMockScope(nodeIds: string[] = [], selectedNodeIds: string[] = []) {
+  const calls: { undo: boolean; graphSet: boolean; groupsSet: any; selectedCleared: boolean } = {
+    undo: false,
+    graphSet: false,
+    groupsSet: null,
+    selectedCleared: false
+  };
+  const nodes = nodeIds.map((id) => ({ id, kind: "static-text" }));
+  const edges: any[] = [];
+  return {
+    scope: {
+      activeSelectedNodeIds: selectedNodeIds,
+      nodes,
+      edges,
+      groups: [],
+      deleteNodesWithConnectedEdges: (ns: any[], es: any[], ids: string[]) => ({
+        nodes: ns.filter((n) => !ids.includes(n.id)),
+        edges: es
+      }),
+      edgeListForNodeIds: () => [],
+      edgeById: new Map(),
+      markRouteEdgesDirty: () => {},
+      markStoredRouteEdgesDirty: () => {},
+      markBusTerminalSyncDirtyForEdges: () => {},
+      normalizeModelGroups: (g: any) => g,
+      normalizeProjectMeasurements: (m: any) => m,
+      removeGraphicsFromGroups: (g: any) => g,
+      pushUndoSnapshot: () => { calls.undo = true; },
+      setGraphArrays: () => { calls.graphSet = true; },
+      setEdges: () => {},
+      setGroups: (g: any) => { calls.groupsSet = g; },
+      setProjectMeasurements: () => {},
+      setCanvasSelectionScope: () => {},
+      setSelectedNodeIds: () => { calls.selectedCleared = true; },
+      setSelectedEdgeId: () => {},
+      setSelectedEdgeIds: () => {}
+    },
+    calls
+  };
+}
+
+describe("programmaticDeleteDevices", () => {
+  test("指定 ids 删除 → 返回 deletedIds + 压栈 + setGraphArrays", () => {
+    const { scope, calls } = createDeleteMockScope(["n1", "n2", "n3"], ["n1", "n2"]);
+    const del = createProgrammaticDeleteDevices(scope);
+    const result = del(["n1", "n2"]);
+    expect(result.deletedIds).toEqual(["n1", "n2"]);
+    expect(calls.undo).toBe(true);
+    expect(calls.graphSet).toBe(true);
+  });
+
+  test("ids 缺省取 activeSelectedNodeIds", () => {
+    const { scope } = createDeleteMockScope(["n1", "n2"], ["n1", "n2"]);
+    const del = createProgrammaticDeleteDevices(scope);
+    const result = del();
+    expect(result.deletedIds).toEqual(["n1", "n2"]);
+  });
+
+  test("无图元可删抛 control-failed", () => {
+    const { scope } = createDeleteMockScope([], []);
+    const del = createProgrammaticDeleteDevices(scope);
+    expect(() => del()).toThrow(/无可删除图元/);
+    try {
+      del();
     } catch (e: any) {
       expect(e.code).toBe("control-failed");
     }

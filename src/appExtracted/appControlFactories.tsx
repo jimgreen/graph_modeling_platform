@@ -2,8 +2,8 @@
 // swigger 控制台写操作程序化方法工厂。
 // 与 UI 写方法隔离：参数显式传入，复用底层 setter，绕过 prompt/alert/draft/editMode。
 // 经 WS control 指令调用（App.tsx commandHandler 分发）。
-import { createDefaultNode, DEVICE_LIBRARY_BY_KIND } from "../model";
-import { createCanvasGroupFromSelection } from "../selectionActions";
+import { createDefaultNode, DEVICE_LIBRARY_BY_KIND, deleteNodesWithConnectedEdges } from "../model";
+import { createCanvasGroupFromSelection, removeGraphicsFromGroups } from "../selectionActions";
 
 // 新增图元：kind 限 DeviceKind 枚举，attrs 从 deviceDefinition 取默认（createDefaultNode 内部完成），
 // 调用方可 override（position/params 等）。压 undo 栈（C-5），不落盘（D-3）。
@@ -183,5 +183,43 @@ export function createProgrammaticGroupSelected(__appScope: Record<string, any>)
     setSelectedEdgeIds(selection.edgeIds);
     setSelectedEdgeId(selection.edgeIds[0] ?? "");
     return { groupId: result.group.id, name: result.group.name };
+  };
+}
+
+// 删除图元：ids 缺省取 activeSelectedNodeIds。复用 deleteNodesWithConnectedEdges 删除节点
+// 及关联边，清理 groups/measurements/selection，压 undo 栈（C-5）。
+// 经 WS control.device.delete 指令调用。
+export function createProgrammaticDeleteDevices(__appScope: Record<string, any>) {
+  return (ids?: string[]) => {
+    const {
+      activeSelectedNodeIds, nodes, edges, groups,
+      deleteNodesWithConnectedEdges, edgeListForNodeIds, edgeById,
+      markRouteEdgesDirty, markStoredRouteEdgesDirty, markBusTerminalSyncDirtyForEdges,
+      normalizeModelGroups, normalizeProjectMeasurements, removeGraphicsFromGroups,
+      pushUndoSnapshot, setGraphArrays, setEdges, setGroups, setProjectMeasurements,
+      setCanvasSelectionScope, setSelectedNodeIds, setSelectedEdgeId, setSelectedEdgeIds
+    } = __appScope;
+    const targetNodeIds = ids ?? ((activeSelectedNodeIds as string[]) ?? []);
+    if (targetNodeIds.length === 0) {
+      const e: any = new Error("无可删除图元。");
+      e.code = "control-failed";
+      throw e;
+    }
+    const selectedEdgeSet = new Set<string>();
+    pushUndoSnapshot();
+    const deletedEdges = edgeListForNodeIds(targetNodeIds, selectedEdgeSet);
+    markRouteEdgesDirty(deletedEdges.map((edge: any) => edge.id));
+    markStoredRouteEdgesDirty(deletedEdges.map((edge: any) => edge.id));
+    markBusTerminalSyncDirtyForEdges(deletedEdges);
+    const result = deleteNodesWithConnectedEdges(nodes, edges, targetNodeIds);
+    const nextEdges = result.edges.filter((edge: any) => !selectedEdgeSet.has(edge.id));
+    setGraphArrays(result.nodes, nextEdges);
+    setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, targetNodeIds, selectedEdgeSet), result.nodes, nextEdges));
+    setProjectMeasurements((current: any) => normalizeProjectMeasurements(current, result.nodes));
+    setCanvasSelectionScope("group");
+    setSelectedNodeIds([]);
+    setSelectedEdgeId("");
+    setSelectedEdgeIds([]);
+    return { deletedIds: targetNodeIds };
   };
 }

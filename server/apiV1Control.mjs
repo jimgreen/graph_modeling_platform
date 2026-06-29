@@ -152,6 +152,28 @@ export async function handleControlDevicesGroup({ url, response }, ctx) {
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.devices.group", {}));
 }
 
+// /api/v1/control/device/delete —— 删除图元
+// body: { ids?: string[] } → 回执 { deletedIds }；ids 缺省取当前选中
+export async function handleControlDeviceDelete({ request, url, response }, ctx) {
+  let payload;
+  try {
+    payload = await readJsonBody(request);
+  } catch {
+    sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
+    return;
+  }
+  const { ids } = payload ?? {};
+  const params = {};
+  if (ids !== undefined) {
+    if (!Array.isArray(ids)) {
+      sendV1Error(response, "bad-request", "ids 须为字符串数组。");
+      return;
+    }
+    params.ids = ids;
+  }
+  await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.device.delete", params));
+}
+
 // 构造 v1 控制台路由表。ctx = { sendCommandToClient }
 // handle 签名：({ request, response, url, match }, ctx) => Promise<void>
 export function createV1ControlRoutes(ctx) {
@@ -162,6 +184,7 @@ export function createV1ControlRoutes(ctx) {
     { method: "POST", pattern: /^\/api\/v1\/control\/scheme\/create\/?$/u, handle: wrap(handleControlSchemeCreate) },
     { method: "POST", pattern: /^\/api\/v1\/control\/model\/create\/?$/u, handle: wrap(handleControlModelCreate) },
     { method: "POST", pattern: /^\/api\/v1\/control\/devices\/select\/?$/u, handle: wrap(handleControlDevicesSelect) },
-    { method: "POST", pattern: /^\/api\/v1\/control\/devices\/group\/?$/u, handle: wrap(handleControlDevicesGroup) }
+    { method: "POST", pattern: /^\/api\/v1\/control\/devices\/group\/?$/u, handle: wrap(handleControlDevicesGroup) },
+    { method: "POST", pattern: /^\/api\/v1\/control\/device\/delete\/?$/u, handle: wrap(handleControlDeviceDelete) }
   ];
 }

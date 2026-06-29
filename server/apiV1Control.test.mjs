@@ -297,3 +297,42 @@ describe("/api/v1/control/devices/group", () => {
     ws.close();
   });
 });
+
+describe("/api/v1/control/device/delete", () => {
+  test("成功删除 → 200 {ok:true,data:{deletedIds}}", async () => {
+    const ws = await connectCommandResponder("c1", (name, params) => {
+      expect(name).toBe("control.device.delete");
+      expect(params.ids).toEqual(["n1", "n2"]);
+      return { ok: true, data: { deletedIds: ["n1", "n2"] } };
+    });
+    const { status, json } = await postV1("/api/v1/control/device/delete", { ids: ["n1", "n2"] });
+    expect(status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.data.deletedIds).toEqual(["n1", "n2"]);
+    ws.close();
+  });
+
+  test("ids 缺省 → 透传空 params（前端取当前选中）", async () => {
+    const ws = await connectCommandResponder("c1", (_name, params) => {
+      expect(params.ids).toBeUndefined();
+      return { ok: true, data: { deletedIds: ["n1"] } };
+    });
+    const { status, json } = await postV1("/api/v1/control/device/delete", {});
+    expect(status).toBe(200);
+    expect(json.data.deletedIds).toEqual(["n1"]);
+    ws.close();
+  });
+
+  test("非数组 ids → 400 bad-request（不下发指令）", async () => {
+    const { status, json } = await postV1("/api/v1/control/device/delete", { ids: "not-array" });
+    expect(status).toBe(400);
+    expect(json.ok).toBe(false);
+    expect(json.error.code).toBe("bad-request");
+  });
+
+  test("无在线客户端 → 503 no-online-client", async () => {
+    const { status, json } = await postV1("/api/v1/control/device/delete", { ids: ["n1"] });
+    expect(status).toBe(503);
+    expect(json.error.code).toBe("no-online-client");
+  });
+});
