@@ -176,7 +176,7 @@ const ENDPOINTS = [
   { group: "控制台", method: "POST", path: "/api/v1/control/model/create", desc: "新建模型（经 WS 到前端，不压栈不落盘）", query: [{ name: "clientId", desc: "可选" }], body: { name: "新模型", schemeId: "" }, response: "{ok:true,data:{id,name,schemeId}}", examples: [
     { label: "新建到默认方案", params: { __body__: { name: "新模型" } } }
   ]},
-  { group: "控制台", method: "POST", path: "/api/v1/control/devices/select", desc: "选中图元（set/add/toggle 三模式）", query: [{ name: "clientId", desc: "可选" }], body: { ids: ["n1", "n2"], mode: "set" }, response: "{ok:true,data:{selectedIds}}", examples: [
+  { group: "控制台", method: "POST", path: "/api/v1/control/devices/select", desc: "选中图元（set/add/toggle 三模式，自动过滤不存在的 id）", query: [{ name: "clientId", desc: "可选" }], body: { ids: ["n1", "n2"], mode: "set" }, response: "{ok:true,data:{selectedIds,validIds,invalidIds}}", examples: [
     { label: "替换选中", params: { __body__: { ids: ["n1", "n2"], mode: "set" } } },
     { label: "追加选中", params: { __body__: { ids: ["n3"], mode: "add" } } },
     { label: "切换选中", params: { __body__: { ids: ["n1"], mode: "toggle" } } }

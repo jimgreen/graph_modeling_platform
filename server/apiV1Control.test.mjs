@@ -237,17 +237,19 @@ describe("/api/v1/control/model/create", () => {
 });
 
 describe("/api/v1/control/devices/select", () => {
-  test("成功选中 → 200 {ok:true,data:{selectedIds}}", async () => {
+  test("成功选中 → 200 {ok:true,data:{selectedIds,validIds,invalidIds}}", async () => {
     const ws = await connectCommandResponder("c1", (name, params) => {
       expect(name).toBe("control.devices.select");
       expect(params.ids).toEqual(["n1", "n2"]);
       expect(params.mode).toBe("set");
-      return { ok: true, data: { selectedIds: ["n1", "n2"] } };
+      return { ok: true, data: { selectedIds: ["n1", "n2"], validIds: ["n1", "n2"], invalidIds: [] } };
     });
     const { status, json } = await postV1("/api/v1/control/devices/select", { ids: ["n1", "n2"], mode: "set" });
     expect(status).toBe(200);
     expect(json.ok).toBe(true);
     expect(json.data.selectedIds).toEqual(["n1", "n2"]);
+    expect(json.data.validIds).toEqual(["n1", "n2"]);
+    expect(json.data.invalidIds).toEqual([]);
     ws.close();
   });
 

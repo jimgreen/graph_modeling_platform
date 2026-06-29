@@ -95,7 +95,7 @@ function commandResponder(name, params) {
     case "control.model.create":
       return { ok: true, data: { id: "m-test", name: params.name || "新模型", schemeId: "s1" } };
     case "control.devices.select":
-      return { ok: true, data: { selectedIds: params.ids || [] } };
+      return { ok: true, data: { selectedIds: params.ids || [], validIds: params.ids || [], invalidIds: [] } };
     case "control.devices.group":
       return { ok: true, data: { groupId: "g-test", name: "组合1" } };
     case "control.device.delete":
@@ -273,7 +273,7 @@ function expectFor(ep, ex) {
   if (p === "/api/v1/control/device/add") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };
   if (p === "/api/v1/control/scheme/create") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };
   if (p === "/api/v1/control/model/create") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };
-  if (p === "/api/v1/control/devices/select") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.selectedIds).toBeInstanceOf(Array); } };
+  if (p === "/api/v1/control/devices/select") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.selectedIds).toBeInstanceOf(Array); expect(r.json.data.validIds).toBeInstanceOf(Array); expect(r.json.data.invalidIds).toBeInstanceOf(Array); } };
   if (p === "/api/v1/control/devices/group") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.groupId).toBeTruthy(); } };
   if (p === "/api/v1/control/device/delete") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.deletedIds).toBeInstanceOf(Array); } };
   if (p === "/api/v1/control/device/property/update") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };

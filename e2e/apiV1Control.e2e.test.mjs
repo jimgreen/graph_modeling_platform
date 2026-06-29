@@ -92,7 +92,7 @@ describe("control.device/add e2e", () => {
 });
 
 describe("control.devices/select e2e", () => {
-  test("选中图元 → 通道打通返回 selectedIds", async () => {
+  test("选中图元 → 通道打通返回 selectedIds + validIds + invalidIds", async () => {
     const { page, baseUrl, imageBaseUrl } = env;
     const clientId = await loadFrontendAndWaitOnline(page, baseUrl, imageBaseUrl);
 
@@ -104,7 +104,10 @@ describe("control.devices/select e2e", () => {
     const json = await res.json();
     expect(res.status).toBe(200);
     expect(json.ok).toBe(true);
-    expect(json.data.selectedIds).toEqual(["fake-id-1", "fake-id-2"]);
+    // 不存在的 id 全部进入 invalidIds
+    expect(json.data.invalidIds).toEqual(["fake-id-1", "fake-id-2"]);
+    expect(json.data.validIds).toEqual([]);
+    expect(json.data.selectedIds).toEqual([]);
   }, 120000);
 
   test("非数组 ids → 400 bad-request", async () => {

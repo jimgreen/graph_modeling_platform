@@ -110,25 +110,37 @@ export function createProgrammaticCreateBlankProject(__appScope: Record<string, 
 
 // 选中图元：ids 必填（字符串数组），mode 可选（"set"|"add"|"toggle"，默认 "set"）。
 // 复用 setSelectedNodeIds，经 WS control.devices.select 指令调用。
+// 返回 { selectedIds, validIds, invalidIds }：validIds 为实际存在的图元 id，invalidIds 为不存在的。
 export function createProgrammaticSelectDevices(__appScope: Record<string, any>) {
   return (ids: string[], mode?: "set" | "add" | "toggle") => {
-    const { setSelectedNodeIds, selectedNodeIds } = __appScope;
+    const { setSelectedNodeIds, selectedNodeIds, nodes } = __appScope;
     if (!Array.isArray(ids)) {
       const e: any = new Error("ids 须为字符串数组。");
       e.code = "bad-request";
       throw e;
     }
+    // 校验图元存在性
+    const nodeIds = new Set((nodes as any[]).map((n) => n.id));
+    const validIds: string[] = [];
+    const invalidIds: string[] = [];
+    for (const id of ids) {
+      if (nodeIds.has(id)) {
+        validIds.push(id);
+      } else {
+        invalidIds.push(id);
+      }
+    }
     const resolvedMode = mode ?? "set";
     let result: string[];
     if (resolvedMode === "set") {
-      result = [...ids];
+      result = [...validIds];
     } else if (resolvedMode === "add") {
       const prev = new Set<string>((selectedNodeIds as string[]) ?? []);
-      for (const id of ids) prev.add(id);
+      for (const id of validIds) prev.add(id);
       result = [...prev];
     } else if (resolvedMode === "toggle") {
       const prev = new Set<string>((selectedNodeIds as string[]) ?? []);
-      for (const id of ids) {
+      for (const id of validIds) {
         if (prev.has(id)) prev.delete(id);
         else prev.add(id);
       }
@@ -139,7 +151,7 @@ export function createProgrammaticSelectDevices(__appScope: Record<string, any>)
       throw e;
     }
     setSelectedNodeIds(result);
-    return { selectedIds: result };
+    return { selectedIds: result, validIds, invalidIds };
   };
 }
 

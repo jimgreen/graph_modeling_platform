@@ -263,11 +263,12 @@ describe("programmaticCreateBlankProject", () => {
 });
 
 // mock __appScope for selectDevices：捕获 setSelectedNodeIds 调用
-function createSelectMockScope(initialSelected: string[] = []) {
+function createSelectMockScope(initialSelected: string[] = [], nodeIds: string[] = ["n1", "n2", "n3"]) {
   const calls: { selectedIds: string[] | null } = { selectedIds: null };
   return {
     scope: {
       selectedNodeIds: initialSelected,
+      nodes: nodeIds.map((id) => ({ id, kind: "static-text" })),
       setSelectedNodeIds: (ids: string[]) => {
         calls.selectedIds = ids;
       }
@@ -277,35 +278,55 @@ function createSelectMockScope(initialSelected: string[] = []) {
 }
 
 describe("programmaticSelectDevices", () => {
-  test("set 模式直接替换选中", () => {
+  test("set 模式直接替换选中（仅存在的 id）", () => {
     const { scope, calls } = createSelectMockScope(["old1"]);
     const select = createProgrammaticSelectDevices(scope);
-    const result = select(["a", "b"]);
-    expect(result.selectedIds).toEqual(["a", "b"]);
-    expect(calls.selectedIds).toEqual(["a", "b"]);
+    const result = select(["n1", "n2"]);
+    expect(result.selectedIds).toEqual(["n1", "n2"]);
+    expect(result.validIds).toEqual(["n1", "n2"]);
+    expect(result.invalidIds).toEqual([]);
+    expect(calls.selectedIds).toEqual(["n1", "n2"]);
   });
 
-  test("add 模式合并去重", () => {
-    const { scope, calls } = createSelectMockScope(["a", "b"]);
+  test("add 模式合并去重（仅存在的 id）", () => {
+    const { scope, calls } = createSelectMockScope(["n1"]);
     const select = createProgrammaticSelectDevices(scope);
-    const result = select(["b", "c"], "add");
-    expect(result.selectedIds).toEqual(["a", "b", "c"]);
-    expect(calls.selectedIds).toEqual(["a", "b", "c"]);
+    const result = select(["n2", "n3"], "add");
+    expect(result.selectedIds).toEqual(["n1", "n2", "n3"]);
+    expect(result.validIds).toEqual(["n2", "n3"]);
+    expect(result.invalidIds).toEqual([]);
   });
 
-  test("toggle 模式切换：存在则移除，不存在则加入", () => {
-    const { scope, calls } = createSelectMockScope(["a", "b"]);
+  test("toggle 模式切换（仅存在的 id）", () => {
+    const { scope } = createSelectMockScope(["n1", "n2"]);
     const select = createProgrammaticSelectDevices(scope);
-    const result = select(["b", "c"], "toggle");
-    expect(result.selectedIds).toEqual(["a", "c"]);
-    expect(calls.selectedIds).toEqual(["a", "c"]);
+    const result = select(["n2", "n3"], "toggle");
+    expect(result.selectedIds).toEqual(["n1", "n3"]);
+  });
+
+  test("不存在的 id 记录到 invalidIds", () => {
+    const { scope } = createSelectMockScope();
+    const select = createProgrammaticSelectDevices(scope);
+    const result = select(["n1", "fake1", "n2", "fake2"]);
+    expect(result.validIds).toEqual(["n1", "n2"]);
+    expect(result.invalidIds).toEqual(["fake1", "fake2"]);
+    expect(result.selectedIds).toEqual(["n1", "n2"]);
+  });
+
+  test("全部 id 不存在 → selectedIds 为空", () => {
+    const { scope } = createSelectMockScope();
+    const select = createProgrammaticSelectDevices(scope);
+    const result = select(["fake1", "fake2"]);
+    expect(result.validIds).toEqual([]);
+    expect(result.invalidIds).toEqual(["fake1", "fake2"]);
+    expect(result.selectedIds).toEqual([]);
   });
 
   test("缺省 mode 为 set", () => {
     const { scope } = createSelectMockScope(["old"]);
     const select = createProgrammaticSelectDevices(scope);
-    const result = select(["x"]);
-    expect(result.selectedIds).toEqual(["x"]);
+    const result = select(["n1"]);
+    expect(result.selectedIds).toEqual(["n1"]);
   });
 
   test("非数组 ids 抛 bad-request", () => {
@@ -322,9 +343,9 @@ describe("programmaticSelectDevices", () => {
   test("未知 mode 抛 bad-request", () => {
     const { scope } = createSelectMockScope();
     const select = createProgrammaticSelectDevices(scope);
-    expect(() => select(["a"], "unknown" as any)).toThrow(/未知选中模式/);
+    expect(() => select(["n1"], "unknown" as any)).toThrow(/未知选中模式/);
     try {
-      select(["a"], "unknown" as any);
+      select(["n1"], "unknown" as any);
     } catch (e: any) {
       expect(e.code).toBe("bad-request");
     }
