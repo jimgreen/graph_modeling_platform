@@ -219,7 +219,7 @@ export async function handleControlSave({ request, url, response }, ctx) {
 }
 
 // /api/v1/control/template/saveFromSelection —— 从选中组合保存为模板
-// body: { name, componentType, attributeLibraryName? } → 回执 { templateKind }
+// body: { name, componentLibrary, categoryLibraryName? } → 回执 { templateKind }
 export async function handleControlTemplateSaveFromSelection({ request, url, response }, ctx) {
   let payload;
   try {
@@ -228,18 +228,20 @@ export async function handleControlTemplateSaveFromSelection({ request, url, res
     sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
     return;
   }
-  const { name, componentType, attributeLibraryName } = payload ?? {};
+  const { name } = payload ?? {};
+  const componentLibrary = payload?.componentLibrary ?? payload?.componentType;
+  const categoryLibraryName = payload?.categoryLibraryName ?? payload?.attributeLibraryName;
   if (!name || typeof name !== "string" || !name.trim()) {
     sendV1Error(response, "bad-request", "name 必填。");
     return;
   }
-  if (!componentType || typeof componentType !== "string" || !componentType.trim()) {
-    sendV1Error(response, "bad-request", "componentType 必填。");
+  if (!componentLibrary || typeof componentLibrary !== "string" || !componentLibrary.trim()) {
+    sendV1Error(response, "bad-request", "componentLibrary 必填。");
     return;
   }
-  const params = { name, componentType };
-  if (attributeLibraryName !== undefined) {
-    params.attributeLibraryName = attributeLibraryName;
+  const params = { name, componentLibrary };
+  if (categoryLibraryName !== undefined) {
+    params.categoryLibraryName = categoryLibraryName;
   }
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.template.saveFromSelection", params));
 }

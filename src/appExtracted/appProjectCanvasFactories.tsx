@@ -3372,9 +3372,9 @@ export function createDeleteModelLayer(__appScope: Record<string, any>) {
 
 export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<string, any>) {
   return (target: DeviceDefinitionMeasurementPanelTarget) => {
-  const { BufferedTextInput, addMeasurementProfileItem, button, deleteMeasurementProfileItem, div, editableMeasurementProfileByKind, editableMeasurementTypeById, footer, isBrowseMode, measurementConfig, measurementConfigDraft, measurementConfigSaveStatus, moveMeasurementProfileItem, normalizeComponentTypeName, section, select, span, table, tbody, td, th, thead, tr, updateMeasurementProfileItem } = __appScope;
+  const { BufferedTextInput, addMeasurementProfileItem, button, deleteMeasurementProfileItem, div, editableMeasurementProfileByKind, editableMeasurementTypeById, footer, isBrowseMode, measurementConfig, measurementConfigDraft, measurementConfigSaveStatus, moveMeasurementProfileItem, normalizeComponentLibraryName, section, select, span, table, tbody, td, th, thead, tr, updateMeasurementProfileItem } = __appScope;
     const draftConfig = measurementConfigDraft ?? measurementConfig;
-    const selectedKind = normalizeComponentTypeName(target.deviceKind);
+    const selectedKind = normalizeComponentLibraryName(target.deviceKind);
     const selectedProfileItems = editableMeasurementProfileByKind.get(selectedKind)?.items ?? [];
     const terminalCount = Math.max(0, target.terminalCount ?? target.terminalLabels?.length ?? 0);
     const measurementProfilePositionOptions = [
@@ -3418,7 +3418,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
           >
             添加量测
           </button>
-          <span>元件类型 {selectedKind || "未设置"} / 参考图元 {target.label}</span>
+          <span>元件库 {selectedKind || "未设置"} / 参考图元 {target.label}</span>
         </div>
         <div className="measurement-table-wrap">
           <table className="measurement-table measurement-profile-table">
@@ -3543,7 +3543,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                 );
               }) : (
                 <tr>
-                  <td colSpan={7}>当前元件类型还没有默认量测模板。</td>
+                  <td colSpan={7}>当前元件库还没有默认量测模板。</td>
                 </tr>
               )}
             </tbody>

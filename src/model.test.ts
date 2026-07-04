@@ -1262,7 +1262,7 @@ describe("power system model", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-diesel-source");
     expect(template).toMatchObject({
       label: "柴油发电机",
-      attributeLibrary: "交流设备",
+      categoryLibrary: "交流设备",
       terminalType: "ac",
       terminalCount: 1,
       params: expect.objectContaining({
@@ -1440,7 +1440,7 @@ describe("power system model", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-terminal-transformer-load");
     expect(template).toMatchObject({
       label: "终端变负荷",
-      attributeLibrary: "交流设备",
+      categoryLibrary: "交流设备",
       terminalType: "ac",
       terminalCount: 1,
       terminalAnchors: [{ x: -0.5, y: 0 }]
@@ -1507,7 +1507,7 @@ describe("power system model", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-box-breaker");
     expect(template).toMatchObject({
       label: "盒型开关",
-      attributeLibrary: "交流设备",
+      categoryLibrary: "交流设备",
       terminalType: "ac",
       terminalCount: 2,
       params: expect.objectContaining({ status: "1" })
@@ -1537,8 +1537,8 @@ describe("power system model", () => {
   test("includes AC and DC zero-impedance branch elements in the library and E export", () => {
     const acTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-zero-branch");
     const dcTemplate = DEVICE_LIBRARY.find((item) => item.kind === "dc-zero-branch");
-    expect(acTemplate).toMatchObject({ label: "交流零阻抗支路", attributeLibrary: "交流设备", terminalType: "ac", terminalCount: 2 });
-    expect(dcTemplate).toMatchObject({ label: "直流零阻抗支路", attributeLibrary: "直流设备", terminalType: "dc", terminalCount: 2 });
+    expect(acTemplate).toMatchObject({ label: "交流零阻抗支路", categoryLibrary: "交流设备", terminalType: "ac", terminalCount: 2 });
+    expect(dcTemplate).toMatchObject({ label: "直流零阻抗支路", categoryLibrary: "直流设备", terminalType: "dc", terminalCount: 2 });
 
     const acZeroBranch = createDefaultNode("ac-zero-branch", { x: 100, y: 100 });
     const dcZeroBranch = createDefaultNode("dc-zero-branch", { x: 260, y: 100 });
@@ -1578,7 +1578,7 @@ describe("power system model", () => {
       const verticalTemplate = DEVICE_LIBRARY.find((template) => template.kind === verticalKind);
       expect(verticalTemplate).toMatchObject({
         label: `${baseTemplate.label}（竖向）`,
-        attributeLibrary: baseTemplate.attributeLibrary,
+        categoryLibrary: baseTemplate.categoryLibrary,
         terminalType: baseTemplate.terminalType,
         terminalCount: baseTemplate.terminalCount,
         rotation: 90
@@ -1692,7 +1692,7 @@ describe("power system model", () => {
     const template: DeviceTemplate = {
       kind: "custom-resize-device",
       label: "可变形自定义设备",
-      attributeLibrary: "交流设备",
+      categoryLibrary: "交流设备",
       size: { width: 104, height: 64 },
       allowResizeTransform: true,
       params: {
@@ -1730,7 +1730,7 @@ describe("power system model", () => {
     const template: DeviceTemplate = {
       kind: "custom-visual-override-device",
       label: "图标覆盖设备",
-      attributeLibrary: "交流设备",
+      categoryLibrary: "交流设备",
       size: { width: 104, height: 64 },
       params: {
         component_type: "CustomVisualOverrideDevice",
@@ -1789,7 +1789,7 @@ describe("power system model", () => {
     const template: DeviceTemplate = {
       kind: "custom-stale-terminal-slots",
       label: "旧端子槽位设备",
-      attributeLibrary: "交流设备",
+      categoryLibrary: "交流设备",
       size: { width: 104, height: 64 },
       params: {
         component_type: "CustomStaleTerminalSlots"
@@ -1840,7 +1840,7 @@ describe("power system model", () => {
     const template: DeviceTemplate = {
       kind: "custom-template-with-stale-saved-node",
       label: "自定义端子裁剪设备",
-      attributeLibrary: "交流设备",
+      categoryLibrary: "交流设备",
       size: { width: 104, height: 64 },
       params: {
         component_type: "CustomTemplateWithStaleSavedNode"
@@ -1869,10 +1869,10 @@ describe("power system model", () => {
   });
 
   test("places converter elements under AC/DC device library groups", () => {
-    expect(DEVICE_LIBRARY.find((item) => item.kind === "acac-converter")).toMatchObject({ attributeLibrary: "交流设备" });
-    expect(DEVICE_LIBRARY.find((item) => item.kind === "acdc-converter")).toMatchObject({ attributeLibrary: "直流设备" });
-    expect(DEVICE_LIBRARY.find((item) => item.kind === "dcac-converter")).toMatchObject({ attributeLibrary: "直流设备" });
-    expect(DEVICE_LIBRARY.find((item) => item.kind === "dcdc-converter")).toMatchObject({ attributeLibrary: "直流设备" });
+    expect(DEVICE_LIBRARY.find((item) => item.kind === "acac-converter")).toMatchObject({ categoryLibrary: "交流设备" });
+    expect(DEVICE_LIBRARY.find((item) => item.kind === "acdc-converter")).toMatchObject({ categoryLibrary: "直流设备" });
+    expect(DEVICE_LIBRARY.find((item) => item.kind === "dcac-converter")).toMatchObject({ categoryLibrary: "直流设备" });
+    expect(DEVICE_LIBRARY.find((item) => item.kind === "dcdc-converter")).toMatchObject({ categoryLibrary: "直流设备" });
   });
 
   test("adds an AC grounding disconnector as a single-terminal grounding device", () => {
@@ -1880,14 +1880,14 @@ describe("power system model", () => {
     const verticalTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-ground-disconnector-vertical");
     expect(template).toMatchObject({
       label: "接地刀闸",
-      attributeLibrary: "交流设备",
+      categoryLibrary: "交流设备",
       terminalType: "ac",
       terminalCount: 1,
       params: expect.objectContaining({ status: "0" })
     });
     expect(verticalTemplate).toMatchObject({
       label: "竖向接地刀闸",
-      attributeLibrary: "交流设备",
+      categoryLibrary: "交流设备",
       terminalType: "ac",
       terminalCount: 1,
       params: expect.objectContaining({ status: "0" })
@@ -2018,7 +2018,7 @@ describe("power system model", () => {
     })).toEqual([
       expect.objectContaining({
         nodeId: custom.id,
-        reason: "元件类型没有对应的 E 文件段定义。"
+        reason: "元件库没有对应的 E 文件段定义。"
       })
     ]);
   });
@@ -2064,9 +2064,9 @@ describe("power system model", () => {
       ["heat-routable-line", "热力线路（自适应）", "热能设备", "heat", "HeatPipe"]
     ] as const;
 
-    for (const [kind, label, attributeLibrary, terminalType, section] of cases) {
+    for (const [kind, label, categoryLibrary, terminalType, section] of cases) {
       const template = DEVICE_LIBRARY.find((item) => item.kind === kind);
-      expect(template).toMatchObject({ label, attributeLibrary, terminalType, terminalCount: 2 });
+      expect(template).toMatchObject({ label, categoryLibrary, terminalType, terminalCount: 2 });
       const node = createDefaultNode(kind, { x: 300, y: 160 });
       const points = routableLineDeviceLocalPoints(node);
 
@@ -4215,7 +4215,7 @@ describe("power system model", () => {
 
     expect(template).toMatchObject({
       label: "三绕组主变(中性点)",
-      attributeLibrary: "交流设备",
+      categoryLibrary: "交流设备",
       terminalCount: 4,
       isContainer: true
     });
@@ -8632,7 +8632,7 @@ describe("power system model", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "dc-storage");
     expect(template).toMatchObject({
       label: "电化学储能",
-      attributeLibrary: "直流设备",
+      categoryLibrary: "直流设备",
       terminalType: "dc",
       terminalCount: 1
     });
@@ -8648,7 +8648,7 @@ describe("power system model", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-storage");
     expect(template).toMatchObject({
       label: "电化学储能",
-      attributeLibrary: "交流设备",
+      categoryLibrary: "交流设备",
       terminalType: "ac",
       terminalCount: 1
     });
@@ -8680,7 +8680,7 @@ describe("power system model", () => {
 
     for (const [kind, label, terminalTypes, glyphVariant] of expected) {
       const template = DEVICE_LIBRARY.find((item) => item.kind === kind);
-      expect(template).toMatchObject({ label, attributeLibrary: "氢能设备", terminalCount: terminalTypes.length });
+      expect(template).toMatchObject({ label, categoryLibrary: "氢能设备", terminalCount: terminalTypes.length });
       const node = createDefaultNode(kind, { x: 100, y: 100 });
       expect(node.terminals.map((terminal) => terminal.type)).toEqual([...terminalTypes]);
       expect(getDeviceGlyphVariant(kind)).toBe(glyphVariant);
@@ -8733,7 +8733,7 @@ describe("power system model", () => {
 
     for (const [kind, label, terminalTypes, glyphVariant] of expected) {
       const template = DEVICE_LIBRARY.find((item) => item.kind === kind);
-      expect(template).toMatchObject({ label, attributeLibrary: "热能设备", terminalCount: terminalTypes.length });
+      expect(template).toMatchObject({ label, categoryLibrary: "热能设备", terminalCount: terminalTypes.length });
       const node = createDefaultNode(kind, { x: 100, y: 100 });
       expect(node.terminals.map((terminal) => terminal.type)).toEqual([...terminalTypes]);
       expect(getDeviceGlyphVariant(kind)).toBe(glyphVariant);
@@ -8804,7 +8804,7 @@ describe("power system model", () => {
     const template: DeviceTemplate = {
       kind: "ACUnit",
       label: "ACUnit",
-      attributeLibrary: "自定义属性库",
+      categoryLibrary: "自定义类别库",
       size: { width: 104, height: 64 },
       params: { backgroundImage: "data:image/svg+xml,custom", fillColor: "transparent", strokeColor: "transparent", lineWidth: "0" },
       terminalType: "ac",
@@ -8841,7 +8841,7 @@ describe("power system model", () => {
     const originalTemplate: DeviceTemplate = {
       kind: "custom-DefinitionSyncUnit",
       label: "DefinitionSyncUnit",
-      attributeLibrary: "自定义属性库",
+      categoryLibrary: "自定义类别库",
       size: { width: 104, height: 64 },
       params: { component_type: "DefinitionSyncUnit", fillColor: "transparent", strokeColor: "transparent", lineWidth: "0" },
       terminalType: "ac",
@@ -8900,7 +8900,7 @@ describe("power system model", () => {
     const template: DeviceTemplate = {
       kind: "custom-CustomEnergyUnit",
       label: "CustomEnergyUnit",
-      attributeLibrary: "自定义属性库",
+      categoryLibrary: "自定义类别库",
       size: { width: 104, height: 64 },
       params: { component_type: "CustomEnergyUnit", fillColor: "transparent", strokeColor: "transparent", lineWidth: "0" },
       terminalType: "ac",
@@ -8920,7 +8920,7 @@ describe("power system model", () => {
 
     const exported = parseESections(buildEDeviceParameterFile({
       version: 1,
-      name: "自定义元件类型导出测试",
+      name: "自定义元件库导出测试",
       nodes: [node],
       edges: []
     }));
@@ -8933,7 +8933,7 @@ describe("power system model", () => {
       run_stat: "1",
       p_set: "3.5"
     });
-    expect(getEExportWarnings({ version: 1, name: "自定义元件类型导出测试", nodes: [node], edges: [] })).toEqual([]);
+    expect(getEExportWarnings({ version: 1, name: "自定义元件库导出测试", nodes: [node], edges: [] })).toEqual([]);
   });
 
   test("creates container device definitions with association idx fields instead of topology node fields", () => {
@@ -8962,7 +8962,7 @@ describe("power system model", () => {
     const template: DeviceTemplate = {
       kind: "CustomContainer",
       label: "CustomContainer",
-      attributeLibrary: "自定义属性库",
+      categoryLibrary: "自定义类别库",
       size: { width: 104, height: 64 },
       params: { backgroundImage: "data:image/svg+xml,custom", fillColor: "transparent", strokeColor: "transparent", lineWidth: "0" },
       terminalType: "ac",
@@ -9013,7 +9013,7 @@ describe("power system model", () => {
     const template: DeviceTemplate = {
       kind: "CustomAssociationDeviceModel",
       label: "CustomAssociationDeviceModel",
-      attributeLibrary: "自定义属性库",
+      categoryLibrary: "自定义类别库",
       size: { width: 104, height: 64 },
       params: {},
       terminalType: "ac",
@@ -9062,7 +9062,7 @@ describe("power system model", () => {
     const template: DeviceTemplate = {
       kind: "CustomContainerAssociations",
       label: "CustomContainerAssociations",
-      attributeLibrary: "自定义属性库",
+      categoryLibrary: "自定义类别库",
       size: { width: 104, height: 64 },
       params: {},
       terminalType: "heat",
@@ -9156,7 +9156,7 @@ describe("power system model", () => {
     expect(views[0]).toMatchObject({ id: "container", kind: "container" });
     expect(views[1]).toMatchObject({
       kind: "associated",
-      componentType: "ACLoad",
+      componentLibrary: "ACLoad",
       relationKeys: ["idx_ac_load_t1"],
       terminalIndexes: [0]
     });
@@ -9170,7 +9170,7 @@ describe("power system model", () => {
     ]));
     expect(views[2]).toMatchObject({
       kind: "associated",
-      componentType: "HydroSource",
+      componentLibrary: "HydroSource",
       relationKeys: ["idx_h2_unit_t2"],
       terminalIndexes: [1]
     });
@@ -9189,7 +9189,7 @@ describe("power system model", () => {
 
     expect(views[1]).toMatchObject({
       kind: "associated",
-      componentType: "ACLoad",
+      componentLibrary: "ACLoad",
       relationKeys: ["idx_ac_load_t1"],
       terminalIndexes: [0]
     });
@@ -9224,7 +9224,7 @@ describe("power system model", () => {
 
     expect(views[1]).toMatchObject({
       kind: "associated",
-      componentType: "DCGenerator",
+      componentLibrary: "DCGenerator",
       relationKeys: ["idx_dc_unit_t1"],
       terminalIndexes: [0]
     });
@@ -9256,9 +9256,9 @@ describe("power system model", () => {
 
       expect(views.length, template.kind).toBeGreaterThan(0);
       for (const view of views) {
-        expect(view.componentType, `${template.kind}:${view.label}`).toBeTruthy();
-        const columns = E_SECTION_COLUMNS[view.componentType ?? ""];
-        expect(columns, `${template.kind}:${view.label}:${view.componentType}`).toBeDefined();
+        expect(view.componentLibrary, `${template.kind}:${view.label}`).toBeTruthy();
+        const columns = E_SECTION_COLUMNS[view.componentLibrary ?? ""];
+        expect(columns, `${template.kind}:${view.label}:${view.componentLibrary}`).toBeDefined();
         expect(view.rows.map((row) => row.key), `${template.kind}:${view.label}`).toEqual(columns);
       }
     }
@@ -9305,7 +9305,7 @@ describe("power system model", () => {
 
     expect(views[1]).toMatchObject({
       kind: "associated",
-      componentType: "ACTransformer",
+      componentLibrary: "ACTransformer",
       relationKeys: ["idx_xf_t1"],
       terminalIndexes: [0]
     });
@@ -9332,7 +9332,7 @@ describe("power system model", () => {
       ["dc-fuel-cell", "idx_dc_unit_t1", "DCGenerator", "DCGenerator", "idx_h2_load_t2", "HydroLoad"]
     ] as const;
 
-    for (const [kind, electricRelationKey, electricComponentType, electricSection, hydrogenRelationKey, hydrogenSection] of expected) {
+    for (const [kind, electricRelationKey, electricComponentLibrary, electricSection, hydrogenRelationKey, hydrogenSection] of expected) {
       const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
       const node = assignPermanentDeviceIndex(createDefaultNode(kind, { x: 100, y: 100 }), {}).node;
       const associations = describeContainerTerminalAssociations(template);
@@ -9347,7 +9347,7 @@ describe("power system model", () => {
       expect(associations[0]).toMatchObject({
         terminalIndex: 0,
         relationKey: electricRelationKey,
-        deviceModel: electricComponentType
+        deviceModel: electricComponentLibrary
       });
       expect(associations[1]).toMatchObject({
         terminalIndex: 1,
@@ -9356,7 +9356,7 @@ describe("power system model", () => {
       });
       expect(views[1]).toMatchObject({
         kind: "associated",
-        componentType: electricComponentType,
+        componentLibrary: electricComponentLibrary,
         relationKeys: [electricRelationKey],
         terminalIndexes: [0]
       });
@@ -9377,7 +9377,7 @@ describe("power system model", () => {
     expect(views.map((view) => view.label)).toEqual(["设备本体", "交流设备端交流电负荷", "热能设备供水端双端热源"]);
     expect(views[2]).toMatchObject({
       kind: "associated",
-      componentType: "HeatSource2",
+      componentLibrary: "HeatSource2",
       relationKeys: ["idx_heat2_unit_t2"],
       terminalIndexes: [1, 2]
     });
@@ -9402,7 +9402,7 @@ describe("power system model", () => {
     expect(views.map((view) => view.label)).toEqual(["设备本体", "交流设备端1双绕组主变首端", "交流设备端2双绕组主变首端", "交流设备端3双绕组主变首端"]);
     expect(views[1]).toMatchObject({
       kind: "associated",
-      componentType: "ACTransformer",
+      componentLibrary: "ACTransformer",
       relationKeys: ["idx_xf_t1"],
       terminalIndexes: [0]
     });
@@ -9433,7 +9433,7 @@ describe("power system model", () => {
     const template: DeviceTemplate = {
       kind: "CustomDoubleContainer",
       label: "CustomDoubleContainer",
-      attributeLibrary: "自定义属性库",
+      categoryLibrary: "自定义类别库",
       size: { width: 104, height: 64 },
       params: { backgroundImage: "data:image/svg+xml,custom", fillColor: "transparent", strokeColor: "transparent", lineWidth: "0" },
       terminalType: "heat",
@@ -9593,7 +9593,7 @@ describe("power system model", () => {
     const template: DeviceTemplate = {
       kind: "custom-CustomEnumUnit",
       label: "CustomEnumUnit",
-      attributeLibrary: "自定义属性库",
+      categoryLibrary: "自定义类别库",
       size: { width: 104, height: 64 },
       params: { component_type: "CustomEnumUnit", fillColor: "transparent", strokeColor: "transparent", lineWidth: "0" },
       terminalType: "ac",
@@ -9725,7 +9725,7 @@ describe("power system model", () => {
     });
   });
 
-  test("builds a three-level element tree grouped by component type, device, and graphic instance", () => {
+  test("builds a three-level element tree grouped by component library, device, and graphic instance", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 100 });
     const wind = createDefaultNode("ac-wind-source", { x: 180, y: 100 });
     const load = createDefaultNode("ac-load", { x: 260, y: 100 });
@@ -9940,7 +9940,7 @@ describe("power system model", () => {
     });
     expect(item?.children).toEqual([
       expect.objectContaining({
-        componentType: "ACLoad",
+        componentLibrary: "ACLoad",
         idx: electrolyzer.params.idx_ac_load_t1,
         name: "自定义交流负荷",
         nameKey: "name_ac_load_t1",
@@ -9948,7 +9948,7 @@ describe("power system model", () => {
         terminalLabels: "交流设备端"
       }),
       expect.objectContaining({
-        componentType: "HydroSource",
+        componentLibrary: "HydroSource",
         idx: electrolyzer.params.idx_h2_unit_t2,
         name: "EL1_氢能设备端氢源",
         nameKey: "name_h2_unit_t2",
@@ -9994,7 +9994,7 @@ describe("power system model", () => {
   });
 
   test("creates static drawing primitives without electrical terminals", () => {
-    const expectedComponentTypes = {
+    const expectedComponentLibraries = {
       "static-text": "StaticTextSymbol",
       "static-line": "StaticConnectorSymbol",
       "static-polyline": "StaticConnectorSymbol",
@@ -10035,7 +10035,7 @@ describe("power system model", () => {
       "static-self-loop": "StaticConnectorSymbol",
       "static-edge-label": "StaticAnnotationSymbol"
     } as const;
-    const expected = Object.keys(expectedComponentTypes);
+    const expected = Object.keys(expectedComponentLibraries);
     const removedControlKinds = [
       "static-web",
       "static-date",
@@ -10044,7 +10044,7 @@ describe("power system model", () => {
       "static-input"
     ];
 
-    expect(new Set(Object.values(expectedComponentTypes))).toEqual(new Set([
+    expect(new Set(Object.values(expectedComponentLibraries))).toEqual(new Set([
       "StaticTextSymbol",
       "StaticMediaSymbol",
       "StaticBasicShape",
@@ -10057,12 +10057,12 @@ describe("power system model", () => {
 
     for (const kind of expected) {
       const node = createDefaultNode(kind, { x: 100, y: 100 });
-      const componentType = expectedComponentTypes[kind as keyof typeof expectedComponentTypes];
+      const componentLibrary = expectedComponentLibraries[kind as keyof typeof expectedComponentLibraries];
       expect(isStaticNode(node)).toBe(true);
       expect(node.terminals).toEqual([]);
-      expect(node.params.component_type).toBe(componentType);
-      expect(inferESection(kind, node.params)).toBe(componentType);
-      expect(inferESection(kind, {})).toBe(componentType);
+      expect(node.params.component_type).toBe(componentLibrary);
+      expect(inferESection(kind, node.params)).toBe(componentLibrary);
+      expect(inferESection(kind, {})).toBe(componentLibrary);
       expect(getEParameterKeys(kind, node.params)).toEqual([]);
       expect(node.params.fillColor).toBeDefined();
       expect(node.params.strokeColor).toBeDefined();
@@ -10075,7 +10075,7 @@ describe("power system model", () => {
     }
 
     expect(DEVICE_LIBRARY.filter((template) => removedControlKinds.includes(template.kind)).map((template) => template.kind)).toEqual([]);
-    expect(DEVICE_LIBRARY.filter((template) => template.attributeLibrary === "静态图元").map((template) => template.kind)).toEqual([...expected]);
+    expect(DEVICE_LIBRARY.filter((template) => template.categoryLibrary === "静态图元").map((template) => template.kind)).toEqual([...expected]);
 
     const errors = validateTopology([createDefaultNode("static-text", { x: 100, y: 100 })], []);
     expect(errors).toEqual([]);
@@ -10117,15 +10117,15 @@ describe("power system model", () => {
       ["static-edge-label", "边标签", "StaticAnnotationSymbol"]
     ] as const;
 
-    for (const [kind, label, componentType] of expected) {
+    for (const [kind, label, componentLibrary] of expected) {
       const template = DEVICE_LIBRARY.find((item) => item.kind === kind);
       expect(template).toMatchObject({
         label,
-        attributeLibrary: "静态图元",
+        categoryLibrary: "静态图元",
         terminalCount: 0,
         terminalType: "ac",
         params: expect.objectContaining({
-          component_type: componentType,
+          component_type: componentLibrary,
           text: expect.any(String),
           fillColor: expect.any(String),
           strokeColor: expect.any(String),
@@ -10149,7 +10149,7 @@ describe("power system model", () => {
       const node = createDefaultNode(kind, { x: 100, y: 100 });
       expect(isStaticNode(node)).toBe(true);
       expect(node.terminals).toEqual([]);
-      expect(inferESection(kind, node.params)).toBe(componentType);
+      expect(inferESection(kind, node.params)).toBe(componentLibrary);
       expect(getEParameterKeys(kind, node.params)).toEqual([]);
       expect(isStaticButtonCapableKind(kind)).toBe(!isStaticLineLikeKind(kind));
     }
@@ -10330,7 +10330,7 @@ describe("power system model", () => {
 
     expect(DEVICE_LIBRARY.find((item) => item.kind === "dcac-converter")).toMatchObject({
       label: "DCAC变流器",
-      attributeLibrary: "直流设备",
+      categoryLibrary: "直流设备",
       terminalTypes: ["dc", "ac"]
     });
     expect(DEVICE_LIBRARY.find((item) => item.kind === "dcac-converter-vertical")).toMatchObject({

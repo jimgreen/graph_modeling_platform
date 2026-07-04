@@ -13,7 +13,7 @@ export type ReactFlowModelNodeData = {
   modelNode: ModelNode;
   kind: string;
   name: string;
-  componentType: string;
+  componentLibrary: string;
   terminalCount: number;
 };
 
@@ -69,7 +69,7 @@ export function modelNodeToReactFlowNode(node: ModelNode): ReactFlowModelNode {
       modelNode: node,
       kind: node.kind,
       name: node.name,
-      componentType: inferESection(node.kind, node.params),
+      componentLibrary: inferESection(node.kind, node.params),
       terminalCount: node.terminals.length
     }
   };

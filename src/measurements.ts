@@ -359,8 +359,8 @@ function fallbackMeasurementProfileKinds(kind: string): string[] {
 function measurementProfileForNode(node: ModelNode, config: PlatformMeasurementConfig): DeviceMeasurementProfile | undefined {
   const kind = node.kind;
   const baseKind = baseDeviceKind(kind);
-  const componentType = inferESection(node.kind, node.params);
-  const directKeys = Array.from(new Set([componentType, kind, baseKind].filter(Boolean)));
+  const componentLibrary = inferESection(node.kind, node.params);
+  const directKeys = Array.from(new Set([componentLibrary, kind, baseKind].filter(Boolean)));
   return directKeys.flatMap((profileKind) => config.deviceProfiles.find((profile) => profile.deviceKind === profileKind) ?? [])[0] ??
     fallbackMeasurementProfileKinds(baseKind).flatMap((profileKind) => config.deviceProfiles.find((profile) => profile.deviceKind === profileKind) ?? [])[0];
 }

@@ -84,8 +84,8 @@ const ENDPOINTS = [
   { group: "配置", method: "GET", path: "/api/device-library", desc: "图元库配置", response: "{ok:true,...deviceLibrary}", examples: [
     { label: "当前图元库配置", params: {} }
   ]},
-  { group: "配置", method: "PUT", path: "/api/device-library", desc: "保存图元库配置", body: { customComponentTypes: [], customAttributeLibraries: [] }, response: "{ok:true,...deviceLibrary}", examples: [
-    { label: "清空自定义图元", params: { __body__: { customComponentTypes: [], customAttributeLibraries: [], customDeviceTemplates: [], customGraphTemplates: [], customGraphTemplateTypes: [], deviceDefinitionOverrides: {} } } }
+  { group: "配置", method: "PUT", path: "/api/device-library", desc: "保存图元库配置", body: { customComponentLibraries: [], customCategoryLibraries: [] }, response: "{ok:true,...deviceLibrary}", examples: [
+    { label: "清空自定义图元", params: { __body__: { customComponentLibraries: [], customCategoryLibraries: [], customDeviceTemplates: [], customGraphTemplates: [], customGraphTemplateTypes: [], deviceDefinitionOverrides: {} } } }
   ]},
 
   // ---- v1 方案域（第三方只读）----
@@ -119,13 +119,13 @@ const ENDPOINTS = [
   { group: "v1 图元库域", method: "GET", path: "/api/v1/library/categories", desc: "图元分类树", response: "{ok:true,data:{categories:[{id,name}]}}", examples: [
     { label: "分类树", params: {} }
   ]},
-  { group: "v1 图元库域", method: "GET", path: "/api/v1/library/devices", desc: "各类图元信息", response: "{ok:true,data:{eSections,staticComponentTypes,customComponentTypes}}", examples: [
+  { group: "v1 图元库域", method: "GET", path: "/api/v1/library/devices", desc: "各类图元信息", response: "{ok:true,data:{eSections,staticComponentLibraries,customComponentLibraries}}", examples: [
     { label: "图元信息", params: {} }
   ]},
   { group: "v1 图元库域", method: "GET", path: "/api/v1/library/measurements", desc: "量测定义", response: "{ok:true,data:{measurementTypes,deviceProfiles}}", examples: [
     { label: "量测定义", params: {} }
   ]},
-  { group: "v1 图元库域", method: "GET", path: "/api/v1/library/device-definitions", desc: "图元定义", response: "{ok:true,data:{deviceDefinitionOverrides,customComponentTypes,customAttributeLibraries}}", examples: [
+  { group: "v1 图元库域", method: "GET", path: "/api/v1/library/device-definitions", desc: "图元定义", response: "{ok:true,data:{deviceDefinitionOverrides,customComponentLibraries,customCategoryLibraries}}", examples: [
     { label: "图元定义", params: {} }
   ]},
   { group: "v1 图元库域", method: "GET", path: "/api/v1/library/templates", desc: "模板库", response: "{ok:true,data:{customDeviceTemplates,customGraphTemplates,customGraphTemplateTypes}}", examples: [
@@ -196,9 +196,9 @@ const ENDPOINTS = [
     { label: "保存当前模型", params: { __body__: { scope: "currentModel" } } },
     { label: "保存方案树", params: { __body__: { scope: "schemeTree" } } }
   ]},
-  { group: "控制台", method: "POST", path: "/api/v1/control/template/saveFromSelection", desc: "从选中组合保存为模板（自动推导端子+图标，不经草稿对话框）", query: [{ name: "clientId", desc: "可选" }], body: { name: "新模板", componentType: "custom_device" }, response: "{ok:true,data:{templateKind}}", examples: [
-    { label: "保存选中组合为模板", params: { __body__: { name: "组合模板", componentType: "combined_device" } } },
-    { label: "指定属性库", params: { __body__: { name: "直流模板", componentType: "dc_device", attributeLibraryName: "直流设备" } } }
+  { group: "控制台", method: "POST", path: "/api/v1/control/template/saveFromSelection", desc: "从选中组合保存为模板（自动推导端子+图标，不经草稿对话框）", query: [{ name: "clientId", desc: "可选" }], body: { name: "新模板", componentLibrary: "custom_device" }, response: "{ok:true,data:{templateKind}}", examples: [
+    { label: "保存选中组合为模板", params: { __body__: { name: "组合模板", componentLibrary: "combined_device" } } },
+    { label: "指定类别库", params: { __body__: { name: "直流模板", componentLibrary: "dc_device", categoryLibraryName: "直流设备" } } }
   ]}
 ];
 

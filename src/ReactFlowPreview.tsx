@@ -87,7 +87,7 @@ function ModelDevicePreviewNode({ data, selected }: NodeProps<ReactFlowModelNode
       <div className={`react-flow-device-node ${selected ? "selected" : ""}`} title={data.name}>
         <Handle type="target" position={Position.Left} className="react-flow-preview-handle" />
         <Handle type="source" position={Position.Right} className="react-flow-preview-handle" />
-        <div className="react-flow-device-node-kind">{data.componentType || data.kind}</div>
+        <div className="react-flow-device-node-kind">{data.componentLibrary || data.kind}</div>
         <div className="react-flow-device-node-name">{data.name}</div>
         <div className="react-flow-device-node-meta">{data.kind} · {data.terminalCount}端子</div>
       </div>

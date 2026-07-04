@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   saveDeviceTemplate,
   getDeviceTemplate,
-  queryTemplatesByAttributeLibrary,
+  queryTemplatesByCategoryLibrary,
   getAllCustomTemplates,
   deleteDeviceTemplate,
   saveGraphTemplate,
@@ -42,7 +42,7 @@ describe("deviceLibraryStorage", () => {
     const mockTemplate: DeviceTemplate = {
       kind: "test-device",
       label: "测试设备",
-      attributeLibrary: "交流设备",
+      categoryLibrary: "交流设备",
       size: { width: 100, height: 80 },
       params: { param1: "value1" },
       terminalType: "ac",
@@ -57,19 +57,19 @@ describe("deviceLibraryStorage", () => {
       expect(retrieved).not.toBeNull();
       expect(retrieved?.kind).toBe("test-device");
       expect(retrieved?.label).toBe("测试设备");
-      expect(retrieved?.attributeLibrary).toBe("交流设备");
+      expect(retrieved?.categoryLibrary).toBe("交流设备");
     });
 
-    it("应该按属性库查询设备模板", async () => {
-      const template1: DeviceTemplate = { ...mockTemplate, kind: "device-1", attributeLibrary: "交流设备" };
-      const template2: DeviceTemplate = { ...mockTemplate, kind: "device-2", attributeLibrary: "直流设备" };
-      const template3: DeviceTemplate = { ...mockTemplate, kind: "device-3", attributeLibrary: "交流设备" };
+    it("应该按类别库查询设备模板", async () => {
+      const template1: DeviceTemplate = { ...mockTemplate, kind: "device-1", categoryLibrary: "交流设备" };
+      const template2: DeviceTemplate = { ...mockTemplate, kind: "device-2", categoryLibrary: "直流设备" };
+      const template3: DeviceTemplate = { ...mockTemplate, kind: "device-3", categoryLibrary: "交流设备" };
 
       await saveDeviceTemplate(template1);
       await saveDeviceTemplate(template2);
       await saveDeviceTemplate(template3);
 
-      const acTemplates = await queryTemplatesByAttributeLibrary("交流设备");
+      const acTemplates = await queryTemplatesByCategoryLibrary("交流设备");
       expect(acTemplates).toHaveLength(2);
       expect(acTemplates.map(t => t.kind).sort()).toEqual(["device-1", "device-3"]);
     });
@@ -238,7 +238,7 @@ describe("deviceLibraryStorage", () => {
       await saveDeviceTemplate({
         kind: "test",
         label: "测试",
-        attributeLibrary: "交流设备",
+        categoryLibrary: "交流设备",
         size: { width: 100, height: 80 },
         params: {},
         terminalType: "ac",

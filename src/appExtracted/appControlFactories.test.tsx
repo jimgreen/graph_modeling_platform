@@ -629,17 +629,17 @@ function createSaveTemplateMockScope() {
       cloneGraphTemplateClipboard: (c: any) => c,
       createGroupDeviceIconSvg: () => "data:image/svg+xml;base64,xxx",
       customDeviceTemplates: [],
-      defaultComponentTypeForAttributeLibrary: () => "default_type",
+      defaultComponentLibraryForCategoryLibrary: () => "default_type",
       edges,
       groupDeviceExternalTerminals: () => [
         { type: "ac", anchor: { x: 0, y: 0 }, association: "ac-source", label: "端子1" },
         { type: "ac", anchor: { x: 100, y: 0 }, association: "ac-load", label: "端子2" }
       ],
       groupExpandedCanvasSelection: { nodeIds: ["n1", "n2"], edgeIds: [] },
-      isValidComponentTypeName: (s: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(s),
+      isValidComponentLibraryName: (s: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(s),
       nextCustomTemplateKind: (ct: string) => `custom-${ct}-1`,
-      normalizeAttributeLibraryName: (s: string) => s || "交流设备",
-      normalizeComponentTypeName: (s: string) => s,
+      normalizeCategoryLibraryName: (s: string) => s || "交流设备",
+      normalizeComponentLibraryName: (s: string) => s,
       normalizeContainerTerminalAssociations: (types: string[], assocs: string[]) => assocs,
       persistDeviceLibraryChange: () => { calls.persisted = true; },
       routedEdges: [],
@@ -656,7 +656,7 @@ describe("programmaticSaveSelectionAsTemplate", () => {
   test("合法参数 → 返回 templateKind + 持久化", () => {
     const { scope, calls } = createSaveTemplateMockScope();
     const save = createProgrammaticSaveSelectionAsTemplate(scope);
-    const result = save({ name: "测试模板", componentType: "test_device" });
+    const result = save({ name: "测试模板", componentLibrary: "test_device" });
     expect(result.templateKind).toBe("custom-test_device-1");
     expect(calls.persisted).toBe(true);
     expect(calls.templatesSet).not.toBeNull();
@@ -667,31 +667,31 @@ describe("programmaticSaveSelectionAsTemplate", () => {
   test("缺 name 抛 bad-request", () => {
     const { scope } = createSaveTemplateMockScope();
     const save = createProgrammaticSaveSelectionAsTemplate(scope);
-    expect(() => save({ name: "", componentType: "test" })).toThrow(/name 必填/);
+    expect(() => save({ name: "", componentLibrary: "test" })).toThrow(/name 必填/);
     try {
-      save({ name: "", componentType: "test" });
+      save({ name: "", componentLibrary: "test" });
     } catch (e: any) {
       expect(e.code).toBe("bad-request");
     }
   });
 
-  test("缺 componentType 抛 bad-request", () => {
+  test("缺 componentLibrary 抛 bad-request", () => {
     const { scope } = createSaveTemplateMockScope();
     const save = createProgrammaticSaveSelectionAsTemplate(scope);
-    expect(() => save({ name: "模板", componentType: "" })).toThrow(/componentType 必填/);
+    expect(() => save({ name: "模板", componentLibrary: "" })).toThrow(/componentLibrary 必填/);
     try {
-      save({ name: "模板", componentType: "" });
+      save({ name: "模板", componentLibrary: "" });
     } catch (e: any) {
       expect(e.code).toBe("bad-request");
     }
   });
 
-  test("非法 componentType 抛 bad-request", () => {
+  test("非法 componentLibrary 抛 bad-request", () => {
     const { scope } = createSaveTemplateMockScope();
     const save = createProgrammaticSaveSelectionAsTemplate(scope);
-    expect(() => save({ name: "模板", componentType: "123invalid" })).toThrow(/合法英文名称/);
+    expect(() => save({ name: "模板", componentLibrary: "123invalid" })).toThrow(/合法英文名称/);
     try {
-      save({ name: "模板", componentType: "123invalid" });
+      save({ name: "模板", componentLibrary: "123invalid" });
     } catch (e: any) {
       expect(e.code).toBe("bad-request");
     }
@@ -701,9 +701,9 @@ describe("programmaticSaveSelectionAsTemplate", () => {
     const { scope } = createSaveTemplateMockScope();
     scope.canAddTemplateFromSelection = false;
     const save = createProgrammaticSaveSelectionAsTemplate(scope);
-    expect(() => save({ name: "模板", componentType: "test" })).toThrow(/选中一个图元组合/);
+    expect(() => save({ name: "模板", componentLibrary: "test" })).toThrow(/选中一个图元组合/);
     try {
-      save({ name: "模板", componentType: "test" });
+      save({ name: "模板", componentLibrary: "test" });
     } catch (e: any) {
       expect(e.code).toBe("control-failed");
     }

@@ -49,7 +49,7 @@ describe("双写过渡层集成测试", () => {
         {
           kind: "test-device",
           label: "测试设备",
-          attributeLibrary: "交流设备",
+          categoryLibrary: "交流设备",
           size: { width: 100, height: 80 },
           params: { param1: "value1" },
           terminalType: "ac",
@@ -57,8 +57,8 @@ describe("双写过渡层集成测试", () => {
           custom: true
         }
       ],
-      customAttributeLibraries: [],
-      customComponentTypes: [],
+      customCategoryLibraries: [],
+      customComponentLibraries: [],
       deviceDefinitionOverrides: {},
       customGraphTemplateTypes: [],
       customGraphTemplates: []
@@ -90,7 +90,7 @@ describe("双写过渡层集成测试", () => {
         {
           kind: "test-device",
           label: "测试设备",
-          attributeLibrary: "交流设备",
+          categoryLibrary: "交流设备",
           size: { width: 100, height: 80 },
           params: {},
           terminalType: "ac",
@@ -98,8 +98,8 @@ describe("双写过渡层集成测试", () => {
           custom: true
         }
       ],
-      customAttributeLibraries: [],
-      customComponentTypes: [],
+      customCategoryLibraries: [],
+      customComponentLibraries: [],
       deviceDefinitionOverrides: {},
       customGraphTemplateTypes: [],
       customGraphTemplates: []
@@ -119,8 +119,8 @@ describe("双写过渡层集成测试", () => {
   it("应该处理图元模板的双写", async () => {
     const payload: DeviceLibraryPersistencePayload = {
       customDeviceTemplates: [],
-      customAttributeLibraries: [],
-      customComponentTypes: [],
+      customCategoryLibraries: [],
+      customComponentLibraries: [],
       deviceDefinitionOverrides: {},
       customGraphTemplateTypes: [],
       customGraphTemplates: [
@@ -149,8 +149,8 @@ describe("双写过渡层集成测试", () => {
   it("应该处理设备定义覆盖的双写", async () => {
     const payload: DeviceLibraryPersistencePayload = {
       customDeviceTemplates: [],
-      customAttributeLibraries: [],
-      customComponentTypes: [],
+      customCategoryLibraries: [],
+      customComponentLibraries: [],
       deviceDefinitionOverrides: {
         "device-1": {
           kind: "device-1",

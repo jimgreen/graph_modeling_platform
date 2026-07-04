@@ -46,8 +46,8 @@ const defaultPowerUnit = "MW";
 const defaultVoltageUnit = "kV";
 const defaultCurrentUnit = "A";
 const defaultPowerBaseValue = 100;
-const defaultStaticComponentType = "StaticBasicShape";
-export const staticComponentTypeByKind = {
+const defaultStaticComponentLibrary = "StaticBasicShape";
+export const staticComponentLibraryByKind = {
   "static-text": "StaticTextSymbol",
   "static-date": "StaticTextSymbol",
   "static-time": "StaticTextSymbol",
@@ -93,8 +93,8 @@ export const staticComponentTypeByKind = {
   "static-callout": "StaticAnnotationSymbol",
   "static-edge-label": "StaticAnnotationSymbol"
 };
-function staticComponentTypeForKind(kind) {
-  return staticComponentTypeByKind[String(kind ?? "")] ?? defaultStaticComponentType;
+function staticComponentLibraryForKind(kind) {
+  return staticComponentLibraryByKind[String(kind ?? "")] ?? defaultStaticComponentLibrary;
 }
 export const eSectionColumns = {
   StaticTextSymbol: [],
@@ -611,9 +611,29 @@ async function writeMeasurementConfig(config) {
 
 function normalizeDeviceLibraryConfig(payload) {
   const source = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
-  const customDeviceTemplates = Array.isArray(source.customDeviceTemplates) ? source.customDeviceTemplates : [];
-  const customAttributeLibraries = Array.isArray(source.customAttributeLibraries) ? source.customAttributeLibraries : [];
-  const customComponentTypes = Array.isArray(source.customComponentTypes) ? source.customComponentTypes : [];
+  const customDeviceTemplates = (Array.isArray(source.customDeviceTemplates) ? source.customDeviceTemplates : [])
+    .map((template) => template && typeof template === "object" && !Array.isArray(template)
+      ? {
+        ...template,
+        categoryLibrary: template.categoryLibrary ?? template.attributeLibrary ?? "交流设备"
+      }
+      : template);
+  const customCategoryLibraries = Array.isArray(source.customCategoryLibraries)
+    ? source.customCategoryLibraries
+    : Array.isArray(source.customAttributeLibraries)
+      ? source.customAttributeLibraries
+      : [];
+  const customComponentLibraries = (Array.isArray(source.customComponentLibraries)
+    ? source.customComponentLibraries
+    : Array.isArray(source.customComponentTypes)
+      ? source.customComponentTypes
+      : [])
+    .map((definition) => definition && typeof definition === "object" && !Array.isArray(definition)
+      ? {
+        ...definition,
+        categoryLibraryName: definition.categoryLibraryName ?? definition.attributeLibraryName ?? "交流设备"
+      }
+      : definition);
   const customGraphTemplateTypes = Array.isArray(source.customGraphTemplateTypes) ? source.customGraphTemplateTypes : [];
   const customGraphTemplates = Array.isArray(source.customGraphTemplates) ? source.customGraphTemplates : [];
   const deviceDefinitionOverrides =
@@ -622,8 +642,8 @@ function normalizeDeviceLibraryConfig(payload) {
       : {};
   return {
     customDeviceTemplates,
-    customAttributeLibraries,
-    customComponentTypes,
+    customCategoryLibraries,
+    customComponentLibraries,
     customGraphTemplateTypes,
     customGraphTemplates,
     deviceDefinitionOverrides
@@ -932,8 +952,8 @@ function inferESection(kind, params = {}) {
   if (kind === "ac-bus") return "ACRealBs";
   if (kind === "dc-bus") return "DCRealBs";
   if (isStaticKind(kind)) {
-    const componentType = String(params.component_type ?? "").trim();
-    return componentType && componentType !== "StaticSymbol" ? componentType : staticComponentTypeForKind(kind);
+    const componentLibrary = String(params.component_type ?? "").trim();
+    return componentLibrary && componentLibrary !== "StaticSymbol" ? componentLibrary : staticComponentLibraryForKind(kind);
   }
   if (params.component_type && eSectionColumns[params.component_type]) return params.component_type;
   if (kind === "ac-line") return "ACBranch";

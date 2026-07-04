@@ -214,7 +214,7 @@ describe("measurement domain", () => {
     expect(group?.items[0].sourcePoint).toBe("node-1.activePower");
   });
 
-  test("uses component type measurement profiles for concrete device templates", () => {
+  test("uses component library measurement profiles for concrete device templates", () => {
     const dcLineNode = node("line-1", "dc-routable-line");
     dcLineNode.params = { component_type: "DCBranch" };
     dcLineNode.terminals = [

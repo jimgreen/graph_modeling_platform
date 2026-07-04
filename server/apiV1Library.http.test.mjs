@@ -70,8 +70,8 @@ describe("/api/v1/library HTTP 路由", () => {
     const { status, json } = await fetchV1("/api/v1/library/device-definitions");
     expect(status).toBe(200);
     expect(json.data).toHaveProperty("deviceDefinitionOverrides");
-    expect(json.data).toHaveProperty("customComponentTypes");
-    expect(json.data).toHaveProperty("customAttributeLibraries");
+    expect(json.data).toHaveProperty("customComponentLibraries");
+    expect(json.data).toHaveProperty("customCategoryLibraries");
   });
 
   test("/api/v1/library/templates 返模板库", async () => {

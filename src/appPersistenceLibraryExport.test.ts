@@ -3,14 +3,15 @@ import { Children, isValidElement, type ReactElement, type ReactNode } from "rea
 import { describe, expect, test } from "vitest";
 import {
   createLibraryPackage,
-  defaultAttributeLibraryForComponentType,
+  defaultCategoryLibraryForComponentLibrary,
   deviceLibraryPayloadForPackageScope,
   filterGraphTemplatesByType,
   graphTemplateTypeList,
   groupGraphTemplatesByType,
-  isBuiltInAttributeLibrary,
+  isBuiltInCategoryLibrary,
   normalizeLibraryPackage,
-  selectableAttributeLibraryList,
+  normalizeDeviceLibraryPersistencePayload,
+  selectableCategoryLibraryList,
   normalizeCustomDeviceTemplates,
   renderEnumValuesEditor
 } from "./appExtracted/appPersistenceLibraryExport";
@@ -48,7 +49,7 @@ describe("graph template library filtering", () => {
         {
           kind: "custom-pump",
           label: "Custom Pump",
-          attributeLibrary: "交流设备",
+          categoryLibrary: "交流设备",
           size: { width: 80, height: 48 },
           params: { component_type: "CustomPump" },
           terminalType: "ac",
@@ -56,8 +57,8 @@ describe("graph template library filtering", () => {
           custom: true
         }
       ],
-      customAttributeLibraries: ["用户库"],
-      customComponentTypes: [{ name: "CustomPump", attributeLibraryName: "用户库" }],
+      customCategoryLibraries: ["用户库"],
+      customComponentLibraries: [{ name: "CustomPump", categoryLibraryName: "用户库" }],
       deviceDefinitionOverrides: {
         "ac-load": {
           kind: "ac-load",
@@ -89,8 +90,8 @@ describe("graph template library filtering", () => {
     expect(devicePackage.deviceLibrary?.customGraphTemplateTypes).toEqual([]);
 
     expect(templatePackage.deviceLibrary?.customDeviceTemplates).toEqual([]);
-    expect(templatePackage.deviceLibrary?.customAttributeLibraries).toEqual([]);
-    expect(templatePackage.deviceLibrary?.customComponentTypes).toEqual([]);
+    expect(templatePackage.deviceLibrary?.customCategoryLibraries).toEqual([]);
+    expect(templatePackage.deviceLibrary?.customComponentLibraries).toEqual([]);
     expect(templatePackage.deviceLibrary?.deviceDefinitionOverrides).toEqual({});
     expect(templatePackage.deviceLibrary?.customGraphTemplateTypes).toEqual(["组合模板"]);
     expect(templatePackage.deviceLibrary?.customGraphTemplates).toHaveLength(1);
@@ -122,7 +123,7 @@ describe("graph template library filtering", () => {
         {
           kind: "old-device",
           label: "Old",
-          attributeLibrary: "交流设备",
+          categoryLibrary: "交流设备",
           size: { width: 50, height: 30 },
           params: { component_type: "OldDevice" },
           terminalType: "ac",
@@ -130,16 +131,16 @@ describe("graph template library filtering", () => {
           custom: true
         }
       ],
-      customAttributeLibraries: ["旧库"],
-      customComponentTypes: [{ name: "OldDevice", attributeLibraryName: "旧库" }],
+      customCategoryLibraries: ["旧库"],
+      customComponentLibraries: [{ name: "OldDevice", categoryLibraryName: "旧库" }],
       deviceDefinitionOverrides: { "old-device": { kind: "old-device", size: { width: 50, height: 30 } } },
       customGraphTemplateTypes: ["旧模板"],
       customGraphTemplates: [sampleGraphTemplate("old-template", "旧模板", "旧组合")]
     };
     const imported = {
       customDeviceTemplates: [],
-      customAttributeLibraries: [],
-      customComponentTypes: [],
+      customCategoryLibraries: [],
+      customComponentLibraries: [],
       deviceDefinitionOverrides: {},
       customGraphTemplateTypes: ["新模板"],
       customGraphTemplates: [sampleGraphTemplate("new-template", "新模板", "新组合")]
@@ -148,9 +149,40 @@ describe("graph template library filtering", () => {
     const merged = deviceLibraryPayloadForPackageScope(current as any, imported as any, "template-library");
 
     expect(merged.customDeviceTemplates).toHaveLength(1);
-    expect(merged.customAttributeLibraries).toEqual(["旧库"]);
+    expect(merged.customCategoryLibraries).toEqual(["旧库"]);
     expect(merged.customGraphTemplateTypes).toEqual(["新模板"]);
     expect(merged.customGraphTemplates[0].id).toBe("new-template");
+  });
+
+  test("normalizes legacy device library names to category and component libraries", () => {
+    const normalized = normalizeDeviceLibraryPersistencePayload({
+      customDeviceTemplates: [
+        {
+          kind: "legacy-meter",
+          label: "Legacy Meter",
+          attributeLibrary: "用户旧库",
+          size: { width: 80, height: 48 },
+          params: { componentType: "LegacyMeter" },
+          terminalType: "ac",
+          terminalCount: 2,
+          custom: true
+        }
+      ],
+      customAttributeLibraries: ["用户旧库"],
+      customComponentTypes: [{ name: "LegacyMeter", attributeLibraryName: "用户旧库" }],
+      deviceDefinitionOverrides: {},
+      customGraphTemplateTypes: [],
+      customGraphTemplates: []
+    });
+
+    expect(normalized.customCategoryLibraries).toEqual(["用户旧库"]);
+    expect(normalized.customComponentLibraries).toEqual([{ name: "LegacyMeter", categoryLibraryName: "用户旧库" }]);
+    expect(normalized.customDeviceTemplates[0]).toMatchObject({
+      kind: "legacy-meter",
+      categoryLibrary: "用户旧库",
+      params: { component_type: "LegacyMeter" }
+    });
+    expect("attributeLibrary" in normalized.customDeviceTemplates[0]).toBe(false);
   });
 
   test("creates icon library packages with only user imported assets", () => {
@@ -210,7 +242,7 @@ describe("graph template library filtering", () => {
           {
             kind: "custom-meter",
             label: "Custom Meter",
-            attributeLibrary: "交流设备",
+            categoryLibrary: "交流设备",
             size: { width: 80, height: 48 },
             params: { component_type: "CustomMeter" },
             terminalType: "ac",
@@ -218,8 +250,8 @@ describe("graph template library filtering", () => {
             custom: true
           }
         ],
-        customAttributeLibraries: ["用户库"],
-        customComponentTypes: [{ name: "CustomMeter", attributeLibraryName: "用户库" }],
+        customCategoryLibraries: ["用户库"],
+        customComponentLibraries: [{ name: "CustomMeter", categoryLibraryName: "用户库" }],
         deviceDefinitionOverrides: { "custom-meter": { kind: "custom-meter", size: { width: 96, height: 48 } } },
         customGraphTemplateTypes: ["不应导出的模板类型"],
         customGraphTemplates: [sampleGraphTemplate("template-hidden", "不应导出的模板类型", "不应导出的模板")]
@@ -248,8 +280,8 @@ describe("graph template library filtering", () => {
 
     const current = {
       customDeviceTemplates: [],
-      customAttributeLibraries: [],
-      customComponentTypes: [],
+      customCategoryLibraries: [],
+      customComponentLibraries: [],
       deviceDefinitionOverrides: {},
       customGraphTemplateTypes: ["保留模板类型"],
       customGraphTemplates: [sampleGraphTemplate("template-kept", "保留模板类型", "保留模板")]
@@ -261,18 +293,18 @@ describe("graph template library filtering", () => {
     expect(merged.customGraphTemplates[0].id).toBe("template-kept");
   });
 
-  test("includes the static graphic built-in library in selectable attribute libraries", () => {
-    expect(selectableAttributeLibraryList(["交流设备", "自定义库"], ["用户属性库"])).toEqual([
+  test("includes the static graphic built-in library in selectable category libraries", () => {
+    expect(selectableCategoryLibraryList(["交流设备", "自定义库"], ["用户类别库"])).toEqual([
       "静态图元",
       "交流设备",
       "直流设备",
       "氢能设备",
       "热能设备",
-      "用户属性库",
+      "用户类别库",
       "自定义库"
     ]);
-    expect(isBuiltInAttributeLibrary("静态图元")).toBe(true);
-    expect(defaultAttributeLibraryForComponentType("StaticButton")).toBe("静态图元");
+    expect(isBuiltInCategoryLibrary("静态图元")).toBe(true);
+    expect(defaultCategoryLibraryForComponentLibrary("StaticButton")).toBe("静态图元");
   });
 
   test("filters template groups by type name or template name", () => {
@@ -427,7 +459,7 @@ describe("graph template library filtering", () => {
       {
         kind: "custom-existing",
         label: "Existing",
-        attributeLibrary: "交流设备",
+        categoryLibrary: "交流设备",
         size: { width: 104, height: 64 },
         params: {
           component_type: "Existing",

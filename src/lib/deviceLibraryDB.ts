@@ -10,7 +10,7 @@ import type { DeviceTemplate, DeviceTemplateDefinitionOverride } from "../model"
 import type { GraphTemplate } from "../appExtracted/appCoreCanvasUtilities";
 
 const DB_NAME = "device-library";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 /**
  * IndexedDB Schema 定义
@@ -32,9 +32,15 @@ export async function initDeviceLibraryDB(): Promise<IDBPDatabase<DeviceLibraryD
           keyPath: "kind",
           autoIncrement: false
         });
-        templateStore.createIndex("attributeLibrary", "attributeLibrary", { unique: false });
+        templateStore.createIndex("categoryLibrary", "categoryLibrary", { unique: false });
         templateStore.createIndex("custom", "custom", { unique: false });
         templateStore.createIndex("updatedAt", "updatedAt", { unique: false });
+      }
+      if (db.objectStoreNames.contains("templates")) {
+        const templateStore = transaction.objectStore("templates");
+        if (!templateStore.indexNames.contains("categoryLibrary")) {
+          templateStore.createIndex("categoryLibrary", "categoryLibrary", { unique: false });
+        }
       }
 
       // 2. 设备图片（Blob 分离存储）
@@ -63,7 +69,13 @@ export async function initDeviceLibraryDB(): Promise<IDBPDatabase<DeviceLibraryD
           keyPath: "kind",
           autoIncrement: false
         });
-        overrideStore.createIndex("attributeLibrary", "attributeLibrary", { unique: false });
+        overrideStore.createIndex("categoryLibrary", "categoryLibrary", { unique: false });
+      }
+      if (db.objectStoreNames.contains("overrides")) {
+        const overrideStore = transaction.objectStore("overrides");
+        if (!overrideStore.indexNames.contains("categoryLibrary")) {
+          overrideStore.createIndex("categoryLibrary", "categoryLibrary", { unique: false });
+        }
       }
 
       // 5. 迁移状态

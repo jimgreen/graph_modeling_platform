@@ -1378,10 +1378,10 @@ export function createClearLibraryFlyoutCloseTimer(__appScope: Record<string, an
 
 export function createHideLibraryFlyout(__appScope: Record<string, any>) {
   return () => {
-  const { clearLibraryFlyoutCloseTimer, libraryFlyoutPositionsRef, setHoveredAttributeLibrary, setHoveredAttributeLibraryComponentType, setHoveredGraphTemplateType, setLibraryFlyoutPositions } = __appScope;
+  const { clearLibraryFlyoutCloseTimer, libraryFlyoutPositionsRef, setHoveredCategoryLibrary, setHoveredCategoryLibraryComponentLibrary, setHoveredGraphTemplateType, setLibraryFlyoutPositions } = __appScope;
     clearLibraryFlyoutCloseTimer();
-    setHoveredAttributeLibrary("");
-    setHoveredAttributeLibraryComponentType("");
+    setHoveredCategoryLibrary("");
+    setHoveredCategoryLibraryComponentLibrary("");
     setHoveredGraphTemplateType("");
     if (Object.keys(libraryFlyoutPositionsRef.current).length > 0) {
       setLibraryFlyoutPositions({});
@@ -1390,17 +1390,17 @@ export function createHideLibraryFlyout(__appScope: Record<string, any>) {
 }
 
 export function createScheduleLibraryFlyoutClose(__appScope: Record<string, any>) {
-  return (group: AttributeLibrary, componentTypeKey?: string) => {
-  const { clearLibraryFlyoutCloseTimer, libraryComponentListRefKey, libraryFlyoutCloseTimerRef, setHoveredAttributeLibrary, setHoveredAttributeLibraryComponentType, setLibraryFlyoutPositions } = __appScope;
+  return (group: CategoryLibrary, componentLibraryKey?: string) => {
+  const { clearLibraryFlyoutCloseTimer, libraryComponentListRefKey, libraryFlyoutCloseTimerRef, setHoveredCategoryLibrary, setHoveredCategoryLibraryComponentLibrary, setLibraryFlyoutPositions } = __appScope;
     clearLibraryFlyoutCloseTimer();
     libraryFlyoutCloseTimerRef.current = window.setTimeout(() => {
-      setHoveredAttributeLibrary((current) => current === group ? "" : current);
-      setHoveredAttributeLibraryComponentType((current) => componentTypeKey ? current === componentTypeKey ? "" : current : "");
+      setHoveredCategoryLibrary((current) => current === group ? "" : current);
+      setHoveredCategoryLibraryComponentLibrary((current) => componentLibraryKey ? current === componentLibraryKey ? "" : current : "");
       setLibraryFlyoutPositions((current) => {
-        if (!componentTypeKey) {
+        if (!componentLibraryKey) {
           return Object.keys(current).length > 0 ? {} : current;
         }
-        const key = libraryComponentListRefKey("flyout", componentTypeKey);
+        const key = libraryComponentListRefKey("flyout", componentLibraryKey);
         if (!(key in current)) {
           return current;
         }
@@ -1427,7 +1427,7 @@ export function createLibraryFlyoutStyle(__appScope: Record<string, any>) {
 
 export function createFitLibraryFlyoutsToVisibleArea(__appScope: Record<string, any>) {
   return () => {
-  const { libraryComponentListRefs, libraryComponentTypeHeaderRefs, libraryFlyoutPositionsRef, libraryScrollRef, setLibraryFlyoutPositions } = __appScope;
+  const { libraryComponentListRefs, libraryComponentLibraryHeaderRefs, libraryFlyoutPositionsRef, libraryScrollRef, setLibraryFlyoutPositions } = __appScope;
     const scrollElement = libraryScrollRef.current;
     if (!scrollElement) {
       return;
@@ -1444,7 +1444,7 @@ export function createFitLibraryFlyoutsToVisibleArea(__appScope: Record<string, 
       if (!key.startsWith("flyout:")) {
         return;
       }
-      const headerElement = libraryComponentTypeHeaderRefs.current.get(key);
+      const headerElement = libraryComponentLibraryHeaderRefs.current.get(key);
       if (!headerElement) {
         return;
       }
@@ -1489,32 +1489,32 @@ export function createFitLibraryFlyoutsToVisibleArea(__appScope: Record<string, 
   };
 }
 
-export function createToggleAttributeLibrary(__appScope: Record<string, any>) {
-  return (group: AttributeLibrary) => {
-  const { componentLibraryDisplayMode, setCollapsedExpandedModeAttributeLibraries, setExpandedAttributeLibraries } = __appScope;
+export function createToggleCategoryLibrary(__appScope: Record<string, any>) {
+  return (group: CategoryLibrary) => {
+  const { componentLibraryDisplayMode, setCollapsedExpandedModeCategoryLibraries, setExpandedCategoryLibraries } = __appScope;
     if (componentLibraryDisplayMode === "expanded") {
-      setCollapsedExpandedModeAttributeLibraries((current) =>
+      setCollapsedExpandedModeCategoryLibraries((current) =>
         current.includes(group) ? current.filter((item) => item !== group) : [...current, group]
       );
       return;
     }
-    setExpandedAttributeLibraries((current) =>
+    setExpandedCategoryLibraries((current) =>
       current.includes(group) ? current.filter((item) => item !== group) : [...current, group]
     );
   };
 }
 
-export function createToggleAttributeLibraryComponentType(__appScope: Record<string, any>) {
-  return (attributeLibraryName: string, sectionName: string) => {
-  const { attributeLibraryComponentTypeKey, componentLibraryDisplayMode, setCollapsedExpandedModeComponentTypes, setExpandedAttributeLibraryComponentTypes } = __appScope;
-    const key = attributeLibraryComponentTypeKey(attributeLibraryName, sectionName);
+export function createToggleCategoryLibraryComponentLibrary(__appScope: Record<string, any>) {
+  return (categoryLibraryName: string, sectionName: string) => {
+  const { categoryLibraryComponentLibraryKey, componentLibraryDisplayMode, setCollapsedExpandedModeComponentLibraries, setExpandedCategoryLibraryComponentLibraries } = __appScope;
+    const key = categoryLibraryComponentLibraryKey(categoryLibraryName, sectionName);
     if (componentLibraryDisplayMode === "expanded") {
-      setCollapsedExpandedModeComponentTypes((current) =>
+      setCollapsedExpandedModeComponentLibraries((current) =>
         current.includes(key) ? current.filter((item) => item !== key) : [...current, key]
       );
       return;
     }
-    setExpandedAttributeLibraryComponentTypes((current) =>
+    setExpandedCategoryLibraryComponentLibraries((current) =>
       current.includes(key) ? current.filter((item) => item !== key) : [...current, key]
     );
   };
@@ -1567,7 +1567,7 @@ export function createElementTreeItemChildren(__appScope: Record<string, any>) {
       .map<ElementTreeChildItem>((view) => ({
         id: `${node.id}:${view.id}`,
         label: view.label,
-        componentType: view.componentType ?? "",
+        componentLibrary: view.componentLibrary ?? "",
         idx: view.rows.find((row) => row.key === "idx")?.value ?? "",
         name: view.rows.find((row) => row.key === "name")?.value ?? "",
         nameKey: view.relationKeys?.[0] ? containerRelationNameKey(view.relationKeys[0]) : "",
@@ -3685,7 +3685,7 @@ export function createSyncExistingNodesWithTemplateDefinitions(__appScope: Recor
       const terminalTemplate = {
         kind: node.kind,
         label: node.label,
-        attributeLibrary: "",
+        categoryLibrary: "",
         size: node.size,
         params: node.params,
         terminalType: template.terminalType ?? template.terminalTypes?.[0] ?? node.terminals[0]?.type ?? "ac",

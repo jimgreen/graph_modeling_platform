@@ -24,8 +24,8 @@ import {
   CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION,
   MAX_CUSTOM_DEVICE_TERMINALS,
   PARAM_LABELS,
-  normalizeAttributeLibraryName,
-  normalizeComponentTypeName,
+  normalizeCategoryLibraryName,
+  normalizeComponentLibraryName,
   normalizeDefinitionRows,
   templateResizeTransformValue,
   terminalColor
@@ -35,8 +35,8 @@ import { createDefinitionStateDraftRows, customParamId, deviceDefinitionRowId } 
 import { decodeSvgImageSource, escapeXml, formatSvgNumber } from "./svgUtils";
 import { clampNumber } from "./canvasViewport";
 
-export function fallbackComponentTypeForAttributeLibrary(attributeLibraryName: string) {
-  const normalized = normalizeAttributeLibraryName(attributeLibraryName);
+export function fallbackComponentLibraryForCategoryLibrary(categoryLibraryName: string) {
+  const normalized = normalizeCategoryLibraryName(categoryLibraryName);
   if (normalized.includes("静态")) return "StaticBasicShape";
   if (normalized.includes("直流")) return "DCLoad";
   if (normalized.includes("变流")) return "DCDCConverter";
@@ -45,16 +45,17 @@ export function fallbackComponentTypeForAttributeLibrary(attributeLibraryName: s
   return "ACLoad";
 }
 
-export function resolveTemplateComponentType(template: DeviceTemplate) {
+export function resolveTemplateComponentLibrary(template: DeviceTemplate) {
   const inferred = inferESection(template.kind, template.params);
   if (inferred) {
     return inferred;
   }
-  return fallbackComponentTypeForAttributeLibrary(template.attributeLibrary);
+  const categoryLibrary = template.categoryLibrary ?? (template as DeviceTemplate & { attributeLibrary?: string }).attributeLibrary ?? "交流设备";
+  return fallbackComponentLibraryForCategoryLibrary(categoryLibrary);
 }
 
 export function deviceDefinitionKeyForTemplate(template: DeviceTemplate) {
-  return normalizeComponentTypeName(resolveTemplateComponentType(template)) || template.kind;
+  return normalizeComponentLibraryName(resolveTemplateComponentLibrary(template)) || template.kind;
 }
 
 export function deviceDefinitionOverrideForTemplate(
@@ -120,10 +121,10 @@ export function createDefaultCustomDeviceTerminalAnchors(count: number, sourceAn
   });
 }
 
-export function createEmptyCustomDeviceDraft(attributeLibraryName = "交流设备"): CustomDeviceDraft {
+export function createEmptyCustomDeviceDraft(categoryLibraryName = "交流设备"): CustomDeviceDraft {
   return {
-    attributeLibraryName,
-    componentType: fallbackComponentTypeForAttributeLibrary(attributeLibraryName),
+    categoryLibraryName,
+    componentLibrary: fallbackComponentLibraryForCategoryLibrary(categoryLibraryName),
     componentName: "",
     backgroundImage: "",
     backgroundImageAssetId: "",
@@ -143,9 +144,9 @@ export function createEmptyCustomDeviceDraft(attributeLibraryName = "交流设�
   };
 }
 
-export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, sectionName = resolveTemplateComponentType(template)): CustomDeviceDraft {
-  const attributeLibraryName = normalizeAttributeLibraryName(template.attributeLibrary);
-  const section = normalizeComponentTypeName(sectionName);
+export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, sectionName = resolveTemplateComponentLibrary(template)): CustomDeviceDraft {
+  const categoryLibraryName = normalizeCategoryLibraryName(template.categoryLibrary ?? (template as DeviceTemplate & { attributeLibrary?: string }).attributeLibrary ?? "交流设备");
+  const section = normalizeComponentLibraryName(sectionName);
   const terminalCount = clampNumber(template.terminalCount, 0, MAX_CUSTOM_DEVICE_TERMINALS);
   const terminalTypes = (template.terminalTypes ?? Array.from({ length: template.terminalCount }, () => template.terminalType)).slice(0, MAX_CUSTOM_DEVICE_TERMINALS) as TerminalType[];
   const terminalAssociations = normalizeContainerTerminalAssociations(
@@ -166,8 +167,8 @@ export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, se
     .map((definition) => ({ ...definition, id: customParamId() }));
   const stateRows = createDefinitionStateDraftRows(template);
   return {
-    attributeLibraryName,
-    componentType: section,
+    categoryLibraryName,
+    componentLibrary: section,
     componentName: template.label,
     backgroundImage: template.params.backgroundImage ?? "",
     backgroundImageAssetId: template.params.backgroundImageAssetId ?? "",
@@ -329,11 +330,11 @@ export function customDeviceImageWithTerminalConnectors(
 
 export const customDeviceGeneratedDefaultImageCandidates = (
   componentLabel: string,
-  componentType: string,
+  componentLibrary: string,
   terminalTypes: TerminalType[]
 ) => {
   const safeTerminalTypes = terminalTypes.length > 0 ? terminalTypes : (["ac"] as TerminalType[]);
-  const labels = Array.from(new Set([componentLabel, componentType, "Unit"].map((label) => label.trim()).filter(Boolean)));
+  const labels = Array.from(new Set([componentLabel, componentLibrary, "Unit"].map((label) => label.trim()).filter(Boolean)));
   return new Set(labels.map((label) => generateCustomDeviceImage(label, safeTerminalTypes)));
 };
 

@@ -516,9 +516,9 @@ import { snapSingleTerminalAnchorToNearestSide, projectedProportionalScaleFromHa
 import { DeviceGlyph, MemoDeviceGlyph, SvgMarkupChunk } from "../DeviceGlyph";
 import { buildSvgNodeLabelMarkup, svgDisplayAttribute, exportSvgSafeId, exportSvgLayerId, exportSvgUniqueId, exportSvgLayerScriptMarkup, exportDeviceMetadataAttributes, exportMeasurementGroupMetadataAttributes, exportMeasurementItemMetadataAttributes, exportMeasurementGroupBackgroundColor, exportMeasurementGroupBorderColor, exportMeasurementGroupBorderWidth, exportMeasurementGroupBorderDashArray, exportMeasurementGroupAnchorPoint, exportMeasurementGroupLocalOffset, exportMeasurementGroupMetrics, buildExportMeasurementGroupMarkup } from "../svgExportUtils";
 import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_PAGE_ID, isDefaultStatePageId, createStateDraftRow, createStateDraftRowFromDefaultVisual, createDefinitionStateDraftRows, normalizeStateDraftRows, validateStateDraftRows, stateVisualFromDraftRow, activeStateDraftRow, normalizeStatePageId, stateDraftImageValue, stateVisualShapeLabel, generateStateVisualShapeImage, stateIconDrawingElementId, visibleStateIconColor, createStateIconDrawingElement, createImportedStateIconElement, svgSourceFromDataUrl, parseStateIconSvgSource, stateIconSvgElementSource, parseSvgStyleAttribute, stateIconSvgReactAttributes, stateIconSvgNodeChildren, stateIconSvgNodeToReact, stateIconSvgSourceToReactNodes, createEditableStateIconElementsFromSvgSource, createStateIconDrawingInitialElements, svgSourceToDataUrl, stateIconDrawingSvgElementMarkup, stateIconDrawingElementMarkup, stateIconDrawingToImage, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "../stateIconDrawing";
-import { fallbackComponentTypeForAttributeLibrary, resolveTemplateComponentType, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, isReservedDeviceDefinitionParamName, createDefinitionDraftRows, normalizeCustomDeviceTerminalAnchorCoordinate, projectCustomDeviceTerminalAnchorToBoundary, customDeviceTerminalAnchorKey, hasOverlappingCustomDeviceTerminalAnchors, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, createCustomDeviceDraftFromTemplate, createDefinitionVisualDraft, defaultContainerAssociationForTerminalType, isAssociationAllowedForTerminal, normalizeContainerTerminalAssociations, customDefaultDefinitions, generateCustomDeviceImage, customDeviceImageWithTerminalConnectors, customDeviceGeneratedDefaultImageCandidates, syncInheritedCustomDeviceStateVisuals, parseCustomDefinitions, screenToSvgPoint, primaryOrthogonalAxis, constrainPointToOrthogonalAxis } from "../customDeviceUtils";
+import { fallbackComponentLibraryForCategoryLibrary, resolveTemplateComponentLibrary, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, isReservedDeviceDefinitionParamName, createDefinitionDraftRows, normalizeCustomDeviceTerminalAnchorCoordinate, projectCustomDeviceTerminalAnchorToBoundary, customDeviceTerminalAnchorKey, hasOverlappingCustomDeviceTerminalAnchors, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, createCustomDeviceDraftFromTemplate, createDefinitionVisualDraft, defaultContainerAssociationForTerminalType, isAssociationAllowedForTerminal, normalizeContainerTerminalAssociations, customDefaultDefinitions, generateCustomDeviceImage, customDeviceImageWithTerminalConnectors, customDeviceGeneratedDefaultImageCandidates, syncInheritedCustomDeviceStateVisuals, parseCustomDefinitions, screenToSvgPoint, primaryOrthogonalAxis, constrainPointToOrthogonalAxis } from "../customDeviceUtils";
 import { useBatchEditors } from "../hooks/useBatchEditors";
-import { ENABLE_REACT_FLOW_PREVIEW, ReactFlowPreview, INTERACTION_MODE_STORAGE_KEY, CANVAS_GRAPHIC_CONTEXT_MENU_TARGET_SELECTOR, CANVAS_WHEEL_ZOOM_EXCLUSION_SELECTOR, CANVAS_KEYBOARD_BLOCKING_SELECTOR, CANVAS_KEYBOARD_SURFACE_SELECTOR, normalizeInteractionMode, isCanvasGraphicContextMenuTarget, isCanvasWheelZoomExcludedTarget, canvasWheelTargetIsRenderedCanvas, isCanvasKeyboardBlockingTarget, readStoredInteractionMode, writeStoredInteractionMode, CANVAS_SELECTION_DRAG_THRESHOLD, hasCanvasSelectionModifier, canvasWheelEventHasNoModifier, shouldZoomCanvasFromWheelEvent, isGroupTransformDrag, selectionRectCenter, combineSelectionRects, routeMidpoint, rotatePointAround, snapRotationDeltaToRightAngle, normalizedRotationDelta, transformPointAngle, rotationDeltaFromTransformPoint, rotationDeltaBetweenTransformPoints, rotationTrajectoryArcPath, mirrorPointAcrossAxis, localScaleKindForScreenHandle, groupTransformGeometry, transformGroupPoint, groupTransformSvgTransform, NODE_LABEL_DISPLAY_MODES, CONTEXT_MENU_VIEWPORT_PADDING, CONTEXT_MENU_FALLBACK_WIDTH, CONTEXT_MENU_FALLBACK_HEIGHT, CONTEXT_MENU_SUBMENU_FALLBACK_WIDTH, CONTEXT_MENU_SUBMENU_FALLBACK_HEIGHT, NODE_LABEL_FOOTPRINT_PARAM_KEYS, isMultiNodeMoveState, reuseSetOrCreate, cloneMeasurementGroupForDraft, terminalColor, busEndpointColor, ENERGY_COLOR_ROWS, ELECTRIC_COLOR_TYPES, ELECTRIC_COLOR_TYPE_LABELS, isElectricPaletteType, terminalVbaseFallbackValue, voltageColorKeyForTerminal, DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT, MIN_CANVAS_WIDTH, MIN_CANVAS_HEIGHT, MAX_CANVAS_WIDTH, MAX_CANVAS_HEIGHT, DEFAULT_CANVAS_BACKGROUND, MOVE_BOUNDARY_GUARD, CANVAS_AUTO_EXPAND_PADDING, CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE, CANVAS_RESIZE_HANDLE_SIZE, MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES, ORIGINAL_POSITION_REROUTE_PADDING, MOVE_ROUTE_LOCAL_SEARCH_PADDING, MAX_DEFERRED_MOVE_REPAIR_MOVED_NODES, MAX_DEFERRED_MOVE_REPAIR_CANDIDATE_EDGES, KEYBOARD_MOVE_COMMIT_DELAY_MS, KEYBOARD_MOVE_REPEAT_RATE_PER_SECOND, KEYBOARD_MOVE_FRAME_INTERVAL_MS, ELEMENT_TREE_INITIAL_ITEM_LIMIT, ELEMENT_TREE_ITEM_LIMIT_STEP, TOPOLOGY_WARNING_PAGE_SIZE, CANVAS_MINIMAP_WIDTH, CANVAS_MINIMAP_HEIGHT, CANVAS_MINIMAP_PADDING, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_WIDTH, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH, NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MARGIN, DEVICE_DEFINITION_DIALOG_DEFAULT_WIDTH, DEVICE_DEFINITION_DIALOG_DEFAULT_HEIGHT, CUSTOM_DEVICE_DIALOG_DEFAULT_WIDTH, CUSTOM_DEVICE_DIALOG_DEFAULT_HEIGHT, MEASUREMENT_CONFIG_DIALOG_DEFAULT_WIDTH, MEASUREMENT_CONFIG_DIALOG_DEFAULT_HEIGHT, DEVICE_LIBRARY_DIALOG_MIN_WIDTH, DEVICE_LIBRARY_DIALOG_MIN_HEIGHT, DEVICE_LIBRARY_DIALOG_MARGIN, DEVICE_LIBRARY_DIALOG_CONFIG, TOPOLOGY_WARNING_PANEL_DEFAULT_WIDTH, TOPOLOGY_WARNING_PANEL_MIN_WIDTH, TOPOLOGY_WARNING_PANEL_MAX_WIDTH, TOPOLOGY_WARNING_PANEL_MARGIN, CANVAS_MINIMAP_MAX_NODE_MARKS, CANVAS_MINIMAP_MAX_ROUTE_MARKS, CANVAS_MINIMAP_DEFER_SAMPLE_THRESHOLD, FIT_SELECTION_MAX_ZOOM_PERCENT, TERMINAL_OVERLAP_DEFER_NODE_THRESHOLD, CANVAS_LOD_NODE_DETAIL_LIMIT, CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT, CANVAS_LOD_MAX_ZOOM_PERCENT, CANVAS_LOD_MAX_NODE_SCREEN_SIZE, CANVAS_LOD_NODE_SCREEN_SAMPLE_LIMIT, CANVAS_LOD_SELECTED_DETAIL_LIMIT, CANVAS_LOD_MARKUP_CHUNK_SIZE, CANVAS_INITIAL_LOD_DETAIL_CHUNK_SIZE, CANVAS_INITIAL_LOD_FIRST_DETAIL_DELAY_MS, CANVAS_INITIAL_LOD_NEXT_DETAIL_DELAY_MS, CONNECTION_HIT_SCREEN_TOLERANCE, CANVAS_MULTI_NODE_DRAG_OVERLAY_DETAIL_LIMIT, CANVAS_MULTI_NODE_DRAG_PREVIEW_EDGE_LIMIT, CANVAS_MULTI_NODE_DRAG_SNAP_NODE_LIMIT, CANVAS_BULK_MOVE_EDGE_THRESHOLD, ROUTE_BULK_TRANSLATE_REBUILD_THRESHOLD, BULK_MOVE_PERF_LOG_THRESHOLD_MS, SMART_ALIGNMENT_SNAP_SCREEN_TOLERANCE, SMART_ALIGNMENT_GUIDE_PADDING, CANVAS_SINGLE_NODE_DRAG_PREVIEW_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_SNAP_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_SYNC_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_PREVIEW_PADDING, CANVAS_FLOATING_TOOLBAR_GAP, NODE_FLOATING_TOOLBAR_WIDTH, NODE_FLOATING_TOOLBAR_HEIGHT, EDGE_FLOATING_TOOLBAR_WIDTH, EDGE_FLOATING_TOOLBAR_HEIGHT, CONTEXT_MENU_AUTO_HIDE_MARGIN, TRANSFORM_ROTATE_STEM_START, TRANSFORM_ROTATE_STEM_END, TRANSFORM_ROTATE_HANDLE_GAP, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, DEFAULT_CURRENT_UNIT, DEFAULT_POWER_BASE_VALUE, EMPTY_TOPOLOGY, INITIAL_TOPOLOGY_STATUS, E_SECTION_OPTIONS, COMPONENT_TYPE_LABELS, SCALE_HANDLE_CONFIGS, GROUP_SCALE_HANDLE_CONFIGS, POWER_UNIT_OPTIONS, VOLTAGE_UNIT_OPTIONS, CURRENT_UNIT_OPTIONS, DEFAULT_ATTRIBUTE_LIBRARIES, CUSTOM_ATTRIBUTE_LIBRARY_BASES, PROTECTED_ATTRIBUTE_LIBRARIES, DEVICE_TYPE_NAME_PATTERN, MAX_CUSTOM_DEVICE_TERMINALS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_SNAP_SCREEN_TOLERANCE, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, CUSTOM_DEVICE_TERMINAL_PREVIEW_OUTWARD_OFFSET, CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN, TERMINAL_TYPE_OPTIONS, CONTAINER_TERMINAL_ASSOCIATION_OPTIONS, PARAM_VALUE_TYPE_OPTIONS, PROJECT_PANEL_MIN_HEIGHT, PROJECT_PANEL_MAX_HEIGHT, PROJECT_PANEL_DEFAULT_HEIGHT, LEFT_PANEL_DEFAULT_WIDTH, RIGHT_PANEL_DEFAULT_WIDTH, SIDE_PANEL_MIN_WIDTH, SIDE_PANEL_MAX_WIDTH, STATUSBAR_DEFAULT_HEIGHT, STATUSBAR_MIN_HEIGHT, STATUSBAR_MAX_HEIGHT, VALIDATION_PANEL_DEFAULT_HEIGHT, VALIDATION_PANEL_MIN_HEIGHT, VALIDATION_PANEL_MAX_HEIGHT, CONNECT_TERMINAL_SNAP_TOLERANCE, CONNECT_BUS_SNAP_TOLERANCE, connectTargetSearchBounds, findNodeTerminalSnapTarget, applyNodeTerminalSnap, pointOnBusForSnap, findNodeBusSnapTarget, SAMPLE_NODES, SAMPLE_EDGES, PROJECT_STORAGE_KEY, SCHEME_STORAGE_KEY, ACTIVE_PROJECT_STORAGE_KEY, DRAFT_PROJECT_STORAGE_KEY, REFRESH_RECOVERY_STORAGE_KEY, EMPTY_VOLTAGE_COLOR_KEY_SET, EMPTY_ID_LIST, EMPTY_EDGE_ID_LIST, EMPTY_MODEL_GROUPS, EMPTY_MODEL_GROUP_BY_ID, EMPTY_CANVAS_LAYOUT_UNITS, EMPTY_CANVAS_SELECTION, IMAGE_STORAGE_KEY, CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY, CUSTOM_COMPONENT_TYPES_STORAGE_KEY, DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, COLOR_DISPLAY_MODE_STORAGE_KEY, COLOR_PALETTE_STORAGE_KEY, MEASUREMENT_CONFIG_STORAGE_KEY, LEFT_PANEL_MODE_STORAGE_KEY, RIGHT_PANEL_MODE_STORAGE_KEY, LEFT_PANEL_WIDTH_STORAGE_KEY, RIGHT_PANEL_WIDTH_STORAGE_KEY, STATUSBAR_HEIGHT_STORAGE_KEY, VALIDATION_PANEL_HEIGHT_STORAGE_KEY, DEFAULT_GRAPH_TEMPLATE_TYPES, scheduleIdleWork, elementTreeCacheSignature, CONNECTION_REDRAW_SCOPE_LABELS, VOLTAGE_BASE_CLEAR_SCOPES, VOLTAGE_BASE_CLEAR_SCOPE_LABELS, VOLTAGE_BASE_SET_SCOPES, VOLTAGE_BASE_SET_SCOPE_LABELS, VOLTAGE_BASE_SET_PRESETS, VIEWPORT_RENDER_PADDING_RATIO, VIEWPORT_RENDER_MIN_PADDING, CANVAS_VIEWPORT_QUERY_SNAP_SIZE, NODE_SPATIAL_BUCKET_SIZE, nextSpatialQueryMark, expandViewBoxForRendering, snapRenderViewportBoundsForQuery, sameCanvasViewBox, canvasFrameHasHorizontalScrollableRange, canvasFrameHasVerticalScrollableRange, canvasFrameHasScrollableRange, renderedCanvasFullyFitsFrame, canvasFrameViewportSizeChanged, visibleCanvasViewBoxFromRects, canvasScrollScaleFromViewBox, estimatedViewportNodeScreenSize, canvasScrollEdgeInset, canvasScrollSurfaceSize, canvasDisplayOffset, canvasFramePaddingOffset, anchoredCanvasScrollPosition, anchoredCanvasNoScrollOffset, initialVisibleCanvasViewBox, fitWholeCanvasViewBox, boxesIntersect, sameRenderViewportBounds, VIEWPORT_RESULT_CACHE_LIMIT, viewportBoundsCacheKey, viewportResultCacheOwnersEqual, resetViewportResultCache, readViewportResultCache, writeViewportResultCache, mergeRenderViewportBounds, smartAlignmentAxisAnchors, bestSmartAlignmentAxisSnap, nodeRenderBounds, nodeIntersectsRenderViewport, spatialBucketKey, spatialBucketRange, buildNodeSpatialIndex, queryNodeSpatialIndex, compactPreviewNodes, PARAM_LABELS, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, PARAM_OPTIONS, STATIC_BUTTON_ACTION_LABELS, STATIC_BUTTON_COMMAND_LABELS, PARAM_OPTION_LABELS, parseStaticButtonTargetLayerValues, serializeStaticButtonTargetLayerIds, resolveStaticButtonTargetLayers, paramOptionsForSection, READONLY_E_PARAM_KEYS, BATCH_PARAM_EXCLUDED_KEYS, BATCH_PARAM_EXCLUDED_PREFIXES, canBatchEditParam, BATCH_GRAPH_PARAM_KEYS, BATCH_GRAPH_PARAM_PREFIXES, isBatchGraphCommonParamKey, isRedundantBatchCommonParamRow, COLOR_PARAM_KEY_PATTERN, isColorParamKey, BATCH_MEASUREMENT_GROUP_KEYS, BATCH_MEASUREMENT_GROUP_LABELS, measurementGroupCommonValue, measurementGroupWithCommonSetting, normalizeLegacyPowerSystemLabel, normalizeSavedProjectIndexes, normalizeSavedSchemeIndexes, normalizeStoredDraftProject, readActiveProjectPointer, savedSchemePathForId, findSavedSchemeByPath, findSavedProjectByActivePointer, activeProjectPointerPayload, draftProjectFromSavedSchemes, readRefreshRecoveryProject, writeRefreshRecoveryProject, clearRefreshRecoveryProject, readImageAssets, saveImageAsset, resolveNodeImage, resolveNodeForegroundImage, resolveProjectImage, imageAssetsToMap, localImageAssetsFromStorage, pointsToPreviewPath, backendJsonHeaders, backendErrorMessage, fetchBackendJson, backendJsonRequest, fetchBackendImageFolders, createBackendImageFolder, renameBackendImageFolder, deleteBackendImageFolder, fetchBackendImages, fetchAllBackendImages, uploadBackendImage } from "./appCoreCanvasUtilities";
+import { ENABLE_REACT_FLOW_PREVIEW, ReactFlowPreview, INTERACTION_MODE_STORAGE_KEY, CANVAS_GRAPHIC_CONTEXT_MENU_TARGET_SELECTOR, CANVAS_WHEEL_ZOOM_EXCLUSION_SELECTOR, CANVAS_KEYBOARD_BLOCKING_SELECTOR, CANVAS_KEYBOARD_SURFACE_SELECTOR, normalizeInteractionMode, isCanvasGraphicContextMenuTarget, isCanvasWheelZoomExcludedTarget, canvasWheelTargetIsRenderedCanvas, isCanvasKeyboardBlockingTarget, readStoredInteractionMode, writeStoredInteractionMode, CANVAS_SELECTION_DRAG_THRESHOLD, hasCanvasSelectionModifier, canvasWheelEventHasNoModifier, shouldZoomCanvasFromWheelEvent, isGroupTransformDrag, selectionRectCenter, combineSelectionRects, routeMidpoint, rotatePointAround, snapRotationDeltaToRightAngle, normalizedRotationDelta, transformPointAngle, rotationDeltaFromTransformPoint, rotationDeltaBetweenTransformPoints, rotationTrajectoryArcPath, mirrorPointAcrossAxis, localScaleKindForScreenHandle, groupTransformGeometry, transformGroupPoint, groupTransformSvgTransform, NODE_LABEL_DISPLAY_MODES, CONTEXT_MENU_VIEWPORT_PADDING, CONTEXT_MENU_FALLBACK_WIDTH, CONTEXT_MENU_FALLBACK_HEIGHT, CONTEXT_MENU_SUBMENU_FALLBACK_WIDTH, CONTEXT_MENU_SUBMENU_FALLBACK_HEIGHT, NODE_LABEL_FOOTPRINT_PARAM_KEYS, isMultiNodeMoveState, reuseSetOrCreate, cloneMeasurementGroupForDraft, terminalColor, busEndpointColor, ENERGY_COLOR_ROWS, ELECTRIC_COLOR_TYPES, ELECTRIC_COLOR_TYPE_LABELS, isElectricPaletteType, terminalVbaseFallbackValue, voltageColorKeyForTerminal, DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT, MIN_CANVAS_WIDTH, MIN_CANVAS_HEIGHT, MAX_CANVAS_WIDTH, MAX_CANVAS_HEIGHT, DEFAULT_CANVAS_BACKGROUND, MOVE_BOUNDARY_GUARD, CANVAS_AUTO_EXPAND_PADDING, CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE, CANVAS_RESIZE_HANDLE_SIZE, MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES, ORIGINAL_POSITION_REROUTE_PADDING, MOVE_ROUTE_LOCAL_SEARCH_PADDING, MAX_DEFERRED_MOVE_REPAIR_MOVED_NODES, MAX_DEFERRED_MOVE_REPAIR_CANDIDATE_EDGES, KEYBOARD_MOVE_COMMIT_DELAY_MS, KEYBOARD_MOVE_REPEAT_RATE_PER_SECOND, KEYBOARD_MOVE_FRAME_INTERVAL_MS, ELEMENT_TREE_INITIAL_ITEM_LIMIT, ELEMENT_TREE_ITEM_LIMIT_STEP, TOPOLOGY_WARNING_PAGE_SIZE, CANVAS_MINIMAP_WIDTH, CANVAS_MINIMAP_HEIGHT, CANVAS_MINIMAP_PADDING, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_WIDTH, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH, NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MARGIN, DEVICE_DEFINITION_DIALOG_DEFAULT_WIDTH, DEVICE_DEFINITION_DIALOG_DEFAULT_HEIGHT, CUSTOM_DEVICE_DIALOG_DEFAULT_WIDTH, CUSTOM_DEVICE_DIALOG_DEFAULT_HEIGHT, MEASUREMENT_CONFIG_DIALOG_DEFAULT_WIDTH, MEASUREMENT_CONFIG_DIALOG_DEFAULT_HEIGHT, DEVICE_LIBRARY_DIALOG_MIN_WIDTH, DEVICE_LIBRARY_DIALOG_MIN_HEIGHT, DEVICE_LIBRARY_DIALOG_MARGIN, DEVICE_LIBRARY_DIALOG_CONFIG, TOPOLOGY_WARNING_PANEL_DEFAULT_WIDTH, TOPOLOGY_WARNING_PANEL_MIN_WIDTH, TOPOLOGY_WARNING_PANEL_MAX_WIDTH, TOPOLOGY_WARNING_PANEL_MARGIN, CANVAS_MINIMAP_MAX_NODE_MARKS, CANVAS_MINIMAP_MAX_ROUTE_MARKS, CANVAS_MINIMAP_DEFER_SAMPLE_THRESHOLD, FIT_SELECTION_MAX_ZOOM_PERCENT, TERMINAL_OVERLAP_DEFER_NODE_THRESHOLD, CANVAS_LOD_NODE_DETAIL_LIMIT, CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT, CANVAS_LOD_MAX_ZOOM_PERCENT, CANVAS_LOD_MAX_NODE_SCREEN_SIZE, CANVAS_LOD_NODE_SCREEN_SAMPLE_LIMIT, CANVAS_LOD_SELECTED_DETAIL_LIMIT, CANVAS_LOD_MARKUP_CHUNK_SIZE, CANVAS_INITIAL_LOD_DETAIL_CHUNK_SIZE, CANVAS_INITIAL_LOD_FIRST_DETAIL_DELAY_MS, CANVAS_INITIAL_LOD_NEXT_DETAIL_DELAY_MS, CONNECTION_HIT_SCREEN_TOLERANCE, CANVAS_MULTI_NODE_DRAG_OVERLAY_DETAIL_LIMIT, CANVAS_MULTI_NODE_DRAG_PREVIEW_EDGE_LIMIT, CANVAS_MULTI_NODE_DRAG_SNAP_NODE_LIMIT, CANVAS_BULK_MOVE_EDGE_THRESHOLD, ROUTE_BULK_TRANSLATE_REBUILD_THRESHOLD, BULK_MOVE_PERF_LOG_THRESHOLD_MS, SMART_ALIGNMENT_SNAP_SCREEN_TOLERANCE, SMART_ALIGNMENT_GUIDE_PADDING, CANVAS_SINGLE_NODE_DRAG_PREVIEW_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_SNAP_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_SYNC_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_PREVIEW_PADDING, CANVAS_FLOATING_TOOLBAR_GAP, NODE_FLOATING_TOOLBAR_WIDTH, NODE_FLOATING_TOOLBAR_HEIGHT, EDGE_FLOATING_TOOLBAR_WIDTH, EDGE_FLOATING_TOOLBAR_HEIGHT, CONTEXT_MENU_AUTO_HIDE_MARGIN, TRANSFORM_ROTATE_STEM_START, TRANSFORM_ROTATE_STEM_END, TRANSFORM_ROTATE_HANDLE_GAP, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, DEFAULT_CURRENT_UNIT, DEFAULT_POWER_BASE_VALUE, EMPTY_TOPOLOGY, INITIAL_TOPOLOGY_STATUS, E_SECTION_OPTIONS, COMPONENT_LIBRARY_LABELS, SCALE_HANDLE_CONFIGS, GROUP_SCALE_HANDLE_CONFIGS, POWER_UNIT_OPTIONS, VOLTAGE_UNIT_OPTIONS, CURRENT_UNIT_OPTIONS, DEFAULT_CATEGORY_LIBRARIES, CUSTOM_CATEGORY_LIBRARY_BASES, PROTECTED_CATEGORY_LIBRARIES, DEVICE_TYPE_NAME_PATTERN, MAX_CUSTOM_DEVICE_TERMINALS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_SNAP_SCREEN_TOLERANCE, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, CUSTOM_DEVICE_TERMINAL_PREVIEW_OUTWARD_OFFSET, CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN, TERMINAL_TYPE_OPTIONS, CONTAINER_TERMINAL_ASSOCIATION_OPTIONS, PARAM_VALUE_TYPE_OPTIONS, PROJECT_PANEL_MIN_HEIGHT, PROJECT_PANEL_MAX_HEIGHT, PROJECT_PANEL_DEFAULT_HEIGHT, LEFT_PANEL_DEFAULT_WIDTH, RIGHT_PANEL_DEFAULT_WIDTH, SIDE_PANEL_MIN_WIDTH, SIDE_PANEL_MAX_WIDTH, STATUSBAR_DEFAULT_HEIGHT, STATUSBAR_MIN_HEIGHT, STATUSBAR_MAX_HEIGHT, VALIDATION_PANEL_DEFAULT_HEIGHT, VALIDATION_PANEL_MIN_HEIGHT, VALIDATION_PANEL_MAX_HEIGHT, CONNECT_TERMINAL_SNAP_TOLERANCE, CONNECT_BUS_SNAP_TOLERANCE, connectTargetSearchBounds, findNodeTerminalSnapTarget, applyNodeTerminalSnap, pointOnBusForSnap, findNodeBusSnapTarget, SAMPLE_NODES, SAMPLE_EDGES, PROJECT_STORAGE_KEY, SCHEME_STORAGE_KEY, ACTIVE_PROJECT_STORAGE_KEY, DRAFT_PROJECT_STORAGE_KEY, REFRESH_RECOVERY_STORAGE_KEY, EMPTY_VOLTAGE_COLOR_KEY_SET, EMPTY_ID_LIST, EMPTY_EDGE_ID_LIST, EMPTY_MODEL_GROUPS, EMPTY_MODEL_GROUP_BY_ID, EMPTY_CANVAS_LAYOUT_UNITS, EMPTY_CANVAS_SELECTION, IMAGE_STORAGE_KEY, CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, LEGACY_CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, LEGACY_CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, COLOR_DISPLAY_MODE_STORAGE_KEY, COLOR_PALETTE_STORAGE_KEY, MEASUREMENT_CONFIG_STORAGE_KEY, LEFT_PANEL_MODE_STORAGE_KEY, RIGHT_PANEL_MODE_STORAGE_KEY, LEFT_PANEL_WIDTH_STORAGE_KEY, RIGHT_PANEL_WIDTH_STORAGE_KEY, STATUSBAR_HEIGHT_STORAGE_KEY, VALIDATION_PANEL_HEIGHT_STORAGE_KEY, DEFAULT_GRAPH_TEMPLATE_TYPES, scheduleIdleWork, elementTreeCacheSignature, CONNECTION_REDRAW_SCOPE_LABELS, VOLTAGE_BASE_CLEAR_SCOPES, VOLTAGE_BASE_CLEAR_SCOPE_LABELS, VOLTAGE_BASE_SET_SCOPES, VOLTAGE_BASE_SET_SCOPE_LABELS, VOLTAGE_BASE_SET_PRESETS, VIEWPORT_RENDER_PADDING_RATIO, VIEWPORT_RENDER_MIN_PADDING, CANVAS_VIEWPORT_QUERY_SNAP_SIZE, NODE_SPATIAL_BUCKET_SIZE, nextSpatialQueryMark, expandViewBoxForRendering, snapRenderViewportBoundsForQuery, sameCanvasViewBox, canvasFrameHasHorizontalScrollableRange, canvasFrameHasVerticalScrollableRange, canvasFrameHasScrollableRange, renderedCanvasFullyFitsFrame, canvasFrameViewportSizeChanged, visibleCanvasViewBoxFromRects, canvasScrollScaleFromViewBox, estimatedViewportNodeScreenSize, canvasScrollEdgeInset, canvasScrollSurfaceSize, canvasDisplayOffset, canvasFramePaddingOffset, anchoredCanvasScrollPosition, anchoredCanvasNoScrollOffset, initialVisibleCanvasViewBox, fitWholeCanvasViewBox, boxesIntersect, sameRenderViewportBounds, VIEWPORT_RESULT_CACHE_LIMIT, viewportBoundsCacheKey, viewportResultCacheOwnersEqual, resetViewportResultCache, readViewportResultCache, writeViewportResultCache, mergeRenderViewportBounds, smartAlignmentAxisAnchors, bestSmartAlignmentAxisSnap, nodeRenderBounds, nodeIntersectsRenderViewport, spatialBucketKey, spatialBucketRange, buildNodeSpatialIndex, queryNodeSpatialIndex, compactPreviewNodes, PARAM_LABELS, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, PARAM_OPTIONS, STATIC_BUTTON_ACTION_LABELS, STATIC_BUTTON_COMMAND_LABELS, PARAM_OPTION_LABELS, parseStaticButtonTargetLayerValues, serializeStaticButtonTargetLayerIds, resolveStaticButtonTargetLayers, paramOptionsForSection, READONLY_E_PARAM_KEYS, BATCH_PARAM_EXCLUDED_KEYS, BATCH_PARAM_EXCLUDED_PREFIXES, canBatchEditParam, BATCH_GRAPH_PARAM_KEYS, BATCH_GRAPH_PARAM_PREFIXES, isBatchGraphCommonParamKey, isRedundantBatchCommonParamRow, COLOR_PARAM_KEY_PATTERN, isColorParamKey, BATCH_MEASUREMENT_GROUP_KEYS, BATCH_MEASUREMENT_GROUP_LABELS, measurementGroupCommonValue, measurementGroupWithCommonSetting, normalizeLegacyPowerSystemLabel, normalizeSavedProjectIndexes, normalizeSavedSchemeIndexes, normalizeStoredDraftProject, readActiveProjectPointer, savedSchemePathForId, findSavedSchemeByPath, findSavedProjectByActivePointer, activeProjectPointerPayload, draftProjectFromSavedSchemes, readRefreshRecoveryProject, writeRefreshRecoveryProject, clearRefreshRecoveryProject, readImageAssets, saveImageAsset, resolveNodeImage, resolveNodeForegroundImage, resolveProjectImage, imageAssetsToMap, localImageAssetsFromStorage, pointsToPreviewPath, backendJsonHeaders, backendErrorMessage, fetchBackendJson, backendJsonRequest, fetchBackendImageFolders, createBackendImageFolder, renameBackendImageFolder, deleteBackendImageFolder, fetchBackendImages, fetchAllBackendImages, uploadBackendImage } from "./appCoreCanvasUtilities";
 
 export function normalizeProjectForBackend(project: ProjectFile): ProjectFile {
   const projectBackground =
@@ -856,8 +856,8 @@ export type LibraryPackagePayload = {
 
 const emptyDeviceLibraryPersistencePayload = (): DeviceLibraryPersistencePayload => ({
   customDeviceTemplates: [],
-  customAttributeLibraries: [],
-  customComponentTypes: [],
+  customCategoryLibraries: [],
+  customComponentLibraries: [],
   deviceDefinitionOverrides: {},
   customGraphTemplateTypes: [],
   customGraphTemplates: []
@@ -971,8 +971,8 @@ export function deviceLibraryPayloadForPackageScope(
     return {
       ...normalizedCurrent,
       customDeviceTemplates: normalizedImported.customDeviceTemplates,
-      customAttributeLibraries: normalizedImported.customAttributeLibraries,
-      customComponentTypes: normalizedImported.customComponentTypes,
+      customCategoryLibraries: normalizedImported.customCategoryLibraries,
+      customComponentLibraries: normalizedImported.customComponentLibraries,
       deviceDefinitionOverrides: normalizedImported.deviceDefinitionOverrides
     };
   }
@@ -1050,19 +1050,19 @@ export async function importBackendImageLibraryPayload(payload: IconLibraryPersi
   );
 }
 
-export function groupDeviceTemplatesByAttributeLibrary(templates: DeviceTemplate[]): Record<string, DeviceTemplate[]> {
+export function groupDeviceTemplatesByCategoryLibrary(templates: DeviceTemplate[]): Record<string, DeviceTemplate[]> {
   return templates.reduce<Record<string, DeviceTemplate[]>>((groups, item) => {
-    const group = normalizeAttributeLibraryName(item.attributeLibrary);
-    groups[group] = groups[group] ? [...groups[group], { ...item, attributeLibrary: group }] : [{ ...item, attributeLibrary: group }];
+    const group = normalizeCategoryLibraryName(item.categoryLibrary);
+    groups[group] = groups[group] ? [...groups[group], { ...item, categoryLibrary: group }] : [{ ...item, categoryLibrary: group }];
     return groups;
   }, {});
 }
 
-export function groupDeviceTemplatesByAttributeLibraryAndComponentType(templates: DeviceTemplate[]): Record<string, AttributeLibraryComponentTypeGroup[]> {
+export function groupDeviceTemplatesByCategoryLibraryAndComponentLibrary(templates: DeviceTemplate[]): Record<string, CategoryLibraryComponentLibraryGroup[]> {
   const grouped = new Map<string, Map<string, DeviceTemplate[]>>();
   for (const template of templates) {
-    const group = normalizeAttributeLibraryName(template.attributeLibrary);
-    const section = resolveTemplateComponentType(template);
+    const group = normalizeCategoryLibraryName(template.categoryLibrary);
+    const section = resolveTemplateComponentLibrary(template);
     if (!grouped.has(group)) {
       grouped.set(group, new Map());
     }
@@ -1070,7 +1070,7 @@ export function groupDeviceTemplatesByAttributeLibraryAndComponentType(templates
     if (!typeMap) {
       continue;
     }
-    typeMap.set(section, [...(typeMap.get(section) ?? []), { ...template, attributeLibrary: group }]);
+    typeMap.set(section, [...(typeMap.get(section) ?? []), { ...template, categoryLibrary: group }]);
   }
   return Object.fromEntries(
     Array.from(grouped.entries()).map(([group, typeMap]) => [
@@ -1084,12 +1084,12 @@ export function normalizeLibrarySearchText(value: string) {
   return value.trim().toLowerCase();
 }
 
-export const attributeLibraryComponentTypeKey = (attributeLibraryName: string, sectionName: string) =>
-  `${normalizeAttributeLibraryName(attributeLibraryName)}::${sectionName}`;
+export const categoryLibraryComponentLibraryKey = (categoryLibraryName: string, sectionName: string) =>
+  `${normalizeCategoryLibraryName(categoryLibraryName)}::${sectionName}`;
 
-export function componentTypeDisplayParts(sectionName: string) {
-  const english = normalizeComponentTypeName(sectionName);
-  const chinese = COMPONENT_TYPE_LABELS[english] ?? "自定义元件类型";
+export function componentLibraryDisplayParts(sectionName: string) {
+  const english = normalizeComponentLibraryName(sectionName);
+  const chinese = COMPONENT_LIBRARY_LABELS[english] ?? "自定义元件库";
   return {
     chinese,
     english,
@@ -1097,8 +1097,8 @@ export function componentTypeDisplayParts(sectionName: string) {
   };
 }
 
-export function componentTypeDisplayName(sectionName: string) {
-  const display = componentTypeDisplayParts(sectionName);
+export function componentLibraryDisplayName(sectionName: string) {
+  const display = componentLibraryDisplayParts(sectionName);
   return display.english ? display.title : display.chinese;
 }
 
@@ -1120,22 +1120,22 @@ export function filterSelectionTreeLabel(label: string, typeKey: string) {
     : `${normalizedLabel} / ${normalizedTypeKey}`;
 }
 
-export const filterSelectionTemplateComponentTypeKey = (template: DeviceTemplate) =>
+export const filterSelectionTemplateComponentLibraryKey = (template: DeviceTemplate) =>
   inferESection(template.kind, {}) ||
   inferESection(template.kind, template.params) ||
-  String(template.params.component_type || template.params.componentType || template.kind);
+  String(template.params.component_type || template.params.componentLibrary || (template.params as { componentType?: string }).componentType || template.kind);
 
 export function libraryTemplateMatchesSearch(template: DeviceTemplate, group: string, section: string, needle: string) {
   if (!needle) {
     return true;
   }
-  return [group, section, componentTypeDisplayName(section), template.label, template.kind, template.params?.component_type]
+  return [group, section, componentLibraryDisplayName(section), template.label, template.kind, template.params?.component_type]
     .filter((value): value is string => typeof value === "string")
     .some((value) => normalizeLibrarySearchText(value).includes(needle));
 }
 
-export function filterAttributeLibraryComponentTypeGroups(
-  grouped: Record<string, AttributeLibraryComponentTypeGroup[]>,
+export function filterCategoryLibraryComponentLibraryGroups(
+  grouped: Record<string, CategoryLibraryComponentLibraryGroup[]>,
   needle: string
 ) {
   if (!needle) {
@@ -1146,40 +1146,40 @@ export function filterAttributeLibraryComponentTypeGroups(
       const groupMatches = normalizeLibrarySearchText(group).includes(needle);
       const filteredTypeGroups = typeGroups
         .map((typeGroup) => {
-          const sectionMatches = normalizeLibrarySearchText(componentTypeDisplayName(typeGroup.section)).includes(needle);
+          const sectionMatches = normalizeLibrarySearchText(componentLibraryDisplayName(typeGroup.section)).includes(needle);
           const templates = groupMatches || sectionMatches
             ? typeGroup.templates
             : typeGroup.templates.filter((item) => libraryTemplateMatchesSearch(item, group, typeGroup.section, needle));
           return templates.length ? { ...typeGroup, templates } : null;
         })
-        .filter((typeGroup): typeGroup is AttributeLibraryComponentTypeGroup => Boolean(typeGroup));
+        .filter((typeGroup): typeGroup is CategoryLibraryComponentLibraryGroup => Boolean(typeGroup));
       return filteredTypeGroups.length ? [group, filteredTypeGroups] as const : null;
     })
-    .filter((entry): entry is readonly [string, AttributeLibraryComponentTypeGroup[]] => Boolean(entry));
+    .filter((entry): entry is readonly [string, CategoryLibraryComponentLibraryGroup[]] => Boolean(entry));
   return Object.fromEntries(filteredEntries);
 }
 
-export function normalizeAttributeLibraryName(attributeLibraryName: string): string {
-  if (attributeLibraryName === "交流系统") {
+export function normalizeCategoryLibraryName(categoryLibraryName: string): string {
+  if (categoryLibraryName === "交流系统") {
     return "交流设备";
   }
-  if (attributeLibraryName === "直流系统") {
+  if (categoryLibraryName === "直流系统") {
     return "直流设备";
   }
-  if (attributeLibraryName === "变流设备") {
+  if (categoryLibraryName === "变流设备") {
     return "直流设备";
   }
-  return attributeLibraryName;
+  return categoryLibraryName;
 }
 
-export function normalizeCustomAttributeLibraries(value: unknown, reservedGroups: readonly AttributeLibrary[] = DEFAULT_ATTRIBUTE_LIBRARIES): AttributeLibrary[] {
+export function normalizeCustomCategoryLibraries(value: unknown, reservedGroups: readonly CategoryLibrary[] = DEFAULT_CATEGORY_LIBRARIES): CategoryLibrary[] {
   if (!Array.isArray(value)) {
     return [];
   }
-  const reserved = new Set(reservedGroups.map((group) => normalizeAttributeLibraryName(group).toLowerCase()));
+  const reserved = new Set(reservedGroups.map((group) => normalizeCategoryLibraryName(group).toLowerCase()));
   const seen = new Set<string>();
   return value
-    .map((item) => normalizeAttributeLibraryName(String(item ?? "").trim()))
+    .map((item) => normalizeCategoryLibraryName(String(item ?? "").trim()))
     .filter((group) => {
       if (!group) {
         return false;
@@ -1193,26 +1193,26 @@ export function normalizeCustomAttributeLibraries(value: unknown, reservedGroups
     });
 }
 
-export function selectableAttributeLibraryList(
-  attributeLibraries: readonly AttributeLibrary[],
-  customAttributeLibraries: readonly AttributeLibrary[] = []
-): AttributeLibrary[] {
+export function selectableCategoryLibraryList(
+  categoryLibraries: readonly CategoryLibrary[],
+  customCategoryLibraries: readonly CategoryLibrary[] = []
+): CategoryLibrary[] {
   const normalized = [
-    ...DEFAULT_ATTRIBUTE_LIBRARIES,
-    ...customAttributeLibraries,
-    ...attributeLibraries
+    ...DEFAULT_CATEGORY_LIBRARIES,
+    ...customCategoryLibraries,
+    ...categoryLibraries
   ]
-    .map((group) => normalizeAttributeLibraryName(String(group ?? "").trim()))
+    .map((group) => normalizeCategoryLibraryName(String(group ?? "").trim()))
     .filter(Boolean);
   return Array.from(new Set(normalized));
 }
 
-export function normalizeComponentTypeName(name: string): string {
+export function normalizeComponentLibraryName(name: string): string {
   return name.trim();
 }
 
-export function defaultAttributeLibraryForComponentType(sectionName: string): AttributeLibrary {
-  const section = normalizeComponentTypeName(sectionName);
+export function defaultCategoryLibraryForComponentLibrary(sectionName: string): CategoryLibrary {
+  const section = normalizeComponentLibraryName(sectionName);
   if (section.startsWith("Static")) {
     return "静态图元";
   }
@@ -1231,32 +1231,32 @@ export function defaultAttributeLibraryForComponentType(sectionName: string): At
   return "交流设备";
 }
 
-export function isBuiltInAttributeLibrary(attributeLibraryName: string): boolean {
-  return PROTECTED_ATTRIBUTE_LIBRARIES.has(normalizeAttributeLibraryName(attributeLibraryName));
+export function isBuiltInCategoryLibrary(categoryLibraryName: string): boolean {
+  return PROTECTED_CATEGORY_LIBRARIES.has(normalizeCategoryLibraryName(categoryLibraryName));
 }
 
-export function isBuiltInComponentType(sectionName: string): boolean {
-  const normalized = normalizeComponentTypeName(sectionName).toLowerCase();
+export function isBuiltInComponentLibrary(sectionName: string): boolean {
+  const normalized = normalizeComponentLibraryName(sectionName).toLowerCase();
   return E_SECTION_OPTIONS.some((section) => section.toLowerCase() === normalized);
 }
 
-export function attributeLibraryOptionClass(attributeLibraryName: string): string {
-  return isBuiltInAttributeLibrary(attributeLibraryName) ? "builtin-option" : "custom-option";
+export function categoryLibraryOptionClass(categoryLibraryName: string): string {
+  return isBuiltInCategoryLibrary(categoryLibraryName) ? "builtin-option" : "custom-option";
 }
 
-export function componentTypeOptionClass(sectionName: string): string {
-  return isBuiltInComponentType(sectionName) ? "builtin-option" : "custom-option";
+export function componentLibraryOptionClass(sectionName: string): string {
+  return isBuiltInComponentLibrary(sectionName) ? "builtin-option" : "custom-option";
 }
 
 export function sourceSelectClassName(isBuiltIn: boolean): string {
   return `source-select ${isBuiltIn ? "builtin-source" : "custom-source"}`;
 }
 
-export function isValidComponentTypeName(name: string): boolean {
+export function isValidComponentLibraryName(name: string): boolean {
   return DEVICE_TYPE_NAME_PATTERN.test(name);
 }
 
-export function normalizeCustomComponentTypes(value: unknown, reservedTypes: readonly string[] = E_SECTION_OPTIONS): CustomComponentTypeDefinition[] {
+export function normalizeCustomComponentLibraries(value: unknown, reservedTypes: readonly string[] = E_SECTION_OPTIONS): CustomComponentLibraryDefinition[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -1264,16 +1264,18 @@ export function normalizeCustomComponentTypes(value: unknown, reservedTypes: rea
   const seen = new Set<string>();
   return value
     .map((item) => {
-      const raw = item && typeof item === "object" ? item as Partial<CustomComponentTypeDefinition> : undefined;
-      const name = normalizeComponentTypeName(String(raw?.name ?? item ?? ""));
-      const attributeLibraryName = normalizeAttributeLibraryName(String(raw?.attributeLibraryName ?? defaultAttributeLibraryForComponentType(name)));
-      return { name, attributeLibraryName };
+      const raw = item && typeof item === "object"
+        ? item as Partial<CustomComponentLibraryDefinition> & { attributeLibraryName?: unknown }
+        : undefined;
+      const name = normalizeComponentLibraryName(String(raw?.name ?? item ?? ""));
+      const categoryLibraryName = normalizeCategoryLibraryName(String(raw?.categoryLibraryName ?? raw?.attributeLibraryName ?? defaultCategoryLibraryForComponentLibrary(name)));
+      return { name, categoryLibraryName };
     })
-    .filter((componentType) => {
-      if (!isValidComponentTypeName(componentType.name)) {
+    .filter((componentLibrary) => {
+      if (!isValidComponentLibraryName(componentLibrary.name)) {
         return false;
       }
-      const key = componentType.name.toLowerCase();
+      const key = componentLibrary.name.toLowerCase();
       if (reserved.has(key) || seen.has(key)) {
         return false;
       }
@@ -1612,8 +1614,17 @@ export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[]
   return value
     .filter((item): item is DeviceTemplate => Boolean(item && typeof item === "object"))
     .map((item) => {
-      const template = item as DeviceTemplate;
+      const template = item as DeviceTemplate & { attributeLibrary?: unknown };
+      const templateRest = { ...template };
+      delete (templateRest as { attributeLibrary?: unknown }).attributeLibrary;
       const rawParams = template.params ?? {};
+      const normalizedComponentLibraryParam = [
+        rawParams.component_type,
+        (rawParams as { componentLibrary?: unknown }).componentLibrary,
+        (rawParams as { componentType?: unknown }).componentType
+      ]
+        .map((value) => String(value ?? "").trim())
+        .find(Boolean);
       const stateDefinitions = normalizeDeviceStateDefinitions(template.stateDefinitions ?? []);
       const terminalCount = clampNumber(Number(template.terminalCount ?? 0), 0, MAX_CUSTOM_DEVICE_TERMINALS);
       const sourceTerminalTypes = (template.terminalTypes ?? []) as TerminalType[];
@@ -1624,9 +1635,15 @@ export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[]
       const terminalAnchors = createDefaultCustomDeviceTerminalAnchors(terminalCount, template.terminalAnchors);
       const params = Object.fromEntries(
         Object.entries(rawParams).filter(([key]) =>
-          key !== ALLOW_RESIZE_TRANSFORM_PARAM && !(key === "status" && stateDefinitions.length > 0)
+          key !== ALLOW_RESIZE_TRANSFORM_PARAM &&
+          key !== "componentLibrary" &&
+          key !== "componentType" &&
+          !(key === "status" && stateDefinitions.length > 0)
         )
       );
+      if (normalizedComponentLibraryParam) {
+        params.component_type = normalizedComponentLibraryParam;
+      }
       const backgroundImage = customDeviceImageWithTerminalConnectors(
         String(params.backgroundImage ?? ""),
         terminalTypes.slice(0, terminalCount),
@@ -1639,10 +1656,10 @@ export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[]
           : "";
       }
       return {
-        ...template,
+        ...templateRest,
         kind: String(template.kind ?? ""),
         label: String(template.label ?? template.kind ?? ""),
-        attributeLibrary: normalizeAttributeLibraryName(String(template.attributeLibrary ?? "自定义属性库")),
+        categoryLibrary: normalizeCategoryLibraryName(String(template.categoryLibrary ?? template.attributeLibrary ?? "自定义类别库")),
         size: template.size ?? { width: 96, height: 62 },
         params,
         terminalType: (template.terminalType ?? "ac") as TerminalType,
@@ -1995,11 +2012,16 @@ export function normalizeDeviceDefinitionOverrides(value: unknown): Record<strin
 }
 
 export function normalizeDeviceLibraryPersistencePayload(value: unknown): DeviceLibraryPersistencePayload {
-  const source = value && typeof value === "object" && !Array.isArray(value) ? value as Partial<DeviceLibraryPersistencePayload> : {};
+  const source = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Partial<DeviceLibraryPersistencePayload> & {
+      customAttributeLibraries?: unknown;
+      customComponentTypes?: unknown;
+    }
+    : {};
   return {
     customDeviceTemplates: normalizeCustomDeviceTemplates(source.customDeviceTemplates),
-    customAttributeLibraries: normalizeCustomAttributeLibraries(source.customAttributeLibraries),
-    customComponentTypes: normalizeCustomComponentTypes(source.customComponentTypes),
+    customCategoryLibraries: normalizeCustomCategoryLibraries(source.customCategoryLibraries ?? source.customAttributeLibraries),
+    customComponentLibraries: normalizeCustomComponentLibraries(source.customComponentLibraries ?? source.customComponentTypes),
     deviceDefinitionOverrides: normalizeDeviceDefinitionOverrides(source.deviceDefinitionOverrides),
     customGraphTemplateTypes: normalizeGraphTemplateTypes(source.customGraphTemplateTypes),
     customGraphTemplates: normalizeGraphTemplates(source.customGraphTemplates)
@@ -2014,16 +2036,43 @@ export function readLocalStorageJson<T>(storageKey: string, emptyJson: string, n
   }
 }
 
+export function readLocalStorageJsonWithLegacy<T>(
+  storageKey: string,
+  legacyStorageKey: string,
+  emptyJson: string,
+  normalize: (value: unknown) => T,
+  fallback: T
+): T {
+  try {
+    const raw = window.localStorage.getItem(storageKey) ?? window.localStorage.getItem(legacyStorageKey) ?? emptyJson;
+    return normalize(JSON.parse(raw));
+  } catch {
+    return fallback;
+  }
+}
+
 export function readCustomDeviceTemplates(): DeviceTemplate[] {
   return readLocalStorageJson(CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, "[]", normalizeCustomDeviceTemplates, []);
 }
 
-export function readCustomAttributeLibraries(): AttributeLibrary[] {
-  return readLocalStorageJson(CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY, "[]", normalizeCustomAttributeLibraries, []);
+export function readCustomCategoryLibraries(): CategoryLibrary[] {
+  return readLocalStorageJsonWithLegacy(
+    CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY,
+    LEGACY_CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY,
+    "[]",
+    normalizeCustomCategoryLibraries,
+    []
+  );
 }
 
-export function readCustomComponentTypes(): CustomComponentTypeDefinition[] {
-  return readLocalStorageJson(CUSTOM_COMPONENT_TYPES_STORAGE_KEY, "[]", normalizeCustomComponentTypes, []);
+export function readCustomComponentLibraries(): CustomComponentLibraryDefinition[] {
+  return readLocalStorageJsonWithLegacy(
+    CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY,
+    LEGACY_CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY,
+    "[]",
+    normalizeCustomComponentLibraries,
+    []
+  );
 }
 
 export function readDeviceDefinitionOverrides(): Record<string, DeviceTemplateDefinitionOverride> {
@@ -2041,8 +2090,8 @@ export function readCustomGraphTemplates(): GraphTemplate[] {
 export function readLocalDeviceLibraryPersistencePayload(): DeviceLibraryPersistencePayload {
   return {
     customDeviceTemplates: readCustomDeviceTemplates(),
-    customAttributeLibraries: readCustomAttributeLibraries(),
-    customComponentTypes: readCustomComponentTypes(),
+    customCategoryLibraries: readCustomCategoryLibraries(),
+    customComponentLibraries: readCustomComponentLibraries(),
     deviceDefinitionOverrides: readDeviceDefinitionOverrides(),
     customGraphTemplateTypes: readCustomGraphTemplateTypes(),
     customGraphTemplates: readCustomGraphTemplates()
@@ -2058,8 +2107,8 @@ const deviceLibraryStoragePromise = import("../lib/deviceLibraryStorage");
 function fallbackToLocalStorage(data: DeviceLibraryPersistencePayload): void {
   try {
     window.localStorage.setItem(CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, JSON.stringify(data.customDeviceTemplates));
-    window.localStorage.setItem(CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY, JSON.stringify(data.customAttributeLibraries));
-    window.localStorage.setItem(CUSTOM_COMPONENT_TYPES_STORAGE_KEY, JSON.stringify(data.customComponentTypes));
+    window.localStorage.setItem(CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, JSON.stringify(data.customCategoryLibraries));
+    window.localStorage.setItem(CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, JSON.stringify(data.customComponentLibraries));
     window.localStorage.setItem(DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, JSON.stringify(data.deviceDefinitionOverrides));
     window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, JSON.stringify(data.customGraphTemplateTypes));
     window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, JSON.stringify(data.customGraphTemplates));
@@ -2568,16 +2617,16 @@ export function buildSvgTerminalMarkup(node: ModelNode, colorDisplayMode: ColorD
 
 export type CustomComponentTreeProps = {
   libraries: string[];
-  filteredByComponentType: Record<string, { section: string; templates: DeviceTemplate[] }[]>;
+  filteredByComponentLibrary: Record<string, { section: string; templates: DeviceTemplate[] }[]>;
   initialCollapsedLibraries: Set<string>;
   initialCollapsedTypes: Set<string>;
   initialSelection: CustomComponentTreeSelection;
   searchQuery: string;
-  onSelectAttributeLibrary: (attributeLibraryName: string) => void;
+  onSelectCategoryLibrary: (categoryLibraryName: string) => void;
   onSelectComponent: (template: DeviceTemplate, section: string) => void;
-  onSelectComponentType: (attributeLibraryName: string, sectionName: string, options?: { expand?: boolean }) => void;
-  onCreateAttributeLibrary: () => void;
-  onCreateComponentType: () => void;
+  onSelectComponentLibrary: (categoryLibraryName: string, sectionName: string, options?: { expand?: boolean }) => void;
+  onCreateCategoryLibrary: () => void;
+  onCreateComponentLibrary: () => void;
   onCreateComponent: () => void;
   onRenameSelection: () => void;
   onDeleteSelection: () => void;
@@ -2587,10 +2636,10 @@ export type CustomComponentTreeProps = {
 };
 
 function customComponentTreeSelectionsEqual(first: CustomComponentTreeSelection, second: CustomComponentTreeSelection) {
-  if (first.kind !== second.kind || first.attributeLibraryName !== second.attributeLibraryName) {
+  if (first.kind !== second.kind || first.categoryLibraryName !== second.categoryLibraryName) {
     return false;
   }
-  if (first.kind === "attributeLibrary" || second.kind === "attributeLibrary") {
+  if (first.kind === "categoryLibrary" || second.kind === "categoryLibrary") {
     return true;
   }
   if (first.section !== second.section) {
@@ -2604,16 +2653,16 @@ function customComponentTreeSelectionsEqual(first: CustomComponentTreeSelection,
 
 export const CustomComponentManagerTree = memo(function CustomComponentManagerTree({
   libraries,
-  filteredByComponentType,
+  filteredByComponentLibrary,
   initialCollapsedLibraries,
   initialCollapsedTypes,
   initialSelection,
   searchQuery,
-  onSelectAttributeLibrary,
+  onSelectCategoryLibrary,
   onSelectComponent,
-  onSelectComponentType,
-  onCreateAttributeLibrary,
-  onCreateComponentType,
+  onSelectComponentLibrary,
+  onCreateCategoryLibrary,
+  onCreateComponentLibrary,
   onCreateComponent,
   onRenameSelection,
   onDeleteSelection,
@@ -2653,11 +2702,11 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
     });
   }, []);
 
-  const handleSelectAttributeLibrary = useCallback((attributeLibraryName: string) => {
-    const selection = { kind: "attributeLibrary" as const, attributeLibraryName };
+  const handleSelectCategoryLibrary = useCallback((categoryLibraryName: string) => {
+    const selection = { kind: "categoryLibrary" as const, categoryLibraryName };
     setSelection(selection);
-    onSelectAttributeLibrary(attributeLibraryName);
-  }, [onSelectAttributeLibrary]);
+    onSelectCategoryLibrary(categoryLibraryName);
+  }, [onSelectCategoryLibrary]);
 
   const handleToggleType = useCallback((library: string, type: string) => {
     const typeKey = `${library}::${type}`;
@@ -2672,37 +2721,37 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
     });
   }, []);
 
-  const handleSelectComponentType = useCallback((attributeLibraryName: string, section: string) => {
-    const selection = { kind: "componentType" as const, attributeLibraryName, section };
+  const handleSelectComponentLibrary = useCallback((categoryLibraryName: string, section: string) => {
+    const selection = { kind: "componentLibrary" as const, categoryLibraryName, section };
     setSelection(selection);
-    onSelectComponentType(attributeLibraryName, section, { expand: false });
-  }, [onSelectComponentType]);
+    onSelectComponentLibrary(categoryLibraryName, section, { expand: false });
+  }, [onSelectComponentLibrary]);
 
   const handleSelectComponent = useCallback((template: DeviceTemplate, section: string) => {
-    const attributeLibraryName = normalizeAttributeLibraryName(template.attributeLibrary);
+    const categoryLibraryName = normalizeCategoryLibraryName(template.categoryLibrary);
     // 立即更新内部 selection，显示选中效果
-    setSelection({ kind: "component", attributeLibraryName, section, templateKind: template.kind });
+    setSelection({ kind: "component", categoryLibraryName, section, templateKind: template.kind });
     // 调用父组件回调（更新右侧面板，已延迟处理）
     onSelectComponent(template, section);
   }, [onSelectComponent]);
 
   const searchNeedle = normalizeLibrarySearchText(searchQuery);
   return (
-    <aside className="custom-component-manager-panel" aria-label="属性库元件类型元件管理">
+    <aside className="custom-component-manager-panel" aria-label="类别库元件库元件管理">
       <div className="custom-component-manager-title">
         <strong>元件结构</strong>
-        <span>属性库 / 元件类型 / 元件</span>
+        <span>类别库 / 元件库 / 元件</span>
       </div>
       <div className="custom-component-manager-actions">
-        <button type="button" onClick={onCreateAttributeLibrary} title="新建属性库">
+        <button type="button" onClick={onCreateCategoryLibrary} title="新建类别库">
           <Plus size={12} aria-hidden="true" />
-          <span>新建属性</span>
+          <span>新建类别</span>
         </button>
-        <button type="button" onClick={onCreateComponentType} title="在当前属性库下新建元件类型">
+        <button type="button" onClick={onCreateComponentLibrary} title="在当前类别库下新建元件库">
           <Plus size={12} aria-hidden="true" />
-          <span>新建类型</span>
+          <span>新建元件库</span>
         </button>
-        <button type="button" className="custom-component-manager-primary-action" onClick={onCreateComponent} title="在当前元件类型下新建元件">
+        <button type="button" className="custom-component-manager-primary-action" onClick={onCreateComponent} title="在当前元件库下新建元件">
           <Plus size={13} aria-hidden="true" />
           <span>新建元件</span>
         </button>
@@ -2714,7 +2763,7 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
           <Trash2 size={12} aria-hidden="true" />
           <span>删除</span>
         </button>
-        <span className="custom-component-tree-actions-note">先选属性/类型/元件</span>
+        <span className="custom-component-tree-actions-note">先选类别/元件库/元件</span>
       </div>
       <div className="custom-component-tree-search-row">
         <div className="dialog-tree-search">
@@ -2722,7 +2771,7 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
           <input
             value={searchQuery}
             onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="搜索属性库/元件类型/元件"
+            placeholder="搜索类别库/元件库/元件"
             aria-label="搜索元件结构"
           />
           {searchQuery && (
@@ -2759,8 +2808,8 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
       </div>
       <div className="custom-component-manager-tree dialog-compact-tree" role="tree">
         {libraries.length > 0 ? libraries.map((group) => {
-          const typeGroups = filteredByComponentType[group] ?? [];
-          const librarySelected = selection.kind === "attributeLibrary" && selection.attributeLibraryName === group;
+          const typeGroups = filteredByComponentLibrary[group] ?? [];
+          const librarySelected = selection.kind === "categoryLibrary" && selection.categoryLibraryName === group;
           const libraryCollapsed = searchNeedle ? false : collapsedLibraries.has(group);
           return (
             <section className="custom-component-tree-library" key={group}>
@@ -2771,7 +2820,7 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
                 aria-selected={librarySelected}
                 aria-expanded={!libraryCollapsed}
                 onClick={() => {
-                  handleSelectAttributeLibrary(group);
+                  handleSelectCategoryLibrary(group);
                   handleToggleLibrary(group);
                 }}
               >
@@ -2783,10 +2832,10 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
                 {typeGroups.map((typeGroup) => {
                   const typeKey = `${group}::${typeGroup.section}`;
                   const typeCollapsed = searchNeedle ? false : collapsedTypes.has(typeKey);
-                  const typeDisplay = componentTypeDisplayParts(typeGroup.section);
+                  const typeDisplay = componentLibraryDisplayParts(typeGroup.section);
                   const typeSelected =
-                    selection.kind === "componentType" &&
-                    selection.attributeLibraryName === group &&
+                    selection.kind === "componentLibrary" &&
+                    selection.categoryLibraryName === group &&
                     selection.section === typeGroup.section;
                   return (
                     <section className="custom-component-tree-type" key={`${group}-${typeGroup.section}`}>
@@ -2797,7 +2846,7 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
                         aria-selected={typeSelected}
                         aria-expanded={!typeCollapsed}
                         onClick={() => {
-                          handleSelectComponentType(group, typeGroup.section);
+                          handleSelectComponentLibrary(group, typeGroup.section);
                           handleToggleType(group, typeGroup.section);
                         }}
                       >

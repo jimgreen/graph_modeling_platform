@@ -53,7 +53,7 @@ import {
   createRenderDeviceDefinitionVisualPanel,
   createSelectCustomComponentTemplate
 } from "./appExtracted/appDeviceDefinitionFactories";
-import { createCustomDeviceDraftFromTemplate, customDeviceImageWithTerminalConnectors, generateCustomDeviceImage, projectCustomDeviceTerminalAnchorToBoundary, resolveTemplateComponentType } from "./customDeviceUtils";
+import { createCustomDeviceDraftFromTemplate, customDeviceImageWithTerminalConnectors, generateCustomDeviceImage, projectCustomDeviceTerminalAnchorToBoundary, resolveTemplateComponentLibrary } from "./customDeviceUtils";
 
 describe("default device state draft rows", () => {
   test("resolves the source image used to initialize state icon drawing", () => {
@@ -439,7 +439,7 @@ describe("default device state draft rows", () => {
       nextNonDefaultStateIndex,
       nonDefaultStateDraftRows,
       projectCustomDeviceTerminalAnchorToBoundary,
-      resolveTemplateComponentType,
+      resolveTemplateComponentLibrary,
       selectedDefinitionTemplate: null,
       setCustomDeviceDraft: () => undefined,
       setCustomDeviceTerminalAnchorDragIndex: () => undefined,
@@ -810,7 +810,7 @@ describe("default device state draft rows", () => {
     const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
       DEFAULT_STATE_PAGE_ID,
       DeviceGlyph: ({ node, stateVisual }: any) => `<path data-status="${node.params.status}" data-state="${stateVisual?.value ?? ""}"/>`,
-      attributeLibraryComponentTypeKey: (group: string, componentType: string) => `${group}:${componentType}`,
+      categoryLibraryComponentLibraryKey: (group: string, componentLibrary: string) => `${group}:${componentLibrary}`,
       colorDisplayMode: "energy",
       colorPalette: {},
       createDefinitionDraftRows: () => [],
@@ -828,10 +828,10 @@ describe("default device state draft rows", () => {
       escapeXml: (value: string) => value,
       formatSvgNumber: (value: number) => String(value),
       nodeGeometryTransform: () => "",
-      normalizeAttributeLibraryName: (value: string) => value,
+      normalizeCategoryLibraryName: (value: string) => value,
       renderSvgElementMarkup: (markup: string) => markup,
-      resolveTemplateComponentType: () => "ACBreak",
-      setCollapsedDefinitionComponentTypes: (updater: any) => {
+      resolveTemplateComponentLibrary: () => "ACBreak",
+      setCollapsedDefinitionComponentLibraries: (updater: any) => {
         updater([]);
       },
       setDefinitionDraftError: () => undefined,
@@ -872,7 +872,7 @@ describe("default device state draft rows", () => {
     const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
       DEFAULT_STATE_PAGE_ID,
       DeviceGlyph: ({ node, stateVisual }: any) => `<path data-status="${node.params.status}" data-state="${stateVisual?.value ?? ""}"/>`,
-      attributeLibraryComponentTypeKey: (group: string, componentType: string) => `${group}:${componentType}`,
+      categoryLibraryComponentLibraryKey: (group: string, componentLibrary: string) => `${group}:${componentLibrary}`,
       colorDisplayMode: "energy",
       colorPalette: {},
       createDefinitionDraftRows: () => [],
@@ -900,10 +900,10 @@ describe("default device state draft rows", () => {
       escapeXml: (value: string) => value,
       formatSvgNumber: (value: number) => String(value),
       nodeGeometryTransform: () => "",
-      normalizeAttributeLibraryName: (value: string) => value,
+      normalizeCategoryLibraryName: (value: string) => value,
       renderSvgElementMarkup: (markup: string) => markup,
-      resolveTemplateComponentType: () => "ACBreak",
-      setCollapsedDefinitionComponentTypes: (updater: any) => {
+      resolveTemplateComponentLibrary: () => "ACBreak",
+      setCollapsedDefinitionComponentLibraries: (updater: any) => {
         updater([]);
       },
       setDefinitionDraftError: () => undefined,
@@ -943,7 +943,7 @@ describe("default device state draft rows", () => {
     let stateRows: any[] = [];
     const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
       ...APP_STATIC_SCOPE,
-      setCollapsedDefinitionComponentTypes: (updater: any) => {
+      setCollapsedDefinitionComponentLibraries: (updater: any) => {
         updater([]);
       },
       setDefinitionDraftError: () => undefined,
@@ -991,7 +991,7 @@ describe("default device state draft rows", () => {
       let stateRows: any[] = [];
       const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
         ...APP_STATIC_SCOPE,
-        setCollapsedDefinitionComponentTypes: (updater: any) => {
+        setCollapsedDefinitionComponentLibraries: (updater: any) => {
           updater([]);
         },
         setDefinitionDraftError: () => undefined,
@@ -1039,7 +1039,7 @@ describe("default device state draft rows", () => {
         createStateDraftRow({ value: "0", name: "打开/开断", image: staleFallbackImage }),
         createStateDraftRow({ value: "1", name: "闭合", imageAssetId: "staleFallback" })
       ],
-      setCollapsedDefinitionComponentTypes: (updater: any) => {
+      setCollapsedDefinitionComponentLibraries: (updater: any) => {
         updater([]);
       },
       setDefinitionDraftError: () => undefined,
@@ -1079,16 +1079,16 @@ describe("default device state draft rows", () => {
     )}`;
     const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
       DEFAULT_STATE_PAGE_ID,
-      attributeLibraryComponentTypeKey: (group: string, componentType: string) => `${group}:${componentType}`,
+      categoryLibraryComponentLibraryKey: (group: string, componentLibrary: string) => `${group}:${componentLibrary}`,
       createDefinitionDraftRows: () => [],
       createDefinitionStateDraftRows: () => [
         createStateDraftRow({ value: "0", name: "打开/开断", image: generatedImage }),
         createStateDraftRow({ value: "1", name: "闭合" })
       ],
       createDefinitionVisualDraft: () => ({}),
-      normalizeAttributeLibraryName: (value: string) => value,
-      resolveTemplateComponentType: () => "ACBreak",
-      setCollapsedDefinitionComponentTypes: (updater: any) => {
+      normalizeCategoryLibraryName: (value: string) => value,
+      resolveTemplateComponentLibrary: () => "ACBreak",
+      setCollapsedDefinitionComponentLibraries: (updater: any) => {
         updater([]);
       },
       setDefinitionDraftError: () => undefined,
@@ -1125,7 +1125,7 @@ describe("default device state draft rows", () => {
     let visualDraft: any = null;
     const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
       DEFAULT_STATE_PAGE_ID,
-      attributeLibraryComponentTypeKey: (group: string, componentType: string) => `${group}:${componentType}`,
+      categoryLibraryComponentLibraryKey: (group: string, componentLibrary: string) => `${group}:${componentLibrary}`,
       createDefinitionDraftRows: () => [],
       createDefinitionStateDraftRows: () => [],
       createDefinitionVisualDraft: () => ({
@@ -1139,9 +1139,9 @@ describe("default device state draft rows", () => {
         terminalAnchors: template.terminalAnchors ?? [],
         error: ""
       }),
-      normalizeAttributeLibraryName: (value: string) => value,
-      resolveTemplateComponentType: () => "HeatLoad2",
-      setCollapsedDefinitionComponentTypes: (updater: any) => {
+      normalizeCategoryLibraryName: (value: string) => value,
+      resolveTemplateComponentLibrary: () => "HeatLoad2",
+      setCollapsedDefinitionComponentLibraries: (updater: any) => {
         updater([]);
       },
       setDefinitionDraftError: () => undefined,
@@ -1334,7 +1334,7 @@ describe("default device state draft rows", () => {
       nextNonDefaultStateIndex,
       nonDefaultStateDraftRows,
       projectCustomDeviceTerminalAnchorToBoundary,
-      resolveTemplateComponentType,
+      resolveTemplateComponentLibrary,
       selectedDefinitionTemplate: null,
       setCustomDeviceDraft: () => undefined,
       setCustomDeviceTerminalAnchorDragIndex: () => undefined,
@@ -1448,7 +1448,7 @@ describe("default device state draft rows", () => {
       nextNonDefaultStateIndex,
       nonDefaultStateDraftRows,
       projectCustomDeviceTerminalAnchorToBoundary,
-      resolveTemplateComponentType,
+      resolveTemplateComponentLibrary,
       selectedDefinitionTemplate: null,
       setCustomDeviceDraft: () => undefined,
       setCustomDeviceTerminalAnchorDragIndex: () => undefined,
@@ -1529,7 +1529,7 @@ describe("default device state draft rows", () => {
     }
 
     let draft = createCustomDeviceDraftFromTemplate(staticTextTemplate);
-    let treeSelection: any = { kind: "component", attributeLibraryName: staticTextTemplate.attributeLibrary, section: "StaticTextSymbol", templateKind: staticTextTemplate.kind };
+    let treeSelection: any = { kind: "component", categoryLibraryName: staticTextTemplate.categoryLibrary, section: "StaticTextSymbol", templateKind: staticTextTemplate.kind };
     let selectedDefinitionKind = staticTextTemplate.kind;
     let definitionDraftSection = "StaticTextSymbol";
     let editingCustomDeviceKind = "";
@@ -1553,12 +1553,12 @@ describe("default device state draft rows", () => {
         customComponentSelectionFrameRef: { current: null },
         customComponentSelectionRequestRef: { current: 0 },
         customDeviceDefinitionMode: "edit",
-        ensureCustomComponentTreeExpanded: (attributeLibraryName: string, section: string) => {
-          expandedRequests.push([attributeLibraryName, section]);
+        ensureCustomComponentTreeExpanded: (categoryLibraryName: string, section: string) => {
+          expandedRequests.push([categoryLibraryName, section]);
         },
-        normalizeAttributeLibraryName: (value: string) => value,
-        normalizeComponentTypeName: (value: string) => value,
-        resolveTemplateComponentType,
+        normalizeCategoryLibraryName: (value: string) => value,
+        normalizeComponentLibraryName: (value: string) => value,
+        resolveTemplateComponentLibrary,
         setCustomComponentTreeSelection: (next: any) => {
           treeSelection = next;
         },
@@ -1592,14 +1592,14 @@ describe("default device state draft rows", () => {
       expect(definitionDraftSection).toBe("HydroCompressor");
       expect(treeSelection).toEqual({
         kind: "component",
-        attributeLibraryName: "氢能设备",
+        categoryLibraryName: "氢能设备",
         section: "HydroCompressor",
         templateKind: "hydrogen-compressor"
       });
       expect(editingCustomDeviceKind).toBe("");
       expect(customDeviceStatePageId).toBe(DEFAULT_STATE_PAGE_ID);
       expect(draft.componentName).toBe("氢压机");
-      expect(draft.componentType).toBe("HydroCompressor");
+      expect(draft.componentLibrary).toBe("HydroCompressor");
       expect(draft.terminalCount).toBe(2);
     } finally {
       if (previousWindow === undefined) {
@@ -1627,9 +1627,9 @@ describe("default device state draft rows", () => {
       customDeviceDefinitionMode: "edit",
       ensureCustomComponentTreeExpanded: () => undefined,
       imageAssets: {},
-      normalizeAttributeLibraryName: (value: string) => value,
-      normalizeComponentTypeName: (value: string) => value,
-      resolveTemplateComponentType,
+      normalizeCategoryLibraryName: (value: string) => value,
+      normalizeComponentLibraryName: (value: string) => value,
+      resolveTemplateComponentLibrary,
       setCustomComponentTreeSelection: () => undefined,
       setCustomDeviceDraft: (next: any) => {
         draft = typeof next === "function" ? next(draft) : next;

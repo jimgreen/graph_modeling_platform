@@ -68,7 +68,7 @@ describe("deviceLibraryMigration", () => {
         {
           kind: "test-device-1",
           label: "测试设备 1",
-          attributeLibrary: "交流设备",
+          categoryLibrary: "交流设备",
           size: { width: 100, height: 80 },
           params: { param1: "value1" },
           terminalType: "ac",
@@ -78,7 +78,7 @@ describe("deviceLibraryMigration", () => {
         {
           kind: "test-device-2",
           label: "测试设备 2",
-          attributeLibrary: "直流设备",
+          categoryLibrary: "直流设备",
           size: { width: 120, height: 90 },
           params: { param2: "value2" },
           terminalType: "dc",
@@ -103,7 +103,7 @@ describe("deviceLibraryMigration", () => {
         {
           kind: "test-device-with-image",
           label: "带图片的设备",
-          attributeLibrary: "交流设备",
+          categoryLibrary: "交流设备",
           size: { width: 100, height: 80 },
           params: {
             backgroundImage: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
@@ -235,7 +235,7 @@ describe("deviceLibraryMigration", () => {
         {
           kind: "test-device",
           label: "测试设备",
-          attributeLibrary: "交流设备",
+          categoryLibrary: "交流设备",
           size: { width: 100, height: 80 },
           params: {},
           terminalType: "ac",
@@ -275,7 +275,7 @@ describe("deviceLibraryMigration", () => {
         {
           kind: "test-device",
           label: "测试设备",
-          attributeLibrary: "交流设备",
+          categoryLibrary: "交流设备",
           size: { width: 100, height: 80 },
           params: {},
           terminalType: "ac",
@@ -300,7 +300,7 @@ describe("deviceLibraryMigration", () => {
         {
           kind: "test-device",
           label: "测试设备",
-          attributeLibrary: "交流设备",
+          categoryLibrary: "交流设备",
           size: { width: 100, height: 80 },
           params: {},
           terminalType: "ac",

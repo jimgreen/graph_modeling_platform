@@ -90,7 +90,7 @@ describe("measurement canvas interactions", () => {
       measurementConfigDraft: null,
       measurementConfigSaveStatus: "idle",
       moveMeasurementProfileItem: vi.fn(),
-      normalizeComponentTypeName: (value: string) => value,
+      normalizeComponentLibraryName: (value: string) => value,
       updateMeasurementProfileItem
     } as any)({
       deviceKind: "CustomDevice",

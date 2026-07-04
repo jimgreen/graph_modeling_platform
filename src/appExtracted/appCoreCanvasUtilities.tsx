@@ -514,7 +514,7 @@ import { snapSingleTerminalAnchorToNearestSide, projectedProportionalScaleFromHa
 import { DeviceGlyph, MemoDeviceGlyph, SvgMarkupChunk } from "../DeviceGlyph";
 import { buildSvgNodeLabelMarkup, svgDisplayAttribute, exportSvgSafeId, exportSvgLayerId, exportSvgUniqueId, exportSvgLayerScriptMarkup, exportDeviceMetadataAttributes, exportMeasurementGroupMetadataAttributes, exportMeasurementItemMetadataAttributes, exportMeasurementGroupBackgroundColor, exportMeasurementGroupBorderColor, exportMeasurementGroupBorderWidth, exportMeasurementGroupBorderDashArray, exportMeasurementGroupAnchorPoint, exportMeasurementGroupLocalOffset, exportMeasurementGroupMetrics, buildExportMeasurementGroupMarkup } from "../svgExportUtils";
 import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_PAGE_ID, isDefaultStatePageId, createStateDraftRow, createStateDraftRowFromDefaultVisual, createDefinitionStateDraftRows, normalizeStateDraftRows, validateStateDraftRows, stateVisualFromDraftRow, activeStateDraftRow, normalizeStatePageId, stateDraftImageValue, stateVisualShapeLabel, generateStateVisualShapeImage, stateIconDrawingElementId, visibleStateIconColor, createStateIconDrawingElement, createImportedStateIconElement, svgSourceFromDataUrl, parseStateIconSvgSource, stateIconSvgElementSource, parseSvgStyleAttribute, stateIconSvgReactAttributes, stateIconSvgNodeChildren, stateIconSvgNodeToReact, stateIconSvgSourceToReactNodes, createEditableStateIconElementsFromSvgSource, createStateIconDrawingInitialElements, svgSourceToDataUrl, stateIconDrawingSvgElementMarkup, stateIconDrawingElementMarkup, stateIconDrawingToImage, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "../stateIconDrawing";
-import { fallbackComponentTypeForAttributeLibrary, resolveTemplateComponentType, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, isReservedDeviceDefinitionParamName, createDefinitionDraftRows, normalizeCustomDeviceTerminalAnchorCoordinate, projectCustomDeviceTerminalAnchorToBoundary, customDeviceTerminalAnchorKey, hasOverlappingCustomDeviceTerminalAnchors, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, createCustomDeviceDraftFromTemplate, createDefinitionVisualDraft, defaultContainerAssociationForTerminalType, isAssociationAllowedForTerminal, normalizeContainerTerminalAssociations, customDefaultDefinitions, generateCustomDeviceImage, customDeviceImageWithTerminalConnectors, customDeviceGeneratedDefaultImageCandidates, syncInheritedCustomDeviceStateVisuals, parseCustomDefinitions, screenToSvgPoint, primaryOrthogonalAxis, constrainPointToOrthogonalAxis } from "../customDeviceUtils";
+import { fallbackComponentLibraryForCategoryLibrary, resolveTemplateComponentLibrary, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, isReservedDeviceDefinitionParamName, createDefinitionDraftRows, normalizeCustomDeviceTerminalAnchorCoordinate, projectCustomDeviceTerminalAnchorToBoundary, customDeviceTerminalAnchorKey, hasOverlappingCustomDeviceTerminalAnchors, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, createCustomDeviceDraftFromTemplate, createDefinitionVisualDraft, defaultContainerAssociationForTerminalType, isAssociationAllowedForTerminal, normalizeContainerTerminalAssociations, customDefaultDefinitions, generateCustomDeviceImage, customDeviceImageWithTerminalConnectors, customDeviceGeneratedDefaultImageCandidates, syncInheritedCustomDeviceStateVisuals, parseCustomDefinitions, screenToSvgPoint, primaryOrthogonalAxis, constrainPointToOrthogonalAxis } from "../customDeviceUtils";
 import { useBatchEditors } from "../hooks/useBatchEditors";
 
 export const ENABLE_REACT_FLOW_PREVIEW = import.meta.env.DEV;
@@ -677,22 +677,22 @@ export type RoutableLinePlacementState = {
   manualPoints?: Point[];
 } | null;
 
-export type AttributeLibrary = string;
+export type CategoryLibrary = string;
 
-export type CustomComponentTypeDefinition = {
+export type CustomComponentLibraryDefinition = {
   name: string;
-  attributeLibraryName: AttributeLibrary;
+  categoryLibraryName: CategoryLibrary;
 };
 
-export type AttributeLibraryComponentTypeGroup = {
+export type CategoryLibraryComponentLibraryGroup = {
   section: string;
   templates: DeviceTemplate[];
 };
 
 export type CustomComponentTreeSelection =
-  | { kind: "attributeLibrary"; attributeLibraryName: AttributeLibrary }
-  | { kind: "componentType"; attributeLibraryName: AttributeLibrary; section: string }
-  | { kind: "component"; attributeLibraryName: AttributeLibrary; section: string; templateKind: string };
+  | { kind: "categoryLibrary"; categoryLibraryName: CategoryLibrary }
+  | { kind: "componentLibrary"; categoryLibraryName: CategoryLibrary; section: string }
+  | { kind: "component"; categoryLibraryName: CategoryLibrary; section: string; templateKind: string };
 
 export type CustomDeviceDialogView = "icon" | "parameters" | "measurements";
 
@@ -1667,8 +1667,8 @@ export type BackendColorConfigResponse = {
 
 export type DeviceLibraryPersistencePayload = {
   customDeviceTemplates: DeviceTemplate[];
-  customAttributeLibraries: AttributeLibrary[];
-  customComponentTypes: CustomComponentTypeDefinition[];
+  customCategoryLibraries: CategoryLibrary[];
+  customComponentLibraries: CustomComponentLibraryDefinition[];
   deviceDefinitionOverrides: Record<string, DeviceTemplateDefinitionOverride>;
   customGraphTemplateTypes: string[];
   customGraphTemplates: GraphTemplate[];
@@ -1700,8 +1700,8 @@ export type CustomParamDraft = DeviceParameterDefinition & {
 };
 
 export type CustomDeviceDraft = {
-  attributeLibraryName: string;
-  componentType: string;
+  categoryLibraryName: string;
+  componentLibrary: string;
   componentName: string;
   backgroundImage: string;
   backgroundImageAssetId: string;
@@ -1765,8 +1765,8 @@ export type GroupDeviceDefinitionDialogState = {
   iconImage: string;
   terminals: GroupDeviceTerminalDraft[];
   mode: GroupDeviceDefinitionMode;
-  attributeLibraryName: string;
-  componentType: string;
+  categoryLibraryName: string;
+  componentLibrary: string;
   targetKind: string;
 } | null;
 
@@ -2018,7 +2018,7 @@ export const INITIAL_TOPOLOGY_STATUS: TopologyRunStatus = { state: "idle", messa
 
 export const E_SECTION_OPTIONS = Object.keys(E_SECTION_COLUMNS);
 
-export const COMPONENT_TYPE_LABELS: Record<string, string> = {
+export const COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   StaticTextSymbol: "静态文本",
   StaticMediaSymbol: "静态媒体",
   StaticBasicShape: "基础图形",
@@ -2101,11 +2101,11 @@ export const VOLTAGE_UNIT_OPTIONS = ["V", "kV"];
 
 export const CURRENT_UNIT_OPTIONS = ["A", "kA"];
 
-export const DEFAULT_ATTRIBUTE_LIBRARIES: AttributeLibrary[] = ["静态图元", "交流设备", "直流设备", "氢能设备", "热能设备"];
+export const DEFAULT_CATEGORY_LIBRARIES: CategoryLibrary[] = ["静态图元", "交流设备", "直流设备", "氢能设备", "热能设备"];
 
-export const CUSTOM_ATTRIBUTE_LIBRARY_BASES: AttributeLibrary[] = ["交流设备", "直流设备", "氢能设备", "热能设备"];
+export const CUSTOM_CATEGORY_LIBRARY_BASES: CategoryLibrary[] = ["交流设备", "直流设备", "氢能设备", "热能设备"];
 
-export const PROTECTED_ATTRIBUTE_LIBRARIES = new Set(DEFAULT_ATTRIBUTE_LIBRARIES);
+export const PROTECTED_CATEGORY_LIBRARIES = new Set(DEFAULT_CATEGORY_LIBRARIES);
 
 export const DEVICE_TYPE_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/;
 
@@ -2409,9 +2409,13 @@ export const IMAGE_STORAGE_KEY = "power-system-image-assets";
 
 export const CUSTOM_DEVICE_LIBRARY_STORAGE_KEY = "power-system-custom-device-library";
 
-export const CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY = "power-system-custom-attribute-libraries";
+export const LEGACY_CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY = "power-system-custom-attribute-libraries";
 
-export const CUSTOM_COMPONENT_TYPES_STORAGE_KEY = "power-system-custom-component-types";
+export const CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY = "power-system-custom-category-libraries";
+
+export const LEGACY_CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY = "power-system-custom-component-types";
+
+export const CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY = "power-system-custom-component-libraries";
 
 export const DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY = "power-system-device-definition-overrides";
 
@@ -3183,7 +3187,7 @@ export const PARAM_LABELS: Record<string, string> = {
   section: "母线分段",
   pole: "极性",
   source_file: "参数来源文件",
-  component_type: "元件类型",
+  component_type: "元件库",
   idx: "外部序号",
   node: "节点号",
   i_node: "首端节点号",

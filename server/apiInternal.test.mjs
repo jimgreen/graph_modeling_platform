@@ -368,7 +368,7 @@ describe("配置域 /api/color-config & measurement-config & device-library", ()
     const saved = await fetchJson("/api/device-library", {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ customComponentTypes: [], customAttributeLibraries: [] })
+      body: JSON.stringify({ customComponentLibraries: [], customCategoryLibraries: [] })
     });
     expect(saved.status).toBe(200);
     expect(saved.json.ok).toBe(true);

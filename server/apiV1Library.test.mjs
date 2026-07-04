@@ -19,7 +19,7 @@ vi.mock("./image-server.mjs", () => ({
     StaticBasicShape: [],
     HydroSource: ["idx", "name", "node"]
   },
-  staticComponentTypeByKind: {
+  staticComponentLibraryByKind: {
     "static-rect": "StaticBasicShape",
     "ac-bus": "StaticBasicShape"
   }
@@ -54,8 +54,8 @@ function ctx() {
 
 const fullLib = {
   customDeviceTemplates: [{ id: "t1", name: "自定义模板1" }],
-  customAttributeLibraries: ["自定义库A"],
-  customComponentTypes: [{ name: "自定义类型1" }],
+  customCategoryLibraries: ["自定义库A"],
+  customComponentLibraries: [{ name: "自定义类型1" }],
   customGraphTemplateTypes: [{ name: "图元模板类型1" }],
   customGraphTemplates: [{ id: "gt1" }],
   deviceDefinitionOverrides: { "ac-bus": { name: "母线" } }
@@ -79,7 +79,7 @@ describe("handleV1LibraryCategories", () => {
   });
 
   test("空库（无自定义）返静态 bases", async () => {
-    readDeviceLibraryConfig.mockResolvedValue({ exists: false, customAttributeLibraries: [] });
+    readDeviceLibraryConfig.mockResolvedValue({ exists: false, customCategoryLibraries: [] });
     const { request, response } = ctx();
     await handleV1LibraryCategories({ request, response });
     expect(response.jsonBody().data.categories).toHaveLength(5);
@@ -104,8 +104,8 @@ describe("handleV1LibraryDevices", () => {
     expect(data.eSections.find((s) => s.section === "ACNode").columns).toEqual(["idx", "name", "vbase"]);
     expect(data.eSections.find((s) => s.section === "ACNode").base).toBe("交流设备");
     expect(data.eSections.find((s) => s.section === "HydroSource").base).toBe("氢能设备");
-    expect(data.staticComponentTypes).toHaveLength(2);
-    expect(data.customComponentTypes).toEqual([{ name: "自定义类型1" }]);
+    expect(data.staticComponentLibraries).toHaveLength(2);
+    expect(data.customComponentLibraries).toEqual([{ name: "自定义类型1" }]);
   });
 
   test("E 段 base 推导：StaticBasicShape→静态图元", async () => {
@@ -143,8 +143,8 @@ describe("handleV1LibraryDeviceDefinitions", () => {
     await handleV1LibraryDeviceDefinitions({ request, response });
     expect(response.jsonBody().data).toEqual({
       deviceDefinitionOverrides: { "ac-bus": { name: "母线" } },
-      customComponentTypes: [{ name: "自定义类型1" }],
-      customAttributeLibraries: ["自定义库A"]
+      customComponentLibraries: [{ name: "自定义类型1" }],
+      customCategoryLibraries: ["自定义库A"]
     });
   });
 });

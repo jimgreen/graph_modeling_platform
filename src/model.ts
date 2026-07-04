@@ -307,7 +307,7 @@ export type Terminal = {
 export type DeviceTemplate = {
   kind: DeviceKind;
   label: string;
-  attributeLibrary: string;
+  categoryLibrary: string;
   size: {
     width: number;
     height: number;
@@ -370,7 +370,7 @@ export type ContainerDeviceParameterView = {
   id: string;
   label: string;
   kind: "container" | "associated";
-  componentType?: string;
+  componentLibrary?: string;
   relationKeys?: string[];
   terminalIndexes?: number[];
   terminalLabels?: string;
@@ -472,8 +472,8 @@ export type ElementTreeItem = {
 export type ElementTreeChildItem = {
   id: string;
   label: string;
-  componentType: string;
-  componentTypeLabel?: string;
+  componentLibrary: string;
+  componentLibraryLabel?: string;
   idx: string;
   name: string;
   nameKey: string;
@@ -575,8 +575,8 @@ export function formatPowerBaseDisplayValue(key: string, value: string) {
   return text;
 }
 
-const DEFAULT_STATIC_COMPONENT_TYPE = "StaticBasicShape";
-const STATIC_COMPONENT_TYPE_BY_KIND: Record<string, string> = {
+const DEFAULT_STATIC_COMPONENT_LIBRARY = "StaticBasicShape";
+const STATIC_COMPONENT_LIBRARY_BY_KIND: Record<string, string> = {
   "static-text": "StaticTextSymbol",
   "static-date": "StaticTextSymbol",
   "static-time": "StaticTextSymbol",
@@ -623,12 +623,12 @@ const STATIC_COMPONENT_TYPE_BY_KIND: Record<string, string> = {
   "static-edge-label": "StaticAnnotationSymbol"
 };
 
-function staticComponentTypeForKind(kind: string): string {
-  return STATIC_COMPONENT_TYPE_BY_KIND[baseDeviceKind(kind)] ?? DEFAULT_STATIC_COMPONENT_TYPE;
+function staticComponentLibraryForKind(kind: string): string {
+  return STATIC_COMPONENT_LIBRARY_BY_KIND[baseDeviceKind(kind)] ?? DEFAULT_STATIC_COMPONENT_LIBRARY;
 }
 
 export function isStaticContainerKind(kind: string): boolean {
-  return staticComponentTypeForKind(kind) === "StaticContainerSymbol";
+  return staticComponentLibraryForKind(kind) === "StaticContainerSymbol";
 }
 
 function defaultStaticRouteAvoidanceValue(kind: string): "0" | "1" {
@@ -826,12 +826,12 @@ export function inferESection(kind: string, params: Record<string, string> = {})
   const sectionKind = baseDeviceKind(kind);
   if (sectionKind === "ac-bus") return "ACRealBs";
   if (sectionKind === "dc-bus") return "DCRealBs";
-  const componentType = params.component_type?.trim();
+  const componentLibrary = (params.component_type || params.componentLibrary || params.componentType)?.trim();
   if (isStaticKind(sectionKind)) {
-    return componentType && componentType !== "StaticSymbol" ? componentType : staticComponentTypeForKind(sectionKind);
+    return componentLibrary && componentLibrary !== "StaticSymbol" ? componentLibrary : staticComponentLibraryForKind(sectionKind);
   }
-  if (componentType) {
-    return componentType;
+  if (componentLibrary) {
+    return componentLibrary;
   }
   const mappedSection = E_KIND_SECTION_MAP[sectionKind];
   if (mappedSection) {
@@ -2151,7 +2151,7 @@ export function getEExportWarnings(project: ProjectFile): EExportWarning[] {
         nodeId: node.id,
         nodeName: node.name,
         kind: node.kind,
-        reason: isContainerParams(node.params) ? "容器设备没有对应的 E 文件段定义。" : "元件类型没有对应的 E 文件段定义。"
+        reason: isContainerParams(node.params) ? "容器设备没有对应的 E 文件段定义。" : "元件库没有对应的 E 文件段定义。"
       }];
     }
     if (!E_SECTION_COLUMNS[section] && getEParameterKeys(node.kind, node.params).length === 0) {
@@ -2505,7 +2505,7 @@ const staticSymbolParams = (
   overrides: Partial<Record<string, string>> = {}
 ): Record<string, string> => ({
   ...withStaticButtonCapability(kind, {
-    component_type: staticComponentTypeForKind(kind),
+    component_type: staticComponentLibraryForKind(kind),
     [STATIC_ROUTE_AVOIDANCE_PARAM]: defaultStaticRouteAvoidanceValue(kind),
     text,
     fillColor: "#ffffff",
@@ -2538,7 +2538,7 @@ const staticVisualParams = (
   params: Record<string, string>
 ): Record<string, string> => ({
   ...withStaticButtonCapability(kind, {
-    component_type: staticComponentTypeForKind(kind),
+    component_type: staticComponentLibraryForKind(kind),
     [STATIC_ROUTE_AVOIDANCE_PARAM]: defaultStaticRouteAvoidanceValue(kind),
     ...params
   })
@@ -2548,7 +2548,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-text",
     label: "文字",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 120, height: 40 },
     params: staticVisualParams("static-text", {
       text: "文字",
@@ -2569,7 +2569,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-line",
     label: "直线",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 140, height: 24 },
     params: staticVisualParams("static-line", { fillColor: "transparent", strokeColor: "#334155", textColor: "#111827", lineWidth: "3", strokeStyle: "solid", fontSize: "16" }),
     terminalType: "ac",
@@ -2578,7 +2578,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-polyline",
     label: "折线",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 140, height: 70 },
     params: staticVisualParams("static-polyline", { fillColor: "transparent", strokeColor: "#334155", textColor: "#111827", lineWidth: "3", strokeStyle: "solid", fontSize: "16" }),
     terminalType: "ac",
@@ -2587,7 +2587,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-circle",
     label: "正圆",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 72, height: 72 },
     params: staticVisualParams("static-circle", { fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" }),
     terminalType: "ac",
@@ -2596,7 +2596,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-ellipse",
     label: "椭圆",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 112, height: 70 },
     params: staticVisualParams("static-ellipse", { fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" }),
     terminalType: "ac",
@@ -2605,7 +2605,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-rect",
     label: "方框",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 112, height: 70 },
     params: staticVisualParams("static-rect", { fillColor: "#ffffff", strokeColor: "transparent", textColor: "#111827", lineWidth: "0", strokeStyle: "solid", fontSize: "16" }),
     terminalType: "ac",
@@ -2614,7 +2614,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-image",
     label: "图片",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 140, height: 90 },
     params: staticVisualParams("static-image", { fillColor: "#ffffff", strokeColor: "transparent", textColor: "#64748b", lineWidth: "0", strokeStyle: "solid", fontSize: "16", backgroundImage: "", backgroundImageAssetId: "" }),
     terminalType: "ac",
@@ -2623,7 +2623,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-rounded-rect",
     label: "圆角节点",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 132, height: 72 },
     params: staticSymbolParams("static-rounded-rect", "圆角节点", { cornerRadius: "12", shadowEnabled: "1" }),
     terminalType: "ac",
@@ -2632,7 +2632,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-diamond",
     label: "判断节点",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 116, height: 86 },
     params: staticSymbolParams("static-diamond", "判断", { fillColor: "#fefce8", strokeColor: "#ca8a04", accentColor: "#eab308", padding: "18" }),
     terminalType: "ac",
@@ -2641,7 +2641,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-pill",
     label: "起止节点",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 132, height: 58 },
     params: staticSymbolParams("static-pill", "开始/结束", { fillColor: "#ecfdf5", strokeColor: "#059669", accentColor: "#10b981", cornerRadius: "999" }),
     terminalType: "ac",
@@ -2650,7 +2650,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-database",
     label: "数据库",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 112, height: 88 },
     params: staticSymbolParams("static-database", "数据库", { fillColor: "#eff6ff", strokeColor: "#2563eb", accentColor: "#60a5fa", verticalAlign: "middle" }),
     terminalType: "ac",
@@ -2659,7 +2659,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-document",
     label: "文档",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 106, height: 128 },
     params: staticSymbolParams("static-document", "文档", { fillColor: "#ffffff", strokeColor: "#475569", accentColor: "#94a3b8", verticalAlign: "top", padding: "16" }),
     terminalType: "ac",
@@ -2668,7 +2668,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-note",
     label: "便签",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 126, height: 92 },
     params: staticSymbolParams("static-note", "便签", { fillColor: "#fef9c3", strokeColor: "#ca8a04", accentColor: "#facc15", cornerRadius: "6", verticalAlign: "top" }),
     terminalType: "ac",
@@ -2677,7 +2677,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-group-box",
     label: "分组框",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 180, height: 112 },
     params: staticSymbolParams("static-group-box", "分组", { fillColor: "transparent", strokeColor: "#64748b", accentColor: "#64748b", cornerRadius: "8", strokeStyle: "dashed", textAlign: "left", verticalAlign: "top" }),
     terminalType: "ac",
@@ -2686,7 +2686,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-swimlane",
     label: "泳道",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 220, height: 122 },
     params: staticSymbolParams("static-swimlane", "泳道", { fillColor: "#f8fafc", strokeColor: "#475569", accentColor: "#dbeafe", textAlign: "left", verticalAlign: "top", padding: "14" }),
     terminalType: "ac",
@@ -2695,7 +2695,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-point",
     label: "连接点",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 22, height: 22 },
     params: staticSymbolParams("static-point", "", { fillColor: "#2563eb", strokeColor: "#ffffff", accentColor: "#2563eb", lineWidth: "2", padding: "4" }),
     terminalType: "ac",
@@ -2704,7 +2704,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-ring",
     label: "圆环点",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 28, height: 28 },
     params: staticSymbolParams("static-ring", "", { fillColor: "transparent", strokeColor: "#2563eb", accentColor: "#60a5fa", lineWidth: "3", padding: "4" }),
     terminalType: "ac",
@@ -2713,7 +2713,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-circle-node",
     label: "圆形节点",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 86, height: 86 },
     params: staticSymbolParams("static-circle-node", "圆形节点", { fillColor: "#eff6ff", strokeColor: "#2563eb", accentColor: "#60a5fa", cornerRadius: "999", shadowEnabled: "1" }),
     terminalType: "ac",
@@ -2722,7 +2722,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-straight-connector",
     label: "直线连接",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 150, height: 28 },
     params: staticSymbolParams("static-straight-connector", "", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "none", arrowSize: "10" }),
     terminalType: "ac",
@@ -2731,7 +2731,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-arrow-connector",
     label: "箭头连接",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 150, height: 32 },
     params: staticSymbolParams("static-arrow-connector", "", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "arrow", arrowSize: "12" }),
     terminalType: "ac",
@@ -2740,7 +2740,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-double-arrow-connector",
     label: "双向箭头",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 150, height: 32 },
     params: staticSymbolParams("static-double-arrow-connector", "", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "arrow", markerEnd: "arrow", arrowSize: "12" }),
     terminalType: "ac",
@@ -2749,7 +2749,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-elbow-connector",
     label: "折线连接",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 150, height: 82 },
     params: staticSymbolParams("static-elbow-connector", "", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "arrow", arrowSize: "12" }),
     terminalType: "ac",
@@ -2758,7 +2758,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-hexagon",
     label: "六边形",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 126, height: 78 },
     params: staticSymbolParams("static-hexagon", "六边形", { fillColor: "#f8fafc", strokeColor: "#475569", accentColor: "#94a3b8", padding: "16" }),
     terminalType: "ac",
@@ -2767,7 +2767,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-parallelogram",
     label: "平行四边形",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 132, height: 76 },
     params: staticSymbolParams("static-parallelogram", "输入/输出", { fillColor: "#f0f9ff", strokeColor: "#0284c7", accentColor: "#38bdf8", padding: "18" }),
     terminalType: "ac",
@@ -2776,7 +2776,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-triangle",
     label: "三角形",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 96, height: 86 },
     params: staticSymbolParams("static-triangle", "三角", { fillColor: "#fff7ed", strokeColor: "#ea580c", accentColor: "#fb923c", padding: "18", verticalAlign: "bottom" }),
     terminalType: "ac",
@@ -2785,7 +2785,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-callout",
     label: "标注气泡",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 154, height: 86 },
     params: staticSymbolParams("static-callout", "标注", { fillColor: "#ffffff", strokeColor: "#475569", accentColor: "#2563eb", cornerRadius: "10", textAlign: "left", verticalAlign: "top", padding: "14", shadowEnabled: "1" }),
     terminalType: "ac",
@@ -2794,7 +2794,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-default-node",
     label: "默认节点",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 142, height: 64 },
     params: staticSymbolParams("static-default-node", "默认节点", { fillColor: "#ffffff", strokeColor: "#1f2937", accentColor: "#3b82f6", cornerRadius: "8", shadowEnabled: "1" }),
     terminalType: "ac",
@@ -2803,7 +2803,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-input-node",
     label: "输入节点",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 142, height: 64 },
     params: staticSymbolParams("static-input-node", "输入", { fillColor: "#eff6ff", strokeColor: "#2563eb", accentColor: "#60a5fa", cornerRadius: "8", handleColor: "#2563eb" }),
     terminalType: "ac",
@@ -2812,7 +2812,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-output-node",
     label: "输出节点",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 142, height: 64 },
     params: staticSymbolParams("static-output-node", "输出", { fillColor: "#ecfdf5", strokeColor: "#059669", accentColor: "#34d399", cornerRadius: "8", handleColor: "#059669" }),
     terminalType: "ac",
@@ -2821,7 +2821,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-port-node",
     label: "端口节点",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 148, height: 82 },
     params: staticSymbolParams("static-port-node", "端口节点", { fillColor: "#f8fafc", strokeColor: "#334155", accentColor: "#94a3b8", cornerRadius: "10", handleColor: "#2563eb", handleSize: "9" }),
     terminalType: "ac",
@@ -2830,7 +2830,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-card-node",
     label: "卡片节点",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 168, height: 98 },
     params: staticSymbolParams("static-card-node", "卡片节点", { fillColor: "#ffffff", strokeColor: "#cbd5e1", accentColor: "#2563eb", cornerRadius: "10", textAlign: "left", verticalAlign: "top", padding: "16", shadowEnabled: "1" }),
     terminalType: "ac",
@@ -2839,7 +2839,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-toolbar-node",
     label: "工具条节点",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 170, height: 96 },
     params: staticSymbolParams("static-toolbar-node", "工具条节点", { fillColor: "#ffffff", strokeColor: "#64748b", accentColor: "#e2e8f0", cornerRadius: "10", verticalAlign: "bottom", shadowEnabled: "1" }),
     terminalType: "ac",
@@ -2848,7 +2848,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-button",
     label: "按钮",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 132, height: 52 },
     params: staticSymbolParams("static-button", "按钮", { fillColor: "#eff6ff", strokeColor: "#2563eb", accentColor: "#60a5fa", cornerRadius: "8", shadowEnabled: "1" }),
     terminalType: "ac",
@@ -2857,7 +2857,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-resizer-frame",
     label: "缩放框",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 166, height: 104 },
     params: staticSymbolParams("static-resizer-frame", "", { fillColor: "transparent", strokeColor: "#2563eb", accentColor: "#2563eb", lineWidth: "2", strokeStyle: "dashed", handleColor: "#ffffff", handleSize: "10" }),
     terminalType: "ac",
@@ -2866,7 +2866,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-subflow-box",
     label: "子流程框",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 210, height: 136 },
     params: staticSymbolParams("static-subflow-box", "子流程", { fillColor: "#f8fafc", strokeColor: "#475569", accentColor: "#dbeafe", cornerRadius: "10", textAlign: "left", verticalAlign: "top", padding: "14" }),
     terminalType: "ac",
@@ -2875,7 +2875,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-bezier-connector",
     label: "贝塞尔连接",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 156, height: 72 },
     params: staticSymbolParams("static-bezier-connector", "", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "arrow", arrowSize: "12" }),
     terminalType: "ac",
@@ -2884,7 +2884,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-smoothstep-connector",
     label: "平滑折线",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 156, height: 76 },
     params: staticSymbolParams("static-smoothstep-connector", "", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "arrow", arrowSize: "12" }),
     terminalType: "ac",
@@ -2893,7 +2893,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-self-loop",
     label: "自环连接",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 104, height: 86 },
     params: staticSymbolParams("static-self-loop", "", { fillColor: "transparent", strokeColor: "#334155", lineWidth: "3", markerStart: "none", markerEnd: "arrow", arrowSize: "10" }),
     terminalType: "ac",
@@ -2902,7 +2902,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-edge-label",
     label: "边标签",
-    attributeLibrary: "静态图元",
+    categoryLibrary: "静态图元",
     size: { width: 104, height: 42 },
     params: staticSymbolParams("static-edge-label", "边标签", { fillColor: "#ffffff", strokeColor: "#cbd5e1", accentColor: "#2563eb", cornerRadius: "999", padding: "10", shadowEnabled: "1" }),
     terminalType: "ac",
@@ -2911,7 +2911,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-source",
     label: "交流电源",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 84, height: 56 },
     params: { ratedVoltage: "10 kV", frequency: "50 Hz", shortCircuitCapacity: "500 MVA" },
     terminalType: "ac",
@@ -2920,7 +2920,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-wind-source",
     label: "交流风电",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "35 kV", ratedPower: "50 MW", sourceType: "风电" },
     terminalType: "ac",
@@ -2929,7 +2929,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-pv-source",
     label: "交流光伏",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "10 kV", ratedPower: "20 MW", sourceType: "光伏" },
     terminalType: "ac",
@@ -2938,7 +2938,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-thermal-source",
     label: "交流火电",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "220 kV", ratedPower: "600 MW", sourceType: "火电" },
     terminalType: "ac",
@@ -2947,7 +2947,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-diesel-source",
     label: "柴油发电机",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "10 kV", ratedPower: "5 MW", sourceType: "柴油" },
     terminalType: "ac",
@@ -2956,7 +2956,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-hydro-source",
     label: "交流水电",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "220 kV", ratedPower: "300 MW", sourceType: "水电" },
     terminalType: "ac",
@@ -2965,7 +2965,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-nuclear-source",
     label: "交流核电",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "500 kV", ratedPower: "1000 MW", sourceType: "核电" },
     terminalType: "ac",
@@ -2974,7 +2974,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-storage",
     label: "电化学储能",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 90, height: 56 },
     params: { ratedVoltage: "10 kV", ratedPower: "5 MW", energyCapacity: "20 MWh", stateOfCharge: "50%" },
     terminalType: "ac",
@@ -2983,7 +2983,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-electrolyzer",
     label: "交流电制氢",
-    attributeLibrary: "氢能设备",
+    categoryLibrary: "氢能设备",
     size: { width: 108, height: 62 },
     params: { ratedVoltage: "10 kV", ratedPower: "5 MW", hydrogenFlow: "1000 Nm3/h" },
     terminalType: "ac",
@@ -2997,7 +2997,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-electrolyzer",
     label: "直流电制氢",
-    attributeLibrary: "氢能设备",
+    categoryLibrary: "氢能设备",
     size: { width: 108, height: 62 },
     params: { ratedVoltage: "750 V", ratedPower: "5 MW", hydrogenFlow: "1000 Nm3/h" },
     terminalType: "dc",
@@ -3011,7 +3011,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "hydrogen-source",
     label: "氢源",
-    attributeLibrary: "氢能设备",
+    categoryLibrary: "氢能设备",
     size: { width: 84, height: 56 },
     params: { pressure: "20 MPa", hydrogenFlow: "1000 Nm3/h" },
     terminalType: "h2",
@@ -3020,7 +3020,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "hydrogen-tank",
     label: "储氢罐",
-    attributeLibrary: "氢能设备",
+    categoryLibrary: "氢能设备",
     size: { width: 126, height: 58 },
     params: { pressure: "35 MPa", capacity: "1000 kg" },
     terminalType: "h2",
@@ -3029,7 +3029,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "hydrogen-tank-horizontal",
     label: "横卧式储氢罐",
-    attributeLibrary: "氢能设备",
+    categoryLibrary: "氢能设备",
     size: { width: 150, height: 54 },
     params: { pressure: "35 MPa", capacity: "1000 kg", storageType: "horizontal" },
     terminalType: "h2",
@@ -3038,7 +3038,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "hydrogen-tank-container",
     label: "集装格式储氢罐",
-    attributeLibrary: "氢能设备",
+    categoryLibrary: "氢能设备",
     size: { width: 142, height: 66 },
     params: { pressure: "35 MPa", capacity: "1000 kg", storageType: "container" },
     terminalType: "h2",
@@ -3047,7 +3047,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "hydrogen-load",
     label: "氢荷",
-    attributeLibrary: "氢能设备",
+    categoryLibrary: "氢能设备",
     size: { width: 86, height: 58 },
     params: { pressure: "2 MPa", hydrogenDemand: "500 Nm3/h" },
     terminalType: "h2",
@@ -3057,7 +3057,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-fuel-cell",
     label: "交流燃料电池",
-    attributeLibrary: "氢能设备",
+    categoryLibrary: "氢能设备",
     size: { width: 108, height: 62 },
     params: { ratedVoltage: "10 kV", ratedPower: "3 MW", hydrogenFlow: "600 Nm3/h" },
     terminalType: "ac",
@@ -3071,7 +3071,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-fuel-cell",
     label: "直流燃料电池",
-    attributeLibrary: "氢能设备",
+    categoryLibrary: "氢能设备",
     size: { width: 108, height: 62 },
     params: { ratedVoltage: "750 V", ratedPower: "3 MW", hydrogenFlow: "600 Nm3/h" },
     terminalType: "dc",
@@ -3085,7 +3085,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "hydrogen-bus",
     label: "氢能母线",
-    attributeLibrary: "氢能设备",
+    categoryLibrary: "氢能设备",
     size: { width: 120, height: 28 },
     params: { pressure: "20 MPa" },
     terminalType: "h2",
@@ -3094,7 +3094,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "hydrogen-compressor",
     label: "氢压机",
-    attributeLibrary: "氢能设备",
+    categoryLibrary: "氢能设备",
     size: { width: 86, height: 58 },
     params: { inletPressure: "2 MPa", outletPressure: "20 MPa" },
     terminalType: "h2",
@@ -3103,7 +3103,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "hydrogen-pressure-reducer",
     label: "减压阀",
-    attributeLibrary: "氢能设备",
+    categoryLibrary: "氢能设备",
     size: { width: 82, height: 54 },
     params: { inletPressure: "20 MPa", outletPressure: "2 MPa" },
     terminalType: "h2",
@@ -3112,7 +3112,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "hydrogen-shutoff-valve",
     label: "截止阀",
-    attributeLibrary: "氢能设备",
+    categoryLibrary: "氢能设备",
     size: { width: 82, height: 54 },
     params: { status: "1" },
     terminalType: "h2",
@@ -3121,7 +3121,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "hydrogen-pipeline",
     label: "输氢管道",
-    attributeLibrary: "氢能设备",
+    categoryLibrary: "氢能设备",
     size: { width: 108, height: 36 },
     params: { length: "1 km", diameter: "DN200" },
     terminalType: "h2",
@@ -3130,7 +3130,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "hydrogen-routable-pipeline",
     label: "输氢管道（自适应）",
-    attributeLibrary: "氢能设备",
+    categoryLibrary: "氢能设备",
     size: { width: 150, height: 36 },
     params: { length: "1 km", diameter: "DN200", component_type: "HydroPipe", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
     terminalType: "h2",
@@ -3139,7 +3139,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "heat-boiler",
     label: "供热锅炉",
-    attributeLibrary: "热能设备",
+    categoryLibrary: "热能设备",
     size: { width: 94, height: 60 },
     params: { heatPower: "10 MW", supplyTemperature: "95 degC" },
     terminalType: "heat",
@@ -3153,7 +3153,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "two-port-heat-boiler",
     label: "供热锅炉2",
-    attributeLibrary: "热能设备",
+    categoryLibrary: "热能设备",
     size: { width: 100, height: 64 },
     params: { heatPower: "10 MW", supplyTemperature: "95 degC", returnTemperature: "70 degC" },
     terminalType: "heat",
@@ -3170,7 +3170,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "heat-source",
     label: "单端热源",
-    attributeLibrary: "热能设备",
+    categoryLibrary: "热能设备",
     size: { width: 88, height: 56 },
     params: { heatPower: "10 MW", supplyTemperature: "95 degC" },
     terminalType: "heat",
@@ -3179,7 +3179,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "two-port-heat-source",
     label: "双端热源",
-    attributeLibrary: "热能设备",
+    categoryLibrary: "热能设备",
     size: { width: 96, height: 60 },
     params: { heatPower: "10 MW", supplyTemperature: "95 degC", returnTemperature: "70 degC" },
     terminalType: "heat",
@@ -3189,7 +3189,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "heat-exchanger",
     label: "双端热交换器",
-    attributeLibrary: "热能设备",
+    categoryLibrary: "热能设备",
     size: { width: 96, height: 66 },
     params: { heatPower: "8 MW", efficiency: "0.98" },
     terminalType: "heat",
@@ -3199,7 +3199,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "three-port-heat-exchanger",
     label: "三端热交换器",
-    attributeLibrary: "热能设备",
+    categoryLibrary: "热能设备",
     size: { width: 104, height: 72 },
     params: { heatPower: "8 MW", efficiency: "0.98" },
     terminalType: "heat",
@@ -3214,7 +3214,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "four-port-heat-exchanger",
     label: "四端热交换器",
-    attributeLibrary: "热能设备",
+    categoryLibrary: "热能设备",
     size: { width: 110, height: 76 },
     params: { heatPower: "8 MW", efficiency: "0.98" },
     terminalType: "heat",
@@ -3230,7 +3230,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-heater",
     label: "交流电制热",
-    attributeLibrary: "热能设备",
+    categoryLibrary: "热能设备",
     size: { width: 108, height: 62 },
     params: { ratedVoltage: "10 kV", ratedPower: "5 MW", heatPower: "4.8 MW" },
     terminalType: "ac",
@@ -3244,7 +3244,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-two-port-heater",
     label: "交流电制热2",
-    attributeLibrary: "热能设备",
+    categoryLibrary: "热能设备",
     size: { width: 116, height: 68 },
     params: { ratedVoltage: "10 kV", ratedPower: "5 MW", heatPower: "4.8 MW", supplyTemperature: "95 degC", returnTemperature: "70 degC" },
     terminalType: "ac",
@@ -3263,7 +3263,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-heater",
     label: "直流电制热",
-    attributeLibrary: "热能设备",
+    categoryLibrary: "热能设备",
     size: { width: 108, height: 62 },
     params: { ratedVoltage: "750 V", ratedPower: "5 MW", heatPower: "4.8 MW" },
     terminalType: "dc",
@@ -3277,7 +3277,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-two-port-heater",
     label: "直流电制热2",
-    attributeLibrary: "热能设备",
+    categoryLibrary: "热能设备",
     size: { width: 116, height: 68 },
     params: { ratedVoltage: "750 V", ratedPower: "5 MW", heatPower: "4.8 MW", supplyTemperature: "95 degC", returnTemperature: "70 degC" },
     terminalType: "dc",
@@ -3296,7 +3296,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "thermal-storage-tank",
     label: "储热罐",
-    attributeLibrary: "热能设备",
+    categoryLibrary: "热能设备",
     size: { width: 126, height: 58 },
     params: { capacity: "100 MWh", temperature: "90 degC" },
     terminalType: "heat",
@@ -3305,7 +3305,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "single-port-heat-load",
     label: "单端热荷",
-    attributeLibrary: "热能设备",
+    categoryLibrary: "热能设备",
     size: { width: 86, height: 58 },
     params: { heatDemand: "5 MW" },
     terminalType: "heat",
@@ -3315,7 +3315,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "two-port-heat-load",
     label: "双端热荷",
-    attributeLibrary: "热能设备",
+    categoryLibrary: "热能设备",
     size: { width: 94, height: 60 },
     params: { heatDemand: "5 MW", supplyTemperature: "95 degC", returnTemperature: "70 degC" },
     terminalType: "heat",
@@ -3325,7 +3325,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "heat-bus",
     label: "热力母线",
-    attributeLibrary: "热能设备",
+    categoryLibrary: "热能设备",
     size: { width: 120, height: 28 },
     params: { temperature: "90 degC" },
     terminalType: "heat",
@@ -3334,7 +3334,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "heat-pipeline",
     label: "输热管道",
-    attributeLibrary: "热能设备",
+    categoryLibrary: "热能设备",
     size: { width: 108, height: 36 },
     params: { length: "1 km", diameter: "DN200" },
     terminalType: "heat",
@@ -3343,7 +3343,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "heat-routable-line",
     label: "热力线路（自适应）",
-    attributeLibrary: "热能设备",
+    categoryLibrary: "热能设备",
     size: { width: 150, height: 36 },
     params: { length: "1 km", diameter: "DN200", component_type: "HeatPipe", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
     terminalType: "heat",
@@ -3352,7 +3352,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "heat-pump",
     label: "循环水泵",
-    attributeLibrary: "热能设备",
+    categoryLibrary: "热能设备",
     size: { width: 86, height: 58 },
     params: { flowRate: "200 t/h", head: "30 m" },
     terminalType: "heat",
@@ -3361,7 +3361,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "heat-shutoff-valve",
     label: "截止阀",
-    attributeLibrary: "热能设备",
+    categoryLibrary: "热能设备",
     size: { width: 82, height: 54 },
     params: { status: "1" },
     terminalType: "heat",
@@ -3370,7 +3370,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-line",
     label: "交流线路",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 108, height: 36 },
     params: { r: "0.1", x: "1.0", b: "0.0" },
     terminalType: "ac",
@@ -3379,7 +3379,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-routable-line",
     label: "交流线路（自适应）",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 150, height: 36 },
     params: { r: "0.1", x: "1.0", b: "0.0", component_type: "ACBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
     terminalType: "ac",
@@ -3388,7 +3388,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-zero-branch",
     label: "交流零阻抗支路",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 108, height: 36 },
     params: {},
     terminalType: "ac",
@@ -3397,7 +3397,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-zero-routable-branch",
     label: "交流零阻抗支路（自适应）",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 150, height: 36 },
     params: { component_type: "ACZeroBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
     terminalType: "ac",
@@ -3406,7 +3406,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-bus",
     label: "交流母线",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 120, height: 28 },
     params: { voltageLevel: "10 kV", section: "I段" },
     terminalType: "ac",
@@ -3415,7 +3415,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-switch",
     label: "交流开关",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 72, height: 48 },
     params: { status: "1", ratedCurrent: "1250 A" },
     terminalType: "ac",
@@ -3424,7 +3424,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-ground-disconnector",
     label: "接地刀闸",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 78, height: 58 },
     params: { status: "0", ratedCurrent: "1250 A" },
     terminalType: "ac",
@@ -3435,7 +3435,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-ground-disconnector-vertical",
     label: "竖向接地刀闸",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 58, height: 78 },
     params: { status: "0", ratedCurrent: "1250 A" },
     terminalType: "ac",
@@ -3446,7 +3446,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-breaker",
     label: "交流断路器",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 78, height: 50 },
     params: {},
     terminalType: "ac",
@@ -3455,7 +3455,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-box-breaker",
     label: "盒型开关",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 86, height: 44 },
     params: { status: "1", ratedCurrent: "1250 A" },
     terminalType: "ac",
@@ -3464,7 +3464,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-load",
     label: "交流负荷",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 86, height: 58 },
     params: { activePower: "5 MW", reactivePower: "1.2 Mvar", powerFactor: "0.95" },
     terminalType: "ac",
@@ -3474,7 +3474,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-terminal-transformer-load",
     label: "终端变负荷",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 92, height: 70 },
     params: { activePower: "5 MW", reactivePower: "1.2 Mvar", powerFactor: "0.95" },
     terminalType: "ac",
@@ -3485,7 +3485,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-transformer",
     label: "双绕组主变",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 92, height: 70 },
     params: { ratedCapacity: "50 MVA", voltageRatio: "110/10 kV", impedance: "10.5%" },
     terminalType: "ac",
@@ -3494,7 +3494,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-three-winding-transformer",
     label: "三绕组主变",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 104, height: 76 },
     params: { ratedCapacity: "90 MVA", voltageRatio: "220/110/10 kV", windingType: "三绕组", impedance: "12.0%" },
     terminalType: "ac",
@@ -3506,7 +3506,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "ac-three-winding-transformer-neutral",
     label: "三绕组主变(中性点)",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 112, height: 92 },
     params: { ratedCapacity: "90 MVA", voltageRatio: "220/110/10/0.4 kV", windingType: "三绕组带中性点", impedance: "12.0%" },
     terminalType: "ac",
@@ -3519,7 +3519,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-source",
     label: "直流电源",
-    attributeLibrary: "直流设备",
+    categoryLibrary: "直流设备",
     size: { width: 84, height: 56 },
     params: { ratedVoltage: "750 V", maxCurrent: "2000 A" },
     terminalType: "dc",
@@ -3528,7 +3528,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-wind-source",
     label: "直流风电",
-    attributeLibrary: "直流设备",
+    categoryLibrary: "直流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "1500 V", ratedPower: "10 MW", sourceType: "风电" },
     terminalType: "dc",
@@ -3537,7 +3537,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-pv-source",
     label: "直流光伏",
-    attributeLibrary: "直流设备",
+    categoryLibrary: "直流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "1500 V", ratedPower: "5 MW", sourceType: "光伏" },
     terminalType: "dc",
@@ -3546,7 +3546,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-storage",
     label: "电化学储能",
-    attributeLibrary: "直流设备",
+    categoryLibrary: "直流设备",
     size: { width: 90, height: 56 },
     params: { ratedVoltage: "750 V", ratedPower: "5 MW", energyCapacity: "20 MWh", stateOfCharge: "50%" },
     terminalType: "dc",
@@ -3555,7 +3555,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-line",
     label: "直流线路",
-    attributeLibrary: "直流设备",
+    categoryLibrary: "直流设备",
     size: { width: 108, height: 36 },
     params: { r: "1.0" },
     terminalType: "dc",
@@ -3564,7 +3564,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-routable-line",
     label: "直流线路（自适应）",
-    attributeLibrary: "直流设备",
+    categoryLibrary: "直流设备",
     size: { width: 150, height: 36 },
     params: { r: "1.0", component_type: "DCBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
     terminalType: "dc",
@@ -3573,7 +3573,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-zero-branch",
     label: "直流零阻抗支路",
-    attributeLibrary: "直流设备",
+    categoryLibrary: "直流设备",
     size: { width: 108, height: 36 },
     params: {},
     terminalType: "dc",
@@ -3582,7 +3582,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-zero-routable-branch",
     label: "直流零阻抗支路（自适应）",
-    attributeLibrary: "直流设备",
+    categoryLibrary: "直流设备",
     size: { width: 150, height: 36 },
     params: { component_type: "DCZeroBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
     terminalType: "dc",
@@ -3591,7 +3591,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-bus",
     label: "直流母线",
-    attributeLibrary: "直流设备",
+    categoryLibrary: "直流设备",
     size: { width: 120, height: 28 },
     params: { voltageLevel: "750 V", pole: "正负极" },
     terminalType: "dc",
@@ -3600,7 +3600,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-switch",
     label: "直流开关",
-    attributeLibrary: "直流设备",
+    categoryLibrary: "直流设备",
     size: { width: 72, height: 48 },
     params: { status: "1", ratedCurrent: "1600 A" },
     terminalType: "dc",
@@ -3609,7 +3609,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-breaker",
     label: "直流断路器",
-    attributeLibrary: "直流设备",
+    categoryLibrary: "直流设备",
     size: { width: 78, height: 50 },
     params: {},
     terminalType: "dc",
@@ -3618,7 +3618,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dc-load",
     label: "直流负荷",
-    attributeLibrary: "直流设备",
+    categoryLibrary: "直流设备",
     size: { width: 86, height: 58 },
     params: { power: "1.5 MW", voltage: "750 V" },
     terminalType: "dc",
@@ -3628,7 +3628,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dcdc-converter",
     label: "DCDC变流器",
-    attributeLibrary: "直流设备",
+    categoryLibrary: "直流设备",
     size: { width: 112, height: 66 },
     params: { ratedPower: "5 MW", inputVoltage: "1500 V", outputVoltage: "750 V" },
     terminalType: "dc",
@@ -3637,7 +3637,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "acdc-converter",
     label: "ACDC变流器",
-    attributeLibrary: "直流设备",
+    categoryLibrary: "直流设备",
     size: { width: 112, height: 66 },
     params: { ratedPower: "10 MW", acVoltage: "10 kV", dcVoltage: "750 V" },
     terminalType: "ac",
@@ -3647,7 +3647,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "dcac-converter",
     label: "DCAC变流器",
-    attributeLibrary: "直流设备",
+    categoryLibrary: "直流设备",
     size: { width: 112, height: 66 },
     params: { ratedPower: "10 MW", dcVoltage: "750 V", acVoltage: "10 kV" },
     terminalType: "dc",
@@ -3657,7 +3657,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "acac-converter",
     label: "ACAC变流器",
-    attributeLibrary: "交流设备",
+    categoryLibrary: "交流设备",
     size: { width: 112, height: 66 },
     params: {},
     terminalType: "ac",
@@ -4169,7 +4169,7 @@ export function buildContainerDeviceParameterViews(
   const fallbackTemplate: DeviceTemplate = template ?? {
     kind: node.kind,
     label: node.name,
-    attributeLibrary: "",
+    categoryLibrary: "",
     size: { width: 0, height: 0 },
     params: node.params,
     terminalType: node.terminals[0]?.type ?? "ac",
@@ -4201,15 +4201,15 @@ export function buildContainerDeviceParameterViews(
     const sourceTerminal = node.terminals[sourceTerminalIndex];
     const terminalIndexes = group.map((association) => association.terminalIndex);
     const terminals = terminalIndexes.map((index) => node.terminals[index]).filter((terminal): terminal is Terminal => Boolean(terminal));
-    const componentType = containerRelationCounterKey(first.relationKey) || first.roleLabel;
+    const componentLibrary = containerRelationCounterKey(first.relationKey) || first.roleLabel;
     const label = `${sourceTerminal?.label ?? first.terminalLabel}${first.roleLabel}`;
-    const sectionColumns = E_SECTION_COLUMNS[componentType] ?? [];
+    const sectionColumns = E_SECTION_COLUMNS[componentLibrary] ?? [];
     const rows = sectionColumns.length > 0
-      ? associatedDeviceRows(node, first.relationKey, componentType, terminals)
+      ? associatedDeviceRows(node, first.relationKey, componentLibrary, terminals)
       : [
           viewRow("idx", "idx", relationIdx),
           viewRow("name", "name", first.relationKey ? containerAssociatedDeviceName(node, first.relationKey) : `${node.name}_${label}`),
-          viewRow("device_model", "device_model", componentType),
+          viewRow("device_model", "device_model", componentLibrary),
           viewRow("relation_fields", "relation_fields", relationKeys.join(", ")),
           viewRow("terminals", "terminals", terminals.map((terminal) => terminal.label).join(", ")),
           viewRow("energy", "energy", uniqueNonEmpty(terminals.map((terminal) => terminal.type.toUpperCase())).join(" / "))
@@ -4233,7 +4233,7 @@ export function buildContainerDeviceParameterViews(
       id: `associated-${sourceTerminalIndex + 1}`,
       label,
       kind: "associated",
-      componentType,
+      componentLibrary,
       relationKeys,
       terminalIndexes,
       terminalLabels: terminals.map((terminal) => terminal.label).join(", "),
@@ -4677,7 +4677,7 @@ export function isStaticBoxLikeKind(kind: DeviceKind): boolean {
   if (baseKind === "static-point" || baseKind === "static-ring") {
     return false;
   }
-  return staticComponentTypeForKind(baseKind) !== "StaticConnectorSymbol";
+  return staticComponentLibraryForKind(baseKind) !== "StaticConnectorSymbol";
 }
 
 export function isStaticBoxLikeNode(node: ModelNode): boolean {
@@ -8597,7 +8597,7 @@ function getElementTreeTypeLabel(node: ModelNode, templateByKind: ReadonlyMap<st
   return templateByKind.get(node.kind)?.label ?? node.kind;
 }
 
-const ELEMENT_TREE_COMPONENT_TYPE_LABELS: Record<string, string> = {
+const ELEMENT_TREE_COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   StaticTextSymbol: "静态文本",
   StaticMediaSymbol: "静态媒体",
   StaticBasicShape: "基础图形",
@@ -8644,9 +8644,9 @@ const ELEMENT_TREE_COMPONENT_TYPE_LABELS: Record<string, string> = {
   HeatBus: "热母线"
 };
 
-function elementTreeComponentTypeLabel(componentType: string): string {
-  const normalized = componentType.trim();
-  return ELEMENT_TREE_COMPONENT_TYPE_LABELS[normalized] ?? normalized;
+function elementTreeComponentLibraryLabel(componentLibrary: string): string {
+  const normalized = componentLibrary.trim();
+  return ELEMENT_TREE_COMPONENT_LIBRARY_LABELS[normalized] ?? normalized;
 }
 
 function edgeDisplayName(edge: Edge, nodeById: Map<string, ModelNode>): string {
@@ -8698,15 +8698,15 @@ export function buildElementTree(
     const deviceLabel = getElementTreeTypeLabel(node, templateByKind);
     const deviceEnglishLabel = node.kind;
     const typeEnglishLabel = inferESection(node.kind, node.params) || deviceEnglishLabel;
-    const typeLabel = typeEnglishLabel ? elementTreeComponentTypeLabel(typeEnglishLabel) : deviceLabel;
+    const typeLabel = typeEnglishLabel ? elementTreeComponentLibraryLabel(typeEnglishLabel) : deviceLabel;
     const containerChildren = includeContainerChildren
       ? buildContainerDeviceParameterViews(node, templateByKind.get(node.kind))
           .filter((view) => view.kind === "associated")
           .map<ElementTreeChildItem>((view) => ({
             id: `${node.id}:${view.id}`,
             label: view.label,
-            componentType: view.componentType ?? "",
-            componentTypeLabel: view.componentType ? elementTreeComponentTypeLabel(view.componentType) : "",
+            componentLibrary: view.componentLibrary ?? "",
+            componentLibraryLabel: view.componentLibrary ? elementTreeComponentLibraryLabel(view.componentLibrary) : "",
             idx: view.rows.find((row) => row.key === "idx")?.value ?? "",
             name: view.rows.find((row) => row.key === "name")?.value ?? "",
             nameKey: view.relationKeys?.[0] ? containerRelationNameKey(view.relationKeys[0]) : "",

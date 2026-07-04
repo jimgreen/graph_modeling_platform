@@ -886,10 +886,10 @@ export function createAppHookCallback8(__appScope: Record<string, any>) {
 
 export function createAppHookCallback9(__appScope: Record<string, any>) {
   return () => {
-  const { activeLayerNodes, componentTypeDisplayName, filterSelectionComponentTypeKey, filterSelectionItemKey, filterSelectionSpecificTypeKey, filterSelectionTemplateLabelByKind } = __appScope;
+  const { activeLayerNodes, componentLibraryDisplayName, filterSelectionComponentLibraryKey, filterSelectionItemKey, filterSelectionSpecificTypeKey, filterSelectionTemplateLabelByKind } = __appScope;
     const optionMap = new Map<string, FilterSelectionTypeOption>();
     for (const node of activeLayerNodes) {
-      const typeKey = filterSelectionComponentTypeKey(node);
+      const typeKey = filterSelectionComponentLibraryKey(node);
       const itemTypeKey = filterSelectionSpecificTypeKey(node);
       const itemKey = filterSelectionItemKey(node);
       const itemLabel = filterSelectionTemplateLabelByKind.get(itemTypeKey) ?? itemTypeKey;
@@ -921,7 +921,7 @@ export function createAppHookCallback9(__appScope: Record<string, any>) {
       }
       optionMap.set(typeKey, {
         typeKey,
-        label: componentTypeDisplayName(typeKey),
+        label: componentLibraryDisplayName(typeKey),
         count: 1,
         items: [{
           itemKey,
@@ -1121,8 +1121,8 @@ export function createAppHookCallback19(__appScope: Record<string, any>) {
 
 export function createAppHookCallback20(__appScope: Record<string, any>) {
   return () => {
-  const { componentLibraryDisplayMode, hideLibraryFlyout, hoveredAttributeLibraryComponentType, hoveredGraphTemplateType, leftPanelTab, templateLibraryDisplayMode } = __appScope;
-    const componentFlyoutActive = leftPanelTab === "library" && componentLibraryDisplayMode === "right" && Boolean(hoveredAttributeLibraryComponentType);
+  const { componentLibraryDisplayMode, hideLibraryFlyout, hoveredCategoryLibraryComponentLibrary, hoveredGraphTemplateType, leftPanelTab, templateLibraryDisplayMode } = __appScope;
+    const componentFlyoutActive = leftPanelTab === "library" && componentLibraryDisplayMode === "right" && Boolean(hoveredCategoryLibraryComponentLibrary);
     const templateFlyoutActive = leftPanelTab === "templates" && templateLibraryDisplayMode === "right" && Boolean(hoveredGraphTemplateType);
     if (!componentFlyoutActive && !templateFlyoutActive) {
       return;
@@ -1134,7 +1134,7 @@ export function createAppHookCallback20(__appScope: Record<string, any>) {
       }
       const targetElement = target instanceof Element ? target : target.parentElement;
       const flyoutElement = document.querySelector(".flyout-library-group");
-      const activeTypeSection = targetElement?.closest(".attribute-library-component-type-section.flyout-mode, .template-library-type-section.flyout-mode");
+      const activeTypeSection = targetElement?.closest(".category-library-component-library-section.flyout-mode, .template-library-type-section.flyout-mode");
       if (flyoutElement?.contains(target) || activeTypeSection) {
         return;
       }
@@ -1147,11 +1147,11 @@ export function createAppHookCallback20(__appScope: Record<string, any>) {
 
 export function createAppHookCallback21(__appScope: Record<string, any>) {
   return () => {
-  const { E_SECTION_OPTIONS, attributeLibraries, customComponentTypes, defaultAttributeLibraryForComponentType, libraryTemplates, normalizeAttributeLibraryName, normalizeComponentTypeName, resolveTemplateComponentType } = __appScope;
+  const { E_SECTION_OPTIONS, categoryLibraries, customComponentLibraries, defaultCategoryLibraryForComponentLibrary, libraryTemplates, normalizeCategoryLibraryName, normalizeComponentLibraryName, resolveTemplateComponentLibrary } = __appScope;
     const groupedOptions = new Map<string, string[]>();
-    const addOption = (attributeLibraryName: string, sectionName: string) => {
-      const group = normalizeAttributeLibraryName(attributeLibraryName);
-      const section = normalizeComponentTypeName(sectionName);
+    const addOption = (categoryLibraryName: string, sectionName: string) => {
+      const group = normalizeCategoryLibraryName(categoryLibraryName);
+      const section = normalizeComponentLibraryName(sectionName);
       if (!group || !section) {
         return;
       }
@@ -1161,34 +1161,34 @@ export function createAppHookCallback21(__appScope: Record<string, any>) {
       }
     };
     for (const section of E_SECTION_OPTIONS) {
-      addOption(defaultAttributeLibraryForComponentType(section), section);
+      addOption(defaultCategoryLibraryForComponentLibrary(section), section);
     }
-    for (const componentType of customComponentTypes) {
-      addOption(componentType.attributeLibraryName, componentType.name);
+    for (const componentLibrary of customComponentLibraries) {
+      addOption(componentLibrary.categoryLibraryName, componentLibrary.name);
     }
     for (const template of libraryTemplates) {
-      addOption(template.attributeLibrary, resolveTemplateComponentType(template));
+      addOption(template.categoryLibrary, resolveTemplateComponentLibrary(template));
     }
-    return Object.fromEntries(attributeLibraries.map((group) => [group, groupedOptions.get(group) ?? []]));
+    return Object.fromEntries(categoryLibraries.map((group) => [group, groupedOptions.get(group) ?? []]));
   };
 }
 
 export function createAppHookCallback22(__appScope: Record<string, any>) {
   return () => {
-  const { componentTypeOptionsByAttributeLibrary, customDeviceDraft, normalizeAttributeLibraryName, normalizeComponentTypeName } = __appScope;
-    const group = normalizeAttributeLibraryName(customDeviceDraft.attributeLibraryName);
-    const options = componentTypeOptionsByAttributeLibrary[group] ?? [];
-    const currentSection = normalizeComponentTypeName(customDeviceDraft.componentType);
+  const { componentLibraryOptionsByCategoryLibrary, customDeviceDraft, normalizeCategoryLibraryName, normalizeComponentLibraryName } = __appScope;
+    const group = normalizeCategoryLibraryName(customDeviceDraft.categoryLibraryName);
+    const options = componentLibraryOptionsByCategoryLibrary[group] ?? [];
+    const currentSection = normalizeComponentLibraryName(customDeviceDraft.componentLibrary);
     return currentSection && !options.some((item) => item.toLowerCase() === currentSection.toLowerCase()) ? [currentSection, ...options] : options;
   };
 }
 
 export function createAppHookCallback23(__appScope: Record<string, any>) {
   return () => {
-  const { componentTypeOptionsByAttributeLibrary, customDeviceDraft, definitionDraftSection, normalizeAttributeLibraryName, normalizeComponentTypeName, selectedDefinitionTemplate } = __appScope;
-    const group = normalizeAttributeLibraryName(selectedDefinitionTemplate?.attributeLibrary ?? customDeviceDraft.attributeLibraryName);
-    const options = componentTypeOptionsByAttributeLibrary[group] ?? [];
-    const currentSection = normalizeComponentTypeName(definitionDraftSection);
+  const { componentLibraryOptionsByCategoryLibrary, customDeviceDraft, definitionDraftSection, normalizeCategoryLibraryName, normalizeComponentLibraryName, selectedDefinitionTemplate } = __appScope;
+    const group = normalizeCategoryLibraryName(selectedDefinitionTemplate?.categoryLibrary ?? customDeviceDraft.categoryLibraryName);
+    const options = componentLibraryOptionsByCategoryLibrary[group] ?? [];
+    const currentSection = normalizeComponentLibraryName(definitionDraftSection);
     return currentSection && !options.some((item) => item.toLowerCase() === currentSection.toLowerCase()) ? [currentSection, ...options] : options;
   };
 }
@@ -1341,8 +1341,8 @@ export function createAppHookCallback31(__appScope: Record<string, any>) {
             ...itemChildren.flatMap((child) => [
               child.id,
               child.label,
-              child.componentType,
-              child.componentTypeLabel,
+              child.componentLibrary,
+              child.componentLibraryLabel,
               child.idx,
               child.name,
               child.terminalLabels
@@ -2610,7 +2610,7 @@ export function createAppHookCallback78(__appScope: Record<string, any>) {
 
 export function createAppHookCallback79(__appScope: Record<string, any>) {
   return () => {
-  const { backendDeviceLibraryLoadedRef, customAttributeLibraries, customComponentTypes, customDeviceTemplates, customGraphTemplateTypes, customGraphTemplates, deviceDefinitionOverrides, fetchBackendDeviceLibrary, lastPersistedDeviceLibraryPayloadRef, saveBackendDeviceLibraryPayload, serializeDeviceLibraryForStorage, setCustomAttributeLibraries, setCustomComponentTypes, setCustomDeviceTemplates, setCustomGraphTemplateTypes, setCustomGraphTemplates, setDeviceDefinitionOverrides, suppressNextBackendDeviceLibrarySyncRef } = __appScope;
+  const { backendDeviceLibraryLoadedRef, customCategoryLibraries, customComponentLibraries, customDeviceTemplates, customGraphTemplateTypes, customGraphTemplates, deviceDefinitionOverrides, fetchBackendDeviceLibrary, lastPersistedDeviceLibraryPayloadRef, saveBackendDeviceLibraryPayload, serializeDeviceLibraryForStorage, setCustomCategoryLibraries, setCustomComponentLibraries, setCustomDeviceTemplates, setCustomGraphTemplateTypes, setCustomGraphTemplates, setDeviceDefinitionOverrides, suppressNextBackendDeviceLibrarySyncRef } = __appScope;
     fetchBackendDeviceLibrary()
       .then((backendDeviceLibrary) => {
         backendDeviceLibraryLoadedRef.current = true;
@@ -2619,8 +2619,8 @@ export function createAppHookCallback79(__appScope: Record<string, any>) {
           lastPersistedDeviceLibraryPayloadRef.current = backendPayload;
           suppressNextBackendDeviceLibrarySyncRef.current = true;
           setCustomDeviceTemplates(backendDeviceLibrary.customDeviceTemplates);
-          setCustomAttributeLibraries(backendDeviceLibrary.customAttributeLibraries);
-          setCustomComponentTypes(backendDeviceLibrary.customComponentTypes);
+          setCustomCategoryLibraries(backendDeviceLibrary.customCategoryLibraries);
+          setCustomComponentLibraries(backendDeviceLibrary.customComponentLibraries);
           setDeviceDefinitionOverrides(backendDeviceLibrary.deviceDefinitionOverrides);
           setCustomGraphTemplateTypes(backendDeviceLibrary.customGraphTemplateTypes);
           setCustomGraphTemplates(backendDeviceLibrary.customGraphTemplates);
@@ -2628,8 +2628,8 @@ export function createAppHookCallback79(__appScope: Record<string, any>) {
         }
         const localPayload = serializeDeviceLibraryForStorage({
           customDeviceTemplates,
-          customAttributeLibraries,
-          customComponentTypes,
+          customCategoryLibraries,
+          customComponentLibraries,
           deviceDefinitionOverrides,
           customGraphTemplateTypes,
           customGraphTemplates
@@ -2699,12 +2699,12 @@ export function createAppHookCallback81(__appScope: Record<string, any>) {
 
 export function createAppHookCallback82(__appScope: Record<string, any>) {
   return () => {
-  const { backendDeviceLibraryLoadedRef, customAttributeLibraries, customComponentTypes, customDeviceTemplates, customGraphTemplateTypes, customGraphTemplates, deviceDefinitionOverrides, lastPersistedDeviceLibraryPayloadRef, normalizeDeviceLibraryPersistencePayload, saveBackendDeviceLibraryPayload, suppressNextBackendDeviceLibrarySyncRef, writeLocalDeviceLibraryPersistencePayload } = __appScope;
+  const { backendDeviceLibraryLoadedRef, customCategoryLibraries, customComponentLibraries, customDeviceTemplates, customGraphTemplateTypes, customGraphTemplates, deviceDefinitionOverrides, lastPersistedDeviceLibraryPayloadRef, normalizeDeviceLibraryPersistencePayload, saveBackendDeviceLibraryPayload, suppressNextBackendDeviceLibrarySyncRef, writeLocalDeviceLibraryPersistencePayload } = __appScope;
     const timeoutId = window.setTimeout(() => {
       const normalizedDeviceLibrary = normalizeDeviceLibraryPersistencePayload({
         customDeviceTemplates,
-        customAttributeLibraries,
-        customComponentTypes,
+        customCategoryLibraries,
+        customComponentLibraries,
         deviceDefinitionOverrides,
         customGraphTemplateTypes,
         customGraphTemplates
@@ -3510,7 +3510,7 @@ export function createAppHookCallback109(__appScope: Record<string, any>) {
 
 export function createAppHookCallback110(__appScope: Record<string, any>) {
   return () => {
-  const { activeLayerEdges, activeLayerNodes, cancelInteractiveStaticDrawing, cancelLibraryPlacement, canvasBounds, canvasInteractionRef, canvasPointerKeyboardShortcutAvailability, clearRecordSelection, connectPreviewPointRef, connectSource, copySelectedRecord, copySelection, customDeviceDialogOpen, cutSelection, deleteProjectRecord, deleteSchemeRecord, deleteSelectedGraphicsFromCanvas, deleteSelectedRecords, findSavedSchemeById, finishInteractiveStaticDrawing, hideLibraryFlyout, hoveredAttributeLibraryComponentType, isEditMode, isGlobalSaveShortcut, keyboardMoveStepForViewBox, lastCanvasPointerRef, libraryPlacement, lockConnectPreviewAxis, lockRoutableLinePreviewAxis, nudgeSelectionByKeyboard, pasteSelectedRecord, pasteSelection, projectById, projectListPointerInsideRef, recordClipboard, releaseConnectPreviewAxisLock, releaseKeyboardMoveKey, releaseRoutableLinePreviewAxisLock, resetConnectPreviewState, resetRoutableLinePreviewState, resolveKeyboardShortcutScope, routableLinePlacement, routableLinePreviewPointRef, saveCurrentProject, saveCustomDeviceDefinitionDialog, schemes, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, setCanvasSelectionScope, setConnectSource, setMode, setRewiring, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, staticDrawing, switchInspectorTabForCanvasSelection, undoLastOperation, viewBox, writeOperationLog } = __appScope;
+  const { activeLayerEdges, activeLayerNodes, cancelInteractiveStaticDrawing, cancelLibraryPlacement, canvasBounds, canvasInteractionRef, canvasPointerKeyboardShortcutAvailability, clearRecordSelection, connectPreviewPointRef, connectSource, copySelectedRecord, copySelection, customDeviceDialogOpen, cutSelection, deleteProjectRecord, deleteSchemeRecord, deleteSelectedGraphicsFromCanvas, deleteSelectedRecords, findSavedSchemeById, finishInteractiveStaticDrawing, hideLibraryFlyout, hoveredCategoryLibraryComponentLibrary, isEditMode, isGlobalSaveShortcut, keyboardMoveStepForViewBox, lastCanvasPointerRef, libraryPlacement, lockConnectPreviewAxis, lockRoutableLinePreviewAxis, nudgeSelectionByKeyboard, pasteSelectedRecord, pasteSelection, projectById, projectListPointerInsideRef, recordClipboard, releaseConnectPreviewAxisLock, releaseKeyboardMoveKey, releaseRoutableLinePreviewAxisLock, resetConnectPreviewState, resetRoutableLinePreviewState, resolveKeyboardShortcutScope, routableLinePlacement, routableLinePreviewPointRef, saveCurrentProject, saveCustomDeviceDefinitionDialog, schemes, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, setCanvasSelectionScope, setConnectSource, setMode, setRewiring, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, staticDrawing, switchInspectorTabForCanvasSelection, undoLastOperation, viewBox, writeOperationLog } = __appScope;
     const handleGlobalSaveKeyDown = (event: KeyboardEvent) => {
       if (!isGlobalSaveShortcut(event)) {
         return;
@@ -3547,7 +3547,7 @@ export function createAppHookCallback110(__appScope: Record<string, any>) {
         }
         return;
       }
-      if (event.key === "Escape" && hoveredAttributeLibraryComponentType) {
+      if (event.key === "Escape" && hoveredCategoryLibraryComponentLibrary) {
         event.preventDefault();
         hideLibraryFlyout();
         return;

@@ -215,11 +215,11 @@ export function createPersistDeviceLibraryChange(__appScope: Record<string, any>
     overrides: Partial<DeviceLibraryPersistencePayload>,
     messages: { success?: string; failure?: string } = {}
   ) => {
-  const { backendDeviceLibraryLoadedRef, customAttributeLibraries, customComponentTypes, customDeviceTemplates, customGraphTemplateTypes, customGraphTemplates, deviceDefinitionOverrides, lastPersistedDeviceLibraryPayloadRef, normalizeDeviceLibraryPersistencePayload, saveBackendDeviceLibraryPayload, suppressNextBackendDeviceLibrarySyncRef, writeLocalDeviceLibraryPersistencePayload, writeOperationLog } = __appScope;
+  const { backendDeviceLibraryLoadedRef, customCategoryLibraries, customComponentLibraries, customDeviceTemplates, customGraphTemplateTypes, customGraphTemplates, deviceDefinitionOverrides, lastPersistedDeviceLibraryPayloadRef, normalizeDeviceLibraryPersistencePayload, saveBackendDeviceLibraryPayload, suppressNextBackendDeviceLibrarySyncRef, writeLocalDeviceLibraryPersistencePayload, writeOperationLog } = __appScope;
     const normalizedDeviceLibrary = normalizeDeviceLibraryPersistencePayload({
       customDeviceTemplates,
-      customAttributeLibraries,
-      customComponentTypes,
+      customCategoryLibraries,
+      customComponentLibraries,
       deviceDefinitionOverrides,
       customGraphTemplateTypes,
       customGraphTemplates,
@@ -1034,7 +1034,7 @@ export function createReplaceBuiltinDeviceIconOverride(__appScope: Record<string
 
 export function createOpenGroupDeviceDefinitionDialog(__appScope: Record<string, any>) {
   return () => {
-  const { MAX_CUSTOM_DEVICE_TERMINALS, activeLayerGroups, activeSelectedGroupIds, buildCanvasClipboard, canAddTemplateFromSelection, canvasClipboardBounds, cloneGraphTemplateClipboard, createGroupDeviceIconSvg, customDeviceDraft, defaultComponentTypeForAttributeLibrary, edges, groupDeviceExternalTerminals, groupDeviceReplacementTemplates, groupExpandedCanvasSelection, normalizeAttributeLibraryName, requireEditMode, routedEdges, setGroupDeviceDefinitionDialog, visibleEdges, visibleNodes } = __appScope;
+  const { MAX_CUSTOM_DEVICE_TERMINALS, activeLayerGroups, activeSelectedGroupIds, buildCanvasClipboard, canAddTemplateFromSelection, canvasClipboardBounds, cloneGraphTemplateClipboard, createGroupDeviceIconSvg, customDeviceDraft, defaultComponentLibraryForCategoryLibrary, edges, groupDeviceExternalTerminals, groupDeviceReplacementTemplates, groupExpandedCanvasSelection, normalizeCategoryLibraryName, requireEditMode, routedEdges, setGroupDeviceDefinitionDialog, visibleEdges, visibleNodes } = __appScope;
     if (!requireEditMode("定义元件")) {
       return;
     }
@@ -1061,8 +1061,8 @@ export function createOpenGroupDeviceDefinitionDialog(__appScope: Record<string,
       window.alert(`当前组合对外端子为 ${terminals.length} 个，暂时最多支持 ${MAX_CUSTOM_DEVICE_TERMINALS} 个端子。`);
       return;
     }
-    const attributeLibraryName = normalizeAttributeLibraryName(customDeviceDraft.attributeLibraryName || "交流设备");
-    const componentType = defaultComponentTypeForAttributeLibrary(attributeLibraryName);
+    const categoryLibraryName = normalizeCategoryLibraryName(customDeviceDraft.categoryLibraryName || "交流设备");
+    const componentLibrary = defaultComponentLibraryForCategoryLibrary(categoryLibraryName);
     setGroupDeviceDefinitionDialog({
       sourceGroupId: activeSelectedGroupIds[0],
       clipboard: cloneGraphTemplateClipboard(clipboard),
@@ -1073,8 +1073,8 @@ export function createOpenGroupDeviceDefinitionDialog(__appScope: Record<string,
       iconImage: createGroupDeviceIconSvg(clipboard),
       terminals,
       mode: "new",
-      attributeLibraryName,
-      componentType,
+      categoryLibraryName,
+      componentLibrary,
       targetKind: groupDeviceReplacementTemplates[0]?.kind ?? ""
     });
   };
@@ -1082,18 +1082,18 @@ export function createOpenGroupDeviceDefinitionDialog(__appScope: Record<string,
 
 export function createConfirmCreateDeviceFromGroup(__appScope: Record<string, any>) {
   return () => {
-  const { DEFAULT_STATE_PAGE_ID, MAX_CUSTOM_DEVICE_TERMINALS, activeGroupById, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, ensureCustomComponentTreeExpanded, groupDeviceDefinitionDialog, isValidComponentTypeName, normalizeAttributeLibraryName, normalizeComponentTypeName, normalizeContainerTerminalAssociations, prepareMeasurementConfigDraft, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode, setCustomDeviceDialogOpen, setCustomDeviceDialogView, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceStatePageId, setDeviceLibraryDialogLayouts, setEditingCustomDeviceKind, setGroupDeviceDefinitionDialog, setSelectedDefinitionKind, writeOperationLog } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, MAX_CUSTOM_DEVICE_TERMINALS, activeGroupById, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, ensureCustomComponentTreeExpanded, groupDeviceDefinitionDialog, isValidComponentLibraryName, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, prepareMeasurementConfigDraft, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode, setCustomDeviceDialogOpen, setCustomDeviceDialogView, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceStatePageId, setDeviceLibraryDialogLayouts, setEditingCustomDeviceKind, setGroupDeviceDefinitionDialog, setSelectedDefinitionKind, writeOperationLog } = __appScope;
     if (!groupDeviceDefinitionDialog) {
       return;
     }
-    const attributeLibraryName = normalizeAttributeLibraryName(groupDeviceDefinitionDialog.attributeLibraryName);
-    const componentType = normalizeComponentTypeName(groupDeviceDefinitionDialog.componentType);
-    if (!componentType) {
-      window.alert("请选择元件类型。");
+    const categoryLibraryName = normalizeCategoryLibraryName(groupDeviceDefinitionDialog.categoryLibraryName);
+    const componentLibrary = normalizeComponentLibraryName(groupDeviceDefinitionDialog.componentLibrary);
+    if (!componentLibrary) {
+      window.alert("请选择元件库。");
       return;
     }
-    if (!isValidComponentTypeName(componentType)) {
-      window.alert("元件类型必须是英文名称，只能包含英文字母、数字和下划线，并且必须以英文字母开头。");
+    if (!isValidComponentLibraryName(componentLibrary)) {
+      window.alert("元件库必须是英文名称，只能包含英文字母、数字和下划线，并且必须以英文字母开头。");
       return;
     }
     const terminalTypes = groupDeviceDefinitionDialog.terminals.map((terminal) => terminal.type);
@@ -1103,16 +1103,16 @@ export function createConfirmCreateDeviceFromGroup(__appScope: Record<string, an
       terminalTypes.length
     );
     const sourceGroup = activeGroupById.get(groupDeviceDefinitionDialog.sourceGroupId);
-    ensureCustomComponentTreeExpanded(attributeLibraryName, componentType);
-    setCustomComponentTreeSelection({ kind: "componentType", attributeLibraryName, section: componentType });
+    ensureCustomComponentTreeExpanded(categoryLibraryName, componentLibrary);
+    setCustomComponentTreeSelection({ kind: "componentLibrary", categoryLibraryName, section: componentLibrary });
     setEditingCustomDeviceKind("");
     setSelectedDefinitionKind("");
     setCustomDeviceDefinitionMode("create");
     setCustomDeviceDialogView("terminals");
     setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
     const nextDraft = {
-      ...createEmptyCustomDeviceDraft(attributeLibraryName),
-      componentType,
+      ...createEmptyCustomDeviceDraft(categoryLibraryName),
+      componentLibrary,
       componentName: sourceGroup?.name ?? "",
       backgroundImage: groupDeviceDefinitionDialog.iconImage,
       backgroundImageAssetId: "",

@@ -1,12 +1,12 @@
 // /api/v1 图元库域 handler：categories、devices、measurements、device-definitions、templates、library（聚合）。
-// 复用 image-server.mjs：readDeviceLibraryConfig、readMeasurementConfig、eSectionColumns、staticComponentTypeByKind。
+// 复用 image-server.mjs：readDeviceLibraryConfig、readMeasurementConfig、eSectionColumns、staticComponentLibraryByKind。
 // categories/devices 为 server 端可离线产出的结构化元数据（非前端完整分类树，决策 A）。
 
-import { readDeviceLibraryConfig, readMeasurementConfig, eSectionColumns, staticComponentTypeByKind } from "./image-server.mjs";
+import { readDeviceLibraryConfig, readMeasurementConfig, eSectionColumns, staticComponentLibraryByKind } from "./image-server.mjs";
 import { sendV1Json, sendV1Error } from "./v1Response.mjs";
 
-// 图元分类 bases（静态，与前端 DEFAULT_ATTRIBUTE_LIBRARIES 对齐）
-const ATTRIBUTE_LIBRARY_BASES = ["静态图元", "交流设备", "直流设备", "氢能设备", "热能设备"];
+// 图元分类 bases（静态，与前端 DEFAULT_CATEGORY_LIBRARIES 对齐）
+const CATEGORY_LIBRARY_BASES = ["静态图元", "交流设备", "直流设备", "氢能设备", "热能设备"];
 
 // 按 E 段名推导所属分类 base
 function baseForESection(section) {
@@ -36,29 +36,29 @@ function baseForESection(section) {
 
 // 图元分类树：静态 bases + 自定义图元库
 function buildCategories(deviceLibrary) {
-  const customLibs = Array.isArray(deviceLibrary.customAttributeLibraries) ? deviceLibrary.customAttributeLibraries : [];
-  const bases = [...ATTRIBUTE_LIBRARY_BASES, ...customLibs];
+  const customLibs = Array.isArray(deviceLibrary.customCategoryLibraries) ? deviceLibrary.customCategoryLibraries : [];
+  const bases = [...CATEGORY_LIBRARY_BASES, ...customLibs];
   return {
     categories: bases.map((name) => ({ id: name, name }))
   };
 }
 
-// 各类图元信息：E 段定义（段名→列）+ 静态图元类型映射 + 自定义 component types
+// 各类图元信息：E 段定义（段名→列）+ 静态图元库映射 + 自定义 component libraries
 function buildDevices(deviceLibrary) {
   const sections = Object.entries(eSectionColumns).map(([section, columns]) => ({
     section,
     base: baseForESection(section),
     columns
   }));
-  const staticComponentTypes = Object.entries(staticComponentTypeByKind).map(([kind, componentType]) => ({
+  const staticComponentLibraries = Object.entries(staticComponentLibraryByKind).map(([kind, componentLibrary]) => ({
     kind,
-    componentType
+    componentLibrary
   }));
-  const customComponentTypes = Array.isArray(deviceLibrary.customComponentTypes) ? deviceLibrary.customComponentTypes : [];
+  const customComponentLibraries = Array.isArray(deviceLibrary.customComponentLibraries) ? deviceLibrary.customComponentLibraries : [];
   return {
     eSections: sections,
-    staticComponentTypes,
-    customComponentTypes
+    staticComponentLibraries,
+    customComponentLibraries
   };
 }
 
@@ -101,8 +101,8 @@ export async function handleV1LibraryDeviceDefinitions({ request, response }) {
     const lib = await readDeviceLibraryConfig();
     await sendV1Json(request, response, {
       deviceDefinitionOverrides: lib.deviceDefinitionOverrides ?? {},
-      customComponentTypes: lib.customComponentTypes ?? [],
-      customAttributeLibraries: lib.customAttributeLibraries ?? []
+      customComponentLibraries: lib.customComponentLibraries ?? [],
+      customCategoryLibraries: lib.customCategoryLibraries ?? []
     });
   } catch (error) {
     sendV1Error(response, "internal", error instanceof Error ? error.message : "后端处理失败。");
@@ -136,8 +136,8 @@ export async function handleV1Library({ request, response }) {
       },
       deviceDefinitions: {
         deviceDefinitionOverrides: deviceLibrary.deviceDefinitionOverrides ?? {},
-        customComponentTypes: deviceLibrary.customComponentTypes ?? [],
-        customAttributeLibraries: deviceLibrary.customAttributeLibraries ?? []
+        customComponentLibraries: deviceLibrary.customComponentLibraries ?? [],
+        customCategoryLibraries: deviceLibrary.customCategoryLibraries ?? []
       },
       templates: {
         customDeviceTemplates: deviceLibrary.customDeviceTemplates ?? [],

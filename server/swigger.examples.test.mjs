@@ -105,7 +105,7 @@ function commandResponder(name, params) {
     case "control.save":
       return { ok: true, data: { saved: true, scope: params.scope } };
     case "control.template.saveFromSelection":
-      return { ok: true, data: { templateKind: `custom-${params.componentType || "device"}-1` } };
+      return { ok: true, data: { templateKind: `custom-${params.componentLibrary || "device"}-1` } };
     default:
       return { ok: false, error: { code: "unknown-command", message: `unknown command: ${name}` } };
   }

@@ -11,6 +11,16 @@ import type { GraphTemplate } from "../appExtracted/appCoreCanvasUtilities";
 
 // ============ 设备模板 ============
 
+type LegacyDeviceTemplate = DeviceTemplate & { attributeLibrary?: string };
+
+function normalizeStoredDeviceTemplate(template: LegacyDeviceTemplate): DeviceTemplate {
+  const { attributeLibrary, ...rest } = template;
+  return {
+    ...rest,
+    categoryLibrary: template.categoryLibrary ?? attributeLibrary ?? "交流设备"
+  };
+}
+
 /**
  * 保存设备模板（图片分离存储为 Blob）
  *
@@ -26,7 +36,7 @@ export async function saveDeviceTemplate(
 
   // 保存模板（移除图片 base64）
   const templateWithoutImages = {
-    ...template,
+    ...normalizeStoredDeviceTemplate(template as LegacyDeviceTemplate),
     params: {
       ...template.params,
       backgroundImage: template.params.backgroundImage?.startsWith("data:")
@@ -75,7 +85,7 @@ export async function getDeviceTemplate(kind: string): Promise<DeviceTemplate | 
   }
 
   return {
-    ...template,
+    ...normalizeStoredDeviceTemplate(template as LegacyDeviceTemplate),
     params: {
       ...template.params,
       ...imageUrls
@@ -84,17 +94,19 @@ export async function getDeviceTemplate(kind: string): Promise<DeviceTemplate | 
 }
 
 /**
- * 按属性库查询设备模板
+ * 按类别库查询设备模板
  *
- * @param attributeLibrary 属性库名称
+ * @param categoryLibrary 类别库名称
  * @returns 设备模板数组
  */
-export async function queryTemplatesByAttributeLibrary(
-  attributeLibrary: string
+export async function queryTemplatesByCategoryLibrary(
+  categoryLibrary: string
 ): Promise<DeviceTemplate[]> {
   const db = await initDeviceLibraryDB();
-  const index = db.transaction("templates").store.index("attributeLibrary");
-  return index.getAll(attributeLibrary);
+  const allTemplates = await db.getAll("templates");
+  return allTemplates
+    .map((template) => normalizeStoredDeviceTemplate(template as LegacyDeviceTemplate))
+    .filter((template) => template.categoryLibrary === categoryLibrary);
 }
 
 /**
@@ -105,7 +117,9 @@ export async function queryTemplatesByAttributeLibrary(
 export async function getAllCustomTemplates(): Promise<DeviceTemplate[]> {
   const db = await initDeviceLibraryDB();
   const allTemplates = await db.getAll("templates");
-  return allTemplates.filter(t => t.custom === true);
+  return allTemplates
+    .map((template) => normalizeStoredDeviceTemplate(template as LegacyDeviceTemplate))
+    .filter(t => t.custom === true);
 }
 
 /**
@@ -256,7 +270,7 @@ export async function saveDeviceTemplates(templates: DeviceTemplate[]): Promise<
   // 批量 put，不等待每个（事务提交时统一等待）
   for (const template of templates) {
     store.put({
-      ...template,
+      ...normalizeStoredDeviceTemplate(template as LegacyDeviceTemplate),
       updatedAt: Date.now()
     });
   }

@@ -305,40 +305,42 @@ export function createProgrammaticSave(__appScope: Record<string, any>) {
   };
 }
 
-// 从当前选中组合保存为模板：name 必填，componentType 必填，attributeLibraryName 可选。
+// 从当前选中组合保存为模板：name 必填，componentLibrary 必填，categoryLibraryName 可选。
 // 复用现有端子推导+图标生成逻辑（buildCanvasClipboard/groupDeviceExternalTerminals/createGroupDeviceIconSvg），
 // 构造 DeviceTemplate 后直接 persistDeviceLibraryChange 落盘。经 WS control.template.saveFromSelection 指令调用。
 export function createProgrammaticSaveSelectionAsTemplate(__appScope: Record<string, any>) {
-  return (opts: { name: string; componentType: string; attributeLibraryName?: string }) => {
+  return (opts: { name: string; componentLibrary?: string; componentType?: string; categoryLibraryName?: string; attributeLibraryName?: string }) => {
     const {
       MAX_CUSTOM_DEVICE_TERMINALS,
       TERMINAL_TYPE_LIBRARY_LABELS,
       activeLayerGroups, activeSelectedGroupIds,
       buildCanvasClipboard, canAddTemplateFromSelection, canvasClipboardBounds,
       cloneGraphTemplateClipboard, createGroupDeviceIconSvg, customDeviceTemplates,
-      defaultComponentTypeForAttributeLibrary, edges, groupDeviceExternalTerminals,
-      groupExpandedCanvasSelection, isValidComponentTypeName,
-      nextCustomTemplateKind, normalizeAttributeLibraryName, normalizeComponentTypeName,
+      defaultComponentLibraryForCategoryLibrary, edges, groupDeviceExternalTerminals,
+      groupExpandedCanvasSelection, isValidComponentLibraryName,
+      nextCustomTemplateKind, normalizeCategoryLibraryName, normalizeComponentLibraryName,
       normalizeContainerTerminalAssociations, persistDeviceLibraryChange,
       routedEdges, setCustomDeviceTemplates, visibleEdges, visibleNodes,
       createDefaultCustomDeviceTerminalAnchors
     } = __appScope;
 
     // 校验参数
-    const { name, componentType: rawComponentType, attributeLibraryName: rawAttributeLibraryName } = opts;
+    const { name } = opts;
+    const rawComponentLibrary = opts.componentLibrary ?? opts.componentType;
+    const rawCategoryLibraryName = opts.categoryLibraryName ?? opts.attributeLibraryName;
     if (!name || typeof name !== "string" || !name.trim()) {
       const e: any = new Error("name 必填。");
       e.code = "bad-request";
       throw e;
     }
-    const componentType = normalizeComponentTypeName(rawComponentType);
-    if (!componentType) {
-      const e: any = new Error("componentType 必填。");
+    const componentLibrary = normalizeComponentLibraryName(rawComponentLibrary);
+    if (!componentLibrary) {
+      const e: any = new Error("componentLibrary 必填。");
       e.code = "bad-request";
       throw e;
     }
-    if (!isValidComponentTypeName(componentType)) {
-      const e: any = new Error("componentType 须为合法英文名称。");
+    if (!isValidComponentLibraryName(componentLibrary)) {
+      const e: any = new Error("componentLibrary 须为合法英文名称。");
       e.code = "bad-request";
       throw e;
     }
@@ -383,7 +385,7 @@ export function createProgrammaticSaveSelectionAsTemplate(__appScope: Record<str
     };
 
     // 构造模板
-    const attributeLibraryName = normalizeAttributeLibraryName(rawAttributeLibraryName || "交流设备");
+    const categoryLibraryName = normalizeCategoryLibraryName(rawCategoryLibraryName || "交流设备");
     const terminalTypes = terminals.map((t: any) => t.type);
     const terminalAssociations = normalizeContainerTerminalAssociations(
       terminalTypes,
@@ -397,14 +399,14 @@ export function createProgrammaticSaveSelectionAsTemplate(__appScope: Record<str
     const terminalLabels = terminals.map(
       (t: any, i: number) => t.label?.trim() || `${TERMINAL_TYPE_LIBRARY_LABELS[terminalTypes[i]] ?? terminalTypes[i]}端${i + 1}`
     );
-    const customKind = nextCustomTemplateKind(componentType);
+    const customKind = nextCustomTemplateKind(componentLibrary);
     const template = {
       kind: customKind,
       label: name.trim(),
-      attributeLibrary: attributeLibraryName,
+      categoryLibrary: categoryLibraryName,
       size,
       params: {
-        component_type: componentType,
+        component_type: componentLibrary,
         fillColor: "transparent",
         strokeColor: "transparent",
         lineWidth: "0",

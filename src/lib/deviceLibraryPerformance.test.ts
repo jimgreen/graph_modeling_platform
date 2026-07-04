@@ -4,20 +4,20 @@
 
 import "fake-indexeddb/auto";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { saveDeviceTemplates, getAllCustomTemplates, queryTemplatesByAttributeLibrary } from "./deviceLibraryStorage";
+import { saveDeviceTemplates, getAllCustomTemplates, queryTemplatesByCategoryLibrary } from "./deviceLibraryStorage";
 import { clearDeviceLibraryDB, getDBStats } from "./deviceLibraryDB";
 import type { DeviceTemplate } from "../model";
 
 // 生成大规模测试数据
 function generateLargeDataset(count: number): DeviceTemplate[] {
   const templates: DeviceTemplate[] = [];
-  const attributeLibraries = ["交流设备", "直流设备", "氢能设备", "热能设备"];
+  const categoryLibraries = ["交流设备", "直流设备", "氢能设备", "热能设备"];
 
   for (let i = 0; i < count; i++) {
     templates.push({
       kind: `device-${i}`,
       label: `测试设备 ${i}`,
-      attributeLibrary: attributeLibraries[i % attributeLibraries.length],
+      categoryLibrary: categoryLibraries[i % categoryLibraries.length],
       size: { width: 100 + (i % 50), height: 80 + (i % 30) },
       params: {
         param1: `value${i}`,
@@ -105,13 +105,13 @@ describe("IndexedDB 性能测试", () => {
       expect(duration).toBeLessThan(500); // 应该小于 500ms
     });
 
-    it("应该快速按属性库查询", async () => {
+    it("应该快速按类别库查询", async () => {
       const startTime = Date.now();
 
-      const results = await queryTemplatesByAttributeLibrary("交流设备");
+      const results = await queryTemplatesByCategoryLibrary("交流设备");
 
       const duration = Date.now() - startTime;
-      console.log(`按属性库查询耗时: ${duration}ms`);
+      console.log(`按类别库查询耗时: ${duration}ms`);
 
       // 500 个模板中，约 125 个是"交流设备"
       expect(results.length).toBeGreaterThan(100);
@@ -129,7 +129,7 @@ describe("IndexedDB 性能测试", () => {
         templates.push({
           kind: `device-with-image-${i}`,
           label: `带图片设备 ${i}`,
-          attributeLibrary: "交流设备",
+          categoryLibrary: "交流设备",
           size: { width: 100, height: 80 },
           params: {
             // 模拟 base64 图片（1KB 左右）
@@ -169,7 +169,7 @@ describe("IndexedDB 性能测试", () => {
       const firstTemplate = results[0];
       expect(firstTemplate.kind).toBeDefined();
       expect(firstTemplate.label).toBeDefined();
-      expect(firstTemplate.attributeLibrary).toBeDefined();
+      expect(firstTemplate.categoryLibrary).toBeDefined();
     });
   });
 });
