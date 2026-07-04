@@ -9589,6 +9589,29 @@ describe("power system model", () => {
     expect(storedDefinitions[0]).not.toHaveProperty("enumValueType");
   });
 
+  test("keeps status enum definitions editable when normalizing historical readonly rows", () => {
+    const baseTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-load");
+    expect(baseTemplate).toBeDefined();
+    const template: DeviceTemplate = {
+      ...baseTemplate!,
+      parameterDefinitions: [
+        { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
+        { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
+        { cnName: "运行状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: true },
+        { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: true },
+        { cnName: "交流节点", enName: "node", valueType: "integer", typicalValue: "", readonly: true }
+      ]
+    };
+
+    const definitions = getTemplateParameterDefinitions(template);
+
+    expect(definitions.find((definition) => definition.enName === "status")).toMatchObject({ readonly: false });
+    expect(definitions.find((definition) => definition.enName === "run_stat")).toMatchObject({ readonly: false });
+    expect(definitions.find((definition) => definition.enName === "idx")).toMatchObject({ readonly: true });
+    expect(definitions.find((definition) => definition.enName === "name")).toMatchObject({ readonly: true });
+    expect(definitions.find((definition) => definition.enName === "node")).toMatchObject({ readonly: true });
+  });
+
   test("exports numeric enum codes and string enum values from custom E sections", () => {
     const template: DeviceTemplate = {
       kind: "custom-CustomEnumUnit",
@@ -10261,7 +10284,7 @@ describe("power system model", () => {
       cnName: "工作状态",
       valueType: "stringEnum",
       typicalValue: "运行",
-      readonly: true
+      readonly: false
     });
     for (const template of DEVICE_LIBRARY.filter((item) => !item.kind.startsWith("static-"))) {
       const node = createDefaultNode(template.kind, { x: 100, y: 100 });
@@ -10274,7 +10297,7 @@ describe("power system model", () => {
       cnName: "运行状态",
       valueType: "numberEnum",
       typicalValue: "1",
-      readonly: true
+      readonly: false
     });
     for (const template of DEVICE_LIBRARY.filter((item) => !item.kind.startsWith("static-"))) {
       const node = createDefaultNode(template.kind, { x: 100, y: 100 });

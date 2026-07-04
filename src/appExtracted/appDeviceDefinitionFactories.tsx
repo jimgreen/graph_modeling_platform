@@ -32,20 +32,65 @@ const STATE_ICON_DRAWING_FRAME_HEIGHT = 160;
 
 const deviceDefinitionComplianceKey = (value: unknown) => String(value ?? "").trim().toLowerCase();
 
+const normalizeCustomDeviceDraftParamRows = (
+  rows: readonly CustomParamDraft[],
+  normalizeDefinitionRowEnumFields: <T extends DeviceParameterDefinition>(row: T) => T
+): DeviceParameterDefinition[] =>
+  rows.map((row) => normalizeDefinitionRowEnumFields({
+    cnName: row.cnName.trim(),
+    enName: row.enName.trim(),
+    valueType: row.valueType,
+    typicalValue: row.typicalValue.trim(),
+    enumOptions: row.enumOptions,
+    enumValues: row.enumValues,
+    readonly: row.readonly
+  }));
+
+const mergeDefaultAndCustomDefinitionRows = (
+  defaultRows: readonly DeviceParameterDefinition[],
+  draftRows: readonly DeviceParameterDefinition[],
+  normalizeDefinitionRowEnumFields: <T extends DeviceParameterDefinition>(row: T) => T
+) => {
+  const defaultKeySet = new Set(defaultRows.map((row) => deviceDefinitionComplianceKey(row.enName)));
+  const overrideRows = new Map(
+    draftRows
+      .filter((row) => defaultKeySet.has(deviceDefinitionComplianceKey(row.enName)))
+      .map((row) => [deviceDefinitionComplianceKey(row.enName), row])
+  );
+  const definitions = defaultRows.map((row) => {
+    const override = overrideRows.get(deviceDefinitionComplianceKey(row.enName));
+    if (!override) {
+      return row;
+    }
+    return normalizeDefinitionRowEnumFields({
+      ...row,
+      valueType: override.valueType,
+      typicalValue: override.typicalValue,
+      enumOptions: override.enumOptions,
+      enumValues: override.enumValues,
+      readonly: row.readonly
+    });
+  });
+  return {
+    definitions,
+    customRows: draftRows.filter((row) => !defaultKeySet.has(deviceDefinitionComplianceKey(row.enName)))
+  };
+};
+
 const parameterTypicalValueTypeError = (row: DeviceParameterDefinition) => {
   const value = String(row.typicalValue ?? "").trim();
   if (!value) {
     return "";
   }
   if (row.valueType === "integer" && !/^-?\d+$/.test(value)) {
-    return "典型取值必须是整数。";
+    return "默认值必须是整数。";
   }
   if (row.valueType === "float" && !Number.isFinite(Number(value))) {
-    return "典型取值必须是数字。";
+    return "默认值必须是数字。";
   }
   if (row.valueType === "numberEnum" || (row.valueType === "enum" && row.enumValueType === "number")) {
     if (!Number.isFinite(Number(value))) {
-      return "典型取值必须是数字枚举值。";
+      return "默认值必须是数字枚举值。";
     }
     const enumValues = [
       ...(Array.isArray(row.enumValues) ? row.enumValues : []),
@@ -4606,16 +4651,130 @@ export function createSelectCustomComponentTemplate(__appScope: Record<string, a
 
 export function createStartCustomComponentCreate(__appScope: Record<string, any>) {
   return () => {
-  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, createEmptyCustomDeviceDraft, customComponentTreeSelection, defaultComponentLibraryForCategoryLibrary, normalizeCategoryLibraryName, requireEditMode, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode, setCustomDeviceDialogView, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceStatePageId, setEditingCustomDeviceKind, setSelectedDefinitionKind } = __appScope;
+  const { customComponentTreeSelection, defaultComponentLibraryForCategoryLibrary, nextCustomTemplateKind, normalizeCategoryLibraryName, requireEditMode, setCustomLibraryCreateDialog } = __appScope;
     if (!requireEditMode("新建元件")) {
       return;
     }
-    cancelPendingCustomComponentTemplateLoad();
     const categoryLibraryName = normalizeCategoryLibraryName(customComponentTreeSelection.categoryLibraryName);
     const section =
       customComponentTreeSelection.kind === "componentLibrary" || customComponentTreeSelection.kind === "component"
         ? customComponentTreeSelection.section
         : defaultComponentLibraryForCategoryLibrary(categoryLibraryName);
+    setCustomLibraryCreateDialog({
+      kind: "component",
+      title: "新建元件",
+      cnName: "",
+      enName: nextCustomTemplateKind(section),
+      categoryLibraryName,
+      componentLibrary: section,
+      error: ""
+    });
+  };
+}
+
+const CUSTOM_DEVICE_KIND_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_-]*$/;
+
+export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string, any>) {
+  return () => {
+  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, categoryLibraries, componentLibraryOptions, createEmptyCustomDeviceDraft, customDeviceDraft, customDeviceTemplates, customLibraryCreateDialog, defaultComponentLibraryForCategoryLibrary, isValidComponentLibraryName, libraryTemplates, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeCustomCategoryLibraries, normalizeCustomComponentLibraries, requireEditMode, setCustomCategoryLibraries, setCustomComponentLibraries, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode, setCustomDeviceDialogView, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceStatePageId, setCustomLibraryCreateDialog, setEditingCustomDeviceKind, setExpandedCategoryLibraries, setSelectedDefinitionKind } = __appScope;
+    const dialog = customLibraryCreateDialog;
+    if (!dialog) {
+      return false;
+    }
+    const actionName = dialog.kind === "categoryLibrary"
+      ? "新建类别库"
+      : dialog.kind === "componentLibrary" ? "新建元件库" : "新建元件";
+    if (!requireEditMode(actionName)) {
+      return false;
+    }
+    const setDialogError = (error: string) => {
+      setCustomLibraryCreateDialog((current: any) => current ? { ...current, error } : current);
+      return false;
+    };
+    const chineseName = String(dialog.cnName ?? "").trim();
+    const englishName = normalizeComponentLibraryName(String(dialog.enName ?? ""));
+    if (!chineseName) {
+      return setDialogError("中文名称不能为空。");
+    }
+    if (!englishName) {
+      return setDialogError("英文名称不能为空。");
+    }
+
+    if (dialog.kind === "categoryLibrary") {
+      const categoryLibraryName = normalizeCategoryLibraryName(chineseName);
+      if (!categoryLibraryName) {
+        return setDialogError("类别库中文名称不能为空。");
+      }
+      const existingGroups = new Set(categoryLibraries.map((group: string) => group.toLowerCase()));
+      if (existingGroups.has(categoryLibraryName.toLowerCase())) {
+        return setDialogError("类别库已存在，无法新增同名类别库。");
+      }
+      if (!isValidComponentLibraryName(englishName)) {
+        return setDialogError("英文名称只能包含英文字母、数字和下划线，并且必须以英文字母开头。");
+      }
+      const existingTypes = new Set(componentLibraryOptions.map((item: string) => item.toLowerCase()));
+      if (existingTypes.has(englishName.toLowerCase())) {
+        return setDialogError("英文名称对应的元件库已存在。");
+      }
+      setCustomCategoryLibraries((current: string[]) => normalizeCustomCategoryLibraries([...current, categoryLibraryName]));
+      setCustomComponentLibraries((current: any[]) => normalizeCustomComponentLibraries([...current, {
+        name: englishName,
+        categoryLibraryName,
+        label: chineseName
+      }]));
+      setExpandedCategoryLibraries((current: string[]) => Array.from(new Set([...current, categoryLibraryName])));
+      setCustomComponentTreeSelection({ kind: "componentLibrary", categoryLibraryName, section: englishName });
+      setCustomDeviceDraft((current: any) => ({
+        ...current,
+        categoryLibraryName,
+        componentLibrary: englishName,
+        error: ""
+      }));
+      setCustomLibraryCreateDialog(null);
+      return true;
+    }
+
+    if (dialog.kind === "componentLibrary") {
+      const categoryLibraryName = normalizeCategoryLibraryName(dialog.categoryLibraryName || customDeviceDraft.categoryLibraryName);
+      if (!categoryLibraryName) {
+        return setDialogError("请选择类别库。");
+      }
+      if (!isValidComponentLibraryName(englishName)) {
+        return setDialogError("英文名称只能包含英文字母、数字和下划线，并且必须以英文字母开头。");
+      }
+      const existingTypes = new Set(componentLibraryOptions.map((item: string) => item.toLowerCase()));
+      if (existingTypes.has(englishName.toLowerCase())) {
+        return setDialogError("元件库已存在，无法新增同名元件库。");
+      }
+      setCustomComponentLibraries((current: any[]) => normalizeCustomComponentLibraries([...current, {
+        name: englishName,
+        categoryLibraryName,
+        label: chineseName
+      }]));
+      setCustomComponentTreeSelection({ kind: "componentLibrary", categoryLibraryName, section: englishName });
+      setCustomDeviceDraft((current: any) => ({
+        ...current,
+        categoryLibraryName,
+        componentLibrary: englishName,
+        error: ""
+      }));
+      setCustomLibraryCreateDialog(null);
+      return true;
+    }
+
+    const categoryLibraryName = normalizeCategoryLibraryName(dialog.categoryLibraryName || customDeviceDraft.categoryLibraryName);
+    const section = normalizeComponentLibraryName(dialog.componentLibrary || customDeviceDraft.componentLibrary || defaultComponentLibraryForCategoryLibrary(categoryLibraryName));
+    if (!section) {
+      return setDialogError("请选择元件库。");
+    }
+    if (!CUSTOM_DEVICE_KIND_NAME_PATTERN.test(englishName)) {
+      return setDialogError("元件英文名称只能包含英文字母、数字、下划线和短横线，并且必须以英文字母开头。");
+    }
+    const existingKinds = new Set([...(libraryTemplates ?? []), ...(customDeviceTemplates ?? [])].map((template: any) => String(template.kind ?? "").toLowerCase()));
+    if (existingKinds.has(englishName.toLowerCase())) {
+      return setDialogError("元件英文名称已存在，无法新增同名元件。");
+    }
+    cancelPendingCustomComponentTemplateLoad();
     setCustomDeviceDefinitionMode("create");
     setEditingCustomDeviceKind("");
     setSelectedDefinitionKind("");
@@ -4625,12 +4784,15 @@ export function createStartCustomComponentCreate(__appScope: Record<string, any>
     const nextDraft = {
       ...createEmptyCustomDeviceDraft(categoryLibraryName),
       componentLibrary: section,
-      componentName: "",
+      componentName: chineseName,
+      componentKind: englishName,
       error: ""
     };
     setCustomDeviceDialogView("icon");
     setCustomDeviceDraft(nextDraft);
     setCustomDeviceDraftCleanBaseline(nextDraft);
+    setCustomLibraryCreateDialog(null);
+    return true;
   };
 }
 
@@ -4650,34 +4812,19 @@ export function createNextCustomCategoryLibraryName(__appScope: Record<string, a
 
 export function createCreateCustomCategoryLibrary(__appScope: Record<string, any>) {
   return () => {
-  const { categoryLibraries, defaultComponentLibraryForCategoryLibrary, nextCustomCategoryLibraryName, normalizeCategoryLibraryName, normalizeCustomCategoryLibraries, requireEditMode, setCustomCategoryLibraries, setCustomComponentTreeSelection, setCustomDeviceDraft, setExpandedCategoryLibraries } = __appScope;
+  const { nextCustomCategoryLibraryName, nextCustomComponentLibraryName, requireEditMode, setCustomLibraryCreateDialog } = __appScope;
     if (!requireEditMode("新建类别库")) {
       return;
     }
-    const defaultName = nextCustomCategoryLibraryName();
-    const rawName = window.prompt("请输入新类别库名称", defaultName);
-    if (rawName === null) {
-      return;
-    }
-    const categoryLibraryName = normalizeCategoryLibraryName(rawName.trim());
-    if (!categoryLibraryName) {
-      window.alert("类别库名称不能为空。");
-      return;
-    }
-    const existingGroups = new Set(categoryLibraries.map((group) => group.toLowerCase()));
-    if (existingGroups.has(categoryLibraryName.toLowerCase())) {
-      window.alert("类别库名称已存在，无法新增同名类别库。");
-      return;
-    }
-    setCustomCategoryLibraries((current) => normalizeCustomCategoryLibraries([...current, categoryLibraryName]));
-    setExpandedCategoryLibraries((current) => Array.from(new Set([...current, categoryLibraryName])));
-    setCustomComponentTreeSelection({ kind: "categoryLibrary", categoryLibraryName });
-    setCustomDeviceDraft((current) => ({
-      ...current,
-      categoryLibraryName,
-      componentLibrary: defaultComponentLibraryForCategoryLibrary(categoryLibraryName),
+    setCustomLibraryCreateDialog({
+      kind: "categoryLibrary",
+      title: "新建类别",
+      cnName: nextCustomCategoryLibraryName(),
+      enName: nextCustomComponentLibraryName(),
+      categoryLibraryName: "",
+      componentLibrary: "",
       error: ""
-    }));
+    });
   };
 }
 
@@ -4774,36 +4921,20 @@ export function createNextCustomComponentLibraryName(__appScope: Record<string, 
 
 export function createCreateCustomComponentLibrary(__appScope: Record<string, any>) {
   return () => {
-  const { componentLibraryOptions, customDeviceDraft, isValidComponentLibraryName, nextCustomComponentLibraryName, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeCustomComponentLibraries, requireEditMode, setCustomComponentTreeSelection, setCustomComponentLibraries, setCustomDeviceDraft } = __appScope;
+  const { customDeviceDraft, nextCustomComponentLibraryName, normalizeCategoryLibraryName, requireEditMode, setCustomLibraryCreateDialog } = __appScope;
     if (!requireEditMode("新建元件库")) {
       return;
     }
-    const rawName = window.prompt("请输入新元件库英文名称", nextCustomComponentLibraryName());
-    if (rawName === null) {
-      return;
-    }
     const categoryLibraryName = normalizeCategoryLibraryName(customDeviceDraft.categoryLibraryName);
-    const componentLibrary = normalizeComponentLibraryName(rawName);
-    if (!componentLibrary) {
-      window.alert("元件库名称不能为空。");
-      return;
-    }
-    if (!isValidComponentLibraryName(componentLibrary)) {
-      window.alert("元件库必须是英文名称，只能包含英文字母、数字和下划线，并且必须以英文字母开头。");
-      return;
-    }
-    const existingTypes = new Set(componentLibraryOptions.map((item) => item.toLowerCase()));
-    if (existingTypes.has(componentLibrary.toLowerCase())) {
-      window.alert("元件库已存在，无法新增同名元件库。");
-      return;
-    }
-    setCustomComponentLibraries((current) => normalizeCustomComponentLibraries([...current, { name: componentLibrary, categoryLibraryName }]));
-    setCustomComponentTreeSelection({ kind: "componentLibrary", categoryLibraryName, section: componentLibrary });
-    setCustomDeviceDraft((current) => ({
-      ...current,
-      componentLibrary: componentLibrary,
+    setCustomLibraryCreateDialog({
+      kind: "componentLibrary",
+      title: "新建元件库",
+      cnName: "",
+      enName: nextCustomComponentLibraryName(),
+      categoryLibraryName,
+      componentLibrary: "",
       error: ""
-    }));
+    });
   };
 }
 
@@ -5065,7 +5196,7 @@ export function createNextCustomTemplateKind(__appScope: Record<string, any>) {
 
 export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) {
   return (options: { closeAfterSave?: boolean } = {}) => {
-  const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, closeCustomDeviceDialog, customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTemplates, customDeviceTerminalAnchors, defaultComponentLibraryForCategoryLibrary, editingCustomDeviceKind, ensureCustomComponentTreeExpanded, generateCustomDeviceImage, hasOverlappingCustomDeviceTerminalAnchors, isReservedDeviceDefinitionParamName, isValidComponentLibraryName, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, nextCustomTemplateKind, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, requireEditMode, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceTemplates, setEditingCustomDeviceKind, setExpandedCategoryLibraries, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
+  const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, closeCustomDeviceDialog, customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTemplates, customDeviceTerminalAnchors, defaultComponentLibraryForCategoryLibrary, editingCustomDeviceKind, ensureCustomComponentTreeExpanded, generateCustomDeviceImage, hasOverlappingCustomDeviceTerminalAnchors, isReservedDeviceDefinitionParamName, isValidComponentLibraryName, libraryTemplates = customDeviceTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, nextCustomTemplateKind, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, requireEditMode, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceTemplates, setEditingCustomDeviceKind, setExpandedCategoryLibraries, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
     if (!requireEditMode("保存元件")) {
       return false;
     }
@@ -5080,6 +5211,18 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
     if (!isValidComponentLibraryName(componentLibrary)) {
       setCustomDeviceDraft((current) => ({ ...current, error: "元件库必须是英文名称，只能包含英文字母、数字和下划线，并且必须以英文字母开头。" }));
       return false;
+    }
+    const requestedCustomKind = normalizeComponentLibraryName(String(customDeviceDraft.componentKind ?? ""));
+    if (!editingCustomDeviceKind && requestedCustomKind) {
+      if (!CUSTOM_DEVICE_KIND_NAME_PATTERN.test(requestedCustomKind)) {
+        setCustomDeviceDraft((current) => ({ ...current, error: "元件英文名称只能包含英文字母、数字、下划线和短横线，并且必须以英文字母开头。" }));
+        return false;
+      }
+      const existingKinds = new Set((libraryTemplates ?? customDeviceTemplates).map((template: any) => String(template.kind ?? "").toLowerCase()));
+      if (existingKinds.has(requestedCustomKind.toLowerCase())) {
+        setCustomDeviceDraft((current) => ({ ...current, error: "元件英文名称已存在，无法新增同名元件。" }));
+        return false;
+      }
     }
     const terminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
     const terminalAssociations = normalizeContainerTerminalAssociations(
@@ -5101,18 +5244,16 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       setCustomDeviceDraft((current) => ({ ...current, error: message }));
       return false;
     }
-    const customRows: DeviceParameterDefinition[] = customDeviceDraft.params
-      .map((row) => normalizeDefinitionRowEnumFields({
-        cnName: row.cnName.trim(),
-        enName: row.enName.trim(),
-        valueType: row.valueType,
-        typicalValue: row.typicalValue.trim(),
-        enumOptions: row.enumOptions,
-        enumValues: row.enumValues
-      }));
-    const customRowsComplianceMessage = deviceParameterDefinitionsComplianceMessage(customRows);
-    if (customRowsComplianceMessage) {
-      setCustomDeviceDraft((current) => ({ ...current, error: customRowsComplianceMessage }));
+    const defaultRows = customDefaultDefinitions(terminalTypes, {
+      isContainer: customDeviceDraft.isContainer,
+      terminalAssociations
+    });
+    const draftRows = normalizeCustomDeviceDraftParamRows(customDeviceDraft.params, normalizeDefinitionRowEnumFields);
+    const { definitions: mergedDefaultRows, customRows } = mergeDefaultAndCustomDefinitionRows(defaultRows, draftRows, normalizeDefinitionRowEnumFields);
+    const definitions = [...mergedDefaultRows, ...customRows];
+    const definitionsComplianceMessage = deviceParameterDefinitionsComplianceMessage(definitions);
+    if (definitionsComplianceMessage) {
+      setCustomDeviceDraft((current) => ({ ...current, error: definitionsComplianceMessage }));
       return false;
     }
     if (customRows.some((row) => !row.cnName || !row.enName)) {
@@ -5127,10 +5268,6 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       }));
       return false;
     }
-    const definitions = [...customDefaultDefinitions(terminalTypes, {
-      isContainer: customDeviceDraft.isContainer,
-      terminalAssociations
-    }), ...customRows];
     const duplicateDefinition = definitions.find(
       (definition, index) => definitions.findIndex((item) => item.enName.toLowerCase() === definition.enName.toLowerCase()) !== index
     );
@@ -5175,7 +5312,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       },
       defaultImageCandidates
     );
-    const customKind = editingCustomDeviceKind || nextCustomTemplateKind(componentLibrary);
+    const customKind = editingCustomDeviceKind || requestedCustomKind || nextCustomTemplateKind(componentLibrary);
     const previousCustomTemplate = editingCustomDeviceKind
       ? customDeviceTemplates.find((item) => item.kind === editingCustomDeviceKind)
       : undefined;
@@ -5274,18 +5411,16 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       setCustomDeviceDraft((current) => ({ ...current, error: message }));
       return false;
     }
-    const customRows: DeviceParameterDefinition[] = customDeviceDraft.params
-      .map((row) => normalizeDefinitionRowEnumFields({
-        cnName: row.cnName.trim(),
-        enName: row.enName.trim(),
-        valueType: row.valueType,
-        typicalValue: row.typicalValue.trim(),
-        enumOptions: row.enumOptions,
-        enumValues: row.enumValues
-      }));
-    const customRowsComplianceMessage = deviceParameterDefinitionsComplianceMessage(customRows);
-    if (customRowsComplianceMessage) {
-      setCustomDeviceDraft((current) => ({ ...current, error: customRowsComplianceMessage }));
+    const defaultRows = customDefaultDefinitions(terminalTypes, {
+      isContainer: customDeviceDraft.isContainer,
+      terminalAssociations
+    });
+    const draftRows = normalizeCustomDeviceDraftParamRows(customDeviceDraft.params, normalizeDefinitionRowEnumFields);
+    const { definitions: mergedDefaultRows, customRows } = mergeDefaultAndCustomDefinitionRows(defaultRows, draftRows, normalizeDefinitionRowEnumFields);
+    const definitions = [...mergedDefaultRows, ...customRows];
+    const definitionsComplianceMessage = deviceParameterDefinitionsComplianceMessage(definitions);
+    if (definitionsComplianceMessage) {
+      setCustomDeviceDraft((current) => ({ ...current, error: definitionsComplianceMessage }));
       return false;
     }
     if (customRows.some((row) => !row.cnName || !row.enName)) {
@@ -5300,10 +5435,6 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       }));
       return false;
     }
-    const definitions = [...customDefaultDefinitions(terminalTypes, {
-      isContainer: customDeviceDraft.isContainer,
-      terminalAssociations
-    }), ...customRows];
     const duplicateDefinition = definitions.find(
       (definition, index) => definitions.findIndex((item) => item.enName.toLowerCase() === definition.enName.toLowerCase()) !== index
     );

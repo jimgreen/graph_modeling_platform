@@ -85,15 +85,19 @@ export function renderAppView(__appScope: Record<string, any>) {
   const { confirmLibraryPackageDialog, closeLibraryPackageDialog, libraryPackageDialogMode, libraryPackageDialogOpen, libraryPackageDialogScope, libraryPackageDialogScopeOptions, openLibraryPackageDialog, requestCloseCustomDeviceDialog, setExpandedDefinitionGroups, setCollapsedDefinitionComponentLibraries, setLibraryPackageDialogMode, setLibraryPackageDialogScope } = __appScope;
   const { ALLOW_RESIZE_TRANSFORM_PARAM, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalDistributeCenter, AlignStartHorizontal, AlignStartVertical, AlignVerticalDistributeCenter, ArrowDown, ArrowUp, Bell, Bold, BoxSelect, BufferedTextInput, BufferedTextarea, CANVAS_MINIMAP_HEIGHT, CANVAS_MINIMAP_WIDTH, CONNECTION_REDRAW_SCOPE_LABELS, CONTAINER_TERMINAL_ASSOCIATION_OPTIONS, CURRENT_UNIT_OPTIONS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, Cable, ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, CircleDot, Copy, CustomComponentManagerTree, DEFAULT_CANVAS_BACKGROUND, DEFAULT_COLOR_PALETTE, DEFAULT_DEVICE_LABEL_FONT_SIZE, DEFAULT_MODEL_LAYER_ID, DEFAULT_POWER_BASE_VALUE, DeferredColorInput, Download, ELECTRIC_COLOR_TYPES, ELECTRIC_COLOR_TYPE_LABELS, ENABLE_REACT_FLOW_PREVIEW, ENERGY_COLOR_ROWS, Eye, EyeOff, FileInput, FileJson, FlipHorizontal, FlipVertical, FolderOpen, Fragment, GROUP_SCALE_HANDLE_CONFIGS, Grid2X2, Group, Italic, Layers, Layers2, LocateFixed, MAX_CANVAS_HEIGHT, MAX_CANVAS_WIDTH, MAX_CUSTOM_DEVICE_TERMINALS, MIN_CANVAS_HEIGHT, MIN_CANVAS_WIDTH, MapIcon, Maximize2, MemoDeviceGlyph, Minus, PARAM_LABELS, PARAM_VALUE_TYPE_OPTIONS, POWER_UNIT_OPTIONS, Paintbrush, Palette, Pencil, Plus, READONLY_E_PARAM_KEYS, ReactFlowPreview, RotateCcw, RotateCw, Route, SCALE_HANDLE_CONFIGS, STATIC_ROUTE_AVOIDANCE_PARAM, Save, ScanSearch, Scissors, Search, Suspense, SvgMarkupChunk, TERMINAL_TYPE_LIBRARY_LABELS, TERMINAL_TYPE_OPTIONS, TOPOLOGY_WARNING_PAGE_SIZE, TRANSFORM_ROTATE_HANDLE_GAP, TRANSFORM_ROTATE_STEM_END, TRANSFORM_ROTATE_STEM_START, TextStyleToggleButton, Trash2, Type, Underline, Undo2, Ungroup, VOLTAGE_BASE_CLEAR_SCOPES, VOLTAGE_BASE_CLEAR_SCOPE_LABELS, VOLTAGE_BASE_SET_SCOPES, VOLTAGE_BASE_SET_SCOPE_LABELS, VOLTAGE_UNIT_OPTIONS, X, Zap, ZapOff, activateInspectorFromCanvas, activeDropHintPoint, activeDropHintStyle, activeDropReady, activeImageFolderId, activeLayer, activeLayerEdgeIdSet, activeLayerId, activeLayerNodeIdSet, activeLayerNodes, activeModelPathName, activeProjectKey, activeSchemeKey, activeSelectedEdgeSet, activeSelectedNodeIds, activeVoltageBaseTerminalKey, activeVoltageBaseTerminalRow, addCustomDeviceStateDraftRow, addDefaultMeasurementsToNode, addDefinitionDraftRow, addManualBendFromContextMenu, addRoutableLineBendFromContextMenu, addStateIconDrawingElement, addVoltageColorRow, adjustSelectedDisplayLayer, alignSelected, allowAutoExpandCanvas, appShellStyle, appendConnectPreviewManualPoint, appendRoutableLinePreviewManualPoint, appendStaticDrawingPoint, applyConnectPreviewState, applyExistingImage, applyLayerAssignmentDialog, applyRoutableLinePreviewState, applyStateIconDrawingDialog, aside, assignSelectedNodesToModelLayer, categoryLibraryComponentLibraryKey, categoryLibraryOptionClass, autoAlignCanvasGraphics, autoSpreadCanvasGraphics, backgroundLayerIds, backgroundLayerOptions, backgroundProjectId, backgroundProjectOptions, backgroundProjectRecord, batchEditors, bindCanvasNodeElement, busEndpointColor, button, canAddTemplateFromSelection, canAdjustSelectedDisplayLayer, canConnectTerminals, canExportCurrentModel, canGroupSelectedGraphics, canUngroupSelectedGraphics, cancelLibraryPlacement, cancelModifierSelectionPress, cancelTemplateDialog, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageUrl, canvasClipboard, canvasDisplayHeight, canvasDisplayOffsetX, canvasDisplayOffsetY, canvasDisplayWidth, canvasFrameRef, canvasHorizontalScrollbarsActive, canvasInteractionRef, canvasRenderBounds, canvasResizeDrag, canvasResizeHandles, canvasResizeHotzoneStyle, canvasResizeHotzonesRef, canvasResizePreviewRect, canvasScrollSurfaceHeight, canvasScrollSurfaceWidth, canvasSelectionShortcutActiveRef, canvasSizeDraft, canvasVerticalScrollbarsActive, centerSelectedInView, centerSelectedViewportTitle, chooseCustomDeviceBackground, chooseDefinitionTemplateIcon, chooseImage, chooseStateIconDrawingImport, chooseStateVisualImage, circle, clampPointToCanvas, clearLibraryPlacementPreview, clearRecordSelection, clearSelectedImage, clearSelectedImageForNode, clearStaticButtonFeedback, clipPath, closeCustomDeviceDialog, closeDeviceDefinitionDialog, code, collapsedCustomComponentTreeLibraries, collapsedCustomComponentTreeTypes, collapsedDefinitionComponentLibraries, colorDisplayMode, colorPalette, colorPaletteDialogOpen, colorPaletteDraft, colorPaletteTab, commitCanvasSizeDraft, commitLibraryPlacementAtPoint, componentLibraryDisplayParts, componentLibraryOptionClass, componentLibraryOptionsByCategoryLibrary, confirmAddGraphTemplate, confirmConnectionRedrawDialog, confirmCreateDeviceFromGroup, confirmFilterSelectionDialog, confirmReplaceDeviceIconFromGroup, confirmVoltageBaseClearDialog, confirmVoltageBaseSetDialog, connectDropHintElementRef, connectPreviewColor, connectPreviewDom, connectPreviewHandleElementRef, connectPreviewPathElementRef, connectPreviewPointRef, connectSource, connectSourceNode, connectTargetPoint, connectTargetSnapPoint, connectTerminalCompatibilityActive, connectionLineStyle, connectionRedrawDialogOpen, connectionRedrawScope, connectionRedrawTargetsForScope, consumeGraphicContextMenuHandled, contextMarqueeSelection, contextMarqueeSelectionRef, contextMeasurementGroup, contextMeasurementNode, contextMenu, contextMenuClassName, contextMenuForEdge, contextMenuForNode, contextMenuForRoutableLine, contextMenuForSelection, contextMenuFromElementTree, contextMenuRef, contextMenuStyle, contextMenuTarget, contextSelectionCount, copyProjectRecord, copySchemeRecord, copySelection, createBlankProject, createGraphTemplateType, createImageFolder, createSchemeRecord, currentCategoryLibraryComponentLibraryOptions, currentModelRecord, currentModelVoltageColorKeys, currentUnit, currentZoomPercent, customComponentTreeSearchQuery, customComponentTreeSelection, customDefaultStateSelected, customDeviceDefinitionMode, customDeviceDialogOpen, customDeviceDialogRef, customDeviceDialogView, customDeviceDraft, customDeviceImageInputRef, customDeviceMeasurementTarget, customDevicePreviewHeight, customDevicePreviewImage, customDevicePreviewSourceTemplate, customDevicePreviewWidth, customDeviceSaveMessage, customDeviceStatePageId, customDeviceTerminalAnchorDragIndex, customDeviceTerminalAnchorValue, customDeviceTerminalAnchors, customDeviceTerminalConnectorSegment, customDraftDefaultParams, customParamId, customStatePreviewText, customStatePreviewVisual, cutSelection, datalist, defaultBackgroundLayerIdsForProject, defaultComponentLibraryForCategoryLibrary, defaultContainerAssociationForTerminalType, definitionCategoryLibraryComponentLibraryOptions, definitionDraftError, definitionDraftRows, definitionDraftSection, definitionDraftSectionEditing, definitionTemplateIconInputRef, defs, deleteCustomDeviceStateDraftRow, deleteDefinitionDraftRow, deleteImageFolder, deleteManualBendPoint, deleteProjectRecord, deleteRoutableLineBendPoint, deleteSchemeRecord, deleteSelectedStateIconDrawingElements, deleteSelection, deleteStateIconDrawingElement, deleteVoltageColorRow, detailedSelectedEdgeIdSet, detailedViewportNodes, deviceDefinitionDialogOpen, deviceDefinitionDialogRef, deviceDefinitionKeyForTemplate, deviceDefinitionSearchNeedle, deviceDefinitionSearchQuery, deviceDefinitionView, deviceLabelsVisible, deviceLibraryDialogDrag, deviceLibraryDialogLayouts, deviceLibraryDialogResize, deviceLibraryDialogStyle, displayedCustomComponentTreeLibraries, displayedDeviceDefinitionLibraries, distributeSelected, div, dragAffectedEdgeIdSet, dragGhostEdgeIdSet, dragGhostEdgeRoutes, dragGhostRoutableLineNodeIdSet, dragOverlayEdgeIdSet, dragPreviewEdgeIdSet, dragPreviewEdgeRoutes, dragStateIconDrawingSelection, draggingDelta, draggingNodeIdSet, draggingRef, edgeById, edgeFloatingToolbar, edges, effectiveLeftPanelTab, em, expandedDefinitionGroups, exportEFile, exportProjectRecordFile, exportSchemeRecord, exportSvg, filterSelectionDialogOpen, filterSelectionTreeLabel, filterSelectionTypeKeys, filterSelectionTypeOptions, filterSelectionTypePartial, filterSelectionTypeSelected, filteredCustomComponentTreeByComponentLibrary, filteredDeviceDefinitionByComponentLibrary, findConnectTargetAtPoint, findConnectionRouteHitAtPoint, findRewireTargetAtPoint, findRoutableLineEndpointTargetAtPoint, findSavedSchemeById, finishCanvasPanning, finishConnectToTarget, finishInteractiveStaticDrawing, finishManualPathDrag, finishMarqueeSelection, finishMarqueeSelectionFromPoints, finishMeasurementDrag, finishModifierSelectionPress, finishNodeDrag, finishNodeLabelDrag, finishNodeLabelRotateDrag, finishRewiring, finishRoutableLineEndpointDrag, finishRoutableLineToTarget, finishTerminalPress, finishTransformDrag, fitSelectedViewportTitle, fitViewToSelection, fitWholeCanvasFromBlankDoubleClick, fitWholeCanvasToFrame, floatingToolbarIconSize, floatingToolbarWrapperStyle, flushConnectPreviewDom, focusCanvasKeyboardShortcutHost, footer, formatCustomDeviceTerminalAnchorValue, formatDeviceModelParamDisplayValue, formatInspectorScaleValue, formatSvgNumber, g, generateCustomDeviceImage, getContainerTerminalAssociationSourceIndex, getEParamValue, getEParameterKeys, getEdgeEndpointPoint, getMovableRouteSegmentIndexes, getNodeScaleX, getNodeScaleY, getTerminalDisplayColor, graphTemplateTypes, groupDeviceDefinitionDialog, groupDeviceReplacementTemplates, groupSelectedGraphics, groupTransformPreviewEdgeIdSet, groupTransformPreviewGroupId, groupTransformPreviewNodeIdSet, groupTransformPreviewRoutableLineNodeIdSet, h1, h2, h3, handleCanvasPointerDownCapture, handleDrop, handleEdgePathPointerDown, handleLodNodeContextMenu, handleLodNodeDoubleClick, handleLodNodePointerDown, handleMinimapNavigate, handleNodePointerDown, handlePointerMove, handleRoutableLineNodePathPointerDown, handleSidePanelPointerLeave, handleStaticButtonClick, handleTerminalPointerDown, handleTreeCollapseChange, handleWheel, hasBatchCommonPropertyRows, hasCanvasSelectionModifier, header, hiddenTopologyErrorCount, hideAutoPanelsFromWorkspace, image, imageAssetList, imageAssets, imageFolders, imageInputRef, imageTarget, img, imperativeMultiNodeDragOverlayRef, imperativeNodeDragDropHintRef, imperativeSingleNodeDragEdgePreviewRef, imperativeSingleNodeDragNodeOverlayRef, importModelFile, importSchemeFile, initialCanvasDetailedEdgeIdSet, insertManualBendFromEdgePath, insertManualBendFromPointer, inspectorSelectedEdge, inspectorSelectedNode, inspectorTab, inspectorTopologyErrors, isBlockingTopologyValidationError, isBrowseMode, isBuiltInCategoryLibrary, isBuiltInComponentLibrary, isBusNode, isCanvasGraphicContextMenuTarget, isContainerTerminalAssociationDependent, isDoubleContainerTerminalAssociation, isEditMode, isGroupTransformDrag, isReadonlyCanvasMode, isRepeatedEdgePointerClick, isRoutableLineDeviceKind, isStaticBoxLikeNode, isStaticButtonEnabledForNode, isStaticNode, lastCanvasClientPointerRef, lastCanvasPointerRef, lastEdgePointerClickRef, lastRawCanvasPointerRef, layerAssignmentDialogOpen, layerAssignmentTargetId, layerAssignmentUnchanged, layerManagementDropdownRef, layers, leftPanelContent, leftPanelMode, leftPanelRef, leftPanelTab, leftPanelVisible, libraryPlacement, line, loadDefinitionTemplateDraft, locateTopologyError, lodCanvasNodeChunks, lodCanvasRouteChunks, lodSelectedNodeMarkup, main, manualPathDrag, manualPathPreviewRoute, mapPointToMinimap, marquee, minimapContentHeight, minimapContentWidth, minimapNodes, minimapOffsetX, minimapOffsetY, minimapRoutes, minimapScale, minimapViewportBottom, minimapViewportLeft, minimapViewportRight, minimapViewportTop, minimapVisible, mirrorSelectedNodes, mode, modelImportInputRef, modifierSelectionPressRef, mousePositionTextRef, multiNodeDragging, nodeById, nodeDoubleClickDialogDrag, nodeDoubleClickDialogResize, nodeFloatingToolbar, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, nodeKindAllowsResizeTransform, nodeLabelDisplayMode, nodeLabelDrag, nodeLabelFontSize, nodeLabelOffset, nodeLabelRotateDrag, nodeLabelShouldRender, nodeLabelText, nodeLabelTextAnchor, nodeLabelTextStyle, nodeLabelTransform, nodeLabelVertical, nodeLabelVerticalSegments, nodeLabelVerticalTokenStyle, nodeLabelVerticalTokenY, nodeRotateHandleControlPoints, nodeScaleHandleControlPoint, nodeUprightRotateHandleControlPoints, nodeUprightSelectionOutlineRect, nodeUsesUprightStaticSelectionOutline, nodes, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, normalizeDefinitionRowEnumFields, normalizeNodeLabelRotation, normalizeScale, normalizeStaticBoxDimension, normalizedTopologyWarningPage, openAddTemplateDialog, openColorPaletteDialog, openConnectionRedrawDialog, openEdgeContextMenu, openFilterSelectionDialog, openGraphicContextMenu, openGroupDeviceDefinitionDialog, openLayerAssignmentDialog, openMeasurementEditorForNode, openModelImportFilePicker, openNodeDoubleClickEditor, openSchemeImportFilePicker, openStateIconDrawingDialog, openTopologyWarningPanel, openVoltageBaseClearDialog, openVoltageBaseSetDialog, operationLogRef, operationLogStatusRef, overlappedTerminalKeys, p, panning, panningRef, paramOptionsForSection, parameterValueTypeLabelForDefinitionRow, parseCustomDefinitions, pasteProjectClipboardRecord, pasteSchemeClipboardRecord, pasteSelection, path, pattern, pendingModelImportConflict, pendingRecordPasteConflict, pendingSchemeImportConflict, pendingUnsavedAction, pointsToOrthogonalPath, polyline, powerBaseValue, powerUnit, projectById, projectListPointerInsideRef, projectMenu, projectName, pushUndoSnapshot, reactFlowPreviewOpen, recordClipboard, rect, removeMeasurementsFromNode, renameImageFolder, renameProjectRecord, renameSchemeRecord, renderBoundaryBusInternalConnector, renderDeviceDefinitionMeasurementPanel, renderDeviceDefinitionVisualPanel, renderElementTreePanel, renderEnumValuesEditor, renderGraphTemplatePreview, renderGroupTransformPhotoPreview, renderInteractiveStaticDrawingPreview, renderLayerManager, renderLibraryPlacementPreview, renderMeasurementConfigDialog, renderMeasurementEditorDialog, renderMeasurementGroup, renderMultiNodeDragOverlay, renderNodeDoubleClickDialog, renderNodePreviewImageContent, renderReadonlyBackgroundPage, renderSelectedNodeMeasurementTable, renderSidePanelEdgeTrigger, renderSidePanelModeControls, renderSingleTransformRotateOriginGhost, renderStateVisualPager, renderTransformRotationTrajectory, renderTypicalValueEditor, renderViewportRoutedEdges, resetConnectPreviewState, resetDeviceDefinitionDraft, resetEnergyColors, resetRoutableLinePreviewState, resetViewportZoom, resetVoltageColors, resizeSizeHint, resolveConnectPreviewPoint, resolveDuplicateModelImport, resolveDuplicateSchemeImport, resolveNodeStateVisual, resolveRecordPasteConflict, resolveRoutableLinePreviewPoint, resolveTemplateComponentLibrary, resolveUnsavedChangeAction, rewiring, rewiringPreviewRoute, rightPanelMode, rightPanelRef, rightPanelVisible, rotateSelectedLayoutUnits, routableLineActiveTerminalType, routableLineDeviceCanvasPoints, routableLineDeviceRenderLocalPoints, routableLineEndpointDrag, routableLineEndpointDragColor, routableLineEndpointDragPreviewRoute, routableLineEndpointHandles, routableLinePlacement, routableLinePlacementColor, routableLinePreview, routableLineTerminalCompatibilityActive, runContextMenuAction, runTopologyCalculation, sameOptionalPoint, saveColorPalette, saveCurrentProject, saveCustomDeviceDefinitionDialog, saveDeviceDefinitionDraft, saveRequired, scaleHandleCursorClass, scheduleRoutableLinePreviewPoint, schemeImportInputRef, schemes, screenToSvgPoint, select, selectCanvasGraphics, selectCustomCategoryLibrary, selectCustomComponentTemplate, selectCustomComponentLibrary, selectableCategoryLibraries, selectedContainerParameterView, selectedContainerParameterViews, selectedCount, selectedDefinitionBaseTemplate, selectedDefinitionTemplate, selectedDefinitionTerminalAssociations, selectedDeviceInfoView, selectedEdge, selectedLayoutUnitCount, selectedNodeCount, selectedNodeId, selectedNodeIdSet, selectedNodeTransformStatus, selectedRoutableLineManualPathRoute, selectedRoutedEdge, selectedSchemeRecord, selectedTransformGroupUnit, selectedViewportActionDisabled, selectionRectCenter, setActiveImageFolderId, setActiveVoltageBaseTerminalKey, setAllowAutoExpandCanvas, setBackgroundLayerIds, setBackgroundProjectId, setCanvasBackgroundColor, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasSelectionScope, setColorPaletteDialogOpen, setColorPaletteTab, setConnectSource, setConnectionRedrawDialogOpen, setConnectionRedrawScope, setContainerParamViewId, setContextMarqueeSelection, setContextMenu, setCurrentUnit, setCustomComponentTreeSearchQuery, setCustomComponentTreeSelection, setCustomDeviceDialogView, setCustomDeviceDraft, setCustomDeviceStatePageId, setCustomDeviceTerminalAnchorDragIndex, setDefinitionDraftError, setDefinitionDraftSection, setDefinitionDraftSectionEditing, setDeviceDefinitionSearchQuery, setDeviceDefinitionView, setDeviceLabelsVisible, setFilterSelectionDialogOpen, setFilterSelectionTypeKeys, setGroupDeviceDefinitionDialog, setImageTarget, setInspectorTab, setLayerAssignmentDialogOpen, setLayerAssignmentTargetId, setLeftPanelTab, setMarquee, setMinimapVisible, setMode, setPowerBaseValue, setPowerUnit, setReactFlowPreviewOpen, setRewiring, setRoutableLineEndpointDrag, setRoutableLinePlacement, setSelectedDeviceInfoView, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setSelectedNodeLabelDisplayMode, setSelectedProjectId, setSelectedProjectIds, setSelectedSchemeId, setSelectedSchemeIds, setSmartAlignmentEnabled, setStateIconDrawingDialog, setStateIconDrawingImportMode, setStateImageUploadTarget, setStaticButtonFeedback, setTemplateDraftName, setTemplateDraftType, setTerminalPress, setTopologyWarningPage, setTopologyWarningPanelClosed, setVoltageBaseClearDialogOpen, setVoltageBaseClearScope, setVoltageBaseSetDialogOpen, setVoltageBaseSetScope, setVoltageBaseSetValue, setVoltageBaseTerminalValue, setVoltageColorVisibility, setVoltageUnit, sidePanelResize, singleNodeDragging, singleSelectedDeviceForInspector, small, smartAlignmentEnabled, smartAlignmentGuides, sourceSelectClassName, span, startCanvasPanning, startCanvasResize, startCanvasResizeFromBottomOverlay, startCanvasResizeFromLeftOverlay, startCanvasResizeFromRightOverlay, startCanvasResizeFromTopOverlay, startContextMarqueeSelection, startDeviceLibraryDialogDrag, startDeviceLibraryDialogResize, startGroupMoveDrag, startGroupTransformDrag, startManualPointDrag, startManualSegmentDrag, startModifierSelectionPress, startNodeLabelDrag, startNodeLabelRotateDrag, startRoutableLineEndpointDrag, startRoutableLineFromTerminal, startRoutableLinePointDrag, startRoutableLineSegmentDrag, startSidePanelResize, startSingleTransformDrag, startStateIconDrawingDrag, startStatusbarResize, startTopologyWarningPanelDrag, startTopologyWarningPanelResize, stateIconDrawingDialog, stateIconDrawingImportInputRef, stateIconDrawingKeyDown, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingToImage, stateVisualImageInputRef, stateVisualShapeLabel, staticButtonPointerRef, staticButtonVisual, staticDrawing, staticNodeParticipatesInRoutingAvoidance, statusbarResize, stopDeviceLibraryDialogEvent, stopSidePanelEventPropagation, stopStateIconDrawingDrag, strong, svgRef, svgStrokeDashArray, switchInspectorTabForCanvasSelection, table, tbody, td, templateDialog, templateDraftName, templateDraftType, templateResizeTransformValue, terminalColor, terminalPressPreviewEdgeIdSet, terminalPressPreviewEdgeRoutes, terminalRenderLocalPoint, terminalStubSegment, terminalStubStrokeWidth, terminalVbaseFallback, terminalVoltageBaseNumber, text, th, thead, tidyRoutableLineRoute, tidySelectedEdgeRoute, title, toggleBackgroundLayer, toggleColorDisplayMode, toggleDefinitionComponentLibrary, toggleDefinitionGroup, toggleFilterSelectionItem, toggleFilterSelectionType, toggleInteractionMode, toggleSelectedNodeLabelDisplay, topology, topologyErrors, topologyStatus, topologyWarningDisplayMessage, topologyWarningPageCount, topologyWarningPanelClosed, topologyWarningPanelRef, topologyWarningPanelResize, topologyWarningPanelStyle, topologyWarningPanelVisible, tr, transformDrag, undoLastOperation, undoStack, ungroupSelectedGraphics, updateAutoPanelVisibility, updateCustomDeviceStateDraftRow, updateCustomDeviceTerminalAnchor, updateCustomDeviceTerminalAnchorFromPreview, updateCustomDraftTerminalCount, updateDefinitionDraftRow, updateEnergyColor, updateLibraryPlacementPreview, updateMouseStatus, updateParam, updateSelectedDefinitionResizePermission, updateSelectedNode, updateStateIconDrawingElement, updateTerminalVbase, updateVoltageColorRow, useSimplifiedCanvasNodes, useSimplifiedCanvasRoutes, useSimplifiedSelectedCanvasNodes, viewportOverlayStyle, visibleEdges, visibleMeasurementGroups, visibleNodes, visibleSelectedGroupLayoutUnits, visibleStateIconColor, visibleTopologyErrors, visibleVoltageColorRows, voltageBaseClearDialogOpen, voltageBaseClearResultForScope, voltageBaseClearScope, voltageBaseSetDialogOpen, voltageBaseSetHasUniformTargets, voltageBaseSetMode, voltageBaseSetModeLabel, voltageBaseSetOptions, voltageBaseSetReady, voltageBaseSetResultForScope, voltageBaseSetScope, voltageBaseSetTerminalRows, voltageBaseSetValue, voltageBaseTerminalRowKey, voltageColorVisibility, voltageUnit, warningStatusText, warningStatusTitle, zoomViewportAtCenter } = __appScope;
   const {
+    confirmCustomLibraryCreateDialog,
     createCustomCategoryLibrary,
     createCustomComponentLibrary,
     clearLibraryFlyoutCloseTimer,
+    customComponentLibraries,
     customGraphTemplates,
+    customLibraryCreateDialog,
     deleteGraphTemplate,
     deleteGraphTemplateType,
     deleteSelectedCustomDeviceTreeItem,
     renameSelectedCustomDeviceTreeItem,
     scheduleGraphTemplateFlyoutClose,
+    setCustomLibraryCreateDialog,
     setHoveredGraphTemplateType,
     startCustomComponentCreate,
     templateMenu
@@ -2129,7 +2133,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                             {typeGroups.map((typeGroup) => {
                         const typeKey = categoryLibraryComponentLibraryKey(group, typeGroup.section);
                         const typeCollapsed = deviceDefinitionSearchNeedle ? false : collapsedDefinitionComponentLibraries.includes(typeKey);
-                        const typeDisplay = componentLibraryDisplayParts(typeGroup.section);
+                        const typeDisplay = componentLibraryDisplayParts(typeGroup.section, customComponentLibraries);
                         return (<section className="component-definition-type-group" key={`${group}-${typeGroup.section}`}>
                                   <button type="button" className={`component-definition-type-header ${typeCollapsed ? "" : "active"}`} role="treeitem" aria-expanded={!typeCollapsed} onClick={() => toggleDefinitionComponentLibrary(group, typeGroup.section)}>
                                     {typeCollapsed ? <ChevronRight size={13}/> : <ChevronDown size={13}/>}
@@ -2263,8 +2267,8 @@ export function renderAppView(__appScope: Record<string, any>) {
                                 <th>中文名称</th>
                                 <th>英文名称</th>
                                 <th>取值类型</th>
-                                <th>典型取值</th>
-                                <th>枚举值</th>
+                                <th>默认值</th>
+                                <th>枚举项</th>
                                 <th>操作</th>
                               </tr>
                             </thead>
@@ -2334,6 +2338,44 @@ export function renderAppView(__appScope: Record<string, any>) {
             <div className="device-library-dialog-resize" role="separator" aria-orientation="horizontal" aria-label="调整修改元件窗口大小" title="拖拽调整窗口大小" onPointerDown={(event) => startDeviceLibraryDialogResize("definition", event)}/>
           </section>
         </div>)}
+      {customLibraryCreateDialog && (<div className="custom-library-create-backdrop" onPointerDown={() => setCustomLibraryCreateDialog(null)}>
+          <form
+            className="custom-library-create-dialog"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={(event) => {
+              event.preventDefault();
+              confirmCustomLibraryCreateDialog();
+            }}
+          >
+            <div className="custom-library-create-title">
+              <h3>{customLibraryCreateDialog.title}</h3>
+              <button type="button" aria-label="关闭" title="关闭" onClick={() => setCustomLibraryCreateDialog(null)}>
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+            {customLibraryCreateDialog.error && <p className="custom-library-create-error">{customLibraryCreateDialog.error}</p>}
+            <label>
+              <span>{customLibraryCreateDialog.kind === "categoryLibrary" ? "类别中文名称" : customLibraryCreateDialog.kind === "componentLibrary" ? "元件库中文名称" : "元件中文名称"}</span>
+              <input
+                autoFocus
+                value={customLibraryCreateDialog.cnName}
+                onChange={(event) => setCustomLibraryCreateDialog((current) => current ? { ...current, cnName: event.target.value, error: "" } : current)}
+              />
+            </label>
+            <label>
+              <span>{customLibraryCreateDialog.kind === "categoryLibrary" ? "类别英文名称" : customLibraryCreateDialog.kind === "componentLibrary" ? "元件库英文名称" : "元件英文名称"}</span>
+              <input
+                value={customLibraryCreateDialog.enName}
+                onChange={(event) => setCustomLibraryCreateDialog((current) => current ? { ...current, enName: event.target.value, error: "" } : current)}
+              />
+            </label>
+            <div className="custom-library-create-actions">
+              <button type="button" onClick={() => setCustomLibraryCreateDialog(null)}>取消</button>
+              <button type="submit" className="primary">确定</button>
+            </div>
+          </form>
+        </div>)}
       {customDeviceDialogOpen && (<div className="image-picker-backdrop" onPointerDown={requestCloseCustomDeviceDialog}>
           <section ref={customDeviceDialogRef} className={`custom-device-dialog${deviceLibraryDialogLayouts.custom ? " floating" : ""}`} style={deviceLibraryDialogStyle("custom")} onPointerDown={stopDeviceLibraryDialogEvent} onPointerUp={stopDeviceLibraryDialogEvent} onPointerCancel={stopDeviceLibraryDialogEvent} onLostPointerCapture={stopDeviceLibraryDialogEvent} onClick={(event) => event.stopPropagation()}>
             <div className="image-picker-title">
@@ -2347,6 +2389,7 @@ export function renderAppView(__appScope: Record<string, any>) {
               <CustomComponentManagerTree
                 libraries={displayedCustomComponentTreeLibraries}
                 filteredByComponentLibrary={filteredCustomComponentTreeByComponentLibrary}
+                customComponentLibraries={customComponentLibraries}
                 initialCollapsedLibraries={collapsedCustomComponentTreeLibraries}
                 initialCollapsedTypes={collapsedCustomComponentTreeTypes}
                 initialSelection={customComponentTreeSelection}
@@ -2379,9 +2422,12 @@ export function renderAppView(__appScope: Record<string, any>) {
                 <span>元件库</span>
                 <div className="custom-category-library-select-row single-control">
                   <select className={sourceSelectClassName(isBuiltInComponentLibrary(customDeviceDraft.componentLibrary))} value={customDeviceDraft.componentLibrary} onChange={(event) => selectCustomComponentLibrary(customDeviceDraft.categoryLibraryName, event.target.value)}>
-                    {currentCategoryLibraryComponentLibraryOptions.map((section) => (<option key={section} value={section} className={componentLibraryOptionClass(section)} title={isBuiltInComponentLibrary(section) ? "系统内置元件库，无法删除" : "用户自定义元件库，可以删除"}>
-                        {section}
-                      </option>))}
+                    {currentCategoryLibraryComponentLibraryOptions.map((section) => {
+                      const sectionDisplay = componentLibraryDisplayParts(section, customComponentLibraries);
+                      return (<option key={section} value={section} className={componentLibraryOptionClass(section)} title={isBuiltInComponentLibrary(section) ? "系统内置元件库，无法删除" : "用户自定义元件库，可以删除"}>
+                        {sectionDisplay.title}
+                      </option>);
+                    })}
                   </select>
                 </div>
               </label>
@@ -2520,24 +2566,92 @@ export function renderAppView(__appScope: Record<string, any>) {
                     <th>中文名称</th>
                     <th>英文名称</th>
                     <th>取值类型</th>
-                    <th>典型取值</th>
-                    <th>枚举值</th>
+                    <th>默认值</th>
+                    <th>枚举项</th>
                     <th>操作</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {customDraftDefaultParams.map((row) => {
-                const readonlyRow: CustomParamDraft = { ...row, id: `default-${row.enName}` };
-                return (<tr key={`default-${row.enName}`} className="readonly-row">
-                        <td>{row.cnName}</td>
-                        <td>{row.enName}</td>
-                        <td>{parameterValueTypeLabelForDefinitionRow(row)}</td>
-                        <td>{renderTypicalValueEditor(readonlyRow, () => undefined, true)}</td>
-                        <td>{renderEnumValuesEditor(readonlyRow, () => undefined, true)}</td>
-                        <td>默认</td>
-                      </tr>);
-            })}
-                  {customDeviceDraft.params.map((row, index) => (<tr key={row.id}>
+                  {(() => {
+                const defaultParamKeySet = new Set(customDraftDefaultParams.map((item) => item.enName.trim().toLowerCase()));
+                const customDefaultParamOverrideMap = new Map(customDeviceDraft.params
+                    .filter((item) => defaultParamKeySet.has(item.enName.trim().toLowerCase()))
+                    .map((item) => [item.enName.trim().toLowerCase(), item]));
+                const mergedDefaultParams = customDraftDefaultParams.map((item) => {
+                    const override = customDefaultParamOverrideMap.get(item.enName.trim().toLowerCase());
+                    return override
+                        ? normalizeDefinitionRowEnumFields({
+                            ...item,
+                            valueType: override.valueType,
+                            typicalValue: override.typicalValue,
+                            enumOptions: override.enumOptions,
+                            enumValues: override.enumValues,
+                            readonly: item.readonly
+                        })
+                        : item;
+                });
+                const visibleCustomParams = customDeviceDraft.params.filter((item) => !defaultParamKeySet.has(item.enName.trim().toLowerCase()));
+                const updateDefaultParamRow = (rowId: string, patch: Partial<CustomParamDraft>) => {
+                    const enName = rowId.replace(/^default-/, "");
+                    const sourceRow = mergedDefaultParams.find((item) => item.enName === enName) ?? customDraftDefaultParams.find((item) => item.enName === enName);
+                    if (!sourceRow || sourceRow.readonly) {
+                        return;
+                    }
+                    setCustomDeviceDraft((current) => {
+                        const key = sourceRow.enName.trim().toLowerCase();
+                        const existing = current.params.find((item) => item.enName.trim().toLowerCase() === key);
+                        const nextRow = normalizeDefinitionRowEnumFields({
+                            ...sourceRow,
+                            ...(existing ?? {}),
+                            ...patch,
+                            id: existing?.id ?? customParamId(),
+                            cnName: sourceRow.cnName,
+                            enName: sourceRow.enName,
+                            readonly: sourceRow.readonly
+                        });
+                        return {
+                            ...current,
+                            params: existing
+                                ? current.params.map((item) => (item.id === existing.id ? nextRow : item))
+                                : [...current.params, nextRow],
+                            error: ""
+                        };
+                    });
+                };
+                const moveVisibleCustomParam = (rowId: string, direction: -1 | 1) => {
+                    setCustomDeviceDraft((current) => {
+                        const visibleIds = current.params
+                            .filter((item) => !defaultParamKeySet.has(item.enName.trim().toLowerCase()))
+                            .map((item) => item.id);
+                        const visibleIndex = visibleIds.indexOf(rowId);
+                        const targetId = visibleIds[visibleIndex + direction];
+                        if (visibleIndex < 0 || !targetId) {
+                            return current;
+                        }
+                        const params = [...current.params];
+                        const currentIndex = params.findIndex((item) => item.id === rowId);
+                        const targetIndex = params.findIndex((item) => item.id === targetId);
+                        if (currentIndex < 0 || targetIndex < 0) {
+                            return current;
+                        }
+                        [params[currentIndex], params[targetIndex]] = [params[targetIndex], params[currentIndex]];
+                        return { ...current, params };
+                    });
+                };
+                return (<>
+                    {mergedDefaultParams.map((row) => {
+                        const defaultRow: CustomParamDraft = { ...row, id: `default-${row.enName}` };
+                        const defaultRowDisabled = Boolean(row.readonly);
+                        return (<tr key={`default-${row.enName}`} className={defaultRowDisabled ? "readonly-row" : ""}>
+                            <td>{row.cnName}</td>
+                            <td>{row.enName}</td>
+                            <td>{parameterValueTypeLabelForDefinitionRow(row)}</td>
+                            <td>{renderTypicalValueEditor(defaultRow, updateDefaultParamRow, defaultRowDisabled)}</td>
+                            <td>{renderEnumValuesEditor(defaultRow, updateDefaultParamRow, defaultRowDisabled)}</td>
+                            <td>默认</td>
+                          </tr>);
+                    })}
+                    {visibleCustomParams.map((row, index) => (<tr key={row.id}>
                       <td>
                         <BufferedTextInput value={row.cnName} onCommit={(value) => setCustomDeviceDraft((current) => ({
                     ...current,
@@ -2581,22 +2695,10 @@ export function renderAppView(__appScope: Record<string, any>) {
                       </td>
                       <td>
                         <div className="custom-param-actions">
-                          <button type="button" onClick={() => setCustomDeviceDraft((current) => {
-                    if (index === 0)
-                        return current;
-                    const params = [...current.params];
-                    [params[index - 1], params[index]] = [params[index], params[index - 1]];
-                    return { ...current, params };
-                })} disabled={index === 0}>
+                          <button type="button" onClick={() => moveVisibleCustomParam(row.id, -1)} disabled={index === 0}>
                             上移
                           </button>
-                          <button type="button" onClick={() => setCustomDeviceDraft((current) => {
-                    if (index >= current.params.length - 1)
-                        return current;
-                    const params = [...current.params];
-                    [params[index + 1], params[index]] = [params[index], params[index + 1]];
-                    return { ...current, params };
-                })} disabled={index >= customDeviceDraft.params.length - 1}>
+                          <button type="button" onClick={() => moveVisibleCustomParam(row.id, 1)} disabled={index >= visibleCustomParams.length - 1}>
                             下移
                           </button>
                           <button type="button" onClick={() => setCustomDeviceDraft((current) => ({ ...current, params: current.params.filter((item) => item.id !== row.id) }))}>
@@ -2605,6 +2707,8 @@ export function renderAppView(__appScope: Record<string, any>) {
                         </div>
                       </td>
                     </tr>))}
+                  </>);
+            })()}
                 </tbody>
               </table>
             </div>

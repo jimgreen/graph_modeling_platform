@@ -166,6 +166,7 @@ import {
   normalizeModelGroups,
   orderNodesByModelLayer,
   defaultAllowsResizeTransformForKind,
+  templateDefinitionIsReadonly,
   normalizeSavedProjectRecordNames,
   getTemplateStateDefinitions,
   normalizeDeviceStateDefinitions,
@@ -1058,19 +1059,38 @@ export function groupDeviceTemplatesByCategoryLibrary(templates: DeviceTemplate[
   }, {});
 }
 
-export function groupDeviceTemplatesByCategoryLibraryAndComponentLibrary(templates: DeviceTemplate[]): Record<string, CategoryLibraryComponentLibraryGroup[]> {
+export function groupDeviceTemplatesByCategoryLibraryAndComponentLibrary(
+  templates: DeviceTemplate[],
+  customComponentLibraries: readonly CustomComponentLibraryDefinition[] = []
+): Record<string, CategoryLibraryComponentLibraryGroup[]> {
   const grouped = new Map<string, Map<string, DeviceTemplate[]>>();
-  for (const template of templates) {
-    const group = normalizeCategoryLibraryName(template.categoryLibrary);
-    const section = resolveTemplateComponentLibrary(template);
+  const ensureSection = (categoryLibraryName: string, sectionName: string) => {
+    const group = normalizeCategoryLibraryName(categoryLibraryName);
+    const section = normalizeComponentLibraryName(sectionName);
+    if (!group || !section) {
+      return undefined;
+    }
     if (!grouped.has(group)) {
       grouped.set(group, new Map());
     }
     const typeMap = grouped.get(group);
     if (!typeMap) {
+      return undefined;
+    }
+    if (!typeMap.has(section)) {
+      typeMap.set(section, []);
+    }
+    return { group, section, typeMap };
+  };
+  for (const template of templates) {
+    const entry = ensureSection(template.categoryLibrary, resolveTemplateComponentLibrary(template));
+    if (!entry) {
       continue;
     }
-    typeMap.set(section, [...(typeMap.get(section) ?? []), { ...template, categoryLibrary: group }]);
+    entry.typeMap.set(entry.section, [...(entry.typeMap.get(entry.section) ?? []), { ...template, categoryLibrary: entry.group }]);
+  }
+  for (const componentLibrary of customComponentLibraries) {
+    ensureSection(componentLibrary.categoryLibraryName, componentLibrary.name);
   }
   return Object.fromEntries(
     Array.from(grouped.entries()).map(([group, typeMap]) => [
@@ -1087,9 +1107,18 @@ export function normalizeLibrarySearchText(value: string) {
 export const categoryLibraryComponentLibraryKey = (categoryLibraryName: string, sectionName: string) =>
   `${normalizeCategoryLibraryName(categoryLibraryName)}::${sectionName}`;
 
-export function componentLibraryDisplayParts(sectionName: string) {
+function customComponentLibraryLabel(sectionName: string, customComponentLibraries: readonly CustomComponentLibraryDefinition[] = []) {
+  const sectionKey = normalizeComponentLibraryName(sectionName).toLowerCase();
+  return customComponentLibraries.find((item) => item.name.toLowerCase() === sectionKey)?.label?.trim() ?? "";
+}
+
+export function componentLibraryDisplayParts(
+  sectionName: string,
+  customComponentLibraries: readonly CustomComponentLibraryDefinition[] = []
+) {
   const english = normalizeComponentLibraryName(sectionName);
-  const chinese = COMPONENT_LIBRARY_LABELS[english] ?? "自定义元件库";
+  const customChinese = customComponentLibraryLabel(english, customComponentLibraries);
+  const chinese = COMPONENT_LIBRARY_LABELS[english] ?? (customChinese || "自定义元件库");
   return {
     chinese,
     english,
@@ -1097,8 +1126,11 @@ export function componentLibraryDisplayParts(sectionName: string) {
   };
 }
 
-export function componentLibraryDisplayName(sectionName: string) {
-  const display = componentLibraryDisplayParts(sectionName);
+export function componentLibraryDisplayName(
+  sectionName: string,
+  customComponentLibraries: readonly CustomComponentLibraryDefinition[] = []
+) {
+  const display = componentLibraryDisplayParts(sectionName, customComponentLibraries);
   return display.english ? display.title : display.chinese;
 }
 
@@ -1125,18 +1157,25 @@ export const filterSelectionTemplateComponentLibraryKey = (template: DeviceTempl
   inferESection(template.kind, template.params) ||
   String(template.params.component_type || template.params.componentLibrary || (template.params as { componentType?: string }).componentType || template.kind);
 
-export function libraryTemplateMatchesSearch(template: DeviceTemplate, group: string, section: string, needle: string) {
+export function libraryTemplateMatchesSearch(
+  template: DeviceTemplate,
+  group: string,
+  section: string,
+  needle: string,
+  customComponentLibraries: readonly CustomComponentLibraryDefinition[] = []
+) {
   if (!needle) {
     return true;
   }
-  return [group, section, componentLibraryDisplayName(section), template.label, template.kind, template.params?.component_type]
+  return [group, section, componentLibraryDisplayName(section, customComponentLibraries), template.label, template.kind, template.params?.component_type]
     .filter((value): value is string => typeof value === "string")
     .some((value) => normalizeLibrarySearchText(value).includes(needle));
 }
 
 export function filterCategoryLibraryComponentLibraryGroups(
   grouped: Record<string, CategoryLibraryComponentLibraryGroup[]>,
-  needle: string
+  needle: string,
+  customComponentLibraries: readonly CustomComponentLibraryDefinition[] = []
 ) {
   if (!needle) {
     return grouped;
@@ -1146,11 +1185,11 @@ export function filterCategoryLibraryComponentLibraryGroups(
       const groupMatches = normalizeLibrarySearchText(group).includes(needle);
       const filteredTypeGroups = typeGroups
         .map((typeGroup) => {
-          const sectionMatches = normalizeLibrarySearchText(componentLibraryDisplayName(typeGroup.section)).includes(needle);
+          const sectionMatches = normalizeLibrarySearchText(componentLibraryDisplayName(typeGroup.section, customComponentLibraries)).includes(needle);
           const templates = groupMatches || sectionMatches
             ? typeGroup.templates
-            : typeGroup.templates.filter((item) => libraryTemplateMatchesSearch(item, group, typeGroup.section, needle));
-          return templates.length ? { ...typeGroup, templates } : null;
+            : typeGroup.templates.filter((item) => libraryTemplateMatchesSearch(item, group, typeGroup.section, needle, customComponentLibraries));
+          return templates.length || groupMatches || sectionMatches ? { ...typeGroup, templates } : null;
         })
         .filter((typeGroup): typeGroup is CategoryLibraryComponentLibraryGroup => Boolean(typeGroup));
       return filteredTypeGroups.length ? [group, filteredTypeGroups] as const : null;
@@ -1265,11 +1304,17 @@ export function normalizeCustomComponentLibraries(value: unknown, reservedTypes:
   return value
     .map((item) => {
       const raw = item && typeof item === "object"
-        ? item as Partial<CustomComponentLibraryDefinition> & { attributeLibraryName?: unknown }
+        ? item as Partial<CustomComponentLibraryDefinition> & {
+          attributeLibraryName?: unknown;
+          cnName?: unknown;
+          chineseName?: unknown;
+          displayName?: unknown;
+        }
         : undefined;
       const name = normalizeComponentLibraryName(String(raw?.name ?? item ?? ""));
       const categoryLibraryName = normalizeCategoryLibraryName(String(raw?.categoryLibraryName ?? raw?.attributeLibraryName ?? defaultCategoryLibraryForComponentLibrary(name)));
-      return { name, categoryLibraryName };
+      const label = String(raw?.label ?? raw?.cnName ?? raw?.chineseName ?? raw?.displayName ?? "").trim();
+      return label ? { name, categoryLibraryName, label } : { name, categoryLibraryName };
     })
     .filter((componentLibrary) => {
       if (!isValidComponentLibraryName(componentLibrary.name)) {
@@ -1542,8 +1587,8 @@ export const renderEnumValuesEditor = <T extends DeviceParameterDefinition & { i
   return (
     <div className={className}>
       <div className="custom-param-enum-heading" aria-hidden="true">
-        <span>取值</span>
-        {enumValueType === "number" && <span>含义</span>}
+        <span>值</span>
+        {enumValueType === "number" && <span>显示名称</span>}
         {!disabled && <span>操作</span>}
       </div>
       {editorOptions.map((option, index) => (
@@ -1565,7 +1610,7 @@ export const renderEnumValuesEditor = <T extends DeviceParameterDefinition & { i
               <BufferedTextInput
                 value={option.label ?? ""}
                 disabled={disabled}
-                placeholder="含义"
+                placeholder="显示名称"
                 onCommit={(value) => {
                   const nextOptions = editorOptions.map((item, itemIndex) => (itemIndex === index ? { ...item, label: value } : item));
                   const nextTypicalValue = row.typicalValue === option.label ? option.value : row.typicalValue;
@@ -1577,7 +1622,7 @@ export const renderEnumValuesEditor = <T extends DeviceParameterDefinition & { i
           {!disabled && (
             <button
               type="button"
-              title="删除枚举值"
+              title="删除枚举项"
               disabled={editorOptions.length <= 1}
               onClick={() => {
                 const nextOptions = editorOptions.filter((_, itemIndex) => itemIndex !== index);
@@ -1599,7 +1644,7 @@ export const renderEnumValuesEditor = <T extends DeviceParameterDefinition & { i
             className="custom-param-enum-add"
             onClick={() => updateValues([...editorOptions, { value: "", label: "" }], row.typicalValue)}
           >
-            新增枚举值
+            新增枚举项
           </button>
         </div>
       )}
@@ -1884,7 +1929,7 @@ export function normalizeDefinitionRows(value: unknown): DeviceParameterDefiniti
         enumValues: (item as DeviceParameterDefinition).enumValues,
         enumValueType: (item as DeviceParameterDefinition).enumValueType,
         enumOptions: (item as DeviceParameterDefinition).enumOptions,
-        readonly: Boolean((item as DeviceParameterDefinition).readonly)
+        readonly: templateDefinitionIsReadonly(enName, Boolean((item as DeviceParameterDefinition).readonly))
       });
     })
     .filter((item) => item.enName && !isReservedDeviceDefinitionParamName(item.enName));
@@ -2618,6 +2663,7 @@ export function buildSvgTerminalMarkup(node: ModelNode, colorDisplayMode: ColorD
 export type CustomComponentTreeProps = {
   libraries: string[];
   filteredByComponentLibrary: Record<string, { section: string; templates: DeviceTemplate[] }[]>;
+  customComponentLibraries?: readonly CustomComponentLibraryDefinition[];
   initialCollapsedLibraries: Set<string>;
   initialCollapsedTypes: Set<string>;
   initialSelection: CustomComponentTreeSelection;
@@ -2654,6 +2700,7 @@ function customComponentTreeSelectionsEqual(first: CustomComponentTreeSelection,
 export const CustomComponentManagerTree = memo(function CustomComponentManagerTree({
   libraries,
   filteredByComponentLibrary,
+  customComponentLibraries = [],
   initialCollapsedLibraries,
   initialCollapsedTypes,
   initialSelection,
@@ -2832,7 +2879,7 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
                 {typeGroups.map((typeGroup) => {
                   const typeKey = `${group}::${typeGroup.section}`;
                   const typeCollapsed = searchNeedle ? false : collapsedTypes.has(typeKey);
-                  const typeDisplay = componentLibraryDisplayParts(typeGroup.section);
+                  const typeDisplay = componentLibraryDisplayParts(typeGroup.section, customComponentLibraries);
                   const typeSelected =
                     selection.kind === "componentLibrary" &&
                     selection.categoryLibraryName === group &&

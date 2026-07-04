@@ -4,6 +4,7 @@ import {
   createComputeStateIconDrawingSmartAlignmentSnap,
   createFindEditableRouteSegmentIndex,
   createRouteSegmentPointerDistance,
+  createSaveCustomDeviceTemplate,
   createStateIconDrawingKeyDown,
   createStartStateIconDrawingDrag,
   deviceParameterDefinitionsComplianceMessage,
@@ -18,6 +19,88 @@ import { createSetEdgeManualPoints } from "./appExtracted/appProjectCanvasFactor
 import { Point } from "./model";
 
 describe("manual bend interaction helpers", () => {
+  test("saves a newly created custom device with the requested English name", () => {
+    let customDeviceDraft = {
+      categoryLibraryName: "用户类别库",
+      componentLibrary: "UserLibrary",
+      componentName: "测试元件",
+      componentKind: "UserDevice",
+      backgroundImage: "",
+      backgroundImageAssetId: "",
+      backgroundImageCleared: "",
+      size: { width: 104, height: 64 },
+      allowResizeTransform: "0",
+      terminalCount: 0,
+      terminalTypes: [],
+      terminalLabels: [],
+      terminalAnchors: [],
+      terminalRoles: [],
+      terminalAssociations: [],
+      isContainer: false,
+      params: [],
+      stateDefinitions: [],
+      error: ""
+    };
+    let savedTemplates: any[] = [];
+    const scope = {
+      ALLOW_RESIZE_TRANSFORM_PARAM: "allowResizeTransform",
+      TERMINAL_TYPE_LIBRARY_LABELS: { ac: "交流" },
+      closeCustomDeviceDialog: vi.fn(),
+      customDefaultDefinitions: () => [],
+      get customDeviceDraft() {
+        return customDeviceDraft;
+      },
+      customDeviceGeneratedDefaultImageCandidates: () => [],
+      customDeviceImageWithTerminalConnectors: (image: string) => image,
+      customDeviceTemplates: [],
+      customDeviceTerminalAnchors: [],
+      defaultComponentLibraryForCategoryLibrary: () => "UserLibrary",
+      editingCustomDeviceKind: "",
+      ensureCustomComponentTreeExpanded: vi.fn(),
+      generateCustomDeviceImage: () => "data:image/svg+xml,%3Csvg%2F%3E",
+      hasOverlappingCustomDeviceTerminalAnchors: () => false,
+      isReservedDeviceDefinitionParamName: () => false,
+      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name),
+      measurementConfig: { measurementTypes: [], deviceProfiles: [] },
+      measurementConfigDraft: undefined,
+      measurementConfigDraftRef: undefined,
+      nextCustomTemplateKind: vi.fn(() => "custom-userlibrary"),
+      normalizeCategoryLibraryName: (name: string) => name.trim(),
+      normalizeComponentLibraryName: (name: string) => name.trim(),
+      normalizeContainerTerminalAssociations: () => [],
+      normalizeDefinitionRowEnumFields: (rows: any) => rows,
+      persistDeviceLibraryChange: vi.fn(),
+      requireEditMode: () => true,
+      setCustomComponentTreeSelection: vi.fn(),
+      setCustomDeviceDraft: (updater: any) => {
+        customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
+      },
+      setCustomDeviceDraftCleanBaseline: vi.fn(),
+      setCustomDeviceSaveMessage: vi.fn(),
+      setCustomDeviceTemplates: (templates: any[]) => {
+        savedTemplates = templates;
+      },
+      setEditingCustomDeviceKind: vi.fn(),
+      setExpandedCategoryLibraries: vi.fn(),
+      syncExistingNodesWithTemplateDefinitions: vi.fn(),
+      syncInheritedCustomDeviceStateVisuals: (states: any[]) => states,
+      validateContainerTerminalAssociations: () => ({ valid: true }),
+      validateStateDraftRows: (states: any[]) => ({ states, error: "" }),
+      writeOperationLog: vi.fn()
+    };
+
+    const saved = createSaveCustomDeviceTemplate(scope)();
+
+    expect(saved).toBe(true);
+    expect(savedTemplates[0]).toMatchObject({
+      kind: "UserDevice",
+      label: "测试元件",
+      categoryLibrary: "用户类别库",
+      params: { component_type: "UserLibrary" }
+    });
+    expect(scope.nextCustomTemplateKind).not.toHaveBeenCalled();
+  });
+
   test("validates parameter definition names and default value types", () => {
     const message = deviceParameterDefinitionsComplianceMessage([
       { cnName: "额定功率", enName: "ratedPower", valueType: "integer", typicalValue: "12.5" },
@@ -32,12 +115,12 @@ describe("manual bend interaction helpers", () => {
       }
     ] as any);
 
-    expect(message).toContain("属性第 1 行：典型取值必须是整数。");
+    expect(message).toContain("属性第 1 行：默认值必须是整数。");
     expect(message).toContain("属性第 2 行：英文名称 ratedPower 与第 1 行重复。");
-    expect(message).toContain("属性第 2 行：典型取值必须是数字。");
+    expect(message).toContain("属性第 2 行：默认值必须是数字。");
     expect(message).toContain("属性第 3 行：中文名称不能为空。");
     expect(message).toContain("属性第 3 行：英文名称不能为空。");
-    expect(message).toContain("属性第 4 行：典型取值必须是数字枚举值。");
+    expect(message).toContain("属性第 4 行：默认值必须是数字枚举值。");
   });
 
   test("separates external image imports from document image and icon imports", () => {

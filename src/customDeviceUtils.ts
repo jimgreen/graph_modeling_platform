@@ -126,6 +126,7 @@ export function createEmptyCustomDeviceDraft(categoryLibraryName = "交流设备
     categoryLibraryName,
     componentLibrary: fallbackComponentLibraryForCategoryLibrary(categoryLibraryName),
     componentName: "",
+    componentKind: "",
     backgroundImage: "",
     backgroundImageAssetId: "",
     backgroundImageCleared: "",
@@ -154,13 +155,15 @@ export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, se
     template.terminalAssociations ?? [],
     terminalCount
   );
-  const defaultDefinitions = new Set(customDefaultDefinitions(terminalTypes, {
+  const readonlyDefaultDefinitions = new Set(customDefaultDefinitions(terminalTypes, {
     isContainer: template.isContainer,
     terminalAssociations
-  }).map((definition) => definition.enName.toLowerCase()));
+  })
+    .filter((definition) => definition.readonly)
+    .map((definition) => definition.enName.toLowerCase()));
   const customParams = (template.parameterDefinitions ?? parseCustomDefinitions(template.params))
     .filter((definition) =>
-      !defaultDefinitions.has(definition.enName.toLowerCase()) &&
+      !readonlyDefaultDefinitions.has(definition.enName.toLowerCase()) &&
       definition.enName !== "component_type" &&
       !isReservedDeviceDefinitionParamName(definition.enName)
     )
@@ -170,6 +173,7 @@ export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, se
     categoryLibraryName,
     componentLibrary: section,
     componentName: template.label,
+    componentKind: template.custom ? template.kind : "",
     backgroundImage: template.params.backgroundImage ?? "",
     backgroundImageAssetId: template.params.backgroundImageAssetId ?? "",
     backgroundImageCleared: template.params.backgroundImageCleared ?? "",

@@ -4130,6 +4130,113 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
 }
 
+.custom-library-create-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.18);
+}
+
+.custom-library-create-dialog {
+  display: grid;
+  gap: 12px;
+  width: min(420px, calc(100vw - 48px));
+  padding: 16px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 22px 62px rgba(15, 23, 42, 0.24);
+}
+
+.custom-library-create-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.custom-library-create-title h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.custom-library-create-title button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  color: #475569;
+  background: #ffffff;
+}
+
+.custom-library-create-dialog label {
+  display: grid;
+  gap: 5px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.custom-library-create-dialog input {
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  color: #0f172a;
+  background: #ffffff;
+  font-size: 13px;
+  outline: none;
+}
+
+.custom-library-create-dialog input:focus-visible {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+
+.custom-library-create-error {
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px solid #fecaca;
+  border-radius: 7px;
+  color: #991b1b;
+  background: #fef2f2;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.custom-library-create-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.custom-library-create-actions button {
+  min-width: 72px;
+  min-height: 32px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  color: #334155;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.custom-library-create-actions button.primary {
+  border-color: #1d4ed8;
+  color: #ffffff;
+  background: #2563eb;
+}
+
 .custom-device-dialog.floating,
 .device-definition-dialog.floating,
 .measurement-config-dialog.floating {
@@ -6826,44 +6933,51 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .custom-param-enum-values {
   display: grid;
   align-items: stretch;
-  gap: 5px;
-  min-width: 180px;
+  gap: 0;
+  min-width: 196px;
+  width: min(100%, 340px);
   white-space: normal;
+  border: 1px solid #d5dde8;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #ffffff;
+  box-sizing: border-box;
 }
 
 .custom-param-enum-values.number-enum {
-  min-width: 228px;
+  min-width: 258px;
 }
 
 .custom-param-enum-values.string-enum {
-  min-width: 150px;
+  min-width: 196px;
 }
 
 .custom-param-enum-values.with-label {
-  min-width: 228px;
+  min-width: 258px;
 }
 
 .custom-param-enum-heading,
 .custom-param-enum-row {
   display: grid;
-  grid-template-columns: minmax(70px, 1fr) max-content;
+  grid-template-columns: minmax(116px, 1fr) 42px;
   align-items: center;
-  gap: 6px;
+  min-height: 30px;
+  gap: 0;
 }
 
 .custom-param-enum-values.number-enum .custom-param-enum-heading,
 .custom-param-enum-values.number-enum .custom-param-enum-row {
-  grid-template-columns: minmax(56px, 0.7fr) minmax(76px, 1fr) max-content;
+  grid-template-columns: minmax(58px, 0.7fr) minmax(112px, 1.3fr) 42px;
 }
 
 .custom-param-enum-values.readonly .custom-param-enum-heading,
 .custom-param-enum-values.readonly .custom-param-enum-row {
-  grid-template-columns: minmax(70px, 1fr);
+  grid-template-columns: minmax(116px, 1fr);
 }
 
 .custom-param-enum-values.readonly.number-enum .custom-param-enum-heading,
 .custom-param-enum-values.readonly.number-enum .custom-param-enum-row {
-  grid-template-columns: minmax(56px, 0.7fr) minmax(76px, 1fr);
+  grid-template-columns: minmax(58px, 0.7fr) minmax(112px, 1.3fr);
 }
 
 .custom-param-enum-heading {
@@ -6871,18 +6985,33 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   font-size: 11px;
   font-weight: 800;
   line-height: 1.2;
+  background: #f8fafc;
+  border-bottom: 1px solid #d5dde8;
 }
 
 .custom-param-enum-heading span {
   min-width: 0;
+  min-height: 28px;
+  padding: 7px 6px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.custom-param-enum-heading span + span,
+.custom-param-enum-field + .custom-param-enum-field,
+.custom-param-enum-row button {
+  border-left: 1px solid #e2e8f0;
+}
+
 .custom-param-enum-field {
   display: grid;
   min-width: 0;
+  min-height: 30px;
+}
+
+.custom-param-enum-row + .custom-param-enum-row {
+  border-top: 1px solid #edf2f7;
 }
 
 .custom-param-enum-row input {
@@ -6893,21 +7022,28 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .custom-param-enum-row button,
 .custom-param-enum-add {
   height: 26px;
-  min-height: 26px;
-  padding: 0 7px;
-  font-size: 12px;
+  min-height: 30px;
+  padding: 0 4px;
+  font-size: 11px;
   line-height: 1;
   white-space: nowrap;
+  border-radius: 0;
 }
 
 .custom-param-enum-add {
   justify-self: end;
+  width: 100%;
+  min-height: 28px;
+  border: 1px solid #d5dde8;
+  border-radius: 6px;
 }
 
 .custom-param-enum-add-row {
   display: flex;
   justify-content: flex-end;
-  margin-top: 1px;
+  padding: 5px 6px;
+  border-top: 1px solid #edf2f7;
+  background: #f8fafc;
 }
 
 .custom-param-enum-spacer {

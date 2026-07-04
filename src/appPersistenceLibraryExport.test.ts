@@ -3,6 +3,7 @@ import { Children, isValidElement, type ReactElement, type ReactNode } from "rea
 import { describe, expect, test } from "vitest";
 import {
   createLibraryPackage,
+  componentLibraryDisplayParts,
   defaultCategoryLibraryForComponentLibrary,
   deviceLibraryPayloadForPackageScope,
   filterGraphTemplatesByType,
@@ -12,7 +13,9 @@ import {
   normalizeLibraryPackage,
   normalizeDeviceLibraryPersistencePayload,
   selectableCategoryLibraryList,
+  normalizeCustomComponentLibraries,
   normalizeCustomDeviceTemplates,
+  normalizeDefinitionRows,
   renderEnumValuesEditor
 } from "./appExtracted/appPersistenceLibraryExport";
 import { DEFAULT_MEASUREMENT_CONFIG } from "./measurements";
@@ -183,6 +186,20 @@ describe("graph template library filtering", () => {
       params: { component_type: "LegacyMeter" }
     });
     expect("attributeLibrary" in normalized.customDeviceTemplates[0]).toBe(false);
+  });
+
+  test("keeps custom component library Chinese labels for bilingual display", () => {
+    const normalized = normalizeCustomComponentLibraries([
+      { name: "CustomPump", categoryLibraryName: "用户类别库", label: "用户泵库" },
+      { name: "LegacyMeter", attributeLibraryName: "用户旧库", cnName: "旧量测库" }
+    ] as any);
+
+    expect(normalized).toEqual([
+      { name: "CustomPump", categoryLibraryName: "用户类别库", label: "用户泵库" },
+      { name: "LegacyMeter", categoryLibraryName: "用户旧库", label: "旧量测库" }
+    ]);
+    expect(componentLibraryDisplayParts("CustomPump", normalized).title).toBe("用户泵库 / CustomPump");
+    expect(componentLibraryDisplayParts("LegacyMeter", normalized).chinese).toBe("旧量测库");
   });
 
   test("creates icon library packages with only user imported assets", () => {
@@ -424,6 +441,20 @@ describe("graph template library filtering", () => {
     expect(firstRowChildren.every((child) => isValidElement(child))).toBe(true);
     expect((firstRowChildren[0] as ReactElement<{ className: string }>).props.className).toBe("custom-param-enum-field");
     expect((firstRowChildren[1] as ReactElement<{ className: string }>).props.className).toBe("custom-param-enum-field");
+  });
+
+  test("normalizes persisted status definitions as editable while keeping structural rows readonly", () => {
+    const definitions = normalizeDefinitionRows([
+      { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
+      { cnName: "运行状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: true },
+      { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: true },
+      { cnName: "节点", enName: "node", valueType: "integer", typicalValue: "", readonly: true }
+    ]);
+
+    expect(definitions.find((definition) => definition.enName === "idx")).toMatchObject({ readonly: true });
+    expect(definitions.find((definition) => definition.enName === "status")).toMatchObject({ readonly: false });
+    expect(definitions.find((definition) => definition.enName === "run_stat")).toMatchObject({ readonly: false });
+    expect(definitions.find((definition) => definition.enName === "node")).toMatchObject({ readonly: true });
   });
 
   test("merges terminal anchors into the state icon editor base layer", () => {

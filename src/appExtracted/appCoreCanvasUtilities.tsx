@@ -682,6 +682,7 @@ export type CategoryLibrary = string;
 export type CustomComponentLibraryDefinition = {
   name: string;
   categoryLibraryName: CategoryLibrary;
+  label?: string;
 };
 
 export type CategoryLibraryComponentLibraryGroup = {
@@ -1703,6 +1704,7 @@ export type CustomDeviceDraft = {
   categoryLibraryName: string;
   componentLibrary: string;
   componentName: string;
+  componentKind?: string;
   backgroundImage: string;
   backgroundImageAssetId: string;
   backgroundImageCleared: string;

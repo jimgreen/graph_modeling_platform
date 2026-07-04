@@ -2468,7 +2468,7 @@ const readonlyIntegerDefinition = (cnName: string, enName: string, typicalValue 
 const threeWindingTransformerParameterDefinitions: DeviceParameterDefinition[] = [
   readonlyIntegerDefinition("序号", "idx"),
   { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
-  { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: true },
+  { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false },
   readonlyIntegerDefinition("高压绕组双绕组主变idx", "idx_xf_t1"),
   readonlyIntegerDefinition("中压绕组双绕组主变idx", "idx_xf_t2"),
   readonlyIntegerDefinition("低压绕组双绕组主变idx", "idx_xf_t3")
@@ -4262,8 +4262,8 @@ export function buildDefaultDeviceParameterDefinitions(
   const baseDefinitions: DeviceParameterDefinition[] = [
     { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
     { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
-    { cnName: "运行状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: true },
-    { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: true }
+    { cnName: "运行状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: false },
+    { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false }
   ];
   if (options.isContainer) {
     const relationDefinitions: DeviceParameterDefinition[] = [];
@@ -4689,6 +4689,15 @@ export function isStaticButtonCapableKind(kind: DeviceKind): boolean {
 }
 
 const TEMPLATE_DEFINITION_READONLY_KEYS = new Set(["idx", "name", "node", "i_node", "j_node", "ac_node", "dc_node"]);
+const TEMPLATE_DEFINITION_EDITABLE_DEFAULT_KEYS = new Set(["status", "run_stat"]);
+
+export function templateDefinitionIsReadonly(enName: string, readonly?: boolean): boolean {
+  const normalizedName = enName.trim();
+  if (TEMPLATE_DEFINITION_EDITABLE_DEFAULT_KEYS.has(normalizedName)) {
+    return false;
+  }
+  return Boolean(readonly || TEMPLATE_DEFINITION_READONLY_KEYS.has(normalizedName));
+}
 const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> = {
   idx: "integer",
   node: "integer",
@@ -4883,7 +4892,7 @@ function normalizeTemplateDefinition(definition: DeviceParameterDefinition): Dev
     enName,
     valueType,
     typicalValue,
-    readonly: Boolean(definition.readonly || TEMPLATE_DEFINITION_READONLY_KEYS.has(enName))
+    readonly: templateDefinitionIsReadonly(enName, definition.readonly)
   };
   if (!templateDefinitionValueTypeIsEnum(valueType)) {
     return normalized;
