@@ -525,7 +525,7 @@ import { createRuntimeScreenshotHandler } from "./runtimeScreenshot";
 export * from "./appExtracted/appCoreCanvasUtilities";
 export * from "./appExtracted/appPersistenceLibraryExport";
 import { ENABLE_REACT_FLOW_PREVIEW, ReactFlowPreview, INTERACTION_MODE_STORAGE_KEY, CANVAS_GRAPHIC_CONTEXT_MENU_TARGET_SELECTOR, CANVAS_WHEEL_ZOOM_EXCLUSION_SELECTOR, CANVAS_KEYBOARD_BLOCKING_SELECTOR, CANVAS_KEYBOARD_SURFACE_SELECTOR, normalizeInteractionMode, isCanvasGraphicContextMenuTarget, isCanvasWheelZoomExcludedTarget, canvasWheelTargetIsRenderedCanvas, isCanvasKeyboardBlockingTarget, readStoredInteractionMode, writeStoredInteractionMode, CANVAS_SELECTION_DRAG_THRESHOLD, hasCanvasSelectionModifier, canvasWheelEventHasNoModifier, shouldZoomCanvasFromWheelEvent, isGroupTransformDrag, selectionRectCenter, combineSelectionRects, routeMidpoint, rotatePointAround, snapRotationDeltaToRightAngle, normalizedRotationDelta, transformPointAngle, rotationDeltaFromTransformPoint, rotationDeltaBetweenTransformPoints, rotationTrajectoryArcPath, mirrorPointAcrossAxis, localScaleKindForScreenHandle, groupTransformGeometry, transformGroupPoint, groupTransformSvgTransform, NODE_LABEL_DISPLAY_MODES, CONTEXT_MENU_VIEWPORT_PADDING, CONTEXT_MENU_FALLBACK_WIDTH, CONTEXT_MENU_FALLBACK_HEIGHT, CONTEXT_MENU_SUBMENU_FALLBACK_WIDTH, CONTEXT_MENU_SUBMENU_FALLBACK_HEIGHT, NODE_LABEL_FOOTPRINT_PARAM_KEYS, isMultiNodeMoveState, reuseSetOrCreate, cloneMeasurementGroupForDraft, terminalColor, busEndpointColor, ENERGY_COLOR_ROWS, ELECTRIC_COLOR_TYPES, ELECTRIC_COLOR_TYPE_LABELS, isElectricPaletteType, terminalVbaseFallbackValue, voltageColorKeyForTerminal, DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT, MIN_CANVAS_WIDTH, MIN_CANVAS_HEIGHT, MAX_CANVAS_WIDTH, MAX_CANVAS_HEIGHT, DEFAULT_CANVAS_BACKGROUND, MOVE_BOUNDARY_GUARD, CANVAS_AUTO_EXPAND_PADDING, CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE, CANVAS_RESIZE_HANDLE_SIZE, MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES, ORIGINAL_POSITION_REROUTE_PADDING, MOVE_ROUTE_LOCAL_SEARCH_PADDING, MAX_DEFERRED_MOVE_REPAIR_MOVED_NODES, MAX_DEFERRED_MOVE_REPAIR_CANDIDATE_EDGES, KEYBOARD_MOVE_COMMIT_DELAY_MS, KEYBOARD_MOVE_REPEAT_RATE_PER_SECOND, KEYBOARD_MOVE_FRAME_INTERVAL_MS, ELEMENT_TREE_INITIAL_ITEM_LIMIT, ELEMENT_TREE_ITEM_LIMIT_STEP, TOPOLOGY_WARNING_PAGE_SIZE, CANVAS_MINIMAP_WIDTH, CANVAS_MINIMAP_HEIGHT, CANVAS_MINIMAP_PADDING, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_WIDTH, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH, NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MARGIN, DEVICE_DEFINITION_DIALOG_DEFAULT_WIDTH, DEVICE_DEFINITION_DIALOG_DEFAULT_HEIGHT, CUSTOM_DEVICE_DIALOG_DEFAULT_WIDTH, CUSTOM_DEVICE_DIALOG_DEFAULT_HEIGHT, MEASUREMENT_CONFIG_DIALOG_DEFAULT_WIDTH, MEASUREMENT_CONFIG_DIALOG_DEFAULT_HEIGHT, DEVICE_LIBRARY_DIALOG_MIN_WIDTH, DEVICE_LIBRARY_DIALOG_MIN_HEIGHT, DEVICE_LIBRARY_DIALOG_MARGIN, DEVICE_LIBRARY_DIALOG_CONFIG, TOPOLOGY_WARNING_PANEL_DEFAULT_WIDTH, TOPOLOGY_WARNING_PANEL_MIN_WIDTH, TOPOLOGY_WARNING_PANEL_MAX_WIDTH, TOPOLOGY_WARNING_PANEL_MARGIN, CANVAS_MINIMAP_MAX_NODE_MARKS, CANVAS_MINIMAP_MAX_ROUTE_MARKS, CANVAS_MINIMAP_DEFER_SAMPLE_THRESHOLD, FIT_SELECTION_MAX_ZOOM_PERCENT, TERMINAL_OVERLAP_DEFER_NODE_THRESHOLD, CANVAS_LOD_NODE_DETAIL_LIMIT, CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT, CANVAS_LOD_MAX_ZOOM_PERCENT, CANVAS_LOD_MAX_NODE_SCREEN_SIZE, CANVAS_LOD_NODE_SCREEN_SAMPLE_LIMIT, CANVAS_LOD_SELECTED_DETAIL_LIMIT, CANVAS_LOD_MARKUP_CHUNK_SIZE, CANVAS_INITIAL_LOD_DETAIL_CHUNK_SIZE, CANVAS_INITIAL_LOD_FIRST_DETAIL_DELAY_MS, CANVAS_INITIAL_LOD_NEXT_DETAIL_DELAY_MS, CONNECTION_HIT_SCREEN_TOLERANCE, CANVAS_MULTI_NODE_DRAG_OVERLAY_DETAIL_LIMIT, CANVAS_MULTI_NODE_DRAG_PREVIEW_EDGE_LIMIT, CANVAS_MULTI_NODE_DRAG_SNAP_NODE_LIMIT, CANVAS_BULK_MOVE_EDGE_THRESHOLD, ROUTE_BULK_TRANSLATE_REBUILD_THRESHOLD, BULK_MOVE_PERF_LOG_THRESHOLD_MS, SMART_ALIGNMENT_SNAP_SCREEN_TOLERANCE, SMART_ALIGNMENT_GUIDE_PADDING, CANVAS_SINGLE_NODE_DRAG_PREVIEW_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_SNAP_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_SYNC_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_PREVIEW_PADDING, CANVAS_FLOATING_TOOLBAR_GAP, NODE_FLOATING_TOOLBAR_WIDTH, NODE_FLOATING_TOOLBAR_HEIGHT, EDGE_FLOATING_TOOLBAR_WIDTH, EDGE_FLOATING_TOOLBAR_HEIGHT, CONTEXT_MENU_AUTO_HIDE_MARGIN, TRANSFORM_ROTATE_STEM_START, TRANSFORM_ROTATE_STEM_END, TRANSFORM_ROTATE_HANDLE_GAP, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, DEFAULT_CURRENT_UNIT, DEFAULT_POWER_BASE_VALUE, EMPTY_TOPOLOGY, INITIAL_TOPOLOGY_STATUS, E_SECTION_OPTIONS, COMPONENT_TYPE_LABELS, SCALE_HANDLE_CONFIGS, GROUP_SCALE_HANDLE_CONFIGS, POWER_UNIT_OPTIONS, VOLTAGE_UNIT_OPTIONS, CURRENT_UNIT_OPTIONS, DEFAULT_ATTRIBUTE_LIBRARIES, CUSTOM_ATTRIBUTE_LIBRARY_BASES, PROTECTED_ATTRIBUTE_LIBRARIES, DEVICE_TYPE_NAME_PATTERN, MAX_CUSTOM_DEVICE_TERMINALS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_SNAP_SCREEN_TOLERANCE, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, CUSTOM_DEVICE_TERMINAL_PREVIEW_OUTWARD_OFFSET, CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN, TERMINAL_TYPE_OPTIONS, CONTAINER_TERMINAL_ASSOCIATION_OPTIONS, PARAM_VALUE_TYPE_OPTIONS, PROJECT_PANEL_MIN_HEIGHT, PROJECT_PANEL_MAX_HEIGHT, PROJECT_PANEL_DEFAULT_HEIGHT, LEFT_PANEL_DEFAULT_WIDTH, RIGHT_PANEL_DEFAULT_WIDTH, SIDE_PANEL_MIN_WIDTH, SIDE_PANEL_MAX_WIDTH, STATUSBAR_DEFAULT_HEIGHT, STATUSBAR_MIN_HEIGHT, STATUSBAR_MAX_HEIGHT, VALIDATION_PANEL_DEFAULT_HEIGHT, VALIDATION_PANEL_MIN_HEIGHT, VALIDATION_PANEL_MAX_HEIGHT, CONNECT_TERMINAL_SNAP_TOLERANCE, CONNECT_BUS_SNAP_TOLERANCE, connectTargetSearchBounds, findNodeTerminalSnapTarget, applyNodeTerminalSnap, pointOnBusForSnap, findNodeBusSnapTarget, SAMPLE_NODES, SAMPLE_EDGES, PROJECT_STORAGE_KEY, SCHEME_STORAGE_KEY, ACTIVE_PROJECT_STORAGE_KEY, DRAFT_PROJECT_STORAGE_KEY, REFRESH_RECOVERY_STORAGE_KEY, EMPTY_VOLTAGE_COLOR_KEY_SET, EMPTY_ID_LIST, EMPTY_EDGE_ID_LIST, EMPTY_MODEL_GROUPS, EMPTY_MODEL_GROUP_BY_ID, EMPTY_CANVAS_LAYOUT_UNITS, EMPTY_CANVAS_SELECTION, IMAGE_STORAGE_KEY, CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY, CUSTOM_COMPONENT_TYPES_STORAGE_KEY, DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, COLOR_DISPLAY_MODE_STORAGE_KEY, COLOR_PALETTE_STORAGE_KEY, MEASUREMENT_CONFIG_STORAGE_KEY, LEFT_PANEL_MODE_STORAGE_KEY, RIGHT_PANEL_MODE_STORAGE_KEY, LEFT_PANEL_WIDTH_STORAGE_KEY, RIGHT_PANEL_WIDTH_STORAGE_KEY, STATUSBAR_HEIGHT_STORAGE_KEY, VALIDATION_PANEL_HEIGHT_STORAGE_KEY, DEFAULT_GRAPH_TEMPLATE_TYPES, scheduleIdleWork, elementTreeCacheSignature, CONNECTION_REDRAW_SCOPE_LABELS, VOLTAGE_BASE_CLEAR_SCOPES, VOLTAGE_BASE_CLEAR_SCOPE_LABELS, VOLTAGE_BASE_SET_SCOPES, VOLTAGE_BASE_SET_SCOPE_LABELS, VOLTAGE_BASE_SET_PRESETS, VIEWPORT_RENDER_PADDING_RATIO, VIEWPORT_RENDER_MIN_PADDING, CANVAS_VIEWPORT_QUERY_SNAP_SIZE, NODE_SPATIAL_BUCKET_SIZE, nextSpatialQueryMark, expandViewBoxForRendering, snapRenderViewportBoundsForQuery, sameCanvasViewBox, canvasFrameHasHorizontalScrollableRange, canvasFrameHasVerticalScrollableRange, canvasFrameHasScrollableRange, renderedCanvasFullyFitsFrame, canvasFrameViewportSizeChanged, visibleCanvasViewBoxFromRects, canvasScrollScaleFromViewBox, estimatedViewportNodeScreenSize, canvasScrollEdgeInset, canvasScrollSurfaceSize, canvasDisplayOffset, canvasFramePaddingOffset, anchoredCanvasScrollPosition, anchoredCanvasNoScrollOffset, initialVisibleCanvasViewBox, fitWholeCanvasViewBox, boxesIntersect, sameRenderViewportBounds, VIEWPORT_RESULT_CACHE_LIMIT, viewportBoundsCacheKey, viewportResultCacheOwnersEqual, resetViewportResultCache, readViewportResultCache, writeViewportResultCache, mergeRenderViewportBounds, smartAlignmentAxisAnchors, bestSmartAlignmentAxisSnap, nodeRenderBounds, nodeIntersectsRenderViewport, spatialBucketKey, spatialBucketRange, buildNodeSpatialIndex, queryNodeSpatialIndex, compactPreviewNodes, PARAM_LABELS, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, PARAM_OPTIONS, STATIC_BUTTON_ACTION_LABELS, STATIC_BUTTON_COMMAND_LABELS, PARAM_OPTION_LABELS, parseStaticButtonTargetLayerValues, serializeStaticButtonTargetLayerIds, resolveStaticButtonTargetLayers, paramOptionsForSection, READONLY_E_PARAM_KEYS, BATCH_PARAM_EXCLUDED_KEYS, BATCH_PARAM_EXCLUDED_PREFIXES, canBatchEditParam, BATCH_GRAPH_PARAM_KEYS, BATCH_GRAPH_PARAM_PREFIXES, isBatchGraphCommonParamKey, isRedundantBatchCommonParamRow, COLOR_PARAM_KEY_PATTERN, isColorParamKey, BATCH_MEASUREMENT_GROUP_KEYS, BATCH_MEASUREMENT_GROUP_LABELS, measurementGroupCommonValue, measurementGroupWithCommonSetting, normalizeLegacyPowerSystemLabel, normalizeSavedProjectIndexes, normalizeSavedSchemeIndexes, normalizeStoredDraftProject, readActiveProjectPointer, savedSchemePathForId, findSavedSchemeByPath, findSavedProjectByActivePointer, activeProjectPointerPayload, draftProjectFromSavedSchemes, readRefreshRecoveryProject, writeRefreshRecoveryProject, clearRefreshRecoveryProject, readImageAssets, saveImageAsset, resolveNodeImage, resolveNodeForegroundImage, resolveProjectImage, imageAssetsToMap, localImageAssetsFromStorage, pointsToPreviewPath, backendJsonHeaders, backendErrorMessage, fetchBackendJson, backendJsonRequest, fetchBackendImageFolders, createBackendImageFolder, renameBackendImageFolder, deleteBackendImageFolder, fetchBackendImages, fetchAllBackendImages, deleteBackendImageAsset, uploadBackendImage } from "./appExtracted/appCoreCanvasUtilities";
-import { normalizeProjectForBackend, normalizeSchemesForBackendRuntime, normalizeSchemesForBackend, serializeSchemesForStorage, findProjectRecordInSchemes, findProjectRecordByNameInScheme, clonePoint, cloneNodesForUndo, cloneEdgesForUndo, cloneGroupsForUndo, cloneTopologyForUndo, cloneTopologyErrorsForUndo, clampCanvasDimension, fetchBackendSchemes, schemePathQueryParam, savedProjectRecordIsSummary, fetchBackendProjectRecord, downloadBackendSchemeArchive, uploadBackendSchemeArchive, saveBackendProjectRecord, deleteBackendProjectRecord, saveBackendSchemeRecord, deleteBackendSchemeRecord, normalizeColorDisplayMode, serializeColorConfigForStorage, fetchBackendColorConfig, saveBackendColorConfigPayload, serializeDeviceLibraryForStorage, fetchBackendDeviceLibrary, saveBackendDeviceLibraryPayload, serializeMeasurementConfigForStorage, fetchBackendMeasurementConfig, saveBackendMeasurementConfigPayload, groupDeviceTemplatesByAttributeLibrary, groupDeviceTemplatesByAttributeLibraryAndComponentType, normalizeLibrarySearchText, attributeLibraryComponentTypeKey, componentTypeDisplayParts, componentTypeDisplayName, filterSelectionTreeLabel, filterSelectionTemplateComponentTypeKey, libraryTemplateMatchesSearch, filterAttributeLibraryComponentTypeGroups, normalizeAttributeLibraryName, normalizeCustomAttributeLibraries, normalizeComponentTypeName, defaultAttributeLibraryForComponentType, isBuiltInAttributeLibrary, isBuiltInComponentType, attributeLibraryOptionClass, componentTypeOptionClass, sourceSelectClassName, isValidComponentTypeName, normalizeCustomComponentTypes, templateResizeTransformValue, templateAllowsResizeTransform, DEFAULT_PARAMETER_ENUM_VALUES, DEFAULT_PARAMETER_ENUM_OPTIONS, normalizeEnumValueList, definitionRowIsEnum, defaultEnumValuesForDefinitionRow, defaultEnumOptionsForDefinitionRow, normalizeEnumOption, normalizeEnumValueType, enumValueTypeForDefinitionRow, enumDefinitionValueTypeForEnumValueType, parameterValueTypeLabelForDefinitionRow, rawEnumValuesForRow, normalizeEnumOptionsForRow, enumValueFromOptions, enumDisplayText, enumValuesForRow, normalizeDefinitionRowEnumFields, renderTypicalValueEditor, renderEnumValuesEditor, normalizeCustomDeviceTemplates, normalizeGraphTemplateTypeName, normalizeGraphTemplateTypes, cloneTemplatePoint, cloneGraphTemplateClipboard, normalizeGraphTemplateClipboard, normalizeGraphTemplates, graphTemplateTypeList, groupGraphTemplatesByType, filterGraphTemplatesByType, uniqueGraphTemplateName, normalizeDefinitionRows, normalizeDefinitionResizePermission, normalizeDefinitionOverrideSize, normalizeDefinitionOverrideTerminalType, normalizeDefinitionOverrideTerminalTypes, normalizeDefinitionOverrideTerminalAnchors, normalizeDeviceDefinitionOverrides, normalizeDeviceLibraryPersistencePayload, readLocalStorageJson, readCustomDeviceTemplates, readCustomAttributeLibraries, readCustomComponentTypes, readDeviceDefinitionOverrides, readCustomGraphTemplateTypes, readCustomGraphTemplates, readLocalDeviceLibraryPersistencePayload, writeLocalDeviceLibraryPersistencePayload, readMeasurementConfig, writeMeasurementConfig, readColorDisplayMode, readColorPalette, readSidePanelMode, clampPanelDimension, clampFloatingDialogLayout, clampNodeDoubleClickDialogLayout, clampDeviceLibraryDialogLayout, readStoredPanelDimension, SCHEME_EXPORT_DIRECTORY_PICKER_ID, fetchBackendImageDataUrl, imageExportPathByIdFromAssets, exportSvgImageHref, nodeGeometryTransform, nodeUprightScaleTransform, nodeImageContentTransform, defaultBackgroundLayerIdsForProject, backgroundPageCanvasTransform, nodeTransformedHalfExtents, nodeScaledLocalHalfExtents, nodeRotateHandleControlPoints, nodeUprightRotateHandleControlPoints, scaleHandleControlPoint, nodeScaleHandleControlPoint, scaleHandleCursorClass, nodeUsesUprightStaticSelectionOutline, TEXT_DOUBLE_CLICK_KINDS, IMAGE_DOUBLE_CLICK_KINDS, NODE_DOUBLE_CLICK_DIALOG_DEDUPE_MS, NODE_DOUBLE_CLICK_CLOSE_SUPPRESS_MS, cloneNodeForDoubleClickDraft, stringRecordShallowEqual, nodeDoubleClickDraftHasModelChanges, isTextDoubleClickKind, isImageDoubleClickKind, nodeHasInteractionDoubleClickEditor, nodeHasTextDoubleClickEditor, nodeHasImageDoubleClickEditor, doubleClickDialogKindForNode, nodeUprightSelectionOutlineRect, emptySmartAlignmentAnchorMap, positionedNodeForSmartAlignment, nodeTerminalOutflowSmartAlignmentAnchors, nodeSmartAlignmentBounds, nodeVisualInteractionBounds, buildSvgTerminalMarkup, CustomComponentManagerTree, tokenArraysEqual, customSingleTerminalAnchorToken, stableSvgMarkupChunks, buildSvgDocument } from "./appExtracted/appPersistenceLibraryExport";
+import { normalizeProjectForBackend, normalizeSchemesForBackendRuntime, normalizeSchemesForBackend, serializeSchemesForStorage, findProjectRecordInSchemes, findProjectRecordByNameInScheme, clonePoint, cloneNodesForUndo, cloneEdgesForUndo, cloneGroupsForUndo, cloneTopologyForUndo, cloneTopologyErrorsForUndo, clampCanvasDimension, fetchBackendSchemes, schemePathQueryParam, savedProjectRecordIsSummary, fetchBackendProjectRecord, downloadBackendSchemeArchive, uploadBackendSchemeArchive, saveBackendProjectRecord, deleteBackendProjectRecord, saveBackendSchemeRecord, deleteBackendSchemeRecord, normalizeColorDisplayMode, serializeColorConfigForStorage, fetchBackendColorConfig, saveBackendColorConfigPayload, serializeDeviceLibraryForStorage, fetchBackendDeviceLibrary, saveBackendDeviceLibraryPayload, serializeMeasurementConfigForStorage, fetchBackendMeasurementConfig, saveBackendMeasurementConfigPayload, createLibraryPackage, normalizeLibraryPackage, deviceLibraryPayloadForPackageScope, normalizeIconLibraryPersistencePayload, importBackendImageLibraryPayload, groupDeviceTemplatesByAttributeLibrary, groupDeviceTemplatesByAttributeLibraryAndComponentType, normalizeLibrarySearchText, attributeLibraryComponentTypeKey, componentTypeDisplayParts, componentTypeDisplayName, filterSelectionTreeLabel, filterSelectionTemplateComponentTypeKey, libraryTemplateMatchesSearch, filterAttributeLibraryComponentTypeGroups, normalizeAttributeLibraryName, normalizeCustomAttributeLibraries, normalizeComponentTypeName, defaultAttributeLibraryForComponentType, isBuiltInAttributeLibrary, isBuiltInComponentType, attributeLibraryOptionClass, componentTypeOptionClass, sourceSelectClassName, selectableAttributeLibraryList, isValidComponentTypeName, normalizeCustomComponentTypes, templateResizeTransformValue, templateAllowsResizeTransform, DEFAULT_PARAMETER_ENUM_VALUES, DEFAULT_PARAMETER_ENUM_OPTIONS, normalizeEnumValueList, definitionRowIsEnum, defaultEnumValuesForDefinitionRow, defaultEnumOptionsForDefinitionRow, normalizeEnumOption, normalizeEnumValueType, enumValueTypeForDefinitionRow, enumDefinitionValueTypeForEnumValueType, parameterValueTypeLabelForDefinitionRow, rawEnumValuesForRow, normalizeEnumOptionsForRow, enumValueFromOptions, enumDisplayText, enumValuesForRow, normalizeDefinitionRowEnumFields, renderTypicalValueEditor, renderEnumValuesEditor, normalizeCustomDeviceTemplates, normalizeGraphTemplateTypeName, normalizeGraphTemplateTypes, cloneTemplatePoint, cloneGraphTemplateClipboard, normalizeGraphTemplateClipboard, normalizeGraphTemplates, graphTemplateTypeList, groupGraphTemplatesByType, filterGraphTemplatesByType, uniqueGraphTemplateName, normalizeDefinitionRows, normalizeDefinitionResizePermission, normalizeDefinitionOverrideSize, normalizeDefinitionOverrideTerminalType, normalizeDefinitionOverrideTerminalTypes, normalizeDefinitionOverrideTerminalAnchors, normalizeDeviceDefinitionOverrides, normalizeDeviceLibraryPersistencePayload, readLocalStorageJson, readCustomDeviceTemplates, readCustomAttributeLibraries, readCustomComponentTypes, readDeviceDefinitionOverrides, readCustomGraphTemplateTypes, readCustomGraphTemplates, readLocalDeviceLibraryPersistencePayload, writeLocalDeviceLibraryPersistencePayload, readMeasurementConfig, writeMeasurementConfig, readColorDisplayMode, readColorPalette, readSidePanelMode, clampPanelDimension, clampFloatingDialogLayout, clampNodeDoubleClickDialogLayout, clampDeviceLibraryDialogLayout, readStoredPanelDimension, SCHEME_EXPORT_DIRECTORY_PICKER_ID, fetchBackendImageDataUrl, imageExportPathByIdFromAssets, exportSvgImageHref, nodeGeometryTransform, nodeUprightScaleTransform, nodeImageContentTransform, defaultBackgroundLayerIdsForProject, backgroundPageCanvasTransform, nodeTransformedHalfExtents, nodeScaledLocalHalfExtents, nodeRotateHandleControlPoints, nodeUprightRotateHandleControlPoints, scaleHandleControlPoint, nodeScaleHandleControlPoint, scaleHandleCursorClass, nodeUsesUprightStaticSelectionOutline, TEXT_DOUBLE_CLICK_KINDS, IMAGE_DOUBLE_CLICK_KINDS, NODE_DOUBLE_CLICK_DIALOG_DEDUPE_MS, NODE_DOUBLE_CLICK_CLOSE_SUPPRESS_MS, cloneNodeForDoubleClickDraft, stringRecordShallowEqual, nodeDoubleClickDraftHasModelChanges, isTextDoubleClickKind, isImageDoubleClickKind, nodeHasInteractionDoubleClickEditor, nodeHasTextDoubleClickEditor, nodeHasImageDoubleClickEditor, doubleClickDialogKindForNode, nodeUprightSelectionOutlineRect, emptySmartAlignmentAnchorMap, positionedNodeForSmartAlignment, nodeTerminalOutflowSmartAlignmentAnchors, nodeSmartAlignmentBounds, nodeVisualInteractionBounds, buildSvgTerminalMarkup, CustomComponentManagerTree, tokenArraysEqual, customSingleTerminalAnchorToken, stableSvgMarkupChunks, buildSvgDocument } from "./appExtracted/appPersistenceLibraryExport";
 import { createSetNodes, createSetEdges, createSetGraphArrays, createPatchGraphNodes, createPatchGraphEdges, createUpdateGraphNodeById, createSetSchemes, createUpdateSmartAlignmentGuides, createSetCanvasPanning, createSetContextMarqueeSelection, createMarkGraphicContextMenuHandled, createConsumeGraphicContextMenuHandled, createOpenGraphicContextMenu, createSetOperationLogText, createEdgeListForNodeIds, createBuildSingleNodeDragCache, createOrderedNodeFromList, createOrderedNodesForIds, createAddRoutingNodesForConnectionEdge, createRoutingNodesForConnectionEdge, createRoutingNodesForConnectionEdges, createCachedConnectionStrokeColor, createConnectionLineStyle, createMeasurementGroupAnchorPoint, createMeasurementGroupLocalOffset, createMeasurementGroupCanvasPosition, createMeasurementGroupRenderMetrics, createIncludeMeasurementGroupBounds, createBuildMeasurementGroupMarkup, createBuildRoutableLineDragGhostRoutesForNodeIds, createBuildMultiNodeDragOverlayPreview, createRenderMultiNodeDragOverlay, createGroupTransformPreviewNodeFromSnapshot, createRenderGroupTransformPhotoPreview, createRenderSingleTransformRotateOriginGhost, createRenderTransformRotationTrajectory, createRenderBoundaryBusInternalConnector, createCollectCurrentModelVoltageColorKeys, createNearestVoltageColor, createFillMissingVoltageColorRows, createToggleColorDisplayMode, createOpenColorPaletteDialog, createSaveColorPalette, createResetEnergyColors, createResetVoltageColors, createUpdateEnergyColor, createSetVoltageColorRows, createUpdateVoltageColorRow, createDeleteVoltageColorRow, createAddVoltageColorRow, createResolveNodeStateVisual, createStatusStatesForNode, createNodeKindAllowsResizeTransform, createClearLibraryFlyoutCloseTimer, createHideLibraryFlyout, createScheduleLibraryFlyoutClose, createLibraryFlyoutStyle, createFitLibraryFlyoutsToVisibleArea, createToggleAttributeLibrary, createToggleAttributeLibraryComponentType, createResolveConfiguredBackgroundLayerIds, createToggleBackgroundLayer, createElementTreeItemChildren, createUpdateElementTreeDraft, createClearElementTreeDraft, createElementTreeCommittedDraftValue, createCommitElementTreeInputOnEnter, createMarkBusTerminalSyncDirty, createBusNodeIdsFromEdges, createMarkBusTerminalSyncDirtyForEdges, createBusTerminalSyncNodeIdsForGraphPatch, createSynchronizePendingBusTerminalsWithGraphStore, createApplyCanvasPanningVisualOffset, createCancelCanvasBoundsScrollSyncPendingRelease, createClearCanvasBoundsScrollSyncPending, createReleaseCanvasBoundsScrollSyncPending, createMarkCanvasBoundsScrollSyncPending, createCanvasBoundsForGraphContent, createApplyCanvasBounds, createRejectAutoCanvasExpansionForContent, createCanvasBoundsForAutoExpandedGraphContent, createTranslateStoredEdgeGeometryBy, createShiftCachedRoutesForCanvasOrigin, createLeftTopCanvasOriginShiftForContent, createMinimumCanvasBoundsForResizeEdge, createClampNodePositionToExpandableBounds, createClampPointToExpandableBounds, createClampEdgeGeometryToExpandableBounds, createCanvasNoScrollOffsetForCanvasResizeAnchor, createSetCanvasFrameScrollPosition, createCenterCanvasFrameScrollPosition, createSyncCanvasFrameScrollToViewBox, createSyncCanvasFrameScrollToCanvasResizeCommitAnchor, createSyncCanvasFrameScrollToWheelAnchor, createCurrentViewBoxFromCanvasFrameScroll, createScheduleCanvasVisibleViewBoxUpdate, createHandleCanvasFrameScroll, createUpdateCanvasFrameViewportSize, createUpdateCanvasFrameViewportAndVisibleBox, createNodeImage, createRenderNodePreviewImageContent, createBuildNodePreviewImageMarkup, createBuildConnectPreviewPath, createBuildRoutableLinePreviewPath, createPatchStoredRouteStoreForEdgeIds, createMarkRouteEdgesDirty, createMarkStoredRouteEdgesDirty, createEdgeListsHaveSameOrder, createEdgeReferenceDiffIds, createDirtyEdgeIdsAfterMove, createDirtyEdgeIdsForMovedLocalRoutes, createDirtyEdgeIdsAfterBulkMove, createLogBulkMoveCommitStats, createBuildMovedNodeUpdates, createNextNodesForMovedGraphCommit, createEdgePatchFromCandidateEdges, createGraphStorePatchStillCurrent, createShouldRunSynchronousMoveBlockerRepair, createMarkGraphDirtyForInteractiveCommit, createPatchSingleTerminalAnchorFromPoint, createRebuildEdgeUpdatesAfterNodeGeometryChange, createRebuildEdgesAfterNodeGeometryChange, createStoredRouteEndpointMatchPoint, createEndpointMatchedRoutePointsForEdge, createEdgeWithFrozenBusEndpointPoints, createPreviewStoredRoutePointsForEdge, createClearLocalSchemeModelCache, createRememberPersistedSchemesPayload, createRefreshSchemesFromBackendDirectory, createHandleBackendSchemeMutationFailure, createSaveSchemeTreeToBackend, createPersistSchemeTreeToBackend, createReplaceSchemeTreeInBackend, createPersistRefreshRecoveryNow, createClearRecordSelection, createBlurLayerManagementDropdownFocus, createSelectSingleScheme, createSelectSingleProject, createToggleSchemeSelection, createToggleProjectSelection, createUndoGraphSnapshotPatchPlan, createApplyUndoGraphSnapshot, createPushUndoSnapshot, createUniqueUndoScopeIds, createPushNodeOnlyUndoSnapshot, createSyncExistingNodesWithTemplateDefinitions, createUpdateMeasurementConfig, createPrepareMeasurementConfigDraft, createOpenMeasurementConfigDialog, createCloseMeasurementConfigDialog, createSaveMeasurementConfigDialog, createUpdateMeasurementType, createAddMeasurementType, createDeleteMeasurementType, createSetMeasurementProfileItems, createCreateMeasurementProfileItem, createAddMeasurementProfileItem, createUpdateMeasurementProfileItem, createDeleteMeasurementProfileItem, createMoveMeasurementProfileItem, createUpdateProjectMeasurementsWithUndo, createAddDefaultMeasurementsToNode, createRemoveMeasurementsFromNode, createMeasurementGroupShellOffsetForNode, createMeasurementSourcePointForNodeItem, createMeasurementTypeOptionsForMeasurementGroup, createCreateMeasurementItemForNode, createUpdateMeasurementGroupById, createUpdateSelectedMeasurementGroup, createUpdateSelectedMeasurementGroups, createAddMeasurementItemToGroup, createAddMeasurementItemToNode, createUpdateMeasurementItem, createRemoveMeasurementItem, createCreateMeasurementEditorGroupForPosition, createUpdateMeasurementEditorGroupSettings, createUpdateMeasurementEditorDraftItem, createAddMeasurementEditorDraftItem, createRemoveMeasurementEditorDraftItem, createMoveMeasurementEditorDraftItem, createUpdateMeasurementEditorDraftItemPosition, createDuplicateMeasurementEditorItemNames, createConfirmMeasurementEditorDialog, createRenderSelectedNodeMeasurementTable, createBeginMeasurementDrag, createUpdateMeasurementDrag, createFinishMeasurementDrag } from "./appExtracted/appGraphMeasurementFactories";
 import { createFlushMeasurementConfigDialogDraftInputs } from "./appExtracted/appGraphMeasurementFactories";
 import { createEnsureDraggingUndoSnapshot, createRequestCanvasFrameCenter, createUndoLastOperation, createCanvasPointerKeyboardShortcutAvailability, createRouteForCurrentEdgeSave, createCurrentProject, createAdjustSelectedDisplayLayer, createClearTransientSelectionState, createWriteOperationLog, createRequireEditMode, createPersistDeviceLibraryChange, createPersistTemplateLibraryChange, createConnectionCommitFailureMessage, createSwitchInspectorTabForCanvasSelection, createSelectCanvasGraphics, createSetModifierSelectionPress, createToggleNodeSelectionFromModifierClick, createToggleEdgeSelectionFromModifierClick, createToggleSelectionFromModifierClick, createRestoreCanvasSelectionSnapshot, createRestoreCanvasSelectionSnapshotWithInspector, createStartModifierSelectionPress, createCancelModifierSelectionPress, createFinishModifierSelectionPress, createStartNodeLabelDrag, createStartNodeLabelRotateDrag, createFinishNodeLabelDrag, createFinishNodeLabelRotateDrag, createSetSelectedNodeLabelDisplayMode, createToggleSelectedNodeLabelDisplay, createCopySelection, createCutSelection, createPasteSelection, createCreateGraphTemplateType, createCreateGroupDeviceIconSvg, createGroupDeviceTerminalAnchor, createGroupDeviceTerminalSortKey, createGroupDeviceTerminalAssociationFor, createGroupDeviceExternalTerminals, createValidateGroupDeviceIconReplacement, createReplaceBuiltinDeviceIconOverride, createOpenGroupDeviceDefinitionDialog, createConfirmCreateDeviceFromGroup, createConfirmReplaceDeviceIconFromGroup, createOpenAddTemplateDialog, createCancelTemplateDialog, createConfirmAddGraphTemplate, createDeleteGraphTemplate, createDeleteGraphTemplateType, createDropGraphTemplate, createFinishMarqueeSelectionFromPoints, createStartContextMarqueeSelection, createOpenFilterSelectionDialog, createToggleFilterSelectionType, createToggleFilterSelectionItem, createConfirmFilterSelectionDialog, createFinishMarqueeSelection, createDeleteSelection, createDeleteSelectedGraphicsFromCanvas, createGroupSelectedGraphics, createUngroupSelectedGraphics, createManualPointDeltaForEdge, createRoutePreserveEdgeIdsForMovedNodes, createRouteSnapshotEdgesForMove, createRouteTouchesExpandedBoxes, createBoundsForNodeSet, createMergeNodeUpdateLists, createMergeUniqueEdgesById, createCompleteNodeListForPartialPatch, createIsWholeActiveLayerMove, createInternalMoveEdgeIdsForMovedNodes, createExternalMoveCandidateEdges, createInternalMoveCandidateEdges, createTranslateInternalMoveCandidateEdges, createTranslateWholeMoveCandidateEdges, createInternalRoutableLineNodeUpdatesForMove, createRoutableLineRouteCandidateIdsForMovedNodes, createRebuildRoutableLineNodeUpdatesForChangedNodes, createScheduleDeferredRoutableLineRouteRepair, createLocalRouteOptimizationEdges, createLocalRouteOptimizationCandidateEdges, createRoutePointsForMovedNodeBlockers, createRoutePointsForMovedEdgesBlockedByStationaryNodes, createRoutePointsNearOriginalMovedNodes, createAdjustEdgesAfterNodeMove, createRebuildSingleAffectedConnectionRoute, createSynchronousEdgeAdjustmentCandidates, createShouldAdjustEdgeSynchronouslyAfterMove, createMergeAdjustedCandidateEdges, createTerminalReconcileNodeScope, createFinalizeMovedNodeEdgesFast, createOptimizeMovedNodeEdgeRoutes, createShouldRunDeferredMoveOptimization, createScheduleMovedEdgeOptimization, createScheduleDeferredMovedConnectionRepair, createMoveRouteRepairSeedEdges, createLightweightMovedEndpointRoute, createPatchCachedRoutesForHighFanoutMove, createPatchCachedRoutesForBulkTranslation, createPatchCachedRoutesForWholeMove, createPatchCachedRoutesForInternalMove, createStoredRouteDirtyIdsForMove, createBuildBulkMovePlan, createCommitFastMovedGraphPatches, createUpdateMouseStatus, createUpdateMultiNodeDragOverlayTransform, createShowImperativeMultiNodeDragOverlay, createHideImperativeMultiNodeDragOverlay, createResetMultiNodeDragOverlayTransform, createBuildSingleNodeDragPreviewNodeMarkup, createClearImperativeNodeDragEdgePreview, createShowImperativeSingleNodeDragPreview, createCssSelectorEscape, createClearImperativeSingleNodeDragOriginLines, createSetImperativeSingleNodeDragOriginLines, createSetImperativeSingleNodeDragOrigin, createBindCanvasNodeElement, createHideImperativeSingleNodeDragPreview, createSingleNodeDragPreviewNodeFor, createSingleNodeDragRelevantEdges, createSingleNodeDragPreviewBounds, createSingleNodeDragEdgeTouchesBounds, createSingleNodeDragViewportLocalEdgesByScan, createSingleNodeDragScopedEdges, createSimpleOrthogonalDragPreviewPoints, createRoutableLineIdsConnectedToNodeIds, createRoutableLineEndpointPreviewRoutePoints, createBuildRoutableLinePreviewRoutesForNodeUpdates, createBuildRoutableLineEndpointPreviewNodeUpdates, createBuildTranslatedInternalRoutableLineDragPreviewRoutes, createBuildRoutableLineDragPreviewRoutes, createBuildCachedSingleNodeDragPreviewRoutes, createBuildDragPreviewEndpointPoints, createConnectionEndpointPreviewRoutePoints, createBuildLightweightNodeDragPreviewRoutes, createBuildLightweightNodeDragPreviewRouteMarkup, createSyncImperativeNodeDragPreviewPaths, createUpdateNodeDragLightweightEdgePreview, createSingleNodeDragInteractionNodes, createMultiNodeDragInteractionNodes, createUpdateImperativeNodeDragDropHint, createFindSingleNodeDragSnapTargetAtDelta, createFindMultiNodeDragSnapTargetAtDelta } from "./appExtracted/appSelectionDragFactories";
@@ -545,6 +545,16 @@ import {
 } from "./iconLibraryCatalog";
 import { renderAppView } from "./appExtracted/appView";
 import { MemoizedCanvasArea } from "./appExtracted/appCanvasArea";
+type LibraryPackageDialogMode = "export" | "import";
+const LIBRARY_PACKAGE_DIALOG_SCOPES: LibraryPackageScope[] = [
+  "all",
+  "component-library",
+  "measurement",
+  "device-library",
+  "template-library",
+  "icon-library"
+];
+
 export function App() {
   const __renderCount = useRef(0);
   __renderCount.current++;
@@ -613,6 +623,18 @@ const modelImportInputRef = useRef<HTMLInputElement | null>(null); Object.assign
 const modelImportTargetSchemeIdRef = useRef<string>(""); Object.assign(__appScope, { modelImportTargetSchemeIdRef });
 const schemeImportInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { schemeImportInputRef });
 const schemeImportParentSchemeIdRef = useRef<string>(""); Object.assign(__appScope, { schemeImportParentSchemeIdRef });
+const libraryPackageImportInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { libraryPackageImportInputRef });
+const libraryPackageImportScopeRef = useRef<LibraryPackageScope>("device-library"); Object.assign(__appScope, { libraryPackageImportScopeRef });
+const [libraryPackageDialogOpen, setLibraryPackageDialogOpen] = useState(false);
+const [libraryPackageDialogMode, setLibraryPackageDialogMode] = useState<LibraryPackageDialogMode>("export");
+const [libraryPackageDialogScope, setLibraryPackageDialogScope] = useState<LibraryPackageScope>("all");
+Object.assign(__appScope, {
+  libraryPackageDialogOpen,
+  libraryPackageDialogMode,
+  libraryPackageDialogScope,
+  setLibraryPackageDialogMode,
+  setLibraryPackageDialogScope
+});
 const layerManagementDropdownRef = useRef<HTMLDivElement | null>(null); Object.assign(__appScope, { layerManagementDropdownRef });
 const canvasFrameRef = useRef<HTMLDivElement | null>(null); Object.assign(__appScope, { canvasFrameRef });
 const canvasResizeHotzonesRef = useRef<HTMLDivElement | null>(null); Object.assign(__appScope, { canvasResizeHotzonesRef });
@@ -1764,7 +1786,7 @@ useEffect(createAppHookCallback20(__appScope), [componentLibraryDisplayMode, hov
 const toggleAttributeLibrary = createToggleAttributeLibrary(__appScope); Object.assign(__appScope, { toggleAttributeLibrary });
 const toggleAttributeLibraryComponentType = createToggleAttributeLibraryComponentType(__appScope); Object.assign(__appScope, { toggleAttributeLibraryComponentType });
 const selectableAttributeLibraries = useMemo<AttributeLibrary[]>(
-    () => Array.from(new Set([...CUSTOM_ATTRIBUTE_LIBRARY_BASES, ...customAttributeLibraries, ...attributeLibraries.filter((group) => group !== "静态图元")])),
+    () => selectableAttributeLibraryList(attributeLibraries, customAttributeLibraries),
     [customAttributeLibraries, attributeLibraries]
   );
 Object.assign(__appScope, { selectableAttributeLibraries });
@@ -3267,6 +3289,257 @@ const writeOperationLog = createWriteOperationLog(__appScope); Object.assign(__a
 const requireEditMode = createRequireEditMode(__appScope); Object.assign(__appScope, { requireEditMode });
 const persistDeviceLibraryChange = createPersistDeviceLibraryChange(__appScope); Object.assign(__appScope, { persistDeviceLibraryChange });
 const persistTemplateLibraryChange = createPersistTemplateLibraryChange(__appScope); Object.assign(__appScope, { persistTemplateLibraryChange });
+const libraryPackageScopeLabels: Record<LibraryPackageScope, string> = {
+  measurement: "量测定义",
+  "device-library": "元件库",
+  "template-library": "模板库",
+  "icon-library": "图标库",
+  "component-library": "元件相关库",
+  all: "全部库"
+};
+Object.assign(__appScope, { libraryPackageScopeLabels });
+const libraryPackageDialogScopeOptions = LIBRARY_PACKAGE_DIALOG_SCOPES.map((scope) => ({
+  scope,
+  label: libraryPackageScopeLabels[scope] ?? scope
+}));
+Object.assign(__appScope, { libraryPackageDialogScopeOptions });
+const libraryPackageScopeMatches = (packageScope: LibraryPackageScope, targetScope: LibraryPackageScope) =>
+  packageScope === targetScope || packageScope === "all";
+Object.assign(__appScope, { libraryPackageScopeMatches });
+const currentDeviceLibraryPersistencePayload = () => normalizeDeviceLibraryPersistencePayload({
+  customDeviceTemplates,
+  customAttributeLibraries,
+  customComponentTypes,
+  deviceDefinitionOverrides,
+  customGraphTemplateTypes,
+  customGraphTemplates
+});
+Object.assign(__appScope, { currentDeviceLibraryPersistencePayload });
+const timestampForLibraryPackageFilename = () => {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+};
+Object.assign(__appScope, { timestampForLibraryPackageFilename });
+const userIconLibraryAssets = async () => {
+  const folders = await fetchBackendImageFolders();
+  const assets = (await fetchAllBackendImages()).filter((asset) =>
+    String(asset.folderId ?? "") !== "builtin-shared-icons" &&
+    !String(asset.id ?? "").startsWith("builtin-shared-icon-")
+  );
+  const exportedAssets = [];
+  for (const asset of assets) {
+    exportedAssets.push({
+      ...asset,
+      dataUrl: await fetchBackendImageDataUrl(asset)
+    });
+  }
+  return normalizeIconLibraryPersistencePayload({ folders, assets: exportedAssets });
+};
+Object.assign(__appScope, { userIconLibraryAssets });
+const exportLibraryPackage = async (scope: LibraryPackageScope) => {
+  try {
+    flushMeasurementConfigDialogDraftInputs?.();
+    const measurementConfigForExport = normalizeMeasurementConfig(measurementConfigDraftRef.current ?? measurementConfigDraft ?? measurementConfig);
+    const packagePayload = createLibraryPackage({
+      scope,
+      measurementConfig: measurementConfigForExport,
+      deviceLibrary: currentDeviceLibraryPersistencePayload(),
+    iconLibrary: scope === "icon-library" || scope === "component-library" || scope === "all" ? await userIconLibraryAssets() : undefined
+    });
+    const label = libraryPackageScopeLabels[scope] ?? "库";
+    const saved = await saveTextFile({
+      filename: `${safeFilePart(label)}-${timestampForLibraryPackageFilename()}.json`,
+      text: JSON.stringify(packagePayload, null, 2),
+      mime: "application/json",
+      description: "图形建模平台库文件",
+      extensions: [".json"]
+    });
+    if (saved) {
+      writeOperationLog(`导出${label}`);
+      if (scope === "device-library") {
+        writeOperationLog("元件库导出不包含图标库；若元件引用了自定义图标，请单独导出图标库。");
+      }
+    }
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : "导出库文件失败。");
+  }
+};
+Object.assign(__appScope, { exportLibraryPackage });
+const openLibraryPackageImportFilePicker = (scope: LibraryPackageScope) => {
+  if (!requireEditMode(`导入${libraryPackageScopeLabels[scope] ?? "库"}`)) {
+    return;
+  }
+  libraryPackageImportScopeRef.current = scope;
+  if (libraryPackageImportInputRef.current) {
+    libraryPackageImportInputRef.current.value = "";
+    libraryPackageImportInputRef.current.click();
+  }
+};
+Object.assign(__appScope, { openLibraryPackageImportFilePicker });
+const openLibraryPackageDialog = (scope: LibraryPackageScope = "all") => {
+  setLibraryPackageDialogScope(scope);
+  setLibraryPackageDialogMode("export");
+  setLibraryPackageDialogOpen(true);
+};
+Object.assign(__appScope, { openLibraryPackageDialog });
+const closeLibraryPackageDialog = () => setLibraryPackageDialogOpen(false);
+Object.assign(__appScope, { closeLibraryPackageDialog });
+const componentLibraryImportMessage = "当前元件、量测定义、图标和设备定义会被导入文件中的对应配置覆盖；模板库不会变更。";
+Object.assign(__appScope, { componentLibraryImportMessage });
+const applyImportedMeasurementLibrary = async (packagePayload: LibraryPackagePayload) => {
+  if (!packagePayload.measurementConfig) {
+    throw new Error("导入文件中没有量测定义。");
+  }
+  const normalized = normalizeMeasurementConfig(packagePayload.measurementConfig);
+  const payload = serializeMeasurementConfigForStorage(normalized);
+  writeMeasurementConfig(normalized);
+  setMeasurementConfig(normalized);
+  measurementConfigDraftRef.current = measurementConfigDialogOpen ? normalized : null;
+  setMeasurementConfigDraft(measurementConfigDialogOpen ? normalized : null);
+  setMeasurementConfigSaveStatus("saving");
+  lastPersistedMeasurementConfigPayloadRef.current = payload;
+  try {
+    await saveBackendMeasurementConfigPayload(payload);
+    backendMeasurementConfigLoadedRef.current = true;
+    setMeasurementConfigSaveStatus("saved");
+  } catch {
+    setMeasurementConfigSaveStatus("error");
+    throw new Error("量测定义已导入到本地，但保存到后台失败，请检查后台服务。");
+  }
+};
+Object.assign(__appScope, { applyImportedMeasurementLibrary });
+const applyImportedDeviceOrTemplateLibrary = (packagePayload: LibraryPackagePayload, targetScope: LibraryPackageScope) => {
+  if (!packagePayload.deviceLibrary) {
+    throw new Error(`导入文件中没有${libraryPackageScopeLabels[targetScope] ?? "库"}数据。`);
+  }
+  const next = deviceLibraryPayloadForPackageScope(
+    currentDeviceLibraryPersistencePayload(),
+    packagePayload.deviceLibrary,
+    targetScope
+  );
+  setCustomDeviceTemplates(next.customDeviceTemplates);
+  setCustomAttributeLibraries(next.customAttributeLibraries);
+  setCustomComponentTypes(next.customComponentTypes);
+  setDeviceDefinitionOverrides(next.deviceDefinitionOverrides);
+  setCustomGraphTemplateTypes(next.customGraphTemplateTypes);
+  setCustomGraphTemplates(next.customGraphTemplates);
+  persistDeviceLibraryChange(next, {
+    success: `${libraryPackageScopeLabels[targetScope]}已导入并保存到后台`,
+    failure: `${libraryPackageScopeLabels[targetScope]}已导入到本地，但保存到后台失败`
+  });
+};
+Object.assign(__appScope, { applyImportedDeviceOrTemplateLibrary });
+const applyImportedIconLibrary = async (packagePayload: LibraryPackagePayload) => {
+  if (!packagePayload.iconLibrary) {
+    throw new Error("导入文件中没有图标库数据。");
+  }
+  const result = await importBackendImageLibraryPayload(packagePayload.iconLibrary);
+  const importedAssets = Array.isArray(result.assets) ? result.assets : [];
+  const nextFolderId = importedAssets[0]?.folderId ?? activeImageFolderId ?? "root";
+  setImageAssets((current) => ({ ...current, ...imageAssetsToMap(importedAssets) }));
+  setActiveImageFolderId(nextFolderId);
+  await refreshImageFolders();
+  await refreshImagesForFolder(nextFolderId);
+};
+Object.assign(__appScope, { applyImportedIconLibrary });
+const applyImportedComponentLibrary = async (packagePayload: LibraryPackagePayload) => {
+  let applied = false;
+  if (packagePayload.measurementConfig) {
+    await applyImportedMeasurementLibrary(packagePayload);
+    applied = true;
+  }
+  if (packagePayload.deviceLibrary) {
+    applyImportedDeviceOrTemplateLibrary(packagePayload, "component-library");
+    applied = true;
+  }
+  if (packagePayload.iconLibrary) {
+    await applyImportedIconLibrary(packagePayload);
+    applied = true;
+  }
+  if (!applied) {
+    throw new Error("导入文件中没有元件相关库数据。");
+  }
+};
+Object.assign(__appScope, { applyImportedComponentLibrary });
+const applyImportedAllLibraries = async (packagePayload: LibraryPackagePayload) => {
+  let applied = false;
+  if (packagePayload.measurementConfig) {
+    await applyImportedMeasurementLibrary(packagePayload);
+    applied = true;
+  }
+  if (packagePayload.deviceLibrary) {
+    applyImportedDeviceOrTemplateLibrary(packagePayload, "all");
+    applied = true;
+  }
+  if (packagePayload.iconLibrary) {
+    await applyImportedIconLibrary(packagePayload);
+    applied = true;
+  }
+  if (!applied) {
+    throw new Error("导入文件中没有可恢复的库数据。");
+  }
+};
+Object.assign(__appScope, { applyImportedAllLibraries });
+const confirmLibraryPackageDialog = () => {
+  const scope = libraryPackageDialogScope;
+  setLibraryPackageDialogOpen(false);
+  if (libraryPackageDialogMode === "import") {
+    openLibraryPackageImportFilePicker(scope);
+    return;
+  }
+  void exportLibraryPackage(scope);
+};
+Object.assign(__appScope, { confirmLibraryPackageDialog });
+const importLibraryPackageFile = (event: ChangeEvent<HTMLInputElement>) => {
+  const file = event.target.files?.[0];
+  event.target.value = "";
+  if (!file) {
+    return;
+  }
+  const targetScope = libraryPackageImportScopeRef.current;
+  const reader = new FileReader();
+  reader.onload = () => {
+    void (async () => {
+      try {
+        const packagePayload = normalizeLibraryPackage(JSON.parse(String(reader.result ?? "{}")));
+        if (!libraryPackageScopeMatches(packagePayload.scope, targetScope)) {
+          throw new Error(`当前选择导入${libraryPackageScopeLabels[targetScope]}，但文件类型是${libraryPackageScopeLabels[packagePayload.scope] ?? packagePayload.scope}。`);
+        }
+        const label = libraryPackageScopeLabels[targetScope] ?? "库";
+        const confirmMessage = targetScope === "all"
+          ? "确定导入全部库吗？当前量测定义、元件库、模板库会被导入文件中的对应配置覆盖，同 ID 图标会被覆盖。"
+          : targetScope === "component-library"
+          ? `确定导入${label}吗？${componentLibraryImportMessage}`
+          : targetScope === "icon-library"
+          ? `确定导入${label}吗？同 ID 图标会被覆盖，其他图标会保留。`
+          : `确定导入${label}吗？当前${label}配置会被导入文件中的对应配置覆盖。`;
+        if (!window.confirm(confirmMessage)) {
+          return;
+        }
+        if (targetScope === "all") {
+          await applyImportedAllLibraries(packagePayload);
+        } else if (targetScope === "component-library") {
+          await applyImportedComponentLibrary(packagePayload);
+        } else if (targetScope === "measurement") {
+          await applyImportedMeasurementLibrary(packagePayload);
+        } else if (targetScope === "device-library" || targetScope === "template-library") {
+          applyImportedDeviceOrTemplateLibrary(packagePayload, targetScope);
+        } else if (targetScope === "icon-library") {
+          await applyImportedIconLibrary(packagePayload);
+        }
+        writeOperationLog(`导入${label}：${file.name}`);
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "导入库文件失败。");
+      }
+    })();
+  };
+  reader.onerror = () => {
+    window.alert("读取库文件失败。");
+  };
+  reader.readAsText(file, "utf-8");
+};
+Object.assign(__appScope, { importLibraryPackageFile });
 const connectionCommitFailureMessage = createConnectionCommitFailureMessage(__appScope); Object.assign(__appScope, { connectionCommitFailureMessage });
 const connectionEndpointRuleFailureMessage = (edge: Edge) =>
     validateConnectionEndpointRules(nodes, edges, edge)[0]?.message ?? "";
@@ -4841,6 +5114,27 @@ const renderTemplateLibraryPanel = () => (
           </button>
         )}
       </div>
+      <div className="template-library-actions library-scope-actions" aria-label="模板库导入导出">
+        <button
+          type="button"
+          className="library-icon-action"
+          title="导入模板库"
+          disabled={isBrowseMode}
+          onClick={() => openLibraryPackageImportFilePicker("template-library")}
+        >
+          <FileInput size={14} aria-hidden="true" />
+          <span>导入</span>
+        </button>
+        <button
+          type="button"
+          className="library-icon-action"
+          title="导出模板库"
+          onClick={() => void exportLibraryPackage("template-library")}
+        >
+          <Download size={14} aria-hidden="true" />
+          <span>导出</span>
+        </button>
+      </div>
       <div className="library-display-mode" role="radiogroup" aria-label="模板库展开方式">
         {([
           ["expanded", "向下展开"],
@@ -4980,6 +5274,27 @@ const renderLibraryPanel = () => (
             <X size={14} />
           </button>
         )}
+      </div>
+      <div className="component-library-actions library-scope-actions" aria-label="元件库导入导出">
+        <button
+          type="button"
+          className="library-icon-action"
+          title="导入元件库"
+          disabled={isBrowseMode}
+          onClick={() => openLibraryPackageImportFilePicker("component-library")}
+        >
+          <FileInput size={14} aria-hidden="true" />
+          <span>导入</span>
+        </button>
+        <button
+          type="button"
+          className="library-icon-action"
+          title="导出元件库"
+          onClick={() => void exportLibraryPackage("component-library")}
+        >
+          <Download size={14} aria-hidden="true" />
+          <span>导出</span>
+        </button>
       </div>
       <div className="library-display-mode" role="radiogroup" aria-label="图元库展开方式">
         {([

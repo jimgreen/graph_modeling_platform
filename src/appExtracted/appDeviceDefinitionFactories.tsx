@@ -129,9 +129,11 @@ export function createStateIconDrawingElementFromStaticTemplate(__appScope: Reco
   const {
     createImportedStateIconElement,
     createStateIconDrawingElement,
-    createTemplateDefaultStateIconImage,
     svgSourceFromDataUrl
   } = __appScope;
+  const renderTemplateDefaultStateIconImage = typeof __appScope.createTemplateDefaultStateIconImage === "function"
+    ? __appScope.createTemplateDefaultStateIconImage
+    : createTemplateDefaultStateIconImage;
   const baseKind = stateIconBaseStaticTemplateKind(template?.kind);
   const editableKind = STATE_ICON_EDITABLE_STATIC_KIND_BY_TEMPLATE_KIND[baseKind];
   const size = template?.size ?? {};
@@ -169,7 +171,7 @@ export function createStateIconDrawingElementFromStaticTemplate(__appScope: Reco
     }
     return element;
   }
-  const renderedImage = createTemplateDefaultStateIconImage(__appScope, template, {
+  const renderedImage = renderTemplateDefaultStateIconImage(__appScope, template, {
     size: { width: templateWidth, height: templateHeight },
     label: template?.label ?? ""
   });
@@ -415,6 +417,116 @@ function stateIconDrawingFrameAlignmentCandidates() {
   return [...verticalCandidates, ...horizontalCandidates];
 }
 
+function stateIconDrawingPointAlignmentCandidate(id: string, x: number, y: number, priority: number) {
+  return {
+    id,
+    bounds: {
+      left: x,
+      right: x,
+      top: y,
+      bottom: y,
+      centerX: x,
+      centerY: y
+    },
+    anchors: {
+      x: [{ key: id, value: x, priority }],
+      y: [{ key: id, value: y, priority }]
+    }
+  };
+}
+
+function stateIconDrawingTerminalFrame() {
+  return {
+    width: STATE_ICON_DRAWING_FRAME_WIDTH * 3 / 4,
+    height: STATE_ICON_DRAWING_FRAME_HEIGHT * 3 / 4,
+    centerX: STATE_ICON_DRAWING_FRAME_WIDTH / 2,
+    centerY: STATE_ICON_DRAWING_FRAME_HEIGHT / 2,
+    marginX: STATE_ICON_DRAWING_FRAME_WIDTH / 8,
+    marginY: STATE_ICON_DRAWING_FRAME_HEIGHT / 8
+  };
+}
+
+function stateIconDrawingTerminalConnectorSegment(anchor: Point, projectAnchor: (anchor: Point) => Point = (value) => value) {
+  const frame = stateIconDrawingTerminalFrame();
+  const boundaryAnchor = projectAnchor(anchor);
+  const from = {
+    x: frame.centerX + boundaryAnchor.x * frame.width,
+    y: frame.centerY + boundaryAnchor.y * frame.height
+  };
+  const horizontal = Math.abs(boundaryAnchor.x) >= Math.abs(boundaryAnchor.y);
+  return {
+    from,
+    to: horizontal
+      ? { x: from.x + (boundaryAnchor.x < 0 ? -frame.marginX : frame.marginX), y: from.y }
+      : { x: from.x, y: from.y + (boundaryAnchor.y < 0 ? -frame.marginY : frame.marginY) }
+  };
+}
+
+function stateIconDrawingTerminalAlignmentCandidates(__appScope: Record<string, any>) {
+  const {
+    customDeviceDraft,
+    customDeviceTerminalAnchors,
+    customDraftTerminalTypes,
+    definitionVisualDraft,
+    definitionVisualTerminalAnchors,
+    definitionVisualTerminalTypes,
+    projectCustomDeviceTerminalAnchorToBoundary,
+    stateIconDrawingDialog
+  } = __appScope;
+  const scope = stateIconDrawingDialog?.target?.scope;
+  const draft = scope === "definition" ? definitionVisualDraft : scope === "custom" ? customDeviceDraft : null;
+  const terminalTypes = scope === "definition" ? definitionVisualTerminalTypes : customDraftTerminalTypes;
+  const terminalAnchors = scope === "definition" ? definitionVisualTerminalAnchors : customDeviceTerminalAnchors;
+  const terminalCount = Math.max(
+    0,
+    Number(draft?.terminalCount) || (Array.isArray(terminalTypes) ? terminalTypes.length : 0) || 0
+  );
+  if (!terminalCount || !Array.isArray(terminalAnchors)) {
+    return [];
+  }
+  const projectAnchor = typeof projectCustomDeviceTerminalAnchorToBoundary === "function"
+    ? projectCustomDeviceTerminalAnchorToBoundary
+    : (anchor: Point) => anchor;
+  return terminalAnchors.slice(0, terminalCount).flatMap((anchor, index) => {
+    const segment = stateIconDrawingTerminalConnectorSegment(anchor, projectAnchor);
+    return [
+      stateIconDrawingPointAlignmentCandidate(`terminal-anchor-${index}`, segment.to.x, segment.to.y, -3),
+      stateIconDrawingPointAlignmentCandidate(`terminal-inner-${index}`, segment.from.x, segment.from.y, -2)
+    ];
+  });
+}
+
+function stateIconDrawingPointBounds(point: Point) {
+  return {
+    left: point.x,
+    right: point.x,
+    top: point.y,
+    bottom: point.y,
+    centerX: point.x,
+    centerY: point.y
+  };
+}
+
+function stateIconDrawingTerminalPointSnap(__appScope: Record<string, any>, point: Point) {
+  if (!__appScope.smartAlignmentEnabled) {
+    return { point, guides: [] };
+  }
+  const candidates = stateIconDrawingTerminalAlignmentCandidates(__appScope);
+  if (candidates.length === 0) {
+    return { point, guides: [] };
+  }
+  const pointBounds = stateIconDrawingPointBounds(point);
+  const xSnap = bestStateIconDrawingAlignmentSnap("x", pointBounds, candidates, STATE_ICON_DRAWING_SMART_ALIGNMENT_TOLERANCE);
+  const ySnap = bestStateIconDrawingAlignmentSnap("y", pointBounds, candidates, STATE_ICON_DRAWING_SMART_ALIGNMENT_TOLERANCE);
+  return {
+    point: {
+      x: point.x + (xSnap?.adjustment ?? 0),
+      y: point.y + (ySnap?.adjustment ?? 0)
+    },
+    guides: [xSnap?.guide, ySnap?.guide].filter(Boolean)
+  };
+}
+
 export function createComputeStateIconDrawingSmartAlignmentSnap(__appScope: Record<string, any>) {
   return ({
     elements,
@@ -442,6 +554,7 @@ export function createComputeStateIconDrawingSmartAlignmentSnap(__appScope: Reco
       ...elements
       .filter((element) => !selectedSet.has(element.id))
       .map((element) => ({ id: element.id, bounds: stateIconDrawingElementBounds(element) })),
+      ...stateIconDrawingTerminalAlignmentCandidates(__appScope),
       ...stateIconDrawingFrameAlignmentCandidates()
     ];
     if (candidates.length === 0) {
@@ -607,7 +720,8 @@ function finishStateIconDrawingDraft(current: any, historyRef: any) {
     selectedElementIds: [element.id],
     pendingElementKind: undefined,
     pendingStaticTemplate: undefined,
-    drawingDraft: undefined
+    drawingDraft: undefined,
+    smartAlignmentGuides: []
   };
 }
 
@@ -665,9 +779,15 @@ function createTemplateDefaultStateIconImage(__appScope: Record<string, any>, te
   const contentHeight = terminalCount > 0 ? drawingHeight * 3 / 4 : drawingHeight;
   const contentCenterX = drawingWidth / 2;
   const contentCenterY = drawingHeight / 2;
+  const isStaticTemplate = typeof __appScope.isStaticKind === "function"
+    ? __appScope.isStaticKind(template.kind)
+    : String(template.kind ?? "").startsWith("static-");
+  const staticTemplateSizeAttrs = isStaticTemplate
+    ? ` data-state-icon-template-width="${formatSvgNumber(width)}" data-state-icon-template-height="${formatSvgNumber(height)}"`
+    : "";
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${formatSvgNumber(drawingWidth)}" height="${formatSvgNumber(drawingHeight)}" viewBox="0 0 ${formatSvgNumber(drawingWidth)} ${formatSvgNumber(drawingHeight)}">` +
-    `<g data-state-icon-layer-width="${formatSvgNumber(contentWidth)}" data-state-icon-layer-height="${formatSvgNumber(contentHeight)}" transform="translate(${formatSvgNumber(contentCenterX)} ${formatSvgNumber(contentCenterY)})">` +
+    `<g data-state-icon-layer-width="${formatSvgNumber(contentWidth)}" data-state-icon-layer-height="${formatSvgNumber(contentHeight)}"${staticTemplateSizeAttrs} transform="translate(${formatSvgNumber(contentCenterX)} ${formatSvgNumber(contentCenterY)})">` +
     `<svg x="${formatSvgNumber(-contentWidth / 2)}" y="${formatSvgNumber(-contentHeight / 2)}" width="${formatSvgNumber(contentWidth)}" height="${formatSvgNumber(contentHeight)}" viewBox="${formatSvgNumber(viewBoxX)} ${formatSvgNumber(viewBoxY)} ${formatSvgNumber(viewBoxWidth)} ${formatSvgNumber(viewBoxHeight)}" preserveAspectRatio="xMidYMid meet">` +
     `<g transform="${escapeXml(nodeGeometryTransform(node))}">${glyphMarkup}${glyphTextMarkup}</g>` +
     `</svg></g></svg>`;
@@ -3853,11 +3973,16 @@ export function createChooseStateIconDrawingImport(__appScope: Record<string, an
 export function createUpdateStateIconDrawingElement(__appScope: Record<string, any>) {
   return (elementId: string, patch: Partial<StateIconDrawingElement>) => {
   const { setStateIconDrawingDialog, stateIconDrawingHistoryRef } = __appScope;
+    const explicitPatch = {
+      ...patch,
+      ...(Object.prototype.hasOwnProperty.call(patch, "strokeColor") ? { strokeColorEdited: true } : {}),
+      ...(Object.prototype.hasOwnProperty.call(patch, "strokeStyle") ? { strokeStyleEdited: true } : {})
+    };
     setStateIconDrawingDialog((current) =>
       current
         ? (pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements), {
             ...current,
-            elements: current.elements.map((element) => (element.id === elementId ? { ...element, ...patch } : element))
+            elements: current.elements.map((element) => (element.id === elementId ? { ...element, ...explicitPatch } : element))
           })
         : current
     );
@@ -5726,6 +5851,99 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
           : { x: from.x, y: from.y + (boundaryAnchor.y < 0 ? -stateIconTerminalFrame.marginY : stateIconTerminalFrame.marginY) }
       };
     };
+    const renderStateIconTerminalDynamicGuideLayer = (anchors: Point[]) => {
+      const activeIndex = typeof stateIconTerminalDragIndex === "number" ? stateIconTerminalDragIndex : -1;
+      const activeAnchor = anchors[activeIndex];
+      if (!activeAnchor) {
+        return null;
+      }
+      const activeSegment = stateIconTerminalConnectorSegment(activeAnchor);
+      const activeDisplayedAnchor = stateIconDisplayedBoundaryAnchor(activeAnchor);
+      const lines: Array<{
+        id: string;
+        orientation: "vertical" | "horizontal";
+        position: number;
+        start: number;
+        end: number;
+        variant: "active" | "match" | "snap";
+      }> = [];
+      const seen = new Set<string>();
+      const addLine = (
+        orientation: "vertical" | "horizontal",
+        position: number,
+        variant: "active" | "match" | "snap",
+        start: number,
+        end: number
+      ) => {
+        if (!Number.isFinite(position)) {
+          return;
+        }
+        const roundedPosition = Number(formatSvgNumber(position));
+        const key = `${orientation}:${roundedPosition}`;
+        if (seen.has(key)) {
+          return;
+        }
+        seen.add(key);
+        lines.push({
+          id: `${orientation}-${variant}-${roundedPosition}`,
+          orientation,
+          position: roundedPosition,
+          start,
+          end,
+          variant
+        });
+      };
+      addLine("vertical", activeSegment.to.x, "active", 0, STATE_ICON_DRAWING_FRAME_HEIGHT);
+      addLine("horizontal", activeSegment.to.y, "active", 0, STATE_ICON_DRAWING_FRAME_WIDTH);
+      const anchorMatchTolerance = 2;
+      anchors.forEach((anchor, index) => {
+        if (index === activeIndex) {
+          return;
+        }
+        const segment = stateIconTerminalConnectorSegment(anchor);
+        if (Math.abs(segment.to.x - activeSegment.to.x) <= anchorMatchTolerance) {
+          addLine("vertical", segment.to.x, "match", 0, STATE_ICON_DRAWING_FRAME_HEIGHT);
+        }
+        if (Math.abs(segment.to.y - activeSegment.to.y) <= anchorMatchTolerance) {
+          addLine("horizontal", segment.to.y, "match", 0, STATE_ICON_DRAWING_FRAME_WIDTH);
+        }
+      });
+      const guideValues = Array.isArray(CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES)
+        ? CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES
+        : [];
+      const guideTolerance = 1 / Math.max(1, Number(CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION) || 1);
+      const activeGuideX = customDeviceTerminalAnchorValue(activeDisplayedAnchor.x);
+      const activeGuideY = customDeviceTerminalAnchorValue(activeDisplayedAnchor.y);
+      guideValues.forEach((guideValue) => {
+        if (Math.abs(activeGuideX - guideValue) <= guideTolerance) {
+          addLine("vertical", stateIconTerminalFrame.centerX + guideValue * stateIconTerminalFrame.width, "snap", 0, STATE_ICON_DRAWING_FRAME_HEIGHT);
+        }
+        if (Math.abs(activeGuideY - guideValue) <= guideTolerance) {
+          addLine("horizontal", stateIconTerminalFrame.centerY + guideValue * stateIconTerminalFrame.height, "snap", 0, STATE_ICON_DRAWING_FRAME_WIDTH);
+        }
+      });
+      return (
+        <g className="state-icon-terminal-dynamic-guide-layer" aria-hidden="true">
+          {lines.map((guide) => (
+            <line
+              key={`state-icon-terminal-dynamic-guide-${guide.id}`}
+              className={[
+                "custom-device-terminal-guide",
+                "state-icon-terminal-anchor-guide",
+                `state-icon-terminal-anchor-guide-${guide.orientation}`,
+                `state-icon-terminal-anchor-guide-${guide.variant}`,
+                guide.variant === "active" ? "active" : ""
+              ].filter(Boolean).join(" ")}
+              x1={guide.orientation === "vertical" ? guide.position : guide.start}
+              y1={guide.orientation === "vertical" ? guide.start : guide.position}
+              x2={guide.orientation === "vertical" ? guide.position : guide.end}
+              y2={guide.orientation === "vertical" ? guide.end : guide.position}
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+        </g>
+      );
+    };
     const updateStateIconTerminalAnchorFromDrawing = (index: number, event: PointerEvent<SVGSVGElement>) => {
       if (!updateStateIconTerminalAnchor || !projectCustomDeviceTerminalAnchorToBoundary) {
         return;
@@ -5775,6 +5993,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       if (stateIconCanvasTerminalContent) {
         return (
           <g className="state-icon-terminal-base-layer state-icon-terminal-canvas-geometry-layer">
+            {renderStateIconTerminalDynamicGuideLayer(anchors)}
             <g className="state-icon-terminal-connector-layer">
               {anchors.map((anchor, index) => {
                 const segment = stateIconTerminalConnectorSegment(anchor);
@@ -5847,36 +6066,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
             strokeDasharray="5 3"
             vectorEffect="non-scaling-stroke"
           />
-          {stateIconTerminalDragIndex !== null && stateIconTerminalDragIndex !== undefined && (
-            <>
-              {CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES.map((guideValue, guideIndex) => {
-                const activeAnchor = anchors[stateIconTerminalDragIndex];
-                const active = Boolean(
-                  activeAnchor &&
-                  (Math.abs(customDeviceTerminalAnchorValue(activeAnchor.x) - guideValue) <= 1 / CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION ||
-                    Math.abs(customDeviceTerminalAnchorValue(activeAnchor.y) - guideValue) <= 1 / CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION)
-                );
-                return (
-                  <g key={`state-icon-terminal-guide-${guideIndex}`}>
-                    <line
-                      className={`custom-device-terminal-guide ${active ? "active" : ""}`}
-                      x1={stateIconTerminalFrame.centerX + guideValue * stateIconTerminalFrame.width}
-                      y1={stateIconTerminalFrame.y}
-                      x2={stateIconTerminalFrame.centerX + guideValue * stateIconTerminalFrame.width}
-                      y2={stateIconTerminalFrame.y + stateIconTerminalFrame.height}
-                    />
-                    <line
-                      className={`custom-device-terminal-guide ${active ? "active" : ""}`}
-                      x1={stateIconTerminalFrame.x}
-                      y1={stateIconTerminalFrame.centerY + guideValue * stateIconTerminalFrame.height}
-                      x2={stateIconTerminalFrame.x + stateIconTerminalFrame.width}
-                      y2={stateIconTerminalFrame.centerY + guideValue * stateIconTerminalFrame.height}
-                    />
-                  </g>
-                );
-              })}
-            </>
-          )}
+          {renderStateIconTerminalDynamicGuideLayer(anchors)}
           <g className="state-icon-terminal-connector-layer">
             {anchors.map((anchor, index) => {
               const terminalType = stateIconTerminalAnchorType(index);
@@ -6182,7 +6372,8 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         ...current,
         pendingElementKind: undefined,
         pendingStaticTemplate: undefined,
-        drawingDraft: undefined
+        drawingDraft: undefined,
+        smartAlignmentGuides: []
       } : current);
       return true;
     };
@@ -6196,6 +6387,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       }
       (event.currentTarget.closest(".state-icon-drawing-inline") as HTMLElement | null)?.focus();
       const point = stateIconDrawingPointer(event);
+      const snappedPoint = stateIconDrawingTerminalPointSnap(__appScope, clampStateIconDrawingPoint(point));
       setStateIconDrawingContextMenu(null);
       setStateIconDrawingDialog((current) => {
         if (!current) {
@@ -6203,7 +6395,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         }
         if (current.drawingDraft) {
           if (current.drawingDraft.kind === "polyline") {
-            const committedPoint = clampStateIconDrawingPoint(point);
+            const committedPoint = snappedPoint.point;
             const draftPoints = current.drawingDraft.points?.length
               ? current.drawingDraft.points
               : [current.drawingDraft.start];
@@ -6217,7 +6409,8 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                   points: nextPoints,
                   current: committedPoint,
                   element: nextElement
-                }
+                },
+                smartAlignmentGuides: snappedPoint.guides
               };
             }
             if (nextPoints.length < 2) {
@@ -6230,10 +6423,11 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                 points: nextPoints,
                 current: committedPoint,
                 element: nextElement
-              }
+              },
+              smartAlignmentGuides: snappedPoint.guides
             }, stateIconDrawingHistoryRef);
           }
-          const element = stateIconDrawingElementFromPoints(current.drawingDraft.element, current.drawingDraft.start, point);
+          const element = stateIconDrawingElementFromPoints(current.drawingDraft.element, current.drawingDraft.start, snappedPoint.point);
           pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements);
           return {
             ...current,
@@ -6242,7 +6436,8 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
             selectedElementIds: [element.id],
             pendingElementKind: undefined,
             pendingStaticTemplate: undefined,
-            drawingDraft: undefined
+            drawingDraft: undefined,
+            smartAlignmentGuides: []
           };
         }
         if (!current.pendingElementKind && !current.pendingStaticTemplate) {
@@ -6252,7 +6447,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         const baseElement = current.pendingStaticTemplate
           ? createStateIconDrawingElementFromStaticTemplate(__appScope, current.pendingStaticTemplate, row)
           : createStateIconDrawingElement(current.pendingElementKind, row);
-        const startPoint = clampStateIconDrawingPoint(point);
+        const startPoint = snappedPoint.point;
         const element = baseElement.kind === "polyline"
           ? stateIconDrawingPolylineElementFromPoints(baseElement, [startPoint])
           : stateIconDrawingElementFromPoints(baseElement, startPoint, startPoint);
@@ -6266,7 +6461,8 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
             current: startPoint,
             points: baseElement.kind === "polyline" ? [startPoint] : undefined,
             element
-          }
+          },
+          smartAlignmentGuides: snappedPoint.guides
         };
       });
       return true;
@@ -6280,28 +6476,30 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         if (!current?.drawingDraft) {
           return current;
         }
-        const currentPoint = clampStateIconDrawingPoint(point);
+        const currentPoint = stateIconDrawingTerminalPointSnap(__appScope, clampStateIconDrawingPoint(point));
         if (current.drawingDraft.kind === "polyline") {
           const draftPoints = current.drawingDraft.points?.length
             ? current.drawingDraft.points
             : [current.drawingDraft.start];
-          const previewPoints = appendDistinctStateIconDrawingPoint(draftPoints, currentPoint);
+          const previewPoints = appendDistinctStateIconDrawingPoint(draftPoints, currentPoint.point);
           return {
             ...current,
             drawingDraft: {
               ...current.drawingDraft,
-              current: currentPoint,
+              current: currentPoint.point,
               element: stateIconDrawingPolylineElementFromPoints(current.drawingDraft.element, previewPoints)
-            }
+            },
+            smartAlignmentGuides: currentPoint.guides
           };
         }
         return {
           ...current,
           drawingDraft: {
             ...current.drawingDraft,
-            current: currentPoint,
-            element: stateIconDrawingElementFromPoints(current.drawingDraft.element, current.drawingDraft.start, currentPoint)
-          }
+            current: currentPoint.point,
+            element: stateIconDrawingElementFromPoints(current.drawingDraft.element, current.drawingDraft.start, currentPoint.point)
+          },
+          smartAlignmentGuides: currentPoint.guides
         };
       });
       return true;
@@ -7159,6 +7357,10 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                         {selected.kind === "text" && (
                           <>
                             <tr>
+                              <th>文字</th>
+                              <td><BufferedTextInput value={selected.text} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { text: nextValue })} /></td>
+                            </tr>
+                            <tr>
                               <th>文本颜色</th>
                               <td>
                                 <div className="state-icon-drawing-color-field">
@@ -7219,20 +7421,6 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                             </tr>
                           </>
                         )}
-                        {selected.kind !== "text" && (
-                          <tr>
-                            <th>文本颜色</th>
-                            <td>
-                              <div className="state-icon-drawing-color-field">
-                                <DeferredColorInput value={visibleTextColor} fallback="#111827" onCommit={(value) => updateStateIconDrawingElement(selected.id, { textColor: value })} />
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                        <tr>
-                          <th>文字</th>
-                          <td><BufferedTextInput value={selected.text} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { text: nextValue })} /></td>
-                        </tr>
                         {selected.kind === "image" && (
                           <>
                             <tr>

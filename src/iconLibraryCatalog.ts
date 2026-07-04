@@ -310,10 +310,20 @@ export function visibleIconLibraryIcons(
 
 async function fetchJson<T>(url: string, errorMessage: string, fetcher: typeof fetch = fetch): Promise<T> {
   const response = await fetcher(url);
+  const contentType = response.headers.get("content-type") || "未知";
+  const detail = `（地址：${url}，状态：${response.status}，类型：${contentType}）`;
+  const payload = await response.text();
   if (!response.ok) {
-    throw new Error(errorMessage);
+    throw new Error(`${errorMessage}${detail}`);
   }
-  return (await response.json()) as T;
+  if (payload.trimStart().startsWith("<")) {
+    throw new Error(`${errorMessage}接口返回了 HTML 页面，请确认后端服务和 /icon-library 代理已启动。${detail}`);
+  }
+  try {
+    return JSON.parse(payload) as T;
+  } catch {
+    throw new Error(`${errorMessage}接口返回的内容不是有效 JSON。${detail}`);
+  }
 }
 
 export async function fetchIconLibraryCatalog(fetcher: typeof fetch = fetch): Promise<IconLibraryCatalog> {

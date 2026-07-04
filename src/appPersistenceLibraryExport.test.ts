@@ -1,11 +1,20 @@
 import { readFileSync } from "node:fs";
+import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
 import { describe, expect, test } from "vitest";
 import {
+  createLibraryPackage,
+  defaultAttributeLibraryForComponentType,
+  deviceLibraryPayloadForPackageScope,
   filterGraphTemplatesByType,
   graphTemplateTypeList,
   groupGraphTemplatesByType,
-  normalizeCustomDeviceTemplates
+  isBuiltInAttributeLibrary,
+  normalizeLibraryPackage,
+  selectableAttributeLibraryList,
+  normalizeCustomDeviceTemplates,
+  renderEnumValuesEditor
 } from "./appExtracted/appPersistenceLibraryExport";
+import { DEFAULT_MEASUREMENT_CONFIG } from "./measurements";
 import { svgSourceFromDataUrl } from "./stateIconDrawing";
 
 const sampleGraphTemplate = (id: string, typeName: string, name: string) => ({
@@ -13,12 +22,259 @@ const sampleGraphTemplate = (id: string, typeName: string, name: string) => ({
   typeName,
   name,
   sourceSize: { width: 120, height: 80 },
-  clipboard: { nodes: [{}], edges: [], groups: [] },
+  clipboard: {
+    nodes: [
+      {
+        id: `${id}-node`,
+        kind: "static-rect",
+        name: "矩形",
+        position: { x: 0, y: 0 },
+        size: { width: 40, height: 24 },
+        params: {},
+        terminals: []
+      }
+    ],
+    edges: [],
+    groups: []
+  },
   createdAt: "2026-06-20T00:00:00.000Z",
   updatedAt: "2026-06-20T00:00:00.000Z"
 });
 
 describe("graph template library filtering", () => {
+  test("creates migration packages without mixing device and template libraries", () => {
+    const deviceLibrary = {
+      customDeviceTemplates: [
+        {
+          kind: "custom-pump",
+          label: "Custom Pump",
+          attributeLibrary: "交流设备",
+          size: { width: 80, height: 48 },
+          params: { component_type: "CustomPump" },
+          terminalType: "ac",
+          terminalCount: 2,
+          custom: true
+        }
+      ],
+      customAttributeLibraries: ["用户库"],
+      customComponentTypes: [{ name: "CustomPump", attributeLibraryName: "用户库" }],
+      deviceDefinitionOverrides: {
+        "ac-load": {
+          kind: "ac-load",
+          size: { width: 120, height: 60 }
+        }
+      },
+      customGraphTemplateTypes: ["组合模板"],
+      customGraphTemplates: [sampleGraphTemplate("template-1", "组合模板", "泵组合")]
+    };
+
+    const devicePackage = createLibraryPackage({
+      scope: "device-library",
+      exportedAt: "2026-06-28T00:00:00.000Z",
+      deviceLibrary: deviceLibrary as any
+    });
+    const templatePackage = createLibraryPackage({
+      scope: "template-library",
+      exportedAt: "2026-06-28T00:00:00.000Z",
+      deviceLibrary: deviceLibrary as any
+    });
+
+    expect(devicePackage).toMatchObject({
+      format: "graph-modeling-platform-library-package",
+      version: 1,
+      scope: "device-library"
+    });
+    expect(devicePackage.deviceLibrary?.customDeviceTemplates).toHaveLength(1);
+    expect(devicePackage.deviceLibrary?.customGraphTemplates).toEqual([]);
+    expect(devicePackage.deviceLibrary?.customGraphTemplateTypes).toEqual([]);
+
+    expect(templatePackage.deviceLibrary?.customDeviceTemplates).toEqual([]);
+    expect(templatePackage.deviceLibrary?.customAttributeLibraries).toEqual([]);
+    expect(templatePackage.deviceLibrary?.customComponentTypes).toEqual([]);
+    expect(templatePackage.deviceLibrary?.deviceDefinitionOverrides).toEqual({});
+    expect(templatePackage.deviceLibrary?.customGraphTemplateTypes).toEqual(["组合模板"]);
+    expect(templatePackage.deviceLibrary?.customGraphTemplates).toHaveLength(1);
+  });
+
+  test("normalizes imported library packages and rejects unrelated files", () => {
+    const measurementPackage = normalizeLibraryPackage({
+      format: "graph-modeling-platform-library-package",
+      version: 1,
+      scope: "measurement",
+      measurementConfig: {
+        measurementTypes: [{ id: "freq", name: "频率", shortLabel: "f", defaultUnit: "Hz" }],
+        deviceProfiles: []
+      }
+    });
+
+    expect(measurementPackage.measurementConfig?.measurementTypes[0]).toMatchObject({
+      id: "freq",
+      name: "频率",
+      defaultUnit: "Hz"
+    });
+    expect(() => normalizeLibraryPackage({ format: "wrong", version: 1, scope: "measurement" })).toThrow("不是有效的库导入文件");
+    expect(() => normalizeLibraryPackage({ format: "graph-modeling-platform-library-package", version: 99, scope: "measurement" })).toThrow("不支持的库文件版本");
+  });
+
+  test("keeps imported device and template scopes isolated from current library state", () => {
+    const current = {
+      customDeviceTemplates: [
+        {
+          kind: "old-device",
+          label: "Old",
+          attributeLibrary: "交流设备",
+          size: { width: 50, height: 30 },
+          params: { component_type: "OldDevice" },
+          terminalType: "ac",
+          terminalCount: 0,
+          custom: true
+        }
+      ],
+      customAttributeLibraries: ["旧库"],
+      customComponentTypes: [{ name: "OldDevice", attributeLibraryName: "旧库" }],
+      deviceDefinitionOverrides: { "old-device": { kind: "old-device", size: { width: 50, height: 30 } } },
+      customGraphTemplateTypes: ["旧模板"],
+      customGraphTemplates: [sampleGraphTemplate("old-template", "旧模板", "旧组合")]
+    };
+    const imported = {
+      customDeviceTemplates: [],
+      customAttributeLibraries: [],
+      customComponentTypes: [],
+      deviceDefinitionOverrides: {},
+      customGraphTemplateTypes: ["新模板"],
+      customGraphTemplates: [sampleGraphTemplate("new-template", "新模板", "新组合")]
+    };
+
+    const merged = deviceLibraryPayloadForPackageScope(current as any, imported as any, "template-library");
+
+    expect(merged.customDeviceTemplates).toHaveLength(1);
+    expect(merged.customAttributeLibraries).toEqual(["旧库"]);
+    expect(merged.customGraphTemplateTypes).toEqual(["新模板"]);
+    expect(merged.customGraphTemplates[0].id).toBe("new-template");
+  });
+
+  test("creates icon library packages with only user imported assets", () => {
+    const iconPackage = createLibraryPackage({
+      scope: "icon-library",
+      exportedAt: "2026-06-28T00:00:00.000Z",
+      iconLibrary: {
+        folders: [
+          { id: "root", name: "默认文件夹" },
+          { id: "builtin-shared-icons", name: "内置 SVG" },
+          { id: "custom-icons", name: "自定义图标" }
+        ],
+        assets: [
+          {
+            id: "builtin-shared-icon-001-ac",
+            name: "内置图标",
+            folderId: "builtin-shared-icons",
+            url: "data:image/svg+xml,%3Csvg%2F%3E",
+            dataUrl: "data:image/svg+xml,%3Csvg%2F%3E"
+          },
+          {
+            id: "img-custom",
+            name: "自定义图标",
+            folderId: "custom-icons",
+            mimeType: "image/png",
+            url: "/api/images/img-custom",
+            dataUrl: "data:image/png;base64,AA=="
+          }
+        ]
+      }
+    });
+
+    expect(iconPackage.iconLibrary?.folders.map((folder) => folder.id)).toEqual(["root", "custom-icons"]);
+    expect(iconPackage.iconLibrary?.assets.map((asset) => asset.id)).toEqual(["img-custom"]);
+    expect(iconPackage.iconLibrary?.assets[0].url).toBe("/api/images/img-custom");
+  });
+
+  test("creates measurement packages from the normalized platform measurement config", () => {
+    const measurementPackage = createLibraryPackage({
+      scope: "measurement",
+      exportedAt: "2026-06-28T00:00:00.000Z",
+      measurementConfig: DEFAULT_MEASUREMENT_CONFIG
+    });
+
+    expect(measurementPackage.measurementConfig?.measurementTypes.length).toBeGreaterThan(0);
+    expect(measurementPackage.deviceLibrary).toBeUndefined();
+    expect(measurementPackage.iconLibrary).toBeUndefined();
+  });
+
+  test("creates component library packages with devices measurements and icons but without templates", () => {
+    const componentPackage = createLibraryPackage({
+      scope: "component-library",
+      exportedAt: "2026-06-28T00:00:00.000Z",
+      measurementConfig: DEFAULT_MEASUREMENT_CONFIG,
+      deviceLibrary: {
+        customDeviceTemplates: [
+          {
+            kind: "custom-meter",
+            label: "Custom Meter",
+            attributeLibrary: "交流设备",
+            size: { width: 80, height: 48 },
+            params: { component_type: "CustomMeter" },
+            terminalType: "ac",
+            terminalCount: 2,
+            custom: true
+          }
+        ],
+        customAttributeLibraries: ["用户库"],
+        customComponentTypes: [{ name: "CustomMeter", attributeLibraryName: "用户库" }],
+        deviceDefinitionOverrides: { "custom-meter": { kind: "custom-meter", size: { width: 96, height: 48 } } },
+        customGraphTemplateTypes: ["不应导出的模板类型"],
+        customGraphTemplates: [sampleGraphTemplate("template-hidden", "不应导出的模板类型", "不应导出的模板")]
+      },
+      iconLibrary: {
+        folders: [{ id: "root", name: "默认文件夹" }],
+        assets: [
+          {
+            id: "img-component",
+            name: "元件图标",
+            folderId: "root",
+            url: "/api/images/img-component",
+            dataUrl: "data:image/png;base64,AA=="
+          }
+        ]
+      }
+    });
+
+    expect(componentPackage.scope).toBe("component-library");
+    expect(componentPackage.measurementConfig?.measurementTypes.length).toBeGreaterThan(0);
+    expect(componentPackage.iconLibrary?.assets.map((asset) => asset.id)).toEqual(["img-component"]);
+    expect(componentPackage.deviceLibrary?.customDeviceTemplates).toHaveLength(1);
+    expect(componentPackage.deviceLibrary?.deviceDefinitionOverrides["custom-meter"]).toMatchObject({ kind: "custom-meter" });
+    expect(componentPackage.deviceLibrary?.customGraphTemplateTypes).toEqual([]);
+    expect(componentPackage.deviceLibrary?.customGraphTemplates).toEqual([]);
+
+    const current = {
+      customDeviceTemplates: [],
+      customAttributeLibraries: [],
+      customComponentTypes: [],
+      deviceDefinitionOverrides: {},
+      customGraphTemplateTypes: ["保留模板类型"],
+      customGraphTemplates: [sampleGraphTemplate("template-kept", "保留模板类型", "保留模板")]
+    };
+    const merged = deviceLibraryPayloadForPackageScope(current as any, componentPackage.deviceLibrary as any, "component-library");
+
+    expect(merged.customDeviceTemplates).toHaveLength(1);
+    expect(merged.customGraphTemplateTypes).toEqual(["保留模板类型"]);
+    expect(merged.customGraphTemplates[0].id).toBe("template-kept");
+  });
+
+  test("includes the static graphic built-in library in selectable attribute libraries", () => {
+    expect(selectableAttributeLibraryList(["交流设备", "自定义库"], ["用户属性库"])).toEqual([
+      "静态图元",
+      "交流设备",
+      "直流设备",
+      "氢能设备",
+      "热能设备",
+      "用户属性库",
+      "自定义库"
+    ]);
+    expect(isBuiltInAttributeLibrary("静态图元")).toBe(true);
+    expect(defaultAttributeLibraryForComponentType("StaticButton")).toBe("静态图元");
+  });
+
   test("filters template groups by type name or template name", () => {
     const templates = [
       sampleGraphTemplate("source-template", "一次设备", "电源组合"),
@@ -67,6 +323,75 @@ describe("graph template library filtering", () => {
 
     expect(templateButtonMatch?.[0]).toContain("clearLibraryFlyoutCloseTimer()");
     expect(templateButtonMatch?.[0]).toContain("setHoveredGraphTemplateType(template.typeName)");
+  });
+
+  test("uses one library package import/export entry with direct component and template actions", () => {
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const projectFactorySource = readFileSync(new URL("./appExtracted/appProjectCanvasFactories.tsx", import.meta.url), "utf8");
+
+    expect(appSource).toContain("libraryPackageDialogOpen");
+    expect(appSource).toContain("confirmLibraryPackageDialog");
+    expect(appViewSource).toContain("library-package-dialog");
+    expect(appViewSource).toContain("导入/导出库");
+    expect(appSource).not.toContain("title=\"导出量测定义\"");
+    expect(appSource).not.toContain("title=\"导入量测定义\"");
+    expect(appSource).not.toContain("title=\"导出图标库\"");
+    expect(appSource).not.toContain("title=\"导入图标库\"");
+    const libraryPanelMatch = appSource.match(/const renderLibraryPanel = \(\) => \([\s\S]*?Object\.assign\(__appScope, \{ renderLibraryPanel \}\);/u);
+    expect(libraryPanelMatch?.[0]).toContain('title="导入元件库"');
+    expect(libraryPanelMatch?.[0]).toContain('title="导出元件库"');
+    expect(libraryPanelMatch?.[0]).toContain('openLibraryPackageImportFilePicker("component-library")');
+    expect(libraryPanelMatch?.[0]).toContain('exportLibraryPackage("component-library")');
+    const templatePanelMatch = appSource.match(/const renderTemplateLibraryPanel = \(\) => \([\s\S]*?Object\.assign\(__appScope, \{ renderTemplateLibraryPanel \}\);/u);
+    expect(templatePanelMatch?.[0]).toContain('title="导入模板库"');
+    expect(templatePanelMatch?.[0]).toContain('title="导出模板库"');
+    expect(templatePanelMatch?.[0]).toContain('openLibraryPackageImportFilePicker("template-library")');
+    expect(templatePanelMatch?.[0]).toContain('exportLibraryPackage("template-library")');
+    expect(appSource.match(/title="导入元件库"/gu)).toHaveLength(1);
+    expect(appSource.match(/title="导出元件库"/gu)).toHaveLength(1);
+    expect(appSource.match(/title="导入模板库"/gu)).toHaveLength(1);
+    expect(appSource.match(/title="导出模板库"/gu)).toHaveLength(1);
+    const measurementToolbarMatch = projectFactorySource.match(/className="measurement-config-toolbar"[\s\S]*?<\/div>/u);
+    expect(measurementToolbarMatch?.[0]).toContain("新增量测类型");
+    expect(measurementToolbarMatch?.[0]).not.toContain("exportLibraryPackage");
+    expect(measurementToolbarMatch?.[0]).not.toContain("openLibraryPackageImportFilePicker");
+    expect(measurementToolbarMatch?.[0]).not.toContain("<Download");
+    expect(measurementToolbarMatch?.[0]).not.toContain("<FileInput");
+  });
+
+  test("renders enum options as grouped rows in the parameter definition table", () => {
+    const editor = renderEnumValuesEditor(
+      {
+        id: "status",
+        cnName: "状态",
+        enName: "status",
+        valueType: "numberEnum",
+        typicalValue: "1",
+        enumOptions: [
+          { value: "1", label: "闭合" },
+          { value: "0", label: "断开" }
+        ]
+      } as any,
+      () => undefined,
+      true
+    );
+
+    expect(isValidElement(editor)).toBe(true);
+    const editorProps = (editor as ReactElement<{ className: string; children: ReactNode }>).props;
+    expect(editorProps.className).toContain("number-enum");
+    expect(editorProps.className).toContain("readonly");
+
+    const optionRows = Children.toArray(editorProps.children).filter(
+      (child): child is ReactElement<{ className: string; children: ReactNode }> =>
+        isValidElement(child) &&
+        (child as ReactElement<{ className: string }>).props.className === "custom-param-enum-row"
+    );
+    expect(optionRows).toHaveLength(2);
+    const firstRowChildren = Children.toArray(optionRows[0].props.children).filter(Boolean);
+    expect(firstRowChildren.every((child) => isValidElement(child))).toBe(true);
+    expect((firstRowChildren[0] as ReactElement<{ className: string }>).props.className).toBe("custom-param-enum-field");
+    expect((firstRowChildren[1] as ReactElement<{ className: string }>).props.className).toBe("custom-param-enum-field");
   });
 
   test("merges terminal anchors into the state icon editor base layer", () => {

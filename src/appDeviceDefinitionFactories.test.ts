@@ -110,6 +110,44 @@ describe("manual bend interaction helpers", () => {
     }
   });
 
+  test("computes state icon drawing smart alignment guides from terminal anchors", () => {
+    const moving = {
+      id: "moving",
+      x: 62,
+      y: 42,
+      width: 20,
+      height: 12
+    };
+    const computeSnap = createComputeStateIconDrawingSmartAlignmentSnap({
+      smartAlignmentEnabled: true,
+      stateIconDrawingDialog: {
+        target: { scope: "definition", rowId: "default" }
+      },
+      definitionVisualDraft: {
+        terminalCount: 2,
+        terminalTypes: ["ac", "ac"]
+      },
+      definitionVisualTerminalAnchors: [
+        { x: -0.5, y: -0.1 },
+        { x: -0.1, y: -0.5 }
+      ],
+      projectCustomDeviceTerminalAnchorToBoundary: (anchor: Point) => anchor
+    });
+
+    const result = computeSnap({
+      elements: [moving],
+      selectedIds: ["moving"],
+      startElements: [moving],
+      delta: { x: 39, y: 25 },
+      threshold: 3
+    });
+
+    expect(result.delta).toEqual({ x: 40, y: 26 });
+    expect(result.guides).toHaveLength(2);
+    expect(result.guides.find((guide) => guide.orientation === "vertical")?.position).toBe(102);
+    expect(result.guides.find((guide) => guide.orientation === "horizontal")?.position).toBe(68);
+  });
+
   test("selects state icon drawing elements intersecting a marquee rectangle", () => {
     const elements = [
       { id: "inside", x: 40, y: 40, width: 20, height: 20 },

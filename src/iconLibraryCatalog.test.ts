@@ -2,6 +2,8 @@ import { describe, expect, test } from "vitest";
 
 import {
   filterIconLibraryIcons,
+  fetchIconLibraryCatalog,
+  fetchIconLibraryManifest,
   flattenIconLibraryManifest,
   iconLibraryCategoriesForSelection,
   iconLibraryCategoryKey,
@@ -50,6 +52,21 @@ const manifest: IconLibraryManifest = {
       ]
     }
   ]
+};
+
+const htmlResponseFetcher = async () =>
+  new Response("<!doctype html><html><body>dev server fallback</body></html>", {
+    status: 200,
+    headers: { "content-type": "text/html; charset=utf-8" }
+  });
+
+const errorMessageFrom = async (action: () => Promise<unknown>) => {
+  try {
+    await action();
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  throw new Error("Expected action to throw.");
 };
 
 describe("icon library catalog utilities", () => {
@@ -149,5 +166,23 @@ describe("icon library catalog utilities", () => {
     expect(result.total).toBe(3);
     expect(result.visible).toHaveLength(2);
     expect(result.hasMore).toBe(true);
+  });
+
+  test("reports a clear error when the catalog endpoint returns HTML instead of JSON", async () => {
+    const message = await errorMessageFrom(() => fetchIconLibraryCatalog(htmlResponseFetcher as typeof fetch));
+
+    expect(message).toContain("读取分类图标库失败。");
+    expect(message).toContain("返回了 HTML 页面");
+    expect(message).toContain("/icon-library/catalog.json");
+    expect(message).not.toContain("Unexpected token");
+  });
+
+  test("reports a clear error when a manifest endpoint returns HTML instead of JSON", async () => {
+    const message = await errorMessageFrom(() => fetchIconLibraryManifest(catalog.libraries[0], htmlResponseFetcher as typeof fetch));
+
+    expect(message).toContain("读取“稻壳兼容”图标清单失败。");
+    expect(message).toContain("返回了 HTML 页面");
+    expect(message).toContain("/icon-library/docer-free-compatible/manifest.json");
+    expect(message).not.toContain("Unexpected token");
   });
 });

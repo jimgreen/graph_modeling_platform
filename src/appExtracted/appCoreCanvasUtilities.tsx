@@ -2104,7 +2104,7 @@ export const DEFAULT_ATTRIBUTE_LIBRARIES: AttributeLibrary[] = ["静态图元", 
 
 export const CUSTOM_ATTRIBUTE_LIBRARY_BASES: AttributeLibrary[] = ["交流设备", "直流设备", "氢能设备", "热能设备"];
 
-export const PROTECTED_ATTRIBUTE_LIBRARIES = new Set(CUSTOM_ATTRIBUTE_LIBRARY_BASES);
+export const PROTECTED_ATTRIBUTE_LIBRARIES = new Set(DEFAULT_ATTRIBUTE_LIBRARIES);
 
 export const DEVICE_TYPE_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/;
 

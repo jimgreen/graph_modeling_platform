@@ -194,6 +194,45 @@ describe("图片资源 /api/images & /api/image-folders", () => {
     const delRoot = await fetchJson("/api/image-folders/root", { method: "DELETE" });
     expect(delRoot.status).toBe(400);
   });
+
+  test("POST /api/image-library/import 批量恢复图标库并保留资源 ID", async () => {
+    const imported = await fetchJson("/api/image-library/import", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        folders: [
+          { id: "root", name: "默认文件夹" },
+          { id: "custom-icons", name: "自定义图标" }
+        ],
+        assets: [
+          {
+            id: "img-preserved-id",
+            name: "保留ID.png",
+            folderId: "custom-icons",
+            dataUrl: PNG_1X1
+          }
+        ]
+      })
+    });
+    expect(imported.status).toBe(200);
+    expect(imported.json).toMatchObject({ ok: true, importedCount: 1 });
+
+    const folders = await fetchJson("/api/image-folders");
+    expect(folders.json.some((folder) => folder.id === "custom-icons" && folder.name === "自定义图标")).toBe(true);
+
+    const list = await fetchJson("/api/images");
+    const preservedAsset = list.json.find((item) => item.id === "img-preserved-id");
+    expect(preservedAsset).toMatchObject({
+      id: "img-preserved-id",
+      name: "保留ID.png",
+      folderId: "custom-icons",
+      url: "/api/images/img-preserved-id"
+    });
+
+    const downloaded = await fetch(`${baseUrl}/api/images/img-preserved-id`);
+    expect(downloaded.status).toBe(200);
+    expect(downloaded.headers.get("content-type")).toContain("image/png");
+  });
 });
 
 // ============ 方案域 ============

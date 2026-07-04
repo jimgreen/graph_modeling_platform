@@ -3534,7 +3534,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
 
 export function createRenderMeasurementConfigDialog(__appScope: Record<string, any>) {
   return () => {
-  const { BufferedTextInput, DeferredColorInput, Save, addMeasurementType, button, closeMeasurementConfigDialog, deleteMeasurementType, deviceLibraryDialogLayouts, deviceLibraryDialogStyle, div, flushMeasurementConfigDialogDraftInputs, footer, h2, header, input, isBrowseMode, measurementConfig, measurementConfigDialogOpen, measurementConfigDialogRef, measurementConfigDraft, measurementConfigSaveStatus, option, p, saveMeasurementConfigDialog, section, select, span, startDeviceLibraryDialogDrag, startDeviceLibraryDialogResize, stopDeviceLibraryDialogEvent, table, tbody, td, th, thead, tr, updateMeasurementType } = __appScope;
+  const { BufferedTextInput, DeferredColorInput, Download, FileInput, Save, addMeasurementType, button, closeMeasurementConfigDialog, deleteMeasurementType, deviceLibraryDialogLayouts, deviceLibraryDialogStyle, div, exportLibraryPackage, flushMeasurementConfigDialogDraftInputs, footer, h2, header, input, isBrowseMode, measurementConfig, measurementConfigDialogOpen, measurementConfigDialogRef, measurementConfigDraft, measurementConfigSaveStatus, openLibraryPackageImportFilePicker, option, p, saveMeasurementConfigDialog, section, select, span, startDeviceLibraryDialogDrag, startDeviceLibraryDialogResize, stopDeviceLibraryDialogEvent, table, tbody, td, th, thead, tr, updateMeasurementType } = __appScope;
     if (!measurementConfigDialogOpen) {
       return null;
     }
@@ -3567,10 +3567,10 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
               <p>配置全平台统一的量测类型、单位、小数位和默认显示样式。</p>
             </div>
           </header>
-          <div className="measurement-config-panel">
-            <div className="measurement-config-toolbar">
-              <button type="button" onClick={addMeasurementType}>新增量测类型</button>
-            </div>
+            <div className="measurement-config-panel">
+              <div className="measurement-config-toolbar">
+                <button type="button" onClick={addMeasurementType}>新增量测类型</button>
+              </div>
             <div className="measurement-table-wrap">
               <table className="measurement-table">
                 <thead>

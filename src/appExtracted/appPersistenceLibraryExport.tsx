@@ -836,6 +836,220 @@ export async function saveBackendMeasurementConfigPayload(normalizedMeasurementC
   );
 }
 
+export const LIBRARY_PACKAGE_FORMAT = "graph-modeling-platform-library-package";
+export const LIBRARY_PACKAGE_VERSION = 1;
+export type LibraryPackageScope = "measurement" | "device-library" | "template-library" | "icon-library" | "component-library" | "all";
+export type IconLibraryPackageAsset = ImageAsset & { dataUrl: string };
+export type IconLibraryPersistencePayload = {
+  folders: ImageFolder[];
+  assets: IconLibraryPackageAsset[];
+};
+export type LibraryPackagePayload = {
+  format: typeof LIBRARY_PACKAGE_FORMAT;
+  version: typeof LIBRARY_PACKAGE_VERSION;
+  scope: LibraryPackageScope;
+  exportedAt: string;
+  measurementConfig?: PlatformMeasurementConfig;
+  deviceLibrary?: DeviceLibraryPersistencePayload;
+  iconLibrary?: IconLibraryPersistencePayload;
+};
+
+const emptyDeviceLibraryPersistencePayload = (): DeviceLibraryPersistencePayload => ({
+  customDeviceTemplates: [],
+  customAttributeLibraries: [],
+  customComponentTypes: [],
+  deviceDefinitionOverrides: {},
+  customGraphTemplateTypes: [],
+  customGraphTemplates: []
+});
+
+const libraryPackageIncludesScope = (packageScope: LibraryPackageScope, requestedScope: LibraryPackageScope) =>
+  packageScope === requestedScope ||
+  packageScope === "all" ||
+  (
+    packageScope === "component-library" &&
+    (requestedScope === "measurement" || requestedScope === "device-library" || requestedScope === "icon-library")
+  );
+
+const isBuiltInIconLibraryAsset = (asset: Pick<ImageAsset, "id" | "folderId">) =>
+  String(asset.folderId ?? "") === "builtin-shared-icons" || String(asset.id ?? "").startsWith("builtin-shared-icon-");
+
+const normalizeIconLibraryFolderId = (value: unknown, fallback = "root") => {
+  const id = String(value ?? "").trim();
+  return id || fallback;
+};
+
+const normalizeIconLibraryFolders = (value: unknown): ImageFolder[] => {
+  const source = Array.isArray(value) ? value : [];
+  const seen = new Set<string>();
+  const folders = source.flatMap((item) => {
+    const raw = item && typeof item === "object" ? item as Partial<ImageFolder> : {};
+    const id = normalizeIconLibraryFolderId(raw.id);
+    if (!id || id === "builtin-shared-icons" || seen.has(id)) {
+      return [];
+    }
+    seen.add(id);
+    return [{
+      id,
+      name: String(raw.name ?? (id === "root" ? "默认文件夹" : id)).trim() || (id === "root" ? "默认文件夹" : id),
+      createdAt: typeof raw.createdAt === "string" ? raw.createdAt : undefined,
+      imageCount: typeof raw.imageCount === "number" ? raw.imageCount : undefined
+    }];
+  });
+  if (!seen.has("root")) {
+    folders.unshift({ id: "root", name: "默认文件夹" });
+  }
+  return folders;
+};
+
+export function normalizeIconLibraryPersistencePayload(value: unknown): IconLibraryPersistencePayload {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value as Partial<IconLibraryPersistencePayload> : {};
+  const folders = normalizeIconLibraryFolders(source.folders);
+  const folderIds = new Set(folders.map((folder) => folder.id));
+  const seenAssets = new Set<string>();
+  const assets = (Array.isArray(source.assets) ? source.assets : []).flatMap((item) => {
+    const raw = item && typeof item === "object" ? item as Partial<IconLibraryPackageAsset> : {};
+    const id = String(raw.id ?? "").trim();
+    const dataUrl = String(raw.dataUrl ?? "").trim();
+    if (!id || !dataUrl || seenAssets.has(id) || isBuiltInIconLibraryAsset({ id, folderId: raw.folderId })) {
+      return [];
+    }
+    seenAssets.add(id);
+    const folderId = normalizeIconLibraryFolderId(raw.folderId);
+    return [{
+      id,
+      name: String(raw.name ?? raw.filename ?? id).trim() || id,
+      filename: typeof raw.filename === "string" ? raw.filename : undefined,
+      folderId: folderIds.has(folderId) ? folderId : "root",
+      mimeType: typeof raw.mimeType === "string" ? raw.mimeType : undefined,
+      size: typeof raw.size === "number" ? raw.size : undefined,
+      createdAt: typeof raw.createdAt === "string" ? raw.createdAt : undefined,
+      url: String(raw.url ?? `/api/images/${encodeURIComponent(id)}`).trim() || `/api/images/${encodeURIComponent(id)}`,
+      dataUrl
+    }];
+  });
+  return { folders, assets };
+}
+
+export function packageScopedDeviceLibraryPayload(
+  payload: Partial<DeviceLibraryPersistencePayload> | undefined,
+  scope: LibraryPackageScope
+): DeviceLibraryPersistencePayload {
+  const normalized = normalizeDeviceLibraryPersistencePayload(payload);
+  if (scope === "template-library") {
+    return {
+      ...emptyDeviceLibraryPersistencePayload(),
+      customGraphTemplateTypes: normalized.customGraphTemplateTypes,
+      customGraphTemplates: normalized.customGraphTemplates
+    };
+  }
+  if (scope === "device-library" || scope === "component-library") {
+    return {
+      ...normalized,
+      customGraphTemplateTypes: [],
+      customGraphTemplates: []
+    };
+  }
+  return normalized;
+}
+
+export function deviceLibraryPayloadForPackageScope(
+  current: Partial<DeviceLibraryPersistencePayload> | undefined,
+  imported: Partial<DeviceLibraryPersistencePayload> | undefined,
+  scope: LibraryPackageScope
+): DeviceLibraryPersistencePayload {
+  const normalizedCurrent = normalizeDeviceLibraryPersistencePayload(current);
+  const normalizedImported = normalizeDeviceLibraryPersistencePayload(imported);
+  if (scope === "template-library") {
+    return {
+      ...normalizedCurrent,
+      customGraphTemplateTypes: normalizedImported.customGraphTemplateTypes,
+      customGraphTemplates: normalizedImported.customGraphTemplates
+    };
+  }
+  if (scope === "device-library" || scope === "component-library") {
+    return {
+      ...normalizedCurrent,
+      customDeviceTemplates: normalizedImported.customDeviceTemplates,
+      customAttributeLibraries: normalizedImported.customAttributeLibraries,
+      customComponentTypes: normalizedImported.customComponentTypes,
+      deviceDefinitionOverrides: normalizedImported.deviceDefinitionOverrides
+    };
+  }
+  return normalizedImported;
+}
+
+export function createLibraryPackage(options: {
+  scope: LibraryPackageScope;
+  exportedAt?: string;
+  measurementConfig?: PlatformMeasurementConfig;
+  deviceLibrary?: Partial<DeviceLibraryPersistencePayload>;
+  iconLibrary?: Partial<IconLibraryPersistencePayload>;
+}): LibraryPackagePayload {
+  const scope = options.scope;
+  const payload: LibraryPackagePayload = {
+    format: LIBRARY_PACKAGE_FORMAT,
+    version: LIBRARY_PACKAGE_VERSION,
+    scope,
+    exportedAt: options.exportedAt ?? new Date().toISOString()
+  };
+  if (libraryPackageIncludesScope(scope, "measurement") && options.measurementConfig) {
+    payload.measurementConfig = normalizeMeasurementConfig(options.measurementConfig);
+  }
+  if ((libraryPackageIncludesScope(scope, "device-library") || libraryPackageIncludesScope(scope, "template-library")) && options.deviceLibrary) {
+    payload.deviceLibrary = scope === "all"
+      ? packageScopedDeviceLibraryPayload(options.deviceLibrary, "all")
+      : packageScopedDeviceLibraryPayload(options.deviceLibrary, scope);
+  }
+  if (libraryPackageIncludesScope(scope, "icon-library") && options.iconLibrary) {
+    payload.iconLibrary = normalizeIconLibraryPersistencePayload(options.iconLibrary);
+  }
+  return payload;
+}
+
+const normalizeLibraryPackageScope = (value: unknown): LibraryPackageScope | null => {
+  if (
+    value === "measurement" ||
+    value === "device-library" ||
+    value === "template-library" ||
+    value === "icon-library" ||
+    value === "component-library" ||
+    value === "all"
+  ) {
+    return value;
+  }
+  return null;
+};
+
+export function normalizeLibraryPackage(value: unknown): LibraryPackagePayload {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value as Partial<LibraryPackagePayload> : {};
+  if (source.format !== LIBRARY_PACKAGE_FORMAT) {
+    throw new Error("不是有效的库导入文件。");
+  }
+  if (source.version !== LIBRARY_PACKAGE_VERSION) {
+    throw new Error("不支持的库文件版本。");
+  }
+  const scope = normalizeLibraryPackageScope(source.scope);
+  if (!scope) {
+    throw new Error("库导入文件缺少有效的库类型。");
+  }
+  return createLibraryPackage({
+    scope,
+    exportedAt: typeof source.exportedAt === "string" ? source.exportedAt : new Date().toISOString(),
+    measurementConfig: source.measurementConfig,
+    deviceLibrary: source.deviceLibrary,
+    iconLibrary: source.iconLibrary
+  });
+}
+
+export async function importBackendImageLibraryPayload(payload: IconLibraryPersistencePayload): Promise<{ ok?: boolean; importedCount?: number; folders?: ImageFolder[]; assets?: ImageAsset[] }> {
+  return fetchBackendJson(
+    "/api/image-library/import",
+    "导入图标库到后台失败。",
+    backendJsonRequest("POST", JSON.stringify(normalizeIconLibraryPersistencePayload(payload)))
+  );
+}
+
 export function groupDeviceTemplatesByAttributeLibrary(templates: DeviceTemplate[]): Record<string, DeviceTemplate[]> {
   return templates.reduce<Record<string, DeviceTemplate[]>>((groups, item) => {
     const group = normalizeAttributeLibraryName(item.attributeLibrary);
@@ -977,6 +1191,20 @@ export function normalizeCustomAttributeLibraries(value: unknown, reservedGroups
       seen.add(key);
       return true;
     });
+}
+
+export function selectableAttributeLibraryList(
+  attributeLibraries: readonly AttributeLibrary[],
+  customAttributeLibraries: readonly AttributeLibrary[] = []
+): AttributeLibrary[] {
+  const normalized = [
+    ...DEFAULT_ATTRIBUTE_LIBRARIES,
+    ...customAttributeLibraries,
+    ...attributeLibraries
+  ]
+    .map((group) => normalizeAttributeLibraryName(String(group ?? "").trim()))
+    .filter(Boolean);
+  return Array.from(new Set(normalized));
 }
 
 export function normalizeComponentTypeName(name: string): string {
@@ -1304,31 +1532,45 @@ export const renderEnumValuesEditor = <T extends DeviceParameterDefinition & { i
       typicalValue: enumValueFromOptions(String(nextTypicalValue ?? ""), nextOptions) || enumValues[0] || ""
     } as Partial<T>);
   };
+  const className = [
+    "custom-param-enum-values",
+    enumValueType === "number" ? "number-enum with-label" : "string-enum",
+    disabled ? "readonly" : "editable"
+  ].join(" ");
   return (
-    <div className={`custom-param-enum-values ${enumValueType === "number" ? "with-label" : ""}`}>
+    <div className={className}>
+      <div className="custom-param-enum-heading" aria-hidden="true">
+        <span>取值</span>
+        {enumValueType === "number" && <span>含义</span>}
+        {!disabled && <span>操作</span>}
+      </div>
       {editorOptions.map((option, index) => (
         <div className="custom-param-enum-row" key={`${row.id}-${index}`}>
-          <BufferedTextInput
-            value={option.value}
-            disabled={disabled}
-            inputMode={enumValueType === "number" ? "decimal" : undefined}
-            onCommit={(value) => {
-              const nextOptions = editorOptions.map((item, itemIndex) => (itemIndex === index ? { ...item, value } : item));
-              const nextTypicalValue = row.typicalValue === option.value ? value : row.typicalValue;
-              updateValues(nextOptions, nextTypicalValue);
-            }}
-          />
-          {enumValueType === "number" && (
+          <div className="custom-param-enum-field">
             <BufferedTextInput
-              value={option.label ?? ""}
+              value={option.value}
               disabled={disabled}
-              placeholder="含义"
+              inputMode={enumValueType === "number" ? "decimal" : undefined}
               onCommit={(value) => {
-                const nextOptions = editorOptions.map((item, itemIndex) => (itemIndex === index ? { ...item, label: value } : item));
-                const nextTypicalValue = row.typicalValue === option.label ? option.value : row.typicalValue;
+                const nextOptions = editorOptions.map((item, itemIndex) => (itemIndex === index ? { ...item, value } : item));
+                const nextTypicalValue = row.typicalValue === option.value ? value : row.typicalValue;
                 updateValues(nextOptions, nextTypicalValue);
               }}
             />
+          </div>
+          {enumValueType === "number" && (
+            <div className="custom-param-enum-field">
+              <BufferedTextInput
+                value={option.label ?? ""}
+                disabled={disabled}
+                placeholder="含义"
+                onCommit={(value) => {
+                  const nextOptions = editorOptions.map((item, itemIndex) => (itemIndex === index ? { ...item, label: value } : item));
+                  const nextTypicalValue = row.typicalValue === option.label ? option.value : row.typicalValue;
+                  updateValues(nextOptions, nextTypicalValue);
+                }}
+              />
+            </div>
           )}
           {!disabled && (
             <button
@@ -1349,9 +1591,7 @@ export const renderEnumValuesEditor = <T extends DeviceParameterDefinition & { i
         </div>
       ))}
       {!disabled && (
-        <div className="custom-param-enum-row custom-param-enum-add-row">
-          <span className="custom-param-enum-spacer" aria-hidden="true" />
-          {enumValueType === "number" && <span className="custom-param-enum-spacer" aria-hidden="true" />}
+        <div className="custom-param-enum-add-row">
           <button
             type="button"
             className="custom-param-enum-add"

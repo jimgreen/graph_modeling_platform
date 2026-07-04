@@ -2278,6 +2278,118 @@ async function writeImageAssetFile(item, bytes) {
   await writeFile(join(imageDataDir, item.filename), bytes);
 }
 
+function safeImageLibraryId(value) {
+  const id = String(value || "").trim();
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(id) ? id : "";
+}
+
+function normalizeImportedImageLibraryFolders(value) {
+  const seen = new Set();
+  const folders = [];
+  for (const folder of Array.isArray(value) ? value : []) {
+    const id = safeImageLibraryId(folder?.id) || "root";
+    if (id === "builtin-shared-icons" || seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    folders.push({
+      id,
+      name: safeName(folder?.name || (id === "root" ? "默认文件夹" : id)),
+      createdAt: typeof folder?.createdAt === "string" ? folder.createdAt : new Date().toISOString()
+    });
+  }
+  if (!seen.has("root")) {
+    folders.unshift(rootImageFolder());
+  }
+  return folders;
+}
+
+function normalizeImportedImageLibraryAssets(value, folderIds) {
+  const seen = new Set();
+  const assets = [];
+  for (const asset of Array.isArray(value) ? value : []) {
+    const id = safeImageLibraryId(asset?.id);
+    if (!id || id.startsWith("builtin-shared-icon-") || seen.has(id) || typeof asset?.dataUrl !== "string") {
+      continue;
+    }
+    seen.add(id);
+    const folderId = safeImageLibraryId(asset.folderId);
+    assets.push({
+      id,
+      name: safeName(asset.name || asset.filename || id),
+      folderId: folderIds.has(folderId) ? folderId : "root",
+      dataUrl: asset.dataUrl,
+      createdAt: typeof asset.createdAt === "string" ? asset.createdAt : new Date().toISOString()
+    });
+  }
+  return assets;
+}
+
+async function handleImportImageLibrary(request, response) {
+  const payload = await readJsonBody(request, maxIconLibraryImportBodyBytes, "图标库导入文件过大，最大支持 128MB。");
+  await ensureStore();
+  const importedFolders = normalizeImportedImageLibraryFolders(payload.folders);
+  const folderIds = new Set(importedFolders.map((folder) => folder.id));
+  const importedAssets = normalizeImportedImageLibraryAssets(payload.assets, folderIds);
+  if (importedAssets.length === 0) {
+    sendError(response, 400, "导入文件中没有可恢复的图标资源。");
+    return;
+  }
+
+  const currentFolders = await readImageFolders();
+  const folderById = new Map(currentFolders.map((folder) => [folder.id, folder]));
+  for (const folder of importedFolders) {
+    folderById.set(folder.id, folder.id === "root" ? { ...rootImageFolder(), ...folder, id: "root" } : folder);
+  }
+  await writeImageFolders(Array.from(folderById.values()));
+
+  const manifest = await readManifest();
+  const manifestById = new Map(manifest.map((item) => [item.id, item]));
+  const savedItems = [];
+  let skippedCount = 0;
+  for (const asset of importedAssets) {
+    let parsed;
+    try {
+      parsed = parseDataUrl(asset.dataUrl);
+    } catch {
+      skippedCount += 1;
+      continue;
+    }
+    const item = {
+      id: asset.id,
+      name: asset.name,
+      folderId: asset.folderId,
+      mimeType: parsed.mimeType,
+      size: parsed.bytes.length,
+      filename: `${asset.id}${mimeExt[parsed.mimeType]}`,
+      createdAt: asset.createdAt
+    };
+    const previous = manifestById.get(item.id);
+    if (previous?.filename && previous.filename !== item.filename) {
+      await rm(join(imageDataDir, previous.filename), { force: true });
+    }
+    await writeImageAssetFile(item, parsed.bytes);
+    manifestById.set(item.id, item);
+    savedItems.push(item);
+  }
+  if (savedItems.length === 0) {
+    sendError(response, 400, "导入文件中的图标数据格式无效。");
+    return;
+  }
+  const savedIds = new Set(savedItems.map((item) => item.id));
+  await writeManifest([
+    ...savedItems,
+    ...Array.from(manifestById.values()).filter((item) => !savedIds.has(item.id))
+  ]);
+  sendJson(response, 200, {
+    ok: true,
+    importedCount: savedItems.length,
+    skippedCount,
+    folders: Array.from(folderById.values()),
+    assets: savedItems.map(publicAsset)
+  });
+}
+
 function iconLibraryEntryMimeType(entryName) {
   const extension = extname(entryName).toLowerCase();
   return imageMimeByExtension[extension] || "";
@@ -2946,6 +3058,9 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
     }],
     ["POST /api/icon-library/import", async ({ request, response }) => {
       await handleImportIconLibrary(request, response);
+    }],
+    ["POST /api/image-library/import", async ({ request, response }) => {
+      await handleImportImageLibrary(request, response);
     }],
     ["GET /api/image-folders", async ({ request, response }) => {
       const folders = await readImageFolders();

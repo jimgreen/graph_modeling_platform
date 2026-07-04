@@ -55,10 +55,12 @@ export type StateIconDrawingElement = {
   rotation: number;
   strokeWidth: number;
   strokeColor: string;
+  strokeColorEdited?: boolean;
   fillColor: string;
   textColor: string;
   text: string;
   strokeStyle?: "solid" | "dashed" | "dotted";
+  strokeStyleEdited?: boolean;
   fontFamily?: string;
   fontSize?: number;
   fontWeight?: string;
@@ -91,6 +93,8 @@ type StateIconSvgStyleOverride = {
   stroke: string;
   strokeWidth: number;
   dashArray: string;
+  strokeColorEdited?: boolean;
+  strokeStyleEdited?: boolean;
 };
 
 export type DeviceDefinitionStateDraftRow = DeviceStateDefinition & {
@@ -512,10 +516,32 @@ function stateIconDrawingFrameMarkup(frame: Partial<StateIconDrawingFrame> | und
 }
 
 function stateIconSvgStyleOverrideCss(override: StateIconSvgStyleOverride) {
-  const dashRule = override.dashArray
-    ? `stroke-dasharray:${escapeXml(override.dashArray)} !important;`
-    : "stroke-dasharray:none !important;";
-  return `path,line,polyline,polygon,rect,circle,ellipse{stroke:${escapeXml(override.stroke)} !important;stroke-width:${formatSvgNumber(Math.max(0, override.strokeWidth))} !important;${dashRule}vector-effect:non-scaling-stroke !important;}`;
+  const rules: string[] = [];
+  const overrideStrokeWidth = override.strokeWidth > 0;
+  const overrideStrokeColor = overrideStrokeWidth || override.strokeColorEdited === true;
+  const overrideStrokeStyle = overrideStrokeWidth || override.strokeStyleEdited === true;
+  if (overrideStrokeColor) {
+    rules.push(`stroke:${escapeXml(override.stroke)} !important;`);
+  }
+  if (overrideStrokeWidth) {
+    rules.push(`stroke-width:${formatSvgNumber(Math.max(0, override.strokeWidth))} !important;`);
+  }
+  if (overrideStrokeStyle) {
+    rules.push(override.dashArray
+      ? `stroke-dasharray:${escapeXml(override.dashArray)} !important;`
+      : "stroke-dasharray:none !important;");
+  }
+  if (overrideStrokeWidth) {
+    rules.push("vector-effect:non-scaling-stroke !important;");
+  }
+  return rules.length > 0
+    ? `path,line,polyline,polygon,rect,circle,ellipse{${rules.join("")}}`
+    : "";
+}
+
+function stateIconSvgStyleOverrideMarkup(override?: StateIconSvgStyleOverride) {
+  const css = override ? stateIconSvgStyleOverrideCss(override) : "";
+  return css ? `<style>${css}</style>` : "";
 }
 
 function isGeneratedZeroStrokeSvgStyleOverride(css: string) {
@@ -751,7 +777,10 @@ function firstSvgMarkupInGeneratedGroup(markup: string) {
     try {
       const document = new DOMParser().parseFromString(`<svg xmlns="http://www.w3.org/2000/svg">${markup}</svg>`, "image/svg+xml");
       if (!document.querySelector("parsererror")) {
-        const nestedSvg = document.querySelector("g > svg");
+        const rootGroup = Array.from(document.documentElement.children).find((child) => child.tagName.toLowerCase() === "g");
+        const nestedSvg = rootGroup
+          ? Array.from(rootGroup.children).find((child) => child.tagName.toLowerCase() === "svg")
+          : null;
         if (nestedSvg?.outerHTML) {
           return nestedSvg.outerHTML;
         }
@@ -760,7 +789,43 @@ function firstSvgMarkupInGeneratedGroup(markup: string) {
       // Fall through to the markup scan used in non-DOM runtimes.
     }
   }
-  return /<svg\b[\s\S]*<\/svg>/i.exec(markup)?.[0] ?? "";
+  const rootGroupOpen = /^<g\b[^>]*>/i.exec(markup);
+  if (rootGroupOpen) {
+    const tagPattern = /<\/?(?:g|svg)\b[^>]*>/gi;
+    tagPattern.lastIndex = rootGroupOpen[0].length;
+    let groupDepth = 1;
+    let match: RegExpExecArray | null;
+    while ((match = tagPattern.exec(markup))) {
+      const tag = match[0];
+      const isClosing = /^<\//u.test(tag);
+      const tagName = /^<\/?\s*([a-z]+)/iu.exec(tag)?.[1]?.toLowerCase() ?? "";
+      if (tagName === "g") {
+        groupDepth += isClosing ? -1 : 1;
+        if (groupDepth <= 0) {
+          break;
+        }
+        continue;
+      }
+      if (tagName !== "svg" || isClosing || groupDepth !== 1) {
+        continue;
+      }
+      const svgStart = match.index;
+      let svgDepth = 1;
+      while ((match = tagPattern.exec(markup))) {
+        const svgTag = match[0];
+        const svgTagName = /^<\/?\s*([a-z]+)/iu.exec(svgTag)?.[1]?.toLowerCase() ?? "";
+        if (svgTagName !== "svg") {
+          continue;
+        }
+        svgDepth += /^<\//u.test(svgTag) ? -1 : 1;
+        if (svgDepth === 0) {
+          return markup.slice(svgStart, tagPattern.lastIndex);
+        }
+      }
+      break;
+    }
+  }
+  return /<svg\b[\s\S]*?<\/svg>/i.exec(markup)?.[0] ?? "";
 }
 
 function generatedStateIconRootOpenMarkup(source: string) {
@@ -839,16 +904,23 @@ export function createStateIconDrawingElementFromGeneratedGroupMarkup(
   if (!/^<g\b/i.test(trimmed)) {
     return null;
   }
+  const groupOpen = /^<g\b[^>]*>/i.exec(trimmed)?.[0] ?? trimmed;
   const transform = parseStateIconDrawingGeneratedTransform(trimmed);
   if (!transform) {
     return null;
   }
-  const terminalOwnership = stateIconDrawingTerminalOwnershipFromMarkup(trimmed);
+  const terminalOwnership = stateIconDrawingTerminalOwnershipFromMarkup(groupOpen);
   const svgMarkup = firstSvgMarkupInGeneratedGroup(trimmed);
   if (svgMarkup) {
     const svgOpen = /<svg\b([^>]*)>/i.exec(svgMarkup)?.[1] ?? "";
-    const width = Math.max(1, readSvgMarkupNumber(trimmed, "data-state-icon-layer-width", readSvgMarkupNumber(svgOpen, "width", 120)));
-    const height = Math.max(1, readSvgMarkupNumber(trimmed, "data-state-icon-layer-height", readSvgMarkupNumber(svgOpen, "height", 88)));
+    const templateWidth = readSvgMarkupNumber(groupOpen, "data-state-icon-template-width", Number.NaN);
+    const templateHeight = readSvgMarkupNumber(groupOpen, "data-state-icon-template-height", Number.NaN);
+    const width = Math.max(1, Number.isFinite(templateWidth) && templateWidth > 0
+      ? templateWidth
+      : readSvgMarkupNumber(groupOpen, "data-state-icon-layer-width", readSvgMarkupNumber(svgOpen, "width", 120)));
+    const height = Math.max(1, Number.isFinite(templateHeight) && templateHeight > 0
+      ? templateHeight
+      : readSvgMarkupNumber(groupOpen, "data-state-icon-layer-height", readSvgMarkupNumber(svgOpen, "height", 88)));
     return {
       ...createImportedStateIconElement(
         "imported-svg",
@@ -1129,12 +1201,14 @@ export function stateIconSvgReactAttributes(element: Element, override?: StateIc
                                   ? "textDecoration"
                                   : name === "vector-effect"
                                     ? "vectorEffect"
-                                    : name === "stop-color"
-                                      ? "stopColor"
-                                      : name === "stop-opacity"
-                                        ? "stopOpacity"
-                                        : name === "fill-opacity"
-                                          ? "fillOpacity"
+                                    : name === "pointer-events"
+                                      ? "pointerEvents"
+                                      : name === "stop-color"
+                                        ? "stopColor"
+                                        : name === "stop-opacity"
+                                          ? "stopOpacity"
+                                          : name === "fill-opacity"
+                                            ? "fillOpacity"
                                             : name === "stroke-opacity"
                                               ? "strokeOpacity"
                                               : name === "marker-start"
@@ -1153,21 +1227,33 @@ export function stateIconSvgReactAttributes(element: Element, override?: StateIc
                                                             ? "refX"
                                                             : name === "refy"
                                                               ? "refY"
-                                            : name;
+                                                              : name;
     props[propName] = attribute.value;
   }
-  if (override && override.strokeWidth > 0 && stateIconSvgElementAcceptsStyleOverride(element.tagName)) {
+  if (override && stateIconSvgElementAcceptsStyleOverride(element.tagName)) {
+    const overrideStrokeWidth = override.strokeWidth > 0;
+    const overrideStrokeColor = overrideStrokeWidth || override.strokeColorEdited === true;
+    const overrideStrokeStyle = overrideStrokeWidth || override.strokeStyleEdited === true;
+    if (!overrideStrokeColor && !overrideStrokeWidth && !overrideStrokeStyle) {
+      return props;
+    }
     const style = typeof props.style === "object" && props.style
       ? { ...(props.style as CSSProperties) }
       : {};
-    delete style.stroke;
-    delete style.strokeWidth;
-    delete style.strokeDasharray;
+    if (overrideStrokeColor) {
+      delete style.stroke;
+      props.stroke = override.stroke;
+    }
+    if (overrideStrokeWidth) {
+      delete style.strokeWidth;
+      props.strokeWidth = formatSvgNumber(Math.max(0, override.strokeWidth));
+      props.vectorEffect = "non-scaling-stroke";
+    }
+    if (overrideStrokeStyle) {
+      delete style.strokeDasharray;
+      props.strokeDasharray = override.dashArray || "none";
+    }
     props.style = style;
-    props.stroke = override.stroke;
-    props.strokeWidth = formatSvgNumber(Math.max(0, override.strokeWidth));
-    props.strokeDasharray = override.dashArray || "none";
-    props.vectorEffect = "non-scaling-stroke";
   }
   return props;
 }
@@ -1320,16 +1406,16 @@ export function stateIconDrawingSvgElementMarkup(
   if (!parsed || !parsed.body) {
     const fallback = stateIconSvgFallbackParts(source);
     if (fallback?.body) {
-      const styleOverride = override && override.strokeWidth > 0 ? `<style>${stateIconSvgStyleOverrideCss(override)}</style>` : "";
-      return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" viewBox="${escapeXml(fallback.viewBox)}" preserveAspectRatio="xMidYMid meet">${styleOverride}${fallback.body}</svg>`;
+      const styleOverride = stateIconSvgStyleOverrideMarkup(override);
+      return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" viewBox="${escapeXml(fallback.viewBox)}" preserveAspectRatio="xMidYMid meet">${fallback.body}${styleOverride}</svg>`;
     }
     const href = svgSourceToDataUrl(source);
     return href
       ? `<image href="${escapeXml(href)}" x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" preserveAspectRatio="xMidYMid meet"/>`
       : "";
   }
-  const styleOverride = override && override.strokeWidth > 0 ? `<style>${stateIconSvgStyleOverrideCss(override)}</style>` : "";
-  return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" viewBox="${escapeXml(stateIconSvgVisibleViewBox(source))}" preserveAspectRatio="xMidYMid meet">${styleOverride}${parsed.body}</svg>`;
+  const styleOverride = stateIconSvgStyleOverrideMarkup(override);
+  return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" viewBox="${escapeXml(stateIconSvgVisibleViewBox(source))}" preserveAspectRatio="xMidYMid meet">${parsed.body}${styleOverride}</svg>`;
 }
 
 export function stateIconDrawingElementMarkup(
@@ -1355,7 +1441,9 @@ export function stateIconDrawingElementMarkup(
       body = stateIconDrawingSvgElementMarkup(element.svgSource ?? "", -hw, -hh, w, h, {
         stroke,
         strokeWidth: Math.max(0, element.strokeWidth),
-        dashArray
+        dashArray,
+        strokeColorEdited: element.strokeColorEdited === true,
+        strokeStyleEdited: element.strokeStyleEdited === true
       });
       break;
     }
@@ -1558,7 +1646,13 @@ export function stateIconDrawingElementPreviewNode(
         const href = svgSourceToDataUrl(element.svgSource);
         return href ? <image href={href} x={-hw} y={-hh} width={w} height={h} preserveAspectRatio="xMidYMid meet" /> : null;
       }
-      const override = { stroke, strokeWidth: sw, dashArray };
+      const override = {
+        stroke,
+        strokeWidth: sw,
+        dashArray,
+        strokeColorEdited: element.strokeColorEdited === true,
+        strokeStyleEdited: element.strokeStyleEdited === true
+      };
       const nodes = stateIconSvgSourceToReactNodes(element.svgSource ?? "", override);
       return (
         <svg

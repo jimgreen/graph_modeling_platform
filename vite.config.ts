@@ -38,6 +38,23 @@ const frontendManualChunks = (id: string) => {
   return undefined;
 };
 
+const backendProxyTarget = `http://127.0.0.1:${process.env.IMAGE_SERVER_PORT ?? "5174"}`;
+const backendProxy = {
+  "/api": {
+    target: backendProxyTarget,
+    changeOrigin: true
+  },
+  "/icon-library": {
+    target: backendProxyTarget,
+    changeOrigin: true
+  },
+  "/ws": {
+    target: backendProxyTarget,
+    ws: true,
+    changeOrigin: true
+  }
+};
+
 export default defineConfig({
   plugins: [react()],
   build: {
@@ -51,21 +68,10 @@ export default defineConfig({
     watch: {
       ignored: ["**/data/**"]
     },
-    proxy: {
-      "/api": {
-        target: `http://127.0.0.1:${process.env.IMAGE_SERVER_PORT ?? "5174"}`,
-        changeOrigin: true
-      },
-      "/icon-library": {
-        target: `http://127.0.0.1:${process.env.IMAGE_SERVER_PORT ?? "5174"}`,
-        changeOrigin: true
-      },
-      "/ws": {
-        target: `http://127.0.0.1:${process.env.IMAGE_SERVER_PORT ?? "5174"}`,
-        ws: true,
-        changeOrigin: true
-      }
-    }
+    proxy: backendProxy
+  },
+  preview: {
+    proxy: backendProxy
   },
   test: {
     environment: "node",

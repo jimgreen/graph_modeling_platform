@@ -27,7 +27,8 @@ import {
   stateIconDrawingInlineCanPersistDraft,
   stateIconDrawingInlineNeedsDraftReload,
   stateIconDrawingToImage,
-  upsertDefaultStateDraftRow
+  upsertDefaultStateDraftRow,
+  visibleStateIconColor
 } from "./stateIconDrawing";
 import {
   DEVICE_LIBRARY,
@@ -152,6 +153,32 @@ describe("default device state draft rows", () => {
     const children = node.props?.children;
     const childList = Array.isArray(children) ? children : [children];
     return ownMatches.concat(childList.flatMap((child) => findElementsByClassName(child, className)));
+  };
+
+  const findElementsByType = (node: any, type: string): any[] => {
+    if (!node || typeof node !== "object") {
+      return [];
+    }
+    const ownMatches = node.type === type ? [node] : [];
+    const children = node.props?.children;
+    const childList = Array.isArray(children) ? children : [children];
+    return ownMatches.concat(childList.flatMap((child) => findElementsByType(child, type)));
+  };
+
+  const nodeTextContent = (node: any): string => {
+    if (node === null || node === undefined || typeof node === "boolean") {
+      return "";
+    }
+    if (typeof node === "string" || typeof node === "number") {
+      return String(node);
+    }
+    if (Array.isArray(node)) {
+      return node.map(nodeTextContent).join("");
+    }
+    if (typeof node === "object") {
+      return nodeTextContent(node.props?.children);
+    }
+    return "";
   };
 
   const pointFromTranslate = (transform: string) => {
@@ -368,6 +395,113 @@ describe("default device state draft rows", () => {
     expect(dialog.drawingDraft).toBeUndefined();
   });
 
+  test("hides text properties for selected non-text drawing elements", () => {
+    const row = createStateDraftRow({ value: "0", name: "状态0" });
+    const rectangle = {
+      ...createStateIconDrawingElement("rectangle"),
+      id: "selected-rectangle"
+    };
+    const renderPager = createRenderStateVisualPager({
+      DEFAULT_STATE_PAGE_ID,
+      DEVICE_LIBRARY: [],
+      BufferedTextInput: "input",
+      DeferredColorInput: "input",
+      FONT_FAMILY_OPTIONS: [],
+      FONT_FAMILY_OPTION_LABELS: {},
+      STATE_ICON_LINE_CAP_OPTIONS: [],
+      TERMINAL_TYPE_LIBRARY_LABELS: {},
+      activeStateDraftRow,
+      addStateIconDrawingElement: () => undefined,
+      appendNonDefaultStateDraftRow,
+      colorPalette: {},
+      createNodeFromTemplate,
+      createStateDraftRowFromDefaultVisual,
+      createStateIconDrawingElement,
+      customDeviceDefaultStateVisualDraft: () => ({}),
+      customDeviceDraft: { stateDefinitions: [row], terminalCount: 0 },
+      customDeviceTerminalAnchorDragIndex: null,
+      customDeviceTerminalAnchorValue: (value: number) => value,
+      customDeviceTerminalAnchors: [],
+      customDraftTerminalTypes: [],
+      defaultStateDraftRow,
+      definitionDefaultStateVisualDraft: () => ({}),
+      definitionTerminalAnchorDragIndex: null,
+      definitionVisualDraft: { terminalCount: 0 },
+      definitionVisualTerminalAnchors: [],
+      definitionVisualTerminalTypes: [],
+      deleteSelectedStateIconDrawingElements: () => undefined,
+      deleteStateIconDrawingElement: () => undefined,
+      dragStateIconDrawingSelection: () => undefined,
+      formatSvgNumber: (value: number) => String(Math.round(value * 1000) / 1000),
+      getNodeScaleX,
+      getNodeScaleY,
+      isDefaultStatePageId,
+      nextNonDefaultStateIndex,
+      nonDefaultStateDraftRows,
+      projectCustomDeviceTerminalAnchorToBoundary,
+      resolveTemplateComponentType,
+      selectedDefinitionTemplate: null,
+      setCustomDeviceDraft: () => undefined,
+      setCustomDeviceTerminalAnchorDragIndex: () => undefined,
+      setDefinitionStateDraftRows: () => undefined,
+      setDefinitionTerminalAnchorDragIndex: () => undefined,
+      setImagePickerCategoryFilter: () => undefined,
+      setImagePickerSearchQuery: () => undefined,
+      setImagePickerSourceFilter: () => undefined,
+      setImageTarget: () => undefined,
+      setStateIconDrawingContextMenu: () => undefined,
+      setStateIconDrawingDialog: () => undefined,
+      setStateIconDrawingImageVisibleFrames: () => undefined,
+      setStateIconDrawingSvgVisibleFrames: () => undefined,
+      stateDraftRowId: () => "state-copy",
+      stateIconDrawingClipboardRef: { current: [] },
+      stateIconDrawingContextMenu: null,
+      stateIconDrawingDialog: {
+        target: { scope: "definition", rowId: row.id },
+        elements: [rectangle],
+        selectedElementId: rectangle.id,
+        selectedElementIds: [rectangle.id],
+        sidePanelTab: "selected"
+      },
+      stateIconDrawingElementPreviewImage: () => ({ href: "", x: 0, y: 0, width: 1, height: 1 }),
+      stateIconDrawingElementPreviewNode: () => null,
+      stateIconDrawingFrameRect: (hasTerminals: boolean) =>
+        hasTerminals ? { x: 30, y: 20, width: 180, height: 120, rx: 8 } : { x: 0, y: 0, width: 240, height: 160, rx: 10 },
+      stateIconDrawingHistoryRef: { current: [] },
+      stateIconDrawingImageVisibleFrames: {},
+      stateIconDrawingKeyDown: () => undefined,
+      stateIconDrawingPointer: () => ({ x: 0, y: 0 }),
+      stateIconDrawingPreviewNeedsDirectElementRender: () => false,
+      stateIconDrawingSelection: () => undefined,
+      stateIconDrawingSvgRef: { current: null },
+      stateIconDrawingSvgVisibleFrames: {},
+      stateIconDrawingToImage: () => "",
+      stateVisualShapeLabel: (kind: string) => kind,
+      startStateIconDrawingDrag: () => undefined,
+      stopStateIconDrawingDrag: () => undefined,
+      terminalColor: () => "#2563eb",
+      terminalRenderLocalPoint,
+      terminalStubSegment,
+      terminalStubStrokeWidth,
+      updateCustomDeviceTerminalAnchor: () => undefined,
+      updateDefinitionTerminalAnchor: () => undefined,
+      updateStateIconDrawingElement: () => undefined,
+      visibleStateIconColor
+    });
+
+    const tree = renderPager([row], row.id, () => undefined, {
+      update: () => undefined,
+      add: () => undefined,
+      remove: () => undefined,
+      drawingScope: "definition"
+    } as any);
+    const labels = findElementsByType(tree, "th").map(nodeTextContent);
+
+    expect(labels).toContain("线色");
+    expect(labels).not.toContain("文本颜色");
+    expect(labels).not.toContain("文字");
+  });
+
   test("can inline backend image references when composing a state icon image", () => {
     const imageElement = createImportedStateIconElement("image", "/api/images/icon-a", "后台图标");
 
@@ -505,6 +639,142 @@ describe("default device state draft rows", () => {
     expect(buttonElement.svgSource).toContain("<rect");
     expect(buttonElement.width).toBe(staticButtonTemplate.size.width);
     expect(buttonElement.height).toBe(staticButtonTemplate.size.height);
+  });
+
+  test("converts static templates with the real app scope renderer", () => {
+    const staticButtonTemplate = DEVICE_LIBRARY.find((item) => item.kind === "static-button");
+    expect(staticButtonTemplate).toBeTruthy();
+    if (!staticButtonTemplate) {
+      return;
+    }
+
+    const buttonElement = createStateIconDrawingElementFromStaticTemplate(APP_STATIC_SCOPE, staticButtonTemplate);
+
+    expect(buttonElement.kind).toBe("imported-svg");
+    expect(buttonElement.svgSource).toContain("<svg");
+    expect(buttonElement.width).toBe(staticButtonTemplate.size.width);
+    expect(buttonElement.height).toBe(staticButtonTemplate.size.height);
+  });
+
+  test("keeps static template imported SVG size after saving and reopening", () => {
+    const staticButtonTemplate = DEVICE_LIBRARY.find((item) => item.kind === "static-button");
+    expect(staticButtonTemplate).toBeTruthy();
+    if (!staticButtonTemplate) {
+      return;
+    }
+    const element = {
+      ...createStateIconDrawingElementFromStaticTemplate(APP_STATIC_SCOPE, staticButtonTemplate),
+      x: 72,
+      y: 64
+    };
+    const imageSource = decodeURIComponent(stateIconDrawingToImage([element]).split(",")[1] ?? "");
+
+    const restored = createEditableStateIconElementsFromSvgSource(imageSource, "静态按钮");
+
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toMatchObject({
+      kind: "imported-svg",
+      x: 72,
+      y: 64,
+      width: element.width,
+      height: element.height
+    });
+    expect(restored[0].width).toBe(staticButtonTemplate.size.width);
+    expect(restored[0].height).toBe(staticButtonTemplate.size.height);
+  });
+
+  test("keeps resized static note size after saving and reopening", () => {
+    const staticNoteTemplate = DEVICE_LIBRARY.find((item) => item.kind === "static-note");
+    expect(staticNoteTemplate).toBeTruthy();
+    if (!staticNoteTemplate) {
+      return;
+    }
+    const element = {
+      ...createStateIconDrawingElementFromStaticTemplate(APP_STATIC_SCOPE, staticNoteTemplate),
+      x: 82,
+      y: 70,
+      width: 68,
+      height: 44
+    };
+    const imageSource = decodeURIComponent(stateIconDrawingToImage([element]).split(",")[1] ?? "");
+
+    const restored = createEditableStateIconElementsFromSvgSource(imageSource, "便签");
+
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toMatchObject({
+      kind: "imported-svg",
+      x: 82,
+      y: 70,
+      width: 68,
+      height: 44
+    });
+  });
+
+  test("does not restore persisted terminal connector layer as an editable static element", () => {
+    const staticNoteTemplate = DEVICE_LIBRARY.find((item) => item.kind === "static-note");
+    expect(staticNoteTemplate).toBeTruthy();
+    if (!staticNoteTemplate) {
+      return;
+    }
+    const element = {
+      ...createStateIconDrawingElementFromStaticTemplate(APP_STATIC_SCOPE, staticNoteTemplate),
+      x: 82,
+      y: 70,
+      width: 68,
+      height: 44
+    };
+    const savedImage = stateIconDrawingToImage([element], { frameHasTerminals: true });
+    const withConnectors = customDeviceImageWithTerminalConnectors(savedImage, ["ac"], [{ x: -0.5, y: 0 }]);
+    const restored = createEditableStateIconElementsFromSvgSource(svgSourceFromDataUrl(withConnectors), "便签");
+
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toMatchObject({
+      kind: "imported-svg",
+      x: 82,
+      y: 70,
+      width: 68,
+      height: 44
+    });
+  });
+
+  test("restores generated static note defaults at the template size when reopened", () => {
+    const staticNoteTemplate = DEVICE_LIBRARY.find((item) => item.kind === "static-note");
+    expect(staticNoteTemplate).toBeTruthy();
+    if (!staticNoteTemplate) {
+      return;
+    }
+    const defaultVisual = createDefinitionDefaultStateVisualDraft({
+      ...APP_STATIC_SCOPE,
+      definitionVisualDraft: {
+        backgroundImage: "",
+        backgroundImageAssetId: "",
+        backgroundImageCleared: "",
+        size: { ...staticNoteTemplate.size },
+        terminalCount: 1,
+        terminalTypes: ["ac"],
+        terminalLabels: ["交流端1"],
+        terminalAnchors: [{ x: -0.5, y: 0 }]
+      },
+      selectedDefinitionTemplate: staticNoteTemplate
+    })();
+    const row = createStateDraftRow({
+      value: DEFAULT_STATE_VALUE,
+      name: DEFAULT_STATE_NAME,
+      image: defaultVisual.image ?? "",
+      imageAssetId: defaultVisual.imageAssetId ?? "",
+      imageCleared: defaultVisual.imageCleared ?? ""
+    });
+
+    const restored = createStateIconDrawingInitialElements(row, {});
+
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toMatchObject({
+      kind: "imported-svg",
+      x: 120,
+      y: 80,
+      width: staticNoteTemplate.size.width,
+      height: staticNoteTemplate.size.height
+    });
   });
 
   test("uses the selected template glyph instead of the generated placeholder for an edited component default state", () => {
@@ -1133,6 +1403,122 @@ describe("default device state draft rows", () => {
     expect(Math.max(...anchorPoints.map((point) => point.y))).toBeCloseTo(160, 5);
   });
 
+  test("renders dynamic terminal anchor guides from the dragged outer anchor", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "two-port-heat-load-vertical");
+    expect(template).toBeTruthy();
+    if (!template) {
+      return;
+    }
+    const draft = createCustomDeviceDraftFromTemplate(template);
+    const renderPager = createRenderStateVisualPager({
+      DEFAULT_STATE_PAGE_ID,
+      DEVICE_LIBRARY: [],
+      BufferedTextInput: "input",
+      DeferredColorInput: "input",
+      FONT_FAMILY_OPTIONS: [],
+      FONT_FAMILY_OPTION_LABELS: {},
+      STATE_ICON_LINE_CAP_OPTIONS: [],
+      TERMINAL_TYPE_LIBRARY_LABELS: {},
+      activeStateDraftRow,
+      addStateIconDrawingElement: () => undefined,
+      appendNonDefaultStateDraftRow,
+      colorPalette: {},
+      createNodeFromTemplate,
+      createStateDraftRowFromDefaultVisual,
+      createStateIconDrawingElement,
+      customDeviceDefaultStateVisualDraft: () => ({}),
+      customDeviceDraft: draft,
+      customDeviceTerminalAnchorDragIndex: 0,
+      customDeviceTerminalAnchorValue: (value: number) => value,
+      customDeviceTerminalAnchors: draft.terminalAnchors,
+      customDraftTerminalTypes: draft.terminalTypes,
+      defaultStateDraftRow,
+      definitionDefaultStateVisualDraft: () => ({}),
+      definitionTerminalAnchorDragIndex: null,
+      definitionVisualDraft: null,
+      definitionVisualTerminalAnchors: [],
+      definitionVisualTerminalTypes: [],
+      deleteSelectedStateIconDrawingElements: () => undefined,
+      deleteStateIconDrawingElement: () => undefined,
+      dragStateIconDrawingSelection: () => undefined,
+      formatSvgNumber: (value: number) => String(Math.round(value * 1000) / 1000),
+      getNodeScaleX,
+      getNodeScaleY,
+      isDefaultStatePageId,
+      nextNonDefaultStateIndex,
+      nonDefaultStateDraftRows,
+      projectCustomDeviceTerminalAnchorToBoundary,
+      resolveTemplateComponentType,
+      selectedDefinitionTemplate: null,
+      setCustomDeviceDraft: () => undefined,
+      setCustomDeviceTerminalAnchorDragIndex: () => undefined,
+      setDefinitionStateDraftRows: () => undefined,
+      setDefinitionTerminalAnchorDragIndex: () => undefined,
+      setImagePickerCategoryFilter: () => undefined,
+      setImagePickerSearchQuery: () => undefined,
+      setImagePickerSourceFilter: () => undefined,
+      setImageTarget: () => undefined,
+      setStateIconDrawingContextMenu: () => undefined,
+      setStateIconDrawingDialog: () => undefined,
+      setStateIconDrawingImageVisibleFrames: () => undefined,
+      setStateIconDrawingSvgVisibleFrames: () => undefined,
+      stateDraftRowId: () => "state-copy",
+      stateIconDrawingClipboardRef: { current: [] },
+      stateIconDrawingContextMenu: null,
+      stateIconDrawingDialog: {
+        target: { scope: "custom", rowId: DEFAULT_STATE_PAGE_ID },
+        elements: [],
+        selectedElementId: "",
+        selectedElementIds: []
+      },
+      stateIconDrawingElementPreviewImage: () => null,
+      stateIconDrawingElementPreviewNode: () => null,
+      stateIconDrawingFrameRect: (hasTerminals: boolean) =>
+        hasTerminals ? { x: 30, y: 20, width: 180, height: 120, rx: 8 } : { x: 0, y: 0, width: 240, height: 160, rx: 10 },
+      stateIconDrawingHistoryRef: { current: [] },
+      stateIconDrawingImageVisibleFrames: {},
+      stateIconDrawingKeyDown: () => undefined,
+      stateIconDrawingPointer: () => ({ x: 0, y: 0 }),
+      stateIconDrawingPreviewNeedsDirectElementRender: () => false,
+      stateIconDrawingSvgRef: { current: null },
+      stateIconDrawingSvgVisibleFrames: {},
+      stateIconDrawingToImage: () => "",
+      stateVisualShapeLabel: (kind: string) => kind,
+      startStateIconDrawingDrag: () => undefined,
+      stopStateIconDrawingDrag: () => undefined,
+      terminalColor: () => "#2563eb",
+      terminalRenderLocalPoint,
+      terminalStubSegment,
+      terminalStubStrokeWidth,
+      updateCustomDeviceTerminalAnchor: () => undefined,
+      updateDefinitionTerminalAnchor: () => undefined,
+      updateStateIconDrawingElement: () => undefined,
+      visibleStateIconColor: () => "#2563eb"
+    });
+
+    const tree = renderPager(draft.stateDefinitions, DEFAULT_STATE_PAGE_ID, () => undefined, {
+      update: () => undefined,
+      add: () => undefined,
+      remove: () => undefined,
+      drawingScope: "custom",
+      terminalGeometryTemplate: template
+    } as any);
+
+    const geometryLayers = findElementsByClassName(tree, "state-icon-terminal-canvas-geometry-layer");
+    expect(geometryLayers).toHaveLength(1);
+    const guideLayers = findElementsByClassName(geometryLayers[0], "state-icon-terminal-dynamic-guide-layer");
+    expect(guideLayers).toHaveLength(1);
+
+    const activeVerticalGuides = findElementsByClassName(guideLayers[0], "state-icon-terminal-anchor-guide-vertical");
+    const activeHorizontalGuides = findElementsByClassName(guideLayers[0], "state-icon-terminal-anchor-guide-horizontal");
+    expect(activeVerticalGuides.length).toBeGreaterThanOrEqual(1);
+    expect(activeHorizontalGuides.length).toBeGreaterThanOrEqual(1);
+    expect(Number(activeVerticalGuides[0].props.x1)).toBeCloseTo(120, 5);
+    expect(Number(activeVerticalGuides[0].props.x2)).toBeCloseTo(120, 5);
+    expect(Number(activeHorizontalGuides[0].props.y1)).toBeCloseTo(0, 5);
+    expect(Number(activeHorizontalGuides[0].props.y2)).toBeCloseTo(0, 5);
+  });
+
   test("selecting a component template immediately replaces the edited device draft", () => {
     const staticTextTemplate = DEVICE_LIBRARY.find((item) => item.kind === "static-text");
     const hydrogenCompressorTemplate = DEVICE_LIBRARY.find((item) => item.kind === "hydrogen-compressor");
@@ -1584,6 +1970,40 @@ describe("default device state draft rows", () => {
     expect(imageSource).toContain("stroke-dasharray:9 5.4 !important");
   });
 
+  test("applies edited stroke color to imported SVG layers without forcing stroke width", () => {
+    const importedElement = {
+      ...createImportedStateIconElement(
+        "imported-svg",
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80"><path d="M 10 10 H 90" stroke="#000000" stroke-width="4" fill="none"/></svg>',
+        "线段"
+      ),
+      strokeColor: "#ef4444",
+      strokeColorEdited: true
+    };
+
+    const imageSource = decodeURIComponent(stateIconDrawingToImage([importedElement]).split(",")[1] ?? "");
+
+    expect(imageSource).toContain("stroke:#ef4444 !important");
+    expect(imageSource).toContain('stroke-width="4"');
+    expect(imageSource).not.toContain("stroke-width:0 !important");
+  });
+
+  test("applies edited stroke color after restored imported SVG style overrides", () => {
+    const importedElement = {
+      ...createImportedStateIconElement(
+        "imported-svg",
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80"><style>path,line,polyline,polygon,rect,circle,ellipse{stroke:#000000 !important;stroke-width:4 !important;}</style><path d="M 10 10 H 90" stroke="#000000" stroke-width="4" fill="none"/></svg>',
+        "线段"
+      ),
+      strokeColor: "#ef4444",
+      strokeColorEdited: true
+    };
+
+    const imageSource = decodeURIComponent(stateIconDrawingToImage([importedElement]).split(",")[1] ?? "");
+
+    expect(imageSource.indexOf("stroke:#ef4444 !important")).toBeGreaterThan(imageSource.indexOf("stroke:#000000 !important"));
+  });
+
   test("preserves imported SVG stroke widths when no edited stroke width is set", () => {
     const importedElement = createImportedStateIconElement(
       "imported-svg",
@@ -1630,6 +2050,71 @@ describe("default device state draft rows", () => {
     } as any);
 
     expect(props.stroke).toBe("#000000");
+    expect(props.strokeWidth).toBe("4");
+    expect(props.fill).toBe("none");
+    expect(props.vectorEffect).toBeUndefined();
+  });
+
+  test("maps pointer-events attributes for imported SVG direct preview rendering", () => {
+    const pathElement = {
+      tagName: "path",
+      attributes: [
+        { name: "d", value: "M 10 10 H 90" },
+        { name: "pointer-events", value: "none" }
+      ]
+    } as any;
+
+    const props = stateIconSvgReactAttributes(pathElement);
+
+    expect(props.pointerEvents).toBe("none");
+    expect(props["pointer-events"]).toBeUndefined();
+  });
+
+  test("maps pointer-events attributes on imported SVG groups and lines", () => {
+    const groupElement = {
+      tagName: "g",
+      attributes: [
+        { name: "pointer-events", value: "none" }
+      ]
+    } as any;
+    const lineElement = {
+      tagName: "line",
+      attributes: [
+        { name: "x1", value: "0" },
+        { name: "y1", value: "0" },
+        { name: "x2", value: "10" },
+        { name: "y2", value: "10" },
+        { name: "pointer-events", value: "none" }
+      ]
+    } as any;
+    const groupProps = stateIconSvgReactAttributes(groupElement);
+    const lineProps = stateIconSvgReactAttributes(lineElement);
+
+    expect(groupProps.pointerEvents).toBe("none");
+    expect(groupProps["pointer-events"]).toBeUndefined();
+    expect(lineProps.pointerEvents).toBe("none");
+    expect(lineProps["pointer-events"]).toBeUndefined();
+  });
+
+  test("applies edited stroke color in direct preview rendering while preserving imported SVG stroke width", () => {
+    const pathElement = {
+      tagName: "path",
+      attributes: [
+        { name: "d", value: "M 10 10 H 90" },
+        { name: "stroke", value: "#000000" },
+        { name: "stroke-width", value: "4" },
+        { name: "fill", value: "none" }
+      ]
+    } as any;
+
+    const props = stateIconSvgReactAttributes(pathElement, {
+      stroke: "#ef4444",
+      strokeWidth: 0,
+      dashArray: "",
+      strokeColorEdited: true
+    } as any);
+
+    expect(props.stroke).toBe("#ef4444");
     expect(props.strokeWidth).toBe("4");
     expect(props.fill).toBe("none");
     expect(props.vectorEffect).toBeUndefined();

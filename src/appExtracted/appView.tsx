@@ -304,6 +304,10 @@ export function renderAppView(__appScope: Record<string, any>) {
               <button className={leftPanelTab === "templates" ? "active" : ""} onClick={() => setLeftPanelTab("templates")} role="tab" aria-selected={leftPanelTab === "templates"}>
                 模板库
               </button>
+              <button type="button" className="library-transfer-open-button" onClick={() => openLibraryPackageDialog?.("all")} title="导入/导出库" aria-label="导入/导出库">
+                <FileJson size={14}/>
+                <span>导入/导出</span>
+              </button>
             </>)}
         </div>
         <div className="left-panel-content">
@@ -511,6 +515,7 @@ export function renderAppView(__appScope: Record<string, any>) {
             <input ref={stateIconDrawingImportInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseStateIconDrawingImport}/>
             <input ref={modelImportInputRef} type="file" accept=".json,application/json" hidden onChange={importModelFile}/>
             <input ref={schemeImportInputRef} type="file" accept=".zip,application/zip,.json,application/json" hidden onChange={importSchemeFile}/>
+            <input ref={__appScope.libraryPackageImportInputRef} type="file" accept=".json,application/json" hidden onChange={__appScope.importLibraryPackageFile}/>
             <button onClick={exportSvg} disabled={!canExportCurrentModel} title={canExportCurrentModel ? "导出 SVG 图形文件" : "请先保存当前模型后再导出图形文件"} aria-label="导出图形文件">
               <Download size={16}/>
             </button>
@@ -1560,6 +1565,61 @@ export function renderAppView(__appScope: Record<string, any>) {
           </div>
         ) : null;
       })()}
+      {libraryPackageDialogOpen && (
+        <div className="image-picker-backdrop library-package-backdrop" onPointerDown={closeLibraryPackageDialog}>
+          <section className="library-package-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="library-package-title">
+            <div className="image-picker-title">
+              <div>
+                <h2 id="library-package-title">导入/导出库</h2>
+              </div>
+              <button type="button" onClick={closeLibraryPackageDialog}>关闭</button>
+            </div>
+            <div className="library-package-mode-toggle" role="radiogroup" aria-label="选择导入或导出">
+              {[
+                ["export", "导出", Download],
+                ["import", "导入", FileInput]
+              ].map(([mode, label, Icon]) => (
+                <label key={mode} className={libraryPackageDialogMode === mode ? "active" : ""}>
+                  <input
+                    type="radio"
+                    name="library-package-mode"
+                    value={mode}
+                    checked={libraryPackageDialogMode === mode}
+                    onChange={() => setLibraryPackageDialogMode?.(mode)}
+                  />
+                  <Icon size={15}/>
+                  <span>{label}</span>
+                </label>
+              ))}
+            </div>
+            <div className="library-package-scope-grid" role="radiogroup" aria-label="选择库类型">
+              {(libraryPackageDialogScopeOptions ?? []).map((option: any) => (
+                <label key={option.scope} className={libraryPackageDialogScope === option.scope ? "active" : ""}>
+                  <input
+                    type="radio"
+                    name="library-package-scope"
+                    value={option.scope}
+                    checked={libraryPackageDialogScope === option.scope}
+                    onChange={() => setLibraryPackageDialogScope?.(option.scope)}
+                  />
+                  <span>{option.label}</span>
+                </label>
+              ))}
+            </div>
+            <div className="library-package-dialog-actions">
+              <button type="button" onClick={closeLibraryPackageDialog}>取消</button>
+              <button
+                type="button"
+                className="primary"
+                disabled={libraryPackageDialogMode === "import" && isBrowseMode}
+                onClick={() => void confirmLibraryPackageDialog?.()}
+              >
+                {libraryPackageDialogMode === "import" ? "导入" : "导出"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {renderMeasurementConfigDialog()}
       {renderMeasurementEditorDialog()}
       {pendingRecordPasteConflict && (<div className="image-picker-backdrop" onPointerDown={() => resolveRecordPasteConflict("cancel")}>
