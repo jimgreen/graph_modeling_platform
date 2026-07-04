@@ -1809,17 +1809,37 @@ export function readLocalDeviceLibraryPersistencePayload(): DeviceLibraryPersist
   };
 }
 
-export function writeLocalDeviceLibraryPersistencePayload(normalizedDeviceLibrary: DeviceLibraryPersistencePayload): void {
+// 缓存 IndexedDB 存储模块的动态导入
+const deviceLibraryStoragePromise = import("../lib/deviceLibraryStorage");
+
+/**
+ * 降级写入 localStorage（当 IndexedDB 失败时调用）
+ */
+function fallbackToLocalStorage(data: DeviceLibraryPersistencePayload): void {
   try {
-    window.localStorage.setItem(CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customDeviceTemplates));
-    window.localStorage.setItem(CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customAttributeLibraries));
-    window.localStorage.setItem(CUSTOM_COMPONENT_TYPES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customComponentTypes));
-    window.localStorage.setItem(DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.deviceDefinitionOverrides));
-    window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customGraphTemplateTypes));
-    window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customGraphTemplates));
+    window.localStorage.setItem(CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, JSON.stringify(data.customDeviceTemplates));
+    window.localStorage.setItem(CUSTOM_ATTRIBUTE_LIBRARIES_STORAGE_KEY, JSON.stringify(data.customAttributeLibraries));
+    window.localStorage.setItem(CUSTOM_COMPONENT_TYPES_STORAGE_KEY, JSON.stringify(data.customComponentTypes));
+    window.localStorage.setItem(DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, JSON.stringify(data.deviceDefinitionOverrides));
+    window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, JSON.stringify(data.customGraphTemplateTypes));
+    window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, JSON.stringify(data.customGraphTemplates));
   } catch {
-    // 浏览器缓存不可写时不阻断当前编辑，后台同步仍会继续尝试。
+    // 浏览器缓存不可写时不阻断当前编辑
   }
+}
+
+export function writeLocalDeviceLibraryPersistencePayload(normalizedDeviceLibrary: DeviceLibraryPersistencePayload): void {
+  // 阶段 5：只写 IndexedDB，失败时降级到 localStorage
+  deviceLibraryStoragePromise.then(({ saveDeviceTemplates, saveGraphTemplates, saveOverrides }) => {
+    return Promise.all([
+      saveDeviceTemplates(normalizedDeviceLibrary.customDeviceTemplates),
+      saveGraphTemplates(normalizedDeviceLibrary.customGraphTemplates),
+      saveOverrides(normalizedDeviceLibrary.deviceDefinitionOverrides)
+    ]);
+  }).catch((error) => {
+    console.warn("[IndexedDB] 写入失败，降级到 localStorage:", error);
+    fallbackToLocalStorage(normalizedDeviceLibrary);
+  });
 }
 
 export function readMeasurementConfig(): PlatformMeasurementConfig {

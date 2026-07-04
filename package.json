@@ -17,6 +17,7 @@
     "@vitejs/plugin-react": "^5.0.0",
     "@xyflow/react": "^12.10.2",
     "adm-zip": "^0.5.17",
+    "idb": "^8.0.3",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -30,6 +31,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/ws": "^8.18.1",
+    "fake-indexeddb": "^6.2.5",
     "vitest": "^3.0.0"
   }
 }

@@ -577,6 +577,26 @@ const initialLayeredProject = useMemo(() => normalizeProjectLayers({
 Object.assign(__appScope, { initialLayeredProject });
 const initialIndexedNodes = useMemo(createAppHookCallback2(__appScope), [initialCanvasBounds, initialDraft?.deviceIndexCounters, initialLayeredProject.nodes]);
 const initialDeviceLibrary = useMemo(() => readLocalDeviceLibraryPersistencePayload(), []); Object.assign(__appScope, { initialDeviceLibrary });
+
+// IndexedDB 迁移：应用启动时自动执行 localStorage → IndexedDB 迁移
+useEffect(() => {
+  import("./lib/deviceLibraryMigration").then(async ({ migrateFromLocalStorage, getMigrationStatus }) => {
+    const status = await getMigrationStatus();
+    if (status?.completed) return;
+
+    console.log("[IndexedDB] 开始迁移图元库数据...");
+    const result = await migrateFromLocalStorage();
+
+    if (result.success) {
+      console.log(`[IndexedDB] 迁移完成:`, result.migrated, `耗时 ${result.duration}ms`);
+    } else {
+      console.warn(`[IndexedDB] 迁移完成但有错误:`, result.errors);
+    }
+  }).catch((error) => {
+    console.warn("[IndexedDB] 迁移失败:", error);
+  });
+}, []);
+
 const svgRef = useRef<SVGSVGElement | null>(null); Object.assign(__appScope, { svgRef });
 const imageInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { imageInputRef });
 const imageArchiveInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { imageArchiveInputRef });
