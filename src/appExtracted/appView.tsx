@@ -2366,7 +2366,7 @@ export function renderAppView(__appScope: Record<string, any>) {
               <div className="custom-device-editor-panel">
             <div className="custom-device-form-grid">
               <label className="custom-category-library-field">
-                <span>类别库类型</span>
+                <span>类别库</span>
                 <div className="custom-category-library-select-row single-control">
                   <select className={sourceSelectClassName(isBuiltInCategoryLibrary(customDeviceDraft.categoryLibraryName))} value={customDeviceDraft.categoryLibraryName} onChange={(event) => selectCustomCategoryLibrary(event.target.value)}>
                     {selectableCategoryLibraries.map((group) => (<option key={group} value={group} className={categoryLibraryOptionClass(group)} title={isBuiltInCategoryLibrary(group) ? "系统内置类别库，无法删除" : "用户自定义类别库，可以删除"}>
