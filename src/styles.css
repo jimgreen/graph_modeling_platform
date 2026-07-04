@@ -9697,6 +9697,104 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   background: transparent;
 }
 
+/* dialog-grid-table: device-definition tables use the cell grid as the visual boundary. */
+.device-definition-dialog .measurement-table,
+.device-definition-dialog .custom-param-table,
+.custom-device-dialog .measurement-table,
+.custom-device-dialog .custom-param-table {
+  border-collapse: collapse;
+  border-top: 1px solid #d5dde8;
+  border-left: 1px solid #d5dde8;
+}
+
+.device-definition-dialog .measurement-table th,
+.device-definition-dialog .measurement-table td,
+.device-definition-dialog .custom-param-table th,
+.device-definition-dialog .custom-param-table td,
+.custom-device-dialog .measurement-table th,
+.custom-device-dialog .measurement-table td,
+.custom-device-dialog .custom-param-table th,
+.custom-device-dialog .custom-param-table td {
+  border-right: 1px solid #d5dde8;
+  border-bottom: 1px solid #d5dde8;
+}
+
+.device-definition-dialog .measurement-table th,
+.device-definition-dialog .custom-param-table th,
+.custom-device-dialog .measurement-table th,
+.custom-device-dialog .custom-param-table th {
+  border-bottom-color: #c4cfdd;
+  background: #f8fafc;
+}
+
+.device-definition-dialog .measurement-table tbody tr:hover td,
+.device-definition-dialog .custom-param-table tbody tr:hover td,
+.custom-device-dialog .measurement-table tbody tr:hover td,
+.custom-device-dialog .custom-param-table tbody tr:hover td {
+  background: #f8fafc;
+}
+
+.device-definition-dialog .measurement-table td:has(> input),
+.device-definition-dialog .measurement-table td:has(> select),
+.device-definition-dialog .custom-param-table td:has(> input),
+.device-definition-dialog .custom-param-table td:has(> select),
+.custom-device-dialog .measurement-table td:has(> input),
+.custom-device-dialog .measurement-table td:has(> select),
+.custom-device-dialog .custom-param-table td:has(> input),
+.custom-device-dialog .custom-param-table td:has(> select) {
+  padding: 0;
+}
+
+.device-definition-dialog .measurement-table input,
+.device-definition-dialog .measurement-table select,
+.device-definition-dialog .custom-param-table input,
+.device-definition-dialog .custom-param-table select,
+.custom-device-dialog .measurement-table input,
+.custom-device-dialog .measurement-table select,
+.custom-device-dialog .custom-param-table input,
+.custom-device-dialog .custom-param-table select {
+  display: block;
+  width: 100%;
+  min-height: 32px;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.device-definition-dialog .measurement-table td:focus-within,
+.device-definition-dialog .custom-param-table td:focus-within,
+.custom-device-dialog .measurement-table td:focus-within,
+.custom-device-dialog .custom-param-table td:focus-within {
+  position: relative;
+  z-index: 1;
+  background: #eff6ff;
+  box-shadow: inset 0 0 0 1px #60a5fa;
+}
+
+.device-definition-dialog .measurement-table input:hover:not(:disabled),
+.device-definition-dialog .measurement-table select:hover:not(:disabled),
+.device-definition-dialog .custom-param-table input:hover:not(:disabled),
+.device-definition-dialog .custom-param-table select:hover:not(:disabled),
+.custom-device-dialog .measurement-table input:hover:not(:disabled),
+.custom-device-dialog .measurement-table select:hover:not(:disabled),
+.custom-device-dialog .custom-param-table input:hover:not(:disabled),
+.custom-device-dialog .custom-param-table select:hover:not(:disabled),
+.device-definition-dialog .measurement-table input:focus-visible,
+.device-definition-dialog .measurement-table select:focus-visible,
+.device-definition-dialog .custom-param-table input:focus-visible,
+.device-definition-dialog .custom-param-table select:focus-visible,
+.custom-device-dialog .measurement-table input:focus-visible,
+.custom-device-dialog .measurement-table select:focus-visible,
+.custom-device-dialog .custom-param-table input:focus-visible,
+.custom-device-dialog .custom-param-table select:focus-visible {
+  border: 0;
+  background: transparent;
+  outline: none;
+  box-shadow: none;
+}
+
 .measurement-profile-device-select {
   display: grid;
   grid-template-columns: 68px minmax(0, 1fr);

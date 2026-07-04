@@ -6,6 +6,7 @@ import {
   createRouteSegmentPointerDistance,
   createStateIconDrawingKeyDown,
   createStartStateIconDrawingDrag,
+  deviceParameterDefinitionsComplianceMessage,
   formatStateIconDrawingNumber,
   imageLibraryFileMatchesImportKind,
   imageLibraryImportKindForInput,
@@ -17,6 +18,28 @@ import { createSetEdgeManualPoints } from "./appExtracted/appProjectCanvasFactor
 import { Point } from "./model";
 
 describe("manual bend interaction helpers", () => {
+  test("validates parameter definition names and default value types", () => {
+    const message = deviceParameterDefinitionsComplianceMessage([
+      { cnName: "额定功率", enName: "ratedPower", valueType: "integer", typicalValue: "12.5" },
+      { cnName: "额定功率2", enName: "ratedPower", valueType: "float", typicalValue: "abc" },
+      { cnName: "", enName: "", valueType: "string", typicalValue: "" },
+      {
+        cnName: "状态",
+        enName: "status",
+        valueType: "numberEnum",
+        typicalValue: "运行",
+        enumOptions: [{ value: "1", label: "运行" }]
+      }
+    ] as any);
+
+    expect(message).toContain("属性第 1 行：典型取值必须是整数。");
+    expect(message).toContain("属性第 2 行：英文名称 ratedPower 与第 1 行重复。");
+    expect(message).toContain("属性第 2 行：典型取值必须是数字。");
+    expect(message).toContain("属性第 3 行：中文名称不能为空。");
+    expect(message).toContain("属性第 3 行：英文名称不能为空。");
+    expect(message).toContain("属性第 4 行：典型取值必须是数字枚举值。");
+  });
+
   test("separates external image imports from document image and icon imports", () => {
     expect(imageLibraryImportKindForInput({ dataset: { imageImportKind: "image" } } as any)).toBe("image");
     expect(imageLibraryImportKindForInput({ dataset: { imageImportKind: "archive" } } as any)).toBe("archive");

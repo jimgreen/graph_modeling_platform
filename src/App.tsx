@@ -4572,7 +4572,8 @@ const customDeviceMeasurementTarget: DeviceDefinitionMeasurementPanelTarget = {
       (selectedCustomComponentTemplate ? deviceDefinitionKeyForTemplate(selectedCustomComponentTemplate) : ""),
     label: customDeviceDraft.componentName.trim() || selectedCustomComponentTemplate?.label || customDeviceDraft.componentType || "未命名元件",
     terminalCount: Math.max(0, customDeviceDraft.terminalCount),
-    terminalLabels: customDeviceDraft.terminalLabels
+    terminalLabels: customDeviceDraft.terminalLabels,
+    parameterDefinitions: [...customDraftDefaultParams, ...customDeviceDraft.params]
   };
 Object.assign(__appScope, { customDeviceMeasurementTarget });
 const customIconStatePageId = customDeviceStatePageId;

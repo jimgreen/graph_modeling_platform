@@ -1,11 +1,143 @@
 import { readFileSync } from "node:fs";
+import { Children, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { describe, expect, test, vi } from "vitest";
 
-import { createBeginMeasurementDrag } from "./appExtracted/appGraphMeasurementFactories";
+import {
+  createBeginMeasurementDrag,
+  measurementProfileItemsComplianceMessage,
+  measurementTypeComplianceMessage
+} from "./appExtracted/appGraphMeasurementFactories";
+import { createRenderDeviceDefinitionMeasurementPanel } from "./appExtracted/appProjectCanvasFactories";
 import { createSetImperativeSingleNodeDragOrigin } from "./appExtracted/appSelectionDragFactories";
 import { createRenderMeasurementGroup } from "./appExtracted/appToolbarHookFactories";
 
 describe("measurement canvas interactions", () => {
+  test("validates measurement type and profile compliance", () => {
+    const typeMessage = measurementTypeComplianceMessage([
+      {
+        id: "activePower",
+        key: "activePower",
+        name: "有功功率",
+        shortLabel: "P",
+        defaultUnit: "kW",
+        valueType: "number",
+        defaultDecimals: 2,
+        defaultColor: "#334155",
+        defaultFontFamily: "Arial",
+        defaultFontSize: 14,
+        defaultFontWeight: "500",
+        defaultVisible: true
+      },
+      {
+        id: "activePower2",
+        key: "activePower2",
+        name: "有功功率",
+        shortLabel: "",
+        defaultUnit: "kW",
+        valueType: "number",
+        defaultDecimals: 9,
+        defaultColor: "#334155",
+        defaultFontFamily: "Arial",
+        defaultFontSize: 4,
+        defaultFontWeight: "500",
+        defaultVisible: true
+      }
+    ] as any);
+
+    expect(typeMessage).toContain("量测类型第 2 行：标签不能为空。");
+    expect(typeMessage).toContain("量测类型第 2 行：默认小数位必须是0到8之间的整数。");
+    expect(typeMessage).toContain("量测类型第 2 行：默认字号必须是6到96之间的数字。");
+    expect(typeMessage).toContain("量测类型名称不能重复：有功功率");
+
+    const profileMessage = measurementProfileItemsComplianceMessage([
+      { name: "有功功率", measurementTypeId: "activePower", position: "device", associatedField: "missingField" },
+      { name: "有功功率", measurementTypeId: "activePower", position: "device", associatedField: "missingField" },
+      { name: "未知", measurementTypeId: "missingType", position: "device", associatedField: "activePower" }
+    ] as any, {
+      measurementTypes: [{ id: "activePower", name: "有功功率" }] as any,
+      parameterDefinitions: [{ cnName: "有功功率", enName: "activePower" }] as any,
+      targetLabel: "测试元件"
+    });
+
+    expect(profileMessage).toContain("测试元件量测第 1 行：关联字段 missingField 不在元件属性名称列表中。");
+    expect(profileMessage).toContain("测试元件量测第 2 行：与第 1 行量测重复。");
+    expect(profileMessage).toContain("测试元件量测第 3 行：量测类型 missingType 不存在。");
+  });
+
+  test("renders associated field as a parameter-name dropdown in device definition measurements", () => {
+    const updateMeasurementProfileItem = vi.fn();
+    const panel = createRenderDeviceDefinitionMeasurementPanel({
+      BufferedTextInput: (props: any) => createElement("input", props),
+      addMeasurementProfileItem: vi.fn(),
+      deleteMeasurementProfileItem: vi.fn(),
+      editableMeasurementProfileByKind: new Map([
+        [
+          "CustomDevice",
+          {
+            items: [
+              { name: "有功功率", measurementTypeId: "activePower", position: "device", associatedField: "activePower" },
+              { name: "旧字段", measurementTypeId: "activePower", position: "device", associatedField: "legacyField" }
+            ]
+          }
+        ]
+      ]),
+      editableMeasurementTypeById: new Map([["activePower", { id: "activePower", name: "有功功率", defaultVisible: true }]]),
+      isBrowseMode: false,
+      measurementConfig: {
+        measurementTypes: [{ id: "activePower", name: "有功功率", defaultVisible: true }],
+        deviceProfiles: []
+      },
+      measurementConfigDraft: null,
+      measurementConfigSaveStatus: "idle",
+      moveMeasurementProfileItem: vi.fn(),
+      normalizeComponentTypeName: (value: string) => value,
+      updateMeasurementProfileItem
+    } as any)({
+      deviceKind: "CustomDevice",
+      label: "自定义元件",
+      terminalCount: 0,
+      parameterDefinitions: [
+        { cnName: "有功功率", enName: "activePower", valueType: "float", typicalValue: "0" },
+        { cnName: "额定功率", enName: "ratedPower", valueType: "float", typicalValue: "0" }
+      ]
+    });
+
+    const selects: ReactElement[] = [];
+    const collectAssociatedSelects = (node: ReactNode) => {
+      Children.forEach(node, (child) => {
+        if (!isValidElement(child)) {
+          return;
+        }
+        if (child.type === "select" && String((child as ReactElement<any>).props.title ?? "").includes("关联")) {
+          selects.push(child as ReactElement);
+        }
+        collectAssociatedSelects((child as ReactElement<{ children?: ReactNode }>).props.children);
+      });
+    };
+    collectAssociatedSelects(panel);
+
+    expect(selects).toHaveLength(2);
+    const elementText = (node: ReactNode): string =>
+      Children.toArray(node).map((child) =>
+        isValidElement(child)
+          ? elementText((child as ReactElement<{ children?: ReactNode }>).props.children)
+          : String(child)
+      ).join("");
+    const firstOptionText = Children.toArray((selects[0] as ReactElement<{ children: ReactNode }>).props.children)
+      .filter(isValidElement)
+      .map((option) => elementText((option as ReactElement<{ children: ReactNode }>).props.children));
+    expect(firstOptionText).toContain("有功功率 (activePower)");
+    expect(firstOptionText).toContain("额定功率 (ratedPower)");
+    const secondOptionText = Children.toArray((selects[1] as ReactElement<{ children: ReactNode }>).props.children)
+      .filter(isValidElement)
+      .map((option) => elementText((option as ReactElement<{ children: ReactNode }>).props.children));
+    expect(secondOptionText).toContain("legacyField（未在属性中）");
+
+    (selects[0] as ReactElement<{ onChange: (event: any) => void }>).props.onChange({ target: { value: "ratedPower" } });
+
+    expect(updateMeasurementProfileItem).toHaveBeenCalledWith("CustomDevice", 0, { associatedField: "ratedPower" });
+  });
+
   test("selects the owning device when pressing a measurement group", () => {
     const selectCanvasGraphics = vi.fn();
     const setMeasurementDrag = vi.fn();

@@ -3384,6 +3384,21 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
         return { value: `t${index + 1}`, label: `${terminalLabel}端子层` };
       })
     ];
+    const associatedFieldOptions = (() => {
+      const seen = new Set<string>();
+      return (target.parameterDefinitions ?? []).flatMap((definition) => {
+        const value = String(definition?.enName ?? "").trim();
+        if (!value || seen.has(value.toLowerCase())) {
+          return [];
+        }
+        seen.add(value.toLowerCase());
+        const label = String(definition?.cnName ?? "").trim();
+        return [{
+          value,
+          label: label && label !== value ? `${label} (${value})` : value
+        }];
+      });
+    })();
     const measurementProfilePositionValue = (item: DeviceMeasurementProfileItem) => item.position ?? "device";
     const measurementConfigStatusText =
       measurementConfigSaveStatus === "saving"
@@ -3467,12 +3482,24 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                       </select>
                     </td>
                     <td>
-                      <BufferedTextInput
+                      <select
                         value={item.associatedField ?? ""}
                         disabled={isBrowseMode}
-                        placeholder={item.measurementTypeId}
-                        onCommit={(nextValue) => updateMeasurementProfileItem(selectedKind, itemIndex, { associatedField: nextValue })}
-                      />
+                        title={item.associatedField && !associatedFieldOptions.some((option) => option.value === item.associatedField)
+                          ? "当前关联字段不在元件属性名称列表中"
+                          : "关联到元件属性名称"}
+                        onChange={(event) => updateMeasurementProfileItem(selectedKind, itemIndex, {
+                          associatedField: event.target.value || undefined
+                        })}
+                      >
+                        <option value="">未关联（使用量测类型ID）</option>
+                        {item.associatedField && !associatedFieldOptions.some((option) => option.value === item.associatedField) && (
+                          <option value={item.associatedField}>{item.associatedField}（未在属性中）</option>
+                        )}
+                        {associatedFieldOptions.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
                     </td>
                     <td>
                       <select

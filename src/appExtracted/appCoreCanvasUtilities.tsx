@@ -1737,6 +1737,7 @@ export type DeviceDefinitionMeasurementPanelTarget = {
   label: string;
   terminalCount: number;
   terminalLabels?: readonly string[];
+  parameterDefinitions?: readonly DeviceParameterDefinition[];
 };
 
 export type TemplateDialogState = {

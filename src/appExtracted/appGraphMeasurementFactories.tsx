@@ -3799,6 +3799,8 @@ export function createFlushMeasurementConfigDialogDraftInputs(__appScope: Record
   };
 }
 
+const measurementComplianceKey = (value: unknown) => String(value ?? "").trim().toLowerCase();
+
 const duplicateMeasurementTypeValues = (measurementTypes: MeasurementTypeDefinition[], field: "id" | "name") => {
   const counts = new Map<string, number>();
   for (const type of measurementTypes) {
@@ -3806,17 +3808,50 @@ const duplicateMeasurementTypeValues = (measurementTypes: MeasurementTypeDefinit
     if (!value) {
       continue;
     }
-    counts.set(value, (counts.get(value) ?? 0) + 1);
+    const key = measurementComplianceKey(value);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const firstValueByKey = new Map<string, string>();
+  for (const type of measurementTypes) {
+    const value = String(type[field] ?? "").trim();
+    const key = measurementComplianceKey(value);
+    if (value && !firstValueByKey.has(key)) {
+      firstValueByKey.set(key, value);
+    }
   }
   return Array.from(counts.entries())
     .filter(([, count]) => count > 1)
-    .map(([value]) => value);
+    .map(([key]) => firstValueByKey.get(key) ?? key);
 };
 
-const measurementTypeDuplicateMessage = (measurementTypes: MeasurementTypeDefinition[]) => {
+export const measurementTypeComplianceMessage = (measurementTypes: MeasurementTypeDefinition[]) => {
+  const messages: string[] = [];
+  if (measurementTypes.length === 0) {
+    messages.push("量测类型列表不能为空。");
+  }
+  measurementTypes.forEach((type, index) => {
+    const rowLabel = `量测类型第 ${index + 1} 行`;
+    if (!String(type.id ?? "").trim()) {
+      messages.push(`${rowLabel}：ID不能为空。`);
+    }
+    if (!String(type.name ?? "").trim()) {
+      messages.push(`${rowLabel}：名称不能为空。`);
+    }
+    if (!String(type.shortLabel ?? "").trim()) {
+      messages.push(`${rowLabel}：标签不能为空。`);
+    }
+    if (!["number", "string", "boolean"].includes(String(type.valueType ?? ""))) {
+      messages.push(`${rowLabel}：取值类型无效。`);
+    }
+    if (!Number.isInteger(Number(type.defaultDecimals)) || Number(type.defaultDecimals) < 0 || Number(type.defaultDecimals) > 8) {
+      messages.push(`${rowLabel}：默认小数位必须是0到8之间的整数。`);
+    }
+    if (!Number.isFinite(Number(type.defaultFontSize)) || Number(type.defaultFontSize) < 6 || Number(type.defaultFontSize) > 96) {
+      messages.push(`${rowLabel}：默认字号必须是6到96之间的数字。`);
+    }
+  });
   const duplicateIds = duplicateMeasurementTypeValues(measurementTypes, "id");
   const duplicateNames = duplicateMeasurementTypeValues(measurementTypes, "name");
-  const messages: string[] = [];
   if (duplicateIds.length > 0) {
     messages.push(`量测类型ID不能重复：${duplicateIds.join("、")}`);
   }
@@ -3826,15 +3861,84 @@ const measurementTypeDuplicateMessage = (measurementTypes: MeasurementTypeDefini
   return messages.join("\n");
 };
 
+export const measurementProfileItemsComplianceMessage = (
+  items: DeviceMeasurementProfileItem[],
+  options: {
+    measurementTypes: readonly MeasurementTypeDefinition[];
+    parameterDefinitions?: readonly DeviceParameterDefinition[];
+    targetLabel?: string;
+  }
+) => {
+  const messages: string[] = [];
+  const validTypeIds = new Set(options.measurementTypes.map((type) => String(type.id ?? "").trim()).filter(Boolean));
+  const validFieldNames = new Set(
+    (options.parameterDefinitions ?? [])
+      .map((definition) => measurementComplianceKey(definition?.enName))
+      .filter(Boolean)
+  );
+  const hasParameterDefinitions = (options.parameterDefinitions ?? []).some((definition) => String(definition?.enName ?? "").trim());
+  const seenBindingKeys = new Map<string, number>();
+  const label = options.targetLabel ? `${options.targetLabel}量测` : "量测";
+  items.forEach((item, index) => {
+    const rowLabel = `${label}第 ${index + 1} 行`;
+    const measurementTypeId = String(item.measurementTypeId ?? "").trim();
+    const position = String(item.position ?? "device").trim();
+    const associatedField = String(item.associatedField ?? "").trim();
+    if (!measurementTypeId) {
+      messages.push(`${rowLabel}：量测类型不能为空。`);
+    } else if (!validTypeIds.has(measurementTypeId)) {
+      messages.push(`${rowLabel}：量测类型 ${measurementTypeId} 不存在。`);
+    }
+    if (!position) {
+      messages.push(`${rowLabel}：量测位置不能为空。`);
+    }
+    if (associatedField && hasParameterDefinitions && !validFieldNames.has(measurementComplianceKey(associatedField))) {
+      messages.push(`${rowLabel}：关联字段 ${associatedField} 不在元件属性名称列表中。`);
+    }
+    const bindingKey = [
+      measurementComplianceKey(position || "device"),
+      measurementComplianceKey(measurementTypeId),
+      measurementComplianceKey(associatedField || measurementTypeId)
+    ].join("\u0000");
+    if (measurementTypeId) {
+      const previousIndex = seenBindingKeys.get(bindingKey);
+      if (previousIndex !== undefined) {
+        messages.push(`${rowLabel}：与第 ${previousIndex + 1} 行量测重复。`);
+      } else {
+        seenBindingKeys.set(bindingKey, index);
+      }
+    }
+  });
+  return messages.join("\n");
+};
+
+export const measurementConfigComplianceMessage = (config: PlatformMeasurementConfig) => {
+  const messages: string[] = [];
+  const typeMessage = measurementTypeComplianceMessage(config.measurementTypes);
+  if (typeMessage) {
+    messages.push(typeMessage);
+  }
+  config.deviceProfiles.forEach((profile) => {
+    const profileMessage = measurementProfileItemsComplianceMessage(profile.items, {
+      measurementTypes: config.measurementTypes,
+      targetLabel: profile.deviceKind ? `${profile.deviceKind} ` : ""
+    });
+    if (profileMessage) {
+      messages.push(profileMessage);
+    }
+  });
+  return messages.join("\n");
+};
+
 export function createSaveMeasurementConfigDialog(__appScope: Record<string, any>) {
   return async () => {
   const { backendMeasurementConfigLoadedRef, flushMeasurementConfigDialogDraftInputs, lastPersistedMeasurementConfigPayloadRef, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeMeasurementConfig, saveBackendMeasurementConfigPayload, serializeMeasurementConfigForStorage, setMeasurementConfig, setMeasurementConfigDraft, setMeasurementConfigSaveStatus, writeMeasurementConfig, writeOperationLog } = __appScope;
     flushMeasurementConfigDialogDraftInputs?.();
     const normalizedMeasurementConfig = normalizeMeasurementConfig(measurementConfigDraftRef.current ?? measurementConfigDraft ?? measurementConfig);
-    const duplicateMessage = measurementTypeDuplicateMessage(normalizedMeasurementConfig.measurementTypes);
-    if (duplicateMessage) {
+    const complianceMessage = measurementConfigComplianceMessage(normalizedMeasurementConfig);
+    if (complianceMessage) {
       setMeasurementConfigSaveStatus("error");
-      window.alert(duplicateMessage);
+      window.alert(complianceMessage);
       return;
     }
     const normalizedMeasurementConfigPayload = serializeMeasurementConfigForStorage(normalizedMeasurementConfig);
