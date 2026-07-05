@@ -150,6 +150,40 @@ describe("default device state draft rows", () => {
     expect(imageSource).toContain('href="/api/images/bg-1"');
   });
 
+  test("does not reopen a frame-only drawing background as an editable element", () => {
+    const image = stateIconDrawingToPersistedImage([], {
+      frame: {
+        strokeStyle: "solid",
+        strokeWidth: 2,
+        strokeColor: "#334155",
+        fillColor: "#fef3c7",
+        backgroundImage: "/api/images/bg-1",
+        backgroundImageAssetId: "bg-1"
+      },
+      frameHasTerminals: false
+    });
+    const row = createStateDraftRow({
+      value: "0",
+      name: "背景测试",
+      image
+    });
+
+    expect(createStateIconDrawingInitialElements(row, {})).toEqual([]);
+    expect(stateIconDrawingInitialFrame(row, {}, {
+      strokeStyle: "dashed",
+      strokeWidth: 1.2,
+      strokeColor: "#94a3b8",
+      fillColor: "#ffffff"
+    })).toMatchObject({
+      strokeStyle: "solid",
+      strokeWidth: 2,
+      strokeColor: "#334155",
+      fillColor: "#fef3c7",
+      backgroundImage: "/api/images/bg-1",
+      backgroundImageAssetId: "bg-1"
+    });
+  });
+
   test("does not serialize an empty drawing with only the default frame", () => {
     expect(stateIconDrawingToPersistedImage([], {
       frame: {

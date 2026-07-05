@@ -1371,8 +1371,13 @@ export function createEditableStateIconElementsFromSvgSource(
   }
   const parsed = parseStateIconSvgSource(source);
   if (!parsed) {
-    return createStateIconDrawingElementsFromGeneratedSvgSource(source, fileName) ??
-      [createImportedStateIconElement("imported-svg", stateIconSvgElementSource(source) || source, fileName)];
+    const generatedElements = createStateIconDrawingElementsFromGeneratedSvgSource(source, fileName);
+    if (generatedElements) {
+      return generatedElements;
+    }
+    return stateIconDrawingSourceHasGeneratedFrameMarkup(source)
+      ? []
+      : [createImportedStateIconElement("imported-svg", stateIconSvgElementSource(source) || source, fileName)];
   }
   const editableChildren = parsed.editableChildren.filter((child) =>
     child.getAttribute("data-state-icon-frame") !== "true" &&
@@ -1390,6 +1395,9 @@ export function createEditableStateIconElementsFromSvgSource(
     ),
     ...stateIconDrawingTerminalOwnershipFromMarkup(child.outerHTML)
   });
+  if (editableChildren.length === 0) {
+    return [];
+  }
   if (generatedElements.some(Boolean)) {
     return editableChildren.map((child, index) =>
       generatedElements[index] ?? importedElementFromGeneratedChild(child, index)
@@ -1431,6 +1439,18 @@ function stateIconDrawingFrameMarkupTag(source: string) {
 
 function stateIconDrawingFrameImageMarkupTag(source: string) {
   return /<image\b(?=[^>]*\bdata-state-icon-frame-image\s*=\s*(?:"true"|'true'|true))[^>]*>/iu.exec(source)?.[0] ?? "";
+}
+
+function stateIconDrawingFrameBorderMarkupTag(source: string) {
+  return /<rect\b(?=[^>]*\bdata-state-icon-frame-border\s*=\s*(?:"true"|'true'|true))[^>]*>/iu.exec(source)?.[0] ?? "";
+}
+
+function stateIconDrawingSourceHasGeneratedFrameMarkup(source: string) {
+  return Boolean(
+    stateIconDrawingFrameMarkupTag(source) ||
+    stateIconDrawingFrameImageMarkupTag(source) ||
+    stateIconDrawingFrameBorderMarkupTag(source)
+  );
 }
 
 export function stateIconDrawingInitialFrame(
