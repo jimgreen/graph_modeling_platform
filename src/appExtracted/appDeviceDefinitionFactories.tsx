@@ -7777,7 +7777,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                         </td>
                       </tr>
                       <tr>
-                        <th>背景图显示方式</th>
+                        <th>显示方式</th>
                         <td>
                           <select value={normalizeImageFitMode(frame.backgroundImageFit)} onChange={(event) => setStateIconFramePatch({ backgroundImageFit: event.target.value })}>
                             {IMAGE_FIT_MODE_OPTIONS.map((option) => (
