@@ -91,6 +91,15 @@ export type StateIconDrawingFrame = {
   backgroundImageAssetId?: string;
 };
 
+export const DEFAULT_STATE_ICON_DRAWING_FRAME: StateIconDrawingFrame = {
+  strokeStyle: "dashed",
+  strokeWidth: 1.2,
+  strokeColor: "#94a3b8",
+  fillColor: "#ffffff",
+  backgroundImage: "",
+  backgroundImageAssetId: ""
+};
+
 type StateIconSvgStyleOverride = {
   stroke: string;
   strokeWidth: number;
@@ -1604,6 +1613,41 @@ export function stateIconDrawingToImage(
   const body = elements.map((element) => stateIconDrawingElementMarkup(element, options)).join("");
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">${frameMarkup}${body}</svg>`;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+function normalizeStateIconFrameText(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function normalizeStateIconFrameNumber(value: unknown) {
+  return Math.max(0, Number(value) || 0);
+}
+
+export function stateIconDrawingFrameHasPersistedContent(
+  frame: Partial<StateIconDrawingFrame> | undefined,
+  fallbackFrame: StateIconDrawingFrame = DEFAULT_STATE_ICON_DRAWING_FRAME
+) {
+  if (!frame) {
+    return false;
+  }
+  const mergedFrame = { ...fallbackFrame, ...frame };
+  return Boolean(
+    normalizeStateIconFrameText(mergedFrame.backgroundImage) ||
+    normalizeStateIconFrameText(mergedFrame.backgroundImageAssetId) ||
+    normalizeStateIconFrameText(mergedFrame.fillColor) !== normalizeStateIconFrameText(fallbackFrame.fillColor) ||
+    normalizeStateIconFrameText(mergedFrame.strokeColor) !== normalizeStateIconFrameText(fallbackFrame.strokeColor) ||
+    normalizeStateIconFrameText(mergedFrame.strokeStyle) !== normalizeStateIconFrameText(fallbackFrame.strokeStyle) ||
+    normalizeStateIconFrameNumber(mergedFrame.strokeWidth) !== normalizeStateIconFrameNumber(fallbackFrame.strokeWidth)
+  );
+}
+
+export function stateIconDrawingToPersistedImage(
+  elements: readonly StateIconDrawingElement[],
+  options: StateIconDrawingToImageOptions = {}
+) {
+  return elements.length > 0 || stateIconDrawingFrameHasPersistedContent(options.frame)
+    ? stateIconDrawingToImage(elements, options)
+    : "";
 }
 
 export function stateIconDrawingPreviewNeedsDirectElementRender(elements: readonly StateIconDrawingElement[]) {

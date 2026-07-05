@@ -27,6 +27,7 @@ import {
   stateIconDrawingInitialFrame,
   stateIconDrawingInlineCanPersistDraft,
   stateIconDrawingInlineNeedsDraftReload,
+  stateIconDrawingToPersistedImage,
   stateIconDrawingToImage,
   upsertDefaultStateDraftRow,
   visibleStateIconColor
@@ -125,6 +126,39 @@ describe("default device state draft rows", () => {
       initialImage: "old-template-image.svg",
       inlineImage: "old-template-image.svg"
     })).toBe(false);
+  });
+
+  test("serializes frame-only drawing backgrounds for inline persistence", () => {
+    const image = stateIconDrawingToPersistedImage([], {
+      frame: {
+        strokeStyle: "solid",
+        strokeWidth: 2,
+        strokeColor: "#334155",
+        fillColor: "#fef3c7",
+        backgroundImage: "/api/images/bg-1",
+        backgroundImageAssetId: "bg-1"
+      },
+      frameHasTerminals: false
+    });
+    const imageSource = decodeURIComponent(image.split(",")[1] ?? "");
+
+    expect(image).toMatch(/^data:image\/svg\+xml/);
+    expect(imageSource).toContain('data-state-icon-frame="true"');
+    expect(imageSource).toContain('fill="#fef3c7"');
+    expect(imageSource).toContain('data-state-icon-frame-image="true"');
+    expect(imageSource).toContain('data-state-icon-frame-image-asset-id="bg-1"');
+    expect(imageSource).toContain('href="/api/images/bg-1"');
+  });
+
+  test("does not serialize an empty drawing with only the default frame", () => {
+    expect(stateIconDrawingToPersistedImage([], {
+      frame: {
+        strokeStyle: "dashed",
+        strokeWidth: 1.2,
+        strokeColor: "#94a3b8",
+        fillColor: "#ffffff"
+      }
+    })).toBe("");
   });
 
   const findElementByText = (node: any, text: string): any => {
