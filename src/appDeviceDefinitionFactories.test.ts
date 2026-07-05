@@ -9,6 +9,7 @@ import {
   createRouteSegmentPointerDistance,
   createSaveCustomDeviceTemplate,
   createSaveDeviceDefinitionVisualDraft,
+  createOpenStateIconDrawingDialog,
   createStateIconDrawingKeyDown,
   createStartStateIconDrawingDrag,
   deviceParameterDefinitionsComplianceMessage,
@@ -353,6 +354,45 @@ describe("manual bend interaction helpers", () => {
     expect(savedTemplates[0].params.backgroundImage).toBe(inlineImage);
     expect(persistedPayload.customDeviceTemplates[0].params.backgroundImage).toBe(inlineImage);
     expect(customDeviceDraft.backgroundImage).toBe(inlineImage);
+  });
+
+  test("opens state icon drawing with the saved frame settings", () => {
+    const row = {
+      id: "state-1",
+      value: "1",
+      name: "运行",
+      image: "data:image/svg+xml,frame",
+      imageAssetId: "",
+      imageCleared: ""
+    };
+    let dialog: any = null;
+    const savedFrame = {
+      strokeStyle: "dotted",
+      strokeWidth: 4,
+      strokeColor: "#123456",
+      fillColor: "#abcdef"
+    };
+    const stateIconDrawingInitialFrame = vi.fn(() => savedFrame);
+    const scope = {
+      createStateIconDrawingInitialElements: vi.fn(() => [{ id: "element-1" }]),
+      customDeviceDraft: { stateDefinitions: [] },
+      definitionStateDraftRows: [row],
+      imageAssets: {},
+      setStateIconDrawingContextMenu: vi.fn(),
+      setStateIconDrawingDialog: (value: any) => {
+        dialog = value;
+      },
+      stateIconDrawingHistoryRef: { current: [{ id: "old" }] },
+      stateIconDrawingInitialFrame
+    };
+
+    createOpenStateIconDrawingDialog(scope)({ scope: "definition", rowId: "state-1" });
+
+    expect(stateIconDrawingInitialFrame).toHaveBeenCalledWith(row, {}, expect.objectContaining({
+      strokeStyle: "dashed",
+      strokeColor: "#94a3b8"
+    }));
+    expect(dialog.frame).toEqual(savedFrame);
   });
 
   test("validates parameter definition names and default value types", () => {

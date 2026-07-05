@@ -24,6 +24,7 @@ import {
   svgSourceFromDataUrl,
   stateIconDrawingPreviewNeedsDirectElementRender,
   stateIconDrawingDraftSourceImage,
+  stateIconDrawingInitialFrame,
   stateIconDrawingInlineCanPersistDraft,
   stateIconDrawingInlineNeedsDraftReload,
   stateIconDrawingToImage,
@@ -244,6 +245,41 @@ describe("default device state draft rows", () => {
     const row = createStateDraftRow({ value: "0", name: "清空", imageCleared: "1" });
 
     expect(createStateIconDrawingInitialElements(row, {})).toEqual([]);
+  });
+
+  test("restores saved drawing frame settings from the serialized svg image", () => {
+    const sourceRow = createStateDraftRow({
+      value: "0",
+      name: "源",
+      icon: "矩形",
+      text: "矩形",
+      fillColor: "#dbeafe",
+      strokeColor: "#2563eb"
+    });
+    const image = stateIconDrawingToImage([
+      createStateIconDrawingElement("rectangle", sourceRow)
+    ], {
+      frame: {
+        strokeStyle: "dotted",
+        strokeWidth: 3,
+        strokeColor: "#123456",
+        fillColor: "#abcdef"
+      },
+      frameHasTerminals: true
+    });
+    const row = createStateDraftRow({ value: "0", name: "带边框", image });
+
+    expect(stateIconDrawingInitialFrame(row, {}, {
+      strokeStyle: "dashed",
+      strokeWidth: 1,
+      strokeColor: "#94a3b8",
+      fillColor: "#ffffff"
+    })).toEqual({
+      strokeStyle: "dotted",
+      strokeWidth: 3,
+      strokeColor: "#123456",
+      fillColor: "#abcdef"
+    });
   });
 
   test("persists custom device terminal connector lines inside svg images", () => {

@@ -1389,6 +1389,37 @@ export function createStateIconDrawingInitialElements(
   return [createStateIconDrawingElement("line", row), createStateIconDrawingElement("text", row)];
 }
 
+function stateIconDrawingFrameMarkupTag(source: string) {
+  return /<rect\b(?=[^>]*\bdata-state-icon-frame\s*=\s*(?:"true"|'true'|true))[^>]*>/iu.exec(source)?.[0] ?? "";
+}
+
+export function stateIconDrawingInitialFrame(
+  row: DeviceDefinitionStateDraftRow | null | undefined,
+  assets: Record<string, string>,
+  fallback: StateIconDrawingFrame
+): StateIconDrawingFrame {
+  const fallbackFrame = { ...fallback };
+  const visual = stateVisualFromDraftRow(row);
+  if (visual?.imageCleared) {
+    return fallbackFrame;
+  }
+  const imageHref = resolveStateVisualImageHref(visual, assets).trim();
+  const svgSource = imageHref ? svgSourceFromDataUrl(imageHref) : "";
+  if (!svgSource) {
+    return fallbackFrame;
+  }
+  const frameMarkup = stateIconDrawingFrameMarkupTag(svgSource);
+  if (!frameMarkup) {
+    return fallbackFrame;
+  }
+  return {
+    strokeStyle: stateIconDrawingStrokeStyleFromMarkup(frameMarkup) ?? fallbackFrame.strokeStyle,
+    strokeWidth: Math.max(0, readSvgMarkupNumber(frameMarkup, "stroke-width", fallbackFrame.strokeWidth)),
+    strokeColor: readSvgMarkupAttribute(frameMarkup, "stroke").trim() || fallbackFrame.strokeColor,
+    fillColor: readSvgMarkupAttribute(frameMarkup, "fill").trim() || fallbackFrame.fillColor
+  };
+}
+
 export function svgSourceToDataUrl(source?: string) {
   const svg = String(source ?? "").trim();
   return svg ? `data:image/svg+xml;utf8,${encodeURIComponent(svg)}` : "";

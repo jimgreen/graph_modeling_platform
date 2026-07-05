@@ -4495,12 +4495,15 @@ export function createDeleteStateIconDrawingElement(__appScope: Record<string, a
 
 export function createOpenStateIconDrawingDialog(__appScope: Record<string, any>) {
   return (target: StateIconDrawingTarget) => {
-  const { createStateIconDrawingInitialElements, customDeviceDraft, definitionStateDraftRows, imageAssets, setStateIconDrawingContextMenu, setStateIconDrawingDialog, stateIconDrawingHistoryRef } = __appScope;
+  const { createStateIconDrawingInitialElements, customDeviceDraft, definitionStateDraftRows, imageAssets, setStateIconDrawingContextMenu, setStateIconDrawingDialog, stateIconDrawingHistoryRef, stateIconDrawingInitialFrame } = __appScope;
     const row =
       target.scope === "definition"
         ? definitionStateDraftRows.find((item) => item.id === target.rowId)
         : customDeviceDraft.stateDefinitions.find((item) => item.id === target.rowId);
     const initial = createStateIconDrawingInitialElements(row, imageAssets);
+    const frame = typeof stateIconDrawingInitialFrame === "function"
+      ? stateIconDrawingInitialFrame(row, imageAssets, STATE_ICON_DRAFT_FRAME)
+      : { ...STATE_ICON_DRAFT_FRAME };
     stateIconDrawingHistoryRef.current = [];
     setStateIconDrawingContextMenu(null);
     setStateIconDrawingDialog({
@@ -4508,7 +4511,7 @@ export function createOpenStateIconDrawingDialog(__appScope: Record<string, any>
       elements: initial,
       selectedElementId: initial[0]?.id ?? "",
       selectedElementIds: initial[0]?.id ? [initial[0].id] : [],
-      frame: { ...STATE_ICON_DRAFT_FRAME }
+      frame
     });
   };
 }
