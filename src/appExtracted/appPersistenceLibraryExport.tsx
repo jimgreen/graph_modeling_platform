@@ -185,7 +185,7 @@ import {
   isBlockingTopologyValidationError,
   isGeneratorNode,
   isRepeatedEdgePointerClick,
-  isStaticButtonCapableKind,
+  isStaticButtonCapableNode,
   isStaticBoxLikeKind,
   isStaticBoxLikeNode,
   isStaticNode,
@@ -2510,7 +2510,7 @@ export const isTextDoubleClickKind = (kind: string) => TEXT_DOUBLE_CLICK_KINDS.h
 export const isImageDoubleClickKind = (kind: string) => IMAGE_DOUBLE_CLICK_KINDS.has(kind);
 
 export const nodeHasInteractionDoubleClickEditor = (node: ModelNode) =>
-  isStaticButtonCapableKind(node.kind) &&
+  isStaticButtonCapableNode(node) &&
   (
     node.kind === "static-button" ||
     node.params.buttonEnabled === "1" ||
@@ -3079,7 +3079,7 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
     }
   }
   const resolveExportLayerButtonTargetIds = (node: ModelNode) => {
-    if (!isStaticButtonCapableKind(node.kind) || node.params.buttonEnabled !== "1" || node.params.buttonActionType !== "layer") {
+    if (!isStaticButtonCapableNode(node) || node.params.buttonEnabled !== "1" || node.params.buttonActionType !== "layer") {
       return [];
     }
     return resolveStaticButtonTargetLayers(node, normalizedLayers).map((layer) => layer.id);

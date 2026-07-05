@@ -8,7 +8,7 @@ import { StaticButtonLayerMultiSelect } from "../components/StaticButtonComponen
 
 import {
   inferESection,
-  isStaticButtonCapableKind,
+  isStaticButtonCapableNode,
   flattenSavedSchemes,
   DEFAULT_MODEL_LAYER_ID,
   getTemplateStateDefinitions,
@@ -661,7 +661,7 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
       updateNode: updateSelectedNode
     }
   ): ReactNode => {
-    if (!isStaticButtonCapableKind(node.kind)) {
+    if (!isStaticButtonCapableNode(node)) {
       return null;
     }
     const writeParam = editorActions.updateParam;

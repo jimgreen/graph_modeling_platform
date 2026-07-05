@@ -9,7 +9,8 @@ import {
   getDeviceStrokeWidth,
   getSwitchVisualState,
   isRoutableLineDeviceKind,
-  isStaticNode,
+  isStaticGraphicNode,
+  staticRenderKindForNode,
   pointsToOrthogonalPath
 } from "./model";
 import { formatSvgNumber, svgStrokeDashArray } from "./svgUtils";
@@ -47,13 +48,14 @@ export type DeviceGlyphProps = {
 export function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode = "energy", colorPalette = DEFAULT_COLOR_PALETTE, stateVisual = null }: DeviceGlyphProps) {
   const rawW = miniature ? 58 : node.size.width;
   const rawH = miniature ? 38 : node.size.height;
-  const isStaticGlyph = isStaticNode(node);
+  const isStaticGlyph = isStaticGraphicNode(node);
   const isRoutableLineGlyph = isRoutableLineDeviceKind(node.kind);
   const glyphContentScale = miniature || isStaticGlyph || isRoutableLineGlyph
     ? 1
     : Math.max(1, Math.max(rawW, rawH) / DEVICE_GLYPH_DESIGN_LONGEST_SIDE);
   const w = rawW / glyphContentScale;
   const h = rawH / glyphContentScale;
+  const staticRenderKind = isStaticGlyph ? staticRenderKindForNode(node) : node.kind;
   const glyphVariant = getDeviceGlyphVariant(node.kind);
   const renderGeometry = mode !== "text";
   const renderText = mode !== "geometry";
@@ -184,7 +186,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     };
-    if (node.kind === "static-text") {
+    if (staticRenderKind === "static-text") {
       const fontSize = miniature ? 18 : Number(node.params.fontSize || 24);
       const textLines = (miniature ? "文" : staticSymbolTextValue(node, node.name)).split(/\r?\n/);
       const textContent = uprightText(
@@ -224,11 +226,11 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-line") {
+    if (staticRenderKind === "static-line") {
       const points = staticDrawPointsForNode(node, [{ x: -w / 2, y: 0 }, { x: w / 2, y: 0 }]);
       return renderGeometry ? staticConnectorPath(node, points, staticStroke, lineWidth, dashArray) : null;
     }
-    if (node.kind === "static-polyline") {
+    if (staticRenderKind === "static-polyline") {
       const points = staticDrawPointsForNode(node, [
         { x: -w / 2, y: h / 3 },
         { x: 0, y: -h / 3 },
@@ -236,13 +238,13 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       ]);
       return renderGeometry ? staticConnectorPath(node, points, staticStroke, lineWidth, dashArray) : null;
     }
-    if (node.kind === "static-circle") {
+    if (staticRenderKind === "static-circle") {
       return renderGeometry ? <circle cx="0" cy="0" r={Math.min(w, h) / 2} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} /> : null;
     }
-    if (node.kind === "static-ellipse") {
+    if (staticRenderKind === "static-ellipse") {
       return renderGeometry ? <ellipse cx="0" cy="0" rx={w / 2} ry={h / 2} fill={staticFill} stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} /> : null;
     }
-    if (node.kind === "static-rect") {
+    if (staticRenderKind === "static-rect") {
       if (mode === "text") {
         return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
       }
@@ -257,7 +259,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-image") {
+    if (staticRenderKind === "static-image") {
       if (mode === "text") {
         return !node.params.backgroundImage
           ? uprightText(
@@ -284,7 +286,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-rounded-rect") {
+    if (staticRenderKind === "static-rounded-rect") {
       if (mode === "text") {
         return staticShapeText(node, w, h, miniature);
       }
@@ -298,7 +300,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-diamond") {
+    if (staticRenderKind === "static-diamond") {
       if (mode === "text") {
         return staticShapeText(node, w, h, miniature);
       }
@@ -313,7 +315,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-pill") {
+    if (staticRenderKind === "static-pill") {
       if (mode === "text") {
         return staticShapeText(node, w, h, miniature);
       }
@@ -327,7 +329,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-database") {
+    if (staticRenderKind === "static-database") {
       if (mode === "text") {
         return staticShapeText(node, w, h * 0.72, miniature);
       }
@@ -344,7 +346,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-document") {
+    if (staticRenderKind === "static-document") {
       if (mode === "text") {
         return staticShapeText(node, w, h, miniature);
       }
@@ -361,7 +363,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-note") {
+    if (staticRenderKind === "static-note") {
       if (mode === "text") {
         return staticShapeText(node, w, h, miniature);
       }
@@ -377,7 +379,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-group-box") {
+    if (staticRenderKind === "static-group-box") {
       if (mode === "text") {
         return staticShapeText(node, w, h, miniature);
       }
@@ -401,7 +403,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-swimlane") {
+    if (staticRenderKind === "static-swimlane") {
       if (mode === "text") {
         return staticShapeText(node, w, h, miniature);
       }
@@ -418,7 +420,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-point") {
+    if (staticRenderKind === "static-point") {
       if (mode === "text") {
         return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
       }
@@ -433,7 +435,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-ring") {
+    if (staticRenderKind === "static-ring") {
       if (mode === "text") {
         return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
       }
@@ -449,7 +451,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-circle-node") {
+    if (staticRenderKind === "static-circle-node") {
       if (mode === "text") {
         return staticShapeText(node, Math.min(w, h), Math.min(w, h), miniature);
       }
@@ -464,7 +466,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-straight-connector") {
+    if (staticRenderKind === "static-straight-connector") {
       if (mode === "text") {
         return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
       }
@@ -479,7 +481,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-arrow-connector") {
+    if (staticRenderKind === "static-arrow-connector") {
       if (mode === "text") {
         return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
       }
@@ -494,7 +496,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-double-arrow-connector") {
+    if (staticRenderKind === "static-double-arrow-connector") {
       if (mode === "text") {
         return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
       }
@@ -509,7 +511,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-elbow-connector") {
+    if (staticRenderKind === "static-elbow-connector") {
       if (mode === "text") {
         return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
       }
@@ -529,7 +531,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-hexagon") {
+    if (staticRenderKind === "static-hexagon") {
       if (mode === "text") {
         return staticShapeText(node, w * 0.78, h, miniature);
       }
@@ -545,7 +547,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-parallelogram") {
+    if (staticRenderKind === "static-parallelogram") {
       if (mode === "text") {
         return staticShapeText(node, w * 0.76, h, miniature);
       }
@@ -561,7 +563,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-triangle") {
+    if (staticRenderKind === "static-triangle") {
       if (mode === "text") {
         return staticShapeText(node, w * 0.66, h * 0.66, miniature);
       }
@@ -576,7 +578,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-callout") {
+    if (staticRenderKind === "static-callout") {
       if (mode === "text") {
         return staticShapeText(node, w, h * 0.82, miniature);
       }
@@ -594,7 +596,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-default-node") {
+    if (staticRenderKind === "static-default-node") {
       if (mode === "text") {
         return staticShapeText(node, w, h, miniature);
       }
@@ -610,7 +612,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-input-node") {
+    if (staticRenderKind === "static-input-node") {
       if (mode === "text") {
         return staticShapeText(node, w, h, miniature);
       }
@@ -625,7 +627,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-output-node") {
+    if (staticRenderKind === "static-output-node") {
       if (mode === "text") {
         return staticShapeText(node, w, h, miniature);
       }
@@ -640,7 +642,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-port-node") {
+    if (staticRenderKind === "static-port-node") {
       if (mode === "text") {
         return staticShapeText(node, w, h, miniature);
       }
@@ -658,7 +660,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-card-node") {
+    if (staticRenderKind === "static-card-node") {
       if (mode === "text") {
         return staticShapeText(node, w, h, miniature);
       }
@@ -675,7 +677,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-toolbar-node") {
+    if (staticRenderKind === "static-toolbar-node") {
       if (mode === "text") {
         return staticShapeText(node, w, h * 0.7, miniature);
       }
@@ -694,7 +696,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-resizer-frame") {
+    if (staticRenderKind === "static-resizer-frame") {
       if (mode === "text") {
         return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
       }
@@ -709,7 +711,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-subflow-box") {
+    if (staticRenderKind === "static-subflow-box") {
       if (mode === "text") {
         return staticShapeText(node, w, h, miniature);
       }
@@ -729,7 +731,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-bezier-connector") {
+    if (staticRenderKind === "static-bezier-connector") {
       if (mode === "text") {
         return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
       }
@@ -750,7 +752,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-smoothstep-connector") {
+    if (staticRenderKind === "static-smoothstep-connector") {
       if (mode === "text") {
         return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
       }
@@ -773,7 +775,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-self-loop") {
+    if (staticRenderKind === "static-self-loop") {
       if (mode === "text") {
         return hasStaticText ? staticShapeText(node, w, h, miniature) : null;
       }
@@ -793,7 +795,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-edge-label") {
+    if (staticRenderKind === "static-edge-label") {
       if (mode === "text") {
         return staticShapeText(node, w, h, miniature);
       }
@@ -808,7 +810,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-web") {
+    if (staticRenderKind === "static-web") {
       if (mode === "text") {
         return uprightText(node, 0, 12, { fill: node.params.textColor || "#334155", fontSize: miniature ? 10 : 13, textAnchor: "middle" }, miniature ? "WEB" : staticSymbolTextValue(node, "https://"));
       }
@@ -823,7 +825,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (["static-date", "static-time", "static-datetime", "static-input"].includes(node.kind)) {
+    if (["static-date", "static-time", "static-datetime", "static-input"].includes(staticRenderKind)) {
       if (mode === "text") {
         return uprightText(node, -w / 2 + 10, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 11 : Number(node.params.fontSize || 16), dominantBaseline: "middle" }, miniature ? "控件" : staticSymbolTextValue(node, node.name));
       }
@@ -837,7 +839,7 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (node.kind === "static-button") {
+    if (staticRenderKind === "static-button") {
       if (mode === "text") {
         return uprightText(node, 0, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 12 : Number(node.params.fontSize || 16), textAnchor: "middle", dominantBaseline: "middle" }, miniature ? "按钮" : staticSymbolTextValue(node, node.name));
       }

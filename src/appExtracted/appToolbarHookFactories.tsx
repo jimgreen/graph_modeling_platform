@@ -1018,8 +1018,8 @@ export function createAppHookCallback12(__appScope: Record<string, any>) {
 
 export function createAppHookCallback13(__appScope: Record<string, any>) {
   return () => {
-  const { BATCH_MEASUREMENT_GROUP_KEYS, BATCH_MEASUREMENT_GROUP_LABELS, activeSelectedNodeIds, isStaticNode, measurementGroupCommonValue, measurementGroupsForNode, nodeById, projectMeasurements } = __appScope;
-    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []).filter((node) => !isStaticNode(node));
+  const { BATCH_MEASUREMENT_GROUP_KEYS, BATCH_MEASUREMENT_GROUP_LABELS, activeSelectedNodeIds, isStaticGraphicNode, measurementGroupCommonValue, measurementGroupsForNode, nodeById, projectMeasurements } = __appScope;
+    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []).filter((node) => !isStaticGraphicNode(node));
     if (selectedNodes.length < 2) {
       return [];
     }

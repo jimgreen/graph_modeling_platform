@@ -623,8 +623,80 @@ const STATIC_COMPONENT_LIBRARY_BY_KIND: Record<string, string> = {
   "static-edge-label": "StaticAnnotationSymbol"
 };
 
+const STATIC_COMPONENT_RENDER_KIND_BY_LIBRARY: Record<string, DeviceKind> = {
+  StaticTextSymbol: "static-text",
+  StaticMediaSymbol: "static-image",
+  StaticBasicShape: "static-rect",
+  StaticFlowNode: "static-default-node",
+  StaticButton: "static-button",
+  StaticContainerSymbol: "static-group-box",
+  StaticConnectorSymbol: "static-straight-connector",
+  StaticAnnotationSymbol: "static-callout"
+};
+
+const STATIC_COMPONENT_LIBRARY_NAME_SET = new Set(Object.values(STATIC_COMPONENT_LIBRARY_BY_KIND));
+
+function staticComponentLibraryFromCustomKind(kind: string): string {
+  const baseKind = baseDeviceKind(kind).trim();
+  const customPrefix = "custom-";
+  if (!baseKind.toLowerCase().startsWith(customPrefix)) {
+    return "";
+  }
+  const customKindSuffix = baseKind.slice(customPrefix.length).toLowerCase();
+  for (const componentLibrary of STATIC_COMPONENT_LIBRARY_NAME_SET) {
+    const componentLibraryLower = componentLibrary.toLowerCase();
+    if (
+      customKindSuffix === componentLibraryLower ||
+      customKindSuffix.startsWith(`${componentLibraryLower}-`) ||
+      customKindSuffix.startsWith(`${componentLibraryLower}_`)
+    ) {
+      return componentLibrary;
+    }
+  }
+  return "";
+}
+
+function explicitStaticComponentLibraryForKind(kind: string): string {
+  const baseKind = baseDeviceKind(kind);
+  return STATIC_COMPONENT_LIBRARY_BY_KIND[baseKind] ?? staticComponentLibraryFromCustomKind(baseKind);
+}
+
 function staticComponentLibraryForKind(kind: string): string {
-  return STATIC_COMPONENT_LIBRARY_BY_KIND[baseDeviceKind(kind)] ?? DEFAULT_STATIC_COMPONENT_LIBRARY;
+  return explicitStaticComponentLibraryForKind(kind) || DEFAULT_STATIC_COMPONENT_LIBRARY;
+}
+
+function staticComponentLibraryFromParams(params?: Record<string, string>): string {
+  return (
+    params?.component_type ||
+    (params as { componentLibrary?: string } | undefined)?.componentLibrary ||
+    (params as { componentType?: string } | undefined)?.componentType ||
+    ""
+  ).trim();
+}
+
+export function isStaticComponentLibraryName(componentLibrary: string): boolean {
+  return STATIC_COMPONENT_LIBRARY_NAME_SET.has(componentLibrary.trim());
+}
+
+export function isStaticGraphicParams(params?: Record<string, string>): boolean {
+  return isStaticComponentLibraryName(staticComponentLibraryFromParams(params));
+}
+
+export function staticComponentLibraryForNodeLike(kind: string, params?: Record<string, string>): string {
+  const paramsComponentLibrary = staticComponentLibraryFromParams(params);
+  if (isStaticComponentLibraryName(paramsComponentLibrary)) {
+    return paramsComponentLibrary;
+  }
+  return explicitStaticComponentLibraryForKind(kind);
+}
+
+export function staticRenderKindForNode(node: Pick<ModelNode, "kind" | "params">): DeviceKind {
+  const baseKind = baseDeviceKind(node.kind) as DeviceKind;
+  if (STATIC_COMPONENT_LIBRARY_BY_KIND[baseKind]) {
+    return baseKind;
+  }
+  const componentLibrary = staticComponentLibraryForNodeLike(node.kind, node.params);
+  return STATIC_COMPONENT_RENDER_KIND_BY_LIBRARY[componentLibrary] ?? baseKind;
 }
 
 export function isStaticContainerKind(kind: string): boolean {
@@ -647,7 +719,7 @@ function normalizeRouteAvoidanceFlag(value: string | undefined, fallback: "0" | 
 }
 
 export function staticNodeParticipatesInRoutingAvoidance(node: Pick<ModelNode, "kind" | "params">): boolean {
-  if (!node.kind.startsWith("static-")) {
+  if (!isStaticGraphicNode(node)) {
     return true;
   }
   return normalizeRouteAvoidanceFlag(
@@ -811,7 +883,7 @@ const RESIZE_TRANSFORM_DEFAULT_ALLOWED_KINDS = new Set<string>([
 export function defaultAllowsResizeTransformForKind(kind: string): boolean {
   const baseKind = baseDeviceKind(kind);
   return (
-    isStaticKind(baseKind) ||
+    Boolean(explicitStaticComponentLibraryForKind(baseKind)) ||
     baseKind.includes("bus") ||
     isRoutableLineDeviceKind(baseKind) ||
     RESIZE_TRANSFORM_DEFAULT_ALLOWED_KINDS.has(baseKind)
@@ -826,9 +898,10 @@ export function inferESection(kind: string, params: Record<string, string> = {})
   const sectionKind = baseDeviceKind(kind);
   if (sectionKind === "ac-bus") return "ACRealBs";
   if (sectionKind === "dc-bus") return "DCRealBs";
-  const componentLibrary = (params.component_type || params.componentLibrary || params.componentType)?.trim();
-  if (isStaticKind(sectionKind)) {
-    return componentLibrary && componentLibrary !== "StaticSymbol" ? componentLibrary : staticComponentLibraryForKind(sectionKind);
+  const componentLibrary = staticComponentLibraryFromParams(params);
+  const staticComponentLibrary = staticComponentLibraryForNodeLike(sectionKind, params);
+  if (staticComponentLibrary) {
+    return componentLibrary && componentLibrary !== "StaticSymbol" ? componentLibrary : staticComponentLibrary;
   }
   if (componentLibrary) {
     return componentLibrary;
@@ -2474,12 +2547,17 @@ const threeWindingTransformerParameterDefinitions: DeviceParameterDefinition[] =
   readonlyIntegerDefinition("低压绕组双绕组主变idx", "idx_xf_t3")
 ];
 
-function defaultStaticButtonParams(kind: DeviceKind): Record<string, string> {
-  if (!isStaticButtonCapableKind(kind)) {
+function isStaticButtonComponentParams(params?: Record<string, string>): boolean {
+  return staticComponentLibraryFromParams(params) === "StaticButton";
+}
+
+function defaultStaticButtonParams(kind: DeviceKind, params?: Record<string, string>): Record<string, string> {
+  const componentLibrary = staticComponentLibraryForNodeLike(kind, params);
+  if (!isStaticButtonCapableKind(kind) && componentLibrary !== "StaticButton") {
     return {};
   }
   return {
-    buttonEnabled: kind === "static-button" ? "1" : "0",
+    buttonEnabled: kind === "static-button" || componentLibrary === "StaticButton" ? "1" : "0",
     buttonActionType: "none",
     buttonTargetSchemeId: "",
     buttonTargetProjectId: "",
@@ -2493,10 +2571,13 @@ function defaultStaticButtonParams(kind: DeviceKind): Record<string, string> {
 }
 
 function withStaticButtonCapability(kind: DeviceKind, params: Record<string, string>): Record<string, string> {
-  return {
-    ...defaultStaticButtonParams(kind),
+  const next = {
+    ...defaultStaticButtonParams(kind, params),
     ...params
   };
+  return staticComponentLibraryForNodeLike(kind, params) === "StaticButton"
+    ? { ...next, buttonEnabled: "1" }
+    : next;
 }
 
 const staticSymbolParams = (
@@ -3690,7 +3771,7 @@ function roundDefaultDeviceSize(value: number): number {
 }
 
 function normalizeDefaultDeviceSize(kind: string, size: DeviceTemplate["size"]): DeviceTemplate["size"] {
-  if (kind.startsWith("static-")) {
+  if (explicitStaticComponentLibraryForKind(kind)) {
     return { ...size };
   }
   const width = Number.isFinite(size.width) && size.width > 0 ? size.width : DEFAULT_DEVICE_LONGEST_SIDE;
@@ -4661,8 +4742,12 @@ export function isStaticKind(kind: DeviceKind): boolean {
   return kind.startsWith("static-");
 }
 
-export function isStaticNode(node: ModelNode): boolean {
-  return isStaticKind(node.kind);
+export function isStaticNode(node: Pick<ModelNode, "kind" | "params">): boolean {
+  return isStaticKind(node.kind) || Boolean(staticComponentLibraryForNodeLike(node.kind, node.params));
+}
+
+export function isStaticGraphicNode(node: Pick<ModelNode, "kind" | "params">): boolean {
+  return isStaticNode(node);
 }
 
 export function isStaticLineLikeKind(kind: DeviceKind): boolean {
@@ -4671,21 +4756,44 @@ export function isStaticLineLikeKind(kind: DeviceKind): boolean {
 
 export function isStaticBoxLikeKind(kind: DeviceKind): boolean {
   const baseKind = baseDeviceKind(kind) as DeviceKind;
-  if (!isStaticKind(baseKind) || isStaticLineLikeKind(baseKind)) {
+  const componentLibrary = explicitStaticComponentLibraryForKind(baseKind);
+  if (!componentLibrary || isStaticLineLikeKind(baseKind)) {
     return false;
   }
   if (baseKind === "static-point" || baseKind === "static-ring") {
     return false;
   }
-  return staticComponentLibraryForKind(baseKind) !== "StaticConnectorSymbol";
+  return componentLibrary !== "StaticConnectorSymbol";
 }
 
-export function isStaticBoxLikeNode(node: ModelNode): boolean {
-  return isStaticBoxLikeKind(node.kind);
+export function isStaticBoxLikeNode(node: Pick<ModelNode, "kind" | "params">): boolean {
+  const baseKind = baseDeviceKind(node.kind) as DeviceKind;
+  if (baseKind === "static-point" || baseKind === "static-ring") {
+    return false;
+  }
+  const componentLibrary = staticComponentLibraryForNodeLike(node.kind, node.params);
+  return Boolean(componentLibrary) && componentLibrary !== "StaticConnectorSymbol";
+}
+
+export function isStaticBoxLikeTemplate(template: Pick<DeviceTemplate, "kind" | "params">): boolean {
+  const baseKind = baseDeviceKind(template.kind) as DeviceKind;
+  if (baseKind === "static-point" || baseKind === "static-ring") {
+    return false;
+  }
+  const componentLibrary = staticComponentLibraryForNodeLike(template.kind, template.params);
+  return Boolean(componentLibrary) && componentLibrary !== "StaticConnectorSymbol";
 }
 
 export function isStaticButtonCapableKind(kind: DeviceKind): boolean {
-  return isStaticKind(kind) && !isStaticLineLikeKind(kind);
+  const baseKind = baseDeviceKind(kind) as DeviceKind;
+  if (explicitStaticComponentLibraryForKind(baseKind) === "StaticButton") {
+    return true;
+  }
+  return isStaticKind(baseKind) && !isStaticLineLikeKind(baseKind);
+}
+
+export function isStaticButtonCapableNode(node: Pick<ModelNode, "kind" | "params">): boolean {
+  return isStaticButtonCapableKind(node.kind) || staticComponentLibraryForNodeLike(node.kind, node.params) === "StaticButton";
 }
 
 const TEMPLATE_DEFINITION_READONLY_KEYS = new Set(["idx", "name", "node", "i_node", "j_node", "ac_node", "dc_node"]);
@@ -5129,10 +5237,23 @@ function applyContainerRelationDefaults(params: Record<string, string>, template
 
 function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   const templateKind = baseDeviceKind(template.kind) as DeviceKind;
+  const templateStaticComponentLibrary = staticComponentLibraryForNodeLike(template.kind, template.params);
+  const templateIsStaticGraphic = Boolean(templateStaticComponentLibrary);
   const withoutResizeTransformParam = (params: Record<string, string>) =>
     Object.fromEntries(Object.entries(params).filter(([key]) => key !== ALLOW_RESIZE_TRANSFORM_PARAM));
+  const withStaticGraphicDefaults = (params: Record<string, string>) => {
+    const componentLibrary = staticComponentLibraryForNodeLike(template.kind, params) || templateStaticComponentLibrary;
+    if (!componentLibrary) {
+      return params;
+    }
+    return {
+      component_type: componentLibrary,
+      [STATIC_ROUTE_AVOIDANCE_PARAM]: defaultStaticRouteAvoidanceValue(template.kind),
+      ...params
+    };
+  };
   const withDeviceLabelDefaults = (params: Record<string, string>) =>
-    isStaticKind(templateKind)
+    templateIsStaticGraphic
       ? params
       : {
           _labelVisible: "1",
@@ -5150,7 +5271,7 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
           ...params
         };
   const withStatusDefault = (params: Record<string, string>) => {
-    if (isStaticKind(templateKind)) {
+    if (templateIsStaticGraphic) {
       return params;
     }
     const templateExplicitStatus = normalizeDeviceStateValue(template.params?.status);
@@ -5177,8 +5298,18 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
     return { ...params, status: mapped?.value ?? normalized };
   };
   const withTemplateDefinitions = (params: Record<string, string>) =>
-    withDeviceLabelDefaults(withStatusDefault(applyTemplateDefinitionDefaults(applyContainerRelationDefaults(withoutResizeTransformParam(params), template), template)));
-  if (isStaticKind(templateKind)) {
+    withDeviceLabelDefaults(
+      withStatusDefault(
+        applyTemplateDefinitionDefaults(
+          applyContainerRelationDefaults(
+            withStaticButtonCapability(template.kind, withStaticGraphicDefaults(withoutResizeTransformParam(params))),
+            template
+          ),
+          template
+        )
+      )
+    );
+  if (templateIsStaticGraphic) {
     return withTemplateDefinitions({ ...template.params });
   }
   const withRunStat = (params: Record<string, string>) => ({ run_stat: "运行", ...params });

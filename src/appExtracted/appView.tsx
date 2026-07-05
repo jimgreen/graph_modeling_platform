@@ -809,13 +809,13 @@ export function renderAppView(__appScope: Record<string, any>) {
                   <button type="button" className="" onClick={() => {
                     setInspectorTab("device");
                     setSelectedDeviceInfoView("model");
-                }} role="tab" aria-selected={false} disabled={multiNodeGraphSelection || !inspectorSelectedNode || isStaticNode(inspectorSelectedNode)}>
+                }} role="tab" aria-selected={false} disabled={multiNodeGraphSelection || !inspectorSelectedNode || __appScope.isStaticGraphicNode(inspectorSelectedNode)}>
                     模型
                   </button>
                   <button type="button" className="" onClick={() => {
                     setInspectorTab("device");
                     setSelectedDeviceInfoView("measurement");
-                }} role="tab" aria-selected={false} disabled={multiNodeGraphSelection || !inspectorSelectedNode || isStaticNode(inspectorSelectedNode)}>
+                }} role="tab" aria-selected={false} disabled={multiNodeGraphSelection || !inspectorSelectedNode || __appScope.isStaticGraphicNode(inspectorSelectedNode)}>
                     量测
                   </button>
                   {multiNodeGraphSelection && (<button type="button" className="active" role="tab" aria-selected={true}>
@@ -910,7 +910,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                         </select>
                       </td>
                     </tr>
-                    {!isStaticNode(inspectorSelectedNode) && (<>
+                    {!__appScope.isStaticGraphicNode(inspectorSelectedNode) && (<>
                         <tr>
                           {batchEditors.renderChineseParamHeader("_labelDisplayMode")}
                           <td>
@@ -1014,7 +1014,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                               </tr>)}
                           </Fragment>))}
                       </>)}
-                    {isStaticNode(inspectorSelectedNode) && (<>
+                    {__appScope.isStaticGraphicNode(inspectorSelectedNode) && (<>
                         <tr>
                           {batchEditors.renderChineseParamHeader(STATIC_ROUTE_AVOIDANCE_PARAM)}
                           <td>
@@ -1128,7 +1128,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                           </td>
                         </tr>
                       </>)}
-                    {!isStaticNode(inspectorSelectedNode) && (<>
+                    {!__appScope.isStaticGraphicNode(inspectorSelectedNode) && (<>
                         <tr>
                           {batchEditors.renderChineseParamHeader("foregroundColor")}
                           <td>{batchEditors.renderColorEditor("foregroundColor", inspectorSelectedNode.params.foregroundColor || "", terminalColor(inspectorSelectedNode.terminals[0]?.type, colorPalette))}</td>
@@ -1152,7 +1152,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                   </div>)}
               </div>);
         })()) : inspectorSelectedNode ? (<div className="device-param-stack">
-                {!isStaticNode(inspectorSelectedNode) && (<div className="device-info-tabs" role="tablist" aria-label="图元属性分类">
+                {!__appScope.isStaticGraphicNode(inspectorSelectedNode) && (<div className="device-info-tabs" role="tablist" aria-label="图元属性分类">
                     <button type="button" className="" onClick={() => setInspectorTab("graph")} role="tab" aria-selected={false}>
                       图形
                     </button>
@@ -1163,7 +1163,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                       量测
                     </button>
                   </div>)}
-                {selectedDeviceInfoView === "measurement" && !isStaticNode(inspectorSelectedNode) ? (renderSelectedNodeMeasurementTable(inspectorSelectedNode)) : (<>
+                {selectedDeviceInfoView === "measurement" && !__appScope.isStaticGraphicNode(inspectorSelectedNode) ? (renderSelectedNodeMeasurementTable(inspectorSelectedNode)) : (<>
                     {selectedContainerParameterViews.length > 0 && (<div className="container-param-tabs" role="tablist" aria-label="容器设备参数切换">
                         {selectedContainerParameterViews.map((view) => (<button key={view.id} type="button" className={selectedContainerParameterView?.id === view.id ? "active" : ""} onClick={() => setContainerParamViewId(view.id)}>
                             {view.label}
@@ -1342,7 +1342,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                   <Plus size={14}/>
                   定义为元件
                 </button>) : null)}
-              {isEditMode && contextMeasurementNode && !isStaticNode(contextMeasurementNode) && (<div className="context-menu-submenu">
+              {isEditMode && contextMeasurementNode && !__appScope.isStaticGraphicNode(contextMeasurementNode) && (<div className="context-menu-submenu">
                   <button type="button" className="context-menu-submenu-trigger">
                     <CircleDot size={14}/>
                     量测显示

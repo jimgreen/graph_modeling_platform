@@ -188,10 +188,9 @@ import {
   isBlockingTopologyValidationError,
   isGeneratorNode,
   isRepeatedEdgePointerClick,
-  isStaticButtonCapableKind,
-  isStaticBoxLikeKind,
+  isStaticButtonCapableNode,
+  isStaticGraphicNode,
   isStaticBoxLikeNode,
-  isStaticNode,
   inferESection,
   insertOrthogonalRouteBend,
   insertRoutableLineDeviceBend,
@@ -1451,8 +1450,11 @@ const batchCommonModelParamRows = useMemo(
   );
 Object.assign(__appScope, { batchCommonModelParamRows });
 const selectedNodeIdsWithMeasurementGroups = useMemo(() => new Set(
-    activeSelectedNodeIds.filter((nodeId) => measurementGroupsForNode(projectMeasurements, nodeId).length > 0)
-  ), [activeSelectedNodeIds, projectMeasurements]);
+    activeSelectedNodeIds.filter((nodeId) => {
+      const node = nodeById.get(nodeId);
+      return node && !isStaticGraphicNode(node) && measurementGroupsForNode(projectMeasurements, nodeId).length > 0;
+    })
+  ), [activeSelectedNodeIds, nodeById, projectMeasurements]);
 Object.assign(__appScope, { selectedNodeIdsWithMeasurementGroups });
 const batchCommonMeasurementGroupRows = useMemo<BatchCommonMeasurementGroupRow[]>(createAppHookCallback13(__appScope), [activeSelectedNodeIds, nodeById, projectMeasurements]);
 const hasBatchCommonPropertyRows =
@@ -1469,13 +1471,13 @@ const selectedEdge = activeLayerEdgeIdSet.has(selectedEdgeId) ? edgeById.get(sel
 const inspectorSelectedNode = selectedNode; Object.assign(__appScope, { inspectorSelectedNode });
 const singleSelectedDeviceForInspector = Boolean(
     inspectorSelectedNode &&
-    !isStaticNode(inspectorSelectedNode) &&
+    !isStaticGraphicNode(inspectorSelectedNode) &&
     activeSelectedNodeIds.length === 1 &&
     activeSelectedEdgeIds.length === 0
   );
 Object.assign(__appScope, { singleSelectedDeviceForInspector });
 const selectedMeasurementGroups = useMemo(
-    () => (inspectorSelectedNode ? measurementGroupsForNode(projectMeasurements, inspectorSelectedNode.id) : []),
+    () => (inspectorSelectedNode && !isStaticGraphicNode(inspectorSelectedNode) ? measurementGroupsForNode(projectMeasurements, inspectorSelectedNode.id) : []),
     [inspectorSelectedNode, projectMeasurements]
   );
 Object.assign(__appScope, { selectedMeasurementGroups });
@@ -6138,7 +6140,7 @@ const handleMinimapNavigate = createHandleMinimapNavigate(__appScope); Object.as
 const centerSelectedInView = createCenterSelectedInView(__appScope); Object.assign(__appScope, { centerSelectedInView });
 const fitViewToSelection = createFitViewToSelection(__appScope); Object.assign(__appScope, { fitViewToSelection });
 const isStaticButtonEnabledForNode = (node: ModelNode) =>
-    isStaticButtonCapableKind(node.kind) && node.params.buttonEnabled === "1";
+    isStaticButtonCapableNode(node) && node.params.buttonEnabled === "1";
 Object.assign(__appScope, { isStaticButtonEnabledForNode });
 const clearStaticButtonFeedbackTimer = createClearStaticButtonFeedbackTimer(__appScope); Object.assign(__appScope, { clearStaticButtonFeedbackTimer });
 const setStaticButtonFeedback = createSetStaticButtonFeedback(__appScope); Object.assign(__appScope, { setStaticButtonFeedback });

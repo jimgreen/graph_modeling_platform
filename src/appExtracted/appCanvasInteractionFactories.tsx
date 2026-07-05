@@ -2803,7 +2803,7 @@ export function createConfirmNodeDoubleClickDialog(__appScope: Record<string, an
 
 export function createRenderNodeDoubleClickDialog(__appScope: Record<string, any>) {
   return () => {
-  const { batchEditors, buildContainerDeviceParameterViews, button, cancelNodeDoubleClickDialog, clampNodeDoubleClickDialogLayout, cloneNodeForDoubleClickDraft, confirmNodeDoubleClickDialog, div, h2, h3, isStaticButtonCapableKind, libraryTemplateByKind, nodeById, nodeDoubleClickDialog, nodeDoubleClickDialogLayout, nodeDoubleClickDialogRef, nodeDoubleClickDraft, nodeHasTextDoubleClickEditor, p, renderNodeDoubleClickContainerParamRows, renderNodeDoubleClickDeviceParamRows, renderNodeDoubleClickTextParamTable, section, setNodeDoubleClickDialog, startNodeDoubleClickDialogDrag, startNodeDoubleClickDialogResize, stopNodeDoubleClickDialogEvent, suppressNodeDoubleClickDialogEvent, table, tbody } = __appScope;
+  const { batchEditors, buildContainerDeviceParameterViews, button, cancelNodeDoubleClickDialog, clampNodeDoubleClickDialogLayout, cloneNodeForDoubleClickDraft, confirmNodeDoubleClickDialog, div, h2, h3, isStaticButtonCapableNode, libraryTemplateByKind, nodeById, nodeDoubleClickDialog, nodeDoubleClickDialogLayout, nodeDoubleClickDialogRef, nodeDoubleClickDraft, nodeHasTextDoubleClickEditor, p, renderNodeDoubleClickContainerParamRows, renderNodeDoubleClickDeviceParamRows, renderNodeDoubleClickTextParamTable, section, setNodeDoubleClickDialog, startNodeDoubleClickDialogDrag, startNodeDoubleClickDialogResize, stopNodeDoubleClickDialogEvent, suppressNodeDoubleClickDialogEvent, table, tbody } = __appScope;
     if (!nodeDoubleClickDialog) {
       return null;
     }
@@ -2870,7 +2870,7 @@ export function createRenderNodeDoubleClickDialog(__appScope: Record<string, any
                     </tbody>
                   </table>
                 </div>
-                {(nodeHasTextDoubleClickEditor(dialogNode) || isStaticButtonCapableKind(dialogNode.kind)) && (
+                {(nodeHasTextDoubleClickEditor(dialogNode) || isStaticButtonCapableNode(dialogNode)) && (
                   <div className="node-double-click-dialog-section">
                     <h3>修改文本</h3>
                     {renderNodeDoubleClickTextParamTable(dialogNode)}
@@ -3155,7 +3155,7 @@ export function createAppendDistinctStaticDrawingPoint(__appScope: Record<string
 
 export function createRenderStaticBoxDrawingPreview(__appScope: Record<string, any>) {
   return () => {
-  const { MemoDeviceGlyph, activeLayerId, circle, colorDisplayMode, colorPalette, createStaticBoxNodeFromDrawing, formatSvgNumber, g, nodeGeometryTransform, rect, resolveNodeStateVisual, staticDrawing, staticDrawingPreviewPoints } = __appScope;
+  const { MemoDeviceGlyph, activeLayerId, circle, colorDisplayMode, colorPalette, createStaticBoxNodeFromDrawing, formatSvgNumber, g, nodeGeometryTransform, rect, renderNodePreviewImageContent, resolveNodeStateVisual, staticDrawing, staticDrawingPreviewPoints } = __appScope;
     if (!staticDrawing) {
       return null;
     }
@@ -3184,6 +3184,7 @@ export function createRenderStaticBoxDrawingPreview(__appScope: Record<string, a
             <MemoDeviceGlyph node={previewNode} mode="geometry" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(previewNode)} />
             <MemoDeviceGlyph node={previewNode} mode="text" colorDisplayMode={colorDisplayMode} colorPalette={colorPalette} stateVisual={resolveNodeStateVisual(previewNode)} />
           </g>
+          {renderNodePreviewImageContent(previewNode, `static-drawing-preview-clip-${staticDrawing.kind.replace(/[^A-Za-z0-9_-]/g, "-")}`)}
         </g>
         {staticDrawing.points.map((point, index) => (
           <circle key={index} className="static-drawing-preview-point" cx={point.x} cy={point.y} r="4.5" />
@@ -3234,7 +3235,7 @@ export function createCancelInteractiveStaticDrawing(__appScope: Record<string, 
 
 export function createFinishInteractiveStaticDrawing(__appScope: Record<string, any>) {
   return (finalPoint?: Point) => {
-  const { activateInspectorFromCanvas, activeLayerId, appendDistinctStaticDrawingPoint, clampPointToCanvas, createInteractiveStaticDrawingNode, createStaticBoxNodeFromDrawing, edges, isStaticBoxLikeKind, nodes, pushUndoSnapshot, requireEditMode, setCanvasSelectionScope, setGraphArrays, setMode, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, staticDrawing, staticDrawingPreviewPoints, writeOperationLog } = __appScope;
+  const { activateInspectorFromCanvas, activeLayerId, appendDistinctStaticDrawingPoint, clampPointToCanvas, createInteractiveStaticDrawingNode, createStaticBoxNodeFromDrawing, edges, isStaticBoxLikeTemplate, nodes, pushUndoSnapshot, requireEditMode, setCanvasSelectionScope, setGraphArrays, setMode, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, staticDrawing, staticDrawingPreviewPoints, writeOperationLog } = __appScope;
     if (!requireEditMode("绘制图元")) {
       return;
     }
@@ -3248,7 +3249,7 @@ export function createFinishInteractiveStaticDrawing(__appScope: Record<string, 
       writeOperationLog("绘制图元至少需要两个落点");
       return;
     }
-    const node = isStaticBoxLikeKind(staticDrawing.kind)
+    const node = isStaticBoxLikeTemplate(staticDrawing.template)
       ? createStaticBoxNodeFromDrawing(staticDrawing.template, points, activeLayerId)
       : createInteractiveStaticDrawingNode(staticDrawing.template, points, activeLayerId);
     pushUndoSnapshot();
@@ -3299,11 +3300,11 @@ export function createUpdateInteractiveStaticDrawingPreview(__appScope: Record<s
 
 export function createRenderInteractiveStaticDrawingPreview(__appScope: Record<string, any>) {
   return () => {
-  const { circle, g, isStaticBoxLikeKind, path, renderStaticBoxDrawingPreview, staticDrawing, staticDrawingPathData, staticDrawingPreviewPoints } = __appScope;
+  const { circle, g, isStaticBoxLikeTemplate, path, renderStaticBoxDrawingPreview, staticDrawing, staticDrawingPathData, staticDrawingPreviewPoints } = __appScope;
     if (!staticDrawing) {
       return null;
     }
-    if (isStaticBoxLikeKind(staticDrawing.kind)) {
+    if (isStaticBoxLikeTemplate(staticDrawing.template)) {
       return renderStaticBoxDrawingPreview();
     }
     const points = staticDrawingPreviewPoints(staticDrawing);
@@ -3408,7 +3409,7 @@ export function createClearLibraryPlacementPreview(__appScope: Record<string, an
 
 export function createPlaceLibraryDeviceAtPoint(__appScope: Record<string, any>) {
   return (template: DeviceTemplate, pointerPosition: Point) => {
-  const { CANVAS_AUTO_EXPAND_PADDING, activateInspectorFromCanvas, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, clampNodePositionToBounds, clampPointToBounds, createNodeFromTemplate, deviceIndexCounters, edges, hasCanvasOriginShift, isInteractiveStaticDrawingKind, isRoutableLineDeviceKind, isStaticBoxLikeKind, lastCanvasPointerRef, lastRawCanvasPointerRef, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, nodes, pushUndoSnapshot, rejectAutoCanvasExpansionForContent, requireEditMode, routeRoutableLineDevice, setCanvasSelectionScope, setDeviceIndexCounters, setGraphArrays, setLibraryPlacement, setMode, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, startInteractiveStaticDrawing, startLibraryDevicePlacement, translateEdgeBy, translateNodeBy, translatePointBy, writeOperationLog } = __appScope;
+  const { CANVAS_AUTO_EXPAND_PADDING, activateInspectorFromCanvas, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, clampNodePositionToBounds, clampPointToBounds, createNodeFromTemplate, deviceIndexCounters, edges, hasCanvasOriginShift, isInteractiveStaticDrawingKind, isRoutableLineDeviceKind, isStaticBoxLikeTemplate, lastCanvasPointerRef, lastRawCanvasPointerRef, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, nodes, pushUndoSnapshot, rejectAutoCanvasExpansionForContent, requireEditMode, routeRoutableLineDevice, setCanvasSelectionScope, setDeviceIndexCounters, setGraphArrays, setLibraryPlacement, setMode, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, startInteractiveStaticDrawing, startLibraryDevicePlacement, translateEdgeBy, translateNodeBy, translatePointBy, writeOperationLog } = __appScope;
     if (!requireEditMode("放置图元")) {
       return;
     }
@@ -3417,7 +3418,7 @@ export function createPlaceLibraryDeviceAtPoint(__appScope: Record<string, any>)
       startLibraryDevicePlacement(template);
       return;
     }
-    if (isInteractiveStaticDrawingKind(kind) || isStaticBoxLikeKind(kind)) {
+    if (isInteractiveStaticDrawingKind(kind) || isStaticBoxLikeTemplate(template)) {
       startInteractiveStaticDrawing(template, pointerPosition);
       return;
     }

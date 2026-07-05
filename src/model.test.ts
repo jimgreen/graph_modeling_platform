@@ -1,4 +1,8 @@
 import { describe, expect, test } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { DeviceGlyph } from "./DeviceGlyph";
+import { createRenderStaticBoxDrawingPreview } from "./appExtracted/appCanvasInteractionFactories";
 import {
   alignNodes,
   buildTopology,
@@ -134,7 +138,11 @@ import {
   segmentIntersectsNodeBody,
   isInteractiveStaticDrawingKind,
   isStaticBoxLikeKind,
+  isStaticBoxLikeNode,
+  isStaticButtonCapableNode,
   isStaticButtonCapableKind,
+  isStaticGraphicNode,
+  staticRenderKindForNode,
   isStaticLineLikeKind,
   isBlockingTopologyValidationError,
   isRepeatedEdgePointerClick,
@@ -10228,6 +10236,210 @@ describe("power system model", () => {
     expect(node.position).toEqual({ x: 200, y: 160 });
     expect(node.size).toEqual({ width: 200, height: 80 });
     expect(node.params[STATIC_DRAW_POINTS_PARAM]).toBeUndefined();
+  });
+
+  test("enables button behavior for drawn static templates assigned to the StaticButton library", () => {
+    const baseTemplate = DEVICE_LIBRARY.find((item) => item.kind === "static-hexagon");
+    expect(baseTemplate).toBeDefined();
+    const template: DeviceTemplate = {
+      ...baseTemplate!,
+      label: "自定义按钮",
+      params: {
+        ...baseTemplate!.params,
+        component_type: "StaticButton"
+      },
+      custom: true
+    };
+
+    const node = createStaticBoxNodeFromDrawing(
+      template,
+      [
+        { x: 80, y: 60 },
+        { x: 180, y: 120 }
+      ],
+      "layer-user"
+    );
+
+    expect(node.kind).toBe("static-hexagon");
+    expect(node.params.component_type).toBe("StaticButton");
+    expect(node.params.buttonEnabled).toBe("1");
+    expect(node.params.buttonActionType).toBe("none");
+  });
+
+  test("treats custom templates assigned to the StaticButton library as button-capable nodes", () => {
+    const template: DeviceTemplate = {
+      kind: "custom-StaticButton",
+      label: "自定义按钮",
+      categoryLibrary: "静态图元",
+      size: { width: 128, height: 54 },
+      params: {
+        component_type: "StaticButton",
+        fillColor: "transparent",
+        strokeColor: "transparent",
+        lineWidth: "0"
+      },
+      terminalType: "ac",
+      terminalCount: 0,
+      terminalTypes: [],
+      custom: true,
+      parameterDefinitions: [],
+      stateDefinitions: []
+    };
+
+    const node = createNodeFromTemplate(template, { x: 240, y: 180 });
+
+    expect(isStaticButtonCapableKind(node.kind)).toBe(true);
+    expect(isStaticButtonCapableNode(node)).toBe(true);
+    expect(isStaticGraphicNode(node)).toBe(true);
+    expect(isStaticBoxLikeNode(node)).toBe(true);
+    expect(node.params.component_type).toBe("StaticButton");
+    expect(node.params.buttonEnabled).toBe("1");
+    expect(node.params.buttonActionType).toBe("none");
+  });
+
+  test("infers static button identity from custom static kinds without stored component type", () => {
+    const template: DeviceTemplate = {
+      kind: "custom-StaticButton-2",
+      label: "操作按钮",
+      categoryLibrary: "静态图元",
+      size: { width: 128, height: 54 },
+      params: {
+        text: "操作按钮",
+        fillColor: "#ffffff",
+        strokeColor: "#0f172a",
+        textColor: "#111827",
+        lineWidth: "2",
+        cornerRadius: "6"
+      },
+      terminalType: "ac",
+      terminalCount: 0,
+      terminalTypes: [],
+      custom: true,
+      parameterDefinitions: [],
+      stateDefinitions: []
+    };
+
+    const node = createStaticBoxNodeFromDrawing(
+      template,
+      [
+        { x: 100, y: 90 },
+        { x: 260, y: 150 }
+      ],
+      "layer-user"
+    );
+
+    expect(isStaticNode(node)).toBe(true);
+    expect(isStaticGraphicNode(node)).toBe(true);
+    expect(isStaticButtonCapableNode(node)).toBe(true);
+    expect(isStaticBoxLikeNode(node)).toBe(true);
+    expect(staticRenderKindForNode(node)).toBe("static-button");
+    expect(inferESection(node.kind, node.params)).toBe("StaticButton");
+    expect(node.params.component_type).toBe("StaticButton");
+    expect(node.params.buttonEnabled).toBe("1");
+    expect(node.params.buttonActionType).toBe("none");
+    expect(node.params[CUSTOM_DEVICE_TEMPLATE_KEY]).toBeUndefined();
+    expect(node.params.run_stat).toBeUndefined();
+    expect(node.params._labelVisible).toBeUndefined();
+    expect(node.position).toEqual({ x: 180, y: 120 });
+    expect(node.size).toEqual({ width: 160, height: 60 });
+  });
+
+  test("renders custom static button graphics during drawing previews", () => {
+    const template: DeviceTemplate = {
+      kind: "custom-StaticButton-3",
+      label: "操作按钮",
+      categoryLibrary: "静态图元",
+      size: { width: 128, height: 54 },
+      params: {
+        text: "操作按钮",
+        fillColor: "#ffffff",
+        strokeColor: "#0f172a",
+        textColor: "#111827",
+        lineWidth: "2",
+        cornerRadius: "6"
+      },
+      terminalType: "ac",
+      terminalCount: 0,
+      terminalTypes: [],
+      custom: true,
+      parameterDefinitions: [],
+      stateDefinitions: []
+    };
+    const node = createStaticBoxNodeFromDrawing(
+      template,
+      [
+        { x: 40, y: 40 },
+        { x: 200, y: 108 }
+      ],
+      "layer-user"
+    );
+
+    const geometryMarkup = renderToStaticMarkup(createElement("svg", null, createElement(DeviceGlyph, { node, mode: "geometry" })));
+    const textMarkup = renderToStaticMarkup(createElement("svg", null, createElement(DeviceGlyph, { node, mode: "text" })));
+
+    expect(geometryMarkup).toContain('stroke="#0f172a"');
+    expect(geometryMarkup).toContain('width="160"');
+    expect(geometryMarkup).toContain('height="68"');
+    expect(geometryMarkup).not.toContain('stroke="none"');
+    expect(textMarkup).toContain("操作按钮");
+  });
+
+  test("renders custom static graphics in box drawing previews with dragged dimensions", () => {
+    const template: DeviceTemplate = {
+      kind: "custom-StaticButton-4",
+      label: "操作按钮",
+      categoryLibrary: "静态图元",
+      size: { width: 128, height: 54 },
+      params: {
+        text: "操作按钮",
+        fillColor: "#ffffff",
+        strokeColor: "#0f172a",
+        textColor: "#111827",
+        lineWidth: "2",
+        cornerRadius: "6"
+      },
+      terminalType: "ac",
+      terminalCount: 0,
+      terminalTypes: [],
+      custom: true,
+      parameterDefinitions: [],
+      stateDefinitions: []
+    };
+    const points = [
+      { x: 40, y: 50 },
+      { x: 240, y: 130 }
+    ];
+    const renderPreview = createRenderStaticBoxDrawingPreview({
+      MemoDeviceGlyph: DeviceGlyph,
+      activeLayerId: "layer-user",
+      circle: "circle",
+      colorDisplayMode: "energy",
+      colorPalette: DEFAULT_COLOR_PALETTE,
+      createStaticBoxNodeFromDrawing,
+      formatSvgNumber: (value: number) => String(Number(value.toFixed(3))),
+      g: "g",
+      nodeGeometryTransform: () => "",
+      rect: "rect",
+      renderNodePreviewImageContent: (node: ReturnType<typeof createStaticBoxNodeFromDrawing>, clipId: string) =>
+        createElement("g", { "data-preview-image": clipId }, createElement("rect", { width: node.size.width, height: node.size.height })),
+      resolveNodeStateVisual: () => null,
+      staticDrawing: {
+        kind: template.kind,
+        template,
+        points: [points[0]],
+        previewPoint: points[1]
+      },
+      staticDrawingPreviewPoints: () => points
+    });
+
+    const markup = renderToStaticMarkup(createElement("svg", null, renderPreview()));
+
+    expect(markup).toContain("static-drawing-preview-box");
+    expect(markup).toContain('stroke="#0f172a"');
+    expect(markup).toContain('width="200"');
+    expect(markup).toContain('height="80"');
+    expect(markup).toContain("操作按钮");
+    expect(markup).toContain("data-preview-image");
   });
 
   test("lets static graphics opt in or out of connection route avoidance", () => {
