@@ -55,6 +55,18 @@ const backendProxy = {
   }
 };
 
+const serverWatchIgnored = [
+  "**/data/**",
+  "**/dist/**",
+  "**/logs/**",
+  "**/output/**",
+  "**/tmp/**",
+  "**/.codex/**",
+  "**/.codex-logs/**",
+  "**/.superpowers/**",
+  "**/.worktrees/**"
+];
+
 export default defineConfig({
   plugins: [react()],
   build: {
@@ -66,7 +78,7 @@ export default defineConfig({
   },
   server: {
     watch: {
-      ignored: ["**/data/**"]
+      ignored: serverWatchIgnored
     },
     proxy: backendProxy
   },
