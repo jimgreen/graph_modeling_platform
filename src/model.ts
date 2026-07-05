@@ -2,6 +2,7 @@ import { normalizeProjectMeasurements } from "./measurements";
 import type { ProjectMeasurementConfig } from "./measurements";
 import { degreesToRadians } from "./formatUtils";
 import { clampNumber } from "./canvasViewport";
+import { normalizeImageFitMode } from "./imageFit";
 
 export type DeviceKind =
   | "static-text"
@@ -280,6 +281,7 @@ export type DeviceStateDefinition = {
   icon?: string;
   image?: string;
   imageAssetId?: string;
+  imageFit?: string;
   text?: string;
   color?: string;
   fillColor?: string;
@@ -287,6 +289,7 @@ export type DeviceStateDefinition = {
   textColor?: string;
   backgroundImage?: string;
   backgroundImageAssetId?: string;
+  backgroundImageFit?: string;
   imageCleared?: string;
 };
 
@@ -507,6 +510,7 @@ export type ProjectFile = {
   canvasBackgroundColor?: string;
   canvasBackgroundImage?: string;
   canvasBackgroundImageAssetId?: string;
+  canvasBackgroundImageFit?: string;
   backgroundProjectId?: string;
   backgroundLayerIds?: string[];
   powerUnit?: string;
@@ -961,6 +965,7 @@ function cloneDeviceStateDefinition(definition: DeviceStateDefinition): DeviceSt
     ...(definition.icon ? { icon: definition.icon } : {}),
     ...(definition.image ? { image: definition.image } : {}),
     ...(definition.imageAssetId ? { imageAssetId: definition.imageAssetId } : {}),
+    ...(definition.imageFit ? { imageFit: normalizeImageFitMode(definition.imageFit) } : {}),
     ...(definition.text ? { text: definition.text } : {}),
     ...(definition.color ? { color: definition.color } : {}),
     ...(definition.fillColor ? { fillColor: definition.fillColor } : {}),
@@ -968,6 +973,7 @@ function cloneDeviceStateDefinition(definition: DeviceStateDefinition): DeviceSt
     ...(definition.textColor ? { textColor: definition.textColor } : {}),
     ...(definition.backgroundImage ? { backgroundImage: definition.backgroundImage } : {}),
     ...(definition.backgroundImageAssetId ? { backgroundImageAssetId: definition.backgroundImageAssetId } : {}),
+    ...(definition.backgroundImageFit ? { backgroundImageFit: normalizeImageFitMode(definition.backgroundImageFit) } : {}),
     ...(definition.imageCleared ? { imageCleared: definition.imageCleared } : {})
   };
 }
@@ -996,6 +1002,12 @@ export function normalizeDeviceStateDefinitions(value: unknown): DeviceStateDefi
       const text = String(source[key] ?? "").trim();
       if (text) {
         state[key] = text;
+      }
+    }
+    for (const key of ["imageFit", "backgroundImageFit"] as const) {
+      const text = String(source[key] ?? "").trim();
+      if (text) {
+        state[key] = normalizeImageFitMode(text);
       }
     }
     states.push(state);

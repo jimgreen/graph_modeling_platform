@@ -136,7 +136,8 @@ describe("default device state draft rows", () => {
         strokeColor: "#334155",
         fillColor: "#fef3c7",
         backgroundImage: "/api/images/bg-1",
-        backgroundImageAssetId: "bg-1"
+        backgroundImageAssetId: "bg-1",
+        backgroundImageFit: "stretch"
       },
       frameHasTerminals: false
     });
@@ -147,7 +148,9 @@ describe("default device state draft rows", () => {
     expect(imageSource).toContain('fill="#fef3c7"');
     expect(imageSource).toContain('data-state-icon-frame-image="true"');
     expect(imageSource).toContain('data-state-icon-frame-image-asset-id="bg-1"');
+    expect(imageSource).toContain('data-state-icon-frame-image-fit="stretch"');
     expect(imageSource).toContain('href="/api/images/bg-1"');
+    expect(imageSource).toContain('preserveAspectRatio="none"');
   });
 
   test("does not reopen a frame-only drawing background as an editable element", () => {
@@ -158,7 +161,8 @@ describe("default device state draft rows", () => {
         strokeColor: "#334155",
         fillColor: "#fef3c7",
         backgroundImage: "/api/images/bg-1",
-        backgroundImageAssetId: "bg-1"
+        backgroundImageAssetId: "bg-1",
+        backgroundImageFit: "stretch"
       },
       frameHasTerminals: false
     });
@@ -180,8 +184,25 @@ describe("default device state draft rows", () => {
       strokeColor: "#334155",
       fillColor: "#fef3c7",
       backgroundImage: "/api/images/bg-1",
-      backgroundImageAssetId: "bg-1"
+      backgroundImageAssetId: "bg-1",
+      backgroundImageFit: "stretch"
     });
+  });
+
+  test("serializes drawing image element fit modes", () => {
+    const element = {
+      ...createImportedStateIconElement("image", "/api/images/photo", "图片"),
+      imageFit: "tile",
+      width: 80,
+      height: 48
+    };
+
+    const image = stateIconDrawingToPersistedImage([element]);
+    const imageSource = decodeURIComponent(image.split(",")[1] ?? "");
+
+    expect(imageSource).toContain('data-state-icon-image-fit="tile"');
+    expect(imageSource).toContain("<pattern");
+    expect(imageSource).toContain('href="/api/images/photo"');
   });
 
   test("does not serialize an empty drawing with only the default frame", () => {

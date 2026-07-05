@@ -61,7 +61,7 @@ function areCanvasPropsEqual(prevProps: any, nextProps: any) {
     'visibleNodes', 'visibleEdges', 'selectedNodeIdSet', 'selectedEdgeIds',
     'marquee', 'connectPreviewDom', 'routableLinePreview', 'resizeSizeHint',
     'draggingDelta', 'connectSource', 'libraryPlacement',
-    'canvasBackgroundColor', 'canvasBackgroundImageUrl', 'backgroundPageRender'
+    'canvasBackgroundColor', 'canvasBackgroundImageUrl', 'canvasBackgroundImageFit', 'backgroundPageRender'
   ];
 
   for (const key of dataKeys) {
@@ -102,7 +102,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     canvasDisplayWidth, canvasDisplayHeight, canvasDisplayOffsetX, canvasDisplayOffsetY,
     canvasRenderBounds, canvasScrollSurfaceWidth, canvasScrollSurfaceHeight,
     canvasHorizontalScrollbarsActive, canvasVerticalScrollbarsActive,
-    canvasBackgroundColor, canvasBackgroundImageUrl,
+    canvasBackgroundColor, canvasBackgroundImageUrl, canvasBackgroundImageFit,
     connectSource, staticDrawing, libraryPlacement, contextMarqueeSelection,
     activeDropReady, panning, multiNodeDragging, singleNodeDragging,
     isEditMode, isBrowseMode, isReadonlyCanvasMode, mode,
@@ -577,7 +577,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
               </pattern>
             </defs>
             <rect data-canvas-background width={canvasRenderBounds.width} height={canvasRenderBounds.height} fill={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND}/>
-            {canvasBackgroundImageUrl && (<image data-canvas-background href={canvasBackgroundImageUrl} x="0" y="0" width={canvasRenderBounds.width} height={canvasRenderBounds.height} preserveAspectRatio="xMidYMid slice" pointerEvents="none"/>)}
+            {canvasBackgroundImageUrl && (<SvgMarkupChunk className="canvas-background-image-markup" markup={svgImageContentMarkup(canvasBackgroundImageUrl, { x: 0, y: 0, width: canvasRenderBounds.width, height: canvasRenderBounds.height, imageFit: canvasBackgroundImageFit, className: "canvas-background-image", extraAttributes: " data-canvas-background=\"true\" pointer-events=\"none\"" })}/>)}
             <rect width={canvasRenderBounds.width} height={canvasRenderBounds.height} fill="url(#large-grid)"/>
             <rect className="canvas-boundary" x="0" y="0" width={canvasRenderBounds.width} height={canvasRenderBounds.height}/>
             {renderReadonlyBackgroundPage()}
@@ -827,6 +827,15 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         }
         const imageHref = nodeImage(node);
         const foregroundImageHref = nodeForegroundImage(node);
+        const nodeUsesStateImage = Boolean(
+            nodeStateVisual?.image ||
+                nodeStateVisual?.imageAssetId ||
+                nodeStateVisual?.backgroundImage ||
+                nodeStateVisual?.backgroundImageAssetId
+        );
+        const nodeBackgroundImageFit = nodeUsesStateImage
+            ? nodeStateVisual?.imageFit ?? nodeStateVisual?.backgroundImageFit ?? node.params.backgroundImageFit
+            : node.params.backgroundImageFit;
         const uprightStaticSelectionOutline = nodeUsesUprightStaticSelectionOutline(node, imageHref, foregroundImageHref);
         const uprightSelectionOutlineRect = uprightStaticSelectionOutline ? nodeUprightSelectionOutlineRect(node) : null;
         const nodeGeometryTransformValue = nodeGeometryTransform(node);
@@ -942,10 +951,10 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                       </g>)}
                   </g>
                   {!nodeIsBus && (imageHref || foregroundImageHref) && (<g className="node-upright-content" transform={nodeImageContentTransform(node)}>
-                      {imageHref && nodeIsStatic && (<SvgMarkupChunk className="node-background-image-markup" markup={svgImageContentMarkup(imageHref, { x: -node.size.width / 2, y: -node.size.height / 2, width: node.size.width, height: node.size.height, preserveAspectRatio: "xMidYMid slice", clipPath: `url(#clip-${node.id})`, className: "node-background-image" })}/>)}
+                      {imageHref && nodeIsStatic && (<SvgMarkupChunk className="node-background-image-markup" markup={svgImageContentMarkup(imageHref, { x: -node.size.width / 2, y: -node.size.height / 2, width: node.size.width, height: node.size.height, imageFit: nodeBackgroundImageFit, clipPath: `url(#clip-${node.id})`, className: "node-background-image" })}/>)}
                       {imageHref && !nodeIsStatic && (<rect x={-node.size.width / 2} y={-node.size.height / 2} width={node.size.width} height={node.size.height} rx="8" className={`node-image-cover ${node.terminals.length > 0 ? "terminal-reserved-area" : ""}`}/>)}
-                      {imageHref && !nodeIsStatic && (<SvgMarkupChunk className="node-background-image-markup" markup={svgImageContentMarkup(imageHref, { x: -node.size.width / 2, y: -node.size.height / 2, width: node.size.width, height: node.size.height, preserveAspectRatio: "xMidYMid slice", clipPath: `url(#clip-${node.id})`, className: "node-background-image" })}/>)}
-                      {foregroundImageHref && (<SvgMarkupChunk className="node-foreground-image-markup" markup={svgImageContentMarkup(foregroundImageHref, { x: -node.size.width / 2, y: -node.size.height / 2, width: node.size.width, height: node.size.height, preserveAspectRatio: "xMidYMid slice", clipPath: `url(#clip-${node.id})`, className: "node-foreground-image" })}/>)}
+                      {imageHref && !nodeIsStatic && (<SvgMarkupChunk className="node-background-image-markup" markup={svgImageContentMarkup(imageHref, { x: -node.size.width / 2, y: -node.size.height / 2, width: node.size.width, height: node.size.height, imageFit: nodeBackgroundImageFit, clipPath: `url(#clip-${node.id})`, className: "node-background-image" })}/>)}
+                      {foregroundImageHref && (<SvgMarkupChunk className="node-foreground-image-markup" markup={svgImageContentMarkup(foregroundImageHref, { x: -node.size.width / 2, y: -node.size.height / 2, width: node.size.width, height: node.size.height, imageFit: node.params.foregroundImageFit, clipPath: `url(#clip-${node.id})`, className: "node-foreground-image" })}/>)}
                     </g>)}
                   {uprightSelectionOutlineRect && (<rect className="node-upright-selection-outline" x={uprightSelectionOutlineRect.x} y={uprightSelectionOutlineRect.y} width={uprightSelectionOutlineRect.width} height={uprightSelectionOutlineRect.height} rx="4"/>)}
                   {nodeLabelVisible && (<g className={`node-device-label ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${nodeLabelIsVertical ? "vertical" : "horizontal"}`} data-node-id={node.id} data-label-owner="device" transform={nodeLabelTransform(node)} onPointerDown={isEditMode ? (event) => startNodeLabelDrag(event, node) : undefined}>

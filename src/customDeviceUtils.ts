@@ -129,6 +129,7 @@ export function createEmptyCustomDeviceDraft(categoryLibraryName = "交流设备
     componentKind: "",
     backgroundImage: "",
     backgroundImageAssetId: "",
+    backgroundImageFit: "cover",
     backgroundImageCleared: "",
     size: { width: 104, height: 64 },
     allowResizeTransform: "0",
@@ -176,6 +177,7 @@ export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, se
     componentKind: template.custom ? template.kind : "",
     backgroundImage: template.params.backgroundImage ?? "",
     backgroundImageAssetId: template.params.backgroundImageAssetId ?? "",
+    backgroundImageFit: template.params.backgroundImageFit ?? "cover",
     backgroundImageCleared: template.params.backgroundImageCleared ?? "",
     size: { ...template.size },
     allowResizeTransform: templateResizeTransformValue(template),
@@ -199,6 +201,7 @@ export function createDefinitionVisualDraft(template: DeviceTemplate): DeviceDef
   return {
     backgroundImage: template.params.backgroundImage ?? "",
     backgroundImageAssetId: template.params.backgroundImageAssetId ?? "",
+    backgroundImageFit: template.params.backgroundImageFit ?? "cover",
     backgroundImageCleared: template.params.backgroundImageCleared ?? "",
     size: {
       width: Math.max(1, Math.round(template.size.width || 104)),
@@ -344,7 +347,7 @@ export const customDeviceGeneratedDefaultImageCandidates = (
 
 export const syncInheritedCustomDeviceStateVisuals = (
   states: DeviceStateDefinition[],
-  defaultVisual: { backgroundImage: string; backgroundImageAssetId: string },
+  defaultVisual: { backgroundImage: string; backgroundImageAssetId: string; backgroundImageFit?: string },
   generatedDefaultImageCandidates: ReadonlySet<string>
 ): DeviceStateDefinition[] => {
   if (!defaultVisual.backgroundImage || generatedDefaultImageCandidates.size === 0) {
@@ -359,7 +362,11 @@ export const syncInheritedCustomDeviceStateVisuals = (
     const next: DeviceStateDefinition = {
       ...state,
       image: defaultVisual.backgroundImage,
-      backgroundImage: defaultVisual.backgroundImage
+      backgroundImage: defaultVisual.backgroundImage,
+      ...(defaultVisual.backgroundImageFit ? {
+        imageFit: defaultVisual.backgroundImageFit,
+        backgroundImageFit: defaultVisual.backgroundImageFit
+      } : {})
     };
     if (defaultVisual.backgroundImageAssetId) {
       next.imageAssetId = defaultVisual.backgroundImageAssetId;

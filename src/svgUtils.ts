@@ -1,6 +1,7 @@
 // SVG 工具函数 — 纯 SVG 标记生成、解析与编码
 
 import { Fragment, isValidElement } from "react";
+import { imageFitPreserveAspectRatio, normalizeImageFitMode } from "./imageFit";
 
 /* 常量 */
 
@@ -223,7 +224,7 @@ function scopeInlineSvgIdReferences(markup: string, ids: Set<string>, prefix: st
 
 export function inlineSvgRootMarkup(
   href: string,
-  options: { x: number; y: number; width: number; height: number; className: string; preserveAspectRatio?: string; clipPath?: string }
+  options: { x: number; y: number; width: number; height: number; className: string; preserveAspectRatio?: string; clipPath?: string; imageFit?: string; extraAttributes?: string }
 ) {
   const source = stripUnsafeInlineSvgMarkup(
     decodeSvgImageSource(href)
@@ -253,25 +254,43 @@ export function inlineSvgRootMarkup(
       : ` viewBox="0 0 ${formatSvgNumber(width)} ${formatSvgNumber(height)}"`;
   const preservedAttributes = scopedRootAttributes ? ` ${scopedRootAttributes}` : "";
   const inlineClassName = ["export-inline-svg-image", options.className].filter(Boolean).join(" ");
-  const inlineSvg = `<svg class="${escapeXml(inlineClassName)}" x="${formatSvgNumber(options.x)}" y="${formatSvgNumber(options.y)}" width="${formatSvgNumber(options.width)}" height="${formatSvgNumber(options.height)}" preserveAspectRatio="${escapeXml(options.preserveAspectRatio ?? "xMidYMid slice")}"${viewBoxAttribute}${preservedAttributes}>${scopedBody}</svg>`;
+  const preserveAspectRatio = options.preserveAspectRatio ?? imageFitPreserveAspectRatio(options.imageFit);
+  const extraAttributes = options.extraAttributes ?? "";
+  const inlineSvg = `<svg class="${escapeXml(inlineClassName)}" x="${formatSvgNumber(options.x)}" y="${formatSvgNumber(options.y)}" width="${formatSvgNumber(options.width)}" height="${formatSvgNumber(options.height)}" preserveAspectRatio="${escapeXml(preserveAspectRatio)}"${extraAttributes}${viewBoxAttribute}${preservedAttributes}>${scopedBody}</svg>`;
   return options.clipPath ? `<g clip-path="${escapeXml(options.clipPath)}">${inlineSvg}</g>` : inlineSvg;
 }
 
 export function svgImageContentMarkup(
   href: string,
-  options: { x: number; y: number; width: number; height: number; className?: string; preserveAspectRatio?: string; clipPath?: string }
+  options: { x: number; y: number; width: number; height: number; className?: string; preserveAspectRatio?: string; clipPath?: string; imageFit?: string; patternId?: string; tileWidth?: number; tileHeight?: number; extraAttributes?: string }
 ) {
   if (!href) {
     return "";
   }
   const className = options.className ?? "";
+  const imageFit = normalizeImageFitMode(options.imageFit);
+  const preserveAspectRatio = options.preserveAspectRatio ?? imageFitPreserveAspectRatio(imageFit);
+  if (imageFit === "tile") {
+    const tileWidth = Math.max(1, Number.isFinite(Number(options.tileWidth)) ? Number(options.tileWidth) : Math.min(Math.max(1, options.width), 96));
+    const tileHeight = Math.max(1, Number.isFinite(Number(options.tileHeight)) ? Number(options.tileHeight) : Math.min(Math.max(1, options.height), 96));
+    const patternId = options.patternId || `${inlineSvgScopedIdPrefix(href, {
+      ...options,
+      className,
+      preserveAspectRatio: "tile"
+    })}pattern`;
+    const classAttribute = className ? ` class="${escapeXml(className)}"` : "";
+    const clipPathAttribute = options.clipPath ? ` clip-path="${escapeXml(options.clipPath)}"` : "";
+    const extraAttributes = options.extraAttributes ?? "";
+    return `<defs><pattern id="${escapeXml(patternId)}" x="${formatSvgNumber(options.x)}" y="${formatSvgNumber(options.y)}" width="${formatSvgNumber(tileWidth)}" height="${formatSvgNumber(tileHeight)}" patternUnits="userSpaceOnUse"><image href="${escapeXml(href)}" x="0" y="0" width="${formatSvgNumber(tileWidth)}" height="${formatSvgNumber(tileHeight)}" preserveAspectRatio="${escapeXml(imageFitPreserveAspectRatio("fixed"))}"/></pattern></defs><rect x="${formatSvgNumber(options.x)}" y="${formatSvgNumber(options.y)}" width="${formatSvgNumber(options.width)}" height="${formatSvgNumber(options.height)}" fill="url(#${escapeXml(patternId)})"${clipPathAttribute}${classAttribute}${extraAttributes}/>`;
+  }
   const inlineSvg = className ? inlineSvgRootMarkup(href, { ...options, className }) : "";
   if (inlineSvg) {
     return inlineSvg;
   }
   const classAttribute = className ? ` class="${escapeXml(className)}"` : "";
   const clipPathAttribute = options.clipPath ? ` clip-path="${escapeXml(options.clipPath)}"` : "";
-  return `<image href="${escapeXml(href)}" x="${formatSvgNumber(options.x)}" y="${formatSvgNumber(options.y)}" width="${formatSvgNumber(options.width)}" height="${formatSvgNumber(options.height)}" preserveAspectRatio="${escapeXml(options.preserveAspectRatio ?? "xMidYMid slice")}"${clipPathAttribute}${classAttribute}/>`;
+  const extraAttributes = options.extraAttributes ?? "";
+  return `<image href="${escapeXml(href)}" x="${formatSvgNumber(options.x)}" y="${formatSvgNumber(options.y)}" width="${formatSvgNumber(options.width)}" height="${formatSvgNumber(options.height)}" preserveAspectRatio="${escapeXml(preserveAspectRatio)}"${clipPathAttribute}${classAttribute}${extraAttributes}/>`;
 }
 
 /* React 元素 → SVG 标记 */

@@ -106,6 +106,7 @@ import {
   getDeviceStrokeColor,
   getDeviceStrokeWidth,
   getTemplateStateDefinitions,
+  normalizeDeviceStateDefinitions,
   normalizeDeviceStatusForE,
   resolveDeviceStateVisual,
   nodeAllowsResizeTransform,
@@ -1395,6 +1396,33 @@ describe("power system model", () => {
 
     expect(exported.ACSwitch.rows).toHaveLength(1);
     expect(exported.ACSwitch.rows[0]).toEqual(expect.objectContaining({ status: "1", run_stat: "1" }));
+  });
+
+  test("normalizes state image fit settings for persisted state visuals", () => {
+    const states = normalizeDeviceStateDefinitions([
+      {
+        value: "1",
+        name: "合位",
+        image: "/api/images/state-closed",
+        imageFit: "stretch",
+        backgroundImage: "/api/images/state-bg",
+        backgroundImageFit: "tile"
+      },
+      {
+        value: "2",
+        name: "分位",
+        image: "/api/images/state-open",
+        imageFit: ""
+      }
+    ]);
+
+    expect(states[0]).toMatchObject({
+      value: "1",
+      name: "合位",
+      imageFit: "stretch",
+      backgroundImageFit: "tile"
+    });
+    expect(states[1]).not.toHaveProperty("imageFit");
   });
 
   test("creates DC source with exactly one DC terminal and one DC node number", () => {

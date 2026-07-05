@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { useState } from "react";
 import { MemoizedCanvasArea } from "./appCanvasArea";
+import { IMAGE_FIT_MODE_OPTIONS, normalizeImageFitMode } from "../imageFit";
 import {
   ICON_LIBRARY_PAGE_SIZE,
   iconLibraryCategoriesForSelection,
@@ -178,6 +179,11 @@ export function renderAppView(__appScope: Record<string, any>) {
       customStatePreviewVisual?.backgroundImage ||
       customStatePreviewVisual?.backgroundImageAssetId
     );
+    const previewImageFit = normalizeImageFitMode(
+      previewUsesStateImage
+        ? customStatePreviewVisual?.imageFit ?? customStatePreviewVisual?.backgroundImageFit ?? "fixed"
+        : customDeviceDraft.backgroundImageFit
+    );
     return (
       <>
         <g className="node-geometry" transform={nodeGeometryTransform(previewFrameNode)}>
@@ -187,7 +193,7 @@ export function renderAppView(__appScope: Record<string, any>) {
         {renderNodePreviewImageContent(previewFrameNode, clipId, {
           imageHref: previewImageHref,
           foregroundImageHref: previewForegroundHref,
-          preserveAspectRatio: previewUsesStateImage ? "xMidYMid meet" : undefined
+          imageFit: previewImageFit
         })}
       </>
     );
@@ -728,10 +734,22 @@ export function renderAppView(__appScope: Record<string, any>) {
                 pushUndoSnapshot();
                 setCanvasBackgroundImage("");
                 setCanvasBackgroundImageAssetId("");
+                __appScope.setCanvasBackgroundImageFit?.("cover");
             }} disabled={isBrowseMode || !canvasBackgroundImage}>
                           清除
                         </button>
                       </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    {batchEditors.renderChineseParamHeader("canvasBackgroundImageFit")}
+                    <td>
+                      <select value={normalizeImageFitMode(__appScope.canvasBackgroundImageFit)} disabled={isBrowseMode} onChange={(event) => {
+                pushUndoSnapshot();
+                __appScope.setCanvasBackgroundImageFit?.(event.target.value);
+            }}>
+                        {IMAGE_FIT_MODE_OPTIONS.map((option) => (<option key={option.value} value={option.value}>{option.label}</option>))}
+                      </select>
                     </td>
                   </tr>
                   <tr>
@@ -1155,6 +1173,14 @@ export function renderAppView(__appScope: Record<string, any>) {
                             </div>
                           </td>
                         </tr>
+                        <tr>
+                          {batchEditors.renderChineseParamHeader("backgroundImageFit")}
+                          <td>
+                            <select value={normalizeImageFitMode(inspectorSelectedNode.params.backgroundImageFit)} onChange={(event) => updateParam("backgroundImageFit", event.target.value)}>
+                              {IMAGE_FIT_MODE_OPTIONS.map((option) => (<option key={option.value} value={option.value}>{option.label}</option>))}
+                            </select>
+                          </td>
+                        </tr>
                       </>)}
                     {!__appScope.isStaticGraphicNode(inspectorSelectedNode) && (<>
                         <tr>
@@ -1169,6 +1195,14 @@ export function renderAppView(__appScope: Record<string, any>) {
                               <button type="button" onClick={() => setImageTarget({ kind: "nodeForeground", nodeId: inspectorSelectedNode.id })}>选择</button>
                               <button type="button" onClick={() => clearSelectedImageForNode(inspectorSelectedNode.id, "foreground")} disabled={!inspectorSelectedNode.params.foregroundImage}>清除</button>
                             </div>
+                          </td>
+                        </tr>
+                        <tr>
+                          {batchEditors.renderChineseParamHeader("foregroundImageFit")}
+                          <td>
+                            <select value={normalizeImageFitMode(inspectorSelectedNode.params.foregroundImageFit)} onChange={(event) => updateParam("foregroundImageFit", event.target.value)}>
+                              {IMAGE_FIT_MODE_OPTIONS.map((option) => (<option key={option.value} value={option.value}>{option.label}</option>))}
+                            </select>
                           </td>
                         </tr>
                       </>)}

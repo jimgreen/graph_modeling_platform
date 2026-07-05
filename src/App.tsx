@@ -817,6 +817,8 @@ const [canvasBackgroundImage, setCanvasBackgroundImage] = useState(() => initial
 Object.assign(__appScope, { canvasBackgroundImage, setCanvasBackgroundImage });
 const [canvasBackgroundImageAssetId, setCanvasBackgroundImageAssetId] = useState(() => initialDraft?.canvasBackgroundImageAssetId ?? "");
 Object.assign(__appScope, { canvasBackgroundImageAssetId, setCanvasBackgroundImageAssetId });
+const [canvasBackgroundImageFit, setCanvasBackgroundImageFit] = useState(() => initialDraft?.canvasBackgroundImageFit ?? "cover");
+Object.assign(__appScope, { canvasBackgroundImageFit, setCanvasBackgroundImageFit });
 const [backgroundProjectId, setBackgroundProjectId] = useState(() => initialDraft?.backgroundProjectId ?? "");
 Object.assign(__appScope, { backgroundProjectId, setBackgroundProjectId });
 const [backgroundLayerIds, setBackgroundLayerIds] = useState<string[]>(() => initialDraft?.backgroundLayerIds ?? []);
@@ -1859,6 +1861,7 @@ const currentModelRecord = useMemo<SavedProjectRecord>(() => (
         canvasBackgroundColor,
         canvasBackgroundImage,
         canvasBackgroundImageAssetId,
+        canvasBackgroundImageFit,
         backgroundProjectId,
         backgroundLayerIds,
         powerUnit,
@@ -1884,6 +1887,7 @@ const currentModelRecord = useMemo<SavedProjectRecord>(() => (
     canvasBackgroundColor,
     canvasBackgroundImage,
     canvasBackgroundImageAssetId,
+    canvasBackgroundImageFit,
     canvasHeight,
     canvasWidth,
     currentUnit,
@@ -1917,6 +1921,7 @@ const refreshRecoveryProjectSnapshot = useMemo<RefreshRecoveryProjectState>(() =
     canvasBackgroundColor,
     canvasBackgroundImage,
     canvasBackgroundImageAssetId,
+    canvasBackgroundImageFit,
     backgroundProjectId,
     backgroundLayerIds,
     powerUnit,
@@ -1940,6 +1945,7 @@ const refreshRecoveryProjectSnapshot = useMemo<RefreshRecoveryProjectState>(() =
     canvasBackgroundColor,
     canvasBackgroundImage,
     canvasBackgroundImageAssetId,
+    canvasBackgroundImageFit,
     canvasHeight,
     canvasWidth,
     currentUnit,
@@ -3074,6 +3080,7 @@ const cloneProjectState = (deepModelSnapshot = false, graphPatchScope?: UndoGrap
     canvasBackgroundColor,
     canvasBackgroundImage,
     canvasBackgroundImageAssetId,
+    canvasBackgroundImageFit,
     backgroundProjectId,
     backgroundLayerIds: [...backgroundLayerIds],
     powerUnit,
@@ -3252,6 +3259,7 @@ const currentGraphDirtyBaseline = (): GraphDirtyBaseline => ({
     canvasBackgroundColor,
     canvasBackgroundImage,
     canvasBackgroundImageAssetId,
+    canvasBackgroundImageFit,
     backgroundProjectId,
     backgroundLayerIds,
     powerUnit,
@@ -3275,6 +3283,7 @@ const graphDirtyBaselineChanged = (previous: GraphDirtyBaseline, next: GraphDirt
     previous.canvasBackgroundColor !== next.canvasBackgroundColor ||
     previous.canvasBackgroundImage !== next.canvasBackgroundImage ||
     previous.canvasBackgroundImageAssetId !== next.canvasBackgroundImageAssetId ||
+    previous.canvasBackgroundImageFit !== next.canvasBackgroundImageFit ||
     previous.backgroundProjectId !== next.backgroundProjectId ||
     previous.backgroundLayerIds !== next.backgroundLayerIds ||
     previous.powerUnit !== next.powerUnit ||
@@ -3287,7 +3296,7 @@ const graphDirtyBaselineChanged = (previous: GraphDirtyBaseline, next: GraphDirt
     previous.groups !== next.groups ||
     previous.measurements !== next.measurements;
 Object.assign(__appScope, { graphDirtyBaselineChanged });
-useEffect(createAppHookCallback120(__appScope), [activeLayerId, allowAutoExpandCanvas, backgroundLayerIds, backgroundProjectId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edges, groups, layers, nodes, powerBaseValue, powerUnit, projectMeasurements, projectName, voltageUnit]);
+useEffect(createAppHookCallback120(__appScope), [activeLayerId, allowAutoExpandCanvas, backgroundLayerIds, backgroundProjectId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasBackgroundImageFit, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edges, groups, layers, nodes, powerBaseValue, powerUnit, projectMeasurements, projectName, voltageUnit]);
 const canAdjustSelectedDisplayLayer = isEditMode && activeSelectedNodeIds.length > 0; Object.assign(__appScope, { canAdjustSelectedDisplayLayer });
 const adjustSelectedDisplayLayer = createAdjustSelectedDisplayLayer(__appScope); Object.assign(__appScope, { adjustSelectedDisplayLayer });
 const clearTransientSelectionState = createClearTransientSelectionState(__appScope); Object.assign(__appScope, { clearTransientSelectionState });
@@ -4792,6 +4801,7 @@ const stateIconDrawingInlineTargetKey = stateIconDrawingInlineTarget
             ? [
                 selectedDefinitionTemplate?.kind ?? selectedDefinitionKind ?? "",
                 definitionVisualDraft?.backgroundImageAssetId ?? "",
+                definitionVisualDraft?.backgroundImageFit ?? "",
                 definitionVisualDraft?.size.width ?? "",
                 definitionVisualDraft?.size.height ?? "",
                 definitionVisualDraft?.terminalCount ?? "",
@@ -4800,6 +4810,7 @@ const stateIconDrawingInlineTargetKey = stateIconDrawingInlineTarget
             : [
                 customDevicePreviewSourceTemplate?.kind ?? selectedCustomComponentTemplate?.kind ?? selectedDefinitionTemplate?.kind ?? editingCustomDeviceKind ?? "",
                 customDeviceDraft.backgroundImageAssetId,
+                customDeviceDraft.backgroundImageFit,
                 customDeviceDraft.size.width,
                 customDeviceDraft.size.height,
                 customDeviceDraft.terminalCount,
@@ -4898,6 +4909,7 @@ useEffect(() => {
     customDeviceDraft.backgroundImage,
     customDeviceDraft.backgroundImageAssetId,
     customDeviceDraft.backgroundImageCleared,
+    customDeviceDraft.backgroundImageFit,
     customDeviceDraft.stateDefinitions,
     customDeviceDraft.terminalCount,
     customIconStatePageId,
@@ -4905,6 +4917,7 @@ useEffect(() => {
     definitionVisualDraft?.backgroundImage,
     definitionVisualDraft?.backgroundImageAssetId,
     definitionVisualDraft?.backgroundImageCleared,
+    definitionVisualDraft?.backgroundImageFit,
     definitionStateDraftRows,
     definitionStatePageId,
     deviceDefinitionDialogOpen,
@@ -4944,6 +4957,7 @@ useEffect(() => {
         const imageFieldsAlreadySynced =
           definitionVisualDraft.backgroundImage === stateIconDrawingInlineImage &&
           !definitionVisualDraft.backgroundImageAssetId &&
+          (definitionVisualDraft.backgroundImageFit ?? "fixed") === "fixed" &&
           (definitionVisualDraft.backgroundImageCleared ?? "") === (stateIconDrawingInlineImage ? "" : "1");
         if (imageFieldsAlreadySynced) {
           return;
@@ -4954,6 +4968,7 @@ useEffect(() => {
                 ...current,
                 backgroundImage: stateIconDrawingInlineImage,
                 backgroundImageAssetId: "",
+                backgroundImageFit: "fixed",
                 backgroundImageCleared: stateIconDrawingInlineImage ? "" : "1",
                 error: ""
               }
@@ -4963,6 +4978,7 @@ useEffect(() => {
         const imageFieldsAlreadySynced =
           customDeviceDraft.backgroundImage === stateIconDrawingInlineImage &&
           !customDeviceDraft.backgroundImageAssetId &&
+          (customDeviceDraft.backgroundImageFit ?? "fixed") === "fixed" &&
           (customDeviceDraft.backgroundImageCleared ?? "") === (stateIconDrawingInlineImage ? "" : "1");
         if (imageFieldsAlreadySynced) {
           return;
@@ -4971,6 +4987,7 @@ useEffect(() => {
           ...current,
           backgroundImage: stateIconDrawingInlineImage,
           backgroundImageAssetId: "",
+          backgroundImageFit: "fixed",
           backgroundImageCleared: stateIconDrawingInlineImage ? "" : "1",
           error: ""
         }));
@@ -4987,8 +5004,10 @@ useEffect(() => {
     const imageFieldsAlreadySynced =
       (row.image ?? "") === stateIconDrawingInlineImage &&
       !row.imageAssetId &&
+      (row.imageFit ?? "fixed") === "fixed" &&
       !row.backgroundImage &&
       !row.backgroundImageAssetId &&
+      (row.backgroundImageFit ?? "fixed") === "fixed" &&
       (row.imageCleared ?? "") === (stateIconDrawingInlineImage ? "" : "1");
     if (imageFieldsAlreadySynced) {
       return;
@@ -4996,8 +5015,10 @@ useEffect(() => {
     const stateIconDrawingInlinePatch: Partial<DeviceDefinitionStateDraftRow> = {
       image: stateIconDrawingInlineImage,
       imageAssetId: "",
+      imageFit: "fixed",
       backgroundImage: "",
       backgroundImageAssetId: "",
+      backgroundImageFit: "fixed",
       imageCleared: stateIconDrawingInlineImage ? "" : "1"
     };
     if (stateIconDrawingDialog.target.scope === "definition") {

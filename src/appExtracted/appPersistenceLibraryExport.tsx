@@ -3145,8 +3145,12 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
         : "";
       const exportButtonClass = targetLayerIds.length > 0 ? " export-static-button" : "";
       const stateVisual = resolveSvgNodeStateVisual(node);
-      const imageHref = exportSvgImageHref(resolveStateVisualImageHref(stateVisual, imageAssets) || resolveNodeImage(node, imageAssets), imageExportPathById);
+      const stateVisualImageHref = resolveStateVisualImageHref(stateVisual, imageAssets);
+      const imageHref = exportSvgImageHref(stateVisualImageHref || resolveNodeImage(node, imageAssets), imageExportPathById);
       const foregroundHref = exportSvgImageHref(resolveNodeForegroundImage(node, imageAssets), imageExportPathById);
+      const backgroundImageFit = stateVisualImageHref
+        ? stateVisual?.imageFit ?? stateVisual?.backgroundImageFit ?? node.params.backgroundImageFit
+        : node.params.backgroundImageFit;
       const allowNodeImage = !isBusNode(node);
       const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette, stateVisual }));
       const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette, stateVisual }));
@@ -3159,6 +3163,8 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
             y: -node.size.height / 2,
             width: node.size.width,
             height: node.size.height,
+            imageFit: backgroundImageFit,
+            patternId: exportSvgUniqueId(`node_background_image_pattern_${node.id}`, usedSvgIds, "node_background_image_pattern"),
             className: "node-background-image"
           })
         : "";
@@ -3168,6 +3174,8 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
             y: -node.size.height / 2,
             width: node.size.width,
             height: node.size.height,
+            imageFit: node.params.foregroundImageFit,
+            patternId: exportSvgUniqueId(`node_foreground_image_pattern_${node.id}`, usedSvgIds, "node_foreground_image_pattern"),
             className: "node-foreground-image"
           })
         : "";
@@ -3225,6 +3233,8 @@ ${backgroundImage ? svgImageContentMarkup(backgroundImage, {
     y: 0,
     width: canvasSize.width,
     height: canvasSize.height,
+    imageFit: canvasSize.backgroundImageFit,
+    patternId: exportSvgUniqueId("canvas_background_image_pattern", usedSvgIds, "canvas_background_image_pattern"),
     className: "export-canvas-background-image"
   }) : ""}`;
   const deviceLayerMarkup = Array.from(nodeTypeLayerIds.entries())

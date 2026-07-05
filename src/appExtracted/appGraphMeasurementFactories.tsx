@@ -2547,14 +2547,20 @@ export function createRenderNodePreviewImageContent(__appScope: Record<string, a
   return (
     node: ModelNode,
     clipId: string,
-    options: { imageHref?: string; foregroundImageHref?: string; className?: string; preserveAspectRatio?: string } = {}
+    options: { imageHref?: string; foregroundImageHref?: string; className?: string; preserveAspectRatio?: string; imageFit?: string; foregroundImageFit?: string } = {}
   ) => {
-  const { SvgMarkupChunk, g, isBusNode, isStaticNode, nodeForegroundImage, nodeImage, nodeImageContentTransform, rect, svgImageContentMarkup } = __appScope;
+  const { SvgMarkupChunk, g, imageAssets, isBusNode, isStaticNode, nodeForegroundImage, nodeImage, nodeImageContentTransform, rect, resolveNodeStateVisual, resolveStateVisualImageHref, svgImageContentMarkup } = __appScope;
     const imageHref = options.imageHref ?? nodeImage(node);
     const foregroundImageHref = options.foregroundImageHref ?? nodeForegroundImage(node);
     if (isBusNode(node) || (!imageHref && !foregroundImageHref)) {
       return null;
     }
+    const stateVisual = resolveNodeStateVisual?.(node);
+    const stateImageHref = resolveStateVisualImageHref?.(stateVisual, imageAssets);
+    const imageFit = options.imageFit ?? (stateImageHref
+      ? stateVisual?.imageFit ?? stateVisual?.backgroundImageFit ?? node.params.backgroundImageFit
+      : node.params.backgroundImageFit);
+    const foregroundImageFit = options.foregroundImageFit ?? node.params.foregroundImageFit;
     const clipPath = `url(#${clipId})`;
     return (
       <>
@@ -2586,7 +2592,8 @@ export function createRenderNodePreviewImageContent(__appScope: Record<string, a
                 y: -node.size.height / 2,
                 width: node.size.width,
                 height: node.size.height,
-                preserveAspectRatio: options.preserveAspectRatio ?? "xMidYMid slice",
+                imageFit,
+                preserveAspectRatio: options.preserveAspectRatio,
                 clipPath,
                 className: "node-background-image"
               })}
@@ -2600,7 +2607,8 @@ export function createRenderNodePreviewImageContent(__appScope: Record<string, a
                 y: -node.size.height / 2,
                 width: node.size.width,
                 height: node.size.height,
-                preserveAspectRatio: options.preserveAspectRatio ?? "xMidYMid slice",
+                imageFit: foregroundImageFit,
+                preserveAspectRatio: options.preserveAspectRatio,
                 clipPath,
                 className: "node-foreground-image"
               })}
@@ -2618,7 +2626,7 @@ export function createBuildNodePreviewImageMarkup(__appScope: Record<string, any
     clipId: string,
     options: { clip?: boolean; className?: string } = {}
   ) => {
-  const { escapeXml, formatSvgNumber, isBusNode, isStaticNode, nodeForegroundImage, nodeImage, nodeImageContentTransform, svgImageContentMarkup } = __appScope;
+  const { escapeXml, formatSvgNumber, imageAssets, isBusNode, isStaticNode, nodeForegroundImage, nodeImage, nodeImageContentTransform, resolveNodeStateVisual, resolveStateVisualImageHref, svgImageContentMarkup } = __appScope;
     const imageHref = nodeImage(node);
     const foregroundImageHref = nodeForegroundImage(node);
     if (isBusNode(node) || (!imageHref && !foregroundImageHref)) {
@@ -2637,14 +2645,18 @@ export function createBuildNodePreviewImageMarkup(__appScope: Record<string, any
       y: -node.size.height / 2,
       width: node.size.width,
       height: node.size.height,
-      preserveAspectRatio: "xMidYMid slice",
       clipPath: clipEnabled ? clipUrl : undefined
     };
+    const stateVisual = resolveNodeStateVisual?.(node);
+    const stateImageHref = resolveStateVisualImageHref?.(stateVisual, imageAssets);
+    const imageFit = stateImageHref
+      ? stateVisual?.imageFit ?? stateVisual?.backgroundImageFit ?? node.params.backgroundImageFit
+      : node.params.backgroundImageFit;
     const backgroundMarkup = imageHref
-      ? svgImageContentMarkup(imageHref, { ...imageContentOptions, className: "node-background-image" })
+      ? svgImageContentMarkup(imageHref, { ...imageContentOptions, imageFit, className: "node-background-image" })
       : "";
     const foregroundMarkup = foregroundImageHref
-      ? svgImageContentMarkup(foregroundImageHref, { ...imageContentOptions, className: "node-foreground-image" })
+      ? svgImageContentMarkup(foregroundImageHref, { ...imageContentOptions, imageFit: node.params.foregroundImageFit, className: "node-foreground-image" })
       : "";
     return `${clipMarkup}<g class="${escapeXml(options.className ?? "node-upright-content")}" transform="${escapeXml(nodeImageContentTransform(node))}">${imageCoverMarkup}${backgroundMarkup}${foregroundMarkup}</g>`;
   };

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { clampNumber } from "../canvasViewport";
+import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
 import { stateIconSvgVisibleViewBox } from "../stateIconDrawing";
 import { measurementProfileItemsComplianceMessage } from "./appGraphMeasurementFactories";
 
@@ -9,7 +10,8 @@ const STATE_ICON_DRAFT_FRAME = {
   strokeColor: "#94a3b8",
   fillColor: "#ffffff",
   backgroundImage: "",
-  backgroundImageAssetId: ""
+  backgroundImageAssetId: "",
+  backgroundImageFit: "cover"
 };
 
 function normalizeStateIconFrameText(value: unknown) {
@@ -973,6 +975,7 @@ function clearGeneratedDefinitionVisualDraftImage(template: any, draft: any) {
     ...draft,
     backgroundImage: "",
     backgroundImageAssetId: "",
+    backgroundImageFit: "cover",
     backgroundImageCleared: ""
   };
 }
@@ -2645,7 +2648,7 @@ export function createApplyIconLibraryCatalogIcon(__appScope: Record<string, any
 
 export function createClearSelectedImage(__appScope: Record<string, any>) {
   return () => {
-  const { imageTarget, pushUndoSnapshot, requireEditMode, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setImageTarget, setStateIconDrawingDialog, updateGraphNodeById } = __appScope;
+  const { imageTarget, pushUndoSnapshot, requireEditMode, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasBackgroundImageFit, setImageTarget, setStateIconDrawingDialog, updateGraphNodeById } = __appScope;
     if (!requireEditMode("清除图片")) {
       return;
     }
@@ -2665,7 +2668,8 @@ export function createClearSelectedImage(__appScope: Record<string, any>) {
                 ...STATE_ICON_DRAFT_FRAME,
                 ...(current.frame ?? {}),
                 backgroundImage: "",
-                backgroundImageAssetId: ""
+                backgroundImageAssetId: "",
+                backgroundImageFit: "cover"
               }
             }
           : current
@@ -2677,6 +2681,7 @@ export function createClearSelectedImage(__appScope: Record<string, any>) {
     if (imageTarget.kind === "canvas") {
       setCanvasBackgroundImage("");
       setCanvasBackgroundImageAssetId("");
+      setCanvasBackgroundImageFit?.("cover");
     } else {
       updateGraphNodeById(imageTarget.nodeId, (node) =>
         imageTarget.kind === "nodeForeground"
@@ -2685,7 +2690,8 @@ export function createClearSelectedImage(__appScope: Record<string, any>) {
               params: {
                 ...node.params,
                 foregroundImage: "",
-                foregroundImageAssetId: ""
+                foregroundImageAssetId: "",
+                foregroundImageFit: "cover"
               }
             }
           : {
@@ -2693,7 +2699,8 @@ export function createClearSelectedImage(__appScope: Record<string, any>) {
               params: {
                 ...node.params,
                 backgroundImage: "",
-                backgroundImageAssetId: ""
+                backgroundImageAssetId: "",
+                backgroundImageFit: "cover"
               }
             }
       );
@@ -2713,8 +2720,8 @@ export function createClearSelectedImageForNode(__appScope: Record<string, any>)
       ...node,
       params:
         target === "foreground"
-          ? { ...node.params, foregroundImage: "", foregroundImageAssetId: "" }
-          : { ...node.params, backgroundImage: "", backgroundImageAssetId: "" }
+          ? { ...node.params, foregroundImage: "", foregroundImageAssetId: "", foregroundImageFit: "cover" }
+          : { ...node.params, backgroundImage: "", backgroundImageAssetId: "", backgroundImageFit: "cover" }
     }));
   };
 }
@@ -3005,6 +3012,8 @@ export function createCustomDeviceDefaultStateVisualDraft(__appScope: Record<str
       return {
         image: "",
         imageAssetId: "",
+        imageFit: "fixed",
+        backgroundImageFit: "fixed",
         imageCleared: "1",
         color: "",
         fillColor: "transparent",
@@ -3029,9 +3038,16 @@ export function createCustomDeviceDefaultStateVisualDraft(__appScope: Record<str
     const imageAssetId = customDeviceDraft.backgroundImageAssetId && image === `/api/images/${customDeviceDraft.backgroundImageAssetId}`
       ? customDeviceDraft.backgroundImageAssetId
       : "";
+    const imageFit = normalizeImageFitMode(
+      customDeviceDraft.backgroundImage || customDeviceDraft.backgroundImageAssetId
+        ? customDeviceDraft.backgroundImageFit
+        : "fixed"
+    );
     return {
       image,
       imageAssetId,
+      imageFit,
+      backgroundImageFit: imageFit,
       imageCleared: "",
       color: "",
       fillColor: "transparent",
@@ -3125,6 +3141,7 @@ export function createUpdateCustomDeviceStateDraftRow(__appScope: Record<string,
         ? {
             backgroundImage: patch.image ?? patch.backgroundImage ?? current.backgroundImage,
             backgroundImageAssetId: patch.imageAssetId ?? patch.backgroundImageAssetId ?? current.backgroundImageAssetId,
+            backgroundImageFit: patch.imageFit ?? patch.backgroundImageFit ?? current.backgroundImageFit,
             backgroundImageCleared: patch.imageCleared ?? current.backgroundImageCleared
           }
         : {}),
@@ -3143,8 +3160,10 @@ export function createAddCustomDeviceStateDraftRow(__appScope: Record<string, an
         ? {
             image: stateIconDrawingInlineImage,
             imageAssetId: "",
+            imageFit: "fixed",
             backgroundImage: "",
             backgroundImageAssetId: "",
+            backgroundImageFit: "fixed",
             imageCleared: stateIconDrawingInlineImage ? "" : "1"
           }
         : null;
@@ -3155,6 +3174,7 @@ export function createAddCustomDeviceStateDraftRow(__appScope: Record<string, an
       ...current,
       backgroundImage: inlineDefaultStateIconPatch ? stateIconDrawingInlineImage : current.backgroundImage,
       backgroundImageAssetId: inlineDefaultStateIconPatch ? "" : current.backgroundImageAssetId,
+      backgroundImageFit: inlineDefaultStateIconPatch ? "fixed" : current.backgroundImageFit,
       backgroundImageCleared: inlineDefaultStateIconPatch ? inlineDefaultStateIconPatch.imageCleared : current.backgroundImageCleared,
       stateDefinitions: (() => {
         const sourceRows = current.stateDefinitions;
@@ -3212,6 +3232,8 @@ export function createDefinitionDefaultStateVisualDraft(__appScope: Record<strin
       return {
         image: "",
         imageAssetId: "",
+        imageFit: "fixed",
+        backgroundImageFit: "fixed",
         imageCleared: "1",
         color: params.foregroundColor || "",
         fillColor: params.fillColor || "",
@@ -3235,9 +3257,16 @@ export function createDefinitionDefaultStateVisualDraft(__appScope: Record<strin
           terminalAnchors: definitionVisualDraft?.terminalAnchors
         })
       : "";
+    const imageFit = normalizeImageFitMode(
+      sourceImage || sourceImageAssetId
+        ? definitionVisualDraft?.backgroundImageFit ?? params.backgroundImageFit
+        : "fixed"
+    );
     return {
       image: sourceImage || templateImage,
       imageAssetId: sourceImageAssetId && sourceImage === `/api/images/${sourceImageAssetId}` ? sourceImageAssetId : sourceImage ? "" : sourceImageAssetId,
+      imageFit,
+      backgroundImageFit: imageFit,
       imageCleared: "",
       color: params.foregroundColor || "",
       fillColor: params.fillColor || "",
@@ -3620,6 +3649,7 @@ export function createUpdateDefinitionStateDraftRow(__appScope: Record<string, a
               ...current,
               backgroundImage: patch.image ?? patch.backgroundImage ?? current.backgroundImage,
               backgroundImageAssetId: patch.imageAssetId ?? patch.backgroundImageAssetId ?? current.backgroundImageAssetId,
+              backgroundImageFit: patch.imageFit ?? patch.backgroundImageFit ?? current.backgroundImageFit,
               backgroundImageCleared: patch.imageCleared ?? current.backgroundImageCleared,
               error: ""
             }
@@ -3640,8 +3670,10 @@ export function createAddDefinitionStateDraftRow(__appScope: Record<string, any>
         ? {
             image: stateIconDrawingInlineImage,
             imageAssetId: "",
+            imageFit: "fixed",
             backgroundImage: "",
             backgroundImageAssetId: "",
+            backgroundImageFit: "fixed",
             imageCleared: stateIconDrawingInlineImage ? "" : "1"
           }
         : null;
@@ -3834,12 +3866,14 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
     const draftBackground = {
       backgroundImage: inlineBackgroundPatch?.backgroundImage ?? definitionVisualDraft.backgroundImage,
       backgroundImageAssetId: inlineBackgroundPatch?.backgroundImageAssetId ?? definitionVisualDraft.backgroundImageAssetId,
+      backgroundImageFit: definitionVisualDraft.backgroundImageFit ?? "cover",
       backgroundImageCleared: inlineBackgroundPatch?.backgroundImageCleared ?? definitionVisualDraft.backgroundImageCleared
     };
     const hasGeneratedDefinitionBackground = !selectedDefinitionTemplate.custom && isGeneratedTemplateDefaultStateIconImage(draftBackground.backgroundImage);
     const backgroundParams = {
       backgroundImage: hasGeneratedDefinitionBackground ? "" : draftBackground.backgroundImage,
       backgroundImageAssetId: hasGeneratedDefinitionBackground ? "" : draftBackground.backgroundImageAssetId,
+      backgroundImageFit: hasGeneratedDefinitionBackground ? "cover" : draftBackground.backgroundImageFit,
       backgroundImageCleared: hasGeneratedDefinitionBackground ? "" : draftBackground.backgroundImageCleared
     };
     const parameterDefinitions = selectedDefinitionTemplate.parameterDefinitions ?? getTemplateParameterDefinitions(selectedDefinitionTemplate);
@@ -4190,8 +4224,10 @@ export function createChooseStateVisualImage(__appScope: Record<string, any>) {
       const patch: Partial<DeviceDefinitionStateDraftRow> = {
         image: asset?.url ?? imageData,
         imageAssetId: asset?.id ?? "",
+        imageFit: "fixed",
         backgroundImage: "",
         backgroundImageAssetId: "",
+        backgroundImageFit: "fixed",
         imageCleared: ""
       };
       if (target.scope === "definition") {
@@ -4688,8 +4724,10 @@ export function createApplyStateIconDrawingDialog(__appScope: Record<string, any
     const patch: Partial<DeviceDefinitionStateDraftRow> = {
       image,
       imageAssetId: "",
+      imageFit: "fixed",
       backgroundImage: "",
       backgroundImageAssetId: "",
+      backgroundImageFit: "fixed",
       imageCleared: image ? "" : "1"
     };
     if (isDefaultStatePageId(stateIconDrawingDialog.target.rowId) && stateIconDrawingDialog.target.scope === "definition") {
@@ -4699,6 +4737,7 @@ export function createApplyStateIconDrawingDialog(__appScope: Record<string, any
               ...current,
               backgroundImage: image,
               backgroundImageAssetId: "",
+              backgroundImageFit: "fixed",
               backgroundImageCleared: patch.imageCleared ?? "",
               error: ""
             }
@@ -5466,6 +5505,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
     const inlineBackgroundPatch = inlineDefaultIconBackgroundPatch(__appScope, "custom");
     const draftBackgroundImage = inlineBackgroundPatch?.backgroundImage ?? customDeviceDraft.backgroundImage;
     const draftBackgroundImageAssetId = inlineBackgroundPatch?.backgroundImageAssetId ?? customDeviceDraft.backgroundImageAssetId;
+    const draftBackgroundImageFit = customDeviceDraft.backgroundImageFit ?? "cover";
     const draftBackgroundImageCleared = inlineBackgroundPatch?.backgroundImageCleared ?? customDeviceDraft.backgroundImageCleared;
     const rawBackgroundImage = draftBackgroundImageCleared
       ? ""
@@ -5484,6 +5524,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       {
         backgroundImage,
         backgroundImageAssetId,
+        backgroundImageFit: draftBackgroundImageFit
       },
       defaultImageCandidates
     );
@@ -5503,6 +5544,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
         lineWidth: "0",
         backgroundImage,
         backgroundImageAssetId,
+        backgroundImageFit: draftBackgroundImageFit,
         backgroundImageCleared: draftBackgroundImageCleared
       },
       terminalType: terminalTypes[0] ?? "ac",
@@ -5538,8 +5580,8 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
     ensureCustomComponentTreeExpanded(categoryLibraryName, componentLibrary);
     setCustomComponentTreeSelection({ kind: "component", categoryLibraryName, section: componentLibrary, templateKind: customKind });
     setEditingCustomDeviceKind(customKind);
-    const cleanDraft = { ...customDeviceDraft, backgroundImage, backgroundImageAssetId, backgroundImageCleared: draftBackgroundImageCleared, error: "" };
-    setCustomDeviceDraft((current) => ({ ...current, backgroundImage, backgroundImageAssetId, backgroundImageCleared: draftBackgroundImageCleared, error: "" }));
+    const cleanDraft = { ...customDeviceDraft, backgroundImage, backgroundImageAssetId, backgroundImageFit: draftBackgroundImageFit, backgroundImageCleared: draftBackgroundImageCleared, error: "" };
+    setCustomDeviceDraft((current) => ({ ...current, backgroundImage, backgroundImageAssetId, backgroundImageFit: draftBackgroundImageFit, backgroundImageCleared: draftBackgroundImageCleared, error: "" }));
     setCustomDeviceDraftCleanBaseline(cleanDraft, terminalAnchors);
     setCustomDeviceSaveMessage(`自定义元件已保存：${componentLabel}`);
     writeOperationLog(`保存自定义元件：${componentLabel}`);
@@ -5637,6 +5679,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     const inlineBackgroundPatch = inlineDefaultIconBackgroundPatch(__appScope, "custom");
     const draftBackgroundImage = inlineBackgroundPatch?.backgroundImage ?? customDeviceDraft.backgroundImage;
     const draftBackgroundImageAssetId = inlineBackgroundPatch?.backgroundImageAssetId ?? customDeviceDraft.backgroundImageAssetId;
+    const draftBackgroundImageFit = customDeviceDraft.backgroundImageFit ?? "cover";
     const draftBackgroundImageCleared = inlineBackgroundPatch?.backgroundImageCleared ?? customDeviceDraft.backgroundImageCleared;
     const backgroundImage = draftBackgroundImageCleared
       ? ""
@@ -5654,6 +5697,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       {
         backgroundImage,
         backgroundImageAssetId,
+        backgroundImageFit: draftBackgroundImageFit
       },
       defaultImageCandidates
     );
@@ -5671,9 +5715,10 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
         params: {
           ...(template.params ?? {}),
           component_type: componentLibrary,
-          backgroundImage,
-          backgroundImageAssetId,
-          backgroundImageCleared: draftBackgroundImageCleared
+        backgroundImage,
+        backgroundImageAssetId,
+        backgroundImageFit: draftBackgroundImageFit,
+        backgroundImageCleared: draftBackgroundImageCleared
         },
         size,
         terminalType: terminalTypes[0] ?? template.terminalType,
@@ -5697,6 +5742,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
           component_type: componentLibrary,
           backgroundImage,
           backgroundImageAssetId,
+          backgroundImageFit: draftBackgroundImageFit,
           backgroundImageCleared: draftBackgroundImageCleared
         },
         size,
@@ -5719,8 +5765,8 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       success: `元件定义已保存到后台：${template.label}`,
       failure: `元件定义已保存到本地，后台保存失败：${template.label}`
     });
-    const cleanDraft = { ...customDeviceDraft, backgroundImage, backgroundImageAssetId, backgroundImageCleared: draftBackgroundImageCleared, size, terminalLabels, error: "" };
-    setCustomDeviceDraft((current) => ({ ...current, backgroundImage, backgroundImageAssetId, backgroundImageCleared: draftBackgroundImageCleared, size, terminalLabels, error: "" }));
+    const cleanDraft = { ...customDeviceDraft, backgroundImage, backgroundImageAssetId, backgroundImageFit: draftBackgroundImageFit, backgroundImageCleared: draftBackgroundImageCleared, size, terminalLabels, error: "" };
+    setCustomDeviceDraft((current) => ({ ...current, backgroundImage, backgroundImageAssetId, backgroundImageFit: draftBackgroundImageFit, backgroundImageCleared: draftBackgroundImageCleared, size, terminalLabels, error: "" }));
     setCustomDeviceDraftCleanBaseline(cleanDraft, terminalAnchors);
     setCustomDeviceSaveMessage(`元件定义已保存：${template.label}`);
     writeOperationLog(`保存元件定义：${template.label}`);
@@ -6552,7 +6598,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       );
     };
     const stateIconImageVisibleFrameKey = (element: any) =>
-      `${element.id}:${element.imageHref ?? ""}:${element.imageScale ?? 1}:${element.cropX ?? 0}:${element.cropY ?? 0}`;
+      `${element.id}:${element.imageHref ?? ""}:${element.imageFit ?? "cover"}:${element.imageScale ?? 1}:${element.cropX ?? 0}:${element.cropY ?? 0}`;
     const updateStateIconImageVisibleFrame = (element: any, event: any) => {
       if (element?.kind !== "image" || !setStateIconDrawingImageVisibleFrames) {
         return;
@@ -7310,7 +7356,9 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         frame.backgroundImage ||
         ""
       ).trim();
+      const frameBackgroundImageFit = normalizeImageFitMode(frame.backgroundImageFit);
       const frameBackgroundClipId = "state-icon-drawing-frame-background-clip";
+      const frameBackgroundPatternId = "state-icon-drawing-frame-background-pattern";
       const frameDashArray = stateIconDrawingFrameDashArray(frame);
       const frameRect = stateIconDrawingFrameRect
         ? stateIconDrawingFrameRect(stateIconHasTerminals)
@@ -7457,17 +7505,34 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                             rx={formatSvgNumber(frameRect.rx)}
                           />
                         </clipPath>
+                        {frameBackgroundImageFit === "tile" && (
+                          <pattern id={frameBackgroundPatternId} x={formatSvgNumber(frameRect.x)} y={formatSvgNumber(frameRect.y)} width={Math.min(frameRect.width, 96)} height={Math.min(frameRect.height, 96)} patternUnits="userSpaceOnUse">
+                            <image href={frameBackgroundImage} x="0" y="0" width={Math.min(frameRect.width, 96)} height={Math.min(frameRect.height, 96)} preserveAspectRatio={imageFitPreserveAspectRatio("fixed")} />
+                          </pattern>
+                        )}
                       </defs>
-                      <image
-                        href={frameBackgroundImage}
-                        x={formatSvgNumber(frameRect.x)}
-                        y={formatSvgNumber(frameRect.y)}
-                        width={formatSvgNumber(frameRect.width)}
-                        height={formatSvgNumber(frameRect.height)}
-                        preserveAspectRatio="xMidYMid slice"
-                        clipPath={`url(#${frameBackgroundClipId})`}
-                        pointerEvents="none"
-                      />
+                      {frameBackgroundImageFit === "tile" ? (
+                        <rect
+                          x={formatSvgNumber(frameRect.x)}
+                          y={formatSvgNumber(frameRect.y)}
+                          width={formatSvgNumber(frameRect.width)}
+                          height={formatSvgNumber(frameRect.height)}
+                          fill={`url(#${frameBackgroundPatternId})`}
+                          clipPath={`url(#${frameBackgroundClipId})`}
+                          pointerEvents="none"
+                        />
+                      ) : (
+                        <image
+                          href={frameBackgroundImage}
+                          x={formatSvgNumber(frameRect.x)}
+                          y={formatSvgNumber(frameRect.y)}
+                          width={formatSvgNumber(frameRect.width)}
+                          height={formatSvgNumber(frameRect.height)}
+                          preserveAspectRatio={imageFitPreserveAspectRatio(frameBackgroundImageFit)}
+                          clipPath={`url(#${frameBackgroundClipId})`}
+                          pointerEvents="none"
+                        />
+                      )}
                     </>
                   )}
                   {renderStateIconOuterFrameLayer()}
@@ -7629,6 +7694,22 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                             <th>状态名称</th>
                             <td><BufferedTextInput value={selectedStateRow.name} onCommit={(value) => handlers.update(selectedStateRowId, { name: value })} /></td>
                           </tr>
+                          <tr>
+                            <th>图片显示方式</th>
+                            <td>
+                              <select
+                                value={normalizeImageFitMode(selectedStateRow.imageFit ?? selectedStateRow.backgroundImageFit)}
+                                onChange={(event) => handlers.update(selectedStateRowId, {
+                                  imageFit: event.target.value,
+                                  backgroundImageFit: event.target.value
+                                })}
+                              >
+                                {IMAGE_FIT_MODE_OPTIONS.map((option) => (
+                                  <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                              </select>
+                            </td>
+                          </tr>
                         </>
                       )}
                       <tr>
@@ -7690,9 +7771,19 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                             >
                               选择
                             </button>
-                            <button type="button" disabled={!frameBackgroundImage} onClick={() => setStateIconFramePatch({ backgroundImage: "", backgroundImageAssetId: "" })}>清空</button>
+                            <button type="button" disabled={!frameBackgroundImage} onClick={() => setStateIconFramePatch({ backgroundImage: "", backgroundImageAssetId: "", backgroundImageFit: "cover" })}>清空</button>
                             <span>{frameBackgroundImageAssetId ? "后台已设置" : frameBackgroundImage ? "已设置" : "未设置"}</span>
                           </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <th>背景图显示方式</th>
+                        <td>
+                          <select value={normalizeImageFitMode(frame.backgroundImageFit)} onChange={(event) => setStateIconFramePatch({ backgroundImageFit: event.target.value })}>
+                            {IMAGE_FIT_MODE_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
                         </td>
                       </tr>
                     </tbody>
@@ -7903,6 +7994,16 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                         {selected.kind === "image" && (
                           <>
                             <tr>
+                              <th>图片显示方式</th>
+                              <td>
+                                <select value={normalizeImageFitMode(selected.imageFit)} onChange={(event) => updateStateIconDrawingElement(selected.id, { imageFit: event.target.value })}>
+                                  {IMAGE_FIT_MODE_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                  ))}
+                                </select>
+                              </td>
+                            </tr>
+                            <tr>
                               <th>图片缩放</th>
                               <td><BufferedTextInput type="number" min="0.05" step="0.01" value={formatStateIconDrawingNumber(selected.imageScale ?? 1, 1)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { imageScale: Math.max(0.05, Number(nextValue) || 0.05) })} /></td>
                             </tr>
@@ -7991,7 +8092,11 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
         definitionStatePreviewVisual?.backgroundImage ||
         definitionStatePreviewVisual?.backgroundImageAssetId
       );
-      const previewPreserveAspectRatio = previewUsesStateImage ? "xMidYMid meet" : "xMidYMid slice";
+      const previewImageFit = normalizeImageFitMode(
+        previewUsesStateImage
+          ? (previewStateVisual?.imageFit ?? previewStateVisual?.backgroundImageFit ?? "fixed")
+          : definitionVisualDraft.backgroundImageFit
+      );
       return (
         <>
           {!previewIsBus && (previewImageHref || previewForegroundHref) && (
@@ -8019,7 +8124,7 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
                     y: -previewFrameNode.size.height / 2,
                     width: previewFrameNode.size.width,
                     height: previewFrameNode.size.height,
-                    preserveAspectRatio: previewPreserveAspectRatio,
+                    imageFit: previewImageFit,
                     clipPath: `url(#${clipId})`,
                     className: "node-background-image"
                   })}
@@ -8043,7 +8148,7 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
                     y: -previewFrameNode.size.height / 2,
                     width: previewFrameNode.size.width,
                     height: previewFrameNode.size.height,
-                    preserveAspectRatio: previewPreserveAspectRatio,
+                    imageFit: previewImageFit,
                     clipPath: `url(#${clipId})`,
                     className: "node-background-image"
                   })}
@@ -8057,7 +8162,7 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
                     y: -previewFrameNode.size.height / 2,
                     width: previewFrameNode.size.width,
                     height: previewFrameNode.size.height,
-                    preserveAspectRatio: previewPreserveAspectRatio,
+                    imageFit: previewImageFit,
                     clipPath: `url(#${clipId})`,
                     className: "node-foreground-image"
                   })}
@@ -8102,6 +8207,7 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
                           ...current,
                           backgroundImage: "",
                           backgroundImageAssetId: "",
+                          backgroundImageFit: "cover",
                           error: ""
                         }
                       : current
@@ -8111,6 +8217,16 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
                 清除
               </button>
               <strong>{definitionVisualDraft.backgroundImageAssetId ? "后台已保存" : definitionVisualDraft.backgroundImage ? "已设置" : "默认图形"}</strong>
+            </div>
+            <div className="custom-device-image-row device-definition-image-row">
+              <span>图标显示方式</span>
+              <select value={normalizeImageFitMode(definitionVisualDraft.backgroundImageFit)} onChange={(event) =>
+                setDefinitionVisualDraft((current) => current ? { ...current, backgroundImageFit: event.target.value, error: "" } : current)
+              }>
+                {IMAGE_FIT_MODE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
             </div>
             <div className="device-definition-size-grid">
               <label>

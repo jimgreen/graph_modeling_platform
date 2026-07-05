@@ -6,7 +6,8 @@ import type {
   Point
 } from "./model";
 import { getTemplateStateDefinitions, normalizeDeviceStateDefinitions } from "./model";
-import { escapeXml, formatSvgNumber } from "./svgUtils";
+import { imageFitPreserveAspectRatio, normalizeImageFitMode } from "./imageFit";
+import { escapeXml, formatSvgNumber, svgImageContentMarkup } from "./svgUtils";
 import { resolveStateVisualImageHref } from "./staticRenderUtils";
 
 export type StateVisualShapeKind =
@@ -71,6 +72,7 @@ export type StateIconDrawingElement = {
   terminalIndex?: number;
   svgSource?: string;
   imageHref?: string;
+  imageFit?: string;
   imageScale?: number;
   cropX?: number;
   cropY?: number;
@@ -89,6 +91,7 @@ export type StateIconDrawingFrame = {
   fillColor: string;
   backgroundImage?: string;
   backgroundImageAssetId?: string;
+  backgroundImageFit?: string;
 };
 
 export const DEFAULT_STATE_ICON_DRAWING_FRAME: StateIconDrawingFrame = {
@@ -97,7 +100,8 @@ export const DEFAULT_STATE_ICON_DRAWING_FRAME: StateIconDrawingFrame = {
   strokeColor: "#94a3b8",
   fillColor: "#ffffff",
   backgroundImage: "",
-  backgroundImageAssetId: ""
+  backgroundImageAssetId: "",
+  backgroundImageFit: "cover"
 };
 
 type StateIconSvgStyleOverride = {
@@ -115,6 +119,7 @@ export type DeviceDefinitionStateDraftRow = DeviceStateDefinition & {
   icon: string;
   image: string;
   imageAssetId: string;
+  imageFit: string;
   text: string;
   color: string;
   fillColor: string;
@@ -122,6 +127,7 @@ export type DeviceDefinitionStateDraftRow = DeviceStateDefinition & {
   textColor: string;
   backgroundImage: string;
   backgroundImageAssetId: string;
+  backgroundImageFit: string;
   imageCleared: string;
 };
 
@@ -148,6 +154,8 @@ export function isDefaultStatePageId(rowId: string) {
 export function createStateDraftRow(definition: Partial<DeviceStateDefinition> = {}): DeviceDefinitionStateDraftRow {
   const value = String(definition.value ?? "").trim();
   const name = String(definition.name ?? value).trim();
+  const hasImage = Boolean(definition.image || definition.imageAssetId || definition.backgroundImage || definition.backgroundImageAssetId);
+  const fallbackImageFit = hasImage ? "fixed" : "cover";
   return {
     id: stateDraftRowId(),
     value,
@@ -155,6 +163,7 @@ export function createStateDraftRow(definition: Partial<DeviceStateDefinition> =
     icon: String(definition.icon ?? "").trim(),
     image: String(definition.image ?? definition.backgroundImage ?? "").trim(),
     imageAssetId: String(definition.imageAssetId ?? definition.backgroundImageAssetId ?? "").trim(),
+    imageFit: normalizeImageFitMode(definition.imageFit ?? definition.backgroundImageFit ?? fallbackImageFit),
     text: String(definition.text ?? "").trim(),
     color: String(definition.color ?? "").trim(),
     fillColor: String(definition.fillColor ?? "").trim(),
@@ -162,6 +171,7 @@ export function createStateDraftRow(definition: Partial<DeviceStateDefinition> =
     textColor: String(definition.textColor ?? "").trim(),
     backgroundImage: String(definition.backgroundImage ?? "").trim(),
     backgroundImageAssetId: String(definition.backgroundImageAssetId ?? "").trim(),
+    backgroundImageFit: normalizeImageFitMode(definition.backgroundImageFit ?? definition.imageFit ?? fallbackImageFit),
     imageCleared: String(definition.imageCleared ?? "").trim()
   };
 }
@@ -245,6 +255,7 @@ export function normalizeStateDraftRows(rows: readonly DeviceDefinitionStateDraf
       icon: row.icon,
       image: row.image,
       imageAssetId: row.imageAssetId,
+      imageFit: row.imageFit,
       text: row.text,
       color: row.color,
       fillColor: row.fillColor,
@@ -252,6 +263,7 @@ export function normalizeStateDraftRows(rows: readonly DeviceDefinitionStateDraf
       textColor: row.textColor,
       backgroundImage: row.backgroundImage,
       backgroundImageAssetId: row.backgroundImageAssetId,
+      backgroundImageFit: row.backgroundImageFit,
       imageCleared: row.imageCleared
     }))
   );
@@ -265,6 +277,7 @@ export function validateStateDraftRows(rows: readonly DeviceDefinitionStateDraft
       row.icon,
       row.image,
       row.imageAssetId,
+      row.imageFit,
       row.text,
       row.color,
       row.fillColor,
@@ -272,6 +285,7 @@ export function validateStateDraftRows(rows: readonly DeviceDefinitionStateDraft
       row.textColor,
       row.backgroundImage,
       row.backgroundImageAssetId,
+      row.backgroundImageFit,
       row.imageCleared
     ].some((value) => String(value ?? "").trim())
   );
@@ -542,7 +556,18 @@ function stateIconDrawingFrameMarkup(
   }
   const clipId = "state-icon-frame-background-clip";
   const assetAttr = backgroundImageAssetId ? ` data-state-icon-frame-image-asset-id="${escapeXml(backgroundImageAssetId)}"` : "";
-  const backgroundMarkup = `<defs><clipPath id="${clipId}"><rect x="${formatSvgNumber(rect.x)}" y="${formatSvgNumber(rect.y)}" width="${formatSvgNumber(rect.width)}" height="${formatSvgNumber(rect.height)}" rx="${formatSvgNumber(rect.rx)}"/></clipPath></defs><image data-state-icon-frame-image="true"${assetAttr} href="${escapeXml(resolvedBackgroundImage)}" x="${formatSvgNumber(rect.x)}" y="${formatSvgNumber(rect.y)}" width="${formatSvgNumber(rect.width)}" height="${formatSvgNumber(rect.height)}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${clipId})"/>`;
+  const backgroundImageFit = normalizeImageFitMode(frame.backgroundImageFit);
+  const fitAttr = backgroundImageFit === "cover" ? "" : ` data-state-icon-frame-image-fit="${escapeXml(backgroundImageFit)}"`;
+  const hrefAttr = ` data-state-icon-frame-image-href="${escapeXml(resolvedBackgroundImage)}"`;
+  const backgroundMarkup = `<defs><clipPath id="${clipId}"><rect x="${formatSvgNumber(rect.x)}" y="${formatSvgNumber(rect.y)}" width="${formatSvgNumber(rect.width)}" height="${formatSvgNumber(rect.height)}" rx="${formatSvgNumber(rect.rx)}"/></clipPath></defs>${svgImageContentMarkup(resolvedBackgroundImage, {
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: rect.height,
+    imageFit: backgroundImageFit,
+    clipPath: `url(#${clipId})`,
+    extraAttributes: ` data-state-icon-frame-image="true"${assetAttr}${fitAttr}${hrefAttr}`
+  })}`;
   const borderMarkup = `<rect data-state-icon-frame-border="true" x="${formatSvgNumber(rect.x)}" y="${formatSvgNumber(rect.y)}" width="${formatSvgNumber(rect.width)}" height="${formatSvgNumber(rect.height)}" rx="${formatSvgNumber(rect.rx)}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"${dashAttr} vector-effect="non-scaling-stroke"/>`;
   return `${frameRect}${backgroundMarkup}${borderMarkup}`;
 }
@@ -723,6 +748,7 @@ export function createStateIconDrawingElement(kind: StateVisualShapeKind, row?: 
     endCap: "none",
     svgSource: "",
     imageHref: "",
+    imageFit: "cover",
     imageScale: 1,
     cropX: 0,
     cropY: 0
@@ -746,6 +772,7 @@ export function createImportedStateIconElement(
     text: fileName || stateVisualShapeLabel(kind),
     svgSource: normalizedSvgSource,
     imageHref: kind === "image" ? source : "",
+    imageFit: "cover",
     imageScale: 1,
     cropX: 0,
     cropY: 0
@@ -1438,7 +1465,7 @@ function stateIconDrawingFrameMarkupTag(source: string) {
 }
 
 function stateIconDrawingFrameImageMarkupTag(source: string) {
-  return /<image\b(?=[^>]*\bdata-state-icon-frame-image\s*=\s*(?:"true"|'true'|true))[^>]*>/iu.exec(source)?.[0] ?? "";
+  return /<(?:image|rect)\b(?=[^>]*\bdata-state-icon-frame-image\s*=\s*(?:"true"|'true'|true))[^>]*>/iu.exec(source)?.[0] ?? "";
 }
 
 function stateIconDrawingFrameBorderMarkupTag(source: string) {
@@ -1474,7 +1501,11 @@ export function stateIconDrawingInitialFrame(
   }
   const frameImageMarkup = stateIconDrawingFrameImageMarkupTag(svgSource);
   const frameBackgroundImageAssetId = readSvgMarkupAttribute(frameImageMarkup, "data-state-icon-frame-image-asset-id").trim();
-  const frameBackgroundImageHref = readSvgMarkupAttribute(frameImageMarkup, "href").trim();
+  const frameBackgroundImageHref = (
+    readSvgMarkupAttribute(frameImageMarkup, "href") ||
+    readSvgMarkupAttribute(frameImageMarkup, "data-state-icon-frame-image-href")
+  ).trim();
+  const frameBackgroundImageFit = normalizeImageFitMode(readSvgMarkupAttribute(frameImageMarkup, "data-state-icon-frame-image-fit"));
   const frameBackgroundImage = frameBackgroundImageAssetId
     ? assets[frameBackgroundImageAssetId] || frameBackgroundImageHref || `/api/images/${frameBackgroundImageAssetId}`
     : frameBackgroundImageHref;
@@ -1484,7 +1515,8 @@ export function stateIconDrawingInitialFrame(
     strokeColor: readSvgMarkupAttribute(frameMarkup, "stroke").trim() || fallbackFrame.strokeColor,
     fillColor: readSvgMarkupAttribute(frameMarkup, "fill").trim() || fallbackFrame.fillColor,
     ...(frameBackgroundImage ? { backgroundImage: frameBackgroundImage } : {}),
-    ...(frameBackgroundImageAssetId ? { backgroundImageAssetId: frameBackgroundImageAssetId } : {})
+    ...(frameBackgroundImageAssetId ? { backgroundImageAssetId: frameBackgroundImageAssetId } : {}),
+    ...(frameBackgroundImageFit !== "cover" ? { backgroundImageFit: frameBackgroundImageFit } : {})
   };
 }
 
@@ -1551,8 +1583,19 @@ export function stateIconDrawingElementMarkup(
       const href = rawHref ? (options.resolveImageHref?.(rawHref) || rawHref) : "";
       const clipId = `clip-${element.id.replace(/[^a-zA-Z0-9_-]/g, "")}`;
       const scale = Math.max(0.05, element.imageScale ?? 1);
+      const imageFit = normalizeImageFitMode(element.imageFit);
+      const useRawFrame = imageFit === "fixed" || imageFit === "stretch" || imageFit === "tile";
+      const fitAttr = imageFit === "cover" ? "" : ` data-state-icon-image-fit="${escapeXml(imageFit)}"`;
       body = href
-        ? `<defs><clipPath id="${escapeXml(clipId)}"><rect x="${formatSvgNumber(-hw)}" y="${formatSvgNumber(-hh)}" width="${formatSvgNumber(w)}" height="${formatSvgNumber(h)}"/></clipPath></defs><image href="${escapeXml(href)}" x="${formatSvgNumber(-hw + (element.cropX ?? 0))}" y="${formatSvgNumber(-hh + (element.cropY ?? 0))}" width="${formatSvgNumber(w * scale)}" height="${formatSvgNumber(h * scale)}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${escapeXml(clipId)})"/>`
+        ? `<defs><clipPath id="${escapeXml(clipId)}"><rect x="${formatSvgNumber(-hw)}" y="${formatSvgNumber(-hh)}" width="${formatSvgNumber(w)}" height="${formatSvgNumber(h)}"/></clipPath></defs>${svgImageContentMarkup(href, {
+            x: useRawFrame ? -hw : -hw + (element.cropX ?? 0),
+            y: useRawFrame ? -hh : -hh + (element.cropY ?? 0),
+            width: useRawFrame ? w : w * scale,
+            height: useRawFrame ? h : h * scale,
+            imageFit,
+            clipPath: `url(#${escapeXml(clipId)})`,
+            extraAttributes: fitAttr
+          })}`
         : "";
       break;
     }
@@ -1805,23 +1848,39 @@ export function stateIconDrawingElementPreviewNode(
       const href = element.imageHref || "";
       const clipId = `preview-clip-${element.id.replace(/[^a-zA-Z0-9_-]/g, "")}`;
       const scale = Math.max(0.05, element.imageScale ?? 1);
+      const imageFit = normalizeImageFitMode(element.imageFit);
+      const useRawFrame = imageFit === "fixed" || imageFit === "stretch" || imageFit === "tile";
+      const tilePatternId = `preview-pattern-${element.id.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+      const imageX = useRawFrame ? -hw : -hw + (element.cropX ?? 0);
+      const imageY = useRawFrame ? -hh : -hh + (element.cropY ?? 0);
+      const imageWidth = useRawFrame ? w : w * scale;
+      const imageHeight = useRawFrame ? h : h * scale;
       return href ? (
         <>
           <defs>
             <clipPath id={clipId}>
               <rect x={-hw} y={-hh} width={w} height={h} />
             </clipPath>
+            {imageFit === "tile" && (
+              <pattern id={tilePatternId} x={-hw} y={-hh} width={Math.min(w, 96)} height={Math.min(h, 96)} patternUnits="userSpaceOnUse">
+                <image href={href} x={0} y={0} width={Math.min(w, 96)} height={Math.min(h, 96)} preserveAspectRatio={imageFitPreserveAspectRatio("fixed")} />
+              </pattern>
+            )}
           </defs>
-          <image
-            href={href}
-            x={-hw + (element.cropX ?? 0)}
-            y={-hh + (element.cropY ?? 0)}
-            width={w * scale}
-            height={h * scale}
-            preserveAspectRatio="xMidYMid slice"
-            clipPath={`url(#${clipId})`}
-            onLoad={(event) => options.onImageLoad?.(element, event)}
-          />
+          {imageFit === "tile" ? (
+            <rect x={-hw} y={-hh} width={w} height={h} fill={`url(#${tilePatternId})`} clipPath={`url(#${clipId})`} />
+          ) : (
+            <image
+              href={href}
+              x={imageX}
+              y={imageY}
+              width={imageWidth}
+              height={imageHeight}
+              preserveAspectRatio={imageFitPreserveAspectRatio(imageFit)}
+              clipPath={`url(#${clipId})`}
+              onLoad={(event) => options.onImageLoad?.(element, event)}
+            />
+          )}
         </>
       ) : null;
     }

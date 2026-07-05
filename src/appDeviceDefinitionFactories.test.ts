@@ -175,12 +175,12 @@ describe("manual bend interaction helpers", () => {
     expect(syncExistingNodesWithTemplateDefinitions).toHaveBeenCalledWith(
       expect.objectContaining({
         parameterDefinitions,
-        params: {
+        params: expect.objectContaining({
           component_type: "UserLibrary",
           backgroundImage: "data:image/svg+xml,new",
           backgroundImageAssetId: "new-asset",
           backgroundImageCleared: ""
-        },
+        }),
         size: { width: 180, height: 88 },
         terminalType: "ac",
         terminalCount: 2,

@@ -1495,7 +1495,32 @@ function stripUnsafeInlineSvgMarkup(value) {
     .replace(/\s+(?:href|xlink:href)\s*=\s*(?:"javascript:[^"]*"|'javascript:[^']*')/giu, "");
 }
 
-function inlineSvgRootMarkup(href, { x, y, width, height, className = "", preserveAspectRatio = "xMidYMid slice" }) {
+const IMAGE_FIT_MODE_SET = new Set(["cover", "fixed", "fill-x", "fill-y", "stretch", "tile"]);
+
+function normalizeImageFitMode(value) {
+  const text = String(value ?? "").trim();
+  return IMAGE_FIT_MODE_SET.has(text) ? text : "cover";
+}
+
+function imageFitPreserveAspectRatio(value) {
+  switch (normalizeImageFitMode(value)) {
+    case "fixed":
+      return "xMidYMid meet";
+    case "fill-x":
+      return "xMidYMin slice";
+    case "fill-y":
+      return "xMinYMid slice";
+    case "stretch":
+      return "none";
+    case "tile":
+      return "xMidYMid meet";
+    case "cover":
+    default:
+      return "xMidYMid slice";
+  }
+}
+
+function inlineSvgRootMarkup(href, { x, y, width, height, className = "", preserveAspectRatio, imageFit }) {
   const source = stripUnsafeInlineSvgMarkup(
     decodeSvgImageSource(href)
       .replace(/^\uFEFF/u, "")
@@ -1520,19 +1545,29 @@ function inlineSvgRootMarkup(href, { x, y, width, height, className = "", preser
       : ` viewBox="0 0 ${formatSvgNumber(svgWidth)} ${formatSvgNumber(svgHeight)}"`;
   const preservedAttributes = filteredRootAttributes ? ` ${filteredRootAttributes}` : "";
   const inlineClassName = ["export-inline-svg-image", className].filter(Boolean).join(" ");
-  return `<svg class="${escapeSvgAttribute(inlineClassName)}" x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" preserveAspectRatio="${escapeSvgAttribute(preserveAspectRatio)}"${viewBoxAttribute}${preservedAttributes}>${body}</svg>`;
+  const resolvedPreserveAspectRatio = preserveAspectRatio ?? imageFitPreserveAspectRatio(imageFit);
+  return `<svg class="${escapeSvgAttribute(inlineClassName)}" x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" preserveAspectRatio="${escapeSvgAttribute(resolvedPreserveAspectRatio)}"${viewBoxAttribute}${preservedAttributes}>${body}</svg>`;
 }
 
-function svgImageContentMarkup(href, { x, y, width, height, className = "", preserveAspectRatio = "xMidYMid slice" }) {
+function svgImageContentMarkup(href, { x, y, width, height, className = "", preserveAspectRatio, imageFit, patternId, tileWidth, tileHeight }) {
   if (!href) {
     return "";
   }
-  const inlineSvg = inlineSvgRootMarkup(href, { x, y, width, height, className, preserveAspectRatio });
+  const normalizedImageFit = normalizeImageFitMode(imageFit);
+  const resolvedPreserveAspectRatio = preserveAspectRatio ?? imageFitPreserveAspectRatio(normalizedImageFit);
+  if (normalizedImageFit === "tile") {
+    const resolvedTileWidth = Math.max(1, Number.isFinite(Number(tileWidth)) ? Number(tileWidth) : Math.min(Math.max(1, width), 96));
+    const resolvedTileHeight = Math.max(1, Number.isFinite(Number(tileHeight)) ? Number(tileHeight) : Math.min(Math.max(1, height), 96));
+    const resolvedPatternId = patternId || svgSafeId(`image_tile_${className}_${x}_${y}_${width}_${height}`, "image_tile");
+    const classAttribute = className ? ` class="${escapeSvgAttribute(className)}"` : "";
+    return `<defs><pattern id="${escapeSvgAttribute(resolvedPatternId)}" x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(resolvedTileWidth)}" height="${formatSvgNumber(resolvedTileHeight)}" patternUnits="userSpaceOnUse"><image href="${escapeSvgAttribute(href)}" x="0" y="0" width="${formatSvgNumber(resolvedTileWidth)}" height="${formatSvgNumber(resolvedTileHeight)}" preserveAspectRatio="${escapeSvgAttribute(imageFitPreserveAspectRatio("fixed"))}"/></pattern></defs><rect x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" fill="url(#${escapeSvgAttribute(resolvedPatternId)})"${classAttribute}/>`;
+  }
+  const inlineSvg = inlineSvgRootMarkup(href, { x, y, width, height, className, preserveAspectRatio: resolvedPreserveAspectRatio, imageFit: normalizedImageFit });
   if (inlineSvg) {
     return inlineSvg;
   }
   const classAttribute = className ? ` class="${escapeSvgAttribute(className)}"` : "";
-  return `<image href="${escapeSvgAttribute(href)}" x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" preserveAspectRatio="${escapeSvgAttribute(preserveAspectRatio)}"${classAttribute}/>`;
+  return `<image href="${escapeSvgAttribute(href)}" x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" preserveAspectRatio="${escapeSvgAttribute(resolvedPreserveAspectRatio)}"${classAttribute}/>`;
 }
 
 function svgSafeId(value, fallback) {
@@ -1818,6 +1853,8 @@ ${image ? svgImageContentMarkup(image, {
         y: -nodeHeight / 2,
         width: nodeWidth,
         height: nodeHeight,
+        imageFit: node.params?.backgroundImageFit,
+        patternId: uniqueSvgId(`node_background_image_pattern_${node.id ?? "node"}`, usedIds, "node_background_image_pattern"),
         className: "node-background-image"
       }) : ""}`;
     }
@@ -1853,6 +1890,8 @@ ${backgroundImage ? svgImageContentMarkup(backgroundImage, {
     y: 0,
     width,
     height,
+    imageFit: project.canvasBackgroundImageFit,
+    patternId: uniqueSvgId("canvas_background_image_pattern", usedIds, "canvas_background_image_pattern"),
     className: "export-canvas-background-image"
   }) : ""}`;
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid meet" height="100%" width="100%" viewBox="0,0,${width},${height}">

@@ -301,6 +301,53 @@ describe("scheme file persistence", () => {
     }
   });
 
+  test("writes saved project svg image fit modes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-svg-image-fit-"));
+    try {
+      const filesRoot = join(root, "files");
+      const trashRoot = join(root, "trash");
+      await saveSchemeProjectRecord({
+        filesRoot,
+        trashRoot,
+        schemePath: ["默认方案"],
+        record: {
+          name: "图片显示方式",
+          updatedAt: "2026-07-05T00:00:00.000Z",
+          project: {
+            version: 1,
+            name: "图片显示方式",
+            canvasBackgroundImage: "canvas-bg.png",
+            canvasBackgroundImageFit: "stretch",
+            nodes: [
+              {
+                id: "image-node",
+                kind: "static-image",
+                name: "图片",
+                position: { x: 100, y: 80 },
+                size: { width: 80, height: 60 },
+                params: {
+                  backgroundImage: "node-bg.png",
+                  backgroundImageFit: "tile"
+                },
+                terminals: []
+              }
+            ],
+            edges: []
+          }
+        },
+        measurementConfig: {}
+      });
+
+      const svg = await readFile(join(filesRoot, "默认方案", "图片显示方式.svg"), "utf-8");
+      expect(svg).toContain('class="export-canvas-background-image"');
+      expect(svg).toContain('preserveAspectRatio="none"');
+      expect(svg).toContain("<pattern");
+      expect(svg).toContain('class="node-background-image"');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("deletes one project by archiving only that model's files", async () => {
     const root = await mkdtemp(join(tmpdir(), "scheme-delete-project-"));
     try {

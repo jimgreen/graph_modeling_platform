@@ -3,6 +3,37 @@ import { describe, expect, test } from "vitest";
 import { decodeSvgImageSource, inlineBackendImageRefsInSvgDataUrl, svgImageContentMarkup } from "./svgUtils";
 
 describe("svg image content markup", () => {
+  test("uses image fit mode to render stretched images", () => {
+    const markup = svgImageContentMarkup("/api/images/background", {
+      x: 0,
+      y: 0,
+      width: 120,
+      height: 80,
+      imageFit: "stretch",
+      className: "canvas-background-image"
+    });
+
+    expect(markup).toContain('preserveAspectRatio="none"');
+    expect(markup).toContain('class="canvas-background-image"');
+  });
+
+  test("uses image fit mode to render tiled images", () => {
+    const markup = svgImageContentMarkup("/api/images/tile", {
+      x: 4,
+      y: 6,
+      width: 120,
+      height: 80,
+      imageFit: "tile",
+      className: "node-background-image"
+    });
+
+    expect(markup).toContain("<pattern");
+    expect(markup).toContain('patternUnits="userSpaceOnUse"');
+    expect(markup).toContain('href="/api/images/tile"');
+    expect(markup).toContain('<rect x="4" y="6" width="120" height="80" fill="url(#');
+    expect(markup).toContain('class="node-background-image"');
+  });
+
   test("renders svg data urls as inline svg so nested images remain visible", () => {
     const source = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10">',

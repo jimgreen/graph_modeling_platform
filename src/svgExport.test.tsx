@@ -84,6 +84,34 @@ describe("SVG export", () => {
     expect(svg).not.toContain('href="data/images/');
   });
 
+  test("exports canvas and node image fit modes", () => {
+    const node = {
+      ...createDefaultNode("static-image", { x: 120, y: 90 }),
+      id: "fit-node"
+    };
+    node.params = {
+      ...node.params,
+      backgroundImage: "node-bg.png",
+      backgroundImageFit: "tile",
+      foregroundImage: "node-fg.png",
+      foregroundImageFit: "stretch"
+    };
+
+    const svg = buildSvgDocument([node], [], {
+      width: 320,
+      height: 180,
+      backgroundColor: "#ffffff",
+      backgroundImage: "canvas-bg.png",
+      backgroundImageFit: "stretch"
+    } as any);
+
+    expect(svg).toContain('class="export-canvas-background-image"');
+    expect(svg).toContain('preserveAspectRatio="none"');
+    expect(svg).toContain("<pattern");
+    expect(svg).toContain('class="node-background-image"');
+    expect(svg).toContain('href="node-fg.png"');
+  });
+
   test("exports custom multi-state visual overrides from template definitions", () => {
     const template: DeviceTemplate = {
       ...DEVICE_LIBRARY.find((item) => item.kind === "ac-switch")!,

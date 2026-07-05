@@ -1342,6 +1342,7 @@ export type GraphDirtyBaseline = {
   canvasBackgroundColor: string;
   canvasBackgroundImage: string;
   canvasBackgroundImageAssetId: string;
+  canvasBackgroundImageFit: string;
   backgroundProjectId: string;
   backgroundLayerIds: string[];
   powerUnit: string;
@@ -1402,6 +1403,7 @@ export type UndoSnapshot = {
   canvasBackgroundColor: string;
   canvasBackgroundImage: string;
   canvasBackgroundImageAssetId: string;
+  canvasBackgroundImageFit: string;
   backgroundProjectId: string;
   backgroundLayerIds: string[];
   powerUnit: string;
@@ -1467,6 +1469,7 @@ export type DraftProjectState = {
   canvasBackgroundColor?: string;
   canvasBackgroundImage?: string;
   canvasBackgroundImageAssetId?: string;
+  canvasBackgroundImageFit?: string;
   backgroundProjectId?: string;
   backgroundLayerIds?: string[];
   powerUnit?: string;
@@ -1599,6 +1602,9 @@ export type StateIconDrawingDialogState = {
     strokeWidth: number;
     strokeColor: string;
     fillColor: string;
+    backgroundImage?: string;
+    backgroundImageAssetId?: string;
+    backgroundImageFit?: string;
   };
 };
 
@@ -1624,6 +1630,7 @@ export type StateIconDrawingDragState = {
 export type CanvasRenderOptions = CanvasBounds & {
   backgroundColor?: string;
   backgroundImage?: string;
+  backgroundImageFit?: string;
   imageExportPathById?: Record<string, string>;
   colorDisplayMode?: ColorDisplayMode;
   colorPalette?: ColorPalette;
@@ -1708,6 +1715,7 @@ export type CustomDeviceDraft = {
   componentKind?: string;
   backgroundImage: string;
   backgroundImageAssetId: string;
+  backgroundImageFit: string;
   backgroundImageCleared: string;
   size: { width: number; height: number };
   allowResizeTransform: string;
@@ -1726,6 +1734,7 @@ export type CustomDeviceDraft = {
 export type DeviceDefinitionVisualDraft = {
   backgroundImage: string;
   backgroundImageAssetId: string;
+  backgroundImageFit: string;
   backgroundImageCleared: string;
   size: { width: number; height: number };
   terminalCount: number;
@@ -3052,6 +3061,7 @@ export const PARAM_LABELS: Record<string, string> = {
   allowAutoExpandCanvas: "允许自动扩界",
   canvasBackgroundColor: "背景色",
   canvasBackgroundImage: "背景图片",
+  canvasBackgroundImageFit: "背景图片显示方式",
   backgroundProjectId: "背景页面",
   backgroundLayerIds: "背景图层",
   powerUnit: "功率单位",
@@ -3141,9 +3151,11 @@ export const PARAM_LABELS: Record<string, string> = {
   run_stat: "工作状态",
   backgroundImage: "背景图片",
   backgroundImageAssetId: "背景图片资产",
+  backgroundImageFit: "背景图片显示方式",
   foregroundColor: "前景色",
   foregroundImage: "前景图片",
   foregroundImageAssetId: "前景图片资产",
+  foregroundImageFit: "前景图片显示方式",
   fillColor: "背景色",
   strokeColor: "线条颜色",
   textColor: "文字颜色",
@@ -3632,6 +3644,7 @@ export function normalizeStoredDraftProject(parsed: DraftProjectState): DraftPro
     canvasBackgroundColor: parsed.canvasBackgroundColor,
     canvasBackgroundImage: parsed.canvasBackgroundImage,
     canvasBackgroundImageAssetId: parsed.canvasBackgroundImageAssetId,
+    canvasBackgroundImageFit: parsed.canvasBackgroundImageFit,
     backgroundProjectId: parsed.backgroundProjectId,
     backgroundLayerIds: parsed.backgroundLayerIds,
     powerUnit: parsed.powerUnit,
@@ -3759,6 +3772,7 @@ export function draftProjectFromSavedSchemes(
       canvasBackgroundColor: record.project.canvasBackgroundColor,
       canvasBackgroundImage: record.project.canvasBackgroundImage,
       canvasBackgroundImageAssetId: record.project.canvasBackgroundImageAssetId,
+      canvasBackgroundImageFit: record.project.canvasBackgroundImageFit,
       backgroundProjectId: record.project.backgroundProjectId,
       backgroundLayerIds: record.project.backgroundLayerIds,
       powerUnit: record.project.powerUnit,

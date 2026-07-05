@@ -20,7 +20,7 @@ export function createRequestCanvasFrameCenter(__appScope: Record<string, any>) 
 
 export function createUndoLastOperation(__appScope: Record<string, any>) {
   return () => {
-  const { applyUndoGraphSnapshot, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, pendingBusTerminalSyncNodeIdsRef, pendingStoredRouteEdgeIdsRef, resetConnectPreviewState, setActiveLayerId, setAllowAutoExpandCanvas, setBackgroundLayerIds, setBackgroundProjectId, setCanvasBackgroundColor, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasHeight, setCanvasSelectionScope, setCanvasWidth, setConnectSource, setContextMenu, setCurrentUnit, setDeviceIndexCounters, setGroups, setHasUnsavedChanges, setLayers, setOperationLogText, setPowerBaseValue, setPowerUnit, setProjectMeasurements, setProjectMenu, setProjectName, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setTopology, setTopologyErrors, setTopologyStatus, setUndoStack, setVoltageUnit, skipNextTopologyStaleRef } = __appScope;
+  const { applyUndoGraphSnapshot, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, pendingBusTerminalSyncNodeIdsRef, pendingStoredRouteEdgeIdsRef, resetConnectPreviewState, setActiveLayerId, setAllowAutoExpandCanvas, setBackgroundLayerIds, setBackgroundProjectId, setCanvasBackgroundColor, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasBackgroundImageFit, setCanvasHeight, setCanvasSelectionScope, setCanvasWidth, setConnectSource, setContextMenu, setCurrentUnit, setDeviceIndexCounters, setGroups, setHasUnsavedChanges, setLayers, setOperationLogText, setPowerBaseValue, setPowerUnit, setProjectMeasurements, setProjectMenu, setProjectName, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setTopology, setTopologyErrors, setTopologyStatus, setUndoStack, setVoltageUnit, skipNextTopologyStaleRef } = __appScope;
     deferredMoveOptimizationCancelRef.current?.();
     deferredMoveOptimizationCancelRef.current = null;
     deferredRoutableLineRouteRepairCancelRef.current?.();
@@ -41,6 +41,7 @@ export function createUndoLastOperation(__appScope: Record<string, any>) {
       setCanvasBackgroundColor(snapshot.canvasBackgroundColor);
       setCanvasBackgroundImage(snapshot.canvasBackgroundImage);
       setCanvasBackgroundImageAssetId(snapshot.canvasBackgroundImageAssetId);
+      setCanvasBackgroundImageFit?.(snapshot.canvasBackgroundImageFit ?? "cover");
       setBackgroundProjectId(snapshot.backgroundProjectId);
       setBackgroundLayerIds(snapshot.backgroundLayerIds);
       setPowerUnit(snapshot.powerUnit);
@@ -118,7 +119,7 @@ export function createRouteForCurrentEdgeSave(__appScope: Record<string, any>) {
 
 export function createCurrentProject(__appScope: Record<string, any>) {
   return (): ProjectFile => {
-  const { activeLayerId, allowAutoExpandCanvas, backgroundLayerIds, backgroundProjectId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edgeWithCurrentRouteGeometryForSave, edges, groups, layers, lockProjectEdgeTerminals, nodes, normalizeModelGroups, normalizeProjectLayers, normalizeProjectMeasurements, powerBaseValue, powerUnit, projectMeasurements, projectName, voltageUnit } = __appScope;
+  const { activeLayerId, allowAutoExpandCanvas, backgroundLayerIds, backgroundProjectId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasBackgroundImageFit, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edgeWithCurrentRouteGeometryForSave, edges, groups, layers, lockProjectEdgeTerminals, nodes, normalizeModelGroups, normalizeProjectLayers, normalizeProjectMeasurements, powerBaseValue, powerUnit, projectMeasurements, projectName, voltageUnit } = __appScope;
     const projectEdges = edges.map(edgeWithCurrentRouteGeometryForSave);
     return normalizeProjectLayers(lockProjectEdgeTerminals({
       version: 1,
@@ -131,6 +132,7 @@ export function createCurrentProject(__appScope: Record<string, any>) {
       canvasBackgroundColor,
       canvasBackgroundImage,
       canvasBackgroundImageAssetId,
+      canvasBackgroundImageFit,
       backgroundProjectId,
       backgroundLayerIds,
       powerUnit,
