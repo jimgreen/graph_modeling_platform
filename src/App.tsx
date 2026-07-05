@@ -3531,6 +3531,7 @@ const importLibraryPackageFile = (event: ChangeEvent<HTMLInputElement>) => {
           await applyImportedIconLibrary(packagePayload);
         }
         writeOperationLog(`导入${label}：${file.name}`);
+        window.alert(`导入${label}成功。`);
       } catch (error) {
         window.alert(error instanceof Error ? error.message : "导入库文件失败。");
       }

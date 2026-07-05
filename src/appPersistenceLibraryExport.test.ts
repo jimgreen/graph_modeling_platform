@@ -409,6 +409,21 @@ describe("graph template library filtering", () => {
     expect(measurementToolbarMatch?.[0]).not.toContain("<FileInput");
   });
 
+  test("alerts after a library package import succeeds", () => {
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const importHandlerMatch = appSource.match(
+      /const importLibraryPackageFile = \(event: ChangeEvent<HTMLInputElement>\) => \{[\s\S]*?Object\.assign\(__appScope, \{ importLibraryPackageFile \}\);/u
+    );
+    const importHandler = importHandlerMatch?.[0] ?? "";
+    const logIndex = importHandler.indexOf("writeOperationLog(`导入${label}：${file.name}`);");
+    const successAlertIndex = importHandler.indexOf("window.alert(`导入${label}成功。`);");
+    const catchIndex = importHandler.indexOf("} catch (error) {");
+
+    expect(logIndex).toBeGreaterThanOrEqual(0);
+    expect(successAlertIndex).toBeGreaterThan(logIndex);
+    expect(successAlertIndex).toBeLessThan(catchIndex);
+  });
+
   test("renders enum options as grouped rows in the parameter definition table", () => {
     const editor = renderEnumValuesEditor(
       {
