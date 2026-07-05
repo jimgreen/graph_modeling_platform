@@ -1,10 +1,14 @@
 import { describe, expect, test, vi } from "vitest";
 
 import {
+  createSyncExistingNodesWithTemplateDefinitions
+} from "./appExtracted/appGraphMeasurementFactories";
+import {
   createComputeStateIconDrawingSmartAlignmentSnap,
   createFindEditableRouteSegmentIndex,
   createRouteSegmentPointerDistance,
   createSaveCustomDeviceTemplate,
+  createSaveDeviceDefinitionVisualDraft,
   createStateIconDrawingKeyDown,
   createStartStateIconDrawingDrag,
   deviceParameterDefinitionsComplianceMessage,
@@ -19,6 +23,170 @@ import { createSetEdgeManualPoints } from "./appExtracted/appProjectCanvasFactor
 import { Point } from "./model";
 
 describe("manual bend interaction helpers", () => {
+  test("syncs existing canvas nodes when a matching template visual definition changes", () => {
+    const node: any = {
+      id: "node-1",
+      kind: "custom-userlibrary",
+      name: "画布按钮",
+      nodeNumber: "7",
+      acTopologyNode: 0,
+      dcTopologyNode: 0,
+      position: { x: 100, y: 120 },
+      x: 100,
+      y: 120,
+      size: { width: 104, height: 64 },
+      rotation: 0,
+      scale: 1,
+      terminals: [],
+      params: {
+        component_type: "UserLibrary",
+        name: "实例名称",
+        status: "1",
+        backgroundImage: "data:image/svg+xml,old",
+        backgroundImageAssetId: "old-asset",
+        fillColor: "#ffffff",
+        strokeColor: "#111827",
+        lineWidth: "1",
+        text: "旧文字"
+      }
+    };
+    const patchGraphNodes = vi.fn();
+    const pushUndoSnapshot = vi.fn();
+    const syncExistingNodesWithTemplateDefinitions = createSyncExistingNodesWithTemplateDefinitions({
+      createNodeFromTemplate: undefined,
+      nodes: [node],
+      patchGraphNodes,
+      pushUndoSnapshot,
+      reconcileNodeParamsWithTemplateDefinitions: (current: any) => current,
+      undoScopeForGraphPatch: (nodeIds: string[]) => ({ nodeIds })
+    });
+
+    const changedCount = syncExistingNodesWithTemplateDefinitions(
+      {
+        parameterDefinitions: [],
+        params: {
+          component_type: "UserLibrary",
+          backgroundImage: "data:image/svg+xml,new",
+          backgroundImageAssetId: "new-asset",
+          backgroundImageCleared: "",
+          fillColor: "#e0f2fe",
+          strokeColor: "#0284c7",
+          lineWidth: "3",
+          text: "新文字"
+        },
+        size: { width: 180, height: 88 },
+        stateDefinitions: [
+          { value: "1", name: "合", backgroundImage: "data:image/svg+xml,state-new" }
+        ]
+      } as any,
+      [],
+      (candidate: any) => candidate.kind === "custom-userlibrary"
+    );
+
+    expect(changedCount).toBe(1);
+    expect(pushUndoSnapshot).toHaveBeenCalledWith(true, false, { nodeIds: ["node-1"] });
+    expect(patchGraphNodes).toHaveBeenCalledTimes(1);
+    const updated = patchGraphNodes.mock.calls[0][0][0];
+    expect(updated.size).toEqual({ width: 180, height: 88 });
+    expect(updated.params).toMatchObject({
+      component_type: "UserLibrary",
+      name: "实例名称",
+      status: "1",
+      backgroundImage: "data:image/svg+xml,new",
+      backgroundImageAssetId: "new-asset",
+      fillColor: "#e0f2fe",
+      strokeColor: "#0284c7",
+      lineWidth: "3",
+      text: "新文字"
+    });
+    expect(updated.params).not.toHaveProperty("_stateDefinitions");
+  });
+
+  test("saving a definition visual draft syncs matching canvas nodes with the new visual definition", () => {
+    const syncExistingNodesWithTemplateDefinitions = vi.fn();
+    const parameterDefinitions = [
+      { cnName: "名称", enName: "name", valueType: "string", typicalValue: "" }
+    ];
+    const stateDefinitions = [
+      { value: "1", name: "合", backgroundImage: "data:image/svg+xml,state-new" }
+    ];
+    const scope = {
+      DEFAULT_STATE_PAGE_ID: "__default__",
+      TERMINAL_TYPE_LIBRARY_LABELS: { ac: "交流" },
+      activeStateDraftRow: () => ({ id: "state-1", value: "1" }),
+      createStateDraftRow: (definition: any) => ({ id: `state-${definition.value}`, ...definition }),
+      definitionStateDraftRows: stateDefinitions,
+      definitionStatePageId: "state-1",
+      definitionVisualDraft: {
+        backgroundImage: "data:image/svg+xml,new",
+        backgroundImageAssetId: "new-asset",
+        backgroundImageCleared: "",
+        size: { width: 180, height: 88 },
+        terminalCount: 2,
+        terminalTypes: ["ac", "ac"],
+        terminalLabels: ["左", "右"]
+      },
+      definitionVisualTerminalAnchors: [
+        { x: -0.5, y: 0 },
+        { x: 0.5, y: 0 }
+      ],
+      deviceDefinitionOverrideForTemplate: () => undefined,
+      getTemplateParameterDefinitions: () => parameterDefinitions,
+      hasOverlappingCustomDeviceTerminalAnchors: () => false,
+      requireEditMode: () => true,
+      selectedDefinitionTemplate: {
+        kind: "custom-userlibrary",
+        label: "用户元件",
+        custom: false,
+        size: { width: 104, height: 64 },
+        params: { component_type: "UserLibrary" },
+        terminalType: "ac",
+        terminalCount: 0,
+        parameterDefinitions
+      },
+      setCustomDeviceTemplates: vi.fn(),
+      setDefinitionDraftError: vi.fn(),
+      setDefinitionStateDraftRows: vi.fn(),
+      setDefinitionStatePageId: vi.fn(),
+      setDefinitionTerminalAnchorDragIndex: vi.fn(),
+      setDefinitionVisualDraft: vi.fn(),
+      setDeviceDefinitionOverrides: vi.fn(),
+      syncExistingNodesWithTemplateDefinitions,
+      templateAllowsResizeTransform: () => true,
+      validateStateDraftRows: () => ({ states: stateDefinitions, error: "" }),
+      writeOperationLog: vi.fn()
+    };
+
+    createSaveDeviceDefinitionVisualDraft(scope)();
+
+    expect(syncExistingNodesWithTemplateDefinitions).toHaveBeenCalledTimes(1);
+    expect(syncExistingNodesWithTemplateDefinitions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parameterDefinitions,
+        params: {
+          component_type: "UserLibrary",
+          backgroundImage: "data:image/svg+xml,new",
+          backgroundImageAssetId: "new-asset",
+          backgroundImageCleared: ""
+        },
+        size: { width: 180, height: 88 },
+        terminalType: "ac",
+        terminalCount: 2,
+        terminalTypes: ["ac", "ac"],
+        terminalLabels: ["左", "右"],
+        terminalAnchors: [
+          { x: -0.5, y: 0 },
+          { x: 0.5, y: 0 }
+        ],
+        stateDefinitions
+      }),
+      parameterDefinitions,
+      expect.any(Function)
+    );
+    expect(syncExistingNodesWithTemplateDefinitions.mock.calls[0][2]({ kind: "custom-userlibrary" })).toBe(true);
+    expect(syncExistingNodesWithTemplateDefinitions.mock.calls[0][2]({ kind: "other" })).toBe(false);
+  });
+
   test("saves a newly created custom device with the requested English name", () => {
     let customDeviceDraft = {
       categoryLibraryName: "用户类别库",
@@ -99,6 +267,92 @@ describe("manual bend interaction helpers", () => {
       params: { component_type: "UserLibrary" }
     });
     expect(scope.nextCustomTemplateKind).not.toHaveBeenCalled();
+  });
+
+  test("saves the active inline default icon drawing as the custom device background", () => {
+    let customDeviceDraft = {
+      categoryLibraryName: "静态图元",
+      componentLibrary: "StaticButton",
+      componentName: "按钮",
+      componentKind: "custom-StaticButton-2",
+      backgroundImage: "data:image/svg+xml,old",
+      backgroundImageAssetId: "",
+      backgroundImageCleared: "",
+      size: { width: 104, height: 64 },
+      allowResizeTransform: "0",
+      terminalCount: 0,
+      terminalTypes: [],
+      terminalLabels: [],
+      terminalAnchors: [],
+      terminalRoles: [],
+      terminalAssociations: [],
+      isContainer: false,
+      params: [],
+      stateDefinitions: [],
+      error: ""
+    };
+    let savedTemplates: any[] = [];
+    let persistedPayload: any = null;
+    const inlineImage = "data:image/svg+xml,inline-frame-background-border";
+    const scope = {
+      ALLOW_RESIZE_TRANSFORM_PARAM: "allowResizeTransform",
+      DEFAULT_STATE_PAGE_ID: "__default__",
+      TERMINAL_TYPE_LIBRARY_LABELS: { ac: "交流" },
+      closeCustomDeviceDialog: vi.fn(),
+      customDefaultDefinitions: () => [],
+      get customDeviceDraft() {
+        return customDeviceDraft;
+      },
+      customDeviceGeneratedDefaultImageCandidates: () => [],
+      customDeviceImageWithTerminalConnectors: (image: string) => image,
+      customDeviceTemplates: [],
+      customDeviceTerminalAnchors: [],
+      defaultComponentLibraryForCategoryLibrary: () => "StaticButton",
+      editingCustomDeviceKind: "",
+      ensureCustomComponentTreeExpanded: vi.fn(),
+      generateCustomDeviceImage: () => "data:image/svg+xml,generated",
+      hasOverlappingCustomDeviceTerminalAnchors: () => false,
+      isDefaultStatePageId: (rowId: string) => rowId === "__default__",
+      isReservedDeviceDefinitionParamName: () => false,
+      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name),
+      measurementConfig: { measurementTypes: [], deviceProfiles: [] },
+      measurementConfigDraft: undefined,
+      measurementConfigDraftRef: undefined,
+      nextCustomTemplateKind: vi.fn(() => "custom-StaticButton-2"),
+      normalizeCategoryLibraryName: (name: string) => name.trim(),
+      normalizeComponentLibraryName: (name: string) => name.trim(),
+      normalizeContainerTerminalAssociations: () => [],
+      normalizeDefinitionRowEnumFields: (rows: any) => rows,
+      persistDeviceLibraryChange: vi.fn((payload: any) => {
+        persistedPayload = payload;
+      }),
+      requireEditMode: () => true,
+      setCustomComponentTreeSelection: vi.fn(),
+      setCustomDeviceDraft: (updater: any) => {
+        customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
+      },
+      setCustomDeviceDraftCleanBaseline: vi.fn(),
+      setCustomDeviceSaveMessage: vi.fn(),
+      setCustomDeviceTemplates: (templates: any[]) => {
+        savedTemplates = templates;
+      },
+      setEditingCustomDeviceKind: vi.fn(),
+      setExpandedCategoryLibraries: vi.fn(),
+      stateIconDrawingInlineImage: inlineImage,
+      stateIconDrawingInlineTarget: { scope: "custom", rowId: "__default__" },
+      syncExistingNodesWithTemplateDefinitions: vi.fn(),
+      syncInheritedCustomDeviceStateVisuals: (states: any[]) => states,
+      validateContainerTerminalAssociations: () => ({ valid: true }),
+      validateStateDraftRows: (states: any[]) => ({ states, error: "" }),
+      writeOperationLog: vi.fn()
+    };
+
+    const saved = createSaveCustomDeviceTemplate(scope)();
+
+    expect(saved).toBe(true);
+    expect(savedTemplates[0].params.backgroundImage).toBe(inlineImage);
+    expect(persistedPayload.customDeviceTemplates[0].params.backgroundImage).toBe(inlineImage);
+    expect(customDeviceDraft.backgroundImage).toBe(inlineImage);
   });
 
   test("validates parameter definition names and default value types", () => {

@@ -77,6 +77,24 @@ const mergeDefaultAndCustomDefinitionRows = (
   };
 };
 
+const inlineDefaultIconBackgroundPatch = (__appScope: Record<string, any>, scope: "custom" | "definition") => {
+  const { isDefaultStatePageId, stateIconDrawingInlineImage, stateIconDrawingInlineTarget } = __appScope;
+  if (
+    !stateIconDrawingInlineTarget ||
+    stateIconDrawingInlineTarget.scope !== scope ||
+    typeof isDefaultStatePageId !== "function" ||
+    !isDefaultStatePageId(stateIconDrawingInlineTarget.rowId)
+  ) {
+    return null;
+  }
+  const backgroundImage = String(stateIconDrawingInlineImage ?? "");
+  return {
+    backgroundImage,
+    backgroundImageAssetId: "",
+    backgroundImageCleared: backgroundImage ? "" : "1"
+  };
+};
+
 const parameterTypicalValueTypeError = (row: DeviceParameterDefinition) => {
   const value = String(row.typicalValue ?? "").trim();
   if (!value) {
@@ -3600,7 +3618,7 @@ export function createUpdateSelectedDefinitionResizePermission(__appScope: Recor
 
 export function createSaveDeviceDefinitionStateVisualDraft(__appScope: Record<string, any>) {
   return () => {
-  const { DEFAULT_STATE_PAGE_ID, activeStateDraftRow, createStateDraftRow, definitionStateDraftRows, definitionStatePageId, deviceDefinitionOverrideForTemplate, requireEditMode, selectedDefinitionTemplate, setCustomDeviceTemplates, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId, setDeviceDefinitionOverrides, validateStateDraftRows, writeOperationLog } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, activeStateDraftRow, createStateDraftRow, definitionStateDraftRows, definitionStatePageId, deviceDefinitionOverrideForTemplate, getTemplateParameterDefinitions, requireEditMode, selectedDefinitionTemplate, setCustomDeviceTemplates, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, validateStateDraftRows, writeOperationLog } = __appScope;
     if (!requireEditMode("保存状态样式")) {
       return;
     }
@@ -3644,6 +3662,14 @@ export function createSaveDeviceDefinitionStateVisualDraft(__appScope: Record<st
         };
       });
     }
+    syncExistingNodesWithTemplateDefinitions(
+      {
+        parameterDefinitions: getTemplateParameterDefinitions(selectedDefinitionTemplate),
+        stateDefinitions
+      },
+      getTemplateParameterDefinitions(selectedDefinitionTemplate),
+      (node) => node.kind === selectedDefinitionTemplate.kind
+    );
     const nextStateRows = stateDefinitions.map((definition) => createStateDraftRow(definition));
     setDefinitionStateDraftRows(nextStateRows);
     setDefinitionStatePageId(nextStateRows.find((row) => row.value === activeStateValue)?.id ?? DEFAULT_STATE_PAGE_ID);
@@ -3654,7 +3680,7 @@ export function createSaveDeviceDefinitionStateVisualDraft(__appScope: Record<st
 
 export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string, any>) {
   return () => {
-  const { DEFAULT_STATE_PAGE_ID, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, createStateDraftRow, definitionStateDraftRows, definitionStatePageId, definitionVisualDraft, definitionVisualTerminalAnchors, deviceDefinitionOverrideForTemplate, getTemplateParameterDefinitions, hasOverlappingCustomDeviceTerminalAnchors, requireEditMode, selectedDefinitionTemplate, setCustomDeviceTemplates, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId, setDefinitionTerminalAnchorDragIndex, setDefinitionVisualDraft, setDeviceDefinitionOverrides, templateAllowsResizeTransform, validateStateDraftRows, writeOperationLog } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, createStateDraftRow, definitionStateDraftRows, definitionStatePageId, definitionVisualDraft, definitionVisualTerminalAnchors, deviceDefinitionOverrideForTemplate, getTemplateParameterDefinitions, hasOverlappingCustomDeviceTerminalAnchors, requireEditMode, selectedDefinitionTemplate, setCustomDeviceTemplates, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId, setDefinitionTerminalAnchorDragIndex, setDefinitionVisualDraft, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, templateAllowsResizeTransform, validateStateDraftRows, writeOperationLog } = __appScope;
     if (!requireEditMode("保存元件图标和端子")) {
       return;
     }
@@ -3684,12 +3710,19 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
       width: Math.max(1, Math.round(definitionVisualDraft.size.width || selectedDefinitionTemplate.size.width || 104)),
       height: Math.max(1, Math.round(definitionVisualDraft.size.height || selectedDefinitionTemplate.size.height || 64))
     };
-    const hasGeneratedDefinitionBackground = !selectedDefinitionTemplate.custom && isGeneratedTemplateDefaultStateIconImage(definitionVisualDraft.backgroundImage);
-    const backgroundParams = {
-      backgroundImage: hasGeneratedDefinitionBackground ? "" : definitionVisualDraft.backgroundImage,
-      backgroundImageAssetId: hasGeneratedDefinitionBackground ? "" : definitionVisualDraft.backgroundImageAssetId,
-      backgroundImageCleared: hasGeneratedDefinitionBackground ? "" : definitionVisualDraft.backgroundImageCleared
+    const inlineBackgroundPatch = inlineDefaultIconBackgroundPatch(__appScope, "definition");
+    const draftBackground = {
+      backgroundImage: inlineBackgroundPatch?.backgroundImage ?? definitionVisualDraft.backgroundImage,
+      backgroundImageAssetId: inlineBackgroundPatch?.backgroundImageAssetId ?? definitionVisualDraft.backgroundImageAssetId,
+      backgroundImageCleared: inlineBackgroundPatch?.backgroundImageCleared ?? definitionVisualDraft.backgroundImageCleared
     };
+    const hasGeneratedDefinitionBackground = !selectedDefinitionTemplate.custom && isGeneratedTemplateDefaultStateIconImage(draftBackground.backgroundImage);
+    const backgroundParams = {
+      backgroundImage: hasGeneratedDefinitionBackground ? "" : draftBackground.backgroundImage,
+      backgroundImageAssetId: hasGeneratedDefinitionBackground ? "" : draftBackground.backgroundImageAssetId,
+      backgroundImageCleared: hasGeneratedDefinitionBackground ? "" : draftBackground.backgroundImageCleared
+    };
+    const parameterDefinitions = selectedDefinitionTemplate.parameterDefinitions ?? getTemplateParameterDefinitions(selectedDefinitionTemplate);
     if (selectedDefinitionTemplate.custom) {
       setCustomDeviceTemplates((current) =>
         current.map((template) => {
@@ -3736,13 +3769,31 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
             terminalAssociations: existingOverride?.terminalAssociations ?? selectedDefinitionTemplate.terminalAssociations,
             isContainer: existingOverride?.isContainer ?? selectedDefinitionTemplate.isContainer,
             allowResizeTransform: existingOverride?.allowResizeTransform ?? templateAllowsResizeTransform(selectedDefinitionTemplate),
-            parameterDefinitions: existingOverride?.parameterDefinitions ?? selectedDefinitionTemplate.parameterDefinitions ?? getTemplateParameterDefinitions(selectedDefinitionTemplate),
+            parameterDefinitions: existingOverride?.parameterDefinitions ?? parameterDefinitions,
             stateDefinitions,
             updatedAt: new Date().toISOString()
           }
         };
       });
     }
+    syncExistingNodesWithTemplateDefinitions(
+      {
+        parameterDefinitions,
+        params: {
+          ...(selectedDefinitionTemplate.params ?? {}),
+          ...backgroundParams
+        },
+        size,
+        terminalType: terminalTypes[0] ?? selectedDefinitionTemplate.terminalType,
+        terminalCount: definitionVisualDraft.terminalCount,
+        terminalTypes,
+        terminalLabels,
+        terminalAnchors,
+        stateDefinitions
+      },
+      parameterDefinitions,
+      (node) => node.kind === selectedDefinitionTemplate.kind
+    );
     const nextStateRows = stateDefinitions.map((definition) => createStateDraftRow(definition));
     setDefinitionVisualDraft((current) => current ? { ...current, size, terminalLabels, terminalAnchors, ...backgroundParams, error: "" } : current);
     setDefinitionStateDraftRows(nextStateRows);
@@ -5292,12 +5343,16 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       return false;
     }
     const terminalAnchors = customDeviceTerminalAnchors.slice(0, terminalTypes.length).map((anchor) => ({ ...anchor }));
-    const rawBackgroundImage = customDeviceDraft.backgroundImageCleared
+    const inlineBackgroundPatch = inlineDefaultIconBackgroundPatch(__appScope, "custom");
+    const draftBackgroundImage = inlineBackgroundPatch?.backgroundImage ?? customDeviceDraft.backgroundImage;
+    const draftBackgroundImageAssetId = inlineBackgroundPatch?.backgroundImageAssetId ?? customDeviceDraft.backgroundImageAssetId;
+    const draftBackgroundImageCleared = inlineBackgroundPatch?.backgroundImageCleared ?? customDeviceDraft.backgroundImageCleared;
+    const rawBackgroundImage = draftBackgroundImageCleared
       ? ""
-      : customDeviceDraft.backgroundImage || generateCustomDeviceImage(componentLabel, terminalTypes.length > 0 ? terminalTypes : ["ac"]);
+      : draftBackgroundImage || generateCustomDeviceImage(componentLabel, terminalTypes.length > 0 ? terminalTypes : ["ac"]);
     const backgroundImage = customDeviceImageWithTerminalConnectors(rawBackgroundImage, terminalTypes, terminalAnchors);
-    const backgroundImageAssetId = customDeviceDraft.backgroundImageAssetId && backgroundImage === `/api/images/${customDeviceDraft.backgroundImageAssetId}`
-      ? customDeviceDraft.backgroundImageAssetId
+    const backgroundImageAssetId = draftBackgroundImageAssetId && backgroundImage === `/api/images/${draftBackgroundImageAssetId}`
+      ? draftBackgroundImageAssetId
       : "";
     const defaultImageCandidates = customDeviceGeneratedDefaultImageCandidates(
       componentLabel,
@@ -5328,7 +5383,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
         lineWidth: "0",
         backgroundImage,
         backgroundImageAssetId,
-        backgroundImageCleared: customDeviceDraft.backgroundImageCleared
+        backgroundImageCleared: draftBackgroundImageCleared
       },
       terminalType: terminalTypes[0] ?? "ac",
       terminalCount: terminalTypes.length,
@@ -5363,8 +5418,8 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
     ensureCustomComponentTreeExpanded(categoryLibraryName, componentLibrary);
     setCustomComponentTreeSelection({ kind: "component", categoryLibraryName, section: componentLibrary, templateKind: customKind });
     setEditingCustomDeviceKind(customKind);
-    const cleanDraft = { ...customDeviceDraft, backgroundImage, backgroundImageAssetId, error: "" };
-    setCustomDeviceDraft((current) => ({ ...current, backgroundImage, backgroundImageAssetId, error: "" }));
+    const cleanDraft = { ...customDeviceDraft, backgroundImage, backgroundImageAssetId, backgroundImageCleared: draftBackgroundImageCleared, error: "" };
+    setCustomDeviceDraft((current) => ({ ...current, backgroundImage, backgroundImageAssetId, backgroundImageCleared: draftBackgroundImageCleared, error: "" }));
     setCustomDeviceDraftCleanBaseline(cleanDraft, terminalAnchors);
     setCustomDeviceSaveMessage(`自定义元件已保存：${componentLabel}`);
     writeOperationLog(`保存自定义元件：${componentLabel}`);
@@ -5459,11 +5514,15 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       return false;
     }
     const terminalAnchors = customDeviceTerminalAnchors.slice(0, terminalTypes.length).map((anchor) => ({ ...anchor }));
-    const backgroundImage = customDeviceDraft.backgroundImageCleared
+    const inlineBackgroundPatch = inlineDefaultIconBackgroundPatch(__appScope, "custom");
+    const draftBackgroundImage = inlineBackgroundPatch?.backgroundImage ?? customDeviceDraft.backgroundImage;
+    const draftBackgroundImageAssetId = inlineBackgroundPatch?.backgroundImageAssetId ?? customDeviceDraft.backgroundImageAssetId;
+    const draftBackgroundImageCleared = inlineBackgroundPatch?.backgroundImageCleared ?? customDeviceDraft.backgroundImageCleared;
+    const backgroundImage = draftBackgroundImageCleared
       ? ""
-      : customDeviceImageWithTerminalConnectors(customDeviceDraft.backgroundImage, terminalTypes, terminalAnchors);
-    const backgroundImageAssetId = customDeviceDraft.backgroundImageAssetId && backgroundImage === `/api/images/${customDeviceDraft.backgroundImageAssetId}`
-      ? customDeviceDraft.backgroundImageAssetId
+      : customDeviceImageWithTerminalConnectors(draftBackgroundImage, terminalTypes, terminalAnchors);
+    const backgroundImageAssetId = draftBackgroundImageAssetId && backgroundImage === `/api/images/${draftBackgroundImageAssetId}`
+      ? draftBackgroundImageAssetId
       : "";
     const defaultImageCandidates = customDeviceGeneratedDefaultImageCandidates(
       customDeviceDraft.componentName.trim() || template.label,
@@ -5489,11 +5548,20 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     syncExistingNodesWithTemplateDefinitions(
       {
         parameterDefinitions: definitions,
+        params: {
+          ...(template.params ?? {}),
+          component_type: componentLibrary,
+          backgroundImage,
+          backgroundImageAssetId,
+          backgroundImageCleared: draftBackgroundImageCleared
+        },
+        size,
         terminalType: terminalTypes[0] ?? template.terminalType,
         terminalCount: terminalTypes.length,
         terminalTypes,
         terminalLabels,
-        terminalAnchors
+        terminalAnchors,
+        stateDefinitions
       },
       previousDefinitions,
       (node) => node.kind === template.kind
@@ -5509,7 +5577,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
           component_type: componentLibrary,
           backgroundImage,
           backgroundImageAssetId,
-          backgroundImageCleared: customDeviceDraft.backgroundImageCleared
+          backgroundImageCleared: draftBackgroundImageCleared
         },
         size,
         terminalType: terminalTypes[0] ?? template.terminalType,
@@ -5531,8 +5599,8 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       success: `元件定义已保存到后台：${template.label}`,
       failure: `元件定义已保存到本地，后台保存失败：${template.label}`
     });
-    const cleanDraft = { ...customDeviceDraft, backgroundImage, backgroundImageAssetId, size, terminalLabels, error: "" };
-    setCustomDeviceDraft((current) => ({ ...current, backgroundImage, backgroundImageAssetId, size, terminalLabels, error: "" }));
+    const cleanDraft = { ...customDeviceDraft, backgroundImage, backgroundImageAssetId, backgroundImageCleared: draftBackgroundImageCleared, size, terminalLabels, error: "" };
+    setCustomDeviceDraft((current) => ({ ...current, backgroundImage, backgroundImageAssetId, backgroundImageCleared: draftBackgroundImageCleared, size, terminalLabels, error: "" }));
     setCustomDeviceDraftCleanBaseline(cleanDraft, terminalAnchors);
     setCustomDeviceSaveMessage(`元件定义已保存：${template.label}`);
     writeOperationLog(`保存元件定义：${template.label}`);

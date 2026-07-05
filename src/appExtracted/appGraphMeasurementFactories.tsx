@@ -3669,14 +3669,92 @@ export function createPushNodeOnlyUndoSnapshot(__appScope: Record<string, any>) 
   };
 }
 
+const TEMPLATE_DEFINITION_PARAM_KEYS = new Set([
+  "component_type",
+  "backgroundImage",
+  "backgroundImageAssetId",
+  "backgroundImageCleared",
+  "foregroundColor",
+  "foregroundImage",
+  "foregroundImageAssetId",
+  "fillColor",
+  "strokeColor",
+  "textColor",
+  "lineWidth",
+  "fontSize",
+  "fontFamily",
+  "fontWeight",
+  "fontStyle",
+  "textDecoration",
+  "strokeStyle",
+  "text",
+  "cornerRadius",
+  "accentColor",
+  "shadowEnabled",
+  "padding",
+  "textAlign",
+  "verticalAlign",
+  "markerStart",
+  "markerEnd",
+  "arrowSize",
+  "handleColor",
+  "handleSize",
+  "routeAvoidance",
+  "staticWidth",
+  "staticHeight"
+]);
+
+const TEMPLATE_DEFINITION_PARAM_PREFIXES = [
+  "button"
+];
+
+const isTemplateDefinitionParamKey = (key: string) =>
+  TEMPLATE_DEFINITION_PARAM_KEYS.has(key) ||
+  TEMPLATE_DEFINITION_PARAM_PREFIXES.some((prefix) => key.startsWith(prefix));
+
 export function createSyncExistingNodesWithTemplateDefinitions(__appScope: Record<string, any>) {
   return (
-    template: Pick<DeviceTemplate, "parameterDefinitions"> & Partial<Pick<DeviceTemplate, "terminalType" | "terminalCount" | "terminalTypes" | "terminalLabels" | "terminalAnchors">>,
+    template: Pick<DeviceTemplate, "parameterDefinitions"> & Partial<Pick<DeviceTemplate, "params" | "size" | "terminalType" | "terminalCount" | "terminalTypes" | "terminalLabels" | "terminalAnchors" | "stateDefinitions">>,
     previousDefinitions: readonly DeviceParameterDefinition[] | undefined,
     matchesNode: (node: ModelNode) => boolean
   ) => {
   const { createNodeFromTemplate, nodes, patchGraphNodes, pushUndoSnapshot, reconcileNodeParamsWithTemplateDefinitions, undoScopeForGraphPatch } = __appScope;
     const nodeUpdates: ModelNode[] = [];
+    const syncNodeDefinitionVisuals = (node: ModelNode) => {
+      let changed = false;
+      let nextParams = node.params;
+      const templateParams = template.params && typeof template.params === "object" ? template.params : null;
+      if (templateParams) {
+        for (const [key, rawValue] of Object.entries(templateParams)) {
+          if (!isTemplateDefinitionParamKey(key)) {
+            continue;
+          }
+          const value = String(rawValue ?? "");
+          if (nextParams[key] !== value) {
+            if (nextParams === node.params) {
+              nextParams = { ...node.params };
+            }
+            nextParams[key] = value;
+            changed = true;
+          }
+        }
+      }
+      const templateSize = template.size;
+      const width = Number(templateSize?.width);
+      const height = Number(templateSize?.height);
+      const nextSize = Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0
+        ? { width: Math.max(1, Math.round(width)), height: Math.max(1, Math.round(height)) }
+        : node.size;
+      const sizeChanged = nextSize.width !== node.size.width || nextSize.height !== node.size.height;
+      if (!changed && !sizeChanged) {
+        return node;
+      }
+      return {
+        ...node,
+        ...(sizeChanged ? { size: nextSize } : {}),
+        ...(changed ? { params: nextParams } : {})
+      };
+    };
     const syncNodeTerminals = (node: ModelNode) => {
       if (!createNodeFromTemplate || !Number.isFinite(Number(template.terminalCount))) {
         return node;
@@ -3725,7 +3803,7 @@ export function createSyncExistingNodesWithTemplateDefinitions(__appScope: Recor
       if (!matchesNode(node)) {
         continue;
       }
-      const reconciled = syncNodeTerminals(reconcileNodeParamsWithTemplateDefinitions(node, template, previousDefinitions));
+      const reconciled = syncNodeTerminals(syncNodeDefinitionVisuals(reconcileNodeParamsWithTemplateDefinitions(node, template, previousDefinitions)));
       if (reconciled !== node) {
         nodeUpdates.push(reconciled);
       }
