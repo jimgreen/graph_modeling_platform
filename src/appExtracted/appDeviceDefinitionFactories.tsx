@@ -4766,22 +4766,13 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
       if (!isValidComponentLibraryName(englishName)) {
         return setDialogError("英文名称只能包含英文字母、数字和下划线，并且必须以英文字母开头。");
       }
-      const existingTypes = new Set(componentLibraryOptions.map((item: string) => item.toLowerCase()));
-      if (existingTypes.has(englishName.toLowerCase())) {
-        return setDialogError("英文名称对应的元件库已存在。");
-      }
       setCustomCategoryLibraries((current: string[]) => normalizeCustomCategoryLibraries([...current, categoryLibraryName]));
-      setCustomComponentLibraries((current: any[]) => normalizeCustomComponentLibraries([...current, {
-        name: englishName,
-        categoryLibraryName,
-        label: chineseName
-      }]));
       setExpandedCategoryLibraries((current: string[]) => Array.from(new Set([...current, categoryLibraryName])));
-      setCustomComponentTreeSelection({ kind: "componentLibrary", categoryLibraryName, section: englishName });
+      setCustomComponentTreeSelection({ kind: "categoryLibrary", categoryLibraryName });
       setCustomDeviceDraft((current: any) => ({
         ...current,
         categoryLibraryName,
-        componentLibrary: englishName,
+        componentLibrary: "",
         error: ""
       }));
       setCustomLibraryCreateDialog(null);
@@ -4897,11 +4888,13 @@ export function createDeleteCustomCategoryLibrary(__appScope: Record<string, any
       return;
     }
     const templatesInGroup = customDeviceTemplates.filter((template) => normalizeCategoryLibraryName(template.categoryLibrary) === categoryLibraryName);
-    if (templatesInGroup.length > 0) {
-      const confirmed = window.confirm(`类别库“${categoryLibraryName}”中共有 ${templatesInGroup.length} 个元件，删除类别库会同时删除这些元件及其自定义元件库，是否继续？`);
-      if (!confirmed) {
-        return;
-      }
+    const confirmed = window.confirm(
+      templatesInGroup.length > 0
+        ? `类别库“${categoryLibraryName}”中共有 ${templatesInGroup.length} 个元件，删除类别库会同时删除这些元件及其自定义元件库，是否继续？`
+        : `确认删除类别库“${categoryLibraryName}”？`
+    );
+    if (!confirmed) {
+      return;
     }
     const deletedKinds = new Set(templatesInGroup.map((template) => template.kind));
     const deletedComponentLibraryKeys = new Set(
@@ -5007,11 +5000,13 @@ export function createDeleteCustomComponentLibrary(__appScope: Record<string, an
       return;
     }
     const templatesWithType = libraryTemplates.filter((template) => template.custom && resolveTemplateComponentLibrary(template).toLowerCase() === componentLibrary.toLowerCase());
-    if (templatesWithType.length > 0) {
-      const confirmed = window.confirm(`元件库“${componentLibrary}”下共有 ${templatesWithType.length} 个自定义元件，删除元件库会同时删除这些元件，是否继续？`);
-      if (!confirmed) {
-        return;
-      }
+    const confirmed = window.confirm(
+      templatesWithType.length > 0
+        ? `元件库“${componentLibrary}”下共有 ${templatesWithType.length} 个自定义元件，删除元件库会同时删除这些元件，是否继续？`
+        : `确认删除元件库“${componentLibrary}”？`
+    );
+    if (!confirmed) {
+      return;
     }
     const deletedKinds = new Set(templatesWithType.map((template) => template.kind));
     setCustomComponentLibraries((current) => current.filter((item) => item.name.toLowerCase() !== componentLibrary.toLowerCase()));

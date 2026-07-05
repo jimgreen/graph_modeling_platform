@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
   createSyncExistingNodesWithTemplateDefinitions
@@ -6,6 +6,9 @@ import {
 import {
   createComputeStateIconDrawingSmartAlignmentSnap,
   createFindEditableRouteSegmentIndex,
+  createConfirmCustomLibraryCreateDialog,
+  createDeleteCustomCategoryLibrary,
+  createDeleteCustomComponentLibrary,
   createRouteSegmentPointerDistance,
   createSaveCustomDeviceTemplate,
   createSaveDeviceDefinitionVisualDraft,
@@ -22,6 +25,10 @@ import {
 } from "./appExtracted/appDeviceDefinitionFactories";
 import { createSetEdgeManualPoints } from "./appExtracted/appProjectCanvasFactories";
 import { Point } from "./model";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("manual bend interaction helpers", () => {
   test("syncs existing canvas nodes when a matching template visual definition changes", () => {
@@ -268,6 +275,161 @@ describe("manual bend interaction helpers", () => {
       params: { component_type: "UserLibrary" }
     });
     expect(scope.nextCustomTemplateKind).not.toHaveBeenCalled();
+  });
+
+  test("creating a category library does not create a duplicate component library", () => {
+    let customCategoryLibraries: string[] = [];
+    let customComponentLibraries: any[] = [];
+    let customDeviceDraft = {
+      categoryLibraryName: "交流设备",
+      componentLibrary: "ACLine",
+      componentName: "",
+      error: ""
+    };
+    let customLibraryCreateDialog: any = {
+      kind: "categoryLibrary",
+      title: "新建类别",
+      cnName: "自定义地图按钮",
+      enName: "CustomDeviceMaple",
+      categoryLibraryName: "",
+      componentLibrary: "",
+      error: ""
+    };
+    const setCustomComponentTreeSelection = vi.fn();
+
+    const scope = {
+      categoryLibraries: ["交流设备", "直流设备"],
+      componentLibraryOptions: ["ACLine", "DCLine"],
+      get customDeviceDraft() {
+        return customDeviceDraft;
+      },
+      get customLibraryCreateDialog() {
+        return customLibraryCreateDialog;
+      },
+      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name),
+      normalizeCategoryLibraryName: (name: string) => name.trim(),
+      normalizeComponentLibraryName: (name: string) => name.trim(),
+      normalizeCustomCategoryLibraries: (value: unknown) => Array.from(new Set((value as string[]).map((item) => item.trim()).filter(Boolean))),
+      normalizeCustomComponentLibraries: (value: unknown) => value as any[],
+      requireEditMode: () => true,
+      setCustomCategoryLibraries: (updater: any) => {
+        customCategoryLibraries = typeof updater === "function" ? updater(customCategoryLibraries) : updater;
+      },
+      setCustomComponentLibraries: (updater: any) => {
+        customComponentLibraries = typeof updater === "function" ? updater(customComponentLibraries) : updater;
+      },
+      setCustomComponentTreeSelection,
+      setCustomDeviceDraft: (updater: any) => {
+        customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
+      },
+      setCustomLibraryCreateDialog: (updater: any) => {
+        customLibraryCreateDialog = typeof updater === "function" ? updater(customLibraryCreateDialog) : updater;
+      },
+      setExpandedCategoryLibraries: vi.fn()
+    };
+
+    const created = createConfirmCustomLibraryCreateDialog(scope)();
+
+    expect(created).toBe(true);
+    expect(customCategoryLibraries).toEqual(["自定义地图按钮"]);
+    expect(customComponentLibraries).toEqual([]);
+    expect(setCustomComponentTreeSelection).toHaveBeenCalledWith({
+      kind: "categoryLibrary",
+      categoryLibraryName: "自定义地图按钮"
+    });
+    expect(customDeviceDraft).toMatchObject({
+      categoryLibraryName: "自定义地图按钮",
+      componentLibrary: "",
+      error: ""
+    });
+  });
+
+  test("asks for confirmation before deleting an empty category library", () => {
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("window", { confirm, alert: vi.fn() });
+    let customCategoryLibraries = ["用户类别"];
+    const setCustomCategoryLibraries = vi.fn((updater: any) => {
+      customCategoryLibraries = typeof updater === "function" ? updater(customCategoryLibraries) : updater;
+    });
+    const scope = {
+      PROTECTED_CATEGORY_LIBRARIES: new Set(["交流设备", "直流设备"]),
+      customComponentLibraries: [],
+      customDeviceDraft: {
+        categoryLibraryName: "用户类别",
+        componentLibrary: "UserLibrary"
+      },
+      customDeviceTemplates: [],
+      defaultComponentLibraryForCategoryLibrary: () => "ACLoad",
+      isBuiltInComponentLibrary: () => false,
+      normalizeCategoryLibraryName: (name: string) => name.trim(),
+      requireEditMode: () => true,
+      resolveTemplateComponentLibrary: (template: any) => template.params?.component_type ?? "",
+      setCollapsedCustomComponentTreeLibraries: vi.fn(),
+      setCollapsedCustomComponentTreeTypes: vi.fn(),
+      setCustomCategoryLibraries,
+      setCustomComponentLibraries: vi.fn(),
+      setCustomComponentTreeSelection: vi.fn(),
+      setCustomDeviceDraft: vi.fn(),
+      setCustomDeviceTemplates: vi.fn(),
+      setDefinitionDraftSection: vi.fn(),
+      setDeviceDefinitionOverrides: vi.fn(),
+      setEditingCustomDeviceKind: vi.fn(),
+      setExpandedCategoryLibraries: vi.fn(),
+      setExpandedDefinitionGroups: vi.fn(),
+      setSelectedDefinitionKind: vi.fn()
+    };
+
+    createDeleteCustomCategoryLibrary(scope)("用户类别");
+
+    expect(confirm).toHaveBeenCalledWith("确认删除类别库“用户类别”？");
+    expect(setCustomCategoryLibraries).not.toHaveBeenCalled();
+    expect(customCategoryLibraries).toEqual(["用户类别"]);
+  });
+
+  test("asks for confirmation before deleting an empty component library", () => {
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("window", { confirm, alert: vi.fn() });
+    let customComponentLibraries = [
+      { name: "UserLibrary", categoryLibraryName: "用户类别", label: "用户元件库" }
+    ];
+    const setCustomComponentLibraries = vi.fn((updater: any) => {
+      customComponentLibraries = typeof updater === "function" ? updater(customComponentLibraries) : updater;
+    });
+    const scope = {
+      E_SECTION_OPTIONS: ["ACLoad"],
+      customComponentTreeSelection: {
+        kind: "componentLibrary",
+        categoryLibraryName: "用户类别",
+        section: "UserLibrary"
+      },
+      customDeviceDraft: {
+        categoryLibraryName: "用户类别",
+        componentLibrary: "UserLibrary"
+      },
+      defaultComponentLibraryForCategoryLibrary: () => "ACLoad",
+      libraryTemplates: [],
+      normalizeCategoryLibraryName: (name: string) => name.trim(),
+      normalizeComponentLibraryName: (name: string) => name.trim(),
+      requireEditMode: () => true,
+      resolveTemplateComponentLibrary: (template: any) => template.params?.component_type ?? "",
+      setCollapsedCustomComponentTreeTypes: vi.fn(),
+      setCustomComponentLibraries,
+      setCustomComponentTreeSelection: vi.fn(),
+      setCustomDeviceDraft: vi.fn(),
+      setCustomDeviceTemplates: vi.fn(),
+      setDefinitionDraftSection: vi.fn(),
+      setDeviceDefinitionOverrides: vi.fn(),
+      setEditingCustomDeviceKind: vi.fn(),
+      setSelectedDefinitionKind: vi.fn()
+    };
+
+    createDeleteCustomComponentLibrary(scope)("UserLibrary");
+
+    expect(confirm).toHaveBeenCalledWith("确认删除元件库“UserLibrary”？");
+    expect(setCustomComponentLibraries).not.toHaveBeenCalled();
+    expect(customComponentLibraries).toEqual([
+      { name: "UserLibrary", categoryLibraryName: "用户类别", label: "用户元件库" }
+    ]);
   });
 
   test("saves the active inline default icon drawing as the custom device background", () => {
