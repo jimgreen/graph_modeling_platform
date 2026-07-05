@@ -3126,7 +3126,7 @@ export function createShouldRunSynchronousMoveBlockerRepair(__appScope: Record<s
 export function createMarkGraphDirtyForInteractiveCommit(__appScope: Record<string, any>) {
   return () => {
   const { setHasUnsavedChanges, setRouteRenderingReady, suppressNextGraphDirtyRef } = __appScope;
-    suppressNextGraphDirtyRef.current = true;
+    suppressNextGraphDirtyRef.current += 1;
     setHasUnsavedChanges(true);
     setRouteRenderingReady(true);
   };

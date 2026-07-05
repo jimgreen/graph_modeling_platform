@@ -2227,7 +2227,7 @@ export function createClearActiveProjectDisplay(__appScope: Record<string, any>)
     deferredMoveOptimizationCancelRef.current = null;
     deferredRoutableLineRouteRepairCancelRef.current?.();
     deferredRoutableLineRouteRepairCancelRef.current = null;
-    suppressNextGraphDirtyRef.current = true;
+    suppressNextGraphDirtyRef.current += 1;
     setUndoStack([]);
     setProjectName("");
     setCanvasWidth(emptyCanvasBounds.width);
@@ -2329,7 +2329,7 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
     deferredMoveOptimizationCancelRef.current = null;
     deferredRoutableLineRouteRepairCancelRef.current?.();
     deferredRoutableLineRouteRepairCancelRef.current = null;
-    suppressNextGraphDirtyRef.current = true;
+    suppressNextGraphDirtyRef.current += 1;
     setUndoStack([]);
     setProjectName(project.name);
     setCanvasWidth(nextCanvasBounds.width);
@@ -4099,7 +4099,7 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
       rememberPersistedSchemesPayload(serializeSchemesForStorage(nextSchemes));
       setActiveProjectKey(targetId);
       if (savedRecord.name !== projectName) {
-        suppressNextGraphDirtyRef.current = true;
+        suppressNextGraphDirtyRef.current += 1;
         setProjectName(savedRecord.name);
       }
       graphDirtyBaselineRef.current = currentGraphDirtyBaseline();

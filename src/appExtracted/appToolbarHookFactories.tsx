@@ -1437,7 +1437,7 @@ export function createAppHookCallback34(__appScope: Record<string, any>) {
           synchronized.nodeUpdates.map((node) => node.id)
         ));
         markStoredRouteEdgesDirty(synchronized.edgeUpserts.map((edge) => edge.id));
-        suppressNextGraphDirtyRef.current = true;
+        suppressNextGraphDirtyRef.current += 1;
         setGraphStore((current) => {
           const next = graphStoreApplyPatch(current, {
             nodeUpdates: synchronized.nodeUpdates,
@@ -3831,7 +3831,7 @@ export function createAppHookCallback120(__appScope: Record<string, any>) {
       return;
     }
     if (suppressNextGraphDirtyRef.current) {
-      suppressNextGraphDirtyRef.current = false;
+      suppressNextGraphDirtyRef.current = Math.max(0, Number(suppressNextGraphDirtyRef.current) - 1);
       return;
     }
     if (graphDirtyBaselineChanged(previousBaseline, nextBaseline)) {

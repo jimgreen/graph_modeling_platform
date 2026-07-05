@@ -754,7 +754,7 @@ const elementTreeSourceRef = useRef<ElementTreeSource | null>(null); Object.assi
 const elementTreeItemRefs = useRef<Record<string, HTMLDivElement | null>>({}); Object.assign(__appScope, { elementTreeItemRefs });
 const selectedLayoutUnitsCacheRef = useRef<CanvasLayoutUnit[]>([]); Object.assign(__appScope, { selectedLayoutUnitsCacheRef });
 const graphDirtyBaselineRef = useRef<GraphDirtyBaseline | null>(null); Object.assign(__appScope, { graphDirtyBaselineRef });
-const suppressNextGraphDirtyRef = useRef(false); Object.assign(__appScope, { suppressNextGraphDirtyRef });
+const suppressNextGraphDirtyRef = useRef(0); Object.assign(__appScope, { suppressNextGraphDirtyRef });
 const saveRequiredRef = useRef(false); Object.assign(__appScope, { saveRequiredRef });
 const refreshRecoveryProjectRef = useRef<RefreshRecoveryProjectState | null>(null); Object.assign(__appScope, { refreshRecoveryProjectRef });
 const latestNodesRef = useRef<ModelNode[]>([]); Object.assign(__appScope, { latestNodesRef });
@@ -1634,7 +1634,7 @@ useEffect(() => {
     if (!changed) {
       return;
     }
-    suppressNextGraphDirtyRef.current = true;
+    suppressNextGraphDirtyRef.current += 1;
     setGraphArrays(normalizedNodes, edges);
   }, [edges, libraryTemplateByKind, nodes]);
 const resolveNodeStateVisual = createResolveNodeStateVisual(__appScope); Object.assign(__appScope, { resolveNodeStateVisual });
