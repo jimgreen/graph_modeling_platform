@@ -383,6 +383,8 @@ describe("graph template library filtering", () => {
     expect(appSource).toContain("confirmLibraryPackageDialog");
     expect(appViewSource).toContain("library-package-dialog");
     expect(appViewSource).toContain("导入/导出库");
+    expect(appViewSource).not.toContain("library-transfer-open-button");
+    expect(appViewSource).not.toContain('openLibraryPackageDialog?.("all")');
     expect(appSource).not.toContain("title=\"导出量测定义\"");
     expect(appSource).not.toContain("title=\"导入量测定义\"");
     expect(appSource).not.toContain("title=\"导出图标库\"");

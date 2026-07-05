@@ -308,10 +308,6 @@ export function renderAppView(__appScope: Record<string, any>) {
               <button className={leftPanelTab === "templates" ? "active" : ""} onClick={() => setLeftPanelTab("templates")} role="tab" aria-selected={leftPanelTab === "templates"}>
                 模板库
               </button>
-              <button type="button" className="library-transfer-open-button" onClick={() => openLibraryPackageDialog?.("all")} title="导入/导出库" aria-label="导入/导出库">
-                <FileJson size={14}/>
-                <span>导入/导出</span>
-              </button>
             </>)}
         </div>
         <div className="left-panel-content">
