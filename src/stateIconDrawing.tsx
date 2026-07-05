@@ -87,6 +87,8 @@ export type StateIconDrawingFrame = {
   strokeWidth: number;
   strokeColor: string;
   fillColor: string;
+  backgroundImage?: string;
+  backgroundImageAssetId?: string;
 };
 
 type StateIconSvgStyleOverride = {
@@ -502,7 +504,11 @@ export function stateIconDrawingFrameRect(hasTerminals: boolean) {
     : { x: 0, y: 0, width: 240, height: 160, rx: 10 };
 }
 
-function stateIconDrawingFrameMarkup(frame: Partial<StateIconDrawingFrame> | undefined, hasTerminals: boolean) {
+function stateIconDrawingFrameMarkup(
+  frame: Partial<StateIconDrawingFrame> | undefined,
+  hasTerminals: boolean,
+  options: StateIconDrawingToImageOptions = {}
+) {
   if (!frame) {
     return "";
   }
@@ -512,7 +518,24 @@ function stateIconDrawingFrameMarkup(frame: Partial<StateIconDrawingFrame> | und
   const dashArray = stateIconStrokeDashArray(frame.strokeStyle, strokeWidth);
   const dashAttr = dashArray ? ` stroke-dasharray="${escapeXml(dashArray)}"` : "";
   const rect = stateIconDrawingFrameRect(hasTerminals);
-  return `<rect data-state-icon-frame="true" x="${formatSvgNumber(rect.x)}" y="${formatSvgNumber(rect.y)}" width="${formatSvgNumber(rect.width)}" height="${formatSvgNumber(rect.height)}" rx="${formatSvgNumber(rect.rx)}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"${dashAttr} vector-effect="non-scaling-stroke"/>`;
+  const backgroundImageAssetId = String(frame.backgroundImageAssetId ?? "").trim();
+  const backgroundImage = backgroundImageAssetId
+    ? (String(frame.backgroundImage ?? "").trim() || `/api/images/${backgroundImageAssetId}`)
+    : String(frame.backgroundImage ?? "").trim();
+  const resolvedBackgroundImage = backgroundImage
+    ? backgroundImageAssetId
+      ? (backgroundImage.startsWith("data:") ? `/api/images/${backgroundImageAssetId}` : backgroundImage)
+      : options.resolveImageHref?.(backgroundImage) || backgroundImage
+    : "";
+  const frameRect = `<rect data-state-icon-frame="true" x="${formatSvgNumber(rect.x)}" y="${formatSvgNumber(rect.y)}" width="${formatSvgNumber(rect.width)}" height="${formatSvgNumber(rect.height)}" rx="${formatSvgNumber(rect.rx)}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"${dashAttr} vector-effect="non-scaling-stroke"/>`;
+  if (!resolvedBackgroundImage) {
+    return frameRect;
+  }
+  const clipId = "state-icon-frame-background-clip";
+  const assetAttr = backgroundImageAssetId ? ` data-state-icon-frame-image-asset-id="${escapeXml(backgroundImageAssetId)}"` : "";
+  const backgroundMarkup = `<defs><clipPath id="${clipId}"><rect x="${formatSvgNumber(rect.x)}" y="${formatSvgNumber(rect.y)}" width="${formatSvgNumber(rect.width)}" height="${formatSvgNumber(rect.height)}" rx="${formatSvgNumber(rect.rx)}"/></clipPath></defs><image data-state-icon-frame-image="true"${assetAttr} href="${escapeXml(resolvedBackgroundImage)}" x="${formatSvgNumber(rect.x)}" y="${formatSvgNumber(rect.y)}" width="${formatSvgNumber(rect.width)}" height="${formatSvgNumber(rect.height)}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${clipId})"/>`;
+  const borderMarkup = `<rect data-state-icon-frame-border="true" x="${formatSvgNumber(rect.x)}" y="${formatSvgNumber(rect.y)}" width="${formatSvgNumber(rect.width)}" height="${formatSvgNumber(rect.height)}" rx="${formatSvgNumber(rect.rx)}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"${dashAttr} vector-effect="non-scaling-stroke"/>`;
+  return `${frameRect}${backgroundMarkup}${borderMarkup}`;
 }
 
 function stateIconSvgStyleOverrideCss(override: StateIconSvgStyleOverride) {
@@ -1342,7 +1365,11 @@ export function createEditableStateIconElementsFromSvgSource(
     return createStateIconDrawingElementsFromGeneratedSvgSource(source, fileName) ??
       [createImportedStateIconElement("imported-svg", stateIconSvgElementSource(source) || source, fileName)];
   }
-  const editableChildren = parsed.editableChildren.filter((child) => child.getAttribute("data-state-icon-frame") !== "true");
+  const editableChildren = parsed.editableChildren.filter((child) =>
+    child.getAttribute("data-state-icon-frame") !== "true" &&
+    child.getAttribute("data-state-icon-frame-image") !== "true" &&
+    child.getAttribute("data-state-icon-frame-border") !== "true"
+  );
   const generatedElements = editableChildren.map((child, index) =>
     createStateIconDrawingElementFromGeneratedGroupMarkup(child.outerHTML, `${fileName || "SVG"}-${index + 1}`)
   );
@@ -1393,6 +1420,10 @@ function stateIconDrawingFrameMarkupTag(source: string) {
   return /<rect\b(?=[^>]*\bdata-state-icon-frame\s*=\s*(?:"true"|'true'|true))[^>]*>/iu.exec(source)?.[0] ?? "";
 }
 
+function stateIconDrawingFrameImageMarkupTag(source: string) {
+  return /<image\b(?=[^>]*\bdata-state-icon-frame-image\s*=\s*(?:"true"|'true'|true))[^>]*>/iu.exec(source)?.[0] ?? "";
+}
+
 export function stateIconDrawingInitialFrame(
   row: DeviceDefinitionStateDraftRow | null | undefined,
   assets: Record<string, string>,
@@ -1412,11 +1443,19 @@ export function stateIconDrawingInitialFrame(
   if (!frameMarkup) {
     return fallbackFrame;
   }
+  const frameImageMarkup = stateIconDrawingFrameImageMarkupTag(svgSource);
+  const frameBackgroundImageAssetId = readSvgMarkupAttribute(frameImageMarkup, "data-state-icon-frame-image-asset-id").trim();
+  const frameBackgroundImageHref = readSvgMarkupAttribute(frameImageMarkup, "href").trim();
+  const frameBackgroundImage = frameBackgroundImageAssetId
+    ? assets[frameBackgroundImageAssetId] || frameBackgroundImageHref || `/api/images/${frameBackgroundImageAssetId}`
+    : frameBackgroundImageHref;
   return {
     strokeStyle: stateIconDrawingStrokeStyleFromMarkup(frameMarkup) ?? fallbackFrame.strokeStyle,
     strokeWidth: Math.max(0, readSvgMarkupNumber(frameMarkup, "stroke-width", fallbackFrame.strokeWidth)),
     strokeColor: readSvgMarkupAttribute(frameMarkup, "stroke").trim() || fallbackFrame.strokeColor,
-    fillColor: readSvgMarkupAttribute(frameMarkup, "fill").trim() || fallbackFrame.fillColor
+    fillColor: readSvgMarkupAttribute(frameMarkup, "fill").trim() || fallbackFrame.fillColor,
+    ...(frameBackgroundImage ? { backgroundImage: frameBackgroundImage } : {}),
+    ...(frameBackgroundImageAssetId ? { backgroundImageAssetId: frameBackgroundImageAssetId } : {})
   };
 }
 
@@ -1561,7 +1600,7 @@ export function stateIconDrawingToImage(
   elements: readonly StateIconDrawingElement[],
   options: StateIconDrawingToImageOptions = {}
 ) {
-  const frameMarkup = stateIconDrawingFrameMarkup(options.frame, options.frameHasTerminals === true);
+  const frameMarkup = stateIconDrawingFrameMarkup(options.frame, options.frameHasTerminals === true, options);
   const body = elements.map((element) => stateIconDrawingElementMarkup(element, options)).join("");
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">${frameMarkup}${body}</svg>`;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;

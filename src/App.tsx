@@ -542,7 +542,7 @@ import {
   flattenIconLibraryManifest,
   type IconLibraryPickerState
 } from "./iconLibraryCatalog";
-import { renderAppView } from "./appExtracted/appView";
+import { imagePickerUsesLibraryTabs, renderAppView } from "./appExtracted/appView";
 import { MemoizedCanvasArea } from "./appExtracted/appCanvasArea";
 type LibraryPackageDialogMode = "export" | "import";
 const LIBRARY_PACKAGE_DIALOG_SCOPES: LibraryPackageScope[] = [
@@ -2906,7 +2906,9 @@ const deleteImageAssetFromContextMenu = () => {
   };
 Object.assign(__appScope, { deleteImageAssetFromContextMenu });
 useEffect(createAppHookCallback84(__appScope), [activeImageFolderId, imageTarget]);
-const iconLibraryPickerOpen = imageTarget?.kind === "stateIconDrawing" && imageTarget.sourceMode === "catalogOnly";
+const iconLibraryPickerOpen =
+  (imageTarget?.kind === "stateIconDrawing" && imageTarget.sourceMode === "catalogOnly") ||
+  (imagePickerUsesLibraryTabs(imageTarget) && imagePickerSourceFilter === "icon-library");
 Object.assign(__appScope, { iconLibraryPickerOpen });
 useEffect(() => {
   if (!iconLibraryPickerOpen) {

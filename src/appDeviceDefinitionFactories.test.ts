@@ -6,6 +6,9 @@ import {
 import {
   createComputeStateIconDrawingSmartAlignmentSnap,
   createFindEditableRouteSegmentIndex,
+  createApplyExistingImage,
+  createApplyIconLibraryCatalogIcon,
+  createApplyStateIconDrawingDialog,
   createConfirmCustomLibraryCreateDialog,
   createDeleteCustomCategoryLibrary,
   createDeleteCustomComponentLibrary,
@@ -25,6 +28,7 @@ import {
 } from "./appExtracted/appDeviceDefinitionFactories";
 import { createSetEdgeManualPoints } from "./appExtracted/appProjectCanvasFactories";
 import { Point } from "./model";
+import { stateIconDrawingToImage } from "./stateIconDrawing";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -193,6 +197,101 @@ describe("manual bend interaction helpers", () => {
     );
     expect(syncExistingNodesWithTemplateDefinitions.mock.calls[0][2]({ kind: "custom-userlibrary" })).toBe(true);
     expect(syncExistingNodesWithTemplateDefinitions.mock.calls[0][2]({ kind: "other" })).toBe(false);
+  });
+
+  test("applying an existing image to the state icon frame sets a platform background reference", async () => {
+    let dialog: any = {
+      frame: {
+        strokeStyle: "solid",
+        strokeWidth: 1,
+        strokeColor: "#334155",
+        fillColor: "#ffffff"
+      },
+      elements: [{ id: "shape-1", kind: "rectangle" }],
+      selectedElementId: "shape-1",
+      selectedElementIds: ["shape-1"]
+    };
+    const setImageTarget = vi.fn();
+    const updateGraphNodeById = vi.fn();
+    const scope = {
+      createEditableStateIconElementsFromSvgSource: vi.fn(),
+      createImportedStateIconElement: vi.fn(),
+      imageAssetList: [
+        { id: "asset-1", name: "背景图", url: "/api/images/asset-1", mimeType: "image/png" }
+      ],
+      imageAssets: {
+        "asset-1": "data:image/png;base64,cached-preview"
+      },
+      imageTarget: { kind: "stateIconFrameBackground" },
+      libraryTemplateByKind: new Map(),
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: () => true,
+      setCanvasBackgroundImage: vi.fn(),
+      setCanvasBackgroundImageAssetId: vi.fn(),
+      setImageTarget,
+      setStateIconDrawingDialog: (updater: any) => {
+        dialog = typeof updater === "function" ? updater(dialog) : updater;
+      },
+      startLibraryDevicePlacement: vi.fn(),
+      stateIconDrawingHistoryRef: { current: [] },
+      svgSourceFromDataUrl: vi.fn(),
+      updateGraphNodeById,
+      writeOperationLog: vi.fn()
+    };
+
+    await createApplyExistingImage(scope)("asset-1");
+
+    expect(dialog.elements).toEqual([{ id: "shape-1", kind: "rectangle" }]);
+    expect(dialog.frame).toMatchObject({
+      backgroundImage: "/api/images/asset-1",
+      backgroundImageAssetId: "asset-1"
+    });
+    expect(updateGraphNodeById).not.toHaveBeenCalled();
+    expect(setImageTarget).toHaveBeenCalledWith(null);
+  });
+
+  test("applying an icon library catalog icon can set the canvas background image", async () => {
+    const setImageTarget = vi.fn();
+    const setCanvasBackgroundImage = vi.fn();
+    const setCanvasBackgroundImageAssetId = vi.fn();
+    const pushUndoSnapshot = vi.fn();
+    const scope = {
+      createEditableStateIconElementsFromSvgSource: vi.fn(),
+      createImportedStateIconElement: vi.fn(),
+      iconLibraryPicker: {
+        entries: [
+          {
+            id: "library-1:maps:pin:maps/pin.svg",
+            libraryLabel: "地图图标",
+            libraryId: "library-1",
+            categoryLabel: "地图",
+            categoryId: "maps",
+            name: "定位",
+            iconId: "pin",
+            url: "/icon-library/library-1/maps/pin.svg"
+          }
+        ]
+      },
+      imageTarget: { kind: "canvas" },
+      libraryTemplateByKind: new Map(),
+      pushUndoSnapshot,
+      requireEditMode: () => true,
+      setCanvasBackgroundImage,
+      setCanvasBackgroundImageAssetId,
+      setImageTarget,
+      setStateIconDrawingDialog: vi.fn(),
+      startLibraryDevicePlacement: vi.fn(),
+      stateIconDrawingHistoryRef: { current: [] },
+      updateGraphNodeById: vi.fn(),
+      writeOperationLog: vi.fn()
+    };
+
+    await createApplyIconLibraryCatalogIcon(scope)("library-1:maps:pin:maps/pin.svg");
+
+    expect(pushUndoSnapshot).toHaveBeenCalledTimes(1);
+    expect(setCanvasBackgroundImageAssetId).toHaveBeenCalledWith("");
+    expect(setCanvasBackgroundImage).toHaveBeenCalledWith("/icon-library/library-1/maps/pin.svg");
+    expect(setImageTarget).toHaveBeenCalledWith(null);
   });
 
   test("saves a newly created custom device with the requested English name", () => {
@@ -555,6 +654,66 @@ describe("manual bend interaction helpers", () => {
       strokeColor: "#94a3b8"
     }));
     expect(dialog.frame).toEqual(savedFrame);
+  });
+
+  test("saves a definition frame background when the drawing has no editable elements", async () => {
+    let definitionVisualDraft: any = {
+      backgroundImage: "",
+      backgroundImageAssetId: "",
+      backgroundImageCleared: "1",
+      terminalCount: 0
+    };
+    let dialogClosed = false;
+    const updateDefinitionStateDraftRow = vi.fn();
+    const scope = {
+      backendImageIdFromHref: () => "",
+      customDeviceDraft: { terminalCount: 0 },
+      customDraftTerminalTypes: [],
+      definitionVisualDraft,
+      definitionVisualTerminalTypes: [],
+      fetchBackendImageDataUrl: vi.fn(),
+      imageAssetList: [],
+      imageAssets: {},
+      isDefaultStatePageId: (rowId: string) => rowId === "__default__",
+      isImageDataUrl: (href: string) => href.startsWith("data:"),
+      setDefinitionVisualDraft: (updater: any) => {
+        definitionVisualDraft = typeof updater === "function" ? updater(definitionVisualDraft) : updater;
+      },
+      setStateIconDrawingDialog: (value: any) => {
+        dialogClosed = value === null;
+      },
+      stateIconDrawingDialog: {
+        target: { scope: "definition", rowId: "__default__" },
+        elements: [],
+        selectedElementId: "",
+        selectedElementIds: [],
+        frame: {
+          strokeStyle: "solid",
+          strokeWidth: 2,
+          strokeColor: "#334155",
+          fillColor: "#fef3c7",
+          backgroundImage: "/api/images/bg-1",
+          backgroundImageAssetId: "bg-1"
+        }
+      },
+      stateIconDrawingToImage,
+      updateCustomDeviceStateDraftRow: vi.fn(),
+      updateDefinitionStateDraftRow
+    };
+
+    await createApplyStateIconDrawingDialog(scope)();
+
+    const savedSvg = decodeURIComponent(definitionVisualDraft.backgroundImage.split(",")[1] ?? "");
+    expect(definitionVisualDraft.backgroundImage).toMatch(/^data:image\/svg\+xml/);
+    expect(definitionVisualDraft.backgroundImageAssetId).toBe("");
+    expect(definitionVisualDraft.backgroundImageCleared).toBe("");
+    expect(savedSvg).toContain('data-state-icon-frame="true"');
+    expect(savedSvg).toContain('fill="#fef3c7"');
+    expect(savedSvg).toContain('data-state-icon-frame-image="true"');
+    expect(savedSvg).toContain('data-state-icon-frame-image-asset-id="bg-1"');
+    expect(savedSvg).toContain('href="/api/images/bg-1"');
+    expect(updateDefinitionStateDraftRow).not.toHaveBeenCalled();
+    expect(dialogClosed).toBe(true);
   });
 
   test("validates parameter definition names and default value types", () => {

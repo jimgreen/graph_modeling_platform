@@ -7,6 +7,26 @@ import {
   visibleIconLibraryIcons
 } from "../iconLibraryCatalog";
 
+export type ImagePickerLibraryTab = "image" | "icon";
+
+export function imagePickerAssetIsBuiltinIcon(asset: any) {
+  return (
+    asset?.createdAt === "builtin" ||
+    String(asset?.folderId ?? "") === "builtin-shared-icons" ||
+    String(asset?.id ?? "").startsWith("builtin-shared-icon-")
+  );
+}
+
+export function imagePickerAssetsForLibraryTab(assets: any[] = [], tab: ImagePickerLibraryTab) {
+  return (assets ?? []).filter((asset) =>
+    tab === "icon" ? imagePickerAssetIsBuiltinIcon(asset) : !imagePickerAssetIsBuiltinIcon(asset)
+  );
+}
+
+export function imagePickerUsesLibraryTabs(imageTarget: any) {
+  return Boolean(imageTarget && imageTarget.kind !== "canvasIcon" && imageTarget.kind !== "stateIconDrawing");
+}
+
 // 运行时态 WS 指示灯：open=绿、connecting=黄、closed=灰；收发消息时闪烁一次。
 // runtimeWsBlinkSeq 递增 → key 变化 → 重放 blink 动画。
 // 悬浮提示「点击复制 clientId」，点击复制当前页面 clientId 到剪贴板。
@@ -181,21 +201,29 @@ export function renderAppView(__appScope: Record<string, any>) {
   };
   const visibleCustomDeviceDialogView = customDeviceDialogView;
   const imagePickerUsesCatalogSource = imageTarget?.kind === "stateIconDrawing" && imageTarget.sourceMode === "catalogOnly";
+  const imagePickerUsesSeparateLibraryTabs = imagePickerUsesLibraryTabs(imageTarget);
+  const imagePickerActiveLibraryTab: ImagePickerLibraryTab = imagePickerUsesSeparateLibraryTabs && imagePickerSourceFilter === "icon-library" ? "icon" : "image";
+  const imagePickerUsesCatalogTab = imagePickerUsesSeparateLibraryTabs && imagePickerActiveLibraryTab === "icon";
+  const imagePickerRendersCatalogSource = imagePickerUsesCatalogSource || imagePickerUsesCatalogTab;
   const imagePickerTitle =
     imageTarget?.kind === "canvas"
       ? "选择模型背景图片"
+      : imageTarget?.kind === "stateIconFrameBackground"
+        ? "选择图案背景图片"
       : imageTarget?.kind === "nodeForeground"
         ? "选择设备前景图片"
         : imageTarget?.kind === "canvasIcon"
           ? "分类图标库"
-          : imagePickerUsesCatalogSource
-            ? "分类图标"
+        : imagePickerUsesCatalogSource
+          ? "分类图标"
           : imageTarget?.kind === "stateIconDrawing"
             ? "选择元件图标素材"
             : "选择设备图片";
   const imagePickerHint =
     imageTarget?.kind === "canvasIcon"
       ? "内置 SVG 通过下方列表选择；外部 SVG/PNG 可直接导入，文档图片/图标导入会抽取图片并将可识别矢量图形转成 SVG 素材。"
+      : imagePickerUsesSeparateLibraryTabs
+        ? "图片(含SVG)从后台图片库读取；图标从分类图标库读取。切换分页后再选择要应用的资源。"
       : imageTarget?.kind === "stateIconDrawing" && imageTarget.sourceMode === "builtinOnly"
         ? "从内置 SVG 分类中选择图标，选择后插入当前元件图标编辑区。"
       : imageTarget?.kind === "stateIconDrawing" && imageTarget.sourceMode === "externalOnly"
@@ -209,7 +237,7 @@ export function renderAppView(__appScope: Record<string, any>) {
   const imagePickerUsesIconSources = imageTarget?.kind === "canvasIcon" || (imageTarget?.kind === "stateIconDrawing" && !imagePickerUsesCatalogSource);
   const imagePickerLockedSourceMode = imageTarget?.kind === "stateIconDrawing" ? imageTarget.sourceMode ?? "" : "";
   const imagePickerSourceLocked = imagePickerLockedSourceMode === "builtinOnly" || imagePickerLockedSourceMode === "externalOnly" || imagePickerLockedSourceMode === "catalogOnly";
-  const imagePickerShowsLibraryActions = !imagePickerUsesCatalogSource && (!imagePickerSourceLocked || imagePickerLockedSourceMode === "externalOnly");
+  const imagePickerShowsLibraryActions = !imagePickerRendersCatalogSource && (!imagePickerSourceLocked || imagePickerLockedSourceMode === "externalOnly");
   const imagePickerActiveSourceFilter = imagePickerUsesIconSources
     ? imagePickerLockedSourceMode === "externalOnly"
       ? "external"
@@ -217,13 +245,12 @@ export function renderAppView(__appScope: Record<string, any>) {
         ? "builtin"
         : imagePickerSourceFilter === "external" ? "external" : "builtin"
     : "builtin";
-  const imagePickerIsBuiltinAsset = (asset: any) =>
-    asset?.createdAt === "builtin" ||
-    String(asset?.folderId ?? "") === "builtin-shared-icons" ||
-    String(asset?.id ?? "").startsWith("builtin-shared-icon-");
   const sourceFilteredImageAssetList = imagePickerUsesIconSources
-    ? (imageAssetList ?? []).filter((asset) => imagePickerActiveSourceFilter === "builtin" ? imagePickerIsBuiltinAsset(asset) : !imagePickerIsBuiltinAsset(asset))
-    : (imageAssetList ?? []);
+    ? (imageAssetList ?? []).filter((asset) => imagePickerActiveSourceFilter === "builtin" ? imagePickerAssetIsBuiltinIcon(asset) : !imagePickerAssetIsBuiltinIcon(asset))
+    : imagePickerUsesSeparateLibraryTabs
+      ? imagePickerAssetsForLibraryTab(imageAssetList ?? [], imagePickerActiveLibraryTab)
+      : (imageAssetList ?? []);
+  const imagePickerAssetNoun = imagePickerUsesSeparateLibraryTabs && imagePickerActiveLibraryTab === "image" ? "图片" : "图标";
   const imagePickerFolderNameById = new Map((imageFolders ?? []).map((folder) => [folder.id, folder.name]));
   const imagePickerAssetCategory = (asset: any) => {
     const assetName = String(asset?.name ?? "").trim();
@@ -269,7 +296,8 @@ export function renderAppView(__appScope: Record<string, any>) {
   const imagePickerDialogClassName = [
     "image-picker-dialog",
     imagePickerUsesIconSources ? "icon-library" : "",
-    imagePickerUsesCatalogSource ? "icon-library catalog-icon-library" : "",
+    imagePickerUsesSeparateLibraryTabs ? "image-library-tabs" : "",
+    imagePickerRendersCatalogSource ? "icon-library catalog-icon-library" : "",
     imagePickerUsesIconSources && imagePickerActiveSourceFilter === "external" ? "external-icon-library" : "",
     imagePickerSourceLocked ? "source-locked-icon-library" : ""
   ].filter(Boolean).join(" ");
@@ -2735,6 +2763,9 @@ export function renderAppView(__appScope: Record<string, any>) {
       {renderNodeDoubleClickDialog()}
       {imageTarget && (<div className="image-picker-backdrop" onPointerDown={() => {
           setImageAssetContextMenu(null);
+          setImagePickerSourceFilter("");
+          setImagePickerCategoryFilter("");
+          setImagePickerSearchQuery("");
           setImageTarget(null);
         }}>
           <section className={imagePickerDialogClassName} onPointerDown={(event) => {
@@ -2748,9 +2779,50 @@ export function renderAppView(__appScope: Record<string, any>) {
               </div>
               <button onClick={() => {
                 setImageAssetContextMenu(null);
+                setImagePickerSourceFilter("");
+                setImagePickerCategoryFilter("");
+                setImagePickerSearchQuery("");
                 setImageTarget(null);
               }}>关闭</button>
             </div>
+            {imagePickerUsesSeparateLibraryTabs && (
+              <div className="image-picker-source-tabs" role="tablist" aria-label="资源类型">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={imagePickerActiveLibraryTab === "image"}
+                  className={imagePickerActiveLibraryTab === "image" ? "active" : ""}
+                  onClick={() => {
+                    setImageAssetContextMenu(null);
+                    setImagePickerSourceFilter("");
+                    setImagePickerCategoryFilter("");
+                    setImagePickerSearchQuery("");
+                  }}
+                >
+                  图片(含SVG)
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={imagePickerActiveLibraryTab === "icon"}
+                  className={imagePickerActiveLibraryTab === "icon" ? "active" : ""}
+                  onClick={() => {
+                    setImageAssetContextMenu(null);
+                    setImagePickerSourceFilter("icon-library");
+                    setImagePickerCategoryFilter("");
+                    setImagePickerSearchQuery("");
+                    setIconLibraryPicker((current: any) => ({
+                      ...current,
+                      selectedCategoryKey: "",
+                      searchQuery: "",
+                      visibleCount: ICON_LIBRARY_PAGE_SIZE
+                    }));
+                  }}
+                >
+                  图标
+                </button>
+              </div>
+            )}
             {imagePickerShowsLibraryActions && (
               <div className="image-picker-actions">
                 <select value={activeImageFolderId} onChange={(event) => setActiveImageFolderId(event.target.value)}>
@@ -2772,7 +2844,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                 {imagePickerCanClear && <button onClick={clearSelectedImage} disabled={isBrowseMode}>取消当前图片</button>}
               </div>
             )}
-            {imagePickerUsesCatalogSource ? (
+            {imagePickerRendersCatalogSource ? (
               <div className="icon-library-browser">
                 <div className="image-picker-filters icon-library-browser-filters" role="search" aria-label="分类图标筛选检索">
                   <label>
@@ -2900,7 +2972,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                 )}
               </div>
             ) : imageAssetList.length > 0 && (
-              <div className={`image-picker-filters ${imagePickerSourceLocked ? "source-locked" : ""}`} role="search" aria-label="图标筛选检索">
+              <div className={`image-picker-filters ${imagePickerSourceLocked ? "source-locked" : ""}`} role="search" aria-label={`${imagePickerAssetNoun}筛选检索`}>
                 {!imagePickerSourceLocked && imagePickerUsesIconSources && (
                     <label>
                       来源
@@ -2951,9 +3023,9 @@ export function renderAppView(__appScope: Record<string, any>) {
                 <span>{filteredImageAssetList.length} / {sourceFilteredImageAssetList.length}</span>
               </div>
             )}
-            {!imagePickerUsesCatalogSource && (<div className="image-asset-list">
-              {imageAssetList.length === 0 ? (<p className="image-empty">后台暂无图片，请先加载本地图片。</p>) : sourceFilteredImageAssetList.length === 0 ? (<p className="image-empty">{imagePickerUsesIconSources && imagePickerActiveSourceFilter === "external" ? "暂无外部导入图标，请使用上方外部导入按钮。" : "暂无可用图标。"}</p>) : filteredImageAssetList.length === 0 ? (<p className="image-empty">没有匹配的图标，请调整来源、分类或搜索关键字。</p>) : (filteredImageAssetList.map((asset, index) => {
-                const canDeleteImageAsset = !isBrowseMode && !imagePickerIsBuiltinAsset(asset) && (!imagePickerUsesIconSources || imagePickerActiveSourceFilter === "external");
+            {!imagePickerRendersCatalogSource && (<div className="image-asset-list">
+              {imageAssetList.length === 0 || (imagePickerUsesSeparateLibraryTabs && imagePickerActiveLibraryTab === "image" && sourceFilteredImageAssetList.length === 0) ? (<p className="image-empty">后台暂无图片，请先加载本地图片。</p>) : sourceFilteredImageAssetList.length === 0 ? (<p className="image-empty">{imagePickerUsesIconSources && imagePickerActiveSourceFilter === "external" ? "暂无外部导入图标，请使用上方外部导入按钮。" : `暂无可用${imagePickerAssetNoun}。`}</p>) : filteredImageAssetList.length === 0 ? (<p className="image-empty">{`没有匹配的${imagePickerAssetNoun}，请调整来源、分类或搜索关键字。`}</p>) : (filteredImageAssetList.map((asset, index) => {
+                const canDeleteImageAsset = !isBrowseMode && !imagePickerAssetIsBuiltinIcon(asset) && (!imagePickerUsesIconSources || imagePickerActiveSourceFilter === "external");
                 return (<button key={asset.id} className="image-asset-option" disabled={isBrowseMode} onClick={() => {
                     setImageAssetContextMenu(null);
                     applyExistingImage(asset.id);
@@ -2971,10 +3043,10 @@ export function renderAppView(__appScope: Record<string, any>) {
                   }} title={asset.name || asset.filename || `后台图片 ${index + 1}`}>
                     <img src={imageAssets[asset.id] ?? asset.url} alt={asset.name || `后台图片 ${index + 1}`}/>
                     <span>{asset.name || `后台图片 ${index + 1}`}</span>
-                  </button>);
+                </button>);
               }))}
             </div>)}
-            {!imagePickerUsesCatalogSource && imageAssetContextMenu && (
+            {!imagePickerRendersCatalogSource && imageAssetContextMenu && (
               <div
                 className="context-menu image-asset-context-menu"
                 role="menu"

@@ -1520,6 +1520,7 @@ export type ImageTarget =
   | { kind: "nodeForeground"; nodeId: string }
   | { kind: "canvas" }
   | { kind: "canvasIcon" }
+  | { kind: "stateIconFrameBackground" }
   | { kind: "stateIconDrawing"; sourceMode?: "builtinOnly" | "externalOnly" | "catalogOnly" };
 
 export type NodeDoubleClickDialogKind = "interaction" | "text" | "device";

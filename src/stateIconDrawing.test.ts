@@ -282,6 +282,86 @@ describe("default device state draft rows", () => {
     });
   });
 
+  test("persists and restores drawing frame background image without editable elements", () => {
+    const sourceRow = createStateDraftRow({
+      value: "0",
+      name: "源",
+      fillColor: "#dbeafe",
+      strokeColor: "#2563eb"
+    });
+    const frameBackgroundImage = "data:image/png;base64,frame-bg";
+    const image = stateIconDrawingToImage([
+      createStateIconDrawingElement("rectangle", sourceRow)
+    ], {
+      frame: {
+        strokeStyle: "solid",
+        strokeWidth: 2,
+        strokeColor: "#334155",
+        fillColor: "#f8fafc",
+        backgroundImage: frameBackgroundImage
+      } as any,
+      frameHasTerminals: true
+    });
+    const imageSource = decodeURIComponent(image.split(",")[1] ?? "");
+    const row = createStateDraftRow({ value: "0", name: "带背景图", image });
+
+    expect(imageSource).toContain('data-state-icon-frame-image="true"');
+    expect(imageSource).toContain(`href="${frameBackgroundImage}"`);
+    expect(stateIconDrawingInitialFrame(row, {}, {
+      strokeStyle: "dashed",
+      strokeWidth: 1,
+      strokeColor: "#94a3b8",
+      fillColor: "#ffffff"
+    } as any)).toMatchObject({
+      strokeStyle: "solid",
+      strokeWidth: 2,
+      strokeColor: "#334155",
+      fillColor: "#f8fafc",
+      backgroundImage: frameBackgroundImage
+    });
+    expect(createEditableStateIconElementsFromSvgSource(svgSourceFromDataUrl(image), "带背景图")).toHaveLength(1);
+  });
+
+  test("persists drawing frame background image as a backend asset reference", () => {
+    const sourceRow = createStateDraftRow({
+      value: "0",
+      name: "源",
+      fillColor: "#dbeafe",
+      strokeColor: "#2563eb"
+    });
+    const image = stateIconDrawingToImage([
+      createStateIconDrawingElement("rectangle", sourceRow)
+    ], {
+      frame: {
+        strokeStyle: "solid",
+        strokeWidth: 2,
+        strokeColor: "#334155",
+        fillColor: "#f8fafc",
+        backgroundImage: "/api/images/frame-bg",
+        backgroundImageAssetId: "frame-bg"
+      } as any,
+      frameHasTerminals: true,
+      resolveImageHref: () => "data:image/png;base64,should-not-inline"
+    });
+    const imageSource = decodeURIComponent(image.split(",")[1] ?? "");
+    const row = createStateDraftRow({ value: "0", name: "后台背景图", image });
+
+    expect(imageSource).toContain('data-state-icon-frame-image="true"');
+    expect(imageSource).toContain('data-state-icon-frame-image-asset-id="frame-bg"');
+    expect(imageSource).toContain('href="/api/images/frame-bg"');
+    expect(imageSource).not.toContain("should-not-inline");
+    expect(stateIconDrawingInitialFrame(row, { "frame-bg": "/api/images/frame-bg" }, {
+      strokeStyle: "dashed",
+      strokeWidth: 1,
+      strokeColor: "#94a3b8",
+      fillColor: "#ffffff"
+    } as any)).toMatchObject({
+      backgroundImage: "/api/images/frame-bg",
+      backgroundImageAssetId: "frame-bg"
+    });
+    expect(createEditableStateIconElementsFromSvgSource(svgSourceFromDataUrl(image), "后台背景图")).toHaveLength(1);
+  });
+
   test("persists custom device terminal connector lines inside svg images", () => {
     const image = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(
       '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160"><style>line{stroke-width:0 !important}</style><rect width="240" height="160"/></svg>'

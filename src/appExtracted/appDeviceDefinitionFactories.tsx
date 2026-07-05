@@ -7,8 +7,33 @@ const STATE_ICON_DRAFT_FRAME = {
   strokeStyle: "dashed",
   strokeWidth: 1.2,
   strokeColor: "#94a3b8",
-  fillColor: "#ffffff"
+  fillColor: "#ffffff",
+  backgroundImage: "",
+  backgroundImageAssetId: ""
 };
+
+function normalizeStateIconFrameText(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function normalizeStateIconFrameNumber(value: unknown) {
+  return Math.max(0, Number(value) || 0);
+}
+
+function stateIconDrawingFrameHasPersistedContent(frame: any) {
+  if (!frame) {
+    return false;
+  }
+  const mergedFrame = { ...STATE_ICON_DRAFT_FRAME, ...frame };
+  return Boolean(
+    normalizeStateIconFrameText(mergedFrame.backgroundImage) ||
+    normalizeStateIconFrameText(mergedFrame.backgroundImageAssetId) ||
+    normalizeStateIconFrameText(mergedFrame.fillColor) !== normalizeStateIconFrameText(STATE_ICON_DRAFT_FRAME.fillColor) ||
+    normalizeStateIconFrameText(mergedFrame.strokeColor) !== normalizeStateIconFrameText(STATE_ICON_DRAFT_FRAME.strokeColor) ||
+    normalizeStateIconFrameText(mergedFrame.strokeStyle) !== normalizeStateIconFrameText(STATE_ICON_DRAFT_FRAME.strokeStyle) ||
+    normalizeStateIconFrameNumber(mergedFrame.strokeWidth) !== normalizeStateIconFrameNumber(STATE_ICON_DRAFT_FRAME.strokeWidth)
+  );
+}
 
 const STATE_ICON_LINE_SHAPE_KINDS = new Set(["line", "polyline", "arc", "semicircle"]);
 const STATE_ICON_CLOSED_SHAPE_KINDS = new Set(["point", "triangle", "rectangle", "square", "hexagon", "polygon", "circle", "semicircle", "ellipse", "text"]);
@@ -2392,6 +2417,25 @@ export function createApplyExistingImage(__appScope: Record<string, any>) {
     if (!imageTarget || !imageData) {
       return;
     }
+    if (imageTarget.kind === "stateIconFrameBackground") {
+      const backgroundImage = asset?.url ?? `/api/images/${assetId}`;
+      setStateIconDrawingDialog((current: any) =>
+        current
+          ? {
+              ...current,
+              frame: {
+                ...STATE_ICON_DRAFT_FRAME,
+                ...(current.frame ?? {}),
+                backgroundImage,
+                backgroundImageAssetId: assetId
+              }
+            }
+          : current
+      );
+      setImageTarget(null);
+      writeOperationLog?.(`选择图案背景图片：${asset?.name || assetId}`);
+      return;
+    }
     if (imageTarget.kind === "canvasIcon") {
       const baseTemplate = libraryTemplateByKind.get("static-image");
       if (!baseTemplate) {
@@ -2493,16 +2537,76 @@ function stateIconDrawingImportedSvgSelectionFrame(element: any) {
 
 export function createApplyIconLibraryCatalogIcon(__appScope: Record<string, any>) {
   return async (iconEntryId: string) => {
-  const { createEditableStateIconElementsFromSvgSource, createImportedStateIconElement, iconLibraryPicker, imageTarget, requireEditMode, setImageTarget, setStateIconDrawingDialog, stateIconDrawingHistoryRef, writeOperationLog } = __appScope;
+  const { createEditableStateIconElementsFromSvgSource, createImportedStateIconElement, iconLibraryPicker, imageTarget, libraryTemplateByKind, pushUndoSnapshot, requireEditMode, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setImageTarget, setStateIconDrawingDialog, startLibraryDevicePlacement, stateIconDrawingHistoryRef, updateGraphNodeById, writeOperationLog } = __appScope;
     if (!requireEditMode("选择分类图标")) {
       return;
     }
-    if (!imageTarget || imageTarget.kind !== "stateIconDrawing") {
+    if (!imageTarget) {
       return;
     }
     const entry = iconLibraryPicker?.entries?.find((item: any) => item.id === iconEntryId);
     if (!entry) {
       window.alert("未找到所选分类图标，请刷新后重试。");
+      return;
+    }
+    const assetName = `${entry.libraryLabel || entry.libraryId} / ${entry.categoryLabel || entry.categoryId} / ${entry.name || entry.iconId}`;
+    if (imageTarget.kind !== "stateIconDrawing") {
+      const iconUrl = entry.url;
+      if (!iconUrl) {
+        window.alert("未找到所选分类图标文件地址，请刷新后重试。");
+        return;
+      }
+      if (imageTarget.kind === "stateIconFrameBackground") {
+        setStateIconDrawingDialog((current: any) =>
+          current
+            ? {
+                ...current,
+                frame: {
+                  ...STATE_ICON_DRAFT_FRAME,
+                  ...(current.frame ?? {}),
+                  backgroundImage: iconUrl,
+                  backgroundImageAssetId: ""
+                }
+              }
+            : current
+        );
+        setImageTarget(null);
+        writeOperationLog?.(`选择图案背景图标：${assetName}`);
+        return;
+      }
+      if (imageTarget.kind === "canvasIcon") {
+        const baseTemplate = libraryTemplateByKind?.get("static-image");
+        if (!baseTemplate) {
+          window.alert("未找到静态图片图元定义，无法插入图标。");
+          return;
+        }
+        startLibraryDevicePlacement({
+          ...baseTemplate,
+          label: entry.name || baseTemplate.label || "图标",
+          params: {
+            ...baseTemplate.params,
+            text: entry.name || baseTemplate.params?.text || "",
+            backgroundImage: iconUrl,
+            backgroundImageAssetId: ""
+          }
+        });
+        setImageTarget(null);
+        writeOperationLog?.(`从分类图标库选择图标：${assetName}`);
+        return;
+      }
+      pushUndoSnapshot?.();
+      if (imageTarget.kind === "canvas") {
+        setCanvasBackgroundImageAssetId("");
+        setCanvasBackgroundImage(iconUrl);
+      } else {
+        updateGraphNodeById(imageTarget.nodeId, (node: any) =>
+          imageTarget.kind === "nodeForeground"
+            ? { ...node, params: { ...node.params, foregroundImageAssetId: "", foregroundImage: iconUrl } }
+            : { ...node, params: { ...node.params, backgroundImageAssetId: "", backgroundImage: iconUrl } }
+        );
+      }
+      setImageTarget(null);
+      writeOperationLog?.(`从分类图标库选择图片：${assetName}`);
       return;
     }
     let svgSource = "";
@@ -2516,7 +2620,6 @@ export function createApplyIconLibraryCatalogIcon(__appScope: Record<string, any
       window.alert("读取分类图标失败。");
       return;
     }
-    const assetName = `${entry.libraryLabel || entry.libraryId} / ${entry.categoryLabel || entry.categoryId} / ${entry.name || entry.iconId}`;
     const importedElements = createEditableStateIconElementsFromSvgSource(svgSource, assetName, { preserveImportedSvg: true });
     const fallbackElements = importedElements.length > 0
       ? importedElements
@@ -2542,7 +2645,7 @@ export function createApplyIconLibraryCatalogIcon(__appScope: Record<string, any
 
 export function createClearSelectedImage(__appScope: Record<string, any>) {
   return () => {
-  const { imageTarget, pushUndoSnapshot, requireEditMode, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setImageTarget, updateGraphNodeById } = __appScope;
+  const { imageTarget, pushUndoSnapshot, requireEditMode, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setImageTarget, setStateIconDrawingDialog, updateGraphNodeById } = __appScope;
     if (!requireEditMode("清除图片")) {
       return;
     }
@@ -2550,6 +2653,23 @@ export function createClearSelectedImage(__appScope: Record<string, any>) {
       return;
     }
     if (imageTarget.kind === "canvasIcon" || imageTarget.kind === "stateIconDrawing") {
+      setImageTarget(null);
+      return;
+    }
+    if (imageTarget.kind === "stateIconFrameBackground") {
+      setStateIconDrawingDialog((current: any) =>
+        current
+          ? {
+              ...current,
+              frame: {
+                ...STATE_ICON_DRAFT_FRAME,
+                ...(current.frame ?? {}),
+                backgroundImage: "",
+                backgroundImageAssetId: ""
+              }
+            }
+          : current
+      );
       setImageTarget(null);
       return;
     }
@@ -4556,7 +4676,9 @@ export function createApplyStateIconDrawingDialog(__appScope: Record<string, any
     const frameHasTerminals = stateIconDrawingDialog.target.scope === "definition"
       ? (Number(definitionVisualDraft?.terminalCount) || (Array.isArray(definitionVisualTerminalTypes) ? definitionVisualTerminalTypes.length : 0)) > 0
       : (Number(customDeviceDraft?.terminalCount) || (Array.isArray(customDraftTerminalTypes) ? customDraftTerminalTypes.length : 0)) > 0;
-    const image = stateIconDrawingDialog.elements.length > 0
+    const shouldPersistImage = stateIconDrawingDialog.elements.length > 0 ||
+      stateIconDrawingFrameHasPersistedContent(stateIconDrawingDialog.frame);
+    const image = shouldPersistImage
       ? stateIconDrawingToImage(stateIconDrawingDialog.elements, {
           resolveImageHref,
           frame: stateIconDrawingDialog.frame,
@@ -5646,7 +5768,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       hideDefaultPage?: boolean;
     }
   ) => {
-  const { BufferedTextInput, COMPONENT_LIBRARY_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, DEFAULT_STATE_PAGE_ID, DEVICE_LIBRARY, DeferredColorInput, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, MemoDeviceGlyph, STATE_ICON_LINE_CAP_OPTIONS, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, addStateIconDrawingElement, appendNonDefaultStateDraftRow, button, circle, colorPalette, createNodeFromTemplate, createStateDraftRowFromDefaultVisual, createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, customDeviceTerminalAnchorDragIndex, customDeviceTerminalAnchorValue, customDeviceTerminalAnchors, customDraftTerminalTypes, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionTerminalAnchorDragIndex, definitionVisualDraft, definitionVisualTerminalAnchors, definitionVisualTerminalTypes, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, getNodeScaleX, getNodeScaleY, image, isDefaultStatePageId, label, line, nextNonDefaultStateIndex, nodeGeometryTransform, nonDefaultStateDraftRows, projectCustomDeviceTerminalAnchorToBoundary, rect, resolveTemplateComponentLibrary, selectedDefinitionTemplate, setCustomDeviceDraft, setCustomDeviceTerminalAnchorDragIndex, setDefinitionStateDraftRows, setDefinitionTerminalAnchorDragIndex, setImagePickerCategoryFilter, setImagePickerSearchQuery, setImagePickerSourceFilter, setImageTarget, setStateIconDrawingContextMenu, setStateIconDrawingDialog, setStateIconDrawingImageVisibleFrames, setStateIconDrawingSvgVisibleFrames, small, span, stateDraftRowId, stateIconDrawingClipboardRef, stateIconDrawingContextMenu, stateIconDrawingDialog, stateIconDrawingElementId, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, stateIconDrawingFrameRect, stateIconDrawingHistoryRef, stateIconDrawingImageVisibleFrames, stateIconDrawingKeyDown, stateIconDrawingPointer, stateIconDrawingPreviewNeedsDirectElementRender, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingSvgVisibleFrames, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, terminalColor, terminalRenderLocalPoint, terminalStubSegment, terminalStubStrokeWidth, text, updateCustomDeviceTerminalAnchor, updateDefinitionTerminalAnchor, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
+  const { BufferedTextInput, COMPONENT_LIBRARY_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, DEFAULT_STATE_PAGE_ID, DEVICE_LIBRARY, DeferredColorInput, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, MemoDeviceGlyph, STATE_ICON_LINE_CAP_OPTIONS, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, addStateIconDrawingElement, appendNonDefaultStateDraftRow, button, circle, colorPalette, createNodeFromTemplate, createStateDraftRowFromDefaultVisual, createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, customDeviceTerminalAnchorDragIndex, customDeviceTerminalAnchorValue, customDeviceTerminalAnchors, customDraftTerminalTypes, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionTerminalAnchorDragIndex, definitionVisualDraft, definitionVisualTerminalAnchors, definitionVisualTerminalTypes, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, getNodeScaleX, getNodeScaleY, image, imageAssets, isDefaultStatePageId, label, line, nextNonDefaultStateIndex, nodeGeometryTransform, nonDefaultStateDraftRows, projectCustomDeviceTerminalAnchorToBoundary, rect, resolveTemplateComponentLibrary, selectedDefinitionTemplate, setCustomDeviceDraft, setCustomDeviceTerminalAnchorDragIndex, setDefinitionStateDraftRows, setDefinitionTerminalAnchorDragIndex, setImagePickerCategoryFilter, setImagePickerSearchQuery, setImagePickerSourceFilter, setImageTarget, setStateIconDrawingContextMenu, setStateIconDrawingDialog, setStateIconDrawingImageVisibleFrames, setStateIconDrawingSvgVisibleFrames, small, span, stateDraftRowId, stateIconDrawingClipboardRef, stateIconDrawingContextMenu, stateIconDrawingDialog, stateIconDrawingElementId, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, stateIconDrawingFrameRect, stateIconDrawingHistoryRef, stateIconDrawingImageVisibleFrames, stateIconDrawingKeyDown, stateIconDrawingPointer, stateIconDrawingPreviewNeedsDirectElementRender, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingSvgVisibleFrames, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, terminalColor, terminalRenderLocalPoint, terminalStubSegment, terminalStubStrokeWidth, text, updateCustomDeviceTerminalAnchor, updateDefinitionTerminalAnchor, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
     const hideDefaultPage = handlers.hideDefaultPage === true;
     const displayRows = hideDefaultPage ? rows : nonDefaultStateDraftRows(rows);
     const defaultVisual = handlers.drawingScope === "definition"
@@ -7182,6 +7304,13 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         : [stateIconDrawingDialog.selectedElementId].filter(Boolean);
       const sidePanelTab = stateIconDrawingDialog.sidePanelTab === "selected" ? "selected" : "global";
       const frame = { ...STATE_ICON_DRAFT_FRAME, ...(stateIconDrawingDialog.frame ?? {}) };
+      const frameBackgroundImageAssetId = String(frame.backgroundImageAssetId ?? "").trim();
+      const frameBackgroundImage = String(
+        (frameBackgroundImageAssetId && imageAssets?.[frameBackgroundImageAssetId]) ||
+        frame.backgroundImage ||
+        ""
+      ).trim();
+      const frameBackgroundClipId = "state-icon-drawing-frame-background-clip";
       const frameDashArray = stateIconDrawingFrameDashArray(frame);
       const frameRect = stateIconDrawingFrameRect
         ? stateIconDrawingFrameRect(stateIconHasTerminals)
@@ -7316,6 +7445,31 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                     className="state-icon-drawing-canvas-bg"
                     fill={frame.fillColor}
                   />
+                  {frameBackgroundImage && (
+                    <>
+                      <defs>
+                        <clipPath id={frameBackgroundClipId}>
+                          <rect
+                            x={formatSvgNumber(frameRect.x)}
+                            y={formatSvgNumber(frameRect.y)}
+                            width={formatSvgNumber(frameRect.width)}
+                            height={formatSvgNumber(frameRect.height)}
+                            rx={formatSvgNumber(frameRect.rx)}
+                          />
+                        </clipPath>
+                      </defs>
+                      <image
+                        href={frameBackgroundImage}
+                        x={formatSvgNumber(frameRect.x)}
+                        y={formatSvgNumber(frameRect.y)}
+                        width={formatSvgNumber(frameRect.width)}
+                        height={formatSvgNumber(frameRect.height)}
+                        preserveAspectRatio="xMidYMid slice"
+                        clipPath={`url(#${frameBackgroundClipId})`}
+                        pointerEvents="none"
+                      />
+                    </>
+                  )}
                   {renderStateIconOuterFrameLayer()}
                   {renderStateIconTerminalBaseLayer()}
                   <rect
@@ -7518,6 +7672,26 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                         <td>
                           <div className="state-icon-drawing-color-field">
                             <DeferredColorInput value={frame.fillColor} fallback="#ffffff" onCommit={(value) => setStateIconFramePatch({ fillColor: value })} />
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <th>背景图</th>
+                        <td>
+                          <div className="state-icon-drawing-background-image-field">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setImagePickerSourceFilter("");
+                                setImagePickerCategoryFilter("");
+                                setImagePickerSearchQuery("");
+                                setImageTarget({ kind: "stateIconFrameBackground" });
+                              }}
+                            >
+                              选择
+                            </button>
+                            <button type="button" disabled={!frameBackgroundImage} onClick={() => setStateIconFramePatch({ backgroundImage: "", backgroundImageAssetId: "" })}>清空</button>
+                            <span>{frameBackgroundImageAssetId ? "后台已设置" : frameBackgroundImage ? "已设置" : "未设置"}</span>
                           </div>
                         </td>
                       </tr>
