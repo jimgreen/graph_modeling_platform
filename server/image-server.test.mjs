@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest";
 import AdmZip from "adm-zip";
 import {
   archiveStaleSchemeFiles,
+  buildSvgFile,
   createSchemeArchiveBuffer,
   deleteSchemeProjectRecord,
   deleteSchemeRecordDirectory,
@@ -15,6 +16,18 @@ import {
   saveSchemeProjectRecord,
   saveSchemeRecordDirectory
 } from "./image-server.mjs";
+
+const svgSectionBetween = (svg, start, end) => {
+  const startIndex = svg.indexOf(start);
+  const endIndex = svg.indexOf(end);
+  if (startIndex < 0 || endIndex < 0 || endIndex <= startIndex) {
+    return "";
+  }
+  return svg.slice(startIndex, endIndex);
+};
+
+const svgDefsSection = (svg) => svg.match(/<defs[^>]*>[\s\S]*?<\/defs>/)?.[0] ?? "";
+const svgUseTags = (svg) => Array.from(svg.matchAll(/<use\b[^>]*>/g), (match) => match[0]);
 
 describe("icon library import", () => {
   test("extracts browser-displayable icons from Office-style archives", () => {
@@ -346,6 +359,173 @@ describe("scheme file persistence", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  test("deduplicates server SVG device state symbols and references active state", () => {
+    const svg = buildSvgFile(
+      {
+        version: 1,
+        name: "服务端状态SVG",
+        canvasWidth: 360,
+        canvasHeight: 220,
+        nodes: [
+          {
+            id: "switch-open",
+            kind: "ac-switch",
+            name: "开关开",
+            position: { x: 120, y: 100 },
+            size: { width: 80, height: 60 },
+            params: { status: "0" },
+            terminals: []
+          },
+          {
+            id: "switch-closed",
+            kind: "ac-switch",
+            name: "开关闭",
+            position: { x: 240, y: 100 },
+            size: { width: 80, height: 60 },
+            params: { status: "1" },
+            terminals: []
+          }
+        ],
+        edges: []
+      },
+      { measurementTypes: [], deviceProfiles: [] }
+    );
+    const defs = svgDefsSection(svg);
+    const useTags = svgUseTags(svg);
+
+    expect(defs).toContain('<symbol id="symbol_ACSwitch_ac-switch_state_0"');
+    expect(defs).toContain('<symbol id="symbol_ACSwitch_ac-switch_state_1"');
+    expect(defs.match(/<symbol id="symbol_ACSwitch_ac-switch_state_/g)).toHaveLength(2);
+    expect(defs).not.toContain("switch-open");
+    expect(defs).not.toContain("switch-closed");
+    expect(useTags).toHaveLength(2);
+    expect(useTags[0]).toContain('href="#symbol_ACSwitch_ac-switch_state_0"');
+    expect(useTags[1]).toContain('href="#symbol_ACSwitch_ac-switch_state_1"');
+    for (const useTag of useTags) {
+      expect(useTag).not.toContain("xlink:href");
+      expect(useTag).not.toContain("data-export-node-id");
+      expect(useTag).not.toContain("dev-id=");
+    }
+  });
+
+  test("writes device labels to Text_Layer and measurements to Measurement_Layer instead of defs", () => {
+    const svg = buildSvgFile(
+      {
+        version: 1,
+        name: "SVG分层",
+        canvasWidth: 320,
+        canvasHeight: 220,
+        nodes: [
+          {
+            id: "server-load",
+            kind: "ac-load",
+            name: "负荷A",
+            position: { x: 140, y: 100 },
+            size: { width: 80, height: 60 },
+            params: {
+              idx: "LOAD-1",
+              _labelText: "LOAD-1",
+              _labelX: "10",
+              _labelY: "64"
+            },
+            terminals: []
+          },
+          {
+            id: "server-load-copy",
+            kind: "ac-load",
+            name: "负荷B",
+            position: { x: 220, y: 100 },
+            size: { width: 80, height: 60 },
+            params: {
+              idx: "LOAD-2"
+            },
+            terminals: []
+          },
+          {
+            id: "server-source",
+            kind: "ac-source",
+            name: "电源A",
+            position: { x: 60, y: 100 },
+            size: { width: 80, height: 60 },
+            params: {
+              idx: "SRC-1"
+            },
+            terminals: []
+          }
+        ],
+        edges: [
+          {
+            id: "server-edge",
+            sourceId: "server-source",
+            targetId: "server-load"
+          }
+        ],
+        measurements: {
+          version: 1,
+          groups: [
+            {
+              id: "server-group",
+              nodeId: "server-load",
+              visible: true,
+              labelVisible: true,
+              unitVisible: true,
+              anchor: "custom",
+              offset: { x: 40, y: -30 },
+              layout: "vertical",
+              items: [
+                {
+                  id: "server-m",
+                  name: "P主",
+                  measurementTypeId: "activePower",
+                  sourcePoint: "server-load.activePower",
+                  visible: true,
+                  unitOverride: "kW"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      { measurementTypes: [], deviceProfiles: [] }
+    );
+    const defs = svgDefsSection(svg);
+    const textLayer = svgSectionBetween(svg, '<g id="Text_Layer">', '<g id="Measurement_Layer">');
+    const measurementLayer = svgSectionBetween(svg, '<g id="Measurement_Layer">', '<g id="Other_Layer">');
+    const useTags = svgUseTags(svg);
+
+    expect(defs).not.toContain("export-node-label");
+    expect(defs).not.toContain("LOAD-1");
+    expect(defs).not.toContain("export-measurement-group");
+    expect(defs).not.toContain("P主");
+    expect(defs.match(/<symbol id="symbol_ACLoad_ac-load_default/g)).toHaveLength(1);
+    expect(textLayer).toContain('class="export-node-label-layer"');
+    expect(textLayer).toContain('node-id="server-load"');
+    expect(textLayer).toContain('dev-id="server-load"');
+    expect(textLayer).toContain('dev-idx="LOAD-1"');
+    expect(textLayer).toContain('dev-name="负荷A"');
+    expect(textLayer).toContain('transform="translate(140 100)"');
+    expect(textLayer).toContain('class="export-node-label horizontal" transform="translate(10 64)"');
+    expect(textLayer).toContain(">LOAD-1</text>");
+    expect(measurementLayer).toContain('class="export-measurement-group measurement-group"');
+    expect(measurementLayer).toContain('data-export-measurement-name="P主"');
+    expect(measurementLayer).toContain('data-export-measurement-source-point="server-load.activePower"');
+    expect(svg).toContain('source-dev-id="server-source"');
+    expect(svg).toContain('target-dev-id="server-load"');
+    expect(useTags).toHaveLength(3);
+    for (const useTag of useTags) {
+      expect(useTag).not.toContain("xlink:href");
+      expect(useTag).not.toContain("data-export-node-id");
+      expect(useTag).not.toContain("dev-id=");
+      expect(useTag).not.toContain("dev-idx=");
+      expect(useTag).not.toContain("dev-name=");
+      expect(useTag).not.toContain("dev-kind=");
+    }
+    expect(svg).not.toContain("data-export-device-id");
+    expect(svg).not.toContain("data-export-device-idx");
+    expect(svg).not.toContain("data-export-device-name");
+    expect(svg).not.toContain("data-export-device-kind");
   });
 
   test("deletes one project by archiving only that model's files", async () => {

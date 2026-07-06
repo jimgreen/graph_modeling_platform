@@ -2652,7 +2652,7 @@ export function buildSvgTerminalMarkup(node: ModelNode, colorDisplayMode: ColorD
       const strokeWidth = terminalStubStrokeWidth(node, terminal);
       const terminalColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
       const label = `${terminal.label} / ${terminal.type.toUpperCase()}`;
-      return `<g class="export-terminal ${terminal.type}" data-terminal-id="${escapeXml(terminal.id)}" transform="translate(${formatSvgNumber(renderPoint.x)} ${formatSvgNumber(renderPoint.y)}) scale(${inverseScaleX} ${inverseScaleY})">
+      return `<g class="export-terminal ${terminal.type}" data-terminal-id="${escapeXml(terminal.id)}" node-id="${escapeXml(node.id)}" transform="translate(${formatSvgNumber(renderPoint.x)} ${formatSvgNumber(renderPoint.y)}) scale(${inverseScaleX} ${inverseScaleY})">
   <line class="export-terminal-stub ${terminal.type}" x1="${stub.from.x}" y1="${stub.from.y}" x2="${stub.to.x}" y2="${stub.to.y}" stroke="${terminalColor}" stroke-width="${formatSvgNumber(strokeWidth)}" stroke-linecap="round"${dashAttribute}/>
   <circle class="export-terminal-dot ${terminal.type}" cx="0" cy="0" r="6" fill="${terminalColor}" stroke="#ffffff" stroke-width="2" vector-effect="non-scaling-stroke"><title>${escapeXml(label)}</title></circle>
 </g>`;
@@ -3043,8 +3043,9 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
   const imageAssets = readImageAssets();
   const imageExportPathById = canvasSize.imageExportPathById ?? {};
   const svgTemplateByKind = new Map((canvasSize.deviceTemplates ?? DEVICE_LIBRARY).map((template) => [template.kind, template]));
+  const resolveSvgNodeTemplate = (node: ModelNode) => svgTemplateByKind.get(node.kind);
   const resolveSvgNodeStateVisual = (node: ModelNode) => {
-    const template = svgTemplateByKind.get(node.kind);
+    const template = resolveSvgNodeTemplate(node);
     return template ? resolveDeviceStateVisual(template, node) : null;
   };
   const backgroundColor = canvasSize.backgroundColor ?? DEFAULT_CANVAS_BACKGROUND;
@@ -3126,7 +3127,7 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
             .join("\n")
         : "";
       const edgeElementId = exportSvgUniqueId(`edge_${route.edgeId}`, usedSvgIds, "edge");
-      return `<g id="${escapeXml(edgeElementId)}" class="export-edge" data-export-edge-id="${escapeXml(route.edgeId)}" data-export-source-layer-id="${escapeXml(sourceLayerId)}" data-export-target-layer-id="${escapeXml(targetLayerId)}"${svgDisplayAttribute(edgeVisible)}>
+      return `<g id="${escapeXml(edgeElementId)}" class="export-edge" data-export-edge-id="${escapeXml(route.edgeId)}" data-export-source-layer-id="${escapeXml(sourceLayerId)}" data-export-target-layer-id="${escapeXml(targetLayerId)}" source-dev-id="${escapeXml(edge?.sourceId ?? "")}" target-dev-id="${escapeXml(edge?.targetId ?? "")}"${svgDisplayAttribute(edgeVisible)}>
 <path d="${route.path}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${internalConnectors ? `\n${internalConnectors}` : ""}
 </g>`;
     })
@@ -3136,6 +3137,8 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
     nodeLayerMarkup.set(layerId, []);
   }
   const nodeSymbolMarkup: string[] = [];
+  const symbolIdBySignature = new Map<string, string>();
+  const textLayerMarkup: string[] = [];
   exportNodes.forEach((node) => {
       const layerId = nodeLayerId(node);
       const typeLayerId = nodeTypeLayerIds.get(exportNodeLayerKey(node)) ?? otherLayerId;
@@ -3144,67 +3147,107 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
         ? ` data-export-button-action="layer" data-export-button-target-layer-id="${escapeXml(targetLayerIds[0])}" data-export-button-target-layer-ids="${escapeXml(targetLayerIds.join(","))}"`
         : "";
       const exportButtonClass = targetLayerIds.length > 0 ? " export-static-button" : "";
-      const stateVisual = resolveSvgNodeStateVisual(node);
-      const stateVisualImageHref = resolveStateVisualImageHref(stateVisual, imageAssets);
-      const imageHref = exportSvgImageHref(stateVisualImageHref || resolveNodeImage(node, imageAssets), imageExportPathById);
-      const foregroundHref = exportSvgImageHref(resolveNodeForegroundImage(node, imageAssets), imageExportPathById);
-      const backgroundImageFit = stateVisualImageHref
-        ? stateVisual?.imageFit ?? stateVisual?.backgroundImageFit ?? node.params.backgroundImageFit
-        : node.params.backgroundImageFit;
       const allowNodeImage = !isBusNode(node);
-      const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette, stateVisual }));
-      const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette, stateVisual }));
       const deviceMetadataAttributes = exportDeviceMetadataAttributes(node);
       const geometryTransform = nodeGeometryTransform(node);
       const imageContentTransform = nodeImageContentTransform(node);
-      const imageMarkup = imageHref
-        ? svgImageContentMarkup(imageHref, {
-            x: -node.size.width / 2,
-            y: -node.size.height / 2,
-            width: node.size.width,
-            height: node.size.height,
-            imageFit: backgroundImageFit,
-            patternId: exportSvgUniqueId(`node_background_image_pattern_${node.id}`, usedSvgIds, "node_background_image_pattern"),
-            className: "node-background-image"
-          })
-        : "";
-      const foregroundMarkup = foregroundHref
-        ? svgImageContentMarkup(foregroundHref, {
-            x: -node.size.width / 2,
-            y: -node.size.height / 2,
-            width: node.size.width,
-            height: node.size.height,
-            imageFit: node.params.foregroundImageFit,
-            patternId: exportSvgUniqueId(`node_foreground_image_pattern_${node.id}`, usedSvgIds, "node_foreground_image_pattern"),
-            className: "node-foreground-image"
-          })
-        : "";
-      const imageCoverMarkup =
-        imageHref && allowNodeImage && !isStaticNode(node)
-          ? `<rect x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}" rx="8" fill="#ffffff" stroke="none"/>`
-          : "";
       const terminalMarkup = buildSvgTerminalMarkup(node, colorDisplayMode, colorPalette);
       const labelMarkup = buildSvgNodeLabelMarkup(node);
-      const symbolId = exportSvgUniqueId(`symbol_${exportNodeType(node)}_${node.id}`, usedSvgIds, "device_symbol");
-      const useId = exportSvgUniqueId(node.id, usedSvgIds, "device");
-      nodeSymbolMarkup.push(`<symbol id="${escapeXml(symbolId)}" viewBox="${formatSvgNumber(-node.size.width / 2)} ${formatSvgNumber(-node.size.height / 2)} ${formatSvgNumber(node.size.width)} ${formatSvgNumber(node.size.height)}" overflow="visible">
-  <title>${escapeXml(node.name)}</title>
+      const template = resolveSvgNodeTemplate(node);
+      const stateDefinitions = template ? getTemplateStateDefinitions(template) : [];
+      const stateSymbolInputs = stateDefinitions.length > 0
+        ? stateDefinitions.map((state) => {
+            const stateNode = { ...node, params: { ...node.params, status: state.value } };
+            return {
+              stateKey: `state_${state.value || "default"}`,
+              node: stateNode,
+              visual: template ? resolveDeviceStateVisual(template, stateNode) : null
+            };
+          })
+        : [{ stateKey: "default", node, visual: resolveSvgNodeStateVisual(node) }];
+      const renderNodeSymbolBody = (symbolNode: ModelNode, stateVisual: DeviceStateVisual | null, patternScopeId: string) => {
+        const stateVisualImageHref = resolveStateVisualImageHref(stateVisual, imageAssets);
+        const imageHref = exportSvgImageHref(stateVisualImageHref || resolveNodeImage(symbolNode, imageAssets), imageExportPathById);
+        const foregroundHref = exportSvgImageHref(resolveNodeForegroundImage(symbolNode, imageAssets), imageExportPathById);
+        const backgroundImageFit = stateVisualImageHref
+          ? stateVisual?.imageFit ?? stateVisual?.backgroundImageFit ?? symbolNode.params.backgroundImageFit
+          : symbolNode.params.backgroundImageFit;
+        const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node: symbolNode, mode: "geometry", colorDisplayMode, colorPalette, stateVisual }));
+        const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node: symbolNode, mode: "text", colorDisplayMode, colorPalette, stateVisual }));
+        const imageMarkup = imageHref
+          ? svgImageContentMarkup(imageHref, {
+              x: -symbolNode.size.width / 2,
+              y: -symbolNode.size.height / 2,
+              width: symbolNode.size.width,
+              height: symbolNode.size.height,
+              imageFit: backgroundImageFit,
+              patternId: exportSvgSafeId(`node_background_image_pattern_${patternScopeId}`, "node_background_image_pattern"),
+              className: "node-background-image"
+            })
+          : "";
+        const foregroundMarkup = foregroundHref
+          ? svgImageContentMarkup(foregroundHref, {
+              x: -symbolNode.size.width / 2,
+              y: -symbolNode.size.height / 2,
+              width: symbolNode.size.width,
+              height: symbolNode.size.height,
+              imageFit: symbolNode.params.foregroundImageFit,
+              patternId: exportSvgSafeId(`node_foreground_image_pattern_${patternScopeId}`, "node_foreground_image_pattern"),
+              className: "node-foreground-image"
+            })
+          : "";
+        const imageCoverMarkup =
+          imageHref && allowNodeImage && !isStaticNode(symbolNode)
+            ? `<rect x="${-symbolNode.size.width / 2}" y="${-symbolNode.size.height / 2}" width="${symbolNode.size.width}" height="${symbolNode.size.height}" rx="8" fill="#ffffff" stroke="none"/>`
+            : "";
+        return `<title>${escapeXml(template?.label ?? exportNodeType(symbolNode))}</title>
   <g class="export-node-geometry" transform="${geometryTransform}">
   ${glyphMarkup}
   ${glyphTextMarkup}
   </g>
   <g class="export-node-upright-content" transform="${imageContentTransform}">
-  ${isStaticNode(node) ? imageMarkup : ""}
+  ${isStaticNode(symbolNode) ? imageMarkup : ""}
   ${imageCoverMarkup}
-  ${allowNodeImage && !isStaticNode(node) ? imageMarkup : ""}
+  ${allowNodeImage && !isStaticNode(symbolNode) ? imageMarkup : ""}
   ${allowNodeImage ? foregroundMarkup : ""}
-  </g>
+  </g>`;
+      };
+      const symbolIdByStateKey = new Map<string, string>();
+      for (const stateInput of stateSymbolInputs) {
+        const symbolBaseId = exportSvgSafeId(`symbol_${exportNodeType(node)}_${node.kind}_${stateInput.stateKey}`, "device_symbol");
+        const viewBox = `${formatSvgNumber(-node.size.width / 2)} ${formatSvgNumber(-node.size.height / 2)} ${formatSvgNumber(node.size.width)} ${formatSvgNumber(node.size.height)}`;
+        const signatureBody = renderNodeSymbolBody(stateInput.node, stateInput.visual, symbolBaseId);
+        const signature = `${symbolBaseId}\n${viewBox}\n${signatureBody}`;
+        let symbolId = symbolIdBySignature.get(signature);
+        if (!symbolId) {
+          symbolId = exportSvgUniqueId(symbolBaseId, usedSvgIds, "device_symbol");
+          const symbolBody = symbolId === symbolBaseId ? signatureBody : renderNodeSymbolBody(stateInput.node, stateInput.visual, symbolId);
+          nodeSymbolMarkup.push(`<symbol id="${escapeXml(symbolId)}" viewBox="${viewBox}" overflow="visible">
+  ${symbolBody}
+</symbol>`);
+          symbolIdBySignature.set(signature, symbolId);
+        }
+        symbolIdByStateKey.set(stateInput.stateKey, symbolId);
+      }
+      const activeStateVisual = resolveSvgNodeStateVisual(node);
+      const activeStateKey = activeStateVisual ? `state_${activeStateVisual.value || "default"}` : "default";
+      const symbolId = symbolIdByStateKey.get(activeStateKey) ?? symbolIdByStateKey.values().next().value ?? "";
+      const useId = exportSvgUniqueId(node.id, usedSvgIds, "device");
+      if (labelMarkup) {
+        const labelWrapperId = exportSvgUniqueId(`label_${node.id}`, usedSvgIds, "node_label");
+        textLayerMarkup.push(`<g id="${escapeXml(labelWrapperId)}" class="export-node-label-layer" node-id="${escapeXml(node.id)}" layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""} transform="translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})"${svgDisplayAttribute(layerVisible(layerId))}>
+  ${labelMarkup}
+</g>`);
+      }
+      const terminalOverlay = terminalMarkup
+        ? `
+<g class="export-node-terminal-layer" layer-id="${escapeXml(layerId)}" transform="translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})"${svgDisplayAttribute(layerVisible(layerId))}>
   <g class="export-node-terminals" transform="${geometryTransform}">
   ${terminalMarkup}
   </g>
-  ${labelMarkup}
-</symbol>`);
-      nodeLayerMarkup.get(typeLayerId)?.push(`<use id="${escapeXml(useId)}" class="export-node${exportButtonClass}" href="#${escapeXml(symbolId)}" xlink:href="#${escapeXml(symbolId)}" x="${formatSvgNumber(node.position.x - node.size.width / 2)}" y="${formatSvgNumber(node.position.y - node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" data-export-node-id="${escapeXml(node.id)}" data-export-layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}/>`);
+</g>`
+        : "";
+      nodeLayerMarkup.get(typeLayerId)?.push(`<use id="${escapeXml(useId)}" class="export-node${exportButtonClass}" href="#${escapeXml(symbolId)}" x="${formatSvgNumber(node.position.x - node.size.width / 2)}" y="${formatSvgNumber(node.position.y - node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" layer-id="${escapeXml(layerId)}"${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}/>${terminalOverlay}`);
   });
   const measurementConfig = canvasSize.measurementConfig ?? DEFAULT_MEASUREMENT_CONFIG;
   const measurements = canvasSize.measurements ?? EMPTY_PROJECT_MEASUREMENTS;
@@ -3221,7 +3264,7 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
         return "";
       }
       const measurementWrapperId = exportSvgUniqueId(`measurement_${group.id}`, usedSvgIds, "measurement");
-      return `<g id="${escapeXml(measurementWrapperId)}" class="export-measurement-layer" data-export-layer-id="${escapeXml(layerId)}"${svgDisplayAttribute(layerVisible(layerId))}>
+      return `<g id="${escapeXml(measurementWrapperId)}" class="export-measurement-layer" layer-id="${escapeXml(layerId)}"${svgDisplayAttribute(layerVisible(layerId))}>
 ${groupMarkup}
 </g>`;
     })
@@ -3238,7 +3281,7 @@ ${backgroundImage ? svgImageContentMarkup(backgroundImage, {
     className: "export-canvas-background-image"
   }) : ""}`;
   const deviceLayerMarkup = Array.from(nodeTypeLayerIds.entries())
-    .map(([layerKey, layerId]) => `<g id="${escapeXml(layerId)}" data-export-device-type="${escapeXml(layerKey)}">
+    .map(([layerKey, layerId]) => `<g id="${escapeXml(layerId)}" device-type="${escapeXml(layerKey)}">
 ${(nodeLayerMarkup.get(layerId) ?? []).join("\n")}
 </g>`)
     .join("\n");
@@ -3258,6 +3301,7 @@ ${edgeMarkup}
 </g>
 ${deviceLayerMarkup}
 <g id="${escapeXml(textLayerId)}">
+${textLayerMarkup.join("\n")}
 </g>
 <g id="${escapeXml(measurementLayerId)}">
 ${measurementMarkup}

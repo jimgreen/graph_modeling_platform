@@ -1093,6 +1093,87 @@ function normalizeSwitchStatusForE(value) {
   return value;
 }
 
+const serverBinaryStateDefinitions = [
+  { value: "0", name: "打开/开断" },
+  { value: "1", name: "闭合" }
+];
+
+function normalizeServerDeviceStateValue(value) {
+  return String(value ?? "").trim();
+}
+
+function normalizeServerDeviceStateDefinitions(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const seen = new Set();
+  const states = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const stateValue = normalizeServerDeviceStateValue(item.value);
+    if (!stateValue || seen.has(stateValue)) {
+      continue;
+    }
+    seen.add(stateValue);
+    states.push({
+      ...item,
+      value: stateValue,
+      name: normalizeServerDeviceStateValue(item.name) || stateValue
+    });
+  }
+  return states;
+}
+
+function serverDeviceHasDefaultBinaryStates(kind, params = {}) {
+  const section = inferESection(kind, params);
+  return Boolean(
+    eSectionColumns[section]?.includes("status") ||
+    String(kind ?? "").includes("switch") ||
+    String(kind ?? "").includes("breaker") ||
+    String(kind ?? "").includes("disconnector") ||
+    String(kind ?? "").includes("valve")
+  );
+}
+
+function serverTemplateStateDefinitions(node, template) {
+  if (Array.isArray(template?.stateDefinitions)) {
+    return normalizeServerDeviceStateDefinitions(template.stateDefinitions);
+  }
+  return serverDeviceHasDefaultBinaryStates(node?.kind, node?.params ?? {})
+    ? serverBinaryStateDefinitions
+    : [];
+}
+
+function serverResolvedStateValue(node, states) {
+  if (!states.length) {
+    return "";
+  }
+  const explicit = normalizeServerDeviceStateValue(node?.params?.status ?? node?.params?.closedStatus);
+  if (explicit) {
+    const exact = states.find((state) => state.value === explicit);
+    if (exact) {
+      return exact.value;
+    }
+    const normalized = normalizeSwitchStatusForE(explicit);
+    const mapped = states.find((state) => normalizeSwitchStatusForE(state.value) === normalized);
+    if (mapped) {
+      return mapped.value;
+    }
+    return normalized || explicit;
+  }
+  if (String(node?.kind ?? "").includes("ground-disconnector")) {
+    return states.find((state) => state.value === "0")?.value ?? states[0]?.value ?? "";
+  }
+  return states.find((state) => state.value === "1")?.value ?? states[0]?.value ?? "";
+}
+
+function serverStateSymbolKey(value) {
+  const stateValue = normalizeServerDeviceStateValue(value);
+  return stateValue ? svgSafeId(`state_${stateValue}`, "state_default") : "default";
+}
+
 function terminalNodeNumber(node, index) {
   return node?.terminals?.[index]?.nodeNumber ?? (index === 0 ? node?.nodeNumber : "") ?? "";
 }
@@ -1775,7 +1856,7 @@ function buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, us
     const valueX = textX + labelWidth + (row.labelText ? textGap : 0);
     const unitX = valueX + valueWidth + (row.unitText ? textGap : 0);
     const itemBaseId = `measurement_${row.item?.id ?? row.item?.measurementTypeId ?? "item"}`;
-    const itemMetadata = `measure_type="${escapeSvgAttribute(row.item?.measurementTypeId ?? "")}" data-export-measurement-item-id="${escapeSvgAttribute(row.item?.id ?? "")}" data-export-measurement-name="${escapeSvgAttribute(measurementName)}" data-export-measurement-type-id="${escapeSvgAttribute(row.item?.measurementTypeId ?? "")}" data-export-measurement-source-point="${escapeSvgAttribute(row.item?.sourcePoint ?? "")}" data-export-measurement-role="${escapeSvgAttribute(row.item?.role ?? "")}" data-export-measurement-unit="${escapeSvgAttribute(row.display.unit)}" data-export-measurement-group-id="${escapeSvgAttribute(group.id ?? "")}" conn-dev="${escapeSvgAttribute(node.id ?? "")}" dev_idx="${escapeSvgAttribute(node.params?.idx ?? "")}" dev_name="${escapeSvgAttribute(node.name ?? "")}" data-export-device-id="${escapeSvgAttribute(node.id ?? "")}" data-export-device-idx="${escapeSvgAttribute(node.params?.idx ?? "")}" data-export-device-name="${escapeSvgAttribute(node.name ?? "")}" data-export-device-kind="${escapeSvgAttribute(node.kind ?? "")}"`;
+    const itemMetadata = `measure_type="${escapeSvgAttribute(row.item?.measurementTypeId ?? "")}" data-export-measurement-item-id="${escapeSvgAttribute(row.item?.id ?? "")}" data-export-measurement-name="${escapeSvgAttribute(measurementName)}" data-export-measurement-type-id="${escapeSvgAttribute(row.item?.measurementTypeId ?? "")}" data-export-measurement-source-point="${escapeSvgAttribute(row.item?.sourcePoint ?? "")}" data-export-measurement-role="${escapeSvgAttribute(row.item?.role ?? "")}" data-export-measurement-unit="${escapeSvgAttribute(row.display.unit)}" data-export-measurement-group-id="${escapeSvgAttribute(group.id ?? "")}" conn-dev="${escapeSvgAttribute(node.id ?? "")}" dev-id="${escapeSvgAttribute(node.id ?? "")}" dev-idx="${escapeSvgAttribute(node.params?.idx ?? "")}" dev-name="${escapeSvgAttribute(node.name ?? "")}" dev-kind="${escapeSvgAttribute(node.kind ?? "")}"`;
     const textStyle = `y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeSvgAttribute(row.display.color)}" font-family="${escapeSvgAttribute(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeSvgAttribute(row.display.fontWeight)}" font-style="${escapeSvgAttribute(row.display.fontStyle)}" text-decoration="${escapeSvgAttribute(row.display.textDecoration)}"`;
     const textIdAttribute = (suffix, fallback) => ` id="${escapeSvgAttribute(uniqueSvgId(`${itemBaseId}_${suffix}`, usedIds, fallback))}"`;
     const labelMarkup = row.labelText
@@ -1787,7 +1868,7 @@ function buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, us
       : "";
     return `${labelMarkup}${valueMarkup}${unitMarkup}`;
   }).join("");
-  return `<g class="export-measurement-group measurement-group" conn-dev="${escapeSvgAttribute(node.id ?? "")}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" data-export-measurement-group-id="${escapeSvgAttribute(group.id ?? "")}" data-export-device-id="${escapeSvgAttribute(node.id ?? "")}" data-export-device-idx="${escapeSvgAttribute(node.params?.idx ?? "")}" data-export-device-name="${escapeSvgAttribute(node.name ?? "")}" data-export-device-kind="${escapeSvgAttribute(node.kind ?? "")}" data-export-measurement-terminal-id="${escapeSvgAttribute(group.terminalId ?? "")}">
+  return `<g class="export-measurement-group measurement-group" conn-dev="${escapeSvgAttribute(node.id ?? "")}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" data-export-measurement-group-id="${escapeSvgAttribute(group.id ?? "")}" dev-id="${escapeSvgAttribute(node.id ?? "")}" dev-idx="${escapeSvgAttribute(node.params?.idx ?? "")}" dev-name="${escapeSvgAttribute(node.name ?? "")}" dev-kind="${escapeSvgAttribute(node.kind ?? "")}" data-export-measurement-terminal-id="${escapeSvgAttribute(group.terminalId ?? "")}">
 <title>${escapeSvgText(`${node.name ?? ""} 动态量测`)}</title>
 <rect class="measurement-group-bg" x="${formatSvgNumber(-width / 2)}" y="${formatSvgNumber(-height / 2)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" rx="4" fill="${escapeSvgAttribute(group.backgroundColor ?? "rgba(255, 255, 255, 0.84)")}" stroke="${escapeSvgAttribute(group.borderColor ?? "rgba(100, 116, 139, 0.36)")}" stroke-width="${formatSvgNumber(measurementBorderWidth(group))}"${dashAttribute}/>
 ${rowsMarkup}
@@ -1802,6 +1883,12 @@ export function buildSvgFile(project, measurementConfig = { measurementTypes: []
   const backgroundColor = project.canvasBackgroundColor ?? "#f8fafc";
   const imagePathById = options.imagePathById ?? {};
   const backgroundImage = svgImageHref(project.canvasBackgroundImage ?? "", imagePathById);
+  const deviceTemplates = Array.isArray(options.deviceTemplates)
+    ? options.deviceTemplates
+    : Array.isArray(project.deviceTemplates)
+      ? project.deviceTemplates
+      : [];
+  const templateByKind = new Map(deviceTemplates.map((template) => [template?.kind, template]).filter(([kind]) => kind));
   const usedIds = new Set(["root_g"]);
   const backgroundLayerId = uniqueSvgId(svgLayerId("Background", "Background"), usedIds, "Background_Layer");
   const segmentLayerId = uniqueSvgId(svgLayerId("Segment", "Segment"), usedIds, "Segment_Layer");
@@ -1818,6 +1905,8 @@ export function buildSvgFile(project, measurementConfig = { measurementTypes: []
   }
   const nodeMarkupByLayer = new Map(Array.from(layerIdsByType.values()).map((layerId) => [layerId, []]));
   const symbolMarkup = [];
+  const symbolIdBySignature = new Map();
+  const textLayerMarkup = [];
   const edgeMarkup = (project.edges ?? [])
     .map((edge) => {
       const start = endpointPoint(project, edge, "source");
@@ -1827,51 +1916,81 @@ export function buildSvgFile(project, measurementConfig = { measurementTypes: []
         .map((point) => `${point.x},${point.y}`)
         .join(" ");
       const edgeId = uniqueSvgId(`edge_${edge.id ?? `${start.x}_${start.y}_${end.x}_${end.y}`}`, usedIds, "edge");
-      return `<polyline id="${escapeSvgAttribute(edgeId)}" data-export-edge-id="${escapeSvgAttribute(edge.id ?? "")}" points="${escapeSvgAttribute(points)}" fill="none" stroke="#334155" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
+      return `<polyline id="${escapeSvgAttribute(edgeId)}" data-export-edge-id="${escapeSvgAttribute(edge.id ?? "")}" source-dev-id="${escapeSvgAttribute(edge.sourceId ?? "")}" target-dev-id="${escapeSvgAttribute(edge.targetId ?? "")}" points="${escapeSvgAttribute(points)}" fill="none" stroke="#334155" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
     })
     .join("\n");
   for (const node of nodes) {
     const nodeWidth = node.size?.width ?? 80;
     const nodeHeight = node.size?.height ?? 48;
-    const stroke = String(node.kind ?? "").startsWith("dc") || String(node.kind ?? "").includes("dcdc") ? "#0f766e" : "#2563eb";
-    const isBus = String(node.kind ?? "").includes("bus");
-    const image = svgImageHref(node.params?.backgroundImageAssetId ? `/api/images/${node.params.backgroundImageAssetId}` : node.params?.backgroundImage ?? "", imagePathById);
     const rotate = Number(node.rotation ?? 0);
     const normalizedRotate = Number.isFinite(rotate) ? rotate : 0;
     const scaleX = nodeScaleX(node);
     const scaleY = nodeScaleY(node);
-    const symbolId = uniqueSvgId(`symbol_${nodeLayerKey(node)}_${node.id ?? "node"}`, usedIds, "device_symbol");
     const useId = uniqueSvgId(node.id ?? "device", usedIds, "device");
-    let nodeBodyMarkup = "";
-    if (isBus) {
-      const thickness = Math.max(8, nodeHeight / 3);
-      nodeBodyMarkup = `<rect class="bus-glyph" x="${-nodeWidth / 2}" y="${-thickness / 2}" width="${nodeWidth}" height="${thickness}" fill="${stroke}" stroke="none"/>`;
-    } else {
-      nodeBodyMarkup = `<rect x="${-nodeWidth / 2}" y="${-nodeHeight / 2}" width="${nodeWidth}" height="${nodeHeight}" rx="8" fill="#ffffff" stroke="#94a3b8"/>
-${image ? svgImageContentMarkup(image, {
-        x: -nodeWidth / 2,
-        y: -nodeHeight / 2,
-        width: nodeWidth,
-        height: nodeHeight,
-        imageFit: node.params?.backgroundImageFit,
-        patternId: uniqueSvgId(`node_background_image_pattern_${node.id ?? "node"}`, usedIds, "node_background_image_pattern"),
-        className: "node-background-image"
-      }) : ""}`;
-    }
     const layerId = layerIdsByType.get(nodeLayerKey(node)) ?? otherLayerId;
     const geometryTransform = `rotate(${formatSvgNumber(normalizedRotate)}) scale(${formatSvgNumber(scaleX)} ${formatSvgNumber(scaleY)})`;
     const labelMarkup = buildServerSvgNodeLabelMarkup(node);
-    symbolMarkup.push(`<symbol id="${escapeSvgAttribute(symbolId)}" viewBox="${formatSvgNumber(-nodeWidth / 2)} ${formatSvgNumber(-nodeHeight / 2)} ${formatSvgNumber(nodeWidth)} ${formatSvgNumber(nodeHeight)}" overflow="visible">
-<title>${escapeSvgText(node.name ?? "")}</title>
+    const deviceMetadataAttributes = `idx="${escapeSvgAttribute(node.params?.idx ?? "")}" name="${escapeSvgAttribute(node.name ?? "")}" dev-id="${escapeSvgAttribute(node.id ?? "")}" dev-idx="${escapeSvgAttribute(node.params?.idx ?? "")}" dev-name="${escapeSvgAttribute(node.name ?? "")}" dev-kind="${escapeSvgAttribute(node.kind ?? "")}"`;
+    if (labelMarkup) {
+      const labelWrapperId = uniqueSvgId(`label_${node.id ?? "node"}`, usedIds, "node_label");
+      textLayerMarkup.push(`<g id="${escapeSvgAttribute(labelWrapperId)}" class="export-node-label-layer" node-id="${escapeSvgAttribute(node.id ?? "")}" ${deviceMetadataAttributes} transform="translate(${formatSvgNumber(Number(node.position?.x ?? 0))} ${formatSvgNumber(Number(node.position?.y ?? 0))})">
+${labelMarkup}
+</g>`);
+    }
+    const viewBox = `${formatSvgNumber(-nodeWidth / 2)} ${formatSvgNumber(-nodeHeight / 2)} ${formatSvgNumber(nodeWidth)} ${formatSvgNumber(nodeHeight)}`;
+    const renderServerNodeSymbolBody = (symbolNode, symbolBaseId) => {
+      const stroke = String(symbolNode.kind ?? "").startsWith("dc") || String(symbolNode.kind ?? "").includes("dcdc") ? "#0f766e" : "#2563eb";
+      const isBus = String(symbolNode.kind ?? "").includes("bus");
+      const image = svgImageHref(
+        symbolNode.params?.backgroundImageAssetId ? `/api/images/${symbolNode.params.backgroundImageAssetId}` : symbolNode.params?.backgroundImage ?? "",
+        imagePathById
+      );
+      const nodeBodyMarkup = isBus
+        ? `<rect class="bus-glyph" x="${-nodeWidth / 2}" y="${formatSvgNumber(-Math.max(8, nodeHeight / 3) / 2)}" width="${nodeWidth}" height="${formatSvgNumber(Math.max(8, nodeHeight / 3))}" fill="${stroke}" stroke="none"/>`
+        : `<rect x="${-nodeWidth / 2}" y="${-nodeHeight / 2}" width="${nodeWidth}" height="${nodeHeight}" rx="8" fill="#ffffff" stroke="#94a3b8"/>
+${image ? svgImageContentMarkup(image, {
+          x: -nodeWidth / 2,
+          y: -nodeHeight / 2,
+          width: nodeWidth,
+          height: nodeHeight,
+          imageFit: symbolNode.params?.backgroundImageFit,
+          patternId: svgSafeId(`node_background_image_pattern_${symbolBaseId}`, "node_background_image_pattern"),
+          className: "node-background-image"
+        }) : ""}`;
+      return `<title>${escapeSvgText(nodeLayerKey(symbolNode))}</title>
 <g class="export-node-geometry" transform="${escapeSvgAttribute(geometryTransform)}">
 ${nodeBodyMarkup}
-</g>
-${labelMarkup}
+</g>`;
+    };
+    const stateDefinitions = serverTemplateStateDefinitions(node, templateByKind.get(node.kind));
+    const stateInputs = stateDefinitions.length > 0
+      ? stateDefinitions.map((state) => ({
+          stateKey: serverStateSymbolKey(state.value),
+          node: { ...node, params: { ...(node.params ?? {}), status: state.value } }
+        }))
+      : [{ stateKey: "default", node }];
+    const symbolIdByStateKey = new Map();
+    for (const stateInput of stateInputs) {
+      const symbolBaseId = svgSafeId(`symbol_${nodeLayerKey(node)}_${node.kind ?? "node"}_${stateInput.stateKey}`, "device_symbol");
+      const signatureBody = renderServerNodeSymbolBody(stateInput.node, symbolBaseId);
+      const signature = `${symbolBaseId}\n${viewBox}\n${signatureBody}`;
+      let symbolId = symbolIdBySignature.get(signature);
+      if (!symbolId) {
+        symbolId = uniqueSvgId(symbolBaseId, usedIds, "device_symbol");
+        const symbolBody = symbolId === symbolBaseId ? signatureBody : renderServerNodeSymbolBody(stateInput.node, symbolId);
+        symbolMarkup.push(`<symbol id="${escapeSvgAttribute(symbolId)}" viewBox="${viewBox}" overflow="visible">
+${symbolBody}
 </symbol>`);
-    nodeMarkupByLayer.get(layerId)?.push(`<use id="${escapeSvgAttribute(useId)}" class="export-node" href="#${escapeSvgAttribute(symbolId)}" xlink:href="#${escapeSvgAttribute(symbolId)}" x="${formatSvgNumber(Number(node.position?.x ?? 0) - nodeWidth / 2)}" y="${formatSvgNumber(Number(node.position?.y ?? 0) - nodeHeight / 2)}" width="${formatSvgNumber(nodeWidth)}" height="${formatSvgNumber(nodeHeight)}" idx="${escapeSvgAttribute(node.params?.idx ?? "")}" name="${escapeSvgAttribute(node.name ?? "")}" data-export-node-id="${escapeSvgAttribute(node.id ?? "")}" data-export-device-id="${escapeSvgAttribute(node.id ?? "")}" data-export-device-idx="${escapeSvgAttribute(node.params?.idx ?? "")}" data-export-device-name="${escapeSvgAttribute(node.name ?? "")}" data-export-device-kind="${escapeSvgAttribute(node.kind ?? "")}"/>`);
+        symbolIdBySignature.set(signature, symbolId);
+      }
+      symbolIdByStateKey.set(stateInput.stateKey, symbolId);
+    }
+    const activeStateKey = stateDefinitions.length > 0 ? serverStateSymbolKey(serverResolvedStateValue(node, stateDefinitions)) : "default";
+    const symbolId = symbolIdByStateKey.get(activeStateKey) ?? symbolIdByStateKey.values().next().value ?? "";
+    nodeMarkupByLayer.get(layerId)?.push(`<use id="${escapeSvgAttribute(useId)}" class="export-node" href="#${escapeSvgAttribute(symbolId)}" x="${formatSvgNumber(Number(node.position?.x ?? 0) - nodeWidth / 2)}" y="${formatSvgNumber(Number(node.position?.y ?? 0) - nodeHeight / 2)}" width="${formatSvgNumber(nodeWidth)}" height="${formatSvgNumber(nodeHeight)}"/>`);
   }
   const deviceLayersMarkup = Array.from(layerIdsByType.entries())
-    .map(([layerKey, layerId]) => `<g id="${escapeSvgAttribute(layerId)}" data-export-device-type="${escapeSvgAttribute(layerKey)}">
+    .map(([layerKey, layerId]) => `<g id="${escapeSvgAttribute(layerId)}" device-type="${escapeSvgAttribute(layerKey)}">
 ${(nodeMarkupByLayer.get(layerId) ?? []).join("\n")}
 </g>`)
     .join("\n");
@@ -1907,6 +2026,7 @@ ${edgeMarkup}
 </g>
 ${deviceLayersMarkup}
 <g id="${escapeSvgAttribute(textLayerId)}">
+${textLayerMarkup.join("\n")}
 </g>
 <g id="${escapeSvgAttribute(measurementLayerId)}">
 ${measurementMarkup}

@@ -82,8 +82,8 @@ export function exportSvgLayerScriptMarkup(includeScript: boolean) {
     return !layerId || layerState[layerId] !== false;
   }
   function exportSvgApplyLayerVisibility() {
-    root.querySelectorAll("[data-export-node-id][data-export-layer-id]").forEach((node) => {
-      const layerId = node.getAttribute("data-export-layer-id") || "";
+    root.querySelectorAll("[layer-id]").forEach((node) => {
+      const layerId = node.getAttribute("layer-id") || "";
       node.style.display = exportSvgLayerVisible(layerId) ? "" : "none";
     });
     root.querySelectorAll("[data-export-edge-id]").forEach((edge) => {
@@ -139,20 +139,20 @@ export function exportDeviceMetadataAttributes(node: ModelNode) {
   return [
     `idx="${escapeXml(node.params.idx ?? "")}"`,
     `name="${escapeXml(node.name)}"`,
-    `data-export-device-id="${escapeXml(node.id)}"`,
-    `data-export-device-idx="${escapeXml(node.params.idx ?? "")}"`,
-    `data-export-device-name="${escapeXml(node.name)}"`,
-    `data-export-device-kind="${escapeXml(node.kind)}"`
+    `dev-id="${escapeXml(node.id)}"`,
+    `dev-idx="${escapeXml(node.params.idx ?? "")}"`,
+    `dev-name="${escapeXml(node.name)}"`,
+    `dev-kind="${escapeXml(node.kind)}"`
   ].join(" ");
 }
 
 export function exportMeasurementGroupMetadataAttributes(node: ModelNode, group: MeasurementGroup) {
   return [
     `data-export-measurement-group-id="${escapeXml(group.id)}"`,
-    `data-export-device-id="${escapeXml(node.id)}"`,
-    `data-export-device-idx="${escapeXml(node.params.idx ?? "")}"`,
-    `data-export-device-name="${escapeXml(node.name)}"`,
-    `data-export-device-kind="${escapeXml(node.kind)}"`,
+    `dev-id="${escapeXml(node.id)}"`,
+    `dev-idx="${escapeXml(node.params.idx ?? "")}"`,
+    `dev-name="${escapeXml(node.name)}"`,
+    `dev-kind="${escapeXml(node.kind)}"`,
     `data-export-measurement-terminal-id="${escapeXml(group.terminalId ?? "")}"`
   ].join(" ");
 }
@@ -173,12 +173,10 @@ export function exportMeasurementItemMetadataAttributes(
     `data-export-measurement-unit="${escapeXml(display.unit)}"`,
     `data-export-measurement-group-id="${escapeXml(group.id)}"`,
     `conn-dev="${escapeXml(node.id)}"`,
-    `dev_idx="${escapeXml(node.params.idx ?? "")}"`,
-    `dev_name="${escapeXml(node.name)}"`,
-    `data-export-device-id="${escapeXml(node.id)}"`,
-    `data-export-device-idx="${escapeXml(node.params.idx ?? "")}"`,
-    `data-export-device-name="${escapeXml(node.name)}"`,
-    `data-export-device-kind="${escapeXml(node.kind)}"`
+    `dev-id="${escapeXml(node.id)}"`,
+    `dev-idx="${escapeXml(node.params.idx ?? "")}"`,
+    `dev-name="${escapeXml(node.name)}"`,
+    `dev-kind="${escapeXml(node.kind)}"`
   ].join(" ");
 }
 
