@@ -226,8 +226,10 @@ describe("SVG export", () => {
       expect(useTag).not.toContain("dev-idx=");
       expect(useTag).not.toContain("dev-name=");
       expect(useTag).not.toContain("dev-kind=");
-      expect(useTag).toContain('layer-id="layer-default"');
+      expect(useTag).not.toContain("layer-id=");
     }
+    expect(svg).toContain('<g id="switch-open" class="export-device" node-id="switch-open" layer-id="layer-default"');
+    expect(svg).toContain('<g id="switch-closed" class="export-device" node-id="switch-closed" layer-id="layer-default"');
   });
 
   test("exports custom device terminal stubs to the inner three-quarter drawing frame", () => {
@@ -275,7 +277,11 @@ describe("SVG export", () => {
     expect(svg).toContain('<g id="Other_Layer">');
     expect(svg).toContain('<symbol id="symbol_ACGenerator_ac-source_default"');
     expect(svg).toContain(`viewBox="${-generator.size.width / 2} ${-generator.size.height / 2} ${generator.size.width} ${generator.size.height}" overflow="visible"`);
-    expect(svg).toContain(`<use id="source-1" class="export-node" href="#symbol_ACGenerator_ac-source_default" x="${generator.position.x - generator.size.width / 2}" y="${generator.position.y - generator.size.height / 2}" width="${generator.size.width}" height="${generator.size.height}" layer-id="layer-default"`);
+    expect(svg).toContain(`<g id="source-1" class="export-device" node-id="source-1" layer-id="layer-default"`);
+    expect(svg).toContain(`dev-id="source-1"`);
+    expect(svg).toContain(`dev-kind="ac-source"`);
+    expect(svg).toContain(`transform="translate(${generator.position.x} ${generator.position.y})"`);
+    expect(svg).toContain(`<use class="export-node" href="#symbol_ACGenerator_ac-source_default" x="${-generator.size.width / 2}" y="${-generator.size.height / 2}" width="${generator.size.width}" height="${generator.size.height}"/>`);
     expect(svg).not.toContain('data-export-node-id="source-1"');
     expect(svg).toContain('dev-id="source-1"');
     expect(svg).toContain('dev-kind="ac-source"');
@@ -294,6 +300,30 @@ describe("SVG export", () => {
 
     const ids = Array.from(svg.matchAll(/\sid="([^"]+)"/g), (match) => match[1]);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  test("groups each exported device use and terminals under one device group", () => {
+    const source = { ...createDefaultNode("ac-source", { x: 120, y: 140 }), id: "source-device" };
+    const breaker = { ...createDefaultNode("ac-breaker", { x: 280, y: 140 }), id: "breaker-device" };
+
+    const svg = buildSvgDocument([source, breaker], [], { width: 420, height: 260 });
+    const sourceGroupStart = svg.indexOf('<g id="source-device" class="export-device"');
+    const breakerGroupStart = svg.indexOf('<g id="breaker-device" class="export-device"');
+    const sourceUseStart = svg.indexOf('<use class="export-node" href="#symbol_ACGenerator_ac-source_default"', sourceGroupStart);
+    const sourceTerminalStart = svg.indexOf('<g class="export-terminal ac"', sourceGroupStart);
+    const sourceUseTag = svg.slice(sourceUseStart, svg.indexOf("/>", sourceUseStart) + 2);
+
+    expect(sourceGroupStart).toBeGreaterThan(-1);
+    expect(breakerGroupStart).toBeGreaterThan(sourceGroupStart);
+    expect(sourceUseStart).toBeGreaterThan(sourceGroupStart);
+    expect(sourceUseStart).toBeLessThan(breakerGroupStart);
+    expect(sourceTerminalStart).toBeGreaterThan(sourceUseStart);
+    expect(sourceTerminalStart).toBeLessThan(breakerGroupStart);
+    expect(sourceUseTag).not.toContain(" id=");
+    expect(sourceUseTag).not.toContain("node-id=");
+    expect(sourceUseTag).not.toContain("layer-id=");
+    expect(sourceUseTag).not.toContain("dev-id=");
+    expect(svg).not.toContain("export-node-terminal-layer");
   });
 
   test("exports the actual device glyph markup for built-in devices", () => {

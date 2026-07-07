@@ -701,7 +701,8 @@ export function createRenderMultiNodeDragOverlay(__appScope: Record<string, any>
           const nodeIsBus = isBusNode(node);
           const terminalControlTransform = (x: number, y: number) => `translate(${x} ${y}) scale(${inverseScaleX} ${inverseScaleY})`;
           const terminalStubDashArray = svgStrokeDashArray(node.params.strokeStyle);
-          const measurementMarkup = buildMeasurementGroupsMarkup(node);
+          const previewNode = originalPosition === node.position ? node : { ...node, position: originalPosition };
+          const measurementMarkup = buildMeasurementGroupsMarkup(previewNode);
           return (
             <g
               key={`multi-drag-preview-node-${node.id}`}

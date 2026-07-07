@@ -3294,13 +3294,13 @@ ${scopedBackgroundSvg}
       }
       const terminalOverlay = terminalMarkup
         ? `
-<g class="export-node-terminal-layer" layer-id="${escapeXml(layerId)}" transform="translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})"${svgDisplayAttribute(layerVisible(layerId))}>
   <g class="export-node-terminals" transform="${geometryTransform}">
   ${terminalMarkup}
-  </g>
-</g>`
+  </g>`
         : "";
-      nodeLayerMarkup.get(typeLayerId)?.push(`<use id="${escapeXml(useId)}" class="export-node${exportButtonClass}" href="#${escapeXml(symbolId)}" x="${formatSvgNumber(node.position.x - node.size.width / 2)}" y="${formatSvgNumber(node.position.y - node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}" layer-id="${escapeXml(layerId)}"${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}/>${terminalOverlay}`);
+      nodeLayerMarkup.get(typeLayerId)?.push(`<g id="${escapeXml(useId)}" class="export-device${exportButtonClass}" node-id="${escapeXml(node.id)}" layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""} transform="translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})"${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}>
+  <use class="export-node" href="#${escapeXml(symbolId)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}"/>${terminalOverlay}
+</g>`);
   });
   const measurementConfig = canvasSize.measurementConfig ?? DEFAULT_MEASUREMENT_CONFIG;
   const measurements = canvasSize.measurements ?? EMPTY_PROJECT_MEASUREMENTS;

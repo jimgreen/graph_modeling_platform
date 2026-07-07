@@ -3807,7 +3807,8 @@ export function createBuildSingleNodeDragPreviewNodeMarkup(__appScope: Record<st
     const imageMarkup = buildNodePreviewImageMarkup(node, `single-node-drag-preview-clip-${node.id}`);
     const terminalMarkup = buildSvgTerminalMarkup(node, colorDisplayMode, colorPalette);
     const labelMarkup = buildSvgNodeLabelMarkup(node);
-    const measurementMarkup = buildMeasurementGroupsMarkup(node);
+    const previewNode = originalPosition === node.position ? node : { ...node, position: originalPosition };
+    const measurementMarkup = buildMeasurementGroupsMarkup(previewNode);
     return `<g class="single-node-drag-preview-node ${nodeIsBus ? "bus-node" : ""}" transform="translate(${formatSvgNumber(originalPosition.x)} ${formatSvgNumber(originalPosition.y)})">
   <title>${escapeXml(node.name)}</title>
   <g class="node-geometry" transform="${escapeXml(nodeGeometryTransform(node))}">

@@ -4,11 +4,16 @@ import { describe, expect, test, vi } from "vitest";
 
 import {
   createBeginMeasurementDrag,
+  createRenderMultiNodeDragOverlay,
+  createUpdateMeasurementDrag,
   measurementProfileItemsComplianceMessage,
   measurementTypeComplianceMessage
 } from "./appExtracted/appGraphMeasurementFactories";
 import { createRenderDeviceDefinitionMeasurementPanel } from "./appExtracted/appProjectCanvasFactories";
-import { createSetImperativeSingleNodeDragOrigin } from "./appExtracted/appSelectionDragFactories";
+import {
+  createBuildSingleNodeDragPreviewNodeMarkup,
+  createSetImperativeSingleNodeDragOrigin
+} from "./appExtracted/appSelectionDragFactories";
 import { createRenderMeasurementGroup } from "./appExtracted/appToolbarHookFactories";
 
 describe("measurement canvas interactions", () => {
@@ -176,6 +181,183 @@ describe("measurement canvas interactions", () => {
       startPoint: { x: 120, y: 80 }
     });
     expect(setPointerCapture).toHaveBeenCalledWith(7);
+  });
+
+  test("moves a routable line measurement group by updating its offset", () => {
+    const pushUndoSnapshot = vi.fn();
+    const setMeasurementDrag = vi.fn();
+    let projectMeasurements: any = {
+      version: 1,
+      groups: [
+        {
+          id: "line-measurement",
+          nodeId: "line-node",
+          anchor: "custom",
+          offset: { x: 12, y: -8 },
+          visible: true,
+          items: []
+        }
+      ]
+    };
+    const setProjectMeasurements = vi.fn((updater: any) => {
+      projectMeasurements = typeof updater === "function" ? updater(projectMeasurements) : updater;
+    });
+    const updateMeasurementDrag = createUpdateMeasurementDrag({
+      measurementDrag: {
+        groupId: "line-measurement",
+        historyCaptured: false,
+        pointerId: 9,
+        startOffset: { x: 12, y: -8 },
+        startPoint: { x: 100, y: 100 }
+      },
+      measurementOffsetScaleForNode: () => ({ x: 2, y: 4 }),
+      nodeById: new Map([
+        [
+          "line-node",
+          {
+            id: "line-node",
+            kind: "ac-routable-line",
+            params: {},
+            position: { x: 200, y: 160 },
+            size: { width: 160, height: 80 }
+          }
+        ]
+      ]),
+      projectMeasurements,
+      pushUndoSnapshot,
+      screenToSvgPoint: vi.fn(() => ({ x: 140, y: 180 })),
+      setMeasurementDrag,
+      setProjectMeasurements,
+      svgRef: { current: {} }
+    });
+
+    const moved = updateMeasurementDrag({
+      pointerId: 9,
+      clientX: 20,
+      clientY: 30,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn()
+    } as any);
+
+    expect(moved).toBe(true);
+    expect(pushUndoSnapshot).toHaveBeenCalledTimes(1);
+    expect(setMeasurementDrag).toHaveBeenCalledWith(expect.objectContaining({ historyCaptured: true }));
+    expect(projectMeasurements.groups[0]).toMatchObject({
+      anchor: "custom",
+      offset: { x: 32, y: 12 }
+    });
+  });
+
+  test("builds single node drag measurement markup from the original node position", () => {
+    const currentNode = {
+      id: "line-node",
+      name: "交流线路（自适应）",
+      kind: "ac-routable-line",
+      params: {},
+      position: { x: 360, y: 240 },
+      size: { width: 180, height: 60 },
+      terminals: []
+    };
+    const buildMeasurementGroupsMarkup = vi.fn(() => "<g class=\"measurement-group\"></g>");
+    const buildSingleNodeDragPreviewNodeMarkup = createBuildSingleNodeDragPreviewNodeMarkup({
+      DeviceGlyph: () => null,
+      buildMeasurementGroupsMarkup,
+      buildNodePreviewImageMarkup: () => "",
+      buildSvgNodeLabelMarkup: () => "",
+      buildSvgTerminalMarkup: () => "",
+      colorDisplayMode: "default",
+      colorPalette: {},
+      escapeXml: (value: string) => value,
+      formatSvgNumber: (value: number) => String(value),
+      isBusNode: () => false,
+      isMultiNodeMoveState: () => false,
+      isStaticNode: () => false,
+      nodeById: new Map([["line-node", currentNode]]),
+      nodeGeometryTransform: () => "",
+      renderSvgElementMarkup: () => "",
+      resolveNodeStateVisual: () => null,
+      visibleNodeIdSet: new Set(["line-node"])
+    } as any);
+
+    const markup = buildSingleNodeDragPreviewNodeMarkup({
+      nodeIds: ["line-node"],
+      originalPositions: { "line-node": { x: 120, y: 80 } }
+    } as any);
+
+    expect(markup).toContain('class="single-node-drag-preview-node');
+    expect(buildMeasurementGroupsMarkup).toHaveBeenCalledWith(
+      expect.objectContaining({ position: { x: 120, y: 80 } })
+    );
+  });
+
+  test("builds multi node drag measurement markup from each original node position", () => {
+    const currentNode = {
+      id: "line-node",
+      name: "交流线路（自适应）",
+      kind: "ac-routable-line",
+      params: {},
+      position: { x: 360, y: 240 },
+      size: { width: 180, height: 60 },
+      terminals: []
+    };
+    const buildMeasurementGroupsMarkup = vi.fn(() => "<g class=\"measurement-group\"></g>");
+    const renderMultiNodeDragOverlay = createRenderMultiNodeDragOverlay({
+      MemoDeviceGlyph: () => null,
+      buildMeasurementGroupsMarkup,
+      circle: "circle",
+      clipPath: "clipPath",
+      colorDisplayMode: "default",
+      colorPalette: {},
+      connectionLineStyle: () => undefined,
+      dragging: {
+        nodeIds: ["line-node"],
+        originalPositions: { "line-node": { x: 120, y: 80 } },
+        overlayPreview: {
+          bounds: null,
+          edgeRoutes: [],
+          ghostRoutes: [],
+          dynamicEdgePreviewEdges: [],
+          movedNodeIds: new Set(["line-node"]),
+          draggedEdgeIds: new Set(),
+          movedBusNodeIds: new Set()
+        }
+      },
+      draggingRef: { current: null },
+      g: "g",
+      getNodeScaleX: () => 1,
+      getNodeScaleY: () => 1,
+      getTerminalDisplayColor: () => "#111827",
+      image: "image",
+      isBusNode: () => false,
+      isMultiNodeMoveState: () => true,
+      isRoutableLineDeviceKind: () => true,
+      isStaticNode: () => false,
+      line: "line",
+      multiNodeDragOverlayDeltaRef: { current: { x: 0, y: 0 } },
+      multiNodeDragOverlayRef: { current: null },
+      nodeById: new Map([["line-node", currentNode]]),
+      nodeForegroundImage: () => "",
+      nodeGeometryTransform: () => "",
+      nodeImage: () => "",
+      nodeImageContentTransform: () => "",
+      path: "path",
+      rect: "rect",
+      resolveNodeStateVisual: () => null,
+      svgStrokeDashArray: () => "",
+      terminalRenderLocalPoint: () => ({ x: 0, y: 0 }),
+      terminalStubSegment: () => ({ from: { x: 0, y: 0 }, to: { x: 0, y: 0 } }),
+      terminalStubStrokeWidth: () => 1,
+      title: "title",
+      updateMultiNodeDragOverlayTransform: vi.fn(),
+      visibleNodeIdSet: new Set(["line-node"])
+    } as any);
+
+    const overlay = renderMultiNodeDragOverlay();
+
+    expect(overlay).not.toBeNull();
+    expect(buildMeasurementGroupsMarkup).toHaveBeenCalledWith(
+      expect.objectContaining({ position: { x: 120, y: 80 } })
+    );
   });
 
   test("renders dragged origin measurement groups as non-interactive ghosts", () => {
