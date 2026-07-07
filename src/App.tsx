@@ -3924,11 +3924,30 @@ const applyLayerAssignmentDialog = createApplyLayerAssignmentDialog(__appScope);
 const rotateSelectedLayoutUnits = createRotateSelectedLayoutUnits(__appScope); Object.assign(__appScope, { rotateSelectedLayoutUnits });
 const mirrorSelectedNodes = createMirrorSelectedNodes(__appScope); Object.assign(__appScope, { mirrorSelectedNodes });
 const updateCanvasSize = createUpdateCanvasSize(__appScope); Object.assign(__appScope, { updateCanvasSize });
-// 收紧画布到刚好包裹所有设备：以内容包围盒尺寸重设画布，复用 updateCanvasSize（含 editMode 守卫、undo、超出节点夹紧）
+// 收紧画布：平移内容使包围盒左上角对齐到 (GAP, GAP)，再以包围盒尺寸 + 2*GAP 重设画布，四边均留间隙
 const shrinkCanvasToFitContent = () => {
-  const { calculateModelContentSize, edges, nodes, routedEdges, updateCanvasSize } = __appScope;
-  const contentSize = calculateModelContentSize(nodes, edges, routedEdges, 0);
-  updateCanvasSize(contentSize.width, contentSize.height);
+  const { canvasWidth, canvasHeight, edges, nodes, routedEdges, translateNodeBy, translateEdgeBy, shiftCachedRoutesForCanvasOrigin, clampNodePositionToBounds, clampEdgeGeometryToBounds, setGraphArrays, pushUndoSnapshot, requireEditMode, applyCanvasBounds } = __appScope;
+  if (!requireEditMode("收紧画布")) {
+    return;
+  }
+  const bounds = calculateModelGeometryBounds(nodes, routedEdges, 0);
+  const GAP = MOVE_BOUNDARY_GUARD;
+  const width = clampCanvasDimension(bounds ? Math.ceil(bounds.right - bounds.left + 2 * GAP) : MIN_CANVAS_WIDTH, MIN_CANVAS_WIDTH, MAX_CANVAS_WIDTH, DEFAULT_CANVAS_WIDTH);
+  const height = clampCanvasDimension(bounds ? Math.ceil(bounds.bottom - bounds.top + 2 * GAP) : MIN_CANVAS_HEIGHT, MIN_CANVAS_HEIGHT, MAX_CANVAS_HEIGHT, DEFAULT_CANVAS_HEIGHT);
+  const shift = bounds ? { x: Math.round(GAP - bounds.left), y: Math.round(GAP - bounds.top) } : { x: 0, y: 0 };
+  const shifted = shift.x !== 0 || shift.y !== 0;
+  if (width === canvasWidth && height === canvasHeight && !shifted) {
+    return;
+  }
+  pushUndoSnapshot();
+  const nextBounds = { width, height };
+  const nextNodes = nodes.map((node) => clampNodePositionToBounds(shifted ? translateNodeBy(node, shift) : node, nextBounds));
+  const nextEdges = edges.map((edge) => clampEdgeGeometryToBounds(shifted ? translateEdgeBy(edge, shift) : edge, nextBounds));
+  if (shifted) {
+    shiftCachedRoutesForCanvasOrigin(shift);
+  }
+  setGraphArrays(nextNodes, nextEdges);
+  applyCanvasBounds(nextBounds);
 };
 Object.assign(__appScope, { shrinkCanvasToFitContent });
 const commitCanvasSizeDraft = createCommitCanvasSizeDraft(__appScope); Object.assign(__appScope, { commitCanvasSizeDraft });
