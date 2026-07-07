@@ -3941,7 +3941,10 @@ const shrinkCanvasToFitContent = () => {
   }
   pushUndoSnapshot();
   const nextBounds = { width, height };
-  const nextNodes = nodes.map((node) => clampNodePositionToBounds(shifted ? translateNodeBy(node, shift) : node, nextBounds));
+  const nextNodes = nodes.map((node) => {
+    const moved = shifted ? translateNodeBy(node, shift) : node;
+    return { ...moved, position: clampNodePositionToBounds(moved, nextBounds) };
+  });
   const nextEdges = edges.map((edge) => clampEdgeGeometryToBounds(shifted ? translateEdgeBy(edge, shift) : edge, nextBounds));
   if (shifted) {
     shiftCachedRoutesForCanvasOrigin(shift);
