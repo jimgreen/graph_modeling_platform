@@ -3039,6 +3039,20 @@ export function stableSvgMarkupChunks<T>(
   return nextChunks.map(({ key, markup }) => ({ key, markup }));
 }
 
+const BACKGROUND_PAGE_EXPORT_ID_PREFIX = "export_bg_";
+
+function prefixNestedSvgDocumentIds(svg: string, prefix: string) {
+  return svg
+    .replace(/(\s)id="([^"]+)"/g, (_match, leadingSpace, id) => `${leadingSpace}id="${escapeXml(`${prefix}${id}`)}"`)
+    .replace(/(\s)(href|xlink:href)="#([^"]+)"/g, (_match, leadingSpace, attributeName, id) => `${leadingSpace}${attributeName}="#${escapeXml(`${prefix}${id}`)}"`)
+    .replace(/url\(#([^)]+)\)/g, (_match, id) => `url(#${escapeXml(`${prefix}${id}`)})`);
+}
+
+function nestedSvgDocumentRoot(svg: string, width: number, height: number) {
+  const root = `<svg class="export-background-page-svg" x="0" y="0" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" preserveAspectRatio="xMidYMid meet" viewBox="0,0,${formatSvgNumber(width)},${formatSvgNumber(height)}">`;
+  return svg.replace(/<svg\b[^>]*>/iu, root);
+}
+
 export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: CanvasRenderOptions = { width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT }) {
   const imageAssets = readImageAssets();
   const imageExportPathById = canvasSize.imageExportPathById ?? {};
@@ -3053,6 +3067,45 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
   const escapedBackgroundColor = escapeXml(backgroundColor);
   const colorDisplayMode = canvasSize.colorDisplayMode ?? "energy";
   const colorPalette = normalizeColorPalette(canvasSize.colorPalette ?? DEFAULT_COLOR_PALETTE);
+  const buildBackgroundPageExportMarkup = () => {
+    const backgroundPage = canvasSize.backgroundPage;
+    if (!backgroundPage) {
+      return "";
+    }
+    const backgroundProject = backgroundPage.project;
+    const backgroundBounds = backgroundPage.backgroundBounds ?? {
+      width: backgroundProject?.canvasWidth ?? canvasSize.width,
+      height: backgroundProject?.canvasHeight ?? canvasSize.height
+    };
+    const backgroundWidth = Math.max(1, Number(backgroundBounds.width) || canvasSize.width);
+    const backgroundHeight = Math.max(1, Number(backgroundBounds.height) || canvasSize.height);
+    const backgroundNodes = backgroundPage.nodes ?? backgroundProject?.nodes ?? [];
+    const backgroundEdges = backgroundPage.edges ?? backgroundProject?.edges ?? [];
+    const backgroundSvg = buildSvgDocument(backgroundNodes, backgroundEdges, {
+      width: backgroundWidth,
+      height: backgroundHeight,
+      backgroundColor: backgroundPage.backgroundColor ?? backgroundProject?.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND,
+      backgroundImage: backgroundPage.backgroundImageUrl ?? backgroundProject?.canvasBackgroundImage ?? "",
+      backgroundImageFit: backgroundProject?.canvasBackgroundImageFit,
+      imageExportPathById,
+      colorDisplayMode,
+      colorPalette,
+      deviceTemplates: canvasSize.deviceTemplates
+    });
+    const scopedBackgroundSvg = nestedSvgDocumentRoot(
+      prefixNestedSvgDocumentIds(backgroundSvg, BACKGROUND_PAGE_EXPORT_ID_PREFIX),
+      backgroundWidth,
+      backgroundHeight
+    );
+    const transform = backgroundPage.transform ?? backgroundPageCanvasTransform(
+      { width: backgroundWidth, height: backgroundHeight },
+      { width: canvasSize.width, height: canvasSize.height }
+    );
+    return `<g class="export-background-page-layer" transform="${escapeXml(transform)}" pointer-events="none">
+${scopedBackgroundSvg}
+<rect class="export-background-page-frame" x="0" y="0" width="${formatSvgNumber(backgroundWidth)}" height="${formatSvgNumber(backgroundHeight)}" fill="transparent" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="10 8" vector-effect="non-scaling-stroke" pointer-events="none"/>
+</g>`;
+  };
   const normalizedLayers = normalizeModelLayers(canvasSize.layers, nodes, canvasSize.activeLayerId);
   const exportNodes = orderNodesByModelLayer(nodes, normalizedLayers);
   const activeExportLayerId = normalizedLayers.some((layer) => layer.id === canvasSize.activeLayerId)
@@ -3280,6 +3333,7 @@ ${backgroundImage ? svgImageContentMarkup(backgroundImage, {
     patternId: exportSvgUniqueId("canvas_background_image_pattern", usedSvgIds, "canvas_background_image_pattern"),
     className: "export-canvas-background-image"
   }) : ""}`;
+  const backgroundPageMarkup = buildBackgroundPageExportMarkup();
   const deviceLayerMarkup = Array.from(nodeTypeLayerIds.entries())
     .map(([layerKey, layerId]) => `<g id="${escapeXml(layerId)}" device-type="${escapeXml(layerKey)}">
 ${(nodeLayerMarkup.get(layerId) ?? []).join("\n")}
@@ -3295,6 +3349,7 @@ ${exportLayerDefinitionsMarkup}
 <g id="${rootId}">
 <g id="${escapeXml(backgroundLayerId)}">
 ${backgroundMarkup}
+${backgroundPageMarkup}
 </g>
 <g id="${escapeXml(segmentLayerId)}">
 ${edgeMarkup}

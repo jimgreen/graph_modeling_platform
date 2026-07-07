@@ -509,8 +509,14 @@ describe("scheme file persistence", () => {
     expect(textLayer).toContain('class="export-node-label horizontal" transform="translate(10 64)"');
     expect(textLayer).toContain(">LOAD-1</text>");
     expect(measurementLayer).toContain('class="export-measurement-group measurement-group"');
-    expect(measurementLayer).toContain('data-export-measurement-name="P主"');
-    expect(measurementLayer).toContain('data-export-measurement-source-point="server-load.activePower"');
+    expect(measurementLayer).toContain('m-name="P主"');
+    expect(measurementLayer).toContain('m-field="server-load.activePower"');
+    expect(measurementLayer).toContain('m-type="activePower"');
+    expect(measurementLayer).toContain('m-value="1"');
+    expect(measurementLayer).toContain('dev-id="server-load"');
+    expect(measurementLayer).toContain('dev-idx="LOAD-1"');
+    expect(measurementLayer).toContain('dev-name="负荷A"');
+    expect(measurementLayer).not.toContain("data-export-measurement-");
     expect(svg).toContain('source-dev-id="server-source"');
     expect(svg).toContain('target-dev-id="server-load"');
     expect(useTags).toHaveLength(3);

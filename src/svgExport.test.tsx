@@ -124,6 +124,54 @@ describe("SVG export", () => {
     expect(svg).toContain('href="node-fg.png"');
   });
 
+  test("exports the rendered background page under the current model graphics", () => {
+    const backgroundBus = {
+      ...createDefaultNode("ac-bus", { x: 160, y: 120 }),
+      id: "background-bus",
+      name: "背景母线"
+    };
+    backgroundBus.params = {
+      ...backgroundBus.params,
+      idx: "BG-1",
+      _labelText: "背景母线"
+    };
+    const currentText = {
+      ...createDefaultNode("static-text", { x: 160, y: 120 }),
+      id: "current-title",
+      name: "当前页面"
+    };
+    currentText.params = {
+      ...currentText.params,
+      text: "当前页面"
+    };
+
+    const svg = buildSvgDocument([currentText], [], {
+      width: 320,
+      height: 240,
+      backgroundPage: {
+        nodes: [backgroundBus],
+        edges: [],
+        backgroundBounds: { width: 640, height: 480 },
+        backgroundColor: "#e2e8f0",
+        transform: "translate(0 0) scale(0.5)"
+      }
+    } as any);
+
+    const backgroundIndex = svg.indexOf('class="export-background-page-layer"');
+    const currentNodeIndex = svg.indexOf('id="current-title"');
+
+    expect(backgroundIndex).toBeGreaterThan(-1);
+    expect(currentNodeIndex).toBeGreaterThan(backgroundIndex);
+    expect(svg).toContain('class="export-background-page-frame"');
+    expect(svg).toContain('fill="#e2e8f0"');
+    const backgroundSymbolId = svg.match(/id="(export_bg_symbol_[^"]+_ac-bus_default)"/)?.[1] ?? "";
+    expect(backgroundSymbolId).toBeTruthy();
+    expect(svg).toContain(`href="#${backgroundSymbolId}"`);
+    expect(svg).toContain('id="export_bg_background-bus"');
+    expect(svg).toContain("背景母线");
+    expect(svg).toContain("当前页面");
+  });
+
   test("exports custom multi-state visual overrides from template definitions", () => {
     const template: DeviceTemplate = {
       ...DEVICE_LIBRARY.find((item) => item.kind === "ac-switch")!,
@@ -365,23 +413,28 @@ describe("SVG export", () => {
     expect(svg).toContain('class="export-node-label horizontal" transform="translate(10 64)"');
     expect(svg).toContain(">LOAD-1</text>");
     expect(svg).toContain('class="export-measurement-group measurement-group" conn-dev="load-export" transform="translate(180 70)"');
-    expect(svg).toContain('data-export-measurement-name="P主"');
-    expect(svg).toContain('data-export-measurement-source-point="load-export.activePower"');
-    expect(svg).toContain('data-export-measurement-unit="kW"');
+    expect(svg).toContain('m-name="P主"');
+    expect(svg).toContain('m-field="load-export.activePower"');
+    expect(svg).toContain('m-unit="kW"');
     expect(svg).toContain('class="export-measurement-label measurement-label"');
     expect(svg).toContain('class="export-measurement-value measurement-value"');
     expect(svg).toContain('class="export-measurement-unit measurement-unit"');
-    expect(svg).toContain('data-export-measurement-text-role="label"');
-    expect(svg).toContain('data-export-measurement-text-role="value"');
-    expect(svg).toContain('data-export-measurement-text-role="unit"');
-    expect(svg).toContain('data-export-measurement-value="1"');
+    expect(svg).toContain('m-text="label"');
+    expect(svg).toContain('m-text="value"');
+    expect(svg).toContain('m-text="unit"');
+    expect(svg).toContain('m-value="1"');
+    expect(svg).toContain('m-type="activePower"');
     expect(svg).toContain('measure_type="activePower"');
     const valueText = svg.match(/<text id="measurement_m-active_value" class="export-measurement-value measurement-value"[^>]*>--<\/text>/)?.[0] ?? "";
+    expect(valueText).toContain('m-value="1"');
+    expect(valueText).toContain('m-id="m-active"');
+    expect(valueText).toContain('m-name="P主"');
+    expect(valueText).toContain('m-type="activePower"');
+    expect(valueText).toContain('m-field="load-export.activePower"');
     expect(valueText).toContain('dev-id="load-export"');
     expect(valueText).toContain('dev-idx="LOAD-1"');
     expect(valueText).toContain('dev-name="负荷A"');
-    expect(valueText).toContain('data-export-measurement-type-id="activePower"');
-    expect(valueText).toContain('data-export-measurement-name="P主"');
+    expect(svg).not.toContain("data-export-measurement-");
     expect(svg).not.toContain("data-export-device-id");
     expect(svg).not.toContain("data-export-device-idx");
     expect(svg).not.toContain("data-export-device-name");
@@ -445,8 +498,10 @@ describe("SVG export", () => {
     expect(textLayer).toContain('class="export-node-label horizontal" transform="translate(10 64)"');
     expect(textLayer).toContain(">LOAD-1</text>");
     expect(measurementLayer).toContain('class="export-measurement-group measurement-group"');
-    expect(measurementLayer).toContain('data-export-measurement-name="P主"');
-    expect(measurementLayer).toContain('data-export-measurement-source-point="layered-text-load.activePower"');
+    expect(measurementLayer).toContain('m-name="P主"');
+    expect(measurementLayer).toContain('m-field="layered-text-load.activePower"');
+    expect(measurementLayer).toContain('m-value="1"');
+    expect(measurementLayer).not.toContain("data-export-measurement-");
   });
 
   test("exports static layer buttons with standalone SVG layer switching logic", () => {

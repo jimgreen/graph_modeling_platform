@@ -148,12 +148,12 @@ export function exportDeviceMetadataAttributes(node: ModelNode) {
 
 export function exportMeasurementGroupMetadataAttributes(node: ModelNode, group: MeasurementGroup) {
   return [
-    `data-export-measurement-group-id="${escapeXml(group.id)}"`,
+    `m-group="${escapeXml(group.id)}"`,
     `dev-id="${escapeXml(node.id)}"`,
     `dev-idx="${escapeXml(node.params.idx ?? "")}"`,
     `dev-name="${escapeXml(node.name)}"`,
     `dev-kind="${escapeXml(node.kind)}"`,
-    `data-export-measurement-terminal-id="${escapeXml(group.terminalId ?? "")}"`
+    `m-terminal="${escapeXml(group.terminalId ?? "")}"`
   ].join(" ");
 }
 
@@ -165,13 +165,14 @@ export function exportMeasurementItemMetadataAttributes(
 ) {
   const measurementName = (item.name ?? display.label ?? item.measurementTypeId).trim();
   return [
-    `data-export-measurement-item-id="${escapeXml(item.id)}"`,
-    `data-export-measurement-name="${escapeXml(measurementName)}"`,
-    `data-export-measurement-type-id="${escapeXml(item.measurementTypeId)}"`,
-    `data-export-measurement-source-point="${escapeXml(item.sourcePoint)}"`,
-    `data-export-measurement-role="${escapeXml(item.role ?? "")}"`,
-    `data-export-measurement-unit="${escapeXml(display.unit)}"`,
-    `data-export-measurement-group-id="${escapeXml(group.id)}"`,
+    `m-id="${escapeXml(item.id)}"`,
+    `m-name="${escapeXml(measurementName)}"`,
+    `m-type="${escapeXml(item.measurementTypeId)}"`,
+    `m-field="${escapeXml(item.sourcePoint)}"`,
+    `m-role="${escapeXml(item.role ?? "")}"`,
+    `m-unit="${escapeXml(display.unit)}"`,
+    `m-group="${escapeXml(group.id)}"`,
+    `m-terminal="${escapeXml(group.terminalId ?? "")}"`,
     `conn-dev="${escapeXml(node.id)}"`,
     `dev-id="${escapeXml(node.id)}"`,
     `dev-idx="${escapeXml(node.params.idx ?? "")}"`,
@@ -266,11 +267,11 @@ export function buildExportMeasurementGroupMarkup(
       return textId ? ` id="${escapeXml(textId)}"` : "";
     };
     const labelMarkup = row.labelText
-      ? `<text${textIdAttribute("label", "measurement_label")} class="export-measurement-label measurement-label" data-export-measurement-text-role="label" ${commonAttributes} x="${formatSvgNumber(textX)}">${escapeXml(row.labelText)}</text>`
+      ? `<text${textIdAttribute("label", "measurement_label")} class="export-measurement-label measurement-label" m-text="label" ${commonAttributes} x="${formatSvgNumber(textX)}">${escapeXml(row.labelText)}</text>`
       : "";
-    const valueMarkup = `<text${textIdAttribute("value", "measurement_value")} class="export-measurement-value measurement-value" data-export-measurement-text-role="value" data-export-measurement-value="1" ${commonAttributes} x="${formatSvgNumber(valueX)}">${escapeXml(row.valueText)}</text>`;
+    const valueMarkup = `<text${textIdAttribute("value", "measurement_value")} class="export-measurement-value measurement-value" m-text="value" m-value="1" ${commonAttributes} x="${formatSvgNumber(valueX)}">${escapeXml(row.valueText)}</text>`;
     const unitMarkup = row.unitText
-      ? `<text${textIdAttribute("unit", "measurement_unit")} class="export-measurement-unit measurement-unit" data-export-measurement-text-role="unit" ${commonAttributes} x="${formatSvgNumber(unitX)}">${escapeXml(row.unitText)}</text>`
+      ? `<text${textIdAttribute("unit", "measurement_unit")} class="export-measurement-unit measurement-unit" m-text="unit" ${commonAttributes} x="${formatSvgNumber(unitX)}">${escapeXml(row.unitText)}</text>`
       : "";
     return `${labelMarkup}${valueMarkup}${unitMarkup}`;
   }).join("");

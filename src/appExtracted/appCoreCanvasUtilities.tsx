@@ -1631,6 +1631,15 @@ export type CanvasRenderOptions = CanvasBounds & {
   backgroundColor?: string;
   backgroundImage?: string;
   backgroundImageFit?: string;
+  backgroundPage?: {
+    nodes?: ModelNode[];
+    edges?: Edge[];
+    project?: ProjectFile;
+    backgroundBounds?: CanvasBounds;
+    backgroundColor?: string;
+    backgroundImageUrl?: string;
+    transform?: string;
+  } | null;
   imageExportPathById?: Record<string, string>;
   colorDisplayMode?: ColorDisplayMode;
   colorPalette?: ColorPalette;

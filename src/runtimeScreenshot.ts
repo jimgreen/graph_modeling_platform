@@ -174,6 +174,7 @@ export async function serializeScreenshot(
           deviceTemplates: appScope.libraryTemplates,
           layers: appScope.layers,
           activeLayerId: appScope.activeLayerId,
+          backgroundPage: appScope.backgroundPageRender,
           measurements: appScope.projectMeasurements,
           measurementConfig: appScope.measurementConfig
         })

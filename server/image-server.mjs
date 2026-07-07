@@ -1856,19 +1856,34 @@ function buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, us
     const valueX = textX + labelWidth + (row.labelText ? textGap : 0);
     const unitX = valueX + valueWidth + (row.unitText ? textGap : 0);
     const itemBaseId = `measurement_${row.item?.id ?? row.item?.measurementTypeId ?? "item"}`;
-    const itemMetadata = `measure_type="${escapeSvgAttribute(row.item?.measurementTypeId ?? "")}" data-export-measurement-item-id="${escapeSvgAttribute(row.item?.id ?? "")}" data-export-measurement-name="${escapeSvgAttribute(measurementName)}" data-export-measurement-type-id="${escapeSvgAttribute(row.item?.measurementTypeId ?? "")}" data-export-measurement-source-point="${escapeSvgAttribute(row.item?.sourcePoint ?? "")}" data-export-measurement-role="${escapeSvgAttribute(row.item?.role ?? "")}" data-export-measurement-unit="${escapeSvgAttribute(row.display.unit)}" data-export-measurement-group-id="${escapeSvgAttribute(group.id ?? "")}" conn-dev="${escapeSvgAttribute(node.id ?? "")}" dev-id="${escapeSvgAttribute(node.id ?? "")}" dev-idx="${escapeSvgAttribute(node.params?.idx ?? "")}" dev-name="${escapeSvgAttribute(node.name ?? "")}" dev-kind="${escapeSvgAttribute(node.kind ?? "")}"`;
+    const itemMetadata = [
+      `measure_type="${escapeSvgAttribute(row.item?.measurementTypeId ?? "")}"`,
+      `m-id="${escapeSvgAttribute(row.item?.id ?? "")}"`,
+      `m-name="${escapeSvgAttribute(measurementName)}"`,
+      `m-type="${escapeSvgAttribute(row.item?.measurementTypeId ?? "")}"`,
+      `m-field="${escapeSvgAttribute(row.item?.sourcePoint ?? "")}"`,
+      `m-role="${escapeSvgAttribute(row.item?.role ?? "")}"`,
+      `m-unit="${escapeSvgAttribute(row.display.unit)}"`,
+      `m-group="${escapeSvgAttribute(group.id ?? "")}"`,
+      `m-terminal="${escapeSvgAttribute(group.terminalId ?? "")}"`,
+      `conn-dev="${escapeSvgAttribute(node.id ?? "")}"`,
+      `dev-id="${escapeSvgAttribute(node.id ?? "")}"`,
+      `dev-idx="${escapeSvgAttribute(node.params?.idx ?? "")}"`,
+      `dev-name="${escapeSvgAttribute(node.name ?? "")}"`,
+      `dev-kind="${escapeSvgAttribute(node.kind ?? "")}"`
+    ].join(" ");
     const textStyle = `y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeSvgAttribute(row.display.color)}" font-family="${escapeSvgAttribute(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeSvgAttribute(row.display.fontWeight)}" font-style="${escapeSvgAttribute(row.display.fontStyle)}" text-decoration="${escapeSvgAttribute(row.display.textDecoration)}"`;
     const textIdAttribute = (suffix, fallback) => ` id="${escapeSvgAttribute(uniqueSvgId(`${itemBaseId}_${suffix}`, usedIds, fallback))}"`;
     const labelMarkup = row.labelText
-      ? `<text${textIdAttribute("label", "measurement_label")} class="export-measurement-label measurement-label" data-export-measurement-text-role="label" ${itemMetadata} ${textStyle} x="${formatSvgNumber(textX)}">${escapeSvgText(row.labelText)}</text>`
+      ? `<text${textIdAttribute("label", "measurement_label")} class="export-measurement-label measurement-label" m-text="label" ${itemMetadata} ${textStyle} x="${formatSvgNumber(textX)}">${escapeSvgText(row.labelText)}</text>`
       : "";
-    const valueMarkup = `<text${textIdAttribute("value", "measurement_value")} class="export-measurement-value measurement-value" data-export-measurement-text-role="value" data-export-measurement-value="1" ${itemMetadata} ${textStyle} x="${formatSvgNumber(valueX)}">${escapeSvgText(row.valueText)}</text>`;
+    const valueMarkup = `<text${textIdAttribute("value", "measurement_value")} class="export-measurement-value measurement-value" m-text="value" m-value="1" ${itemMetadata} ${textStyle} x="${formatSvgNumber(valueX)}">${escapeSvgText(row.valueText)}</text>`;
     const unitMarkup = row.unitText
-      ? `<text${textIdAttribute("unit", "measurement_unit")} class="export-measurement-unit measurement-unit" data-export-measurement-text-role="unit" ${itemMetadata} ${textStyle} x="${formatSvgNumber(unitX)}">${escapeSvgText(row.unitText)}</text>`
+      ? `<text${textIdAttribute("unit", "measurement_unit")} class="export-measurement-unit measurement-unit" m-text="unit" ${itemMetadata} ${textStyle} x="${formatSvgNumber(unitX)}">${escapeSvgText(row.unitText)}</text>`
       : "";
     return `${labelMarkup}${valueMarkup}${unitMarkup}`;
   }).join("");
-  return `<g class="export-measurement-group measurement-group" conn-dev="${escapeSvgAttribute(node.id ?? "")}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" data-export-measurement-group-id="${escapeSvgAttribute(group.id ?? "")}" dev-id="${escapeSvgAttribute(node.id ?? "")}" dev-idx="${escapeSvgAttribute(node.params?.idx ?? "")}" dev-name="${escapeSvgAttribute(node.name ?? "")}" dev-kind="${escapeSvgAttribute(node.kind ?? "")}" data-export-measurement-terminal-id="${escapeSvgAttribute(group.terminalId ?? "")}">
+  return `<g class="export-measurement-group measurement-group" conn-dev="${escapeSvgAttribute(node.id ?? "")}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" m-group="${escapeSvgAttribute(group.id ?? "")}" dev-id="${escapeSvgAttribute(node.id ?? "")}" dev-idx="${escapeSvgAttribute(node.params?.idx ?? "")}" dev-name="${escapeSvgAttribute(node.name ?? "")}" dev-kind="${escapeSvgAttribute(node.kind ?? "")}" m-terminal="${escapeSvgAttribute(group.terminalId ?? "")}">
 <title>${escapeSvgText(`${node.name ?? ""} 动态量测`)}</title>
 <rect class="measurement-group-bg" x="${formatSvgNumber(-width / 2)}" y="${formatSvgNumber(-height / 2)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" rx="4" fill="${escapeSvgAttribute(group.backgroundColor ?? "rgba(255, 255, 255, 0.84)")}" stroke="${escapeSvgAttribute(group.borderColor ?? "rgba(100, 116, 139, 0.36)")}" stroke-width="${formatSvgNumber(measurementBorderWidth(group))}"${dashAttribute}/>
 ${rowsMarkup}

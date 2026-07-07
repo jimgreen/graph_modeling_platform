@@ -15,6 +15,7 @@ import {
   createRouteSegmentPointerDistance,
   createSaveCustomDeviceTemplate,
   createSaveDeviceDefinitionVisualDraft,
+  createSvgExportReferencedImageHrefById,
   createOpenStateIconDrawingDialog,
   createStateIconDrawingKeyDown,
   createStartStateIconDrawingDrag,
@@ -35,6 +36,64 @@ afterEach(() => {
 });
 
 describe("manual bend interaction helpers", () => {
+  test("collects referenced images from the rendered background page for svg export", () => {
+    const backendImageIdFromHref = (href: string) => {
+      const match = /\/api\/images\/([^/?#]+)/.exec(href);
+      return match ? decodeURIComponent(match[1]) : "";
+    };
+    const hrefById = createSvgExportReferencedImageHrefById({
+      backendImageIdFromHref,
+      canvasBackgroundImage: "/api/images/current-canvas-bg",
+      canvasBackgroundImageAssetId: "",
+      canvasBackgroundImageUrl: "",
+      backgroundPageRender: {
+        backgroundImageUrl: "/api/images/background-page-bg",
+        nodes: [
+          {
+            kind: "background-kind",
+            params: {
+              backgroundImageAssetId: "background-node-bg-asset",
+              foregroundImageAssetId: "background-node-fg-asset",
+              backgroundImage: "/api/images/background-node-bg",
+              foregroundImage: "/api/images/background-node-fg",
+              status: "1"
+            }
+          }
+        ]
+      },
+      imageAssets: {},
+      libraryTemplateByKind: new Map([
+        ["current-kind", { kind: "current-kind" }],
+        ["background-kind", { kind: "background-kind" }]
+      ]),
+      nodes: [
+        {
+          kind: "current-kind",
+          params: {
+            backgroundImage: "/api/images/current-node-bg",
+            foregroundImage: "",
+            backgroundImageAssetId: "",
+            foregroundImageAssetId: ""
+          }
+        }
+      ],
+      resolveDeviceStateVisual: (_template: any, node: any) => node.kind === "background-kind"
+        ? { image: "/api/images/background-state-visual" }
+        : { image: "/api/images/current-state-visual" },
+      resolveStateVisualImageHref: (visual: any) => visual?.image ?? ""
+    })();
+
+    expect(hrefById.get("current-canvas-bg")).toBe("/api/images/current-canvas-bg");
+    expect(hrefById.get("current-node-bg")).toBe("/api/images/current-node-bg");
+    expect(hrefById.get("current-state-visual")).toBe("/api/images/current-state-visual");
+    expect(hrefById.get("background-page-bg")).toBe("/api/images/background-page-bg");
+    expect(hrefById.get("background-node-bg-asset")).toBe("/api/images/background-node-bg-asset");
+    expect(hrefById.get("background-node-fg-asset")).toBe("/api/images/background-node-fg-asset");
+    expect(hrefById.get("background-node-bg")).toBe("/api/images/background-node-bg");
+    expect(hrefById.get("background-node-fg")).toBe("/api/images/background-node-fg");
+    expect(hrefById.get("background-state-visual")).toBe("/api/images/background-state-visual");
+  });
+
   test("syncs existing canvas nodes when a matching template visual definition changes", () => {
     const node: any = {
       id: "node-1",

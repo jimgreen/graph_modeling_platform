@@ -1740,7 +1740,7 @@ export function createEnsureSavedBeforeExport(__appScope: Record<string, any>) {
 
 export function createSvgExportReferencedImageHrefById(__appScope: Record<string, any>) {
   return () => {
-  const { backendImageIdFromHref, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasBackgroundImageUrl, imageAssets, libraryTemplateByKind, nodes, resolveDeviceStateVisual, resolveStateVisualImageHref } = __appScope;
+  const { backendImageIdFromHref, backgroundPageRender, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasBackgroundImageUrl, imageAssets, libraryTemplateByKind, nodes, resolveDeviceStateVisual, resolveStateVisualImageHref } = __appScope;
     const hrefById = new Map<string, string>();
     const appendAssetId = (assetId?: string) => {
       const id = String(assetId ?? "").trim();
@@ -1755,19 +1755,25 @@ export function createSvgExportReferencedImageHrefById(__appScope: Record<string
         hrefById.set(id, value);
       }
     };
+    const appendNodeImages = (nodeList?: ModelNode[]) => {
+      for (const node of nodeList ?? []) {
+        appendAssetId(node.params.backgroundImageAssetId);
+        appendAssetId(node.params.foregroundImageAssetId);
+        appendHref(node.params.backgroundImage);
+        appendHref(node.params.foregroundImage);
+        const template = libraryTemplateByKind.get(node.kind);
+        const stateVisual = template ? resolveDeviceStateVisual(template, node) : null;
+        appendHref(resolveStateVisualImageHref(stateVisual, imageAssets));
+      }
+    };
 
     appendAssetId(canvasBackgroundImageAssetId);
     appendHref(canvasBackgroundImage);
     appendHref(canvasBackgroundImageUrl);
-    for (const node of nodes) {
-      appendAssetId(node.params.backgroundImageAssetId);
-      appendAssetId(node.params.foregroundImageAssetId);
-      appendHref(node.params.backgroundImage);
-      appendHref(node.params.foregroundImage);
-      const template = libraryTemplateByKind.get(node.kind);
-      const stateVisual = template ? resolveDeviceStateVisual(template, node) : null;
-      appendHref(resolveStateVisualImageHref(stateVisual, imageAssets));
-    }
+    appendNodeImages(nodes);
+    appendHref(backgroundPageRender?.backgroundImageUrl);
+    appendHref(backgroundPageRender?.project?.canvasBackgroundImage);
+    appendNodeImages(backgroundPageRender?.nodes ?? backgroundPageRender?.project?.nodes);
     return hrefById;
   };
 }
@@ -1814,7 +1820,7 @@ export function createLoadSvgImageExportPathById(__appScope: Record<string, any>
 
 export function createExportSvg(__appScope: Record<string, any>) {
   return async () => {
-  const { DEFAULT_CANVAS_BACKGROUND, activeLayerId, buildSvgDocument, canvasBackgroundColor, canvasBackgroundImageUrl, canvasBounds, colorDisplayMode, colorPalette, edges, ensureSavedBeforeExport, layers, libraryTemplates, loadSvgImageExportPathById, measurementConfig, nodes, projectMeasurements, projectName, safeFilePart, saveTextFile, writeOperationLog } = __appScope;
+  const { DEFAULT_CANVAS_BACKGROUND, activeLayerId, backgroundPageRender, buildSvgDocument, canvasBackgroundColor, canvasBackgroundImageUrl, canvasBounds, colorDisplayMode, colorPalette, edges, ensureSavedBeforeExport, layers, libraryTemplates, loadSvgImageExportPathById, measurementConfig, nodes, projectMeasurements, projectName, safeFilePart, saveTextFile, writeOperationLog } = __appScope;
     if (!ensureSavedBeforeExport()) {
       return;
     }
@@ -1831,6 +1837,7 @@ export function createExportSvg(__appScope: Record<string, any>) {
         deviceTemplates: libraryTemplates,
         layers,
         activeLayerId,
+        backgroundPage: backgroundPageRender,
         measurements: projectMeasurements,
         measurementConfig
       }),

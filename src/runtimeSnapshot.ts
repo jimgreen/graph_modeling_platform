@@ -397,6 +397,7 @@ export function serializeSvg(appScope: Record<string, any>): V1Result<string> {
         deviceTemplates: appScope.libraryTemplates,
         layers: appScope.layers,
         activeLayerId: appScope.activeLayerId,
+        backgroundPage: appScope.backgroundPageRender,
         measurements: appScope.projectMeasurements,
         measurementConfig: appScope.measurementConfig
       });
