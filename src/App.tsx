@@ -3924,7 +3924,7 @@ const applyLayerAssignmentDialog = createApplyLayerAssignmentDialog(__appScope);
 const rotateSelectedLayoutUnits = createRotateSelectedLayoutUnits(__appScope); Object.assign(__appScope, { rotateSelectedLayoutUnits });
 const mirrorSelectedNodes = createMirrorSelectedNodes(__appScope); Object.assign(__appScope, { mirrorSelectedNodes });
 const updateCanvasSize = createUpdateCanvasSize(__appScope); Object.assign(__appScope, { updateCanvasSize });
-// 收紧画布：平移内容使包围盒左上角对齐到 (GAP, GAP)，再以包围盒尺寸 + 2*GAP 重设画布，四边均留间隙
+// 收紧画布：以内容包围盒 + 2*GAP 重设画布，四边均留间隙；某方向达到最小值时内容在该方向居中
 const shrinkCanvasToFitContent = () => {
   const { canvasWidth, canvasHeight, edges, nodes, routedEdges, translateNodeBy, translateEdgeBy, shiftCachedRoutesForCanvasOrigin, clampNodePositionToBounds, clampEdgeGeometryToBounds, setGraphArrays, pushUndoSnapshot, requireEditMode, applyCanvasBounds } = __appScope;
   if (!requireEditMode("收紧画布")) {
@@ -3932,9 +3932,15 @@ const shrinkCanvasToFitContent = () => {
   }
   const bounds = calculateModelGeometryBounds(nodes, routedEdges, 0);
   const GAP = MOVE_BOUNDARY_GUARD;
-  const width = clampCanvasDimension(bounds ? Math.ceil(bounds.right - bounds.left + 2 * GAP) : MIN_CANVAS_WIDTH, MIN_CANVAS_WIDTH, MAX_CANVAS_WIDTH, DEFAULT_CANVAS_WIDTH);
-  const height = clampCanvasDimension(bounds ? Math.ceil(bounds.bottom - bounds.top + 2 * GAP) : MIN_CANVAS_HEIGHT, MIN_CANVAS_HEIGHT, MAX_CANVAS_HEIGHT, DEFAULT_CANVAS_HEIGHT);
-  const shift = bounds ? { x: Math.round(GAP - bounds.left), y: Math.round(GAP - bounds.top) } : { x: 0, y: 0 };
+  const contentWidth = bounds ? bounds.right - bounds.left : 0;
+  const contentHeight = bounds ? bounds.bottom - bounds.top : 0;
+  const width = clampCanvasDimension(Math.ceil(contentWidth + 2 * GAP), MIN_CANVAS_WIDTH, MAX_CANVAS_WIDTH, DEFAULT_CANVAS_WIDTH);
+  const height = clampCanvasDimension(Math.ceil(contentHeight + 2 * GAP), MIN_CANVAS_HEIGHT, MAX_CANVAS_HEIGHT, DEFAULT_CANVAS_HEIGHT);
+  // 未缩小时四边均留 GAP 间隙；某方向达到最小值时内容在该方向居中
+  const shift = bounds ? {
+    x: Math.round((width - contentWidth) / 2) - bounds.left,
+    y: Math.round((height - contentHeight) / 2) - bounds.top
+  } : { x: 0, y: 0 };
   const shifted = shift.x !== 0 || shift.y !== 0;
   if (width === canvasWidth && height === canvasHeight && !shifted) {
     return;
