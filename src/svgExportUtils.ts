@@ -1,17 +1,21 @@
 import type { ModelNode, Point } from "./model";
-import { getTerminalPoint, isStaticNode } from "./model";
+import { getTerminalPoint, isBusNode, isStaticNode } from "./model";
 import type { MeasurementGroup, MeasurementItemBinding, PlatformMeasurementConfig } from "./measurements";
 import { measurementFontScaleForNode, measurementOffsetScaleForNode, resolveMeasurementItemDisplay } from "./measurements";
 import { escapeXml, formatSvgNumber, svgStrokeDashArray } from "./svgUtils";
-import { nodeLabelText, nodeLabelFontSize, nodeLabelShouldRender, nodeLabelTextAnchor, nodeLabelTransform, nodeLabelVertical, nodeLabelVerticalSegments, nodeLabelVerticalTokenY } from "./nodeLabelUtils";
+import { nodeLabelText, nodeLabelFontSize, nodeLabelShouldRender, nodeLabelTextAnchor, nodeLabelTransform, nodeLabelVertical, nodeLabelVerticalSegments, nodeLabelVerticalTokenY, nodeLabelCanvasCenter } from "./nodeLabelUtils";
 import { clampNumber } from "./canvasViewport";
+
+function svgNodeLabelBaseAttributes(node: ModelNode) {
+  return `dominant-baseline="middle" fill="${escapeXml(node.params._labelColor || "#334155")}" font-family="${escapeXml(node.params._labelFontFamily || "Arial")}" font-size="${formatSvgNumber(nodeLabelFontSize(node))}" font-weight="${escapeXml(node.params._labelFontWeight || "500")}" font-style="${escapeXml(node.params._labelFontStyle || "normal")}" text-decoration="${escapeXml(node.params._labelTextDecoration || "none")}" paint-order="stroke" stroke="rgba(255,255,255,0.85)" stroke-width="3" stroke-linejoin="round"`;
+}
 
 function buildSvgNodeLabelTextMarkup(node: ModelNode) {
   const text = nodeLabelText(node);
   if (!text) {
     return "";
   }
-  const baseAttributes = `dominant-baseline="middle" fill="${escapeXml(node.params._labelColor || "#334155")}" font-family="${escapeXml(node.params._labelFontFamily || "Arial")}" font-size="${formatSvgNumber(nodeLabelFontSize(node))}" font-weight="${escapeXml(node.params._labelFontWeight || "500")}" font-style="${escapeXml(node.params._labelFontStyle || "normal")}" text-decoration="${escapeXml(node.params._labelTextDecoration || "none")}" paint-order="stroke" stroke="rgba(255,255,255,0.85)" stroke-width="3" stroke-linejoin="round"`;
+  const baseAttributes = svgNodeLabelBaseAttributes(node);
   if (nodeLabelVertical(node)) {
     return nodeLabelVerticalSegments(text)
       .map(
@@ -29,6 +33,31 @@ export function buildSvgNodeLabelMarkup(node: ModelNode) {
     return "";
   }
   return `<g class="export-node-label ${nodeLabelVertical(node) ? "vertical" : "horizontal"}" transform="${nodeLabelTransform(node)}">${buildSvgNodeLabelTextMarkup(node)}</g>`;
+}
+
+export function buildSvgNodeLabelTextElementsMarkup(
+  node: ModelNode,
+  id: string,
+  options: { attributes?: string; visible?: boolean } = {}
+) {
+  const text = nodeLabelText(node);
+  if (!nodeLabelShouldRender(node, true) || !text) {
+    return "";
+  }
+  const center = nodeLabelCanvasCenter(node);
+  const transform = `translate(${formatSvgNumber(center.x)} ${formatSvgNumber(center.y)})`;
+  const commonAttributes = `${options.attributes ? `${options.attributes} ` : ""}transform="${transform}" ${svgNodeLabelBaseAttributes(node)}`;
+  const stylePrefix = options.visible === false ? "display:none; " : "";
+  if (nodeLabelVertical(node)) {
+    const segments = nodeLabelVerticalSegments(text);
+    return segments
+      .map((segment, index) => {
+        const tokenId = segments.length === 1 ? id : `${id}_${index + 1}`;
+        return `<text id="${escapeXml(tokenId)}" class="export-node-label vertical node-label-vertical-token ${segment.numeric ? "numeric" : ""}" ${commonAttributes} x="0" y="${formatSvgNumber(nodeLabelVerticalTokenY(index, segments.length, node))}" text-anchor="middle" style="${stylePrefix}writing-mode: horizontal-tb; text-orientation: mixed; letter-spacing: 0;">${escapeXml(segment.text)}</text>`;
+      })
+      .join("\n");
+  }
+  return `<text id="${escapeXml(id)}" class="export-node-label horizontal" ${commonAttributes} x="0" y="0" text-anchor="${escapeXml(nodeLabelTextAnchor(node))}" style="${stylePrefix}writing-mode: horizontal-tb;">${escapeXml(text)}</text>`;
 }
 
 export function svgDisplayAttribute(visible: boolean) {
@@ -136,13 +165,15 @@ export function exportDeviceMetadataAttributes(node: ModelNode) {
   if (isStaticNode(node)) {
     return "";
   }
+  const busNodeNumber = isBusNode(node) ? node.nodeNumber || node.terminals[0]?.nodeNumber || "" : "";
   return [
     `idx="${escapeXml(node.params.idx ?? "")}"`,
     `name="${escapeXml(node.name)}"`,
     `dev-id="${escapeXml(node.id)}"`,
     `dev-idx="${escapeXml(node.params.idx ?? "")}"`,
     `dev-name="${escapeXml(node.name)}"`,
-    `dev-kind="${escapeXml(node.kind)}"`
+    `dev-kind="${escapeXml(node.kind)}"`,
+    ...(busNodeNumber ? [`node="${escapeXml(busNodeNumber)}"`] : [])
   ].join(" ");
 }
 

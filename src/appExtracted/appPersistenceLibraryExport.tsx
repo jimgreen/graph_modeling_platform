@@ -289,6 +289,7 @@ import {
   TERMINAL_TYPE_LIBRARY_LABELS,
   terminalVoltageBaseNumber,
   terminalTypeColor,
+  voltageLevelColor,
   tidyOrthogonalRoute,
   topologyCalculationMessage,
   upsertSavedProject,
@@ -515,7 +516,7 @@ import {
 } from "../staticRenderUtils";
 import { snapSingleTerminalAnchorToNearestSide, projectedProportionalScaleFromHandleDelta } from "../transformUtils";
 import { DeviceGlyph, MemoDeviceGlyph, SvgMarkupChunk } from "../DeviceGlyph";
-import { buildSvgNodeLabelMarkup, svgDisplayAttribute, exportSvgSafeId, exportSvgLayerId, exportSvgUniqueId, exportSvgLayerScriptMarkup, exportDeviceMetadataAttributes, exportMeasurementGroupMetadataAttributes, exportMeasurementItemMetadataAttributes, exportMeasurementGroupBackgroundColor, exportMeasurementGroupBorderColor, exportMeasurementGroupBorderWidth, exportMeasurementGroupBorderDashArray, exportMeasurementGroupAnchorPoint, exportMeasurementGroupLocalOffset, exportMeasurementGroupMetrics, buildExportMeasurementGroupMarkup } from "../svgExportUtils";
+import { buildSvgNodeLabelMarkup, buildSvgNodeLabelTextElementsMarkup, svgDisplayAttribute, exportSvgSafeId, exportSvgLayerId, exportSvgUniqueId, exportSvgLayerScriptMarkup, exportDeviceMetadataAttributes, exportMeasurementGroupMetadataAttributes, exportMeasurementItemMetadataAttributes, exportMeasurementGroupBackgroundColor, exportMeasurementGroupBorderColor, exportMeasurementGroupBorderWidth, exportMeasurementGroupBorderDashArray, exportMeasurementGroupAnchorPoint, exportMeasurementGroupLocalOffset, exportMeasurementGroupMetrics, buildExportMeasurementGroupMarkup } from "../svgExportUtils";
 import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_PAGE_ID, isDefaultStatePageId, createStateDraftRow, createStateDraftRowFromDefaultVisual, createDefinitionStateDraftRows, normalizeStateDraftRows, validateStateDraftRows, stateVisualFromDraftRow, activeStateDraftRow, normalizeStatePageId, stateDraftImageValue, stateVisualShapeLabel, generateStateVisualShapeImage, stateIconDrawingElementId, visibleStateIconColor, createStateIconDrawingElement, createImportedStateIconElement, svgSourceFromDataUrl, parseStateIconSvgSource, stateIconSvgElementSource, parseSvgStyleAttribute, stateIconSvgReactAttributes, stateIconSvgNodeChildren, stateIconSvgNodeToReact, stateIconSvgSourceToReactNodes, createEditableStateIconElementsFromSvgSource, createStateIconDrawingInitialElements, svgSourceToDataUrl, stateIconDrawingSvgElementMarkup, stateIconDrawingElementMarkup, stateIconDrawingToImage, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "../stateIconDrawing";
 import { fallbackComponentLibraryForCategoryLibrary, resolveTemplateComponentLibrary, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, isReservedDeviceDefinitionParamName, createDefinitionDraftRows, normalizeCustomDeviceTerminalAnchorCoordinate, projectCustomDeviceTerminalAnchorToBoundary, customDeviceTerminalAnchorKey, hasOverlappingCustomDeviceTerminalAnchors, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, createCustomDeviceDraftFromTemplate, createDefinitionVisualDraft, defaultContainerAssociationForTerminalType, isAssociationAllowedForTerminal, normalizeContainerTerminalAssociations, customDefaultDefinitions, generateCustomDeviceImage, customDeviceImageWithTerminalConnectors, customDeviceGeneratedDefaultImageCandidates, syncInheritedCustomDeviceStateVisuals, parseCustomDefinitions, screenToSvgPoint, primaryOrthogonalAxis, constrainPointToOrthogonalAxis } from "../customDeviceUtils";
 import { useBatchEditors } from "../hooks/useBatchEditors";
@@ -3147,7 +3148,185 @@ ${scopedBackgroundSvg}
   const includeLayerScript = hasLayerButtons || normalizedLayers.length > 1;
   const nodeById = new Map(exportNodes.map((node) => [node.id, node]));
   const edgeById = new Map(edges.map((edge) => [edge.id, edge]));
-  const buildBoundaryBusInternalConnectorMarkup = (edge: Edge, endpoint: "source" | "target", stroke: string) => {
+  type ExportVoltageTerminal = ModelNode["terminals"][number];
+  const isExportElectricTerminalType = (type?: TerminalType): type is "ac" | "dc" => type === "ac" || type === "dc";
+  const exportVoltageValue = (value?: string) => terminalVoltageBaseNumber(value) || "0";
+  const nonZeroExportVoltageValue = (value?: string) => {
+    const normalized = terminalVoltageBaseNumber(value);
+    return normalized && Number(normalized) !== 0 ? normalized : "";
+  };
+  const firstNonZeroExportVoltageValue = (values: Array<string | undefined>) => {
+    for (const value of values) {
+      const normalized = nonZeroExportVoltageValue(value);
+      if (normalized) {
+        return normalized;
+      }
+    }
+    return "";
+  };
+  const terminalIndexForExportVoltage = (node: ModelNode, terminal?: ExportVoltageTerminal) =>
+    terminal?.id ? node.terminals.findIndex((candidate) => candidate.id === terminal.id) : node.terminals.length === 1 ? 0 : -1;
+  const terminalSideExportVoltage = (node: ModelNode, terminalIndex: number) => {
+    if (terminalIndex < 0) {
+      return "";
+    }
+    if (terminalIndex === 0) {
+      return firstNonZeroExportVoltageValue([node.params.i_vbase, node.params.sourceVbase, node.params.highVbase]);
+    }
+    if (terminalIndex === 1) {
+      return firstNonZeroExportVoltageValue([node.params.j_vbase, node.params.targetVbase, node.params.lowVbase]);
+    }
+    if (terminalIndex === 2) {
+      return firstNonZeroExportVoltageValue([node.params.mediumVbase]);
+    }
+    if (terminalIndex === 3) {
+      return firstNonZeroExportVoltageValue([node.params.neutral_vbase]);
+    }
+    return "";
+  };
+  const terminalExportVoltage = (node: ModelNode, terminal?: ExportVoltageTerminal) => {
+    const rawTerminalVoltage = exportVoltageValue(terminal?.vbase);
+    const terminalVoltage = nonZeroExportVoltageValue(terminal?.vbase);
+    if (terminalVoltage) {
+      return terminalVoltage;
+    }
+    const sideVoltage = terminalSideExportVoltage(node, terminalIndexForExportVoltage(node, terminal));
+    if (sideVoltage) {
+      return sideVoltage;
+    }
+    if (rawTerminalVoltage !== "0") {
+      return rawTerminalVoltage;
+    }
+    return firstNonZeroExportVoltageValue([
+      node.params.vbase,
+      node.params.voltageLevel,
+      node.params.ratedVoltage,
+      node.params.voltage
+    ]) || rawTerminalVoltage;
+  };
+  const exportVoltageClassSuffix = (voltage: string) => exportVoltageValue(voltage).replace(/[^A-Za-z0-9_-]+/g, "_") || "0";
+  const exportVoltageDeviceClass = (type: "ac" | "dc", voltage: string) =>
+    `${type === "dc" ? "dcv" : "kv"}${exportVoltageClassSuffix(voltage)}`;
+  const exportVoltageLineClass = (type: "ac" | "dc", voltage: string) =>
+    `${type === "dc" ? "ldcv" : "lkv"}${exportVoltageClassSuffix(voltage)}`;
+  const exportVoltageCssColor = (color: string) => color.trim().replace(/[<>{};]/g, "") || "#64748b";
+  const voltageStyleRules = new Map<string, { type: "ac" | "dc"; voltage: string; color: string }>();
+  const addVoltageStyleRule = (type: "ac" | "dc", voltage: string, color = voltageLevelColor(voltage, type, colorPalette)) => {
+    const normalizedVoltage = exportVoltageValue(voltage);
+    voltageStyleRules.set(`${type}:${normalizedVoltage}`, { type, voltage: normalizedVoltage, color: exportVoltageCssColor(color) });
+  };
+  if (colorDisplayMode === "voltage") {
+    Object.entries(colorPalette.voltage).forEach(([key, color]) => {
+      const [maybeType, maybeVoltage] = key.split(":", 2);
+      if (maybeVoltage && (maybeType === "ac" || maybeType === "dc")) {
+        addVoltageStyleRule(maybeType, maybeVoltage, color);
+        return;
+      }
+      addVoltageStyleRule("ac", key, color);
+    });
+  }
+  const nodeVoltageDescriptor = (node: ModelNode) => {
+    if (colorDisplayMode !== "voltage" || node.params.foregroundColor) {
+      return null;
+    }
+    const terminal = node.terminals.find((candidate) => isExportElectricTerminalType(candidate.type));
+    if (!terminal || !isExportElectricTerminalType(terminal.type)) {
+      return null;
+    }
+    const voltage = terminalExportVoltage(node, terminal);
+    addVoltageStyleRule(terminal.type, voltage);
+    return { type: terminal.type, voltage };
+  };
+  const findExportDisplayTerminal = (node: ModelNode | undefined, terminalId?: string) =>
+    node?.terminals.find((terminal) => terminal.id === terminalId) ?? node?.terminals[0];
+  const edgeVoltageDescriptor = (edge: Edge | undefined) => {
+    if (colorDisplayMode !== "voltage" || !edge) {
+      return null;
+    }
+    const sourceNode = nodeById.get(edge.sourceId);
+    const targetNode = nodeById.get(edge.targetId);
+    const sourceTerminal = findExportDisplayTerminal(sourceNode, edge.sourceTerminalId);
+    const targetTerminal = findExportDisplayTerminal(targetNode, edge.targetTerminalId);
+    const type = sourceTerminal?.type ?? targetTerminal?.type;
+    if (!isExportElectricTerminalType(type)) {
+      return null;
+    }
+    const sourceVoltage = sourceNode && sourceTerminal?.type === type ? terminalExportVoltage(sourceNode, sourceTerminal) : "";
+    const targetVoltage = targetNode && targetTerminal?.type === type ? terminalExportVoltage(targetNode, targetTerminal) : "";
+    const voltage = sourceVoltage && sourceVoltage !== "0" ? sourceVoltage : targetVoltage || sourceVoltage || "0";
+    addVoltageStyleRule(type, voltage);
+    return { type, voltage };
+  };
+  exportNodes.forEach(nodeVoltageDescriptor);
+  edges.forEach(edgeVoltageDescriptor);
+  const voltageColorStyleMarkup = (() => {
+    if (colorDisplayMode !== "voltage" || voltageStyleRules.size === 0) {
+      return "";
+    }
+    const rules = ["symbol{overflow:visible}"];
+    Array.from(voltageStyleRules.values())
+      .sort((left, right) => exportVoltageDeviceClass(left.type, left.voltage).localeCompare(exportVoltageDeviceClass(right.type, right.voltage)))
+      .forEach(({ type, voltage, color }) => {
+        rules.push(`.${exportVoltageDeviceClass(type, voltage)}{fill:${color};stroke:${color};stroke-width:1;color:${color}}`);
+        rules.push(`.${exportVoltageLineClass(type, voltage)}{fill:none;stroke:${color};color:${color}}`);
+      });
+    return `<style type="text/css"><![CDATA[
+${rules.join("\n")}
+]]></style>`;
+  })();
+  const glyphColorPalette: ColorPalette = colorDisplayMode === "voltage"
+    ? {
+        ...colorPalette,
+        voltage: {
+          ...Object.fromEntries(Object.keys(colorPalette.voltage).map((key) => [key, "currentColor"])),
+          ...Object.fromEntries(Array.from(voltageStyleRules.values()).flatMap(({ type, voltage }) => [
+            [`${type}:${voltage}`, "currentColor"],
+            [voltage, "currentColor"]
+          ]))
+        }
+      }
+    : colorPalette;
+  const connectedNodeIdsByNodeTerminal = new Map<string, Map<string, Set<string>>>();
+  const addConnectedNodeId = (nodeId: string, terminalId: string | undefined, connectedNodeId: string) => {
+    const node = nodeById.get(nodeId);
+    if (!node || !connectedNodeId) {
+      return;
+    }
+    const resolvedTerminalId = terminalId || node.terminals[0]?.id || "";
+    if (!resolvedTerminalId) {
+      return;
+    }
+    let terminalConnections = connectedNodeIdsByNodeTerminal.get(nodeId);
+    if (!terminalConnections) {
+      terminalConnections = new Map();
+      connectedNodeIdsByNodeTerminal.set(nodeId, terminalConnections);
+    }
+    let connectedNodeIds = terminalConnections.get(resolvedTerminalId);
+    if (!connectedNodeIds) {
+      connectedNodeIds = new Set();
+      terminalConnections.set(resolvedTerminalId, connectedNodeIds);
+    }
+    connectedNodeIds.add(connectedNodeId);
+  };
+  for (const edge of edges) {
+    addConnectedNodeId(edge.sourceId, edge.sourceTerminalId, edge.targetId);
+    addConnectedNodeId(edge.targetId, edge.targetTerminalId, edge.sourceId);
+  }
+  const deviceEndpointConnectionAttributes = (node: ModelNode) => {
+    if (isStaticNode(node) || node.terminals.length === 0) {
+      return "";
+    }
+    const terminalConnections = connectedNodeIdsByNodeTerminal.get(node.id);
+    const connectedNodeIdsForTerminal = (terminalIndex: number) => {
+      const terminalId = node.terminals[terminalIndex]?.id;
+      if (!terminalId || !terminalConnections) {
+        return "";
+      }
+      return Array.from(terminalConnections.get(terminalId) ?? []).join(",");
+    };
+    return ` inode="${escapeXml(connectedNodeIdsForTerminal(0))}" znode="${escapeXml(connectedNodeIdsForTerminal(1))}"`;
+  };
+  const buildBoundaryBusInternalConnectorMarkup = (edge: Edge, endpoint: "source" | "target", stroke: string, voltageLineClass = "") => {
     const node = nodeById.get(endpoint === "source" ? edge.sourceId : edge.targetId);
     if (!node) {
       return "";
@@ -3163,7 +3342,7 @@ ${scopedBackgroundSvg}
     }
     const dashArray = svgStrokeDashArray(node.params.strokeStyle);
     const dashAttribute = dashArray ? ` stroke-dasharray="${escapeXml(dashArray)}"` : "";
-    return `<line class="export-boundary-bus-internal-connector" x1="${formatSvgNumber(segment.from.x)}" y1="${formatSvgNumber(segment.from.y)}" x2="${formatSvgNumber(segment.to.x)}" y2="${formatSvgNumber(segment.to.y)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(boundaryBusInternalConnectorStrokeWidth(node, segment))}" stroke-linecap="round"${dashAttribute}/>`;
+    return `<line class="export-boundary-bus-internal-connector${voltageLineClass ? ` ${voltageLineClass}` : ""}" x1="${formatSvgNumber(segment.from.x)}" y1="${formatSvgNumber(segment.from.y)}" x2="${formatSvgNumber(segment.to.x)}" y2="${formatSvgNumber(segment.to.y)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(boundaryBusInternalConnectorStrokeWidth(node, segment))}" stroke-linecap="round"${dashAttribute}/>`;
   };
   const edgeMarkup = routeEdgesForStoredRendering(exportNodes, edges, canvasSize)
     .map((route) => {
@@ -3174,14 +3353,16 @@ ${scopedBackgroundSvg}
       const sourceLayerId = sourceNode ? nodeLayerId(sourceNode) : DEFAULT_MODEL_LAYER_ID;
       const targetLayerId = targetNode ? nodeLayerId(targetNode) : DEFAULT_MODEL_LAYER_ID;
       const edgeVisible = layerVisible(sourceLayerId) && layerVisible(targetLayerId);
+      const edgeVoltage = edgeVoltageDescriptor(edge);
+      const edgeVoltageLineClass = edgeVoltage ? exportVoltageLineClass(edgeVoltage.type, edgeVoltage.voltage) : "";
       const internalConnectors = edge
-        ? [buildBoundaryBusInternalConnectorMarkup(edge, "source", stroke), buildBoundaryBusInternalConnectorMarkup(edge, "target", stroke)]
+        ? [buildBoundaryBusInternalConnectorMarkup(edge, "source", stroke, edgeVoltageLineClass), buildBoundaryBusInternalConnectorMarkup(edge, "target", stroke, edgeVoltageLineClass)]
             .filter(Boolean)
             .join("\n")
         : "";
       const edgeElementId = exportSvgUniqueId(`edge_${route.edgeId}`, usedSvgIds, "edge");
       return `<g id="${escapeXml(edgeElementId)}" class="export-edge" data-export-edge-id="${escapeXml(route.edgeId)}" data-export-source-layer-id="${escapeXml(sourceLayerId)}" data-export-target-layer-id="${escapeXml(targetLayerId)}" source-dev-id="${escapeXml(edge?.sourceId ?? "")}" target-dev-id="${escapeXml(edge?.targetId ?? "")}"${svgDisplayAttribute(edgeVisible)}>
-<path d="${route.path}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${internalConnectors ? `\n${internalConnectors}` : ""}
+<path class="export-edge-path${edgeVoltageLineClass ? ` ${edgeVoltageLineClass}` : ""}" d="${route.path}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${internalConnectors ? `\n${internalConnectors}` : ""}
 </g>`;
     })
     .join("\n");
@@ -3202,9 +3383,9 @@ ${scopedBackgroundSvg}
       const exportButtonClass = targetLayerIds.length > 0 ? " export-static-button" : "";
       const allowNodeImage = !isBusNode(node);
       const deviceMetadataAttributes = exportDeviceMetadataAttributes(node);
+      const endpointConnectionAttributes = deviceEndpointConnectionAttributes(node);
       const geometryTransform = nodeGeometryTransform(node);
       const imageContentTransform = nodeImageContentTransform(node);
-      const terminalMarkup = buildSvgTerminalMarkup(node, colorDisplayMode, colorPalette);
       const labelMarkup = buildSvgNodeLabelMarkup(node);
       const template = resolveSvgNodeTemplate(node);
       const stateDefinitions = template ? getTemplateStateDefinitions(template) : [];
@@ -3225,8 +3406,8 @@ ${scopedBackgroundSvg}
         const backgroundImageFit = stateVisualImageHref
           ? stateVisual?.imageFit ?? stateVisual?.backgroundImageFit ?? symbolNode.params.backgroundImageFit
           : symbolNode.params.backgroundImageFit;
-        const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node: symbolNode, mode: "geometry", colorDisplayMode, colorPalette, stateVisual }));
-        const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node: symbolNode, mode: "text", colorDisplayMode, colorPalette, stateVisual }));
+        const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node: symbolNode, mode: "geometry", colorDisplayMode, colorPalette: glyphColorPalette, stateVisual }));
+        const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node: symbolNode, mode: "text", colorDisplayMode, colorPalette: glyphColorPalette, stateVisual }));
         const imageMarkup = imageHref
           ? svgImageContentMarkup(imageHref, {
               x: -symbolNode.size.width / 2,
@@ -3286,21 +3467,16 @@ ${scopedBackgroundSvg}
       const activeStateKey = activeStateVisual ? `state_${activeStateVisual.value || "default"}` : "default";
       const symbolId = symbolIdByStateKey.get(activeStateKey) ?? symbolIdByStateKey.values().next().value ?? "";
       const useId = exportSvgUniqueId(node.id, usedSvgIds, "device");
+      const nodeVoltage = nodeVoltageDescriptor(node);
+      const nodeVoltageClass = nodeVoltage ? exportVoltageDeviceClass(nodeVoltage.type, nodeVoltage.voltage) : "";
       if (labelMarkup) {
         const labelWrapperId = exportSvgUniqueId(`label_${node.id}`, usedSvgIds, "node_label");
-        textLayerMarkup.push(`<g id="${escapeXml(labelWrapperId)}" class="export-node-label-layer" node-id="${escapeXml(node.id)}" layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""} transform="translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})"${svgDisplayAttribute(layerVisible(layerId))}>
-  ${labelMarkup}
-</g>`);
+        textLayerMarkup.push(buildSvgNodeLabelTextElementsMarkup(node, labelWrapperId, {
+          attributes: `node-id="${escapeXml(node.id)}" layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}`,
+          visible: layerVisible(layerId)
+        }));
       }
-      const terminalOverlay = terminalMarkup
-        ? `
-  <g class="export-node-terminals" transform="${geometryTransform}">
-  ${terminalMarkup}
-  </g>`
-        : "";
-      nodeLayerMarkup.get(typeLayerId)?.push(`<g id="${escapeXml(useId)}" class="export-device${exportButtonClass}" node-id="${escapeXml(node.id)}" layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""} transform="translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})"${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}>
-  <use class="export-node" href="#${escapeXml(symbolId)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}"/>${terminalOverlay}
-</g>`);
+      nodeLayerMarkup.get(typeLayerId)?.push(`<use id="${escapeXml(useId)}" class="export-node export-device${exportButtonClass}${nodeVoltageClass ? ` ${nodeVoltageClass}` : ""}" node-id="${escapeXml(node.id)}" layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}${endpointConnectionAttributes} transform="translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})" href="#${escapeXml(symbolId)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}"${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}/>`);
   });
   const measurementConfig = canvasSize.measurementConfig ?? DEFAULT_MEASUREMENT_CONFIG;
   const measurements = canvasSize.measurements ?? EMPTY_PROJECT_MEASUREMENTS;
@@ -3341,12 +3517,13 @@ ${(nodeLayerMarkup.get(layerId) ?? []).join("\n")}
     .join("\n");
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid meet" height="100%" width="100%" viewBox="0,0,${canvasSize.width},${canvasSize.height}" data-export-active-layer-id="${escapeXml(activeExportLayerId)}">
 <defs id="${escapeXml(defsId)}">
+${voltageColorStyleMarkup}
 ${nodeSymbolMarkup.join("\n")}
+</defs>
+<g id="${rootId}">
 <g class="export-layer-definitions" style="display:none">
 ${exportLayerDefinitionsMarkup}
 </g>
-</defs>
-<g id="${rootId}">
 <g id="${escapeXml(backgroundLayerId)}">
 ${backgroundMarkup}
 ${backgroundPageMarkup}
