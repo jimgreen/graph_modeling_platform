@@ -224,22 +224,21 @@ describe("SVG export", () => {
       expect(useTag).not.toContain("xlink:href");
       expect(useTag).not.toContain("data-export-node-id");
       expect(useTag).not.toContain("data-export-layer-id");
+      expect(useTag).not.toContain("node-id=");
     }
     expect(useTags[0]).toContain('id="switch-open"');
     expect(useTags[0]).toContain('class="export-node export-device"');
-    expect(useTags[0]).toContain('node-id="switch-open"');
     expect(useTags[0]).toContain('layer-id="layer-default"');
     expect(useTags[0]).toContain('dev-id="switch-open"');
     expect(useTags[1]).toContain('id="switch-closed"');
     expect(useTags[1]).toContain('class="export-node export-device"');
-    expect(useTags[1]).toContain('node-id="switch-closed"');
     expect(useTags[1]).toContain('layer-id="layer-default"');
     expect(useTags[1]).toContain('dev-id="switch-closed"');
     expect(svg).not.toContain('<g id="switch-open" class="export-device"');
     expect(svg).not.toContain('<g id="switch-closed" class="export-device"');
   });
 
-  test("exports terminal connections as device inode and znode attributes without visible anchors", () => {
+  test("exports topology node attributes on device uses without visible anchors", () => {
     const template: DeviceTemplate = {
       ...DEVICE_LIBRARY.find((item) => item.kind === "ac-switch")!,
       kind: "custom-export-connection-attrs" as DeviceKind,
@@ -255,24 +254,39 @@ describe("SVG export", () => {
       ...createDefaultNode("ac-source", { x: 60, y: 120 }),
       id: "source-node"
     };
+    source.terminals[0].nodeNumber = "N_SOURCE";
     const node = {
       ...createNodeFromTemplate(template, { x: 140, y: 120 }),
       id: "custom-terminal-connection-node"
     };
+    node.terminals[0].nodeNumber = "N_CUSTOM_IN";
+    node.terminals[1].nodeNumber = "N_CUSTOM_OUT";
     const load = {
       ...createDefaultNode("ac-load", { x: 240, y: 120 }),
       id: "load-node"
     };
+    load.terminals[0].nodeNumber = "N_LOAD";
     const edges: Edge[] = [
       { id: "source-device", sourceId: source.id, targetId: node.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
       { id: "device-load", sourceId: node.id, targetId: load.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
     ];
 
     const svg = buildSvgDocument([source, node, load], edges, { width: 320, height: 240, deviceTemplates: [template] });
+    const sourceTag = svgDeviceUseTag(svg, source.id);
     const deviceTag = svgDeviceUseTag(svg, node.id);
+    const loadTag = svgDeviceUseTag(svg, load.id);
 
-    expect(deviceTag).toContain('inode="source-node"');
-    expect(deviceTag).toContain('znode="load-node"');
+    expect(sourceTag).toContain('node="N_SOURCE"');
+    expect(sourceTag).not.toContain("node-id=");
+    expect(sourceTag).not.toContain("node_1=");
+    expect(deviceTag).toContain('node_1="N_CUSTOM_IN"');
+    expect(deviceTag).toContain('node_2="N_CUSTOM_OUT"');
+    expect(deviceTag).not.toContain(' node="');
+    expect(deviceTag).not.toContain("node-id=");
+    expect(deviceTag).not.toContain("inode=");
+    expect(deviceTag).not.toContain("znode=");
+    expect(loadTag).toContain('node="N_LOAD"');
+    expect(loadTag).not.toContain("node-id=");
     expect(svg).not.toContain("export-node-terminals");
     expect(svg).not.toContain('class="export-terminal');
     expect(svg).not.toContain("data-terminal-id");
@@ -304,7 +318,7 @@ describe("SVG export", () => {
     expect(svg).toContain('class="export-layer-definitions"');
     expect(svg.indexOf('class="export-layer-definitions"')).toBeGreaterThan(svg.indexOf('<g id="root_g">'));
     expect(svg).toContain(`viewBox="${-generator.size.width / 2} ${-generator.size.height / 2} ${generator.size.width} ${generator.size.height}" overflow="visible"`);
-    expect(svg).toContain(`<use id="source-1" class="export-node export-device" node-id="source-1" layer-id="layer-default"`);
+    expect(svg).toContain(`<use id="source-1" class="export-node export-device" layer-id="layer-default"`);
     expect(svg).toContain(`dev-id="source-1"`);
     expect(svg).toContain(`dev-kind="ac-source"`);
     expect(svg).toContain(`transform="translate(${generator.position.x} ${generator.position.y})"`);
@@ -315,7 +329,7 @@ describe("SVG export", () => {
     expect(svg).toContain('dev-kind="ac-source"');
     expect(svg).toContain('source-dev-id="source-1"');
     expect(svg).toContain('target-dev-id="load-1"');
-    expect(svg).toContain('node-id="source-1"');
+    expect(svgDeviceUseTag(svg, "source-1")).not.toContain("node-id=");
     expect(svg).not.toContain("data-export-device-id");
     expect(svg).not.toContain("data-export-device-idx");
     expect(svg).not.toContain("data-export-device-name");
@@ -341,7 +355,7 @@ describe("SVG export", () => {
 
     expect(sourceUseStart).toBeGreaterThan(-1);
     expect(breakerUseStart).toBeGreaterThan(sourceUseStart);
-    expect(sourceUseTag).toContain('node-id="source-device"');
+    expect(sourceUseTag).not.toContain("node-id=");
     expect(sourceUseTag).toContain('layer-id="layer-default"');
     expect(sourceUseTag).toContain('dev-id="source-device"');
     expect(sourceUseTag).toContain('href="#symbol_ACGenerator_ac-source_default"');
@@ -661,6 +675,7 @@ describe("SVG export", () => {
     expect(svg).not.toContain('stroke-linecap="round"');
     expect(svg).not.toContain('rx="');
     expect(svgDeviceUseTag(svg, "ac-bus-node-export")).toContain('node="N_BUS_1"');
+    expect(svgDeviceUseTag(svg, "ac-bus-node-export")).not.toContain("node-id=");
   });
 
   test("exports connection line colors by terminal energy type", () => {
@@ -766,6 +781,8 @@ describe("SVG export", () => {
     source.id = "dc-source-node";
     const converter = createDefaultNode("dcdc-converter", { x: 160, y: 120 });
     converter.id = "converter-node";
+    converter.terminals[0].nodeNumber = "N_CONVERTER_IN";
+    converter.terminals[1].nodeNumber = "N_CONVERTER_OUT";
     const load = createDefaultNode("dc-load", { x: 260, y: 120 });
     load.id = "dc-load-node";
     const edges: Edge[] = [
@@ -776,8 +793,11 @@ describe("SVG export", () => {
     const svg = buildSvgDocument([source, converter, load], edges, { width: 360, height: 240 });
     const converterTag = svgDeviceUseTag(svg, converter.id);
 
-    expect(converterTag).toContain('inode="dc-source-node"');
-    expect(converterTag).toContain('znode="dc-load-node"');
+    expect(converterTag).toContain('node_1="N_CONVERTER_IN"');
+    expect(converterTag).toContain('node_2="N_CONVERTER_OUT"');
+    expect(converterTag).not.toContain("node-id=");
+    expect(converterTag).not.toContain("inode=");
+    expect(converterTag).not.toContain("znode=");
     expect(svg).not.toContain("export-terminal");
   });
 

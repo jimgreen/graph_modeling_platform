@@ -1,5 +1,5 @@
 import type { ModelNode, Point } from "./model";
-import { getTerminalPoint, isBusNode, isStaticNode } from "./model";
+import { getTerminalPoint, isStaticNode } from "./model";
 import type { MeasurementGroup, MeasurementItemBinding, PlatformMeasurementConfig } from "./measurements";
 import { measurementFontScaleForNode, measurementOffsetScaleForNode, resolveMeasurementItemDisplay } from "./measurements";
 import { escapeXml, formatSvgNumber, svgStrokeDashArray } from "./svgUtils";
@@ -165,15 +165,13 @@ export function exportDeviceMetadataAttributes(node: ModelNode) {
   if (isStaticNode(node)) {
     return "";
   }
-  const busNodeNumber = isBusNode(node) ? node.nodeNumber || node.terminals[0]?.nodeNumber || "" : "";
   return [
     `idx="${escapeXml(node.params.idx ?? "")}"`,
     `name="${escapeXml(node.name)}"`,
     `dev-id="${escapeXml(node.id)}"`,
     `dev-idx="${escapeXml(node.params.idx ?? "")}"`,
     `dev-name="${escapeXml(node.name)}"`,
-    `dev-kind="${escapeXml(node.kind)}"`,
-    ...(busNodeNumber ? [`node="${escapeXml(busNodeNumber)}"`] : [])
+    `dev-kind="${escapeXml(node.kind)}"`
   ].join(" ");
 }
 

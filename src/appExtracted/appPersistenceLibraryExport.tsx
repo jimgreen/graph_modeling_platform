@@ -3286,45 +3286,20 @@ ${rules.join("\n")}
         }
       }
     : colorPalette;
-  const connectedNodeIdsByNodeTerminal = new Map<string, Map<string, Set<string>>>();
-  const addConnectedNodeId = (nodeId: string, terminalId: string | undefined, connectedNodeId: string) => {
-    const node = nodeById.get(nodeId);
-    if (!node || !connectedNodeId) {
-      return;
-    }
-    const resolvedTerminalId = terminalId || node.terminals[0]?.id || "";
-    if (!resolvedTerminalId) {
-      return;
-    }
-    let terminalConnections = connectedNodeIdsByNodeTerminal.get(nodeId);
-    if (!terminalConnections) {
-      terminalConnections = new Map();
-      connectedNodeIdsByNodeTerminal.set(nodeId, terminalConnections);
-    }
-    let connectedNodeIds = terminalConnections.get(resolvedTerminalId);
-    if (!connectedNodeIds) {
-      connectedNodeIds = new Set();
-      terminalConnections.set(resolvedTerminalId, connectedNodeIds);
-    }
-    connectedNodeIds.add(connectedNodeId);
-  };
-  for (const edge of edges) {
-    addConnectedNodeId(edge.sourceId, edge.sourceTerminalId, edge.targetId);
-    addConnectedNodeId(edge.targetId, edge.targetTerminalId, edge.sourceId);
-  }
-  const deviceEndpointConnectionAttributes = (node: ModelNode) => {
-    if (isStaticNode(node) || node.terminals.length === 0) {
+  const deviceTopologyNodeAttributes = (node: ModelNode) => {
+    if (isStaticNode(node)) {
       return "";
     }
-    const terminalConnections = connectedNodeIdsByNodeTerminal.get(node.id);
-    const connectedNodeIdsForTerminal = (terminalIndex: number) => {
-      const terminalId = node.terminals[terminalIndex]?.id;
-      if (!terminalId || !terminalConnections) {
-        return "";
-      }
-      return Array.from(terminalConnections.get(terminalId) ?? []).join(",");
-    };
-    return ` inode="${escapeXml(connectedNodeIdsForTerminal(0))}" znode="${escapeXml(connectedNodeIdsForTerminal(1))}"`;
+    if (isBusNode(node)) {
+      return ` node="${escapeXml(node.nodeNumber || node.terminals[0]?.nodeNumber || "")}"`;
+    }
+    if (node.terminals.length === 0) {
+      return "";
+    }
+    if (node.terminals.length === 1) {
+      return ` node="${escapeXml(node.terminals[0]?.nodeNumber || node.nodeNumber || "")}"`;
+    }
+    return node.terminals.map((terminal, index) => ` node_${index + 1}="${escapeXml(terminal.nodeNumber ?? "")}"`).join("");
   };
   const buildBoundaryBusInternalConnectorMarkup = (edge: Edge, endpoint: "source" | "target", stroke: string, voltageLineClass = "") => {
     const node = nodeById.get(endpoint === "source" ? edge.sourceId : edge.targetId);
@@ -3383,7 +3358,7 @@ ${rules.join("\n")}
       const exportButtonClass = targetLayerIds.length > 0 ? " export-static-button" : "";
       const allowNodeImage = !isBusNode(node);
       const deviceMetadataAttributes = exportDeviceMetadataAttributes(node);
-      const endpointConnectionAttributes = deviceEndpointConnectionAttributes(node);
+      const topologyNodeAttributes = deviceTopologyNodeAttributes(node);
       const geometryTransform = nodeGeometryTransform(node);
       const imageContentTransform = nodeImageContentTransform(node);
       const labelMarkup = buildSvgNodeLabelMarkup(node);
@@ -3476,7 +3451,7 @@ ${rules.join("\n")}
           visible: layerVisible(layerId)
         }));
       }
-      nodeLayerMarkup.get(typeLayerId)?.push(`<use id="${escapeXml(useId)}" class="export-node export-device${exportButtonClass}${nodeVoltageClass ? ` ${nodeVoltageClass}` : ""}" node-id="${escapeXml(node.id)}" layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}${endpointConnectionAttributes} transform="translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})" href="#${escapeXml(symbolId)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}"${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}/>`);
+      nodeLayerMarkup.get(typeLayerId)?.push(`<use id="${escapeXml(useId)}" class="export-node export-device${exportButtonClass}${nodeVoltageClass ? ` ${nodeVoltageClass}` : ""}" layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}${topologyNodeAttributes} transform="translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})" href="#${escapeXml(symbolId)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}"${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}/>`);
   });
   const measurementConfig = canvasSize.measurementConfig ?? DEFAULT_MEASUREMENT_CONFIG;
   const measurements = canvasSize.measurements ?? EMPTY_PROJECT_MEASUREMENTS;
