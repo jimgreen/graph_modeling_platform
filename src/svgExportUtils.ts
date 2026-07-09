@@ -169,8 +169,6 @@ export function exportDeviceMetadataAttributes(node: ModelNode) {
     `idx="${escapeXml(node.params.idx ?? "")}"`,
     `name="${escapeXml(node.name)}"`,
     `dev-id="${escapeXml(node.id)}"`,
-    `dev-idx="${escapeXml(node.params.idx ?? "")}"`,
-    `dev-name="${escapeXml(node.name)}"`,
     `dev-kind="${escapeXml(node.kind)}"`
   ].join(" ");
 }
@@ -179,8 +177,8 @@ export function exportMeasurementGroupMetadataAttributes(node: ModelNode, group:
   return [
     `m-group="${escapeXml(group.id)}"`,
     `dev-id="${escapeXml(node.id)}"`,
-    `dev-idx="${escapeXml(node.params.idx ?? "")}"`,
-    `dev-name="${escapeXml(node.name)}"`,
+    `idx="${escapeXml(node.params.idx ?? "")}"`,
+    `name="${escapeXml(node.name)}"`,
     `dev-kind="${escapeXml(node.kind)}"`,
     `m-terminal="${escapeXml(group.terminalId ?? "")}"`
   ].join(" ");
@@ -204,8 +202,8 @@ export function exportMeasurementItemMetadataAttributes(
     `m-terminal="${escapeXml(group.terminalId ?? "")}"`,
     `conn-dev="${escapeXml(node.id)}"`,
     `dev-id="${escapeXml(node.id)}"`,
-    `dev-idx="${escapeXml(node.params.idx ?? "")}"`,
-    `dev-name="${escapeXml(node.name)}"`,
+    `idx="${escapeXml(node.params.idx ?? "")}"`,
+    `name="${escapeXml(node.name)}"`,
     `dev-kind="${escapeXml(node.kind)}"`
   ].join(" ");
 }

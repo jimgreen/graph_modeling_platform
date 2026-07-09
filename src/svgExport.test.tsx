@@ -278,9 +278,12 @@ describe("SVG export", () => {
 
     expect(sourceTag).toContain('node="N_SOURCE"');
     expect(sourceTag).not.toContain("node-id=");
+    expect(sourceTag).not.toContain("node-1=");
     expect(sourceTag).not.toContain("node_1=");
-    expect(deviceTag).toContain('node_1="N_CUSTOM_IN"');
-    expect(deviceTag).toContain('node_2="N_CUSTOM_OUT"');
+    expect(deviceTag).toContain('node-1="N_CUSTOM_IN"');
+    expect(deviceTag).toContain('node-2="N_CUSTOM_OUT"');
+    expect(deviceTag).not.toContain("node_1=");
+    expect(deviceTag).not.toContain("node_2=");
     expect(deviceTag).not.toContain(' node="');
     expect(deviceTag).not.toContain("node-id=");
     expect(deviceTag).not.toContain("inode=");
@@ -476,11 +479,16 @@ describe("SVG export", () => {
     };
 
     const svg = buildSvgDocument([load], [], { width: 320, height: 220, measurements });
+    const deviceTag = svgDeviceUseTag(svg, load.id);
 
     expect(svg).toContain('dev-id="load-export"');
-    expect(svg).toContain('dev-idx="LOAD-1"');
     expect(svg).toContain('idx="LOAD-1"');
     expect(svg).toContain('name="负荷A"');
+    expect(deviceTag).toContain('dev-id="load-export"');
+    expect(deviceTag).toContain('idx="LOAD-1"');
+    expect(deviceTag).toContain('name="负荷A"');
+    expect(deviceTag).not.toContain("dev-idx=");
+    expect(deviceTag).not.toContain("dev-name=");
     expect(svg).toContain('<text id="label_load-export" class="export-node-label horizontal"');
     expect(svg).toContain('node-id="load-export" layer-id="layer-default"');
     expect(svg).toContain('transform="translate(150 164)"');
@@ -505,13 +513,17 @@ describe("SVG export", () => {
     expect(valueText).toContain('m-type="activePower"');
     expect(valueText).toContain('m-field="load-export.activePower"');
     expect(valueText).toContain('dev-id="load-export"');
-    expect(valueText).toContain('dev-idx="LOAD-1"');
-    expect(valueText).toContain('dev-name="负荷A"');
+    expect(valueText).toContain('idx="LOAD-1"');
+    expect(valueText).toContain('name="负荷A"');
+    expect(valueText).not.toContain("dev-idx=");
+    expect(valueText).not.toContain("dev-name=");
     expect(svg).not.toContain("data-export-measurement-");
     expect(svg).not.toContain("data-export-device-id");
     expect(svg).not.toContain("data-export-device-idx");
     expect(svg).not.toContain("data-export-device-name");
     expect(svg).not.toContain("data-export-device-kind");
+    expect(svg).not.toContain("dev-idx=");
+    expect(svg).not.toContain("dev-name=");
     expect(svg).toContain(">P</text>");
     expect(svg).toContain(">kW</text>");
     expect(svg).not.toContain(">P -- kW</text>");
@@ -568,8 +580,10 @@ describe("SVG export", () => {
     expect(textLayer).toContain('layer-id="layer-default"');
     expect(textLayer).toContain('node-id="layered-text-load"');
     expect(textLayer).toContain('dev-id="layered-text-load"');
-    expect(textLayer).toContain('dev-idx="LOAD-1"');
-    expect(textLayer).toContain('dev-name="负荷A"');
+    expect(textLayer).toContain('idx="LOAD-1"');
+    expect(textLayer).toContain('name="负荷A"');
+    expect(textLayer).not.toContain("dev-idx=");
+    expect(textLayer).not.toContain("dev-name=");
     expect(textLayer).toContain('transform="translate(150 164)"');
     expect(textLayer).toContain(">LOAD-1</text>");
     expect(measurementLayer).toContain('class="export-measurement-group measurement-group"');
@@ -793,8 +807,10 @@ describe("SVG export", () => {
     const svg = buildSvgDocument([source, converter, load], edges, { width: 360, height: 240 });
     const converterTag = svgDeviceUseTag(svg, converter.id);
 
-    expect(converterTag).toContain('node_1="N_CONVERTER_IN"');
-    expect(converterTag).toContain('node_2="N_CONVERTER_OUT"');
+    expect(converterTag).toContain('node-1="N_CONVERTER_IN"');
+    expect(converterTag).toContain('node-2="N_CONVERTER_OUT"');
+    expect(converterTag).not.toContain("node_1=");
+    expect(converterTag).not.toContain("node_2=");
     expect(converterTag).not.toContain("node-id=");
     expect(converterTag).not.toContain("inode=");
     expect(converterTag).not.toContain("znode=");

@@ -3299,7 +3299,7 @@ ${rules.join("\n")}
     if (node.terminals.length === 1) {
       return ` node="${escapeXml(node.terminals[0]?.nodeNumber || node.nodeNumber || "")}"`;
     }
-    return node.terminals.map((terminal, index) => ` node_${index + 1}="${escapeXml(terminal.nodeNumber ?? "")}"`).join("");
+    return node.terminals.map((terminal, index) => ` node-${index + 1}="${escapeXml(terminal.nodeNumber ?? "")}"`).join("");
   };
   const buildBoundaryBusInternalConnectorMarkup = (edge: Edge, endpoint: "source" | "target", stroke: string, voltageLineClass = "") => {
     const node = nodeById.get(endpoint === "source" ? edge.sourceId : edge.targetId);
