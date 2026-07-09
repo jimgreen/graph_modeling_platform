@@ -174,38 +174,37 @@ export function exportDeviceMetadataAttributes(node: ModelNode) {
 }
 
 export function exportMeasurementGroupMetadataAttributes(node: ModelNode, group: MeasurementGroup) {
+  const idx = String(node.params.idx ?? "").trim();
+  const terminalId = String(group.terminalId ?? "").trim();
   return [
     `m-group="${escapeXml(group.id)}"`,
     `dev-id="${escapeXml(node.id)}"`,
-    `idx="${escapeXml(node.params.idx ?? "")}"`,
+    idx ? `idx="${escapeXml(idx)}"` : "",
     `name="${escapeXml(node.name)}"`,
     `dev-kind="${escapeXml(node.kind)}"`,
-    `m-terminal="${escapeXml(group.terminalId ?? "")}"`
-  ].join(" ");
+    terminalId ? `m-terminal="${escapeXml(terminalId)}"` : ""
+  ].filter(Boolean).join(" ");
 }
 
 export function exportMeasurementItemMetadataAttributes(
-  node: ModelNode,
+  _node: ModelNode,
   group: MeasurementGroup,
   item: MeasurementItemBinding,
   display: { label: string; unit: string }
 ) {
   const measurementName = (item.name ?? display.label ?? item.measurementTypeId).trim();
+  const role = String(item.role ?? "").trim();
+  const terminalId = String(group.terminalId ?? "").trim();
   return [
     `m-id="${escapeXml(item.id)}"`,
     `m-name="${escapeXml(measurementName)}"`,
     `m-type="${escapeXml(item.measurementTypeId)}"`,
     `m-field="${escapeXml(item.sourcePoint)}"`,
-    `m-role="${escapeXml(item.role ?? "")}"`,
+    role ? `m-role="${escapeXml(role)}"` : "",
     `m-unit="${escapeXml(display.unit)}"`,
     `m-group="${escapeXml(group.id)}"`,
-    `m-terminal="${escapeXml(group.terminalId ?? "")}"`,
-    `conn-dev="${escapeXml(node.id)}"`,
-    `dev-id="${escapeXml(node.id)}"`,
-    `idx="${escapeXml(node.params.idx ?? "")}"`,
-    `name="${escapeXml(node.name)}"`,
-    `dev-kind="${escapeXml(node.kind)}"`
-  ].join(" ");
+    terminalId ? `m-terminal="${escapeXml(terminalId)}"` : ""
+  ].filter(Boolean).join(" ");
 }
 
 export const exportMeasurementGroupBackgroundColor = (group: MeasurementGroup) => group.backgroundColor ?? "rgba(255, 255, 255, 0.84)";
@@ -288,7 +287,7 @@ export function buildExportMeasurementGroupMarkup(
     const unitX = valueX + valueWidth + (row.unitText ? textGap : 0);
     const itemBaseId = `measurement_${row.item.id}`;
     const itemMetadata = exportMeasurementItemMetadataAttributes(node, group, row.item, row.display);
-    const commonAttributes = `measure_type="${escapeXml(row.item.measurementTypeId)}" ${itemMetadata} y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
+    const commonAttributes = `y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
     const textIdAttribute = (suffix: string, fallback: string) => {
       const textId = usedSvgIds ? exportSvgUniqueId(`${itemBaseId}_${suffix}`, usedSvgIds, fallback) : "";
       return textId ? ` id="${escapeXml(textId)}"` : "";
@@ -296,13 +295,13 @@ export function buildExportMeasurementGroupMarkup(
     const labelMarkup = row.labelText
       ? `<text${textIdAttribute("label", "measurement_label")} class="export-measurement-label measurement-label" m-text="label" ${commonAttributes} x="${formatSvgNumber(textX)}">${escapeXml(row.labelText)}</text>`
       : "";
-    const valueMarkup = `<text${textIdAttribute("value", "measurement_value")} class="export-measurement-value measurement-value" m-text="value" m-value="1" ${commonAttributes} x="${formatSvgNumber(valueX)}">${escapeXml(row.valueText)}</text>`;
+    const valueMarkup = `<text${textIdAttribute("value", "measurement_value")} class="export-measurement-value measurement-value" m-text="value" m-value="1" ${itemMetadata} ${commonAttributes} x="${formatSvgNumber(valueX)}">${escapeXml(row.valueText)}</text>`;
     const unitMarkup = row.unitText
       ? `<text${textIdAttribute("unit", "measurement_unit")} class="export-measurement-unit measurement-unit" m-text="unit" ${commonAttributes} x="${formatSvgNumber(unitX)}">${escapeXml(row.unitText)}</text>`
       : "";
     return `${labelMarkup}${valueMarkup}${unitMarkup}`;
   }).join("");
-  return `<g class="export-measurement-group measurement-group" conn-dev="${escapeXml(node.id)}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group)}>
+  return `<g class="export-measurement-group measurement-group" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group)}>
   <title>${escapeXml(`${node.name} 动态量测`)}</title>
   <rect class="measurement-group-bg" x="${formatSvgNumber(-metrics.width / 2)}" y="${formatSvgNumber(-metrics.height / 2)}" width="${formatSvgNumber(metrics.width)}" height="${formatSvgNumber(metrics.height)}" rx="4" fill="${escapeXml(exportMeasurementGroupBackgroundColor(group))}" stroke="${escapeXml(exportMeasurementGroupBorderColor(group))}" stroke-width="${formatSvgNumber(exportMeasurementGroupBorderWidth(group))}"${borderDashAttribute}/>
   ${rowsMarkup}
