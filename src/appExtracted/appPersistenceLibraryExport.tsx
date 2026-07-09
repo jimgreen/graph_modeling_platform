@@ -2661,6 +2661,30 @@ export function buildSvgTerminalMarkup(node: ModelNode, colorDisplayMode: ColorD
     .join("\n");
 }
 
+function buildSvgDeviceConnectorMarkup(node: ModelNode, colorDisplayMode: ColorDisplayMode = "energy", colorPalette: ColorPalette = DEFAULT_COLOR_PALETTE) {
+  if (isBusNode(node) || isStaticNode(node) || isRoutableLineDeviceKind(node.kind)) {
+    return "";
+  }
+  const nodeScaleX = getNodeScaleX(node);
+  const nodeScaleY = getNodeScaleY(node);
+  const dashArray = svgStrokeDashArray(node.params.strokeStyle);
+  const dashAttribute = dashArray ? ` stroke-dasharray="${escapeXml(dashArray)}"` : "";
+  const connectors = node.terminals
+    .map((terminal) => {
+      const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
+      const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size);
+      const strokeWidth = terminalStubStrokeWidth(node, terminal);
+      const terminalColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
+      return `<g transform="translate(${formatSvgNumber(renderPoint.x)} ${formatSvgNumber(renderPoint.y)})">
+  <line class="export-device-connector ${terminal.type}" x1="${formatSvgNumber(stub.from.x)}" y1="${formatSvgNumber(stub.from.y)}" x2="${formatSvgNumber(stub.to.x)}" y2="${formatSvgNumber(stub.to.y)}" stroke="${escapeXml(terminalColor)}" stroke-width="${formatSvgNumber(strokeWidth)}" stroke-linecap="round"${dashAttribute}/>
+</g>`;
+    })
+    .join("\n");
+  return connectors ? `<g class="export-device-connector-layer">
+${connectors}
+</g>` : "";
+}
+
 export type CustomComponentTreeProps = {
   libraries: string[];
   filteredByComponentLibrary: Record<string, { section: string; templates: DeviceTemplate[] }[]>;
@@ -3383,6 +3407,7 @@ ${rules.join("\n")}
           : symbolNode.params.backgroundImageFit;
         const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node: symbolNode, mode: "geometry", colorDisplayMode, colorPalette: glyphColorPalette, stateVisual }));
         const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node: symbolNode, mode: "text", colorDisplayMode, colorPalette: glyphColorPalette, stateVisual }));
+        const connectorMarkup = buildSvgDeviceConnectorMarkup(symbolNode, colorDisplayMode, colorPalette);
         const imageMarkup = imageHref
           ? svgImageContentMarkup(imageHref, {
               x: -symbolNode.size.width / 2,
@@ -3413,6 +3438,7 @@ ${rules.join("\n")}
   <g class="export-node-geometry" transform="${geometryTransform}">
   ${glyphMarkup}
   ${glyphTextMarkup}
+  ${connectorMarkup}
   </g>
   <g class="export-node-upright-content" transform="${imageContentTransform}">
   ${isStaticNode(symbolNode) ? imageMarkup : ""}

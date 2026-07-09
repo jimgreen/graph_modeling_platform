@@ -295,6 +295,29 @@ describe("SVG export", () => {
     expect(svg).not.toContain("data-terminal-id");
   });
 
+  test("exports terminal connector strokes in device symbols without anchor dots", () => {
+    const breaker = {
+      ...createDefaultNode("ac-box-breaker-vertical", { x: 180, y: 160 }),
+      id: "vertical-breaker"
+    };
+    const bus = {
+      ...createDefaultNode("ac-bus", { x: 180, y: 70 }),
+      id: "bus-node"
+    };
+    const edges: Edge[] = [
+      { id: "breaker-bus", sourceId: breaker.id, targetId: bus.id, sourceTerminalId: "t1", targetTerminalId: "t1" }
+    ];
+
+    const svg = buildSvgDocument([breaker, bus], edges, { width: 360, height: 240 });
+
+    expect(svg).toContain("export-device-connector");
+    expect(svg).toContain('<line class="export-device-connector ac"');
+    expect(svg).not.toContain("export-terminal-stub");
+    expect(svg).not.toContain("export-terminal-dot");
+    expect(svg).not.toContain('class="export-terminal');
+    expect(svg).not.toContain("data-terminal-id");
+  });
+
   test("exports template-compatible root, defs, typed layers and unique ids", () => {
     const generator = { ...createDefaultNode("ac-source", { x: 120, y: 140 }), id: "source-1" };
     const load = { ...createDefaultNode("ac-load", { x: 280, y: 140 }), id: "load-1" };
