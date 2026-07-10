@@ -2676,13 +2676,11 @@ function buildSvgDeviceConnectorMarkup(node: ModelNode, colorDisplayMode: ColorD
       const strokeWidth = terminalStubStrokeWidth(node, terminal);
       const terminalColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
       return `<g transform="translate(${formatSvgNumber(renderPoint.x)} ${formatSvgNumber(renderPoint.y)})">
-  <line class="export-device-connector ${terminal.type}" x1="${formatSvgNumber(stub.from.x)}" y1="${formatSvgNumber(stub.from.y)}" x2="${formatSvgNumber(stub.to.x)}" y2="${formatSvgNumber(stub.to.y)}" stroke="${escapeXml(terminalColor)}" stroke-width="${formatSvgNumber(strokeWidth)}" stroke-linecap="round"${dashAttribute}/>
+  <line x1="${formatSvgNumber(stub.from.x)}" y1="${formatSvgNumber(stub.from.y)}" x2="${formatSvgNumber(stub.to.x)}" y2="${formatSvgNumber(stub.to.y)}" stroke="${escapeXml(terminalColor)}" stroke-width="${formatSvgNumber(strokeWidth)}" stroke-linecap="round"${dashAttribute}/>
 </g>`;
     })
     .join("\n");
-  return connectors ? `<g class="export-device-connector-layer">
-${connectors}
-</g>` : "";
+  return connectors;
 }
 
 export type CustomComponentTreeProps = {
@@ -3436,13 +3434,12 @@ ${rules.join("\n")}
       const exportButtonAttributes = targetLayerIds.length > 0
         ? ` data-export-button-action="layer" data-export-button-target-layer-id="${escapeXml(targetLayerIds[0])}" data-export-button-target-layer-ids="${escapeXml(targetLayerIds.join(","))}"`
         : "";
-      const exportButtonClass = targetLayerIds.length > 0 ? " export-static-button" : "";
+      const exportButtonClass = targetLayerIds.length > 0 ? "export-static-button" : "";
       const allowNodeImage = !isBusNode(node);
       const deviceMetadataAttributes = exportDeviceMetadataAttributes(node);
       const topologyNodeAttributes = deviceTopologyNodeAttributes(node);
       const voltageAttributes = nodeVoltageAttributes(node);
       const geometryTransform = nodeGeometryTransform(node);
-      const imageContentTransform = nodeImageContentTransform(node);
       const labelMarkup = buildSvgNodeLabelMarkup(node);
       const template = resolveSvgNodeTemplate(node);
       const stateDefinitions = template ? getTemplateStateDefinitions(template) : [];
@@ -3496,12 +3493,10 @@ ${rules.join("\n")}
             ? `<rect x="${-symbolNode.size.width / 2}" y="${-symbolNode.size.height / 2}" width="${symbolNode.size.width}" height="${symbolNode.size.height}" rx="8" fill="#ffffff" stroke="none"/>`
             : "";
         return `<title>${escapeXml(template?.label ?? exportNodeType(symbolNode))}</title>
-  <g class="export-node-geometry" transform="${geometryTransform}">
+  <g transform="${geometryTransform}">
   ${glyphMarkup}
   ${glyphTextMarkup}
   ${connectorMarkup}
-  </g>
-  <g class="export-node-upright-content" transform="${imageContentTransform}">
   ${isStaticNode(symbolNode) ? imageMarkup : ""}
   ${imageCoverMarkup}
   ${allowNodeImage && !isStaticNode(symbolNode) ? imageMarkup : ""}
@@ -3531,14 +3526,16 @@ ${rules.join("\n")}
       const useId = exportSvgUniqueId(node.id, usedSvgIds, "device");
       const nodeVoltage = nodeVoltageDescriptor(node);
       const nodeVoltageClass = nodeVoltage ? exportVoltageDeviceClass(nodeVoltage.type, nodeVoltage.voltage) : "";
+      const nodeClassName = [exportButtonClass, nodeVoltageClass].filter(Boolean).join(" ");
+      const nodeClassAttribute = nodeClassName ? ` class="${escapeXml(nodeClassName)}"` : "";
       if (labelMarkup) {
         const labelWrapperId = exportSvgUniqueId(`label_${node.id}`, usedSvgIds, "node_label");
         textLayerMarkup.push(buildSvgNodeLabelTextElementsMarkup(node, labelWrapperId, {
-          attributes: `node-id="${escapeXml(node.id)}" layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}`,
+          attributes: `layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}`,
           visible: layerVisible(layerId)
         }));
       }
-      nodeLayerMarkup.get(typeLayerId)?.push(`<use id="${escapeXml(useId)}" class="export-node export-device${exportButtonClass}${nodeVoltageClass ? ` ${nodeVoltageClass}` : ""}" layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}${topologyNodeAttributes}${voltageAttributes} transform="translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})" href="#${escapeXml(symbolId)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}"${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}/>`);
+      nodeLayerMarkup.get(typeLayerId)?.push(`<use id="${escapeXml(useId)}"${nodeClassAttribute} layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}${topologyNodeAttributes}${voltageAttributes} transform="translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})" href="#${escapeXml(symbolId)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}"${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}/>`);
   });
   const measurementConfig = canvasSize.measurementConfig ?? DEFAULT_MEASUREMENT_CONFIG;
   const measurements = canvasSize.measurements ?? EMPTY_PROJECT_MEASUREMENTS;
@@ -3550,14 +3547,14 @@ ${rules.join("\n")}
         return "";
       }
       const layerId = nodeLayerId(node);
-      const groupMarkup = buildExportMeasurementGroupMarkup(node, group, measurementConfig, usedSvgIds);
+      const groupMarkup = buildExportMeasurementGroupMarkup(node, group, measurementConfig, usedSvgIds, {
+        layerId,
+        visible: layerVisible(layerId)
+      });
       if (!groupMarkup) {
         return "";
       }
-      const measurementWrapperId = exportSvgUniqueId(`measurement_${group.id}`, usedSvgIds, "measurement");
-      return `<g id="${escapeXml(measurementWrapperId)}" class="export-measurement-layer" layer-id="${escapeXml(layerId)}"${svgDisplayAttribute(layerVisible(layerId))}>
-${groupMarkup}
-</g>`;
+      return groupMarkup;
     })
     .filter(Boolean)
     .join("\n");

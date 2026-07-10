@@ -1704,7 +1704,7 @@ function labelTextAnchor(node) {
   return anchor === "start" || anchor === "middle" || anchor === "end" ? anchor : "middle";
 }
 
-function buildServerSvgNodeLabelMarkup(node) {
+function buildServerSvgNodeLabelMarkup(node, id, attributes = "") {
   if (isStaticNode(node) || node?.params?._labelVisible === "0") {
     return "";
   }
@@ -1716,6 +1716,8 @@ function buildServerSvgNodeLabelMarkup(node) {
   const scaleY = Math.abs(nodeScaleY(node)) || 1;
   const offsetX = numericNodeParam(node, "_labelX", 0) * scaleX;
   const offsetY = numericNodeParam(node, "_labelY", Math.round((node?.size?.height ?? 48) / 2 + 22)) * scaleY;
+  const centerX = Number(node?.position?.x ?? 0) + offsetX;
+  const centerY = Number(node?.position?.y ?? 0) + offsetY;
   const fontSize = numericNodeParam(node, "_labelFontSize", 14) * Math.sqrt(scaleX * scaleY);
   const rotation = normalizeLabelRotation(node?.params?._labelRotation);
   const vertical = rotation === 90 || rotation === 270;
@@ -1732,12 +1734,16 @@ function buildServerSvgNodeLabelMarkup(node) {
     `stroke-width="3"`,
     `stroke-linejoin="round"`
   ].join(" ");
-  const textMarkup = vertical
-    ? Array.from(text).map((char, index, chars) =>
-        `<text class="node-label-vertical-token" x="0" y="${formatSvgNumber((index - (chars.length - 1) / 2) * fontSize * 1.2)}" text-anchor="middle" ${textStyle} style="writing-mode: horizontal-tb; text-orientation: mixed; letter-spacing: 0;">${escapeSvgText(char)}</text>`
-      ).join("")
-    : `<text x="0" y="0" text-anchor="${escapeSvgAttribute(labelTextAnchor(node))}" ${textStyle} style="writing-mode: horizontal-tb;">${escapeSvgText(text)}</text>`;
-  return `<g class="export-node-label ${vertical ? "vertical" : "horizontal"}" transform="translate(${formatSvgNumber(offsetX)} ${formatSvgNumber(offsetY)})">${textMarkup}</g>`;
+  const transform = `translate(${formatSvgNumber(centerX)} ${formatSvgNumber(centerY)})`;
+  const commonAttributes = `${attributes ? `${attributes} ` : ""}transform="${transform}" ${textStyle}`;
+  if (vertical) {
+    const characters = Array.from(text);
+    return characters.map((char, index) => {
+      const tokenId = characters.length === 1 ? id : `${id}_${index + 1}`;
+      return `<text id="${escapeSvgAttribute(tokenId)}" ${commonAttributes} x="0" y="${formatSvgNumber((index - (characters.length - 1) / 2) * fontSize * 1.2)}" text-anchor="middle" style="writing-mode: horizontal-tb; text-orientation: mixed; letter-spacing: 0;">${escapeSvgText(char)}</text>`;
+    }).join("\n");
+  }
+  return `<text id="${escapeSvgAttribute(id)}" ${commonAttributes} x="0" y="0" text-anchor="${escapeSvgAttribute(labelTextAnchor(node))}" style="writing-mode: horizontal-tb;">${escapeSvgText(text)}</text>`;
 }
 
 function serverTerminalPoint(node, terminalId) {
@@ -1849,43 +1855,38 @@ function buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, us
     const rowIndex = columns <= 1 ? index : Math.floor(index / columns);
     const textX = -width / 2 + col * columnWidth + 7;
     const textY = -height / 2 + rowIndex * lineHeight + lineHeight / 2;
-    const measurementName = String(row.item?.name ?? row.display.label ?? row.item?.measurementTypeId ?? "").trim();
     const textGap = Math.max(4, row.fontSize * 0.36);
     const labelWidth = row.labelText ? estimateWidth(row.labelText, row.fontSize) : 0;
     const valueWidth = estimateWidth(row.valueText, row.fontSize);
     const valueX = textX + labelWidth + (row.labelText ? textGap : 0);
     const unitX = valueX + valueWidth + (row.unitText ? textGap : 0);
-    const itemBaseId = `measurement_${row.item?.id ?? row.item?.measurementTypeId ?? "item"}`;
     const itemMetadata = [
-      `measure_type="${escapeSvgAttribute(row.item?.measurementTypeId ?? "")}"`,
-      `m-id="${escapeSvgAttribute(row.item?.id ?? "")}"`,
-      `m-name="${escapeSvgAttribute(measurementName)}"`,
-      `m-type="${escapeSvgAttribute(row.item?.measurementTypeId ?? "")}"`,
-      `m-field="${escapeSvgAttribute(row.item?.sourcePoint ?? "")}"`,
-      `m-role="${escapeSvgAttribute(row.item?.role ?? "")}"`,
-      `m-unit="${escapeSvgAttribute(row.display.unit)}"`,
-      `m-group="${escapeSvgAttribute(group.id ?? "")}"`,
-      `m-terminal="${escapeSvgAttribute(group.terminalId ?? "")}"`,
-      `conn-dev="${escapeSvgAttribute(node.id ?? "")}"`,
-      `dev-id="${escapeSvgAttribute(node.id ?? "")}"`,
-      `dev-idx="${escapeSvgAttribute(node.params?.idx ?? "")}"`,
-      `dev-name="${escapeSvgAttribute(node.name ?? "")}"`,
-      `dev-kind="${escapeSvgAttribute(node.kind ?? "")}"`
-    ].join(" ");
+      `mid="${escapeSvgAttribute(row.item?.id ?? "")}"`,
+      `mt="${escapeSvgAttribute(row.item?.measurementTypeId ?? "")}"`,
+      `mf="${escapeSvgAttribute(row.item?.sourcePoint ?? "")}"`,
+      row.item?.role ? `mr="${escapeSvgAttribute(row.item.role)}"` : ""
+    ].filter(Boolean).join(" ");
     const textStyle = `y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeSvgAttribute(row.display.color)}" font-family="${escapeSvgAttribute(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeSvgAttribute(row.display.fontWeight)}" font-style="${escapeSvgAttribute(row.display.fontStyle)}" text-decoration="${escapeSvgAttribute(row.display.textDecoration)}"`;
-    const textIdAttribute = (suffix, fallback) => ` id="${escapeSvgAttribute(uniqueSvgId(`${itemBaseId}_${suffix}`, usedIds, fallback))}"`;
     const labelMarkup = row.labelText
-      ? `<text${textIdAttribute("label", "measurement_label")} class="export-measurement-label measurement-label" m-text="label" ${itemMetadata} ${textStyle} x="${formatSvgNumber(textX)}">${escapeSvgText(row.labelText)}</text>`
+      ? `<text ${textStyle} x="${formatSvgNumber(textX)}">${escapeSvgText(row.labelText)}</text>`
       : "";
-    const valueMarkup = `<text${textIdAttribute("value", "measurement_value")} class="export-measurement-value measurement-value" m-text="value" m-value="1" ${itemMetadata} ${textStyle} x="${formatSvgNumber(valueX)}">${escapeSvgText(row.valueText)}</text>`;
+    const valueId = uniqueSvgId(`mv${index + 1}`, usedIds, "mv");
+    const valueMarkup = `<text id="${escapeSvgAttribute(valueId)}" class="mv" ${itemMetadata} ${textStyle} x="${formatSvgNumber(valueX)}">${escapeSvgText(row.valueText)}</text>`;
     const unitMarkup = row.unitText
-      ? `<text${textIdAttribute("unit", "measurement_unit")} class="export-measurement-unit measurement-unit" m-text="unit" ${itemMetadata} ${textStyle} x="${formatSvgNumber(unitX)}">${escapeSvgText(row.unitText)}</text>`
+      ? `<text ${textStyle} x="${formatSvgNumber(unitX)}">${escapeSvgText(row.unitText)}</text>`
       : "";
     return `${labelMarkup}${valueMarkup}${unitMarkup}`;
   }).join("");
-  return `<g class="export-measurement-group measurement-group" conn-dev="${escapeSvgAttribute(node.id ?? "")}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" m-group="${escapeSvgAttribute(group.id ?? "")}" dev-id="${escapeSvgAttribute(node.id ?? "")}" dev-idx="${escapeSvgAttribute(node.params?.idx ?? "")}" dev-name="${escapeSvgAttribute(node.name ?? "")}" dev-kind="${escapeSvgAttribute(node.kind ?? "")}" m-terminal="${escapeSvgAttribute(group.terminalId ?? "")}">
-<title>${escapeSvgText(`${node.name ?? ""} 动态量测`)}</title>
-<rect class="measurement-group-bg" x="${formatSvgNumber(-width / 2)}" y="${formatSvgNumber(-height / 2)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" rx="4" fill="${escapeSvgAttribute(group.backgroundColor ?? "rgba(255, 255, 255, 0.84)")}" stroke="${escapeSvgAttribute(group.borderColor ?? "rgba(100, 116, 139, 0.36)")}" stroke-width="${formatSvgNumber(measurementBorderWidth(group))}"${dashAttribute}/>
+  const groupMetadata = [
+    `mg="${escapeSvgAttribute(group.id ?? "")}"`,
+    `dev="${escapeSvgAttribute(node.id ?? "")}"`,
+    node.params?.idx ? `idx="${escapeSvgAttribute(node.params.idx)}"` : "",
+    `name="${escapeSvgAttribute(node.name ?? "")}"`,
+    `kind="${escapeSvgAttribute(node.kind ?? "")}"`,
+    group.terminalId ? `term="${escapeSvgAttribute(group.terminalId)}"` : ""
+  ].filter(Boolean).join(" ");
+  return `<g class="mg" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${groupMetadata}>
+<rect x="${formatSvgNumber(-width / 2)}" y="${formatSvgNumber(-height / 2)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" rx="4" fill="${escapeSvgAttribute(group.backgroundColor ?? "rgba(255, 255, 255, 0.84)")}" stroke="${escapeSvgAttribute(group.borderColor ?? "rgba(100, 116, 139, 0.36)")}" stroke-width="${formatSvgNumber(measurementBorderWidth(group))}"${dashAttribute}/>
 ${rowsMarkup}
 </g>`;
 }
@@ -1944,13 +1945,12 @@ export function buildSvgFile(project, measurementConfig = { measurementTypes: []
     const useId = uniqueSvgId(node.id ?? "device", usedIds, "device");
     const layerId = layerIdsByType.get(nodeLayerKey(node)) ?? otherLayerId;
     const geometryTransform = `rotate(${formatSvgNumber(normalizedRotate)}) scale(${formatSvgNumber(scaleX)} ${formatSvgNumber(scaleY)})`;
-    const labelMarkup = buildServerSvgNodeLabelMarkup(node);
-    const deviceMetadataAttributes = `idx="${escapeSvgAttribute(node.params?.idx ?? "")}" name="${escapeSvgAttribute(node.name ?? "")}" dev-id="${escapeSvgAttribute(node.id ?? "")}" dev-idx="${escapeSvgAttribute(node.params?.idx ?? "")}" dev-name="${escapeSvgAttribute(node.name ?? "")}" dev-kind="${escapeSvgAttribute(node.kind ?? "")}"`;
+    const labelId = uniqueSvgId(`label_${node.id ?? "node"}`, usedIds, "node_label");
+    const projectLayerId = String(node.layerId ?? "layer-default");
+    const deviceMetadataAttributes = `idx="${escapeSvgAttribute(node.params?.idx ?? "")}" name="${escapeSvgAttribute(node.name ?? "")}" dev-id="${escapeSvgAttribute(node.id ?? "")}" dev-kind="${escapeSvgAttribute(node.kind ?? "")}"`;
+    const labelMarkup = buildServerSvgNodeLabelMarkup(node, labelId, `layer-id="${escapeSvgAttribute(projectLayerId)}" ${deviceMetadataAttributes}`);
     if (labelMarkup) {
-      const labelWrapperId = uniqueSvgId(`label_${node.id ?? "node"}`, usedIds, "node_label");
-      textLayerMarkup.push(`<g id="${escapeSvgAttribute(labelWrapperId)}" class="export-node-label-layer" node-id="${escapeSvgAttribute(node.id ?? "")}" ${deviceMetadataAttributes} transform="translate(${formatSvgNumber(Number(node.position?.x ?? 0))} ${formatSvgNumber(Number(node.position?.y ?? 0))})">
-${labelMarkup}
-</g>`);
+      textLayerMarkup.push(labelMarkup);
     }
     const viewBox = `${formatSvgNumber(-nodeWidth / 2)} ${formatSvgNumber(-nodeHeight / 2)} ${formatSvgNumber(nodeWidth)} ${formatSvgNumber(nodeHeight)}`;
     const renderServerNodeSymbolBody = (symbolNode, symbolBaseId) => {
@@ -1973,7 +1973,7 @@ ${image ? svgImageContentMarkup(image, {
           className: "node-background-image"
         }) : ""}`;
       return `<title>${escapeSvgText(nodeLayerKey(symbolNode))}</title>
-<g class="export-node-geometry" transform="${escapeSvgAttribute(geometryTransform)}">
+<g transform="${escapeSvgAttribute(geometryTransform)}">
 ${nodeBodyMarkup}
 </g>`;
     };
@@ -2002,7 +2002,7 @@ ${symbolBody}
     }
     const activeStateKey = stateDefinitions.length > 0 ? serverStateSymbolKey(serverResolvedStateValue(node, stateDefinitions)) : "default";
     const symbolId = symbolIdByStateKey.get(activeStateKey) ?? symbolIdByStateKey.values().next().value ?? "";
-    nodeMarkupByLayer.get(layerId)?.push(`<use id="${escapeSvgAttribute(useId)}" class="export-node" href="#${escapeSvgAttribute(symbolId)}" x="${formatSvgNumber(Number(node.position?.x ?? 0) - nodeWidth / 2)}" y="${formatSvgNumber(Number(node.position?.y ?? 0) - nodeHeight / 2)}" width="${formatSvgNumber(nodeWidth)}" height="${formatSvgNumber(nodeHeight)}"/>`);
+    nodeMarkupByLayer.get(layerId)?.push(`<use id="${escapeSvgAttribute(useId)}" href="#${escapeSvgAttribute(symbolId)}" x="${formatSvgNumber(Number(node.position?.x ?? 0) - nodeWidth / 2)}" y="${formatSvgNumber(Number(node.position?.y ?? 0) - nodeHeight / 2)}" width="${formatSvgNumber(nodeWidth)}" height="${formatSvgNumber(nodeHeight)}"/>`);
   }
   const deviceLayersMarkup = Array.from(layerIdsByType.entries())
     .map(([layerKey, layerId]) => `<g id="${escapeSvgAttribute(layerId)}" device-type="${escapeSvgAttribute(layerKey)}">

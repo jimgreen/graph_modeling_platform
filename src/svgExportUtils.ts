@@ -53,11 +53,11 @@ export function buildSvgNodeLabelTextElementsMarkup(
     return segments
       .map((segment, index) => {
         const tokenId = segments.length === 1 ? id : `${id}_${index + 1}`;
-        return `<text id="${escapeXml(tokenId)}" class="export-node-label vertical node-label-vertical-token ${segment.numeric ? "numeric" : ""}" ${commonAttributes} x="0" y="${formatSvgNumber(nodeLabelVerticalTokenY(index, segments.length, node))}" text-anchor="middle" style="${stylePrefix}writing-mode: horizontal-tb; text-orientation: mixed; letter-spacing: 0;">${escapeXml(segment.text)}</text>`;
+        return `<text id="${escapeXml(tokenId)}" ${commonAttributes} x="0" y="${formatSvgNumber(nodeLabelVerticalTokenY(index, segments.length, node))}" text-anchor="middle" style="${stylePrefix}writing-mode: horizontal-tb; text-orientation: mixed; letter-spacing: 0;">${escapeXml(segment.text)}</text>`;
       })
       .join("\n");
   }
-  return `<text id="${escapeXml(id)}" class="export-node-label horizontal" ${commonAttributes} x="0" y="0" text-anchor="${escapeXml(nodeLabelTextAnchor(node))}" style="${stylePrefix}writing-mode: horizontal-tb;">${escapeXml(text)}</text>`;
+  return `<text id="${escapeXml(id)}" ${commonAttributes} x="0" y="0" text-anchor="${escapeXml(nodeLabelTextAnchor(node))}" style="${stylePrefix}writing-mode: horizontal-tb;">${escapeXml(text)}</text>`;
 }
 
 export function svgDisplayAttribute(visible: boolean) {
@@ -186,24 +186,13 @@ export function exportMeasurementGroupMetadataAttributes(node: ModelNode, group:
   ].filter(Boolean).join(" ");
 }
 
-export function exportMeasurementItemMetadataAttributes(
-  _node: ModelNode,
-  group: MeasurementGroup,
-  item: MeasurementItemBinding,
-  display: { label: string; unit: string }
-) {
-  const measurementName = (item.name ?? display.label ?? item.measurementTypeId).trim();
+export function exportMeasurementItemMetadataAttributes(item: MeasurementItemBinding) {
   const role = String(item.role ?? "").trim();
-  const terminalId = String(group.terminalId ?? "").trim();
   return [
     `mid="${escapeXml(item.id)}"`,
-    `mn="${escapeXml(measurementName)}"`,
     `mt="${escapeXml(item.measurementTypeId)}"`,
     `mf="${escapeXml(item.sourcePoint)}"`,
-    role ? `mr="${escapeXml(role)}"` : "",
-    `mu="${escapeXml(display.unit)}"`,
-    `mg="${escapeXml(group.id)}"`,
-    terminalId ? `term="${escapeXml(terminalId)}"` : ""
+    role ? `mr="${escapeXml(role)}"` : ""
   ].filter(Boolean).join(" ");
 }
 
@@ -263,7 +252,8 @@ export function buildExportMeasurementGroupMarkup(
   node: ModelNode,
   group: MeasurementGroup,
   measurementConfig: PlatformMeasurementConfig,
-  usedSvgIds?: Set<string>
+  usedSvgIds?: Set<string>,
+  options: { layerId?: string; visible?: boolean } = {}
 ) {
   const metrics = exportMeasurementGroupMetrics(node, group, measurementConfig);
   if (!metrics) {
@@ -285,24 +275,22 @@ export function buildExportMeasurementGroupMarkup(
     const valueWidth = textWidth(row.valueText);
     const valueX = textX + labelWidth + (row.labelText ? textGap : 0);
     const unitX = valueX + valueWidth + (row.unitText ? textGap : 0);
-    const itemMetadata = exportMeasurementItemMetadataAttributes(node, group, row.item, row.display);
+    const itemMetadata = exportMeasurementItemMetadataAttributes(row.item);
     const commonAttributes = `y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
-    const textIdAttribute = (suffix: string, fallback: string) => {
-      const textId = usedSvgIds ? exportSvgUniqueId(`${suffix}${index + 1}`, usedSvgIds, fallback) : "";
-      return textId ? ` id="${escapeXml(textId)}"` : "";
-    };
     const labelMarkup = row.labelText
-      ? `<text${textIdAttribute("ml", "ml")} class="ml" ${commonAttributes} x="${formatSvgNumber(textX)}">${escapeXml(row.labelText)}</text>`
+      ? `<text ${commonAttributes} x="${formatSvgNumber(textX)}">${escapeXml(row.labelText)}</text>`
       : "";
-    const valueMarkup = `<text${textIdAttribute("mv", "mv")} class="mv" mv="1" ${itemMetadata} ${commonAttributes} x="${formatSvgNumber(valueX)}">${escapeXml(row.valueText)}</text>`;
+    const valueTextId = usedSvgIds ? exportSvgUniqueId(`mv${index + 1}`, usedSvgIds, "mv") : "";
+    const valueIdAttribute = valueTextId ? ` id="${escapeXml(valueTextId)}"` : "";
+    const valueMarkup = `<text${valueIdAttribute} class="mv" ${itemMetadata} ${commonAttributes} x="${formatSvgNumber(valueX)}">${escapeXml(row.valueText)}</text>`;
     const unitMarkup = row.unitText
-      ? `<text${textIdAttribute("mu", "mu")} class="mu" ${commonAttributes} x="${formatSvgNumber(unitX)}">${escapeXml(row.unitText)}</text>`
+      ? `<text ${commonAttributes} x="${formatSvgNumber(unitX)}">${escapeXml(row.unitText)}</text>`
       : "";
     return `${labelMarkup}${valueMarkup}${unitMarkup}`;
   }).join("");
-  return `<g class="mg" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group)}>
-  <title>${escapeXml(`${node.name} 动态量测`)}</title>
-  <rect class="mg-bg" x="${formatSvgNumber(-metrics.width / 2)}" y="${formatSvgNumber(-metrics.height / 2)}" width="${formatSvgNumber(metrics.width)}" height="${formatSvgNumber(metrics.height)}" rx="4" fill="${escapeXml(exportMeasurementGroupBackgroundColor(group))}" stroke="${escapeXml(exportMeasurementGroupBorderColor(group))}" stroke-width="${formatSvgNumber(exportMeasurementGroupBorderWidth(group))}"${borderDashAttribute}/>
+  const layerAttribute = options.layerId ? ` layer-id="${escapeXml(options.layerId)}"` : "";
+  return `<g class="mg"${layerAttribute} transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group)}${svgDisplayAttribute(options.visible !== false)}>
+  <rect x="${formatSvgNumber(-metrics.width / 2)}" y="${formatSvgNumber(-metrics.height / 2)}" width="${formatSvgNumber(metrics.width)}" height="${formatSvgNumber(metrics.height)}" rx="4" fill="${escapeXml(exportMeasurementGroupBackgroundColor(group))}" stroke="${escapeXml(exportMeasurementGroupBorderColor(group))}" stroke-width="${formatSvgNumber(exportMeasurementGroupBorderWidth(group))}"${borderDashAttribute}/>
   ${rowsMarkup}
 </g>`;
 }

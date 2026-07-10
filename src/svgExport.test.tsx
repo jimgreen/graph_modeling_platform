@@ -17,7 +17,7 @@ describe("SVG export", () => {
   const svgDefsSection = (svg: string) => svg.match(/<defs[^>]*>[\s\S]*?<\/defs>/)?.[0] ?? "";
   const svgUseTags = (svg: string) => Array.from(svg.matchAll(/<use\b[^>]*>/g), (match) => match[0]);
   const svgDeviceUseTag = (svg: string, id: string) =>
-    svg.match(new RegExp(`<use id="${id}" class="export-node export-device[^"]*"[^>]*>`))?.[0] ?? "";
+    svg.match(new RegExp(`<use id="${id}"(?=\\s|/?>)[^>]*>`))?.[0] ?? "";
   const svgEdgeGroupTag = (svg: string, id: string) =>
     svg.match(new RegExp(`<g id="[^"]+" class="export-edge" data-export-edge-id="${id}"[^>]*>`))?.[0] ?? "";
 
@@ -264,11 +264,11 @@ describe("SVG export", () => {
       expect(useTag).not.toContain("node-id=");
     }
     expect(useTags[0]).toContain('id="switch-open"');
-    expect(useTags[0]).toContain('class="export-node export-device"');
+    expect(useTags[0]).not.toContain('class=');
     expect(useTags[0]).toContain('layer-id="layer-default"');
     expect(useTags[0]).toContain('dev-id="switch-open"');
     expect(useTags[1]).toContain('id="switch-closed"');
-    expect(useTags[1]).toContain('class="export-node export-device"');
+    expect(useTags[1]).not.toContain('class=');
     expect(useTags[1]).toContain('layer-id="layer-default"');
     expect(useTags[1]).toContain('dev-id="switch-closed"');
     expect(svg).not.toContain('<g id="switch-open" class="export-device"');
@@ -347,8 +347,11 @@ describe("SVG export", () => {
 
     const svg = buildSvgDocument([breaker, bus], edges, { width: 360, height: 240 });
 
-    expect(svg).toContain("export-device-connector");
-    expect(svg).toContain('<line class="export-device-connector ac"');
+    expect(svg).not.toContain("export-device-connector");
+    expect(svg).not.toContain("export-device-connector-layer");
+    expect(svg).not.toContain("export-node-geometry");
+    expect(svg).not.toContain("export-node-upright-content");
+    expect(svg).toContain('<line x1=');
     expect(svg).not.toContain("export-terminal-stub");
     expect(svg).not.toContain("export-terminal-dot");
     expect(svg).not.toContain('class="export-terminal');
@@ -381,7 +384,7 @@ describe("SVG export", () => {
     expect(svg).toContain('class="export-layer-definitions"');
     expect(svg.indexOf('class="export-layer-definitions"')).toBeGreaterThan(svg.indexOf('<g id="root_g">'));
     expect(svg).toContain(`viewBox="${-generator.size.width / 2} ${-generator.size.height / 2} ${generator.size.width} ${generator.size.height}" overflow="visible"`);
-    expect(svg).toContain(`<use id="source-1" class="export-node export-device" layer-id="layer-default"`);
+    expect(svg).toContain(`<use id="source-1" layer-id="layer-default"`);
     expect(svg).toContain(`dev-id="source-1"`);
     expect(svg).toContain(`dev-kind="ac-source"`);
     expect(svg).toContain(`transform="translate(${generator.position.x} ${generator.position.y})"`);
@@ -412,8 +415,8 @@ describe("SVG export", () => {
     const breaker = { ...createDefaultNode("ac-breaker", { x: 280, y: 140 }), id: "breaker-device" };
 
     const svg = buildSvgDocument([source, breaker], [], { width: 420, height: 260 });
-    const sourceUseStart = svg.indexOf('<use id="source-device" class="export-node export-device"');
-    const breakerUseStart = svg.indexOf('<use id="breaker-device" class="export-node export-device"');
+    const sourceUseStart = svg.indexOf('<use id="source-device"');
+    const breakerUseStart = svg.indexOf('<use id="breaker-device"');
     const sourceUseTag = svg.slice(sourceUseStart, svg.indexOf("/>", sourceUseStart) + 2);
 
     expect(sourceUseStart).toBeGreaterThan(-1);
@@ -423,6 +426,7 @@ describe("SVG export", () => {
     expect(sourceUseTag).toContain('dev-id="source-device"');
     expect(sourceUseTag).toContain('href="#symbol_ACGenerator_ac-source_default"');
     expect(sourceUseTag).toContain('transform="translate(120 140)"');
+    expect(sourceUseTag).not.toContain('class=');
     expect(svg).not.toContain('<g id="source-device" class="export-device"');
     expect(svg).not.toContain('<g id="breaker-device" class="export-device"');
     expect(svg).not.toContain("export-node-terminal-layer");
@@ -549,28 +553,35 @@ describe("SVG export", () => {
     expect(deviceTag).toContain('name="负荷A"');
     expect(deviceTag).not.toContain("dev-idx=");
     expect(deviceTag).not.toContain("dev-name=");
-    expect(svg).toContain('<text id="label_load-export" class="export-node-label horizontal"');
-    expect(svg).toContain('node-id="load-export" layer-id="layer-default"');
+    expect(svg).toContain('<text id="label_load-export" layer-id="layer-default"');
+    expect(svg).not.toContain('node-id="load-export"');
+    expect(svg).not.toContain('class="export-node-label');
     expect(svg).toContain('transform="translate(150 164)"');
     expect(svg).toContain(">LOAD-1</text>");
-    expect(svg).toContain('class="mg" transform="translate(180 70)"');
+    expect(svg).not.toContain('class="export-measurement-layer"');
+    expect(svg).not.toContain('id="measurement_group-1"');
+    expect(svg).toContain('class="mg" layer-id="layer-default" transform="translate(180 70)"');
     expect(svg).toContain('dev="load-export"');
-    expect(svg).toContain('mn="P主"');
     expect(svg).toContain('mf="load-export.activePower"');
-    expect(svg).toContain('mu="kW"');
-    expect(svg).toContain('class="ml"');
     expect(svg).toContain('class="mv"');
-    expect(svg).toContain('class="mu"');
+    expect(svg).not.toContain('mn="P主"');
+    expect(svg).not.toContain('mu="kW"');
+    expect(svg).not.toContain('class="ml"');
+    expect(svg).not.toContain('class="mu"');
+    expect(svg).not.toContain('class="mg-bg"');
+    expect(svg).not.toContain('动态量测</title>');
     expect(svg).not.toContain('m-text=');
-    expect(svg).toContain('mv="1"');
+    expect(svg).not.toContain('mv="1"');
     expect(svg).toContain('mt="activePower"');
     expect(svg).not.toContain('measure_type="activePower"');
     const valueText = svg.match(/<text id="mv1" class="mv"[^>]*>--<\/text>/)?.[0] ?? "";
-    expect(valueText).toContain('mv="1"');
     expect(valueText).toContain('mid="m-active"');
-    expect(valueText).toContain('mn="P主"');
     expect(valueText).toContain('mt="activePower"');
     expect(valueText).toContain('mf="load-export.activePower"');
+    expect(valueText).not.toContain('mn=');
+    expect(valueText).not.toContain('mu=');
+    expect(valueText).not.toContain('mg=');
+    expect(valueText).not.toContain('term=');
     expect(valueText).not.toContain('dev="load-export"');
     expect(valueText).not.toContain('dev-id="load-export"');
     expect(valueText).not.toContain('idx="LOAD-1"');
@@ -578,12 +589,8 @@ describe("SVG export", () => {
     expect(valueText).not.toContain('conn-dev="load-export"');
     expect(valueText).not.toContain("dev-idx=");
     expect(valueText).not.toContain("dev-name=");
-    const labelText = svg.match(/<text id="ml1" class="ml"[^>]*>P<\/text>/)?.[0] ?? "";
-    const unitText = svg.match(/<text id="mu1" class="mu"[^>]*>kW<\/text>/)?.[0] ?? "";
-    expect(labelText).not.toContain('mid="m-active"');
-    expect(labelText).not.toContain('mf=');
-    expect(unitText).not.toContain('mid="m-active"');
-    expect(unitText).not.toContain('mf=');
+    expect(svg).not.toContain('id="ml1"');
+    expect(svg).not.toContain('id="mu1"');
     expect(svg).not.toContain("data-export-measurement-");
     expect(svg).not.toContain("data-export-device-id");
     expect(svg).not.toContain("data-export-device-idx");
@@ -647,9 +654,9 @@ describe("SVG export", () => {
     expect(textLayer).not.toContain('class="export-node-label-layer"');
     expect(textLayer).not.toContain('<g id="label_layered-text-load"');
     expect(textLayer).not.toContain('<g class="export-node-label');
-    expect(textLayer).toContain('<text id="label_layered-text-load" class="export-node-label horizontal"');
+    expect(textLayer).toContain('<text id="label_layered-text-load" layer-id="layer-default"');
     expect(textLayer).toContain('layer-id="layer-default"');
-    expect(textLayer).toContain('node-id="layered-text-load"');
+    expect(textLayer).not.toContain('node-id="layered-text-load"');
     expect(textLayer).toContain('dev-id="layered-text-load"');
     expect(textLayer).toContain('idx="LOAD-1"');
     expect(textLayer).toContain('name="负荷A"');
@@ -658,9 +665,15 @@ describe("SVG export", () => {
     expect(textLayer).toContain('transform="translate(150 164)"');
     expect(textLayer).toContain(">LOAD-1</text>");
     expect(measurementLayer).toContain('class="mg"');
-    expect(measurementLayer).toContain('mn="P主"');
+    expect(measurementLayer).not.toContain('class="export-measurement-layer"');
+    expect(measurementLayer).not.toContain('id="measurement_group-layered"');
+    expect(measurementLayer).toContain('class="mg" layer-id="layer-default"');
     expect(measurementLayer).toContain('mf="layered-text-load.activePower"');
-    expect(measurementLayer).toContain('mv="1"');
+    expect(measurementLayer).not.toContain('mn="P主"');
+    expect(measurementLayer).not.toContain('mv="1"');
+    expect(measurementLayer).not.toContain('class="ml"');
+    expect(measurementLayer).not.toContain('class="mu"');
+    expect(measurementLayer).not.toContain('class="mg-bg"');
     expect(measurementLayer).not.toContain("data-export-measurement-");
   });
 
@@ -826,10 +839,10 @@ describe("SVG export", () => {
     expect(defs).toContain(".dcv750{fill:#00aa88;stroke:#00aa88;stroke-width:1;color:#00aa88}");
     expect(defs).toContain(".ldcv750{fill:none;stroke:#00aa88;color:#00aa88}");
     expect(defs).toContain('stroke="currentColor"');
-    expect(svg).toContain('id="ac-source-10" class="export-node export-device kv10"');
-    expect(svg).toContain('id="ac-bus-10" class="export-node export-device kv10"');
-    expect(svg).toContain('id="dc-source-750" class="export-node export-device dcv750"');
-    expect(svg).toContain('id="dc-bus-750" class="export-node export-device dcv750"');
+    expect(svg).toContain('id="ac-source-10" class="kv10"');
+    expect(svg).toContain('id="ac-bus-10" class="kv10"');
+    expect(svg).toContain('id="dc-source-750" class="dcv750"');
+    expect(svg).toContain('id="dc-bus-750" class="dcv750"');
     expect(svg).toContain('class="export-edge-path lkv10"');
     expect(svg).toContain('class="export-edge-path ldcv750"');
     expect(svgDeviceUseTag(svg, "ac-source-10")).toContain('vbase="10"');
@@ -874,7 +887,9 @@ describe("SVG export", () => {
 
     const svg = buildSvgDocument([acLine], [], { width: 360, height: 240 });
 
-    expect(svg).toContain('class="export-node-geometry" transform="rotate(0) scale(2 0.5)"');
+    expect(svg).toContain('<g transform="rotate(0) scale(2 0.5)"');
+    expect(svg).not.toContain("export-node-geometry");
+    expect(svg).not.toContain("export-node-upright-content");
     expect(svg).not.toContain("export-terminal");
     expect(svg).not.toContain("data-terminal-id");
   });
@@ -921,8 +936,9 @@ describe("SVG export", () => {
     const svg = buildSvgDocument([generator], [], { width: 360, height: 260 });
 
     // 功能验证：确保旋转和镜像设备的几何变换正确应用
-    expect(svg).toContain('class="export-node-geometry" transform="rotate(90) scale(-1.5 2)"');
-    expect(svg).toContain('class="export-node-upright-content" transform="rotate(90) scale(-1.5 2)"');
+    expect(svg).toContain('<g transform="rotate(90) scale(-1.5 2)"');
+    expect(svg).not.toContain("export-node-geometry");
+    expect(svg).not.toContain("export-node-upright-content");
     expect(svg).toContain(">AC</text>");
   });
 
