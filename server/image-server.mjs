@@ -1882,26 +1882,23 @@ function buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, us
     const textX = -width / 2 + col * columnWidth + 7;
     const textY = -height / 2 + rowIndex * lineHeight + lineHeight / 2;
     const textGap = Math.max(4, row.fontSize * 0.36);
-    const labelWidth = row.labelText ? estimateWidth(row.labelText, row.fontSize) : 0;
-    const valueWidth = estimateWidth(row.valueText, row.fontSize);
-    const valueX = textX + labelWidth + (row.labelText ? textGap : 0);
-    const unitX = valueX + valueWidth + (row.unitText ? textGap : 0);
     const itemMetadata = [
       `mid="${escapeSvgAttribute(row.item?.id ?? "")}"`,
       `mt="${escapeSvgAttribute(row.item?.measurementTypeId ?? "")}"`,
       `mf="${escapeSvgAttribute(row.item?.sourcePoint ?? "")}"`,
       row.item?.role ? `mr="${escapeSvgAttribute(row.item.role)}"` : ""
     ].filter(Boolean).join(" ");
-    const textStyle = `y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeSvgAttribute(row.display.color)}" font-family="${escapeSvgAttribute(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeSvgAttribute(row.display.fontWeight)}" font-style="${escapeSvgAttribute(row.display.fontStyle)}" text-decoration="${escapeSvgAttribute(row.display.textDecoration)}"`;
+    const textStyle = `x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeSvgAttribute(row.display.color)}" font-family="${escapeSvgAttribute(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeSvgAttribute(row.display.fontWeight)}" font-style="${escapeSvgAttribute(row.display.fontStyle)}" text-decoration="${escapeSvgAttribute(row.display.textDecoration)}"`;
     const labelMarkup = row.labelText
-      ? `<text ${textStyle} x="${formatSvgNumber(textX)}">${escapeSvgText(row.labelText)}</text>`
+      ? `<tspan>${escapeSvgText(row.labelText)}</tspan>`
       : "";
     const valueId = uniqueSvgId(`mv${index + 1}`, usedIds, "mv");
-    const valueMarkup = `<text id="${escapeSvgAttribute(valueId)}" class="mv" ${itemMetadata} ${textStyle} x="${formatSvgNumber(valueX)}">${escapeSvgText(row.valueText)}</text>`;
+    const valueDxAttribute = row.labelText ? ` dx="${formatSvgNumber(textGap)}"` : "";
+    const valueMarkup = `<tspan id="${escapeSvgAttribute(valueId)}" class="mv" ${itemMetadata}${valueDxAttribute}>${escapeSvgText(row.valueText)}</tspan>`;
     const unitMarkup = row.unitText
-      ? `<text ${textStyle} x="${formatSvgNumber(unitX)}">${escapeSvgText(row.unitText)}</text>`
+      ? `<tspan dx="${formatSvgNumber(textGap)}">${escapeSvgText(row.unitText)}</tspan>`
       : "";
-    return `${labelMarkup}${valueMarkup}${unitMarkup}`;
+    return `<text ${textStyle}>${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
   }).join("");
   const groupMetadata = [
     `mg="${escapeSvgAttribute(group.id ?? "")}"`,

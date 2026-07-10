@@ -192,15 +192,13 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
           const textX = -metrics.width / 2 + col * metrics.columnWidth + 7;
           const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
           const textGap = Math.max(4, row.fontSize * 0.36);
-          const textWidth = (value: string) => value.length * row.fontSize * 0.58;
-          const labelWidth = row.labelText ? textWidth(row.labelText) : 0;
-          const valueWidth = textWidth(row.valueText);
-          const valueX = textX + labelWidth + (row.labelText ? textGap : 0);
-          const unitX = valueX + valueWidth + (row.unitText ? textGap : 0);
           return (
-            <g
+            <text
               key={row.item.id}
               className="measurement-item mi"
+              x={formatSvgNumber(textX)}
+              y={formatSvgNumber(textY)}
+              dominantBaseline="middle"
               fill={row.display.color}
               fontFamily={row.display.fontFamily}
               fontSize={row.fontSize}
@@ -224,35 +222,28 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
               data-export-device-kind={node.kind}
             >
               {row.labelText && (
-                <text
+                <tspan
                   className="measurement-label ml"
-                  x={formatSvgNumber(textX)}
-                  y={formatSvgNumber(textY)}
-                  dominantBaseline="middle"
                 >
                   {row.labelText}
-                </text>
+                </tspan>
               )}
-              <text
+              <tspan
                 id={`mv-${row.item.id}`}
                 className="measurement-value mv"
-                x={formatSvgNumber(valueX)}
-                y={formatSvgNumber(textY)}
-                dominantBaseline="middle"
+                dx={row.labelText ? formatSvgNumber(textGap) : undefined}
               >
                 {row.valueText}
-              </text>
+              </tspan>
               {row.unitText && (
-                <text
+                <tspan
                   className="measurement-unit mu"
-                  x={formatSvgNumber(unitX)}
-                  y={formatSvgNumber(textY)}
-                  dominantBaseline="middle"
+                  dx={formatSvgNumber(textGap)}
                 >
                   {row.unitText}
-                </text>
+                </tspan>
               )}
-            </g>
+            </text>
           );
         })}
       </g>

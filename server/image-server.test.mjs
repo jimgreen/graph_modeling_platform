@@ -579,14 +579,19 @@ describe("scheme file persistence", () => {
     expect(measurementLayer).not.toContain('dev-idx=');
     expect(measurementLayer).not.toContain('dev-name=');
     expect(measurementLayer).not.toContain('动态量测</title>');
-    const valueText = measurementLayer.match(/<text id="mv1" class="mv"[^>]*>--<\/text>/)?.[0] ?? "";
+    const measurementRow = measurementLayer.match(/<text\b[^>]*><tspan>P主<\/tspan><tspan id="mv1"[\s\S]*?<\/text>/)?.[0] ?? "";
+    const valueText = measurementRow.match(/<tspan id="mv1" class="mv"[^>]*>--<\/tspan>/)?.[0] ?? "";
+    const unitText = measurementRow.match(/<tspan dx="[^"]+">kW<\/tspan>/)?.[0] ?? "";
+    expect(measurementRow).toContain('<tspan>P主</tspan>');
     expect(valueText).toContain('mid="server-m"');
     expect(valueText).toContain('mt="activePower"');
     expect(valueText).toContain('mf="server-load.activePower"');
-    expect(valueText).toContain('fill="#dc2626"');
-    expect(valueText).toContain('font-size="18"');
+    expect(measurementRow).toContain('fill="#dc2626"');
+    expect(measurementRow).toContain('font-size="18"');
     expect(valueText).not.toContain('mg=');
     expect(valueText).not.toContain('term=');
+    expect(unitText).toContain('dx="');
+    expect(unitText).not.toContain(' x="');
     expect(measurementLayer).not.toContain("data-export-measurement-");
     expect(svg).toContain('edge-id="server-edge"');
     expect(svg).toContain('source-dev-id="server-source"');
@@ -698,8 +703,8 @@ describe("scheme file persistence", () => {
     const measurementLayer = svgSectionBetween(svg, '<g id="Measurement_Layer">', '<g id="Other_Layer">');
     expect(measurementLayer).toContain('class="mg"');
     expect(measurementLayer).toContain('mid="server-box-current"');
-    expect(measurementLayer).toContain(">I</text>");
-    expect(measurementLayer).toContain(">A</text>");
+    expect(measurementLayer).toContain(">I</tspan>");
+    expect(measurementLayer).toContain(">A</tspan>");
   });
 
   test("deletes one project by archiving only that model's files", async () => {

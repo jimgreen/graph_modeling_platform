@@ -658,12 +658,15 @@ describe("SVG export", () => {
     expect(svg).not.toContain('mv="1"');
     expect(svg).toContain('mt="activePower"');
     expect(svg).not.toContain('measure_type="activePower"');
-    const valueText = svg.match(/<text id="mv1" class="mv"[^>]*>--<\/text>/)?.[0] ?? "";
+    const measurementRow = svg.match(/<text\b[^>]*><tspan>P<\/tspan><tspan id="mv1"[\s\S]*?<\/text>/)?.[0] ?? "";
+    const valueText = measurementRow.match(/<tspan id="mv1" class="mv"[^>]*>--<\/tspan>/)?.[0] ?? "";
+    const unitText = measurementRow.match(/<tspan dx="[^"]+">kW<\/tspan>/)?.[0] ?? "";
+    expect(measurementRow).toContain('<tspan>P</tspan>');
     expect(valueText).toContain('mid="m-active"');
     expect(valueText).toContain('mt="activePower"');
     expect(valueText).toContain('mf="load-export.activePower"');
-    expect(valueText).toContain('fill="#dc2626"');
-    expect(valueText).toContain('font-size="18"');
+    expect(measurementRow).toContain('fill="#dc2626"');
+    expect(measurementRow).toContain('font-size="18"');
     expect(valueText).not.toContain('mn=');
     expect(valueText).not.toContain('mu=');
     expect(valueText).not.toContain('mg=');
@@ -675,6 +678,8 @@ describe("SVG export", () => {
     expect(valueText).not.toContain('conn-dev="load-export"');
     expect(valueText).not.toContain("dev-idx=");
     expect(valueText).not.toContain("dev-name=");
+    expect(unitText).toContain('dx="');
+    expect(unitText).not.toContain(' x="');
     expect(svg).not.toContain('id="ml1"');
     expect(svg).not.toContain('id="mu1"');
     expect(svg).not.toContain("data-export-measurement-");
@@ -688,8 +693,8 @@ describe("SVG export", () => {
     expect(svg).not.toContain("conn-dev=");
     expect(svg).not.toContain("dev-idx=");
     expect(svg).not.toContain("dev-name=");
-    expect(svg).toContain(">P</text>");
-    expect(svg).toContain(">kW</text>");
+    expect(svg).toContain(">P</tspan>");
+    expect(svg).toContain(">kW</tspan>");
     expect(svg).not.toContain(">P -- kW</text>");
   });
 

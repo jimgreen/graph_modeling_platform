@@ -298,23 +298,19 @@ export function buildExportMeasurementGroupMarkup(
     const textX = -metrics.width / 2 + col * metrics.columnWidth + 7;
     const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
     const textGap = Math.max(4, row.fontSize * 0.36);
-    const textWidth = (text: string) => text.length * row.fontSize * 0.58;
-    const labelWidth = row.labelText ? textWidth(row.labelText) : 0;
-    const valueWidth = textWidth(row.valueText);
-    const valueX = textX + labelWidth + (row.labelText ? textGap : 0);
-    const unitX = valueX + valueWidth + (row.unitText ? textGap : 0);
     const itemMetadata = exportMeasurementItemMetadataAttributes(row.item);
-    const commonAttributes = `y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
+    const commonAttributes = `x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
     const labelMarkup = row.labelText
-      ? `<text ${commonAttributes} x="${formatSvgNumber(textX)}">${escapeXml(row.labelText)}</text>`
+      ? `<tspan>${escapeXml(row.labelText)}</tspan>`
       : "";
     const valueTextId = usedSvgIds ? exportSvgUniqueId(`mv${index + 1}`, usedSvgIds, "mv") : "";
     const valueIdAttribute = valueTextId ? ` id="${escapeXml(valueTextId)}"` : "";
-    const valueMarkup = `<text${valueIdAttribute} class="mv" ${itemMetadata} ${commonAttributes} x="${formatSvgNumber(valueX)}">${escapeXml(row.valueText)}</text>`;
+    const valueDxAttribute = row.labelText ? ` dx="${formatSvgNumber(textGap)}"` : "";
+    const valueMarkup = `<tspan${valueIdAttribute} class="mv" ${itemMetadata}${valueDxAttribute}>${escapeXml(row.valueText)}</tspan>`;
     const unitMarkup = row.unitText
-      ? `<text ${commonAttributes} x="${formatSvgNumber(unitX)}">${escapeXml(row.unitText)}</text>`
+      ? `<tspan dx="${formatSvgNumber(textGap)}">${escapeXml(row.unitText)}</tspan>`
       : "";
-    return `${labelMarkup}${valueMarkup}${unitMarkup}`;
+    return `<text ${commonAttributes}>${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
   }).join("");
   const layerAttribute = options.layerId ? ` layer-id="${escapeXml(options.layerId)}"` : "";
   return `<g class="mg"${layerAttribute} transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group, options.deviceId)}${svgDisplayAttribute(options.visible !== false)}>

@@ -311,14 +311,14 @@ describe("measurement canvas interactions", () => {
       { id: "measurement-group-1", nodeId: "node-42", items: [item] } as any
     );
 
-    expect(markup).toContain('<g class="measurement-item mi" mid="m-active" mt="activePower" mf="node-42.activePower" mr="value"');
-    expect(markup).toContain('<text class="measurement-label ml"');
-    expect(markup).toContain('>P</text>');
-    expect(markup).toContain('<text class="measurement-value mv"');
-    expect(markup).toContain('>--</text>');
-    expect(markup).toContain('<text class="measurement-unit mu"');
-    expect(markup).toContain('>MW</text>');
+    expect(markup).toContain('<text class="measurement-item mi" mid="m-active" mt="activePower" mf="node-42.activePower" mr="value"');
+    expect(markup).toContain('<tspan class="measurement-label ml">P</tspan>');
+    expect(markup).toContain('<tspan class="measurement-value mv"');
+    expect(markup).toContain('>--</tspan>');
+    expect(markup).toContain('<tspan class="measurement-unit mu" dx="');
+    expect(markup).toContain('>MW</tspan>');
     expect(markup).not.toContain('id="mv-m-active"');
+    expect(markup).not.toContain('<text class="measurement-unit mu"');
     expect(markup).not.toContain('>P -- MW</text>');
   });
 
@@ -587,8 +587,14 @@ describe("measurement canvas interactions", () => {
 
     const row = elements.find((element) => String(element.props.className ?? "").split(" ").includes("mi"));
     const value = elements.find((element) => String(element.props.className ?? "").split(" ").includes("mv"));
+    const unit = elements.find((element) => String(element.props.className ?? "").split(" ").includes("mu"));
+    expect(row?.type).toBe("text");
     expect(row?.props).toMatchObject({ mid: "current-1", mt: "current", mf: "node-42.current" });
+    expect(value?.type).toBe("tspan");
     expect(value?.props).toMatchObject({ id: "mv-current-1" });
+    expect(unit?.type).toBe("tspan");
+    expect(unit?.props.x).toBeUndefined();
+    expect(Number(unit?.props.dx)).toBeGreaterThan(0);
     expect(textNodes).toContain("I");
     expect(textNodes).toContain("--");
     expect(textNodes).toContain("A");
