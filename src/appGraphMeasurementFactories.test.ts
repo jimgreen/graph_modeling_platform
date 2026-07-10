@@ -1,11 +1,12 @@
 import { readFileSync } from "node:fs";
-import { Children, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
+import { Children, Fragment, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { describe, expect, test, vi } from "vitest";
 
 import {
   createBeginMeasurementDrag,
   createBuildMeasurementGroupMarkup,
   createMeasurementGroupRenderMetrics,
+  createRenderSelectedNodeMeasurementTable,
   createRenderMultiNodeDragOverlay,
   createUpdateMeasurementDrag,
   measurementProfileItemsComplianceMessage,
@@ -144,6 +145,74 @@ describe("measurement canvas interactions", () => {
     (selects[0] as ReactElement<{ onChange: (event: any) => void }>).props.onChange({ target: { value: "ratedPower" } });
 
     expect(updateMeasurementProfileItem).toHaveBeenCalledWith("CustomDevice", 0, { associatedField: "ratedPower" });
+  });
+
+  test("keeps only the measurement-group add action in the selected-node measurement panel", () => {
+    const renderSelectedNodeMeasurementTable = createRenderSelectedNodeMeasurementTable({
+      BufferedTextInput: (props: any) => createElement("input", props),
+      DeferredColorInput: (props: any) => createElement("input", { ...props, type: "color" }),
+      Fragment,
+      addDefaultMeasurementsToNode: vi.fn(),
+      addMeasurementItemToGroup: vi.fn(),
+      addMeasurementItemToNode: vi.fn(),
+      button: "button",
+      div: "div",
+      isBrowseMode: false,
+      measurementConfig: { measurementTypes: [] },
+      measurementGroupBackgroundColor: () => "transparent",
+      measurementTypeById: new Map(),
+      measurementTypeOptionsForMeasurementGroup: () => [],
+      option: "option",
+      removeMeasurementItem: vi.fn(),
+      removeMeasurementsFromNode: vi.fn(),
+      select: "select",
+      selectedMeasurementGroups: [
+        {
+          id: "measurement-group-1",
+          nodeId: "node-1",
+          visible: true,
+          layout: "vertical",
+          items: []
+        }
+      ],
+      span: "span",
+      table: "table",
+      tbody: "tbody",
+      td: "td",
+      th: "th",
+      tr: "tr",
+      updateMeasurementItem: vi.fn(),
+      updateSelectedMeasurementGroups: vi.fn()
+    } as any);
+
+    const panel = renderSelectedNodeMeasurementTable({
+      id: "node-1",
+      name: "测试设备",
+      kind: "custom-device",
+      params: {},
+      position: { x: 0, y: 0 },
+      size: { width: 80, height: 80 },
+      terminals: []
+    } as any);
+
+    const buttonTexts: string[] = [];
+    const collectButtonTexts = (node: ReactNode) => {
+      Children.forEach(node, (child) => {
+        if (!isValidElement(child)) {
+          return;
+        }
+        if (child.type === "button") {
+          buttonTexts.push(Children.toArray((child as ReactElement<{ children?: ReactNode }>).props.children).join(""));
+        }
+        collectButtonTexts((child as ReactElement<{ children?: ReactNode }>).props.children);
+      });
+    };
+    collectButtonTexts(panel);
+
+    expect(buttonTexts).toContain("添加默认量测");
+    expect(buttonTexts).toContain("添加到本组");
+    expect(buttonTexts).toContain("删除量测");
+    expect(buttonTexts).not.toContain("添加量测项");
   });
 
   test("selects the owning device when pressing a measurement group", () => {

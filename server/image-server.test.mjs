@@ -230,6 +230,101 @@ describe("scheme file persistence", () => {
     }
   });
 
+  test("writes saved project E files as field-aligned sections", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-e-field-aligned-"));
+    try {
+      const filesRoot = join(root, "files");
+      const trashRoot = join(root, "trash");
+      await saveSchemeProjectRecord({
+        filesRoot,
+        trashRoot,
+        schemePath: ["默认方案"],
+        record: {
+          name: "新模型",
+          updatedAt: "2026-07-11T00:00:00.000Z",
+          project: {
+            version: 1,
+            name: "新模型",
+            powerBaseValue: 100,
+            voltageUnit: "kV",
+            powerUnit: "MW",
+            currentUnit: "A",
+            nodes: [
+              {
+                id: "bus-1",
+                kind: "ac-bus",
+                name: "交流母线-1",
+                position: { x: 0, y: 0 },
+                size: { width: 120, height: 8 },
+                params: { idx: "1", vbase: "110", voltage: "110", run_stat: "1" },
+                terminals: [{ id: "t1", type: "ac", vbase: "110" }]
+              },
+              {
+                id: "bus-2",
+                kind: "ac-bus",
+                name: "交流母线-2",
+                position: { x: 280, y: 0 },
+                size: { width: 120, height: 8 },
+                params: { idx: "2", vbase: "110", voltage: "110", run_stat: "1" },
+                terminals: [{ id: "t1", type: "ac", vbase: "110" }]
+              },
+              {
+                id: "line-1",
+                kind: "ac-line",
+                name: "交流线路（自适应）-1",
+                position: { x: 120, y: 80 },
+                size: { width: 160, height: 40 },
+                params: { idx: "1", r: "0.1", x: "1.0", b: "0.0", run_stat: "1" },
+                terminals: [
+                  { id: "i", type: "ac" },
+                  { id: "j", type: "ac" }
+                ]
+              },
+              {
+                id: "break-1",
+                kind: "ac-box-breaker",
+                name: "盒型开关-1",
+                position: { x: 60, y: 80 },
+                size: { width: 80, height: 40 },
+                params: { idx: "1", status: "1", run_stat: "1" },
+                terminals: [
+                  { id: "i", type: "ac" },
+                  { id: "j", type: "ac" }
+                ]
+              }
+            ],
+            edges: [
+              { id: "e-bus1-break", sourceId: "bus-1", sourceTerminalId: "t1", targetId: "break-1", targetTerminalId: "i" },
+              { id: "e-break-line", sourceId: "break-1", sourceTerminalId: "j", targetId: "line-1", targetTerminalId: "i" },
+              { id: "e-line-bus2", sourceId: "line-1", sourceTerminalId: "j", targetId: "bus-2", targetTerminalId: "t1" }
+            ]
+          }
+        },
+        measurementConfig: {}
+      });
+
+      const eFile = await readFile(join(filesRoot, "默认方案", "新模型.e"), "utf-8");
+
+      expect(eFile).toContain("<PowerBase>\n");
+      expect(eFile).toContain("@    p_base    u_unit    p_unit    i_unit\n");
+      expect(eFile).toContain("#    100       kV        MW        A\n");
+      expect(eFile).toContain("<ACNode>\n");
+      expect(eFile).toContain("@    idx    name                    vbase    voltage    angle    isl    run_stat\n");
+      expect(eFile).toContain("#    1      交流母线-1              110      110        0        0      1\n");
+      expect(eFile).toContain("<ACBranch>\n");
+      expect(eFile).toContain("@    idx    name                    i_node    j_node    r      x      b      run_stat\n");
+      expect(eFile).toContain("#    1      交流线路（自适应）-1    3         2         0.1    1.0    0.0    1\n");
+      expect(eFile).toContain("<ACBreak>\n");
+      expect(eFile).toContain("@    idx    name          i_node    j_node    status    run_stat\n");
+      expect(eFile).toContain("#    1      盒型开关-1    1         3         1         1\n");
+      expect(eFile.trimEnd()).toContain("</ACBreak>");
+      expect(eFile).not.toContain('"modelParameters"');
+      expect(eFile).not.toContain('"devices"');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("writes saved project svg image hrefs as root-relative image file paths", async () => {
     const root = await mkdtemp(join(tmpdir(), "scheme-svg-image-paths-"));
     try {

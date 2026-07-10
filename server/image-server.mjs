@@ -1256,6 +1256,69 @@ function buildEDeviceValues(node, options = {}) {
   return values;
 }
 
+const eFileColumnGap = "    ";
+const eSectionPrimaryOrder = ["ACNode", "DCNode"];
+
+function eFileCellText(value) {
+  return String(value ?? "");
+}
+
+function eFileCellDisplayWidth(value) {
+  let width = 0;
+  for (const char of eFileCellText(value)) {
+    width += /[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6]/u.test(char)
+      ? 2
+      : 1;
+  }
+  return width;
+}
+
+function eFilePadCell(value, width) {
+  const text = eFileCellText(value);
+  return `${text}${" ".repeat(Math.max(0, width - eFileCellDisplayWidth(text)))}`;
+}
+
+function formatESection(section, columns, records) {
+  if (!columns.length || !records.length) {
+    return "";
+  }
+  const rows = records.map((record) => columns.map((column) => eFileCellText(record.params?.[column])));
+  const widths = columns.map((column, columnIndex) =>
+    Math.max(eFileCellDisplayWidth(column), ...rows.map((row) => eFileCellDisplayWidth(row[columnIndex])))
+  );
+  const formatRow = (prefix, cells) =>
+    [prefix, ...cells.map((cell, index) => eFilePadCell(cell, widths[index]))].join(eFileColumnGap).trimEnd();
+  return [
+    `<${section}>`,
+    formatRow("@", columns),
+    ...rows.map((row) => formatRow("#", row)),
+    `</${section}>`
+  ].join("\n");
+}
+
+function orderedESections(recordsBySection) {
+  const seen = new Set();
+  const ordered = [];
+  for (const section of eSectionPrimaryOrder) {
+    if (recordsBySection.has(section)) {
+      ordered.push(section);
+      seen.add(section);
+    }
+  }
+  for (const section of Object.keys(eSectionColumns)) {
+    if (!seen.has(section) && recordsBySection.has(section)) {
+      ordered.push(section);
+      seen.add(section);
+    }
+  }
+  for (const section of recordsBySection.keys()) {
+    if (!seen.has(section)) {
+      ordered.push(section);
+    }
+  }
+  return ordered;
+}
+
 function isBusNode(node) {
   return node?.kind === "ac-bus" || node?.kind === "dc-bus";
 }
@@ -1452,22 +1515,30 @@ function buildDeviceParameterFile(project) {
       };
     })
     .filter(Boolean);
-  return JSON.stringify(
-    {
-      version: 1,
-      name: project.name,
-      modelParameters: {
-        powerUnit: project.powerUnit ?? defaultPowerUnit,
-        voltageUnit: project.voltageUnit ?? defaultVoltageUnit,
-        currentUnit: project.currentUnit ?? defaultCurrentUnit,
-        powerBaseValue: project.powerBaseValue ?? defaultPowerBaseValue
-      },
-      devices: [...topologyNodeDevices, ...deviceRecords],
-      edges: project.edges ?? []
-    },
-    null,
-    2
-  );
+  const recordsBySection = new Map();
+  for (const record of [...topologyNodeDevices, ...deviceRecords]) {
+    const columns = eSectionColumns[record.section] ?? [];
+    if (!columns.length) {
+      continue;
+    }
+    recordsBySection.set(record.section, [...(recordsBySection.get(record.section) ?? []), record]);
+  }
+  const sections = [
+    formatESection("PowerBase", ["p_base", "u_unit", "p_unit", "i_unit"], [
+      {
+        params: {
+          p_base: project.powerBaseValue ?? defaultPowerBaseValue,
+          u_unit: project.voltageUnit ?? defaultVoltageUnit,
+          p_unit: project.powerUnit ?? defaultPowerUnit,
+          i_unit: project.currentUnit ?? defaultCurrentUnit
+        }
+      }
+    ]),
+    ...orderedESections(recordsBySection).map((section) =>
+      formatESection(section, eSectionColumns[section] ?? [], recordsBySection.get(section) ?? [])
+    )
+  ].filter(Boolean);
+  return `${sections.join("\n\n")}\n`;
 }
 
 function endpointPoint(project, edge, side) {

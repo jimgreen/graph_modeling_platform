@@ -4673,7 +4673,7 @@ export function createConfirmMeasurementEditorDialog(__appScope: Record<string, 
 
 export function createRenderSelectedNodeMeasurementTable(__appScope: Record<string, any>) {
   return (node: ModelNode) => {
-  const { BufferedTextInput, DeferredColorInput, Fragment, addDefaultMeasurementsToNode, addMeasurementItemToGroup, addMeasurementItemToNode, button, div, isBrowseMode, measurementConfig, measurementGroupBackgroundColor, measurementTypeById, measurementTypeOptionsForMeasurementGroup, option, removeMeasurementItem, removeMeasurementsFromNode, select, selectedMeasurementGroups, span, table, tbody, td, th, tr, updateMeasurementItem, updateSelectedMeasurementGroups } = __appScope;
+  const { BufferedTextInput, DeferredColorInput, Fragment, addDefaultMeasurementsToNode, addMeasurementItemToGroup, button, div, isBrowseMode, measurementConfig, measurementGroupBackgroundColor, measurementTypeById, measurementTypeOptionsForMeasurementGroup, option, removeMeasurementItem, removeMeasurementsFromNode, select, selectedMeasurementGroups, span, table, tbody, td, th, tr, updateMeasurementItem, updateSelectedMeasurementGroups } = __appScope;
     const selectedMeasurementGroupCommonDraft = selectedMeasurementGroups[0];
     const renderCommonMeasurementGroupRows = () => {
       if (!selectedMeasurementGroupCommonDraft) {
@@ -4871,7 +4871,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
             <td>
               <div className="measurement-sidebar-actions">
                 <span className="graph-readonly-value">{terminal ? `端子：${terminal.label || terminal.id}` : "设备级量测"}</span>
-                <button type="button" disabled={isBrowseMode} onClick={() => addMeasurementItemToGroup(node, group)}>添加量测项</button>
+                <button type="button" disabled={isBrowseMode} onClick={() => addMeasurementItemToGroup(node, group)}>添加到本组</button>
               </div>
             </td>
           </tr>
@@ -5009,13 +5009,6 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                   onClick={() => addDefaultMeasurementsToNode(node)}
                 >
                   添加默认量测
-                </button>
-                <button
-                  type="button"
-                  disabled={isBrowseMode}
-                  onClick={() => addMeasurementItemToNode(node)}
-                >
-                  添加量测项
                 </button>
                 <button
                   type="button"
