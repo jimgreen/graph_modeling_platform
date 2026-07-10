@@ -32,6 +32,10 @@ export function resolveInspectorTopologyEntry(topology: any, inspectorTopology: 
   return inspectorTopology?.nodes?.[nodeId] ?? topology?.nodes?.[nodeId];
 }
 
+export function inspectorTabShowsDevicePanel(inspectorTab: string, hasSelectedNode: boolean) {
+  return inspectorTab === "device" && hasSelectedNode;
+}
+
 // 运行时态 WS 指示灯：open=绿、connecting=黄、closed=灰；收发消息时闪烁一次。
 // runtimeWsBlinkSeq 递增 → key 变化 → 重放 blink 动画。
 // 悬浮提示「点击复制 clientId」，点击复制当前页面 clientId 到剪贴板。
@@ -1220,7 +1224,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                     <p>当前没有被选中图元。</p>
                   </div>)}
               </div>);
-        })()) : inspectorSelectedNode ? (<div className="device-param-stack">
+        })()) : inspectorTabShowsDevicePanel(inspectorTab, Boolean(inspectorSelectedNode)) ? (<div className="device-param-stack">
                 {!__appScope.isStaticGraphicNode(inspectorSelectedNode) && (<div className="device-info-tabs" role="tablist" aria-label="图元属性分类">
                     <button type="button" className="" onClick={() => setInspectorTab("graph")} role="tab" aria-selected={false}>
                       图形
@@ -1281,10 +1285,10 @@ export function renderAppView(__appScope: Record<string, any>) {
                         </tbody>
                       </table>)}
                   </>)}
-              </div>) : (<div className="empty-state">
+              </div>) : inspectorTab === "device" ? (<div className="empty-state">
                 <FileJson size={28}/>
                 <p>选择画布设备后，可切换查看图形、模型和量测。</p>
-              </div>)}
+              </div>) : null}
             {singleSelectedDeviceForInspector && inspectorSelectedNode && inspectorTab === "graph" && (<div className="topology-card">
                 <span>连接度</span>
                 <strong>{inspectorTopologyEntry?.degree ?? 0}</strong>

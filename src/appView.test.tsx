@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { areCanvasPropsEqual } from "./appExtracted/appCanvasArea";
-import { resolveInspectorTopologyEntry } from "./appExtracted/appView";
+import { inspectorTabShowsDevicePanel, resolveInspectorTopologyEntry } from "./appExtracted/appView";
 import type { Topology } from "./model";
 
 describe("app view topology inspector", () => {
@@ -33,6 +33,16 @@ describe("app view topology inspector", () => {
       "source-bus",
       "target-bus"
     ]);
+  });
+});
+
+describe("app view inspector tab visibility", () => {
+  test("shows device details only on the device tab", () => {
+    expect(inspectorTabShowsDevicePanel("model", true)).toBe(false);
+    expect(inspectorTabShowsDevicePanel("tree", true)).toBe(false);
+    expect(inspectorTabShowsDevicePanel("graph", true)).toBe(false);
+    expect(inspectorTabShowsDevicePanel("device", true)).toBe(true);
+    expect(inspectorTabShowsDevicePanel("device", false)).toBe(false);
   });
 });
 
