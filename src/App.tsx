@@ -1181,6 +1181,8 @@ const [topologyWarningPage, setTopologyWarningPage] = useState(0);
 Object.assign(__appScope, { topologyWarningPage, setTopologyWarningPage });
 const [topology, setTopology] = useState<Topology>(EMPTY_TOPOLOGY);
 Object.assign(__appScope, { topology, setTopology });
+const inspectorTopology = useMemo(() => buildTopology(nodes, edges), [nodes, edges]);
+Object.assign(__appScope, { inspectorTopology });
 const [topologyStatus, setTopologyStatus] = useState<TopologyRunStatus>(INITIAL_TOPOLOGY_STATUS);
 Object.assign(__appScope, { topologyStatus, setTopologyStatus });
 const topologyWarningPanelRef = useRef<HTMLElement | null>(null); Object.assign(__appScope, { topologyWarningPanelRef });

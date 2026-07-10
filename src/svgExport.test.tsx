@@ -745,16 +745,22 @@ describe("SVG export", () => {
   test("exports voltage colors as reusable css classes", () => {
     const acSource = createDefaultNode("ac-source", { x: 120, y: 120 });
     const acLoad = createDefaultNode("ac-load", { x: 260, y: 120 });
+    const acBus = createDefaultNode("ac-bus", { x: 380, y: 120 });
     const dcSource = createDefaultNode("dc-source", { x: 120, y: 220 });
     const dcLoad = createDefaultNode("dc-load", { x: 260, y: 220 });
+    const dcBus = createDefaultNode("dc-bus", { x: 380, y: 220 });
     acSource.id = "ac-source-10";
     acLoad.id = "ac-load-10";
+    acBus.id = "ac-bus-10";
     dcSource.id = "dc-source-750";
     dcLoad.id = "dc-load-750";
+    dcBus.id = "dc-bus-750";
     acSource.terminals[0].vbase = "10";
     acLoad.terminals[0].vbase = "10";
+    acBus.params.voltageLevel = "10 kV";
     dcSource.terminals[0].vbase = "750";
     dcLoad.terminals[0].vbase = "750";
+    dcBus.params.voltageLevel = "750 V";
     const edges: Edge[] = [
       { id: "ac-10-edge", sourceId: acSource.id, targetId: acLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
       { id: "dc-750-edge", sourceId: dcSource.id, targetId: dcLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" }
@@ -768,7 +774,7 @@ describe("SVG export", () => {
       }
     };
 
-    const svg = buildSvgDocument([acSource, acLoad, dcSource, dcLoad], edges, {
+    const svg = buildSvgDocument([acSource, acLoad, acBus, dcSource, dcLoad, dcBus], edges, {
       width: 500,
       height: 320,
       colorDisplayMode: "voltage",
@@ -784,7 +790,9 @@ describe("SVG export", () => {
     expect(defs).toContain(".ldcv750{fill:none;stroke:#00aa88;color:#00aa88}");
     expect(defs).toContain('stroke="currentColor"');
     expect(svg).toContain('id="ac-source-10" class="export-node export-device kv10"');
+    expect(svg).toContain('id="ac-bus-10" class="export-node export-device kv10"');
     expect(svg).toContain('id="dc-source-750" class="export-node export-device dcv750"');
+    expect(svg).toContain('id="dc-bus-750" class="export-node export-device dcv750"');
     expect(svg).toContain('class="export-edge-path lkv10"');
     expect(svg).toContain('class="export-edge-path ldcv750"');
   });

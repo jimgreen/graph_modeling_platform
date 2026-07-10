@@ -558,6 +558,86 @@ describe("power system model", () => {
     expect(topology.connectedComponents).toEqual([[nodes[0].id, nodes[1].id, nodes[2].id]]);
   });
 
+  test("builds adjacency topology from routable line device endpoint refs", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const bus = createDefaultNode("ac-bus", { x: 420, y: 100 });
+    const line = createRoutableLineDeviceFromEndpoints(
+      DEVICE_LIBRARY.find((template) => template.kind === "ac-routable-line")!,
+      { x: 160, y: 100 },
+      { x: 360, y: 100 },
+      undefined,
+      {
+        source: { nodeId: source.id, terminalId: source.terminals[0].id },
+        target: { nodeId: bus.id, terminalId: "t1" }
+      }
+    );
+
+    const topology = buildTopology([source, line, bus], []);
+
+    expect(topology.nodes[source.id].degree).toBe(1);
+    expect(topology.nodes[source.id].neighbors).toEqual([line.id]);
+    expect(topology.nodes[line.id].degree).toBe(2);
+    expect(topology.nodes[line.id].neighbors).toEqual([source.id, bus.id]);
+    expect(topology.nodes[bus.id].degree).toBe(1);
+    expect(topology.connectedComponents).toEqual([[source.id, line.id, bus.id]]);
+  });
+
+  test("builds adjacency topology from routable line device endpoints touching buses", () => {
+    const bus = { ...createDefaultNode("ac-bus", { x: 420, y: 100 }), id: "selected-bus" };
+    const switchNode = { ...createDefaultNode("ac-switch", { x: 420, y: 220 }), id: "connected-switch" };
+    const line = {
+      ...createRoutableLineDeviceFromEndpoints(
+        DEVICE_LIBRARY.find((template) => template.kind === "ac-routable-line")!,
+        { x: 180, y: 100 },
+        { x: 420, y: 100 }
+      ),
+      id: "touching-routable-line"
+    };
+    const edges: Edge[] = [
+      {
+        id: "switch-to-bus",
+        sourceId: switchNode.id,
+        targetId: bus.id,
+        sourceTerminalId: switchNode.terminals[0].id,
+        targetTerminalId: "t1"
+      }
+    ];
+
+    const topology = buildTopology([bus, switchNode, line], edges);
+
+    expect(topology.nodes[bus.id].degree).toBe(2);
+    expect(topology.nodes[bus.id].neighbors).toEqual([switchNode.id, line.id]);
+    expect(topology.nodes[line.id].degree).toBe(1);
+  });
+
+  test("builds adjacency topology for a U-shaped routable line device between two buses", () => {
+    const sourceBus = { ...createDefaultNode("ac-bus", { x: 260, y: 220 }), id: "source-bus" };
+    const targetBus = { ...createDefaultNode("ac-bus", { x: 640, y: 220 }), id: "target-bus" };
+    const line = setRoutableLineDeviceCanvasPoints(
+      {
+        ...createRoutableLineDeviceFromEndpoints(
+          DEVICE_LIBRARY.find((template) => template.kind === "ac-routable-line")!,
+          { x: 320, y: 220 },
+          { x: 580, y: 220 }
+        ),
+        id: "selected-routable-line"
+      },
+      [
+        { x: 320, y: 220 },
+        { x: 320, y: 120 },
+        { x: 580, y: 120 },
+        { x: 580, y: 220 }
+      ]
+    );
+
+    const topology = buildTopology([sourceBus, line, targetBus], []);
+
+    expect(topology.nodes[line.id].degree).toBe(2);
+    expect(topology.nodes[line.id].neighbors).toEqual([sourceBus.id, targetBus.id]);
+    expect(topology.nodes[sourceBus.id].neighbors).toEqual([line.id]);
+    expect(topology.nodes[targetBus.id].neighbors).toEqual([line.id]);
+  });
+
   test("can render saved connection geometry without full obstacle-aware rerouting", () => {
     const source = withHiddenDeviceLabel(createDefaultNode("ac-source", { x: 100, y: 100 }));
     const target = withHiddenDeviceLabel(createRightTerminalLoad({ x: 360, y: 180 }));
@@ -9857,16 +9937,20 @@ describe("power system model", () => {
   test("colors only AC and DC electric graphics by voltage level in voltage color mode", () => {
     const acSource = createDefaultNode("ac-source", { x: 100, y: 100 });
     const acLoad = createDefaultNode("ac-load", { x: 240, y: 100 });
+    const acBus = createDefaultNode("ac-bus", { x: 380, y: 100 });
     const dcSource = createDefaultNode("dc-source", { x: 100, y: 180 });
     const dcLoad = createDefaultNode("dc-load", { x: 240, y: 180 });
+    const dcBus = createDefaultNode("dc-bus", { x: 380, y: 180 });
     const hydrogenSource = createDefaultNode("hydrogen-source", { x: 100, y: 260 });
     const hydrogenLoad = createDefaultNode("hydrogen-load", { x: 240, y: 260 });
     const heatSource = createDefaultNode("heat-source", { x: 100, y: 340 });
     const heatLoad = createDefaultNode("single-port-heat-load", { x: 240, y: 340 });
     acSource.terminals[0].vbase = "10";
     acLoad.terminals[0].vbase = "10";
+    acBus.params.voltageLevel = "10 kV";
     dcSource.terminals[0].vbase = "750";
     dcLoad.terminals[0].vbase = "750";
+    dcBus.params.voltageLevel = "750 V";
     hydrogenSource.terminals[0].vbase = "30";
     heatSource.terminals[0].vbase = "95";
     const nodeById = new Map([acSource, acLoad, dcSource, dcLoad, hydrogenSource, hydrogenLoad, heatSource, heatLoad].map((node) => [node.id, node]));
@@ -9874,9 +9958,11 @@ describe("power system model", () => {
     expect(voltageLevelColor("10")).toBe("#f97316");
     expect(voltageLevelColor("750")).toBe("#0891b2");
     expect(getDeviceStrokeColor(acSource, "voltage")).toBe("#f97316");
+    expect(getDeviceStrokeColor(acBus, "voltage")).toBe("#f97316");
     expect(getTerminalDisplayColor(acSource, acSource.terminals[0], "voltage")).toBe("#f97316");
     expect(getConnectionStrokeColor({ id: "ac", sourceId: acSource.id, targetId: acLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" }, nodeById, "voltage")).toBe("#f97316");
     expect(getDeviceStrokeColor(dcSource, "voltage")).toBe("#0891b2");
+    expect(getDeviceStrokeColor(dcBus, "voltage")).toBe("#0891b2");
     expect(getTerminalDisplayColor(dcSource, dcSource.terminals[0], "voltage")).toBe("#0891b2");
     expect(getConnectionStrokeColor({ id: "dc", sourceId: dcSource.id, targetId: dcLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" }, nodeById, "voltage")).toBe("#0891b2");
     expect(getDeviceStrokeColor(hydrogenSource, "voltage")).toBe("#7c3aed");

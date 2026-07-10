@@ -4652,8 +4652,17 @@ function isPureThermalNetworkKind(kind: string): boolean {
 
 export function getDeviceStrokeColor(node: Pick<ModelNode, "kind" | "terminals" | "params">, mode: ColorDisplayMode = "energy", palette: ColorPalette = DEFAULT_COLOR_PALETTE): string {
   const primaryTerminal = node.terminals.find((terminal) => isElectricColorType(terminal.type)) ?? node.terminals[0] ?? virtualBusTerminal(node);
+  const busTerminalType = busTerminalTypeByKind(node.kind);
+  const busVoltage = firstNonZeroVoltageBase([
+    node.params.vbase,
+    node.params.voltageLevel,
+    node.params.ratedVoltage,
+    node.params.voltage
+  ]);
   return node.params.foregroundColor || (
-    isHydrogenVisualKind(node.kind)
+    mode === "voltage" && isElectricColorType(busTerminalType) && busVoltage
+      ? voltageLevelColor(busVoltage, busTerminalType, palette)
+      : isHydrogenVisualKind(node.kind)
       ? terminalTypeColor("h2", palette)
       : isThermalVisualKind(node.kind)
         ? terminalTypeColor("heat", palette)
@@ -6637,7 +6646,8 @@ function routableLineDeviceTopologyEdges(nodes: ModelNode[]): Edge[] {
     if (!isRoutableLineDeviceKind(node.kind)) {
       continue;
     }
-    const refs = routableLineDeviceEndpointRefs(node);
+    const nodeWithRefs = inferMissingRoutableLineDeviceEndpointRefs(node, nodes);
+    const refs = routableLineDeviceEndpointRefs(nodeWithRefs);
     const sourceTerminal = node.terminals[0];
     const targetTerminal = node.terminals[node.terminals.length - 1];
     if (refs.source && sourceTerminal) {
@@ -10791,6 +10801,7 @@ export function topologyCalculationMessage(errorCount: number) {
 }
 
 export function buildTopology(nodes: ModelNode[], edges: Edge[]): Topology {
+  const topologyEdges = [...edges, ...routableLineDeviceTopologyEdges(nodes)];
   const topology: Topology = {
     nodes: Object.fromEntries(
       nodes.map((node) => [
@@ -10806,7 +10817,7 @@ export function buildTopology(nodes: ModelNode[], edges: Edge[]): Topology {
     connectedComponents: []
   };
 
-  for (const edge of edges) {
+  for (const edge of topologyEdges) {
     const source = topology.nodes[edge.sourceId];
     const target = topology.nodes[edge.targetId];
     if (!source || !target) {

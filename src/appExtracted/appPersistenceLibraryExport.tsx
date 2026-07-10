@@ -3254,15 +3254,26 @@ ${scopedBackgroundSvg}
       return null;
     }
     const terminal = node.terminals.find((candidate) => isExportElectricTerminalType(candidate.type));
-    if (!terminal || !isExportElectricTerminalType(terminal.type)) {
+    const busTerminalType = terminal ? undefined : getBusTerminalType(node);
+    const type = terminal?.type ?? busTerminalType;
+    if (!isExportElectricTerminalType(type)) {
       return null;
     }
-    const voltage = terminalExportVoltage(node, terminal);
-    addVoltageStyleRule(terminal.type, voltage);
-    return { type: terminal.type, voltage };
+    const voltage = terminal ? terminalExportVoltage(node, terminal) : firstNonZeroExportVoltageValue([
+      node.params.vbase,
+      node.params.voltageLevel,
+      node.params.ratedVoltage,
+      node.params.voltage
+    ]) || "0";
+    addVoltageStyleRule(type, voltage);
+    return { type, voltage };
   };
   const findExportDisplayTerminal = (node: ModelNode | undefined, terminalId?: string) =>
-    node?.terminals.find((terminal) => terminal.id === terminalId) ?? node?.terminals[0];
+    node?.terminals.find((terminal) => terminal.id === terminalId) ??
+      node?.terminals[0] ??
+      ((node && isExportElectricTerminalType(getBusTerminalType(node)))
+        ? { id: terminalId || "t1", label: "", type: getBusTerminalType(node), anchor: { x: 0, y: 0 }, nodeNumber: node.nodeNumber || "0", vbase: "0" }
+        : undefined);
   const edgeVoltageDescriptor = (edge: Edge | undefined) => {
     if (colorDisplayMode !== "voltage" || !edge) {
       return null;

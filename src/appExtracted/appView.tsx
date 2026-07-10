@@ -28,6 +28,10 @@ export function imagePickerUsesLibraryTabs(imageTarget: any) {
   return Boolean(imageTarget && imageTarget.kind !== "canvasIcon" && imageTarget.kind !== "stateIconDrawing");
 }
 
+export function resolveInspectorTopologyEntry(topology: any, inspectorTopology: any, nodeId: string) {
+  return inspectorTopology?.nodes?.[nodeId] ?? topology?.nodes?.[nodeId];
+}
+
 // 运行时态 WS 指示灯：open=绿、connecting=黄、closed=灰；收发消息时闪烁一次。
 // runtimeWsBlinkSeq 递增 → key 变化 → 重放 blink 动画。
 // 悬浮提示「点击复制 clientId」，点击复制当前页面 clientId 到剪贴板。
@@ -325,6 +329,9 @@ export function renderAppView(__appScope: Record<string, any>) {
       ? iconLibraryLibraries.find((library) => library.id === iconLibrarySelectedLibraryId)?.totalIcons
       : iconLibraryCatalog?.totalIcons;
   const iconLibraryLoadedText = `${iconLibraryVisibleResult.total} / ${iconLibraryPicker?.entries?.length ?? 0}${typeof iconLibraryRequestedTotal === "number" ? ` / ${iconLibraryRequestedTotal}` : ""}`;
+  const inspectorTopologyEntry = inspectorSelectedNode
+    ? resolveInspectorTopologyEntry(topology, __appScope.inspectorTopology, inspectorSelectedNode.id)
+    : undefined;
   return (<div className={`app-shell ${isBrowseMode ? "browse-mode" : "edit-mode"} left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${topologyWarningPanelResize ? "topology-warning-panel-resizing" : ""} ${nodeDoubleClickDialogDrag || nodeDoubleClickDialogResize ? "node-double-click-dialog-moving" : ""} ${deviceLibraryDialogDrag || deviceLibraryDialogResize ? "device-library-dialog-moving" : ""} ${canvasResizeDrag ? "canvas-resizing" : ""}`} style={appShellStyle}>
       {renderSidePanelEdgeTrigger("left")}
       {renderSidePanelEdgeTrigger("right")}
@@ -1280,9 +1287,9 @@ export function renderAppView(__appScope: Record<string, any>) {
               </div>)}
             {singleSelectedDeviceForInspector && inspectorSelectedNode && inspectorTab === "graph" && (<div className="topology-card">
                 <span>连接度</span>
-                <strong>{topology.nodes[inspectorSelectedNode.id]?.degree ?? 0}</strong>
+                <strong>{inspectorTopologyEntry?.degree ?? 0}</strong>
                 <small>
-                  {(topology.nodes[inspectorSelectedNode.id]?.neighbors ?? [])
+                  {(inspectorTopologyEntry?.neighbors ?? [])
                 .map((id) => nodeById.get(id)?.name)
                 .filter(Boolean)
                 .join("、") || "暂无相邻元件"}
