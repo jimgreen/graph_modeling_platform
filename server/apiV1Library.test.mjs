@@ -63,7 +63,13 @@ const fullLib = {
 
 const fullMeasurement = {
   measurementTypes: [{ id: "voltage", name: "电压" }],
-  deviceProfiles: [{ deviceKind: "ac-bus", items: [] }]
+  deviceProfiles: [{ deviceKind: "ac-bus", items: [] }],
+  groupDefaults: {
+    backgroundColor: "transparent",
+    borderColor: "#64748b",
+    borderWidth: 0,
+    borderStyle: "none"
+  }
 };
 
 describe("handleV1LibraryCategories", () => {
@@ -124,7 +130,8 @@ describe("handleV1LibraryMeasurements", () => {
     await handleV1LibraryMeasurements({ request, response });
     expect(response.jsonBody().data).toEqual({
       measurementTypes: [{ id: "voltage", name: "电压" }],
-      deviceProfiles: [{ deviceKind: "ac-bus", items: [] }]
+      deviceProfiles: [{ deviceKind: "ac-bus", items: [] }],
+      groupDefaults: fullMeasurement.groupDefaults
     });
   });
 

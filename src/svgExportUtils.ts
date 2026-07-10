@@ -87,9 +87,14 @@ export function exportSvgUniqueId(rawId: string, usedIds: Set<string>, fallback:
 
 export function buildExportDeviceIdMap(nodes: readonly ModelNode[], usedIds: Set<string>) {
   const usedIndexesByType = new Map<string, Set<number>>();
+  const staticNodesByType = new Map<string, ModelNode[]>();
   const result = new Map<string, string>();
   for (const node of nodes) {
     if (isStaticNode(node)) {
+      const typeId = exportSvgSafeId(String(node.kind), "static");
+      const typeNodes = staticNodesByType.get(typeId) ?? [];
+      typeNodes.push(node);
+      staticNodesByType.set(typeId, typeNodes);
       continue;
     }
     const typeId = exportSvgSafeId(inferESection(node.kind, node.params) || String(node.kind), "device");
@@ -107,6 +112,40 @@ export function buildExportDeviceIdMap(nodes: readonly ModelNode[], usedIds: Set
     }
     usedIndexes.add(exportIndex);
     result.set(node.id, exportSvgUniqueId(`${typeId}-${exportIndex}`, usedIds, "device"));
+  }
+
+  for (const [typeId, typeNodes] of Array.from(staticNodesByType.entries()).sort(([left], [right]) => left.localeCompare(right))) {
+    const usedIndexes = new Set<number>();
+    const indexedNodes: Array<{ node: ModelNode; requestedIndex: number }> = [];
+    const unindexedNodes: ModelNode[] = [];
+    for (const node of typeNodes) {
+      const requestedIndexText = String(node.params.idx ?? "").trim();
+      const requestedIndex = /^[1-9]\d*$/.test(requestedIndexText) ? Number.parseInt(requestedIndexText, 10) : 0;
+      if (requestedIndex > 0) {
+        indexedNodes.push({ node, requestedIndex });
+      } else {
+        unindexedNodes.push(node);
+      }
+    }
+    indexedNodes.sort((left, right) => left.requestedIndex - right.requestedIndex || left.node.id.localeCompare(right.node.id));
+    for (const { node, requestedIndex } of indexedNodes) {
+      let exportIndex = requestedIndex;
+      while (usedIndexes.has(exportIndex)) {
+        exportIndex += 1;
+      }
+      usedIndexes.add(exportIndex);
+      result.set(node.id, exportSvgUniqueId(`${typeId}-${exportIndex}`, usedIds, "static"));
+    }
+    unindexedNodes.sort((left, right) => left.id.localeCompare(right.id));
+    let exportIndex = 1;
+    for (const node of unindexedNodes) {
+      while (usedIndexes.has(exportIndex)) {
+        exportIndex += 1;
+      }
+      usedIndexes.add(exportIndex);
+      result.set(node.id, exportSvgUniqueId(`${typeId}-${exportIndex}`, usedIds, "static"));
+      exportIndex += 1;
+    }
   }
   return result;
 }

@@ -87,6 +87,7 @@ export async function handleV1LibraryMeasurements({ request, response }) {
   try {
     const config = await readMeasurementConfig();
     await sendV1Json(request, response, {
+      groupDefaults: config.groupDefaults ?? {},
       measurementTypes: config.measurementTypes ?? [],
       deviceProfiles: config.deviceProfiles ?? []
     });
@@ -131,6 +132,7 @@ export async function handleV1Library({ request, response }) {
       categories: buildCategories(deviceLibrary).categories,
       devices: buildDevices(deviceLibrary),
       measurements: {
+        groupDefaults: measurementConfig.groupDefaults ?? {},
         measurementTypes: measurementConfig.measurementTypes ?? [],
         deviceProfiles: measurementConfig.deviceProfiles ?? []
       },

@@ -67,6 +67,27 @@ describe("measurement domain", () => {
     expect(group?.items[0].sourcePoint).toBe("node-1.activePower");
   });
 
+  test("applies configured defaults only when creating new measurement groups", () => {
+    const config = normalizeMeasurementConfig({
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: DEFAULT_MEASUREMENT_CONFIG.deviceProfiles,
+      groupDefaults: {
+        backgroundColor: "#fef3c7",
+        borderColor: "#d97706",
+        borderWidth: 3,
+        borderStyle: "dashed"
+      }
+    });
+
+    expect(config.groupDefaults).toEqual({
+      backgroundColor: "#fef3c7",
+      borderColor: "#d97706",
+      borderWidth: 3,
+      borderStyle: "dashed"
+    });
+    expect(createDefaultMeasurementGroupForNode(node("node-default-style"), config)).toMatchObject(config.groupDefaults);
+  });
+
   test("shows an added device measurement unless the profile explicitly hides it", () => {
     const config = normalizeMeasurementConfig({
       measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,

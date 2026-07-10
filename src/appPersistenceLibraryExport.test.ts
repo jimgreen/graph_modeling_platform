@@ -409,6 +409,20 @@ describe("graph template library filtering", () => {
     expect(measurementToolbarMatch?.[0]).not.toContain("openLibraryPackageImportFilePicker");
     expect(measurementToolbarMatch?.[0]).not.toContain("<Download");
     expect(measurementToolbarMatch?.[0]).not.toContain("<FileInput");
+    expect(projectFactorySource).toContain("新增量测框默认样式");
+    expect(projectFactorySource).toContain("默认背景色");
+    expect(projectFactorySource).toContain("默认边框色");
+    expect(projectFactorySource).toContain("默认边框宽度");
+    expect(projectFactorySource).toContain("默认边框类型");
+  });
+
+  test("refreshes the library panel callback after measurement defaults are saved", () => {
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const libraryPanelContentMatch = appSource.match(
+      /const libraryPanelContent = useMemo\([\s\S]*?Object\.assign\(__appScope, \{ libraryPanelContent \}\);/u
+    );
+
+    expect(libraryPanelContentMatch?.[0]).toContain("measurementConfig");
   });
 
   test("alerts after a library package import succeeds", () => {

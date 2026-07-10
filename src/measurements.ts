@@ -11,6 +11,13 @@ export type MeasurementFontStyle = "normal" | "italic";
 export type MeasurementTextDecoration = "none" | "underline";
 export type MeasurementGroupBorderStyle = "none" | "solid" | "dashed" | "dotted";
 
+export type MeasurementGroupDefaults = {
+  backgroundColor: string;
+  borderColor: string;
+  borderStyle: MeasurementGroupBorderStyle;
+  borderWidth: number;
+};
+
 export type MeasurementStyleOverride = {
   color?: string;
   fontFamily?: string;
@@ -54,11 +61,13 @@ export type DeviceMeasurementProfile = {
 };
 
 export type PlatformMeasurementConfig = {
+  groupDefaults: MeasurementGroupDefaults;
   measurementTypes: MeasurementTypeDefinition[];
   deviceProfiles: DeviceMeasurementProfile[];
 };
 
 export type PlatformMeasurementConfigInput = {
+  groupDefaults?: Partial<MeasurementGroupDefaults>;
   measurementTypes?: Array<Partial<MeasurementTypeDefinition>>;
   deviceProfiles?: Array<Partial<DeviceMeasurementProfile> & { items?: Partial<DeviceMeasurementProfileItem>[] }>;
 };
@@ -146,6 +155,12 @@ function normalizedDefaultMeasurementFontSize(value: unknown, fallback?: Measure
 }
 
 export const DEFAULT_MEASUREMENT_CONFIG: PlatformMeasurementConfig = {
+  groupDefaults: {
+    backgroundColor: DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR,
+    borderColor: DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR,
+    borderStyle: DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE,
+    borderWidth: DEFAULT_MEASUREMENT_GROUP_BORDER_WIDTH
+  },
   measurementTypes: [
     { id: "activePower", key: "p", name: "有功功率", shortLabel: "P", defaultUnit: "MW", valueType: "number", defaultDecimals: 3, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
     { id: "reactivePower", key: "q", name: "无功功率", shortLabel: "Q", defaultUnit: "Mvar", valueType: "number", defaultDecimals: 3, defaultColor: "#475569", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
@@ -398,6 +413,13 @@ function normalizeStyleOverride(value: unknown): MeasurementStyleOverride | unde
 }
 
 export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput | undefined): PlatformMeasurementConfig {
+  const rawGroupDefaults = input?.groupDefaults ?? DEFAULT_MEASUREMENT_CONFIG.groupDefaults;
+  const groupDefaults: MeasurementGroupDefaults = {
+    backgroundColor: normalizedGroupColor(rawGroupDefaults.backgroundColor) ?? DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR,
+    borderColor: normalizedGroupColor(rawGroupDefaults.borderColor) ?? DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR,
+    borderStyle: normalizedGroupBorderStyle(rawGroupDefaults.borderStyle) ?? DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE,
+    borderWidth: normalizedGroupBorderWidth(rawGroupDefaults.borderWidth) ?? DEFAULT_MEASUREMENT_GROUP_BORDER_WIDTH
+  };
   const defaults = typeById(DEFAULT_MEASUREMENT_CONFIG.measurementTypes);
   const rawTypes = Array.isArray(input?.measurementTypes) && input.measurementTypes.length > 0
     ? input.measurementTypes
@@ -456,7 +478,7 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
     });
     return [{ deviceKind, items }];
   });
-  return { measurementTypes, deviceProfiles };
+  return { groupDefaults, measurementTypes, deviceProfiles };
 }
 
 function normalizeMeasurementItem(item: Partial<MeasurementItemBinding>, validTypeIds?: ReadonlySet<string>): MeasurementItemBinding | null {
@@ -637,10 +659,10 @@ export function createDefaultMeasurementGroupsForNode(
       visible: true,
       labelVisible: true,
       unitVisible: true,
-      backgroundColor: DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR,
-      borderColor: DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR,
-      borderStyle: DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE,
-      borderWidth: DEFAULT_MEASUREMENT_GROUP_BORDER_WIDTH,
+      backgroundColor: normalizedConfig.groupDefaults.backgroundColor,
+      borderColor: normalizedConfig.groupDefaults.borderColor,
+      borderStyle: normalizedConfig.groupDefaults.borderStyle,
+      borderWidth: normalizedConfig.groupDefaults.borderWidth,
       anchor: "bottom",
       offset: defaultMeasurementGroupOffsetForNode(node, terminal),
       layout: "vertical",

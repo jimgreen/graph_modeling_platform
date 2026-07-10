@@ -454,6 +454,7 @@ import {
   imageArrayBufferToDataUrl,
   decodeBase64Text,
   decodeSvgImageSource,
+  inlineBackendImageRefsInSvgDataUrl,
   svgRootAttributeValue,
   svgLengthNumber,
   stripUnsafeInlineSvgMarkup,
@@ -2306,7 +2307,7 @@ export function imageExportPathByIdFromAssets(assets: ImageAsset[], storedAssets
 }
 
 export function exportSvgImageHref(value: string, imageExportPathById: Record<string, string> = {}) {
-  const href = String(value ?? "");
+  const href = inlineBackendImageRefsInSvgDataUrl(String(value ?? ""), imageExportPathById);
   const id = backendImageIdFromHref(href);
   if (!id) {
     return href;
@@ -3456,16 +3457,18 @@ ${rules.join("\n")}
       const labelMarkup = buildSvgNodeLabelMarkup(node);
       const template = resolveSvgNodeTemplate(node);
       const stateDefinitions = template ? getTemplateStateDefinitions(template) : [];
-      const stateSymbolInputs = stateDefinitions.length > 0
-        ? stateDefinitions.map((state) => {
-            const stateNode = { ...node, params: { ...node.params, status: state.value } };
-            return {
-              stateKey: `state_${state.value || "default"}`,
-              node: stateNode,
-              visual: template ? resolveDeviceStateVisual(template, stateNode) : null
-            };
-          })
-        : [{ stateKey: "default", node, visual: resolveSvgNodeStateVisual(node) }];
+      const activeStateVisual = resolveSvgNodeStateVisual(node);
+      const stateSymbolInputs = stateDefinitions.map((state) => {
+        const stateNode = { ...node, params: { ...node.params, status: state.value } };
+        return {
+          stateKey: `state_${state.value || "default"}`,
+          node: stateNode,
+          visual: template ? resolveDeviceStateVisual(template, stateNode) : null
+        };
+      });
+      if (stateSymbolInputs.length === 0 || !activeStateVisual) {
+        stateSymbolInputs.push({ stateKey: "default", node, visual: activeStateVisual });
+      }
       const renderNodeSymbolBody = (symbolNode: ModelNode, stateVisual: DeviceStateVisual | null, patternScopeId: string) => {
         const stateVisualImageHref = resolveStateVisualImageHref(stateVisual, imageAssets);
         const imageHref = exportSvgImageHref(stateVisualImageHref || resolveNodeImage(symbolNode, imageAssets), imageExportPathById);
@@ -3533,7 +3536,6 @@ ${rules.join("\n")}
         }
         symbolIdByStateKey.set(stateInput.stateKey, symbolId);
       }
-      const activeStateVisual = resolveSvgNodeStateVisual(node);
       const activeStateKey = activeStateVisual ? `state_${activeStateVisual.value || "default"}` : "default";
       const symbolId = symbolIdByStateKey.get(activeStateKey) ?? symbolIdByStateKey.values().next().value ?? "";
       const useId = exportDeviceIdByNodeId.get(node.id) ?? exportSvgUniqueId(node.id, usedSvgIds, "device");

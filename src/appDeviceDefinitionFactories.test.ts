@@ -94,6 +94,42 @@ describe("manual bend interaction helpers", () => {
     expect(hrefById.get("background-state-visual")).toBe("/api/images/background-state-visual");
   });
 
+  test("collects backend images nested inside svg data urls for standalone svg export", () => {
+    const backendImageIdFromHref = (href: string) => {
+      const match = /^\/api\/images\/([^/?#]+)/.exec(href);
+      return match ? decodeURIComponent(match[1]) : "";
+    };
+    const nestedSvg = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160">',
+      '<image href="/api/images/nested-photo" x="0" y="0" width="240" height="160"/>',
+      "</svg>"
+    ].join("");
+    const hrefById = createSvgExportReferencedImageHrefById({
+      backendImageIdFromHref,
+      canvasBackgroundImage: "",
+      canvasBackgroundImageAssetId: "",
+      canvasBackgroundImageUrl: "",
+      backgroundPageRender: null,
+      imageAssets: {},
+      libraryTemplateByKind: new Map(),
+      nodes: [
+        {
+          kind: "static-text",
+          params: {
+            backgroundImage: `data:image/svg+xml;utf8,${encodeURIComponent(nestedSvg)}`,
+            foregroundImage: "",
+            backgroundImageAssetId: "",
+            foregroundImageAssetId: ""
+          }
+        }
+      ],
+      resolveDeviceStateVisual: () => null,
+      resolveStateVisualImageHref: () => ""
+    })();
+
+    expect(hrefById.get("nested-photo")).toBe("/api/images/nested-photo");
+  });
+
   test("syncs existing canvas nodes when a matching template visual definition changes", () => {
     const node: any = {
       id: "node-1",

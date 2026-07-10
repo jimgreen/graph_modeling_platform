@@ -9782,6 +9782,69 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   gap: 10px;
 }
 
+.measurement-group-defaults {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.75fr) minmax(0, 2.25fr);
+  gap: 16px;
+  align-items: end;
+  padding: 10px 0;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.measurement-group-defaults-heading {
+  display: grid;
+  gap: 4px;
+  align-self: center;
+}
+
+.measurement-group-defaults-heading strong {
+  font-size: 13px;
+  color: #1e293b;
+}
+
+.measurement-group-defaults-heading span {
+  font-size: 11px;
+  line-height: 1.45;
+  color: #64748b;
+}
+
+.measurement-group-defaults-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(118px, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.measurement-group-defaults-grid label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.measurement-group-defaults-grid label > span {
+  font-size: 11px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.measurement-group-defaults-grid input,
+.measurement-group-defaults-grid select {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .measurement-group-defaults {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .measurement-group-defaults-grid {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+  }
+}
+
 .measurement-config-actions {
   display: flex;
   align-items: center;

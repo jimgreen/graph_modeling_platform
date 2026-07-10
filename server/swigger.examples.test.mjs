@@ -283,6 +283,31 @@ function expectFor(ep, ex) {
   throw new Error(`未定义期望: ${ep.method} ${p} (示例: ${label})`);
 }
 
+describe("swigger 量测配置元数据", () => {
+  test("记录新增量测框默认样式", () => {
+    const getConfig = SWIGGER_ENDPOINTS.find((endpoint) => (
+      endpoint.method === "GET" && endpoint.path === "/api/measurement-config"
+    ));
+    const putConfig = SWIGGER_ENDPOINTS.find((endpoint) => (
+      endpoint.method === "PUT" && endpoint.path === "/api/measurement-config"
+    ));
+    const getV1Measurements = SWIGGER_ENDPOINTS.find((endpoint) => (
+      endpoint.method === "GET" && endpoint.path === "/api/v1/library/measurements"
+    ));
+
+    expect(getConfig?.response).toContain("groupDefaults");
+    expect(putConfig?.body).toMatchObject({
+      groupDefaults: {
+        backgroundColor: "transparent",
+        borderColor: "#64748b",
+        borderStyle: "none",
+        borderWidth: 0
+      }
+    });
+    expect(getV1Measurements?.response).toContain("groupDefaults");
+  });
+});
+
 // 动态生成测试：每个接口的每个示例一个 test
 describe("swigger 所有示例自动化验证", () => {
   for (const ep of SWIGGER_ENDPOINTS) {

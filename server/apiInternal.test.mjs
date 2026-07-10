@@ -355,13 +355,28 @@ describe("配置域 /api/color-config & measurement-config & device-library", ()
     const saved = await fetchJson("/api/measurement-config", {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ measurementTypes: [{ id: "m1", name: "测点1" }], deviceProfiles: [] })
+      body: JSON.stringify({
+        measurementTypes: [{ id: "m1", name: "测点1" }],
+        deviceProfiles: [],
+        groupDefaults: {
+          backgroundColor: "#fef3c7",
+          borderColor: "#d97706",
+          borderWidth: 3,
+          borderStyle: "dashed"
+        }
+      })
     });
     expect(saved.status).toBe(200);
     expect(saved.json.ok).toBe(true);
     const got = await fetchJson("/api/measurement-config");
     expect(got.status).toBe(200);
     expect(Array.isArray(got.json.measurementTypes)).toBe(true);
+    expect(got.json.groupDefaults).toEqual({
+      backgroundColor: "#fef3c7",
+      borderColor: "#d97706",
+      borderWidth: 3,
+      borderStyle: "dashed"
+    });
   });
 
   test("device-library 保存 → 读取", async () => {

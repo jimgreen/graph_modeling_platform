@@ -6257,7 +6257,8 @@ const libraryPanelContent = useMemo(
       libraryFlyoutPositions,
       libraryPreviewByKind,
       librarySearchNeedle,
-      librarySearchQuery
+      librarySearchQuery,
+      measurementConfig
     ]
   );
 Object.assign(__appScope, { libraryPanelContent });

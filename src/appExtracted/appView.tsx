@@ -7,6 +7,7 @@ import {
   iconLibraryCategoriesForSelection,
   visibleIconLibraryIcons
 } from "../iconLibraryCatalog";
+import { buildExportDeviceIdMap } from "../svgExportUtils";
 
 export type ImagePickerLibraryTab = "image" | "icon";
 
@@ -34,6 +35,10 @@ export function resolveInspectorTopologyEntry(topology: any, inspectorTopology: 
 
 export function inspectorTabShowsDevicePanel(inspectorTab: string, hasSelectedNode: boolean) {
   return inspectorTab === "device" && hasSelectedNode;
+}
+
+export function resolveInspectorGraphId(nodes: any[], node: any) {
+  return buildExportDeviceIdMap(nodes, new Set<string>()).get(node.id) ?? node.id;
 }
 
 // 运行时态 WS 指示灯：open=绿、connecting=黄、closed=灰；收发消息时闪烁一次。
@@ -336,6 +341,9 @@ export function renderAppView(__appScope: Record<string, any>) {
   const inspectorTopologyEntry = inspectorSelectedNode
     ? resolveInspectorTopologyEntry(topology, __appScope.inspectorTopology, inspectorSelectedNode.id)
     : undefined;
+  const inspectorGraphId = inspectorSelectedNode
+    ? resolveInspectorGraphId(nodes, inspectorSelectedNode)
+    : "";
   return (<div className={`app-shell ${isBrowseMode ? "browse-mode" : "edit-mode"} left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${topologyWarningPanelResize ? "topology-warning-panel-resizing" : ""} ${nodeDoubleClickDialogDrag || nodeDoubleClickDialogResize ? "node-double-click-dialog-moving" : ""} ${deviceLibraryDialogDrag || deviceLibraryDialogResize ? "device-library-dialog-moving" : ""} ${canvasResizeDrag ? "canvas-resizing" : ""}`} style={appShellStyle}>
       {renderSidePanelEdgeTrigger("left")}
       {renderSidePanelEdgeTrigger("right")}
@@ -895,7 +903,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                           title="点击复制 ID"
                           onClick={(e) => {
                             const rect = e.currentTarget.getBoundingClientRect();
-                            navigator.clipboard.writeText(inspectorSelectedNode.id).then(() => {
+                            navigator.clipboard.writeText(inspectorGraphId).then(() => {
                               const toast = document.createElement("span");
                               toast.className = "id-copy-toast";
                               toast.textContent = "已复制";
@@ -906,7 +914,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                               setTimeout(() => toast.remove(), 1000);
                             });
                           }}
-                        >{inspectorSelectedNode.id}</span>
+                        >{inspectorGraphId}</span>
                       </td>
                     </tr>
                     <tr>

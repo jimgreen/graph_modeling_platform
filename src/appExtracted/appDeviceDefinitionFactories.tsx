@@ -2,6 +2,7 @@
 import { clampNumber } from "../canvasViewport";
 import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
 import { stateIconSvgVisibleViewBox } from "../stateIconDrawing";
+import { decodeSvgImageSource } from "../svgUtils";
 import { measurementProfileItemsComplianceMessage } from "./appGraphMeasurementFactories";
 
 const STATE_ICON_DRAFT_FRAME = {
@@ -1753,6 +1754,17 @@ export function createSvgExportReferencedImageHrefById(__appScope: Record<string
       const id = backendImageIdFromHref(value);
       if (id && !hrefById.has(id)) {
         hrefById.set(id, value);
+      }
+      const svgSource = decodeSvgImageSource(value);
+      if (!svgSource) {
+        return;
+      }
+      for (const match of svgSource.matchAll(/\s(?:xlink:)?href\s*=\s*(["'])(.*?)\1/giu)) {
+        const nestedHref = match[2] ?? "";
+        const nestedId = backendImageIdFromHref(nestedHref);
+        if (nestedId && !hrefById.has(nestedId)) {
+          hrefById.set(nestedId, nestedHref);
+        }
       }
     };
     const appendNodeImages = (nodeList?: ModelNode[]) => {

@@ -99,6 +99,87 @@ describe("SVG export", () => {
     expect(svg).not.toContain('href="data/images/');
   });
 
+  test("embeds backend images referenced inside svg data url backgrounds", () => {
+    const nestedSvg = [
+      '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">',
+      '<image href="/api/images/nested-photo" x="0" y="0" width="240" height="160"/>',
+      "</svg>"
+    ].join("");
+    const node = {
+      ...createDefaultNode("static-text", { x: 120, y: 90 }),
+      id: "nested-image-node"
+    };
+    node.params = {
+      ...node.params,
+      text: "文字",
+      backgroundImage: `data:image/svg+xml;utf8,${encodeURIComponent(nestedSvg)}`
+    };
+
+    const svg = buildSvgDocument([node], [], {
+      width: 320,
+      height: 180,
+      imageExportPathById: {
+        "nested-photo": "data:image/png;base64,bmVzdGVkLXBob3Rv"
+      }
+    });
+
+    expect(svg).toContain('href="data:image/png;base64,bmVzdGVkLXBob3Rv"');
+    expect(svg).not.toContain('/api/images/nested-photo');
+  });
+
+  test("uses the node default image when its current status has no matching state definition", () => {
+    const fallbackStateSvg = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40">',
+      '<text x="60" y="20">文字</text>',
+      "</svg>"
+    ].join("");
+    const nestedImageSvg = [
+      '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">',
+      '<image href="/api/images/current-photo" x="0" y="0" width="240" height="160"/>',
+      "</svg>"
+    ].join("");
+    const template: DeviceTemplate = {
+      ...DEVICE_LIBRARY.find((item) => item.kind === "static-text")!,
+      kind: "custom-static-image-state" as DeviceKind,
+      label: "状态图片",
+      custom: true,
+      params: { component_type: "StaticTextSymbol" },
+      stateDefinitions: [
+        {
+          value: "0",
+          name: "状态0",
+          image: `data:image/svg+xml;utf8,${encodeURIComponent(fallbackStateSvg)}`
+        }
+      ]
+    };
+    const node = {
+      ...createNodeFromTemplate(template, { x: 120, y: 90 }),
+      id: "current-image-node"
+    };
+    node.params = {
+      ...node.params,
+      status: "1",
+      text: "文字",
+      backgroundImage: `data:image/svg+xml;utf8,${encodeURIComponent(nestedImageSvg)}`
+    };
+
+    const svg = buildSvgDocument([node], [], {
+      width: 320,
+      height: 180,
+      deviceTemplates: [template],
+      imageExportPathById: {
+        "current-photo": "data:image/png;base64,Y3VycmVudC1waG90bw=="
+      }
+    });
+    const useTag = svgDeviceUseTag(svg, "custom-static-image-state-1");
+
+    expect(svg).toContain('id="symbol_StaticTextSymbol_custom-static-image-state_state_0"');
+    expect(svg).toContain('id="symbol_StaticTextSymbol_custom-static-image-state_default"');
+    expect(useTag).toContain('href="#symbol_StaticTextSymbol_custom-static-image-state_default"');
+    expect(svg).toContain('href="data:image/png;base64,Y3VycmVudC1waG90bw=="');
+    expect(svg).not.toContain('/api/images/current-photo');
+  });
+
   test("keeps svg node background images as svg markup in exported svg", () => {
     const node = {
       ...createDefaultNode("static-image", { x: 120, y: 90 }),
@@ -197,7 +278,7 @@ describe("SVG export", () => {
     } as any);
 
     const backgroundIndex = svg.indexOf('class="export-background-page-layer"');
-    const currentNodeIndex = svg.indexOf('id="current-title"');
+    const currentNodeIndex = svg.indexOf('id="static-text-1"');
 
     expect(backgroundIndex).toBeGreaterThan(-1);
     expect(currentNodeIndex).toBeGreaterThan(backgroundIndex);
@@ -307,6 +388,29 @@ describe("SVG export", () => {
     expect(svg).toContain('target-dev-id="ACBreak-2"');
     expect(svg).toContain('<text id="label_ACBreak-1"');
     expect(svg).not.toContain('id="label_node-1783339759502-u3qq"');
+  });
+
+  test("exports static graphics with stable semantic ids", () => {
+    const first = { ...createDefaultNode("static-circle", { x: 120, y: 120 }), id: "node-static-b" };
+    const second = { ...createDefaultNode("static-circle", { x: 280, y: 120 }), id: "node-static-a" };
+    const customButton = {
+      ...createDefaultNode("static-button", { x: 440, y: 120 }),
+      id: "node-custom-static",
+      kind: "custom-StaticButton-2" as DeviceKind,
+      params: {
+        ...createDefaultNode("static-button", { x: 0, y: 0 }).params,
+        component_type: "StaticButton"
+      }
+    };
+
+    const svg = buildSvgDocument([first, customButton, second], [], { width: 600, height: 260 });
+
+    expect(svg).toContain('id="static-circle-1"');
+    expect(svg).toContain('id="static-circle-2"');
+    expect(svg).toContain('id="custom-StaticButton-2-1"');
+    expect(svg).not.toContain('id="node-static-a"');
+    expect(svg).not.toContain('id="node-static-b"');
+    expect(svg).not.toContain('id="node-custom-static"');
   });
 
   test("exports topology node attributes on device uses without visible anchors", () => {

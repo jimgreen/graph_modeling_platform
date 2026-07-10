@@ -1,6 +1,48 @@
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { createAppHookCallback120 } from "./appExtracted/appToolbarHookFactories";
+import { createAppHookCallback100, createAppHookCallback120 } from "./appExtracted/appToolbarHookFactories";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("side panel resize hook", () => {
+  test("listens for captured pointer moves so panel event isolation cannot block resizing", () => {
+    const listeners = new Map<string, EventListener>();
+    const addEventListener = vi.fn((type: string, listener: EventListener, capture?: boolean) => {
+      expect(capture).toBe(true);
+      listeners.set(type, listener);
+    });
+    const removeEventListener = vi.fn();
+    vi.stubGlobal("window", {
+      innerWidth: 1200,
+      addEventListener,
+      removeEventListener
+    });
+    const setRightPanelWidth = vi.fn();
+    const setSidePanelResize = vi.fn();
+    const cleanup = createAppHookCallback100({
+      SIDE_PANEL_MAX_WIDTH: 640,
+      SIDE_PANEL_MIN_WIDTH: 240,
+      clampPanelDimension: (value: number, min: number, max: number) => Math.min(max, Math.max(min, value)),
+      setLeftPanelWidth: vi.fn(),
+      setRightPanelWidth,
+      setSidePanelResize,
+      sidePanelResize: { side: "right", startX: 1000, startWidth: 240 }
+    })();
+
+    listeners.get("pointermove")?.({ clientX: 880 } as PointerEvent);
+    expect(setRightPanelWidth).toHaveBeenCalledWith(360);
+
+    listeners.get("pointerup")?.(new Event("pointerup"));
+    expect(setSidePanelResize).toHaveBeenCalledWith(null);
+
+    cleanup?.();
+    expect(removeEventListener).toHaveBeenCalledWith("pointermove", expect.any(Function), true);
+    expect(removeEventListener).toHaveBeenCalledWith("pointerup", expect.any(Function), true);
+    expect(removeEventListener).toHaveBeenCalledWith("pointercancel", expect.any(Function), true);
+  });
+});
 
 const dirtyBaseline = (name: string, nodes: unknown[] = []) => ({
   projectName: name,

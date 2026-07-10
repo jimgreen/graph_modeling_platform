@@ -361,6 +361,46 @@ describe("scheme file persistence", () => {
     }
   });
 
+  test("embeds backend images referenced inside svg data url backgrounds", () => {
+    const nestedSvg = [
+      '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">',
+      '<image href="/api/images/nested-photo" x="0" y="0" width="240" height="160"/>',
+      "</svg>"
+    ].join("");
+    const svg = buildSvgFile(
+      {
+        version: 1,
+        name: "内嵌图片导出",
+        canvasWidth: 320,
+        canvasHeight: 180,
+        nodes: [
+          {
+            id: "nested-image-node",
+            kind: "static-text",
+            name: "图片",
+            position: { x: 120, y: 90 },
+            size: { width: 120, height: 80 },
+            params: {
+              text: "文字",
+              backgroundImage: `data:image/svg+xml;utf8,${encodeURIComponent(nestedSvg)}`
+            },
+            terminals: []
+          }
+        ],
+        edges: []
+      },
+      {},
+      {
+        imagePathById: {
+          "nested-photo": "data:image/png;base64,bmVzdGVkLXBob3Rv"
+        }
+      }
+    );
+
+    expect(svg).toContain('href="data:image/png;base64,bmVzdGVkLXBob3Rv"');
+    expect(svg).not.toContain('/api/images/nested-photo');
+  });
+
   test("deduplicates server SVG device state symbols and references active state", () => {
     const svg = buildSvgFile(
       {
@@ -455,6 +495,52 @@ describe("scheme file persistence", () => {
     expect(svg).toContain('<text id="label_ACBreak-1"');
     expect(svg).toContain('dev-id="ACBreak-1"');
     expect(svg).not.toContain('dev-id="node-1783339759502-u3qq"');
+  });
+
+  test("exports static graphics with stable semantic ids", () => {
+    const svg = buildSvgFile({
+      version: 1,
+      name: "静态图元ID",
+      canvasWidth: 600,
+      canvasHeight: 260,
+      nodes: [
+        {
+          id: "node-static-b",
+          kind: "static-circle",
+          name: "圆形2",
+          position: { x: 120, y: 120 },
+          size: { width: 80, height: 80 },
+          params: {},
+          terminals: []
+        },
+        {
+          id: "node-custom-static",
+          kind: "custom-StaticButton-2",
+          name: "自定义按钮",
+          position: { x: 440, y: 120 },
+          size: { width: 120, height: 48 },
+          params: { component_type: "StaticButton", text: "按钮" },
+          terminals: []
+        },
+        {
+          id: "node-static-a",
+          kind: "static-circle",
+          name: "圆形1",
+          position: { x: 280, y: 120 },
+          size: { width: 80, height: 80 },
+          params: {},
+          terminals: []
+        }
+      ],
+      edges: []
+    });
+
+    expect(svg).toContain('id="static-circle-1"');
+    expect(svg).toContain('id="static-circle-2"');
+    expect(svg).toContain('id="custom-StaticButton-2-1"');
+    expect(svg).not.toContain('id="node-static-a"');
+    expect(svg).not.toContain('id="node-static-b"');
+    expect(svg).not.toContain('id="node-custom-static"');
   });
 
   test("writes device labels to Text_Layer and measurements to Measurement_Layer instead of defs", () => {

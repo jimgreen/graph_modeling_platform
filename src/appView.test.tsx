@@ -1,7 +1,11 @@
 import { describe, expect, test } from "vitest";
 import { areCanvasPropsEqual } from "./appExtracted/appCanvasArea";
-import { inspectorTabShowsDevicePanel, resolveInspectorTopologyEntry } from "./appExtracted/appView";
-import type { Topology } from "./model";
+import {
+  inspectorTabShowsDevicePanel,
+  resolveInspectorGraphId,
+  resolveInspectorTopologyEntry
+} from "./appExtracted/appView";
+import { createDefaultNode, type Topology } from "./model";
 
 describe("app view topology inspector", () => {
   test("uses live topology entries instead of stale saved topology entries", () => {
@@ -43,6 +47,31 @@ describe("app view inspector tab visibility", () => {
     expect(inspectorTabShowsDevicePanel("graph", true)).toBe(false);
     expect(inspectorTabShowsDevicePanel("device", true)).toBe(true);
     expect(inspectorTabShowsDevicePanel("device", false)).toBe(false);
+  });
+});
+
+describe("app view inspector graph id", () => {
+  test("uses the same normalized device id rule as SVG export", () => {
+    const first = createDefaultNode("ac-box-breaker", { x: 100, y: 100 });
+    first.id = "node-1783657543903-first";
+    first.params = { ...first.params, idx: "1" };
+    const second = createDefaultNode("ac-box-breaker", { x: 200, y: 100 });
+    second.id = "node-1783657543903-second";
+    second.params = { ...second.params, idx: "2" };
+
+    expect(resolveInspectorGraphId([first, second], second)).toBe("ACBreak-2");
+  });
+
+  test("uses stable semantic ids for static graphics regardless of node order", () => {
+    const first = createDefaultNode("static-circle", { x: 100, y: 100 });
+    first.id = "node-static-b";
+    const second = createDefaultNode("static-circle", { x: 200, y: 100 });
+    second.id = "node-static-a";
+
+    expect(resolveInspectorGraphId([first, second], second)).toBe("static-circle-1");
+    expect(resolveInspectorGraphId([first, second], first)).toBe("static-circle-2");
+    expect(resolveInspectorGraphId([second, first], second)).toBe("static-circle-1");
+    expect(resolveInspectorGraphId([second, first], first)).toBe("static-circle-2");
   });
 });
 

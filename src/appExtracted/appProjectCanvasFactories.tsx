@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { clampNumber } from "../canvasViewport";
+import { DEFAULT_MEASUREMENT_CONFIG } from "../measurements";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
   return (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget, manualPoints?: Point[]) => {
@@ -3561,11 +3562,19 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
 
 export function createRenderMeasurementConfigDialog(__appScope: Record<string, any>) {
   return () => {
-  const { BufferedTextInput, DeferredColorInput, Download, FileInput, Save, addMeasurementType, button, closeMeasurementConfigDialog, deleteMeasurementType, deviceLibraryDialogLayouts, deviceLibraryDialogStyle, div, exportLibraryPackage, flushMeasurementConfigDialogDraftInputs, footer, h2, header, input, isBrowseMode, measurementConfig, measurementConfigDialogOpen, measurementConfigDialogRef, measurementConfigDraft, measurementConfigSaveStatus, openLibraryPackageImportFilePicker, option, p, saveMeasurementConfigDialog, section, select, span, startDeviceLibraryDialogDrag, startDeviceLibraryDialogResize, stopDeviceLibraryDialogEvent, table, tbody, td, th, thead, tr, updateMeasurementType } = __appScope;
+  const { BufferedTextInput, DeferredColorInput, Download, FileInput, Save, addMeasurementType, button, closeMeasurementConfigDialog, deleteMeasurementType, deviceLibraryDialogLayouts, deviceLibraryDialogStyle, div, exportLibraryPackage, flushMeasurementConfigDialogDraftInputs, footer, h2, header, input, isBrowseMode, measurementConfig, measurementConfigDialogOpen, measurementConfigDialogRef, measurementConfigDraft, measurementConfigSaveStatus, openLibraryPackageImportFilePicker, option, p, saveMeasurementConfigDialog, section, select, span, startDeviceLibraryDialogDrag, startDeviceLibraryDialogResize, stopDeviceLibraryDialogEvent, table, tbody, td, th, thead, tr, updateMeasurementConfig, updateMeasurementType } = __appScope;
     if (!measurementConfigDialogOpen) {
       return null;
     }
     const draftConfig = measurementConfigDraft ?? measurementConfig;
+    const groupDefaults = draftConfig.groupDefaults ?? DEFAULT_MEASUREMENT_CONFIG.groupDefaults;
+    const updateGroupDefaults = (patch: Record<string, unknown>) => updateMeasurementConfig((current) => ({
+      ...current,
+      groupDefaults: {
+        ...(current.groupDefaults ?? DEFAULT_MEASUREMENT_CONFIG.groupDefaults),
+        ...patch
+      }
+    }));
     const measurementConfigStatusText =
       measurementConfigSaveStatus === "saving"
         ? "正在保存..."
@@ -3595,6 +3604,53 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
             </div>
           </header>
             <div className="measurement-config-panel">
+              <section className="measurement-group-defaults" aria-labelledby="measurement-group-defaults-title">
+                <div className="measurement-group-defaults-heading">
+                  <strong id="measurement-group-defaults-title">新增量测框默认样式</strong>
+                  <span>仅应用于保存配置后新建的量测框，已有量测框保持不变。</span>
+                </div>
+                <div className="measurement-group-defaults-grid">
+                  <label>
+                    <span>默认背景色</span>
+                    <DeferredColorInput
+                      value={groupDefaults.backgroundColor}
+                      fallback="transparent"
+                      onCommit={(value) => updateGroupDefaults({ backgroundColor: value })}
+                    />
+                  </label>
+                  <label>
+                    <span>默认边框色</span>
+                    <DeferredColorInput
+                      value={groupDefaults.borderColor}
+                      fallback="#64748b"
+                      onCommit={(value) => updateGroupDefaults({ borderColor: value })}
+                    />
+                  </label>
+                  <label>
+                    <span>默认边框宽度</span>
+                    <BufferedTextInput
+                      type="number"
+                      min="0"
+                      max="12"
+                      step="1"
+                      value={groupDefaults.borderWidth}
+                      onCommit={(nextValue) => updateGroupDefaults({ borderWidth: Number(nextValue) })}
+                    />
+                  </label>
+                  <label>
+                    <span>默认边框类型</span>
+                    <select
+                      value={groupDefaults.borderStyle}
+                      onChange={(event) => updateGroupDefaults({ borderStyle: event.target.value })}
+                    >
+                      <option value="none">无边框</option>
+                      <option value="solid">实线</option>
+                      <option value="dashed">虚线</option>
+                      <option value="dotted">点线</option>
+                    </select>
+                  </label>
+                </div>
+              </section>
               <div className="measurement-config-toolbar">
                 <button type="button" onClick={addMeasurementType}>新增量测类型</button>
               </div>

@@ -487,6 +487,31 @@ const builtinMeasurementTypeIds = new Set([
   "status"
 ]);
 
+const defaultMeasurementGroupDefaults = Object.freeze({
+  backgroundColor: "transparent",
+  borderColor: "#64748b",
+  borderStyle: "none",
+  borderWidth: 0
+});
+
+function normalizeMeasurementGroupDefaults(value) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const backgroundColor = String(source.backgroundColor ?? defaultMeasurementGroupDefaults.backgroundColor).trim();
+  const borderColor = String(source.borderColor ?? defaultMeasurementGroupDefaults.borderColor).trim();
+  const borderStyle = ["none", "solid", "dashed", "dotted"].includes(source.borderStyle)
+    ? source.borderStyle
+    : defaultMeasurementGroupDefaults.borderStyle;
+  const rawBorderWidth = Number(source.borderWidth);
+  return {
+    backgroundColor: backgroundColor || defaultMeasurementGroupDefaults.backgroundColor,
+    borderColor: borderColor || defaultMeasurementGroupDefaults.borderColor,
+    borderStyle,
+    borderWidth: Number.isFinite(rawBorderWidth)
+      ? Math.max(0, Math.min(12, rawBorderWidth))
+      : defaultMeasurementGroupDefaults.borderWidth
+  };
+}
+
 function normalizeMeasurementDefaultFontSize(id, value) {
   const size = Math.max(6, Math.min(96, Number.isFinite(Number(value)) ? Number(value) : 14));
   return builtinMeasurementTypeIds.has(id) && size === 12 ? 14 : size;
@@ -520,6 +545,7 @@ function normalizeMeasurementStyleOverride(value) {
 
 function normalizeMeasurementConfig(payload) {
   const source = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
+  const groupDefaults = normalizeMeasurementGroupDefaults(source.groupDefaults);
   const seenTypes = new Set();
   const measurementTypes = (Array.isArray(source.measurementTypes) ? source.measurementTypes : []).flatMap((item) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
@@ -582,7 +608,7 @@ function normalizeMeasurementConfig(payload) {
     });
     return [{ deviceKind, items }];
   });
-  return { measurementTypes, deviceProfiles };
+  return { groupDefaults, measurementTypes, deviceProfiles };
 }
 
 export async function readMeasurementConfig() {
@@ -595,6 +621,7 @@ export async function readMeasurementConfig() {
   }
   return {
     exists: false,
+    groupDefaults: { ...defaultMeasurementGroupDefaults },
     measurementTypes: [],
     deviceProfiles: []
   };
@@ -1522,7 +1549,27 @@ async function imageExportPathByIdFromManifest(manifest) {
 }
 
 function svgImageHref(value, imagePathById = {}) {
-  const href = String(value ?? "");
+  const originalHref = String(value ?? "");
+  const svgSource = decodeSvgImageSource(originalHref);
+  let href = originalHref;
+  if (svgSource) {
+    let changed = false;
+    const nextSource = svgSource.replace(
+      /(\s(?:xlink:)?href\s*=\s*)(["'])(.*?)\2/giu,
+      (match, prefix, quote, rawHref) => {
+        const nestedId = backendImageIdFromHref(rawHref);
+        const nestedImageHref = nestedId ? imagePathById[nestedId] ?? "" : "";
+        if (!/^data:image\//iu.test(nestedImageHref)) {
+          return match;
+        }
+        changed = true;
+        return `${prefix}${quote}${escapeSvgAttribute(nestedImageHref)}${quote}`;
+      }
+    );
+    if (changed) {
+      href = `data:image/svg+xml;utf8,${encodeURIComponent(nextSource)}`;
+    }
+  }
   const id = backendImageIdFromHref(href);
   if (!id) {
     return href;
@@ -1674,10 +1721,18 @@ function uniqueSvgId(rawId, usedIds, fallback) {
 
 function buildExportDeviceIdMap(nodes, usedIds) {
   const usedIndexesByType = new Map();
+  const staticNodesByType = new Map();
   const result = new Map();
   for (const node of nodes) {
-    if (isStaticNode(node)) continue;
-    const typeId = svgSafeId(inferESection(node?.kind, node?.params ?? {}) || String(node?.kind ?? ""), "device");
+    const inferredSection = inferESection(node?.kind, node?.params ?? {});
+    if (isStaticNode(node) || String(inferredSection).startsWith("Static")) {
+      const typeId = svgSafeId(String(node?.kind ?? ""), "static");
+      const typeNodes = staticNodesByType.get(typeId) ?? [];
+      typeNodes.push(node);
+      staticNodesByType.set(typeId, typeNodes);
+      continue;
+    }
+    const typeId = svgSafeId(inferredSection || String(node?.kind ?? ""), "device");
     const usedIndexes = usedIndexesByType.get(typeId) ?? new Set();
     usedIndexesByType.set(typeId, usedIndexes);
     const requestedIndexText = String(node?.params?.idx ?? "").trim();
@@ -1690,6 +1745,36 @@ function buildExportDeviceIdMap(nodes, usedIds) {
     while (usedIndexes.has(exportIndex)) exportIndex += 1;
     usedIndexes.add(exportIndex);
     result.set(node.id, uniqueSvgId(`${typeId}-${exportIndex}`, usedIds, "device"));
+  }
+
+  for (const [typeId, typeNodes] of Array.from(staticNodesByType.entries()).sort(([left], [right]) => left.localeCompare(right))) {
+    const usedIndexes = new Set();
+    const indexedNodes = [];
+    const unindexedNodes = [];
+    for (const node of typeNodes) {
+      const requestedIndexText = String(node?.params?.idx ?? "").trim();
+      const requestedIndex = /^[1-9]\d*$/.test(requestedIndexText) ? Number.parseInt(requestedIndexText, 10) : 0;
+      if (requestedIndex > 0) {
+        indexedNodes.push({ node, requestedIndex });
+      } else {
+        unindexedNodes.push(node);
+      }
+    }
+    indexedNodes.sort((left, right) => left.requestedIndex - right.requestedIndex || String(left.node?.id ?? "").localeCompare(String(right.node?.id ?? "")));
+    for (const { node, requestedIndex } of indexedNodes) {
+      let exportIndex = requestedIndex;
+      while (usedIndexes.has(exportIndex)) exportIndex += 1;
+      usedIndexes.add(exportIndex);
+      result.set(node.id, uniqueSvgId(`${typeId}-${exportIndex}`, usedIds, "static"));
+    }
+    unindexedNodes.sort((left, right) => String(left?.id ?? "").localeCompare(String(right?.id ?? "")));
+    let exportIndex = 1;
+    for (const node of unindexedNodes) {
+      while (usedIndexes.has(exportIndex)) exportIndex += 1;
+      usedIndexes.add(exportIndex);
+      result.set(node.id, uniqueSvgId(`${typeId}-${exportIndex}`, usedIds, "static"));
+      exportIndex += 1;
+    }
   }
   return result;
 }
