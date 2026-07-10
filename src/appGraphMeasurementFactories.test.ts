@@ -5,6 +5,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   createBeginMeasurementDrag,
   createBuildMeasurementGroupMarkup,
+  createMeasurementGroupRenderMetrics,
   createRenderMultiNodeDragOverlay,
   createUpdateMeasurementDrag,
   measurementProfileItemsComplianceMessage,
@@ -277,6 +278,8 @@ describe("measurement canvas interactions", () => {
           {
             item,
             display: {
+              label: "P",
+              unit: "MW",
               color: "#334155",
               fontFamily: "Arial",
               fontStyle: "normal",
@@ -284,6 +287,9 @@ describe("measurement canvas interactions", () => {
               textDecoration: "none"
             },
             fontSize: 14,
+            labelText: "P",
+            valueText: "--",
+            unitText: "MW",
             text: "P -- MW"
           }
         ],
@@ -292,7 +298,7 @@ describe("measurement canvas interactions", () => {
       selectedMeasurementGroupIdSet: new Set<string>()
     } as any);
 
-    expect(() => buildMeasurementGroupMarkup(
+    const markup = buildMeasurementGroupMarkup(
       {
         id: "node-42",
         kind: "ac-load",
@@ -303,7 +309,62 @@ describe("measurement canvas interactions", () => {
         terminals: []
       } as any,
       { id: "measurement-group-1", nodeId: "node-42", items: [item] } as any
-    )).not.toThrow();
+    );
+
+    expect(markup).toContain('<g class="measurement-item mi" mid="m-active" mt="activePower" mf="node-42.activePower" mr="value"');
+    expect(markup).toContain('<text class="measurement-label ml"');
+    expect(markup).toContain('>P</text>');
+    expect(markup).toContain('<text class="measurement-value mv"');
+    expect(markup).toContain('>--</text>');
+    expect(markup).toContain('<text class="measurement-unit mu"');
+    expect(markup).toContain('>MW</text>');
+    expect(markup).not.toContain('id="mv-m-active"');
+    expect(markup).not.toContain('>P -- MW</text>');
+  });
+
+  test("splits measurement row metrics into label value and unit fragments", () => {
+    const item = {
+      id: "current-1",
+      measurementTypeId: "current",
+      sourcePoint: "node-42.current"
+    };
+    const measurementGroupRenderMetrics = createMeasurementGroupRenderMetrics({
+      formatMeasurementDisplayValue: (_value: unknown, _decimals: number, unit: string) => unit ? `-- ${unit}` : "--",
+      measurementConfig: {},
+      measurementFontScaleForNode: () => 1,
+      resolveMeasurementItemDisplay: () => ({
+        label: "I",
+        unit: "A",
+        decimals: 2,
+        color: "#334155",
+        fontFamily: "Arial",
+        fontSize: 14,
+        fontWeight: "500",
+        fontStyle: "normal",
+        textDecoration: "none",
+        visible: true
+      })
+    } as any);
+
+    const metrics = measurementGroupRenderMetrics(
+      { id: "node-42" } as any,
+      {
+        id: "measurement-group-1",
+        nodeId: "node-42",
+        visible: true,
+        labelVisible: true,
+        unitVisible: true,
+        layout: "vertical",
+        items: [item]
+      } as any
+    );
+
+    expect(metrics?.rows[0]).toMatchObject({
+      labelText: "I",
+      valueText: "--",
+      unitText: "A",
+      text: "I -- A"
+    });
   });
 
   test("builds single node drag measurement markup from the original node position", () => {
@@ -469,6 +530,70 @@ describe("measurement canvas interactions", () => {
     nodeId: "node-42",
     visible: true
   } as any;
+
+  test("renders an addressable live measurement value without splitting group interaction", () => {
+    const item = {
+      id: "current-1",
+      measurementTypeId: "current",
+      sourcePoint: "node-42.current",
+      role: "value"
+    };
+    const renderMeasurementGroup = createMeasurementGroupRenderer({
+      dragging: null,
+      draggingNodeIdSet: new Set<string>(),
+      measurementGroupRenderMetrics: () => ({
+        columnWidth: 96,
+        columns: 1,
+        height: 24,
+        lineHeight: 24,
+        rows: [{
+          item,
+          display: {
+            label: "I",
+            unit: "A",
+            color: "#334155",
+            fontFamily: "Arial",
+            fontStyle: "normal",
+            fontWeight: "500",
+            textDecoration: "none"
+          },
+          fontSize: 14,
+          labelText: "I",
+          valueText: "--",
+          unitText: "A",
+          text: "I -- A"
+        }],
+        width: 96
+      })
+    });
+
+    const rendered = renderMeasurementGroup(draggedMeasurementGroup);
+    const elements: ReactElement<any>[] = [];
+    const textNodes: string[] = [];
+    const collect = (node: ReactNode) => {
+      Children.forEach(node, (child) => {
+        if (typeof child === "string") {
+          textNodes.push(child);
+          return;
+        }
+        if (!isValidElement(child)) {
+          return;
+        }
+        elements.push(child as ReactElement<any>);
+        collect((child as ReactElement<any>).props.children);
+      });
+    };
+    collect(rendered);
+
+    const row = elements.find((element) => String(element.props.className ?? "").split(" ").includes("mi"));
+    const value = elements.find((element) => String(element.props.className ?? "").split(" ").includes("mv"));
+    expect(row?.props).toMatchObject({ mid: "current-1", mt: "current", mf: "node-42.current" });
+    expect(value?.props).toMatchObject({ id: "mv-current-1" });
+    expect(textNodes).toContain("I");
+    expect(textNodes).toContain("--");
+    expect(textNodes).toContain("A");
+    expect(textNodes).not.toContain("I -- A");
+  });
 
   test("hides the normal measurement layer for a single dragged node", () => {
     const renderMeasurementGroup = createMeasurementGroupRenderer({ singleNodeDragging: true });

@@ -402,10 +402,11 @@ export function createMeasurementGroupRenderMetrics(__appScope: Record<string, a
       if (!display.visible) {
         return [];
       }
-      const label = group.labelVisible === false ? "" : display.label;
-      const unit = group.unitVisible === false ? "" : display.unit;
-      const text = `${label} ${formatMeasurementDisplayValue(undefined, display.decimals, unit)}`.trim();
-      return [{ item, display, text, fontSize: display.fontSize * measurementFontScale }];
+      const labelText = group.labelVisible === false ? "" : display.label;
+      const valueText = formatMeasurementDisplayValue(undefined, display.decimals, "");
+      const unitText = group.unitVisible === false ? "" : display.unit;
+      const text = [labelText, valueText, unitText].filter(Boolean).join(" ");
+      return [{ item, display, labelText, valueText, unitText, text, fontSize: display.fontSize * measurementFontScale }];
     });
     if (rows.length === 0) {
       return null;
@@ -457,7 +458,21 @@ export function createBuildMeasurementGroupMarkup(__appScope: Record<string, any
       const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
       const textX = -metrics.width / 2 + col * metrics.columnWidth + 7;
       const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
-      return `<text class="measurement-item" ${exportMeasurementItemMetadataAttributes(row.item)} x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}">${escapeXml(row.text)}</text>`;
+      const textGap = Math.max(4, row.fontSize * 0.36);
+      const textWidth = (text: string) => text.length * row.fontSize * 0.58;
+      const labelWidth = row.labelText ? textWidth(row.labelText) : 0;
+      const valueWidth = textWidth(row.valueText);
+      const valueX = textX + labelWidth + (row.labelText ? textGap : 0);
+      const unitX = valueX + valueWidth + (row.unitText ? textGap : 0);
+      const rowAttributes = `fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
+      const labelMarkup = row.labelText
+        ? `<text class="measurement-label ml" x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle">${escapeXml(row.labelText)}</text>`
+        : "";
+      const valueMarkup = `<text class="measurement-value mv" x="${formatSvgNumber(valueX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle">${escapeXml(row.valueText)}</text>`;
+      const unitMarkup = row.unitText
+        ? `<text class="measurement-unit mu" x="${formatSvgNumber(unitX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle">${escapeXml(row.unitText)}</text>`
+        : "";
+      return `<g class="measurement-item mi" ${exportMeasurementItemMetadataAttributes(row.item)} ${rowAttributes}>${labelMarkup}${valueMarkup}${unitMarkup}</g>`;
     }).join("");
     const extraClass = options.className ? ` ${escapeXml(options.className)}` : "";
     return `<g class="measurement-group drag-preview-measurement-group${selectedClass}${extraClass}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group)}>

@@ -191,19 +191,26 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
           const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
           const textX = -metrics.width / 2 + col * metrics.columnWidth + 7;
           const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
+          const textGap = Math.max(4, row.fontSize * 0.36);
+          const textWidth = (value: string) => value.length * row.fontSize * 0.58;
+          const labelWidth = row.labelText ? textWidth(row.labelText) : 0;
+          const valueWidth = textWidth(row.valueText);
+          const valueX = textX + labelWidth + (row.labelText ? textGap : 0);
+          const unitX = valueX + valueWidth + (row.unitText ? textGap : 0);
           return (
-            <text
+            <g
               key={row.item.id}
-              className="measurement-item"
-              x={formatSvgNumber(textX)}
-              y={formatSvgNumber(textY)}
-              dominantBaseline="middle"
+              className="measurement-item mi"
               fill={row.display.color}
               fontFamily={row.display.fontFamily}
               fontSize={row.fontSize}
               fontWeight={row.display.fontWeight}
               fontStyle={row.display.fontStyle}
               textDecoration={row.display.textDecoration}
+              mid={row.item.id}
+              mt={row.item.measurementTypeId}
+              mf={row.item.sourcePoint}
+              mr={row.item.role ?? ""}
               data-export-measurement-item-id={row.item.id}
               data-export-measurement-name={(row.item.name ?? row.display.label ?? row.item.measurementTypeId).trim()}
               data-export-measurement-type-id={row.item.measurementTypeId}
@@ -216,8 +223,36 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
               data-export-device-name={node.name}
               data-export-device-kind={node.kind}
             >
-              {row.text}
-            </text>
+              {row.labelText && (
+                <text
+                  className="measurement-label ml"
+                  x={formatSvgNumber(textX)}
+                  y={formatSvgNumber(textY)}
+                  dominantBaseline="middle"
+                >
+                  {row.labelText}
+                </text>
+              )}
+              <text
+                id={`mv-${row.item.id}`}
+                className="measurement-value mv"
+                x={formatSvgNumber(valueX)}
+                y={formatSvgNumber(textY)}
+                dominantBaseline="middle"
+              >
+                {row.valueText}
+              </text>
+              {row.unitText && (
+                <text
+                  className="measurement-unit mu"
+                  x={formatSvgNumber(unitX)}
+                  y={formatSvgNumber(textY)}
+                  dominantBaseline="middle"
+                >
+                  {row.unitText}
+                </text>
+              )}
+            </g>
           );
         })}
       </g>
