@@ -4,6 +4,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import {
   createBeginMeasurementDrag,
+  createBuildMeasurementGroupMarkup,
   createRenderMultiNodeDragOverlay,
   createUpdateMeasurementDrag,
   measurementProfileItemsComplianceMessage,
@@ -15,6 +16,7 @@ import {
   createSetImperativeSingleNodeDragOrigin
 } from "./appExtracted/appSelectionDragFactories";
 import { createRenderMeasurementGroup } from "./appExtracted/appToolbarHookFactories";
+import { exportMeasurementItemMetadataAttributes } from "./svgExportUtils";
 
 describe("measurement canvas interactions", () => {
   test("validates measurement type and profile compliance", () => {
@@ -246,6 +248,62 @@ describe("measurement canvas interactions", () => {
       anchor: "custom",
       offset: { x: 32, y: 12 }
     });
+  });
+
+  test("builds live measurement markup with the current compact item metadata signature", () => {
+    const item = {
+      id: "m-active",
+      measurementTypeId: "activePower",
+      sourcePoint: "node-42.activePower",
+      role: "value"
+    };
+    const buildMeasurementGroupMarkup = createBuildMeasurementGroupMarkup({
+      escapeXml: (value: string) => value.replaceAll("&", "&amp;"),
+      exportMeasurementGroupMetadataAttributes: () => 'mg="measurement-group-1"',
+      exportMeasurementItemMetadataAttributes,
+      formatSvgNumber: (value: number) => String(value),
+      measurementGroupAnchorPoint: () => ({ x: 100, y: 60 }),
+      measurementGroupBackgroundColor: () => "#ffffff",
+      measurementGroupBorderColor: () => "#64748b",
+      measurementGroupBorderDashArray: () => undefined,
+      measurementGroupBorderWidth: () => 1,
+      measurementGroupLocalOffset: () => ({ x: 0, y: 0 }),
+      measurementGroupRenderMetrics: () => ({
+        columnWidth: 80,
+        columns: 1,
+        height: 24,
+        lineHeight: 24,
+        rows: [
+          {
+            item,
+            display: {
+              color: "#334155",
+              fontFamily: "Arial",
+              fontStyle: "normal",
+              fontWeight: "500",
+              textDecoration: "none"
+            },
+            fontSize: 14,
+            text: "P -- MW"
+          }
+        ],
+        width: 80
+      }),
+      selectedMeasurementGroupIdSet: new Set<string>()
+    } as any);
+
+    expect(() => buildMeasurementGroupMarkup(
+      {
+        id: "node-42",
+        kind: "ac-load",
+        name: "负荷-1",
+        params: {},
+        position: { x: 100, y: 60 },
+        size: { width: 80, height: 80 },
+        terminals: []
+      } as any,
+      { id: "measurement-group-1", nodeId: "node-42", items: [item] } as any
+    )).not.toThrow();
   });
 
   test("builds single node drag measurement markup from the original node position", () => {

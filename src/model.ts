@@ -10816,6 +10816,25 @@ export function buildTopology(nodes: ModelNode[], edges: Edge[]): Topology {
     ),
     connectedComponents: []
   };
+  const connectedNodePairKeys = new Set<string>();
+  const nodePairKey = (firstId: string, secondId: string) =>
+    firstId < secondId ? `${firstId}|${secondId}` : `${secondId}|${firstId}`;
+  const addImplicitConnection = (sourceId: string, targetId: string) => {
+    if (sourceId === targetId) {
+      return;
+    }
+    const source = topology.nodes[sourceId];
+    const target = topology.nodes[targetId];
+    const pairKey = nodePairKey(sourceId, targetId);
+    if (!source || !target || connectedNodePairKeys.has(pairKey)) {
+      return;
+    }
+    connectedNodePairKeys.add(pairKey);
+    source.neighbors.push(targetId);
+    source.degree += 1;
+    target.neighbors.push(sourceId);
+    target.degree += 1;
+  };
 
   for (const edge of topologyEdges) {
     const source = topology.nodes[edge.sourceId];
@@ -10829,6 +10848,22 @@ export function buildTopology(nodes: ModelNode[], edges: Edge[]): Topology {
     target.neighbors.push(edge.sourceId);
     target.edgeIds.push(edge.id);
     target.degree += 1;
+    connectedNodePairKeys.add(nodePairKey(edge.sourceId, edge.targetId));
+  }
+
+  for (const overlappingGroup of getOverlappingTerminalGroups(nodes)) {
+    const nodeIds = Array.from(new Set(overlappingGroup.terminals.map((terminal) => terminal.nodeId)));
+    for (let firstIndex = 0; firstIndex < nodeIds.length; firstIndex += 1) {
+      for (let secondIndex = firstIndex + 1; secondIndex < nodeIds.length; secondIndex += 1) {
+        addImplicitConnection(nodeIds[firstIndex], nodeIds[secondIndex]);
+      }
+    }
+  }
+
+  for (const contactGroup of getTerminalBusContactGroups(nodes)) {
+    for (const contact of contactGroup.contacts) {
+      addImplicitConnection(contact.nodeId, contact.busId);
+    }
   }
 
   const visited = new Set<string>();

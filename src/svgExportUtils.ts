@@ -45,19 +45,19 @@ export function buildSvgNodeLabelTextElementsMarkup(
     return "";
   }
   const center = nodeLabelCanvasCenter(node);
-  const transform = `translate(${formatSvgNumber(center.x)} ${formatSvgNumber(center.y)})`;
-  const commonAttributes = `${options.attributes ? `${options.attributes} ` : ""}transform="${transform}" ${svgNodeLabelBaseAttributes(node)}`;
+  const commonAttributes = `${options.attributes ? `${options.attributes} ` : ""}${svgNodeLabelBaseAttributes(node)}`;
   const stylePrefix = options.visible === false ? "display:none; " : "";
   if (nodeLabelVertical(node)) {
     const segments = nodeLabelVerticalSegments(text);
     return segments
       .map((segment, index) => {
         const tokenId = segments.length === 1 ? id : `${id}_${index + 1}`;
-        return `<text id="${escapeXml(tokenId)}" ${commonAttributes} x="0" y="${formatSvgNumber(nodeLabelVerticalTokenY(index, segments.length, node))}" text-anchor="middle" style="${stylePrefix}writing-mode: horizontal-tb; text-orientation: mixed; letter-spacing: 0;">${escapeXml(segment.text)}</text>`;
+        const tokenY = center.y + nodeLabelVerticalTokenY(index, segments.length, node);
+        return `<text id="${escapeXml(tokenId)}" ${commonAttributes} x="${formatSvgNumber(center.x)}" y="${formatSvgNumber(tokenY)}" text-anchor="middle" style="${stylePrefix}writing-mode: horizontal-tb; text-orientation: mixed; letter-spacing: 0;">${escapeXml(segment.text)}</text>`;
       })
       .join("\n");
   }
-  return `<text id="${escapeXml(id)}" ${commonAttributes} x="0" y="0" text-anchor="${escapeXml(nodeLabelTextAnchor(node))}" style="${stylePrefix}writing-mode: horizontal-tb;">${escapeXml(text)}</text>`;
+  return `<text id="${escapeXml(id)}" ${commonAttributes} x="${formatSvgNumber(center.x)}" y="${formatSvgNumber(center.y)}" text-anchor="${escapeXml(nodeLabelTextAnchor(node))}" style="${stylePrefix}writing-mode: horizontal-tb;">${escapeXml(text)}</text>`;
 }
 
 export function svgDisplayAttribute(visible: boolean) {
@@ -100,11 +100,11 @@ export function exportSvgLayerScriptMarkup(includeScript: boolean) {
     return;
   }
   const layerState = Object.create(null);
-  const layerDefs = root.querySelectorAll("[data-export-layer-def]");
+  const layerDefs = root.querySelectorAll(".export-layer-definitions > [layer-id]");
   layerDefs.forEach((layer) => {
-    const id = layer.getAttribute("data-export-layer-def");
+    const id = layer.getAttribute("layer-id");
     if (id) {
-      layerState[id] = layer.getAttribute("data-export-layer-visible") !== "0";
+      layerState[id] = layer.getAttribute("visible") !== "0";
     }
   });
   function exportSvgLayerVisible(layerId) {
@@ -115,19 +115,19 @@ export function exportSvgLayerScriptMarkup(includeScript: boolean) {
       const layerId = node.getAttribute("layer-id") || "";
       node.style.display = exportSvgLayerVisible(layerId) ? "" : "none";
     });
-    root.querySelectorAll("[data-export-edge-id]").forEach((edge) => {
-      const sourceLayerId = edge.getAttribute("data-export-source-layer-id") || "";
-      const targetLayerId = edge.getAttribute("data-export-target-layer-id") || "";
+    root.querySelectorAll("[edge-id]").forEach((edge) => {
+      const sourceLayerId = edge.getAttribute("source-layer-id") || "";
+      const targetLayerId = edge.getAttribute("target-layer-id") || "";
       edge.style.display = exportSvgLayerVisible(sourceLayerId) && exportSvgLayerVisible(targetLayerId) ? "" : "none";
     });
-    const activeLayerId = root.getAttribute("data-export-active-layer-id") || "";
-    root.querySelectorAll("[data-export-button-action='layer']").forEach((button) => {
+    const activeLayerId = root.getAttribute("active-layer-id") || "";
+    root.querySelectorAll("[action='layer']").forEach((button) => {
       const targetLayerIds = exportSvgButtonTargetLayerIds(button);
       button.classList.toggle("export-active-layer-button", targetLayerIds.includes(activeLayerId));
     });
   }
   function exportSvgButtonTargetLayerIds(button) {
-    const encodedLayerIds = button.getAttribute("data-export-button-target-layer-ids") || button.getAttribute("data-export-button-target-layer-id") || "";
+    const encodedLayerIds = button.getAttribute("target-layer-ids") || button.getAttribute("target-layer-id") || "";
     return encodedLayerIds.split(",").map((id) => id.trim()).filter(Boolean);
   }
   function exportSvgActivateLayers(layerIds) {
@@ -139,7 +139,7 @@ export function exportSvgLayerScriptMarkup(includeScript: boolean) {
     Object.keys(layerState).forEach((layerId) => {
       layerState[layerId] = targetLayerIdSet.has(layerId);
     });
-    root.setAttribute("data-export-active-layer-id", validLayerIds[0]);
+    root.setAttribute("active-layer-id", validLayerIds[0]);
     exportSvgApplyLayerVisibility();
   }
   function exportSvgActivateLayer(layerId) {
@@ -148,7 +148,7 @@ export function exportSvgLayerScriptMarkup(includeScript: boolean) {
   root.exportSvgApplyLayerVisibility = exportSvgApplyLayerVisibility;
   root.exportSvgActivateLayer = exportSvgActivateLayer;
   root.exportSvgActivateLayers = exportSvgActivateLayers;
-  root.querySelectorAll("[data-export-button-action='layer']").forEach((button) => {
+  root.querySelectorAll("[action='layer']").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { areCanvasPropsEqual } from "./appExtracted/appCanvasArea";
 import { resolveInspectorTopologyEntry } from "./appExtracted/appView";
 import type { Topology } from "./model";
 
@@ -32,5 +33,31 @@ describe("app view topology inspector", () => {
       "source-bus",
       "target-bus"
     ]);
+  });
+});
+
+describe("canvas memoization", () => {
+  test("rerenders when visible measurement groups move", () => {
+    const sharedScope = {
+      visibleNodes: [],
+      visibleEdges: [],
+      selectedNodeIdSet: new Set<string>(),
+      selectedEdgeIds: []
+    };
+    const previousGroup = {
+      id: "measurement-line",
+      nodeId: "line-node",
+      visible: true,
+      offset: { x: -240, y: -90 }
+    };
+    const nextGroup = {
+      ...previousGroup,
+      offset: { x: -68, y: -176 }
+    };
+
+    expect(areCanvasPropsEqual(
+      { scope: { ...sharedScope, visibleMeasurementGroups: [previousGroup] } },
+      { scope: { ...sharedScope, visibleMeasurementGroups: [nextGroup] } }
+    )).toBe(false);
   });
 });

@@ -558,6 +558,86 @@ describe("power system model", () => {
     expect(topology.connectedComponents).toEqual([[nodes[0].id, nodes[1].id, nodes[2].id]]);
   });
 
+  test("builds adjacency topology from directly overlapping device terminals", () => {
+    const generator = {
+      ...createDefaultNode("ac-source", { x: 399, y: 710 }),
+      id: "connected-generator",
+      rotation: 270
+    };
+    const generatorBreaker = {
+      ...createDefaultNode("ac-box-breaker-vertical", { x: 399, y: 552 }),
+      id: "generator-breaker",
+      rotation: 90
+    };
+    const loadSwitch = {
+      ...createDefaultNode("ac-switch-vertical", { x: 1516, y: 497 }),
+      id: "load-switch",
+      rotation: 90
+    };
+    const load = {
+      ...createDefaultNode("ac-load", { x: 1516, y: 631 }),
+      id: "connected-load"
+    };
+
+    expect(getTerminalPoint(generator, generator.terminals[0].id)).toEqual(
+      getTerminalPoint(generatorBreaker, generatorBreaker.terminals[1].id)
+    );
+    expect(getTerminalPoint(loadSwitch, loadSwitch.terminals[1].id)).toEqual(
+      getTerminalPoint(load, load.terminals[0].id)
+    );
+
+    const topology = buildTopology([generator, generatorBreaker, loadSwitch, load], []);
+
+    expect(topology.nodes[generator.id].degree).toBe(1);
+    expect(topology.nodes[generator.id].neighbors).toEqual([generatorBreaker.id]);
+    expect(topology.nodes[generatorBreaker.id].neighbors).toEqual([generator.id]);
+    expect(topology.nodes[load.id].degree).toBe(1);
+    expect(topology.nodes[load.id].neighbors).toEqual([loadSwitch.id]);
+    expect(topology.nodes[loadSwitch.id].neighbors).toEqual([load.id]);
+  });
+
+  test("does not double count an overlapping terminal connection that also has an edge", () => {
+    const source = { ...createDefaultNode("ac-source", { x: 200, y: 300 }), id: "overlap-source" };
+    const target = { ...createDefaultNode("ac-load", { x: 200, y: 300 }), id: "overlap-load" };
+    const sourcePoint = getTerminalPoint(source, source.terminals[0].id);
+    const targetPoint = getTerminalPoint(target, target.terminals[0].id);
+    target.position = {
+      x: target.position.x + sourcePoint.x - targetPoint.x,
+      y: target.position.y + sourcePoint.y - targetPoint.y
+    };
+    const edge: Edge = {
+      id: "overlap-edge",
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: source.terminals[0].id,
+      targetTerminalId: target.terminals[0].id
+    };
+
+    const topology = buildTopology([source, target], [edge]);
+
+    expect(topology.nodes[source.id].degree).toBe(1);
+    expect(topology.nodes[source.id].neighbors).toEqual([target.id]);
+    expect(topology.nodes[source.id].edgeIds).toEqual([edge.id]);
+  });
+
+  test("builds adjacency topology from a terminal touching a bus", () => {
+    const bus = { ...createDefaultNode("ac-bus", { x: 320, y: 120 }), id: "contact-bus" };
+    const source = { ...createDefaultNode("ac-source", { x: 200, y: 260 }), id: "contact-source" };
+    const terminalPoint = getTerminalPoint(source, source.terminals[0].id);
+    source.position = {
+      x: source.position.x + bus.position.x - terminalPoint.x,
+      y: source.position.y + bus.position.y - terminalPoint.y
+    };
+
+    expect(getTerminalBusContactGroups([bus, source])).toHaveLength(1);
+
+    const topology = buildTopology([bus, source], []);
+
+    expect(topology.nodes[source.id].degree).toBe(1);
+    expect(topology.nodes[source.id].neighbors).toEqual([bus.id]);
+    expect(topology.nodes[bus.id].neighbors).toEqual([source.id]);
+  });
+
   test("builds adjacency topology from routable line device endpoint refs", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 100 });
     const bus = createDefaultNode("ac-bus", { x: 420, y: 100 });

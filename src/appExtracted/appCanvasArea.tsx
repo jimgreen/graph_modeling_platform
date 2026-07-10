@@ -18,7 +18,7 @@ const STORAGE_BUS_KINDS = new Set([
  * 自定义比较器：深度比较画布相关的所有值。
  * 只有当画布实际使用的值发生变化时，才触发重渲染。
  */
-function areCanvasPropsEqual(prevProps: any, nextProps: any) {
+export function areCanvasPropsEqual(prevProps: any, nextProps: any) {
   const prev = prevProps.scope;
   const next = nextProps.scope;
 
@@ -59,6 +59,7 @@ function areCanvasPropsEqual(prevProps: any, nextProps: any) {
   // 比较渲染数据（节点、边等）- 使用浅比较
   const dataKeys = [
     'visibleNodes', 'visibleEdges', 'selectedNodeIdSet', 'selectedEdgeIds',
+    'visibleMeasurementGroups',
     'marquee', 'connectPreviewDom', 'routableLinePreview', 'resizeSizeHint',
     'draggingDelta', 'connectSource', 'libraryPlacement',
     'canvasBackgroundColor', 'canvasBackgroundImageUrl', 'canvasBackgroundImageFit', 'backgroundPageRender'

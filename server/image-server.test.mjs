@@ -511,7 +511,9 @@ describe("scheme file persistence", () => {
     expect(textLayer).not.toContain('dev-idx=');
     expect(textLayer).not.toContain('dev-name=');
     expect(textLayer).not.toContain('class="export-node-label');
-    expect(textLayer).toContain('transform="translate(150 164)"');
+    const labelText = textLayer.match(/<text id="label_server-load"[^>]*>/)?.[0] ?? "";
+    expect(labelText).toContain('x="150" y="164"');
+    expect(labelText).not.toContain("transform=");
     expect(textLayer).toContain(">LOAD-1</text>");
     expect(measurementLayer).toContain('class="mg"');
     expect(measurementLayer).toContain('mg="server-group"');
@@ -536,6 +538,7 @@ describe("scheme file persistence", () => {
     expect(valueText).not.toContain('mg=');
     expect(valueText).not.toContain('term=');
     expect(measurementLayer).not.toContain("data-export-measurement-");
+    expect(svg).toContain('edge-id="server-edge"');
     expect(svg).toContain('source-dev-id="server-source"');
     expect(svg).toContain('target-dev-id="server-load"');
     expect(useTags).toHaveLength(3);
@@ -551,6 +554,102 @@ describe("scheme file persistence", () => {
     expect(svg).not.toContain("data-export-device-idx");
     expect(svg).not.toContain("data-export-device-name");
     expect(svg).not.toContain("data-export-device-kind");
+    expect(svg).not.toContain("data-export-");
+  });
+
+  test("writes vertical device label tokens with absolute x and y coordinates", () => {
+    const svg = buildSvgFile({
+      canvasWidth: 320,
+      canvasHeight: 220,
+      nodes: [
+        {
+          id: "server-vertical-label",
+          kind: "ac-load",
+          name: "负荷A",
+          position: { x: 140, y: 100 },
+          size: { width: 80, height: 60 },
+          params: {
+            _labelText: "A1",
+            _labelX: "10",
+            _labelY: "64",
+            _labelRotation: "90"
+          },
+          terminals: []
+        }
+      ],
+      edges: []
+    });
+    const textLayer = svgSectionBetween(svg, '<g id="Text_Layer">', '<g id="Measurement_Layer">');
+    const labelTokens = Array.from(
+      textLayer.matchAll(/<text id="label_server-vertical-label_\d+"[^>]*>/g),
+      (match) => match[0]
+    );
+
+    expect(labelTokens).toHaveLength(2);
+    expect(labelTokens[0]).toContain('x="150" y="155.6"');
+    expect(labelTokens[1]).toContain('x="150" y="172.4"');
+    expect(labelTokens.every((token) => !token.includes("transform="))).toBe(true);
+  });
+
+  test("renders measurement items that the editor treats as visible when visibility is unspecified", () => {
+    const svg = buildSvgFile(
+      {
+        canvasWidth: 320,
+        canvasHeight: 220,
+        nodes: [
+          {
+            id: "server-box-breaker",
+            kind: "ac-box-breaker",
+            name: "盒型开关-1",
+            position: { x: 140, y: 100 },
+            size: { width: 150, height: 76 },
+            params: { idx: "1" },
+            terminals: []
+          }
+        ],
+        edges: [],
+        measurements: {
+          version: 1,
+          groups: [
+            {
+              id: "server-box-group",
+              nodeId: "server-box-breaker",
+              visible: true,
+              labelVisible: true,
+              unitVisible: true,
+              anchor: "custom",
+              offset: { x: 0, y: 80 },
+              layout: "vertical",
+              items: [
+                {
+                  id: "server-box-current",
+                  measurementTypeId: "current",
+                  sourcePoint: "server-box-breaker.current"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        measurementTypes: [
+          {
+            id: "current",
+            name: "电流",
+            shortLabel: "I",
+            defaultUnit: "A",
+            defaultVisible: false
+          }
+        ],
+        deviceProfiles: [{ deviceKind: "ac-breaker", items: [{ measurementTypeId: "current" }] }]
+      }
+    );
+
+    const measurementLayer = svgSectionBetween(svg, '<g id="Measurement_Layer">', '<g id="Other_Layer">');
+    expect(measurementLayer).toContain('class="mg"');
+    expect(measurementLayer).toContain('mid="server-box-current"');
+    expect(measurementLayer).toContain(">I</text>");
+    expect(measurementLayer).toContain(">A</text>");
   });
 
   test("deletes one project by archiving only that model's files", async () => {

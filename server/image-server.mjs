@@ -1734,16 +1734,16 @@ function buildServerSvgNodeLabelMarkup(node, id, attributes = "") {
     `stroke-width="3"`,
     `stroke-linejoin="round"`
   ].join(" ");
-  const transform = `translate(${formatSvgNumber(centerX)} ${formatSvgNumber(centerY)})`;
-  const commonAttributes = `${attributes ? `${attributes} ` : ""}transform="${transform}" ${textStyle}`;
+  const commonAttributes = `${attributes ? `${attributes} ` : ""}${textStyle}`;
   if (vertical) {
     const characters = Array.from(text);
     return characters.map((char, index) => {
       const tokenId = characters.length === 1 ? id : `${id}_${index + 1}`;
-      return `<text id="${escapeSvgAttribute(tokenId)}" ${commonAttributes} x="0" y="${formatSvgNumber((index - (characters.length - 1) / 2) * fontSize * 1.2)}" text-anchor="middle" style="writing-mode: horizontal-tb; text-orientation: mixed; letter-spacing: 0;">${escapeSvgText(char)}</text>`;
+      const tokenY = centerY + (index - (characters.length - 1) / 2) * fontSize * 1.2;
+      return `<text id="${escapeSvgAttribute(tokenId)}" ${commonAttributes} x="${formatSvgNumber(centerX)}" y="${formatSvgNumber(tokenY)}" text-anchor="middle" style="writing-mode: horizontal-tb; text-orientation: mixed; letter-spacing: 0;">${escapeSvgText(char)}</text>`;
     }).join("\n");
   }
-  return `<text id="${escapeSvgAttribute(id)}" ${commonAttributes} x="0" y="0" text-anchor="${escapeSvgAttribute(labelTextAnchor(node))}" style="writing-mode: horizontal-tb;">${escapeSvgText(text)}</text>`;
+  return `<text id="${escapeSvgAttribute(id)}" ${commonAttributes} x="${formatSvgNumber(centerX)}" y="${formatSvgNumber(centerY)}" text-anchor="${escapeSvgAttribute(labelTextAnchor(node))}" style="writing-mode: horizontal-tb;">${escapeSvgText(text)}</text>`;
 }
 
 function serverTerminalPoint(node, terminalId) {
@@ -1793,7 +1793,7 @@ function resolveServerMeasurementItemDisplay(node, item, measurementConfig) {
     fontWeight: style.fontWeight || type?.defaultFontWeight || "500",
     fontStyle: style.fontStyle || "normal",
     textDecoration: style.textDecoration || "none",
-    visible: item?.visible ?? profileItem?.defaultVisible ?? type?.defaultVisible ?? true
+    visible: item?.visible !== false
   };
 }
 
@@ -1932,7 +1932,7 @@ export function buildSvgFile(project, measurementConfig = { measurementTypes: []
         .map((point) => `${point.x},${point.y}`)
         .join(" ");
       const edgeId = uniqueSvgId(`edge_${edge.id ?? `${start.x}_${start.y}_${end.x}_${end.y}`}`, usedIds, "edge");
-      return `<polyline id="${escapeSvgAttribute(edgeId)}" data-export-edge-id="${escapeSvgAttribute(edge.id ?? "")}" source-dev-id="${escapeSvgAttribute(edge.sourceId ?? "")}" target-dev-id="${escapeSvgAttribute(edge.targetId ?? "")}" points="${escapeSvgAttribute(points)}" fill="none" stroke="#334155" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
+      return `<polyline id="${escapeSvgAttribute(edgeId)}" edge-id="${escapeSvgAttribute(edge.id ?? "")}" source-dev-id="${escapeSvgAttribute(edge.sourceId ?? "")}" target-dev-id="${escapeSvgAttribute(edge.targetId ?? "")}" points="${escapeSvgAttribute(points)}" fill="none" stroke="#334155" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
     })
     .join("\n");
   for (const node of nodes) {

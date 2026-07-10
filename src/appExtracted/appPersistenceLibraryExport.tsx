@@ -267,7 +267,6 @@ import {
   routeEdgesForCachedStoredRendering,
   routeEdgesForIncrementalRendering,
   routeEdgesForSavedPathRendering,
-  routeEdgesForStoredRendering,
   modelGeometryInsideCanvasBounds,
   buildManualConnectionPreviewRoute,
   buildManualConnectionPreviewPath,
@@ -3163,7 +3162,7 @@ ${scopedBackgroundSvg}
   };
   const exportLayerDefinitionsMarkup = normalizedLayers
     .map((layer) =>
-      `<g data-export-layer-def="${escapeXml(layer.id)}" data-export-layer-name="${escapeXml(layer.name)}" data-export-layer-visible="${layer.visible === false ? "0" : "1"}" data-export-layer-active="${layer.id === activeExportLayerId ? "1" : "0"}"/>`
+      `<g layer-id="${escapeXml(layer.id)}" name="${escapeXml(layer.name)}" visible="${layer.visible === false ? "0" : "1"}" active="${layer.id === activeExportLayerId ? "1" : "0"}"/>`
     )
     .join("\n");
   const hasLayerButtons = exportNodes.some((node) => resolveExportLayerButtonTargetIds(node).length > 0);
@@ -3278,6 +3277,14 @@ ${scopedBackgroundSvg}
     if (isStaticNode(node)) {
       return "";
     }
+    if (colorDisplayMode === "voltage") {
+      const terminalVoltageDescriptors = node.terminals
+        .filter((terminal) => isExportElectricTerminalType(terminal.type))
+        .map((terminal) => `${terminal.type}:${terminalExportVoltage(node, terminal)}`);
+      if (new Set(terminalVoltageDescriptors).size <= 1) {
+        return "";
+      }
+    }
     if (node.terminals.length === 0) {
       const descriptor = nodeExportVoltageDescriptor(node);
       return descriptor
@@ -3376,7 +3383,7 @@ ${rules.join("\n")}
     }
     return node.terminals.map((terminal, index) => ` node-${index + 1}="${escapeXml(terminal.nodeNumber ?? "")}"`).join("");
   };
-  const buildBoundaryBusInternalConnectorMarkup = (edge: Edge, endpoint: "source" | "target", stroke: string, voltageLineClass = "") => {
+  const buildBoundaryBusInternalConnectorMarkup = (edge: Edge, endpoint: "source" | "target", stroke: string, edgeLayerAttributes: string, voltageLineClass = "") => {
     const node = nodeById.get(endpoint === "source" ? edge.sourceId : edge.targetId);
     if (!node) {
       return "";
@@ -3392,9 +3399,9 @@ ${rules.join("\n")}
     }
     const dashArray = svgStrokeDashArray(node.params.strokeStyle);
     const dashAttribute = dashArray ? ` stroke-dasharray="${escapeXml(dashArray)}"` : "";
-    return `<line class="export-boundary-bus-internal-connector${voltageLineClass ? ` ${voltageLineClass}` : ""}" x1="${formatSvgNumber(segment.from.x)}" y1="${formatSvgNumber(segment.from.y)}" x2="${formatSvgNumber(segment.to.x)}" y2="${formatSvgNumber(segment.to.y)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(boundaryBusInternalConnectorStrokeWidth(node, segment))}" stroke-linecap="round"${dashAttribute}/>`;
+    return `<line class="export-boundary-bus-internal-connector${voltageLineClass ? ` ${voltageLineClass}` : ""}"${edgeLayerAttributes} x1="${formatSvgNumber(segment.from.x)}" y1="${formatSvgNumber(segment.from.y)}" x2="${formatSvgNumber(segment.to.x)}" y2="${formatSvgNumber(segment.to.y)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(boundaryBusInternalConnectorStrokeWidth(node, segment))}" stroke-linecap="round"${dashAttribute}/>`;
   };
-  const edgeMarkup = routeEdgesForStoredRendering(exportNodes, edges, canvasSize)
+  const edgeMarkup = routeEdgesForSavedPathRendering(exportNodes, edges, canvasSize, { refreshCrossingArcs: true })
     .map((route) => {
       const edge = edgeById.get(route.edgeId);
       const stroke = edge ? getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette) : "#334155";
@@ -3406,18 +3413,20 @@ ${rules.join("\n")}
       const edgeVoltage = edgeVoltageDescriptor(edge);
       const edgeExportVoltage = edgeExportVoltageDescriptor(edge);
       const edgeVoltageLineClass = edgeVoltage ? exportVoltageLineClass(edgeVoltage.type, edgeVoltage.voltage) : "";
-      const edgeVoltageAttributes = edgeExportVoltage
+      const edgeVoltageAttributes = colorDisplayMode !== "voltage" && edgeExportVoltage
         ? ` voltage-type="${edgeExportVoltage.type}" vbase="${escapeXml(exportVoltageValue(edgeExportVoltage.voltage))}"`
         : "";
+      const edgeElementId = exportSvgUniqueId(`edge_${route.edgeId}`, usedSvgIds, "edge");
+      const edgeLayerAttributes = ` edge-id="${escapeXml(route.edgeId)}" source-layer-id="${escapeXml(sourceLayerId)}" target-layer-id="${escapeXml(targetLayerId)}"${svgDisplayAttribute(edgeVisible)}`;
       const internalConnectors = edge
-        ? [buildBoundaryBusInternalConnectorMarkup(edge, "source", stroke, edgeVoltageLineClass), buildBoundaryBusInternalConnectorMarkup(edge, "target", stroke, edgeVoltageLineClass)]
+        ? [
+            buildBoundaryBusInternalConnectorMarkup(edge, "source", stroke, edgeLayerAttributes, edgeVoltageLineClass),
+            buildBoundaryBusInternalConnectorMarkup(edge, "target", stroke, edgeLayerAttributes, edgeVoltageLineClass)
+          ]
             .filter(Boolean)
             .join("\n")
         : "";
-      const edgeElementId = exportSvgUniqueId(`edge_${route.edgeId}`, usedSvgIds, "edge");
-      return `<g id="${escapeXml(edgeElementId)}" class="export-edge" data-export-edge-id="${escapeXml(route.edgeId)}" data-export-source-layer-id="${escapeXml(sourceLayerId)}" data-export-target-layer-id="${escapeXml(targetLayerId)}" source-dev-id="${escapeXml(edge?.sourceId ?? "")}" target-dev-id="${escapeXml(edge?.targetId ?? "")}"${edgeVoltageAttributes}${svgDisplayAttribute(edgeVisible)}>
-<path class="export-edge-path${edgeVoltageLineClass ? ` ${edgeVoltageLineClass}` : ""}" d="${route.path}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${internalConnectors ? `\n${internalConnectors}` : ""}
-</g>`;
+      return `<path id="${escapeXml(edgeElementId)}" class="export-edge${edgeVoltageLineClass ? ` ${edgeVoltageLineClass}` : ""}"${edgeLayerAttributes} source-dev-id="${escapeXml(edge?.sourceId ?? "")}" target-dev-id="${escapeXml(edge?.targetId ?? "")}"${edgeVoltageAttributes} d="${route.path}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${internalConnectors ? `\n${internalConnectors}` : ""}`;
     })
     .join("\n");
   const nodeLayerMarkup = new Map<string, string[]>();
@@ -3432,7 +3441,7 @@ ${rules.join("\n")}
       const typeLayerId = nodeTypeLayerIds.get(exportNodeLayerKey(node)) ?? otherLayerId;
       const targetLayerIds = resolveExportLayerButtonTargetIds(node);
       const exportButtonAttributes = targetLayerIds.length > 0
-        ? ` data-export-button-action="layer" data-export-button-target-layer-id="${escapeXml(targetLayerIds[0])}" data-export-button-target-layer-ids="${escapeXml(targetLayerIds.join(","))}"`
+        ? ` action="layer" target-layer-id="${escapeXml(targetLayerIds[0])}" target-layer-ids="${escapeXml(targetLayerIds.join(","))}"`
         : "";
       const exportButtonClass = targetLayerIds.length > 0 ? "export-static-button" : "";
       const allowNodeImage = !isBusNode(node);
@@ -3574,7 +3583,7 @@ ${backgroundImage ? svgImageContentMarkup(backgroundImage, {
 ${(nodeLayerMarkup.get(layerId) ?? []).join("\n")}
 </g>`)
     .join("\n");
-  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid meet" height="100%" width="100%" viewBox="0,0,${canvasSize.width},${canvasSize.height}" data-export-active-layer-id="${escapeXml(activeExportLayerId)}">
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid meet" height="100%" width="100%" viewBox="0,0,${canvasSize.width},${canvasSize.height}" active-layer-id="${escapeXml(activeExportLayerId)}">
 <defs id="${escapeXml(defsId)}">
 ${voltageColorStyleMarkup}
 ${nodeSymbolMarkup.join("\n")}

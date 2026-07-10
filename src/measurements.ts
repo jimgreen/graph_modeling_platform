@@ -646,7 +646,7 @@ export function createDefaultMeasurementGroupsForNode(
         measurementTypeId: item.measurementTypeId,
         role: item.role,
         sourcePoint: measurementSourcePointForProfileItem(node.id, item, terminal?.id),
-        visible: item.defaultVisible,
+        visible: item.defaultVisible !== false,
         labelOverride: item.name ?? item.labelOverride,
         unitOverride: item.unitOverride,
         decimalsOverride: item.decimalsOverride,
@@ -681,7 +681,7 @@ export function resolveMeasurementItemDisplay({
     fontWeight: style.fontWeight || type?.defaultFontWeight || DEFAULT_TYPE_VALUES.defaultFontWeight,
     fontStyle: style.fontStyle || "normal",
     textDecoration: style.textDecoration || "none",
-    visible: item.visible ?? profileItem?.defaultVisible ?? type?.defaultVisible ?? true
+    visible: item.visible !== false
   };
 }
 

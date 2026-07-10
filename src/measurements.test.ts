@@ -63,6 +63,34 @@ describe("measurement domain", () => {
     expect(group?.items[0].sourcePoint).toBe("node-1.activePower");
   });
 
+  test("shows an added device measurement unless the profile explicitly hides it", () => {
+    const config = normalizeMeasurementConfig({
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{ deviceKind: "ac-breaker", items: [{ measurementTypeId: "current" }] }]
+    });
+    const breaker = node("box-breaker-1", "ac-box-breaker");
+
+    const group = createDefaultMeasurementGroupForNode(breaker, config);
+    const item = group?.items[0];
+
+    expect(item?.visible).toBe(true);
+    expect(item && group ? resolveMeasurementItemDisplay({ config, node: breaker, group, item }).visible : false).toBe(true);
+  });
+
+  test("keeps explicitly hidden device profile measurements hidden", () => {
+    const config = normalizeMeasurementConfig({
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{ deviceKind: "ac-breaker", items: [{ measurementTypeId: "current", defaultVisible: false }] }]
+    });
+    const breaker = node("box-breaker-2", "ac-box-breaker");
+
+    const group = createDefaultMeasurementGroupForNode(breaker, config);
+    const item = group?.items[0];
+
+    expect(item?.visible).toBe(false);
+    expect(item && group ? resolveMeasurementItemDisplay({ config, node: breaker, group, item }).visible : true).toBe(false);
+  });
+
   test("keeps legacy unspecified profile items on the device measurement group for multi-terminal devices", () => {
     const threeTerminalNode: ModelNode = {
       ...node("transformer-1", "ac-transformer"),
