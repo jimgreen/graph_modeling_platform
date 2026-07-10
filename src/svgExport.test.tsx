@@ -1,5 +1,6 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { buildSvgDocument } from "./App";
+import { createExportSvg } from "./appExtracted/appDeviceDefinitionFactories";
 import { createDefaultNode, createNodeFromTemplate, DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY, type DeviceKind, type DeviceTemplate, type Edge } from "./model";
 import type { ProjectMeasurementConfig } from "./measurements";
 
@@ -17,6 +18,42 @@ describe("SVG export", () => {
   const svgUseTags = (svg: string) => Array.from(svg.matchAll(/<use\b[^>]*>/g), (match) => match[0]);
   const svgDeviceUseTag = (svg: string, id: string) =>
     svg.match(new RegExp(`<use id="${id}" class="export-node export-device[^"]*"[^>]*>`))?.[0] ?? "";
+  const svgEdgeGroupTag = (svg: string, id: string) =>
+    svg.match(new RegExp(`<g id="[^"]+" class="export-edge" data-export-edge-id="${id}"[^>]*>`))?.[0] ?? "";
+
+  test("downloads SVG exports in voltage color mode", async () => {
+    const buildDocument = vi.fn((_nodes: unknown, _edges: unknown, _options: unknown) => "<svg/>");
+    const saveTextFile = vi.fn(async () => undefined);
+    const exportSvg = createExportSvg({
+      DEFAULT_CANVAS_BACKGROUND: "#ffffff",
+      activeLayerId: "default-layer",
+      backgroundPageRender: null,
+      buildSvgDocument: buildDocument,
+      canvasBackgroundColor: "#ffffff",
+      canvasBackgroundImageUrl: "",
+      canvasBounds: { width: 320, height: 180 },
+      colorDisplayMode: "energy",
+      colorPalette: DEFAULT_COLOR_PALETTE,
+      edges: [],
+      ensureSavedBeforeExport: () => true,
+      layers: [],
+      libraryTemplates: DEVICE_LIBRARY,
+      loadSvgImageExportPathById: async () => ({}),
+      measurementConfig: undefined,
+      nodes: [],
+      projectMeasurements: { groups: [] },
+      projectName: "voltage-export",
+      safeFilePart: (value: string) => value,
+      saveTextFile,
+      writeOperationLog: vi.fn()
+    });
+
+    await exportSvg();
+
+    expect(buildDocument).toHaveBeenCalledOnce();
+    expect(buildDocument.mock.calls[0]?.[2]).toMatchObject({ colorDisplayMode: "voltage" });
+    expect(saveTextFile).toHaveBeenCalledOnce();
+  });
 
   test("escapes custom canvas background image href", () => {
     const svg = buildSvgDocument([], [], {
@@ -795,6 +832,16 @@ describe("SVG export", () => {
     expect(svg).toContain('id="dc-bus-750" class="export-node export-device dcv750"');
     expect(svg).toContain('class="export-edge-path lkv10"');
     expect(svg).toContain('class="export-edge-path ldcv750"');
+    expect(svgDeviceUseTag(svg, "ac-source-10")).toContain('vbase="10"');
+    expect(svgDeviceUseTag(svg, "ac-source-10")).toContain('voltage-type="ac"');
+    expect(svgDeviceUseTag(svg, "ac-bus-10")).toContain('vbase="10"');
+    expect(svgDeviceUseTag(svg, "dc-source-750")).toContain('vbase="750"');
+    expect(svgDeviceUseTag(svg, "dc-source-750")).toContain('voltage-type="dc"');
+    expect(svgDeviceUseTag(svg, "dc-bus-750")).toContain('vbase="750"');
+    expect(svgEdgeGroupTag(svg, "ac-10-edge")).toContain('vbase="10"');
+    expect(svgEdgeGroupTag(svg, "ac-10-edge")).toContain('voltage-type="ac"');
+    expect(svgEdgeGroupTag(svg, "dc-750-edge")).toContain('vbase="750"');
+    expect(svgEdgeGroupTag(svg, "dc-750-edge")).toContain('voltage-type="dc"');
   });
 
   test("exports AC and DC electric loads with smaller vertical bodies", () => {
@@ -839,6 +886,8 @@ describe("SVG export", () => {
     converter.id = "converter-node";
     converter.terminals[0].nodeNumber = "N_CONVERTER_IN";
     converter.terminals[1].nodeNumber = "N_CONVERTER_OUT";
+    converter.terminals[0].vbase = "750";
+    converter.terminals[1].vbase = "1500";
     const load = createDefaultNode("dc-load", { x: 260, y: 120 });
     load.id = "dc-load-node";
     const edges: Edge[] = [
@@ -856,6 +905,10 @@ describe("SVG export", () => {
     expect(converterTag).not.toContain("node-id=");
     expect(converterTag).not.toContain("inode=");
     expect(converterTag).not.toContain("znode=");
+    expect(converterTag).toContain('vbase-1="750"');
+    expect(converterTag).toContain('voltage-type-1="dc"');
+    expect(converterTag).toContain('vbase-2="1500"');
+    expect(converterTag).toContain('voltage-type-2="dc"');
     expect(svg).not.toContain("export-terminal");
   });
 

@@ -1820,7 +1820,7 @@ export function createLoadSvgImageExportPathById(__appScope: Record<string, any>
 
 export function createExportSvg(__appScope: Record<string, any>) {
   return async () => {
-  const { DEFAULT_CANVAS_BACKGROUND, activeLayerId, backgroundPageRender, buildSvgDocument, canvasBackgroundColor, canvasBackgroundImageUrl, canvasBounds, colorDisplayMode, colorPalette, edges, ensureSavedBeforeExport, layers, libraryTemplates, loadSvgImageExportPathById, measurementConfig, nodes, projectMeasurements, projectName, safeFilePart, saveTextFile, writeOperationLog } = __appScope;
+  const { DEFAULT_CANVAS_BACKGROUND, activeLayerId, backgroundPageRender, buildSvgDocument, canvasBackgroundColor, canvasBackgroundImageUrl, canvasBounds, colorPalette, edges, ensureSavedBeforeExport, layers, libraryTemplates, loadSvgImageExportPathById, measurementConfig, nodes, projectMeasurements, projectName, safeFilePart, saveTextFile, writeOperationLog } = __appScope;
     if (!ensureSavedBeforeExport()) {
       return;
     }
@@ -1832,7 +1832,7 @@ export function createExportSvg(__appScope: Record<string, any>) {
         backgroundColor: canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND,
         backgroundImage: canvasBackgroundImageUrl,
         imageExportPathById,
-        colorDisplayMode,
+        colorDisplayMode: "voltage",
         colorPalette,
         deviceTemplates: libraryTemplates,
         layers,

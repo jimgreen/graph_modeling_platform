@@ -3249,10 +3249,7 @@ ${scopedBackgroundSvg}
       addVoltageStyleRule("ac", key, color);
     });
   }
-  const nodeVoltageDescriptor = (node: ModelNode) => {
-    if (colorDisplayMode !== "voltage" || node.params.foregroundColor) {
-      return null;
-    }
+  const nodeExportVoltageDescriptor = (node: ModelNode) => {
     const terminal = node.terminals.find((candidate) => isExportElectricTerminalType(candidate.type));
     const busTerminalType = terminal ? undefined : getBusTerminalType(node);
     const type = terminal?.type ?? busTerminalType;
@@ -3265,8 +3262,42 @@ ${scopedBackgroundSvg}
       node.params.ratedVoltage,
       node.params.voltage
     ]) || "0";
-    addVoltageStyleRule(type, voltage);
     return { type, voltage };
+  };
+  const nodeVoltageDescriptor = (node: ModelNode) => {
+    if (colorDisplayMode !== "voltage") {
+      return null;
+    }
+    const descriptor = nodeExportVoltageDescriptor(node);
+    if (!descriptor) {
+      return null;
+    }
+    const { type, voltage } = descriptor;
+    addVoltageStyleRule(type, voltage);
+    return descriptor;
+  };
+  const nodeVoltageAttributes = (node: ModelNode) => {
+    if (isStaticNode(node)) {
+      return "";
+    }
+    if (node.terminals.length === 0) {
+      const descriptor = nodeExportVoltageDescriptor(node);
+      return descriptor
+        ? ` voltage-type="${descriptor.type}" vbase="${escapeXml(exportVoltageValue(descriptor.voltage))}"`
+        : "";
+    }
+    if (node.terminals.length === 1) {
+      const terminal = node.terminals[0];
+      return isExportElectricTerminalType(terminal?.type)
+        ? ` voltage-type="${terminal.type}" vbase="${escapeXml(terminalExportVoltage(node, terminal))}"`
+        : "";
+    }
+    return node.terminals
+      .map((terminal, index) => isExportElectricTerminalType(terminal.type)
+        ? ` voltage-type-${index + 1}="${terminal.type}" vbase-${index + 1}="${escapeXml(terminalExportVoltage(node, terminal))}"`
+        : "")
+      .filter(Boolean)
+      .join("");
   };
   const findExportDisplayTerminal = (node: ModelNode | undefined, terminalId?: string) =>
     node?.terminals.find((terminal) => terminal.id === terminalId) ??
@@ -3274,8 +3305,8 @@ ${scopedBackgroundSvg}
       ((node && isExportElectricTerminalType(getBusTerminalType(node)))
         ? { id: terminalId || "t1", label: "", type: getBusTerminalType(node), anchor: { x: 0, y: 0 }, nodeNumber: node.nodeNumber || "0", vbase: "0" }
         : undefined);
-  const edgeVoltageDescriptor = (edge: Edge | undefined) => {
-    if (colorDisplayMode !== "voltage" || !edge) {
+  const edgeExportVoltageDescriptor = (edge: Edge | undefined) => {
+    if (!edge) {
       return null;
     }
     const sourceNode = nodeById.get(edge.sourceId);
@@ -3289,8 +3320,19 @@ ${scopedBackgroundSvg}
     const sourceVoltage = sourceNode && sourceTerminal?.type === type ? terminalExportVoltage(sourceNode, sourceTerminal) : "";
     const targetVoltage = targetNode && targetTerminal?.type === type ? terminalExportVoltage(targetNode, targetTerminal) : "";
     const voltage = sourceVoltage && sourceVoltage !== "0" ? sourceVoltage : targetVoltage || sourceVoltage || "0";
-    addVoltageStyleRule(type, voltage);
     return { type, voltage };
+  };
+  const edgeVoltageDescriptor = (edge: Edge | undefined) => {
+    if (colorDisplayMode !== "voltage") {
+      return null;
+    }
+    const descriptor = edgeExportVoltageDescriptor(edge);
+    if (!descriptor) {
+      return null;
+    }
+    const { type, voltage } = descriptor;
+    addVoltageStyleRule(type, voltage);
+    return descriptor;
   };
   exportNodes.forEach(nodeVoltageDescriptor);
   edges.forEach(edgeVoltageDescriptor);
@@ -3364,14 +3406,18 @@ ${rules.join("\n")}
       const targetLayerId = targetNode ? nodeLayerId(targetNode) : DEFAULT_MODEL_LAYER_ID;
       const edgeVisible = layerVisible(sourceLayerId) && layerVisible(targetLayerId);
       const edgeVoltage = edgeVoltageDescriptor(edge);
+      const edgeExportVoltage = edgeExportVoltageDescriptor(edge);
       const edgeVoltageLineClass = edgeVoltage ? exportVoltageLineClass(edgeVoltage.type, edgeVoltage.voltage) : "";
+      const edgeVoltageAttributes = edgeExportVoltage
+        ? ` voltage-type="${edgeExportVoltage.type}" vbase="${escapeXml(exportVoltageValue(edgeExportVoltage.voltage))}"`
+        : "";
       const internalConnectors = edge
         ? [buildBoundaryBusInternalConnectorMarkup(edge, "source", stroke, edgeVoltageLineClass), buildBoundaryBusInternalConnectorMarkup(edge, "target", stroke, edgeVoltageLineClass)]
             .filter(Boolean)
             .join("\n")
         : "";
       const edgeElementId = exportSvgUniqueId(`edge_${route.edgeId}`, usedSvgIds, "edge");
-      return `<g id="${escapeXml(edgeElementId)}" class="export-edge" data-export-edge-id="${escapeXml(route.edgeId)}" data-export-source-layer-id="${escapeXml(sourceLayerId)}" data-export-target-layer-id="${escapeXml(targetLayerId)}" source-dev-id="${escapeXml(edge?.sourceId ?? "")}" target-dev-id="${escapeXml(edge?.targetId ?? "")}"${svgDisplayAttribute(edgeVisible)}>
+      return `<g id="${escapeXml(edgeElementId)}" class="export-edge" data-export-edge-id="${escapeXml(route.edgeId)}" data-export-source-layer-id="${escapeXml(sourceLayerId)}" data-export-target-layer-id="${escapeXml(targetLayerId)}" source-dev-id="${escapeXml(edge?.sourceId ?? "")}" target-dev-id="${escapeXml(edge?.targetId ?? "")}"${edgeVoltageAttributes}${svgDisplayAttribute(edgeVisible)}>
 <path class="export-edge-path${edgeVoltageLineClass ? ` ${edgeVoltageLineClass}` : ""}" d="${route.path}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${internalConnectors ? `\n${internalConnectors}` : ""}
 </g>`;
     })
@@ -3394,6 +3440,7 @@ ${rules.join("\n")}
       const allowNodeImage = !isBusNode(node);
       const deviceMetadataAttributes = exportDeviceMetadataAttributes(node);
       const topologyNodeAttributes = deviceTopologyNodeAttributes(node);
+      const voltageAttributes = nodeVoltageAttributes(node);
       const geometryTransform = nodeGeometryTransform(node);
       const imageContentTransform = nodeImageContentTransform(node);
       const labelMarkup = buildSvgNodeLabelMarkup(node);
@@ -3416,9 +3463,12 @@ ${rules.join("\n")}
         const backgroundImageFit = stateVisualImageHref
           ? stateVisual?.imageFit ?? stateVisual?.backgroundImageFit ?? symbolNode.params.backgroundImageFit
           : symbolNode.params.backgroundImageFit;
-        const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node: symbolNode, mode: "geometry", colorDisplayMode, colorPalette: glyphColorPalette, stateVisual }));
-        const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node: symbolNode, mode: "text", colorDisplayMode, colorPalette: glyphColorPalette, stateVisual }));
-        const connectorMarkup = buildSvgDeviceConnectorMarkup(symbolNode, colorDisplayMode, colorPalette);
+        const voltageColoredNode = colorDisplayMode === "voltage" && nodeExportVoltageDescriptor(symbolNode)
+          ? { ...symbolNode, params: { ...symbolNode.params, foregroundColor: "" } }
+          : symbolNode;
+        const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node: voltageColoredNode, mode: "geometry", colorDisplayMode, colorPalette: glyphColorPalette, stateVisual }));
+        const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node: voltageColoredNode, mode: "text", colorDisplayMode, colorPalette: glyphColorPalette, stateVisual }));
+        const connectorMarkup = buildSvgDeviceConnectorMarkup(voltageColoredNode, colorDisplayMode, colorPalette);
         const imageMarkup = imageHref
           ? svgImageContentMarkup(imageHref, {
               x: -symbolNode.size.width / 2,
@@ -3488,7 +3538,7 @@ ${rules.join("\n")}
           visible: layerVisible(layerId)
         }));
       }
-      nodeLayerMarkup.get(typeLayerId)?.push(`<use id="${escapeXml(useId)}" class="export-node export-device${exportButtonClass}${nodeVoltageClass ? ` ${nodeVoltageClass}` : ""}" layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}${topologyNodeAttributes} transform="translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})" href="#${escapeXml(symbolId)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}"${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}/>`);
+      nodeLayerMarkup.get(typeLayerId)?.push(`<use id="${escapeXml(useId)}" class="export-node export-device${exportButtonClass}${nodeVoltageClass ? ` ${nodeVoltageClass}` : ""}" layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}${topologyNodeAttributes}${voltageAttributes} transform="translate(${formatSvgNumber(node.position.x)} ${formatSvgNumber(node.position.y)})" href="#${escapeXml(symbolId)}" x="${formatSvgNumber(-node.size.width / 2)}" y="${formatSvgNumber(-node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}"${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}/>`);
   });
   const measurementConfig = canvasSize.measurementConfig ?? DEFAULT_MEASUREMENT_CONFIG;
   const measurements = canvasSize.measurements ?? EMPTY_PROJECT_MEASUREMENTS;
