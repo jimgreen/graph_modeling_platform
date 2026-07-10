@@ -57,7 +57,11 @@ describe("measurement domain", () => {
       nodeId: "node-1",
       anchor: "bottom",
       layout: "vertical",
-      visible: true
+      visible: true,
+      backgroundColor: "transparent",
+      borderColor: "#64748b",
+      borderStyle: "none",
+      borderWidth: 0
     });
     expect(group?.items.map((item) => item.measurementTypeId)).toEqual(["activePower", "reactivePower", "voltage", "current"]);
     expect(group?.items[0].sourcePoint).toBe("node-1.activePower");
@@ -303,6 +307,61 @@ describe("measurement domain", () => {
     });
   });
 
+  test("applies measurement group font style when an item has no override", () => {
+    const config = normalizeMeasurementConfig(DEFAULT_MEASUREMENT_CONFIG);
+    const group: ProjectMeasurementConfig["groups"][number] = {
+      id: "group-style",
+      nodeId: "node-1",
+      visible: true,
+      anchor: "bottom",
+      offset: { x: 0, y: 80 },
+      layout: "vertical",
+      groupStyleOverride: { color: "#2563eb", fontSize: 18 },
+      items: [{
+        id: "item-group-style",
+        measurementTypeId: "activePower",
+        sourcePoint: "plant.load.1.p"
+      }]
+    };
+
+    const display = resolveMeasurementItemDisplay({
+      config,
+      node: node("node-1", "ac-load"),
+      group,
+      item: group.items[0]
+    });
+
+    expect(display).toMatchObject({ color: "#2563eb", fontSize: 18 });
+  });
+
+  test("lets an item override one group font field while inheriting the other", () => {
+    const config = normalizeMeasurementConfig(DEFAULT_MEASUREMENT_CONFIG);
+    const group: ProjectMeasurementConfig["groups"][number] = {
+      id: "group-partial-style",
+      nodeId: "node-1",
+      visible: true,
+      anchor: "bottom",
+      offset: { x: 0, y: 80 },
+      layout: "vertical",
+      groupStyleOverride: { color: "#2563eb", fontSize: 18 },
+      items: [{
+        id: "item-partial-style",
+        measurementTypeId: "activePower",
+        sourcePoint: "plant.load.1.p",
+        styleOverride: { color: "#dc2626" }
+      }]
+    };
+
+    const display = resolveMeasurementItemDisplay({
+      config,
+      node: node("node-1", "ac-load"),
+      group,
+      item: group.items[0]
+    });
+
+    expect(display).toMatchObject({ color: "#dc2626", fontSize: 18 });
+  });
+
   test("formats runtime values with decimals, units, and quality fallback", () => {
     const good: MeasurementRuntimeValue = {
       sourcePoint: "plant.load.1.p",
@@ -348,6 +407,31 @@ describe("measurement domain", () => {
     expect(normalized.groups[0]).toMatchObject({
       labelVisible: false,
       unitVisible: false
+    });
+  });
+
+  test("uses a transparent borderless box when legacy measurement groups omit box styles", () => {
+    const normalized = normalizeProjectMeasurements(
+      {
+        version: 1,
+        groups: [{
+          id: "group-default-box",
+          nodeId: "node-1",
+          visible: true,
+          anchor: "bottom",
+          offset: { x: 0, y: 70 },
+          layout: "vertical",
+          items: []
+        }]
+      },
+      [node("node-1")]
+    );
+
+    expect(normalized.groups[0]).toMatchObject({
+      backgroundColor: "transparent",
+      borderColor: "#64748b",
+      borderStyle: "none",
+      borderWidth: 0
     });
   });
 
@@ -452,9 +536,15 @@ describe("measurement domain", () => {
     expect(normalized.groups.map((group) => group.id)).toEqual(["keep"]);
   });
 
-  test("filters groups by existing node ids without changing valid objects", () => {
+  test("filters groups by existing node ids while applying default box styles", () => {
     const group = { id: "group-1", nodeId: "node-1", visible: true, anchor: "bottom" as const, offset: { x: 0, y: 70 }, layout: "vertical" as const, items: [] };
-    expect(measurementGroupsForExistingNodes([group], new Set(["node-1"]))).toEqual([group]);
+    expect(measurementGroupsForExistingNodes([group], new Set(["node-1"]))[0]).toMatchObject({
+      ...group,
+      backgroundColor: "transparent",
+      borderColor: "#64748b",
+      borderStyle: "none",
+      borderWidth: 0
+    });
     expect(measurementGroupsForExistingNodes([group], new Set(["node-2"]))).toEqual([]);
   });
 });

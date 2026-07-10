@@ -1672,6 +1672,28 @@ function uniqueSvgId(rawId, usedIds, fallback) {
   return candidate;
 }
 
+function buildExportDeviceIdMap(nodes, usedIds) {
+  const usedIndexesByType = new Map();
+  const result = new Map();
+  for (const node of nodes) {
+    if (isStaticNode(node)) continue;
+    const typeId = svgSafeId(inferESection(node?.kind, node?.params ?? {}) || String(node?.kind ?? ""), "device");
+    const usedIndexes = usedIndexesByType.get(typeId) ?? new Set();
+    usedIndexesByType.set(typeId, usedIndexes);
+    const requestedIndexText = String(node?.params?.idx ?? "").trim();
+    const requestedIndex = /^[1-9]\d*$/.test(requestedIndexText) ? Number.parseInt(requestedIndexText, 10) : 0;
+    if (requestedIndex <= 0) {
+      result.set(node.id, uniqueSvgId(node.id, usedIds, "device"));
+      continue;
+    }
+    let exportIndex = requestedIndex;
+    while (usedIndexes.has(exportIndex)) exportIndex += 1;
+    usedIndexes.add(exportIndex);
+    result.set(node.id, uniqueSvgId(`${typeId}-${exportIndex}`, usedIds, "device"));
+  }
+  return result;
+}
+
 function formatSvgNumber(value) {
   const numeric = Number(value);
   const rounded = Math.round((Number.isFinite(numeric) ? numeric : 0) * 100000) / 100000;
@@ -1778,11 +1800,15 @@ function serverMeasurementProfileForNode(node, config) {
   return (config?.deviceProfiles ?? []).find((profile) => profile.deviceKind === node?.kind);
 }
 
-function resolveServerMeasurementItemDisplay(node, item, measurementConfig) {
+function resolveServerMeasurementItemDisplay(node, group, item, measurementConfig) {
   const type = serverMeasurementTypeById(measurementConfig).get(item?.measurementTypeId);
   const profileItem = serverMeasurementProfileForNode(node, measurementConfig)
     ?.items?.find((candidate) => candidate.measurementTypeId === item?.measurementTypeId && (candidate.role ?? "") === (item?.role ?? ""));
-  const style = { ...(profileItem?.styleOverride ?? {}), ...(item?.styleOverride ?? {}) };
+  const style = {
+    ...(profileItem?.styleOverride ?? {}),
+    ...(group?.groupStyleOverride ?? {}),
+    ...(item?.styleOverride ?? {})
+  };
   return {
     label: item?.labelOverride || item?.name || profileItem?.labelOverride || type?.shortLabel || item?.measurementTypeId || "",
     unit: item?.unitOverride ?? profileItem?.unitOverride ?? type?.defaultUnit ?? "",
@@ -1811,7 +1837,7 @@ function serverMeasurementGroupPosition(node, group) {
 }
 
 function measurementBorderWidth(group) {
-  return group?.borderStyle === "none" ? 0 : Math.max(0, Math.min(12, Number(group?.borderWidth ?? 1)));
+  return (group?.borderStyle ?? "none") === "none" ? 0 : Math.max(0, Math.min(12, Number(group?.borderWidth ?? 1)));
 }
 
 function measurementBorderDashArray(group) {
@@ -1821,13 +1847,13 @@ function measurementBorderDashArray(group) {
   return group?.borderStyle === "dotted" ? "2 4" : "10 6";
 }
 
-function buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, usedIds) {
+function buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, usedIds, deviceId = node.id) {
   if (!group?.visible) {
     return "";
   }
   const fontScale = measurementFontScaleForServerNode(node);
   const rows = (group.items ?? []).flatMap((item) => {
-    const display = resolveServerMeasurementItemDisplay(node, item, measurementConfig);
+    const display = resolveServerMeasurementItemDisplay(node, group, item, measurementConfig);
     if (!display.visible) {
       return [];
     }
@@ -1879,14 +1905,14 @@ function buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, us
   }).join("");
   const groupMetadata = [
     `mg="${escapeSvgAttribute(group.id ?? "")}"`,
-    `dev="${escapeSvgAttribute(node.id ?? "")}"`,
+    `dev="${escapeSvgAttribute(deviceId ?? "")}"`,
     node.params?.idx ? `idx="${escapeSvgAttribute(node.params.idx)}"` : "",
     `name="${escapeSvgAttribute(node.name ?? "")}"`,
     `kind="${escapeSvgAttribute(node.kind ?? "")}"`,
     group.terminalId ? `term="${escapeSvgAttribute(group.terminalId)}"` : ""
   ].filter(Boolean).join(" ");
   return `<g class="mg" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${groupMetadata}>
-<rect x="${formatSvgNumber(-width / 2)}" y="${formatSvgNumber(-height / 2)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" rx="4" fill="${escapeSvgAttribute(group.backgroundColor ?? "rgba(255, 255, 255, 0.84)")}" stroke="${escapeSvgAttribute(group.borderColor ?? "rgba(100, 116, 139, 0.36)")}" stroke-width="${formatSvgNumber(measurementBorderWidth(group))}"${dashAttribute}/>
+<rect x="${formatSvgNumber(-width / 2)}" y="${formatSvgNumber(-height / 2)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" rx="4" fill="${escapeSvgAttribute(group.backgroundColor ?? "transparent")}" stroke="${escapeSvgAttribute(group.borderColor ?? "#64748b")}" stroke-width="${formatSvgNumber(measurementBorderWidth(group))}"${dashAttribute}/>
 ${rowsMarkup}
 </g>`;
 }
@@ -1919,6 +1945,7 @@ export function buildSvgFile(project, measurementConfig = { measurementTypes: []
       layerIdsByType.set(layerKey, uniqueSvgId(svgLayerId(layerKey, "Device"), usedIds, "Device_Layer"));
     }
   }
+  const exportDeviceIdByNodeId = buildExportDeviceIdMap(nodes, usedIds);
   const nodeMarkupByLayer = new Map(Array.from(layerIdsByType.values()).map((layerId) => [layerId, []]));
   const symbolMarkup = [];
   const symbolIdBySignature = new Map();
@@ -1932,7 +1959,9 @@ export function buildSvgFile(project, measurementConfig = { measurementTypes: []
         .map((point) => `${point.x},${point.y}`)
         .join(" ");
       const edgeId = uniqueSvgId(`edge_${edge.id ?? `${start.x}_${start.y}_${end.x}_${end.y}`}`, usedIds, "edge");
-      return `<polyline id="${escapeSvgAttribute(edgeId)}" edge-id="${escapeSvgAttribute(edge.id ?? "")}" source-dev-id="${escapeSvgAttribute(edge.sourceId ?? "")}" target-dev-id="${escapeSvgAttribute(edge.targetId ?? "")}" points="${escapeSvgAttribute(points)}" fill="none" stroke="#334155" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
+      const sourceExportDeviceId = exportDeviceIdByNodeId.get(edge.sourceId) ?? edge.sourceId ?? "";
+      const targetExportDeviceId = exportDeviceIdByNodeId.get(edge.targetId) ?? edge.targetId ?? "";
+      return `<polyline id="${escapeSvgAttribute(edgeId)}" edge-id="${escapeSvgAttribute(edge.id ?? "")}" source-dev-id="${escapeSvgAttribute(sourceExportDeviceId)}" target-dev-id="${escapeSvgAttribute(targetExportDeviceId)}" points="${escapeSvgAttribute(points)}" fill="none" stroke="#334155" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
     })
     .join("\n");
   for (const node of nodes) {
@@ -1942,12 +1971,13 @@ export function buildSvgFile(project, measurementConfig = { measurementTypes: []
     const normalizedRotate = Number.isFinite(rotate) ? rotate : 0;
     const scaleX = nodeScaleX(node);
     const scaleY = nodeScaleY(node);
-    const useId = uniqueSvgId(node.id ?? "device", usedIds, "device");
+    const exportDeviceId = exportDeviceIdByNodeId.get(node.id) ?? node.id ?? "device";
+    const useId = exportDeviceIdByNodeId.get(node.id) ?? uniqueSvgId(exportDeviceId, usedIds, "device");
     const layerId = layerIdsByType.get(nodeLayerKey(node)) ?? otherLayerId;
     const geometryTransform = `rotate(${formatSvgNumber(normalizedRotate)}) scale(${formatSvgNumber(scaleX)} ${formatSvgNumber(scaleY)})`;
-    const labelId = uniqueSvgId(`label_${node.id ?? "node"}`, usedIds, "node_label");
+    const labelId = uniqueSvgId(`label_${exportDeviceId}`, usedIds, "node_label");
     const projectLayerId = String(node.layerId ?? "layer-default");
-    const deviceMetadataAttributes = `idx="${escapeSvgAttribute(node.params?.idx ?? "")}" name="${escapeSvgAttribute(node.name ?? "")}" dev-id="${escapeSvgAttribute(node.id ?? "")}" dev-kind="${escapeSvgAttribute(node.kind ?? "")}"`;
+    const deviceMetadataAttributes = `idx="${escapeSvgAttribute(node.params?.idx ?? "")}" name="${escapeSvgAttribute(node.name ?? "")}" dev-id="${escapeSvgAttribute(exportDeviceId)}" dev-kind="${escapeSvgAttribute(node.kind ?? "")}"`;
     const labelMarkup = buildServerSvgNodeLabelMarkup(node, labelId, `layer-id="${escapeSvgAttribute(projectLayerId)}" ${deviceMetadataAttributes}`);
     if (labelMarkup) {
       textLayerMarkup.push(labelMarkup);
@@ -2014,7 +2044,7 @@ ${(nodeMarkupByLayer.get(layerId) ?? []).join("\n")}
     .map((group) => {
       const node = nodeById.get(group.nodeId);
       if (!node || isStaticNode(node)) return "";
-      return buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, usedIds);
+      return buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, usedIds, exportDeviceIdByNodeId.get(node.id) ?? node.id);
     })
     .filter(Boolean)
     .join("\n");

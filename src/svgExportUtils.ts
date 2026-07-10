@@ -1,7 +1,7 @@
 import type { ModelNode, Point } from "./model";
-import { getTerminalPoint, isStaticNode } from "./model";
+import { getTerminalPoint, inferESection, isStaticNode } from "./model";
 import type { MeasurementGroup, MeasurementItemBinding, PlatformMeasurementConfig } from "./measurements";
-import { measurementFontScaleForNode, measurementOffsetScaleForNode, resolveMeasurementItemDisplay } from "./measurements";
+import { DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR, DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR, DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE, measurementFontScaleForNode, measurementOffsetScaleForNode, resolveMeasurementItemDisplay } from "./measurements";
 import { escapeXml, formatSvgNumber, svgStrokeDashArray } from "./svgUtils";
 import { nodeLabelText, nodeLabelFontSize, nodeLabelShouldRender, nodeLabelTextAnchor, nodeLabelTransform, nodeLabelVertical, nodeLabelVerticalSegments, nodeLabelVerticalTokenY, nodeLabelCanvasCenter } from "./nodeLabelUtils";
 import { clampNumber } from "./canvasViewport";
@@ -85,6 +85,32 @@ export function exportSvgUniqueId(rawId: string, usedIds: Set<string>, fallback:
   return candidate;
 }
 
+export function buildExportDeviceIdMap(nodes: readonly ModelNode[], usedIds: Set<string>) {
+  const usedIndexesByType = new Map<string, Set<number>>();
+  const result = new Map<string, string>();
+  for (const node of nodes) {
+    if (isStaticNode(node)) {
+      continue;
+    }
+    const typeId = exportSvgSafeId(inferESection(node.kind, node.params) || String(node.kind), "device");
+    const usedIndexes = usedIndexesByType.get(typeId) ?? new Set<number>();
+    usedIndexesByType.set(typeId, usedIndexes);
+    const requestedIndexText = String(node.params.idx ?? "").trim();
+    const requestedIndex = /^[1-9]\d*$/.test(requestedIndexText) ? Number.parseInt(requestedIndexText, 10) : 0;
+    if (requestedIndex <= 0) {
+      result.set(node.id, exportSvgUniqueId(node.id, usedIds, "device"));
+      continue;
+    }
+    let exportIndex = requestedIndex;
+    while (usedIndexes.has(exportIndex)) {
+      exportIndex += 1;
+    }
+    usedIndexes.add(exportIndex);
+    result.set(node.id, exportSvgUniqueId(`${typeId}-${exportIndex}`, usedIds, "device"));
+  }
+  return result;
+}
+
 export function exportSvgLayerScriptMarkup(includeScript: boolean) {
   if (!includeScript) {
     return "";
@@ -161,24 +187,24 @@ export function exportSvgLayerScriptMarkup(includeScript: boolean) {
 ]]></script>`;
 }
 
-export function exportDeviceMetadataAttributes(node: ModelNode) {
+export function exportDeviceMetadataAttributes(node: ModelNode, deviceId = node.id) {
   if (isStaticNode(node)) {
     return "";
   }
   return [
     `idx="${escapeXml(node.params.idx ?? "")}"`,
     `name="${escapeXml(node.name)}"`,
-    `dev-id="${escapeXml(node.id)}"`,
+    `dev-id="${escapeXml(deviceId)}"`,
     `dev-kind="${escapeXml(node.kind)}"`
   ].join(" ");
 }
 
-export function exportMeasurementGroupMetadataAttributes(node: ModelNode, group: MeasurementGroup) {
+export function exportMeasurementGroupMetadataAttributes(node: ModelNode, group: MeasurementGroup, deviceId = node.id) {
   const idx = String(node.params.idx ?? "").trim();
   const terminalId = String(group.terminalId ?? "").trim();
   return [
     `mg="${escapeXml(group.id)}"`,
-    `dev="${escapeXml(node.id)}"`,
+    `dev="${escapeXml(deviceId)}"`,
     idx ? `idx="${escapeXml(idx)}"` : "",
     `name="${escapeXml(node.name)}"`,
     `kind="${escapeXml(node.kind)}"`,
@@ -196,10 +222,12 @@ export function exportMeasurementItemMetadataAttributes(item: MeasurementItemBin
   ].filter(Boolean).join(" ");
 }
 
-export const exportMeasurementGroupBackgroundColor = (group: MeasurementGroup) => group.backgroundColor ?? "rgba(255, 255, 255, 0.84)";
-export const exportMeasurementGroupBorderColor = (group: MeasurementGroup) => group.borderColor ?? "rgba(100, 116, 139, 0.36)";
+export const exportMeasurementGroupBackgroundColor = (group: MeasurementGroup) => group.backgroundColor ?? DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR;
+export const exportMeasurementGroupBorderColor = (group: MeasurementGroup) => group.borderColor ?? DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR;
 export const exportMeasurementGroupBorderWidth = (group: MeasurementGroup) =>
-  group.borderStyle === "none" ? 0 : clampNumber(Number(group.borderWidth ?? 1), 0, 12);
+  (group.borderStyle ?? DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE) === "none"
+    ? 0
+    : clampNumber(Number(group.borderWidth ?? 1), 0, 12);
 export const exportMeasurementGroupBorderDashArray = (group: MeasurementGroup) =>
   exportMeasurementGroupBorderWidth(group) <= 0 || group.borderStyle === "none"
     ? undefined
@@ -253,7 +281,7 @@ export function buildExportMeasurementGroupMarkup(
   group: MeasurementGroup,
   measurementConfig: PlatformMeasurementConfig,
   usedSvgIds?: Set<string>,
-  options: { layerId?: string; visible?: boolean } = {}
+  options: { layerId?: string; visible?: boolean; deviceId?: string } = {}
 ) {
   const metrics = exportMeasurementGroupMetrics(node, group, measurementConfig);
   if (!metrics) {
@@ -289,7 +317,7 @@ export function buildExportMeasurementGroupMarkup(
     return `${labelMarkup}${valueMarkup}${unitMarkup}`;
   }).join("");
   const layerAttribute = options.layerId ? ` layer-id="${escapeXml(options.layerId)}"` : "";
-  return `<g class="mg"${layerAttribute} transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group)}${svgDisplayAttribute(options.visible !== false)}>
+  return `<g class="mg"${layerAttribute} transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group, options.deviceId)}${svgDisplayAttribute(options.visible !== false)}>
   <rect x="${formatSvgNumber(-metrics.width / 2)}" y="${formatSvgNumber(-metrics.height / 2)}" width="${formatSvgNumber(metrics.width)}" height="${formatSvgNumber(metrics.height)}" rx="4" fill="${escapeXml(exportMeasurementGroupBackgroundColor(group))}" stroke="${escapeXml(exportMeasurementGroupBorderColor(group))}" stroke-width="${formatSvgNumber(exportMeasurementGroupBorderWidth(group))}"${borderDashAttribute}/>
   ${rowsMarkup}
 </g>`;

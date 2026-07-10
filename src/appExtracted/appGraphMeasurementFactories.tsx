@@ -4726,6 +4726,41 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
             </td>
           </tr>
           <tr>
+            <th>字体颜色</th>
+            <td>
+              <DeferredColorInput
+                value={selectedMeasurementGroupCommonDraft.groupStyleOverride?.color ?? "#334155"}
+                fallback="#334155"
+                disabled={isBrowseMode}
+                aria-label="量测组字体颜色"
+                onCommit={(value) => updateSelectedMeasurementGroups((current) => ({
+                  ...current,
+                  groupStyleOverride: { ...(current.groupStyleOverride ?? {}), color: value }
+                }), "修改量测组字体颜色")}
+              />
+            </td>
+          </tr>
+          <tr>
+            <th>字体大小</th>
+            <td>
+              <BufferedTextInput
+                type="number"
+                min="6"
+                max="96"
+                value={selectedMeasurementGroupCommonDraft.groupStyleOverride?.fontSize ?? 14}
+                disabled={isBrowseMode}
+                aria-label="量测组字体大小"
+                onCommit={(nextValue) => updateSelectedMeasurementGroups((current) => ({
+                  ...current,
+                  groupStyleOverride: {
+                    ...(current.groupStyleOverride ?? {}),
+                    fontSize: clampNumber(Number(nextValue), 6, 96)
+                  }
+                }), "修改量测组字体大小")}
+              />
+            </td>
+          </tr>
+          <tr>
             <th>背景显示</th>
             <td>
               <select
@@ -4759,13 +4794,16 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
             <th>边框样式</th>
             <td>
               <select
-                value={selectedMeasurementGroupCommonDraft.borderStyle ?? "solid"}
+                value={selectedMeasurementGroupCommonDraft.borderStyle ?? "none"}
                 disabled={isBrowseMode}
-                onChange={(event) => updateSelectedMeasurementGroups((current) => ({
-                  ...current,
-                  borderStyle: event.target.value as MeasurementGroup["borderStyle"],
-                  borderWidth: current.borderWidth ?? 1
-                }), "修改量测组边框样式")}
+                onChange={(event) => {
+                  const borderStyle = event.target.value as MeasurementGroup["borderStyle"];
+                  updateSelectedMeasurementGroups((current) => ({
+                    ...current,
+                    borderStyle,
+                    borderWidth: borderStyle === "none" ? 0 : Math.max(1, current.borderWidth ?? 0)
+                  }), "修改量测组边框样式");
+                }}
               >
                 <option value="solid">实线</option>
                 <option value="dashed">虚线</option>
@@ -4780,7 +4818,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
               <DeferredColorInput
                 value={selectedMeasurementGroupCommonDraft.borderColor ?? ""}
                 fallback="#64748b"
-                disabled={isBrowseMode || (selectedMeasurementGroupCommonDraft.borderStyle ?? "solid") === "none"}
+                disabled={isBrowseMode || (selectedMeasurementGroupCommonDraft.borderStyle ?? "none") === "none"}
                 aria-label="量测组边框颜色"
                 onCommit={(value) => updateSelectedMeasurementGroups((current) => ({ ...current, borderColor: value }), "修改量测组边框颜色")}
               />
@@ -4794,8 +4832,8 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                 min="0"
                 max="12"
                 step="0.5"
-                value={selectedMeasurementGroupCommonDraft.borderWidth ?? 1}
-                disabled={isBrowseMode || (selectedMeasurementGroupCommonDraft.borderStyle ?? "solid") === "none"}
+                value={selectedMeasurementGroupCommonDraft.borderWidth ?? 0}
+                disabled={isBrowseMode || (selectedMeasurementGroupCommonDraft.borderStyle ?? "none") === "none"}
                 aria-label="量测组边框宽度"
                 onCommit={(nextValue) => updateSelectedMeasurementGroups((current) => ({
                   ...current,
@@ -4835,8 +4873,8 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
           {group.items.map((item, itemIndex) => {
             const type = measurementTypeById.get(item.measurementTypeId) ?? measurementConfig.measurementTypes[0];
             const measurementTypeOptions = measurementTypeOptionsForMeasurementGroup(node, group);
-            const itemColor = item.styleOverride?.color ?? type?.defaultColor ?? "#334155";
-            const itemFontSize = item.styleOverride?.fontSize ?? type?.defaultFontSize ?? 14;
+            const itemColor = item.styleOverride?.color ?? group.groupStyleOverride?.color ?? type?.defaultColor ?? "#334155";
+            const itemFontSize = item.styleOverride?.fontSize ?? group.groupStyleOverride?.fontSize ?? type?.defaultFontSize ?? 14;
             return (
               <Fragment key={item.id}>
                 <tr className="measurement-item-row">

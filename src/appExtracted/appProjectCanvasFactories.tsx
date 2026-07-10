@@ -3709,7 +3709,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
       group.items.map((item, itemIndex) => ({ group, groupId: group.id, item, itemIndex }))
     );
     const draftBackgroundHidden = measurementGroupBackgroundColor(draft) === "transparent";
-    const draftBorderHidden = (draft.borderStyle ?? "solid") === "none";
+    const draftBorderHidden = (draft.borderStyle ?? "none") === "none";
     return (
       <div className="image-picker-backdrop measurement-editor-backdrop" onPointerDown={() => setMeasurementEditorDialog(null)}>
         <section className="measurement-editor-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="measurement-editor-title">
@@ -3769,6 +3769,37 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
               </select>
             </label>
             <label>
+              <span>字体颜色</span>
+              <DeferredColorInput
+                value={draft.groupStyleOverride?.color ?? "#334155"}
+                fallback="#334155"
+                disabled={isBrowseMode}
+                aria-label="量测组字体颜色"
+                onCommit={(value) => updateMeasurementEditorGroupSettings((group) => ({
+                  ...group,
+                  groupStyleOverride: { ...(group.groupStyleOverride ?? {}), color: value }
+                }))}
+              />
+            </label>
+            <label>
+              <span>字体大小</span>
+              <BufferedTextInput
+                type="number"
+                min="6"
+                max="96"
+                value={draft.groupStyleOverride?.fontSize ?? 14}
+                disabled={isBrowseMode}
+                aria-label="量测组字体大小"
+                onCommit={(nextValue) => updateMeasurementEditorGroupSettings((group) => ({
+                  ...group,
+                  groupStyleOverride: {
+                    ...(group.groupStyleOverride ?? {}),
+                    fontSize: clampNumber(Number(nextValue), 6, 96)
+                  }
+                }))}
+              />
+            </label>
+            <label>
               <span>背景显示</span>
               <select
                 value={draftBackgroundHidden ? "0" : "1"}
@@ -3796,13 +3827,16 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
             <label>
               <span>边框样式</span>
               <select
-                value={draft.borderStyle ?? "solid"}
+                value={draft.borderStyle ?? "none"}
                 disabled={isBrowseMode}
-                onChange={(event) => updateMeasurementEditorGroupSettings((group) => ({
-                  ...group,
-                  borderStyle: event.target.value as MeasurementGroup["borderStyle"],
-                  borderWidth: group.borderWidth ?? 1
-                }))}
+                onChange={(event) => {
+                  const borderStyle = event.target.value as MeasurementGroup["borderStyle"];
+                  updateMeasurementEditorGroupSettings((group) => ({
+                    ...group,
+                    borderStyle,
+                    borderWidth: borderStyle === "none" ? 0 : Math.max(1, group.borderWidth ?? 0)
+                  }));
+                }}
               >
                 <option value="solid">实线</option>
                 <option value="dashed">虚线</option>
@@ -3826,7 +3860,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                 min="0"
                 max="12"
                 step="0.5"
-                value={draft.borderWidth ?? 1}
+                value={draft.borderWidth ?? 0}
                 disabled={isBrowseMode || draftBorderHidden}
                 onCommit={(nextValue) => updateMeasurementEditorGroupSettings((group) => ({
                   ...group,
@@ -3867,8 +3901,8 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                   const { group, item, itemIndex } = row;
                   const type = measurementTypeById.get(item.measurementTypeId) ?? measurementConfig.measurementTypes[0];
                   const measurementTypeOptions = measurementTypeOptionsForMeasurementGroup(node, group);
-                  const itemColor = item.styleOverride?.color ?? type?.defaultColor ?? "#334155";
-                  const itemFontSize = item.styleOverride?.fontSize ?? type?.defaultFontSize ?? 14;
+                  const itemColor = item.styleOverride?.color ?? group.groupStyleOverride?.color ?? type?.defaultColor ?? "#334155";
+                  const itemFontSize = item.styleOverride?.fontSize ?? group.groupStyleOverride?.fontSize ?? type?.defaultFontSize ?? 14;
                   return (
                     <tr key={item.id}>
                       <td>{rowIndex + 1}</td>

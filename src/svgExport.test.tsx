@@ -275,6 +275,40 @@ describe("SVG export", () => {
     expect(svg).not.toContain('<g id="switch-closed" class="export-device"');
   });
 
+  test("normalizes device ids from the export type and permanent index", () => {
+    const first = { ...createDefaultNode("ac-box-breaker", { x: 120, y: 120 }), id: "ac-box-breaker-aakyra2" };
+    first.params = { ...first.params, idx: "1", _labelText: "盒型开关-1" };
+    const second = { ...createDefaultNode("ac-box-breaker", { x: 280, y: 120 }), id: "node-1783339759502-u3qq" };
+    second.params = { ...second.params, idx: "2", _labelText: "盒型开关-2" };
+    const third = { ...createDefaultNode("ac-box-breaker", { x: 440, y: 120 }), id: "node-1783657543903-bm6" };
+    third.params = { ...third.params, idx: "3", _labelText: "盒型开关-3" };
+    const edges: Edge[] = [
+      {
+        id: "switch-edge",
+        sourceId: first.id,
+        targetId: second.id,
+        sourceTerminalId: "t2",
+        targetTerminalId: "t1"
+      }
+    ];
+
+    const svg = buildSvgDocument([first, second, third], edges, { width: 600, height: 260 });
+
+    for (const [index, node] of [first, second, third].entries()) {
+      const exportId = `ACBreak-${index + 1}`;
+      const useTag = svgDeviceUseTag(svg, exportId);
+      expect(useTag).toContain(`id="${exportId}"`);
+      expect(useTag).toContain(`dev-id="${exportId}"`);
+      expect(useTag).toContain(`idx="${index + 1}"`);
+      expect(useTag).toContain('dev-kind="ac-box-breaker"');
+      expect(svg).not.toContain(`dev-id="${node.id}"`);
+    }
+    expect(svg).toContain('source-dev-id="ACBreak-1"');
+    expect(svg).toContain('target-dev-id="ACBreak-2"');
+    expect(svg).toContain('<text id="label_ACBreak-1"');
+    expect(svg).not.toContain('id="label_node-1783339759502-u3qq"');
+  });
+
   test("exports topology node attributes on device uses without visible anchors", () => {
     const template: DeviceTemplate = {
       ...DEVICE_LIBRARY.find((item) => item.kind === "ac-switch")!,
@@ -387,8 +421,9 @@ describe("SVG export", () => {
     expect(svg).toContain(`<use id="source-1" layer-id="layer-default"`);
     expect(svg).toContain(`dev-id="source-1"`);
     expect(svg).toContain(`dev-kind="ac-source"`);
-    expect(svg).toContain(`transform="translate(${generator.position.x} ${generator.position.y})"`);
-    expect(svg).toContain(`href="#symbol_ACGenerator_ac-source_default" x="${-generator.size.width / 2}" y="${-generator.size.height / 2}" width="${generator.size.width}" height="${generator.size.height}"/>`);
+    const generatorUseTag = svgDeviceUseTag(svg, "source-1");
+    expect(generatorUseTag).not.toContain("transform=");
+    expect(generatorUseTag).toContain(`href="#symbol_ACGenerator_ac-source_default" x="${generator.position.x - generator.size.width / 2}" y="${generator.position.y - generator.size.height / 2}" width="${generator.size.width}" height="${generator.size.height}"`);
     expect(svg).not.toContain(`<g id="source-1" class="export-device"`);
     expect(svg).not.toContain('data-export-node-id="source-1"');
     expect(svg).toContain('dev-id="source-1"');
@@ -428,7 +463,8 @@ describe("SVG export", () => {
     expect(sourceUseTag).toContain('layer-id="layer-default"');
     expect(sourceUseTag).toContain('dev-id="source-device"');
     expect(sourceUseTag).toContain('href="#symbol_ACGenerator_ac-source_default"');
-    expect(sourceUseTag).toContain('transform="translate(120 140)"');
+    expect(sourceUseTag).toContain('x="45" y="90"');
+    expect(sourceUseTag).not.toContain("transform=");
     expect(sourceUseTag).not.toContain('class=');
     expect(svg).not.toContain('<g id="source-device" class="export-device"');
     expect(svg).not.toContain('<g id="breaker-device" class="export-device"');
@@ -462,9 +498,12 @@ describe("SVG export", () => {
     const line = createDefaultNode("ac-routable-line", { x: 180, y: 120 });
 
     const svg = buildSvgDocument([line], [], { width: 360, height: 240 });
+    const lineUseTag = svgDeviceUseTag(svg, line.id);
 
     expect(svg).toContain("routable-line-device-glyph");
     expect(svg).toContain('stroke-width="4"');
+    expect(lineUseTag).toContain(`x="${line.position.x - line.size.width / 2}" y="${line.position.y - line.size.height / 2}"`);
+    expect(lineUseTag).not.toContain("transform=");
   });
 
   test("exports a large saved-route model without rerouting every connection", () => {
@@ -569,6 +608,7 @@ describe("SVG export", () => {
           anchor: "custom",
           offset: { x: 40, y: -30 },
           layout: "vertical",
+          groupStyleOverride: { color: "#2563eb", fontSize: 18 },
           items: [
             {
               id: "m-active",
@@ -576,7 +616,8 @@ describe("SVG export", () => {
               measurementTypeId: "activePower",
               sourcePoint: "load-export.activePower",
               visible: true,
-              unitOverride: "kW"
+              unitOverride: "kW",
+              styleOverride: { color: "#dc2626" }
             }
           ]
         }
@@ -621,6 +662,8 @@ describe("SVG export", () => {
     expect(valueText).toContain('mid="m-active"');
     expect(valueText).toContain('mt="activePower"');
     expect(valueText).toContain('mf="load-export.activePower"');
+    expect(valueText).toContain('fill="#dc2626"');
+    expect(valueText).toContain('font-size="18"');
     expect(valueText).not.toContain('mn=');
     expect(valueText).not.toContain('mu=');
     expect(valueText).not.toContain('mg=');
@@ -719,6 +762,32 @@ describe("SVG export", () => {
     expect(measurementLayer).not.toContain('class="mu"');
     expect(measurementLayer).not.toContain('class="mg-bg"');
     expect(measurementLayer).not.toContain("data-export-measurement-");
+  });
+
+  test("exports measurement groups without explicit box styles as transparent and borderless", () => {
+    const load = { ...createDefaultNode("ac-load", { x: 140, y: 100 }), id: "default-style-load" };
+    const measurements: ProjectMeasurementConfig = {
+      version: 1,
+      groups: [{
+        id: "default-style-group",
+        nodeId: load.id,
+        visible: true,
+        anchor: "bottom",
+        offset: { x: 0, y: 70 },
+        layout: "vertical",
+        items: [{
+          id: "default-style-item",
+          measurementTypeId: "activePower",
+          sourcePoint: `${load.id}.activePower`,
+          visible: true
+        }]
+      }]
+    };
+
+    const svg = buildSvgDocument([load], [], { width: 320, height: 240, measurements });
+    const measurementLayer = svgSectionBetween(svg, '<g id="Measurement_Layer">', '<g id="Other_Layer">');
+
+    expect(measurementLayer).toMatch(/<rect\b[^>]*fill="transparent"[^>]*stroke-width="0"/);
   });
 
   test("exports vertical device label tokens with absolute x and y coordinates", () => {

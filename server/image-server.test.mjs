@@ -412,6 +412,51 @@ describe("scheme file persistence", () => {
     expect(defs).not.toContain("export-node-geometry");
   });
 
+  test("normalizes server SVG device ids from the export type and permanent index", () => {
+    const svg = buildSvgFile({
+      version: 1,
+      name: "统一设备ID",
+      canvasWidth: 600,
+      canvasHeight: 260,
+      nodes: [
+        {
+          id: "ac-box-breaker-aakyra2",
+          kind: "ac-box-breaker",
+          name: "盒型开关-1",
+          position: { x: 120, y: 120 },
+          size: { width: 150, height: 76 },
+          params: { idx: "1", _labelText: "盒型开关-1" },
+          terminals: []
+        },
+        {
+          id: "node-1783339759502-u3qq",
+          kind: "ac-box-breaker",
+          name: "盒型开关-2",
+          position: { x: 300, y: 120 },
+          size: { width: 150, height: 76 },
+          params: { idx: "2", _labelText: "盒型开关-2" },
+          terminals: []
+        }
+      ],
+      edges: [
+        {
+          id: "switch-edge",
+          sourceId: "ac-box-breaker-aakyra2",
+          targetId: "node-1783339759502-u3qq"
+        }
+      ]
+    });
+    const useTags = svgUseTags(svg);
+
+    expect(useTags[0]).toContain('id="ACBreak-1"');
+    expect(useTags[1]).toContain('id="ACBreak-2"');
+    expect(svg).toContain('source-dev-id="ACBreak-1"');
+    expect(svg).toContain('target-dev-id="ACBreak-2"');
+    expect(svg).toContain('<text id="label_ACBreak-1"');
+    expect(svg).toContain('dev-id="ACBreak-1"');
+    expect(svg).not.toContain('dev-id="node-1783339759502-u3qq"');
+  });
+
   test("writes device labels to Text_Layer and measurements to Measurement_Layer instead of defs", () => {
     const svg = buildSvgFile(
       {
@@ -476,6 +521,7 @@ describe("scheme file persistence", () => {
               anchor: "custom",
               offset: { x: 40, y: -30 },
               layout: "vertical",
+              groupStyleOverride: { color: "#2563eb", fontSize: 18 },
               items: [
                 {
                   id: "server-m",
@@ -483,7 +529,8 @@ describe("scheme file persistence", () => {
                   measurementTypeId: "activePower",
                   sourcePoint: "server-load.activePower",
                   visible: true,
-                  unitOverride: "kW"
+                  unitOverride: "kW",
+                  styleOverride: { color: "#dc2626" }
                 }
               ]
             }
@@ -518,6 +565,7 @@ describe("scheme file persistence", () => {
     expect(measurementLayer).toContain('class="mg"');
     expect(measurementLayer).toContain('mg="server-group"');
     expect(measurementLayer).toContain('dev="server-load"');
+    expect(measurementLayer).toMatch(/<rect\b[^>]*fill="transparent"[^>]*stroke-width="0"/);
     expect(measurementLayer).toContain('idx="LOAD-1"');
     expect(measurementLayer).toContain('name="负荷A"');
     expect(measurementLayer).toContain('mf="server-load.activePower"');
@@ -535,6 +583,8 @@ describe("scheme file persistence", () => {
     expect(valueText).toContain('mid="server-m"');
     expect(valueText).toContain('mt="activePower"');
     expect(valueText).toContain('mf="server-load.activePower"');
+    expect(valueText).toContain('fill="#dc2626"');
+    expect(valueText).toContain('font-size="18"');
     expect(valueText).not.toContain('mg=');
     expect(valueText).not.toContain('term=');
     expect(measurementLayer).not.toContain("data-export-measurement-");

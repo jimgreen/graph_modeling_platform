@@ -3545,15 +3545,15 @@ export const measurementGroupCommonValue = (group: MeasurementGroup, key: BatchC
     case "unitVisible":
       return group.unitVisible === false ? "0" : "1";
     case "backgroundVisible":
-      return group.backgroundColor === "transparent" ? "0" : "1";
+      return !group.backgroundColor || group.backgroundColor === "transparent" ? "0" : "1";
     case "backgroundColor":
-      return group.backgroundColor ?? "#ffffff";
+      return group.backgroundColor ?? "transparent";
     case "borderStyle":
-      return group.borderStyle ?? "solid";
+      return group.borderStyle ?? "none";
     case "borderColor":
       return group.borderColor ?? "#64748b";
     case "borderWidth":
-      return String(group.borderWidth ?? 1);
+      return String(group.borderWidth ?? 0);
     default:
       return "";
   }
@@ -3583,10 +3583,11 @@ export const measurementGroupWithCommonSetting = (
     case "backgroundColor":
       return { ...group, backgroundColor: value || "#ffffff" };
     case "borderStyle":
+      const borderStyle = value as MeasurementGroup["borderStyle"];
       return {
         ...group,
-        borderStyle: value as MeasurementGroup["borderStyle"],
-        borderWidth: group.borderWidth ?? 1
+        borderStyle,
+        borderWidth: borderStyle === "none" ? 0 : Math.max(1, group.borderWidth ?? 0)
       };
     case "borderColor":
       return { ...group, borderColor: value || "#64748b" };

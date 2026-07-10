@@ -498,6 +498,23 @@ describe("measurement canvas interactions", () => {
     expect(canvasSource).toContain('buildMeasurementGroupsMarkup(ghostNode, { absolute: true, className: "drag-origin" })');
   });
 
+  test("exposes group font color and size controls in both measurement editors", () => {
+    const selectedMeasurementSource = readFileSync(
+      new URL("./appExtracted/appGraphMeasurementFactories.tsx", import.meta.url),
+      "utf8"
+    );
+    const measurementDialogSource = readFileSync(
+      new URL("./appExtracted/appProjectCanvasFactories.tsx", import.meta.url),
+      "utf8"
+    );
+
+    for (const source of [selectedMeasurementSource, measurementDialogSource]) {
+      expect(source).toContain('aria-label="量测组字体颜色"');
+      expect(source).toContain('aria-label="量测组字体大小"');
+      expect(source).toContain("groupStyleOverride");
+    }
+  });
+
   test("marks measurement groups through the imperative single-node drag origin path", () => {
     const nodeClassList = { add: vi.fn(), remove: vi.fn() };
     const measurementClassList = { add: vi.fn(), remove: vi.fn() };

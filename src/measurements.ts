@@ -99,6 +99,11 @@ export type ProjectMeasurementConfig = {
   groups: MeasurementGroup[];
 };
 
+export const DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR = "transparent";
+export const DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR = "#64748b";
+export const DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE: MeasurementGroupBorderStyle = "none";
+export const DEFAULT_MEASUREMENT_GROUP_BORDER_WIDTH = 0;
+
 export type MeasurementRuntimeValue = {
   sourcePoint: string;
   value: number | string | boolean | null;
@@ -486,10 +491,10 @@ export function measurementGroupsForExistingNodes(groups: readonly MeasurementGr
       visible: group.visible !== false,
       labelVisible: group.labelVisible === undefined ? undefined : group.labelVisible !== false,
       unitVisible: group.unitVisible === undefined ? undefined : group.unitVisible !== false,
-      backgroundColor: normalizedGroupColor(group.backgroundColor),
-      borderColor: normalizedGroupColor(group.borderColor),
-      borderStyle: normalizedGroupBorderStyle(group.borderStyle),
-      borderWidth: normalizedGroupBorderWidth(group.borderWidth),
+      backgroundColor: normalizedGroupColor(group.backgroundColor) ?? DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR,
+      borderColor: normalizedGroupColor(group.borderColor) ?? DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR,
+      borderStyle: normalizedGroupBorderStyle(group.borderStyle) ?? DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE,
+      borderWidth: normalizedGroupBorderWidth(group.borderWidth) ?? DEFAULT_MEASUREMENT_GROUP_BORDER_WIDTH,
       anchor: normalizedAnchor(group.anchor),
       offset: {
         x: finiteNumber(group.offset?.x, 0),
@@ -632,10 +637,10 @@ export function createDefaultMeasurementGroupsForNode(
       visible: true,
       labelVisible: true,
       unitVisible: true,
-      backgroundColor: "#ffffff",
-      borderColor: "#64748b",
-      borderStyle: "solid",
-      borderWidth: 1,
+      backgroundColor: DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR,
+      borderColor: DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR,
+      borderStyle: DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE,
+      borderWidth: DEFAULT_MEASUREMENT_GROUP_BORDER_WIDTH,
       anchor: "bottom",
       offset: defaultMeasurementGroupOffsetForNode(node, terminal),
       layout: "vertical",
@@ -659,6 +664,7 @@ export function createDefaultMeasurementGroupsForNode(
 export function resolveMeasurementItemDisplay({
   config,
   node,
+  group,
   item
 }: {
   config: PlatformMeasurementConfig;
@@ -670,7 +676,11 @@ export function resolveMeasurementItemDisplay({
   const type = normalizedConfig.measurementTypes.find((candidate) => candidate.id === item.measurementTypeId);
   const profileItem = measurementProfileForNode(node, normalizedConfig)
     ?.items.find((candidate) => candidate.measurementTypeId === item.measurementTypeId && (candidate.role ?? "") === (item.role ?? ""));
-  const style = { ...(profileItem?.styleOverride ?? {}), ...(item.styleOverride ?? {}) };
+  const style = {
+    ...(profileItem?.styleOverride ?? {}),
+    ...(group.groupStyleOverride ?? {}),
+    ...(item.styleOverride ?? {})
+  };
   return {
     label: item.labelOverride || profileItem?.labelOverride || type?.shortLabel || item.measurementTypeId,
     unit: item.unitOverride ?? profileItem?.unitOverride ?? type?.defaultUnit ?? "",

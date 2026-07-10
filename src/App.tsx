@@ -397,6 +397,10 @@ import {
 } from "./sidePanelVisibility";
 import {
   DEFAULT_MEASUREMENT_CONFIG,
+  DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR,
+  DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR,
+  DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE,
+  DEFAULT_MEASUREMENT_GROUP_BORDER_WIDTH,
   EMPTY_PROJECT_MEASUREMENTS,
   createDefaultMeasurementGroupsForNode,
   formatMeasurementDisplayValue,
@@ -1526,10 +1530,12 @@ const connectionStrokeColorCacheToken = useMemo(
 Object.assign(__appScope, { connectionStrokeColorCacheToken });
 const cachedConnectionStrokeColor = createCachedConnectionStrokeColor(__appScope); Object.assign(__appScope, { cachedConnectionStrokeColor });
 const connectionLineStyle = createConnectionLineStyle(__appScope); Object.assign(__appScope, { connectionLineStyle });
-const measurementGroupBackgroundColor = (group: MeasurementGroup) => group.backgroundColor ?? "rgba(255, 255, 255, 0.84)"; Object.assign(__appScope, { measurementGroupBackgroundColor });
-const measurementGroupBorderColor = (group: MeasurementGroup) => group.borderColor ?? "rgba(100, 116, 139, 0.36)"; Object.assign(__appScope, { measurementGroupBorderColor });
+const measurementGroupBackgroundColor = (group: MeasurementGroup) => group.backgroundColor ?? DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR; Object.assign(__appScope, { measurementGroupBackgroundColor });
+const measurementGroupBorderColor = (group: MeasurementGroup) => group.borderColor ?? DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR; Object.assign(__appScope, { measurementGroupBorderColor });
 const measurementGroupBorderWidth = (group: MeasurementGroup) =>
-    group.borderStyle === "none" ? 0 : clampNumber(Number(group.borderWidth ?? 1), 0, 12);
+    (group.borderStyle ?? DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE) === "none"
+      ? 0
+      : clampNumber(Number(group.borderWidth ?? 1), 0, 12);
 Object.assign(__appScope, { measurementGroupBorderWidth });
 const measurementGroupBorderDashArray = (group: MeasurementGroup) =>
     measurementGroupBorderWidth(group) <= 0 || group.borderStyle === "none"
@@ -3158,10 +3164,10 @@ const createMeasurementGroupShellForNode = (node: ModelNode, terminalId?: string
     visible: true,
     labelVisible: true,
     unitVisible: true,
-    backgroundColor: "#ffffff",
-    borderColor: "#64748b",
-    borderStyle: "solid",
-    borderWidth: 1,
+    backgroundColor: DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR,
+    borderColor: DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR,
+    borderStyle: DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE,
+    borderWidth: DEFAULT_MEASUREMENT_GROUP_BORDER_WIDTH,
     anchor: "bottom",
     offset: measurementGroupShellOffsetForNode(node, terminalId),
     layout: "vertical",
