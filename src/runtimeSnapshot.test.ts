@@ -1,5 +1,5 @@
 // runtimeSnapshot.test.ts — 运行时态序列化单测
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   serializeModel,
   serializeDevices,
@@ -29,6 +29,7 @@ const mockNode = (overrides: Record<string, any> = {}) => ({
 
 const mockScope = (overrides: Record<string, any> = {}) => ({
   activeProjectKey: "proj-1",
+  activeSchemeKey: "scheme-1",
   activeModelName: "测试模型",
   currentModelRecord: {
     id: "proj-1",
@@ -63,6 +64,7 @@ const mockScope = (overrides: Record<string, any> = {}) => ({
     mime: "text/plain"
   }),
   currentProject: () => ({ version: 1, name: "测试模型", nodes: [], edges: [] }),
+  schemePathForScheme: () => ["方案A", "测试方案"],
   svgRef: { current: null },
   ...overrides
 });
@@ -277,12 +279,18 @@ describe("serializeSvg", () => {
 
 describe("serializeEFile", () => {
   it("返回 E 文件文本", () => {
-    const res = serializeEFile(mockScope());
+    const buildEFileExport = vi.fn(() => ({
+      filename: "model.e",
+      text: "E file content",
+      mime: "text/plain"
+    }));
+    const res = serializeEFile(mockScope({ buildEFileExport }));
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.data.filename).toBe("model.e");
     expect(res.data.text).toBe("E file content");
     expect(res.data.mime).toBe("text/plain");
+    expect(buildEFileExport).toHaveBeenCalledWith(expect.anything(), ["方案A", "测试方案"]);
   });
 
   it("无活动模型时返回 no-active-model", () => {

@@ -238,7 +238,7 @@ function eFileVisualWidthForTest(value: string) {
   let width = 0;
   for (const char of value) {
     width += /[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6]/u.test(char)
-      ? 2
+      ? 5 / 3
       : 1;
   }
   return width;
@@ -258,7 +258,9 @@ function expectEFileSectionColumnsAligned(text: string, section: string) {
   expect(rows.length).toBeGreaterThan(0);
   const expectedColumns = eFileTokenVisualColumns(header ?? "").slice(1);
   for (const row of rows) {
-    expect(eFileTokenVisualColumns(row).slice(1)).toEqual(expectedColumns);
+    const rowColumns = eFileTokenVisualColumns(row).slice(1);
+    expect(rowColumns).toHaveLength(expectedColumns.length);
+    rowColumns.forEach((column, index) => expect(column).toBeCloseTo(expectedColumns[index], 0));
   }
 }
 
@@ -2175,15 +2177,24 @@ describe("power system model", () => {
       edges: []
     };
 
-    const file = buildEFileExport(project);
+    const file = buildEFileExport(project, ["主方案", "子方案"]);
 
     expect(file.filename).toBe("混合_能源_模型.e");
     expect(file.mime).toBe("text/plain");
-    expect(file.text).toContain("<PowerBase>");
-    expect(file.text).toContain("@    p_base    u_unit    p_unit    i_unit");
-    expect(file.text).toContain("#    100       kV        MW        A");
+    expect(file.text).toContain("<Model>");
+    expect(file.text).not.toContain("<PowerBase>");
+    const sections = parseESections(file.text);
+    expect(sections.Model.columns).toEqual(["path", "name", "p_base", "u_unit", "p_unit", "i_unit"]);
+    expect(sections.Model.rows[0]).toEqual({
+      path: "主方案/子方案",
+      name: "混合/能源:模型",
+      p_base: "100",
+      u_unit: "kV",
+      p_unit: "MW",
+      i_unit: "A"
+    });
     expect(file.text).toContain("<ACGenerator>");
-    expectEFileSectionColumnsAligned(file.text, "PowerBase");
+    expectEFileSectionColumnsAligned(file.text, "Model");
     expectEFileSectionColumnsAligned(file.text, "ACGenerator");
     expect(() => JSON.parse(file.text)).toThrow();
   });
@@ -4173,6 +4184,8 @@ describe("power system model", () => {
     const exportedAcLoad = payload.ACLoad.rows.find((row) => row.name === "ac_load");
     const exportedDcLoad = payload.DCLoad.rows.find((row) => row.name === "dc_load");
 
+    expect(payload.ACNode.columns).toEqual(["idx", "name", "vbase", "run_stat"]);
+    expect(payload.ACNode.columns).not.toEqual(expect.arrayContaining(["voltage", "angle", "isl"]));
     expect(acNodes.map((row) => row.idx)).toEqual(["1", "2"]);
     expect(acNodes.map((row) => row.name)).toEqual(["ac_src", "ac_load"]);
     expect(acNodes.map((row) => row.vbase)).toEqual(["10", "10"]);
@@ -4225,7 +4238,7 @@ describe("power system model", () => {
     const acTransfomer3 = payload.ACTransfomer3.rows.find((row) => row.name === "T3");
 
     expect(acNodes.map((row) => row.idx)).toEqual(["1", "2", "3", "4"]);
-    expect(neutralNode).toMatchObject({ name: "T3_neutral", vbase: "1.0", voltage: "1.0" });
+    expect(neutralNode).toMatchObject({ name: "T3_neutral", vbase: "1.0" });
     expect(acTransfomer3).toEqual({
       idx: "1",
       name: "T3",

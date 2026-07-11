@@ -100,13 +100,16 @@ describe("SVG export", () => {
   test("reports successful E file export after saving completes", async () => {
     const alert = vi.fn();
     const writeOperationLog = vi.fn();
+    const buildEFileExport = vi.fn(() => ({ filename: "模型.e", text: "<Model/>", mime: "text/plain" }));
     vi.stubGlobal("window", { alert });
     const exportEFile = createExportEFile({
-      buildEFileExport: () => ({ filename: "模型.e", text: "<PowerBase/>", mime: "text/plain" }),
+      activeSchemeKey: "scheme-1",
+      buildEFileExport,
       currentProject: () => ({ version: 1, name: "模型", nodes: [], edges: [] }),
       ensureSavedBeforeExport: () => true,
       getEExportWarnings: () => [],
       saveTextFile: vi.fn(async () => true),
+      schemePathForScheme: () => ["主方案", "子方案"],
       writeOperationLog
     });
 
@@ -114,6 +117,7 @@ describe("SVG export", () => {
 
     expect(writeOperationLog).toHaveBeenCalledWith("导出模型文件：模型.e");
     expect(alert).toHaveBeenCalledWith("E 文件导出成功：模型.e");
+    expect(buildEFileExport).toHaveBeenCalledWith(expect.anything(), ["主方案", "子方案"]);
   });
 
   test("does not report E file export success when saving is cancelled", async () => {

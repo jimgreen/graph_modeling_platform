@@ -1868,7 +1868,16 @@ export function createExportSvg(__appScope: Record<string, any>) {
 
 export function createExportEFile(__appScope: Record<string, any>) {
   return async () => {
-  const { buildEFileExport, currentProject, ensureSavedBeforeExport, getEExportWarnings, saveTextFile, writeOperationLog } = __appScope;
+    const {
+      activeSchemeKey,
+      buildEFileExport,
+      currentProject,
+      ensureSavedBeforeExport,
+      getEExportWarnings,
+      saveTextFile,
+      schemePathForScheme,
+      writeOperationLog
+    } = __appScope;
     if (!ensureSavedBeforeExport()) {
       return;
     }
@@ -1883,7 +1892,13 @@ export function createExportEFile(__appScope: Record<string, any>) {
         ].filter(Boolean).join("\n")
       );
     }
-    const file = buildEFileExport(project);
+    const schemePath = typeof schemePathForScheme === "function"
+      ? schemePathForScheme(activeSchemeKey)
+      : [];
+    const file = buildEFileExport(
+      project,
+      Array.isArray(schemePath) && schemePath.length > 0 ? schemePath : ["默认方案"]
+    );
     const saved = await saveTextFile({
       filename: file.filename,
       text: file.text,

@@ -107,7 +107,7 @@ export const eSectionColumns = {
   StaticAnnotationSymbol: [],
   ACRealBs: ["idx", "name", "node", "run_stat"],
   DCRealBs: ["idx", "name", "node", "run_stat"],
-  ACNode: ["idx", "name", "vbase", "voltage", "angle", "isl", "run_stat"],
+  ACNode: ["idx", "name", "vbase", "run_stat"],
   DCNode: ["idx", "name", "vbase", "voltage", "isl", "run_stat"],
   ACBranch: ["idx", "name", "i_node", "j_node", "r", "x", "b", "run_stat"],
   DCBranch: ["idx", "name", "i_node", "j_node", "r", "run_stat"],
@@ -1257,6 +1257,7 @@ function buildEDeviceValues(node, options = {}) {
 }
 
 const eFileColumnGap = "    ";
+const eFileWideCharWidth = 5 / 3;
 const eSectionPrimaryOrder = ["ACNode", "DCNode"];
 
 function eFileCellText(value) {
@@ -1267,7 +1268,7 @@ function eFileCellDisplayWidth(value) {
   let width = 0;
   for (const char of eFileCellText(value)) {
     width += /[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6]/u.test(char)
-      ? 2
+      ? eFileWideCharWidth
       : 1;
   }
   return width;
@@ -1275,7 +1276,8 @@ function eFileCellDisplayWidth(value) {
 
 function eFilePadCell(value, width) {
   const text = eFileCellText(value);
-  return `${text}${" ".repeat(Math.max(0, width - eFileCellDisplayWidth(text)))}`;
+  const padding = Math.max(0, Math.round(width - eFileCellDisplayWidth(text)));
+  return `${text}${" ".repeat(padding)}`;
 }
 
 function formatESection(section, columns, records) {
@@ -1500,7 +1502,7 @@ function buildTopologyNodeDevices(nodes) {
   return [...buildForType("ac", "ACNode"), ...buildForType("dc", "DCNode")];
 }
 
-function buildDeviceParameterFile(project) {
+function buildDeviceParameterFile(project, schemePath = ["默认方案"]) {
   const topologyNodes = calculateElectricalTopology(project.nodes ?? [], project.edges ?? []);
   const topologyNodeDevices = buildTopologyNodeDevices(topologyNodes);
   const deviceRecords = topologyNodes
@@ -1523,10 +1525,17 @@ function buildDeviceParameterFile(project) {
     }
     recordsBySection.set(record.section, [...(recordsBySection.get(record.section) ?? []), record]);
   }
+  const modelPath = (Array.isArray(schemePath) ? schemePath : [])
+    .map((part) => String(part ?? "").trim().replace(/\s+/g, "_"))
+    .filter(Boolean)
+    .join("/") || "默认方案";
+  const modelName = String(project.name ?? "").trim().replace(/\s+/g, "_") || "未命名";
   const sections = [
-    formatESection("PowerBase", ["p_base", "u_unit", "p_unit", "i_unit"], [
+    formatESection("Model", ["path", "name", "p_base", "u_unit", "p_unit", "i_unit"], [
       {
         params: {
+          path: modelPath,
+          name: modelName,
           p_base: project.powerBaseValue ?? defaultPowerBaseValue,
           u_unit: project.voltageUnit ?? defaultVoltageUnit,
           p_unit: project.powerUnit ?? defaultPowerUnit,
@@ -2560,7 +2569,7 @@ export async function saveSchemeProjectRecord(options) {
   const imagePathById = options.imagePathById ?? (await imageExportPathByIdFromManifest(await readManifest()));
   await Promise.all([
     writeTextIfChanged(jsonPath, stringifyJson(storedRecord.project)),
-    writeTextIfChanged(ePath, buildDeviceParameterFile(storedRecord.project)),
+    writeTextIfChanged(ePath, buildDeviceParameterFile(storedRecord.project, schemePath)),
     writeTextIfChanged(svgPath, buildSvgFile(storedRecord.project, measurementConfig, { imagePathById }))
   ]);
   return storedRecord;
@@ -2586,7 +2595,9 @@ async function writeSchemeFiles(schemes, options = {}) {
   const measurementConfig = await readMeasurementConfig();
   const imagePathById = options.imagePathById ?? (await imageExportPathByIdFromManifest(await readManifest()));
 
-  const writeSchemeTree = async (scheme, parentDir) => {
+  const writeSchemeTree = async (scheme, parentDir, parentPath = []) => {
+    const schemeName = String(scheme.name ?? "").trim() || "方案";
+    const currentSchemePath = [...parentPath, schemeName];
     const schemeDir = join(parentDir, safeFilePart(scheme.name, "方案"));
     expectedDirs.add(schemeDir);
     await mkdir(schemeDir, { recursive: true });
@@ -2600,12 +2611,12 @@ async function writeSchemeFiles(schemes, options = {}) {
       expectedFiles.add(svgPath);
       writeTasks.push(
         writeTextIfChanged(jsonPath, stringifyJson(record.project)),
-        writeTextIfChanged(ePath, buildDeviceParameterFile(record.project)),
+        writeTextIfChanged(ePath, buildDeviceParameterFile(record.project, currentSchemePath)),
         writeTextIfChanged(svgPath, buildSvgFile(record.project, measurementConfig, { imagePathById }))
       );
     }
     for (const childScheme of scheme.children ?? []) {
-      await writeSchemeTree(childScheme, schemeDir);
+      await writeSchemeTree(childScheme, schemeDir, currentSchemePath);
     }
   };
 

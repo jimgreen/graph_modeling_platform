@@ -743,7 +743,7 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   StaticAnnotationSymbol: [],
   ACRealBs: ["idx", "name", "node", "run_stat"],
   DCRealBs: ["idx", "name", "node", "run_stat"],
-  ACNode: ["idx", "name", "vbase", "voltage", "angle", "isl", "run_stat"],
+  ACNode: ["idx", "name", "vbase", "run_stat"],
   DCNode: ["idx", "name", "vbase", "voltage", "isl", "run_stat"],
   ACBranch: ["idx", "name", "i_node", "j_node", "r", "x", "b", "run_stat"],
   DCBranch: ["idx", "name", "i_node", "j_node", "r", "run_stat"],
@@ -2360,19 +2360,21 @@ function eSectionColumns(section: string, rows: EDeviceExport[]) {
 }
 
 const E_FILE_COLUMN_GAP = "    ";
+const E_FILE_WIDE_CHAR_WIDTH = 5 / 3;
 
 function eFileCellDisplayWidth(value: string) {
   let width = 0;
   for (const char of value) {
     width += /[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6]/u.test(char)
-      ? 2
+      ? E_FILE_WIDE_CHAR_WIDTH
       : 1;
   }
   return width;
 }
 
 function eFilePadCell(value: string, width: number) {
-  return `${value}${" ".repeat(Math.max(0, width - eFileCellDisplayWidth(value)))}`;
+  const padding = Math.max(0, Math.round(width - eFileCellDisplayWidth(value)));
+  return `${value}${" ".repeat(padding)}`;
 }
 
 function formatEFileSectionRows(section: string, columns: string[], rows: string[][]) {
@@ -2396,25 +2398,31 @@ function formatESection(section: string, rows: EDeviceExport[]) {
   return formatEFileSectionRows(section, columns, formattedRows);
 }
 
-function buildPowerBaseSection(project: ProjectFile) {
+function buildPowerBaseSection(project: ProjectFile, schemePath: string[]) {
+  const normalizedSchemePath = schemePath
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join("/") || "默认方案";
   const row: EDeviceExport = {
-    id: "PowerBase-1",
-    kind: "power-base",
-    section: "PowerBase",
+    id: "Model-1",
+    kind: "model",
+    section: "Model",
     params: {
+      path: normalizedSchemePath,
+      name: project.name || "未命名",
       p_base: String(project.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE),
       u_unit: project.voltageUnit ?? DEFAULT_VOLTAGE_UNIT,
       p_unit: project.powerUnit ?? DEFAULT_POWER_UNIT,
       i_unit: project.currentUnit ?? DEFAULT_CURRENT_UNIT
     }
   };
-  const columns = ["p_base", "u_unit", "p_unit", "i_unit"];
-  return formatEFileSectionRows("PowerBase", columns, [
-    columns.map((column) => formatEColumnValue("PowerBase", column, row.params[column], 0))
+  const columns = ["path", "name", "p_base", "u_unit", "p_unit", "i_unit"];
+  return formatEFileSectionRows("Model", columns, [
+    columns.map((column) => formatEColumnValue("Model", column, row.params[column], 0))
   ]);
 }
 
-export function buildEDeviceParameterFile(project: ProjectFile) {
+export function buildEDeviceParameterFile(project: ProjectFile, schemePath: string[] = ["默认方案"]) {
   const records = buildEDeviceRecords(project);
   const recordsBySection = new Map<string, EDeviceExport[]>();
   for (const record of records) {
@@ -2432,7 +2440,7 @@ export function buildEDeviceParameterFile(project: ProjectFile) {
   ];
   const sectionBlocks = orderedSections
     .map((section) => formatESection(section, recordsBySection.get(section) ?? []));
-  return [buildPowerBaseSection(project), ...sectionBlocks].join("\n\n") + "\n";
+  return [buildPowerBaseSection(project, schemePath), ...sectionBlocks].join("\n\n") + "\n";
 }
 
 export type TextFileExport = {
@@ -2445,10 +2453,10 @@ function safeModelFilePart(name: string) {
   return name.trim().replace(/[\\/:*?"<>|]+/g, "_") || "未命名";
 }
 
-export function buildEFileExport(project: ProjectFile): TextFileExport {
+export function buildEFileExport(project: ProjectFile, schemePath: string[] = ["默认方案"]): TextFileExport {
   return {
     filename: `${safeModelFilePart(project.name)}.e`,
-    text: buildEDeviceParameterFile(project),
+    text: buildEDeviceParameterFile(project, schemePath),
     mime: "text/plain"
   };
 }

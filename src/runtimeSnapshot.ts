@@ -432,7 +432,13 @@ export function serializeEFile(appScope: Record<string, any>): V1Result<{
       return { ok: false, error: { code: "internal", message: "buildEFileExport 不可用" } };
     }
     const project = currentProject();
-    const file = buildEFile(project);
+    const schemePath = typeof appScope.schemePathForScheme === "function"
+      ? appScope.schemePathForScheme(appScope.activeSchemeKey)
+      : [];
+    const file = buildEFile(
+      project,
+      Array.isArray(schemePath) && schemePath.length > 0 ? schemePath : ["默认方案"]
+    );
     return {
       ok: true,
       data: {

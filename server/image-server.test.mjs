@@ -35,7 +35,7 @@ const eSectionLines = (text, section) => {
 };
 
 const eVisualWidth = (value) =>
-  Array.from(String(value ?? "")).reduce((width, char) => width + (/[^\u0000-\u00ff]/u.test(char) ? 2 : 1), 0);
+  Array.from(String(value ?? "")).reduce((width, char) => width + (/[^\u0000-\u00ff]/u.test(char) ? 5 / 3 : 1), 0);
 
 const sequentialTokenStartColumns = (line, tokens) => {
   let cursor = 0;
@@ -53,7 +53,10 @@ const expectEFieldsAlignedWithHeader = (text, section, columns, rowValues) => {
   const row = lines.find((line) => line.startsWith("#") && rowValues.every((value) => line.includes(String(value))));
   expect(header).toBeTruthy();
   expect(row).toBeTruthy();
-  expect(sequentialTokenStartColumns(row, rowValues)).toEqual(sequentialTokenStartColumns(header, columns));
+  const headerColumns = sequentialTokenStartColumns(header, columns);
+  const rowColumns = sequentialTokenStartColumns(row, rowValues);
+  expect(rowColumns).toHaveLength(headerColumns.length);
+  rowColumns.forEach((column, index) => expect(column).toBeCloseTo(headerColumns[index], 0));
 };
 
 describe("icon library import", () => {
@@ -265,7 +268,7 @@ describe("scheme file persistence", () => {
       await saveSchemeProjectRecord({
         filesRoot,
         trashRoot,
-        schemePath: ["默认方案"],
+        schemePath: ["默认方案", "子方案"],
         record: {
           name: "新模型",
           updatedAt: "2026-07-11T00:00:00.000Z",
@@ -330,19 +333,36 @@ describe("scheme file persistence", () => {
         measurementConfig: {}
       });
 
-      const eFile = await readFile(join(filesRoot, "默认方案", "新模型.e"), "utf-8");
+      const eFile = await readFile(join(filesRoot, "默认方案", "子方案", "新模型.e"), "utf-8");
 
-      expect(eFile).toContain("<PowerBase>\n");
-      expect(eFile).toContain("@    p_base    u_unit    p_unit    i_unit\n");
-      expect(eFile).toContain("#    100       kV        MW        A\n");
+      expect(eFile).toContain("<Model>\n");
+      expect(eFile).not.toContain("<PowerBase>\n");
+      expectEFieldsAlignedWithHeader(
+        eFile,
+        "Model",
+        ["path", "name", "p_base", "u_unit", "p_unit", "i_unit"],
+        ["默认方案/子方案", "新模型", "100", "kV", "MW", "A"]
+      );
       expect(eFile).toContain("<ACNode>\n");
-      expect(eFile).toContain("@    idx    name                    vbase    voltage    angle    isl    run_stat\n");
-      expect(eFile).toContain("#    1      交流母线-1              110      110        0        0      1\n");
+      const acNodeLines = eSectionLines(eFile, "ACNode");
+      expect(acNodeLines.find((line) => line.startsWith("@"))?.trim().split(/\s+/u).slice(1)).toEqual([
+        "idx",
+        "name",
+        "vbase",
+        "run_stat"
+      ]);
+      expect(acNodeLines.find((line) => line.startsWith("#"))?.trim().split(/\s+/u).slice(1)).toEqual([
+        "1",
+        "交流母线-1",
+        "110",
+        "1"
+      ]);
+      expectEFieldsAlignedWithHeader(eFile, "ACNode", ["idx", "name", "vbase", "run_stat"], ["1", "交流母线-1", "110", "1"]);
       expect(eFile).toContain("<ACBranch>\n");
-      expect(eFile).toContain("@    idx    name                    i_node    j_node    r      x      b      run_stat\n");
+      expect(eFile).toContain("@    idx    name                 i_node    j_node    r      x      b      run_stat\n");
       expect(eFile).toContain("#    1      交流线路（自适应）-1    3         2         0.1    1.0    0.0    1\n");
       expect(eFile).toContain("<ACBreak>\n");
-      expect(eFile).toContain("@    idx    name          i_node    j_node    status    run_stat\n");
+      expect(eFile).toContain("@    idx    name         i_node    j_node    status    run_stat\n");
       expect(eFile).toContain("#    1      盒型开关-1    1         3         1         1\n");
       expect(eFile.trimEnd()).toContain("</ACBreak>");
       expect(eFile).not.toContain('"modelParameters"');
