@@ -384,6 +384,186 @@ describe("scheme file persistence", () => {
     }
   });
 
+  test("applies persisted parameter export controls to backend-generated E files", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-e-export-controls-"));
+    try {
+      const filesRoot = join(root, "files");
+      const trashRoot = join(root, "trash");
+      const parameterDefinitions = [
+        { cnName: "电阻", enName: "r", valueType: "float", typicalValue: "0.1", exportEnabled: false, exportName: "r" },
+        { cnName: "电抗", enName: "x", valueType: "float", typicalValue: "1.2", exportEnabled: true, exportName: "reactance" }
+      ];
+      await saveSchemeProjectRecord({
+        filesRoot,
+        trashRoot,
+        schemePath: ["默认方案"],
+        record: {
+          name: "参数导出控制",
+          updatedAt: "2026-07-12T00:00:00.000Z",
+          project: {
+            version: 1,
+            name: "参数导出控制",
+            nodes: [
+              {
+                id: "line-1",
+                kind: "ac-line",
+                name: "交流线路-1",
+                position: { x: 100, y: 100 },
+                size: { width: 160, height: 40 },
+                params: {
+                  idx: "1",
+                  r: "0.1",
+                  x: "1.2",
+                  b: "0",
+                  run_stat: "1",
+                  _customParamDefinitions: JSON.stringify(parameterDefinitions)
+                },
+                terminals: [
+                  { id: "i", type: "ac" },
+                  { id: "j", type: "ac" }
+                ]
+              }
+            ],
+            edges: []
+          }
+        },
+        measurementConfig: {}
+      });
+
+      const eFile = await readFile(join(filesRoot, "默认方案", "参数导出控制.e"), "utf-8");
+      const lines = eSectionLines(eFile, "ACBranch");
+      const columns = lines.find((line) => line.startsWith("@"))?.trim().split(/\s+/u).slice(1) ?? [];
+
+      expect(columns).toContain("reactance");
+      expect(columns).not.toContain("r");
+      expect(columns).not.toContain("x");
+      expect(eFile).toContain("1.2");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("writes three-winding transformers as independent E devices with three-side parameters", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-e-three-winding-"));
+    try {
+      const filesRoot = join(root, "files");
+      const trashRoot = join(root, "trash");
+      await saveSchemeProjectRecord({
+        filesRoot,
+        trashRoot,
+        schemePath: ["默认方案"],
+        record: {
+          name: "三绕组主变模型",
+          updatedAt: "2026-07-12T00:00:00.000Z",
+          project: {
+            version: 1,
+            name: "三绕组主变模型",
+            nodes: [
+              {
+                id: "transformer-3",
+                kind: "ac-three-winding-transformer",
+                name: "三绕组主变-1",
+                position: { x: 100, y: 100 },
+                size: { width: 100, height: 100 },
+                params: {
+                  idx: "1",
+                  highResistancePu: "0.01",
+                  highReactancePu: "0.11",
+                  highMagnetizingConductancePu: "0.001",
+                  highMagnetizingSusceptancePu: "0.002",
+                  highTapRatio: "1.01",
+                  highShift: "1",
+                  mediumResistancePu: "0.02",
+                  mediumReactancePu: "0.12",
+                  mediumMagnetizingConductancePu: "0.003",
+                  mediumMagnetizingSusceptancePu: "0.004",
+                  mediumTapRatio: "1.02",
+                  mediumShift: "2",
+                  lowResistancePu: "0.03",
+                  lowReactancePu: "0.13",
+                  lowMagnetizingConductancePu: "0.005",
+                  lowMagnetizingSusceptancePu: "0.006",
+                  lowTapRatio: "1.03",
+                  lowShift: "3",
+                  run_stat: "1"
+                },
+                terminals: [
+                  { id: "t1", type: "ac", vbase: "220" },
+                  { id: "t2", type: "ac", vbase: "110" },
+                  { id: "t3", type: "ac", vbase: "10" }
+                ]
+              }
+            ],
+            edges: []
+          }
+        },
+        measurementConfig: {}
+      });
+
+      const eFile = await readFile(join(filesRoot, "默认方案", "三绕组主变模型.e"), "utf-8");
+      const lines = eSectionLines(eFile, "ACTransfomer3");
+
+      expect(lines.find((line) => line.startsWith("@"))?.trim().split(/\s+/u).slice(1)).toEqual([
+        "idx",
+        "name",
+        "t1_node",
+        "t2_node",
+        "t3_node",
+        "neutral_node",
+        "r1",
+        "x1",
+        "gt1",
+        "bt1",
+        "tap1",
+        "shift1",
+        "r2",
+        "x2",
+        "gt2",
+        "bt2",
+        "tap2",
+        "shift2",
+        "r3",
+        "x3",
+        "gt3",
+        "bt3",
+        "tap3",
+        "shift3",
+        "run_stat"
+      ]);
+      expect(lines.find((line) => line.startsWith("#"))?.trim().split(/\s+/u).slice(1)).toEqual([
+        "1",
+        "三绕组主变-1",
+        "1",
+        "2",
+        "3",
+        "0",
+        "0.01",
+        "0.11",
+        "0.001",
+        "0.002",
+        "1.01",
+        "1",
+        "0.02",
+        "0.12",
+        "0.003",
+        "0.004",
+        "1.02",
+        "2",
+        "0.03",
+        "0.13",
+        "0.005",
+        "0.006",
+        "1.03",
+        "3",
+        "1"
+      ]);
+      expect(eFile).not.toContain("idx_xf_t1");
+      expect(eFile).not.toContain("三绕组主变-1_高压绕组");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("writes saved project svg image hrefs as root-relative image file paths", async () => {
     const root = await mkdtemp(join(tmpdir(), "scheme-svg-image-paths-"));
     try {

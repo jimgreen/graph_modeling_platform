@@ -2346,6 +2346,8 @@ export function renderAppView(__appScope: Record<string, any>) {
                                 <th>取值类型</th>
                                 <th>默认值</th>
                                 <th>枚举项</th>
+                                <th>是否导出</th>
+                                <th>导出名称</th>
                                 <th>操作</th>
                               </tr>
                             </thead>
@@ -2380,6 +2382,26 @@ export function renderAppView(__appScope: Record<string, any>) {
                                   </td>
                                   <td>
                                     {renderEnumValuesEditor(row, updateDefinitionDraftRow, row.readonly)}
+                                  </td>
+                                  <td className="custom-param-export-toggle">
+                                    <input
+                                      className="custom-param-export-checkbox"
+                                      type="checkbox"
+                                      checked={Boolean(row.exportEnabled)}
+                                      aria-label={`${row.cnName || row.enName || "参数"}是否导出`}
+                                      onChange={(event) => {
+                        const exportEnabled = event.target.checked;
+                        updateDefinitionDraftRow(row.id, {
+                            exportEnabled,
+                            exportName: exportEnabled ? row.exportName?.trim() || row.enName.trim() : row.exportName ?? ""
+                        });
+                    }}/>
+                                  </td>
+                                  <td>
+                                    <BufferedTextInput
+                                      value={row.exportName ?? ""}
+                                      disabled={!row.exportEnabled}
+                                      onCommit={(value) => updateDefinitionDraftRow(row.id, { exportName: value })}/>
                                   </td>
                                   <td>
                                     <div className="custom-param-actions">
@@ -2646,6 +2668,8 @@ export function renderAppView(__appScope: Record<string, any>) {
                     <th>取值类型</th>
                     <th>默认值</th>
                     <th>枚举项</th>
+                    <th>是否导出</th>
+                    <th>导出名称</th>
                     <th>操作</th>
                   </tr>
                 </thead>
@@ -2664,7 +2688,9 @@ export function renderAppView(__appScope: Record<string, any>) {
                             typicalValue: override.typicalValue,
                             enumOptions: override.enumOptions,
                             enumValues: override.enumValues,
-                            readonly: item.readonly
+                            readonly: item.readonly,
+                            ...(typeof override.exportEnabled === "boolean" ? { exportEnabled: override.exportEnabled } : {}),
+                            ...(typeof override.exportName === "string" ? { exportName: override.exportName } : {})
                         })
                         : item;
                 });
@@ -2672,7 +2698,8 @@ export function renderAppView(__appScope: Record<string, any>) {
                 const updateDefaultParamRow = (rowId: string, patch: Partial<CustomParamDraft>) => {
                     const enName = rowId.replace(/^default-/, "");
                     const sourceRow = mergedDefaultParams.find((item) => item.enName === enName) ?? customDraftDefaultParams.find((item) => item.enName === enName);
-                    if (!sourceRow || sourceRow.readonly) {
+                    const exportOnlyPatch = Object.keys(patch).every((key) => key === "exportEnabled" || key === "exportName");
+                    if (!sourceRow || (sourceRow.readonly && !exportOnlyPatch)) {
                         return;
                     }
                     setCustomDeviceDraft((current) => {
@@ -2726,6 +2753,26 @@ export function renderAppView(__appScope: Record<string, any>) {
                             <td>{parameterValueTypeLabelForDefinitionRow(row)}</td>
                             <td>{renderTypicalValueEditor(defaultRow, updateDefaultParamRow, defaultRowDisabled)}</td>
                             <td>{renderEnumValuesEditor(defaultRow, updateDefaultParamRow, defaultRowDisabled)}</td>
+                            <td className="custom-param-export-toggle">
+                              <input
+                                className="custom-param-export-checkbox"
+                                type="checkbox"
+                                checked={Boolean(row.exportEnabled)}
+                                aria-label={`${row.cnName || row.enName}是否导出`}
+                                onChange={(event) => {
+                            const exportEnabled = event.target.checked;
+                            updateDefaultParamRow(defaultRow.id, {
+                                exportEnabled,
+                                exportName: exportEnabled ? row.exportName?.trim() || row.enName.trim() : row.exportName ?? ""
+                            });
+                        }}/>
+                            </td>
+                            <td>
+                              <BufferedTextInput
+                                value={row.exportName ?? ""}
+                                disabled={!row.exportEnabled}
+                                onCommit={(value) => updateDefaultParamRow(defaultRow.id, { exportName: value })}/>
+                            </td>
                             <td>默认</td>
                           </tr>);
                     })}
@@ -2771,6 +2818,37 @@ export function renderAppView(__appScope: Record<string, any>) {
                     error: ""
                 })))}
                       </td>
+                      <td className="custom-param-export-toggle">
+                        <input
+                          className="custom-param-export-checkbox"
+                          type="checkbox"
+                          checked={Boolean(row.exportEnabled)}
+                          aria-label={`${row.cnName || row.enName || "参数"}是否导出`}
+                          onChange={(event) => {
+                    const exportEnabled = event.target.checked;
+                    setCustomDeviceDraft((current) => ({
+                        ...current,
+                        params: current.params.map((item) => item.id === row.id
+                            ? {
+                                ...item,
+                                exportEnabled,
+                                exportName: exportEnabled ? item.exportName?.trim() || item.enName.trim() : item.exportName ?? ""
+                            }
+                            : item),
+                        error: ""
+                    }));
+                }}/>
+                      </td>
+                      <td>
+                        <BufferedTextInput
+                          value={row.exportName ?? ""}
+                          disabled={!row.exportEnabled}
+                          onCommit={(value) => setCustomDeviceDraft((current) => ({
+                    ...current,
+                    params: current.params.map((item) => item.id === row.id ? { ...item, exportName: value } : item),
+                    error: ""
+                }))}/>
+                      </td>
                       <td>
                         <div className="custom-param-actions">
                           <button type="button" onClick={() => moveVisibleCustomParam(row.id, -1)} disabled={index === 0}>
@@ -2795,7 +2873,15 @@ export function renderAppView(__appScope: Record<string, any>) {
                 ...current,
                 params: [
                     ...current.params,
-                    { id: customParamId(), cnName: "", enName: "", valueType: "string", typicalValue: "" }
+                    {
+                        id: customParamId(),
+                        cnName: "",
+                        enName: "",
+                        valueType: "string",
+                        typicalValue: "",
+                        exportEnabled: false,
+                        exportName: ""
+                    }
                 ]
             }))}>
                 新增参数

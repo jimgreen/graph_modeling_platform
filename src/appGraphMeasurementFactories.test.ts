@@ -117,7 +117,7 @@ describe("measurement canvas interactions", () => {
     ]);
   });
 
-  test("resolves container terminal positions and fields from associated device models", () => {
+  test("treats the built-in three-winding transformer as an independent measurement device", () => {
     const buildMeasurementProfilePositionDefinitions = (measurementDefinitions as any).buildMeasurementProfilePositionDefinitions;
     expect(buildMeasurementProfilePositionDefinitions).toBeTypeOf("function");
     const transformer = DEVICE_LIBRARY.find((template) => template.kind === "ac-three-winding-transformer")!;
@@ -129,13 +129,70 @@ describe("measurement canvas interactions", () => {
     });
 
     expect(positions.map((position: any) => ({ value: position.value, label: position.label }))).toEqual([
-      { value: "device", label: "设备本体" },
-      { value: "t1", label: "端1（双绕组主变首端）" },
-      { value: "t2", label: "端2（双绕组主变首端）" },
-      { value: "t3", label: "端3（双绕组主变首端）" }
+      { value: "device", label: "设备本体" }
     ]);
-    expect(positions[1].parameterDefinitions.map((definition: any) => definition.enName)).toContain("r");
-    expect(positions[1].parameterDefinitions.map((definition: any) => definition.enName)).toContain("j_node");
+    expect(positions[0].parameterDefinitions.map((definition: any) => definition.enName)).toContain("highResistancePu");
+    expect(positions[0].parameterDefinitions.map((definition: any) => definition.enName)).not.toContain("idx_xf_t1");
+  });
+
+  test("shows the legacy two-winding transformer profile in the ACTransformer definition", () => {
+    const config = measurementDefinitions.normalizeMeasurementConfig(measurementDefinitions.DEFAULT_MEASUREMENT_CONFIG);
+    const updateMeasurementProfileItem = vi.fn();
+    const transformer = DEVICE_LIBRARY.find((template) => template.kind === "ac-transformer")!;
+    const panel = createRenderDeviceDefinitionMeasurementPanel({
+      BufferedTextInput: (props: any) => createElement("input", props),
+      addMeasurementProfileItem: vi.fn(),
+      deleteMeasurementProfileItem: vi.fn(),
+      editableMeasurementProfileByKind: new Map(config.deviceProfiles.map((profile) => [profile.deviceKind, profile])),
+      editableMeasurementTypeById: new Map(config.measurementTypes.map((type) => [type.id, type])),
+      isBrowseMode: false,
+      measurementConfig: config,
+      measurementConfigDraft: null,
+      measurementConfigSaveStatus: "idle",
+      moveMeasurementProfileItem: vi.fn(),
+      normalizeComponentLibraryName: (value: string) => value,
+      updateMeasurementProfileItem
+    } as any)({
+      deviceKind: "ACTransformer",
+      label: transformer.label,
+      terminalCount: transformer.terminalCount,
+      parameterDefinitions: getTemplateParameterDefinitions(transformer)
+    });
+
+    const elementText = (node: ReactNode): string =>
+      Children.toArray(node).map((child) =>
+        isValidElement(child)
+          ? elementText((child as ReactElement<{ children?: ReactNode }>).props.children)
+          : String(child)
+      ).join("");
+    const selects: ReactElement<any>[] = [];
+    const collectSelects = (node: ReactNode) => {
+      Children.forEach(node, (child) => {
+        if (!isValidElement(child)) {
+          return;
+        }
+        if (child.type === "select") {
+          selects.push(child as ReactElement<any>);
+        }
+        collectSelects((child as ReactElement<{ children?: ReactNode }>).props.children);
+      });
+    };
+    collectSelects(panel);
+
+    expect(elementText(panel)).toContain("有功功率");
+    expect(elementText(panel)).not.toContain("当前元件库还没有默认量测模板");
+    const measurementTypeSelect = selects.find((selectElement) => {
+      const values = Children.toArray(selectElement.props.children)
+        .filter(isValidElement)
+        .map((option) => String((option as ReactElement<any>).props.value ?? ""));
+      return values.includes("activePower") && values.includes("reactivePower");
+    });
+    expect(measurementTypeSelect).toBeDefined();
+    measurementTypeSelect!.props.onChange({ target: { value: "reactivePower" } });
+    expect(updateMeasurementProfileItem).toHaveBeenCalledWith("ac-transformer", 0, {
+      measurementTypeId: "reactivePower",
+      name: "无功功率"
+    });
   });
 
   test("renders associated field as a parameter-name dropdown in device definition measurements", () => {

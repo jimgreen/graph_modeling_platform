@@ -6561,6 +6561,19 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   font-size: 13px;
 }
 
+.custom-param-table .custom-param-export-toggle {
+  width: 76px;
+  text-align: center;
+}
+
+.custom-param-table input.custom-param-export-checkbox {
+  width: 16px;
+  min-height: 16px;
+  padding: 0;
+  accent-color: #2563eb;
+  cursor: pointer;
+}
+
 .custom-terminal-grid select:disabled {
   color: #64748b;
   background: #f1f5f9;
@@ -6967,7 +6980,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .custom-param-table {
   width: 100%;
-  min-width: 940px;
+  min-width: 1120px;
   border-collapse: collapse;
   font-size: 12px;
 }
@@ -6986,6 +6999,13 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   min-height: 28px;
   padding: 0 7px;
   font-size: 12px;
+}
+
+.custom-param-table td input.custom-param-export-checkbox {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  padding: 0;
 }
 
 .custom-param-table th {

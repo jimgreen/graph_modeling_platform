@@ -273,6 +273,8 @@ export type DeviceParameterDefinition = {
   enumValueType?: DeviceParameterEnumValueType;
   enumOptions?: DeviceParameterEnumOption[];
   readonly?: boolean;
+  exportEnabled?: boolean;
+  exportName?: string;
 };
 
 export type DeviceStateDefinition = {
@@ -760,7 +762,33 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   DCBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   GroundDisconnector: ["idx", "name", "node", "status", "run_stat"],
   ACTransformer: ["idx", "name", "i_node", "j_node", "r", "x", "gt", "bt", "tap", "shift", "run_stat"],
-  ACTransfomer3: ["idx", "name", "run_stat", "idx_xf_t1", "idx_xf_t2", "idx_xf_t3"],
+  ACTransfomer3: [
+    "idx",
+    "name",
+    "t1_node",
+    "t2_node",
+    "t3_node",
+    "neutral_node",
+    "r1",
+    "x1",
+    "gt1",
+    "bt1",
+    "tap1",
+    "shift1",
+    "r2",
+    "x2",
+    "gt2",
+    "bt2",
+    "tap2",
+    "shift2",
+    "r3",
+    "x3",
+    "gt3",
+    "bt3",
+    "tap3",
+    "shift3",
+    "run_stat"
+  ],
   DCDCConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "i_control_type", "j_control_type", "p_set", "i_set", "v_set", "run_stat"],
   DCACConverter: ["idx", "name", "ac_node", "dc_node", "r1", "r2", "control_type", "p_ac_set", "q_ac_set", "v_ac_set", "v_dc_set", "run_stat"],
   ACACConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"],
@@ -1656,6 +1684,7 @@ type EDeviceExport = {
   kind: string;
   section: string;
   params: Record<string, string>;
+  columns?: string[];
 };
 
 type EParamValueOptions = {
@@ -1729,12 +1758,13 @@ const E_INTEGER_COLUMNS = new Set([
   "node2",
   "node3",
   "node4",
+  "t1_node",
+  "t2_node",
+  "t3_node",
+  "neutral_node",
   "isl",
   "status",
-  "run_stat",
-  "idx_xf_t1",
-  "idx_xf_t2",
-  "idx_xf_t3"
+  "run_stat"
 ]);
 
 const E_FLOAT_COLUMNS = new Set([
@@ -1764,7 +1794,23 @@ const E_FLOAT_COLUMNS = new Set([
   "tap",
   "shift",
   "r1",
+  "x1",
+  "gt1",
+  "bt1",
+  "tap1",
+  "shift1",
   "r2",
+  "x2",
+  "gt2",
+  "bt2",
+  "tap2",
+  "shift2",
+  "r3",
+  "x3",
+  "gt3",
+  "bt3",
+  "tap3",
+  "shift3",
   "p_ac_set",
   "q_ac_set",
   "v_ac_set",
@@ -1775,7 +1821,7 @@ const E_FLOAT_COLUMNS = new Set([
   "j_v_set"
 ]);
 
-export function getEParamValue(
+function getRawEParamValue(
   key: string,
   node: Pick<ModelNode, "kind" | "name" | "nodeNumber" | "terminals" | "params">,
   options: EParamValueOptions = {}
@@ -1834,6 +1880,37 @@ export function getEParamValue(
   if (key === "j_node") {
     return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, 1) : node.params.j_node ?? terminalNodeNumber(node, 1);
   }
+  if (isThreeWindingTransformer(node)) {
+    const terminalNodeMatch = /^t([123])_node$/.exec(key);
+    if (terminalNodeMatch) {
+      const terminalIndex = Number.parseInt(terminalNodeMatch[1], 10) - 1;
+      return options.preferTopologyNodeNumbers
+        ? terminalNodeNumber(node, terminalIndex)
+        : node.params[key] ?? terminalNodeNumber(node, terminalIndex);
+    }
+    if (key === "neutral_node") {
+      if (node.kind !== "ac-three-winding-transformer-neutral") {
+        return "0";
+      }
+      const visibleNeutralNode = terminalNodeNumber(node, 3);
+      return options.preferTopologyNodeNumbers
+        ? visibleNeutralNode || node.params.neutral_node || ""
+        : node.params.neutral_node ?? visibleNeutralNode;
+    }
+    const sideParameterMatch = /^(r|x|gt|bt|tap|shift)([123])$/.exec(key);
+    if (sideParameterMatch) {
+      const sidePrefix = ["high", "medium", "low"][Number.parseInt(sideParameterMatch[2], 10) - 1];
+      const parameterSuffix: Record<string, string> = {
+        r: "ResistancePu",
+        x: "ReactancePu",
+        gt: "MagnetizingConductancePu",
+        bt: "MagnetizingSusceptancePu",
+        tap: "TapRatio",
+        shift: "Shift"
+      };
+      return node.params[`${sidePrefix}${parameterSuffix[sideParameterMatch[1]]}`] ?? "";
+    }
+  }
   const numberedNodeMatch = /^node(\d+)$/.exec(key);
   if (numberedNodeMatch) {
     const index = Number.parseInt(numberedNodeMatch[1], 10) - 1;
@@ -1863,47 +1940,191 @@ function customEParameterDefinitions(params: Record<string, string>) {
   }
 }
 
-function customEParameterKeys(params: Record<string, string>) {
-  return Array.from(new Set(customEParameterDefinitions(params).map((definition) => definition.enName)));
-}
+type EParameterField = {
+  sourceName: string;
+  exportName: string;
+  definition?: DeviceParameterDefinition;
+};
 
-function customEParameterDefinitionMap(params: Record<string, string>) {
-  const definitionMap = new Map<string, DeviceParameterDefinition>();
-  for (const definition of customEParameterDefinitions(params)) {
-    if (!definitionMap.has(definition.enName)) {
-      definitionMap.set(definition.enName, definition);
+const LEGACY_E_DEFINITION_COLUMN_ALIASES: Record<string, string> = {
+  ratedActivePower: "pbase",
+  ratedReactivePower: "qbase",
+  resistancePu: "r",
+  reactancePu: "x",
+  halfChargingSusceptancePu: "b",
+  magnetizingConductancePu: "gt",
+  magnetizingSusceptancePu: "bt",
+  tapRatio: "tap",
+  sourceEquivalentResistance: "r1",
+  targetEquivalentResistance: "r2",
+  controlType: "control_type",
+  acControlType: "control_type",
+  dcControlType: "control_type",
+  closedStatus: "status"
+};
+
+function legacyEColumnForDefinition(section: string, enName: string): string {
+  const columns = E_SECTION_COLUMNS[section];
+  if (!columns) {
+    return "";
+  }
+  if (columns.includes(enName)) {
+    return enName;
+  }
+  if (enName === "t1_node") {
+    if (columns.includes("i_node")) return "i_node";
+    if (columns.includes("node")) return "node";
+  }
+  if (enName === "t2_node" && columns.includes("j_node")) {
+    return "j_node";
+  }
+  if (enName === "sourceControlType") {
+    if (columns.includes("i_control_type")) return "i_control_type";
+    if (columns.includes("control_type")) return "control_type";
+  }
+  if (enName === "targetControlType") {
+    if (columns.includes("j_control_type")) return "j_control_type";
+    if (columns.includes("control_type")) return "control_type";
+  }
+  if (section === "ACTransfomer3") {
+    const sideMatch = /^(high|medium|low)(ResistancePu|ReactancePu|MagnetizingConductancePu|MagnetizingSusceptancePu|TapRatio|Shift)$/.exec(enName);
+    if (sideMatch) {
+      const sideIndex = { high: "1", medium: "2", low: "3" }[sideMatch[1] as "high" | "medium" | "low"];
+      const prefix = {
+        ResistancePu: "r",
+        ReactancePu: "x",
+        MagnetizingConductancePu: "gt",
+        MagnetizingSusceptancePu: "bt",
+        TapRatio: "tap",
+        Shift: "shift"
+      }[sideMatch[2] as "ResistancePu" | "ReactancePu" | "MagnetizingConductancePu" | "MagnetizingSusceptancePu" | "TapRatio" | "Shift"];
+      const column = `${prefix}${sideIndex}`;
+      return columns.includes(column) ? column : "";
     }
   }
-  return definitionMap;
+  const alias = LEGACY_E_DEFINITION_COLUMN_ALIASES[enName];
+  return alias && columns.includes(alias) ? alias : "";
 }
 
-export function getEParameterKeys(kind: string, params: Record<string, string>) {
+export function resolveDeviceParameterDefinitionExportSettings(
+  kind: string,
+  params: Record<string, string>,
+  definition: DeviceParameterDefinition
+) {
+  const section = inferESection(kind, params);
+  const enName = String(definition.enName ?? "").trim();
+  const legacyColumn = section ? legacyEColumnForDefinition(section, enName) : "";
+  const configuredExportName = typeof definition.exportName === "string" ? definition.exportName.trim() : "";
+  const exportEnabled = typeof definition.exportEnabled === "boolean"
+    ? definition.exportEnabled
+    : Boolean(section && (E_SECTION_COLUMNS[section] ? legacyColumn : enName));
+  return {
+    exportEnabled,
+    exportName: configuredExportName || (exportEnabled ? legacyColumn || enName : "")
+  };
+}
+
+function resolveEParameterFields(kind: string, params: Record<string, string>): EParameterField[] {
   const section = inferESection(kind, params);
   if (!section) {
     return [];
   }
+  const definitions = customEParameterDefinitions(params);
   const builtInColumns = E_SECTION_COLUMNS[section];
-  if (builtInColumns) {
-    return builtInColumns;
+  if (definitions.length === 0) {
+    return (builtInColumns ?? []).map((column) => ({ sourceName: column, exportName: column }));
   }
-  return customEParameterKeys(params);
+
+  const fields: EParameterField[] = [];
+  const seenExportNames = new Set<string>();
+  const appendField = (field: EParameterField) => {
+    if (!field.exportName || seenExportNames.has(field.exportName)) {
+      return;
+    }
+    seenExportNames.add(field.exportName);
+    fields.push(field);
+  };
+
+  if (builtInColumns) {
+    const definitionByLegacyColumn = new Map<string, DeviceParameterDefinition>();
+    const definitionsMappedToLegacyColumns = new Set<DeviceParameterDefinition>();
+    for (const definition of definitions) {
+      const legacyColumn = legacyEColumnForDefinition(section, definition.enName);
+      if (!legacyColumn) {
+        continue;
+      }
+      definitionsMappedToLegacyColumns.add(definition);
+      const current = definitionByLegacyColumn.get(legacyColumn);
+      if (!current || definition.enName === legacyColumn) {
+        definitionByLegacyColumn.set(legacyColumn, definition);
+      }
+    }
+    for (const column of builtInColumns) {
+      const definition = definitionByLegacyColumn.get(column);
+      if (!definition) {
+        appendField({ sourceName: column, exportName: column });
+        continue;
+      }
+      const settings = resolveDeviceParameterDefinitionExportSettings(kind, params, definition);
+      if (settings.exportEnabled) {
+        appendField({ sourceName: column, exportName: settings.exportName, definition });
+      }
+    }
+    for (const definition of definitions) {
+      if (definitionsMappedToLegacyColumns.has(definition)) {
+        continue;
+      }
+      const settings = resolveDeviceParameterDefinitionExportSettings(kind, params, definition);
+      if (settings.exportEnabled) {
+        appendField({ sourceName: definition.enName, exportName: settings.exportName, definition });
+      }
+    }
+    return fields;
+  }
+
+  for (const definition of definitions) {
+    const settings = resolveDeviceParameterDefinitionExportSettings(kind, params, definition);
+    if (settings.exportEnabled) {
+      appendField({ sourceName: definition.enName, exportName: settings.exportName, definition });
+    }
+  }
+  return fields;
+}
+
+export function getEParamValue(
+  key: string,
+  node: Pick<ModelNode, "kind" | "name" | "nodeNumber" | "terminals" | "params">,
+  options: EParamValueOptions = {}
+) {
+  const field = resolveEParameterFields(node.kind, node.params).find((item) => item.exportName === key);
+  return getRawEParamValue(field?.sourceName ?? key, node, options);
+}
+
+export function getEParameterKeys(kind: string, params: Record<string, string>) {
+  return resolveEParameterFields(kind, params).map((field) => field.exportName);
+}
+
+function buildEDeviceValuesFromFields(
+  node: Pick<ModelNode, "kind" | "name" | "nodeNumber" | "terminals" | "params">,
+  fields: readonly EParameterField[],
+  options: EParamValueOptions = {}
+) {
+  const values: Record<string, string> = {};
+  for (const field of fields) {
+    const sourceValue = getRawEParamValue(field.sourceName, node, options);
+    const value = field.definition ? enumExportValueForDefinition(field.definition, sourceValue) : sourceValue;
+    if (value !== "") {
+      values[field.exportName] = value;
+    }
+  }
+  return values;
 }
 
 export function buildEDeviceValues(
   node: Pick<ModelNode, "kind" | "name" | "nodeNumber" | "terminals" | "params">,
   options: EParamValueOptions = {}
 ) {
-  const values: Record<string, string> = {};
-  const section = inferESection(node.kind, node.params);
-  const customDefinitionMap = section && !E_SECTION_COLUMNS[section] ? customEParameterDefinitionMap(node.params) : undefined;
-  for (const key of getEParameterKeys(node.kind, node.params)) {
-    const definition = customDefinitionMap?.get(key);
-    const value = definition ? enumExportValueForDefinition(definition, getEParamValue(key, node, options)) : getEParamValue(key, node, options);
-    if (value !== "") {
-      values[key] = value;
-    }
-  }
-  return values;
+  return buildEDeviceValuesFromFields(node, resolveEParameterFields(node.kind, node.params), options);
 }
 
 function firstText(values: Array<string | undefined>): string {
@@ -2029,24 +2250,6 @@ function buildTopologyNodeDevices(nodes: ModelNode[]): EDeviceExport[] {
       candidates.push({ node, terminal });
       groups[terminalType].set(terminal.nodeNumber, candidates);
     }
-    if (isThreeWindingTransformer(node) && !hasVisibleThreeWindingNeutralTerminal(node) && node.params.neutral_node) {
-      const neutralTerminal: Terminal = {
-        id: "neutral",
-        label: "中性点",
-        type: "ac",
-        anchor: { x: 0, y: 0 },
-        nodeNumber: node.params.neutral_node,
-        vbase: node.params.neutral_vbase || "1.0"
-      };
-      const candidates = groups.ac.get(neutralTerminal.nodeNumber) ?? [];
-      candidates.push({
-        node,
-        terminal: neutralTerminal,
-        name: `${node.name}_neutral`,
-        voltage: node.params.neutral_vbase || "1.0"
-      });
-      groups.ac.set(neutralTerminal.nodeNumber, candidates);
-    }
   }
 
   const buildForType = (type: ElectricalTerminalType, section: "ACNode" | "DCNode"): EDeviceExport[] =>
@@ -2083,52 +2286,6 @@ const THREE_WINDING_TRANSFORMER_SIDES = [
   { suffix: "medium", label: "中压绕组", terminalIndex: 1, idxKey: "idx_xf_t2" },
   { suffix: "low", label: "低压绕组", terminalIndex: 2, idxKey: "idx_xf_t3" }
 ] as const;
-
-function buildThreeWindingTransformerBranchDevices(nodes: ModelNode[]): EDeviceExport[] {
-  const records: EDeviceExport[] = [];
-  for (const node of nodes) {
-    if (!isThreeWindingTransformer(node) || !node.params.neutral_node) {
-      continue;
-    }
-    for (const side of THREE_WINDING_TRANSFORMER_SIDES) {
-      const terminal = node.terminals[side.terminalIndex];
-      if (!terminal?.nodeNumber) {
-        continue;
-      }
-      const params = Object.fromEntries(
-        E_SECTION_COLUMNS.ACTransformer.map((column) => [
-          column,
-          associatedNodeColumnValue(node, side.idxKey, "ACTransformer", column, [terminal])
-        ])
-      );
-      records.push({
-        id: `${node.id}:w${side.terminalIndex + 1}`,
-        kind: "ac-two-winding-transformer",
-        section: "ACTransformer",
-        params
-      });
-    }
-  }
-  return records;
-}
-
-function buildACTransfomer3Devices(nodes: ModelNode[]): EDeviceExport[] {
-  return nodes
-    .filter((node) => isThreeWindingTransformer(node))
-    .map((node) => ({
-      id: node.id,
-      kind: node.kind,
-      section: "ACTransfomer3",
-      params: {
-        idx: node.params.idx ?? "",
-        name: node.name,
-        run_stat: normalizeRunStatForE(node.params.run_stat),
-        idx_xf_t1: node.params.idx_xf_t1 ?? "",
-        idx_xf_t2: node.params.idx_xf_t2 ?? "",
-        idx_xf_t3: node.params.idx_xf_t3 ?? ""
-      }
-    }));
-}
 
 function buildContainerAssociatedDevices(nodes: ModelNode[]): EDeviceExport[] {
   const records: EDeviceExport[] = [];
@@ -2180,26 +2337,24 @@ function buildContainerAssociatedDevices(nodes: ModelNode[]): EDeviceExport[] {
 function buildEDeviceRecords(project: ProjectFile): EDeviceExport[] {
   const topologyNodes = calculateElectricalTopology(project.nodes, project.edges);
   const topologyNodeDevices = buildTopologyNodeDevices(topologyNodes);
-  const acTransfomer3Devices = buildACTransfomer3Devices(topologyNodes);
-  const threeWindingTransformerBranchDevices = buildThreeWindingTransformerBranchDevices(topologyNodes);
   const containerAssociatedDevices = buildContainerAssociatedDevices(topologyNodes);
   const deviceRecords = topologyNodes
     .map<EDeviceExport | null>((node) => {
-      if (isThreeWindingTransformer(node)) {
-        return null;
-      }
       const section = inferESection(node.kind, node.params);
       if (!section || section === "ACNode" || section === "DCNode") {
         return null;
       }
-      if (getEParameterKeys(node.kind, node.params).length === 0) {
+      const fields = resolveEParameterFields(node.kind, node.params);
+      const columns = fields.map((field) => field.exportName);
+      if (columns.length === 0) {
         return null;
       }
       return {
         id: node.id,
         kind: node.kind,
         section,
-        params: buildEDeviceValues(node, { preferTopologyNodeNumbers: true })
+        params: buildEDeviceValuesFromFields(node, fields, { preferTopologyNodeNumbers: true }),
+        columns
       };
     })
     .filter((device): device is EDeviceExport => Boolean(device));
@@ -2207,8 +2362,6 @@ function buildEDeviceRecords(project: ProjectFile): EDeviceExport[] {
   return [
     ...topologyNodeDevices,
     ...deviceRecords,
-    ...acTransfomer3Devices,
-    ...threeWindingTransformerBranchDevices,
     ...containerAssociatedDevices
   ];
 }
@@ -2271,7 +2424,7 @@ function defaultEColumnValue(column: string, rowIndex: number) {
   if (column === "status") return "1";
   if (column === "control_type") return "0";
   if (column === "i_control_type" || column === "j_control_type") return "SLACK";
-  if (column === "tap" || column === "alpha" || column === "voltage" || column === "vbase") return "1.0";
+  if (column === "tap" || /^tap[123]$/.test(column) || column === "alpha" || column === "voltage" || column === "vbase") return "1.0";
   return "0";
 }
 
@@ -2341,14 +2494,11 @@ function sortESectionRecordsByIdx(rows: EDeviceExport[]): EDeviceExport[] {
 }
 
 function eSectionColumns(section: string, rows: EDeviceExport[]) {
-  const builtInColumns = E_SECTION_COLUMNS[section];
-  if (builtInColumns) {
-    return builtInColumns;
-  }
   const columns: string[] = [];
   const seen = new Set<string>();
   for (const record of rows) {
-    for (const key of Object.keys(record.params)) {
+    const recordColumns = record.columns ?? E_SECTION_COLUMNS[section] ?? Object.keys(record.params);
+    for (const key of recordColumns) {
       if (!key || key.startsWith("_") || seen.has(key)) {
         continue;
       }
@@ -2356,7 +2506,7 @@ function eSectionColumns(section: string, rows: EDeviceExport[]) {
       columns.push(key);
     }
   }
-  return columns;
+  return columns.length > 0 ? columns : E_SECTION_COLUMNS[section] ?? [];
 }
 
 const E_FILE_COLUMN_GAP = "    ";
@@ -2590,13 +2740,57 @@ const readonlyIntegerDefinition = (cnName: string, enName: string, typicalValue 
   readonly: true
 });
 
+const twoWindingTransformerParameterDefinitions: DeviceParameterDefinition[] = [
+  readonlyIntegerDefinition("序号", "idx"),
+  { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
+  { cnName: "运行状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: false },
+  { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false },
+  readonlyIntegerDefinition("高压侧节点号", "t1_node"),
+  readonlyIntegerDefinition("低压侧节点号", "t2_node"),
+  { cnName: "高压侧电压等级", enName: "highVbase", valueType: "string", typicalValue: "0", readonly: false },
+  { cnName: "低压侧电压等级", enName: "lowVbase", valueType: "string", typicalValue: "0", readonly: false },
+  { cnName: "额定容量", enName: "ratedCapacity", valueType: "string", typicalValue: "50 MVA", readonly: false },
+  { cnName: "电阻（标幺值）", enName: "resistancePu", valueType: "float", typicalValue: "0.0", readonly: false },
+  { cnName: "电抗（标幺值）", enName: "reactancePu", valueType: "float", typicalValue: "0.1", readonly: false },
+  { cnName: "励磁电导（标幺值）", enName: "magnetizingConductancePu", valueType: "float", typicalValue: "0.0", readonly: false },
+  { cnName: "励磁电纳（标幺值）", enName: "magnetizingSusceptancePu", valueType: "float", typicalValue: "0.0", readonly: false },
+  { cnName: "分接头档位/变比", enName: "tapRatio", valueType: "float", typicalValue: "1.0", readonly: false },
+  { cnName: "相移（度）", enName: "shift", valueType: "float", typicalValue: "0", readonly: false }
+];
+
 const threeWindingTransformerParameterDefinitions: DeviceParameterDefinition[] = [
   readonlyIntegerDefinition("序号", "idx"),
   { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
+  { cnName: "运行状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: false },
   { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false },
-  readonlyIntegerDefinition("高压绕组双绕组主变idx", "idx_xf_t1"),
-  readonlyIntegerDefinition("中压绕组双绕组主变idx", "idx_xf_t2"),
-  readonlyIntegerDefinition("低压绕组双绕组主变idx", "idx_xf_t3")
+  readonlyIntegerDefinition("高压侧节点号", "t1_node"),
+  readonlyIntegerDefinition("中压侧节点号", "t2_node"),
+  readonlyIntegerDefinition("低压侧节点号", "t3_node"),
+  readonlyIntegerDefinition("中性点节点号", "neutral_node"),
+  { cnName: "高压侧电压等级", enName: "highVbase", valueType: "string", typicalValue: "0", readonly: false },
+  { cnName: "高压侧额定容量", enName: "highRatedCapacity", valueType: "string", typicalValue: "90 MVA", readonly: false },
+  { cnName: "高压侧电阻（标幺值）", enName: "highResistancePu", valueType: "float", typicalValue: "0.0", readonly: false },
+  { cnName: "高压侧电抗（标幺值）", enName: "highReactancePu", valueType: "float", typicalValue: "0.1", readonly: false },
+  { cnName: "高压侧励磁电导（标幺值）", enName: "highMagnetizingConductancePu", valueType: "float", typicalValue: "0.0", readonly: false },
+  { cnName: "高压侧励磁电纳（标幺值）", enName: "highMagnetizingSusceptancePu", valueType: "float", typicalValue: "0.0", readonly: false },
+  { cnName: "高压侧分接头档位/变比", enName: "highTapRatio", valueType: "float", typicalValue: "1.0", readonly: false },
+  { cnName: "高压侧相移", enName: "highShift", valueType: "float", typicalValue: "0", readonly: false },
+  { cnName: "中压侧电压等级", enName: "mediumVbase", valueType: "string", typicalValue: "0", readonly: false },
+  { cnName: "中压侧额定容量", enName: "mediumRatedCapacity", valueType: "string", typicalValue: "90 MVA", readonly: false },
+  { cnName: "中压侧电阻（标幺值）", enName: "mediumResistancePu", valueType: "float", typicalValue: "0.0", readonly: false },
+  { cnName: "中压侧电抗（标幺值）", enName: "mediumReactancePu", valueType: "float", typicalValue: "0.1", readonly: false },
+  { cnName: "中压侧励磁电导（标幺值）", enName: "mediumMagnetizingConductancePu", valueType: "float", typicalValue: "0.0", readonly: false },
+  { cnName: "中压侧励磁电纳（标幺值）", enName: "mediumMagnetizingSusceptancePu", valueType: "float", typicalValue: "0.0", readonly: false },
+  { cnName: "中压侧分接头档位/变比", enName: "mediumTapRatio", valueType: "float", typicalValue: "1.0", readonly: false },
+  { cnName: "中压侧相移", enName: "mediumShift", valueType: "float", typicalValue: "0", readonly: false },
+  { cnName: "低压侧电压等级", enName: "lowVbase", valueType: "string", typicalValue: "0", readonly: false },
+  { cnName: "低压侧额定容量", enName: "lowRatedCapacity", valueType: "string", typicalValue: "90 MVA", readonly: false },
+  { cnName: "低压侧电阻（标幺值）", enName: "lowResistancePu", valueType: "float", typicalValue: "0.0", readonly: false },
+  { cnName: "低压侧电抗（标幺值）", enName: "lowReactancePu", valueType: "float", typicalValue: "0.1", readonly: false },
+  { cnName: "低压侧励磁电导（标幺值）", enName: "lowMagnetizingConductancePu", valueType: "float", typicalValue: "0.0", readonly: false },
+  { cnName: "低压侧励磁电纳（标幺值）", enName: "lowMagnetizingSusceptancePu", valueType: "float", typicalValue: "0.0", readonly: false },
+  { cnName: "低压侧分接头档位/变比", enName: "lowTapRatio", valueType: "float", typicalValue: "1.0", readonly: false },
+  { cnName: "低压侧相移", enName: "lowShift", valueType: "float", typicalValue: "0", readonly: false }
 ];
 
 function isStaticButtonComponentParams(params?: Record<string, string>): boolean {
@@ -3622,7 +3816,9 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     size: { width: 92, height: 70 },
     params: { ratedCapacity: "50 MVA", voltageRatio: "110/10 kV", impedance: "10.5%" },
     terminalType: "ac",
-    terminalCount: 2
+    terminalCount: 2,
+    isContainer: false,
+    parameterDefinitions: twoWindingTransformerParameterDefinitions
   },
   {
     kind: "ac-three-winding-transformer",
@@ -3633,7 +3829,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalType: "ac",
     terminalCount: 3,
     terminalAnchors: THREE_WINDING_TRANSFORMER_TERMINAL_ANCHORS,
-    isContainer: true,
+    isContainer: false,
     parameterDefinitions: threeWindingTransformerParameterDefinitions
   },
   {
@@ -3646,7 +3842,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalCount: 4,
     terminalLabels: ["高压绕组端", "中压绕组端", "低压绕组端", "中性点"],
     terminalAnchors: THREE_WINDING_TRANSFORMER_NEUTRAL_TERMINAL_ANCHORS,
-    isContainer: true,
+    isContainer: false,
     parameterDefinitions: threeWindingTransformerParameterDefinitions
   },
   {
@@ -5056,12 +5252,17 @@ function normalizeTemplateDefinition(definition: DeviceParameterDefinition): Dev
   }
   const valueType = TEMPLATE_DEFINITION_VALUE_TYPES[enName] ?? (["integer", "float", "string", "stringEnum", "numberEnum", "enum"].includes(definition.valueType) ? definition.valueType : "string");
   const typicalValue = String(definition.typicalValue ?? "");
+  const exportSettings = {
+    ...(typeof definition.exportEnabled === "boolean" ? { exportEnabled: definition.exportEnabled } : {}),
+    ...(typeof definition.exportName === "string" ? { exportName: definition.exportName.trim() } : {})
+  };
   const normalized: DeviceParameterDefinition = {
     cnName: String(definition.cnName ?? enName).trim() || enName,
     enName,
     valueType,
     typicalValue,
-    readonly: templateDefinitionIsReadonly(enName, definition.readonly)
+    readonly: templateDefinitionIsReadonly(enName, definition.readonly),
+    ...exportSettings
   };
   if (!templateDefinitionValueTypeIsEnum(valueType)) {
     return normalized;
@@ -5133,6 +5334,87 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
   }));
 }
 
+function stripThreeWindingTransformerContainerParams(params: Record<string, string>): Record<string, string> {
+  const legacyContainerParamPattern =
+    /(?:^|_)(?:xf_t\d+|(?:ac2|dc2|h22|heat2|ac|dc|h2|heat)_(?:unit|load|transformer)_t\d+)$/;
+  let changed = false;
+  const entries = Object.entries(params).filter(([key]) => {
+    const shouldRemove = key === "is_container" || legacyContainerParamPattern.test(key);
+    if (shouldRemove) {
+      changed = true;
+    }
+    return !shouldRemove;
+  });
+  return changed ? Object.fromEntries(entries) : params;
+}
+
+function isTwoWindingTransformerTemplateKind(kind: string): boolean {
+  const templateKind = baseDeviceKind(kind);
+  return templateKind === "ac-transformer" || templateKind === "ac-two-winding-transformer";
+}
+
+function normalizeTwoWindingTransformerParams(params: Record<string, string>): Record<string, string> {
+  let next = stripThreeWindingTransformerContainerParams(params);
+  let changed = next !== params;
+  const aliases = [
+    ["resistancePu", "r"],
+    ["reactancePu", "x"],
+    ["magnetizingConductancePu", "gt"],
+    ["magnetizingSusceptancePu", "bt"],
+    ["tapRatio", "tap"]
+  ] as const;
+  for (const [canonicalKey, legacyKey] of aliases) {
+    const canonicalValue = String(next[canonicalKey] ?? "").trim();
+    const legacyValue = next[legacyKey];
+    if (!canonicalValue && legacyValue !== undefined) {
+      if (!changed) {
+        next = { ...next };
+        changed = true;
+      }
+      next[canonicalKey] = legacyValue;
+    }
+    if (Object.prototype.hasOwnProperty.call(next, legacyKey)) {
+      if (!changed) {
+        next = { ...next };
+        changed = true;
+      }
+      delete next[legacyKey];
+    }
+  }
+  return changed ? next : params;
+}
+
+function mergeCanonicalParameterDefinitions(
+  canonicalDefinitions: readonly DeviceParameterDefinition[],
+  overrideDefinitions: readonly DeviceParameterDefinition[]
+): DeviceParameterDefinition[] {
+  const overrideByName = new Map(overrideDefinitions.map((definition) => [definition.enName.toLowerCase(), definition]));
+  const canonicalNames = new Set(canonicalDefinitions.map((definition) => definition.enName.toLowerCase()));
+  const legacyContainerParamPattern = /(?:^|_)(?:xf_t\d+|(?:ac2|dc2|h22|heat2|ac|dc|h2|heat)_(?:unit|load|transformer)_t\d+)$/;
+  const merged = canonicalDefinitions.map((definition) => {
+    const override = overrideByName.get(definition.enName.toLowerCase());
+    if (!override) {
+      return { ...definition };
+    }
+    return normalizeTemplateDefinition({
+      ...definition,
+      ...override,
+      enName: definition.enName,
+      readonly: definition.readonly
+    }) ?? { ...definition };
+  });
+  for (const definition of overrideDefinitions) {
+    if (
+      !canonicalNames.has(definition.enName.toLowerCase()) &&
+      definition.enName !== "is_container" &&
+      !legacyContainerParamPattern.test(definition.enName)
+    ) {
+      merged.push({ ...definition });
+    }
+  }
+  return merged;
+}
+
 export function applyDeviceTemplateDefinitionOverride(
   template: DeviceTemplate,
   override?: DeviceTemplateDefinitionOverride
@@ -5163,7 +5445,7 @@ export function applyDeviceTemplateDefinitionOverride(
     Math.round(override.terminalCount ?? terminalTypes?.length ?? template.terminalCount)
   );
   const terminalType = override.terminalType ?? terminalTypes?.[0] ?? template.terminalType;
-  return {
+  const mergedTemplate: DeviceTemplate = {
     ...template,
     size: override.size ? { ...override.size } : template.size,
     terminalType,
@@ -5178,6 +5460,39 @@ export function applyDeviceTemplateDefinitionOverride(
     params,
     parameterDefinitions,
     ...(stateDefinitions ? { stateDefinitions } : {})
+  };
+  if (isTwoWindingTransformerTemplateKind(template.kind)) {
+    const canonicalTerminalCount = 2;
+    return {
+      ...mergedTemplate,
+      terminalType: "ac",
+      terminalCount: canonicalTerminalCount,
+      terminalTypes: Array.from({ length: canonicalTerminalCount }, () => "ac"),
+      terminalLabels: mergedTemplate.terminalLabels?.slice(0, canonicalTerminalCount),
+      terminalAnchors: mergedTemplate.terminalAnchors?.slice(0, canonicalTerminalCount).map(clonePoint),
+      terminalRoles: undefined,
+      terminalAssociations: undefined,
+      isContainer: false,
+      params: normalizeTwoWindingTransformerParams(mergedTemplate.params),
+      parameterDefinitions: mergeCanonicalParameterDefinitions(twoWindingTransformerParameterDefinitions, parameterDefinitions)
+    };
+  }
+  if (!isThreeWindingTransformer(template)) {
+    return mergedTemplate;
+  }
+  const canonicalTerminalCount = template.terminalCount;
+  return {
+    ...mergedTemplate,
+    terminalType: "ac",
+    terminalCount: canonicalTerminalCount,
+    terminalTypes: Array.from({ length: canonicalTerminalCount }, () => "ac"),
+    terminalLabels: mergedTemplate.terminalLabels?.slice(0, canonicalTerminalCount),
+    terminalAnchors: mergedTemplate.terminalAnchors?.slice(0, canonicalTerminalCount).map(clonePoint),
+    terminalRoles: undefined,
+    terminalAssociations: undefined,
+    isContainer: false,
+    params: stripThreeWindingTransformerContainerParams(mergedTemplate.params),
+    parameterDefinitions: mergeCanonicalParameterDefinitions(threeWindingTransformerParameterDefinitions, parameterDefinitions)
   };
 }
 
@@ -5490,7 +5805,8 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       reactancePu: "0.1",
       magnetizingConductancePu: "0.0",
       magnetizingSusceptancePu: "0.0",
-      tapRatio: "1.0"
+      tapRatio: "1.0",
+      shift: "0"
     }));
   }
   if (templateKind === "ac-three-winding-transformer" || templateKind === "ac-three-winding-transformer-neutral") {
@@ -7457,7 +7773,23 @@ function virtualBusTerminal(node: Pick<ModelNode, "kind" | "terminals">, termina
 }
 
 export function normalizeNodeTerminalsWithTemplate(node: ModelNode, template: DeviceTemplate | undefined): ModelNode {
-  const normalizedNode = normalizeRoutableLineDeviceStrokeWidthParam(node);
+  let normalizedNode = normalizeRoutableLineDeviceStrokeWidthParam(node);
+  if (template && !template.isContainer && (isThreeWindingTransformer(normalizedNode) || isTwoWindingTransformerTemplateKind(normalizedNode.kind))) {
+    const parameterDefinitions = isThreeWindingTransformer(normalizedNode)
+      ? threeWindingTransformerParameterDefinitions
+      : twoWindingTransformerParameterDefinitions;
+    const sourceParams = isThreeWindingTransformer(normalizedNode)
+      ? stripThreeWindingTransformerContainerParams(normalizedNode.params)
+      : normalizeTwoWindingTransformerParams(normalizedNode.params);
+    const sourceNode = sourceParams === normalizedNode.params ? normalizedNode : { ...normalizedNode, params: sourceParams };
+    const reconciledNode = reconcileNodeParamsWithTemplateDefinitions(sourceNode, {
+      parameterDefinitions
+    });
+    const params = isThreeWindingTransformer(reconciledNode)
+      ? stripThreeWindingTransformerContainerParams(reconciledNode.params)
+      : normalizeTwoWindingTransformerParams(reconciledNode.params);
+    normalizedNode = params === reconciledNode.params ? reconciledNode : { ...reconciledNode, params };
+  }
   if (!template || normalizedNode.terminals.length === 0) {
     return normalizedNode;
   }

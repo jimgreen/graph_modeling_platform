@@ -16,7 +16,8 @@ import {
   TERMINAL_TYPE_LIBRARY_LABELS,
   getTemplateParameterDefinitions,
   inferESection,
-  isDoubleContainerTerminalAssociation
+  isDoubleContainerTerminalAssociation,
+  resolveDeviceParameterDefinitionExportSettings
 } from "./model";
 import type { OrthogonalAxis } from "./App";
 import {
@@ -73,6 +74,7 @@ export function createDefinitionDraftRows(template: DeviceTemplate): DeviceDefin
     .filter((definition) => definition.enName !== "component_type" && !isReservedDeviceDefinitionParamName(definition.enName))
     .map((definition) => ({
       ...definition,
+      ...resolveDeviceParameterDefinitionExportSettings(template.kind, template.params, definition),
       cnName: definition.cnName === definition.enName ? PARAM_LABELS[definition.enName] ?? definition.cnName : definition.cnName,
       id: deviceDefinitionRowId()
     }));
@@ -156,19 +158,17 @@ export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, se
     template.terminalAssociations ?? [],
     terminalCount
   );
-  const readonlyDefaultDefinitions = new Set(customDefaultDefinitions(terminalTypes, {
-    isContainer: template.isContainer,
-    terminalAssociations
-  })
-    .filter((definition) => definition.readonly)
-    .map((definition) => definition.enName.toLowerCase()));
+  const exportContextParams = { ...template.params, component_type: section };
   const customParams = (template.parameterDefinitions ?? parseCustomDefinitions(template.params))
     .filter((definition) =>
-      !readonlyDefaultDefinitions.has(definition.enName.toLowerCase()) &&
       definition.enName !== "component_type" &&
       !isReservedDeviceDefinitionParamName(definition.enName)
     )
-    .map((definition) => ({ ...definition, id: customParamId() }));
+    .map((definition) => ({
+      ...definition,
+      ...resolveDeviceParameterDefinitionExportSettings(template.kind, exportContextParams, definition),
+      id: customParamId()
+    }));
   const stateRows = createDefinitionStateDraftRows(template);
   return {
     categoryLibraryName,

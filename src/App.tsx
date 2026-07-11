@@ -138,6 +138,7 @@ import {
   isRoutableLineDeviceKind,
   getEParameterKeys,
   getEParamValue,
+  resolveDeviceParameterDefinitionExportSettings,
   getEExportWarnings,
   formatPowerBaseDisplayValue,
   getTemplateParameterDefinitions,
@@ -4625,7 +4626,14 @@ Object.assign(__appScope, { customDraftTerminalAssociations });
 const customDraftDefaultParams = customDefaultDefinitions(customDraftTerminalTypes, {
     isContainer: customDeviceDraft.isContainer,
     terminalAssociations: customDraftTerminalAssociations
-  });
+  }).map((definition) => ({
+    ...definition,
+    ...resolveDeviceParameterDefinitionExportSettings(
+      customDeviceDraft.componentKind || customDeviceDraft.componentLibrary,
+      { component_type: customDeviceDraft.componentLibrary },
+      definition
+    )
+  }));
 Object.assign(__appScope, { customDraftDefaultParams });
 const customDraftDefaultParamKeySet = new Set(customDraftDefaultParams.map((row) => row.enName.trim().toLowerCase()));
 const customDraftDefaultParamOverrideMap = new Map(
@@ -4642,7 +4650,9 @@ const customDraftMergedDefaultParams = customDraftDefaultParams.map((row) => {
         typicalValue: override.typicalValue,
         enumOptions: override.enumOptions,
         enumValues: override.enumValues,
-        readonly: row.readonly
+        readonly: row.readonly,
+        ...(typeof override.exportEnabled === "boolean" ? { exportEnabled: override.exportEnabled } : {}),
+        ...(typeof override.exportName === "string" ? { exportName: override.exportName } : {})
       })
     : row;
 });

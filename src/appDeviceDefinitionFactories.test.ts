@@ -833,6 +833,56 @@ describe("manual bend interaction helpers", () => {
     expect(message).toContain("属性第 4 行：默认值必须是数字枚举值。");
   });
 
+  test("validates enabled E export names and rejects duplicates", () => {
+    const message = deviceParameterDefinitionsComplianceMessage([
+      {
+        cnName: "额定功率",
+        enName: "ratedPower",
+        valueType: "float",
+        typicalValue: "10",
+        exportEnabled: true,
+        exportName: "rated-power"
+      },
+      {
+        cnName: "额定电压",
+        enName: "ratedVoltage",
+        valueType: "float",
+        typicalValue: "110",
+        exportEnabled: true,
+        exportName: "rated_value"
+      },
+      {
+        cnName: "额定电流",
+        enName: "ratedCurrent",
+        valueType: "float",
+        typicalValue: "100",
+        exportEnabled: true,
+        exportName: "rated_value"
+      },
+      {
+        cnName: "备注",
+        enName: "remark",
+        valueType: "string",
+        typicalValue: "",
+        exportEnabled: true,
+        exportName: ""
+      },
+      {
+        cnName: "内部字段",
+        enName: "internalValue",
+        valueType: "string",
+        typicalValue: "",
+        exportEnabled: false,
+        exportName: ""
+      }
+    ] as any);
+
+    expect(message).toContain("属性第 1 行：导出名称 rated-power 只能包含英文字母、数字和下划线，且必须以英文字母开头。");
+    expect(message).toContain("属性第 3 行：导出名称 rated_value 与第 2 行重复。");
+    expect(message).toContain("属性第 4 行：启用导出时，导出名称不能为空。");
+    expect(message).not.toContain("属性第 5 行");
+  });
+
   test("separates external image imports from document image and icon imports", () => {
     expect(imageLibraryImportKindForInput({ dataset: { imageImportKind: "image" } } as any)).toBe("image");
     expect(imageLibraryImportKindForInput({ dataset: { imageImportKind: "archive" } } as any)).toBe("archive");

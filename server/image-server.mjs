@@ -124,7 +124,33 @@ export const eSectionColumns = {
   DCBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   GroundDisconnector: ["idx", "name", "node", "status", "run_stat"],
   ACTransformer: ["idx", "name", "i_node", "j_node", "r", "x", "gt", "bt", "tap", "shift", "run_stat"],
-  ACTransfomer3: ["idx", "name", "run_stat", "idx_xf_t1", "idx_xf_t2", "idx_xf_t3"],
+  ACTransfomer3: [
+    "idx",
+    "name",
+    "t1_node",
+    "t2_node",
+    "t3_node",
+    "neutral_node",
+    "r1",
+    "x1",
+    "gt1",
+    "bt1",
+    "tap1",
+    "shift1",
+    "r2",
+    "x2",
+    "gt2",
+    "bt2",
+    "tap2",
+    "shift2",
+    "r3",
+    "x3",
+    "gt3",
+    "bt3",
+    "tap3",
+    "shift3",
+    "run_stat"
+  ],
   DCDCConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_set", "v_set", "run_stat"],
   DCACConverter: ["idx", "name", "ac_node", "dc_node", "r1", "r2", "control_type", "p_ac_set", "q_ac_set", "v_ac_set", "v_dc_set", "run_stat"],
   ACACConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"],
@@ -1219,7 +1245,7 @@ function mappedLegacyEValue(key, params = {}) {
   return params[key] ?? "";
 }
 
-function getEParamValue(key, node, options = {}) {
+function getRawEParamValue(key, node, options = {}) {
   const params = node?.params ?? {};
   if (key === "name") return node?.name ?? "";
   if (key === "run_stat") return normalizeRunStatForE(params.run_stat);
@@ -1229,6 +1255,37 @@ function getEParamValue(key, node, options = {}) {
   if (key === "node") return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, 0) : params.node ?? terminalNodeNumber(node, 0);
   if (key === "i_node") return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, 0) : params.i_node ?? terminalNodeNumber(node, 0);
   if (key === "j_node") return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, 1) : params.j_node ?? terminalNodeNumber(node, 1);
+  if (node?.kind === "ac-three-winding-transformer" || node?.kind === "ac-three-winding-transformer-neutral") {
+    const terminalNodeMatch = /^t([123])_node$/.exec(key);
+    if (terminalNodeMatch) {
+      const terminalIndex = Number.parseInt(terminalNodeMatch[1], 10) - 1;
+      return options.preferTopologyNodeNumbers
+        ? terminalNodeNumber(node, terminalIndex)
+        : params[key] ?? terminalNodeNumber(node, terminalIndex);
+    }
+    if (key === "neutral_node") {
+      if (node?.kind !== "ac-three-winding-transformer-neutral") {
+        return "0";
+      }
+      const visibleNeutralNode = terminalNodeNumber(node, 3);
+      return options.preferTopologyNodeNumbers
+        ? visibleNeutralNode || params.neutral_node || ""
+        : params.neutral_node ?? visibleNeutralNode;
+    }
+    const sideParameterMatch = /^(r|x|gt|bt|tap|shift)([123])$/.exec(key);
+    if (sideParameterMatch) {
+      const sidePrefix = ["high", "medium", "low"][Number.parseInt(sideParameterMatch[2], 10) - 1];
+      const parameterSuffix = {
+        r: "ResistancePu",
+        x: "ReactancePu",
+        gt: "MagnetizingConductancePu",
+        bt: "MagnetizingSusceptancePu",
+        tap: "TapRatio",
+        shift: "Shift"
+      };
+      return params[`${sidePrefix}${parameterSuffix[sideParameterMatch[1]]}`] ?? "";
+    }
+  }
   if (key === "ac_node") {
     const acNodeNumber = node?.terminals?.find((terminal) => terminal.type === "ac")?.nodeNumber ?? terminalNodeNumber(node, 0);
     return options.preferTopologyNodeNumbers ? acNodeNumber : params.ac_node ?? acNodeNumber;
@@ -1240,20 +1297,180 @@ function getEParamValue(key, node, options = {}) {
   return mappedLegacyEValue(key, params);
 }
 
-function getEParameterKeys(kind, params = {}) {
-  const section = inferESection(kind, params);
-  return section ? eSectionColumns[section] ?? [] : [];
+const legacyEDefinitionColumnAliases = {
+  ratedActivePower: "pbase",
+  ratedReactivePower: "qbase",
+  resistancePu: "r",
+  reactancePu: "x",
+  halfChargingSusceptancePu: "b",
+  magnetizingConductancePu: "gt",
+  magnetizingSusceptancePu: "bt",
+  tapRatio: "tap",
+  sourceEquivalentResistance: "r1",
+  targetEquivalentResistance: "r2",
+  controlType: "control_type",
+  acControlType: "control_type",
+  dcControlType: "control_type",
+  closedStatus: "status"
+};
+
+function storedEParameterDefinitions(params = {}) {
+  try {
+    const parsed = JSON.parse(params._customParamDefinitions ?? "[]");
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .filter((definition) => definition && typeof definition === "object")
+      .map((definition) => ({
+        ...definition,
+        enName: String(definition.enName ?? "").trim(),
+        exportName: typeof definition.exportName === "string" ? definition.exportName.trim() : definition.exportName
+      }))
+      .filter((definition) => definition.enName && !definition.enName.startsWith("_") && definition.enName !== "component_type");
+  } catch {
+    return [];
+  }
 }
 
-function buildEDeviceValues(node, options = {}) {
+function legacyEColumnForDefinition(section, enName) {
+  const columns = eSectionColumns[section];
+  if (!columns) {
+    return "";
+  }
+  if (columns.includes(enName)) {
+    return enName;
+  }
+  if (enName === "t1_node") {
+    if (columns.includes("i_node")) return "i_node";
+    if (columns.includes("node")) return "node";
+  }
+  if (enName === "t2_node" && columns.includes("j_node")) {
+    return "j_node";
+  }
+  if (enName === "sourceControlType") {
+    if (columns.includes("i_control_type")) return "i_control_type";
+    if (columns.includes("control_type")) return "control_type";
+  }
+  if (enName === "targetControlType") {
+    if (columns.includes("j_control_type")) return "j_control_type";
+    if (columns.includes("control_type")) return "control_type";
+  }
+  if (section === "ACTransfomer3") {
+    const sideMatch = /^(high|medium|low)(ResistancePu|ReactancePu|MagnetizingConductancePu|MagnetizingSusceptancePu|TapRatio|Shift)$/.exec(enName);
+    if (sideMatch) {
+      const sideIndex = { high: "1", medium: "2", low: "3" }[sideMatch[1]];
+      const prefix = {
+        ResistancePu: "r",
+        ReactancePu: "x",
+        MagnetizingConductancePu: "gt",
+        MagnetizingSusceptancePu: "bt",
+        TapRatio: "tap",
+        Shift: "shift"
+      }[sideMatch[2]];
+      const column = `${prefix}${sideIndex}`;
+      return columns.includes(column) ? column : "";
+    }
+  }
+  const alias = legacyEDefinitionColumnAliases[enName];
+  return alias && columns.includes(alias) ? alias : "";
+}
+
+function parameterDefinitionExportSettings(kind, params, definition) {
+  const section = inferESection(kind, params);
+  const enName = String(definition?.enName ?? "").trim();
+  const legacyColumn = section ? legacyEColumnForDefinition(section, enName) : "";
+  const configuredExportName = typeof definition?.exportName === "string" ? definition.exportName.trim() : "";
+  const exportEnabled = typeof definition?.exportEnabled === "boolean"
+    ? definition.exportEnabled
+    : Boolean(section && (eSectionColumns[section] ? legacyColumn : enName));
+  return {
+    exportEnabled,
+    exportName: configuredExportName || (exportEnabled ? legacyColumn || enName : "")
+  };
+}
+
+function resolveEParameterFields(kind, params = {}) {
+  const section = inferESection(kind, params);
+  if (!section) {
+    return [];
+  }
+  const definitions = storedEParameterDefinitions(params);
+  const builtInColumns = eSectionColumns[section];
+  if (!definitions.length) {
+    return (builtInColumns ?? []).map((column) => ({ sourceName: column, exportName: column }));
+  }
+  const fields = [];
+  const seenExportNames = new Set();
+  const appendField = (field) => {
+    if (!field.exportName || seenExportNames.has(field.exportName)) {
+      return;
+    }
+    seenExportNames.add(field.exportName);
+    fields.push(field);
+  };
+  if (builtInColumns) {
+    const definitionByLegacyColumn = new Map();
+    const definitionsMappedToLegacyColumns = new Set();
+    for (const definition of definitions) {
+      const legacyColumn = legacyEColumnForDefinition(section, definition.enName);
+      if (!legacyColumn) {
+        continue;
+      }
+      definitionsMappedToLegacyColumns.add(definition);
+      const current = definitionByLegacyColumn.get(legacyColumn);
+      if (!current || definition.enName === legacyColumn) {
+        definitionByLegacyColumn.set(legacyColumn, definition);
+      }
+    }
+    for (const column of builtInColumns) {
+      const definition = definitionByLegacyColumn.get(column);
+      if (!definition) {
+        appendField({ sourceName: column, exportName: column });
+        continue;
+      }
+      const settings = parameterDefinitionExportSettings(kind, params, definition);
+      if (settings.exportEnabled) {
+        appendField({ sourceName: column, exportName: settings.exportName, definition });
+      }
+    }
+    for (const definition of definitions) {
+      if (definitionsMappedToLegacyColumns.has(definition)) {
+        continue;
+      }
+      const settings = parameterDefinitionExportSettings(kind, params, definition);
+      if (settings.exportEnabled) {
+        appendField({ sourceName: definition.enName, exportName: settings.exportName, definition });
+      }
+    }
+    return fields;
+  }
+  for (const definition of definitions) {
+    const settings = parameterDefinitionExportSettings(kind, params, definition);
+    if (settings.exportEnabled) {
+      appendField({ sourceName: definition.enName, exportName: settings.exportName, definition });
+    }
+  }
+  return fields;
+}
+
+function getEParameterKeys(kind, params = {}) {
+  return resolveEParameterFields(kind, params).map((field) => field.exportName);
+}
+
+function buildEDeviceValuesFromFields(node, fields, options = {}) {
   const values = {};
-  for (const key of getEParameterKeys(node.kind, node.params)) {
-    const value = getEParamValue(key, node, options);
+  for (const field of fields) {
+    const value = getRawEParamValue(field.sourceName, node, options);
     if (value !== "") {
-      values[key] = value;
+      values[field.exportName] = value;
     }
   }
   return values;
+}
+
+function buildEDeviceValues(node, options = {}) {
+  return buildEDeviceValuesFromFields(node, resolveEParameterFields(node.kind, node.params), options);
 }
 
 const eFileColumnGap = "    ";
@@ -1278,6 +1495,22 @@ function eFilePadCell(value, width) {
   const text = eFileCellText(value);
   const padding = Math.max(0, Math.round(width - eFileCellDisplayWidth(text)));
   return `${text}${" ".repeat(padding)}`;
+}
+
+function eColumnsForRecords(section, records) {
+  const columns = [];
+  const seen = new Set();
+  for (const record of records) {
+    const recordColumns = record.columns ?? eSectionColumns[section] ?? Object.keys(record.params ?? {});
+    for (const column of recordColumns) {
+      if (!column || column.startsWith("_") || seen.has(column)) {
+        continue;
+      }
+      seen.add(column);
+      columns.push(column);
+    }
+  }
+  return columns.length ? columns : eSectionColumns[section] ?? [];
 }
 
 function formatESection(section, columns, records) {
@@ -1509,17 +1742,21 @@ function buildDeviceParameterFile(project, schemePath = ["默认方案"]) {
     .map((node) => {
       const section = inferESection(node.kind, node.params ?? {});
       if (!section || section === "ACNode" || section === "DCNode") return null;
+      const fields = resolveEParameterFields(node.kind, node.params ?? {});
+      const columns = fields.map((field) => field.exportName);
+      if (!columns.length) return null;
       return {
         id: node.id,
         kind: node.kind,
         section,
-        params: buildEDeviceValues(node, { preferTopologyNodeNumbers: true })
+        params: buildEDeviceValuesFromFields(node, fields, { preferTopologyNodeNumbers: true }),
+        columns
       };
     })
     .filter(Boolean);
   const recordsBySection = new Map();
   for (const record of [...topologyNodeDevices, ...deviceRecords]) {
-    const columns = eSectionColumns[record.section] ?? [];
+    const columns = record.columns ?? eSectionColumns[record.section] ?? [];
     if (!columns.length) {
       continue;
     }
@@ -1544,7 +1781,7 @@ function buildDeviceParameterFile(project, schemePath = ["默认方案"]) {
       }
     ]),
     ...orderedESections(recordsBySection).map((section) =>
-      formatESection(section, eSectionColumns[section] ?? [], recordsBySection.get(section) ?? [])
+      formatESection(section, eColumnsForRecords(section, recordsBySection.get(section) ?? []), recordsBySection.get(section) ?? [])
     )
   ].filter(Boolean);
   return `${sections.join("\n\n")}\n`;

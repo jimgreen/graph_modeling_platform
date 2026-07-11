@@ -488,6 +488,47 @@ describe("graph template library filtering", () => {
     expect(definitions.find((definition) => definition.enName === "node")).toMatchObject({ readonly: true });
   });
 
+  test("preserves parameter E export settings while normalizing persisted definitions", () => {
+    const definitions = normalizeDefinitionRows([
+      {
+        cnName: "额定功率",
+        enName: "ratedPower",
+        valueType: "float",
+        typicalValue: "10",
+        exportEnabled: true,
+        exportName: "p_rated"
+      },
+      {
+        cnName: "备注",
+        enName: "remark",
+        valueType: "string",
+        typicalValue: "",
+        exportEnabled: false,
+        exportName: ""
+      },
+      {
+        cnName: "旧参数",
+        enName: "legacyValue",
+        valueType: "string",
+        typicalValue: "legacy"
+      }
+    ]);
+
+    expect(definitions[0]).toMatchObject({ exportEnabled: true, exportName: "p_rated" });
+    expect(definitions[1]).toMatchObject({ exportEnabled: false, exportName: "" });
+    expect(definitions[2]).not.toHaveProperty("exportEnabled");
+    expect(definitions[2]).not.toHaveProperty("exportName");
+  });
+
+  test("renders E export controls in both parameter definition tables", () => {
+    const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+
+    expect(appViewSource.match(/<th>是否导出<\/th>/gu)).toHaveLength(2);
+    expect(appViewSource.match(/<th>导出名称<\/th>/gu)).toHaveLength(2);
+    expect(appViewSource).toContain("exportEnabled");
+    expect(appViewSource).toContain("exportName");
+  });
+
   test("merges terminal anchors into the state icon editor base layer", () => {
     const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
     const appCoreSource = readFileSync(new URL("./appExtracted/appCoreCanvasUtilities.tsx", import.meta.url), "utf8");

@@ -1930,7 +1930,13 @@ export function normalizeDefinitionRows(value: unknown): DeviceParameterDefiniti
         enumValues: (item as DeviceParameterDefinition).enumValues,
         enumValueType: (item as DeviceParameterDefinition).enumValueType,
         enumOptions: (item as DeviceParameterDefinition).enumOptions,
-        readonly: templateDefinitionIsReadonly(enName, Boolean((item as DeviceParameterDefinition).readonly))
+        readonly: templateDefinitionIsReadonly(enName, Boolean((item as DeviceParameterDefinition).readonly)),
+        ...(typeof (item as DeviceParameterDefinition).exportEnabled === "boolean"
+          ? { exportEnabled: (item as DeviceParameterDefinition).exportEnabled }
+          : {}),
+        ...(typeof (item as DeviceParameterDefinition).exportName === "string"
+          ? { exportName: (item as DeviceParameterDefinition).exportName?.trim() ?? "" }
+          : {})
       });
     })
     .filter((item) => item.enName && !isReservedDeviceDefinitionParamName(item.enName));

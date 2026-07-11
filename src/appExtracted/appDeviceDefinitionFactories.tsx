@@ -72,7 +72,9 @@ const normalizeCustomDeviceDraftParamRows = (
     typicalValue: row.typicalValue.trim(),
     enumOptions: row.enumOptions,
     enumValues: row.enumValues,
-    readonly: row.readonly
+    readonly: row.readonly,
+    ...(typeof row.exportEnabled === "boolean" ? { exportEnabled: row.exportEnabled } : {}),
+    ...(typeof row.exportName === "string" ? { exportName: row.exportName.trim() } : {})
   }));
 
 const mergeDefaultAndCustomDefinitionRows = (
@@ -97,7 +99,9 @@ const mergeDefaultAndCustomDefinitionRows = (
       typicalValue: override.typicalValue,
       enumOptions: override.enumOptions,
       enumValues: override.enumValues,
-      readonly: row.readonly
+      readonly: row.readonly,
+      ...(typeof override.exportEnabled === "boolean" ? { exportEnabled: override.exportEnabled } : {}),
+      ...(typeof override.exportName === "string" ? { exportName: override.exportName.trim() } : {})
     });
   });
   return {
@@ -154,6 +158,7 @@ const parameterTypicalValueTypeError = (row: DeviceParameterDefinition) => {
 export const deviceParameterDefinitionsComplianceMessage = (rows: readonly DeviceParameterDefinition[]) => {
   const messages: string[] = [];
   const seenEnNames = new Map<string, number>();
+  const seenExportNames = new Map<string, number>();
   rows.forEach((row, index) => {
     const rowLabel = `属性第 ${index + 1} 行`;
     const cnName = String(row.cnName ?? "").trim();
@@ -175,6 +180,22 @@ export const deviceParameterDefinitionsComplianceMessage = (rows: readonly Devic
     const typeError = parameterTypicalValueTypeError(row);
     if (typeError) {
       messages.push(`${rowLabel}：${typeError}`);
+    }
+    if (row.exportEnabled === true) {
+      const exportName = String(row.exportName ?? "").trim();
+      if (!exportName) {
+        messages.push(`${rowLabel}：启用导出时，导出名称不能为空。`);
+      } else if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(exportName)) {
+        messages.push(`${rowLabel}：导出名称 ${exportName} 只能包含英文字母、数字和下划线，且必须以英文字母开头。`);
+      } else {
+        const exportKey = deviceDefinitionComplianceKey(exportName);
+        const previousIndex = seenExportNames.get(exportKey);
+        if (previousIndex !== undefined) {
+          messages.push(`${rowLabel}：导出名称 ${exportName} 与第 ${previousIndex + 1} 行重复。`);
+        } else {
+          seenExportNames.set(exportKey, index);
+        }
+      }
     }
   });
   return messages.join("\n");
@@ -3660,7 +3681,9 @@ export function createAddDefinitionDraftRow(__appScope: Record<string, any>) {
         cnName: "",
         enName: "",
         valueType: "string",
-        typicalValue: ""
+        typicalValue: "",
+        exportEnabled: false,
+        exportName: ""
       }
     ]);
     setDefinitionDraftError("");
@@ -4042,7 +4065,9 @@ export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>)
         typicalValue: row.typicalValue,
         enumOptions: row.enumOptions,
         enumValues: row.enumValues,
-        readonly: Boolean(row.readonly)
+        readonly: Boolean(row.readonly),
+        ...(typeof row.exportEnabled === "boolean" ? { exportEnabled: row.exportEnabled } : {}),
+        ...(typeof row.exportName === "string" ? { exportName: row.exportName.trim() } : {})
       }));
     }
     const definitionKey = normalizeComponentLibraryName(definitionDraftSection) || deviceDefinitionKeyForTemplate(selectedDefinitionTemplate);
