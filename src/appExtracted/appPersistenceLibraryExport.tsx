@@ -3385,7 +3385,7 @@ ${rules.join("\n")}
     }
     return node.terminals.map((terminal, index) => ` node-${index + 1}="${escapeXml(terminal.nodeNumber ?? "")}"`).join("");
   };
-  const buildBoundaryBusInternalConnectorMarkup = (edge: Edge, endpoint: "source" | "target", stroke: string, edgeLayerAttributes: string, voltageLineClass = "") => {
+  const buildBoundaryBusInternalConnectorMarkup = (edge: Edge, endpoint: "source" | "target", stroke: string, edgeAttributes: string, voltageLineClass = "") => {
     const node = nodeById.get(endpoint === "source" ? edge.sourceId : edge.targetId);
     if (!node) {
       return "";
@@ -3401,10 +3401,10 @@ ${rules.join("\n")}
     }
     const dashArray = svgStrokeDashArray(node.params.strokeStyle);
     const dashAttribute = dashArray ? ` stroke-dasharray="${escapeXml(dashArray)}"` : "";
-    return `<line class="export-boundary-bus-internal-connector${voltageLineClass ? ` ${voltageLineClass}` : ""}"${edgeLayerAttributes} x1="${formatSvgNumber(segment.from.x)}" y1="${formatSvgNumber(segment.from.y)}" x2="${formatSvgNumber(segment.to.x)}" y2="${formatSvgNumber(segment.to.y)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(boundaryBusInternalConnectorStrokeWidth(node, segment))}" stroke-linecap="round"${dashAttribute}/>`;
+    return `<line class="export-boundary-bus-internal-connector${voltageLineClass ? ` ${voltageLineClass}` : ""}"${edgeAttributes} x1="${formatSvgNumber(segment.from.x)}" y1="${formatSvgNumber(segment.from.y)}" x2="${formatSvgNumber(segment.to.x)}" y2="${formatSvgNumber(segment.to.y)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(boundaryBusInternalConnectorStrokeWidth(node, segment))}" stroke-linecap="round"${dashAttribute}/>`;
   };
   const edgeMarkup = routeEdgesForSavedPathRendering(exportNodes, edges, canvasSize, { refreshCrossingArcs: true })
-    .map((route) => {
+    .map((route, index) => {
       const edge = edgeById.get(route.edgeId);
       const stroke = edge ? getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette) : "#334155";
       const sourceNode = edge ? nodeById.get(edge.sourceId) : undefined;
@@ -3418,19 +3418,20 @@ ${rules.join("\n")}
       const edgeVoltageAttributes = colorDisplayMode !== "voltage" && edgeExportVoltage
         ? ` voltage-type="${edgeExportVoltage.type}" vbase="${escapeXml(exportVoltageValue(edgeExportVoltage.voltage))}"`
         : "";
-      const edgeElementId = exportSvgUniqueId(`edge_${route.edgeId}`, usedSvgIds, "edge");
-      const edgeLayerAttributes = ` edge-id="${escapeXml(route.edgeId)}" source-layer-id="${escapeXml(sourceLayerId)}" target-layer-id="${escapeXml(targetLayerId)}"${svgDisplayAttribute(edgeVisible)}`;
+      const edgeElementId = exportSvgUniqueId(`edge-${index + 1}`, usedSvgIds, "edge");
+      const edgeClassAttribute = edgeVoltageLineClass ? ` class="${edgeVoltageLineClass}"` : "";
       const sourceExportDeviceId = edge ? exportDeviceIdByNodeId.get(edge.sourceId) ?? edge.sourceId : "";
       const targetExportDeviceId = edge ? exportDeviceIdByNodeId.get(edge.targetId) ?? edge.targetId : "";
+      const edgeAttributes = `${svgDisplayAttribute(edgeVisible)} source-dev-id="${escapeXml(sourceExportDeviceId)}" target-dev-id="${escapeXml(targetExportDeviceId)}"`;
       const internalConnectors = edge
         ? [
-            buildBoundaryBusInternalConnectorMarkup(edge, "source", stroke, edgeLayerAttributes, edgeVoltageLineClass),
-            buildBoundaryBusInternalConnectorMarkup(edge, "target", stroke, edgeLayerAttributes, edgeVoltageLineClass)
+            buildBoundaryBusInternalConnectorMarkup(edge, "source", stroke, edgeAttributes, edgeVoltageLineClass),
+            buildBoundaryBusInternalConnectorMarkup(edge, "target", stroke, edgeAttributes, edgeVoltageLineClass)
           ]
             .filter(Boolean)
             .join("\n")
         : "";
-      return `<path id="${escapeXml(edgeElementId)}" class="export-edge${edgeVoltageLineClass ? ` ${edgeVoltageLineClass}` : ""}"${edgeLayerAttributes} source-dev-id="${escapeXml(sourceExportDeviceId)}" target-dev-id="${escapeXml(targetExportDeviceId)}"${edgeVoltageAttributes} d="${route.path}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${internalConnectors ? `\n${internalConnectors}` : ""}`;
+      return `<path id="${escapeXml(edgeElementId)}"${edgeClassAttribute}${edgeAttributes}${edgeVoltageAttributes} d="${route.path}" fill="none" stroke="${escapeXml(stroke)}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${internalConnectors ? `\n${internalConnectors}` : ""}`;
     })
     .join("\n");
   const nodeLayerMarkup = new Map<string, string[]>();
@@ -3451,6 +3452,9 @@ ${rules.join("\n")}
       const allowNodeImage = !isBusNode(node);
       const exportDeviceId = exportDeviceIdByNodeId.get(node.id) ?? node.id;
       const deviceMetadataAttributes = exportDeviceMetadataAttributes(node, exportDeviceId);
+      const labelMetadataAttributes = isStaticNode(node)
+        ? ""
+        : `dev-id="${escapeXml(exportDeviceId)}"`;
       const topologyNodeAttributes = deviceTopologyNodeAttributes(node);
       const voltageAttributes = nodeVoltageAttributes(node);
       const geometryTransform = nodeGeometryTransform(node);
@@ -3546,7 +3550,7 @@ ${rules.join("\n")}
       if (labelMarkup) {
         const labelWrapperId = exportSvgUniqueId(`label_${exportDeviceId}`, usedSvgIds, "node_label");
         textLayerMarkup.push(buildSvgNodeLabelTextElementsMarkup(node, labelWrapperId, {
-          attributes: `layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}`,
+          attributes: `layer-id="${escapeXml(layerId)}"${labelMetadataAttributes ? ` ${labelMetadataAttributes}` : ""}`,
           visible: layerVisible(layerId)
         }));
       }

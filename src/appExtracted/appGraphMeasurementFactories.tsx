@@ -468,7 +468,7 @@ export function createBuildMeasurementGroupMarkup(__appScope: Record<string, any
       const unitMarkup = row.unitText
         ? `<tspan class="measurement-unit mu" dx="${formatSvgNumber(textGap)}">${escapeXml(row.unitText)}</tspan>`
         : "";
-      return `<text class="measurement-item mi" ${exportMeasurementItemMetadataAttributes(row.item)} x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" ${rowAttributes}>${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
+      return `<text class="measurement-item mi" ${exportMeasurementItemMetadataAttributes(row.item, node.id)} x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" ${rowAttributes}>${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
     }).join("");
     const extraClass = options.className ? ` ${escapeXml(options.className)}` : "";
     return `<g class="measurement-group drag-preview-measurement-group${selectedClass}${extraClass}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group)}>

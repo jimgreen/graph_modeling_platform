@@ -23,7 +23,7 @@ describe("SVG export", () => {
   const svgDeviceUseTag = (svg: string, id: string) =>
     svg.match(new RegExp(`<use id="${id}"(?=\\s|/?>)[^>]*>`))?.[0] ?? "";
   const svgEdgeGroupTag = (svg: string, id: string) =>
-    svg.match(new RegExp(`<path id="[^"]+" class="export-edge[^"]*" edge-id="${id}"[^>]*>`))?.[0] ?? "";
+    svg.match(new RegExp(`<path id="${id}"(?=\\s|/?>)[^>]*>`))?.[0] ?? "";
 
   test("downloads SVG exports in voltage color mode", async () => {
     const buildDocument = vi.fn((_nodes: unknown, _edges: unknown, _options: unknown) => "<svg/>");
@@ -584,7 +584,7 @@ describe("SVG export", () => {
     const generator = { ...createDefaultNode("ac-source", { x: 120, y: 140 }), id: "source-1" };
     const load = { ...createDefaultNode("ac-load", { x: 280, y: 140 }), id: "load-1" };
     const edges: Edge[] = [
-      { id: "edge-1", sourceId: generator.id, targetId: load.id, sourceTerminalId: "t1", targetTerminalId: "t1" }
+      { id: "edge-1783340107909", sourceId: generator.id, targetId: load.id, sourceTerminalId: "t1", targetTerminalId: "t1" }
     ];
 
     const svg = buildSvgDocument([generator, load], edges, { width: 420, height: 260 });
@@ -618,7 +618,14 @@ describe("SVG export", () => {
     expect(svg).toContain('dev-kind="ac-source"');
     expect(svg).toContain('source-dev-id="source-1"');
     expect(svg).toContain('target-dev-id="load-1"');
-    expect(svgEdgeGroupTag(svg, "edge-1")).toContain('edge-id="edge-1"');
+    const edgePath = svgEdgeGroupTag(svg, "edge-1");
+    expect(edgePath).toContain('<path id="edge-1"');
+    expect(edgePath).not.toContain('edge-id=');
+    expect(edgePath).not.toContain('class="export-edge');
+    expect(edgePath).not.toContain('source-layer-id=');
+    expect(edgePath).not.toContain('target-layer-id=');
+    expect(svg).not.toContain("edge_edge");
+    expect(svg).not.toContain("edge-1783340107909");
     expect(svg).not.toMatch(/<g\b[^>]*class="export-edge"/);
     expect(svg).not.toContain('class="export-edge-path');
     expect(svgDeviceUseTag(svg, "source-1")).not.toContain("node-id=");
@@ -728,7 +735,12 @@ describe("SVG export", () => {
     });
     const durationMs = performance.now() - startedAt;
 
-    expect(svg.match(/class="export-edge/g)).toHaveLength(edges.length);
+    const segmentLayer = svg.match(/<g id="Segment_Layer">[\s\S]*?<\/g>/)?.[0] ?? "";
+    expect(Array.from(segmentLayer.matchAll(/<path id="edge-\d+"/g))).toHaveLength(edges.length);
+    expect(segmentLayer).not.toContain('class="export-edge');
+    expect(segmentLayer).not.toContain('edge-id=');
+    expect(segmentLayer).not.toContain('source-layer-id=');
+    expect(segmentLayer).not.toContain('target-layer-id=');
     expect(durationMs).toBeLessThan(2000);
   });
 
@@ -765,7 +777,13 @@ describe("SVG export", () => {
     const svg = buildSvgDocument([source, tank], edges, { width: 420, height: 260 });
 
     expect(svg).toContain('class="export-boundary-bus-internal-connector"');
-    expect(svg).toMatch(/class="export-boundary-bus-internal-connector" edge-id="heat-edge"[^>]* x1="[\d.-]+" y1="120" x2="[\d.-]+" y2="120"/);
+    const connector = svg.match(/<line class="export-boundary-bus-internal-connector"[^>]*>/)?.[0] ?? "";
+    expect(connector).toMatch(/x1="[\d.-]+" y1="120" x2="[\d.-]+" y2="120"/);
+    expect(connector).not.toContain('edge-id=');
+    expect(connector).not.toContain('source-layer-id=');
+    expect(connector).not.toContain('target-layer-id=');
+    expect(connector).toContain(`source-dev-id="${source.id}"`);
+    expect(connector).toContain(`target-dev-id="${tank.id}"`);
     expect(svg).toContain('stroke="#dc2626"');
   });
 
@@ -833,8 +851,13 @@ describe("SVG export", () => {
     expect(svg).not.toContain('class="export-measurement-layer"');
     expect(svg).not.toContain('id="measurement_group-1"');
     expect(svg).toContain('class="mg" layer-id="layer-default" transform="translate(180 70)"');
-    expect(svg).toContain('dev="load-export"');
-    expect(svg).toContain('mf="load-export.activePower"');
+    const measurementGroupTag = svg.match(/<g class="mg"[^>]*>/)?.[0] ?? "";
+    expect(measurementGroupTag).toContain('dev="load-export"');
+    expect(measurementGroupTag).not.toContain(' mg=');
+    expect(measurementGroupTag).not.toContain(' idx=');
+    expect(measurementGroupTag).not.toContain(' name=');
+    expect(measurementGroupTag).not.toContain(' kind=');
+    expect(svg).not.toContain('mf="activePower"');
     expect(svg).toContain('class="mv"');
     expect(svg).not.toContain('mn="P主"');
     expect(svg).not.toContain('mu="kW"');
@@ -850,9 +873,9 @@ describe("SVG export", () => {
     const valueText = measurementRow.match(/<tspan id="mv-load-export-m-active" class="mv"[^>]*>--<\/tspan>/)?.[0] ?? "";
     const unitText = measurementRow.match(/<tspan dx="[^"]+">kW<\/tspan>/)?.[0] ?? "";
     expect(measurementRow).toContain('<tspan>P</tspan>');
-    expect(valueText).toContain('mid="m-active"');
+    expect(valueText).not.toContain('mid=');
     expect(valueText).toContain('mt="activePower"');
-    expect(valueText).toContain('mf="load-export.activePower"');
+    expect(valueText).not.toContain('mf=');
     expect(measurementRow).toContain('fill="#dc2626"');
     expect(measurementRow).toContain('font-size="18"');
     expect(valueText).not.toContain('mn=');
@@ -903,6 +926,11 @@ describe("SVG export", () => {
           measurementTypeId: "reactivePower",
           sourcePoint: `${load.id}.reactivePower`,
           visible: true
+        }, {
+          id: `measurement-${load.id}-external-2`,
+          measurementTypeId: "reactivePower",
+          sourcePoint: "plant.load.1.p",
+          visible: true
         }]
       }]
     };
@@ -911,11 +939,16 @@ describe("SVG export", () => {
     const measurementLayer = svgSectionBetween(svg, '<g id="Measurement_Layer">', '<g id="Other_Layer">');
 
     expect(svgDeviceUseTag(svg, "ACLoad-2")).toContain('id="ACLoad-2"');
-    expect(measurementLayer).toContain('mg="measurement-ACLoad-2"');
-    expect(measurementLayer).toContain('dev="ACLoad-2"');
+    const measurementGroupTag = measurementLayer.match(/<g class="mg"[^>]*>/)?.[0] ?? "";
+    expect(measurementGroupTag).toContain('dev="ACLoad-2"');
+    expect(measurementGroupTag).not.toContain(' mg=');
+    expect(measurementGroupTag).not.toContain(' idx=');
+    expect(measurementGroupTag).not.toContain(' name=');
+    expect(measurementGroupTag).not.toContain(' kind=');
     expect(measurementLayer).toContain('id="mv-ACLoad-2-reactivePower-1"');
-    expect(measurementLayer).toContain('mid="measurement-ACLoad-2-reactivePower-1"');
-    expect(measurementLayer).toContain('mf="ACLoad-2.reactivePower"');
+    expect(measurementLayer).not.toContain('mid=');
+    expect(measurementLayer).not.toContain('mf="reactivePower"');
+    expect(measurementLayer).toContain('mf="plant.load.1.p"');
     expect(measurementLayer).not.toContain(load.id);
   });
 
@@ -970,8 +1003,9 @@ describe("SVG export", () => {
     expect(textLayer).toContain('layer-id="layer-default"');
     expect(textLayer).not.toContain('node-id="layered-text-load"');
     expect(textLayer).toContain('dev-id="layered-text-load"');
-    expect(textLayer).toContain('idx="LOAD-1"');
-    expect(textLayer).toContain('name="负荷A"');
+    expect(textLayer).not.toContain(' idx=');
+    expect(textLayer).not.toContain(' name=');
+    expect(textLayer).not.toContain(' dev-kind=');
     expect(textLayer).not.toContain("dev-idx=");
     expect(textLayer).not.toContain("dev-name=");
     expect(textLayer).toContain('x="150" y="164"');
@@ -981,7 +1015,7 @@ describe("SVG export", () => {
     expect(measurementLayer).not.toContain('class="export-measurement-layer"');
     expect(measurementLayer).not.toContain('id="measurement_group-layered"');
     expect(measurementLayer).toContain('class="mg" layer-id="layer-default"');
-    expect(measurementLayer).toContain('mf="layered-text-load.activePower"');
+    expect(measurementLayer).not.toContain('mf="activePower"');
     expect(measurementLayer).not.toContain('mn="P主"');
     expect(measurementLayer).not.toContain('mv="1"');
     expect(measurementLayer).not.toContain('class="ml"');
@@ -1072,14 +1106,22 @@ describe("SVG export", () => {
     expect(svg).toContain('<g layer-id="layer-b" name="二次系统" visible="0" active="0"/>');
     expect(svg).not.toContain('data-export-node-id="load-b"');
     expect(svg).toContain('layer-id="layer-b"');
-    expect(svg).toContain('edge-id="cross-layer-edge"');
-    expect(svg).toContain('source-layer-id="layer-a"');
-    expect(svg).toContain('target-layer-id="layer-b"');
+    expect(svg).toContain('<path id="edge-1"');
+    expect(svg).not.toContain('edge-id=');
+    const segmentLayer = svg.match(/<g id="Segment_Layer">[\s\S]*?<\/g>/)?.[0] ?? "";
+    expect(segmentLayer).not.toContain('source-layer-id=');
+    expect(segmentLayer).not.toContain('target-layer-id=');
+    expect(segmentLayer).toContain('source-dev-id="source-a"');
+    expect(segmentLayer).toContain('target-dev-id="load-b"');
     expect(svg).toContain('action="layer"');
     expect(svg).toContain('target-layer-id="layer-b"');
     expect(svg).not.toContain("data-export-");
     expect(svg).toContain("function exportSvgApplyLayerVisibility");
     expect(svg).toContain("function exportSvgActivateLayer");
+    expect(svg).toContain('querySelectorAll("use[id][layer-id]")');
+    expect(svg).toContain('querySelectorAll("[source-dev-id][target-dev-id]")');
+    expect(svg).not.toContain('querySelectorAll("[source-layer-id][target-layer-id]")');
+    expect(svg).not.toContain('querySelectorAll("[edge-id]")');
     expect(svg).toContain("addEventListener(\"click\"");
     expect(svg.indexOf("<script")).toBeGreaterThan(svg.indexOf('action="layer"'));
   });
@@ -1206,15 +1248,17 @@ describe("SVG export", () => {
     expect(svg).toContain('id="ac-bus-10" class="kv10"');
     expect(svg).toContain('id="dc-source-750" class="dcv750"');
     expect(svg).toContain('id="dc-bus-750" class="dcv750"');
-    expect(svg).toContain('class="export-edge lkv10"');
-    expect(svg).toContain('class="export-edge ldcv750"');
+    expect(svg).toContain('class="lkv10"');
+    expect(svg).toContain('class="ldcv750"');
+    expect(svg).not.toContain('class="export-edge');
     for (const nodeId of ["ac-source-10", "ac-bus-10", "dc-source-750", "dc-bus-750"]) {
       expect(svgDeviceUseTag(svg, nodeId)).not.toContain("vbase");
       expect(svgDeviceUseTag(svg, nodeId)).not.toContain("voltage-type");
     }
-    for (const edgeId of ["ac-10-edge", "dc-750-edge"]) {
+    for (const edgeId of ["edge-1", "edge-2"]) {
       expect(svgEdgeGroupTag(svg, edgeId)).not.toContain("vbase");
       expect(svgEdgeGroupTag(svg, edgeId)).not.toContain("voltage-type");
+      expect(svgEdgeGroupTag(svg, edgeId)).not.toContain("edge-id=");
     }
   });
 

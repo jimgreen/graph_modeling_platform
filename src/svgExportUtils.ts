@@ -172,6 +172,13 @@ export function exportSvgLayerScriptMarkup(includeScript: boolean) {
       layerState[id] = layer.getAttribute("visible") !== "0";
     }
   });
+  const deviceLayerById = Object.create(null);
+  root.querySelectorAll("use[id][layer-id]").forEach((device) => {
+    const id = device.getAttribute("id");
+    if (id) {
+      deviceLayerById[id] = device.getAttribute("layer-id") || "";
+    }
+  });
   function exportSvgLayerVisible(layerId) {
     return !layerId || layerState[layerId] !== false;
   }
@@ -180,9 +187,9 @@ export function exportSvgLayerScriptMarkup(includeScript: boolean) {
       const layerId = node.getAttribute("layer-id") || "";
       node.style.display = exportSvgLayerVisible(layerId) ? "" : "none";
     });
-    root.querySelectorAll("[edge-id]").forEach((edge) => {
-      const sourceLayerId = edge.getAttribute("source-layer-id") || "";
-      const targetLayerId = edge.getAttribute("target-layer-id") || "";
+    root.querySelectorAll("[source-dev-id][target-dev-id]").forEach((edge) => {
+      const sourceLayerId = deviceLayerById[edge.getAttribute("source-dev-id") || ""] || "";
+      const targetLayerId = deviceLayerById[edge.getAttribute("target-dev-id") || ""] || "";
       edge.style.display = exportSvgLayerVisible(sourceLayerId) && exportSvgLayerVisible(targetLayerId) ? "" : "none";
     });
     const activeLayerId = root.getAttribute("active-layer-id") || "";
@@ -252,15 +259,15 @@ function exportMeasurementSourcePoint(value: string, nodeId: string, deviceId: s
   const rawValue = String(value ?? "").trim();
   const internalNodeId = String(nodeId ?? "").trim();
   const stableDeviceId = String(deviceId ?? "").trim();
-  if (!rawValue || !internalNodeId || !stableDeviceId || internalNodeId === stableDeviceId) {
+  if (!rawValue) {
     return rawValue;
   }
-  if (rawValue === internalNodeId) {
-    return stableDeviceId;
+  for (const prefix of [internalNodeId, stableDeviceId]) {
+    if (prefix && rawValue.startsWith(`${prefix}.`)) {
+      return rawValue.slice(prefix.length + 1);
+    }
   }
-  return rawValue.startsWith(`${internalNodeId}.`)
-    ? `${stableDeviceId}${rawValue.slice(internalNodeId.length)}`
-    : rawValue;
+  return rawValue;
 }
 
 function exportMeasurementValueElementId(itemId: string, deviceId: string) {
@@ -273,24 +280,20 @@ function exportMeasurementValueElementId(itemId: string, deviceId: string) {
 }
 
 export function exportMeasurementGroupMetadataAttributes(node: ModelNode, group: MeasurementGroup, deviceId = node.id) {
-  const idx = String(node.params.idx ?? "").trim();
   const terminalId = String(group.terminalId ?? "").trim();
   return [
-    `mg="${escapeXml(exportMeasurementScopedId(group.id, node.id, deviceId))}"`,
     `dev="${escapeXml(deviceId)}"`,
-    idx ? `idx="${escapeXml(idx)}"` : "",
-    `name="${escapeXml(node.name)}"`,
-    `kind="${escapeXml(node.kind)}"`,
     terminalId ? `term="${escapeXml(terminalId)}"` : ""
   ].filter(Boolean).join(" ");
 }
 
 export function exportMeasurementItemMetadataAttributes(item: MeasurementItemBinding, nodeId = "", deviceId = nodeId) {
   const role = String(item.role ?? "").trim();
+  const measurementTypeId = String(item.measurementTypeId ?? "").trim();
+  const sourceField = exportMeasurementSourcePoint(item.sourcePoint, nodeId, deviceId);
   return [
-    `mid="${escapeXml(exportMeasurementScopedId(item.id, nodeId, deviceId))}"`,
-    `mt="${escapeXml(item.measurementTypeId)}"`,
-    `mf="${escapeXml(exportMeasurementSourcePoint(item.sourcePoint, nodeId, deviceId))}"`,
+    `mt="${escapeXml(measurementTypeId)}"`,
+    sourceField && sourceField !== measurementTypeId ? `mf="${escapeXml(sourceField)}"` : "",
     role ? `mr="${escapeXml(role)}"` : ""
   ].filter(Boolean).join(" ");
 }

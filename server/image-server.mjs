@@ -2026,15 +2026,15 @@ function serverExportMeasurementSourcePoint(value, nodeId, deviceId) {
   const rawValue = String(value ?? "").trim();
   const internalNodeId = String(nodeId ?? "").trim();
   const stableDeviceId = String(deviceId ?? "").trim();
-  if (!rawValue || !internalNodeId || !stableDeviceId || internalNodeId === stableDeviceId) {
+  if (!rawValue) {
     return rawValue;
   }
-  if (rawValue === internalNodeId) {
-    return stableDeviceId;
+  for (const prefix of [internalNodeId, stableDeviceId]) {
+    if (prefix && rawValue.startsWith(`${prefix}.`)) {
+      return rawValue.slice(prefix.length + 1);
+    }
   }
-  return rawValue.startsWith(`${internalNodeId}.`)
-    ? `${stableDeviceId}${rawValue.slice(internalNodeId.length)}`
-    : rawValue;
+  return rawValue;
 }
 
 function serverExportMeasurementValueElementId(itemId, deviceId) {
@@ -2083,10 +2083,11 @@ function buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, us
     const textY = -height / 2 + rowIndex * lineHeight + lineHeight / 2;
     const textGap = Math.max(4, row.fontSize * 0.36);
     const exportedItemId = serverExportMeasurementScopedId(row.item?.id, node?.id, stableDeviceId);
+    const measurementTypeId = String(row.item?.measurementTypeId ?? "").trim();
+    const sourceField = serverExportMeasurementSourcePoint(row.item?.sourcePoint, node?.id, stableDeviceId);
     const itemMetadata = [
-      `mid="${escapeSvgAttribute(exportedItemId)}"`,
-      `mt="${escapeSvgAttribute(row.item?.measurementTypeId ?? "")}"`,
-      `mf="${escapeSvgAttribute(serverExportMeasurementSourcePoint(row.item?.sourcePoint, node?.id, stableDeviceId))}"`,
+      `mt="${escapeSvgAttribute(measurementTypeId)}"`,
+      sourceField && sourceField !== measurementTypeId ? `mf="${escapeSvgAttribute(sourceField)}"` : "",
       row.item?.role ? `mr="${escapeSvgAttribute(row.item.role)}"` : ""
     ].filter(Boolean).join(" ");
     const textStyle = `x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeSvgAttribute(row.display.color)}" font-family="${escapeSvgAttribute(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeSvgAttribute(row.display.fontWeight)}" font-style="${escapeSvgAttribute(row.display.fontStyle)}" text-decoration="${escapeSvgAttribute(row.display.textDecoration)}"`;
@@ -2102,14 +2103,11 @@ function buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, us
     return `<text ${textStyle}>${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
   }).join("");
   const groupMetadata = [
-    `mg="${escapeSvgAttribute(serverExportMeasurementScopedId(group.id, node?.id, stableDeviceId))}"`,
     `dev="${escapeSvgAttribute(stableDeviceId)}"`,
-    node.params?.idx ? `idx="${escapeSvgAttribute(node.params.idx)}"` : "",
-    `name="${escapeSvgAttribute(node.name ?? "")}"`,
-    `kind="${escapeSvgAttribute(node.kind ?? "")}"`,
     group.terminalId ? `term="${escapeSvgAttribute(group.terminalId)}"` : ""
   ].filter(Boolean).join(" ");
-  return `<g class="mg" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${groupMetadata}>
+  const projectLayerId = String(node?.layerId ?? "layer-default");
+  return `<g class="mg" layer-id="${escapeSvgAttribute(projectLayerId)}" transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${groupMetadata}>
 <rect x="${formatSvgNumber(-width / 2)}" y="${formatSvgNumber(-height / 2)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" rx="4" fill="${escapeSvgAttribute(group.backgroundColor ?? "transparent")}" stroke="${escapeSvgAttribute(group.borderColor ?? "#64748b")}" stroke-width="${formatSvgNumber(measurementBorderWidth(group))}"${dashAttribute}/>
 ${rowsMarkup}
 </g>`;
@@ -2149,17 +2147,17 @@ export function buildSvgFile(project, measurementConfig = { measurementTypes: []
   const symbolIdBySignature = new Map();
   const textLayerMarkup = [];
   const edgeMarkup = (project.edges ?? [])
-    .map((edge) => {
+    .map((edge, index) => {
       const start = endpointPoint(project, edge, "source");
       const end = endpointPoint(project, edge, "target");
       const midX = Math.round((start.x + end.x) / 2);
       const points = [start, { x: midX, y: start.y }, { x: midX, y: end.y }, end]
         .map((point) => `${point.x},${point.y}`)
         .join(" ");
-      const edgeId = uniqueSvgId(`edge_${edge.id ?? `${start.x}_${start.y}_${end.x}_${end.y}`}`, usedIds, "edge");
+      const edgeId = uniqueSvgId(`edge-${index + 1}`, usedIds, "edge");
       const sourceExportDeviceId = exportDeviceIdByNodeId.get(edge.sourceId) ?? edge.sourceId ?? "";
       const targetExportDeviceId = exportDeviceIdByNodeId.get(edge.targetId) ?? edge.targetId ?? "";
-      return `<polyline id="${escapeSvgAttribute(edgeId)}" edge-id="${escapeSvgAttribute(edge.id ?? "")}" source-dev-id="${escapeSvgAttribute(sourceExportDeviceId)}" target-dev-id="${escapeSvgAttribute(targetExportDeviceId)}" points="${escapeSvgAttribute(points)}" fill="none" stroke="#334155" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
+      return `<polyline id="${escapeSvgAttribute(edgeId)}" source-dev-id="${escapeSvgAttribute(sourceExportDeviceId)}" target-dev-id="${escapeSvgAttribute(targetExportDeviceId)}" points="${escapeSvgAttribute(points)}" fill="none" stroke="#334155" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
     })
     .join("\n");
   for (const node of nodes) {
@@ -2175,8 +2173,8 @@ export function buildSvgFile(project, measurementConfig = { measurementTypes: []
     const geometryTransform = `rotate(${formatSvgNumber(normalizedRotate)}) scale(${formatSvgNumber(scaleX)} ${formatSvgNumber(scaleY)})`;
     const labelId = uniqueSvgId(`label_${exportDeviceId}`, usedIds, "node_label");
     const projectLayerId = String(node.layerId ?? "layer-default");
-    const deviceMetadataAttributes = `idx="${escapeSvgAttribute(node.params?.idx ?? "")}" name="${escapeSvgAttribute(node.name ?? "")}" dev-id="${escapeSvgAttribute(exportDeviceId)}" dev-kind="${escapeSvgAttribute(node.kind ?? "")}"`;
-    const labelMarkup = buildServerSvgNodeLabelMarkup(node, labelId, `layer-id="${escapeSvgAttribute(projectLayerId)}" ${deviceMetadataAttributes}`);
+    const labelMetadataAttributes = `dev-id="${escapeSvgAttribute(exportDeviceId)}"`;
+    const labelMarkup = buildServerSvgNodeLabelMarkup(node, labelId, `layer-id="${escapeSvgAttribute(projectLayerId)}" ${labelMetadataAttributes}`);
     if (labelMarkup) {
       textLayerMarkup.push(labelMarkup);
     }

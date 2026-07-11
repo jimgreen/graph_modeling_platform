@@ -646,6 +646,11 @@ describe("scheme file persistence", () => {
     expect(useTags[1]).toContain('id="ACBreak-2"');
     expect(svg).toContain('source-dev-id="ACBreak-1"');
     expect(svg).toContain('target-dev-id="ACBreak-2"');
+    expect(svg).toContain('<polyline id="edge-1"');
+    expect(svg).not.toContain('edge-id=');
+    expect(svg).not.toContain('source-layer-id=');
+    expect(svg).not.toContain('target-layer-id=');
+    expect(svg).not.toContain('switch-edge');
     expect(svg).toContain('<text id="label_ACBreak-1"');
     expect(svg).toContain('dev-id="ACBreak-1"');
     expect(svg).not.toContain('dev-id="node-1783339759502-u3qq"');
@@ -793,8 +798,9 @@ describe("scheme file persistence", () => {
     expect(textLayer).not.toContain('node-id="server-load"');
     expect(textLayer).toContain('<text id="label_server-load" layer-id="layer-default"');
     expect(textLayer).toContain('dev-id="server-load"');
-    expect(textLayer).toContain('idx="LOAD-1"');
-    expect(textLayer).toContain('name="负荷A"');
+    expect(textLayer).not.toContain(' idx=');
+    expect(textLayer).not.toContain(' name=');
+    expect(textLayer).not.toContain(' dev-kind=');
     expect(textLayer).not.toContain('dev-idx=');
     expect(textLayer).not.toContain('dev-name=');
     expect(textLayer).not.toContain('class="export-node-label');
@@ -803,14 +809,17 @@ describe("scheme file persistence", () => {
     expect(labelText).not.toContain("transform=");
     expect(textLayer).toContain(">LOAD-1</text>");
     expect(measurementLayer).toContain('class="mg"');
-    expect(measurementLayer).toContain('mg="server-group"');
-    expect(measurementLayer).toContain('dev="server-load"');
+    const measurementGroupTag = measurementLayer.match(/<g class="mg"[^>]*>/)?.[0] ?? "";
+    expect(measurementGroupTag).toContain('layer-id="layer-default"');
+    expect(measurementGroupTag).toContain('dev="server-load"');
+    expect(measurementGroupTag).not.toContain(' mg=');
+    expect(measurementGroupTag).not.toContain(' idx=');
+    expect(measurementGroupTag).not.toContain(' name=');
+    expect(measurementGroupTag).not.toContain(' kind=');
     expect(measurementLayer).toMatch(/<rect\b[^>]*fill="transparent"[^>]*stroke-width="0"/);
-    expect(measurementLayer).toContain('idx="LOAD-1"');
-    expect(measurementLayer).toContain('name="负荷A"');
-    expect(measurementLayer).toContain('mf="server-load.activePower"');
+    expect(measurementLayer).not.toContain('mf="activePower"');
     expect(measurementLayer).toContain('mt="activePower"');
-    expect(measurementLayer).toContain('mid="server-m"');
+    expect(measurementLayer).not.toContain('mid=');
     expect(measurementLayer).not.toContain('m-name=');
     expect(measurementLayer).not.toContain('m-value=');
     expect(measurementLayer).not.toContain('class="export-measurement');
@@ -823,9 +832,9 @@ describe("scheme file persistence", () => {
     const valueText = measurementRow.match(/<tspan id="mv-server-load-server-m" class="mv"[^>]*>--<\/tspan>/)?.[0] ?? "";
     const unitText = measurementRow.match(/<tspan dx="[^"]+">kW<\/tspan>/)?.[0] ?? "";
     expect(measurementRow).toContain('<tspan>P主</tspan>');
-    expect(valueText).toContain('mid="server-m"');
+    expect(valueText).not.toContain('mid=');
     expect(valueText).toContain('mt="activePower"');
-    expect(valueText).toContain('mf="server-load.activePower"');
+    expect(valueText).not.toContain('mf=');
     expect(measurementRow).toContain('fill="#dc2626"');
     expect(measurementRow).toContain('font-size="18"');
     expect(valueText).not.toContain('mg=');
@@ -833,7 +842,8 @@ describe("scheme file persistence", () => {
     expect(unitText).toContain('dx="');
     expect(unitText).not.toContain(' x="');
     expect(measurementLayer).not.toContain("data-export-measurement-");
-    expect(svg).toContain('edge-id="server-edge"');
+    expect(svg).toContain('<polyline id="edge-1"');
+    expect(svg).not.toContain('edge-id=');
     expect(svg).toContain('source-dev-id="server-source"');
     expect(svg).toContain('target-dev-id="server-load"');
     expect(useTags).toHaveLength(3);
@@ -882,6 +892,11 @@ describe("scheme file persistence", () => {
               measurementTypeId: "reactivePower",
               sourcePoint: `${nodeId}.reactivePower`,
               visible: true
+            }, {
+              id: `measurement-${nodeId}-external-2`,
+              measurementTypeId: "reactivePower",
+              sourcePoint: "plant.load.1.p",
+              visible: true
             }]
           }]
         }
@@ -894,11 +909,17 @@ describe("scheme file persistence", () => {
     const measurementLayer = svgSectionBetween(svg, '<g id="Measurement_Layer">', '<g id="Other_Layer">');
 
     expect(svgUseTags(svg).some((tag) => tag.includes('id="ACLoad-2"'))).toBe(true);
-    expect(measurementLayer).toContain('mg="measurement-ACLoad-2"');
-    expect(measurementLayer).toContain('dev="ACLoad-2"');
+    const measurementGroupTag = measurementLayer.match(/<g class="mg"[^>]*>/)?.[0] ?? "";
+    expect(measurementGroupTag).toContain('layer-id="layer-default"');
+    expect(measurementGroupTag).toContain('dev="ACLoad-2"');
+    expect(measurementGroupTag).not.toContain(' mg=');
+    expect(measurementGroupTag).not.toContain(' idx=');
+    expect(measurementGroupTag).not.toContain(' name=');
+    expect(measurementGroupTag).not.toContain(' kind=');
     expect(measurementLayer).toContain('id="mv-ACLoad-2-reactivePower-1"');
-    expect(measurementLayer).toContain('mid="measurement-ACLoad-2-reactivePower-1"');
-    expect(measurementLayer).toContain('mf="ACLoad-2.reactivePower"');
+    expect(measurementLayer).not.toContain('mid=');
+    expect(measurementLayer).not.toContain('mf="reactivePower"');
+    expect(measurementLayer).toContain('mf="plant.load.1.p"');
     expect(measurementLayer).not.toContain(nodeId);
   });
 
@@ -992,7 +1013,9 @@ describe("scheme file persistence", () => {
 
     const measurementLayer = svgSectionBetween(svg, '<g id="Measurement_Layer">', '<g id="Other_Layer">');
     expect(measurementLayer).toContain('class="mg"');
-    expect(measurementLayer).toContain('mid="server-box-current"');
+    expect(measurementLayer).toContain('class="mv" mt="current"');
+    expect(measurementLayer).not.toContain('mf="current"');
+    expect(measurementLayer).not.toContain('mid=');
     expect(measurementLayer).toContain(">I</tspan>");
     expect(measurementLayer).toContain(">A</tspan>");
   });
