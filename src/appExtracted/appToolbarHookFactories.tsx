@@ -514,9 +514,12 @@ export function createRenderReadonlyBackgroundPage(__appScope: Record<string, an
           {backgroundPageRender.routes.map((route) => {
             const edge = backgroundPageRender.edgeById.get(route.edgeId);
             return edge ? (
-              <g key={`background-edge-${edge.id}`} className="connection-group background-page-edge" style={backgroundConnectionLineStyle(edge)}>
-                <path d={route.path} className="connection-line" />
-              </g>
+              <path
+                key={`background-edge-${edge.id}`}
+                d={route.path}
+                className="connection-line background-page-edge"
+                style={backgroundConnectionLineStyle(edge)}
+              />
             ) : null;
           })}
         </g>

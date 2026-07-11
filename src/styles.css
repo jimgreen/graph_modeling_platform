@@ -1680,7 +1680,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .background-page-edge,
-.background-page-edge .connection-line,
 .background-page-node,
 .background-page-node .terminal-dot {
   pointer-events: none;
@@ -1830,6 +1829,10 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   stroke-linejoin: round;
   pointer-events: stroke;
   cursor: pointer;
+}
+
+.connection-group > .connection-line {
+  pointer-events: none;
 }
 
 .connection-group:hover .connection-line {
