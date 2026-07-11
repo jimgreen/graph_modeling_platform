@@ -1880,14 +1880,14 @@ function getRawEParamValue(
   if (key === "j_node") {
     return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, 1) : node.params.j_node ?? terminalNodeNumber(node, 1);
   }
+  const transformerTerminalNodeMatch = /^t([123])_node$/.exec(key);
+  if (transformerTerminalNodeMatch && (isTwoWindingTransformerNode(node) || isThreeWindingTransformer(node))) {
+    const terminalIndex = Number.parseInt(transformerTerminalNodeMatch[1], 10) - 1;
+    return options.preferTopologyNodeNumbers
+      ? terminalNodeNumber(node, terminalIndex)
+      : node.params[key] || terminalNodeNumber(node, terminalIndex);
+  }
   if (isThreeWindingTransformer(node)) {
-    const terminalNodeMatch = /^t([123])_node$/.exec(key);
-    if (terminalNodeMatch) {
-      const terminalIndex = Number.parseInt(terminalNodeMatch[1], 10) - 1;
-      return options.preferTopologyNodeNumbers
-        ? terminalNodeNumber(node, terminalIndex)
-        : node.params[key] ?? terminalNodeNumber(node, terminalIndex);
-    }
     if (key === "neutral_node") {
       if (node.kind !== "ac-three-winding-transformer-neutral") {
         return "0";
@@ -1895,7 +1895,7 @@ function getRawEParamValue(
       const visibleNeutralNode = terminalNodeNumber(node, 3);
       return options.preferTopologyNodeNumbers
         ? visibleNeutralNode || node.params.neutral_node || ""
-        : node.params.neutral_node ?? visibleNeutralNode;
+        : node.params.neutral_node || visibleNeutralNode;
     }
     const sideParameterMatch = /^(r|x|gt|bt|tap|shift)([123])$/.exec(key);
     if (sideParameterMatch) {
@@ -10554,7 +10554,21 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
     });
     const acTopologyNode = Number(terminals.find((terminal) => terminal.type === "ac")?.nodeNumber ?? 0);
     const dcTopologyNode = Number(terminals.find((terminal) => terminal.type === "dc")?.nodeNumber ?? 0);
-    const params = applyVoltageSetpointDefaults(node, terminals);
+    let params = applyVoltageSetpointDefaults(node, terminals);
+    if (isTwoWindingTransformerNode(node)) {
+      params = {
+        ...params,
+        t1_node: terminals[0]?.nodeNumber ?? "",
+        t2_node: terminals[1]?.nodeNumber ?? ""
+      };
+    } else if (isThreeWindingTransformer(node)) {
+      params = {
+        ...params,
+        t1_node: terminals[0]?.nodeNumber ?? "",
+        t2_node: terminals[1]?.nodeNumber ?? "",
+        t3_node: terminals[2]?.nodeNumber ?? ""
+      };
+    }
     return {
       ...node,
       acTopologyNode,

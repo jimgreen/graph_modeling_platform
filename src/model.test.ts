@@ -151,6 +151,7 @@ import {
   getContainerAssociationRelationKey,
   getContainerRelationKey,
   getEExportWarnings,
+  getEParamValue,
   getEParameterKeys,
   resolveDeviceParameterDefinitionExportSettings,
   inferESection,
@@ -4415,6 +4416,41 @@ describe("power system model", () => {
       shift3: "3",
       run_stat: "1"
     });
+  });
+
+  test("synchronizes transformer terminal node numbers into readonly model parameters", () => {
+    const twoWinding = createDefaultNode("ac-transformer", { x: 100, y: 100 });
+    const threeWinding = createDefaultNode("ac-three-winding-transformer", { x: 300, y: 100 });
+
+    const calculated = calculateElectricalTopology([twoWinding, threeWinding], []);
+    const calculatedTwoWinding = calculated.find((node) => node.id === twoWinding.id)!;
+    const calculatedThreeWinding = calculated.find((node) => node.id === threeWinding.id)!;
+
+    expect([calculatedTwoWinding.params.t1_node, calculatedTwoWinding.params.t2_node]).toEqual(
+      calculatedTwoWinding.terminals.map((terminal) => terminal.nodeNumber)
+    );
+    expect([
+      calculatedThreeWinding.params.t1_node,
+      calculatedThreeWinding.params.t2_node,
+      calculatedThreeWinding.params.t3_node
+    ]).toEqual(calculatedThreeWinding.terminals.map((terminal) => terminal.nodeNumber));
+  });
+
+  test("resolves persisted transformer model node parameters from terminal topology numbers", () => {
+    const twoWinding = createDefaultNode("ac-transformer", { x: 100, y: 100 });
+    const threeWinding = createDefaultNode("ac-three-winding-transformer", { x: 300, y: 100 });
+    twoWinding.terminals[0].nodeNumber = "11";
+    twoWinding.terminals[1].nodeNumber = "12";
+    threeWinding.terminals[0].nodeNumber = "21";
+    threeWinding.terminals[1].nodeNumber = "22";
+    threeWinding.terminals[2].nodeNumber = "23";
+
+    expect([getEParamValue("t1_node", twoWinding), getEParamValue("t2_node", twoWinding)]).toEqual(["11", "12"]);
+    expect([
+      getEParamValue("t1_node", threeWinding),
+      getEParamValue("t2_node", threeWinding),
+      getEParamValue("t3_node", threeWinding)
+    ]).toEqual(["21", "22", "23"]);
   });
 
   test("uses the fourth terminal of a neutral-point three-winding transformer as the neutral node", () => {

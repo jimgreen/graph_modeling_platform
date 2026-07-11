@@ -1279,7 +1279,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                                 ? eKeys
                                 : Object.keys(inspectorSelectedNode.params).filter((key) => !key.startsWith("_") && key !== "is_container" && key !== ALLOW_RESIZE_TRANSFORM_PARAM);
                         return keys.map((key) => {
-                            const value = key === "name" ? inspectorSelectedNode.name : eKeys.includes(key) ? getEParamValue(key, inspectorSelectedNode) : inspectorSelectedNode.params[key] ?? "";
+                            const value = key === "name" ? inspectorSelectedNode.name : eKeys.length > 0 ? getEParamValue(key, inspectorSelectedNode) : inspectorSelectedNode.params[key] ?? "";
                             const displayValue = formatDeviceModelParamDisplayValue(key, value);
                             const definition = customDefinitions.find((item) => item.enName === key);
                             return (<tr key={key}>
