@@ -2012,6 +2012,40 @@ function measurementBorderDashArray(group) {
   return group?.borderStyle === "dotted" ? "2 4" : "10 6";
 }
 
+function serverExportMeasurementScopedId(value, nodeId, deviceId) {
+  const rawValue = String(value ?? "").trim();
+  const internalNodeId = String(nodeId ?? "").trim();
+  const stableDeviceId = String(deviceId ?? "").trim();
+  if (!rawValue || !internalNodeId || !stableDeviceId || internalNodeId === stableDeviceId) {
+    return rawValue;
+  }
+  return rawValue.replace(internalNodeId, stableDeviceId);
+}
+
+function serverExportMeasurementSourcePoint(value, nodeId, deviceId) {
+  const rawValue = String(value ?? "").trim();
+  const internalNodeId = String(nodeId ?? "").trim();
+  const stableDeviceId = String(deviceId ?? "").trim();
+  if (!rawValue || !internalNodeId || !stableDeviceId || internalNodeId === stableDeviceId) {
+    return rawValue;
+  }
+  if (rawValue === internalNodeId) {
+    return stableDeviceId;
+  }
+  return rawValue.startsWith(`${internalNodeId}.`)
+    ? `${stableDeviceId}${rawValue.slice(internalNodeId.length)}`
+    : rawValue;
+}
+
+function serverExportMeasurementValueElementId(itemId, deviceId) {
+  const rawItemId = String(itemId ?? "").trim();
+  const stableDeviceId = String(deviceId ?? "").trim();
+  const itemKey = rawItemId.startsWith("measurement-")
+    ? rawItemId.slice("measurement-".length)
+    : [stableDeviceId, rawItemId].filter(Boolean).join("-");
+  return `mv-${itemKey || stableDeviceId || "measurement"}`;
+}
+
 function buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, usedIds, deviceId = node.id) {
   if (!group?.visible) {
     return "";
@@ -2041,23 +2075,25 @@ function buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, us
   const position = serverMeasurementGroupPosition(node, group);
   const dashArray = measurementBorderDashArray(group);
   const dashAttribute = dashArray ? ` stroke-dasharray="${escapeSvgAttribute(dashArray)}"` : "";
+  const stableDeviceId = String(deviceId ?? node.id ?? "");
   const rowsMarkup = rows.map((row, index) => {
     const col = columns <= 1 ? 0 : index % columns;
     const rowIndex = columns <= 1 ? index : Math.floor(index / columns);
     const textX = -width / 2 + col * columnWidth + 7;
     const textY = -height / 2 + rowIndex * lineHeight + lineHeight / 2;
     const textGap = Math.max(4, row.fontSize * 0.36);
+    const exportedItemId = serverExportMeasurementScopedId(row.item?.id, node?.id, stableDeviceId);
     const itemMetadata = [
-      `mid="${escapeSvgAttribute(row.item?.id ?? "")}"`,
+      `mid="${escapeSvgAttribute(exportedItemId)}"`,
       `mt="${escapeSvgAttribute(row.item?.measurementTypeId ?? "")}"`,
-      `mf="${escapeSvgAttribute(row.item?.sourcePoint ?? "")}"`,
+      `mf="${escapeSvgAttribute(serverExportMeasurementSourcePoint(row.item?.sourcePoint, node?.id, stableDeviceId))}"`,
       row.item?.role ? `mr="${escapeSvgAttribute(row.item.role)}"` : ""
     ].filter(Boolean).join(" ");
     const textStyle = `x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeSvgAttribute(row.display.color)}" font-family="${escapeSvgAttribute(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeSvgAttribute(row.display.fontWeight)}" font-style="${escapeSvgAttribute(row.display.fontStyle)}" text-decoration="${escapeSvgAttribute(row.display.textDecoration)}"`;
     const labelMarkup = row.labelText
       ? `<tspan>${escapeSvgText(row.labelText)}</tspan>`
       : "";
-    const valueId = uniqueSvgId(`mv${index + 1}`, usedIds, "mv");
+    const valueId = uniqueSvgId(serverExportMeasurementValueElementId(exportedItemId, stableDeviceId), usedIds, "mv");
     const valueDxAttribute = row.labelText ? ` dx="${formatSvgNumber(textGap)}"` : "";
     const valueMarkup = `<tspan id="${escapeSvgAttribute(valueId)}" class="mv" ${itemMetadata}${valueDxAttribute}>${escapeSvgText(row.valueText)}</tspan>`;
     const unitMarkup = row.unitText
@@ -2066,8 +2102,8 @@ function buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, us
     return `<text ${textStyle}>${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
   }).join("");
   const groupMetadata = [
-    `mg="${escapeSvgAttribute(group.id ?? "")}"`,
-    `dev="${escapeSvgAttribute(deviceId ?? "")}"`,
+    `mg="${escapeSvgAttribute(serverExportMeasurementScopedId(group.id, node?.id, stableDeviceId))}"`,
+    `dev="${escapeSvgAttribute(stableDeviceId)}"`,
     node.params?.idx ? `idx="${escapeSvgAttribute(node.params.idx)}"` : "",
     `name="${escapeSvgAttribute(node.name ?? "")}"`,
     `kind="${escapeSvgAttribute(node.kind ?? "")}"`,

@@ -238,11 +238,45 @@ export function exportDeviceMetadataAttributes(node: ModelNode, deviceId = node.
   ].join(" ");
 }
 
+function exportMeasurementScopedId(value: string, nodeId: string, deviceId: string) {
+  const rawValue = String(value ?? "").trim();
+  const internalNodeId = String(nodeId ?? "").trim();
+  const stableDeviceId = String(deviceId ?? "").trim();
+  if (!rawValue || !internalNodeId || !stableDeviceId || internalNodeId === stableDeviceId) {
+    return rawValue;
+  }
+  return rawValue.replace(internalNodeId, stableDeviceId);
+}
+
+function exportMeasurementSourcePoint(value: string, nodeId: string, deviceId: string) {
+  const rawValue = String(value ?? "").trim();
+  const internalNodeId = String(nodeId ?? "").trim();
+  const stableDeviceId = String(deviceId ?? "").trim();
+  if (!rawValue || !internalNodeId || !stableDeviceId || internalNodeId === stableDeviceId) {
+    return rawValue;
+  }
+  if (rawValue === internalNodeId) {
+    return stableDeviceId;
+  }
+  return rawValue.startsWith(`${internalNodeId}.`)
+    ? `${stableDeviceId}${rawValue.slice(internalNodeId.length)}`
+    : rawValue;
+}
+
+function exportMeasurementValueElementId(itemId: string, deviceId: string) {
+  const rawItemId = String(itemId ?? "").trim();
+  const stableDeviceId = String(deviceId ?? "").trim();
+  const itemKey = rawItemId.startsWith("measurement-")
+    ? rawItemId.slice("measurement-".length)
+    : [stableDeviceId, rawItemId].filter(Boolean).join("-");
+  return `mv-${itemKey || stableDeviceId || "measurement"}`;
+}
+
 export function exportMeasurementGroupMetadataAttributes(node: ModelNode, group: MeasurementGroup, deviceId = node.id) {
   const idx = String(node.params.idx ?? "").trim();
   const terminalId = String(group.terminalId ?? "").trim();
   return [
-    `mg="${escapeXml(group.id)}"`,
+    `mg="${escapeXml(exportMeasurementScopedId(group.id, node.id, deviceId))}"`,
     `dev="${escapeXml(deviceId)}"`,
     idx ? `idx="${escapeXml(idx)}"` : "",
     `name="${escapeXml(node.name)}"`,
@@ -251,12 +285,12 @@ export function exportMeasurementGroupMetadataAttributes(node: ModelNode, group:
   ].filter(Boolean).join(" ");
 }
 
-export function exportMeasurementItemMetadataAttributes(item: MeasurementItemBinding) {
+export function exportMeasurementItemMetadataAttributes(item: MeasurementItemBinding, nodeId = "", deviceId = nodeId) {
   const role = String(item.role ?? "").trim();
   return [
-    `mid="${escapeXml(item.id)}"`,
+    `mid="${escapeXml(exportMeasurementScopedId(item.id, nodeId, deviceId))}"`,
     `mt="${escapeXml(item.measurementTypeId)}"`,
-    `mf="${escapeXml(item.sourcePoint)}"`,
+    `mf="${escapeXml(exportMeasurementSourcePoint(item.sourcePoint, nodeId, deviceId))}"`,
     role ? `mr="${escapeXml(role)}"` : ""
   ].filter(Boolean).join(" ");
 }
@@ -331,18 +365,22 @@ export function buildExportMeasurementGroupMarkup(
   const position = { x: anchor.x + localOffset.x, y: anchor.y + localOffset.y };
   const borderDashArray = exportMeasurementGroupBorderDashArray(group);
   const borderDashAttribute = borderDashArray ? ` stroke-dasharray="${escapeXml(borderDashArray)}"` : "";
+  const deviceId = options.deviceId ?? node.id;
   const rowsMarkup = metrics.rows.map((row, index) => {
     const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
     const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
     const textX = -metrics.width / 2 + col * metrics.columnWidth + 7;
     const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
     const textGap = Math.max(4, row.fontSize * 0.36);
-    const itemMetadata = exportMeasurementItemMetadataAttributes(row.item);
+    const exportedItemId = exportMeasurementScopedId(row.item.id, node.id, deviceId);
+    const itemMetadata = exportMeasurementItemMetadataAttributes(row.item, node.id, deviceId);
     const commonAttributes = `x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
     const labelMarkup = row.labelText
       ? `<tspan>${escapeXml(row.labelText)}</tspan>`
       : "";
-    const valueTextId = usedSvgIds ? exportSvgUniqueId(`mv${index + 1}`, usedSvgIds, "mv") : "";
+    const valueTextId = usedSvgIds
+      ? exportSvgUniqueId(exportMeasurementValueElementId(exportedItemId, deviceId), usedSvgIds, "mv")
+      : "";
     const valueIdAttribute = valueTextId ? ` id="${escapeXml(valueTextId)}"` : "";
     const valueDxAttribute = row.labelText ? ` dx="${formatSvgNumber(textGap)}"` : "";
     const valueMarkup = `<tspan${valueIdAttribute} class="mv" ${itemMetadata}${valueDxAttribute}>${escapeXml(row.valueText)}</tspan>`;
@@ -352,7 +390,7 @@ export function buildExportMeasurementGroupMarkup(
     return `<text ${commonAttributes}>${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
   }).join("");
   const layerAttribute = options.layerId ? ` layer-id="${escapeXml(options.layerId)}"` : "";
-  return `<g class="mg"${layerAttribute} transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group, options.deviceId)}${svgDisplayAttribute(options.visible !== false)}>
+  return `<g class="mg"${layerAttribute} transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group, deviceId)}${svgDisplayAttribute(options.visible !== false)}>
   <rect x="${formatSvgNumber(-metrics.width / 2)}" y="${formatSvgNumber(-metrics.height / 2)}" width="${formatSvgNumber(metrics.width)}" height="${formatSvgNumber(metrics.height)}" rx="4" fill="${escapeXml(exportMeasurementGroupBackgroundColor(group))}" stroke="${escapeXml(exportMeasurementGroupBorderColor(group))}" stroke-width="${formatSvgNumber(exportMeasurementGroupBorderWidth(group))}"${borderDashAttribute}/>
   ${rowsMarkup}
 </g>`;

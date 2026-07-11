@@ -846,8 +846,8 @@ describe("SVG export", () => {
     expect(svg).not.toContain('mv="1"');
     expect(svg).toContain('mt="activePower"');
     expect(svg).not.toContain('measure_type="activePower"');
-    const measurementRow = svg.match(/<text\b[^>]*><tspan>P<\/tspan><tspan id="mv1"[\s\S]*?<\/text>/)?.[0] ?? "";
-    const valueText = measurementRow.match(/<tspan id="mv1" class="mv"[^>]*>--<\/tspan>/)?.[0] ?? "";
+    const measurementRow = svg.match(/<text\b[^>]*><tspan>P<\/tspan><tspan id="mv-load-export-m-active"[\s\S]*?<\/text>/)?.[0] ?? "";
+    const valueText = measurementRow.match(/<tspan id="mv-load-export-m-active" class="mv"[^>]*>--<\/tspan>/)?.[0] ?? "";
     const unitText = measurementRow.match(/<tspan dx="[^"]+">kW<\/tspan>/)?.[0] ?? "";
     expect(measurementRow).toContain('<tspan>P</tspan>');
     expect(valueText).toContain('mid="m-active"');
@@ -884,6 +884,39 @@ describe("SVG export", () => {
     expect(svg).toContain(">P</tspan>");
     expect(svg).toContain(">kW</tspan>");
     expect(svg).not.toContain(">P -- kW</text>");
+  });
+
+  test("keys exported measurement metadata by the stable device id", () => {
+    const load = { ...createDefaultNode("ac-load", { x: 140, y: 100 }), id: "ac-load-ja8lfjt", name: "交流负荷-2" };
+    load.params = { ...load.params, idx: "2" };
+    const measurements: ProjectMeasurementConfig = {
+      version: 1,
+      groups: [{
+        id: `measurement-${load.id}`,
+        nodeId: load.id,
+        visible: true,
+        anchor: "custom",
+        offset: { x: 40, y: -30 },
+        layout: "vertical",
+        items: [{
+          id: `measurement-${load.id}-reactivePower-1`,
+          measurementTypeId: "reactivePower",
+          sourcePoint: `${load.id}.reactivePower`,
+          visible: true
+        }]
+      }]
+    };
+
+    const svg = buildSvgDocument([load], [], { width: 320, height: 220, measurements });
+    const measurementLayer = svgSectionBetween(svg, '<g id="Measurement_Layer">', '<g id="Other_Layer">');
+
+    expect(svgDeviceUseTag(svg, "ACLoad-2")).toContain('id="ACLoad-2"');
+    expect(measurementLayer).toContain('mg="measurement-ACLoad-2"');
+    expect(measurementLayer).toContain('dev="ACLoad-2"');
+    expect(measurementLayer).toContain('id="mv-ACLoad-2-reactivePower-1"');
+    expect(measurementLayer).toContain('mid="measurement-ACLoad-2-reactivePower-1"');
+    expect(measurementLayer).toContain('mf="ACLoad-2.reactivePower"');
+    expect(measurementLayer).not.toContain(load.id);
   });
 
   test("keeps device labels in Text_Layer and measurements in Measurement_Layer instead of defs", () => {

@@ -819,8 +819,8 @@ describe("scheme file persistence", () => {
     expect(measurementLayer).not.toContain('dev-idx=');
     expect(measurementLayer).not.toContain('dev-name=');
     expect(measurementLayer).not.toContain('动态量测</title>');
-    const measurementRow = measurementLayer.match(/<text\b[^>]*><tspan>P主<\/tspan><tspan id="mv1"[\s\S]*?<\/text>/)?.[0] ?? "";
-    const valueText = measurementRow.match(/<tspan id="mv1" class="mv"[^>]*>--<\/tspan>/)?.[0] ?? "";
+    const measurementRow = measurementLayer.match(/<text\b[^>]*><tspan>P主<\/tspan><tspan id="mv-server-load-server-m"[\s\S]*?<\/text>/)?.[0] ?? "";
+    const valueText = measurementRow.match(/<tspan id="mv-server-load-server-m" class="mv"[^>]*>--<\/tspan>/)?.[0] ?? "";
     const unitText = measurementRow.match(/<tspan dx="[^"]+">kW<\/tspan>/)?.[0] ?? "";
     expect(measurementRow).toContain('<tspan>P主</tspan>');
     expect(valueText).toContain('mid="server-m"');
@@ -850,6 +850,56 @@ describe("scheme file persistence", () => {
     expect(svg).not.toContain("data-export-device-name");
     expect(svg).not.toContain("data-export-device-kind");
     expect(svg).not.toContain("data-export-");
+  });
+
+  test("keys server-exported measurement metadata by the stable device id", () => {
+    const nodeId = "ac-load-ja8lfjt";
+    const svg = buildSvgFile(
+      {
+        version: 1,
+        name: "量测标识测试",
+        nodes: [{
+          id: nodeId,
+          kind: "ac-load",
+          name: "交流负荷-2",
+          position: { x: 140, y: 100 },
+          size: { width: 80, height: 48 },
+          params: { idx: "2" },
+          terminals: []
+        }],
+        edges: [],
+        measurements: {
+          version: 1,
+          groups: [{
+            id: `measurement-${nodeId}`,
+            nodeId,
+            visible: true,
+            anchor: "custom",
+            offset: { x: 40, y: -30 },
+            layout: "vertical",
+            items: [{
+              id: `measurement-${nodeId}-reactivePower-1`,
+              measurementTypeId: "reactivePower",
+              sourcePoint: `${nodeId}.reactivePower`,
+              visible: true
+            }]
+          }]
+        }
+      },
+      {
+        measurementTypes: [{ id: "reactivePower", name: "无功功率", shortLabel: "Q", defaultUnit: "Mvar" }],
+        deviceProfiles: [{ deviceKind: "ac-load", items: [{ measurementTypeId: "reactivePower" }] }]
+      }
+    );
+    const measurementLayer = svgSectionBetween(svg, '<g id="Measurement_Layer">', '<g id="Other_Layer">');
+
+    expect(svgUseTags(svg).some((tag) => tag.includes('id="ACLoad-2"'))).toBe(true);
+    expect(measurementLayer).toContain('mg="measurement-ACLoad-2"');
+    expect(measurementLayer).toContain('dev="ACLoad-2"');
+    expect(measurementLayer).toContain('id="mv-ACLoad-2-reactivePower-1"');
+    expect(measurementLayer).toContain('mid="measurement-ACLoad-2-reactivePower-1"');
+    expect(measurementLayer).toContain('mf="ACLoad-2.reactivePower"');
+    expect(measurementLayer).not.toContain(nodeId);
   });
 
   test("writes vertical device label tokens with absolute x and y coordinates", () => {
