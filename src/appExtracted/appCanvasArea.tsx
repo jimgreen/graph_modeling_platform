@@ -86,6 +86,39 @@ export function areCanvasPropsEqual(prevProps: any, nextProps: any) {
   return true;
 }
 
+export function CanvasConnectionPaths({
+  d,
+  onContextMenu,
+  onDoubleClick,
+  onPointerDown
+}: {
+  d: string;
+  onContextMenu?: (event: any) => void;
+  onDoubleClick?: (event: any) => void;
+  onPointerDown?: (event: any) => void;
+}) {
+  return (
+    <>
+      <path
+        d={d}
+        className="connection-hitline"
+        onContextMenu={onContextMenu}
+        onDoubleClick={onDoubleClick}
+        onPointerDown={onPointerDown}
+      />
+      <path d={d} className="connection-line" />
+    </>
+  );
+}
+
+export function shouldRenderBaseCanvasEdge(
+  edgeId: string,
+  selectedEdgeId: string | null,
+  selectedEdgeTopmostVisible: boolean
+) {
+  return !(selectedEdgeTopmostVisible && edgeId === selectedEdgeId);
+}
+
 /**
  * MemoizedCanvasArea - 接收整个 __appScope，内部解构使用。
  */
@@ -256,6 +289,17 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
       routePoints: routePoints.map((point) => ({ ...point }))
     });
   };
+
+  const selectedEdgeTopmostVisible = Boolean(
+    selectedEdge &&
+    !dragGhostEdgeIdSet.has(selectedEdge.id) &&
+    !(singleNodeDragging && dragAffectedEdgeIdSet.has(selectedEdge.id)) &&
+    !(draggingDelta && dragPreviewEdgeIdSet.has(selectedEdge.id)) &&
+    !(multiNodeDragging && dragOverlayEdgeIdSet.has(selectedEdge.id)) &&
+    !groupTransformPreviewEdgeIdSet.has(selectedEdge.id) &&
+    !terminalPressPreviewEdgeIdSet.has(selectedEdge.id) &&
+    rewiring?.edgeId !== selectedEdge.id
+  );
 
   return (
     <>
@@ -612,6 +656,9 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         const edge = edgeById.get(route.edgeId);
         if (!edge)
             return null;
+        if (!shouldRenderBaseCanvasEdge(edge.id, selectedEdge?.id ?? null, selectedEdgeTopmostVisible)) {
+            return null;
+        }
         const selected = activeSelectedEdgeSet.has(edge.id);
         if (dragGhostEdgeIdSet.has(edge.id) ||
             (multiNodeDragging && dragOverlayEdgeIdSet.has(edge.id)) ||
@@ -651,8 +698,12 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                 ? targetPoint
                 : undefined;
         return (<g key={edge.id} className={`connection-group ${selected ? "selected" : ""} ${inactiveLayerGraphic ? "inactive-layer-graphic" : ""}`} style={connectionLineStyle(edge.id)} data-edge-id={edge.id}>
-                  <path d={route.path} className="connection-hitline" onContextMenu={editable ? (event) => openEdgeContextMenu(event, edge.id, route.points) : undefined} onDoubleClick={editable ? (event) => insertManualBendFromEdgePath(event, edge.id, route.points) : undefined} onPointerDown={editable ? (event) => handleEdgePathPointerDown(event, edge.id, route.points) : undefined}/>
-                  <path d={route.path} className="connection-line" onContextMenu={editable ? (event) => openEdgeContextMenu(event, edge.id, route.points) : undefined} onDoubleClick={editable ? (event) => insertManualBendFromEdgePath(event, edge.id, route.points) : undefined} onPointerDown={editable ? (event) => handleEdgePathPointerDown(event, edge.id, route.points) : undefined}/>
+                  <CanvasConnectionPaths
+                    d={route.path}
+                    onContextMenu={editable ? (event) => openEdgeContextMenu(event, edge.id, route.points) : undefined}
+                    onDoubleClick={editable ? (event) => insertManualBendFromEdgePath(event, edge.id, route.points) : undefined}
+                    onPointerDown={editable ? (event) => handleEdgePathPointerDown(event, edge.id, route.points) : undefined}
+                  />
                   {renderBoundaryBusInternalConnector(sourceNode, sourceBusDotPoint, `${edge.id}-source-internal-connector`)}
                   {renderBoundaryBusInternalConnector(targetNode, targetBusDotPoint, `${edge.id}-target-internal-connector`)}
                   {isEditMode && sourceBusDotPoint && (<circle className="bus-connection-dot" cx={sourceBusDotPoint.x} cy={sourceBusDotPoint.y} r={7} fill={busEndpointColor((rewiringSource ? rewireTarget?.node : sourceNode) ?? sourceNode!, colorPalette)} onPointerDown={editable ? (event) => {
@@ -1123,14 +1174,8 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                   </circle>))}
               </g>)}
             {selectedRoutedEdge &&
+        selectedEdgeTopmostVisible &&
         selectedEdge &&
-        !dragGhostEdgeIdSet.has(selectedEdge.id) &&
-        !(singleNodeDragging && dragAffectedEdgeIdSet.has(selectedEdge.id)) &&
-        !(draggingDelta && dragPreviewEdgeIdSet.has(selectedEdge.id)) &&
-        !(multiNodeDragging && dragOverlayEdgeIdSet.has(selectedEdge.id)) &&
-        !groupTransformPreviewEdgeIdSet.has(selectedEdge.id) &&
-        !terminalPressPreviewEdgeIdSet.has(selectedEdge.id) &&
-        rewiring?.edgeId !== selectedEdge.id &&
         (() => {
             const edge = selectedEdge;
             const route = selectedRoutedEdge;
@@ -1152,8 +1197,12 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
             const manualRoutePointKey = (point: Point) => `${Math.round(point.x)},${Math.round(point.y)}`;
             const manualRoutePointKeys = new Set((edge.manualPoints ?? []).map(manualRoutePointKey));
             return (<g className="connection-group selected topmost" style={connectionLineStyle(edge.id)} data-edge-id={edge.id}>
-                  <path d={displayPath} className="connection-hitline" onContextMenu={isEditMode ? (event) => openEdgeContextMenu(event, edge.id, routePoints) : undefined} onDoubleClick={isEditMode ? (event) => insertManualBendFromEdgePath(event, edge.id, routePoints) : undefined} onPointerDown={isEditMode ? (event) => handleEdgePathPointerDown(event, edge.id, routePoints) : undefined}/>
-                  <path d={displayPath} className="connection-line" onContextMenu={isEditMode ? (event) => openEdgeContextMenu(event, edge.id, routePoints) : undefined} onDoubleClick={isEditMode ? (event) => insertManualBendFromEdgePath(event, edge.id, routePoints) : undefined} onPointerDown={isEditMode ? (event) => handleEdgePathPointerDown(event, edge.id, routePoints) : undefined}/>
+                  <CanvasConnectionPaths
+                    d={displayPath}
+                    onContextMenu={isEditMode ? (event) => openEdgeContextMenu(event, edge.id, routePoints) : undefined}
+                    onDoubleClick={isEditMode ? (event) => insertManualBendFromEdgePath(event, edge.id, routePoints) : undefined}
+                    onPointerDown={isEditMode ? (event) => handleEdgePathPointerDown(event, edge.id, routePoints) : undefined}
+                  />
                   {isEditMode && !isRewiringSelectedEdge && routePoints.slice(1).map((point, index) => {
                     const from = routePoints[index];
                     const segmentIndex = index;
