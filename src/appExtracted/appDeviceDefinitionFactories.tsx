@@ -3,6 +3,7 @@ import { clampNumber } from "../canvasViewport";
 import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
 import { stateIconSvgVisibleViewBox } from "../stateIconDrawing";
 import { decodeSvgImageSource } from "../svgUtils";
+import { buildMeasurementProfilePositionDefinitions } from "../measurements";
 import { measurementProfileItemsComplianceMessage } from "./appGraphMeasurementFactories";
 
 const STATE_ICON_DRAFT_FRAME = {
@@ -4003,7 +4004,7 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
 
 export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>) {
   return () => {
-  const { ALLOW_RESIZE_TRANSFORM_PARAM, definitionDraftRows, definitionDraftSection, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, deviceDefinitionRowId, getTemplateParameterDefinitions, isReservedDeviceDefinitionParamName, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeComponentLibraryName, normalizeDefinitionRowEnumFields, requireEditMode, selectedDefinitionTemplate, setDefinitionDraftError, setDefinitionDraftRows, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, templateAllowsResizeTransform } = __appScope;
+  const { ALLOW_RESIZE_TRANSFORM_PARAM, definitionDraftRows, definitionDraftSection, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, deviceDefinitionRowId, getTemplateParameterDefinitions, isReservedDeviceDefinitionParamName, libraryTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeComponentLibraryName, normalizeDefinitionRowEnumFields, requireEditMode, selectedDefinitionTemplate, setDefinitionDraftError, setDefinitionDraftRows, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, templateAllowsResizeTransform } = __appScope;
     if (!requireEditMode("保存元件定义")) {
       return;
     }
@@ -4058,6 +4059,11 @@ export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>)
     const measurementProfileMessage = measurementProfileItemsComplianceMessage(selectedProfileItems, {
       measurementTypes: currentMeasurementConfig?.measurementTypes ?? [],
       parameterDefinitions: normalizedRows,
+      positionDefinitions: buildMeasurementProfilePositionDefinitions({
+        source: { ...selectedDefinitionTemplate, parameterDefinitions: normalizedRows },
+        parameterDefinitions: normalizedRows,
+        libraryTemplates
+      }),
       targetLabel: selectedDefinitionTemplate.label
     });
     if (measurementProfileMessage) {
@@ -5533,6 +5539,23 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
     const measurementProfileMessage = measurementProfileItemsComplianceMessage(profileItems, {
       measurementTypes: currentMeasurementConfig?.measurementTypes ?? [],
       parameterDefinitions: definitions,
+      positionDefinitions: buildMeasurementProfilePositionDefinitions({
+        source: {
+          kind: editingCustomDeviceKind || requestedCustomKind || customDeviceDraft.componentKind || componentLibrary,
+          label: componentLabel,
+          params: { component_type: componentLibrary },
+          terminalType: terminalTypes[0] ?? "ac",
+          terminalCount: terminalTypes.length,
+          terminalTypes,
+          terminalLabels: customDeviceDraft.terminalLabels.slice(0, terminalTypes.length),
+          terminalRoles: customDeviceDraft.terminalRoles.slice(0, terminalTypes.length),
+          terminalAssociations: customDeviceDraft.isContainer ? terminalAssociations : undefined,
+          isContainer: customDeviceDraft.isContainer,
+          parameterDefinitions: definitions
+        },
+        parameterDefinitions: definitions,
+        libraryTemplates
+      }),
       targetLabel: componentLabel
     });
     if (measurementProfileMessage) {
@@ -5637,7 +5660,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
 
 export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Record<string, any>) {
   return (template: DeviceTemplate, options: { closeAfterSave?: boolean } = {}) => {
-  const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, closeCustomDeviceDialog, customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTerminalAnchors, deviceDefinitionOverrideForTemplate, deviceDefinitionOverrides, getTemplateParameterDefinitions, hasOverlappingCustomDeviceTerminalAnchors, isReservedDeviceDefinitionParamName, isValidComponentLibraryName, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, requireEditMode, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
+  const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, closeCustomDeviceDialog, customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTerminalAnchors, deviceDefinitionOverrideForTemplate, deviceDefinitionOverrides, getTemplateParameterDefinitions, hasOverlappingCustomDeviceTerminalAnchors, isReservedDeviceDefinitionParamName, isValidComponentLibraryName, libraryTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, requireEditMode, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
     if (!requireEditMode("保存元件定义")) {
       return false;
     }
@@ -5707,6 +5730,21 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     const measurementProfileMessage = measurementProfileItemsComplianceMessage(profileItems, {
       measurementTypes: currentMeasurementConfig?.measurementTypes ?? [],
       parameterDefinitions: definitions,
+      positionDefinitions: buildMeasurementProfilePositionDefinitions({
+        source: {
+          ...template,
+          terminalType: terminalTypes[0] ?? template.terminalType,
+          terminalCount: terminalTypes.length,
+          terminalTypes,
+          terminalLabels: customDeviceDraft.terminalLabels.slice(0, terminalTypes.length),
+          terminalRoles: customDeviceDraft.terminalRoles.slice(0, terminalTypes.length),
+          terminalAssociations: customDeviceDraft.isContainer ? terminalAssociations : undefined,
+          isContainer: customDeviceDraft.isContainer,
+          parameterDefinitions: definitions
+        },
+        parameterDefinitions: definitions,
+        libraryTemplates
+      }),
       targetLabel: customDeviceDraft.componentName.trim() || template.label
     });
     if (measurementProfileMessage) {

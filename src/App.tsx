@@ -402,6 +402,7 @@ import {
   DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE,
   DEFAULT_MEASUREMENT_GROUP_BORDER_WIDTH,
   EMPTY_PROJECT_MEASUREMENTS,
+  buildMeasurementProfilePositionDefinitions,
   createDefaultMeasurementGroupsForNode,
   formatMeasurementDisplayValue,
   measurementFontScaleForNode,
@@ -1834,6 +1835,14 @@ const selectedDefinitionTerminalAssociations = selectedDefinitionTemplate
     ? describeContainerTerminalAssociations(selectedDefinitionTemplate)
     : [];
 Object.assign(__appScope, { selectedDefinitionTerminalAssociations });
+const selectedDefinitionMeasurementPositionDefinitions = selectedDefinitionTemplate
+    ? buildMeasurementProfilePositionDefinitions({
+        source: selectedDefinitionTemplate,
+        parameterDefinitions: definitionDraftRows,
+        libraryTemplates
+      })
+    : [];
+Object.assign(__appScope, { selectedDefinitionMeasurementPositionDefinitions });
 const deviceParamPanelActive = inspectorTab === "device"; Object.assign(__appScope, { deviceParamPanelActive });
 const selectedNodeTemplate = deviceParamPanelActive && inspectorSelectedNode ? libraryTemplateByKind.get(inspectorSelectedNode.kind) : undefined; Object.assign(__appScope, { selectedNodeTemplate });
 const selectedContainerParameterViews = useMemo(
@@ -4639,6 +4648,29 @@ const customDraftMergedDefaultParams = customDraftDefaultParams.map((row) => {
 });
 const customDraftVisibleParams = customDeviceDraft.params.filter((row) => !customDraftDefaultParamKeySet.has(row.enName.trim().toLowerCase()));
 Object.assign(__appScope, { customDraftDefaultParamKeySet, customDraftMergedDefaultParams, customDraftVisibleParams });
+const customDeviceMeasurementParameterDefinitions = [...customDraftMergedDefaultParams, ...customDraftVisibleParams];
+const customDeviceMeasurementPositionDefinitions = buildMeasurementProfilePositionDefinitions({
+    source: {
+      kind:
+        customDeviceDraft.componentKind ||
+        editingCustomDeviceKind ||
+        selectedCustomComponentTemplate?.kind ||
+        selectedDefinitionTemplate?.kind ||
+        "custom-device-draft",
+      label: customDeviceDraft.componentName,
+      params: { component_type: customDeviceDraft.componentLibrary },
+      terminalType: customDraftTerminalTypes[0] ?? "ac",
+      terminalCount: customDraftTerminalTypes.length,
+      terminalTypes: customDraftTerminalTypes,
+      terminalLabels: customDeviceDraft.terminalLabels.slice(0, customDraftTerminalTypes.length),
+      terminalRoles: customDeviceDraft.terminalRoles.slice(0, customDraftTerminalTypes.length),
+      terminalAssociations: customDeviceDraft.isContainer ? customDraftTerminalAssociations : undefined,
+      isContainer: customDeviceDraft.isContainer,
+      parameterDefinitions: customDeviceMeasurementParameterDefinitions
+    },
+    parameterDefinitions: customDeviceMeasurementParameterDefinitions,
+    libraryTemplates
+  });
 const customDeviceMeasurementTarget: DeviceDefinitionMeasurementPanelTarget = {
     deviceKind:
       normalizeComponentLibraryName(customDeviceDraft.componentLibrary) ||
@@ -4646,7 +4678,8 @@ const customDeviceMeasurementTarget: DeviceDefinitionMeasurementPanelTarget = {
     label: customDeviceDraft.componentName.trim() || selectedCustomComponentTemplate?.label || customDeviceDraft.componentLibrary || "未命名元件",
     terminalCount: Math.max(0, customDeviceDraft.terminalCount),
     terminalLabels: customDeviceDraft.terminalLabels,
-    parameterDefinitions: [...customDraftMergedDefaultParams, ...customDraftVisibleParams]
+    parameterDefinitions: customDeviceMeasurementParameterDefinitions,
+    positionDefinitions: customDeviceMeasurementPositionDefinitions
   };
 Object.assign(__appScope, { customDeviceMeasurementTarget });
 const customIconStatePageId = customDeviceStatePageId;

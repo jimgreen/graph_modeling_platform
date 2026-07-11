@@ -411,6 +411,7 @@ import {
   type DeviceMeasurementProfileItem,
   type MeasurementGroup,
   type MeasurementItemBinding,
+  type MeasurementProfilePositionDefinition,
   type MeasurementTypeDefinition,
   type PlatformMeasurementConfig,
   type ProjectMeasurementConfig
@@ -1759,6 +1760,7 @@ export type DeviceDefinitionMeasurementPanelTarget = {
   terminalCount: number;
   terminalLabels?: readonly string[];
   parameterDefinitions?: readonly DeviceParameterDefinition[];
+  positionDefinitions?: readonly MeasurementProfilePositionDefinition[];
 };
 
 export type TemplateDialogState = {

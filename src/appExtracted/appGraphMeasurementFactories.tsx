@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { clampNumber } from "../canvasViewport";
 import { degreesToRadians } from "../formatUtils";
+import type { MeasurementProfilePositionDefinition } from "../measurements";
 
 export function createSetNodes(__appScope: Record<string, any>) {
   return (value: SetStateAction<ModelNode[]>) => {
@@ -3968,6 +3969,7 @@ export const measurementProfileItemsComplianceMessage = (
   options: {
     measurementTypes: readonly MeasurementTypeDefinition[];
     parameterDefinitions?: readonly DeviceParameterDefinition[];
+    positionDefinitions?: readonly MeasurementProfilePositionDefinition[];
     targetLabel?: string;
   }
 ) => {
@@ -3979,6 +3981,9 @@ export const measurementProfileItemsComplianceMessage = (
       .filter(Boolean)
   );
   const hasParameterDefinitions = (options.parameterDefinitions ?? []).some((definition) => String(definition?.enName ?? "").trim());
+  const positionDefinitionByValue = options.positionDefinitions
+    ? new Map(options.positionDefinitions.map((definition) => [definition.value, definition]))
+    : null;
   const seenBindingKeys = new Map<string, number>();
   const label = options.targetLabel ? `${options.targetLabel}量测` : "量测";
   items.forEach((item, index) => {
@@ -3993,8 +3998,19 @@ export const measurementProfileItemsComplianceMessage = (
     }
     if (!position) {
       messages.push(`${rowLabel}：量测位置不能为空。`);
+    } else if (positionDefinitionByValue && !positionDefinitionByValue.has(position)) {
+      messages.push(`${rowLabel}：量测位置 ${position} 不存在。`);
     }
-    if (associatedField && hasParameterDefinitions && !validFieldNames.has(measurementComplianceKey(associatedField))) {
+    const positionDefinition = positionDefinitionByValue?.get(position);
+    const positionFieldNames = positionDefinition
+      ? new Set(
+          positionDefinition.parameterDefinitions
+            .map((definition) => measurementComplianceKey(definition?.enName))
+            .filter(Boolean)
+        )
+      : validFieldNames;
+    const shouldValidateAssociatedField = Boolean(positionDefinitionByValue) || hasParameterDefinitions;
+    if (associatedField && shouldValidateAssociatedField && !positionFieldNames.has(measurementComplianceKey(associatedField))) {
       messages.push(`${rowLabel}：关联字段 ${associatedField} 不在元件属性名称列表中。`);
     }
     const bindingKey = [

@@ -2404,7 +2404,8 @@ export function renderAppView(__appScope: Record<string, any>) {
                 label: selectedDefinitionTemplate.label,
                 terminalCount: selectedDefinitionTemplate.terminalCount,
                 terminalLabels: selectedDefinitionTemplate.terminalLabels,
-                parameterDefinitions: definitionDraftRows
+                parameterDefinitions: definitionDraftRows,
+                positionDefinitions: __appScope.selectedDefinitionMeasurementPositionDefinitions
             }))}
                   </>) : (<div className="empty-state compact">
                     <Grid2X2 size={24}/>

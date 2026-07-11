@@ -18,6 +18,8 @@ import {
   createSetImperativeSingleNodeDragOrigin
 } from "./appExtracted/appSelectionDragFactories";
 import { createRenderMeasurementGroup } from "./appExtracted/appToolbarHookFactories";
+import * as measurementDefinitions from "./measurements";
+import { DEVICE_LIBRARY, getTemplateParameterDefinitions } from "./model";
 import { exportMeasurementItemMetadataAttributes } from "./svgExportUtils";
 
 describe("measurement canvas interactions", () => {
@@ -71,6 +73,69 @@ describe("measurement canvas interactions", () => {
     expect(profileMessage).toContain("测试元件量测第 1 行：关联字段 missingField 不在元件属性名称列表中。");
     expect(profileMessage).toContain("测试元件量测第 2 行：与第 1 行量测重复。");
     expect(profileMessage).toContain("测试元件量测第 3 行：量测类型 missingType 不存在。");
+  });
+
+  test("validates associated fields against the selected measurement position", () => {
+    const profileMessage = measurementProfileItemsComplianceMessage([
+      { name: "首端电阻", measurementTypeId: "activePower", position: "t1", associatedField: "r" },
+      { name: "本体电阻", measurementTypeId: "activePower", position: "device", associatedField: "r" }
+    ] as any, {
+      measurementTypes: [{ id: "activePower", name: "有功功率" }] as any,
+      parameterDefinitions: [{ cnName: "父设备字段", enName: "parentOnly" }] as any,
+      positionDefinitions: [
+        {
+          value: "device",
+          label: "设备本体",
+          parameterDefinitions: [{ cnName: "父设备字段", enName: "parentOnly" }]
+        },
+        {
+          value: "t1",
+          label: "端1（双绕组主变首端）",
+          parameterDefinitions: [{ cnName: "电阻", enName: "r" }]
+        }
+      ],
+      targetLabel: "三绕组主变"
+    } as any);
+
+    expect(profileMessage).not.toContain("三绕组主变量测第 1 行：关联字段 r 不在元件属性名称列表中。");
+    expect(profileMessage).toContain("三绕组主变量测第 2 行：关联字段 r 不在元件属性名称列表中。");
+  });
+
+  test("offers only the device body position for non-container devices", () => {
+    const buildMeasurementProfilePositionDefinitions = (measurementDefinitions as any).buildMeasurementProfilePositionDefinitions;
+    expect(buildMeasurementProfilePositionDefinitions).toBeTypeOf("function");
+    const transformer = DEVICE_LIBRARY.find((template) => template.kind === "ac-transformer")!;
+
+    const positions = buildMeasurementProfilePositionDefinitions({
+      source: transformer,
+      parameterDefinitions: getTemplateParameterDefinitions(transformer),
+      libraryTemplates: DEVICE_LIBRARY
+    });
+
+    expect(positions.map((position: any) => ({ value: position.value, label: position.label }))).toEqual([
+      { value: "device", label: "设备本体" }
+    ]);
+  });
+
+  test("resolves container terminal positions and fields from associated device models", () => {
+    const buildMeasurementProfilePositionDefinitions = (measurementDefinitions as any).buildMeasurementProfilePositionDefinitions;
+    expect(buildMeasurementProfilePositionDefinitions).toBeTypeOf("function");
+    const transformer = DEVICE_LIBRARY.find((template) => template.kind === "ac-three-winding-transformer")!;
+
+    const positions = buildMeasurementProfilePositionDefinitions({
+      source: transformer,
+      parameterDefinitions: getTemplateParameterDefinitions(transformer),
+      libraryTemplates: DEVICE_LIBRARY
+    });
+
+    expect(positions.map((position: any) => ({ value: position.value, label: position.label }))).toEqual([
+      { value: "device", label: "设备本体" },
+      { value: "t1", label: "端1（双绕组主变首端）" },
+      { value: "t2", label: "端2（双绕组主变首端）" },
+      { value: "t3", label: "端3（双绕组主变首端）" }
+    ]);
+    expect(positions[1].parameterDefinitions.map((definition: any) => definition.enName)).toContain("r");
+    expect(positions[1].parameterDefinitions.map((definition: any) => definition.enName)).toContain("j_node");
   });
 
   test("renders associated field as a parameter-name dropdown in device definition measurements", () => {
@@ -145,6 +210,109 @@ describe("measurement canvas interactions", () => {
     (selects[0] as ReactElement<{ onChange: (event: any) => void }>).props.onChange({ target: { value: "ratedPower" } });
 
     expect(updateMeasurementProfileItem).toHaveBeenCalledWith("CustomDevice", 0, { associatedField: "ratedPower" });
+  });
+
+  test("switches associated fields with the selected container terminal", () => {
+    const updateMeasurementProfileItem = vi.fn();
+    const parentDefinitions = [
+      { cnName: "容器字段", enName: "parentOnly", valueType: "float", typicalValue: "0" }
+    ];
+    const terminalDefinitions = [
+      { cnName: "电阻", enName: "r", valueType: "float", typicalValue: "0" },
+      { cnName: "电抗", enName: "x", valueType: "float", typicalValue: "0" }
+    ];
+    const panel = createRenderDeviceDefinitionMeasurementPanel({
+      BufferedTextInput: (props: any) => createElement("input", props),
+      addMeasurementProfileItem: vi.fn(),
+      deleteMeasurementProfileItem: vi.fn(),
+      editableMeasurementProfileByKind: new Map([
+        [
+          "ACTransfomer3",
+          {
+            items: [
+              { name: "本体有功", measurementTypeId: "activePower", position: "device", associatedField: "parentOnly" },
+              { name: "首端有功", measurementTypeId: "activePower", position: "t1", associatedField: "r" }
+            ]
+          }
+        ]
+      ]),
+      editableMeasurementTypeById: new Map([["activePower", { id: "activePower", name: "有功功率", defaultVisible: true }]]),
+      isBrowseMode: false,
+      measurementConfig: {
+        measurementTypes: [{ id: "activePower", name: "有功功率", defaultVisible: true }],
+        deviceProfiles: []
+      },
+      measurementConfigDraft: null,
+      measurementConfigSaveStatus: "idle",
+      moveMeasurementProfileItem: vi.fn(),
+      normalizeComponentLibraryName: (value: string) => value,
+      updateMeasurementProfileItem
+    } as any)({
+      deviceKind: "ACTransfomer3",
+      label: "三绕组主变",
+      terminalCount: 3,
+      parameterDefinitions: parentDefinitions,
+      positionDefinitions: [
+        { value: "device", label: "设备本体", parameterDefinitions: parentDefinitions },
+        { value: "t1", label: "端1（双绕组主变首端）", parameterDefinitions: terminalDefinitions },
+        { value: "t2", label: "端2（双绕组主变首端）", parameterDefinitions: terminalDefinitions },
+        { value: "t3", label: "端3（双绕组主变首端）", parameterDefinitions: terminalDefinitions }
+      ]
+    });
+
+    const elementText = (node: ReactNode): string =>
+      Children.toArray(node).map((child) =>
+        isValidElement(child)
+          ? elementText((child as ReactElement<{ children?: ReactNode }>).props.children)
+          : String(child)
+      ).join("");
+    const selects: ReactElement<any>[] = [];
+    const collectSelects = (node: ReactNode) => {
+      Children.forEach(node, (child) => {
+        if (!isValidElement(child)) {
+          return;
+        }
+        if (child.type === "select") {
+          selects.push(child as ReactElement<any>);
+        }
+        collectSelects((child as ReactElement<{ children?: ReactNode }>).props.children);
+      });
+    };
+    collectSelects(panel);
+    const positionSelects = selects.filter((selectElement) => {
+      const values = Children.toArray(selectElement.props.children)
+        .filter(isValidElement)
+        .map((option) => String((option as ReactElement<any>).props.value ?? ""));
+      return ["device", "t1", "t2", "t3"].every((value) => values.includes(value));
+    });
+
+    expect(positionSelects).toHaveLength(2);
+    const positionOptions = Children.toArray(positionSelects[0].props.children)
+      .filter(isValidElement)
+      .map((option) => ({
+        value: String((option as ReactElement<any>).props.value ?? ""),
+        label: elementText((option as ReactElement<any>).props.children)
+      }));
+    expect(positionOptions).toEqual([
+      { value: "device", label: "设备本体" },
+      { value: "t1", label: "端1（双绕组主变首端）" },
+      { value: "t2", label: "端2（双绕组主变首端）" },
+      { value: "t3", label: "端3（双绕组主变首端）" }
+    ]);
+    const associatedFieldSelects = selects.filter((selectElement) => String(selectElement.props.title ?? "").includes("关联"));
+    expect(associatedFieldSelects).toHaveLength(2);
+    const terminalFieldValues = Children.toArray(associatedFieldSelects[1].props.children)
+      .filter(isValidElement)
+      .map((option) => String((option as ReactElement<any>).props.value ?? ""));
+    expect(terminalFieldValues).toContain("r");
+    expect(terminalFieldValues).not.toContain("parentOnly");
+
+    positionSelects[0].props.onChange({ target: { value: "t1" } });
+
+    expect(updateMeasurementProfileItem).toHaveBeenCalledWith("ACTransfomer3", 0, {
+      position: "t1",
+      associatedField: undefined
+    });
   });
 
   test("keeps only the measurement-group add action in the selected-node measurement panel", () => {

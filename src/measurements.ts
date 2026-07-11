@@ -1,4 +1,13 @@
-import { getSafeNodeScaleX, getSafeNodeScaleY, inferESection, type ModelNode } from "./model";
+import {
+  describeContainerTerminalAssociations,
+  getSafeNodeScaleX,
+  getSafeNodeScaleY,
+  getTemplateParameterDefinitions,
+  inferESection,
+  type DeviceParameterDefinition,
+  type DeviceTemplate,
+  type ModelNode
+} from "./model";
 import { finiteNumber, degreesToRadians } from "./formatUtils";
 import { clampNumber } from "./canvasViewport";
 
@@ -59,6 +68,82 @@ export type DeviceMeasurementProfile = {
   deviceKind: string;
   items: DeviceMeasurementProfileItem[];
 };
+
+export type MeasurementProfilePositionDefinition = {
+  value: string;
+  label: string;
+  deviceModel?: string;
+  parameterDefinitions: readonly DeviceParameterDefinition[];
+};
+
+export type MeasurementProfilePositionSource = Pick<DeviceTemplate, "kind" | "terminalCount"> &
+  Partial<Pick<DeviceTemplate,
+    | "label"
+    | "categoryLibrary"
+    | "size"
+    | "params"
+    | "terminalType"
+    | "terminalTypes"
+    | "terminalLabels"
+    | "terminalRoles"
+    | "terminalAssociations"
+    | "isContainer"
+    | "parameterDefinitions"
+  >>;
+
+export function buildMeasurementProfilePositionDefinitions(options: {
+  source: MeasurementProfilePositionSource;
+  parameterDefinitions?: readonly DeviceParameterDefinition[];
+  libraryTemplates?: readonly DeviceTemplate[];
+}): MeasurementProfilePositionDefinition[] {
+  const { source } = options;
+  const parentParameterDefinitions = options.parameterDefinitions ?? source.parameterDefinitions ?? [];
+  const positions: MeasurementProfilePositionDefinition[] = [{
+    value: "device",
+    label: "设备本体",
+    parameterDefinitions: parentParameterDefinitions
+  }];
+  const terminalCount = Math.max(0, Number(source.terminalCount) || 0);
+  if (!source.isContainer || terminalCount === 0) {
+    return positions;
+  }
+
+  const associationTemplate: DeviceTemplate = {
+    kind: source.kind,
+    label: source.label ?? String(source.kind),
+    categoryLibrary: source.categoryLibrary ?? "",
+    size: source.size ?? { width: 1, height: 1 },
+    params: source.params ?? {},
+    terminalType: source.terminalType ?? source.terminalTypes?.[0] ?? "ac",
+    terminalCount,
+    terminalTypes: source.terminalTypes ? [...source.terminalTypes] : undefined,
+    terminalLabels: source.terminalLabels ? [...source.terminalLabels] : undefined,
+    terminalRoles: source.terminalRoles ? [...source.terminalRoles] : undefined,
+    terminalAssociations: source.terminalAssociations ? [...source.terminalAssociations] : undefined,
+    isContainer: true,
+    parameterDefinitions: [...parentParameterDefinitions]
+  };
+  const templateByDeviceModel = new Map<string, DeviceTemplate>();
+  for (const template of options.libraryTemplates ?? []) {
+    const deviceModel = String(inferESection(template.kind, template.params) ?? "").trim().toLowerCase();
+    if (deviceModel && !templateByDeviceModel.has(deviceModel)) {
+      templateByDeviceModel.set(deviceModel, template);
+    }
+  }
+
+  for (const association of describeContainerTerminalAssociations(associationTemplate)) {
+    const deviceModelKey = String(association.deviceModel ?? "").trim().toLowerCase();
+    const associatedTemplate = templateByDeviceModel.get(deviceModelKey);
+    const roleLabel = String(association.roleLabel ?? "").trim();
+    positions.push({
+      value: `t${association.terminalIndex + 1}`,
+      label: `端${association.terminalIndex + 1}${roleLabel ? `（${roleLabel}）` : ""}`,
+      deviceModel: association.deviceModel,
+      parameterDefinitions: associatedTemplate ? getTemplateParameterDefinitions(associatedTemplate) : []
+    });
+  }
+  return positions;
+}
 
 export type PlatformMeasurementConfig = {
   groupDefaults: MeasurementGroupDefaults;

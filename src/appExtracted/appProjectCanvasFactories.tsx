@@ -3377,17 +3377,20 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
     const draftConfig = measurementConfigDraft ?? measurementConfig;
     const selectedKind = normalizeComponentLibraryName(target.deviceKind);
     const selectedProfileItems = editableMeasurementProfileByKind.get(selectedKind)?.items ?? [];
-    const terminalCount = Math.max(0, target.terminalCount ?? target.terminalLabels?.length ?? 0);
-    const measurementProfilePositionOptions = [
-      { value: "device", label: "设备层" },
-      ...Array.from({ length: terminalCount }, (_, index) => {
-        const terminalLabel = target.terminalLabels?.[index] ?? `端子${index + 1}`;
-        return { value: `t${index + 1}`, label: `${terminalLabel}端子层` };
-      })
-    ];
-    const associatedFieldOptions = (() => {
+    const measurementProfilePositionDefinitions = target.positionDefinitions?.length
+      ? [...target.positionDefinitions]
+      : [{
+          value: "device",
+          label: "设备本体",
+          parameterDefinitions: target.parameterDefinitions ?? []
+        }];
+    const measurementProfilePositionOptions = measurementProfilePositionDefinitions.map(({ value, label }) => ({ value, label }));
+    const positionDefinitionByValue = new Map(
+      measurementProfilePositionDefinitions.map((definition) => [definition.value, definition])
+    );
+    const associatedFieldOptionsForPosition = (position: string) => {
       const seen = new Set<string>();
-      return (target.parameterDefinitions ?? []).flatMap((definition) => {
+      return (positionDefinitionByValue.get(position)?.parameterDefinitions ?? []).flatMap((definition) => {
         const value = String(definition?.enName ?? "").trim();
         if (!value || seen.has(value.toLowerCase())) {
           return [];
@@ -3399,7 +3402,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
           label: label && label !== value ? `${label} (${value})` : value
         }];
       });
-    })();
+    };
     const measurementProfilePositionValue = (item: DeviceMeasurementProfileItem) => item.position ?? "device";
     const measurementConfigStatusText =
       measurementConfigSaveStatus === "saving"
@@ -3437,6 +3440,8 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
             <tbody>
               {selectedProfileItems.length > 0 ? selectedProfileItems.map((item, itemIndex) => {
                 const currentType = editableMeasurementTypeById.get(item.measurementTypeId) ?? draftConfig.measurementTypes[0];
+                const itemPosition = measurementProfilePositionValue(item);
+                const associatedFieldOptions = associatedFieldOptionsForPosition(itemPosition);
                 return (
                   <tr key={`${selectedKind}-${item.measurementTypeId}-${item.position ?? "legacy"}-${item.role ?? "item"}-${itemIndex}`}>
                     <td>{itemIndex + 1}</td>
@@ -3471,11 +3476,23 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                     </td>
                     <td>
                       <select
-                        value={measurementProfilePositionValue(item)}
+                        value={itemPosition}
                         disabled={isBrowseMode}
-                        onChange={(event) => updateMeasurementProfileItem(selectedKind, itemIndex, {
-                          position: event.target.value
-                        })}
+                        onChange={(event) => {
+                          const nextPosition = event.target.value;
+                          const validAssociatedFields = new Set(
+                            (positionDefinitionByValue.get(nextPosition)?.parameterDefinitions ?? [])
+                              .map((definition) => String(definition?.enName ?? "").trim().toLowerCase())
+                              .filter(Boolean)
+                          );
+                          const currentAssociatedField = String(item.associatedField ?? "").trim();
+                          updateMeasurementProfileItem(selectedKind, itemIndex, {
+                            position: nextPosition,
+                            ...(currentAssociatedField && !validAssociatedFields.has(currentAssociatedField.toLowerCase())
+                              ? { associatedField: undefined }
+                              : {})
+                          });
+                        }}
                       >
                         {measurementProfilePositionOptions.map((option) => (
                           <option key={option.value} value={option.value}>{option.label}</option>
