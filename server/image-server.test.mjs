@@ -29,6 +29,33 @@ const svgSectionBetween = (svg, start, end) => {
 const svgDefsSection = (svg) => svg.match(/<defs[^>]*>[\s\S]*?<\/defs>/)?.[0] ?? "";
 const svgUseTags = (svg) => Array.from(svg.matchAll(/<use\b[^>]*>/g), (match) => match[0]);
 
+const eSectionLines = (text, section) => {
+  const match = new RegExp(`<${section}>\\n([\\s\\S]*?)\\n<\\/${section}>`, "u").exec(text);
+  return match ? match[1].split("\n") : [];
+};
+
+const eVisualWidth = (value) =>
+  Array.from(String(value ?? "")).reduce((width, char) => width + (/[^\u0000-\u00ff]/u.test(char) ? 2 : 1), 0);
+
+const sequentialTokenStartColumns = (line, tokens) => {
+  let cursor = 0;
+  return tokens.map((token) => {
+    const index = line.indexOf(token, cursor);
+    expect(index, `Cannot find "${token}" in "${line}" after ${cursor}`).toBeGreaterThanOrEqual(0);
+    cursor = index + String(token).length;
+    return eVisualWidth(line.slice(0, index));
+  });
+};
+
+const expectEFieldsAlignedWithHeader = (text, section, columns, rowValues) => {
+  const lines = eSectionLines(text, section);
+  const header = lines.find((line) => line.startsWith("@"));
+  const row = lines.find((line) => line.startsWith("#") && rowValues.every((value) => line.includes(String(value))));
+  expect(header).toBeTruthy();
+  expect(row).toBeTruthy();
+  expect(sequentialTokenStartColumns(row, rowValues)).toEqual(sequentialTokenStartColumns(header, columns));
+};
+
 describe("icon library import", () => {
   test("extracts browser-displayable icons from Office-style archives", () => {
     const zip = new AdmZip();
@@ -320,6 +347,18 @@ describe("scheme file persistence", () => {
       expect(eFile.trimEnd()).toContain("</ACBreak>");
       expect(eFile).not.toContain('"modelParameters"');
       expect(eFile).not.toContain('"devices"');
+      expectEFieldsAlignedWithHeader(
+        eFile,
+        "ACBranch",
+        ["idx", "name", "i_node", "j_node", "r", "x", "b", "run_stat"],
+        ["1", "交流线路（自适应）-1", "3", "2", "0.1", "1.0", "0.0", "1"]
+      );
+      expectEFieldsAlignedWithHeader(
+        eFile,
+        "ACBreak",
+        ["idx", "name", "i_node", "j_node", "status", "run_stat"],
+        ["1", "盒型开关-1", "1", "3", "1", "1"]
+      );
     } finally {
       await rm(root, { recursive: true, force: true });
     }
