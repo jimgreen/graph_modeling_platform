@@ -7,8 +7,10 @@ import {
 } from "./appExtracted/appCanvasArea";
 import { createRenderReadonlyBackgroundPage } from "./appExtracted/appToolbarHookFactories";
 
-const reactChildren = (element: ReactElement) =>
-  Children.toArray(element.props.children).filter(isValidElement) as ReactElement[];
+type AnyReactElement = ReactElement<any>;
+
+const reactChildren = (element: AnyReactElement) =>
+  Children.toArray(element.props.children).filter(isValidElement) as AnyReactElement[];
 
 describe("live canvas edge DOM", () => {
   test("binds detailed edge interactions only to the wide hit path", () => {
@@ -20,7 +22,7 @@ describe("live canvas edge DOM", () => {
       onContextMenu,
       onDoubleClick,
       onPointerDown
-    }) as ReactElement;
+    }) as AnyReactElement;
     const [hitline, line] = reactChildren(rendered);
 
     expect(hitline.props.className).toBe("connection-hitline");
@@ -59,7 +61,7 @@ describe("live canvas edge DOM", () => {
       image: "image",
       path: "path"
     });
-    const layer = render() as ReactElement;
+    const layer = render() as AnyReactElement;
     const edgesLayer = reactChildren(layer).find((element) => element.props.className === "background-page-edges");
     const routes = edgesLayer ? reactChildren(edgesLayer) : [];
 
