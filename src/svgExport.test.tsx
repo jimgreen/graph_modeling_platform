@@ -1,10 +1,14 @@
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { buildSvgDocument } from "./App";
-import { createExportSvg } from "./appExtracted/appDeviceDefinitionFactories";
+import { createExportEFile, createExportSvg } from "./appExtracted/appDeviceDefinitionFactories";
 import { createDefaultNode, createNodeFromTemplate, DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY, getTerminalPoint, type DeviceKind, type DeviceTemplate, type Edge } from "./model";
 import type { ProjectMeasurementConfig } from "./measurements";
 
 describe("SVG export", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   const svgSectionBetween = (svg: string, start: string, end: string) => {
     const startIndex = svg.indexOf(start);
     const endIndex = svg.indexOf(end);
@@ -23,7 +27,10 @@ describe("SVG export", () => {
 
   test("downloads SVG exports in voltage color mode", async () => {
     const buildDocument = vi.fn((_nodes: unknown, _edges: unknown, _options: unknown) => "<svg/>");
-    const saveTextFile = vi.fn(async () => undefined);
+    const saveTextFile = vi.fn(async () => true);
+    const alert = vi.fn();
+    const writeOperationLog = vi.fn();
+    vi.stubGlobal("window", { alert });
     const exportSvg = createExportSvg({
       DEFAULT_CANVAS_BACKGROUND: "#ffffff",
       activeLayerId: "default-layer",
@@ -45,7 +52,7 @@ describe("SVG export", () => {
       projectName: "voltage-export",
       safeFilePart: (value: string) => value,
       saveTextFile,
-      writeOperationLog: vi.fn()
+      writeOperationLog
     });
 
     await exportSvg();
@@ -53,6 +60,79 @@ describe("SVG export", () => {
     expect(buildDocument).toHaveBeenCalledOnce();
     expect(buildDocument.mock.calls[0]?.[2]).toMatchObject({ colorDisplayMode: "voltage" });
     expect(saveTextFile).toHaveBeenCalledOnce();
+    expect(writeOperationLog).toHaveBeenCalledWith("导出图形文件：voltage-export.svg");
+    expect(alert).toHaveBeenCalledWith("SVG 文件导出成功：voltage-export.svg");
+  });
+
+  test("does not report SVG export success when saving is cancelled", async () => {
+    const alert = vi.fn();
+    const writeOperationLog = vi.fn();
+    vi.stubGlobal("window", { alert });
+    const exportSvg = createExportSvg({
+      DEFAULT_CANVAS_BACKGROUND: "#ffffff",
+      activeLayerId: "default-layer",
+      backgroundPageRender: null,
+      buildSvgDocument: vi.fn(() => "<svg/>"),
+      canvasBackgroundColor: "#ffffff",
+      canvasBackgroundImageUrl: "",
+      canvasBounds: { width: 320, height: 180 },
+      colorPalette: DEFAULT_COLOR_PALETTE,
+      edges: [],
+      ensureSavedBeforeExport: () => true,
+      layers: [],
+      libraryTemplates: DEVICE_LIBRARY,
+      loadSvgImageExportPathById: async () => ({}),
+      measurementConfig: undefined,
+      nodes: [],
+      projectMeasurements: { groups: [] },
+      projectName: "cancelled-export",
+      safeFilePart: (value: string) => value,
+      saveTextFile: vi.fn(async () => false),
+      writeOperationLog
+    });
+
+    await exportSvg();
+
+    expect(writeOperationLog).not.toHaveBeenCalled();
+    expect(alert).not.toHaveBeenCalled();
+  });
+
+  test("reports successful E file export after saving completes", async () => {
+    const alert = vi.fn();
+    const writeOperationLog = vi.fn();
+    vi.stubGlobal("window", { alert });
+    const exportEFile = createExportEFile({
+      buildEFileExport: () => ({ filename: "模型.e", text: "<PowerBase/>", mime: "text/plain" }),
+      currentProject: () => ({ version: 1, name: "模型", nodes: [], edges: [] }),
+      ensureSavedBeforeExport: () => true,
+      getEExportWarnings: () => [],
+      saveTextFile: vi.fn(async () => true),
+      writeOperationLog
+    });
+
+    await exportEFile();
+
+    expect(writeOperationLog).toHaveBeenCalledWith("导出模型文件：模型.e");
+    expect(alert).toHaveBeenCalledWith("E 文件导出成功：模型.e");
+  });
+
+  test("does not report E file export success when saving is cancelled", async () => {
+    const alert = vi.fn();
+    const writeOperationLog = vi.fn();
+    vi.stubGlobal("window", { alert });
+    const exportEFile = createExportEFile({
+      buildEFileExport: () => ({ filename: "模型.e", text: "<PowerBase/>", mime: "text/plain" }),
+      currentProject: () => ({ version: 1, name: "模型", nodes: [], edges: [] }),
+      ensureSavedBeforeExport: () => true,
+      getEExportWarnings: () => [],
+      saveTextFile: vi.fn(async () => false),
+      writeOperationLog
+    });
+
+    await exportEFile();
+
+    expect(writeOperationLog).not.toHaveBeenCalled();
+    expect(alert).not.toHaveBeenCalled();
   });
 
   test("escapes custom canvas background image href", () => {

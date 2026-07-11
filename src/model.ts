@@ -2359,12 +2359,41 @@ function eSectionColumns(section: string, rows: EDeviceExport[]) {
   return columns;
 }
 
+const E_FILE_COLUMN_GAP = "    ";
+
+function eFileCellDisplayWidth(value: string) {
+  let width = 0;
+  for (const char of value) {
+    width += /[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6]/u.test(char)
+      ? 2
+      : 1;
+  }
+  return width;
+}
+
+function eFilePadCell(value: string, width: number) {
+  return `${value}${" ".repeat(Math.max(0, width - eFileCellDisplayWidth(value)))}`;
+}
+
+function formatEFileSectionRows(section: string, columns: string[], rows: string[][]) {
+  const widths = columns.map((column, columnIndex) =>
+    Math.max(eFileCellDisplayWidth(column), ...rows.map((row) => eFileCellDisplayWidth(row[columnIndex] ?? "")))
+  );
+  const formatRow = (prefix: "@" | "#", cells: string[]) =>
+    [prefix, ...cells.map((cell, index) => eFilePadCell(cell, widths[index]))].join(E_FILE_COLUMN_GAP).trimEnd();
+  return [
+    `<${section}>`,
+    formatRow("@", columns),
+    ...rows.map((row) => formatRow("#", row)),
+    `</${section}>`
+  ].join("\n");
+}
+
 function formatESection(section: string, rows: EDeviceExport[]) {
   const columns = eSectionColumns(section, rows);
-  const bodyRows = sortESectionRecordsByIdx(rows)
-    .map((record, rowIndex) => `# ${columns.map((column) => formatEColumnValue(section, column, record.params[column], rowIndex)).join(" ")}`)
-    .join("\n");
-  return `<${section}>\n@ ${columns.join(" ")}\n${bodyRows}\n</${section}>`;
+  const formattedRows = sortESectionRecordsByIdx(rows)
+    .map((record, rowIndex) => columns.map((column) => formatEColumnValue(section, column, record.params[column], rowIndex)));
+  return formatEFileSectionRows(section, columns, formattedRows);
 }
 
 function buildPowerBaseSection(project: ProjectFile) {
@@ -2379,7 +2408,10 @@ function buildPowerBaseSection(project: ProjectFile) {
       i_unit: project.currentUnit ?? DEFAULT_CURRENT_UNIT
     }
   };
-  return `<PowerBase>\n@ p_base u_unit p_unit i_unit\n# ${["p_base", "u_unit", "p_unit", "i_unit"].map((column) => formatEColumnValue("PowerBase", column, row.params[column], 0)).join(" ")}\n</PowerBase>`;
+  const columns = ["p_base", "u_unit", "p_unit", "i_unit"];
+  return formatEFileSectionRows("PowerBase", columns, [
+    columns.map((column) => formatEColumnValue("PowerBase", column, row.params[column], 0))
+  ]);
 }
 
 export function buildEDeviceParameterFile(project: ProjectFile) {

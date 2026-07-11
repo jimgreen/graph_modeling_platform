@@ -1837,8 +1837,9 @@ export function createExportSvg(__appScope: Record<string, any>) {
       return;
     }
     const imageExportPathById = await loadSvgImageExportPathById();
-    await saveTextFile({
-      filename: `${safeFilePart(projectName)}.svg`,
+    const filename = `${safeFilePart(projectName)}.svg`;
+    const saved = await saveTextFile({
+      filename,
       text: buildSvgDocument(nodes, edges, {
         ...canvasBounds,
         backgroundColor: canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND,
@@ -1857,7 +1858,11 @@ export function createExportSvg(__appScope: Record<string, any>) {
       description: "SVG 图形文件",
       extensions: [".svg"]
     });
-    writeOperationLog(`导出图形文件：${projectName}.svg`);
+    if (!saved) {
+      return;
+    }
+    writeOperationLog(`导出图形文件：${filename}`);
+    window.alert(`SVG 文件导出成功：${filename}`);
   };
 }
 
@@ -1879,14 +1884,18 @@ export function createExportEFile(__appScope: Record<string, any>) {
       );
     }
     const file = buildEFileExport(project);
-    await saveTextFile({
+    const saved = await saveTextFile({
       filename: file.filename,
       text: file.text,
       mime: file.mime,
       description: "E 模型文件",
       extensions: [".e"]
     });
+    if (!saved) {
+      return;
+    }
     writeOperationLog(`导出模型文件：${file.filename}`);
+    window.alert(`E 文件导出成功：${file.filename}`);
   };
 }
 

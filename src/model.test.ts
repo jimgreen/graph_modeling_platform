@@ -234,6 +234,34 @@ function parseESections(text: string): Record<string, ParsedESection> {
   return sections;
 }
 
+function eFileVisualWidthForTest(value: string) {
+  let width = 0;
+  for (const char of value) {
+    width += /[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6]/u.test(char)
+      ? 2
+      : 1;
+  }
+  return width;
+}
+
+function eFileTokenVisualColumns(line: string) {
+  return Array.from(line.matchAll(/\S+/gu), (match) => eFileVisualWidthForTest(line.slice(0, match.index ?? 0)));
+}
+
+function expectEFileSectionColumnsAligned(text: string, section: string) {
+  const match = new RegExp(`<${section}>\\r?\\n([\\s\\S]*?)\\r?\\n<\\/${section}>`, "u").exec(text);
+  expect(match, `Missing E section ${section}`).toBeTruthy();
+  const lines = (match?.[1] ?? "").split(/\r?\n/u);
+  const header = lines.find((line) => line.startsWith("@"));
+  const rows = lines.filter((line) => line.startsWith("#"));
+  expect(header).toBeTruthy();
+  expect(rows.length).toBeGreaterThan(0);
+  const expectedColumns = eFileTokenVisualColumns(header ?? "").slice(1);
+  for (const row of rows) {
+    expect(eFileTokenVisualColumns(row).slice(1)).toEqual(expectedColumns);
+  }
+}
+
 function hasImmediateRouteReversal(points: Point[]) {
   for (let index = 1; index < points.length - 1; index += 1) {
     const previous = points[index - 1];
@@ -2139,6 +2167,7 @@ describe("power system model", () => {
 
   test("builds a downloadable E file export for the current model", () => {
     const node = createDefaultNode("ac-source", { x: 100, y: 100 });
+    node.name = "交流发电机-1";
     const project: ProjectFile = {
       version: 1,
       name: "混合/能源:模型",
@@ -2151,8 +2180,11 @@ describe("power system model", () => {
     expect(file.filename).toBe("混合_能源_模型.e");
     expect(file.mime).toBe("text/plain");
     expect(file.text).toContain("<PowerBase>");
-    expect(file.text).toContain("@ p_base u_unit p_unit i_unit");
+    expect(file.text).toContain("@    p_base    u_unit    p_unit    i_unit");
+    expect(file.text).toContain("#    100       kV        MW        A");
     expect(file.text).toContain("<ACGenerator>");
+    expectEFileSectionColumnsAligned(file.text, "PowerBase");
+    expectEFileSectionColumnsAligned(file.text, "ACGenerator");
     expect(() => JSON.parse(file.text)).toThrow();
   });
 
