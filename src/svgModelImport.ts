@@ -3,11 +3,27 @@ import {
   DEFAULT_MODEL_LAYER_NAME,
   DEVICE_LIBRARY,
   createNodeFromTemplate,
+  getSafeNodeScaleX,
+  getSafeNodeScaleY,
+  getTerminalPoint,
+  isBusNode,
   type DeviceTemplate,
+  type Edge,
   type ModelNode,
   type ModelLayer,
+  type Point,
   type ProjectFile
 } from "./model";
+import {
+  measurementFontScaleForNode,
+  measurementOffsetScaleForNode,
+  type MeasurementGroup,
+  type MeasurementGroupAnchor,
+  type MeasurementGroupBorderStyle,
+  type MeasurementGroupLayout,
+  type MeasurementItemBinding,
+  type MeasurementStyleOverride
+} from "./measurements";
 
 export type SvgModelImportMode = "platform" | "generic";
 
@@ -423,59 +439,123 @@ function isInsideDefs(element: Element) {
   return false;
 }
 
+function hasAncestorId(element: Element, id: string) {
+  let parent = element.parentNode;
+  while (parent && parent.nodeType === 1) {
+    if ((parent as Element).getAttribute("id") === id) {
+      return true;
+    }
+    parent = parent.parentNode;
+  }
+  return false;
+}
+
+function isInsideNestedSvg(element: Element, root: Element) {
+  let parent = element.parentNode;
+  while (parent && parent.nodeType === 1 && parent !== root) {
+    if (elementName(parent as Element) === "svg") {
+      return true;
+    }
+    parent = parent.parentNode;
+  }
+  return false;
+}
+
 async function parsePlatformSvg(
   document: Document,
   options: SvgModelImportOptions,
   warnings: string[]
 ): Promise<SvgModelImportResult> {
   const root = document.documentElement;
+  const dom = options.dom ?? browserDomAdapter();
   const { width: canvasWidth, height: canvasHeight } = svgViewport(root, warnings);
   const templates = options.templates ?? DEVICE_LIBRARY;
   const templateByKind = new Map(templates.map((template) => [template.kind, template]));
+  const staticImageTemplate = templateByKind.get("static-image")
+    ?? DEVICE_LIBRARY.find((template) => template.kind === "static-image");
+  const staticTextTemplate = templateByKind.get("static-text")
+    ?? DEVICE_LIBRARY.find((template) => template.kind === "static-text");
+  if (!staticImageTemplate || !staticTextTemplate) {
+    throw new Error("当前图元库缺少 SVG 导入所需的静态图元模板。");
+  }
   const usedNodeIds = new Set<string>();
+  const usedEdgeIds = new Set<string>();
+  const usedMeasurementGroupIds = new Set<string>();
   const nodeIdBySvgId = new Map<string, string>();
   const nodes: ModelNode[] = [];
   const semanticUses = [root, ...walkElements(root)].filter((element) =>
-    elementName(element) === "use" && element.hasAttribute("dev-kind") && !isInsideDefs(element)
+    elementName(element) === "use" &&
+    !isInsideDefs(element) &&
+    !hasAncestorId(element, "Background_Layer") &&
+    !isInsideNestedSvg(element, root)
   );
   const batchSize = Math.max(1, Math.floor(options.batchSize ?? 200));
   const yieldToMain = options.yieldToMain ?? (() => new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0)));
+  let deviceCount = 0;
+  let staticNodeCount = 0;
   let defaultedDeviceCount = 0;
 
   for (let index = 0; index < semanticUses.length; index += 1) {
     const element = semanticUses[index];
-    const kind = String(element.getAttribute("dev-kind") || "").trim();
+    const declaredKind = String(element.getAttribute("dev-kind") || "").trim();
+    const href = elementHref(element);
+    const kind = declaredKind || inferredKindFromHref(href, templates);
     const template = templateByKind.get(kind);
-    if (!template || kind.startsWith("static-")) {
-      continue;
-    }
-    const rawId = String(element.getAttribute("dev-id") || element.getAttribute("id") || `${kind}-${index + 1}`);
-    const id = uniqueModelId(rawId, `${kind}-${index + 1}`, usedNodeIds, warnings);
     const symbol = symbolForUse(root, element);
-    const transform = parseGeometryTransform(symbol);
-    const nodeWidth = Math.max(1, elementNumber(element, "width", template.size.width));
-    const nodeHeight = Math.max(1, elementNumber(element, "height", template.size.height));
+    const fallbackWidth = template?.size.width ?? 120;
+    const fallbackHeight = template?.size.height ?? 80;
+    const nodeWidth = Math.max(1, elementNumber(element, "width", fallbackWidth));
+    const nodeHeight = Math.max(1, elementNumber(element, "height", fallbackHeight));
     const x = elementNumber(element, "x", 0);
     const y = elementNumber(element, "y", 0);
-    const baseNode = createNodeFromTemplate(template, { x: x + nodeWidth / 2, y: y + nodeHeight / 2 });
     const requestedLayerId = String(element.getAttribute("layer-id") || DEFAULT_MODEL_LAYER_ID).trim() || DEFAULT_MODEL_LAYER_ID;
-    const status = stateFromHref(elementHref(element));
-    const node = restoreTerminalMetadata({
-      ...baseNode,
-      id,
-      name: String(element.getAttribute("name") || template.label).trim() || template.label,
-      layerId: requestedLayerId,
-      size: { width: nodeWidth, height: nodeHeight },
-      rotation: transform.rotation,
-      scale: 1,
-      scaleX: transform.scaleX,
-      scaleY: transform.scaleY,
-      params: {
-        ...baseNode.params,
-        ...(element.hasAttribute("idx") ? { idx: String(element.getAttribute("idx") || "") } : {}),
-        ...(status ? { status } : {})
+    const rawId = String(element.getAttribute("dev-id") || element.getAttribute("id") || `${kind || "svg-node"}-${index + 1}`);
+    const id = uniqueModelId(rawId, `${kind || "svg-node"}-${index + 1}`, usedNodeIds, warnings);
+    let node: ModelNode | null = null;
+    if (template && !kind.startsWith("static-")) {
+      const transform = parseGeometryTransform(symbol);
+      const baseNode = createNodeFromTemplate(template, { x: x + nodeWidth / 2, y: y + nodeHeight / 2 });
+      const status = stateFromHref(href);
+      node = restoreTerminalMetadata({
+        ...baseNode,
+        id,
+        name: String(element.getAttribute("name") || template.label).trim() || template.label,
+        layerId: requestedLayerId,
+        size: { width: nodeWidth, height: nodeHeight },
+        rotation: transform.rotation,
+        scale: 1,
+        scaleX: transform.scaleX,
+        scaleY: transform.scaleY,
+        params: {
+          ...baseNode.params,
+          ...(element.hasAttribute("idx") ? { idx: String(element.getAttribute("idx") || "") } : {}),
+          ...(status ? { status } : {})
+        }
+      }, element);
+      deviceCount += 1;
+      defaultedDeviceCount += 1;
+    } else if (symbol) {
+      node = positionedStaticImageNode({
+        template: staticImageTemplate,
+        id,
+        name: String(element.getAttribute("name") || declaredKind || kind || "SVG 静态图元").trim() || "SVG 静态图元",
+        svg: standaloneSymbolSvg(root, symbol, dom, nodeWidth, nodeHeight),
+        width: nodeWidth,
+        height: nodeHeight,
+        position: { x: x + nodeWidth / 2, y: y + nodeHeight / 2 },
+        layerId: requestedLayerId
+      });
+      staticNodeCount += 1;
+      if (declaredKind && !template) {
+        warnings.push(`设备类型“${declaredKind}”在当前元件库中不存在，已降级为静态 SVG 图元。`);
       }
-    }, element);
+    } else if (declaredKind) {
+      warnings.push(`设备“${rawId}”引用的 SVG symbol 不存在，无法恢复其图形。`);
+    }
+    if (!node) {
+      usedNodeIds.delete(id);
+      continue;
+    }
     nodes.push(node);
     for (const alias of [rawId, element.getAttribute("dev-id"), element.getAttribute("id")]) {
       const normalizedAlias = String(alias || "").trim();
@@ -483,15 +563,208 @@ async function parsePlatformSvg(
         nodeIdBySvgId.set(normalizedAlias, id);
       }
     }
-    defaultedDeviceCount += 1;
     if ((index + 1) % batchSize === 0 && index + 1 < semanticUses.length) {
       await yieldToMain();
     }
   }
 
+  const nodeIndexById = new Map(nodes.map((node, index) => [node.id, index]));
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const updateNode = (node: ModelNode) => {
+    const index = nodeIndexById.get(node.id);
+    if (index === undefined) {
+      return;
+    }
+    nodes[index] = node;
+    nodeById.set(node.id, node);
+  };
+
+  const edges: Edge[] = [];
+  const segmentLayer = findById(root, "Segment_Layer");
+  const edgePaths = segmentLayer
+    ? walkElements(segmentLayer).filter((element) => elementName(element) === "path")
+    : [];
+  for (let index = 0; index < edgePaths.length; index += 1) {
+    const path = edgePaths[index];
+    const rawId = String(path.getAttribute("id") || `edge-${index + 1}`);
+    const sourceSvgId = String(path.getAttribute("source-dev-id") || "").trim();
+    const targetSvgId = String(path.getAttribute("target-dev-id") || "").trim();
+    const sourceId = nodeIdBySvgId.get(sourceSvgId);
+    const targetId = nodeIdBySvgId.get(targetSvgId);
+    const points = parsePolylinePath(String(path.getAttribute("d") || ""));
+    const source = sourceId ? nodeById.get(sourceId) : undefined;
+    const target = targetId ? nodeById.get(targetId) : undefined;
+    const edgeId = uniqueModelId(rawId, `edge-${index + 1}`, usedEdgeIds, warnings);
+    const sourceMatch = source && points ? matchedTerminal(source, points[0], warnings, edgeId, "首") : null;
+    const targetMatch = target && points ? matchedTerminal(target, points[points.length - 1], warnings, edgeId, "末") : null;
+    if (!points || !source || !target || !sourceMatch || !targetMatch) {
+      const fallbackId = uniqueModelId(`static-${edgeId}`, `static-edge-${index + 1}`, usedNodeIds, warnings);
+      nodes.push(positionedStaticImageNode({
+        template: staticImageTemplate,
+        id: fallbackId,
+        name: `未识别连接线 ${rawId}`,
+        svg: standaloneCanvasElementSvg(root, path, dom, canvasWidth, canvasHeight),
+        width: canvasWidth,
+        height: canvasHeight,
+        position: { x: canvasWidth / 2, y: canvasHeight / 2 },
+        layerId: DEFAULT_MODEL_LAYER_ID
+      }));
+      staticNodeCount += 1;
+      warnings.push(`连接线“${rawId}”无法恢复拓扑，已保留为静态 SVG 图元。`);
+      continue;
+    }
+    edges.push({
+      id: edgeId,
+      sourceId: source.id,
+      targetId: target.id,
+      sourceTerminalId: sourceMatch.terminalId,
+      targetTerminalId: targetMatch.terminalId,
+      sourcePoint: sourceMatch.endpointPoint,
+      targetPoint: targetMatch.endpointPoint,
+      routePoints: points.map((point) => ({ ...point }))
+    });
+    if ((index + 1) % batchSize === 0 && index + 1 < edgePaths.length) {
+      await yieldToMain();
+    }
+  }
+
+  const textLayer = findById(root, "Text_Layer");
+  const labelTexts = textLayer
+    ? walkElements(textLayer).filter((element) => elementName(element) === "text")
+    : [];
+  const labelsByNodeId = new Map<string, Element[]>();
+  const unmatchedLabels: Element[] = [];
+  for (const text of labelTexts) {
+    const nodeId = nodeIdBySvgId.get(String(text.getAttribute("dev-id") || "").trim());
+    if (!nodeId || !nodeById.has(nodeId)) {
+      unmatchedLabels.push(text);
+      continue;
+    }
+    const labels = labelsByNodeId.get(nodeId) ?? [];
+    labels.push(text);
+    labelsByNodeId.set(nodeId, labels);
+  }
+  for (const [nodeId, texts] of labelsByNodeId) {
+    const node = nodeById.get(nodeId);
+    if (!node || texts.length === 0) {
+      continue;
+    }
+    const first = texts[0];
+    const labelText = texts.map(elementText).join("");
+    const center = {
+      x: texts.reduce((sum, text) => sum + elementNumber(text, "x", node.position.x), 0) / texts.length,
+      y: texts.reduce((sum, text) => sum + elementNumber(text, "y", node.position.y), 0) / texts.length
+    };
+    const scaleX = getSafeNodeScaleX(node) || 1;
+    const scaleY = getSafeNodeScaleY(node) || 1;
+    const fontScale = Math.sqrt(scaleX * scaleY) || 1;
+    updateNode({
+      ...node,
+      params: {
+        ...node.params,
+        _labelText: labelText || node.name,
+        _labelX: String((center.x - node.position.x) / scaleX),
+        _labelY: String((center.y - node.position.y) / scaleY),
+        _labelColor: elementStyleValue(first, "fill") || "#334155",
+        _labelFontFamily: elementStyleValue(first, "font-family") || "Arial",
+        _labelFontSize: String(numericStyleValue(first, "font-size", 14) / fontScale),
+        _labelFontWeight: elementStyleValue(first, "font-weight") || "500",
+        _labelFontStyle: elementStyleValue(first, "font-style") || "normal",
+        _labelTextDecoration: elementStyleValue(first, "text-decoration") || "none",
+        _labelTextAnchor: String(first.getAttribute("text-anchor") || "middle"),
+        _labelRotation: texts.length > 1 ? "90" : "0",
+        _labelVisible: texts.every(elementHidden) ? "0" : "1",
+        _labelDisplayMode: "follow"
+      }
+    });
+  }
+  for (let index = 0; index < unmatchedLabels.length; index += 1) {
+    const text = unmatchedLabels[index];
+    const id = uniqueModelId(String(text.getAttribute("id") || `static-text-${index + 1}`), `static-text-${index + 1}`, usedNodeIds, warnings);
+    nodes.push(staticTextNode(
+      staticTextTemplate,
+      text,
+      id,
+      String(text.getAttribute("layer-id") || DEFAULT_MODEL_LAYER_ID).trim() || DEFAULT_MODEL_LAYER_ID
+    ));
+    staticNodeCount += 1;
+    warnings.push(`Text_Layer 中的文本“${elementText(text)}”未关联到设备，已恢复为静态文本。`);
+  }
+
+  const measurements: MeasurementGroup[] = [];
+  const measurementLayer = findById(root, "Measurement_Layer");
+  const measurementElements = measurementLayer
+    ? walkElements(measurementLayer).filter((element) => elementName(element) === "g" && hasClass(element, "mg"))
+    : [];
+  for (let index = 0; index < measurementElements.length; index += 1) {
+    const groupElement = measurementElements[index];
+    const svgDeviceId = String(groupElement.getAttribute("dev") || "").trim();
+    const nodeId = nodeIdBySvgId.get(svgDeviceId);
+    const node = nodeId ? nodeById.get(nodeId) : undefined;
+    const terminalId = String(groupElement.getAttribute("term") || "").trim() || undefined;
+    if (!node) {
+      warnings.push(`量测组引用的设备“${svgDeviceId}”不存在，已跳过。`);
+      continue;
+    }
+    if (terminalId && !node.terminals.some((terminal) => terminal.id === terminalId) && !isBusNode(node)) {
+      warnings.push(`设备“${node.name}”不存在端子“${terminalId}”，对应量测组已跳过。`);
+      continue;
+    }
+    const { textRows, items } = measurementItemsForGroup(groupElement, node, terminalId, warnings);
+    if (items.length === 0) {
+      continue;
+    }
+    const rect = walkElements(groupElement).find((element) => elementName(element) === "rect");
+    const position = parseTranslate(String(groupElement.getAttribute("transform") || ""));
+    const anchorPoint = terminalId ? getTerminalPoint(node, terminalId) : node.position;
+    const offsetScale = measurementOffsetScaleForNode(node);
+    const baseGroupId = terminalId ? `measurement-${node.id}-${terminalId}` : `measurement-${node.id}`;
+    const id = uniqueModelId(baseGroupId, `measurement-group-${index + 1}`, usedMeasurementGroupIds, warnings);
+    measurements.push({
+      id,
+      nodeId: node.id,
+      terminalId,
+      visible: !elementHidden(groupElement),
+      labelVisible: items.some((item) => Boolean(item.labelOverride)),
+      unitVisible: items.some((item) => Boolean(item.unitOverride)),
+      backgroundColor: rect ? elementStyleValue(rect, "fill") || "transparent" : "transparent",
+      borderColor: rect ? elementStyleValue(rect, "stroke") || "#64748b" : "#64748b",
+      borderStyle: measurementBorderStyle(rect),
+      borderWidth: rect ? numericStyleValue(rect, "stroke-width", 0) : 0,
+      anchor: terminalId ? terminalMeasurementAnchor(node, terminalId) : "custom",
+      offset: {
+        x: (position.x - anchorPoint.x) / (offsetScale.x || 1),
+        y: (position.y - anchorPoint.y) / (offsetScale.y || 1)
+      },
+      layout: inferredMeasurementLayout(textRows),
+      items
+    });
+    if ((index + 1) % batchSize === 0 && index + 1 < measurementElements.length) {
+      await yieldToMain();
+    }
+  }
+
+  const otherLayer = findById(root, "Other_Layer");
+  const otherElements = otherLayer ? childElements(otherLayer) : [];
+  for (let index = 0; index < otherElements.length; index += 1) {
+    const element = otherElements[index];
+    const id = uniqueModelId(String(element.getAttribute("id") || `static-other-${index + 1}`), `static-other-${index + 1}`, usedNodeIds, warnings);
+    nodes.push(positionedStaticImageNode({
+      template: staticImageTemplate,
+      id,
+      name: `SVG 辅助图元 ${index + 1}`,
+      svg: standaloneCanvasElementSvg(root, element, dom, canvasWidth, canvasHeight),
+      width: canvasWidth,
+      height: canvasHeight,
+      position: { x: canvasWidth / 2, y: canvasHeight / 2 },
+      layerId: String(element.getAttribute("layer-id") || DEFAULT_MODEL_LAYER_ID).trim() || DEFAULT_MODEL_LAYER_ID
+    }));
+    staticNodeCount += 1;
+  }
+
   if (nodes.length === 0) {
-    warnings.push("平台 SVG 未恢复出有效设备，已按普通 SVG 整体导入。");
-    return genericSvgResult(document, options.dom ?? browserDomAdapter(), options, warnings);
+    warnings.push("平台 SVG 未恢复出有效设备或静态图元，已按普通 SVG 整体导入。");
+    return genericSvgResult(document, dom, options, warnings);
   }
   const layerState = platformLayers(root, nodes, warnings);
   const validLayerIds = new Set(layerState.layers.map((layer) => layer.id));
@@ -499,7 +772,7 @@ async function parsePlatformSvg(
     if (validLayerIds.has(node.layerId ?? "")) {
       return node;
     }
-    warnings.push(`设备“${node.name}”引用的图层“${node.layerId}”不存在，已移入默认图层。`);
+    warnings.push(`图元“${node.name}”引用的图层“${node.layerId}”不存在，已移入默认图层。`);
     return { ...node, layerId: validLayerIds.has(DEFAULT_MODEL_LAYER_ID) ? DEFAULT_MODEL_LAYER_ID : layerState.layers[0].id };
   });
   if (defaultedDeviceCount > 0) {
@@ -513,15 +786,14 @@ async function parsePlatformSvg(
     canvasWidth,
     canvasHeight,
     canvasBackgroundColor: platformBackgroundColor(root),
-    measurements: { version: 1, groups: [] },
+    measurements: { version: 1, groups: measurements },
     nodes: normalizedNodes,
-    edges: []
+    edges
   };
-  void nodeIdBySvgId;
   return {
     mode: "platform",
     project,
-    stats: { nodes: normalizedNodes.length, edges: 0, measurementGroups: 0, staticNodes: 0 },
+    stats: { nodes: deviceCount, edges: edges.length, measurementGroups: measurements.length, staticNodes: staticNodeCount },
     warnings
   };
 }
@@ -549,6 +821,347 @@ function staticImageNode(
       strokeColor: "transparent",
       lineWidth: "0",
       allowResizeTransform: "1"
+    }
+  };
+}
+
+function positionedStaticImageNode(options: {
+  template: DeviceTemplate;
+  id: string;
+  name: string;
+  svg: string;
+  width: number;
+  height: number;
+  position: Point;
+  layerId: string;
+}) {
+  return {
+    ...staticImageNode(options.template, options.id, options.name, options.svg, options.width, options.height),
+    position: { ...options.position },
+    layerId: options.layerId
+  };
+}
+
+function serializedChildNodes(element: Element, dom: SvgDomAdapter) {
+  const markup: string[] = [];
+  for (let index = 0; index < element.childNodes.length; index += 1) {
+    const child = element.childNodes.item(index);
+    if (child) {
+      markup.push(dom.serialize(child));
+    }
+  }
+  return markup.join("");
+}
+
+function sharedDefinitionMarkup(root: Element, dom: SvgDomAdapter) {
+  const defs = [root, ...walkElements(root)].find((element) => elementName(element) === "defs");
+  if (!defs) {
+    return "";
+  }
+  return childElements(defs)
+    .filter((element) => elementName(element) !== "symbol")
+    .map((element) => dom.serialize(element))
+    .join("");
+}
+
+function standaloneSvgMarkup(options: {
+  root: Element;
+  dom: SvgDomAdapter;
+  body: string;
+  viewBox: string;
+}) {
+  const sharedDefs = sharedDefinitionMarkup(options.root, options.dom);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${options.viewBox}">${sharedDefs ? `<defs>${sharedDefs}</defs>` : ""}${options.body}</svg>`;
+}
+
+function standaloneSymbolSvg(root: Element, symbol: Element, dom: SvgDomAdapter, width: number, height: number) {
+  const viewBox = String(symbol.getAttribute("viewBox") || `0 0 ${width} ${height}`).trim();
+  return standaloneSvgMarkup({
+    root,
+    dom,
+    viewBox,
+    body: serializedChildNodes(symbol, dom)
+  });
+}
+
+function standaloneCanvasElementSvg(root: Element, element: Element, dom: SvgDomAdapter, width: number, height: number) {
+  return standaloneSvgMarkup({
+    root,
+    dom,
+    viewBox: `0 0 ${width} ${height}`,
+    body: dom.serialize(element)
+  });
+}
+
+function inferredKindFromHref(href: string, templates: readonly DeviceTemplate[]) {
+  const symbolId = href.replace(/^#/, "");
+  const sortedKinds = templates.map((template) => template.kind).sort((left, right) => right.length - left.length);
+  return sortedKinds.find((kind) => symbolId.includes(`_${kind}_`) || symbolId.endsWith(`_${kind}`)) ?? "";
+}
+
+function parsePolylinePath(data: string) {
+  const withoutNumbers = data
+    .replace(/[-+]?(?:\d*\.)?\d+(?:e[-+]?\d+)?/giu, "")
+    .replace(/[\s,]/gu, "");
+  if (/[^MLHVZmlhvz]/u.test(withoutNumbers)) {
+    return null;
+  }
+  const tokens = data.match(/[MLHVZmlhvz]|[-+]?(?:\d*\.)?\d+(?:e[-+]?\d+)?/giu) ?? [];
+  const points: Point[] = [];
+  let command = "";
+  let x = 0;
+  let y = 0;
+  let index = 0;
+  const readNumber = () => Number(tokens[index++]);
+  while (index < tokens.length) {
+    if (/^[A-Za-z]$/u.test(tokens[index])) {
+      command = tokens[index++];
+    }
+    if (!command) {
+      return null;
+    }
+    if (command === "Z" || command === "z") {
+      break;
+    }
+    const relative = command === command.toLowerCase();
+    if (command === "M" || command === "m" || command === "L" || command === "l") {
+      if (index + 1 >= tokens.length || /^[A-Za-z]$/u.test(tokens[index]) || /^[A-Za-z]$/u.test(tokens[index + 1])) {
+        return null;
+      }
+      const nextX = readNumber();
+      const nextY = readNumber();
+      if (!Number.isFinite(nextX) || !Number.isFinite(nextY)) {
+        return null;
+      }
+      x = relative ? x + nextX : nextX;
+      y = relative ? y + nextY : nextY;
+      points.push({ x, y });
+      if (command === "M" || command === "m") {
+        command = relative ? "l" : "L";
+      }
+      continue;
+    }
+    if (command === "H" || command === "h") {
+      if (index >= tokens.length || /^[A-Za-z]$/u.test(tokens[index])) {
+        return null;
+      }
+      const nextX = readNumber();
+      if (!Number.isFinite(nextX)) {
+        return null;
+      }
+      x = relative ? x + nextX : nextX;
+      points.push({ x, y });
+      continue;
+    }
+    if (command === "V" || command === "v") {
+      if (index >= tokens.length || /^[A-Za-z]$/u.test(tokens[index])) {
+        return null;
+      }
+      const nextY = readNumber();
+      if (!Number.isFinite(nextY)) {
+        return null;
+      }
+      y = relative ? y + nextY : nextY;
+      points.push({ x, y });
+      continue;
+    }
+    return null;
+  }
+  const deduplicated = points.filter((point, pointIndex) =>
+    pointIndex === 0 || point.x !== points[pointIndex - 1].x || point.y !== points[pointIndex - 1].y
+  );
+  return deduplicated.length >= 2 ? deduplicated : null;
+}
+
+function pointDistance(first: Point, second: Point) {
+  return Math.hypot(first.x - second.x, first.y - second.y);
+}
+
+function matchedTerminal(node: ModelNode, point: Point, warnings: string[], edgeId: string, endpointLabel: string) {
+  if (isBusNode(node)) {
+    return {
+      terminalId: node.terminals[0]?.id ?? "t1",
+      endpointPoint: { ...point }
+    };
+  }
+  if (node.terminals.length === 0) {
+    return null;
+  }
+  const ranked = node.terminals
+    .map((terminal) => ({ terminal, distance: pointDistance(getTerminalPoint(node, terminal.id), point) }))
+    .sort((left, right) => left.distance - right.distance || left.terminal.id.localeCompare(right.terminal.id));
+  const best = ranked[0];
+  if (!best) {
+    return null;
+  }
+  const tolerance = Math.max(24, Math.min(node.size.width, node.size.height) / 2);
+  const tied = ranked[1] && Math.abs(ranked[1].distance - best.distance) <= 0.5;
+  if (best.distance > tolerance || tied) {
+    warnings.push(`连接线“${edgeId}”的${endpointLabel}端子无法唯一精确匹配，已使用最近端子“${best.terminal.id}”。`);
+  }
+  return { terminalId: best.terminal.id, endpointPoint: undefined };
+}
+
+function elementStyleValue(element: Element, property: string) {
+  const direct = String(element.getAttribute(property) || "").trim();
+  if (direct) {
+    return direct;
+  }
+  const pattern = new RegExp(`(?:^|;)\\s*${property.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:\\s*([^;]+)`, "iu");
+  return pattern.exec(String(element.getAttribute("style") || ""))?.[1]?.trim() ?? "";
+}
+
+function elementHidden(element: Element) {
+  return elementStyleValue(element, "display") === "none" || element.getAttribute("visibility") === "hidden";
+}
+
+function elementText(element: Element) {
+  return String(element.textContent || "").trim();
+}
+
+function parseTranslate(value: string) {
+  const match = /translate\s*\(\s*([-+\d.eE]+)(?:[\s,]+([-+\d.eE]+))?\s*\)/u.exec(value);
+  const x = Number(match?.[1] ?? 0);
+  const y = Number(match?.[2] ?? 0);
+  return {
+    x: Number.isFinite(x) ? x : 0,
+    y: Number.isFinite(y) ? y : 0
+  };
+}
+
+function numericStyleValue(element: Element, property: string, fallback: number) {
+  const parsed = Number.parseFloat(elementStyleValue(element, property));
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function terminalMeasurementAnchor(node: ModelNode, terminalId: string): MeasurementGroupAnchor {
+  const terminal = node.terminals.find((candidate) => candidate.id === terminalId);
+  if (!terminal) {
+    return "custom";
+  }
+  if (Math.abs(terminal.anchor.x) >= Math.abs(terminal.anchor.y)) {
+    return terminal.anchor.x >= 0 ? "right" : "left";
+  }
+  return terminal.anchor.y >= 0 ? "bottom" : "top";
+}
+
+function inferredMeasurementLayout(rows: Element[]): MeasurementGroupLayout {
+  if (rows.length <= 1) {
+    return "vertical";
+  }
+  const xValues = new Set(rows.map((row) => numericStyleValue(row, "x", 0).toFixed(3)));
+  const yValues = new Set(rows.map((row) => numericStyleValue(row, "y", 0).toFixed(3)));
+  if (xValues.size === 1) {
+    return "vertical";
+  }
+  if (yValues.size === 1) {
+    return "horizontal";
+  }
+  return "grid";
+}
+
+function measurementBorderStyle(rect: Element | undefined): MeasurementGroupBorderStyle {
+  if (!rect || numericStyleValue(rect, "stroke-width", 0) <= 0) {
+    return "none";
+  }
+  const dashArray = elementStyleValue(rect, "stroke-dasharray");
+  if (/^2(?:\D|$)/u.test(dashArray)) {
+    return "dotted";
+  }
+  if (dashArray && dashArray !== "none") {
+    return "dashed";
+  }
+  return "solid";
+}
+
+function measurementStyleForText(text: Element, node: ModelNode): MeasurementStyleOverride {
+  const scale = measurementFontScaleForNode(node) || 1;
+  const fontSize = numericStyleValue(text, "font-size", 14) / scale;
+  const fontWeight = elementStyleValue(text, "font-weight");
+  return {
+    color: elementStyleValue(text, "fill") || "#334155",
+    fontFamily: elementStyleValue(text, "font-family") || "Arial",
+    fontSize,
+    fontWeight: fontWeight === "400" || fontWeight === "700" ? fontWeight : "500",
+    fontStyle: elementStyleValue(text, "font-style") === "italic" ? "italic" : "normal",
+    textDecoration: elementStyleValue(text, "text-decoration") === "underline" ? "underline" : "none"
+  };
+}
+
+function measurementItemsForGroup(
+  groupElement: Element,
+  node: ModelNode,
+  terminalId: string | undefined,
+  warnings: string[]
+) {
+  const textRows = walkElements(groupElement).filter((element) => elementName(element) === "text");
+  const items: MeasurementItemBinding[] = [];
+  for (let rowIndex = 0; rowIndex < textRows.length; rowIndex += 1) {
+    const text = textRows[rowIndex];
+    const spans = childElements(text).filter((element) => elementName(element) === "tspan");
+    const valueIndex = spans.findIndex((span) => hasClass(span, "mv"));
+    if (valueIndex < 0) {
+      continue;
+    }
+    const valueSpan = spans[valueIndex];
+    const measurementTypeId = String(valueSpan.getAttribute("mt") || "").trim();
+    if (!measurementTypeId) {
+      warnings.push(`设备“${node.name}”的量测项缺少 mt，已跳过。`);
+      continue;
+    }
+    const rawValueId = String(valueSpan.getAttribute("id") || `${node.id}-${terminalId ? `${terminalId}-` : ""}${measurementTypeId}-${rowIndex}`)
+      .replace(/^mv-/u, "");
+    const sourceField = String(valueSpan.getAttribute("mf") || "").trim();
+    const sourcePoint = sourceField
+      ? (sourceField.startsWith(`${node.id}.`) ? sourceField : `${node.id}.${sourceField}`)
+      : `${node.id}.${terminalId ? `${terminalId}.` : ""}${measurementTypeId}`;
+    const label = spans.slice(0, valueIndex).map(elementText).join("").trim();
+    const unit = spans.slice(valueIndex + 1).map(elementText).join("").trim();
+    items.push({
+      id: `measurement-${rawValueId}`,
+      measurementTypeId,
+      role: String(valueSpan.getAttribute("mr") || "").trim() || undefined,
+      sourcePoint,
+      visible: !elementHidden(text) && !elementHidden(valueSpan),
+      labelOverride: label,
+      unitOverride: unit,
+      styleOverride: measurementStyleForText(text, node)
+    });
+  }
+  return { textRows, items };
+}
+
+function staticTextNode(
+  template: DeviceTemplate,
+  element: Element,
+  id: string,
+  layerId: string
+): ModelNode {
+  const text = elementText(element) || "文字";
+  const fontSize = numericStyleValue(element, "font-size", 16);
+  const x = elementNumber(element, "x", 0);
+  const y = elementNumber(element, "y", 0);
+  const width = Math.max(24, text.length * fontSize * 0.7);
+  const height = Math.max(24, fontSize * 1.5);
+  const node = createNodeFromTemplate(template, { x, y });
+  return {
+    ...node,
+    id,
+    name: text,
+    layerId,
+    size: { width, height },
+    params: {
+      ...node.params,
+      text,
+      textColor: elementStyleValue(element, "fill") || "#111827",
+      fontFamily: elementStyleValue(element, "font-family") || "Arial",
+      fontSize: String(fontSize),
+      fontWeight: elementStyleValue(element, "font-weight") || "500",
+      fontStyle: elementStyleValue(element, "font-style") || "normal",
+      textDecoration: elementStyleValue(element, "text-decoration") || "none",
+      fillColor: "transparent",
+      strokeColor: "transparent",
+      lineWidth: "0"
     }
   };
 }
