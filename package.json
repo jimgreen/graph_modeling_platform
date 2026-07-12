@@ -31,6 +31,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/ws": "^8.18.1",
+    "@xmldom/xmldom": "^0.9.10",
     "fake-indexeddb": "^6.2.5",
     "vitest": "^3.0.0"
   }
