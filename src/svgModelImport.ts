@@ -7,6 +7,7 @@ import {
   getSafeNodeScaleY,
   getTerminalPoint,
   isBusNode,
+  projectPointToBusCenterlineIfInRange,
   type DeviceTemplate,
   type Edge,
   type ModelNode,
@@ -307,13 +308,49 @@ function svgViewport(root: Element, warnings: string[]) {
   return { width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT };
 }
 
+function firstAttributeValue(element: Element | null | undefined, ...names: string[]) {
+  if (!element) {
+    return "";
+  }
+  for (const name of names) {
+    const value = element.getAttribute(name);
+    if (value !== null && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
+function hasAnyAttribute(element: Element, ...names: string[]) {
+  return names.some((name) => element.hasAttribute(name));
+}
+
+function legacyPlatformSvg(root: Element) {
+  return [root, ...walkElements(root)].some((element) => hasAnyAttribute(
+    element,
+    "data-export-active-layer-id",
+    "data-export-layer-def",
+    "data-export-device-kind",
+    "data-export-device-id",
+    "data-export-edge-id"
+  ));
+}
+
 function platformSvg(root: Element) {
   const all = [root, ...walkElements(root)];
   const hasRoot = all.some((element) => element.getAttribute("id") === "root_g");
   const semanticLayerIds = new Set(["Segment_Layer", "Text_Layer", "Measurement_Layer", "Other_Layer"]);
   const hasLayer = all.some((element) => semanticLayerIds.has(String(element.getAttribute("id") || "")));
   const hasMetadata = all.some((element) =>
-    ["dev-kind", "dev-id", "source-dev-id", "target-dev-id"].some((name) => element.hasAttribute(name))
+    [
+      "dev-kind",
+      "dev-id",
+      "source-dev-id",
+      "target-dev-id",
+      "data-export-device-kind",
+      "data-export-device-id",
+      "data-export-edge-id"
+    ].some((name) => element.hasAttribute(name))
   );
   return hasRoot && hasLayer && hasMetadata;
 }
@@ -372,15 +409,15 @@ function platformLayers(root: Element, nodes: readonly ModelNode[], warnings: st
   const usedIds = new Set<string>();
   const layers: ModelLayer[] = [];
   for (const element of definitionLayer ? childElements(definitionLayer) : []) {
-    const rawId = String(element.getAttribute("layer-id") || "").trim();
+    const rawId = firstAttributeValue(element, "layer-id", "data-export-layer-def", "data-export-layer-id");
     if (!rawId || usedIds.has(rawId)) {
       continue;
     }
     usedIds.add(rawId);
     layers.push({
       id: rawId,
-      name: String(element.getAttribute("name") || rawId).trim() || rawId,
-      visible: element.getAttribute("visible") !== "0"
+      name: firstAttributeValue(element, "name", "data-export-layer-name") || rawId,
+      visible: firstAttributeValue(element, "visible", "data-export-layer-visible") !== "0"
     });
   }
   if (layers.length === 0) {
@@ -392,8 +429,11 @@ function platformLayers(root: Element, nodes: readonly ModelNode[], warnings: st
       layers.unshift({ id: DEFAULT_MODEL_LAYER_ID, name: DEFAULT_MODEL_LAYER_NAME, visible: true });
     }
   }
-  const requestedActive = String(root.getAttribute("active-layer-id") || "").trim()
-    || String(childElements(definitionLayer ?? root).find((element) => element.getAttribute("active") === "1")?.getAttribute("layer-id") || "").trim();
+  const activeDefinition = childElements(definitionLayer ?? root).find((element) =>
+    firstAttributeValue(element, "active", "data-export-layer-active") === "1"
+  );
+  const requestedActive = firstAttributeValue(root, "active-layer-id", "data-export-active-layer-id")
+    || firstAttributeValue(activeDefinition, "layer-id", "data-export-layer-def", "data-export-layer-id");
   const activeLayerId = layers.some((layer) => layer.id === requestedActive) ? requestedActive : layers[0].id;
   return { layers, activeLayerId };
 }
@@ -529,6 +569,18 @@ function isInsideNestedSvg(element: Element, root: Element) {
   return false;
 }
 
+function edgeMetadataElement(path: Element, segmentLayer: Element) {
+  let current = path.parentNode;
+  while (current && current.nodeType === 1 && current !== segmentLayer) {
+    const element = current as Element;
+    if (hasClass(element, "export-edge") || hasAnyAttribute(element, "edge-id", "data-export-edge-id")) {
+      return element;
+    }
+    current = current.parentNode;
+  }
+  return path;
+}
+
 async function parsePlatformSvg(
   document: Document,
   options: SvgModelImportOptions,
@@ -536,6 +588,10 @@ async function parsePlatformSvg(
 ): Promise<SvgModelImportResult> {
   const root = document.documentElement;
   const dom = options.dom ?? browserDomAdapter();
+  const legacyMetadata = legacyPlatformSvg(root);
+  if (legacyMetadata) {
+    warnings.push("检测到旧版平台 SVG 元数据，已启用兼容恢复。");
+  }
   const { width: canvasWidth, height: canvasHeight } = svgViewport(root, warnings);
   const templates = options.templates ?? DEVICE_LIBRARY;
   const templateByKind = new Map(templates.map((template) => [template.kind, template]));
@@ -565,7 +621,7 @@ async function parsePlatformSvg(
 
   for (let index = 0; index < semanticUses.length; index += 1) {
     const element = semanticUses[index];
-    const declaredKind = String(element.getAttribute("dev-kind") || "").trim();
+    const declaredKind = firstAttributeValue(element, "dev-kind", "data-export-device-kind");
     const href = elementHref(element);
     const kind = declaredKind || inferredKindFromHref(href, templates);
     const template = templateByKind.get(kind);
@@ -576,8 +632,14 @@ async function parsePlatformSvg(
     const nodeHeight = Math.max(1, elementNumber(element, "height", fallbackHeight));
     const x = elementNumber(element, "x", 0);
     const y = elementNumber(element, "y", 0);
-    const requestedLayerId = String(element.getAttribute("layer-id") || DEFAULT_MODEL_LAYER_ID).trim() || DEFAULT_MODEL_LAYER_ID;
-    const rawId = String(element.getAttribute("dev-id") || element.getAttribute("id") || `${kind || "svg-node"}-${index + 1}`);
+    const requestedLayerId = firstAttributeValue(element, "layer-id", "data-export-layer-id") || DEFAULT_MODEL_LAYER_ID;
+    const rawId = firstAttributeValue(
+      element,
+      "dev-id",
+      "data-export-device-id",
+      "data-export-node-id",
+      "id"
+    ) || `${kind || "svg-node"}-${index + 1}`;
     const id = uniqueModelId(rawId, `${kind || "svg-node"}-${index + 1}`, usedNodeIds, warnings);
     let node: ModelNode | null = null;
     if (template && !kind.startsWith("static-")) {
@@ -587,7 +649,7 @@ async function parsePlatformSvg(
       node = restoreTerminalMetadata({
         ...baseNode,
         id,
-        name: String(element.getAttribute("name") || template.label).trim() || template.label,
+        name: firstAttributeValue(element, "name", "dev-name", "data-export-device-name") || template.label,
         layerId: requestedLayerId,
         size: { width: nodeWidth, height: nodeHeight },
         rotation: transform.rotation,
@@ -596,7 +658,9 @@ async function parsePlatformSvg(
         scaleY: transform.scaleY,
         params: {
           ...baseNode.params,
-          ...(element.hasAttribute("idx") ? { idx: String(element.getAttribute("idx") || "") } : {}),
+          ...(firstAttributeValue(element, "idx", "dev-idx", "data-export-device-idx")
+            ? { idx: firstAttributeValue(element, "idx", "dev-idx", "data-export-device-idx") }
+            : {}),
           ...(status ? { status } : {})
         }
       }, element);
@@ -606,7 +670,10 @@ async function parsePlatformSvg(
       node = positionedStaticImageNode({
         template: staticImageTemplate,
         id,
-        name: String(element.getAttribute("name") || declaredKind || kind || "SVG 静态图元").trim() || "SVG 静态图元",
+        name: firstAttributeValue(element, "name", "dev-name", "data-export-device-name")
+          || declaredKind
+          || kind
+          || "SVG 静态图元",
         svg: standaloneSymbolSvg(root, symbol, dom, nodeWidth, nodeHeight),
         width: nodeWidth,
         height: nodeHeight,
@@ -625,7 +692,13 @@ async function parsePlatformSvg(
       continue;
     }
     nodes.push(node);
-    for (const alias of [rawId, element.getAttribute("dev-id"), element.getAttribute("id")]) {
+    for (const alias of [
+      rawId,
+      element.getAttribute("dev-id"),
+      element.getAttribute("data-export-device-id"),
+      element.getAttribute("data-export-node-id"),
+      element.getAttribute("id")
+    ]) {
       const normalizedAlias = String(alias || "").trim();
       if (normalizedAlias && !nodeIdBySvgId.has(normalizedAlias)) {
         nodeIdBySvgId.set(normalizedAlias, id);
@@ -652,19 +725,67 @@ async function parsePlatformSvg(
   const edgePaths = segmentLayer
     ? walkElements(segmentLayer).filter((element) => elementName(element) === "path")
     : [];
+  let inferredLegacyEdgeCount = 0;
   for (let index = 0; index < edgePaths.length; index += 1) {
     const path = edgePaths[index];
-    const rawId = String(path.getAttribute("id") || `edge-${index + 1}`);
-    const sourceSvgId = String(path.getAttribute("source-dev-id") || "").trim();
-    const targetSvgId = String(path.getAttribute("target-dev-id") || "").trim();
+    const metadataElement = segmentLayer ? edgeMetadataElement(path, segmentLayer) : path;
+    const rawId = firstAttributeValue(path, "edge-id", "data-export-edge-id", "id")
+      || firstAttributeValue(metadataElement, "edge-id", "data-export-edge-id", "id")
+      || `edge-${index + 1}`;
+    const sourceSvgId = firstAttributeValue(
+      path,
+      "source-dev-id",
+      "data-export-source-dev-id",
+      "data-export-source-device-id",
+      "data-export-source-node-id"
+    ) || firstAttributeValue(
+      metadataElement,
+      "source-dev-id",
+      "data-export-source-dev-id",
+      "data-export-source-device-id",
+      "data-export-source-node-id"
+    );
+    const targetSvgId = firstAttributeValue(
+      path,
+      "target-dev-id",
+      "data-export-target-dev-id",
+      "data-export-target-device-id",
+      "data-export-target-node-id"
+    ) || firstAttributeValue(
+      metadataElement,
+      "target-dev-id",
+      "data-export-target-dev-id",
+      "data-export-target-device-id",
+      "data-export-target-node-id"
+    );
     const sourceId = nodeIdBySvgId.get(sourceSvgId);
     const targetId = nodeIdBySvgId.get(targetSvgId);
     const points = parsePolylinePath(String(path.getAttribute("d") || ""));
-    const source = sourceId ? nodeById.get(sourceId) : undefined;
-    const target = targetId ? nodeById.get(targetId) : undefined;
+    let source = sourceId ? nodeById.get(sourceId) : undefined;
+    let target = targetId ? nodeById.get(targetId) : undefined;
     const edgeId = uniqueModelId(rawId, `edge-${index + 1}`, usedEdgeIds, warnings);
-    const sourceMatch = source && points ? matchedTerminal(source, points[0], warnings, edgeId, "首") : null;
-    const targetMatch = target && points ? matchedTerminal(target, points[points.length - 1], warnings, edgeId, "末") : null;
+    let sourceMatch = source && points ? matchedTerminal(source, points[0], warnings, edgeId, "首") : null;
+    let targetMatch = target && points ? matchedTerminal(target, points[points.length - 1], warnings, edgeId, "末") : null;
+    const legacyEdge = hasClass(metadataElement, "export-edge") || metadataElement.hasAttribute("data-export-edge-id");
+    let inferredLegacyEdge = false;
+    if (legacyEdge && points) {
+      if (!source || !sourceMatch) {
+        const inferredSource = inferLegacyEdgeEndpoint(nodes, points[0]);
+        if (inferredSource) {
+          source = inferredSource.node;
+          sourceMatch = inferredSource.match;
+          inferredLegacyEdge = true;
+        }
+      }
+      if (!target || !targetMatch) {
+        const inferredTarget = inferLegacyEdgeEndpoint(nodes, points[points.length - 1], source?.id);
+        if (inferredTarget) {
+          target = inferredTarget.node;
+          targetMatch = inferredTarget.match;
+          inferredLegacyEdge = true;
+        }
+      }
+    }
     if (!points || !source || !target || !sourceMatch || !targetMatch) {
       const fallbackId = uniqueModelId(`static-${edgeId}`, `static-edge-${index + 1}`, usedNodeIds, warnings);
       nodes.push(positionedStaticImageNode({
@@ -681,6 +802,9 @@ async function parsePlatformSvg(
       warnings.push(`连接线“${rawId}”无法恢复拓扑，已保留为静态 SVG 图元。`);
       continue;
     }
+    if (inferredLegacyEdge) {
+      inferredLegacyEdgeCount += 1;
+    }
     edges.push({
       id: edgeId,
       sourceId: source.id,
@@ -694,6 +818,9 @@ async function parsePlatformSvg(
     if ((index + 1) % batchSize === 0 && index + 1 < edgePaths.length) {
       await yieldToMain();
     }
+  }
+  if (inferredLegacyEdgeCount > 0) {
+    warnings.push(`${inferredLegacyEdgeCount} 条旧版连接线缺少首末设备标识，已根据端子和母线位置恢复拓扑。`);
   }
 
   const textLayer = findById(root, "Text_Layer");
@@ -1046,6 +1173,56 @@ function parsePolylinePath(data: string) {
 
 function pointDistance(first: Point, second: Point) {
   return Math.hypot(first.x - second.x, first.y - second.y);
+}
+
+function inferLegacyEdgeEndpoint(nodes: readonly ModelNode[], point: Point, excludedNodeId = "") {
+  const candidates: Array<{
+    node: ModelNode;
+    terminalId: string;
+    endpointPoint?: Point;
+    distance: number;
+  }> = [];
+  for (const node of nodes) {
+    if (node.id === excludedNodeId) {
+      continue;
+    }
+    if (isBusNode(node)) {
+      const projected = projectPointToBusCenterlineIfInRange(node, point);
+      if (projected) {
+        candidates.push({
+          node,
+          terminalId: node.terminals[0]?.id ?? "t1",
+          endpointPoint: projected,
+          distance: pointDistance(projected, point)
+        });
+      }
+      continue;
+    }
+    for (const terminal of node.terminals) {
+      candidates.push({
+        node,
+        terminalId: terminal.id,
+        distance: pointDistance(getTerminalPoint(node, terminal.id), point)
+      });
+    }
+  }
+  candidates.sort((left, right) =>
+    left.distance - right.distance
+    || left.node.id.localeCompare(right.node.id)
+    || left.terminalId.localeCompare(right.terminalId)
+  );
+  const best = candidates[0];
+  const tied = candidates[1] && Math.abs(candidates[1].distance - best.distance) <= 0.5;
+  if (!best || best.distance > 8 || tied) {
+    return null;
+  }
+  return {
+    node: best.node,
+    match: {
+      terminalId: best.terminalId,
+      endpointPoint: best.endpointPoint
+    }
+  };
 }
 
 function matchedTerminal(node: ModelNode, point: Point, warnings: string[], edgeId: string, endpointLabel: string) {

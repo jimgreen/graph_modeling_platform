@@ -131,7 +131,68 @@ const PLATFORM_SVG = `
   </g>
 </svg>`;
 
+const LEGACY_PLATFORM_SVG = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0,0,1200,1900" data-export-active-layer-id="layer-default">
+  <defs id="svg_defs">
+    <symbol id="symbol_DCBreak_legacy-breaker" viewBox="-75 -48 150 96">
+      <g class="export-node-geometry" transform="rotate(0) scale(1 1)"><path d="M -42 0 L 42 0"/></g>
+    </symbol>
+    <symbol id="symbol_DCRealBs_legacy-bus" viewBox="-75 -18 150 36">
+      <g class="export-node-geometry" transform="rotate(90) scale(11.66667 1)"><path d="M -75 0 L 75 0"/></g>
+    </symbol>
+    <g class="export-layer-definitions" style="display:none">
+      <g data-export-layer-def="layer-default" data-export-layer-name="默认图层"
+        data-export-layer-visible="1" data-export-layer-active="1"/>
+    </g>
+  </defs>
+  <g id="root_g">
+    <g id="Background_Layer"><rect width="100%" height="100%" fill="#f1f5f9"/></g>
+    <g id="Segment_Layer">
+      <g id="edge_edge-legacy" class="export-edge" data-export-edge-id="edge-legacy"
+        data-export-source-layer-id="layer-default" data-export-target-layer-id="layer-default">
+        <path d="M 673 170 L 733 170 L 765 170" fill="none" stroke="#0f766e"/>
+      </g>
+    </g>
+    <g id="DCBreak_Layer" data-export-device-type="DCBreak">
+      <use id="legacy-breaker" href="#symbol_DCBreak_legacy-breaker" x="519" y="122" width="150" height="96"
+        data-export-node-id="legacy-breaker" data-export-layer-id="layer-default" idx="1" name="直流断路器-1"
+        data-export-device-id="legacy-breaker" data-export-device-idx="1" data-export-device-name="直流断路器-1"
+        data-export-device-kind="dc-breaker"/>
+    </g>
+    <g id="DCRealBs_Layer" data-export-device-type="DCRealBs">
+      <use id="legacy-bus" href="#symbol_DCRealBs_legacy-bus" x="690" y="930" width="150" height="36"
+        data-export-node-id="legacy-bus" data-export-layer-id="layer-default" idx="1" name="直流母线（竖向）-1"
+        data-export-device-id="legacy-bus" data-export-device-idx="1" data-export-device-name="直流母线（竖向）-1"
+        data-export-device-kind="dc-bus-vertical"/>
+    </g>
+    <g id="Text_Layer"/><g id="Measurement_Layer"/><g id="Other_Layer"/>
+  </g>
+</svg>`;
+
 describe("parseSvgModel platform semantics", () => {
+  test("restores legacy data-export devices and infers geometry-only edge endpoints", async () => {
+    const result = await parse(LEGACY_PLATFORM_SVG, "旧版平台恢复");
+
+    expect(result.mode).toBe("platform");
+    expect(result.project.layers).toEqual([{ id: "layer-default", name: "默认图层", visible: true }]);
+    expect(result.project.activeLayerId).toBe("layer-default");
+    expect(result.project.nodes.map((node) => ({ id: node.id, kind: node.kind, name: node.name }))).toEqual([
+      { id: "legacy-breaker", kind: "dc-breaker", name: "直流断路器-1" },
+      { id: "legacy-bus", kind: "dc-bus-vertical", name: "直流母线（竖向）-1" }
+    ]);
+    expect(result.project.edges).toEqual([expect.objectContaining({
+      id: "edge-legacy",
+      sourceId: "legacy-breaker",
+      targetId: "legacy-bus",
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      targetPoint: { x: 765, y: 170 },
+      routePoints: [{ x: 673, y: 170 }, { x: 733, y: 170 }, { x: 765, y: 170 }]
+    })]);
+    expect(result.stats).toEqual({ nodes: 2, edges: 1, measurementGroups: 0, staticNodes: 0 });
+    expect(result.warnings.some((warning) => warning.includes("旧版平台 SVG"))).toBe(true);
+  });
+
   test("restores platform canvas, layers, device transforms, states and terminal metadata", async () => {
     const result = await parse(PLATFORM_SVG, "平台恢复");
 
