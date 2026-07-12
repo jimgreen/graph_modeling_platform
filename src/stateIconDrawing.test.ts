@@ -20,6 +20,7 @@ import {
   normalizeStatePageId,
   normalizeStateDraftRows,
   stateVisualShapeLabel,
+  stateIconSvgElementSource,
   stateIconSvgReactAttributes,
   svgSourceFromDataUrl,
   stateIconDrawingPreviewNeedsDirectElementRender,
@@ -2092,6 +2093,75 @@ describe("default device state draft rows", () => {
       height: 120
     });
     expect(restored[0].svgSource).toContain('viewBox="-68 -45 136 90"');
+  });
+
+  test("marks generated three-winding transformer SVGs to preserve the model viewport", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer");
+    expect(template).toBeTruthy();
+    if (!template) {
+      return;
+    }
+    const defaultVisual = createDefinitionDefaultStateVisualDraft({
+      ...APP_STATIC_SCOPE,
+      definitionVisualDraft: {
+        backgroundImage: "",
+        backgroundImageAssetId: "",
+        backgroundImageCleared: "",
+        size: { ...template.size },
+        terminalCount: template.terminalCount,
+        terminalTypes: template.terminalTypes ?? [],
+        terminalLabels: template.terminalLabels ?? [],
+        terminalAnchors: template.terminalAnchors ?? []
+      },
+      selectedDefinitionTemplate: template
+    })();
+    const imageSource = decodeURIComponent(String(defaultVisual.image ?? "").split(",")[1] ?? "");
+
+    expect(imageSource).toContain('data-state-icon-preserve-view-box="true"');
+    expect(imageSource).toContain('viewBox="-87 -67 174 134"');
+  });
+
+  test("keeps generated viewBox preservation when sanitizing and resaving SVG layers", () => {
+    const source = '<svg xmlns="http://www.w3.org/2000/svg" data-state-icon-preserve-view-box="true" viewBox="-68 -45 136 90"><g><path d="M -40 0 H 40" stroke="#dc2626" stroke-width="4" fill="none"/></g></svg>';
+    const originalDOMParser = (globalThis as any).DOMParser;
+    (globalThis as any).DOMParser = class {
+      parseFromString() {
+        const child = {
+          tagName: "g",
+          outerHTML: '<g><path d="M -40 0 H 40" stroke="#dc2626" stroke-width="4" fill="none"/></g>'
+        };
+        const svg = {
+          children: [child],
+          getAttribute: (name: string) => name === "viewBox" ? "-68 -45 136 90" : null
+        };
+        return {
+          querySelector: (selector: string) => selector === "svg" ? svg : null
+        };
+      }
+    };
+
+    try {
+      expect(stateIconSvgElementSource(source)).toContain('data-state-icon-preserve-view-box="true"');
+    } finally {
+      (globalThis as any).DOMParser = originalDOMParser;
+    }
+
+    const element = createImportedStateIconElement("imported-svg", source, "三绕组主变");
+    const savedSource = decodeURIComponent(stateIconDrawingToImage([element]).split(",")[1] ?? "");
+
+    expect(savedSource).toContain('data-state-icon-preserve-view-box="true"');
+    expect(savedSource).toContain('viewBox="-68 -45 136 90"');
+  });
+
+  test("does not mark ordinary imported SVGs as preserving their declared viewBox", () => {
+    const element = createImportedStateIconElement(
+      "imported-svg",
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80"><rect x="20" y="10" width="40" height="40"/></svg>',
+      "普通导入图标"
+    );
+    const savedSource = decodeURIComponent(stateIconDrawingToImage([element]).split(",")[1] ?? "");
+
+    expect(savedSource).not.toContain("data-state-icon-preserve-view-box");
   });
 
   test("does not restore generated frame markup as an editable drawing element", () => {

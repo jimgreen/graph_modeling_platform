@@ -790,6 +790,19 @@ function readSvgMarkupAttribute(markup: string, name: string) {
     .replace(/&amp;/g, "&");
 }
 
+const STATE_ICON_PRESERVE_VIEW_BOX_ATTRIBUTE = "data-state-icon-preserve-view-box";
+
+function stateIconSvgPreservesDeclaredViewBox(source: string) {
+  const rootOpen = /<svg\b([^>]*)>/iu.exec(source.trim())?.[1] ?? "";
+  return readSvgMarkupAttribute(rootOpen, STATE_ICON_PRESERVE_VIEW_BOX_ATTRIBUTE).trim().toLowerCase() === "true";
+}
+
+function stateIconSvgPreserveViewBoxMarkup(source: string) {
+  return stateIconSvgPreservesDeclaredViewBox(source)
+    ? ` ${STATE_ICON_PRESERVE_VIEW_BOX_ATTRIBUTE}="true"`
+    : "";
+}
+
 function readSvgMarkupNumber(markup: string, name: string, fallback: number) {
   const parsed = Number.parseFloat(readSvgMarkupAttribute(markup, name));
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -1120,7 +1133,7 @@ export function stateIconSvgElementSource(source: string) {
   if (!parsed || !parsed.body) {
     return "";
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${escapeXml(parsed.viewBox)}">${parsed.body}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg"${stateIconSvgPreserveViewBoxMarkup(source)} viewBox="${escapeXml(parsed.viewBox)}">${parsed.body}</svg>`;
 }
 
 export function stateIconSvgVisibleViewBox(source: string) {
@@ -1197,6 +1210,13 @@ export function stateIconSvgVisibleViewBox(source: string) {
     // Fall back to the declared SVG viewBox when rendered geometry cannot be measured.
   }
   return parsed.viewBox;
+}
+
+function stateIconSvgRenderViewBox(source: string) {
+  if (!stateIconSvgPreservesDeclaredViewBox(source)) {
+    return stateIconSvgVisibleViewBox(source);
+  }
+  return parseStateIconSvgSource(source)?.viewBox ?? stateIconSvgFallbackParts(source)?.viewBox ?? "";
 }
 
 export function parseSvgStyleAttribute(value: string) {
@@ -1534,11 +1554,12 @@ export function stateIconDrawingSvgElementMarkup(
   override?: StateIconSvgStyleOverride
 ) {
   const parsed = parseStateIconSvgSource(source);
+  const preserveViewBoxMarkup = stateIconSvgPreserveViewBoxMarkup(source);
   if (!parsed || !parsed.body) {
     const fallback = stateIconSvgFallbackParts(source);
     if (fallback?.body) {
       const styleOverride = stateIconSvgStyleOverrideMarkup(override);
-      return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" viewBox="${escapeXml(fallback.viewBox)}" preserveAspectRatio="xMidYMid meet">${fallback.body}${styleOverride}</svg>`;
+      return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}"${preserveViewBoxMarkup} viewBox="${escapeXml(fallback.viewBox)}" preserveAspectRatio="xMidYMid meet">${fallback.body}${styleOverride}</svg>`;
     }
     const href = svgSourceToDataUrl(source);
     return href
@@ -1546,7 +1567,7 @@ export function stateIconDrawingSvgElementMarkup(
       : "";
   }
   const styleOverride = stateIconSvgStyleOverrideMarkup(override);
-  return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" viewBox="${escapeXml(stateIconSvgVisibleViewBox(source))}" preserveAspectRatio="xMidYMid meet">${parsed.body}${styleOverride}</svg>`;
+  return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}"${preserveViewBoxMarkup} viewBox="${escapeXml(stateIconSvgRenderViewBox(source))}" preserveAspectRatio="xMidYMid meet">${parsed.body}${styleOverride}</svg>`;
 }
 
 export function stateIconDrawingElementMarkup(
@@ -1837,7 +1858,7 @@ export function stateIconDrawingElementPreviewNode(
           y={-hh}
           width={w}
           height={h}
-          viewBox={stateIconSvgVisibleViewBox(element.svgSource ?? "")}
+          viewBox={stateIconSvgRenderViewBox(element.svgSource ?? "")}
           preserveAspectRatio="xMidYMid meet"
         >
           {nodes}

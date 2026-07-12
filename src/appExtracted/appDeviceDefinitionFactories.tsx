@@ -960,7 +960,7 @@ function createTemplateDefaultStateIconImage(__appScope: Record<string, any>, te
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${formatSvgNumber(drawingWidth)}" height="${formatSvgNumber(drawingHeight)}" viewBox="0 0 ${formatSvgNumber(drawingWidth)} ${formatSvgNumber(drawingHeight)}">` +
     `<g data-state-icon-layer-width="${formatSvgNumber(contentWidth)}" data-state-icon-layer-height="${formatSvgNumber(contentHeight)}"${staticTemplateSizeAttrs} transform="translate(${formatSvgNumber(contentCenterX)} ${formatSvgNumber(contentCenterY)})">` +
-    `<svg x="${formatSvgNumber(-contentWidth / 2)}" y="${formatSvgNumber(-contentHeight / 2)}" width="${formatSvgNumber(contentWidth)}" height="${formatSvgNumber(contentHeight)}" viewBox="${formatSvgNumber(viewBoxX)} ${formatSvgNumber(viewBoxY)} ${formatSvgNumber(viewBoxWidth)} ${formatSvgNumber(viewBoxHeight)}" preserveAspectRatio="xMidYMid meet">` +
+    `<svg x="${formatSvgNumber(-contentWidth / 2)}" y="${formatSvgNumber(-contentHeight / 2)}" width="${formatSvgNumber(contentWidth)}" height="${formatSvgNumber(contentHeight)}" data-state-icon-preserve-view-box="true" viewBox="${formatSvgNumber(viewBoxX)} ${formatSvgNumber(viewBoxY)} ${formatSvgNumber(viewBoxWidth)} ${formatSvgNumber(viewBoxHeight)}" preserveAspectRatio="xMidYMid meet">` +
     `<g transform="${escapeXml(nodeGeometryTransform(node))}">${glyphMarkup}${glyphTextMarkup}</g>` +
     `</svg></g></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
