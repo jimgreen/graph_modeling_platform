@@ -5,7 +5,9 @@ import {
 } from "./appExtracted/appGraphMeasurementFactories";
 import {
   createComputeStateIconDrawingSmartAlignmentSnap,
+  createCompleteImportedModelFeedback,
   createFindEditableRouteSegmentIndex,
+  createImportSvgModelFile,
   createApplyExistingImage,
   createApplyIconLibraryCatalogIcon,
   createApplyStateIconDrawingDialog,
@@ -13,9 +15,11 @@ import {
   createDeleteCustomCategoryLibrary,
   createDeleteCustomComponentLibrary,
   createRouteSegmentPointerDistance,
+  createResolveDuplicateModelImport,
   createSaveCustomDeviceTemplate,
   createSaveDeviceDefinitionVisualDraft,
   createSvgExportReferencedImageHrefById,
+  createOpenSvgModelImportFilePicker,
   createOpenStateIconDrawingDialog,
   createStateIconDrawingKeyDown,
   createStartStateIconDrawingDrag,
@@ -33,6 +37,163 @@ import { stateIconDrawingToImage } from "./stateIconDrawing";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("SVG model import factories", () => {
+  test("opens the SVG model picker for the right-clicked scheme", () => {
+    const click = vi.fn();
+    const target = { current: "" };
+    const input = { value: "old", click };
+    const open = createOpenSvgModelImportFilePicker({
+      requireEditMode: vi.fn(() => true),
+      svgModelImportInputRef: { current: input },
+      modelImportTargetSchemeIdRef: target
+    });
+
+    open("scheme-2");
+
+    expect(target.current).toBe("scheme-2");
+    expect(input.value).toBe("");
+    expect(click).toHaveBeenCalledOnce();
+  });
+
+  test("imports SVG into the target scheme and reports semantic statistics", async () => {
+    const targetScheme = { id: "scheme-2", name: "目标方案", projects: [] };
+    const commitImportedModelRecord = vi.fn();
+    const completeImportedModelFeedback = vi.fn();
+    const importedProject = { version: 1, name: "一次图", nodes: [], edges: [] };
+    const parseSvgModel = vi.fn(async () => ({
+      mode: "platform",
+      project: importedProject,
+      stats: { nodes: 5, edges: 6, measurementGroups: 2, staticNodes: 1 },
+      warnings: ["参数使用模板默认值。"]
+    }));
+    const importFile = createImportSvgModelFile({
+      activeSchemeRecord: null,
+      selectedSchemeRecord: null,
+      schemes: [targetScheme],
+      libraryTemplates: [],
+      modelImportTargetSchemeIdRef: { current: "scheme-2" },
+      requireEditMode: vi.fn(() => true),
+      findSavedSchemeById: (_schemes: unknown, id: string) => id === "scheme-2" ? targetScheme : null,
+      createSavedScheme: vi.fn(),
+      createSavedProject: (name: string, project: unknown) => ({ id: "project-new", name, project }),
+      commitImportedModelRecord,
+      completeImportedModelFeedback,
+      setPendingModelImportConflict: vi.fn(),
+      parseSvgModel,
+      writeOperationLog: vi.fn(),
+      yieldToBrowser: async () => undefined
+    });
+    const input = { files: [{ name: "一次图.svg", text: async () => "<svg/>" }], value: "chosen" };
+
+    await importFile({ currentTarget: input } as never);
+
+    expect(parseSvgModel).toHaveBeenCalledWith("<svg/>", expect.objectContaining({ name: "一次图", templates: [] }));
+    expect(commitImportedModelRecord).toHaveBeenCalledWith(targetScheme, expect.objectContaining({ name: "一次图" }));
+    expect(completeImportedModelFeedback).toHaveBeenCalledWith(expect.objectContaining({
+      successMessage: expect.stringContaining("设备：5"),
+      warnings: ["参数使用模板默认值。"]
+    }));
+    expect(input.value).toBe("");
+  });
+
+  test("stores SVG completion feedback when a duplicate model needs resolution", async () => {
+    const targetScheme = {
+      id: "scheme-2",
+      name: "目标方案",
+      projects: [{ id: "project-old", name: "一次图" }]
+    };
+    const setPendingModelImportConflict = vi.fn();
+    const warnings = Array.from({ length: 25 }, (_, index) => `警告 ${index + 1}`);
+    const importFile = createImportSvgModelFile({
+      activeSchemeRecord: null,
+      selectedSchemeRecord: null,
+      schemes: [targetScheme],
+      libraryTemplates: [],
+      modelImportTargetSchemeIdRef: { current: "scheme-2" },
+      requireEditMode: vi.fn(() => true),
+      findSavedSchemeById: () => targetScheme,
+      createSavedScheme: vi.fn(),
+      createSavedProject: vi.fn(),
+      commitImportedModelRecord: vi.fn(),
+      completeImportedModelFeedback: vi.fn(),
+      setPendingModelImportConflict,
+      parseSvgModel: vi.fn(async () => ({
+        mode: "generic",
+        project: { version: 1, name: "一次图", nodes: [], edges: [] },
+        stats: { nodes: 0, edges: 0, measurementGroups: 0, staticNodes: 1 },
+        warnings
+      })),
+      writeOperationLog: vi.fn(),
+      yieldToBrowser: async () => undefined
+    });
+
+    await importFile({
+      currentTarget: { files: [{ name: "一次图.svg", text: async () => "<svg/>" }], value: "chosen" }
+    } as never);
+
+    const conflict = setPendingModelImportConflict.mock.calls[0]?.[0];
+    expect(conflict).toMatchObject({
+      targetSchemeId: "scheme-2",
+      importedName: "一次图",
+      duplicateProjectId: "project-old",
+      duplicateProjectName: "一次图",
+      completionFeedback: { warnings }
+    });
+    expect(conflict.completionFeedback.successMessage).toContain("普通 SVG 静态图元");
+    expect(conflict.completionFeedback.successMessage).toContain("20. 警告 20");
+    expect(conflict.completionFeedback.successMessage).not.toContain("警告 21");
+  });
+
+  test("writes every SVG warning to the operation log before showing completion", () => {
+    const alert = vi.fn();
+    vi.stubGlobal("window", { alert });
+    const writeOperationLog = vi.fn();
+    const complete = createCompleteImportedModelFeedback({ writeOperationLog });
+
+    complete({ successMessage: "导入完成", warnings: ["第一条", "第二条"] });
+
+    expect(writeOperationLog).toHaveBeenNthCalledWith(1, "SVG 导入警告：第一条");
+    expect(writeOperationLog).toHaveBeenNthCalledWith(2, "SVG 导入警告：第二条");
+    expect(alert).toHaveBeenCalledWith("导入完成");
+  });
+
+  test("shows SVG completion feedback after a duplicate import is renamed", () => {
+    const targetScheme = { id: "scheme-2", projects: [{ id: "old", name: "一次图" }] };
+    const commitImportedModelRecord = vi.fn();
+    const completeImportedModelFeedback = vi.fn();
+    const setPendingModelImportConflict = vi.fn();
+    const conflict = {
+      targetSchemeId: "scheme-2",
+      importedProject: { version: 1, name: "一次图", nodes: [], edges: [] },
+      importedName: "一次图",
+      duplicateProjectId: "old",
+      duplicateProjectName: "一次图",
+      completionFeedback: { successMessage: "SVG 导入完成", warnings: ["提示"] }
+    };
+    const resolve = createResolveDuplicateModelImport({
+      activeSchemeRecord: null,
+      selectedSchemeRecord: null,
+      schemes: [targetScheme],
+      pendingModelImportConflict: conflict,
+      requireEditMode: vi.fn(() => true),
+      findSavedSchemeById: () => targetScheme,
+      createSavedScheme: vi.fn(),
+      uniqueRecordName: () => "一次图 (2)",
+      promptUniqueRecordName: () => "一次图 (2)",
+      createSavedProject: (name: string, project: unknown) => ({ id: "new", name, project }),
+      setPendingModelImportConflict,
+      commitImportedModelRecord,
+      completeImportedModelFeedback
+    });
+
+    resolve("rename");
+
+    expect(commitImportedModelRecord).toHaveBeenCalledWith(targetScheme, expect.objectContaining({ name: "一次图 (2)" }));
+    expect(completeImportedModelFeedback).toHaveBeenCalledWith(conflict.completionFeedback);
+    expect(setPendingModelImportConflict).toHaveBeenCalledWith(null);
+  });
 });
 
 describe("manual bend interaction helpers", () => {

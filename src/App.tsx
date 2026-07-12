@@ -520,6 +520,12 @@ import {
 } from "./staticRenderUtils";
 import { DeviceGlyph, MemoDeviceGlyph, SvgMarkupChunk } from "./DeviceGlyph";
 import { buildSvgNodeLabelMarkup, svgDisplayAttribute, exportSvgSafeId, exportSvgLayerId, exportSvgUniqueId, exportSvgLayerScriptMarkup, exportDeviceMetadataAttributes, exportMeasurementGroupMetadataAttributes, exportMeasurementItemMetadataAttributes, exportMeasurementGroupBackgroundColor, exportMeasurementGroupBorderColor, exportMeasurementGroupBorderWidth, exportMeasurementGroupBorderDashArray, exportMeasurementGroupAnchorPoint, exportMeasurementGroupLocalOffset, exportMeasurementGroupMetrics, buildExportMeasurementGroupMarkup } from "./svgExportUtils";
+import { parseSvgModel } from "./svgModelImport";
+import {
+  createCompleteImportedModelFeedback,
+  createImportSvgModelFile,
+  createOpenSvgModelImportFilePicker
+} from "./appExtracted/appDeviceDefinitionFactories";
 import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_PAGE_ID, isDefaultStatePageId, createStateDraftRow, createStateDraftRowFromDefaultVisual, defaultStateDraftRow, createDefinitionStateDraftRows, normalizeStateDraftRows, validateStateDraftRows, stateVisualFromDraftRow, activeStateDraftRow, normalizeStatePageId, stateDraftImageValue, stateIconDrawingDraftSourceImage, stateIconDrawingInlineNeedsDraftReload, stateIconDrawingInlineCanPersistDraft, stateVisualShapeLabel, generateStateVisualShapeImage, stateIconDrawingElementId, visibleStateIconColor, createStateIconDrawingElement, createImportedStateIconElement, svgSourceFromDataUrl, parseStateIconSvgSource, stateIconSvgElementSource, parseSvgStyleAttribute, stateIconSvgReactAttributes, stateIconSvgNodeChildren, stateIconSvgNodeToReact, stateIconSvgSourceToReactNodes, createEditableStateIconElementsFromSvgSource, createStateIconDrawingInitialElements, stateIconDrawingInitialFrame, svgSourceToDataUrl, stateIconDrawingSvgElementMarkup, stateIconDrawingElementMarkup, stateIconDrawingToImage, stateIconDrawingToPersistedImage, stateIconDrawingFrameRect, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "./stateIconDrawing";
 import { fallbackComponentLibraryForCategoryLibrary, resolveTemplateComponentLibrary, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, isReservedDeviceDefinitionParamName, createDefinitionDraftRows, normalizeCustomDeviceTerminalAnchorCoordinate, projectCustomDeviceTerminalAnchorToBoundary, customDeviceTerminalAnchorKey, hasOverlappingCustomDeviceTerminalAnchors, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, createCustomDeviceDraftFromTemplate, createDefinitionVisualDraft, defaultContainerAssociationForTerminalType, isAssociationAllowedForTerminal, normalizeContainerTerminalAssociations, customDefaultDefinitions, generateCustomDeviceImage, customDeviceImageWithTerminalConnectors, customDeviceGeneratedDefaultImageCandidates, syncInheritedCustomDeviceStateVisuals, parseCustomDefinitions, screenToSvgPoint, primaryOrthogonalAxis, constrainPointToOrthogonalAxis } from "./customDeviceUtils";
 import { useBatchEditors } from "./hooks/useBatchEditors";
@@ -625,6 +631,7 @@ const stateIconDrawingHistoryRef = useRef<StateIconDrawingElement[][]>([]); Obje
 const stateIconDrawingClipboardRef = useRef<StateIconDrawingElement[]>([]); Object.assign(__appScope, { stateIconDrawingClipboardRef });
 const stateIconDrawingInitialImageRef = useRef<{ key: string; image: string; sourceImage: string } | null>(null);
 const modelImportInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { modelImportInputRef });
+const svgModelImportInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { svgModelImportInputRef, parseSvgModel });
 const modelImportTargetSchemeIdRef = useRef<string>(""); Object.assign(__appScope, { modelImportTargetSchemeIdRef });
 const schemeImportInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { schemeImportInputRef });
 const schemeImportParentSchemeIdRef = useRef<string>(""); Object.assign(__appScope, { schemeImportParentSchemeIdRef });
@@ -4553,13 +4560,16 @@ const createImportedSchemeRecord = createCreateImportedSchemeRecord(__appScope);
 const exportProjectRecordFile = createExportProjectRecordFile(__appScope); Object.assign(__appScope, { exportProjectRecordFile });
 const exportCurrentModelFile = createExportCurrentModelFile(__appScope); Object.assign(__appScope, { exportCurrentModelFile });
 const openModelImportFilePicker = createOpenModelImportFilePicker(__appScope); Object.assign(__appScope, { openModelImportFilePicker });
+const openSvgModelImportFilePicker = createOpenSvgModelImportFilePicker(__appScope); Object.assign(__appScope, { openSvgModelImportFilePicker });
 const openSchemeImportFilePicker = createOpenSchemeImportFilePicker(__appScope); Object.assign(__appScope, { openSchemeImportFilePicker });
 const mergeImportedSchemeIntoExisting = createMergeImportedSchemeIntoExisting(__appScope); Object.assign(__appScope, { mergeImportedSchemeIntoExisting });
 const commitImportedSchemeRecord = createCommitImportedSchemeRecord(__appScope); Object.assign(__appScope, { commitImportedSchemeRecord });
 const applyBackendSchemeArchiveImport = createApplyBackendSchemeArchiveImport(__appScope); Object.assign(__appScope, { applyBackendSchemeArchiveImport });
 const importSchemeFile = createImportSchemeFile(__appScope); Object.assign(__appScope, { importSchemeFile });
 const commitImportedModelRecord = createCommitImportedModelRecord(__appScope); Object.assign(__appScope, { commitImportedModelRecord });
+const completeImportedModelFeedback = createCompleteImportedModelFeedback(__appScope); Object.assign(__appScope, { completeImportedModelFeedback });
 const importModelFile = createImportModelFile(__appScope); Object.assign(__appScope, { importModelFile });
+const importSvgModelFile = createImportSvgModelFile(__appScope); Object.assign(__appScope, { importSvgModelFile });
 const resolveDuplicateSchemeImport = createResolveDuplicateSchemeImport(__appScope); Object.assign(__appScope, { resolveDuplicateSchemeImport });
 const resolveDuplicateModelImport = createResolveDuplicateModelImport(__appScope); Object.assign(__appScope, { resolveDuplicateModelImport });
 const exportSchemeRecord = createExportSchemeRecord(__appScope); Object.assign(__appScope, { exportSchemeRecord });

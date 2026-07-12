@@ -997,12 +997,18 @@ export type UnsavedChangeAction =
       label: string;
     };
 
+export type ModelImportCompletionFeedback = {
+  successMessage: string;
+  warnings: string[];
+};
+
 export type PendingModelImportConflict = {
   targetSchemeId: string;
   importedProject: ProjectFile;
   importedName: string;
   duplicateProjectId: string;
   duplicateProjectName: string;
+  completionFeedback?: ModelImportCompletionFeedback;
 } | null;
 
 export type PendingSchemeImportConflict = {

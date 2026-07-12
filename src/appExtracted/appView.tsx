@@ -567,6 +567,7 @@ export function renderAppView(__appScope: Record<string, any>) {
             <input ref={stateVisualImageInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseStateVisualImage}/>
             <input ref={stateIconDrawingImportInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseStateIconDrawingImport}/>
             <input ref={modelImportInputRef} type="file" accept=".json,application/json" hidden onChange={importModelFile}/>
+            <input ref={__appScope.svgModelImportInputRef} type="file" accept=".svg,image/svg+xml" hidden onChange={__appScope.importSvgModelFile}/>
             <input ref={schemeImportInputRef} type="file" accept=".zip,application/zip,.json,application/json" hidden onChange={importSchemeFile}/>
             <input ref={__appScope.libraryPackageImportInputRef} type="file" accept=".json,application/json" hidden onChange={__appScope.importLibraryPackageFile}/>
             <button onClick={exportSvg} disabled={!canExportCurrentModel} title={canExportCurrentModel ? "导出 SVG 图形文件" : "请先保存当前模型后再导出图形文件"} aria-label="导出图形文件">
@@ -1592,6 +1593,10 @@ export function renderAppView(__appScope: Record<string, any>) {
               {isEditMode && (<button onClick={() => runContextMenuAction(() => openModelImportFilePicker(projectMenu.schemeId ?? ""))}>
                 <FileInput size={14}/>
                 模型导入
+              </button>)}
+              {isEditMode && (<button onClick={() => runContextMenuAction(() => __appScope.openSvgModelImportFilePicker(projectMenu.schemeId ?? ""))}>
+                <FileInput size={14}/>
+                从 SVG 生成模型
               </button>)}
               {recordClipboard?.kind === "project" && projectMenu.schemeId && (isEditMode ? (<button onClick={() => runContextMenuAction(() => pasteProjectClipboardRecord(projectMenu.schemeId ?? ""))}>
                   <FileInput size={14}/>

@@ -2032,6 +2032,53 @@ export function createOpenModelImportFilePicker(__appScope: Record<string, any>)
   };
 }
 
+export function createOpenSvgModelImportFilePicker(__appScope: Record<string, any>) {
+  return (targetSchemeId = "") => {
+  const { modelImportTargetSchemeIdRef, requireEditMode, svgModelImportInputRef } = __appScope;
+    if (!requireEditMode("从 SVG 生成模型")) {
+      return;
+    }
+    modelImportTargetSchemeIdRef.current = targetSchemeId;
+    if (svgModelImportInputRef.current) {
+      svgModelImportInputRef.current.value = "";
+      svgModelImportInputRef.current.click();
+    }
+  };
+}
+
+export function createCompleteImportedModelFeedback(__appScope: Record<string, any>) {
+  return (feedback?: { successMessage: string; warnings: string[] }) => {
+  const { writeOperationLog } = __appScope;
+    if (!feedback) {
+      return;
+    }
+    for (const warning of feedback.warnings) {
+      writeOperationLog(`SVG 导入警告：${warning}`);
+    }
+    window.alert(feedback.successMessage);
+  };
+}
+
+function svgModelImportCompletionFeedback(importedName: string, result: any) {
+  const modeLabel = result.mode === "platform" ? "平台语义恢复" : "普通 SVG 静态图元";
+  const warnings = Array.isArray(result.warnings) ? result.warnings.map((warning: unknown) => String(warning)) : [];
+  const warningLines = warnings.slice(0, 20).map((warning: string, index: number) => `${index + 1}. ${warning}`);
+  return {
+    warnings,
+    successMessage: [
+      `从 SVG 生成模型成功：${importedName}`,
+      `解析方式：${modeLabel}`,
+      `设备：${Number(result.stats?.nodes) || 0}`,
+      `连接线：${Number(result.stats?.edges) || 0}`,
+      `量测组：${Number(result.stats?.measurementGroups) || 0}`,
+      `静态图元：${Number(result.stats?.staticNodes) || 0}`,
+      `警告：${warnings.length}`,
+      ...(warningLines.length > 0 ? ["", ...warningLines] : []),
+      ...(warnings.length > warningLines.length ? ["", `其余 ${warnings.length - warningLines.length} 条警告已写入操作日志。`] : [])
+    ].join("\n")
+  };
+}
+
 export function createOpenSchemeImportFilePicker(__appScope: Record<string, any>) {
   return (parentSchemeId = "") => {
   const { requireEditMode, schemeImportInputRef, schemeImportParentSchemeIdRef } = __appScope;
@@ -2231,6 +2278,83 @@ export function createImportModelFile(__appScope: Record<string, any>) {
   };
 }
 
+export function createImportSvgModelFile(__appScope: Record<string, any>) {
+  return async (event: ChangeEvent<HTMLInputElement>) => {
+  const {
+    activeSchemeRecord,
+    commitImportedModelRecord,
+    completeImportedModelFeedback,
+    createSavedProject,
+    createSavedScheme,
+    findSavedSchemeById,
+    libraryTemplates,
+    modelImportTargetSchemeIdRef,
+    parseSvgModel,
+    requireEditMode,
+    schemes,
+    selectedSchemeRecord,
+    setPendingModelImportConflict,
+    writeOperationLog,
+    yieldToBrowser
+  } = __appScope;
+    const input = event.currentTarget;
+    if (!requireEditMode("从 SVG 生成模型")) {
+      modelImportTargetSchemeIdRef.current = "";
+      input.value = "";
+      return;
+    }
+    const file = input.files?.[0];
+    if (!file) {
+      modelImportTargetSchemeIdRef.current = "";
+      input.value = "";
+      return;
+    }
+    try {
+      if (!/\.svg$/iu.test(file.name) && file.type !== "image/svg+xml") {
+        throw new Error("请选择 SVG 文件。");
+      }
+      writeOperationLog(`正在从 SVG 生成模型：${file.name}`);
+      if (typeof yieldToBrowser === "function") {
+        await yieldToBrowser();
+      } else {
+        await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0));
+      }
+      const text = await file.text();
+      const importedName = file.name.replace(/\.svg$/iu, "").trim() || "SVG 导入模型";
+      const result = await parseSvgModel(text, {
+        name: importedName,
+        templates: libraryTemplates
+      });
+      const targetScheme =
+        findSavedSchemeById(schemes, modelImportTargetSchemeIdRef.current) ??
+        activeSchemeRecord ??
+        selectedSchemeRecord ??
+        schemes[0] ??
+        createSavedScheme("默认方案");
+      const completionFeedback = svgModelImportCompletionFeedback(importedName, result);
+      const duplicateProject = targetScheme.projects.find((project: any) => project.name.trim() === importedName);
+      if (duplicateProject) {
+        setPendingModelImportConflict({
+          targetSchemeId: targetScheme.id,
+          importedProject: result.project,
+          importedName,
+          duplicateProjectId: duplicateProject.id,
+          duplicateProjectName: duplicateProject.name,
+          completionFeedback
+        });
+        return;
+      }
+      commitImportedModelRecord(targetScheme, createSavedProject(importedName, result.project));
+      completeImportedModelFeedback(completionFeedback);
+    } catch (error) {
+      window.alert(error instanceof Error ? `从 SVG 生成模型失败：${error.message}` : "从 SVG 生成模型失败。");
+    } finally {
+      modelImportTargetSchemeIdRef.current = "";
+      input.value = "";
+    }
+  };
+}
+
 export function createResolveDuplicateSchemeImport(__appScope: Record<string, any>) {
   return (action: "merge" | "rename" | "cancel") => {
   const { applyBackendSchemeArchiveImport, commitImportedSchemeRecord, findSavedSchemeById, mergeImportedSchemeIntoExisting, pendingSchemeImportConflict, persistSchemeTreeToBackend, promptUniqueRecordName, replaceSavedSchemeById, requireEditMode, savedChildSchemeNames, schemePathForRecord, schemePathForScheme, schemes, selectSingleScheme, setExpandedSchemeIds, setPendingSchemeImportConflict, setSchemes, uniqueRecordName, uploadBackendSchemeArchive, writeOperationLog } = __appScope;
@@ -2314,7 +2438,7 @@ export function createResolveDuplicateSchemeImport(__appScope: Record<string, an
 
 export function createResolveDuplicateModelImport(__appScope: Record<string, any>) {
   return (action: "overwrite" | "rename" | "cancel") => {
-  const { activeSchemeRecord, commitImportedModelRecord, createSavedProject, createSavedScheme, findSavedSchemeById, pendingModelImportConflict, promptUniqueRecordName, requireEditMode, schemes, selectedSchemeRecord, setPendingModelImportConflict, uniqueRecordName } = __appScope;
+  const { activeSchemeRecord, commitImportedModelRecord, completeImportedModelFeedback, createSavedProject, createSavedScheme, findSavedSchemeById, pendingModelImportConflict, promptUniqueRecordName, requireEditMode, schemes, selectedSchemeRecord, setPendingModelImportConflict, uniqueRecordName } = __appScope;
     const conflict = pendingModelImportConflict;
     if (!conflict || action === "cancel") {
       setPendingModelImportConflict(null);
@@ -2344,6 +2468,7 @@ export function createResolveDuplicateModelImport(__appScope: Record<string, any
       }
       setPendingModelImportConflict(null);
       commitImportedModelRecord(targetScheme, createSavedProject(renamed, conflict.importedProject));
+      completeImportedModelFeedback(conflict.completionFeedback);
       return;
     }
     const duplicateProject = targetScheme.projects.find((project) => project.id === conflict.duplicateProjectId);
@@ -2356,6 +2481,7 @@ export function createResolveDuplicateModelImport(__appScope: Record<string, any
       name: targetName,
       project: { ...overwrittenRecord.project, name: targetName }
     });
+    completeImportedModelFeedback(conflict.completionFeedback);
   };
 }
 
