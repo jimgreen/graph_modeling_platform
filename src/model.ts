@@ -9896,10 +9896,14 @@ const TERMINAL_VOLTAGE_BASE_SETTING_KINDS = new Set([
 export type VoltageBaseSettingMode = "uniform" | "terminal";
 
 export function voltageBaseSettingModeForNode(node: ModelNode): VoltageBaseSettingMode | null {
+  const kind = baseDeviceKind(node.kind);
+  if (kind === "ac-bus" || kind === "dc-bus") {
+    return "uniform";
+  }
   if (isBusNode(node) || isStaticNode(node) || !node.terminals.some((terminal) => isElectricalTerminalType(terminal.type))) {
     return null;
   }
-  return TERMINAL_VOLTAGE_BASE_SETTING_KINDS.has(baseDeviceKind(node.kind)) || TERMINAL_VOLTAGE_BASE_SETTING_SECTIONS.has(inferESection(node.kind, node.params))
+  return TERMINAL_VOLTAGE_BASE_SETTING_KINDS.has(kind) || TERMINAL_VOLTAGE_BASE_SETTING_SECTIONS.has(inferESection(node.kind, node.params))
     ? "terminal"
     : "uniform";
 }

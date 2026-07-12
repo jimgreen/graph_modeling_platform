@@ -10377,6 +10377,26 @@ describe("power system model", () => {
     expect(voltageBaseSettingModeForNode(createDefaultNode("ac-load", { x: 340, y: 220 }))).toBe("uniform");
   });
 
+  test("allows terminal-free electrical buses to use uniform voltage base settings", () => {
+    const acBus = createDefaultNode("ac-bus-vertical", { x: 100, y: 100 });
+    const dcBus = createDefaultNode("dc-bus", { x: 220, y: 100 });
+    dcBus.params = { ...dcBus.params, vbase: "750" };
+
+    expect(acBus.terminals).toHaveLength(0);
+    expect(dcBus.terminals).toHaveLength(0);
+    expect(voltageBaseSettingModeForNode(acBus)).toBe("uniform");
+    expect(voltageBaseSettingModeForNode(dcBus)).toBe("uniform");
+    expect(voltageBaseSettingModeForNode(createDefaultNode("hydrogen-bus", { x: 340, y: 100 }))).toBeNull();
+    expect(voltageBaseSettingModeForNode(createDefaultNode("heat-bus", { x: 460, y: 100 }))).toBeNull();
+
+    const result = setVoltageBaseValuesForScope([acBus, dcBus], [], [acBus.id], "selected", "110");
+    const byId = new Map(result.nodes.map((node) => [node.id, node]));
+
+    expect(result.changedNodeIds).toEqual([acBus.id]);
+    expect(byId.get(acBus.id)?.params.vbase).toBe("110");
+    expect(byId.get(dcBus.id)?.params.vbase).toBe("750");
+  });
+
   test("shows associated container devices as child rows in the element tree", () => {
     const electrolyzer = assignPermanentDeviceIndex(createDefaultNode("ac-electrolyzer", { x: 100, y: 100 }), {}).node;
     electrolyzer.name = "EL1";
