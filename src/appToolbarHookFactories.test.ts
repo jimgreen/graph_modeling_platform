@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { createAppHookCallback100, createAppHookCallback120 } from "./appExtracted/appToolbarHookFactories";
@@ -111,5 +113,21 @@ describe("graph dirty baseline hook", () => {
     callback();
 
     expect(setHasUnsavedChanges).toHaveBeenCalledWith(true);
+  });
+});
+
+describe("toolbar hook scope ordering", () => {
+  test("registers the routable-line endpoint preview helper before hook callback 61 consumes it", () => {
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const registration = appSource.indexOf(
+      "const routableLineEndpointPreviewRoutePoints = createRoutableLineEndpointPreviewRoutePoints(__appScope);"
+    );
+    const consumption = appSource.indexOf(
+      "const routableLineEndpointDragPreviewRoute = useMemo(createAppHookCallback61(__appScope)"
+    );
+
+    expect(registration).toBeGreaterThanOrEqual(0);
+    expect(consumption).toBeGreaterThanOrEqual(0);
+    expect(registration).toBeLessThan(consumption);
   });
 });

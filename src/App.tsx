@@ -2712,6 +2712,7 @@ const edgeWithFrozenBusEndpointPoints = createEdgeWithFrozenBusEndpointPoints(__
 const previewStoredRoutePointsForEdge = createPreviewStoredRoutePointsForEdge(__appScope); Object.assign(__appScope, { previewStoredRoutePointsForEdge });
 const rewiringPreviewRoute = useMemo(createAppHookCallback60(__appScope), [canvasBounds, edgeById, nodeById, previewStoredRoutePointsForEdge, routedEdgeById, rewiring]);
 Object.assign(__appScope, { rewiringPreviewRoute });
+const routableLineEndpointPreviewRoutePoints = createRoutableLineEndpointPreviewRoutePoints(__appScope); Object.assign(__appScope, { routableLineEndpointPreviewRoutePoints });
 const routableLineEndpointDragPreviewRoute = useMemo(createAppHookCallback61(__appScope), [canvasBounds, nodeById, nodes, routableLineEndpointDrag]);
 Object.assign(__appScope, { routableLineEndpointDragPreviewRoute });
 const manualPathPreviewRoute = useMemo(createAppHookCallback62(__appScope), [manualPathDrag]);
@@ -3828,7 +3829,6 @@ const singleNodeDragSnapEdges = (dragState: DraggingState, delta: Point) =>
 Object.assign(__appScope, { singleNodeDragSnapEdges });
 const simpleOrthogonalDragPreviewPoints = createSimpleOrthogonalDragPreviewPoints(__appScope); Object.assign(__appScope, { simpleOrthogonalDragPreviewPoints });
 const routableLineIdsConnectedToNodeIds = createRoutableLineIdsConnectedToNodeIds(__appScope); Object.assign(__appScope, { routableLineIdsConnectedToNodeIds });
-const routableLineEndpointPreviewRoutePoints = createRoutableLineEndpointPreviewRoutePoints(__appScope); Object.assign(__appScope, { routableLineEndpointPreviewRoutePoints });
 const buildRoutableLinePreviewRoutesForNodeUpdates = createBuildRoutableLinePreviewRoutesForNodeUpdates(__appScope); Object.assign(__appScope, { buildRoutableLinePreviewRoutesForNodeUpdates });
 const buildRoutableLineEndpointPreviewNodeUpdates = createBuildRoutableLineEndpointPreviewNodeUpdates(__appScope); Object.assign(__appScope, { buildRoutableLineEndpointPreviewNodeUpdates });
 const buildTranslatedInternalRoutableLineDragPreviewRoutes = createBuildTranslatedInternalRoutableLineDragPreviewRoutes(__appScope); Object.assign(__appScope, { buildTranslatedInternalRoutableLineDragPreviewRoutes });
