@@ -5,6 +5,7 @@ import {
   createNodeFromTemplate,
   type DeviceTemplate,
   type ModelNode,
+  type ModelLayer,
   type ProjectFile
 } from "./model";
 
@@ -88,6 +89,21 @@ function walkElements(root: Node): Element[] {
     pending.unshift(...childElements(element));
   }
   return result;
+}
+
+function hasClass(element: Element, className: string) {
+  return String(element.getAttribute("class") || "")
+    .split(/\s+/u)
+    .filter(Boolean)
+    .includes(className);
+}
+
+function findById(root: Element, id: string) {
+  return [root, ...walkElements(root)].find((element) => element.getAttribute("id") === id);
+}
+
+function elementHref(element: Element) {
+  return String(element.getAttribute("href") || element.getAttribute("xlink:href") || "").trim();
 }
 
 function normalizedUrlForSafety(value: string) {
@@ -257,6 +273,259 @@ function svgViewport(root: Element, warnings: string[]) {
   return { width: DEFAULT_CANVAS_WIDTH, height: DEFAULT_CANVAS_HEIGHT };
 }
 
+function platformSvg(root: Element) {
+  const all = [root, ...walkElements(root)];
+  const hasRoot = all.some((element) => element.getAttribute("id") === "root_g");
+  const semanticLayerIds = new Set(["Segment_Layer", "Text_Layer", "Measurement_Layer", "Other_Layer"]);
+  const hasLayer = all.some((element) => semanticLayerIds.has(String(element.getAttribute("id") || "")));
+  const hasMetadata = all.some((element) =>
+    ["dev-kind", "dev-id", "source-dev-id", "target-dev-id"].some((name) => element.hasAttribute(name))
+  );
+  return hasRoot && hasLayer && hasMetadata;
+}
+
+function uniqueModelId(raw: string, fallback: string, used: Set<string>, warnings: string[]) {
+  const requested = raw.trim();
+  const normalized = requested
+    .replace(/[^A-Za-z0-9_.:-]+/gu, "-")
+    .replace(/^[^A-Za-z_]+/u, "");
+  const base = normalized || fallback;
+  let candidate = base;
+  let index = 2;
+  while (used.has(candidate)) {
+    candidate = `${base}_${index}`;
+    index += 1;
+  }
+  used.add(candidate);
+  if (candidate !== requested) {
+    warnings.push(`SVG 标识“${requested || fallback}”已规范化为“${candidate}”。`);
+  }
+  return candidate;
+}
+
+function parseGeometryTransform(symbol: Element | undefined) {
+  const transformed = symbol
+    ? [symbol, ...walkElements(symbol)].find((element) => /\b(?:rotate|scale)\s*\(/u.test(String(element.getAttribute("transform") || "")))
+    : undefined;
+  const transform = String(transformed?.getAttribute("transform") || "");
+  const rotation = Number(/rotate\s*\(\s*([-+\d.eE]+)/u.exec(transform)?.[1] || 0);
+  const scale = /scale\s*\(\s*([-+\d.eE]+)(?:[\s,]+([-+\d.eE]+))?/u.exec(transform);
+  const scaleX = Number(scale?.[1] || 1);
+  const scaleY = Number(scale?.[2] || scale?.[1] || 1);
+  return {
+    rotation: Number.isFinite(rotation) ? rotation : 0,
+    scaleX: Number.isFinite(scaleX) && scaleX !== 0 ? scaleX : 1,
+    scaleY: Number.isFinite(scaleY) && scaleY !== 0 ? scaleY : 1
+  };
+}
+
+function stateFromHref(href: string) {
+  const match = /_state_([^#]+)$/u.exec(href.replace(/^#/, ""));
+  return match?.[1] && match[1] !== "default" ? match[1] : "";
+}
+
+function elementNumber(element: Element, name: string, fallback: number) {
+  const parsed = Number.parseFloat(String(element.getAttribute(name) || ""));
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function validTerminalType(value: string) {
+  return value === "ac" || value === "dc" || value === "h2" || value === "heat";
+}
+
+function platformLayers(root: Element, nodes: readonly ModelNode[], warnings: string[]) {
+  const definitionLayer = [root, ...walkElements(root)].find((element) => hasClass(element, "export-layer-definitions"));
+  const usedIds = new Set<string>();
+  const layers: ModelLayer[] = [];
+  for (const element of definitionLayer ? childElements(definitionLayer) : []) {
+    const rawId = String(element.getAttribute("layer-id") || "").trim();
+    if (!rawId || usedIds.has(rawId)) {
+      continue;
+    }
+    usedIds.add(rawId);
+    layers.push({
+      id: rawId,
+      name: String(element.getAttribute("name") || rawId).trim() || rawId,
+      visible: element.getAttribute("visible") !== "0"
+    });
+  }
+  if (layers.length === 0) {
+    layers.push({ id: DEFAULT_MODEL_LAYER_ID, name: DEFAULT_MODEL_LAYER_NAME, visible: true });
+    warnings.push("平台 SVG 缺少图层定义，已创建默认图层。");
+  } else if (!layers.some((layer) => layer.id === DEFAULT_MODEL_LAYER_ID)) {
+    const needsDefault = nodes.some((node) => !layers.some((layer) => layer.id === node.layerId));
+    if (needsDefault) {
+      layers.unshift({ id: DEFAULT_MODEL_LAYER_ID, name: DEFAULT_MODEL_LAYER_NAME, visible: true });
+    }
+  }
+  const requestedActive = String(root.getAttribute("active-layer-id") || "").trim()
+    || String(childElements(definitionLayer ?? root).find((element) => element.getAttribute("active") === "1")?.getAttribute("layer-id") || "").trim();
+  const activeLayerId = layers.some((layer) => layer.id === requestedActive) ? requestedActive : layers[0].id;
+  return { layers, activeLayerId };
+}
+
+function platformBackgroundColor(root: Element) {
+  const layer = findById(root, "Background_Layer");
+  if (!layer) {
+    return "transparent";
+  }
+  const rect = [layer, ...walkElements(layer)].find((element) => elementName(element) === "rect");
+  if (!rect) {
+    return "transparent";
+  }
+  const directFill = String(rect.getAttribute("fill") || "").trim();
+  if (directFill && !directFill.startsWith("url(")) {
+    return directFill;
+  }
+  const styleFill = /(?:^|;)\s*fill\s*:\s*([^;]+)/iu.exec(String(rect.getAttribute("style") || ""))?.[1]?.trim();
+  return styleFill && !styleFill.startsWith("url(") ? styleFill : "transparent";
+}
+
+function nodeTopologyNumber(node: ModelNode, type: "ac" | "dc") {
+  const value = node.terminals.find((terminal) => terminal.type === type)?.nodeNumber
+    || (node.terminals.length === 0 ? node.nodeNumber : "");
+  const parsed = Number.parseInt(String(value || ""), 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function restoreTerminalMetadata(node: ModelNode, element: Element) {
+  const commonNodeNumber = String(element.getAttribute("node") || "").trim();
+  const terminals = node.terminals.map((terminal, index) => {
+    const suffix = node.terminals.length > 1 ? `-${index + 1}` : "";
+    const nodeNumber = String(element.getAttribute(`node${suffix}`) || commonNodeNumber || terminal.nodeNumber).trim();
+    const rawType = String(element.getAttribute(`voltage-type${suffix}`) || element.getAttribute("voltage-type") || terminal.type).trim();
+    const type = validTerminalType(rawType) ? rawType : terminal.type;
+    const vbase = String(element.getAttribute(`vbase${suffix}`) || element.getAttribute("vbase") || terminal.vbase || "").trim();
+    return { ...terminal, nodeNumber, type, vbase };
+  });
+  const nodeNumber = commonNodeNumber || terminals[0]?.nodeNumber || node.nodeNumber;
+  const next = { ...node, nodeNumber, terminals };
+  return {
+    ...next,
+    acTopologyNode: nodeTopologyNumber(next, "ac"),
+    dcTopologyNode: nodeTopologyNumber(next, "dc")
+  };
+}
+
+function symbolForUse(root: Element, use: Element) {
+  const id = elementHref(use).replace(/^#/, "");
+  return id ? findById(root, id) : undefined;
+}
+
+function isInsideDefs(element: Element) {
+  let parent = element.parentNode;
+  while (parent && parent.nodeType === 1) {
+    if (elementName(parent as Element) === "defs") {
+      return true;
+    }
+    parent = parent.parentNode;
+  }
+  return false;
+}
+
+async function parsePlatformSvg(
+  document: Document,
+  options: SvgModelImportOptions,
+  warnings: string[]
+): Promise<SvgModelImportResult> {
+  const root = document.documentElement;
+  const { width: canvasWidth, height: canvasHeight } = svgViewport(root, warnings);
+  const templates = options.templates ?? DEVICE_LIBRARY;
+  const templateByKind = new Map(templates.map((template) => [template.kind, template]));
+  const usedNodeIds = new Set<string>();
+  const nodeIdBySvgId = new Map<string, string>();
+  const nodes: ModelNode[] = [];
+  const semanticUses = [root, ...walkElements(root)].filter((element) =>
+    elementName(element) === "use" && element.hasAttribute("dev-kind") && !isInsideDefs(element)
+  );
+  const batchSize = Math.max(1, Math.floor(options.batchSize ?? 200));
+  const yieldToMain = options.yieldToMain ?? (() => new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0)));
+  let defaultedDeviceCount = 0;
+
+  for (let index = 0; index < semanticUses.length; index += 1) {
+    const element = semanticUses[index];
+    const kind = String(element.getAttribute("dev-kind") || "").trim();
+    const template = templateByKind.get(kind);
+    if (!template || kind.startsWith("static-")) {
+      continue;
+    }
+    const rawId = String(element.getAttribute("dev-id") || element.getAttribute("id") || `${kind}-${index + 1}`);
+    const id = uniqueModelId(rawId, `${kind}-${index + 1}`, usedNodeIds, warnings);
+    const symbol = symbolForUse(root, element);
+    const transform = parseGeometryTransform(symbol);
+    const nodeWidth = Math.max(1, elementNumber(element, "width", template.size.width));
+    const nodeHeight = Math.max(1, elementNumber(element, "height", template.size.height));
+    const x = elementNumber(element, "x", 0);
+    const y = elementNumber(element, "y", 0);
+    const baseNode = createNodeFromTemplate(template, { x: x + nodeWidth / 2, y: y + nodeHeight / 2 });
+    const requestedLayerId = String(element.getAttribute("layer-id") || DEFAULT_MODEL_LAYER_ID).trim() || DEFAULT_MODEL_LAYER_ID;
+    const status = stateFromHref(elementHref(element));
+    const node = restoreTerminalMetadata({
+      ...baseNode,
+      id,
+      name: String(element.getAttribute("name") || template.label).trim() || template.label,
+      layerId: requestedLayerId,
+      size: { width: nodeWidth, height: nodeHeight },
+      rotation: transform.rotation,
+      scale: 1,
+      scaleX: transform.scaleX,
+      scaleY: transform.scaleY,
+      params: {
+        ...baseNode.params,
+        ...(element.hasAttribute("idx") ? { idx: String(element.getAttribute("idx") || "") } : {}),
+        ...(status ? { status } : {})
+      }
+    }, element);
+    nodes.push(node);
+    for (const alias of [rawId, element.getAttribute("dev-id"), element.getAttribute("id")]) {
+      const normalizedAlias = String(alias || "").trim();
+      if (normalizedAlias && !nodeIdBySvgId.has(normalizedAlias)) {
+        nodeIdBySvgId.set(normalizedAlias, id);
+      }
+    }
+    defaultedDeviceCount += 1;
+    if ((index + 1) % batchSize === 0 && index + 1 < semanticUses.length) {
+      await yieldToMain();
+    }
+  }
+
+  if (nodes.length === 0) {
+    warnings.push("平台 SVG 未恢复出有效设备，已按普通 SVG 整体导入。");
+    return genericSvgResult(document, options.dom ?? browserDomAdapter(), options, warnings);
+  }
+  const layerState = platformLayers(root, nodes, warnings);
+  const validLayerIds = new Set(layerState.layers.map((layer) => layer.id));
+  const normalizedNodes = nodes.map((node) => {
+    if (validLayerIds.has(node.layerId ?? "")) {
+      return node;
+    }
+    warnings.push(`设备“${node.name}”引用的图层“${node.layerId}”不存在，已移入默认图层。`);
+    return { ...node, layerId: validLayerIds.has(DEFAULT_MODEL_LAYER_ID) ? DEFAULT_MODEL_LAYER_ID : layerState.layers[0].id };
+  });
+  if (defaultedDeviceCount > 0) {
+    warnings.push(`${defaultedDeviceCount} 个设备未包含完整静态参数，已使用当前元件模板默认值补齐。`);
+  }
+  const project: ProjectFile = {
+    version: 1,
+    name: options.name.trim() || "SVG 导入模型",
+    layers: layerState.layers,
+    activeLayerId: layerState.activeLayerId,
+    canvasWidth,
+    canvasHeight,
+    canvasBackgroundColor: platformBackgroundColor(root),
+    measurements: { version: 1, groups: [] },
+    nodes: normalizedNodes,
+    edges: []
+  };
+  void nodeIdBySvgId;
+  return {
+    mode: "platform",
+    project,
+    stats: { nodes: normalizedNodes.length, edges: 0, measurementGroups: 0, staticNodes: 0 },
+    warnings
+  };
+}
+
 function staticImageNode(
   template: DeviceTemplate,
   id: string,
@@ -334,5 +603,8 @@ export async function parseSvgModel(source: string, options: SvgModelImportOptio
   const warnings: string[] = [];
   const document = parseSvgDocument(source, dom);
   sanitizeDocument(document, dom, warnings);
+  if (platformSvg(document.documentElement)) {
+    return parsePlatformSvg(document, { ...options, dom }, warnings);
+  }
   return genericSvgResult(document, dom, options, warnings);
 }
