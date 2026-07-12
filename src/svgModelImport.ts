@@ -141,7 +141,20 @@ function safeUrl(value: string) {
   ) {
     return true;
   }
-  return normalized.startsWith("data:image/");
+  if (normalized.startsWith("data:image/")) {
+    return true;
+  }
+  return !/^[a-z][a-z0-9+.-]*:/iu.test(normalized);
+}
+
+function relativeResourceUrl(value: string) {
+  const normalized = normalizedUrlForSafety(value);
+  return Boolean(
+    normalized &&
+    !normalized.startsWith("#") &&
+    !normalized.startsWith("/") &&
+    !/^[a-z][a-z0-9+.-]*:/iu.test(normalized)
+  );
 }
 
 function decodeSvgDataUrl(value: string) {
@@ -192,6 +205,7 @@ function sanitizeSvgDataUrl(value: string, dom: SvgDomAdapter, warnings: string[
 function sanitizeDocument(document: Document, dom: SvgDomAdapter, warnings: string[], depth = 0) {
   const root = document.documentElement;
   let removedCount = 0;
+  let relativeImageWarningAdded = false;
   for (const element of [root, ...walkElements(root)]) {
     const name = elementName(element);
     if (DANGEROUS_ELEMENT_NAMES.has(name)) {
@@ -228,6 +242,10 @@ function sanitizeDocument(document: Document, dom: SvgDomAdapter, warnings: stri
         element.removeAttribute(attribute.name);
         removedCount += 1;
         continue;
+      }
+      if (!relativeImageWarningAdded && elementName(element) === "image" && relativeResourceUrl(attributeValue)) {
+        warnings.push("SVG 包含相对图片路径；离开原目录后，该图片可能无法加载。");
+        relativeImageWarningAdded = true;
       }
       if (normalizedUrlForSafety(attributeValue).startsWith("data:image/svg+xml")) {
         const sanitized = sanitizeSvgDataUrl(attributeValue, dom, warnings, depth);
@@ -395,6 +413,56 @@ function platformBackgroundColor(root: Element) {
   }
   const styleFill = /(?:^|;)\s*fill\s*:\s*([^;]+)/iu.exec(String(rect.getAttribute("style") || ""))?.[1]?.trim();
   return styleFill && !styleFill.startsWith("url(") ? styleFill : "transparent";
+}
+
+function imageFitFromPreserveAspectRatio(value: string) {
+  const normalized = value.trim().replace(/\s+/gu, " ");
+  if (normalized === "none") {
+    return "stretch";
+  }
+  if (normalized.includes("xMidYMin") && normalized.includes("slice")) {
+    return "fill-x";
+  }
+  if (normalized.includes("xMinYMid") && normalized.includes("slice")) {
+    return "fill-y";
+  }
+  if (normalized.includes("slice")) {
+    return "cover";
+  }
+  return "fixed";
+}
+
+function platformBackgroundImage(root: Element, dom: SvgDomAdapter) {
+  const layer = findById(root, "Background_Layer");
+  if (!layer) {
+    return { image: "", fit: "stretch" };
+  }
+  const elements = [layer, ...walkElements(layer)];
+  const imageElement = elements.find((element) =>
+    hasClass(element, "export-canvas-background-image") &&
+    (elementName(element) === "image" || elementName(element) === "svg")
+  );
+  if (imageElement) {
+    const image = elementName(imageElement) === "image"
+      ? elementHref(imageElement)
+      : svgDataUrl(dom.serialize(imageElement));
+    return {
+      image,
+      fit: imageFitFromPreserveAspectRatio(String(imageElement.getAttribute("preserveAspectRatio") || ""))
+    };
+  }
+  const tiledRect = elements.find((element) =>
+    elementName(element) === "rect" && hasClass(element, "export-canvas-background-image")
+  );
+  const patternId = /url\(\s*#([^\s)]+)\s*\)/u.exec(String(tiledRect?.getAttribute("fill") || ""))?.[1];
+  const pattern = patternId ? findById(root, patternId) : undefined;
+  const tiledImage = pattern
+    ? [pattern, ...walkElements(pattern)].find((element) => elementName(element) === "image")
+    : undefined;
+  return {
+    image: tiledImage ? elementHref(tiledImage) : "",
+    fit: tiledImage ? "tile" : "stretch"
+  };
 }
 
 function nodeTopologyNumber(node: ModelNode, type: "ac" | "dc") {
@@ -778,6 +846,7 @@ async function parsePlatformSvg(
   if (defaultedDeviceCount > 0) {
     warnings.push(`${defaultedDeviceCount} 个设备未包含完整静态参数，已使用当前元件模板默认值补齐。`);
   }
+  const backgroundImage = platformBackgroundImage(root, dom);
   const project: ProjectFile = {
     version: 1,
     name: options.name.trim() || "SVG 导入模型",
@@ -786,6 +855,8 @@ async function parsePlatformSvg(
     canvasWidth,
     canvasHeight,
     canvasBackgroundColor: platformBackgroundColor(root),
+    canvasBackgroundImage: backgroundImage.image,
+    canvasBackgroundImageFit: backgroundImage.fit,
     measurements: { version: 1, groups: measurements },
     nodes: normalizedNodes,
     edges
