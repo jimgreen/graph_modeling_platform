@@ -1369,61 +1369,56 @@ describe("manual bend interaction helpers", () => {
 });
 
 describe("createExportEDeviceDefinitionFile", () => {
-  const buildCustomTemplate = (parameterDefinitions: any[]) => ({
-    kind: "custom_load",
+  const buildTemplate = (kind: string, componentType: string, parameterDefinitions: any[]) => ({
+    kind,
     label: "自定义负荷",
     categoryLibrary: "用户库",
-    params: { component_type: "custom_load" },
+    params: { component_type: componentType },
     parameterDefinitions
   });
 
-  test("exports fields whose export flag only lives in deviceDefinitionOverrides", async () => {
+  test("exports enabled fields from library templates covering both custom and built-in devices", async () => {
     const alert = vi.fn();
     vi.stubGlobal("window", { alert });
     const saveTextFile = vi.fn().mockResolvedValue(true);
-    const writeOperationLog = vi.fn();
-    // customDeviceTemplates 的 parameterDefinitions 没有 exportEnabled（元件定义编辑保存后写到 override 的典型状态）
-    const customDeviceTemplates = [
-      buildCustomTemplate([
-        { cnName: "有功", enName: "p", valueType: "float", typicalValue: "1" }
+    // libraryTemplates 已合并内置 + 自定义元件并应用 deviceDefinitionOverrides
+    const libraryTemplates = [
+      buildTemplate("custom_load", "custom_load", [
+        { cnName: "有功", enName: "p", valueType: "float", typicalValue: "1", exportEnabled: true, exportName: "p_load" }
+      ]),
+      buildTemplate("ac-two-winding-transformer", "TwoWindingTransformer", [
+        { cnName: "电阻", enName: "r", valueType: "float", typicalValue: "0", exportEnabled: true, exportName: "r" }
       ])
     ];
-    const deviceDefinitionOverrides = {
-      custom_load: {
-        parameterDefinitions: [
-          { cnName: "有功", enName: "p", valueType: "float", typicalValue: "1", exportEnabled: true, exportName: "p_load" }
-        ]
-      }
-    };
 
     const exportFn = createExportEDeviceDefinitionFile({
-      customDeviceTemplates,
-      deviceDefinitionOverrides,
+      libraryTemplates,
       saveTextFile,
-      writeOperationLog
+      writeOperationLog: vi.fn()
     });
     await exportFn();
 
     expect(saveTextFile).toHaveBeenCalledTimes(1);
     const payload = saveTextFile.mock.calls[0][0];
     expect(payload.text).toContain("p_load");
+    expect(payload.text).toContain("r");
     expect(payload.filename).toBe("自定义元件定义.e");
     expect(alert).toHaveBeenCalledWith(expect.stringContaining("导出成功"));
   });
 
-  test("still exports when export flag is set directly on customDeviceTemplates", async () => {
+  test("exports params whose export flag is inferred from E section when exportEnabled is undefined", async () => {
     const alert = vi.fn();
     vi.stubGlobal("window", { alert });
     const saveTextFile = vi.fn().mockResolvedValue(true);
-    const customDeviceTemplates = [
-      buildCustomTemplate([
-        { cnName: "有功", enName: "p", valueType: "float", typicalValue: "1", exportEnabled: true, exportName: "p_load" }
+    // 非内置 component_type，exportEnabled 为 undefined 时按 E 分区推导为 true（与界面一致）
+    const libraryTemplates = [
+      buildTemplate("customMyLoad", "MyCustomLoad", [
+        { cnName: "有功功率", enName: "p_load", valueType: "float", typicalValue: "0" }
       ])
     ];
 
     const exportFn = createExportEDeviceDefinitionFile({
-      customDeviceTemplates,
-      deviceDefinitionOverrides: {},
+      libraryTemplates,
       saveTextFile,
       writeOperationLog: vi.fn()
     });
@@ -1437,15 +1432,14 @@ describe("createExportEDeviceDefinitionFile", () => {
     const alert = vi.fn();
     vi.stubGlobal("window", { alert });
     const saveTextFile = vi.fn().mockResolvedValue(true);
-    const customDeviceTemplates = [
-      buildCustomTemplate([
+    const libraryTemplates = [
+      buildTemplate("custom_load", "custom_load", [
         { cnName: "有功", enName: "p", valueType: "float", typicalValue: "1", exportEnabled: false }
       ])
     ];
 
     const exportFn = createExportEDeviceDefinitionFile({
-      customDeviceTemplates,
-      deviceDefinitionOverrides: {},
+      libraryTemplates,
       saveTextFile,
       writeOperationLog: vi.fn()
     });

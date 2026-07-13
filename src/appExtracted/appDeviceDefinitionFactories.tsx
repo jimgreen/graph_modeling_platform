@@ -1,6 +1,5 @@
 // @ts-nocheck
-import { applyDeviceTemplateDefinitionOverride, buildEDeviceDefinitionFile, parseEDeviceDefinitionFile } from "../model";
-import { deviceDefinitionOverrideForTemplate } from "../customDeviceUtils";
+import { buildEDeviceDefinitionFile, parseEDeviceDefinitionFile } from "../model";
 import { clampNumber } from "../canvasViewport";
 import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
 import { stateIconSvgVisibleViewBox } from "../stateIconDrawing";
@@ -1940,12 +1939,9 @@ export function createExportEFile(__appScope: Record<string, any>) {
 
 export function createExportEDeviceDefinitionFile(__appScope: Record<string, any>) {
   return async () => {
-    const { customDeviceTemplates, deviceDefinitionOverrides, saveTextFile, writeOperationLog } = __appScope;
-    // 元件定义编辑（"保存定义"）写入 deviceDefinitionOverrides，导出时需合并 override 才能取到勾选的导出字段
-    const templates = customDeviceTemplates.map((template) =>
-      applyDeviceTemplateDefinitionOverride(template, deviceDefinitionOverrideForTemplate(template, deviceDefinitionOverrides ?? {}))
-    );
-    const file = buildEDeviceDefinitionFile(templates);
+    const { libraryTemplates, saveTextFile, writeOperationLog } = __appScope;
+    // libraryTemplates 已合并内置 + 自定义元件并应用 deviceDefinitionOverrides，导出范围覆盖所有元件（含内置）
+    const file = buildEDeviceDefinitionFile(libraryTemplates ?? []);
     if (!file.text) {
       window.alert("没有可导出的元件定义：所有元件均未勾选导出字段。");
       return;

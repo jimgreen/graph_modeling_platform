@@ -2246,6 +2246,22 @@ describe("power system model", () => {
       expect(file.text.endsWith("\n")).toBe(true);
     });
 
+    test("exports params whose export flag is inferred from E section when exportEnabled is undefined", () => {
+      // 自定义元件默认参数行未显式设置 exportEnabled，界面按 E 分区推导显示"是"，导出需与之保持一致
+      const template = {
+        kind: "customMyLoad",
+        label: "自定义负荷",
+        categoryLibrary: "交流设备",
+        params: { component_type: "MyCustomLoad" },
+        parameterDefinitions: [
+          { cnName: "有功功率", enName: "p_load", valueType: "float", typicalValue: "0" }
+        ]
+      } as unknown as DeviceTemplate;
+      const file = buildEDeviceDefinitionFile([template]);
+      expect(file.text).toContain("p_load");
+      expect(file.text).toContain("有功功率");
+    });
+
     test("round trips fields through export and parse", () => {
       const file = buildEDeviceDefinitionFile(templates);
       const sections = parseEDeviceDefinitionFile(file.text);

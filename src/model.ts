@@ -2658,12 +2658,18 @@ export function buildEDeviceDefinitionFile(templates: DeviceTemplate[]): TextFil
   const sections: EDeviceDefinitionSection[] = [];
   for (const template of templates) {
     const definitions = template.parameterDefinitions ?? [];
-    const fields = definitions
-      .filter((definition) => definition.exportEnabled)
-      .map((definition) => ({
-        exportName: (definition.exportName || definition.enName).trim(),
+    const fields = [];
+    for (const definition of definitions) {
+      // 与元件定义编辑界面保持一致：按 E 分区推导导出开关，避免 exportEnabled 为 undefined 时被误过滤
+      const settings = resolveDeviceParameterDefinitionExportSettings(template.kind, template.params ?? {}, definition);
+      if (!settings.exportEnabled) {
+        continue;
+      }
+      fields.push({
+        exportName: (settings.exportName || definition.enName).trim(),
         cnName: definition.cnName.trim()
-      }));
+      });
+    }
     if (fields.length === 0) {
       continue;
     }
