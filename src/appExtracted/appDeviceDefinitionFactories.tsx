@@ -1970,6 +1970,7 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
     }
     const {
       customDeviceTemplates,
+      libraryTemplates,
       persistDeviceLibraryChange,
       setCustomDeviceTemplates,
       writeOperationLog
@@ -1982,17 +1983,28 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
           window.alert("未在文件中解析到元件定义。");
           return;
         }
+        const sectionByKind = new Map(sections.map((s: any) => [s.kind, s]));
+        // 匹配统计用 libraryTemplates（含内置+自定义），静态图元不计入（非电力设备）
         const matched: string[] = [];
         const skipped: string[] = [];
-        const nextTemplates = (customDeviceTemplates as any[]).map((template: any) => {
-          // 新格式按元件库（E section）标签分组，按 componentLibrary 匹配
+        for (const template of (libraryTemplates ?? []) as any[]) {
           const componentLibrary = inferESection(template.kind, template.params ?? {});
-          const section = componentLibrary ? sections.find((item: any) => item.kind === componentLibrary) : undefined;
-          if (!section) {
+          if (!componentLibrary || componentLibrary.startsWith("Static")) {
+            continue;
+          }
+          if (sectionByKind.has(componentLibrary)) {
+            matched.push(template.label || template.kind);
+          } else {
             skipped.push(template.label || template.kind);
+          }
+        }
+        // 回写 customDeviceTemplates（更新 exportEnabled）
+        const nextTemplates = (customDeviceTemplates as any[]).map((template: any) => {
+          const componentLibrary = inferESection(template.kind, template.params ?? {});
+          const section = componentLibrary ? sectionByKind.get(componentLibrary) : undefined;
+          if (!section) {
             return template;
           }
-          matched.push(template.label || template.kind);
           const exportNames = new Set(section.fields.map((field: any) => field.exportName));
           const parameterDefinitions = (template.parameterDefinitions ?? []).map((definition: any) => {
             // 用推导的 exportName 匹配（与导出一致，如 resistancePu -> resistance），确保无人工修改时全部匹配
