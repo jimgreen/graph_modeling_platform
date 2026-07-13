@@ -2697,16 +2697,17 @@ export function buildEDeviceDefinitionFile(templates: DeviceTemplate[]): TextFil
     }
     // 字段顺序：idx、name 固定首位，dev_type 紧跟 name（新增列），其余按出现顺序
     const fields: EDeviceDefinitionField[] = [];
-    const idxCnNames = group.fields.get("idx");
-    fields.push({ exportName: "idx", cnName: idxCnNames && idxCnNames.length > 0 ? idxCnNames.join("/") : "序号" });
-    const nameCnNames = group.fields.get("name");
-    fields.push({ exportName: "name", cnName: nameCnNames && nameCnNames.length > 0 ? nameCnNames.join("/") : "名称" });
+    // idx/name 为 E 文件固定标准列，中文名固定，不取图元 cnName 并集（避免混入英文 key 如 idx/name）
+    fields.push({ exportName: "idx", cnName: "序号" });
+    fields.push({ exportName: "name", cnName: "名称" });
     fields.push({ exportName: "dev_type", cnName: "设备类型" });
     for (const [exportName, cnNames] of group.fields) {
       if (exportName === "idx" || exportName === "name") {
         continue;
       }
-      fields.push({ exportName, cnName: cnNames.join("/") });
+      // 过滤掉与 enName 相同的英文 key，只保留真正的中文名；全被过滤则回退到字段名
+      const meaningfulCnNames = cnNames.filter((cnName) => cnName && cnName !== exportName);
+      fields.push({ exportName, cnName: meaningfulCnNames.length > 0 ? meaningfulCnNames.join("/") : exportName });
     }
     sections.push({
       kind: componentLibrary,

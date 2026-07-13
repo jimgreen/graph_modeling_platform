@@ -2280,6 +2280,40 @@ describe("power system model", () => {
       expect(file.text).toContain("dev_type");
     });
 
+    test("uses fixed cnName for idx/name and filters enName-only cnName in union", () => {
+      // ac-source 无 parameterDefinitions（idx cnName=enName="idx"），ac-storage 有 parameterDefinitions（idx cnName="序号"）
+      // 两者同属 ACGenerator，idx/name 应固定为"序号"/"名称"，p_set 过滤英文后保留"有功设定"
+      const templates = [
+        {
+          kind: "ac-source",
+          label: "交流电源",
+          categoryLibrary: "交流设备",
+          params: { ratedVoltage: "10 kV" },
+          terminalType: "ac",
+          terminalCount: 1
+        },
+        {
+          kind: "ac-storage",
+          label: "储能",
+          categoryLibrary: "交流设备",
+          params: { component_type: "ACGenerator" },
+          parameterDefinitions: [
+            { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
+            { cnName: "名称", enName: "name", valueType: "string", typicalValue: "" },
+            { cnName: "有功设定", enName: "p_set", valueType: "float", typicalValue: "0", exportEnabled: true, exportName: "p_set" }
+          ]
+        }
+      ] as unknown as DeviceTemplate[];
+      const file = buildEDeviceDefinitionFile(templates);
+      const sections = parseEDeviceDefinitionFile(file.text);
+      const acGen = sections.find((s) => s.kind === "ACGenerator");
+      expect(acGen).toBeDefined();
+      expect(acGen!.fields.find((f) => f.exportName === "idx")?.cnName).toBe("序号");
+      expect(acGen!.fields.find((f) => f.exportName === "name")?.cnName).toBe("名称");
+      expect(acGen!.fields.find((f) => f.exportName === "dev_type")?.cnName).toBe("设备类型");
+      expect(acGen!.fields.find((f) => f.exportName === "p_set")?.cnName).toBe("有功设定");
+    });
+
     test("round trips fields through export and parse", () => {
       const file = buildEDeviceDefinitionFile(templates);
       const sections = parseEDeviceDefinitionFile(file.text);
