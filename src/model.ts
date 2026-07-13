@@ -5461,9 +5461,35 @@ function templateTerminalTypes(template: DeviceTemplate): TerminalType[] {
 
 export function getTemplateParameterDefinitions(template: DeviceTemplate): DeviceParameterDefinition[] {
   if (template.parameterDefinitions?.length) {
-    return template.parameterDefinitions
+    const paramDefs = template.parameterDefinitions
       .map((definition) => normalizeTemplateDefinition(definition))
       .filter((definition): definition is DeviceParameterDefinition => Boolean(definition));
+    // 对属 E 分区的图元，合并 eKeys（E_SECTION_COLUMNS 内置列）+ dev_type，确保所有字段都显示
+    const eKeys = getEParameterKeys(template.kind, template.params);
+    if (eKeys.length > 0) {
+      const existingEnNames = new Set(paramDefs.map(d => d.enName));
+      // 过滤掉已被 parameterDefinitions 映射 legacyColumn 的 eKeys，避免覆盖参数定义的 exportName（如 resistancePu -> resistance）
+      const section = inferESection(template.kind, template.params);
+      const existingLegacyColumns = new Set(
+        paramDefs.map(d => section ? legacyEColumnForDefinition(section, d.enName) : "").filter(Boolean)
+      );
+      const keysToAdd = [...eKeys];
+      if (!keysToAdd.includes("dev_type")) {
+        keysToAdd.push("dev_type");
+      }
+      const keysToAppend = keysToAdd.filter(k => !existingEnNames.has(k) && !existingLegacyColumns.has(k) && k !== ALLOW_RESIZE_TRANSFORM_PARAM && !k.startsWith("_"));
+      if (keysToAppend.length > 0) {
+        const eDefs = keysToAppend.map((key) => ({
+          cnName: key,
+          enName: key,
+          valueType: inferDefinitionValueType(key, template.params[key] ?? ""),
+          typicalValue: template.params[key] ?? "",
+          readonly: TEMPLATE_DEFINITION_READONLY_KEYS.has(key)
+        }));
+        return [...paramDefs, ...eDefs];
+      }
+    }
+    return paramDefs;
   }
   if (template.isContainer) {
     const defaultDefinitions = buildDefaultDeviceParameterDefinitions(templateTerminalTypes(template), {
