@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { buildEDeviceDefinitionFile, inferESection, parseEDeviceDefinitionFile } from "../model";
+import { buildEDeviceDefinitionFile, inferESection, parseEDeviceDefinitionFile, resolveDeviceParameterDefinitionExportSettings } from "../model";
 import { clampNumber } from "../canvasViewport";
 import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
 import { stateIconSvgVisibleViewBox } from "../stateIconDrawing";
@@ -1995,8 +1995,10 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
           matched.push(template.label || template.kind);
           const exportNames = new Set(section.fields.map((field: any) => field.exportName));
           const parameterDefinitions = (template.parameterDefinitions ?? []).map((definition: any) => {
-            if (exportNames.has(definition.enName)) {
-              return { ...definition, exportEnabled: true, exportName: definition.exportName || definition.enName };
+            // 用推导的 exportName 匹配（与导出一致，如 resistancePu -> resistance），确保无人工修改时全部匹配
+            const settings = resolveDeviceParameterDefinitionExportSettings(template.kind, template.params ?? {}, definition);
+            if (settings.exportEnabled && exportNames.has(settings.exportName)) {
+              return { ...definition, exportEnabled: true, exportName: settings.exportName };
             }
             return { ...definition, exportEnabled: false };
           });
