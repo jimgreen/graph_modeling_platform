@@ -3256,7 +3256,8 @@ export const PARAM_LABELS: Record<string, string> = {
   g_set: "电导设定值",
   b_set: "电纳设定值",
   pbase: "有功基准",
-  qbase: "无功基准"
+  qbase: "无功基准",
+  dev_type: "设备类型"
 };
 
 export const FONT_FAMILY_OPTIONS = ["Arial", "Microsoft YaHei", "SimSun", "KaiTi", "SimHei"];

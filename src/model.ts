@@ -5492,6 +5492,10 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
   }
   const eKeys = getEParameterKeys(template.kind, template.params);
   const keys = eKeys.length > 0 ? eKeys : Object.keys(template.params);
+  // 属 E 分区的图元加 dev_type（E 文件固定列，标识设备类型）
+  if (eKeys.length > 0 && !keys.includes("dev_type")) {
+    keys.push("dev_type");
+  }
   const uniqueKeys = Array.from(new Set(keys.filter((key) => key && key !== ALLOW_RESIZE_TRANSFORM_PARAM && !key.startsWith("_"))));
   return uniqueKeys.map((key) => ({
     cnName: key,
