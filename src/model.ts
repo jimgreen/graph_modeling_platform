@@ -2697,12 +2697,26 @@ export function buildEDeviceDefinitionFile(templates: DeviceTemplate[]): TextFil
     }
     // 字段顺序：idx、name 固定首位，dev_type 紧跟 name（新增列），其余按出现顺序
     const fields: EDeviceDefinitionField[] = [];
-    // idx/name 为 E 文件固定标准列，中文名固定，不取图元 cnName 并集（避免混入英文 key 如 idx/name）
-    fields.push({ exportName: "idx", cnName: "序号" });
-    fields.push({ exportName: "name", cnName: "名称" });
-    fields.push({ exportName: "dev_type", cnName: "设备类型" });
+    // E 文件固定标准列的中文名映射（不取图元 cnName 并集，避免混入英文 key）
+    const fixedCnName: Record<string, string> = {
+      idx: "序号",
+      name: "名称",
+      dev_type: "设备类型",
+      node: "节点",
+      i_node: "首节点",
+      j_node: "末节点",
+      run_stat: "运行状态（运行/停运）"
+    };
+    // idx/name/dev_type 固定前三位
+    fields.push({ exportName: "idx", cnName: fixedCnName.idx });
+    fields.push({ exportName: "name", cnName: fixedCnName.name });
+    fields.push({ exportName: "dev_type", cnName: fixedCnName.dev_type });
     for (const [exportName, cnNames] of group.fields) {
       if (exportName === "idx" || exportName === "name") {
+        continue;
+      }
+      if (fixedCnName[exportName]) {
+        fields.push({ exportName, cnName: fixedCnName[exportName] });
         continue;
       }
       // 过滤掉与 enName 相同的英文 key，只保留真正的中文名；全被过滤则回退到字段名

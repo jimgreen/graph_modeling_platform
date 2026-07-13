@@ -2314,6 +2314,37 @@ describe("power system model", () => {
       expect(acGen!.fields.find((f) => f.exportName === "p_set")?.cnName).toBe("有功设定");
     });
 
+    test("uses fixed cnName for node/i_node/j_node/run_stat columns", () => {
+      const templates = [
+        {
+          kind: "ac-bus",
+          label: "交流母线",
+          categoryLibrary: "交流设备",
+          params: {},
+          terminalType: "ac",
+          terminalCount: 1
+        },
+        {
+          kind: "ac-line",
+          label: "交流线路",
+          categoryLibrary: "交流设备",
+          params: { resistance: "1", reactance: "2" },
+          terminalType: "ac",
+          terminalCount: 2
+        }
+      ] as unknown as DeviceTemplate[];
+      const file = buildEDeviceDefinitionFile(templates);
+      const sections = parseEDeviceDefinitionFile(file.text);
+      const bus = sections.find((s) => s.kind === "ACRealBs");
+      expect(bus).toBeDefined();
+      expect(bus!.fields.find((f) => f.exportName === "node")?.cnName).toBe("节点");
+      expect(bus!.fields.find((f) => f.exportName === "run_stat")?.cnName).toBe("运行状态（运行/停运）");
+      const branch = sections.find((s) => s.kind === "ACBranch");
+      expect(branch).toBeDefined();
+      expect(branch!.fields.find((f) => f.exportName === "i_node")?.cnName).toBe("首节点");
+      expect(branch!.fields.find((f) => f.exportName === "j_node")?.cnName).toBe("末节点");
+    });
+
     test("round trips fields through export and parse", () => {
       const file = buildEDeviceDefinitionFile(templates);
       const sections = parseEDeviceDefinitionFile(file.text);
