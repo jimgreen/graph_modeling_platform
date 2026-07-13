@@ -246,6 +246,30 @@ export async function handleControlTemplateSaveFromSelection({ request, url, res
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.template.saveFromSelection", params));
 }
 
+// /api/v1/control/e-device-definition/export -- 导出 E 文件定义文本
+// body: {} -> 回执 { filename, text, mime }
+export async function handleControlExportEDeviceDefinition({ url, response }, ctx) {
+  await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.e-device-definition.export", {}));
+}
+
+// /api/v1/control/e-device-definition/import -- 导入 E 文件定义（返回匹配结果，不实际写入）
+// body: { text } -> 回执 { matched, skipped, matchedCount, skippedCount }
+export async function handleControlImportEDeviceDefinition({ request, url, response }, ctx) {
+  let payload;
+  try {
+    payload = await readJsonBody(request);
+  } catch {
+    sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
+    return;
+  }
+  const text = payload?.text;
+  if (typeof text !== "string" || !text.trim()) {
+    sendV1Error(response, "bad-request", "text 必填（E 文件文本）。");
+    return;
+  }
+  await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.e-device-definition.import", { text }));
+}
+
 // 构造 v1 控制台路由表。ctx = { sendCommandToClient }
 // handle 签名：({ request, response, url, match }, ctx) => Promise<void>
 export function createV1ControlRoutes(ctx) {
@@ -260,6 +284,8 @@ export function createV1ControlRoutes(ctx) {
     { method: "POST", pattern: /^\/api\/v1\/control\/device\/delete\/?$/u, handle: wrap(handleControlDeviceDelete) },
     { method: "POST", pattern: /^\/api\/v1\/control\/device\/property\/update\/?$/u, handle: wrap(handleControlDevicePropertyUpdate) },
     { method: "POST", pattern: /^\/api\/v1\/control\/save\/?$/u, handle: wrap(handleControlSave) },
-    { method: "POST", pattern: /^\/api\/v1\/control\/template\/saveFromSelection\/?$/u, handle: wrap(handleControlTemplateSaveFromSelection) }
+    { method: "POST", pattern: /^\/api\/v1\/control\/template\/saveFromSelection\/?$/u, handle: wrap(handleControlTemplateSaveFromSelection) },
+    { method: "POST", pattern: /^\/api\/v1\/control\/e-device-definition\/export\/?$/u, handle: wrap(handleControlExportEDeviceDefinition) },
+    { method: "POST", pattern: /^\/api\/v1\/control\/e-device-definition\/import\/?$/u, handle: wrap(handleControlImportEDeviceDefinition) }
   ];
 }

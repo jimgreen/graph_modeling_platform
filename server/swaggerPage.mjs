@@ -199,6 +199,12 @@ const ENDPOINTS = [
   { group: "控制台", method: "POST", path: "/api/v1/control/template/saveFromSelection", desc: "从选中组合保存为模板（自动推导端子+图标，不经草稿对话框）", query: [{ name: "clientId", desc: "可选" }], body: { name: "新模板", componentLibrary: "custom_device" }, response: "{ok:true,data:{templateKind}}", examples: [
     { label: "保存选中组合为模板", params: { __body__: { name: "组合模板", componentLibrary: "combined_device" } } },
     { label: "指定类别库", params: { __body__: { name: "直流模板", componentLibrary: "dc_device", categoryLibraryName: "直流设备" } } }
+  ]},
+  { group: "控制台", method: "POST", path: "/api/v1/control/e-device-definition/export", desc: "导出图元 E 文件定义文本（按元件库分组，含内置+自定义元件）", query: [{ name: "clientId", desc: "可选" }], body: {}, response: "{ok:true,data:{filename,text,mime}}", examples: [
+    { label: "导出 E 文件定义", params: { __body__: {} } }
+  ]},
+  { group: "控制台", method: "POST", path: "/api/v1/control/e-device-definition/import", desc: "导入 E 文件定义（校验匹配，不实际写入；返回 matched/skipped）", query: [{ name: "clientId", desc: "可选" }], body: { text: "<ACLoad ...>...</ACLoad>" }, response: "{ok:true,data:{matched,skipped,matchedCount,skippedCount}}", examples: [
+    { label: "导入 E 文件定义（校验匹配）", params: { __body__: { text: "<ACLoad 中文名=\"交流负荷\" 类别库=\"交流设备\">\n@idx name\n//序号 名称\n</ACLoad>" } } }
   ]}
 ];
 

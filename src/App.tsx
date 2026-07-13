@@ -524,7 +524,9 @@ import { parseSvgModel } from "./svgModelImport";
 import {
   createCompleteImportedModelFeedback,
   createImportSvgModelFile,
-  createOpenSvgModelImportFilePicker
+  createOpenSvgModelImportFilePicker,
+  createProgrammaticExportEDeviceDefinition,
+  createProgrammaticImportEDeviceDefinition
 } from "./appExtracted/appDeviceDefinitionFactories";
 import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_PAGE_ID, isDefaultStatePageId, createStateDraftRow, createStateDraftRowFromDefaultVisual, defaultStateDraftRow, createDefinitionStateDraftRows, normalizeStateDraftRows, validateStateDraftRows, stateVisualFromDraftRow, activeStateDraftRow, normalizeStatePageId, stateDraftImageValue, stateIconDrawingDraftSourceImage, stateIconDrawingInlineNeedsDraftReload, stateIconDrawingInlineCanPersistDraft, stateVisualShapeLabel, generateStateVisualShapeImage, stateIconDrawingElementId, visibleStateIconColor, createStateIconDrawingElement, createImportedStateIconElement, svgSourceFromDataUrl, parseStateIconSvgSource, stateIconSvgElementSource, parseSvgStyleAttribute, stateIconSvgReactAttributes, stateIconSvgNodeChildren, stateIconSvgNodeToReact, stateIconSvgSourceToReactNodes, createEditableStateIconElementsFromSvgSource, createStateIconDrawingInitialElements, stateIconDrawingInitialFrame, svgSourceToDataUrl, stateIconDrawingSvgElementMarkup, stateIconDrawingElementMarkup, stateIconDrawingToImage, stateIconDrawingToPersistedImage, stateIconDrawingFrameRect, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "./stateIconDrawing";
 import { fallbackComponentLibraryForCategoryLibrary, resolveTemplateComponentLibrary, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, isReservedDeviceDefinitionParamName, createDefinitionDraftRows, normalizeCustomDeviceTerminalAnchorCoordinate, projectCustomDeviceTerminalAnchorToBoundary, customDeviceTerminalAnchorKey, hasOverlappingCustomDeviceTerminalAnchors, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, createCustomDeviceDraftFromTemplate, createDefinitionVisualDraft, defaultContainerAssociationForTerminalType, isAssociationAllowedForTerminal, normalizeContainerTerminalAssociations, customDefaultDefinitions, generateCustomDeviceImage, customDeviceImageWithTerminalConnectors, customDeviceGeneratedDefaultImageCandidates, syncInheritedCustomDeviceStateVisuals, parseCustomDefinitions, screenToSvgPoint, primaryOrthogonalAxis, constrainPointToOrthogonalAxis } from "./customDeviceUtils";
@@ -4538,6 +4540,8 @@ const exportSvg = createExportSvg(__appScope); Object.assign(__appScope, { expor
 const exportEFile = createExportEFile(__appScope); Object.assign(__appScope, { exportEFile });
 const exportEDeviceDefinitionFile = createExportEDeviceDefinitionFile(__appScope); Object.assign(__appScope, { exportEDeviceDefinitionFile });
 const importEDeviceDefinitionFile = createImportEDeviceDefinitionFile(__appScope); Object.assign(__appScope, { importEDeviceDefinitionFile });
+const programmaticExportEDeviceDefinition = createProgrammaticExportEDeviceDefinition(__appScope); Object.assign(__appScope, { programmaticExportEDeviceDefinition });
+const programmaticImportEDeviceDefinition = createProgrammaticImportEDeviceDefinition(__appScope); Object.assign(__appScope, { programmaticImportEDeviceDefinition });
 const safeFilePart = (name: string) => name.trim().replace(/[\\/:*?"<>|]+/g, "_") || "未命名"; Object.assign(__appScope, { safeFilePart });
 const serializeSchemeRecordForFile = (scheme: SavedSchemeRecord): string =>
     JSON.stringify(
@@ -6434,7 +6438,9 @@ useEffect(() => {
       "control.device.property.update": (p) => scope.programmaticUpdateDeviceProperty?.(p.id, p.category, p.patch),
       "control.device.add": (p) => scope.programmaticAddDevice?.(p.kind, p.x, p.y, p.attrs),
       "control.device.delete": (p) => scope.programmaticDeleteDevices?.(p.ids),
-      "control.save": (p) => scope.programmaticSave?.(p.scope)
+      "control.save": (p) => scope.programmaticSave?.(p.scope),
+      "control.e-device-definition.export": () => scope.programmaticExportEDeviceDefinition?.(),
+      "control.e-device-definition.import": (p) => scope.programmaticImportEDeviceDefinition?.(p.text)
     };
     const handler = dispatch[name];
     if (!handler) {

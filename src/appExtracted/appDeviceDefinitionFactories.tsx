@@ -2023,6 +2023,40 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
   };
 }
 
+// 程序化导出 E 文件定义（经 WS control 指令调用，返回文本不触发浏览器下载）
+export function createProgrammaticExportEDeviceDefinition(__appScope: Record<string, any>) {
+  return () => {
+    const { libraryTemplates, PARAM_LABELS } = __appScope;
+    return buildEDeviceDefinitionFile(libraryTemplates ?? [], PARAM_LABELS);
+  };
+}
+
+// 程序化导入 E 文件定义（经 WS control 指令调用，返回匹配结果，不实际写入）
+export function createProgrammaticImportEDeviceDefinition(__appScope: Record<string, any>) {
+  return (text: string) => {
+    const { libraryTemplates } = __appScope;
+    const sections = parseEDeviceDefinitionFile(String(text ?? ""));
+    if (sections.length === 0) {
+      const e: any = new Error("未在文件中解析到元件定义。");
+      e.code = "bad-request";
+      throw e;
+    }
+    const sectionByKind = new Map(sections.map((s: any) => [s.kind, s]));
+    const matched: string[] = [];
+    const skipped: string[] = [];
+    for (const template of (libraryTemplates ?? []) as any[]) {
+      const componentLibrary = inferESection(template.kind, template.params ?? {});
+      const section = componentLibrary ? sectionByKind.get(componentLibrary) : undefined;
+      if (!section) {
+        skipped.push(template.label || template.kind);
+        continue;
+      }
+      matched.push(template.label || template.kind);
+    }
+    return { matched, skipped, matchedCount: matched.length, skippedCount: skipped.length };
+  };
+}
+
 export function createIsProjectFilePayload(__appScope: Record<string, any>) {
   return (value: unknown): value is ProjectFile => {
   const { isObjectRecord } = __appScope;
