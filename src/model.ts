@@ -2657,7 +2657,9 @@ function splitEDefinitionCells(line: string): string[] {
 export function buildEDeviceDefinitionFile(templates: DeviceTemplate[]): TextFileExport {
   const sections: EDeviceDefinitionSection[] = [];
   for (const template of templates) {
-    const definitions = template.parameterDefinitions ?? [];
+    // 用 getTemplateParameterDefinitions 兼容无 parameterDefinitions 的图元（如 ac-source，参数仅在 params 里），
+    // 否则这些图元 definitions 为空会被整体跳过，导致导出 E 文件丢失整类图元
+    const definitions = getTemplateParameterDefinitions(template);
     const fields = [];
     for (const definition of definitions) {
       // 与元件定义编辑界面保持一致：按 E 分区推导导出开关，避免 exportEnabled 为 undefined 时被误过滤

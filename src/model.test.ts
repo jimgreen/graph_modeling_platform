@@ -2262,6 +2262,22 @@ describe("power system model", () => {
       expect(file.text).toContain("有功功率");
     });
 
+    test("exports built-in E columns for devices without parameterDefinitions (e.g. ac-source)", () => {
+      // 交流电源参数仅在 params 里、无 parameterDefinitions，应按 E 分区内置列导出，避免整类图元丢失
+      const template = {
+        kind: "ac-source",
+        label: "交流电源",
+        categoryLibrary: "交流设备",
+        params: { ratedVoltage: "10 kV", frequency: "50 Hz", shortCircuitCapacity: "500 MVA" },
+        terminalType: "ac",
+        terminalCount: 1
+      } as unknown as DeviceTemplate;
+      const file = buildEDeviceDefinitionFile([template]);
+      expect(file.text).toContain("<ac-source ");
+      expect(file.text).toContain("p_set");
+      expect(file.text).toContain("交流电源");
+    });
+
     test("round trips fields through export and parse", () => {
       const file = buildEDeviceDefinitionFile(templates);
       const sections = parseEDeviceDefinitionFile(file.text);
