@@ -5499,7 +5499,17 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
           }
           return base;
         });
-        return [...paramDefs, ...eDefs];
+        const allDefs = [...paramDefs, ...eDefs];
+        // dev_type 移到 name 之后，确保表格中紧跟名称行
+        const devTypeIndex = allDefs.findIndex(d => d.enName === "dev_type");
+        if (devTypeIndex >= 0) {
+          const nameIndex = allDefs.findIndex(d => d.enName === "name");
+          if (nameIndex >= 0 && devTypeIndex !== nameIndex + 1) {
+            const [devTypeDef] = allDefs.splice(devTypeIndex, 1);
+            allDefs.splice(nameIndex + 1, 0, devTypeDef);
+          }
+        }
+        return allDefs;
       }
     }
     return paramDefs;
