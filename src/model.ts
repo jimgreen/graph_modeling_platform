@@ -5475,7 +5475,13 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
       );
       const keysToAdd = [...eKeys];
       if (!keysToAdd.includes("dev_type")) {
-        keysToAdd.push("dev_type");
+        // dev_type 紧跟 name 之后
+        const nameIndex = keysToAdd.indexOf("name");
+        if (nameIndex >= 0) {
+          keysToAdd.splice(nameIndex + 1, 0, "dev_type");
+        } else {
+          keysToAdd.unshift("dev_type");
+        }
       }
       const keysToAppend = keysToAdd.filter(k => !existingEnNames.has(k) && !existingLegacyColumns.has(k) && k !== ALLOW_RESIZE_TRANSFORM_PARAM && !k.startsWith("_"));
       if (keysToAppend.length > 0) {
@@ -5524,10 +5530,15 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
     ];
   }
   const eKeys = getEParameterKeys(template.kind, template.params);
-  const keys = eKeys.length > 0 ? eKeys : Object.keys(template.params);
-  // 属 E 分区的图元加 dev_type（E 文件固定列，标识设备类型）
+  const keys = eKeys.length > 0 ? [...eKeys] : Object.keys(template.params);
+  // 属 E 分区的图元加 dev_type（E 文件固定列，标识设备类型），紧跟 name 之后
   if (eKeys.length > 0 && !keys.includes("dev_type")) {
-    keys.push("dev_type");
+    const nameIndex = keys.indexOf("name");
+    if (nameIndex >= 0) {
+      keys.splice(nameIndex + 1, 0, "dev_type");
+    } else {
+      keys.unshift("dev_type");
+    }
   }
   const uniqueKeys = Array.from(new Set(keys.filter((key) => key && key !== ALLOW_RESIZE_TRANSFORM_PARAM && !key.startsWith("_"))));
   return uniqueKeys.map((key) => {
