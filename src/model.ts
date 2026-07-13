@@ -2654,7 +2654,7 @@ function splitEDefinitionCells(line: string): string[] {
   return line.split(/\s{2,}/).map((cell) => cell.trim()).filter((cell) => cell.length > 0);
 }
 
-export function buildEDeviceDefinitionFile(templates: DeviceTemplate[]): TextFileExport {
+export function buildEDeviceDefinitionFile(templates: DeviceTemplate[], labels?: Record<string, string>): TextFileExport {
   // 按元件库（E section）分组：同元件库的所有图元合并为一个 section，字段取勾选导出的并集
   const groups = new Map<string, { categoryLibrary: string; fields: Map<string, string[]> }>();
   for (const template of templates) {
@@ -2683,7 +2683,9 @@ export function buildEDeviceDefinitionFile(templates: DeviceTemplate[]): TextFil
         cnNames = [];
         group.fields.set(exportName, cnNames);
       }
-      const cnName = (definition.cnName ?? "").trim();
+      const rawCnName = (definition.cnName ?? "").trim();
+      // cnName 为英文 key 时用 labels 转中文（与 UI PARAM_LABELS 一致）
+      const cnName = (rawCnName === exportName && labels?.[exportName]) ? labels[exportName] : rawCnName;
       if (cnName && !cnNames.includes(cnName)) {
         cnNames.push(cnName);
       }
@@ -2713,7 +2715,7 @@ export function buildEDeviceDefinitionFile(templates: DeviceTemplate[]): TextFil
     fields.push({ exportName: "name", cnName: fixedCnName.name });
     fields.push({ exportName: "dev_type", cnName: fixedCnName.dev_type });
     for (const [exportName, cnNames] of group.fields) {
-      if (exportName === "idx" || exportName === "name") {
+      if (exportName === "idx" || exportName === "name" || exportName === "dev_type") {
         continue;
       }
       if (fixedCnName[exportName]) {

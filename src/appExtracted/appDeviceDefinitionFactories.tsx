@@ -1939,9 +1939,9 @@ export function createExportEFile(__appScope: Record<string, any>) {
 
 export function createExportEDeviceDefinitionFile(__appScope: Record<string, any>) {
   return async () => {
-    const { libraryTemplates, saveTextFile, writeOperationLog } = __appScope;
+    const { libraryTemplates, PARAM_LABELS, saveTextFile, writeOperationLog } = __appScope;
     // libraryTemplates 已合并内置 + 自定义元件并应用 deviceDefinitionOverrides，导出范围覆盖所有元件（含内置）
-    const file = buildEDeviceDefinitionFile(libraryTemplates ?? []);
+    const file = buildEDeviceDefinitionFile(libraryTemplates ?? [], PARAM_LABELS);
     if (!file.text) {
       window.alert("没有可导出的元件定义：所有元件均未勾选导出字段。");
       return;
