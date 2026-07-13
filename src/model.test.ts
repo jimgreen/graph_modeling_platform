@@ -2353,7 +2353,7 @@ describe("power system model", () => {
       expect(branch!.fields.find((f) => f.exportName === "j_node")?.cnName).toBe("末节点");
       const sw = sections.find((s) => s.kind === "ACSwitch");
       expect(sw).toBeDefined();
-      expect(sw!.fields.find((f) => f.exportName === "status")?.cnName).toBe("状态");
+      expect(sw!.fields.find((f) => f.exportName === "status")?.cnName).toBe("运行状态");
     });
 
     test("round trips fields through export and parse", () => {

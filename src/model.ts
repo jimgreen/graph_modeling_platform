@@ -2705,7 +2705,7 @@ export function buildEDeviceDefinitionFile(templates: DeviceTemplate[]): TextFil
       node: "节点",
       i_node: "首节点",
       j_node: "末节点",
-      status: "状态",
+      status: "运行状态",
       run_stat: "运行状态（运行/停运）"
     };
     // idx/name/dev_type 固定前三位
