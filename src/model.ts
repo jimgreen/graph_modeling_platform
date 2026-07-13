@@ -5479,13 +5479,20 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
       }
       const keysToAppend = keysToAdd.filter(k => !existingEnNames.has(k) && !existingLegacyColumns.has(k) && k !== ALLOW_RESIZE_TRANSFORM_PARAM && !k.startsWith("_"));
       if (keysToAppend.length > 0) {
-        const eDefs = keysToAppend.map((key) => ({
-          cnName: key,
-          enName: key,
-          valueType: inferDefinitionValueType(key, template.params[key] ?? ""),
-          typicalValue: template.params[key] ?? "",
-          readonly: TEMPLATE_DEFINITION_READONLY_KEYS.has(key)
-        }));
+        const eDefs = keysToAppend.map((key) => {
+          const base = {
+            cnName: key,
+            enName: key,
+            valueType: inferDefinitionValueType(key, template.params[key] ?? ""),
+            typicalValue: template.params[key] ?? "",
+            readonly: TEMPLATE_DEFINITION_READONLY_KEYS.has(key)
+          };
+          // dev_type 固定列默认勾选导出，导出名称为 dev_type
+          if (key === "dev_type") {
+            return { ...base, exportEnabled: true, exportName: "dev_type" };
+          }
+          return base;
+        });
         return [...paramDefs, ...eDefs];
       }
     }
@@ -5523,13 +5530,20 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
     keys.push("dev_type");
   }
   const uniqueKeys = Array.from(new Set(keys.filter((key) => key && key !== ALLOW_RESIZE_TRANSFORM_PARAM && !key.startsWith("_"))));
-  return uniqueKeys.map((key) => ({
-    cnName: key,
-    enName: key,
-    valueType: inferDefinitionValueType(key, template.params[key] ?? ""),
-    typicalValue: template.params[key] ?? "",
-    readonly: TEMPLATE_DEFINITION_READONLY_KEYS.has(key)
-  }));
+  return uniqueKeys.map((key) => {
+    const base = {
+      cnName: key,
+      enName: key,
+      valueType: inferDefinitionValueType(key, template.params[key] ?? ""),
+      typicalValue: template.params[key] ?? "",
+      readonly: TEMPLATE_DEFINITION_READONLY_KEYS.has(key)
+    };
+    // dev_type 固定列默认勾选导出，导出名称为 dev_type
+    if (key === "dev_type") {
+      return { ...base, exportEnabled: true, exportName: "dev_type" };
+    }
+    return base;
+  });
 }
 
 function stripThreeWindingTransformerContainerParams(params: Record<string, string>): Record<string, string> {
