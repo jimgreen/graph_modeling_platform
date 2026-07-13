@@ -159,7 +159,7 @@ export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, se
     terminalCount
   );
   const exportContextParams = { ...template.params, component_type: section };
-  const customParams = (template.parameterDefinitions ?? parseCustomDefinitions(template.params))
+  const customParams = getTemplateParameterDefinitions(template)
     .filter((definition) =>
       definition.enName !== "component_type" &&
       !isReservedDeviceDefinitionParamName(definition.enName)
