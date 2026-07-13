@@ -2331,6 +2331,14 @@ describe("power system model", () => {
           params: { resistance: "1", reactance: "2" },
           terminalType: "ac",
           terminalCount: 2
+        },
+        {
+          kind: "ac-switch",
+          label: "交流开关",
+          categoryLibrary: "交流设备",
+          params: {},
+          terminalType: "ac",
+          terminalCount: 2
         }
       ] as unknown as DeviceTemplate[];
       const file = buildEDeviceDefinitionFile(templates);
@@ -2343,6 +2351,9 @@ describe("power system model", () => {
       expect(branch).toBeDefined();
       expect(branch!.fields.find((f) => f.exportName === "i_node")?.cnName).toBe("首节点");
       expect(branch!.fields.find((f) => f.exportName === "j_node")?.cnName).toBe("末节点");
+      const sw = sections.find((s) => s.kind === "ACSwitch");
+      expect(sw).toBeDefined();
+      expect(sw!.fields.find((f) => f.exportName === "status")?.cnName).toBe("状态");
     });
 
     test("round trips fields through export and parse", () => {
