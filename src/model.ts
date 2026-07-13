@@ -2721,7 +2721,7 @@ export function buildEDeviceDefinitionFile(templates: DeviceTemplate[]): TextFil
     ? sections.map(formatEDeviceDefinitionSection).join("\n\n") + "\n"
     : "";
   return {
-    filename: "自定义元件定义.e",
+    filename: "图元E文件定义.e",
     text,
     mime: "text/plain"
   };

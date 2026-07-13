@@ -1402,7 +1402,7 @@ describe("createExportEDeviceDefinitionFile", () => {
     const payload = saveTextFile.mock.calls[0][0];
     expect(payload.text).toContain("p_load");
     expect(payload.text).toContain("r");
-    expect(payload.filename).toBe("自定义元件定义.e");
+    expect(payload.filename).toBe("图元E文件定义.e");
     expect(alert).toHaveBeenCalledWith(expect.stringContaining("导出成功"));
   });
 

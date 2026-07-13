@@ -2235,7 +2235,7 @@ describe("power system model", () => {
 
     test("exports only devices with exported params and skips others", () => {
       const file = buildEDeviceDefinitionFile(templates);
-      expect(file.filename).toBe("自定义元件定义.e");
+      expect(file.filename).toBe("图元E文件定义.e");
       expect(file.mime).toBe("text/plain");
       expect(file.text).toContain("<ACLoad 中文名=\"交流负荷\" 类别库=\"交流设备\" 元件库=\"ACLoad\">");
       expect(file.text).toContain("p_load");
