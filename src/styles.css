@@ -4688,6 +4688,41 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   background: #fef2f2;
 }
 
+.custom-component-manager-efile-and-search {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 0;
+}
+
+.custom-component-manager-efile-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.custom-component-manager-efile-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  flex: 1;
+  min-height: 30px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  color: #334155;
+  background: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.custom-component-manager-efile-actions button:hover,
+.custom-component-manager-efile-actions button:focus-visible {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  outline: none;
+}
+
 .custom-component-tree-actions-note {
   grid-column: 1 / -1;
   color: #64748b;

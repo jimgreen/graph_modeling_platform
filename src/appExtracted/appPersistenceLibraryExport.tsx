@@ -2846,6 +2846,7 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
         </button>
         <span className="custom-component-tree-actions-note">先选类别/元件库/元件</span>
       </div>
+      <div className="custom-component-manager-efile-and-search">
       <div className="custom-component-manager-efile-actions">
         <button type="button" onClick={onExportEDeviceDefinition} title="导出元件定义为 E 文件">
           <Download size={12} aria-hidden="true" />
@@ -2897,6 +2898,7 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
             </button>
           );
         })()}
+      </div>
       </div>
       <div className="custom-component-manager-tree dialog-compact-tree" role="tree">
         {libraries.length > 0 ? libraries.map((group) => {
