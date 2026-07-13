@@ -2237,7 +2237,7 @@ describe("power system model", () => {
       const file = buildEDeviceDefinitionFile(templates);
       expect(file.filename).toBe("图元E文件定义.e");
       expect(file.mime).toBe("text/plain");
-      expect(file.text).toContain("<ACLoad 中文名=\"交流负荷\" 类别库=\"交流设备\" 元件库=\"ACLoad\">");
+      expect(file.text).toContain("<ACLoad 中文名=\"交流负荷\" 类别库=\"交流设备\">");
       expect(file.text).toContain("p_load");
       expect(file.text).toContain("q_load");
       expect(file.text).toContain("有功功率");
@@ -2321,7 +2321,6 @@ describe("power system model", () => {
       expect(sections[0].kind).toBe("ACLoad");
       expect(sections[0].label).toBe("交流负荷");
       expect(sections[0].categoryLibrary).toBe("交流设备");
-      expect(sections[0].componentLibrary).toBe("ACLoad");
       expect(sections[0].fields).toEqual([
         { exportName: "idx", cnName: "序号" },
         { exportName: "name", cnName: "名称" },
@@ -2332,7 +2331,7 @@ describe("power system model", () => {
     });
 
     test("parses a hand-written section with attributes", () => {
-      const text = `<customDcGen 中文名="直流电源" 类别库="直流设备" 元件库="DCGen">
+      const text = `<customDcGen 中文名="直流电源" 类别库="直流设备">
 @    v_out      i_out
 //   输出电压   输出电流
 </customDcGen>`;
@@ -2340,7 +2339,6 @@ describe("power system model", () => {
       expect(sections).toHaveLength(1);
       expect(sections[0].kind).toBe("customDcGen");
       expect(sections[0].label).toBe("直流电源");
-      expect(sections[0].componentLibrary).toBe("DCGen");
       expect(sections[0].fields).toEqual([
         { exportName: "v_out", cnName: "输出电压" },
         { exportName: "i_out", cnName: "输出电流" }

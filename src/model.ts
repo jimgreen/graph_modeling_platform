@@ -2641,7 +2641,7 @@ function formatEDeviceDefinitionSection(section: EDeviceDefinitionSection): stri
   const commentRow = ["//", ...comments.map((cell, index) => eFilePadCell(cell, widths[index]))]
     .join(E_FILE_COLUMN_GAP)
     .trimEnd();
-  const attrs = `中文名="${escapeEDefinitionAttr(section.label)}" 类别库="${escapeEDefinitionAttr(section.categoryLibrary)}" 元件库="${escapeEDefinitionAttr(section.componentLibrary)}"`;
+  const attrs = `中文名="${escapeEDefinitionAttr(section.label)}" 类别库="${escapeEDefinitionAttr(section.categoryLibrary)}"`;
   return [`<${section.kind} ${attrs}>`, fieldRow, commentRow, `</${section.kind}>`].join("\n");
 }
 
