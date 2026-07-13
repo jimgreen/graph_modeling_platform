@@ -14,6 +14,7 @@ import {
   createConfirmCustomLibraryCreateDialog,
   createDeleteCustomCategoryLibrary,
   createDeleteCustomComponentLibrary,
+  createExportEDeviceDefinitionFile,
   createRouteSegmentPointerDistance,
   createResolveDuplicateModelImport,
   createSaveCustomDeviceTemplate,
@@ -1364,5 +1365,93 @@ describe("manual bend interaction helpers", () => {
         routePoints: editedRoutePoints
       }
     ]);
+  });
+});
+
+describe("createExportEDeviceDefinitionFile", () => {
+  const buildCustomTemplate = (parameterDefinitions: any[]) => ({
+    kind: "custom_load",
+    label: "自定义负荷",
+    categoryLibrary: "用户库",
+    params: { component_type: "custom_load" },
+    parameterDefinitions
+  });
+
+  test("exports fields whose export flag only lives in deviceDefinitionOverrides", async () => {
+    const alert = vi.fn();
+    vi.stubGlobal("window", { alert });
+    const saveTextFile = vi.fn().mockResolvedValue(true);
+    const writeOperationLog = vi.fn();
+    // customDeviceTemplates 的 parameterDefinitions 没有 exportEnabled（元件定义编辑保存后写到 override 的典型状态）
+    const customDeviceTemplates = [
+      buildCustomTemplate([
+        { cnName: "有功", enName: "p", valueType: "float", typicalValue: "1" }
+      ])
+    ];
+    const deviceDefinitionOverrides = {
+      custom_load: {
+        parameterDefinitions: [
+          { cnName: "有功", enName: "p", valueType: "float", typicalValue: "1", exportEnabled: true, exportName: "p_load" }
+        ]
+      }
+    };
+
+    const exportFn = createExportEDeviceDefinitionFile({
+      customDeviceTemplates,
+      deviceDefinitionOverrides,
+      saveTextFile,
+      writeOperationLog
+    });
+    await exportFn();
+
+    expect(saveTextFile).toHaveBeenCalledTimes(1);
+    const payload = saveTextFile.mock.calls[0][0];
+    expect(payload.text).toContain("p_load");
+    expect(payload.filename).toBe("自定义元件定义.e");
+    expect(alert).toHaveBeenCalledWith(expect.stringContaining("导出成功"));
+  });
+
+  test("still exports when export flag is set directly on customDeviceTemplates", async () => {
+    const alert = vi.fn();
+    vi.stubGlobal("window", { alert });
+    const saveTextFile = vi.fn().mockResolvedValue(true);
+    const customDeviceTemplates = [
+      buildCustomTemplate([
+        { cnName: "有功", enName: "p", valueType: "float", typicalValue: "1", exportEnabled: true, exportName: "p_load" }
+      ])
+    ];
+
+    const exportFn = createExportEDeviceDefinitionFile({
+      customDeviceTemplates,
+      deviceDefinitionOverrides: {},
+      saveTextFile,
+      writeOperationLog: vi.fn()
+    });
+    await exportFn();
+
+    expect(saveTextFile).toHaveBeenCalledTimes(1);
+    expect(saveTextFile.mock.calls[0][0].text).toContain("p_load");
+  });
+
+  test("alerts when no field is marked for export", async () => {
+    const alert = vi.fn();
+    vi.stubGlobal("window", { alert });
+    const saveTextFile = vi.fn().mockResolvedValue(true);
+    const customDeviceTemplates = [
+      buildCustomTemplate([
+        { cnName: "有功", enName: "p", valueType: "float", typicalValue: "1", exportEnabled: false }
+      ])
+    ];
+
+    const exportFn = createExportEDeviceDefinitionFile({
+      customDeviceTemplates,
+      deviceDefinitionOverrides: {},
+      saveTextFile,
+      writeOperationLog: vi.fn()
+    });
+    await exportFn();
+
+    expect(saveTextFile).not.toHaveBeenCalled();
+    expect(alert).toHaveBeenCalledWith("没有可导出的元件定义：所有元件均未勾选导出字段。");
   });
 });
