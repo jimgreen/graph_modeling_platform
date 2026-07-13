@@ -4116,6 +4116,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .component-library-actions,
 .library-scope-actions {
   flex: 0 0 auto;
+  margin: 0 14px 5px;
 }
 
 .library-icon-action {
