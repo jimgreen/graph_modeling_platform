@@ -9,6 +9,8 @@ import {
   buildElementTree,
   buildEFileExport,
   buildEDeviceParameterFile,
+  buildEDeviceDefinitionFile,
+  parseEDeviceDefinitionFile,
   calculateElectricalTopology,
   clearVoltageBaseValuesForScope,
   DeviceParameterDefinition,
@@ -2199,6 +2201,80 @@ describe("power system model", () => {
     expectEFileSectionColumnsAligned(file.text, "Model");
     expectEFileSectionColumnsAligned(file.text, "ACGenerator");
     expect(() => JSON.parse(file.text)).toThrow();
+  });
+
+  describe("element definition E file", () => {
+    const templates = [
+      {
+        kind: "customAcLoad",
+        label: "交流负荷",
+        categoryLibrary: "交流设备",
+        size: { width: 100, height: 60 },
+        params: { component_type: "ACLoad" },
+        terminalType: "ac",
+        terminalCount: 2,
+        parameterDefinitions: [
+          { cnName: "有功功率", enName: "p_load", valueType: "float", typicalValue: "0", exportEnabled: true, exportName: "p_load" },
+          { cnName: "无功功率", enName: "q_load", valueType: "float", typicalValue: "0", exportEnabled: true, exportName: "q_load" },
+          { cnName: "未导出", enName: "skip_me", valueType: "float", typicalValue: "0", exportEnabled: false }
+        ]
+      },
+      {
+        kind: "customNoExport",
+        label: "无勾选",
+        categoryLibrary: "交流设备",
+        size: { width: 100, height: 60 },
+        params: { component_type: "X" },
+        terminalType: "ac",
+        terminalCount: 2,
+        parameterDefinitions: [
+          { cnName: "未导出", enName: "skip", valueType: "float", typicalValue: "0", exportEnabled: false }
+        ]
+      }
+    ] as unknown as DeviceTemplate[];
+
+    test("exports only devices with exported params and skips others", () => {
+      const file = buildEDeviceDefinitionFile(templates);
+      expect(file.filename).toBe("自定义元件定义.e");
+      expect(file.mime).toBe("text/plain");
+      expect(file.text).toContain("<customAcLoad 中文名=\"交流负荷\" 类别库=\"交流设备\" 元件库=\"ACLoad\">");
+      expect(file.text).toContain("p_load");
+      expect(file.text).toContain("q_load");
+      expect(file.text).toContain("有功功率");
+      expect(file.text).toContain("无功功率");
+      expect(file.text).not.toContain("customNoExport");
+      expect(file.text.endsWith("\n")).toBe(true);
+    });
+
+    test("round trips fields through export and parse", () => {
+      const file = buildEDeviceDefinitionFile(templates);
+      const sections = parseEDeviceDefinitionFile(file.text);
+      expect(sections).toHaveLength(1);
+      expect(sections[0].kind).toBe("customAcLoad");
+      expect(sections[0].label).toBe("交流负荷");
+      expect(sections[0].categoryLibrary).toBe("交流设备");
+      expect(sections[0].componentLibrary).toBe("ACLoad");
+      expect(sections[0].fields).toEqual([
+        { exportName: "p_load", cnName: "有功功率" },
+        { exportName: "q_load", cnName: "无功功率" }
+      ]);
+    });
+
+    test("parses a hand-written section with attributes", () => {
+      const text = `<customDcGen 中文名="直流电源" 类别库="直流设备" 元件库="DCGen">
+@    v_out      i_out
+//   输出电压   输出电流
+</customDcGen>`;
+      const sections = parseEDeviceDefinitionFile(text);
+      expect(sections).toHaveLength(1);
+      expect(sections[0].kind).toBe("customDcGen");
+      expect(sections[0].label).toBe("直流电源");
+      expect(sections[0].componentLibrary).toBe("DCGen");
+      expect(sections[0].fields).toEqual([
+        { exportName: "v_out", cnName: "输出电压" },
+        { exportName: "i_out", cnName: "输出电流" }
+      ]);
+    });
   });
 
   test("preserves the per-model automatic canvas expansion setting", () => {

@@ -2708,6 +2708,8 @@ export type CustomComponentTreeProps = {
   onSearchChange: (query: string) => void;
   onCollapseChange: (libraries: Set<string>, types: Set<string>) => void;
   onSelectionChange: (selection: CustomComponentTreeSelection) => void;
+  onExportEDeviceDefinition: () => void;
+  onImportEDeviceDefinition: (event: ChangeEvent<HTMLInputElement>) => void;
 };
 
 function customComponentTreeSelectionsEqual(first: CustomComponentTreeSelection, second: CustomComponentTreeSelection) {
@@ -2744,8 +2746,11 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
   onDeleteSelection,
   onSearchChange,
   onCollapseChange,
-  onSelectionChange
+  onSelectionChange,
+  onExportEDeviceDefinition,
+  onImportEDeviceDefinition
 }: CustomComponentTreeProps) {
+  const eDeviceDefinitionImportInputRef = useRef<HTMLInputElement | null>(null);
   // 内部管理 collapsed 状态，展开/收缩不触发父组件重渲染
   const [collapsedLibraries, setCollapsedLibraries] = useState<Set<string>>(initialCollapsedLibraries);
   const [collapsedTypes, setCollapsedTypes] = useState<Set<string>>(initialCollapsedTypes);
@@ -2840,6 +2845,17 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
           <span>删除</span>
         </button>
         <span className="custom-component-tree-actions-note">先选类别/元件库/元件</span>
+      </div>
+      <div className="custom-component-manager-efile-actions">
+        <button type="button" onClick={onExportEDeviceDefinition} title="导出元件定义为 E 文件">
+          <Download size={12} aria-hidden="true" />
+          <span>导出E文件定义</span>
+        </button>
+        <button type="button" onClick={() => eDeviceDefinitionImportInputRef.current?.click()} title="从 E 文件导入元件定义">
+          <FileInput size={12} aria-hidden="true" />
+          <span>导入E文件定义</span>
+        </button>
+        <input ref={eDeviceDefinitionImportInputRef} type="file" accept=".e,text/plain" hidden onChange={onImportEDeviceDefinition} />
       </div>
       <div className="custom-component-tree-search-row">
         <div className="dialog-tree-search">

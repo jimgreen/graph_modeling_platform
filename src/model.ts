@@ -2611,6 +2611,117 @@ export function buildEFileExport(project: ProjectFile, schemePath: string[] = ["
   };
 }
 
+// 元件定义 E 文件：每个元件一个 section，标签=英文名（带属性），@ 字段行 + // 注释行，无 # 数据行
+export type EDeviceDefinitionField = {
+  exportName: string;
+  cnName: string;
+};
+
+export type EDeviceDefinitionSection = {
+  kind: string;
+  label: string;
+  categoryLibrary: string;
+  componentLibrary: string;
+  fields: EDeviceDefinitionField[];
+};
+
+function escapeEDefinitionAttr(value: string): string {
+  return String(value ?? "").replace(/"/g, "'");
+}
+
+function formatEDeviceDefinitionSection(section: EDeviceDefinitionSection): string {
+  const columns = section.fields.map((field) => field.exportName);
+  const comments = section.fields.map((field) => field.cnName);
+  const widths = columns.map((_, index) =>
+    Math.max(eFileCellDisplayWidth(columns[index]), eFileCellDisplayWidth(comments[index]))
+  );
+  const fieldRow = ["@", ...columns.map((cell, index) => eFilePadCell(cell, widths[index]))]
+    .join(E_FILE_COLUMN_GAP)
+    .trimEnd();
+  const commentRow = ["//", ...comments.map((cell, index) => eFilePadCell(cell, widths[index]))]
+    .join(E_FILE_COLUMN_GAP)
+    .trimEnd();
+  const attrs = `中文名="${escapeEDefinitionAttr(section.label)}" 类别库="${escapeEDefinitionAttr(section.categoryLibrary)}" 元件库="${escapeEDefinitionAttr(section.componentLibrary)}"`;
+  return [`<${section.kind} ${attrs}>`, fieldRow, commentRow, `</${section.kind}>`].join("\n");
+}
+
+function matchEDefinitionAttr(attrText: string, key: string): string {
+  const match = attrText.match(new RegExp(`${key}="([^"]*)"`));
+  return match ? match[1] : "";
+}
+
+function splitEDefinitionCells(line: string): string[] {
+  return line.split(/\s{2,}/).map((cell) => cell.trim()).filter((cell) => cell.length > 0);
+}
+
+export function buildEDeviceDefinitionFile(templates: DeviceTemplate[]): TextFileExport {
+  const sections: EDeviceDefinitionSection[] = [];
+  for (const template of templates) {
+    const definitions = template.parameterDefinitions ?? [];
+    const fields = definitions
+      .filter((definition) => definition.exportEnabled)
+      .map((definition) => ({
+        exportName: (definition.exportName || definition.enName).trim(),
+        cnName: definition.cnName.trim()
+      }));
+    if (fields.length === 0) {
+      continue;
+    }
+    sections.push({
+      kind: template.kind,
+      label: template.label,
+      categoryLibrary: template.categoryLibrary,
+      componentLibrary: template.params?.component_type ?? "",
+      fields
+    });
+  }
+  const text = sections.length > 0
+    ? sections.map(formatEDeviceDefinitionSection).join("\n\n") + "\n"
+    : "";
+  return {
+    filename: "自定义元件定义.e",
+    text,
+    mime: "text/plain"
+  };
+}
+
+export function parseEDeviceDefinitionFile(text: string): EDeviceDefinitionSection[] {
+  const sections: EDeviceDefinitionSection[] = [];
+  const sectionRegex = /<(\S+)([^>]*)>([\s\S]*?)<\/\1>/g;
+  let match: RegExpExecArray | null;
+  while ((match = sectionRegex.exec(text)) !== null) {
+    const kind = match[1];
+    const attrText = match[2];
+    const body = match[3];
+    const exportNames: string[] = [];
+    const cnNames: string[] = [];
+    for (const rawLine of body.split("\n")) {
+      const line = rawLine.trim();
+      if (line.startsWith("@")) {
+        exportNames.push(...splitEDefinitionCells(line.slice(1)));
+      } else if (line.startsWith("//")) {
+        cnNames.push(...splitEDefinitionCells(line.slice(2)));
+      }
+    }
+    const count = Math.max(exportNames.length, cnNames.length);
+    const fields: EDeviceDefinitionField[] = [];
+    for (let index = 0; index < count; index += 1) {
+      fields.push({
+        exportName: exportNames[index] ?? "",
+        cnName: cnNames[index] ?? ""
+      });
+    }
+    sections.push({
+      kind,
+      label: matchEDefinitionAttr(attrText, "中文名"),
+      categoryLibrary: matchEDefinitionAttr(attrText, "类别库"),
+      componentLibrary: matchEDefinitionAttr(attrText, "元件库"),
+      fields
+    });
+  }
+  return sections;
+}
+
 export type SavedProjectRecord = {
   id: string;
   name: string;

@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { buildEDeviceDefinitionFile, parseEDeviceDefinitionFile } from "../model";
 import { clampNumber } from "../canvasViewport";
 import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
 import { stateIconSvgVisibleViewBox } from "../stateIconDrawing";
@@ -1933,6 +1934,88 @@ export function createExportEFile(__appScope: Record<string, any>) {
     }
     writeOperationLog(`导出模型文件：${file.filename}`);
     window.alert(`E 文件导出成功：${file.filename}`);
+  };
+}
+
+export function createExportEDeviceDefinitionFile(__appScope: Record<string, any>) {
+  return async () => {
+    const { customDeviceTemplates, saveTextFile, writeOperationLog } = __appScope;
+    const file = buildEDeviceDefinitionFile(customDeviceTemplates);
+    if (!file.text) {
+      window.alert("没有可导出的元件定义：所有元件均未勾选导出字段。");
+      return;
+    }
+    const saved = await saveTextFile({
+      filename: file.filename,
+      text: file.text,
+      mime: file.mime,
+      description: "E 元件定义文件",
+      extensions: [".e"]
+    });
+    if (!saved) {
+      return;
+    }
+    writeOperationLog(`导出元件定义文件：${file.filename}`);
+    window.alert(`元件定义文件导出成功：${file.filename}`);
+  };
+}
+
+export function createImportEDeviceDefinitionFile(__appScope: Record<string, any>) {
+  return (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+    const {
+      customDeviceTemplates,
+      persistDeviceLibraryChange,
+      setCustomDeviceTemplates,
+      writeOperationLog
+    } = __appScope;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const sections = parseEDeviceDefinitionFile(String(reader.result ?? ""));
+        if (sections.length === 0) {
+          window.alert("未在文件中解析到元件定义。");
+          return;
+        }
+        const matched: string[] = [];
+        const skipped: string[] = [];
+        const nextTemplates = (customDeviceTemplates as any[]).map((template: any) => {
+          const section = sections.find((item: any) => item.kind === template.kind);
+          if (!section) {
+            skipped.push(template.label || template.kind);
+            return template;
+          }
+          matched.push(template.label || template.kind);
+          const fieldByCnName = new Map(section.fields.map((field: any) => [field.cnName, field.exportName]));
+          const parameterDefinitions = (template.parameterDefinitions ?? []).map((definition: any) => {
+            const exportName = fieldByCnName.get(definition.cnName);
+            if (exportName === undefined) {
+              return { ...definition, exportEnabled: false };
+            }
+            return { ...definition, exportEnabled: true, exportName: exportName || definition.enName };
+          });
+          return { ...template, parameterDefinitions };
+        });
+        setCustomDeviceTemplates(nextTemplates);
+        persistDeviceLibraryChange({ customDeviceTemplates: nextTemplates }, {
+          success: `元件定义导入成功：匹配 ${matched.length} 个，跳过 ${skipped.length} 个。`,
+          failure: `元件定义已更新本地，后台保存失败：匹配 ${matched.length} 个。`
+        });
+        writeOperationLog(`导入元件定义文件：${file.name}`);
+        const detail = skipped.length > 0 ? `\n未匹配（跳过）：${skipped.length} 个` : "";
+        window.alert(`元件定义导入成功。\n匹配元件：${matched.length} 个${detail}`);
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "导入元件定义文件失败。");
+      }
+    };
+    reader.onerror = () => {
+      window.alert("读取元件定义文件失败。");
+    };
+    reader.readAsText(file, "utf-8");
   };
 }
 

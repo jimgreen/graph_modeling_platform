@@ -2510,6 +2510,8 @@ export function renderAppView(__appScope: Record<string, any>) {
                 onSearchChange={setCustomComponentTreeSearchQuery}
                 onCollapseChange={handleTreeCollapseChange}
                 onSelectionChange={setCustomComponentTreeSelection}
+                onExportEDeviceDefinition={__appScope.exportEDeviceDefinitionFile}
+                onImportEDeviceDefinition={__appScope.importEDeviceDefinitionFile}
               />
               <div className="custom-device-editor-panel">
             <div className="custom-device-form-grid">
