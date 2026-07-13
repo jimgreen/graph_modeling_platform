@@ -167,6 +167,7 @@ export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, se
     .map((definition) => ({
       ...definition,
       ...resolveDeviceParameterDefinitionExportSettings(template.kind, exportContextParams, definition),
+      cnName: definition.cnName === definition.enName ? PARAM_LABELS[definition.enName] ?? definition.cnName : definition.cnName,
       id: customParamId()
     }));
   const stateRows = createDefinitionStateDraftRows(template);
