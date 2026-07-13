@@ -2237,11 +2237,12 @@ describe("power system model", () => {
       const file = buildEDeviceDefinitionFile(templates);
       expect(file.filename).toBe("自定义元件定义.e");
       expect(file.mime).toBe("text/plain");
-      expect(file.text).toContain("<customAcLoad 中文名=\"交流负荷\" 类别库=\"交流设备\" 元件库=\"ACLoad\">");
+      expect(file.text).toContain("<ACLoad 中文名=\"交流负荷\" 类别库=\"交流设备\" 元件库=\"ACLoad\">");
       expect(file.text).toContain("p_load");
       expect(file.text).toContain("q_load");
       expect(file.text).toContain("有功功率");
       expect(file.text).toContain("无功功率");
+      expect(file.text).toContain("dev_type");
       expect(file.text).not.toContain("customNoExport");
       expect(file.text.endsWith("\n")).toBe(true);
     });
@@ -2273,20 +2274,24 @@ describe("power system model", () => {
         terminalCount: 1
       } as unknown as DeviceTemplate;
       const file = buildEDeviceDefinitionFile([template]);
-      expect(file.text).toContain("<ac-source ");
+      expect(file.text).toContain("<ACGenerator ");
       expect(file.text).toContain("p_set");
       expect(file.text).toContain("交流电源");
+      expect(file.text).toContain("dev_type");
     });
 
     test("round trips fields through export and parse", () => {
       const file = buildEDeviceDefinitionFile(templates);
       const sections = parseEDeviceDefinitionFile(file.text);
       expect(sections).toHaveLength(1);
-      expect(sections[0].kind).toBe("customAcLoad");
+      expect(sections[0].kind).toBe("ACLoad");
       expect(sections[0].label).toBe("交流负荷");
       expect(sections[0].categoryLibrary).toBe("交流设备");
       expect(sections[0].componentLibrary).toBe("ACLoad");
       expect(sections[0].fields).toEqual([
+        { exportName: "idx", cnName: "序号" },
+        { exportName: "name", cnName: "名称" },
+        { exportName: "dev_type", cnName: "设备类型" },
         { exportName: "p_load", cnName: "有功功率" },
         { exportName: "q_load", cnName: "无功功率" }
       ]);

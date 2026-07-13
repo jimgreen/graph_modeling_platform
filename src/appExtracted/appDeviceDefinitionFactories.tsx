@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { buildEDeviceDefinitionFile, parseEDeviceDefinitionFile } from "../model";
+import { buildEDeviceDefinitionFile, inferESection, parseEDeviceDefinitionFile } from "../model";
 import { clampNumber } from "../canvasViewport";
 import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
 import { stateIconSvgVisibleViewBox } from "../stateIconDrawing";
@@ -1985,19 +1985,20 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
         const matched: string[] = [];
         const skipped: string[] = [];
         const nextTemplates = (customDeviceTemplates as any[]).map((template: any) => {
-          const section = sections.find((item: any) => item.kind === template.kind);
+          // 新格式按元件库（E section）标签分组，按 componentLibrary 匹配
+          const componentLibrary = inferESection(template.kind, template.params ?? {});
+          const section = componentLibrary ? sections.find((item: any) => item.kind === componentLibrary) : undefined;
           if (!section) {
             skipped.push(template.label || template.kind);
             return template;
           }
           matched.push(template.label || template.kind);
-          const fieldByCnName = new Map(section.fields.map((field: any) => [field.cnName, field.exportName]));
+          const exportNames = new Set(section.fields.map((field: any) => field.exportName));
           const parameterDefinitions = (template.parameterDefinitions ?? []).map((definition: any) => {
-            const exportName = fieldByCnName.get(definition.cnName);
-            if (exportName === undefined) {
-              return { ...definition, exportEnabled: false };
+            if (exportNames.has(definition.enName)) {
+              return { ...definition, exportEnabled: true, exportName: definition.exportName || definition.enName };
             }
-            return { ...definition, exportEnabled: true, exportName: exportName || definition.enName };
+            return { ...definition, exportEnabled: false };
           });
           return { ...template, parameterDefinitions };
         });

@@ -2655,31 +2655,64 @@ function splitEDefinitionCells(line: string): string[] {
 }
 
 export function buildEDeviceDefinitionFile(templates: DeviceTemplate[]): TextFileExport {
-  const sections: EDeviceDefinitionSection[] = [];
+  // 按元件库（E section）分组：同元件库的所有图元合并为一个 section，字段取勾选导出的并集
+  const groups = new Map<string, { categoryLibrary: string; fields: Map<string, string[]> }>();
   for (const template of templates) {
-    // 用 getTemplateParameterDefinitions 兼容无 parameterDefinitions 的图元（如 ac-source，参数仅在 params 里），
-    // 否则这些图元 definitions 为空会被整体跳过，导致导出 E 文件丢失整类图元
+    const componentLibrary = inferESection(template.kind, template.params ?? {});
+    if (!componentLibrary) {
+      continue;
+    }
+    // 无 parameterDefinitions 的图元（如 ac-source）按 E 分区推导内置列参数，避免整类丢失
     const definitions = getTemplateParameterDefinitions(template);
-    const fields = [];
+    let group = groups.get(componentLibrary);
+    if (!group) {
+      group = { categoryLibrary: template.categoryLibrary ?? "", fields: new Map() };
+      groups.set(componentLibrary, group);
+    }
     for (const definition of definitions) {
-      // 与元件定义编辑界面保持一致：按 E 分区推导导出开关，避免 exportEnabled 为 undefined 时被误过滤
       const settings = resolveDeviceParameterDefinitionExportSettings(template.kind, template.params ?? {}, definition);
       if (!settings.exportEnabled) {
         continue;
       }
-      fields.push({
-        exportName: (settings.exportName || definition.enName).trim(),
-        cnName: definition.cnName.trim()
-      });
+      const exportName = (settings.exportName || definition.enName).trim();
+      if (!exportName) {
+        continue;
+      }
+      let cnNames = group.fields.get(exportName);
+      if (!cnNames) {
+        cnNames = [];
+        group.fields.set(exportName, cnNames);
+      }
+      const cnName = (definition.cnName ?? "").trim();
+      if (cnName && !cnNames.includes(cnName)) {
+        cnNames.push(cnName);
+      }
     }
-    if (fields.length === 0) {
+  }
+
+  const sections: EDeviceDefinitionSection[] = [];
+  for (const [componentLibrary, group] of groups) {
+    if (group.fields.size === 0) {
       continue;
     }
+    // 字段顺序：idx、name 固定首位，dev_type 紧跟 name（新增列），其余按出现顺序
+    const fields: EDeviceDefinitionField[] = [];
+    const idxCnNames = group.fields.get("idx");
+    fields.push({ exportName: "idx", cnName: idxCnNames && idxCnNames.length > 0 ? idxCnNames.join("/") : "序号" });
+    const nameCnNames = group.fields.get("name");
+    fields.push({ exportName: "name", cnName: nameCnNames && nameCnNames.length > 0 ? nameCnNames.join("/") : "名称" });
+    fields.push({ exportName: "dev_type", cnName: "设备类型" });
+    for (const [exportName, cnNames] of group.fields) {
+      if (exportName === "idx" || exportName === "name") {
+        continue;
+      }
+      fields.push({ exportName, cnName: cnNames.join("/") });
+    }
     sections.push({
-      kind: template.kind,
-      label: template.label,
-      categoryLibrary: template.categoryLibrary,
-      componentLibrary: template.params?.component_type ?? "",
+      kind: componentLibrary,
+      label: ELEMENT_TREE_COMPONENT_LIBRARY_LABELS[componentLibrary] ?? componentLibrary,
+      categoryLibrary: group.categoryLibrary,
+      componentLibrary,
       fields
     });
   }
