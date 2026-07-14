@@ -5911,6 +5911,16 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   cursor: nwse-resize;
 }
 
+.state-icon-drawing-resize-handle-top,
+.state-icon-drawing-resize-handle-bottom {
+  cursor: ns-resize;
+}
+
+.state-icon-drawing-resize-handle-left,
+.state-icon-drawing-resize-handle-right {
+  cursor: ew-resize;
+}
+
 .state-icon-drawing-rotate-handle {
   cursor: grab;
 }

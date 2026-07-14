@@ -1624,7 +1624,7 @@ export type StateIconDrawingContextMenuState = {
   pastePoint?: Point;
 };
 
-export type StateIconDrawingDragMode = "move" | "resize" | "rotate";
+export type StateIconDrawingDragMode = "move" | "resize" | "resize-top" | "resize-bottom" | "resize-left" | "resize-right" | "rotate";
 
 export type StateIconDrawingDragState = {
   mode: StateIconDrawingDragMode;

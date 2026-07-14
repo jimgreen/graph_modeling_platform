@@ -4861,21 +4861,71 @@ export function createDragStateIconDrawingSelection(__appScope: Record<string, a
       });
       return;
     }
-    if (drag.mode === "resize") {
-      const startDistance = Math.hypot(drag.start.x - drag.center.x, drag.start.y - drag.center.y) || 1;
-      const currentDistance = Math.hypot(point.x - drag.center.x, point.y - drag.center.y) || 1;
-      const scale = Math.max(0.05, currentDistance / startDistance);
+    if (drag.mode === "resize" || drag.mode === "resize-top" || drag.mode === "resize-bottom" || drag.mode === "resize-left" || drag.mode === "resize-right") {
       updateStateIconDrawingElements(drag.elementIds, (element) => {
         const startElement = drag.startElements.find((item) => item.id === element.id);
-        return startElement
-          ? {
-              ...element,
-              x: drag.center.x + (startElement.x - drag.center.x) * scale,
-              y: drag.center.y + (startElement.y - drag.center.y) * scale,
-              width: Math.max(1, startElement.width * scale),
-              height: Math.max(1, startElement.height * scale)
-            }
-          : element;
+        if (!startElement) {
+          return element;
+        }
+        // 等比例缩放（corner handle）
+        if (drag.mode === "resize") {
+          const startDistance = Math.hypot(drag.start.x - drag.center.x, drag.start.y - drag.center.y) || 1;
+          const currentDistance = Math.hypot(point.x - drag.center.x, point.y - drag.center.y) || 1;
+          const scale = Math.max(0.05, currentDistance / startDistance);
+          return {
+            ...element,
+            x: drag.center.x + (startElement.x - drag.center.x) * scale,
+            y: drag.center.y + (startElement.y - drag.center.y) * scale,
+            width: Math.max(1, startElement.width * scale),
+            height: Math.max(1, startElement.height * scale)
+          };
+        }
+        // 自由变换（side handles），需要将指针位移转到元素局部坐标系
+        const dx = point.x - drag.start.x;
+        const dy = point.y - drag.start.y;
+        const rad = -(startElement.rotation * Math.PI) / 180;
+        const localDx = dx * Math.cos(rad) - dy * Math.sin(rad);
+        const localDy = dx * Math.sin(rad) + dy * Math.cos(rad);
+        const halfW = Math.max(1, startElement.width) / 2;
+        const halfH = Math.max(1, startElement.height) / 2;
+        let scaleX = 1;
+        let scaleY = 1;
+        let anchorOffsetX = 0;
+        let anchorOffsetY = 0;
+        switch (drag.mode) {
+          case "resize-right":
+            scaleX = Math.max(0.05, (halfW + localDx) / halfW);
+            anchorOffsetX = -halfW;
+            break;
+          case "resize-left":
+            scaleX = Math.max(0.05, (halfW - localDx) / halfW);
+            anchorOffsetX = halfW;
+            break;
+          case "resize-bottom":
+            scaleY = Math.max(0.05, (halfH + localDy) / halfH);
+            anchorOffsetY = -halfH;
+            break;
+          case "resize-top":
+            scaleY = Math.max(0.05, (halfH - localDy) / halfH);
+            anchorOffsetY = halfH;
+            break;
+        }
+        const newWidth = Math.max(1, startElement.width * scaleX);
+        const newHeight = Math.max(1, startElement.height * scaleY);
+        // 锚点固定：中心在局部坐标系的位移 = (1 - scale) * anchorOffset
+        const localCenterShiftX = (1 - scaleX) * anchorOffsetX;
+        const localCenterShiftY = (1 - scaleY) * anchorOffsetY;
+        // 将局部位移转回根坐标系
+        const fwdRad = (startElement.rotation * Math.PI) / 180;
+        const centerShiftX = localCenterShiftX * Math.cos(fwdRad) - localCenterShiftY * Math.sin(fwdRad);
+        const centerShiftY = localCenterShiftX * Math.sin(fwdRad) + localCenterShiftY * Math.cos(fwdRad);
+        return {
+          ...element,
+          x: startElement.x + centerShiftX,
+          y: startElement.y + centerShiftY,
+          width: newWidth,
+          height: newHeight
+        };
       });
       return;
     }
@@ -8084,6 +8134,10 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                           <>
                             <rect x={formatSvgNumber(selectionFrame.x)} y={formatSvgNumber(selectionFrame.y)} width={formatSvgNumber(selectionFrame.width)} height={formatSvgNumber(selectionFrame.height)} className="state-icon-drawing-selection-box" />
                             <circle cx={formatSvgNumber(selectionFrame.halfWidth)} cy={formatSvgNumber(selectionFrame.halfHeight)} r="5" className="state-icon-drawing-resize-handle" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize")} />
+                            <circle cx="0" cy={formatSvgNumber(-selectionFrame.halfHeight)} r="5" className="state-icon-drawing-resize-handle state-icon-drawing-resize-handle-top" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize-top")} />
+                            <circle cx="0" cy={formatSvgNumber(selectionFrame.halfHeight)} r="5" className="state-icon-drawing-resize-handle state-icon-drawing-resize-handle-bottom" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize-bottom")} />
+                            <circle cx={formatSvgNumber(-selectionFrame.halfWidth)} cy="0" r="5" className="state-icon-drawing-resize-handle state-icon-drawing-resize-handle-left" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize-left")} />
+                            <circle cx={formatSvgNumber(selectionFrame.halfWidth)} cy="0" r="5" className="state-icon-drawing-resize-handle state-icon-drawing-resize-handle-right" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize-right")} />
                             <line x1="0" y1={formatSvgNumber(-selectionFrame.halfHeight)} x2="0" y2={formatSvgNumber(-selectionFrame.halfHeight - 16)} className="state-icon-drawing-rotate-stem" />
                             <circle cx="0" cy={formatSvgNumber(-selectionFrame.halfHeight - 20)} r="5" className="state-icon-drawing-rotate-handle" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "rotate")} />
                           </>
