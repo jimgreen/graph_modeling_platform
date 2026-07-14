@@ -7081,7 +7081,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .custom-param-table {
   width: 100%;
-  min-width: 1120px;
   border-collapse: collapse;
   font-size: 12px;
 }
