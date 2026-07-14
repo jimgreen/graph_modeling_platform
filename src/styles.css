@@ -6562,10 +6562,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   align-self: start;
 }
 
-.device-definition-table-wrap {
-  max-height: 390px;
-}
-
 .compact-table-wrap {
   max-height: 180px;
 }
@@ -7049,7 +7045,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .custom-param-table-wrap {
-  max-height: 330px;
   overflow: auto;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
