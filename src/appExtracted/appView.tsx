@@ -2727,16 +2727,16 @@ export function renderAppView(__appScope: Record<string, any>) {
                     <table className="custom-param-table">
                       <thead>
                         <tr>
-                          <th>英文名称</th>
                           <th>中文名称</th>
+                          <th>英文名称</th>
                           <th>是否导出</th>
                           <th>导出名称</th>
                         </tr>
                       </thead>
                       <tbody>
                         {componentLibraryCommonParams.map((param) => (<tr key={param.enName}>
-                          <td><code>{param.enName}</code></td>
                           <td>{param.cnName}</td>
+                          <td><code>{param.enName}</code></td>
                           <td className="custom-param-export-toggle">
                             <input
                               className="custom-param-export-checkbox"
