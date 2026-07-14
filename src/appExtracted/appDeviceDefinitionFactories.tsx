@@ -4774,7 +4774,7 @@ export function createStateIconDrawingSelection(__appScope: Record<string, any>)
 }
 
 export function createStartStateIconDrawingDrag(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGElement>, elementId: string, mode: StateIconDrawingDragMode) => {
+  return (event: PointerEvent<SVGElement>, elementId: string, mode: StateIconDrawingDragMode, handleOffset?: Point) => {
   const { setStateIconDrawingContextMenu, setStateIconDrawingDialog, stateIconDrawingDragRef, stateIconDrawingHistoryRef, stateIconDrawingPointer } = __appScope;
     if (event.button !== 0) {
       return;
@@ -4821,7 +4821,7 @@ export function createStartStateIconDrawingDrag(__appScope: Record<string, any>)
     if (startElements.length === 0) {
       return;
     }
-    stateIconDrawingDragRef.current = { mode, elementIds: dragIds, start, center, startElements };
+    stateIconDrawingDragRef.current = { mode, elementIds: dragIds, start, center, startElements, handleOffset };
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
 }
@@ -4886,36 +4886,33 @@ export function createDragStateIconDrawingSelection(__appScope: Record<string, a
         const rad = -(startElement.rotation * Math.PI) / 180;
         const localDx = dx * Math.cos(rad) - dy * Math.sin(rad);
         const localDy = dx * Math.sin(rad) + dy * Math.cos(rad);
-        const halfW = Math.max(1, startElement.width) / 2;
-        const halfH = Math.max(1, startElement.height) / 2;
-        // 把手位置即固定边在元素局部坐标系的位置（拖拽时该边在根空间固定）
-        let anchorLocalX = 0;
-        let anchorLocalY = 0;
-        let scaleX = 1;
-        let scaleY = 1;
+        const fullWidth = Math.max(1, startElement.width);
+        const fullHeight = Math.max(1, startElement.height);
+        // 拖哪边哪边跟鼠标走，对边固定
+        let newWidth = fullWidth;
+        let newHeight = fullHeight;
+        let localCenterShiftX = 0;
+        let localCenterShiftY = 0;
+        const wHandle = Math.abs(drag.handleOffset?.x ?? fullWidth / 2) || fullWidth / 2;
+        const hHandle = Math.abs(drag.handleOffset?.y ?? fullHeight / 2) || fullHeight / 2;
         switch (drag.mode) {
           case "resize-right":
-            scaleX = Math.max(0.05, (halfW + localDx) / halfW);
-            anchorLocalX = halfW;
+            newWidth = Math.max(1, fullWidth + fullWidth * localDx / (2 * wHandle));
+            localCenterShiftX = localDx / 2;
             break;
           case "resize-left":
-            scaleX = Math.max(0.05, (halfW - localDx) / halfW);
-            anchorLocalX = -halfW;
+            newWidth = Math.max(1, fullWidth - fullWidth * localDx / (2 * wHandle));
+            localCenterShiftX = localDx / 2;
             break;
           case "resize-bottom":
-            scaleY = Math.max(0.05, (halfH + localDy) / halfH);
-            anchorLocalY = halfH;
+            newHeight = Math.max(1, fullHeight + fullHeight * localDy / (2 * hHandle));
+            localCenterShiftY = localDy / 2;
             break;
           case "resize-top":
-            scaleY = Math.max(0.05, (halfH - localDy) / halfH);
-            anchorLocalY = -halfH;
+            newHeight = Math.max(1, fullHeight - fullHeight * localDy / (2 * hHandle));
+            localCenterShiftY = localDy / 2;
             break;
         }
-        const newWidth = Math.max(1, startElement.width * scaleX);
-        const newHeight = Math.max(1, startElement.height * scaleY);
-        // 把手所在边在根空间不动：中心在局部空间的位移 = (1 - scale) * anchorLocal
-        const localCenterShiftX = (1 - scaleX) * anchorLocalX;
-        const localCenterShiftY = (1 - scaleY) * anchorLocalY;
         // 将局部位移转回根坐标系
         const fwdRad = (startElement.rotation * Math.PI) / 180;
         const centerShiftX = localCenterShiftX * Math.cos(fwdRad) - localCenterShiftY * Math.sin(fwdRad);
@@ -8135,10 +8132,10 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                           <>
                             <rect x={formatSvgNumber(selectionFrame.x)} y={formatSvgNumber(selectionFrame.y)} width={formatSvgNumber(selectionFrame.width)} height={formatSvgNumber(selectionFrame.height)} className="state-icon-drawing-selection-box" />
                             <circle cx={formatSvgNumber(selectionFrame.halfWidth)} cy={formatSvgNumber(selectionFrame.halfHeight)} r="5" className="state-icon-drawing-resize-handle" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize")} />
-                            <circle cx="0" cy={formatSvgNumber(-selectionFrame.halfHeight)} r="5" className="state-icon-drawing-resize-handle state-icon-drawing-resize-handle-top" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize-top")} />
-                            <circle cx="0" cy={formatSvgNumber(selectionFrame.halfHeight)} r="5" className="state-icon-drawing-resize-handle state-icon-drawing-resize-handle-bottom" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize-bottom")} />
-                            <circle cx={formatSvgNumber(-selectionFrame.halfWidth)} cy="0" r="5" className="state-icon-drawing-resize-handle state-icon-drawing-resize-handle-left" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize-left")} />
-                            <circle cx={formatSvgNumber(selectionFrame.halfWidth)} cy="0" r="5" className="state-icon-drawing-resize-handle state-icon-drawing-resize-handle-right" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize-right")} />
+                            <circle cx="0" cy={formatSvgNumber(-selectionFrame.halfHeight)} r="5" className="state-icon-drawing-resize-handle state-icon-drawing-resize-handle-top" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize-top", { x: 0, y: -selectionFrame.halfHeight })} />
+                            <circle cx="0" cy={formatSvgNumber(selectionFrame.halfHeight)} r="5" className="state-icon-drawing-resize-handle state-icon-drawing-resize-handle-bottom" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize-bottom", { x: 0, y: selectionFrame.halfHeight })} />
+                            <circle cx={formatSvgNumber(-selectionFrame.halfWidth)} cy="0" r="5" className="state-icon-drawing-resize-handle state-icon-drawing-resize-handle-left" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize-left", { x: -selectionFrame.halfWidth, y: 0 })} />
+                            <circle cx={formatSvgNumber(selectionFrame.halfWidth)} cy="0" r="5" className="state-icon-drawing-resize-handle state-icon-drawing-resize-handle-right" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize-right", { x: selectionFrame.halfWidth, y: 0 })} />
                             <line x1="0" y1={formatSvgNumber(-selectionFrame.halfHeight)} x2="0" y2={formatSvgNumber(-selectionFrame.halfHeight - 16)} className="state-icon-drawing-rotate-stem" />
                             <circle cx="0" cy={formatSvgNumber(-selectionFrame.halfHeight - 20)} r="5" className="state-icon-drawing-rotate-handle" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "rotate")} />
                           </>

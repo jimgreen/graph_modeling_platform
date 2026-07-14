@@ -1632,6 +1632,7 @@ export type StateIconDrawingDragState = {
   start: Point;
   center: Point;
   startElements: StateIconDrawingElement[];
+  handleOffset?: Point;
 };
 
 export type CanvasRenderOptions = CanvasBounds & {
