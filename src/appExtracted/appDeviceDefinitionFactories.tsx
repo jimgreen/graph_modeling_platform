@@ -1983,7 +1983,7 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
           window.alert("未在文件中解析到元件定义。");
           return;
         }
-        const sectionByKind = new Map(sections.map((s: any) => [s.kind, s]));
+        const sectionByKind = new Map(sections.map((s: any) => [s.componentLibrary || s.kind, s]));
         // 匹配统计用 libraryTemplates（含内置+自定义），静态图元不计入（非电力设备）
         const matched: string[] = [];
         const skipped: string[] = [];
@@ -2053,7 +2053,7 @@ export function createProgrammaticImportEDeviceDefinition(__appScope: Record<str
       e.code = "bad-request";
       throw e;
     }
-    const sectionByKind = new Map(sections.map((s: any) => [s.kind, s]));
+    const sectionByKind = new Map(sections.map((s: any) => [s.componentLibrary || s.kind, s]));
     const matched: string[] = [];
     const skipped: string[] = [];
     for (const template of (libraryTemplates ?? []) as any[]) {
