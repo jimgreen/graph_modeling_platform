@@ -6558,6 +6558,10 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   font-size: 13px;
 }
 
+.device-definition-component-library-panel {
+  align-self: start;
+}
+
 .device-definition-table-wrap {
   max-height: 390px;
 }
