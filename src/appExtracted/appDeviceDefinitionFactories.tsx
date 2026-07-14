@@ -4104,20 +4104,8 @@ export function createDeleteDefinitionStateDraftRow(__appScope: Record<string, a
 
 export function createRequestCloseCustomDeviceDialog(__appScope: Record<string, any>) {
   return () => {
-  const { closeCustomDeviceDialog, customDeviceDraftHasUnsavedChanges, saveCustomDeviceDefinitionDialog } = __appScope;
-    if (!customDeviceDraftHasUnsavedChanges()) {
-      closeCustomDeviceDialog();
-      return;
-    }
-    const shouldSave = window.confirm("元件定义有未保存修改，是否保存后关闭？\n确定：保存并关闭\n取消：不保存");
-    if (shouldSave) {
-      saveCustomDeviceDefinitionDialog({ closeAfterSave: true });
-      return;
-    }
-    const shouldDiscard = window.confirm("不保存修改并关闭元件定义？");
-    if (shouldDiscard) {
-      closeCustomDeviceDialog();
-    }
+  const { closeCustomDeviceDialog } = __appScope;
+    closeCustomDeviceDialog();
   };
 }
 
@@ -4733,20 +4721,30 @@ export function createUpdateStateIconDrawingElements(__appScope: Record<string, 
 }
 
 export function createStateIconDrawingPointer(__appScope: Record<string, any>) {
+  let cachedSvg: SVGSVGElement | null = null;
+  let cachedPoint: SVGPoint | null = null;
+  let cachedInverse: DOMMatrix | null = null;
   return (event: PointerEvent<SVGElement>): Point => {
   const { stateIconDrawingSvgRef } = __appScope;
     const svg = stateIconDrawingSvgRef.current;
     if (!svg) {
       return { x: 0, y: 0 };
     }
-    const point = svg.createSVGPoint();
-    point.x = event.clientX;
-    point.y = event.clientY;
-    const matrix = svg.getScreenCTM();
-    if (!matrix) {
+    if (svg !== cachedSvg) {
+      cachedSvg = svg;
+      cachedPoint = svg.createSVGPoint();
+      cachedInverse = null;
+    }
+    cachedPoint.x = event.clientX;
+    cachedPoint.y = event.clientY;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) {
       return { x: 0, y: 0 };
     }
-    const transformed = point.matrixTransform(matrix.inverse());
+    if (!cachedInverse) {
+      cachedInverse = ctm.inverse();
+    }
+    const transformed = cachedPoint.matrixTransform(cachedInverse);
     return { x: transformed.x, y: transformed.y };
   };
 }
@@ -4827,8 +4825,11 @@ export function createStartStateIconDrawingDrag(__appScope: Record<string, any>)
 }
 
 export function createDragStateIconDrawingSelection(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGSVGElement>) => {
-  const { computeStateIconDrawingSmartAlignmentSnap, setStateIconDrawingDialog, stateIconDrawingDragRef, stateIconDrawingPointer, updateStateIconDrawingElements } = __appScope;
+  let rafId: number | null = null;
+  let pendingEvent: PointerEvent<SVGSVGElement> | null = null;
+
+  const processDrag = (event: PointerEvent<SVGSVGElement>) => {
+  const { computeStateIconDrawingSmartAlignmentSnap, setStateIconDrawingDialog, stateIconDrawingDragDeltaRef, stateIconDrawingDragRef, stateIconDrawingPointer } = __appScope;
     const drag = stateIconDrawingDragRef.current;
     if (!drag) {
       return;
@@ -4838,57 +4839,42 @@ export function createDragStateIconDrawingSelection(__appScope: Record<string, a
     const dx = point.x - drag.start.x;
     const dy = point.y - drag.start.y;
     if (drag.mode === "move") {
-      setStateIconDrawingDialog((current) => {
-        if (!current) {
-          return current;
-        }
-        const snap = computeStateIconDrawingSmartAlignmentSnap
-          ? computeStateIconDrawingSmartAlignmentSnap({
-              elements: current.elements,
-              selectedIds: drag.elementIds,
-              startElements: drag.startElements,
-              delta: { x: dx, y: dy }
-            })
-          : { delta: { x: dx, y: dy }, guides: [] };
-        return {
-          ...current,
-          elements: current.elements.map((element) => {
-            const startElement = drag.startElements.find((item) => item.id === element.id);
-            return startElement ? { ...element, x: startElement.x + snap.delta.x, y: startElement.y + snap.delta.y } : element;
-          }),
-          smartAlignmentGuides: snap.guides
-        };
-      });
+      const snap = computeStateIconDrawingSmartAlignmentSnap
+        ? computeStateIconDrawingSmartAlignmentSnap({
+            elements: drag.startElements,
+            selectedIds: drag.elementIds,
+            startElements: drag.startElements,
+            delta: { x: dx, y: dy }
+          })
+        : { delta: { x: dx, y: dy }, guides: [] };
+      const overrides: Record<string, { x: number; y: number }> = {};
+      for (const startElement of drag.startElements) {
+        overrides[startElement.id] = { x: startElement.x + snap.delta.x, y: startElement.y + snap.delta.y };
+      }
+      stateIconDrawingDragDeltaRef.current = { overrides, guides: snap.guides };
+      setStateIconDrawingDialog((current) => current ? { ...current, _dragTick: (current._dragTick ?? 0) + 1 } : current);
       return;
     }
     if (drag.mode === "resize" || drag.mode === "resize-top" || drag.mode === "resize-bottom" || drag.mode === "resize-left" || drag.mode === "resize-right") {
-      updateStateIconDrawingElements(drag.elementIds, (element) => {
-        const startElement = drag.startElements.find((item) => item.id === element.id);
-        if (!startElement) {
-          return element;
-        }
-        // 等比例缩放（corner handle）
+      const overrides: Record<string, { x: number; y: number; width: number; height: number }> = {};
+      for (const startElement of drag.startElements) {
         if (drag.mode === "resize") {
           const startDistance = Math.hypot(drag.start.x - drag.center.x, drag.start.y - drag.center.y) || 1;
           const currentDistance = Math.hypot(point.x - drag.center.x, point.y - drag.center.y) || 1;
           const scale = Math.max(0.05, currentDistance / startDistance);
-          return {
-            ...element,
+          overrides[startElement.id] = {
             x: drag.center.x + (startElement.x - drag.center.x) * scale,
             y: drag.center.y + (startElement.y - drag.center.y) * scale,
             width: Math.max(1, startElement.width * scale),
             height: Math.max(1, startElement.height * scale)
           };
+          continue;
         }
-        // 将指针位移转到元素局部坐标系
-        const dx = point.x - drag.start.x;
-        const dy = point.y - drag.start.y;
         const rad = -(startElement.rotation * Math.PI) / 180;
         const localDx = dx * Math.cos(rad) - dy * Math.sin(rad);
         const localDy = dx * Math.sin(rad) + dy * Math.cos(rad);
         const fullWidth = Math.max(1, startElement.width);
         const fullHeight = Math.max(1, startElement.height);
-        // 拖哪边哪边跟鼠标走，对边固定
         let newWidth = fullWidth;
         let newHeight = fullHeight;
         let localCenterShiftX = 0;
@@ -4913,35 +4899,68 @@ export function createDragStateIconDrawingSelection(__appScope: Record<string, a
             localCenterShiftY = localDy / 2;
             break;
         }
-        // 将局部位移转回根坐标系
         const fwdRad = (startElement.rotation * Math.PI) / 180;
         const centerShiftX = localCenterShiftX * Math.cos(fwdRad) - localCenterShiftY * Math.sin(fwdRad);
         const centerShiftY = localCenterShiftX * Math.sin(fwdRad) + localCenterShiftY * Math.cos(fwdRad);
-        return {
-          ...element,
+        overrides[startElement.id] = {
           x: startElement.x + centerShiftX,
           y: startElement.y + centerShiftY,
           width: newWidth,
           height: newHeight
         };
-      });
+      }
+      stateIconDrawingDragDeltaRef.current = { overrides };
+      setStateIconDrawingDialog((current) => current ? { ...current, _dragTick: (current._dragTick ?? 0) + 1 } : current);
       return;
     }
     const startAngle = Math.atan2(drag.start.y - drag.center.y, drag.start.x - drag.center.x);
     const currentAngle = Math.atan2(point.y - drag.center.y, point.x - drag.center.x);
     const deltaAngle = ((currentAngle - startAngle) * 180) / Math.PI;
-    updateStateIconDrawingElements(drag.elementIds, (element) => {
-      const startElement = drag.startElements.find((item) => item.id === element.id);
-      return startElement ? { ...element, rotation: startElement.rotation + deltaAngle } : element;
-    });
+    const overrides: Record<string, { rotation: number }> = {};
+    for (const startElement of drag.startElements) {
+      overrides[startElement.id] = { rotation: startElement.rotation + deltaAngle };
+    }
+    stateIconDrawingDragDeltaRef.current = { overrides };
+    setStateIconDrawingDialog((current) => current ? { ...current, _dragTick: (current._dragTick ?? 0) + 1 } : current);
+  };
+
+  return (event: PointerEvent<SVGSVGElement>) => {
+    pendingEvent = event;
+    if (!rafId) {
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        if (pendingEvent) {
+          const e = pendingEvent;
+          pendingEvent = null;
+          processDrag(e);
+        }
+      });
+    }
   };
 }
 
 export function createStopStateIconDrawingDrag(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGSVGElement>) => {
-  const { setStateIconDrawingDialog, stateIconDrawingDragRef } = __appScope;
+  const { setStateIconDrawingDialog, stateIconDrawingDragDeltaRef, stateIconDrawingDragRef } = __appScope;
+    const delta = stateIconDrawingDragDeltaRef.current;
     stateIconDrawingDragRef.current = null;
-    setStateIconDrawingDialog?.((current: any) => current ? { ...current, smartAlignmentGuides: [] } : current);
+    stateIconDrawingDragDeltaRef.current = null;
+    if (delta?.overrides) {
+      const overrides = delta.overrides;
+      setStateIconDrawingDialog((current: any) => {
+        if (!current) return current;
+        return {
+          ...current,
+          smartAlignmentGuides: [],
+          elements: current.elements.map((element: any) => {
+            const ovr = overrides[element.id];
+            return ovr ? { ...element, ...ovr } : element;
+          })
+        };
+      });
+    } else {
+      setStateIconDrawingDialog?.((current: any) => current ? { ...current, smartAlignmentGuides: [] } : current);
+    }
     event.currentTarget.releasePointerCapture?.(event.pointerId);
   };
 }
@@ -6298,7 +6317,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       hideDefaultPage?: boolean;
     }
   ) => {
-  const { BufferedTextInput, COMPONENT_LIBRARY_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, DEFAULT_STATE_PAGE_ID, DEVICE_LIBRARY, DeferredColorInput, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, MemoDeviceGlyph, STATE_ICON_LINE_CAP_OPTIONS, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, addStateIconDrawingElement, appendNonDefaultStateDraftRow, button, circle, colorPalette, createNodeFromTemplate, createStateDraftRowFromDefaultVisual, createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, customDeviceTerminalAnchorDragIndex, customDeviceTerminalAnchorValue, customDeviceTerminalAnchors, customDraftTerminalTypes, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionTerminalAnchorDragIndex, definitionVisualDraft, definitionVisualTerminalAnchors, definitionVisualTerminalTypes, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, getNodeScaleX, getNodeScaleY, image, imageAssets, isDefaultStatePageId, label, line, nextNonDefaultStateIndex, nodeGeometryTransform, nonDefaultStateDraftRows, projectCustomDeviceTerminalAnchorToBoundary, rect, resolveTemplateComponentLibrary, selectedDefinitionTemplate, setCustomDeviceDraft, setCustomDeviceTerminalAnchorDragIndex, setDefinitionStateDraftRows, setDefinitionTerminalAnchorDragIndex, setImagePickerCategoryFilter, setImagePickerSearchQuery, setImagePickerSourceFilter, setImageTarget, setStateIconDrawingContextMenu, setStateIconDrawingDialog, setStateIconDrawingImageVisibleFrames, setStateIconDrawingSvgVisibleFrames, small, span, stateDraftRowId, stateIconDrawingClipboardRef, stateIconDrawingContextMenu, stateIconDrawingDialog, stateIconDrawingElementId, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, stateIconDrawingFrameRect, stateIconDrawingHistoryRef, stateIconDrawingImageVisibleFrames, stateIconDrawingKeyDown, stateIconDrawingPointer, stateIconDrawingPreviewNeedsDirectElementRender, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingSvgVisibleFrames, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, terminalColor, terminalRenderLocalPoint, terminalStubSegment, terminalStubStrokeWidth, text, updateCustomDeviceTerminalAnchor, updateDefinitionTerminalAnchor, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
+  const { BufferedTextInput, COMPONENT_LIBRARY_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, DEFAULT_STATE_PAGE_ID, DEVICE_LIBRARY, DeferredColorInput, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, MemoDeviceGlyph, STATE_ICON_LINE_CAP_OPTIONS, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, addStateIconDrawingElement, appendNonDefaultStateDraftRow, button, circle, colorPalette, createNodeFromTemplate, createStateDraftRowFromDefaultVisual, createStateIconDrawingElement, customDeviceDefaultStateVisualDraft, customDeviceDraft, customDeviceTerminalAnchorDragIndex, customDeviceTerminalAnchorValue, customDeviceTerminalAnchors, customDraftTerminalTypes, defaultStateDraftRow, definitionDefaultStateVisualDraft, definitionTerminalAnchorDragIndex, definitionVisualDraft, definitionVisualTerminalAnchors, definitionVisualTerminalTypes, deleteSelectedStateIconDrawingElements, deleteStateIconDrawingElement, div, dragStateIconDrawingSelection, formatSvgNumber, g, getNodeScaleX, getNodeScaleY, image, imageAssets, isDefaultStatePageId, label, line, nextNonDefaultStateIndex, nodeGeometryTransform, nonDefaultStateDraftRows, projectCustomDeviceTerminalAnchorToBoundary, rect, resolveTemplateComponentLibrary, selectedDefinitionTemplate, setCustomDeviceDraft, setCustomDeviceTerminalAnchorDragIndex, setDefinitionStateDraftRows, setDefinitionTerminalAnchorDragIndex, setImagePickerCategoryFilter, setImagePickerSearchQuery, setImagePickerSourceFilter, setImageTarget, setStateIconDrawingContextMenu, setStateIconDrawingDialog, setStateIconDrawingImageVisibleFrames, setStateIconDrawingSvgVisibleFrames, small, span, stateDraftRowId, stateIconDrawingClipboardRef, stateIconDrawingContextMenu, stateIconDrawingDialog, stateIconDrawingDragDeltaRef, stateIconDrawingDragRef, stateIconDrawingElementId, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, stateIconDrawingFrameRect, stateIconDrawingHistoryRef, stateIconDrawingImageVisibleFrames, stateIconDrawingKeyDown, stateIconDrawingPointer, stateIconDrawingPreviewNeedsDirectElementRender, stateIconDrawingSelection, stateIconDrawingSvgRef, stateIconDrawingSvgVisibleFrames, stateIconDrawingToImage, stateVisualShapeLabel, startStateIconDrawingDrag, stopStateIconDrawingDrag, strong, terminalColor, terminalRenderLocalPoint, terminalStubSegment, terminalStubStrokeWidth, text, updateCustomDeviceTerminalAnchor, updateDefinitionTerminalAnchor, updateStateIconDrawingElement, visibleStateIconColor } = __appScope;
     const hideDefaultPage = handlers.hideDefaultPage === true;
     const displayRows = hideDefaultPage ? rows : nonDefaultStateDraftRows(rows);
     const defaultVisual = handlers.drawingScope === "definition"
@@ -7849,11 +7868,18 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         : stateIconHasTerminals
           ? { x: 30, y: 20, width: 180, height: 120, rx: 8 }
           : { x: 0, y: 0, width: 240, height: 160, rx: 10 };
-      const previewElements = stateIconDrawingDialog.drawingDraft
+      const rawPreviewElements = stateIconDrawingDialog.drawingDraft
         ? [...stateIconDrawingDialog.elements, stateIconDrawingDialog.drawingDraft.element]
         : stateIconDrawingDialog.elements;
+      const dragOverrides = stateIconDrawingDragDeltaRef?.current?.overrides;
+      const previewElements = dragOverrides
+        ? rawPreviewElements.map((element) => {
+            const ovr = dragOverrides[element.id];
+            return ovr ? { ...element, ...ovr } : element;
+          })
+        : rawPreviewElements;
       const directPreviewElements = stateIconDrawingPreviewNeedsDirectElementRender(previewElements);
-      const stateIconDrawingSmartGuides = stateIconDrawingDialog.smartAlignmentGuides ?? [];
+      const stateIconDrawingSmartGuides = stateIconDrawingDragDeltaRef?.current?.guides ?? stateIconDrawingDialog.smartAlignmentGuides ?? [];
       const stateIconDrawingMarqueeRect = stateIconDrawingDialog.marquee
         ? stateIconDrawingRectFromPoints(stateIconDrawingDialog.marquee.start, stateIconDrawingDialog.marquee.current)
         : null;
@@ -8041,7 +8067,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                       className="state-icon-drawing-direct-preview"
                       transform={`translate(${formatSvgNumber(element.x)} ${formatSvgNumber(element.y)}) rotate(${formatSvgNumber(element.rotation)})`}
                     >
-                      {stateIconDrawingElementPreviewNode(element, { onImageLoad: updateStateIconImageVisibleFrame })}
+                      {stateIconDrawingElementPreviewNode(element, { onImageLoad: stateIconDrawingDragRef?.current ? undefined : updateStateIconImageVisibleFrame })}
                     </g>
                   )) : (
                     <image
@@ -8096,6 +8122,10 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                     />
                   )}
                   {stateIconDrawingDialog.elements.map((element) => {
+                    const dragOverride = stateIconDrawingDragDeltaRef?.current?.overrides?.[element.id];
+                    if (dragOverride) {
+                      element = { ...element, ...dragOverride };
+                    }
                     const selected = selectedIds.includes(element.id);
                     const halfWidth = Math.max(1, element.width) / 2;
                     const halfHeight = Math.max(1, element.height) / 2;
@@ -8121,6 +8151,27 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                         className={`state-icon-drawing-element ${selected ? "selected" : ""}`}
                         transform={`translate(${formatSvgNumber(element.x)} ${formatSvgNumber(element.y)}) rotate(${formatSvgNumber(element.rotation)})`}
                         onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "move")}
+                        onDoubleClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          const aspect = element.width / element.height;
+                          const frameAspect = frameRect.width / frameRect.height;
+                          let newWidth: number;
+                          let newHeight: number;
+                          if (aspect > frameAspect) {
+                            newWidth = frameRect.width;
+                            newHeight = frameRect.width / aspect;
+                          } else {
+                            newHeight = frameRect.height;
+                            newWidth = frameRect.height * aspect;
+                          }
+                          updateStateIconDrawingElement(element.id, {
+                            width: newWidth,
+                            height: newHeight,
+                            x: frameRect.x + frameRect.width / 2,
+                            y: frameRect.y + frameRect.height / 2
+                          });
+                        }}
                         onContextMenu={(event) => {
                           event.preventDefault();
                           event.stopPropagation();

@@ -1245,6 +1245,9 @@ export function stateIconSvgReactAttributes(element: Element, override?: StateIc
     if (name.startsWith("on")) {
       continue;
     }
+    if (name === "pointer-events") {
+      continue;
+    }
     if (name === "style") {
       props.style = parseSvgStyleAttribute(attribute.value);
       continue;
@@ -1860,6 +1863,7 @@ export function stateIconDrawingElementPreviewNode(
           height={h}
           viewBox={stateIconSvgRenderViewBox(element.svgSource ?? "")}
           preserveAspectRatio="none"
+          style={{ pointerEvents: "none" }}
         >
           {nodes}
         </svg>
