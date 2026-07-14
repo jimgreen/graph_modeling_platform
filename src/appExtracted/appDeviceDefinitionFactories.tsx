@@ -3896,25 +3896,24 @@ export function createToggleDefinitionGroup(__appScope: Record<string, any>) {
 
 export function createToggleDefinitionComponentLibrary(__appScope: Record<string, any>) {
   return (categoryLibrary: CategoryLibrary, componentLibrary: string) => {
-  const { categoryLibraryComponentLibraryKey, setCollapsedDefinitionComponentLibraries, setDefinitionDraftSection, setDeviceDefinitionView, setSelectedDefinitionKind } = __appScope;
+  const { categoryLibraryComponentLibraryKey, setCollapsedDefinitionComponentLibraries, setDefinitionDraftSection, setSelectedDefinitionKind } = __appScope;
     const typeKey = categoryLibraryComponentLibraryKey(categoryLibrary, componentLibrary);
     setCollapsedDefinitionComponentLibraries((current) =>
       current.includes(typeKey) ? current.filter((item) => item !== typeKey) : [...current, typeKey]
     );
-    // 选中元件库节点：右侧显示共有参数表格，隐藏端子定义 tab，默认参数定义
+    // 选中元件库节点：右侧显示共有参数表格
     setDefinitionDraftSection(componentLibrary);
     setSelectedDefinitionKind("");
-    setDeviceDefinitionView("parameters");
   };
 }
 
 export function createUpdateDefinitionComponentLibraryCommonParamExport(__appScope: Record<string, any>) {
-  return (enName: string, patch: { exportEnabled?: boolean; exportName?: string }) => {
-  const { definitionDraftSection, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, getTemplateParameterDefinitions, libraryTemplates, normalizeComponentLibraryName, requireEditMode, resolveTemplateComponentLibrary, setCustomDeviceTemplates, setDeviceDefinitionOverrides, writeOperationLog } = __appScope;
+  return (componentLibrary: string, enName: string, patch: { exportEnabled?: boolean; exportName?: string }) => {
+  const { deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, getTemplateParameterDefinitions, libraryTemplates, normalizeComponentLibraryName, requireEditMode, resolveTemplateComponentLibrary, setCustomDeviceTemplates, setDeviceDefinitionOverrides, writeOperationLog } = __appScope;
     if (!requireEditMode("修改元件库共有参数导出")) {
       return;
     }
-    const sectionKey = normalizeComponentLibraryName(definitionDraftSection);
+    const sectionKey = normalizeComponentLibraryName(componentLibrary);
     if (!sectionKey) {
       return;
     }
@@ -3969,7 +3968,7 @@ export function createUpdateDefinitionComponentLibraryCommonParamExport(__appSco
         })
       );
     }
-    writeOperationLog(`修改元件库共有参数导出：${definitionDraftSection} ${enName}`);
+    writeOperationLog(`修改元件库共有参数导出：${componentLibrary} ${enName}`);
   };
 }
 
@@ -5211,7 +5210,7 @@ export function createSelectCustomCategoryLibrary(__appScope: Record<string, any
 
 export function createSelectCustomComponentLibrary(__appScope: Record<string, any>) {
   return (categoryLibraryName: string, sectionName: string, options: { expand?: boolean } = {}) => {
-  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, ensureCustomComponentTreeExpanded, normalizeCategoryLibraryName, normalizeComponentLibraryName, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceStatePageId, setEditingCustomDeviceKind } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, ensureCustomComponentTreeExpanded, normalizeCategoryLibraryName, normalizeComponentLibraryName, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceStatePageId, setCustomDeviceDialogView, setEditingCustomDeviceKind } = __appScope;
     cancelPendingCustomComponentTemplateLoad();
     const group = normalizeCategoryLibraryName(categoryLibraryName);
     const section = normalizeComponentLibraryName(sectionName);
@@ -5221,6 +5220,7 @@ export function createSelectCustomComponentLibrary(__appScope: Record<string, an
     setCustomComponentTreeSelection({ kind: "componentLibrary", categoryLibraryName: group, section });
     setEditingCustomDeviceKind("");
     setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
+    setCustomDeviceDialogView("parameters");
     setCustomDeviceDraft((current) => ({
       ...current,
       categoryLibraryName: group,
