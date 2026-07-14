@@ -7058,14 +7058,37 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   transform: translateX(-50%);
   z-index: 10000;
   padding: 10px 20px;
-  background: #ffffff;
-  border: 1px solid #e4e7ed;
   border-radius: 4px;
   box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
-  color: #303133;
   font-size: 14px;
   line-height: 1.5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   animation: global-message-fade-in 0.3s ease;
+}
+
+.global-message-success {
+  background: #f0f9ff;
+  border: 1px solid #b3e5fc;
+  color: #2e7d32;
+}
+
+.global-message-error {
+  background: #fef0f0;
+  border: 1px solid #fbc4c4;
+  color: #c62828;
+}
+
+.global-message-info {
+  background: #ffffff;
+  border: 1px solid #e4e7ed;
+  color: #303133;
+}
+
+.global-message-icon {
+  font-weight: bold;
+  font-size: 16px;
 }
 
 @keyframes global-message-fade-in {

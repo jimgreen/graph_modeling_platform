@@ -1128,11 +1128,11 @@ const customDeviceDraftCleanTokenRef = useRef("");
 Object.assign(__appScope, { customDeviceDraftCleanTokenRef });
 const [customDeviceSaveMessage, setCustomDeviceSaveMessage] = useState("");
 Object.assign(__appScope, { customDeviceSaveMessage, setCustomDeviceSaveMessage });
-const [globalMessage, setGlobalMessage] = useState<string | null>(null);
+const [globalMessage, setGlobalMessage] = useState<{ text: string; type: "success" | "error" | "info" } | null>(null);
 const globalMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-const showGlobalMessage = (text: string, duration = 2000) => {
+const showGlobalMessage = (text: string, type: "success" | "error" | "info" = "info", duration = 2000) => {
   if (globalMessageTimerRef.current) clearTimeout(globalMessageTimerRef.current);
-  setGlobalMessage(text);
+  setGlobalMessage({ text, type });
   globalMessageTimerRef.current = setTimeout(() => setGlobalMessage(null), duration);
 };
 Object.assign(__appScope, { globalMessage, showGlobalMessage });

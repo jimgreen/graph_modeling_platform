@@ -6003,7 +6003,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
     setCustomDeviceDraft((current) => ({ ...current, backgroundImage, backgroundImageAssetId, backgroundImageFit: draftBackgroundImageFit, backgroundImageCleared: draftBackgroundImageCleared, error: "" }));
     setCustomDeviceDraftCleanBaseline(cleanDraft, terminalAnchors);
     setCustomDeviceSaveMessage("");
-    showGlobalMessage(`自定义元件已保存：${componentLabel}`);
+    showGlobalMessage(`自定义元件已保存：${componentLabel}`, "success");
     writeOperationLog(`保存自定义元件：${componentLabel}`);
     if (options.closeAfterSave) {
       closeCustomDeviceDialog();
@@ -6204,7 +6204,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     setCustomDeviceDraft((current) => ({ ...current, backgroundImage, backgroundImageAssetId, backgroundImageFit: draftBackgroundImageFit, backgroundImageCleared: draftBackgroundImageCleared, size, terminalLabels, error: "" }));
     setCustomDeviceDraftCleanBaseline(cleanDraft, terminalAnchors);
     setCustomDeviceSaveMessage("");
-    showGlobalMessage(`元件定义已保存：${template.label}`);
+    showGlobalMessage(`元件定义已保存：${template.label}`, "success");
     writeOperationLog(`保存元件定义：${template.label}`);
     if (options.closeAfterSave) {
       closeCustomDeviceDialog();
