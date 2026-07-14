@@ -4893,7 +4893,6 @@ export function createDragStateIconDrawingSelection(__appScope: Record<string, a
         let handleLocalY = 0;
         let scaleX = 1;
         let scaleY = 1;
-        const isHorizontal = drag.mode === "resize-left" || drag.mode === "resize-right";
         switch (drag.mode) {
           case "resize-right":
             scaleX = Math.max(0.05, (halfW + localDx) / halfW);
@@ -4912,20 +4911,8 @@ export function createDragStateIconDrawingSelection(__appScope: Record<string, a
             handleLocalY = -halfH;
             break;
         }
-        const isImage = startElement.kind === "image";
-        // SVG 图元：等比例缩放，另一维度随主维度同步
-        // 图片图元：自由变换，仅改主维度，另一维度不变
-        let finalScaleX = scaleX;
-        let finalScaleY = scaleY;
-        if (!isImage) {
-          if (isHorizontal) {
-            finalScaleY = scaleX;
-          } else {
-            finalScaleX = scaleY;
-          }
-        }
-        const newWidth = Math.max(1, startElement.width * finalScaleX);
-        const newHeight = Math.max(1, startElement.height * finalScaleY);
+        const newWidth = Math.max(1, startElement.width * scaleX);
+        const newHeight = Math.max(1, startElement.height * scaleY);
         // 把手在根空间固定：中心在局部空间的位移 = (1 - scale) * handleLocal
         const localCenterShiftX = (1 - scaleX) * handleLocalX;
         const localCenterShiftY = (1 - scaleY) * handleLocalY;
