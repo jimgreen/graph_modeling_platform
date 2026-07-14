@@ -5808,7 +5808,7 @@ export function createNextCustomTemplateKind(__appScope: Record<string, any>) {
 
 export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) {
   return (options: { closeAfterSave?: boolean } = {}) => {
-  const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, closeCustomDeviceDialog, customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTemplates, customDeviceTerminalAnchors, defaultComponentLibraryForCategoryLibrary, editingCustomDeviceKind, ensureCustomComponentTreeExpanded, generateCustomDeviceImage, hasOverlappingCustomDeviceTerminalAnchors, isReservedDeviceDefinitionParamName, isValidComponentLibraryName, libraryTemplates = customDeviceTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, nextCustomTemplateKind, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, requireEditMode, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceTemplates, setEditingCustomDeviceKind, setExpandedCategoryLibraries, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
+  const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, closeCustomDeviceDialog, customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTemplates, customDeviceTerminalAnchors, defaultComponentLibraryForCategoryLibrary, editingCustomDeviceKind, ensureCustomComponentTreeExpanded, generateCustomDeviceImage, hasOverlappingCustomDeviceTerminalAnchors, isReservedDeviceDefinitionParamName, isValidComponentLibraryName, libraryTemplates = customDeviceTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, nextCustomTemplateKind, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, requireEditMode, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceTemplates, setEditingCustomDeviceKind, setExpandedCategoryLibraries, showGlobalMessage, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
     if (!requireEditMode("保存元件")) {
       return false;
     }
@@ -6002,7 +6002,8 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
     const cleanDraft = { ...customDeviceDraft, backgroundImage, backgroundImageAssetId, backgroundImageFit: draftBackgroundImageFit, backgroundImageCleared: draftBackgroundImageCleared, error: "" };
     setCustomDeviceDraft((current) => ({ ...current, backgroundImage, backgroundImageAssetId, backgroundImageFit: draftBackgroundImageFit, backgroundImageCleared: draftBackgroundImageCleared, error: "" }));
     setCustomDeviceDraftCleanBaseline(cleanDraft, terminalAnchors);
-    setCustomDeviceSaveMessage(`自定义元件已保存：${componentLabel}`);
+    setCustomDeviceSaveMessage("");
+    showGlobalMessage(`自定义元件已保存：${componentLabel}`);
     writeOperationLog(`保存自定义元件：${componentLabel}`);
     if (options.closeAfterSave) {
       closeCustomDeviceDialog();
@@ -6013,7 +6014,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
 
 export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Record<string, any>) {
   return (template: DeviceTemplate, options: { closeAfterSave?: boolean } = {}) => {
-  const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, closeCustomDeviceDialog, customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTerminalAnchors, deviceDefinitionOverrideForTemplate, deviceDefinitionOverrides, getTemplateParameterDefinitions, hasOverlappingCustomDeviceTerminalAnchors, isReservedDeviceDefinitionParamName, isValidComponentLibraryName, libraryTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, requireEditMode, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
+  const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, closeCustomDeviceDialog, customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTerminalAnchors, deviceDefinitionOverrideForTemplate, deviceDefinitionOverrides, getTemplateParameterDefinitions, hasOverlappingCustomDeviceTerminalAnchors, isReservedDeviceDefinitionParamName, isValidComponentLibraryName, libraryTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, requireEditMode, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setDeviceDefinitionOverrides, showGlobalMessage, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
     if (!requireEditMode("保存元件定义")) {
       return false;
     }
@@ -6202,7 +6203,8 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     const cleanDraft = { ...customDeviceDraft, backgroundImage, backgroundImageAssetId, backgroundImageFit: draftBackgroundImageFit, backgroundImageCleared: draftBackgroundImageCleared, size, terminalLabels, error: "" };
     setCustomDeviceDraft((current) => ({ ...current, backgroundImage, backgroundImageAssetId, backgroundImageFit: draftBackgroundImageFit, backgroundImageCleared: draftBackgroundImageCleared, size, terminalLabels, error: "" }));
     setCustomDeviceDraftCleanBaseline(cleanDraft, terminalAnchors);
-    setCustomDeviceSaveMessage(`元件定义已保存：${template.label}`);
+    setCustomDeviceSaveMessage("");
+    showGlobalMessage(`元件定义已保存：${template.label}`);
     writeOperationLog(`保存元件定义：${template.label}`);
     if (options.closeAfterSave) {
       closeCustomDeviceDialog();

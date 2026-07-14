@@ -7050,6 +7050,35 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   border-radius: 8px;
 }
 
+/* Global Message Toast */
+.global-message {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  padding: 10px 20px;
+  background: #ffffff;
+  border: 1px solid #e4e7ed;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  color: #303133;
+  font-size: 14px;
+  line-height: 1.5;
+  animation: global-message-fade-in 0.3s ease;
+}
+
+@keyframes global-message-fade-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
 .custom-param-table {
   width: 100%;
   min-width: 1120px;

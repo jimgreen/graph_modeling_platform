@@ -1128,6 +1128,14 @@ const customDeviceDraftCleanTokenRef = useRef("");
 Object.assign(__appScope, { customDeviceDraftCleanTokenRef });
 const [customDeviceSaveMessage, setCustomDeviceSaveMessage] = useState("");
 Object.assign(__appScope, { customDeviceSaveMessage, setCustomDeviceSaveMessage });
+const [globalMessage, setGlobalMessage] = useState<string | null>(null);
+const globalMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+const showGlobalMessage = (text: string, duration = 2000) => {
+  if (globalMessageTimerRef.current) clearTimeout(globalMessageTimerRef.current);
+  setGlobalMessage(text);
+  globalMessageTimerRef.current = setTimeout(() => setGlobalMessage(null), duration);
+};
+Object.assign(__appScope, { globalMessage, showGlobalMessage });
 const [customDeviceTerminalAnchorDragIndex, setCustomDeviceTerminalAnchorDragIndex] = useState<number | null>(null);
 Object.assign(__appScope, { customDeviceTerminalAnchorDragIndex, setCustomDeviceTerminalAnchorDragIndex });
 const [, startCustomComponentSelectionTransition] = useTransition();

@@ -139,6 +139,7 @@ export function renderAppView(__appScope: Record<string, any>) {
   } = __appScope;
   const { dragging } = __appScope;
   const { eDeviceDefinitionLabels, setEDeviceDefinitionLabels, libraryTemplates, updateDefinitionComponentLibraryCommonParamExport } = __appScope;
+  const { globalMessage } = __appScope;
   // 选中元件库节点（"元件定义"对话框）时：计算该库共有参数（enName 交集，排除 dev_type）+ E 文件标签 key
   const componentLibrarySectionKey = customComponentTreeSelection?.kind === "componentLibrary" ? normalizeComponentLibraryName(customComponentTreeSelection?.section ?? "") : "";
   const componentLibraryTemplates = componentLibrarySectionKey
@@ -375,7 +376,7 @@ export function renderAppView(__appScope: Record<string, any>) {
   const inspectorGraphId = inspectorSelectedNode
     ? resolveInspectorGraphId(nodes, inspectorSelectedNode)
     : "";
-  return (<div className={`app-shell ${isBrowseMode ? "browse-mode" : "edit-mode"} left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${topologyWarningPanelResize ? "topology-warning-panel-resizing" : ""} ${nodeDoubleClickDialogDrag || nodeDoubleClickDialogResize ? "node-double-click-dialog-moving" : ""} ${deviceLibraryDialogDrag || deviceLibraryDialogResize ? "device-library-dialog-moving" : ""} ${canvasResizeDrag ? "canvas-resizing" : ""}`} style={appShellStyle}>
+  return (<>{globalMessage && <div className="global-message">{globalMessage}</div>}<div className={`app-shell ${isBrowseMode ? "browse-mode" : "edit-mode"} left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${topologyWarningPanelResize ? "topology-warning-panel-resizing" : ""} ${nodeDoubleClickDialogDrag || nodeDoubleClickDialogResize ? "node-double-click-dialog-moving" : ""} ${deviceLibraryDialogDrag || deviceLibraryDialogResize ? "device-library-dialog-moving" : ""} ${canvasResizeDrag ? "canvas-resizing" : ""}`} style={appShellStyle}>
       {renderSidePanelEdgeTrigger("left")}
       {renderSidePanelEdgeTrigger("right")}
       <aside ref={leftPanelRef} className={`library-panel floating-side-panel ${leftPanelVisible ? "visible" : "hidden"}`} onPointerDown={stopSidePanelEventPropagation} onPointerMoveCapture={stopSidePanelEventPropagation} onPointerMove={stopSidePanelEventPropagation} onPointerEnter={() => updateAutoPanelVisibility("left", "panel-enter")} onPointerLeave={(event) => handleSidePanelPointerLeave("left", event)} onMouseMoveCapture={stopSidePanelEventPropagation} onMouseMove={stopSidePanelEventPropagation} onClick={stopSidePanelEventPropagation} onDoubleClick={stopSidePanelEventPropagation} onContextMenu={stopSidePanelEventPropagation} onKeyDown={stopSidePanelEventPropagation} onKeyUp={stopSidePanelEventPropagation}>
@@ -3303,5 +3304,5 @@ export function renderAppView(__appScope: Record<string, any>) {
             )}
           </section>
         </div>)}
-    </div>);
+    </div></>);
 }
