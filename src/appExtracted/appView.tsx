@@ -8,6 +8,7 @@ import {
   visibleIconLibraryIcons
 } from "../iconLibraryCatalog";
 import { buildExportDeviceIdMap } from "../svgExportUtils";
+import { inferESection, getTemplateParameterDefinitions, resolveDeviceParameterDefinitionExportSettings } from "../model";
 
 export type ImagePickerLibraryTab = "image" | "icon";
 
@@ -137,6 +138,35 @@ export function renderAppView(__appScope: Record<string, any>) {
     templateMenu
   } = __appScope;
   const { dragging } = __appScope;
+  const { selectedDefinitionKind, eDeviceDefinitionLabels, setEDeviceDefinitionLabels, libraryTemplates, updateDefinitionComponentLibraryCommonParamExport } = __appScope;
+  // 选中元件库节点时：计算该库下所有元件的共有参数（enName 交集，排除 dev_type）+ E 文件标签 key
+  const componentLibrarySectionKey = !selectedDefinitionKind ? normalizeComponentLibraryName(definitionDraftSection) : "";
+  const componentLibraryTemplates = componentLibrarySectionKey
+    ? libraryTemplates.filter((template) => normalizeComponentLibraryName(resolveTemplateComponentLibrary(template)) === componentLibrarySectionKey)
+    : [];
+  const componentLibraryCommonParams = (() => {
+    if (componentLibraryTemplates.length === 0) {
+      return [];
+    }
+    const perTemplateEnNames = componentLibraryTemplates.map((template) =>
+      new Set(getTemplateParameterDefinitions(template).filter((definition) => definition.enName !== "dev_type").map((definition) => definition.enName))
+    );
+    const intersection = perTemplateEnNames.reduce(
+      (acc, set) => new Set(Array.from(acc).filter((name) => set.has(name))),
+      perTemplateEnNames[0]
+    );
+    const firstTemplate = componentLibraryTemplates[0];
+    const firstDefinitions = getTemplateParameterDefinitions(firstTemplate);
+    return Array.from(intersection).map((enName) => {
+      const definition = firstDefinitions.find((item) => item.enName === enName);
+      const settings = definition ? resolveDeviceParameterDefinitionExportSettings(firstTemplate.kind, firstTemplate.params ?? {}, definition) : { exportEnabled: false, exportName: enName };
+      return { enName, cnName: definition?.cnName ?? enName, exportEnabled: Boolean(settings.exportEnabled), exportName: settings.exportName ?? enName };
+    });
+  })();
+  const componentLibraryLabelKey = componentLibraryTemplates.length > 0
+    ? inferESection(componentLibraryTemplates[0].kind, componentLibraryTemplates[0].params ?? {})
+    : definitionDraftSection;
+  const componentLibraryLabelValue = eDeviceDefinitionLabels[componentLibraryLabelKey] ?? componentLibraryLabelKey;
   const {
     applyIconLibraryCatalogIcon,
     deleteImageAssetFromContextMenu,
@@ -2298,9 +2328,9 @@ export function renderAppView(__appScope: Record<string, any>) {
                       </div>
                     </div>
                     <div className="device-definition-tabs" role="tablist" aria-label="元件修改内容切换">
-                      <button type="button" className={deviceDefinitionView === "visual" ? "active" : ""} onClick={() => setDeviceDefinitionView("visual")}>
+                      {selectedDefinitionKind && (<button type="button" className={deviceDefinitionView === "visual" ? "active" : ""} onClick={() => setDeviceDefinitionView("visual")}>
                         端子定义
-                      </button>
+                      </button>)}
                       <button type="button" className={deviceDefinitionView === "parameters" ? "active" : ""} onClick={() => setDeviceDefinitionView("parameters")}>
                         参数定义
                       </button>
@@ -2308,7 +2338,72 @@ export function renderAppView(__appScope: Record<string, any>) {
                         量测定义
                       </button>
                     </div>
-                    {deviceDefinitionView === "visual" ? (renderDeviceDefinitionVisualPanel(selectedDefinitionTemplate)) : deviceDefinitionView === "parameters" ? (<>
+                    {deviceDefinitionView === "visual" ? (renderDeviceDefinitionVisualPanel(selectedDefinitionTemplate)) : deviceDefinitionView === "parameters" ? (!selectedDefinitionKind ? (
+                      <section className="device-definition-component-library-panel">
+                        <div className="device-definition-section-title">
+                          <h3>元件库：{definitionDraftSection}</h3>
+                          <span>{componentLibraryTemplates.length} 个元件</span>
+                        </div>
+                        <div className="device-definition-label-field">
+                          <label>
+                            <span>E 文件标签</span>
+                            <BufferedTextInput
+                              value={componentLibraryLabelValue}
+                              onCommit={(value) => {
+                                const trimmed = value.trim();
+                                setEDeviceDefinitionLabels((prev) => {
+                                  const next = { ...prev };
+                                  if (!trimmed || trimmed === componentLibraryLabelKey) {
+                                    delete next[componentLibraryLabelKey];
+                                  } else {
+                                    next[componentLibraryLabelKey] = trimmed;
+                                  }
+                                  return next;
+                                });
+                              }}
+                            />
+                          </label>
+                          <button type="button" onClick={() => setEDeviceDefinitionLabels((prev) => { const next = { ...prev }; delete next[componentLibraryLabelKey]; return next; })} disabled={eDeviceDefinitionLabels[componentLibraryLabelKey] === undefined}>
+                            还原
+                          </button>
+                        </div>
+                        <div className="custom-param-table-wrap device-definition-table-wrap">
+                          <table className="custom-param-table">
+                            <thead>
+                              <tr>
+                                <th>英文名称</th>
+                                <th>中文名称</th>
+                                <th>是否导出</th>
+                                <th>导出名称</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {componentLibraryCommonParams.map((param) => (<tr key={param.enName}>
+                                <td><code>{param.enName}</code></td>
+                                <td>{param.cnName}</td>
+                                <td className="custom-param-export-toggle">
+                                  <input
+                                    className="custom-param-export-checkbox"
+                                    type="checkbox"
+                                    checked={param.exportEnabled}
+                                    aria-label={`${param.cnName || param.enName}是否导出`}
+                                    onChange={(event) => updateDefinitionComponentLibraryCommonParamExport(param.enName, { exportEnabled: event.target.checked, exportName: param.exportName?.trim() || param.enName })}
+                                  />
+                                </td>
+                                <td>
+                                  <BufferedTextInput
+                                    value={param.exportName ?? ""}
+                                    disabled={!param.exportEnabled}
+                                    onCommit={(value) => updateDefinitionComponentLibraryCommonParamExport(param.enName, { exportName: value })}
+                                  />
+                                </td>
+                              </tr>))}
+                            </tbody>
+                          </table>
+                        </div>
+                        {componentLibraryCommonParams.length === 0 && <p className="custom-device-error">该元件库下元件无共有参数。</p>}
+                      </section>
+                    ) : (<>
                         {selectedDefinitionTemplate.isContainer && selectedDefinitionTerminalAssociations.length > 0 && (<section className="device-definition-associations">
                             <div className="device-definition-section-title">
                               <h3>端子关联信息</h3>
@@ -2426,7 +2521,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                             恢复默认
                           </button>
                         </div>
-                      </>) : (renderDeviceDefinitionMeasurementPanel({
+                      </>)) : (renderDeviceDefinitionMeasurementPanel({
                 deviceKind: normalizeComponentLibraryName(definitionDraftSection) || deviceDefinitionKeyForTemplate(selectedDefinitionTemplate),
                 label: selectedDefinitionTemplate.label,
                 terminalCount: selectedDefinitionTemplate.terminalCount,

@@ -520,11 +520,11 @@ describe("graph template library filtering", () => {
     expect(definitions[2]).not.toHaveProperty("exportName");
   });
 
-  test("renders E export controls in both parameter definition tables", () => {
+  test("renders E export controls in all parameter definition tables", () => {
     const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
 
-    expect(appViewSource.match(/<th>是否导出<\/th>/gu)).toHaveLength(2);
-    expect(appViewSource.match(/<th>导出名称<\/th>/gu)).toHaveLength(2);
+    expect(appViewSource.match(/<th>是否导出<\/th>/gu)).toHaveLength(3);
+    expect(appViewSource.match(/<th>导出名称<\/th>/gu)).toHaveLength(3);
     expect(appViewSource).toContain("exportEnabled");
     expect(appViewSource).toContain("exportName");
   });

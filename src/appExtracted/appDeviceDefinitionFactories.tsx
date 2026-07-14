@@ -3896,14 +3896,80 @@ export function createToggleDefinitionGroup(__appScope: Record<string, any>) {
 
 export function createToggleDefinitionComponentLibrary(__appScope: Record<string, any>) {
   return (categoryLibrary: CategoryLibrary, componentLibrary: string) => {
-  const { categoryLibraryComponentLibraryKey, setCollapsedDefinitionComponentLibraries, setDefinitionDraftSection, setSelectedDefinitionKind } = __appScope;
+  const { categoryLibraryComponentLibraryKey, setCollapsedDefinitionComponentLibraries, setDefinitionDraftSection, setDeviceDefinitionView, setSelectedDefinitionKind } = __appScope;
     const typeKey = categoryLibraryComponentLibraryKey(categoryLibrary, componentLibrary);
     setCollapsedDefinitionComponentLibraries((current) =>
       current.includes(typeKey) ? current.filter((item) => item !== typeKey) : [...current, typeKey]
     );
-    // 选中元件库节点：右侧显示共有参数表格
+    // 选中元件库节点：右侧显示共有参数表格，隐藏端子定义 tab，默认参数定义
     setDefinitionDraftSection(componentLibrary);
     setSelectedDefinitionKind("");
+    setDeviceDefinitionView("parameters");
+  };
+}
+
+export function createUpdateDefinitionComponentLibraryCommonParamExport(__appScope: Record<string, any>) {
+  return (enName: string, patch: { exportEnabled?: boolean; exportName?: string }) => {
+  const { definitionDraftSection, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, getTemplateParameterDefinitions, libraryTemplates, normalizeComponentLibraryName, requireEditMode, resolveTemplateComponentLibrary, setCustomDeviceTemplates, setDeviceDefinitionOverrides, writeOperationLog } = __appScope;
+    if (!requireEditMode("修改元件库共有参数导出")) {
+      return;
+    }
+    const sectionKey = normalizeComponentLibraryName(definitionDraftSection);
+    if (!sectionKey) {
+      return;
+    }
+    const componentLibraryTemplates = libraryTemplates.filter((template) =>
+      normalizeComponentLibraryName(resolveTemplateComponentLibrary(template)) === sectionKey
+    );
+    if (componentLibraryTemplates.length === 0) {
+      return;
+    }
+    const applyPatch = (definition: DeviceParameterDefinition) => ({
+      ...definition,
+      ...(typeof patch.exportEnabled === "boolean" ? { exportEnabled: patch.exportEnabled } : {}),
+      ...(typeof patch.exportName === "string" ? { exportName: patch.exportName.trim() } : {})
+    });
+    // 内置元件：批量写 override（与 saveDeviceDefinitionDraft 同模式）
+    setDeviceDefinitionOverrides((current) => {
+      const next = { ...current };
+      for (const template of componentLibraryTemplates) {
+        if (template.custom) {
+          continue;
+        }
+        const definitionKey = deviceDefinitionKeyForTemplate(template);
+        const existingOverride = deviceDefinitionOverrideForTemplate(template, next);
+        const parameterDefinitions = getTemplateParameterDefinitions(template).map((definition) =>
+          definition.enName === enName ? applyPatch(definition) : definition
+        );
+        delete next[template.kind];
+        next[definitionKey] = {
+          ...existingOverride,
+          kind: definitionKey,
+          params: { ...(existingOverride?.params ?? {}) },
+          parameterDefinitions,
+          stateDefinitions: Array.isArray(existingOverride?.stateDefinitions)
+            ? existingOverride.stateDefinitions
+            : template.stateDefinitions,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return next;
+    });
+    // 自定义元件：直接改 template.parameterDefinitions
+    if (componentLibraryTemplates.some((template) => template.custom)) {
+      setCustomDeviceTemplates((current) =>
+        current.map((template) => {
+          if (!template.custom || !componentLibraryTemplates.some((item) => item.kind === template.kind)) {
+            return template;
+          }
+          const parameterDefinitions = (template.parameterDefinitions ?? []).map((definition) =>
+            definition.enName === enName ? applyPatch(definition) : definition
+          );
+          return { ...template, parameterDefinitions };
+        })
+      );
+    }
+    writeOperationLog(`修改元件库共有参数导出：${definitionDraftSection} ${enName}`);
   };
 }
 
