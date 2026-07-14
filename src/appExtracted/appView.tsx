@@ -2697,11 +2697,9 @@ export function renderAppView(__appScope: Record<string, any>) {
             </div>}
               </>) : visibleCustomDeviceDialogView === "parameters" ? (customComponentTreeSelection?.kind === "componentLibrary" ? (
                 <section className="device-definition-component-library-panel">
-                  <div className="device-definition-section-title">
+                  <div className="device-definition-component-library-header">
                     <h3>元件库：{customComponentTreeSelection?.section}</h3>
-                    <span>{componentLibraryTemplates.length} 个元件</span>
-                  </div>
-                  <div className="device-definition-label-field">
+                    <span className="device-definition-count">{componentLibraryTemplates.length} 个元件</span>
                     <label>
                       <span>E 文件标签</span>
                       <BufferedTextInput

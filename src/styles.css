@@ -6521,6 +6521,38 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   font-weight: 700;
 }
 
+.device-definition-component-library-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.device-definition-component-library-header h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.device-definition-component-library-header .device-definition-count {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.device-definition-component-library-header label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.device-definition-component-library-header input,
+.device-definition-component-library-header button {
+  font-size: 13px;
+}
+
 .device-definition-table-wrap {
   max-height: 390px;
 }
