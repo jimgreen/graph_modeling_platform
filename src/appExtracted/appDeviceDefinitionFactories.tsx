@@ -3896,11 +3896,14 @@ export function createToggleDefinitionGroup(__appScope: Record<string, any>) {
 
 export function createToggleDefinitionComponentLibrary(__appScope: Record<string, any>) {
   return (categoryLibrary: CategoryLibrary, componentLibrary: string) => {
-  const { categoryLibraryComponentLibraryKey, setCollapsedDefinitionComponentLibraries } = __appScope;
+  const { categoryLibraryComponentLibraryKey, setCollapsedDefinitionComponentLibraries, setDefinitionDraftSection, setSelectedDefinitionKind } = __appScope;
     const typeKey = categoryLibraryComponentLibraryKey(categoryLibrary, componentLibrary);
     setCollapsedDefinitionComponentLibraries((current) =>
       current.includes(typeKey) ? current.filter((item) => item !== typeKey) : [...current, typeKey]
     );
+    // 选中元件库节点：右侧显示共有参数表格
+    setDefinitionDraftSection(componentLibrary);
+    setSelectedDefinitionKind("");
   };
 }
 

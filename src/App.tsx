@@ -1136,6 +1136,8 @@ const customComponentSelectionRequestRef = useRef(0); Object.assign(__appScope, 
 const customComponentSelectionFrameRef = useRef<number | null>(null); Object.assign(__appScope, { customComponentSelectionFrameRef });
 const [deviceDefinitionOverrides, setDeviceDefinitionOverrides] = useState<Record<string, DeviceTemplateDefinitionOverride>>(() => initialDeviceLibrary.deviceDefinitionOverrides);
 Object.assign(__appScope, { deviceDefinitionOverrides, setDeviceDefinitionOverrides });
+const [eDeviceDefinitionLabels, setEDeviceDefinitionLabels] = useState<Record<string, string>>(() => (initialDeviceLibrary as any).eDeviceDefinitionLabels ?? {});
+Object.assign(__appScope, { eDeviceDefinitionLabels, setEDeviceDefinitionLabels });
 const [deviceDefinitionDialogOpen, setDeviceDefinitionDialogOpen] = useState(false);
 Object.assign(__appScope, { deviceDefinitionDialogOpen, setDeviceDefinitionDialogOpen });
 const [selectedDefinitionKind, setSelectedDefinitionKind] = useState<DeviceKind | "">("");
