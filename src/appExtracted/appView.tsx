@@ -160,7 +160,8 @@ export function renderAppView(__appScope: Record<string, any>) {
     return Array.from(intersection).map((enName) => {
       const definition = firstDefinitions.find((item) => item.enName === enName);
       const settings = definition ? resolveDeviceParameterDefinitionExportSettings(firstTemplate.kind, firstTemplate.params ?? {}, definition) : { exportEnabled: false, exportName: enName };
-      return { enName, cnName: definition?.cnName ?? enName, exportEnabled: Boolean(settings.exportEnabled), exportName: settings.exportName ?? enName };
+      const rawCn = definition?.cnName ?? enName;
+      return { enName, cnName: rawCn === enName ? PARAM_LABELS[enName] ?? rawCn : rawCn, exportEnabled: Boolean(settings.exportEnabled), exportName: settings.exportName ?? enName };
     });
   })();
   const componentLibraryLabelKey = componentLibraryTemplates.length > 0
@@ -1314,7 +1315,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                             const displayValue = formatDeviceModelParamDisplayValue(key, value);
                             const definition = customDefinitions.find((item) => item.enName === key);
                             return (<tr key={key}>
-                                  {batchEditors.renderParamHeader(key, key, definition?.cnName ?? PARAM_LABELS[key] ?? key)}
+                                  {batchEditors.renderParamHeader(key, key, definition?.cnName === key ? PARAM_LABELS[key] ?? key : (definition?.cnName ?? PARAM_LABELS[key] ?? key))}
                                   <td>
                                     {key === "name" ? (<BufferedTextInput value={inspectorSelectedNode.name} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/>) : READONLY_E_PARAM_KEYS.has(key) || batchEditors.definitionMakesValueReadonly(definition) ? (<input value={displayValue} readOnly/>) : (batchEditors.renderParamEditor(key, displayValue, false, definition))}
                                   </td>

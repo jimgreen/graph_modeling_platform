@@ -2637,7 +2637,7 @@ export function createRenderNodeDoubleClickDeviceParamRows(__appScope: Record<st
       const definition = customDefinitions.find((item) => item.enName === key);
       return (
         <tr key={key}>
-          {batchEditors.renderParamHeader(key, key, definition?.cnName ?? PARAM_LABELS[key] ?? key)}
+          {batchEditors.renderParamHeader(key, key, definition?.cnName === key ? PARAM_LABELS[key] ?? key : (definition?.cnName ?? PARAM_LABELS[key] ?? key))}
           <td>
             {key === "name" ? (
               <BufferedTextInput value={node.name} onCommit={(nextValue) => batchEditors.updateNodeDoubleClickDraftPatch(node.id, { name: nextValue })} />

@@ -3377,7 +3377,7 @@ const DEVICE_DEFINITION_MEASUREMENT_PROFILE_ALIASES: Record<string, readonly str
 
 export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<string, any>) {
   return (target: DeviceDefinitionMeasurementPanelTarget) => {
-  const { BufferedTextInput, addMeasurementProfileItem, button, deleteMeasurementProfileItem, div, editableMeasurementProfileByKind, editableMeasurementTypeById, footer, isBrowseMode, measurementConfig, measurementConfigDraft, measurementConfigSaveStatus, moveMeasurementProfileItem, normalizeComponentLibraryName, section, select, span, table, tbody, td, th, thead, tr, updateMeasurementProfileItem } = __appScope;
+  const { BufferedTextInput, PARAM_LABELS, addMeasurementProfileItem, button, deleteMeasurementProfileItem, div, editableMeasurementProfileByKind, editableMeasurementTypeById, footer, isBrowseMode, measurementConfig, measurementConfigDraft, measurementConfigSaveStatus, moveMeasurementProfileItem, normalizeComponentLibraryName, section, select, span, table, tbody, td, th, thead, tr, updateMeasurementProfileItem } = __appScope;
     const draftConfig = measurementConfigDraft ?? measurementConfig;
     const selectedKind = normalizeComponentLibraryName(target.deviceKind);
     const selectedProfileKind = [
@@ -3405,9 +3405,10 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
         }
         seen.add(value.toLowerCase());
         const label = String(definition?.cnName ?? "").trim();
+        const resolvedLabel = !label || label === value ? (PARAM_LABELS[value] ?? value) : label;
         return [{
           value,
-          label: label && label !== value ? `${label} (${value})` : value
+          label: resolvedLabel !== value ? `${resolvedLabel} (${value})` : value
         }];
       });
     };
