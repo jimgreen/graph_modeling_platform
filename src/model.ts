@@ -890,9 +890,22 @@ const ELECTRIC_GENERATION_BASE_KIND_SET = new Set<string>(
     ELECTRIC_GENERATION_FAMILY_KIND_SUFFIXES.map((kindSuffix) => `${terminalType}-${kindSuffix}`)
   )
 );
+const LEGACY_ELECTRIC_GENERATION_BASE_KIND_SET = new Set<string>([
+  "ac-wind-source",
+  "dc-wind-source",
+  "ac-pv-source",
+  "dc-pv-source",
+  "ac-thermal-source",
+  "ac-hydro-source",
+  "ac-nuclear-source"
+]);
 
 export function isElectricGenerationContainerKind(kind: string): boolean {
   return ELECTRIC_GENERATION_BASE_KIND_SET.has(baseDeviceKind(kind));
+}
+
+function isLegacyElectricGenerationContainerKind(kind: string): boolean {
+  return LEGACY_ELECTRIC_GENERATION_BASE_KIND_SET.has(baseDeviceKind(kind));
 }
 
 const ROUTABLE_LINE_DEVICE_KINDS = new Set<string>([
@@ -3116,15 +3129,15 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
   {
     kindSuffix: "wind-source",
     label: "风力发电机",
-    sourceType: "风电",
+    sourceType: "风力",
     parameterDefinitions: [
-      electricGenerationStringDefinition("风力机型号", "windTurbineModel"),
-      electricGenerationIntegerDefinition("风力机数量", "windTurbineCount"),
+      electricGenerationStringDefinition("风机型号", "windTurbineModel"),
+      electricGenerationIntegerDefinition("风机台数", "windTurbineCount"),
       electricGenerationStringDefinition("单机额定功率", "unitRatedPower"),
       electricGenerationStringDefinition("切入风速", "cutInWindSpeed"),
       electricGenerationStringDefinition("额定风速", "ratedWindSpeed"),
       electricGenerationStringDefinition("切出风速", "cutOutWindSpeed"),
-      electricGenerationStringDefinition("风轮直径", "rotorDiameter"),
+      electricGenerationStringDefinition("叶轮直径", "rotorDiameter"),
       electricGenerationStringDefinition("轮毂高度", "hubHeight")
     ],
     commonParams: {
@@ -3152,10 +3165,10 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     parameterDefinitions: [
       electricGenerationStringDefinition("光伏组件型号", "pvModuleModel"),
       electricGenerationIntegerDefinition("光伏组件数量", "pvModuleCount"),
-      electricGenerationStringDefinition("组件额定功率", "moduleRatedPower"),
+      electricGenerationStringDefinition("单组件额定功率", "moduleRatedPower"),
       electricGenerationStringDefinition("组件效率", "moduleEfficiency"),
       electricGenerationStringDefinition("阵列面积", "arrayArea"),
-      electricGenerationIntegerDefinition("MPPT数量", "mpptCount")
+      electricGenerationIntegerDefinition("MPPT 路数", "mpptCount")
     ],
     commonParams: {
       pvModuleModel: "Mono-550W",
@@ -3174,7 +3187,7 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
   {
     kindSuffix: "thermal-source",
     label: "火力发电机",
-    sourceType: "火电",
+    sourceType: "火力",
     parameterDefinitions: [
       electricGenerationStringDefinition("火电机组型号", "thermalUnitModel"),
       electricGenerationStringEnumDefinition("燃料类型", "fuelType", [
@@ -3204,7 +3217,7 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
   {
     kindSuffix: "hydro-source",
     label: "水力发电机",
-    sourceType: "水电",
+    sourceType: "水力",
     parameterDefinitions: [
       electricGenerationStringDefinition("水电机组型号", "hydroUnitModel"),
       electricGenerationStringEnumDefinition("水轮机类型", "turbineType", [
@@ -3213,7 +3226,7 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
         { value: "pelton", label: "冲击式" },
         { value: "bulb", label: "贯流式" }
       ]),
-      electricGenerationIntegerDefinition("水轮机数量", "turbineCount"),
+      electricGenerationIntegerDefinition("水轮机台数", "turbineCount"),
       electricGenerationStringDefinition("单机额定功率", "unitRatedPower"),
       electricGenerationStringDefinition("设计水头", "designHead"),
       electricGenerationStringDefinition("设计流量", "designFlow"),
@@ -3238,7 +3251,7 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
   {
     kindSuffix: "nuclear-source",
     label: "核能发电机",
-    sourceType: "核电",
+    sourceType: "核能",
     parameterDefinitions: [
       electricGenerationStringDefinition("核电机组型号", "nuclearUnitModel"),
       electricGenerationStringEnumDefinition("反应堆类型", "reactorType", [
@@ -3308,7 +3321,7 @@ function createElectricGenerationDeviceTemplate(
     parameterDefinitions: [
       readonlyIntegerDefinition("序号", "idx"),
       { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
-      { cnName: "运行状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: false },
+      { cnName: "设备状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: false },
       { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false },
       readonlyIntegerDefinition(`${terminalLabel}${terminalPrefix}电源关联idx`, relationKey),
       { cnName: "发电类型", enName: "sourceType", valueType: "string", typicalValue: family.sourceType, readonly: true },
@@ -4925,7 +4938,9 @@ export function buildContainerDeviceParameterViews(
     const terminalIndexes = group.map((association) => association.terminalIndex);
     const terminals = terminalIndexes.map((index) => node.terminals[index]).filter((terminal): terminal is Terminal => Boolean(terminal));
     const componentLibrary = containerRelationCounterKey(first.relationKey) || first.roleLabel;
-    const label = `${sourceTerminal?.label ?? first.terminalLabel}${first.roleLabel}`;
+    const label = fallbackTemplate.isContainer && isElectricGenerationContainerKind(fallbackTemplate.kind)
+      ? `端${sourceTerminalIndex + 1}（${first.roleLabel}）`
+      : `${sourceTerminal?.label ?? first.terminalLabel}${first.roleLabel}`;
     const sectionColumns = E_SECTION_COLUMNS[componentLibrary] ?? [];
     const rows = sectionColumns.length > 0
       ? associatedDeviceRows(node, first.relationKey, componentLibrary, terminals)
@@ -6171,6 +6186,9 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   if (isPureHydrogenNetworkKind(templateKind) || isPureThermalNetworkKind(templateKind)) {
     return withTemplateDefinitions(withRunStat({ ...template.params }));
   }
+  if (template.isContainer && isElectricGenerationContainerKind(templateKind)) {
+    return withTemplateDefinitions(withRunStat({ ...template.params }));
+  }
   if (isGeneratorKind(templateKind)) {
     const base: Record<string, string> = {
       ratedCapacity: template.params.ratedPower ?? template.params.ratedCapacity ?? "10 MW",
@@ -6351,7 +6369,7 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
 }
 
 function migrateElectricGenerationContainerParams(node: ModelNode, template: DeviceTemplate): ModelNode {
-  if (!template.isContainer || !isElectricGenerationContainerKind(template.kind)) {
+  if (!template.isContainer || !isLegacyElectricGenerationContainerKind(template.kind)) {
     return node;
   }
   const defaultParams = buildDefaultParams(template);

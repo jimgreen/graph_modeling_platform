@@ -1447,20 +1447,24 @@ describe("power system model", () => {
     expect(synchronized.edges).toBe(edges);
   });
 
-  test("creates generator parameters with readonly node numbers and control types", () => {
+  test("creates electric generation parameters without generic generator-body defaults", () => {
     const acWind = createDefaultNode("ac-wind-source", { x: 100, y: 100 });
     const dcPv = createDefaultNode("dc-pv-source", { x: 240, y: 100 });
 
     expect(isGeneratorNode(acWind)).toBe(true);
     expect(acWind.nodeNumber).toMatch(/^N\d+$/);
-    expect(acWind.params.ratedCapacity).toBe("50 MW");
-    expect(acWind.params.controlType).toBe("PV");
+    expect(acWind.params.ratedPower).toBe("50 MW");
+    expect(acWind.params.ratedCapacity).toBeUndefined();
+    expect(acWind.params.controlType).toBeUndefined();
+    expect(acWind.params.vbase).toBeUndefined();
     expect(acWind.params.cutInWindSpeed).toBe("3 m/s");
     expect(acWind.params.ratedWindSpeed).toBe("12 m/s");
     expect(acWind.params.cutOutWindSpeed).toBe("25 m/s");
 
-    expect(dcPv.params.controlType).toBe("P");
-    expect(dcPv.params.ratedCapacity).toBe("5 MW");
+    expect(dcPv.params.ratedPower).toBe("5 MW");
+    expect(dcPv.params.ratedCapacity).toBeUndefined();
+    expect(dcPv.params.controlType).toBeUndefined();
+    expect(dcPv.params.vbase).toBeUndefined();
   });
 
   test("adds AC diesel generator as an ACGenerator with diesel glyph", () => {
@@ -9241,17 +9245,27 @@ describe("power system model", () => {
   });
 
   const electricGenerationCases = [
-    { kind: "ac-wind-source", family: "wind", label: "交流风力发电机", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_ac_unit_t1", ratedVoltage: "35 kV", ratedPower: "50 MW" },
-    { kind: "dc-wind-source", family: "wind", label: "直流风力发电机", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dc_unit_t1", ratedVoltage: "1500 V", ratedPower: "10 MW" },
-    { kind: "ac-pv-source", family: "pv", label: "交流光伏发电机", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_ac_unit_t1", ratedVoltage: "10 kV", ratedPower: "20 MW" },
-    { kind: "dc-pv-source", family: "pv", label: "直流光伏发电机", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dc_unit_t1", ratedVoltage: "1500 V", ratedPower: "5 MW" },
-    { kind: "ac-thermal-source", family: "thermal", label: "交流火力发电机", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_ac_unit_t1", ratedVoltage: "220 kV", ratedPower: "600 MW" },
-    { kind: "dc-thermal-source", family: "thermal", label: "直流火力发电机", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dc_unit_t1", ratedVoltage: "1500 V", ratedPower: "600 MW" },
-    { kind: "ac-hydro-source", family: "hydro", label: "交流水力发电机", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_ac_unit_t1", ratedVoltage: "220 kV", ratedPower: "300 MW" },
-    { kind: "dc-hydro-source", family: "hydro", label: "直流水力发电机", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dc_unit_t1", ratedVoltage: "1500 V", ratedPower: "300 MW" },
-    { kind: "ac-nuclear-source", family: "nuclear", label: "交流核能发电机", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_ac_unit_t1", ratedVoltage: "500 kV", ratedPower: "1000 MW" },
-    { kind: "dc-nuclear-source", family: "nuclear", label: "直流核能发电机", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dc_unit_t1", ratedVoltage: "1500 V", ratedPower: "1000 MW" }
+    { kind: "ac-wind-source", family: "wind", label: "交流风力发电机", sourceType: "风力", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_ac_unit_t1", ratedVoltage: "35 kV", ratedPower: "50 MW" },
+    { kind: "dc-wind-source", family: "wind", label: "直流风力发电机", sourceType: "风力", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dc_unit_t1", ratedVoltage: "1500 V", ratedPower: "10 MW" },
+    { kind: "ac-pv-source", family: "pv", label: "交流光伏发电机", sourceType: "光伏", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_ac_unit_t1", ratedVoltage: "10 kV", ratedPower: "20 MW" },
+    { kind: "dc-pv-source", family: "pv", label: "直流光伏发电机", sourceType: "光伏", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dc_unit_t1", ratedVoltage: "1500 V", ratedPower: "5 MW" },
+    { kind: "ac-thermal-source", family: "thermal", label: "交流火力发电机", sourceType: "火力", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_ac_unit_t1", ratedVoltage: "220 kV", ratedPower: "600 MW" },
+    { kind: "dc-thermal-source", family: "thermal", label: "直流火力发电机", sourceType: "火力", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dc_unit_t1", ratedVoltage: "1500 V", ratedPower: "600 MW" },
+    { kind: "ac-hydro-source", family: "hydro", label: "交流水力发电机", sourceType: "水力", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_ac_unit_t1", ratedVoltage: "220 kV", ratedPower: "300 MW" },
+    { kind: "dc-hydro-source", family: "hydro", label: "直流水力发电机", sourceType: "水力", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dc_unit_t1", ratedVoltage: "1500 V", ratedPower: "300 MW" },
+    { kind: "ac-nuclear-source", family: "nuclear", label: "交流核能发电机", sourceType: "核能", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_ac_unit_t1", ratedVoltage: "500 kV", ratedPower: "1000 MW" },
+    { kind: "dc-nuclear-source", family: "nuclear", label: "直流核能发电机", sourceType: "核能", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dc_unit_t1", ratedVoltage: "1500 V", ratedPower: "1000 MW" }
   ] as const;
+
+  const legacyElectricGenerationKinds = new Set<string>([
+    "ac-wind-source",
+    "dc-wind-source",
+    "ac-pv-source",
+    "dc-pv-source",
+    "ac-thermal-source",
+    "ac-hydro-source",
+    "ac-nuclear-source"
+  ]);
 
   test("defines all electric generation devices as single-terminal containers", () => {
     for (const expected of electricGenerationCases) {
@@ -9267,6 +9281,7 @@ describe("power system model", () => {
         isContainer: true,
         params: expect.objectContaining({
           is_container: "1",
+          sourceType: expected.sourceType,
           ratedVoltage: expected.ratedVoltage,
           ratedPower: expected.ratedPower
         })
@@ -9279,10 +9294,18 @@ describe("power system model", () => {
       ]);
       expect(node.params).toMatchObject({
         is_container: "1",
+        sourceType: expected.sourceType,
         ratedVoltage: expected.ratedVoltage,
         ratedPower: expected.ratedPower,
         [expected.relationKey]: ""
       });
+      expect(node.params).not.toHaveProperty("ratedCapacity");
+      expect(node.params).not.toHaveProperty("controlType");
+      expect(node.params).not.toHaveProperty("vbase");
+
+      const associatedViews = buildContainerDeviceParameterViews(node, template!).filter((view) => view.kind === "associated");
+      expect(associatedViews).toHaveLength(1);
+      expect(associatedViews[0].label).toBe(expected.terminalType === "ac" ? "端1（交流电源）" : "端1（直流电源）");
 
       const definitions = new Map(getTemplateParameterDefinitions(template!).map((definition) => [definition.enName, definition]));
       expect(definitions.get("idx")).toMatchObject({ valueType: "integer", readonly: true });
@@ -9390,6 +9413,34 @@ describe("power system model", () => {
     ]);
   });
 
+  test("uses the exact Chinese parameter labels for electric generation definitions", () => {
+    const familyPairs = {
+      wind: [
+        { cnName: "风机型号", enName: "windTurbineModel" },
+        { cnName: "风机台数", enName: "windTurbineCount" },
+        { cnName: "叶轮直径", enName: "rotorDiameter" }
+      ],
+      pv: [
+        { cnName: "单组件额定功率", enName: "moduleRatedPower" },
+        { cnName: "MPPT 路数", enName: "mpptCount" }
+      ],
+      thermal: [],
+      hydro: [
+        { cnName: "水轮机台数", enName: "turbineCount" }
+      ],
+      nuclear: []
+    } as const;
+
+    for (const expected of electricGenerationCases) {
+      const template = DEVICE_LIBRARY.find((item) => item.kind === expected.kind)!;
+      const pairs = getTemplateParameterDefinitions(template).map(({ cnName, enName }) => ({ cnName, enName }));
+      expect(pairs).toEqual(expect.arrayContaining([
+        { cnName: "设备状态", enName: "status" },
+        ...familyPairs[expected.family]
+      ]));
+    }
+  });
+
   test("recognizes only electric generation container base and vertical kinds", () => {
     for (const expected of electricGenerationCases) {
       expect(isElectricGenerationContainerKind(expected.kind)).toBe(true);
@@ -9402,74 +9453,108 @@ describe("power system model", () => {
   });
 
   test("migrates legacy electric generation nodes without replacing existing values or geometry", () => {
-    for (const expected of electricGenerationCases) {
+    for (const expected of electricGenerationCases.filter(({ kind }) => legacyElectricGenerationKinds.has(kind))) {
       const donor = createDefaultNode(expected.terminalType === "ac" ? "ac-source" : "dc-source", { x: 12, y: 34 });
-      const legacy: ModelNode = {
-        ...donor,
-        id: `legacy-${expected.kind}`,
-        kind: expected.kind,
-        name: `保留-${expected.label}`,
-        nodeNumber: `legacy-${expected.terminalType}-node`,
-        position: { x: 321, y: 654 },
-        size: { width: 137, height: 89 },
-        rotation: 17,
-        scale: 1.25,
-        scaleX: -1,
-        scaleY: 1,
-        params: {
+      const baseTemplate = DEVICE_LIBRARY.find((item) => item.kind === expected.kind)!;
+      for (const kind of [expected.kind, `${expected.kind}-vertical`]) {
+        const legacy: ModelNode = {
+          ...donor,
+          id: `legacy-${kind}`,
+          kind,
+          name: `保留-${expected.label}`,
+          nodeNumber: `legacy-${expected.terminalType}-node`,
+          position: { x: 321, y: 654 },
+          size: { width: 137, height: 89 },
+          rotation: 17,
+          scale: 1.25,
+          scaleX: -1,
+          scaleY: 1,
+          params: {
+            ratedVoltage: "保留电压",
+            ratedPower: "保留容量",
+            ratedCapacity: "保留通用额定容量",
+            controlType: "保留通用控制类型",
+            vbase: "保留通用电压基准",
+            status: "0",
+            is_container: "0",
+            legacyCustomValue: "保留自定义值"
+          },
+          terminals: [{
+            ...donor.terminals[0],
+            label: "旧发电端",
+            type: expected.terminalType,
+            anchor: { x: 0.25, y: -0.25 },
+            nodeNumber: "986",
+            vbase: "保留端子电压"
+          }]
+        };
+        const template = kind === expected.kind ? baseTemplate : { ...baseTemplate, kind };
+
+        const normalized = normalizeNodeTerminalsWithTemplate(legacy, template);
+
+        expect(normalized).toMatchObject({
+          id: legacy.id,
+          kind,
+          name: legacy.name,
+          nodeNumber: legacy.nodeNumber,
+          position: legacy.position,
+          size: legacy.size,
+          rotation: legacy.rotation,
+          scale: legacy.scale,
+          scaleX: legacy.scaleX,
+          scaleY: legacy.scaleY
+        });
+        expect(normalized.params).toMatchObject({
           ratedVoltage: "保留电压",
           ratedPower: "保留容量",
+          ratedCapacity: "保留通用额定容量",
+          controlType: "保留通用控制类型",
+          vbase: "保留通用电压基准",
           status: "0",
-          is_container: "0",
-          legacyCustomValue: "保留自定义值"
-        },
-        terminals: [{
-          ...donor.terminals[0],
-          label: "旧发电端",
+          is_container: "1",
+          legacyCustomValue: "保留自定义值",
+          [expected.relationKey]: ""
+        });
+        expect(normalized.terminals).toMatchObject([{
+          id: "t1",
+          label: expected.terminalLabel,
           type: expected.terminalType,
           anchor: { x: 0.25, y: -0.25 },
           nodeNumber: "986",
           vbase: "保留端子电压"
-        }]
-      };
-      const template = DEVICE_LIBRARY.find((item) => item.kind === expected.kind)!;
+        }]);
 
-      const normalized = normalizeNodeTerminalsWithTemplate(legacy, template);
+        const normalizedAgain = normalizeNodeTerminalsWithTemplate(normalized, template);
+        expect(normalizedAgain).toBe(normalized);
 
-      expect(normalized).toMatchObject({
-        id: legacy.id,
-        kind: expected.kind,
-        name: legacy.name,
-        nodeNumber: legacy.nodeNumber,
-        position: legacy.position,
-        size: legacy.size,
-        rotation: legacy.rotation,
-        scale: legacy.scale,
-        scaleX: legacy.scaleX,
-        scaleY: legacy.scaleY
-      });
-      expect(normalized.params).toMatchObject({
-        ratedVoltage: "保留电压",
-        ratedPower: "保留容量",
-        status: "0",
-        is_container: "1",
-        legacyCustomValue: "保留自定义值",
-        [expected.relationKey]: ""
-      });
-      expect(normalized.terminals).toMatchObject([{
-        id: "t1",
-        label: expected.terminalLabel,
-        type: expected.terminalType,
-        anchor: { x: 0.25, y: -0.25 },
-        nodeNumber: "986",
-        vbase: "保留端子电压"
-      }]);
+        const indexed = assignMissingDeviceIndexes([normalized]);
+        expect(indexed.nodes[0].params[expected.relationKey]).toBe("1");
+      }
+    }
+  });
 
-      const normalizedAgain = normalizeNodeTerminalsWithTemplate(normalized, template);
-      expect(normalizedAgain).toBe(normalized);
+  test("does not migrate newly added electric generation kinds as legacy nodes", () => {
+    for (const expected of electricGenerationCases.filter(({ kind }) => !legacyElectricGenerationKinds.has(kind))) {
+      const donor = createDefaultNode(expected.terminalType === "ac" ? "ac-source" : "dc-source", { x: 12, y: 34 });
+      const baseTemplate = DEVICE_LIBRARY.find((item) => item.kind === expected.kind)!;
+      for (const kind of [expected.kind, `${expected.kind}-vertical`]) {
+        const params = { is_container: "0", legacyCustomValue: "保持原值" };
+        const node: ModelNode = {
+          ...donor,
+          id: `new-kind-${kind}`,
+          kind,
+          params,
+          terminals: [{ ...donor.terminals[0], type: expected.terminalType }]
+        };
+        const template = kind === expected.kind ? baseTemplate : { ...baseTemplate, kind };
 
-      const indexed = assignMissingDeviceIndexes([normalized]);
-      expect(indexed.nodes[0].params[expected.relationKey]).toBe("1");
+        const normalized = normalizeNodeTerminalsWithTemplate(node, template);
+
+        expect(normalized.params).toBe(params);
+        expect(normalized.params).toEqual({ is_container: "0", legacyCustomValue: "保持原值" });
+        expect(normalized.params[expected.relationKey]).toBeUndefined();
+        expect(normalized.params.sourceType).toBeUndefined();
+      }
     }
   });
 
