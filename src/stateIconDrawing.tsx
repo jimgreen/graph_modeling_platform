@@ -1559,15 +1559,15 @@ export function stateIconDrawingSvgElementMarkup(
     const fallback = stateIconSvgFallbackParts(source);
     if (fallback?.body) {
       const styleOverride = stateIconSvgStyleOverrideMarkup(override);
-      return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}"${preserveViewBoxMarkup} viewBox="${escapeXml(fallback.viewBox)}" preserveAspectRatio="xMidYMid meet">${fallback.body}${styleOverride}</svg>`;
+      return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}"${preserveViewBoxMarkup} viewBox="${escapeXml(fallback.viewBox)}" preserveAspectRatio="none">${fallback.body}${styleOverride}</svg>`;
     }
     const href = svgSourceToDataUrl(source);
     return href
-      ? `<image href="${escapeXml(href)}" x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" preserveAspectRatio="xMidYMid meet"/>`
+      ? `<image href="${escapeXml(href)}" x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}" preserveAspectRatio="none"/>`
       : "";
   }
   const styleOverride = stateIconSvgStyleOverrideMarkup(override);
-  return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}"${preserveViewBoxMarkup} viewBox="${escapeXml(stateIconSvgRenderViewBox(source))}" preserveAspectRatio="xMidYMid meet">${parsed.body}${styleOverride}</svg>`;
+  return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}"${preserveViewBoxMarkup} viewBox="${escapeXml(stateIconSvgRenderViewBox(source))}" preserveAspectRatio="none">${parsed.body}${styleOverride}</svg>`;
 }
 
 export function stateIconDrawingElementMarkup(
@@ -1842,7 +1842,7 @@ export function stateIconDrawingElementPreviewNode(
       const parsed = parseStateIconSvgSource(element.svgSource ?? "");
       if (!parsed || !parsed.body) {
         const href = svgSourceToDataUrl(element.svgSource);
-        return href ? <image href={href} x={-hw} y={-hh} width={w} height={h} preserveAspectRatio="xMidYMid meet" /> : null;
+        return href ? <image href={href} x={-hw} y={-hh} width={w} height={h} preserveAspectRatio="none" /> : null;
       }
       const override = {
         stroke,
@@ -1859,7 +1859,7 @@ export function stateIconDrawingElementPreviewNode(
           width={w}
           height={h}
           viewBox={stateIconSvgRenderViewBox(element.svgSource ?? "")}
-          preserveAspectRatio="xMidYMid meet"
+          preserveAspectRatio="none"
         >
           {nodes}
         </svg>
