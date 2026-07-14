@@ -2622,6 +2622,7 @@ export type EDeviceDefinitionSection = {
   label: string;
   categoryLibrary: string;
   componentLibrary: string;
+  originalComponentLibrary?: string;
   fields: EDeviceDefinitionField[];
 };
 
@@ -2641,7 +2642,8 @@ function formatEDeviceDefinitionSection(section: EDeviceDefinitionSection): stri
   const commentRow = ["//", ...comments.map((cell, index) => eFilePadCell(cell, widths[index]))]
     .join(E_FILE_COLUMN_GAP)
     .trimEnd();
-  const attrs = `中文名="${escapeEDefinitionAttr(section.label)}" 类别库="${escapeEDefinitionAttr(section.categoryLibrary)}"`;
+  const libraryAttr = section.originalComponentLibrary ? ` 元件库="${escapeEDefinitionAttr(section.originalComponentLibrary)}"` : "";
+  const attrs = `中文名="${escapeEDefinitionAttr(section.label)}" 类别库="${escapeEDefinitionAttr(section.categoryLibrary)}"${libraryAttr}`;
   return [`<${section.kind} ${attrs}>`, fieldRow, commentRow, `</${section.kind}>`].join("\n");
 }
 
@@ -2654,7 +2656,7 @@ function splitEDefinitionCells(line: string): string[] {
   return line.split(/\s{2,}/).map((cell) => cell.trim()).filter((cell) => cell.length > 0);
 }
 
-export function buildEDeviceDefinitionFile(templates: DeviceTemplate[], labels?: Record<string, string>): TextFileExport {
+export function buildEDeviceDefinitionFile(templates: DeviceTemplate[], labels?: Record<string, string>, eDeviceDefinitionLabels?: Record<string, string>): TextFileExport {
   // 按元件库（E section）分组：同元件库的所有图元合并为一个 section，字段取勾选导出的并集
   const groups = new Map<string, { categoryLibrary: string; fields: Map<string, string[]> }>();
   for (const template of templates) {
@@ -2726,11 +2728,13 @@ export function buildEDeviceDefinitionFile(templates: DeviceTemplate[], labels?:
       const meaningfulCnNames = cnNames.filter((cnName) => cnName && cnName !== exportName);
       fields.push({ exportName, cnName: meaningfulCnNames.length > 0 ? meaningfulCnNames.join("/") : exportName });
     }
+    const eLabel = eDeviceDefinitionLabels?.[componentLibrary]?.trim();
     sections.push({
-      kind: componentLibrary,
+      kind: eLabel || componentLibrary,
       label: ELEMENT_TREE_COMPONENT_LIBRARY_LABELS[componentLibrary] ?? componentLibrary,
       categoryLibrary: group.categoryLibrary,
       componentLibrary,
+      originalComponentLibrary: eLabel && eLabel !== componentLibrary ? componentLibrary : undefined,
       fields
     });
   }

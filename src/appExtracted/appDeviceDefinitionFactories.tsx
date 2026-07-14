@@ -1939,9 +1939,9 @@ export function createExportEFile(__appScope: Record<string, any>) {
 
 export function createExportEDeviceDefinitionFile(__appScope: Record<string, any>) {
   return async () => {
-    const { libraryTemplates, PARAM_LABELS, saveTextFile, writeOperationLog } = __appScope;
+    const { libraryTemplates, PARAM_LABELS, eDeviceDefinitionLabels, saveTextFile, writeOperationLog } = __appScope;
     // libraryTemplates 已合并内置 + 自定义元件并应用 deviceDefinitionOverrides，导出范围覆盖所有元件（含内置）
-    const file = buildEDeviceDefinitionFile(libraryTemplates ?? [], PARAM_LABELS);
+    const file = buildEDeviceDefinitionFile(libraryTemplates ?? [], PARAM_LABELS, eDeviceDefinitionLabels);
     if (!file.text) {
       window.alert("没有可导出的元件定义：所有元件均未勾选导出字段。");
       return;
@@ -2038,8 +2038,8 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
 // 程序化导出 E 文件定义（经 WS control 指令调用，返回文本不触发浏览器下载）
 export function createProgrammaticExportEDeviceDefinition(__appScope: Record<string, any>) {
   return () => {
-    const { libraryTemplates, PARAM_LABELS } = __appScope;
-    return buildEDeviceDefinitionFile(libraryTemplates ?? [], PARAM_LABELS);
+    const { libraryTemplates, PARAM_LABELS, eDeviceDefinitionLabels } = __appScope;
+    return buildEDeviceDefinitionFile(libraryTemplates ?? [], PARAM_LABELS, eDeviceDefinitionLabels);
   };
 }
 
