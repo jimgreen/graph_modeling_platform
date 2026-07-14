@@ -55,9 +55,12 @@ export type DeviceKind =
   | "ac-pv-source"
   | "dc-pv-source"
   | "ac-thermal-source"
+  | "dc-thermal-source"
   | "ac-diesel-source"
   | "ac-hydro-source"
+  | "dc-hydro-source"
   | "ac-nuclear-source"
+  | "dc-nuclear-source"
   | "ac-storage"
   | "ac-electrolyzer"
   | "dc-electrolyzer"
@@ -872,6 +875,24 @@ function baseDeviceKind(kind: string): string {
     return kind;
   }
   return kind.slice(0, -GENERATED_VERTICAL_KIND_SUFFIX.length);
+}
+
+const ELECTRIC_GENERATION_TERMINAL_TYPES = ["ac", "dc"] as const;
+const ELECTRIC_GENERATION_FAMILY_KIND_SUFFIXES = [
+  "wind-source",
+  "pv-source",
+  "thermal-source",
+  "hydro-source",
+  "nuclear-source"
+] as const;
+const ELECTRIC_GENERATION_BASE_KIND_SET = new Set<string>(
+  ELECTRIC_GENERATION_TERMINAL_TYPES.flatMap((terminalType) =>
+    ELECTRIC_GENERATION_FAMILY_KIND_SUFFIXES.map((kindSuffix) => `${terminalType}-${kindSuffix}`)
+  )
+);
+
+export function isElectricGenerationContainerKind(kind: string): boolean {
+  return ELECTRIC_GENERATION_BASE_KIND_SET.has(baseDeviceKind(kind));
 }
 
 const ROUTABLE_LINE_DEVICE_KINDS = new Set<string>([
@@ -3045,6 +3066,266 @@ const staticVisualParams = (
   })
 });
 
+type ElectricGenerationTerminalType = (typeof ELECTRIC_GENERATION_TERMINAL_TYPES)[number];
+type ElectricGenerationFamilyKindSuffix = (typeof ELECTRIC_GENERATION_FAMILY_KIND_SUFFIXES)[number];
+type ElectricGenerationParameterDefinitionSpec = Omit<DeviceParameterDefinition, "typicalValue">;
+
+type ElectricGenerationFamilySpec = {
+  kindSuffix: ElectricGenerationFamilyKindSuffix;
+  label: string;
+  sourceType: string;
+  parameterDefinitions: ElectricGenerationParameterDefinitionSpec[];
+  commonParams: Record<string, string>;
+  paramsByTerminalType?: Partial<Record<ElectricGenerationTerminalType, Record<string, string>>>;
+  defaultsByTerminalType: Record<ElectricGenerationTerminalType, { ratedVoltage: string; ratedPower: string }>;
+};
+
+const electricGenerationStringDefinition = (
+  cnName: string,
+  enName: string
+): ElectricGenerationParameterDefinitionSpec => ({
+  cnName,
+  enName,
+  valueType: "string",
+  readonly: false
+});
+
+const electricGenerationIntegerDefinition = (
+  cnName: string,
+  enName: string
+): ElectricGenerationParameterDefinitionSpec => ({
+  cnName,
+  enName,
+  valueType: "integer",
+  readonly: false
+});
+
+const electricGenerationStringEnumDefinition = (
+  cnName: string,
+  enName: string,
+  enumOptions: DeviceParameterEnumOption[]
+): ElectricGenerationParameterDefinitionSpec => ({
+  cnName,
+  enName,
+  valueType: "stringEnum",
+  enumOptions,
+  readonly: false
+});
+
+const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
+  {
+    kindSuffix: "wind-source",
+    label: "风力发电机",
+    sourceType: "风电",
+    parameterDefinitions: [
+      electricGenerationStringDefinition("风力机型号", "windTurbineModel"),
+      electricGenerationIntegerDefinition("风力机数量", "windTurbineCount"),
+      electricGenerationStringDefinition("单机额定功率", "unitRatedPower"),
+      electricGenerationStringDefinition("切入风速", "cutInWindSpeed"),
+      electricGenerationStringDefinition("额定风速", "ratedWindSpeed"),
+      electricGenerationStringDefinition("切出风速", "cutOutWindSpeed"),
+      electricGenerationStringDefinition("风轮直径", "rotorDiameter"),
+      electricGenerationStringDefinition("轮毂高度", "hubHeight")
+    ],
+    commonParams: {
+      windTurbineModel: "WT-5MW",
+      unitRatedPower: "5 MW",
+      cutInWindSpeed: "3 m/s",
+      ratedWindSpeed: "12 m/s",
+      cutOutWindSpeed: "25 m/s",
+      rotorDiameter: "170 m",
+      hubHeight: "110 m"
+    },
+    paramsByTerminalType: {
+      ac: { windTurbineCount: "10" },
+      dc: { windTurbineCount: "2" }
+    },
+    defaultsByTerminalType: {
+      ac: { ratedVoltage: "35 kV", ratedPower: "50 MW" },
+      dc: { ratedVoltage: "1500 V", ratedPower: "10 MW" }
+    }
+  },
+  {
+    kindSuffix: "pv-source",
+    label: "光伏发电机",
+    sourceType: "光伏",
+    parameterDefinitions: [
+      electricGenerationStringDefinition("光伏组件型号", "pvModuleModel"),
+      electricGenerationIntegerDefinition("光伏组件数量", "pvModuleCount"),
+      electricGenerationStringDefinition("组件额定功率", "moduleRatedPower"),
+      electricGenerationStringDefinition("组件效率", "moduleEfficiency"),
+      electricGenerationStringDefinition("阵列面积", "arrayArea"),
+      electricGenerationIntegerDefinition("MPPT数量", "mpptCount")
+    ],
+    commonParams: {
+      pvModuleModel: "Mono-550W",
+      moduleRatedPower: "550 Wp",
+      moduleEfficiency: "21.3%"
+    },
+    paramsByTerminalType: {
+      ac: { pvModuleCount: "36364", arrayArea: "100000 m2", mpptCount: "100" },
+      dc: { pvModuleCount: "9091", arrayArea: "25000 m2", mpptCount: "25" }
+    },
+    defaultsByTerminalType: {
+      ac: { ratedVoltage: "10 kV", ratedPower: "20 MW" },
+      dc: { ratedVoltage: "1500 V", ratedPower: "5 MW" }
+    }
+  },
+  {
+    kindSuffix: "thermal-source",
+    label: "火力发电机",
+    sourceType: "火电",
+    parameterDefinitions: [
+      electricGenerationStringDefinition("火电机组型号", "thermalUnitModel"),
+      electricGenerationStringEnumDefinition("燃料类型", "fuelType", [
+        { value: "coal", label: "煤" },
+        { value: "gas", label: "天然气" },
+        { value: "oil", label: "燃油" },
+        { value: "biomass", label: "生物质" }
+      ]),
+      electricGenerationStringDefinition("热效率", "thermalEfficiency"),
+      electricGenerationStringDefinition("热耗率", "heatRate"),
+      electricGenerationStringDefinition("主蒸汽压力", "mainSteamPressure"),
+      electricGenerationStringDefinition("主蒸汽温度", "mainSteamTemperature")
+    ],
+    commonParams: {
+      thermalUnitModel: "600 MW超超临界机组",
+      fuelType: "coal",
+      thermalEfficiency: "45%",
+      heatRate: "8000 kJ/kWh",
+      mainSteamPressure: "25 MPa",
+      mainSteamTemperature: "600 C"
+    },
+    defaultsByTerminalType: {
+      ac: { ratedVoltage: "220 kV", ratedPower: "600 MW" },
+      dc: { ratedVoltage: "1500 V", ratedPower: "600 MW" }
+    }
+  },
+  {
+    kindSuffix: "hydro-source",
+    label: "水力发电机",
+    sourceType: "水电",
+    parameterDefinitions: [
+      electricGenerationStringDefinition("水电机组型号", "hydroUnitModel"),
+      electricGenerationStringEnumDefinition("水轮机类型", "turbineType", [
+        { value: "francis", label: "混流式" },
+        { value: "kaplan", label: "轴流式" },
+        { value: "pelton", label: "冲击式" },
+        { value: "bulb", label: "贯流式" }
+      ]),
+      electricGenerationIntegerDefinition("水轮机数量", "turbineCount"),
+      electricGenerationStringDefinition("单机额定功率", "unitRatedPower"),
+      electricGenerationStringDefinition("设计水头", "designHead"),
+      electricGenerationStringDefinition("设计流量", "designFlow"),
+      electricGenerationStringDefinition("额定转速", "ratedSpeed"),
+      electricGenerationStringDefinition("发电机效率", "generatorEfficiency")
+    ],
+    commonParams: {
+      hydroUnitModel: "300 MW混流式机组",
+      turbineType: "francis",
+      turbineCount: "1",
+      unitRatedPower: "300 MW",
+      designHead: "120 m",
+      designFlow: "280 m3/s",
+      ratedSpeed: "150 r/min",
+      generatorEfficiency: "98.5%"
+    },
+    defaultsByTerminalType: {
+      ac: { ratedVoltage: "220 kV", ratedPower: "300 MW" },
+      dc: { ratedVoltage: "1500 V", ratedPower: "300 MW" }
+    }
+  },
+  {
+    kindSuffix: "nuclear-source",
+    label: "核能发电机",
+    sourceType: "核电",
+    parameterDefinitions: [
+      electricGenerationStringDefinition("核电机组型号", "nuclearUnitModel"),
+      electricGenerationStringEnumDefinition("反应堆类型", "reactorType", [
+        { value: "pwr", label: "压水堆" },
+        { value: "bwr", label: "沸水堆" },
+        { value: "phwr", label: "重水堆" },
+        { value: "htgr", label: "高温气冷堆" },
+        { value: "fbr", label: "快中子增殖堆" }
+      ]),
+      electricGenerationIntegerDefinition("反应堆数量", "reactorCount"),
+      electricGenerationStringDefinition("单机额定功率", "unitRatedPower"),
+      electricGenerationStringDefinition("反应堆热功率", "reactorThermalPower"),
+      electricGenerationStringDefinition("热效率", "thermalEfficiency"),
+      electricGenerationStringDefinition("一回路压力", "primaryLoopPressure"),
+      electricGenerationStringDefinition("主蒸汽压力", "mainSteamPressure"),
+      electricGenerationStringDefinition("主蒸汽温度", "mainSteamTemperature"),
+      electricGenerationStringDefinition("容量因子", "capacityFactor")
+    ],
+    commonParams: {
+      nuclearUnitModel: "1000 MW压水堆机组",
+      reactorType: "pwr",
+      reactorCount: "1",
+      unitRatedPower: "1000 MW",
+      reactorThermalPower: "2900 MWth",
+      thermalEfficiency: "34.5%",
+      primaryLoopPressure: "15.5 MPa",
+      mainSteamPressure: "6.8 MPa",
+      mainSteamTemperature: "285 C",
+      capacityFactor: "90%"
+    },
+    defaultsByTerminalType: {
+      ac: { ratedVoltage: "500 kV", ratedPower: "1000 MW" },
+      dc: { ratedVoltage: "1500 V", ratedPower: "1000 MW" }
+    }
+  }
+];
+
+function createElectricGenerationDeviceTemplate(
+  terminalType: ElectricGenerationTerminalType,
+  family: ElectricGenerationFamilySpec
+): DeviceTemplate {
+  const electricalDefaults = family.defaultsByTerminalType[terminalType];
+  const terminalPrefix = terminalType === "ac" ? "交流" : "直流";
+  const terminalLabel = `${terminalPrefix}发电机端`;
+  const association: ContainerTerminalAssociationType = terminalType === "ac" ? "ac-generator" : "dc-generator";
+  const relationKey = terminalType === "ac" ? "idx_ac_unit_t1" : "idx_dc_unit_t1";
+  const params: Record<string, string> = {
+    is_container: "1",
+    sourceType: family.sourceType,
+    ratedPower: electricalDefaults.ratedPower,
+    ratedVoltage: electricalDefaults.ratedVoltage,
+    ...family.commonParams,
+    ...(family.paramsByTerminalType?.[terminalType] ?? {})
+  };
+  return {
+    kind: `${terminalType}-${family.kindSuffix}` as DeviceKind,
+    label: `${terminalPrefix}${family.label}`,
+    categoryLibrary: `${terminalPrefix}设备`,
+    size: { width: 92, height: 58 },
+    params,
+    terminalType,
+    terminalCount: 1,
+    terminalLabels: [terminalLabel],
+    terminalRoles: ["single-source"],
+    terminalAssociations: [association],
+    isContainer: true,
+    parameterDefinitions: [
+      readonlyIntegerDefinition("序号", "idx"),
+      { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
+      { cnName: "运行状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: false },
+      { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false },
+      readonlyIntegerDefinition(`${terminalLabel}${terminalPrefix}电源关联idx`, relationKey),
+      { cnName: "发电类型", enName: "sourceType", valueType: "string", typicalValue: family.sourceType, readonly: true },
+      { cnName: "额定功率", enName: "ratedPower", valueType: "string", typicalValue: electricalDefaults.ratedPower, readonly: false },
+      { cnName: "额定电压", enName: "ratedVoltage", valueType: "string", typicalValue: electricalDefaults.ratedVoltage, readonly: false },
+      ...family.parameterDefinitions.map((definition) => ({
+        ...definition,
+        typicalValue: params[definition.enName] ?? ""
+      }))
+    ]
+  };
+}
+
+const ELECTRIC_GENERATION_DEVICE_TEMPLATES = ELECTRIC_GENERATION_FAMILY_SPECS.flatMap((family) =>
+  ELECTRIC_GENERATION_TERMINAL_TYPES.map((terminalType) => createElectricGenerationDeviceTemplate(terminalType, family))
+);
+
 const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-text",
@@ -3418,57 +3699,13 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalType: "ac",
     terminalCount: 1
   },
-  {
-    kind: "ac-wind-source",
-    label: "交流风电",
-    categoryLibrary: "交流设备",
-    size: { width: 92, height: 58 },
-    params: { ratedVoltage: "35 kV", ratedPower: "50 MW", sourceType: "风电" },
-    terminalType: "ac",
-    terminalCount: 1
-  },
-  {
-    kind: "ac-pv-source",
-    label: "交流光伏",
-    categoryLibrary: "交流设备",
-    size: { width: 92, height: 58 },
-    params: { ratedVoltage: "10 kV", ratedPower: "20 MW", sourceType: "光伏" },
-    terminalType: "ac",
-    terminalCount: 1
-  },
-  {
-    kind: "ac-thermal-source",
-    label: "交流火电",
-    categoryLibrary: "交流设备",
-    size: { width: 92, height: 58 },
-    params: { ratedVoltage: "220 kV", ratedPower: "600 MW", sourceType: "火电" },
-    terminalType: "ac",
-    terminalCount: 1
-  },
+  ...ELECTRIC_GENERATION_DEVICE_TEMPLATES.filter((template) => template.terminalType === "ac"),
   {
     kind: "ac-diesel-source",
     label: "柴油发电机",
     categoryLibrary: "交流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "10 kV", ratedPower: "5 MW", sourceType: "柴油" },
-    terminalType: "ac",
-    terminalCount: 1
-  },
-  {
-    kind: "ac-hydro-source",
-    label: "交流水电",
-    categoryLibrary: "交流设备",
-    size: { width: 92, height: 58 },
-    params: { ratedVoltage: "220 kV", ratedPower: "300 MW", sourceType: "水电" },
-    terminalType: "ac",
-    terminalCount: 1
-  },
-  {
-    kind: "ac-nuclear-source",
-    label: "交流核电",
-    categoryLibrary: "交流设备",
-    size: { width: 92, height: 58 },
-    params: { ratedVoltage: "500 kV", ratedPower: "1000 MW", sourceType: "核电" },
     terminalType: "ac",
     terminalCount: 1
   },
@@ -4028,24 +4265,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     terminalType: "dc",
     terminalCount: 1
   },
-  {
-    kind: "dc-wind-source",
-    label: "直流风电",
-    categoryLibrary: "直流设备",
-    size: { width: 92, height: 58 },
-    params: { ratedVoltage: "1500 V", ratedPower: "10 MW", sourceType: "风电" },
-    terminalType: "dc",
-    terminalCount: 1
-  },
-  {
-    kind: "dc-pv-source",
-    label: "直流光伏",
-    categoryLibrary: "直流设备",
-    size: { width: 92, height: 58 },
-    params: { ratedVoltage: "1500 V", ratedPower: "5 MW", sourceType: "光伏" },
-    terminalType: "dc",
-    terminalCount: 1
-  },
+  ...ELECTRIC_GENERATION_DEVICE_TEMPLATES.filter((template) => template.terminalType === "dc"),
   {
     kind: "dc-storage",
     label: "电化学储能",
@@ -6130,6 +6350,27 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   return withTemplateDefinitions(withRunStat(withDefaultVbase({ ...template.params })));
 }
 
+function migrateElectricGenerationContainerParams(node: ModelNode, template: DeviceTemplate): ModelNode {
+  if (!template.isContainer || !isElectricGenerationContainerKind(template.kind)) {
+    return node;
+  }
+  const defaultParams = buildDefaultParams(template);
+  const hasMissingDefaults = Object.keys(defaultParams).some((key) =>
+    !Object.prototype.hasOwnProperty.call(node.params, key)
+  );
+  if (!hasMissingDefaults && node.params.is_container === "1") {
+    return node;
+  }
+  return {
+    ...node,
+    params: {
+      ...defaultParams,
+      ...node.params,
+      is_container: "1"
+    }
+  };
+}
+
 export function getTemplate(kind: DeviceKind): DeviceTemplate {
   const template = DEVICE_LIBRARY_BY_KIND.get(kind);
   if (!template) {
@@ -8013,6 +8254,9 @@ function virtualBusTerminal(node: Pick<ModelNode, "kind" | "terminals">, termina
 
 export function normalizeNodeTerminalsWithTemplate(node: ModelNode, template: DeviceTemplate | undefined): ModelNode {
   let normalizedNode = normalizeRoutableLineDeviceStrokeWidthParam(node);
+  if (template) {
+    normalizedNode = migrateElectricGenerationContainerParams(normalizedNode, template);
+  }
   if (template && !template.isContainer && (isThreeWindingTransformer(normalizedNode) || isTwoWindingTransformerTemplateKind(normalizedNode.kind))) {
     const parameterDefinitions = isThreeWindingTransformer(normalizedNode)
       ? threeWindingTransformerParameterDefinitions
