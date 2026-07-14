@@ -6527,6 +6527,11 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   gap: 10px;
   flex-wrap: wrap;
   font-size: 13px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
 }
 
 .device-definition-component-library-header h3 {
