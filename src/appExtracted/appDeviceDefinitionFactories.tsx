@@ -4880,7 +4880,7 @@ export function createDragStateIconDrawingSelection(__appScope: Record<string, a
             height: Math.max(1, startElement.height * scale)
           };
         }
-        // 自由变换（side handles），需要将指针位移转到元素局部坐标系
+        // 将指针位移转到元素局部坐标系
         const dx = point.x - drag.start.x;
         const dy = point.y - drag.start.y;
         const rad = -(startElement.rotation * Math.PI) / 180;
@@ -4893,6 +4893,7 @@ export function createDragStateIconDrawingSelection(__appScope: Record<string, a
         let handleLocalY = 0;
         let scaleX = 1;
         let scaleY = 1;
+        const isHorizontal = drag.mode === "resize-left" || drag.mode === "resize-right";
         switch (drag.mode) {
           case "resize-right":
             scaleX = Math.max(0.05, (halfW + localDx) / halfW);
@@ -4909,12 +4910,25 @@ export function createDragStateIconDrawingSelection(__appScope: Record<string, a
           case "resize-top":
             scaleY = Math.max(0.05, (halfH - localDy) / halfH);
             handleLocalY = -halfH;
-            break;        }
-        const newWidth = Math.max(1, startElement.width * scaleX);
-        const newHeight = Math.max(1, startElement.height * scaleY);
-        // 把手在根空间固定：中心在局部空间的位移 = (scale - 1) * handleLocal
-        const localCenterShiftX = (scaleX - 1) * handleLocalX;
-        const localCenterShiftY = (scaleY - 1) * handleLocalY;
+            break;
+        }
+        const isImage = startElement.kind === "image";
+        // SVG 图元：等比例缩放，另一维度随主维度同步
+        // 图片图元：自由变换，仅改主维度，另一维度不变
+        let finalScaleX = scaleX;
+        let finalScaleY = scaleY;
+        if (!isImage) {
+          if (isHorizontal) {
+            finalScaleY = scaleX;
+          } else {
+            finalScaleX = scaleY;
+          }
+        }
+        const newWidth = Math.max(1, startElement.width * finalScaleX);
+        const newHeight = Math.max(1, startElement.height * finalScaleY);
+        // 把手在根空间固定：中心在局部空间的位移 = (1 - scale) * handleLocal
+        const localCenterShiftX = (1 - scaleX) * handleLocalX;
+        const localCenterShiftY = (1 - scaleY) * handleLocalY;
         // 将局部位移转回根坐标系
         const fwdRad = (startElement.rotation * Math.PI) / 180;
         const centerShiftX = localCenterShiftX * Math.cos(fwdRad) - localCenterShiftY * Math.sin(fwdRad);
