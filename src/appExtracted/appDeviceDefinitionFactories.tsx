@@ -4888,34 +4888,34 @@ export function createDragStateIconDrawingSelection(__appScope: Record<string, a
         const localDy = dx * Math.sin(rad) + dy * Math.cos(rad);
         const halfW = Math.max(1, startElement.width) / 2;
         const halfH = Math.max(1, startElement.height) / 2;
-        // 把手在元素局部坐标系的位置（拖拽时此点在根空间固定）
-        let handleLocalX = 0;
-        let handleLocalY = 0;
+        // 把手位置即固定边在元素局部坐标系的位置（拖拽时该边在根空间固定）
+        let anchorLocalX = 0;
+        let anchorLocalY = 0;
         let scaleX = 1;
         let scaleY = 1;
         switch (drag.mode) {
           case "resize-right":
             scaleX = Math.max(0.05, (halfW + localDx) / halfW);
-            handleLocalX = halfW;
+            anchorLocalX = halfW;
             break;
           case "resize-left":
             scaleX = Math.max(0.05, (halfW - localDx) / halfW);
-            handleLocalX = -halfW;
+            anchorLocalX = -halfW;
             break;
           case "resize-bottom":
             scaleY = Math.max(0.05, (halfH + localDy) / halfH);
-            handleLocalY = halfH;
+            anchorLocalY = halfH;
             break;
           case "resize-top":
             scaleY = Math.max(0.05, (halfH - localDy) / halfH);
-            handleLocalY = -halfH;
+            anchorLocalY = -halfH;
             break;
         }
         const newWidth = Math.max(1, startElement.width * scaleX);
         const newHeight = Math.max(1, startElement.height * scaleY);
-        // 把手在根空间固定：中心在局部空间的位移 = (1 - scale) * handleLocal
-        const localCenterShiftX = (1 - scaleX) * handleLocalX;
-        const localCenterShiftY = (1 - scaleY) * handleLocalY;
+        // 把手所在边在根空间不动：中心在局部空间的位移 = (1 - scale) * anchorLocal
+        const localCenterShiftX = (1 - scaleX) * anchorLocalX;
+        const localCenterShiftY = (1 - scaleY) * anchorLocalY;
         // 将局部位移转回根坐标系
         const fwdRad = (startElement.rotation * Math.PI) / 180;
         const centerShiftX = localCenterShiftX * Math.cos(fwdRad) - localCenterShiftY * Math.sin(fwdRad);
