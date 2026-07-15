@@ -286,13 +286,20 @@ export function customDeviceDraftDirtyToken(draft: CustomDeviceDraft, anchors: r
 
 export function createSetCustomDeviceDraftCleanBaseline(__appScope: Record<string, any>) {
   return (draft: CustomDeviceDraft, anchors?: readonly Point[]) => {
-  const { createDefaultCustomDeviceTerminalAnchors, customDeviceDraftCleanTokenRef, measurementConfigDraft, measurementConfigDraftRef } = __appScope;
+  const { createDefaultCustomDeviceTerminalAnchors, customDeviceDraftBaselineRef, customDeviceDraftCleanTokenRef, measurementConfigBaselineRef, measurementConfigDraft, measurementConfigDraftRef } = __appScope;
     const nextAnchors = anchors ?? createDefaultCustomDeviceTerminalAnchors(draft.terminalCount, draft.terminalAnchors);
     customDeviceDraftCleanTokenRef.current = customDeviceDraftDirtyToken(
       draft,
       nextAnchors,
       measurementConfigDraftRef.current ?? measurementConfigDraft ?? null
     );
+    if (customDeviceDraftBaselineRef) {
+      customDeviceDraftBaselineRef.current = JSON.parse(JSON.stringify(draft));
+    }
+    if (measurementConfigBaselineRef) {
+      const currentMeasurement = measurementConfigDraftRef.current ?? measurementConfigDraft ?? null;
+      measurementConfigBaselineRef.current = currentMeasurement ? JSON.parse(JSON.stringify(currentMeasurement)) : null;
+    }
   };
 }
 
@@ -305,6 +312,57 @@ export function createCustomDeviceDraftHasUnsavedChanges(__appScope: Record<stri
       measurementConfigDraftRef.current ?? measurementConfigDraft ?? null
     );
     return customDeviceDraftCleanTokenRef.current !== currentToken;
+  };
+}
+
+// 还原当前 tab 或全部 tab 到预设定义
+export function createRevertCustomDeviceDraftCurrentTab(__appScope: Record<string, any>) {
+  return () => {
+  const { customDeviceDraftBaselineRef, customDeviceDialogView, customDeviceDraft, measurementConfigBaselineRef, setCustomDeviceDraft, setMeasurementConfigDraft } = __appScope;
+    const baseline: CustomDeviceDraft | null = customDeviceDraftBaselineRef?.current ?? null;
+    if (!baseline) return;
+    if (customDeviceDialogView === "icon") {
+      setCustomDeviceDraft((current: CustomDeviceDraft) => ({
+        ...current,
+        stateDefinitions: JSON.parse(JSON.stringify(baseline.stateDefinitions)),
+        backgroundImage: baseline.backgroundImage,
+        backgroundImageAssetId: baseline.backgroundImageAssetId,
+        backgroundImageFit: baseline.backgroundImageFit,
+        backgroundImageCleared: baseline.backgroundImageCleared,
+        size: { ...baseline.size },
+        terminalTypes: [...baseline.terminalTypes],
+        terminalLabels: [...baseline.terminalLabels],
+        terminalAnchors: baseline.terminalAnchors.map((p) => ({ ...p })),
+        terminalRoles: [...baseline.terminalRoles],
+        terminalAssociations: [...baseline.terminalAssociations],
+        error: ""
+      }));
+    } else if (customDeviceDialogView === "parameters") {
+      setCustomDeviceDraft((current: CustomDeviceDraft) => ({
+        ...current,
+        params: JSON.parse(JSON.stringify(baseline.params)),
+        error: ""
+      }));
+    } else if (customDeviceDialogView === "measurements") {
+      const measurementBaseline = measurementConfigBaselineRef?.current ?? null;
+      if (measurementBaseline) {
+        const next = JSON.parse(JSON.stringify(measurementBaseline));
+        setMeasurementConfigDraft(next);
+      }
+    }
+  };
+}
+
+export function createRevertCustomDeviceDraftAll(__appScope: Record<string, any>) {
+  return () => {
+  const { customDeviceDraftBaselineRef, measurementConfigBaselineRef, setCustomDeviceDraft, setMeasurementConfigDraft } = __appScope;
+    const baseline: CustomDeviceDraft | null = customDeviceDraftBaselineRef?.current ?? null;
+    if (!baseline) return;
+    setCustomDeviceDraft(JSON.parse(JSON.stringify(baseline)));
+    const measurementBaseline = measurementConfigBaselineRef?.current ?? null;
+    if (measurementBaseline) {
+      setMeasurementConfigDraft(JSON.parse(JSON.stringify(measurementBaseline)));
+    }
   };
 }
 

@@ -5612,6 +5612,34 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .custom-device-tabs {
   margin-top: 2px;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.device-definition-tabs-spacer {
+  flex: 1 1 auto;
+}
+
+.device-definition-tab-action {
+  min-height: 26px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  padding: 2px 10px;
+  color: #475569;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: 4px;
+}
+
+.device-definition-tab-action:hover,
+.device-definition-tab-action:focus-visible {
+  color: #1d4ed8;
+  border-color: #93c5fd;
+  background: #eff6ff;
+  outline: none;
 }
 
 .device-definition-visual-actions,
