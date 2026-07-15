@@ -1,7 +1,11 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import { areCanvasPropsEqual } from "./appExtracted/appCanvasArea";
 import {
   inspectorTabShowsDevicePanel,
+  resolveDeviceDefinitionParameterRowsForDisplay,
+  resolveDeviceModelPanelParameterKeys,
+  resolveCustomDeviceParameterRowsForDisplay,
   resolveInspectorGraphId,
   resolveInspectorTopologyEntry
 } from "./appExtracted/appView";
@@ -47,6 +51,89 @@ describe("app view inspector tab visibility", () => {
     expect(inspectorTabShowsDevicePanel("graph", true)).toBe(false);
     expect(inspectorTabShowsDevicePanel("device", true)).toBe(true);
     expect(inspectorTabShowsDevicePanel("device", false)).toBe(false);
+  });
+});
+
+describe("app view device model parameter keys", () => {
+  test("shows base class E fields together with derived-specific fields", () => {
+    const keys = resolveDeviceModelPanelParameterKeys(
+      ["idx", "name", "node", "control_type", "p_set", "run_stat"],
+      [
+        { cnName: "水电机组型号", enName: "hydroUnitModel", valueType: "string", typicalValue: "" },
+        { cnName: "水轮机类型", enName: "turbineType", valueType: "stringEnum", typicalValue: "" }
+      ],
+      []
+    );
+
+    expect(keys).toEqual([
+      "idx",
+      "name",
+      "node",
+      "control_type",
+      "p_set",
+      "run_stat",
+      "hydroUnitModel",
+      "turbineType"
+    ]);
+  });
+});
+
+describe("app view device definition parameter rows", () => {
+  test("filters polluted base rows from derived component parameter tables", () => {
+    const rows = resolveDeviceDefinitionParameterRowsForDisplay(
+      [
+        { id: "idx", enName: "idx" },
+        { id: "name", enName: "name" },
+        { id: "status", enName: "status" },
+        { id: "hydro", enName: "hydroUnitModel" },
+        { id: "turbine", enName: "turbineType" },
+        { id: "node", enName: "node" }
+      ],
+      [
+        { enName: "hydroUnitModel" },
+        { enName: "turbineType" }
+      ]
+    );
+
+    expect(rows.map((row) => row.enName)).toEqual(["hydroUnitModel", "turbineType"]);
+  });
+
+  test("renders the parameter table from display-filtered rows", () => {
+    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+
+    expect(source).toMatch(/definitionDraftRowsForDisplay\.map\(\(row\)/);
+    expect(source).not.toMatch(/definitionDraftRows\.map\(\(row\)\s*=>\s*\(<tr key=\{row\.id\}/);
+  });
+
+  test("keeps derived edit dialogs from injecting base default parameters", () => {
+    const source = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+
+    expect(source).toMatch(/isDerivedComponentLibrary:\s*customDeviceDraft\.isDerivedComponentLibrary/);
+  });
+
+  test("filters polluted base rows from derived custom component dialogs", () => {
+    const rows = resolveCustomDeviceParameterRowsForDisplay(
+      [
+        { id: "default-idx", enName: "idx" },
+        { id: "default-name", enName: "name" }
+      ],
+      [
+        { id: "status", enName: "status" },
+        { id: "run-stat", enName: "run_stat" },
+        { id: "node", enName: "node" },
+        { id: "pv", enName: "pvModuleModel" },
+        { id: "mppt", enName: "mpptCount" }
+      ],
+      {
+        isDerivedComponentLibrary: true,
+        baseComponentLibrary: "ACGenerator",
+        isDerivedComponentBaseParamName: (name: unknown) =>
+          ["idx", "name", "status", "run_stat", "node"].includes(String(name ?? "").trim())
+      }
+    );
+
+    expect(rows.defaultRows.map((row) => row.enName)).toEqual([]);
+    expect(rows.customRows.map((row) => row.enName)).toEqual(["pvModuleModel", "mpptCount"]);
   });
 });
 

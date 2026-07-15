@@ -4232,7 +4232,8 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   font-weight: 800;
 }
 
-.custom-library-create-dialog input {
+.custom-library-create-dialog input,
+.custom-library-create-dialog select {
   min-width: 0;
   height: 34px;
   padding: 0 10px;
@@ -4244,9 +4245,15 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   outline: none;
 }
 
-.custom-library-create-dialog input:focus-visible {
+.custom-library-create-dialog input:focus-visible,
+.custom-library-create-dialog select:focus-visible {
   border-color: #2563eb;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+
+.custom-library-create-dialog input:disabled {
+  color: #64748b;
+  background: #f8fafc;
 }
 
 .custom-library-create-error {
@@ -6609,13 +6616,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .custom-device-form-grid {
-  grid-template-columns:
-    minmax(0, 1.05fr)
-    minmax(0, 1.05fr)
-    minmax(0, 1.35fr)
-    minmax(0, 0.72fr)
-    minmax(0, 0.82fr)
-    minmax(0, 0.72fr);
+  grid-template-columns: repeat(auto-fit, minmax(142px, 1fr));
   align-items: end;
 }
 
@@ -6698,6 +6699,9 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .custom-device-form-grid .custom-device-container-field,
+.custom-device-form-grid .custom-device-derived-field,
+.custom-device-form-grid .custom-device-derived-cn-field,
+.custom-device-form-grid .custom-device-derived-en-field,
 .custom-device-form-grid .custom-device-resize-field,
 .custom-device-form-grid .custom-device-terminal-count-field {
   min-width: 0;

@@ -13,11 +13,13 @@ import {
   ALLOW_RESIZE_TRANSFORM_PARAM,
   buildDefaultDeviceParameterDefinitions,
   CUSTOM_PARAM_DEFINITIONS_KEY,
+  E_SECTION_COLUMNS,
   TERMINAL_TYPE_LIBRARY_LABELS,
   getTemplateParameterDefinitions,
   inferESection,
   isDoubleContainerTerminalAssociation,
-  resolveDeviceParameterDefinitionExportSettings
+  resolveDeviceParameterDefinitionExportSettings,
+  templateDerivedComponentLibraryInfo as modelTemplateDerivedComponentLibraryInfo
 } from "./model";
 import type { OrthogonalAxis } from "./App";
 import {
@@ -47,6 +49,10 @@ export function fallbackComponentLibraryForCategoryLibrary(categoryLibraryName: 
 }
 
 export function resolveTemplateComponentLibrary(template: DeviceTemplate) {
+  const derivedInfo = modelTemplateDerivedComponentLibraryInfo(template);
+  if (derivedInfo) {
+    return derivedInfo.componentLibrary;
+  }
   const inferred = inferESection(template.kind, template.params);
   if (inferred) {
     return inferred;
@@ -54,6 +60,8 @@ export function resolveTemplateComponentLibrary(template: DeviceTemplate) {
   const categoryLibrary = template.categoryLibrary ?? (template as DeviceTemplate & { attributeLibrary?: string }).attributeLibrary ?? "交流设备";
   return fallbackComponentLibraryForCategoryLibrary(categoryLibrary);
 }
+
+export const templateDerivedComponentLibraryInfo = modelTemplateDerivedComponentLibraryInfo;
 
 export function deviceDefinitionKeyForTemplate(template: DeviceTemplate) {
   return normalizeComponentLibraryName(resolveTemplateComponentLibrary(template)) || template.kind;
@@ -70,14 +78,80 @@ export const isReservedDeviceDefinitionParamName = (enName: string) =>
   enName.trim() === "is_container" || enName.trim() === ALLOW_RESIZE_TRANSFORM_PARAM;
 
 export function createDefinitionDraftRows(template: DeviceTemplate): DeviceDefinitionDraftRow[] {
+  const derivedInfo = modelTemplateDerivedComponentLibraryInfo(template);
+  const exportContextParams = derivedInfo
+    ? { ...template.params, component_type: derivedInfo.derivedComponentLibrary }
+    : template.params;
   return getTemplateParameterDefinitions(template)
-    .filter((definition) => definition.enName !== "component_type" && !isReservedDeviceDefinitionParamName(definition.enName))
+    .filter((definition) =>
+      derivedInfo
+        ? isDerivedComponentSpecificDefinition(template, derivedInfo.baseComponentLibrary, definition)
+        : definition.enName !== "component_type" && !isReservedDeviceDefinitionParamName(definition.enName)
+    )
     .map((definition) => ({
       ...definition,
-      ...resolveDeviceParameterDefinitionExportSettings(template.kind, template.params, definition),
+      ...resolveDeviceParameterDefinitionExportSettings(template.kind, exportContextParams, definition),
       cnName: definition.cnName === definition.enName ? PARAM_LABELS[definition.enName] ?? definition.cnName : definition.cnName,
       id: deviceDefinitionRowId()
     }));
+}
+
+const DERIVED_COMPONENT_BASE_PARAM_NAMES = new Set([
+  "idx",
+  "name",
+  "dev_type",
+  "status",
+  "run_stat",
+  "node",
+  "t1_node",
+  "t2_node",
+  "t3_node",
+  "i_node",
+  "j_node",
+  "control_type",
+  "controlType",
+  "acControlType",
+  "dcControlType",
+  "sourceControlType",
+  "p_set",
+  "q_set",
+  "v_set",
+  "i_set",
+  "alpha",
+  "vbase",
+  "ratedPower",
+  "ratedVoltage",
+  "ratedCapacity",
+  "sourceType"
+]);
+
+export function isDerivedComponentBaseParamName(fieldName: unknown, baseComponentLibrary = "") {
+  const enName = String(fieldName ?? "").trim();
+  if (!enName || enName === "component_type" || isReservedDeviceDefinitionParamName(enName)) {
+    return true;
+  }
+  if (DERIVED_COMPONENT_BASE_PARAM_NAMES.has(enName)) {
+    return true;
+  }
+  return Boolean(baseComponentLibrary && E_SECTION_COLUMNS[baseComponentLibrary]?.includes(enName));
+}
+
+function isDerivedComponentSpecificDefinition(
+  template: DeviceTemplate,
+  baseComponentLibrary: string,
+  definition: DeviceParameterDefinition
+) {
+  const enName = definition.enName.trim();
+  if (isDerivedComponentBaseParamName(enName, baseComponentLibrary)) {
+    return false;
+  }
+  const baseSettings = resolveDeviceParameterDefinitionExportSettings(
+    template.kind,
+    { ...(template.params ?? {}), component_type: baseComponentLibrary },
+    definition
+  );
+  const baseExportName = (baseSettings.exportName || enName).trim();
+  return !isDerivedComponentBaseParamName(baseExportName, baseComponentLibrary);
 }
 
 export const normalizeCustomDeviceTerminalAnchorCoordinate = (value: number) =>
@@ -129,6 +203,10 @@ export function createEmptyCustomDeviceDraft(categoryLibraryName = "交流设备
     componentLibrary: fallbackComponentLibraryForCategoryLibrary(categoryLibraryName),
     componentName: "",
     componentKind: "",
+    isDerivedComponentLibrary: false,
+    derivedFromComponentLibrary: "",
+    derivedComponentLibrary: "",
+    derivedComponentLibraryLabel: "",
     backgroundImage: "",
     backgroundImageAssetId: "",
     backgroundImageFit: "cover",
@@ -151,6 +229,9 @@ export function createEmptyCustomDeviceDraft(categoryLibraryName = "交流设备
 export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, sectionName = resolveTemplateComponentLibrary(template)): CustomDeviceDraft {
   const categoryLibraryName = normalizeCategoryLibraryName(template.categoryLibrary ?? (template as DeviceTemplate & { attributeLibrary?: string }).attributeLibrary ?? "交流设备");
   const section = normalizeComponentLibraryName(sectionName);
+  const derivedInfo = modelTemplateDerivedComponentLibraryInfo(template);
+  const baseComponentLibrary = derivedInfo?.baseComponentLibrary ? normalizeComponentLibraryName(derivedInfo.baseComponentLibrary) : "";
+  const editableComponentLibrary = baseComponentLibrary || section;
   const terminalCount = clampNumber(template.terminalCount, 0, MAX_CUSTOM_DEVICE_TERMINALS);
   const terminalTypes = (template.terminalTypes ?? Array.from({ length: template.terminalCount }, () => template.terminalType)).slice(0, MAX_CUSTOM_DEVICE_TERMINALS) as TerminalType[];
   const terminalAssociations = normalizeContainerTerminalAssociations(
@@ -158,11 +239,13 @@ export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, se
     template.terminalAssociations ?? [],
     terminalCount
   );
-  const exportContextParams = { ...template.params, component_type: section };
+  const parameterExportComponentLibrary = derivedInfo?.derivedComponentLibrary ?? section;
+  const exportContextParams = { ...template.params, component_type: parameterExportComponentLibrary };
   const customParams = getTemplateParameterDefinitions(template)
     .filter((definition) =>
-      definition.enName !== "component_type" &&
-      !isReservedDeviceDefinitionParamName(definition.enName)
+      derivedInfo
+        ? isDerivedComponentSpecificDefinition(template, derivedInfo.baseComponentLibrary, definition)
+        : definition.enName !== "component_type" && !isReservedDeviceDefinitionParamName(definition.enName)
     )
     .map((definition) => ({
       ...definition,
@@ -173,9 +256,13 @@ export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, se
   const stateRows = createDefinitionStateDraftRows(template);
   return {
     categoryLibraryName,
-    componentLibrary: section,
+    componentLibrary: editableComponentLibrary,
     componentName: template.label,
     componentKind: template.custom ? template.kind : "",
+    isDerivedComponentLibrary: Boolean(derivedInfo),
+    derivedFromComponentLibrary: baseComponentLibrary,
+    derivedComponentLibrary: derivedInfo?.derivedComponentLibrary ?? "",
+    derivedComponentLibraryLabel: derivedInfo?.label ?? "",
     backgroundImage: template.params.backgroundImage ?? "",
     backgroundImageAssetId: template.params.backgroundImageAssetId ?? "",
     backgroundImageFit: template.params.backgroundImageFit ?? "cover",
@@ -253,10 +340,14 @@ export function customDefaultDefinitions(
   terminalTypes: TerminalType[],
   options: {
     isContainer?: boolean;
+    isDerivedComponentLibrary?: boolean;
     terminalRoles?: ContainerTerminalRole[];
     terminalAssociations?: ContainerTerminalAssociationValue[];
   } = {}
 ): DeviceParameterDefinition[] {
+  if (options.isDerivedComponentLibrary) {
+    return [];
+  }
   return buildDefaultDeviceParameterDefinitions(terminalTypes, options);
 }
 

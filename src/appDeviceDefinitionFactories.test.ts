@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { readFileSync } from "node:fs";
 
 import {
   createSyncExistingNodesWithTemplateDefinitions
@@ -18,10 +19,12 @@ import {
   createRouteSegmentPointerDistance,
   createResolveDuplicateModelImport,
   createSaveCustomDeviceTemplate,
+  createSaveDeviceDefinitionDraft,
   createSaveDeviceDefinitionVisualDraft,
   createSvgExportReferencedImageHrefById,
   createOpenSvgModelImportFilePicker,
   createOpenStateIconDrawingDialog,
+  createStartCustomComponentCreate,
   createStateIconDrawingKeyDown,
   createStartStateIconDrawingDrag,
   deviceParameterDefinitionsComplianceMessage,
@@ -456,6 +459,158 @@ describe("manual bend interaction helpers", () => {
     expect(syncExistingNodesWithTemplateDefinitions.mock.calls[0][2]({ kind: "other" })).toBe(false);
   });
 
+  test("saving a derived definition parameter draft does not overwrite the base component library", () => {
+    let nextOverrides: Record<string, any> = {};
+    const setDefinitionDraftRows = vi.fn();
+    const scope = {
+      ALLOW_RESIZE_TRANSFORM_PARAM: "allowResizeTransform",
+      definitionDraftRows: [
+        {
+          id: "row-hydro",
+          cnName: "水电机组型号",
+          enName: "hydroUnitModel",
+          valueType: "string",
+          typicalValue: "300 MW混流式机组",
+          readonly: false,
+          exportEnabled: true,
+          exportName: "hydroUnitModel"
+        }
+      ],
+      definitionDraftSection: "ACGenerator",
+      deviceDefinitionKeyForTemplate: () => "ACGenerator",
+      deviceDefinitionOverrideForTemplate: () => undefined,
+      deviceDefinitionRowId: () => "new-row-id",
+      getTemplateParameterDefinitions: () => [],
+      isReservedDeviceDefinitionParamName: () => false,
+      libraryTemplates: [],
+      measurementConfig: { measurementTypes: [], deviceProfiles: [] },
+      measurementConfigDraft: null,
+      measurementConfigDraftRef: { current: null },
+      normalizeComponentLibraryName: (value: string) => value.trim(),
+      normalizeDefinitionRowEnumFields: (row: any) => row,
+      requireEditMode: () => true,
+      selectedDefinitionTemplate: {
+        kind: "ac-hydro-source",
+        label: "交流水力发电机",
+        categoryLibrary: "交流设备",
+        custom: false,
+        size: { width: 92, height: 58 },
+        params: {
+          sourceType: "水力",
+          ratedPower: "300 MW",
+          ratedVoltage: "220 kV"
+        },
+        terminalType: "ac",
+        terminalCount: 1
+      },
+      setDefinitionDraftError: vi.fn(),
+      setDefinitionDraftRows,
+      setDeviceDefinitionOverrides: (updater: (current: Record<string, any>) => Record<string, any>) => {
+        nextOverrides = updater({});
+      },
+      syncExistingNodesWithTemplateDefinitions: vi.fn(),
+      templateAllowsResizeTransform: () => false
+    };
+
+    createSaveDeviceDefinitionDraft(scope)();
+
+    expect(nextOverrides).toHaveProperty("ac-hydro-source");
+    expect(nextOverrides).not.toHaveProperty("ACGenerator");
+    expect(nextOverrides["ac-hydro-source"]).toMatchObject({
+      kind: "ac-hydro-source",
+      params: {
+        component_type: "ACGenerator",
+        derived_component_type: "ACHydroGen",
+        derived_from_component_type: "ACGenerator",
+        derived_component_library_label: "交流水电",
+        is_derived_component_library: "1",
+        hydroUnitModel: "300 MW混流式机组"
+      },
+      parameterDefinitions: [
+        expect.objectContaining({
+          enName: "hydroUnitModel",
+          exportName: "hydroUnitModel"
+        })
+      ]
+    });
+    expect(setDefinitionDraftRows).toHaveBeenCalledWith([
+      expect.objectContaining({ enName: "hydroUnitModel", id: "new-row-id" })
+    ]);
+  });
+
+  test("rejects derived definition parameters that duplicate base component fields", () => {
+    const setDefinitionDraftError = vi.fn();
+    const setDeviceDefinitionOverrides = vi.fn();
+    const syncExistingNodesWithTemplateDefinitions = vi.fn();
+    const scope = {
+      ALLOW_RESIZE_TRANSFORM_PARAM: "allowResizeTransform",
+      createDefinitionDraftRows: () => [
+        {
+          id: "row-nuclear",
+          cnName: "核电机组型号",
+          enName: "nuclearUnitModel",
+          valueType: "string",
+          typicalValue: "1000 MW压水堆机组"
+        }
+      ],
+      definitionDraftRows: [
+        {
+          id: "row-p-set",
+          cnName: "有功设定",
+          enName: "p_set",
+          valueType: "float",
+          typicalValue: "100"
+        },
+        {
+          id: "row-nuclear",
+          cnName: "核电机组型号",
+          enName: "nuclearUnitModel",
+          valueType: "string",
+          typicalValue: "1000 MW压水堆机组"
+        }
+      ],
+      definitionDraftSection: "ACGenerator",
+      deviceDefinitionKeyForTemplate: () => "ACGenerator",
+      deviceDefinitionOverrideForTemplate: () => undefined,
+      deviceDefinitionRowId: () => "new-row-id",
+      getTemplateParameterDefinitions: () => [],
+      isReservedDeviceDefinitionParamName: () => false,
+      libraryTemplates: [],
+      measurementConfig: { measurementTypes: [], deviceProfiles: [] },
+      measurementConfigDraft: null,
+      measurementConfigDraftRef: { current: null },
+      normalizeComponentLibraryName: (value: string) => value.trim(),
+      normalizeDefinitionRowEnumFields: (row: any) => row,
+      requireEditMode: () => true,
+      selectedDefinitionTemplate: {
+        kind: "ac-nuclear-source",
+        label: "交流核能发电机",
+        categoryLibrary: "交流设备",
+        custom: false,
+        size: { width: 92, height: 58 },
+        params: {
+          sourceType: "核能",
+          ratedPower: "1000 MW",
+          ratedVoltage: "500 kV"
+        },
+        terminalType: "ac",
+        terminalCount: 1
+      },
+      setDefinitionDraftError,
+      setDefinitionDraftRows: vi.fn(),
+      setDeviceDefinitionOverrides,
+      syncExistingNodesWithTemplateDefinitions,
+      templateAllowsResizeTransform: () => false
+    };
+
+    createSaveDeviceDefinitionDraft(scope)();
+
+    expect(setDefinitionDraftError).toHaveBeenCalledWith(expect.stringContaining("p_set"));
+    expect(setDefinitionDraftError.mock.calls[0]?.[0]).toContain("基类");
+    expect(setDeviceDefinitionOverrides).not.toHaveBeenCalled();
+    expect(syncExistingNodesWithTemplateDefinitions).not.toHaveBeenCalled();
+  });
+
   test("applying an existing image to the state icon frame sets a platform background reference", async () => {
     let dialog: any = {
       frame: {
@@ -633,6 +788,131 @@ describe("manual bend interaction helpers", () => {
     expect(scope.nextCustomTemplateKind).not.toHaveBeenCalled();
   });
 
+  test("saves a derived custom device inside the base component library without creating a component library", () => {
+    let customDeviceDraft = {
+      categoryLibraryName: "交流设备",
+      componentLibrary: "ACGenerator",
+      componentName: "用户风电机组",
+      componentKind: "custom-user-wind-generator",
+      isDerivedComponentLibrary: true,
+      derivedFromComponentLibrary: "ACGenerator",
+      derivedComponentLibrary: "UserWindGen",
+      derivedComponentLibraryLabel: "用户风电",
+      backgroundImage: "",
+      backgroundImageAssetId: "",
+      backgroundImageCleared: "",
+      size: { width: 104, height: 64 },
+      allowResizeTransform: "0",
+      terminalCount: 1,
+      terminalTypes: ["ac"],
+      terminalLabels: ["交流发电机端"],
+      terminalAnchors: [{ x: -0.5, y: 0 }],
+      terminalRoles: ["single-source"],
+      terminalAssociations: ["ac-generator"],
+      isContainer: false,
+      params: [
+        { id: "base-idx", cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "" },
+        { id: "base-status", cnName: "运行状态", enName: "status", valueType: "numberEnum", typicalValue: "1" },
+        { id: "base-rated", cnName: "额定功率", enName: "ratedPower", valueType: "string", typicalValue: "50 MW" },
+        { id: "derived-capacity", cnName: "装机容量", enName: "installedCapacity", valueType: "string", typicalValue: "120 MW" }
+      ],
+      stateDefinitions: [],
+      error: ""
+    };
+    let savedTemplates: any[] = [];
+    const setCustomComponentLibraries = vi.fn();
+    const customDefaultDefinitions = vi.fn((_terminalTypes: any[], options?: { isDerivedComponentLibrary?: boolean }) =>
+      options?.isDerivedComponentLibrary
+        ? []
+        : [{ cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true }]
+    );
+    const scope = {
+      ALLOW_RESIZE_TRANSFORM_PARAM: "allowResizeTransform",
+      TERMINAL_TYPE_LIBRARY_LABELS: { ac: "交流" },
+      closeCustomDeviceDialog: vi.fn(),
+      customComponentLibraries: [],
+      customDefaultDefinitions,
+      get customDeviceDraft() {
+        return customDeviceDraft;
+      },
+      customDeviceGeneratedDefaultImageCandidates: () => [],
+      customDeviceImageWithTerminalConnectors: (image: string) => image,
+      customDeviceTemplates: [],
+      customDeviceTerminalAnchors: [{ x: -0.5, y: 0 }],
+      defaultComponentLibraryForCategoryLibrary: () => "ACGenerator",
+      editingCustomDeviceKind: "",
+      ensureCustomComponentTreeExpanded: vi.fn(),
+      generateCustomDeviceImage: () => "data:image/svg+xml,%3Csvg%2F%3E",
+      hasOverlappingCustomDeviceTerminalAnchors: () => false,
+      isBuiltInComponentLibrary: () => false,
+      isReservedDeviceDefinitionParamName: () => false,
+      isDerivedComponentBaseParamName: (name: unknown) =>
+        ["idx", "name", "status", "run_stat", "node", "ratedPower"].includes(String(name ?? "").trim()),
+      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name),
+      measurementConfig: { measurementTypes: [], deviceProfiles: [] },
+      measurementConfigDraft: undefined,
+      measurementConfigDraftRef: undefined,
+      nextCustomTemplateKind: vi.fn(() => "custom-user-wind-generator"),
+      normalizeCategoryLibraryName: (name: string) => name.trim(),
+      normalizeComponentLibraryName: (name: string) => name.trim(),
+      normalizeContainerTerminalAssociations: (_terminalTypes: any, values: any[]) => values,
+      normalizeCustomComponentLibraries: (value: unknown) => value as any[],
+      normalizeDefinitionRowEnumFields: (row: any) => row,
+      persistDeviceLibraryChange: vi.fn(),
+      requireEditMode: () => true,
+      setCustomComponentLibraries,
+      setCustomComponentTreeSelection: vi.fn(),
+      setCustomDeviceDraft: (updater: any) => {
+        customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
+      },
+      setCustomDeviceDraftCleanBaseline: vi.fn(),
+      setCustomDeviceSaveMessage: vi.fn(),
+      setCustomDeviceTemplates: (templates: any[]) => {
+        savedTemplates = templates;
+      },
+      setEditingCustomDeviceKind: vi.fn(),
+      setExpandedCategoryLibraries: vi.fn(),
+      showGlobalMessage: vi.fn(),
+      syncExistingNodesWithTemplateDefinitions: vi.fn(),
+      syncInheritedCustomDeviceStateVisuals: (states: any[]) => states,
+      validateContainerTerminalAssociations: () => ({ valid: true }),
+      validateStateDraftRows: (states: any[]) => ({ states, error: "" }),
+      writeOperationLog: vi.fn()
+    };
+
+    const saved = createSaveCustomDeviceTemplate(scope)();
+
+    expect(saved).toBe(true);
+    expect(customDefaultDefinitions).toHaveBeenCalledWith(["ac"], expect.objectContaining({
+      isDerivedComponentLibrary: true
+    }));
+    expect(savedTemplates[0]).toMatchObject({
+      kind: "custom-user-wind-generator",
+      label: "用户风电机组",
+      categoryLibrary: "交流设备",
+      isContainer: false,
+      isDerivedComponentLibrary: true,
+      derivedFromComponentLibrary: "ACGenerator",
+      derivedComponentLibrary: "UserWindGen",
+      derivedComponentLibraryLabel: "用户风电",
+      params: {
+        component_type: "ACGenerator",
+        derived_from_component_type: "ACGenerator",
+        derived_component_type: "UserWindGen",
+        derived_component_library_label: "用户风电"
+      }
+    });
+    expect(savedTemplates[0].parameterDefinitions.map((row: any) => row.enName)).toEqual(["installedCapacity"]);
+    expect(setCustomComponentLibraries).not.toHaveBeenCalled();
+    expect(scope.ensureCustomComponentTreeExpanded).toHaveBeenCalledWith("交流设备", "ACGenerator");
+    expect(scope.setCustomComponentTreeSelection).toHaveBeenCalledWith({
+      kind: "component",
+      categoryLibraryName: "交流设备",
+      section: "ACGenerator",
+      templateKind: "custom-user-wind-generator"
+    });
+  });
+
   test("creating a category library does not create a duplicate component library", () => {
     let customCategoryLibraries: string[] = [];
     let customComponentLibraries: any[] = [];
@@ -698,6 +978,156 @@ describe("manual bend interaction helpers", () => {
       componentLibrary: "",
       error: ""
     });
+  });
+
+  test("creating a component from the dialog initializes derived-class metadata", () => {
+    let customDeviceDraft: any = {
+      categoryLibraryName: "交流设备",
+      componentLibrary: "ACGenerator",
+      componentName: "",
+      error: ""
+    };
+    let customLibraryCreateDialog: any = {
+      kind: "component",
+      title: "新建元件",
+      cnName: "用户风电机组",
+      enName: "custom-user-wind-generator",
+      categoryLibraryName: "交流设备",
+      componentLibrary: "ACGenerator",
+      isDerivedComponentLibrary: true,
+      derivedFromComponentLibrary: "ACGenerator",
+      derivedComponentLibrary: "UserWindGen",
+      derivedComponentLibraryLabel: "用户风电",
+      error: ""
+    };
+    const setCustomComponentTreeSelection = vi.fn();
+    const setCustomDeviceDefinitionMode = vi.fn();
+    const setCustomDeviceDialogView = vi.fn();
+    const setCustomDeviceDraftCleanBaseline = vi.fn();
+    const setCustomDeviceStatePageId = vi.fn();
+
+    const scope = {
+      DEFAULT_STATE_PAGE_ID: "default",
+      cancelPendingCustomComponentTemplateLoad: vi.fn(),
+      categoryLibraries: ["交流设备"],
+      componentLibraryOptions: ["ACGenerator"],
+      createEmptyCustomDeviceDraft: (categoryLibraryName = "") => ({
+        categoryLibraryName,
+        componentLibrary: "",
+        componentName: "",
+        componentKind: "",
+        isDerivedComponentLibrary: false,
+        derivedFromComponentLibrary: "",
+        derivedComponentLibrary: "",
+        derivedComponentLibraryLabel: "",
+        isContainer: false,
+        error: ""
+      }),
+      customDeviceTemplates: [],
+      defaultComponentLibraryForCategoryLibrary: () => "ACGenerator",
+      get customDeviceDraft() {
+        return customDeviceDraft;
+      },
+      get customLibraryCreateDialog() {
+        return customLibraryCreateDialog;
+      },
+      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name),
+      libraryTemplates: [],
+      normalizeCategoryLibraryName: (name: string) => name.trim(),
+      normalizeComponentLibraryName: (name: string) => name.trim(),
+      normalizeCustomCategoryLibraries: (value: unknown) => value as string[],
+      normalizeCustomComponentLibraries: (value: unknown) => value as any[],
+      requireEditMode: () => true,
+      setCustomCategoryLibraries: vi.fn(),
+      setCustomComponentLibraries: vi.fn(),
+      setCustomComponentTreeSelection,
+      setCustomDeviceDefinitionMode,
+      setCustomDeviceDialogView,
+      setCustomDeviceDraft: (updater: any) => {
+        customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
+      },
+      setCustomDeviceDraftCleanBaseline,
+      setCustomDeviceSaveMessage: vi.fn(),
+      setCustomDeviceStatePageId,
+      setCustomLibraryCreateDialog: (updater: any) => {
+        customLibraryCreateDialog = typeof updater === "function" ? updater(customLibraryCreateDialog) : updater;
+      },
+      setEditingCustomDeviceKind: vi.fn(),
+      setExpandedCategoryLibraries: vi.fn(),
+      setSelectedDefinitionKind: vi.fn()
+    };
+
+    const created = createConfirmCustomLibraryCreateDialog(scope)();
+
+    expect(created).toBe(true);
+    expect(setCustomDeviceDefinitionMode).toHaveBeenCalledWith("create");
+    expect(setCustomDeviceDialogView).toHaveBeenCalledWith("icon");
+    expect(setCustomDeviceStatePageId).toHaveBeenCalledWith("default");
+    expect(setCustomComponentTreeSelection).toHaveBeenCalledWith({
+      kind: "componentLibrary",
+      categoryLibraryName: "交流设备",
+      section: "ACGenerator"
+    });
+    expect(customDeviceDraft).toMatchObject({
+      categoryLibraryName: "交流设备",
+      componentLibrary: "ACGenerator",
+      componentName: "用户风电机组",
+      componentKind: "custom-user-wind-generator",
+      isDerivedComponentLibrary: true,
+      derivedFromComponentLibrary: "ACGenerator",
+      derivedComponentLibrary: "UserWindGen",
+      derivedComponentLibraryLabel: "用户风电",
+      isContainer: false,
+      error: ""
+    });
+    expect(setCustomDeviceDraftCleanBaseline).toHaveBeenCalledWith(expect.objectContaining({
+      isDerivedComponentLibrary: true,
+      derivedComponentLibrary: "UserWindGen",
+      isContainer: false
+    }));
+    expect(customLibraryCreateDialog).toBeNull();
+  });
+
+  test("opening the new component dialog carries derived-class creation defaults", () => {
+    let customLibraryCreateDialog: any = null;
+    const scope = {
+      customComponentTreeSelection: {
+        kind: "componentLibrary",
+        categoryLibraryName: "交流设备",
+        section: "ACGenerator"
+      },
+      defaultComponentLibraryForCategoryLibrary: () => "ACGenerator",
+      nextCustomTemplateKind: (section: string) => `custom-${section}`,
+      normalizeCategoryLibraryName: (name: string) => name.trim(),
+      requireEditMode: () => true,
+      setCustomLibraryCreateDialog: (value: any) => {
+        customLibraryCreateDialog = value;
+      }
+    };
+
+    createStartCustomComponentCreate(scope)();
+
+    expect(customLibraryCreateDialog).toMatchObject({
+      kind: "component",
+      title: "新建元件",
+      categoryLibraryName: "交流设备",
+      componentLibrary: "ACGenerator",
+      isDerivedComponentLibrary: false,
+      derivedFromComponentLibrary: "ACGenerator",
+      derivedComponentLibrary: "",
+      derivedComponentLibraryLabel: ""
+    });
+  });
+
+  test("custom-device form exposes derived-class fields separately from the container flag", () => {
+    const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+
+    expect(appViewSource).toContain("custom-library-create-derived-field");
+    expect(appViewSource).toContain("custom-device-derived-field");
+    expect(appViewSource).toContain("custom-device-derived-cn-field");
+    expect(appViewSource).toContain("custom-device-derived-en-field");
+    expect(appViewSource).not.toContain("disabled={customDeviceDraft.isDerivedComponentLibrary}");
+    expect(appViewSource).not.toContain("customDeviceDraft.isDerivedComponentLibrary || customDeviceDraft.isContainer");
   });
 
   test("asks for confirmation before deleting an empty category library", () => {

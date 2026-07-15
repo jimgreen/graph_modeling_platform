@@ -1091,6 +1091,9 @@ export function groupDeviceTemplatesByCategoryLibraryAndComponentLibrary(
     entry.typeMap.set(entry.section, [...(entry.typeMap.get(entry.section) ?? []), { ...template, categoryLibrary: entry.group }]);
   }
   for (const componentLibrary of customComponentLibraries) {
+    if (componentLibrary.isDerivedComponentLibrary) {
+      continue;
+    }
     ensureSection(componentLibrary.categoryLibraryName, componentLibrary.name);
   }
   return Object.fromEntries(
@@ -1154,8 +1157,7 @@ export function filterSelectionTreeLabel(label: string, typeKey: string) {
 }
 
 export const filterSelectionTemplateComponentLibraryKey = (template: DeviceTemplate) =>
-  inferESection(template.kind, {}) ||
-  inferESection(template.kind, template.params) ||
+  resolveTemplateComponentLibrary(template) ||
   String(template.params.component_type || template.params.componentLibrary || (template.params as { componentType?: string }).componentType || template.kind);
 
 export function libraryTemplateMatchesSearch(
@@ -1296,6 +1298,11 @@ export function isValidComponentLibraryName(name: string): boolean {
   return DEVICE_TYPE_NAME_PATTERN.test(name);
 }
 
+function persistenceFlagIsYes(value: unknown): boolean {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "是";
+}
+
 export function normalizeCustomComponentLibraries(value: unknown, reservedTypes: readonly string[] = E_SECTION_OPTIONS): CustomComponentLibraryDefinition[] {
   if (!Array.isArray(value)) {
     return [];
@@ -1310,14 +1317,30 @@ export function normalizeCustomComponentLibraries(value: unknown, reservedTypes:
           cnName?: unknown;
           chineseName?: unknown;
           displayName?: unknown;
+          derivedFromComponentLibrary?: unknown;
+          isDerivedComponentLibrary?: unknown;
+          isContainerComponentLibrary?: unknown;
         }
         : undefined;
       const name = normalizeComponentLibraryName(String(raw?.name ?? item ?? ""));
       const categoryLibraryName = normalizeCategoryLibraryName(String(raw?.categoryLibraryName ?? raw?.attributeLibraryName ?? defaultCategoryLibraryForComponentLibrary(name)));
       const label = String(raw?.label ?? raw?.cnName ?? raw?.chineseName ?? raw?.displayName ?? "").trim();
-      return label ? { name, categoryLibraryName, label } : { name, categoryLibraryName };
+      const derivedFromComponentLibrary = normalizeComponentLibraryName(String(raw?.derivedFromComponentLibrary ?? ""));
+      const isDerivedComponentLibrary = persistenceFlagIsYes(raw?.isDerivedComponentLibrary);
+      const isContainerComponentLibrary = persistenceFlagIsYes(raw?.isContainerComponentLibrary);
+      return {
+        name,
+        categoryLibraryName,
+        ...(label ? { label } : {}),
+        ...(isDerivedComponentLibrary ? { isDerivedComponentLibrary: true } : {}),
+        ...(derivedFromComponentLibrary ? { derivedFromComponentLibrary } : {}),
+        ...(isContainerComponentLibrary ? { isContainerComponentLibrary: true } : {})
+      };
     })
     .filter((componentLibrary) => {
+      if (componentLibrary.isDerivedComponentLibrary) {
+        return false;
+      }
       if (!isValidComponentLibraryName(componentLibrary.name)) {
         return false;
       }
@@ -1690,6 +1713,51 @@ export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[]
       if (normalizedComponentLibraryParam) {
         params.component_type = normalizedComponentLibraryParam;
       }
+      const derivedFromComponentLibrary = normalizeComponentLibraryName(String(
+        template.derivedFromComponentLibrary ??
+        rawParams.derived_from_component_type ??
+        (rawParams as { derivedFromComponentLibrary?: unknown }).derivedFromComponentLibrary ??
+        ""
+      ));
+      const derivedComponentLibrary = normalizeComponentLibraryName(String(
+        template.derivedComponentLibrary ??
+        rawParams.derived_component_type ??
+        (rawParams as { derivedComponentLibrary?: unknown }).derivedComponentLibrary ??
+        ""
+      ));
+      const derivedComponentLibraryLabel = String(
+        template.derivedComponentLibraryLabel ??
+        rawParams.derived_component_library_label ??
+        (rawParams as { derivedComponentLibraryLabel?: unknown }).derivedComponentLibraryLabel ??
+        ""
+      ).trim();
+      const legacyDerivedComponentLibrary = normalizedComponentLibraryParam &&
+        derivedFromComponentLibrary &&
+        normalizedComponentLibraryParam.toLowerCase() !== derivedFromComponentLibrary.toLowerCase()
+          ? normalizedComponentLibraryParam
+          : "";
+      const migratedDerivedComponentLibrary = derivedComponentLibrary || legacyDerivedComponentLibrary;
+      const isDerivedComponentLibrary = persistenceFlagIsYes(template.isDerivedComponentLibrary) ||
+        persistenceFlagIsYes(rawParams.is_derived_component_library ?? (rawParams as { isDerivedComponentLibrary?: unknown }).isDerivedComponentLibrary) ||
+        Boolean(derivedFromComponentLibrary && migratedDerivedComponentLibrary);
+      if (isDerivedComponentLibrary && derivedFromComponentLibrary) {
+        params.component_type = derivedFromComponentLibrary;
+        params.derived_from_component_type = derivedFromComponentLibrary;
+        params.is_derived_component_library = "1";
+        if (migratedDerivedComponentLibrary) {
+          params.derived_component_type = migratedDerivedComponentLibrary;
+        } else {
+          delete params.derived_component_type;
+        }
+        if (derivedComponentLibraryLabel) {
+          params.derived_component_library_label = derivedComponentLibraryLabel;
+        }
+      } else {
+        delete params.derived_component_type;
+        delete params.derived_from_component_type;
+        delete params.derived_component_library_label;
+        delete params.is_derived_component_library;
+      }
       const backgroundImage = customDeviceImageWithTerminalConnectors(
         String(params.backgroundImage ?? ""),
         terminalTypes.slice(0, terminalCount),
@@ -1716,6 +1784,12 @@ export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[]
         terminalRoles: (template.terminalRoles ?? []).slice(0, MAX_CUSTOM_DEVICE_TERMINALS) as ContainerTerminalRole[],
         terminalAssociations: (template.terminalAssociations ?? []).slice(0, MAX_CUSTOM_DEVICE_TERMINALS) as ContainerTerminalAssociationValue[],
         isContainer: Boolean(template.isContainer),
+        ...(isDerivedComponentLibrary ? {
+          isDerivedComponentLibrary: true,
+          derivedFromComponentLibrary,
+          derivedComponentLibrary: params.derived_component_type ?? "",
+          derivedComponentLibraryLabel
+        } : {}),
         allowResizeTransform: templateAllowsResizeTransform({ ...template, params: rawParams }),
         custom: true,
         parameterDefinitions: normalizeDefinitionRows(template.parameterDefinitions ?? []),

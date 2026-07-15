@@ -684,6 +684,9 @@ export type CustomComponentLibraryDefinition = {
   name: string;
   categoryLibraryName: CategoryLibrary;
   label?: string;
+  isDerivedComponentLibrary?: boolean;
+  derivedFromComponentLibrary?: string;
+  isContainerComponentLibrary?: boolean;
 };
 
 export type CategoryLibraryComponentLibraryGroup = {
@@ -1730,6 +1733,10 @@ export type CustomDeviceDraft = {
   componentLibrary: string;
   componentName: string;
   componentKind?: string;
+  isDerivedComponentLibrary: boolean;
+  derivedFromComponentLibrary: string;
+  derivedComponentLibrary: string;
+  derivedComponentLibraryLabel: string;
   backgroundImage: string;
   backgroundImageAssetId: string;
   backgroundImageFit: string;
@@ -2067,6 +2074,16 @@ export const COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   DCLoad: "直流负荷",
   ACGenerator: "交流电源",
   DCGenerator: "直流电源",
+  ACWindGen: "交流风电",
+  DCWindGen: "直流风电",
+  ACPVGen: "交流光伏",
+  DCPVGen: "直流光伏",
+  ACThermalGen: "交流火电",
+  DCThermalGen: "直流火电",
+  ACHydroGen: "交流水电",
+  DCHydroGen: "直流水电",
+  ACNuclearGen: "交流核电",
+  DCNuclearGen: "直流核电",
   ACShuntCompensator: "交流无功补偿",
   ACZeroBranch: "交流零阻支路",
   DCZeroBranch: "直流零阻支路",

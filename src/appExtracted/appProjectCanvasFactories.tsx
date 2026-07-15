@@ -3405,7 +3405,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
         }
         seen.add(value.toLowerCase());
         const label = String(definition?.cnName ?? "").trim();
-        const resolvedLabel = !label || label === value ? (PARAM_LABELS[value] ?? value) : label;
+        const resolvedLabel = !label || label === value ? (PARAM_LABELS?.[value] ?? value) : label;
         return [{
           value,
           label: resolvedLabel !== value ? `${resolvedLabel} (${value})` : value

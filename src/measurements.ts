@@ -4,6 +4,7 @@ import {
   getSafeNodeScaleY,
   getTemplateParameterDefinitions,
   inferESection,
+  templateDerivedComponentLibraryInfo,
   type DeviceParameterDefinition,
   type DeviceTemplate,
   type ModelNode
@@ -91,13 +92,58 @@ export type MeasurementProfilePositionSource = Pick<DeviceTemplate, "kind" | "te
     | "parameterDefinitions"
   >>;
 
+function measurementParameterDefinitionKey(definition: Pick<DeviceParameterDefinition, "enName">) {
+  return String(definition.enName ?? "").trim().toLowerCase();
+}
+
+function mergeMeasurementParameterDefinitions(
+  ...definitionGroups: readonly (readonly DeviceParameterDefinition[] | undefined)[]
+): DeviceParameterDefinition[] {
+  const seen = new Set<string>();
+  const merged: DeviceParameterDefinition[] = [];
+  for (const definitions of definitionGroups) {
+    for (const definition of definitions ?? []) {
+      const key = measurementParameterDefinitionKey(definition);
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      merged.push(definition);
+    }
+  }
+  return merged;
+}
+
+function derivedBaseTemplateForMeasurementSource(
+  source: MeasurementProfilePositionSource,
+  libraryTemplates: readonly DeviceTemplate[] = []
+) {
+  const derivedInfo = templateDerivedComponentLibraryInfo({ ...source, params: source.params ?? {} });
+  if (!derivedInfo) {
+    return undefined;
+  }
+  const baseLibraryKey = String(derivedInfo.baseComponentLibrary ?? "").trim().toLowerCase();
+  if (!baseLibraryKey) {
+    return undefined;
+  }
+  return libraryTemplates.find((template) =>
+    !templateDerivedComponentLibraryInfo(template) &&
+    String(inferESection(template.kind, template.params ?? {})).trim().toLowerCase() === baseLibraryKey
+  );
+}
+
 export function buildMeasurementProfilePositionDefinitions(options: {
   source: MeasurementProfilePositionSource;
   parameterDefinitions?: readonly DeviceParameterDefinition[];
   libraryTemplates?: readonly DeviceTemplate[];
 }): MeasurementProfilePositionDefinition[] {
   const { source } = options;
-  const parentParameterDefinitions = options.parameterDefinitions ?? source.parameterDefinitions ?? [];
+  const directParameterDefinitions = options.parameterDefinitions ?? source.parameterDefinitions ?? [];
+  const derivedBaseTemplate = derivedBaseTemplateForMeasurementSource(source, options.libraryTemplates);
+  const parentParameterDefinitions = mergeMeasurementParameterDefinitions(
+    derivedBaseTemplate ? getTemplateParameterDefinitions(derivedBaseTemplate) : undefined,
+    directParameterDefinitions
+  );
   const positions: MeasurementProfilePositionDefinition[] = [{
     value: "device",
     label: "设备本体",

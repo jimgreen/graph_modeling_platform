@@ -529,7 +529,7 @@ import {
   createProgrammaticImportEDeviceDefinition
 } from "./appExtracted/appDeviceDefinitionFactories";
 import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_PAGE_ID, isDefaultStatePageId, createStateDraftRow, createStateDraftRowFromDefaultVisual, defaultStateDraftRow, createDefinitionStateDraftRows, normalizeStateDraftRows, validateStateDraftRows, stateVisualFromDraftRow, activeStateDraftRow, normalizeStatePageId, stateDraftImageValue, stateIconDrawingDraftSourceImage, stateIconDrawingInlineNeedsDraftReload, stateIconDrawingInlineCanPersistDraft, stateVisualShapeLabel, generateStateVisualShapeImage, stateIconDrawingElementId, visibleStateIconColor, createStateIconDrawingElement, createImportedStateIconElement, svgSourceFromDataUrl, parseStateIconSvgSource, stateIconSvgElementSource, parseSvgStyleAttribute, stateIconSvgReactAttributes, stateIconSvgNodeChildren, stateIconSvgNodeToReact, stateIconSvgSourceToReactNodes, createEditableStateIconElementsFromSvgSource, createStateIconDrawingInitialElements, stateIconDrawingInitialFrame, svgSourceToDataUrl, stateIconDrawingSvgElementMarkup, stateIconDrawingElementMarkup, stateIconDrawingToImage, stateIconDrawingToPersistedImage, stateIconDrawingFrameRect, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "./stateIconDrawing";
-import { fallbackComponentLibraryForCategoryLibrary, resolveTemplateComponentLibrary, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, isReservedDeviceDefinitionParamName, createDefinitionDraftRows, normalizeCustomDeviceTerminalAnchorCoordinate, projectCustomDeviceTerminalAnchorToBoundary, customDeviceTerminalAnchorKey, hasOverlappingCustomDeviceTerminalAnchors, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, createCustomDeviceDraftFromTemplate, createDefinitionVisualDraft, defaultContainerAssociationForTerminalType, isAssociationAllowedForTerminal, normalizeContainerTerminalAssociations, customDefaultDefinitions, generateCustomDeviceImage, customDeviceImageWithTerminalConnectors, customDeviceGeneratedDefaultImageCandidates, syncInheritedCustomDeviceStateVisuals, parseCustomDefinitions, screenToSvgPoint, primaryOrthogonalAxis, constrainPointToOrthogonalAxis } from "./customDeviceUtils";
+import { fallbackComponentLibraryForCategoryLibrary, resolveTemplateComponentLibrary, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, isReservedDeviceDefinitionParamName, isDerivedComponentBaseParamName, createDefinitionDraftRows, normalizeCustomDeviceTerminalAnchorCoordinate, projectCustomDeviceTerminalAnchorToBoundary, customDeviceTerminalAnchorKey, hasOverlappingCustomDeviceTerminalAnchors, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, createCustomDeviceDraftFromTemplate, createDefinitionVisualDraft, defaultContainerAssociationForTerminalType, isAssociationAllowedForTerminal, normalizeContainerTerminalAssociations, customDefaultDefinitions, generateCustomDeviceImage, customDeviceImageWithTerminalConnectors, customDeviceGeneratedDefaultImageCandidates, syncInheritedCustomDeviceStateVisuals, parseCustomDefinitions, screenToSvgPoint, primaryOrthogonalAxis, constrainPointToOrthogonalAxis } from "./customDeviceUtils";
 import { useBatchEditors } from "./hooks/useBatchEditors";
 import { APP_STATIC_SCOPE } from "./appExtracted/appStaticScope";
 import { createRuntimeWsClient } from "./runtimeWsClient";
@@ -4652,6 +4652,7 @@ const customDraftTerminalAssociations = normalizeContainerTerminalAssociations(
 Object.assign(__appScope, { customDraftTerminalAssociations });
 const customDraftDefaultParams = customDefaultDefinitions(customDraftTerminalTypes, {
     isContainer: customDeviceDraft.isContainer,
+    isDerivedComponentLibrary: customDeviceDraft.isDerivedComponentLibrary,
     terminalAssociations: customDraftTerminalAssociations
   }).map((definition) => ({
     ...definition,
@@ -4683,7 +4684,15 @@ const customDraftMergedDefaultParams = customDraftDefaultParams.map((row) => {
       })
     : row;
 });
-const customDraftVisibleParams = customDeviceDraft.params.filter((row) => !customDraftDefaultParamKeySet.has(row.enName.trim().toLowerCase()));
+const customDraftDerivedBaseComponentLibrary =
+  customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary;
+const customDraftParamIsHiddenDerivedBaseRow = (row: { enName?: unknown }) =>
+  customDeviceDraft.isDerivedComponentLibrary &&
+  isDerivedComponentBaseParamName(row.enName, customDraftDerivedBaseComponentLibrary);
+const customDraftVisibleParams = customDeviceDraft.params.filter((row) =>
+  !customDraftDefaultParamKeySet.has(row.enName.trim().toLowerCase()) &&
+  !customDraftParamIsHiddenDerivedBaseRow(row)
+);
 Object.assign(__appScope, { customDraftDefaultParamKeySet, customDraftMergedDefaultParams, customDraftVisibleParams });
 const customDeviceMeasurementParameterDefinitions = [...customDraftMergedDefaultParams, ...customDraftVisibleParams];
 const customDeviceMeasurementPositionDefinitions = buildMeasurementProfilePositionDefinitions({

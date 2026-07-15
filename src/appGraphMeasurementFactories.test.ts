@@ -18,6 +18,7 @@ import {
   createSetImperativeSingleNodeDragOrigin
 } from "./appExtracted/appSelectionDragFactories";
 import { createRenderMeasurementGroup } from "./appExtracted/appToolbarHookFactories";
+import { createDefinitionDraftRows } from "./customDeviceUtils";
 import * as measurementDefinitions from "./measurements";
 import { DEVICE_LIBRARY, getTemplateParameterDefinitions } from "./model";
 import { exportMeasurementItemMetadataAttributes } from "./svgExportUtils";
@@ -133,6 +134,27 @@ describe("measurement canvas interactions", () => {
     ]);
     expect(positions[0].parameterDefinitions.map((definition: any) => definition.enName)).toContain("highResistancePu");
     expect(positions[0].parameterDefinitions.map((definition: any) => definition.enName)).not.toContain("idx_xf_t1");
+  });
+
+  test("offers base fields before derived fields for derived device measurements", () => {
+    const buildMeasurementProfilePositionDefinitions = (measurementDefinitions as any).buildMeasurementProfilePositionDefinitions;
+    expect(buildMeasurementProfilePositionDefinitions).toBeTypeOf("function");
+    const nuclear = DEVICE_LIBRARY.find((template) => template.kind === "ac-nuclear-source")!;
+    const derivedRows = createDefinitionDraftRows(nuclear);
+
+    const positions = buildMeasurementProfilePositionDefinitions({
+      source: nuclear,
+      parameterDefinitions: derivedRows,
+      libraryTemplates: DEVICE_LIBRARY
+    });
+
+    const fieldNames = positions[0].parameterDefinitions.map((definition: any) => definition.enName);
+    expect(fieldNames).toContain("p_set");
+    expect(fieldNames).toContain("run_stat");
+    expect(fieldNames).toContain("nuclearUnitModel");
+    expect(fieldNames.indexOf("p_set")).toBeLessThan(fieldNames.indexOf("nuclearUnitModel"));
+    expect(fieldNames.indexOf("run_stat")).toBeLessThan(fieldNames.indexOf("nuclearUnitModel"));
+    expect(fieldNames.filter((name: string) => name === "p_set")).toHaveLength(1);
   });
 
   test("shows the legacy two-winding transformer profile in the ACTransformer definition", () => {

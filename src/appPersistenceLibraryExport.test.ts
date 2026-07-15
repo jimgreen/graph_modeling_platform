@@ -8,6 +8,7 @@ import {
   deviceLibraryPayloadForPackageScope,
   filterGraphTemplatesByType,
   graphTemplateTypeList,
+  groupDeviceTemplatesByCategoryLibraryAndComponentLibrary,
   groupGraphTemplatesByType,
   isBuiltInCategoryLibrary,
   normalizeLibraryPackage,
@@ -18,6 +19,7 @@ import {
   normalizeDefinitionRows,
   renderEnumValuesEditor
 } from "./appExtracted/appPersistenceLibraryExport";
+import { DEVICE_LIBRARY } from "./model";
 import { DEFAULT_MEASUREMENT_CONFIG } from "./measurements";
 import { svgSourceFromDataUrl } from "./stateIconDrawing";
 
@@ -200,6 +202,129 @@ describe("graph template library filtering", () => {
     ]);
     expect(componentLibraryDisplayParts("CustomPump", normalized).title).toBe("用户泵库 / CustomPump");
     expect(componentLibraryDisplayParts("LegacyMeter", normalized).chinese).toBe("旧量测库");
+  });
+
+  test("normalizes old derived component-library metadata back onto the base component library", () => {
+    const componentLibraries = normalizeCustomComponentLibraries([
+      {
+        name: "UserWindGen",
+        categoryLibraryName: "交流设备",
+        label: "用户风电",
+        isDerivedComponentLibrary: true,
+        derivedFromComponentLibrary: "ACGenerator",
+        isContainerComponentLibrary: true
+      }
+    ] as any);
+
+    expect(componentLibraries).toEqual([]);
+
+    const normalized = normalizeDeviceLibraryPersistencePayload({
+      customDeviceTemplates: [
+        {
+          kind: "custom-user-wind",
+          label: "用户风电机组",
+          categoryLibrary: "交流设备",
+          size: { width: 96, height: 64 },
+          params: {
+            component_type: "UserWindGen",
+            derived_from_component_type: "ACGenerator",
+            derived_component_library_label: "用户风电"
+          },
+          terminalType: "ac",
+          terminalCount: 1,
+          terminalTypes: ["ac"],
+          isContainer: false,
+          isDerivedComponentLibrary: true,
+          derivedFromComponentLibrary: "ACGenerator",
+          derivedComponentLibraryLabel: "用户风电",
+          custom: true
+        }
+      ],
+      customCategoryLibraries: [],
+      customComponentLibraries: componentLibraries,
+      deviceDefinitionOverrides: {},
+      customGraphTemplateTypes: [],
+      customGraphTemplates: []
+    } as any);
+
+    expect(normalized.customComponentLibraries).toEqual([]);
+    expect(normalized.customDeviceTemplates[0]).toMatchObject({
+      isDerivedComponentLibrary: true,
+      derivedFromComponentLibrary: "ACGenerator",
+      derivedComponentLibrary: "UserWindGen",
+      derivedComponentLibraryLabel: "用户风电",
+      params: {
+        component_type: "ACGenerator",
+        derived_from_component_type: "ACGenerator",
+        derived_component_type: "UserWindGen",
+        derived_component_library_label: "用户风电"
+      },
+      isContainer: false
+    });
+  });
+
+  test("migrates legacy derived templates without an explicit derived flag into the base component library", () => {
+    const normalized = normalizeDeviceLibraryPersistencePayload({
+      customDeviceTemplates: [
+        {
+          kind: "custom-legacy-wind",
+          label: "旧版风电机组",
+          categoryLibrary: "交流设备",
+          size: { width: 96, height: 64 },
+          params: {
+            component_type: "UserWindGen",
+            derived_from_component_type: "ACGenerator",
+            derived_component_library_label: "用户风电"
+          },
+          terminalType: "ac",
+          terminalCount: 1,
+          terminalTypes: ["ac"],
+          isContainer: false,
+          custom: true
+        }
+      ],
+      customCategoryLibraries: [],
+      customComponentLibraries: [],
+      deviceDefinitionOverrides: {},
+      customGraphTemplateTypes: [],
+      customGraphTemplates: []
+    } as any);
+
+    expect(normalized.customDeviceTemplates[0]).toMatchObject({
+      isDerivedComponentLibrary: true,
+      derivedFromComponentLibrary: "ACGenerator",
+      derivedComponentLibrary: "UserWindGen",
+      derivedComponentLibraryLabel: "用户风电",
+      params: {
+        component_type: "ACGenerator",
+        derived_from_component_type: "ACGenerator",
+        derived_component_type: "UserWindGen",
+        derived_component_library_label: "用户风电",
+        is_derived_component_library: "1"
+      },
+      isContainer: false
+    });
+  });
+
+  test("shows built-in electric generation derived component library labels", () => {
+    expect(componentLibraryDisplayParts("ACWindGen").title).toBe("交流风电 / ACWindGen");
+    expect(componentLibraryDisplayParts("DCHydroGen").title).toBe("直流水电 / DCHydroGen");
+    expect(componentLibraryDisplayParts("ACNuclearGen").chinese).toBe("交流核电");
+  });
+
+  test("groups built-in generation derived classes under the base power-source component library", () => {
+    const templates = DEVICE_LIBRARY.filter((template) => template.kind === "ac-source" || template.kind === "ac-wind-source" || template.kind === "ac-pv-source");
+    const grouped = groupDeviceTemplatesByCategoryLibraryAndComponentLibrary(templates);
+    const acSections = grouped["交流设备"] ?? [];
+    const acGeneratorSection = acSections.find((section) => section.section === "ACGenerator");
+
+    expect(acGeneratorSection?.templates.map((template: { kind: string }) => template.kind).sort()).toEqual([
+      "ac-pv-source",
+      "ac-source",
+      "ac-wind-source"
+    ]);
+    expect(acSections.some((section) => section.section === "ACWindGen")).toBe(false);
+    expect(acSections.some((section) => section.section === "ACPVGen")).toBe(false);
   });
 
   test("creates icon library packages with only user imported assets", () => {

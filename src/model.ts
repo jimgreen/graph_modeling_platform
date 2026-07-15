@@ -329,6 +329,10 @@ export type DeviceTemplate = {
   terminalRoles?: ContainerTerminalRole[];
   terminalAssociations?: ContainerTerminalAssociationValue[];
   isContainer?: boolean;
+  isDerivedComponentLibrary?: boolean;
+  derivedFromComponentLibrary?: string;
+  derivedComponentLibrary?: string;
+  derivedComponentLibraryLabel?: string;
   allowResizeTransform?: boolean;
   custom?: boolean;
   parameterDefinitions?: DeviceParameterDefinition[];
@@ -348,6 +352,10 @@ export type DeviceTemplateDefinitionOverride = {
   terminalRoles?: ContainerTerminalRole[];
   terminalAssociations?: ContainerTerminalAssociationValue[];
   isContainer?: boolean;
+  isDerivedComponentLibrary?: boolean;
+  derivedFromComponentLibrary?: string;
+  derivedComponentLibrary?: string;
+  derivedComponentLibraryLabel?: string;
   allowResizeTransform?: boolean;
   parameterDefinitions?: DeviceParameterDefinition[];
   stateDefinitions?: DeviceStateDefinition[];
@@ -885,11 +893,6 @@ const ELECTRIC_GENERATION_FAMILY_KIND_SUFFIXES = [
   "hydro-source",
   "nuclear-source"
 ] as const;
-const ELECTRIC_GENERATION_BASE_KIND_SET = new Set<string>(
-  ELECTRIC_GENERATION_TERMINAL_TYPES.flatMap((terminalType) =>
-    ELECTRIC_GENERATION_FAMILY_KIND_SUFFIXES.map((kindSuffix) => `${terminalType}-${kindSuffix}`)
-  )
-);
 const LEGACY_ELECTRIC_GENERATION_BASE_KIND_SET = new Set<string>([
   "ac-wind-source",
   "dc-wind-source",
@@ -901,7 +904,8 @@ const LEGACY_ELECTRIC_GENERATION_BASE_KIND_SET = new Set<string>([
 ]);
 
 export function isElectricGenerationContainerKind(kind: string): boolean {
-  return ELECTRIC_GENERATION_BASE_KIND_SET.has(baseDeviceKind(kind));
+  void kind;
+  return false;
 }
 
 function isLegacyElectricGenerationContainerKind(kind: string): boolean {
@@ -975,6 +979,10 @@ export function inferESection(kind: string, params: Record<string, string> = {})
   const mappedSection = E_KIND_SECTION_MAP[sectionKind];
   if (mappedSection) {
     return mappedSection;
+  }
+  const derivedComponentInfo = templateDerivedComponentLibraryInfo({ kind: sectionKind, params });
+  if (derivedComponentInfo) {
+    return derivedComponentInfo.baseComponentLibrary;
   }
   if (isContainerParams(params)) {
     return "";
@@ -2154,6 +2162,137 @@ function buildEDeviceValuesFromFields(
   return values;
 }
 
+const DERIVED_COMPONENT_METADATA_PARAM_NAMES = new Set([
+  "component_type",
+  "componentType",
+  "componentLibrary",
+  "derived_from_component_type",
+  "derivedFromComponentLibrary",
+  "derived_component_type",
+  "derivedComponentLibrary",
+  "derived_component_library_label",
+  "derivedComponentLibraryLabel",
+  "is_derived_component_library",
+  "isDerivedComponentLibrary"
+]);
+
+const DERIVED_COMPONENT_COMMON_PARAM_NAMES = new Set([
+  "idx",
+  "name",
+  "dev_type",
+  "status",
+  "run_stat",
+  "node",
+  "t1_node",
+  "t2_node",
+  "t3_node",
+  "i_node",
+  "j_node",
+  "control_type",
+  "controlType",
+  "acControlType",
+  "dcControlType",
+  "sourceControlType",
+  "p_set",
+  "q_set",
+  "v_set",
+  "i_set",
+  "alpha",
+  "vbase",
+  "ratedPower",
+  "ratedVoltage",
+  "ratedCapacity",
+  "sourceType"
+]);
+
+function derivedComponentBaseRelationKey(baseComponentLibrary: string): string {
+  const normalizedBase = baseComponentLibrary.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return normalizedBase ? `idx_${normalizedBase}` : "idx_base";
+}
+
+function isDerivedComponentCommonFieldName(fieldName: string, baseComponentLibrary: string): boolean {
+  if (!fieldName || fieldName.startsWith("_")) {
+    return true;
+  }
+  return (
+    DERIVED_COMPONENT_METADATA_PARAM_NAMES.has(fieldName) ||
+    DERIVED_COMPONENT_COMMON_PARAM_NAMES.has(fieldName) ||
+    Boolean(E_SECTION_COLUMNS[baseComponentLibrary]?.includes(fieldName))
+  );
+}
+
+function resolveDerivedComponentParameterFields(
+  kind: string,
+  params: Record<string, string>,
+  definitions: readonly DeviceParameterDefinition[],
+  baseComponentLibrary: string,
+  derivedComponentLibrary: string
+): EParameterField[] {
+  const baseFields = resolveEParameterFields(kind, { ...params, component_type: baseComponentLibrary });
+  const baseFieldNames = new Set(
+    baseFields.flatMap((field) => [field.sourceName, field.exportName])
+  );
+  const derivedParams = { ...params, component_type: derivedComponentLibrary };
+  const fields: EParameterField[] = [];
+  const seenExportNames = new Set<string>();
+  for (const definition of definitions) {
+    const sourceName = String(definition.enName ?? "").trim();
+    if (
+      isDerivedComponentCommonFieldName(sourceName, baseComponentLibrary) ||
+      baseFieldNames.has(sourceName)
+    ) {
+      continue;
+    }
+    const settings = resolveDeviceParameterDefinitionExportSettings(kind, derivedParams, definition);
+    if (!settings.exportEnabled) {
+      continue;
+    }
+    const exportName = (settings.exportName || sourceName).trim();
+    if (
+      isDerivedComponentCommonFieldName(exportName, baseComponentLibrary) ||
+      baseFieldNames.has(exportName) ||
+      seenExportNames.has(exportName)
+    ) {
+      continue;
+    }
+    seenExportNames.add(exportName);
+    fields.push({ sourceName, exportName, definition });
+  }
+  return fields;
+}
+
+function buildDerivedComponentEDeviceRecord(
+  node: Pick<ModelNode, "id" | "kind" | "name" | "nodeNumber" | "terminals" | "params">,
+  baseIdx: string,
+  derivedIdx: string
+): EDeviceExport | null {
+  const derivedInfo = templateDerivedComponentLibraryInfo({ kind: node.kind, params: node.params });
+  if (!derivedInfo) {
+    return null;
+  }
+  const relationKey = derivedComponentBaseRelationKey(derivedInfo.baseComponentLibrary);
+  const fields = resolveDerivedComponentParameterFields(
+    node.kind,
+    node.params,
+    customEParameterDefinitions(node.params),
+    derivedInfo.baseComponentLibrary,
+    derivedInfo.derivedComponentLibrary
+  );
+  const fieldValues = buildEDeviceValuesFromFields(node, fields, { preferTopologyNodeNumbers: true });
+  const columns = ["idx", relationKey, ...fields.map((field) => field.exportName)];
+  return {
+    id: `${node.id}:derived:${derivedInfo.derivedComponentLibrary}`,
+    kind: `${node.kind}:derived:${derivedInfo.derivedComponentLibrary}`,
+    section: derivedInfo.derivedComponentLibrary,
+    params: {
+      idx: derivedIdx,
+      [relationKey]: baseIdx,
+      ...fieldValues
+    },
+    columns
+  };
+}
+
 export function buildEDeviceValues(
   node: Pick<ModelNode, "kind" | "name" | "nodeNumber" | "terminals" | "params">,
   options: EParamValueOptions = {}
@@ -2327,6 +2466,9 @@ function buildContainerAssociatedDevices(nodes: ModelNode[]): EDeviceExport[] {
     if (!isContainerParams(node.params)) {
       continue;
     }
+    if (templateDerivedComponentLibraryInfo({ kind: node.kind, params: node.params })) {
+      continue;
+    }
     const consumed = new Set<string>();
     const entries = Object.keys(node.params)
       .map((fieldName) => {
@@ -2372,30 +2514,49 @@ function buildEDeviceRecords(project: ProjectFile): EDeviceExport[] {
   const topologyNodes = calculateElectricalTopology(project.nodes, project.edges);
   const topologyNodeDevices = buildTopologyNodeDevices(topologyNodes);
   const containerAssociatedDevices = buildContainerAssociatedDevices(topologyNodes);
-  const deviceRecords = topologyNodes
-    .map<EDeviceExport | null>((node) => {
-      const section = inferESection(node.kind, node.params);
-      if (!section || section === "ACNode" || section === "DCNode") {
-        return null;
+  const deviceRecords: EDeviceExport[] = [];
+  const derivedDeviceRecords: EDeviceExport[] = [];
+  const sectionRowCounts = new Map<string, number>();
+  const derivedSectionRowCounts = new Map<string, number>();
+  for (const node of topologyNodes) {
+    const section = inferESection(node.kind, node.params);
+    if (!section || section === "ACNode" || section === "DCNode") {
+      continue;
+    }
+    const fields = resolveEParameterFields(node.kind, node.params);
+    const columns = fields.map((field) => field.exportName);
+    if (columns.length === 0) {
+      continue;
+    }
+    const params = buildEDeviceValuesFromFields(node, fields, { preferTopologyNodeNumbers: true });
+    const sectionRowCount = (sectionRowCounts.get(section) ?? 0) + 1;
+    sectionRowCounts.set(section, sectionRowCount);
+    const baseIdx = firstNumericToken(String(params.idx || node.params.idx || "")) || String(sectionRowCount);
+    if (columns.includes("idx") && !params.idx) {
+      params.idx = baseIdx;
+    }
+    deviceRecords.push({
+      id: node.id,
+      kind: node.kind,
+      section,
+      params,
+      columns
+    });
+    const derivedInfo = templateDerivedComponentLibraryInfo({ kind: node.kind, params: node.params });
+    if (derivedInfo) {
+      const derivedSectionRowCount = (derivedSectionRowCounts.get(derivedInfo.derivedComponentLibrary) ?? 0) + 1;
+      derivedSectionRowCounts.set(derivedInfo.derivedComponentLibrary, derivedSectionRowCount);
+      const derivedRecord = buildDerivedComponentEDeviceRecord(node, baseIdx, String(derivedSectionRowCount));
+      if (derivedRecord) {
+        derivedDeviceRecords.push(derivedRecord);
       }
-      const fields = resolveEParameterFields(node.kind, node.params);
-      const columns = fields.map((field) => field.exportName);
-      if (columns.length === 0) {
-        return null;
-      }
-      return {
-        id: node.id,
-        kind: node.kind,
-        section,
-        params: buildEDeviceValuesFromFields(node, fields, { preferTopologyNodeNumbers: true }),
-        columns
-      };
-    })
-    .filter((device): device is EDeviceExport => Boolean(device));
+    }
+  }
 
   return [
     ...topologyNodeDevices,
     ...deviceRecords,
+    ...derivedDeviceRecords,
     ...containerAssociatedDevices
   ];
 }
@@ -2657,6 +2818,9 @@ export type EDeviceDefinitionSection = {
   categoryLibrary: string;
   componentLibrary: string;
   originalComponentLibrary?: string;
+  derivedFromComponentLibrary?: string;
+  isDerivedComponentLibrary?: boolean;
+  isContainerComponentLibrary?: boolean;
   fields: EDeviceDefinitionField[];
 };
 
@@ -2677,7 +2841,10 @@ function formatEDeviceDefinitionSection(section: EDeviceDefinitionSection): stri
     .join(E_FILE_COLUMN_GAP)
     .trimEnd();
   const libraryAttr = section.originalComponentLibrary ? ` 元件库="${escapeEDefinitionAttr(section.originalComponentLibrary)}"` : "";
-  const attrs = `中文名="${escapeEDefinitionAttr(section.label)}" 类别库="${escapeEDefinitionAttr(section.categoryLibrary)}"${libraryAttr}`;
+  const derivedAttr = section.isDerivedComponentLibrary ? ` 是否派生新类="是"` : "";
+  const derivedBaseAttr = section.derivedFromComponentLibrary ? ` 派生基类="${escapeEDefinitionAttr(section.derivedFromComponentLibrary)}"` : "";
+  const containerAttr = section.isContainerComponentLibrary ? ` 是否容器="是"` : "";
+  const attrs = `中文名="${escapeEDefinitionAttr(section.label)}" 类别库="${escapeEDefinitionAttr(section.categoryLibrary)}"${libraryAttr}${derivedAttr}${derivedBaseAttr}${containerAttr}`;
   return [`<${section.kind} ${attrs}>`, fieldRow, commentRow, `</${section.kind}>`].join("\n");
 }
 
@@ -2686,27 +2853,91 @@ function matchEDefinitionAttr(attrText: string, key: string): string {
   return match ? match[1] : "";
 }
 
+function eDefinitionAttrIsYes(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return normalized === "是" || normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
 function splitEDefinitionCells(line: string): string[] {
   return line.split(/\s{2,}/).map((cell) => cell.trim()).filter((cell) => cell.length > 0);
 }
 
 export function buildEDeviceDefinitionFile(templates: DeviceTemplate[], labels?: Record<string, string>, eDeviceDefinitionLabels?: Record<string, string>): TextFileExport {
   // 按元件库（E section）分组：同元件库的所有图元合并为一个 section，字段取勾选导出的并集
-  const groups = new Map<string, { categoryLibrary: string; fields: Map<string, string[]> }>();
+  type EDeviceDefinitionGroup = {
+    categoryLibrary: string;
+    label: string;
+    derivedFromComponentLibrary?: string;
+    isDerivedComponentLibrary?: boolean;
+    isContainerComponentLibrary?: boolean;
+    fields: Map<string, string[]>;
+  };
+  const groups = new Map<string, EDeviceDefinitionGroup>();
+  const ensureGroup = (
+    componentLibrary: string,
+    options: Partial<Omit<EDeviceDefinitionGroup, "fields">> = {}
+  ): EDeviceDefinitionGroup => {
+    let group = groups.get(componentLibrary);
+    if (!group) {
+      group = {
+        categoryLibrary: options.categoryLibrary ?? "",
+        label: options.label ?? "",
+        derivedFromComponentLibrary: options.derivedFromComponentLibrary,
+        isDerivedComponentLibrary: options.isDerivedComponentLibrary,
+        isContainerComponentLibrary: options.isContainerComponentLibrary,
+        fields: new Map()
+      };
+      groups.set(componentLibrary, group);
+      return group;
+    }
+    if (!group.categoryLibrary && options.categoryLibrary) {
+      group.categoryLibrary = options.categoryLibrary;
+    }
+    if (!group.label && options.label) {
+      group.label = options.label;
+    }
+    if (!group.derivedFromComponentLibrary && options.derivedFromComponentLibrary) {
+      group.derivedFromComponentLibrary = options.derivedFromComponentLibrary;
+    }
+    if (options.isDerivedComponentLibrary !== undefined) {
+      group.isDerivedComponentLibrary = options.isDerivedComponentLibrary;
+    }
+    if (options.isContainerComponentLibrary !== undefined) {
+      group.isContainerComponentLibrary = options.isContainerComponentLibrary;
+    }
+    return group;
+  };
+  const appendGroupField = (group: EDeviceDefinitionGroup, exportName: string, cnName: string) => {
+    const normalizedExportName = exportName.trim();
+    if (!normalizedExportName) {
+      return;
+    }
+    let cnNames = group.fields.get(normalizedExportName);
+    if (!cnNames) {
+      cnNames = [];
+      group.fields.set(normalizedExportName, cnNames);
+    }
+    const normalizedCnName = cnName.trim();
+    if (normalizedCnName && !cnNames.includes(normalizedCnName)) {
+      cnNames.push(normalizedCnName);
+    }
+  };
   for (const template of templates) {
-    const componentLibrary = inferESection(template.kind, template.params ?? {});
+    const derivedInfo = templateDerivedComponentLibraryInfo(template);
+    const componentLibrary = derivedInfo?.componentLibrary ?? inferESection(template.kind, template.params ?? {});
     if (!componentLibrary) {
       continue;
     }
+    const definitionParams = derivedInfo
+      ? { ...(template.params ?? {}), component_type: componentLibrary }
+      : template.params ?? {};
     // 无 parameterDefinitions 的图元（如 ac-source）按 E 分区推导内置列参数，避免整类丢失
     const definitions = getTemplateParameterDefinitions(template);
-    let group = groups.get(componentLibrary);
-    if (!group) {
-      group = { categoryLibrary: template.categoryLibrary ?? "", fields: new Map() };
-      groups.set(componentLibrary, group);
-    }
+    const group = ensureGroup(componentLibrary, {
+      categoryLibrary: derivedInfo?.categoryLibrary ?? template.categoryLibrary ?? ""
+    });
     for (const definition of definitions) {
-      const settings = resolveDeviceParameterDefinitionExportSettings(template.kind, template.params ?? {}, definition);
+      const settings = resolveDeviceParameterDefinitionExportSettings(template.kind, definitionParams, definition);
       if (!settings.exportEnabled) {
         continue;
       }
@@ -2714,16 +2945,31 @@ export function buildEDeviceDefinitionFile(templates: DeviceTemplate[], labels?:
       if (!exportName) {
         continue;
       }
-      let cnNames = group.fields.get(exportName);
-      if (!cnNames) {
-        cnNames = [];
-        group.fields.set(exportName, cnNames);
-      }
       const rawCnName = (definition.cnName ?? "").trim();
       // cnName 为英文 key 时用 labels 转中文（与 UI PARAM_LABELS 一致）
       const cnName = (rawCnName === exportName && labels?.[exportName]) ? labels[exportName] : rawCnName;
-      if (cnName && !cnNames.includes(cnName)) {
-        cnNames.push(cnName);
+      appendGroupField(group, exportName, cnName);
+    }
+    if (derivedInfo) {
+      const derivedGroup = ensureGroup(derivedInfo.derivedComponentLibrary, {
+        categoryLibrary: derivedInfo.categoryLibrary || template.categoryLibrary || "",
+        label: derivedInfo.label || (ELEMENT_TREE_COMPONENT_LIBRARY_LABELS[derivedInfo.derivedComponentLibrary] ?? derivedInfo.derivedComponentLibrary),
+        derivedFromComponentLibrary: derivedInfo.baseComponentLibrary,
+        isDerivedComponentLibrary: true,
+        isContainerComponentLibrary: false
+      });
+      appendGroupField(derivedGroup, derivedComponentBaseRelationKey(derivedInfo.baseComponentLibrary), "原类关联idx");
+      const derivedFields = resolveDerivedComponentParameterFields(
+        template.kind,
+        template.params ?? {},
+        definitions,
+        derivedInfo.baseComponentLibrary,
+        derivedInfo.derivedComponentLibrary
+      );
+      for (const field of derivedFields) {
+        const rawCnName = (field.definition?.cnName ?? "").trim();
+        const cnName = (rawCnName === field.exportName && labels?.[field.exportName]) ? labels[field.exportName] : rawCnName;
+        appendGroupField(derivedGroup, field.exportName, cnName || field.exportName);
       }
     }
   }
@@ -2733,7 +2979,7 @@ export function buildEDeviceDefinitionFile(templates: DeviceTemplate[], labels?:
     if (group.fields.size === 0) {
       continue;
     }
-    // 字段顺序：idx、name 固定首位，dev_type 紧跟 name（新增列），其余按出现顺序
+    // 字段顺序：普通设备 idx/name/dev_type 固定在前；派生类只保留 idx、原类关联字段和个性化字段
     const fields: EDeviceDefinitionField[] = [];
     // E 文件固定标准列的中文名映射（不取图元 cnName 并集，避免混入英文 key）
     const fixedCnName: Record<string, string> = {
@@ -2746,12 +2992,17 @@ export function buildEDeviceDefinitionFile(templates: DeviceTemplate[], labels?:
       status: "运行状态",
       run_stat: "运行状态（运行/停运）"
     };
-    // idx/name/dev_type 固定前三位
     fields.push({ exportName: "idx", cnName: fixedCnName.idx });
-    fields.push({ exportName: "name", cnName: fixedCnName.name });
-    fields.push({ exportName: "dev_type", cnName: fixedCnName.dev_type });
+    if (!group.isDerivedComponentLibrary) {
+      fields.push({ exportName: "name", cnName: fixedCnName.name });
+      fields.push({ exportName: "dev_type", cnName: fixedCnName.dev_type });
+    }
     for (const [exportName, cnNames] of group.fields) {
-      if (exportName === "idx" || exportName === "name" || exportName === "dev_type") {
+      if (
+        exportName === "idx" ||
+        (!group.isDerivedComponentLibrary && (exportName === "name" || exportName === "dev_type")) ||
+        (group.isDerivedComponentLibrary && DERIVED_COMPONENT_COMMON_PARAM_NAMES.has(exportName))
+      ) {
         continue;
       }
       if (fixedCnName[exportName]) {
@@ -2765,10 +3016,13 @@ export function buildEDeviceDefinitionFile(templates: DeviceTemplate[], labels?:
     const eLabel = eDeviceDefinitionLabels?.[componentLibrary]?.trim();
     sections.push({
       kind: eLabel || componentLibrary,
-      label: ELEMENT_TREE_COMPONENT_LIBRARY_LABELS[componentLibrary] ?? componentLibrary,
+      label: group.label || (ELEMENT_TREE_COMPONENT_LIBRARY_LABELS[componentLibrary] ?? componentLibrary),
       categoryLibrary: group.categoryLibrary,
       componentLibrary,
       originalComponentLibrary: eLabel && eLabel !== componentLibrary ? componentLibrary : undefined,
+      derivedFromComponentLibrary: group.derivedFromComponentLibrary,
+      isDerivedComponentLibrary: group.isDerivedComponentLibrary,
+      isContainerComponentLibrary: group.isContainerComponentLibrary,
       fields
     });
   }
@@ -2808,11 +3062,18 @@ export function parseEDeviceDefinitionFile(text: string): EDeviceDefinitionSecti
         cnName: cnNames[index] ?? ""
       });
     }
+    const componentLibraryAttr = matchEDefinitionAttr(attrText, "元件库");
+    const derivedAttr = matchEDefinitionAttr(attrText, "是否派生新类");
+    const containerAttr = matchEDefinitionAttr(attrText, "是否容器");
     sections.push({
       kind,
       label: matchEDefinitionAttr(attrText, "中文名"),
       categoryLibrary: matchEDefinitionAttr(attrText, "类别库"),
-      componentLibrary: matchEDefinitionAttr(attrText, "元件库"),
+      componentLibrary: componentLibraryAttr || kind,
+      originalComponentLibrary: componentLibraryAttr && componentLibraryAttr !== kind ? componentLibraryAttr : undefined,
+      derivedFromComponentLibrary: matchEDefinitionAttr(attrText, "派生基类") || undefined,
+      isDerivedComponentLibrary: derivedAttr ? eDefinitionAttrIsYes(derivedAttr) : undefined,
+      isContainerComponentLibrary: containerAttr ? eDefinitionAttrIsYes(containerAttr) : undefined,
       fields
     });
   }
@@ -3087,6 +3348,8 @@ type ElectricGenerationFamilySpec = {
   kindSuffix: ElectricGenerationFamilyKindSuffix;
   label: string;
   sourceType: string;
+  derivedClassLabel: string;
+  derivedComponentSuffix: string;
   parameterDefinitions: ElectricGenerationParameterDefinitionSpec[];
   commonParams: Record<string, string>;
   paramsByTerminalType?: Partial<Record<ElectricGenerationTerminalType, Record<string, string>>>;
@@ -3130,6 +3393,8 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     kindSuffix: "wind-source",
     label: "风力发电机",
     sourceType: "风力",
+    derivedClassLabel: "风电",
+    derivedComponentSuffix: "WindGen",
     parameterDefinitions: [
       electricGenerationStringDefinition("风机型号", "windTurbineModel"),
       electricGenerationIntegerDefinition("风机台数", "windTurbineCount"),
@@ -3162,6 +3427,8 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     kindSuffix: "pv-source",
     label: "光伏发电机",
     sourceType: "光伏",
+    derivedClassLabel: "光伏",
+    derivedComponentSuffix: "PVGen",
     parameterDefinitions: [
       electricGenerationStringDefinition("光伏组件型号", "pvModuleModel"),
       electricGenerationIntegerDefinition("光伏组件数量", "pvModuleCount"),
@@ -3188,6 +3455,8 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     kindSuffix: "thermal-source",
     label: "火力发电机",
     sourceType: "火力",
+    derivedClassLabel: "火电",
+    derivedComponentSuffix: "ThermalGen",
     parameterDefinitions: [
       electricGenerationStringDefinition("火电机组型号", "thermalUnitModel"),
       electricGenerationStringEnumDefinition("燃料类型", "fuelType", [
@@ -3218,6 +3487,8 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     kindSuffix: "hydro-source",
     label: "水力发电机",
     sourceType: "水力",
+    derivedClassLabel: "水电",
+    derivedComponentSuffix: "HydroGen",
     parameterDefinitions: [
       electricGenerationStringDefinition("水电机组型号", "hydroUnitModel"),
       electricGenerationStringEnumDefinition("水轮机类型", "turbineType", [
@@ -3252,6 +3523,8 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     kindSuffix: "nuclear-source",
     label: "核能发电机",
     sourceType: "核能",
+    derivedClassLabel: "核电",
+    derivedComponentSuffix: "NuclearGen",
     parameterDefinitions: [
       electricGenerationStringDefinition("核电机组型号", "nuclearUnitModel"),
       electricGenerationStringEnumDefinition("反应堆类型", "reactorType", [
@@ -3289,6 +3562,114 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
   }
 ];
 
+export type ElectricGenerationDerivedComponentLibraryInfo = {
+  kind: string;
+  componentLibrary: string;
+  derivedComponentLibrary: string;
+  label: string;
+  categoryLibrary: string;
+  terminalType: ElectricGenerationTerminalType;
+  baseComponentLibrary: "ACGenerator" | "DCGenerator";
+  isContainer: false;
+};
+
+function electricGenerationDerivedInfoForFamily(
+  terminalType: ElectricGenerationTerminalType,
+  family: ElectricGenerationFamilySpec
+): ElectricGenerationDerivedComponentLibraryInfo {
+  const terminalPrefix = terminalType === "ac" ? "交流" : "直流";
+  const baseComponentLibrary = terminalType === "ac" ? "ACGenerator" : "DCGenerator";
+  return {
+    kind: `${terminalType}-${family.kindSuffix}`,
+    componentLibrary: baseComponentLibrary,
+    derivedComponentLibrary: `${terminalType.toUpperCase()}${family.derivedComponentSuffix}`,
+    label: `${terminalPrefix}${family.derivedClassLabel}`,
+    categoryLibrary: `${terminalPrefix}设备`,
+    terminalType,
+    baseComponentLibrary,
+    isContainer: false
+  };
+}
+
+export function electricGenerationDerivedComponentLibraryInfo(kind: string): ElectricGenerationDerivedComponentLibraryInfo | null {
+  const normalizedKind = baseDeviceKind(kind);
+  for (const family of ELECTRIC_GENERATION_FAMILY_SPECS) {
+    for (const terminalType of ELECTRIC_GENERATION_TERMINAL_TYPES) {
+      const info = electricGenerationDerivedInfoForFamily(terminalType, family);
+      if (info.kind === normalizedKind) {
+        return info;
+      }
+    }
+  }
+  return null;
+}
+
+export type TemplateDerivedComponentLibraryInfo = {
+  kind: string;
+  componentLibrary: string;
+  derivedComponentLibrary: string;
+  label: string;
+  categoryLibrary: string;
+  baseComponentLibrary: string;
+  isContainer: false;
+};
+
+function derivedComponentLibraryFlagIsYes(value: unknown): boolean {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "是";
+}
+
+export function templateDerivedComponentLibraryInfo(
+  template: Pick<DeviceTemplate, "kind" | "params"> &
+    Partial<Pick<DeviceTemplate, "categoryLibrary" | "derivedFromComponentLibrary" | "derivedComponentLibrary" | "derivedComponentLibraryLabel" | "isDerivedComponentLibrary">>
+): TemplateDerivedComponentLibraryInfo | null {
+  const builtInInfo = electricGenerationDerivedComponentLibraryInfo(template.kind);
+  if (builtInInfo) {
+    return builtInInfo;
+  }
+  const params = template.params ?? {};
+  const rawComponentLibrary = String(params.component_type ?? params.componentLibrary ?? (params as { componentType?: string }).componentType ?? "").trim();
+  const baseComponentLibrary = String(
+    template.derivedFromComponentLibrary ??
+    params.derived_from_component_type ??
+    (params as { derivedFromComponentLibrary?: string }).derivedFromComponentLibrary ??
+    ""
+  ).trim();
+  const explicitDerivedComponentLibrary = String(
+    template.derivedComponentLibrary ??
+    params.derived_component_type ??
+    (params as { derivedComponentLibrary?: string }).derivedComponentLibrary ??
+    ""
+  ).trim();
+  const componentLibrary = baseComponentLibrary || rawComponentLibrary;
+  const derivedComponentLibrary = explicitDerivedComponentLibrary ||
+    (baseComponentLibrary && rawComponentLibrary && rawComponentLibrary.toLowerCase() !== baseComponentLibrary.toLowerCase()
+      ? rawComponentLibrary
+      : "");
+  const derived = template.isDerivedComponentLibrary === true ||
+    derivedComponentLibraryFlagIsYes(params.is_derived_component_library) ||
+    derivedComponentLibraryFlagIsYes((params as { isDerivedComponentLibrary?: string }).isDerivedComponentLibrary) ||
+    Boolean(baseComponentLibrary && derivedComponentLibrary);
+  if (!derived || !componentLibrary || !baseComponentLibrary || !derivedComponentLibrary) {
+    return null;
+  }
+  const label = String(
+    template.derivedComponentLibraryLabel ??
+    params.derived_component_library_label ??
+    (params as { derivedComponentLibraryLabel?: string }).derivedComponentLibraryLabel ??
+    ""
+  ).trim();
+  return {
+    kind: template.kind,
+    componentLibrary,
+    derivedComponentLibrary,
+    label,
+    categoryLibrary: String(template.categoryLibrary ?? "").trim(),
+    baseComponentLibrary,
+    isContainer: false
+  };
+}
+
 function createElectricGenerationDeviceTemplate(
   terminalType: ElectricGenerationTerminalType,
   family: ElectricGenerationFamilySpec
@@ -3296,10 +3677,7 @@ function createElectricGenerationDeviceTemplate(
   const electricalDefaults = family.defaultsByTerminalType[terminalType];
   const terminalPrefix = terminalType === "ac" ? "交流" : "直流";
   const terminalLabel = `${terminalPrefix}发电机端`;
-  const association: ContainerTerminalAssociationType = terminalType === "ac" ? "ac-generator" : "dc-generator";
-  const relationKey = terminalType === "ac" ? "idx_ac_unit_t1" : "idx_dc_unit_t1";
   const params: Record<string, string> = {
-    is_container: "1",
     sourceType: family.sourceType,
     ratedPower: electricalDefaults.ratedPower,
     ratedVoltage: electricalDefaults.ratedVoltage,
@@ -3316,14 +3694,11 @@ function createElectricGenerationDeviceTemplate(
     terminalCount: 1,
     terminalLabels: [terminalLabel],
     terminalRoles: ["single-source"],
-    terminalAssociations: [association],
-    isContainer: true,
     parameterDefinitions: [
       readonlyIntegerDefinition("序号", "idx"),
       { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
       { cnName: "设备状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: false },
       { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false },
-      readonlyIntegerDefinition(`${terminalLabel}${terminalPrefix}电源关联idx`, relationKey),
       { cnName: "发电类型", enName: "sourceType", valueType: "string", typicalValue: family.sourceType, readonly: true },
       { cnName: "额定功率", enName: "ratedPower", valueType: "string", typicalValue: electricalDefaults.ratedPower, readonly: false },
       { cnName: "额定电压", enName: "ratedVoltage", valueType: "string", typicalValue: electricalDefaults.ratedVoltage, readonly: false },
@@ -6187,6 +6562,9 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
     return withTemplateDefinitions(withRunStat({ ...template.params }));
   }
   if (template.isContainer && isElectricGenerationContainerKind(templateKind)) {
+    return withTemplateDefinitions(withRunStat({ ...template.params }));
+  }
+  if (electricGenerationDerivedComponentLibraryInfo(templateKind)) {
     return withTemplateDefinitions(withRunStat({ ...template.params }));
   }
   if (isGeneratorKind(templateKind)) {
@@ -9651,6 +10029,16 @@ const ELEMENT_TREE_COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   DCLoad: "直流负荷",
   ACGenerator: "交流电源",
   DCGenerator: "直流电源",
+  ACWindGen: "交流风电",
+  DCWindGen: "直流风电",
+  ACPVGen: "交流光伏",
+  DCPVGen: "直流光伏",
+  ACThermalGen: "交流火电",
+  DCThermalGen: "直流火电",
+  ACHydroGen: "交流水电",
+  DCHydroGen: "直流水电",
+  ACNuclearGen: "交流核电",
+  DCNuclearGen: "直流核电",
   ACShuntCompensator: "交流无功补偿",
   ACZeroBranch: "交流零阻支路",
   DCZeroBranch: "直流零阻支路",

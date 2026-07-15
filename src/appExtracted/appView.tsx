@@ -8,7 +8,7 @@ import {
   visibleIconLibraryIcons
 } from "../iconLibraryCatalog";
 import { buildExportDeviceIdMap } from "../svgExportUtils";
-import { inferESection, getTemplateParameterDefinitions, resolveDeviceParameterDefinitionExportSettings } from "../model";
+import { inferESection, getTemplateParameterDefinitions, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo } from "../model";
 
 export type ImagePickerLibraryTab = "image" | "icon";
 
@@ -36,6 +36,75 @@ export function resolveInspectorTopologyEntry(topology: any, inspectorTopology: 
 
 export function inspectorTabShowsDevicePanel(inspectorTab: string, hasSelectedNode: boolean) {
   return inspectorTab === "device" && hasSelectedNode;
+}
+
+export function resolveDeviceModelPanelParameterKeys(
+  eKeys: readonly string[] = [],
+  customDefinitions: readonly Record<string, unknown>[] = [],
+  fallbackKeys: readonly string[] = []
+): string[] {
+  const customKeys = customDefinitions
+    .map((definition) => String(definition.enName ?? "").trim())
+    .filter(Boolean);
+  const exportKeyToCustomKey = new Map<string, string>();
+  customDefinitions.forEach((definition) => {
+    const customKey = String(definition.enName ?? "").trim();
+    const exportKey = String(definition.exportName ?? "").trim();
+    if (customKey && exportKey && exportKey !== customKey) {
+      exportKeyToCustomKey.set(exportKey, customKey);
+    }
+  });
+  const mergedKeys: string[] = [];
+  const appendKey = (key: string) => {
+    const normalizedKey = String(key ?? "").trim();
+    if (normalizedKey && !mergedKeys.includes(normalizedKey)) {
+      mergedKeys.push(normalizedKey);
+    }
+  };
+  eKeys.forEach((key) => appendKey(exportKeyToCustomKey.get(key) ?? key));
+  customKeys.forEach(appendKey);
+  if (mergedKeys.length > 0) {
+    return mergedKeys;
+  }
+  fallbackKeys.forEach(appendKey);
+  return mergedKeys;
+}
+
+export function resolveDeviceDefinitionParameterRowsForDisplay<T extends { enName?: unknown }>(
+  rows: readonly T[] = [],
+  allowedRows?: readonly { enName?: unknown }[] | null
+): T[] {
+  if (!allowedRows || allowedRows.length === 0) {
+    return [...rows];
+  }
+  const allowedNames = new Set(
+    allowedRows.map((row) => String(row.enName ?? "").trim()).filter(Boolean)
+  );
+  if (allowedNames.size === 0) {
+    return [...rows];
+  }
+  return rows.filter((row) => allowedNames.has(String(row.enName ?? "").trim()));
+}
+
+export function resolveCustomDeviceParameterRowsForDisplay<T extends { enName?: unknown }>(
+  defaultRows: readonly T[] = [],
+  customRows: readonly T[] = [],
+  options: {
+    isDerivedComponentLibrary?: boolean;
+    baseComponentLibrary?: string;
+    isDerivedComponentBaseParamName?: (fieldName: unknown, baseComponentLibrary?: string) => boolean;
+  } = {}
+): { defaultRows: T[]; customRows: T[] } {
+  const isHiddenDerivedBaseRow = (row: T) =>
+    Boolean(
+      options.isDerivedComponentLibrary &&
+        typeof options.isDerivedComponentBaseParamName === "function" &&
+        options.isDerivedComponentBaseParamName(row.enName, options.baseComponentLibrary)
+    );
+  return {
+    defaultRows: defaultRows.filter((row) => !isHiddenDerivedBaseRow(row)),
+    customRows: customRows.filter((row) => !isHiddenDerivedBaseRow(row))
+  };
 }
 
 export function resolveInspectorGraphId(nodes: any[], node: any) {
@@ -184,6 +253,65 @@ export function renderAppView(__appScope: Record<string, any>) {
     setImagePickerSourceFilter
   } = __appScope;
   const { customDevicePreviewNode } = __appScope;
+  const definitionDraftRowsForDisplay = selectedDefinitionTemplate && templateDerivedComponentLibraryInfo(selectedDefinitionTemplate) && typeof __appScope.createDefinitionDraftRows === "function"
+    ? resolveDeviceDefinitionParameterRowsForDisplay(definitionDraftRows, __appScope.createDefinitionDraftRows(selectedDefinitionTemplate))
+    : definitionDraftRows;
+  const customDeviceDerivedBaseLibrary = normalizeComponentLibraryName(
+    customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary || ""
+  );
+  const derivedComponentLibraryOptionMap = new Map<string, { name: string; label: string; base: string; categoryLibraryName: string }>();
+  for (const item of customComponentLibraries ?? []) {
+    const name = normalizeComponentLibraryName(item.name ?? "");
+    const base = normalizeComponentLibraryName(item.derivedFromComponentLibrary ?? "");
+    const categoryLibraryName = normalizeCategoryLibraryName(item.categoryLibraryName ?? "");
+    if (!name || !base || !item.isDerivedComponentLibrary) {
+      continue;
+    }
+    derivedComponentLibraryOptionMap.set(`${categoryLibraryName.toLowerCase()}::${name.toLowerCase()}`, { name, label: String(item.label ?? "").trim(), base, categoryLibraryName });
+  }
+  for (const template of libraryTemplates ?? []) {
+    const info = templateDerivedComponentLibraryInfo(template);
+    if (!info) {
+      continue;
+    }
+    const name = normalizeComponentLibraryName(info.derivedComponentLibrary);
+    const base = normalizeComponentLibraryName(info.componentLibrary || info.baseComponentLibrary);
+    const categoryLibraryName = normalizeCategoryLibraryName(info.categoryLibrary || template.categoryLibrary || "");
+    if (!name || !base) {
+      continue;
+    }
+    const key = `${categoryLibraryName.toLowerCase()}::${name.toLowerCase()}`;
+    if (!derivedComponentLibraryOptionMap.has(key)) {
+      derivedComponentLibraryOptionMap.set(key, { name, label: info.label, base, categoryLibraryName });
+    }
+  }
+  const derivedComponentLibraryOptionsFor = (categoryLibraryName: string, baseComponentLibrary: string) => Array.from(derivedComponentLibraryOptionMap.values())
+    .filter((item) => normalizeCategoryLibraryName(item.categoryLibraryName).toLowerCase() === normalizeCategoryLibraryName(categoryLibraryName).toLowerCase())
+    .filter((item) => !baseComponentLibrary || item.base.toLowerCase() === baseComponentLibrary.toLowerCase())
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const currentCategoryDerivedComponentLibraryNameSet = new Set(
+    derivedComponentLibraryOptionsFor(customDeviceDraft.categoryLibraryName, "")
+      .map((item) => item.name.toLowerCase())
+  );
+  const customDeviceBaseComponentLibraryOptions = customDeviceDraft.isDerivedComponentLibrary
+    ? currentCategoryLibraryComponentLibraryOptions.filter((section) => !currentCategoryDerivedComponentLibraryNameSet.has(normalizeComponentLibraryName(section).toLowerCase()))
+    : currentCategoryLibraryComponentLibraryOptions;
+  const customLibraryCreateDialogCategoryLibraryName = normalizeCategoryLibraryName(
+    customLibraryCreateDialog?.categoryLibraryName || customDeviceDraft.categoryLibraryName || ""
+  );
+  const customLibraryCreateDialogBaseComponentLibrary = normalizeComponentLibraryName(
+    customLibraryCreateDialog?.derivedFromComponentLibrary || customLibraryCreateDialog?.componentLibrary || customDeviceDerivedBaseLibrary || ""
+  );
+  const customLibraryCreateDialogDerivedOptions = customLibraryCreateDialog?.kind === "component"
+    ? derivedComponentLibraryOptionsFor(customLibraryCreateDialogCategoryLibraryName, customLibraryCreateDialogBaseComponentLibrary)
+    : [];
+  const customLibraryCreateDialogSelectedDerivedComponentLibrary = normalizeComponentLibraryName(
+    customLibraryCreateDialog?.derivedComponentLibrary ?? ""
+  );
+  const customLibraryCreateDialogDerivedSelectValue = customLibraryCreateDialogSelectedDerivedComponentLibrary &&
+    customLibraryCreateDialogDerivedOptions.some((item) => item.name.toLowerCase() === customLibraryCreateDialogSelectedDerivedComponentLibrary.toLowerCase())
+    ? customLibraryCreateDialogSelectedDerivedComponentLibrary
+    : "__new__";
   const renderCustomDevicePreviewContent = (clipId = "custom-device-preview-clip") => {
     const fallbackPreviewNode = {
       id: "custom-device-preview-fallback",
@@ -1305,12 +1433,11 @@ export function renderAppView(__appScope: Record<string, any>) {
                           {(() => {
                         const eKeys = getEParameterKeys(inspectorSelectedNode.kind, inspectorSelectedNode.params);
                         const customDefinitions = parseCustomDefinitions(inspectorSelectedNode.params);
-                        const customKeys = customDefinitions.map((definition) => definition.enName);
-                        const keys = customKeys.length > 0
-                            ? customKeys
-                            : eKeys.length > 0
-                                ? eKeys
-                                : Object.keys(inspectorSelectedNode.params).filter((key) => !key.startsWith("_") && key !== "is_container" && key !== ALLOW_RESIZE_TRANSFORM_PARAM);
+                        const keys = resolveDeviceModelPanelParameterKeys(
+                            eKeys,
+                            customDefinitions,
+                            Object.keys(inspectorSelectedNode.params).filter((key) => !key.startsWith("_") && key !== "is_container" && key !== ALLOW_RESIZE_TRANSFORM_PARAM)
+                        );
                         return keys.map((key) => {
                             const value = key === "name" ? inspectorSelectedNode.name : eKeys.length > 0 ? getEParamValue(key, inspectorSelectedNode) : inspectorSelectedNode.params[key] ?? "";
                             const displayValue = formatDeviceModelParamDisplayValue(key, value);
@@ -2389,7 +2516,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                               </tr>
                             </thead>
                             <tbody>
-                              {definitionDraftRows.map((row) => (<tr key={row.id} className={row.readonly ? "readonly-row" : ""}>
+                              {definitionDraftRowsForDisplay.map((row) => (<tr key={row.id} className={row.readonly ? "readonly-row" : ""}>
                                   <td>
                                     <BufferedTextInput value={row.cnName} disabled={row.readonly} onCommit={(value) => updateDefinitionDraftRow(row.id, { cnName: value })}/>
                                   </td>
@@ -2507,6 +2634,85 @@ export function renderAppView(__appScope: Record<string, any>) {
                 onChange={(event) => setCustomLibraryCreateDialog((current) => current ? { ...current, enName: event.target.value, error: "" } : current)}
               />
             </label>
+            {customLibraryCreateDialog.kind === "component" && (<>
+              <label className="custom-library-create-derived-field">
+                <span>是否派生类</span>
+                <select value={customLibraryCreateDialog.isDerivedComponentLibrary ? "1" : "0"} onChange={(event) => {
+                  const enabled = event.target.value === "1";
+                  setCustomLibraryCreateDialog((current) => {
+                    if (!current) {
+                      return current;
+                    }
+                    const baseComponentLibrary = normalizeComponentLibraryName(current.derivedFromComponentLibrary || current.componentLibrary || customLibraryCreateDialogBaseComponentLibrary);
+                    return {
+                      ...current,
+                      isDerivedComponentLibrary: enabled,
+                      derivedFromComponentLibrary: baseComponentLibrary,
+                      derivedComponentLibrary: enabled ? (current.derivedComponentLibrary ?? "") : "",
+                      derivedComponentLibraryLabel: enabled ? (current.derivedComponentLibraryLabel ?? "") : "",
+                      error: ""
+                    };
+                  });
+                }}>
+                  <option value="0">否</option>
+                  <option value="1">是</option>
+                </select>
+              </label>
+              {customLibraryCreateDialog.isDerivedComponentLibrary && (<>
+                <label className="custom-library-create-derived-base-field">
+                  <span>关联原类</span>
+                  <input value={customLibraryCreateDialogBaseComponentLibrary} disabled readOnly />
+                </label>
+                <label className="custom-library-create-derived-select-field">
+                  <span>派生类</span>
+                  <select value={customLibraryCreateDialogDerivedSelectValue} onChange={(event) => {
+                    if (event.target.value === "__new__") {
+                      setCustomLibraryCreateDialog((current) => current ? {
+                        ...current,
+                        derivedFromComponentLibrary: normalizeComponentLibraryName(current.derivedFromComponentLibrary || current.componentLibrary || customLibraryCreateDialogBaseComponentLibrary),
+                        derivedComponentLibrary: "",
+                        derivedComponentLibraryLabel: "",
+                        error: ""
+                      } : current);
+                      return;
+                    }
+                    const selected = customLibraryCreateDialogDerivedOptions.find((item) => item.name === event.target.value);
+                    if (!selected) {
+                      return;
+                    }
+                    setCustomLibraryCreateDialog((current) => current ? {
+                      ...current,
+                      componentLibrary: selected.base,
+                      derivedFromComponentLibrary: selected.base,
+                      derivedComponentLibrary: selected.name,
+                      derivedComponentLibraryLabel: selected.label,
+                      error: ""
+                    } : current);
+                  }}>
+                    <option value="__new__">新建派生类</option>
+                    {customLibraryCreateDialogDerivedOptions.map((option) => (<option key={option.name} value={option.name}>
+                      {option.label ? `${option.label} / ${option.name}` : option.name}
+                    </option>))}
+                  </select>
+                </label>
+                <label className="custom-library-create-derived-cn-field">
+                  <span>派生类中文名称</span>
+                  <input
+                    value={customLibraryCreateDialog.derivedComponentLibraryLabel ?? ""}
+                    placeholder="例如 交流风电"
+                    onChange={(event) => setCustomLibraryCreateDialog((current) => current ? { ...current, derivedComponentLibraryLabel: event.target.value, error: "" } : current)}
+                  />
+                </label>
+                <label className="custom-library-create-derived-en-field">
+                  <span>派生类英文名称</span>
+                  <input
+                    value={customLibraryCreateDialog.derivedComponentLibrary ?? ""}
+                    placeholder="例如 ACWindGen"
+                    onChange={(event) => setCustomLibraryCreateDialog((current) => current ? { ...current, derivedComponentLibrary: event.target.value, error: "" } : current)}
+                  />
+                </label>
+              </>)}
+            </>)}
             <div className="custom-library-create-actions">
               <button type="button" onClick={() => setCustomLibraryCreateDialog(null)}>取消</button>
               <button type="submit" className="primary">确定</button>
@@ -2560,8 +2766,22 @@ export function renderAppView(__appScope: Record<string, any>) {
               <label className="custom-component-library-field">
                 <span>元件库</span>
                 <div className="custom-category-library-select-row single-control">
-                  <select className={sourceSelectClassName(isBuiltInComponentLibrary(customDeviceDraft.componentLibrary))} value={customDeviceDraft.componentLibrary} onChange={(event) => selectCustomComponentLibrary(customDeviceDraft.categoryLibraryName, event.target.value)}>
-                    {currentCategoryLibraryComponentLibraryOptions.map((section) => {
+                  <select className={sourceSelectClassName(isBuiltInComponentLibrary(customDeviceDraft.componentLibrary))} value={customDeviceDraft.componentLibrary} onChange={(event) => {
+                    if (customDeviceDraft.isDerivedComponentLibrary) {
+                      const base = normalizeComponentLibraryName(event.target.value);
+                      setCustomDeviceDraft((current) => ({
+                        ...current,
+                        componentLibrary: base,
+                        derivedFromComponentLibrary: base,
+                        derivedComponentLibrary: "",
+                        derivedComponentLibraryLabel: "",
+                        error: ""
+                      }));
+                      return;
+                    }
+                    selectCustomComponentLibrary(customDeviceDraft.categoryLibraryName, event.target.value);
+                  }}>
+                    {customDeviceBaseComponentLibraryOptions.map((section) => {
                       const sectionDisplay = componentLibraryDisplayParts(section, customComponentLibraries);
                       return (<option key={section} value={section} className={componentLibraryOptionClass(section)} title={isBuiltInComponentLibrary(section) ? "系统内置元件库，无法删除" : "用户自定义元件库，可以删除"}>
                         {sectionDisplay.title}
@@ -2574,6 +2794,36 @@ export function renderAppView(__appScope: Record<string, any>) {
                 元件名称
                 <BufferedTextInput value={customDeviceDraft.componentName} placeholder="例如 水电、核电、风电、光伏" onCommit={(value) => setCustomDeviceDraft((current) => ({ ...current, componentName: value, error: "" }))}/>
               </label>
+              <label className="custom-device-derived-field">
+                是否派生类
+                <select value={customDeviceDraft.isDerivedComponentLibrary ? "1" : "0"} onChange={(event) => {
+                  const enabled = event.target.value === "1";
+                  setCustomDeviceDraft((current) => {
+                    const base = normalizeComponentLibraryName(current.derivedFromComponentLibrary || current.componentLibrary || customDeviceDerivedBaseLibrary);
+                    return {
+                      ...current,
+                      isDerivedComponentLibrary: enabled,
+                      derivedFromComponentLibrary: enabled ? base : "",
+                      derivedComponentLibrary: enabled ? (current.derivedComponentLibrary ?? "") : "",
+                      derivedComponentLibraryLabel: enabled ? (current.derivedComponentLibraryLabel ?? "") : "",
+                      error: ""
+                    };
+                  });
+                }}>
+                  <option value="0">否</option>
+                  <option value="1">是</option>
+                </select>
+              </label>
+              {customDeviceDraft.isDerivedComponentLibrary && (<>
+                <label className="custom-device-derived-cn-field">
+                  派生类中文名称
+                  <BufferedTextInput value={customDeviceDraft.derivedComponentLibraryLabel ?? ""} placeholder="例如 交流风电" onCommit={(value) => setCustomDeviceDraft((current) => ({ ...current, derivedComponentLibraryLabel: value, error: "" }))}/>
+                </label>
+                <label className="custom-device-derived-en-field">
+                  派生类英文名称
+                  <BufferedTextInput value={customDeviceDraft.derivedComponentLibrary ?? ""} placeholder="例如 ACWindGen" onCommit={(value) => setCustomDeviceDraft((current) => ({ ...current, derivedComponentLibrary: value, error: "" }))}/>
+                </label>
+              </>)}
               <label className="custom-device-container-field">
                 是否容器
                 <select value={customDeviceDraft.isContainer ? "1" : "0"} onChange={(event) => setCustomDeviceDraft((current) => ({
@@ -2797,6 +3047,13 @@ export function renderAppView(__appScope: Record<string, any>) {
                         : item;
                 });
                 const visibleCustomParams = customDeviceDraft.params.filter((item) => !defaultParamKeySet.has(item.enName.trim().toLowerCase()));
+                const displayedCustomRows = resolveCustomDeviceParameterRowsForDisplay(mergedDefaultParams, visibleCustomParams, {
+                    isDerivedComponentLibrary: customDeviceDraft.isDerivedComponentLibrary,
+                    baseComponentLibrary: customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary,
+                    isDerivedComponentBaseParamName: __appScope.isDerivedComponentBaseParamName
+                });
+                const displayedMergedDefaultParams = displayedCustomRows.defaultRows;
+                const displayedVisibleCustomParams = displayedCustomRows.customRows;
                 const updateDefaultParamRow = (rowId: string, patch: Partial<CustomParamDraft>) => {
                     const enName = rowId.replace(/^default-/, "");
                     const sourceRow = mergedDefaultParams.find((item) => item.enName === enName) ?? customDraftDefaultParams.find((item) => item.enName === enName);
@@ -2828,7 +3085,16 @@ export function renderAppView(__appScope: Record<string, any>) {
                 const moveVisibleCustomParam = (rowId: string, direction: -1 | 1) => {
                     setCustomDeviceDraft((current) => {
                         const visibleIds = current.params
-                            .filter((item) => !defaultParamKeySet.has(item.enName.trim().toLowerCase()))
+                            .filter((item) => {
+                            if (defaultParamKeySet.has(item.enName.trim().toLowerCase())) {
+                                return false;
+                            }
+                            return resolveCustomDeviceParameterRowsForDisplay([], [item], {
+                                isDerivedComponentLibrary: current.isDerivedComponentLibrary,
+                                baseComponentLibrary: current.derivedFromComponentLibrary || current.componentLibrary,
+                                isDerivedComponentBaseParamName: __appScope.isDerivedComponentBaseParamName
+                            }).customRows.length > 0;
+                        })
                             .map((item) => item.id);
                         const visibleIndex = visibleIds.indexOf(rowId);
                         const targetId = visibleIds[visibleIndex + direction];
@@ -2846,7 +3112,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                     });
                 };
                 return (<>
-                    {mergedDefaultParams.map((row) => {
+                    {displayedMergedDefaultParams.map((row) => {
                         const defaultRow: CustomParamDraft = { ...row, id: `default-${row.enName}` };
                         const defaultRowDisabled = Boolean(row.readonly);
                         return (<tr key={`default-${row.enName}`} className={defaultRowDisabled ? "readonly-row" : ""}>
@@ -2878,7 +3144,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                             <td>默认</td>
                           </tr>);
                     })}
-                    {visibleCustomParams.map((row, index) => (<tr key={row.id}>
+                    {displayedVisibleCustomParams.map((row, index) => (<tr key={row.id}>
                       <td>
                         <BufferedTextInput value={row.cnName} onCommit={(value) => setCustomDeviceDraft((current) => ({
                     ...current,
@@ -2956,7 +3222,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                           <button type="button" onClick={() => moveVisibleCustomParam(row.id, -1)} disabled={index === 0}>
                             上移
                           </button>
-                          <button type="button" onClick={() => moveVisibleCustomParam(row.id, 1)} disabled={index >= visibleCustomParams.length - 1}>
+                          <button type="button" onClick={() => moveVisibleCustomParam(row.id, 1)} disabled={index >= displayedVisibleCustomParams.length - 1}>
                             下移
                           </button>
                           <button type="button" onClick={() => setCustomDeviceDraft((current) => ({ ...current, params: current.params.filter((item) => item.id !== row.id) }))}>
