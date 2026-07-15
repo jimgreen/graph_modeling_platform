@@ -318,10 +318,12 @@ export function createCustomDeviceDraftHasUnsavedChanges(__appScope: Record<stri
 // 还原当前 tab 或全部 tab 到预设定义
 export function createRevertCustomDeviceDraftCurrentTab(__appScope: Record<string, any>) {
   return () => {
-  const { customDeviceDraftBaselineRef, customDeviceDialogView, customDeviceDraft, measurementConfigBaselineRef, setCustomDeviceDraft, setMeasurementConfigDraft } = __appScope;
+  const { customDeviceDraftBaselineRef, customDeviceDialogView, customDeviceDraft, measurementConfigBaselineRef, setCustomDeviceDraft, setMeasurementConfigDraft, setStateIconDrawingDialog } = __appScope;
     const baseline: CustomDeviceDraft | null = customDeviceDraftBaselineRef?.current ?? null;
     if (!baseline) return;
     if (customDeviceDialogView === "icon") {
+      // 关闭绘图对话框，避免残留编辑状态
+      if (typeof setStateIconDrawingDialog === "function") setStateIconDrawingDialog(null);
       setCustomDeviceDraft((current: CustomDeviceDraft) => ({
         ...current,
         stateDefinitions: JSON.parse(JSON.stringify(baseline.stateDefinitions)),
@@ -355,9 +357,10 @@ export function createRevertCustomDeviceDraftCurrentTab(__appScope: Record<strin
 
 export function createRevertCustomDeviceDraftAll(__appScope: Record<string, any>) {
   return () => {
-  const { customDeviceDraftBaselineRef, measurementConfigBaselineRef, setCustomDeviceDraft, setMeasurementConfigDraft } = __appScope;
+  const { customDeviceDraftBaselineRef, measurementConfigBaselineRef, setCustomDeviceDraft, setMeasurementConfigDraft, setStateIconDrawingDialog } = __appScope;
     const baseline: CustomDeviceDraft | null = customDeviceDraftBaselineRef?.current ?? null;
     if (!baseline) return;
+    if (typeof setStateIconDrawingDialog === "function") setStateIconDrawingDialog(null);
     setCustomDeviceDraft(JSON.parse(JSON.stringify(baseline)));
     const measurementBaseline = measurementConfigBaselineRef?.current ?? null;
     if (measurementBaseline) {
