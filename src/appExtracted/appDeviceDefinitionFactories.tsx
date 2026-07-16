@@ -3141,33 +3141,36 @@ export function createExportSchemeRecord(__appScope: Record<string, any>) {
           return null;
         };
         for (const record of flattenSavedProjects([scheme])) {
-          let projectRecord = record;
-          if (typeof savedProjectRecordIsSummary === "function" && savedProjectRecordIsSummary(record)) {
+          try {
             const ownerScheme = findOwnerSchemeForProject(scheme, record.id) ?? scheme;
-            const ownerPath = typeof schemePathForScheme === "function" ? schemePathForScheme(ownerScheme) : schemePath;
-            projectRecord = await fetchBackendProjectRecord(ownerPath, record.name);
+            const ownerPath = typeof schemePathForScheme === "function" ? schemePathForScheme(ownerScheme.id) : schemePath;
+            let projectRecord = record;
+            if (typeof savedProjectRecordIsSummary === "function" && savedProjectRecordIsSummary(record)) {
+              projectRecord = await fetchBackendProjectRecord(ownerPath, record.name);
+            }
+            const project = projectRecord?.project;
+            if (!project) continue;
+            const svg = buildSvgDocument(project.nodes ?? [], project.edges ?? [], {
+              width: project.canvasWidth ?? 1920,
+              height: project.canvasHeight ?? 1024,
+              backgroundColor: project.canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND,
+              backgroundImage: project.canvasBackgroundImage,
+              imageExportPathById,
+              colorDisplayMode: "voltage",
+              colorPalette,
+              deviceTemplates: libraryTemplates,
+              layers: project.layers,
+              activeLayerId: project.activeLayerId,
+              backgroundPage: backgroundPageRender,
+              measurements: project.measurements,
+              measurementConfig
+            });
+            const eResult = buildEFileExport(project, ownerPath && ownerPath.length > 0 ? ownerPath : ["默认方案"]);
+            await saveBackendProjectArtifacts(ownerPath, projectRecord.name, { svg, eFile: eResult?.text });
+          } catch (error) {
+            // eslint-disable-next-line no-console
+            console.error(`刷新方案模型 SVG/E 失败（${record.name}）：`, error);
           }
-          const project = projectRecord?.project;
-          if (!project) continue;
-          const ownerScheme = findOwnerSchemeForProject(scheme, record.id) ?? scheme;
-          const ownerPath = typeof schemePathForScheme === "function" ? schemePathForScheme(ownerScheme) : schemePath;
-          const svg = buildSvgDocument(project.nodes ?? [], project.edges ?? [], {
-            width: project.canvasWidth ?? 1920,
-            height: project.canvasHeight ?? 1024,
-            backgroundColor: project.canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND,
-            backgroundImage: project.canvasBackgroundImage,
-            imageExportPathById,
-            colorDisplayMode: "voltage",
-            colorPalette,
-            deviceTemplates: libraryTemplates,
-            layers: project.layers,
-            activeLayerId: project.activeLayerId,
-            backgroundPage: backgroundPageRender,
-            measurements: project.measurements,
-            measurementConfig
-          });
-          const eResult = buildEFileExport(project, ownerPath && ownerPath.length > 0 ? ownerPath : ["默认方案"]);
-          await saveBackendProjectArtifacts(ownerPath, projectRecord.name, { svg, eFile: eResult?.text });
         }
       } catch (error) {
         // 刷新失败不阻止导出；提示用户，压缩包内仍是磁盘现有内容

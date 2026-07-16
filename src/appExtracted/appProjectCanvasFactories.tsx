@@ -4209,7 +4209,9 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
         });
         const eResult = buildEFileExport(project, schemePath.length > 0 ? schemePath : ["默认方案"]);
         return { svg, eFile: eResult?.text };
-      } catch {
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error("计算模型导出产物失败：", error);
         return {};
       }
     };

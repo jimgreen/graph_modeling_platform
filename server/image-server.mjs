@@ -3490,7 +3490,7 @@ async function handleSaveSchemeProjectArtifacts(request, response) {
   }
   const filesRoot = join(schemeDataDir, "files");
   const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
-  const { ePath, svgPath } = projectFilePathsForName(schemeDir, name);
+  const { ePath, svgPath } = projectFilePathsForName(schemeDir, storageProjectDisplayName(name));
   const tasks = [];
   if (typeof payload.svg === "string") {
     tasks.push(writeTextIfChanged(svgPath, payload.svg));
