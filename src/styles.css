@@ -4163,18 +4163,21 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .custom-device-dialog {
-  position: relative;
+  position: fixed;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  width: min(1180px, calc(100vw - 48px));
-  height: min(760px, calc(100vh - 48px));
-  max-height: min(760px, calc(100vh - 48px));
+  width: 1500px;
+  height: 900px;
+  max-height: 900px;
   overflow: hidden;
   padding: 18px;
   border-radius: 8px;
   background: #ffffff;
   box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
 }
 
 .custom-library-create-backdrop {
@@ -4346,6 +4349,33 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   border-right: 2px solid #64748b;
   border-bottom: 2px solid #64748b;
   opacity: 0.7;
+}
+
+/* 元件定义对话框标题栏（可拖动区域）特殊样式 */
+.custom-device-dialog > .image-picker-title {
+  margin: -18px -18px 0;
+  padding: 10px 16px;
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  border-bottom: 1px solid #e2e8f0;
+  border-radius: 8px 8px 0 0;
+}
+
+.custom-device-dialog > .image-picker-title .device-library-dialog-title {
+  padding: 2px 8px 2px 4px;
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+
+.custom-device-dialog > .image-picker-title .device-library-dialog-title:hover {
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.custom-device-dialog > .image-picker-title .device-library-dialog-title h2 {
+  display: inline;
+  vertical-align: middle;
+  font-size: 15px;
+  font-weight: 600;
+  color: #334155;
 }
 
 .template-dialog {
@@ -6645,12 +6675,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .custom-device-form-grid {
   grid-template-columns:
-    minmax(126px, 1.15fr)
-    minmax(150px, 1.35fr)
-    minmax(132px, 1.2fr)
-    minmax(104px, 1fr)
-    minmax(116px, 1fr)
-    minmax(96px, 0.95fr);
+    160px 2fr 1fr 80px 80px 80px;
   align-items: end;
 }
 
