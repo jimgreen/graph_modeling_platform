@@ -247,12 +247,19 @@ export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, se
         ? isDerivedComponentSpecificDefinition(template, derivedInfo.baseComponentLibrary, definition)
         : definition.enName !== "component_type" && !isReservedDeviceDefinitionParamName(definition.enName)
     )
-    .map((definition) => ({
-      ...definition,
-      ...resolveDeviceParameterDefinitionExportSettings(template.kind, exportContextParams, definition),
-      cnName: definition.cnName === definition.enName ? PARAM_LABELS[definition.enName] ?? definition.cnName : definition.cnName,
-      id: customParamId()
-    }));
+    .map((definition) => {
+      const row = {
+        ...definition,
+        ...resolveDeviceParameterDefinitionExportSettings(template.kind, exportContextParams, definition),
+        cnName: definition.cnName === definition.enName ? PARAM_LABELS[definition.enName] ?? definition.cnName : definition.cnName,
+        id: customParamId()
+      };
+      // dev_type（设备类型）默认值取当前图元英文名称（元件库），仅当图元未预设 dev_type 时填充
+      if (definition.enName === "dev_type" && !String(row.typicalValue ?? "").trim()) {
+        return { ...row, typicalValue: editableComponentLibrary };
+      }
+      return row;
+    });
   const stateRows = createDefinitionStateDraftRows(template);
   return {
     categoryLibraryName,

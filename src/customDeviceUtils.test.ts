@@ -51,6 +51,15 @@ describe("electric generation device library classification", () => {
     expect(deviceDefinitionKeyForTemplate(dcSource!)).toBe("DCGenerator");
   });
 
+  test("defaults dev_type to the current component library english name", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-load");
+    const draft = createCustomDeviceDraftFromTemplate(template!);
+    const devTypeRow = draft.params.find((row) => row.enName === "dev_type");
+
+    expect(devTypeRow).toBeDefined();
+    expect(devTypeRow?.typicalValue).toBe(draft.componentLibrary);
+  });
+
   test("shows only derived-specific parameters when editing a derived generation device", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-wind-source");
     const draft = createCustomDeviceDraftFromTemplate(template!);
