@@ -2752,105 +2752,6 @@ export function renderAppView(__appScope: Record<string, any>) {
             </div>
           </form>
         </div>)}
-      {eDeviceDefinitionInterfaceDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setEDeviceDefinitionInterfaceDialogOpen(false)}>
-          <section className="e-device-interface-dialog" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
-            <div className="image-picker-title">
-              <div>
-                <h2>E文件接口定义</h2>
-              </div>
-              <button type="button" aria-label="关闭E文件接口定义" title="关闭" onClick={() => setEDeviceDefinitionInterfaceDialogOpen(false)}>
-                <X size={16} />
-              </button>
-            </div>
-            <div className="e-device-interface-actions">
-              <button type="button" onClick={__appScope.exportEDeviceDefinitionFile}>
-                <Download size={14} aria-hidden="true" />
-                <span>保存成文件</span>
-              </button>
-              <label className="e-device-interface-file-button">
-                <FileInput size={14} aria-hidden="true" />
-                <span>从文件加载</span>
-                <input type="file" accept=".e,text/plain" hidden onChange={__appScope.importEDeviceDefinitionFile} />
-              </label>
-            </div>
-            <div className="e-device-interface-table-wrap">
-              <table className="custom-param-table e-device-interface-table">
-                <thead>
-                  <tr>
-                    <th>设备类/参数</th>
-                    <th>英文名称</th>
-                    <th>是否导出</th>
-                    <th>导出名称</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {eDeviceInterfaceDefinitionRows.map((classRow) => (<Fragment key={classRow.componentLibrary}>
-                    <tr className="e-device-interface-class-row">
-                      <td>
-                        <strong>{classRow.label || classRow.componentLibrary}</strong>
-                        {classRow.categoryLibrary ? <small>{classRow.categoryLibrary}</small> : null}
-                      </td>
-                      <td><code>{classRow.componentLibrary}</code></td>
-                      <td className="custom-param-export-toggle">
-                        <input
-                          className="custom-param-export-checkbox"
-                          type="checkbox"
-                          checked={classRow.exportEnabled}
-                          aria-label={`${classRow.componentLibrary}是否导出`}
-                          onChange={(event) => setEDeviceDefinitionClassExportEnabled((current) => ({
-                            ...current,
-                            [classRow.componentLibrary]: event.target.checked
-                          }))}
-                        />
-                      </td>
-                      <td>
-                        <BufferedTextInput
-                          value={classRow.exportName ?? classRow.componentLibrary}
-                          onCommit={(value) => {
-                            const trimmed = value.trim();
-                            setEDeviceDefinitionLabels((prev) => {
-                              const next = { ...prev };
-                              if (!trimmed || trimmed === classRow.componentLibrary) {
-                                delete next[classRow.componentLibrary];
-                              } else {
-                                next[classRow.componentLibrary] = trimmed;
-                              }
-                              return next;
-                            });
-                          }}
-                        />
-                      </td>
-                    </tr>
-                    {classRow.fields.map((field) => (<tr key={`${classRow.componentLibrary}:${field.sourceName}`} className={classRow.exportEnabled ? "" : "disabled"}>
-                      <td className="e-device-interface-param-name">{field.cnName || field.sourceName}</td>
-                      <td><code>{field.sourceName}</code></td>
-                      <td className="custom-param-export-toggle">
-                        <input
-                          className="custom-param-export-checkbox"
-                          type="checkbox"
-                          checked={Boolean(field.exportEnabled)}
-                          disabled={!classRow.exportEnabled || field.readonly}
-                          aria-label={`${field.cnName || field.sourceName}是否导出`}
-                          onChange={(event) => updateDefinitionComponentLibraryCommonParamExport(classRow.componentLibrary, field.sourceName, { exportEnabled: event.target.checked, exportName: field.exportName?.trim() || field.sourceName })}
-                        />
-                      </td>
-                      <td>
-                        <BufferedTextInput
-                          value={field.exportName ?? ""}
-                          disabled={!classRow.exportEnabled || !field.exportEnabled || field.readonly}
-                          onCommit={(value) => updateDefinitionComponentLibraryCommonParamExport(classRow.componentLibrary, field.sourceName, { exportName: value })}
-                        />
-                      </td>
-                    </tr>))}
-                  </Fragment>))}
-                  {eDeviceInterfaceDefinitionRows.length === 0 && (<tr>
-                    <td colSpan={4}>暂无可配置设备类</td>
-                  </tr>)}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </div>)}
       {customDeviceDialogOpen && (<div className="image-picker-backdrop" onPointerDown={requestCloseCustomDeviceDialog}>
           <section ref={customDeviceDialogRef} className={`custom-device-dialog${deviceLibraryDialogLayouts.custom ? " floating" : ""}`} style={deviceLibraryDialogStyle("custom")} onPointerDown={stopDeviceLibraryDialogEvent} onPointerUp={stopDeviceLibraryDialogEvent} onPointerCancel={stopDeviceLibraryDialogEvent} onLostPointerCapture={stopDeviceLibraryDialogEvent} onClick={(event) => event.stopPropagation()}>
             <div className="image-picker-title">
@@ -3404,6 +3305,105 @@ export function renderAppView(__appScope: Record<string, any>) {
               </button>
             </footer>
             <div className="device-library-dialog-resize" role="separator" aria-orientation="horizontal" aria-label="调整新建元件窗口大小" title="拖拽调整窗口大小" onPointerDown={(event) => startDeviceLibraryDialogResize("custom", event)}/>
+          </section>
+        </div>)}
+      {eDeviceDefinitionInterfaceDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setEDeviceDefinitionInterfaceDialogOpen(false)}>
+          <section className="e-device-interface-dialog" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+            <div className="image-picker-title">
+              <div>
+                <h2>E文件接口定义</h2>
+              </div>
+              <button type="button" aria-label="关闭E文件接口定义" title="关闭" onClick={() => setEDeviceDefinitionInterfaceDialogOpen(false)}>
+                <X size={16} />
+              </button>
+            </div>
+            <div className="e-device-interface-actions">
+              <button type="button" onClick={__appScope.exportEDeviceDefinitionFile}>
+                <Download size={14} aria-hidden="true" />
+                <span>保存成文件</span>
+              </button>
+              <label className="e-device-interface-file-button">
+                <FileInput size={14} aria-hidden="true" />
+                <span>从文件加载</span>
+                <input type="file" accept=".e,text/plain" hidden onChange={__appScope.importEDeviceDefinitionFile} />
+              </label>
+            </div>
+            <div className="e-device-interface-table-wrap">
+              <table className="custom-param-table e-device-interface-table">
+                <thead>
+                  <tr>
+                    <th>设备类/参数</th>
+                    <th>英文名称</th>
+                    <th>是否导出</th>
+                    <th>导出名称</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {eDeviceInterfaceDefinitionRows.map((classRow) => (<Fragment key={classRow.componentLibrary}>
+                    <tr className="e-device-interface-class-row">
+                      <td>
+                        <strong>{classRow.label || classRow.componentLibrary}</strong>
+                        {classRow.categoryLibrary ? <small>{classRow.categoryLibrary}</small> : null}
+                      </td>
+                      <td><code>{classRow.componentLibrary}</code></td>
+                      <td className="custom-param-export-toggle">
+                        <input
+                          className="custom-param-export-checkbox"
+                          type="checkbox"
+                          checked={classRow.exportEnabled}
+                          aria-label={`${classRow.componentLibrary}是否导出`}
+                          onChange={(event) => setEDeviceDefinitionClassExportEnabled((current) => ({
+                            ...current,
+                            [classRow.componentLibrary]: event.target.checked
+                          }))}
+                        />
+                      </td>
+                      <td>
+                        <BufferedTextInput
+                          value={classRow.exportName ?? classRow.componentLibrary}
+                          onCommit={(value) => {
+                            const trimmed = value.trim();
+                            setEDeviceDefinitionLabels((prev) => {
+                              const next = { ...prev };
+                              if (!trimmed || trimmed === classRow.componentLibrary) {
+                                delete next[classRow.componentLibrary];
+                              } else {
+                                next[classRow.componentLibrary] = trimmed;
+                              }
+                              return next;
+                            });
+                          }}
+                        />
+                      </td>
+                    </tr>
+                    {classRow.fields.map((field) => (<tr key={`${classRow.componentLibrary}:${field.sourceName}`} className={classRow.exportEnabled ? "" : "disabled"}>
+                      <td className="e-device-interface-param-name">{field.cnName || field.sourceName}</td>
+                      <td><code>{field.sourceName}</code></td>
+                      <td className="custom-param-export-toggle">
+                        <input
+                          className="custom-param-export-checkbox"
+                          type="checkbox"
+                          checked={Boolean(field.exportEnabled)}
+                          disabled={!classRow.exportEnabled || field.readonly}
+                          aria-label={`${field.cnName || field.sourceName}是否导出`}
+                          onChange={(event) => updateDefinitionComponentLibraryCommonParamExport(classRow.componentLibrary, field.sourceName, { exportEnabled: event.target.checked, exportName: field.exportName?.trim() || field.sourceName })}
+                        />
+                      </td>
+                      <td>
+                        <BufferedTextInput
+                          value={field.exportName ?? ""}
+                          disabled={!classRow.exportEnabled || !field.exportEnabled || field.readonly}
+                          onCommit={(value) => updateDefinitionComponentLibraryCommonParamExport(classRow.componentLibrary, field.sourceName, { exportName: value })}
+                        />
+                      </td>
+                    </tr>))}
+                  </Fragment>))}
+                  {eDeviceInterfaceDefinitionRows.length === 0 && (<tr>
+                    <td colSpan={4}>暂无可配置设备类</td>
+                  </tr>)}
+                </tbody>
+              </table>
+            </div>
           </section>
         </div>)}
       {renderNodeDoubleClickDialog()}

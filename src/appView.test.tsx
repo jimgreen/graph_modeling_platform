@@ -79,6 +79,14 @@ describe("app view device model parameter keys", () => {
 });
 
 describe("app view device definition parameter rows", () => {
+  test("renders the E interface dialog after the custom device dialog so it is not hidden behind it", () => {
+    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+
+    expect(source.indexOf("{customDeviceDialogOpen &&")).toBeLessThan(
+      source.indexOf("{eDeviceDefinitionInterfaceDialogOpen &&")
+    );
+  });
+
   test("filters polluted base rows from derived component parameter tables", () => {
     const rows = resolveDeviceDefinitionParameterRowsForDisplay(
       [
