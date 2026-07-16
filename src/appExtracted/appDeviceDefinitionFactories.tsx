@@ -3126,9 +3126,54 @@ export function createResolveDuplicateModelImport(__appScope: Record<string, any
 
 export function createExportSchemeRecord(__appScope: Record<string, any>) {
   return async (scheme: SavedSchemeRecord) => {
-  const { downloadBackendSchemeArchive, flattenSavedProjects, isPickerAbort, safeFilePart, schemePathForRecord, writeOperationLog } = __appScope;
+  const { DEFAULT_CANVAS_BACKGROUND, backgroundPageRender, buildEFileExport, buildSvgDocument, colorPalette, downloadBackendSchemeArchive, fetchBackendProjectRecord, flattenSavedProjects, isPickerAbort, libraryTemplates, loadSvgImageExportPathById, measurementConfig, safeFilePart, saveBackendProjectArtifacts, savedProjectRecordIsSummary, schemePathForRecord, schemePathForScheme, schemes, writeOperationLog } = __appScope;
     try {
       const schemePath = schemePathForRecord(scheme);
+      // 导出前用前端逻辑刷新方案下所有模型的 SVG/E，保证与右上角导出按钮产物一致
+      try {
+        const imageExportPathById = typeof loadSvgImageExportPathById === "function" ? await loadSvgImageExportPathById() : {};
+        const findOwnerSchemeForProject = (root: SavedSchemeRecord, projectId: string): SavedSchemeRecord | null => {
+          if (root.projects?.some((p) => p.id === projectId)) return root;
+          for (const child of (root as any).children ?? []) {
+            const found = findOwnerSchemeForProject(child, projectId);
+            if (found) return found;
+          }
+          return null;
+        };
+        for (const record of flattenSavedProjects([scheme])) {
+          let projectRecord = record;
+          if (typeof savedProjectRecordIsSummary === "function" && savedProjectRecordIsSummary(record)) {
+            const ownerScheme = findOwnerSchemeForProject(scheme, record.id) ?? scheme;
+            const ownerPath = typeof schemePathForScheme === "function" ? schemePathForScheme(ownerScheme) : schemePath;
+            projectRecord = await fetchBackendProjectRecord(ownerPath, record.name);
+          }
+          const project = projectRecord?.project;
+          if (!project) continue;
+          const ownerScheme = findOwnerSchemeForProject(scheme, record.id) ?? scheme;
+          const ownerPath = typeof schemePathForScheme === "function" ? schemePathForScheme(ownerScheme) : schemePath;
+          const svg = buildSvgDocument(project.nodes ?? [], project.edges ?? [], {
+            width: project.canvasWidth ?? 1920,
+            height: project.canvasHeight ?? 1024,
+            backgroundColor: project.canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND,
+            backgroundImage: project.canvasBackgroundImage,
+            imageExportPathById,
+            colorDisplayMode: "voltage",
+            colorPalette,
+            deviceTemplates: libraryTemplates,
+            layers: project.layers,
+            activeLayerId: project.activeLayerId,
+            backgroundPage: backgroundPageRender,
+            measurements: project.measurements,
+            measurementConfig
+          });
+          const eResult = buildEFileExport(project, ownerPath && ownerPath.length > 0 ? ownerPath : ["默认方案"]);
+          await saveBackendProjectArtifacts(ownerPath, projectRecord.name, { svg, eFile: eResult?.text });
+        }
+      } catch (error) {
+        // 刷新失败不阻止导出；提示用户，压缩包内仍是磁盘现有内容
+        // eslint-disable-next-line no-console
+        console.warn("导出前刷新方案 SVG/E 失败：", error);
+      }
       const saved = await downloadBackendSchemeArchive(schemePath, `${safeFilePart(scheme.name)}.zip`);
       if (!saved) {
         return;

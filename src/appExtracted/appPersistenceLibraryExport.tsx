@@ -754,6 +754,17 @@ export async function saveBackendProjectRecord(schemePath: string[], record: Sav
   return payload.project ? { ...normalizeSavedProjectIndexes(payload.project), id: record.id } : record;
 }
 
+export async function saveBackendProjectArtifacts(schemePath: string[], name: string, artifacts: { svg?: string; eFile?: string }): Promise<void> {
+  if (!artifacts.svg && !artifacts.eFile) {
+    return;
+  }
+  await fetchBackendJson<{ ok?: boolean }>(
+    "/api/schemes/project/artifacts",
+    "保存模型产物到后台失败。",
+    backendJsonRequest("PUT", JSON.stringify({ schemePath, name, ...artifacts }))
+  );
+}
+
 export async function deleteBackendProjectRecord(schemePath: string[], name: string): Promise<void> {
   await fetchBackendJson<{ ok?: boolean }>(
     "/api/schemes/project",

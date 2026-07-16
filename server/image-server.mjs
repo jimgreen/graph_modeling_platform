@@ -3480,6 +3480,28 @@ async function handleSaveSchemeProject(request, response) {
   sendJson(response, 200, { ok: true, project: savedRecord, savedAt: new Date().toISOString() });
 }
 
+async function handleSaveSchemeProjectArtifacts(request, response) {
+  const payload = await readJsonBody(request, maxSchemeBodyBytes, "模型产物数据过大，最大支持 64MB。");
+  const schemePath = Array.isArray(payload.schemePath) && payload.schemePath.length > 0 ? payload.schemePath : null;
+  const name = typeof payload.name === "string" ? payload.name.trim() : "";
+  if (!schemePath || !name) {
+    sendError(response, 400, "缺少方案路径或模型名称。");
+    return;
+  }
+  const filesRoot = join(schemeDataDir, "files");
+  const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
+  const { ePath, svgPath } = projectFilePathsForName(schemeDir, name);
+  const tasks = [];
+  if (typeof payload.svg === "string") {
+    tasks.push(writeTextIfChanged(svgPath, payload.svg));
+  }
+  if (typeof payload.eFile === "string") {
+    tasks.push(writeTextIfChanged(ePath, payload.eFile));
+  }
+  await Promise.all(tasks);
+  sendJson(response, 200, { ok: true, savedAt: new Date().toISOString() });
+}
+
 async function handleDeleteSchemeProject(request, response) {
   const payload = await readJsonBody(request, maxSchemeBodyBytes, "模型数据过大，最大支持 64MB。");
   if (!payload.name && !payload.projectName) {
@@ -3772,6 +3794,9 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
     }],
     ["PUT /api/schemes/project", async ({ request, response }) => {
       await handleSaveSchemeProject(request, response);
+    }],
+    ["PUT /api/schemes/project/artifacts", async ({ request, response }) => {
+      await handleSaveSchemeProjectArtifacts(request, response);
     }],
     ["DELETE /api/schemes/project", async ({ request, response }) => {
       await handleDeleteSchemeProject(request, response);
