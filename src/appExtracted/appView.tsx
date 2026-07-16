@@ -2794,6 +2794,32 @@ export function renderAppView(__appScope: Record<string, any>) {
                 元件名称
                 <BufferedTextInput value={customDeviceDraft.componentName} placeholder="例如 水电、核电、风电、光伏" onCommit={(value) => setCustomDeviceDraft((current) => ({ ...current, componentName: value, error: "" }))}/>
               </label>
+              <label className="custom-device-container-field">
+                是否容器
+                <select value={customDeviceDraft.isContainer ? "1" : "0"} onChange={(event) => setCustomDeviceDraft((current) => ({
+            ...current,
+            isContainer: event.target.value === "1",
+            error: ""
+        }))}>
+                  <option value="0">否</option>
+                  <option value="1">是</option>
+                </select>
+              </label>
+              <label className="custom-device-resize-field">
+                是否允许变形
+                <select value={customDeviceDraft.allowResizeTransform} onChange={(event) => setCustomDeviceDraft((current) => ({
+            ...current,
+            allowResizeTransform: event.target.value,
+            error: ""
+        }))}>
+                  <option value="0">否</option>
+                  <option value="1">是</option>
+                </select>
+              </label>
+              <label className="custom-device-terminal-count-field">
+                端子数量
+                <BufferedTextInput type="number" min="0" max={MAX_CUSTOM_DEVICE_TERMINALS} value={customDeviceDraft.terminalCount} onCommit={(value) => updateCustomDraftTerminalCount(Number(value))}/>
+              </label>
               <label className="custom-device-derived-field">
                 是否派生类
                 <select value={customDeviceDraft.isDerivedComponentLibrary ? "1" : "0"} onChange={(event) => {
@@ -2824,32 +2850,6 @@ export function renderAppView(__appScope: Record<string, any>) {
                   <BufferedTextInput value={customDeviceDraft.derivedComponentLibrary ?? ""} placeholder="例如 ACWindGen" onCommit={(value) => setCustomDeviceDraft((current) => ({ ...current, derivedComponentLibrary: value, error: "" }))}/>
                 </label>
               </>)}
-              <label className="custom-device-container-field">
-                是否容器
-                <select value={customDeviceDraft.isContainer ? "1" : "0"} onChange={(event) => setCustomDeviceDraft((current) => ({
-            ...current,
-            isContainer: event.target.value === "1",
-            error: ""
-        }))}>
-                  <option value="0">否</option>
-                  <option value="1">是</option>
-                </select>
-              </label>
-              <label className="custom-device-resize-field">
-                是否允许变形
-                <select value={customDeviceDraft.allowResizeTransform} onChange={(event) => setCustomDeviceDraft((current) => ({
-            ...current,
-            allowResizeTransform: event.target.value,
-            error: ""
-        }))}>
-                  <option value="0">否</option>
-                  <option value="1">是</option>
-                </select>
-              </label>
-              <label className="custom-device-terminal-count-field">
-                端子数量
-                <BufferedTextInput type="number" min="0" max={MAX_CUSTOM_DEVICE_TERMINALS} value={customDeviceDraft.terminalCount} onCommit={(value) => updateCustomDraftTerminalCount(Number(value))}/>
-              </label>
             </div>
             <div className="device-definition-tabs custom-device-tabs" role="tablist" aria-label="元件定义内容切换">
               {customComponentTreeSelection?.kind !== "componentLibrary" && (<button type="button" className={visibleCustomDeviceDialogView === "icon" ? "active" : ""} onClick={() => setCustomDeviceDialogView("icon")}>
