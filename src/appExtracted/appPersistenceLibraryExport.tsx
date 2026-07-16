@@ -730,18 +730,26 @@ export async function uploadBackendSchemeArchive(
   return payload;
 }
 
-export async function saveBackendProjectRecord(schemePath: string[], record: SavedProjectRecord, previousName = ""): Promise<SavedProjectRecord> {
+export async function saveBackendProjectRecord(schemePath: string[], record: SavedProjectRecord, previousName = “”, options?: { svg?: string; eFile?: string }): Promise<SavedProjectRecord> {
   if (savedProjectRecordIsSummary(record)) {
-    throw new Error(`模型“${record.name}”仍是目录摘要，尚未读取完整内容，不能写回后台。`);
+    throw new Error(`模型”${record.name}”仍是目录摘要，尚未读取完整内容，不能写回后台。`);
+  }
+  const normalizedRecord = normalizeSchemesForBackend([createSavedScheme(“__single_project__”, [record])])[0]?.projects?.[0] ?? record;
+  const body: Record<string, unknown> = {
+    schemePath,
+    previousName,
+    record: normalizedRecord
+  };
+  if (options?.svg) {
+    body.svg = options.svg;
+  }
+  if (options?.eFile) {
+    body.eFile = options.eFile;
   }
   const payload = await fetchBackendJson<BackendProjectSaveResponse>(
-    "/api/schemes/project",
-    "保存模型到后台失败。",
-    backendJsonRequest("PUT", JSON.stringify({
-      schemePath,
-      previousName,
-      record: normalizeSchemesForBackend([createSavedScheme("__single_project__", [record])])[0]?.projects?.[0] ?? record
-    }))
+    “/api/schemes/project”,
+    “保存模型到后台失败。”,
+    backendJsonRequest(“PUT”, JSON.stringify(body))
   );
   return payload.project ? { ...normalizeSavedProjectIndexes(payload.project), id: record.id } : record;
 }

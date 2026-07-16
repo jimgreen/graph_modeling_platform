@@ -4169,7 +4169,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
 
 export function createSaveCurrentProject(__appScope: Record<string, any>) {
   return async (targetId?: string) => {
-  const { activeProjectKey, activeSchemeKey, clearRefreshRecoveryProject, createSavedProject, currentGraphDirtyBaseline, currentProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, findProjectRecordByNameInScheme, findSavedSchemeById, findSchemeForProject, graphDirtyBaselineRef, projectById, projectName, rememberPersistedSchemesPayload, requireEditMode, saveActiveProjectPointer, saveBackendProjectRecord, savedSchemePathForId, schemes, selectedSchemeId, serializeSchemesForStorage, setActiveProjectKey, setActiveSchemeKey, setHasUnsavedChanges, setProjectName, setSchemes, suppressNextGraphDirtyRef, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
+  const { activeProjectKey, activeSchemeKey, backgroundPageRender, buildEFileExport, buildSvgDocument, clearRefreshRecoveryProject, colorPalette, createSavedProject, currentGraphDirtyBaseline, currentProject, DEFAULT_CANVAS_BACKGROUND, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, findProjectRecordByNameInScheme, findSavedSchemeById, findSchemeForProject, getEExportWarnings, graphDirtyBaselineRef, libraryTemplates, loadSvgImageExportPathById, measurementConfig, projectById, projectMeasurements, projectName, rememberPersistedSchemesPayload, requireEditMode, saveActiveProjectPointer, saveBackendProjectRecord, savedSchemePathForId, schemePathForScheme, schemes, selectedSchemeId, serializeSchemesForStorage, setActiveProjectKey, setActiveSchemeKey, setHasUnsavedChanges, setProjectName, setSchemes, suppressNextGraphDirtyRef, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
     if (targetId === undefined) {
       targetId = activeProjectKey;
     }
@@ -4186,6 +4186,33 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
     deferredMoveOptimizationCancelRef.current = null;
     deferredRoutableLineRouteRepairCancelRef.current?.();
     deferredRoutableLineRouteRepairCancelRef.current = null;
+    const computeSaveArtifacts = async (project: ProjectFile, schemePath: string[]): Promise<{ svg?: string; eFile?: string }> => {
+      try {
+        if (typeof buildSvgDocument !== "function" || typeof buildEFileExport !== "function") {
+          return {};
+        }
+        const imageExportPathById = typeof loadSvgImageExportPathById === "function" ? await loadSvgImageExportPathById() : {};
+        const svg = buildSvgDocument(project.nodes ?? [], project.edges ?? [], {
+          width: project.canvasWidth ?? 1920,
+          height: project.canvasHeight ?? 1024,
+          backgroundColor: project.canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND,
+          backgroundImage: project.canvasBackgroundImage,
+          imageExportPathById,
+          colorDisplayMode: "voltage",
+          colorPalette,
+          deviceTemplates: libraryTemplates,
+          layers: project.layers,
+          activeLayerId: project.activeLayerId,
+          backgroundPage: backgroundPageRender,
+          measurements: projectMeasurements ?? project.measurements,
+          measurementConfig
+        });
+        const eResult = buildEFileExport(project, schemePath.length > 0 ? schemePath : ["默认方案"]);
+        return { svg, eFile: eResult?.text };
+      } catch {
+        return {};
+      }
+    };
     if (targetId && existingTargetProject) {
       const existing = existingTargetProject;
       const record: SavedProjectRecord = {
@@ -4203,7 +4230,8 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
       }
       let savedRecord: SavedProjectRecord;
       try {
-        savedRecord = await saveBackendProjectRecord(ownerSchemePath, record, existing.name);
+        const artifacts = await computeSaveArtifacts(record.project, ownerSchemePath);
+        savedRecord = await saveBackendProjectRecord(ownerSchemePath, record, existing.name, artifacts);
       } catch (error) {
         const message = error instanceof Error ? error.message : `保存模型到后台失败：${record.name}`;
         window.alert(message);
@@ -4248,7 +4276,8 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
     const targetSchemePath = savedSchemePathForId(fallbackSchemes, resolvedSchemeId) ?? [targetScheme?.name ?? "默认方案"];
     let savedRecord: SavedProjectRecord;
     try {
-      savedRecord = await saveBackendProjectRecord(targetSchemePath, record, recoveredRecord?.name);
+      const artifacts = await computeSaveArtifacts(record.project, targetSchemePath);
+      savedRecord = await saveBackendProjectRecord(targetSchemePath, record, recoveredRecord?.name, artifacts);
     } catch (error) {
       const message = error instanceof Error ? error.message : `保存模型到后台失败：${record.name}`;
       window.alert(message);

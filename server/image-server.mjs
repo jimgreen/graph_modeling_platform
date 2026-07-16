@@ -228,6 +228,15 @@ async function writeTextIfChanged(filePath, content) {
   await writeFile(filePath, content, "utf-8");
 }
 
+async function fileExists(filePath) {
+  try {
+    await stat(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function ensureJsonStoreFile(dirPath, filePath, defaultValue) {
   await mkdir(dirPath, { recursive: true });
   try {
@@ -2838,10 +2847,12 @@ export async function saveSchemeProjectRecord(options) {
   const { jsonPath, ePath, svgPath } = projectFilePathsForName(schemeDir, name);
   const measurementConfig = options.measurementConfig ?? { measurementTypes: [], deviceProfiles: [] };
   const imagePathById = options.imagePathById ?? (await imageExportPathByIdFromManifest(await readManifest()));
+  const svgContent = options.svg ?? buildSvgFile(storedRecord.project, measurementConfig, { imagePathById });
+  const eContent = options.eFile ?? buildDeviceParameterFile(storedRecord.project, schemePath);
   await Promise.all([
     writeTextIfChanged(jsonPath, stringifyJson(storedRecord.project)),
-    writeTextIfChanged(ePath, buildDeviceParameterFile(storedRecord.project, schemePath)),
-    writeTextIfChanged(svgPath, buildSvgFile(storedRecord.project, measurementConfig, { imagePathById }))
+    writeTextIfChanged(ePath, eContent),
+    writeTextIfChanged(svgPath, svgContent)
   ]);
   return storedRecord;
 }
@@ -2880,11 +2891,14 @@ async function writeSchemeFiles(schemes, options = {}) {
       expectedFiles.add(jsonPath);
       expectedFiles.add(ePath);
       expectedFiles.add(svgPath);
-      writeTasks.push(
-        writeTextIfChanged(jsonPath, stringifyJson(record.project)),
-        writeTextIfChanged(ePath, buildDeviceParameterFile(record.project, currentSchemePath)),
-        writeTextIfChanged(svgPath, buildSvgFile(record.project, measurementConfig, { imagePathById }))
-      );
+      writeTasks.push(writeTextIfChanged(jsonPath, stringifyJson(record.project)));
+      const [svgExists, eExists] = await Promise.all([fileExists(svgPath), fileExists(ePath)]);
+      if (!svgExists) {
+        writeTasks.push(writeTextIfChanged(svgPath, buildSvgFile(record.project, measurementConfig, { imagePathById })));
+      }
+      if (!eExists) {
+        writeTasks.push(writeTextIfChanged(ePath, buildDeviceParameterFile(record.project, currentSchemePath)));
+      }
     }
     for (const childScheme of scheme.children ?? []) {
       await writeSchemeTree(childScheme, schemeDir, currentSchemePath);
@@ -3459,7 +3473,9 @@ async function handleSaveSchemeProject(request, response) {
     record,
     previousName: payload.previousName,
     measurementConfig: await readMeasurementConfig(),
-    imagePathById: await imageExportPathByIdFromManifest(await readManifest())
+    imagePathById: await imageExportPathByIdFromManifest(await readManifest()),
+    svg: typeof payload.svg === "string" ? payload.svg : undefined,
+    eFile: typeof payload.eFile === "string" ? payload.eFile : undefined
   });
   sendJson(response, 200, { ok: true, project: savedRecord, savedAt: new Date().toISOString() });
 }
