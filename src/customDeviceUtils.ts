@@ -254,9 +254,9 @@ export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, se
         cnName: definition.cnName === definition.enName ? PARAM_LABELS[definition.enName] ?? definition.cnName : definition.cnName,
         id: customParamId()
       };
-      // dev_type（设备类型）默认值取当前图元英文名称（元件库），仅当图元未预设 dev_type 时填充
+      // dev_type（设备类型）默认值取当前元件英文名称（template.kind），仅当图元未预设 dev_type 时填充
       if (definition.enName === "dev_type" && !String(row.typicalValue ?? "").trim()) {
-        return { ...row, typicalValue: editableComponentLibrary };
+        return { ...row, typicalValue: template.kind };
       }
       return row;
     });
