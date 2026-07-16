@@ -87,6 +87,16 @@ describe("app view device definition parameter rows", () => {
     );
   });
 
+  test("renders the E interface dialog as a left class list with a right parameter table", () => {
+    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("e-device-interface-layout");
+    expect(source).toContain("e-device-interface-class-list");
+    expect(source).toContain("e-device-interface-detail");
+    expect(source).toContain("selectedEDeviceInterfaceRow");
+    expect(source).toMatch(/selectedEDeviceInterfaceRow\?\.fields\.map/);
+  });
+
   test("filters polluted base rows from derived component parameter tables", () => {
     const rows = resolveDeviceDefinitionParameterRowsForDisplay(
       [
