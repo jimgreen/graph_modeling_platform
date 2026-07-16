@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
-import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
+import { Children, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 import {
+  CustomComponentManagerTree,
   createLibraryPackage,
   componentLibraryDisplayParts,
   defaultCategoryLibraryForComponentLibrary,
@@ -211,6 +213,29 @@ describe("graph template library filtering", () => {
       params: { component_type: "LegacyMeter" }
     });
     expect("attributeLibrary" in normalized.customDeviceTemplates[0]).toBe(false);
+  });
+
+  test("preserves E interface definition labels and class export flags", () => {
+    const normalized = normalizeDeviceLibraryPersistencePayload({
+      customDeviceTemplates: [],
+      customCategoryLibraries: [],
+      customComponentLibraries: [],
+      deviceDefinitionOverrides: {},
+      customGraphTemplateTypes: [],
+      customGraphTemplates: [],
+      eDeviceDefinitionLabels: {
+        ACLoad: "LoadTable",
+        EmptyName: "   "
+      },
+      eDeviceDefinitionClassExportEnabled: {
+        ACLoad: false,
+        DCLoad: true,
+        EmptyKey: "no"
+      }
+    } as any);
+
+    expect((normalized as any).eDeviceDefinitionLabels).toEqual({ ACLoad: "LoadTable" });
+    expect((normalized as any).eDeviceDefinitionClassExportEnabled).toEqual({ ACLoad: false, DCLoad: true });
   });
 
   test("keeps custom component library Chinese labels for bilingual display", () => {
@@ -671,8 +696,8 @@ describe("graph template library filtering", () => {
   test("renders E export controls in all parameter definition tables", () => {
     const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
 
-    expect(appViewSource.match(/<th>是否导出<\/th>/gu)).toHaveLength(3);
-    expect(appViewSource.match(/<th>导出名称<\/th>/gu)).toHaveLength(3);
+    expect(appViewSource.match(/<th>是否导出<\/th>/gu)).toHaveLength(4);
+    expect(appViewSource.match(/<th>导出名称<\/th>/gu)).toHaveLength(4);
     expect(appViewSource).toContain("exportEnabled");
     expect(appViewSource).toContain("exportName");
   });
@@ -734,5 +759,37 @@ describe("graph template library filtering", () => {
     expect(source).toContain('x1="0" y1="80" x2="30" y2="80"');
     expect(source).toContain('x1="240" y1="80" x2="210" y2="80"');
     expect(source).not.toContain("<circle");
+  });
+});
+
+describe("E device interface definition entry", () => {
+  test("shows one merged E interface definition action instead of separate import and export buttons", () => {
+    const html = renderToStaticMarkup(createElement(CustomComponentManagerTree as any, {
+      libraries: [],
+      filteredByComponentLibrary: {},
+      customComponentLibraries: [],
+      initialCollapsedLibraries: new Set(),
+      initialCollapsedTypes: new Set(),
+      initialSelection: { kind: "categoryLibrary", categoryLibraryName: "" },
+      searchQuery: "",
+      onSelectCategoryLibrary: () => undefined,
+      onSelectComponent: () => undefined,
+      onSelectComponentLibrary: () => undefined,
+      onCreateCategoryLibrary: () => undefined,
+      onCreateComponentLibrary: () => undefined,
+      onCreateComponent: () => undefined,
+      onRenameSelection: () => undefined,
+      onDeleteSelection: () => undefined,
+      onSearchChange: () => undefined,
+      onCollapseChange: () => undefined,
+      onSelectionChange: () => undefined,
+      onOpenEDeviceDefinitionInterface: () => undefined,
+      onExportEDeviceDefinition: () => undefined,
+      onImportEDeviceDefinition: () => undefined
+    }));
+
+    expect(html).toContain("E文件接口定义");
+    expect(html).not.toContain("导出E文件定义");
+    expect(html).not.toContain("导入E文件定义");
   });
 });

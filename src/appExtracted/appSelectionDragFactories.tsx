@@ -217,12 +217,14 @@ export function createPersistDeviceLibraryChange(__appScope: Record<string, any>
     overrides: Partial<DeviceLibraryPersistencePayload>,
     messages: { success?: string; failure?: string } = {}
   ) => {
-  const { backendDeviceLibraryLoadedRef, customCategoryLibraries, customComponentLibraries, customDeviceTemplates, customGraphTemplateTypes, customGraphTemplates, deviceDefinitionOverrides, lastPersistedDeviceLibraryPayloadRef, normalizeDeviceLibraryPersistencePayload, saveBackendDeviceLibraryPayload, suppressNextBackendDeviceLibrarySyncRef, writeLocalDeviceLibraryPersistencePayload, writeOperationLog } = __appScope;
+  const { backendDeviceLibraryLoadedRef, customCategoryLibraries, customComponentLibraries, customDeviceTemplates, customGraphTemplateTypes, customGraphTemplates, deviceDefinitionOverrides, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, lastPersistedDeviceLibraryPayloadRef, normalizeDeviceLibraryPersistencePayload, saveBackendDeviceLibraryPayload, suppressNextBackendDeviceLibrarySyncRef, writeLocalDeviceLibraryPersistencePayload, writeOperationLog } = __appScope;
     const normalizedDeviceLibrary = normalizeDeviceLibraryPersistencePayload({
       customDeviceTemplates,
       customCategoryLibraries,
       customComponentLibraries,
       deviceDefinitionOverrides,
+      eDeviceDefinitionLabels,
+      eDeviceDefinitionClassExportEnabled,
       customGraphTemplateTypes,
       customGraphTemplates,
       ...overrides

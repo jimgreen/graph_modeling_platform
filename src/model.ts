@@ -2862,7 +2862,12 @@ function splitEDefinitionCells(line: string): string[] {
   return line.split(/\s{2,}/).map((cell) => cell.trim()).filter((cell) => cell.length > 0);
 }
 
-export function buildEDeviceDefinitionFile(templates: DeviceTemplate[], labels?: Record<string, string>, eDeviceDefinitionLabels?: Record<string, string>): TextFileExport {
+export function buildEDeviceDefinitionFile(
+  templates: DeviceTemplate[],
+  labels?: Record<string, string>,
+  eDeviceDefinitionLabels?: Record<string, string>,
+  eDeviceDefinitionClassExportEnabled?: Record<string, boolean>
+): TextFileExport {
   // 按元件库（E section）分组：同元件库的所有图元合并为一个 section，字段取勾选导出的并集
   type EDeviceDefinitionGroup = {
     categoryLibrary: string;
@@ -2976,6 +2981,9 @@ export function buildEDeviceDefinitionFile(templates: DeviceTemplate[], labels?:
 
   const sections: EDeviceDefinitionSection[] = [];
   for (const [componentLibrary, group] of groups) {
+    if (eDeviceDefinitionClassExportEnabled?.[componentLibrary] === false) {
+      continue;
+    }
     if (group.fields.size === 0) {
       continue;
     }

@@ -15,6 +15,7 @@ import {
   createConfirmCustomLibraryCreateDialog,
   createDeleteCustomCategoryLibrary,
   createDeleteCustomComponentLibrary,
+  applyEDeviceDefinitionSectionsToLibraryState,
   createExportEDeviceDefinitionFile,
   createRouteSegmentPointerDistance,
   createResolveDuplicateModelImport,
@@ -22,6 +23,7 @@ import {
   createSaveCustomDeviceTemplate,
   createSaveDeviceDefinitionDraft,
   createSaveDeviceDefinitionVisualDraft,
+  createSelectCustomComponentLibrary,
   createSvgExportReferencedImageHrefById,
   createOpenSvgModelImportFilePicker,
   createOpenStateIconDrawingDialog,
@@ -1504,6 +1506,83 @@ describe("manual bend interaction helpers", () => {
     });
   });
 
+  test("selecting a base component library clears stale derived-specific draft params", () => {
+    let customDeviceDraft: any = {
+      categoryLibraryName: "交流设备",
+      componentLibrary: "ACThermalGen",
+      componentName: "交流火电",
+      componentKind: "ac-thermal-source",
+      isDerivedComponentLibrary: true,
+      derivedFromComponentLibrary: "ACGenerator",
+      derivedComponentLibrary: "ACThermalGen",
+      derivedComponentLibraryLabel: "交流火电",
+      params: [
+        { id: "thermal-model", cnName: "火电机组型号", enName: "thermalUnitModel", valueType: "string", typicalValue: "" },
+        { id: "heat-rate", cnName: "热耗率", enName: "heatRate", valueType: "string", typicalValue: "" }
+      ],
+      stateDefinitions: [{ value: "1" }],
+      error: ""
+    };
+    const scope = {
+      DEFAULT_STATE_PAGE_ID: "default",
+      cancelPendingCustomComponentTemplateLoad: vi.fn(),
+      ensureCustomComponentTreeExpanded: vi.fn(),
+      createCustomDeviceDraftFromTemplate: (_template: any, section: string) => ({
+        componentLibrary: section,
+        terminalCount: 1,
+        terminalTypes: ["ac"],
+        terminalLabels: ["交流发电机端"],
+        terminalAnchors: [{ x: -0.5, y: 0 }],
+        terminalRoles: ["single-source"],
+        terminalAssociations: ["ac-generator"],
+        isContainer: false,
+        allowResizeTransform: "0",
+        size: { width: 84, height: 56 },
+        params: [
+          { id: "idx", cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "" },
+          { id: "p-set", cnName: "有功功率设定", enName: "p_set", valueType: "number", typicalValue: "" },
+          { id: "q-set", cnName: "无功功率设定", enName: "q_set", valueType: "number", typicalValue: "" }
+        ],
+        stateDefinitions: [{ value: "template-state" }]
+      }),
+      libraryTemplates: [
+        { kind: "ac-source", categoryLibrary: "交流设备" },
+        { kind: "ac-thermal-source", categoryLibrary: "交流设备", params: { is_derived_component_library: "1" } }
+      ],
+      normalizeCategoryLibraryName: (name: string) => name.trim(),
+      normalizeComponentLibraryName: (name: string) => name.trim(),
+      resolveTemplateComponentLibrary: (template: any) => template.kind === "ac-source" || template.kind === "ac-thermal-source" ? "ACGenerator" : "",
+      setCustomComponentTreeSelection: vi.fn(),
+      setCustomDeviceDialogView: vi.fn(),
+      setCustomDeviceDraft: (updater: any) => {
+        customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
+      },
+      setCustomDeviceStatePageId: vi.fn(),
+      setEditingCustomDeviceKind: vi.fn()
+    };
+
+    createSelectCustomComponentLibrary(scope)("交流设备", "ACGenerator");
+
+    expect(customDeviceDraft).toMatchObject({
+      categoryLibraryName: "交流设备",
+      componentLibrary: "ACGenerator",
+      componentName: "",
+      componentKind: "",
+      isDerivedComponentLibrary: false,
+      derivedFromComponentLibrary: "",
+      derivedComponentLibrary: "",
+      derivedComponentLibraryLabel: "",
+      params: expect.arrayContaining([
+        expect.objectContaining({ enName: "p_set" }),
+        expect.objectContaining({ enName: "q_set" })
+      ]),
+      stateDefinitions: [],
+      error: ""
+    });
+    expect(customDeviceDraft.params.map((row: any) => row.enName)).not.toContain("thermalUnitModel");
+    expect(customDeviceDraft.params.map((row: any) => row.enName)).not.toContain("heatRate");
+  });
+
   test("custom-device form exposes derived-class fields separately from the container flag", () => {
     const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
 
@@ -2180,6 +2259,65 @@ describe("manual bend interaction helpers", () => {
         routePoints: editedRoutePoints
       }
     ]);
+  });
+});
+
+describe("applyEDeviceDefinitionSectionsToLibraryState", () => {
+  const buildTemplate = (kind: string, componentType: string, parameterDefinitions: any[], custom = false) => ({
+    kind,
+    label: componentType,
+    categoryLibrary: componentType.startsWith("DC") ? "直流设备" : "交流设备",
+    params: { component_type: componentType },
+    parameterDefinitions,
+    custom
+  });
+
+  test("loads class export switches, class names, and parameter export names from an interface file", () => {
+    const acTemplate = buildTemplate("ac-load", "ACLoad", [
+      { cnName: "有功", enName: "p", valueType: "float", typicalValue: "0", exportEnabled: false },
+      { cnName: "无功", enName: "q", valueType: "float", typicalValue: "0", exportEnabled: true, exportName: "q_old" }
+    ]);
+    const dcTemplate = buildTemplate("custom-dc-load", "DCLoad", [
+      { cnName: "功率", enName: "p", valueType: "float", typicalValue: "0", exportEnabled: true, exportName: "p" }
+    ], true);
+
+    const result = applyEDeviceDefinitionSectionsToLibraryState({
+      sections: [
+        {
+          kind: "LoadTable",
+          label: "交流负荷",
+          categoryLibrary: "交流设备",
+          componentLibrary: "ACLoad",
+          originalComponentLibrary: "ACLoad",
+          fields: [
+            { exportName: "idx", cnName: "序号" },
+            { exportName: "name", cnName: "名称" },
+            { exportName: "dev_type", cnName: "设备类型" },
+            { exportName: "p_custom", cnName: "有功" }
+          ]
+        }
+      ],
+      customDeviceTemplates: [dcTemplate],
+      libraryTemplates: [acTemplate, dcTemplate],
+      deviceDefinitionOverrides: {},
+      eDeviceDefinitionLabels: {},
+      eDeviceDefinitionClassExportEnabled: {},
+      deviceDefinitionKeyForTemplate: (template: any) => template.params.component_type,
+      deviceDefinitionOverrideForTemplate: (_template: any, overrides: any) => overrides[_template.params.component_type],
+      resolveDefinitionComponentLibrary: (template: any) => template.params.component_type
+    });
+
+    expect(result.eDeviceDefinitionLabels).toEqual({ ACLoad: "LoadTable" });
+    expect(result.eDeviceDefinitionClassExportEnabled).toEqual({ ACLoad: true, DCLoad: false });
+    expect(result.deviceDefinitionOverrides.ACLoad.parameterDefinitions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ enName: "p", exportEnabled: true, exportName: "p_custom" }),
+      expect.objectContaining({ enName: "q", exportEnabled: false, exportName: "q_old" })
+    ]));
+    expect(result.customDeviceTemplates[0].parameterDefinitions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ enName: "p", exportEnabled: false, exportName: "p" })
+    ]));
+    expect(result.matched).toEqual(["ACLoad"]);
+    expect(result.skipped).toEqual(["DCLoad"]);
   });
 });
 

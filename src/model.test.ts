@@ -2253,6 +2253,13 @@ describe("power system model", () => {
       expect(file.text.endsWith("\n")).toBe(true);
     });
 
+    test("omits device classes disabled by E interface definition settings", () => {
+      const file = buildEDeviceDefinitionFile(templates, undefined, undefined, { ACLoad: false });
+
+      expect(file.text).not.toContain("<ACLoad ");
+      expect(file.text).toBe("");
+    });
+
     test("exports params whose export flag is inferred from E section when exportEnabled is undefined", () => {
       // 自定义元件默认参数行未显式设置 exportEnabled，界面按 E 分区推导显示"是"，导出需与之保持一致
       const template = {

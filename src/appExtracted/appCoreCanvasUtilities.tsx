@@ -1699,6 +1699,8 @@ export type DeviceLibraryPersistencePayload = {
   customCategoryLibraries: CategoryLibrary[];
   customComponentLibraries: CustomComponentLibraryDefinition[];
   deviceDefinitionOverrides: Record<string, DeviceTemplateDefinitionOverride>;
+  eDeviceDefinitionLabels?: Record<string, string>;
+  eDeviceDefinitionClassExportEnabled?: Record<string, boolean>;
   customGraphTemplateTypes: string[];
   customGraphTemplates: GraphTemplate[];
 };

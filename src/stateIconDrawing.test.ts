@@ -2118,7 +2118,34 @@ describe("default device state draft rows", () => {
     const imageSource = decodeURIComponent(String(defaultVisual.image ?? "").split(",")[1] ?? "");
 
     expect(imageSource).toContain('data-state-icon-preserve-view-box="true"');
-    expect(imageSource).toContain('viewBox="-87 -67 174 134"');
+    expect(imageSource).toContain('viewBox="-75 -55 150 110"');
+  });
+
+  test("generates built-in source SVGs with the same viewport as the canvas glyph", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-pv-source");
+    expect(template).toBeTruthy();
+    if (!template) {
+      return;
+    }
+    const defaultVisual = createDefinitionDefaultStateVisualDraft({
+      ...APP_STATIC_SCOPE,
+      definitionVisualDraft: {
+        backgroundImage: "",
+        backgroundImageAssetId: "",
+        backgroundImageCleared: "",
+        size: { ...template.size },
+        terminalCount: template.terminalCount,
+        terminalTypes: template.terminalTypes ?? [],
+        terminalLabels: template.terminalLabels ?? [],
+        terminalAnchors: template.terminalAnchors ?? []
+      },
+      selectedDefinitionTemplate: template
+    })();
+    const imageSource = decodeURIComponent(String(defaultVisual.image ?? "").split(",")[1] ?? "");
+
+    expect(imageSource).toContain('data-state-icon-preserve-view-box="true"');
+    expect(imageSource).toContain('viewBox="-75 -47 150 94"');
+    expect(imageSource).not.toContain('viewBox="-87 -59 174 118"');
   });
 
   test("keeps generated viewBox preservation when sanitizing and resaving SVG layers", () => {

@@ -1149,6 +1149,10 @@ const [deviceDefinitionOverrides, setDeviceDefinitionOverrides] = useState<Recor
 Object.assign(__appScope, { deviceDefinitionOverrides, setDeviceDefinitionOverrides });
 const [eDeviceDefinitionLabels, setEDeviceDefinitionLabels] = useState<Record<string, string>>(() => (initialDeviceLibrary as any).eDeviceDefinitionLabels ?? {});
 Object.assign(__appScope, { eDeviceDefinitionLabels, setEDeviceDefinitionLabels });
+const [eDeviceDefinitionClassExportEnabled, setEDeviceDefinitionClassExportEnabled] = useState<Record<string, boolean>>(() => (initialDeviceLibrary as any).eDeviceDefinitionClassExportEnabled ?? {});
+Object.assign(__appScope, { eDeviceDefinitionClassExportEnabled, setEDeviceDefinitionClassExportEnabled });
+const [eDeviceDefinitionInterfaceDialogOpen, setEDeviceDefinitionInterfaceDialogOpen] = useState(false);
+Object.assign(__appScope, { eDeviceDefinitionInterfaceDialogOpen, setEDeviceDefinitionInterfaceDialogOpen });
 const [deviceDefinitionDialogOpen, setDeviceDefinitionDialogOpen] = useState(false);
 Object.assign(__appScope, { deviceDefinitionDialogOpen, setDeviceDefinitionDialogOpen });
 const [selectedDefinitionKind, setSelectedDefinitionKind] = useState<DeviceKind | "">("");
@@ -2900,7 +2904,7 @@ useEffect(createAppHookCallback78(__appScope), []);
 useEffect(createAppHookCallback79(__appScope), []);
 useEffect(createAppHookCallback80(__appScope), []);
 useEffect(createAppHookCallback81(__appScope), [schemes]);
-useEffect(createAppHookCallback82(__appScope), [customDeviceTemplates, customCategoryLibraries, customComponentLibraries, deviceDefinitionOverrides, customGraphTemplateTypes, customGraphTemplates]);
+useEffect(createAppHookCallback82(__appScope), [customDeviceTemplates, customCategoryLibraries, customComponentLibraries, deviceDefinitionOverrides, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, customGraphTemplateTypes, customGraphTemplates]);
 useEffect(createAppHookCallback83(__appScope), [colorDisplayMode, colorPalette]);
 const refreshImageFolders = () =>
     fetchBackendImageFolders()
@@ -3368,6 +3372,8 @@ const currentDeviceLibraryPersistencePayload = () => normalizeDeviceLibraryPersi
   customCategoryLibraries,
   customComponentLibraries,
   deviceDefinitionOverrides,
+  eDeviceDefinitionLabels,
+  eDeviceDefinitionClassExportEnabled,
   customGraphTemplateTypes,
   customGraphTemplates
 });
@@ -3479,6 +3485,8 @@ const applyImportedDeviceOrTemplateLibrary = (packagePayload: LibraryPackagePayl
   setCustomCategoryLibraries(next.customCategoryLibraries);
   setCustomComponentLibraries(next.customComponentLibraries);
   setDeviceDefinitionOverrides(next.deviceDefinitionOverrides);
+  setEDeviceDefinitionLabels(next.eDeviceDefinitionLabels ?? {});
+  setEDeviceDefinitionClassExportEnabled(next.eDeviceDefinitionClassExportEnabled ?? {});
   setCustomGraphTemplateTypes(next.customGraphTemplateTypes);
   setCustomGraphTemplates(next.customGraphTemplates);
   persistDeviceLibraryChange(next, {

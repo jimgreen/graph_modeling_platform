@@ -2639,7 +2639,7 @@ export function createAppHookCallback78(__appScope: Record<string, any>) {
 
 export function createAppHookCallback79(__appScope: Record<string, any>) {
   return () => {
-  const { backendDeviceLibraryLoadedRef, customCategoryLibraries, customComponentLibraries, customDeviceTemplates, customGraphTemplateTypes, customGraphTemplates, deviceDefinitionOverrides, fetchBackendDeviceLibrary, lastPersistedDeviceLibraryPayloadRef, saveBackendDeviceLibraryPayload, serializeDeviceLibraryForStorage, setCustomCategoryLibraries, setCustomComponentLibraries, setCustomDeviceTemplates, setCustomGraphTemplateTypes, setCustomGraphTemplates, setDeviceDefinitionOverrides, suppressNextBackendDeviceLibrarySyncRef } = __appScope;
+  const { backendDeviceLibraryLoadedRef, customCategoryLibraries, customComponentLibraries, customDeviceTemplates, customGraphTemplateTypes, customGraphTemplates, deviceDefinitionOverrides, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, fetchBackendDeviceLibrary, lastPersistedDeviceLibraryPayloadRef, saveBackendDeviceLibraryPayload, serializeDeviceLibraryForStorage, setCustomCategoryLibraries, setCustomComponentLibraries, setCustomDeviceTemplates, setCustomGraphTemplateTypes, setCustomGraphTemplates, setDeviceDefinitionOverrides, setEDeviceDefinitionLabels, setEDeviceDefinitionClassExportEnabled, suppressNextBackendDeviceLibrarySyncRef } = __appScope;
     fetchBackendDeviceLibrary()
       .then((backendDeviceLibrary) => {
         backendDeviceLibraryLoadedRef.current = true;
@@ -2651,6 +2651,8 @@ export function createAppHookCallback79(__appScope: Record<string, any>) {
           setCustomCategoryLibraries(backendDeviceLibrary.customCategoryLibraries);
           setCustomComponentLibraries(backendDeviceLibrary.customComponentLibraries);
           setDeviceDefinitionOverrides(backendDeviceLibrary.deviceDefinitionOverrides);
+          setEDeviceDefinitionLabels(backendDeviceLibrary.eDeviceDefinitionLabels ?? {});
+          setEDeviceDefinitionClassExportEnabled(backendDeviceLibrary.eDeviceDefinitionClassExportEnabled ?? {});
           setCustomGraphTemplateTypes(backendDeviceLibrary.customGraphTemplateTypes);
           setCustomGraphTemplates(backendDeviceLibrary.customGraphTemplates);
           return;
@@ -2660,6 +2662,8 @@ export function createAppHookCallback79(__appScope: Record<string, any>) {
           customCategoryLibraries,
           customComponentLibraries,
           deviceDefinitionOverrides,
+          eDeviceDefinitionLabels,
+          eDeviceDefinitionClassExportEnabled,
           customGraphTemplateTypes,
           customGraphTemplates
         });
@@ -2728,13 +2732,15 @@ export function createAppHookCallback81(__appScope: Record<string, any>) {
 
 export function createAppHookCallback82(__appScope: Record<string, any>) {
   return () => {
-  const { backendDeviceLibraryLoadedRef, customCategoryLibraries, customComponentLibraries, customDeviceTemplates, customGraphTemplateTypes, customGraphTemplates, deviceDefinitionOverrides, lastPersistedDeviceLibraryPayloadRef, normalizeDeviceLibraryPersistencePayload, saveBackendDeviceLibraryPayload, suppressNextBackendDeviceLibrarySyncRef, writeLocalDeviceLibraryPersistencePayload } = __appScope;
+  const { backendDeviceLibraryLoadedRef, customCategoryLibraries, customComponentLibraries, customDeviceTemplates, customGraphTemplateTypes, customGraphTemplates, deviceDefinitionOverrides, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, lastPersistedDeviceLibraryPayloadRef, normalizeDeviceLibraryPersistencePayload, saveBackendDeviceLibraryPayload, suppressNextBackendDeviceLibrarySyncRef, writeLocalDeviceLibraryPersistencePayload } = __appScope;
     const timeoutId = window.setTimeout(() => {
       const normalizedDeviceLibrary = normalizeDeviceLibraryPersistencePayload({
         customDeviceTemplates,
         customCategoryLibraries,
         customComponentLibraries,
         deviceDefinitionOverrides,
+        eDeviceDefinitionLabels,
+        eDeviceDefinitionClassExportEnabled,
         customGraphTemplateTypes,
         customGraphTemplates
       });

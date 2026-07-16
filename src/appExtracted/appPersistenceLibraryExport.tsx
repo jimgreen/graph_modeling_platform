@@ -861,6 +861,8 @@ const emptyDeviceLibraryPersistencePayload = (): DeviceLibraryPersistencePayload
   customCategoryLibraries: [],
   customComponentLibraries: [],
   deviceDefinitionOverrides: {},
+  eDeviceDefinitionLabels: {},
+  eDeviceDefinitionClassExportEnabled: {},
   customGraphTemplateTypes: [],
   customGraphTemplates: []
 });
@@ -975,7 +977,9 @@ export function deviceLibraryPayloadForPackageScope(
       customDeviceTemplates: normalizedImported.customDeviceTemplates,
       customCategoryLibraries: normalizedImported.customCategoryLibraries,
       customComponentLibraries: normalizedImported.customComponentLibraries,
-      deviceDefinitionOverrides: normalizedImported.deviceDefinitionOverrides
+      deviceDefinitionOverrides: normalizedImported.deviceDefinitionOverrides,
+      eDeviceDefinitionLabels: normalizedImported.eDeviceDefinitionLabels,
+      eDeviceDefinitionClassExportEnabled: normalizedImported.eDeviceDefinitionClassExportEnabled
     };
   }
   return normalizedImported;
@@ -1302,6 +1306,36 @@ function persistenceFlagIsYes(value: unknown): boolean {
   const normalized = String(value ?? "").trim().toLowerCase();
   return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "是";
 }
+
+function normalizeStringRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return Object.entries(value as Record<string, unknown>).reduce<Record<string, string>>((record, [rawKey, rawValue]) => {
+    const key = normalizeComponentLibraryName(String(rawKey ?? ""));
+    const text = String(rawValue ?? "").trim();
+    if (key && text) {
+      record[key] = text;
+    }
+    return record;
+  }, {});
+}
+
+function normalizeBooleanRecord(value: unknown): Record<string, boolean> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return Object.entries(value as Record<string, unknown>).reduce<Record<string, boolean>>((record, [rawKey, rawValue]) => {
+    const key = normalizeComponentLibraryName(String(rawKey ?? ""));
+    if (key && typeof rawValue === "boolean") {
+      record[key] = rawValue;
+    }
+    return record;
+  }, {});
+}
+
+const E_DEVICE_DEFINITION_LABELS_STORAGE_KEY = "power-system-e-device-definition-labels";
+const E_DEVICE_DEFINITION_CLASS_EXPORT_STORAGE_KEY = "power-system-e-device-definition-class-export-enabled";
 
 export function normalizeCustomComponentLibraries(value: unknown, reservedTypes: readonly string[] = E_SECTION_OPTIONS): CustomComponentLibraryDefinition[] {
   if (!Array.isArray(value)) {
@@ -2157,6 +2191,8 @@ export function normalizeDeviceLibraryPersistencePayload(value: unknown): Device
     customCategoryLibraries: normalizeCustomCategoryLibraries(source.customCategoryLibraries ?? source.customAttributeLibraries),
     customComponentLibraries: normalizeCustomComponentLibraries(source.customComponentLibraries ?? source.customComponentTypes),
     deviceDefinitionOverrides: normalizeDeviceDefinitionOverrides(source.deviceDefinitionOverrides),
+    eDeviceDefinitionLabels: normalizeStringRecord((source as any).eDeviceDefinitionLabels),
+    eDeviceDefinitionClassExportEnabled: normalizeBooleanRecord((source as any).eDeviceDefinitionClassExportEnabled),
     customGraphTemplateTypes: normalizeGraphTemplateTypes(source.customGraphTemplateTypes),
     customGraphTemplates: normalizeGraphTemplates(source.customGraphTemplates)
   };
@@ -2213,6 +2249,14 @@ export function readDeviceDefinitionOverrides(): Record<string, DeviceTemplateDe
   return readLocalStorageJson(DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, "{}", normalizeDeviceDefinitionOverrides, {});
 }
 
+export function readEDeviceDefinitionLabels(): Record<string, string> {
+  return readLocalStorageJson(E_DEVICE_DEFINITION_LABELS_STORAGE_KEY, "{}", normalizeStringRecord, {});
+}
+
+export function readEDeviceDefinitionClassExportEnabled(): Record<string, boolean> {
+  return readLocalStorageJson(E_DEVICE_DEFINITION_CLASS_EXPORT_STORAGE_KEY, "{}", normalizeBooleanRecord, {});
+}
+
 export function readCustomGraphTemplateTypes(): string[] {
   return readLocalStorageJson(CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, "[]", normalizeGraphTemplateTypes, []);
 }
@@ -2227,6 +2271,8 @@ export function readLocalDeviceLibraryPersistencePayload(): DeviceLibraryPersist
     customCategoryLibraries: readCustomCategoryLibraries(),
     customComponentLibraries: readCustomComponentLibraries(),
     deviceDefinitionOverrides: readDeviceDefinitionOverrides(),
+    eDeviceDefinitionLabels: readEDeviceDefinitionLabels(),
+    eDeviceDefinitionClassExportEnabled: readEDeviceDefinitionClassExportEnabled(),
     customGraphTemplateTypes: readCustomGraphTemplateTypes(),
     customGraphTemplates: readCustomGraphTemplates()
   };
@@ -2244,6 +2290,8 @@ function fallbackToLocalStorage(data: DeviceLibraryPersistencePayload): void {
     window.localStorage.setItem(CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, JSON.stringify(data.customCategoryLibraries));
     window.localStorage.setItem(CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, JSON.stringify(data.customComponentLibraries));
     window.localStorage.setItem(DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, JSON.stringify(data.deviceDefinitionOverrides));
+    window.localStorage.setItem(E_DEVICE_DEFINITION_LABELS_STORAGE_KEY, JSON.stringify(data.eDeviceDefinitionLabels ?? {}));
+    window.localStorage.setItem(E_DEVICE_DEFINITION_CLASS_EXPORT_STORAGE_KEY, JSON.stringify(data.eDeviceDefinitionClassExportEnabled ?? {}));
     window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, JSON.stringify(data.customGraphTemplateTypes));
     window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, JSON.stringify(data.customGraphTemplates));
   } catch {
@@ -2252,6 +2300,12 @@ function fallbackToLocalStorage(data: DeviceLibraryPersistencePayload): void {
 }
 
 export function writeLocalDeviceLibraryPersistencePayload(normalizedDeviceLibrary: DeviceLibraryPersistencePayload): void {
+  try {
+    window.localStorage.setItem(E_DEVICE_DEFINITION_LABELS_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionLabels ?? {}));
+    window.localStorage.setItem(E_DEVICE_DEFINITION_CLASS_EXPORT_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionClassExportEnabled ?? {}));
+  } catch {
+    // 本地接口定义缓存不可写时，不阻断元件库保存。
+  }
   // 阶段 5：只写 IndexedDB，失败时降级到 localStorage
   deviceLibraryStoragePromise.then(({ saveDeviceTemplates, saveGraphTemplates, saveOverrides }) => {
     return Promise.all([
@@ -2790,8 +2844,7 @@ export type CustomComponentTreeProps = {
   onSearchChange: (query: string) => void;
   onCollapseChange: (libraries: Set<string>, types: Set<string>) => void;
   onSelectionChange: (selection: CustomComponentTreeSelection) => void;
-  onExportEDeviceDefinition: () => void;
-  onImportEDeviceDefinition: (event: ChangeEvent<HTMLInputElement>) => void;
+  onOpenEDeviceDefinitionInterface: () => void;
 };
 
 function customComponentTreeSelectionsEqual(first: CustomComponentTreeSelection, second: CustomComponentTreeSelection) {
@@ -2829,10 +2882,8 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
   onSearchChange,
   onCollapseChange,
   onSelectionChange,
-  onExportEDeviceDefinition,
-  onImportEDeviceDefinition
+  onOpenEDeviceDefinitionInterface
 }: CustomComponentTreeProps) {
-  const eDeviceDefinitionImportInputRef = useRef<HTMLInputElement | null>(null);
   // 内部管理 collapsed 状态，展开/收缩不触发父组件重渲染
   const [collapsedLibraries, setCollapsedLibraries] = useState<Set<string>>(initialCollapsedLibraries);
   const [collapsedTypes, setCollapsedTypes] = useState<Set<string>>(initialCollapsedTypes);
@@ -2930,15 +2981,10 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
       </div>
       <div className="custom-component-manager-efile-and-search">
       <div className="custom-component-manager-efile-actions">
-        <button type="button" onClick={onExportEDeviceDefinition} title="导出元件定义为 E 文件">
-          <Download size={12} aria-hidden="true" />
-          <span>导出E文件定义</span>
+        <button type="button" onClick={onOpenEDeviceDefinitionInterface} title="打开 E 文件接口定义">
+          <FileJson size={12} aria-hidden="true" />
+          <span>E文件接口定义</span>
         </button>
-        <button type="button" onClick={() => eDeviceDefinitionImportInputRef.current?.click()} title="从 E 文件导入元件定义">
-          <FileInput size={12} aria-hidden="true" />
-          <span>导入E文件定义</span>
-        </button>
-        <input ref={eDeviceDefinitionImportInputRef} type="file" accept=".e,text/plain" hidden onChange={onImportEDeviceDefinition} />
       </div>
       <div className="custom-component-tree-search-row">
         <div className="dialog-tree-search">

@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { buildEDeviceDefinitionFile, E_SECTION_COLUMNS, inferESection, parseEDeviceDefinitionFile, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo } from "../model";
+import { buildEDeviceDefinitionFile, E_SECTION_COLUMNS, getTemplateParameterDefinitions, inferESection, parseEDeviceDefinitionFile, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo } from "../model";
 import { clampNumber } from "../canvasViewport";
 import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
 import { stateIconSvgVisibleViewBox } from "../stateIconDrawing";
@@ -61,6 +61,396 @@ const STATE_ICON_DRAWING_FRAME_WIDTH = 240;
 const STATE_ICON_DRAWING_FRAME_HEIGHT = 160;
 
 const deviceDefinitionComplianceKey = (value: unknown) => String(value ?? "").trim().toLowerCase();
+
+const E_DEVICE_INTERFACE_FIXED_FIELD_NAMES = new Set(["idx", "name", "dev_type"]);
+const E_DEVICE_INTERFACE_DERIVED_BASE_FIELD_NAMES = new Set([
+  "idx",
+  "name",
+  "dev_type",
+  "status",
+  "run_stat",
+  "node",
+  "t1_node",
+  "t2_node",
+  "t3_node",
+  "i_node",
+  "j_node",
+  "control_type",
+  "controlType",
+  "acControlType",
+  "dcControlType",
+  "sourceControlType",
+  "p_set",
+  "q_set",
+  "v_set",
+  "i_set",
+  "alpha",
+  "vbase",
+  "ratedPower",
+  "ratedVoltage",
+  "ratedCapacity",
+  "sourceType"
+]);
+
+function eDeviceInterfaceRelationKey(baseComponentLibrary: string) {
+  const normalizedBase = String(baseComponentLibrary ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return normalizedBase ? `idx_${normalizedBase}` : "idx_base";
+}
+
+function eDeviceInterfaceIsDerivedBaseField(fieldName: unknown, baseComponentLibrary = "") {
+  const enName = String(fieldName ?? "").trim();
+  if (!enName || enName === "component_type" || enName.startsWith("_")) {
+    return true;
+  }
+  if (E_DEVICE_INTERFACE_DERIVED_BASE_FIELD_NAMES.has(enName)) {
+    return true;
+  }
+  return Boolean(baseComponentLibrary && E_SECTION_COLUMNS[baseComponentLibrary]?.includes(enName));
+}
+
+function eDeviceInterfaceComponentLibraryForTemplate(template: any, resolveDefinitionComponentLibrary?: (template: any) => string) {
+  const resolved = typeof resolveDefinitionComponentLibrary === "function"
+    ? resolveDefinitionComponentLibrary(template)
+    : "";
+  return String(resolved || templateDerivedComponentLibraryInfo(template)?.componentLibrary || inferESection(template.kind, template.params ?? {}) || "").trim();
+}
+
+function eDeviceInterfaceFieldCnName(definition: any, labels?: Record<string, string>) {
+  const cnName = String(definition?.cnName ?? definition?.enName ?? "").trim();
+  const enName = String(definition?.enName ?? "").trim();
+  return cnName === enName ? labels?.[enName] ?? cnName : cnName;
+}
+
+export function buildEDeviceInterfaceDefinitionRows(options: {
+  libraryTemplates?: readonly any[];
+  labels?: Record<string, string>;
+  eDeviceDefinitionLabels?: Record<string, string>;
+  eDeviceDefinitionClassExportEnabled?: Record<string, boolean>;
+  resolveDefinitionComponentLibrary?: (template: any) => string;
+}) {
+  const {
+    libraryTemplates = [],
+    labels,
+    eDeviceDefinitionLabels = {},
+    eDeviceDefinitionClassExportEnabled = {},
+    resolveDefinitionComponentLibrary
+  } = options;
+  const groups = new Map<string, any>();
+  const ensureGroup = (componentLibrary: string, template: any, extra: Record<string, any> = {}) => {
+    const key = String(componentLibrary ?? "").trim();
+    if (!key || key.startsWith("Static")) {
+      return null;
+    }
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        componentLibrary: key,
+        categoryLibrary: extra.categoryLibrary ?? template?.categoryLibrary ?? "",
+        label: extra.label ?? template?.label ?? key,
+        exportEnabled: eDeviceDefinitionClassExportEnabled[key] !== false,
+        exportName: eDeviceDefinitionLabels[key] ?? key,
+        derivedFromComponentLibrary: extra.derivedFromComponentLibrary,
+        isDerivedComponentLibrary: Boolean(extra.isDerivedComponentLibrary),
+        fields: [],
+        fieldBySourceName: new Map<string, any>()
+      };
+      groups.set(key, group);
+      return group;
+    }
+    if (!group.categoryLibrary && (extra.categoryLibrary || template?.categoryLibrary)) {
+      group.categoryLibrary = extra.categoryLibrary ?? template?.categoryLibrary ?? "";
+    }
+    if (!group.label && (extra.label || template?.label)) {
+      group.label = extra.label ?? template?.label ?? key;
+    }
+    return group;
+  };
+  const appendField = (group: any, field: any) => {
+    const sourceName = String(field.sourceName ?? field.enName ?? "").trim();
+    if (!sourceName || sourceName === "component_type" || sourceName.startsWith("_")) {
+      return;
+    }
+    const fieldKey = deviceDefinitionComplianceKey(sourceName);
+    const existing = group.fieldBySourceName.get(fieldKey);
+    const exportName = String(field.exportName ?? sourceName).trim();
+    if (existing) {
+      existing.exportEnabled = Boolean(existing.exportEnabled || field.exportEnabled);
+      if (!existing.exportName && exportName) {
+        existing.exportName = exportName;
+      }
+      return;
+    }
+    const row = {
+      sourceName,
+      cnName: String(field.cnName ?? sourceName).trim(),
+      exportEnabled: Boolean(field.exportEnabled),
+      exportName,
+      readonly: Boolean(field.readonly)
+    };
+    group.fieldBySourceName.set(fieldKey, row);
+    group.fields.push(row);
+  };
+
+  for (const template of libraryTemplates ?? []) {
+    const derivedInfo = templateDerivedComponentLibraryInfo(template);
+    const componentLibrary = derivedInfo?.componentLibrary ?? eDeviceInterfaceComponentLibraryForTemplate(template, resolveDefinitionComponentLibrary);
+    const baseGroup = ensureGroup(componentLibrary, template, {
+      categoryLibrary: derivedInfo?.categoryLibrary ?? template?.categoryLibrary ?? ""
+    });
+    if (!baseGroup) {
+      continue;
+    }
+    const baseParams = derivedInfo
+      ? { ...(template.params ?? {}), component_type: derivedInfo.baseComponentLibrary }
+      : template.params ?? {};
+    for (const definition of getTemplateParameterDefinitions(template) ?? []) {
+      const enName = String(definition.enName ?? "").trim();
+      if (E_DEVICE_INTERFACE_FIXED_FIELD_NAMES.has(enName)) {
+        continue;
+      }
+      const settings = resolveDeviceParameterDefinitionExportSettings(template.kind, baseParams, definition);
+      appendField(baseGroup, {
+        sourceName: enName,
+        cnName: eDeviceInterfaceFieldCnName(definition, labels),
+        exportEnabled: settings.exportEnabled,
+        exportName: settings.exportName || enName
+      });
+    }
+    if (!derivedInfo) {
+      continue;
+    }
+    const derivedGroup = ensureGroup(derivedInfo.derivedComponentLibrary, template, {
+      categoryLibrary: derivedInfo.categoryLibrary || template?.categoryLibrary || "",
+      label: derivedInfo.label || derivedInfo.derivedComponentLibrary,
+      derivedFromComponentLibrary: derivedInfo.baseComponentLibrary,
+      isDerivedComponentLibrary: true
+    });
+    if (!derivedGroup) {
+      continue;
+    }
+    appendField(derivedGroup, {
+      sourceName: eDeviceInterfaceRelationKey(derivedInfo.baseComponentLibrary),
+      cnName: "原类关联idx",
+      exportEnabled: true,
+      exportName: eDeviceInterfaceRelationKey(derivedInfo.baseComponentLibrary),
+      readonly: true
+    });
+    const derivedParams = { ...(template.params ?? {}), component_type: derivedInfo.derivedComponentLibrary };
+    for (const definition of getTemplateParameterDefinitions(template) ?? []) {
+      const enName = String(definition.enName ?? "").trim();
+      const settings = resolveDeviceParameterDefinitionExportSettings(template.kind, derivedParams, definition);
+      const exportName = String(settings.exportName || enName).trim();
+      if (
+        eDeviceInterfaceIsDerivedBaseField(enName, derivedInfo.baseComponentLibrary) ||
+        eDeviceInterfaceIsDerivedBaseField(exportName, derivedInfo.baseComponentLibrary)
+      ) {
+        continue;
+      }
+      appendField(derivedGroup, {
+        sourceName: enName,
+        cnName: eDeviceInterfaceFieldCnName(definition, labels),
+        exportEnabled: settings.exportEnabled,
+        exportName
+      });
+    }
+  }
+
+  return Array.from(groups.values()).map((group) => {
+    const { fieldBySourceName, ...row } = group;
+    return row;
+  });
+}
+
+function eDeviceInterfaceSectionByComponentLibrary(sections: readonly any[] = []) {
+  const sectionByComponentLibrary = new Map<string, any>();
+  for (const section of sections ?? []) {
+    const componentLibrary = String(section.originalComponentLibrary || section.componentLibrary || section.kind || "").trim();
+    if (componentLibrary) {
+      sectionByComponentLibrary.set(componentLibrary, section);
+    }
+  }
+  return sectionByComponentLibrary;
+}
+
+function eDeviceInterfacePatchesForRow(row: any, section: any | undefined) {
+  const patches = new Map<string, { exportEnabled: boolean; exportName: string }>();
+  const availableFields = section
+    ? (section.fields ?? []).filter((field: any) => !E_DEVICE_INTERFACE_FIXED_FIELD_NAMES.has(String(field.exportName ?? "").trim()))
+    : [];
+  const usedFieldIndexes = new Set<number>();
+  const findSectionFieldIndex = (field: any) => {
+    const fieldKeys = [
+      field.exportName,
+      field.sourceName,
+      field.cnName
+    ].map(deviceDefinitionComplianceKey).filter(Boolean);
+    for (let index = 0; index < availableFields.length; index += 1) {
+      if (usedFieldIndexes.has(index)) {
+        continue;
+      }
+      const sectionField = availableFields[index];
+      const sectionKeys = [
+        sectionField.exportName,
+        sectionField.cnName
+      ].map(deviceDefinitionComplianceKey).filter(Boolean);
+      if (fieldKeys.some((key) => sectionKeys.includes(key))) {
+        return index;
+      }
+    }
+    for (let index = 0; index < availableFields.length; index += 1) {
+      if (!usedFieldIndexes.has(index)) {
+        return index;
+      }
+    }
+    return -1;
+  };
+  for (const field of row.fields ?? []) {
+    if (field.readonly) {
+      continue;
+    }
+    const sourceName = String(field.sourceName ?? "").trim();
+    if (!sourceName) {
+      continue;
+    }
+    const sectionFieldIndex = section ? findSectionFieldIndex(field) : -1;
+    if (sectionFieldIndex >= 0) {
+      usedFieldIndexes.add(sectionFieldIndex);
+      const sectionField = availableFields[sectionFieldIndex];
+      patches.set(deviceDefinitionComplianceKey(sourceName), {
+        exportEnabled: true,
+        exportName: String(sectionField.exportName || field.exportName || sourceName).trim()
+      });
+    } else {
+      patches.set(deviceDefinitionComplianceKey(sourceName), {
+        exportEnabled: false,
+        exportName: String(field.exportName || sourceName).trim()
+      });
+    }
+  }
+  return patches;
+}
+
+export function applyEDeviceDefinitionSectionsToLibraryState(options: {
+  sections: readonly any[];
+  customDeviceTemplates?: readonly any[];
+  libraryTemplates?: readonly any[];
+  deviceDefinitionOverrides?: Record<string, any>;
+  eDeviceDefinitionLabels?: Record<string, string>;
+  eDeviceDefinitionClassExportEnabled?: Record<string, boolean>;
+  labels?: Record<string, string>;
+  deviceDefinitionKeyForTemplate?: (template: any) => string;
+  deviceDefinitionOverrideForTemplate?: (template: any, overrides: Record<string, any>) => any;
+  resolveDefinitionComponentLibrary?: (template: any) => string;
+}) {
+  const {
+    sections,
+    customDeviceTemplates = [],
+    libraryTemplates = [],
+    deviceDefinitionOverrides = {},
+    eDeviceDefinitionLabels = {},
+    eDeviceDefinitionClassExportEnabled = {},
+    labels,
+    deviceDefinitionKeyForTemplate,
+    deviceDefinitionOverrideForTemplate,
+    resolveDefinitionComponentLibrary
+  } = options;
+  const rows = buildEDeviceInterfaceDefinitionRows({
+    libraryTemplates,
+    labels,
+    eDeviceDefinitionLabels,
+    eDeviceDefinitionClassExportEnabled,
+    resolveDefinitionComponentLibrary
+  });
+  const sectionByComponentLibrary = eDeviceInterfaceSectionByComponentLibrary(sections);
+  const nextLabels: Record<string, string> = { ...eDeviceDefinitionLabels };
+  const nextClassExportEnabled: Record<string, boolean> = { ...eDeviceDefinitionClassExportEnabled };
+  const fieldPatchesByComponentLibrary = new Map<string, Map<string, { exportEnabled: boolean; exportName: string }>>();
+  const matched: string[] = [];
+  const skipped: string[] = [];
+  for (const row of rows) {
+    const componentLibrary = row.componentLibrary;
+    const section = sectionByComponentLibrary.get(componentLibrary);
+    nextClassExportEnabled[componentLibrary] = Boolean(section);
+    if (section) {
+      matched.push(componentLibrary);
+      const exportName = String(section.kind ?? "").trim();
+      if (exportName && exportName !== componentLibrary) {
+        nextLabels[componentLibrary] = exportName;
+      } else {
+        delete nextLabels[componentLibrary];
+      }
+    } else {
+      skipped.push(componentLibrary);
+    }
+    fieldPatchesByComponentLibrary.set(componentLibrary, eDeviceInterfacePatchesForRow(row, section));
+  }
+
+  const patchDefinitions = (template: any) => {
+    const derivedInfo = templateDerivedComponentLibraryInfo(template);
+    const componentLibrary = derivedInfo?.componentLibrary ?? eDeviceInterfaceComponentLibraryForTemplate(template, resolveDefinitionComponentLibrary);
+    const basePatches = fieldPatchesByComponentLibrary.get(componentLibrary) ?? new Map();
+    const derivedPatches = derivedInfo
+      ? fieldPatchesByComponentLibrary.get(derivedInfo.derivedComponentLibrary) ?? new Map()
+      : new Map();
+    return (getTemplateParameterDefinitions(template) ?? []).map((definition: any) => {
+      const enName = String(definition.enName ?? "").trim();
+      const definitionKey = deviceDefinitionComplianceKey(enName);
+      const derivedSpecific = derivedInfo
+        ? !eDeviceInterfaceIsDerivedBaseField(enName, derivedInfo.baseComponentLibrary)
+        : false;
+      const patch = derivedSpecific && derivedPatches.has(definitionKey)
+        ? derivedPatches.get(definitionKey)
+        : basePatches.get(definitionKey);
+      if (!patch) {
+        return definition;
+      }
+      return {
+        ...definition,
+        exportEnabled: patch.exportEnabled,
+        exportName: patch.exportName
+      };
+    });
+  };
+
+  const customTemplateKinds = new Set((customDeviceTemplates ?? []).map((template: any) => template.kind));
+  const nextCustomDeviceTemplates = (customDeviceTemplates ?? []).map((template: any) => ({
+    ...template,
+    parameterDefinitions: patchDefinitions(template)
+  }));
+  const nextDeviceDefinitionOverrides: Record<string, any> = { ...deviceDefinitionOverrides };
+  for (const template of libraryTemplates ?? []) {
+    if (template.custom || customTemplateKinds.has(template.kind)) {
+      continue;
+    }
+    const definitionKey = typeof deviceDefinitionKeyForTemplate === "function"
+      ? deviceDefinitionKeyForTemplate(template)
+      : (eDeviceInterfaceComponentLibraryForTemplate(template, resolveDefinitionComponentLibrary) || template.kind);
+    const existingOverride = typeof deviceDefinitionOverrideForTemplate === "function"
+      ? deviceDefinitionOverrideForTemplate(template, nextDeviceDefinitionOverrides)
+      : (nextDeviceDefinitionOverrides[template.kind] ?? nextDeviceDefinitionOverrides[definitionKey] ?? {});
+    const parameterDefinitions = patchDefinitions(template);
+    delete nextDeviceDefinitionOverrides[template.kind];
+    nextDeviceDefinitionOverrides[definitionKey] = {
+      ...existingOverride,
+      kind: definitionKey,
+      params: { ...(existingOverride?.params ?? {}) },
+      parameterDefinitions,
+      stateDefinitions: Array.isArray(existingOverride?.stateDefinitions)
+        ? existingOverride.stateDefinitions
+        : template.stateDefinitions,
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  return {
+    customDeviceTemplates: nextCustomDeviceTemplates,
+    deviceDefinitionOverrides: nextDeviceDefinitionOverrides,
+    eDeviceDefinitionLabels: nextLabels,
+    eDeviceDefinitionClassExportEnabled: nextClassExportEnabled,
+    matched,
+    skipped
+  };
+}
 
 function derivedDefinitionBaseParameterNameSet(
   template: DeviceTemplate,
@@ -1064,11 +1454,10 @@ function createTemplateDefaultStateIconImage(__appScope: Record<string, any>, te
   const stateVisual = options.stateVisual ?? null;
   const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette, stateVisual }));
   const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette, stateVisual }));
-  const padding = 12;
-  const viewBoxX = -width / 2 - padding;
-  const viewBoxY = -height / 2 - padding;
-  const viewBoxWidth = width + padding * 2;
-  const viewBoxHeight = height + padding * 2;
+  const viewBoxX = -width / 2;
+  const viewBoxY = -height / 2;
+  const viewBoxWidth = width;
+  const viewBoxHeight = height;
   const drawingWidth = 240;
   const drawingHeight = 160;
   const contentWidth = terminalCount > 0 ? drawingWidth * 3 / 4 : drawingWidth;
@@ -1084,7 +1473,7 @@ function createTemplateDefaultStateIconImage(__appScope: Record<string, any>, te
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${formatSvgNumber(drawingWidth)}" height="${formatSvgNumber(drawingHeight)}" viewBox="0 0 ${formatSvgNumber(drawingWidth)} ${formatSvgNumber(drawingHeight)}">` +
     `<g data-state-icon-layer-width="${formatSvgNumber(contentWidth)}" data-state-icon-layer-height="${formatSvgNumber(contentHeight)}"${staticTemplateSizeAttrs} transform="translate(${formatSvgNumber(contentCenterX)} ${formatSvgNumber(contentCenterY)})">` +
-    `<svg x="${formatSvgNumber(-contentWidth / 2)}" y="${formatSvgNumber(-contentHeight / 2)}" width="${formatSvgNumber(contentWidth)}" height="${formatSvgNumber(contentHeight)}" data-state-icon-preserve-view-box="true" viewBox="${formatSvgNumber(viewBoxX)} ${formatSvgNumber(viewBoxY)} ${formatSvgNumber(viewBoxWidth)} ${formatSvgNumber(viewBoxHeight)}" preserveAspectRatio="xMidYMid meet">` +
+    `<svg x="${formatSvgNumber(-contentWidth / 2)}" y="${formatSvgNumber(-contentHeight / 2)}" width="${formatSvgNumber(contentWidth)}" height="${formatSvgNumber(contentHeight)}" data-state-icon-preserve-view-box="true" viewBox="${formatSvgNumber(viewBoxX)} ${formatSvgNumber(viewBoxY)} ${formatSvgNumber(viewBoxWidth)} ${formatSvgNumber(viewBoxHeight)}" preserveAspectRatio="xMidYMid meet" overflow="visible">` +
     `<g transform="${escapeXml(nodeGeometryTransform(node))}">${glyphMarkup}${glyphTextMarkup}</g>` +
     `</svg></g></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
@@ -2062,9 +2451,9 @@ export function createExportEFile(__appScope: Record<string, any>) {
 
 export function createExportEDeviceDefinitionFile(__appScope: Record<string, any>) {
   return async () => {
-    const { libraryTemplates, PARAM_LABELS, eDeviceDefinitionLabels, saveTextFile, writeOperationLog } = __appScope;
+    const { libraryTemplates, PARAM_LABELS, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, saveTextFile, writeOperationLog } = __appScope;
     // libraryTemplates 已合并内置 + 自定义元件并应用 deviceDefinitionOverrides，导出范围覆盖所有元件（含内置）
-    const file = buildEDeviceDefinitionFile(libraryTemplates ?? [], PARAM_LABELS, eDeviceDefinitionLabels);
+    const file = buildEDeviceDefinitionFile(libraryTemplates ?? [], PARAM_LABELS, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled);
     if (!file.text) {
       window.alert("没有可导出的元件定义：所有元件均未勾选导出字段。");
       return;
@@ -2093,9 +2482,15 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
     }
     const {
       customDeviceTemplates,
+      deviceDefinitionOverrides,
+      eDeviceDefinitionLabels,
+      eDeviceDefinitionClassExportEnabled,
       libraryTemplates,
       persistDeviceLibraryChange,
       setCustomDeviceTemplates,
+      setDeviceDefinitionOverrides,
+      setEDeviceDefinitionLabels,
+      setEDeviceDefinitionClassExportEnabled,
       writeOperationLog
     } = __appScope;
     const reader = new FileReader();
@@ -2106,48 +2501,34 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
           window.alert("未在文件中解析到元件定义。");
           return;
         }
-        const resolveDefinitionComponentLibrary = __appScope.resolveTemplateComponentLibrary ?? ((template: any) => inferESection(template.kind, template.params ?? {}));
-        const sectionByKind = new Map(sections.map((s: any) => [s.componentLibrary || s.kind, s]));
-        // 匹配统计用 libraryTemplates（含内置+自定义），静态图元不计入（非电力设备）
-        const matched: string[] = [];
-        const skipped: string[] = [];
-        for (const template of (libraryTemplates ?? []) as any[]) {
-          const componentLibrary = resolveDefinitionComponentLibrary(template);
-          if (!componentLibrary || componentLibrary.startsWith("Static")) {
-            continue;
-          }
-          if (sectionByKind.has(componentLibrary)) {
-            matched.push(template.label || template.kind);
-          } else {
-            skipped.push(template.label || template.kind);
-          }
-        }
-        // 回写 customDeviceTemplates（更新 exportEnabled）
-        const nextTemplates = (customDeviceTemplates as any[]).map((template: any) => {
-          const componentLibrary = resolveDefinitionComponentLibrary(template);
-          const section = componentLibrary ? sectionByKind.get(componentLibrary) : undefined;
-          if (!section) {
-            return template;
-          }
-          const exportNames = new Set(section.fields.map((field: any) => field.exportName));
-          const parameterDefinitions = (template.parameterDefinitions ?? []).map((definition: any) => {
-            // 用推导的 exportName 匹配（与导出一致，如 resistancePu -> resistance），确保无人工修改时全部匹配
-            const settings = resolveDeviceParameterDefinitionExportSettings(template.kind, template.params ?? {}, definition);
-            if (settings.exportEnabled && exportNames.has(settings.exportName)) {
-              return { ...definition, exportEnabled: true, exportName: settings.exportName };
-            }
-            return { ...definition, exportEnabled: false };
-          });
-          return { ...template, parameterDefinitions };
+        const result = applyEDeviceDefinitionSectionsToLibraryState({
+          sections,
+          customDeviceTemplates,
+          libraryTemplates,
+          deviceDefinitionOverrides,
+          eDeviceDefinitionLabels,
+          eDeviceDefinitionClassExportEnabled,
+          labels: __appScope.PARAM_LABELS,
+          deviceDefinitionKeyForTemplate: __appScope.deviceDefinitionKeyForTemplate,
+          deviceDefinitionOverrideForTemplate: __appScope.deviceDefinitionOverrideForTemplate,
+          resolveDefinitionComponentLibrary: __appScope.resolveTemplateComponentLibrary ?? ((template: any) => inferESection(template.kind, template.params ?? {}))
         });
-        setCustomDeviceTemplates(nextTemplates);
-        persistDeviceLibraryChange({ customDeviceTemplates: nextTemplates }, {
-          success: `元件定义导入成功：匹配 ${matched.length} 个，跳过 ${skipped.length} 个。`,
-          failure: `元件定义已更新本地，后台保存失败：匹配 ${matched.length} 个。`
+        setCustomDeviceTemplates(result.customDeviceTemplates);
+        setDeviceDefinitionOverrides(result.deviceDefinitionOverrides);
+        setEDeviceDefinitionLabels(result.eDeviceDefinitionLabels);
+        setEDeviceDefinitionClassExportEnabled(result.eDeviceDefinitionClassExportEnabled);
+        persistDeviceLibraryChange({
+          customDeviceTemplates: result.customDeviceTemplates,
+          deviceDefinitionOverrides: result.deviceDefinitionOverrides,
+          eDeviceDefinitionLabels: result.eDeviceDefinitionLabels,
+          eDeviceDefinitionClassExportEnabled: result.eDeviceDefinitionClassExportEnabled
+        }, {
+          success: `元件定义导入成功：匹配 ${result.matched.length} 个，跳过 ${result.skipped.length} 个。`,
+          failure: `元件定义已更新本地，后台保存失败：匹配 ${result.matched.length} 个。`
         });
         writeOperationLog(`导入元件定义文件：${file.name}`);
-        const detail = skipped.length > 0 ? `\n未匹配（跳过）：${skipped.length} 个` : "";
-        window.alert(`元件定义导入成功。\n匹配元件：${matched.length} 个${detail}`);
+        const detail = result.skipped.length > 0 ? `\n未匹配（跳过）：${result.skipped.length} 个` : "";
+        window.alert(`元件定义导入成功。\n匹配元件：${result.matched.length} 个${detail}`);
       } catch (error) {
         window.alert(error instanceof Error ? error.message : "导入元件定义文件失败。");
       }
@@ -2162,8 +2543,8 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
 // 程序化导出 E 文件定义（经 WS control 指令调用，返回文本不触发浏览器下载）
 export function createProgrammaticExportEDeviceDefinition(__appScope: Record<string, any>) {
   return () => {
-    const { libraryTemplates, PARAM_LABELS, eDeviceDefinitionLabels } = __appScope;
-    return buildEDeviceDefinitionFile(libraryTemplates ?? [], PARAM_LABELS, eDeviceDefinitionLabels);
+    const { libraryTemplates, PARAM_LABELS, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled } = __appScope;
+    return buildEDeviceDefinitionFile(libraryTemplates ?? [], PARAM_LABELS, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled);
   };
 }
 
@@ -4042,9 +4423,12 @@ export function createUpdateDefinitionComponentLibraryCommonParamExport(__appSco
     if (!sectionKey) {
       return;
     }
-    const componentLibraryTemplates = libraryTemplates.filter((template) =>
-      normalizeComponentLibraryName(resolveTemplateComponentLibrary(template)) === sectionKey
-    );
+    const componentLibraryTemplates = libraryTemplates.filter((template) => {
+      const templateComponentLibrary = normalizeComponentLibraryName(resolveTemplateComponentLibrary(template));
+      const derivedInfo = templateDerivedComponentLibraryInfo(template);
+      const derivedComponentLibrary = normalizeComponentLibraryName(derivedInfo?.derivedComponentLibrary ?? "");
+      return templateComponentLibrary === sectionKey || derivedComponentLibrary === sectionKey;
+    });
     if (componentLibraryTemplates.length === 0) {
       return;
     }
@@ -5405,9 +5789,11 @@ export function createCancelPendingCustomComponentTemplateLoad(__appScope: Recor
 
 export function createSelectCustomCategoryLibrary(__appScope: Record<string, any>) {
   return (categoryLibraryName: string, options: { expand?: boolean } = {}) => {
-  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, defaultComponentLibraryForCategoryLibrary, ensureCustomComponentTreeExpanded, normalizeCategoryLibraryName, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceStatePageId, setEditingCustomDeviceKind } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, defaultComponentLibraryForCategoryLibrary, ensureCustomComponentTreeExpanded, normalizeCategoryLibraryName, normalizeComponentLibraryName, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceStatePageId, setEditingCustomDeviceKind } = __appScope;
     cancelPendingCustomComponentTemplateLoad();
     const group = normalizeCategoryLibraryName(categoryLibraryName);
+    const section = defaultComponentLibraryForCategoryLibrary(group);
+    const libraryDraftPatch = customDeviceDraftPatchForComponentLibrarySelection(__appScope, section);
     if (options.expand !== false) {
       ensureCustomComponentTreeExpanded(group);
     }
@@ -5417,8 +5803,10 @@ export function createSelectCustomCategoryLibrary(__appScope: Record<string, any
     setCustomDeviceDraft((current) => ({
       ...current,
       categoryLibraryName: group,
-      componentLibrary: defaultComponentLibraryForCategoryLibrary(group),
+      componentLibrary: normalizeComponentLibraryName(section),
       componentName: "",
+      componentKind: "",
+      ...libraryDraftPatch,
       isDerivedComponentLibrary: false,
       derivedFromComponentLibrary: "",
       derivedComponentLibrary: "",
@@ -5428,12 +5816,53 @@ export function createSelectCustomCategoryLibrary(__appScope: Record<string, any
   };
 }
 
+function customDeviceDraftPatchForComponentLibrarySelection(__appScope: Record<string, any>, sectionName: string) {
+  const {
+    createCustomDeviceDraftFromTemplate,
+    libraryTemplates = [],
+    normalizeComponentLibraryName = (value: unknown) => String(value ?? "").trim(),
+    resolveTemplateComponentLibrary
+  } = __appScope;
+  const section = normalizeComponentLibraryName(sectionName);
+  const matchingTemplates = (libraryTemplates ?? []).filter((template: any) =>
+    normalizeComponentLibraryName(
+      typeof resolveTemplateComponentLibrary === "function"
+        ? resolveTemplateComponentLibrary(template)
+        : inferESection(template.kind, template.params ?? {})
+    ) === section
+  );
+  const representativeTemplate =
+    matchingTemplates.find((template: any) => !templateDerivedComponentLibraryInfo(template)) ??
+    matchingTemplates[0];
+  if (!representativeTemplate || typeof createCustomDeviceDraftFromTemplate !== "function") {
+    return {
+      params: [],
+      stateDefinitions: []
+    };
+  }
+  const representativeDraft = createCustomDeviceDraftFromTemplate(representativeTemplate, section);
+  return {
+    size: representativeDraft.size,
+    allowResizeTransform: representativeDraft.allowResizeTransform,
+    terminalCount: representativeDraft.terminalCount,
+    terminalTypes: representativeDraft.terminalTypes,
+    terminalLabels: representativeDraft.terminalLabels,
+    terminalAnchors: representativeDraft.terminalAnchors,
+    terminalRoles: representativeDraft.terminalRoles,
+    terminalAssociations: representativeDraft.terminalAssociations,
+    isContainer: representativeDraft.isContainer,
+    params: representativeDraft.params ?? [],
+    stateDefinitions: []
+  };
+}
+
 export function createSelectCustomComponentLibrary(__appScope: Record<string, any>) {
   return (categoryLibraryName: string, sectionName: string, options: { expand?: boolean } = {}) => {
   const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, ensureCustomComponentTreeExpanded, normalizeCategoryLibraryName, normalizeComponentLibraryName, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceStatePageId, setCustomDeviceDialogView, setEditingCustomDeviceKind } = __appScope;
     cancelPendingCustomComponentTemplateLoad();
     const group = normalizeCategoryLibraryName(categoryLibraryName);
     const section = normalizeComponentLibraryName(sectionName);
+    const libraryDraftPatch = customDeviceDraftPatchForComponentLibrarySelection(__appScope, section);
     if (options.expand !== false) {
       ensureCustomComponentTreeExpanded(group, section);
     }
@@ -5446,6 +5875,8 @@ export function createSelectCustomComponentLibrary(__appScope: Record<string, an
       categoryLibraryName: group,
       componentLibrary: section,
       componentName: "",
+      componentKind: "",
+      ...libraryDraftPatch,
       isDerivedComponentLibrary: false,
       derivedFromComponentLibrary: "",
       derivedComponentLibrary: "",

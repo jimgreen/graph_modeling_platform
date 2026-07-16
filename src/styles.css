@@ -4760,6 +4760,86 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   outline: none;
 }
 
+.e-device-interface-dialog {
+  width: min(980px, calc(100vw - 56px));
+  max-height: min(760px, calc(100vh - 56px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.22);
+  padding: 14px;
+}
+
+.e-device-interface-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.e-device-interface-actions button,
+.e-device-interface-file-button {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.e-device-interface-actions button:hover,
+.e-device-interface-actions button:focus-visible,
+.e-device-interface-file-button:hover,
+.e-device-interface-file-button:focus-within {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  outline: none;
+}
+
+.e-device-interface-table-wrap {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid #d7dee8;
+  border-radius: 8px;
+}
+
+.e-device-interface-table {
+  min-width: 720px;
+}
+
+.e-device-interface-class-row td {
+  background: #f1f5f9;
+  font-weight: 800;
+}
+
+.e-device-interface-class-row small {
+  display: block;
+  margin-top: 2px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.e-device-interface-param-name {
+  padding-left: 24px !important;
+  color: #334155;
+}
+
+.e-device-interface-table tr.disabled td {
+  color: #94a3b8;
+  background: #f8fafc;
+}
+
 .custom-component-tree-actions-note {
   grid-column: 1 / -1;
   color: #64748b;
