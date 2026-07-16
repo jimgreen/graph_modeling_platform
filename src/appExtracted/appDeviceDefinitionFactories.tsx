@@ -4424,12 +4424,7 @@ export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>)
       setDefinitionDraftError(derivedDefinitionBaseParameterDuplicateMessage(baseDuplicateRow, selectedDefinitionTemplate));
       return;
     }
-    const allowedDerivedParameterNames = derivedInfo && typeof createDefinitionDraftRows === "function"
-      ? new Set(createDefinitionDraftRows(selectedDefinitionTemplate).map((row: DeviceParameterDefinition) => row.enName.trim()).filter(Boolean))
-      : null;
-    const rowsForSave = allowedDerivedParameterNames
-      ? definitionDraftRows.filter((row: DeviceParameterDefinition) => allowedDerivedParameterNames.has(row.enName.trim()))
-      : definitionDraftRows;
+    const rowsForSave = definitionDraftRows;
     const definitionComplianceMessage = deviceParameterDefinitionsComplianceMessage(rowsForSave);
     if (definitionComplianceMessage) {
       setDefinitionDraftError(definitionComplianceMessage);
@@ -4501,7 +4496,7 @@ export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>)
       setDefinitionDraftError(measurementProfileMessage);
       return;
     }
-    const previousDefinitions = allowedDerivedParameterNames && typeof createDefinitionDraftRows === "function"
+    const previousDefinitions = derivedInfo && typeof createDefinitionDraftRows === "function"
       ? createDefinitionDraftRows(selectedDefinitionTemplate)
       : getTemplateParameterDefinitions(selectedDefinitionTemplate);
     syncExistingNodesWithTemplateDefinitions(
@@ -6108,7 +6103,10 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
     });
     const draftRows = normalizeCustomDeviceDraftParamRows(customDeviceDraft.params, normalizeDefinitionRowEnumFields);
     const visibleDraftRows = derivedRequested && typeof isDerivedComponentBaseParamName === "function"
-      ? draftRows.filter((row) => !isDerivedComponentBaseParamName(row.enName, derivedFromComponentLibrary))
+      ? draftRows.filter((row) => {
+          const enName = String(row.enName ?? "").trim();
+          return !enName || !isDerivedComponentBaseParamName(enName, derivedFromComponentLibrary);
+        })
       : draftRows;
     const { definitions: mergedDefaultRows, customRows } = mergeDefaultAndCustomDefinitionRows(defaultRows, visibleDraftRows, normalizeDefinitionRowEnumFields);
     const definitions = [...mergedDefaultRows, ...customRows];
@@ -6145,7 +6143,19 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
         source: {
           kind: editingCustomDeviceKind || requestedCustomKind || customDeviceDraft.componentKind || componentLibrary,
           label: componentLabel,
-          params: { component_type: componentLibrary },
+          params: {
+            component_type: componentLibrary,
+            ...(derivedRequested ? {
+              derived_from_component_type: derivedFromComponentLibrary,
+              derived_component_type: derivedComponentLibrary,
+              derived_component_library_label: derivedComponentLibraryLabel,
+              is_derived_component_library: "1"
+            } : {})
+          },
+          isDerivedComponentLibrary: derivedRequested,
+          derivedFromComponentLibrary: derivedRequested ? derivedFromComponentLibrary : "",
+          derivedComponentLibrary: derivedRequested ? derivedComponentLibrary : "",
+          derivedComponentLibraryLabel: derivedRequested ? derivedComponentLibraryLabel : "",
           terminalType: terminalTypes[0] ?? "ac",
           terminalCount: terminalTypes.length,
           terminalTypes,
@@ -6302,6 +6312,48 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       setCustomDeviceDraft((current) => ({ ...current, error: "元件库必须是英文名称，只能包含英文字母、数字和下划线，并且必须以英文字母开头。" }));
       return false;
     }
+    const derivedRequested = Boolean(customDeviceDraft.isDerivedComponentLibrary);
+    const derivedFromComponentLibrary = normalizeComponentLibraryName(customDeviceDraft.derivedFromComponentLibrary || componentLibrary);
+    const derivedComponentLibrary = normalizeComponentLibraryName(customDeviceDraft.derivedComponentLibrary ?? "");
+    const derivedComponentLibraryLabel = String(customDeviceDraft.derivedComponentLibraryLabel ?? "").trim();
+    if (derivedRequested) {
+      if (!derivedFromComponentLibrary) {
+        setCustomDeviceDraft((current) => ({ ...current, error: "请选择派生类关联的原类元件库。" }));
+        return false;
+      }
+      if (!derivedComponentLibrary) {
+        setCustomDeviceDraft((current) => ({ ...current, error: "请输入或选择派生类英文名称。" }));
+        return false;
+      }
+      if (!isValidComponentLibraryName(derivedComponentLibrary)) {
+        setCustomDeviceDraft((current) => ({ ...current, error: "派生类英文名称只能包含英文字母、数字和下划线，并且必须以英文字母开头。" }));
+        return false;
+      }
+      if (derivedComponentLibrary.toLowerCase() === derivedFromComponentLibrary.toLowerCase()) {
+        setCustomDeviceDraft((current) => ({ ...current, error: "派生类英文名称不能与基类元件库相同。" }));
+        return false;
+      }
+      if (!derivedComponentLibraryLabel) {
+        setCustomDeviceDraft((current) => ({ ...current, error: "请输入派生类中文名称。" }));
+        return false;
+      }
+    }
+    const definitionDerivedParams = derivedRequested
+      ? {
+          derived_from_component_type: derivedFromComponentLibrary,
+          derived_component_type: derivedComponentLibrary,
+          derived_component_library_label: derivedComponentLibraryLabel,
+          is_derived_component_library: "1"
+        }
+      : {};
+    const withoutDerivedDefinitionParams = (params: Record<string, string> = {}) => {
+      const next = { ...params };
+      delete next.derived_from_component_type;
+      delete next.derived_component_type;
+      delete next.derived_component_library_label;
+      delete next.is_derived_component_library;
+      return next;
+    };
     const terminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
     const terminalAssociations = normalizeContainerTerminalAssociations(
       terminalTypes,
@@ -6330,7 +6382,10 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     const draftRows = normalizeCustomDeviceDraftParamRows(customDeviceDraft.params, normalizeDefinitionRowEnumFields);
     const derivedBaseComponentLibrary = customDeviceDraft.derivedFromComponentLibrary || componentLibrary;
     const visibleDraftRows = customDeviceDraft.isDerivedComponentLibrary && typeof isDerivedComponentBaseParamName === "function"
-      ? draftRows.filter((row) => !isDerivedComponentBaseParamName(row.enName, derivedBaseComponentLibrary))
+      ? draftRows.filter((row) => {
+          const enName = String(row.enName ?? "").trim();
+          return !enName || !isDerivedComponentBaseParamName(enName, derivedBaseComponentLibrary);
+        })
       : draftRows;
     const { definitions: mergedDefaultRows, customRows } = mergeDefaultAndCustomDefinitionRows(defaultRows, visibleDraftRows, normalizeDefinitionRowEnumFields);
     const definitions = [...mergedDefaultRows, ...customRows];
@@ -6366,6 +6421,15 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       positionDefinitions: buildMeasurementProfilePositionDefinitions({
         source: {
           ...template,
+          params: {
+            ...withoutDerivedDefinitionParams(template.params ?? {}),
+            component_type: componentLibrary,
+            ...definitionDerivedParams
+          },
+          isDerivedComponentLibrary: derivedRequested,
+          derivedFromComponentLibrary: derivedRequested ? derivedFromComponentLibrary : "",
+          derivedComponentLibrary: derivedRequested ? derivedComponentLibrary : "",
+          derivedComponentLibraryLabel: derivedRequested ? derivedComponentLibraryLabel : "",
           terminalType: terminalTypes[0] ?? template.terminalType,
           terminalCount: terminalTypes.length,
           terminalTypes,
@@ -6427,12 +6491,13 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       {
         parameterDefinitions: definitions,
         params: {
-          ...(template.params ?? {}),
+          ...withoutDerivedDefinitionParams(template.params ?? {}),
           component_type: componentLibrary,
-        backgroundImage,
-        backgroundImageAssetId,
-        backgroundImageFit: draftBackgroundImageFit,
-        backgroundImageCleared: draftBackgroundImageCleared
+          ...definitionDerivedParams,
+          backgroundImage,
+          backgroundImageAssetId,
+          backgroundImageFit: draftBackgroundImageFit,
+          backgroundImageCleared: draftBackgroundImageCleared
         },
         size,
         terminalType: terminalTypes[0] ?? template.terminalType,
@@ -6452,8 +6517,9 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
         ...existingOverride,
         kind: template.kind,
         params: {
-          ...(existingOverride?.params ?? {}),
+          ...withoutDerivedDefinitionParams(existingOverride?.params ?? {}),
           component_type: componentLibrary,
+          ...definitionDerivedParams,
           backgroundImage,
           backgroundImageAssetId,
           backgroundImageFit: draftBackgroundImageFit,
@@ -6468,6 +6534,10 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
         terminalRoles: customDeviceDraft.terminalRoles.slice(0, terminalTypes.length),
         terminalAssociations: customDeviceDraft.isContainer ? terminalAssociations : undefined,
         isContainer: customDeviceDraft.isContainer,
+        isDerivedComponentLibrary: derivedRequested,
+        derivedFromComponentLibrary: derivedRequested ? derivedFromComponentLibrary : "",
+        derivedComponentLibrary: derivedRequested ? derivedComponentLibrary : "",
+        derivedComponentLibraryLabel: derivedRequested ? derivedComponentLibraryLabel : "",
         allowResizeTransform: customDeviceDraft.allowResizeTransform === "1",
         parameterDefinitions: definitions,
         stateDefinitions,
@@ -6479,8 +6549,34 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       success: `元件定义已保存到后台：${template.label}`,
       failure: `元件定义已保存到本地，后台保存失败：${template.label}`
     });
-    const cleanDraft = { ...customDeviceDraft, backgroundImage, backgroundImageAssetId, backgroundImageFit: draftBackgroundImageFit, backgroundImageCleared: draftBackgroundImageCleared, size, terminalLabels, error: "" };
-    setCustomDeviceDraft((current) => ({ ...current, backgroundImage, backgroundImageAssetId, backgroundImageFit: draftBackgroundImageFit, backgroundImageCleared: draftBackgroundImageCleared, size, terminalLabels, error: "" }));
+    const cleanDraft = {
+      ...customDeviceDraft,
+      isDerivedComponentLibrary: derivedRequested,
+      derivedFromComponentLibrary: derivedRequested ? derivedFromComponentLibrary : "",
+      derivedComponentLibrary: derivedRequested ? derivedComponentLibrary : "",
+      derivedComponentLibraryLabel: derivedRequested ? derivedComponentLibraryLabel : "",
+      backgroundImage,
+      backgroundImageAssetId,
+      backgroundImageFit: draftBackgroundImageFit,
+      backgroundImageCleared: draftBackgroundImageCleared,
+      size,
+      terminalLabels,
+      error: ""
+    };
+    setCustomDeviceDraft((current) => ({
+      ...current,
+      isDerivedComponentLibrary: derivedRequested,
+      derivedFromComponentLibrary: derivedRequested ? derivedFromComponentLibrary : "",
+      derivedComponentLibrary: derivedRequested ? derivedComponentLibrary : "",
+      derivedComponentLibraryLabel: derivedRequested ? derivedComponentLibraryLabel : "",
+      backgroundImage,
+      backgroundImageAssetId,
+      backgroundImageFit: draftBackgroundImageFit,
+      backgroundImageCleared: draftBackgroundImageCleared,
+      size,
+      terminalLabels,
+      error: ""
+    }));
     setCustomDeviceDraftCleanBaseline(cleanDraft, terminalAnchors);
     setCustomDeviceSaveMessage("");
     showGlobalMessage(`元件定义已保存：${template.label}`, "success");

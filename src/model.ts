@@ -3619,15 +3619,27 @@ function derivedComponentLibraryFlagIsYes(value: unknown): boolean {
   return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "是";
 }
 
+function derivedComponentLibraryFlagIsNo(value: unknown): boolean {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === "0" || normalized === "false" || normalized === "no" || normalized === "否";
+}
+
 export function templateDerivedComponentLibraryInfo(
   template: Pick<DeviceTemplate, "kind" | "params"> &
     Partial<Pick<DeviceTemplate, "categoryLibrary" | "derivedFromComponentLibrary" | "derivedComponentLibrary" | "derivedComponentLibraryLabel" | "isDerivedComponentLibrary">>
 ): TemplateDerivedComponentLibraryInfo | null {
+  const params = template.params ?? {};
+  if (
+    template.isDerivedComponentLibrary === false ||
+    derivedComponentLibraryFlagIsNo(params.is_derived_component_library) ||
+    derivedComponentLibraryFlagIsNo((params as { isDerivedComponentLibrary?: string }).isDerivedComponentLibrary)
+  ) {
+    return null;
+  }
   const builtInInfo = electricGenerationDerivedComponentLibraryInfo(template.kind);
   if (builtInInfo) {
     return builtInInfo;
   }
-  const params = template.params ?? {};
   const rawComponentLibrary = String(params.component_type ?? params.componentLibrary ?? (params as { componentType?: string }).componentType ?? "").trim();
   const baseComponentLibrary = String(
     template.derivedFromComponentLibrary ??
@@ -6305,6 +6317,10 @@ export function applyDeviceTemplateDefinitionOverride(
     terminalRoles: override.terminalRoles ? override.terminalRoles.slice(0, terminalCount) : template.terminalRoles,
     terminalAssociations: override.terminalAssociations ? override.terminalAssociations.slice(0, terminalCount) : template.terminalAssociations,
     isContainer: override.isContainer ?? template.isContainer,
+    isDerivedComponentLibrary: override.isDerivedComponentLibrary ?? template.isDerivedComponentLibrary,
+    derivedFromComponentLibrary: override.derivedFromComponentLibrary ?? template.derivedFromComponentLibrary,
+    derivedComponentLibrary: override.derivedComponentLibrary ?? template.derivedComponentLibrary,
+    derivedComponentLibraryLabel: override.derivedComponentLibraryLabel ?? template.derivedComponentLibraryLabel,
     allowResizeTransform: override.allowResizeTransform ?? template.allowResizeTransform,
     params,
     parameterDefinitions,

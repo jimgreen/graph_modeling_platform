@@ -2101,6 +2101,10 @@ export function normalizeDeviceDefinitionOverrides(value: unknown): Record<strin
       const stateDefinitions = Array.isArray(rawOverride.stateDefinitions)
         ? normalizeDeviceStateDefinitions(rawOverride.stateDefinitions)
         : undefined;
+      const hasDerivedFlag = typeof rawOverride.isDerivedComponentLibrary === "boolean";
+      const hasDerivedFrom = Object.prototype.hasOwnProperty.call(rawOverride, "derivedFromComponentLibrary");
+      const hasDerivedComponent = Object.prototype.hasOwnProperty.call(rawOverride, "derivedComponentLibrary");
+      const hasDerivedLabel = Object.prototype.hasOwnProperty.call(rawOverride, "derivedComponentLibraryLabel");
       const normalizedOverride: DeviceTemplateDefinitionOverride = {
         kind: normalizedKind,
         params: Object.fromEntries(
@@ -2123,6 +2127,10 @@ export function normalizeDeviceDefinitionOverrides(value: unknown): Record<strin
           ? rawOverride.terminalAssociations.slice(0, terminalCount || MAX_CUSTOM_DEVICE_TERMINALS) as ContainerTerminalAssociationValue[]
           : undefined,
         isContainer: typeof rawOverride.isContainer === "boolean" ? rawOverride.isContainer : undefined,
+        isDerivedComponentLibrary: hasDerivedFlag ? rawOverride.isDerivedComponentLibrary : undefined,
+        derivedFromComponentLibrary: hasDerivedFrom ? normalizeComponentLibraryName(String(rawOverride.derivedFromComponentLibrary ?? "")) : undefined,
+        derivedComponentLibrary: hasDerivedComponent ? normalizeComponentLibraryName(String(rawOverride.derivedComponentLibrary ?? "")) : undefined,
+        derivedComponentLibraryLabel: hasDerivedLabel ? String(rawOverride.derivedComponentLibraryLabel ?? "").trim() : undefined,
         allowResizeTransform: normalizeDefinitionResizePermission(rawOverride.allowResizeTransform),
         parameterDefinitions: normalizeDefinitionRows(override.parameterDefinitions),
         stateDefinitions,

@@ -157,6 +157,47 @@ describe("measurement canvas interactions", () => {
     expect(fieldNames.filter((name: string) => name === "p_set")).toHaveLength(1);
   });
 
+  test("offers base fields before custom derived draft fields for measurements", () => {
+    const buildMeasurementProfilePositionDefinitions = (measurementDefinitions as any).buildMeasurementProfilePositionDefinitions;
+    expect(buildMeasurementProfilePositionDefinitions).toBeTypeOf("function");
+
+    const positions = buildMeasurementProfilePositionDefinitions({
+      source: {
+        kind: "custom-ACGenerator",
+        label: "新交流发电机",
+        categoryLibrary: "交流设备",
+        params: {
+          component_type: "ACGenerator",
+          derived_from_component_type: "ACGenerator",
+          derived_component_type: "NewACGen",
+          derived_component_library_label: "新交流发电机2",
+          is_derived_component_library: "1"
+        },
+        terminalType: "ac",
+        terminalCount: 1,
+        isDerivedComponentLibrary: true,
+        derivedFromComponentLibrary: "ACGenerator",
+        derivedComponentLibrary: "NewACGen",
+        derivedComponentLibraryLabel: "新交流发电机2",
+        parameterDefinitions: [
+          { cnName: "派生字段A", enName: "a", valueType: "string", typicalValue: "" },
+          { cnName: "派生字段B", enName: "bbbb", valueType: "string", typicalValue: "" }
+        ]
+      },
+      parameterDefinitions: [
+        { cnName: "派生字段A", enName: "a", valueType: "string", typicalValue: "" },
+        { cnName: "派生字段B", enName: "bbbb", valueType: "string", typicalValue: "" }
+      ],
+      libraryTemplates: DEVICE_LIBRARY
+    });
+
+    const fieldNames = positions[0].parameterDefinitions.map((definition: any) => definition.enName);
+    expect(fieldNames).toEqual(expect.arrayContaining(["p_set", "run_stat", "a", "bbbb"]));
+    expect(fieldNames.indexOf("p_set")).toBeLessThan(fieldNames.indexOf("a"));
+    expect(fieldNames.indexOf("run_stat")).toBeLessThan(fieldNames.indexOf("bbbb"));
+    expect(fieldNames.filter((name: string) => name === "p_set")).toHaveLength(1);
+  });
+
   test("shows the legacy two-winding transformer profile in the ACTransformer definition", () => {
     const config = measurementDefinitions.normalizeMeasurementConfig(measurementDefinitions.DEFAULT_MEASUREMENT_CONFIG);
     const updateMeasurementProfileItem = vi.fn();

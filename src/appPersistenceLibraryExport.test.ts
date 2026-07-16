@@ -13,6 +13,7 @@ import {
   isBuiltInCategoryLibrary,
   normalizeLibraryPackage,
   normalizeDeviceLibraryPersistencePayload,
+  normalizeDeviceDefinitionOverrides,
   selectableCategoryLibraryList,
   normalizeCustomComponentLibraries,
   normalizeCustomDeviceTemplates,
@@ -120,6 +121,28 @@ describe("graph template library filtering", () => {
     });
     expect(() => normalizeLibraryPackage({ format: "wrong", version: 1, scope: "measurement" })).toThrow("不是有效的库导入文件");
     expect(() => normalizeLibraryPackage({ format: "graph-modeling-platform-library-package", version: 99, scope: "measurement" })).toThrow("不支持的库文件版本");
+  });
+
+  test("preserves explicit non-derived built-in definition overrides", () => {
+    const overrides = normalizeDeviceDefinitionOverrides({
+      "ac-wind-source": {
+        kind: "ac-wind-source",
+        params: { component_type: "ACGenerator" },
+        isDerivedComponentLibrary: false,
+        derivedFromComponentLibrary: "",
+        derivedComponentLibrary: "",
+        derivedComponentLibraryLabel: ""
+      }
+    });
+
+    expect(overrides["ac-wind-source"]).toMatchObject({
+      kind: "ac-wind-source",
+      params: { component_type: "ACGenerator" },
+      isDerivedComponentLibrary: false,
+      derivedFromComponentLibrary: "",
+      derivedComponentLibrary: "",
+      derivedComponentLibraryLabel: ""
+    });
   });
 
   test("keeps imported device and template scopes isolated from current library state", () => {

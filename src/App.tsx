@@ -4704,7 +4704,21 @@ const customDeviceMeasurementPositionDefinitions = buildMeasurementProfilePositi
         selectedDefinitionTemplate?.kind ||
         "custom-device-draft",
       label: customDeviceDraft.componentName,
-      params: { component_type: customDeviceDraft.componentLibrary },
+      params: {
+        component_type: customDeviceDraft.componentLibrary,
+        ...(customDeviceDraft.isDerivedComponentLibrary ? {
+          derived_from_component_type: customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary,
+          derived_component_type: customDeviceDraft.derivedComponentLibrary,
+          derived_component_library_label: customDeviceDraft.derivedComponentLibraryLabel,
+          is_derived_component_library: "1"
+        } : {})
+      },
+      isDerivedComponentLibrary: customDeviceDraft.isDerivedComponentLibrary,
+      derivedFromComponentLibrary: customDeviceDraft.isDerivedComponentLibrary
+        ? customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary
+        : "",
+      derivedComponentLibrary: customDeviceDraft.isDerivedComponentLibrary ? customDeviceDraft.derivedComponentLibrary : "",
+      derivedComponentLibraryLabel: customDeviceDraft.isDerivedComponentLibrary ? customDeviceDraft.derivedComponentLibraryLabel : "",
       terminalType: customDraftTerminalTypes[0] ?? "ac",
       terminalCount: customDraftTerminalTypes.length,
       terminalTypes: customDraftTerminalTypes,

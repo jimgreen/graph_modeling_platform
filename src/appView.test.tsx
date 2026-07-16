@@ -98,6 +98,26 @@ describe("app view device definition parameter rows", () => {
     expect(rows.map((row) => row.enName)).toEqual(["hydroUnitModel", "turbineType"]);
   });
 
+  test("keeps new derived parameter draft rows visible while hiding base rows", () => {
+    const rows = resolveDeviceDefinitionParameterRowsForDisplay(
+      [
+        { id: "base", enName: "p_set" },
+        { id: "existing-derived", enName: "hydroUnitModel" },
+        { id: "new-blank", enName: "" },
+        { id: "new-derived", enName: "ownerName" }
+      ],
+      [
+        { enName: "hydroUnitModel" }
+      ],
+      {
+        baseComponentLibrary: "ACGenerator",
+        isDerivedComponentBaseParamName: (name: unknown) => String(name ?? "").trim() === "p_set"
+      }
+    );
+
+    expect(rows.map((row) => row.id)).toEqual(["existing-derived", "new-blank", "new-derived"]);
+  });
+
   test("renders the parameter table from display-filtered rows", () => {
     const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
 
@@ -109,6 +129,14 @@ describe("app view device definition parameter rows", () => {
     const source = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
 
     expect(source).toMatch(/isDerivedComponentLibrary:\s*customDeviceDraft\.isDerivedComponentLibrary/);
+  });
+
+  test("passes derived metadata into custom device measurement positions", () => {
+    const source = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+
+    expect(source).toMatch(
+      /const customDeviceMeasurementPositionDefinitions = buildMeasurementProfilePositionDefinitions\(\{[\s\S]*source:\s*\{[\s\S]*is_derived_component_library:\s*"1"[\s\S]*isDerivedComponentLibrary:\s*customDeviceDraft\.isDerivedComponentLibrary[\s\S]*derivedFromComponentLibrary:\s*customDeviceDraft\.isDerivedComponentLibrary[\s\S]*customDeviceDraft\.derivedFromComponentLibrary \|\| customDeviceDraft\.componentLibrary[\s\S]*derivedComponentLibrary:\s*customDeviceDraft\.isDerivedComponentLibrary \? customDeviceDraft\.derivedComponentLibrary : ""[\s\S]*derivedComponentLibraryLabel:\s*customDeviceDraft\.isDerivedComponentLibrary \? customDeviceDraft\.derivedComponentLibraryLabel : ""/
+    );
   });
 
   test("filters polluted base rows from derived custom component dialogs", () => {
@@ -134,6 +162,26 @@ describe("app view device definition parameter rows", () => {
 
     expect(rows.defaultRows.map((row) => row.enName)).toEqual([]);
     expect(rows.customRows.map((row) => row.enName)).toEqual(["pvModuleModel", "mpptCount"]);
+  });
+
+  test("keeps new blank rows visible in derived custom component dialogs", () => {
+    const rows = resolveCustomDeviceParameterRowsForDisplay(
+      [],
+      [
+        { id: "base-status", enName: "status" },
+        { id: "new-blank", enName: "" },
+        { id: "new-derived", enName: "ownerName" }
+      ],
+      {
+        isDerivedComponentLibrary: true,
+        baseComponentLibrary: "ACGenerator",
+        isDerivedComponentBaseParamName: (name: unknown) =>
+          !String(name ?? "").trim() ||
+          ["idx", "name", "status", "run_stat", "node"].includes(String(name ?? "").trim())
+      }
+    );
+
+    expect(rows.customRows.map((row) => row.id)).toEqual(["new-blank", "new-derived"]);
   });
 });
 

@@ -72,8 +72,21 @@ export function resolveDeviceModelPanelParameterKeys(
 
 export function resolveDeviceDefinitionParameterRowsForDisplay<T extends { enName?: unknown }>(
   rows: readonly T[] = [],
-  allowedRows?: readonly { enName?: unknown }[] | null
+  allowedRows?: readonly { enName?: unknown }[] | null,
+  options: {
+    baseComponentLibrary?: string;
+    isDerivedComponentBaseParamName?: (fieldName: unknown, baseComponentLibrary?: string) => boolean;
+  } = {}
 ): T[] {
+  if (typeof options.isDerivedComponentBaseParamName === "function") {
+    return rows.filter((row) => {
+      const enName = String(row.enName ?? "").trim();
+      if (!enName) {
+        return true;
+      }
+      return !options.isDerivedComponentBaseParamName?.(enName, options.baseComponentLibrary);
+    });
+  }
   if (!allowedRows || allowedRows.length === 0) {
     return [...rows];
   }
@@ -83,7 +96,10 @@ export function resolveDeviceDefinitionParameterRowsForDisplay<T extends { enNam
   if (allowedNames.size === 0) {
     return [...rows];
   }
-  return rows.filter((row) => allowedNames.has(String(row.enName ?? "").trim()));
+  return rows.filter((row) => {
+    const enName = String(row.enName ?? "").trim();
+    return !enName || allowedNames.has(enName);
+  });
 }
 
 export function resolveCustomDeviceParameterRowsForDisplay<T extends { enName?: unknown }>(
@@ -95,12 +111,15 @@ export function resolveCustomDeviceParameterRowsForDisplay<T extends { enName?: 
     isDerivedComponentBaseParamName?: (fieldName: unknown, baseComponentLibrary?: string) => boolean;
   } = {}
 ): { defaultRows: T[]; customRows: T[] } {
-  const isHiddenDerivedBaseRow = (row: T) =>
-    Boolean(
-      options.isDerivedComponentLibrary &&
+  const isHiddenDerivedBaseRow = (row: T) => {
+    const enName = String(row.enName ?? "").trim();
+    return Boolean(
+      enName &&
+        options.isDerivedComponentLibrary &&
         typeof options.isDerivedComponentBaseParamName === "function" &&
-        options.isDerivedComponentBaseParamName(row.enName, options.baseComponentLibrary)
+        options.isDerivedComponentBaseParamName(enName, options.baseComponentLibrary)
     );
+  };
   return {
     defaultRows: defaultRows.filter((row) => !isHiddenDerivedBaseRow(row)),
     customRows: customRows.filter((row) => !isHiddenDerivedBaseRow(row))
@@ -253,8 +272,14 @@ export function renderAppView(__appScope: Record<string, any>) {
     setImagePickerSourceFilter
   } = __appScope;
   const { customDevicePreviewNode } = __appScope;
-  const definitionDraftRowsForDisplay = selectedDefinitionTemplate && templateDerivedComponentLibraryInfo(selectedDefinitionTemplate) && typeof __appScope.createDefinitionDraftRows === "function"
-    ? resolveDeviceDefinitionParameterRowsForDisplay(definitionDraftRows, __appScope.createDefinitionDraftRows(selectedDefinitionTemplate))
+  const selectedDefinitionDerivedInfo = selectedDefinitionTemplate
+    ? templateDerivedComponentLibraryInfo(selectedDefinitionTemplate)
+    : null;
+  const definitionDraftRowsForDisplay = selectedDefinitionTemplate && selectedDefinitionDerivedInfo && typeof __appScope.createDefinitionDraftRows === "function"
+    ? resolveDeviceDefinitionParameterRowsForDisplay(definitionDraftRows, __appScope.createDefinitionDraftRows(selectedDefinitionTemplate), {
+        baseComponentLibrary: selectedDefinitionDerivedInfo.baseComponentLibrary,
+        isDerivedComponentBaseParamName: __appScope.isDerivedComponentBaseParamName
+      })
     : definitionDraftRows;
   const customDeviceDerivedBaseLibrary = normalizeComponentLibraryName(
     customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary || ""
