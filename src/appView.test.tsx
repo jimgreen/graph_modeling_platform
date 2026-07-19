@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import { areCanvasPropsEqual } from "./appExtracted/appCanvasArea";
+import * as appViewModule from "./appExtracted/appView";
 import {
   inspectorTabShowsDevicePanel,
+  customDeviceDefinitionUsesIconOnly,
   resolveDeviceDefinitionParameterRowsForDisplay,
   resolveDeviceModelPanelParameterKeys,
   resolveCustomDeviceParameterRowsForDisplay,
@@ -79,6 +81,132 @@ describe("app view device model parameter keys", () => {
 });
 
 describe("app view device definition parameter rows", () => {
+  test("shows only icon definition for concrete static graphics", () => {
+    expect(customDeviceDefinitionUsesIconOnly(
+      { kind: "component", categoryLibraryName: "静态图元", templateKind: "custom-static-symbol" },
+      { categoryLibraryName: "静态图元", componentKind: "custom-static-symbol" }
+    )).toBe(true);
+    expect(customDeviceDefinitionUsesIconOnly(
+      { kind: "component", categoryLibraryName: "自定义类别", templateKind: "static-line" },
+      { categoryLibraryName: "自定义类别", componentKind: "static-line" }
+    )).toBe(true);
+    expect(customDeviceDefinitionUsesIconOnly(
+      { kind: "component", categoryLibraryName: "交流设备", templateKind: "ac-breaker" },
+      { categoryLibraryName: "交流设备", componentKind: "ac-breaker" }
+    )).toBe(false);
+    expect(customDeviceDefinitionUsesIconOnly(
+      { kind: "componentLibrary", categoryLibraryName: "静态图元", section: "StaticBasicShape" },
+      { categoryLibraryName: "静态图元", componentKind: "" }
+    )).toBe(false);
+  });
+
+  test("tracks E interface unsaved changes from class and field export settings", () => {
+    const signatureFor = (appViewModule as any).eDeviceInterfaceDefinitionSignature;
+
+    expect(typeof signatureFor).toBe("function");
+    if (typeof signatureFor !== "function") {
+      return;
+    }
+
+    const rows = [
+      {
+        componentLibrary: "ACGenerator",
+        exportEnabled: true,
+        exportName: "ACGenerator",
+        fields: [
+          { sourceName: "node", exportEnabled: true, exportName: "node" },
+          { sourceName: "p_set", exportEnabled: true, exportName: "p_set" }
+        ]
+      }
+    ];
+    const baseline = signatureFor(rows);
+
+    expect(signatureFor(rows.map((row: any) => ({ ...row, label: "交流电源" })))).toBe(baseline);
+    expect(signatureFor(rows.map((row: any) => ({ ...row, exportName: "Generator" })))).not.toBe(baseline);
+    expect(signatureFor(rows.map((row: any) => ({
+      ...row,
+      fields: row.fields.map((field: any) => field.sourceName === "node" ? { ...field, exportName: "inode" } : field)
+    })))).not.toBe(baseline);
+  });
+
+  test("tracks the selected E interface class and prompts before switching dirty definitions", () => {
+    const classSignatureFor = (appViewModule as any).eDeviceInterfaceClassDefinitionSignature;
+    const fieldDefinitionMatches = (appViewModule as any).eDeviceInterfaceFieldDefinitionMatches;
+    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const row = {
+      componentLibrary: "ACGenerator",
+      exportEnabled: true,
+      exportName: "ACGenerator",
+      fields: [
+        { sourceName: "node", exportEnabled: true, exportName: "node" },
+        { sourceName: "p_set", exportEnabled: true, exportName: "p_set" }
+      ]
+    };
+
+    expect(typeof classSignatureFor).toBe("function");
+    expect(typeof fieldDefinitionMatches).toBe("function");
+    expect(classSignatureFor({ ...row, label: "交流电源" })).toBe(classSignatureFor(row));
+    expect(classSignatureFor({
+      ...row,
+      fields: row.fields.map((field) => field.sourceName === "p_set" ? { ...field, exportName: "active_power" } : field)
+    })).not.toBe(classSignatureFor(row));
+    expect(fieldDefinitionMatches(row.fields[0], { ...row.fields[0] })).toBe(true);
+    expect(fieldDefinitionMatches(row.fields[0], { ...row.fields[0], exportName: "inode" })).toBe(false);
+    expect(source).toContain("requestSelectEDeviceInterfaceComponentLibrary");
+    expect(source).toContain("e-device-interface-class-switch-dialog");
+    expect(source).toContain("不保存并切换");
+    expect(source).toContain("保存并切换");
+  });
+
+  test("groups E interface classes as category and derived-class tree nodes", () => {
+    const buildTree = (appViewModule as any).buildEDeviceInterfaceDefinitionTree;
+
+    expect(typeof buildTree).toBe("function");
+    if (typeof buildTree !== "function") {
+      return;
+    }
+
+    const tree = buildTree([
+      {
+        componentLibrary: "ACGenerator",
+        categoryLibrary: "交流设备",
+        label: "交流电源",
+        fields: []
+      },
+      {
+        componentLibrary: "ACWindGen",
+        categoryLibrary: "交流设备",
+        label: "交流风电",
+        isDerivedComponentLibrary: true,
+        derivedFromComponentLibrary: "ACGenerator",
+        fields: []
+      },
+      {
+        componentLibrary: "ACPVGen",
+        categoryLibrary: "交流设备",
+        label: "交流光伏",
+        isDerivedComponentLibrary: true,
+        derivedFromComponentLibrary: "ACGenerator",
+        fields: []
+      },
+      {
+        componentLibrary: "CustomText",
+        categoryLibrary: "静态图元",
+        label: "文字",
+        fields: []
+      }
+    ]);
+
+    expect(tree.map((category: any) => category.label)).toEqual(["交流设备", "静态图元"]);
+    expect(tree[0].classCount).toBe(3);
+    expect(tree[0].items.map((item: any) => item.row.componentLibrary)).toEqual(["ACGenerator"]);
+    expect(tree[0].items[0].children.map((row: any) => row.componentLibrary)).toEqual([
+      "ACWindGen",
+      "ACPVGen"
+    ]);
+    expect(tree[1].items[0].row.componentLibrary).toBe("CustomText");
+  });
+
   test("renders the E interface dialog after the custom device dialog so it is not hidden behind it", () => {
     const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
 
@@ -87,14 +215,46 @@ describe("app view device definition parameter rows", () => {
     );
   });
 
-  test("renders the E interface dialog as a left class list with a right parameter table", () => {
+  test("renders the E interface dialog as a left class tree with a right parameter table", () => {
     const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
 
     expect(source).toContain("e-device-interface-layout");
     expect(source).toContain("e-device-interface-class-list");
+    expect(source).toContain('role="tree"');
+    expect(source).toContain("e-device-interface-tree-category");
+    expect(source).toContain("e-device-interface-tree-branch");
     expect(source).toContain("e-device-interface-detail");
     expect(source).toContain("selectedEDeviceInterfaceRow");
     expect(source).toMatch(/selectedEDeviceInterfaceRow\?\.fields\.map/);
+  });
+
+  test("renders explicit save and exit actions with Ctrl+S handling", () => {
+    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("e-device-interface-footer");
+    expect(source).toContain("saveEDeviceInterfaceDefinition");
+    expect(source).toContain("requestCloseEDeviceInterfaceDefinition");
+    expect(source).toContain("e-device-interface-unsaved-dialog");
+    expect(source).toContain("eDeviceInterfaceSaveRef");
+    expect(source).toContain("runAfterEDeviceInterfaceInputCommit");
+    expect(source).toContain("requestSaveEDeviceInterfaceDefinition");
+    expect(source).toContain("requestExportEDeviceInterfaceDefinitionFile");
+    expect(source).toContain("activeElement.blur()");
+    expect(source).toMatch(/event\.key\.toLowerCase\(\) === "s"/);
+  });
+
+  test("keeps export configuration columns only in the E interface definition dialog", () => {
+    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const eInterfaceStart = source.indexOf("{eDeviceDefinitionInterfaceDialogOpen &&");
+
+    expect(eInterfaceStart).toBeGreaterThan(0);
+    const deviceDefinitionSource = source.slice(0, eInterfaceStart);
+    const eInterfaceSource = source.slice(eInterfaceStart);
+
+    expect(deviceDefinitionSource).not.toContain("<th>是否导出</th>");
+    expect(deviceDefinitionSource).not.toContain("<th>导出名称</th>");
+    expect(eInterfaceSource).toContain("<th>是否导出</th>");
+    expect(eInterfaceSource).toContain("<th>导出名称</th>");
   });
 
   test("filters polluted base rows from derived component parameter tables", () => {

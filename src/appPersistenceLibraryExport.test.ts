@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { Children, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
+import { createElement, isValidElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 import {
@@ -20,6 +20,10 @@ import {
   normalizeCustomComponentLibraries,
   normalizeCustomDeviceTemplates,
   normalizeDefinitionRows,
+  enumDisplayText,
+  enumEditorOptionsForRow,
+  enumEditorValidationMessage,
+  enumValuesSummaryText,
   renderEnumValuesEditor
 } from "./appExtracted/appPersistenceLibraryExport";
 import { DEVICE_LIBRARY } from "./model";
@@ -613,7 +617,7 @@ describe("graph template library filtering", () => {
     expect(successAlertIndex).toBeLessThan(catchIndex);
   });
 
-  test("renders enum options as grouped rows in the parameter definition table", () => {
+  test("renders enum options as a compact summary in the parameter definition table", () => {
     const editor = renderEnumValuesEditor(
       {
         id: "status",
@@ -631,20 +635,51 @@ describe("graph template library filtering", () => {
     );
 
     expect(isValidElement(editor)).toBe(true);
-    const editorProps = (editor as ReactElement<{ className: string; children: ReactNode }>).props;
-    expect(editorProps.className).toContain("number-enum");
-    expect(editorProps.className).toContain("readonly");
+    const html = renderToStaticMarkup(editor as any);
 
-    const optionRows = Children.toArray(editorProps.children).filter(
-      (child): child is ReactElement<{ className: string; children: ReactNode }> =>
-        isValidElement(child) &&
-        (child as ReactElement<{ className: string }>).props.className === "custom-param-enum-row"
-    );
-    expect(optionRows).toHaveLength(2);
-    const firstRowChildren = Children.toArray(optionRows[0].props.children).filter(Boolean);
-    expect(firstRowChildren.every((child) => isValidElement(child))).toBe(true);
-    expect((firstRowChildren[0] as ReactElement<{ className: string }>).props.className).toBe("custom-param-enum-field");
-    expect((firstRowChildren[1] as ReactElement<{ className: string }>).props.className).toBe("custom-param-enum-field");
+    expect(html).toContain("custom-param-enum-summary");
+    expect(html).toContain("readonly");
+    expect(html).toContain("number-enum");
+    expect(html).toContain("2 项：1=闭合；0=断开");
+    expect(html).toContain("双击查看枚举项详情");
+    expect(html).toContain("custom-param-enum-summary-action");
+    expect(html).not.toContain("custom-param-enum-row");
+
+    const source = readFileSync(new URL("./appExtracted/appPersistenceLibraryExport.tsx", import.meta.url), "utf8");
+    const actionMatch = source.match(/className="custom-param-enum-summary-action"[\s\S]*?<\/button>/u);
+    expect(actionMatch?.[0]).toContain("onClick");
+    expect(actionMatch?.[0]).toContain("openDialog()");
+    expect(source).toContain('{enumValueType === "number" && <th>显示名称</th>}');
+  });
+
+  test("summarizes long enum lists and validates dialog edits", () => {
+    expect(enumValuesSummaryText({
+      enName: "mode",
+      valueType: "stringEnum",
+      typicalValue: "auto",
+      enumOptions: [
+        { value: "auto", label: "自动" },
+        { value: "manual", label: "手动" },
+        { value: "off", label: "停用" }
+      ]
+    } as any)).toBe("3 项：auto；manual；…");
+
+    expect(enumDisplayText({ value: "auto", label: "自动" }, "string")).toBe("auto");
+    expect(enumDisplayText({ value: "1", label: "闭合" }, "number")).toBe("闭合 (1)");
+
+    expect(enumEditorOptionsForRow({
+      enName: "status",
+      typicalValue: "1",
+      enumValues: ["1", "0"]
+    } as any)).toEqual([
+      { value: "1", label: "闭合" },
+      { value: "0", label: "打开/开断" }
+    ]);
+
+    expect(enumEditorValidationMessage([{ value: "", label: "" }], "string")).toBe("枚举值不能为空。");
+    expect(enumEditorValidationMessage([{ value: "1", label: "闭合" }, { value: "1", label: "重复" }], "number")).toBe("枚举值不能重复。");
+    expect(enumEditorValidationMessage([{ value: "abc", label: "无效" }], "number")).toBe("数字枚举的值必须是有效数字。");
+    expect(enumEditorValidationMessage([{ value: "1", label: "闭合" }, { value: "0", label: "断开" }], "number")).toBe("");
   });
 
   test("normalizes persisted status definitions as editable while keeping structural rows readonly", () => {
@@ -693,11 +728,12 @@ describe("graph template library filtering", () => {
     expect(definitions[2]).not.toHaveProperty("exportName");
   });
 
-  test("renders E export controls in all parameter definition tables", () => {
+  test("renders E export controls only in the centralized E interface definition table", () => {
     const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
 
-    expect(appViewSource.match(/<th>是否导出<\/th>/gu)).toHaveLength(4);
-    expect(appViewSource.match(/<th>导出名称<\/th>/gu)).toHaveLength(4);
+    expect(appViewSource.match(/<th>是否导出<\/th>/gu)).toHaveLength(1);
+    expect(appViewSource.match(/<th>导出名称<\/th>/gu)).toHaveLength(1);
+    expect(appViewSource).toContain("e-device-interface-table");
     expect(appViewSource).toContain("exportEnabled");
     expect(appViewSource).toContain("exportName");
   });

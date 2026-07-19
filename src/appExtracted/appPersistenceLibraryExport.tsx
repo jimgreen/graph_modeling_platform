@@ -1572,6 +1572,9 @@ export const enumValueFromOptions = (value: string, enumOptions: readonly Device
 
 export const enumDisplayText = (option: DeviceParameterEnumOption, enumValueType?: DeviceParameterEnumValueType) => {
   const label = String(option.label ?? "").trim();
+  if (enumValueType === "string") {
+    return option.value;
+  }
   if (!label || label === option.value) {
     return option.value;
   }
@@ -1635,6 +1638,300 @@ export const renderTypicalValueEditor = <T extends DeviceParameterDefinition & {
   );
 };
 
+export const enumEditorOptionsForRow = (
+  row: Pick<DeviceParameterDefinition, "enName" | "typicalValue" | "enumValues" | "enumOptions">
+): DeviceParameterEnumOption[] => {
+  const rawOptions = normalizeEnumOptionsForRow(row).map((option) => ({
+    value: String(option?.value ?? ""),
+    label: String(option?.label ?? "")
+  }));
+  return rawOptions.length > 0 ? rawOptions : [{ value: "", label: "" }];
+};
+
+export const enumValuesSummaryText = (
+  row: Pick<DeviceParameterDefinition, "enName" | "typicalValue" | "enumValues" | "enumOptions" | "valueType" | "enumValueType">,
+  visibleCount = 2
+) => {
+  const options = normalizeEnumOptionsForRow(row);
+  if (options.length === 0) {
+    return "未设置";
+  }
+  const showDisplayNames = enumValueTypeForDefinitionRow(row, options) === "number";
+  const parts = options.slice(0, Math.max(1, visibleCount)).map((option) => {
+    const value = String(option.value ?? "").trim();
+    const label = String(option.label ?? "").trim();
+    return showDisplayNames && label && label !== value ? `${value}=${label}` : value;
+  });
+  return `${options.length} 项：${parts.join("；")}${options.length > parts.length ? "；…" : ""}`;
+};
+
+export const enumEditorValidationMessage = (
+  options: readonly DeviceParameterEnumOption[],
+  enumValueType: DeviceParameterEnumValueType
+) => {
+  const values = options.map((option) => String(option?.value ?? "").trim());
+  if (values.some((value) => !value)) {
+    return "枚举值不能为空。";
+  }
+  if (new Set(values).size !== values.length) {
+    return "枚举值不能重复。";
+  }
+  if (enumValueType === "number" && values.some((value) => !Number.isFinite(Number(value)))) {
+    return "数字枚举的值必须是有效数字。";
+  }
+  return "";
+};
+
+function EnumValuesEditor<T extends DeviceParameterDefinition & { id: string }>({
+  row,
+  updateRow,
+  disabled = false
+}: {
+  row: T;
+  updateRow: (rowId: string, patch: Partial<T>) => void;
+  disabled?: boolean;
+}) {
+  const normalizedOptions = normalizeEnumOptionsForRow(row);
+  const enumValueType = enumValueTypeForDefinitionRow(row, normalizedOptions);
+  const showDisplayNames = enumValueType === "number";
+  const parameterName = String(row.cnName ?? "").trim() || String(row.enName ?? "").trim() || "参数";
+  const summaryText = enumValuesSummaryText(row);
+  const fullSummaryText = normalizedOptions.length > 0
+    ? normalizedOptions.map((option) => {
+        const value = String(option.value ?? "").trim();
+        const label = String(option.label ?? "").trim();
+        return showDisplayNames && label && label !== value ? `${value}=${label}` : value;
+      }).join("；")
+    : "未设置";
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [draftOptions, setDraftOptions] = useState<DeviceParameterEnumOption[]>([]);
+  const [draftTypicalValue, setDraftTypicalValue] = useState("");
+  const [validationMessage, setValidationMessage] = useState("");
+  const firstInputRef = useRef<HTMLInputElement | null>(null);
+
+  const openDialog = () => {
+    const options = enumEditorOptionsForRow(row);
+    setDraftOptions(options);
+    setDraftTypicalValue(enumValueFromOptions(String(row.typicalValue ?? ""), options) || options[0]?.value || "");
+    setValidationMessage("");
+    setDialogOpen(true);
+  };
+  const closeDialog = () => {
+    setValidationMessage("");
+    setDialogOpen(false);
+  };
+
+  useEffect(() => {
+    if (!dialogOpen) {
+      return undefined;
+    }
+    const timeoutId = window.setTimeout(() => firstInputRef.current?.focus(), 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [dialogOpen]);
+
+  const updateDraftOption = (index: number, patch: Partial<DeviceParameterEnumOption>) => {
+    const currentOption = draftOptions[index] ?? { value: "", label: "" };
+    const nextOptions = draftOptions.map((option, optionIndex) => optionIndex === index ? { ...option, ...patch } : option);
+    setDraftOptions(nextOptions);
+    setValidationMessage("");
+    if (typeof patch.value === "string" && (draftTypicalValue === currentOption.value || draftTypicalValue === currentOption.label)) {
+      setDraftTypicalValue(patch.value);
+    } else if (typeof patch.label === "string" && draftTypicalValue === currentOption.label) {
+      setDraftTypicalValue(currentOption.value);
+    }
+  };
+
+  const deleteDraftOption = (index: number) => {
+    if (draftOptions.length <= 1) {
+      return;
+    }
+    const removed = draftOptions[index];
+    const nextOptions = draftOptions.filter((_, optionIndex) => optionIndex !== index);
+    setDraftOptions(nextOptions);
+    setValidationMessage("");
+    if (removed && (draftTypicalValue === removed.value || draftTypicalValue === removed.label)) {
+      setDraftTypicalValue(nextOptions[0]?.value ?? "");
+    }
+  };
+
+  const applyDraftOptions = () => {
+    if (disabled) {
+      closeDialog();
+      return;
+    }
+    const nextOptions = draftOptions.map((option) => {
+      const value = String(option?.value ?? "").trim();
+      const label = String(option?.label ?? "").trim();
+      return showDisplayNames && label ? { value, label } : { value };
+    });
+    const error = enumEditorValidationMessage(nextOptions, enumValueType);
+    if (error) {
+      setValidationMessage(error);
+      return;
+    }
+    const enumValues = normalizeEnumValueList(nextOptions.map((option) => option.value), "");
+    updateRow(row.id, {
+      enumOptions: nextOptions,
+      enumValues,
+      typicalValue: enumValueFromOptions(draftTypicalValue, nextOptions) || enumValues[0] || ""
+    } as Partial<T>);
+    closeDialog();
+  };
+
+  const dialog = dialogOpen && typeof document !== "undefined"
+    ? createPortal(
+        <div className="custom-param-enum-dialog-backdrop" onPointerDown={closeDialog}>
+          <section
+            className="custom-param-enum-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${parameterName}枚举项详情`}
+            onPointerDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                closeDialog();
+              } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+                event.preventDefault();
+                event.stopPropagation();
+                applyDraftOptions();
+              }
+            }}
+          >
+            <header className="custom-param-enum-dialog-header">
+              <div>
+                <h2>枚举项详情</h2>
+                <p><strong>{parameterName}</strong>{row.enName ? <code>{row.enName}</code> : null}</p>
+              </div>
+              <button type="button" className="custom-param-enum-dialog-close" aria-label="关闭枚举项详情" title="关闭" onClick={closeDialog}>
+                <X size={16} aria-hidden="true" />
+              </button>
+            </header>
+            <div className="custom-param-enum-dialog-body">
+              <div className="custom-param-enum-type-row">
+                <span>枚举类型</span>
+                <strong>{enumValueType === "number" ? "数字枚举" : "字符串枚举"}</strong>
+                <span>枚举数量</span>
+                <strong>{draftOptions.length}</strong>
+              </div>
+              <div className="custom-param-enum-dialog-table-wrap">
+                <table className="custom-param-enum-dialog-table">
+                  <thead>
+                    <tr>
+                      <th>枚举值</th>
+                      {enumValueType === "number" && <th>显示名称</th>}
+                      {!disabled && <th className="custom-param-enum-dialog-operation-heading" aria-label="操作" />}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {draftOptions.map((option, index) => (
+                      <tr key={`${row.id}-enum-dialog-${index}`}>
+                        <td>
+                          <input
+                            ref={index === 0 ? firstInputRef : undefined}
+                            value={option.value}
+                            disabled={disabled}
+                            inputMode={enumValueType === "number" ? "decimal" : undefined}
+                            aria-label={`枚举值${index + 1}`}
+                            onChange={(event) => updateDraftOption(index, { value: event.target.value })}
+                          />
+                        </td>
+                        {showDisplayNames && (
+                          <td>
+                            <input
+                              value={option.label ?? ""}
+                              disabled={disabled}
+                              placeholder="可选"
+                              aria-label={`显示名称${index + 1}`}
+                              onChange={(event) => updateDraftOption(index, { label: event.target.value })}
+                            />
+                          </td>
+                        )}
+                        {!disabled && (
+                          <td className="custom-param-enum-dialog-operation">
+                            <button
+                              type="button"
+                              aria-label={`删除枚举项${index + 1}`}
+                              title="删除枚举项"
+                              disabled={draftOptions.length <= 1}
+                              onClick={() => deleteDraftOption(index)}
+                            >
+                              <Trash2 size={14} aria-hidden="true" />
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {!disabled && (
+                <button
+                  type="button"
+                  className="custom-param-enum-dialog-add"
+                  onClick={() => {
+                    setDraftOptions((current) => [...current, { value: "", label: "" }]);
+                    setValidationMessage("");
+                  }}
+                >
+                  <Plus size={14} aria-hidden="true" />
+                  新增枚举项
+                </button>
+              )}
+              {validationMessage && <p className="custom-param-enum-dialog-error" role="alert">{validationMessage}</p>}
+            </div>
+            <footer className="custom-param-enum-dialog-footer">
+              {disabled ? (
+                <button type="button" className="primary" onClick={closeDialog}>关闭</button>
+              ) : (<>
+                  <button type="button" onClick={closeDialog}>取消</button>
+                  <button type="button" className="primary" onClick={applyDraftOptions}>
+                    <Save size={14} aria-hidden="true" />
+                    保存
+                  </button>
+                </>)}
+            </footer>
+          </section>
+        </div>,
+        document.body
+      )
+    : null;
+
+  return (<>
+      <div
+        className={`custom-param-enum-summary ${enumValueType === "number" ? "number-enum" : "string-enum"} ${disabled ? "readonly" : "editable"}`}
+        role="button"
+        tabIndex={0}
+        aria-label={`${parameterName}枚举项，${disabled ? "双击查看枚举项详情" : "双击编辑枚举项"}`}
+        title={`${fullSummaryText}\n${disabled ? "双击查看枚举项详情" : "双击编辑枚举项"}`}
+        onDoubleClick={openDialog}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openDialog();
+          }
+        }}
+      >
+        <span>{summaryText}</span>
+        <button
+          type="button"
+          className="custom-param-enum-summary-action"
+          aria-label={`${disabled ? "查看" : "编辑"}${parameterName}枚举项详情`}
+          title={disabled ? "查看枚举项详情" : "编辑枚举项"}
+          onClick={(event) => {
+            event.stopPropagation();
+            openDialog();
+          }}
+          onDoubleClick={(event) => event.stopPropagation()}
+        >
+          {disabled ? <ScanSearch size={14} aria-hidden="true" /> : <Pencil size={14} aria-hidden="true" />}
+        </button>
+      </div>
+      {dialog}
+    </>);
+}
+
 export const renderEnumValuesEditor = <T extends DeviceParameterDefinition & { id: string }>(
   row: T,
   updateRow: (rowId: string, patch: Partial<T>) => void,
@@ -1643,90 +1940,7 @@ export const renderEnumValuesEditor = <T extends DeviceParameterDefinition & { i
   if (!definitionRowIsEnum(row)) {
     return <span className="custom-param-enum-placeholder">-</span>;
   }
-  const enumValueType = enumValueTypeForDefinitionRow(row, normalizeEnumOptionsForRow(row));
-  const rawOptions = Array.isArray(row.enumOptions) && row.enumOptions.length > 0
-    ? row.enumOptions.map((option) => ({ value: String(option?.value ?? ""), label: String(option?.label ?? "") }))
-    : rawEnumValuesForRow(row).map((value) => ({ value, label: "" }));
-  const editorOptions = rawOptions.length > 0 ? rawOptions : [{ value: "", label: "" }];
-  const updateValues = (nextOptions: DeviceParameterEnumOption[], nextTypicalValue = row.typicalValue) => {
-    const enumValues = normalizeEnumValueList(nextOptions.map((option) => option.value), "");
-    updateRow(row.id, {
-      enumOptions: nextOptions,
-      enumValues,
-      typicalValue: enumValueFromOptions(String(nextTypicalValue ?? ""), nextOptions) || enumValues[0] || ""
-    } as Partial<T>);
-  };
-  const className = [
-    "custom-param-enum-values",
-    enumValueType === "number" ? "number-enum with-label" : "string-enum",
-    disabled ? "readonly" : "editable"
-  ].join(" ");
-  return (
-    <div className={className}>
-      <div className="custom-param-enum-heading" aria-hidden="true">
-        <span>值</span>
-        {enumValueType === "number" && <span>显示名称</span>}
-        {!disabled && <span>操作</span>}
-      </div>
-      {editorOptions.map((option, index) => (
-        <div className="custom-param-enum-row" key={`${row.id}-${index}`}>
-          <div className="custom-param-enum-field">
-            <BufferedTextInput
-              value={option.value}
-              disabled={disabled}
-              inputMode={enumValueType === "number" ? "decimal" : undefined}
-              onCommit={(value) => {
-                const nextOptions = editorOptions.map((item, itemIndex) => (itemIndex === index ? { ...item, value } : item));
-                const nextTypicalValue = row.typicalValue === option.value ? value : row.typicalValue;
-                updateValues(nextOptions, nextTypicalValue);
-              }}
-            />
-          </div>
-          {enumValueType === "number" && (
-            <div className="custom-param-enum-field">
-              <BufferedTextInput
-                value={option.label ?? ""}
-                disabled={disabled}
-                placeholder="显示名称"
-                onCommit={(value) => {
-                  const nextOptions = editorOptions.map((item, itemIndex) => (itemIndex === index ? { ...item, label: value } : item));
-                  const nextTypicalValue = row.typicalValue === option.label ? option.value : row.typicalValue;
-                  updateValues(nextOptions, nextTypicalValue);
-                }}
-              />
-            </div>
-          )}
-          {!disabled && (
-            <button
-              type="button"
-              title="删除枚举项"
-              disabled={editorOptions.length <= 1}
-              onClick={() => {
-                const nextOptions = editorOptions.filter((_, itemIndex) => itemIndex !== index);
-                const normalizedValues = normalizeEnumValueList(nextOptions.map((item) => item.value), "");
-                const currentTypical = enumValueFromOptions(String(row.typicalValue ?? ""), editorOptions);
-                const nextTypicalValue = normalizedValues.includes(currentTypical) ? currentTypical : normalizedValues[0] ?? "";
-                updateValues(nextOptions, nextTypicalValue);
-              }}
-            >
-              删除
-            </button>
-          )}
-        </div>
-      ))}
-      {!disabled && (
-        <div className="custom-param-enum-add-row">
-          <button
-            type="button"
-            className="custom-param-enum-add"
-            onClick={() => updateValues([...editorOptions, { value: "", label: "" }], row.typicalValue)}
-          >
-            新增枚举项
-          </button>
-        </div>
-      )}
-    </div>
-  );
+  return <EnumValuesEditor row={row} updateRow={updateRow} disabled={disabled} />;
 };
 
 export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[] {

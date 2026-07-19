@@ -2323,6 +2323,87 @@ describe("applyEDeviceDefinitionSectionsToLibraryState", () => {
 });
 
 describe("buildEDeviceInterfaceDefinitionRows", () => {
+  test("does not merge derived-only fields into the base component interface", () => {
+    const baseDefinitions = [
+      { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "" },
+      { cnName: "名称", enName: "name", valueType: "string", typicalValue: "" },
+      { cnName: "节点", enName: "node", valueType: "string", typicalValue: "" },
+      { cnName: "工作状态", enName: "run_stat", valueType: "integer", typicalValue: "1" }
+    ];
+    const rows = buildEDeviceInterfaceDefinitionRows({
+      libraryTemplates: [
+        {
+          kind: "custom-ac-source",
+          label: "交流电源",
+          categoryLibrary: "交流设备",
+          params: { component_type: "ACGenerator" },
+          parameterDefinitions: baseDefinitions
+        },
+        {
+          kind: "custom-wind-source",
+          label: "交流风电",
+          categoryLibrary: "交流设备",
+          params: {
+            component_type: "ACGenerator",
+            derived_from_component_type: "ACGenerator",
+            derived_component_type: "ACWindGen",
+            derived_component_library_label: "交流风电",
+            is_derived_component_library: "1"
+          },
+          parameterDefinitions: [
+            ...baseDefinitions,
+            { cnName: "风机型号", enName: "windTurbineModel", valueType: "string", typicalValue: "", exportEnabled: true }
+          ]
+        },
+        {
+          kind: "custom-pv-source",
+          label: "交流光伏",
+          categoryLibrary: "交流设备",
+          params: {
+            component_type: "ACGenerator",
+            derived_from_component_type: "ACGenerator",
+            derived_component_type: "ACPVGen",
+            derived_component_library_label: "交流光伏",
+            is_derived_component_library: "1"
+          },
+          parameterDefinitions: [
+            ...baseDefinitions,
+            { cnName: "组件额定功率", enName: "moduleRatedPower", valueType: "number", typicalValue: "", exportEnabled: true }
+          ]
+        },
+        {
+          kind: "ac-thermal-source",
+          label: "交流火力发电机",
+          categoryLibrary: "交流设备",
+          isDerivedComponentLibrary: false,
+          params: { component_type: "ACGenerator" },
+          parameterDefinitions: [
+            ...baseDefinitions,
+            { cnName: "火电机组型号", enName: "thermalUnitModel", valueType: "string", typicalValue: "", exportEnabled: true },
+            { cnName: "燃料类型", enName: "fuelType", valueType: "string", typicalValue: "", exportEnabled: true }
+          ]
+        }
+      ],
+      resolveDefinitionComponentLibrary: (template) => String(template.params?.component_type ?? "")
+    });
+
+    const baseRow = rows.find((row: any) => row.componentLibrary === "ACGenerator");
+
+    expect(baseRow?.fields.map((field: any) => field.sourceName)).toEqual([
+      "idx",
+      "name",
+      "dev_type",
+      "node",
+      "run_stat",
+      "control_type",
+      "p_set",
+      "q_set",
+      "v_set",
+      "alpha"
+    ]);
+    expect(rows.some((row: any) => row.componentLibrary === "ACThermalGen")).toBe(false);
+  });
+
   test("keeps fixed E fields visible in the interface definition table", () => {
     const rows = buildEDeviceInterfaceDefinitionRows({
       libraryTemplates: [

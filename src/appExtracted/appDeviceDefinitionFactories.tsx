@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { buildEDeviceDefinitionFile, E_SECTION_COLUMNS, getTemplateParameterDefinitions, inferESection, parseEDeviceDefinitionFile, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo } from "../model";
+import { buildEDeviceDefinitionFile, E_SECTION_COLUMNS, electricGenerationDerivedComponentLibraryInfo, getTemplateParameterDefinitions, inferESection, parseEDeviceDefinitionFile, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo } from "../model";
 import { clampNumber } from "../canvasViewport";
 import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
 import { stateIconSvgVisibleViewBox } from "../stateIconDrawing";
@@ -197,6 +197,7 @@ export function buildEDeviceInterfaceDefinitionRows(options: {
 
   for (const template of libraryTemplates ?? []) {
     const derivedInfo = templateDerivedComponentLibraryInfo(template);
+    const derivedFieldBoundaryInfo = derivedInfo ?? electricGenerationDerivedComponentLibraryInfo(template.kind);
     const componentLibrary = derivedInfo?.componentLibrary ?? eDeviceInterfaceComponentLibraryForTemplate(template, resolveDefinitionComponentLibrary);
     const baseGroup = ensureGroup(componentLibrary, template, {
       categoryLibrary: derivedInfo?.categoryLibrary ?? template?.categoryLibrary ?? ""
@@ -210,11 +211,19 @@ export function buildEDeviceInterfaceDefinitionRows(options: {
     for (const definition of getTemplateParameterDefinitions(template) ?? []) {
       const enName = String(definition.enName ?? "").trim();
       const settings = resolveDeviceParameterDefinitionExportSettings(template.kind, baseParams, definition);
+      const exportName = String(settings.exportName || enName).trim();
+      if (
+        derivedFieldBoundaryInfo &&
+        !eDeviceInterfaceIsDerivedBaseField(enName, derivedFieldBoundaryInfo.baseComponentLibrary) &&
+        !eDeviceInterfaceIsDerivedBaseField(exportName, derivedFieldBoundaryInfo.baseComponentLibrary)
+      ) {
+        continue;
+      }
       appendField(baseGroup, {
         sourceName: enName,
         cnName: eDeviceInterfaceFieldCnName(definition, labels),
         exportEnabled: settings.exportEnabled,
-        exportName: settings.exportName || enName
+        exportName
       });
     }
     if (!derivedInfo) {

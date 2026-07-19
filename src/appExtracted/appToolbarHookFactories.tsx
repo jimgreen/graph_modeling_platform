@@ -2732,7 +2732,10 @@ export function createAppHookCallback81(__appScope: Record<string, any>) {
 
 export function createAppHookCallback82(__appScope: Record<string, any>) {
   return () => {
-  const { backendDeviceLibraryLoadedRef, customCategoryLibraries, customComponentLibraries, customDeviceTemplates, customGraphTemplateTypes, customGraphTemplates, deviceDefinitionOverrides, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, lastPersistedDeviceLibraryPayloadRef, normalizeDeviceLibraryPersistencePayload, saveBackendDeviceLibraryPayload, suppressNextBackendDeviceLibrarySyncRef, writeLocalDeviceLibraryPersistencePayload } = __appScope;
+  const { backendDeviceLibraryLoadedRef, customCategoryLibraries, customComponentLibraries, customDeviceTemplates, customGraphTemplateTypes, customGraphTemplates, deviceDefinitionOverrides, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionInterfaceDialogOpen, lastPersistedDeviceLibraryPayloadRef, normalizeDeviceLibraryPersistencePayload, saveBackendDeviceLibraryPayload, suppressNextBackendDeviceLibrarySyncRef, writeLocalDeviceLibraryPersistencePayload } = __appScope;
+    if (eDeviceDefinitionInterfaceDialogOpen) {
+      return undefined;
+    }
     const timeoutId = window.setTimeout(() => {
       const normalizedDeviceLibrary = normalizeDeviceLibraryPersistencePayload({
         customDeviceTemplates,

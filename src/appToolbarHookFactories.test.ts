@@ -2,10 +2,46 @@ import { readFileSync } from "node:fs";
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { createAppHookCallback100, createAppHookCallback120 } from "./appExtracted/appToolbarHookFactories";
+import { createAppHookCallback82, createAppHookCallback100, createAppHookCallback120 } from "./appExtracted/appToolbarHookFactories";
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+describe("device library persistence hook", () => {
+  test("pauses automatic persistence while the E interface editor is open", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", {
+      setTimeout: globalThis.setTimeout,
+      clearTimeout: globalThis.clearTimeout
+    });
+    const writeLocalDeviceLibraryPersistencePayload = vi.fn();
+    const saveBackendDeviceLibraryPayload = vi.fn(() => Promise.resolve());
+    const cleanup = createAppHookCallback82({
+      backendDeviceLibraryLoadedRef: { current: true },
+      customCategoryLibraries: [],
+      customComponentLibraries: [],
+      customDeviceTemplates: [],
+      customGraphTemplateTypes: [],
+      customGraphTemplates: [],
+      deviceDefinitionOverrides: {},
+      eDeviceDefinitionLabels: {},
+      eDeviceDefinitionClassExportEnabled: {},
+      eDeviceDefinitionInterfaceDialogOpen: true,
+      lastPersistedDeviceLibraryPayloadRef: { current: null },
+      normalizeDeviceLibraryPersistencePayload: (value: unknown) => value,
+      saveBackendDeviceLibraryPayload,
+      suppressNextBackendDeviceLibrarySyncRef: { current: false },
+      writeLocalDeviceLibraryPersistencePayload
+    })();
+
+    vi.advanceTimersByTime(1000);
+
+    expect(writeLocalDeviceLibraryPersistencePayload).not.toHaveBeenCalled();
+    expect(saveBackendDeviceLibraryPayload).not.toHaveBeenCalled();
+    cleanup?.();
+  });
 });
 
 describe("side panel resize hook", () => {

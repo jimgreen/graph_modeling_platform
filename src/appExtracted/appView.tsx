@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MemoizedCanvasArea } from "./appCanvasArea";
 import { IMAGE_FIT_MODE_OPTIONS, normalizeImageFitMode } from "../imageFit";
 import {
@@ -69,6 +69,111 @@ export function resolveDeviceModelPanelParameterKeys(
   }
   fallbackKeys.forEach(appendKey);
   return mergedKeys;
+}
+
+export function buildEDeviceInterfaceDefinitionTree(rows: readonly any[] = []) {
+  const categories = new Map<string, { key: string; label: string; rows: any[] }>();
+  for (const row of rows ?? []) {
+    const label = String(row?.categoryLibrary ?? "").trim() || "未分类";
+    const key = label.toLowerCase();
+    const category = categories.get(key) ?? { key: `category:${key}`, label, rows: [] };
+    category.rows.push(row);
+    categories.set(key, category);
+  }
+
+  return Array.from(categories.values()).map((category) => {
+    const rowByLibrary = new Map(
+      category.rows.map((row) => [String(row?.componentLibrary ?? "").trim().toLowerCase(), row])
+    );
+    const nestedLibraries = new Set<string>();
+    const childrenByBaseLibrary = new Map<string, any[]>();
+
+    for (const row of category.rows) {
+      const componentLibrary = String(row?.componentLibrary ?? "").trim().toLowerCase();
+      const baseComponentLibrary = String(row?.derivedFromComponentLibrary ?? "").trim().toLowerCase();
+      if (
+        !row?.isDerivedComponentLibrary ||
+        !componentLibrary ||
+        !baseComponentLibrary ||
+        componentLibrary === baseComponentLibrary ||
+        !rowByLibrary.has(baseComponentLibrary)
+      ) {
+        continue;
+      }
+      nestedLibraries.add(componentLibrary);
+      const children = childrenByBaseLibrary.get(baseComponentLibrary) ?? [];
+      children.push(row);
+      childrenByBaseLibrary.set(baseComponentLibrary, children);
+    }
+
+    return {
+      key: category.key,
+      label: category.label,
+      classCount: category.rows.length,
+      items: category.rows
+        .filter((row) => !nestedLibraries.has(String(row?.componentLibrary ?? "").trim().toLowerCase()))
+        .map((row) => ({
+          row,
+          children: childrenByBaseLibrary.get(String(row?.componentLibrary ?? "").trim().toLowerCase()) ?? []
+        }))
+    };
+  });
+}
+
+export function eDeviceInterfaceDefinitionSignature(rows: readonly any[] = []) {
+  const normalizedRows = (rows ?? []).map((row) => ({
+    componentLibrary: String(row?.componentLibrary ?? "").trim(),
+    exportEnabled: Boolean(row?.exportEnabled),
+    exportName: String(row?.exportName ?? row?.componentLibrary ?? "").trim(),
+    fields: (row?.fields ?? [])
+      .map((field: any) => ({
+        sourceName: String(field?.sourceName ?? "").trim(),
+        exportEnabled: Boolean(field?.exportEnabled),
+        exportName: String(field?.exportName ?? field?.sourceName ?? "").trim()
+      }))
+      .sort((left: any, right: any) => left.sourceName.localeCompare(right.sourceName))
+  }));
+  normalizedRows.sort((left, right) => left.componentLibrary.localeCompare(right.componentLibrary));
+  return JSON.stringify(normalizedRows);
+}
+
+export function eDeviceInterfaceClassDefinitionSignature(row: any) {
+  if (!row) {
+    return "";
+  }
+  return JSON.stringify({
+    componentLibrary: String(row.componentLibrary ?? "").trim(),
+    exportEnabled: Boolean(row.exportEnabled),
+    exportName: String(row.exportName ?? row.componentLibrary ?? "").trim(),
+    fields: (row.fields ?? [])
+      .map((field: any) => ({
+        sourceName: String(field?.sourceName ?? "").trim(),
+        exportEnabled: Boolean(field?.exportEnabled),
+        exportName: String(field?.exportName ?? field?.sourceName ?? "").trim()
+      }))
+      .sort((left: any, right: any) => left.sourceName.localeCompare(right.sourceName))
+  });
+}
+
+export function eDeviceInterfaceFieldDefinitionMatches(left: any, right: any) {
+  if (!left || !right) {
+    return false;
+  }
+  return (
+    String(left.sourceName ?? "").trim() === String(right.sourceName ?? "").trim() &&
+    Boolean(left.exportEnabled) === Boolean(right.exportEnabled) &&
+    String(left.exportName ?? left.sourceName ?? "").trim() ===
+      String(right.exportName ?? right.sourceName ?? "").trim()
+  );
+}
+
+export function customDeviceDefinitionUsesIconOnly(selection: any, draft: any) {
+  if (selection?.kind !== "component") {
+    return false;
+  }
+  const categoryLibraryName = String(selection?.categoryLibraryName ?? draft?.categoryLibraryName ?? "").trim();
+  const templateKind = String(selection?.templateKind ?? draft?.componentKind ?? "").trim().toLowerCase();
+  return categoryLibraryName === "静态图元" || templateKind.startsWith("static-");
 }
 
 export function resolveDeviceDefinitionParameterRowsForDisplay<T extends { enName?: unknown }>(
@@ -227,7 +332,22 @@ export function renderAppView(__appScope: Record<string, any>) {
     templateMenu
   } = __appScope;
   const { dragging } = __appScope;
-  const { eDeviceDefinitionLabels, setEDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, setEDeviceDefinitionClassExportEnabled, eDeviceDefinitionInterfaceDialogOpen, setEDeviceDefinitionInterfaceDialogOpen, libraryTemplates, updateDefinitionComponentLibraryCommonParamExport } = __appScope;
+  const {
+    customDeviceTemplates,
+    deviceDefinitionOverrides,
+    eDeviceDefinitionLabels,
+    setEDeviceDefinitionLabels,
+    eDeviceDefinitionClassExportEnabled,
+    setEDeviceDefinitionClassExportEnabled,
+    eDeviceDefinitionInterfaceDialogOpen,
+    setEDeviceDefinitionInterfaceDialogOpen,
+    libraryTemplates,
+    persistDeviceLibraryChange,
+    setCustomDeviceTemplates,
+    setDeviceDefinitionOverrides,
+    updateDefinitionComponentLibraryCommonParamExport,
+    writeOperationLog
+  } = __appScope;
   const { globalMessage } = __appScope;
   // 选中元件库节点（"元件定义"对话框）时：计算该库共有参数（enName 交集，排除 dev_type）+ E 文件标签 key
   const componentLibrarySectionKey = customComponentTreeSelection?.kind === "componentLibrary" ? normalizeComponentLibraryName(customComponentTreeSelection?.section ?? "") : "";
@@ -266,10 +386,256 @@ export function renderAppView(__appScope: Record<string, any>) {
     resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
   });
   const [selectedEDeviceInterfaceComponentLibrary, setSelectedEDeviceInterfaceComponentLibrary] = useState("");
+  const [collapsedEDeviceInterfaceTreeNodes, setCollapsedEDeviceInterfaceTreeNodes] = useState<Record<string, boolean>>({});
+  const [eDeviceInterfaceDefinitionBaseline, setEDeviceInterfaceDefinitionBaseline] = useState<any>(null);
+  const [eDeviceInterfaceSelectedClassBaseline, setEDeviceInterfaceSelectedClassBaseline] = useState<any>(null);
+  const [eDeviceInterfaceClassSwitchTarget, setEDeviceInterfaceClassSwitchTarget] = useState("");
+  const [eDeviceInterfaceExitPromptOpen, setEDeviceInterfaceExitPromptOpen] = useState(false);
+  const eDeviceInterfaceSaveRef = useRef<(options?: { closeAfterSave?: boolean }) => void>(() => undefined);
+  const eDeviceInterfaceExportFileRef = useRef<() => void>(() => undefined);
+  const eDeviceInterfaceSaveAndSwitchRef = useRef<() => void>(() => undefined);
+  const eDeviceInterfaceClassSelectRef = useRef<(componentLibrary: string) => void>(() => undefined);
   const selectedEDeviceInterfaceRow =
     eDeviceInterfaceDefinitionRows.find((row) => row.componentLibrary === selectedEDeviceInterfaceComponentLibrary) ??
     eDeviceInterfaceDefinitionRows[0] ??
     null;
+  const eDeviceInterfaceClassSwitchTargetRow =
+    eDeviceInterfaceDefinitionRows.find((row) => row.componentLibrary === eDeviceInterfaceClassSwitchTarget) ??
+    null;
+  const eDeviceInterfaceDefinitionTree = buildEDeviceInterfaceDefinitionTree(eDeviceInterfaceDefinitionRows);
+  const eDeviceInterfaceCurrentSignature = eDeviceInterfaceDefinitionSignature(eDeviceInterfaceDefinitionRows);
+  const eDeviceInterfaceHasUnsavedChanges = Boolean(
+    eDeviceInterfaceDefinitionBaseline &&
+    eDeviceInterfaceDefinitionBaseline.signature !== eDeviceInterfaceCurrentSignature
+  );
+  const eDeviceInterfaceSelectedClassSignature = eDeviceInterfaceClassDefinitionSignature(selectedEDeviceInterfaceRow);
+  const eDeviceInterfaceSelectedClassHasUnsavedChanges = Boolean(
+    selectedEDeviceInterfaceRow &&
+    eDeviceInterfaceSelectedClassBaseline?.componentLibrary === selectedEDeviceInterfaceRow.componentLibrary &&
+    eDeviceInterfaceSelectedClassBaseline.signature !== eDeviceInterfaceSelectedClassSignature
+  );
+  const captureEDeviceInterfaceClassBaseline = (row: any) => {
+    if (!row) {
+      return null;
+    }
+    const componentLibrary = String(row.componentLibrary ?? "").trim();
+    const hasLabelOverride = Object.prototype.hasOwnProperty.call(eDeviceDefinitionLabels, componentLibrary);
+    const hasClassExportOverride = Object.prototype.hasOwnProperty.call(eDeviceDefinitionClassExportEnabled, componentLibrary);
+    const rowSnapshot = {
+      componentLibrary,
+      exportEnabled: Boolean(row.exportEnabled),
+      exportName: String(row.exportName ?? componentLibrary).trim(),
+      fields: (row.fields ?? []).map((field: any) => ({
+        sourceName: String(field?.sourceName ?? "").trim(),
+        exportEnabled: Boolean(field?.exportEnabled),
+        exportName: String(field?.exportName ?? field?.sourceName ?? "").trim()
+      }))
+    };
+    return {
+      componentLibrary,
+      signature: eDeviceInterfaceClassDefinitionSignature(rowSnapshot),
+      row: rowSnapshot,
+      labelOverride: hasLabelOverride ? eDeviceDefinitionLabels[componentLibrary] : undefined,
+      classExportOverride: hasClassExportOverride ? eDeviceDefinitionClassExportEnabled[componentLibrary] : undefined
+    };
+  };
+  const captureEDeviceInterfaceDefinitionSnapshot = () => ({
+    signature: eDeviceInterfaceCurrentSignature,
+    customDeviceTemplates,
+    deviceDefinitionOverrides,
+    eDeviceDefinitionLabels,
+    eDeviceDefinitionClassExportEnabled
+  });
+  const runAfterEDeviceInterfaceInputCommit = (callback: () => void) => {
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement && activeElement.closest(".e-device-interface-dialog")) {
+      activeElement.blur();
+    }
+    window.setTimeout(callback, 0);
+  };
+  const closeEDeviceInterfaceDefinition = () => {
+    setEDeviceInterfaceClassSwitchTarget("");
+    setEDeviceInterfaceExitPromptOpen(false);
+    setEDeviceDefinitionInterfaceDialogOpen(false);
+  };
+  const saveEDeviceInterfaceDefinition = (options: { closeAfterSave?: boolean } = {}) => {
+    const snapshot = captureEDeviceInterfaceDefinitionSnapshot();
+    persistDeviceLibraryChange?.({
+      customDeviceTemplates: snapshot.customDeviceTemplates,
+      deviceDefinitionOverrides: snapshot.deviceDefinitionOverrides,
+      eDeviceDefinitionLabels: snapshot.eDeviceDefinitionLabels,
+      eDeviceDefinitionClassExportEnabled: snapshot.eDeviceDefinitionClassExportEnabled
+    }, {
+      failure: "E文件接口定义保存到后台失败"
+    });
+    setEDeviceInterfaceDefinitionBaseline(snapshot);
+    setEDeviceInterfaceSelectedClassBaseline(captureEDeviceInterfaceClassBaseline(selectedEDeviceInterfaceRow));
+    setEDeviceInterfaceExitPromptOpen(false);
+    writeOperationLog?.("E文件接口定义已保存");
+    if (options.closeAfterSave) {
+      setEDeviceDefinitionInterfaceDialogOpen(false);
+    }
+  };
+  eDeviceInterfaceSaveRef.current = saveEDeviceInterfaceDefinition;
+  eDeviceInterfaceExportFileRef.current = __appScope.exportEDeviceDefinitionFile ?? (() => undefined);
+  const requestSaveEDeviceInterfaceDefinition = (options: { closeAfterSave?: boolean } = {}) => {
+    runAfterEDeviceInterfaceInputCommit(() => eDeviceInterfaceSaveRef.current(options));
+  };
+  const requestExportEDeviceInterfaceDefinitionFile = () => {
+    runAfterEDeviceInterfaceInputCommit(() => eDeviceInterfaceExportFileRef.current());
+  };
+  const selectEDeviceInterfaceComponentLibrary = (componentLibrary: string) => {
+    const targetRow = eDeviceInterfaceDefinitionRows.find((row) => row.componentLibrary === componentLibrary);
+    if (!targetRow) {
+      setEDeviceInterfaceClassSwitchTarget("");
+      return;
+    }
+    setSelectedEDeviceInterfaceComponentLibrary(componentLibrary);
+    setEDeviceInterfaceSelectedClassBaseline(captureEDeviceInterfaceClassBaseline(targetRow));
+    setEDeviceInterfaceClassSwitchTarget("");
+  };
+  const restoreEDeviceInterfaceSelectedClass = () => {
+    const baseline = eDeviceInterfaceSelectedClassBaseline;
+    if (!baseline?.row?.componentLibrary) {
+      return;
+    }
+    const componentLibrary = baseline.row.componentLibrary;
+    const currentRow = eDeviceInterfaceDefinitionRows.find((row) => row.componentLibrary === componentLibrary);
+    setEDeviceDefinitionLabels((current) => {
+      const next = { ...current };
+      if (baseline.labelOverride === undefined) {
+        delete next[componentLibrary];
+      } else {
+        next[componentLibrary] = baseline.labelOverride;
+      }
+      return next;
+    });
+    setEDeviceDefinitionClassExportEnabled((current) => {
+      const next = { ...current };
+      if (baseline.classExportOverride === undefined) {
+        delete next[componentLibrary];
+      } else {
+        next[componentLibrary] = baseline.classExportOverride;
+      }
+      return next;
+    });
+    for (const field of baseline.row.fields ?? []) {
+      const currentField = currentRow?.fields?.find((item: any) => item.sourceName === field.sourceName);
+      if (!field.sourceName || eDeviceInterfaceFieldDefinitionMatches(currentField, field)) {
+        continue;
+      }
+      updateDefinitionComponentLibraryCommonParamExport(componentLibrary, field.sourceName, {
+        exportEnabled: field.exportEnabled,
+        exportName: field.exportName
+      });
+    }
+  };
+  const discardEDeviceInterfaceClassAndSwitch = () => {
+    const target = eDeviceInterfaceClassSwitchTarget;
+    restoreEDeviceInterfaceSelectedClass();
+    if (target) {
+      selectEDeviceInterfaceComponentLibrary(target);
+    }
+    writeOperationLog?.("已放弃当前设备类的E文件接口定义修改");
+  };
+  const saveEDeviceInterfaceClassAndSwitch = () => {
+    const target = eDeviceInterfaceClassSwitchTarget;
+    saveEDeviceInterfaceDefinition();
+    if (target) {
+      selectEDeviceInterfaceComponentLibrary(target);
+    }
+  };
+  eDeviceInterfaceSaveAndSwitchRef.current = saveEDeviceInterfaceClassAndSwitch;
+  eDeviceInterfaceClassSelectRef.current = (componentLibrary: string) => {
+    if (!componentLibrary || componentLibrary === selectedEDeviceInterfaceRow?.componentLibrary) {
+      setEDeviceInterfaceClassSwitchTarget("");
+      return;
+    }
+    if (eDeviceInterfaceSelectedClassHasUnsavedChanges) {
+      setEDeviceInterfaceClassSwitchTarget(componentLibrary);
+      return;
+    }
+    selectEDeviceInterfaceComponentLibrary(componentLibrary);
+  };
+  const requestSelectEDeviceInterfaceComponentLibrary = (componentLibrary: string) => {
+    runAfterEDeviceInterfaceInputCommit(() => eDeviceInterfaceClassSelectRef.current(componentLibrary));
+  };
+  const discardEDeviceInterfaceDefinitionChanges = () => {
+    const baseline = eDeviceInterfaceDefinitionBaseline;
+    if (baseline) {
+      setCustomDeviceTemplates(baseline.customDeviceTemplates);
+      setDeviceDefinitionOverrides(baseline.deviceDefinitionOverrides);
+      setEDeviceDefinitionLabels(baseline.eDeviceDefinitionLabels);
+      setEDeviceDefinitionClassExportEnabled(baseline.eDeviceDefinitionClassExportEnabled);
+      persistDeviceLibraryChange?.({
+        customDeviceTemplates: baseline.customDeviceTemplates,
+        deviceDefinitionOverrides: baseline.deviceDefinitionOverrides,
+        eDeviceDefinitionLabels: baseline.eDeviceDefinitionLabels,
+        eDeviceDefinitionClassExportEnabled: baseline.eDeviceDefinitionClassExportEnabled
+      }, {
+        failure: "放弃E文件接口定义修改时恢复后台数据失败"
+      });
+    }
+    writeOperationLog?.("已放弃E文件接口定义的未保存修改");
+    closeEDeviceInterfaceDefinition();
+  };
+  const requestCloseEDeviceInterfaceDefinition = () => {
+    if (eDeviceInterfaceHasUnsavedChanges) {
+      setEDeviceInterfaceExitPromptOpen(true);
+      return;
+    }
+    closeEDeviceInterfaceDefinition();
+  };
+  useEffect(() => {
+    if (eDeviceDefinitionInterfaceDialogOpen) {
+      setEDeviceInterfaceDefinitionBaseline((current: any) => current ?? captureEDeviceInterfaceDefinitionSnapshot());
+      setEDeviceInterfaceSelectedClassBaseline((current: any) =>
+        current?.componentLibrary === selectedEDeviceInterfaceRow?.componentLibrary
+          ? current
+          : captureEDeviceInterfaceClassBaseline(selectedEDeviceInterfaceRow)
+      );
+      return;
+    }
+    setEDeviceInterfaceDefinitionBaseline(null);
+    setEDeviceInterfaceSelectedClassBaseline(null);
+    setEDeviceInterfaceClassSwitchTarget("");
+    setEDeviceInterfaceExitPromptOpen(false);
+  }, [eDeviceDefinitionInterfaceDialogOpen]);
+  useEffect(() => {
+    if (!eDeviceDefinitionInterfaceDialogOpen) {
+      return undefined;
+    }
+    const handleEDeviceInterfaceShortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        runAfterEDeviceInterfaceInputCommit(() => {
+          if (eDeviceInterfaceClassSwitchTarget) {
+            eDeviceInterfaceSaveAndSwitchRef.current();
+            return;
+          }
+          eDeviceInterfaceSaveRef.current({ closeAfterSave: eDeviceInterfaceExitPromptOpen });
+        });
+      }
+    };
+    window.addEventListener("keydown", handleEDeviceInterfaceShortcut);
+    return () => window.removeEventListener("keydown", handleEDeviceInterfaceShortcut);
+  }, [
+    eDeviceDefinitionInterfaceDialogOpen,
+    eDeviceInterfaceClassSwitchTarget,
+    eDeviceInterfaceExitPromptOpen,
+    eDeviceInterfaceHasUnsavedChanges,
+    eDeviceInterfaceCurrentSignature,
+    customDeviceTemplates,
+    deviceDefinitionOverrides,
+    eDeviceDefinitionLabels,
+    eDeviceDefinitionClassExportEnabled
+  ]);
+  const toggleEDeviceInterfaceTreeNode = (key: string) => {
+    setCollapsedEDeviceInterfaceTreeNodes((current) => ({
+      ...current,
+      [key]: !current[key]
+    }));
+  };
   const {
     applyIconLibraryCatalogIcon,
     deleteImageAssetFromContextMenu,
@@ -416,7 +782,13 @@ export function renderAppView(__appScope: Record<string, any>) {
     clearLibraryFlyoutCloseTimer();
     setHoveredGraphTemplateType(typeName);
   };
-  const visibleCustomDeviceDialogView = customDeviceDialogView;
+  const customDeviceDefinitionIconOnly = customDeviceDefinitionUsesIconOnly(customComponentTreeSelection, customDeviceDraft);
+  const visibleCustomDeviceDialogView = customDeviceDefinitionIconOnly ? "icon" : customDeviceDialogView;
+  useEffect(() => {
+    if (customDeviceDefinitionIconOnly && customDeviceDialogView !== "icon") {
+      setCustomDeviceDialogView("icon");
+    }
+  }, [customDeviceDefinitionIconOnly, customDeviceDialogView, setCustomDeviceDialogView]);
   const imagePickerUsesCatalogSource = imageTarget?.kind === "stateIconDrawing" && imageTarget.sourceMode === "catalogOnly";
   const imagePickerUsesSeparateLibraryTabs = imagePickerUsesLibraryTabs(imageTarget);
   const imagePickerActiveLibraryTab: ImagePickerLibraryTab = imagePickerUsesSeparateLibraryTabs && imagePickerSourceFilter === "icon-library" ? "icon" : "image";
@@ -2545,12 +2917,10 @@ export function renderAppView(__appScope: Record<string, any>) {
                               <tr>
                                 <th>中文名称</th>
                                 <th>英文名称</th>
-                                <th>取值类型</th>
-                                <th>默认值</th>
-                                <th>枚举项</th>
-                                <th>是否导出</th>
-                                <th>导出名称</th>
-                                <th>操作</th>
+                                 <th>取值类型</th>
+                                 <th>默认值</th>
+                                 <th>枚举项</th>
+                                 <th>操作</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -2584,26 +2954,6 @@ export function renderAppView(__appScope: Record<string, any>) {
                                   </td>
                                   <td>
                                     {renderEnumValuesEditor(row, updateDefinitionDraftRow, row.readonly)}
-                                  </td>
-                                  <td className="custom-param-export-toggle">
-                                    <input
-                                      className="custom-param-export-checkbox"
-                                      type="checkbox"
-                                      checked={Boolean(row.exportEnabled)}
-                                      aria-label={`${row.cnName || row.enName || "参数"}是否导出`}
-                                      onChange={(event) => {
-                        const exportEnabled = event.target.checked;
-                        updateDefinitionDraftRow(row.id, {
-                            exportEnabled,
-                            exportName: exportEnabled ? row.exportName?.trim() || row.enName.trim() : row.exportName ?? ""
-                        });
-                    }}/>
-                                  </td>
-                                  <td>
-                                    <BufferedTextInput
-                                      value={row.exportName ?? ""}
-                                      disabled={!row.exportEnabled}
-                                      onCommit={(value) => updateDefinitionDraftRow(row.id, { exportName: value })}/>
                                   </td>
                                   <td>
                                     <div className="custom-param-actions">
@@ -2892,12 +3242,14 @@ export function renderAppView(__appScope: Record<string, any>) {
               {customComponentTreeSelection?.kind !== "componentLibrary" && (<button type="button" className={visibleCustomDeviceDialogView === "icon" ? "active" : ""} onClick={() => setCustomDeviceDialogView("icon")}>
                 图标定义
               </button>)}
-              <button type="button" className={visibleCustomDeviceDialogView === "parameters" ? "active" : ""} onClick={() => setCustomDeviceDialogView("parameters")}>
-                参数定义
-              </button>
-              <button type="button" className={visibleCustomDeviceDialogView === "measurements" ? "active" : ""} onClick={() => setCustomDeviceDialogView("measurements")}>
-                量测定义
-              </button>
+              {!customDeviceDefinitionIconOnly && (<>
+                  <button type="button" className={visibleCustomDeviceDialogView === "parameters" ? "active" : ""} onClick={() => setCustomDeviceDialogView("parameters")}>
+                    参数定义
+                  </button>
+                  <button type="button" className={visibleCustomDeviceDialogView === "measurements" ? "active" : ""} onClick={() => setCustomDeviceDialogView("measurements")}>
+                    量测定义
+                  </button>
+                </>)}
               <span className="device-definition-tabs-spacer" />
               <button type="button" className="device-definition-tab-action" onClick={revertCustomDeviceDraftCurrentTab} title="还原当前分页的修改到预设定义">
                 还原
@@ -3022,33 +3374,15 @@ export function renderAppView(__appScope: Record<string, any>) {
                     <table className="custom-param-table">
                       <thead>
                         <tr>
-                          <th>中文名称</th>
-                          <th>英文名称</th>
-                          <th>是否导出</th>
-                          <th>导出名称</th>
-                        </tr>
+                           <th>中文名称</th>
+                           <th>英文名称</th>
+                         </tr>
                       </thead>
                       <tbody>
                         {componentLibraryCommonParams.map((param) => (<tr key={param.enName}>
-                          <td>{param.cnName}</td>
-                          <td><code>{param.enName}</code></td>
-                          <td className="custom-param-export-toggle">
-                            <input
-                              className="custom-param-export-checkbox"
-                              type="checkbox"
-                              checked={param.exportEnabled}
-                              aria-label={`${param.cnName || param.enName}是否导出`}
-                              onChange={(event) => updateDefinitionComponentLibraryCommonParamExport(customComponentTreeSelection?.section ?? "", param.enName, { exportEnabled: event.target.checked, exportName: param.exportName?.trim() || param.enName })}
-                            />
-                          </td>
-                          <td>
-                            <BufferedTextInput
-                              value={param.exportName ?? ""}
-                              disabled={!param.exportEnabled}
-                              onCommit={(value) => updateDefinitionComponentLibraryCommonParamExport(customComponentTreeSelection?.section ?? "", param.enName, { exportName: value })}
-                            />
-                          </td>
-                        </tr>))}
+                           <td>{param.cnName}</td>
+                           <td><code>{param.enName}</code></td>
+                         </tr>))}
                       </tbody>
                     </table>
                   </div>
@@ -3061,12 +3395,10 @@ export function renderAppView(__appScope: Record<string, any>) {
                   <tr>
                     <th>中文名称</th>
                     <th>英文名称</th>
-                    <th>取值类型</th>
-                    <th>默认值</th>
-                    <th>枚举项</th>
-                    <th>是否导出</th>
-                    <th>导出名称</th>
-                    <th>操作</th>
+                     <th>取值类型</th>
+                     <th>默认值</th>
+                     <th>枚举项</th>
+                     <th>操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3162,30 +3494,10 @@ export function renderAppView(__appScope: Record<string, any>) {
                         return (<tr key={`default-${row.enName}`} className={defaultRowDisabled ? "readonly-row" : ""}>
                             <td>{row.cnName}</td>
                             <td>{row.enName}</td>
-                            <td>{parameterValueTypeLabelForDefinitionRow(row)}</td>
-                            <td>{renderTypicalValueEditor(defaultRow, updateDefaultParamRow, defaultRowDisabled)}</td>
-                            <td>{renderEnumValuesEditor(defaultRow, updateDefaultParamRow, defaultRowDisabled)}</td>
-                            <td className="custom-param-export-toggle">
-                              <input
-                                className="custom-param-export-checkbox"
-                                type="checkbox"
-                                checked={Boolean(row.exportEnabled)}
-                                aria-label={`${row.cnName || row.enName}是否导出`}
-                                onChange={(event) => {
-                            const exportEnabled = event.target.checked;
-                            updateDefaultParamRow(defaultRow.id, {
-                                exportEnabled,
-                                exportName: exportEnabled ? row.exportName?.trim() || row.enName.trim() : row.exportName ?? ""
-                            });
-                        }}/>
-                            </td>
-                            <td>
-                              <BufferedTextInput
-                                value={row.exportName ?? ""}
-                                disabled={!row.exportEnabled}
-                                onCommit={(value) => updateDefaultParamRow(defaultRow.id, { exportName: value })}/>
-                            </td>
-                            <td>默认</td>
+                             <td>{parameterValueTypeLabelForDefinitionRow(row)}</td>
+                             <td>{renderTypicalValueEditor(defaultRow, updateDefaultParamRow, defaultRowDisabled)}</td>
+                             <td>{renderEnumValuesEditor(defaultRow, updateDefaultParamRow, defaultRowDisabled)}</td>
+                             <td>默认</td>
                           </tr>);
                     })}
                     {displayedVisibleCustomParams.map((row, index) => (<tr key={row.id}>
@@ -3223,45 +3535,14 @@ export function renderAppView(__appScope: Record<string, any>) {
                     error: ""
                 })))}
                       </td>
-                      <td>
-                        {renderEnumValuesEditor(row, (rowId, patch) => setCustomDeviceDraft((current) => ({
+                       <td>
+                         {renderEnumValuesEditor(row, (rowId, patch) => setCustomDeviceDraft((current) => ({
                     ...current,
                     params: current.params.map((item) => (item.id === rowId ? { ...item, ...patch } : item)),
                     error: ""
-                })))}
-                      </td>
-                      <td className="custom-param-export-toggle">
-                        <input
-                          className="custom-param-export-checkbox"
-                          type="checkbox"
-                          checked={Boolean(row.exportEnabled)}
-                          aria-label={`${row.cnName || row.enName || "参数"}是否导出`}
-                          onChange={(event) => {
-                    const exportEnabled = event.target.checked;
-                    setCustomDeviceDraft((current) => ({
-                        ...current,
-                        params: current.params.map((item) => item.id === row.id
-                            ? {
-                                ...item,
-                                exportEnabled,
-                                exportName: exportEnabled ? item.exportName?.trim() || item.enName.trim() : item.exportName ?? ""
-                            }
-                            : item),
-                        error: ""
-                    }));
-                }}/>
-                      </td>
-                      <td>
-                        <BufferedTextInput
-                          value={row.exportName ?? ""}
-                          disabled={!row.exportEnabled}
-                          onCommit={(value) => setCustomDeviceDraft((current) => ({
-                    ...current,
-                    params: current.params.map((item) => item.id === row.id ? { ...item, exportName: value } : item),
-                    error: ""
-                }))}/>
-                      </td>
-                      <td>
+                 })))}
+                       </td>
+                       <td>
                         <div className="custom-param-actions">
                           <button type="button" onClick={() => moveVisibleCustomParam(row.id, -1)} disabled={index === 0}>
                             上移
@@ -3312,18 +3593,18 @@ export function renderAppView(__appScope: Record<string, any>) {
             <div className="device-library-dialog-resize" role="separator" aria-orientation="horizontal" aria-label="调整新建元件窗口大小" title="拖拽调整窗口大小" onPointerDown={(event) => startDeviceLibraryDialogResize("custom", event)}/>
           </section>
         </div>)}
-      {eDeviceDefinitionInterfaceDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setEDeviceDefinitionInterfaceDialogOpen(false)}>
+      {eDeviceDefinitionInterfaceDialogOpen && (<div className="image-picker-backdrop" onPointerDown={requestCloseEDeviceInterfaceDefinition}>
           <section className="e-device-interface-dialog" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
             <div className="image-picker-title">
               <div>
                 <h2>E文件接口定义</h2>
               </div>
-              <button type="button" aria-label="关闭E文件接口定义" title="关闭" onClick={() => setEDeviceDefinitionInterfaceDialogOpen(false)}>
+              <button type="button" aria-label="关闭E文件接口定义" title="关闭" onClick={requestCloseEDeviceInterfaceDefinition}>
                 <X size={16} />
               </button>
             </div>
             <div className="e-device-interface-actions">
-              <button type="button" onClick={__appScope.exportEDeviceDefinitionFile}>
+              <button type="button" onClick={requestExportEDeviceInterfaceDefinitionFile}>
                 <Download size={14} aria-hidden="true" />
                 <span>保存成文件</span>
               </button>
@@ -3334,23 +3615,93 @@ export function renderAppView(__appScope: Record<string, any>) {
               </label>
             </div>
             <div className="e-device-interface-layout">
-              <aside className="e-device-interface-class-list" aria-label="设备类列表">
-                {eDeviceInterfaceDefinitionRows.map((classRow) => {
-                  const active = classRow.componentLibrary === selectedEDeviceInterfaceRow?.componentLibrary;
+              <aside className="e-device-interface-class-list" aria-label="设备类树" role="tree">
+                {eDeviceInterfaceDefinitionTree.map((category) => {
+                  const categoryCollapsed = Boolean(collapsedEDeviceInterfaceTreeNodes[category.key]);
                   return (
-                    <button
-                      type="button"
-                      key={classRow.componentLibrary}
-                      className={`e-device-interface-class-option${active ? " active" : ""}`}
-                      onClick={() => setSelectedEDeviceInterfaceComponentLibrary(classRow.componentLibrary)}
-                    >
-                      <span className="e-device-interface-class-label">{classRow.label || classRow.componentLibrary}</span>
-                      <code>{classRow.componentLibrary}</code>
-                      <small>
-                        {classRow.categoryLibrary ? `${classRow.categoryLibrary} · ` : ""}
-                        {classRow.fields.length} 参数
-                      </small>
-                    </button>
+                    <div className="e-device-interface-tree-category" key={category.key}>
+                      <button
+                        type="button"
+                        className="e-device-interface-tree-category-toggle"
+                        role="treeitem"
+                        aria-level={1}
+                        aria-expanded={!categoryCollapsed}
+                        onClick={() => toggleEDeviceInterfaceTreeNode(category.key)}
+                      >
+                        {categoryCollapsed ? <ChevronRight size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
+                        <FolderOpen size={14} aria-hidden="true" />
+                        <span>{category.label}</span>
+                        <small>{category.classCount} 类</small>
+                      </button>
+                      {!categoryCollapsed ? (
+                        <div className="e-device-interface-tree-category-children" role="group">
+                          {category.items.map((item) => {
+                            const classRow = item.row;
+                            const branchKey = `class:${classRow.componentLibrary}`;
+                            const branchCollapsed = Boolean(collapsedEDeviceInterfaceTreeNodes[branchKey]);
+                            const active = classRow.componentLibrary === selectedEDeviceInterfaceRow?.componentLibrary;
+                            return (
+                              <div className="e-device-interface-tree-branch" key={classRow.componentLibrary}>
+                                <div className="e-device-interface-tree-node-row">
+                                  {item.children.length > 0 ? (
+                                    <button
+                                      type="button"
+                                      className="e-device-interface-tree-toggle"
+                                      aria-label={`${branchCollapsed ? "展开" : "收起"}${classRow.label || classRow.componentLibrary}`}
+                                      aria-expanded={!branchCollapsed}
+                                      onClick={() => toggleEDeviceInterfaceTreeNode(branchKey)}
+                                    >
+                                      {branchCollapsed ? <ChevronRight size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}
+                                    </button>
+                                  ) : (
+                                    <span className="e-device-interface-tree-toggle-spacer" aria-hidden="true" />
+                                  )}
+                                  <button
+                                    type="button"
+                                    className={`e-device-interface-class-option${active ? " active" : ""}`}
+                                    role="treeitem"
+                                    aria-level={2}
+                                    aria-selected={active}
+                                    aria-expanded={item.children.length > 0 ? !branchCollapsed : undefined}
+                                    onClick={() => requestSelectEDeviceInterfaceComponentLibrary(classRow.componentLibrary)}
+                                  >
+                                    <span className="e-device-interface-class-label">{classRow.label || classRow.componentLibrary}</span>
+                                    <span className="e-device-interface-class-meta">
+                                      <code>{classRow.componentLibrary}</code>
+                                      <small>{classRow.fields.length} 参数</small>
+                                    </span>
+                                  </button>
+                                </div>
+                                {item.children.length > 0 && !branchCollapsed ? (
+                                  <div className="e-device-interface-tree-children" role="group">
+                                    {item.children.map((childRow) => {
+                                      const childActive = childRow.componentLibrary === selectedEDeviceInterfaceRow?.componentLibrary;
+                                      return (
+                                        <button
+                                          type="button"
+                                          key={childRow.componentLibrary}
+                                          className={`e-device-interface-class-option e-device-interface-tree-derived${childActive ? " active" : ""}`}
+                                          role="treeitem"
+                                          aria-level={3}
+                                          aria-selected={childActive}
+                                          onClick={() => requestSelectEDeviceInterfaceComponentLibrary(childRow.componentLibrary)}
+                                        >
+                                          <span className="e-device-interface-class-label">{childRow.label || childRow.componentLibrary}</span>
+                                          <span className="e-device-interface-class-meta">
+                                            <code>{childRow.componentLibrary}</code>
+                                            <small>{childRow.fields.length} 参数</small>
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
                   );
                 })}
                 {eDeviceInterfaceDefinitionRows.length === 0 ? <p className="e-device-interface-empty">暂无可配置设备类</p> : null}
@@ -3437,6 +3788,55 @@ export function renderAppView(__appScope: Record<string, any>) {
                   <div className="e-device-interface-empty e-device-interface-empty-detail">暂无可配置设备类</div>
                 )}
               </div>
+            </div>
+            <footer className="e-device-interface-footer">
+              <span className={eDeviceInterfaceHasUnsavedChanges ? "dirty" : ""} aria-live="polite">
+                {eDeviceInterfaceHasUnsavedChanges ? "有未保存修改" : "当前无未保存修改"}
+              </span>
+              <div className="e-device-interface-footer-actions">
+                <button type="button" onClick={requestCloseEDeviceInterfaceDefinition}>退出</button>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => requestSaveEDeviceInterfaceDefinition()}
+                >
+                  <Save size={14} aria-hidden="true" />
+                  保存
+                </button>
+              </div>
+            </footer>
+          </section>
+        </div>)}
+      {eDeviceInterfaceExitPromptOpen && (<div className="image-picker-backdrop" onPointerDown={() => setEDeviceInterfaceExitPromptOpen(false)}>
+          <section className="unsaved-change-dialog e-device-interface-unsaved-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="e-device-interface-unsaved-title">
+            <div className="image-picker-title">
+              <div>
+                <h2 id="e-device-interface-unsaved-title">E文件接口定义尚未保存</h2>
+                <p>当前接口定义存在未保存修改。退出之前，请选择如何处理这些修改。</p>
+              </div>
+            </div>
+            <div className="unsaved-change-actions">
+              <button type="button" onClick={discardEDeviceInterfaceDefinitionChanges}>不保存直接退出</button>
+              <button type="button" onClick={() => requestSaveEDeviceInterfaceDefinition({ closeAfterSave: true })}>保存后退出</button>
+              <button type="button" onClick={() => setEDeviceInterfaceExitPromptOpen(false)}>继续编辑</button>
+            </div>
+          </section>
+        </div>)}
+      {eDeviceInterfaceClassSwitchTarget && (<div className="image-picker-backdrop" onPointerDown={() => setEDeviceInterfaceClassSwitchTarget("")}>
+          <section className="unsaved-change-dialog e-device-interface-unsaved-dialog e-device-interface-class-switch-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="e-device-interface-class-switch-title">
+            <div className="image-picker-title">
+              <div>
+                <h2 id="e-device-interface-class-switch-title">当前设备类定义尚未保存</h2>
+                <p>
+                  “{selectedEDeviceInterfaceRow?.label || selectedEDeviceInterfaceRow?.componentLibrary}”存在未保存修改。
+                  切换到“{eDeviceInterfaceClassSwitchTargetRow?.label || eDeviceInterfaceClassSwitchTarget}”之前，请选择如何处理这些修改。
+                </p>
+              </div>
+            </div>
+            <div className="unsaved-change-actions">
+              <button type="button" onClick={discardEDeviceInterfaceClassAndSwitch}>不保存并切换</button>
+              <button type="button" onClick={() => runAfterEDeviceInterfaceInputCommit(() => eDeviceInterfaceSaveAndSwitchRef.current())}>保存并切换</button>
+              <button type="button" onClick={() => setEDeviceInterfaceClassSwitchTarget("")}>继续编辑</button>
             </div>
           </section>
         </div>)}
