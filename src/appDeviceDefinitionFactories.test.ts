@@ -16,6 +16,7 @@ import {
   createDeleteCustomCategoryLibrary,
   createDeleteCustomComponentLibrary,
   applyEDeviceDefinitionSectionsToLibraryState,
+  buildEDeviceInterfaceDefinitionRows,
   createExportEDeviceDefinitionFile,
   createRouteSegmentPointerDistance,
   createResolveDuplicateModelImport,
@@ -2318,6 +2319,71 @@ describe("applyEDeviceDefinitionSectionsToLibraryState", () => {
     ]));
     expect(result.matched).toEqual(["ACLoad"]);
     expect(result.skipped).toEqual(["DCLoad"]);
+  });
+});
+
+describe("buildEDeviceInterfaceDefinitionRows", () => {
+  test("keeps fixed E fields visible in the interface definition table", () => {
+    const rows = buildEDeviceInterfaceDefinitionRows({
+      libraryTemplates: [
+        {
+          kind: "hydrogen-source",
+          label: "氢源",
+          categoryLibrary: "氢能设备",
+          params: { component_type: "HydroSource" }
+        }
+      ],
+      resolveDefinitionComponentLibrary: () => "HydroSource"
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].componentLibrary).toBe("HydroSource");
+    expect(rows[0].fields.map((field: any) => field.sourceName)).toEqual([
+      "idx",
+      "name",
+      "dev_type",
+      "node",
+      "run_stat"
+    ]);
+  });
+
+  test("keeps derived component idx and base relation visible", () => {
+    const rows = buildEDeviceInterfaceDefinitionRows({
+      libraryTemplates: [
+        {
+          kind: "custom-wind-source",
+          label: "交流风电",
+          categoryLibrary: "交流设备",
+          params: {
+            component_type: "ACGenerator",
+            derived_from_component_type: "ACGenerator",
+            derived_component_type: "ACWindGen",
+            derived_component_library_label: "交流风电",
+            is_derived_component_library: "1"
+          },
+          parameterDefinitions: [
+            { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "" },
+            { cnName: "名称", enName: "name", valueType: "string", typicalValue: "" },
+            { cnName: "节点", enName: "node", valueType: "string", typicalValue: "" },
+            { cnName: "风机型号", enName: "windTurbineModel", valueType: "string", typicalValue: "", exportEnabled: true, exportName: "wind_model" }
+          ]
+        }
+      ],
+      resolveDefinitionComponentLibrary: () => "ACGenerator"
+    });
+
+    const derivedRow = rows.find((row: any) => row.componentLibrary === "ACWindGen");
+
+    expect(derivedRow?.fields.map((field: any) => field.sourceName)).toEqual([
+      "idx",
+      "idx_acgenerator",
+      "windTurbineModel"
+    ]);
+    expect(derivedRow?.fields.find((field: any) => field.sourceName === "idx")).toMatchObject({
+      exportEnabled: true,
+      exportName: "idx",
+      readonly: true
+    });
   });
 });
 

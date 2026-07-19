@@ -172,10 +172,14 @@ export function buildEDeviceInterfaceDefinitionRows(options: {
     }
     const fieldKey = deviceDefinitionComplianceKey(sourceName);
     const existing = group.fieldBySourceName.get(fieldKey);
+    const fixedField = E_DEVICE_INTERFACE_FIXED_FIELD_NAMES.has(sourceName);
     const exportName = String(field.exportName ?? sourceName).trim();
     if (existing) {
-      existing.exportEnabled = Boolean(existing.exportEnabled || field.exportEnabled);
-      if (!existing.exportName && exportName) {
+      existing.exportEnabled = fixedField || Boolean(existing.exportEnabled || field.exportEnabled);
+      if (fixedField) {
+        existing.exportName = sourceName;
+        existing.readonly = true;
+      } else if (!existing.exportName && exportName) {
         existing.exportName = exportName;
       }
       return;
@@ -183,9 +187,9 @@ export function buildEDeviceInterfaceDefinitionRows(options: {
     const row = {
       sourceName,
       cnName: String(field.cnName ?? sourceName).trim(),
-      exportEnabled: Boolean(field.exportEnabled),
-      exportName,
-      readonly: Boolean(field.readonly)
+      exportEnabled: fixedField || Boolean(field.exportEnabled),
+      exportName: fixedField ? sourceName : exportName,
+      readonly: Boolean(field.readonly || fixedField)
     };
     group.fieldBySourceName.set(fieldKey, row);
     group.fields.push(row);
@@ -205,9 +209,6 @@ export function buildEDeviceInterfaceDefinitionRows(options: {
       : template.params ?? {};
     for (const definition of getTemplateParameterDefinitions(template) ?? []) {
       const enName = String(definition.enName ?? "").trim();
-      if (E_DEVICE_INTERFACE_FIXED_FIELD_NAMES.has(enName)) {
-        continue;
-      }
       const settings = resolveDeviceParameterDefinitionExportSettings(template.kind, baseParams, definition);
       appendField(baseGroup, {
         sourceName: enName,
@@ -228,6 +229,13 @@ export function buildEDeviceInterfaceDefinitionRows(options: {
     if (!derivedGroup) {
       continue;
     }
+    appendField(derivedGroup, {
+      sourceName: "idx",
+      cnName: "序号",
+      exportEnabled: true,
+      exportName: "idx",
+      readonly: true
+    });
     appendField(derivedGroup, {
       sourceName: eDeviceInterfaceRelationKey(derivedInfo.baseComponentLibrary),
       cnName: "原类关联idx",
