@@ -8,6 +8,7 @@ import {
   createMeasurementGroupRenderMetrics,
   createRenderSelectedNodeMeasurementTable,
   createRenderMultiNodeDragOverlay,
+  createSaveMeasurementConfigDialog,
   createUpdateMeasurementDrag,
   measurementProfileItemsComplianceMessage,
   measurementTypeComplianceMessage
@@ -24,6 +25,83 @@ import { DEVICE_LIBRARY, getTemplateParameterDefinitions } from "./model";
 import { exportMeasurementItemMetadataAttributes } from "./svgExportUtils";
 
 describe("measurement canvas interactions", () => {
+  test("migrates current measurement instances before saving a new measurement definition", async () => {
+    const previousConfig = measurementDefinitions.normalizeMeasurementConfig(measurementDefinitions.DEFAULT_MEASUREMENT_CONFIG);
+    const nextConfig = measurementDefinitions.normalizeMeasurementConfig({
+      ...previousConfig,
+      groupDefaults: { ...previousConfig.groupDefaults, backgroundColor: "#f8fafc" }
+    });
+    const projectMeasurements = { version: 1 as const, groups: [] };
+    const migratedMeasurements = { version: 1 as const, groups: [{ id: "migrated" }] } as any;
+    const reconcileProjectMeasurementsWithConfig = vi.fn(() => migratedMeasurements);
+    const pushUndoSnapshot = vi.fn();
+    const setProjectMeasurements = vi.fn();
+    const saveMeasurementConfigDialog = createSaveMeasurementConfigDialog({
+      backendMeasurementConfigLoadedRef: { current: false },
+      flushMeasurementConfigDialogDraftInputs: vi.fn(),
+      lastPersistedMeasurementConfigPayloadRef: { current: "" },
+      measurementConfig: previousConfig,
+      measurementConfigDraft: nextConfig,
+      measurementConfigDraftRef: { current: nextConfig },
+      nodes: [{ id: "node-1" }],
+      normalizeMeasurementConfig: measurementDefinitions.normalizeMeasurementConfig,
+      projectMeasurements,
+      pushUndoSnapshot,
+      reconcileProjectMeasurementsWithConfig,
+      saveBackendMeasurementConfigPayload: vi.fn(async () => undefined),
+      serializeMeasurementConfigForStorage: JSON.stringify,
+      setMeasurementConfig: vi.fn(),
+      setMeasurementConfigDraft: vi.fn(),
+      setMeasurementConfigSaveStatus: vi.fn(),
+      setProjectMeasurements,
+      writeMeasurementConfig: vi.fn(),
+      writeOperationLog: vi.fn()
+    } as any);
+
+    await saveMeasurementConfigDialog();
+
+    expect(reconcileProjectMeasurementsWithConfig).toHaveBeenCalledWith(
+      projectMeasurements,
+      [{ id: "node-1" }],
+      nextConfig,
+      previousConfig
+    );
+    expect(pushUndoSnapshot).toHaveBeenCalledTimes(1);
+    expect(setProjectMeasurements).toHaveBeenCalledWith(migratedMeasurements);
+  });
+
+  test("does not create a measurement undo snapshot when definition migration is unchanged", async () => {
+    const config = measurementDefinitions.normalizeMeasurementConfig(measurementDefinitions.DEFAULT_MEASUREMENT_CONFIG);
+    const projectMeasurements = { version: 1 as const, groups: [] };
+    const pushUndoSnapshot = vi.fn();
+    const setProjectMeasurements = vi.fn();
+    const saveMeasurementConfigDialog = createSaveMeasurementConfigDialog({
+      backendMeasurementConfigLoadedRef: { current: false },
+      lastPersistedMeasurementConfigPayloadRef: { current: "" },
+      measurementConfig: config,
+      measurementConfigDraft: config,
+      measurementConfigDraftRef: { current: config },
+      nodes: [],
+      normalizeMeasurementConfig: measurementDefinitions.normalizeMeasurementConfig,
+      projectMeasurements,
+      pushUndoSnapshot,
+      reconcileProjectMeasurementsWithConfig: vi.fn(() => projectMeasurements),
+      saveBackendMeasurementConfigPayload: vi.fn(async () => undefined),
+      serializeMeasurementConfigForStorage: JSON.stringify,
+      setMeasurementConfig: vi.fn(),
+      setMeasurementConfigDraft: vi.fn(),
+      setMeasurementConfigSaveStatus: vi.fn(),
+      setProjectMeasurements,
+      writeMeasurementConfig: vi.fn(),
+      writeOperationLog: vi.fn()
+    } as any);
+
+    await saveMeasurementConfigDialog();
+
+    expect(pushUndoSnapshot).not.toHaveBeenCalled();
+    expect(setProjectMeasurements).not.toHaveBeenCalled();
+  });
+
   test("validates measurement type and profile compliance", () => {
     const typeMessage = measurementTypeComplianceMessage([
       {

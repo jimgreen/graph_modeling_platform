@@ -814,6 +814,175 @@ export function createDefaultMeasurementGroupsForNode(
   });
 }
 
+function measurementValuesEqual(left: unknown, right: unknown) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function canonicalMeasurementGroupId(group: Pick<MeasurementGroup, "nodeId" | "terminalId">) {
+  return group.terminalId
+    ? `measurement-${group.nodeId}-${group.terminalId}`
+    : `measurement-${group.nodeId}`;
+}
+
+function generatedMeasurementGroupsById(
+  nodes: readonly ModelNode[],
+  config: PlatformMeasurementConfig
+) {
+  return new Map(
+    nodes.flatMap((node) => createDefaultMeasurementGroupsForNode(node, config))
+      .map((group) => [group.id, group] as const)
+  );
+}
+
+function isManualMeasurementItem(
+  item: MeasurementItemBinding,
+  group: MeasurementGroup,
+  previousGeneratedItemIds: ReadonlySet<string>,
+  nextGeneratedItemIds: ReadonlySet<string>
+) {
+  if (previousGeneratedItemIds.has(item.id) || nextGeneratedItemIds.has(item.id)) {
+    return false;
+  }
+  const prefix = `${group.id}-${item.measurementTypeId}-`;
+  if (!item.id.startsWith(prefix)) {
+    return true;
+  }
+  const suffix = item.id.slice(prefix.length);
+  return /^[a-z0-9]{6,}-[a-z0-9]{4}$/i.test(suffix);
+}
+
+function mergeInheritedMeasurementValue<T>(
+  existing: T,
+  previousGenerated: T | undefined,
+  nextGenerated: T
+) {
+  if (previousGenerated === undefined) {
+    return existing === undefined ? nextGenerated : existing;
+  }
+  return measurementValuesEqual(existing, previousGenerated) ? nextGenerated : existing;
+}
+
+function reconcileGeneratedMeasurementItem(
+  existing: MeasurementItemBinding,
+  nextGenerated: MeasurementItemBinding,
+  previousGenerated?: MeasurementItemBinding
+): MeasurementItemBinding {
+  return {
+    ...existing,
+    id: nextGenerated.id,
+    measurementTypeId: nextGenerated.measurementTypeId,
+    role: nextGenerated.role,
+    sourcePoint: nextGenerated.sourcePoint,
+    name: mergeInheritedMeasurementValue(existing.name, previousGenerated?.name, nextGenerated.name),
+    visible: mergeInheritedMeasurementValue(existing.visible, previousGenerated?.visible, nextGenerated.visible),
+    labelOverride: mergeInheritedMeasurementValue(existing.labelOverride, previousGenerated?.labelOverride, nextGenerated.labelOverride),
+    unitOverride: mergeInheritedMeasurementValue(existing.unitOverride, previousGenerated?.unitOverride, nextGenerated.unitOverride),
+    decimalsOverride: mergeInheritedMeasurementValue(existing.decimalsOverride, previousGenerated?.decimalsOverride, nextGenerated.decimalsOverride),
+    styleOverride: mergeInheritedMeasurementValue(existing.styleOverride, previousGenerated?.styleOverride, nextGenerated.styleOverride)
+  };
+}
+
+function reconcileGeneratedMeasurementGroup(
+  existing: MeasurementGroup,
+  nextGenerated: MeasurementGroup,
+  previousGenerated: MeasurementGroup | undefined,
+  previousConfig: PlatformMeasurementConfig | undefined,
+  nextConfig: PlatformMeasurementConfig
+): MeasurementGroup {
+  const previousItems = new Map((previousGenerated?.items ?? []).map((item) => [item.id, item]));
+  const nextItemIds = new Set(nextGenerated.items.map((item) => item.id));
+  const previousItemIds = new Set(previousItems.keys());
+  const existingItems = new Map(existing.items.map((item) => [item.id, item]));
+  const generatedItems = nextGenerated.items.map((item) => {
+    const current = existingItems.get(item.id);
+    return current ? reconcileGeneratedMeasurementItem(current, item, previousItems.get(item.id)) : item;
+  });
+  const manualItems = existing.items.filter((item) =>
+    !nextItemIds.has(item.id) && isManualMeasurementItem(item, existing, previousItemIds, nextItemIds)
+  );
+  const previousDefaults = previousConfig?.groupDefaults;
+  return {
+    ...existing,
+    id: nextGenerated.id,
+    nodeId: nextGenerated.nodeId,
+    terminalId: nextGenerated.terminalId,
+    backgroundColor: mergeInheritedMeasurementValue(
+      existing.backgroundColor,
+      previousGenerated?.backgroundColor ?? previousDefaults?.backgroundColor,
+      nextGenerated.backgroundColor ?? nextConfig.groupDefaults.backgroundColor
+    ),
+    borderColor: mergeInheritedMeasurementValue(
+      existing.borderColor,
+      previousGenerated?.borderColor ?? previousDefaults?.borderColor,
+      nextGenerated.borderColor ?? nextConfig.groupDefaults.borderColor
+    ),
+    borderStyle: mergeInheritedMeasurementValue(
+      existing.borderStyle,
+      previousGenerated?.borderStyle ?? previousDefaults?.borderStyle,
+      nextGenerated.borderStyle ?? nextConfig.groupDefaults.borderStyle
+    ),
+    borderWidth: mergeInheritedMeasurementValue(
+      existing.borderWidth,
+      previousGenerated?.borderWidth ?? previousDefaults?.borderWidth,
+      nextGenerated.borderWidth ?? nextConfig.groupDefaults.borderWidth
+    ),
+    items: [...generatedItems, ...manualItems]
+  };
+}
+
+export function reconcileProjectMeasurementsWithConfig(
+  measurements: ProjectMeasurementConfig,
+  nodes: readonly ModelNode[],
+  nextConfigInput: PlatformMeasurementConfig,
+  previousConfigInput?: PlatformMeasurementConfig
+): ProjectMeasurementConfig {
+  const normalizedMeasurements = normalizeProjectMeasurements(measurements, nodes);
+  const nextConfig = normalizeMeasurementConfig(nextConfigInput);
+  const previousConfig = previousConfigInput ? normalizeMeasurementConfig(previousConfigInput) : undefined;
+  const nextGeneratedGroups = generatedMeasurementGroupsById(nodes, nextConfig);
+  const previousGeneratedGroups = previousConfig
+    ? generatedMeasurementGroupsById(nodes, previousConfig)
+    : new Map<string, MeasurementGroup>();
+  const reconciledGroups: MeasurementGroup[] = [];
+  const handledGroupIds = new Set<string>();
+
+  for (const group of normalizedMeasurements.groups) {
+    if (group.id !== canonicalMeasurementGroupId(group)) {
+      reconciledGroups.push(group);
+      continue;
+    }
+    handledGroupIds.add(group.id);
+    const nextGenerated = nextGeneratedGroups.get(group.id);
+    const previousGenerated = previousGeneratedGroups.get(group.id);
+    if (nextGenerated) {
+      reconciledGroups.push(reconcileGeneratedMeasurementGroup(
+        group,
+        nextGenerated,
+        previousGenerated,
+        previousConfig,
+        nextConfig
+      ));
+      continue;
+    }
+    const previousItemIds = new Set((previousGenerated?.items ?? []).map((item) => item.id));
+    const manualItems = group.items.filter((item) =>
+      isManualMeasurementItem(item, group, previousItemIds, new Set())
+    );
+    if (manualItems.length > 0) {
+      reconciledGroups.push({ ...group, items: manualItems });
+    }
+  }
+
+  for (const group of nextGeneratedGroups.values()) {
+    if (!handledGroupIds.has(group.id)) {
+      reconciledGroups.push(group);
+    }
+  }
+
+  const reconciled: ProjectMeasurementConfig = { version: 1, groups: reconciledGroups };
+  return measurementValuesEqual(measurements, reconciled) ? measurements : reconciled;
+}
+
 export function resolveMeasurementItemDisplay({
   config,
   node,

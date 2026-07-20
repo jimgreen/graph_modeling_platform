@@ -702,13 +702,30 @@ function normalizeDeviceLibraryConfig(payload) {
     source.deviceDefinitionOverrides && typeof source.deviceDefinitionOverrides === "object" && !Array.isArray(source.deviceDefinitionOverrides)
       ? source.deviceDefinitionOverrides
       : {};
+  const eDeviceDefinitionLabels =
+    source.eDeviceDefinitionLabels && typeof source.eDeviceDefinitionLabels === "object" && !Array.isArray(source.eDeviceDefinitionLabels)
+      ? Object.fromEntries(Object.entries(source.eDeviceDefinitionLabels).flatMap(([rawKey, rawValue]) => {
+        const key = String(rawKey ?? "").trim();
+        const value = String(rawValue ?? "").trim();
+        return key && value ? [[key, value]] : [];
+      }))
+      : {};
+  const eDeviceDefinitionClassExportEnabled =
+    source.eDeviceDefinitionClassExportEnabled && typeof source.eDeviceDefinitionClassExportEnabled === "object" && !Array.isArray(source.eDeviceDefinitionClassExportEnabled)
+      ? Object.fromEntries(Object.entries(source.eDeviceDefinitionClassExportEnabled).flatMap(([rawKey, rawValue]) => {
+        const key = String(rawKey ?? "").trim();
+        return key && typeof rawValue === "boolean" ? [[key, rawValue]] : [];
+      }))
+      : {};
   return {
     customDeviceTemplates,
     customCategoryLibraries,
     customComponentLibraries,
     customGraphTemplateTypes,
     customGraphTemplates,
-    deviceDefinitionOverrides
+    deviceDefinitionOverrides,
+    eDeviceDefinitionLabels,
+    eDeviceDefinitionClassExportEnabled
   };
 }
 

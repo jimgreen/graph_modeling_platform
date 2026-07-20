@@ -64,11 +64,30 @@ export function resolveDeviceModelPanelParameterKeys(
   };
   eKeys.forEach((key) => appendKey(exportKeyToCustomKey.get(key) ?? key));
   customKeys.forEach(appendKey);
+  if (eKeys.length > 0) {
+    const deviceTypeKey = exportKeyToCustomKey.get("dev_type") ?? "dev_type";
+    if (!mergedKeys.includes(deviceTypeKey)) {
+      const nameKey = exportKeyToCustomKey.get("name") ?? "name";
+      const nameIndex = mergedKeys.indexOf(nameKey);
+      mergedKeys.splice(nameIndex >= 0 ? nameIndex + 1 : 0, 0, deviceTypeKey);
+    }
+  }
   if (mergedKeys.length > 0) {
     return mergedKeys;
   }
   fallbackKeys.forEach(appendKey);
   return mergedKeys;
+}
+
+export function resolveDeviceModelPanelDevType(kind: string, params: Record<string, unknown> = {}): string {
+  const explicitValue = String(params.dev_type ?? "").trim();
+  if (explicitValue) {
+    return explicitValue;
+  }
+  const componentLibrary = String(
+    params.component_type ?? params.componentType ?? params.componentLibrary ?? ""
+  ).trim();
+  return componentLibrary || inferESection(kind, params as Record<string, string>) || String(kind ?? "").trim();
 }
 
 export function buildEDeviceInterfaceDefinitionTree(rows: readonly any[] = []) {
@@ -1849,7 +1868,13 @@ export function renderAppView(__appScope: Record<string, any>) {
                             Object.keys(inspectorSelectedNode.params).filter((key) => !key.startsWith("_") && key !== "is_container" && key !== ALLOW_RESIZE_TRANSFORM_PARAM)
                         );
                         return keys.map((key) => {
-                            const value = key === "name" ? inspectorSelectedNode.name : eKeys.length > 0 ? getEParamValue(key, inspectorSelectedNode) : inspectorSelectedNode.params[key] ?? "";
+                            const value = key === "name"
+                              ? inspectorSelectedNode.name
+                              : key === "dev_type"
+                                ? resolveDeviceModelPanelDevType(inspectorSelectedNode.kind, inspectorSelectedNode.params)
+                                : eKeys.length > 0
+                                  ? getEParamValue(key, inspectorSelectedNode)
+                                  : inspectorSelectedNode.params[key] ?? "";
                             const displayValue = formatDeviceModelParamDisplayValue(key, value);
                             const definition = customDefinitions.find((item) => item.enName === key);
                             return (<tr key={key}>

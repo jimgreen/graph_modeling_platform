@@ -33,6 +33,7 @@ import * as SelectionActionsScope from "../selectionActions";
 import * as CanvasViewportScope from "../canvasViewport";
 import * as SidePanelVisibilityScope from "../sidePanelVisibility";
 import * as MeasurementsScope from "../measurements";
+import * as DefinitionInstanceSyncScope from "../definitionInstanceSync";
 import * as StaticButtonComponentsScope from "../components/StaticButtonComponents";
 import * as FormatUtilsScope from "../formatUtils";
 import * as FileIOScope from "../fileIO";
@@ -62,6 +63,7 @@ export const APP_STATIC_SCOPE = Object.assign(
   CanvasViewportScope,
   SidePanelVisibilityScope,
   MeasurementsScope,
+  DefinitionInstanceSyncScope,
   StaticButtonComponentsScope,
   FormatUtilsScope,
   FileIOScope,

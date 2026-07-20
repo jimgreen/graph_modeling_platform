@@ -5,6 +5,7 @@ import * as appViewModule from "./appExtracted/appView";
 import {
   inspectorTabShowsDevicePanel,
   customDeviceDefinitionUsesIconOnly,
+  resolveDeviceModelPanelDevType,
   resolveDeviceDefinitionParameterRowsForDisplay,
   resolveDeviceModelPanelParameterKeys,
   resolveCustomDeviceParameterRowsForDisplay,
@@ -57,6 +58,30 @@ describe("app view inspector tab visibility", () => {
 });
 
 describe("app view device model parameter keys", () => {
+  test("keeps dev_type in the model panel for E devices without stored custom definitions", () => {
+    const keys = resolveDeviceModelPanelParameterKeys(
+      ["idx", "name", "node", "control_type", "p_set", "run_stat"],
+      [],
+      []
+    );
+
+    expect(keys).toEqual([
+      "idx",
+      "name",
+      "dev_type",
+      "node",
+      "control_type",
+      "p_set",
+      "run_stat"
+    ]);
+  });
+
+  test("uses the explicit dev_type first and otherwise falls back to the effective device class", () => {
+    expect(resolveDeviceModelPanelDevType("ac-source", { dev_type: "aa" })).toBe("aa");
+    expect(resolveDeviceModelPanelDevType("ac-source", {})).toBe("ACGenerator");
+    expect(resolveDeviceModelPanelDevType("custom-source", { component_type: "CustomGenerator" })).toBe("CustomGenerator");
+  });
+
   test("shows base class E fields together with derived-specific fields", () => {
     const keys = resolveDeviceModelPanelParameterKeys(
       ["idx", "name", "node", "control_type", "p_set", "run_stat"],
@@ -70,6 +95,7 @@ describe("app view device model parameter keys", () => {
     expect(keys).toEqual([
       "idx",
       "name",
+      "dev_type",
       "node",
       "control_type",
       "p_set",
@@ -323,6 +349,20 @@ describe("app view device definition parameter rows", () => {
     )?.[1] ?? "";
 
     expect(floatingDialogRule).toMatch(/transform:\s*none/);
+  });
+
+  test("keeps custom device identity and derived fields on one desktop row", () => {
+    const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+    const baseGridRule = styles.match(/\.custom-device-form-grid\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+    const derivedGridRule = styles.match(
+      /\.custom-device-form-grid:has\(\.custom-device-derived-en-field\)\s*\{([\s\S]*?)\}/
+    )?.[1] ?? "";
+
+    expect(baseGridRule).toMatch(/repeat\(4,\s*minmax\(/);
+    expect(derivedGridRule).toMatch(/grid-template-columns/);
+    expect(styles).not.toMatch(
+      /\.custom-device-form-grid \.custom-device-derived-(?:en-)?field\s*\{[^}]*grid-row:\s*2/
+    );
   });
 
   test("passes derived metadata into custom device measurement positions", () => {

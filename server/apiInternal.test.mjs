@@ -383,12 +383,20 @@ describe("配置域 /api/color-config & measurement-config & device-library", ()
     const saved = await fetchJson("/api/device-library", {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ customComponentLibraries: [], customCategoryLibraries: [] })
+      body: JSON.stringify({
+        customComponentLibraries: [],
+        customCategoryLibraries: [],
+        eDeviceDefinitionLabels: { ACGenerator: "ACGeneratorRenamed" },
+        eDeviceDefinitionClassExportEnabled: { ACGenerator: false }
+      })
     });
     expect(saved.status).toBe(200);
     expect(saved.json.ok).toBe(true);
+    expect(saved.json.eDeviceDefinitionLabels).toEqual({ ACGenerator: "ACGeneratorRenamed" });
+    expect(saved.json.eDeviceDefinitionClassExportEnabled).toEqual({ ACGenerator: false });
     const got = await fetchJson("/api/device-library");
     expect(got.status).toBe(200);
-    expect(got.json).toBeTruthy();
+    expect(got.json.eDeviceDefinitionLabels).toEqual({ ACGenerator: "ACGeneratorRenamed" });
+    expect(got.json.eDeviceDefinitionClassExportEnabled).toEqual({ ACGenerator: false });
   });
 });

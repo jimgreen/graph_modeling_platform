@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { clampNumber } from "../canvasViewport";
+import { reconcileNodeWithDefinition } from "../definitionInstanceSync";
 import { degreesToRadians } from "../formatUtils";
 import type { MeasurementProfilePositionDefinition } from "../measurements";
 
@@ -3694,141 +3695,19 @@ export function createPushNodeOnlyUndoSnapshot(__appScope: Record<string, any>) 
   };
 }
 
-const TEMPLATE_DEFINITION_PARAM_KEYS = new Set([
-  "component_type",
-  "backgroundImage",
-  "backgroundImageAssetId",
-  "backgroundImageCleared",
-  "foregroundColor",
-  "foregroundImage",
-  "foregroundImageAssetId",
-  "fillColor",
-  "strokeColor",
-  "textColor",
-  "lineWidth",
-  "fontSize",
-  "fontFamily",
-  "fontWeight",
-  "fontStyle",
-  "textDecoration",
-  "strokeStyle",
-  "text",
-  "cornerRadius",
-  "accentColor",
-  "shadowEnabled",
-  "padding",
-  "textAlign",
-  "verticalAlign",
-  "markerStart",
-  "markerEnd",
-  "arrowSize",
-  "handleColor",
-  "handleSize",
-  "routeAvoidance",
-  "staticWidth",
-  "staticHeight"
-]);
-
-const TEMPLATE_DEFINITION_PARAM_PREFIXES = [
-  "button"
-];
-
-const isTemplateDefinitionParamKey = (key: string) =>
-  TEMPLATE_DEFINITION_PARAM_KEYS.has(key) ||
-  TEMPLATE_DEFINITION_PARAM_PREFIXES.some((prefix) => key.startsWith(prefix));
-
 export function createSyncExistingNodesWithTemplateDefinitions(__appScope: Record<string, any>) {
   return (
     template: Pick<DeviceTemplate, "parameterDefinitions"> & Partial<Pick<DeviceTemplate, "params" | "size" | "terminalType" | "terminalCount" | "terminalTypes" | "terminalLabels" | "terminalAnchors" | "stateDefinitions">>,
     previousDefinitions: readonly DeviceParameterDefinition[] | undefined,
     matchesNode: (node: ModelNode) => boolean
   ) => {
-  const { createNodeFromTemplate, nodes, patchGraphNodes, pushUndoSnapshot, reconcileNodeParamsWithTemplateDefinitions, undoScopeForGraphPatch } = __appScope;
+  const { measurementConfig, nodes, patchGraphNodes, projectMeasurements, pushUndoSnapshot, reconcileProjectMeasurementsWithConfig, setProjectMeasurements, undoScopeForGraphPatch } = __appScope;
     const nodeUpdates: ModelNode[] = [];
-    const syncNodeDefinitionVisuals = (node: ModelNode) => {
-      let changed = false;
-      let nextParams = node.params;
-      const templateParams = template.params && typeof template.params === "object" ? template.params : null;
-      if (templateParams) {
-        for (const [key, rawValue] of Object.entries(templateParams)) {
-          if (!isTemplateDefinitionParamKey(key)) {
-            continue;
-          }
-          const value = String(rawValue ?? "");
-          if (nextParams[key] !== value) {
-            if (nextParams === node.params) {
-              nextParams = { ...node.params };
-            }
-            nextParams[key] = value;
-            changed = true;
-          }
-        }
-      }
-      const templateSize = template.size;
-      const width = Number(templateSize?.width);
-      const height = Number(templateSize?.height);
-      const nextSize = Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0
-        ? { width: Math.max(1, Math.round(width)), height: Math.max(1, Math.round(height)) }
-        : node.size;
-      const sizeChanged = nextSize.width !== node.size.width || nextSize.height !== node.size.height;
-      if (!changed && !sizeChanged) {
-        return node;
-      }
-      return {
-        ...node,
-        ...(sizeChanged ? { size: nextSize } : {}),
-        ...(changed ? { params: nextParams } : {})
-      };
-    };
-    const syncNodeTerminals = (node: ModelNode) => {
-      if (!createNodeFromTemplate || !Number.isFinite(Number(template.terminalCount))) {
-        return node;
-      }
-      const terminalCount = Math.max(0, Math.round(Number(template.terminalCount) || 0));
-      const terminalTemplate = {
-        kind: node.kind,
-        label: node.label,
-        categoryLibrary: "",
-        size: node.size,
-        params: node.params,
-        terminalType: template.terminalType ?? template.terminalTypes?.[0] ?? node.terminals[0]?.type ?? "ac",
-        terminalCount,
-        terminalTypes: template.terminalTypes?.slice(0, terminalCount),
-        terminalLabels: template.terminalLabels?.slice(0, terminalCount),
-        terminalAnchors: template.terminalAnchors?.slice(0, terminalCount)
-      };
-      const expectedTerminals = createNodeFromTemplate(terminalTemplate, { x: node.x, y: node.y }).terminals;
-      const terminals = expectedTerminals.map((expected, index) => {
-        const current = node.terminals[index];
-        if (!current) {
-          return expected;
-        }
-        return {
-          ...expected,
-          nodeNumber: current.nodeNumber,
-          vbase: current.type === expected.type ? current.vbase : expected.vbase
-        };
-      });
-      const changed =
-        terminals.length !== node.terminals.length ||
-        terminals.some((terminal, index) => {
-          const current = node.terminals[index];
-          return !current ||
-            current.id !== terminal.id ||
-            current.label !== terminal.label ||
-            current.type !== terminal.type ||
-            current.nodeNumber !== terminal.nodeNumber ||
-            current.vbase !== terminal.vbase ||
-            current.anchor.x !== terminal.anchor.x ||
-            current.anchor.y !== terminal.anchor.y;
-        });
-      return changed ? { ...node, terminals } : node;
-    };
     for (const node of nodes) {
       if (!matchesNode(node)) {
         continue;
       }
-      const reconciled = syncNodeTerminals(syncNodeDefinitionVisuals(reconcileNodeParamsWithTemplateDefinitions(node, template, previousDefinitions)));
+      const reconciled = reconcileNodeWithDefinition(node, template, previousDefinitions);
       if (reconciled !== node) {
         nodeUpdates.push(reconciled);
       }
@@ -3837,6 +3716,19 @@ export function createSyncExistingNodesWithTemplateDefinitions(__appScope: Recor
       return 0;
     }
     pushUndoSnapshot(true, false, undoScopeForGraphPatch(nodeUpdates.map((node) => node.id), []));
+    if (typeof reconcileProjectMeasurementsWithConfig === "function" && projectMeasurements && measurementConfig) {
+      const updatesById = new Map(nodeUpdates.map((node) => [node.id, node]));
+      const nextNodes = nodes.map((node) => updatesById.get(node.id) ?? node);
+      const reconciledMeasurements = reconcileProjectMeasurementsWithConfig(
+        projectMeasurements,
+        nextNodes,
+        measurementConfig,
+        measurementConfig
+      );
+      if (reconciledMeasurements !== projectMeasurements) {
+        setProjectMeasurements(reconciledMeasurements);
+      }
+    }
     patchGraphNodes(nodeUpdates);
     return nodeUpdates.length;
   };
@@ -4050,14 +3942,25 @@ export const measurementConfigComplianceMessage = (config: PlatformMeasurementCo
 
 export function createSaveMeasurementConfigDialog(__appScope: Record<string, any>) {
   return async () => {
-  const { backendMeasurementConfigLoadedRef, flushMeasurementConfigDialogDraftInputs, lastPersistedMeasurementConfigPayloadRef, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeMeasurementConfig, saveBackendMeasurementConfigPayload, serializeMeasurementConfigForStorage, setMeasurementConfig, setMeasurementConfigDraft, setMeasurementConfigSaveStatus, writeMeasurementConfig, writeOperationLog } = __appScope;
+  const { backendMeasurementConfigLoadedRef, flushMeasurementConfigDialogDraftInputs, lastPersistedMeasurementConfigPayloadRef, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, nodes, normalizeMeasurementConfig, projectMeasurements, pushUndoSnapshot, reconcileProjectMeasurementsWithConfig, saveBackendMeasurementConfigPayload, serializeMeasurementConfigForStorage, setMeasurementConfig, setMeasurementConfigDraft, setMeasurementConfigSaveStatus, setProjectMeasurements, writeMeasurementConfig, writeOperationLog } = __appScope;
     flushMeasurementConfigDialogDraftInputs?.();
+    const previousMeasurementConfig = normalizeMeasurementConfig(measurementConfig);
     const normalizedMeasurementConfig = normalizeMeasurementConfig(measurementConfigDraftRef.current ?? measurementConfigDraft ?? measurementConfig);
     const complianceMessage = measurementConfigComplianceMessage(normalizedMeasurementConfig);
     if (complianceMessage) {
       setMeasurementConfigSaveStatus("error");
       window.alert(complianceMessage);
       return;
+    }
+    const reconciledMeasurements = reconcileProjectMeasurementsWithConfig(
+      projectMeasurements,
+      nodes,
+      normalizedMeasurementConfig,
+      previousMeasurementConfig
+    );
+    if (reconciledMeasurements !== projectMeasurements) {
+      pushUndoSnapshot();
+      setProjectMeasurements(reconciledMeasurements);
     }
     const normalizedMeasurementConfigPayload = serializeMeasurementConfigForStorage(normalizedMeasurementConfig);
     setMeasurementConfigSaveStatus("saving");

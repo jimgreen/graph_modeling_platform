@@ -328,12 +328,21 @@ describe("manual bend interaction helpers", () => {
     };
     const patchGraphNodes = vi.fn();
     const pushUndoSnapshot = vi.fn();
+    const projectMeasurements = { version: 1 as const, groups: [] };
+    const migratedMeasurements = { version: 1 as const, groups: [{ id: "measurement-node-1" }] } as any;
+    const measurementConfig = { groupDefaults: {}, measurementTypes: [], deviceProfiles: [] } as any;
+    const reconcileProjectMeasurementsWithConfig = vi.fn(() => migratedMeasurements);
+    const setProjectMeasurements = vi.fn();
     const syncExistingNodesWithTemplateDefinitions = createSyncExistingNodesWithTemplateDefinitions({
       createNodeFromTemplate: undefined,
+      measurementConfig,
       nodes: [node],
       patchGraphNodes,
+      projectMeasurements,
       pushUndoSnapshot,
+      reconcileProjectMeasurementsWithConfig,
       reconcileNodeParamsWithTemplateDefinitions: (current: any) => current,
+      setProjectMeasurements,
       undoScopeForGraphPatch: (nodeIds: string[]) => ({ nodeIds })
     });
 
@@ -376,6 +385,13 @@ describe("manual bend interaction helpers", () => {
       text: "新文字"
     });
     expect(updated.params).not.toHaveProperty("_stateDefinitions");
+    expect(reconcileProjectMeasurementsWithConfig).toHaveBeenCalledWith(
+      projectMeasurements,
+      [updated],
+      measurementConfig,
+      measurementConfig
+    );
+    expect(setProjectMeasurements).toHaveBeenCalledWith(migratedMeasurements);
   });
 
   test("saving a definition visual draft syncs matching canvas nodes with the new visual definition", () => {

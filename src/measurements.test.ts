@@ -10,6 +10,7 @@ import {
   measurementProfileItemsForNodePosition,
   normalizeMeasurementConfig,
   normalizeProjectMeasurements,
+  reconcileProjectMeasurementsWithConfig,
   resolveMeasurementItemDisplay
 } from "./measurements";
 import type { MeasurementRuntimeValue, ProjectMeasurementConfig } from "./measurements";
@@ -34,6 +35,150 @@ const node = (id: string, kind = "ac-load"): ModelNode => ({
 });
 
 describe("measurement domain", () => {
+  test("reconciles generated measurements while preserving instance and manual overrides", () => {
+    const sourceNode = {
+      ...node("sync-node", "sync-device"),
+      terminals: [{ id: "t1", label: "端1", type: "ac" as const, anchor: { x: 0.5, y: 0 }, nodeNumber: "N2", vbase: "35" }]
+    };
+    const previousConfig = normalizeMeasurementConfig({
+      groupDefaults: { backgroundColor: "#ffffff", borderColor: "#111111", borderStyle: "solid", borderWidth: 1 },
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{
+        deviceKind: "sync-device",
+        items: [
+          { measurementTypeId: "activePower", position: "device", associatedField: "p_old", labelOverride: "旧有功", unitOverride: "MW", decimalsOverride: 2, styleOverride: { color: "#111111" } },
+          { measurementTypeId: "voltage", position: "t1", associatedField: "u_old" }
+        ]
+      }]
+    });
+    const nextConfig = normalizeMeasurementConfig({
+      groupDefaults: { backgroundColor: "#eeeeee", borderColor: "#222222", borderStyle: "dashed", borderWidth: 2 },
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{
+        deviceKind: "sync-device",
+        items: [
+          { measurementTypeId: "activePower", position: "device", associatedField: "p_new", labelOverride: "新有功", unitOverride: "kW", decimalsOverride: 1, styleOverride: { color: "#dc2626" } },
+          { measurementTypeId: "reactivePower", position: "device", associatedField: "q_new" }
+        ]
+      }]
+    });
+    const generated = createDefaultMeasurementGroupsForNode(sourceNode, previousConfig);
+    const deviceGroup = generated.find((group) => !group.terminalId)!;
+    const terminalGroup = generated.find((group) => group.terminalId === "t1")!;
+    const manualItem = {
+      id: "measurement-sync-node-activePower-mabc1234-z9x8",
+      name: "手工量测",
+      measurementTypeId: "activePower",
+      sourcePoint: "sync-node.manual",
+      visible: true
+    };
+    const measurements: ProjectMeasurementConfig = {
+      version: 1,
+      groups: [
+        {
+          ...deviceGroup,
+          visible: false,
+          offset: { x: 88, y: 99 },
+          layout: "horizontal",
+          borderColor: "#f59e0b",
+          items: [
+            { ...deviceGroup.items[0], labelOverride: "用户自定义有功" },
+            manualItem
+          ]
+        },
+        terminalGroup,
+        {
+          ...deviceGroup,
+          id: "measurement-sync-node-group-mabc1234-z9x8",
+          items: [manualItem]
+        }
+      ]
+    };
+
+    const reconciled = reconcileProjectMeasurementsWithConfig(
+      measurements,
+      [sourceNode],
+      nextConfig,
+      previousConfig
+    );
+
+    const nextDeviceGroup = reconciled.groups.find((group) => group.id === "measurement-sync-node")!;
+    expect(nextDeviceGroup).toMatchObject({
+      visible: false,
+      offset: { x: 88, y: 99 },
+      layout: "horizontal",
+      backgroundColor: "#eeeeee",
+      borderColor: "#f59e0b",
+      borderStyle: "dashed",
+      borderWidth: 2
+    });
+    expect(nextDeviceGroup.items.map((item) => item.measurementTypeId)).toEqual([
+      "activePower",
+      "reactivePower",
+      "activePower"
+    ]);
+    expect(nextDeviceGroup.items[0]).toMatchObject({
+      sourcePoint: "sync-node.p_new",
+      labelOverride: "用户自定义有功",
+      unitOverride: "kW",
+      decimalsOverride: 1,
+      styleOverride: { color: "#dc2626" }
+    });
+    expect(nextDeviceGroup.items[2]).toEqual(manualItem);
+    expect(reconciled.groups.some((group) => group.id === terminalGroup.id)).toBe(false);
+    expect(reconciled.groups.some((group) => group.id === "measurement-sync-node-group-mabc1234-z9x8")).toBe(true);
+  });
+
+  test("keeps manual terminal measurements after the terminal definition is removed", () => {
+    const oldNode = {
+      ...node("terminal-sync", "sync-device"),
+      terminals: [
+        { id: "t1", label: "端1", type: "ac" as const, anchor: { x: -0.5, y: 0 }, nodeNumber: "N1", vbase: "35" },
+        { id: "t2", label: "端2", type: "ac" as const, anchor: { x: 0.5, y: 0 }, nodeNumber: "N2", vbase: "35" }
+      ]
+    };
+    const nextNode = { ...oldNode, terminals: oldNode.terminals.slice(0, 1) };
+    const previousConfig = normalizeMeasurementConfig({
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{ deviceKind: "sync-device", items: [{ measurementTypeId: "voltage", position: "t2" }] }]
+    });
+    const nextConfig = normalizeMeasurementConfig({
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{ deviceKind: "sync-device", items: [] }]
+    });
+    const group = createDefaultMeasurementGroupsForNode(oldNode, previousConfig)[0];
+    const manualItem = {
+      id: "measurement-terminal-sync-t2-voltage-mabc1234-z9x8",
+      measurementTypeId: "voltage",
+      sourcePoint: "terminal-sync.t2.manual"
+    };
+    const measurements = {
+      version: 1 as const,
+      groups: [{ ...group, items: [...group.items, manualItem] }]
+    };
+
+    const reconciled = reconcileProjectMeasurementsWithConfig(measurements, [nextNode], nextConfig, previousConfig);
+
+    expect(reconciled.groups).toHaveLength(1);
+    expect(reconciled.groups[0].terminalId).toBe("t2");
+    expect(reconciled.groups[0].items).toEqual([manualItem]);
+  });
+
+  test("returns the original project measurements when reconciliation changes nothing", () => {
+    const sourceNode = node("same-node", "ac-load");
+    const measurements = {
+      version: 1 as const,
+      groups: createDefaultMeasurementGroupsForNode(sourceNode, DEFAULT_MEASUREMENT_CONFIG)
+    };
+
+    expect(reconcileProjectMeasurementsWithConfig(
+      measurements,
+      [sourceNode],
+      DEFAULT_MEASUREMENT_CONFIG,
+      DEFAULT_MEASUREMENT_CONFIG
+    )).toBe(measurements);
+  });
+
   test("normalizes platform measurement types and keeps default active power settings", () => {
     const config = normalizeMeasurementConfig({
       measurementTypes: [{ id: "activePower", key: "p", name: "有功功率", shortLabel: "P" }],

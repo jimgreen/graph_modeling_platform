@@ -2296,22 +2296,38 @@ export function createClearActiveProjectDisplay(__appScope: Record<string, any>)
 
 export function createLoadSavedProject(__appScope: Record<string, any>) {
   return (project: SavedProjectRecord, schemeId?: string) => {
-  const { CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT, DEFAULT_CANVAS_BACKGROUND, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_CURRENT_UNIT, DEFAULT_MODEL_LAYER_ID, DEFAULT_POWER_BASE_VALUE, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, EMPTY_TOPOLOGY, INITIAL_TOPOLOGY_STATUS, assignMissingDeviceIndexes, cachedRoutedEdgesRef, canvasFrameRef, clearNodeDragMoveSchedule, clearRefreshRecoveryProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, dragUndoCapturedRef, draggingRef, findSchemeForProject, fitWholeCanvasViewBox, hideImperativeMultiNodeDragOverlay, lastBusTerminalSyncEndpointRevisionRef, libraryTemplateByKind, lockProjectEdgeTerminals, normalizeModelGroups, normalizeNodeTerminalsByTemplate, normalizeNodeTerminalsWithTemplate, normalizeProjectLayers, normalizeProjectMeasurements, pendingBusTerminalSyncNodeIdsRef, pendingRouteEdgeIdsRef, pendingStoredRouteEdgeIdsRef, requestCanvasFrameCenter, resetConnectPreviewState, resolveConfiguredBackgroundLayerIds, selectSingleProject, setActiveLayerId, setActiveProjectKey, setActiveSchemeKey, setAllowAutoExpandCanvas, setBackgroundLayerIds, setBackgroundProjectId, setCanvasBackgroundColor, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasHeight, setCanvasPanning, setCanvasSelectionScope, setCanvasVisibleViewBox, setCanvasWidth, setConnectSource, setCurrentUnit, setDeviceIndexCounters, setDragging, setGraphArrays, setGroups, setHasUnsavedChanges, setInitialCanvasDetailHydrationLimit, setInitialCanvasLodActive, setLayers, setManualPathDrag, setMarquee, setModifierSelectionPress, setPowerBaseValue, setPowerUnit, setProjectMeasurements, setProjectName, setRewiring, setRouteRenderingReady, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setTerminalPress, setTopology, setTopologyErrors, setTopologyStatus, setTransformDrag, setUndoStack, setViewBox, setVoltageUnit, suppressNextGraphDirtyRef, writeOperationLog } = __appScope;
+  const { CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT, DEFAULT_CANVAS_BACKGROUND, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_CURRENT_UNIT, DEFAULT_MODEL_LAYER_ID, DEFAULT_POWER_BASE_VALUE, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, EMPTY_TOPOLOGY, INITIAL_TOPOLOGY_STATUS, assignMissingDeviceIndexes, cachedRoutedEdgesRef, canvasFrameRef, clearNodeDragMoveSchedule, clearRefreshRecoveryProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, dragUndoCapturedRef, draggingRef, findSchemeForProject, fitWholeCanvasViewBox, hideImperativeMultiNodeDragOverlay, lastBusTerminalSyncEndpointRevisionRef, libraryTemplateByKind, lockProjectEdgeTerminals, measurementConfig, normalizeModelGroups, normalizeNodeTerminalsByTemplate, normalizeNodeTerminalsWithTemplate, normalizeProjectLayers, normalizeProjectMeasurements, pendingBusTerminalSyncNodeIdsRef, pendingRouteEdgeIdsRef, pendingStoredRouteEdgeIdsRef, reconcileNodeWithDefinition, reconcileProjectMeasurementsWithConfig, requestCanvasFrameCenter, resetConnectPreviewState, resolveConfiguredBackgroundLayerIds, selectSingleProject, setActiveLayerId, setActiveProjectKey, setActiveSchemeKey, setAllowAutoExpandCanvas, setBackgroundLayerIds, setBackgroundProjectId, setCanvasBackgroundColor, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasHeight, setCanvasPanning, setCanvasSelectionScope, setCanvasVisibleViewBox, setCanvasWidth, setConnectSource, setCurrentUnit, setDeviceIndexCounters, setDragging, setGraphArrays, setGroups, setHasUnsavedChanges, setInitialCanvasDetailHydrationLimit, setInitialCanvasLodActive, setLayers, setManualPathDrag, setMarquee, setModifierSelectionPress, setPowerBaseValue, setPowerUnit, setProjectMeasurements, setProjectName, setRewiring, setRouteRenderingReady, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setTerminalPress, setTopology, setTopologyErrors, setTopologyStatus, setTransformDrag, setUndoStack, setViewBox, setVoltageUnit, suppressNextGraphDirtyRef, writeOperationLog } = __appScope;
     if (schemeId === undefined) {
       schemeId = findSchemeForProject(project.id)?.id ?? "";
     }
     clearRefreshRecoveryProject();
-    const normalizedNodes = project.project.nodes.map((node) =>
-      libraryTemplateByKind?.has(node.kind)
-        ? normalizeNodeTerminalsWithTemplate(node, libraryTemplateByKind.get(node.kind))
-        : normalizeNodeTerminalsByTemplate(node)
-    );
+    let definitionMigrationChanged = false;
+    const normalizedNodes = project.project.nodes.map((node) => {
+      const template = libraryTemplateByKind?.get(node.kind);
+      if (template) {
+        const normalized = normalizeNodeTerminalsWithTemplate(node, template);
+        const reconciled = reconcileNodeWithDefinition(normalized, template);
+        if (reconciled !== node) {
+          definitionMigrationChanged = true;
+        }
+        return reconciled;
+      }
+      return libraryTemplateByKind ? node : normalizeNodeTerminalsByTemplate(node);
+    });
     const indexed = assignMissingDeviceIndexes(normalizedNodes, project.project.deviceIndexCounters);
     const lockedProject = lockProjectEdgeTerminals({
       ...project.project,
       nodes: indexed.nodes
     });
     const layeredProject = normalizeProjectLayers(lockedProject);
+    const storedMeasurements = layeredProject.measurements ?? { version: 1, groups: [] };
+    const normalizedMeasurements = normalizeProjectMeasurements(layeredProject.measurements, layeredProject.nodes);
+    const reconciledMeasurements = typeof reconcileProjectMeasurementsWithConfig === "function" && measurementConfig
+      ? reconcileProjectMeasurementsWithConfig(normalizedMeasurements, layeredProject.nodes, measurementConfig)
+      : normalizedMeasurements;
+    const measurementMigrationChanged =
+      JSON.stringify(normalizedMeasurements) !== JSON.stringify(storedMeasurements) ||
+      reconciledMeasurements !== normalizedMeasurements;
     const nextCanvasBounds = {
       width: project.project.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
       height: project.project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT
@@ -2352,7 +2368,7 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
     setDeviceIndexCounters(indexed.counters);
     setGraphArrays(layeredProject.nodes, layeredProject.edges);
     setGroups(normalizeModelGroups(layeredProject.groups, layeredProject.nodes, layeredProject.edges));
-    setProjectMeasurements(normalizeProjectMeasurements(layeredProject.measurements, layeredProject.nodes));
+    setProjectMeasurements(reconciledMeasurements);
     setTopology(EMPTY_TOPOLOGY);
     setTopologyErrors([]);
     setTopologyStatus(INITIAL_TOPOLOGY_STATUS);
@@ -2377,7 +2393,7 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
     setMarquee(null);
     setModifierSelectionPress(null);
     setCanvasPanning(null);
-    setHasUnsavedChanges(false);
+    setHasUnsavedChanges(definitionMigrationChanged || measurementMigrationChanged);
     writeOperationLog(`加载模型：${project.name}`);
     requestCanvasFrameCenter();
   };
