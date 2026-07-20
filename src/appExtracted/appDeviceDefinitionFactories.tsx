@@ -6120,9 +6120,6 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
     const derivedComponentLibrary = normalizeComponentLibraryName(dialog.derivedComponentLibrary ?? "");
     const derivedComponentLibraryLabel = String(dialog.derivedComponentLibraryLabel ?? "").trim();
     if (derivedRequested) {
-      if (!derivedComponentLibraryLabel) {
-        return setDialogError("请输入派生类中文名称。");
-      }
       if (!derivedComponentLibrary) {
         return setDialogError("请输入或选择派生类英文名称。");
       }
@@ -6616,10 +6613,6 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
         setCustomDeviceDraft((current) => ({ ...current, error: "派生类英文名称不能与基类元件库相同。" }));
         return false;
       }
-      if (!derivedComponentLibraryLabel) {
-        setCustomDeviceDraft((current) => ({ ...current, error: "请输入派生类中文名称。" }));
-        return false;
-      }
     }
     const requestedCustomKind = normalizeComponentLibraryName(String(customDeviceDraft.componentKind ?? ""));
     if (!editingCustomDeviceKind && requestedCustomKind) {
@@ -6705,7 +6698,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
             ...(derivedRequested ? {
               derived_from_component_type: derivedFromComponentLibrary,
               derived_component_type: derivedComponentLibrary,
-              derived_component_library_label: derivedComponentLibraryLabel,
+              ...(derivedComponentLibraryLabel ? { derived_component_library_label: derivedComponentLibraryLabel } : {}),
               is_derived_component_library: "1"
             } : {})
           },
@@ -6777,7 +6770,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
         ...(derivedRequested ? {
           derived_from_component_type: derivedFromComponentLibrary,
           derived_component_type: derivedComponentLibrary,
-          derived_component_library_label: derivedComponentLibraryLabel,
+          ...(derivedComponentLibraryLabel ? { derived_component_library_label: derivedComponentLibraryLabel } : {}),
           is_derived_component_library: "1"
         } : {}),
         fillColor: "transparent",
@@ -6801,7 +6794,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
         isDerivedComponentLibrary: true,
         derivedFromComponentLibrary,
         derivedComponentLibrary,
-        derivedComponentLibraryLabel
+        ...(derivedComponentLibraryLabel ? { derivedComponentLibraryLabel } : {})
       } : {}),
       allowResizeTransform: customDeviceDraft.allowResizeTransform === "1",
       custom: true,
@@ -6890,16 +6883,12 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
         setCustomDeviceDraft((current) => ({ ...current, error: "派生类英文名称不能与基类元件库相同。" }));
         return false;
       }
-      if (!derivedComponentLibraryLabel) {
-        setCustomDeviceDraft((current) => ({ ...current, error: "请输入派生类中文名称。" }));
-        return false;
-      }
     }
     const definitionDerivedParams = derivedRequested
       ? {
           derived_from_component_type: derivedFromComponentLibrary,
           derived_component_type: derivedComponentLibrary,
-          derived_component_library_label: derivedComponentLibraryLabel,
+          ...(derivedComponentLibraryLabel ? { derived_component_library_label: derivedComponentLibraryLabel } : {}),
           is_derived_component_library: "1"
         }
       : {};
@@ -7094,7 +7083,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
         isDerivedComponentLibrary: derivedRequested,
         derivedFromComponentLibrary: derivedRequested ? derivedFromComponentLibrary : "",
         derivedComponentLibrary: derivedRequested ? derivedComponentLibrary : "",
-        derivedComponentLibraryLabel: derivedRequested ? derivedComponentLibraryLabel : "",
+        ...(derivedRequested && derivedComponentLibraryLabel ? { derivedComponentLibraryLabel } : {}),
         allowResizeTransform: customDeviceDraft.allowResizeTransform === "1",
         parameterDefinitions: definitions,
         stateDefinitions,

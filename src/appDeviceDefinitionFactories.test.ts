@@ -882,7 +882,7 @@ describe("manual bend interaction helpers", () => {
       isDerivedComponentLibrary: true,
       derivedFromComponentLibrary: "ACGenerator",
       derivedComponentLibrary: "UserWindGen",
-      derivedComponentLibraryLabel: "用户风电",
+      derivedComponentLibraryLabel: "",
       backgroundImage: "",
       backgroundImageAssetId: "",
       backgroundImageCleared: "",
@@ -979,14 +979,14 @@ describe("manual bend interaction helpers", () => {
       isDerivedComponentLibrary: true,
       derivedFromComponentLibrary: "ACGenerator",
       derivedComponentLibrary: "UserWindGen",
-      derivedComponentLibraryLabel: "用户风电",
       params: {
         component_type: "ACGenerator",
         derived_from_component_type: "ACGenerator",
-        derived_component_type: "UserWindGen",
-        derived_component_library_label: "用户风电"
+        derived_component_type: "UserWindGen"
       }
     });
+    expect(savedTemplates[0]).not.toHaveProperty("derivedComponentLibraryLabel");
+    expect(savedTemplates[0].params).not.toHaveProperty("derived_component_library_label");
     expect(savedTemplates[0].parameterDefinitions.map((row: any) => row.enName)).toEqual(["installedCapacity"]);
     expect(setCustomComponentLibraries).not.toHaveBeenCalled();
     expect(scope.ensureCustomComponentTreeExpanded).toHaveBeenCalledWith("交流设备", "ACGenerator");
@@ -1110,7 +1110,7 @@ describe("manual bend interaction helpers", () => {
       isDerivedComponentLibrary: true,
       derivedFromComponentLibrary: "ACGenerator",
       derivedComponentLibrary: "UserDieselGen",
-      derivedComponentLibraryLabel: "用户柴油机",
+      derivedComponentLibraryLabel: "",
       backgroundImage: "",
       backgroundImageAssetId: "",
       backgroundImageCleared: "",
@@ -1180,20 +1180,20 @@ describe("manual bend interaction helpers", () => {
       isDerivedComponentLibrary: true,
       derivedFromComponentLibrary: "ACGenerator",
       derivedComponentLibrary: "UserDieselGen",
-      derivedComponentLibraryLabel: "用户柴油机",
       params: {
         component_type: "ACGenerator",
         derived_from_component_type: "ACGenerator",
         derived_component_type: "UserDieselGen",
-        derived_component_library_label: "用户柴油机",
         is_derived_component_library: "1"
       }
     });
+    expect(savedOverrides["ac-diesel-source"]).not.toHaveProperty("derivedComponentLibraryLabel");
+    expect(savedOverrides["ac-diesel-source"].params).not.toHaveProperty("derived_component_library_label");
     expect(customDeviceDraft).toMatchObject({
       isDerivedComponentLibrary: true,
       derivedFromComponentLibrary: "ACGenerator",
       derivedComponentLibrary: "UserDieselGen",
-      derivedComponentLibraryLabel: "用户柴油机"
+      derivedComponentLibraryLabel: ""
     });
     expect(persistDeviceLibraryChange).toHaveBeenCalledWith(
       { deviceDefinitionOverrides: savedOverrides },
@@ -1295,9 +1295,9 @@ describe("manual bend interaction helpers", () => {
       kind: "ac-wind-source",
       isDerivedComponentLibrary: false,
       derivedFromComponentLibrary: "",
-      derivedComponentLibrary: "",
-      derivedComponentLibraryLabel: ""
+      derivedComponentLibrary: ""
     });
+    expect(savedOverrides["ac-wind-source"]).not.toHaveProperty("derivedComponentLibraryLabel");
     expect(templateDerivedComponentLibraryInfo(reopenedTemplate)).toBeNull();
   });
 
@@ -1385,7 +1385,7 @@ describe("manual bend interaction helpers", () => {
       isDerivedComponentLibrary: true,
       derivedFromComponentLibrary: "ACGenerator",
       derivedComponentLibrary: "UserWindGen",
-      derivedComponentLibraryLabel: "用户风电",
+      derivedComponentLibraryLabel: "",
       error: ""
     };
     const setCustomComponentTreeSelection = vi.fn();
@@ -1464,7 +1464,7 @@ describe("manual bend interaction helpers", () => {
       isDerivedComponentLibrary: true,
       derivedFromComponentLibrary: "ACGenerator",
       derivedComponentLibrary: "UserWindGen",
-      derivedComponentLibraryLabel: "用户风电",
+      derivedComponentLibraryLabel: "",
       isContainer: false,
       error: ""
     });
@@ -1584,12 +1584,12 @@ describe("manual bend interaction helpers", () => {
     expect(customDeviceDraft.params.map((row: any) => row.enName)).not.toContain("heatRate");
   });
 
-  test("custom-device form exposes derived-class fields separately from the container flag", () => {
+  test("custom-device form exposes only the derived-class english name separately from the container flag", () => {
     const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
 
     expect(appViewSource).toContain("custom-library-create-derived-field");
     expect(appViewSource).toContain("custom-device-derived-field");
-    expect(appViewSource).toContain("custom-device-derived-cn-field");
+    expect(appViewSource).not.toContain("custom-device-derived-cn-field");
     expect(appViewSource).toContain("custom-device-derived-en-field");
     expect(appViewSource).not.toContain("disabled={customDeviceDraft.isDerivedComponentLibrary}");
     expect(appViewSource).not.toContain("customDeviceDraft.isDerivedComponentLibrary || customDeviceDraft.isContainer");

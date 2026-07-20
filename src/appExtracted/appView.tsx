@@ -3083,14 +3083,6 @@ export function renderAppView(__appScope: Record<string, any>) {
                     </option>))}
                   </select>
                 </label>
-                <label className="custom-library-create-derived-cn-field">
-                  <span>派生类中文名称</span>
-                  <input
-                    value={customLibraryCreateDialog.derivedComponentLibraryLabel ?? ""}
-                    placeholder="例如 交流风电"
-                    onChange={(event) => setCustomLibraryCreateDialog((current) => current ? { ...current, derivedComponentLibraryLabel: event.target.value, error: "" } : current)}
-                  />
-                </label>
                 <label className="custom-library-create-derived-en-field">
                   <span>派生类英文名称</span>
                   <input
@@ -3228,10 +3220,6 @@ export function renderAppView(__appScope: Record<string, any>) {
                 </select>
               </label>
               {customDeviceDraft.isDerivedComponentLibrary && (<>
-                <label className="custom-device-derived-cn-field">
-                  派生类中文名称
-                  <BufferedTextInput value={customDeviceDraft.derivedComponentLibraryLabel ?? ""} placeholder="例如 交流风电" onCommit={(value) => setCustomDeviceDraft((current) => ({ ...current, derivedComponentLibraryLabel: value, error: "" }))}/>
-                </label>
                 <label className="custom-device-derived-en-field">
                   派生类英文名称
                   <BufferedTextInput value={customDeviceDraft.derivedComponentLibrary ?? ""} placeholder="例如 ACWindGen" onCommit={(value) => setCustomDeviceDraft((current) => ({ ...current, derivedComponentLibrary: value, error: "" }))}/>

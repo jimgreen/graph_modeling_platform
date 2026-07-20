@@ -309,6 +309,22 @@ describe("app view device definition parameter rows", () => {
     expect(source).toMatch(/isDerivedComponentLibrary:\s*customDeviceDraft\.isDerivedComponentLibrary/);
   });
 
+  test("only exposes the derived class english name in create and edit dialogs", () => {
+    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+
+    expect(source).not.toContain("派生类中文名称");
+    expect(source.match(/派生类英文名称/g)).toHaveLength(2);
+  });
+
+  test("removes the centered transform when device library dialogs become floating", () => {
+    const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+    const floatingDialogRule = styles.match(
+      /\.custom-device-dialog\.floating,\s*\.device-definition-dialog\.floating,\s*\.measurement-config-dialog\.floating\s*\{([\s\S]*?)\}/
+    )?.[1] ?? "";
+
+    expect(floatingDialogRule).toMatch(/transform:\s*none/);
+  });
+
   test("passes derived metadata into custom device measurement positions", () => {
     const source = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
 

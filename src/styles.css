@@ -4298,6 +4298,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .device-definition-dialog.floating,
 .measurement-config-dialog.floating {
   position: fixed;
+  transform: none;
   max-width: none;
   max-height: none;
 }
@@ -7131,13 +7132,8 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   grid-row: 2;
 }
 
-.custom-device-form-grid .custom-device-derived-cn-field {
-  grid-column: 2;
-  grid-row: 2;
-}
-
 .custom-device-form-grid .custom-device-derived-en-field {
-  grid-column: 3;
+  grid-column: 2;
   grid-row: 2;
 }
 
@@ -7221,7 +7217,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .custom-device-form-grid .custom-device-container-field,
 .custom-device-form-grid .custom-device-derived-field,
-.custom-device-form-grid .custom-device-derived-cn-field,
 .custom-device-form-grid .custom-device-derived-en-field,
 .custom-device-form-grid .custom-device-resize-field,
 .custom-device-form-grid .custom-device-terminal-count-field {
@@ -7234,7 +7229,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   }
 
   .custom-device-form-grid .custom-device-derived-field,
-  .custom-device-form-grid .custom-device-derived-cn-field,
   .custom-device-form-grid .custom-device-derived-en-field {
     grid-column: auto;
     grid-row: auto;
