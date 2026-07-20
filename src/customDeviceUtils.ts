@@ -71,7 +71,14 @@ export function deviceDefinitionOverrideForTemplate(
   template: DeviceTemplate,
   overrides: Record<string, DeviceTemplateDefinitionOverride>
 ) {
-  return overrides[template.kind] ?? overrides[deviceDefinitionKeyForTemplate(template)];
+  const templateOverride = overrides[template.kind];
+  if (templateOverride) {
+    return templateOverride;
+  }
+  if (modelTemplateDerivedComponentLibraryInfo(template)) {
+    return undefined;
+  }
+  return overrides[deviceDefinitionKeyForTemplate(template)];
 }
 
 export const isReservedDeviceDefinitionParamName = (enName: string) =>

@@ -1,10 +1,11 @@
 import { describe, expect, test } from "vitest";
 
-import { DEVICE_LIBRARY } from "./model";
+import { applyDeviceTemplateDefinitionOverride, DEVICE_LIBRARY } from "./model";
 import {
   createDefinitionDraftRows,
   createCustomDeviceDraftFromTemplate,
   customDefaultDefinitions,
+  deviceDefinitionOverrideForTemplate,
   deviceDefinitionKeyForTemplate,
   resolveTemplateComponentLibrary,
   templateDerivedComponentLibraryInfo
@@ -49,6 +50,32 @@ describe("electric generation device library classification", () => {
     expect(deviceDefinitionKeyForTemplate(acSource!)).toBe("ACGenerator");
     expect(resolveTemplateComponentLibrary(dcSource!)).toBe("DCGenerator");
     expect(deviceDefinitionKeyForTemplate(dcSource!)).toBe("DCGenerator");
+  });
+
+  test("does not apply a base-class override to a derived generation template", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-wind-source")!;
+    const overrides = {
+      ACGenerator: {
+        kind: "ACGenerator",
+        isDerivedComponentLibrary: false,
+        derivedFromComponentLibrary: "",
+        derivedComponentLibrary: "",
+        derivedComponentLibraryLabel: "",
+        parameterDefinitions: [
+          { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true }
+        ]
+      }
+    } as any;
+
+    const override = deviceDefinitionOverrideForTemplate(template, overrides);
+    const appliedTemplate = applyDeviceTemplateDefinitionOverride(template, override);
+
+    expect(override).toBeUndefined();
+    expect(templateDerivedComponentLibraryInfo(appliedTemplate)).toMatchObject({
+      componentLibrary: "ACGenerator",
+      derivedComponentLibrary: "ACWindGen"
+    });
+    expect(createCustomDeviceDraftFromTemplate(appliedTemplate).params.map((row) => row.enName)).toContain("windTurbineModel");
   });
 
   test("defaults dev_type to the current component english name", () => {
