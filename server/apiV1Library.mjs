@@ -152,11 +152,13 @@ export async function handleV1Library({ request, response }) {
   }
 }
 
+import { apiPattern } from "./config.mjs";
+
 export const v1LibraryRoutes = [
-  { method: "GET", pattern: /^\/webgrp\/v1\/library\/?$/u, handle: handleV1Library },
-  { method: "GET", pattern: /^\/webgrp\/v1\/library\/categories\/?$/u, handle: handleV1LibraryCategories },
-  { method: "GET", pattern: /^\/webgrp\/v1\/library\/devices\/?$/u, handle: handleV1LibraryDevices },
-  { method: "GET", pattern: /^\/webgrp\/v1\/library\/measurements\/?$/u, handle: handleV1LibraryMeasurements },
-  { method: "GET", pattern: /^\/webgrp\/v1\/library\/device-definitions\/?$/u, handle: handleV1LibraryDeviceDefinitions },
-  { method: "GET", pattern: /^\/webgrp\/v1\/library\/templates\/?$/u, handle: handleV1LibraryTemplates }
+  { method: "GET", pattern: apiPattern("/v1/library", "/?$"), handle: handleV1Library },
+  { method: "GET", pattern: apiPattern("/v1/library/categories", "/?$"), handle: handleV1LibraryCategories },
+  { method: "GET", pattern: apiPattern("/v1/library/devices", "/?$"), handle: handleV1LibraryDevices },
+  { method: "GET", pattern: apiPattern("/v1/library/measurements", "/?$"), handle: handleV1LibraryMeasurements },
+  { method: "GET", pattern: apiPattern("/v1/library/device-definitions", "/?$"), handle: handleV1LibraryDeviceDefinitions },
+  { method: "GET", pattern: apiPattern("/v1/library/templates", "/?$"), handle: handleV1LibraryTemplates }
 ];

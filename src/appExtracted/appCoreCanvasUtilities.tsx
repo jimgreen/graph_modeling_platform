@@ -2,6 +2,7 @@
 import { ChangeEvent, DragEvent, Fragment, Suspense, isValidElement, lazy, memo, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, type ReactNode, type SetStateAction, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { useTransition } from "react";
+import { apiPath } from "../config";
 import {
   AlignCenter,
   AlignEndHorizontal,
@@ -3926,12 +3927,12 @@ export function backendJsonRequest(method: "POST" | "PUT" | "DELETE", body: stri
 }
 
 export async function fetchBackendImageFolders(): Promise<ImageFolder[]> {
-  return fetchBackendJson<ImageFolder[]>("/webgrp/image-folders", "读取后台图片文件夹失败。");
+  return fetchBackendJson<ImageFolder[]>(apiPath("/image-folders"), "读取后台图片文件夹失败。");
 }
 
 export async function createBackendImageFolder(name: string): Promise<ImageFolder> {
   return fetchBackendJson<ImageFolder>(
-    "/webgrp/image-folders",
+    apiPath("/image-folders"),
     "新建图片文件夹失败。",
     backendJsonRequest("POST", JSON.stringify({ name }))
   );
@@ -3939,35 +3940,35 @@ export async function createBackendImageFolder(name: string): Promise<ImageFolde
 
 export async function renameBackendImageFolder(folderId: string, name: string): Promise<ImageFolder> {
   return fetchBackendJson<ImageFolder>(
-    `/webgrp/image-folders/${encodeURIComponent(folderId)}`,
+    apiPath(`/image-folders/${encodeURIComponent(folderId)}`),
     "重命名图片文件夹失败。",
     backendJsonRequest("PUT", JSON.stringify({ name }))
   );
 }
 
 export async function deleteBackendImageFolder(folderId: string): Promise<void> {
-  await fetchBackendJson<{ ok?: boolean }>(`/webgrp/image-folders/${encodeURIComponent(folderId)}`, "删除图片文件夹失败。", {
+  await fetchBackendJson<{ ok?: boolean }>(apiPath(`/image-folders/${encodeURIComponent(folderId)}`), "删除图片文件夹失败。", {
     method: "DELETE"
   });
 }
 
 export async function fetchBackendImages(folderId = "root"): Promise<ImageAsset[]> {
-  return fetchBackendJson<ImageAsset[]>(`/webgrp/images?folderId=${encodeURIComponent(folderId)}`, "读取后台图片列表失败。");
+  return fetchBackendJson<ImageAsset[]>(`${apiPath("/images")}?folderId=${encodeURIComponent(folderId)}`, "读取后台图片列表失败。");
 }
 
 export async function fetchAllBackendImages(): Promise<ImageAsset[]> {
-  return fetchBackendJson<ImageAsset[]>("/webgrp/images", "读取后台图片列表失败。");
+  return fetchBackendJson<ImageAsset[]>(apiPath("/images"), "读取后台图片列表失败。");
 }
 
 export async function deleteBackendImageAsset(assetId: string): Promise<void> {
-  await fetchBackendJson<{ ok?: boolean }>(`/webgrp/images/${encodeURIComponent(assetId)}`, "删除图片资源失败。", {
+  await fetchBackendJson<{ ok?: boolean }>(apiPath(`/images/${encodeURIComponent(assetId)}`), "删除图片资源失败。", {
     method: "DELETE"
   });
 }
 
 export async function uploadBackendImage(fileName: string, dataUrl: string, folderId = "root"): Promise<ImageAsset> {
   return fetchBackendJson<ImageAsset>(
-    "/webgrp/images",
+    apiPath("/images"),
     "上传图片到后台失败。",
     backendJsonRequest("POST", JSON.stringify({ name: fileName, dataUrl, folderId }))
   );
@@ -3975,7 +3976,7 @@ export async function uploadBackendImage(fileName: string, dataUrl: string, fold
 
 export async function importBackendIconLibraryFile(fileName: string, dataUrl: string, folderId = "root"): Promise<ImageAsset[]> {
   const payload = await fetchBackendJson<{ assets?: ImageAsset[] }>(
-    "/webgrp/icon-library/import",
+    apiPath("/icon-library/import"),
     "导入文档图片/图标素材失败。",
     backendJsonRequest("POST", JSON.stringify({ name: fileName, dataUrl, folderId }))
   );

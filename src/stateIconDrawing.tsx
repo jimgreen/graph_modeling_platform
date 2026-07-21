@@ -9,6 +9,7 @@ import { getTemplateStateDefinitions, normalizeDeviceStateDefinitions } from "./
 import { imageFitPreserveAspectRatio, normalizeImageFitMode } from "./imageFit";
 import { escapeXml, formatSvgNumber, svgImageContentMarkup } from "./svgUtils";
 import { resolveStateVisualImageHref } from "./staticRenderUtils";
+import { apiPath } from "./config";
 
 export type StateVisualShapeKind =
   | "switch-open"
@@ -543,11 +544,11 @@ function stateIconDrawingFrameMarkup(
   const rect = stateIconDrawingFrameRect(hasTerminals);
   const backgroundImageAssetId = String(frame.backgroundImageAssetId ?? "").trim();
   const backgroundImage = backgroundImageAssetId
-    ? (String(frame.backgroundImage ?? "").trim() || `/webgrp/images/${backgroundImageAssetId}`)
+    ? (String(frame.backgroundImage ?? "").trim() || apiPath(`/images/${backgroundImageAssetId}`))
     : String(frame.backgroundImage ?? "").trim();
   const resolvedBackgroundImage = backgroundImage
     ? backgroundImageAssetId
-      ? (backgroundImage.startsWith("data:") ? `/webgrp/images/${backgroundImageAssetId}` : backgroundImage)
+      ? (backgroundImage.startsWith("data:") ? apiPath(`/images/${backgroundImageAssetId}`) : backgroundImage)
       : options.resolveImageHref?.(backgroundImage) || backgroundImage
     : "";
   const frameRect = `<rect data-state-icon-frame="true" x="${formatSvgNumber(rect.x)}" y="${formatSvgNumber(rect.y)}" width="${formatSvgNumber(rect.width)}" height="${formatSvgNumber(rect.height)}" rx="${formatSvgNumber(rect.rx)}" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${formatSvgNumber(strokeWidth)}"${dashAttr} vector-effect="non-scaling-stroke"/>`;
@@ -1527,7 +1528,7 @@ export function stateIconDrawingInitialFrame(
   ).trim();
   const frameBackgroundImageFit = normalizeImageFitMode(readSvgMarkupAttribute(frameImageMarkup, "data-state-icon-frame-image-fit"));
   const frameBackgroundImage = frameBackgroundImageAssetId
-    ? assets[frameBackgroundImageAssetId] || frameBackgroundImageHref || `/webgrp/images/${frameBackgroundImageAssetId}`
+    ? assets[frameBackgroundImageAssetId] || frameBackgroundImageHref || apiPath(`/images/${frameBackgroundImageAssetId}`)
     : frameBackgroundImageHref;
   return {
     strokeStyle: stateIconDrawingStrokeStyleFromMarkup(frameMarkup) ?? fallbackFrame.strokeStyle,

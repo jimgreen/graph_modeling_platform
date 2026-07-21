@@ -1,4 +1,5 @@
-// /swigger 页面：Swagger 风格的 /webgrp/ 接口文档 + 在线测试。
+// /swigger 页面：Swagger 风格的接口文档 + 在线测试（接口前缀按 platform.config.json 配置）。
+import { apiPrefix } from "./config.mjs";
 // 自包含 HTML（无外部依赖），内嵌接口元数据，前端 JS 渲染分组卡片 + Try-it。
 
 // 接口元数据。method/path/desc/group/query/body/response 用于文档展示。
@@ -210,6 +211,13 @@ const ENDPOINTS = [
 
 // 导出供测试复用（swigger.examples.test.mjs 遍历验证）
 export const SWIGGER_ENDPOINTS = ENDPOINTS;
+
+// ENDPOINTS 内路径以 /webgrp 为基，运行时按配置 apiPrefix 重写（默认 /webgrp 时为空操作）
+for (const ep of ENDPOINTS) {
+  if (typeof ep.path === "string" && ep.path.startsWith("/webgrp")) {
+    ep.path = apiPrefix + ep.path.slice("/webgrp".length);
+  }
+}
 
 const METHOD_COLORS = {
   GET: "#61affe",

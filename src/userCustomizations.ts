@@ -1,3 +1,4 @@
+import { apiPath } from "./config";
 import type {
   DeviceLibraryPersistencePayload,
   ImageAsset,
@@ -263,7 +264,7 @@ const normalizeUserImageLibrary = (
         id,
         name: normalizedText(asset.name || asset.filename || id),
         folderId: folderIds.has(normalizedText(asset.folderId)) ? normalizedText(asset.folderId) : "root",
-        url: normalizedText(asset.url) || `/webgrp/images/${encodeURIComponent(id)}`
+        url: normalizedText(asset.url) || apiPath(`/images/${encodeURIComponent(id)}`)
       };
       const existingIndex = result.findIndex((candidate) => candidate.id === id);
       if (existingIndex >= 0) {

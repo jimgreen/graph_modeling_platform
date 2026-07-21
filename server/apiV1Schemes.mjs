@@ -174,12 +174,14 @@ export async function handleV1ModelSvg({ url, response }) {
   response.end(svg);
 }
 
+import { apiPattern } from "./config.mjs";
+
 // v1 方案域路由表：{ method, pattern, handle }
 export const v1SchemeRoutes = [
-  { method: "GET", pattern: /^\/webgrp\/v1\/schemes\/?$/u, handle: handleV1Schemes },
-  { method: "GET", pattern: /^\/webgrp\/v1\/schemes\/hierarchy\/?$/u, handle: handleV1SchemesHierarchy },
-  { method: "GET", pattern: /^\/webgrp\/v1\/schemes\/models\/?$/u, handle: handleV1SchemeModels },
-  { method: "GET", pattern: /^\/webgrp\/v1\/schemes\/export\/?$/u, handle: handleV1SchemeExport },
-  { method: "GET", pattern: /^\/webgrp\/v1\/schemes\/model\/json\/?$/u, handle: handleV1ModelJson },
-  { method: "GET", pattern: /^\/webgrp\/v1\/schemes\/model\/svg\/?$/u, handle: handleV1ModelSvg }
+  { method: "GET", pattern: apiPattern("/v1/schemes", "/?$"), handle: handleV1Schemes },
+  { method: "GET", pattern: apiPattern("/v1/schemes/hierarchy", "/?$"), handle: handleV1SchemesHierarchy },
+  { method: "GET", pattern: apiPattern("/v1/schemes/models", "/?$"), handle: handleV1SchemeModels },
+  { method: "GET", pattern: apiPattern("/v1/schemes/export", "/?$"), handle: handleV1SchemeExport },
+  { method: "GET", pattern: apiPattern("/v1/schemes/model/json", "/?$"), handle: handleV1ModelJson },
+  { method: "GET", pattern: apiPattern("/v1/schemes/model/svg", "/?$"), handle: handleV1ModelSvg }
 ];

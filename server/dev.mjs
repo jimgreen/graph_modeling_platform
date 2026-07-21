@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import { createImageServer } from "./image-server.mjs";
+import { backendPort, frontendPort, host } from "./config.mjs";
 
-const host = "127.0.0.1";
-const imagePort = Number(process.env.IMAGE_SERVER_PORT ?? 5174);
+const imagePort = backendPort;
 
 await createImageServer({ host, port: imagePort });
 console.log(`Image backend listening at http://${host}:${imagePort}`);
@@ -14,7 +14,8 @@ const vite = spawn(viteCommand, viteArgs, {
   stdio: "inherit",
   env: {
     ...process.env,
-    IMAGE_SERVER_PORT: String(imagePort)
+    IMAGE_SERVER_PORT: String(imagePort),
+    VITE_PORT: String(frontendPort)
   }
 });
 

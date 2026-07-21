@@ -2,10 +2,11 @@
 
 import { Fragment, isValidElement } from "react";
 import { imageFitPreserveAspectRatio, normalizeImageFitMode } from "./imageFit";
+import { API_PREFIX } from "./config";
 
 /* 常量 */
 
-const BACKEND_IMAGE_HREF_PATTERN = /^\/webgrp\/images\/([^/?#]+)/;
+const BACKEND_IMAGE_HREF_PATTERN = new RegExp(`^${escapeRegExp(API_PREFIX)}/images/([^/?#]+)`);
 const IMAGE_DATA_URL_PATTERN = /^data:image\//iu;
 let inlineSvgAutoScopeCounter = 0;
 

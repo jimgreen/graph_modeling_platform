@@ -2,6 +2,7 @@
 import { buildEDeviceDefinitionFile, E_SECTION_COLUMNS, electricGenerationDerivedComponentLibraryInfo, getTemplateParameterDefinitions, inferESection, parseEDeviceDefinitionFile, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo } from "../model";
 import { clampNumber } from "../canvasViewport";
 import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
+import { apiPath } from "../config";
 import { DEFAULT_STATE_ICON_DRAWING_FRAME, stateIconSvgVisibleViewBox } from "../stateIconDrawing";
 import { decodeSvgImageSource } from "../svgUtils";
 import { buildMeasurementProfilePositionDefinitions } from "../measurements";
@@ -2329,7 +2330,7 @@ export function createSvgExportReferencedImageHrefById(__appScope: Record<string
     const appendAssetId = (assetId?: string) => {
       const id = String(assetId ?? "").trim();
       if (id && !hrefById.has(id)) {
-        hrefById.set(id, `/webgrp/images/${encodeURIComponent(id)}`);
+        hrefById.set(id, apiPath(`/images/${encodeURIComponent(id)}`));
       }
     };
     const appendHref = (href?: string) => {
@@ -3371,7 +3372,7 @@ export function createApplyExistingImage(__appScope: Record<string, any>) {
       return;
     }
     if (imageTarget.kind === "stateIconFrameBackground") {
-      const backgroundImage = asset?.url ?? `/webgrp/images/${assetId}`;
+      const backgroundImage = asset?.url ?? apiPath(`/images/${assetId}`);
       setStateIconDrawingDialog((current: any) =>
         current
           ? {
@@ -3985,7 +3986,7 @@ export function createCustomDeviceDefaultStateVisualDraft(__appScope: Record<str
     const image = customDeviceDraft.backgroundImage ||
       templateImage ||
       generateCustomDeviceImage(customDevicePreviewLabel, customDraftTerminalTypes.length > 0 ? customDraftTerminalTypes : ["ac"]);
-    const imageAssetId = customDeviceDraft.backgroundImageAssetId && image === `/webgrp/images/${customDeviceDraft.backgroundImageAssetId}`
+    const imageAssetId = customDeviceDraft.backgroundImageAssetId && image === apiPath(`/images/${customDeviceDraft.backgroundImageAssetId}`)
       ? customDeviceDraft.backgroundImageAssetId
       : "";
     const imageFit = normalizeImageFitMode(
@@ -4214,7 +4215,7 @@ export function createDefinitionDefaultStateVisualDraft(__appScope: Record<strin
     );
     return {
       image: sourceImage || templateImage,
-      imageAssetId: sourceImageAssetId && sourceImage === `/webgrp/images/${sourceImageAssetId}` ? sourceImageAssetId : sourceImage ? "" : sourceImageAssetId,
+      imageAssetId: sourceImageAssetId && sourceImage === apiPath(`/images/${sourceImageAssetId}`) ? sourceImageAssetId : sourceImage ? "" : sourceImageAssetId,
       imageFit,
       backgroundImageFit: imageFit,
       imageCleared: "",
@@ -6794,7 +6795,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       ? ""
       : draftBackgroundImage || generateCustomDeviceImage(componentLabel, terminalTypes.length > 0 ? terminalTypes : ["ac"]);
     const backgroundImage = customDeviceImageWithTerminalConnectors(rawBackgroundImage, terminalTypes, terminalAnchors);
-    const backgroundImageAssetId = draftBackgroundImageAssetId && backgroundImage === `/webgrp/images/${draftBackgroundImageAssetId}`
+    const backgroundImageAssetId = draftBackgroundImageAssetId && backgroundImage === apiPath(`/images/${draftBackgroundImageAssetId}`)
       ? draftBackgroundImageAssetId
       : "";
     const defaultImageCandidates = customDeviceGeneratedDefaultImageCandidates(
@@ -7070,7 +7071,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     const backgroundImage = draftBackgroundImageCleared
       ? ""
       : customDeviceImageWithTerminalConnectors(draftBackgroundImage, terminalTypes, terminalAnchors);
-    const backgroundImageAssetId = draftBackgroundImageAssetId && backgroundImage === `/webgrp/images/${draftBackgroundImageAssetId}`
+    const backgroundImageAssetId = draftBackgroundImageAssetId && backgroundImage === apiPath(`/images/${draftBackgroundImageAssetId}`)
       ? draftBackgroundImageAssetId
       : "";
     const defaultImageCandidates = customDeviceGeneratedDefaultImageCandidates(

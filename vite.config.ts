@@ -1,5 +1,6 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import { backendPort, frontendPort, apiPrefix } from "./server/config.mjs";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -38,9 +39,9 @@ const frontendManualChunks = (id: string) => {
   return undefined;
 };
 
-const backendProxyTarget = `http://127.0.0.1:${process.env.IMAGE_SERVER_PORT ?? "5174"}`;
+const backendProxyTarget = `http://127.0.0.1:${backendPort}`;
 const backendProxy = {
-  "/webgrp": {
+  [apiPrefix]: {
     target: backendProxyTarget,
     changeOrigin: true
   },
@@ -69,6 +70,9 @@ const serverWatchIgnored = [
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __API_PREFIX__: JSON.stringify(apiPrefix)
+  },
   build: {
     rollupOptions: {
       output: {
@@ -77,12 +81,16 @@ export default defineConfig({
     }
   },
   server: {
+    port: frontendPort,
+    host: "127.0.0.1",
     watch: {
       ignored: serverWatchIgnored
     },
     proxy: backendProxy
   },
   preview: {
+    port: frontendPort,
+    host: "127.0.0.1",
     proxy: backendProxy
   },
   test: {

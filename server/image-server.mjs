@@ -7,6 +7,7 @@ import { gzip } from "node:zlib";
 import { promisify } from "node:util";
 import { createHash } from "node:crypto";
 import AdmZip from "adm-zip";
+import { apiPrefix, apiPath, escapeRegExp, backendPort, host } from "./config.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = resolve(__dirname, "..");
@@ -31,7 +32,7 @@ const maxColorConfigBodyBytes = 1024 * 1024;
 const maxMeasurementConfigBodyBytes = 1024 * 1024;
 const maxDeviceLibraryBodyBytes = 16 * 1024 * 1024;
 const maxFilePartLength = 80;
-const backendImageHrefPattern = /^\/webgrp\/images\/([^/?#]+)/;
+const backendImageHrefPattern = new RegExp(`^${escapeRegExp(apiPath("/images"))}/([^/?#]+)`);
 const accessControlHeaders = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
@@ -921,7 +922,7 @@ function normalizeProjectForStorage(project) {
       const params = {
         ...(node?.params ?? {}),
         ...(assetId && typeof backgroundImage === "string" && backgroundImage.startsWith("data:")
-          ? { backgroundImage: `/webgrp/images/${assetId}` }
+          ? { backgroundImage: apiPath(`/images/${assetId}`) }
           : {})
       };
       return { ...node, params };
@@ -2446,7 +2447,7 @@ export function buildSvgFile(project, measurementConfig = { measurementTypes: []
       const stroke = String(symbolNode.kind ?? "").startsWith("dc") || String(symbolNode.kind ?? "").includes("dcdc") ? "#0f766e" : "#2563eb";
       const isBus = String(symbolNode.kind ?? "").includes("bus");
       const image = svgImageHref(
-        symbolNode.params?.backgroundImageAssetId ? `/webgrp/images/${symbolNode.params.backgroundImageAssetId}` : symbolNode.params?.backgroundImage ?? "",
+        symbolNode.params?.backgroundImageAssetId ? apiPath(`/images/${symbolNode.params.backgroundImageAssetId}`) : symbolNode.params?.backgroundImage ?? "",
         imagePathById
       );
       const nodeBodyMarkup = isBus
@@ -2938,7 +2939,7 @@ function publicAsset(item) {
     mimeType: item.mimeType,
     size: item.size,
     createdAt: item.createdAt,
-    url: `/webgrp/images/${item.id}`
+    url: apiPath(`/images/${item.id}`)
   };
 }
 
@@ -3706,7 +3707,7 @@ async function serveStaticAsset(request, response, url, staticRoot) {
   }
   const pathname = url.pathname;
   // /api、/ws 不走静态托管
-  if (pathname === "/ws" || pathname.startsWith("/webgrp/")) {
+  if (pathname === "/ws" || pathname.startsWith(apiPrefix + "/")) {
     return false;
   }
   const safePathname = pathname === "/" ? "/index.html" : pathname;
@@ -3750,6 +3751,7 @@ async function serveStaticAsset(request, response, url, staticRoot) {
 }
 
 export async function createImageServer({ port = 5174, host = "127.0.0.1", staticRoot } = {}) {
+  const routeKey = (method, sub) => `${method} ${apiPath(sub)}`;
   const exactRouteHandlers = new Map([
     ["GET /swigger", async ({ response }) => {
       const { renderSwaggerHtml } = await import("./swaggerPage.mjs");
@@ -3761,22 +3763,22 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
       });
       response.end(html);
     }],
-    ["GET /webgrp/images", async ({ url, request, response }) => {
+    [routeKey("GET", "/images"), async ({ url, request, response }) => {
       const manifest = await readManifest();
       const folderId = url.searchParams.get("folderId");
       const filtered = folderId ? manifest.filter((item) => (item.folderId || "root") === folderId) : manifest;
       await sendJsonCacheable(request, response, filtered.map(publicAsset));
     }],
-    ["POST /webgrp/images", async ({ request, response }) => {
+    [routeKey("POST", "/images"), async ({ request, response }) => {
       await handleUpload(request, response);
     }],
-    ["POST /webgrp/icon-library/import", async ({ request, response }) => {
+    [routeKey("POST", "/icon-library/import"), async ({ request, response }) => {
       await handleImportIconLibrary(request, response);
     }],
-    ["POST /webgrp/image-library/import", async ({ request, response }) => {
+    [routeKey("POST", "/image-library/import"), async ({ request, response }) => {
       await handleImportImageLibrary(request, response);
     }],
-    ["GET /webgrp/image-folders", async ({ request, response }) => {
+    [routeKey("GET", "/image-folders"), async ({ request, response }) => {
       const folders = await readImageFolders();
       const manifest = await readManifest();
       const counts = imageCountsByFolder(manifest);
@@ -3789,85 +3791,86 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
         }))
       );
     }],
-    ["POST /webgrp/image-folders", async ({ request, response }) => {
+    [routeKey("POST", "/image-folders"), async ({ request, response }) => {
       await handleCreateImageFolder(request, response);
     }],
-    ["GET /webgrp/schemes", async ({ url, request, response }) => {
+    [routeKey("GET", "/schemes"), async ({ url, request, response }) => {
       const includeProjects = url.searchParams.get("includeProjects") === "1";
       const schemes = normalizeSchemesForStorage(await readSchemes({ includeProjects }));
       await sendJsonCacheable(request, response, { schemes });
     }],
-    ["GET /webgrp/schemes/export", async ({ url, response }) => {
+    [routeKey("GET", "/schemes/export"), async ({ url, response }) => {
       await handleExportSchemeArchive(url, response);
     }],
-    ["POST /webgrp/schemes/import", async ({ url, request, response }) => {
+    [routeKey("POST", "/schemes/import"), async ({ url, request, response }) => {
       await handleImportSchemeArchive(url, request, response);
     }],
-    ["PUT /webgrp/schemes", async ({ request, response }) => {
+    [routeKey("PUT", "/schemes"), async ({ request, response }) => {
       await handleSaveSchemes(request, response);
     }],
-    ["GET /webgrp/schemes/project", async ({ url, response }) => {
+    [routeKey("GET", "/schemes/project"), async ({ url, response }) => {
       await handleReadSchemeProject(url, response);
     }],
-    ["PUT /webgrp/schemes/project", async ({ request, response }) => {
+    [routeKey("PUT", "/schemes/project"), async ({ request, response }) => {
       await handleSaveSchemeProject(request, response);
     }],
-    ["PUT /webgrp/schemes/project/artifacts", async ({ request, response }) => {
+    [routeKey("PUT", "/schemes/project/artifacts"), async ({ request, response }) => {
       await handleSaveSchemeProjectArtifacts(request, response);
     }],
-    ["DELETE /webgrp/schemes/project", async ({ request, response }) => {
+    [routeKey("DELETE", "/schemes/project"), async ({ request, response }) => {
       await handleDeleteSchemeProject(request, response);
     }],
-    ["PUT /webgrp/schemes/scheme", async ({ request, response }) => {
+    [routeKey("PUT", "/schemes/scheme"), async ({ request, response }) => {
       await handleSaveSchemeRecord(request, response);
     }],
-    ["DELETE /webgrp/schemes/scheme", async ({ request, response }) => {
+    [routeKey("DELETE", "/schemes/scheme"), async ({ request, response }) => {
       await handleDeleteSchemeRecord(request, response);
     }],
-    ["GET /webgrp/color-config", async ({ request, response }) => {
+    [routeKey("GET", "/color-config"), async ({ request, response }) => {
       await sendCachedJsonFile(request, response, colorConfigPath, readColorConfig);
     }],
-    ["PUT /webgrp/color-config", async ({ request, response }) => {
+    [routeKey("PUT", "/color-config"), async ({ request, response }) => {
       await handleSaveColorConfig(request, response);
     }],
-    ["GET /webgrp/measurement-config", async ({ request, response }) => {
+    [routeKey("GET", "/measurement-config"), async ({ request, response }) => {
       await sendCachedJsonFile(request, response, measurementConfigPath, readMeasurementConfig);
     }],
-    ["PUT /webgrp/measurement-config", async ({ request, response }) => {
+    [routeKey("PUT", "/measurement-config"), async ({ request, response }) => {
       await handleSaveMeasurementConfig(request, response);
     }],
-    ["GET /webgrp/device-library", async ({ request, response }) => {
+    [routeKey("GET", "/device-library"), async ({ request, response }) => {
       await sendCachedJsonFile(request, response, deviceLibraryPath, readDeviceLibraryConfig);
     }],
-    ["PUT /webgrp/device-library", async ({ request, response }) => {
+    [routeKey("PUT", "/device-library"), async ({ request, response }) => {
       await handleSaveDeviceLibrary(request, response);
     }]
   ]);
+  const dynAssetPattern = (sub) => new RegExp(`^${escapeRegExp(apiPath(sub))}/([^/]+)$`, "u");
   const dynamicRouteHandlers = [
     {
       method: "PUT",
-      pattern: /^\/webgrp\/image-folders\/([^/]+)$/u,
+      pattern: dynAssetPattern("/image-folders"),
       handle: async ({ match, request, response }) => {
         await handleRenameImageFolder(decodeURIComponent(match[1]), request, response);
       }
     },
     {
       method: "DELETE",
-      pattern: /^\/webgrp\/image-folders\/([^/]+)$/u,
+      pattern: dynAssetPattern("/image-folders"),
       handle: async ({ match, response }) => {
         await handleDeleteImageFolder(decodeURIComponent(match[1]), response);
       }
     },
     {
       method: "GET",
-      pattern: /^\/webgrp\/images\/([^/]+)$/u,
+      pattern: dynAssetPattern("/images"),
       handle: async ({ match, response }) => {
         await handleDownload(match[1], response);
       }
     },
     {
       method: "DELETE",
-      pattern: /^\/webgrp\/images\/([^/]+)$/u,
+      pattern: dynAssetPattern("/images"),
       handle: async ({ match, response }) => {
         await handleDeleteImageAsset(match[1], response);
       }
@@ -3913,7 +3916,7 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
         }
       }
       // /webgrp/v1/* 第三方只读路由（动态加载避开循环依赖）
-      if (url.pathname.startsWith("/webgrp/v1/")) {
+      if (url.pathname.startsWith(apiPrefix + "/v1/")) {
         const { v1SchemeRoutes } = await import("./apiV1Schemes.mjs");
         const { v1LibraryRoutes } = await import("./apiV1Library.mjs");
         const v1Routes = [...v1SchemeRoutes, ...v1LibraryRoutes, ...v1RuntimeRoutes, ...v1ControlRoutes];
@@ -3949,8 +3952,7 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const port = Number(process.env.IMAGE_SERVER_PORT ?? 5174);
-  const host = process.env.IMAGE_SERVER_HOST ?? "127.0.0.1";
+  const port = backendPort;
   // prod 模式：dist/ 存在则托管静态资源（同端口同源）。dev 模式由 dev.mjs 单独跑 Vite。
   const staticRoot = resolve(repoRoot, "dist");
   let staticRootArg;

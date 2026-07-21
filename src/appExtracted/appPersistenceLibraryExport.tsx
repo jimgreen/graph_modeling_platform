@@ -2,6 +2,7 @@
 import { ChangeEvent, DragEvent, Fragment, Suspense, isValidElement, lazy, memo, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, type ReactNode, type SetStateAction, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { useTransition } from "react";
+import { apiPath } from "../config";
 import {
   AlignCenter,
   AlignEndHorizontal,
@@ -526,7 +527,7 @@ import { ENABLE_REACT_FLOW_PREVIEW, ReactFlowPreview, INTERACTION_MODE_STORAGE_K
 export function normalizeProjectForBackend(project: ProjectFile): ProjectFile {
   const projectBackground =
     project.canvasBackgroundImageAssetId && typeof project.canvasBackgroundImage === "string" && project.canvasBackgroundImage.startsWith("data:")
-      ? `/webgrp/images/${project.canvasBackgroundImageAssetId}`
+      ? apiPath(`/images/${project.canvasBackgroundImageAssetId}`)
       : project.canvasBackgroundImage;
   return {
     ...project,
@@ -544,10 +545,10 @@ export function normalizeProjectForBackend(project: ProjectFile): ProjectFile {
       const backgroundImage = node.params.backgroundImage;
       const params: Record<string, string> =
         assetId && typeof backgroundImage === "string" && backgroundImage.startsWith("data:")
-          ? { ...node.params, backgroundImage: `/webgrp/images/${assetId}` }
+          ? { ...node.params, backgroundImage: apiPath(`/images/${assetId}`) }
           : { ...node.params };
       if (params.foregroundImageAssetId && typeof params.foregroundImage === "string" && params.foregroundImage.startsWith("data:")) {
-        params.foregroundImage = `/webgrp/images/${params.foregroundImageAssetId}`;
+        params.foregroundImage = apiPath(`/images/${params.foregroundImageAssetId}`);
       }
       return {
         ...node,
@@ -662,7 +663,7 @@ export function clampCanvasDimension(value: number, min: number, max: number, fa
 }
 
 export async function fetchBackendSchemes(): Promise<SavedSchemeRecord[]> {
-  const payload = await fetchBackendJson<BackendSchemesResponse | SavedSchemeRecord[]>("/webgrp/schemes", "读取后台方案/模型失败。");
+  const payload = await fetchBackendJson<BackendSchemesResponse | SavedSchemeRecord[]>(apiPath("/schemes"), "读取后台方案/模型失败。");
   const schemes = Array.isArray(payload) ? payload : Array.isArray(payload.schemes) ? payload.schemes : [];
   return hydrateSavedSchemeRuntimeIds(schemes.map(normalizeSavedSchemeIndexes));
 }
@@ -677,7 +678,7 @@ export function savedProjectRecordIsSummary(record: SavedProjectRecord | null | 
 
 export async function fetchBackendProjectRecord(schemePath: string[], name: string): Promise<SavedProjectRecord> {
   const payload = await fetchBackendJson<BackendProjectLoadResponse>(
-    `/webgrp/schemes/project?${schemePathQueryParam("schemePath", schemePath)}&name=${encodeURIComponent(name)}`,
+    `${apiPath("/schemes/project")}?${schemePathQueryParam("schemePath", schemePath)}&name=${encodeURIComponent(name)}`,
     "读取后台模型失败。"
   );
   if (!payload.project) {
@@ -694,7 +695,7 @@ export async function downloadBackendSchemeArchive(schemePath: string[], filenam
     extensions: [".zip"],
     pickerId: SCHEME_EXPORT_DIRECTORY_PICKER_ID,
     loadBlob: async () => {
-      const response = await fetch(`/webgrp/schemes/export?${schemePathQueryParam("schemePath", schemePath)}`);
+      const response = await fetch(`${apiPath("/schemes/export")}?${schemePathQueryParam("schemePath", schemePath)}`);
       if (!response.ok) {
         throw new Error(await backendErrorMessage(response, "导出方案压缩包失败。"));
       }
@@ -716,7 +717,7 @@ export async function uploadBackendSchemeArchive(
   if (options.targetName) {
     params.set("targetName", options.targetName);
   }
-  const response = await fetch(`/webgrp/schemes/import?${params.toString()}`, {
+  const response = await fetch(`${apiPath("/schemes/import")}?${params.toString()}`, {
     method: "POST",
     headers: { "content-type": file.type || "application/zip" },
     body: file
@@ -748,7 +749,7 @@ export async function saveBackendProjectRecord(schemePath: string[], record: Sav
     body.eFile = options.eFile;
   }
   const payload = await fetchBackendJson<BackendProjectSaveResponse>(
-    "/webgrp/schemes/project",
+    apiPath("/schemes/project"),
     "保存模型到后台失败。",
     backendJsonRequest("PUT", JSON.stringify(body))
   );
@@ -760,7 +761,7 @@ export async function saveBackendProjectArtifacts(schemePath: string[], name: st
     return;
   }
   await fetchBackendJson<{ ok?: boolean }>(
-    "/webgrp/schemes/project/artifacts",
+    apiPath("/schemes/project/artifacts"),
     "保存模型产物到后台失败。",
     backendJsonRequest("PUT", JSON.stringify({ schemePath, name, ...artifacts }))
   );
@@ -768,7 +769,7 @@ export async function saveBackendProjectArtifacts(schemePath: string[], name: st
 
 export async function deleteBackendProjectRecord(schemePath: string[], name: string): Promise<void> {
   await fetchBackendJson<{ ok?: boolean }>(
-    "/webgrp/schemes/project",
+    apiPath("/schemes/project"),
     "删除后台模型失败。",
     backendJsonRequest("DELETE", JSON.stringify({ schemePath, name }))
   );
@@ -776,7 +777,7 @@ export async function deleteBackendProjectRecord(schemePath: string[], name: str
 
 export async function saveBackendSchemeRecord(schemePath: string[], previousSchemePath?: string[]): Promise<void> {
   await fetchBackendJson<{ ok?: boolean }>(
-    "/webgrp/schemes/scheme",
+    apiPath("/schemes/scheme"),
     "保存方案到后台失败。",
     backendJsonRequest("PUT", JSON.stringify({ schemePath, previousSchemePath }))
   );
@@ -784,7 +785,7 @@ export async function saveBackendSchemeRecord(schemePath: string[], previousSche
 
 export async function deleteBackendSchemeRecord(schemePath: string[]): Promise<void> {
   await fetchBackendJson<{ ok?: boolean }>(
-    "/webgrp/schemes/scheme",
+    apiPath("/schemes/scheme"),
     "删除后台方案失败。",
     backendJsonRequest("DELETE", JSON.stringify({ schemePath }))
   );
@@ -802,7 +803,7 @@ export function serializeColorConfigForStorage(mode: ColorDisplayMode, palette: 
 }
 
 export async function fetchBackendColorConfig(): Promise<{ colorDisplayMode: ColorDisplayMode; colorPalette: ColorPalette; exists: boolean }> {
-  const payload = await fetchBackendJson<BackendColorConfigResponse>("/webgrp/color-config", "读取后台配色配置失败。");
+  const payload = await fetchBackendJson<BackendColorConfigResponse>(apiPath("/color-config"), "读取后台配色配置失败。");
   return {
     colorDisplayMode: normalizeColorDisplayMode(payload.colorDisplayMode),
     colorPalette: normalizeColorPalette(payload.colorPalette),
@@ -812,7 +813,7 @@ export async function fetchBackendColorConfig(): Promise<{ colorDisplayMode: Col
 
 export async function saveBackendColorConfigPayload(normalizedColorConfigPayload: string): Promise<void> {
   await fetchBackendJson<{ ok?: boolean }>(
-    "/webgrp/color-config",
+    apiPath("/color-config"),
     "保存配色配置到后台失败。",
     backendJsonRequest("PUT", normalizedColorConfigPayload)
   );
@@ -823,7 +824,7 @@ export function serializeDeviceLibraryForStorage(payload: DeviceLibraryPersisten
 }
 
 export async function fetchBackendDeviceLibrary(): Promise<DeviceLibraryPersistencePayload & { exists: boolean }> {
-  const payload = await fetchBackendJson<BackendDeviceLibraryResponse>("/webgrp/device-library", "读取后台图元库失败。");
+  const payload = await fetchBackendJson<BackendDeviceLibraryResponse>(apiPath("/device-library"), "读取后台图元库失败。");
   return {
     ...normalizeDeviceLibraryPersistencePayload(payload),
     exists: Boolean(payload.exists)
@@ -832,7 +833,7 @@ export async function fetchBackendDeviceLibrary(): Promise<DeviceLibraryPersiste
 
 export async function saveBackendDeviceLibraryPayload(normalizedDeviceLibraryPayload: string): Promise<void> {
   await fetchBackendJson<{ ok?: boolean }>(
-    "/webgrp/device-library",
+    apiPath("/device-library"),
     "保存图元库到后台失败。",
     backendJsonRequest("PUT", normalizedDeviceLibraryPayload)
   );
@@ -843,7 +844,7 @@ export function serializeMeasurementConfigForStorage(config: PlatformMeasurement
 }
 
 export async function fetchBackendMeasurementConfig(): Promise<PlatformMeasurementConfig & { exists: boolean }> {
-  const payload = await fetchBackendJson<BackendMeasurementConfigResponse>("/webgrp/measurement-config", "读取后台动态量测配置失败。");
+  const payload = await fetchBackendJson<BackendMeasurementConfigResponse>(apiPath("/measurement-config"), "读取后台动态量测配置失败。");
   return {
     ...normalizeMeasurementConfig(payload),
     exists: Boolean(payload.exists)
@@ -852,7 +853,7 @@ export async function fetchBackendMeasurementConfig(): Promise<PlatformMeasureme
 
 export async function saveBackendMeasurementConfigPayload(normalizedMeasurementConfigPayload: string): Promise<void> {
   await fetchBackendJson<{ ok?: boolean }>(
-    "/webgrp/measurement-config",
+    apiPath("/measurement-config"),
     "保存动态量测配置到后台失败。",
     backendJsonRequest("PUT", normalizedMeasurementConfigPayload)
   );
@@ -959,7 +960,7 @@ export function normalizeIconLibraryPersistencePayload(value: unknown): IconLibr
       mimeType: typeof raw.mimeType === "string" ? raw.mimeType : undefined,
       size: typeof raw.size === "number" ? raw.size : undefined,
       createdAt: typeof raw.createdAt === "string" ? raw.createdAt : undefined,
-      url: String(raw.url ?? `/webgrp/images/${encodeURIComponent(id)}`).trim() || `/webgrp/images/${encodeURIComponent(id)}`,
+      url: String(raw.url ?? apiPath(`/images/${encodeURIComponent(id)}`)).trim() || apiPath(`/images/${encodeURIComponent(id)}`),
       dataUrl
     }];
   });
@@ -1111,7 +1112,7 @@ export function normalizeLibraryPackage(value: unknown): LibraryPackagePayload {
 
 export async function importBackendImageLibraryPayload(payload: IconLibraryPersistencePayload): Promise<{ ok?: boolean; importedCount?: number; folders?: ImageFolder[]; assets?: ImageAsset[] }> {
   return fetchBackendJson(
-    "/webgrp/image-library/import",
+    apiPath("/image-library/import"),
     "导入图标库到后台失败。",
     backendJsonRequest("POST", JSON.stringify(normalizeIconLibraryPersistencePayload(payload)))
   );
@@ -2074,7 +2075,7 @@ export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[]
       );
       if (backgroundImage) {
         params.backgroundImage = backgroundImage;
-        params.backgroundImageAssetId = params.backgroundImageAssetId && backgroundImage === `/webgrp/images/${params.backgroundImageAssetId}`
+        params.backgroundImageAssetId = params.backgroundImageAssetId && backgroundImage === apiPath(`/images/${params.backgroundImageAssetId}`)
           ? params.backgroundImageAssetId
           : "";
       }
@@ -2704,7 +2705,7 @@ export function readStoredPanelDimension(storageKey: string, fallback: number, m
 export const SCHEME_EXPORT_DIRECTORY_PICKER_ID = "scheme-export";
 
 export async function fetchBackendImageDataUrl(asset: ImageAsset) {
-  const response = await fetch(asset.url || `/webgrp/images/${encodeURIComponent(asset.id)}`);
+  const response = await fetch(asset.url || apiPath(`/images/${encodeURIComponent(asset.id)}`));
   if (!response.ok) {
     throw new Error("读取后台图片失败。");
   }

@@ -159,6 +159,8 @@ export async function handleV1RuntimeEFile({ url, response }, ctx) {
   }
 }
 
+import { apiPattern } from "./config.mjs";
+
 // 构造 v1 运行时态路由表。ctx = { fetchFromClient, listClients }
 // handle 签名：({ request, response, url, match }, ctx) => Promise<void>
 // match 为路由 pattern.exec(pathname) 结果，命名捕获组在 match.groups
@@ -166,14 +168,14 @@ export function createV1RuntimeRoutes(ctx) {
   const wrap = (handler) => ({ request, response, url, match }) =>
     handler({ request, response, url }, ctx, match?.groups?.tab);
   return [
-    { method: "GET", pattern: /^\/webgrp\/v1\/runtime\/clients\/?$/u, handle: wrap(handleV1RuntimeClients) },
-    { method: "GET", pattern: /^\/webgrp\/v1\/runtime\/model\/?$/u, handle: wrap(handleV1RuntimeModel) },
-    { method: "GET", pattern: /^\/webgrp\/v1\/runtime\/devices\/?$/u, handle: wrap(handleV1RuntimeDevices) },
-    { method: "GET", pattern: /^\/webgrp\/v1\/runtime\/selection\/?$/u, handle: wrap(handleV1RuntimeSelection) },
-    { method: "GET", pattern: /^\/webgrp\/v1\/runtime\/tabs\/?$/u, handle: wrap(handleV1RuntimeTabs) },
-    { method: "GET", pattern: /^\/webgrp\/v1\/runtime\/tabs\/(?<tab>model|tree|graph)\/?$/u, handle: wrap(handleV1RuntimeTab) },
-    { method: "GET", pattern: /^\/webgrp\/v1\/runtime\/screenshot\/?$/u, handle: wrap(handleV1RuntimeScreenshot) },
-    { method: "GET", pattern: /^\/webgrp\/v1\/runtime\/svg\/?$/u, handle: wrap(handleV1RuntimeSvg) },
-    { method: "GET", pattern: /^\/webgrp\/v1\/runtime\/e-file\/?$/u, handle: wrap(handleV1RuntimeEFile) }
+    { method: "GET", pattern: apiPattern("/v1/runtime/clients", "/?$"), handle: wrap(handleV1RuntimeClients) },
+    { method: "GET", pattern: apiPattern("/v1/runtime/model", "/?$"), handle: wrap(handleV1RuntimeModel) },
+    { method: "GET", pattern: apiPattern("/v1/runtime/devices", "/?$"), handle: wrap(handleV1RuntimeDevices) },
+    { method: "GET", pattern: apiPattern("/v1/runtime/selection", "/?$"), handle: wrap(handleV1RuntimeSelection) },
+    { method: "GET", pattern: apiPattern("/v1/runtime/tabs", "/?$"), handle: wrap(handleV1RuntimeTabs) },
+    { method: "GET", pattern: apiPattern("/v1/runtime/tabs/", "(?<tab>model|tree|graph)/?$"), handle: wrap(handleV1RuntimeTab) },
+    { method: "GET", pattern: apiPattern("/v1/runtime/screenshot", "/?$"), handle: wrap(handleV1RuntimeScreenshot) },
+    { method: "GET", pattern: apiPattern("/v1/runtime/svg", "/?$"), handle: wrap(handleV1RuntimeSvg) },
+    { method: "GET", pattern: apiPattern("/v1/runtime/e-file", "/?$"), handle: wrap(handleV1RuntimeEFile) }
   ];
 }

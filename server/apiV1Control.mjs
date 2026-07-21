@@ -270,22 +270,24 @@ export async function handleControlImportEDeviceDefinition({ request, url, respo
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.e-device-definition.import", { text }));
 }
 
+import { apiPattern } from "./config.mjs";
+
 // 构造 v1 控制台路由表。ctx = { sendCommandToClient }
 // handle 签名：({ request, response, url, match }, ctx) => Promise<void>
 export function createV1ControlRoutes(ctx) {
   const wrap = (handler) => ({ request, response, url, match }) =>
     handler({ request, response, url }, ctx);
   return [
-    { method: "POST", pattern: /^\/webgrp\/v1\/control\/device\/add\/?$/u, handle: wrap(handleControlDeviceAdd) },
-    { method: "POST", pattern: /^\/webgrp\/v1\/control\/scheme\/create\/?$/u, handle: wrap(handleControlSchemeCreate) },
-    { method: "POST", pattern: /^\/webgrp\/v1\/control\/model\/create\/?$/u, handle: wrap(handleControlModelCreate) },
-    { method: "POST", pattern: /^\/webgrp\/v1\/control\/devices\/select\/?$/u, handle: wrap(handleControlDevicesSelect) },
-    { method: "POST", pattern: /^\/webgrp\/v1\/control\/devices\/group\/?$/u, handle: wrap(handleControlDevicesGroup) },
-    { method: "POST", pattern: /^\/webgrp\/v1\/control\/device\/delete\/?$/u, handle: wrap(handleControlDeviceDelete) },
-    { method: "POST", pattern: /^\/webgrp\/v1\/control\/device\/property\/update\/?$/u, handle: wrap(handleControlDevicePropertyUpdate) },
-    { method: "POST", pattern: /^\/webgrp\/v1\/control\/save\/?$/u, handle: wrap(handleControlSave) },
-    { method: "POST", pattern: /^\/webgrp\/v1\/control\/template\/saveFromSelection\/?$/u, handle: wrap(handleControlTemplateSaveFromSelection) },
-    { method: "POST", pattern: /^\/webgrp\/v1\/control\/e-device-definition\/export\/?$/u, handle: wrap(handleControlExportEDeviceDefinition) },
-    { method: "POST", pattern: /^\/webgrp\/v1\/control\/e-device-definition\/import\/?$/u, handle: wrap(handleControlImportEDeviceDefinition) }
+    { method: "POST", pattern: apiPattern("/v1/control/device/add", "/?$"), handle: wrap(handleControlDeviceAdd) },
+    { method: "POST", pattern: apiPattern("/v1/control/scheme/create", "/?$"), handle: wrap(handleControlSchemeCreate) },
+    { method: "POST", pattern: apiPattern("/v1/control/model/create", "/?$"), handle: wrap(handleControlModelCreate) },
+    { method: "POST", pattern: apiPattern("/v1/control/devices/select", "/?$"), handle: wrap(handleControlDevicesSelect) },
+    { method: "POST", pattern: apiPattern("/v1/control/devices/group", "/?$"), handle: wrap(handleControlDevicesGroup) },
+    { method: "POST", pattern: apiPattern("/v1/control/device/delete", "/?$"), handle: wrap(handleControlDeviceDelete) },
+    { method: "POST", pattern: apiPattern("/v1/control/device/property/update", "/?$"), handle: wrap(handleControlDevicePropertyUpdate) },
+    { method: "POST", pattern: apiPattern("/v1/control/save", "/?$"), handle: wrap(handleControlSave) },
+    { method: "POST", pattern: apiPattern("/v1/control/template/saveFromSelection", "/?$"), handle: wrap(handleControlTemplateSaveFromSelection) },
+    { method: "POST", pattern: apiPattern("/v1/control/e-device-definition/export", "/?$"), handle: wrap(handleControlExportEDeviceDefinition) },
+    { method: "POST", pattern: apiPattern("/v1/control/e-device-definition/import", "/?$"), handle: wrap(handleControlImportEDeviceDefinition) }
   ];
 }
