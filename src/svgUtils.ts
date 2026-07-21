@@ -120,6 +120,19 @@ export function decodeSvgImageSource(value: string) {
   }
 }
 
+export function isPlatformDeviceVisualReplacementImage(value: unknown) {
+  const source = decodeSvgImageSource(String(value ?? ""));
+  if (!source) {
+    return false;
+  }
+  return (
+    /\bdata-state-icon-drawing\s*=\s*["']true["']/iu.test(source) ||
+    /\bdata-state-icon-frame\s*=\s*["']true["']/iu.test(source) ||
+    /\bdata-state-icon-layer-(?:width|height)\s*=/iu.test(source) ||
+    /\bdata-custom-device-persisted-terminal-connectors\s*=\s*["']true["']/iu.test(source)
+  );
+}
+
 export function inlineBackendImageRefsInSvgDataUrl(value: string, assets: Record<string, string>) {
   const href = String(value ?? "").trim();
   if (!href) {

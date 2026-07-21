@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { DeviceGlyph } from "./DeviceGlyph";
 import { createDefaultNode, CUSTOM_DEVICE_TEMPLATE_KEY } from "./model";
+import { createStateIconDrawingElement, stateIconDrawingToImage } from "./stateIconDrawing";
 
 describe("DeviceGlyph static nodes", () => {
   it("renders static text frame style params when they are configured", () => {
@@ -86,5 +87,62 @@ describe("DeviceGlyph custom devices", () => {
 
     expect(markup).toContain('fill="transparent"');
     expect(markup).not.toContain('fill="#ffffff"');
+  });
+});
+
+describe("DeviceGlyph persisted definition visuals", () => {
+  it("does not draw the built-in glyph underneath a platform drawing replacement", () => {
+    const node = createDefaultNode("ac-source", { x: 0, y: 0 });
+    const replacement = stateIconDrawingToImage([
+      {
+        ...createStateIconDrawingElement("circle"),
+        x: 120,
+        y: 80,
+        width: 72,
+        height: 72
+      }
+    ]);
+    const customizedNode = {
+      ...node,
+      params: {
+        ...node.params,
+        backgroundImage: replacement
+      }
+    };
+
+    const markup = renderToStaticMarkup(<svg><DeviceGlyph node={customizedNode} /></svg>);
+
+    expect(markup).toBe("<svg></svg>");
+  });
+
+  it("keeps the built-in glyph when an ordinary background image is configured", () => {
+    const node = createDefaultNode("ac-source", { x: 0, y: 0 });
+    const customizedNode = {
+      ...node,
+      params: {
+        ...node.params,
+        backgroundImage: "data:image/png;base64,YmFja2dyb3VuZA=="
+      }
+    };
+
+    const markup = renderToStaticMarkup(<svg><DeviceGlyph node={customizedNode} /></svg>);
+
+    expect(markup).toContain("<circle");
+    expect(markup).toContain(">AC</text>");
+  });
+
+  it("keeps an explicitly cleared built-in definition blank", () => {
+    const node = createDefaultNode("ac-source", { x: 0, y: 0 });
+    const clearedNode = {
+      ...node,
+      params: {
+        ...node.params,
+        backgroundImageCleared: "1"
+      }
+    };
+
+    const markup = renderToStaticMarkup(<svg><DeviceGlyph node={clearedNode} /></svg>);
+
+    expect(markup).toBe("<svg></svg>");
   });
 });

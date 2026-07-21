@@ -2,20 +2,12 @@
 import { buildEDeviceDefinitionFile, E_SECTION_COLUMNS, electricGenerationDerivedComponentLibraryInfo, getTemplateParameterDefinitions, inferESection, parseEDeviceDefinitionFile, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo } from "../model";
 import { clampNumber } from "../canvasViewport";
 import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
-import { stateIconSvgVisibleViewBox } from "../stateIconDrawing";
+import { DEFAULT_STATE_ICON_DRAWING_FRAME, stateIconSvgVisibleViewBox } from "../stateIconDrawing";
 import { decodeSvgImageSource } from "../svgUtils";
 import { buildMeasurementProfilePositionDefinitions } from "../measurements";
 import { measurementProfileItemsComplianceMessage } from "./appGraphMeasurementFactories";
 
-const STATE_ICON_DRAFT_FRAME = {
-  strokeStyle: "dashed",
-  strokeWidth: 1.2,
-  strokeColor: "#94a3b8",
-  fillColor: "#ffffff",
-  backgroundImage: "",
-  backgroundImageAssetId: "",
-  backgroundImageFit: "cover"
-};
+const STATE_ICON_DRAFT_FRAME = DEFAULT_STATE_ICON_DRAWING_FRAME;
 
 function normalizeStateIconFrameText(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
@@ -1498,7 +1490,16 @@ function createTemplateDefaultStateIconImage(__appScope: Record<string, any>, te
   if (explicitStatus) {
     node.params = { ...node.params, status: String(options.status) };
   }
-  const stateVisual = options.stateVisual ?? null;
+  const stateVisual = options.stateVisual
+    ? {
+        ...options.stateVisual,
+        image: "",
+        imageAssetId: "",
+        backgroundImage: "",
+        backgroundImageAssetId: "",
+        imageCleared: ""
+      }
+    : null;
   const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette, stateVisual }));
   const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette, stateVisual }));
   const viewBoxX = -width / 2;

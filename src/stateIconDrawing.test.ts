@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  DEFAULT_STATE_ICON_DRAWING_FRAME,
   DEFAULT_STATE_NAME,
   DEFAULT_STATE_PAGE_ID,
   DEFAULT_STATE_VALUE,
@@ -59,6 +60,18 @@ import {
 import { createCustomDeviceDraftFromTemplate, customDeviceImageWithTerminalConnectors, generateCustomDeviceImage, projectCustomDeviceTerminalAnchorToBoundary, resolveTemplateComponentLibrary } from "./customDeviceUtils";
 
 describe("default device state draft rows", () => {
+  test("uses a transparent borderless frame when no definition frame is configured", () => {
+    expect(DEFAULT_STATE_ICON_DRAWING_FRAME).toMatchObject({
+      strokeStyle: "solid",
+      strokeWidth: 0,
+      strokeColor: "transparent",
+      fillColor: "transparent"
+    });
+    expect(stateIconDrawingToPersistedImage([], {
+      frame: DEFAULT_STATE_ICON_DRAWING_FRAME
+    })).toBe("");
+  });
+
   test("resolves the source image used to initialize state icon drawing", () => {
     const assetHref = "data:image/svg+xml;utf8,%3Csvg%20viewBox%3D%220%200%2010%2010%22%2F%3E";
     const directHref = "data:image/svg+xml;utf8,%3Csvg%20viewBox%3D%220%200%2020%2020%22%2F%3E";
@@ -145,6 +158,7 @@ describe("default device state draft rows", () => {
     const imageSource = decodeURIComponent(image.split(",")[1] ?? "");
 
     expect(image).toMatch(/^data:image\/svg\+xml/);
+    expect(imageSource).toContain('data-state-icon-drawing="true"');
     expect(imageSource).toContain('data-state-icon-frame="true"');
     expect(imageSource).toContain('fill="#fef3c7"');
     expect(imageSource).toContain('data-state-icon-frame-image="true"');
@@ -208,12 +222,7 @@ describe("default device state draft rows", () => {
 
   test("does not serialize an empty drawing with only the default frame", () => {
     expect(stateIconDrawingToPersistedImage([], {
-      frame: {
-        strokeStyle: "dashed",
-        strokeWidth: 1.2,
-        strokeColor: "#94a3b8",
-        fillColor: "#ffffff"
-      }
+      frame: DEFAULT_STATE_ICON_DRAWING_FRAME
     })).toBe("");
   });
 

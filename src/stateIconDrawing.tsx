@@ -95,10 +95,10 @@ export type StateIconDrawingFrame = {
 };
 
 export const DEFAULT_STATE_ICON_DRAWING_FRAME: StateIconDrawingFrame = {
-  strokeStyle: "dashed",
-  strokeWidth: 1.2,
-  strokeColor: "#94a3b8",
-  fillColor: "#ffffff",
+  strokeStyle: "solid",
+  strokeWidth: 0,
+  strokeColor: "transparent",
+  fillColor: "transparent",
   backgroundImage: "",
   backgroundImageAssetId: "",
   backgroundImageFit: "cover"
@@ -1695,7 +1695,7 @@ export function stateIconDrawingToImage(
 ) {
   const frameMarkup = stateIconDrawingFrameMarkup(options.frame, options.frameHasTerminals === true, options);
   const body = elements.map((element) => stateIconDrawingElementMarkup(element, options)).join("");
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">${frameMarkup}${body}</svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" data-state-icon-drawing="true" width="240" height="160" viewBox="0 0 240 160">${frameMarkup}${body}</svg>`;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 

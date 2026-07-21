@@ -1833,8 +1833,10 @@ describe("manual bend interaction helpers", () => {
     createOpenStateIconDrawingDialog(scope)({ scope: "definition", rowId: "state-1" });
 
     expect(stateIconDrawingInitialFrame).toHaveBeenCalledWith(row, {}, expect.objectContaining({
-      strokeStyle: "dashed",
-      strokeColor: "#94a3b8"
+      strokeStyle: "solid",
+      strokeWidth: 0,
+      strokeColor: "transparent",
+      fillColor: "transparent"
     }));
     expect(dialog.frame).toEqual(savedFrame);
   });

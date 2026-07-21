@@ -56,6 +56,7 @@ import {
   Save,
   ScanSearch,
   Search,
+  Settings2,
   Shrink,
   Trash2,
   Type,
@@ -528,13 +529,39 @@ import {
   createProgrammaticExportEDeviceDefinition,
   createProgrammaticImportEDeviceDefinition
 } from "./appExtracted/appDeviceDefinitionFactories";
-import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_PAGE_ID, isDefaultStatePageId, createStateDraftRow, createStateDraftRowFromDefaultVisual, defaultStateDraftRow, createDefinitionStateDraftRows, normalizeStateDraftRows, validateStateDraftRows, stateVisualFromDraftRow, activeStateDraftRow, normalizeStatePageId, stateDraftImageValue, stateIconDrawingDraftSourceImage, stateIconDrawingInlineNeedsDraftReload, stateIconDrawingInlineCanPersistDraft, stateVisualShapeLabel, generateStateVisualShapeImage, stateIconDrawingElementId, visibleStateIconColor, createStateIconDrawingElement, createImportedStateIconElement, svgSourceFromDataUrl, parseStateIconSvgSource, stateIconSvgElementSource, parseSvgStyleAttribute, stateIconSvgReactAttributes, stateIconSvgNodeChildren, stateIconSvgNodeToReact, stateIconSvgSourceToReactNodes, createEditableStateIconElementsFromSvgSource, createStateIconDrawingInitialElements, stateIconDrawingInitialFrame, svgSourceToDataUrl, stateIconDrawingSvgElementMarkup, stateIconDrawingElementMarkup, stateIconDrawingToImage, stateIconDrawingToPersistedImage, stateIconDrawingFrameRect, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "./stateIconDrawing";
+import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_ICON_DRAWING_FRAME, DEFAULT_STATE_PAGE_ID, isDefaultStatePageId, createStateDraftRow, createStateDraftRowFromDefaultVisual, defaultStateDraftRow, createDefinitionStateDraftRows, normalizeStateDraftRows, validateStateDraftRows, stateVisualFromDraftRow, activeStateDraftRow, normalizeStatePageId, stateDraftImageValue, stateIconDrawingDraftSourceImage, stateIconDrawingInlineNeedsDraftReload, stateIconDrawingInlineCanPersistDraft, stateVisualShapeLabel, generateStateVisualShapeImage, stateIconDrawingElementId, visibleStateIconColor, createStateIconDrawingElement, createImportedStateIconElement, svgSourceFromDataUrl, parseStateIconSvgSource, stateIconSvgElementSource, parseSvgStyleAttribute, stateIconSvgReactAttributes, stateIconSvgNodeChildren, stateIconSvgNodeToReact, stateIconSvgSourceToReactNodes, createEditableStateIconElementsFromSvgSource, createStateIconDrawingInitialElements, stateIconDrawingInitialFrame, svgSourceToDataUrl, stateIconDrawingSvgElementMarkup, stateIconDrawingElementMarkup, stateIconDrawingToImage, stateIconDrawingToPersistedImage, stateIconDrawingFrameRect, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "./stateIconDrawing";
 import { fallbackComponentLibraryForCategoryLibrary, resolveTemplateComponentLibrary, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, isReservedDeviceDefinitionParamName, isDerivedComponentBaseParamName, createDefinitionDraftRows, normalizeCustomDeviceTerminalAnchorCoordinate, projectCustomDeviceTerminalAnchorToBoundary, customDeviceTerminalAnchorKey, hasOverlappingCustomDeviceTerminalAnchors, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, createCustomDeviceDraftFromTemplate, createDefinitionVisualDraft, defaultContainerAssociationForTerminalType, isAssociationAllowedForTerminal, normalizeContainerTerminalAssociations, customDefaultDefinitions, generateCustomDeviceImage, customDeviceImageWithTerminalConnectors, customDeviceGeneratedDefaultImageCandidates, syncInheritedCustomDeviceStateVisuals, parseCustomDefinitions, screenToSvgPoint, primaryOrthogonalAxis, constrainPointToOrthogonalAxis } from "./customDeviceUtils";
 import { useBatchEditors } from "./hooks/useBatchEditors";
 import { APP_STATIC_SCOPE } from "./appExtracted/appStaticScope";
 import { createRuntimeWsClient } from "./runtimeWsClient";
 import { createRuntimeSnapshotHandler } from "./runtimeSnapshot";
 import { createRuntimeScreenshotHandler } from "./runtimeScreenshot";
+import {
+  buildUserCustomizationInventory,
+  collectReferencedUserAssetIds,
+  type UserCustomizationDomain,
+  type UserCustomizationImportMode,
+  type UserCustomizationImportPreview,
+  type UserCustomizationSnapshot
+} from "./userCustomizations";
+import {
+  createApplyUserCustomizationSnapshot,
+  createApplyUserCustomizationSnapshotToState,
+  createCancelPendingUserCustomizationImport,
+  createCaptureUserCustomizationSnapshot,
+  createChangePendingUserCustomizationImportMode,
+  createCloseUserCustomizationManager,
+  createConfirmUserCustomizationImport,
+  createExportAllUserCustomizations,
+  createImportUserCustomizationFile,
+  createOpenUserCustomizationImportFilePicker,
+  createOpenUserCustomizationManager,
+  createPersistUserCustomizationSnapshot,
+  createReconcileOpenModelAfterCustomizationChange,
+  createRefreshUserCustomizationManager,
+  createRestoreUserCustomizations,
+  createSaveUserCustomizationSnapshotFile
+} from "./appExtracted/appUserCustomizationFactories";
 export * from "./appExtracted/appCoreCanvasUtilities";
 export * from "./appExtracted/appPersistenceLibraryExport";
 import { ENABLE_REACT_FLOW_PREVIEW, ReactFlowPreview, INTERACTION_MODE_STORAGE_KEY, CANVAS_GRAPHIC_CONTEXT_MENU_TARGET_SELECTOR, CANVAS_WHEEL_ZOOM_EXCLUSION_SELECTOR, CANVAS_KEYBOARD_BLOCKING_SELECTOR, CANVAS_KEYBOARD_SURFACE_SELECTOR, normalizeInteractionMode, isCanvasGraphicContextMenuTarget, isCanvasWheelZoomExcludedTarget, canvasWheelTargetIsRenderedCanvas, isCanvasKeyboardBlockingTarget, readStoredInteractionMode, writeStoredInteractionMode, CANVAS_SELECTION_DRAG_THRESHOLD, hasCanvasSelectionModifier, canvasWheelEventHasNoModifier, shouldZoomCanvasFromWheelEvent, isGroupTransformDrag, selectionRectCenter, combineSelectionRects, routeMidpoint, rotatePointAround, snapRotationDeltaToRightAngle, normalizedRotationDelta, transformPointAngle, rotationDeltaFromTransformPoint, rotationDeltaBetweenTransformPoints, rotationTrajectoryArcPath, mirrorPointAcrossAxis, localScaleKindForScreenHandle, groupTransformGeometry, transformGroupPoint, groupTransformSvgTransform, NODE_LABEL_DISPLAY_MODES, CONTEXT_MENU_VIEWPORT_PADDING, CONTEXT_MENU_FALLBACK_WIDTH, CONTEXT_MENU_FALLBACK_HEIGHT, CONTEXT_MENU_SUBMENU_FALLBACK_WIDTH, CONTEXT_MENU_SUBMENU_FALLBACK_HEIGHT, NODE_LABEL_FOOTPRINT_PARAM_KEYS, isMultiNodeMoveState, reuseSetOrCreate, cloneMeasurementGroupForDraft, terminalColor, busEndpointColor, ENERGY_COLOR_ROWS, ELECTRIC_COLOR_TYPES, ELECTRIC_COLOR_TYPE_LABELS, isElectricPaletteType, terminalVbaseFallbackValue, voltageColorKeyForTerminal, DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT, MIN_CANVAS_WIDTH, MIN_CANVAS_HEIGHT, MAX_CANVAS_WIDTH, MAX_CANVAS_HEIGHT, DEFAULT_CANVAS_BACKGROUND, MOVE_BOUNDARY_GUARD, CANVAS_AUTO_EXPAND_PADDING, CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE, CANVAS_RESIZE_HANDLE_SIZE, MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES, ORIGINAL_POSITION_REROUTE_PADDING, MOVE_ROUTE_LOCAL_SEARCH_PADDING, MAX_DEFERRED_MOVE_REPAIR_MOVED_NODES, MAX_DEFERRED_MOVE_REPAIR_CANDIDATE_EDGES, KEYBOARD_MOVE_COMMIT_DELAY_MS, KEYBOARD_MOVE_REPEAT_RATE_PER_SECOND, KEYBOARD_MOVE_FRAME_INTERVAL_MS, ELEMENT_TREE_INITIAL_ITEM_LIMIT, ELEMENT_TREE_ITEM_LIMIT_STEP, TOPOLOGY_WARNING_PAGE_SIZE, CANVAS_MINIMAP_WIDTH, CANVAS_MINIMAP_HEIGHT, CANVAS_MINIMAP_PADDING, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_WIDTH, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH, NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MARGIN, DEVICE_DEFINITION_DIALOG_DEFAULT_WIDTH, DEVICE_DEFINITION_DIALOG_DEFAULT_HEIGHT, CUSTOM_DEVICE_DIALOG_DEFAULT_WIDTH, CUSTOM_DEVICE_DIALOG_DEFAULT_HEIGHT, MEASUREMENT_CONFIG_DIALOG_DEFAULT_WIDTH, MEASUREMENT_CONFIG_DIALOG_DEFAULT_HEIGHT, DEVICE_LIBRARY_DIALOG_MIN_WIDTH, DEVICE_LIBRARY_DIALOG_MIN_HEIGHT, DEVICE_LIBRARY_DIALOG_MARGIN, DEVICE_LIBRARY_DIALOG_CONFIG, TOPOLOGY_WARNING_PANEL_DEFAULT_WIDTH, TOPOLOGY_WARNING_PANEL_MIN_WIDTH, TOPOLOGY_WARNING_PANEL_MAX_WIDTH, TOPOLOGY_WARNING_PANEL_MARGIN, CANVAS_MINIMAP_MAX_NODE_MARKS, CANVAS_MINIMAP_MAX_ROUTE_MARKS, CANVAS_MINIMAP_DEFER_SAMPLE_THRESHOLD, FIT_SELECTION_MAX_ZOOM_PERCENT, TERMINAL_OVERLAP_DEFER_NODE_THRESHOLD, CANVAS_LOD_NODE_DETAIL_LIMIT, CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT, CANVAS_LOD_MAX_ZOOM_PERCENT, CANVAS_LOD_MAX_NODE_SCREEN_SIZE, CANVAS_LOD_NODE_SCREEN_SAMPLE_LIMIT, CANVAS_LOD_SELECTED_DETAIL_LIMIT, CANVAS_LOD_MARKUP_CHUNK_SIZE, CANVAS_INITIAL_LOD_DETAIL_CHUNK_SIZE, CANVAS_INITIAL_LOD_FIRST_DETAIL_DELAY_MS, CANVAS_INITIAL_LOD_NEXT_DETAIL_DELAY_MS, CONNECTION_HIT_SCREEN_TOLERANCE, CANVAS_MULTI_NODE_DRAG_OVERLAY_DETAIL_LIMIT, CANVAS_MULTI_NODE_DRAG_PREVIEW_EDGE_LIMIT, CANVAS_MULTI_NODE_DRAG_SNAP_NODE_LIMIT, CANVAS_BULK_MOVE_EDGE_THRESHOLD, ROUTE_BULK_TRANSLATE_REBUILD_THRESHOLD, BULK_MOVE_PERF_LOG_THRESHOLD_MS, SMART_ALIGNMENT_SNAP_SCREEN_TOLERANCE, SMART_ALIGNMENT_GUIDE_PADDING, CANVAS_SINGLE_NODE_DRAG_PREVIEW_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_SNAP_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_SYNC_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_PREVIEW_PADDING, CANVAS_FLOATING_TOOLBAR_GAP, NODE_FLOATING_TOOLBAR_WIDTH, NODE_FLOATING_TOOLBAR_HEIGHT, EDGE_FLOATING_TOOLBAR_WIDTH, EDGE_FLOATING_TOOLBAR_HEIGHT, CONTEXT_MENU_AUTO_HIDE_MARGIN, TRANSFORM_ROTATE_STEM_START, TRANSFORM_ROTATE_STEM_END, TRANSFORM_ROTATE_HANDLE_GAP, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, DEFAULT_CURRENT_UNIT, DEFAULT_POWER_BASE_VALUE, EMPTY_TOPOLOGY, INITIAL_TOPOLOGY_STATUS, E_SECTION_OPTIONS, COMPONENT_LIBRARY_LABELS, SCALE_HANDLE_CONFIGS, GROUP_SCALE_HANDLE_CONFIGS, POWER_UNIT_OPTIONS, VOLTAGE_UNIT_OPTIONS, CURRENT_UNIT_OPTIONS, DEFAULT_CATEGORY_LIBRARIES, CUSTOM_CATEGORY_LIBRARY_BASES, PROTECTED_CATEGORY_LIBRARIES, DEVICE_TYPE_NAME_PATTERN, MAX_CUSTOM_DEVICE_TERMINALS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_SNAP_SCREEN_TOLERANCE, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, CUSTOM_DEVICE_TERMINAL_PREVIEW_OUTWARD_OFFSET, CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN, TERMINAL_TYPE_OPTIONS, CONTAINER_TERMINAL_ASSOCIATION_OPTIONS, PARAM_VALUE_TYPE_OPTIONS, PROJECT_PANEL_MIN_HEIGHT, PROJECT_PANEL_MAX_HEIGHT, PROJECT_PANEL_DEFAULT_HEIGHT, LEFT_PANEL_DEFAULT_WIDTH, RIGHT_PANEL_DEFAULT_WIDTH, SIDE_PANEL_MIN_WIDTH, SIDE_PANEL_MAX_WIDTH, STATUSBAR_DEFAULT_HEIGHT, STATUSBAR_MIN_HEIGHT, STATUSBAR_MAX_HEIGHT, VALIDATION_PANEL_DEFAULT_HEIGHT, VALIDATION_PANEL_MIN_HEIGHT, VALIDATION_PANEL_MAX_HEIGHT, CONNECT_TERMINAL_SNAP_TOLERANCE, CONNECT_BUS_SNAP_TOLERANCE, connectTargetSearchBounds, findNodeTerminalSnapTarget, applyNodeTerminalSnap, pointOnBusForSnap, findNodeBusSnapTarget, SAMPLE_NODES, SAMPLE_EDGES, PROJECT_STORAGE_KEY, SCHEME_STORAGE_KEY, ACTIVE_PROJECT_STORAGE_KEY, DRAFT_PROJECT_STORAGE_KEY, REFRESH_RECOVERY_STORAGE_KEY, EMPTY_VOLTAGE_COLOR_KEY_SET, EMPTY_ID_LIST, EMPTY_EDGE_ID_LIST, EMPTY_MODEL_GROUPS, EMPTY_MODEL_GROUP_BY_ID, EMPTY_CANVAS_LAYOUT_UNITS, EMPTY_CANVAS_SELECTION, IMAGE_STORAGE_KEY, CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, COLOR_DISPLAY_MODE_STORAGE_KEY, COLOR_PALETTE_STORAGE_KEY, MEASUREMENT_CONFIG_STORAGE_KEY, LEFT_PANEL_MODE_STORAGE_KEY, RIGHT_PANEL_MODE_STORAGE_KEY, LEFT_PANEL_WIDTH_STORAGE_KEY, RIGHT_PANEL_WIDTH_STORAGE_KEY, STATUSBAR_HEIGHT_STORAGE_KEY, VALIDATION_PANEL_HEIGHT_STORAGE_KEY, DEFAULT_GRAPH_TEMPLATE_TYPES, scheduleIdleWork, elementTreeCacheSignature, CONNECTION_REDRAW_SCOPE_LABELS, VOLTAGE_BASE_CLEAR_SCOPES, VOLTAGE_BASE_CLEAR_SCOPE_LABELS, VOLTAGE_BASE_SET_SCOPES, VOLTAGE_BASE_SET_SCOPE_LABELS, VOLTAGE_BASE_SET_PRESETS, VIEWPORT_RENDER_PADDING_RATIO, VIEWPORT_RENDER_MIN_PADDING, CANVAS_VIEWPORT_QUERY_SNAP_SIZE, NODE_SPATIAL_BUCKET_SIZE, nextSpatialQueryMark, expandViewBoxForRendering, snapRenderViewportBoundsForQuery, sameCanvasViewBox, canvasFrameHasHorizontalScrollableRange, canvasFrameHasVerticalScrollableRange, canvasFrameHasScrollableRange, renderedCanvasFullyFitsFrame, canvasFrameViewportSizeChanged, visibleCanvasViewBoxFromRects, canvasScrollScaleFromViewBox, estimatedViewportNodeScreenSize, canvasScrollEdgeInset, canvasScrollSurfaceSize, canvasDisplayOffset, canvasFramePaddingOffset, anchoredCanvasScrollPosition, anchoredCanvasNoScrollOffset, initialVisibleCanvasViewBox, fitWholeCanvasViewBox, boxesIntersect, sameRenderViewportBounds, VIEWPORT_RESULT_CACHE_LIMIT, viewportBoundsCacheKey, viewportResultCacheOwnersEqual, resetViewportResultCache, readViewportResultCache, writeViewportResultCache, mergeRenderViewportBounds, smartAlignmentAxisAnchors, bestSmartAlignmentAxisSnap, nodeRenderBounds, nodeIntersectsRenderViewport, spatialBucketKey, spatialBucketRange, buildNodeSpatialIndex, queryNodeSpatialIndex, compactPreviewNodes, PARAM_LABELS, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, PARAM_OPTIONS, STATIC_BUTTON_ACTION_LABELS, STATIC_BUTTON_COMMAND_LABELS, PARAM_OPTION_LABELS, parseStaticButtonTargetLayerValues, serializeStaticButtonTargetLayerIds, resolveStaticButtonTargetLayers, paramOptionsForSection, READONLY_E_PARAM_KEYS, BATCH_PARAM_EXCLUDED_KEYS, BATCH_PARAM_EXCLUDED_PREFIXES, canBatchEditParam, BATCH_GRAPH_PARAM_KEYS, BATCH_GRAPH_PARAM_PREFIXES, isBatchGraphCommonParamKey, isRedundantBatchCommonParamRow, COLOR_PARAM_KEY_PATTERN, isColorParamKey, BATCH_MEASUREMENT_GROUP_KEYS, BATCH_MEASUREMENT_GROUP_LABELS, measurementGroupCommonValue, measurementGroupWithCommonSetting, normalizeLegacyPowerSystemLabel, normalizeSavedProjectIndexes, normalizeSavedSchemeIndexes, normalizeStoredDraftProject, readActiveProjectPointer, savedSchemePathForId, findSavedSchemeByPath, findSavedProjectByActivePointer, activeProjectPointerPayload, draftProjectFromSavedSchemes, readRefreshRecoveryProject, writeRefreshRecoveryProject, clearRefreshRecoveryProject, readImageAssets, saveImageAsset, resolveNodeImage, resolveNodeForegroundImage, resolveProjectImage, imageAssetsToMap, localImageAssetsFromStorage, pointsToPreviewPath, backendJsonHeaders, backendErrorMessage, fetchBackendJson, backendJsonRequest, fetchBackendImageFolders, createBackendImageFolder, renameBackendImageFolder, deleteBackendImageFolder, fetchBackendImages, fetchAllBackendImages, deleteBackendImageAsset, uploadBackendImage } from "./appExtracted/appCoreCanvasUtilities";
@@ -559,6 +586,12 @@ import {
 import { imagePickerUsesLibraryTabs, renderAppView } from "./appExtracted/appView";
 import { MemoizedCanvasArea } from "./appExtracted/appCanvasArea";
 type LibraryPackageDialogMode = "export" | "import";
+type PendingUserCustomizationImport = {
+  fileName: string;
+  imported: Partial<UserCustomizationSnapshot>;
+  mode: UserCustomizationImportMode;
+  preview: UserCustomizationImportPreview;
+};
 const LIBRARY_PACKAGE_DIALOG_SCOPES: LibraryPackageScope[] = [
   "all",
   "component-library",
@@ -640,15 +673,34 @@ const schemeImportInputRef = useRef<HTMLInputElement | null>(null); Object.assig
 const schemeImportParentSchemeIdRef = useRef<string>(""); Object.assign(__appScope, { schemeImportParentSchemeIdRef });
 const libraryPackageImportInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { libraryPackageImportInputRef });
 const libraryPackageImportScopeRef = useRef<LibraryPackageScope>("device-library"); Object.assign(__appScope, { libraryPackageImportScopeRef });
+const userCustomizationImportInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { userCustomizationImportInputRef });
 const [libraryPackageDialogOpen, setLibraryPackageDialogOpen] = useState(false);
 const [libraryPackageDialogMode, setLibraryPackageDialogMode] = useState<LibraryPackageDialogMode>("export");
 const [libraryPackageDialogScope, setLibraryPackageDialogScope] = useState<LibraryPackageScope>("all");
+const [userCustomizationManagerOpen, setUserCustomizationManagerOpen] = useState(false);
+const [userCustomizationActiveDomain, setUserCustomizationActiveDomain] = useState<UserCustomizationDomain>("custom-devices");
+const [userCustomizationBusy, setUserCustomizationBusy] = useState(false);
+const [userCustomizationStatus, setUserCustomizationStatus] = useState("");
+const [userCustomizationSnapshotView, setUserCustomizationSnapshotView] = useState<UserCustomizationSnapshot | null>(null);
+const [pendingUserCustomizationImport, setPendingUserCustomizationImport] = useState<PendingUserCustomizationImport | null>(null);
 Object.assign(__appScope, {
   libraryPackageDialogOpen,
   libraryPackageDialogMode,
   libraryPackageDialogScope,
   setLibraryPackageDialogMode,
-  setLibraryPackageDialogScope
+  setLibraryPackageDialogScope,
+  userCustomizationManagerOpen,
+  setUserCustomizationManagerOpen,
+  userCustomizationActiveDomain,
+  setUserCustomizationActiveDomain,
+  userCustomizationBusy,
+  setUserCustomizationBusy,
+  userCustomizationStatus,
+  setUserCustomizationStatus,
+  userCustomizationSnapshotView,
+  setUserCustomizationSnapshotView,
+  pendingUserCustomizationImport,
+  setPendingUserCustomizationImport
 });
 const layerManagementDropdownRef = useRef<HTMLDivElement | null>(null); Object.assign(__appScope, { layerManagementDropdownRef });
 const canvasFrameRef = useRef<HTMLDivElement | null>(null); Object.assign(__appScope, { canvasFrameRef });
@@ -3403,6 +3455,83 @@ const userIconLibraryAssets = async () => {
   return normalizeIconLibraryPersistencePayload({ folders, assets: exportedAssets });
 };
 Object.assign(__appScope, { userIconLibraryAssets });
+const referencedUserAssetIds = useMemo(() => collectReferencedUserAssetIds({
+  nodes,
+  projectMeasurements,
+  schemes,
+  deviceLibrary: currentDeviceLibraryPersistencePayload()
+}), [
+  customCategoryLibraries,
+  customComponentLibraries,
+  customDeviceTemplates,
+  customGraphTemplateTypes,
+  customGraphTemplates,
+  deviceDefinitionOverrides,
+  eDeviceDefinitionClassExportEnabled,
+  eDeviceDefinitionLabels,
+  nodes,
+  projectMeasurements,
+  schemes
+]);
+Object.assign(__appScope, { referencedUserAssetIds });
+const userCustomizationInventory = useMemo(() => buildUserCustomizationInventory(
+  userCustomizationSnapshotView ?? {
+    deviceLibrary: currentDeviceLibraryPersistencePayload(),
+    measurementConfig,
+    colorConfig: { colorDisplayMode, colorPalette },
+    imageLibrary: { folders: imageFolders, assets: [] }
+  },
+  DEVICE_LIBRARY,
+  referencedUserAssetIds
+), [
+  colorDisplayMode,
+  colorPalette,
+  customCategoryLibraries,
+  customComponentLibraries,
+  customDeviceTemplates,
+  customGraphTemplateTypes,
+  customGraphTemplates,
+  deviceDefinitionOverrides,
+  eDeviceDefinitionClassExportEnabled,
+  eDeviceDefinitionLabels,
+  imageFolders,
+  measurementConfig,
+  referencedUserAssetIds,
+  userCustomizationSnapshotView
+]);
+Object.assign(__appScope, { userCustomizationInventory });
+const captureUserCustomizationSnapshot = createCaptureUserCustomizationSnapshot(__appScope);
+Object.assign(__appScope, { captureUserCustomizationSnapshot });
+const persistUserCustomizationSnapshot = createPersistUserCustomizationSnapshot(__appScope);
+Object.assign(__appScope, { persistUserCustomizationSnapshot });
+const applyUserCustomizationSnapshotToState = createApplyUserCustomizationSnapshotToState(__appScope);
+Object.assign(__appScope, { applyUserCustomizationSnapshotToState });
+const reconcileOpenModelAfterCustomizationChange = createReconcileOpenModelAfterCustomizationChange(__appScope);
+Object.assign(__appScope, { reconcileOpenModelAfterCustomizationChange });
+const refreshUserCustomizationManager = createRefreshUserCustomizationManager(__appScope);
+Object.assign(__appScope, { refreshUserCustomizationManager });
+const saveUserCustomizationSnapshotFile = createSaveUserCustomizationSnapshotFile(__appScope);
+Object.assign(__appScope, { saveUserCustomizationSnapshotFile });
+const applyUserCustomizationSnapshot = createApplyUserCustomizationSnapshot(__appScope);
+Object.assign(__appScope, { applyUserCustomizationSnapshot });
+const exportAllUserCustomizations = createExportAllUserCustomizations(__appScope);
+Object.assign(__appScope, { exportAllUserCustomizations });
+const openUserCustomizationManager = createOpenUserCustomizationManager(__appScope);
+Object.assign(__appScope, { openUserCustomizationManager });
+const closeUserCustomizationManager = createCloseUserCustomizationManager(__appScope);
+Object.assign(__appScope, { closeUserCustomizationManager });
+const openUserCustomizationImportFilePicker = createOpenUserCustomizationImportFilePicker(__appScope);
+Object.assign(__appScope, { openUserCustomizationImportFilePicker });
+const importUserCustomizationFile = createImportUserCustomizationFile(__appScope);
+Object.assign(__appScope, { importUserCustomizationFile });
+const changePendingUserCustomizationImportMode = createChangePendingUserCustomizationImportMode(__appScope);
+Object.assign(__appScope, { changePendingUserCustomizationImportMode });
+const confirmUserCustomizationImport = createConfirmUserCustomizationImport(__appScope);
+Object.assign(__appScope, { confirmUserCustomizationImport });
+const cancelPendingUserCustomizationImport = createCancelPendingUserCustomizationImport(__appScope);
+Object.assign(__appScope, { cancelPendingUserCustomizationImport });
+const restoreUserCustomizations = createRestoreUserCustomizations(__appScope);
+Object.assign(__appScope, { restoreUserCustomizations });
 const exportLibraryPackage = async (scope: LibraryPackageScope) => {
   try {
     flushMeasurementConfigDialogDraftInputs?.();
@@ -5022,12 +5151,7 @@ useEffect(() => {
         return current;
       }
       const initial = createStateIconDrawingInitialElements(row, imageAssets);
-      const initialFrame = stateIconDrawingInitialFrame(row, imageAssets, {
-        strokeStyle: "dashed",
-        strokeWidth: 1.2,
-        strokeColor: "#94a3b8",
-        fillColor: "#ffffff"
-      });
+      const initialFrame = stateIconDrawingInitialFrame(row, imageAssets, DEFAULT_STATE_ICON_DRAWING_FRAME);
       stateIconDrawingHistoryRef.current = [];
       setStateIconDrawingContextMenu(null);
       stateIconDrawingInitialImageRef.current = {
@@ -5485,6 +5609,15 @@ const renderLibraryPanel = () => (
         >
           <Download size={14} aria-hidden="true" />
           <span>导出</span>
+        </button>
+        <button
+          type="button"
+          className="library-icon-action"
+          title="管理用户自定义内容"
+          onClick={() => void openUserCustomizationManager()}
+        >
+          <Settings2 size={14} aria-hidden="true" />
+          <span>自定义管理</span>
         </button>
       </div>
       <div className="library-display-mode" role="radiogroup" aria-label="图元库展开方式">

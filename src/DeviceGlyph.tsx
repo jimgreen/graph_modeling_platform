@@ -13,7 +13,7 @@ import {
   staticRenderKindForNode,
   pointsToOrthogonalPath
 } from "./model";
-import { formatSvgNumber, svgStrokeDashArray } from "./svgUtils";
+import { formatSvgNumber, isPlatformDeviceVisualReplacementImage, svgStrokeDashArray } from "./svgUtils";
 import {
   DEVICE_GLYPH_DESIGN_LONGEST_SIDE,
   deviceStateVisualToken,
@@ -45,7 +45,21 @@ export type DeviceGlyphProps = {
   stateVisual?: DeviceStateVisual | null;
 };
 
+function deviceVisualReplacesGlyph(node: ModelNode, stateVisual: DeviceStateVisual | null) {
+  if (String(stateVisual?.imageCleared ?? "").trim() === "1" || String(node.params.backgroundImageCleared ?? "").trim() === "1") {
+    return true;
+  }
+  return [
+    stateVisual?.image,
+    stateVisual?.backgroundImage,
+    node.params.backgroundImage
+  ].some(isPlatformDeviceVisualReplacementImage);
+}
+
 export function DeviceGlyph({ node, miniature = false, mode = "full", colorDisplayMode = "energy", colorPalette = DEFAULT_COLOR_PALETTE, stateVisual = null }: DeviceGlyphProps) {
+  if (deviceVisualReplacesGlyph(node, stateVisual)) {
+    return null;
+  }
   const rawW = miniature ? 58 : node.size.width;
   const rawH = miniature ? 38 : node.size.height;
   const isStaticGlyph = isStaticGraphicNode(node);
