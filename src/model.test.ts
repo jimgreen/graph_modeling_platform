@@ -3,6 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { DeviceGlyph } from "./DeviceGlyph";
 import { createRenderStaticBoxDrawingPreview } from "./appExtracted/appCanvasInteractionFactories";
+import { apiPath } from "./config";
 import {
   alignNodes,
   buildTopology,
@@ -1097,7 +1098,7 @@ describe("power system model", () => {
       version: 1,
       name: "测试模型",
       canvasBackgroundColor: "#f1f5f9",
-      canvasBackgroundImage: "/webgrp/images/background",
+      canvasBackgroundImage: apiPath("/images/background"),
       canvasBackgroundImageAssetId: "background",
       powerUnit: "MW",
       voltageUnit: "kV",
@@ -1133,7 +1134,7 @@ describe("power system model", () => {
 
     expect(loaded.name).toBe("测试模型");
     expect(loaded.canvasBackgroundColor).toBe("#f1f5f9");
-    expect(loaded.canvasBackgroundImage).toBe("/webgrp/images/background");
+    expect(loaded.canvasBackgroundImage).toBe(apiPath("/images/background"));
     expect(loaded.canvasBackgroundImageAssetId).toBe("background");
     expect(loaded.powerUnit).toBe("MW");
     expect(loaded.voltageUnit).toBe("kV");
@@ -1603,15 +1604,15 @@ describe("power system model", () => {
       {
         value: "1",
         name: "合位",
-        image: "/webgrp/images/state-closed",
+        image: apiPath("/images/state-closed"),
         imageFit: "stretch",
-        backgroundImage: "/webgrp/images/state-bg",
+        backgroundImage: apiPath("/images/state-bg"),
         backgroundImageFit: "tile"
       },
       {
         value: "2",
         name: "分位",
-        image: "/webgrp/images/state-open",
+        image: apiPath("/images/state-open"),
         imageFit: ""
       }
     ]);
@@ -4282,7 +4283,7 @@ describe("power system model", () => {
       node: "3",
       pbase: "9.5",
       ratedActivePower: "不要导出",
-      backgroundImage: "/webgrp/images/asset"
+      backgroundImage: apiPath("/images/asset")
     };
 
     const payload = parseESections(

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { createElement, isValidElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
+import { apiPath } from "./config";
 import {
   CustomComponentManagerTree,
   createLibraryPackage,
@@ -437,7 +438,7 @@ describe("graph template library filtering", () => {
             name: "自定义图标",
             folderId: "custom-icons",
             mimeType: "image/png",
-            url: "/webgrp/images/img-custom",
+            url: apiPath("/images/img-custom"),
             dataUrl: "data:image/png;base64,AA=="
           }
         ]
@@ -446,7 +447,7 @@ describe("graph template library filtering", () => {
 
     expect(iconPackage.iconLibrary?.folders.map((folder) => folder.id)).toEqual(["root", "custom-icons"]);
     expect(iconPackage.iconLibrary?.assets.map((asset) => asset.id)).toEqual(["img-custom"]);
-    expect(iconPackage.iconLibrary?.assets[0].url).toBe("/webgrp/images/img-custom");
+    expect(iconPackage.iconLibrary?.assets[0].url).toBe(apiPath("/images/img-custom"));
   });
 
   test("creates measurement packages from the normalized platform measurement config", () => {
@@ -492,7 +493,7 @@ describe("graph template library filtering", () => {
             id: "img-component",
             name: "元件图标",
             folderId: "root",
-            url: "/webgrp/images/img-component",
+            url: apiPath("/images/img-component"),
             dataUrl: "data:image/png;base64,AA=="
           }
         ]

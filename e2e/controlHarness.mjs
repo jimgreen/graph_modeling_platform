@@ -7,6 +7,7 @@ import { chromium } from "@playwright/test";
 import { readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { apiPath } from "../server/config.mjs";
 
 const E2E_IMAGE_PORT = "5184";
 const E2E_VITE_PORT = "5183";
@@ -155,7 +156,7 @@ export async function waitForOnlineClient(imageBaseUrl, timeoutMs = 60000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
-      const res = await fetch(`${imageBaseUrl}/webgrp/v1/runtime/clients`);
+      const res = await fetch(`${imageBaseUrl}${apiPath("/v1/runtime/clients")}`);
       const json = await res.json();
       if (json?.ok && json.data?.clients?.length > 0) {
         return json.data.clients[0].clientId;

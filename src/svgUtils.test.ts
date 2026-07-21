@@ -1,10 +1,11 @@
 import { describe, expect, test } from "vitest";
 
 import { decodeSvgImageSource, inlineBackendImageRefsInSvgDataUrl, svgImageContentMarkup } from "./svgUtils";
+import { apiPath } from "./config";
 
 describe("svg image content markup", () => {
   test("uses image fit mode to render stretched images", () => {
-    const markup = svgImageContentMarkup("/webgrp/images/background", {
+    const markup = svgImageContentMarkup(apiPath("/images/background"), {
       x: 0,
       y: 0,
       width: 120,
@@ -18,7 +19,7 @@ describe("svg image content markup", () => {
   });
 
   test("uses image fit mode to render tiled images", () => {
-    const markup = svgImageContentMarkup("/webgrp/images/tile", {
+    const markup = svgImageContentMarkup(apiPath("/images/tile"), {
       x: 4,
       y: 6,
       width: 120,
@@ -29,7 +30,7 @@ describe("svg image content markup", () => {
 
     expect(markup).toContain("<pattern");
     expect(markup).toContain('patternUnits="userSpaceOnUse"');
-    expect(markup).toContain('href="/webgrp/images/tile"');
+    expect(markup).toContain('href="' + apiPath('/images/tile') + '"');
     expect(markup).toContain('<rect x="4" y="6" width="120" height="80" fill="url(#');
     expect(markup).toContain('class="node-background-image"');
   });
@@ -37,7 +38,7 @@ describe("svg image content markup", () => {
   test("renders svg data urls as inline svg so nested images remain visible", () => {
     const source = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10">',
-      '<image href="/webgrp/images/nested-symbol" x="1" y="2" width="8" height="6"/>',
+      '<image href="' + apiPath('/images/nested-symbol') + '" x="1" y="2" width="8" height="6"/>',
       '<circle class="inline-shape" cx="15" cy="5" r="3"/>',
       "</svg>"
     ].join("");
@@ -57,7 +58,7 @@ describe("svg image content markup", () => {
     expect(markup).toContain('<g clip-path="url(#clip-node)">');
     expect(markup).toContain('class="export-inline-svg-image node-background-image"');
     expect(markup).not.toContain('<svg class="export-inline-svg-image node-background-image" x="-10" y="-5" width="20" height="10" preserveAspectRatio="xMidYMid meet" clip-path=');
-    expect(markup).toContain('href="/webgrp/images/nested-symbol"');
+    expect(markup).toContain('href="' + apiPath('/images/nested-symbol') + '"');
     expect(markup).toContain('class="inline-shape"');
     expect(markup).not.toContain('href="data:image/svg+xml');
   });
@@ -120,21 +121,21 @@ describe("svg image content markup", () => {
   test("inlines cached backend image refs inside svg data urls", () => {
     const source = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10">',
-      '<image href="/webgrp/images/icon-a?cache=1" x="1" y="2" width="8" height="6"/>',
-      '<image xlink:href="/webgrp/images/icon-b" x="11" y="2" width="8" height="6"/>',
+      '<image href="' + apiPath('/images/icon-a?cache=1') + '" x="1" y="2" width="8" height="6"/>',
+      '<image xlink:href="' + apiPath('/images/icon-b') + '" x="11" y="2" width="8" height="6"/>',
       "</svg>"
     ].join("");
     const href = `data:image/svg+xml;utf8,${encodeURIComponent(source)}`;
 
     const result = inlineBackendImageRefsInSvgDataUrl(href, {
       "icon-a": "data:image/png;base64,aWNvbi1h",
-      "icon-b": "/webgrp/images/icon-b"
+      "icon-b": apiPath("/images/icon-b")
     });
     const decoded = decodeSvgImageSource(result);
 
     expect(decoded).toContain('href="data:image/png;base64,aWNvbi1h"');
-    expect(decoded).not.toContain("/webgrp/images/icon-a");
-    expect(decoded).toContain('xlink:href="/webgrp/images/icon-b"');
+    expect(decoded).not.toContain(apiPath("/images/icon-a"));
+    expect(decoded).toContain('xlink:href="' + apiPath('/images/icon-b') + '"');
   });
 
   test("prefixes internal ids when the same svg is inlined more than once", () => {

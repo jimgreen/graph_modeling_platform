@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, test, afterEach, beforeEach } from "vitest";
 import { createImageServer } from "./image-server.mjs";
+import { apiPath } from "./config.mjs";
 
 // HTTP 集成测试：起真实 server（临时端口 + tmpdir 静态目录），打真实请求。
 // 测静态资源分流：/* 走静态、/api 不被静态拦截、SPA fallback、/ws 不被静态拦截。
@@ -69,8 +70,8 @@ describe("静态资源分流", () => {
     expect(text).toContain("<title>SPA</title>");
   });
 
-  test("/webgrp/* 不被静态托管拦截，走接口层（未命中返 404 JSON）", async () => {
-    const { status, text } = await fetchPath("/webgrp/nonexistent-endpoint");
+  test(apiPath("/*") + " 不被静态托管拦截，走接口层（未命中返 404 JSON）", async () => {
+    const { status, text } = await fetchPath(apiPath("/nonexistent-endpoint"));
     expect(status).toBe(404);
     expect(JSON.parse(text).error).toBeTruthy();
   });
@@ -102,7 +103,7 @@ describe("静态资源分流", () => {
   });
 
   test("OPTIONS 预检返 204", async () => {
-    const res = await fetch(`${baseUrl}/webgrp/images`, { method: "OPTIONS" });
+    const res = await fetch(`${baseUrl}${apiPath("/images")}`, { method: "OPTIONS" });
     expect(res.status).toBe(204);
   });
 });

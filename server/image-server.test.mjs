@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, test } from "vitest";
 import AdmZip from "adm-zip";
+import { apiPath } from "./config.mjs";
 import {
   archiveStaleSchemeFiles,
   buildSvgFile,
@@ -579,7 +580,7 @@ describe("scheme file persistence", () => {
           project: {
             version: 1,
             name: "图片模型",
-            canvasBackgroundImage: "/webgrp/images/canvas-bg",
+            canvasBackgroundImage: apiPath("/images/canvas-bg"),
             nodes: [
               {
                 id: "image-node",
@@ -589,7 +590,7 @@ describe("scheme file persistence", () => {
                 size: { width: 80, height: 60 },
                 params: {
                   backgroundImageAssetId: "node-bg",
-                  backgroundImage: "/webgrp/images/node-bg"
+                  backgroundImage: apiPath("/images/node-bg")
                 },
                 terminals: []
               }
@@ -607,7 +608,7 @@ describe("scheme file persistence", () => {
       const svg = await readFile(join(filesRoot, "默认方案", "图片模型.svg"), "utf-8");
       expect(svg).toContain('href="data/images/canvas-bg.png"');
       expect(svg).toContain('href="data/images/node-bg.jpg"');
-      expect(svg).not.toContain('href="/webgrp/images/');
+      expect(svg).not.toContain('href="' + apiPath('/images/'));
       expect(svg).not.toContain('href="http://');
       expect(svg).not.toContain('href="https://');
     } finally {
@@ -630,7 +631,7 @@ describe("scheme file persistence", () => {
           project: {
             version: 1,
             name: "缺失图片清单",
-            canvasBackgroundImage: "/webgrp/images/missing-bg?id=1",
+            canvasBackgroundImage: apiPath("/images/missing-bg?id=1"),
             nodes: [],
             edges: []
           }
@@ -641,7 +642,7 @@ describe("scheme file persistence", () => {
 
       const svg = await readFile(join(filesRoot, "默认方案", "缺失图片清单.svg"), "utf-8");
       // 当 imagePathById 为空时，保留原始 API 路径（不转换为 data/images/）
-      expect(svg).toContain('href="/webgrp/images/missing-bg?id=1"');
+      expect(svg).toContain('href="' + apiPath('/images/missing-bg?id=1') + '"');
       expect(svg).not.toContain('href="data/images/');
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -698,7 +699,7 @@ describe("scheme file persistence", () => {
   test("embeds backend images referenced inside svg data url backgrounds", () => {
     const nestedSvg = [
       '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">',
-      '<image href="/webgrp/images/nested-photo" x="0" y="0" width="240" height="160"/>',
+      '<image href="' + apiPath('/images/nested-photo') + '" x="0" y="0" width="240" height="160"/>',
       "</svg>"
     ].join("");
     const svg = buildSvgFile(
@@ -732,7 +733,7 @@ describe("scheme file persistence", () => {
     );
 
     expect(svg).toContain('href="data:image/png;base64,bmVzdGVkLXBob3Rv"');
-    expect(svg).not.toContain('/webgrp/images/nested-photo');
+    expect(svg).not.toContain(apiPath('/images/nested-photo'));
   });
 
   test("deduplicates server SVG device state symbols and references active state", () => {

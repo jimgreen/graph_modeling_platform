@@ -1,5 +1,6 @@
 import { describe, expect, test, beforeEach, afterEach } from "vitest";
 import { createImageServer } from "./image-server.mjs";
+import { apiPath } from "./config.mjs";
 
 // HTTP 集成测试：起真实 server，打 /webgrp/v1/library/* 真实请求。
 // 验证路由挂载 + 信封格式 + 真实 device-library/measurement-config 配置响应。
@@ -30,9 +31,9 @@ async function fetchV1(pathname) {
   return { status: res.status, headers: res.headers, text, json };
 }
 
-describe("/webgrp/v1/library HTTP 路由", () => {
-  test("/webgrp/v1/library 返聚合信封", async () => {
-    const { status, json } = await fetchV1("/webgrp/v1/library");
+describe(apiPath("/v1/library") + " HTTP 路由", () => {
+  test(apiPath("/v1/library") + " 返聚合信封", async () => {
+    const { status, json } = await fetchV1(apiPath("/v1/library"));
     expect(status).toBe(200);
     expect(json.ok).toBe(true);
     expect(json.data.categories).toBeDefined();
@@ -42,15 +43,15 @@ describe("/webgrp/v1/library HTTP 路由", () => {
     expect(json.data.templates).toBeDefined();
   });
 
-  test("/webgrp/v1/library/categories 返分类树", async () => {
-    const { status, json } = await fetchV1("/webgrp/v1/library/categories");
+  test(apiPath("/v1/library/categories") + " 返分类树", async () => {
+    const { status, json } = await fetchV1(apiPath("/v1/library/categories"));
     expect(status).toBe(200);
     expect(Array.isArray(json.data.categories)).toBe(true);
     expect(json.data.categories.some((c) => c.name === "静态图元")).toBe(true);
   });
 
-  test("/webgrp/v1/library/devices 返 E 段定义", async () => {
-    const { status, json } = await fetchV1("/webgrp/v1/library/devices");
+  test(apiPath("/v1/library/devices") + " 返 E 段定义", async () => {
+    const { status, json } = await fetchV1(apiPath("/v1/library/devices"));
     expect(status).toBe(200);
     expect(Array.isArray(json.data.eSections)).toBe(true);
     expect(json.data.eSections.length).toBeGreaterThan(0);
@@ -59,31 +60,31 @@ describe("/webgrp/v1/library HTTP 路由", () => {
     expect(json.data.eSections[0]).toHaveProperty("base");
   });
 
-  test("/webgrp/v1/library/measurements 返量测定义", async () => {
-    const { status, json } = await fetchV1("/webgrp/v1/library/measurements");
+  test(apiPath("/v1/library/measurements") + " 返量测定义", async () => {
+    const { status, json } = await fetchV1(apiPath("/v1/library/measurements"));
     expect(status).toBe(200);
     expect(Array.isArray(json.data.measurementTypes)).toBe(true);
     expect(Array.isArray(json.data.deviceProfiles)).toBe(true);
   });
 
-  test("/webgrp/v1/library/device-definitions 返图元定义", async () => {
-    const { status, json } = await fetchV1("/webgrp/v1/library/device-definitions");
+  test(apiPath("/v1/library/device-definitions") + " 返图元定义", async () => {
+    const { status, json } = await fetchV1(apiPath("/v1/library/device-definitions"));
     expect(status).toBe(200);
     expect(json.data).toHaveProperty("deviceDefinitionOverrides");
     expect(json.data).toHaveProperty("customComponentLibraries");
     expect(json.data).toHaveProperty("customCategoryLibraries");
   });
 
-  test("/webgrp/v1/library/templates 返模板库", async () => {
-    const { status, json } = await fetchV1("/webgrp/v1/library/templates");
+  test(apiPath("/v1/library/templates") + " 返模板库", async () => {
+    const { status, json } = await fetchV1(apiPath("/v1/library/templates"));
     expect(status).toBe(200);
     expect(json.data).toHaveProperty("customDeviceTemplates");
     expect(json.data).toHaveProperty("customGraphTemplates");
     expect(json.data).toHaveProperty("customGraphTemplateTypes");
   });
 
-  test("未知 /webgrp/v1/library/* 路径返 404", async () => {
-    const { status, json } = await fetchV1("/webgrp/v1/library/unknown");
+  test("未知 " + apiPath("/v1/library") + "/* 路径返 404", async () => {
+    const { status, json } = await fetchV1(apiPath("/v1/library/unknown"));
     expect(status).toBe(404);
     expect(json.error).toBeTruthy();
   });

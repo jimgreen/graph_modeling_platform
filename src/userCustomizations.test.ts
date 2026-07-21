@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY, type DeviceTemplate, type ModelNode } from "./model";
 import { DEFAULT_MEASUREMENT_CONFIG } from "./measurements";
+import { apiPath } from "./config";
 import {
   buildUserCustomizationInventory,
   collectReferencedUserAssetIds,
@@ -86,7 +87,7 @@ describe("user customization inventory", () => {
       id: "img-user",
       name: "用户图标",
       folderId: "root",
-      url: "/webgrp/images/img-user"
+      url: apiPath("/images/img-user")
     });
     snapshot.colorConfig.colorPalette.energy.ac = "#123456";
 
@@ -114,7 +115,7 @@ describe("user customization inventory", () => {
       id: "img-used",
       name: "被引用图片",
       folderId: "root",
-      url: "/webgrp/images/img-used"
+      url: apiPath("/images/img-used")
     });
 
     const inventory = buildUserCustomizationInventory(snapshot, DEVICE_LIBRARY, new Set(["img-used"]));

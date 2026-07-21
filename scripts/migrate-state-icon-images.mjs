@@ -13,6 +13,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import { apiPath } from "../server/config.mjs";
 
 const APPLY = process.argv.includes("--apply");
 const repoRoot = process.cwd();
@@ -104,7 +105,7 @@ function migrateSvgField(value) {
       return full;
     }
     changed = true;
-    return `${pre}/webgrp/images/${id}${post}`;
+    return `${pre}${apiPath(`/images/${id}`)}${post}`;
   });
   if (!changed) {
     return value;
@@ -122,7 +123,7 @@ function transform(value) {
       const id = storeRaster(value);
       if (id) {
         fieldsChanged += 1;
-        return `/webgrp/images/${id}`;
+        return apiPath(`/images/${id}`);
       }
     }
     return value;

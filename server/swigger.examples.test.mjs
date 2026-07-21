@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { WebSocket } from "ws";
 import { describe, expect, test, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import { SWIGGER_ENDPOINTS } from "./swaggerPage.mjs";
+import { apiPath, apiPrefix } from "./config.mjs";
 
 let dataDir;
 let createImageServer;
@@ -106,6 +107,10 @@ function commandResponder(name, params) {
       return { ok: true, data: { saved: true, scope: params.scope } };
     case "control.template.saveFromSelection":
       return { ok: true, data: { templateKind: `custom-${params.componentLibrary || "device"}-1` } };
+    case "control.e-device-definition.export":
+      return { ok: true, data: { filename: "device-definitions.e", text: "<Section>", mime: "text/plain" } };
+    case "control.e-device-definition.import":
+      return { ok: true, data: { matched: [], skipped: [], matchedCount: 0, skippedCount: 0 } };
     default:
       return { ok: false, error: { code: "unknown-command", message: `unknown command: ${name}` } };
   }
@@ -200,85 +205,87 @@ function expectFor(ep, ex) {
   const label = ex.label;
 
   // runtime 域：均需前端在线，状态 200（clients 直返，其余经 WS 透传成功）
-  if (p === "/webgrp/v1/runtime/clients") return { status: 200, check: (r) => expect(r.json.data.clients).toBeInstanceOf(Array) };
-  if (p === "/webgrp/v1/runtime/model") return { status: 200, check: (r) => expect(r.json.data.modelName).toBe("测试模型") };
-  if (p === "/webgrp/v1/runtime/devices") return { status: 200, check: (r) => expect(r.json.data.nodes).toBeInstanceOf(Array) };
-  if (p === "/webgrp/v1/runtime/selection") return { status: 200, check: (r) => expect(r.json.data.selectedNodeIds).toBeInstanceOf(Array) };
-  if (p === "/webgrp/v1/runtime/tabs") return { status: 200, check: (r) => expect(r.json.data.tabs).toBeTruthy() };
-  if (p === "/webgrp/v1/runtime/tabs/{tab}") return { status: 200, check: (r) => expect(r.json.data.tab).toBeTruthy() };
-  if (p === "/webgrp/v1/runtime/screenshot") return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("image/png") };
-  if (p === "/webgrp/v1/runtime/svg") return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("image/svg") };
-  if (p === "/webgrp/v1/runtime/e-file") return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("text/plain") };
+  if (p === apiPath("/v1/runtime/clients")) return { status: 200, check: (r) => expect(r.json.data.clients).toBeInstanceOf(Array) };
+  if (p === apiPath("/v1/runtime/model")) return { status: 200, check: (r) => expect(r.json.data.modelName).toBe("测试模型") };
+  if (p === apiPath("/v1/runtime/devices")) return { status: 200, check: (r) => expect(r.json.data.nodes).toBeInstanceOf(Array) };
+  if (p === apiPath("/v1/runtime/selection")) return { status: 200, check: (r) => expect(r.json.data.selectedNodeIds).toBeInstanceOf(Array) };
+  if (p === apiPath("/v1/runtime/tabs")) return { status: 200, check: (r) => expect(r.json.data.tabs).toBeTruthy() };
+  if (p === apiPath("/v1/runtime/tabs/{tab}")) return { status: 200, check: (r) => expect(r.json.data.tab).toBeTruthy() };
+  if (p === apiPath("/v1/runtime/screenshot")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("image/png") };
+  if (p === apiPath("/v1/runtime/svg")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("image/svg") };
+  if (p === apiPath("/v1/runtime/e-file")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("text/plain") };
 
   // 图片域
-  if (p === "/webgrp/images" && ep.method === "GET") return { status: 200, check: (r) => expect(Array.isArray(r.json)).toBe(true) };
-  if (p === "/webgrp/images" && ep.method === "POST") return { status: 201, check: (r) => { expect(r.json.id).toBeTruthy(); expect(r.json.url).toContain("/webgrp/images/"); } };
-  if (p === "/webgrp/image-folders" && ep.method === "GET") return { status: 200, check: (r) => expect(Array.isArray(r.json)).toBe(true) };
-  if (p === "/webgrp/image-folders" && ep.method === "POST") return { status: 201, check: (r) => expect(r.json.id).toBeTruthy() };
-  if (p === "/webgrp/image-folders/{folderId}" && ep.method === "PUT") {
+  if (p === apiPath("/images") && ep.method === "GET") return { status: 200, check: (r) => expect(Array.isArray(r.json)).toBe(true) };
+  if (p === apiPath("/images") && ep.method === "POST") return { status: 201, check: (r) => { expect(r.json.id).toBeTruthy(); expect(r.json.url).toContain(apiPath("/images/")); } };
+  if (p === apiPath("/image-folders") && ep.method === "GET") return { status: 200, check: (r) => expect(Array.isArray(r.json)).toBe(true) };
+  if (p === apiPath("/image-folders") && ep.method === "POST") return { status: 201, check: (r) => expect(r.json.id).toBeTruthy() };
+  if (p === apiPath("/image-folders/{folderId}") && ep.method === "PUT") {
     // root 不可重命名 → 400
     return { status: 400, check: (r) => expect(r.json.error).toBeTruthy() };
   }
-  if (p === "/webgrp/image-folders/{folderId}" && ep.method === "DELETE") {
+  if (p === apiPath("/image-folders/{folderId}") && ep.method === "DELETE") {
     // root 不可删 → 400
     return { status: 400, check: (r) => expect(r.json.error).toBeTruthy() };
   }
-  if (p === "/webgrp/images/{id}") {
+  if (p === apiPath("/images/{id}")) {
     // 示例 id 为空 → 不存在 → 404
     return { status: 404, check: (r) => expect(r.json.error).toBeTruthy() };
   }
 
   // 方案域（内部）
-  if (p === "/webgrp/schemes" && ep.method === "GET") return { status: 200, check: (r) => expect(r.json.schemes).toBeInstanceOf(Array) };
-  if (p === "/webgrp/schemes" && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
-  if (p === "/webgrp/schemes/export") return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/zip") };
-  if (p === "/webgrp/schemes/import") {
+  if (p === apiPath("/schemes") && ep.method === "GET") return { status: 200, check: (r) => expect(r.json.schemes).toBeInstanceOf(Array) };
+  if (p === apiPath("/schemes") && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+  if (p === apiPath("/schemes/export")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/zip") };
+  if (p === apiPath("/schemes/import")) {
     // 非 zip body → 400
     return { status: 400, check: (r) => expect(r.json.error).toBeTruthy() };
   }
-  if (p === "/webgrp/schemes/project" && ep.method === "GET") {
+  if (p === apiPath("/schemes/project") && ep.method === "GET") {
     // 复制了 repo schemes 数据，模型存在 → 200
     return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
   }
-  if (p === "/webgrp/schemes/project" && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
-  if (p === "/webgrp/schemes/project" && ep.method === "DELETE") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
-  if (p === "/webgrp/schemes/scheme" && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
-  if (p === "/webgrp/schemes/scheme" && ep.method === "DELETE") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+  if (p === apiPath("/schemes/project") && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+  if (p === apiPath("/schemes/project") && ep.method === "DELETE") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+  if (p === apiPath("/schemes/scheme") && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+  if (p === apiPath("/schemes/scheme") && ep.method === "DELETE") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
 
   // 配置域
-  if (p === "/webgrp/color-config" && ep.method === "GET") return { status: 200, check: (r) => expect(r.json).toBeTruthy() };
-  if (p === "/webgrp/color-config" && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
-  if (p === "/webgrp/measurement-config" && ep.method === "GET") return { status: 200, check: (r) => expect(r.json).toBeTruthy() };
-  if (p === "/webgrp/measurement-config" && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
-  if (p === "/webgrp/device-library" && ep.method === "GET") return { status: 200, check: (r) => expect(r.json).toBeTruthy() };
-  if (p === "/webgrp/device-library" && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+  if (p === apiPath("/color-config") && ep.method === "GET") return { status: 200, check: (r) => expect(r.json).toBeTruthy() };
+  if (p === apiPath("/color-config") && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+  if (p === apiPath("/measurement-config") && ep.method === "GET") return { status: 200, check: (r) => expect(r.json).toBeTruthy() };
+  if (p === apiPath("/measurement-config") && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+  if (p === apiPath("/device-library") && ep.method === "GET") return { status: 200, check: (r) => expect(r.json).toBeTruthy() };
+  if (p === apiPath("/device-library") && ep.method === "PUT") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
 
   // v1 方案域
-  if (p === "/webgrp/v1/schemes" && ep.method === "GET") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
-  if (p === "/webgrp/v1/schemes/hierarchy") return { status: 200, check: (r) => expect(r.json.data.nodes).toBeInstanceOf(Array) };
-  if (p === "/webgrp/v1/schemes/models") return { status: 200, check: (r) => expect(r.json.data.models).toBeInstanceOf(Array) };
-  if (p === "/webgrp/v1/schemes/export") return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/zip") };
-  if (p === "/webgrp/v1/schemes/model/json") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
-  if (p === "/webgrp/v1/schemes/model/svg") return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("image/svg") };
+  if (p === apiPath("/v1/schemes") && ep.method === "GET") return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+  if (p === apiPath("/v1/schemes/hierarchy")) return { status: 200, check: (r) => expect(r.json.data.nodes).toBeInstanceOf(Array) };
+  if (p === apiPath("/v1/schemes/models")) return { status: 200, check: (r) => expect(r.json.data.models).toBeInstanceOf(Array) };
+  if (p === apiPath("/v1/schemes/export")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("application/zip") };
+  if (p === apiPath("/v1/schemes/model/json")) return { status: 200, check: (r) => expect(r.json.ok).toBe(true) };
+  if (p === apiPath("/v1/schemes/model/svg")) return { status: 200, check: (r) => expect(r.headers.get("content-type")).toContain("image/svg") };
 
   // v1 图元库域
-  if (p === "/webgrp/v1/library") return { status: 200, check: (r) => expect(r.json.data.categories).toBeInstanceOf(Array) };
-  if (p === "/webgrp/v1/library/categories") return { status: 200, check: (r) => expect(r.json.data.categories).toBeInstanceOf(Array) };
-  if (p === "/webgrp/v1/library/devices") return { status: 200, check: (r) => expect(r.json.data.eSections).toBeInstanceOf(Array) };
-  if (p === "/webgrp/v1/library/measurements") return { status: 200, check: (r) => expect(r.json.data.measurementTypes).toBeInstanceOf(Array) };
-  if (p === "/webgrp/v1/library/device-definitions") return { status: 200, check: (r) => expect(r.json.data).toBeTruthy() };
-  if (p === "/webgrp/v1/library/templates") return { status: 200, check: (r) => expect(r.json.data).toBeTruthy() };
+  if (p === apiPath("/v1/library")) return { status: 200, check: (r) => expect(r.json.data.categories).toBeInstanceOf(Array) };
+  if (p === apiPath("/v1/library/categories")) return { status: 200, check: (r) => expect(r.json.data.categories).toBeInstanceOf(Array) };
+  if (p === apiPath("/v1/library/devices")) return { status: 200, check: (r) => expect(r.json.data.eSections).toBeInstanceOf(Array) };
+  if (p === apiPath("/v1/library/measurements")) return { status: 200, check: (r) => expect(r.json.data.measurementTypes).toBeInstanceOf(Array) };
+  if (p === apiPath("/v1/library/device-definitions")) return { status: 200, check: (r) => expect(r.json.data).toBeTruthy() };
+  if (p === apiPath("/v1/library/templates")) return { status: 200, check: (r) => expect(r.json.data).toBeTruthy() };
 
   // v1 控制台域（经 WS 下发前端，测试 WS 客户端模拟回执）
-  if (p === "/webgrp/v1/control/device/add") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };
-  if (p === "/webgrp/v1/control/scheme/create") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };
-  if (p === "/webgrp/v1/control/model/create") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };
-  if (p === "/webgrp/v1/control/devices/select") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.selectedIds).toBeInstanceOf(Array); expect(r.json.data.validIds).toBeInstanceOf(Array); expect(r.json.data.invalidIds).toBeInstanceOf(Array); } };
-  if (p === "/webgrp/v1/control/devices/group") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.groupId).toBeTruthy(); } };
-  if (p === "/webgrp/v1/control/device/delete") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.deletedIds).toBeInstanceOf(Array); } };
-  if (p === "/webgrp/v1/control/device/property/update") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };
-  if (p === "/webgrp/v1/control/save") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.saved).toBe(true); } };
-  if (p === "/webgrp/v1/control/template/saveFromSelection") return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.templateKind).toBeTruthy(); } };
+  if (p === apiPath("/v1/control/device/add")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };
+  if (p === apiPath("/v1/control/scheme/create")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };
+  if (p === apiPath("/v1/control/model/create")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };
+  if (p === apiPath("/v1/control/devices/select")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.selectedIds).toBeInstanceOf(Array); expect(r.json.data.validIds).toBeInstanceOf(Array); expect(r.json.data.invalidIds).toBeInstanceOf(Array); } };
+  if (p === apiPath("/v1/control/devices/group")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.groupId).toBeTruthy(); } };
+  if (p === apiPath("/v1/control/device/delete")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.deletedIds).toBeInstanceOf(Array); } };
+  if (p === apiPath("/v1/control/device/property/update")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.id).toBeTruthy(); } };
+  if (p === apiPath("/v1/control/save")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.saved).toBe(true); } };
+  if (p === apiPath("/v1/control/template/saveFromSelection")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.templateKind).toBeTruthy(); } };
+  if (p === apiPath("/v1/control/e-device-definition/export")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.filename).toBeTruthy(); } };
+  if (p === apiPath("/v1/control/e-device-definition/import")) return { status: 200, check: (r) => { expect(r.json.ok).toBe(true); expect(r.json.data.matched).toBeInstanceOf(Array); } };
 
   throw new Error(`未定义期望: ${ep.method} ${p} (示例: ${label})`);
 }
@@ -286,13 +293,13 @@ function expectFor(ep, ex) {
 describe("swigger 量测配置元数据", () => {
   test("记录新增量测框默认样式", () => {
     const getConfig = SWIGGER_ENDPOINTS.find((endpoint) => (
-      endpoint.method === "GET" && endpoint.path === "/webgrp/measurement-config"
+      endpoint.method === "GET" && endpoint.path === apiPath("/measurement-config")
     ));
     const putConfig = SWIGGER_ENDPOINTS.find((endpoint) => (
-      endpoint.method === "PUT" && endpoint.path === "/webgrp/measurement-config"
+      endpoint.method === "PUT" && endpoint.path === apiPath("/measurement-config")
     ));
     const getV1Measurements = SWIGGER_ENDPOINTS.find((endpoint) => (
-      endpoint.method === "GET" && endpoint.path === "/webgrp/v1/library/measurements"
+      endpoint.method === "GET" && endpoint.path === apiPath("/v1/library/measurements")
     ));
 
     expect(getConfig?.response).toContain("groupDefaults");

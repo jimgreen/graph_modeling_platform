@@ -6,6 +6,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, test, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
+import { apiPath } from "./config.mjs";
 
 let server;
 let baseUrl;
@@ -79,28 +80,28 @@ describe("图标库静态资源 /icon-library", () => {
 // ============ 图片资源 ============
 describe("图片资源 /webgrp/images & /webgrp/image-folders", () => {
   test("GET /webgrp/images 空清单", async () => {
-    const { status, json } = await fetchJson("/webgrp/images");
+    const { status, json } = await fetchJson(apiPath("/images"));
     expect(status).toBe(200);
     expect(Array.isArray(json)).toBe(true);
     expect(json).toHaveLength(0);
   });
 
   test("POST /webgrp/images 上传后出现在清单", async () => {
-    const up = await fetchJson("/webgrp/images", {
+    const up = await fetchJson(apiPath("/images"), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ dataUrl: PNG_1X1, name: "示例.png" })
     });
     expect(up.status).toBe(201);
     expect(up.json.id).toBeTruthy();
-    expect(up.json.url).toBe(`/webgrp/images/${up.json.id}`);
-    const list = await fetchJson("/webgrp/images");
+    expect(up.json.url).toBe(apiPath(`/images/${up.json.id}`));
+    const list = await fetchJson(apiPath("/images"));
     expect(list.json).toHaveLength(1);
     expect(list.json[0].id).toBe(up.json.id);
   });
 
   test("POST /webgrp/images 缺 dataUrl → 400", async () => {
-    const { status, json } = await fetchJson("/webgrp/images", {
+    const { status, json } = await fetchJson(apiPath("/images"), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "无数据.png" })
@@ -110,12 +111,12 @@ describe("图片资源 /webgrp/images & /webgrp/image-folders", () => {
   });
 
   test("GET /webgrp/images/{id} 下载二进制", async () => {
-    const up = await fetchJson("/webgrp/images", {
+    const up = await fetchJson(apiPath("/images"), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ dataUrl: PNG_1X1, name: "dl.png" })
     });
-    const res = await fetch(`${baseUrl}/webgrp/images/${up.json.id}`);
+    const res = await fetch(`${baseUrl}${apiPath(`/images/${up.json.id}`)}`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("image/png");
     const buf = Buffer.from(await res.arrayBuffer());
@@ -123,38 +124,38 @@ describe("图片资源 /webgrp/images & /webgrp/image-folders", () => {
   });
 
   test("GET /webgrp/images/{id} 不存在 → 404", async () => {
-    const { status } = await fetchJson("/webgrp/images/nope-id");
+    const { status } = await fetchJson(apiPath("/images/nope-id"));
     expect(status).toBe(404);
   });
 
   test("DELETE /webgrp/images/{id} 删除图片资源", async () => {
-    const up = await fetchJson("/webgrp/images", {
+    const up = await fetchJson(apiPath("/images"), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ dataUrl: PNG_1X1, name: "待删除.png" })
     });
     expect(up.status).toBe(201);
 
-    const deleted = await fetchJson(`/webgrp/images/${up.json.id}`, { method: "DELETE" });
+    const deleted = await fetchJson(apiPath(`/images/${up.json.id}`), { method: "DELETE" });
     expect(deleted.status).toBe(200);
     expect(deleted.json.ok).toBe(true);
 
-    const list = await fetchJson("/webgrp/images");
+    const list = await fetchJson(apiPath("/images"));
     expect(list.json.some((item) => item.id === up.json.id)).toBe(false);
-    const download = await fetch(`${baseUrl}/webgrp/images/${up.json.id}`);
+    const download = await fetch(`${baseUrl}${apiPath(`/images/${up.json.id}`)}`);
     expect(download.status).toBe(404);
   });
 
   test("图片文件夹 CRUD", async () => {
     // 初始有 root
-    const list0 = await fetchJson("/webgrp/image-folders");
+    const list0 = await fetchJson(apiPath("/image-folders"));
     expect(list0.status).toBe(200);
     expect(Array.isArray(list0.json)).toBe(true);
     const root = list0.json.find((f) => f.id === "root");
     expect(root).toBeTruthy();
 
     // 新建
-    const created = await fetchJson("/webgrp/image-folders", {
+    const created = await fetchJson(apiPath("/image-folders"), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "测试夹" })
@@ -164,7 +165,7 @@ describe("图片资源 /webgrp/images & /webgrp/image-folders", () => {
     const fid = created.json.id;
 
     // 重命名
-    const renamed = await fetchJson(`/webgrp/image-folders/${fid}`, {
+    const renamed = await fetchJson(apiPath(`/image-folders/${fid}`), {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "改名夹" })
@@ -173,12 +174,12 @@ describe("图片资源 /webgrp/images & /webgrp/image-folders", () => {
     expect(renamed.json.name).toBe("改名夹");
 
     // 重名冲突 → 409
-    await fetchJson("/webgrp/image-folders", {
+    await fetchJson(apiPath("/image-folders"), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "另一个" })
     });
-    const dup = await fetchJson(`/webgrp/image-folders/${fid}`, {
+    const dup = await fetchJson(apiPath(`/image-folders/${fid}`), {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "另一个" })
@@ -186,17 +187,17 @@ describe("图片资源 /webgrp/images & /webgrp/image-folders", () => {
     expect(dup.status).toBe(409);
 
     // 删除
-    const del = await fetchJson(`/webgrp/image-folders/${fid}`, { method: "DELETE" });
+    const del = await fetchJson(apiPath(`/image-folders/${fid}`), { method: "DELETE" });
     expect(del.status).toBe(200);
     expect(del.json.ok).toBe(true);
 
     // root 不可删
-    const delRoot = await fetchJson("/webgrp/image-folders/root", { method: "DELETE" });
+    const delRoot = await fetchJson(apiPath("/image-folders/root"), { method: "DELETE" });
     expect(delRoot.status).toBe(400);
   });
 
   test("POST /webgrp/image-library/import 批量恢复图标库并保留资源 ID", async () => {
-    const imported = await fetchJson("/webgrp/image-library/import", {
+    const imported = await fetchJson(apiPath("/image-library/import"), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -217,19 +218,19 @@ describe("图片资源 /webgrp/images & /webgrp/image-folders", () => {
     expect(imported.status).toBe(200);
     expect(imported.json).toMatchObject({ ok: true, importedCount: 1 });
 
-    const folders = await fetchJson("/webgrp/image-folders");
+    const folders = await fetchJson(apiPath("/image-folders"));
     expect(folders.json.some((folder) => folder.id === "custom-icons" && folder.name === "自定义图标")).toBe(true);
 
-    const list = await fetchJson("/webgrp/images");
+    const list = await fetchJson(apiPath("/images"));
     const preservedAsset = list.json.find((item) => item.id === "img-preserved-id");
     expect(preservedAsset).toMatchObject({
       id: "img-preserved-id",
       name: "保留ID.png",
       folderId: "custom-icons",
-      url: "/webgrp/images/img-preserved-id"
+      url: apiPath("/images/img-preserved-id")
     });
 
-    const downloaded = await fetch(`${baseUrl}/webgrp/images/img-preserved-id`);
+    const downloaded = await fetch(`${baseUrl}${apiPath("/images/img-preserved-id")}`);
     expect(downloaded.status).toBe(200);
     expect(downloaded.headers.get("content-type")).toContain("image/png");
   });
@@ -238,25 +239,25 @@ describe("图片资源 /webgrp/images & /webgrp/image-folders", () => {
 // ============ 方案域 ============
 describe("方案域 /webgrp/schemes", () => {
   test("GET /webgrp/schemes 空方案树", async () => {
-    const { status, json } = await fetchJson("/webgrp/schemes");
+    const { status, json } = await fetchJson(apiPath("/schemes"));
     expect(status).toBe(200);
     expect(json.schemes).toEqual([]);
   });
 
   test("PUT /webgrp/schemes 保存方案树 → GET 读回", async () => {
-    const saved = await fetchJson("/webgrp/schemes", {
+    const saved = await fetchJson(apiPath("/schemes"), {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ schemes: [{ name: "方案A", updatedAt: "2026-01-01T00:00:00Z", projects: [], children: [] }] })
     });
     expect(saved.status).toBe(200);
     expect(saved.json.ok).toBe(true);
-    const got = await fetchJson("/webgrp/schemes");
+    const got = await fetchJson(apiPath("/schemes"));
     expect(got.json.schemes[0].name).toBe("方案A");
   });
 
   test("PUT /webgrp/schemes 缺数据 → 400", async () => {
-    const { status } = await fetchJson("/webgrp/schemes", {
+    const { status } = await fetchJson(apiPath("/schemes"), {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({})
@@ -266,7 +267,7 @@ describe("方案域 /webgrp/schemes", () => {
 
   test("模型 CRUD：保存/读取/删除", async () => {
     // 保存模型
-    const saved = await fetchJson("/webgrp/schemes/project", {
+    const saved = await fetchJson(apiPath("/schemes/project"), {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ schemePath: ["方案A"], name: "模型1", project: { canvasWidth: 1920, canvasHeight: 1024, nodes: [], edges: [] } })
@@ -275,21 +276,21 @@ describe("方案域 /webgrp/schemes", () => {
     expect(saved.json.ok).toBe(true);
 
     // 读取
-    const got = await fetchJson(`/webgrp/schemes/project?schemePath=${SP_A}&name=模型1`);
+    const got = await fetchJson(apiPath(`/schemes/project?schemePath=${SP_A}&name=模型1`));
     expect(got.status).toBe(200);
     expect(got.json.ok).toBe(true);
     expect(got.json.project).toBeTruthy();
 
     // 缺 name → 400
-    const bad = await fetchJson(`/webgrp/schemes/project?schemePath=${SP_A}`);
+    const bad = await fetchJson(apiPath(`/schemes/project?schemePath=${SP_A}`));
     expect(bad.status).toBe(400);
 
     // 不存在 → 404
-    const nf = await fetchJson(`/webgrp/schemes/project?schemePath=${SP_A}&name=不存在`);
+    const nf = await fetchJson(apiPath(`/schemes/project?schemePath=${SP_A}&name=不存在`));
     expect(nf.status).toBe(404);
 
     // 删除
-    const del = await fetchJson("/webgrp/schemes/project", {
+    const del = await fetchJson(apiPath("/schemes/project"), {
       method: "DELETE",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ schemePath: ["方案A"], name: "模型1" })
@@ -299,7 +300,7 @@ describe("方案域 /webgrp/schemes", () => {
   });
 
   test("方案目录 保存/删除", async () => {
-    const saved = await fetchJson("/webgrp/schemes/scheme", {
+    const saved = await fetchJson(apiPath("/schemes/scheme"), {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ schemePath: ["方案B"] })
@@ -307,7 +308,7 @@ describe("方案域 /webgrp/schemes", () => {
     expect(saved.status).toBe(200);
     expect(saved.json.ok).toBe(true);
 
-    const del = await fetchJson("/webgrp/schemes/scheme", {
+    const del = await fetchJson(apiPath("/schemes/scheme"), {
       method: "DELETE",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ schemePath: ["方案B"] })
@@ -316,7 +317,7 @@ describe("方案域 /webgrp/schemes", () => {
     expect(del.json.ok).toBe(true);
 
     // 缺路径 → 400
-    const bad = await fetchJson("/webgrp/schemes/scheme", {
+    const bad = await fetchJson(apiPath("/schemes/scheme"), {
       method: "DELETE",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({})
@@ -326,7 +327,7 @@ describe("方案域 /webgrp/schemes", () => {
 
   test("GET /webgrp/schemes/export 不存在 → 404", async () => {
     const sp = encodeURIComponent(JSON.stringify(["不存在方案"]));
-    const { status } = await fetchJson(`/webgrp/schemes/export?schemePath=${sp}`);
+    const { status } = await fetchJson(apiPath(`/schemes/export?schemePath=${sp}`));
     expect(status).toBe(404);
   });
 });
@@ -334,11 +335,11 @@ describe("方案域 /webgrp/schemes", () => {
 // ============ 配置域 ============
 describe("配置域 /webgrp/color-config & measurement-config & device-library", () => {
   test("color-config 读取 → 保存 → 再读取", async () => {
-    const got0 = await fetchJson("/webgrp/color-config");
+    const got0 = await fetchJson(apiPath("/color-config"));
     expect(got0.status).toBe(200);
     expect(got0.json).toBeTruthy();
 
-    const saved = await fetchJson("/webgrp/color-config", {
+    const saved = await fetchJson(apiPath("/color-config"), {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ colorDisplayMode: "voltage", colorPalette: { test: 1 } })
@@ -346,13 +347,13 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
     expect(saved.status).toBe(200);
     expect(saved.json.ok).toBe(true);
 
-    const got1 = await fetchJson("/webgrp/color-config");
+    const got1 = await fetchJson(apiPath("/color-config"));
     expect(got1.status).toBe(200);
     expect(got1.json.colorDisplayMode).toBe("voltage");
   });
 
   test("measurement-config 保存 → 读取", async () => {
-    const saved = await fetchJson("/webgrp/measurement-config", {
+    const saved = await fetchJson(apiPath("/measurement-config"), {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -368,7 +369,7 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
     });
     expect(saved.status).toBe(200);
     expect(saved.json.ok).toBe(true);
-    const got = await fetchJson("/webgrp/measurement-config");
+    const got = await fetchJson(apiPath("/measurement-config"));
     expect(got.status).toBe(200);
     expect(Array.isArray(got.json.measurementTypes)).toBe(true);
     expect(got.json.groupDefaults).toEqual({
@@ -380,7 +381,7 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
   });
 
   test("device-library 保存 → 读取", async () => {
-    const saved = await fetchJson("/webgrp/device-library", {
+    const saved = await fetchJson(apiPath("/device-library"), {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -394,7 +395,7 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
     expect(saved.json.ok).toBe(true);
     expect(saved.json.eDeviceDefinitionLabels).toEqual({ ACGenerator: "ACGeneratorRenamed" });
     expect(saved.json.eDeviceDefinitionClassExportEnabled).toEqual({ ACGenerator: false });
-    const got = await fetchJson("/webgrp/device-library");
+    const got = await fetchJson(apiPath("/device-library"));
     expect(got.status).toBe(200);
     expect(got.json.eDeviceDefinitionLabels).toEqual({ ACGenerator: "ACGeneratorRenamed" });
     expect(got.json.eDeviceDefinitionClassExportEnabled).toEqual({ ACGenerator: false });

@@ -8,6 +8,7 @@ import {
   userCustomizationSnapshotFromLibraryPackage
 } from "./appExtracted/appUserCustomizationFactories";
 import { emptyUserDeviceLibrary, normalizeUserCustomizationSnapshot } from "./userCustomizations";
+import { apiPath } from "./config";
 
 const snapshot = (assetIds: string[] = []) => normalizeUserCustomizationSnapshot({
   deviceLibrary: emptyUserDeviceLibrary(),
@@ -19,7 +20,7 @@ const snapshot = (assetIds: string[] = []) => normalizeUserCustomizationSnapshot
       id,
       name: id,
       folderId: "root",
-      url: `/webgrp/images/${id}`,
+      url: apiPath(`/images/${id}`),
       dataUrl: "data:image/png;base64,AA=="
     }))
   }
@@ -39,8 +40,8 @@ describe("user customization application factories", () => {
         { id: "builtin-shared-icons", name: "内置" }
       ]),
       fetchAllBackendImages: vi.fn(async () => [
-        { id: "img-user", name: "用户图片", folderId: "root", url: "/webgrp/images/img-user" },
-        { id: "builtin-shared-icon-1", name: "内置", folderId: "builtin-shared-icons", url: "/webgrp/images/builtin" }
+        { id: "img-user", name: "用户图片", folderId: "root", url: apiPath("/images/img-user") },
+        { id: "builtin-shared-icon-1", name: "内置", folderId: "builtin-shared-icons", url: apiPath("/images/builtin") }
       ]),
       fetchBackendImageDataUrl: vi.fn(async () => "data:image/png;base64,AA==")
     });

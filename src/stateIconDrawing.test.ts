@@ -44,6 +44,7 @@ import {
   terminalStubStrokeWidth
 } from "./model";
 import { APP_STATIC_SCOPE } from "./appExtracted/appStaticScope";
+import { apiPath } from "./config";
 import {
   createAddCustomDeviceStateDraftRow,
   createAddStateIconDrawingElement,
@@ -149,7 +150,7 @@ describe("default device state draft rows", () => {
         strokeWidth: 2,
         strokeColor: "#334155",
         fillColor: "#fef3c7",
-        backgroundImage: "/webgrp/images/bg-1",
+        backgroundImage: apiPath("/images/bg-1"),
         backgroundImageAssetId: "bg-1",
         backgroundImageFit: "stretch"
       },
@@ -164,7 +165,7 @@ describe("default device state draft rows", () => {
     expect(imageSource).toContain('data-state-icon-frame-image="true"');
     expect(imageSource).toContain('data-state-icon-frame-image-asset-id="bg-1"');
     expect(imageSource).toContain('data-state-icon-frame-image-fit="stretch"');
-    expect(imageSource).toContain('href="/webgrp/images/bg-1"');
+    expect(imageSource).toContain('href="' + apiPath('/images/bg-1') + '"');
     expect(imageSource).toContain('preserveAspectRatio="none"');
   });
 
@@ -175,7 +176,7 @@ describe("default device state draft rows", () => {
         strokeWidth: 2,
         strokeColor: "#334155",
         fillColor: "#fef3c7",
-        backgroundImage: "/webgrp/images/bg-1",
+        backgroundImage: apiPath("/images/bg-1"),
         backgroundImageAssetId: "bg-1",
         backgroundImageFit: "stretch"
       },
@@ -198,7 +199,7 @@ describe("default device state draft rows", () => {
       strokeWidth: 2,
       strokeColor: "#334155",
       fillColor: "#fef3c7",
-      backgroundImage: "/webgrp/images/bg-1",
+      backgroundImage: apiPath("/images/bg-1"),
       backgroundImageAssetId: "bg-1",
       backgroundImageFit: "stretch"
     });
@@ -206,7 +207,7 @@ describe("default device state draft rows", () => {
 
   test("serializes drawing image element fit modes", () => {
     const element = {
-      ...createImportedStateIconElement("image", "/webgrp/images/photo", "图片"),
+      ...createImportedStateIconElement("image", apiPath("/images/photo"), "图片"),
       imageFit: "tile",
       width: 80,
       height: 48
@@ -217,7 +218,7 @@ describe("default device state draft rows", () => {
 
     expect(imageSource).toContain('data-state-icon-image-fit="tile"');
     expect(imageSource).toContain("<pattern");
-    expect(imageSource).toContain('href="/webgrp/images/photo"');
+    expect(imageSource).toContain('href="' + apiPath('/images/photo') + '"');
   });
 
   test("does not serialize an empty drawing with only the default frame", () => {
@@ -436,7 +437,7 @@ describe("default device state draft rows", () => {
         strokeWidth: 2,
         strokeColor: "#334155",
         fillColor: "#f8fafc",
-        backgroundImage: "/webgrp/images/frame-bg",
+        backgroundImage: apiPath("/images/frame-bg"),
         backgroundImageAssetId: "frame-bg"
       } as any,
       frameHasTerminals: true,
@@ -447,15 +448,15 @@ describe("default device state draft rows", () => {
 
     expect(imageSource).toContain('data-state-icon-frame-image="true"');
     expect(imageSource).toContain('data-state-icon-frame-image-asset-id="frame-bg"');
-    expect(imageSource).toContain('href="/webgrp/images/frame-bg"');
+    expect(imageSource).toContain('href="' + apiPath('/images/frame-bg') + '"');
     expect(imageSource).not.toContain("should-not-inline");
-    expect(stateIconDrawingInitialFrame(row, { "frame-bg": "/webgrp/images/frame-bg" }, {
+    expect(stateIconDrawingInitialFrame(row, { "frame-bg": apiPath("/images/frame-bg") }, {
       strokeStyle: "dashed",
       strokeWidth: 1,
       strokeColor: "#94a3b8",
       fillColor: "#ffffff"
     } as any)).toMatchObject({
-      backgroundImage: "/webgrp/images/frame-bg",
+      backgroundImage: apiPath("/images/frame-bg"),
       backgroundImageAssetId: "frame-bg"
     });
     expect(createEditableStateIconElementsFromSvgSource(svgSourceFromDataUrl(image), "后台背景图")).toHaveLength(1);
@@ -506,13 +507,13 @@ describe("default device state draft rows", () => {
 
   test("wraps non-svg custom device images so terminal connector lines are saved with the definition", () => {
     const withConnectors = customDeviceImageWithTerminalConnectors(
-      "/webgrp/images/background-asset",
+      apiPath("/images/background-asset"),
       ["ac"],
       [{ x: -0.5, y: 0.25 }]
     );
     const source = svgSourceFromDataUrl(withConnectors);
 
-    expect(source).toContain('<image href="/webgrp/images/background-asset"');
+    expect(source).toContain('<image href="' + apiPath('/images/background-asset') + '"');
     expect(source).toContain('data-custom-device-persisted-terminal-connectors="true"');
     expect(source).toContain('x1="0" y1="110" x2="30" y2="110"');
     expect(source).not.toContain("<circle");
@@ -718,15 +719,15 @@ describe("default device state draft rows", () => {
   });
 
   test("can inline backend image references when composing a state icon image", () => {
-    const imageElement = createImportedStateIconElement("image", "/webgrp/images/icon-a", "后台图标");
+    const imageElement = createImportedStateIconElement("image", apiPath("/images/icon-a"), "后台图标");
 
     const image = stateIconDrawingToImage([imageElement], {
-      resolveImageHref: (href) => href === "/webgrp/images/icon-a" ? "data:image/png;base64,aWNvbg==" : href
+      resolveImageHref: (href) => href === apiPath("/images/icon-a") ? "data:image/png;base64,aWNvbg==" : href
     });
     const svgSource = svgSourceFromDataUrl(image);
 
     expect(svgSource).toContain('href="data:image/png;base64,aWNvbg=="');
-    expect(svgSource).not.toContain('href="/webgrp/images/icon-a"');
+    expect(svgSource).not.toContain('href="' + apiPath('/images/icon-a') + '"');
   });
 
   test("draws frame background and border inside the inner area when terminals exist", () => {
@@ -2493,7 +2494,7 @@ describe("default device state draft rows", () => {
       "line.svg"
     );
     const emptyImage = createImportedStateIconElement("image", "", "empty.png");
-    const imageLayer = createImportedStateIconElement("image", "/webgrp/images/icon.png", "icon.png");
+    const imageLayer = createImportedStateIconElement("image", apiPath("/images/icon.png"), "icon.png");
 
     expect(stateIconDrawingPreviewNeedsDirectElementRender([line, emptyImage])).toBe(false);
     expect(stateIconDrawingPreviewNeedsDirectElementRender([line, svgLayer, emptyImage])).toBe(true);

@@ -5,6 +5,7 @@ import { describe, expect, test, beforeEach, afterEach } from "vitest";
 import AdmZip from "adm-zip";
 import { createImageServer } from "./image-server.mjs";
 import { encodeSchemePath } from "./schemePath.mjs";
+import { apiPath } from "./config.mjs";
 
 // 集成测试：起真实 server（临时端口 + tmpdir 数据目录），打真实 /webgrp/v1 请求。
 // 问题：createImageServer 用模块级 schemeDataDir（repo data/），无法注入 tmpdir。
@@ -60,98 +61,98 @@ const sampleProject = {
   edges: []
 };
 
-describe("/webgrp/v1/schemes 方案列表", () => {
+describe(apiPath("/v1/schemes") + " 方案列表", () => {
   test("200 返回信封 {ok:true,data:{schemes}}", async () => {
-    const { status, json } = await fetchV1("/webgrp/v1/schemes");
+    const { status, json } = await fetchV1(apiPath("/v1/schemes"));
     expect(status).toBe(200);
     expect(json.ok).toBe(true);
     expect(Array.isArray(json.data.schemes)).toBe(true);
   });
 
   test("includeProjects=1 时含 projects", async () => {
-    const { status, json } = await fetchV1("/webgrp/v1/schemes?includeProjects=1");
+    const { status, json } = await fetchV1(apiPath("/v1/schemes") + "?includeProjects=1");
     expect(status).toBe(200);
     expect(json.ok).toBe(true);
   });
 });
 
-describe("/webgrp/v1/schemes/hierarchy 层级树", () => {
+describe(apiPath("/v1/schemes/hierarchy") + " 层级树", () => {
   test("200 返回 {ok:true,data:{nodes}}", async () => {
-    const { status, json } = await fetchV1("/webgrp/v1/schemes/hierarchy");
+    const { status, json } = await fetchV1(apiPath("/v1/schemes/hierarchy"));
     expect(status).toBe(200);
     expect(json.ok).toBe(true);
     expect(Array.isArray(json.data.nodes)).toBe(true);
   });
 });
 
-describe("/webgrp/v1/schemes/models 模型列表", () => {
+describe(apiPath("/v1/schemes/models") + " 模型列表", () => {
   test("缺少 schemePath 返 400", async () => {
-    const { status, json } = await fetchV1("/webgrp/v1/schemes/models");
+    const { status, json } = await fetchV1(apiPath("/v1/schemes/models"));
     expect(status).toBe(400);
     expect(json.ok).toBe(false);
     expect(json.error.code).toBe("bad-request");
   });
 
   test("非法 schemePath（非 JSON）返 400", async () => {
-    const { status } = await fetchV1("/webgrp/v1/schemes/models?schemePath=not-json");
+    const { status } = await fetchV1(apiPath("/v1/schemes/models") + "?schemePath=not-json");
     expect(status).toBe(400);
   });
 
   test("不存在的方案返 404", async () => {
     const sp = encodeSchemePath(["不存在的方案xyz"]);
-    const { status, json } = await fetchV1(`/webgrp/v1/schemes/models?schemePath=${sp}`);
+    const { status, json } = await fetchV1(apiPath(`/v1/schemes/models?schemePath=${sp}`));
     expect(status).toBe(404);
     expect(json.error.code).toBe("not-found");
   });
 });
 
-describe("/webgrp/v1/schemes/export 方案导出", () => {
+describe(apiPath("/v1/schemes/export") + " 方案导出", () => {
   test("缺少 schemePath 返 400", async () => {
-    const { status } = await fetchV1("/webgrp/v1/schemes/export");
+    const { status } = await fetchV1(apiPath("/v1/schemes/export"));
     expect(status).toBe(400);
   });
 
   test("不存在的方案返 404", async () => {
     const sp = encodeSchemePath(["不存在的方案xyz"]);
-    const { status } = await fetchV1(`/webgrp/v1/schemes/export?schemePath=${sp}`);
+    const { status } = await fetchV1(apiPath(`/v1/schemes/export?schemePath=${sp}`));
     expect(status).toBe(404);
   });
 });
 
-describe("/webgrp/v1/schemes/model/json 模型 JSON", () => {
+describe(apiPath("/v1/schemes/model/json") + " 模型 JSON", () => {
   test("缺少 schemePath 返 400", async () => {
-    const { status } = await fetchV1("/webgrp/v1/schemes/model/json?name=x");
+    const { status } = await fetchV1(apiPath("/v1/schemes/model/json") + "?name=x");
     expect(status).toBe(400);
   });
 
   test("缺少 name 返 400", async () => {
     const sp = encodeSchemePath(["方案"]);
-    const { status } = await fetchV1(`/webgrp/v1/schemes/model/json?schemePath=${sp}`);
+    const { status } = await fetchV1(apiPath(`/v1/schemes/model/json?schemePath=${sp}`));
     expect(status).toBe(400);
   });
 
   test("不存在模型返 404", async () => {
     const sp = encodeSchemePath(["方案xyz"]);
-    const { status } = await fetchV1(`/webgrp/v1/schemes/model/json?schemePath=${sp}&name=不存在`);
+    const { status } = await fetchV1(apiPath(`/v1/schemes/model/json?schemePath=${sp}&name=不存在`));
     expect(status).toBe(404);
   });
 });
 
-describe("/webgrp/v1/schemes/model/svg 模型 SVG", () => {
+describe(apiPath("/v1/schemes/model/svg") + " 模型 SVG", () => {
   test("缺少 schemePath 返 400", async () => {
-    const { status } = await fetchV1("/webgrp/v1/schemes/model/svg?name=x");
+    const { status } = await fetchV1(apiPath("/v1/schemes/model/svg") + "?name=x");
     expect(status).toBe(400);
   });
 
   test("缺少 name 返 400", async () => {
     const sp = encodeSchemePath(["方案"]);
-    const { status } = await fetchV1(`/webgrp/v1/schemes/model/svg?schemePath=${sp}`);
+    const { status } = await fetchV1(apiPath(`/v1/schemes/model/svg?schemePath=${sp}`));
     expect(status).toBe(400);
   });
 
   test("不存在模型返 404", async () => {
     const sp = encodeSchemePath(["方案xyz"]);
-    const { status } = await fetchV1(`/webgrp/v1/schemes/model/svg?schemePath=${sp}&name=不存在`);
+    const { status } = await fetchV1(apiPath(`/v1/schemes/model/svg?schemePath=${sp}&name=不存在`));
     expect(status).toBe(404);
   });
 });
