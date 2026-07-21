@@ -469,3 +469,27 @@ describe("canvas memoization", () => {
     )).toBe(false);
   });
 });
+
+describe("user customization manager entry", () => {
+  test("keeps the customization manager in the component library toolbar", () => {
+    const source = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const templateActions = source.match(
+      /<div className="template-library-actions library-scope-actions"[\s\S]*?<\/div>\s*<div className="library-display-mode"/
+    )?.[0] ?? "";
+    const componentActions = source.match(
+      /<div className="component-library-actions library-scope-actions"[\s\S]*?<\/div>\s*<div className="library-display-mode"/
+    )?.[0] ?? "";
+
+    expect(templateActions).not.toContain("自定义管理");
+    expect(componentActions).toContain("自定义管理");
+    expect(componentActions).toContain("openUserCustomizationManager");
+  });
+
+  test("keeps the customization table readable on narrow screens", () => {
+    const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+
+    expect(styles).toMatch(
+      /@media \(max-width: 760px\)[\s\S]*?\.user-customization-table\s*\{[\s\S]*?min-width:\s*720px/
+    );
+  });
+});

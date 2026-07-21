@@ -10,6 +10,7 @@ import {
 import { buildExportDeviceIdMap } from "../svgExportUtils";
 import { inferESection, getTemplateParameterDefinitions, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo } from "../model";
 import { buildEDeviceInterfaceDefinitionRows } from "./appDeviceDefinitionFactories";
+import { UserCustomizationManagerDialog } from "../UserCustomizationManagerDialog";
 
 export type ImagePickerLibraryTab = "image" | "icon";
 
@@ -1159,6 +1160,7 @@ export function renderAppView(__appScope: Record<string, any>) {
             <input ref={__appScope.svgModelImportInputRef} type="file" accept=".svg,image/svg+xml" hidden onChange={__appScope.importSvgModelFile}/>
             <input ref={schemeImportInputRef} type="file" accept=".zip,application/zip,.json,application/json" hidden onChange={importSchemeFile}/>
             <input ref={__appScope.libraryPackageImportInputRef} type="file" accept=".json,application/json" hidden onChange={__appScope.importLibraryPackageFile}/>
+            <input ref={__appScope.userCustomizationImportInputRef} type="file" accept=".json,application/json" hidden onChange={__appScope.importUserCustomizationFile}/>
             <button onClick={exportSvg} disabled={!canExportCurrentModel} title={canExportCurrentModel ? "导出 SVG 图形文件" : "请先保存当前模型后再导出图形文件"} aria-label="导出图形文件">
               <Download size={16}/>
             </button>
@@ -2300,6 +2302,22 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>
       )}
+      <UserCustomizationManagerDialog
+        open={Boolean(__appScope.userCustomizationManagerOpen)}
+        inventory={__appScope.userCustomizationInventory}
+        activeDomain={__appScope.userCustomizationActiveDomain}
+        busy={Boolean(__appScope.userCustomizationBusy)}
+        status={__appScope.userCustomizationStatus ?? ""}
+        pendingImport={__appScope.pendingUserCustomizationImport}
+        onClose={__appScope.closeUserCustomizationManager}
+        onDomainChange={__appScope.setUserCustomizationActiveDomain}
+        onExport={__appScope.exportAllUserCustomizations}
+        onChooseImport={__appScope.openUserCustomizationImportFilePicker}
+        onImportModeChange={__appScope.changePendingUserCustomizationImportMode}
+        onConfirmImport={__appScope.confirmUserCustomizationImport}
+        onCancelImport={__appScope.cancelPendingUserCustomizationImport}
+        onRestore={__appScope.restoreUserCustomizations}
+      />
       {renderMeasurementConfigDialog()}
       {renderMeasurementEditorDialog()}
       {pendingRecordPasteConflict && (<div className="image-picker-backdrop" onPointerDown={() => resolveRecordPasteConflict("cancel")}>
