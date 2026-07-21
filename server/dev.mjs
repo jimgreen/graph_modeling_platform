@@ -9,7 +9,8 @@ console.log(`Image backend listening at http://${host}:${imagePort}`);
 console.log(`API Swigger:          http://${host}:${imagePort}/swigger`);
 
 const viteCommand = process.platform === "win32" ? "cmd.exe" : "npx";
-const viteArgs = process.platform === "win32" ? ["/c", "npx", "vite", "--host", host] : ["vite", "--host", host];
+const viteConfigArgs = ["--host", host, "--config", "vite.config.ts"];
+const viteArgs = process.platform === "win32" ? ["/c", "npx", "vite", ...viteConfigArgs] : ["vite", ...viteConfigArgs];
 const vite = spawn(viteCommand, viteArgs, {
   stdio: "inherit",
   env: {
