@@ -848,7 +848,7 @@ describe("manual bend interaction helpers", () => {
       generateCustomDeviceImage: () => "data:image/svg+xml,%3Csvg%2F%3E",
       hasOverlappingCustomDeviceTerminalAnchors: () => false,
       isReservedDeviceDefinitionParamName: () => false,
-      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name),
+      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
       measurementConfig: { measurementTypes: [], deviceProfiles: [] },
       measurementConfigDraft: undefined,
       measurementConfigDraftRef: undefined,
@@ -865,6 +865,8 @@ describe("manual bend interaction helpers", () => {
       },
       setCustomDeviceDraftCleanBaseline: vi.fn(),
       setCustomDeviceSaveMessage: vi.fn(),
+      setCustomDeviceSaveToast: vi.fn(),
+      customDeviceSaveToastTimerRef: { current: null },
       setCustomDeviceTemplates: (templates: any[]) => {
         savedTemplates = templates;
       },
@@ -949,7 +951,7 @@ describe("manual bend interaction helpers", () => {
       isReservedDeviceDefinitionParamName: () => false,
       isDerivedComponentBaseParamName: (name: unknown) =>
         ["idx", "name", "status", "run_stat", "node", "ratedPower"].includes(String(name ?? "").trim()),
-      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name),
+      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
       measurementConfig: { measurementTypes: [], deviceProfiles: [] },
       measurementConfigDraft: undefined,
       measurementConfigDraftRef: undefined,
@@ -968,6 +970,8 @@ describe("manual bend interaction helpers", () => {
       },
       setCustomDeviceDraftCleanBaseline: vi.fn(),
       setCustomDeviceSaveMessage: vi.fn(),
+      setCustomDeviceSaveToast: vi.fn(),
+      customDeviceSaveToastTimerRef: { current: null },
       setCustomDeviceTemplates: (templates: any[]) => {
         savedTemplates = templates;
       },
@@ -1066,7 +1070,7 @@ describe("manual bend interaction helpers", () => {
       isDerivedComponentBaseParamName: (name: unknown) =>
         !String(name ?? "").trim() ||
         ["idx", "name", "status", "run_stat", "node", "ratedPower"].includes(String(name ?? "").trim()),
-      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name),
+      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
       measurementConfig: { measurementTypes: [], deviceProfiles: [] },
       measurementConfigDraft: undefined,
       measurementConfigDraftRef: undefined,
@@ -1085,6 +1089,8 @@ describe("manual bend interaction helpers", () => {
       },
       setCustomDeviceDraftCleanBaseline: vi.fn(),
       setCustomDeviceSaveMessage: vi.fn(),
+      setCustomDeviceSaveToast: vi.fn(),
+      customDeviceSaveToastTimerRef: { current: null },
       setCustomDeviceTemplates: (templates: any[]) => {
         savedTemplates = templates;
       },
@@ -1162,7 +1168,7 @@ describe("manual bend interaction helpers", () => {
       hasOverlappingCustomDeviceTerminalAnchors: () => false,
       isDerivedComponentBaseParamName: () => false,
       isReservedDeviceDefinitionParamName: () => false,
-      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name),
+      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
       libraryTemplates: [template],
       measurementConfig: { measurementTypes: [], deviceProfiles: [] },
       measurementConfigDraft: undefined,
@@ -1177,6 +1183,8 @@ describe("manual bend interaction helpers", () => {
       },
       setCustomDeviceDraftCleanBaseline: vi.fn(),
       setCustomDeviceSaveMessage: vi.fn(),
+      setCustomDeviceSaveToast: vi.fn(),
+      customDeviceSaveToastTimerRef: { current: null },
       setDeviceDefinitionOverrides: (next: any) => {
         savedOverrides = next;
       },
@@ -1277,7 +1285,7 @@ describe("manual bend interaction helpers", () => {
       hasOverlappingCustomDeviceTerminalAnchors: () => false,
       isDerivedComponentBaseParamName: () => false,
       isReservedDeviceDefinitionParamName: () => false,
-      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name),
+      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
       libraryTemplates: [template],
       measurementConfig: { measurementTypes: [], deviceProfiles: [] },
       measurementConfigDraft: undefined,
@@ -1292,6 +1300,8 @@ describe("manual bend interaction helpers", () => {
       },
       setCustomDeviceDraftCleanBaseline: vi.fn(),
       setCustomDeviceSaveMessage: vi.fn(),
+      setCustomDeviceSaveToast: vi.fn(),
+      customDeviceSaveToastTimerRef: { current: null },
       setDeviceDefinitionOverrides: (next: any) => {
         savedOverrides = next;
       },
@@ -1346,7 +1356,7 @@ describe("manual bend interaction helpers", () => {
       get customLibraryCreateDialog() {
         return customLibraryCreateDialog;
       },
-      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name),
+      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
       normalizeCategoryLibraryName: (name: string) => name.trim(),
       normalizeComponentLibraryName: (name: string) => name.trim(),
       normalizeCustomCategoryLibraries: (value: unknown) => Array.from(new Set((value as string[]).map((item) => item.trim()).filter(Boolean))),
@@ -1435,7 +1445,7 @@ describe("manual bend interaction helpers", () => {
       get customLibraryCreateDialog() {
         return customLibraryCreateDialog;
       },
-      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name),
+      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
       libraryTemplates: [],
       normalizeCategoryLibraryName: (name: string) => name.trim(),
       normalizeComponentLibraryName: (name: string) => name.trim(),
@@ -1452,6 +1462,8 @@ describe("manual bend interaction helpers", () => {
       },
       setCustomDeviceDraftCleanBaseline,
       setCustomDeviceSaveMessage: vi.fn(),
+      setCustomDeviceSaveToast: vi.fn(),
+      customDeviceSaveToastTimerRef: { current: null },
       setCustomDeviceStatePageId,
       setCustomLibraryCreateDialog: (updater: any) => {
         customLibraryCreateDialog = typeof updater === "function" ? updater(customLibraryCreateDialog) : updater;
@@ -1744,7 +1756,7 @@ describe("manual bend interaction helpers", () => {
       hasOverlappingCustomDeviceTerminalAnchors: () => false,
       isDefaultStatePageId: (rowId: string) => rowId === "__default__",
       isReservedDeviceDefinitionParamName: () => false,
-      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name),
+      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
       measurementConfig: { measurementTypes: [], deviceProfiles: [] },
       measurementConfigDraft: undefined,
       measurementConfigDraftRef: undefined,
@@ -1763,6 +1775,8 @@ describe("manual bend interaction helpers", () => {
       },
       setCustomDeviceDraftCleanBaseline: vi.fn(),
       setCustomDeviceSaveMessage: vi.fn(),
+      setCustomDeviceSaveToast: vi.fn(),
+      customDeviceSaveToastTimerRef: { current: null },
       setCustomDeviceTemplates: (templates: any[]) => {
         savedTemplates = templates;
       },
@@ -1914,7 +1928,7 @@ describe("manual bend interaction helpers", () => {
         valueType: "float",
         typicalValue: "10",
         exportEnabled: true,
-        exportName: "rated-power"
+        exportName: "1rated"
       },
       {
         cnName: "额定电压",
@@ -1950,7 +1964,7 @@ describe("manual bend interaction helpers", () => {
       }
     ] as any);
 
-    expect(message).toContain("属性第 1 行：导出名称 rated-power 只能包含英文字母、数字和下划线，且必须以英文字母开头。");
+    expect(message).toContain("属性第 1 行：导出名称 1rated 只能包含英文字母、数字、下划线和中划线，且必须以英文字母开头。");
     expect(message).toContain("属性第 3 行：导出名称 rated_value 与第 2 行重复。");
     expect(message).toContain("属性第 4 行：启用导出时，导出名称不能为空。");
     expect(message).not.toContain("属性第 5 行");

@@ -655,8 +655,8 @@ export const deviceParameterDefinitionsComplianceMessage = (rows: readonly Devic
       const exportName = String(row.exportName ?? "").trim();
       if (!exportName) {
         messages.push(`${rowLabel}：启用导出时，导出名称不能为空。`);
-      } else if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(exportName)) {
-        messages.push(`${rowLabel}：导出名称 ${exportName} 只能包含英文字母、数字和下划线，且必须以英文字母开头。`);
+      } else if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(exportName)) {
+        messages.push(`${rowLabel}：导出名称 ${exportName} 只能包含英文字母、数字、下划线和中划线，且必须以英文字母开头。`);
       } else {
         const exportKey = deviceDefinitionComplianceKey(exportName);
         const previousIndex = seenExportNames.get(exportKey);
@@ -764,10 +764,22 @@ export function createRevertCustomDeviceDraftCurrentTab(__appScope: Record<strin
 
 export function createRevertCustomDeviceDraftAll(__appScope: Record<string, any>) {
   return () => {
-  const { customDeviceDraftBaselineRef, measurementConfigBaselineRef, setCustomDeviceDraft, setMeasurementConfigDraft, setStateIconDrawingDialog } = __appScope;
+  const { customDeviceDraftBaselineRef, measurementConfigBaselineRef, setCustomDeviceDraft, setMeasurementConfigDraft, setStateIconDrawingDialog, editingCustomDeviceKind, selectedDefinitionKind, baseLibraryTemplateByKind, createCustomDeviceDraftFromTemplate, prepareMeasurementConfigDraft, resolveTemplateComponentLibrary } = __appScope;
+    if (typeof setStateIconDrawingDialog === "function") setStateIconDrawingDialog(null);
+    // 内置元件：从源码原始定义还原
+    if (!editingCustomDeviceKind && selectedDefinitionKind && baseLibraryTemplateByKind && typeof createCustomDeviceDraftFromTemplate === "function") {
+      const baseTemplate = baseLibraryTemplateByKind.get(selectedDefinitionKind);
+      if (baseTemplate) {
+        const section = typeof resolveTemplateComponentLibrary === "function" ? resolveTemplateComponentLibrary(baseTemplate) : (baseTemplate.categoryLibrary ?? "");
+        const freshDraft = createCustomDeviceDraftFromTemplate(baseTemplate, section);
+        setCustomDeviceDraft({ ...freshDraft, error: "" });
+        if (typeof prepareMeasurementConfigDraft === "function") prepareMeasurementConfigDraft();
+        return;
+      }
+    }
+    // 自定义元件：从 baseline 还原
     const baseline: CustomDeviceDraft | null = customDeviceDraftBaselineRef?.current ?? null;
     if (!baseline) return;
-    if (typeof setStateIconDrawingDialog === "function") setStateIconDrawingDialog(null);
     setCustomDeviceDraft(JSON.parse(JSON.stringify(baseline)));
     const measurementBaseline = measurementConfigBaselineRef?.current ?? null;
     if (measurementBaseline) {
@@ -6052,7 +6064,7 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
         return setDialogError("类别库已存在，无法新增同名类别库。");
       }
       if (!isValidComponentLibraryName(englishName)) {
-        return setDialogError("英文名称只能包含英文字母、数字和下划线，并且必须以英文字母开头。");
+        return setDialogError("英文名称只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。");
       }
       setCustomCategoryLibraries((current: string[]) => normalizeCustomCategoryLibraries([...current, categoryLibraryName]));
       setExpandedCategoryLibraries((current: string[]) => Array.from(new Set([...current, categoryLibraryName])));
@@ -6077,7 +6089,7 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
         return setDialogError("请选择类别库。");
       }
       if (!isValidComponentLibraryName(englishName)) {
-        return setDialogError("英文名称只能包含英文字母、数字和下划线，并且必须以英文字母开头。");
+        return setDialogError("英文名称只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。");
       }
       const existingTypes = new Set(componentLibraryOptions.map((item: string) => item.toLowerCase()));
       if (existingTypes.has(englishName.toLowerCase())) {
@@ -6124,7 +6136,7 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
         return setDialogError("请输入或选择派生类英文名称。");
       }
       if (!isValidComponentLibraryName(derivedComponentLibrary)) {
-        return setDialogError("派生类英文名称只能包含英文字母、数字和下划线，并且必须以英文字母开头。");
+        return setDialogError("派生类英文名称只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。");
       }
       if (derivedComponentLibrary.toLowerCase() === section.toLowerCase()) {
         return setDialogError("派生类英文名称不能与基类元件库相同。");
@@ -6440,7 +6452,7 @@ export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<stri
       }
       const newSection = normalizeComponentLibraryName(rawName);
       if (!isValidComponentLibraryName(newSection)) {
-        window.alert("元件库必须是英文名称，只能包含英文字母、数字和下划线，并且必须以英文字母开头。");
+        window.alert("元件库必须是英文名称，只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。");
         return;
       }
       if (componentLibraryOptions.some((section) => section.toLowerCase() === newSection.toLowerCase() && section.toLowerCase() !== oldSection.toLowerCase())) {
@@ -6574,7 +6586,7 @@ export function createNextCustomTemplateKind(__appScope: Record<string, any>) {
 
 export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) {
   return (options: { closeAfterSave?: boolean } = {}) => {
-  const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, closeCustomDeviceDialog, customComponentLibraries = [], customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTemplates, customDeviceTerminalAnchors, defaultComponentLibraryForCategoryLibrary, editingCustomDeviceKind, ensureCustomComponentTreeExpanded, generateCustomDeviceImage, hasOverlappingCustomDeviceTerminalAnchors, isBuiltInComponentLibrary, isDerivedComponentBaseParamName, isReservedDeviceDefinitionParamName, isValidComponentLibraryName, libraryTemplates = customDeviceTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, nextCustomTemplateKind, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, normalizeCustomComponentLibraries, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, requireEditMode, setCustomComponentLibraries, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceTemplates, setEditingCustomDeviceKind, setExpandedCategoryLibraries, showGlobalMessage = () => undefined, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
+  const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, closeCustomDeviceDialog, customComponentLibraries = [], customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTemplates, customDeviceTerminalAnchors, defaultComponentLibraryForCategoryLibrary, editingCustomDeviceKind, ensureCustomComponentTreeExpanded, generateCustomDeviceImage, hasOverlappingCustomDeviceTerminalAnchors, isBuiltInComponentLibrary, isDerivedComponentBaseParamName, isReservedDeviceDefinitionParamName, isValidComponentLibraryName, libraryTemplates = customDeviceTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, nextCustomTemplateKind, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, normalizeCustomComponentLibraries, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, requireEditMode, setCustomComponentLibraries, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceSaveToast, customDeviceSaveToastTimerRef, setCustomDeviceTemplates, setEditingCustomDeviceKind, setExpandedCategoryLibraries, showGlobalMessage = () => undefined, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
     if (!requireEditMode("保存元件")) {
       return false;
     }
@@ -6593,7 +6605,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       return false;
     }
     if (!isValidComponentLibraryName(baseComponentLibrary)) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "元件库必须是英文名称，只能包含英文字母、数字和下划线，并且必须以英文字母开头。" }));
+      setCustomDeviceDraft((current) => ({ ...current, error: "元件库必须是英文名称，只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。" }));
       return false;
     }
     if (derivedRequested) {
@@ -6606,7 +6618,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
         return false;
       }
       if (!isValidComponentLibraryName(derivedComponentLibrary)) {
-        setCustomDeviceDraft((current) => ({ ...current, error: "派生类英文名称只能包含英文字母、数字和下划线，并且必须以英文字母开头。" }));
+        setCustomDeviceDraft((current) => ({ ...current, error: "派生类英文名称只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。" }));
         return false;
       }
       if (derivedComponentLibrary.toLowerCase() === derivedFromComponentLibrary.toLowerCase()) {
@@ -6837,7 +6849,14 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
     setCustomDeviceDraft((current) => ({ ...current, ...cleanDraft }));
     setCustomDeviceDraftCleanBaseline(cleanDraft, terminalAnchors);
     setCustomDeviceSaveMessage("");
-    showGlobalMessage(`自定义元件已保存：${componentLabel}`, "success");
+    const toastMessage = `自定义元件已保存：${componentLabel}`;
+    setCustomDeviceSaveToast(toastMessage);
+    if (customDeviceSaveToastTimerRef?.current) {
+      clearTimeout(customDeviceSaveToastTimerRef.current);
+    }
+    if (customDeviceSaveToastTimerRef) {
+      customDeviceSaveToastTimerRef.current = setTimeout(() => setCustomDeviceSaveToast(""), 3000);
+    }
     writeOperationLog(`保存自定义元件：${componentLabel}`);
     if (options.closeAfterSave) {
       closeCustomDeviceDialog();
@@ -6848,7 +6867,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
 
 export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Record<string, any>) {
   return (template: DeviceTemplate, options: { closeAfterSave?: boolean } = {}) => {
-  const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, closeCustomDeviceDialog, customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTerminalAnchors, deviceDefinitionOverrideForTemplate, deviceDefinitionOverrides, getTemplateParameterDefinitions, hasOverlappingCustomDeviceTerminalAnchors, isDerivedComponentBaseParamName, isReservedDeviceDefinitionParamName, isValidComponentLibraryName, libraryTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, requireEditMode, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setDeviceDefinitionOverrides, showGlobalMessage, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
+  const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, closeCustomDeviceDialog, customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTerminalAnchors, deviceDefinitionOverrideForTemplate, deviceDefinitionOverrides, getTemplateParameterDefinitions, hasOverlappingCustomDeviceTerminalAnchors, isDerivedComponentBaseParamName, isReservedDeviceDefinitionParamName, isValidComponentLibraryName, libraryTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, requireEditMode, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceSaveToast, customDeviceSaveToastTimerRef, setDeviceDefinitionOverrides, showGlobalMessage, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
     if (!requireEditMode("保存元件定义")) {
       return false;
     }
@@ -6859,7 +6878,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       return false;
     }
     if (!isValidComponentLibraryName(componentLibrary)) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "元件库必须是英文名称，只能包含英文字母、数字和下划线，并且必须以英文字母开头。" }));
+      setCustomDeviceDraft((current) => ({ ...current, error: "元件库必须是英文名称，只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。" }));
       return false;
     }
     const derivedRequested = Boolean(customDeviceDraft.isDerivedComponentLibrary);
@@ -6876,7 +6895,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
         return false;
       }
       if (!isValidComponentLibraryName(derivedComponentLibrary)) {
-        setCustomDeviceDraft((current) => ({ ...current, error: "派生类英文名称只能包含英文字母、数字和下划线，并且必须以英文字母开头。" }));
+        setCustomDeviceDraft((current) => ({ ...current, error: "派生类英文名称只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。" }));
         return false;
       }
       if (derivedComponentLibrary.toLowerCase() === derivedFromComponentLibrary.toLowerCase()) {
@@ -7125,7 +7144,14 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     }));
     setCustomDeviceDraftCleanBaseline(cleanDraft, terminalAnchors);
     setCustomDeviceSaveMessage("");
-    showGlobalMessage(`元件定义已保存：${template.label}`, "success");
+    const toastMessage = `元件定义已保存：${template.label}`;
+    setCustomDeviceSaveToast(toastMessage);
+    if (customDeviceSaveToastTimerRef?.current) {
+      clearTimeout(customDeviceSaveToastTimerRef.current);
+    }
+    if (customDeviceSaveToastTimerRef) {
+      customDeviceSaveToastTimerRef.current = setTimeout(() => setCustomDeviceSaveToast(""), 3000);
+    }
     writeOperationLog(`保存元件定义：${template.label}`);
     if (options.closeAfterSave) {
       closeCustomDeviceDialog();

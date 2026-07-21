@@ -1097,7 +1097,7 @@ export function createConfirmCreateDeviceFromGroup(__appScope: Record<string, an
       return;
     }
     if (!isValidComponentLibraryName(componentLibrary)) {
-      window.alert("元件库必须是英文名称，只能包含英文字母、数字和下划线，并且必须以英文字母开头。");
+      window.alert("元件库必须是英文名称，只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。");
       return;
     }
     const terminalTypes = groupDeviceDefinitionDialog.terminals.map((terminal) => terminal.type);

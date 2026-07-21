@@ -2156,7 +2156,7 @@ export const CUSTOM_CATEGORY_LIBRARY_BASES: CategoryLibrary[] = ["交流设备",
 
 export const PROTECTED_CATEGORY_LIBRARIES = new Set(DEFAULT_CATEGORY_LIBRARIES);
 
-export const DEVICE_TYPE_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/;
+export const DEVICE_TYPE_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_-]*$/;
 
 export const MAX_CUSTOM_DEVICE_TERMINALS = 8;
 

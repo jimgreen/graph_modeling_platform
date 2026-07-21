@@ -636,7 +636,7 @@ function createSaveTemplateMockScope() {
         { type: "ac", anchor: { x: 100, y: 0 }, association: "ac-load", label: "端子2" }
       ],
       groupExpandedCanvasSelection: { nodeIds: ["n1", "n2"], edgeIds: [] },
-      isValidComponentLibraryName: (s: string) => /^[A-Za-z][A-Za-z0-9_]*$/.test(s),
+      isValidComponentLibraryName: (s: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(s),
       nextCustomTemplateKind: (ct: string) => `custom-${ct}-1`,
       normalizeCategoryLibraryName: (s: string) => s || "交流设备",
       normalizeComponentLibraryName: (s: string) => s,
