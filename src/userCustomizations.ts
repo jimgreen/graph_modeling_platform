@@ -263,7 +263,7 @@ const normalizeUserImageLibrary = (
         id,
         name: normalizedText(asset.name || asset.filename || id),
         folderId: folderIds.has(normalizedText(asset.folderId)) ? normalizedText(asset.folderId) : "root",
-        url: normalizedText(asset.url) || `/api/images/${encodeURIComponent(id)}`
+        url: normalizedText(asset.url) || `/webgrp/images/${encodeURIComponent(id)}`
       };
       const existingIndex = result.findIndex((candidate) => candidate.id === id);
       if (existingIndex >= 0) {

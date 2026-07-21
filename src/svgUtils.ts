@@ -5,7 +5,7 @@ import { imageFitPreserveAspectRatio, normalizeImageFitMode } from "./imageFit";
 
 /* 常量 */
 
-const BACKEND_IMAGE_HREF_PATTERN = /^\/api\/images\/([^/?#]+)/;
+const BACKEND_IMAGE_HREF_PATTERN = /^\/webgrp\/images\/([^/?#]+)/;
 const IMAGE_DATA_URL_PATTERN = /^data:image\//iu;
 let inlineSvgAutoScopeCounter = 0;
 

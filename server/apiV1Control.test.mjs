@@ -2,7 +2,7 @@ import { describe, expect, test, beforeEach, afterEach } from "vitest";
 import { WebSocket } from "ws";
 import { createImageServer } from "./image-server.mjs";
 
-// /api/v1/control/* 集成测试：起真实 image-server（含 WS 双向指令通道 + control 路由），
+// /webgrp/v1/control/* 集成测试：起真实 image-server（含 WS 双向指令通道 + control 路由），
 // 用真实 WS 客户端连入响应 command，打 HTTP POST 验证端到端。
 
 let server;
@@ -79,14 +79,14 @@ async function postV1(pathname, body) {
   return { status: res.status, json };
 }
 
-describe("/api/v1/control/device/add", () => {
+describe("/webgrp/v1/control/device/add", () => {
   test("成功新增 → 200 {ok:true,data:{id}}", async () => {
     const ws = await connectCommandResponder("c1", (name, params) => {
       expect(name).toBe("control.device.add");
       expect(params).toMatchObject({ kind: "busbar", x: 100, y: 200 });
       return { ok: true, data: { id: "n1" } };
     });
-    const { status, json } = await postV1("/api/v1/control/device/add", { kind: "busbar", x: 100, y: 200 });
+    const { status, json } = await postV1("/webgrp/v1/control/device/add", { kind: "busbar", x: 100, y: 200 });
     expect(status).toBe(200);
     expect(json.ok).toBe(true);
     expect(json.data).toEqual({ id: "n1" });
@@ -98,7 +98,7 @@ describe("/api/v1/control/device/add", () => {
       expect(params.attrs).toEqual({ name: "自定义", rotation: 45 });
       return { ok: true, data: { id: "n2" } };
     });
-    const { status, json } = await postV1("/api/v1/control/device/add", {
+    const { status, json } = await postV1("/webgrp/v1/control/device/add", {
       kind: "busbar",
       attrs: { name: "自定义", rotation: 45 }
     });
@@ -108,14 +108,14 @@ describe("/api/v1/control/device/add", () => {
   });
 
   test("缺 kind → 400 bad-request（不下发指令）", async () => {
-    const { status, json } = await postV1("/api/v1/control/device/add", { x: 100 });
+    const { status, json } = await postV1("/webgrp/v1/control/device/add", { x: 100 });
     expect(status).toBe(400);
     expect(json.ok).toBe(false);
     expect(json.error.code).toBe("bad-request");
   });
 
   test("非法 JSON body → 400 bad-request", async () => {
-    const res = await fetch(`${baseUrl}/api/v1/control/device/add`, {
+    const res = await fetch(`${baseUrl}/webgrp/v1/control/device/add`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: "{not json"
@@ -126,7 +126,7 @@ describe("/api/v1/control/device/add", () => {
   });
 
   test("无在线客户端 → 503 no-online-client", async () => {
-    const { status, json } = await postV1("/api/v1/control/device/add", { kind: "busbar" });
+    const { status, json } = await postV1("/webgrp/v1/control/device/add", { kind: "busbar" });
     expect(status).toBe(503);
     expect(json.error.code).toBe("no-online-client");
   });
@@ -136,7 +136,7 @@ describe("/api/v1/control/device/add", () => {
       ok: false,
       error: { code: "bad-request", message: "未知图元类型：foo" }
     }));
-    const { status, json } = await postV1("/api/v1/control/device/add", { kind: "foo" });
+    const { status, json } = await postV1("/webgrp/v1/control/device/add", { kind: "foo" });
     expect(status).toBe(400);
     expect(json.ok).toBe(false);
     expect(json.error.code).toBe("bad-request");
@@ -147,21 +147,21 @@ describe("/api/v1/control/device/add", () => {
   test("前端不响应 → 503 ws-timeout", async () => {
     // 连接但不响应 command
     const ws = await connectCommandResponder("c1", () => new Promise(() => {}));
-    const { status, json } = await postV1("/api/v1/control/device/add", { kind: "busbar" });
+    const { status, json } = await postV1("/webgrp/v1/control/device/add", { kind: "busbar" });
     expect(status).toBe(503);
     expect(json.error.code).toBe("ws-timeout");
     ws.close();
   }, 10000);
 });
 
-describe("/api/v1/control/scheme/create", () => {
+describe("/webgrp/v1/control/scheme/create", () => {
   test("成功新建 → 200 {ok:true,data:{id,name,path}}", async () => {
     const ws = await connectCommandResponder("c1", (name, params) => {
       expect(name).toBe("control.scheme.create");
       expect(params).toMatchObject({ name: "方案1", parentSchemeId: "p1" });
       return { ok: true, data: { id: "s1", name: "方案1", path: ["方案1"] } };
     });
-    const { status, json } = await postV1("/api/v1/control/scheme/create", { name: "方案1", parentSchemeId: "p1" });
+    const { status, json } = await postV1("/webgrp/v1/control/scheme/create", { name: "方案1", parentSchemeId: "p1" });
     expect(status).toBe(200);
     expect(json.ok).toBe(true);
     expect(json.data).toEqual({ id: "s1", name: "方案1", path: ["方案1"] });
@@ -169,14 +169,14 @@ describe("/api/v1/control/scheme/create", () => {
   });
 
   test("缺 name → 400 bad-request（不下发指令）", async () => {
-    const { status, json } = await postV1("/api/v1/control/scheme/create", { parentSchemeId: "p1" });
+    const { status, json } = await postV1("/webgrp/v1/control/scheme/create", { parentSchemeId: "p1" });
     expect(status).toBe(400);
     expect(json.ok).toBe(false);
     expect(json.error.code).toBe("bad-request");
   });
 
   test("无在线客户端 → 503 no-online-client", async () => {
-    const { status, json } = await postV1("/api/v1/control/scheme/create", { name: "方案1" });
+    const { status, json } = await postV1("/webgrp/v1/control/scheme/create", { name: "方案1" });
     expect(status).toBe(503);
     expect(json.error.code).toBe("no-online-client");
   });
@@ -186,7 +186,7 @@ describe("/api/v1/control/scheme/create", () => {
       ok: false,
       error: { code: "bad-request", message: "方案名称重复，无法新建方案。" }
     }));
-    const { status, json } = await postV1("/api/v1/control/scheme/create", { name: "重复" });
+    const { status, json } = await postV1("/webgrp/v1/control/scheme/create", { name: "重复" });
     expect(status).toBe(400);
     expect(json.ok).toBe(false);
     expect(json.error.code).toBe("bad-request");
@@ -195,14 +195,14 @@ describe("/api/v1/control/scheme/create", () => {
   });
 });
 
-describe("/api/v1/control/model/create", () => {
+describe("/webgrp/v1/control/model/create", () => {
   test("成功新建 → 200 {ok:true,data:{id,name,schemeId}}", async () => {
     const ws = await connectCommandResponder("c1", (name, params) => {
       expect(name).toBe("control.model.create");
       expect(params).toMatchObject({ name: "模型1", schemeId: "s1" });
       return { ok: true, data: { id: "m1", name: "模型1", schemeId: "s1" } };
     });
-    const { status, json } = await postV1("/api/v1/control/model/create", { name: "模型1", schemeId: "s1" });
+    const { status, json } = await postV1("/webgrp/v1/control/model/create", { name: "模型1", schemeId: "s1" });
     expect(status).toBe(200);
     expect(json.ok).toBe(true);
     expect(json.data).toEqual({ id: "m1", name: "模型1", schemeId: "s1" });
@@ -210,14 +210,14 @@ describe("/api/v1/control/model/create", () => {
   });
 
   test("缺 name → 400 bad-request（不下发指令）", async () => {
-    const { status, json } = await postV1("/api/v1/control/model/create", { schemeId: "s1" });
+    const { status, json } = await postV1("/webgrp/v1/control/model/create", { schemeId: "s1" });
     expect(status).toBe(400);
     expect(json.ok).toBe(false);
     expect(json.error.code).toBe("bad-request");
   });
 
   test("无在线客户端 → 503 no-online-client", async () => {
-    const { status, json } = await postV1("/api/v1/control/model/create", { name: "模型1" });
+    const { status, json } = await postV1("/webgrp/v1/control/model/create", { name: "模型1" });
     expect(status).toBe(503);
     expect(json.error.code).toBe("no-online-client");
   });
@@ -227,7 +227,7 @@ describe("/api/v1/control/model/create", () => {
       ok: false,
       error: { code: "bad-request", message: "无可用方案，请先创建方案" }
     }));
-    const { status, json } = await postV1("/api/v1/control/model/create", { name: "模型1" });
+    const { status, json } = await postV1("/webgrp/v1/control/model/create", { name: "模型1" });
     expect(status).toBe(400);
     expect(json.ok).toBe(false);
     expect(json.error.code).toBe("bad-request");
@@ -236,7 +236,7 @@ describe("/api/v1/control/model/create", () => {
   });
 });
 
-describe("/api/v1/control/devices/select", () => {
+describe("/webgrp/v1/control/devices/select", () => {
   test("成功选中 → 200 {ok:true,data:{selectedIds,validIds,invalidIds}}", async () => {
     const ws = await connectCommandResponder("c1", (name, params) => {
       expect(name).toBe("control.devices.select");
@@ -244,7 +244,7 @@ describe("/api/v1/control/devices/select", () => {
       expect(params.mode).toBe("set");
       return { ok: true, data: { selectedIds: ["n1", "n2"], validIds: ["n1", "n2"], invalidIds: [] } };
     });
-    const { status, json } = await postV1("/api/v1/control/devices/select", { ids: ["n1", "n2"], mode: "set" });
+    const { status, json } = await postV1("/webgrp/v1/control/devices/select", { ids: ["n1", "n2"], mode: "set" });
     expect(status).toBe(200);
     expect(json.ok).toBe(true);
     expect(json.data.selectedIds).toEqual(["n1", "n2"]);
@@ -254,26 +254,26 @@ describe("/api/v1/control/devices/select", () => {
   });
 
   test("缺 ids → 400 bad-request（不下发指令）", async () => {
-    const { status, json } = await postV1("/api/v1/control/devices/select", { mode: "set" });
+    const { status, json } = await postV1("/webgrp/v1/control/devices/select", { mode: "set" });
     expect(status).toBe(400);
     expect(json.ok).toBe(false);
     expect(json.error.code).toBe("bad-request");
   });
 
   test("无在线客户端 → 503 no-online-client", async () => {
-    const { status, json } = await postV1("/api/v1/control/devices/select", { ids: ["n1"] });
+    const { status, json } = await postV1("/webgrp/v1/control/devices/select", { ids: ["n1"] });
     expect(status).toBe(503);
     expect(json.error.code).toBe("no-online-client");
   });
 });
 
-describe("/api/v1/control/devices/group", () => {
+describe("/webgrp/v1/control/devices/group", () => {
   test("成功组合 → 200 {ok:true,data:{groupId,name}}", async () => {
     const ws = await connectCommandResponder("c1", (name) => {
       expect(name).toBe("control.devices.group");
       return { ok: true, data: { groupId: "g1", name: "组合1" } };
     });
-    const { status, json } = await postV1("/api/v1/control/devices/group", {});
+    const { status, json } = await postV1("/webgrp/v1/control/devices/group", {});
     expect(status).toBe(200);
     expect(json.ok).toBe(true);
     expect(json.data.groupId).toBe("g1");
@@ -282,7 +282,7 @@ describe("/api/v1/control/devices/group", () => {
   });
 
   test("无在线客户端 → 503 no-online-client", async () => {
-    const { status, json } = await postV1("/api/v1/control/devices/group", {});
+    const { status, json } = await postV1("/webgrp/v1/control/devices/group", {});
     expect(status).toBe(503);
     expect(json.error.code).toBe("no-online-client");
   });
@@ -292,7 +292,7 @@ describe("/api/v1/control/devices/group", () => {
       ok: false,
       error: { code: "control-failed", message: "至少选中 2 个图元方可组合。" }
     }));
-    const { status, json } = await postV1("/api/v1/control/devices/group", {});
+    const { status, json } = await postV1("/webgrp/v1/control/devices/group", {});
     expect(status).toBe(500);
     expect(json.ok).toBe(false);
     expect(json.error.code).toBe("control-failed");
@@ -300,14 +300,14 @@ describe("/api/v1/control/devices/group", () => {
   });
 });
 
-describe("/api/v1/control/device/delete", () => {
+describe("/webgrp/v1/control/device/delete", () => {
   test("成功删除 → 200 {ok:true,data:{deletedIds}}", async () => {
     const ws = await connectCommandResponder("c1", (name, params) => {
       expect(name).toBe("control.device.delete");
       expect(params.ids).toEqual(["n1", "n2"]);
       return { ok: true, data: { deletedIds: ["n1", "n2"] } };
     });
-    const { status, json } = await postV1("/api/v1/control/device/delete", { ids: ["n1", "n2"] });
+    const { status, json } = await postV1("/webgrp/v1/control/device/delete", { ids: ["n1", "n2"] });
     expect(status).toBe(200);
     expect(json.ok).toBe(true);
     expect(json.data.deletedIds).toEqual(["n1", "n2"]);
@@ -319,34 +319,34 @@ describe("/api/v1/control/device/delete", () => {
       expect(params.ids).toBeUndefined();
       return { ok: true, data: { deletedIds: ["n1"] } };
     });
-    const { status, json } = await postV1("/api/v1/control/device/delete", {});
+    const { status, json } = await postV1("/webgrp/v1/control/device/delete", {});
     expect(status).toBe(200);
     expect(json.data.deletedIds).toEqual(["n1"]);
     ws.close();
   });
 
   test("非数组 ids → 400 bad-request（不下发指令）", async () => {
-    const { status, json } = await postV1("/api/v1/control/device/delete", { ids: "not-array" });
+    const { status, json } = await postV1("/webgrp/v1/control/device/delete", { ids: "not-array" });
     expect(status).toBe(400);
     expect(json.ok).toBe(false);
     expect(json.error.code).toBe("bad-request");
   });
 
   test("无在线客户端 → 503 no-online-client", async () => {
-    const { status, json } = await postV1("/api/v1/control/device/delete", { ids: ["n1"] });
+    const { status, json } = await postV1("/webgrp/v1/control/device/delete", { ids: ["n1"] });
     expect(status).toBe(503);
     expect(json.error.code).toBe("no-online-client");
   });
 });
 
-describe("/api/v1/control/device/property/update", () => {
+describe("/webgrp/v1/control/device/property/update", () => {
   test("成功修改 → 200 {ok:true,data:{id,category,patched}}", async () => {
     const ws = await connectCommandResponder("c1", (name, params) => {
       expect(name).toBe("control.device.property.update");
       expect(params).toMatchObject({ id: "n1", category: "graphic", patch: { rotation: 90 } });
       return { ok: true, data: { id: "n1", category: "graphic", patched: ["rotation"] } };
     });
-    const { status, json } = await postV1("/api/v1/control/device/property/update", { id: "n1", category: "graphic", patch: { rotation: 90 } });
+    const { status, json } = await postV1("/webgrp/v1/control/device/property/update", { id: "n1", category: "graphic", patch: { rotation: 90 } });
     expect(status).toBe(200);
     expect(json.ok).toBe(true);
     expect(json.data.id).toBe("n1");
@@ -354,38 +354,38 @@ describe("/api/v1/control/device/property/update", () => {
   });
 
   test("缺 id → 400 bad-request", async () => {
-    const { status, json } = await postV1("/api/v1/control/device/property/update", { category: "graphic", patch: { x: 0 } });
+    const { status, json } = await postV1("/webgrp/v1/control/device/property/update", { category: "graphic", patch: { x: 0 } });
     expect(status).toBe(400);
     expect(json.error.code).toBe("bad-request");
   });
 
   test("缺 category → 400 bad-request", async () => {
-    const { status, json } = await postV1("/api/v1/control/device/property/update", { id: "n1", patch: { x: 0 } });
+    const { status, json } = await postV1("/webgrp/v1/control/device/property/update", { id: "n1", patch: { x: 0 } });
     expect(status).toBe(400);
     expect(json.error.code).toBe("bad-request");
   });
 
   test("缺 patch → 400 bad-request", async () => {
-    const { status, json } = await postV1("/api/v1/control/device/property/update", { id: "n1", category: "graphic" });
+    const { status, json } = await postV1("/webgrp/v1/control/device/property/update", { id: "n1", category: "graphic" });
     expect(status).toBe(400);
     expect(json.error.code).toBe("bad-request");
   });
 
   test("无在线客户端 → 503 no-online-client", async () => {
-    const { status, json } = await postV1("/api/v1/control/device/property/update", { id: "n1", category: "graphic", patch: { x: 0 } });
+    const { status, json } = await postV1("/webgrp/v1/control/device/property/update", { id: "n1", category: "graphic", patch: { x: 0 } });
     expect(status).toBe(503);
     expect(json.error.code).toBe("no-online-client");
   });
 });
 
-describe("/api/v1/control/save", () => {
+describe("/webgrp/v1/control/save", () => {
   test("scope=currentModel → 200 {ok:true,data:{saved:true,scope}}", async () => {
     const ws = await connectCommandResponder("c1", (name, params) => {
       expect(name).toBe("control.save");
       expect(params.scope).toBe("currentModel");
       return { ok: true, data: { saved: true, scope: "currentModel" } };
     });
-    const { status, json } = await postV1("/api/v1/control/save", { scope: "currentModel" });
+    const { status, json } = await postV1("/webgrp/v1/control/save", { scope: "currentModel" });
     expect(status).toBe(200);
     expect(json.ok).toBe(true);
     expect(json.data.saved).toBe(true);
@@ -398,39 +398,39 @@ describe("/api/v1/control/save", () => {
       expect(params.scope).toBe("schemeTree");
       return { ok: true, data: { saved: true, scope: "schemeTree" } };
     });
-    const { status, json } = await postV1("/api/v1/control/save", { scope: "schemeTree" });
+    const { status, json } = await postV1("/webgrp/v1/control/save", { scope: "schemeTree" });
     expect(status).toBe(200);
     expect(json.data.scope).toBe("schemeTree");
     ws.close();
   });
 
   test("非法 scope → 400 bad-request（不下发指令）", async () => {
-    const { status, json } = await postV1("/api/v1/control/save", { scope: "invalid" });
+    const { status, json } = await postV1("/webgrp/v1/control/save", { scope: "invalid" });
     expect(status).toBe(400);
     expect(json.error.code).toBe("bad-request");
   });
 
   test("缺 scope → 400 bad-request", async () => {
-    const { status, json } = await postV1("/api/v1/control/save", {});
+    const { status, json } = await postV1("/webgrp/v1/control/save", {});
     expect(status).toBe(400);
     expect(json.error.code).toBe("bad-request");
   });
 
   test("无在线客户端 → 503 no-online-client", async () => {
-    const { status, json } = await postV1("/api/v1/control/save", { scope: "currentModel" });
+    const { status, json } = await postV1("/webgrp/v1/control/save", { scope: "currentModel" });
     expect(status).toBe(503);
     expect(json.error.code).toBe("no-online-client");
   });
 });
 
-describe("/api/v1/control/template/saveFromSelection", () => {
+describe("/webgrp/v1/control/template/saveFromSelection", () => {
   test("成功保存 → 200 {ok:true,data:{templateKind}}", async () => {
     const ws = await connectCommandResponder("c1", (name, params) => {
       expect(name).toBe("control.template.saveFromSelection");
       expect(params).toMatchObject({ name: "测试模板", componentLibrary: "test_device" });
       return { ok: true, data: { templateKind: "custom-test_device-1" } };
     });
-    const { status, json } = await postV1("/api/v1/control/template/saveFromSelection", {
+    const { status, json } = await postV1("/webgrp/v1/control/template/saveFromSelection", {
       name: "测试模板", componentLibrary: "test_device"
     });
     expect(status).toBe(200);
@@ -444,7 +444,7 @@ describe("/api/v1/control/template/saveFromSelection", () => {
       expect(params.categoryLibraryName).toBe("直流设备");
       return { ok: true, data: { templateKind: "custom-test-1" } };
     });
-    const { status, json } = await postV1("/api/v1/control/template/saveFromSelection", {
+    const { status, json } = await postV1("/webgrp/v1/control/template/saveFromSelection", {
       name: "模板", componentLibrary: "test", categoryLibraryName: "直流设备"
     });
     expect(status).toBe(200);
@@ -453,19 +453,19 @@ describe("/api/v1/control/template/saveFromSelection", () => {
   });
 
   test("缺 name → 400 bad-request", async () => {
-    const { status, json } = await postV1("/api/v1/control/template/saveFromSelection", { componentLibrary: "test" });
+    const { status, json } = await postV1("/webgrp/v1/control/template/saveFromSelection", { componentLibrary: "test" });
     expect(status).toBe(400);
     expect(json.error.code).toBe("bad-request");
   });
 
   test("缺 componentLibrary → 400 bad-request", async () => {
-    const { status, json } = await postV1("/api/v1/control/template/saveFromSelection", { name: "模板" });
+    const { status, json } = await postV1("/webgrp/v1/control/template/saveFromSelection", { name: "模板" });
     expect(status).toBe(400);
     expect(json.error.code).toBe("bad-request");
   });
 
   test("无在线客户端 → 503 no-online-client", async () => {
-    const { status, json } = await postV1("/api/v1/control/template/saveFromSelection", {
+    const { status, json } = await postV1("/webgrp/v1/control/template/saveFromSelection", {
       name: "模板", componentLibrary: "test"
     });
     expect(status).toBe(503);

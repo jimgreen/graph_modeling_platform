@@ -86,7 +86,7 @@ describe("user customization inventory", () => {
       id: "img-user",
       name: "用户图标",
       folderId: "root",
-      url: "/api/images/img-user"
+      url: "/webgrp/images/img-user"
     });
     snapshot.colorConfig.colorPalette.energy.ac = "#123456";
 
@@ -114,7 +114,7 @@ describe("user customization inventory", () => {
       id: "img-used",
       name: "被引用图片",
       folderId: "root",
-      url: "/api/images/img-used"
+      url: "/webgrp/images/img-used"
     });
 
     const inventory = buildUserCustomizationInventory(snapshot, DEVICE_LIBRARY, new Set(["img-used"]));

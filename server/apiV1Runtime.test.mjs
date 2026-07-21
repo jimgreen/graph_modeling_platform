@@ -2,7 +2,7 @@ import { describe, expect, test, beforeEach, afterEach } from "vitest";
 import { WebSocket } from "ws";
 import { createImageServer } from "./image-server.mjs";
 
-// /api/v1/runtime/* 集成测试：起真实 image-server（含 WS 桥接 + runtime 路由），
+// /webgrp/v1/runtime/* 集成测试：起真实 image-server（含 WS 桥接 + runtime 路由），
 // 用真实 WS 客户端连入响应 fetch，打 HTTP 请求验证端到端。
 
 let server;
@@ -77,9 +77,9 @@ async function fetchV1(pathname) {
   return { status: res.status, headers: res.headers, text, json };
 }
 
-describe("/api/v1/runtime/clients", () => {
+describe("/webgrp/v1/runtime/clients", () => {
   test("无客户端时空列表", async () => {
-    const { status, json } = await fetchV1("/api/v1/runtime/clients");
+    const { status, json } = await fetchV1("/webgrp/v1/runtime/clients");
     expect(status).toBe(200);
     expect(json.ok).toBe(true);
     expect(json.data.clients).toEqual([]);
@@ -87,7 +87,7 @@ describe("/api/v1/runtime/clients", () => {
 
   test("有在线客户端时返回列表", async () => {
     const ws = await connectResponder("c1", () => ({ ok: true, data: {} }));
-    const { status, json } = await fetchV1("/api/v1/runtime/clients");
+    const { status, json } = await fetchV1("/webgrp/v1/runtime/clients");
     expect(status).toBe(200);
     expect(json.data.clients).toHaveLength(1);
     expect(json.data.clients[0].clientId).toBe("c1");
@@ -96,9 +96,9 @@ describe("/api/v1/runtime/clients", () => {
   });
 });
 
-describe("/api/v1/runtime/model", () => {
+describe("/webgrp/v1/runtime/model", () => {
   test("无在线客户端 → 503 no-online-client", async () => {
-    const { status, json } = await fetchV1("/api/v1/runtime/model");
+    const { status, json } = await fetchV1("/webgrp/v1/runtime/model");
     expect(status).toBe(503);
     expect(json.ok).toBe(false);
     expect(json.error.code).toBe("no-online-client");
@@ -109,7 +109,7 @@ describe("/api/v1/runtime/model", () => {
       ok: true,
       data: { modelName: "M1", modelId: "k1", schemePath: "方案A", updatedAt: "t" }
     }));
-    const { status, headers, json } = await fetchV1("/api/v1/runtime/model");
+    const { status, headers, json } = await fetchV1("/webgrp/v1/runtime/model");
     expect(status).toBe(200);
     expect(headers.get("cache-control")).toBe("no-store");
     expect(json.ok).toBe(true);
@@ -121,7 +121,7 @@ describe("/api/v1/runtime/model", () => {
     const ws = await connectResponder("c1", () => ({
       ok: false, error: { code: "no-active-model", message: "无活动模型" }
     }));
-    const { status, json } = await fetchV1("/api/v1/runtime/model");
+    const { status, json } = await fetchV1("/webgrp/v1/runtime/model");
     expect(status).toBe(404);
     expect(json.error.code).toBe("no-active-model");
     ws.close();
@@ -131,19 +131,19 @@ describe("/api/v1/runtime/model", () => {
     const ws = await connectResponder("c-target", (resource) => ({
       ok: true, data: { routedTo: resource }
     }));
-    const { status, json } = await fetchV1("/api/v1/runtime/devices?clientId=c-target");
+    const { status, json } = await fetchV1("/webgrp/v1/runtime/devices?clientId=c-target");
     expect(status).toBe(200);
     expect(json.data.routedTo).toBe("runtime.devices");
     ws.close();
   });
 });
 
-describe("/api/v1/runtime/tabs/{tab}", () => {
+describe("/webgrp/v1/runtime/tabs/{tab}", () => {
   test("路径段 tab=model → runtime.tab params.tab=model", async () => {
     const ws = await connectResponder("c1", (resource, params) => ({
       ok: true, data: { resource, tab: params.tab }
     }));
-    const { status, json } = await fetchV1("/api/v1/runtime/tabs/tree");
+    const { status, json } = await fetchV1("/webgrp/v1/runtime/tabs/tree");
     expect(status).toBe(200);
     expect(json.data.resource).toBe("runtime.tab");
     expect(json.data.tab).toBe("tree");
@@ -151,40 +151,40 @@ describe("/api/v1/runtime/tabs/{tab}", () => {
   });
 
   test("非法路径段不匹配（pattern 限定 model|tree|graph）", async () => {
-    // /api/v1/runtime/tabs/xyz 不匹配 tab 路由，也不匹配 tabs 路由 → 404
-    const { status } = await fetchV1("/api/v1/runtime/tabs/xyz");
+    // /webgrp/v1/runtime/tabs/xyz 不匹配 tab 路由，也不匹配 tabs 路由 → 404
+    const { status } = await fetchV1("/webgrp/v1/runtime/tabs/xyz");
     expect(status).toBe(404);
   });
 
-  test("聚合 /api/v1/runtime/tabs → runtime.snapshot", async () => {
+  test("聚合 /webgrp/v1/runtime/tabs → runtime.snapshot", async () => {
     const ws = await connectResponder("c1", (resource) => ({
       ok: true, data: { resource }
     }));
-    const { status, json } = await fetchV1("/api/v1/runtime/tabs");
+    const { status, json } = await fetchV1("/webgrp/v1/runtime/tabs");
     expect(status).toBe(200);
     expect(json.data.resource).toBe("runtime.snapshot");
     ws.close();
   });
 });
 
-describe("/api/v1/runtime/selection", () => {
+describe("/webgrp/v1/runtime/selection", () => {
   test("前端 no-selection → 404 透传", async () => {
     const ws = await connectResponder("c1", () => ({
       ok: false, error: { code: "no-selection", message: "未选中" }
     }));
-    const { status, json } = await fetchV1("/api/v1/runtime/selection");
+    const { status, json } = await fetchV1("/webgrp/v1/runtime/selection");
     expect(status).toBe(404);
     expect(json.error.code).toBe("no-selection");
     ws.close();
   });
 });
 
-describe("/api/v1/runtime/screenshot", () => {
+describe("/webgrp/v1/runtime/screenshot", () => {
   test("PNG 二进制透传，content-type image/png", async () => {
     const ws = await connectResponder("c1", () => ({
       ok: true, data: { base64: "iVBORw0KGgo=", width: 10, height: 5, mime: "image/png" }
     }));
-    const res = await fetch(`${baseUrl}/api/v1/runtime/screenshot`);
+    const res = await fetch(`${baseUrl}/webgrp/v1/runtime/screenshot`);
     const buf = Buffer.from(await res.arrayBuffer());
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("image/png");
@@ -194,13 +194,13 @@ describe("/api/v1/runtime/screenshot", () => {
   });
 
   test("非法 width → 400 bad-request", async () => {
-    const { status, json } = await fetchV1("/api/v1/runtime/screenshot?width=abc");
+    const { status, json } = await fetchV1("/webgrp/v1/runtime/screenshot?width=abc");
     expect(status).toBe(400);
     expect(json.error.code).toBe("bad-request");
   });
 
   test("负 width → 400 bad-request", async () => {
-    const { status, json } = await fetchV1("/api/v1/runtime/screenshot?width=-5");
+    const { status, json } = await fetchV1("/webgrp/v1/runtime/screenshot?width=-5");
     expect(status).toBe(400);
     expect(json.error.code).toBe("bad-request");
   });
@@ -209,19 +209,19 @@ describe("/api/v1/runtime/screenshot", () => {
     const ws = await connectResponder("c1", () => ({
       ok: false, error: { code: "internal", message: "SVG DOM 不可用" }
     }));
-    const { status, json } = await fetchV1("/api/v1/runtime/screenshot");
+    const { status, json } = await fetchV1("/webgrp/v1/runtime/screenshot");
     expect(status).toBe(500);
     expect(json.error.code).toBe("internal");
     ws.close();
   });
 });
 
-describe("/api/v1/runtime/svg", () => {
+describe("/webgrp/v1/runtime/svg", () => {
   test("SVG 文本透传，content-type image/svg+xml", async () => {
     const ws = await connectResponder("c1", () => ({
       ok: true, data: "<svg></svg>"
     }));
-    const res = await fetch(`${baseUrl}/api/v1/runtime/svg`);
+    const res = await fetch(`${baseUrl}/webgrp/v1/runtime/svg`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("image/svg+xml; charset=utf-8");
     expect(await res.text()).toBe("<svg></svg>");
@@ -229,12 +229,12 @@ describe("/api/v1/runtime/svg", () => {
   });
 });
 
-describe("/api/v1/runtime/e-file", () => {
+describe("/webgrp/v1/runtime/e-file", () => {
   test("E 文件文本透传，content-type text/plain + attachment", async () => {
     const ws = await connectResponder("c1", () => ({
       ok: true, data: { filename: "模型.e", text: "<Section>", mime: "text/plain" }
     }));
-    const res = await fetch(`${baseUrl}/api/v1/runtime/e-file`);
+    const res = await fetch(`${baseUrl}/webgrp/v1/runtime/e-file`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("text/plain; charset=utf-8");
     expect(res.headers.get("content-disposition")).toContain("attachment");
@@ -243,10 +243,10 @@ describe("/api/v1/runtime/e-file", () => {
   });
 });
 
-describe("/api/v1/runtime 超时降级", () => {
+describe("/webgrp/v1/runtime 超时降级", () => {
   test("前端不响应 → 503 ws-timeout", async () => {
     const ws = await connectResponder("c1", () => new Promise(() => {})); // 永不响应
-    const { status, json } = await fetchV1("/api/v1/runtime/model");
+    const { status, json } = await fetchV1("/webgrp/v1/runtime/model");
     expect(status).toBe(503);
     expect(json.error.code).toBe("ws-timeout");
     ws.close();

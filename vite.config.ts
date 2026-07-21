@@ -40,7 +40,7 @@ const frontendManualChunks = (id: string) => {
 
 const backendProxyTarget = `http://127.0.0.1:${process.env.IMAGE_SERVER_PORT ?? "5174"}`;
 const backendProxy = {
-  "/api": {
+  "/webgrp": {
     target: backendProxyTarget,
     changeOrigin: true
   },

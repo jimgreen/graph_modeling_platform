@@ -1097,7 +1097,7 @@ describe("power system model", () => {
       version: 1,
       name: "测试模型",
       canvasBackgroundColor: "#f1f5f9",
-      canvasBackgroundImage: "/api/images/background",
+      canvasBackgroundImage: "/webgrp/images/background",
       canvasBackgroundImageAssetId: "background",
       powerUnit: "MW",
       voltageUnit: "kV",
@@ -1133,7 +1133,7 @@ describe("power system model", () => {
 
     expect(loaded.name).toBe("测试模型");
     expect(loaded.canvasBackgroundColor).toBe("#f1f5f9");
-    expect(loaded.canvasBackgroundImage).toBe("/api/images/background");
+    expect(loaded.canvasBackgroundImage).toBe("/webgrp/images/background");
     expect(loaded.canvasBackgroundImageAssetId).toBe("background");
     expect(loaded.powerUnit).toBe("MW");
     expect(loaded.voltageUnit).toBe("kV");
@@ -1603,15 +1603,15 @@ describe("power system model", () => {
       {
         value: "1",
         name: "合位",
-        image: "/api/images/state-closed",
+        image: "/webgrp/images/state-closed",
         imageFit: "stretch",
-        backgroundImage: "/api/images/state-bg",
+        backgroundImage: "/webgrp/images/state-bg",
         backgroundImageFit: "tile"
       },
       {
         value: "2",
         name: "分位",
-        image: "/api/images/state-open",
+        image: "/webgrp/images/state-open",
         imageFit: ""
       }
     ]);
@@ -4282,7 +4282,7 @@ describe("power system model", () => {
       node: "3",
       pbase: "9.5",
       ratedActivePower: "不要导出",
-      backgroundImage: "/api/images/asset"
+      backgroundImage: "/webgrp/images/asset"
     };
 
     const payload = parseESections(

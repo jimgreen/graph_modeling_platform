@@ -69,8 +69,8 @@ describe("静态资源分流", () => {
     expect(text).toContain("<title>SPA</title>");
   });
 
-  test("/api/* 不被静态托管拦截，走接口层（未命中返 404 JSON）", async () => {
-    const { status, text } = await fetchPath("/api/nonexistent-endpoint");
+  test("/webgrp/* 不被静态托管拦截，走接口层（未命中返 404 JSON）", async () => {
+    const { status, text } = await fetchPath("/webgrp/nonexistent-endpoint");
     expect(status).toBe(404);
     expect(JSON.parse(text).error).toBeTruthy();
   });
@@ -102,7 +102,7 @@ describe("静态资源分流", () => {
   });
 
   test("OPTIONS 预检返 204", async () => {
-    const res = await fetch(`${baseUrl}/api/images`, { method: "OPTIONS" });
+    const res = await fetch(`${baseUrl}/webgrp/images`, { method: "OPTIONS" });
     expect(res.status).toBe(204);
   });
 });

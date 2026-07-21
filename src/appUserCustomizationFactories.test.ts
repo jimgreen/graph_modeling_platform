@@ -19,7 +19,7 @@ const snapshot = (assetIds: string[] = []) => normalizeUserCustomizationSnapshot
       id,
       name: id,
       folderId: "root",
-      url: `/api/images/${id}`,
+      url: `/webgrp/images/${id}`,
       dataUrl: "data:image/png;base64,AA=="
     }))
   }
@@ -39,8 +39,8 @@ describe("user customization application factories", () => {
         { id: "builtin-shared-icons", name: "内置" }
       ]),
       fetchAllBackendImages: vi.fn(async () => [
-        { id: "img-user", name: "用户图片", folderId: "root", url: "/api/images/img-user" },
-        { id: "builtin-shared-icon-1", name: "内置", folderId: "builtin-shared-icons", url: "/api/images/builtin" }
+        { id: "img-user", name: "用户图片", folderId: "root", url: "/webgrp/images/img-user" },
+        { id: "builtin-shared-icon-1", name: "内置", folderId: "builtin-shared-icons", url: "/webgrp/images/builtin" }
       ]),
       fetchBackendImageDataUrl: vi.fn(async () => "data:image/png;base64,AA==")
     });

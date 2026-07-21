@@ -1,4 +1,4 @@
-// /api/v1 控制台写操作域 handler：经 WS 双向指令通道下发到前端 __appScope 程序化方法。
+// /webgrp/v1 控制台写操作域 handler：经 WS 双向指令通道下发到前端 __appScope 程序化方法。
 // 依赖 runtimeWs 挂载后注入的 { sendCommandToClient }。
 // 所有接口 POST + JSON body，query 可带 clientId（不指定取默认最近活跃客户端）。
 // 写操作实时执行：no-store 信封。
@@ -52,7 +52,7 @@ async function relayCommand(response, commandPromise) {
   }
 }
 
-// /api/v1/control/device/add —— 新增图元
+// /webgrp/v1/control/device/add —— 新增图元
 // body: { kind, x?, y?, attrs? } → 回执 { id }
 export async function handleControlDeviceAdd({ request, url, response }, ctx) {
   let payload;
@@ -80,7 +80,7 @@ export async function handleControlDeviceAdd({ request, url, response }, ctx) {
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.device.add", params));
 }
 
-// /api/v1/control/scheme/create —— 新建方案
+// /webgrp/v1/control/scheme/create —— 新建方案
 // body: { name, parentSchemeId? } → 回执 { id, name, path }
 export async function handleControlSchemeCreate({ request, url, response }, ctx) {
   let payload;
@@ -102,7 +102,7 @@ export async function handleControlSchemeCreate({ request, url, response }, ctx)
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.scheme.create", params));
 }
 
-// /api/v1/control/model/create —— 新建模型
+// /webgrp/v1/control/model/create —— 新建模型
 // body: { name, schemeId? } → 回执 { id, name, schemeId }
 export async function handleControlModelCreate({ request, url, response }, ctx) {
   let payload;
@@ -124,7 +124,7 @@ export async function handleControlModelCreate({ request, url, response }, ctx) 
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.model.create", params));
 }
 
-// /api/v1/control/devices/select —— 选中图元
+// /webgrp/v1/control/devices/select —— 选中图元
 // body: { ids: string[], mode?: "set" | "add" | "toggle" } → 回执 { selectedIds }
 export async function handleControlDevicesSelect({ request, url, response }, ctx) {
   let payload;
@@ -146,13 +146,13 @@ export async function handleControlDevicesSelect({ request, url, response }, ctx
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.devices.select", params));
 }
 
-// /api/v1/control/devices/group —— 将当前选中图元组合
+// /webgrp/v1/control/devices/group —— 将当前选中图元组合
 // 无 body → 回执 { groupId, name }
 export async function handleControlDevicesGroup({ url, response }, ctx) {
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.devices.group", {}));
 }
 
-// /api/v1/control/device/delete —— 删除图元
+// /webgrp/v1/control/device/delete —— 删除图元
 // body: { ids?: string[] } → 回执 { deletedIds }；ids 缺省取当前选中
 export async function handleControlDeviceDelete({ request, url, response }, ctx) {
   let payload;
@@ -174,7 +174,7 @@ export async function handleControlDeviceDelete({ request, url, response }, ctx)
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.device.delete", params));
 }
 
-// /api/v1/control/device/property/update —— 修改图元属性
+// /webgrp/v1/control/device/property/update —— 修改图元属性
 // body: { id, category: "graphic"|"model"|"measurement", patch } → 回执 { id, category, patched }
 export async function handleControlDevicePropertyUpdate({ request, url, response }, ctx) {
   let payload;
@@ -200,7 +200,7 @@ export async function handleControlDevicePropertyUpdate({ request, url, response
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.device.property.update", { id, category, patch }));
 }
 
-// /api/v1/control/save —— 显式落盘
+// /webgrp/v1/control/save —— 显式落盘
 // body: { scope: "currentModel"|"schemeTree" } → 回执 { saved: true, scope }
 export async function handleControlSave({ request, url, response }, ctx) {
   let payload;
@@ -218,7 +218,7 @@ export async function handleControlSave({ request, url, response }, ctx) {
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.save", { scope }));
 }
 
-// /api/v1/control/template/saveFromSelection —— 从选中组合保存为模板
+// /webgrp/v1/control/template/saveFromSelection —— 从选中组合保存为模板
 // body: { name, componentLibrary, categoryLibraryName? } → 回执 { templateKind }
 export async function handleControlTemplateSaveFromSelection({ request, url, response }, ctx) {
   let payload;
@@ -246,13 +246,13 @@ export async function handleControlTemplateSaveFromSelection({ request, url, res
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.template.saveFromSelection", params));
 }
 
-// /api/v1/control/e-device-definition/export -- 导出 E 文件定义文本
+// /webgrp/v1/control/e-device-definition/export -- 导出 E 文件定义文本
 // body: {} -> 回执 { filename, text, mime }
 export async function handleControlExportEDeviceDefinition({ url, response }, ctx) {
   await relayCommand(response, ctx.sendCommandToClient(readClientId(url), "control.e-device-definition.export", {}));
 }
 
-// /api/v1/control/e-device-definition/import -- 导入 E 文件定义（返回匹配结果，不实际写入）
+// /webgrp/v1/control/e-device-definition/import -- 导入 E 文件定义（返回匹配结果，不实际写入）
 // body: { text } -> 回执 { matched, skipped, matchedCount, skippedCount }
 export async function handleControlImportEDeviceDefinition({ request, url, response }, ctx) {
   let payload;
@@ -276,16 +276,16 @@ export function createV1ControlRoutes(ctx) {
   const wrap = (handler) => ({ request, response, url, match }) =>
     handler({ request, response, url }, ctx);
   return [
-    { method: "POST", pattern: /^\/api\/v1\/control\/device\/add\/?$/u, handle: wrap(handleControlDeviceAdd) },
-    { method: "POST", pattern: /^\/api\/v1\/control\/scheme\/create\/?$/u, handle: wrap(handleControlSchemeCreate) },
-    { method: "POST", pattern: /^\/api\/v1\/control\/model\/create\/?$/u, handle: wrap(handleControlModelCreate) },
-    { method: "POST", pattern: /^\/api\/v1\/control\/devices\/select\/?$/u, handle: wrap(handleControlDevicesSelect) },
-    { method: "POST", pattern: /^\/api\/v1\/control\/devices\/group\/?$/u, handle: wrap(handleControlDevicesGroup) },
-    { method: "POST", pattern: /^\/api\/v1\/control\/device\/delete\/?$/u, handle: wrap(handleControlDeviceDelete) },
-    { method: "POST", pattern: /^\/api\/v1\/control\/device\/property\/update\/?$/u, handle: wrap(handleControlDevicePropertyUpdate) },
-    { method: "POST", pattern: /^\/api\/v1\/control\/save\/?$/u, handle: wrap(handleControlSave) },
-    { method: "POST", pattern: /^\/api\/v1\/control\/template\/saveFromSelection\/?$/u, handle: wrap(handleControlTemplateSaveFromSelection) },
-    { method: "POST", pattern: /^\/api\/v1\/control\/e-device-definition\/export\/?$/u, handle: wrap(handleControlExportEDeviceDefinition) },
-    { method: "POST", pattern: /^\/api\/v1\/control\/e-device-definition\/import\/?$/u, handle: wrap(handleControlImportEDeviceDefinition) }
+    { method: "POST", pattern: /^\/webgrp\/v1\/control\/device\/add\/?$/u, handle: wrap(handleControlDeviceAdd) },
+    { method: "POST", pattern: /^\/webgrp\/v1\/control\/scheme\/create\/?$/u, handle: wrap(handleControlSchemeCreate) },
+    { method: "POST", pattern: /^\/webgrp\/v1\/control\/model\/create\/?$/u, handle: wrap(handleControlModelCreate) },
+    { method: "POST", pattern: /^\/webgrp\/v1\/control\/devices\/select\/?$/u, handle: wrap(handleControlDevicesSelect) },
+    { method: "POST", pattern: /^\/webgrp\/v1\/control\/devices\/group\/?$/u, handle: wrap(handleControlDevicesGroup) },
+    { method: "POST", pattern: /^\/webgrp\/v1\/control\/device\/delete\/?$/u, handle: wrap(handleControlDeviceDelete) },
+    { method: "POST", pattern: /^\/webgrp\/v1\/control\/device\/property\/update\/?$/u, handle: wrap(handleControlDevicePropertyUpdate) },
+    { method: "POST", pattern: /^\/webgrp\/v1\/control\/save\/?$/u, handle: wrap(handleControlSave) },
+    { method: "POST", pattern: /^\/webgrp\/v1\/control\/template\/saveFromSelection\/?$/u, handle: wrap(handleControlTemplateSaveFromSelection) },
+    { method: "POST", pattern: /^\/webgrp\/v1\/control\/e-device-definition\/export\/?$/u, handle: wrap(handleControlExportEDeviceDefinition) },
+    { method: "POST", pattern: /^\/webgrp\/v1\/control\/e-device-definition\/import\/?$/u, handle: wrap(handleControlImportEDeviceDefinition) }
   ];
 }

@@ -208,24 +208,24 @@ describe("SVG model import factories", () => {
 describe("manual bend interaction helpers", () => {
   test("collects referenced images from the rendered background page for svg export", () => {
     const backendImageIdFromHref = (href: string) => {
-      const match = /\/api\/images\/([^/?#]+)/.exec(href);
+      const match = /\/webgrp\/images\/([^/?#]+)/.exec(href);
       return match ? decodeURIComponent(match[1]) : "";
     };
     const hrefById = createSvgExportReferencedImageHrefById({
       backendImageIdFromHref,
-      canvasBackgroundImage: "/api/images/current-canvas-bg",
+      canvasBackgroundImage: "/webgrp/images/current-canvas-bg",
       canvasBackgroundImageAssetId: "",
       canvasBackgroundImageUrl: "",
       backgroundPageRender: {
-        backgroundImageUrl: "/api/images/background-page-bg",
+        backgroundImageUrl: "/webgrp/images/background-page-bg",
         nodes: [
           {
             kind: "background-kind",
             params: {
               backgroundImageAssetId: "background-node-bg-asset",
               foregroundImageAssetId: "background-node-fg-asset",
-              backgroundImage: "/api/images/background-node-bg",
-              foregroundImage: "/api/images/background-node-fg",
+              backgroundImage: "/webgrp/images/background-node-bg",
+              foregroundImage: "/webgrp/images/background-node-fg",
               status: "1"
             }
           }
@@ -240,7 +240,7 @@ describe("manual bend interaction helpers", () => {
         {
           kind: "current-kind",
           params: {
-            backgroundImage: "/api/images/current-node-bg",
+            backgroundImage: "/webgrp/images/current-node-bg",
             foregroundImage: "",
             backgroundImageAssetId: "",
             foregroundImageAssetId: ""
@@ -248,30 +248,30 @@ describe("manual bend interaction helpers", () => {
         }
       ],
       resolveDeviceStateVisual: (_template: any, node: any) => node.kind === "background-kind"
-        ? { image: "/api/images/background-state-visual" }
-        : { image: "/api/images/current-state-visual" },
+        ? { image: "/webgrp/images/background-state-visual" }
+        : { image: "/webgrp/images/current-state-visual" },
       resolveStateVisualImageHref: (visual: any) => visual?.image ?? ""
     })();
 
-    expect(hrefById.get("current-canvas-bg")).toBe("/api/images/current-canvas-bg");
-    expect(hrefById.get("current-node-bg")).toBe("/api/images/current-node-bg");
-    expect(hrefById.get("current-state-visual")).toBe("/api/images/current-state-visual");
-    expect(hrefById.get("background-page-bg")).toBe("/api/images/background-page-bg");
-    expect(hrefById.get("background-node-bg-asset")).toBe("/api/images/background-node-bg-asset");
-    expect(hrefById.get("background-node-fg-asset")).toBe("/api/images/background-node-fg-asset");
-    expect(hrefById.get("background-node-bg")).toBe("/api/images/background-node-bg");
-    expect(hrefById.get("background-node-fg")).toBe("/api/images/background-node-fg");
-    expect(hrefById.get("background-state-visual")).toBe("/api/images/background-state-visual");
+    expect(hrefById.get("current-canvas-bg")).toBe("/webgrp/images/current-canvas-bg");
+    expect(hrefById.get("current-node-bg")).toBe("/webgrp/images/current-node-bg");
+    expect(hrefById.get("current-state-visual")).toBe("/webgrp/images/current-state-visual");
+    expect(hrefById.get("background-page-bg")).toBe("/webgrp/images/background-page-bg");
+    expect(hrefById.get("background-node-bg-asset")).toBe("/webgrp/images/background-node-bg-asset");
+    expect(hrefById.get("background-node-fg-asset")).toBe("/webgrp/images/background-node-fg-asset");
+    expect(hrefById.get("background-node-bg")).toBe("/webgrp/images/background-node-bg");
+    expect(hrefById.get("background-node-fg")).toBe("/webgrp/images/background-node-fg");
+    expect(hrefById.get("background-state-visual")).toBe("/webgrp/images/background-state-visual");
   });
 
   test("collects backend images nested inside svg data urls for standalone svg export", () => {
     const backendImageIdFromHref = (href: string) => {
-      const match = /^\/api\/images\/([^/?#]+)/.exec(href);
+      const match = /^\/webgrp\/images\/([^/?#]+)/.exec(href);
       return match ? decodeURIComponent(match[1]) : "";
     };
     const nestedSvg = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160">',
-      '<image href="/api/images/nested-photo" x="0" y="0" width="240" height="160"/>',
+      '<image href="/webgrp/images/nested-photo" x="0" y="0" width="240" height="160"/>',
       "</svg>"
     ].join("");
     const hrefById = createSvgExportReferencedImageHrefById({
@@ -297,7 +297,7 @@ describe("manual bend interaction helpers", () => {
       resolveStateVisualImageHref: () => ""
     })();
 
-    expect(hrefById.get("nested-photo")).toBe("/api/images/nested-photo");
+    expect(hrefById.get("nested-photo")).toBe("/webgrp/images/nested-photo");
   });
 
   test("syncs existing canvas nodes when a matching template visual definition changes", () => {
@@ -731,7 +731,7 @@ describe("manual bend interaction helpers", () => {
       createEditableStateIconElementsFromSvgSource: vi.fn(),
       createImportedStateIconElement: vi.fn(),
       imageAssetList: [
-        { id: "asset-1", name: "背景图", url: "/api/images/asset-1", mimeType: "image/png" }
+        { id: "asset-1", name: "背景图", url: "/webgrp/images/asset-1", mimeType: "image/png" }
       ],
       imageAssets: {
         "asset-1": "data:image/png;base64,cached-preview"
@@ -757,7 +757,7 @@ describe("manual bend interaction helpers", () => {
 
     expect(dialog.elements).toEqual([{ id: "shape-1", kind: "rectangle" }]);
     expect(dialog.frame).toMatchObject({
-      backgroundImage: "/api/images/asset-1",
+      backgroundImage: "/webgrp/images/asset-1",
       backgroundImageAssetId: "asset-1"
     });
     expect(updateGraphNodeById).not.toHaveBeenCalled();
@@ -1877,7 +1877,7 @@ describe("manual bend interaction helpers", () => {
           strokeWidth: 2,
           strokeColor: "#334155",
           fillColor: "#fef3c7",
-          backgroundImage: "/api/images/bg-1",
+          backgroundImage: "/webgrp/images/bg-1",
           backgroundImageAssetId: "bg-1"
         }
       },
@@ -1896,7 +1896,7 @@ describe("manual bend interaction helpers", () => {
     expect(savedSvg).toContain('fill="#fef3c7"');
     expect(savedSvg).toContain('data-state-icon-frame-image="true"');
     expect(savedSvg).toContain('data-state-icon-frame-image-asset-id="bg-1"');
-    expect(savedSvg).toContain('href="/api/images/bg-1"');
+    expect(savedSvg).toContain('href="/webgrp/images/bg-1"');
     expect(updateDefinitionStateDraftRow).not.toHaveBeenCalled();
     expect(dialogClosed).toBe(true);
   });

@@ -6600,7 +6600,7 @@ const canvasResizeHandles = (
 Object.assign(__appScope, { canvasResizeHandles });
 
 // 运行时态 WS 客户端：连入 server /ws，注册 clientId，响应 server 的 fetch 拉取。
-// 第三方 /api/v1/runtime/* 经此桥接获取前端运行时态（snapshot/tab/selection/model/devices/e-file/svg/screenshot）。
+// 第三方 /webgrp/v1/runtime/* 经此桥接获取前端运行时态（snapshot/tab/selection/model/devices/e-file/svg/screenshot）。
 // __appScope 每帧重建，用 __appScopeRef 读最新引用，避免闭包冻结在首次渲染。
 const [runtimeWsStatus, setRuntimeWsStatus] = useState<"connecting" | "open" | "closed">("connecting");
 const [runtimeWsBlinkSeq, setRuntimeWsBlinkSeq] = useState(0);

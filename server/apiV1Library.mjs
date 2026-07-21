@@ -1,4 +1,4 @@
-// /api/v1 图元库域 handler：categories、devices、measurements、device-definitions、templates、library（聚合）。
+// /webgrp/v1 图元库域 handler：categories、devices、measurements、device-definitions、templates、library（聚合）。
 // 复用 image-server.mjs：readDeviceLibraryConfig、readMeasurementConfig、eSectionColumns、staticComponentLibraryByKind。
 // categories/devices 为 server 端可离线产出的结构化元数据（非前端完整分类树，决策 A）。
 
@@ -62,7 +62,7 @@ function buildDevices(deviceLibrary) {
   };
 }
 
-// /api/v1/library/categories
+// /webgrp/v1/library/categories
 export async function handleV1LibraryCategories({ request, response }) {
   try {
     const lib = await readDeviceLibraryConfig();
@@ -72,7 +72,7 @@ export async function handleV1LibraryCategories({ request, response }) {
   }
 }
 
-// /api/v1/library/devices
+// /webgrp/v1/library/devices
 export async function handleV1LibraryDevices({ request, response }) {
   try {
     const lib = await readDeviceLibraryConfig();
@@ -82,7 +82,7 @@ export async function handleV1LibraryDevices({ request, response }) {
   }
 }
 
-// /api/v1/library/measurements —— 量测定义
+// /webgrp/v1/library/measurements —— 量测定义
 export async function handleV1LibraryMeasurements({ request, response }) {
   try {
     const config = await readMeasurementConfig();
@@ -96,7 +96,7 @@ export async function handleV1LibraryMeasurements({ request, response }) {
   }
 }
 
-// /api/v1/library/device-definitions —— 图元定义
+// /webgrp/v1/library/device-definitions —— 图元定义
 export async function handleV1LibraryDeviceDefinitions({ request, response }) {
   try {
     const lib = await readDeviceLibraryConfig();
@@ -110,7 +110,7 @@ export async function handleV1LibraryDeviceDefinitions({ request, response }) {
   }
 }
 
-// /api/v1/library/templates —— 模板库
+// /webgrp/v1/library/templates —— 模板库
 export async function handleV1LibraryTemplates({ request, response }) {
   try {
     const lib = await readDeviceLibraryConfig();
@@ -124,7 +124,7 @@ export async function handleV1LibraryTemplates({ request, response }) {
   }
 }
 
-// /api/v1/library —— 聚合（一次取全）
+// /webgrp/v1/library —— 聚合（一次取全）
 export async function handleV1Library({ request, response }) {
   try {
     const [deviceLibrary, measurementConfig] = await Promise.all([readDeviceLibraryConfig(), readMeasurementConfig()]);
@@ -153,10 +153,10 @@ export async function handleV1Library({ request, response }) {
 }
 
 export const v1LibraryRoutes = [
-  { method: "GET", pattern: /^\/api\/v1\/library\/?$/u, handle: handleV1Library },
-  { method: "GET", pattern: /^\/api\/v1\/library\/categories\/?$/u, handle: handleV1LibraryCategories },
-  { method: "GET", pattern: /^\/api\/v1\/library\/devices\/?$/u, handle: handleV1LibraryDevices },
-  { method: "GET", pattern: /^\/api\/v1\/library\/measurements\/?$/u, handle: handleV1LibraryMeasurements },
-  { method: "GET", pattern: /^\/api\/v1\/library\/device-definitions\/?$/u, handle: handleV1LibraryDeviceDefinitions },
-  { method: "GET", pattern: /^\/api\/v1\/library\/templates\/?$/u, handle: handleV1LibraryTemplates }
+  { method: "GET", pattern: /^\/webgrp\/v1\/library\/?$/u, handle: handleV1Library },
+  { method: "GET", pattern: /^\/webgrp\/v1\/library\/categories\/?$/u, handle: handleV1LibraryCategories },
+  { method: "GET", pattern: /^\/webgrp\/v1\/library\/devices\/?$/u, handle: handleV1LibraryDevices },
+  { method: "GET", pattern: /^\/webgrp\/v1\/library\/measurements\/?$/u, handle: handleV1LibraryMeasurements },
+  { method: "GET", pattern: /^\/webgrp\/v1\/library\/device-definitions\/?$/u, handle: handleV1LibraryDeviceDefinitions },
+  { method: "GET", pattern: /^\/webgrp\/v1\/library\/templates\/?$/u, handle: handleV1LibraryTemplates }
 ];

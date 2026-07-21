@@ -51,7 +51,7 @@ describe("handleV1Schemes 正路径", () => {
       { name: "方案A", updatedAt: "2024-01-01", projects: [{ name: "模型1", updatedAt: "2024-01-01" }], children: [] }
     ]);
     const res = createMockResponse();
-    await handleV1Schemes({ url: mockUrl("/api/v1/schemes"), request: { headers: {} }, response: res });
+    await handleV1Schemes({ url: mockUrl("/webgrp/v1/schemes"), request: { headers: {} }, response: res });
     expect(res.statusCode).toBe(200);
     expect(res.jsonBody()).toEqual({
       ok: true,
@@ -63,14 +63,14 @@ describe("handleV1Schemes 正路径", () => {
     const full = [{ name: "方案A", updatedAt: "x", projects: [{ name: "m", updatedAt: "y", project: { nodes: [] } }] }];
     readSchemes.mockResolvedValue(full);
     const res = createMockResponse();
-    await handleV1Schemes({ url: mockUrl("/api/v1/schemes", "includeProjects=1"), request: { headers: {} }, response: res });
+    await handleV1Schemes({ url: mockUrl("/webgrp/v1/schemes", "includeProjects=1"), request: { headers: {} }, response: res });
     expect(res.jsonBody().data.schemes).toEqual(full);
   });
 
   test("readSchemes 抛错转 internal", async () => {
     readSchemes.mockRejectedValue(new Error("boom"));
     const res = createMockResponse();
-    await handleV1Schemes({ url: mockUrl("/api/v1/schemes"), request: { headers: {} }, response: res });
+    await handleV1Schemes({ url: mockUrl("/webgrp/v1/schemes"), request: { headers: {} }, response: res });
     expect(res.statusCode).toBe(500);
     expect(res.jsonBody().error.code).toBe("internal");
   });
@@ -80,7 +80,7 @@ describe("handleV1SchemesHierarchy 正路径", () => {
   test("成功返层级树", async () => {
     readSchemes.mockResolvedValue([{ name: "A", updatedAt: "x", children: [{ name: "B", updatedAt: "y", children: [] }] }]);
     const res = createMockResponse();
-    await handleV1SchemesHierarchy({ url: mockUrl("/api/v1/schemes/hierarchy"), request: { headers: {} }, response: res });
+    await handleV1SchemesHierarchy({ url: mockUrl("/webgrp/v1/schemes/hierarchy"), request: { headers: {} }, response: res });
     expect(res.jsonBody()).toEqual({ ok: true, data: { nodes: [{ name: "A", updatedAt: "x", children: [{ name: "B", updatedAt: "y", children: [] }] }] } });
   });
 });
@@ -90,7 +90,7 @@ describe("handleV1SchemeModels 正路径", () => {
     readSchemes.mockResolvedValue([{ name: "方案A", updatedAt: "x", projects: [{ name: "m1", updatedAt: "y" }], children: [] }]);
     const res = createMockResponse();
     const sp = encodeURIComponent(JSON.stringify(["方案A"]));
-    await handleV1SchemeModels({ url: mockUrl("/api/v1/schemes/models", `schemePath=${sp}`), request: { headers: {} }, response: res });
+    await handleV1SchemeModels({ url: mockUrl("/webgrp/v1/schemes/models", `schemePath=${sp}`), request: { headers: {} }, response: res });
     expect(res.jsonBody()).toEqual({ ok: true, data: { models: [{ name: "m1", updatedAt: "y" }] } });
   });
 
@@ -98,7 +98,7 @@ describe("handleV1SchemeModels 正路径", () => {
     readSchemes.mockResolvedValue([{ name: "父", updatedAt: "x", projects: [], children: [{ name: "子", updatedAt: "y", projects: [{ name: "m", updatedAt: "z" }], children: [] }] }]);
     const res = createMockResponse();
     const sp = encodeURIComponent(JSON.stringify(["父", "子"]));
-    await handleV1SchemeModels({ url: mockUrl("/api/v1/schemes/models", `schemePath=${sp}`), request: { headers: {} }, response: res });
+    await handleV1SchemeModels({ url: mockUrl("/webgrp/v1/schemes/models", `schemePath=${sp}`), request: { headers: {} }, response: res });
     expect(res.jsonBody().data.models).toEqual([{ name: "m", updatedAt: "z" }]);
   });
 });
@@ -111,7 +111,7 @@ describe("handleV1SchemeExport 正路径", () => {
     createSchemeArchiveBuffer.mockResolvedValue({ buffer, filename: "方案A.zip" });
     const res = createMockResponse();
     const sp = encodeURIComponent(JSON.stringify(["方案A"]));
-    await handleV1SchemeExport({ url: mockUrl("/api/v1/schemes/export", `schemePath=${sp}`), response: res });
+    await handleV1SchemeExport({ url: mockUrl("/webgrp/v1/schemes/export", `schemePath=${sp}`), response: res });
     expect(res.statusCode).toBe(200);
     expect(res.headers["content-type"]).toBe("application/zip");
     expect(Buffer.isBuffer(res._rawBuffer)).toBe(true);
@@ -123,7 +123,7 @@ describe("handleV1SchemeExport 正路径", () => {
     createSchemeArchiveBuffer.mockRejectedValue(new Error("缺少方案路径"));
     const res = createMockResponse();
     const sp = encodeURIComponent(JSON.stringify(["x"]));
-    await handleV1SchemeExport({ url: mockUrl("/api/v1/schemes/export", `schemePath=${sp}`), response: res });
+    await handleV1SchemeExport({ url: mockUrl("/webgrp/v1/schemes/export", `schemePath=${sp}`), response: res });
     expect(res.statusCode).toBe(400);
   });
 
@@ -131,7 +131,7 @@ describe("handleV1SchemeExport 正路径", () => {
     createSchemeArchiveBuffer.mockRejectedValue(new Error("方案目录不存在"));
     const res = createMockResponse();
     const sp = encodeURIComponent(JSON.stringify(["x"]));
-    await handleV1SchemeExport({ url: mockUrl("/api/v1/schemes/export", `schemePath=${sp}`), response: res });
+    await handleV1SchemeExport({ url: mockUrl("/webgrp/v1/schemes/export", `schemePath=${sp}`), response: res });
     expect(res.statusCode).toBe(404);
   });
 });
@@ -141,7 +141,7 @@ describe("handleV1ModelJson 正路径", () => {
     readSchemeProjectRecord.mockResolvedValue({ name: "m", project: { version: 1, name: "m", nodes: [], edges: [] } });
     const res = createMockResponse();
     const sp = encodeURIComponent(JSON.stringify(["方案A"]));
-    await handleV1ModelJson({ url: mockUrl("/api/v1/schemes/model/json", `schemePath=${sp}&name=m`), request: { headers: {} }, response: res });
+    await handleV1ModelJson({ url: mockUrl("/webgrp/v1/schemes/model/json", `schemePath=${sp}&name=m`), request: { headers: {} }, response: res });
     expect(res.jsonBody()).toEqual({ ok: true, data: { project: { version: 1, name: "m", nodes: [], edges: [] } } });
   });
 });
@@ -153,7 +153,7 @@ describe("handleV1ModelSvg 正路径", () => {
     buildSvgFile.mockReturnValue("<svg>...</svg>");
     const res = createMockResponse();
     const sp = encodeURIComponent(JSON.stringify(["方案A"]));
-    await handleV1ModelSvg({ url: mockUrl("/api/v1/schemes/model/svg", `schemePath=${sp}&name=m`), response: res });
+    await handleV1ModelSvg({ url: mockUrl("/webgrp/v1/schemes/model/svg", `schemePath=${sp}&name=m`), response: res });
     expect(res.statusCode).toBe(200);
     expect(res.headers["content-type"]).toBe("image/svg+xml; charset=utf-8");
     expect(res.body()).toBe("<svg>...</svg>");

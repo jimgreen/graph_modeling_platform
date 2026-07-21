@@ -1,6 +1,6 @@
 // e2e 测试 harness：起 image-server + Vite dev server + Playwright 浏览器。
 // 用非常规端口（5184/5183）避免与开发态 pnpm dev（5174/5173）冲突。
-// IMAGE_SERVER_PORT 贯通：image-server 监听 5184，Vite 代理 /api//ws 到 5184，
+// IMAGE_SERVER_PORT 贯通：image-server 监听 5184，Vite 代理 /webgrp//ws 到 5184，
 // 前端 dev 模式 WS 直连 IMAGE_SERVER_PORT=5184（runtimeWsClient.ts DEV 分支）。
 import { spawn } from "node:child_process";
 import { chromium } from "@playwright/test";
@@ -150,12 +150,12 @@ export async function startE2EEnvironment({ dataDir }) {
   return { browser, page, baseUrl, imageBaseUrl, teardown };
 }
 
-// 等待前端 WS 客户端在线：轮询 GET /api/v1/runtime/clients 直到非空
+// 等待前端 WS 客户端在线：轮询 GET /webgrp/v1/runtime/clients 直到非空
 export async function waitForOnlineClient(imageBaseUrl, timeoutMs = 60000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
-      const res = await fetch(`${imageBaseUrl}/api/v1/runtime/clients`);
+      const res = await fetch(`${imageBaseUrl}/webgrp/v1/runtime/clients`);
       const json = await res.json();
       if (json?.ok && json.data?.clients?.length > 0) {
         return json.data.clients[0].clientId;

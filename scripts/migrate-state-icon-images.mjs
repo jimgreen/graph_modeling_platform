@@ -1,4 +1,4 @@
-// 一次性迁移：把设备库里"内嵌 base64 位图"的状态图标抽到图片库(/api/images),原地改为引用。
+// 一次性迁移：把设备库里"内嵌 base64 位图"的状态图标抽到图片库(/webgrp/images),原地改为引用。
 //
 // 用法(项目根目录):
 //   node scripts/migrate-state-icon-images.mjs            # 预演(dry-run),只报告不写入
@@ -7,7 +7,7 @@
 // 安全性:
 //   - 默认 dry-run;--apply 前会备份 library.json 与 images/manifest.json。
 //   - 按内容哈希去重:同一张位图只存一份,多处引用同一 id(模板/override 重复天然合并)。
-//   - 幂等:已是 /api/images 引用的不再处理;重复运行无副作用(内容哈希 id 确定)。
+//   - 幂等:已是 /webgrp/images 引用的不再处理;重复运行无副作用(内容哈希 id 确定)。
 //   - 只转换"带内嵌位图的 svg+xml data URL"和"直接的位图 data URL",纯 SVG 图标不动。
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync } from "node:fs";
@@ -104,7 +104,7 @@ function migrateSvgField(value) {
       return full;
     }
     changed = true;
-    return `${pre}/api/images/${id}${post}`;
+    return `${pre}/webgrp/images/${id}${post}`;
   });
   if (!changed) {
     return value;
@@ -122,7 +122,7 @@ function transform(value) {
       const id = storeRaster(value);
       if (id) {
         fieldsChanged += 1;
-        return `/api/images/${id}`;
+        return `/webgrp/images/${id}`;
       }
     }
     return value;

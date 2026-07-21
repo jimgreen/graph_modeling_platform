@@ -162,14 +162,14 @@ describe("SVG export", () => {
     };
     node.params = {
       ...node.params,
-      backgroundImage: "/api/images/node-bg",
-      foregroundImage: "/api/images/node-fg"
+      backgroundImage: "/webgrp/images/node-bg",
+      foregroundImage: "/webgrp/images/node-fg"
     };
     const svg = buildSvgDocument([node], [], {
       width: 320,
       height: 180,
       backgroundColor: "#ffffff",
-      backgroundImage: "/api/images/canvas-bg",
+      backgroundImage: "/webgrp/images/canvas-bg",
       imageExportPathById: {
         "canvas-bg": "data:image/png;base64,Y2FudmFzLWJn",
         "node-bg": "data:image/jpeg;base64,bm9kZS1iZw==",
@@ -183,14 +183,14 @@ describe("SVG export", () => {
     expect(svg).toContain('class="inline-fg-shape"');
     expect(svg).not.toContain('href="data:image/svg+xml');
     expect(svg).not.toContain("http://127.0.0.1:5173");
-    expect(svg).not.toContain('href="/api/images/');
+    expect(svg).not.toContain('href="/webgrp/images/');
     expect(svg).not.toContain('href="data/images/');
   });
 
   test("embeds backend images referenced inside svg data url backgrounds", () => {
     const nestedSvg = [
       '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">',
-      '<image href="/api/images/nested-photo" x="0" y="0" width="240" height="160"/>',
+      '<image href="/webgrp/images/nested-photo" x="0" y="0" width="240" height="160"/>',
       "</svg>"
     ].join("");
     const node = {
@@ -212,7 +212,7 @@ describe("SVG export", () => {
     });
 
     expect(svg).toContain('href="data:image/png;base64,bmVzdGVkLXBob3Rv"');
-    expect(svg).not.toContain('/api/images/nested-photo');
+    expect(svg).not.toContain('/webgrp/images/nested-photo');
   });
 
   test("uses the node default image when its current status has no matching state definition", () => {
@@ -223,7 +223,7 @@ describe("SVG export", () => {
     ].join("");
     const nestedImageSvg = [
       '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">',
-      '<image href="/api/images/current-photo" x="0" y="0" width="240" height="160"/>',
+      '<image href="/webgrp/images/current-photo" x="0" y="0" width="240" height="160"/>',
       "</svg>"
     ].join("");
     const template: DeviceTemplate = {
@@ -265,7 +265,7 @@ describe("SVG export", () => {
     expect(svg).toContain('id="symbol_StaticTextSymbol_custom-static-image-state_default"');
     expect(useTag).toContain('href="#symbol_StaticTextSymbol_custom-static-image-state_default"');
     expect(svg).toContain('href="data:image/png;base64,Y3VycmVudC1waG90bw=="');
-    expect(svg).not.toContain('/api/images/current-photo');
+    expect(svg).not.toContain('/webgrp/images/current-photo');
   });
 
   test("keeps svg node background images as svg markup in exported svg", () => {
@@ -275,7 +275,7 @@ describe("SVG export", () => {
     };
     node.params = {
       ...node.params,
-      backgroundImage: "/api/images/vector-bg"
+      backgroundImage: "/webgrp/images/vector-bg"
     };
     const svg = buildSvgDocument([node], [], {
       width: 320,
@@ -297,10 +297,10 @@ describe("SVG export", () => {
       width: 320,
       height: 180,
       backgroundColor: "#ffffff",
-      backgroundImage: "/api/images/missing-bg?id=1"
+      backgroundImage: "/webgrp/images/missing-bg?id=1"
     });
 
-    expect(svg).toContain('href="/api/images/missing-bg?id=1"');
+    expect(svg).toContain('href="/webgrp/images/missing-bg?id=1"');
     expect(svg).not.toContain('href="data/images/');
   });
 

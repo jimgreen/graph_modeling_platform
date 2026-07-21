@@ -1,4 +1,4 @@
-// /api/v1 运行时态域 handler：clients 直返，其余经 WS 拉前端运行时态。
+// /webgrp/v1 运行时态域 handler：clients 直返，其余经 WS 拉前端运行时态。
 // 依赖 runtimeWs 挂载后注入的 { fetchFromClient, listClients }。
 // 所有接口 query 可带 clientId（不指定取默认最近活跃客户端）。
 // 运行时态实时数据：cache-control: no-store（sendV1JsonNoStore）。
@@ -42,7 +42,7 @@ async function relayJson(response, fetchPromise) {
   }
 }
 
-// /api/v1/runtime/clients —— 在线客户端列表（server 直返，不经 WS）
+// /webgrp/v1/runtime/clients —— 在线客户端列表（server 直返，不经 WS）
 export function handleV1RuntimeClients({ response }, ctx) {
   try {
     const clients = ctx.listClients().map((c) => ({
@@ -57,27 +57,27 @@ export function handleV1RuntimeClients({ response }, ctx) {
   }
 }
 
-// /api/v1/runtime/model —— 当前打开模型定位
+// /webgrp/v1/runtime/model —— 当前打开模型定位
 export async function handleV1RuntimeModel({ url, response }, ctx) {
   await relayJson(response, ctx.fetchFromClient(readClientId(url), "runtime.model"));
 }
 
-// /api/v1/runtime/devices —— 当前模型设备清单
+// /webgrp/v1/runtime/devices —— 当前模型设备清单
 export async function handleV1RuntimeDevices({ url, response }, ctx) {
   await relayJson(response, ctx.fetchFromClient(readClientId(url), "runtime.devices"));
 }
 
-// /api/v1/runtime/selection —— 当前选中设备
+// /webgrp/v1/runtime/selection —— 当前选中设备
 export async function handleV1RuntimeSelection({ url, response }, ctx) {
   await relayJson(response, ctx.fetchFromClient(readClientId(url), "runtime.selection"));
 }
 
-// /api/v1/runtime/tabs —— 三 tab 聚合（runtime.snapshot）
+// /webgrp/v1/runtime/tabs —— 三 tab 聚合（runtime.snapshot）
 export async function handleV1RuntimeTabs({ url, response }, ctx) {
   await relayJson(response, ctx.fetchFromClient(readClientId(url), "runtime.snapshot"));
 }
 
-// /api/v1/runtime/tabs/{tab} —— 单 tab（tab ∈ model|tree|graph）
+// /webgrp/v1/runtime/tabs/{tab} —— 单 tab（tab ∈ model|tree|graph）
 // pathTab 由路由 match 的命名捕获组提供（优先），否则回落 query.tab
 export async function handleV1RuntimeTab({ url, response }, ctx, pathTab) {
   const tab = (pathTab ?? url.searchParams.get("tab") ?? "").trim();
@@ -88,7 +88,7 @@ export async function handleV1RuntimeTab({ url, response }, ctx, pathTab) {
   await relayJson(response, ctx.fetchFromClient(readClientId(url), "runtime.tab", { tab: tab || "model" }));
 }
 
-// /api/v1/runtime/screenshot —— PNG 二进制
+// /webgrp/v1/runtime/screenshot —— PNG 二进制
 export async function handleV1RuntimeScreenshot({ url, response }, ctx) {
   const clientId = readClientId(url);
   const width = url.searchParams.get("width");
@@ -125,7 +125,7 @@ export async function handleV1RuntimeScreenshot({ url, response }, ctx) {
   }
 }
 
-// /api/v1/runtime/svg —— SVG 文本
+// /webgrp/v1/runtime/svg —— SVG 文本
 export async function handleV1RuntimeSvg({ url, response }, ctx) {
   try {
     const data = await ctx.fetchFromClient(readClientId(url), "runtime.svg");
@@ -141,7 +141,7 @@ export async function handleV1RuntimeSvg({ url, response }, ctx) {
   }
 }
 
-// /api/v1/runtime/e-file —— E 文件文本
+// /webgrp/v1/runtime/e-file —— E 文件文本
 export async function handleV1RuntimeEFile({ url, response }, ctx) {
   try {
     const data = await ctx.fetchFromClient(readClientId(url), "runtime.e-file");
@@ -166,14 +166,14 @@ export function createV1RuntimeRoutes(ctx) {
   const wrap = (handler) => ({ request, response, url, match }) =>
     handler({ request, response, url }, ctx, match?.groups?.tab);
   return [
-    { method: "GET", pattern: /^\/api\/v1\/runtime\/clients\/?$/u, handle: wrap(handleV1RuntimeClients) },
-    { method: "GET", pattern: /^\/api\/v1\/runtime\/model\/?$/u, handle: wrap(handleV1RuntimeModel) },
-    { method: "GET", pattern: /^\/api\/v1\/runtime\/devices\/?$/u, handle: wrap(handleV1RuntimeDevices) },
-    { method: "GET", pattern: /^\/api\/v1\/runtime\/selection\/?$/u, handle: wrap(handleV1RuntimeSelection) },
-    { method: "GET", pattern: /^\/api\/v1\/runtime\/tabs\/?$/u, handle: wrap(handleV1RuntimeTabs) },
-    { method: "GET", pattern: /^\/api\/v1\/runtime\/tabs\/(?<tab>model|tree|graph)\/?$/u, handle: wrap(handleV1RuntimeTab) },
-    { method: "GET", pattern: /^\/api\/v1\/runtime\/screenshot\/?$/u, handle: wrap(handleV1RuntimeScreenshot) },
-    { method: "GET", pattern: /^\/api\/v1\/runtime\/svg\/?$/u, handle: wrap(handleV1RuntimeSvg) },
-    { method: "GET", pattern: /^\/api\/v1\/runtime\/e-file\/?$/u, handle: wrap(handleV1RuntimeEFile) }
+    { method: "GET", pattern: /^\/webgrp\/v1\/runtime\/clients\/?$/u, handle: wrap(handleV1RuntimeClients) },
+    { method: "GET", pattern: /^\/webgrp\/v1\/runtime\/model\/?$/u, handle: wrap(handleV1RuntimeModel) },
+    { method: "GET", pattern: /^\/webgrp\/v1\/runtime\/devices\/?$/u, handle: wrap(handleV1RuntimeDevices) },
+    { method: "GET", pattern: /^\/webgrp\/v1\/runtime\/selection\/?$/u, handle: wrap(handleV1RuntimeSelection) },
+    { method: "GET", pattern: /^\/webgrp\/v1\/runtime\/tabs\/?$/u, handle: wrap(handleV1RuntimeTabs) },
+    { method: "GET", pattern: /^\/webgrp\/v1\/runtime\/tabs\/(?<tab>model|tree|graph)\/?$/u, handle: wrap(handleV1RuntimeTab) },
+    { method: "GET", pattern: /^\/webgrp\/v1\/runtime\/screenshot\/?$/u, handle: wrap(handleV1RuntimeScreenshot) },
+    { method: "GET", pattern: /^\/webgrp\/v1\/runtime\/svg\/?$/u, handle: wrap(handleV1RuntimeSvg) },
+    { method: "GET", pattern: /^\/webgrp\/v1\/runtime\/e-file\/?$/u, handle: wrap(handleV1RuntimeEFile) }
   ];
 }

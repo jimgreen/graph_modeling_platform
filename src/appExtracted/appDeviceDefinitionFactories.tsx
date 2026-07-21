@@ -2329,7 +2329,7 @@ export function createSvgExportReferencedImageHrefById(__appScope: Record<string
     const appendAssetId = (assetId?: string) => {
       const id = String(assetId ?? "").trim();
       if (id && !hrefById.has(id)) {
-        hrefById.set(id, `/api/images/${encodeURIComponent(id)}`);
+        hrefById.set(id, `/webgrp/images/${encodeURIComponent(id)}`);
       }
     };
     const appendHref = (href?: string) => {
@@ -3371,7 +3371,7 @@ export function createApplyExistingImage(__appScope: Record<string, any>) {
       return;
     }
     if (imageTarget.kind === "stateIconFrameBackground") {
-      const backgroundImage = asset?.url ?? `/api/images/${assetId}`;
+      const backgroundImage = asset?.url ?? `/webgrp/images/${assetId}`;
       setStateIconDrawingDialog((current: any) =>
         current
           ? {
@@ -3985,7 +3985,7 @@ export function createCustomDeviceDefaultStateVisualDraft(__appScope: Record<str
     const image = customDeviceDraft.backgroundImage ||
       templateImage ||
       generateCustomDeviceImage(customDevicePreviewLabel, customDraftTerminalTypes.length > 0 ? customDraftTerminalTypes : ["ac"]);
-    const imageAssetId = customDeviceDraft.backgroundImageAssetId && image === `/api/images/${customDeviceDraft.backgroundImageAssetId}`
+    const imageAssetId = customDeviceDraft.backgroundImageAssetId && image === `/webgrp/images/${customDeviceDraft.backgroundImageAssetId}`
       ? customDeviceDraft.backgroundImageAssetId
       : "";
     const imageFit = normalizeImageFitMode(
@@ -4214,7 +4214,7 @@ export function createDefinitionDefaultStateVisualDraft(__appScope: Record<strin
     );
     return {
       image: sourceImage || templateImage,
-      imageAssetId: sourceImageAssetId && sourceImage === `/api/images/${sourceImageAssetId}` ? sourceImageAssetId : sourceImage ? "" : sourceImageAssetId,
+      imageAssetId: sourceImageAssetId && sourceImage === `/webgrp/images/${sourceImageAssetId}` ? sourceImageAssetId : sourceImage ? "" : sourceImageAssetId,
       imageFit,
       backgroundImageFit: imageFit,
       imageCleared: "",
@@ -5318,7 +5318,7 @@ export function createChooseStateIconDrawingImport(__appScope: Record<string, an
         appendImportedElements(createEditableStateIconElementsFromSvgSource(source, file.name, { preserveImportedSvg: true }));
         return;
       }
-      // 位图：上传到图片库并引用 /api/images，避免把 base64 位图内联进状态图标 SVG（library.json 膨胀根因）。
+      // 位图：上传到图片库并引用 /webgrp/images，避免把 base64 位图内联进状态图标 SVG（library.json 膨胀根因）。
       let href = source;
       try {
         const uploadedAsset = await uploadBackendImage(file.name, source, activeImageFolderId);
@@ -6794,7 +6794,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       ? ""
       : draftBackgroundImage || generateCustomDeviceImage(componentLabel, terminalTypes.length > 0 ? terminalTypes : ["ac"]);
     const backgroundImage = customDeviceImageWithTerminalConnectors(rawBackgroundImage, terminalTypes, terminalAnchors);
-    const backgroundImageAssetId = draftBackgroundImageAssetId && backgroundImage === `/api/images/${draftBackgroundImageAssetId}`
+    const backgroundImageAssetId = draftBackgroundImageAssetId && backgroundImage === `/webgrp/images/${draftBackgroundImageAssetId}`
       ? draftBackgroundImageAssetId
       : "";
     const defaultImageCandidates = customDeviceGeneratedDefaultImageCandidates(
@@ -7070,7 +7070,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     const backgroundImage = draftBackgroundImageCleared
       ? ""
       : customDeviceImageWithTerminalConnectors(draftBackgroundImage, terminalTypes, terminalAnchors);
-    const backgroundImageAssetId = draftBackgroundImageAssetId && backgroundImage === `/api/images/${draftBackgroundImageAssetId}`
+    const backgroundImageAssetId = draftBackgroundImageAssetId && backgroundImage === `/webgrp/images/${draftBackgroundImageAssetId}`
       ? draftBackgroundImageAssetId
       : "";
     const defaultImageCandidates = customDeviceGeneratedDefaultImageCandidates(

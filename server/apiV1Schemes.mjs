@@ -1,4 +1,4 @@
-// /api/v1 方案域 handler：schemes、hierarchy、models、export、model json/svg。
+// /webgrp/v1 方案域 handler：schemes、hierarchy、models、export、model json/svg。
 // 复用 image-server.mjs 纯函数。v1 信封包装。
 
 import { join, resolve } from "node:path";
@@ -50,7 +50,7 @@ function findSchemeByPath(schemes, parts) {
   return found;
 }
 
-// /api/v1/schemes —— 方案列表（树形，含模型摘要）
+// /webgrp/v1/schemes —— 方案列表（树形，含模型摘要）
 // query: includeProjects=1 时含完整 project 数据（大）
 export async function handleV1Schemes({ url, request, response }) {
   try {
@@ -62,7 +62,7 @@ export async function handleV1Schemes({ url, request, response }) {
   }
 }
 
-// /api/v1/schemes/hierarchy —— 纯层级树
+// /webgrp/v1/schemes/hierarchy —— 纯层级树
 export async function handleV1SchemesHierarchy({ request, response }) {
   try {
     const schemes = await readSchemes({ includeProjects: false });
@@ -72,7 +72,7 @@ export async function handleV1SchemesHierarchy({ request, response }) {
   }
 }
 
-// /api/v1/schemes/models —— 指定方案下模型列表
+// /webgrp/v1/schemes/models —— 指定方案下模型列表
 // query: schemePath=<encoded>
 export async function handleV1SchemeModels({ url, request, response }) {
   try {
@@ -93,7 +93,7 @@ export async function handleV1SchemeModels({ url, request, response }) {
   }
 }
 
-// /api/v1/schemes/export —— 方案导出 ZIP
+// /webgrp/v1/schemes/export —— 方案导出 ZIP
 // query: schemePath=<encoded>
 export async function handleV1SchemeExport({ url, response }) {
   const parts = parseSchemePathParam(url.searchParams.get("schemePath"));
@@ -121,7 +121,7 @@ export async function handleV1SchemeExport({ url, response }) {
   }
 }
 
-// /api/v1/schemes/model/json —— 模型 project JSON
+// /webgrp/v1/schemes/model/json —— 模型 project JSON
 // query: schemePath=<encoded>, name=<模型名>
 export async function handleV1ModelJson({ url, request, response }) {
   try {
@@ -146,7 +146,7 @@ export async function handleV1ModelJson({ url, request, response }) {
   }
 }
 
-// /api/v1/schemes/model/svg —— 模型 SVG
+// /webgrp/v1/schemes/model/svg —— 模型 SVG
 // query: schemePath=<encoded>, name=<模型名>
 export async function handleV1ModelSvg({ url, response }) {
   const parts = parseSchemePathParam(url.searchParams.get("schemePath"));
@@ -176,10 +176,10 @@ export async function handleV1ModelSvg({ url, response }) {
 
 // v1 方案域路由表：{ method, pattern, handle }
 export const v1SchemeRoutes = [
-  { method: "GET", pattern: /^\/api\/v1\/schemes\/?$/u, handle: handleV1Schemes },
-  { method: "GET", pattern: /^\/api\/v1\/schemes\/hierarchy\/?$/u, handle: handleV1SchemesHierarchy },
-  { method: "GET", pattern: /^\/api\/v1\/schemes\/models\/?$/u, handle: handleV1SchemeModels },
-  { method: "GET", pattern: /^\/api\/v1\/schemes\/export\/?$/u, handle: handleV1SchemeExport },
-  { method: "GET", pattern: /^\/api\/v1\/schemes\/model\/json\/?$/u, handle: handleV1ModelJson },
-  { method: "GET", pattern: /^\/api\/v1\/schemes\/model\/svg\/?$/u, handle: handleV1ModelSvg }
+  { method: "GET", pattern: /^\/webgrp\/v1\/schemes\/?$/u, handle: handleV1Schemes },
+  { method: "GET", pattern: /^\/webgrp\/v1\/schemes\/hierarchy\/?$/u, handle: handleV1SchemesHierarchy },
+  { method: "GET", pattern: /^\/webgrp\/v1\/schemes\/models\/?$/u, handle: handleV1SchemeModels },
+  { method: "GET", pattern: /^\/webgrp\/v1\/schemes\/export\/?$/u, handle: handleV1SchemeExport },
+  { method: "GET", pattern: /^\/webgrp\/v1\/schemes\/model\/json\/?$/u, handle: handleV1ModelJson },
+  { method: "GET", pattern: /^\/webgrp\/v1\/schemes\/model\/svg\/?$/u, handle: handleV1ModelSvg }
 ];

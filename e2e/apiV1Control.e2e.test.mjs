@@ -26,7 +26,7 @@ afterEach(async () => {
 
 // 取当前模型设备清单。无活动模型时返回 null（不抛错）。
 async function fetchDevices(imageBaseUrl, clientId) {
-  const url = new URL(`${imageBaseUrl}/api/v1/runtime/devices`);
+  const url = new URL(`${imageBaseUrl}/webgrp/v1/runtime/devices`);
   if (clientId) {
     url.searchParams.set("clientId", clientId);
   }
@@ -49,7 +49,7 @@ describe("control.device/add e2e", () => {
     const beforeNodes = Array.isArray(before?.nodes) ? before.nodes : null;
 
     // 调 control.device/add（用一个真实存在的 DeviceKind）
-    const addRes = await fetch(`${imageBaseUrl}/api/v1/control/device/add?clientId=${clientId}`, {
+    const addRes = await fetch(`${imageBaseUrl}/webgrp/v1/control/device/add?clientId=${clientId}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ kind: "static-text", x: 100, y: 100 })
@@ -80,7 +80,7 @@ describe("control.device/add e2e", () => {
     // 等待 server 端清理客户端（心跳超时 60s 太久，直接断连应即时 unregister）
     await new Promise((r) => setTimeout(r, 1000));
 
-    const res = await fetch(`${imageBaseUrl}/api/v1/control/device/add`, {
+    const res = await fetch(`${imageBaseUrl}/webgrp/v1/control/device/add`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ kind: "static-text" })
@@ -96,7 +96,7 @@ describe("control.devices/select e2e", () => {
     const { page, baseUrl, imageBaseUrl } = env;
     const clientId = await loadFrontendAndWaitOnline(page, baseUrl, imageBaseUrl);
 
-    const res = await fetch(`${imageBaseUrl}/api/v1/control/devices/select?clientId=${clientId}`, {
+    const res = await fetch(`${imageBaseUrl}/webgrp/v1/control/devices/select?clientId=${clientId}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ ids: ["fake-id-1", "fake-id-2"], mode: "set" })
@@ -114,7 +114,7 @@ describe("control.devices/select e2e", () => {
     const { page, baseUrl, imageBaseUrl } = env;
     const clientId = await loadFrontendAndWaitOnline(page, baseUrl, imageBaseUrl);
 
-    const res = await fetch(`${imageBaseUrl}/api/v1/control/devices/select?clientId=${clientId}`, {
+    const res = await fetch(`${imageBaseUrl}/webgrp/v1/control/devices/select?clientId=${clientId}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ ids: "not-array" })
@@ -130,7 +130,7 @@ describe("control.devices/group e2e", () => {
     const { page, baseUrl, imageBaseUrl } = env;
     const clientId = await loadFrontendAndWaitOnline(page, baseUrl, imageBaseUrl);
 
-    const res = await fetch(`${imageBaseUrl}/api/v1/control/devices/group?clientId=${clientId}`, {
+    const res = await fetch(`${imageBaseUrl}/webgrp/v1/control/devices/group?clientId=${clientId}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({})
@@ -148,7 +148,7 @@ describe("control.device/delete e2e", () => {
     const { page, baseUrl, imageBaseUrl } = env;
     const clientId = await loadFrontendAndWaitOnline(page, baseUrl, imageBaseUrl);
 
-    const res = await fetch(`${imageBaseUrl}/api/v1/control/device/delete?clientId=${clientId}`, {
+    const res = await fetch(`${imageBaseUrl}/webgrp/v1/control/device/delete?clientId=${clientId}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({})
@@ -166,7 +166,7 @@ describe("control.device/property/update e2e", () => {
     const { page, baseUrl, imageBaseUrl } = env;
     const clientId = await loadFrontendAndWaitOnline(page, baseUrl, imageBaseUrl);
 
-    const res = await fetch(`${imageBaseUrl}/api/v1/control/device/property/update?clientId=${clientId}`, {
+    const res = await fetch(`${imageBaseUrl}/webgrp/v1/control/device/property/update?clientId=${clientId}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ id: "nonexistent", category: "graphic", patch: { rotation: 90 } })
@@ -183,7 +183,7 @@ describe("control/save e2e", () => {
     const { page, baseUrl, imageBaseUrl } = env;
     const clientId = await loadFrontendAndWaitOnline(page, baseUrl, imageBaseUrl);
 
-    const res = await fetch(`${imageBaseUrl}/api/v1/control/save?clientId=${clientId}`, {
+    const res = await fetch(`${imageBaseUrl}/webgrp/v1/control/save?clientId=${clientId}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ scope: "currentModel" })
@@ -199,7 +199,7 @@ describe("control/save e2e", () => {
     const { page, baseUrl, imageBaseUrl } = env;
     const clientId = await loadFrontendAndWaitOnline(page, baseUrl, imageBaseUrl);
 
-    const res = await fetch(`${imageBaseUrl}/api/v1/control/save?clientId=${clientId}`, {
+    const res = await fetch(`${imageBaseUrl}/webgrp/v1/control/save?clientId=${clientId}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ scope: "invalid" })
@@ -215,7 +215,7 @@ describe("control/template/saveFromSelection e2e", () => {
     const { page, baseUrl, imageBaseUrl } = env;
     const clientId = await loadFrontendAndWaitOnline(page, baseUrl, imageBaseUrl);
 
-    const res = await fetch(`${imageBaseUrl}/api/v1/control/template/saveFromSelection?clientId=${clientId}`, {
+    const res = await fetch(`${imageBaseUrl}/webgrp/v1/control/template/saveFromSelection?clientId=${clientId}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "测试模板", componentType: "test_device" })
@@ -230,7 +230,7 @@ describe("control/template/saveFromSelection e2e", () => {
     const { page, baseUrl, imageBaseUrl } = env;
     const clientId = await loadFrontendAndWaitOnline(page, baseUrl, imageBaseUrl);
 
-    const res = await fetch(`${imageBaseUrl}/api/v1/control/template/saveFromSelection?clientId=${clientId}`, {
+    const res = await fetch(`${imageBaseUrl}/webgrp/v1/control/template/saveFromSelection?clientId=${clientId}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ componentType: "test_device" })
