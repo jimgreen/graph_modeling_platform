@@ -6,9 +6,12 @@ import type {
 } from "./appExtracted/appCoreCanvasUtilities";
 import { reconcileNodeWithDefinition } from "./definitionInstanceSync";
 import {
+  ALLOW_RESIZE_TRANSFORM_PARAM,
   CUSTOM_PARAM_DEFINITIONS_KEY,
   DEFAULT_COLOR_PALETTE,
+  getTemplateParameterDefinitions,
   normalizeColorPalette,
+  resolveDeviceParameterDefinitionExportSettings,
   type ColorDisplayMode,
   type ColorPalette,
   type DeviceParameterDefinition,
@@ -339,6 +342,76 @@ const definitionsHaveExportMetadata = (definitions: readonly DeviceParameterDefi
     typeof definition.exportEnabled === "boolean" || Boolean(normalizedText(definition.exportName))
   ));
 
+const editableBuiltInParameterDefinitions = (template: DeviceTemplate) =>
+  getTemplateParameterDefinitions(template).filter((definition) => ![
+    "component_type",
+    "is_container",
+    ALLOW_RESIZE_TRANSFORM_PARAM
+  ].includes(normalizedText(definition.enName)));
+
+const comparableParameterDefinition = (
+  definition: DeviceParameterDefinition,
+  builtInDefinition: DeviceParameterDefinition
+) => ({
+  cnName: normalizedText(builtInDefinition.cnName) === normalizedText(builtInDefinition.enName)
+    ? ""
+    : normalizedText(definition.cnName),
+  enName: normalizedText(definition.enName),
+  valueType: definition.valueType,
+  typicalValue: normalizedText(definition.typicalValue),
+  enumValues: (definition.enumValues ?? []).map(normalizedText),
+  enumValueType: definition.enumValueType ?? "",
+  enumOptions: (definition.enumOptions ?? []).map((option) => ({
+    value: normalizedText(option.value),
+    label: normalizedText(option.label)
+  })),
+  readonly: Boolean(definition.readonly)
+});
+
+const builtInParameterDefinitionsMatch = (
+  definitions: readonly DeviceParameterDefinition[],
+  template: DeviceTemplate
+) => {
+  const builtInDefinitions = editableBuiltInParameterDefinitions(template);
+  if (definitions.length !== builtInDefinitions.length) {
+    return false;
+  }
+  return definitions.every((definition, index) => canonicalEqual(
+    comparableParameterDefinition(definition, builtInDefinitions[index]),
+    comparableParameterDefinition(builtInDefinitions[index], builtInDefinitions[index])
+  ));
+};
+
+const comparableParameterExportSettings = (
+  definitions: readonly DeviceParameterDefinition[],
+  kind: string,
+  params: Record<string, string>
+) => definitions.map((definition) => {
+  const settings = resolveDeviceParameterDefinitionExportSettings(kind, params, definition);
+  return {
+    enName: normalizedText(definition.enName),
+    exportEnabled: settings.exportEnabled,
+    exportName: normalizedText(settings.exportName)
+  };
+});
+
+const builtInParameterExportSettingsMatch = (
+  definitions: readonly DeviceParameterDefinition[],
+  template: DeviceTemplate,
+  override: DeviceTemplateDefinitionOverride
+) => canonicalEqual(
+  comparableParameterExportSettings(
+    definitions,
+    template.kind,
+    { ...template.params, ...(override.params ?? {}) }
+  ),
+  comparableParameterExportSettings(
+    editableBuiltInParameterDefinitions(template),
+    template.kind,
+    template.params
+  )
+);
+
 const overrideHasNonParameterChanges = (override: DeviceTemplateDefinitionOverride) => {
   const keys = Object.keys(override).filter((key) => ![
     "kind",
@@ -403,13 +476,14 @@ export function buildUserCustomizationInventory(
   });
   Object.entries(snapshot.deviceLibrary.deviceDefinitionOverrides).forEach(([kind, override]) => {
     const template = customByKind.get(kind) ?? builtInByKind.get(kind);
+    const builtInTemplate = builtInByKind.get(kind);
     const label = template?.label || kind;
     const definitions = overrideParameterDefinitions(override);
     if (overrideHasNonParameterChanges(override)) {
       const changedFields = Object.keys(override).filter((key) => !["kind", "updatedAt", "parameterDefinitions"].includes(key));
       pushItem("device-definition-overrides", kind, label, template?.categoryLibrary || "内置元件", "modified", `${changedFields.length} 组图形或端子设置`);
     }
-    if (definitions.length > 0) {
+    if (definitions.length > 0 && (!builtInTemplate || !builtInParameterDefinitionsMatch(definitions, builtInTemplate))) {
       pushItem("parameter-definitions", kind, label, template?.categoryLibrary || "元件定义", builtInByKind.has(kind) ? "modified" : "added", `${definitions.length} 项参数定义`);
     }
   });
@@ -424,7 +498,11 @@ export function buildUserCustomizationInventory(
     }
   });
   Object.entries(snapshot.deviceLibrary.deviceDefinitionOverrides).forEach(([kind, override]) => {
-    if (definitionsHaveExportMetadata(overrideParameterDefinitions(override))) {
+    const definitions = overrideParameterDefinitions(override);
+    const builtInTemplate = builtInByKind.get(kind);
+    if (builtInTemplate
+      ? definitions.length > 0 && !builtInParameterExportSettingsMatch(definitions, builtInTemplate, override)
+      : definitionsHaveExportMetadata(definitions)) {
       eKinds.add(kind);
     }
   });

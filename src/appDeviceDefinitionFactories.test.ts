@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   createSyncExistingNodesWithTemplateDefinitions
 } from "./appExtracted/appGraphMeasurementFactories";
+import { normalizeDefinitionRowEnumFields } from "./appExtracted/appPersistenceLibraryExport";
 import {
   createComputeStateIconDrawingSmartAlignmentSnap,
   createCompleteImportedModelFeedback,
@@ -41,7 +42,20 @@ import {
   stateIconDrawingElementIdsInRect
 } from "./appExtracted/appDeviceDefinitionFactories";
 import { createSetEdgeManualPoints } from "./appExtracted/appProjectCanvasFactories";
-import { applyDeviceTemplateDefinitionOverride, Point, templateDerivedComponentLibraryInfo } from "./model";
+import {
+  createCustomDeviceDraftFromTemplate,
+  customDefaultDefinitions,
+  isDerivedComponentBaseParamName,
+  isReservedDeviceDefinitionParamName,
+  normalizeContainerTerminalAssociations
+} from "./customDeviceUtils";
+import {
+  applyDeviceTemplateDefinitionOverride,
+  DEVICE_LIBRARY,
+  getTemplateParameterDefinitions,
+  Point,
+  templateDerivedComponentLibraryInfo
+} from "./model";
 import { stateIconDrawingToImage } from "./stateIconDrawing";
 import { apiPath } from "./config";
 
@@ -1112,6 +1126,242 @@ describe("manual bend interaction helpers", () => {
     expect(customDeviceDraft.error).toContain("中文名称不能为空");
     expect(customDeviceDraft.error).toContain("英文名称不能为空");
     expect(savedTemplates).toEqual([]);
+  });
+
+  const createBuiltinDeviceDefinitionSaveHarness = ({
+    template,
+    draftDefinitions,
+    existingOverride,
+    initialDraft,
+    createDraftFromTemplate,
+    defaultDefinitionsFactory = () => [],
+    normalizeDefinition = (row: any) => row,
+    normalizeAssociations = (_terminalTypes: any, values: any[]) => values,
+    derivedBasePredicate = () => false,
+    reservedPredicate = () => false
+  }: {
+    template: any;
+    draftDefinitions: any[];
+    existingOverride?: any;
+    initialDraft?: any;
+    createDraftFromTemplate?: (item: any) => any;
+    defaultDefinitionsFactory?: (...args: any[]) => any[];
+    normalizeDefinition?: (row: any) => any;
+    normalizeAssociations?: (_terminalTypes: any, values: any[], count: number) => any[];
+    derivedBasePredicate?: (fieldName: unknown, baseComponentLibrary?: string) => boolean;
+    reservedPredicate?: (fieldName: string) => boolean;
+  }) => {
+    let customDeviceDraft = initialDraft ? {
+      ...structuredClone(initialDraft),
+      size: { width: template.size.width + 8, height: template.size.height + 4 },
+      params: draftDefinitions.map((definition, index) => ({ ...definition, id: definition.id ?? `draft-${index}` }))
+    } : {
+      componentLibrary: template.params?.component_type ?? "ACGenerator",
+      componentName: template.label,
+      isDerivedComponentLibrary: false,
+      derivedFromComponentLibrary: "",
+      derivedComponentLibrary: "",
+      derivedComponentLibraryLabel: "",
+      backgroundImage: "",
+      backgroundImageAssetId: "",
+      backgroundImageCleared: "",
+      backgroundImageFit: "cover",
+      size: { width: template.size.width + 8, height: template.size.height + 4 },
+      allowResizeTransform: "0",
+      terminalCount: template.terminalCount,
+      terminalTypes: template.terminalTypes ?? [template.terminalType],
+      terminalLabels: template.terminalLabels ?? ["交流端"],
+      terminalRoles: template.terminalRoles ?? ["single-source"],
+      terminalAssociations: template.terminalAssociations ?? ["ac-generator"],
+      isContainer: false,
+      params: draftDefinitions.map((definition, index) => ({ ...definition, id: `draft-${index}` })),
+      stateDefinitions: [],
+      error: ""
+    };
+    let savedOverrides: any = {};
+    const deviceDefinitionOverrides = existingOverride
+      ? { [template.kind]: existingOverride }
+      : {};
+    const scope = {
+      ALLOW_RESIZE_TRANSFORM_PARAM: "allowResizeTransform",
+      TERMINAL_TYPE_LIBRARY_LABELS: { ac: "交流" },
+      baseLibraryTemplates: [template],
+      closeCustomDeviceDialog: vi.fn(),
+      createCustomDeviceDraftFromTemplate: createDraftFromTemplate ?? ((item: any) => ({
+        ...customDeviceDraft,
+        componentName: item.label,
+        size: { ...item.size },
+        params: (item.parameterDefinitions ?? []).map((definition: any, index: number) => ({
+          ...definition,
+          id: `base-${index}`
+        }))
+      })),
+      customDefaultDefinitions: vi.fn(defaultDefinitionsFactory),
+      get customDeviceDraft() {
+        return customDeviceDraft;
+      },
+      customDeviceGeneratedDefaultImageCandidates: () => [],
+      customDeviceImageWithTerminalConnectors: (image: string) => image,
+      customDeviceTerminalAnchors: customDeviceDraft.terminalAnchors ?? template.terminalAnchors ?? [{ x: -0.5, y: 0 }],
+      deviceDefinitionOverrides,
+      deviceDefinitionOverrideForTemplate: (_template: any, overrides: any) => overrides[_template.kind],
+      getTemplateParameterDefinitions: (item: any) => item.parameterDefinitions ?? [],
+      hasOverlappingCustomDeviceTerminalAnchors: () => false,
+      isDerivedComponentBaseParamName: derivedBasePredicate,
+      isReservedDeviceDefinitionParamName: reservedPredicate,
+      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
+      libraryTemplates: [template],
+      measurementConfig: { measurementTypes: [], deviceProfiles: [] },
+      measurementConfigDraft: undefined,
+      measurementConfigDraftRef: undefined,
+      normalizeComponentLibraryName: (name: string) => name.trim(),
+      normalizeContainerTerminalAssociations: normalizeAssociations,
+      normalizeDefinitionRowEnumFields: normalizeDefinition,
+      persistDeviceLibraryChange: vi.fn(),
+      requireEditMode: () => true,
+      setCustomDeviceDraft: (updater: any) => {
+        customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
+      },
+      setCustomDeviceDraftCleanBaseline: vi.fn(),
+      setCustomDeviceSaveMessage: vi.fn(),
+      setCustomDeviceSaveToast: vi.fn(),
+      customDeviceSaveToastTimerRef: { current: null },
+      setDeviceDefinitionOverrides: (next: any) => {
+        savedOverrides = next;
+      },
+      showGlobalMessage: vi.fn(),
+      syncExistingNodesWithTemplateDefinitions: vi.fn(),
+      syncInheritedCustomDeviceStateVisuals: (states: any[]) => states,
+      validateContainerTerminalAssociations: () => ({ valid: true }),
+      validateStateDraftRows: (states: any[]) => ({ states, error: "" }),
+      writeOperationLog: vi.fn()
+    };
+    return {
+      save: () => createSaveBuiltinDeviceDefinitionFromCustomDraft(scope)(template),
+      savedOverride: () => savedOverrides[template.kind]
+    };
+  };
+
+  test("does not persist unchanged built-in parameter definitions for a visual-only edit", () => {
+    const defaultDefinition = {
+      cnName: "额定功率",
+      enName: "ratedPower",
+      valueType: "string",
+      typicalValue: "5 MW",
+      exportEnabled: true,
+      exportName: "rated_power"
+    };
+    const template = {
+      kind: "ac-source",
+      label: "交流电源",
+      categoryLibrary: "交流设备",
+      params: { component_type: "ACGenerator" },
+      size: { width: 84, height: 56 },
+      terminalType: "ac",
+      terminalCount: 1,
+      terminalTypes: ["ac"],
+      terminalLabels: ["交流端"],
+      terminalAnchors: [{ x: -0.5, y: 0 }],
+      parameterDefinitions: [defaultDefinition]
+    };
+    const harness = createBuiltinDeviceDefinitionSaveHarness({
+      template,
+      draftDefinitions: [defaultDefinition]
+    });
+
+    expect(harness.save()).toBe(true);
+    expect(harness.savedOverride()).toMatchObject({
+      kind: "ac-source",
+      size: { width: 92, height: 60 }
+    });
+    expect(harness.savedOverride()).not.toHaveProperty("parameterDefinitions");
+  });
+
+  test("omits inferred AC source defaults when the real built-in draft only changes visually", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-source");
+    expect(template).toBeDefined();
+    const initialDraft = createCustomDeviceDraftFromTemplate(template!);
+    const harness = createBuiltinDeviceDefinitionSaveHarness({
+      template: template!,
+      draftDefinitions: initialDraft.params,
+      initialDraft,
+      createDraftFromTemplate: createCustomDeviceDraftFromTemplate,
+      defaultDefinitionsFactory: customDefaultDefinitions,
+      normalizeDefinition: normalizeDefinitionRowEnumFields,
+      normalizeAssociations: normalizeContainerTerminalAssociations,
+      derivedBasePredicate: isDerivedComponentBaseParamName,
+      reservedPredicate: isReservedDeviceDefinitionParamName
+    });
+
+    expect(harness.save()).toBe(true);
+    expect(harness.savedOverride()).not.toHaveProperty("parameterDefinitions");
+  });
+
+  test("keeps genuine built-in parameter changes when saving a definition", () => {
+    const defaultDefinition = {
+      cnName: "额定功率",
+      enName: "ratedPower",
+      valueType: "string",
+      typicalValue: "5 MW",
+      exportEnabled: true,
+      exportName: "rated_power"
+    };
+    const template = {
+      kind: "ac-source",
+      label: "交流电源",
+      categoryLibrary: "交流设备",
+      params: { component_type: "ACGenerator" },
+      size: { width: 84, height: 56 },
+      terminalType: "ac",
+      terminalCount: 1,
+      terminalTypes: ["ac"],
+      terminalLabels: ["交流端"],
+      terminalAnchors: [{ x: -0.5, y: 0 }],
+      parameterDefinitions: [defaultDefinition]
+    };
+    const changedDefinition = { ...defaultDefinition, typicalValue: "8 MW" };
+    const harness = createBuiltinDeviceDefinitionSaveHarness({
+      template,
+      draftDefinitions: [changedDefinition]
+    });
+
+    expect(harness.save()).toBe(true);
+    expect(harness.savedOverride().parameterDefinitions).toEqual([changedDefinition]);
+  });
+
+  test("removes legacy copied parameter definitions after they are restored to built-in defaults", () => {
+    const defaultDefinition = {
+      cnName: "额定功率",
+      enName: "ratedPower",
+      valueType: "string",
+      typicalValue: "5 MW",
+      exportEnabled: true,
+      exportName: "rated_power"
+    };
+    const template = {
+      kind: "ac-source",
+      label: "交流电源",
+      categoryLibrary: "交流设备",
+      params: { component_type: "ACGenerator" },
+      size: { width: 84, height: 56 },
+      terminalType: "ac",
+      terminalCount: 1,
+      terminalTypes: ["ac"],
+      terminalLabels: ["交流端"],
+      terminalAnchors: [{ x: -0.5, y: 0 }],
+      parameterDefinitions: [defaultDefinition]
+    };
+    const harness = createBuiltinDeviceDefinitionSaveHarness({
+      template,
+      draftDefinitions: [defaultDefinition],
+      existingOverride: {
+        kind: "ac-source",
+        parameterDefinitions: [defaultDefinition]
+      }
+    });
+
+    expect(harness.save()).toBe(true);
+    expect(harness.savedOverride()).not.toHaveProperty("parameterDefinitions");
   });
 
   test("saves derived settings when editing a built-in device definition from the custom dialog", () => {

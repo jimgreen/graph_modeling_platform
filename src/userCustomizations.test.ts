@@ -1,5 +1,12 @@
 import { describe, expect, test, vi } from "vitest";
-import { DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY, type DeviceTemplate, type ModelNode } from "./model";
+import {
+  DEFAULT_COLOR_PALETTE,
+  DEVICE_LIBRARY,
+  getTemplateParameterDefinitions,
+  resolveDeviceParameterDefinitionExportSettings,
+  type DeviceTemplate,
+  type ModelNode
+} from "./model";
 import { DEFAULT_MEASUREMENT_CONFIG } from "./measurements";
 import { apiPath } from "./config";
 import {
@@ -125,6 +132,55 @@ describe("user customization inventory", () => {
       changeType: "protected",
       protected: true
     }));
+  });
+
+  test("treats a visual-only built-in override with copied defaults as one visual customization", () => {
+    const snapshot = defaultSnapshot();
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-source");
+    expect(template).toBeDefined();
+    const defaultDefinitions = getTemplateParameterDefinitions(template!).map((definition) => ({
+      ...definition,
+      ...resolveDeviceParameterDefinitionExportSettings(template!.kind, template!.params, definition)
+    }));
+    snapshot.deviceLibrary.deviceDefinitionOverrides[template!.kind] = {
+      kind: template!.kind,
+      size: { width: template!.size.width + 8, height: template!.size.height + 4 },
+      parameterDefinitions: defaultDefinitions
+    };
+
+    const inventory = buildUserCustomizationInventory(snapshot, DEVICE_LIBRARY);
+
+    expect(inventory.countsByDomain["device-definition-overrides"]).toBe(1);
+    expect(inventory.countsByDomain["parameter-definitions"]).toBe(0);
+    expect(inventory.countsByDomain["e-interface-definitions"]).toBe(0);
+    expect(inventory.summary.total).toBe(1);
+  });
+
+  test("still reports genuine built-in parameter and E-interface changes", () => {
+    const snapshot = defaultSnapshot();
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-source");
+    expect(template).toBeDefined();
+    const defaultDefinitions = getTemplateParameterDefinitions(template!).map((definition) => ({
+      ...definition,
+      ...resolveDeviceParameterDefinitionExportSettings(template!.kind, template!.params, definition)
+    }));
+    const changedDefinitions = defaultDefinitions.map((definition, index) => index === 0
+      ? {
+          ...definition,
+          typicalValue: `${definition.typicalValue || "0"}-changed`,
+          exportEnabled: !definition.exportEnabled,
+          exportName: definition.exportEnabled ? "" : definition.enName
+        }
+      : definition);
+    snapshot.deviceLibrary.deviceDefinitionOverrides[template!.kind] = {
+      kind: template!.kind,
+      parameterDefinitions: changedDefinitions
+    };
+
+    const inventory = buildUserCustomizationInventory(snapshot, DEVICE_LIBRARY);
+
+    expect(inventory.countsByDomain["parameter-definitions"]).toBe(1);
+    expect(inventory.countsByDomain["e-interface-definitions"]).toBe(1);
   });
 });
 
