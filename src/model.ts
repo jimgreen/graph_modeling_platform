@@ -1871,6 +1871,9 @@ function getRawEParamValue(
   if (key === "name") {
     return node.name;
   }
+  if (key === "dev_type") {
+    return String(node.params.dev_type ?? "").trim() || node.kind;
+  }
   if (key === "run_stat") {
     return normalizeRunStatForE(node.params.run_stat);
   }
@@ -1988,6 +1991,32 @@ type EParameterField = {
   definition?: DeviceParameterDefinition;
 };
 
+export type EFileInterfaceFieldDefinition = {
+  sourceName: string;
+  exportEnabled?: boolean;
+  exportName?: string;
+  definition?: DeviceParameterDefinition;
+};
+
+export type EFileInterfaceSectionDefinition = {
+  componentLibrary: string;
+  exportEnabled?: boolean;
+  exportName?: string;
+  fields?: readonly EFileInterfaceFieldDefinition[];
+};
+
+export type EFileExportOptions = {
+  interfaceDefinitions?: readonly EFileInterfaceSectionDefinition[];
+};
+
+function eFileInterfaceDefinitionIndex(options: EFileExportOptions = {}) {
+  return new Map(
+    (options.interfaceDefinitions ?? [])
+      .map((definition) => [String(definition.componentLibrary ?? "").trim(), definition] as const)
+      .filter(([componentLibrary]) => Boolean(componentLibrary))
+  );
+}
+
 const LEGACY_E_DEFINITION_COLUMN_ALIASES: Record<string, string> = {
   ratedActivePower: "pbase",
   ratedReactivePower: "qbase",
@@ -2066,10 +2095,42 @@ export function resolveDeviceParameterDefinitionExportSettings(
   };
 }
 
-function resolveEParameterFields(kind: string, params: Record<string, string>): EParameterField[] {
+function eParameterFieldsFromInterfaceDefinition(
+  section: string,
+  interfaceDefinition: EFileInterfaceSectionDefinition
+): EParameterField[] {
+  const fields: EParameterField[] = [];
+  const seenExportNames = new Set<string>();
+  for (const configuredField of interfaceDefinition.fields ?? []) {
+    if (configuredField.exportEnabled === false) {
+      continue;
+    }
+    const configuredSourceName = String(configuredField.sourceName ?? "").trim();
+    const exportName = String(configuredField.exportName ?? configuredSourceName).trim();
+    if (!configuredSourceName || !exportName || seenExportNames.has(exportName)) {
+      continue;
+    }
+    seenExportNames.add(exportName);
+    fields.push({
+      sourceName: legacyEColumnForDefinition(section, configuredSourceName) || configuredSourceName,
+      exportName,
+      definition: configuredField.definition
+    });
+  }
+  return fields;
+}
+
+function resolveEParameterFields(
+  kind: string,
+  params: Record<string, string>,
+  interfaceDefinition?: EFileInterfaceSectionDefinition
+): EParameterField[] {
   const section = inferESection(kind, params);
   if (!section) {
     return [];
+  }
+  if (interfaceDefinition) {
+    return eParameterFieldsFromInterfaceDefinition(section, interfaceDefinition);
   }
   const definitions = customEParameterDefinitions(params);
   const builtInColumns = E_SECTION_COLUMNS[section];
@@ -2264,31 +2325,51 @@ function resolveDerivedComponentParameterFields(
 function buildDerivedComponentEDeviceRecord(
   node: Pick<ModelNode, "id" | "kind" | "name" | "nodeNumber" | "terminals" | "params">,
   baseIdx: string,
-  derivedIdx: string
+  derivedIdx: string,
+  interfaceDefinition?: EFileInterfaceSectionDefinition
 ): EDeviceExport | null {
   const derivedInfo = templateDerivedComponentLibraryInfo({ kind: node.kind, params: node.params });
   if (!derivedInfo) {
     return null;
   }
   const relationKey = derivedComponentBaseRelationKey(derivedInfo.baseComponentLibrary);
-  const fields = resolveDerivedComponentParameterFields(
-    node.kind,
-    node.params,
-    customEParameterDefinitions(node.params),
-    derivedInfo.baseComponentLibrary,
-    derivedInfo.derivedComponentLibrary
-  );
-  const fieldValues = buildEDeviceValuesFromFields(node, fields, { preferTopologyNodeNumbers: true });
-  const columns = ["idx", relationKey, ...fields.map((field) => field.exportName)];
+  const configuredFields = interfaceDefinition
+    ? eParameterFieldsFromInterfaceDefinition(derivedInfo.derivedComponentLibrary, interfaceDefinition)
+    : null;
+  const fields = configuredFields
+    ? configuredFields.filter((field) => field.sourceName !== "idx" && field.sourceName !== relationKey)
+    : resolveDerivedComponentParameterFields(
+        node.kind,
+        node.params,
+        customEParameterDefinitions(node.params),
+        derivedInfo.baseComponentLibrary,
+        derivedInfo.derivedComponentLibrary
+      );
+  const columns = configuredFields
+    ? configuredFields.map((field) => field.exportName)
+    : ["idx", relationKey, ...fields.map((field) => field.exportName)];
+  if (columns.length === 0) {
+    return null;
+  }
+  const params = buildEDeviceValuesFromFields(node, fields, { preferTopologyNodeNumbers: true });
+  if (configuredFields) {
+    const idxField = configuredFields.find((field) => field.sourceName === "idx");
+    const relationField = configuredFields.find((field) => field.sourceName === relationKey);
+    if (idxField) {
+      params[idxField.exportName] = derivedIdx;
+    }
+    if (relationField) {
+      params[relationField.exportName] = baseIdx;
+    }
+  } else {
+    params.idx = derivedIdx;
+    params[relationKey] = baseIdx;
+  }
   return {
     id: `${node.id}:derived:${derivedInfo.derivedComponentLibrary}`,
     kind: `${node.kind}:derived:${derivedInfo.derivedComponentLibrary}`,
     section: derivedInfo.derivedComponentLibrary,
-    params: {
-      idx: derivedIdx,
-      [relationKey]: baseIdx,
-      ...fieldValues
-    },
+    params,
     columns
   };
 }
@@ -2510,10 +2591,40 @@ function buildContainerAssociatedDevices(nodes: ModelNode[]): EDeviceExport[] {
   return records;
 }
 
-function buildEDeviceRecords(project: ProjectFile): EDeviceExport[] {
+function applyEInterfaceDefinitionToRecord(
+  record: EDeviceExport,
+  interfaceDefinition?: EFileInterfaceSectionDefinition
+): EDeviceExport {
+  if (!interfaceDefinition) {
+    return record;
+  }
+  const fields = eParameterFieldsFromInterfaceDefinition(record.section, interfaceDefinition);
+  const params: Record<string, string> = {};
+  for (const field of fields) {
+    const sourceValue = field.sourceName === "dev_type"
+      ? String(record.params.dev_type ?? "").trim() || record.kind.split(":", 1)[0] || record.section
+      : record.params[field.sourceName] ?? "";
+    const value = field.definition ? enumExportValueForDefinition(field.definition, sourceValue) : sourceValue;
+    if (value !== "") {
+      params[field.exportName] = value;
+    }
+  }
+  return {
+    ...record,
+    params,
+    columns: fields.map((field) => field.exportName)
+  };
+}
+
+function buildEDeviceRecords(project: ProjectFile, options: EFileExportOptions = {}): EDeviceExport[] {
+  const interfaceDefinitionBySection = eFileInterfaceDefinitionIndex(options);
   const topologyNodes = calculateElectricalTopology(project.nodes, project.edges);
-  const topologyNodeDevices = buildTopologyNodeDevices(topologyNodes);
-  const containerAssociatedDevices = buildContainerAssociatedDevices(topologyNodes);
+  const topologyNodeDevices = buildTopologyNodeDevices(topologyNodes).map((record) =>
+    applyEInterfaceDefinitionToRecord(record, interfaceDefinitionBySection.get(record.section))
+  );
+  const containerAssociatedDevices = buildContainerAssociatedDevices(topologyNodes).map((record) =>
+    applyEInterfaceDefinitionToRecord(record, interfaceDefinitionBySection.get(record.section))
+  );
   const deviceRecords: EDeviceExport[] = [];
   const derivedDeviceRecords: EDeviceExport[] = [];
   const sectionRowCounts = new Map<string, number>();
@@ -2523,7 +2634,7 @@ function buildEDeviceRecords(project: ProjectFile): EDeviceExport[] {
     if (!section || section === "ACNode" || section === "DCNode") {
       continue;
     }
-    const fields = resolveEParameterFields(node.kind, node.params);
+    const fields = resolveEParameterFields(node.kind, node.params, interfaceDefinitionBySection.get(section));
     const columns = fields.map((field) => field.exportName);
     if (columns.length === 0) {
       continue;
@@ -2546,7 +2657,12 @@ function buildEDeviceRecords(project: ProjectFile): EDeviceExport[] {
     if (derivedInfo) {
       const derivedSectionRowCount = (derivedSectionRowCounts.get(derivedInfo.derivedComponentLibrary) ?? 0) + 1;
       derivedSectionRowCounts.set(derivedInfo.derivedComponentLibrary, derivedSectionRowCount);
-      const derivedRecord = buildDerivedComponentEDeviceRecord(node, baseIdx, String(derivedSectionRowCount));
+      const derivedRecord = buildDerivedComponentEDeviceRecord(
+        node,
+        baseIdx,
+        String(derivedSectionRowCount),
+        interfaceDefinitionBySection.get(derivedInfo.derivedComponentLibrary)
+      );
       if (derivedRecord) {
         derivedDeviceRecords.push(derivedRecord);
       }
@@ -2558,7 +2674,7 @@ function buildEDeviceRecords(project: ProjectFile): EDeviceExport[] {
     ...deviceRecords,
     ...derivedDeviceRecords,
     ...containerAssociatedDevices
-  ];
+  ].filter((record) => interfaceDefinitionBySection.get(record.section)?.exportEnabled !== false);
 }
 
 export type EExportWarning = {
@@ -2568,8 +2684,9 @@ export type EExportWarning = {
   reason: string;
 };
 
-export function getEExportWarnings(project: ProjectFile): EExportWarning[] {
-  const records = buildEDeviceRecords(project);
+export function getEExportWarnings(project: ProjectFile, options: EFileExportOptions = {}): EExportWarning[] {
+  const interfaceDefinitionBySection = eFileInterfaceDefinitionIndex(options);
+  const records = buildEDeviceRecords(project, options);
   const exportedNodeIds = new Set(records.map((record) => record.id).filter((id) => !id.includes(":")));
   return project.nodes.flatMap((node) => {
     if (isStaticNode(node)) {
@@ -2587,7 +2704,11 @@ export function getEExportWarnings(project: ProjectFile): EExportWarning[] {
         reason: isContainerParams(node.params) ? "容器设备没有对应的 E 文件段定义。" : "元件库没有对应的 E 文件段定义。"
       }];
     }
-    if (!E_SECTION_COLUMNS[section] && getEParameterKeys(node.kind, node.params).length === 0) {
+    const interfaceDefinition = interfaceDefinitionBySection.get(section);
+    if (interfaceDefinition?.exportEnabled === false) {
+      return [];
+    }
+    if (!E_SECTION_COLUMNS[section] && resolveEParameterFields(node.kind, node.params, interfaceDefinition).length === 0) {
       return [{
         nodeId: node.id,
         nodeName: node.name,
@@ -2736,11 +2857,11 @@ function formatEFileSectionRows(section: string, columns: string[], rows: string
   ].join("\n");
 }
 
-function formatESection(section: string, rows: EDeviceExport[]) {
+function formatESection(section: string, rows: EDeviceExport[], outputSection = section) {
   const columns = eSectionColumns(section, rows);
   const formattedRows = sortESectionRecordsByIdx(rows)
     .map((record, rowIndex) => columns.map((column) => formatEColumnValue(section, column, record.params[column], rowIndex)));
-  return formatEFileSectionRows(section, columns, formattedRows);
+  return formatEFileSectionRows(outputSection, columns, formattedRows);
 }
 
 function buildPowerBaseSection(project: ProjectFile, schemePath: string[]) {
@@ -2767,8 +2888,13 @@ function buildPowerBaseSection(project: ProjectFile, schemePath: string[]) {
   ]);
 }
 
-export function buildEDeviceParameterFile(project: ProjectFile, schemePath: string[] = ["默认方案"]) {
-  const records = buildEDeviceRecords(project);
+export function buildEDeviceParameterFile(
+  project: ProjectFile,
+  schemePath: string[] = ["默认方案"],
+  options: EFileExportOptions = {}
+) {
+  const interfaceDefinitionBySection = eFileInterfaceDefinitionIndex(options);
+  const records = buildEDeviceRecords(project, options);
   const recordsBySection = new Map<string, EDeviceExport[]>();
   for (const record of records) {
     const columns = eSectionColumns(record.section, [record]);
@@ -2784,7 +2910,10 @@ export function buildEDeviceParameterFile(project: ProjectFile, schemePath: stri
     ...Array.from(recordsBySection.keys()).filter((section) => !E_SECTION_OUTPUT_ORDER.includes(section))
   ];
   const sectionBlocks = orderedSections
-    .map((section) => formatESection(section, recordsBySection.get(section) ?? []));
+    .map((section) => {
+      const outputSection = String(interfaceDefinitionBySection.get(section)?.exportName ?? "").trim() || section;
+      return formatESection(section, recordsBySection.get(section) ?? [], outputSection);
+    });
   return [buildPowerBaseSection(project, schemePath), ...sectionBlocks].join("\n\n") + "\n";
 }
 
@@ -2798,10 +2927,14 @@ function safeModelFilePart(name: string) {
   return name.trim().replace(/[\\/:*?"<>|]+/g, "_") || "未命名";
 }
 
-export function buildEFileExport(project: ProjectFile, schemePath: string[] = ["默认方案"]): TextFileExport {
+export function buildEFileExport(
+  project: ProjectFile,
+  schemePath: string[] = ["默认方案"],
+  options: EFileExportOptions = {}
+): TextFileExport {
   return {
     filename: `${safeModelFilePart(project.name)}.e`,
-    text: buildEDeviceParameterFile(project, schemePath),
+    text: buildEDeviceParameterFile(project, schemePath, options),
     mime: "text/plain"
   };
 }

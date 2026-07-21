@@ -117,7 +117,11 @@ describe("SVG export", () => {
 
     expect(writeOperationLog).toHaveBeenCalledWith("导出模型文件：模型.e");
     expect(alert).toHaveBeenCalledWith("E 文件导出成功：模型.e");
-    expect(buildEFileExport).toHaveBeenCalledWith(expect.anything(), ["主方案", "子方案"]);
+    expect(buildEFileExport).toHaveBeenCalledWith(
+      expect.anything(),
+      ["主方案", "子方案"],
+      expect.objectContaining({ interfaceDefinitions: [] })
+    );
   });
 
   test("does not report E file export success when saving is cancelled", async () => {

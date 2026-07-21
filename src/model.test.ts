@@ -4380,6 +4380,76 @@ describe("power system model", () => {
     expect(payload.ACTransformer.rows[0].resistance).toBe("0.125");
   });
 
+  test("uses the current E interface definition instead of stale node export metadata", () => {
+    const generator = createDefaultNode("ac-source", { x: 100, y: 100 });
+    generator.name = "generator_1";
+    generator.params = {
+      ...generator.params,
+      idx: "5",
+      p_set: "8.5",
+      q_set: "12.5",
+      [CUSTOM_PARAM_DEFINITIONS_KEY]: JSON.stringify(
+        (JSON.parse(generator.params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]") as DeviceParameterDefinition[])
+          .filter((definition) => definition.enName !== "dev_type")
+          .map((definition) => definition.enName === "q_set"
+            ? { ...definition, exportEnabled: false, exportName: "old_reactive_power" }
+            : definition)
+      )
+    };
+    const project: ProjectFile = {
+      version: 1,
+      name: "接口定义导出测试",
+      nodes: [generator],
+      edges: []
+    };
+    const interfaceDefinitions = [{
+      componentLibrary: "ACGenerator",
+      exportEnabled: true,
+      exportName: "GeneratorTable",
+      fields: [
+        { sourceName: "idx", exportEnabled: true, exportName: "idx" },
+        { sourceName: "name", exportEnabled: true, exportName: "name" },
+        { sourceName: "dev_type", exportEnabled: true, exportName: "dev_type" },
+        { sourceName: "p_set", exportEnabled: false, exportName: "p_set" },
+        { sourceName: "q_set", exportEnabled: true, exportName: "reactive_power" }
+      ]
+    }];
+
+    const payload = parseESections(buildEFileExport(project, ["默认方案"], { interfaceDefinitions }).text);
+
+    expect(payload.ACGenerator).toBeUndefined();
+    expect(payload.GeneratorTable.columns).toEqual(["idx", "name", "dev_type", "reactive_power"]);
+    expect(payload.GeneratorTable.rows[0]).toMatchObject({
+      idx: "5",
+      name: "generator_1",
+      dev_type: "ac-source",
+      reactive_power: "12.5"
+    });
+    expect(payload.GeneratorTable.columns).not.toContain("p_set");
+    expect(payload.GeneratorTable.columns).not.toContain("old_reactive_power");
+  });
+
+  test("honors an E interface class export switch without reporting an intentional omission", () => {
+    const generator = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const project: ProjectFile = {
+      version: 1,
+      name: "接口类开关测试",
+      nodes: [generator],
+      edges: []
+    };
+    const exportOptions = {
+      interfaceDefinitions: [{
+        componentLibrary: "ACGenerator",
+        exportEnabled: false,
+        exportName: "ACGenerator",
+        fields: []
+      }]
+    };
+
+    expect(buildEFileExport(project, ["默认方案"], exportOptions).text).not.toContain("<ACGenerator>");
+    expect(getEExportWarnings(project, exportOptions)).toEqual([]);
+  });
+
   test("keeps old custom parameters exported while new explicitly disabled parameters stay internal", () => {
     const template = {
       kind: "custom-export-control",

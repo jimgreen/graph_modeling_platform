@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { clampNumber } from "../canvasViewport";
 import { DEFAULT_MEASUREMENT_CONFIG } from "../measurements";
+import { buildEFileExportOptionsFromLibrary } from "./appDeviceDefinitionFactories";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
   return (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget, manualPoints?: Point[]) => {
@@ -4185,7 +4186,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
 
 export function createSaveCurrentProject(__appScope: Record<string, any>) {
   return async (targetId?: string) => {
-  const { activeProjectKey, activeSchemeKey, backgroundPageRender, buildEFileExport, buildSvgDocument, clearRefreshRecoveryProject, colorPalette, createSavedProject, currentGraphDirtyBaseline, currentProject, DEFAULT_CANVAS_BACKGROUND, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, findProjectRecordByNameInScheme, findSavedSchemeById, findSchemeForProject, getEExportWarnings, graphDirtyBaselineRef, libraryTemplates, loadSvgImageExportPathById, measurementConfig, projectById, projectMeasurements, projectName, rememberPersistedSchemesPayload, requireEditMode, saveActiveProjectPointer, saveBackendProjectRecord, savedSchemePathForId, schemePathForScheme, schemes, selectedSchemeId, serializeSchemesForStorage, setActiveProjectKey, setActiveSchemeKey, setHasUnsavedChanges, setProjectName, setSchemes, suppressNextGraphDirtyRef, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
+  const { activeProjectKey, activeSchemeKey, backgroundPageRender, buildEFileExport, buildSvgDocument, clearRefreshRecoveryProject, colorPalette, createSavedProject, currentGraphDirtyBaseline, currentProject, DEFAULT_CANVAS_BACKGROUND, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionLabels, findProjectRecordByNameInScheme, findSavedSchemeById, findSchemeForProject, getEExportWarnings, graphDirtyBaselineRef, libraryTemplates, loadSvgImageExportPathById, measurementConfig, PARAM_LABELS, projectById, projectMeasurements, projectName, rememberPersistedSchemesPayload, requireEditMode, resolveTemplateComponentLibrary, saveActiveProjectPointer, saveBackendProjectRecord, savedSchemePathForId, schemePathForScheme, schemes, selectedSchemeId, serializeSchemesForStorage, setActiveProjectKey, setActiveSchemeKey, setHasUnsavedChanges, setProjectName, setSchemes, suppressNextGraphDirtyRef, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
     if (targetId === undefined) {
       targetId = activeProjectKey;
     }
@@ -4223,7 +4224,17 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
           measurements: projectMeasurements ?? project.measurements,
           measurementConfig
         });
-        const eResult = buildEFileExport(project, schemePath.length > 0 ? schemePath : ["默认方案"]);
+        const eResult = buildEFileExport(
+          project,
+          schemePath.length > 0 ? schemePath : ["默认方案"],
+          buildEFileExportOptionsFromLibrary({
+            libraryTemplates,
+            labels: PARAM_LABELS,
+            eDeviceDefinitionLabels,
+            eDeviceDefinitionClassExportEnabled,
+            resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
+          })
+        );
         return { svg, eFile: eResult?.text };
       } catch (error) {
         // eslint-disable-next-line no-console

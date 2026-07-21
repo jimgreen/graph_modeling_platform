@@ -17,6 +17,7 @@ import {
   createDeleteCustomComponentLibrary,
   applyEDeviceDefinitionSectionsToLibraryState,
   buildEDeviceInterfaceDefinitionRows,
+  createExportEFile,
   createExportEDeviceDefinitionFile,
   createRouteSegmentPointerDistance,
   createResolveDuplicateModelImport,
@@ -2495,6 +2496,55 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
       exportName: "idx",
       readonly: true
     });
+  });
+});
+
+describe("createExportEFile", () => {
+  test("passes the current E interface definition into warnings and file generation", async () => {
+    const project = { version: 1, name: "当前模型", nodes: [], edges: [] };
+    const buildEFileExport = vi.fn(() => ({ filename: "当前模型.e", text: "", mime: "text/plain" }));
+    const getEExportWarnings = vi.fn(() => []);
+    const saveTextFile = vi.fn(async () => false);
+    const exportEFile = createExportEFile({
+      activeSchemeKey: "scheme-1",
+      buildEFileExport,
+      currentProject: () => project,
+      ensureSavedBeforeExport: () => true,
+      getEExportWarnings,
+      saveTextFile,
+      schemePathForScheme: () => ["默认方案"],
+      writeOperationLog: vi.fn(),
+      libraryTemplates: [{
+        kind: "ac-source",
+        label: "交流电源",
+        categoryLibrary: "交流设备",
+        size: { width: 84, height: 56 },
+        params: {},
+        terminalType: "ac",
+        terminalCount: 1
+      }],
+      PARAM_LABELS: {},
+      eDeviceDefinitionLabels: { ACGenerator: "GeneratorTable" },
+      eDeviceDefinitionClassExportEnabled: { ACGenerator: true },
+      resolveTemplateComponentLibrary: () => "ACGenerator"
+    });
+
+    await exportEFile();
+
+    const exportOptions = expect.objectContaining({
+      interfaceDefinitions: expect.arrayContaining([
+        expect.objectContaining({
+          componentLibrary: "ACGenerator",
+          exportEnabled: true,
+          exportName: "GeneratorTable",
+          fields: expect.arrayContaining([
+            expect.objectContaining({ sourceName: "dev_type", exportEnabled: true, exportName: "dev_type" })
+          ])
+        })
+      ])
+    });
+    expect(getEExportWarnings).toHaveBeenCalledWith(project, exportOptions);
+    expect(buildEFileExport).toHaveBeenCalledWith(project, ["默认方案"], exportOptions);
   });
 });
 

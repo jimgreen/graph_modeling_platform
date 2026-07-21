@@ -2,6 +2,8 @@
 // 从 __appScope 读取状态，按 resource 序列化为可 JSON 化的 v1 信封结构
 // 供 WS 客户端 fetchHandler 调用
 
+import { buildEFileExportOptionsFromLibrary } from "./appExtracted/appDeviceDefinitionFactories";
+
 /** 可用 runtime resource 类型 */
 export type RuntimeSnapshotResource =
   | "runtime.snapshot"
@@ -437,7 +439,14 @@ export function serializeEFile(appScope: Record<string, any>): V1Result<{
       : [];
     const file = buildEFile(
       project,
-      Array.isArray(schemePath) && schemePath.length > 0 ? schemePath : ["默认方案"]
+      Array.isArray(schemePath) && schemePath.length > 0 ? schemePath : ["默认方案"],
+      buildEFileExportOptionsFromLibrary({
+        libraryTemplates: appScope.libraryTemplates,
+        labels: appScope.PARAM_LABELS,
+        eDeviceDefinitionLabels: appScope.eDeviceDefinitionLabels,
+        eDeviceDefinitionClassExportEnabled: appScope.eDeviceDefinitionClassExportEnabled,
+        resolveDefinitionComponentLibrary: appScope.resolveTemplateComponentLibrary
+      })
     );
     return {
       ok: true,

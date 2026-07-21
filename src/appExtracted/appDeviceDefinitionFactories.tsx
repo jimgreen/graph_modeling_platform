@@ -176,6 +176,9 @@ export function buildEDeviceInterfaceDefinitionRows(options: {
     const exportName = String(field.exportName ?? sourceName).trim();
     if (existing) {
       existing.exportEnabled = fixedField || Boolean(existing.exportEnabled || field.exportEnabled);
+      if (!existing.definition && field.definition) {
+        existing.definition = field.definition;
+      }
       if (fixedField) {
         existing.exportName = sourceName;
         existing.readonly = true;
@@ -189,7 +192,8 @@ export function buildEDeviceInterfaceDefinitionRows(options: {
       cnName: String(field.cnName ?? sourceName).trim(),
       exportEnabled: fixedField || Boolean(field.exportEnabled),
       exportName: fixedField ? sourceName : exportName,
-      readonly: Boolean(field.readonly || fixedField)
+      readonly: Boolean(field.readonly || fixedField),
+      definition: field.definition
     };
     group.fieldBySourceName.set(fieldKey, row);
     group.fields.push(row);
@@ -223,7 +227,8 @@ export function buildEDeviceInterfaceDefinitionRows(options: {
         sourceName: enName,
         cnName: eDeviceInterfaceFieldCnName(definition, labels),
         exportEnabled: settings.exportEnabled,
-        exportName
+        exportName,
+        definition
       });
     }
     if (!derivedInfo) {
@@ -267,7 +272,8 @@ export function buildEDeviceInterfaceDefinitionRows(options: {
         sourceName: enName,
         cnName: eDeviceInterfaceFieldCnName(definition, labels),
         exportEnabled: settings.exportEnabled,
-        exportName
+        exportName,
+        definition
       });
     }
   }
@@ -276,6 +282,18 @@ export function buildEDeviceInterfaceDefinitionRows(options: {
     const { fieldBySourceName, ...row } = group;
     return row;
   });
+}
+
+export function buildEFileExportOptionsFromLibrary(options: {
+  libraryTemplates?: readonly any[];
+  labels?: Record<string, string>;
+  eDeviceDefinitionLabels?: Record<string, string>;
+  eDeviceDefinitionClassExportEnabled?: Record<string, boolean>;
+  resolveDefinitionComponentLibrary?: (template: any) => string;
+}) {
+  return {
+    interfaceDefinitions: buildEDeviceInterfaceDefinitionRows(options)
+  };
 }
 
 function eDeviceInterfaceSectionByComponentLibrary(sections: readonly any[] = []) {
@@ -2436,8 +2454,13 @@ export function createExportEFile(__appScope: Record<string, any>) {
       activeSchemeKey,
       buildEFileExport,
       currentProject,
+      eDeviceDefinitionClassExportEnabled,
+      eDeviceDefinitionLabels,
       ensureSavedBeforeExport,
       getEExportWarnings,
+      libraryTemplates,
+      PARAM_LABELS,
+      resolveTemplateComponentLibrary,
       saveTextFile,
       schemePathForScheme,
       writeOperationLog
@@ -2446,7 +2469,14 @@ export function createExportEFile(__appScope: Record<string, any>) {
       return;
     }
     const project = currentProject();
-    const warnings = getEExportWarnings(project);
+    const exportOptions = buildEFileExportOptionsFromLibrary({
+      libraryTemplates,
+      labels: PARAM_LABELS,
+      eDeviceDefinitionLabels,
+      eDeviceDefinitionClassExportEnabled,
+      resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
+    });
+    const warnings = getEExportWarnings(project, exportOptions);
     if (warnings.length > 0) {
       window.alert(
         [
@@ -2461,7 +2491,8 @@ export function createExportEFile(__appScope: Record<string, any>) {
       : [];
     const file = buildEFileExport(
       project,
-      Array.isArray(schemePath) && schemePath.length > 0 ? schemePath : ["默认方案"]
+      Array.isArray(schemePath) && schemePath.length > 0 ? schemePath : ["默认方案"],
+      exportOptions
     );
     const saved = await saveTextFile({
       filename: file.filename,
@@ -3155,12 +3186,19 @@ export function createResolveDuplicateModelImport(__appScope: Record<string, any
 
 export function createExportSchemeRecord(__appScope: Record<string, any>) {
   return async (scheme: SavedSchemeRecord) => {
-  const { DEFAULT_CANVAS_BACKGROUND, backgroundPageRender, buildEFileExport, buildSvgDocument, colorPalette, downloadBackendSchemeArchive, fetchBackendProjectRecord, flattenSavedProjects, isPickerAbort, libraryTemplates, loadSvgImageExportPathById, measurementConfig, safeFilePart, saveBackendProjectArtifacts, savedProjectRecordIsSummary, schemePathForRecord, schemePathForScheme, schemes, writeOperationLog } = __appScope;
+  const { DEFAULT_CANVAS_BACKGROUND, PARAM_LABELS, backgroundPageRender, buildEFileExport, buildSvgDocument, colorPalette, downloadBackendSchemeArchive, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionLabels, fetchBackendProjectRecord, flattenSavedProjects, isPickerAbort, libraryTemplates, loadSvgImageExportPathById, measurementConfig, resolveTemplateComponentLibrary, safeFilePart, saveBackendProjectArtifacts, savedProjectRecordIsSummary, schemePathForRecord, schemePathForScheme, schemes, writeOperationLog } = __appScope;
     try {
       const schemePath = schemePathForRecord(scheme);
       // 导出前用前端逻辑刷新方案下所有模型的 SVG/E，保证与右上角导出按钮产物一致
       try {
         const imageExportPathById = typeof loadSvgImageExportPathById === "function" ? await loadSvgImageExportPathById() : {};
+        const eFileExportOptions = buildEFileExportOptionsFromLibrary({
+          libraryTemplates,
+          labels: PARAM_LABELS,
+          eDeviceDefinitionLabels,
+          eDeviceDefinitionClassExportEnabled,
+          resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
+        });
         const findOwnerSchemeForProject = (root: SavedSchemeRecord, projectId: string): SavedSchemeRecord | null => {
           if (root.projects?.some((p) => p.id === projectId)) return root;
           for (const child of (root as any).children ?? []) {
@@ -3194,7 +3232,11 @@ export function createExportSchemeRecord(__appScope: Record<string, any>) {
               measurements: project.measurements,
               measurementConfig
             });
-            const eResult = buildEFileExport(project, ownerPath && ownerPath.length > 0 ? ownerPath : ["默认方案"]);
+            const eResult = buildEFileExport(
+              project,
+              ownerPath && ownerPath.length > 0 ? ownerPath : ["默认方案"],
+              eFileExportOptions
+            );
             await saveBackendProjectArtifacts(ownerPath, projectRecord.name, { svg, eFile: eResult?.text });
           } catch (error) {
             // eslint-disable-next-line no-console

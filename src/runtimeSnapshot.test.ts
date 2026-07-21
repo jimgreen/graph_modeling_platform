@@ -284,13 +284,42 @@ describe("serializeEFile", () => {
       text: "E file content",
       mime: "text/plain"
     }));
-    const res = serializeEFile(mockScope({ buildEFileExport }));
+    const res = serializeEFile(mockScope({
+      buildEFileExport,
+      libraryTemplates: [{
+        kind: "ac-source",
+        label: "交流电源",
+        categoryLibrary: "交流设备",
+        size: { width: 84, height: 56 },
+        params: {},
+        terminalType: "ac",
+        terminalCount: 1
+      }],
+      PARAM_LABELS: {},
+      eDeviceDefinitionLabels: { ACGenerator: "GeneratorTable" },
+      eDeviceDefinitionClassExportEnabled: { ACGenerator: true },
+      resolveTemplateComponentLibrary: () => "ACGenerator"
+    }));
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.data.filename).toBe("model.e");
     expect(res.data.text).toBe("E file content");
     expect(res.data.mime).toBe("text/plain");
-    expect(buildEFileExport).toHaveBeenCalledWith(expect.anything(), ["方案A", "测试方案"]);
+    expect(buildEFileExport).toHaveBeenCalledWith(
+      expect.anything(),
+      ["方案A", "测试方案"],
+      expect.objectContaining({
+        interfaceDefinitions: expect.arrayContaining([
+          expect.objectContaining({
+            componentLibrary: "ACGenerator",
+            exportName: "GeneratorTable",
+            fields: expect.arrayContaining([
+              expect.objectContaining({ sourceName: "dev_type", exportEnabled: true })
+            ])
+          })
+        ])
+      })
+    );
   });
 
   it("无活动模型时返回 no-active-model", () => {
