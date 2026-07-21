@@ -418,6 +418,7 @@ import {
   type PlatformMeasurementConfig,
   type ProjectMeasurementConfig
 } from "../measurements";
+import type { UserCustomizationDomain } from "../userCustomizations";
 import {
   StaticButtonLayerMultiSelect,
   TextStyleToggleButton,
@@ -858,12 +859,18 @@ export async function saveBackendMeasurementConfigPayload(normalizedMeasurementC
 }
 
 export const LIBRARY_PACKAGE_FORMAT = "graph-modeling-platform-library-package";
-export const LIBRARY_PACKAGE_VERSION = 1;
+export const LIBRARY_PACKAGE_VERSION = 2;
+export type SupportedLibraryPackageVersion = 1 | typeof LIBRARY_PACKAGE_VERSION;
 export type LibraryPackageScope = "measurement" | "device-library" | "template-library" | "icon-library" | "component-library" | "all";
 export type IconLibraryPackageAsset = ImageAsset & { dataUrl: string };
 export type IconLibraryPersistencePayload = {
   folders: ImageFolder[];
   assets: IconLibraryPackageAsset[];
+};
+export type LibraryPackageManifest = {
+  total: number;
+  domainCounts: Partial<Record<UserCustomizationDomain, number>>;
+  applicationVersion?: string;
 };
 export type LibraryPackagePayload = {
   format: typeof LIBRARY_PACKAGE_FORMAT;
@@ -873,6 +880,11 @@ export type LibraryPackagePayload = {
   measurementConfig?: PlatformMeasurementConfig;
   deviceLibrary?: DeviceLibraryPersistencePayload;
   iconLibrary?: IconLibraryPersistencePayload;
+  colorConfig?: {
+    colorDisplayMode: ColorDisplayMode;
+    colorPalette: ColorPalette;
+  };
+  manifest?: LibraryPackageManifest;
 };
 
 const emptyDeviceLibraryPersistencePayload = (): DeviceLibraryPersistencePayload => ({
@@ -1010,6 +1022,11 @@ export function createLibraryPackage(options: {
   measurementConfig?: PlatformMeasurementConfig;
   deviceLibrary?: Partial<DeviceLibraryPersistencePayload>;
   iconLibrary?: Partial<IconLibraryPersistencePayload>;
+  colorConfig?: {
+    colorDisplayMode?: ColorDisplayMode;
+    colorPalette?: Partial<ColorPalette>;
+  };
+  manifest?: Partial<LibraryPackageManifest>;
 }): LibraryPackagePayload {
   const scope = options.scope;
   const payload: LibraryPackagePayload = {
@@ -1029,6 +1046,27 @@ export function createLibraryPackage(options: {
   if (libraryPackageIncludesScope(scope, "icon-library") && options.iconLibrary) {
     payload.iconLibrary = normalizeIconLibraryPersistencePayload(options.iconLibrary);
   }
+  if (scope === "all" && options.colorConfig) {
+    payload.colorConfig = {
+      colorDisplayMode: normalizeColorDisplayMode(options.colorConfig.colorDisplayMode),
+      colorPalette: normalizeColorPalette(options.colorConfig.colorPalette)
+    };
+  }
+  if (scope === "all" && options.manifest) {
+    const domainCounts = Object.fromEntries(
+      Object.entries(options.manifest.domainCounts ?? {}).flatMap(([domain, count]) => {
+        const normalizedCount = Math.max(0, Math.floor(Number(count) || 0));
+        return normalizedCount > 0 ? [[domain, normalizedCount]] : [];
+      })
+    ) as Partial<Record<UserCustomizationDomain, number>>;
+    payload.manifest = {
+      total: Math.max(0, Math.floor(Number(options.manifest.total) || 0)),
+      domainCounts,
+      ...(typeof options.manifest.applicationVersion === "string" && options.manifest.applicationVersion.trim()
+        ? { applicationVersion: options.manifest.applicationVersion.trim() }
+        : {})
+    };
+  }
   return payload;
 }
 
@@ -1047,11 +1085,13 @@ const normalizeLibraryPackageScope = (value: unknown): LibraryPackageScope | nul
 };
 
 export function normalizeLibraryPackage(value: unknown): LibraryPackagePayload {
-  const source = value && typeof value === "object" && !Array.isArray(value) ? value as Partial<LibraryPackagePayload> : {};
+  const source = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
   if (source.format !== LIBRARY_PACKAGE_FORMAT) {
     throw new Error("不是有效的库导入文件。");
   }
-  if (source.version !== LIBRARY_PACKAGE_VERSION) {
+  if (source.version !== 1 && source.version !== LIBRARY_PACKAGE_VERSION) {
     throw new Error("不支持的库文件版本。");
   }
   const scope = normalizeLibraryPackageScope(source.scope);
@@ -1061,9 +1101,11 @@ export function normalizeLibraryPackage(value: unknown): LibraryPackagePayload {
   return createLibraryPackage({
     scope,
     exportedAt: typeof source.exportedAt === "string" ? source.exportedAt : new Date().toISOString(),
-    measurementConfig: source.measurementConfig,
-    deviceLibrary: source.deviceLibrary,
-    iconLibrary: source.iconLibrary
+    measurementConfig: source.measurementConfig as PlatformMeasurementConfig | undefined,
+    deviceLibrary: source.deviceLibrary as Partial<DeviceLibraryPersistencePayload> | undefined,
+    iconLibrary: source.iconLibrary as Partial<IconLibraryPersistencePayload> | undefined,
+    colorConfig: source.colorConfig as { colorDisplayMode?: ColorDisplayMode; colorPalette?: Partial<ColorPalette> } | undefined,
+    manifest: source.manifest as Partial<LibraryPackageManifest> | undefined
   });
 }
 

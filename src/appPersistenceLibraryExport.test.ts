@@ -26,9 +26,10 @@ import {
   enumValuesSummaryText,
   renderEnumValuesEditor
 } from "./appExtracted/appPersistenceLibraryExport";
-import { DEVICE_LIBRARY } from "./model";
+import { DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY } from "./model";
 import { DEFAULT_MEASUREMENT_CONFIG } from "./measurements";
 import { svgSourceFromDataUrl } from "./stateIconDrawing";
+import { emptyUserDeviceLibrary } from "./userCustomizations";
 
 const sampleGraphTemplate = (id: string, typeName: string, name: string) => ({
   id,
@@ -94,7 +95,7 @@ describe("graph template library filtering", () => {
 
     expect(devicePackage).toMatchObject({
       format: "graph-modeling-platform-library-package",
-      version: 1,
+      version: 2,
       scope: "device-library"
     });
     expect(devicePackage.deviceLibrary?.customDeviceTemplates).toHaveLength(1);
@@ -127,6 +128,40 @@ describe("graph template library filtering", () => {
     });
     expect(() => normalizeLibraryPackage({ format: "wrong", version: 1, scope: "measurement" })).toThrow("不是有效的库导入文件");
     expect(() => normalizeLibraryPackage({ format: "graph-modeling-platform-library-package", version: 99, scope: "measurement" })).toThrow("不支持的库文件版本");
+  });
+
+  test("creates version-2 all-library packages with color configuration and a manifest", () => {
+    const packagePayload = createLibraryPackage({
+      scope: "all",
+      exportedAt: "2026-07-21T00:00:00.000Z",
+      measurementConfig: DEFAULT_MEASUREMENT_CONFIG,
+      deviceLibrary: emptyUserDeviceLibrary(),
+      iconLibrary: { folders: [{ id: "root", name: "默认文件夹" }], assets: [] },
+      colorConfig: { colorDisplayMode: "energy", colorPalette: DEFAULT_COLOR_PALETTE },
+      manifest: { total: 0, domainCounts: {} }
+    });
+
+    expect(packagePayload).toMatchObject({
+      format: "graph-modeling-platform-library-package",
+      version: 2,
+      scope: "all",
+      colorConfig: { colorDisplayMode: "energy" },
+      manifest: { total: 0 }
+    });
+  });
+
+  test("accepts version-1 packages while leaving version-2-only domains absent", () => {
+    const normalized = normalizeLibraryPackage({
+      format: "graph-modeling-platform-library-package",
+      version: 1,
+      scope: "device-library",
+      deviceLibrary: emptyUserDeviceLibrary()
+    });
+
+    expect(normalized.version).toBe(2);
+    expect(normalized.deviceLibrary).toBeDefined();
+    expect(normalized.colorConfig).toBeUndefined();
+    expect(normalized.manifest).toBeUndefined();
   });
 
   test("preserves explicit non-derived built-in definition overrides", () => {

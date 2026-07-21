@@ -53,7 +53,6 @@ describe("user customization inventory", () => {
     snapshot.deviceLibrary.customDeviceTemplates = [{
       ...customTemplate("custom-source", "自定义电源"),
       parameterDefinitions: [{
-        id: "fuel",
         cnName: "燃料",
         enName: "fuel",
         valueType: "string",
@@ -203,7 +202,6 @@ describe("user customization merge and restore", () => {
       kind: "ac-source",
       size: { width: 96, height: 56 },
       parameterDefinitions: [{
-        id: "custom-field",
         cnName: "自定义字段",
         enName: "custom_field",
         valueType: "string",
@@ -269,8 +267,13 @@ describe("user customization safety helpers", () => {
       position: { x: 0, y: 0 },
       size: { width: 80, height: 48 },
       params: {},
-      terminals: []
-    } as ModelNode;
+      terminals: [],
+      nodeNumber: "N-orphan",
+      acTopologyNode: "",
+      dcTopologyNode: "",
+      rotation: 0,
+      scale: 1
+    } as unknown as ModelNode;
 
     const result = reconcileNodesAfterCustomizationChange([orphan], new Map(), new Map());
 
