@@ -296,12 +296,16 @@ export function createApplyUserCustomizationSnapshot(scope: Record<string, any>)
       scope.applyUserCustomizationSnapshotToState(target);
       scope.reconcileOpenModelAfterCustomizationChange(before, target);
       await scope.refreshUserCustomizationManager();
+      scope.setUserCustomizationSnapshotView?.(target);
+      scope.setUserCustomizationAssets?.(target.imageLibrary.assets);
       scope.setUserCustomizationStatus?.(`${actionLabel}成功`);
       alertUser(scope, `${actionLabel}成功。`);
       return true;
     } catch (error) {
       scope.applyUserCustomizationSnapshotToState(before);
       await scope.refreshUserCustomizationManager().catch(() => undefined);
+      scope.setUserCustomizationSnapshotView?.(before);
+      scope.setUserCustomizationAssets?.(before.imageLibrary.assets);
       scope.setUserCustomizationStatus?.(`${actionLabel}失败`);
       throw error;
     } finally {

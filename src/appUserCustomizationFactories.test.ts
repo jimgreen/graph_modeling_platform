@@ -125,6 +125,37 @@ describe("user customization application factories", () => {
     ]);
   });
 
+  test("keeps the manager view on the applied target snapshot after a successful restore", async () => {
+    const before = snapshot(["img-before"]);
+    const target = snapshot([]);
+    const viewUpdates: string[] = [];
+    const setUserCustomizationSnapshotView = vi.fn((value) => {
+      viewUpdates.push(value.imageLibrary.assets[0]?.id ?? "empty");
+    });
+    const apply = createApplyUserCustomizationSnapshot({
+      captureUserCustomizationSnapshot: vi.fn(async () => before),
+      saveUserCustomizationSnapshotFile: vi.fn(async () => true),
+      persistUserCustomizationSnapshot: vi.fn(async () => undefined),
+      applyUserCustomizationSnapshotToState: vi.fn(),
+      reconcileOpenModelAfterCustomizationChange: vi.fn(),
+      refreshUserCustomizationManager: vi.fn(async () => {
+        setUserCustomizationSnapshotView(before);
+        return before;
+      }),
+      setUserCustomizationSnapshotView,
+      setUserCustomizationAssets: vi.fn(),
+      setUserCustomizationBusy: vi.fn(),
+      setUserCustomizationStatus: vi.fn(),
+      referencedUserAssetIds: new Set<string>(),
+      alertUser: vi.fn()
+    });
+
+    await expect(apply(target, "恢复用户自定义")).resolves.toBe(true);
+
+    expect(viewUpdates.at(-1)).toBe("empty");
+    expect(setUserCustomizationSnapshotView).toHaveBeenLastCalledWith(target);
+  });
+
   test("maps a legacy partial library package without inventing absent domains", () => {
     const partial = userCustomizationSnapshotFromLibraryPackage({
       format: "graph-modeling-platform-library-package",
