@@ -377,6 +377,7 @@ const CUSTOM_DEVICE_IMAGE_WIDTH = 240;
 const CUSTOM_DEVICE_IMAGE_HEIGHT = 160;
 const CUSTOM_DEVICE_IMAGE_INNER_WIDTH = CUSTOM_DEVICE_IMAGE_WIDTH * 3 / 4;
 const CUSTOM_DEVICE_IMAGE_INNER_HEIGHT = CUSTOM_DEVICE_IMAGE_HEIGHT * 3 / 4;
+const CUSTOM_DEVICE_TERMINAL_BODY_REACH_RATIO = 0.6;
 const CUSTOM_DEVICE_PERSISTED_TERMINAL_GROUP_ATTR = `data-custom-device-persisted-terminal-connectors="true"`;
 const CUSTOM_DEVICE_PERSISTED_TERMINAL_GROUP_PATTERN =
   /<g\b(?=[^>]*\bdata-custom-device-(?:persisted-terminals|persisted-terminal-connectors|terminal-connectors)\s*=\s*(?:"true"|'true'))[^>]*>[\s\S]*?<\/g>/giu;
@@ -388,13 +389,21 @@ function customDeviceTerminalConnectorGeometry(anchor: Point) {
   const innerX = centerX + boundary.x * CUSTOM_DEVICE_IMAGE_INNER_WIDTH;
   const innerY = centerY + boundary.y * CUSTOM_DEVICE_IMAGE_INNER_HEIGHT;
   const horizontalSide = Math.abs(boundary.x) >= Math.abs(boundary.y);
+  const bodyReachX = ((CUSTOM_DEVICE_IMAGE_WIDTH - CUSTOM_DEVICE_IMAGE_INNER_WIDTH) / 2) * CUSTOM_DEVICE_TERMINAL_BODY_REACH_RATIO;
+  const bodyReachY = ((CUSTOM_DEVICE_IMAGE_HEIGHT - CUSTOM_DEVICE_IMAGE_INNER_HEIGHT) / 2) * CUSTOM_DEVICE_TERMINAL_BODY_REACH_RATIO;
   const outerX = horizontalSide
     ? boundary.x < 0 ? 0 : CUSTOM_DEVICE_IMAGE_WIDTH
     : innerX;
   const outerY = horizontalSide
     ? innerY
     : boundary.y < 0 ? 0 : CUSTOM_DEVICE_IMAGE_HEIGHT;
-  return { outerX, outerY, innerX, innerY };
+  const targetX = horizontalSide
+    ? innerX - Math.sign(boundary.x || 1) * bodyReachX
+    : innerX;
+  const targetY = horizontalSide
+    ? innerY
+    : innerY - Math.sign(boundary.y || 1) * bodyReachY;
+  return { outerX, outerY, innerX: targetX, innerY: targetY };
 }
 
 function customDeviceTerminalConnectorLineMarkup(type: TerminalType, anchor: Point) {

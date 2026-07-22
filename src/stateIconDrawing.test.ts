@@ -477,8 +477,8 @@ describe("default device state draft rows", () => {
     const source = svgSourceFromDataUrl(withConnectors);
 
     expect(source).toContain('data-custom-device-persisted-terminal-connectors="true"');
-    expect(source).toContain('x1="0" y1="80" x2="30" y2="80"');
-    expect(source).toContain('x1="240" y1="80" x2="210" y2="80"');
+    expect(source).toContain('x1="0" y1="80" x2="48" y2="80"');
+    expect(source).toContain('x1="240" y1="80" x2="192" y2="80"');
     expect(source).toContain("stroke-width:2 !important");
     expect(source).not.toContain("<circle");
   });
@@ -491,7 +491,7 @@ describe("default device state draft rows", () => {
 
     expect(source.match(/data-custom-device-persisted-terminal-connectors="true"/g)).toHaveLength(1);
     expect(source).not.toContain('x1="120" y1="0" x2="120" y2="20"');
-    expect(source).toContain('x1="120" y1="160" x2="120" y2="140"');
+    expect(source).toContain('x1="120" y1="160" x2="120" y2="128"');
   });
 
   test("removes obsolete persisted terminal anchor circles when rewriting the definition image", () => {
@@ -502,7 +502,7 @@ describe("default device state draft rows", () => {
     expect(rewritten).not.toContain('data-custom-device-persisted-terminals="true"');
     expect(rewritten).not.toContain("<circle");
     expect(rewritten).toContain('data-custom-device-persisted-terminal-connectors="true"');
-    expect(rewritten).toContain('x1="240" y1="80" x2="210" y2="80"');
+    expect(rewritten).toContain('x1="240" y1="80" x2="192" y2="80"');
   });
 
   test("wraps non-svg custom device images so terminal connector lines are saved with the definition", () => {
@@ -515,7 +515,7 @@ describe("default device state draft rows", () => {
 
     expect(source).toContain('<image href="' + apiPath('/images/background-asset') + '"');
     expect(source).toContain('data-custom-device-persisted-terminal-connectors="true"');
-    expect(source).toContain('x1="0" y1="110" x2="30" y2="110"');
+    expect(source).toContain('x1="0" y1="110" x2="48" y2="110"');
     expect(source).not.toContain("<circle");
   });
 

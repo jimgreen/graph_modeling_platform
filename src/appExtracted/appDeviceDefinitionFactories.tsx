@@ -4060,9 +4060,14 @@ export function createCustomDeviceTerminalConnectorSegment(__appScope: Record<st
     };
     const outwardOffsetX = customDevicePreviewWidth / 6;
     const outwardOffsetY = customDevicePreviewHeight / 6;
+    const bodyReachX = outwardOffsetX * 0.6;
+    const bodyReachY = outwardOffsetY * 0.6;
     if (Math.abs(boundaryAnchor.x) >= Math.abs(boundaryAnchor.y)) {
       return {
-        from,
+        from: {
+          x: from.x - Math.sign(boundaryAnchor.x || 1) * bodyReachX,
+          y: from.y
+        },
         to: {
           x: from.x + Math.sign(boundaryAnchor.x || 1) * outwardOffsetX,
           y: from.y
@@ -4070,7 +4075,10 @@ export function createCustomDeviceTerminalConnectorSegment(__appScope: Record<st
       };
     }
     return {
-      from,
+      from: {
+        x: from.x,
+        y: from.y - Math.sign(boundaryAnchor.y || 1) * bodyReachY
+      },
       to: {
         x: from.x,
         y: from.y + Math.sign(boundaryAnchor.y || 1) * outwardOffsetY
@@ -7795,16 +7803,20 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
     };
     const stateIconTerminalConnectorSegment = (anchor: Point) => {
       const boundaryAnchor = stateIconDisplayedBoundaryAnchor(anchor);
-      const from = {
+      const framePoint = {
         x: stateIconTerminalFrame.centerX + boundaryAnchor.x * stateIconTerminalFrame.width,
         y: stateIconTerminalFrame.centerY + boundaryAnchor.y * stateIconTerminalFrame.height
       };
+      const bodyReachX = stateIconTerminalFrame.marginX * 0.6;
+      const bodyReachY = stateIconTerminalFrame.marginY * 0.6;
       const horizontal = Math.abs(boundaryAnchor.x) >= Math.abs(boundaryAnchor.y);
       return {
-        from,
+        from: horizontal
+          ? { x: framePoint.x - Math.sign(boundaryAnchor.x || 1) * bodyReachX, y: framePoint.y }
+          : { x: framePoint.x, y: framePoint.y - Math.sign(boundaryAnchor.y || 1) * bodyReachY },
         to: horizontal
-          ? { x: from.x + (boundaryAnchor.x < 0 ? -stateIconTerminalFrame.marginX : stateIconTerminalFrame.marginX), y: from.y }
-          : { x: from.x, y: from.y + (boundaryAnchor.y < 0 ? -stateIconTerminalFrame.marginY : stateIconTerminalFrame.marginY) }
+          ? { x: framePoint.x + (boundaryAnchor.x < 0 ? -stateIconTerminalFrame.marginX : stateIconTerminalFrame.marginX), y: framePoint.y }
+          : { x: framePoint.x, y: framePoint.y + (boundaryAnchor.y < 0 ? -stateIconTerminalFrame.marginY : stateIconTerminalFrame.marginY) }
       };
     };
     const renderStateIconTerminalDynamicGuideLayer = (anchors: Point[]) => {
@@ -8009,19 +8021,6 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       }
       return (
         <g className="state-icon-terminal-base-layer">
-          <rect
-            x={stateIconTerminalFrame.x}
-            y={stateIconTerminalFrame.y}
-            width={stateIconTerminalFrame.width}
-            height={stateIconTerminalFrame.height}
-            rx="6"
-            className="state-icon-drawing-icon-frame state-icon-drawing-inner-frame"
-            fill="none"
-            stroke="#f97316"
-            strokeWidth={1.5}
-            strokeDasharray="5 3"
-            vectorEffect="non-scaling-stroke"
-          />
           {renderStateIconTerminalDynamicGuideLayer(anchors)}
           <g className="state-icon-terminal-connector-layer">
             {anchors.map((anchor, index) => {
