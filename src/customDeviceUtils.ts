@@ -377,7 +377,7 @@ const CUSTOM_DEVICE_IMAGE_WIDTH = 240;
 const CUSTOM_DEVICE_IMAGE_HEIGHT = 160;
 const CUSTOM_DEVICE_IMAGE_INNER_WIDTH = CUSTOM_DEVICE_IMAGE_WIDTH * 3 / 4;
 const CUSTOM_DEVICE_IMAGE_INNER_HEIGHT = CUSTOM_DEVICE_IMAGE_HEIGHT * 3 / 4;
-const CUSTOM_DEVICE_TERMINAL_BODY_REACH_RATIO = 0.6;
+const CUSTOM_DEVICE_TERMINAL_BODY_REACH_RATIO = 2.6;
 const CUSTOM_DEVICE_PERSISTED_TERMINAL_GROUP_ATTR = `data-custom-device-persisted-terminal-connectors="true"`;
 const CUSTOM_DEVICE_PERSISTED_TERMINAL_GROUP_PATTERN =
   /<g\b(?=[^>]*\bdata-custom-device-(?:persisted-terminals|persisted-terminal-connectors|terminal-connectors)\s*=\s*(?:"true"|'true'))[^>]*>[\s\S]*?<\/g>/giu;
