@@ -7833,7 +7833,94 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         y: (-displayedAnchor.x * sin + displayedAnchor.y * cos) * scaleSignY
       });
     };
-    const stateIconTerminalConnectorSegment = (anchor: Point) => {
+    const stateIconCanvasTerminalVisualElement = (() => {
+      const elements = [
+        ...(Array.isArray(stateIconDrawingDialog?.elements) ? stateIconDrawingDialog.elements : []),
+        stateIconDrawingDialog?.drawingDraft?.element
+      ].filter(Boolean);
+      const dragOverrides = stateIconDrawingDragDeltaRef?.current?.overrides;
+      const withOverrides = elements.map((element: any) => {
+        const override = dragOverrides?.[element.id];
+        return override ? { ...element, ...override } : element;
+      });
+      const selectedIds = new Set(
+        stateIconDrawingDialog?.selectedElementIds?.length > 0
+          ? stateIconDrawingDialog.selectedElementIds
+          : [stateIconDrawingDialog?.selectedElementId].filter(Boolean)
+      );
+      const isGeneratedTemplateElement = (element: any) => {
+        const kind = String(element?.kind ?? "");
+        if (kind !== "imported-svg" && kind !== "image") {
+          return false;
+        }
+        const source = String(element?.svgSource || element?.imageHref || "");
+        return source.includes("data-state-icon-preserve-view-box");
+      };
+      return withOverrides.find((element: any) => selectedIds.has(element.id) && isGeneratedTemplateElement(element))
+        ?? withOverrides.find(isGeneratedTemplateElement)
+        ?? null;
+    })();
+    const stateIconMapCanvasTerminalPoint = (renderPoint: Point, controlPoint: Point): Point | null => {
+      const content = stateIconCanvasTerminalContent;
+      const node = content?.node;
+      if (!content || !node) {
+        return null;
+      }
+      const scaleX = getNodeScaleX ? getNodeScaleX(node) : 1;
+      const scaleY = getNodeScaleY ? getNodeScaleY(node) : 1;
+      const radians = ((Number(node.rotation) || 0) * Math.PI) / 180;
+      const cos = Math.cos(radians);
+      const sin = Math.sin(radians);
+      const local = {
+        x: renderPoint.x * scaleX + controlPoint.x,
+        y: renderPoint.y * scaleY + controlPoint.y
+      };
+      const visualElement = stateIconCanvasTerminalVisualElement;
+      if (visualElement) {
+        const elementWidth = Math.max(1, Number(visualElement.width) || 1);
+        const elementHeight = Math.max(1, Number(visualElement.height) || 1);
+        const nodeWidth = Math.max(1, Number(node.size?.width) || 1);
+        const nodeHeight = Math.max(1, Number(node.size?.height) || 1);
+        const elementScale = Math.min(elementWidth / nodeWidth, elementHeight / nodeHeight);
+        const elementRadians = ((Number(visualElement.rotation) || 0) * Math.PI) / 180;
+        const elementCos = Math.cos(elementRadians);
+        const elementSin = Math.sin(elementRadians);
+        const elementLocal = {
+          x: (local.x * cos - local.y * sin) * elementScale,
+          y: (local.x * sin + local.y * cos) * elementScale
+        };
+        return {
+          x: Number(visualElement.x || 0) + elementLocal.x * elementCos - elementLocal.y * elementSin,
+          y: Number(visualElement.y || 0) + elementLocal.x * elementSin + elementLocal.y * elementCos
+        };
+      }
+      return {
+        x: content.centerX + (local.x * cos - local.y * sin) * content.scale,
+        y: content.centerY + (local.x * sin + local.y * cos) * content.scale
+      };
+    };
+    const stateIconCanvasTerminalConnectorSegment = (index?: number) => {
+      if (
+        typeof index !== "number" ||
+        !stateIconCanvasTerminalContent ||
+        !terminalRenderLocalPoint ||
+        !terminalStubSegment
+      ) {
+        return null;
+      }
+      const node = stateIconCanvasTerminalContent.node;
+      const terminal = Array.isArray(node.terminals) ? node.terminals[index] : null;
+      if (!terminal) {
+        return null;
+      }
+      const scaleX = getNodeScaleX ? getNodeScaleX(node) : 1;
+      const scaleY = getNodeScaleY ? getNodeScaleY(node) : 1;
+      const renderPoint = terminalRenderLocalPoint(terminal, node.size, scaleX, scaleY, node.kind);
+      const stub = terminalStubSegment(terminal, scaleX, scaleY, 24, node.kind, node.size);
+      const from = stateIconMapCanvasTerminalPoint(renderPoint, stub.from);
+      return from ? { from } : null;
+    };
+    const stateIconFrameTerminalConnectorSegment = (anchor: Point) => {
       const boundaryAnchor = stateIconDisplayedBoundaryAnchor(anchor);
       const framePoint = {
         x: stateIconTerminalFrame.centerX + boundaryAnchor.x * stateIconTerminalFrame.width,
@@ -7851,13 +7938,24 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
           : { x: framePoint.x, y: framePoint.y + (boundaryAnchor.y < 0 ? -stateIconTerminalFrame.marginY : stateIconTerminalFrame.marginY) }
       };
     };
+    const stateIconTerminalConnectorSegment = (anchor: Point, index?: number) => {
+      const frameSegment = stateIconFrameTerminalConnectorSegment(anchor);
+      const canvasSegment = stateIconCanvasTerminalConnectorSegment(index);
+      if (canvasSegment) {
+        return {
+          from: canvasSegment.from,
+          to: frameSegment.to
+        };
+      }
+      return frameSegment;
+    };
     const renderStateIconTerminalDynamicGuideLayer = (anchors: Point[]) => {
       const activeIndex = typeof stateIconTerminalDragIndex === "number" ? stateIconTerminalDragIndex : -1;
       const activeAnchor = anchors[activeIndex];
       if (!activeAnchor) {
         return null;
       }
-      const activeSegment = stateIconTerminalConnectorSegment(activeAnchor);
+      const activeSegment = stateIconTerminalConnectorSegment(activeAnchor, activeIndex);
       const activeDisplayedAnchor = stateIconDisplayedBoundaryAnchor(activeAnchor);
       const lines: Array<{
         id: string;
@@ -7900,7 +7998,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         if (index === activeIndex) {
           return;
         }
-        const segment = stateIconTerminalConnectorSegment(anchor);
+        const segment = stateIconTerminalConnectorSegment(anchor, index);
         if (Math.abs(segment.to.x - activeSegment.to.x) <= anchorMatchTolerance) {
           addLine("vertical", segment.to.x, "match", 0, STATE_ICON_DRAWING_FRAME_HEIGHT);
         }
@@ -8014,7 +8112,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
             {renderStateIconTerminalDynamicGuideLayer(anchors)}
             <g className="state-icon-terminal-connector-layer">
               {anchors.map((anchor, index) => {
-                const segment = stateIconTerminalConnectorSegment(anchor);
+                const segment = stateIconTerminalConnectorSegment(anchor, index);
                 const terminalType = stateIconTerminalAnchorType(index);
                 return (
                   <line
@@ -8035,7 +8133,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
             </g>
             <g className="state-icon-terminal-anchor-layer">
               {anchors.map((anchor, index) => {
-                const segment = stateIconTerminalConnectorSegment(anchor);
+                const segment = stateIconTerminalConnectorSegment(anchor, index);
                 const terminalType = stateIconTerminalAnchorType(index);
                 const dragging = stateIconTerminalDragIndex === index;
                 return (
