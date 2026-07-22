@@ -20,12 +20,34 @@ const cfg = readConfig();
 
 const trimTrailingSlash = (value) => String(value).replace(/\/+$/g, "");
 
+// 规范化为 Vite base 合法值：以 / 开头；非根值补尾斜杠（/app -> /app/）；空或仅 / 返回 /
+const normalizeBase = (value) => {
+  const v = String(value ?? "/").trim() || "/";
+  if (v === "/") return "/";
+  const withSlash = v.endsWith("/") ? v : `${v}/`;
+  return withSlash.startsWith("/") ? withSlash : `/${withSlash}`;
+};
+
 export const host = process.env.IMAGE_SERVER_HOST ?? cfg.host ?? "127.0.0.1";
 export const frontendPort = Number(process.env.VITE_PORT ?? cfg.ports?.frontend ?? 5173);
 export const backendPort = Number(process.env.IMAGE_SERVER_PORT ?? cfg.ports?.backend ?? 5174);
 export const apiPrefix = trimTrailingSlash(
   process.env.GRAPH_MODEL_API_PREFIX ?? cfg.apiPrefix ?? "/webgrp"
 );
+
+// 前端 base 部署路径（Vite base）：前端应用挂在子路径下时配置，如 /app/。默认 /
+export const frontendApiPrefix = normalizeBase(
+  process.env.GRAPH_MODEL_FRONTEND_API_PREFIX ?? cfg.frontendApiPrefix ?? "/"
+);
+
+// 剥掉前端 base 前缀（非根时）：后端入口把 /app/icon-library/x 还原为 /icon-library/x；
+// apiPrefix 开头的 API 请求不以 base 开头，原样返回。
+export const stripFrontendBase = (pathname) => {
+  if (frontendApiPrefix === "/") return pathname;
+  return pathname.startsWith(frontendApiPrefix)
+    ? pathname.slice(frontendApiPrefix.length - 1) || "/"
+    : pathname;
+};
 
 // 转义正则元字符，用于把 apiPrefix 拼进路由正则
 export const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

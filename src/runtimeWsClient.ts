@@ -2,6 +2,8 @@
 // 收到 server 的 fetch 请求时，调用注入的 fetchHandler 生成响应并回传。
 // clientId 持久化于 localStorage，重连复用。
 
+import { frontendPath } from "./config";
+
 const CLIENT_ID_KEY = "runtimeWsClientId";
 const PING_INTERVAL_MS = 15_000;
 const RECONNECT_DELAY_MS = 3_000;
@@ -59,14 +61,14 @@ export function createRuntimeWsClient(fetchHandler: FetchHandler, options: Runti
       return options.url;
     }
     // dev：vite (5173) 的 /ws WS 代理不稳定（升级常 pending），直连 image-server。
-    // prod：同源同端口走 /ws。
+    // prod：同源同端口走 /ws。WS 路径带前端 base（如 /app/ws），后端剥前缀匹配 /ws。
     if (import.meta.env && import.meta.env.DEV) {
       const devPort = (import.meta.env as any).VITE_IMAGE_SERVER_PORT ?? "5174";
       const devHost = window.location.hostname || "127.0.0.1";
-      return `ws://${devHost}:${devPort}/ws`;
+      return `ws://${devHost}:${devPort}${frontendPath("/ws")}`;
     }
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${window.location.host}/ws`;
+    return `${proto}//${window.location.host}${frontendPath("/ws")}`;
   }
 
   function startPing() {

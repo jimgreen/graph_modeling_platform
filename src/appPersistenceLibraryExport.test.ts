@@ -828,8 +828,8 @@ describe("graph template library filtering", () => {
     const source = svgSourceFromDataUrl(template.params.backgroundImage);
 
     expect(source).toContain('data-custom-device-persisted-terminal-connectors="true"');
-    expect(source).toContain('x1="0" y1="80" x2="30" y2="80"');
-    expect(source).toContain('x1="240" y1="80" x2="210" y2="80"');
+    expect(source).toContain('x1="0" y1="80" x2="108" y2="80"');
+    expect(source).toContain('x1="240" y1="80" x2="132" y2="80"');
     expect(source).not.toContain("<circle");
   });
 });

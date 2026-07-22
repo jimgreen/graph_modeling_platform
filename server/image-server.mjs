@@ -7,7 +7,7 @@ import { gzip } from "node:zlib";
 import { promisify } from "node:util";
 import { createHash } from "node:crypto";
 import AdmZip from "adm-zip";
-import { apiPrefix, apiPath, escapeRegExp, backendPort, host } from "./config.mjs";
+import { apiPrefix, apiPath, escapeRegExp, backendPort, host, frontendApiPrefix, stripFrontendBase } from "./config.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = resolve(__dirname, "..");
@@ -3891,6 +3891,8 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
   const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
+      // 剥前端 base 前缀：/app/icon-library/x -> /icon-library/x（默认 / 时 no-op），下游路由按根路径匹配
+      url.pathname = stripFrontendBase(url.pathname);
       if (request.method === "OPTIONS") {
         response.writeHead(204, accessControlHeaders);
         response.end();

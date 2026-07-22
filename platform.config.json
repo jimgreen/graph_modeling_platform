@@ -4,5 +4,6 @@
     "frontend": 5173,
     "backend": 5174
   },
-  "apiPrefix": "/webgrp"
+  "apiPrefix": "/webgrp",
+  "frontendApiPrefix": "/"
 }

@@ -1,4 +1,6 @@
-export const ICON_LIBRARY_CATALOG_URL = "/icon-library/catalog.json";
+import { frontendPath } from "./config";
+
+export const ICON_LIBRARY_CATALOG_URL = frontendPath("/icon-library/catalog.json");
 export const ICON_LIBRARY_PAGE_SIZE = 120;
 
 const CATALOG_CACHE_KEY = "graph-modeling-platform:icon-library:catalog:v2";
@@ -187,7 +189,7 @@ function writeCacheJson(key: string, value: unknown) {
 const normalizeRoot = (root: string, libraryId: string) => {
   const fallback = `/icon-library/${libraryId}`;
   const normalized = String(root || fallback).replace(/\/+$/u, "");
-  return normalized.startsWith("/") ? normalized : fallback;
+  return frontendPath(normalized.startsWith("/") ? normalized : fallback);
 };
 
 const encodeIconFilePath = (file: string) =>
