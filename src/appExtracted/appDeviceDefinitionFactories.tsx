@@ -7942,8 +7942,12 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
       const frameSegment = stateIconFrameTerminalConnectorSegment(anchor);
       const canvasSegment = stateIconCanvasTerminalConnectorSegment(index);
       if (canvasSegment) {
+        const displayedAnchor = stateIconDisplayedBoundaryAnchor(anchor);
+        const horizontal = Math.abs(displayedAnchor.x) >= Math.abs(displayedAnchor.y);
         return {
-          from: canvasSegment.from,
+          from: horizontal
+            ? { x: canvasSegment.from.x, y: frameSegment.to.y }
+            : { x: frameSegment.to.x, y: canvasSegment.from.y },
           to: frameSegment.to
         };
       }
