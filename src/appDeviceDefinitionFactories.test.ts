@@ -43,6 +43,7 @@ import {
 } from "./appExtracted/appDeviceDefinitionFactories";
 import { createSetEdgeManualPoints } from "./appExtracted/appProjectCanvasFactories";
 import {
+  createDefinitionVisualDraft,
   createCustomDeviceDraftFromTemplate,
   customDefaultDefinitions,
   isDerivedComponentBaseParamName,
@@ -61,6 +62,20 @@ import { apiPath } from "./config";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("device definition terminal anchors", () => {
+  test("uses the canvas single-terminal default when a built-in template has no explicit anchor", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-source");
+    expect(template).toBeTruthy();
+    expect(template?.terminalAnchors).toBeUndefined();
+    if (!template) {
+      return;
+    }
+
+    expect(createDefinitionVisualDraft(template).terminalAnchors[0]).toEqual({ x: 0.5, y: 0 });
+    expect(createCustomDeviceDraftFromTemplate(template).terminalAnchors[0]).toEqual({ x: 0.5, y: 0 });
+  });
 });
 
 describe("SVG model import factories", () => {

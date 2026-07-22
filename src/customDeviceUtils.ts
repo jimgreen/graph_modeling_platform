@@ -204,6 +204,25 @@ export function createDefaultCustomDeviceTerminalAnchors(count: number, sourceAn
   });
 }
 
+function defaultTemplateTerminalAnchors(count: number, sourceAnchors: readonly Point[] | undefined): Point[] {
+  if (sourceAnchors?.length) {
+    return createDefaultCustomDeviceTerminalAnchors(count, sourceAnchors);
+  }
+  const fallbackAnchors: Point[] = count === 1
+    ? [{ x: 0.5, y: 0 }]
+    : [
+        { x: -0.5, y: 0 },
+        { x: 0.5, y: 0 },
+        { x: 0, y: -0.5 },
+        { x: 0, y: 0.5 },
+        { x: -0.5, y: -0.25 },
+        { x: 0.5, y: -0.25 },
+        { x: -0.5, y: 0.25 },
+        { x: 0.5, y: 0.25 }
+      ];
+  return createDefaultCustomDeviceTerminalAnchors(count, fallbackAnchors);
+}
+
 export function createEmptyCustomDeviceDraft(categoryLibraryName = "交流设备"): CustomDeviceDraft {
   return {
     categoryLibraryName,
@@ -286,7 +305,7 @@ export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, se
     terminalCount,
     terminalTypes: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => terminalTypes[index] ?? "ac") as TerminalType[],
     terminalLabels: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => template.terminalLabels?.[index] ?? ""),
-    terminalAnchors: createDefaultCustomDeviceTerminalAnchors(terminalCount, template.terminalAnchors),
+    terminalAnchors: defaultTemplateTerminalAnchors(terminalCount, template.terminalAnchors),
     terminalRoles: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => template.terminalRoles?.[index] ?? "single-load") as ContainerTerminalRole[],
     terminalAssociations: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => terminalAssociations[index] ?? "ac-load") as ContainerTerminalAssociationValue[],
     isContainer: Boolean(template.isContainer),
@@ -315,7 +334,7 @@ export function createDefinitionVisualDraft(template: DeviceTemplate): DeviceDef
       const type = terminalTypes[index] ?? template.terminalType ?? "ac";
       return template.terminalLabels?.[index] ?? `${TERMINAL_TYPE_LIBRARY_LABELS[type] ?? type}端${index + 1}`;
     }),
-    terminalAnchors: createDefaultCustomDeviceTerminalAnchors(terminalCount, template.terminalAnchors),
+    terminalAnchors: defaultTemplateTerminalAnchors(terminalCount, template.terminalAnchors),
     error: ""
   };
 }

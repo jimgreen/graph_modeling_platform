@@ -14,6 +14,67 @@ const STORAGE_BUS_KINDS = new Set([
   "thermal-storage-tank"
 ]);
 
+function decodeStateIconSvgDataUrl(value: string) {
+  const source = String(value ?? "").trim();
+  if (!source.startsWith("data:image/svg+xml")) {
+    return "";
+  }
+  const commaIndex = source.indexOf(",");
+  if (commaIndex < 0) {
+    return "";
+  }
+  const metadata = source.slice(0, commaIndex).toLowerCase();
+  const payload = source.slice(commaIndex + 1);
+  try {
+    if (metadata.includes(";base64")) {
+      return typeof atob === "function" ? atob(payload) : "";
+    }
+    return decodeURIComponent(payload);
+  } catch {
+    return payload;
+  }
+}
+
+function readStateIconSvgNumber(markup: string, name: string, fallback: number) {
+  const match = new RegExp(`\\b${name}\\s*=\\s*["']?([-+]?\\d*\\.?\\d+)`, "i").exec(markup);
+  const parsed = Number(match?.[1]);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function generatedStateIconVisualTransform(imageHref: string, nodeSize: { width: number; height: number }) {
+  const svg = decodeStateIconSvgDataUrl(imageHref);
+  if (!svg || !svg.includes("data-state-icon-drawing") || !svg.includes("data-state-icon-preserve-view-box")) {
+    return null;
+  }
+  const groupPattern = /<g\b([^>]*)>([\s\S]*?data-state-icon-preserve-view-box[\s\S]*?)<\/g>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = groupPattern.exec(svg))) {
+    const groupAttrs = match[1] ?? "";
+    const body = match[2] ?? "";
+    const transformMatch = /transform\s*=\s*["']translate\(([-+]?[\d.]+)[ ,]+([-+]?[\d.]+)\)(?:\s+rotate\(([-+]?[\d.]+)\))?/i.exec(groupAttrs);
+    const innerSvgMatch = /<svg\b([^>]*)/i.exec(body);
+    if (!transformMatch || !innerSvgMatch) {
+      continue;
+    }
+    const innerAttrs = innerSvgMatch[1] ?? "";
+    const width = readStateIconSvgNumber(innerAttrs, "width", 0);
+    const height = readStateIconSvgNumber(innerAttrs, "height", 0);
+    if (width <= 0 || height <= 0) {
+      continue;
+    }
+    return {
+      x: (Number(transformMatch[1]) - 120) * (nodeSize.width / 240),
+      y: (Number(transformMatch[2]) - 80) * (nodeSize.height / 160),
+      scale: Math.min(
+        (width * (nodeSize.width / 240)) / Math.max(1, nodeSize.width),
+        (height * (nodeSize.height / 160)) / Math.max(1, nodeSize.height)
+      ),
+      rotation: Number(transformMatch[3] ?? 0) || 0
+    };
+  }
+  return null;
+}
+
 /**
  * 自定义比较器：深度比较画布相关的所有值。
  * 只有当画布实际使用的值发生变化时，才触发重渲染。
@@ -893,10 +954,38 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         const nodeGeometryTransformValue = nodeGeometryTransform(node);
         const nodeScaleX = getNodeScaleX(node);
         const nodeScaleY = getNodeScaleY(node);
+        const terminalVisualTransform = generatedStateIconVisualTransform(imageHref, node.size);
         const inverseScaleX = nodeScaleX === 0 ? 1 : 1 / nodeScaleX;
         const inverseScaleY = nodeScaleY === 0 ? 1 : 1 / nodeScaleY;
         const terminalStubDashArray = svgStrokeDashArray(node.params.strokeStyle);
         const terminalControlTransform = (x: number, y: number) => `translate(${x} ${y}) scale(${inverseScaleX} ${inverseScaleY})`;
+        const adjustedTerminalStub = (terminal: any, renderPoint: any, stub: any) => {
+            if (!terminalVisualTransform) {
+                return stub;
+            }
+            const displayedAnchor = {
+                x: terminal.anchor.x * (Math.sign(nodeScaleX) || 1),
+                y: terminal.anchor.y * (Math.sign(nodeScaleY) || 1)
+            };
+            const horizontal = Math.abs(displayedAnchor.x) >= Math.abs(displayedAnchor.y);
+            const radians = ((Number(terminalVisualTransform.rotation) || 0) * Math.PI) / 180;
+            const cos = Math.cos(radians);
+            const sin = Math.sin(radians);
+            const basePoint = {
+                x: renderPoint.x + stub.from.x,
+                y: renderPoint.y + stub.from.y
+            };
+            const visualPoint = {
+                x: terminalVisualTransform.x + (basePoint.x * cos - basePoint.y * sin) * terminalVisualTransform.scale,
+                y: terminalVisualTransform.y + (basePoint.x * sin + basePoint.y * cos) * terminalVisualTransform.scale
+            };
+            return {
+                ...stub,
+                from: horizontal
+                    ? { x: (visualPoint.x - renderPoint.x) * nodeScaleX, y: stub.from.y }
+                    : { x: stub.from.x, y: (visualPoint.y - renderPoint.y) * nodeScaleY }
+            };
+        };
         const handleTransform = (x: number, y: number) => `translate(${x} ${y})`;
         const handleGapX = 14;
         const handleGapY = 14;
@@ -1033,7 +1122,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                             terminal.type !== routableLineActiveTerminalType));
                 const overlapped = isEditMode && overlappedTerminalKeys.has(`${node.id}:${terminal.id}`);
                 const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
-                const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size);
+                const stub = adjustedTerminalStub(terminal, renderPoint, terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size));
                 const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
                 return hideFixedTerminal ? null : (<g key={terminal.id} transform={terminalControlTransform(renderPoint.x, renderPoint.y)}>
                           <line className={`terminal-stub ${terminal.type} ${disabled ? "disabled" : ""}`} strokeDasharray={terminalStubDashArray} style={{
