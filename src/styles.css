@@ -11470,7 +11470,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 /* dialog-table-column-resize: popup table headers can be dragged wider or narrower by the user. */
-.measurement-editor-table,
 .measurement-config-dialog .measurement-table,
 .device-definition-dialog .measurement-table,
 .device-definition-dialog .custom-param-table,
@@ -11478,7 +11477,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   table-layout: auto;
 }
 
-.measurement-editor-table th,
 .measurement-config-dialog .measurement-table th,
 .device-definition-dialog .measurement-table th,
 .device-definition-dialog .custom-param-table th,

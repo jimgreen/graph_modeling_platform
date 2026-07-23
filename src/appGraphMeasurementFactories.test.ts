@@ -123,7 +123,11 @@ describe("measurement canvas interactions", () => {
     const [group] = measurementDefinitions.createDefaultMeasurementGroupsForNode(node as any, config);
 
     expect(group).toBeTruthy();
-    expect(group.offset.y).toBeGreaterThanOrEqual(92);
+    const lineHeight = 20;
+    const measurementHeight = group.items.filter((item) => item.visible !== false).length * lineHeight;
+    const measurementTop = group.offset.y - measurementHeight / 2;
+    const labelBottom = Number(node.params._labelY) + Number(node.params._labelFontSize) * 0.75;
+    expect(measurementTop).toBeGreaterThanOrEqual(labelBottom + 8);
   });
 
   test("validates measurement type and profile compliance", () => {
@@ -1161,6 +1165,11 @@ describe("measurement canvas interactions", () => {
     expect(measurementDialogSource).toContain("measurement-editor-column-resize");
     expect(styles).toContain("cursor: col-resize");
     expect(styles).toContain(".measurement-editor-column-resize");
+    expect(styles).not.toMatch(/\.measurement-editor-table th[^{}]*\{[^}]*resize: horizontal;/);
+    expect(appSource).toContain("event.currentTarget.setPointerCapture");
+    expect(appSource).toContain("moveEvent.buttons === 0");
+    expect(appSource).toContain('window.addEventListener("mouseup"');
+    expect(appSource).toContain('window.addEventListener("blur"');
   });
 
   test("marks measurement groups through the imperative single-node drag origin path", () => {

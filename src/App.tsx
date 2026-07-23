@@ -1264,23 +1264,52 @@ const [measurementEditorDialog, setMeasurementEditorDialog] = useState<Measureme
 Object.assign(__appScope, { measurementEditorDialog, setMeasurementEditorDialog });
 const [measurementEditorColumnWidths, setMeasurementEditorColumnWidths] = useState<Record<string, number>>({});
 const startMeasurementEditorTableColumnResize = (columnKey: string, defaultWidth: number, event: PointerEvent<HTMLElement>) => {
+  if (event.button !== 0) {
+    return;
+  }
   event.preventDefault();
   event.stopPropagation();
+  const resizeHandle = event.currentTarget;
+  const pointerId = event.pointerId;
+  try {
+    event.currentTarget.setPointerCapture(pointerId);
+  } catch {
+    // Window-level fallback listeners below still guarantee cleanup if capture is unavailable.
+  }
   const startX = event.clientX;
-  const headerCell = event.currentTarget.parentElement;
+  const headerCell = resizeHandle.parentElement;
   const startWidth = measurementEditorColumnWidths[columnKey] ?? headerCell?.getBoundingClientRect().width ?? defaultWidth;
-  const handlePointerMove = (moveEvent: globalThis.PointerEvent) => {
+  let handlePointerMove: (moveEvent: globalThis.PointerEvent) => void;
+  const finishColumnResize = () => {
+    window.removeEventListener("pointermove", handlePointerMove);
+    window.removeEventListener("pointerup", finishColumnResize);
+    window.removeEventListener("pointercancel", finishColumnResize);
+    window.removeEventListener("mouseup", finishColumnResize);
+    window.removeEventListener("blur", finishColumnResize);
+    window.removeEventListener("contextmenu", finishColumnResize);
+    try {
+      if (resizeHandle.hasPointerCapture(pointerId)) {
+        resizeHandle.releasePointerCapture(pointerId);
+      }
+    } catch {
+      // Ignore release errors from detached handles or browsers without pointer capture support.
+    }
+  };
+  handlePointerMove = (moveEvent: globalThis.PointerEvent) => {
+    if (moveEvent.buttons === 0) {
+      finishColumnResize();
+      return;
+    }
+    moveEvent.preventDefault();
     const nextWidth = clampNumber(Math.round(startWidth + moveEvent.clientX - startX), 56, 520);
     setMeasurementEditorColumnWidths((current) => ({ ...current, [columnKey]: nextWidth }));
   };
-  const handlePointerUp = () => {
-    window.removeEventListener("pointermove", handlePointerMove);
-    window.removeEventListener("pointerup", handlePointerUp);
-    window.removeEventListener("pointercancel", handlePointerUp);
-  };
   window.addEventListener("pointermove", handlePointerMove);
-  window.addEventListener("pointerup", handlePointerUp, { once: true });
-  window.addEventListener("pointercancel", handlePointerUp, { once: true });
+  window.addEventListener("pointerup", finishColumnResize, { once: true });
+  window.addEventListener("pointercancel", finishColumnResize, { once: true });
+  window.addEventListener("mouseup", finishColumnResize, { once: true });
+  window.addEventListener("blur", finishColumnResize, { once: true });
+  window.addEventListener("contextmenu", finishColumnResize, { once: true });
 };
 Object.assign(__appScope, { measurementEditorColumnWidths, setMeasurementEditorColumnWidths, startMeasurementEditorTableColumnResize });
 const [measurementDrag, setMeasurementDrag] = useState<MeasurementDragState>(null);

@@ -748,7 +748,31 @@ function numericNodeParam(node: ModelNode, key: string, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function defaultMeasurementGroupDeviceOffsetY(node: ModelNode) {
+function defaultMeasurementGroupEstimatedHeight(
+  node: ModelNode,
+  items: readonly DeviceMeasurementProfileItem[],
+  config: PlatformMeasurementConfig
+) {
+  const visibleItems = items.filter((item) => item.defaultVisible !== false);
+  const visibleCount = Math.max(1, visibleItems.length);
+  const measurementTypesById = typeById(config.measurementTypes);
+  const fontScale = measurementFontScaleForNode(node);
+  const maxFontSize = Math.max(
+    DEFAULT_TYPE_VALUES.defaultFontSize,
+    ...visibleItems.map((item) => {
+      const type = measurementTypesById.get(item.measurementTypeId);
+      return (item.styleOverride?.fontSize ?? type?.defaultFontSize ?? DEFAULT_TYPE_VALUES.defaultFontSize) * fontScale;
+    })
+  );
+  const lineHeight = Math.max(16, maxFontSize + 6);
+  return visibleCount * lineHeight;
+}
+
+function defaultMeasurementGroupDeviceOffsetY(
+  node: ModelNode,
+  items: readonly DeviceMeasurementProfileItem[] = [],
+  config: PlatformMeasurementConfig = DEFAULT_MEASUREMENT_CONFIG
+) {
   const baseOffset = Math.round(node.size.height / 2 + 42);
   if (node.params._labelVisible === "0") {
     return baseOffset;
@@ -758,10 +782,17 @@ function defaultMeasurementGroupDeviceOffsetY(node: ModelNode) {
     return baseOffset;
   }
   const labelFontSize = Math.max(6, numericNodeParam(node, "_labelFontSize", DEFAULT_DEVICE_LABEL_FONT_SIZE));
-  return Math.max(baseOffset, Math.round(labelY + labelFontSize * 2.4));
+  const labelBottom = labelY + labelFontSize * 0.75;
+  const measurementHeight = defaultMeasurementGroupEstimatedHeight(node, items, config);
+  return Math.max(baseOffset, Math.ceil(labelBottom + 8 + measurementHeight / 2));
 }
 
-function defaultMeasurementGroupOffsetForNode(node: ModelNode, terminal?: ModelNode["terminals"][number]): { x: number; y: number } {
+function defaultMeasurementGroupOffsetForNode(
+  node: ModelNode,
+  terminal?: ModelNode["terminals"][number],
+  items?: readonly DeviceMeasurementProfileItem[],
+  config?: PlatformMeasurementConfig
+): { x: number; y: number } {
   const rotateOffset = (offset: { x: number; y: number }) => {
     const radians = degreesToRadians(node.rotation);
     const cos = Math.cos(radians);
@@ -772,7 +803,7 @@ function defaultMeasurementGroupOffsetForNode(node: ModelNode, terminal?: ModelN
     };
   };
   if (!terminal) {
-    return { x: 0, y: defaultMeasurementGroupDeviceOffsetY(node) };
+    return { x: 0, y: defaultMeasurementGroupDeviceOffsetY(node, items, config) };
   }
   const anchor = terminal.anchor;
   if (Math.abs(anchor.x) >= Math.abs(anchor.y) && Math.abs(anchor.x) > 0.001) {
@@ -814,7 +845,7 @@ export function createDefaultMeasurementGroupsForNode(
       borderStyle: normalizedConfig.groupDefaults.borderStyle,
       borderWidth: normalizedConfig.groupDefaults.borderWidth,
       anchor: "bottom",
-      offset: defaultMeasurementGroupOffsetForNode(node, terminal),
+      offset: defaultMeasurementGroupOffsetForNode(node, terminal, items, normalizedConfig),
       layout: "vertical",
       items: items.map((item, index) => ({
         id: terminal
