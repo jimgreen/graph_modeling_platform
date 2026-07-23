@@ -16,7 +16,7 @@ import {
   readSchemesFromFiles,
   saveSchemeProjectRecord,
   saveSchemeRecordDirectory
-} from "./image-server.mjs";
+} from "./server.mjs";
 
 const svgSectionBetween = (svg, start, end) => {
   const startIndex = svg.indexOf(start);

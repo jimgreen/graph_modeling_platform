@@ -2378,7 +2378,7 @@ const manifest = {
   name: "open-source-svg",
   label: "开源 SVG 综合图标库",
   generatedAt: new Date().toISOString(),
-  root: "/icon-library/open-source-svg",
+  root: "/webgrp/icon-library/open-source-svg",
   sourcePolicy:
     "仅使用官方 npm 包中的开源 SVG；保留源库版本、许可和 LICENSE 文件；过滤明显品牌/logo 图标；同一分类内按语义键保留一个代表图标，避免重复展示。",
   maxIconsPerSourceCategory,

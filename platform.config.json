@@ -1,0 +1,9 @@
+{
+  "host": "0.0.0.0",
+  "ports": {
+    "frontend": 5173,
+    "backend": 5174
+  },
+  "apiPrefix": "/webgrp",
+  "frontendPrefix": "/app"
+}

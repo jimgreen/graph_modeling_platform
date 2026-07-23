@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach } from "vitest";
-import { createImageServer } from "./image-server.mjs";
+import { createImageServer } from "./server.mjs";
 import { apiPath } from "./config.mjs";
 
 // HTTP 集成测试：起真实 server，打 /webgrp/v1/library/* 真实请求。

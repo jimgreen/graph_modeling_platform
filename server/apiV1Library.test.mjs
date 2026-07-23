@@ -11,7 +11,7 @@ import {
 // handler 单测：mock image-server 依赖，验证正路径 + 信封 + 空库。
 // HTTP 错误路径少（图元库域无 schemePath/name 参数，主要 200 + internal）。
 
-vi.mock("./image-server.mjs", () => ({
+vi.mock("./server.mjs", () => ({
   readDeviceLibraryConfig: vi.fn(),
   readMeasurementConfig: vi.fn(),
   eSectionColumns: {
@@ -25,7 +25,7 @@ vi.mock("./image-server.mjs", () => ({
   }
 }));
 
-import { readDeviceLibraryConfig, readMeasurementConfig } from "./image-server.mjs";
+import { readDeviceLibraryConfig, readMeasurementConfig } from "./server.mjs";
 
 function createMockResponse() {
   const chunks = [];

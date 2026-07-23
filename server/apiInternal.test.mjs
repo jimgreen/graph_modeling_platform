@@ -1,6 +1,6 @@
 // 内部 /webgrp/* 读写层集成测试：起真实 image-server（GRAPH_MODEL_DATA_DIR 指向 tmpdir 隔离），
 // 打真实请求测图片/方案/配置 CRUD + 错误码（400/404/409）。
-// 动态 import：在设 env 后加载 image-server.mjs，确保 dataRoot 指向 tmpdir。
+// 动态 import：在设 env 后加载 server.mjs，确保 dataRoot 指向 tmpdir。
 
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -19,7 +19,7 @@ beforeAll(async () => {
   dataDir = await mkdtemp(join(tmpdir(), "api-internal-"));
   process.env.GRAPH_MODEL_DATA_DIR = dataDir;
   // 动态 import：env 已设，模块求值时 dataRoot 取 tmpdir
-  ({ createImageServer } = await import("./image-server.mjs"));
+  ({ createImageServer } = await import("./server.mjs"));
 });
 
 afterAll(async () => {
@@ -50,7 +50,7 @@ async function fetchJson(pathname, opts = {}) {
 const PNG_1X1 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 const SP_A = encodeURIComponent(JSON.stringify(["方案A"]));
 
-describe("图标库静态资源 /icon-library", () => {
+describe("图标库静态资源 /webgrp/icon-library", () => {
   test("serves icon library files from the data directory while blocking path traversal", async () => {
     const iconLibraryDir = join(dataDir, "icon-library");
     await mkdir(join(iconLibraryDir, "open-source-svg", "power"), { recursive: true });
@@ -61,18 +61,18 @@ describe("图标库静态资源 /icon-library", () => {
       "utf-8"
     );
 
-    const catalog = await fetch(`${baseUrl}/icon-library/catalog.json`);
+    const catalog = await fetch(`${baseUrl}/webgrp/icon-library/catalog.json`);
     expect(catalog.status).toBe(200);
     expect(catalog.headers.get("content-type")).toContain("application/json");
     expect(await catalog.json()).toMatchObject({ name: "icon-library" });
 
-    const svg = await fetch(`${baseUrl}/icon-library/open-source-svg/power/bus.svg`);
+    const svg = await fetch(`${baseUrl}/webgrp/icon-library/open-source-svg/power/bus.svg`);
     expect(svg.status).toBe(200);
     expect(svg.headers.get("content-type")).toContain("image/svg+xml");
     expect(svg.headers.get("cache-control")).toBe("no-cache");
     expect(await svg.text()).toContain("<svg");
 
-    const traversal = await fetch(`${baseUrl}/icon-library/%2e%2e/settings/measurement-config.json`);
+    const traversal = await fetch(`${baseUrl}/webgrp/icon-library/%2e%2e/settings/measurement-config.json`);
     expect(traversal.status).toBe(404);
   });
 });

@@ -1,5 +1,5 @@
 // /webgrp/v1 方案域 handler：schemes、hierarchy、models、export、model json/svg。
-// 复用 image-server.mjs 纯函数。v1 信封包装。
+// 复用 server.mjs 纯函数。v1 信封包装。
 
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,7 +9,7 @@ import {
   readSchemeProjectRecord,
   buildSvgFile,
   readMeasurementConfig
-} from "./image-server.mjs";
+} from "./server.mjs";
 import { sendV1Json, sendV1Error } from "./v1Response.mjs";
 import { parseSchemePathParam, requireSchemePath } from "./schemePath.mjs";
 

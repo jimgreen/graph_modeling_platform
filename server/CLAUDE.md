@@ -11,7 +11,7 @@
 
 | File | Description |
 |------|-------------|
-| `image-server.mjs` | 主服务创建：HTTP 路由分发、静态托管、WS 挂载、v1 路由装配；`GRAPH_MODEL_DATA_DIR` 覆盖数据根 |
+| `server.mjs` | 主服务创建：HTTP 路由分发、静态托管、WS 挂载、v1 路由装配；`GRAPH_MODEL_DATA_DIR` 覆盖数据根 |
 | `dev.mjs` | 开发入口：起 image-server + spawn vite；打印 swigger 地址 |
 | `runtimeWs.mjs` | /ws 升级 + 客户端注册表 + fetchFromClient（向前端拉运行时态） |
 | `runtimeRegistry.mjs` | 客户端注册表纯逻辑：register/unregister/touch/listClients/fetchFromClient + 超时清理 |
@@ -34,7 +34,7 @@
 ### Working In This Directory
 
 - 后端统一 `.mjs`（ESM），`package.json` `"type": "module"`。
-- 新增 v1 端点：在对应 `apiV1*.mjs` 加 handler → `image-server.mjs` 注册路由 → `swaggerPage.mjs` 加端点+示例 → `swigger.examples.test.mjs` 加期望。
+- 新增 v1 端点：在对应 `apiV1*.mjs` 加 handler → `server.mjs` 注册路由 → `swaggerPage.mjs` 加端点+示例 → `swigger.examples.test.mjs` 加期望。
 - WS 透传：`fetchFromClient` 成功 resolve 裸 data（非信封），失败 reject `Error` 带 `.code`。
 - 数据隔离：测试用 `GRAPH_MODEL_DATA_DIR` env 指向 tmpdir，image-server 模块加载时求值一次。
 - schemePath 单次 `encodeURIComponent`，示例值存原始 JSON 字符串，`buildUrl` 统一编码。

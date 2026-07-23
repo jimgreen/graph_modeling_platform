@@ -163,7 +163,7 @@ beforeAll(async () => {
   } catch {
     // repo 无 schemes 数据则空（方案域示例可能 404，期望表相应处理）
   }
-  ({ createImageServer } = await import("./image-server.mjs"));
+  ({ createImageServer } = await import("./server.mjs"));
 });
 
 afterAll(async () => {
@@ -185,7 +185,7 @@ beforeEach(async () => {
   server = await createImageServer({ port: 0, host: "127.0.0.1" });
   const port = server.address().port;
   baseUrl = `http://127.0.0.1:${port}`;
-  wsUrl = `ws://127.0.0.1:${port}/ws`;
+  wsUrl = `ws://127.0.0.1:${port}/webgrp/ws`;
   wsClient = await connectRuntimeClient();
 });
 

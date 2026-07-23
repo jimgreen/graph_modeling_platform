@@ -6,7 +6,7 @@ import { apiPath } from "./config.mjs";
 // handler 单测：mock image-server 依赖函数，验证成功分支（正路径）+ 信封。
 // 覆盖 sendV1Json 成功路径，补 apiV1Schemes.test.mjs 的 HTTP 错误路径。
 
-vi.mock("./image-server.mjs", () => ({
+vi.mock("./server.mjs", () => ({
   readSchemes: vi.fn(),
   createSchemeArchiveBuffer: vi.fn(),
   readSchemeProjectRecord: vi.fn(),
@@ -14,7 +14,7 @@ vi.mock("./image-server.mjs", () => ({
   readMeasurementConfig: vi.fn()
 }));
 
-import { readSchemes, createSchemeArchiveBuffer, readSchemeProjectRecord, buildSvgFile, readMeasurementConfig } from "./image-server.mjs";
+import { readSchemes, createSchemeArchiveBuffer, readSchemeProjectRecord, buildSvgFile, readMeasurementConfig } from "./server.mjs";
 
 function createMockResponse() {
   const chunks = [];

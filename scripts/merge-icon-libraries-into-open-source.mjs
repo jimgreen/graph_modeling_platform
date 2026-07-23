@@ -6,7 +6,7 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const iconLibraryDir = path.join(rootDir, "data", "icon-library");
 const targetLibraryId = "open-source-svg";
 const mergedLibraryIds = ["docer-free-compatible", "office-fluent-compatible"];
-const targetRoot = `/icon-library/${targetLibraryId}`;
+const targetRoot = `/webgrp/icon-library/${targetLibraryId}`;
 const mergedRootDir = "merged";
 
 function normalizeWebPath(...parts) {

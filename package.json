@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node server/dev.mjs",
     "dev:frontend": "vite --host 127.0.0.1",
-    "backend": "node server/image-server.mjs",
+    "server": "node server/server.mjs",
+    "backend": "node server/server.mjs",
     "build": "tsc -b && vite build",
     "audit:icons": "node scripts/audit-icon-library-quality.mjs",
     "test": "vitest run",

@@ -2,7 +2,7 @@
 // 收发消息：register / ping / fetch-response。server→前端的 fetch 由 registry.fetchFromClient 触发。
 
 import { WebSocketServer } from "ws";
-import { stripFrontendBase } from "./config.mjs";
+import { apiPath } from "./config.mjs";
 
 const HEARTBEAT_CHECK_INTERVAL_MS = 15_000;
 const HEARTBEAT_TIMEOUT_MS = 60_000;
@@ -30,9 +30,9 @@ export function attachRuntimeWebSocket(server, registry) {
 
   server.on("upgrade", (request, socket, head) => {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
-    // 剥前端 base 前缀后匹配 /ws（前端 WS URL 带 base，如 /app/ws）
-    if (stripFrontendBase(url.pathname) !== "/ws") {
-      // 非 /ws 升级，交还（实际无其他 WS，直接销毁）
+    // WS 在 apiPrefix 下：/webgrp/ws
+    if (url.pathname !== apiPath("/ws")) {
+      // 非 /webgrp/ws 升级，交还（实际无其他 WS，直接销毁）
       socket.destroy();
       return;
     }

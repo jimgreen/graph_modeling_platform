@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { createImageServer } from "./image-server.mjs";
+import { createImageServer } from "./server.mjs";
 import { backendPort, frontendPort, host } from "./config.mjs";
 
 const imagePort = backendPort;

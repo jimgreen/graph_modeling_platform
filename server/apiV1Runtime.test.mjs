@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeEach, afterEach } from "vitest";
 import { WebSocket } from "ws";
-import { createImageServer } from "./image-server.mjs";
+import { createImageServer } from "./server.mjs";
 import { apiPath } from "./config.mjs";
 
 // /webgrp/v1/runtime/* 集成测试：起真实 image-server（含 WS 桥接 + runtime 路由），
@@ -14,7 +14,7 @@ async function startServer() {
   server = await createImageServer({ port: 0, host: "127.0.0.1" });
   const port = server.address().port;
   baseUrl = `http://127.0.0.1:${port}`;
-  wsUrl = `ws://127.0.0.1:${port}/ws`;
+  wsUrl = `ws://127.0.0.1:${port}/webgrp/ws`;
 }
 
 beforeEach(async () => {

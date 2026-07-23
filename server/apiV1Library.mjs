@@ -1,8 +1,8 @@
 // /webgrp/v1 图元库域 handler：categories、devices、measurements、device-definitions、templates、library（聚合）。
-// 复用 image-server.mjs：readDeviceLibraryConfig、readMeasurementConfig、eSectionColumns、staticComponentLibraryByKind。
+// 复用 server.mjs：readDeviceLibraryConfig、readMeasurementConfig、eSectionColumns、staticComponentLibraryByKind。
 // categories/devices 为 server 端可离线产出的结构化元数据（非前端完整分类树，决策 A）。
 
-import { readDeviceLibraryConfig, readMeasurementConfig, eSectionColumns, staticComponentLibraryByKind } from "./image-server.mjs";
+import { readDeviceLibraryConfig, readMeasurementConfig, eSectionColumns, staticComponentLibraryByKind } from "./server.mjs";
 import { sendV1Json, sendV1Error } from "./v1Response.mjs";
 
 // 图元分类 bases（静态，与前端 DEFAULT_CATEGORY_LIBRARIES 对齐）

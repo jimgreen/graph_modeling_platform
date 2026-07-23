@@ -24,6 +24,8 @@ const measurementConfigPath = join(settingsDataDir, "measurement-config.json");
 const deviceLibraryDataDir = join(dataRoot, "device-library");
 const deviceLibraryPath = join(deviceLibraryDataDir, "library.json");
 const iconLibraryDataDir = join(dataRoot, "icon-library");
+const iconLibraryBase = apiPath("/icon-library");
+const iconLibraryBaseSlash = iconLibraryBase + "/";
 const maxImageBodyBytes = 16 * 1024 * 1024;
 const maxIconLibraryImportBodyBytes = 128 * 1024 * 1024;
 const maxSchemeBodyBytes = 64 * 1024 * 1024;
@@ -3662,11 +3664,11 @@ function isPathInsideStaticRoot(targetPath, staticRoot) {
 }
 
 async function serveIconLibraryAsset(request, response, url) {
-  if (request.method !== "GET" || (url.pathname !== "/icon-library" && !url.pathname.startsWith("/icon-library/"))) {
+  if (request.method !== "GET" || (url.pathname !== iconLibraryBase && !url.pathname.startsWith(iconLibraryBaseSlash))) {
     return false;
   }
   const relativeUrlPath =
-    url.pathname === "/icon-library" || url.pathname === "/icon-library/" ? "index.html" : url.pathname.slice("/icon-library/".length);
+    url.pathname === iconLibraryBase || url.pathname === iconLibraryBase + "/" ? "index.html" : url.pathname.slice(iconLibraryBaseSlash.length);
   let decodedPath;
   try {
     decodedPath = decodeURIComponent(relativeUrlPath);
@@ -3707,7 +3709,7 @@ async function serveStaticAsset(request, response, url, staticRoot) {
   }
   const pathname = url.pathname;
   // /api、/ws 不走静态托管
-  if (pathname === "/ws" || pathname.startsWith(apiPrefix + "/")) {
+  if (pathname === apiPath("/ws") || pathname.startsWith(apiPrefix + "/")) {
     return false;
   }
   const safePathname = pathname === "/" ? "/index.html" : pathname;

@@ -72,8 +72,8 @@ const errorMessageFrom = async (action: () => Promise<unknown>) => {
 describe("icon library catalog utilities", () => {
   test("builds stable category keys and root-relative icon urls", () => {
     expect(iconLibraryCategoryKey("docer-free-compatible", "electric-power")).toBe("docer-free-compatible::electric-power");
-    expect(iconLibraryIconUrl("/icon-library/docer-free-compatible/", "electric-power/ac source.svg")).toBe(
-      "/icon-library/docer-free-compatible/electric-power/ac%20source.svg"
+    expect(iconLibraryIconUrl("/webgrp/icon-library/docer-free-compatible/", "electric-power/ac source.svg")).toBe(
+      "/webgrp/icon-library/docer-free-compatible/electric-power/ac%20source.svg"
     );
   });
 
@@ -86,7 +86,7 @@ describe("icon library catalog utilities", () => {
       libraryId: "docer-free-compatible",
       categoryKey: "docer-free-compatible::electric-power",
       categoryLabel: "电力设备",
-      url: "/icon-library/docer-free-compatible/electric-power/ac-source.svg"
+      url: "/webgrp/icon-library/docer-free-compatible/electric-power/ac-source.svg"
     });
     expect(icons[0].searchText).toContain("交流电源");
     expect(icons[0].searchText).toContain("source");
@@ -173,7 +173,7 @@ describe("icon library catalog utilities", () => {
 
     expect(message).toContain("读取分类图标库失败。");
     expect(message).toContain("返回了 HTML 页面");
-    expect(message).toContain("/icon-library/catalog.json");
+    expect(message).toContain("/webgrp/icon-library/catalog.json");
     expect(message).not.toContain("Unexpected token");
   });
 
@@ -182,7 +182,7 @@ describe("icon library catalog utilities", () => {
 
     expect(message).toContain("读取“稻壳兼容”图标清单失败。");
     expect(message).toContain("返回了 HTML 页面");
-    expect(message).toContain("/icon-library/docer-free-compatible/manifest.json");
+    expect(message).toContain("/webgrp/icon-library/docer-free-compatible/manifest.json");
     expect(message).not.toContain("Unexpected token");
   });
 });

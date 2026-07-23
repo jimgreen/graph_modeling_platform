@@ -22,7 +22,7 @@ async function startRuntimeServer() {
   });
   const port = httpServer.address().port;
   baseUrl = `http://127.0.0.1:${port}`;
-  wsUrl = `ws://127.0.0.1:${port}/ws`;
+  wsUrl = `ws://127.0.0.1:${port}/webgrp/ws`;
 }
 
 function connectClient(clientId) {

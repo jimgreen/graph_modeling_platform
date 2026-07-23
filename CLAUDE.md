@@ -31,7 +31,7 @@ graph_modeling_platform/
 | 设备类型定义 | `src/model.ts` | 核心模型 |
 | React 主组件 | `src/App.tsx` | 应用主逻辑（含 __appScope 装配） |
 | 视图渲染 | `src/appExtracted/appView.tsx` | topbar/画布/面板渲染 |
-| 后端 API | `server/image-server.mjs` | 图片/方案/配置 REST + /swigger |
+| 后端 API | `server/server.mjs` | 图片/方案/配置 REST + /swigger |
 | 第三方 v1 API | `server/apiV1*.mjs` | 只读信封 API（schemes/library/runtime）+ 控制台写操作（control） |
 | 运行时态桥接 | `server/runtimeWs.mjs` + `src/runtimeWsClient.ts` | WS 桥接前端 |
 | 接口文档页 | `server/swaggerPage.mjs` → `/swigger` | 在线接口文档与测试 |
@@ -44,7 +44,7 @@ graph_modeling_platform/
 | App | 组件 | src/App.tsx | 主应用组件，装配 __appScope |
 | renderAppView | 函数 | src/appExtracted/appView.tsx | 渲染整体视图 |
 | DeviceKind | 类型 | src/model.ts | 设备类型枚举 |
-| createImageServer | 函数 | server/image-server.mjs | 后端服务创建（含 WS 挂载） |
+| createImageServer | 函数 | server/server.mjs | 后端服务创建（含 WS 挂载） |
 | attachRuntimeWebSocket | 函数 | server/runtimeWs.mjs | /ws 升级 + 客户端注册表 |
 | createRuntimeWsClient | 函数 | src/runtimeWsClient.ts | 前端 WS 客户端 |
 | buildSvgDocument | 函数 | src/appExtracted/appPersistenceLibraryExport.tsx | 自包含 SVG 导出 |

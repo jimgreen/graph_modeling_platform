@@ -1,6 +1,6 @@
-import { frontendPath } from "./config";
+import { apiPath } from "./config";
 
-export const ICON_LIBRARY_CATALOG_URL = frontendPath("/icon-library/catalog.json");
+export const ICON_LIBRARY_CATALOG_URL = apiPath("/icon-library/catalog.json");
 export const ICON_LIBRARY_PAGE_SIZE = 120;
 
 const CATALOG_CACHE_KEY = "graph-modeling-platform:icon-library:catalog:v2";
@@ -187,9 +187,13 @@ function writeCacheJson(key: string, value: unknown) {
 }
 
 const normalizeRoot = (root: string, libraryId: string) => {
-  const fallback = `/icon-library/${libraryId}`;
-  const normalized = String(root || fallback).replace(/\/+$/u, "");
-  return frontendPath(normalized.startsWith("/") ? normalized : fallback);
+  const fallback = apiPath(`/icon-library/${libraryId}`);
+  if (!root) return fallback;
+  // 兼容旧数据：/icon-library/... -> /webgrp/icon-library/...
+  if (root.startsWith("/icon-library/")) return apiPath(root);
+  // 新数据已含 apiPrefix，直接使用
+  const normalized = root.replace(/\/+$/u, "");
+  return normalized.startsWith("/") ? normalized : fallback;
 };
 
 const encodeIconFilePath = (file: string) =>

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, test, beforeEach, afterEach } from "vitest";
 import AdmZip from "adm-zip";
-import { createImageServer } from "./image-server.mjs";
+import { createImageServer } from "./server.mjs";
 import { encodeSchemePath } from "./schemePath.mjs";
 import { apiPath } from "./config.mjs";
 

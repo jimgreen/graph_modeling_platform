@@ -2981,7 +2981,7 @@ const manifest = {
   generatedAt: sourceAudit.checkedAt,
   sourcePolicy:
     "未复制稻壳受权益限制的 SVG；细分设备图标优先复用本地开源、Fluent 或平台已有基础图标；稻壳接口核验记录见 source-audit.json。",
-  root: "/icon-library/docer-free-compatible",
+  root: "/webgrp/icon-library/docer-free-compatible",
   categories: [],
 };
 

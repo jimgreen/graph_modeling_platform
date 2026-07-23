@@ -1,6 +1,6 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
-import { host, backendPort, frontendPort, apiPrefix, frontendPrefix, escapeRegExp } from "./server/config.mjs";
+import { host, backendPort, frontendPort, apiPrefix, frontendPrefix } from "./server/config.mjs";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -40,27 +40,11 @@ const frontendManualChunks = (id: string) => {
 };
 
 const backendProxyTarget = `http://${host}:${backendPort}`;
-// 前端 base 子路径：非 API 请求（图标库/WS）带 frontendPrefix 前缀，代理 rewrite 剥前缀转发后端根。
-// 默认 / 时 fe 为空，key 退化为 /icon-library、/ws，rewrite 为 undefined（no-op）。
-const feBaseNoSlash = frontendPrefix === "/" ? "" : frontendPrefix.replace(/\/+$/g, "");
-const stripFe = feBaseNoSlash
-  ? (path: string) => path.replace(new RegExp(`^${escapeRegExp(feBaseNoSlash)}`), "") || "/"
-  : undefined;
 const backendProxy = {
   [apiPrefix]: {
     target: backendProxyTarget,
-    changeOrigin: true
-  },
-  [`${feBaseNoSlash}/icon-library`]: {
-    target: backendProxyTarget,
     changeOrigin: true,
-    rewrite: stripFe
-  },
-  [`${feBaseNoSlash}/ws`]: {
-    target: backendProxyTarget,
-    ws: true,
-    changeOrigin: true,
-    rewrite: stripFe
+    ws: true
   }
 };
 

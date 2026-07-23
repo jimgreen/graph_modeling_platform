@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, test, afterEach, beforeEach } from "vitest";
-import { createImageServer } from "./image-server.mjs";
+import { createImageServer } from "./server.mjs";
 import { apiPath } from "./config.mjs";
 
 // HTTP 集成测试：起真实 server（临时端口 + tmpdir 静态目录），打真实请求。
@@ -76,10 +76,10 @@ describe("静态资源分流", () => {
     expect(JSON.parse(text).error).toBeTruthy();
   });
 
-  test("/ws 不被静态托管拦截（后续 WS 升级处理，此处 GET 未命中走 404 不返 HTML）", async () => {
-    const { status } = await fetchPath("/ws");
-    // /ws 不匹配静态文件 index.html 之外的规则；当前无 WS handler，路由未命中 → 静态 fallback 返 index.html
-    // 关键：/ws 不应返回静态 JS/资源。此处验证不崩即可，WS 升级由 T2 实现。
+  test("/webgrp/ws 不被静态托管拦截（后续 WS 升级处理，此处 GET 未命中走 404 不返 HTML）", async () => {
+    const { status } = await fetchPath("/webgrp/ws");
+    // /webgrp/ws 不匹配静态文件 index.html 之外的规则；当前无 WS handler，路由未命中 → 静态 fallback 返 index.html
+    // 关键：/webgrp/ws 不应返回静态 JS/资源。此处验证不崩即可，WS 升级由 T2 实现。
     expect([200, 404]).toContain(status);
   });
 

@@ -111,7 +111,7 @@ export async function startE2EEnvironment({ dataDir }) {
     IMAGE_SERVER_HOST: E2E_HOST,
     GRAPH_MODEL_DATA_DIR: dataDir
   };
-  const imageServer = spawnServer("node", ["server/image-server.mjs"], imageEnv, "image-server");
+  const imageServer = spawnServer("node", ["server/server.mjs"], imageEnv, "image-server");
   await waitForPort(E2E_HOST, Number(E2E_IMAGE_PORT));
 
   // 2. Vite dev server（IMAGE_SERVER_PORT 贯通代理）
