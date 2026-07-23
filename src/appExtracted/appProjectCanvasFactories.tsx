@@ -3814,8 +3814,8 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
         <section className="measurement-editor-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="measurement-editor-title">
           <header>
             <div>
-              <h2 id="measurement-editor-title">修改量测信息</h2>
-              <p>{node.name}：共 {measurementEditorRows.length} 项量测，可在同一张表中修改量测名称、位置和显示参数。</p>
+              <h2 id="measurement-editor-title">修改量测显示定义</h2>
+              <p>{node.name}：共 {measurementEditorRows.length} 项量测，可在同一窗口中修改显示状态、布局、样式、量测名称、位置和测点。</p>
             </div>
             <button type="button" onClick={() => setMeasurementEditorDialog(null)}>关闭</button>
           </header>

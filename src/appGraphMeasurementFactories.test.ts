@@ -949,6 +949,7 @@ describe("measurement canvas interactions", () => {
         width: 80
       }),
       selectedMeasurementGroup: null,
+      openMeasurementEditorForNode: vi.fn(),
       visibleNodeById: new Map([
         [
           "node-42",
@@ -1057,6 +1058,26 @@ describe("measurement canvas interactions", () => {
     });
 
     expect(renderMeasurementGroup(draggedMeasurementGroup)).not.toBeNull();
+  });
+
+  test("opens the measurement display editor from a measurement group double click", () => {
+    const openMeasurementEditorForNode = vi.fn();
+    const renderMeasurementGroup = createMeasurementGroupRenderer({
+      dragging: null,
+      draggingNodeIdSet: new Set<string>(),
+      openMeasurementEditorForNode
+    });
+    const rendered = renderMeasurementGroup(draggedMeasurementGroup) as ReactElement<any>;
+    const event = {
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn()
+    };
+
+    rendered.props.onDoubleClick(event);
+
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(event.stopPropagation).toHaveBeenCalled();
+    expect(openMeasurementEditorForNode).toHaveBeenCalledWith(expect.objectContaining({ id: "node-42" }));
   });
 
   test("renders measurement markup inside the single node origin ghost", () => {

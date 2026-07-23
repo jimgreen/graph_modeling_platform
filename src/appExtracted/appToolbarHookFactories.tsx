@@ -146,7 +146,7 @@ export function createPlaceFloatingToolbar(__appScope: Record<string, any>) {
 
 export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
   return (group: MeasurementGroup) => {
-  const { beginMeasurementDrag, dragging, draggingNodeIdSet, formatSvgNumber, g, measurementGroupBackgroundColor, measurementGroupBorderColor, measurementGroupBorderDashArray, measurementGroupBorderWidth, measurementGroupCanvasPosition, measurementGroupRenderMetrics, rect, selectedMeasurementGroup, text, title, visibleNodeById } = __appScope;
+  const { beginMeasurementDrag, dragging, draggingNodeIdSet, formatSvgNumber, g, measurementGroupBackgroundColor, measurementGroupBorderColor, measurementGroupBorderDashArray, measurementGroupBorderWidth, measurementGroupCanvasPosition, measurementGroupRenderMetrics, openMeasurementEditorForNode, rect, selectedMeasurementGroup, text, title, visibleNodeById } = __appScope;
     const node = visibleNodeById.get(group.nodeId);
     if (!node || !group.visible) {
       return null;
@@ -172,6 +172,11 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
         data-export-device-kind={node.kind}
         data-export-measurement-terminal-id={group.terminalId ?? ""}
         onPointerDown={(event) => beginMeasurementDrag(event, group)}
+        onDoubleClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openMeasurementEditorForNode(node);
+        }}
       >
         <title>{`${node.name} 动态量测；拖拽可调整位置`}</title>
         <rect
