@@ -29,15 +29,15 @@ const normalizeBase = (value) => {
 };
 
 export const host = process.env.IMAGE_SERVER_HOST ?? cfg.host ?? "127.0.0.1";
-export const frontendPort = Number(process.env.VITE_PORT ?? cfg.ports?.frontend ?? 5173);
-export const backendPort = Number(process.env.IMAGE_SERVER_PORT ?? cfg.ports?.backend ?? 5174);
+export const frontendPort = Number(process.env.VITE_PORT ?? cfg.frontend?.port ?? 5173);
+export const backendPort = Number(process.env.IMAGE_SERVER_PORT ?? cfg.backend?.port ?? 5174);
 export const apiPrefix = trimTrailingSlash(
-  process.env.GRAPH_MODEL_API_PREFIX ?? cfg.apiPrefix ?? "/webgrp"
+  process.env.GRAPH_MODEL_API_PREFIX ?? cfg.backend?.prefix ?? "/webgrp"
 );
 
 // 前端 base 部署路径（Vite base）：前端应用挂在子路径下时配置，如 /app/。默认 /
 export const frontendPrefix = normalizeBase(
-  process.env.GRAPH_MODEL_FRONTEND_PREFIX ?? cfg.frontendPrefix ?? "/"
+  process.env.GRAPH_MODEL_FRONTEND_PREFIX ?? cfg.frontend?.prefix ?? "/"
 );
 
 // 剥掉前端 base 前缀（非根时）：后端入口把 /app/icon-library/x 还原为 /icon-library/x；

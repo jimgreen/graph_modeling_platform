@@ -14,8 +14,5 @@ export const FRONTEND_BASE: string =
 export const frontendPath = (subPath: string): string =>
   `${FRONTEND_BASE.replace(/\/+$/u, "")}${subPath}`;
 
-// 转义正则元字符
-export const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
 // 拼接前缀 + 子路径，如 apiPath("/images") -> "/webgrp/images"
 export const apiPath = (subPath: string): string => `${API_PREFIX}${subPath}`;
