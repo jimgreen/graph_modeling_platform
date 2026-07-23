@@ -1,6 +1,6 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
-import { backendPort, frontendPort, apiPrefix, frontendApiPrefix, escapeRegExp } from "./server/config.mjs";
+import { host, backendPort, frontendPort, apiPrefix, frontendPrefix, escapeRegExp } from "./server/config.mjs";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -39,10 +39,10 @@ const frontendManualChunks = (id: string) => {
   return undefined;
 };
 
-const backendProxyTarget = `http://127.0.0.1:${backendPort}`;
-// 前端 base 子路径：非 API 请求（图标库/WS）带 frontendApiPrefix 前缀，代理 rewrite 剥前缀转发后端根。
+const backendProxyTarget = `http://${host}:${backendPort}`;
+// 前端 base 子路径：非 API 请求（图标库/WS）带 frontendPrefix 前缀，代理 rewrite 剥前缀转发后端根。
 // 默认 / 时 fe 为空，key 退化为 /icon-library、/ws，rewrite 为 undefined（no-op）。
-const feBaseNoSlash = frontendApiPrefix === "/" ? "" : frontendApiPrefix.replace(/\/+$/g, "");
+const feBaseNoSlash = frontendPrefix === "/" ? "" : frontendPrefix.replace(/\/+$/g, "");
 const stripFe = feBaseNoSlash
   ? (path: string) => path.replace(new RegExp(`^${escapeRegExp(feBaseNoSlash)}`), "") || "/"
   : undefined;
@@ -78,10 +78,10 @@ const serverWatchIgnored = [
 
 export default defineConfig({
   plugins: [react()],
-  base: frontendApiPrefix,
+  base: frontendPrefix,
   define: {
     __API_PREFIX__: JSON.stringify(apiPrefix),
-    __FRONTEND_BASE__: JSON.stringify(frontendApiPrefix)
+    __FRONTEND_BASE__: JSON.stringify(frontendPrefix)
   },
   build: {
     rollupOptions: {
@@ -92,7 +92,7 @@ export default defineConfig({
   },
   server: {
     port: frontendPort,
-    host: "127.0.0.1",
+    host,
     watch: {
       ignored: serverWatchIgnored
     },
@@ -100,7 +100,7 @@ export default defineConfig({
   },
   preview: {
     port: frontendPort,
-    host: "127.0.0.1",
+    host,
     proxy: backendProxy
   },
   test: {

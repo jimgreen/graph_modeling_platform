@@ -36,16 +36,16 @@ export const apiPrefix = trimTrailingSlash(
 );
 
 // 前端 base 部署路径（Vite base）：前端应用挂在子路径下时配置，如 /app/。默认 /
-export const frontendApiPrefix = normalizeBase(
-  process.env.GRAPH_MODEL_FRONTEND_API_PREFIX ?? cfg.frontendApiPrefix ?? "/"
+export const frontendPrefix = normalizeBase(
+  process.env.GRAPH_MODEL_FRONTEND_PREFIX ?? cfg.frontendPrefix ?? "/"
 );
 
 // 剥掉前端 base 前缀（非根时）：后端入口把 /app/icon-library/x 还原为 /icon-library/x；
 // apiPrefix 开头的 API 请求不以 base 开头，原样返回。
 export const stripFrontendBase = (pathname) => {
-  if (frontendApiPrefix === "/") return pathname;
-  return pathname.startsWith(frontendApiPrefix)
-    ? pathname.slice(frontendApiPrefix.length - 1) || "/"
+  if (frontendPrefix === "/") return pathname;
+  return pathname.startsWith(frontendPrefix)
+    ? pathname.slice(frontendPrefix.length - 1) || "/"
     : pathname;
 };
 

@@ -7,7 +7,7 @@ import { gzip } from "node:zlib";
 import { promisify } from "node:util";
 import { createHash } from "node:crypto";
 import AdmZip from "adm-zip";
-import { apiPrefix, apiPath, escapeRegExp, backendPort, host, frontendApiPrefix, stripFrontendBase } from "./config.mjs";
+import { apiPrefix, apiPath, escapeRegExp, backendPort, host, frontendPrefix, stripFrontendBase } from "./config.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = resolve(__dirname, "..");

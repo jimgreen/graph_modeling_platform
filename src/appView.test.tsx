@@ -345,7 +345,7 @@ describe("app view device definition parameter rows", () => {
   test("removes the centered transform when device library dialogs become floating", () => {
     const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
     const floatingDialogRule = styles.match(
-      /\.custom-device-dialog\.floating,\s*\.device-definition-dialog\.floating,\s*\.measurement-config-dialog\.floating\s*\{([\s\S]*?)\}/
+      /\.custom-device-dialog\.floating,\s*\.device-definition-dialog\.floating,\s*\.measurement-config-dialog\.floating,\s*\.measurement-editor-dialog\.floating\s*\{([\s\S]*?)\}/
     )?.[1] ?? "";
 
     expect(floatingDialogRule).toMatch(/transform:\s*none/);
