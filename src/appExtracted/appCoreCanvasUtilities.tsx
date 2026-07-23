@@ -1572,7 +1572,7 @@ export type NodeDoubleClickDialogDragState = FloatingDialogPointerState;
 
 export type NodeDoubleClickDialogResizeState = FloatingDialogPointerState;
 
-export type DeviceLibraryDialogKind = "definition" | "custom" | "measurementConfig";
+export type DeviceLibraryDialogKind = "definition" | "custom" | "measurementConfig" | "measurementEditor";
 
 export type DeviceLibraryDialogLayouts = Partial<Record<DeviceLibraryDialogKind, FloatingDialogLayout>>;
 
@@ -1926,6 +1926,10 @@ export const MEASUREMENT_CONFIG_DIALOG_DEFAULT_WIDTH = 1180;
 
 export const MEASUREMENT_CONFIG_DIALOG_DEFAULT_HEIGHT = 760;
 
+export const MEASUREMENT_EDITOR_DIALOG_DEFAULT_WIDTH = 1080;
+
+export const MEASUREMENT_EDITOR_DIALOG_DEFAULT_HEIGHT = 690;
+
 export const DEVICE_LIBRARY_DIALOG_MIN_WIDTH = 720;
 
 export const DEVICE_LIBRARY_DIALOG_MIN_HEIGHT = 420;
@@ -1956,6 +1960,13 @@ export const DEVICE_LIBRARY_DIALOG_CONFIG: Record<DeviceLibraryDialogKind, {
   measurementConfig: {
     defaultWidth: MEASUREMENT_CONFIG_DIALOG_DEFAULT_WIDTH,
     defaultHeight: MEASUREMENT_CONFIG_DIALOG_DEFAULT_HEIGHT,
+    minWidth: DEVICE_LIBRARY_DIALOG_MIN_WIDTH,
+    minHeight: DEVICE_LIBRARY_DIALOG_MIN_HEIGHT,
+    margin: DEVICE_LIBRARY_DIALOG_MARGIN
+  },
+  measurementEditor: {
+    defaultWidth: MEASUREMENT_EDITOR_DIALOG_DEFAULT_WIDTH,
+    defaultHeight: MEASUREMENT_EDITOR_DIALOG_DEFAULT_HEIGHT,
     minWidth: DEVICE_LIBRARY_DIALOG_MIN_WIDTH,
     minHeight: DEVICE_LIBRARY_DIALOG_MIN_HEIGHT,
     margin: DEVICE_LIBRARY_DIALOG_MARGIN

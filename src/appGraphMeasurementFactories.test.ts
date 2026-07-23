@@ -102,6 +102,30 @@ describe("measurement canvas interactions", () => {
     expect(setProjectMeasurements).not.toHaveBeenCalled();
   });
 
+  test("places automatically added device measurements below the device label by default", () => {
+    const config = measurementDefinitions.normalizeMeasurementConfig(measurementDefinitions.DEFAULT_MEASUREMENT_CONFIG);
+    const node = {
+      id: "ac-source-1",
+      kind: "ac-source",
+      name: "交流电源-1",
+      position: { x: 0, y: 0 },
+      size: { width: 104, height: 72 },
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1,
+      terminals: [],
+      params: {
+        _labelY: "58",
+        _labelFontSize: "14"
+      }
+    };
+
+    const [group] = measurementDefinitions.createDefaultMeasurementGroupsForNode(node as any, config);
+
+    expect(group).toBeTruthy();
+    expect(group.offset.y).toBeGreaterThanOrEqual(92);
+  });
+
   test("validates measurement type and profile compliance", () => {
     const typeMessage = measurementTypeComplianceMessage([
       {
@@ -1102,6 +1126,41 @@ describe("measurement canvas interactions", () => {
       expect(source).toContain('aria-label="量测组字体大小"');
       expect(source).toContain("groupStyleOverride");
     }
+  });
+
+  test("allows the measurement display editor dialog to be dragged by its title", () => {
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const coreSource = readFileSync(new URL("./appExtracted/appCoreCanvasUtilities.tsx", import.meta.url), "utf8");
+    const measurementDialogSource = readFileSync(
+      new URL("./appExtracted/appProjectCanvasFactories.tsx", import.meta.url),
+      "utf8"
+    );
+    const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+
+    expect(coreSource).toContain('"measurementConfig" | "measurementEditor"');
+    expect(coreSource).toContain("measurementEditor:");
+    expect(appSource).toContain("measurementEditorDialogRef");
+    expect(appSource).toContain('kind === "measurementEditor"');
+    expect(measurementDialogSource).toContain('deviceLibraryDialogStyle("measurementEditor")');
+    expect(measurementDialogSource).toContain('startDeviceLibraryDialogDrag("measurementEditor", event)');
+    expect(styles).toContain(".measurement-editor-dialog.floating");
+  });
+
+  test("renders draggable column width handles in the measurement display editor table", () => {
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const measurementDialogSource = readFileSync(
+      new URL("./appExtracted/appProjectCanvasFactories.tsx", import.meta.url),
+      "utf8"
+    );
+    const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+
+    expect(appSource).toContain("measurementEditorColumnWidths");
+    expect(appSource).toContain("startMeasurementEditorTableColumnResize");
+    expect(measurementDialogSource).toContain("<colgroup>");
+    expect(measurementDialogSource).toContain("measurementEditorColumns.map");
+    expect(measurementDialogSource).toContain("measurement-editor-column-resize");
+    expect(styles).toContain("cursor: col-resize");
+    expect(styles).toContain(".measurement-editor-column-resize");
   });
 
   test("marks measurement groups through the imperative single-node drag origin path", () => {

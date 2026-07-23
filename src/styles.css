@@ -4891,14 +4891,16 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .custom-device-dialog.floating,
 .device-definition-dialog.floating,
-.measurement-config-dialog.floating {
+.measurement-config-dialog.floating,
+.measurement-editor-dialog.floating {
   position: fixed;
   transform: none;
   max-width: none;
   max-height: none;
 }
 
-.device-library-dialog-title {
+.device-library-dialog-title,
+.measurement-editor-dialog-title {
   display: grid;
   align-content: center;
   gap: 2px;
@@ -4909,11 +4911,13 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   user-select: none;
 }
 
-.device-library-dialog-title h2 {
+.device-library-dialog-title h2,
+.measurement-editor-dialog-title h2 {
   line-height: 1.15;
 }
 
-.device-library-dialog-title p {
+.device-library-dialog-title p,
+.measurement-editor-dialog-title p {
   line-height: 1.25;
 }
 
@@ -4921,7 +4925,8 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   user-select: none;
 }
 
-.app-shell.device-library-dialog-moving .device-library-dialog-title {
+.app-shell.device-library-dialog-moving .device-library-dialog-title,
+.app-shell.device-library-dialog-moving .measurement-editor-dialog-title {
   cursor: grabbing;
 }
 
@@ -11238,6 +11243,50 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   padding: 1px;
 }
 
+.measurement-editor-table {
+  table-layout: fixed;
+}
+
+.measurement-editor-table th {
+  position: relative;
+  padding-right: 12px;
+  overflow: visible;
+  resize: none;
+}
+
+.measurement-editor-column-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.measurement-editor-column-resize {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  z-index: 2;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.measurement-editor-column-resize::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  right: 3px;
+  width: 1px;
+  height: calc(100% - 10px);
+  background: rgba(100, 116, 139, 0.28);
+}
+
+.measurement-editor-column-resize:hover::after,
+.measurement-editor-column-resize:active::after {
+  width: 2px;
+  background: #2563eb;
+}
+
 .measurement-editor-row-actions {
   display: flex;
   align-items: center;
@@ -11438,6 +11487,15 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   max-width: 520px;
   resize: horizontal;
   overflow: auto;
+}
+
+.measurement-editor-table {
+  table-layout: fixed;
+}
+
+.measurement-editor-table th {
+  overflow: visible;
+  resize: none;
 }
 
 /* popup-table-borderless-wrap: edit dialogs avoid an extra framed box around tables. */

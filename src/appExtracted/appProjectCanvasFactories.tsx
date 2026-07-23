@@ -3788,7 +3788,7 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
 
 export function createRenderMeasurementEditorDialog(__appScope: Record<string, any>) {
   return () => {
-  const { BufferedTextInput, DeferredColorInput, addMeasurementEditorDraftItem, button, confirmMeasurementEditorDialog, div, h2, header, isBrowseMode, label, measurementConfig, measurementEditorDialog, measurementEditorItemName, measurementGroupBackgroundColor, measurementTypeById, measurementTypeOptionsForMeasurementGroup, moveMeasurementEditorDraftItem, nodeById, option, p, removeMeasurementEditorDraftItem, section, select, setMeasurementEditorDialog, span, table, tbody, td, th, thead, tr, updateMeasurementEditorDraftItem, updateMeasurementEditorDraftItemPosition, updateMeasurementEditorGroupSettings } = __appScope;
+  const { BufferedTextInput, DeferredColorInput, addMeasurementEditorDraftItem, button, confirmMeasurementEditorDialog, deviceLibraryDialogLayouts, deviceLibraryDialogStyle, div, h2, header, isBrowseMode, label, measurementConfig, measurementEditorColumnWidths, measurementEditorDialog, measurementEditorDialogRef, measurementEditorItemName, measurementGroupBackgroundColor, measurementTypeById, measurementTypeOptionsForMeasurementGroup, moveMeasurementEditorDraftItem, nodeById, option, p, removeMeasurementEditorDraftItem, section, select, setMeasurementEditorDialog, span, startDeviceLibraryDialogDrag, startMeasurementEditorTableColumnResize, stopDeviceLibraryDialogEvent, table, tbody, td, th, thead, tr, updateMeasurementEditorDraftItem, updateMeasurementEditorDraftItemPosition, updateMeasurementEditorGroupSettings } = __appScope;
     if (!measurementEditorDialog) {
       return null;
     }
@@ -3807,13 +3807,45 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
     const measurementEditorRows = measurementEditorDialog.drafts.flatMap((group) =>
       group.items.map((item, itemIndex) => ({ group, groupId: group.id, item, itemIndex }))
     );
+    const measurementEditorColumns = [
+      { key: "index", label: "序号", width: 72 },
+      { key: "actions", label: "操作", width: 136 },
+      { key: "name", label: "量测名称", width: 128 },
+      { key: "position", label: "量测位置", width: 118 },
+      { key: "type", label: "量测类型", width: 128 },
+      { key: "visible", label: "显示", width: 80 },
+      { key: "sourcePoint", label: "测点", width: 170 },
+      { key: "label", label: "标签", width: 92 },
+      { key: "unit", label: "单位", width: 92 },
+      { key: "decimals", label: "小数位", width: 88 },
+      { key: "color", label: "颜色", width: 88 },
+      { key: "fontSize", label: "字号", width: 84 }
+    ];
+    const measurementEditorColumnWidth = (column: { key: string; width: number }) =>
+      measurementEditorColumnWidths[column.key] ?? column.width;
+    const measurementEditorTableWidth = measurementEditorColumns.reduce(
+      (total, column) => total + measurementEditorColumnWidth(column),
+      0
+    );
     const draftBackgroundHidden = measurementGroupBackgroundColor(draft) === "transparent";
     const draftBorderHidden = (draft.borderStyle ?? "none") === "none";
     return (
       <div className="image-picker-backdrop measurement-editor-backdrop" onPointerDown={() => setMeasurementEditorDialog(null)}>
-        <section className="measurement-editor-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="measurement-editor-title">
+        <section
+          ref={measurementEditorDialogRef}
+          className={`measurement-editor-dialog${deviceLibraryDialogLayouts.measurementEditor ? " floating" : ""}`}
+          style={deviceLibraryDialogStyle("measurementEditor")}
+          onPointerDown={stopDeviceLibraryDialogEvent}
+          onPointerUp={stopDeviceLibraryDialogEvent}
+          onPointerCancel={stopDeviceLibraryDialogEvent}
+          onLostPointerCapture={stopDeviceLibraryDialogEvent}
+          onClick={(event) => event.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="measurement-editor-title"
+        >
           <header>
-            <div>
+            <div className="measurement-editor-dialog-title" onPointerDown={(event) => startDeviceLibraryDialogDrag("measurementEditor", event)}>
               <h2 id="measurement-editor-title">修改量测显示定义</h2>
               <p>{node.name}：共 {measurementEditorRows.length} 项量测，可在同一窗口中修改显示状态、布局、样式、量测名称、位置和测点。</p>
             </div>
@@ -3978,21 +4010,27 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
             </button>
           </div>
           <div className="measurement-editor-table-wrap">
-            <table className="measurement-editor-table">
+            <table className="measurement-editor-table" style={{ width: `${measurementEditorTableWidth}px` }}>
+              <colgroup>
+                {measurementEditorColumns.map((column) => (
+                  <col key={column.key} style={{ width: `${measurementEditorColumnWidth(column)}px` }} />
+                ))}
+              </colgroup>
               <thead>
                 <tr>
-                  <th>序号</th>
-                  <th>操作</th>
-                  <th>量测名称</th>
-                  <th>量测位置</th>
-                  <th>量测类型</th>
-                  <th>显示</th>
-                  <th>测点</th>
-                  <th>标签</th>
-                  <th>单位</th>
-                  <th>小数位</th>
-                  <th>颜色</th>
-                  <th>字号</th>
+                  {measurementEditorColumns.map((column) => (
+                    <th key={column.key} style={{ width: `${measurementEditorColumnWidth(column)}px` }}>
+                      <span className="measurement-editor-column-title">{column.label}</span>
+                      <span
+                        className="measurement-editor-column-resize"
+                        role="separator"
+                        aria-orientation="vertical"
+                        aria-label={`调整${column.label}列宽`}
+                        title="拖拽调整列宽"
+                        onPointerDown={(event) => startMeasurementEditorTableColumnResize(column.key, column.width, event)}
+                      />
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>

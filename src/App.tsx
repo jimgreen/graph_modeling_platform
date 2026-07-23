@@ -1245,6 +1245,7 @@ Object.assign(__appScope, { deviceLibraryDialogResize, setDeviceLibraryDialogRes
 const deviceDefinitionDialogRef = useRef<HTMLElement | null>(null); Object.assign(__appScope, { deviceDefinitionDialogRef });
 const customDeviceDialogRef = useRef<HTMLElement | null>(null); Object.assign(__appScope, { customDeviceDialogRef });
 const measurementConfigDialogRef = useRef<HTMLElement | null>(null); Object.assign(__appScope, { measurementConfigDialogRef });
+const measurementEditorDialogRef = useRef<HTMLElement | null>(null); Object.assign(__appScope, { measurementEditorDialogRef });
 const [layerAssignmentDialogOpen, setLayerAssignmentDialogOpen] = useState(false);
 Object.assign(__appScope, { layerAssignmentDialogOpen, setLayerAssignmentDialogOpen });
 const [layerAssignmentTargetId, setLayerAssignmentTargetId] = useState("");
@@ -1261,6 +1262,27 @@ const [measurementConfigSaveStatus, setMeasurementConfigSaveStatus] = useState<"
 Object.assign(__appScope, { measurementConfigSaveStatus, setMeasurementConfigSaveStatus });
 const [measurementEditorDialog, setMeasurementEditorDialog] = useState<MeasurementEditorDialogState>(null);
 Object.assign(__appScope, { measurementEditorDialog, setMeasurementEditorDialog });
+const [measurementEditorColumnWidths, setMeasurementEditorColumnWidths] = useState<Record<string, number>>({});
+const startMeasurementEditorTableColumnResize = (columnKey: string, defaultWidth: number, event: PointerEvent<HTMLElement>) => {
+  event.preventDefault();
+  event.stopPropagation();
+  const startX = event.clientX;
+  const headerCell = event.currentTarget.parentElement;
+  const startWidth = measurementEditorColumnWidths[columnKey] ?? headerCell?.getBoundingClientRect().width ?? defaultWidth;
+  const handlePointerMove = (moveEvent: globalThis.PointerEvent) => {
+    const nextWidth = clampNumber(Math.round(startWidth + moveEvent.clientX - startX), 56, 520);
+    setMeasurementEditorColumnWidths((current) => ({ ...current, [columnKey]: nextWidth }));
+  };
+  const handlePointerUp = () => {
+    window.removeEventListener("pointermove", handlePointerMove);
+    window.removeEventListener("pointerup", handlePointerUp);
+    window.removeEventListener("pointercancel", handlePointerUp);
+  };
+  window.addEventListener("pointermove", handlePointerMove);
+  window.addEventListener("pointerup", handlePointerUp, { once: true });
+  window.addEventListener("pointercancel", handlePointerUp, { once: true });
+};
+Object.assign(__appScope, { measurementEditorColumnWidths, setMeasurementEditorColumnWidths, startMeasurementEditorTableColumnResize });
 const [measurementDrag, setMeasurementDrag] = useState<MeasurementDragState>(null);
 Object.assign(__appScope, { measurementDrag, setMeasurementDrag });
 const [topologyErrors, setTopologyErrors] = useState<TopologyValidationError[]>([]);
@@ -4996,6 +5018,8 @@ const deviceLibraryDialogRefForKind = (kind: DeviceLibraryDialogKind) =>
       ? deviceDefinitionDialogRef
       : kind === "measurementConfig"
         ? measurementConfigDialogRef
+        : kind === "measurementEditor"
+          ? measurementEditorDialogRef
         : customDeviceDialogRef;
 Object.assign(__appScope, { deviceLibraryDialogRefForKind });
 const currentDeviceLibraryDialogRect = createCurrentDeviceLibraryDialogRect(__appScope); Object.assign(__appScope, { currentDeviceLibraryDialogRect });

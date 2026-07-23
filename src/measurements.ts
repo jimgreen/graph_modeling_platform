@@ -1,4 +1,5 @@
 import {
+  DEFAULT_DEVICE_LABEL_FONT_SIZE,
   describeContainerTerminalAssociations,
   getSafeNodeScaleX,
   getSafeNodeScaleY,
@@ -742,6 +743,24 @@ function measurementSourcePointForProfileItem(nodeId: string, item: Pick<DeviceM
   return terminalId ? `${nodeId}.${terminalId}.${sourceKey}` : `${nodeId}.${sourceKey}`;
 }
 
+function numericNodeParam(node: ModelNode, key: string, fallback: number) {
+  const parsed = Number(node.params[key]);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function defaultMeasurementGroupDeviceOffsetY(node: ModelNode) {
+  const baseOffset = Math.round(node.size.height / 2 + 42);
+  if (node.params._labelVisible === "0") {
+    return baseOffset;
+  }
+  const labelY = numericNodeParam(node, "_labelY", Math.round(node.size.height / 2 + 22));
+  if (labelY < node.size.height / 2) {
+    return baseOffset;
+  }
+  const labelFontSize = Math.max(6, numericNodeParam(node, "_labelFontSize", DEFAULT_DEVICE_LABEL_FONT_SIZE));
+  return Math.max(baseOffset, Math.round(labelY + labelFontSize * 2.4));
+}
+
 function defaultMeasurementGroupOffsetForNode(node: ModelNode, terminal?: ModelNode["terminals"][number]): { x: number; y: number } {
   const rotateOffset = (offset: { x: number; y: number }) => {
     const radians = degreesToRadians(node.rotation);
@@ -753,7 +772,7 @@ function defaultMeasurementGroupOffsetForNode(node: ModelNode, terminal?: ModelN
     };
   };
   if (!terminal) {
-    return { x: 0, y: Math.round(node.size.height / 2 + 42) };
+    return { x: 0, y: defaultMeasurementGroupDeviceOffsetY(node) };
   }
   const anchor = terminal.anchor;
   if (Math.abs(anchor.x) >= Math.abs(anchor.y) && Math.abs(anchor.x) > 0.001) {
