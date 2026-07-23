@@ -3650,9 +3650,7 @@ ${scopedBackgroundSvg}
     }
     return firstNonZeroExportVoltageValue([
       node.params.vbase,
-      node.params.voltageLevel,
-      node.params.ratedVoltage,
-      node.params.voltage
+      node.params.voltageLevel
     ]) || rawTerminalVoltage;
   };
   const exportVoltageClassSuffix = (voltage: string) => exportVoltageValue(voltage).replace(/[^A-Za-z0-9_-]+/g, "_") || "0";
@@ -3685,9 +3683,7 @@ ${scopedBackgroundSvg}
     }
     const voltage = terminal ? terminalExportVoltage(node, terminal) : firstNonZeroExportVoltageValue([
       node.params.vbase,
-      node.params.voltageLevel,
-      node.params.ratedVoltage,
-      node.params.voltage
+      node.params.voltageLevel
     ]) || "0";
     return { type, voltage };
   };
@@ -3707,19 +3703,24 @@ ${scopedBackgroundSvg}
     if (isStaticNode(node)) {
       return "";
     }
-    if (colorDisplayMode === "voltage") {
-      const terminalVoltageDescriptors = node.terminals
-        .filter((terminal) => isExportElectricTerminalType(terminal.type))
-        .map((terminal) => `${terminal.type}:${terminalExportVoltage(node, terminal)}`);
-      if (new Set(terminalVoltageDescriptors).size <= 1) {
-        return "";
-      }
-    }
     if (node.terminals.length === 0) {
       const descriptor = nodeExportVoltageDescriptor(node);
       return descriptor
         ? ` voltage-type="${descriptor.type}" vbase="${escapeXml(exportVoltageValue(descriptor.voltage))}"`
         : "";
+    }
+    const terminalVoltageDescriptors = node.terminals
+      .filter((terminal) => isExportElectricTerminalType(terminal.type))
+      .map((terminal) => ({
+        type: terminal.type,
+        voltage: terminalExportVoltage(node, terminal)
+      }));
+    if (terminalVoltageDescriptors.length > 0) {
+      const descriptorKeys = terminalVoltageDescriptors.map((descriptor) => `${descriptor.type}:${exportVoltageValue(descriptor.voltage)}`);
+      if (new Set(descriptorKeys).size <= 1) {
+        const descriptor = terminalVoltageDescriptors[0];
+        return ` voltage-type="${descriptor.type}" vbase="${escapeXml(exportVoltageValue(descriptor.voltage))}"`;
+      }
     }
     if (node.terminals.length === 1) {
       const terminal = node.terminals[0];

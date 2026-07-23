@@ -1257,14 +1257,51 @@ describe("SVG export", () => {
     expect(svg).toContain('class="ldcv750"');
     expect(svg).not.toContain('class="export-edge');
     for (const nodeId of ["ac-source-10", "ac-bus-10", "dc-source-750", "dc-bus-750"]) {
-      expect(svgDeviceUseTag(svg, nodeId)).not.toContain("vbase");
-      expect(svgDeviceUseTag(svg, nodeId)).not.toContain("voltage-type");
+      expect(svgDeviceUseTag(svg, nodeId)).toContain("vbase");
+      expect(svgDeviceUseTag(svg, nodeId)).toContain("voltage-type");
     }
     for (const edgeId of ["edge-1", "edge-2"]) {
       expect(svgEdgeGroupTag(svg, edgeId)).not.toContain("vbase");
       expect(svgEdgeGroupTag(svg, edgeId)).not.toContain("voltage-type");
       expect(svgEdgeGroupTag(svg, edgeId)).not.toContain("edge-id=");
     }
+  });
+
+  test("exports every electric device voltage base and colors by voltage base instead of rated voltage", () => {
+    const acSource = createDefaultNode("ac-source", { x: 120, y: 120 });
+    const acLoad = createDefaultNode("ac-load", { x: 260, y: 120 });
+    acSource.id = "ac-source-vbase";
+    acLoad.id = "ac-load-vbase";
+    acSource.terminals[0].vbase = "10";
+    acLoad.terminals[0].vbase = "10";
+    acSource.params.ratedVoltage = "35";
+    acLoad.params.ratedVoltage = "35";
+    const colorPalette = {
+      ...DEFAULT_COLOR_PALETTE,
+      voltage: {
+        ...DEFAULT_COLOR_PALETTE.voltage,
+        "ac:10": "#aa0000",
+        "ac:35": "#00aa00"
+      }
+    };
+
+    const svg = buildSvgDocument([acSource, acLoad], [], {
+      width: 420,
+      height: 240,
+      colorDisplayMode: "voltage",
+      colorPalette
+    });
+    const acSourceTag = svgDeviceUseTag(svg, acSource.id);
+    const acLoadTag = svgDeviceUseTag(svg, acLoad.id);
+
+    expect(acSourceTag).toContain('class="kv10"');
+    expect(acSourceTag).toContain('voltage-type="ac"');
+    expect(acSourceTag).toContain('vbase="10"');
+    expect(acLoadTag).toContain('class="kv10"');
+    expect(acLoadTag).toContain('vbase="10"');
+    expect(acSourceTag).not.toContain("kv35");
+    expect(acLoadTag).not.toContain("kv35");
+    expect(svg).toContain(".kv10{fill:#aa0000;stroke:#aa0000;stroke-width:1;color:#aa0000}");
   });
 
   test("keeps per-terminal voltage metadata only for mixed-voltage devices in voltage color mode", () => {
@@ -1286,6 +1323,8 @@ describe("SVG export", () => {
     const mixedTag = svgDeviceUseTag(svg, mixedConverter.id);
 
     expect(uniformTag).toContain('class="kv110"');
+    expect(uniformTag).toContain('vbase="110"');
+    expect(uniformTag).toContain('voltage-type="ac"');
     expect(uniformTag).not.toContain("vbase-");
     expect(uniformTag).not.toContain("voltage-type-");
     expect(mixedTag).toContain('class="dcv750"');
