@@ -2011,7 +2011,7 @@ const manifest = {
     "使用 MIT 许可的 Microsoft Fluent UI System Icons；未复制 Microsoft Office 品牌图标或专有 Office 内置图标；同一个 Fluent 源图标只保留一次，避免跨分类重复。",
   packageName,
   packageVersion,
-  root: "/webgrp/icon-library/office-fluent-compatible",
+  root: "/icon-library/office-fluent-compatible",
   categories: [],
 };
 

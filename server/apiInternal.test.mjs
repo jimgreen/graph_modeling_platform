@@ -18,6 +18,7 @@ let createImageServer;
 beforeAll(async () => {
   dataDir = await mkdtemp(join(tmpdir(), "api-internal-"));
   process.env.GRAPH_MODEL_DATA_DIR = dataDir;
+  process.env.GRAPH_MODEL_ICON_LIBRARY_DIR = join(dataDir, "icon-library");
   // 动态 import：env 已设，模块求值时 dataRoot 取 tmpdir
   ({ createImageServer } = await import("./server.mjs"));
 });
@@ -49,33 +50,6 @@ async function fetchJson(pathname, opts = {}) {
 
 const PNG_1X1 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 const SP_A = encodeURIComponent(JSON.stringify(["方案A"]));
-
-describe("图标库静态资源 /webgrp/icon-library", () => {
-  test("serves icon library files from the data directory while blocking path traversal", async () => {
-    const iconLibraryDir = join(dataDir, "icon-library");
-    await mkdir(join(iconLibraryDir, "open-source-svg", "power"), { recursive: true });
-    await writeFile(join(iconLibraryDir, "catalog.json"), "{\"name\":\"icon-library\"}", "utf-8");
-    await writeFile(
-      join(iconLibraryDir, "open-source-svg", "power", "bus.svg"),
-      "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\"><path d=\"M1 5h8\"/></svg>",
-      "utf-8"
-    );
-
-    const catalog = await fetch(`${baseUrl}/webgrp/icon-library/catalog.json`);
-    expect(catalog.status).toBe(200);
-    expect(catalog.headers.get("content-type")).toContain("application/json");
-    expect(await catalog.json()).toMatchObject({ name: "icon-library" });
-
-    const svg = await fetch(`${baseUrl}/webgrp/icon-library/open-source-svg/power/bus.svg`);
-    expect(svg.status).toBe(200);
-    expect(svg.headers.get("content-type")).toContain("image/svg+xml");
-    expect(svg.headers.get("cache-control")).toBe("no-cache");
-    expect(await svg.text()).toContain("<svg");
-
-    const traversal = await fetch(`${baseUrl}/webgrp/icon-library/%2e%2e/settings/measurement-config.json`);
-    expect(traversal.status).toBe(404);
-  });
-});
 
 // ============ 图片资源 ============
 describe("图片资源 /webgrp/images & /webgrp/image-folders", () => {
@@ -196,8 +170,8 @@ describe("图片资源 /webgrp/images & /webgrp/image-folders", () => {
     expect(delRoot.status).toBe(400);
   });
 
-  test("POST /webgrp/image-library/import 批量恢复图标库并保留资源 ID", async () => {
-    const imported = await fetchJson(apiPath("/image-library/import"), {
+  test("POST /webgrp/icon-library/import 批量恢复图标库并保留资源 ID", async () => {
+    const imported = await fetchJson(apiPath("/icon-library/import"), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({

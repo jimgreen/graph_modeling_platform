@@ -47,7 +47,7 @@ for (const libraryDir of libraryDirs) {
   const library = {
     id: manifest.name || libraryDir,
     label: manifest.label || libraryDir,
-    root: manifest.root || `/webgrp/icon-library/${libraryDir}`,
+    root: manifest.root || `/icon-library/${libraryDir}`,
     totalIcons: manifest.totalIcons || 0,
     sourcePolicy: manifest.sourcePolicy || "",
     categories: [],
@@ -163,7 +163,7 @@ function renderHtml() {
   const libraryLinks = libraries
     .map(
       (library) =>
-        `<a href=".${escapeXml(library.root.replace(/^\/webgrp\/icon-library/, ""))}/index.html">${escapeXml(library.label)}<span>${library.totalIcons}</span></a>`,
+        `<a href=".${escapeXml(library.root.replace(/^\/icon-library/, ""))}/index.html">${escapeXml(library.label)}<span>${library.totalIcons}</span></a>`,
     )
     .join("");
   const cards = searchIndex

@@ -3900,11 +3900,6 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
         response.end();
         return;
       }
-      // icon-library 静态资源（public/icon-library/），优先级高于 API 路由
-      const servedIconLibrary = await serveIconLibraryAsset(request, response, url);
-      if (servedIconLibrary) {
-        return;
-      }
       const exactRouteHandler = exactRouteHandlers.get(`${request.method} ${url.pathname}`);
       if (exactRouteHandler) {
         await exactRouteHandler({ request, response, url });
@@ -3934,6 +3929,13 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
             await route.handle({ request, response, url, match });
             return;
           }
+        }
+      }
+      // icon-library 静态资源（public/icon-library/），仅 GET 且路径匹配时处理
+      if (request.method === "GET" && url.pathname.startsWith("/icon-library/")) {
+        const servedIconLibrary = await serveIconLibraryAsset(request, response, url);
+        if (servedIconLibrary) {
+          return;
         }
       }
       // 路由未命中：prod 模式尝试静态资源托管（dev 模式 staticRoot 为空，跳过返 404）
