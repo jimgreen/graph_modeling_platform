@@ -40,11 +40,17 @@ const frontendManualChunks = (id: string) => {
 };
 
 const backendProxyTarget = `http://${host}:${backendPort}`;
+// frontendPrefix 去掉尾斜杠后拼 /icon-library，匹配 frontendPath() 产出的 URL
+const frontendBaseForProxy = frontendPrefix === "/" ? "" : frontendPrefix.replace(/\/+$/u, "");
 const backendProxy = {
   [apiPrefix]: {
     target: backendProxyTarget,
     changeOrigin: true,
     ws: true
+  },
+  [`${frontendBaseForProxy}/icon-library`]: {
+    target: backendProxyTarget,
+    changeOrigin: true
   }
 };
 

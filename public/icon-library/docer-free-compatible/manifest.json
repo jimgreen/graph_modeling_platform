@@ -3,7 +3,7 @@
   "label": "稻壳免费图库兼容图标库",
   "generatedAt": "2026-06-22T07:01:16.468Z",
   "sourcePolicy": "未复制稻壳受权益限制的 SVG；细分设备图标优先复用本地开源、Fluent 或平台已有基础图标；稻壳接口核验记录见 source-audit.json。",
-  "root": "/webgrp/icon-library/docer-free-compatible",
+  "root": "/icon-library/docer-free-compatible",
   "categories": [
     {
       "id": "electric-power",

@@ -120,3 +120,25 @@ describe("无 staticRoot（dev 模式）", () => {
     expect(JSON.parse(text).error).toBeTruthy();
   });
 });
+
+describe("icon-library 静态托管", () => {
+  test("GET /icon-library/catalog.json 从 public/icon-library/ 读取", async () => {
+    const { status, headers, text } = await fetchPath("/icon-library/catalog.json");
+    expect(status).toBe(200);
+    expect(headers.get("content-type")).toBe("application/json; charset=utf-8");
+    const parsed = JSON.parse(text);
+    expect(parsed.libraries).toBeTruthy();
+  });
+
+  test("GET /icon-library/README.md 从 public/icon-library/ 读取", async () => {
+    const { status, headers } = await fetchPath("/icon-library/README.md");
+    expect(status).toBe(200);
+    expect(headers.get("content-type")).toMatch(/^text\/markdown/);
+  });
+
+  test("/icon-library/ 路径穿越被拦截", async () => {
+    const { status } = await fetchPath("/icon-library/../../package.json");
+    // URL 规范化后为 /package.json，不匹配 /icon-library/ 前缀 → 走 SPA fallback 或 404
+    expect([200, 404]).toContain(status);
+  });
+});

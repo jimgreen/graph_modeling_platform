@@ -14,6 +14,7 @@ const repoRoot = resolve(__dirname, "..");
 // 数据根目录：默认 repo data/，可用 GRAPH_MODEL_DATA_DIR 覆盖（测试隔离用 tmpdir）
 const dataRoot = process.env.GRAPH_MODEL_DATA_DIR ? resolve(process.env.GRAPH_MODEL_DATA_DIR) : resolve(repoRoot, "data");
 const imageDataDir = join(dataRoot, "images");
+const iconDataDir = join(dataRoot, "icons");
 const manifestPath = join(imageDataDir, "manifest.json");
 const imageFoldersPath = join(imageDataDir, "folders.json");
 const schemeDataDir = join(dataRoot, "schemes");
@@ -23,9 +24,6 @@ const colorConfigPath = join(settingsDataDir, "color-config.json");
 const measurementConfigPath = join(settingsDataDir, "measurement-config.json");
 const deviceLibraryDataDir = join(dataRoot, "device-library");
 const deviceLibraryPath = join(deviceLibraryDataDir, "library.json");
-const iconLibraryDataDir = join(dataRoot, "icon-library");
-const iconLibraryBase = apiPath("/icon-library");
-const iconLibraryBaseSlash = iconLibraryBase + "/";
 const maxImageBodyBytes = 16 * 1024 * 1024;
 const maxIconLibraryImportBodyBytes = 128 * 1024 * 1024;
 const maxSchemeBodyBytes = 64 * 1024 * 1024;
@@ -275,6 +273,7 @@ async function writeJsonStoreFile(dirPath, filePath, value) {
 async function ensureStore() {
   await ensureJsonStoreFile(imageDataDir, manifestPath, []);
   await ensureJsonStoreFile(imageDataDir, imageFoldersPath, [rootImageFolder()]);
+  await mkdir(iconDataDir, { recursive: true });
 }
 
 async function readManifest() {
@@ -2967,8 +2966,12 @@ function createImageManifestItem({ name, mimeType, bytes, folderId }) {
   };
 }
 
+function getAssetDir(item) {
+  return item.dir === "icons" ? iconDataDir : imageDataDir;
+}
+
 async function writeImageAssetFile(item, bytes) {
-  await writeFile(join(imageDataDir, item.filename), bytes);
+  await writeFile(join(getAssetDir(item), item.filename), bytes);
 }
 
 function safeImageLibraryId(value) {
@@ -3055,11 +3058,12 @@ async function handleImportImageLibrary(request, response) {
       mimeType: parsed.mimeType,
       size: parsed.bytes.length,
       filename: `${asset.id}${mimeExt[parsed.mimeType]}`,
-      createdAt: asset.createdAt
+      createdAt: asset.createdAt,
+      dir: "icons"
     };
     const previous = manifestById.get(item.id);
     if (previous?.filename && previous.filename !== item.filename) {
-      await rm(join(imageDataDir, previous.filename), { force: true });
+      await rm(join(getAssetDir(previous), previous.filename), { force: true });
     }
     await writeImageAssetFile(item, parsed.bytes);
     manifestById.set(item.id, item);
@@ -3433,7 +3437,7 @@ async function handleDownload(id, response) {
     "cache-control": "public, max-age=31536000, immutable",
     "access-control-allow-origin": "*"
   });
-  createReadStream(join(imageDataDir, item.filename)).pipe(response);
+  createReadStream(join(getAssetDir(item), item.filename)).pipe(response);
 }
 
 async function handleDeleteImageAsset(id, response) {
@@ -3444,7 +3448,7 @@ async function handleDeleteImageAsset(id, response) {
     return;
   }
   await writeManifest(manifest.filter((entry) => entry.id !== id));
-  await rm(join(imageDataDir, item.filename), { force: true });
+  await rm(join(getAssetDir(item), item.filename), { force: true });
   sendJson(response, 200, { ok: true });
 }
 
@@ -3655,50 +3659,13 @@ const staticAssetMimeTypes = {
   ".woff": "font/woff",
   ".woff2": "font/woff2",
   ".ttf": "font/ttf",
-  ".map": "application/json; charset=utf-8"
+  ".map": "application/json; charset=utf-8",
+  ".md": "text/markdown; charset=utf-8"
 };
 
 function isPathInsideStaticRoot(targetPath, staticRoot) {
   const relativePath = relative(staticRoot, targetPath);
   return Boolean(relativePath) && !relativePath.startsWith("..") && !isAbsolute(relativePath);
-}
-
-async function serveIconLibraryAsset(request, response, url) {
-  if (request.method !== "GET" || (url.pathname !== iconLibraryBase && !url.pathname.startsWith(iconLibraryBaseSlash))) {
-    return false;
-  }
-  const relativeUrlPath =
-    url.pathname === iconLibraryBase || url.pathname === iconLibraryBase + "/" ? "index.html" : url.pathname.slice(iconLibraryBaseSlash.length);
-  let decodedPath;
-  try {
-    decodedPath = decodeURIComponent(relativeUrlPath);
-  } catch {
-    sendError(response, 404, "资源不存在。");
-    return true;
-  }
-  const filePath = resolve(iconLibraryDataDir, decodedPath);
-  if (!isPathInsideStaticRoot(filePath, iconLibraryDataDir)) {
-    sendError(response, 404, "资源不存在。");
-    return true;
-  }
-  try {
-    const info = await stat(filePath);
-    if (!info.isFile()) {
-      sendError(response, 404, "资源不存在。");
-      return true;
-    }
-    const ext = extname(filePath).toLowerCase();
-    response.writeHead(200, {
-      "content-type": staticAssetMimeTypes[ext] ?? "application/octet-stream",
-      "cache-control": "no-cache",
-      ...accessControlHeaders
-    });
-    createReadStream(filePath).pipe(response);
-    return true;
-  } catch {
-    sendError(response, 404, "资源不存在。");
-    return true;
-  }
 }
 
 // prod 静态资源托管：dist/ 存在时，非 /api、/ws 请求走静态文件 + SPA fallback。
@@ -3752,6 +3719,39 @@ async function serveStaticAsset(request, response, url, staticRoot) {
   return false;
 }
 
+// icon-library 静态资源：从 public/icon-library/ 读取，dev/prod 通用。
+// 前端 URL 经 frontendPath() 拼接（含 frontendPrefix），后端 stripFrontendBase 剥前缀后命中此处。
+const iconLibraryPublicDir = join(repoRoot, "public", "icon-library");
+
+async function serveIconLibraryAsset(request, response, url) {
+  const prefix = "/icon-library/";
+  if (!url.pathname.startsWith(prefix)) {
+    return false;
+  }
+  const relativePath = url.pathname.slice(prefix.length);
+  const filePath = join(iconLibraryPublicDir, relativePath);
+  if (!isPathInsideStaticRoot(filePath, iconLibraryPublicDir)) {
+    sendError(response, 404, "资源不存在。");
+    return true;
+  }
+  try {
+    const info = await stat(filePath);
+    if (info.isFile()) {
+      const ext = extname(filePath).toLowerCase();
+      response.writeHead(200, {
+        "content-type": staticAssetMimeTypes[ext] ?? "application/octet-stream",
+        "cache-control": "public, max-age=3600",
+        ...accessControlHeaders
+      });
+      createReadStream(filePath).pipe(response);
+      return true;
+    }
+  } catch {
+    // 文件不存在，fall through
+  }
+  return false;
+}
+
 export async function createImageServer({ port = 5174, host = "127.0.0.1", staticRoot } = {}) {
   const routeKey = (method, sub) => `${method} ${apiPath(sub)}`;
   const exactRouteHandlers = new Map([
@@ -3775,10 +3775,10 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
       await handleUpload(request, response);
     }],
     [routeKey("POST", "/icon-library/import"), async ({ request, response }) => {
-      await handleImportIconLibrary(request, response);
+      await handleImportImageLibrary(request, response);
     }],
     [routeKey("POST", "/image-library/import"), async ({ request, response }) => {
-      await handleImportImageLibrary(request, response);
+      await handleImportIconLibrary(request, response);
     }],
     [routeKey("GET", "/image-folders"), async ({ request, response }) => {
       const folders = await readImageFolders();
@@ -3900,8 +3900,9 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
         response.end();
         return;
       }
-      const servedIconLibraryAsset = await serveIconLibraryAsset(request, response, url);
-      if (servedIconLibraryAsset) {
+      // icon-library 静态资源（public/icon-library/），优先级高于 API 路由
+      const servedIconLibrary = await serveIconLibraryAsset(request, response, url);
+      if (servedIconLibrary) {
         return;
       }
       const exactRouteHandler = exactRouteHandlers.get(`${request.method} ${url.pathname}`);
