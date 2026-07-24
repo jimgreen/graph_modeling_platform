@@ -1,0 +1,457 @@
+{
+  "canvas": {
+    "width": 1168.0,
+    "height": 710.0
+  },
+  "nodes": [
+    {
+      "id": "bus-1",
+      "name": "bus_1",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 352.0,
+      "y": 236.0,
+      "rank": 1,
+      "order": 2
+    },
+    {
+      "id": "bus-2",
+      "name": "bus_2",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 772.0,
+      "y": 236.0,
+      "rank": 3,
+      "order": 2
+    },
+    {
+      "id": "bus-3",
+      "name": "bus_3",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 772.0,
+      "y": 120.0,
+      "rank": 3,
+      "order": 0
+    },
+    {
+      "id": "bus-4",
+      "name": "bus_4",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 214.0,
+      "y": 120.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "bus-5",
+      "name": "bus_5",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 352.0,
+      "y": 120.0,
+      "rank": 1,
+      "order": 0
+    },
+    {
+      "id": "bus-6",
+      "name": "bus_6",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 616.0,
+      "y": 120.0,
+      "rank": 2,
+      "order": 0
+    },
+    {
+      "id": "bus-7",
+      "name": "bus_7",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 904.0,
+      "y": 120.0,
+      "rank": 3,
+      "order": 1
+    },
+    {
+      "id": "bus-8",
+      "name": "bus_8",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 562.0,
+      "y": 236.0,
+      "rank": 2,
+      "order": 1
+    },
+    {
+      "id": "bus-9",
+      "name": "bus_9",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 484.0,
+      "y": 120.0,
+      "rank": 1,
+      "order": 1
+    },
+    {
+      "id": "ACGenerator-gen-1-1",
+      "name": "gen_1_1",
+      "kind": "ac-source",
+      "category": "source",
+      "x": 352.0,
+      "y": 347.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACGenerator-gen-2-2",
+      "name": "gen_2_2",
+      "kind": "ac-source",
+      "category": "source",
+      "x": 772.0,
+      "y": 347.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACGenerator-gen-3-3",
+      "name": "gen_3_3",
+      "kind": "ac-source",
+      "category": "source",
+      "x": 916.0,
+      "y": 231.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-5",
+      "name": "load_5",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 208.0,
+      "y": 232.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-7",
+      "name": "load_7",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 1048.0,
+      "y": 232.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-9",
+      "name": "load_9",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 484.0,
+      "y": 376.0,
+      "rank": 0,
+      "order": 0
+    }
+  ],
+  "edges": [
+    {
+      "id": "ACBranch-line-1-4",
+      "source": "bus-1",
+      "target": "bus-4",
+      "points": [
+        {
+          "x": 352.0,
+          "y": 236.0
+        },
+        {
+          "x": 252.0,
+          "y": 236.0
+        },
+        {
+          "x": 252.0,
+          "y": 120.0
+        },
+        {
+          "x": 214.0,
+          "y": 120.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-4-5",
+      "source": "bus-4",
+      "target": "bus-5",
+      "points": [
+        {
+          "x": 214.0,
+          "y": 120.0
+        },
+        {
+          "x": 352.0,
+          "y": 120.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-5-6",
+      "source": "bus-5",
+      "target": "bus-6",
+      "points": [
+        {
+          "x": 352.0,
+          "y": 120.0
+        },
+        {
+          "x": 352.0,
+          "y": 158.0
+        },
+        {
+          "x": 616.0,
+          "y": 158.0
+        },
+        {
+          "x": 616.0,
+          "y": 120.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-3-6",
+      "source": "bus-3",
+      "target": "bus-6",
+      "points": [
+        {
+          "x": 772.0,
+          "y": 120.0
+        },
+        {
+          "x": 616.0,
+          "y": 120.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-6-7",
+      "source": "bus-6",
+      "target": "bus-7",
+      "points": [
+        {
+          "x": 616.0,
+          "y": 120.0
+        },
+        {
+          "x": 616.0,
+          "y": 92.0
+        },
+        {
+          "x": 904.0,
+          "y": 92.0
+        },
+        {
+          "x": 904.0,
+          "y": 120.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-7-8",
+      "source": "bus-7",
+      "target": "bus-8",
+      "points": [
+        {
+          "x": 904.0,
+          "y": 120.0
+        },
+        {
+          "x": 904.0,
+          "y": 178.0
+        },
+        {
+          "x": 562.0,
+          "y": 178.0
+        },
+        {
+          "x": 562.0,
+          "y": 236.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-8-2",
+      "source": "bus-8",
+      "target": "bus-2",
+      "points": [
+        {
+          "x": 562.0,
+          "y": 236.0
+        },
+        {
+          "x": 772.0,
+          "y": 236.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-8-9",
+      "source": "bus-8",
+      "target": "bus-9",
+      "points": [
+        {
+          "x": 562.0,
+          "y": 236.0
+        },
+        {
+          "x": 562.0,
+          "y": 158.0
+        },
+        {
+          "x": 484.0,
+          "y": 158.0
+        },
+        {
+          "x": 484.0,
+          "y": 120.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-9-4",
+      "source": "bus-9",
+      "target": "bus-4",
+      "points": [
+        {
+          "x": 484.0,
+          "y": 120.0
+        },
+        {
+          "x": 484.0,
+          "y": 62.0
+        },
+        {
+          "x": 214.0,
+          "y": 62.0
+        },
+        {
+          "x": 214.0,
+          "y": 120.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACGenerator-gen-1-1-1",
+      "source": "ACGenerator-gen-1-1",
+      "target": "bus-1",
+      "points": [
+        {
+          "x": 352.0,
+          "y": 347.0
+        },
+        {
+          "x": 352.0,
+          "y": 236.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACGenerator-gen-2-2-2",
+      "source": "ACGenerator-gen-2-2",
+      "target": "bus-2",
+      "points": [
+        {
+          "x": 772.0,
+          "y": 347.0
+        },
+        {
+          "x": 772.0,
+          "y": 236.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACGenerator-gen-3-3-3",
+      "source": "ACGenerator-gen-3-3",
+      "target": "bus-3",
+      "points": [
+        {
+          "x": 916.0,
+          "y": 231.0
+        },
+        {
+          "x": 916.0,
+          "y": 178.0
+        },
+        {
+          "x": 772.0,
+          "y": 178.0
+        },
+        {
+          "x": 772.0,
+          "y": 120.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-5-5",
+      "source": "ACLoad-load-5",
+      "target": "bus-5",
+      "points": [
+        {
+          "x": 208.0,
+          "y": 232.0
+        },
+        {
+          "x": 208.0,
+          "y": 204.0
+        },
+        {
+          "x": 352.0,
+          "y": 204.0
+        },
+        {
+          "x": 352.0,
+          "y": 120.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-7-7",
+      "source": "ACLoad-load-7",
+      "target": "bus-7",
+      "points": [
+        {
+          "x": 1048.0,
+          "y": 232.0
+        },
+        {
+          "x": 994.0,
+          "y": 232.0
+        },
+        {
+          "x": 994.0,
+          "y": 120.0
+        },
+        {
+          "x": 904.0,
+          "y": 120.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-9-9",
+      "source": "ACLoad-load-9",
+      "target": "bus-9",
+      "points": [
+        {
+          "x": 484.0,
+          "y": 376.0
+        },
+        {
+          "x": 484.0,
+          "y": 120.0
+        }
+      ]
+    }
+  ]
+}

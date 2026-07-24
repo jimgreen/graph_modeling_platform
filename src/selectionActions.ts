@@ -71,6 +71,7 @@ export type CanvasLayoutUnit = {
 
 export type BuildCanvasLayoutUnitsOptions = {
   isTransformableNode?: (node: ModelNode) => boolean;
+  extraBoundsByNodeId?: ReadonlyMap<string, readonly SelectionRect[]>;
 };
 
 export const AUTO_ALIGN_DEFAULT_THRESHOLD_PX = 50;
@@ -797,6 +798,7 @@ export function buildCanvasLayoutUnits(
       .map((edge) => edge.id);
     const groupEdgeIds = uniqueIds([...groupMembers.edgeIds, ...internalEdgeIds]).filter((edgeId) => edgesById.has(edgeId));
     const groupEdges = groupEdgeIds.flatMap((edgeId) => edgesById.get(edgeId) ?? []);
+    const extraGroupBounds = groupNodeIds.flatMap((nodeId) => options.extraBoundsByNodeId?.get(nodeId) ?? []);
     const bounds = boundsForNodesAndEdges(
       groupNodeIds.flatMap((nodeId) => nodesById.get(nodeId) ?? []),
       groupEdges,
@@ -811,13 +813,14 @@ export function buildCanvasLayoutUnits(
     if (!bounds || !layoutBounds) {
       continue;
     }
+    const visibleBounds = mergeSelectionRects([bounds, ...extraGroupBounds]) ?? bounds;
     groupNodeIds.forEach((nodeId) => coveredNodeIds.add(nodeId));
     units.push({
       id: `group:${group.id}`,
       kind: "group",
       nodeIds: groupNodeIds,
       edgeIds: groupEdgeIds,
-      bounds: padSelectionRect(bounds, GROUP_LAYOUT_BOUNDS_PADDING),
+      bounds: padSelectionRect(visibleBounds, GROUP_LAYOUT_BOUNDS_PADDING),
       layoutBounds: padSelectionRect(layoutBounds, GROUP_LAYOUT_BOUNDS_PADDING)
     });
   }
@@ -829,12 +832,13 @@ export function buildCanvasLayoutUnits(
     if (!node || !(options.isTransformableNode?.(node) ?? true)) {
       continue;
     }
+    const visibleBounds = mergeSelectionRects([nodeSelectionBounds(node), ...(options.extraBoundsByNodeId?.get(node.id) ?? [])]) ?? nodeSelectionBounds(node);
     units.push({
       id: `node:${node.id}`,
       kind: "node",
       nodeIds: [node.id],
       edgeIds: [],
-      bounds: nodeSelectionBounds(node),
+      bounds: visibleBounds,
       layoutBounds: nodeLayoutBounds(node)
     });
   }
@@ -1004,6 +1008,7 @@ export type AutoSpreadNodeLayoutUnitsOptions = {
   maxIterations?: number;
   minSeparation?: number;
   bounds?: CanvasBounds;
+  avoidRects?: readonly SelectionRect[];
 };
 
 function offsetRect(rect: SelectionRect, delta: Point): SelectionRect {
@@ -1068,6 +1073,10 @@ function boundsForRects(rects: readonly SelectionRect[]): SelectionRect {
     top: Math.min(...rects.map((rect) => rect.top)),
     bottom: Math.max(...rects.map((rect) => rect.bottom))
   };
+}
+
+function mergeSelectionRects(rects: readonly SelectionRect[]): SelectionRect | null {
+  return rects.length > 0 ? boundsForRects(rects) : null;
 }
 
 function uniqueNearestValues(values: number[], limit: number) {
@@ -1366,6 +1375,9 @@ export function autoSpreadNodeLayoutUnits(
       firstBounds.left - secondBounds.left;
   });
   const placed = new PlacedRectGrid();
+  for (const avoidRect of options.avoidRects ?? []) {
+    placed.add(padRect(avoidRect, padding));
+  }
   const deltas = new Map<string, Point>();
   for (const component of orderedComponents) {
     if (component.length >= 4) {

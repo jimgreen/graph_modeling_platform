@@ -842,6 +842,39 @@ describe("canvas selection actions", () => {
     expect(movedSecond.position.x - movedFirst.position.x).toBe(secondGrouped.position.x - firstGrouped.position.x);
   });
 
+  test("auto-spread keeps moved graphics away from occupied route or annotation rectangles", () => {
+    const first = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const second = createDefaultNode("ac-load", { x: 104, y: 100 });
+    const nodes = [first, second];
+    const units = buildCanvasLayoutUnits([], nodes, nodes.map((node) => node.id), []);
+    const occupiedRect = { left: 170, right: 350, top: 40, bottom: 180 };
+
+    const arranged = autoSpreadNodeLayoutUnits(nodes, units, {
+      padding: 4,
+      avoidRects: [occupiedRect]
+    });
+    const nextUnits = buildCanvasLayoutUnits([], arranged, arranged.map((node) => node.id), []);
+
+    for (const unit of nextUnits) {
+      const overlapX = Math.min(unit.bounds.right, occupiedRect.right) - Math.max(unit.bounds.left, occupiedRect.left);
+      const overlapY = Math.min(unit.bounds.bottom, occupiedRect.bottom) - Math.max(unit.bounds.top, occupiedRect.top);
+      expect(overlapX <= 0 || overlapY <= 0).toBe(true);
+    }
+  });
+
+  test("layout units include extra node bounds such as measurement boxes", () => {
+    const node = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const measurementBounds = { left: 220, right: 340, top: 70, bottom: 140 };
+
+    const [unit] = buildCanvasLayoutUnits([], [node], [node.id], [], [], [], {
+      extraBoundsByNodeId: new Map([[node.id, [measurementBounds]]])
+    });
+
+    expect(unit.bounds.right).toBeGreaterThanOrEqual(measurementBounds.right);
+    expect(unit.bounds.top).toBeLessThanOrEqual(measurementBounds.top);
+    expect(unit.layoutBounds.right).toBeLessThan(measurementBounds.right);
+  });
+
   test("auto-spread keeps dense clusters near their original in-canvas area", () => {
     const nodes = Array.from({ length: 6 }, (_, index) =>
       createDefaultNode("ac-source", { x: 100 + (index % 2) * 4, y: 100 + Math.floor(index / 2) * 4 })

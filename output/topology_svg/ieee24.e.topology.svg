@@ -1,0 +1,192 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2462" height="1190" viewBox="0 0 2462 1190">
+<style>
+  svg { background: #f8fafc; font-family: Arial, "Microsoft YaHei", sans-serif; }
+  .edge { fill: none; stroke: #334155; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+  .node-fill { fill: #ffffff; stroke: #0f172a; stroke-width: 2; }
+  .node-bus { stroke: #0f172a; stroke-width: 6; stroke-linecap: square; }
+  .node-source .node-fill { fill: #eff6ff; stroke: #2563eb; }
+  .node-transformer .node-fill { fill: #fff7ed; stroke: #ea580c; }
+  .node-switch .node-fill { fill: #f8fafc; stroke: #475569; }
+  .node-load .node-fill { fill: #fef2f2; stroke: #dc2626; }
+  .node-device .node-fill { fill: #f8fafc; stroke: #64748b; }
+  text { fill: #1e293b; font-size: 13px; }
+</style>
+<g id="edges">
+<path id="ACBranch-line-1-2" class="edge" d="M 900.0 240.0 L 906.0 240.0 L 906.0 360.0 L 930.0 360.0"><title>bus-1 -> bus-2</title></path>
+<path id="ACBranch-line-1-3" class="edge" d="M 900.0 240.0 L 900.0 213.0 L 1519.0 213.0 L 1519.0 240.0"><title>bus-1 -> bus-3</title></path>
+<path id="ACBranch-line-1-5" class="edge" d="M 900.0 240.0 L 900.0 213.0 L 636.0 213.0 L 636.0 240.0"><title>bus-1 -> bus-5</title></path>
+<path id="ACBranch-line-2-4" class="edge" d="M 930.0 360.0 L 930.0 393.0 L 1150.0 393.0 L 1150.0 360.0"><title>bus-2 -> bus-4</title></path>
+<path id="ACBranch-line-2-6" class="edge" d="M 930.0 360.0 L 930.0 333.0 L 352.0 333.0 L 352.0 360.0"><title>bus-2 -> bus-6</title></path>
+<path id="ACBranch-line-3-9" class="edge" d="M 1519.0 240.0 L 1519.0 213.0 L 768.0 213.0 L 768.0 240.0"><title>bus-3 -> bus-9</title></path>
+<path id="ACBranch-line-4-9" class="edge" d="M 1150.0 360.0 L 1150.0 302.0 L 768.0 302.0 L 768.0 240.0"><title>bus-4 -> bus-9</title></path>
+<path id="ACBranch-line-5-10" class="edge" d="M 636.0 240.0 L 636.0 214.0 L 240.0 214.0 L 240.0 240.0"><title>bus-5 -> bus-10</title></path>
+<path id="ACBranch-line-6-10" class="edge" d="M 352.0 360.0 L 288.0 360.0 L 288.0 240.0 L 240.0 240.0"><title>bus-6 -> bus-10</title></path>
+<path id="ACBranch-line-7-8" class="edge" d="M 870.0 480.0 L 870.0 420.0 L 484.0 420.0 L 484.0 360.0"><title>bus-7 -> bus-8</title></path>
+<path id="ACBranch-line-8-9" class="edge" d="M 484.0 360.0 L 484.0 333.0 L 768.0 333.0 L 768.0 240.0"><title>bus-8 -> bus-9</title></path>
+<path id="ACBranch-line-8-10" class="edge" d="M 484.0 360.0 L 484.0 300.0 L 240.0 300.0 L 240.0 240.0"><title>bus-8 -> bus-10</title></path>
+<path id="ACBranch-line-11-13" class="edge" d="M 372.0 240.0 L 372.0 333.0 L 798.0 333.0 L 798.0 360.0"><title>bus-11 -> bus-13</title></path>
+<path id="ACBranch-line-11-14" class="edge" d="M 372.0 240.0 L 372.0 214.0 L 631.0 214.0 L 631.0 120.0"><title>bus-11 -> bus-14</title></path>
+<path id="ACBranch-line-12-13" class="edge" d="M 504.0 240.0 L 504.0 333.0 L 798.0 333.0 L 798.0 360.0"><title>bus-12 -> bus-13</title></path>
+<path id="ACBranch-line-12-23" class="edge" d="M 504.0 240.0 L 504.0 302.0 L 1123.0 302.0 L 1123.0 240.0"><title>bus-12 -> bus-23</title></path>
+<path id="ACBranch-line-13-23" class="edge" d="M 798.0 360.0 L 798.0 302.0 L 1123.0 302.0 L 1123.0 240.0"><title>bus-13 -> bus-23</title></path>
+<path id="ACBranch-line-14-16" class="edge" d="M 631.0 120.0 L 631.0 213.0 L 1387.0 213.0 L 1387.0 240.0"><title>bus-14 -> bus-16</title></path>
+<path id="ACBranch-line-15-16" class="edge" d="M 1651.0 240.0 L 1651.0 213.0 L 1387.0 213.0 L 1387.0 240.0"><title>bus-15 -> bus-16</title></path>
+<path id="ACBranch-line-15-21" class="edge" d="M 1651.0 240.0 L 1651.0 213.0 L 2047.0 213.0 L 2047.0 240.0"><title>bus-15 -> bus-21</title></path>
+<path id="ACBranch-line-15-21-2" class="edge" d="M 1651.0 240.0 L 1651.0 213.0 L 2047.0 213.0 L 2047.0 240.0"><title>bus-15 -> bus-21</title></path>
+<path id="ACBranch-line-15-24" class="edge" d="M 1651.0 240.0 L 1585.0 240.0 L 1585.0 360.0 L 1555.0 360.0"><title>bus-15 -> bus-24</title></path>
+<path id="ACBranch-line-16-17" class="edge" d="M 1387.0 240.0 L 1387.0 213.0 L 1783.0 213.0 L 1783.0 240.0"><title>bus-16 -> bus-17</title></path>
+<path id="ACBranch-line-16-19" class="edge" d="M 1387.0 240.0 L 1387.0 213.0 L 1915.0 213.0 L 1915.0 240.0"><title>bus-16 -> bus-19</title></path>
+<path id="ACBranch-line-17-18" class="edge" d="M 1783.0 240.0 L 1783.0 213.0 L 2270.0 213.0 L 2270.0 240.0"><title>bus-17 -> bus-18</title></path>
+<path id="ACBranch-line-17-22" class="edge" d="M 1783.0 240.0 L 1783.0 328.0 L 1957.0 328.0 L 1957.0 360.0"><title>bus-17 -> bus-22</title></path>
+<path id="ACBranch-line-18-21" class="edge" d="M 2270.0 240.0 L 2270.0 213.0 L 2047.0 213.0 L 2047.0 240.0"><title>bus-18 -> bus-21</title></path>
+<path id="ACBranch-line-18-21-2" class="edge" d="M 2270.0 240.0 L 2270.0 213.0 L 2047.0 213.0 L 2047.0 240.0"><title>bus-18 -> bus-21</title></path>
+<path id="ACBranch-line-19-20" class="edge" d="M 1915.0 240.0 L 1915.0 213.0 L 1255.0 213.0 L 1255.0 240.0"><title>bus-19 -> bus-20</title></path>
+<path id="ACBranch-line-19-20-2" class="edge" d="M 1915.0 240.0 L 1915.0 213.0 L 1255.0 213.0 L 1255.0 240.0"><title>bus-19 -> bus-20</title></path>
+<path id="ACBranch-line-20-23" class="edge" d="M 1255.0 240.0 L 1123.0 240.0"><title>bus-20 -> bus-23</title></path>
+<path id="ACBranch-line-20-23-2" class="edge" d="M 1255.0 240.0 L 1123.0 240.0"><title>bus-20 -> bus-23</title></path>
+<path id="ACBranch-line-21-22" class="edge" d="M 2047.0 240.0 L 2002.0 240.0 L 2002.0 360.0 L 1957.0 360.0"><title>bus-21 -> bus-22</title></path>
+<path id="ACTransformer-tr-3-24-i" class="edge" d="M 1519.0 240.0 L 1487.0 240.0 L 1487.0 516.0 L 1537.0 516.0"><title>bus-3 -> ACTransformer-tr-3-24</title></path>
+<path id="ACTransformer-tr-3-24-j" class="edge" d="M 1537.0 516.0 L 1551.0 516.0 L 1551.0 360.0 L 1555.0 360.0"><title>ACTransformer-tr-3-24 -> bus-24</title></path>
+<path id="ACTransformer-tr-9-11-i" class="edge" d="M 768.0 240.0 L 768.0 333.0 L 498.0 333.0 L 498.0 456.0"><title>bus-9 -> ACTransformer-tr-9-11</title></path>
+<path id="ACTransformer-tr-9-11-j" class="edge" d="M 498.0 456.0 L 421.0 456.0 L 421.0 240.0 L 372.0 240.0"><title>ACTransformer-tr-9-11 -> bus-11</title></path>
+<path id="ACTransformer-tr-9-12-i" class="edge" d="M 768.0 240.0 L 768.0 333.0 L 564.0 333.0 L 564.0 600.0"><title>bus-9 -> ACTransformer-tr-9-12</title></path>
+<path id="ACTransformer-tr-9-12-j" class="edge" d="M 564.0 600.0 L 564.0 418.0 L 504.0 418.0 L 504.0 240.0"><title>ACTransformer-tr-9-12 -> bus-12</title></path>
+<path id="ACTransformer-tr-10-11-i" class="edge" d="M 240.0 240.0 L 240.0 256.0 L 234.0 256.0 L 234.0 384.0"><title>bus-10 -> ACTransformer-tr-10-11</title></path>
+<path id="ACTransformer-tr-10-11-j" class="edge" d="M 234.0 384.0 L 234.0 302.0 L 372.0 302.0 L 372.0 240.0"><title>ACTransformer-tr-10-11 -> bus-11</title></path>
+<path id="ACTransformer-tr-10-12-i" class="edge" d="M 240.0 240.0 L 162.0 240.0 L 162.0 456.0 L 372.0 456.0"><title>bus-10 -> ACTransformer-tr-10-12</title></path>
+<path id="ACTransformer-tr-10-12-j" class="edge" d="M 372.0 456.0 L 372.0 321.0 L 504.0 321.0 L 504.0 240.0"><title>ACTransformer-tr-10-12 -> bus-12</title></path>
+<path id="conn-ACGenerator-gen-1-1-1" class="edge" d="M 742.5 135.0 L 742.5 213.0 L 900.0 213.0 L 900.0 240.0"><title>ACGenerator-gen-1-1 -> bus-1</title></path>
+<path id="conn-ACGenerator-gen-1-2-1" class="edge" d="M 847.5 135.0 L 847.5 213.0 L 900.0 213.0 L 900.0 240.0"><title>ACGenerator-gen-1-2 -> bus-1</title></path>
+<path id="conn-ACGenerator-gen-1-3-1" class="edge" d="M 952.5 135.0 L 952.5 213.0 L 900.0 213.0 L 900.0 240.0"><title>ACGenerator-gen-1-3 -> bus-1</title></path>
+<path id="conn-ACGenerator-gen-1-4-1" class="edge" d="M 1201.5 135.0 L 1201.5 213.0 L 900.0 213.0 L 900.0 240.0"><title>ACGenerator-gen-1-4 -> bus-1</title></path>
+<path id="conn-ACGenerator-gen-2-5-2" class="edge" d="M 772.5 471.0 L 772.5 453.0 L 930.0 453.0 L 930.0 360.0"><title>ACGenerator-gen-2-5 -> bus-2</title></path>
+<path id="conn-ACGenerator-gen-2-6-2" class="edge" d="M 1021.5 471.0 L 1021.5 415.5 L 930.0 415.5 L 930.0 360.0"><title>ACGenerator-gen-2-6 -> bus-2</title></path>
+<path id="conn-ACGenerator-gen-2-7-2" class="edge" d="M 1126.5 471.0 L 1126.5 393.0 L 930.0 393.0 L 930.0 360.0"><title>ACGenerator-gen-2-7 -> bus-2</title></path>
+<path id="conn-ACGenerator-gen-2-8-2" class="edge" d="M 1303.5 399.0 L 1303.5 393.0 L 930.0 393.0 L 930.0 360.0"><title>ACGenerator-gen-2-8 -> bus-2</title></path>
+<path id="conn-ACGenerator-gen-7-9-7" class="edge" d="M 1047.0 591.0 L 943.5 591.0 L 943.5 480.0 L 870.0 480.0"><title>ACGenerator-gen-7-9 -> bus-7</title></path>
+<path id="conn-ACGenerator-gen-7-10-7" class="edge" d="M 693.0 519.0 L 825.0 519.0 L 825.0 480.0 L 870.0 480.0"><title>ACGenerator-gen-7-10 -> bus-7</title></path>
+<path id="conn-ACGenerator-gen-7-11-7" class="edge" d="M 582.0 375.0 L 582.0 399.5 L 870.0 399.5 L 870.0 480.0"><title>ACGenerator-gen-7-11 -> bus-7</title></path>
+<path id="conn-ACGenerator-gen-13-12-13" class="edge" d="M 693.0 399.0 L 745.5 399.0 L 745.5 360.0 L 798.0 360.0"><title>ACGenerator-gen-13-12 -> bus-13</title></path>
+<path id="conn-ACGenerator-gen-13-13-13" class="edge" d="M 1014.0 255.0 L 1014.0 302.0 L 798.0 302.0 L 798.0 360.0"><title>ACGenerator-gen-13-13 -> bus-13</title></path>
+<path id="conn-ACGenerator-gen-13-14-13" class="edge" d="M 903.0 615.0 L 903.0 513.0 L 798.0 513.0 L 798.0 360.0"><title>ACGenerator-gen-13-14 -> bus-13</title></path>
+<path id="conn-ACGenerator-gen-14-15-14" class="edge" d="M 487.0 159.0 L 587.0 159.0 L 587.0 120.0 L 631.0 120.0"><title>ACGenerator-gen-14-15 -> bus-14</title></path>
+<path id="conn-ACGenerator-gen-15-16-15" class="edge" d="M 1388.5 351.0 L 1388.5 267.5 L 1651.0 267.5 L 1651.0 240.0"><title>ACGenerator-gen-15-16 -> bus-15</title></path>
+<path id="conn-ACGenerator-gen-15-17-15" class="edge" d="M 1637.5 135.0 L 1637.5 213.0 L 1651.0 213.0 L 1651.0 240.0"><title>ACGenerator-gen-15-17 -> bus-15</title></path>
+<path id="conn-ACGenerator-gen-15-18-15" class="edge" d="M 1742.5 135.0 L 1742.5 213.0 L 1651.0 213.0 L 1651.0 240.0"><title>ACGenerator-gen-15-18 -> bus-15</title></path>
+<path id="conn-ACGenerator-gen-15-19-15" class="edge" d="M 1847.5 135.0 L 1847.5 213.0 L 1651.0 213.0 L 1651.0 240.0"><title>ACGenerator-gen-15-19 -> bus-15</title></path>
+<path id="conn-ACGenerator-gen-15-20-15" class="edge" d="M 1952.5 135.0 L 1952.5 213.0 L 1651.0 213.0 L 1651.0 240.0"><title>ACGenerator-gen-15-20 -> bus-15</title></path>
+<path id="conn-ACGenerator-gen-15-21-15" class="edge" d="M 2057.5 135.0 L 2057.5 213.0 L 1651.0 213.0 L 1651.0 240.0"><title>ACGenerator-gen-15-21 -> bus-15</title></path>
+<path id="conn-ACGenerator-gen-16-22-16" class="edge" d="M 1531.0 135.0 L 1531.0 213.0 L 1387.0 213.0 L 1387.0 240.0"><title>ACGenerator-gen-16-22 -> bus-16</title></path>
+<path id="conn-ACGenerator-gen-18-23-18" class="edge" d="M 2270.0 135.0 L 2270.0 240.0"><title>ACGenerator-gen-18-23 -> bus-18</title></path>
+<path id="conn-ACGenerator-gen-21-24-21" class="edge" d="M 2191.0 135.0 L 2191.0 213.0 L 2047.0 213.0 L 2047.0 240.0"><title>ACGenerator-gen-21-24 -> bus-21</title></path>
+<path id="conn-ACGenerator-gen-22-25-22" class="edge" d="M 1694.5 399.0 L 1694.5 333.0 L 1957.0 333.0 L 1957.0 360.0"><title>ACGenerator-gen-22-25 -> bus-22</title></path>
+<path id="conn-ACGenerator-gen-22-26-22" class="edge" d="M 1799.5 399.0 L 1850.2 399.0 L 1850.2 360.0 L 1957.0 360.0"><title>ACGenerator-gen-22-26 -> bus-22</title></path>
+<path id="conn-ACGenerator-gen-22-27-22" class="edge" d="M 1904.5 471.0 L 1930.8 471.0 L 1930.8 360.0 L 1957.0 360.0"><title>ACGenerator-gen-22-27 -> bus-22</title></path>
+<path id="conn-ACGenerator-gen-22-28-22" class="edge" d="M 2153.5 255.0 L 2153.5 279.5 L 1957.0 279.5 L 1957.0 360.0"><title>ACGenerator-gen-22-28 -> bus-22</title></path>
+<path id="conn-ACGenerator-gen-22-29-22" class="edge" d="M 2114.5 399.0 L 2035.8 399.0 L 2035.8 360.0 L 1957.0 360.0"><title>ACGenerator-gen-22-29 -> bus-22</title></path>
+<path id="conn-ACGenerator-gen-22-30-22" class="edge" d="M 2219.5 399.0 L 2219.5 333.0 L 1957.0 333.0 L 1957.0 360.0"><title>ACGenerator-gen-22-30 -> bus-22</title></path>
+<path id="conn-ACGenerator-gen-23-31-23" class="edge" d="M 1090.0 135.0 L 1090.0 213.0 L 1123.0 213.0 L 1123.0 240.0"><title>ACGenerator-gen-23-31 -> bus-23</title></path>
+<path id="conn-ACGenerator-gen-23-32-23" class="edge" d="M 1339.0 135.0 L 1339.0 213.0 L 1123.0 213.0 L 1123.0 240.0"><title>ACGenerator-gen-23-32 -> bus-23</title></path>
+<path id="conn-ACGenerator-gen-23-33-23" class="edge" d="M 1444.0 135.0 L 1444.0 213.0 L 1123.0 213.0 L 1123.0 240.0"><title>ACGenerator-gen-23-33 -> bus-23</title></path>
+<path id="conn-ACLoad-load-1-1" class="edge" d="M 828.0 640.0 L 828.0 302.0 L 900.0 302.0 L 900.0 240.0"><title>ACLoad-load-1 -> bus-1</title></path>
+<path id="conn-ACLoad-load-2-2" class="edge" d="M 1002.0 688.0 L 943.5 688.0 L 943.5 360.0 L 930.0 360.0"><title>ACLoad-load-2 -> bus-2</title></path>
+<path id="conn-ACLoad-load-3-3" class="edge" d="M 1663.0 496.0 L 1663.0 321.0 L 1519.0 321.0 L 1519.0 240.0"><title>ACLoad-load-3 -> bus-3</title></path>
+<path id="conn-ACLoad-load-4-4" class="edge" d="M 1150.0 616.0 L 1168.0 616.0 L 1168.0 360.0 L 1150.0 360.0"><title>ACLoad-load-4 -> bus-4</title></path>
+<path id="conn-ACLoad-load-5-5" class="edge" d="M 708.0 640.0 L 648.0 640.0 L 648.0 240.0 L 636.0 240.0"><title>ACLoad-load-5 -> bus-5</title></path>
+<path id="conn-ACLoad-load-6-6" class="edge" d="M 404.5 616.0 L 421.0 616.0 L 421.0 360.0 L 352.0 360.0"><title>ACLoad-load-6 -> bus-6</title></path>
+<path id="conn-ACLoad-load-7-7" class="edge" d="M 870.0 736.0 L 906.0 736.0 L 906.0 480.0 L 870.0 480.0"><title>ACLoad-load-7 -> bus-7</title></path>
+<path id="conn-ACLoad-load-8-8" class="edge" d="M 484.0 616.0 L 484.0 360.0"><title>ACLoad-load-8 -> bus-8</title></path>
+<path id="conn-ACLoad-load-9-9" class="edge" d="M 1056.0 352.0 L 1056.0 302.0 L 768.0 302.0 L 768.0 240.0"><title>ACLoad-load-9 -> bus-9</title></path>
+<path id="conn-ACLoad-load-10-10" class="edge" d="M 240.0 136.0 L 240.0 240.0"><title>ACLoad-load-10 -> bus-10</title></path>
+<path id="conn-ACLoad-load-13-13" class="edge" d="M 582.0 472.0 L 648.0 472.0 L 648.0 360.0 L 798.0 360.0"><title>ACLoad-load-13 -> bus-13</title></path>
+<path id="conn-ACLoad-load-14-14" class="edge" d="M 343.0 160.0 L 343.0 81.0 L 631.0 81.0 L 631.0 120.0"><title>ACLoad-load-14 -> bus-14</title></path>
+<path id="conn-ACLoad-load-15-15" class="edge" d="M 1795.0 496.0 L 1795.0 446.0 L 1651.0 446.0 L 1651.0 240.0"><title>ACLoad-load-15 -> bus-15</title></path>
+<path id="conn-ACLoad-load-16-16" class="edge" d="M 1387.0 496.0 L 1387.0 240.0"><title>ACLoad-load-16 -> bus-16</title></path>
+<path id="conn-ACLoad-load-18-18" class="edge" d="M 2342.0 352.0 L 2270.0 352.0 L 2270.0 240.0"><title>ACLoad-load-18 -> bus-18</title></path>
+<path id="conn-ACLoad-load-19-19" class="edge" d="M 1987.0 496.0 L 1857.0 496.0 L 1857.0 240.0 L 1915.0 240.0"><title>ACLoad-load-19 -> bus-19</title></path>
+<path id="conn-ACLoad-load-20-20" class="edge" d="M 1255.0 496.0 L 1255.0 240.0"><title>ACLoad-load-20 -> bus-20</title></path>
+<path id="conn-ACShuntCompensator-shunt-6-6" class="edge" d="M 227.5 544.0 L 288.0 544.0 L 288.0 360.0 L 352.0 360.0"><title>ACShuntCompensator-shunt-6 -> bus-6</title></path>
+</g>
+<g id="nodes">
+<g id="bus-1" class="node node-bus"><title>bus-1 / ac-bus</title><line x1="854.0" y1="240.0" x2="946.0" y2="240.0" class="node-bus"/><text x="900.0" y="288.0" text-anchor="middle">bus_1</text></g>
+<g id="bus-2" class="node node-bus"><title>bus-2 / ac-bus</title><line x1="884.0" y1="360.0" x2="976.0" y2="360.0" class="node-bus"/><text x="930.0" y="408.0" text-anchor="middle">bus_2</text></g>
+<g id="bus-3" class="node node-bus"><title>bus-3 / ac-bus</title><line x1="1473.0" y1="240.0" x2="1565.0" y2="240.0" class="node-bus"/><text x="1519.0" y="288.0" text-anchor="middle">bus_3</text></g>
+<g id="bus-4" class="node node-bus"><title>bus-4 / ac-bus</title><line x1="1104.0" y1="360.0" x2="1196.0" y2="360.0" class="node-bus"/><text x="1150.0" y="408.0" text-anchor="middle">bus_4</text></g>
+<g id="bus-5" class="node node-bus"><title>bus-5 / ac-bus</title><line x1="590.0" y1="240.0" x2="682.0" y2="240.0" class="node-bus"/><text x="636.0" y="288.0" text-anchor="middle">bus_5</text></g>
+<g id="bus-6" class="node node-bus"><title>bus-6 / ac-bus</title><line x1="306.0" y1="360.0" x2="398.0" y2="360.0" class="node-bus"/><text x="352.0" y="408.0" text-anchor="middle">bus_6</text></g>
+<g id="bus-7" class="node node-bus"><title>bus-7 / ac-bus</title><line x1="824.0" y1="480.0" x2="916.0" y2="480.0" class="node-bus"/><text x="870.0" y="528.0" text-anchor="middle">bus_7</text></g>
+<g id="bus-8" class="node node-bus"><title>bus-8 / ac-bus</title><line x1="438.0" y1="360.0" x2="530.0" y2="360.0" class="node-bus"/><text x="484.0" y="408.0" text-anchor="middle">bus_8</text></g>
+<g id="bus-9" class="node node-bus"><title>bus-9 / ac-bus</title><line x1="722.0" y1="240.0" x2="814.0" y2="240.0" class="node-bus"/><text x="768.0" y="288.0" text-anchor="middle">bus_9</text></g>
+<g id="bus-10" class="node node-bus"><title>bus-10 / ac-bus</title><line x1="194.0" y1="240.0" x2="286.0" y2="240.0" class="node-bus"/><text x="240.0" y="288.0" text-anchor="middle">bus_10</text></g>
+<g id="bus-11" class="node node-bus"><title>bus-11 / ac-bus</title><line x1="326.0" y1="240.0" x2="418.0" y2="240.0" class="node-bus"/><text x="372.0" y="288.0" text-anchor="middle">bus_11</text></g>
+<g id="bus-12" class="node node-bus"><title>bus-12 / ac-bus</title><line x1="458.0" y1="240.0" x2="550.0" y2="240.0" class="node-bus"/><text x="504.0" y="288.0" text-anchor="middle">bus_12</text></g>
+<g id="bus-13" class="node node-bus"><title>bus-13 / ac-bus</title><line x1="752.0" y1="360.0" x2="844.0" y2="360.0" class="node-bus"/><text x="798.0" y="408.0" text-anchor="middle">bus_13</text></g>
+<g id="bus-14" class="node node-bus"><title>bus-14 / ac-bus</title><line x1="585.0" y1="120.0" x2="677.0" y2="120.0" class="node-bus"/><text x="631.0" y="168.0" text-anchor="middle">bus_14</text></g>
+<g id="bus-15" class="node node-bus"><title>bus-15 / ac-bus</title><line x1="1605.0" y1="240.0" x2="1697.0" y2="240.0" class="node-bus"/><text x="1651.0" y="288.0" text-anchor="middle">bus_15</text></g>
+<g id="bus-16" class="node node-bus"><title>bus-16 / ac-bus</title><line x1="1341.0" y1="240.0" x2="1433.0" y2="240.0" class="node-bus"/><text x="1387.0" y="288.0" text-anchor="middle">bus_16</text></g>
+<g id="bus-17" class="node node-bus"><title>bus-17 / ac-bus</title><line x1="1737.0" y1="240.0" x2="1829.0" y2="240.0" class="node-bus"/><text x="1783.0" y="288.0" text-anchor="middle">bus_17</text></g>
+<g id="bus-18" class="node node-bus"><title>bus-18 / ac-bus</title><line x1="2224.0" y1="240.0" x2="2316.0" y2="240.0" class="node-bus"/><text x="2270.0" y="288.0" text-anchor="middle">bus_18</text></g>
+<g id="bus-19" class="node node-bus"><title>bus-19 / ac-bus</title><line x1="1869.0" y1="240.0" x2="1961.0" y2="240.0" class="node-bus"/><text x="1915.0" y="288.0" text-anchor="middle">bus_19</text></g>
+<g id="bus-20" class="node node-bus"><title>bus-20 / ac-bus</title><line x1="1209.0" y1="240.0" x2="1301.0" y2="240.0" class="node-bus"/><text x="1255.0" y="288.0" text-anchor="middle">bus_20</text></g>
+<g id="bus-21" class="node node-bus"><title>bus-21 / ac-bus</title><line x1="2001.0" y1="240.0" x2="2093.0" y2="240.0" class="node-bus"/><text x="2047.0" y="288.0" text-anchor="middle">bus_21</text></g>
+<g id="bus-22" class="node node-bus"><title>bus-22 / ac-bus</title><line x1="1911.0" y1="360.0" x2="2003.0" y2="360.0" class="node-bus"/><text x="1957.0" y="408.0" text-anchor="middle">bus_22</text></g>
+<g id="bus-23" class="node node-bus"><title>bus-23 / ac-bus</title><line x1="1077.0" y1="240.0" x2="1169.0" y2="240.0" class="node-bus"/><text x="1123.0" y="288.0" text-anchor="middle">bus_23</text></g>
+<g id="bus-24" class="node node-bus"><title>bus-24 / ac-bus</title><line x1="1509.0" y1="360.0" x2="1601.0" y2="360.0" class="node-bus"/><text x="1555.0" y="408.0" text-anchor="middle">bus_24</text></g>
+<g id="ACTransformer-tr-3-24" class="node node-transformer"><title>ACTransformer-tr-3-24 / ac-transformer</title><circle cx="1524.0" cy="516.0" r="18" class="node-fill"/><circle cx="1550.0" cy="516.0" r="18" class="node-fill"/><text x="1537.0" y="564.0" text-anchor="middle">tr_3_24</text></g>
+<g id="ACTransformer-tr-9-11" class="node node-transformer"><title>ACTransformer-tr-9-11 / ac-transformer</title><circle cx="485.0" cy="456.0" r="18" class="node-fill"/><circle cx="511.0" cy="456.0" r="18" class="node-fill"/><text x="498.0" y="504.0" text-anchor="middle">tr_9_11</text></g>
+<g id="ACTransformer-tr-9-12" class="node node-transformer"><title>ACTransformer-tr-9-12 / ac-transformer</title><circle cx="551.0" cy="600.0" r="18" class="node-fill"/><circle cx="577.0" cy="600.0" r="18" class="node-fill"/><text x="564.0" y="648.0" text-anchor="middle">tr_9_12</text></g>
+<g id="ACTransformer-tr-10-11" class="node node-transformer"><title>ACTransformer-tr-10-11 / ac-transformer</title><circle cx="221.0" cy="384.0" r="18" class="node-fill"/><circle cx="247.0" cy="384.0" r="18" class="node-fill"/><text x="234.0" y="432.0" text-anchor="middle">tr_10_11</text></g>
+<g id="ACTransformer-tr-10-12" class="node node-transformer"><title>ACTransformer-tr-10-12 / ac-transformer</title><circle cx="359.0" cy="456.0" r="18" class="node-fill"/><circle cx="385.0" cy="456.0" r="18" class="node-fill"/><text x="372.0" y="504.0" text-anchor="middle">tr_10_12</text></g>
+<g id="ACGenerator-gen-1-1" class="node node-source"><title>ACGenerator-gen-1-1 / ac-source</title><circle cx="742.5" cy="135.0" r="26" class="node-fill"/><text x="742.5" y="183.0" text-anchor="middle">gen_1_1</text></g>
+<g id="ACGenerator-gen-1-2" class="node node-source"><title>ACGenerator-gen-1-2 / ac-source</title><circle cx="847.5" cy="135.0" r="26" class="node-fill"/><text x="847.5" y="183.0" text-anchor="middle">gen_1_2</text></g>
+<g id="ACGenerator-gen-1-3" class="node node-source"><title>ACGenerator-gen-1-3 / ac-source</title><circle cx="952.5" cy="135.0" r="26" class="node-fill"/><text x="952.5" y="183.0" text-anchor="middle">gen_1_3</text></g>
+<g id="ACGenerator-gen-1-4" class="node node-source"><title>ACGenerator-gen-1-4 / ac-source</title><circle cx="1201.5" cy="135.0" r="26" class="node-fill"/><text x="1201.5" y="183.0" text-anchor="middle">gen_1_4</text></g>
+<g id="ACGenerator-gen-2-5" class="node node-source"><title>ACGenerator-gen-2-5 / ac-source</title><circle cx="772.5" cy="471.0" r="26" class="node-fill"/><text x="772.5" y="519.0" text-anchor="middle">gen_2_5</text></g>
+<g id="ACGenerator-gen-2-6" class="node node-source"><title>ACGenerator-gen-2-6 / ac-source</title><circle cx="1021.5" cy="471.0" r="26" class="node-fill"/><text x="1021.5" y="519.0" text-anchor="middle">gen_2_6</text></g>
+<g id="ACGenerator-gen-2-7" class="node node-source"><title>ACGenerator-gen-2-7 / ac-source</title><circle cx="1126.5" cy="471.0" r="26" class="node-fill"/><text x="1126.5" y="519.0" text-anchor="middle">gen_2_7</text></g>
+<g id="ACGenerator-gen-2-8" class="node node-source"><title>ACGenerator-gen-2-8 / ac-source</title><circle cx="1303.5" cy="399.0" r="26" class="node-fill"/><text x="1303.5" y="447.0" text-anchor="middle">gen_2_8</text></g>
+<g id="ACGenerator-gen-7-9" class="node node-source"><title>ACGenerator-gen-7-9 / ac-source</title><circle cx="1047.0" cy="591.0" r="26" class="node-fill"/><text x="1047.0" y="639.0" text-anchor="middle">gen_7_9</text></g>
+<g id="ACGenerator-gen-7-10" class="node node-source"><title>ACGenerator-gen-7-10 / ac-source</title><circle cx="693.0" cy="519.0" r="26" class="node-fill"/><text x="693.0" y="567.0" text-anchor="middle">gen_7_10</text></g>
+<g id="ACGenerator-gen-7-11" class="node node-source"><title>ACGenerator-gen-7-11 / ac-source</title><circle cx="582.0" cy="375.0" r="26" class="node-fill"/><text x="582.0" y="423.0" text-anchor="middle">gen_7_11</text></g>
+<g id="ACGenerator-gen-13-12" class="node node-source"><title>ACGenerator-gen-13-12 / ac-source</title><circle cx="693.0" cy="399.0" r="26" class="node-fill"/><text x="693.0" y="447.0" text-anchor="middle">gen_13_12</text></g>
+<g id="ACGenerator-gen-13-13" class="node node-source"><title>ACGenerator-gen-13-13 / ac-source</title><circle cx="1014.0" cy="255.0" r="26" class="node-fill"/><text x="1014.0" y="303.0" text-anchor="middle">gen_13_13</text></g>
+<g id="ACGenerator-gen-13-14" class="node node-source"><title>ACGenerator-gen-13-14 / ac-source</title><circle cx="903.0" cy="615.0" r="26" class="node-fill"/><text x="903.0" y="663.0" text-anchor="middle">gen_13_14</text></g>
+<g id="ACGenerator-gen-14-15" class="node node-source"><title>ACGenerator-gen-14-15 / ac-source</title><circle cx="487.0" cy="159.0" r="26" class="node-fill"/><text x="487.0" y="207.0" text-anchor="middle">gen_14_15</text></g>
+<g id="ACGenerator-gen-15-16" class="node node-source"><title>ACGenerator-gen-15-16 / ac-source</title><circle cx="1388.5" cy="351.0" r="26" class="node-fill"/><text x="1388.5" y="399.0" text-anchor="middle">gen_15_16</text></g>
+<g id="ACGenerator-gen-15-17" class="node node-source"><title>ACGenerator-gen-15-17 / ac-source</title><circle cx="1637.5" cy="135.0" r="26" class="node-fill"/><text x="1637.5" y="183.0" text-anchor="middle">gen_15_17</text></g>
+<g id="ACGenerator-gen-15-18" class="node node-source"><title>ACGenerator-gen-15-18 / ac-source</title><circle cx="1742.5" cy="135.0" r="26" class="node-fill"/><text x="1742.5" y="183.0" text-anchor="middle">gen_15_18</text></g>
+<g id="ACGenerator-gen-15-19" class="node node-source"><title>ACGenerator-gen-15-19 / ac-source</title><circle cx="1847.5" cy="135.0" r="26" class="node-fill"/><text x="1847.5" y="183.0" text-anchor="middle">gen_15_19</text></g>
+<g id="ACGenerator-gen-15-20" class="node node-source"><title>ACGenerator-gen-15-20 / ac-source</title><circle cx="1952.5" cy="135.0" r="26" class="node-fill"/><text x="1952.5" y="183.0" text-anchor="middle">gen_15_20</text></g>
+<g id="ACGenerator-gen-15-21" class="node node-source"><title>ACGenerator-gen-15-21 / ac-source</title><circle cx="2057.5" cy="135.0" r="26" class="node-fill"/><text x="2057.5" y="183.0" text-anchor="middle">gen_15_21</text></g>
+<g id="ACGenerator-gen-16-22" class="node node-source"><title>ACGenerator-gen-16-22 / ac-source</title><circle cx="1531.0" cy="135.0" r="26" class="node-fill"/><text x="1531.0" y="183.0" text-anchor="middle">gen_16_22</text></g>
+<g id="ACGenerator-gen-18-23" class="node node-source"><title>ACGenerator-gen-18-23 / ac-source</title><circle cx="2270.0" cy="135.0" r="26" class="node-fill"/><text x="2270.0" y="183.0" text-anchor="middle">gen_18_23</text></g>
+<g id="ACGenerator-gen-21-24" class="node node-source"><title>ACGenerator-gen-21-24 / ac-source</title><circle cx="2191.0" cy="135.0" r="26" class="node-fill"/><text x="2191.0" y="183.0" text-anchor="middle">gen_21_24</text></g>
+<g id="ACGenerator-gen-22-25" class="node node-source"><title>ACGenerator-gen-22-25 / ac-source</title><circle cx="1694.5" cy="399.0" r="26" class="node-fill"/><text x="1694.5" y="447.0" text-anchor="middle">gen_22_25</text></g>
+<g id="ACGenerator-gen-22-26" class="node node-source"><title>ACGenerator-gen-22-26 / ac-source</title><circle cx="1799.5" cy="399.0" r="26" class="node-fill"/><text x="1799.5" y="447.0" text-anchor="middle">gen_22_26</text></g>
+<g id="ACGenerator-gen-22-27" class="node node-source"><title>ACGenerator-gen-22-27 / ac-source</title><circle cx="1904.5" cy="471.0" r="26" class="node-fill"/><text x="1904.5" y="519.0" text-anchor="middle">gen_22_27</text></g>
+<g id="ACGenerator-gen-22-28" class="node node-source"><title>ACGenerator-gen-22-28 / ac-source</title><circle cx="2153.5" cy="255.0" r="26" class="node-fill"/><text x="2153.5" y="303.0" text-anchor="middle">gen_22_28</text></g>
+<g id="ACGenerator-gen-22-29" class="node node-source"><title>ACGenerator-gen-22-29 / ac-source</title><circle cx="2114.5" cy="399.0" r="26" class="node-fill"/><text x="2114.5" y="447.0" text-anchor="middle">gen_22_29</text></g>
+<g id="ACGenerator-gen-22-30" class="node node-source"><title>ACGenerator-gen-22-30 / ac-source</title><circle cx="2219.5" cy="399.0" r="26" class="node-fill"/><text x="2219.5" y="447.0" text-anchor="middle">gen_22_30</text></g>
+<g id="ACGenerator-gen-23-31" class="node node-source"><title>ACGenerator-gen-23-31 / ac-source</title><circle cx="1090.0" cy="135.0" r="26" class="node-fill"/><text x="1090.0" y="183.0" text-anchor="middle">gen_23_31</text></g>
+<g id="ACGenerator-gen-23-32" class="node node-source"><title>ACGenerator-gen-23-32 / ac-source</title><circle cx="1339.0" cy="135.0" r="26" class="node-fill"/><text x="1339.0" y="183.0" text-anchor="middle">gen_23_32</text></g>
+<g id="ACGenerator-gen-23-33" class="node node-source"><title>ACGenerator-gen-23-33 / ac-source</title><circle cx="1444.0" cy="135.0" r="26" class="node-fill"/><text x="1444.0" y="183.0" text-anchor="middle">gen_23_33</text></g>
+<g id="ACLoad-load-1" class="node node-load"><title>ACLoad-load-1 / ac-load</title><path d="M 802.0 618.0 L 854.0 618.0 L 828.0 666.0 Z" class="node-fill"/><text x="828.0" y="688.0" text-anchor="middle">load_1</text></g>
+<g id="ACLoad-load-2" class="node node-load"><title>ACLoad-load-2 / ac-load</title><path d="M 976.0 666.0 L 1028.0 666.0 L 1002.0 714.0 Z" class="node-fill"/><text x="1002.0" y="736.0" text-anchor="middle">load_2</text></g>
+<g id="ACLoad-load-3" class="node node-load"><title>ACLoad-load-3 / ac-load</title><path d="M 1637.0 474.0 L 1689.0 474.0 L 1663.0 522.0 Z" class="node-fill"/><text x="1663.0" y="544.0" text-anchor="middle">load_3</text></g>
+<g id="ACLoad-load-4" class="node node-load"><title>ACLoad-load-4 / ac-load</title><path d="M 1124.0 594.0 L 1176.0 594.0 L 1150.0 642.0 Z" class="node-fill"/><text x="1150.0" y="664.0" text-anchor="middle">load_4</text></g>
+<g id="ACLoad-load-5" class="node node-load"><title>ACLoad-load-5 / ac-load</title><path d="M 682.0 618.0 L 734.0 618.0 L 708.0 666.0 Z" class="node-fill"/><text x="708.0" y="688.0" text-anchor="middle">load_5</text></g>
+<g id="ACLoad-load-6" class="node node-load"><title>ACLoad-load-6 / ac-load</title><path d="M 378.5 594.0 L 430.5 594.0 L 404.5 642.0 Z" class="node-fill"/><text x="404.5" y="664.0" text-anchor="middle">load_6</text></g>
+<g id="ACLoad-load-7" class="node node-load"><title>ACLoad-load-7 / ac-load</title><path d="M 844.0 714.0 L 896.0 714.0 L 870.0 762.0 Z" class="node-fill"/><text x="870.0" y="784.0" text-anchor="middle">load_7</text></g>
+<g id="ACLoad-load-8" class="node node-load"><title>ACLoad-load-8 / ac-load</title><path d="M 458.0 594.0 L 510.0 594.0 L 484.0 642.0 Z" class="node-fill"/><text x="484.0" y="664.0" text-anchor="middle">load_8</text></g>
+<g id="ACLoad-load-9" class="node node-load"><title>ACLoad-load-9 / ac-load</title><path d="M 1030.0 330.0 L 1082.0 330.0 L 1056.0 378.0 Z" class="node-fill"/><text x="1056.0" y="400.0" text-anchor="middle">load_9</text></g>
+<g id="ACLoad-load-10" class="node node-load"><title>ACLoad-load-10 / ac-load</title><path d="M 214.0 114.0 L 266.0 114.0 L 240.0 162.0 Z" class="node-fill"/><text x="240.0" y="184.0" text-anchor="middle">load_10</text></g>
+<g id="ACLoad-load-13" class="node node-load"><title>ACLoad-load-13 / ac-load</title><path d="M 556.0 450.0 L 608.0 450.0 L 582.0 498.0 Z" class="node-fill"/><text x="582.0" y="520.0" text-anchor="middle">load_13</text></g>
+<g id="ACLoad-load-14" class="node node-load"><title>ACLoad-load-14 / ac-load</title><path d="M 317.0 138.0 L 369.0 138.0 L 343.0 186.0 Z" class="node-fill"/><text x="343.0" y="208.0" text-anchor="middle">load_14</text></g>
+<g id="ACLoad-load-15" class="node node-load"><title>ACLoad-load-15 / ac-load</title><path d="M 1769.0 474.0 L 1821.0 474.0 L 1795.0 522.0 Z" class="node-fill"/><text x="1795.0" y="544.0" text-anchor="middle">load_15</text></g>
+<g id="ACLoad-load-16" class="node node-load"><title>ACLoad-load-16 / ac-load</title><path d="M 1361.0 474.0 L 1413.0 474.0 L 1387.0 522.0 Z" class="node-fill"/><text x="1387.0" y="544.0" text-anchor="middle">load_16</text></g>
+<g id="ACLoad-load-18" class="node node-load"><title>ACLoad-load-18 / ac-load</title><path d="M 2316.0 330.0 L 2368.0 330.0 L 2342.0 378.0 Z" class="node-fill"/><text x="2342.0" y="400.0" text-anchor="middle">load_18</text></g>
+<g id="ACLoad-load-19" class="node node-load"><title>ACLoad-load-19 / ac-load</title><path d="M 1961.0 474.0 L 2013.0 474.0 L 1987.0 522.0 Z" class="node-fill"/><text x="1987.0" y="544.0" text-anchor="middle">load_19</text></g>
+<g id="ACLoad-load-20" class="node node-load"><title>ACLoad-load-20 / ac-load</title><path d="M 1229.0 474.0 L 1281.0 474.0 L 1255.0 522.0 Z" class="node-fill"/><text x="1255.0" y="544.0" text-anchor="middle">load_20</text></g>
+<g id="ACShuntCompensator-shunt-6" class="node node-device"><title>ACShuntCompensator-shunt-6 / ac-shunt</title><path d="M 227.5 520.0 L 227.5 568.0 M 209.5 568.0 L 245.5 568.0" class="node-fill"/><text x="227.5" y="592.0" text-anchor="middle">shunt_6</text></g>
+</g>
+</svg>

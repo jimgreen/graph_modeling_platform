@@ -1569,7 +1569,7 @@ export function createApplySelectedNodeLayout(__appScope: Record<string, any>) {
 
 export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) {
   return () => {
-  const { activeLayerEdges, activeLayerGroups, activeLayerNodes, autoSpreadNodeLayoutUnits, buildCanvasLayoutUnits, canvasBounds, commitLayoutNodePositions, isCanvasNodeMovable, nodes, requireEditMode, routedEdges, writeOperationLog } = __appScope;
+  const { activeLayerEdges, activeLayerGroups, activeLayerNodes, autoSpreadNodeLayoutUnits, buildCanvasLayoutUnits, canvasBounds, commitLayoutNodePositions, includeMeasurementGroupBounds, isCanvasNodeMovable, nodes, requireEditMode, routedEdges, writeOperationLog } = __appScope;
     if (!requireEditMode("自动散开")) {
       return;
     }
@@ -1578,6 +1578,43 @@ export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) 
       writeOperationLog("自动散开需要至少 2 个可操作图元");
       return;
     }
+    const extraBoundsByNodeId = new Map<string, Array<{ left: number; right: number; top: number; bottom: number }>>();
+    for (const node of activeLayerNodes) {
+      const boxes: Array<{ left: number; right: number; top: number; bottom: number }> = [];
+      includeMeasurementGroupBounds?.(node, (box: { left: number; right: number; top: number; bottom: number }) => boxes.push(box));
+      if (boxes.length > 0) {
+        extraBoundsByNodeId.set(node.id, boxes);
+      }
+    }
+    const routeByEdgeId = new Map(routedEdges.map((route: { edgeId: string }) => [route.edgeId, route]));
+    const routeSegmentPadding = 10;
+    const routeEndpointTrim = routeSegmentPadding * 1.5;
+    const avoidRects = activeLayerEdges.flatMap((edge: { id: string }) => {
+      const route = routeByEdgeId.get(edge.id) as { points?: Array<{ x: number; y: number }> } | undefined;
+      const points = route?.points ?? [];
+      if (points.length < 2) {
+        return [];
+      }
+      return points.slice(1).flatMap((point, index) => {
+        const previous = points[index];
+        const dx = point.x - previous.x;
+        const dy = point.y - previous.y;
+        const length = Math.hypot(dx, dy);
+        if (length <= routeEndpointTrim * 2) {
+          return [];
+        }
+        const trimX = (dx / length) * routeEndpointTrim;
+        const trimY = (dy / length) * routeEndpointTrim;
+        const start = { x: previous.x + trimX, y: previous.y + trimY };
+        const end = { x: point.x - trimX, y: point.y - trimY };
+        return {
+          left: Math.min(start.x, end.x) - routeSegmentPadding,
+          right: Math.max(start.x, end.x) + routeSegmentPadding,
+          top: Math.min(start.y, end.y) - routeSegmentPadding,
+          bottom: Math.max(start.y, end.y) + routeSegmentPadding
+        };
+      });
+    });
     const layoutUnits = buildCanvasLayoutUnits(
       activeLayerGroups,
       activeLayerNodes,
@@ -1585,13 +1622,13 @@ export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) 
       [],
       activeLayerEdges,
       routedEdges,
-      { isTransformableNode: (node) => isCanvasNodeMovable(node.kind) }
+      { isTransformableNode: (node) => isCanvasNodeMovable(node.kind), extraBoundsByNodeId }
     );
     if (layoutUnits.length < 2) {
       writeOperationLog("自动散开没有发现可调整的图元");
       return;
     }
-    const arranged = autoSpreadNodeLayoutUnits(nodes, layoutUnits, { padding: 4, bounds: canvasBounds });
+    const arranged = autoSpreadNodeLayoutUnits(nodes, layoutUnits, { padding: 4, bounds: canvasBounds, avoidRects });
     const movedCount = commitLayoutNodePositions(
       Array.from(new Set(layoutUnits.flatMap((unit) => unit.nodeIds))),
       arranged

@@ -1,0 +1,2844 @@
+{
+  "canvas": {
+    "width": 1440.0,
+    "height": 1310.0
+  },
+  "nodes": [
+    {
+      "id": "bus-1",
+      "name": "bus_1",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 1140.0,
+      "y": 390.0,
+      "rank": 5,
+      "order": 2
+    },
+    {
+      "id": "bus-2",
+      "name": "bus_2",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 930.0,
+      "y": 450.0,
+      "rank": 4,
+      "order": 2
+    },
+    {
+      "id": "bus-3",
+      "name": "bus_3",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 720.0,
+      "y": 450.0,
+      "rank": 3,
+      "order": 2
+    },
+    {
+      "id": "bus-4",
+      "name": "bus_4",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 720.0,
+      "y": 210.0,
+      "rank": 3,
+      "order": 0
+    },
+    {
+      "id": "bus-5",
+      "name": "bus_5",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 930.0,
+      "y": 210.0,
+      "rank": 4,
+      "order": 0
+    },
+    {
+      "id": "bus-6",
+      "name": "bus_6",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 1140.0,
+      "y": 150.0,
+      "rank": 5,
+      "order": 0
+    },
+    {
+      "id": "bus-7",
+      "name": "bus_7",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 1350.0,
+      "y": 510.0,
+      "rank": 6,
+      "order": 1
+    },
+    {
+      "id": "bus-8",
+      "name": "bus_8",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 1140.0,
+      "y": 270.0,
+      "rank": 5,
+      "order": 1
+    },
+    {
+      "id": "bus-9",
+      "name": "bus_9",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 1350.0,
+      "y": 630.0,
+      "rank": 6,
+      "order": 2
+    },
+    {
+      "id": "bus-10",
+      "name": "bus_10",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 930.0,
+      "y": 570.0,
+      "rank": 4,
+      "order": 3
+    },
+    {
+      "id": "bus-11",
+      "name": "bus_11",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 1140.0,
+      "y": 510.0,
+      "rank": 5,
+      "order": 3
+    },
+    {
+      "id": "bus-12",
+      "name": "bus_12",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 930.0,
+      "y": 330.0,
+      "rank": 4,
+      "order": 1
+    },
+    {
+      "id": "bus-13",
+      "name": "bus_13",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 720.0,
+      "y": 330.0,
+      "rank": 3,
+      "order": 1
+    },
+    {
+      "id": "bus-14",
+      "name": "bus_14",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 510.0,
+      "y": 210.0,
+      "rank": 2,
+      "order": 0
+    },
+    {
+      "id": "bus-15",
+      "name": "bus_15",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 300.0,
+      "y": 330.0,
+      "rank": 1,
+      "order": 0
+    },
+    {
+      "id": "bus-16",
+      "name": "bus_16",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 90.0,
+      "y": 510.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "bus-17",
+      "name": "bus_17",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 300.0,
+      "y": 450.0,
+      "rank": 1,
+      "order": 1
+    },
+    {
+      "id": "bus-18",
+      "name": "bus_18",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 510.0,
+      "y": 330.0,
+      "rank": 2,
+      "order": 1
+    },
+    {
+      "id": "bus-19",
+      "name": "bus_19",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 300.0,
+      "y": 690.0,
+      "rank": 1,
+      "order": 3
+    },
+    {
+      "id": "bus-20",
+      "name": "bus_20",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 510.0,
+      "y": 570.0,
+      "rank": 2,
+      "order": 3
+    },
+    {
+      "id": "bus-21",
+      "name": "bus_21",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 300.0,
+      "y": 570.0,
+      "rank": 1,
+      "order": 2
+    },
+    {
+      "id": "bus-22",
+      "name": "bus_22",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 510.0,
+      "y": 690.0,
+      "rank": 2,
+      "order": 4
+    },
+    {
+      "id": "bus-23",
+      "name": "bus_23",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 510.0,
+      "y": 810.0,
+      "rank": 2,
+      "order": 5
+    },
+    {
+      "id": "bus-24",
+      "name": "bus_24",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 300.0,
+      "y": 810.0,
+      "rank": 1,
+      "order": 4
+    },
+    {
+      "id": "bus-25",
+      "name": "bus_25",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 930.0,
+      "y": 690.0,
+      "rank": 4,
+      "order": 4
+    },
+    {
+      "id": "bus-26",
+      "name": "bus_26",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 720.0,
+      "y": 570.0,
+      "rank": 3,
+      "order": 3
+    },
+    {
+      "id": "bus-27",
+      "name": "bus_27",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 510.0,
+      "y": 450.0,
+      "rank": 2,
+      "order": 2
+    },
+    {
+      "id": "bus-28",
+      "name": "bus_28",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 930.0,
+      "y": 930.0,
+      "rank": 4,
+      "order": 6
+    },
+    {
+      "id": "bus-29",
+      "name": "bus_29",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 930.0,
+      "y": 810.0,
+      "rank": 4,
+      "order": 5
+    },
+    {
+      "id": "bus-30",
+      "name": "bus_30",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 1140.0,
+      "y": 630.0,
+      "rank": 5,
+      "order": 4
+    },
+    {
+      "id": "bus-31",
+      "name": "bus_31",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 1350.0,
+      "y": 390.0,
+      "rank": 6,
+      "order": 0
+    },
+    {
+      "id": "bus-32",
+      "name": "bus_32",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 1140.0,
+      "y": 750.0,
+      "rank": 5,
+      "order": 5
+    },
+    {
+      "id": "bus-33",
+      "name": "bus_33",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 510.0,
+      "y": 930.0,
+      "rank": 2,
+      "order": 6
+    },
+    {
+      "id": "bus-34",
+      "name": "bus_34",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 720.0,
+      "y": 690.0,
+      "rank": 3,
+      "order": 4
+    },
+    {
+      "id": "bus-35",
+      "name": "bus_35",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 720.0,
+      "y": 810.0,
+      "rank": 3,
+      "order": 5
+    },
+    {
+      "id": "bus-36",
+      "name": "bus_36",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 720.0,
+      "y": 930.0,
+      "rank": 3,
+      "order": 6
+    },
+    {
+      "id": "bus-37",
+      "name": "bus_37",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 1140.0,
+      "y": 870.0,
+      "rank": 5,
+      "order": 6
+    },
+    {
+      "id": "bus-38",
+      "name": "bus_38",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 1140.0,
+      "y": 990.0,
+      "rank": 5,
+      "order": 7
+    },
+    {
+      "id": "bus-39",
+      "name": "bus_39",
+      "kind": "ac-bus",
+      "category": "bus",
+      "x": 1350.0,
+      "y": 750.0,
+      "rank": 6,
+      "order": 3
+    },
+    {
+      "id": "ACTransformer-tr-2-30",
+      "name": "tr_2_30",
+      "kind": "ac-transformer",
+      "category": "transformer",
+      "x": 1035.0,
+      "y": 540.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACTransformer-tr-6-31",
+      "name": "tr_6_31",
+      "kind": "ac-transformer",
+      "category": "transformer",
+      "x": 1245.0,
+      "y": 270.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACTransformer-tr-10-32",
+      "name": "tr_10_32",
+      "kind": "ac-transformer",
+      "category": "transformer",
+      "x": 1035.0,
+      "y": 660.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACTransformer-tr-12-11",
+      "name": "tr_12_11",
+      "kind": "ac-transformer",
+      "category": "transformer",
+      "x": 1035.0,
+      "y": 420.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACTransformer-tr-12-13",
+      "name": "tr_12_13",
+      "kind": "ac-transformer",
+      "category": "transformer",
+      "x": 825.0,
+      "y": 330.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACTransformer-tr-19-20",
+      "name": "tr_19_20",
+      "kind": "ac-transformer",
+      "category": "transformer",
+      "x": 405.0,
+      "y": 630.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACTransformer-tr-19-33",
+      "name": "tr_19_33",
+      "kind": "ac-transformer",
+      "category": "transformer",
+      "x": 405.0,
+      "y": 810.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACTransformer-tr-20-34",
+      "name": "tr_20_34",
+      "kind": "ac-transformer",
+      "category": "transformer",
+      "x": 615.0,
+      "y": 630.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACTransformer-tr-22-35",
+      "name": "tr_22_35",
+      "kind": "ac-transformer",
+      "category": "transformer",
+      "x": 615.0,
+      "y": 750.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACTransformer-tr-25-37",
+      "name": "tr_25_37",
+      "kind": "ac-transformer",
+      "category": "transformer",
+      "x": 1035.0,
+      "y": 780.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACTransformer-tr-29-38",
+      "name": "tr_29_38",
+      "kind": "ac-transformer",
+      "category": "transformer",
+      "x": 1035.0,
+      "y": 900.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACGenerator-gen-30-1",
+      "name": "gen_30_1",
+      "kind": "ac-source",
+      "category": "source",
+      "x": 1140.0,
+      "y": 552.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACGenerator-gen-31-2",
+      "name": "gen_31_2",
+      "kind": "ac-source",
+      "category": "source",
+      "x": 1350.0,
+      "y": 312.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACGenerator-gen-32-3",
+      "name": "gen_32_3",
+      "kind": "ac-source",
+      "category": "source",
+      "x": 1140.0,
+      "y": 672.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACGenerator-gen-33-4",
+      "name": "gen_33_4",
+      "kind": "ac-source",
+      "category": "source",
+      "x": 510.0,
+      "y": 852.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACGenerator-gen-34-5",
+      "name": "gen_34_5",
+      "kind": "ac-source",
+      "category": "source",
+      "x": 720.0,
+      "y": 612.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACGenerator-gen-35-6",
+      "name": "gen_35_6",
+      "kind": "ac-source",
+      "category": "source",
+      "x": 720.0,
+      "y": 732.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACGenerator-gen-36-7",
+      "name": "gen_36_7",
+      "kind": "ac-source",
+      "category": "source",
+      "x": 720.0,
+      "y": 852.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACGenerator-gen-37-8",
+      "name": "gen_37_8",
+      "kind": "ac-source",
+      "category": "source",
+      "x": 1140.0,
+      "y": 792.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACGenerator-gen-38-9",
+      "name": "gen_38_9",
+      "kind": "ac-source",
+      "category": "source",
+      "x": 1140.0,
+      "y": 912.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACGenerator-gen-39-10",
+      "name": "gen_39_10",
+      "kind": "ac-source",
+      "category": "source",
+      "x": 1350.0,
+      "y": 672.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-1",
+      "name": "load_1",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 1140.0,
+      "y": 472.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-3",
+      "name": "load_3",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 720.0,
+      "y": 532.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-4",
+      "name": "load_4",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 720.0,
+      "y": 292.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-7",
+      "name": "load_7",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 1350.0,
+      "y": 592.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-8",
+      "name": "load_8",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 1140.0,
+      "y": 352.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-9",
+      "name": "load_9",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 1350.0,
+      "y": 712.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-12",
+      "name": "load_12",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 930.0,
+      "y": 412.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-15",
+      "name": "load_15",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 300.0,
+      "y": 412.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-16",
+      "name": "load_16",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 90.0,
+      "y": 592.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-18",
+      "name": "load_18",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 510.0,
+      "y": 412.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-20",
+      "name": "load_20",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 510.0,
+      "y": 652.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-21",
+      "name": "load_21",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 300.0,
+      "y": 652.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-23",
+      "name": "load_23",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 510.0,
+      "y": 892.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-24",
+      "name": "load_24",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 300.0,
+      "y": 892.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-25",
+      "name": "load_25",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 930.0,
+      "y": 772.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-26",
+      "name": "load_26",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 720.0,
+      "y": 652.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-27",
+      "name": "load_27",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 510.0,
+      "y": 532.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-28",
+      "name": "load_28",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 930.0,
+      "y": 1012.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-29",
+      "name": "load_29",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 930.0,
+      "y": 892.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-31",
+      "name": "load_31",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 1350.0,
+      "y": 472.0,
+      "rank": 0,
+      "order": 0
+    },
+    {
+      "id": "ACLoad-load-39",
+      "name": "load_39",
+      "kind": "ac-load",
+      "category": "load",
+      "x": 1350.0,
+      "y": 832.0,
+      "rank": 0,
+      "order": 0
+    }
+  ],
+  "edges": [
+    {
+      "id": "ACBranch-line-1-2",
+      "source": "bus-1",
+      "target": "bus-2",
+      "points": [
+        {
+          "x": 1140.0,
+          "y": 390.0
+        },
+        {
+          "x": 1015.0,
+          "y": 390.0
+        },
+        {
+          "x": 1015.0,
+          "y": 450.0
+        },
+        {
+          "x": 930.0,
+          "y": 450.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-1-39",
+      "source": "bus-1",
+      "target": "bus-39",
+      "points": [
+        {
+          "x": 1140.0,
+          "y": 390.0
+        },
+        {
+          "x": 1225.0,
+          "y": 390.0
+        },
+        {
+          "x": 1225.0,
+          "y": 750.0
+        },
+        {
+          "x": 1350.0,
+          "y": 750.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-2-3",
+      "source": "bus-2",
+      "target": "bus-3",
+      "points": [
+        {
+          "x": 930.0,
+          "y": 450.0
+        },
+        {
+          "x": 805.0,
+          "y": 450.0
+        },
+        {
+          "x": 805.0,
+          "y": 450.0
+        },
+        {
+          "x": 720.0,
+          "y": 450.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-2-25",
+      "source": "bus-2",
+      "target": "bus-25",
+      "points": [
+        {
+          "x": 930.0,
+          "y": 450.0
+        },
+        {
+          "x": 1000.0,
+          "y": 450.0
+        },
+        {
+          "x": 1000.0,
+          "y": 690.0
+        },
+        {
+          "x": 930.0,
+          "y": 690.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-3-4",
+      "source": "bus-3",
+      "target": "bus-4",
+      "points": [
+        {
+          "x": 720.0,
+          "y": 450.0
+        },
+        {
+          "x": 790.0,
+          "y": 450.0
+        },
+        {
+          "x": 790.0,
+          "y": 210.0
+        },
+        {
+          "x": 720.0,
+          "y": 210.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-3-18",
+      "source": "bus-3",
+      "target": "bus-18",
+      "points": [
+        {
+          "x": 720.0,
+          "y": 450.0
+        },
+        {
+          "x": 595.0,
+          "y": 450.0
+        },
+        {
+          "x": 595.0,
+          "y": 330.0
+        },
+        {
+          "x": 510.0,
+          "y": 330.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-4-5",
+      "source": "bus-4",
+      "target": "bus-5",
+      "points": [
+        {
+          "x": 720.0,
+          "y": 210.0
+        },
+        {
+          "x": 815.0,
+          "y": 210.0
+        },
+        {
+          "x": 815.0,
+          "y": 210.0
+        },
+        {
+          "x": 930.0,
+          "y": 210.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-4-14",
+      "source": "bus-4",
+      "target": "bus-14",
+      "points": [
+        {
+          "x": 720.0,
+          "y": 210.0
+        },
+        {
+          "x": 605.0,
+          "y": 210.0
+        },
+        {
+          "x": 605.0,
+          "y": 210.0
+        },
+        {
+          "x": 510.0,
+          "y": 210.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-5-6",
+      "source": "bus-5",
+      "target": "bus-6",
+      "points": [
+        {
+          "x": 930.0,
+          "y": 210.0
+        },
+        {
+          "x": 1025.0,
+          "y": 210.0
+        },
+        {
+          "x": 1025.0,
+          "y": 150.0
+        },
+        {
+          "x": 1140.0,
+          "y": 150.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-5-8",
+      "source": "bus-5",
+      "target": "bus-8",
+      "points": [
+        {
+          "x": 930.0,
+          "y": 210.0
+        },
+        {
+          "x": 1035.0,
+          "y": 210.0
+        },
+        {
+          "x": 1035.0,
+          "y": 270.0
+        },
+        {
+          "x": 1140.0,
+          "y": 270.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-6-7",
+      "source": "bus-6",
+      "target": "bus-7",
+      "points": [
+        {
+          "x": 1140.0,
+          "y": 150.0
+        },
+        {
+          "x": 1235.0,
+          "y": 150.0
+        },
+        {
+          "x": 1235.0,
+          "y": 510.0
+        },
+        {
+          "x": 1350.0,
+          "y": 510.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-6-11",
+      "source": "bus-6",
+      "target": "bus-11",
+      "points": [
+        {
+          "x": 1140.0,
+          "y": 150.0
+        },
+        {
+          "x": 1210.0,
+          "y": 150.0
+        },
+        {
+          "x": 1210.0,
+          "y": 510.0
+        },
+        {
+          "x": 1140.0,
+          "y": 510.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-7-8",
+      "source": "bus-7",
+      "target": "bus-8",
+      "points": [
+        {
+          "x": 1350.0,
+          "y": 510.0
+        },
+        {
+          "x": 1245.0,
+          "y": 510.0
+        },
+        {
+          "x": 1245.0,
+          "y": 270.0
+        },
+        {
+          "x": 1140.0,
+          "y": 270.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-8-9",
+      "source": "bus-8",
+      "target": "bus-9",
+      "points": [
+        {
+          "x": 1140.0,
+          "y": 270.0
+        },
+        {
+          "x": 1255.0,
+          "y": 270.0
+        },
+        {
+          "x": 1255.0,
+          "y": 630.0
+        },
+        {
+          "x": 1350.0,
+          "y": 630.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-9-39",
+      "source": "bus-9",
+      "target": "bus-39",
+      "points": [
+        {
+          "x": 1350.0,
+          "y": 630.0
+        },
+        {
+          "x": 1420.0,
+          "y": 630.0
+        },
+        {
+          "x": 1420.0,
+          "y": 750.0
+        },
+        {
+          "x": 1350.0,
+          "y": 750.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-10-11",
+      "source": "bus-10",
+      "target": "bus-11",
+      "points": [
+        {
+          "x": 930.0,
+          "y": 570.0
+        },
+        {
+          "x": 1045.0,
+          "y": 570.0
+        },
+        {
+          "x": 1045.0,
+          "y": 510.0
+        },
+        {
+          "x": 1140.0,
+          "y": 510.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-10-13",
+      "source": "bus-10",
+      "target": "bus-13",
+      "points": [
+        {
+          "x": 930.0,
+          "y": 570.0
+        },
+        {
+          "x": 825.0,
+          "y": 570.0
+        },
+        {
+          "x": 825.0,
+          "y": 330.0
+        },
+        {
+          "x": 720.0,
+          "y": 330.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-13-14",
+      "source": "bus-13",
+      "target": "bus-14",
+      "points": [
+        {
+          "x": 720.0,
+          "y": 330.0
+        },
+        {
+          "x": 615.0,
+          "y": 330.0
+        },
+        {
+          "x": 615.0,
+          "y": 210.0
+        },
+        {
+          "x": 510.0,
+          "y": 210.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-14-15",
+      "source": "bus-14",
+      "target": "bus-15",
+      "points": [
+        {
+          "x": 510.0,
+          "y": 210.0
+        },
+        {
+          "x": 385.0,
+          "y": 210.0
+        },
+        {
+          "x": 385.0,
+          "y": 330.0
+        },
+        {
+          "x": 300.0,
+          "y": 330.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-15-16",
+      "source": "bus-15",
+      "target": "bus-16",
+      "points": [
+        {
+          "x": 300.0,
+          "y": 330.0
+        },
+        {
+          "x": 175.0,
+          "y": 330.0
+        },
+        {
+          "x": 175.0,
+          "y": 510.0
+        },
+        {
+          "x": 90.0,
+          "y": 510.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-16-17",
+      "source": "bus-16",
+      "target": "bus-17",
+      "points": [
+        {
+          "x": 90.0,
+          "y": 510.0
+        },
+        {
+          "x": 185.0,
+          "y": 510.0
+        },
+        {
+          "x": 185.0,
+          "y": 450.0
+        },
+        {
+          "x": 300.0,
+          "y": 450.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-16-19",
+      "source": "bus-16",
+      "target": "bus-19",
+      "points": [
+        {
+          "x": 90.0,
+          "y": 510.0
+        },
+        {
+          "x": 195.0,
+          "y": 510.0
+        },
+        {
+          "x": 195.0,
+          "y": 690.0
+        },
+        {
+          "x": 300.0,
+          "y": 690.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-16-21",
+      "source": "bus-16",
+      "target": "bus-21",
+      "points": [
+        {
+          "x": 90.0,
+          "y": 510.0
+        },
+        {
+          "x": 205.0,
+          "y": 510.0
+        },
+        {
+          "x": 205.0,
+          "y": 570.0
+        },
+        {
+          "x": 300.0,
+          "y": 570.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-16-24",
+      "source": "bus-16",
+      "target": "bus-24",
+      "points": [
+        {
+          "x": 90.0,
+          "y": 510.0
+        },
+        {
+          "x": 215.0,
+          "y": 510.0
+        },
+        {
+          "x": 215.0,
+          "y": 810.0
+        },
+        {
+          "x": 300.0,
+          "y": 810.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-17-18",
+      "source": "bus-17",
+      "target": "bus-18",
+      "points": [
+        {
+          "x": 300.0,
+          "y": 450.0
+        },
+        {
+          "x": 395.0,
+          "y": 450.0
+        },
+        {
+          "x": 395.0,
+          "y": 330.0
+        },
+        {
+          "x": 510.0,
+          "y": 330.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-17-27",
+      "source": "bus-17",
+      "target": "bus-27",
+      "points": [
+        {
+          "x": 300.0,
+          "y": 450.0
+        },
+        {
+          "x": 405.0,
+          "y": 450.0
+        },
+        {
+          "x": 405.0,
+          "y": 450.0
+        },
+        {
+          "x": 510.0,
+          "y": 450.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-21-22",
+      "source": "bus-21",
+      "target": "bus-22",
+      "points": [
+        {
+          "x": 300.0,
+          "y": 570.0
+        },
+        {
+          "x": 415.0,
+          "y": 570.0
+        },
+        {
+          "x": 415.0,
+          "y": 690.0
+        },
+        {
+          "x": 510.0,
+          "y": 690.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-22-23",
+      "source": "bus-22",
+      "target": "bus-23",
+      "points": [
+        {
+          "x": 510.0,
+          "y": 690.0
+        },
+        {
+          "x": 580.0,
+          "y": 690.0
+        },
+        {
+          "x": 580.0,
+          "y": 810.0
+        },
+        {
+          "x": 510.0,
+          "y": 810.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-23-24",
+      "source": "bus-23",
+      "target": "bus-24",
+      "points": [
+        {
+          "x": 510.0,
+          "y": 810.0
+        },
+        {
+          "x": 425.0,
+          "y": 810.0
+        },
+        {
+          "x": 425.0,
+          "y": 810.0
+        },
+        {
+          "x": 300.0,
+          "y": 810.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-23-36",
+      "source": "bus-23",
+      "target": "bus-36",
+      "points": [
+        {
+          "x": 510.0,
+          "y": 810.0
+        },
+        {
+          "x": 625.0,
+          "y": 810.0
+        },
+        {
+          "x": 625.0,
+          "y": 930.0
+        },
+        {
+          "x": 720.0,
+          "y": 930.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-25-26",
+      "source": "bus-25",
+      "target": "bus-26",
+      "points": [
+        {
+          "x": 930.0,
+          "y": 690.0
+        },
+        {
+          "x": 835.0,
+          "y": 690.0
+        },
+        {
+          "x": 835.0,
+          "y": 570.0
+        },
+        {
+          "x": 720.0,
+          "y": 570.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-26-27",
+      "source": "bus-26",
+      "target": "bus-27",
+      "points": [
+        {
+          "x": 720.0,
+          "y": 570.0
+        },
+        {
+          "x": 635.0,
+          "y": 570.0
+        },
+        {
+          "x": 635.0,
+          "y": 450.0
+        },
+        {
+          "x": 510.0,
+          "y": 450.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-26-28",
+      "source": "bus-26",
+      "target": "bus-28",
+      "points": [
+        {
+          "x": 720.0,
+          "y": 570.0
+        },
+        {
+          "x": 845.0,
+          "y": 570.0
+        },
+        {
+          "x": 845.0,
+          "y": 930.0
+        },
+        {
+          "x": 930.0,
+          "y": 930.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-26-29",
+      "source": "bus-26",
+      "target": "bus-29",
+      "points": [
+        {
+          "x": 720.0,
+          "y": 570.0
+        },
+        {
+          "x": 805.0,
+          "y": 570.0
+        },
+        {
+          "x": 805.0,
+          "y": 810.0
+        },
+        {
+          "x": 930.0,
+          "y": 810.0
+        }
+      ]
+    },
+    {
+      "id": "ACBranch-line-28-29",
+      "source": "bus-28",
+      "target": "bus-29",
+      "points": [
+        {
+          "x": 930.0,
+          "y": 930.0
+        },
+        {
+          "x": 1000.0,
+          "y": 930.0
+        },
+        {
+          "x": 1000.0,
+          "y": 810.0
+        },
+        {
+          "x": 930.0,
+          "y": 810.0
+        }
+      ]
+    },
+    {
+      "id": "ACTransformer-tr-2-30-i",
+      "source": "bus-2",
+      "target": "ACTransformer-tr-2-30",
+      "points": [
+        {
+          "x": 930.0,
+          "y": 450.0
+        },
+        {
+          "x": 962.5,
+          "y": 450.0
+        },
+        {
+          "x": 962.5,
+          "y": 540.0
+        },
+        {
+          "x": 1035.0,
+          "y": 540.0
+        }
+      ]
+    },
+    {
+      "id": "ACTransformer-tr-2-30-j",
+      "source": "ACTransformer-tr-2-30",
+      "target": "bus-30",
+      "points": [
+        {
+          "x": 1035.0,
+          "y": 540.0
+        },
+        {
+          "x": 1067.5,
+          "y": 540.0
+        },
+        {
+          "x": 1067.5,
+          "y": 630.0
+        },
+        {
+          "x": 1140.0,
+          "y": 630.0
+        }
+      ]
+    },
+    {
+      "id": "ACTransformer-tr-6-31-i",
+      "source": "bus-6",
+      "target": "ACTransformer-tr-6-31",
+      "points": [
+        {
+          "x": 1140.0,
+          "y": 150.0
+        },
+        {
+          "x": 1172.5,
+          "y": 150.0
+        },
+        {
+          "x": 1172.5,
+          "y": 270.0
+        },
+        {
+          "x": 1245.0,
+          "y": 270.0
+        }
+      ]
+    },
+    {
+      "id": "ACTransformer-tr-6-31-j",
+      "source": "ACTransformer-tr-6-31",
+      "target": "bus-31",
+      "points": [
+        {
+          "x": 1245.0,
+          "y": 270.0
+        },
+        {
+          "x": 1277.5,
+          "y": 270.0
+        },
+        {
+          "x": 1277.5,
+          "y": 390.0
+        },
+        {
+          "x": 1350.0,
+          "y": 390.0
+        }
+      ]
+    },
+    {
+      "id": "ACTransformer-tr-10-32-i",
+      "source": "bus-10",
+      "target": "ACTransformer-tr-10-32",
+      "points": [
+        {
+          "x": 930.0,
+          "y": 570.0
+        },
+        {
+          "x": 972.5,
+          "y": 570.0
+        },
+        {
+          "x": 972.5,
+          "y": 660.0
+        },
+        {
+          "x": 1035.0,
+          "y": 660.0
+        }
+      ]
+    },
+    {
+      "id": "ACTransformer-tr-10-32-j",
+      "source": "ACTransformer-tr-10-32",
+      "target": "bus-32",
+      "points": [
+        {
+          "x": 1035.0,
+          "y": 660.0
+        },
+        {
+          "x": 1077.5,
+          "y": 660.0
+        },
+        {
+          "x": 1077.5,
+          "y": 750.0
+        },
+        {
+          "x": 1140.0,
+          "y": 750.0
+        }
+      ]
+    },
+    {
+      "id": "ACTransformer-tr-12-11-i",
+      "source": "bus-12",
+      "target": "ACTransformer-tr-12-11",
+      "points": [
+        {
+          "x": 930.0,
+          "y": 330.0
+        },
+        {
+          "x": 982.5,
+          "y": 330.0
+        },
+        {
+          "x": 982.5,
+          "y": 420.0
+        },
+        {
+          "x": 1035.0,
+          "y": 420.0
+        }
+      ]
+    },
+    {
+      "id": "ACTransformer-tr-12-11-j",
+      "source": "ACTransformer-tr-12-11",
+      "target": "bus-11",
+      "points": [
+        {
+          "x": 1035.0,
+          "y": 420.0
+        },
+        {
+          "x": 1087.5,
+          "y": 420.0
+        },
+        {
+          "x": 1087.5,
+          "y": 510.0
+        },
+        {
+          "x": 1140.0,
+          "y": 510.0
+        }
+      ]
+    },
+    {
+      "id": "ACTransformer-tr-12-13-i",
+      "source": "bus-12",
+      "target": "ACTransformer-tr-12-13",
+      "points": [
+        {
+          "x": 930.0,
+          "y": 330.0
+        },
+        {
+          "x": 857.5,
+          "y": 330.0
+        },
+        {
+          "x": 857.5,
+          "y": 330.0
+        },
+        {
+          "x": 825.0,
+          "y": 330.0
+        }
+      ]
+    },
+    {
+      "id": "ACTransformer-tr-12-13-j",
+      "source": "ACTransformer-tr-12-13",
+      "target": "bus-13",
+      "points": [
+        {
+          "x": 825.0,
+          "y": 330.0
+        },
+        {
+          "x": 752.5,
+          "y": 330.0
+        },
+        {
+          "x": 752.5,
+          "y": 330.0
+        },
+        {
+          "x": 720.0,
+          "y": 330.0
+        }
+      ]
+    },
+    {
+      "id": "ACTransformer-tr-19-20-i",
+      "source": "bus-19",
+      "target": "ACTransformer-tr-19-20",
+      "points": [
+        {
+          "x": 300.0,
+          "y": 690.0
+        },
+        {
+          "x": 332.5,
+          "y": 690.0
+        },
+        {
+          "x": 332.5,
+          "y": 630.0
+        },
+        {
+          "x": 405.0,
+          "y": 630.0
+        }
+      ]
+    },
+    {
+      "id": "ACTransformer-tr-19-20-j",
+      "source": "ACTransformer-tr-19-20",
+      "target": "bus-20",
+      "points": [
+        {
+          "x": 405.0,
+          "y": 630.0
+        },
+        {
+          "x": 437.5,
+          "y": 630.0
+        },
+        {
+          "x": 437.5,
+          "y": 570.0
+        },
+        {
+          "x": 510.0,
+          "y": 570.0
+        }
+      ]
+    },
+    {
+      "id": "ACTransformer-tr-19-33-i",
+      "source": "bus-19",
+      "target": "ACTransformer-tr-19-33",
+      "points": [
+        {
+          "x": 300.0,
+          "y": 690.0
+        },
+        {
+          "x": 342.5,
+          "y": 690.0
+        },
+        {
+          "x": 342.5,
+          "y": 810.0
+        },
+        {
+          "x": 405.0,
+          "y": 810.0
+        }
+      ]
+    },
+    {
+      "id": "ACTransformer-tr-19-33-j",
+      "source": "ACTransformer-tr-19-33",
+      "target": "bus-33",
+      "points": [
+        {
+          "x": 405.0,
+          "y": 810.0
+        },
+        {
+          "x": 447.5,
+          "y": 810.0
+        },
+        {
+          "x": 447.5,
+          "y": 930.0
+        },
+        {
+          "x": 510.0,
+          "y": 930.0
+        }
+      ]
+    },
+    {
+      "id": "ACTransformer-tr-20-34-i",
+      "source": "bus-20",
+      "target": "ACTransformer-tr-20-34",
+      "points": [
+        {
+          "x": 510.0,
+          "y": 570.0
+        },
+        {
+          "x": 542.5,
+          "y": 570.0
+        },
+        {
+          "x": 542.5,
+          "y": 630.0
+        },
+        {
+          "x": 615.0,
+          "y": 630.0
+        }
+      ]
+    },
+    {
+      "id": "ACTransformer-tr-20-34-j",
+      "source": "ACTransformer-tr-20-34",
+      "target": "bus-34",
+      "points": [
+        {
+          "x": 615.0,
+          "y": 630.0
+        },
+        {
+          "x": 647.5,
+          "y": 630.0
+        },
+        {
+          "x": 647.5,
+          "y": 690.0
+        },
+        {
+          "x": 720.0,
+          "y": 690.0
+        }
+      ]
+    },
+    {
+      "id": "ACTransformer-tr-22-35-i",
+      "source": "bus-22",
+      "target": "ACTransformer-tr-22-35",
+      "points": [
+        {
+          "x": 510.0,
+          "y": 690.0
+        },
+        {
+          "x": 552.5,
+          "y": 690.0
+        },
+        {
+          "x": 552.5,
+          "y": 750.0
+        },
+        {
+          "x": 615.0,
+          "y": 750.0
+        }
+      ]
+    },
+    {
+      "id": "ACTransformer-tr-22-35-j",
+      "source": "ACTransformer-tr-22-35",
+      "target": "bus-35",
+      "points": [
+        {
+          "x": 615.0,
+          "y": 750.0
+        },
+        {
+          "x": 657.5,
+          "y": 750.0
+        },
+        {
+          "x": 657.5,
+          "y": 810.0
+        },
+        {
+          "x": 720.0,
+          "y": 810.0
+        }
+      ]
+    },
+    {
+      "id": "ACTransformer-tr-25-37-i",
+      "source": "bus-25",
+      "target": "ACTransformer-tr-25-37",
+      "points": [
+        {
+          "x": 930.0,
+          "y": 690.0
+        },
+        {
+          "x": 992.5,
+          "y": 690.0
+        },
+        {
+          "x": 992.5,
+          "y": 780.0
+        },
+        {
+          "x": 1035.0,
+          "y": 780.0
+        }
+      ]
+    },
+    {
+      "id": "ACTransformer-tr-25-37-j",
+      "source": "ACTransformer-tr-25-37",
+      "target": "bus-37",
+      "points": [
+        {
+          "x": 1035.0,
+          "y": 780.0
+        },
+        {
+          "x": 1097.5,
+          "y": 780.0
+        },
+        {
+          "x": 1097.5,
+          "y": 870.0
+        },
+        {
+          "x": 1140.0,
+          "y": 870.0
+        }
+      ]
+    },
+    {
+      "id": "ACTransformer-tr-29-38-i",
+      "source": "bus-29",
+      "target": "ACTransformer-tr-29-38",
+      "points": [
+        {
+          "x": 930.0,
+          "y": 810.0
+        },
+        {
+          "x": 1002.5,
+          "y": 810.0
+        },
+        {
+          "x": 1002.5,
+          "y": 900.0
+        },
+        {
+          "x": 1035.0,
+          "y": 900.0
+        }
+      ]
+    },
+    {
+      "id": "ACTransformer-tr-29-38-j",
+      "source": "ACTransformer-tr-29-38",
+      "target": "bus-38",
+      "points": [
+        {
+          "x": 1035.0,
+          "y": 900.0
+        },
+        {
+          "x": 1107.5,
+          "y": 900.0
+        },
+        {
+          "x": 1107.5,
+          "y": 990.0
+        },
+        {
+          "x": 1140.0,
+          "y": 990.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACGenerator-gen-30-1-30",
+      "source": "ACGenerator-gen-30-1",
+      "target": "bus-30",
+      "points": [
+        {
+          "x": 1140.0,
+          "y": 552.0
+        },
+        {
+          "x": 1210.0,
+          "y": 552.0
+        },
+        {
+          "x": 1210.0,
+          "y": 630.0
+        },
+        {
+          "x": 1140.0,
+          "y": 630.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACGenerator-gen-31-2-31",
+      "source": "ACGenerator-gen-31-2",
+      "target": "bus-31",
+      "points": [
+        {
+          "x": 1350.0,
+          "y": 312.0
+        },
+        {
+          "x": 1420.0,
+          "y": 312.0
+        },
+        {
+          "x": 1420.0,
+          "y": 390.0
+        },
+        {
+          "x": 1350.0,
+          "y": 390.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACGenerator-gen-32-3-32",
+      "source": "ACGenerator-gen-32-3",
+      "target": "bus-32",
+      "points": [
+        {
+          "x": 1140.0,
+          "y": 672.0
+        },
+        {
+          "x": 1210.0,
+          "y": 672.0
+        },
+        {
+          "x": 1210.0,
+          "y": 750.0
+        },
+        {
+          "x": 1140.0,
+          "y": 750.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACGenerator-gen-33-4-33",
+      "source": "ACGenerator-gen-33-4",
+      "target": "bus-33",
+      "points": [
+        {
+          "x": 510.0,
+          "y": 852.0
+        },
+        {
+          "x": 580.0,
+          "y": 852.0
+        },
+        {
+          "x": 580.0,
+          "y": 930.0
+        },
+        {
+          "x": 510.0,
+          "y": 930.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACGenerator-gen-34-5-34",
+      "source": "ACGenerator-gen-34-5",
+      "target": "bus-34",
+      "points": [
+        {
+          "x": 720.0,
+          "y": 612.0
+        },
+        {
+          "x": 790.0,
+          "y": 612.0
+        },
+        {
+          "x": 790.0,
+          "y": 690.0
+        },
+        {
+          "x": 720.0,
+          "y": 690.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACGenerator-gen-35-6-35",
+      "source": "ACGenerator-gen-35-6",
+      "target": "bus-35",
+      "points": [
+        {
+          "x": 720.0,
+          "y": 732.0
+        },
+        {
+          "x": 790.0,
+          "y": 732.0
+        },
+        {
+          "x": 790.0,
+          "y": 810.0
+        },
+        {
+          "x": 720.0,
+          "y": 810.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACGenerator-gen-36-7-36",
+      "source": "ACGenerator-gen-36-7",
+      "target": "bus-36",
+      "points": [
+        {
+          "x": 720.0,
+          "y": 852.0
+        },
+        {
+          "x": 790.0,
+          "y": 852.0
+        },
+        {
+          "x": 790.0,
+          "y": 930.0
+        },
+        {
+          "x": 720.0,
+          "y": 930.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACGenerator-gen-37-8-37",
+      "source": "ACGenerator-gen-37-8",
+      "target": "bus-37",
+      "points": [
+        {
+          "x": 1140.0,
+          "y": 792.0
+        },
+        {
+          "x": 1210.0,
+          "y": 792.0
+        },
+        {
+          "x": 1210.0,
+          "y": 870.0
+        },
+        {
+          "x": 1140.0,
+          "y": 870.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACGenerator-gen-38-9-38",
+      "source": "ACGenerator-gen-38-9",
+      "target": "bus-38",
+      "points": [
+        {
+          "x": 1140.0,
+          "y": 912.0
+        },
+        {
+          "x": 1210.0,
+          "y": 912.0
+        },
+        {
+          "x": 1210.0,
+          "y": 990.0
+        },
+        {
+          "x": 1140.0,
+          "y": 990.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACGenerator-gen-39-10-39",
+      "source": "ACGenerator-gen-39-10",
+      "target": "bus-39",
+      "points": [
+        {
+          "x": 1350.0,
+          "y": 672.0
+        },
+        {
+          "x": 1420.0,
+          "y": 672.0
+        },
+        {
+          "x": 1420.0,
+          "y": 750.0
+        },
+        {
+          "x": 1350.0,
+          "y": 750.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-1-1",
+      "source": "ACLoad-load-1",
+      "target": "bus-1",
+      "points": [
+        {
+          "x": 1140.0,
+          "y": 472.0
+        },
+        {
+          "x": 1210.0,
+          "y": 472.0
+        },
+        {
+          "x": 1210.0,
+          "y": 390.0
+        },
+        {
+          "x": 1140.0,
+          "y": 390.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-3-3",
+      "source": "ACLoad-load-3",
+      "target": "bus-3",
+      "points": [
+        {
+          "x": 720.0,
+          "y": 532.0
+        },
+        {
+          "x": 790.0,
+          "y": 532.0
+        },
+        {
+          "x": 790.0,
+          "y": 450.0
+        },
+        {
+          "x": 720.0,
+          "y": 450.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-4-4",
+      "source": "ACLoad-load-4",
+      "target": "bus-4",
+      "points": [
+        {
+          "x": 720.0,
+          "y": 292.0
+        },
+        {
+          "x": 814.0,
+          "y": 292.0
+        },
+        {
+          "x": 814.0,
+          "y": 210.0
+        },
+        {
+          "x": 720.0,
+          "y": 210.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-7-7",
+      "source": "ACLoad-load-7",
+      "target": "bus-7",
+      "points": [
+        {
+          "x": 1350.0,
+          "y": 592.0
+        },
+        {
+          "x": 1420.0,
+          "y": 592.0
+        },
+        {
+          "x": 1420.0,
+          "y": 510.0
+        },
+        {
+          "x": 1350.0,
+          "y": 510.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-8-8",
+      "source": "ACLoad-load-8",
+      "target": "bus-8",
+      "points": [
+        {
+          "x": 1140.0,
+          "y": 352.0
+        },
+        {
+          "x": 1210.0,
+          "y": 352.0
+        },
+        {
+          "x": 1210.0,
+          "y": 270.0
+        },
+        {
+          "x": 1140.0,
+          "y": 270.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-9-9",
+      "source": "ACLoad-load-9",
+      "target": "bus-9",
+      "points": [
+        {
+          "x": 1350.0,
+          "y": 712.0
+        },
+        {
+          "x": 1444.0,
+          "y": 712.0
+        },
+        {
+          "x": 1444.0,
+          "y": 630.0
+        },
+        {
+          "x": 1350.0,
+          "y": 630.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-12-12",
+      "source": "ACLoad-load-12",
+      "target": "bus-12",
+      "points": [
+        {
+          "x": 930.0,
+          "y": 412.0
+        },
+        {
+          "x": 1000.0,
+          "y": 412.0
+        },
+        {
+          "x": 1000.0,
+          "y": 330.0
+        },
+        {
+          "x": 930.0,
+          "y": 330.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-15-15",
+      "source": "ACLoad-load-15",
+      "target": "bus-15",
+      "points": [
+        {
+          "x": 300.0,
+          "y": 412.0
+        },
+        {
+          "x": 370.0,
+          "y": 412.0
+        },
+        {
+          "x": 370.0,
+          "y": 330.0
+        },
+        {
+          "x": 300.0,
+          "y": 330.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-16-16",
+      "source": "ACLoad-load-16",
+      "target": "bus-16",
+      "points": [
+        {
+          "x": 90.0,
+          "y": 592.0
+        },
+        {
+          "x": 160.0,
+          "y": 592.0
+        },
+        {
+          "x": 160.0,
+          "y": 510.0
+        },
+        {
+          "x": 90.0,
+          "y": 510.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-18-18",
+      "source": "ACLoad-load-18",
+      "target": "bus-18",
+      "points": [
+        {
+          "x": 510.0,
+          "y": 412.0
+        },
+        {
+          "x": 580.0,
+          "y": 412.0
+        },
+        {
+          "x": 580.0,
+          "y": 330.0
+        },
+        {
+          "x": 510.0,
+          "y": 330.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-20-20",
+      "source": "ACLoad-load-20",
+      "target": "bus-20",
+      "points": [
+        {
+          "x": 510.0,
+          "y": 652.0
+        },
+        {
+          "x": 580.0,
+          "y": 652.0
+        },
+        {
+          "x": 580.0,
+          "y": 570.0
+        },
+        {
+          "x": 510.0,
+          "y": 570.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-21-21",
+      "source": "ACLoad-load-21",
+      "target": "bus-21",
+      "points": [
+        {
+          "x": 300.0,
+          "y": 652.0
+        },
+        {
+          "x": 370.0,
+          "y": 652.0
+        },
+        {
+          "x": 370.0,
+          "y": 570.0
+        },
+        {
+          "x": 300.0,
+          "y": 570.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-23-23",
+      "source": "ACLoad-load-23",
+      "target": "bus-23",
+      "points": [
+        {
+          "x": 510.0,
+          "y": 892.0
+        },
+        {
+          "x": 580.0,
+          "y": 892.0
+        },
+        {
+          "x": 580.0,
+          "y": 810.0
+        },
+        {
+          "x": 510.0,
+          "y": 810.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-24-24",
+      "source": "ACLoad-load-24",
+      "target": "bus-24",
+      "points": [
+        {
+          "x": 300.0,
+          "y": 892.0
+        },
+        {
+          "x": 370.0,
+          "y": 892.0
+        },
+        {
+          "x": 370.0,
+          "y": 810.0
+        },
+        {
+          "x": 300.0,
+          "y": 810.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-25-25",
+      "source": "ACLoad-load-25",
+      "target": "bus-25",
+      "points": [
+        {
+          "x": 930.0,
+          "y": 772.0
+        },
+        {
+          "x": 1000.0,
+          "y": 772.0
+        },
+        {
+          "x": 1000.0,
+          "y": 690.0
+        },
+        {
+          "x": 930.0,
+          "y": 690.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-26-26",
+      "source": "ACLoad-load-26",
+      "target": "bus-26",
+      "points": [
+        {
+          "x": 720.0,
+          "y": 652.0
+        },
+        {
+          "x": 790.0,
+          "y": 652.0
+        },
+        {
+          "x": 790.0,
+          "y": 570.0
+        },
+        {
+          "x": 720.0,
+          "y": 570.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-27-27",
+      "source": "ACLoad-load-27",
+      "target": "bus-27",
+      "points": [
+        {
+          "x": 510.0,
+          "y": 532.0
+        },
+        {
+          "x": 580.0,
+          "y": 532.0
+        },
+        {
+          "x": 580.0,
+          "y": 450.0
+        },
+        {
+          "x": 510.0,
+          "y": 450.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-28-28",
+      "source": "ACLoad-load-28",
+      "target": "bus-28",
+      "points": [
+        {
+          "x": 930.0,
+          "y": 1012.0
+        },
+        {
+          "x": 1000.0,
+          "y": 1012.0
+        },
+        {
+          "x": 1000.0,
+          "y": 930.0
+        },
+        {
+          "x": 930.0,
+          "y": 930.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-29-29",
+      "source": "ACLoad-load-29",
+      "target": "bus-29",
+      "points": [
+        {
+          "x": 930.0,
+          "y": 892.0
+        },
+        {
+          "x": 1024.0,
+          "y": 892.0
+        },
+        {
+          "x": 1024.0,
+          "y": 810.0
+        },
+        {
+          "x": 930.0,
+          "y": 810.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-31-31",
+      "source": "ACLoad-load-31",
+      "target": "bus-31",
+      "points": [
+        {
+          "x": 1350.0,
+          "y": 472.0
+        },
+        {
+          "x": 1420.0,
+          "y": 472.0
+        },
+        {
+          "x": 1420.0,
+          "y": 390.0
+        },
+        {
+          "x": 1350.0,
+          "y": 390.0
+        }
+      ]
+    },
+    {
+      "id": "conn-ACLoad-load-39-39",
+      "source": "ACLoad-load-39",
+      "target": "bus-39",
+      "points": [
+        {
+          "x": 1350.0,
+          "y": 832.0
+        },
+        {
+          "x": 1420.0,
+          "y": 832.0
+        },
+        {
+          "x": 1420.0,
+          "y": 750.0
+        },
+        {
+          "x": 1350.0,
+          "y": 750.0
+        }
+      ]
+    }
+  ]
+}
