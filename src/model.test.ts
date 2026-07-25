@@ -1091,8 +1091,8 @@ describe("power system model", () => {
   test("round-trips project files without losing device parameters", () => {
     const node = createDefaultNode("ac-transformer", { x: 160, y: 180 });
     node.name = "1号主变";
-    node.params.ratedCapacity = "50 MVA";
-    node.params.voltageRatio = "110/10 kV";
+    node.params.rated_capacity = "50 MVA";
+    node.params.voltage_ratio = "110/10 kV";
 
     const json = serializeProject({
       version: 1,
@@ -1114,7 +1114,7 @@ describe("power system model", () => {
             anchor: "bottom",
             offset: { x: 0, y: 80 },
             layout: "vertical",
-            items: [{ id: "item-p", measurementTypeId: "activePower", sourcePoint: `${node.id}.activePower` }]
+            items: [{ id: "item-p", measurementTypeId: "active_power", sourcePoint: `${node.id}.active_power` }]
           },
           {
             id: "measurement-drop",
@@ -1123,7 +1123,7 @@ describe("power system model", () => {
             anchor: "bottom",
             offset: { x: 0, y: 80 },
             layout: "vertical",
-            items: [{ id: "item-q", measurementTypeId: "reactivePower", sourcePoint: "missing.reactivePower" }]
+            items: [{ id: "item-q", measurementTypeId: "reactive_power", sourcePoint: "missing.reactive_power" }]
           }
         ]
       },
@@ -1141,9 +1141,9 @@ describe("power system model", () => {
     expect(loaded.currentUnit).toBe("kA");
     expect(loaded.powerBaseValue).toBe(100);
     expect(loaded.nodes[0].name).toBe("1号主变");
-    expect(loaded.nodes[0].params.voltageRatio).toBe("110/10 kV");
+    expect(loaded.nodes[0].params.voltage_ratio).toBe("110/10 kV");
     expect(loaded.measurements?.groups.map((group) => group.id)).toEqual(["measurement-keep"]);
-    expect(loaded.measurements?.groups[0].items[0]).toMatchObject({ measurementTypeId: "activePower" });
+    expect(loaded.measurements?.groups[0].items[0]).toMatchObject({ measurementTypeId: "active_power" });
   });
 
   test("normalizes legacy projects onto a default visible layer", () => {
@@ -1454,18 +1454,64 @@ describe("power system model", () => {
 
     expect(isGeneratorNode(acWind)).toBe(true);
     expect(acWind.nodeNumber).toMatch(/^N\d+$/);
-    expect(acWind.params.ratedPower).toBe("50 MW");
-    expect(acWind.params.ratedCapacity).toBeUndefined();
-    expect(acWind.params.controlType).toBeUndefined();
+    expect(acWind.params.rated_power).toBe("50 MW");
+    expect(acWind.params.rated_capacity).toBeUndefined();
+    expect(acWind.params.control_type).toBeUndefined();
     expect(acWind.params.vbase).toBeUndefined();
-    expect(acWind.params.cutInWindSpeed).toBe("3 m/s");
-    expect(acWind.params.ratedWindSpeed).toBe("12 m/s");
-    expect(acWind.params.cutOutWindSpeed).toBe("25 m/s");
+    expect(acWind.params.cut_in_wind_speed).toBe("3 m/s");
+    expect(acWind.params.rated_wind_speed).toBe("12 m/s");
+    expect(acWind.params.cut_out_wind_speed).toBe("25 m/s");
 
-    expect(dcPv.params.ratedPower).toBe("5 MW");
-    expect(dcPv.params.ratedCapacity).toBeUndefined();
-    expect(dcPv.params.controlType).toBeUndefined();
+    expect(dcPv.params.rated_power).toBe("5 MW");
+    expect(dcPv.params.rated_capacity).toBeUndefined();
+    expect(dcPv.params.control_type).toBeUndefined();
     expect(dcPv.params.vbase).toBeUndefined();
+  });
+
+  test("uses snake_case names for every built-in device class parameter", () => {
+    const snakeCasePattern = /^[a-z0-9_]+$/;
+    const violations: string[] = [];
+    for (const template of DEVICE_LIBRARY) {
+      if (isStaticNode({ kind: template.kind } as ModelNode)) {
+        continue;
+      }
+      for (const key of Object.keys(template.params ?? {})) {
+        if (!snakeCasePattern.test(key)) {
+          violations.push(`${template.kind}.params.${key}`);
+        }
+      }
+      for (const definition of getTemplateParameterDefinitions(template)) {
+        if (!snakeCasePattern.test(definition.enName)) {
+          violations.push(`${template.kind}.definition.${definition.enName}`);
+        }
+        if (definition.exportName && !snakeCasePattern.test(definition.exportName)) {
+          violations.push(`${template.kind}.export.${definition.exportName}`);
+        }
+      }
+    }
+
+    expect(violations).toEqual([]);
+  });
+
+  test("creates built-in device default params with snake_case names", () => {
+    const snakeCasePattern = /^[a-z0-9_]+$/;
+    const violations: string[] = [];
+    for (const template of DEVICE_LIBRARY) {
+      if (isStaticNode({ kind: template.kind } as ModelNode)) {
+        continue;
+      }
+      const node = createDefaultNode(template.kind, { x: 0, y: 0 });
+      for (const key of Object.keys(node.params ?? {})) {
+        if (key.startsWith("_")) {
+          continue;
+        }
+        if (!snakeCasePattern.test(key)) {
+          violations.push(`${template.kind}.node.${key}`);
+        }
+      }
+    }
+
+    expect(violations).toEqual([]);
   });
 
   test("adds AC diesel generator as an ACGenerator with diesel glyph", () => {
@@ -1476,9 +1522,9 @@ describe("power system model", () => {
       terminalType: "ac",
       terminalCount: 1,
       params: expect.objectContaining({
-        ratedVoltage: "10 kV",
-        ratedPower: "5 MW",
-        sourceType: "柴油"
+        rated_voltage: "10 kV",
+        rated_power: "5 MW",
+        source_type: "柴油"
       })
     });
 
@@ -1487,9 +1533,9 @@ describe("power system model", () => {
 
     expect(node.terminals).toHaveLength(1);
     expect(node.terminals[0]).toMatchObject({ type: "ac", label: "交流设备端1" });
-    expect(node.params.ratedCapacity).toBe("5 MW");
-    expect(node.params.controlType).toBe("PV");
-    expect(node.params.sourceType).toBe("柴油");
+    expect(node.params.rated_capacity).toBe("5 MW");
+    expect(node.params.control_type).toBe("PV");
+    expect(node.params.source_type).toBe("柴油");
     expect(inferESection("ac-diesel-source", node.params)).toBe("ACGenerator");
     expect(getDeviceGlyphVariant("ac-diesel-source")).toBe("diesel-source");
 
@@ -2283,7 +2329,7 @@ describe("power system model", () => {
         kind: "ac-source",
         label: "交流电源",
         categoryLibrary: "交流设备",
-        params: { ratedVoltage: "10 kV", frequency: "50 Hz", shortCircuitCapacity: "500 MVA" },
+        params: { rated_voltage: "10 kV", frequency: "50 Hz", short_circuit_capacity: "500 MVA" },
         terminalType: "ac",
         terminalCount: 1
       } as unknown as DeviceTemplate;
@@ -2302,7 +2348,7 @@ describe("power system model", () => {
           kind: "ac-source",
           label: "交流电源",
           categoryLibrary: "交流设备",
-          params: { ratedVoltage: "10 kV" },
+          params: { rated_voltage: "10 kV" },
           terminalType: "ac",
           terminalCount: 1
         },
@@ -2577,7 +2623,7 @@ describe("power system model", () => {
       expect(points).toHaveLength(2);
       expect(points[0].x).toBeLessThan(points[1].x);
       expect(getDeviceGlyphVariant(kind)).toBe("routable-line");
-      expect(node.params.lineWidth).toBe(String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH));
+      expect(node.params.line_width).toBe(String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH));
       expect(getDeviceStrokeWidth(node)).toBe(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH);
       expect(inferESection(kind, node.params)).toBe(section);
     }
@@ -2601,19 +2647,19 @@ describe("power system model", () => {
       ...createDefaultNode("ac-routable-line", { x: 300, y: 160 }),
       params: {
         ...createDefaultNode("ac-routable-line", { x: 300, y: 160 }).params,
-        lineWidth: "7"
+        line_width: "7"
       }
     };
     const customLine = {
       ...legacyLine,
       params: {
         ...legacyLine.params,
-        lineWidth: "5"
+        line_width: "5"
       }
     };
 
     expect(getDeviceStrokeWidth(legacyLine)).toBe(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH);
-    expect(normalizeNodeTerminalsByTemplate(legacyLine).params.lineWidth).toBe(String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH));
+    expect(normalizeNodeTerminalsByTemplate(legacyLine).params.line_width).toBe(String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH));
     expect(getDeviceStrokeWidth(customLine)).toBe(5);
   });
 
@@ -4129,7 +4175,7 @@ describe("power system model", () => {
     expect(getDeviceStrokeColor(acLine)).toBe("#2563eb");
     expect(getDeviceStrokeWidth(acLine)).toBe(4);
 
-    const customColored = { ...acLine, params: { ...acLine.params, foregroundColor: "#123456", lineWidth: "3.5" } };
+    const customColored = { ...acLine, params: { ...acLine.params, foregroundColor: "#123456", line_width: "3.5" } };
     expect(getDeviceStrokeColor(customColored)).toBe("#123456");
     expect(getDeviceStrokeWidth(customColored)).toBe(3.5);
 
@@ -4282,7 +4328,7 @@ describe("power system model", () => {
       idx: "7",
       node: "3",
       pbase: "9.5",
-      ratedActivePower: "不要导出",
+      rated_active_power: "不要导出",
       backgroundImage: apiPath("/images/asset")
     };
 
@@ -4308,28 +4354,28 @@ describe("power system model", () => {
       pbase: "9.5",
       run_stat: "1"
     });
-    expect(payload.ACLoad.columns).not.toContain("ratedActivePower");
+    expect(payload.ACLoad.columns).not.toContain("rated_active_power");
     expect(payload.ACLoad.columns).not.toContain("backgroundImage");
     expect(buildEDeviceParameterFile({
       version: 1,
       name: "E导出模型",
       nodes: [acLoad, staticText],
       edges: []
-    })).not.toContain("ratedActivePower");
+    })).not.toContain("rated_active_power");
   });
 
   test("keeps legacy E aliases as compatibility defaults when export metadata is absent", () => {
     const transformer = createDefaultNode("ac-transformer", { x: 100, y: 100 });
     const definitions = JSON.parse(transformer.params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]") as DeviceParameterDefinition[];
-    const resistanceDefinition = definitions.find((definition) => definition.enName === "resistancePu");
-    const ratedCapacityDefinition = definitions.find((definition) => definition.enName === "ratedCapacity");
+    const resistanceDefinition = definitions.find((definition) => definition.enName === "resistance_pu");
+    const rated_capacityDefinition = definitions.find((definition) => definition.enName === "rated_capacity");
 
     expect(resistanceDefinition).toBeTruthy();
     expect(resolveDeviceParameterDefinitionExportSettings(transformer.kind, transformer.params, resistanceDefinition!)).toEqual({
       exportEnabled: true,
       exportName: "r"
     });
-    expect(resolveDeviceParameterDefinitionExportSettings(transformer.kind, transformer.params, ratedCapacityDefinition!)).toEqual({
+    expect(resolveDeviceParameterDefinitionExportSettings(transformer.kind, transformer.params, rated_capacityDefinition!)).toEqual({
       exportEnabled: false,
       exportName: ""
     });
@@ -4339,9 +4385,9 @@ describe("power system model", () => {
   test("removes a legacy E column when its parameter definition disables export", () => {
     const transformer = createDefaultNode("ac-transformer", { x: 100, y: 100 });
     const definitions = JSON.parse(transformer.params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]") as DeviceParameterDefinition[];
-    transformer.params.resistancePu = "0.125";
+    transformer.params.resistance_pu = "0.125";
     transformer.params[CUSTOM_PARAM_DEFINITIONS_KEY] = JSON.stringify(definitions.map((definition) =>
-      definition.enName === "resistancePu"
+      definition.enName === "resistance_pu"
         ? { ...definition, exportEnabled: false, exportName: "r" }
         : definition
     ));
@@ -4360,9 +4406,9 @@ describe("power system model", () => {
   test("uses a configured E export name while reading the value through the legacy alias", () => {
     const transformer = createDefaultNode("ac-transformer", { x: 100, y: 100 });
     const definitions = JSON.parse(transformer.params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]") as DeviceParameterDefinition[];
-    transformer.params.resistancePu = "0.125";
+    transformer.params.resistance_pu = "0.125";
     transformer.params[CUSTOM_PARAM_DEFINITIONS_KEY] = JSON.stringify(definitions.map((definition) =>
-      definition.enName === "resistancePu"
+      definition.enName === "resistance_pu"
         ? { ...definition, exportEnabled: true, exportName: "resistance" }
         : definition
     ));
@@ -4643,24 +4689,24 @@ describe("power system model", () => {
     transformer.terminals[2].vbase = "10 kV";
     transformer.params = {
       ...transformer.params,
-      highResistancePu: "0.01",
-      highReactancePu: "0.11",
-      highMagnetizingConductancePu: "0.001",
-      highMagnetizingSusceptancePu: "0.002",
-      highTapRatio: "1.01",
-      highShift: "1",
-      mediumResistancePu: "0.02",
-      mediumReactancePu: "0.12",
-      mediumMagnetizingConductancePu: "0.003",
-      mediumMagnetizingSusceptancePu: "0.004",
-      mediumTapRatio: "1.02",
-      mediumShift: "2",
-      lowResistancePu: "0.03",
-      lowReactancePu: "0.13",
-      lowMagnetizingConductancePu: "0.005",
-      lowMagnetizingSusceptancePu: "0.006",
-      lowTapRatio: "1.03",
-      lowShift: "3"
+      high_resistance_pu: "0.01",
+      high_reactance_pu: "0.11",
+      high_magnetizing_conductance_pu: "0.001",
+      high_magnetizing_susceptance_pu: "0.002",
+      high_tap_ratio: "1.01",
+      high_shift: "1",
+      medium_resistance_pu: "0.02",
+      medium_reactance_pu: "0.12",
+      medium_magnetizing_conductance_pu: "0.003",
+      medium_magnetizing_susceptance_pu: "0.004",
+      medium_tap_ratio: "1.02",
+      medium_shift: "2",
+      low_resistance_pu: "0.03",
+      low_reactance_pu: "0.13",
+      low_magnetizing_conductance_pu: "0.005",
+      low_magnetizing_susceptance_pu: "0.006",
+      low_tap_ratio: "1.03",
+      low_shift: "3"
     };
     highBus.terminals.forEach((terminal) => { terminal.vbase = "220 kV"; });
     mediumBus.terminals.forEach((terminal) => { terminal.vbase = "110 kV"; });
@@ -4841,15 +4887,15 @@ describe("power system model", () => {
     const threeWinding = createDefaultNode("ac-three-winding-transformer", { x: 500, y: 100 });
 
     expect(acLoad.nodeNumber).toMatch(/^N\d+$/);
-    expect(acLoad.params.ratedActivePower).toBe("5 MW");
+    expect(acLoad.params.rated_active_power).toBe("5 MW");
     expect(acLoad.params.pv0).toBe("1.0");
     expect(acLoad.params.pv1).toBe("0.0");
     expect(acLoad.params.pv2).toBe("0.0");
-    expect(acLoad.params.ratedReactivePower).toBe("1.2 Mvar");
+    expect(acLoad.params.rated_reactive_power).toBe("1.2 Mvar");
     expect(acLoad.params.qv0).toBe("1.0");
     expect(acLoad.params.qv1).toBe("0.0");
     expect(acLoad.params.qv2).toBe("0.0");
-    expect(dcLoad.params.ratedReactivePower).toBeUndefined();
+    expect(dcLoad.params.rated_reactive_power).toBeUndefined();
 
     expect(acLine.terminals[0].nodeNumber).toMatch(/^N\d+$/);
     expect(acLine.terminals[1].nodeNumber).toMatch(/^N\d+$/);
@@ -4858,20 +4904,20 @@ describe("power system model", () => {
     expect(acLine.params.b).toBe("0.0");
 
     expect(twoWinding.terminals).toHaveLength(2);
-    expect(twoWinding.params.ratedCapacity).toBe("50 MVA");
-    expect(twoWinding.params.resistancePu).toBe("0.0");
-    expect(twoWinding.params.reactancePu).toBe("0.1");
-    expect(twoWinding.params.magnetizingConductancePu).toBe("0.0");
-    expect(twoWinding.params.magnetizingSusceptancePu).toBe("0.0");
-    expect(twoWinding.params.tapRatio).toBe("1.0");
+    expect(twoWinding.params.rated_capacity).toBe("50 MVA");
+    expect(twoWinding.params.resistance_pu).toBe("0.0");
+    expect(twoWinding.params.reactance_pu).toBe("0.1");
+    expect(twoWinding.params.magnetizing_conductance_pu).toBe("0.0");
+    expect(twoWinding.params.magnetizing_susceptance_pu).toBe("0.0");
+    expect(twoWinding.params.tap_ratio).toBe("1.0");
 
     expect(threeWinding.terminals).toHaveLength(3);
-    expect(threeWinding.params.highRatedCapacity).toBe("90 MVA");
-    expect(threeWinding.params.mediumRatedCapacity).toBe("90 MVA");
-    expect(threeWinding.params.lowRatedCapacity).toBe("90 MVA");
-    expect(threeWinding.params.highTapRatio).toBe("1.0");
-    expect(threeWinding.params.mediumTapRatio).toBe("1.0");
-    expect(threeWinding.params.lowTapRatio).toBe("1.0");
+    expect(threeWinding.params.high_rated_capacity).toBe("90 MVA");
+    expect(threeWinding.params.medium_rated_capacity).toBe("90 MVA");
+    expect(threeWinding.params.low_rated_capacity).toBe("90 MVA");
+    expect(threeWinding.params.high_tap_ratio).toBe("1.0");
+    expect(threeWinding.params.medium_tap_ratio).toBe("1.0");
+    expect(threeWinding.params.low_tap_ratio).toBe("1.0");
     expect(threeWinding.params.is_container).toBeUndefined();
     expect(threeWinding.params.neutral_node).toBe("");
     expect(threeWinding.params.neutral_vbase).toBe("1.0");
@@ -4883,8 +4929,8 @@ describe("power system model", () => {
     const dcdc = createDefaultNode("dcdc-converter", { x: 600, y: 100 });
     expect(dcdc.terminals[0].nodeNumber).toMatch(/^N\d+$/);
     expect(dcdc.terminals[1].nodeNumber).toMatch(/^N\d+$/);
-    expect(dcdc.params.sourceEquivalentResistance).toBe("0.0");
-    expect(dcdc.params.targetEquivalentResistance).toBe("0.0");
+    expect(dcdc.params.source_equivalent_resistance).toBe("0.0");
+    expect(dcdc.params.target_equivalent_resistance).toBe("0.0");
     expect(dcdc.params.i_control_type).toBe("CTRL_P");
     expect(dcdc.params.j_control_type).toBe("SLACK");
     expect(dcdc.params.control_type).toBeUndefined();
@@ -4892,18 +4938,18 @@ describe("power system model", () => {
     const acdc = createDefaultNode("acdc-converter", { x: 700, y: 100 });
     expect(acdc.terminals.map((terminal) => terminal.type)).toEqual(["ac", "dc"]);
     expect(acdc.terminals.map((terminal) => terminal.vbase)).toEqual(["0", "0"]);
-    expect(acdc.params.sourceEquivalentResistance).toBe("0.0");
-    expect(acdc.params.targetEquivalentResistance).toBe("0.0");
+    expect(acdc.params.source_equivalent_resistance).toBe("0.0");
+    expect(acdc.params.target_equivalent_resistance).toBe("0.0");
     expect(acdc.params.control_type).toBe("DCV");
-    expect(acdc.params.acControlType).toBe("定PQ");
-    expect(acdc.params.dcControlType).toBe("不定");
+    expect(acdc.params.ac_control_type).toBe("定PQ");
+    expect(acdc.params.dc_control_type).toBe("不定");
 
     const acac = createDefaultNode("acac-converter", { x: 800, y: 100 });
-    expect(acac.params.sourceEquivalentResistance).toBe("0.0");
-    expect(acac.params.targetEquivalentResistance).toBe("0.0");
+    expect(acac.params.source_equivalent_resistance).toBe("0.0");
+    expect(acac.params.target_equivalent_resistance).toBe("0.0");
     expect(acac.params.control_type).toBe("PQQ");
-    expect(acac.params.sourceControlType).toBe("定PQ");
-    expect(acac.params.targetControlType).toBe("不定");
+    expect(acac.params.source_control_type).toBe("定PQ");
+    expect(acac.params.target_control_type).toBe("不定");
 
     const dcLine = createDefaultNode("dc-line", { x: 900, y: 100 });
     expect(dcLine.params.r).toBe("1.0");
@@ -4914,16 +4960,16 @@ describe("power system model", () => {
     const dcBreaker = createDefaultNode("dc-breaker", { x: 1100, y: 100 });
     expect(acSwitch.terminals[0].nodeNumber).toMatch(/^N\d+$/);
     expect(acSwitch.terminals[1].nodeNumber).toMatch(/^N\d+$/);
-    expect(acSwitch.params.ratedCapacity).toBe("1250 A");
+    expect(acSwitch.params.rated_capacity).toBe("1250 A");
     expect(acSwitch.params.status).toBe("1");
-    expect(acSwitch.params.closedStatus).toBeUndefined();
+    expect(acSwitch.params.closed_status).toBeUndefined();
     expect(getSwitchVisualState(acSwitch)).toBe("closed");
     acSwitch.params.status = "0";
     expect(getSwitchVisualState(acSwitch)).toBe("open");
     acSwitch.params.status = "1";
     expect(getSwitchVisualState(acSwitch)).toBe("closed");
     delete dcBreaker.params.status;
-    dcBreaker.params.closedStatus = "打开";
+    dcBreaker.params.closed_status = "打开";
     expect(getSwitchVisualState(dcBreaker)).toBe("open");
     dcBreaker.params.status = "1";
     expect(getSwitchVisualState(dcBreaker)).toBe("closed");
@@ -5644,7 +5690,7 @@ describe("power system model", () => {
       size: { width: 1, height: 1 },
       params: {
         ...createDefaultNode("ac-routable-line", { x: 0, y: 0 }).params,
-        lineWidth: "4",
+        line_width: "4",
         [ROUTABLE_LINE_POINTS_PARAM]: JSON.stringify([
           { x: 0, y: 300 },
           { x: 0, y: 100 },
@@ -9385,16 +9431,18 @@ describe("power system model", () => {
   });
 
   const electricGenerationCases = [
-    { kind: "ac-wind-source", family: "wind", label: "交流风力发电机", sourceType: "风力", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", ratedVoltage: "35 kV", ratedPower: "50 MW", derivedClassCnName: "交流风电", derivedComponentType: "ACWindGen" },
-    { kind: "dc-wind-source", family: "wind", label: "直流风力发电机", sourceType: "风力", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", ratedVoltage: "1500 V", ratedPower: "10 MW", derivedClassCnName: "直流风电", derivedComponentType: "DCWindGen" },
-    { kind: "ac-pv-source", family: "pv", label: "交流光伏发电机", sourceType: "光伏", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", ratedVoltage: "10 kV", ratedPower: "20 MW", derivedClassCnName: "交流光伏", derivedComponentType: "ACPVGen" },
-    { kind: "dc-pv-source", family: "pv", label: "直流光伏发电机", sourceType: "光伏", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", ratedVoltage: "1500 V", ratedPower: "5 MW", derivedClassCnName: "直流光伏", derivedComponentType: "DCPVGen" },
-    { kind: "ac-thermal-source", family: "thermal", label: "交流火力发电机", sourceType: "火力", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", ratedVoltage: "220 kV", ratedPower: "600 MW", derivedClassCnName: "交流火电", derivedComponentType: "ACThermalGen" },
-    { kind: "dc-thermal-source", family: "thermal", label: "直流火力发电机", sourceType: "火力", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", ratedVoltage: "1500 V", ratedPower: "600 MW", derivedClassCnName: "直流火电", derivedComponentType: "DCThermalGen" },
-    { kind: "ac-hydro-source", family: "hydro", label: "交流水力发电机", sourceType: "水力", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", ratedVoltage: "220 kV", ratedPower: "300 MW", derivedClassCnName: "交流水电", derivedComponentType: "ACHydroGen" },
-    { kind: "dc-hydro-source", family: "hydro", label: "直流水力发电机", sourceType: "水力", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", ratedVoltage: "1500 V", ratedPower: "300 MW", derivedClassCnName: "直流水电", derivedComponentType: "DCHydroGen" },
-    { kind: "ac-nuclear-source", family: "nuclear", label: "交流核能发电机", sourceType: "核能", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", ratedVoltage: "500 kV", ratedPower: "1000 MW", derivedClassCnName: "交流核电", derivedComponentType: "ACNuclearGen" },
-    { kind: "dc-nuclear-source", family: "nuclear", label: "直流核能发电机", sourceType: "核能", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", ratedVoltage: "1500 V", ratedPower: "1000 MW", derivedClassCnName: "直流核电", derivedComponentType: "DCNuclearGen" }
+    { kind: "ac-wind-source", family: "wind", label: "交流风力发电机", source_type: "风力", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "35 kV", rated_power: "50 MW", derivedClassCnName: "交流风电", derivedComponentType: "ACWindGen" },
+    { kind: "dc-wind-source", family: "wind", label: "直流风力发电机", source_type: "风力", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "1500 V", rated_power: "10 MW", derivedClassCnName: "直流风电", derivedComponentType: "DCWindGen" },
+    { kind: "ac-pv-source", family: "pv", label: "交流光伏发电机", source_type: "光伏", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "10 kV", rated_power: "20 MW", derivedClassCnName: "交流光伏", derivedComponentType: "ACPVGen" },
+    { kind: "dc-pv-source", family: "pv", label: "直流光伏发电机", source_type: "光伏", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "1500 V", rated_power: "5 MW", derivedClassCnName: "直流光伏", derivedComponentType: "DCPVGen" },
+    { kind: "ac-thermal-source", family: "thermal", label: "交流火力发电机", source_type: "火力", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "220 kV", rated_power: "600 MW", derivedClassCnName: "交流火电", derivedComponentType: "ACThermalGen" },
+    { kind: "dc-thermal-source", family: "thermal", label: "直流火力发电机", source_type: "火力", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "1500 V", rated_power: "600 MW", derivedClassCnName: "直流火电", derivedComponentType: "DCThermalGen" },
+    { kind: "ac-hydro-source", family: "hydro", label: "交流水力发电机", source_type: "水力", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "220 kV", rated_power: "300 MW", derivedClassCnName: "交流水电", derivedComponentType: "ACHydroGen" },
+    { kind: "dc-hydro-source", family: "hydro", label: "直流水力发电机", source_type: "水力", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "1500 V", rated_power: "300 MW", derivedClassCnName: "直流水电", derivedComponentType: "DCHydroGen" },
+    { kind: "ac-nuclear-source", family: "nuclear", label: "交流核能发电机", source_type: "核能", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "500 kV", rated_power: "1000 MW", derivedClassCnName: "交流核电", derivedComponentType: "ACNuclearGen" },
+    { kind: "dc-nuclear-source", family: "nuclear", label: "直流核能发电机", source_type: "核能", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "1500 V", rated_power: "1000 MW", derivedClassCnName: "直流核电", derivedComponentType: "DCNuclearGen" },
+    { kind: "ac-storage", family: "storage", label: "交流电化学储能", source_type: "储能", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "10 kV", rated_power: "5 MW", derivedClassCnName: "交流储能", derivedComponentType: "ACStorageGen" },
+    { kind: "dc-storage", family: "storage", label: "直流电化学储能", source_type: "储能", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "750 V", rated_power: "5 MW", derivedClassCnName: "直流储能", derivedComponentType: "DCStorageGen" }
   ] as const;
 
   const legacyElectricGenerationKinds = new Set<string>([
@@ -9418,9 +9466,9 @@ describe("power system model", () => {
         terminalLabels: [expected.terminalLabel],
         terminalRoles: ["single-source"],
         params: expect.objectContaining({
-          sourceType: expected.sourceType,
-          ratedVoltage: expected.ratedVoltage,
-          ratedPower: expected.ratedPower
+          source_type: expected.source_type,
+          rated_voltage: expected.rated_voltage,
+          rated_power: expected.rated_power
         })
       });
       expect(template?.terminalAssociations).toBeUndefined();
@@ -9432,15 +9480,19 @@ describe("power system model", () => {
         { id: "t1", label: expected.terminalLabel, type: expected.terminalType }
       ]);
       expect(node.params).toMatchObject({
-        sourceType: expected.sourceType,
-        ratedVoltage: expected.ratedVoltage,
-        ratedPower: expected.ratedPower
+        source_type: expected.source_type,
+        rated_voltage: expected.rated_voltage,
+        rated_power: expected.rated_power
       });
       expect(node.params).not.toHaveProperty("is_container");
       expect(node.params).not.toHaveProperty(expected.relationKey);
-      expect(node.params).not.toHaveProperty("ratedCapacity");
-      expect(node.params).not.toHaveProperty("controlType");
-      expect(node.params).not.toHaveProperty("vbase");
+      if (expected.family === "storage") {
+        expect(node.params.vbase).toBe("0");
+      } else {
+        expect(node.params).not.toHaveProperty("rated_capacity");
+        expect(node.params).not.toHaveProperty("control_type");
+        expect(node.params).not.toHaveProperty("vbase");
+      }
 
       const associatedViews = buildContainerDeviceParameterViews(node, template!).filter((view) => view.kind === "associated");
       expect(associatedViews).toHaveLength(0);
@@ -9451,9 +9503,9 @@ describe("power system model", () => {
       expect(definitions.get("status")).toMatchObject({ valueType: "numberEnum", enumValues: ["1", "0"], readonly: false });
       expect(definitions.get("run_stat")).toMatchObject({ valueType: "stringEnum", enumValues: ["运行", "停运"], readonly: false });
       expect(definitions.get(expected.relationKey)).toBeUndefined();
-      expect(definitions.get("sourceType")).toMatchObject({ valueType: "string", readonly: true });
-      expect(definitions.get("ratedPower")).toMatchObject({ valueType: "string", readonly: false });
-      expect(definitions.get("ratedVoltage")).toMatchObject({ valueType: "string", readonly: false });
+      expect(definitions.get("source_type")).toMatchObject({ valueType: "string", readonly: true });
+      expect(definitions.get("rated_power")).toMatchObject({ valueType: "string", readonly: false });
+      expect(definitions.get("rated_voltage")).toMatchObject({ valueType: "string", readonly: false });
     }
   });
 
@@ -9509,9 +9561,9 @@ describe("power system model", () => {
   test("exports electric generation derived devices as base records plus derived records with only relation and family fields", () => {
     const indexed = assignPermanentDeviceIndex(createDefaultNode("ac-wind-source", { x: 100, y: 100 }), {}).node;
     indexed.name = "风电场A";
-    indexed.params.windTurbineModel = "WT-8MW";
-    indexed.params.windTurbineCount = "12";
-    indexed.params.cutInWindSpeed = "3.5mps";
+    indexed.params.wind_turbine_model = "WT-8MW";
+    indexed.params.wind_turbine_count = "12";
+    indexed.params.cut_in_wind_speed = "3.5mps";
 
     const payload = parseESections(buildEDeviceParameterFile({
       version: 1,
@@ -9531,26 +9583,26 @@ describe("power system model", () => {
     expect(payload.ACWindGen.columns).toEqual(expect.arrayContaining([
       "idx",
       "idx_acgenerator",
-      "windTurbineModel",
-      "windTurbineCount",
-      "cutInWindSpeed"
+      "wind_turbine_model",
+      "wind_turbine_count",
+      "cut_in_wind_speed"
     ]));
     expect(payload.ACWindGen.rows).toEqual([
       expect.objectContaining({
         idx: indexed.params.idx,
         idx_acgenerator: indexed.params.idx,
-        windTurbineModel: "WT-8MW",
-        windTurbineCount: "12",
-        cutInWindSpeed: "3.5mps"
+        wind_turbine_model: "WT-8MW",
+        wind_turbine_count: "12",
+        cut_in_wind_speed: "3.5mps"
       })
     ]);
     expect(payload.ACWindGen.columns).not.toContain("name");
     expect(payload.ACWindGen.columns).not.toContain("node");
     expect(payload.ACWindGen.columns).not.toContain("control_type");
     expect(payload.ACWindGen.columns).not.toContain("run_stat");
-    expect(payload.ACWindGen.columns).not.toContain("ratedPower");
-    expect(payload.ACWindGen.columns).not.toContain("ratedVoltage");
-    expect(payload.ACWindGen.columns).not.toContain("sourceType");
+    expect(payload.ACWindGen.columns).not.toContain("rated_power");
+    expect(payload.ACWindGen.columns).not.toContain("rated_voltage");
+    expect(payload.ACWindGen.columns).not.toContain("source_type");
   });
 
   test("exports legacy container-polluted electric generation derived nodes without container warnings or duplicate associated records", () => {
@@ -9560,7 +9612,7 @@ describe("power system model", () => {
       ...wind.params,
       is_container: "1",
       idx_ac_unit_t1: "999",
-      windTurbineModel: "WT-8MW"
+      wind_turbine_model: "WT-8MW"
     };
     const project: ProjectFile = {
       version: 1,
@@ -9574,13 +9626,13 @@ describe("power system model", () => {
     expect(getEExportWarnings(project)).toEqual([]);
     expect(payload.ACGenerator.rows).toHaveLength(1);
     expect(payload.ACGenerator.rows[0].idx).toBe(wind.params.idx);
-    expect(payload.ACWindGen.columns).toEqual(expect.arrayContaining(["idx", "idx_acgenerator", "windTurbineModel"]));
+    expect(payload.ACWindGen.columns).toEqual(expect.arrayContaining(["idx", "idx_acgenerator", "wind_turbine_model"]));
     expect(payload.ACWindGen.columns).not.toContain("idx_ac_unit_t1");
     expect(payload.ACWindGen.rows).toEqual([
       expect.objectContaining({
         idx: "1",
         idx_acgenerator: wind.params.idx,
-        windTurbineModel: "WT-8MW"
+        wind_turbine_model: "WT-8MW"
       })
     ]);
   });
@@ -9588,16 +9640,16 @@ describe("power system model", () => {
   test("numbers derived component rows independently from base component indexes and per derived section", () => {
     const nuclearOne = createDefaultNode("ac-nuclear-source", { x: 100, y: 100 });
     nuclearOne.params.idx = "28";
-    nuclearOne.params.nuclearUnitModel = "1000MW";
+    nuclearOne.params.nuclear_unit_model = "1000MW";
     const nuclearTwo = createDefaultNode("ac-nuclear-source", { x: 200, y: 100 });
     nuclearTwo.params.idx = "32";
-    nuclearTwo.params.nuclearUnitModel = "1000MW";
+    nuclearTwo.params.nuclear_unit_model = "1000MW";
     const wind = createDefaultNode("ac-wind-source", { x: 300, y: 100 });
     wind.params.idx = "30";
-    wind.params.windTurbineModel = "WT-5MW";
+    wind.params.wind_turbine_model = "WT-5MW";
     const pv = createDefaultNode("ac-pv-source", { x: 400, y: 100 });
     pv.params.idx = "31";
-    pv.params.pvModuleModel = "Mono-550W";
+    pv.params.pv_module_model = "Mono-550W";
 
     const payload = parseESections(buildEDeviceParameterFile({
       version: 1,
@@ -9617,52 +9669,61 @@ describe("power system model", () => {
   test("defines family-specific electric generation parameters and engineering defaults", () => {
     const familyDefinitions = {
       wind: {
-        windTurbineModel: "string",
-        windTurbineCount: "integer",
-        unitRatedPower: "string",
-        cutInWindSpeed: "string",
-        ratedWindSpeed: "string",
-        cutOutWindSpeed: "string",
-        rotorDiameter: "string",
-        hubHeight: "string"
+        wind_turbine_model: "string",
+        wind_turbine_count: "integer",
+        unit_rated_power: "string",
+        cut_in_wind_speed: "string",
+        rated_wind_speed: "string",
+        cut_out_wind_speed: "string",
+        rotor_diameter: "string",
+        hub_height: "string"
       },
       pv: {
-        pvModuleModel: "string",
-        pvModuleCount: "integer",
-        moduleRatedPower: "string",
-        moduleEfficiency: "string",
-        arrayArea: "string",
-        mpptCount: "integer"
+        pv_module_model: "string",
+        pv_module_count: "integer",
+        module_rated_power: "string",
+        module_efficiency: "string",
+        array_area: "string",
+        mppt_count: "integer"
       },
       thermal: {
-        thermalUnitModel: "string",
-        fuelType: "stringEnum",
-        thermalEfficiency: "string",
-        heatRate: "string",
-        mainSteamPressure: "string",
-        mainSteamTemperature: "string"
+        thermal_unit_model: "string",
+        fuel_type: "stringEnum",
+        thermal_efficiency: "string",
+        heat_rate: "string",
+        main_steam_pressure: "string",
+        main_steam_temperature: "string"
       },
       hydro: {
-        hydroUnitModel: "string",
-        turbineType: "stringEnum",
-        turbineCount: "integer",
-        unitRatedPower: "string",
-        designHead: "string",
-        designFlow: "string",
-        ratedSpeed: "string",
-        generatorEfficiency: "string"
+        hydro_unit_model: "string",
+        turbine_type: "stringEnum",
+        turbine_count: "integer",
+        unit_rated_power: "string",
+        design_head: "string",
+        design_flow: "string",
+        rated_speed: "string",
+        generator_efficiency: "string"
       },
       nuclear: {
-        nuclearUnitModel: "string",
-        reactorType: "stringEnum",
-        reactorCount: "integer",
-        unitRatedPower: "string",
-        reactorThermalPower: "string",
-        thermalEfficiency: "string",
-        primaryLoopPressure: "string",
-        mainSteamPressure: "string",
-        mainSteamTemperature: "string",
-        capacityFactor: "string"
+        nuclear_unit_model: "string",
+        reactor_type: "stringEnum",
+        reactor_count: "integer",
+        unit_rated_power: "string",
+        reactor_thermal_power: "string",
+        thermal_efficiency: "string",
+        primary_loop_pressure: "string",
+        main_steam_pressure: "string",
+        main_steam_temperature: "string",
+        capacity_factor: "string"
+      },
+      storage: {
+        storage_technology: "stringEnum",
+        battery_rack_count: "integer",
+        energy_capacity: "string",
+        charge_discharge_efficiency: "string",
+        max_charge_power: "string",
+        max_discharge_power: "string",
+        state_of_charge: "string"
       }
     } as const;
 
@@ -9678,28 +9739,28 @@ describe("power system model", () => {
 
     const wind = createDefaultNode("ac-wind-source", { x: 100, y: 100 });
     expect(wind.params).toMatchObject({
-      cutInWindSpeed: "3 m/s",
-      ratedWindSpeed: "12 m/s",
-      cutOutWindSpeed: "25 m/s"
+      cut_in_wind_speed: "3 m/s",
+      rated_wind_speed: "12 m/s",
+      cut_out_wind_speed: "25 m/s"
     });
 
     const enumOptions = (kind: DeviceKind, fieldName: string) => {
       const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
       return getTemplateParameterDefinitions(template).find((definition) => definition.enName === fieldName)?.enumOptions;
     };
-    expect(enumOptions("ac-thermal-source", "fuelType")).toEqual([
+    expect(enumOptions("ac-thermal-source", "fuel_type")).toEqual([
       { value: "coal", label: "煤" },
       { value: "gas", label: "天然气" },
       { value: "oil", label: "燃油" },
       { value: "biomass", label: "生物质" }
     ]);
-    expect(enumOptions("ac-hydro-source", "turbineType")).toEqual([
+    expect(enumOptions("ac-hydro-source", "turbine_type")).toEqual([
       { value: "francis", label: "混流式" },
       { value: "kaplan", label: "轴流式" },
       { value: "pelton", label: "冲击式" },
       { value: "bulb", label: "贯流式" }
     ]);
-    expect(enumOptions("ac-nuclear-source", "reactorType")).toEqual([
+    expect(enumOptions("ac-nuclear-source", "reactor_type")).toEqual([
       { value: "pwr", label: "压水堆" },
       { value: "bwr", label: "沸水堆" },
       { value: "phwr", label: "重水堆" },
@@ -9711,19 +9772,24 @@ describe("power system model", () => {
   test("uses the exact Chinese parameter labels for electric generation definitions", () => {
     const familyPairs = {
       wind: [
-        { cnName: "风机型号", enName: "windTurbineModel" },
-        { cnName: "风机台数", enName: "windTurbineCount" },
-        { cnName: "叶轮直径", enName: "rotorDiameter" }
+        { cnName: "风机型号", enName: "wind_turbine_model" },
+        { cnName: "风机台数", enName: "wind_turbine_count" },
+        { cnName: "叶轮直径", enName: "rotor_diameter" }
       ],
       pv: [
-        { cnName: "单组件额定功率", enName: "moduleRatedPower" },
-        { cnName: "MPPT 路数", enName: "mpptCount" }
+        { cnName: "单组件额定功率", enName: "module_rated_power" },
+        { cnName: "MPPT 路数", enName: "mppt_count" }
       ],
       thermal: [],
       hydro: [
-        { cnName: "水轮机台数", enName: "turbineCount" }
+        { cnName: "水轮机台数", enName: "turbine_count" }
       ],
-      nuclear: []
+      nuclear: [],
+      storage: [
+        { cnName: "储能技术类型", enName: "storage_technology" },
+        { cnName: "储能容量", enName: "energy_capacity" },
+        { cnName: "荷电状态", enName: "state_of_charge" }
+      ]
     } as const;
 
     for (const expected of electricGenerationCases) {
@@ -9741,7 +9807,7 @@ describe("power system model", () => {
       expect(isElectricGenerationContainerKind(expected.kind)).toBe(false);
       expect(isElectricGenerationContainerKind(`${expected.kind}-vertical`)).toBe(false);
     }
-    for (const kind of ["ac-diesel-source", "ac-storage", "dc-storage", "ac-source", "dc-source"]) {
+    for (const kind of ["ac-diesel-source", "ac-source", "dc-source"]) {
       expect(isElectricGenerationContainerKind(kind)).toBe(false);
       expect(isElectricGenerationContainerKind(`${kind}-vertical`)).toBe(false);
     }
@@ -9765,10 +9831,10 @@ describe("power system model", () => {
           scaleX: -1,
           scaleY: 1,
           params: {
-            ratedVoltage: "保留电压",
-            ratedPower: "保留容量",
-            ratedCapacity: "保留通用额定容量",
-            controlType: "保留通用控制类型",
+            rated_voltage: "保留电压",
+            rated_power: "保留容量",
+            rated_capacity: "保留通用额定容量",
+            control_type: "保留通用控制类型",
             vbase: "保留通用电压基准",
             status: "0",
             is_container: "0",
@@ -9800,10 +9866,10 @@ describe("power system model", () => {
           scaleY: legacy.scaleY
         });
         expect(normalized.params).toMatchObject({
-          ratedVoltage: "保留电压",
-          ratedPower: "保留容量",
-          ratedCapacity: "保留通用额定容量",
-          controlType: "保留通用控制类型",
+          rated_voltage: "保留电压",
+          rated_power: "保留容量",
+          rated_capacity: "保留通用额定容量",
+          control_type: "保留通用控制类型",
           vbase: "保留通用电压基准",
           status: "0",
           is_container: "0",
@@ -9848,7 +9914,7 @@ describe("power system model", () => {
         expect(normalized.params).toBe(params);
         expect(normalized.params).toEqual({ is_container: "0", legacyCustomValue: "保持原值" });
         expect(normalized.params[expected.relationKey]).toBeUndefined();
-        expect(normalized.params.sourceType).toBeUndefined();
+        expect(normalized.params.source_type).toBeUndefined();
       }
     }
   });
@@ -9856,15 +9922,21 @@ describe("power system model", () => {
   test("includes DC electrochemical storage as a single-port DC device", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "dc-storage");
     expect(template).toMatchObject({
-      label: "电化学储能",
+      label: "直流电化学储能",
       categoryLibrary: "直流设备",
       terminalType: "dc",
       terminalCount: 1
     });
 
     const node = createDefaultNode("dc-storage", { x: 100, y: 100 });
+    expect(node.name).toBe("直流电化学储能");
     expect(node.terminals).toHaveLength(1);
     expect(node.terminals[0].type).toBe("dc");
+    expect(node.params).toMatchObject({
+      source_type: "储能",
+      energy_capacity: "20 MWh",
+      state_of_charge: "50%"
+    });
     expect(node.params.vbase).toBe("0");
     expect(getDeviceGlyphVariant("dc-storage")).toBe("battery-storage");
   });
@@ -9872,15 +9944,21 @@ describe("power system model", () => {
   test("includes AC electrochemical storage as a single-port AC device", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-storage");
     expect(template).toMatchObject({
-      label: "电化学储能",
+      label: "交流电化学储能",
       categoryLibrary: "交流设备",
       terminalType: "ac",
       terminalCount: 1
     });
 
     const node = createDefaultNode("ac-storage", { x: 100, y: 100 });
+    expect(node.name).toBe("交流电化学储能");
     expect(node.terminals).toHaveLength(1);
     expect(node.terminals[0].type).toBe("ac");
+    expect(node.params).toMatchObject({
+      source_type: "储能",
+      energy_capacity: "20 MWh",
+      state_of_charge: "50%"
+    });
     expect(node.params.vbase).toBe("0");
     expect(getDeviceGlyphVariant("ac-storage")).toBe("battery-storage");
   });
@@ -10031,7 +10109,7 @@ describe("power system model", () => {
       label: "ACUnit",
       categoryLibrary: "自定义类别库",
       size: { width: 104, height: 64 },
-      params: { backgroundImage: "data:image/svg+xml,custom", fillColor: "transparent", strokeColor: "transparent", lineWidth: "0" },
+      params: { backgroundImage: "data:image/svg+xml,custom", fillColor: "transparent", strokeColor: "transparent", line_width: "0" },
       terminalType: "ac",
       terminalCount: 4,
       terminalTypes: ["ac", "dc", "h2", "heat"],
@@ -10052,7 +10130,7 @@ describe("power system model", () => {
     expect(node.params[CUSTOM_DEVICE_TEMPLATE_KEY]).toBe("1");
     expect(JSON.parse(node.params[CUSTOM_PARAM_DEFINITIONS_KEY])).toHaveLength(4);
     expect(node.params.eta).toBe("0.95");
-    expect(node.params.strokeColor).toBe("transparent");
+    expect(node.params.stroke_color).toBe("transparent");
     expect(canConnectTerminals(node, "t3", createDefaultNode("hydrogen-pipeline", { x: 240, y: 120 }), "t1")).toBe(true);
     expect(canConnectTerminals(node, "t4", createDefaultNode("hydrogen-pipeline", { x: 300, y: 120 }), "t1")).toBe(false);
 
@@ -10068,7 +10146,7 @@ describe("power system model", () => {
       label: "DefinitionSyncUnit",
       categoryLibrary: "自定义类别库",
       size: { width: 104, height: 64 },
-      params: { component_type: "DefinitionSyncUnit", fillColor: "transparent", strokeColor: "transparent", lineWidth: "0" },
+      params: { component_type: "DefinitionSyncUnit", fillColor: "transparent", strokeColor: "transparent", line_width: "0" },
       terminalType: "ac",
       terminalCount: 1,
       custom: true,
@@ -10127,7 +10205,7 @@ describe("power system model", () => {
       label: "CustomEnergyUnit",
       categoryLibrary: "自定义类别库",
       size: { width: 104, height: 64 },
-      params: { component_type: "CustomEnergyUnit", fillColor: "transparent", strokeColor: "transparent", lineWidth: "0" },
+      params: { component_type: "CustomEnergyUnit", fillColor: "transparent", strokeColor: "transparent", line_width: "0" },
       terminalType: "ac",
       terminalCount: 1,
       custom: true,
@@ -10189,7 +10267,7 @@ describe("power system model", () => {
       label: "CustomContainer",
       categoryLibrary: "自定义类别库",
       size: { width: 104, height: 64 },
-      params: { backgroundImage: "data:image/svg+xml,custom", fillColor: "transparent", strokeColor: "transparent", lineWidth: "0" },
+      params: { backgroundImage: "data:image/svg+xml,custom", fillColor: "transparent", strokeColor: "transparent", line_width: "0" },
       terminalType: "ac",
       terminalCount: terminalTypes.length,
       terminalTypes: [...terminalTypes],
@@ -10343,9 +10421,9 @@ describe("power system model", () => {
     expect(template.isContainer).toBe(false);
     expect(describeContainerTerminalAssociations(template)).toEqual([]);
     expect(getTemplateParameterDefinitions(template).map((definition) => definition.enName)).toEqual(expect.arrayContaining([
-      "highResistancePu",
-      "mediumResistancePu",
-      "lowResistancePu"
+      "high_resistance_pu",
+      "medium_resistance_pu",
+      "low_resistance_pu"
     ]));
     const fieldNames = getTemplateParameterDefinitions(template).map((definition) => definition.enName);
     expect(fieldNames).not.toContain("idx_xf_t1");
@@ -10519,7 +10597,7 @@ describe("power system model", () => {
 
     expect(overridden.isContainer).toBe(false);
     expect(overridden.terminalAssociations).toBeUndefined();
-    expect(fieldNames).toContain("highResistancePu");
+    expect(fieldNames).toContain("high_resistance_pu");
     expect(fieldNames).not.toContain("idx_xf_t1");
     expect(node.params.is_container).toBeUndefined();
     expect(node.params.idx_xf_t1).toBeUndefined();
@@ -10601,7 +10679,7 @@ describe("power system model", () => {
       name_ac_unit_t1: "旧关联设备",
       control_type_ac_unit_t1: "PV",
       status: "0",
-      highResistancePu: "0.02",
+      high_resistance_pu: "0.02",
       [CUSTOM_PARAM_DEFINITIONS_KEY]: JSON.stringify([
         { cnName: "运行状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"] },
         { cnName: "高压绕组双绕组主变idx", enName: "idx_xf_t1", valueType: "integer", typicalValue: "", readonly: true },
@@ -10620,7 +10698,7 @@ describe("power system model", () => {
     expect(normalized.params.name_ac_unit_t1).toBeUndefined();
     expect(normalized.params.control_type_ac_unit_t1).toBeUndefined();
     expect(normalized.params.status).toBe("0");
-    expect(normalized.params.highResistancePu).toBe("0.02");
+    expect(normalized.params.high_resistance_pu).toBe("0.02");
   });
 
   test("pairs the next terminal with a double-port container association", () => {
@@ -10645,7 +10723,7 @@ describe("power system model", () => {
       label: "CustomDoubleContainer",
       categoryLibrary: "自定义类别库",
       size: { width: 104, height: 64 },
-      params: { backgroundImage: "data:image/svg+xml,custom", fillColor: "transparent", strokeColor: "transparent", lineWidth: "0" },
+      params: { backgroundImage: "data:image/svg+xml,custom", fillColor: "transparent", strokeColor: "transparent", line_width: "0" },
       terminalType: "heat",
       terminalCount: terminalTypes.length,
       terminalTypes: [...terminalTypes],
@@ -10830,7 +10908,7 @@ describe("power system model", () => {
       label: "CustomEnumUnit",
       categoryLibrary: "自定义类别库",
       size: { width: 104, height: 64 },
-      params: { component_type: "CustomEnumUnit", fillColor: "transparent", strokeColor: "transparent", lineWidth: "0" },
+      params: { component_type: "CustomEnumUnit", fillColor: "transparent", strokeColor: "transparent", line_width: "0" },
       terminalType: "ac",
       terminalCount: 1,
       custom: true,
@@ -10945,11 +11023,11 @@ describe("power system model", () => {
       b: "float"
     });
     expect(definitionTypes("ac-transformer")).toMatchObject({
-      resistancePu: "float",
-      reactancePu: "float",
-      magnetizingConductancePu: "float",
-      magnetizingSusceptancePu: "float",
-      tapRatio: "float",
+      resistance_pu: "float",
+      reactance_pu: "float",
+      magnetizing_conductance_pu: "float",
+      magnetizing_susceptance_pu: "float",
+      tap_ratio: "float",
       shift: "float"
     });
     expect(definitionTypes("dcdc-converter")).toMatchObject({
@@ -11048,10 +11126,10 @@ describe("power system model", () => {
     const heatLoad = createDefaultNode("single-port-heat-load", { x: 240, y: 340 });
     acSource.terminals[0].vbase = "10";
     acLoad.terminals[0].vbase = "10";
-    acBus.params.voltageLevel = "10 kV";
+    acBus.params.voltage_level = "10 kV";
     dcSource.terminals[0].vbase = "750";
     dcLoad.terminals[0].vbase = "750";
-    dcBus.params.voltageLevel = "750 V";
+    dcBus.params.voltage_level = "750 V";
     hydrogenSource.terminals[0].vbase = "30";
     heatSource.terminals[0].vbase = "95";
     const nodeById = new Map([acSource, acLoad, dcSource, dcLoad, hydrogenSource, hydrogenLoad, heatSource, heatLoad].map((node) => [node.id, node]));
@@ -11511,7 +11589,7 @@ describe("power system model", () => {
         component_type: "StaticButton",
         fillColor: "transparent",
         strokeColor: "transparent",
-        lineWidth: "0"
+        line_width: "0"
       },
       terminalType: "ac",
       terminalCount: 0,
@@ -11543,7 +11621,7 @@ describe("power system model", () => {
         fillColor: "#ffffff",
         strokeColor: "#0f172a",
         textColor: "#111827",
-        lineWidth: "2",
+        line_width: "2",
         cornerRadius: "6"
       },
       terminalType: "ac",
@@ -11590,7 +11668,7 @@ describe("power system model", () => {
         fillColor: "#ffffff",
         strokeColor: "#0f172a",
         textColor: "#111827",
-        lineWidth: "2",
+        line_width: "2",
         cornerRadius: "6"
       },
       terminalType: "ac",
@@ -11630,7 +11708,7 @@ describe("power system model", () => {
         fillColor: "#ffffff",
         strokeColor: "#0f172a",
         textColor: "#111827",
-        lineWidth: "2",
+        line_width: "2",
         cornerRadius: "6"
       },
       terminalType: "ac",
@@ -11755,20 +11833,20 @@ describe("power system model", () => {
   test("adds voltage base parameters to devices, transformers, and converters", () => {
     expect(createDefaultNode("ac-load", { x: 100, y: 100 }).params.vbase).toBe("0");
     const twoWinding = createDefaultNode("ac-transformer", { x: 200, y: 100 });
-    expect(twoWinding.params.highVbase).toBe("0");
-    expect(twoWinding.params.lowVbase).toBe("0");
+    expect(twoWinding.params.high_vbase).toBe("0");
+    expect(twoWinding.params.low_vbase).toBe("0");
     const threeWinding = createDefaultNode("ac-three-winding-transformer", { x: 300, y: 100 });
-    expect(threeWinding.params.highVbase).toBe("0");
-    expect(threeWinding.params.mediumVbase).toBe("0");
-    expect(threeWinding.params.lowVbase).toBe("0");
+    expect(threeWinding.params.high_vbase).toBe("0");
+    expect(threeWinding.params.medium_vbase).toBe("0");
+    expect(threeWinding.params.low_vbase).toBe("0");
     const converter = createDefaultNode("acdc-converter", { x: 400, y: 100 });
-    expect(converter.params.sourceVbase).toBe("0");
-    expect(converter.params.targetVbase).toBe("0");
+    expect(converter.params.source_vbase).toBe("0");
+    expect(converter.params.target_vbase).toBe("0");
     expect(converter.terminals.map((terminal) => terminal.type)).toEqual(["ac", "dc"]);
     expect(converter.terminals.map((terminal) => terminal.vbase)).toEqual(["0", "0"]);
     const dcacConverter = createDefaultNode("dcac-converter", { x: 500, y: 100 });
-    expect(dcacConverter.params.sourceVbase).toBe("0");
-    expect(dcacConverter.params.targetVbase).toBe("0");
+    expect(dcacConverter.params.source_vbase).toBe("0");
+    expect(dcacConverter.params.target_vbase).toBe("0");
     expect(dcacConverter.terminals.map((terminal) => terminal.type)).toEqual(["dc", "ac"]);
     expect(dcacConverter.terminals.map((terminal) => terminal.vbase)).toEqual(["0", "0"]);
   });
@@ -11830,8 +11908,8 @@ describe("power system model", () => {
     defaultConverter.params.j_control_type = "CTRL_I";
     legacyConverter.params.i_control_type = "";
     legacyConverter.params.j_control_type = "";
-    legacyConverter.params.sourceControlType = "定P";
-    legacyConverter.params.targetControlType = "不定";
+    legacyConverter.params.source_control_type = "定P";
+    legacyConverter.params.target_control_type = "不定";
     invalidConverter.params.i_control_type = "BAD";
     invalidConverter.params.j_control_type = "V";
 
@@ -11898,19 +11976,19 @@ describe("power system model", () => {
     const dcacConverter = createDefaultNode("dcac-converter", { x: 160, y: 100 });
     const verticalDcacConverter = createDefaultNode("dcac-converter-vertical", { x: 220, y: 100 });
     const invalidConverter = createDefaultNode("acdc-converter", { x: 240, y: 100 });
-    const acVoltageConverter = createDefaultNode("acdc-converter", { x: 380, y: 100 });
+    const ac_voltageConverter = createDefaultNode("acdc-converter", { x: 380, y: 100 });
     defaultConverter.name = "ACDC";
     dcacConverter.name = "DCAC";
     verticalDcacConverter.name = "DCAC竖向";
     invalidConverter.name = "ACDC旧控制";
-    acVoltageConverter.name = "ACDC交流定压";
+    ac_voltageConverter.name = "ACDC交流定压";
     defaultConverter.params.control_type = "DCV";
     dcacConverter.params.control_type = "ACP";
     verticalDcacConverter.params.control_type = "ACV";
     invalidConverter.params.control_type = "PQ";
-    invalidConverter.params.acControlType = "定PQ";
-    acVoltageConverter.params.control_type = "ACV";
-    const nodes = [defaultConverter, dcacConverter, verticalDcacConverter, invalidConverter, acVoltageConverter];
+    invalidConverter.params.ac_control_type = "定PQ";
+    ac_voltageConverter.params.control_type = "ACV";
+    const nodes = [defaultConverter, dcacConverter, verticalDcacConverter, invalidConverter, ac_voltageConverter];
 
     const payload = parseESections(buildEDeviceParameterFile({
       version: 1,
@@ -11947,9 +12025,9 @@ describe("power system model", () => {
     const bothVoltageConverter = createDefaultNode("acac-converter", { x: 520, y: 100 });
     defaultConverter.params.control_type = "PQQ";
     sourceVoltageConverter.params.control_type = "PQ";
-    sourceVoltageConverter.params.sourceControlType = "定PV";
+    sourceVoltageConverter.params.source_control_type = "定PV";
     targetVoltageConverter.params.control_type = "PQ";
-    targetVoltageConverter.params.targetControlType = "定PV";
+    targetVoltageConverter.params.target_control_type = "定PV";
     bothVoltageConverter.params.control_type = "PVV";
 
     const payload = parseESections(buildEDeviceParameterFile({
@@ -11979,14 +12057,14 @@ describe("power system model", () => {
       "run_stat",
       "t1_node",
       "t2_node",
-      "highVbase",
-      "lowVbase",
-      "ratedCapacity",
-      "resistancePu",
-      "reactancePu",
-      "magnetizingConductancePu",
-      "magnetizingSusceptancePu",
-      "tapRatio",
+      "high_vbase",
+      "low_vbase",
+      "rated_capacity",
+      "resistance_pu",
+      "reactance_pu",
+      "magnetizing_conductance_pu",
+      "magnetizing_susceptance_pu",
+      "tap_ratio",
       "shift"
     ]));
     expect(twoWinding).toBeUndefined();
@@ -11998,9 +12076,9 @@ describe("power system model", () => {
       "idx",
       "name",
       "run_stat",
-      "highResistancePu",
-      "mediumResistancePu",
-      "lowResistancePu"
+      "high_resistance_pu",
+      "medium_resistance_pu",
+      "low_resistance_pu"
     ]));
     expect(fieldNames).not.toContain("idx_xf_t1");
     expect(fieldNames).not.toContain("idx_xf_t2");
@@ -12022,25 +12100,25 @@ describe("power system model", () => {
     const fieldNames = getTemplateParameterDefinitions(overridden).map((definition) => definition.enName);
     const node = createNodeFromTemplate(overridden, { x: 100, y: 100 });
 
-    expect(fieldNames).toContain("ratedCapacity");
-    expect(fieldNames).toContain("resistancePu");
-    expect(fieldNames).toContain("tapRatio");
+    expect(fieldNames).toContain("rated_capacity");
+    expect(fieldNames).toContain("resistance_pu");
+    expect(fieldNames).toContain("tap_ratio");
     expect(fieldNames).toContain("shift");
-    expect(node.params.ratedCapacity).toBe("50 MVA");
-    expect(node.params.reactancePu).toBe("0.1");
+    expect(node.params.rated_capacity).toBe("50 MVA");
+    expect(node.params.reactance_pu).toBe("0.1");
     expect(node.params.shift).toBe("0");
 
-    delete node.params.resistancePu;
+    delete node.params.resistance_pu;
     delete node.params.shift;
     const normalized = normalizeNodeTerminalsWithTemplate(node, overridden);
-    expect(normalized.params.resistancePu).toBe("0.0");
+    expect(normalized.params.resistance_pu).toBe("0.0");
     expect(normalized.params.shift).toBe("0");
   });
 
   test("keeps transformer E export controls through override application and node creation", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-transformer")!;
     const parameterDefinitions = getTemplateParameterDefinitions(template).map((definition) =>
-      definition.enName === "resistancePu"
+      definition.enName === "resistance_pu"
         ? { ...definition, exportEnabled: true, exportName: "resistance" }
         : {
             ...definition,
@@ -12056,11 +12134,11 @@ describe("power system model", () => {
     const node = createNodeFromTemplate(overridden, { x: 100, y: 100 });
     const storedDefinitions = JSON.parse(node.params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]") as DeviceParameterDefinition[];
 
-    expect(overridden.parameterDefinitions?.find((definition) => definition.enName === "resistancePu")).toMatchObject({
+    expect(overridden.parameterDefinitions?.find((definition) => definition.enName === "resistance_pu")).toMatchObject({
       exportEnabled: true,
       exportName: "resistance"
     });
-    expect(storedDefinitions.find((definition) => definition.enName === "resistancePu")).toMatchObject({
+    expect(storedDefinitions.find((definition) => definition.enName === "resistance_pu")).toMatchObject({
       exportEnabled: true,
       exportName: "resistance"
     });
@@ -13009,14 +13087,14 @@ describe("power system model", () => {
       ...source.params,
       vbase: "35",
       v_base: "35",
-      highVbase: "35",
+      high_vbase: "35",
       v_set: "35",
       ac_v_set: "35",
       v_set_ac_unit_t1: "35",
       voltage: "35",
-      ratedVoltage: "35"
+      rated_voltage: "35"
     };
-    load.params = { ...load.params, vbase: "10", v_set: "10", voltage: "10", ratedVoltage: "10" };
+    load.params = { ...load.params, vbase: "10", v_set: "10", voltage: "10", rated_voltage: "10" };
 
     const result = clearVoltageBaseValuesForScope([source, load], [], [source.id], "selected");
     const byId = new Map(result.nodes.map((node) => [node.id, node]));
@@ -13026,12 +13104,12 @@ describe("power system model", () => {
     expect(byId.get(source.id)?.params).toMatchObject({
       vbase: "0.0",
       v_base: "0.0",
-      highVbase: "0.0",
+      high_vbase: "0.0",
       v_set: "0.0",
       ac_v_set: "0.0",
       v_set_ac_unit_t1: "0.0",
       voltage: "0.0",
-      ratedVoltage: "35"
+      rated_voltage: "35"
     });
     expect(byId.get(load.id)?.terminals[0].vbase).toBe("10 kV");
     expect(byId.get(load.id)?.params.vbase).toBe("10");
@@ -13077,10 +13155,10 @@ describe("power system model", () => {
     transformer.params = {
       ...transformer.params,
       vbase: "110",
-      highVbase: "110",
-      lowVbase: "10",
-      sourceVbase: "110",
-      targetVbase: "10",
+      high_vbase: "110",
+      low_vbase: "10",
+      source_vbase: "110",
+      target_vbase: "10",
       i_vbase: "110",
       j_vbase: "10"
     };
@@ -13095,11 +13173,11 @@ describe("power system model", () => {
 
     expect(new Set(result.changedNodeIds)).toEqual(new Set([highSource.id, transformer.id]));
     expect(nextTransformer?.terminals.map((terminal) => terminal.vbase)).toEqual(["0.0", "10"]);
-    expect(nextTransformer?.params.highVbase).toBe("0.0");
-    expect(nextTransformer?.params.sourceVbase).toBe("0.0");
+    expect(nextTransformer?.params.high_vbase).toBe("0.0");
+    expect(nextTransformer?.params.source_vbase).toBe("0.0");
     expect(nextTransformer?.params.i_vbase).toBe("0.0");
-    expect(nextTransformer?.params.lowVbase).toBe("10");
-    expect(nextTransformer?.params.targetVbase).toBe("10");
+    expect(nextTransformer?.params.low_vbase).toBe("10");
+    expect(nextTransformer?.params.target_vbase).toBe("10");
     expect(nextTransformer?.params.j_vbase).toBe("10");
     expect(nextTransformer?.params.vbase).toBe("110");
     expect(byId.get(lowLoad.id)?.terminals[0].vbase).toBe("10");
@@ -13131,16 +13209,16 @@ describe("power system model", () => {
       ...source.params,
       vbase: "35",
       v_base: "35",
-      highVbase: "35",
-      sourceVbase: "35",
+      high_vbase: "35",
+      source_vbase: "35",
       i_vbase: "35",
       v_set: "35",
       i_v_set: "35",
       ac_v_set: "35",
       voltage: "35",
-      ratedVoltage: "35"
+      rated_voltage: "35"
     };
-    load.params = { ...load.params, vbase: "10", v_set: "10", voltage: "10", ratedVoltage: "10" };
+    load.params = { ...load.params, vbase: "10", v_set: "10", voltage: "10", rated_voltage: "10" };
 
     const result = setVoltageBaseValuesForScope([source, load], [], [source.id], "selected", "110");
     const byId = new Map(result.nodes.map((node) => [node.id, node]));
@@ -13150,14 +13228,14 @@ describe("power system model", () => {
     expect(byId.get(source.id)?.params).toMatchObject({
       vbase: "110",
       v_base: "110",
-      highVbase: "110",
-      sourceVbase: "110",
+      high_vbase: "110",
+      source_vbase: "110",
       i_vbase: "110",
       v_set: "110",
       i_v_set: "110",
       ac_v_set: "110",
       voltage: "110",
-      ratedVoltage: "35"
+      rated_voltage: "35"
     });
     expect(byId.get(load.id)?.terminals[0].vbase).toBe("10");
     expect(byId.get(load.id)?.params.vbase).toBe("10");
@@ -13239,9 +13317,9 @@ describe("power system model", () => {
     });
     transformer.params = {
       ...transformer.params,
-      highVbase: "110",
-      mediumVbase: "35",
-      lowVbase: "10",
+      high_vbase: "110",
+      medium_vbase: "35",
+      low_vbase: "10",
       neutral_vbase: "0.4",
       vbase: "110"
     };
@@ -13263,9 +13341,9 @@ describe("power system model", () => {
 
     expect(result.changedNodeIds).toEqual([transformer.id]);
     expect(nextTransformer.terminals.map((terminal) => terminal.vbase)).toEqual(["220", "66", "20", "0.8"]);
-    expect(nextTransformer.params.highVbase).toBe("220");
-    expect(nextTransformer.params.mediumVbase).toBe("66");
-    expect(nextTransformer.params.lowVbase).toBe("20");
+    expect(nextTransformer.params.high_vbase).toBe("220");
+    expect(nextTransformer.params.medium_vbase).toBe("66");
+    expect(nextTransformer.params.low_vbase).toBe("20");
     expect(nextTransformer.params.neutral_vbase).toBe("0.8");
     expect(nextTransformer.params.vbase).toBe("110");
   });
@@ -13672,8 +13750,8 @@ describe("power system model", () => {
       });
       converter.params = {
         ...converter.params,
-        sourceVbase: item.sourceVoltage,
-        targetVbase: item.targetVoltage
+        source_vbase: item.sourceVoltage,
+        target_vbase: item.targetVoltage
       };
 
       const errors = validateTopology(

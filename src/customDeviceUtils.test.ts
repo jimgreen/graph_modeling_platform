@@ -21,7 +21,9 @@ const generationCases = [
   ["ac-hydro-source", "交流设备", "ACGenerator", "ACHydroGen"],
   ["dc-hydro-source", "直流设备", "DCGenerator", "DCHydroGen"],
   ["ac-nuclear-source", "交流设备", "ACGenerator", "ACNuclearGen"],
-  ["dc-nuclear-source", "直流设备", "DCGenerator", "DCNuclearGen"]
+  ["dc-nuclear-source", "直流设备", "DCGenerator", "DCNuclearGen"],
+  ["ac-storage", "交流设备", "ACGenerator", "ACStorageGen"],
+  ["dc-storage", "直流设备", "DCGenerator", "DCStorageGen"]
 ] as const;
 
 describe("electric generation device library classification", () => {
@@ -75,7 +77,7 @@ describe("electric generation device library classification", () => {
       componentLibrary: "ACGenerator",
       derivedComponentLibrary: "ACWindGen"
     });
-    expect(createCustomDeviceDraftFromTemplate(appliedTemplate).params.map((row) => row.enName)).toContain("windTurbineModel");
+    expect(createCustomDeviceDraftFromTemplate(appliedTemplate).params.map((row) => row.enName)).toContain("wind_turbine_model");
   });
 
   test("defaults dev_type to the current component english name", () => {
@@ -94,23 +96,23 @@ describe("electric generation device library classification", () => {
 
     expect(draft.isDerivedComponentLibrary).toBe(true);
     expect(fieldNames).toEqual([
-      "windTurbineModel",
-      "windTurbineCount",
-      "unitRatedPower",
-      "cutInWindSpeed",
-      "ratedWindSpeed",
-      "cutOutWindSpeed",
-      "rotorDiameter",
-      "hubHeight"
+      "wind_turbine_model",
+      "wind_turbine_count",
+      "unit_rated_power",
+      "cut_in_wind_speed",
+      "rated_wind_speed",
+      "cut_out_wind_speed",
+      "rotor_diameter",
+      "hub_height"
     ]);
     expect(fieldNames).not.toEqual(expect.arrayContaining([
       "idx",
       "name",
       "status",
       "run_stat",
-      "sourceType",
-      "ratedPower",
-      "ratedVoltage",
+      "source_type",
+      "rated_power",
+      "rated_voltage",
       "node",
       "control_type",
       "p_set"
@@ -125,14 +127,14 @@ describe("electric generation device library classification", () => {
     const fieldNames = rows.map((row) => row.enName);
 
     expect(fieldNames).toEqual([
-      "hydroUnitModel",
-      "turbineType",
-      "turbineCount",
-      "unitRatedPower",
-      "designHead",
-      "designFlow",
-      "ratedSpeed",
-      "generatorEfficiency"
+      "hydro_unit_model",
+      "turbine_type",
+      "turbine_count",
+      "unit_rated_power",
+      "design_head",
+      "design_flow",
+      "rated_speed",
+      "generator_efficiency"
     ]);
     expect(fieldNames).not.toEqual(expect.arrayContaining([
       "idx",
@@ -140,9 +142,9 @@ describe("electric generation device library classification", () => {
       "dev_type",
       "status",
       "run_stat",
-      "sourceType",
-      "ratedPower",
-      "ratedVoltage",
+      "source_type",
+      "rated_power",
+      "rated_voltage",
       "node",
       "control_type",
       "p_set"

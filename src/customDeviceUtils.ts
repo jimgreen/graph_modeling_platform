@@ -118,8 +118,12 @@ const DERIVED_COMPONENT_BASE_PARAM_NAMES = new Set([
   "control_type",
   "controlType",
   "acControlType",
+  "ac_control_type",
   "dcControlType",
+  "dc_control_type",
   "sourceControlType",
+  "source_control_type",
+  "target_control_type",
   "p_set",
   "q_set",
   "v_set",
@@ -127,9 +131,13 @@ const DERIVED_COMPONENT_BASE_PARAM_NAMES = new Set([
   "alpha",
   "vbase",
   "ratedPower",
+  "rated_power",
   "ratedVoltage",
+  "rated_voltage",
   "ratedCapacity",
-  "sourceType"
+  "rated_capacity",
+  "sourceType",
+  "source_type"
 ]);
 
 export function isDerivedComponentBaseParamName(fieldName: unknown, baseComponentLibrary = "") {

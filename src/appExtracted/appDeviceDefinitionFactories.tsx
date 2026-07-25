@@ -69,20 +69,20 @@ const E_DEVICE_INTERFACE_DERIVED_BASE_FIELD_NAMES = new Set([
   "i_node",
   "j_node",
   "control_type",
-  "controlType",
-  "acControlType",
-  "dcControlType",
-  "sourceControlType",
+  "control_type",
+  "ac_control_type",
+  "dc_control_type",
+  "source_control_type",
   "p_set",
   "q_set",
   "v_set",
   "i_set",
   "alpha",
   "vbase",
-  "ratedPower",
-  "ratedVoltage",
-  "ratedCapacity",
-  "sourceType"
+  "rated_power",
+  "rated_voltage",
+  "rated_capacity",
+  "source_type"
 ]);
 
 function eDeviceInterfaceRelationKey(baseComponentLibrary: string) {

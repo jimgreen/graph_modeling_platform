@@ -891,7 +891,8 @@ const ELECTRIC_GENERATION_FAMILY_KIND_SUFFIXES = [
   "pv-source",
   "thermal-source",
   "hydro-source",
-  "nuclear-source"
+  "nuclear-source",
+  "storage"
 ] as const;
 const LEGACY_ELECTRIC_GENERATION_BASE_KIND_SET = new Set<string>([
   "ac-wind-source",
@@ -1668,11 +1669,11 @@ function normalizeDcacConverterControlTypeForE(params: Record<string, string>) {
   if ((DCAC_CONVERTER_CONTROL_TYPES as readonly string[]).includes(explicit)) {
     return explicit;
   }
-  const dcControl = normalizeControlTypeForE(params.dcControlType);
+  const dcControl = normalizeControlTypeForE(deviceParamValue(params, "dc_control_type"));
   if (dcControl === "V") {
     return "DCV";
   }
-  const acControl = normalizeControlTypeForE(params.acControlType);
+  const acControl = normalizeControlTypeForE(deviceParamValue(params, "ac_control_type"));
   if (acControl === "PV" || acControl === "V" || acControl === "ACV") {
     return "ACV";
   }
@@ -1687,8 +1688,8 @@ function normalizeAcacConverterControlTypeForE(params: Record<string, string>) {
   if ((ACAC_CONVERTER_CONTROL_TYPES as readonly string[]).includes(explicit)) {
     return explicit;
   }
-  const sourceControl = normalizeControlTypeForE(params.sourceControlType);
-  const targetControl = normalizeControlTypeForE(params.targetControlType);
+  const sourceControl = normalizeControlTypeForE(deviceParamValue(params, "source_control_type"));
+  const targetControl = normalizeControlTypeForE(deviceParamValue(params, "target_control_type"));
   const sourceVoltageControlled = sourceControl === "PV" || sourceControl === "V";
   const targetVoltageControlled = targetControl === "PV" || targetControl === "V";
   if (sourceVoltageControlled && targetVoltageControlled) {
@@ -1708,17 +1709,17 @@ function terminalNodeNumber(node: Pick<ModelNode, "nodeNumber" | "terminals">, i
 }
 
 function mappedLegacyEValue(key: string, params: Record<string, string>) {
-  if (key === "pbase") return params.pbase ?? params.ratedActivePower ?? "";
-  if (key === "qbase") return params.qbase ?? params.ratedReactivePower ?? "";
-  if (key === "r") return params.r ?? params.resistancePu ?? "";
-  if (key === "x") return params.x ?? params.reactancePu ?? "";
-  if (key === "b") return params.b ?? params.halfChargingSusceptancePu ?? "";
-  if (key === "gt") return params.gt ?? params.magnetizingConductancePu ?? "";
-  if (key === "bt") return params.bt ?? params.magnetizingSusceptancePu ?? "";
-  if (key === "tap") return params.tap ?? params.tapRatio ?? "";
-  if (key === "r1") return params.r1 ?? params.sourceEquivalentResistance ?? "";
-  if (key === "r2") return params.r2 ?? params.targetEquivalentResistance ?? "";
-  return params[key] ?? "";
+  if (key === "pbase") return params.pbase ?? deviceParamValue(params, "rated_active_power") ?? "";
+  if (key === "qbase") return params.qbase ?? deviceParamValue(params, "rated_reactive_power") ?? "";
+  if (key === "r") return params.r ?? deviceParamValue(params, "resistance_pu") ?? "";
+  if (key === "x") return params.x ?? deviceParamValue(params, "reactance_pu") ?? "";
+  if (key === "b") return params.b ?? deviceParamValue(params, "half_charging_susceptance_pu") ?? "";
+  if (key === "gt") return params.gt ?? deviceParamValue(params, "magnetizing_conductance_pu") ?? "";
+  if (key === "bt") return params.bt ?? deviceParamValue(params, "magnetizing_susceptance_pu") ?? "";
+  if (key === "tap") return params.tap ?? deviceParamValue(params, "tap_ratio") ?? "";
+  if (key === "r1") return params.r1 ?? deviceParamValue(params, "source_equivalent_resistance") ?? "";
+  if (key === "r2") return params.r2 ?? deviceParamValue(params, "target_equivalent_resistance") ?? "";
+  return deviceParamValue(params, key) ?? "";
 }
 
 type EDeviceExport = {
@@ -1883,13 +1884,13 @@ function getRawEParamValue(
   if (key === "control_type") {
     const section = inferESection(node.kind, node.params);
     if (section === "ACGenerator") {
-      return normalizeAcGeneratorControlTypeForE(
-        node.params.control_type ?? node.params.controlType ?? node.params.acControlType ?? node.params.sourceControlType ?? ""
+    return normalizeAcGeneratorControlTypeForE(
+        node.params.control_type ?? deviceParamValue(node.params, "control_type") ?? deviceParamValue(node.params, "ac_control_type") ?? deviceParamValue(node.params, "source_control_type") ?? ""
       );
     }
     if (section === "DCGenerator") {
       return normalizeDcGeneratorControlTypeForE(
-        node.params.control_type ?? node.params.controlType ?? node.params.dcControlType ?? node.params.sourceControlType ?? ""
+        node.params.control_type ?? deviceParamValue(node.params, "control_type") ?? deviceParamValue(node.params, "dc_control_type") ?? deviceParamValue(node.params, "source_control_type") ?? ""
       );
     }
     if (section === "DCACConverter") {
@@ -1900,18 +1901,18 @@ function getRawEParamValue(
     }
     return normalizeControlTypeForE(
       node.params.control_type ??
-        node.params.controlType ??
-        node.params.acControlType ??
-        node.params.dcControlType ??
-        node.params.sourceControlType ??
+        deviceParamValue(node.params, "control_type") ??
+        deviceParamValue(node.params, "ac_control_type") ??
+        deviceParamValue(node.params, "dc_control_type") ??
+        deviceParamValue(node.params, "source_control_type") ??
         ""
     );
   }
   if (key === "i_control_type") {
-    return normalizeDcdcEndpointControlTypeForE(node.params.i_control_type || node.params.sourceControlType || node.params.control_type);
+    return normalizeDcdcEndpointControlTypeForE(node.params.i_control_type || deviceParamValue(node.params, "source_control_type") || node.params.control_type);
   }
   if (key === "j_control_type") {
-    return normalizeDcdcEndpointControlTypeForE(node.params.j_control_type || node.params.targetControlType);
+    return normalizeDcdcEndpointControlTypeForE(node.params.j_control_type || deviceParamValue(node.params, "target_control_type"));
   }
   if (key === "vbase") {
     return node.params.vbase ?? node.terminals[0]?.vbase ?? "";
@@ -1946,14 +1947,14 @@ function getRawEParamValue(
     if (sideParameterMatch) {
       const sidePrefix = ["high", "medium", "low"][Number.parseInt(sideParameterMatch[2], 10) - 1];
       const parameterSuffix: Record<string, string> = {
-        r: "ResistancePu",
-        x: "ReactancePu",
-        gt: "MagnetizingConductancePu",
-        bt: "MagnetizingSusceptancePu",
-        tap: "TapRatio",
-        shift: "Shift"
+        r: "resistance_pu",
+        x: "reactance_pu",
+        gt: "magnetizing_conductance_pu",
+        bt: "magnetizing_susceptance_pu",
+        tap: "tap_ratio",
+        shift: "shift"
       };
-      return node.params[`${sidePrefix}${parameterSuffix[sideParameterMatch[1]]}`] ?? "";
+      return deviceParamValue(node.params, `${sidePrefix}_${parameterSuffix[sideParameterMatch[1]]}`) ?? "";
     }
   }
   const numberedNodeMatch = /^node(\d+)$/.exec(key);
@@ -2019,18 +2020,30 @@ function eFileInterfaceDefinitionIndex(options: EFileExportOptions = {}) {
 
 const LEGACY_E_DEFINITION_COLUMN_ALIASES: Record<string, string> = {
   ratedActivePower: "pbase",
+  rated_active_power: "pbase",
   ratedReactivePower: "qbase",
+  rated_reactive_power: "qbase",
   resistancePu: "r",
+  resistance_pu: "r",
   reactancePu: "x",
+  reactance_pu: "x",
   halfChargingSusceptancePu: "b",
+  half_charging_susceptance_pu: "b",
   magnetizingConductancePu: "gt",
+  magnetizing_conductance_pu: "gt",
   magnetizingSusceptancePu: "bt",
+  magnetizing_susceptance_pu: "bt",
   tapRatio: "tap",
+  tap_ratio: "tap",
   sourceEquivalentResistance: "r1",
+  source_equivalent_resistance: "r1",
   targetEquivalentResistance: "r2",
+  target_equivalent_resistance: "r2",
   controlType: "control_type",
   acControlType: "control_type",
+  ac_control_type: "control_type",
   dcControlType: "control_type",
+  dc_control_type: "control_type",
   closedStatus: "status"
 };
 
@@ -2049,16 +2062,18 @@ function legacyEColumnForDefinition(section: string, enName: string): string {
   if (enName === "t2_node" && columns.includes("j_node")) {
     return "j_node";
   }
-  if (enName === "sourceControlType") {
+  if (enName === "sourceControlType" || enName === "source_control_type") {
     if (columns.includes("i_control_type")) return "i_control_type";
     if (columns.includes("control_type")) return "control_type";
   }
-  if (enName === "targetControlType") {
+  if (enName === "targetControlType" || enName === "target_control_type") {
     if (columns.includes("j_control_type")) return "j_control_type";
     if (columns.includes("control_type")) return "control_type";
   }
   if (section === "ACTransfomer3") {
-    const sideMatch = /^(high|medium|low)(ResistancePu|ReactancePu|MagnetizingConductancePu|MagnetizingSusceptancePu|TapRatio|Shift)$/.exec(enName);
+    const sideMatch =
+      /^(high|medium|low)(ResistancePu|ReactancePu|MagnetizingConductancePu|MagnetizingSusceptancePu|TapRatio|Shift)$/.exec(enName) ??
+      /^(high|medium|low)_(resistance_pu|reactance_pu|magnetizing_conductance_pu|magnetizing_susceptance_pu|tap_ratio|shift)$/.exec(enName);
     if (sideMatch) {
       const sideIndex = { high: "1", medium: "2", low: "3" }[sideMatch[1] as "high" | "medium" | "low"];
       const prefix = {
@@ -2067,8 +2082,14 @@ function legacyEColumnForDefinition(section: string, enName: string): string {
         MagnetizingConductancePu: "gt",
         MagnetizingSusceptancePu: "bt",
         TapRatio: "tap",
-        Shift: "shift"
-      }[sideMatch[2] as "ResistancePu" | "ReactancePu" | "MagnetizingConductancePu" | "MagnetizingSusceptancePu" | "TapRatio" | "Shift"];
+        Shift: "shift",
+        resistance_pu: "r",
+        reactance_pu: "x",
+        magnetizing_conductance_pu: "gt",
+        magnetizing_susceptance_pu: "bt",
+        tap_ratio: "tap",
+        shift: "shift"
+      }[sideMatch[2] as "ResistancePu" | "ReactancePu" | "MagnetizingConductancePu" | "MagnetizingSusceptancePu" | "TapRatio" | "Shift" | "resistance_pu" | "reactance_pu" | "magnetizing_conductance_pu" | "magnetizing_susceptance_pu" | "tap_ratio" | "shift"];
       const column = `${prefix}${sideIndex}`;
       return columns.includes(column) ? column : "";
     }
@@ -2252,8 +2273,12 @@ const DERIVED_COMPONENT_COMMON_PARAM_NAMES = new Set([
   "control_type",
   "controlType",
   "acControlType",
+  "ac_control_type",
   "dcControlType",
+  "dc_control_type",
   "sourceControlType",
+  "source_control_type",
+  "target_control_type",
   "p_set",
   "q_set",
   "v_set",
@@ -2261,9 +2286,13 @@ const DERIVED_COMPONENT_COMMON_PARAM_NAMES = new Set([
   "alpha",
   "vbase",
   "ratedPower",
+  "rated_power",
   "ratedVoltage",
+  "rated_voltage",
   "ratedCapacity",
-  "sourceType"
+  "rated_capacity",
+  "sourceType",
+  "source_type"
 ]);
 
 function derivedComponentBaseRelationKey(baseComponentLibrary: string): string {
@@ -2421,17 +2450,17 @@ function terminalSideVoltageBase(node: VoltageDisplayNode, terminalIndex: number
   }
   if (isThreeWindingTransformer(node)) {
     return firstNonZeroVoltageBase([
-      node.params.highVbase,
-      node.params.mediumVbase,
-      node.params.lowVbase,
+      deviceParamValue(node.params, "high_vbase"),
+      deviceParamValue(node.params, "medium_vbase"),
+      deviceParamValue(node.params, "low_vbase"),
       node.params.neutral_vbase
     ].slice(terminalIndex, terminalIndex + 1));
   }
   if (terminalIndex === 0) {
-    return firstNonZeroVoltageBase([node.params.i_vbase, node.params.sourceVbase, node.params.highVbase]);
+    return firstNonZeroVoltageBase([node.params.i_vbase, deviceParamValue(node.params, "source_vbase"), deviceParamValue(node.params, "high_vbase")]);
   }
   if (terminalIndex === 1) {
-    return firstNonZeroVoltageBase([node.params.j_vbase, node.params.targetVbase, node.params.lowVbase]);
+    return firstNonZeroVoltageBase([node.params.j_vbase, deviceParamValue(node.params, "target_vbase"), deviceParamValue(node.params, "low_vbase")]);
   }
   return "";
 }
@@ -2451,8 +2480,8 @@ function terminalVoltageDisplayValue(node: VoltageDisplayNode, terminal?: Voltag
   }
   const nodeVoltage = firstNonZeroVoltageBase([
     node.params.vbase,
-    node.params.voltageLevel,
-    node.params.ratedVoltage,
+    deviceParamValue(node.params, "voltage_level"),
+    deviceParamValue(node.params, "rated_voltage"),
     node.params.voltage
   ]);
   return nodeVoltage || terminalVoltageBaseNumber(terminal?.vbase);
@@ -3700,6 +3729,41 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
       ac: { ratedVoltage: "500 kV", ratedPower: "1000 MW" },
       dc: { ratedVoltage: "1500 V", ratedPower: "1000 MW" }
     }
+  },
+  {
+    kindSuffix: "storage",
+    label: "电化学储能",
+    sourceType: "储能",
+    derivedClassLabel: "储能",
+    derivedComponentSuffix: "StorageGen",
+    parameterDefinitions: [
+      electricGenerationStringEnumDefinition("储能技术类型", "storageTechnology", [
+        { value: "lithium", label: "锂电池" },
+        { value: "sodium", label: "钠离子电池" },
+        { value: "flow", label: "液流电池" },
+        { value: "leadCarbon", label: "铅碳电池" },
+        { value: "supercapacitor", label: "超级电容" }
+      ]),
+      electricGenerationIntegerDefinition("电池簇/电池架数量", "batteryRackCount"),
+      electricGenerationStringDefinition("储能容量", "energyCapacity"),
+      electricGenerationStringDefinition("充放电效率", "chargeDischargeEfficiency"),
+      electricGenerationStringDefinition("最大充电功率", "maxChargePower"),
+      electricGenerationStringDefinition("最大放电功率", "maxDischargePower"),
+      electricGenerationStringDefinition("荷电状态", "stateOfCharge")
+    ],
+    commonParams: {
+      storageTechnology: "lithium",
+      batteryRackCount: "20",
+      energyCapacity: "20 MWh",
+      chargeDischargeEfficiency: "90%",
+      maxChargePower: "5 MW",
+      maxDischargePower: "5 MW",
+      stateOfCharge: "50%"
+    },
+    defaultsByTerminalType: {
+      ac: { ratedVoltage: "10 kV", ratedPower: "5 MW" },
+      dc: { ratedVoltage: "750 V", ratedPower: "5 MW" }
+    }
   }
 ];
 
@@ -4247,15 +4311,6 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     categoryLibrary: "交流设备",
     size: { width: 92, height: 58 },
     params: { ratedVoltage: "10 kV", ratedPower: "5 MW", sourceType: "柴油" },
-    terminalType: "ac",
-    terminalCount: 1
-  },
-  {
-    kind: "ac-storage",
-    label: "电化学储能",
-    categoryLibrary: "交流设备",
-    size: { width: 90, height: 56 },
-    params: { ratedVoltage: "10 kV", ratedPower: "5 MW", energyCapacity: "20 MWh", stateOfCharge: "50%" },
     terminalType: "ac",
     terminalCount: 1
   },
@@ -4808,15 +4863,6 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   },
   ...ELECTRIC_GENERATION_DEVICE_TEMPLATES.filter((template) => template.terminalType === "dc"),
   {
-    kind: "dc-storage",
-    label: "电化学储能",
-    categoryLibrary: "直流设备",
-    size: { width: 90, height: 56 },
-    params: { ratedVoltage: "750 V", ratedPower: "5 MW", energyCapacity: "20 MWh", stateOfCharge: "50%" },
-    terminalType: "dc",
-    terminalCount: 1
-  },
-  {
     kind: "dc-line",
     label: "直流线路",
     categoryLibrary: "直流设备",
@@ -4974,6 +5020,59 @@ function normalizeDeviceTemplateDefaultSize(template: DeviceTemplate): DeviceTem
   };
 }
 
+export function toSnakeCaseDeviceParamName(name: string): string {
+  return name
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/([A-Z]+)([A-Z][a-z0-9])/g, "$1_$2")
+    .replace(/[^A-Za-z0-9_]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
+}
+
+function legacyCamelCaseParamName(name: string): string {
+  return name.replace(/_([a-z0-9])/g, (_match, char: string) => char.toUpperCase());
+}
+
+function deviceParamValue(params: Record<string, string>, key: string): string | undefined {
+  const snakeKey = toSnakeCaseDeviceParamName(key);
+  const camelKey = legacyCamelCaseParamName(snakeKey);
+  return params[key] ?? params[snakeKey] ?? params[camelKey];
+}
+
+function normalizeDeviceParamRecord(params?: Record<string, string>): Record<string, string> | undefined {
+  if (!params) {
+    return params;
+  }
+  const normalized: Record<string, string> = {};
+  for (const [key, value] of Object.entries(params)) {
+    normalized[key.startsWith("_") ? key : toSnakeCaseDeviceParamName(key)] = value;
+  }
+  return normalized;
+}
+
+function normalizeDeviceParameterDefinition(definition: DeviceParameterDefinition): DeviceParameterDefinition {
+  const enName = toSnakeCaseDeviceParamName(definition.enName);
+  const exportName = definition.exportName ? toSnakeCaseDeviceParamName(definition.exportName) : definition.exportName;
+  return {
+    ...definition,
+    enName,
+    exportName
+  };
+}
+
+function normalizeDeviceTemplateParameterNames(template: DeviceTemplate): DeviceTemplate {
+  if (isStaticNode({ kind: template.kind } as ModelNode)) {
+    return template;
+  }
+  return {
+    ...template,
+    params: normalizeDeviceParamRecord(template.params) ?? template.params,
+    parameterDefinitions: template.parameterDefinitions?.map(normalizeDeviceParameterDefinition)
+  };
+}
+
 function createVerticalDeviceTemplate(template: DeviceTemplate): DeviceTemplate {
   return {
     ...template,
@@ -4992,7 +5091,9 @@ function createVerticalDeviceTemplate(template: DeviceTemplate): DeviceTemplate 
   };
 }
 
-const NORMALIZED_BASE_DEVICE_LIBRARY = BASE_DEVICE_LIBRARY.map(normalizeDeviceTemplateDefaultSize);
+const NORMALIZED_BASE_DEVICE_LIBRARY = BASE_DEVICE_LIBRARY
+  .map(normalizeDeviceTemplateDefaultSize)
+  .map(normalizeDeviceTemplateParameterNames);
 
 export const DEVICE_LIBRARY: DeviceTemplate[] = [
   ...NORMALIZED_BASE_DEVICE_LIBRARY,
@@ -5828,11 +5929,11 @@ export function getDeviceStrokeColor(node: Pick<ModelNode, "kind" | "terminals" 
   const busTerminalType = busTerminalTypeByKind(node.kind);
   const busVoltage = firstNonZeroVoltageBase([
     node.params.vbase,
-    node.params.voltageLevel,
-    node.params.ratedVoltage,
+    deviceParamValue(node.params, "voltage_level"),
+    deviceParamValue(node.params, "rated_voltage"),
     node.params.voltage
   ]);
-  return node.params.foregroundColor || (
+  return (deviceParamValue(node.params, "foreground_color") ?? "") || (
     mode === "voltage" && isElectricColorType(busTerminalType) && busVoltage
       ? voltageLevelColor(busVoltage, busTerminalType, palette)
       : isHydrogenVisualKind(node.kind)
@@ -5897,7 +5998,7 @@ const DEVICE_STROKE_WIDTH_BY_VARIANT: Partial<Record<DeviceGlyphVariant, number>
 };
 
 export function getDeviceStrokeWidth(node: Pick<ModelNode, "kind" | "params">): number {
-  const explicitWidth = Number(node.params.lineWidth ?? "");
+  const explicitWidth = Number(deviceParamValue(node.params, "line_width") ?? "");
   if (Number.isFinite(explicitWidth) && explicitWidth > 0) {
     if (isRoutableLineDeviceKind(node.kind) && explicitWidth === ROUTABLE_LINE_LEGACY_DEFAULT_STROKE_WIDTH) {
       return ROUTABLE_LINE_DEFAULT_STROKE_WIDTH;
@@ -5911,9 +6012,10 @@ export function normalizeRoutableLineDeviceStrokeWidthParam(node: ModelNode): Mo
   if (!isRoutableLineDeviceKind(node.kind)) {
     return node;
   }
-  const explicitWidth = Number(node.params.lineWidth ?? "");
+  const lineWidth = deviceParamValue(node.params, "line_width");
+  const explicitWidth = Number(lineWidth ?? "");
   if (
-    node.params.lineWidth &&
+    lineWidth &&
     explicitWidth !== ROUTABLE_LINE_LEGACY_DEFAULT_STROKE_WIDTH
   ) {
     return node;
@@ -5922,13 +6024,13 @@ export function normalizeRoutableLineDeviceStrokeWidthParam(node: ModelNode): Mo
     ...node,
     params: {
       ...node.params,
-      lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH)
+      line_width: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH)
     }
   };
 }
 
 export function getSwitchVisualState(node: ModelNode): "open" | "closed" {
-  const status = normalizeSwitchStatusForE(node.params.status ?? node.params.closedStatus);
+  const status = normalizeSwitchStatusForE(node.params.status ?? deviceParamValue(node.params, "closed_status"));
   return status === "0" ? "open" : "closed";
 }
 
@@ -6390,10 +6492,12 @@ function mergeCanonicalParameterDefinitions(
   canonicalDefinitions: readonly DeviceParameterDefinition[],
   overrideDefinitions: readonly DeviceParameterDefinition[]
 ): DeviceParameterDefinition[] {
-  const overrideByName = new Map(overrideDefinitions.map((definition) => [definition.enName.toLowerCase(), definition]));
-  const canonicalNames = new Set(canonicalDefinitions.map((definition) => definition.enName.toLowerCase()));
+  const normalizedCanonicalDefinitions = canonicalDefinitions.map(normalizeDeviceParameterDefinition);
+  const normalizedOverrideDefinitions = overrideDefinitions.map(normalizeDeviceParameterDefinition);
+  const overrideByName = new Map(normalizedOverrideDefinitions.map((definition) => [definition.enName.toLowerCase(), definition]));
+  const canonicalNames = new Set(normalizedCanonicalDefinitions.map((definition) => definition.enName.toLowerCase()));
   const legacyContainerParamPattern = /(?:^|_)(?:xf_t\d+|(?:ac2|dc2|h22|heat2|ac|dc|h2|heat)_(?:unit|load|transformer)_t\d+)$/;
-  const merged = canonicalDefinitions.map((definition) => {
+  const merged = normalizedCanonicalDefinitions.map((definition) => {
     const override = overrideByName.get(definition.enName.toLowerCase());
     if (!override) {
       return { ...definition };
@@ -6405,7 +6509,7 @@ function mergeCanonicalParameterDefinitions(
       readonly: definition.readonly
     }) ?? { ...definition };
   });
-  for (const definition of overrideDefinitions) {
+  for (const definition of normalizedOverrideDefinitions) {
     if (
       !canonicalNames.has(definition.enName.toLowerCase()) &&
       definition.enName !== "is_container" &&
@@ -6502,8 +6606,13 @@ export function applyDeviceTemplateDefinitionOverride(
   };
 }
 
-function applyTemplateDefinitionDefaults(params: Record<string, string>, template: DeviceTemplate): Record<string, string> {
-  const parameterDefinitions = normalizeTemplateDefinitionList(template.parameterDefinitions);
+function applyTemplateDefinitionDefaults(
+  params: Record<string, string>,
+  template: DeviceTemplate,
+  definitionFilter?: (definition: DeviceParameterDefinition) => boolean
+): Record<string, string> {
+  const parameterDefinitions = normalizeTemplateDefinitionList(template.parameterDefinitions)
+    .filter((definition) => definitionFilter ? definitionFilter(definition) : true);
   if (parameterDefinitions.length === 0) {
     return params;
   }
@@ -6679,18 +6788,24 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
     const mapped = states.find((state) => normalizeDeviceStatusForE(state.value) === normalized);
     return { ...params, status: mapped?.value ?? normalized };
   };
-  const withTemplateDefinitions = (params: Record<string, string>) =>
-    withDeviceLabelDefaults(
+  const withTemplateDefinitions = (
+    params: Record<string, string>,
+    definitionFilter?: (definition: DeviceParameterDefinition) => boolean
+  ) => {
+    const resolved = withDeviceLabelDefaults(
       withStatusDefault(
         applyTemplateDefinitionDefaults(
           applyContainerRelationDefaults(
             withStaticButtonCapability(template.kind, withStaticGraphicDefaults(withoutResizeTransformParam(params))),
             template
           ),
-          template
+          template,
+          definitionFilter
         )
       )
     );
+    return templateIsStaticGraphic ? resolved : normalizeDeviceParamRecord(resolved) ?? resolved;
+  };
   if (templateIsStaticGraphic) {
     return withTemplateDefinitions({ ...template.params });
   }
@@ -6721,12 +6836,37 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   if (template.isContainer && isElectricGenerationContainerKind(templateKind)) {
     return withTemplateDefinitions(withRunStat({ ...template.params }));
   }
-  if (electricGenerationDerivedComponentLibraryInfo(templateKind)) {
-    return withTemplateDefinitions(withRunStat({ ...template.params }));
+  if (templateKind === "ac-storage") {
+    return withTemplateDefinitions(withRunStat(withDefaultVbase({
+      ...template.params,
+      ratedCapacity: deviceParamValue(template.params, "rated_power") ?? "5 MW",
+      controlType: "PQ",
+      p_set: "0.0",
+      q_set: "0.0",
+      v_set: "10",
+      alpha: "1.0"
+    })));
+  }
+  if (templateKind === "dc-storage") {
+    return withTemplateDefinitions(withRunStat(withDefaultVbase({
+      ...template.params,
+      ratedCapacity: deviceParamValue(template.params, "rated_power") ?? "5 MW",
+      controlType: "P",
+      v_set: "750",
+      p_set: "0.0",
+      i_set: "0.0"
+    })));
+  }
+  const electricGenerationDerivedInfo = electricGenerationDerivedComponentLibraryInfo(templateKind);
+  if (electricGenerationDerivedInfo) {
+    return withTemplateDefinitions(
+      withRunStat({ ...template.params }),
+      (definition) => !isDerivedComponentCommonFieldName(definition.enName, electricGenerationDerivedInfo.baseComponentLibrary)
+    );
   }
   if (isGeneratorKind(templateKind)) {
     const base: Record<string, string> = {
-      ratedCapacity: template.params.ratedPower ?? template.params.ratedCapacity ?? "10 MW",
+      ratedCapacity: deviceParamValue(template.params, "rated_power") ?? deviceParamValue(template.params, "rated_capacity") ?? "10 MW",
       controlType: type === "ac" ? "PV" : "P"
     };
     if (templateKind.includes("wind-source")) {
@@ -6756,27 +6896,6 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       pv2: "0.0"
     })));
   }
-  if (templateKind === "ac-storage") {
-    return withTemplateDefinitions(withRunStat(withDefaultVbase({
-      ...template.params,
-      ratedCapacity: template.params.ratedPower ?? "5 MW",
-      controlType: "PQ",
-      p_set: "0.0",
-      q_set: "0.0",
-      v_set: "10",
-      alpha: "1.0"
-    })));
-  }
-  if (templateKind === "dc-storage") {
-    return withTemplateDefinitions(withRunStat(withDefaultVbase({
-      ...template.params,
-      ratedCapacity: template.params.ratedPower ?? "5 MW",
-      controlType: "P",
-      v_set: "750",
-      p_set: "0.0",
-      i_set: "0.0"
-    })));
-  }
   if (
     templateKind === "ac-electrolyzer" ||
     templateKind === "dc-electrolyzer" ||
@@ -6785,14 +6904,14 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   ) {
     return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ...template.params,
-      ratedCapacity: template.params.ratedPower ?? "5 MW",
+      ratedCapacity: deviceParamValue(template.params, "rated_power") ?? "5 MW",
       controlType: template.terminalType === "ac" ? "PQ" : "P"
     })));
   }
   if (templateKind === "ac-heater" || templateKind === "dc-heater" || templateKind === "ac-two-port-heater" || templateKind === "dc-two-port-heater") {
     return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ...template.params,
-      ratedCapacity: template.params.ratedPower ?? "5 MW",
+      ratedCapacity: deviceParamValue(template.params, "rated_power") ?? "5 MW",
       controlType: template.terminalType === "ac" ? "PQ" : "P"
     })));
   }
@@ -8812,8 +8931,8 @@ export function normalizeNodeTerminalsWithTemplate(node: ModelNode, template: De
   }
   if (template && !template.isContainer && (isThreeWindingTransformer(normalizedNode) || isTwoWindingTransformerTemplateKind(normalizedNode.kind))) {
     const parameterDefinitions = isThreeWindingTransformer(normalizedNode)
-      ? threeWindingTransformerParameterDefinitions
-      : twoWindingTransformerParameterDefinitions;
+      ? threeWindingTransformerParameterDefinitions.map(normalizeDeviceParameterDefinition)
+      : twoWindingTransformerParameterDefinitions.map(normalizeDeviceParameterDefinition);
     const sourceParams = isThreeWindingTransformer(normalizedNode)
       ? stripThreeWindingTransformerContainerParams(normalizedNode.params)
       : normalizeTwoWindingTransformerParams(normalizedNode.params);
@@ -10196,6 +10315,8 @@ const ELEMENT_TREE_COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   DCHydroGen: "直流水电",
   ACNuclearGen: "交流核电",
   DCNuclearGen: "直流核电",
+  ACStorageGen: "交流储能",
+  DCStorageGen: "直流储能",
   ACShuntCompensator: "交流无功补偿",
   ACZeroBranch: "交流零阻支路",
   DCZeroBranch: "直流零阻支路",
@@ -10974,8 +11095,8 @@ export function validateTwoTerminalVoltageBaseConsistency(nodes: ModelNode[]): T
     }
     const sourceTerminal = node.terminals[0];
     const targetTerminal = node.terminals[1];
-    const sourceVoltageBase = terminalVoltageBaseNumber(sourceTerminal.vbase ?? node.params.i_vbase ?? node.params.sourceVbase ?? node.params.vbase);
-    const targetVoltageBase = terminalVoltageBaseNumber(targetTerminal.vbase ?? node.params.j_vbase ?? node.params.targetVbase ?? node.params.vbase);
+    const sourceVoltageBase = terminalVoltageBaseNumber(sourceTerminal.vbase ?? node.params.i_vbase ?? deviceParamValue(node.params, "source_vbase") ?? node.params.vbase);
+    const targetVoltageBase = terminalVoltageBaseNumber(targetTerminal.vbase ?? node.params.j_vbase ?? deviceParamValue(node.params, "target_vbase") ?? node.params.vbase);
     if (!sourceVoltageBase || !targetVoltageBase || voltageBaseComparisonKey(sourceVoltageBase) === voltageBaseComparisonKey(targetVoltageBase)) {
       continue;
     }
@@ -11510,21 +11631,21 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
       params.vbase = terminalVoltages[0];
     }
     if (isThreeWindingTransformer(node)) {
-      assignTerminalParam("highVbase", terminals[0]);
-      assignTerminalParam("mediumVbase", terminals[1]);
-      assignTerminalParam("lowVbase", terminals[2]);
+      assignTerminalParam("high_vbase", terminals[0]);
+      assignTerminalParam("medium_vbase", terminals[1]);
+      assignTerminalParam("low_vbase", terminals[2]);
       if (hasVisibleThreeWindingNeutralTerminal(node)) {
         assignTerminalParam("neutral_vbase", terminals[3]);
       }
     } else if (isTwoWindingTransformerNode(node)) {
-      assignTerminalParam("highVbase", terminals[0]);
-      assignTerminalParam("lowVbase", terminals[1]);
+      assignTerminalParam("high_vbase", terminals[0]);
+      assignTerminalParam("low_vbase", terminals[1]);
     }
-    if (Object.prototype.hasOwnProperty.call(params, "sourceVbase")) {
-      assignTerminalParam("sourceVbase", terminals[0]);
+    if (Object.prototype.hasOwnProperty.call(params, "source_vbase") || Object.prototype.hasOwnProperty.call(params, "sourceVbase")) {
+      assignTerminalParam("source_vbase", terminals[0]);
     }
-    if (Object.prototype.hasOwnProperty.call(params, "targetVbase")) {
-      assignTerminalParam("targetVbase", terminals[1]);
+    if (Object.prototype.hasOwnProperty.call(params, "target_vbase") || Object.prototype.hasOwnProperty.call(params, "targetVbase")) {
+      assignTerminalParam("target_vbase", terminals[1]);
     }
     if (Object.prototype.hasOwnProperty.call(params, "i_vbase")) {
       assignTerminalParam("i_vbase", terminals[0]);
