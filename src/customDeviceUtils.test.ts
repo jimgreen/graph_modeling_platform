@@ -18,6 +18,8 @@ const generationCases = [
   ["dc-pv-source", "直流设备", "DCGenerator", "DCPVGen"],
   ["ac-thermal-source", "交流设备", "ACGenerator", "ACThermalGen"],
   ["dc-thermal-source", "直流设备", "DCGenerator", "DCThermalGen"],
+  ["ac-diesel-source", "交流设备", "ACGenerator", "ACDieselGen"],
+  ["dc-diesel-source", "直流设备", "DCGenerator", "DCDieselGen"],
   ["ac-hydro-source", "交流设备", "ACGenerator", "ACHydroGen"],
   ["dc-hydro-source", "直流设备", "DCGenerator", "DCHydroGen"],
   ["ac-nuclear-source", "交流设备", "ACGenerator", "ACNuclearGen"],
@@ -98,7 +100,6 @@ describe("electric generation device library classification", () => {
     expect(fieldNames).toEqual([
       "wind_turbine_model",
       "wind_turbine_count",
-      "unit_rated_power",
       "cut_in_wind_speed",
       "rated_wind_speed",
       "cut_out_wind_speed",
@@ -117,6 +118,7 @@ describe("electric generation device library classification", () => {
       "control_type",
       "p_set"
     ]));
+    expect(fieldNames).not.toContain("unit_rated_power");
     expect(draft.params.every((row) => row.exportEnabled === true)).toBe(true);
     expect(draft.params.map((row) => row.exportName)).toEqual(fieldNames);
   });

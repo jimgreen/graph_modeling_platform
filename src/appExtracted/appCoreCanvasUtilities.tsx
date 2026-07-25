@@ -2094,6 +2094,8 @@ export const COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   DCPVGen: "直流光伏",
   ACThermalGen: "交流火电",
   DCThermalGen: "直流火电",
+  ACDieselGen: "交流柴发",
+  DCDieselGen: "直流柴发",
   ACHydroGen: "交流水电",
   DCHydroGen: "直流水电",
   ACNuclearGen: "交流核电",

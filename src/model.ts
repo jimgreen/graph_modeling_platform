@@ -57,6 +57,7 @@ export type DeviceKind =
   | "ac-thermal-source"
   | "dc-thermal-source"
   | "ac-diesel-source"
+  | "dc-diesel-source"
   | "ac-hydro-source"
   | "dc-hydro-source"
   | "ac-nuclear-source"
@@ -890,6 +891,7 @@ const ELECTRIC_GENERATION_FAMILY_KIND_SUFFIXES = [
   "wind-source",
   "pv-source",
   "thermal-source",
+  "diesel-source",
   "hydro-source",
   "nuclear-source",
   "storage"
@@ -2155,6 +2157,7 @@ function resolveEParameterFields(
   }
   const definitions = customEParameterDefinitions(params);
   const builtInColumns = E_SECTION_COLUMNS[section];
+  const derivedInfo = electricGenerationDerivedComponentLibraryInfo(kind);
   if (definitions.length === 0) {
     return (builtInColumns ?? []).map((column) => ({ sourceName: column, exportName: column }));
   }
@@ -2172,7 +2175,10 @@ function resolveEParameterFields(
   if (builtInColumns) {
     const definitionByLegacyColumn = new Map<string, DeviceParameterDefinition>();
     const definitionsMappedToLegacyColumns = new Set<DeviceParameterDefinition>();
-    for (const definition of definitions) {
+    const baseDefinitions = derivedInfo
+      ? definitions.filter((definition) => isDerivedComponentCommonFieldName(definition.enName, derivedInfo.baseComponentLibrary))
+      : definitions;
+    for (const definition of baseDefinitions) {
       const legacyColumn = legacyEColumnForDefinition(section, definition.enName);
       if (!legacyColumn) {
         continue;
@@ -3568,7 +3574,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     parameterDefinitions: [
       electricGenerationStringDefinition("风机型号", "windTurbineModel"),
       electricGenerationIntegerDefinition("风机台数", "windTurbineCount"),
-      electricGenerationStringDefinition("单机额定功率", "unitRatedPower"),
       electricGenerationStringDefinition("切入风速", "cutInWindSpeed"),
       electricGenerationStringDefinition("额定风速", "ratedWindSpeed"),
       electricGenerationStringDefinition("切出风速", "cutOutWindSpeed"),
@@ -3577,7 +3582,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     ],
     commonParams: {
       windTurbineModel: "WT-5MW",
-      unitRatedPower: "5 MW",
       cutInWindSpeed: "3 m/s",
       ratedWindSpeed: "12 m/s",
       cutOutWindSpeed: "25 m/s",
@@ -3651,6 +3655,37 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     defaultsByTerminalType: {
       ac: { ratedVoltage: "220 kV", ratedPower: "600 MW" },
       dc: { ratedVoltage: "1500 V", ratedPower: "600 MW" }
+    }
+  },
+  {
+    kindSuffix: "diesel-source",
+    label: "柴油发电机",
+    sourceType: "柴油",
+    derivedClassLabel: "柴发",
+    derivedComponentSuffix: "DieselGen",
+    parameterDefinitions: [
+      electricGenerationStringDefinition("柴油机组型号", "dieselUnitModel"),
+      electricGenerationIntegerDefinition("柴油机组台数", "dieselUnitCount"),
+      electricGenerationStringDefinition("单机额定功率", "unitRatedPower"),
+      electricGenerationStringDefinition("燃油牌号", "fuelGrade"),
+      electricGenerationStringDefinition("单位油耗", "specificFuelConsumption"),
+      electricGenerationStringDefinition("油箱容量", "fuelTankCapacity"),
+      electricGenerationStringDefinition("额定转速", "ratedSpeed"),
+      electricGenerationStringDefinition("启动时间", "startTime")
+    ],
+    commonParams: {
+      dieselUnitModel: "DG-2500",
+      dieselUnitCount: "2",
+      unitRatedPower: "2.5 MW",
+      fuelGrade: "0#柴油",
+      specificFuelConsumption: "200 g/kWh",
+      fuelTankCapacity: "20 m3",
+      ratedSpeed: "1500 r/min",
+      startTime: "10 s"
+    },
+    defaultsByTerminalType: {
+      ac: { ratedVoltage: "10 kV", ratedPower: "5 MW" },
+      dc: { ratedVoltage: "750 V", ratedPower: "5 MW" }
     }
   },
   {
@@ -3917,8 +3952,6 @@ function createElectricGenerationDeviceTemplate(
       { cnName: "设备状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: false },
       { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false },
       { cnName: "发电类型", enName: "sourceType", valueType: "string", typicalValue: family.sourceType, readonly: true },
-      { cnName: "额定功率", enName: "ratedPower", valueType: "string", typicalValue: electricalDefaults.ratedPower, readonly: false },
-      { cnName: "额定电压", enName: "ratedVoltage", valueType: "string", typicalValue: electricalDefaults.ratedVoltage, readonly: false },
       ...family.parameterDefinitions.map((definition) => ({
         ...definition,
         typicalValue: params[definition.enName] ?? ""
@@ -4300,20 +4333,17 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流电源",
     categoryLibrary: "交流设备",
     size: { width: 84, height: 56 },
-    params: { ratedVoltage: "10 kV", frequency: "50 Hz", shortCircuitCapacity: "500 MVA" },
+    params: { ratedPower: "10 MW", ratedVoltage: "10 kV", frequency: "50 Hz", shortCircuitCapacity: "500 MVA" },
     terminalType: "ac",
-    terminalCount: 1
+    terminalCount: 1,
+    parameterDefinitions: [
+      { cnName: "额定功率", enName: "ratedPower", valueType: "string", typicalValue: "10 MW", readonly: false },
+      { cnName: "额定电压", enName: "ratedVoltage", valueType: "string", typicalValue: "10 kV", readonly: false },
+      { cnName: "频率", enName: "frequency", valueType: "string", typicalValue: "50 Hz", readonly: false },
+      { cnName: "短路容量", enName: "shortCircuitCapacity", valueType: "string", typicalValue: "500 MVA", readonly: false }
+    ]
   },
   ...ELECTRIC_GENERATION_DEVICE_TEMPLATES.filter((template) => template.terminalType === "ac"),
-  {
-    kind: "ac-diesel-source",
-    label: "柴油发电机",
-    categoryLibrary: "交流设备",
-    size: { width: 92, height: 58 },
-    params: { ratedVoltage: "10 kV", ratedPower: "5 MW", sourceType: "柴油" },
-    terminalType: "ac",
-    terminalCount: 1
-  },
   {
     kind: "ac-electrolyzer",
     label: "交流电制氢",
@@ -4857,9 +4887,14 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流电源",
     categoryLibrary: "直流设备",
     size: { width: 84, height: 56 },
-    params: { ratedVoltage: "750 V", maxCurrent: "2000 A" },
+    params: { ratedPower: "10 MW", ratedVoltage: "750 V", maxCurrent: "2000 A" },
     terminalType: "dc",
-    terminalCount: 1
+    terminalCount: 1,
+    parameterDefinitions: [
+      { cnName: "额定功率", enName: "ratedPower", valueType: "string", typicalValue: "10 MW", readonly: false },
+      { cnName: "额定电压", enName: "ratedVoltage", valueType: "string", typicalValue: "750 V", readonly: false },
+      { cnName: "最大电流", enName: "maxCurrent", valueType: "string", typicalValue: "2000 A", readonly: false }
+    ]
   },
   ...ELECTRIC_GENERATION_DEVICE_TEMPLATES.filter((template) => template.terminalType === "dc"),
   {
@@ -6528,20 +6563,39 @@ export function applyDeviceTemplateDefinitionOverride(
   if (!override) {
     return template;
   }
-  const parameterDefinitions = (override.parameterDefinitions ?? [])
+  const overrideParameterDefinitions = (override.parameterDefinitions ?? [])
     .map((definition) => normalizeTemplateDefinition(definition))
     .filter((definition): definition is DeviceParameterDefinition => Boolean(definition));
+  const baseKind = baseDeviceKind(template.kind);
+  const electricGenerationDerivedInfo = electricGenerationDerivedComponentLibraryInfo(baseKind);
+  const canonicalOverrideParameterDefinitions = electricGenerationDerivedInfo
+    ? overrideParameterDefinitions.filter((definition) => (
+        definition.enName !== "rated_power" &&
+        definition.enName !== "rated_voltage" &&
+        !(baseKind.includes("wind-source") && definition.enName === "unit_rated_power")
+      ))
+    : overrideParameterDefinitions;
+  const parameterDefinitions = baseKind === "ac-source" || baseKind === "dc-source" || electricGenerationDerivedInfo
+    ? mergeCanonicalParameterDefinitions(template.parameterDefinitions ?? [], canonicalOverrideParameterDefinitions)
+    : canonicalOverrideParameterDefinitions;
   const hasStateDefinitionsOverride = Array.isArray(override.stateDefinitions);
   const stateDefinitions = hasStateDefinitionsOverride ? normalizeDeviceStateDefinitions(override.stateDefinitions) : template.stateDefinitions?.map(cloneDeviceStateDefinition);
   const overrideParams = Object.fromEntries(
     Object.entries(override.params ?? {}).filter(([key]) => key !== ALLOW_RESIZE_TRANSFORM_PARAM)
   );
   const params = { ...template.params, ...overrideParams };
-  for (const definition of parameterDefinitions) {
-    if (definition.enName === "name") {
+  for (const definition of overrideParameterDefinitions) {
+    if (
+      definition.enName === "name" ||
+      (electricGenerationDerivedInfo && baseKind.includes("wind-source") && definition.enName === "unit_rated_power")
+    ) {
       continue;
     }
     params[definition.enName] = definition.typicalValue;
+  }
+  if (electricGenerationDerivedInfo && baseKind.includes("wind-source")) {
+    delete params.unit_rated_power;
+    delete params.unitRatedPower;
   }
   const terminalTypes = override.terminalTypes?.length
     ? override.terminalTypes.slice(0, Math.max(0, override.terminalCount ?? override.terminalTypes.length))
@@ -10311,6 +10365,8 @@ const ELEMENT_TREE_COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   DCPVGen: "直流光伏",
   ACThermalGen: "交流火电",
   DCThermalGen: "直流火电",
+  ACDieselGen: "交流柴发",
+  DCDieselGen: "直流柴发",
   ACHydroGen: "交流水电",
   DCHydroGen: "直流水电",
   ACNuclearGen: "交流核电",

@@ -398,19 +398,23 @@ describe("graph template library filtering", () => {
     expect(componentLibraryDisplayParts("ACWindGen").title).toBe("交流风电 / ACWindGen");
     expect(componentLibraryDisplayParts("DCHydroGen").title).toBe("直流水电 / DCHydroGen");
     expect(componentLibraryDisplayParts("ACNuclearGen").chinese).toBe("交流核电");
+    expect(componentLibraryDisplayParts("ACDieselGen").title).toBe("交流柴发 / ACDieselGen");
+    expect(componentLibraryDisplayParts("DCDieselGen").chinese).toBe("直流柴发");
   });
 
   test("groups built-in generation derived classes under the base power-source component library", () => {
-    const templates = DEVICE_LIBRARY.filter((template) => template.kind === "ac-source" || template.kind === "ac-wind-source" || template.kind === "ac-pv-source");
+    const templates = DEVICE_LIBRARY.filter((template) => template.kind === "ac-source" || template.kind === "ac-wind-source" || template.kind === "ac-pv-source" || template.kind === "ac-diesel-source");
     const grouped = groupDeviceTemplatesByCategoryLibraryAndComponentLibrary(templates);
     const acSections = grouped["交流设备"] ?? [];
     const acGeneratorSection = acSections.find((section) => section.section === "ACGenerator");
 
     expect(acGeneratorSection?.templates.map((template: { kind: string }) => template.kind).sort()).toEqual([
+      "ac-diesel-source",
       "ac-pv-source",
       "ac-source",
       "ac-wind-source"
     ]);
+    expect(acSections.some((section) => section.section === "ACDieselGen")).toBe(false);
     expect(acSections.some((section) => section.section === "ACWindGen")).toBe(false);
     expect(acSections.some((section) => section.section === "ACPVGen")).toBe(false);
   });

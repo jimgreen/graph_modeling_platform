@@ -160,6 +160,7 @@ import {
   resolveDeviceParameterDefinitionExportSettings,
   inferESection,
   getTemplateParameterDefinitions,
+  templateDerivedComponentLibraryInfo,
   getOverlappingTerminalGroups,
   getTerminalBusContactGroups,
   validateContainerTerminalAssociations,
@@ -1468,6 +1469,41 @@ describe("power system model", () => {
     expect(dcPv.params.vbase).toBeUndefined();
   });
 
+  test("keeps required AC and DC wind parameters when legacy visual overrides contain an empty definition list", () => {
+    const expectedWindFields = [
+      "cut_in_wind_speed",
+      "rated_wind_speed",
+      "cut_out_wind_speed"
+    ];
+
+    for (const kind of ["ac-wind-source", "dc-wind-source"] as const) {
+      const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
+      const overridden = applyDeviceTemplateDefinitionOverride(template, {
+        kind,
+        params: { backgroundImageFit: "fixed" },
+        parameterDefinitions: []
+      });
+      const fieldNames = getTemplateParameterDefinitions(overridden).map((definition) => definition.enName);
+
+      expect(fieldNames).toEqual(expect.arrayContaining(expectedWindFields));
+      expect(fieldNames).not.toContain("rated_power");
+      expect(fieldNames).not.toContain("rated_voltage");
+      expect(fieldNames).not.toContain("unit_rated_power");
+    }
+
+    for (const kind of ["ac-source", "dc-source"] as const) {
+      const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
+      const overridden = applyDeviceTemplateDefinitionOverride(template, {
+        kind,
+        params: { backgroundImageFit: "fixed" },
+        parameterDefinitions: []
+      });
+      const fieldNames = getTemplateParameterDefinitions(overridden).map((definition) => definition.enName);
+
+      expect(fieldNames).toEqual(expect.arrayContaining(["rated_power", "rated_voltage"]));
+    }
+  });
+
   test("uses snake_case names for every built-in device class parameter", () => {
     const snakeCasePattern = /^[a-z0-9_]+$/;
     const violations: string[] = [];
@@ -1514,48 +1550,43 @@ describe("power system model", () => {
     expect(violations).toEqual([]);
   });
 
-  test("adds AC diesel generator as an ACGenerator with diesel glyph", () => {
-    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-diesel-source");
-    expect(template).toMatchObject({
-      label: "柴油发电机",
-      categoryLibrary: "交流设备",
-      terminalType: "ac",
-      terminalCount: 1,
-      params: expect.objectContaining({
-        rated_voltage: "10 kV",
-        rated_power: "5 MW",
-        source_type: "柴油"
-      })
-    });
+  test("adds AC and DC diesel generators as derived generator classes", () => {
+    const cases = [
+      { kind: "ac-diesel-source", terminalType: "ac", componentLibrary: "ACGenerator", derivedComponentLibrary: "ACDieselGen" },
+      { kind: "dc-diesel-source", terminalType: "dc", componentLibrary: "DCGenerator", derivedComponentLibrary: "DCDieselGen" }
+    ] as const;
 
-    const node = createDefaultNode("ac-diesel-source", { x: 100, y: 100 });
-    node.name = "柴油发电机1";
+    for (const expected of cases) {
+      const template = DEVICE_LIBRARY.find((item) => item.kind === expected.kind);
+      expect(template).toMatchObject({
+        label: expected.terminalType === "ac" ? "交流柴油发电机" : "直流柴油发电机",
+        categoryLibrary: expected.terminalType === "ac" ? "交流设备" : "直流设备",
+        terminalType: expected.terminalType,
+        terminalCount: 1,
+        params: expect.objectContaining({
+          rated_power: "5 MW",
+          source_type: "柴油",
+          diesel_unit_model: "DG-2500",
+          diesel_unit_count: "2"
+        })
+      });
+      expect(templateDerivedComponentLibraryInfo(template!)).toMatchObject({
+        componentLibrary: expected.componentLibrary,
+        derivedComponentLibrary: expected.derivedComponentLibrary,
+        baseComponentLibrary: expected.componentLibrary
+      });
 
-    expect(node.terminals).toHaveLength(1);
-    expect(node.terminals[0]).toMatchObject({ type: "ac", label: "交流设备端1" });
-    expect(node.params.rated_capacity).toBe("5 MW");
-    expect(node.params.control_type).toBe("PV");
-    expect(node.params.source_type).toBe("柴油");
-    expect(inferESection("ac-diesel-source", node.params)).toBe("ACGenerator");
-    expect(getDeviceGlyphVariant("ac-diesel-source")).toBe("diesel-source");
-
-    const exported = parseESections(buildEDeviceParameterFile({
-      version: 1,
-      name: "柴油发电机测试",
-      nodes: [node],
-      edges: []
-    }));
-
-    expect(exported.ACGenerator.rows).toEqual([
-      expect.objectContaining({
-        idx: "1",
-        name: "柴油发电机1",
-        node: "1",
-        control_type: "PV",
-        p_set: "0",
-        run_stat: "1"
-      })
-    ]);
+      const node = createDefaultNode(expected.kind, { x: 100, y: 100 });
+      expect(node.terminals).toMatchObject([{
+        type: expected.terminalType,
+        label: expected.terminalType === "ac" ? "交流发电机端" : "直流发电机端"
+      }]);
+      expect(node.params.rated_capacity).toBeUndefined();
+      expect(node.params.control_type).toBeUndefined();
+      expect(node.params.source_type).toBe("柴油");
+      expect(inferESection(expected.kind, node.params)).toBe(expected.componentLibrary);
+      expect(getDeviceGlyphVariant(expected.kind)).toBe("diesel-source");
+    }
   });
 
   test("defines template device status states separately from run_stat", () => {
@@ -9437,6 +9468,8 @@ describe("power system model", () => {
     { kind: "dc-pv-source", family: "pv", label: "直流光伏发电机", source_type: "光伏", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "1500 V", rated_power: "5 MW", derivedClassCnName: "直流光伏", derivedComponentType: "DCPVGen" },
     { kind: "ac-thermal-source", family: "thermal", label: "交流火力发电机", source_type: "火力", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "220 kV", rated_power: "600 MW", derivedClassCnName: "交流火电", derivedComponentType: "ACThermalGen" },
     { kind: "dc-thermal-source", family: "thermal", label: "直流火力发电机", source_type: "火力", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "1500 V", rated_power: "600 MW", derivedClassCnName: "直流火电", derivedComponentType: "DCThermalGen" },
+    { kind: "ac-diesel-source", family: "diesel", label: "交流柴油发电机", source_type: "柴油", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "10 kV", rated_power: "5 MW", derivedClassCnName: "交流柴发", derivedComponentType: "ACDieselGen" },
+    { kind: "dc-diesel-source", family: "diesel", label: "直流柴油发电机", source_type: "柴油", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "750 V", rated_power: "5 MW", derivedClassCnName: "直流柴发", derivedComponentType: "DCDieselGen" },
     { kind: "ac-hydro-source", family: "hydro", label: "交流水力发电机", source_type: "水力", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "220 kV", rated_power: "300 MW", derivedClassCnName: "交流水电", derivedComponentType: "ACHydroGen" },
     { kind: "dc-hydro-source", family: "hydro", label: "直流水力发电机", source_type: "水力", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "1500 V", rated_power: "300 MW", derivedClassCnName: "直流水电", derivedComponentType: "DCHydroGen" },
     { kind: "ac-nuclear-source", family: "nuclear", label: "交流核能发电机", source_type: "核能", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "500 kV", rated_power: "1000 MW", derivedClassCnName: "交流核电", derivedComponentType: "ACNuclearGen" },
@@ -9504,8 +9537,59 @@ describe("power system model", () => {
       expect(definitions.get("run_stat")).toMatchObject({ valueType: "stringEnum", enumValues: ["运行", "停运"], readonly: false });
       expect(definitions.get(expected.relationKey)).toBeUndefined();
       expect(definitions.get("source_type")).toMatchObject({ valueType: "string", readonly: true });
-      expect(definitions.get("rated_power")).toMatchObject({ valueType: "string", readonly: false });
-      expect(definitions.get("rated_voltage")).toMatchObject({ valueType: "string", readonly: false });
+      expect(definitions.has("rated_power")).toBe(false);
+      expect(definitions.has("rated_voltage")).toBe(false);
+    }
+  });
+
+  test("defines rated power and rated voltage on the AC and DC generator base classes", () => {
+    const baseCases = [
+      { kind: "ac-source", ratedPower: "10 MW", ratedVoltage: "10 kV" },
+      { kind: "dc-source", ratedPower: "10 MW", ratedVoltage: "750 V" }
+    ] as const;
+
+    for (const expected of baseCases) {
+      const template = DEVICE_LIBRARY.find((item) => item.kind === expected.kind)!;
+      const definitions = new Map(getTemplateParameterDefinitions(template).map((definition) => [definition.enName, definition]));
+
+      expect(template.params).toMatchObject({
+        rated_power: expected.ratedPower,
+        rated_voltage: expected.ratedVoltage
+      });
+      expect(definitions.get("rated_power")).toMatchObject({ cnName: "额定功率", valueType: "string", readonly: false });
+      expect(definitions.get("rated_voltage")).toMatchObject({ cnName: "额定电压", valueType: "string", readonly: false });
+    }
+  });
+
+  test("removes inherited rated fields from legacy electric generation definition overrides", () => {
+    for (const expected of electricGenerationCases) {
+      const template = DEVICE_LIBRARY.find((item) => item.kind === expected.kind)!;
+      const overridden = applyDeviceTemplateDefinitionOverride(template, {
+        kind: expected.kind,
+        params: {
+          rated_power: expected.rated_power,
+          rated_voltage: expected.rated_voltage,
+          ...(expected.family === "wind" ? { unit_rated_power: "5 MW" } : {})
+        },
+        parameterDefinitions: [
+          ...getTemplateParameterDefinitions(template),
+          { cnName: "额定功率", enName: "rated_power", valueType: "string", typicalValue: expected.rated_power },
+          { cnName: "额定电压", enName: "rated_voltage", valueType: "string", typicalValue: expected.rated_voltage },
+          ...(expected.family === "wind"
+            ? [{ cnName: "单机额定功率", enName: "unit_rated_power", valueType: "string" as const, typicalValue: "5 MW" }]
+            : [])
+        ]
+      });
+      const fieldNames = getTemplateParameterDefinitions(overridden).map((definition) => definition.enName);
+
+      expect(fieldNames).not.toContain("rated_power");
+      expect(fieldNames).not.toContain("rated_voltage");
+      expect(overridden.params.rated_power).toBe(expected.rated_power);
+      expect(overridden.params.rated_voltage).toBe(expected.rated_voltage);
+      if (expected.family === "wind") {
+        expect(fieldNames).not.toContain("unit_rated_power");
+        expect(overridden.params).not.toHaveProperty("unit_rated_power");
+      }
     }
   });
 
@@ -9524,7 +9608,8 @@ describe("power system model", () => {
       expect(node.params).not.toHaveProperty("derivedClassCnName");
       expect(node.params).not.toHaveProperty("derivedComponentType");
 
-      const file = buildEDeviceDefinitionFile([template]);
+      const baseTemplate = DEVICE_LIBRARY.find((item) => item.kind === (expected.terminalType === "ac" ? "ac-source" : "dc-source"))!;
+      const file = buildEDeviceDefinitionFile([baseTemplate, template]);
       const sections = parseEDeviceDefinitionFile(file.text);
       expect(sections).toHaveLength(2);
       const expectedComponentLibrary = expected.terminalType === "ac" ? "ACGenerator" : "DCGenerator";
@@ -9552,6 +9637,14 @@ describe("power system model", () => {
       expect(derivedSection?.fields.map((field) => field.exportName).slice(0, 2)).toEqual(["idx", expected.relationKey]);
       expect(derivedSection?.fields.map((field) => field.exportName)).not.toContain("name");
       expect(derivedSection?.fields.map((field) => field.exportName)).not.toContain("dev_type");
+      expect(derivedSection?.fields.map((field) => field.exportName)).not.toContain("rated_power");
+      expect(derivedSection?.fields.map((field) => field.exportName)).not.toContain("rated_voltage");
+      const baseFieldNames = new Set(baseSection?.fields.map((field) => field.exportName));
+      for (const field of derivedSection?.fields ?? []) {
+        if (field.exportName !== "idx" && field.exportName !== expected.relationKey) {
+          expect(baseFieldNames.has(field.exportName)).toBe(false);
+        }
+      }
       expect(file.text).toContain(`是否派生新类="是"`);
       expect(file.text).toContain(`派生基类="${expectedComponentLibrary}"`);
       expect(file.text).not.toContain(`是否容器="是"`);
@@ -9671,7 +9764,6 @@ describe("power system model", () => {
       wind: {
         wind_turbine_model: "string",
         wind_turbine_count: "integer",
-        unit_rated_power: "string",
         cut_in_wind_speed: "string",
         rated_wind_speed: "string",
         cut_out_wind_speed: "string",
@@ -9693,6 +9785,16 @@ describe("power system model", () => {
         heat_rate: "string",
         main_steam_pressure: "string",
         main_steam_temperature: "string"
+      },
+      diesel: {
+        diesel_unit_model: "string",
+        diesel_unit_count: "integer",
+        unit_rated_power: "string",
+        fuel_grade: "string",
+        specific_fuel_consumption: "string",
+        fuel_tank_capacity: "string",
+        rated_speed: "string",
+        start_time: "string"
       },
       hydro: {
         hydro_unit_model: "string",
@@ -9781,6 +9883,11 @@ describe("power system model", () => {
         { cnName: "MPPT 路数", enName: "mppt_count" }
       ],
       thermal: [],
+      diesel: [
+        { cnName: "柴油机组型号", enName: "diesel_unit_model" },
+        { cnName: "柴油机组台数", enName: "diesel_unit_count" },
+        { cnName: "单位油耗", enName: "specific_fuel_consumption" }
+      ],
       hydro: [
         { cnName: "水轮机台数", enName: "turbine_count" }
       ],
@@ -9807,7 +9914,7 @@ describe("power system model", () => {
       expect(isElectricGenerationContainerKind(expected.kind)).toBe(false);
       expect(isElectricGenerationContainerKind(`${expected.kind}-vertical`)).toBe(false);
     }
-    for (const kind of ["ac-diesel-source", "ac-source", "dc-source"]) {
+    for (const kind of ["ac-source", "dc-source"]) {
       expect(isElectricGenerationContainerKind(kind)).toBe(false);
       expect(isElectricGenerationContainerKind(`${kind}-vertical`)).toBe(false);
     }

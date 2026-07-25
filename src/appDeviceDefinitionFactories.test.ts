@@ -2622,6 +2622,42 @@ describe("applyEDeviceDefinitionSectionsToLibraryState", () => {
 });
 
 describe("buildEDeviceInterfaceDefinitionRows", () => {
+  test("shows rated power and voltage on base generator interfaces instead of derived interfaces", () => {
+    const includedKinds = new Set([
+      "ac-source",
+      "dc-source",
+      "ac-wind-source",
+      "dc-wind-source"
+    ]);
+    const rows = buildEDeviceInterfaceDefinitionRows({
+      libraryTemplates: DEVICE_LIBRARY.filter((template) => includedKinds.has(template.kind))
+    });
+
+    for (const componentLibrary of ["ACGenerator", "DCGenerator"]) {
+      const fieldNames = rows
+        .find((row: any) => row.componentLibrary === componentLibrary)
+        ?.fields.map((field: any) => field.sourceName);
+      expect(fieldNames).toEqual(expect.arrayContaining(["rated_power", "rated_voltage"]));
+      expect(fieldNames).not.toContain("wind_turbine_model");
+      expect(fieldNames).not.toContain("cut_in_wind_speed");
+    }
+
+    for (const componentLibrary of ["ACWindGen", "DCWindGen"]) {
+      const fieldNames = rows
+        .find((row: any) => row.componentLibrary === componentLibrary)
+        ?.fields.map((field: any) => field.sourceName);
+      expect(fieldNames).toEqual(expect.arrayContaining([
+        "idx",
+        componentLibrary === "ACWindGen" ? "idx_acgenerator" : "idx_dcgenerator",
+        "wind_turbine_model",
+        "cut_in_wind_speed"
+      ]));
+      expect(fieldNames).not.toContain("rated_power");
+      expect(fieldNames).not.toContain("rated_voltage");
+      expect(fieldNames).not.toContain("unit_rated_power");
+    }
+  });
+
   test("does not merge derived-only fields into the base component interface", () => {
     const baseDefinitions = [
       { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "" },
