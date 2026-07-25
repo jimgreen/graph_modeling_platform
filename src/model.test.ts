@@ -1566,8 +1566,7 @@ describe("power system model", () => {
         params: expect.objectContaining({
           rated_power: "5 MW",
           source_type: "柴油",
-          diesel_unit_model: "DG-2500",
-          diesel_unit_count: "2"
+          diesel_unit_model: "DG-2500"
         })
       });
       expect(templateDerivedComponentLibraryInfo(template!)).toMatchObject({
@@ -9561,6 +9560,84 @@ describe("power system model", () => {
     }
   });
 
+  test("omits equipment-count fields from generation derived classes and historical overrides", () => {
+    const retiredCountFieldByFamily = {
+      wind: "wind_turbine_count",
+      pv: "pv_module_count",
+      diesel: "diesel_unit_count",
+      hydro: "turbine_count",
+      nuclear: "reactor_count"
+    } as const;
+
+    for (const expected of electricGenerationCases) {
+      const retiredField = retiredCountFieldByFamily[expected.family as keyof typeof retiredCountFieldByFamily];
+      if (!retiredField) {
+        continue;
+      }
+      const template = DEVICE_LIBRARY.find((item) => item.kind === expected.kind)!;
+      const node = createDefaultNode(expected.kind, { x: 100, y: 100 });
+      const retiredDefinition = {
+        cnName: "历史台数字段",
+        enName: retiredField,
+        valueType: "integer" as const,
+        typicalValue: "99"
+      };
+      const overridden = applyDeviceTemplateDefinitionOverride(template, {
+        kind: expected.kind,
+        params: {
+          [retiredField]: "99",
+          legacy_note: "keep"
+        },
+        parameterDefinitions: [
+          ...getTemplateParameterDefinitions(template),
+          retiredDefinition,
+          { cnName: "历史备注", enName: "legacy_note", valueType: "string", typicalValue: "keep" }
+        ]
+      });
+      const reconciledLegacyNode = reconcileNodeParamsWithTemplateDefinitions({
+        ...node,
+        params: {
+          ...node.params,
+          [retiredField]: "99",
+          [CUSTOM_PARAM_DEFINITIONS_KEY]: JSON.stringify([
+            ...getTemplateParameterDefinitions(template),
+            retiredDefinition
+          ])
+        }
+      }, template);
+      const overriddenFieldNames = getTemplateParameterDefinitions(overridden).map((definition) => definition.enName);
+
+      expect(getTemplateParameterDefinitions(template).map((definition) => definition.enName), expected.kind).not.toContain(retiredField);
+      expect(node.params, expected.kind).not.toHaveProperty(retiredField);
+      expect(overriddenFieldNames, expected.kind).not.toContain(retiredField);
+      expect(overridden.params, expected.kind).not.toHaveProperty(retiredField);
+      expect(reconciledLegacyNode.params, expected.kind).not.toHaveProperty(retiredField);
+      expect(overriddenFieldNames, expected.kind).toContain("legacy_note");
+      expect(overridden.params.legacy_note, expected.kind).toBe("keep");
+    }
+  });
+
+  test("defines SOC upper and lower limits for AC and DC storage", () => {
+    for (const kind of ["ac-storage", "dc-storage"] as const) {
+      const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
+      const node = createDefaultNode(kind, { x: 100, y: 100 });
+      const definitions = new Map(getTemplateParameterDefinitions(template).map((definition) => [definition.enName, definition]));
+
+      expect(definitions.get("soc_upper_limit")).toMatchObject({
+        cnName: "SOC上限",
+        valueType: "string",
+        readonly: false
+      });
+      expect(definitions.get("soc_lower_limit")).toMatchObject({
+        cnName: "SOC下限",
+        valueType: "string",
+        readonly: false
+      });
+      expect(node.params.soc_upper_limit).toBe("90%");
+      expect(node.params.soc_lower_limit).toBe("10%");
+    }
+  });
+
   test("removes inherited rated fields from legacy electric generation definition overrides", () => {
     for (const expected of electricGenerationCases) {
       const template = DEVICE_LIBRARY.find((item) => item.kind === expected.kind)!;
@@ -9655,7 +9732,6 @@ describe("power system model", () => {
     const indexed = assignPermanentDeviceIndex(createDefaultNode("ac-wind-source", { x: 100, y: 100 }), {}).node;
     indexed.name = "风电场A";
     indexed.params.wind_turbine_model = "WT-8MW";
-    indexed.params.wind_turbine_count = "12";
     indexed.params.cut_in_wind_speed = "3.5mps";
 
     const payload = parseESections(buildEDeviceParameterFile({
@@ -9677,7 +9753,6 @@ describe("power system model", () => {
       "idx",
       "idx_acgenerator",
       "wind_turbine_model",
-      "wind_turbine_count",
       "cut_in_wind_speed"
     ]));
     expect(payload.ACWindGen.rows).toEqual([
@@ -9685,7 +9760,6 @@ describe("power system model", () => {
         idx: indexed.params.idx,
         idx_acgenerator: indexed.params.idx,
         wind_turbine_model: "WT-8MW",
-        wind_turbine_count: "12",
         cut_in_wind_speed: "3.5mps"
       })
     ]);
@@ -9696,6 +9770,34 @@ describe("power system model", () => {
     expect(payload.ACWindGen.columns).not.toContain("rated_power");
     expect(payload.ACWindGen.columns).not.toContain("rated_voltage");
     expect(payload.ACWindGen.columns).not.toContain("source_type");
+  });
+
+  test("exports storage SOC limits through the derived E interface", () => {
+    const indexed = assignPermanentDeviceIndex(createDefaultNode("ac-storage", { x: 100, y: 100 }), {}).node;
+    indexed.params.soc_upper_limit = "95%";
+    indexed.params.soc_lower_limit = "15%";
+
+    const payload = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: "储能SOC导出测试",
+      nodes: [indexed],
+      edges: []
+    }));
+
+    expect(payload.ACStorageGen.columns).toEqual(expect.arrayContaining([
+      "idx",
+      "idx_acgenerator",
+      "soc_upper_limit",
+      "soc_lower_limit"
+    ]));
+    expect(payload.ACStorageGen.rows).toEqual([
+      expect.objectContaining({
+        idx: indexed.params.idx,
+        idx_acgenerator: indexed.params.idx,
+        soc_upper_limit: "95%",
+        soc_lower_limit: "15%"
+      })
+    ]);
   });
 
   test("exports legacy container-polluted electric generation derived nodes without container warnings or duplicate associated records", () => {
@@ -9763,7 +9865,6 @@ describe("power system model", () => {
     const familyDefinitions = {
       wind: {
         wind_turbine_model: "string",
-        wind_turbine_count: "integer",
         cut_in_wind_speed: "string",
         rated_wind_speed: "string",
         cut_out_wind_speed: "string",
@@ -9772,7 +9873,6 @@ describe("power system model", () => {
       },
       pv: {
         pv_module_model: "string",
-        pv_module_count: "integer",
         module_rated_power: "string",
         module_efficiency: "string",
         array_area: "string",
@@ -9788,7 +9888,6 @@ describe("power system model", () => {
       },
       diesel: {
         diesel_unit_model: "string",
-        diesel_unit_count: "integer",
         unit_rated_power: "string",
         fuel_grade: "string",
         specific_fuel_consumption: "string",
@@ -9799,7 +9898,6 @@ describe("power system model", () => {
       hydro: {
         hydro_unit_model: "string",
         turbine_type: "stringEnum",
-        turbine_count: "integer",
         unit_rated_power: "string",
         design_head: "string",
         design_flow: "string",
@@ -9809,7 +9907,6 @@ describe("power system model", () => {
       nuclear: {
         nuclear_unit_model: "string",
         reactor_type: "stringEnum",
-        reactor_count: "integer",
         unit_rated_power: "string",
         reactor_thermal_power: "string",
         thermal_efficiency: "string",
@@ -9825,7 +9922,9 @@ describe("power system model", () => {
         charge_discharge_efficiency: "string",
         max_charge_power: "string",
         max_discharge_power: "string",
-        state_of_charge: "string"
+        state_of_charge: "string",
+        soc_upper_limit: "string",
+        soc_lower_limit: "string"
       }
     } as const;
 
@@ -9875,7 +9974,6 @@ describe("power system model", () => {
     const familyPairs = {
       wind: [
         { cnName: "风机型号", enName: "wind_turbine_model" },
-        { cnName: "风机台数", enName: "wind_turbine_count" },
         { cnName: "叶轮直径", enName: "rotor_diameter" }
       ],
       pv: [
@@ -9885,17 +9983,16 @@ describe("power system model", () => {
       thermal: [],
       diesel: [
         { cnName: "柴油机组型号", enName: "diesel_unit_model" },
-        { cnName: "柴油机组台数", enName: "diesel_unit_count" },
         { cnName: "单位油耗", enName: "specific_fuel_consumption" }
       ],
-      hydro: [
-        { cnName: "水轮机台数", enName: "turbine_count" }
-      ],
+      hydro: [],
       nuclear: [],
       storage: [
         { cnName: "储能技术类型", enName: "storage_technology" },
         { cnName: "储能容量", enName: "energy_capacity" },
-        { cnName: "荷电状态", enName: "state_of_charge" }
+        { cnName: "荷电状态", enName: "state_of_charge" },
+        { cnName: "SOC上限", enName: "soc_upper_limit" },
+        { cnName: "SOC下限", enName: "soc_lower_limit" }
       ]
     } as const;
 

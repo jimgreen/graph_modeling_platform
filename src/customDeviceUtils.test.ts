@@ -99,7 +99,6 @@ describe("electric generation device library classification", () => {
     expect(draft.isDerivedComponentLibrary).toBe(true);
     expect(fieldNames).toEqual([
       "wind_turbine_model",
-      "wind_turbine_count",
       "cut_in_wind_speed",
       "rated_wind_speed",
       "cut_out_wind_speed",
@@ -131,7 +130,6 @@ describe("electric generation device library classification", () => {
     expect(fieldNames).toEqual([
       "hydro_unit_model",
       "turbine_type",
-      "turbine_count",
       "unit_rated_power",
       "design_head",
       "design_flow",

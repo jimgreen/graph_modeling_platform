@@ -3573,7 +3573,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     derivedComponentSuffix: "WindGen",
     parameterDefinitions: [
       electricGenerationStringDefinition("风机型号", "windTurbineModel"),
-      electricGenerationIntegerDefinition("风机台数", "windTurbineCount"),
       electricGenerationStringDefinition("切入风速", "cutInWindSpeed"),
       electricGenerationStringDefinition("额定风速", "ratedWindSpeed"),
       electricGenerationStringDefinition("切出风速", "cutOutWindSpeed"),
@@ -3588,10 +3587,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
       rotorDiameter: "170 m",
       hubHeight: "110 m"
     },
-    paramsByTerminalType: {
-      ac: { windTurbineCount: "10" },
-      dc: { windTurbineCount: "2" }
-    },
     defaultsByTerminalType: {
       ac: { ratedVoltage: "35 kV", ratedPower: "50 MW" },
       dc: { ratedVoltage: "1500 V", ratedPower: "10 MW" }
@@ -3605,7 +3600,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     derivedComponentSuffix: "PVGen",
     parameterDefinitions: [
       electricGenerationStringDefinition("光伏组件型号", "pvModuleModel"),
-      electricGenerationIntegerDefinition("光伏组件数量", "pvModuleCount"),
       electricGenerationStringDefinition("单组件额定功率", "moduleRatedPower"),
       electricGenerationStringDefinition("组件效率", "moduleEfficiency"),
       electricGenerationStringDefinition("阵列面积", "arrayArea"),
@@ -3617,8 +3611,8 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
       moduleEfficiency: "21.3%"
     },
     paramsByTerminalType: {
-      ac: { pvModuleCount: "36364", arrayArea: "100000 m2", mpptCount: "100" },
-      dc: { pvModuleCount: "9091", arrayArea: "25000 m2", mpptCount: "25" }
+      ac: { arrayArea: "100000 m2", mpptCount: "100" },
+      dc: { arrayArea: "25000 m2", mpptCount: "25" }
     },
     defaultsByTerminalType: {
       ac: { ratedVoltage: "10 kV", ratedPower: "20 MW" },
@@ -3665,7 +3659,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     derivedComponentSuffix: "DieselGen",
     parameterDefinitions: [
       electricGenerationStringDefinition("柴油机组型号", "dieselUnitModel"),
-      electricGenerationIntegerDefinition("柴油机组台数", "dieselUnitCount"),
       electricGenerationStringDefinition("单机额定功率", "unitRatedPower"),
       electricGenerationStringDefinition("燃油牌号", "fuelGrade"),
       electricGenerationStringDefinition("单位油耗", "specificFuelConsumption"),
@@ -3675,7 +3668,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     ],
     commonParams: {
       dieselUnitModel: "DG-2500",
-      dieselUnitCount: "2",
       unitRatedPower: "2.5 MW",
       fuelGrade: "0#柴油",
       specificFuelConsumption: "200 g/kWh",
@@ -3702,7 +3694,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
         { value: "pelton", label: "冲击式" },
         { value: "bulb", label: "贯流式" }
       ]),
-      electricGenerationIntegerDefinition("水轮机台数", "turbineCount"),
       electricGenerationStringDefinition("单机额定功率", "unitRatedPower"),
       electricGenerationStringDefinition("设计水头", "designHead"),
       electricGenerationStringDefinition("设计流量", "designFlow"),
@@ -3712,7 +3703,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     commonParams: {
       hydroUnitModel: "300 MW混流式机组",
       turbineType: "francis",
-      turbineCount: "1",
       unitRatedPower: "300 MW",
       designHead: "120 m",
       designFlow: "280 m3/s",
@@ -3739,7 +3729,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
         { value: "htgr", label: "高温气冷堆" },
         { value: "fbr", label: "快中子增殖堆" }
       ]),
-      electricGenerationIntegerDefinition("反应堆数量", "reactorCount"),
       electricGenerationStringDefinition("单机额定功率", "unitRatedPower"),
       electricGenerationStringDefinition("反应堆热功率", "reactorThermalPower"),
       electricGenerationStringDefinition("热效率", "thermalEfficiency"),
@@ -3751,7 +3740,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     commonParams: {
       nuclearUnitModel: "1000 MW压水堆机组",
       reactorType: "pwr",
-      reactorCount: "1",
       unitRatedPower: "1000 MW",
       reactorThermalPower: "2900 MWth",
       thermalEfficiency: "34.5%",
@@ -3784,7 +3772,9 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
       electricGenerationStringDefinition("充放电效率", "chargeDischargeEfficiency"),
       electricGenerationStringDefinition("最大充电功率", "maxChargePower"),
       electricGenerationStringDefinition("最大放电功率", "maxDischargePower"),
-      electricGenerationStringDefinition("荷电状态", "stateOfCharge")
+      electricGenerationStringDefinition("荷电状态", "stateOfCharge"),
+      electricGenerationStringDefinition("SOC上限", "socUpperLimit"),
+      electricGenerationStringDefinition("SOC下限", "socLowerLimit")
     ],
     commonParams: {
       storageTechnology: "lithium",
@@ -3793,7 +3783,9 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
       chargeDischargeEfficiency: "90%",
       maxChargePower: "5 MW",
       maxDischargePower: "5 MW",
-      stateOfCharge: "50%"
+      stateOfCharge: "50%",
+      socUpperLimit: "90%",
+      socLowerLimit: "10%"
     },
     defaultsByTerminalType: {
       ac: { ratedVoltage: "10 kV", ratedPower: "5 MW" },
@@ -3801,6 +3793,14 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     }
   }
 ];
+
+const RETIRED_ELECTRIC_GENERATION_PARAMETER_NAMES_BY_KIND_SUFFIX: Readonly<Record<string, readonly string[]>> = {
+  "wind-source": ["wind_turbine_count", "unit_rated_power"],
+  "pv-source": ["pv_module_count"],
+  "diesel-source": ["diesel_unit_count"],
+  "hydro-source": ["turbine_count"],
+  "nuclear-source": ["reactor_count"]
+};
 
 export type ElectricGenerationDerivedComponentLibraryInfo = {
   kind: string;
@@ -6568,11 +6568,17 @@ export function applyDeviceTemplateDefinitionOverride(
     .filter((definition): definition is DeviceParameterDefinition => Boolean(definition));
   const baseKind = baseDeviceKind(template.kind);
   const electricGenerationDerivedInfo = electricGenerationDerivedComponentLibraryInfo(baseKind);
+  const retiredElectricGenerationParameterNames = new Set(
+    electricGenerationDerivedInfo
+      ? Object.entries(RETIRED_ELECTRIC_GENERATION_PARAMETER_NAMES_BY_KIND_SUFFIX)
+          .find(([kindSuffix]) => baseKind.endsWith(kindSuffix))?.[1] ?? []
+      : []
+  );
   const canonicalOverrideParameterDefinitions = electricGenerationDerivedInfo
     ? overrideParameterDefinitions.filter((definition) => (
         definition.enName !== "rated_power" &&
         definition.enName !== "rated_voltage" &&
-        !(baseKind.includes("wind-source") && definition.enName === "unit_rated_power")
+        !retiredElectricGenerationParameterNames.has(definition.enName)
       ))
     : overrideParameterDefinitions;
   const parameterDefinitions = baseKind === "ac-source" || baseKind === "dc-source" || electricGenerationDerivedInfo
@@ -6581,21 +6587,25 @@ export function applyDeviceTemplateDefinitionOverride(
   const hasStateDefinitionsOverride = Array.isArray(override.stateDefinitions);
   const stateDefinitions = hasStateDefinitionsOverride ? normalizeDeviceStateDefinitions(override.stateDefinitions) : template.stateDefinitions?.map(cloneDeviceStateDefinition);
   const overrideParams = Object.fromEntries(
-    Object.entries(override.params ?? {}).filter(([key]) => key !== ALLOW_RESIZE_TRANSFORM_PARAM)
+    Object.entries(override.params ?? {}).filter(([key]) => (
+      key !== ALLOW_RESIZE_TRANSFORM_PARAM &&
+      !retiredElectricGenerationParameterNames.has(toSnakeCaseDeviceParamName(key))
+    ))
   );
   const params = { ...template.params, ...overrideParams };
   for (const definition of overrideParameterDefinitions) {
     if (
       definition.enName === "name" ||
-      (electricGenerationDerivedInfo && baseKind.includes("wind-source") && definition.enName === "unit_rated_power")
+      retiredElectricGenerationParameterNames.has(definition.enName)
     ) {
       continue;
     }
     params[definition.enName] = definition.typicalValue;
   }
-  if (electricGenerationDerivedInfo && baseKind.includes("wind-source")) {
-    delete params.unit_rated_power;
-    delete params.unitRatedPower;
+  for (const key of Object.keys(params)) {
+    if (retiredElectricGenerationParameterNames.has(toSnakeCaseDeviceParamName(key))) {
+      delete params[key];
+    }
   }
   const terminalTypes = override.terminalTypes?.length
     ? override.terminalTypes.slice(0, Math.max(0, override.terminalCount ?? override.terminalTypes.length))
