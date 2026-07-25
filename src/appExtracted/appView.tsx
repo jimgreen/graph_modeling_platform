@@ -43,13 +43,23 @@ export function inspectorTabShowsDevicePanel(inspectorTab: string, hasSelectedNo
 export function resolveDeviceModelPanelParameterKeys(
   eKeys: readonly string[] = [],
   customDefinitions: readonly Record<string, unknown>[] = [],
-  fallbackKeys: readonly string[] = []
+  fallbackKeys: readonly string[] = [],
+  definitionGroups: {
+    baseDefinitions?: readonly Record<string, unknown>[];
+    derivedDefinitions?: readonly Record<string, unknown>[];
+  } = {}
 ): string[] {
-  const customKeys = customDefinitions
+  const baseDefinitions = definitionGroups.baseDefinitions ?? [];
+  const derivedDefinitions = definitionGroups.derivedDefinitions ?? [];
+  const usesDefinitionGroups = baseDefinitions.length > 0 || derivedDefinitions.length > 0;
+  const activeDefinitions = usesDefinitionGroups
+    ? [...baseDefinitions, ...derivedDefinitions]
+    : customDefinitions;
+  const definitionKeys = activeDefinitions
     .map((definition) => String(definition.enName ?? "").trim())
     .filter(Boolean);
   const exportKeyToCustomKey = new Map<string, string>();
-  customDefinitions.forEach((definition) => {
+  activeDefinitions.forEach((definition) => {
     const customKey = String(definition.enName ?? "").trim();
     const exportKey = String(definition.exportName ?? "").trim();
     if (customKey && exportKey && exportKey !== customKey) {
@@ -64,14 +74,21 @@ export function resolveDeviceModelPanelParameterKeys(
     }
   };
   eKeys.forEach((key) => appendKey(exportKeyToCustomKey.get(key) ?? key));
-  customKeys.forEach(appendKey);
+  if (usesDefinitionGroups) {
+    baseDefinitions.forEach((definition) => appendKey(String(definition.enName ?? "")));
+    derivedDefinitions.forEach((definition) => appendKey(String(definition.enName ?? "")));
+  } else {
+    definitionKeys.forEach(appendKey);
+  }
   if (eKeys.length > 0) {
     const deviceTypeKey = exportKeyToCustomKey.get("dev_type") ?? "dev_type";
-    if (!mergedKeys.includes(deviceTypeKey)) {
-      const nameKey = exportKeyToCustomKey.get("name") ?? "name";
-      const nameIndex = mergedKeys.indexOf(nameKey);
-      mergedKeys.splice(nameIndex >= 0 ? nameIndex + 1 : 0, 0, deviceTypeKey);
+    const existingDeviceTypeIndex = mergedKeys.indexOf(deviceTypeKey);
+    if (existingDeviceTypeIndex >= 0) {
+      mergedKeys.splice(existingDeviceTypeIndex, 1);
     }
+    const nameKey = exportKeyToCustomKey.get("name") ?? "name";
+    const nameIndex = mergedKeys.indexOf(nameKey);
+    mergedKeys.splice(nameIndex >= 0 ? nameIndex + 1 : 0, 0, deviceTypeKey);
   }
   if (mergedKeys.length > 0) {
     return mergedKeys;
@@ -1873,21 +1890,44 @@ export function renderAppView(__appScope: Record<string, any>) {
                           {(() => {
                         const eKeys = getEParameterKeys(inspectorSelectedNode.kind, inspectorSelectedNode.params);
                         const customDefinitions = parseCustomDefinitions(inspectorSelectedNode.params);
+                        const selectedTemplate = libraryTemplates.find((template) => template.kind === inspectorSelectedNode.kind);
+                        const selectedDerivedInfo = selectedTemplate ? templateDerivedComponentLibraryInfo(selectedTemplate) : null;
+                        const baseTemplate = selectedDerivedInfo
+                          ? libraryTemplates.find((template) => (
+                              !templateDerivedComponentLibraryInfo(template) &&
+                              String(resolveTemplateComponentLibrary(template) ?? "").trim().toLowerCase() === selectedDerivedInfo.baseComponentLibrary.trim().toLowerCase()
+                            ))
+                          : null;
+                        const definitionGroups = selectedTemplate && selectedDerivedInfo
+                          ? {
+                              baseDefinitions: baseTemplate ? getTemplateParameterDefinitions(baseTemplate) : [],
+                              derivedDefinitions: getTemplateParameterDefinitions(selectedTemplate)
+                            }
+                          : undefined;
+                        const panelDefinitions = definitionGroups
+                          ? [...definitionGroups.baseDefinitions, ...definitionGroups.derivedDefinitions]
+                          : customDefinitions;
                         const keys = resolveDeviceModelPanelParameterKeys(
                             eKeys,
                             customDefinitions,
-                            Object.keys(inspectorSelectedNode.params).filter((key) => !key.startsWith("_") && key !== "is_container" && key !== ALLOW_RESIZE_TRANSFORM_PARAM)
+                            Object.keys(inspectorSelectedNode.params).filter((key) => !key.startsWith("_") && key !== "is_container" && key !== ALLOW_RESIZE_TRANSFORM_PARAM),
+                            definitionGroups
                         );
                         return keys.map((key) => {
-                            const value = key === "name"
+                            const definition = panelDefinitions.find((item) => item.enName === key);
+                            const resolvedValue = key === "name"
                               ? inspectorSelectedNode.name
                               : key === "dev_type"
                                 ? resolveDeviceModelPanelDevType(inspectorSelectedNode.kind, inspectorSelectedNode.params)
                                 : eKeys.length > 0
                                   ? getEParamValue(key, inspectorSelectedNode)
                                   : inspectorSelectedNode.params[key] ?? "";
+                            const value = key !== "name" && key !== "dev_type" &&
+                              !Object.prototype.hasOwnProperty.call(inspectorSelectedNode.params, key) &&
+                              resolvedValue === ""
+                                ? definition?.typicalValue ?? ""
+                                : resolvedValue;
                             const displayValue = formatDeviceModelParamDisplayValue(key, value);
-                            const definition = customDefinitions.find((item) => item.enName === key);
                             return (<tr key={key}>
                                   {batchEditors.renderParamHeader(key, key, definition?.cnName === key ? PARAM_LABELS[key] ?? key : (definition?.cnName ?? PARAM_LABELS[key] ?? key))}
                                   <td>

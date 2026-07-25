@@ -9617,6 +9617,56 @@ describe("power system model", () => {
     }
   });
 
+  test("omits per-unit and per-component rated power fields from generation derived classes", () => {
+    const retiredPowerFieldByFamily = {
+      wind: "unit_rated_power",
+      pv: "module_rated_power",
+      diesel: "unit_rated_power",
+      hydro: "unit_rated_power",
+      nuclear: "unit_rated_power"
+    } as const;
+
+    for (const expected of electricGenerationCases) {
+      const retiredField = retiredPowerFieldByFamily[expected.family as keyof typeof retiredPowerFieldByFamily];
+      if (!retiredField) {
+        continue;
+      }
+      const template = DEVICE_LIBRARY.find((item) => item.kind === expected.kind)!;
+      const node = createDefaultNode(expected.kind, { x: 100, y: 100 });
+      const retiredDefinition = {
+        cnName: retiredField === "module_rated_power" ? "单组件额定功率" : "单机额定功率",
+        enName: retiredField,
+        valueType: "string" as const,
+        typicalValue: "999 MW"
+      };
+      const overridden = applyDeviceTemplateDefinitionOverride(template, {
+        kind: expected.kind,
+        params: { [retiredField]: "999 MW" },
+        parameterDefinitions: [
+          ...getTemplateParameterDefinitions(template),
+          retiredDefinition
+        ]
+      });
+      const reconciledLegacyNode = reconcileNodeParamsWithTemplateDefinitions({
+        ...node,
+        params: {
+          ...node.params,
+          [retiredField]: "999 MW",
+          [CUSTOM_PARAM_DEFINITIONS_KEY]: JSON.stringify([
+            ...getTemplateParameterDefinitions(template),
+            retiredDefinition
+          ])
+        }
+      }, template);
+
+      expect(getTemplateParameterDefinitions(template).map((definition) => definition.enName), expected.kind).not.toContain(retiredField);
+      expect(node.params, expected.kind).not.toHaveProperty(retiredField);
+      expect(getTemplateParameterDefinitions(overridden).map((definition) => definition.enName), expected.kind).not.toContain(retiredField);
+      expect(overridden.params, expected.kind).not.toHaveProperty(retiredField);
+      expect(reconciledLegacyNode.params, expected.kind).not.toHaveProperty(retiredField);
+    }
+  });
+
   test("defines SOC upper and lower limits for AC and DC storage", () => {
     for (const kind of ["ac-storage", "dc-storage"] as const) {
       const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
@@ -9873,7 +9923,6 @@ describe("power system model", () => {
       },
       pv: {
         pv_module_model: "string",
-        module_rated_power: "string",
         module_efficiency: "string",
         array_area: "string",
         mppt_count: "integer"
@@ -9888,7 +9937,6 @@ describe("power system model", () => {
       },
       diesel: {
         diesel_unit_model: "string",
-        unit_rated_power: "string",
         fuel_grade: "string",
         specific_fuel_consumption: "string",
         fuel_tank_capacity: "string",
@@ -9898,7 +9946,6 @@ describe("power system model", () => {
       hydro: {
         hydro_unit_model: "string",
         turbine_type: "stringEnum",
-        unit_rated_power: "string",
         design_head: "string",
         design_flow: "string",
         rated_speed: "string",
@@ -9907,7 +9954,6 @@ describe("power system model", () => {
       nuclear: {
         nuclear_unit_model: "string",
         reactor_type: "stringEnum",
-        unit_rated_power: "string",
         reactor_thermal_power: "string",
         thermal_efficiency: "string",
         primary_loop_pressure: "string",
@@ -9977,7 +10023,7 @@ describe("power system model", () => {
         { cnName: "叶轮直径", enName: "rotor_diameter" }
       ],
       pv: [
-        { cnName: "单组件额定功率", enName: "module_rated_power" },
+        { cnName: "光伏组件型号", enName: "pv_module_model" },
         { cnName: "MPPT 路数", enName: "mppt_count" }
       ],
       thermal: [],

@@ -130,7 +130,6 @@ describe("electric generation device library classification", () => {
     expect(fieldNames).toEqual([
       "hydro_unit_model",
       "turbine_type",
-      "unit_rated_power",
       "design_head",
       "design_flow",
       "rated_speed",

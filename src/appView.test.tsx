@@ -12,7 +12,13 @@ import {
   resolveInspectorGraphId,
   resolveInspectorTopologyEntry
 } from "./appExtracted/appView";
-import { createDefaultNode, type Topology } from "./model";
+import {
+  DEVICE_LIBRARY,
+  createDefaultNode,
+  getEParameterKeys,
+  getTemplateParameterDefinitions,
+  type Topology
+} from "./model";
 
 describe("app view topology inspector", () => {
   test("uses live topology entries instead of stale saved topology entries", () => {
@@ -102,6 +108,51 @@ describe("app view device model parameter keys", () => {
       "run_stat",
       "hydroUnitModel",
       "turbineType"
+    ]);
+  });
+
+  test("shows every base-class field before derived fields and ignores stale stored definitions", () => {
+    const baseTemplate = DEVICE_LIBRARY.find((template) => template.kind === "ac-source")!;
+    const derivedTemplate = DEVICE_LIBRARY.find((template) => template.kind === "ac-hydro-source")!;
+    const derivedNode = createDefaultNode("ac-hydro-source", { x: 100, y: 100 });
+    const staleStoredDefinitions = [
+      ...getTemplateParameterDefinitions(derivedTemplate),
+      { cnName: "水轮机台数", enName: "turbine_count", valueType: "integer", typicalValue: "1" }
+    ];
+
+    const keys = resolveDeviceModelPanelParameterKeys(
+      getEParameterKeys(derivedNode.kind, derivedNode.params),
+      staleStoredDefinitions,
+      Object.keys(derivedNode.params),
+      {
+        baseDefinitions: getTemplateParameterDefinitions(baseTemplate),
+        derivedDefinitions: getTemplateParameterDefinitions(derivedTemplate)
+      }
+    );
+
+    expect(keys).toEqual([
+      "idx",
+      "name",
+      "dev_type",
+      "node",
+      "control_type",
+      "p_set",
+      "q_set",
+      "v_set",
+      "alpha",
+      "run_stat",
+      "rated_power",
+      "rated_voltage",
+      "frequency",
+      "short_circuit_capacity",
+      "status",
+      "source_type",
+      "hydro_unit_model",
+      "turbine_type",
+      "design_head",
+      "design_flow",
+      "rated_speed",
+      "generator_efficiency"
     ]);
   });
 });

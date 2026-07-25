@@ -3600,14 +3600,12 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     derivedComponentSuffix: "PVGen",
     parameterDefinitions: [
       electricGenerationStringDefinition("光伏组件型号", "pvModuleModel"),
-      electricGenerationStringDefinition("单组件额定功率", "moduleRatedPower"),
       electricGenerationStringDefinition("组件效率", "moduleEfficiency"),
       electricGenerationStringDefinition("阵列面积", "arrayArea"),
       electricGenerationIntegerDefinition("MPPT 路数", "mpptCount")
     ],
     commonParams: {
       pvModuleModel: "Mono-550W",
-      moduleRatedPower: "550 Wp",
       moduleEfficiency: "21.3%"
     },
     paramsByTerminalType: {
@@ -3659,7 +3657,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     derivedComponentSuffix: "DieselGen",
     parameterDefinitions: [
       electricGenerationStringDefinition("柴油机组型号", "dieselUnitModel"),
-      electricGenerationStringDefinition("单机额定功率", "unitRatedPower"),
       electricGenerationStringDefinition("燃油牌号", "fuelGrade"),
       electricGenerationStringDefinition("单位油耗", "specificFuelConsumption"),
       electricGenerationStringDefinition("油箱容量", "fuelTankCapacity"),
@@ -3668,7 +3665,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     ],
     commonParams: {
       dieselUnitModel: "DG-2500",
-      unitRatedPower: "2.5 MW",
       fuelGrade: "0#柴油",
       specificFuelConsumption: "200 g/kWh",
       fuelTankCapacity: "20 m3",
@@ -3694,7 +3690,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
         { value: "pelton", label: "冲击式" },
         { value: "bulb", label: "贯流式" }
       ]),
-      electricGenerationStringDefinition("单机额定功率", "unitRatedPower"),
       electricGenerationStringDefinition("设计水头", "designHead"),
       electricGenerationStringDefinition("设计流量", "designFlow"),
       electricGenerationStringDefinition("额定转速", "ratedSpeed"),
@@ -3703,7 +3698,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     commonParams: {
       hydroUnitModel: "300 MW混流式机组",
       turbineType: "francis",
-      unitRatedPower: "300 MW",
       designHead: "120 m",
       designFlow: "280 m3/s",
       ratedSpeed: "150 r/min",
@@ -3729,7 +3723,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
         { value: "htgr", label: "高温气冷堆" },
         { value: "fbr", label: "快中子增殖堆" }
       ]),
-      electricGenerationStringDefinition("单机额定功率", "unitRatedPower"),
       electricGenerationStringDefinition("反应堆热功率", "reactorThermalPower"),
       electricGenerationStringDefinition("热效率", "thermalEfficiency"),
       electricGenerationStringDefinition("一回路压力", "primaryLoopPressure"),
@@ -3740,7 +3733,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     commonParams: {
       nuclearUnitModel: "1000 MW压水堆机组",
       reactorType: "pwr",
-      unitRatedPower: "1000 MW",
       reactorThermalPower: "2900 MWth",
       thermalEfficiency: "34.5%",
       primaryLoopPressure: "15.5 MPa",
@@ -3796,10 +3788,10 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
 
 const RETIRED_ELECTRIC_GENERATION_PARAMETER_NAMES_BY_KIND_SUFFIX: Readonly<Record<string, readonly string[]>> = {
   "wind-source": ["wind_turbine_count", "unit_rated_power"],
-  "pv-source": ["pv_module_count"],
-  "diesel-source": ["diesel_unit_count"],
-  "hydro-source": ["turbine_count"],
-  "nuclear-source": ["reactor_count"]
+  "pv-source": ["pv_module_count", "module_rated_power"],
+  "diesel-source": ["diesel_unit_count", "unit_rated_power"],
+  "hydro-source": ["turbine_count", "unit_rated_power"],
+  "nuclear-source": ["reactor_count", "unit_rated_power"]
 };
 
 export type ElectricGenerationDerivedComponentLibraryInfo = {
