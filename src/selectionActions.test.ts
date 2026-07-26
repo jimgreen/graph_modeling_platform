@@ -20,8 +20,10 @@ import {
   AUTO_ALIGN_MAX_THRESHOLD_PX,
   AUTO_ALIGN_MIN_THRESHOLD_PX,
   CANVAS_EMPTY_SELECTION_MESSAGE,
+  type CanvasLayoutUnit,
   alignNodeLayoutUnits,
   autoAlignNodeLayoutUnits,
+  autoSpreadMovableRects,
   autoSpreadNodeLayoutUnits,
   buildCanvasLayoutUnits,
   buildCanvasClipboard,
@@ -979,6 +981,133 @@ describe("canvas selection actions", () => {
     expect(uniqueRows.size).toBeLessThanOrEqual(5);
     expect(aspectRatio).toBeGreaterThan(0.55);
     expect(aspectRatio).toBeLessThan(1.8);
+  });
+
+  test("auto-spread brings a separated unit back inside the canvas after auto-align", () => {
+    const canvasBounds = { width: 400, height: 300 };
+    const padding = 4;
+    const first = createDefaultNode("ac-source", { x: 100, y: 250 });
+    const second = createDefaultNode("ac-load", { x: 300, y: 290 });
+    const nodes = [first, second];
+    const initialUnits: CanvasLayoutUnit[] = [
+      {
+        id: `node:${first.id}`,
+        kind: "node",
+        nodeIds: [first.id],
+        edgeIds: [],
+        bounds: { left: 60, right: 140, top: 220, bottom: 286 },
+        layoutBounds: { left: 90, right: 110, top: 240, bottom: 260 },
+        collisionRects: [{ left: 60, right: 140, top: 220, bottom: 286 }]
+      },
+      {
+        id: `node:${second.id}`,
+        kind: "node",
+        nodeIds: [second.id],
+        edgeIds: [],
+        bounds: { left: 260, right: 340, top: 275, bottom: 295 },
+        layoutBounds: { left: 290, right: 310, top: 280, bottom: 300 },
+        collisionRects: [{ left: 260, right: 340, top: 275, bottom: 295 }]
+      }
+    ];
+    const offsetUnits = (units: readonly CanvasLayoutUnit[], before: readonly ModelNode[], after: readonly ModelNode[]) => {
+      const beforeById = new Map(before.map((node) => [node.id, node]));
+      const afterById = new Map(after.map((node) => [node.id, node]));
+      const offsetRect = (rect: CanvasLayoutUnit["bounds"], dx: number, dy: number) => ({
+        left: rect.left + dx,
+        right: rect.right + dx,
+        top: rect.top + dy,
+        bottom: rect.bottom + dy
+      });
+      return units.map((unit) => {
+        const nodeId = unit.nodeIds[0];
+        const beforeNode = beforeById.get(nodeId)!;
+        const afterNode = afterById.get(nodeId)!;
+        const dx = afterNode.position.x - beforeNode.position.x;
+        const dy = afterNode.position.y - beforeNode.position.y;
+        return {
+          ...unit,
+          bounds: offsetRect(unit.bounds, dx, dy),
+          layoutBounds: offsetRect(unit.layoutBounds, dx, dy),
+          collisionRects: unit.collisionRects.map((rect) => offsetRect(rect, dx, dy))
+        };
+      });
+    };
+
+    const firstSpread = autoSpreadNodeLayoutUnits(nodes, initialUnits, { padding, bounds: canvasBounds });
+    const aligned = autoAlignNodeLayoutUnits(firstSpread, initialUnits, 50);
+    const alignedUnits = offsetUnits(initialUnits, nodes, aligned);
+    expect(alignedUnits[0].bounds.bottom).toBeGreaterThan(canvasBounds.height);
+
+    const finalNodes = autoSpreadNodeLayoutUnits(aligned, alignedUnits, { padding, bounds: canvasBounds });
+    const finalUnits = offsetUnits(alignedUnits, aligned, finalNodes);
+
+    for (const unit of finalUnits) {
+      expect(unit.bounds.left).toBeGreaterThanOrEqual(padding);
+      expect(unit.bounds.top).toBeGreaterThanOrEqual(padding);
+      expect(unit.bounds.right).toBeLessThanOrEqual(canvasBounds.width - padding);
+      expect(unit.bounds.bottom).toBeLessThanOrEqual(canvasBounds.height - padding);
+    }
+  });
+
+  test("auto-spread moves a measurement rectangle away from a device label", () => {
+    const fixedRect = { left: 80, right: 160, top: 80, bottom: 140 };
+    const measurementRect = { left: 100, right: 180, top: 120, bottom: 154 };
+    const deltas = autoSpreadMovableRects(
+      [{ id: "measurement-1", rect: measurementRect }],
+      [fixedRect],
+      { padding: 4, bounds: { width: 300, height: 220 } }
+    );
+    const delta = deltas.get("measurement-1");
+
+    expect(delta).toBeDefined();
+    expect(Math.abs(delta!.x) + Math.abs(delta!.y)).toBeGreaterThan(0);
+    const movedRect = {
+      left: measurementRect.left + delta!.x,
+      right: measurementRect.right + delta!.x,
+      top: measurementRect.top + delta!.y,
+      bottom: measurementRect.bottom + delta!.y
+    };
+    const overlapX = Math.min(fixedRect.right, movedRect.right) - Math.max(fixedRect.left, movedRect.left);
+    const overlapY = Math.min(fixedRect.bottom, movedRect.bottom) - Math.max(fixedRect.top, movedRect.top);
+    expect(overlapX <= 0 || overlapY <= 0).toBe(true);
+    expect(movedRect.left).toBeGreaterThanOrEqual(4);
+    expect(movedRect.top).toBeGreaterThanOrEqual(4);
+    expect(movedRect.right).toBeLessThanOrEqual(296);
+    expect(movedRect.bottom).toBeLessThanOrEqual(216);
+  });
+
+  test("auto-spread separates multiple measurement rectangles from labels and each other", () => {
+    const fixedRect = { left: 90, right: 170, top: 90, bottom: 135 };
+    const items = [
+      { id: "measurement-1", rect: { left: 110, right: 190, top: 110, bottom: 146 } },
+      { id: "measurement-2", rect: { left: 116, right: 196, top: 116, bottom: 152 } }
+    ];
+    const deltas = autoSpreadMovableRects(items, [fixedRect], {
+      padding: 4,
+      bounds: { width: 320, height: 240 }
+    });
+    const movedRects = items.map((item) => {
+      const delta = deltas.get(item.id) ?? { x: 0, y: 0 };
+      return {
+        left: item.rect.left + delta.x,
+        right: item.rect.right + delta.x,
+        top: item.rect.top + delta.y,
+        bottom: item.rect.bottom + delta.y
+      };
+    });
+    const overlaps = (first: typeof fixedRect, second: typeof fixedRect) =>
+      Math.min(first.right, second.right) - Math.max(first.left, second.left) > 0 &&
+      Math.min(first.bottom, second.bottom) - Math.max(first.top, second.top) > 0;
+
+    expect(overlaps(movedRects[0], fixedRect)).toBe(false);
+    expect(overlaps(movedRects[1], fixedRect)).toBe(false);
+    expect(overlaps(movedRects[0], movedRects[1])).toBe(false);
+    for (const rect of movedRects) {
+      expect(rect.left).toBeGreaterThanOrEqual(4);
+      expect(rect.top).toBeGreaterThanOrEqual(4);
+      expect(rect.right).toBeLessThanOrEqual(316);
+      expect(rect.bottom).toBeLessThanOrEqual(236);
+    }
   });
 
   test("auto-aligns layout units with nearby horizontal or vertical coordinates", () => {

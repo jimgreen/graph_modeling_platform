@@ -1571,9 +1571,111 @@ export function createApplySelectedNodeLayout(__appScope: Record<string, any>) {
   };
 }
 
+export function buildAutoSpreadMeasurementReflow(options: {
+  nodes: ModelNode[];
+  projectMeasurements: ProjectMeasurementConfig;
+  fixedRects: Array<{ left: number; right: number; top: number; bottom: number }>;
+  canvasBounds: CanvasBounds;
+  autoSpreadMovableRects: (
+    items: Array<{ id: string; rect: { left: number; right: number; top: number; bottom: number } }>,
+    fixedRects: Array<{ left: number; right: number; top: number; bottom: number }>,
+    options: { padding: number; bounds: CanvasBounds }
+  ) => Map<string, { x: number; y: number }>;
+  measurementGroupCanvasPosition: (node: ModelNode, group: MeasurementGroup) => Point;
+  measurementGroupRenderMetrics: (node: ModelNode, group: MeasurementGroup) => { width: number; height: number } | null;
+  measurementGroupsForNode: (measurements: ProjectMeasurementConfig, nodeId: string) => MeasurementGroup[];
+  measurementOffsetScaleForNode: (node: ModelNode) => { x: number; y: number };
+}) {
+  const measurementLayoutItems: Array<{
+    id: string;
+    nodeId: string;
+    rect: { left: number; right: number; top: number; bottom: number };
+  }> = [];
+  for (const node of options.nodes) {
+    for (const group of options.measurementGroupsForNode(options.projectMeasurements, node.id) ?? []) {
+      const metrics = options.measurementGroupRenderMetrics(node, group);
+      if (!metrics) {
+        continue;
+      }
+      const position = options.measurementGroupCanvasPosition(node, group);
+      const width = Number(metrics.width);
+      const height = Number(metrics.height);
+      if (
+        !Number.isFinite(position?.x) ||
+        !Number.isFinite(position?.y) ||
+        !Number.isFinite(width) ||
+        !Number.isFinite(height) ||
+        width <= 0 ||
+        height <= 0
+      ) {
+        continue;
+      }
+      measurementLayoutItems.push({
+        id: group.id,
+        nodeId: node.id,
+        rect: {
+          left: position.x - width / 2,
+          right: position.x + width / 2,
+          top: position.y - height / 2,
+          bottom: position.y + height / 2
+        }
+      });
+    }
+  }
+  const measurementDeltas = measurementLayoutItems.length > 0
+    ? options.autoSpreadMovableRects(
+        measurementLayoutItems.map((item) => ({ id: item.id, rect: item.rect })),
+        options.fixedRects,
+        { padding: 4, bounds: options.canvasBounds }
+      )
+    : new Map<string, { x: number; y: number }>();
+  const extraBoundsByNodeId = new Map<string, Array<{ left: number; right: number; top: number; bottom: number }>>();
+  for (const item of measurementLayoutItems) {
+    const delta = measurementDeltas.get(item.id) ?? { x: 0, y: 0 };
+    const boxes = extraBoundsByNodeId.get(item.nodeId) ?? [];
+    boxes.push({
+      left: item.rect.left + delta.x,
+      right: item.rect.right + delta.x,
+      top: item.rect.top + delta.y,
+      bottom: item.rect.bottom + delta.y
+    });
+    extraBoundsByNodeId.set(item.nodeId, boxes);
+  }
+  const nodeById = new Map(options.nodes.map((node) => [node.id, node]));
+  let adjustedCount = 0;
+  const nextGroups = options.projectMeasurements.groups.map((group) => {
+    const delta = measurementDeltas.get(group.id);
+    const node = delta ? nodeById.get(group.nodeId) : undefined;
+    if (!delta || !node) {
+      return group;
+    }
+    const scale = options.measurementOffsetScaleForNode(node);
+    const scaleX = Number.isFinite(scale?.x) && scale.x !== 0 ? scale.x : 1;
+    const scaleY = Number.isFinite(scale?.y) && scale.y !== 0 ? scale.y : 1;
+    adjustedCount += 1;
+    return {
+      ...group,
+      anchor: "custom",
+      offset: {
+        x: Math.round((group.offset.x + delta.x / scaleX) * 10) / 10,
+        y: Math.round((group.offset.y + delta.y / scaleY) * 10) / 10
+      }
+    };
+  });
+  return {
+    adjustedCount,
+    extraBoundsByNodeId,
+    measurementDeltas,
+    measurementLayoutItems,
+    nextProjectMeasurements: adjustedCount > 0
+      ? { version: 1, groups: nextGroups }
+      : options.projectMeasurements
+  };
+}
+
 export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) {
   return () => {
-  const { activeLayerEdges, activeLayerGroups, activeLayerNodes, autoSpreadNodeLayoutUnits, buildCanvasLayoutUnits, canvasBounds, commitLayoutNodePositions, includeMeasurementGroupBounds, isCanvasNodeMovable, nodes, requireEditMode, routedEdges, writeOperationLog } = __appScope;
+  const { activeLayerEdges, activeLayerGroups, activeLayerNodes, autoSpreadMovableRects, autoSpreadNodeLayoutUnits, buildCanvasLayoutUnits, cachedRoutedEdgesRef, calculateNodeVisualBounds, canvasBounds, commitLayoutNodePositions, deferredRoutableLineRouteRepairCancelRef, includeMeasurementGroupBounds, isCanvasNodeMovable, latestGraphStoreRef, measurementGroupCanvasPosition, measurementGroupRenderMetrics, measurementGroupsForNode, measurementOffsetScaleForNode, nodes, projectMeasurements, pushUndoSnapshot, requireEditMode, routedEdges, scheduleIdleWork, setProjectMeasurements, writeOperationLog } = __appScope;
     if (!requireEditMode("自动散开")) {
       return;
     }
@@ -1582,43 +1684,93 @@ export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) 
       writeOperationLog("自动散开需要至少 2 个可操作图元");
       return;
     }
-    const extraBoundsByNodeId = new Map<string, Array<{ left: number; right: number; top: number; bottom: number }>>();
-    for (const node of activeLayerNodes) {
-      const boxes: Array<{ left: number; right: number; top: number; bottom: number }> = [];
-      includeMeasurementGroupBounds?.(node, (box: { left: number; right: number; top: number; bottom: number }) => boxes.push(box));
-      if (boxes.length > 0) {
-        extraBoundsByNodeId.set(node.id, boxes);
-      }
+    const measurementReflowToken = Symbol("auto-spread-measurement-reflow");
+    if (latestGraphStoreRef && typeof latestGraphStoreRef === "object") {
+      latestGraphStoreRef.autoSpreadMeasurementReflowToken = measurementReflowToken;
     }
-    const routeByEdgeId = new Map(routedEdges.map((route: { edgeId: string }) => [route.edgeId, route]));
-    const routeSegmentPadding = 10;
-    const routeEndpointTrim = routeSegmentPadding * 1.5;
-    const avoidRects = activeLayerEdges.flatMap((edge: { id: string }) => {
-      const route = routeByEdgeId.get(edge.id) as { points?: Array<{ x: number; y: number }> } | undefined;
-      const points = route?.points ?? [];
-      if (points.length < 2) {
-        return [];
-      }
-      return points.slice(1).flatMap((point, index) => {
-        const previous = points[index];
-        const dx = point.x - previous.x;
-        const dy = point.y - previous.y;
-        const length = Math.hypot(dx, dy);
-        if (length <= routeEndpointTrim * 2) {
+    const routeAvoidRectsFor = (currentRoutes: Array<{ edgeId: string; points?: Array<{ x: number; y: number }> }>) => {
+      const routeByEdgeId = new Map((currentRoutes ?? []).map((route) => [route.edgeId, route]));
+      const routeSegmentPadding = 10;
+      const routeEndpointTrim = routeSegmentPadding * 1.5;
+      return activeLayerEdges.flatMap((edge: { id: string }) => {
+        const points = routeByEdgeId.get(edge.id)?.points ?? [];
+        if (points.length < 2) {
           return [];
         }
-        const trimX = (dx / length) * routeEndpointTrim;
-        const trimY = (dy / length) * routeEndpointTrim;
-        const start = { x: previous.x + trimX, y: previous.y + trimY };
-        const end = { x: point.x - trimX, y: point.y - trimY };
-        return {
-          left: Math.min(start.x, end.x) - routeSegmentPadding,
-          right: Math.max(start.x, end.x) + routeSegmentPadding,
-          top: Math.min(start.y, end.y) - routeSegmentPadding,
-          bottom: Math.max(start.y, end.y) + routeSegmentPadding
-        };
+        return points.slice(1).flatMap((point, index) => {
+          const previous = points[index];
+          const dx = point.x - previous.x;
+          const dy = point.y - previous.y;
+          const length = Math.hypot(dx, dy);
+          if (length <= routeEndpointTrim * 2) {
+            return [];
+          }
+          const trimX = (dx / length) * routeEndpointTrim;
+          const trimY = (dy / length) * routeEndpointTrim;
+          const start = { x: previous.x + trimX, y: previous.y + trimY };
+          const end = { x: point.x - trimX, y: point.y - trimY };
+          return {
+            left: Math.min(start.x, end.x) - routeSegmentPadding,
+            right: Math.max(start.x, end.x) + routeSegmentPadding,
+            top: Math.min(start.y, end.y) - routeSegmentPadding,
+            bottom: Math.max(start.y, end.y) + routeSegmentPadding
+          };
+        });
       });
-    });
+    };
+    const avoidRects = routeAvoidRectsFor(routedEdges);
+    const baseLayoutUnits = buildCanvasLayoutUnits(
+      activeLayerGroups,
+      activeLayerNodes,
+      activeNodeIds,
+      [],
+      activeLayerEdges,
+      routedEdges,
+      { isTransformableNode: (node) => isCanvasNodeMovable(node.kind) }
+    );
+    const canAdjustMeasurements =
+      typeof autoSpreadMovableRects === "function" &&
+      typeof measurementGroupCanvasPosition === "function" &&
+      typeof measurementGroupRenderMetrics === "function" &&
+      typeof measurementGroupsForNode === "function" &&
+      typeof measurementOffsetScaleForNode === "function" &&
+      typeof pushUndoSnapshot === "function" &&
+      typeof setProjectMeasurements === "function" &&
+      Array.isArray(projectMeasurements?.groups);
+    const nodeVisualEntries = typeof calculateNodeVisualBounds === "function"
+      ? activeLayerNodes.map((node) => ({ node, rect: calculateNodeVisualBounds(node) }))
+      : [];
+    const nodeVisualAvoidRects = nodeVisualEntries.length > 0
+      ? nodeVisualEntries.map((entry) => entry.rect)
+      : baseLayoutUnits.flatMap((unit: { collisionRects?: Array<{ left: number; right: number; top: number; bottom: number }> }) => unit.collisionRects ?? []);
+    const stationaryNodeAvoidRects = nodeVisualEntries
+      .filter((entry) => !isCanvasNodeMovable(entry.node.kind))
+      .map((entry) => entry.rect);
+    const fixedAnnotationAvoidRects = [...nodeVisualAvoidRects, ...avoidRects];
+    const measurementReflow = canAdjustMeasurements
+      ? buildAutoSpreadMeasurementReflow({
+          nodes: activeLayerNodes,
+          projectMeasurements,
+          fixedRects: fixedAnnotationAvoidRects,
+          canvasBounds,
+          autoSpreadMovableRects,
+          measurementGroupCanvasPosition,
+          measurementGroupRenderMetrics,
+          measurementGroupsForNode,
+          measurementOffsetScaleForNode
+        })
+      : null;
+    const measurementDeltas = measurementReflow?.measurementDeltas ?? new Map<string, { x: number; y: number }>();
+    const extraBoundsByNodeId = measurementReflow?.extraBoundsByNodeId ?? new Map<string, Array<{ left: number; right: number; top: number; bottom: number }>>();
+    if (!measurementReflow) {
+      for (const node of activeLayerNodes) {
+        const boxes: Array<{ left: number; right: number; top: number; bottom: number }> = [];
+        includeMeasurementGroupBounds?.(node, (box: { left: number; right: number; top: number; bottom: number }) => boxes.push(box));
+        if (boxes.length > 0) {
+          extraBoundsByNodeId.set(node.id, boxes);
+        }
+      }
+    }
     const layoutUnits = buildCanvasLayoutUnits(
       activeLayerGroups,
       activeLayerNodes,
@@ -1628,17 +1780,105 @@ export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) 
       routedEdges,
       { isTransformableNode: (node) => isCanvasNodeMovable(node.kind), extraBoundsByNodeId }
     );
-    if (layoutUnits.length < 2) {
+    if (layoutUnits.length < 2 && measurementDeltas.size === 0) {
       writeOperationLog("自动散开没有发现可调整的图元");
       return;
     }
-    const arranged = autoSpreadNodeLayoutUnits(nodes, layoutUnits, { padding: 4, bounds: canvasBounds, avoidRects });
-    const movedCount = commitLayoutNodePositions(
-      Array.from(new Set(layoutUnits.flatMap((unit) => unit.nodeIds))),
-      arranged,
-      { preserveCanvasBounds: true }
-    );
-    writeOperationLog(movedCount > 0 ? `自动散开 ${movedCount} 个图元` : "自动散开未发现重叠图元");
+    const arranged = layoutUnits.length >= 2
+      ? autoSpreadNodeLayoutUnits(nodes, layoutUnits, {
+          padding: 4,
+          bounds: canvasBounds,
+          avoidRects: [...avoidRects, ...stationaryNodeAvoidRects]
+        })
+      : nodes;
+    const movedCount = layoutUnits.length >= 2
+      ? commitLayoutNodePositions(
+          Array.from(new Set(layoutUnits.flatMap((unit) => unit.nodeIds))),
+          arranged,
+          { preserveCanvasBounds: true }
+        )
+      : 0;
+    const adjustedMeasurementCount = measurementReflow?.adjustedCount ?? 0;
+    if (measurementReflow && adjustedMeasurementCount > 0) {
+      if (movedCount === 0) {
+        pushUndoSnapshot();
+      }
+      setProjectMeasurements(measurementReflow.nextProjectMeasurements);
+    }
+    const shouldSchedulePostRouteMeasurementReflow =
+      movedCount > 0 &&
+      canAdjustMeasurements &&
+      measurementReflow?.measurementLayoutItems.length > 0 &&
+      typeof scheduleIdleWork === "function" &&
+      latestGraphStoreRef &&
+      typeof latestGraphStoreRef === "object";
+    if (shouldSchedulePostRouteMeasurementReflow) {
+      const schedulePostRouteMeasurementReflow = (delayMs: number, retriesRemaining: number) => {
+        scheduleIdleWork(() => {
+          if (latestGraphStoreRef.autoSpreadMeasurementReflowToken !== measurementReflowToken) {
+            return;
+          }
+          if (deferredRoutableLineRouteRepairCancelRef?.current && retriesRemaining > 0) {
+            schedulePostRouteMeasurementReflow(140, retriesRemaining - 1);
+            return;
+          }
+          const latestStore = latestGraphStoreRef.current;
+          if (!latestStore) {
+            return;
+          }
+          const latestNodeById = new Map(latestStore.nodes.map((node: ModelNode) => [node.id, node]));
+          const latestActiveNodes = activeNodeIds.flatMap((nodeId) => {
+            const node = latestNodeById.get(nodeId);
+            return node ? [node] : [];
+          });
+          if (latestActiveNodes.length !== activeNodeIds.length) {
+            return;
+          }
+          const latestRoutes = Array.isArray(cachedRoutedEdgesRef?.current)
+            ? cachedRoutedEdgesRef.current
+            : routedEdges;
+          const latestNodeVisualRects = typeof calculateNodeVisualBounds === "function"
+            ? latestActiveNodes.map((node) => calculateNodeVisualBounds(node))
+            : [];
+          const latestFixedRects = [
+            ...latestNodeVisualRects,
+            ...routeAvoidRectsFor(latestRoutes)
+          ];
+          setProjectMeasurements((currentMeasurements: ProjectMeasurementConfig) => {
+            if (
+              latestGraphStoreRef.autoSpreadMeasurementReflowToken !== measurementReflowToken ||
+              !Array.isArray(currentMeasurements?.groups)
+            ) {
+              return currentMeasurements;
+            }
+            const latestReflow = buildAutoSpreadMeasurementReflow({
+              nodes: latestActiveNodes,
+              projectMeasurements: currentMeasurements,
+              fixedRects: latestFixedRects,
+              canvasBounds,
+              autoSpreadMovableRects,
+              measurementGroupCanvasPosition,
+              measurementGroupRenderMetrics,
+              measurementGroupsForNode,
+              measurementOffsetScaleForNode
+            });
+            return latestReflow.adjustedCount > 0
+              ? latestReflow.nextProjectMeasurements
+              : currentMeasurements;
+          });
+        }, delayMs, 2000);
+      };
+      schedulePostRouteMeasurementReflow(240, 4);
+    }
+    if (movedCount > 0 && adjustedMeasurementCount > 0) {
+      writeOperationLog(`自动散开 ${movedCount} 个图元，调整 ${adjustedMeasurementCount} 个量测框`);
+    } else if (movedCount > 0) {
+      writeOperationLog(`自动散开 ${movedCount} 个图元`);
+    } else if (adjustedMeasurementCount > 0) {
+      writeOperationLog(`自动散开调整 ${adjustedMeasurementCount} 个量测框`);
+    } else {
+      writeOperationLog("自动散开未发现重叠图元");
+    }
   };
 }
 

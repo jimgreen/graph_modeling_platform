@@ -291,4 +291,136 @@ describe("automatic canvas layout", () => {
       { preserveCanvasBounds: true }
     );
   });
+
+  test("automatic spread independently moves overlapping measurement boxes before arranging devices", () => {
+    const nodes = [
+      { id: "node-1", kind: "device", position: { x: 100, y: 100 } },
+      { id: "node-2", kind: "device", position: { x: 260, y: 100 } },
+      { id: "line-1", kind: "line", position: { x: 420, y: 100 } }
+    ];
+    const measurementGroup = {
+      id: "measurement-1",
+      nodeId: "node-1",
+      visible: true,
+      anchor: "bottom",
+      offset: { x: 0, y: 20 },
+      layout: "vertical",
+      items: []
+    };
+    const projectMeasurements = { version: 1, groups: [measurementGroup] };
+    const baseLayoutUnits = nodes.slice(0, 2).map((node, index) => ({
+      id: `node:${node.id}`,
+      kind: "node",
+      nodeIds: [node.id],
+      edgeIds: [],
+      bounds: { left: 70 + index * 160, right: 130 + index * 160, top: 70, bottom: 130 },
+      layoutBounds: { left: 75 + index * 160, right: 125 + index * 160, top: 75, bottom: 125 },
+      collisionRects: [{ left: 70 + index * 160, right: 130 + index * 160, top: 70, bottom: 130 }]
+    }));
+    const finalLayoutUnits = baseLayoutUnits.map((unit) => ({ ...unit }));
+    const nodeVisualRects = [
+      { left: 68, right: 142, top: 66, bottom: 154 },
+      { left: 226, right: 306, top: 68, bottom: 158 },
+      { left: 372, right: 468, top: 52, bottom: 166 }
+    ];
+    const buildCanvasLayoutUnits = vi.fn()
+      .mockReturnValueOnce(baseLayoutUnits)
+      .mockReturnValueOnce(finalLayoutUnits);
+    const autoSpreadMovableRects = vi.fn()
+      .mockReturnValueOnce(new Map([[measurementGroup.id, { x: 0, y: 36 }]]))
+      .mockReturnValueOnce(new Map([[measurementGroup.id, { x: 18, y: 0 }]]));
+    const autoSpreadNodeLayoutUnits = vi.fn(() => nodes);
+    const commitLayoutNodePositions = vi.fn(() => 1);
+    const pushUndoSnapshot = vi.fn();
+    let measurementState = projectMeasurements;
+    const setProjectMeasurements = vi.fn((next) => {
+      measurementState = typeof next === "function" ? next(measurementState) : next;
+    });
+    let scheduledReflow: (() => void) | null = null;
+    const scheduleIdleWork = vi.fn((callback: () => void) => {
+      scheduledReflow = callback;
+      return vi.fn();
+    });
+    const writeOperationLog = vi.fn();
+    const scope = {
+      activeLayerEdges: [],
+      activeLayerGroups: [],
+      activeLayerNodes: nodes,
+      autoSpreadMovableRects,
+      autoSpreadNodeLayoutUnits,
+      buildCanvasLayoutUnits,
+      calculateNodeVisualBounds: vi.fn((node: { id: string }) =>
+        node.id === "node-1" ? nodeVisualRects[0] : node.id === "node-2" ? nodeVisualRects[1] : nodeVisualRects[2]
+      ),
+      canvasBounds: { width: 1000, height: 800 },
+      cachedRoutedEdgesRef: { current: [] },
+      commitLayoutNodePositions,
+      isCanvasNodeMovable: (kind: string) => kind !== "line",
+      latestGraphStoreRef: { current: { nodes } },
+      measurementGroupCanvasPosition: (_node: unknown, group: { offset: { x: number; y: number } }) => ({
+        x: 100 + group.offset.x * 2,
+        y: 68 + group.offset.y * 3
+      }),
+      measurementGroupRenderMetrics: () => ({ width: 80, height: 32 }),
+      measurementGroupsForNode: (_measurements: unknown, nodeId: string) =>
+        nodeId === measurementGroup.nodeId ? [measurementGroup] : [],
+      measurementOffsetScaleForNode: () => ({ x: 2, y: 3 }),
+      nodes,
+      projectMeasurements,
+      pushUndoSnapshot,
+      requireEditMode: () => true,
+      routedEdges: [],
+      scheduleIdleWork,
+      setProjectMeasurements,
+      writeOperationLog
+    };
+
+    createAutoSpreadCanvasGraphics(scope as any)();
+
+    expect(autoSpreadMovableRects).toHaveBeenCalledWith(
+      [{
+        id: measurementGroup.id,
+        rect: { left: 60, right: 140, top: 112, bottom: 144 }
+      }],
+      nodeVisualRects,
+      { padding: 4, bounds: scope.canvasBounds }
+    );
+    const finalBuildOptions = buildCanvasLayoutUnits.mock.calls[1][6];
+    expect(finalBuildOptions.extraBoundsByNodeId.get("node-1")).toEqual([
+      { left: 60, right: 140, top: 148, bottom: 180 }
+    ]);
+    expect(measurementState).toEqual({
+      version: 1,
+      groups: [{
+        ...measurementGroup,
+        anchor: "custom",
+        offset: { x: 0, y: 32 }
+      }]
+    });
+    expect(pushUndoSnapshot).not.toHaveBeenCalled();
+    expect(autoSpreadNodeLayoutUnits).toHaveBeenCalledWith(
+      nodes,
+      finalLayoutUnits,
+      { padding: 4, bounds: scope.canvasBounds, avoidRects: [nodeVisualRects[2]] }
+    );
+    expect(commitLayoutNodePositions).toHaveBeenCalledWith(
+      ["node-1", "node-2"],
+      nodes,
+      { preserveCanvasBounds: true }
+    );
+    expect(writeOperationLog).toHaveBeenCalledWith("自动散开 1 个图元，调整 1 个量测框");
+    expect(scheduleIdleWork).toHaveBeenCalledWith(expect.any(Function), 240, 2000);
+
+    (scheduledReflow as (() => void) | null)?.();
+
+    expect(measurementState).toEqual({
+      version: 1,
+      groups: [{
+        ...measurementGroup,
+        anchor: "custom",
+        offset: { x: 9, y: 32 }
+      }]
+    });
+    expect(pushUndoSnapshot).not.toHaveBeenCalled();
+  });
 });

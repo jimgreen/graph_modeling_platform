@@ -1020,6 +1020,11 @@ export type AutoSpreadNodeLayoutUnitsOptions = {
   avoidRects?: readonly SelectionRect[];
 };
 
+export type AutoSpreadMovableRect = {
+  id: string;
+  rect: SelectionRect;
+};
+
 function offsetRect(rect: SelectionRect, delta: Point): SelectionRect {
   return {
     left: rect.left + delta.x,
@@ -1058,6 +1063,28 @@ function rectCanvasOverflow(rect: SelectionRect, bounds: CanvasBounds | undefine
     Math.max(0, -rect.top) +
     Math.max(0, rect.right - bounds.width) +
     Math.max(0, rect.bottom - bounds.height);
+}
+
+function rectCanvasContainmentDelta(rect: SelectionRect, bounds: CanvasBounds | undefined): Point {
+  if (!bounds) {
+    return { x: 0, y: 0 };
+  }
+  const axisDelta = (start: number, end: number, limit: number) => {
+    if (end - start > limit) {
+      return Math.round(limit / 2 - (start + end) / 2);
+    }
+    if (start < 0) {
+      return Math.ceil(-start);
+    }
+    if (end > limit) {
+      return Math.floor(limit - end);
+    }
+    return 0;
+  };
+  return {
+    x: axisDelta(rect.left, rect.right, bounds.width),
+    y: axisDelta(rect.top, rect.bottom, bounds.height)
+  };
 }
 
 function rectWidth(rect: SelectionRect) {
@@ -1224,11 +1251,53 @@ function nearestNonOverlappingDelta(
   return { x: 0, y: 0 };
 }
 
+export function autoSpreadMovableRects(
+  items: readonly AutoSpreadMovableRect[],
+  fixedRects: readonly SelectionRect[],
+  options: AutoSpreadNodeLayoutUnitsOptions = {}
+): Map<string, Point> {
+  const padding = Math.max(0, options.padding ?? 4);
+  const minSeparation = Math.max(1, options.minSeparation ?? 1);
+  const placed = new PlacedRectGrid();
+  for (const rect of fixedRects) {
+    placed.add(padRect(rect, padding));
+  }
+  const deltas = new Map<string, Point>();
+  const orderedItems = items
+    .map((item, index) => ({ item, index }))
+    .sort((first, second) =>
+      first.item.rect.top - second.item.rect.top ||
+      first.item.rect.left - second.item.rect.left ||
+      first.index - second.index
+    );
+  for (const { item } of orderedItems) {
+    const paddedRect = padRect(item.rect, padding);
+    const boundaryDelta = rectCanvasContainmentDelta(paddedRect, options.bounds);
+    const containedRect = offsetRect(paddedRect, boundaryDelta);
+    const separationDelta = nearestNonOverlappingDelta(
+      [containedRect],
+      placed,
+      minSeparation,
+      options.bounds
+    );
+    const finalDelta = {
+      x: boundaryDelta.x + separationDelta.x,
+      y: boundaryDelta.y + separationDelta.y
+    };
+    placed.add(offsetRect(containedRect, separationDelta));
+    if (finalDelta.x !== 0 || finalDelta.y !== 0) {
+      deltas.set(item.id, finalDelta);
+    }
+  }
+  return deltas;
+}
+
 type AutoSpreadLayoutItem = {
   unit: CanvasLayoutUnit;
   index: number;
   baseRect: SelectionRect;
   baseRects: SelectionRect[];
+  boundaryDelta: Point;
 };
 
 function rectCollectionsOverlap(first: readonly SelectionRect[], second: readonly SelectionRect[]) {
@@ -1374,11 +1443,17 @@ export function autoSpreadNodeLayoutUnits(
       first.unit.bounds.left - second.unit.bounds.left ||
       first.index - second.index
     );
-  const layoutItems = orderedUnits.map((item) => ({
-    ...item,
-    baseRect: padRect(item.unit.bounds, padding),
-    baseRects: item.unit.collisionRects.map((rect) => padRect(rect, padding))
-  }));
+  const layoutItems = orderedUnits.map((item) => {
+    const baseRect = padRect(item.unit.bounds, padding);
+    const baseRects = item.unit.collisionRects.map((rect) => padRect(rect, padding));
+    const boundaryDelta = rectCanvasContainmentDelta(baseRect, options.bounds);
+    return {
+      ...item,
+      baseRect: offsetRect(baseRect, boundaryDelta),
+      baseRects: baseRects.map((rect) => offsetRect(rect, boundaryDelta)),
+      boundaryDelta
+    };
+  });
   const components = buildOverlapComponents(layoutItems);
   const orderedComponents = [
     ...components.filter((component) => component.length === 1),
@@ -1404,6 +1479,18 @@ export function autoSpreadNodeLayoutUnits(
     placed.add(padRect(avoidRect, padding));
   }
   const deltas = new Map<string, Point>();
+  const mergeDelta = (unitId: string, delta: Point) => {
+    const current = deltas.get(unitId) ?? { x: 0, y: 0 };
+    const next = { x: current.x + delta.x, y: current.y + delta.y };
+    if (next.x === 0 && next.y === 0) {
+      deltas.delete(unitId);
+      return;
+    }
+    deltas.set(unitId, next);
+  };
+  for (const item of layoutItems) {
+    mergeDelta(item.unit.id, item.boundaryDelta);
+  }
   for (const component of orderedComponents) {
     if (component.length === 1) {
       continue;
@@ -1411,7 +1498,7 @@ export function autoSpreadNodeLayoutUnits(
     if (component.length >= 4 && component.every((item) => item.baseRects.length === 1)) {
       const gridLayout = balancedGridDeltasForComponent(component, placed, minSeparation, options.bounds);
       for (const [unitId, delta] of gridLayout.deltas) {
-        deltas.set(unitId, delta);
+        mergeDelta(unitId, delta);
       }
       for (const rect of gridLayout.rects) {
         placed.add(rect);
@@ -1424,7 +1511,7 @@ export function autoSpreadNodeLayoutUnits(
         placed.add(offsetRect(rect, delta));
       }
       if (delta.x !== 0 || delta.y !== 0) {
-        deltas.set(item.unit.id, delta);
+        mergeDelta(item.unit.id, delta);
       }
     }
   }
