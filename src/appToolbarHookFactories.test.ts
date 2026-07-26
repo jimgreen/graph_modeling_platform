@@ -2,7 +2,22 @@ import { readFileSync } from "node:fs";
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { createAppHookCallback82, createAppHookCallback100, createAppHookCallback120 } from "./appExtracted/appToolbarHookFactories";
+import { canBatchEditParam, PARAM_LABELS } from "./appExtracted/appCoreCanvasUtilities";
+import { enumValuesForRow } from "./appExtracted/appPersistenceLibraryExport";
+import { createAppHookCallback12, createAppHookCallback82, createAppHookCallback100, createAppHookCallback120 } from "./appExtracted/appToolbarHookFactories";
+import {
+  applyDeviceTemplateDefinitionOverride,
+  createDefaultNode,
+  DEVICE_LIBRARY,
+  getEParamValue,
+  getTemplateParameterDefinitions,
+  templateDerivedComponentLibraryInfo
+} from "./model";
+import {
+  deviceDefinitionOverrideForTemplate,
+  parseCustomDefinitions,
+  resolveTemplateComponentLibrary
+} from "./customDeviceUtils";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -79,6 +94,58 @@ describe("side panel resize hook", () => {
     expect(removeEventListener).toHaveBeenCalledWith("pointermove", expect.any(Function), true);
     expect(removeEventListener).toHaveBeenCalledWith("pointerup", expect.any(Function), true);
     expect(removeEventListener).toHaveBeenCalledWith("pointercancel", expect.any(Function), true);
+  });
+});
+
+describe("batch common model parameter hook", () => {
+  test("includes inherited AC generator fields for selected wind generators", () => {
+    const firstNode = createDefaultNode("ac-wind-source", { x: 100, y: 100 });
+    const secondNode = createDefaultNode("ac-wind-source", { x: 240, y: 100 });
+    firstNode.params.v_set = "380";
+    secondNode.params.v_set = "380";
+
+    const rows = createAppHookCallback12({
+      DEFAULT_MODEL_LAYER_ID: "default",
+      DEVICE_LIBRARY,
+      PARAM_LABELS,
+      activeSelectedNodeIds: [firstNode.id, secondNode.id],
+      applyDeviceTemplateDefinitionOverride,
+      canBatchEditParam,
+      customDeviceTemplates: [],
+      deviceDefinitionOverrideForTemplate,
+      deviceDefinitionOverrides: {},
+      enumValuesForRow,
+      getEParamValue,
+      getTemplateParameterDefinitions,
+      nodeById: new Map([
+        [firstNode.id, firstNode],
+        [secondNode.id, secondNode]
+      ]),
+      parseCustomDefinitions,
+      resolveTemplateComponentLibrary,
+      templateDerivedComponentLibraryInfo
+    })();
+
+    const keys = rows.map((row) => row.key);
+    expect(keys).toEqual(expect.arrayContaining([
+      "control_type",
+      "p_set",
+      "q_set",
+      "v_set",
+      "alpha",
+      "wind_turbine_model"
+    ]));
+    expect(rows.find((row) => row.key === "control_type")?.value).toBe("PV");
+    expect(rows.find((row) => row.key === "v_set")?.value).toBe("380");
+  });
+
+  test("recomputes inherited fields when device library definitions change", () => {
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const normalizedSource = appSource.replace(/\s+/g, " ");
+
+    expect(normalizedSource).toContain(
+      "createAppHookCallback12(__appScope), [activeSelectedNodeIds, customDeviceTemplates, deviceDefinitionOverrides, nodeById]"
+    );
   });
 });
 

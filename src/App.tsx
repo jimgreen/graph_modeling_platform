@@ -1576,7 +1576,10 @@ const activeSelectionKey = useMemo(
 Object.assign(__appScope, { activeSelectionKey });
 const activeSelectedEdgeSet = useMemo(() => new Set(displaySelectedEdgeIds), [displaySelectedEdgeIds]); Object.assign(__appScope, { activeSelectedEdgeSet });
 const displaySelectedEdgeKey = useMemo(() => displaySelectedEdgeIds.join("|"), [displaySelectedEdgeIds]); Object.assign(__appScope, { displaySelectedEdgeKey });
-const batchCommonParamRows = useMemo<BatchCommonParamRow[]>(createAppHookCallback12(__appScope), [activeSelectedNodeIds, nodeById]);
+const batchCommonParamRows = useMemo<BatchCommonParamRow[]>(
+    createAppHookCallback12(__appScope),
+    [activeSelectedNodeIds, customDeviceTemplates, deviceDefinitionOverrides, nodeById]
+  );
 const batchCommonParamKeySet = useMemo(
     () => new Set(batchCommonParamRows.map((row) => row.key)),
     [batchCommonParamRows]

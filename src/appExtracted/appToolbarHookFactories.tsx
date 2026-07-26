@@ -1004,23 +1004,86 @@ export function createAppHookCallback11(__appScope: Record<string, any>) {
 
 export function createAppHookCallback12(__appScope: Record<string, any>) {
   return () => {
-  const { DEFAULT_MODEL_LAYER_ID, PARAM_LABELS, activeSelectedNodeIds, canBatchEditParam, enumValuesForRow, nodeById, parseCustomDefinitions } = __appScope;
+  const { DEFAULT_MODEL_LAYER_ID, DEVICE_LIBRARY, PARAM_LABELS, activeSelectedNodeIds, applyDeviceTemplateDefinitionOverride, canBatchEditParam, customDeviceTemplates, deviceDefinitionOverrideForTemplate, deviceDefinitionOverrides, enumValuesForRow, getEParamValue, getTemplateParameterDefinitions, nodeById, parseCustomDefinitions, resolveTemplateComponentLibrary, templateDerivedComponentLibraryInfo } = __appScope;
     const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []);
     if (selectedNodes.length < 2) {
       return [];
     }
     const firstNode = selectedNodes[0];
-    const customDefinitionsByNode = selectedNodes.map((node) => parseCustomDefinitions(node.params));
-    const commonKeys = Object.keys(firstNode.params)
+    const libraryTemplates = [
+      ...(Array.isArray(DEVICE_LIBRARY) ? DEVICE_LIBRARY : []),
+      ...(Array.isArray(customDeviceTemplates) ? customDeviceTemplates : [])
+    ].map((template) => applyDeviceTemplateDefinitionOverride(
+      template,
+      deviceDefinitionOverrideForTemplate(template, deviceDefinitionOverrides ?? {})
+    ));
+    const libraryTemplateByKind = new Map<string, any>();
+    const baseTemplateByComponentLibrary = new Map<string, any>();
+    libraryTemplates.forEach((template) => {
+      if (!libraryTemplateByKind.has(template.kind)) {
+        libraryTemplateByKind.set(template.kind, template);
+      }
+      if (templateDerivedComponentLibraryInfo(template)) {
+        return;
+      }
+      const componentLibrary = String(resolveTemplateComponentLibrary(template) ?? "").trim().toLowerCase();
+      if (componentLibrary && !baseTemplateByComponentLibrary.has(componentLibrary)) {
+        baseTemplateByComponentLibrary.set(componentLibrary, template);
+      }
+    });
+    const effectiveDefinitionsByNode = selectedNodes.map((node) => {
+      const storedDefinitions = parseCustomDefinitions(node.params);
+      const selectedTemplate = libraryTemplateByKind.get(node.kind);
+      if (!selectedTemplate) {
+        return storedDefinitions;
+      }
+      const derivedInfo = templateDerivedComponentLibraryInfo(selectedTemplate);
+      const baseTemplate = derivedInfo
+        ? baseTemplateByComponentLibrary.get(derivedInfo.baseComponentLibrary.trim().toLowerCase())
+        : null;
+      const definitions = [
+        ...(baseTemplate ? getTemplateParameterDefinitions(baseTemplate) : []),
+        ...getTemplateParameterDefinitions(selectedTemplate)
+      ];
+      const seenKeys = new Set<string>();
+      return definitions.filter((definition) => {
+        const key = String(definition.enName ?? "").trim();
+        if (!key || seenKeys.has(key)) {
+          return false;
+        }
+        seenKeys.add(key);
+        return true;
+      });
+    });
+    const effectiveDefinitionMaps = effectiveDefinitionsByNode.map((definitions) =>
+      new Map(definitions.map((definition) => [definition.enName, definition]))
+    );
+    const effectiveKeySets = selectedNodes.map((node, index) => new Set([
+      ...Object.keys(node.params),
+      ...effectiveDefinitionsByNode[index].map((definition) => definition.enName)
+    ]));
+    const commonKeys = Array.from(new Set([
+      ...Object.keys(firstNode.params),
+      ...effectiveDefinitionsByNode[0].map((definition) => definition.enName)
+    ]))
       .filter((key) => canBatchEditParam(key))
-      .filter((key) => selectedNodes.every((node) => Object.prototype.hasOwnProperty.call(node.params, key)));
+      .filter((key) => effectiveKeySets.every((keys) => keys.has(key)));
     const layerValues = selectedNodes.map((node) => node.layerId ?? DEFAULT_MODEL_LAYER_ID);
     const paramRows = commonKeys
       .map<BatchCommonParamRow>((key) => {
-        const values = selectedNodes.map((node) => node.params[key] ?? "");
-        const definition = customDefinitionsByNode[0]?.find((item) => item.enName === key);
-        const compatibleDefinition = definition && customDefinitionsByNode.every((definitions) => {
-          const candidate = definitions.find((item) => item.enName === key);
+        const values = selectedNodes.map((node, index) => {
+          if (Object.prototype.hasOwnProperty.call(node.params, key)) {
+            return node.params[key] ?? "";
+          }
+          const eValue = getEParamValue(key, node);
+          if (eValue !== undefined && eValue !== null && String(eValue) !== "") {
+            return String(eValue);
+          }
+          return effectiveDefinitionMaps[index].get(key)?.typicalValue ?? "";
+        });
+        const definition = effectiveDefinitionMaps[0].get(key);
+        const compatibleDefinition = definition && effectiveDefinitionMaps.every((definitions) => {
+          const candidate = definitions.get(key);
           return Boolean(
             candidate &&
             candidate.valueType === definition.valueType &&
