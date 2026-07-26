@@ -669,7 +669,7 @@ export function createHandleRoutableLineNodePathPointerDown(__appScope: Record<s
 
 export function createHandlePointerMove(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGSVGElement>) => {
-  const { CANVAS_SELECTION_DRAG_THRESHOLD, MOVE_BOUNDARY_GUARD, applyCanvasPanningVisualOffset, buildGroupTransformNodeUpdates, buildRoutableLineEndpointPreviewNodeUpdates, canvasBounds, canvasFrameRef, canvasFrameUserScrollRef, canvasNoScrollOffsetRef, clampCanvasNoScrollOffsetPoint, clampNumber, clampPointToCanvas, clampViewBoxToCanvas, connectSource, contextMarqueeSelectionRef, draggingRef, getNodeScaleX, getNodeScaleY, graphStore, isBusNode, isGroupTransformDrag, isRoutableLineDeviceKind, lastCanvasClientPointerRef, lastCanvasPointerRef, lastRawCanvasPointerRef, latestGraphStoreRef, libraryPlacement, manualPathDrag, marquee, modelGeometryInsideCanvasBounds, modifierSelectionPressRef, moveOrthogonalRouteSegment, moveRoutableLineDeviceSegment, nodeById, nodeLabelDrag, nodeLabelRotateDrag, nodeLabelRotationFromPoint, normalizeNodeLabelRotation, normalizeRotationDegrees, panning, panningRef, patchGraphNodes, patchSingleTerminalAnchorFromPoint, pendingCanvasNoScrollOffsetRef, proportionalSignedScaleFromHandleDelta, proportionalSignedScaleFromUprightHandleDelta, pushUndoSnapshot, resolveConnectPreviewPoint, resolveRoutableLinePreviewPoint, rewiring, rotationDeltaBetweenTransformPoints, routableLineDeviceCanvasPoints, routableLineEndpointDrag, routableLinePlacement, sameOptionalPoint, sameOptionalPointList, scheduleConnectPreviewPoint, scheduleNodeDragMove, scheduleRewirePreviewPoint, scheduleRoutableLinePreviewPoint, screenToSvgPoint, setManualPathDrag, setMarquee, setModifierSelectionPress, setNodeLabelDrag, setNodeLabelRotateDrag, setRoutableLineDeviceCanvasPoints, setTerminalPress, setTransformDrag, setViewBox, signedScaleFromRotatedHandleDelta, signedScaleFromUprightHandleDelta, singleTransformBaseNode, staticButtonPointerRef, staticDrawing, svgRef, terminalPress, transformDrag, transformDragChangedRef, updateGraphNodeById, updateInteractiveStaticDrawingPreview, updateLibraryPlacementPreview, updateMeasurementDrag, updateMouseStatus, updateRoutableLineEndpointDrag } = __appScope;
+  const { CANVAS_SELECTION_DRAG_THRESHOLD, MOVE_BOUNDARY_GUARD, applyCanvasPanningVisualOffset, buildGroupTransformNodeUpdates, buildRoutableLineEndpointPreviewNodeUpdates, canvasBounds, canvasFrameRef, canvasFrameUserScrollRef, canvasNoScrollOffsetRef, clampCanvasNoScrollOffsetPoint, clampNumber, clampPointToCanvas, clampViewBoxToCanvas, connectSource, contextMarqueeSelectionRef, draggingRef, getNodeScaleX, getNodeScaleY, graphStore, isBusNode, isGroupTransformDrag, isRoutableLineDeviceKind, lastCanvasClientPointerRef, lastCanvasPointerRef, lastRawCanvasPointerRef, latestGraphStoreRef, libraryPlacement, manualPathDrag, marquee, modelGeometryInsideCanvasBounds, modifierSelectionPressRef, moveOrthogonalRouteSegment, moveRoutableLineDeviceSegment, nodeById, nodeLabelDrag, nodeLabelRotateDrag, nodeLabelRotationFromPoint, normalizeNodeLabelRotation, normalizeRotationDegrees, panning, panningRef, patchGraphNodes, patchSingleTerminalAnchorFromPoint, pendingCanvasNoScrollOffsetRef, proportionalSignedScaleFromHandleDelta, proportionalSignedScaleFromUprightHandleDelta, pushUndoSnapshot, resolveConnectPreviewPoint, resolveRoutableLinePreviewPoint, rewiring, rotationDeltaBetweenTransformPoints, routableLineDeviceCanvasPoints, routableLineEndpointDrag, routableLinePlacement, sameOptionalPoint, sameOptionalPointList, scheduleConnectPreviewPoint, scheduleNodeDragMove, scheduleRewirePreviewPoint, scheduleRoutableLinePreviewPoint, screenToSvgPoint, setManualPathDrag, setMarquee, setModifierSelectionPress, setNodeLabelDrag, setNodeLabelRotateDrag, setRoutableLineDeviceCanvasPoints, setTerminalPress, setTransformDrag, setViewBox, signedScaleFromRotatedHandleDelta, signedScaleFromUprightHandleDelta, singleTransformBaseNode, skipNextCanvasScrollSyncRef, staticButtonPointerRef, staticDrawing, svgRef, terminalPress, transformDrag, transformDragChangedRef, updateGraphNodeById, updateInteractiveStaticDrawingPreview, updateLibraryPlacementPreview, updateMeasurementDrag, updateMouseStatus, updateRoutableLineEndpointDrag } = __appScope;
     const staticButtonPointer = staticButtonPointerRef.current;
     if (
       staticButtonPointer &&
@@ -684,31 +684,41 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
       const useHorizontalScrollPanning = Boolean(frame && activePanning.horizontalScrollMode);
       const useVerticalScrollPanning = Boolean(frame && activePanning.verticalScrollMode);
       if (frame) {
-        const maxLeft = Math.max(0, frame.scrollWidth - frame.clientWidth);
-        const maxTop = Math.max(0, frame.scrollHeight - frame.clientHeight);
+        const pointerDeltaX = event.clientX - activePanning.clientX;
+        const pointerDeltaY = event.clientY - activePanning.clientY;
+        let nextOffsetX = activePanning.canvasOffset.x + pointerDeltaX;
+        let nextOffsetY = activePanning.canvasOffset.y + pointerDeltaY;
         let scrollChanged = false;
         if (useHorizontalScrollPanning) {
-          const nextLeft = activePanning.scrollLeft - (event.clientX - activePanning.clientX);
-          if (Math.abs(frame.scrollLeft - nextLeft) > 0.5) {
-            frame.scrollLeft = nextLeft;
+          const requestedLeft = activePanning.scrollLeft - pointerDeltaX;
+          const previousLeft = frame.scrollLeft;
+          frame.scrollLeft = requestedLeft;
+          nextOffsetX = activePanning.canvasOffset.x + frame.scrollLeft - requestedLeft;
+          if (Math.abs(frame.scrollLeft - previousLeft) > 0.5) {
             scrollChanged = true;
           }
         }
         if (useVerticalScrollPanning) {
-          const nextTop = activePanning.scrollTop - (event.clientY - activePanning.clientY);
-          if (Math.abs(frame.scrollTop - nextTop) > 0.5) {
-            frame.scrollTop = nextTop;
+          const requestedTop = activePanning.scrollTop - pointerDeltaY;
+          const previousTop = frame.scrollTop;
+          frame.scrollTop = requestedTop;
+          nextOffsetY = activePanning.canvasOffset.y + frame.scrollTop - requestedTop;
+          if (Math.abs(frame.scrollTop - previousTop) > 0.5) {
             scrollChanged = true;
           }
         }
         const nextOffset = clampCanvasNoScrollOffsetPoint({
-          x: useHorizontalScrollPanning ? activePanning.canvasOffset.x : activePanning.canvasOffset.x + event.clientX - activePanning.clientX,
-          y: useVerticalScrollPanning ? activePanning.canvasOffset.y : activePanning.canvasOffset.y + event.clientY - activePanning.clientY
+          x: nextOffsetX,
+          y: nextOffsetY
         });
+        const offsetChanged =
+          Math.abs(nextOffset.x - activePanning.canvasOffset.x) > 0.5 ||
+          Math.abs(nextOffset.y - activePanning.canvasOffset.y) > 0.5;
         pendingCanvasNoScrollOffsetRef.current = nextOffset;
         canvasNoScrollOffsetRef.current = nextOffset;
         applyCanvasPanningVisualOffset(nextOffset);
-        if (scrollChanged) {
+        skipNextCanvasScrollSyncRef.current = offsetChanged;
+        if (scrollChanged || offsetChanged) {
           canvasFrameUserScrollRef.current = true;
         }
         return;

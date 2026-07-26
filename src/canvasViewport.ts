@@ -122,10 +122,10 @@ export function clampCanvasNoScrollOffset(
   baseOffset: number,
   scrollActive: boolean
 ) {
-  if (scrollActive || viewportSize <= 0 || displaySize <= 0) {
+  if (viewportSize <= 0 || displaySize <= 0) {
     return 0;
   }
-  // ponytail: 移除范围限制，画布可自由拖动到任意位置甚至超出视口
+  // Keep overflow drag offsets even with scrollbars so panning remains responsive at scroll boundaries.
   return offset;
 }
 

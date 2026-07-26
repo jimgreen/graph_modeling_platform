@@ -3,8 +3,10 @@ import { describe, expect, test, vi } from "vitest";
 import {
   createAutoSpreadCanvasGraphics,
   createCommitLayoutNodePositions,
+  createHandlePointerMove,
   createLoadSavedProject
 } from "./appExtracted/appProjectCanvasFactories";
+import { clampCanvasNoScrollOffset } from "./canvasViewport";
 
 function createLoadScope(overrides: Record<string, unknown> = {}) {
   const noop = vi.fn();
@@ -188,6 +190,77 @@ describe("saved project definition migration", () => {
     } as any, "scheme-1");
 
     expect(setHasUnsavedChanges).toHaveBeenLastCalledWith(true);
+  });
+});
+
+describe("canvas panning", () => {
+  test("converts drag distance beyond a scroll boundary into a visual canvas offset", () => {
+    let scrollLeft = 400;
+    let scrollTop = 0;
+    const frame = {
+      clientHeight: 800,
+      clientWidth: 1200,
+      scrollHeight: 2400,
+      scrollWidth: 2800,
+      get scrollLeft() {
+        return scrollLeft;
+      },
+      set scrollLeft(value: number) {
+        scrollLeft = Math.min(1600, Math.max(0, value));
+      },
+      get scrollTop() {
+        return scrollTop;
+      },
+      set scrollTop(value: number) {
+        scrollTop = Math.min(1600, Math.max(0, value));
+      }
+    };
+    const applyCanvasPanningVisualOffset = vi.fn();
+    const canvasFrameUserScrollRef = { current: false };
+    const canvasNoScrollOffsetRef = { current: { x: 0, y: 0 } };
+    const pendingCanvasNoScrollOffsetRef = { current: null as { x: number; y: number } | null };
+    const skipNextCanvasScrollSyncRef = { current: false };
+    const scope = {
+      applyCanvasPanningVisualOffset,
+      canvasFrameRef: { current: frame },
+      canvasFrameUserScrollRef,
+      canvasNoScrollOffsetRef,
+      clampCanvasNoScrollOffsetPoint: (offset: { x: number; y: number }) => ({
+        x: clampCanvasNoScrollOffset(offset.x, 2000, frame.clientWidth, 400, true),
+        y: clampCanvasNoScrollOffset(offset.y, 1800, frame.clientHeight, 270, true)
+      }),
+      panning: null,
+      panningRef: {
+        current: {
+          canvasOffset: { x: 0, y: 0 },
+          clientX: 500,
+          clientY: 200,
+          horizontalScrollMode: true,
+          scrollLeft: 400,
+          scrollTop: 0,
+          verticalScrollMode: true,
+          viewBox: { x: 0, y: 0, width: 1200, height: 800 }
+        }
+      },
+      pendingCanvasNoScrollOffsetRef,
+      skipNextCanvasScrollSyncRef,
+      staticButtonPointerRef: { current: null },
+      svgRef: { current: {} }
+    };
+
+    createHandlePointerMove(scope as any)({ clientX: 500, clientY: 320 } as any);
+
+    expect(frame.scrollTop).toBe(0);
+    expect(pendingCanvasNoScrollOffsetRef.current).toEqual({ x: 0, y: 120 });
+    expect(canvasNoScrollOffsetRef.current).toEqual({ x: 0, y: 120 });
+    expect(applyCanvasPanningVisualOffset).toHaveBeenCalledWith({ x: 0, y: 120 });
+    expect(canvasFrameUserScrollRef.current).toBe(true);
+    expect(skipNextCanvasScrollSyncRef.current).toBe(true);
+
+    createHandlePointerMove(scope as any)({ clientX: 500, clientY: 200 } as any);
+
+    expect(pendingCanvasNoScrollOffsetRef.current).toEqual({ x: 0, y: 0 });
+    expect(skipNextCanvasScrollSyncRef.current).toBe(false);
   });
 });
 

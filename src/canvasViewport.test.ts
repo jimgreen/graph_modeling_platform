@@ -4,6 +4,7 @@ import {
   canvasBoundsScrollSyncTarget,
   canvasFrameScrollIsUserDriven,
   canvasFrameScrollTargetForViewBox,
+  clampCanvasNoScrollOffset,
   canvasRenderViewBoxAfterBoundsDraft,
   canvasResizePreviewRectForDraft,
   canvasResizeScrollTargetForCommitAnchor,
@@ -14,6 +15,11 @@ import {
 } from "./canvasViewport";
 
 describe("canvas viewport bounds changes", () => {
+  test("preserves free-drag overflow offsets while canvas scrollbars are active", () => {
+    expect(clampCanvasNoScrollOffset(120, 1800, 800, 270, true)).toBe(120);
+    expect(clampCanvasNoScrollOffset(-80, 1800, 800, 270, true)).toBe(-80);
+  });
+
   test("preserves the visible viewport when the canvas auto-expands downward or rightward", () => {
     const current = { x: 120, y: 620, width: 800, height: 600 };
 
