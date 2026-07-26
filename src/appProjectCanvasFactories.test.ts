@@ -1,6 +1,10 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { createLoadSavedProject } from "./appExtracted/appProjectCanvasFactories";
+import {
+  createAutoSpreadCanvasGraphics,
+  createCommitLayoutNodePositions,
+  createLoadSavedProject
+} from "./appExtracted/appProjectCanvasFactories";
 
 function createLoadScope(overrides: Record<string, unknown> = {}) {
   const noop = vi.fn();
@@ -184,5 +188,107 @@ describe("saved project definition migration", () => {
     } as any, "scheme-1");
 
     expect(setHasUnsavedChanges).toHaveBeenLastCalledWith(true);
+  });
+});
+
+describe("automatic canvas layout", () => {
+  test("keeps the current canvas bounds when a layout commit requests preservation", () => {
+    const originalNode = {
+      id: "node-1",
+      kind: "device",
+      position: { x: 100, y: 100 }
+    };
+    const movedNode = {
+      ...originalNode,
+      position: { x: 960, y: 760 }
+    };
+    const canvasBounds = { width: 1000, height: 800 };
+    const expandedCanvasBounds = { width: 1200, height: 1000 };
+    const applyCanvasBounds = vi.fn();
+    const canvasBoundsForAutoExpandedGraphContent = vi.fn(() => expandedCanvasBounds);
+    const commitFastMovedGraphPatches = vi.fn();
+    const scope = {
+      CANVAS_AUTO_EXPAND_PADDING: 40,
+      adjustEdgesAfterNodeMove: vi.fn(),
+      applyCanvasBounds,
+      canvasBounds,
+      canvasBoundsForAutoExpandedGraphContent,
+      commitFastMovedGraphPatches,
+      currentStoredRoutePointsForEdge: vi.fn(),
+      edgeListForNodeIds: () => [],
+      edges: [],
+      finalizeMovedNodeEdgesFast: vi.fn(),
+      isRoutableLineDeviceKind: () => false,
+      mergeNodeUpdateLists: vi.fn(),
+      nodeById: new Map([[originalNode.id, originalNode]]),
+      nodes: [originalNode],
+      orderedNodeFromList: (items: Array<{ id: string }>, id: string) => items.find((item) => item.id === id),
+      pushUndoSnapshot: vi.fn(),
+      readjustMovedBusConnectionRoutes: vi.fn(),
+      realignRoutableLineDeviceBusEndpointPoints: vi.fn(),
+      redrawRoutableLineDeviceRoutes: vi.fn(),
+      rejectAutoCanvasExpansionForContent: () => false,
+      routableLineIdsConnectedToNodeIds: () => new Set<string>(),
+      snapshotEdgePoints: () => ({}),
+      undoScopeForGraphPatch: vi.fn()
+    };
+
+    const movedCount = createCommitLayoutNodePositions(scope as any)(
+      [originalNode.id],
+      [movedNode] as any,
+      { preserveCanvasBounds: true }
+    );
+
+    expect(movedCount).toBe(1);
+    expect(canvasBoundsForAutoExpandedGraphContent).not.toHaveBeenCalled();
+    expect(applyCanvasBounds).not.toHaveBeenCalled();
+    expect(commitFastMovedGraphPatches).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      canvasBounds
+    );
+  });
+
+  test("automatic spread preserves the existing canvas bounds", () => {
+    const nodes = [
+      { id: "node-1", kind: "device", position: { x: 100, y: 100 } },
+      { id: "node-2", kind: "device", position: { x: 100, y: 100 } }
+    ];
+    const arranged = [
+      nodes[0],
+      { ...nodes[1], position: { x: 160, y: 100 } }
+    ];
+    const layoutUnits = nodes.map((node) => ({ nodeIds: [node.id] }));
+    const commitLayoutNodePositions = vi.fn(() => 1);
+    const scope = {
+      activeLayerEdges: [],
+      activeLayerGroups: [],
+      activeLayerNodes: nodes,
+      autoSpreadNodeLayoutUnits: vi.fn(() => arranged),
+      buildCanvasLayoutUnits: vi.fn(() => layoutUnits),
+      canvasBounds: { width: 1000, height: 800 },
+      commitLayoutNodePositions,
+      includeMeasurementGroupBounds: vi.fn(),
+      isCanvasNodeMovable: () => true,
+      nodes,
+      requireEditMode: () => true,
+      routedEdges: [],
+      writeOperationLog: vi.fn()
+    };
+
+    createAutoSpreadCanvasGraphics(scope as any)();
+
+    expect(commitLayoutNodePositions).toHaveBeenCalledWith(
+      ["node-1", "node-2"],
+      arranged,
+      { preserveCanvasBounds: true }
+    );
   });
 });

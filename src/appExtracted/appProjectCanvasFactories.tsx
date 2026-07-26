@@ -1390,7 +1390,7 @@ export function createCommitLayoutNodePositions(__appScope: Record<string, any>)
   return (
     layoutNodeIds: string[],
     arranged: ModelNode[],
-    options: { readjustBusEndpoints?: boolean } = {}
+    options: { preserveCanvasBounds?: boolean; readjustBusEndpoints?: boolean } = {}
   ) => {
   const { CANVAS_AUTO_EXPAND_PADDING, adjustEdgesAfterNodeMove, applyCanvasBounds, canvasBounds, canvasBoundsForAutoExpandedGraphContent, commitFastMovedGraphPatches, currentStoredRoutePointsForEdge, edgeListForNodeIds, edges, finalizeMovedNodeEdgesFast, isRoutableLineDeviceKind, mergeNodeUpdateLists, nodeById, nodes, orderedNodeFromList, pushUndoSnapshot, readjustMovedBusConnectionRoutes, realignRoutableLineDeviceBusEndpointPoints, redrawRoutableLineDeviceRoutes, rejectAutoCanvasExpansionForContent, routableLineIdsConnectedToNodeIds, snapshotEdgePoints, undoScopeForGraphPatch } = __appScope;
     const uniqueLayoutNodeIds = Array.from(new Set(layoutNodeIds));
@@ -1425,14 +1425,18 @@ export function createCommitLayoutNodePositions(__appScope: Record<string, any>)
         affectedEdgesForLayout.map((edge) => edge.id)
       )
     );
-    const layoutCanvasBounds = canvasBoundsForAutoExpandedGraphContent(
-      canvasBounds,
-      arranged,
-      edges,
-      [],
-      CANVAS_AUTO_EXPAND_PADDING
-    );
-    applyCanvasBounds(layoutCanvasBounds);
+    const layoutCanvasBounds = options.preserveCanvasBounds
+      ? canvasBounds
+      : canvasBoundsForAutoExpandedGraphContent(
+          canvasBounds,
+          arranged,
+          edges,
+          [],
+          CANVAS_AUTO_EXPAND_PADDING
+        );
+    if (!options.preserveCanvasBounds) {
+      applyCanvasBounds(layoutCanvasBounds);
+    }
     const originalPositions = Object.fromEntries(
       movedNodeIds.flatMap((id) => {
         const node = nodeById.get(id);
@@ -1631,7 +1635,8 @@ export function createAutoSpreadCanvasGraphics(__appScope: Record<string, any>) 
     const arranged = autoSpreadNodeLayoutUnits(nodes, layoutUnits, { padding: 4, bounds: canvasBounds, avoidRects });
     const movedCount = commitLayoutNodePositions(
       Array.from(new Set(layoutUnits.flatMap((unit) => unit.nodeIds))),
-      arranged
+      arranged,
+      { preserveCanvasBounds: true }
     );
     writeOperationLog(movedCount > 0 ? `自动散开 ${movedCount} 个图元` : "自动散开未发现重叠图元");
   };
