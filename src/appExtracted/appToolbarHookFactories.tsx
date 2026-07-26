@@ -1063,8 +1063,8 @@ export function createAppHookCallback12(__appScope: Record<string, any>) {
       ...effectiveDefinitionsByNode[index].map((definition) => definition.enName)
     ]));
     const commonKeys = Array.from(new Set([
-      ...Object.keys(firstNode.params),
-      ...effectiveDefinitionsByNode[0].map((definition) => definition.enName)
+      ...effectiveDefinitionsByNode[0].map((definition) => definition.enName),
+      ...Object.keys(firstNode.params)
     ]))
       .filter((key) => canBatchEditParam(key))
       .filter((key) => effectiveKeySets.every((keys) => keys.has(key)));
@@ -1108,8 +1108,7 @@ export function createAppHookCallback12(__appScope: Record<string, any>) {
         mixed: layerValues.some((value) => value !== layerValues[0])
       },
       ...paramRows
-    ]
-      .sort((first, second) => first.label.localeCompare(second.label, "zh-Hans-CN") || first.key.localeCompare(second.key));
+    ];
   };
 }
 

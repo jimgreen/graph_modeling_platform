@@ -139,6 +139,58 @@ describe("batch common model parameter hook", () => {
     expect(rows.find((row) => row.key === "v_set")?.value).toBe("380");
   });
 
+  test("lists AC generator base fields before wind generator derived fields", () => {
+    const firstNode = createDefaultNode("ac-wind-source", { x: 100, y: 100 });
+    const secondNode = createDefaultNode("ac-wind-source", { x: 240, y: 100 });
+
+    const rows = createAppHookCallback12({
+      DEFAULT_MODEL_LAYER_ID: "default",
+      DEVICE_LIBRARY,
+      PARAM_LABELS,
+      activeSelectedNodeIds: [firstNode.id, secondNode.id],
+      applyDeviceTemplateDefinitionOverride,
+      canBatchEditParam,
+      customDeviceTemplates: [],
+      deviceDefinitionOverrideForTemplate,
+      deviceDefinitionOverrides: {},
+      enumValuesForRow,
+      getEParamValue,
+      getTemplateParameterDefinitions,
+      nodeById: new Map([
+        [firstNode.id, firstNode],
+        [secondNode.id, secondNode]
+      ]),
+      parseCustomDefinitions,
+      resolveTemplateComponentLibrary,
+      templateDerivedComponentLibraryInfo
+    })();
+
+    const expectedOrderedKeys = [
+      "rated_power",
+      "rated_voltage",
+      "frequency",
+      "short_circuit_capacity",
+      "dev_type",
+      "control_type",
+      "p_set",
+      "q_set",
+      "v_set",
+      "alpha",
+      "run_stat",
+      "status",
+      "source_type",
+      "wind_turbine_model",
+      "cut_in_wind_speed",
+      "rated_wind_speed",
+      "cut_out_wind_speed",
+      "rotor_diameter",
+      "hub_height"
+    ];
+    const expectedKeySet = new Set(expectedOrderedKeys);
+
+    expect(rows.map((row) => row.key).filter((key) => expectedKeySet.has(key))).toEqual(expectedOrderedKeys);
+  });
+
   test("recomputes inherited fields when device library definitions change", () => {
     const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
     const normalizedSource = appSource.replace(/\s+/g, " ");
