@@ -67,6 +67,7 @@ export type CanvasLayoutUnit = {
   edgeIds: string[];
   bounds: SelectionRect;
   layoutBounds: SelectionRect;
+  collisionRects: SelectionRect[];
 };
 
 export type BuildCanvasLayoutUnitsOptions = {
@@ -798,14 +799,19 @@ export function buildCanvasLayoutUnits(
       .map((edge) => edge.id);
     const groupEdgeIds = uniqueIds([...groupMembers.edgeIds, ...internalEdgeIds]).filter((edgeId) => edgesById.has(edgeId));
     const groupEdges = groupEdgeIds.flatMap((edgeId) => edgesById.get(edgeId) ?? []);
+    const groupNodes = groupNodeIds.flatMap((nodeId) => nodesById.get(nodeId) ?? []);
     const extraGroupBounds = groupNodeIds.flatMap((nodeId) => options.extraBoundsByNodeId?.get(nodeId) ?? []);
+    const collisionRects = groupNodeIds.flatMap((nodeId) => {
+      const node = nodesById.get(nodeId);
+      return node ? [nodeSelectionBounds(node), ...(options.extraBoundsByNodeId?.get(nodeId) ?? [])] : [];
+    });
     const bounds = boundsForNodesAndEdges(
-      groupNodeIds.flatMap((nodeId) => nodesById.get(nodeId) ?? []),
+      groupNodes,
       groupEdges,
       routeByEdgeId
     );
     const layoutBounds = boundsForNodesAndEdges(
-      groupNodeIds.flatMap((nodeId) => nodesById.get(nodeId) ?? []),
+      groupNodes,
       groupEdges,
       routeByEdgeId,
       nodeLayoutBounds
@@ -821,7 +827,8 @@ export function buildCanvasLayoutUnits(
       nodeIds: groupNodeIds,
       edgeIds: groupEdgeIds,
       bounds: padSelectionRect(visibleBounds, GROUP_LAYOUT_BOUNDS_PADDING),
-      layoutBounds: padSelectionRect(layoutBounds, GROUP_LAYOUT_BOUNDS_PADDING)
+      layoutBounds: padSelectionRect(layoutBounds, GROUP_LAYOUT_BOUNDS_PADDING),
+      collisionRects
     });
   }
   for (const nodeId of uniqueIds(selectedNodeIds)) {
@@ -832,14 +839,16 @@ export function buildCanvasLayoutUnits(
     if (!node || !(options.isTransformableNode?.(node) ?? true)) {
       continue;
     }
-    const visibleBounds = mergeSelectionRects([nodeSelectionBounds(node), ...(options.extraBoundsByNodeId?.get(node.id) ?? [])]) ?? nodeSelectionBounds(node);
+    const collisionRects = [nodeSelectionBounds(node), ...(options.extraBoundsByNodeId?.get(node.id) ?? [])];
+    const visibleBounds = mergeSelectionRects(collisionRects) ?? nodeSelectionBounds(node);
     units.push({
       id: `node:${node.id}`,
       kind: "node",
       nodeIds: [node.id],
       edgeIds: [],
       bounds: visibleBounds,
-      layoutBounds: nodeLayoutBounds(node)
+      layoutBounds: nodeLayoutBounds(node),
+      collisionRects
     });
   }
   return units;
@@ -1142,33 +1151,36 @@ class PlacedRectGrid {
 }
 
 function nearestNonOverlappingDelta(
-  baseRect: SelectionRect,
+  baseRects: readonly SelectionRect[],
   placedGrid: PlacedRectGrid,
   minSeparation: number,
   bounds: CanvasBounds | undefined
 ) {
-  if (!placedGrid.overlapsAny(baseRect)) {
+  if (!baseRects.some((rect) => placedGrid.overlapsAny(rect))) {
     return { x: 0, y: 0 };
   }
+  const baseBounds = boundsForRects(baseRects);
   const axisValueLimit = placedGrid.rects.length < 80 ? Math.max(1, placedGrid.rects.length * 2 + 1) : 48;
   const xValues = [0];
   const yValues = [0];
   for (const placed of placedGrid.rects) {
-    xValues.push(placed.right - baseRect.left + minSeparation);
-    xValues.push(placed.left - baseRect.right - minSeparation);
-    yValues.push(placed.bottom - baseRect.top + minSeparation);
-    yValues.push(placed.top - baseRect.bottom - minSeparation);
+    for (const baseRect of baseRects) {
+      xValues.push(placed.right - baseRect.left + minSeparation);
+      xValues.push(placed.left - baseRect.right - minSeparation);
+      yValues.push(placed.bottom - baseRect.top + minSeparation);
+      yValues.push(placed.top - baseRect.bottom - minSeparation);
+    }
   }
   const candidateXValues = uniqueNearestValues(xValues, axisValueLimit);
   const candidateYValues = uniqueNearestValues(yValues, axisValueLimit);
   let bestDelta: Point | null = null;
   let bestScore = Number.POSITIVE_INFINITY;
   const consider = (delta: Point) => {
-    const rect = offsetRect(baseRect, delta);
-    if (placedGrid.overlapsAny(rect)) {
+    const movedRects = baseRects.map((rect) => offsetRect(rect, delta));
+    if (movedRects.some((rect) => placedGrid.overlapsAny(rect))) {
       return;
     }
-    const overflow = rectCanvasOverflow(rect, bounds);
+    const overflow = rectCanvasOverflow(boundsForRects(movedRects), bounds);
     const score = overflow * 1_000_000 + delta.x * delta.x + delta.y * delta.y + (delta.x !== 0 && delta.y !== 0 ? 0.25 : 0);
     if (score < bestScore) {
       bestScore = score;
@@ -1191,8 +1203,8 @@ function nearestNonOverlappingDelta(
     return bestDelta;
   }
 
-  const width = Math.max(1, baseRect.right - baseRect.left);
-  const height = Math.max(1, baseRect.bottom - baseRect.top);
+  const width = Math.max(1, baseBounds.right - baseBounds.left);
+  const height = Math.max(1, baseBounds.bottom - baseBounds.top);
   const stepX = width + minSeparation;
   const stepY = height + minSeparation;
   const maxRing = Math.max(8, Math.ceil(Math.sqrt(placedGrid.rects.length)) + 8);
@@ -1216,7 +1228,12 @@ type AutoSpreadLayoutItem = {
   unit: CanvasLayoutUnit;
   index: number;
   baseRect: SelectionRect;
+  baseRects: SelectionRect[];
 };
+
+function rectCollectionsOverlap(first: readonly SelectionRect[], second: readonly SelectionRect[]) {
+  return first.some((firstRect) => second.some((secondRect) => rectsOverlap(firstRect, secondRect)));
+}
 
 function buildOverlapComponents(items: readonly AutoSpreadLayoutItem[]) {
   const components: AutoSpreadLayoutItem[][] = [];
@@ -1236,7 +1253,7 @@ function buildOverlapComponents(items: readonly AutoSpreadLayoutItem[]) {
         if (visited.has(nextIndex)) {
           continue;
         }
-        if (rectsOverlap(current.baseRect, items[nextIndex].baseRect)) {
+        if (rectCollectionsOverlap(current.baseRects, items[nextIndex].baseRects)) {
           visited.add(nextIndex);
           stack.push(nextIndex);
         }
@@ -1316,7 +1333,7 @@ function balancedGridDeltasForComponent(
     };
   });
   const clusterDelta = nearestNonOverlappingDelta(
-    boundsForRects(proposedRects),
+    [boundsForRects(proposedRects)],
     placedGrid,
     minSeparation,
     bounds
@@ -1359,7 +1376,8 @@ export function autoSpreadNodeLayoutUnits(
     );
   const layoutItems = orderedUnits.map((item) => ({
     ...item,
-    baseRect: padRect(item.unit.bounds, padding)
+    baseRect: padRect(item.unit.bounds, padding),
+    baseRects: item.unit.collisionRects.map((rect) => padRect(rect, padding))
   }));
   const components = buildOverlapComponents(layoutItems);
   const orderedComponents = [
@@ -1375,12 +1393,22 @@ export function autoSpreadNodeLayoutUnits(
       firstBounds.left - secondBounds.left;
   });
   const placed = new PlacedRectGrid();
+  for (const component of orderedComponents) {
+    if (component.length === 1) {
+      for (const rect of component[0].baseRects) {
+        placed.add(rect);
+      }
+    }
+  }
   for (const avoidRect of options.avoidRects ?? []) {
     placed.add(padRect(avoidRect, padding));
   }
   const deltas = new Map<string, Point>();
   for (const component of orderedComponents) {
-    if (component.length >= 4) {
+    if (component.length === 1) {
+      continue;
+    }
+    if (component.length >= 4 && component.every((item) => item.baseRects.length === 1)) {
       const gridLayout = balancedGridDeltasForComponent(component, placed, minSeparation, options.bounds);
       for (const [unitId, delta] of gridLayout.deltas) {
         deltas.set(unitId, delta);
@@ -1391,8 +1419,10 @@ export function autoSpreadNodeLayoutUnits(
       continue;
     }
     for (const item of component) {
-      const delta = nearestNonOverlappingDelta(item.baseRect, placed, minSeparation, options.bounds);
-      placed.add(offsetRect(item.baseRect, delta));
+      const delta = nearestNonOverlappingDelta(item.baseRects, placed, minSeparation, options.bounds);
+      for (const rect of item.baseRects) {
+        placed.add(offsetRect(rect, delta));
+      }
       if (delta.x !== 0 || delta.y !== 0) {
         deltas.set(item.unit.id, delta);
       }

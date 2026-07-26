@@ -862,6 +862,60 @@ describe("canvas selection actions", () => {
     }
   });
 
+  test("auto-spread does not disturb an already separated layout because of its current routes", () => {
+    const first = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const second = createDefaultNode("ac-load", { x: 400, y: 100 });
+    const third = createDefaultNode("ac-source", { x: 700, y: 100 });
+    const nodes = [first, second, third];
+    const units = buildCanvasLayoutUnits([], nodes, nodes.map((node) => node.id), []);
+
+    const arranged = autoSpreadNodeLayoutUnits(nodes, units, {
+      padding: 4,
+      bounds: { width: 1200, height: 900 },
+      avoidRects: [{ left: 80, right: 720, top: 90, bottom: 110 }]
+    });
+
+    expect(arranged.map((node) => node.position)).toEqual(nodes.map((node) => node.position));
+  });
+
+  test("auto-spread does not treat empty space inside a sparse group as an overlap", () => {
+    const firstGrouped = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const middle = createDefaultNode("ac-load", { x: 400, y: 100 });
+    const secondGrouped = createDefaultNode("dc-load", { x: 700, y: 100 });
+    const nodes = [firstGrouped, middle, secondGrouped];
+    const groups: ModelGroup[] = [{
+      id: "group-sparse-auto-spread",
+      name: "稀疏组合",
+      nodeIds: [firstGrouped.id, secondGrouped.id],
+      edgeIds: []
+    }];
+    const units = buildCanvasLayoutUnits(groups, nodes, nodes.map((node) => node.id), []);
+
+    const arranged = autoSpreadNodeLayoutUnits(nodes, units, {
+      padding: 4,
+      bounds: { width: 1200, height: 900 }
+    });
+
+    expect(arranged.map((node) => node.position)).toEqual(nodes.map((node) => node.position));
+  });
+
+  test("auto-spread does not treat the gap before a detached measurement box as occupied", () => {
+    const measured = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const middle = createDefaultNode("ac-load", { x: 350, y: 100 });
+    const nodes = [measured, middle];
+    const measurementBounds = { left: 560, right: 680, top: 60, bottom: 140 };
+    const units = buildCanvasLayoutUnits([], nodes, nodes.map((node) => node.id), [], [], [], {
+      extraBoundsByNodeId: new Map([[measured.id, [measurementBounds]]])
+    });
+
+    const arranged = autoSpreadNodeLayoutUnits(nodes, units, {
+      padding: 4,
+      bounds: { width: 1000, height: 700 }
+    });
+
+    expect(arranged.map((node) => node.position)).toEqual(nodes.map((node) => node.position));
+  });
+
   test("layout units include extra node bounds such as measurement boxes", () => {
     const node = createDefaultNode("ac-source", { x: 100, y: 100 });
     const measurementBounds = { left: 220, right: 340, top: 70, bottom: 140 };
