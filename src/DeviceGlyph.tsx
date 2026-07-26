@@ -18,6 +18,7 @@ import {
   DEVICE_GLYPH_DESIGN_LONGEST_SIDE,
   deviceStateVisualToken,
   estimateSvgTextWidth,
+  nodeCounterTransformMatrix,
   renderBusGlyphRect,
   routableLineDeviceRenderLocalPoints,
   stateVisualText,
@@ -1707,17 +1708,17 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     const markerOneX = borderX + markerInsetX;
     const markerTwoX = borderX + borderWidth - markerInsetX;
     const terminalOnePath = [
-      `M ${formatSvgNumber(markerOneX - 1.75 * markerScale)} ${formatSvgNumber(markerY - 2.25 * markerScale)}`,
-      `L ${formatSvgNumber(markerOneX)} ${formatSvgNumber(markerY - 4.5 * markerScale)}`,
-      `V ${formatSvgNumber(markerY + 4.5 * markerScale)}`,
-      `M ${formatSvgNumber(markerOneX - 2.4 * markerScale)} ${formatSvgNumber(markerY + 4.5 * markerScale)}`,
-      `H ${formatSvgNumber(markerOneX + 2.4 * markerScale)}`
+      `M ${formatSvgNumber(-1.75 * markerScale)} ${formatSvgNumber(-2.25 * markerScale)}`,
+      `L 0 ${formatSvgNumber(-4.5 * markerScale)}`,
+      `V ${formatSvgNumber(4.5 * markerScale)}`,
+      `M ${formatSvgNumber(-2.4 * markerScale)} ${formatSvgNumber(4.5 * markerScale)}`,
+      `H ${formatSvgNumber(2.4 * markerScale)}`
     ].join(" ");
     const terminalTwoPath = [
-      `M ${formatSvgNumber(markerTwoX - 3 * markerScale)} ${formatSvgNumber(markerY - 2.2 * markerScale)}`,
-      `C ${formatSvgNumber(markerTwoX - 2.6 * markerScale)} ${formatSvgNumber(markerY - 4.7 * markerScale)}, ${formatSvgNumber(markerTwoX + 3 * markerScale)} ${formatSvgNumber(markerY - 4.7 * markerScale)}, ${formatSvgNumber(markerTwoX + 3 * markerScale)} ${formatSvgNumber(markerY - 1.8 * markerScale)}`,
-      `C ${formatSvgNumber(markerTwoX + 3 * markerScale)} ${formatSvgNumber(markerY + 0.2 * markerScale)}, ${formatSvgNumber(markerTwoX + 1.4 * markerScale)} ${formatSvgNumber(markerY + 1.2 * markerScale)}, ${formatSvgNumber(markerTwoX - 3 * markerScale)} ${formatSvgNumber(markerY + 4.5 * markerScale)}`,
-      `H ${formatSvgNumber(markerTwoX + 3 * markerScale)}`
+      `M ${formatSvgNumber(-3 * markerScale)} ${formatSvgNumber(-2.2 * markerScale)}`,
+      `C ${formatSvgNumber(-2.6 * markerScale)} ${formatSvgNumber(-4.7 * markerScale)}, ${formatSvgNumber(3 * markerScale)} ${formatSvgNumber(-4.7 * markerScale)}, ${formatSvgNumber(3 * markerScale)} ${formatSvgNumber(-1.8 * markerScale)}`,
+      `C ${formatSvgNumber(3 * markerScale)} ${formatSvgNumber(0.2 * markerScale)}, ${formatSvgNumber(1.4 * markerScale)} ${formatSvgNumber(1.2 * markerScale)}, ${formatSvgNumber(-3 * markerScale)} ${formatSvgNumber(4.5 * markerScale)}`,
+      `H ${formatSvgNumber(3 * markerScale)}`
     ].join(" ");
     const dcSymbol = (x: number) => (
       <g>
@@ -1738,8 +1739,12 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         <path d={glyphVariant === "acac-converter" ? "M -5 -8 L 0 0 L -5 8 M 5 -8 L 0 0 L 5 8" : "M -7 0 H 7 M 2 -5 L 7 0 L 2 5"} />
         {showTerminalOrder && (
           <g className="converter-terminal-order-markers" strokeWidth={miniature ? 1 : 1.4}>
-            <path d={terminalOnePath} />
-            <path d={terminalTwoPath} />
+            <g transform={`translate(${formatSvgNumber(markerOneX)} ${formatSvgNumber(markerY)}) ${nodeCounterTransformMatrix(node)}`}>
+              <path d={terminalOnePath} />
+            </g>
+            <g transform={`translate(${formatSvgNumber(markerTwoX)} ${formatSvgNumber(markerY)}) ${nodeCounterTransformMatrix(node)}`}>
+              <path d={terminalTwoPath} />
+            </g>
           </g>
         )}
       </g>

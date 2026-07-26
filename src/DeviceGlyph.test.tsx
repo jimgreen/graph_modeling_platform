@@ -148,18 +148,23 @@ describe("DeviceGlyph persisted definition visuals", () => {
 });
 
 describe("DeviceGlyph converter terminal ordering", () => {
-  it("marks the first and second terminals on DCDC and ACAC converter glyphs", () => {
+  it("keeps the first and second terminal markers upright on mirrored and rotated converter glyphs", () => {
     for (const kind of ["dcdc-converter", "acac-converter"] as const) {
-      const node = createDefaultNode(kind, { x: 0, y: 0 });
+      const node = {
+        ...createDefaultNode(kind, { x: 0, y: 0 }),
+        rotation: 90,
+        scaleX: -1,
+        scaleY: 1.5
+      };
       const markup = renderToStaticMarkup(<svg><DeviceGlyph node={node} /></svg>);
 
-      const markerMarkup = markup.match(
-        /<g class="converter-terminal-order-markers"[^>]*>(.*?)<\/g>/
-      )?.[1] ?? "";
+      const markerCounterTransforms = Array.from(markup.matchAll(
+        /transform="translate\([^"]+\) (matrix\([^"]+\))"/g
+      ));
 
-      expect(markerMarkup).not.toBe("");
-      expect((markerMarkup.match(/<path/g) ?? [])).toHaveLength(2);
-      expect(markerMarkup).not.toContain("<text");
+      expect(markup).toContain('class="converter-terminal-order-markers"');
+      expect(markerCounterTransforms).toHaveLength(2);
+      expect(markerCounterTransforms.every((match) => match[1] !== "matrix(1 0 0 1 0 0)")).toBe(true);
     }
   });
 
