@@ -146,3 +146,29 @@ describe("DeviceGlyph persisted definition visuals", () => {
     expect(markup).toBe("<svg></svg>");
   });
 });
+
+describe("DeviceGlyph converter terminal ordering", () => {
+  it("marks the first and second terminals on DCDC and ACAC converter glyphs", () => {
+    for (const kind of ["dcdc-converter", "acac-converter"] as const) {
+      const node = createDefaultNode(kind, { x: 0, y: 0 });
+      const markup = renderToStaticMarkup(<svg><DeviceGlyph node={node} /></svg>);
+
+      const markerMarkup = markup.match(
+        /<g class="converter-terminal-order-markers"[^>]*>(.*?)<\/g>/
+      )?.[1] ?? "";
+
+      expect(markerMarkup).not.toBe("");
+      expect((markerMarkup.match(/<path/g) ?? [])).toHaveLength(2);
+      expect(markerMarkup).not.toContain("<text");
+    }
+  });
+
+  it("does not mark the already distinct AC/DC converter glyphs", () => {
+    for (const kind of ["acdc-converter", "dcac-converter"] as const) {
+      const node = createDefaultNode(kind, { x: 0, y: 0 });
+      const markup = renderToStaticMarkup(<svg><DeviceGlyph node={node} /></svg>);
+
+      expect(markup).not.toContain('class="converter-terminal-order-markers"');
+    }
+  });
+});
