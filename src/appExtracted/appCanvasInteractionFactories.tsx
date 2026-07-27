@@ -2414,11 +2414,16 @@ export function createUpdateParam(__appScope: Record<string, any>) {
 }
 
 export function createApplyBatchCommonParamPatch(__appScope: Record<string, any>) {
-  return (operationLabel: string, patchForNode: (node: ModelNode) => BatchCommonParamPatch) => {
+  return (
+    operationLabel: string,
+    patchForNode: (node: ModelNode) => BatchCommonParamPatch,
+    allowMissingParamKeys: readonly string[] = []
+  ) => {
   const { NODE_LABEL_FOOTPRINT_PARAM_KEYS, activeSelectedNodeIds, canBatchEditParam, commitNodeFootprintUpdates, edgeListForNodeIds, nodeById, patchGraphNodes, pushUndoSnapshot, requireEditMode, undoScopeForGraphPatch, writeOperationLog } = __appScope;
     if (!requireEditMode("批量修改图元参数")) {
       return;
     }
+    const allowedMissingParamKeySet = new Set(allowMissingParamKeys);
     const targetNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []);
     const changedPatchKeys = new Set<string>();
     const nextNodes = targetNodes
@@ -2426,7 +2431,10 @@ export function createApplyBatchCommonParamPatch(__appScope: Record<string, any>
         const patch = Object.fromEntries(
           Object.entries(patchForNode(node))
             .filter(([patchKey]) => canBatchEditParam(patchKey))
-            .filter(([patchKey]) => Object.prototype.hasOwnProperty.call(node.params, patchKey))
+            .filter(([patchKey]) =>
+              Object.prototype.hasOwnProperty.call(node.params, patchKey) ||
+              allowedMissingParamKeySet.has(patchKey)
+            )
         );
         if (Object.keys(patch).length === 0) {
           return node;
@@ -2467,7 +2475,8 @@ export function createApplyBatchCommonParam(__appScope: Record<string, any>) {
       PARAM_LABELS[key] ?? key,
       () => normalizedLabelDisplayMode
         ? { _labelDisplayMode: normalizedLabelDisplayMode, _labelVisible: normalizedLabelVisible }
-        : { [key]: value }
+        : { [key]: value },
+      normalizedLabelDisplayMode ? ["_labelDisplayMode", "_labelVisible"] : [key]
     );
   };
 }
