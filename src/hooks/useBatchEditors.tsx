@@ -18,6 +18,7 @@ import { normalizeNodeLabelDisplayMode } from "../nodeLabelUtils";
 
 import {
   PARAM_LABELS,
+  PARAM_OPTIONS,
   PARAM_OPTION_LABELS,
   STATIC_BUTTON_ACTION_LABELS,
   STATIC_BUTTON_COMMAND_LABELS,
@@ -103,6 +104,18 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     updateSelectedNode,
     libraryTemplateByKind,
   } = params;
+
+  const batchParamOptionNode = (() => {
+    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []);
+    const firstNode = selectedNodes[0];
+    if (!firstNode) {
+      return undefined;
+    }
+    const section = inferESection(firstNode.kind, firstNode.params);
+    return selectedNodes.every((node) => inferESection(node.kind, node.params) === section)
+      ? firstNode
+      : undefined;
+  })();
 
   const statusStatesForNode = (node: ModelNode | undefined): DeviceStateDefinition[] => {
     if (!node) {
@@ -192,23 +205,88 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
   const definitionMakesValueReadonly = (definition: DeviceParameterDefinition | undefined): boolean =>
     Boolean(definition?.readonly && !definitionRowIsEnum(definition));
 
+  const unionOptionRows = (optionRows: Array<readonly string[] | undefined>): string[] | undefined => {
+    const seen = new Set<string>();
+    const options: string[] = [];
+    optionRows.forEach((row) => row?.forEach((option) => {
+      if (!seen.has(option)) {
+        seen.add(option);
+        options.push(option);
+      }
+    }));
+    return options.length > 0 ? options : undefined;
+  };
+
   const batchStatusOptions = (value: string): string[] | undefined => {
     const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []).filter((node) => Object.prototype.hasOwnProperty.call(node.params, "status"));
-    const optionRows = selectedNodes.map((node) => statusStatesForNode(node));
-    if (optionRows.length === 0 || optionRows.some((rows) => rows.length === 0)) {
-      return undefined;
-    }
-    const firstToken = optionRows[0].map((state) => `${state.value}:${state.name}`).join("|");
-    if (!optionRows.every((rows) => rows.map((state) => `${state.value}:${state.name}`).join("|") === firstToken)) {
-      return undefined;
-    }
-    return withCurrentOption(optionRows[0].map((state) => state.value), value);
+    return withCurrentOption(
+      unionOptionRows(
+        selectedNodes.map((node) => statusStatesForNode(node).map((state) => state.value))
+      ),
+      value
+    );
   };
 
   const batchStatusOptionLabels = (): Record<string, string> => {
     const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []).filter((node) => Object.prototype.hasOwnProperty.call(node.params, "status"));
-    const first = selectedNodes[0];
-    return first ? statusOptionLabelsForNode(first) : {};
+    const labels: Record<string, string> = {};
+    selectedNodes.forEach((node) => {
+      Object.entries(statusOptionLabelsForNode(node)).forEach(([value, label]) => {
+        labels[value] ??= label;
+      });
+    });
+    return labels;
+  };
+
+  const batchParamOptionConfig = (row: BatchCommonParamRow, value: string): {
+    options: string[] | undefined;
+    optionLabels: Record<string, string>;
+  } => {
+    if (row.key === "status") {
+      return {
+        options: batchStatusOptions(value),
+        optionLabels: batchStatusOptionLabels()
+      };
+    }
+
+    const specificOptionRows: string[][] = [];
+    const specificOptionLabels: Record<string, string> = {};
+    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []);
+    selectedNodes.forEach((node, index) => {
+      const sectionOptions = paramOptionsForSection(row.key, inferESection(node.kind, node.params));
+      // The shared resolver returns the PARAM_OPTIONS entry itself only when it uses the global fallback.
+      if (sectionOptions && sectionOptions !== PARAM_OPTIONS[row.key]) {
+        specificOptionRows.push(sectionOptions);
+        Object.entries(PARAM_OPTION_LABELS[row.key] ?? {}).forEach(([option, label]) => {
+          specificOptionLabels[option] ??= label;
+        });
+        return;
+      }
+
+      const definition = row.definitions?.[index];
+      const definitionOptions = enumOptionsForDefinition(definition, "");
+      if (!definitionOptions) {
+        return;
+      }
+      specificOptionRows.push(definitionOptions);
+      Object.entries(enumOptionLabelsForDefinition(definition, "") ?? {}).forEach(([option, label]) => {
+        specificOptionLabels[option] ??= label;
+      });
+    });
+
+    const specificOptions = unionOptionRows(specificOptionRows);
+    if (specificOptions) {
+      const options = withCurrentOption(specificOptions, value);
+      if (value && !specificOptionLabels[value]) {
+        specificOptionLabels[value] = value;
+      }
+      return { options, optionLabels: specificOptionLabels };
+    }
+
+    return {
+      options: paramOptionsForDefinition(row.key, batchParamOptionNode, value, row.definition),
+      optionLabels: paramOptionLabelsForDefinition(row.key, batchParamOptionNode, value, row.definition)
+    };
   };
 
   const renderParamEditor = (key: string, value: string, wrapLabel = true, definition?: DeviceParameterDefinition): ReactNode => {
@@ -473,8 +551,7 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     if (row.key === "buttonTargetLayerId" || row.key === "buttonTargetLayerName") {
       return renderBatchCommonLayerSelect(row);
     }
-    const options = row.key === "status" ? batchStatusOptions(value) : paramOptionsForDefinition(row.key, undefined, value, row.definition);
-    const optionLabels = row.key === "status" ? batchStatusOptionLabels() : paramOptionLabelsForDefinition(row.key, undefined, value, row.definition);
+    const { options, optionLabels } = batchParamOptionConfig(row, value);
     if (options) {
       return (
         <select value={value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonParam(row.key, event.target.value)}>

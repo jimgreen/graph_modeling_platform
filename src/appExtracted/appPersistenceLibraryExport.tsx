@@ -3559,6 +3559,31 @@ ${scopedBackgroundSvg}
   };
   const normalizedLayers = normalizeModelLayers(canvasSize.layers, nodes, canvasSize.activeLayerId);
   const exportNodes = orderNodesByModelLayer(nodes, normalizedLayers);
+  const existingNumericNodeNumber = (value: unknown) => {
+    const normalized = String(value ?? "").trim();
+    if (/^\d+$/.test(normalized)) {
+      return normalized;
+    }
+    return /^N(\d+)$/i.exec(normalized)?.[1] ?? "";
+  };
+  const calculatedTopologyNodeById = new Map(
+    calculateElectricalTopology(nodes, edges).map((node) => [node.id, node])
+  );
+  const topologyNodeById = new Map(nodes.map((node) => {
+    const calculated = calculatedTopologyNodeById.get(node.id) ?? node;
+    const originalTerminalById = new Map(node.terminals.map((terminal) => [terminal.id, terminal]));
+    const terminals = calculated.terminals.map((terminal, index) => ({
+      ...terminal,
+      nodeNumber: existingNumericNodeNumber(
+        originalTerminalById.get(terminal.id)?.nodeNumber ?? node.terminals[index]?.nodeNumber
+      ) || terminal.nodeNumber
+    }));
+    return [node.id, {
+      ...calculated,
+      nodeNumber: existingNumericNodeNumber(node.nodeNumber) || calculated.nodeNumber,
+      terminals
+    }];
+  }));
   const activeExportLayerId = normalizedLayers.some((layer) => layer.id === canvasSize.activeLayerId)
     ? canvasSize.activeLayerId!
     : normalizedLayers[0]?.id ?? DEFAULT_MODEL_LAYER_ID;
@@ -3800,19 +3825,20 @@ ${rules.join("\n")}
       }
     : colorPalette;
   const deviceTopologyNodeAttributes = (node: ModelNode) => {
-    if (isStaticNode(node)) {
+    const topologyNode = topologyNodeById.get(node.id) ?? node;
+    if (isStaticNode(topologyNode)) {
       return "";
     }
-    if (isBusNode(node)) {
-      return ` node="${escapeXml(node.nodeNumber || node.terminals[0]?.nodeNumber || "")}"`;
+    if (isBusNode(topologyNode)) {
+      return ` node="${escapeXml(topologyNode.terminals[0]?.nodeNumber || topologyNode.nodeNumber || "")}"`;
     }
-    if (node.terminals.length === 0) {
+    if (topologyNode.terminals.length === 0) {
       return "";
     }
-    if (node.terminals.length === 1) {
-      return ` node="${escapeXml(node.terminals[0]?.nodeNumber || node.nodeNumber || "")}"`;
+    if (topologyNode.terminals.length === 1) {
+      return ` node="${escapeXml(topologyNode.terminals[0]?.nodeNumber || topologyNode.nodeNumber || "")}"`;
     }
-    return node.terminals.map((terminal, index) => ` node-${index + 1}="${escapeXml(terminal.nodeNumber ?? "")}"`).join("");
+    return topologyNode.terminals.map((terminal, index) => ` node-${index + 1}="${escapeXml(terminal.nodeNumber ?? "")}"`).join("");
   };
   const buildBoundaryBusInternalConnectorMarkup = (edge: Edge, endpoint: "source" | "target", stroke: string, edgeAttributes: string, voltageLineClass = "") => {
     const node = nodeById.get(endpoint === "source" ? edge.sourceId : edge.targetId);

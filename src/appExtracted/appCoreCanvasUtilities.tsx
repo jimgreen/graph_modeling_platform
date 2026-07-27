@@ -1448,6 +1448,7 @@ export type BatchCommonParamRow = {
   value: string;
   mixed: boolean;
   definition?: DeviceParameterDefinition;
+  definitions?: Array<DeviceParameterDefinition | undefined>;
 };
 
 export type BatchCommonParamPatch = Record<string, string>;

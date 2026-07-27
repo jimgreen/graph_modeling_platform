@@ -1642,7 +1642,7 @@ export const ACAC_CONVERTER_CONTROL_TYPES = ["PQQ", "PVQ", "PQV", "PVV"] as cons
 export const ACAC_SIDE_CONTROL_TYPES = DCAC_AC_CONTROL_TYPES;
 export const DCDC_CONVERTER_CONTROL_TYPES = DCAC_DC_CONTROL_TYPES;
 export const AC_GENERATOR_CONTROL_TYPES = ["PV", "PQ", "PH"] as const;
-export const DC_GENERATOR_CONTROL_TYPES = ["P", "V", "I"] as const;
+export const DC_GENERATOR_CONTROL_TYPES = ["P", "V", "I", "NONE"] as const;
 
 function normalizeAcGeneratorControlTypeForE(value?: string) {
   if (!value) return "PV";
@@ -1766,6 +1766,56 @@ function dcacConverterControlTypePairForE(params: Record<string, string>): DcacC
 
 function terminalNodeNumber(node: Pick<ModelNode, "nodeNumber" | "terminals">, index: number) {
   return node.terminals[index]?.nodeNumber ?? (index === 0 ? node.nodeNumber : "") ?? "";
+}
+
+const E_NODE_REFERENCE_COLUMNS = new Set([
+  "node",
+  "i_node",
+  "j_node",
+  "ac_node",
+  "dc_node",
+  "node1",
+  "node2",
+  "node3",
+  "node4",
+  "t1_node",
+  "t2_node",
+  "t3_node",
+  "neutral_node"
+]);
+
+function numericNodeReference(value: unknown): string {
+  const normalized = String(value ?? "").trim();
+  if (/^\d+$/.test(normalized)) {
+    return normalized;
+  }
+  return /^N(\d+)$/i.exec(normalized)?.[1] ?? "";
+}
+
+function topologyNodeNumberForEField(
+  node: Pick<ModelNode, "nodeNumber" | "terminals">,
+  key: string
+): string {
+  if (key === "ac_node") {
+    return numericNodeReference(node.terminals.find((terminal) => terminal.type === "ac")?.nodeNumber);
+  }
+  if (key === "dc_node") {
+    return numericNodeReference(node.terminals.find((terminal) => terminal.type === "dc")?.nodeNumber);
+  }
+  const numberedNodeMatch = /^node([1-4])$/.exec(key);
+  const transformerNodeMatch = /^t([123])_node$/.exec(key);
+  const terminalIndex = key === "node" || key === "i_node"
+    ? 0
+    : key === "j_node"
+      ? 1
+      : key === "neutral_node"
+        ? 3
+        : numberedNodeMatch
+          ? Number.parseInt(numberedNodeMatch[1], 10) - 1
+          : transformerNodeMatch
+            ? Number.parseInt(transformerNodeMatch[1], 10) - 1
+            : -1;
+  return terminalIndex >= 0 ? numericNodeReference(terminalNodeNumber(node, terminalIndex)) : "";
 }
 
 function mappedLegacyEValue(key: string, params: Record<string, string>) {
@@ -1975,32 +2025,17 @@ function getRawEParamValue(
   if (key === "vbase") {
     return node.params.vbase ?? node.terminals[0]?.vbase ?? "";
   }
-  if (key === "node") {
-    return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, 0) : node.params.node ?? terminalNodeNumber(node, 0);
-  }
-  if (key === "i_node") {
-    return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, 0) : node.params.i_node ?? terminalNodeNumber(node, 0);
-  }
-  if (key === "j_node") {
-    return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, 1) : node.params.j_node ?? terminalNodeNumber(node, 1);
-  }
-  const transformerTerminalNodeMatch = /^t([123])_node$/.exec(key);
-  if (transformerTerminalNodeMatch && (isTwoWindingTransformerNode(node) || isThreeWindingTransformer(node))) {
-    const terminalIndex = Number.parseInt(transformerTerminalNodeMatch[1], 10) - 1;
-    return options.preferTopologyNodeNumbers
-      ? terminalNodeNumber(node, terminalIndex)
-      : node.params[key] || terminalNodeNumber(node, terminalIndex);
+  if (E_NODE_REFERENCE_COLUMNS.has(key)) {
+    if (key === "neutral_node" && isThreeWindingTransformer(node) && node.kind !== "ac-three-winding-transformer-neutral") {
+      return "0";
+    }
+    const topologyNodeNumber = topologyNodeNumberForEField(node, key);
+    if (topologyNodeNumber) {
+      return topologyNodeNumber;
+    }
+    return options.preferTopologyNodeNumbers ? "" : numericNodeReference(node.params[key]);
   }
   if (isThreeWindingTransformer(node)) {
-    if (key === "neutral_node") {
-      if (node.kind !== "ac-three-winding-transformer-neutral") {
-        return "0";
-      }
-      const visibleNeutralNode = terminalNodeNumber(node, 3);
-      return options.preferTopologyNodeNumbers
-        ? visibleNeutralNode || node.params.neutral_node || ""
-        : node.params.neutral_node || visibleNeutralNode;
-    }
     const sideParameterMatch = /^(r|x|gt|bt|tap|shift)([123])$/.exec(key);
     if (sideParameterMatch) {
       const sidePrefix = ["high", "medium", "low"][Number.parseInt(sideParameterMatch[2], 10) - 1];
@@ -2014,19 +2049,6 @@ function getRawEParamValue(
       };
       return node.params[key] ?? deviceParamValue(node.params, `${sidePrefix}_${parameterSuffix[sideParameterMatch[1]]}`) ?? "";
     }
-  }
-  const numberedNodeMatch = /^node(\d+)$/.exec(key);
-  if (numberedNodeMatch) {
-    const index = Number.parseInt(numberedNodeMatch[1], 10) - 1;
-    return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, index) : node.params[key] ?? terminalNodeNumber(node, index);
-  }
-  if (key === "ac_node") {
-    const acNodeNumber = node.terminals.find((terminal) => terminal.type === "ac")?.nodeNumber ?? terminalNodeNumber(node, 0);
-    return options.preferTopologyNodeNumbers ? acNodeNumber : node.params.ac_node ?? acNodeNumber;
-  }
-  if (key === "dc_node") {
-    const dcNodeNumber = node.terminals.find((terminal) => terminal.type === "dc")?.nodeNumber ?? terminalNodeNumber(node, 1);
-    return options.preferTopologyNodeNumbers ? dcNodeNumber : node.params.dc_node ?? dcNodeNumber;
   }
   return mappedLegacyEValue(key, node.params);
 }
@@ -12289,6 +12311,31 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
     return params;
   };
 
+  const applyTopologyNodeReferenceParams = (
+    node: ModelNode,
+    terminals: Terminal[],
+    params: Record<string, string>
+  ): Record<string, string> => {
+    const section = inferESection(node.kind, params);
+    const referenceKeys = (E_SECTION_COLUMNS[section] ?? []).filter((key) => E_NODE_REFERENCE_COLUMNS.has(key));
+    if (referenceKeys.length === 0) {
+      return params;
+    }
+    const topologyNode = { ...node, terminals };
+    let nextParams = params;
+    for (const key of referenceKeys) {
+      const value = topologyNodeNumberForEField(topologyNode, key);
+      if (!value) {
+        continue;
+      }
+      if (nextParams === params) {
+        nextParams = { ...params };
+      }
+      nextParams[key] = value;
+    }
+    return nextParams;
+  };
+
   const numberedNodes = nodes.map((node) => {
     const terminals = node.terminals.map((terminal) => {
       const voltage = voltageForTerminal(node.id, terminal);
@@ -12298,8 +12345,23 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
         nodeNumber: getTopologyNumber(node.id, terminal)
       };
     });
-    const acTopologyNode = Number(terminals.find((terminal) => terminal.type === "ac")?.nodeNumber ?? 0);
-    const dcTopologyNode = Number(terminals.find((terminal) => terminal.type === "dc")?.nodeNumber ?? 0);
+    const standaloneBusType = isBusNode(node) && terminals.length === 0 ? getBusTerminalType(node) : undefined;
+    const standaloneBusNodeNumber = standaloneBusType ? String(nextTopologyNumberByType[standaloneBusType]++) : "";
+    const primaryTopologyNodeNumber = terminals[0]?.nodeNumber ?? standaloneBusNodeNumber;
+    const calculatedNodeNumber = isBusNode(node)
+      ? primaryTopologyNodeNumber || node.nodeNumber
+      : terminals.length === 1
+        ? primaryTopologyNodeNumber
+        : node.nodeNumber;
+    const topologyNode = calculatedNodeNumber === node.nodeNumber ? node : { ...node, nodeNumber: calculatedNodeNumber };
+    const acTopologyNode = Number(
+      terminals.find((terminal) => terminal.type === "ac")?.nodeNumber ??
+      (standaloneBusType === "ac" ? standaloneBusNodeNumber : 0)
+    );
+    const dcTopologyNode = Number(
+      terminals.find((terminal) => terminal.type === "dc")?.nodeNumber ??
+      (standaloneBusType === "dc" ? standaloneBusNodeNumber : 0)
+    );
     let params = applyVoltageSetpointDefaults(node, terminals);
     if (isTwoWindingTransformerNode(node)) {
       params = normalizeTwoWindingTransformerParams(params);
@@ -12311,11 +12373,11 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
         t3_node: terminals[2]?.nodeNumber ?? ""
       };
     }
+    params = applyTopologyNodeReferenceParams(topologyNode, terminals, params);
     return {
-      ...node,
+      ...topologyNode,
       acTopologyNode,
       dcTopologyNode,
-      nodeNumber: terminals.length === 1 ? terminals[0].nodeNumber : node.nodeNumber,
       params,
       terminals
     };

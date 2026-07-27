@@ -1097,7 +1097,8 @@ export function createAppHookCallback12(__appScope: Record<string, any>) {
           label: definition?.cnName === key ? PARAM_LABELS[key] ?? key : (definition?.cnName ?? PARAM_LABELS[key] ?? key),
           value: values[0] ?? "",
           mixed: values.some((value) => value !== values[0]),
-          definition: compatibleDefinition
+          definition: compatibleDefinition,
+          definitions: effectiveDefinitionMaps.map((definitions) => definitions.get(key))
         };
       });
     return [

@@ -13400,6 +13400,139 @@ describe("power system model", () => {
     expect(byId.get(dcLoad.id)?.acTopologyNode).toBe(0);
   });
 
+  test("uses calculated terminal topology numbers when stored E node fields are blank", () => {
+    const acLoad = createDefaultNode("ac-load", { x: 100, y: 100 });
+    const acBreaker = createDefaultNode("ac-breaker", { x: 240, y: 100 });
+    const dcBreaker = createDefaultNode("dc-breaker", { x: 380, y: 100 });
+    const converter = createDefaultNode("dcac-converter", { x: 520, y: 100 });
+
+    acLoad.params.node = "";
+    acBreaker.params.i_node = "";
+    acBreaker.params.j_node = "";
+    dcBreaker.params.i_node = "";
+    dcBreaker.params.j_node = "";
+    converter.params.ac_node = "";
+    converter.params.dc_node = "";
+
+    const calculated = calculateElectricalTopology([acLoad, acBreaker, dcBreaker, converter], []);
+    const byId = new Map(calculated.map((node) => [node.id, node]));
+    const calculatedAcLoad = byId.get(acLoad.id)!;
+    const calculatedAcBreaker = byId.get(acBreaker.id)!;
+    const calculatedDcBreaker = byId.get(dcBreaker.id)!;
+    const calculatedConverter = byId.get(converter.id)!;
+
+    expect(getEParamValue("node", calculatedAcLoad)).toBe(calculatedAcLoad.terminals[0].nodeNumber);
+    expect([
+      getEParamValue("i_node", calculatedAcBreaker),
+      getEParamValue("j_node", calculatedAcBreaker)
+    ]).toEqual(calculatedAcBreaker.terminals.map((terminal) => terminal.nodeNumber));
+    expect([
+      getEParamValue("i_node", calculatedDcBreaker),
+      getEParamValue("j_node", calculatedDcBreaker)
+    ]).toEqual(calculatedDcBreaker.terminals.map((terminal) => terminal.nodeNumber));
+    expect(getEParamValue("ac_node", calculatedConverter)).toBe(
+      calculatedConverter.terminals.find((terminal) => terminal.type === "ac")?.nodeNumber
+    );
+    expect(getEParamValue("dc_node", calculatedConverter)).toBe(
+      calculatedConverter.terminals.find((terminal) => terminal.type === "dc")?.nodeNumber
+    );
+  });
+
+  test("writes numeric topology node numbers to every E node reference field instead of stored node names", () => {
+    const singleTerminal = createDefaultNode("ac-load", { x: 100, y: 100 });
+    const branch = createDefaultNode("ac-line", { x: 260, y: 100 });
+    const converter = createDefaultNode("dcac-converter", { x: 420, y: 100 });
+    const transformer = createDefaultNode("ac-three-winding-transformer", { x: 580, y: 100 });
+    const exchanger = createDefaultNode("four-port-heat-exchanger", { x: 740, y: 100 });
+
+    singleTerminal.params.node = "N_SINGLE";
+    branch.params.i_node = "N_BRANCH_I";
+    branch.params.j_node = "N_BRANCH_J";
+    converter.params.ac_node = "N_CONVERTER_AC";
+    converter.params.dc_node = "N_CONVERTER_DC";
+    transformer.params.t1_node = "N_TRANSFORMER_1";
+    transformer.params.t2_node = "N_TRANSFORMER_2";
+    transformer.params.t3_node = "N_TRANSFORMER_3";
+    transformer.params.neutral_node = "N_TRANSFORMER_NEUTRAL";
+    exchanger.params.node1 = "N_EXCHANGER_1";
+    exchanger.params.node2 = "N_EXCHANGER_2";
+    exchanger.params.node3 = "N_EXCHANGER_3";
+    exchanger.params.node4 = "N_EXCHANGER_4";
+
+    const calculated = calculateElectricalTopology(
+      [singleTerminal, branch, converter, transformer, exchanger],
+      []
+    );
+    const byId = new Map(calculated.map((node) => [node.id, node]));
+    const calculatedSingle = byId.get(singleTerminal.id)!;
+    const calculatedBranch = byId.get(branch.id)!;
+    const calculatedConverter = byId.get(converter.id)!;
+    const calculatedTransformer = byId.get(transformer.id)!;
+    const calculatedExchanger = byId.get(exchanger.id)!;
+
+    const expectNumericNodeValues = (values: Array<string | undefined>) => {
+      values.forEach((value) => expect(value).toMatch(/^\d+$/));
+    };
+
+    expect(calculatedSingle.params.node).toBe(calculatedSingle.terminals[0].nodeNumber);
+    expect([calculatedBranch.params.i_node, calculatedBranch.params.j_node]).toEqual(
+      calculatedBranch.terminals.map((terminal) => terminal.nodeNumber)
+    );
+    expect(calculatedConverter.params.ac_node).toBe(
+      calculatedConverter.terminals.find((terminal) => terminal.type === "ac")?.nodeNumber
+    );
+    expect(calculatedConverter.params.dc_node).toBe(
+      calculatedConverter.terminals.find((terminal) => terminal.type === "dc")?.nodeNumber
+    );
+    expect([
+      calculatedTransformer.params.t1_node,
+      calculatedTransformer.params.t2_node,
+      calculatedTransformer.params.t3_node
+    ]).toEqual(calculatedTransformer.terminals.slice(0, 3).map((terminal) => terminal.nodeNumber));
+    expect([
+      calculatedExchanger.params.node1,
+      calculatedExchanger.params.node2,
+      calculatedExchanger.params.node3,
+      calculatedExchanger.params.node4
+    ]).toEqual(calculatedExchanger.terminals.map((terminal) => terminal.nodeNumber));
+    expectNumericNodeValues([
+      calculatedSingle.params.node,
+      calculatedBranch.params.i_node,
+      calculatedBranch.params.j_node,
+      calculatedConverter.params.ac_node,
+      calculatedConverter.params.dc_node,
+      calculatedTransformer.params.t1_node,
+      calculatedTransformer.params.t2_node,
+      calculatedTransformer.params.t3_node,
+      calculatedTransformer.params.neutral_node,
+      calculatedExchanger.params.node1,
+      calculatedExchanger.params.node2,
+      calculatedExchanger.params.node3,
+      calculatedExchanger.params.node4
+    ]);
+
+    calculatedSingle.params.node = "N_STALE_SINGLE";
+    calculatedBranch.params.i_node = "N_STALE_I";
+    calculatedBranch.params.j_node = "N_STALE_J";
+    calculatedConverter.params.ac_node = "N_STALE_AC";
+    calculatedConverter.params.dc_node = "N_STALE_DC";
+    expect(getEParamValue("node", calculatedSingle)).toBe(calculatedSingle.terminals[0].nodeNumber);
+    expect([getEParamValue("i_node", calculatedBranch), getEParamValue("j_node", calculatedBranch)]).toEqual(
+      calculatedBranch.terminals.map((terminal) => terminal.nodeNumber)
+    );
+    expect(getEParamValue("ac_node", calculatedConverter)).toBe(
+      calculatedConverter.terminals.find((terminal) => terminal.type === "ac")?.nodeNumber
+    );
+    expect(getEParamValue("dc_node", calculatedConverter)).toBe(
+      calculatedConverter.terminals.find((terminal) => terminal.type === "dc")?.nodeNumber
+    );
+
+    const legacyNamedNode = createDefaultNode("ac-load", { x: 900, y: 100 });
+    legacyNamedNode.params.node = "N2236";
+    legacyNamedNode.terminals[0].nodeNumber = "N2236";
+    expect(getEParamValue("node", legacyNamedNode)).toBe("2236");
+  });
+
   test("contracts overlapping same-type device terminals into one topology node", () => {
     const source = createDefaultNode("ac-source", { x: 100, y: 100 });
     const load = createDefaultNode("ac-load", { x: 260, y: 100 });

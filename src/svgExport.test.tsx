@@ -567,23 +567,36 @@ describe("SVG export", () => {
     const deviceTag = svgDeviceUseTag(svg, node.id);
     const loadTag = svgDeviceUseTag(svg, load.id);
 
-    expect(sourceTag).toContain('node="N_SOURCE"');
+    expect(sourceTag).toContain('node="1"');
     expect(sourceTag).not.toContain("node-id=");
     expect(sourceTag).not.toContain("node-1=");
     expect(sourceTag).not.toContain("node_1=");
-    expect(deviceTag).toContain('node-1="N_CUSTOM_IN"');
-    expect(deviceTag).toContain('node-2="N_CUSTOM_OUT"');
+    expect(deviceTag).toContain('node-1="1"');
+    expect(deviceTag).toContain('node-2="2"');
     expect(deviceTag).not.toContain("node_1=");
     expect(deviceTag).not.toContain("node_2=");
     expect(deviceTag).not.toContain(' node="');
     expect(deviceTag).not.toContain("node-id=");
     expect(deviceTag).not.toContain("inode=");
     expect(deviceTag).not.toContain("znode=");
-    expect(loadTag).toContain('node="N_LOAD"');
+    expect(loadTag).toContain('node="2"');
     expect(loadTag).not.toContain("node-id=");
     expect(svg).not.toContain("export-node-terminals");
     expect(svg).not.toContain('class="export-terminal');
     expect(svg).not.toContain("data-terminal-id");
+  });
+
+  test("exports legacy N-prefixed numeric node names as numeric node attributes", () => {
+    const load = createDefaultNode("ac-load", { x: 120, y: 120 });
+    load.id = "legacy-numeric-node-name";
+    load.nodeNumber = "N2236";
+    load.terminals[0].nodeNumber = "N2236";
+    load.params.node = "N2236";
+
+    const svg = buildSvgDocument([load], [], { width: 280, height: 240 });
+
+    expect(svgDeviceUseTag(svg, load.id)).toContain('node="2236"');
+    expect(svgDeviceUseTag(svg, load.id)).not.toContain('node="N2236"');
   });
 
   test("exports terminal connector strokes in device symbols without anchor dots", () => {
@@ -1209,7 +1222,7 @@ describe("SVG export", () => {
     expect(svg).not.toContain('class="bus-glyph" x1=');
     expect(svg).not.toContain('stroke-linecap="round"');
     expect(svg).not.toContain('rx="');
-    expect(svgDeviceUseTag(svg, "ac-bus-node-export")).toContain('node="N_BUS_1"');
+    expect(svgDeviceUseTag(svg, "ac-bus-node-export")).toContain('node="1"');
     expect(svgDeviceUseTag(svg, "ac-bus-node-export")).not.toContain("node-id=");
   });
 
@@ -1417,8 +1430,8 @@ describe("SVG export", () => {
     const svg = buildSvgDocument([source, converter, load], edges, { width: 360, height: 240 });
     const converterTag = svgDeviceUseTag(svg, converter.id);
 
-    expect(converterTag).toContain('node-1="N_CONVERTER_IN"');
-    expect(converterTag).toContain('node-2="N_CONVERTER_OUT"');
+    expect(converterTag).toContain('node-1="1"');
+    expect(converterTag).toContain('node-2="2"');
     expect(converterTag).not.toContain("node_1=");
     expect(converterTag).not.toContain("node_2=");
     expect(converterTag).not.toContain("node-id=");

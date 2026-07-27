@@ -8,10 +8,13 @@ import { createAppHookCallback12, createAppHookCallback82, createAppHookCallback
 import {
   applyDeviceTemplateDefinitionOverride,
   createDefaultNode,
+  createNodeFromTemplate,
   DEVICE_LIBRARY,
   getEParamValue,
   getTemplateParameterDefinitions,
-  templateDerivedComponentLibraryInfo
+  templateDerivedComponentLibraryInfo,
+  type DeviceParameterDefinition,
+  type DeviceTemplate
 } from "./model";
 import {
   deviceDefinitionOverrideForTemplate,
@@ -198,6 +201,69 @@ describe("batch common model parameter hook", () => {
     expect(normalizedSource).toContain(
       "createAppHookCallback12(__appScope), [activeSelectedNodeIds, customDeviceTemplates, deviceDefinitionOverrides, nodeById]"
     );
+  });
+
+  test("keeps each selected device definition for mixed enum common fields", () => {
+    const firstTemplate: DeviceTemplate = {
+      kind: "custom:dispatch-a",
+      label: "调度设备A",
+      categoryLibrary: "测试设备",
+      size: { width: 100, height: 60 },
+      params: { component_type: "DispatchA", dispatch_mode: "AUTO" },
+      terminalType: "ac",
+      terminalCount: 1,
+      custom: true,
+      parameterDefinitions: [{
+        cnName: "调度模式",
+        enName: "dispatch_mode",
+        valueType: "stringEnum",
+        typicalValue: "AUTO",
+        enumValues: ["AUTO", "MANUAL"]
+      }]
+    };
+    const secondTemplate: DeviceTemplate = {
+      ...firstTemplate,
+      kind: "custom:dispatch-b",
+      label: "调度设备B",
+      params: { component_type: "DispatchB", dispatch_mode: "REMOTE" },
+      parameterDefinitions: [{
+        cnName: "调度模式",
+        enName: "dispatch_mode",
+        valueType: "stringEnum",
+        typicalValue: "REMOTE",
+        enumValues: ["REMOTE", "LOCAL"]
+      }]
+    };
+    const firstNode = createNodeFromTemplate(firstTemplate, { x: 100, y: 100 });
+    const secondNode = createNodeFromTemplate(secondTemplate, { x: 240, y: 100 });
+
+    const rows = createAppHookCallback12({
+      DEFAULT_MODEL_LAYER_ID: "default",
+      DEVICE_LIBRARY,
+      PARAM_LABELS,
+      activeSelectedNodeIds: [firstNode.id, secondNode.id],
+      applyDeviceTemplateDefinitionOverride,
+      canBatchEditParam,
+      customDeviceTemplates: [firstTemplate, secondTemplate],
+      deviceDefinitionOverrideForTemplate,
+      deviceDefinitionOverrides: {},
+      enumValuesForRow,
+      getEParamValue,
+      getTemplateParameterDefinitions,
+      nodeById: new Map([
+        [firstNode.id, firstNode],
+        [secondNode.id, secondNode]
+      ]),
+      parseCustomDefinitions,
+      resolveTemplateComponentLibrary,
+      templateDerivedComponentLibraryInfo
+    })();
+
+    const row = rows.find((item) => item.key === "dispatch_mode");
+    expect(row?.definitions?.map((definition: DeviceParameterDefinition | undefined) => definition && enumValuesForRow(definition))).toEqual([
+      ["AUTO", "MANUAL"],
+      ["REMOTE", "LOCAL"]
+    ]);
   });
 });
 
