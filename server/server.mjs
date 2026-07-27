@@ -152,9 +152,9 @@ export const eSectionColumns = {
     "shift3",
     "run_stat"
   ],
-  DCDCConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_set", "v_set", "run_stat"],
-  DCACConverter: ["idx", "name", "ac_node", "dc_node", "r1", "r2", "control_type", "p_ac_set", "q_ac_set", "v_ac_set", "v_dc_set", "run_stat"],
-  ACACConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"],
+  DCDCConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "i_control_type", "j_control_type", "p_set", "i_set", "v_set", "run_stat"],
+  DCACConverter: ["idx", "name", "ac_node", "dc_node", "r1", "r2", "ac_control_type", "dc_control_type", "p_ac_set", "q_ac_set", "v_ac_set", "v_dc_set", "run_stat"],
+  ACACConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "i_control_type", "j_control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"],
   HydroSource: ["idx", "name", "node", "run_stat"],
   HydroLoad: ["idx", "name", "node", "run_stat"],
   HydroPipe: ["idx", "name", "i_node", "j_node", "run_stat"],
@@ -1165,6 +1165,121 @@ function normalizeRunStatForE(value) {
   return value;
 }
 
+function normalizeControlTypeForE(value) {
+  const text = String(value ?? "").trim();
+  const aliases = {
+    定P: "P",
+    定V: "V",
+    定I: "I",
+    定PQ: "PQ",
+    定PV: "PV",
+    定PH: "PH",
+    不定: "0"
+  };
+  return aliases[text] ?? text;
+}
+
+const dcacAcControlTypes = new Set(["PQ", "PV", "PH", "NONE"]);
+const dcacDcControlTypes = new Set(["P", "V", "I", "NONE"]);
+const dcacLegacyControlTypePairs = {
+  DCV: { ac_control_type: "PQ", dc_control_type: "V" },
+  ACV: { ac_control_type: "PH", dc_control_type: "NONE" },
+  ACP: { ac_control_type: "PQ", dc_control_type: "NONE" },
+  PH: { ac_control_type: "PH", dc_control_type: "NONE" },
+  PQ: { ac_control_type: "PQ", dc_control_type: "NONE" }
+};
+
+function normalizeDcacAcControlTypeForE(value, fallback = "PQ") {
+  const normalized = normalizeControlTypeForE(value).toUpperCase();
+  const mapped = normalized === "0" ? "NONE" : normalized === "ACV" ? "PH" : normalized === "ACP" ? "PQ" : normalized;
+  return dcacAcControlTypes.has(mapped) ? mapped : fallback;
+}
+
+function normalizeDcacDcControlTypeForE(value, fallback = "V") {
+  const normalized = normalizeControlTypeForE(value).toUpperCase();
+  const mapped = normalized === "0" || normalized === "SLACK" ? "NONE" : normalized === "DCV" ? "V" : normalized;
+  return dcacDcControlTypes.has(mapped) ? mapped : fallback;
+}
+
+function dcacConverterControlTypePairForE(params = {}) {
+  const legacyControlType = normalizeControlTypeForE(params.control_type ?? params.controlType).toUpperCase();
+  const legacyPair = dcacLegacyControlTypePairs[legacyControlType];
+  if (legacyPair) {
+    return legacyPair;
+  }
+  return {
+    ac_control_type: normalizeDcacAcControlTypeForE(params.ac_control_type ?? params.acControlType),
+    dc_control_type: normalizeDcacDcControlTypeForE(params.dc_control_type ?? params.dcControlType)
+  };
+}
+
+const acacSideControlTypes = new Set(["PQ", "PV", "PH", "NONE"]);
+const acacLegacyControlTypePairs = {
+  PQQ: { i_control_type: "PQ", j_control_type: "PQ" },
+  PVQ: { i_control_type: "PV", j_control_type: "PQ" },
+  PQV: { i_control_type: "PQ", j_control_type: "PV" },
+  PVV: { i_control_type: "PV", j_control_type: "PV" }
+};
+const dcdcEndpointControlTypes = new Set(["P", "V", "I", "NONE"]);
+
+function normalizeAcacEndpointControlTypeForE(value, fallback = "PQ") {
+  const normalized = normalizeControlTypeForE(value).toUpperCase();
+  const mapped = normalized === "Q"
+    ? "PQ"
+    : normalized === "V"
+      ? "PV"
+      : normalized === "0"
+        ? "NONE"
+        : normalized;
+  return acacSideControlTypes.has(mapped) ? mapped : fallback;
+}
+
+function normalizeDcdcEndpointControlTypeForE(value, fallback = "NONE") {
+  const normalized = normalizeControlTypeForE(value).toUpperCase();
+  const mapped = {
+    CTRL_P: "P",
+    CTRL_V: "V",
+    CTRL_I: "I",
+    SLACK: "NONE",
+    0: "NONE"
+  }[normalized] ?? normalized;
+  return dcdcEndpointControlTypes.has(mapped) ? mapped : fallback;
+}
+
+function acacConverterControlTypePairForE(params = {}) {
+  const explicitI = params.i_control_type ?? params.iControlType;
+  const explicitJ = params.j_control_type ?? params.jControlType;
+  const legacyControlType = normalizeControlTypeForE(params.control_type ?? params.controlType).toUpperCase();
+  const legacyPair = acacLegacyControlTypePairs[legacyControlType];
+  return {
+    i_control_type: explicitI
+      ? normalizeAcacEndpointControlTypeForE(explicitI)
+      : legacyPair?.i_control_type ?? normalizeAcacEndpointControlTypeForE(params.source_control_type ?? params.sourceControlType),
+    j_control_type: explicitJ
+      ? normalizeAcacEndpointControlTypeForE(explicitJ)
+      : legacyPair?.j_control_type ?? normalizeAcacEndpointControlTypeForE(params.target_control_type ?? params.targetControlType)
+  };
+}
+
+function dcdcConverterControlTypePairForE(params = {}) {
+  const explicitI = params.i_control_type ?? params.iControlType;
+  const explicitJ = params.j_control_type ?? params.jControlType;
+  const legacyControlType = params.control_type ?? params.controlType;
+  const sourceControlType = params.source_control_type ?? params.sourceControlType;
+  return {
+    i_control_type: explicitI
+      ? normalizeDcdcEndpointControlTypeForE(explicitI)
+      : legacyControlType
+        ? normalizeDcdcEndpointControlTypeForE(legacyControlType)
+        : sourceControlType
+          ? normalizeDcdcEndpointControlTypeForE(sourceControlType)
+          : "P",
+    j_control_type: explicitJ
+      ? normalizeDcdcEndpointControlTypeForE(explicitJ)
+      : normalizeDcdcEndpointControlTypeForE(params.target_control_type ?? params.targetControlType)
+  };
+}
+
 function normalizeSwitchStatusForE(value) {
   if (!value) return "";
   if (value === "闭合") return "1";
@@ -1275,10 +1390,23 @@ function mappedLegacyEValue(key, params = {}) {
 
 function getRawEParamValue(key, node, options = {}) {
   const params = node?.params ?? {};
+  const section = inferESection(node?.kind, params);
   if (key === "name") return node?.name ?? "";
   if (key === "run_stat") return normalizeRunStatForE(params.run_stat);
   if (key === "status") return normalizeSwitchStatusForE(params.status ?? params.closedStatus);
-  if (key === "control_type") return params.control_type ?? params.controlType ?? params.sourceControlType ?? "";
+  if ((key === "ac_control_type" || key === "dc_control_type") && section === "DCACConverter") {
+    return dcacConverterControlTypePairForE(params)[key];
+  }
+  if ((key === "i_control_type" || key === "j_control_type") && section === "ACACConverter") {
+    return acacConverterControlTypePairForE(params)[key];
+  }
+  if ((key === "i_control_type" || key === "j_control_type") && section === "DCDCConverter") {
+    return dcdcConverterControlTypePairForE(params)[key];
+  }
+  if (key === "control_type") {
+    if (section === "DCACConverter" || section === "ACACConverter" || section === "DCDCConverter") return "";
+    return params.control_type ?? params.controlType ?? params.sourceControlType ?? "";
+  }
   if (key === "vbase") return params.vbase ?? node?.terminals?.[0]?.vbase ?? "";
   if (key === "node") return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, 0) : params.node ?? terminalNodeNumber(node, 0);
   if (key === "i_node") return options.preferTopologyNodeNumbers ? terminalNodeNumber(node, 0) : params.i_node ?? terminalNodeNumber(node, 0);
@@ -1303,7 +1431,7 @@ function getRawEParamValue(key, node, options = {}) {
     const sideParameterMatch = /^(r|x|gt|bt|tap|shift)([123])$/.exec(key);
     if (sideParameterMatch) {
       const sidePrefix = ["high", "medium", "low"][Number.parseInt(sideParameterMatch[2], 10) - 1];
-      const parameterSuffix = {
+      const legacyCamelSuffix = {
         r: "ResistancePu",
         x: "ReactancePu",
         gt: "MagnetizingConductancePu",
@@ -1311,7 +1439,19 @@ function getRawEParamValue(key, node, options = {}) {
         tap: "TapRatio",
         shift: "Shift"
       };
-      return params[`${sidePrefix}${parameterSuffix[sideParameterMatch[1]]}`] ?? "";
+      const legacySnakeSuffix = {
+        r: "resistance_pu",
+        x: "reactance_pu",
+        gt: "magnetizing_conductance_pu",
+        bt: "magnetizing_susceptance_pu",
+        tap: "tap_ratio",
+        shift: "shift"
+      };
+      const parameterKey = sideParameterMatch[1];
+      return params[key] ??
+        params[`${sidePrefix}_${legacySnakeSuffix[parameterKey]}`] ??
+        params[`${sidePrefix}${legacyCamelSuffix[parameterKey]}`] ??
+        "";
     }
   }
   if (key === "ac_node") {
@@ -1369,6 +1509,22 @@ function legacyEColumnForDefinition(section, enName) {
   if (columns.includes(enName)) {
     return enName;
   }
+  if (section === "DCACConverter") {
+    if (enName === "control_type" || enName === "controlType") return "";
+    if (enName === "ac_control_type" || enName === "acControlType") return "ac_control_type";
+    if (enName === "dc_control_type" || enName === "dcControlType") return "dc_control_type";
+  }
+  if (section === "ACACConverter" || section === "DCDCConverter") {
+    const normalizedName = String(enName ?? "")
+      .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+      .replace(/[^A-Za-z0-9_]+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .toLowerCase();
+    if (normalizedName === "control_type") return "";
+    if (normalizedName === "i_control_type" || normalizedName === "source_control_type") return "i_control_type";
+    if (normalizedName === "j_control_type" || normalizedName === "target_control_type") return "j_control_type";
+  }
   if (enName === "t1_node") {
     if (columns.includes("i_node")) return "i_node";
     if (columns.includes("node")) return "node";
@@ -1423,7 +1579,16 @@ function resolveEParameterFields(kind, params = {}) {
   if (!section) {
     return [];
   }
-  const definitions = storedEParameterDefinitions(params);
+  const splitControlSections = new Set(["DCACConverter", "ACACConverter", "DCDCConverter"]);
+  const definitions = storedEParameterDefinitions(params).filter((definition) => {
+    const normalizedName = String(definition.enName ?? "")
+      .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+      .replace(/[^A-Za-z0-9_]+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .toLowerCase();
+    return !splitControlSections.has(section) || normalizedName !== "control_type";
+  });
   const builtInColumns = eSectionColumns[section];
   if (!definitions.length) {
     return (builtInColumns ?? []).map((column) => ({ sourceName: column, exportName: column }));

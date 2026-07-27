@@ -61,7 +61,6 @@ import {
   pointsToOrthogonalPath,
   ACAC_CONVERTER_CONTROL_TYPES,
   AC_GENERATOR_CONTROL_TYPES,
-  DCAC_CONVERTER_CONTROL_TYPES,
   DC_GENERATOR_CONTROL_TYPES,
   E_SECTION_COLUMNS,
   tidyOrthogonalRoute,
@@ -4394,10 +4393,11 @@ describe("power system model", () => {
     })).not.toContain("rated_active_power");
   });
 
-  test("keeps legacy E aliases as compatibility defaults when export metadata is absent", () => {
+  test("keeps canonical transformer E fields as export defaults when metadata is absent", () => {
     const transformer = createDefaultNode("ac-transformer", { x: 100, y: 100 });
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-transformer")!;
     const definitions = JSON.parse(transformer.params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]") as DeviceParameterDefinition[];
-    const resistanceDefinition = definitions.find((definition) => definition.enName === "resistance_pu");
+    const resistanceDefinition = getTemplateParameterDefinitions(template).find((definition) => definition.enName === "r");
     const rated_capacityDefinition = definitions.find((definition) => definition.enName === "rated_capacity");
 
     expect(resistanceDefinition).toBeTruthy();
@@ -4412,15 +4412,14 @@ describe("power system model", () => {
     expect(getEParameterKeys(transformer.kind, transformer.params)).toEqual(E_SECTION_COLUMNS.ACTransformer);
   });
 
-  test("removes a legacy E column when its parameter definition disables export", () => {
+  test("removes a canonical E column when its parameter definition disables export", () => {
     const transformer = createDefaultNode("ac-transformer", { x: 100, y: 100 });
     const definitions = JSON.parse(transformer.params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]") as DeviceParameterDefinition[];
-    transformer.params.resistance_pu = "0.125";
-    transformer.params[CUSTOM_PARAM_DEFINITIONS_KEY] = JSON.stringify(definitions.map((definition) =>
-      definition.enName === "resistance_pu"
-        ? { ...definition, exportEnabled: false, exportName: "r" }
-        : definition
-    ));
+    transformer.params.r = "0.125";
+    transformer.params[CUSTOM_PARAM_DEFINITIONS_KEY] = JSON.stringify([
+      ...definitions,
+      { cnName: "电阻（标幺值）", enName: "r", valueType: "float", typicalValue: "0.0", exportEnabled: false, exportName: "r" }
+    ]);
 
     const payload = parseESections(buildEDeviceParameterFile({
       version: 1,
@@ -4433,15 +4432,14 @@ describe("power system model", () => {
     expect(payload.ACTransformer.columns).not.toContain("r");
   });
 
-  test("uses a configured E export name while reading the value through the legacy alias", () => {
+  test("uses a configured E export name while reading the canonical transformer value", () => {
     const transformer = createDefaultNode("ac-transformer", { x: 100, y: 100 });
     const definitions = JSON.parse(transformer.params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]") as DeviceParameterDefinition[];
-    transformer.params.resistance_pu = "0.125";
-    transformer.params[CUSTOM_PARAM_DEFINITIONS_KEY] = JSON.stringify(definitions.map((definition) =>
-      definition.enName === "resistance_pu"
-        ? { ...definition, exportEnabled: true, exportName: "resistance" }
-        : definition
-    ));
+    transformer.params.r = "0.125";
+    transformer.params[CUSTOM_PARAM_DEFINITIONS_KEY] = JSON.stringify([
+      ...definitions,
+      { cnName: "电阻（标幺值）", enName: "r", valueType: "float", typicalValue: "0.0", exportEnabled: true, exportName: "resistance" }
+    ]);
 
     const payload = parseESections(buildEDeviceParameterFile({
       version: 1,
@@ -4719,24 +4717,24 @@ describe("power system model", () => {
     transformer.terminals[2].vbase = "10 kV";
     transformer.params = {
       ...transformer.params,
-      high_resistance_pu: "0.01",
-      high_reactance_pu: "0.11",
-      high_magnetizing_conductance_pu: "0.001",
-      high_magnetizing_susceptance_pu: "0.002",
-      high_tap_ratio: "1.01",
-      high_shift: "1",
-      medium_resistance_pu: "0.02",
-      medium_reactance_pu: "0.12",
-      medium_magnetizing_conductance_pu: "0.003",
-      medium_magnetizing_susceptance_pu: "0.004",
-      medium_tap_ratio: "1.02",
-      medium_shift: "2",
-      low_resistance_pu: "0.03",
-      low_reactance_pu: "0.13",
-      low_magnetizing_conductance_pu: "0.005",
-      low_magnetizing_susceptance_pu: "0.006",
-      low_tap_ratio: "1.03",
-      low_shift: "3"
+      r1: "0.01",
+      x1: "0.11",
+      gt1: "0.001",
+      bt1: "0.002",
+      tap1: "1.01",
+      shift1: "1",
+      r2: "0.02",
+      x2: "0.12",
+      gt2: "0.003",
+      bt2: "0.004",
+      tap2: "1.02",
+      shift2: "2",
+      r3: "0.03",
+      x3: "0.13",
+      gt3: "0.005",
+      bt3: "0.006",
+      tap3: "1.03",
+      shift3: "3"
     };
     highBus.terminals.forEach((terminal) => { terminal.vbase = "220 kV"; });
     mediumBus.terminals.forEach((terminal) => { terminal.vbase = "110 kV"; });
@@ -4825,7 +4823,7 @@ describe("power system model", () => {
     });
   });
 
-  test("synchronizes transformer terminal node numbers into readonly model parameters", () => {
+  test("keeps two-winding node numbers on terminals and three-winding node numbers in model parameters", () => {
     const twoWinding = createDefaultNode("ac-transformer", { x: 100, y: 100 });
     const threeWinding = createDefaultNode("ac-three-winding-transformer", { x: 300, y: 100 });
 
@@ -4833,7 +4831,9 @@ describe("power system model", () => {
     const calculatedTwoWinding = calculated.find((node) => node.id === twoWinding.id)!;
     const calculatedThreeWinding = calculated.find((node) => node.id === threeWinding.id)!;
 
-    expect([calculatedTwoWinding.params.t1_node, calculatedTwoWinding.params.t2_node]).toEqual(
+    expect(calculatedTwoWinding.params.t1_node).toBeUndefined();
+    expect(calculatedTwoWinding.params.t2_node).toBeUndefined();
+    expect([getEParamValue("i_node", calculatedTwoWinding), getEParamValue("j_node", calculatedTwoWinding)]).toEqual(
       calculatedTwoWinding.terminals.map((terminal) => terminal.nodeNumber)
     );
     expect([
@@ -4852,7 +4852,7 @@ describe("power system model", () => {
     threeWinding.terminals[1].nodeNumber = "22";
     threeWinding.terminals[2].nodeNumber = "23";
 
-    expect([getEParamValue("t1_node", twoWinding), getEParamValue("t2_node", twoWinding)]).toEqual(["11", "12"]);
+    expect([getEParamValue("i_node", twoWinding), getEParamValue("j_node", twoWinding)]).toEqual(["11", "12"]);
     expect([
       getEParamValue("t1_node", threeWinding),
       getEParamValue("t2_node", threeWinding),
@@ -4935,19 +4935,19 @@ describe("power system model", () => {
 
     expect(twoWinding.terminals).toHaveLength(2);
     expect(twoWinding.params.rated_capacity).toBe("50 MVA");
-    expect(twoWinding.params.resistance_pu).toBe("0.0");
-    expect(twoWinding.params.reactance_pu).toBe("0.1");
-    expect(twoWinding.params.magnetizing_conductance_pu).toBe("0.0");
-    expect(twoWinding.params.magnetizing_susceptance_pu).toBe("0.0");
-    expect(twoWinding.params.tap_ratio).toBe("1.0");
+    expect(twoWinding.params.r).toBe("0.0");
+    expect(twoWinding.params.x).toBe("0.1");
+    expect(twoWinding.params.gt).toBe("0.0");
+    expect(twoWinding.params.bt).toBe("0.0");
+    expect(twoWinding.params.tap).toBe("1.0");
 
     expect(threeWinding.terminals).toHaveLength(3);
     expect(threeWinding.params.high_rated_capacity).toBe("90 MVA");
     expect(threeWinding.params.medium_rated_capacity).toBe("90 MVA");
     expect(threeWinding.params.low_rated_capacity).toBe("90 MVA");
-    expect(threeWinding.params.high_tap_ratio).toBe("1.0");
-    expect(threeWinding.params.medium_tap_ratio).toBe("1.0");
-    expect(threeWinding.params.low_tap_ratio).toBe("1.0");
+    expect(threeWinding.params.tap1).toBe("1.0");
+    expect(threeWinding.params.tap2).toBe("1.0");
+    expect(threeWinding.params.tap3).toBe("1.0");
     expect(threeWinding.params.is_container).toBeUndefined();
     expect(threeWinding.params.neutral_node).toBe("");
     expect(threeWinding.params.neutral_vbase).toBe("1.0");
@@ -4961,8 +4961,8 @@ describe("power system model", () => {
     expect(dcdc.terminals[1].nodeNumber).toMatch(/^N\d+$/);
     expect(dcdc.params.source_equivalent_resistance).toBe("0.0");
     expect(dcdc.params.target_equivalent_resistance).toBe("0.0");
-    expect(dcdc.params.i_control_type).toBe("CTRL_P");
-    expect(dcdc.params.j_control_type).toBe("SLACK");
+    expect(dcdc.params.i_control_type).toBe("P");
+    expect(dcdc.params.j_control_type).toBe("NONE");
     expect(dcdc.params.control_type).toBeUndefined();
 
     const acdc = createDefaultNode("acdc-converter", { x: 700, y: 100 });
@@ -4970,16 +4970,18 @@ describe("power system model", () => {
     expect(acdc.terminals.map((terminal) => terminal.vbase)).toEqual(["0", "0"]);
     expect(acdc.params.source_equivalent_resistance).toBe("0.0");
     expect(acdc.params.target_equivalent_resistance).toBe("0.0");
-    expect(acdc.params.control_type).toBe("DCV");
-    expect(acdc.params.ac_control_type).toBe("定PQ");
-    expect(acdc.params.dc_control_type).toBe("不定");
+    expect(acdc.params.control_type).toBeUndefined();
+    expect(acdc.params.ac_control_type).toBe("PQ");
+    expect(acdc.params.dc_control_type).toBe("V");
 
     const acac = createDefaultNode("acac-converter", { x: 800, y: 100 });
     expect(acac.params.source_equivalent_resistance).toBe("0.0");
     expect(acac.params.target_equivalent_resistance).toBe("0.0");
-    expect(acac.params.control_type).toBe("PQQ");
-    expect(acac.params.source_control_type).toBe("定PQ");
-    expect(acac.params.target_control_type).toBe("不定");
+    expect(acac.params.i_control_type).toBe("PQ");
+    expect(acac.params.j_control_type).toBe("PQ");
+    expect(acac.params.control_type).toBeUndefined();
+    expect(acac.params.source_control_type).toBeUndefined();
+    expect(acac.params.target_control_type).toBeUndefined();
 
     const dcLine = createDefaultNode("dc-line", { x: 900, y: 100 });
     expect(dcLine.params.r).toBe("1.0");
@@ -10671,11 +10673,14 @@ describe("power system model", () => {
     expect(template.isContainer).toBe(false);
     expect(describeContainerTerminalAssociations(template)).toEqual([]);
     expect(getTemplateParameterDefinitions(template).map((definition) => definition.enName)).toEqual(expect.arrayContaining([
-      "high_resistance_pu",
-      "medium_resistance_pu",
-      "low_resistance_pu"
+      "r1",
+      "r2",
+      "r3"
     ]));
     const fieldNames = getTemplateParameterDefinitions(template).map((definition) => definition.enName);
+    expect(fieldNames).not.toContain("high_resistance_pu");
+    expect(fieldNames).not.toContain("medium_resistance_pu");
+    expect(fieldNames).not.toContain("low_resistance_pu");
     expect(fieldNames).not.toContain("idx_xf_t1");
     expect(fieldNames).not.toContain("idx_xf_t2");
     expect(fieldNames).not.toContain("idx_xf_t3");
@@ -10847,7 +10852,8 @@ describe("power system model", () => {
 
     expect(overridden.isContainer).toBe(false);
     expect(overridden.terminalAssociations).toBeUndefined();
-    expect(fieldNames).toContain("high_resistance_pu");
+    expect(fieldNames).toContain("r1");
+    expect(fieldNames).not.toContain("high_resistance_pu");
     expect(fieldNames).not.toContain("idx_xf_t1");
     expect(node.params.is_container).toBeUndefined();
     expect(node.params.idx_xf_t1).toBeUndefined();
@@ -10919,6 +10925,7 @@ describe("power system model", () => {
 
   test("normalizes legacy three-winding container metadata on existing nodes", () => {
     const node = createDefaultNode("ac-three-winding-transformer", { x: 100, y: 100 });
+    delete node.params.r1;
     node.params = {
       ...node.params,
       is_container: "1",
@@ -10948,7 +10955,8 @@ describe("power system model", () => {
     expect(normalized.params.name_ac_unit_t1).toBeUndefined();
     expect(normalized.params.control_type_ac_unit_t1).toBeUndefined();
     expect(normalized.params.status).toBe("0");
-    expect(normalized.params.high_resistance_pu).toBe("0.02");
+    expect(normalized.params.r1).toBe("0.02");
+    expect(normalized.params.high_resistance_pu).toBeUndefined();
   });
 
   test("pairs the next terminal with a double-port container association", () => {
@@ -11273,11 +11281,13 @@ describe("power system model", () => {
       b: "float"
     });
     expect(definitionTypes("ac-transformer")).toMatchObject({
-      resistance_pu: "float",
-      reactance_pu: "float",
-      magnetizing_conductance_pu: "float",
-      magnetizing_susceptance_pu: "float",
-      tap_ratio: "float",
+      i_node: "integer",
+      j_node: "integer",
+      r: "float",
+      x: "float",
+      gt: "float",
+      bt: "float",
+      tap: "float",
       shift: "float"
     });
     expect(definitionTypes("dcdc-converter")).toMatchObject({
@@ -12153,28 +12163,32 @@ describe("power system model", () => {
   test("exports DCDC converter endpoint control types with supported values", () => {
     const defaultConverter = createDefaultNode("dcdc-converter", { x: 100, y: 100 });
     const legacyConverter = createDefaultNode("dcdc-converter", { x: 240, y: 100 });
-    const invalidConverter = createDefaultNode("dcdc-converter", { x: 380, y: 100 });
-    defaultConverter.params.i_control_type = "CTRL_V";
-    defaultConverter.params.j_control_type = "CTRL_I";
+    const legacyCombinedConverter = createDefaultNode("dcdc-converter", { x: 380, y: 100 });
+    const invalidConverter = createDefaultNode("dcdc-converter", { x: 520, y: 100 });
+    defaultConverter.params.i_control_type = "V";
+    defaultConverter.params.j_control_type = "I";
     legacyConverter.params.i_control_type = "";
     legacyConverter.params.j_control_type = "";
     legacyConverter.params.source_control_type = "定P";
     legacyConverter.params.target_control_type = "不定";
+    delete legacyCombinedConverter.params.i_control_type;
+    delete legacyCombinedConverter.params.j_control_type;
+    legacyCombinedConverter.params.control_type = "V";
     invalidConverter.params.i_control_type = "BAD";
     invalidConverter.params.j_control_type = "V";
 
     const payload = parseESections(buildEDeviceParameterFile({
       version: 1,
       name: "DCDC控制类型测试",
-      nodes: [defaultConverter, legacyConverter, invalidConverter],
+      nodes: [defaultConverter, legacyConverter, legacyCombinedConverter, invalidConverter],
       edges: []
     }));
 
     expect(payload.DCDCConverter.columns).toContain("i_control_type");
     expect(payload.DCDCConverter.columns).toContain("j_control_type");
     expect(payload.DCDCConverter.columns).not.toContain("control_type");
-    expect(payload.DCDCConverter.rows.map((row) => row.i_control_type)).toEqual(["CTRL_V", "CTRL_P", "SLACK"]);
-    expect(payload.DCDCConverter.rows.map((row) => row.j_control_type)).toEqual(["CTRL_I", "SLACK", "CTRL_V"]);
+    expect(payload.DCDCConverter.rows.map((row) => row.i_control_type)).toEqual(["V", "P", "V", "NONE"]);
+    expect(payload.DCDCConverter.rows.map((row) => row.j_control_type)).toEqual(["I", "NONE", "NONE", "V"]);
   });
 
   test("exports AC generator control_type with only PV PQ PH values", () => {
@@ -12221,24 +12235,37 @@ describe("power system model", () => {
     expect(values.every((value) => (DC_GENERATOR_CONTROL_TYPES as readonly string[]).includes(value))).toBe(true);
   });
 
-  test("exports DCAC converter control_type with only supported values", () => {
+  test("exports DCAC converter AC and DC control types as separate columns", () => {
     const defaultConverter = createDefaultNode("acdc-converter", { x: 100, y: 100 });
-    const dcacConverter = createDefaultNode("dcac-converter", { x: 160, y: 100 });
-    const verticalDcacConverter = createDefaultNode("dcac-converter-vertical", { x: 220, y: 100 });
-    const invalidConverter = createDefaultNode("acdc-converter", { x: 240, y: 100 });
-    const ac_voltageConverter = createDefaultNode("acdc-converter", { x: 380, y: 100 });
-    defaultConverter.name = "ACDC";
-    dcacConverter.name = "DCAC";
-    verticalDcacConverter.name = "DCAC竖向";
-    invalidConverter.name = "ACDC旧控制";
-    ac_voltageConverter.name = "ACDC交流定压";
-    defaultConverter.params.control_type = "DCV";
-    dcacConverter.params.control_type = "ACP";
-    verticalDcacConverter.params.control_type = "ACV";
-    invalidConverter.params.control_type = "PQ";
-    invalidConverter.params.ac_control_type = "定PQ";
-    ac_voltageConverter.params.control_type = "ACV";
-    const nodes = [defaultConverter, dcacConverter, verticalDcacConverter, invalidConverter, ac_voltageConverter];
+    const explicitConverter = createDefaultNode("dcac-converter", { x: 160, y: 100 });
+    const legacyDcvConverter = createDefaultNode("dcac-converter-vertical", { x: 220, y: 100 });
+    const legacyAcvConverter = createDefaultNode("acdc-converter", { x: 300, y: 100 });
+    const legacyAcpConverter = createDefaultNode("dcac-converter", { x: 380, y: 100 });
+    defaultConverter.name = "默认控制";
+    explicitConverter.name = "独立控制";
+    legacyDcvConverter.name = "旧DCV";
+    legacyAcvConverter.name = "旧ACV";
+    legacyAcpConverter.name = "旧ACP";
+    explicitConverter.params.ac_control_type = "PV";
+    explicitConverter.params.dc_control_type = "I";
+    for (const [node, legacyValue] of [
+      [legacyDcvConverter, "DCV"],
+      [legacyAcvConverter, "ACV"],
+      [legacyAcpConverter, "ACP"]
+    ] as const) {
+      node.params.control_type = legacyValue;
+      delete node.params.ac_control_type;
+      delete node.params.dc_control_type;
+    }
+    legacyAcpConverter.params[CUSTOM_PARAM_DEFINITIONS_KEY] = JSON.stringify([{
+      cnName: "旧控制类型",
+      enName: "control_type",
+      valueType: "stringEnum",
+      typicalValue: "ACP",
+      exportEnabled: true,
+      exportName: "control_type"
+    }]);
+    const nodes = [defaultConverter, explicitConverter, legacyDcvConverter, legacyAcvConverter, legacyAcpConverter];
 
     const payload = parseESections(buildEDeviceParameterFile({
       version: 1,
@@ -12246,50 +12273,218 @@ describe("power system model", () => {
       nodes,
       edges: []
     }));
-    const values = payload.DCACConverter.rows.map((row) => row.control_type);
     const topologyNodeById = new Map(calculateElectricalTopology(nodes, []).map((node) => [node.id, node]));
     const topologyNodeNumberForType = (node: ModelNode, type: "ac" | "dc") =>
       topologyNodeById.get(node.id)?.terminals.find((terminal) => terminal.type === type)?.nodeNumber;
     const rowByName = new Map(payload.DCACConverter.rows.map((row) => [row.name, row]));
 
-    expect(rowByName.get("ACDC")).toMatchObject({
+    expect(payload.DCACConverter.columns).toContain("ac_control_type");
+    expect(payload.DCACConverter.columns).toContain("dc_control_type");
+    expect(payload.DCACConverter.columns).not.toContain("control_type");
+    expect(rowByName.get("默认控制")).toMatchObject({
       ac_node: topologyNodeNumberForType(defaultConverter, "ac"),
-      dc_node: topologyNodeNumberForType(defaultConverter, "dc")
+      dc_node: topologyNodeNumberForType(defaultConverter, "dc"),
+      ac_control_type: "PQ",
+      dc_control_type: "V"
     });
-    expect(rowByName.get("DCAC")).toMatchObject({
-      ac_node: topologyNodeNumberForType(dcacConverter, "ac"),
-      dc_node: topologyNodeNumberForType(dcacConverter, "dc")
+    expect(rowByName.get("独立控制")).toMatchObject({
+      ac_node: topologyNodeNumberForType(explicitConverter, "ac"),
+      dc_node: topologyNodeNumberForType(explicitConverter, "dc"),
+      ac_control_type: "PV",
+      dc_control_type: "I"
     });
-    expect(rowByName.get("DCAC竖向")).toMatchObject({
-      ac_node: topologyNodeNumberForType(verticalDcacConverter, "ac"),
-      dc_node: topologyNodeNumberForType(verticalDcacConverter, "dc")
-    });
-    expect(values).toEqual(["DCV", "ACP", "ACV", "ACP", "ACV"]);
-    expect(values.every((value) => (DCAC_CONVERTER_CONTROL_TYPES as readonly string[]).includes(value))).toBe(true);
+    expect(rowByName.get("旧DCV")).toMatchObject({ ac_control_type: "PQ", dc_control_type: "V" });
+    expect(rowByName.get("旧ACV")).toMatchObject({ ac_control_type: "PH", dc_control_type: "NONE" });
+    expect(rowByName.get("旧ACP")).toMatchObject({ ac_control_type: "PQ", dc_control_type: "NONE" });
   });
 
-  test("exports ACAC converter control_type with only supported values", () => {
+  test("migrates a legacy DCAC E interface control_type field to both split fields", () => {
+    const converter = createDefaultNode("acdc-converter", { x: 100, y: 100 });
+    converter.name = "接口迁移";
+    converter.params.control_type = "DCV";
+    delete converter.params.ac_control_type;
+    delete converter.params.dc_control_type;
+
+    const payload = parseESections(buildEFileExport({
+      version: 1,
+      name: "DCAC接口迁移",
+      nodes: [converter],
+      edges: []
+    }, ["默认方案"], {
+      interfaceDefinitions: [{
+        componentLibrary: "DCACConverter",
+        exportEnabled: true,
+        exportName: "DCACConverter",
+        fields: [
+          { sourceName: "idx", exportEnabled: true, exportName: "idx" },
+          { sourceName: "name", exportEnabled: true, exportName: "name" },
+          { sourceName: "control_type", exportEnabled: true, exportName: "control_type" }
+        ]
+      }]
+    }).text);
+
+    expect(payload.DCACConverter.columns).toEqual(["idx", "name", "ac_control_type", "dc_control_type"]);
+    expect(payload.DCACConverter.rows[0]).toMatchObject({
+      name: "接口迁移",
+      ac_control_type: "PQ",
+      dc_control_type: "V"
+    });
+  });
+
+  test("migrates legacy DCAC converter control_type values to the split fields", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "acdc-converter");
+    expect(template).toBeTruthy();
+    const cases = [
+      ["DCV", "PQ", "V"],
+      ["ACV", "PH", "NONE"],
+      ["ACP", "PQ", "NONE"],
+      ["PH", "PH", "NONE"],
+      ["PQ", "PQ", "NONE"]
+    ] as const;
+
+    for (const [legacyValue, expectedAc, expectedDc] of cases) {
+      const node = createDefaultNode("acdc-converter", { x: 100, y: 100 });
+      node.params.control_type = legacyValue;
+      node.params.acControlType = "定PV";
+      node.params.dcControlType = "定I";
+      delete node.params.ac_control_type;
+      delete node.params.dc_control_type;
+
+      const normalized = normalizeNodeTerminalsWithTemplate(node, template);
+
+      expect(normalized.params.ac_control_type).toBe(expectedAc);
+      expect(normalized.params.dc_control_type).toBe(expectedDc);
+      expect(normalized.params).not.toHaveProperty("control_type");
+      expect(normalized.params).not.toHaveProperty("acControlType");
+      expect(normalized.params).not.toHaveProperty("dcControlType");
+    }
+
+    const definitionKeys = getTemplateParameterDefinitions(template!).map((definition) => definition.enName);
+    expect(definitionKeys).toContain("ac_control_type");
+    expect(definitionKeys).toContain("dc_control_type");
+    expect(definitionKeys).not.toContain("control_type");
+  });
+
+  test("exports ACAC converter endpoint control types with only supported values", () => {
     const defaultConverter = createDefaultNode("acac-converter", { x: 100, y: 100 });
-    const sourceVoltageConverter = createDefaultNode("acac-converter", { x: 240, y: 100 });
-    const targetVoltageConverter = createDefaultNode("acac-converter", { x: 380, y: 100 });
-    const bothVoltageConverter = createDefaultNode("acac-converter", { x: 520, y: 100 });
-    defaultConverter.params.control_type = "PQQ";
-    sourceVoltageConverter.params.control_type = "PQ";
-    sourceVoltageConverter.params.source_control_type = "定PV";
-    targetVoltageConverter.params.control_type = "PQ";
-    targetVoltageConverter.params.target_control_type = "定PV";
-    bothVoltageConverter.params.control_type = "PVV";
+    const explicitConverter = createDefaultNode("acac-converter", { x: 240, y: 100 });
+    const legacyCombinedConverter = createDefaultNode("acac-converter", { x: 380, y: 100 });
+    const legacyEndpointConverter = createDefaultNode("acac-converter", { x: 520, y: 100 });
+    explicitConverter.params.i_control_type = "PH";
+    explicitConverter.params.j_control_type = "NONE";
+    delete legacyCombinedConverter.params.i_control_type;
+    delete legacyCombinedConverter.params.j_control_type;
+    legacyCombinedConverter.params.control_type = "PQV";
+    legacyCombinedConverter.params[CUSTOM_PARAM_DEFINITIONS_KEY] = JSON.stringify([{
+      cnName: "旧控制类型",
+      enName: "control_type",
+      valueType: "stringEnum",
+      typicalValue: "PQV",
+      exportEnabled: true,
+      exportName: "control_type"
+    }]);
+    delete legacyEndpointConverter.params.i_control_type;
+    delete legacyEndpointConverter.params.j_control_type;
+    legacyEndpointConverter.params.source_control_type = "定PV";
+    legacyEndpointConverter.params.target_control_type = "定PH";
 
     const payload = parseESections(buildEDeviceParameterFile({
       version: 1,
       name: "ACAC控制类型测试",
-      nodes: [defaultConverter, sourceVoltageConverter, targetVoltageConverter, bothVoltageConverter],
+      nodes: [defaultConverter, explicitConverter, legacyCombinedConverter, legacyEndpointConverter],
       edges: []
     }));
-    const values = payload.ACACConverter.rows.map((row) => row.control_type);
 
-    expect(values).toEqual(["PQQ", "PVQ", "PQV", "PVV"]);
-    expect(values.every((value) => (ACAC_CONVERTER_CONTROL_TYPES as readonly string[]).includes(value))).toBe(true);
+    expect(payload.ACACConverter.columns).toContain("i_control_type");
+    expect(payload.ACACConverter.columns).toContain("j_control_type");
+    expect(payload.ACACConverter.columns).not.toContain("control_type");
+    expect(payload.ACACConverter.rows.map((row) => row.i_control_type)).toEqual(["PQ", "PH", "PQ", "PV"]);
+    expect(payload.ACACConverter.rows.map((row) => row.j_control_type)).toEqual(["PQ", "NONE", "PV", "PH"]);
+    expect(payload.ACACConverter.rows.flatMap((row) => [row.i_control_type, row.j_control_type]).every((value) => ["PQ", "PV", "PH", "NONE"].includes(value))).toBe(true);
+  });
+
+  test("migrates legacy ACAC and DCDC converter controls to endpoint fields", () => {
+    const cases = [
+      {
+        kind: "dcdc-converter" as const,
+        params: { control_type: "V", source_control_type: "定P", target_control_type: "不定" },
+        expected: { i_control_type: "V", j_control_type: "NONE" }
+      },
+      {
+        kind: "acac-converter" as const,
+        params: { control_type: "PVQ", source_control_type: "定PQ", target_control_type: "定PQ" },
+        expected: { i_control_type: "PV", j_control_type: "PQ" }
+      }
+    ];
+
+    for (const item of cases) {
+      const template = DEVICE_LIBRARY.find((candidate) => candidate.kind === item.kind)!;
+      const node = createDefaultNode(item.kind, { x: 100, y: 100 });
+      delete node.params.i_control_type;
+      delete node.params.j_control_type;
+      Object.assign(node.params, item.params, {
+        [CUSTOM_PARAM_DEFINITIONS_KEY]: JSON.stringify([
+          { cnName: "旧控制类型", enName: "control_type", valueType: "stringEnum", typicalValue: item.params.control_type },
+          { cnName: "首端控制类型", enName: "source_control_type", valueType: "stringEnum", typicalValue: item.params.source_control_type },
+          { cnName: "末端控制类型", enName: "target_control_type", valueType: "stringEnum", typicalValue: item.params.target_control_type }
+        ])
+      });
+
+      const normalized = normalizeNodeTerminalsWithTemplate(node, template);
+      const fieldNames = getTemplateParameterDefinitions(template).map((definition) => definition.enName);
+      const storedFieldNames = (JSON.parse(normalized.params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]") as DeviceParameterDefinition[])
+        .map((definition) => definition.enName);
+
+      expect(normalized.params).toMatchObject(item.expected);
+      expect(normalized.params).not.toHaveProperty("control_type");
+      expect(normalized.params).not.toHaveProperty("source_control_type");
+      expect(normalized.params).not.toHaveProperty("target_control_type");
+      expect(fieldNames).toEqual(expect.arrayContaining(["i_control_type", "j_control_type"]));
+      expect(fieldNames).not.toContain("control_type");
+      expect(storedFieldNames).toEqual(expect.arrayContaining(["i_control_type", "j_control_type"]));
+      expect(storedFieldNames).not.toContain("control_type");
+      expect(storedFieldNames).not.toContain("source_control_type");
+      expect(storedFieldNames).not.toContain("target_control_type");
+    }
+  });
+
+  test("migrates legacy ACAC and DCDC E interface control_type fields to both endpoint fields", () => {
+    const cases = [
+      { kind: "dcdc-converter" as const, section: "DCDCConverter", legacy: "V", expectedI: "V", expectedJ: "NONE" },
+      { kind: "acac-converter" as const, section: "ACACConverter", legacy: "PVQ", expectedI: "PV", expectedJ: "PQ" }
+    ];
+
+    for (const item of cases) {
+      const converter = createDefaultNode(item.kind, { x: 100, y: 100 });
+      converter.name = `${item.section}接口迁移`;
+      delete converter.params.i_control_type;
+      delete converter.params.j_control_type;
+      converter.params.control_type = item.legacy;
+
+      const payload = parseESections(buildEFileExport({
+        version: 1,
+        name: `${item.section}接口迁移`,
+        nodes: [converter],
+        edges: []
+      }, ["默认方案"], {
+        interfaceDefinitions: [{
+          componentLibrary: item.section,
+          exportEnabled: true,
+          exportName: item.section,
+          fields: [
+            { sourceName: "idx", exportEnabled: true, exportName: "idx" },
+            { sourceName: "name", exportEnabled: true, exportName: "name" },
+            { sourceName: "control_type", exportEnabled: true, exportName: "control_type" }
+          ]
+        }]
+      }).text);
+
+      expect(payload[item.section].columns).toEqual(["idx", "name", "i_control_type", "j_control_type"]);
+      expect(payload[item.section].rows[0]).toMatchObject({
+        i_control_type: item.expectedI,
+        j_control_type: item.expectedJ
+      });
+    }
   });
 
   test("keeps two-winding and three-winding transformers as separate non-container device types", () => {
@@ -12305,16 +12500,16 @@ describe("power system model", () => {
       "name",
       "status",
       "run_stat",
-      "t1_node",
-      "t2_node",
+      "i_node",
+      "j_node",
       "high_vbase",
       "low_vbase",
       "rated_capacity",
-      "resistance_pu",
-      "reactance_pu",
-      "magnetizing_conductance_pu",
-      "magnetizing_susceptance_pu",
-      "tap_ratio",
+      "r",
+      "x",
+      "gt",
+      "bt",
+      "tap",
       "shift"
     ]));
     expect(twoWinding).toBeUndefined();
@@ -12322,20 +12517,182 @@ describe("power system model", () => {
     expect(threeWinding?.terminalCount).toBe(3);
     expect(threeWinding?.isContainer).toBe(false);
     const fieldNames = getTemplateParameterDefinitions(threeWinding!).map((definition) => definition.enName);
+    const canonicalSideFields = [
+      "r1", "x1", "gt1", "bt1", "tap1", "shift1",
+      "r2", "x2", "gt2", "bt2", "tap2", "shift2",
+      "r3", "x3", "gt3", "bt3", "tap3", "shift3"
+    ];
+    const retiredSideFields = [
+      "high_resistance_pu",
+      "high_reactance_pu",
+      "high_magnetizing_conductance_pu",
+      "high_magnetizing_susceptance_pu",
+      "high_tap_ratio",
+      "high_shift",
+      "medium_resistance_pu",
+      "medium_reactance_pu",
+      "medium_magnetizing_conductance_pu",
+      "medium_magnetizing_susceptance_pu",
+      "medium_tap_ratio",
+      "medium_shift",
+      "low_resistance_pu",
+      "low_reactance_pu",
+      "low_magnetizing_conductance_pu",
+      "low_magnetizing_susceptance_pu",
+      "low_tap_ratio",
+      "low_shift"
+    ];
     expect(fieldNames).toEqual(expect.arrayContaining([
       "idx",
       "name",
       "run_stat",
-      "high_resistance_pu",
-      "medium_resistance_pu",
-      "low_resistance_pu"
+      ...canonicalSideFields
     ]));
+    expect(fieldNames).not.toEqual(expect.arrayContaining(retiredSideFields));
     expect(fieldNames).not.toContain("idx_xf_t1");
     expect(fieldNames).not.toContain("idx_xf_t2");
     expect(fieldNames).not.toContain("idx_xf_t3");
     expect(getEParameterKeys("ac-three-winding-transformer", createDefaultNode("ac-three-winding-transformer", { x: 100, y: 100 }).params)).toEqual(
       E_SECTION_COLUMNS.ACTransfomer3
     );
+  });
+
+  test("removes duplicate legacy parameter fields from two-winding transformers", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-transformer")!;
+    const fieldNames = getTemplateParameterDefinitions(template).map((definition) => definition.enName);
+    const transformer = createDefaultNode("ac-transformer", { x: 100, y: 100 });
+
+    expect(fieldNames).toEqual(expect.arrayContaining(["i_node", "j_node", "r", "x", "gt", "bt", "tap"]));
+    expect(fieldNames).not.toEqual(expect.arrayContaining([
+      "t1_node",
+      "t2_node",
+      "resistance_pu",
+      "reactance_pu",
+      "magnetizing_conductance_pu",
+      "magnetizing_susceptance_pu",
+      "tap_ratio"
+    ]));
+    expect(transformer.params).toMatchObject({
+      r: "0.0",
+      x: "0.1",
+      gt: "0.0",
+      bt: "0.0",
+      tap: "1.0"
+    });
+    expect(transformer.params).not.toHaveProperty("t1_node");
+    expect(transformer.params).not.toHaveProperty("t2_node");
+    expect(transformer.params).not.toHaveProperty("resistance_pu");
+    expect(transformer.params).not.toHaveProperty("reactance_pu");
+    expect(transformer.params).not.toHaveProperty("magnetizing_conductance_pu");
+    expect(transformer.params).not.toHaveProperty("magnetizing_susceptance_pu");
+    expect(transformer.params).not.toHaveProperty("tap_ratio");
+  });
+
+  test("removes duplicate legacy side parameter fields from three-winding transformers", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer")!;
+    const canonicalFields = [
+      "r1", "x1", "gt1", "bt1", "tap1", "shift1",
+      "r2", "x2", "gt2", "bt2", "tap2", "shift2",
+      "r3", "x3", "gt3", "bt3", "tap3", "shift3"
+    ];
+    const legacyFields = [
+      "high_resistance_pu",
+      "high_reactance_pu",
+      "high_magnetizing_conductance_pu",
+      "high_magnetizing_susceptance_pu",
+      "high_tap_ratio",
+      "high_shift",
+      "medium_resistance_pu",
+      "medium_reactance_pu",
+      "medium_magnetizing_conductance_pu",
+      "medium_magnetizing_susceptance_pu",
+      "medium_tap_ratio",
+      "medium_shift",
+      "low_resistance_pu",
+      "low_reactance_pu",
+      "low_magnetizing_conductance_pu",
+      "low_magnetizing_susceptance_pu",
+      "low_tap_ratio",
+      "low_shift"
+    ];
+    const fieldNames = getTemplateParameterDefinitions(template).map((definition) => definition.enName);
+    const transformer = createDefaultNode("ac-three-winding-transformer", { x: 100, y: 100 });
+
+    expect(fieldNames).toEqual(expect.arrayContaining(canonicalFields));
+    expect(fieldNames).not.toEqual(expect.arrayContaining(legacyFields));
+    expect(transformer.params).toMatchObject({
+      r1: "0.0",
+      x1: "0.1",
+      gt1: "0.0",
+      bt1: "0.0",
+      tap1: "1.0",
+      shift1: "0",
+      r2: "0.0",
+      x2: "0.1",
+      gt2: "0.0",
+      bt2: "0.0",
+      tap2: "1.0",
+      shift2: "0",
+      r3: "0.0",
+      x3: "0.1",
+      gt3: "0.0",
+      bt3: "0.0",
+      tap3: "1.0",
+      shift3: "0"
+    });
+    for (const field of legacyFields) {
+      expect(transformer.params).not.toHaveProperty(field);
+    }
+
+    for (const field of canonicalFields) {
+      delete transformer.params[field];
+    }
+    Object.assign(transformer.params, {
+      high_resistance_pu: "0.01",
+      high_reactance_pu: "0.11",
+      high_magnetizing_conductance_pu: "0.001",
+      high_magnetizing_susceptance_pu: "0.002",
+      high_tap_ratio: "1.01",
+      high_shift: "1",
+      medium_resistance_pu: "0.02",
+      medium_reactance_pu: "0.12",
+      medium_magnetizing_conductance_pu: "0.003",
+      medium_magnetizing_susceptance_pu: "0.004",
+      medium_tap_ratio: "1.02",
+      medium_shift: "2",
+      low_resistance_pu: "0.03",
+      low_reactance_pu: "0.13",
+      low_magnetizing_conductance_pu: "0.005",
+      low_magnetizing_susceptance_pu: "0.006",
+      low_tap_ratio: "1.03",
+      low_shift: "3"
+    });
+
+    const normalized = normalizeNodeTerminalsWithTemplate(transformer, template);
+
+    expect(normalized.params).toMatchObject({
+      r1: "0.01",
+      x1: "0.11",
+      gt1: "0.001",
+      bt1: "0.002",
+      tap1: "1.01",
+      shift1: "1",
+      r2: "0.02",
+      x2: "0.12",
+      gt2: "0.003",
+      bt2: "0.004",
+      tap2: "1.02",
+      shift2: "2",
+      r3: "0.03",
+      x3: "0.13",
+      gt3: "0.005",
+      bt3: "0.006",
+      tap3: "1.03",
+      shift3: "3"
+    });
+    for (const field of legacyFields) {
+      expect(normalized.params).not.toHaveProperty(field);
+    }
   });
 
   test("keeps persisted two-winding transformer overrides aligned with the built-in parameter model", () => {
@@ -12351,24 +12708,51 @@ describe("power system model", () => {
     const node = createNodeFromTemplate(overridden, { x: 100, y: 100 });
 
     expect(fieldNames).toContain("rated_capacity");
-    expect(fieldNames).toContain("resistance_pu");
-    expect(fieldNames).toContain("tap_ratio");
+    expect(fieldNames).toContain("r");
+    expect(fieldNames).toContain("tap");
     expect(fieldNames).toContain("shift");
+    expect(fieldNames).not.toContain("t1_node");
+    expect(fieldNames).not.toContain("t2_node");
+    expect(fieldNames).not.toContain("resistance_pu");
+    expect(fieldNames).not.toContain("tap_ratio");
     expect(node.params.rated_capacity).toBe("50 MVA");
-    expect(node.params.reactance_pu).toBe("0.1");
+    expect(node.params.x).toBe("0.1");
     expect(node.params.shift).toBe("0");
 
-    delete node.params.resistance_pu;
-    delete node.params.shift;
+    delete node.params.r;
+    delete node.params.x;
+    delete node.params.gt;
+    delete node.params.bt;
+    delete node.params.tap;
+    node.params.t1_node = "11";
+    node.params.t2_node = "12";
+    node.params.resistance_pu = "0.025";
+    node.params.reactance_pu = "0.2";
+    node.params.magnetizing_conductance_pu = "0.003";
+    node.params.magnetizing_susceptance_pu = "0.004";
+    node.params.tap_ratio = "1.05";
     const normalized = normalizeNodeTerminalsWithTemplate(node, overridden);
-    expect(normalized.params.resistance_pu).toBe("0.0");
+    expect(normalized.params).toMatchObject({
+      r: "0.025",
+      x: "0.2",
+      gt: "0.003",
+      bt: "0.004",
+      tap: "1.05"
+    });
+    expect(normalized.params.t1_node).toBeUndefined();
+    expect(normalized.params.t2_node).toBeUndefined();
+    expect(normalized.params.resistance_pu).toBeUndefined();
+    expect(normalized.params.reactance_pu).toBeUndefined();
+    expect(normalized.params.magnetizing_conductance_pu).toBeUndefined();
+    expect(normalized.params.magnetizing_susceptance_pu).toBeUndefined();
+    expect(normalized.params.tap_ratio).toBeUndefined();
     expect(normalized.params.shift).toBe("0");
   });
 
   test("keeps transformer E export controls through override application and node creation", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-transformer")!;
     const parameterDefinitions = getTemplateParameterDefinitions(template).map((definition) =>
-      definition.enName === "resistance_pu"
+      definition.enName === "r"
         ? { ...definition, exportEnabled: true, exportName: "resistance" }
         : {
             ...definition,
@@ -12383,17 +12767,66 @@ describe("power system model", () => {
     });
     const node = createNodeFromTemplate(overridden, { x: 100, y: 100 });
     const storedDefinitions = JSON.parse(node.params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]") as DeviceParameterDefinition[];
+    const normalized = normalizeNodeTerminalsWithTemplate(node, overridden);
+    const normalizedDefinitions = JSON.parse(normalized.params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]") as DeviceParameterDefinition[];
 
-    expect(overridden.parameterDefinitions?.find((definition) => definition.enName === "resistance_pu")).toMatchObject({
+    expect(overridden.parameterDefinitions?.find((definition) => definition.enName === "r")).toMatchObject({
       exportEnabled: true,
       exportName: "resistance"
     });
-    expect(storedDefinitions.find((definition) => definition.enName === "resistance_pu")).toMatchObject({
+    expect(storedDefinitions.find((definition) => definition.enName === "r")).toMatchObject({
       exportEnabled: true,
       exportName: "resistance"
     });
+    expect(normalizedDefinitions.find((definition) => definition.enName === "r")).toMatchObject({
+      exportEnabled: true,
+      exportName: "resistance"
+    });
+    expect(normalized.params.r).toBe("0.0");
     expect(getEParameterKeys(node.kind, node.params)).toContain("resistance");
     expect(getEParameterKeys(node.kind, node.params)).not.toContain("r");
+    expect(getEParameterKeys(normalized.kind, normalized.params)).toContain("resistance");
+    expect(getEParameterKeys(normalized.kind, normalized.params)).not.toContain("r");
+  });
+
+  test("keeps three-winding transformer E export controls on canonical side parameters", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer")!;
+    const parameterDefinitions = getTemplateParameterDefinitions(template).map((definition) =>
+      definition.enName === "r1"
+        ? { ...definition, exportEnabled: true, exportName: "high_resistance" }
+        : {
+            ...definition,
+            ...resolveDeviceParameterDefinitionExportSettings(template.kind, template.params, definition)
+          }
+    );
+    const overridden = applyDeviceTemplateDefinitionOverride(template, {
+      kind: "ACTransfomer3",
+      params: { component_type: "ACTransfomer3" },
+      parameterDefinitions,
+      updatedAt: "2026-07-12T00:00:00.000Z"
+    });
+    const node = createNodeFromTemplate(overridden, { x: 100, y: 100 });
+    const storedDefinitions = JSON.parse(node.params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]") as DeviceParameterDefinition[];
+    const normalized = normalizeNodeTerminalsWithTemplate(node, overridden);
+    const normalizedDefinitions = JSON.parse(normalized.params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]") as DeviceParameterDefinition[];
+
+    expect(overridden.parameterDefinitions?.find((definition) => definition.enName === "r1")).toMatchObject({
+      exportEnabled: true,
+      exportName: "high_resistance"
+    });
+    expect(storedDefinitions.find((definition) => definition.enName === "r1")).toMatchObject({
+      exportEnabled: true,
+      exportName: "high_resistance"
+    });
+    expect(normalizedDefinitions.find((definition) => definition.enName === "r1")).toMatchObject({
+      exportEnabled: true,
+      exportName: "high_resistance"
+    });
+    expect(normalized.params.r1).toBe("0.0");
+    expect(getEParameterKeys(node.kind, node.params)).toContain("high_resistance");
+    expect(getEParameterKeys(node.kind, node.params)).not.toContain("r1");
+    expect(getEParameterKeys(normalized.kind, normalized.params)).toContain("high_resistance");
+    expect(getEParameterKeys(normalized.kind, normalized.params)).not.toContain("r1");
   });
 
   test("renders crossing connection lines with local arc transitions", () => {
@@ -13646,8 +14079,8 @@ describe("power system model", () => {
   test("fills zero converter voltage setpoints from the related topology node rated voltage", () => {
     const dcdc = createDefaultNode("dcdc-converter", { x: 100, y: 100 });
     dcdc.params.v_set = "0.0";
-    dcdc.params.i_control_type = "CTRL_P";
-    dcdc.params.j_control_type = "CTRL_V";
+    dcdc.params.i_control_type = "P";
+    dcdc.params.j_control_type = "V";
     dcdc.terminals[0].vbase = "1500 V";
     dcdc.terminals[1].vbase = "750 V";
     const acdc = createDefaultNode("acdc-converter", { x: 260, y: 100 });

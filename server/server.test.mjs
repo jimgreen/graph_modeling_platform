@@ -444,6 +444,172 @@ describe("scheme file persistence", () => {
     }
   });
 
+  test("writes DCAC converter AC and DC control types as separate E columns", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-e-dcac-control-types-"));
+    try {
+      const filesRoot = join(root, "files");
+      const trashRoot = join(root, "trash");
+      const converterNode = (id, name, idx, params) => ({
+        id,
+        kind: "acdc-converter",
+        name,
+        position: { x: idx * 120, y: 100 },
+        size: { width: 112, height: 66 },
+        params: {
+          idx: String(idx),
+          r1: "0",
+          r2: "0",
+          p_ac_set: "0",
+          q_ac_set: "0",
+          v_ac_set: "0",
+          v_dc_set: "0",
+          run_stat: "1",
+          ...params
+        },
+        terminals: [
+          { id: "t1", type: "ac" },
+          { id: "t2", type: "dc" }
+        ]
+      });
+      await saveSchemeProjectRecord({
+        filesRoot,
+        trashRoot,
+        schemePath: ["默认方案"],
+        record: {
+          name: "DCAC双控制类型",
+          updatedAt: "2026-07-27T00:00:00.000Z",
+          project: {
+            version: 1,
+            name: "DCAC双控制类型",
+            nodes: [
+              converterNode("dcac-new", "独立控制", 1, { ac_control_type: "PV", dc_control_type: "I" }),
+              converterNode("dcac-dcv", "旧DCV", 2, { control_type: "DCV" }),
+              converterNode("dcac-acv", "旧ACV", 3, { control_type: "ACV" }),
+              converterNode("dcac-acp", "旧ACP", 4, {
+                control_type: "ACP",
+                _customParamDefinitions: JSON.stringify([{
+                  cnName: "旧控制类型",
+                  enName: "control_type",
+                  valueType: "stringEnum",
+                  typicalValue: "ACP",
+                  exportEnabled: true,
+                  exportName: "control_type"
+                }])
+              })
+            ],
+            edges: []
+          }
+        },
+        measurementConfig: {}
+      });
+
+      const eFile = await readFile(join(filesRoot, "默认方案", "DCAC双控制类型.e"), "utf-8");
+      const lines = eSectionLines(eFile, "DCACConverter");
+      const columns = lines.find((line) => line.startsWith("@"))?.trim().split(/\s+/u).slice(1) ?? [];
+      const rows = lines
+        .filter((line) => line.startsWith("#"))
+        .map((line) => line.trim().split(/\s+/u).slice(1))
+        .map((values) => Object.fromEntries(columns.map((column, index) => [column, values[index] ?? ""])));
+      const rowByName = new Map(rows.map((row) => [row.name, row]));
+
+      expect(columns).toContain("ac_control_type");
+      expect(columns).toContain("dc_control_type");
+      expect(columns).not.toContain("control_type");
+      expect(rowByName.get("独立控制")).toMatchObject({ ac_control_type: "PV", dc_control_type: "I" });
+      expect(rowByName.get("旧DCV")).toMatchObject({ ac_control_type: "PQ", dc_control_type: "V" });
+      expect(rowByName.get("旧ACV")).toMatchObject({ ac_control_type: "PH", dc_control_type: "NONE" });
+      expect(rowByName.get("旧ACP")).toMatchObject({ ac_control_type: "PQ", dc_control_type: "NONE" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("writes ACAC and DCDC endpoint control types as separate E columns", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-e-endpoint-control-types-"));
+    try {
+      const filesRoot = join(root, "files");
+      const trashRoot = join(root, "trash");
+      const converterNode = (kind, id, name, idx, terminalType, params) => ({
+        id,
+        kind,
+        name,
+        position: { x: idx * 120, y: 100 },
+        size: { width: 112, height: 66 },
+        params: {
+          idx: String(idx),
+          r1: "0",
+          r2: "0",
+          p_set: "0",
+          i_set: "0",
+          v_set: "0",
+          i_q_set: "0",
+          j_q_set: "0",
+          i_v_set: "1",
+          j_v_set: "1",
+          run_stat: "1",
+          ...params
+        },
+        terminals: [
+          { id: "t1", type: terminalType },
+          { id: "t2", type: terminalType }
+        ]
+      });
+      await saveSchemeProjectRecord({
+        filesRoot,
+        trashRoot,
+        schemePath: ["默认方案"],
+        record: {
+          name: "端点控制类型",
+          updatedAt: "2026-07-27T00:00:00.000Z",
+          project: {
+            version: 1,
+            name: "端点控制类型",
+            nodes: [
+              converterNode("dcdc-converter", "dcdc-new", "DCDC独立控制", 1, "dc", { i_control_type: "V", j_control_type: "I" }),
+              converterNode("dcdc-converter", "dcdc-old", "DCDC旧控制", 2, "dc", {
+                control_type: "P",
+                _customParamDefinitions: JSON.stringify([{ enName: "control_type", exportEnabled: true, exportName: "control_type" }])
+              }),
+              converterNode("acac-converter", "acac-new", "ACAC独立控制", 1, "ac", { i_control_type: "PH", j_control_type: "NONE" }),
+              converterNode("acac-converter", "acac-old", "ACAC旧控制", 2, "ac", {
+                control_type: "PQV",
+                _customParamDefinitions: JSON.stringify([{ enName: "control_type", exportEnabled: true, exportName: "control_type" }])
+              })
+            ],
+            edges: []
+          }
+        },
+        measurementConfig: {}
+      });
+
+      const eFile = await readFile(join(filesRoot, "默认方案", "端点控制类型.e"), "utf-8");
+      const rowsForSection = (section) => {
+        const lines = eSectionLines(eFile, section);
+        const columns = lines.find((line) => line.startsWith("@"))?.trim().split(/\s+/u).slice(1) ?? [];
+        const rows = lines
+          .filter((line) => line.startsWith("#"))
+          .map((line) => line.trim().split(/\s+/u).slice(1))
+          .map((values) => Object.fromEntries(columns.map((column, index) => [column, values[index] ?? ""])));
+        return { columns, rowByName: new Map(rows.map((row) => [row.name, row])) };
+      };
+      const dcdc = rowsForSection("DCDCConverter");
+      const acac = rowsForSection("ACACConverter");
+
+      expect(dcdc.columns).toContain("i_control_type");
+      expect(dcdc.columns).toContain("j_control_type");
+      expect(dcdc.columns).not.toContain("control_type");
+      expect(dcdc.rowByName.get("DCDC独立控制")).toMatchObject({ i_control_type: "V", j_control_type: "I" });
+      expect(dcdc.rowByName.get("DCDC旧控制")).toMatchObject({ i_control_type: "P", j_control_type: "NONE" });
+      expect(acac.columns).toContain("i_control_type");
+      expect(acac.columns).toContain("j_control_type");
+      expect(acac.columns).not.toContain("control_type");
+      expect(acac.rowByName.get("ACAC独立控制")).toMatchObject({ i_control_type: "PH", j_control_type: "NONE" });
+      expect(acac.rowByName.get("ACAC旧控制")).toMatchObject({ i_control_type: "PQ", j_control_type: "PV" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("writes three-winding transformers as independent E devices with three-side parameters", async () => {
     const root = await mkdtemp(join(tmpdir(), "scheme-e-three-winding-"));
     try {
@@ -468,24 +634,24 @@ describe("scheme file persistence", () => {
                 size: { width: 100, height: 100 },
                 params: {
                   idx: "1",
-                  highResistancePu: "0.01",
-                  highReactancePu: "0.11",
-                  highMagnetizingConductancePu: "0.001",
-                  highMagnetizingSusceptancePu: "0.002",
-                  highTapRatio: "1.01",
-                  highShift: "1",
+                  r1: "0.01",
+                  x1: "0.11",
+                  gt1: "0.001",
+                  bt1: "0.002",
+                  tap1: "1.01",
+                  shift1: "1",
                   mediumResistancePu: "0.02",
                   mediumReactancePu: "0.12",
                   mediumMagnetizingConductancePu: "0.003",
                   mediumMagnetizingSusceptancePu: "0.004",
                   mediumTapRatio: "1.02",
                   mediumShift: "2",
-                  lowResistancePu: "0.03",
-                  lowReactancePu: "0.13",
-                  lowMagnetizingConductancePu: "0.005",
-                  lowMagnetizingSusceptancePu: "0.006",
-                  lowTapRatio: "1.03",
-                  lowShift: "3",
+                  low_resistance_pu: "0.03",
+                  low_reactance_pu: "0.13",
+                  low_magnetizing_conductance_pu: "0.005",
+                  low_magnetizing_susceptance_pu: "0.006",
+                  low_tap_ratio: "1.03",
+                  low_shift: "3",
                   run_stat: "1"
                 },
                 terminals: [

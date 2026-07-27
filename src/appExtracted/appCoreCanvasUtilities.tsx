@@ -111,10 +111,12 @@ import {
   deleteSavedScheme,
   deleteSavedProject,
   DEVICE_LIBRARY,
-  ACAC_CONVERTER_CONTROL_TYPES,
+  ACAC_SIDE_CONTROL_TYPES,
   AC_GENERATOR_CONTROL_TYPES,
-  DCAC_CONVERTER_CONTROL_TYPES,
+  DCAC_AC_CONTROL_TYPES,
+  DCAC_DC_CONTROL_TYPES,
   DC_GENERATOR_CONTROL_TYPES,
+  DCDC_CONVERTER_CONTROL_TYPES,
   E_SECTION_COLUMNS,
   getEdgeEndpointPoint as getModelEdgeEndpointPoint,
   getNodeScaleX,
@@ -3309,10 +3311,10 @@ export const PARAM_OPTIONS: Record<string, string[]> = {
   control_type: ["PV", "PQ", "PH", "P", "V", "I", "Q", "Z", "DCV", "ACV", "ACP", "PQQ"],
   source_control_type: ["定P", "定V", "定I", "定PQ", "定PV", "定PH", "不定"],
   target_control_type: ["定P", "定V", "定I", "定PQ", "定PV", "定PH", "不定"],
-  i_control_type: ["CTRL_P", "CTRL_V", "CTRL_I", "SLACK"],
-  j_control_type: ["CTRL_P", "CTRL_V", "CTRL_I", "SLACK"],
-  ac_control_type: ["定PQ", "定PV", "定PH", "不定"],
-  dc_control_type: ["定P", "定V", "定I", "不定"],
+  i_control_type: ["P", "V", "I", "NONE"],
+  j_control_type: ["P", "V", "I", "NONE"],
+  ac_control_type: [...DCAC_AC_CONTROL_TYPES],
+  dc_control_type: [...DCAC_DC_CONTROL_TYPES],
   closed_status: ["闭合", "打开"],
   status: ["1", "0"],
   run_stat: ["1", "0"],
@@ -3442,10 +3444,22 @@ export function paramOptionsForSection(key: string, section?: string) {
     return [...DC_GENERATOR_CONTROL_TYPES];
   }
   if (key === "control_type" && section === "DCACConverter") {
-    return [...DCAC_CONVERTER_CONTROL_TYPES];
+    return undefined;
   }
-  if (key === "control_type" && section === "ACACConverter") {
-    return [...ACAC_CONVERTER_CONTROL_TYPES];
+  if (key === "ac_control_type" && section === "DCACConverter") {
+    return [...DCAC_AC_CONTROL_TYPES];
+  }
+  if (key === "dc_control_type" && section === "DCACConverter") {
+    return [...DCAC_DC_CONTROL_TYPES];
+  }
+  if (key === "control_type" && (section === "ACACConverter" || section === "DCDCConverter")) {
+    return undefined;
+  }
+  if ((key === "i_control_type" || key === "j_control_type") && section === "ACACConverter") {
+    return [...ACAC_SIDE_CONTROL_TYPES];
+  }
+  if ((key === "i_control_type" || key === "j_control_type") && section === "DCDCConverter") {
+    return [...DCDC_CONVERTER_CONTROL_TYPES];
   }
   return PARAM_OPTIONS[key];
 }

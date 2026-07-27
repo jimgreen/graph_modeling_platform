@@ -802,8 +802,8 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
     "run_stat"
   ],
   DCDCConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "i_control_type", "j_control_type", "p_set", "i_set", "v_set", "run_stat"],
-  DCACConverter: ["idx", "name", "ac_node", "dc_node", "r1", "r2", "control_type", "p_ac_set", "q_ac_set", "v_ac_set", "v_dc_set", "run_stat"],
-  ACACConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"],
+  DCACConverter: ["idx", "name", "ac_node", "dc_node", "r1", "r2", "ac_control_type", "dc_control_type", "p_ac_set", "q_ac_set", "v_ac_set", "v_dc_set", "run_stat"],
+  ACACConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "i_control_type", "j_control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"],
   HydroSource: ["idx", "name", "node", "run_stat"],
   HydroLoad: ["idx", "name", "node", "run_stat"],
   HydroPipe: ["idx", "name", "i_node", "j_node", "run_stat"],
@@ -1636,8 +1636,11 @@ function normalizeControlTypeForE(value?: string) {
 }
 
 export const DCAC_CONVERTER_CONTROL_TYPES = ["DCV", "ACV", "ACP"] as const;
+export const DCAC_AC_CONTROL_TYPES = ["PQ", "PV", "PH", "NONE"] as const;
+export const DCAC_DC_CONTROL_TYPES = ["P", "V", "I", "NONE"] as const;
 export const ACAC_CONVERTER_CONTROL_TYPES = ["PQQ", "PVQ", "PQV", "PVV"] as const;
-export const DCDC_CONVERTER_CONTROL_TYPES = ["CTRL_P", "CTRL_V", "CTRL_I", "SLACK"] as const;
+export const ACAC_SIDE_CONTROL_TYPES = DCAC_AC_CONTROL_TYPES;
+export const DCDC_CONVERTER_CONTROL_TYPES = DCAC_DC_CONTROL_TYPES;
 export const AC_GENERATOR_CONTROL_TYPES = ["PV", "PQ", "PH"] as const;
 export const DC_GENERATOR_CONTROL_TYPES = ["P", "V", "I"] as const;
 
@@ -1653,57 +1656,112 @@ function normalizeDcGeneratorControlTypeForE(value?: string) {
   return (DC_GENERATOR_CONTROL_TYPES as readonly string[]).includes(normalized) ? normalized : "P";
 }
 
-function normalizeDcdcEndpointControlTypeForE(value?: string) {
-  if (!value) return "SLACK";
-  const normalized = normalizeControlTypeForE(value);
+function normalizeDcdcEndpointControlTypeForE(value?: string, fallback = "NONE") {
+  if (!value) return fallback;
+  const normalized = normalizeControlTypeForE(value).toUpperCase();
   const map: Record<string, string> = {
-    P: "CTRL_P",
-    V: "CTRL_V",
-    I: "CTRL_I",
-    "0": "SLACK"
+    CTRL_P: "P",
+    CTRL_V: "V",
+    CTRL_I: "I",
+    SLACK: "NONE",
+    "0": "NONE"
   };
   const mapped = map[normalized] ?? normalized;
-  return (DCDC_CONVERTER_CONTROL_TYPES as readonly string[]).includes(mapped) ? mapped : "SLACK";
+  return (DCDC_CONVERTER_CONTROL_TYPES as readonly string[]).includes(mapped) ? mapped : fallback;
 }
 
-function normalizeDcacConverterControlTypeForE(params: Record<string, string>) {
-  const explicit = normalizeControlTypeForE(params.control_type);
-  if ((DCAC_CONVERTER_CONTROL_TYPES as readonly string[]).includes(explicit)) {
-    return explicit;
-  }
-  const dcControl = normalizeControlTypeForE(deviceParamValue(params, "dc_control_type"));
-  if (dcControl === "V") {
-    return "DCV";
-  }
-  const acControl = normalizeControlTypeForE(deviceParamValue(params, "ac_control_type"));
-  if (acControl === "PV" || acControl === "V" || acControl === "ACV") {
-    return "ACV";
-  }
-  if (acControl === "PQ" || acControl === "PH" || acControl === "P" || acControl === "ACP") {
-    return "ACP";
-  }
-  return "DCV";
+type EndpointConverterControlTypePair = {
+  i_control_type: string;
+  j_control_type: string;
+};
+
+const ACAC_LEGACY_CONTROL_TYPE_PAIRS: Record<string, EndpointConverterControlTypePair> = {
+  PQQ: { i_control_type: "PQ", j_control_type: "PQ" },
+  PVQ: { i_control_type: "PV", j_control_type: "PQ" },
+  PQV: { i_control_type: "PQ", j_control_type: "PV" },
+  PVV: { i_control_type: "PV", j_control_type: "PV" }
+};
+
+function normalizeAcacEndpointControlTypeForE(value?: string, fallback = "PQ") {
+  const normalized = normalizeControlTypeForE(value).toUpperCase();
+  const mapped = normalized === "Q"
+    ? "PQ"
+    : normalized === "V"
+      ? "PV"
+      : normalized === "0"
+        ? "NONE"
+        : normalized;
+  return (ACAC_SIDE_CONTROL_TYPES as readonly string[]).includes(mapped) ? mapped : fallback;
 }
 
-function normalizeAcacConverterControlTypeForE(params: Record<string, string>) {
-  const explicit = normalizeControlTypeForE(params.control_type);
-  if ((ACAC_CONVERTER_CONTROL_TYPES as readonly string[]).includes(explicit)) {
-    return explicit;
+function acacConverterControlTypePairForE(params: Record<string, string>): EndpointConverterControlTypePair {
+  const explicitI = deviceParamValue(params, "i_control_type");
+  const explicitJ = deviceParamValue(params, "j_control_type");
+  const legacyControlType = normalizeControlTypeForE(deviceParamValue(params, "control_type")).toUpperCase();
+  const legacyPair = ACAC_LEGACY_CONTROL_TYPE_PAIRS[legacyControlType];
+  return {
+    i_control_type: explicitI
+      ? normalizeAcacEndpointControlTypeForE(explicitI)
+      : legacyPair?.i_control_type ?? normalizeAcacEndpointControlTypeForE(deviceParamValue(params, "source_control_type")),
+    j_control_type: explicitJ
+      ? normalizeAcacEndpointControlTypeForE(explicitJ)
+      : legacyPair?.j_control_type ?? normalizeAcacEndpointControlTypeForE(deviceParamValue(params, "target_control_type"))
+  };
+}
+
+function dcdcConverterControlTypePairForE(params: Record<string, string>): EndpointConverterControlTypePair {
+  const explicitI = deviceParamValue(params, "i_control_type");
+  const explicitJ = deviceParamValue(params, "j_control_type");
+  const legacyControlType = deviceParamValue(params, "control_type");
+  return {
+    i_control_type: explicitI
+      ? normalizeDcdcEndpointControlTypeForE(explicitI)
+      : legacyControlType
+        ? normalizeDcdcEndpointControlTypeForE(legacyControlType)
+        : deviceParamValue(params, "source_control_type")
+          ? normalizeDcdcEndpointControlTypeForE(deviceParamValue(params, "source_control_type"))
+          : "P",
+    j_control_type: explicitJ
+      ? normalizeDcdcEndpointControlTypeForE(explicitJ)
+      : normalizeDcdcEndpointControlTypeForE(deviceParamValue(params, "target_control_type"))
+  };
+}
+
+type DcacConverterControlTypePair = {
+  ac_control_type: string;
+  dc_control_type: string;
+};
+
+const DCAC_LEGACY_CONTROL_TYPE_PAIRS: Record<string, DcacConverterControlTypePair> = {
+  DCV: { ac_control_type: "PQ", dc_control_type: "V" },
+  ACV: { ac_control_type: "PH", dc_control_type: "NONE" },
+  ACP: { ac_control_type: "PQ", dc_control_type: "NONE" },
+  PH: { ac_control_type: "PH", dc_control_type: "NONE" },
+  PQ: { ac_control_type: "PQ", dc_control_type: "NONE" }
+};
+
+function normalizeDcacAcControlTypeForE(value?: string, fallback = "PQ") {
+  const normalized = normalizeControlTypeForE(value).toUpperCase();
+  const mapped = normalized === "0" ? "NONE" : normalized === "ACV" ? "PH" : normalized === "ACP" ? "PQ" : normalized;
+  return (DCAC_AC_CONTROL_TYPES as readonly string[]).includes(mapped) ? mapped : fallback;
+}
+
+function normalizeDcacDcControlTypeForE(value?: string, fallback = "V") {
+  const normalized = normalizeControlTypeForE(value).toUpperCase();
+  const mapped = normalized === "0" || normalized === "SLACK" ? "NONE" : normalized === "DCV" ? "V" : normalized;
+  return (DCAC_DC_CONTROL_TYPES as readonly string[]).includes(mapped) ? mapped : fallback;
+}
+
+function dcacConverterControlTypePairForE(params: Record<string, string>): DcacConverterControlTypePair {
+  const legacyControlType = normalizeControlTypeForE(deviceParamValue(params, "control_type")).toUpperCase();
+  const legacyPair = DCAC_LEGACY_CONTROL_TYPE_PAIRS[legacyControlType];
+  if (legacyPair) {
+    return legacyPair;
   }
-  const sourceControl = normalizeControlTypeForE(deviceParamValue(params, "source_control_type"));
-  const targetControl = normalizeControlTypeForE(deviceParamValue(params, "target_control_type"));
-  const sourceVoltageControlled = sourceControl === "PV" || sourceControl === "V";
-  const targetVoltageControlled = targetControl === "PV" || targetControl === "V";
-  if (sourceVoltageControlled && targetVoltageControlled) {
-    return "PVV";
-  }
-  if (sourceVoltageControlled) {
-    return "PVQ";
-  }
-  if (targetVoltageControlled) {
-    return "PQV";
-  }
-  return "PQQ";
+  return {
+    ac_control_type: normalizeDcacAcControlTypeForE(deviceParamValue(params, "ac_control_type")),
+    dc_control_type: normalizeDcacDcControlTypeForE(deviceParamValue(params, "dc_control_type"))
+  };
 }
 
 function terminalNodeNumber(node: Pick<ModelNode, "nodeNumber" | "terminals">, index: number) {
@@ -1871,6 +1929,7 @@ function getRawEParamValue(
   node: Pick<ModelNode, "kind" | "name" | "nodeNumber" | "terminals" | "params">,
   options: EParamValueOptions = {}
 ) {
+  const section = inferESection(node.kind, node.params);
   if (key === "name") {
     return node.name;
   }
@@ -1883,8 +1942,16 @@ function getRawEParamValue(
   if (key === "status") {
     return normalizeSwitchStatusForE(node.params.status ?? node.params.closedStatus);
   }
+  if ((key === "ac_control_type" || key === "dc_control_type") && section === "DCACConverter") {
+    return dcacConverterControlTypePairForE(node.params)[key];
+  }
+  if ((key === "i_control_type" || key === "j_control_type") && section === "ACACConverter") {
+    return acacConverterControlTypePairForE(node.params)[key];
+  }
+  if ((key === "i_control_type" || key === "j_control_type") && section === "DCDCConverter") {
+    return dcdcConverterControlTypePairForE(node.params)[key];
+  }
   if (key === "control_type") {
-    const section = inferESection(node.kind, node.params);
     if (section === "ACGenerator") {
     return normalizeAcGeneratorControlTypeForE(
         node.params.control_type ?? deviceParamValue(node.params, "control_type") ?? deviceParamValue(node.params, "ac_control_type") ?? deviceParamValue(node.params, "source_control_type") ?? ""
@@ -1895,12 +1962,7 @@ function getRawEParamValue(
         node.params.control_type ?? deviceParamValue(node.params, "control_type") ?? deviceParamValue(node.params, "dc_control_type") ?? deviceParamValue(node.params, "source_control_type") ?? ""
       );
     }
-    if (section === "DCACConverter") {
-      return normalizeDcacConverterControlTypeForE(node.params);
-    }
-    if (section === "ACACConverter") {
-      return normalizeAcacConverterControlTypeForE(node.params);
-    }
+    if (section === "DCACConverter" || section === "ACACConverter" || section === "DCDCConverter") return "";
     return normalizeControlTypeForE(
       node.params.control_type ??
         deviceParamValue(node.params, "control_type") ??
@@ -1909,12 +1971,6 @@ function getRawEParamValue(
         deviceParamValue(node.params, "source_control_type") ??
         ""
     );
-  }
-  if (key === "i_control_type") {
-    return normalizeDcdcEndpointControlTypeForE(node.params.i_control_type || deviceParamValue(node.params, "source_control_type") || node.params.control_type);
-  }
-  if (key === "j_control_type") {
-    return normalizeDcdcEndpointControlTypeForE(node.params.j_control_type || deviceParamValue(node.params, "target_control_type"));
   }
   if (key === "vbase") {
     return node.params.vbase ?? node.terminals[0]?.vbase ?? "";
@@ -1956,7 +2012,7 @@ function getRawEParamValue(
         tap: "tap_ratio",
         shift: "shift"
       };
-      return deviceParamValue(node.params, `${sidePrefix}_${parameterSuffix[sideParameterMatch[1]]}`) ?? "";
+      return node.params[key] ?? deviceParamValue(node.params, `${sidePrefix}_${parameterSuffix[sideParameterMatch[1]]}`) ?? "";
     }
   }
   const numberedNodeMatch = /^node(\d+)$/.exec(key);
@@ -2057,6 +2113,18 @@ function legacyEColumnForDefinition(section: string, enName: string): string {
   if (columns.includes(enName)) {
     return enName;
   }
+  if (section === "DCACConverter") {
+    const normalizedName = toSnakeCaseDeviceParamName(enName);
+    if (normalizedName === "control_type") return "";
+    if (normalizedName === "ac_control_type") return "ac_control_type";
+    if (normalizedName === "dc_control_type") return "dc_control_type";
+  }
+  if (section === "ACACConverter" || section === "DCDCConverter") {
+    const normalizedName = toSnakeCaseDeviceParamName(enName);
+    if (normalizedName === "control_type") return "";
+    if (normalizedName === "i_control_type" || normalizedName === "source_control_type") return "i_control_type";
+    if (normalizedName === "j_control_type" || normalizedName === "target_control_type") return "j_control_type";
+  }
   if (enName === "t1_node") {
     if (columns.includes("i_node")) return "i_node";
     if (columns.includes("node")) return "node";
@@ -2124,17 +2192,35 @@ function eParameterFieldsFromInterfaceDefinition(
 ): EParameterField[] {
   const fields: EParameterField[] = [];
   const seenExportNames = new Set<string>();
+  const appendField = (field: EParameterField) => {
+    if (!field.sourceName || !field.exportName || seenExportNames.has(field.exportName)) {
+      return;
+    }
+    seenExportNames.add(field.exportName);
+    fields.push(field);
+  };
   for (const configuredField of interfaceDefinition.fields ?? []) {
     if (configuredField.exportEnabled === false) {
       continue;
     }
     const configuredSourceName = String(configuredField.sourceName ?? "").trim();
     const exportName = String(configuredField.exportName ?? configuredSourceName).trim();
-    if (!configuredSourceName || !exportName || seenExportNames.has(exportName)) {
+    if (!configuredSourceName || !exportName) {
       continue;
     }
-    seenExportNames.add(exportName);
-    fields.push({
+    if (toSnakeCaseDeviceParamName(configuredSourceName) === "control_type") {
+      if (section === "DCACConverter") {
+        appendField({ sourceName: "ac_control_type", exportName: "ac_control_type" });
+        appendField({ sourceName: "dc_control_type", exportName: "dc_control_type" });
+        continue;
+      }
+      if (section === "ACACConverter" || section === "DCDCConverter") {
+        appendField({ sourceName: "i_control_type", exportName: "i_control_type" });
+        appendField({ sourceName: "j_control_type", exportName: "j_control_type" });
+        continue;
+      }
+    }
+    appendField({
       sourceName: legacyEColumnForDefinition(section, configuredSourceName) || configuredSourceName,
       exportName,
       definition: configuredField.definition
@@ -2155,7 +2241,10 @@ function resolveEParameterFields(
   if (interfaceDefinition) {
     return eParameterFieldsFromInterfaceDefinition(section, interfaceDefinition);
   }
-  const definitions = customEParameterDefinitions(params);
+  const splitControlSections = new Set(["DCACConverter", "ACACConverter", "DCDCConverter"]);
+  const definitions = customEParameterDefinitions(params).filter(
+    (definition) => !splitControlSections.has(section) || toSnakeCaseDeviceParamName(definition.enName) !== "control_type"
+  );
   const builtInColumns = E_SECTION_COLUMNS[section];
   const derivedInfo = electricGenerationDerivedComponentLibraryInfo(kind);
   if (definitions.length === 0) {
@@ -2774,7 +2863,9 @@ function defaultEColumnValue(column: string, rowIndex: number) {
   if (column === "run_stat") return "1";
   if (column === "status") return "1";
   if (column === "control_type") return "0";
-  if (column === "i_control_type" || column === "j_control_type") return "SLACK";
+  if (column === "i_control_type" || column === "j_control_type") return "NONE";
+  if (column === "ac_control_type") return "PQ";
+  if (column === "dc_control_type") return "V";
   if (column === "tap" || /^tap[123]$/.test(column) || column === "alpha" || column === "voltage" || column === "vbase") return "1.0";
   return "0";
 }
@@ -2790,7 +2881,11 @@ function defaultContainerAssociatedColumnValue(section: string, column: string, 
 }
 
 function formatEColumnValue(section: string, column: string, value: string | undefined, rowIndex: number) {
-  const fallback = defaultEColumnValue(column, rowIndex);
+  const fallback = section === "ACACConverter" && (column === "i_control_type" || column === "j_control_type")
+    ? "PQ"
+    : section === "DCDCConverter" && column === "i_control_type"
+      ? "P"
+      : defaultEColumnValue(column, rowIndex);
   const text = String(value ?? "").trim();
   if (!text) {
     return fallback;
@@ -2808,7 +2903,16 @@ function formatEColumnValue(section: string, column: string, value: string | und
     return normalizeEFileToken(normalizeControlTypeForE(text));
   }
   if (column === "i_control_type" || column === "j_control_type") {
+    if (section === "ACACConverter") {
+      return normalizeEFileToken(normalizeAcacEndpointControlTypeForE(text));
+    }
     return normalizeEFileToken(normalizeDcdcEndpointControlTypeForE(text));
+  }
+  if (column === "ac_control_type") {
+    return normalizeEFileToken(normalizeDcacAcControlTypeForE(text));
+  }
+  if (column === "dc_control_type") {
+    return normalizeEFileToken(normalizeDcacDcControlTypeForE(text));
   }
   if (column === "run_stat") {
     return normalizeRunStatForE(text) || fallback;
@@ -3390,18 +3494,25 @@ const twoWindingTransformerParameterDefinitions: DeviceParameterDefinition[] = [
   { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
   { cnName: "运行状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: false },
   { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false },
-  readonlyIntegerDefinition("高压侧节点号", "t1_node"),
-  readonlyIntegerDefinition("低压侧节点号", "t2_node"),
   { cnName: "高压侧电压等级", enName: "highVbase", valueType: "string", typicalValue: "0", readonly: false },
   { cnName: "低压侧电压等级", enName: "lowVbase", valueType: "string", typicalValue: "0", readonly: false },
   { cnName: "额定容量", enName: "ratedCapacity", valueType: "string", typicalValue: "50 MVA", readonly: false },
-  { cnName: "电阻（标幺值）", enName: "resistancePu", valueType: "float", typicalValue: "0.0", readonly: false },
-  { cnName: "电抗（标幺值）", enName: "reactancePu", valueType: "float", typicalValue: "0.1", readonly: false },
-  { cnName: "励磁电导（标幺值）", enName: "magnetizingConductancePu", valueType: "float", typicalValue: "0.0", readonly: false },
-  { cnName: "励磁电纳（标幺值）", enName: "magnetizingSusceptancePu", valueType: "float", typicalValue: "0.0", readonly: false },
-  { cnName: "分接头档位/变比", enName: "tapRatio", valueType: "float", typicalValue: "1.0", readonly: false },
   { cnName: "相移（度）", enName: "shift", valueType: "float", typicalValue: "0", readonly: false }
 ];
+
+const RETIRED_TWO_WINDING_TRANSFORMER_PARAMETER_NAMES = new Set([
+  "t1_node",
+  "t2_node",
+  "resistance_pu",
+  "reactance_pu",
+  "magnetizing_conductance_pu",
+  "magnetizing_susceptance_pu",
+  "tap_ratio"
+]);
+
+function isRetiredTwoWindingTransformerParameterName(name: string): boolean {
+  return RETIRED_TWO_WINDING_TRANSFORMER_PARAMETER_NAMES.has(toSnakeCaseDeviceParamName(name));
+}
 
 const threeWindingTransformerParameterDefinitions: DeviceParameterDefinition[] = [
   readonlyIntegerDefinition("序号", "idx"),
@@ -3414,29 +3525,63 @@ const threeWindingTransformerParameterDefinitions: DeviceParameterDefinition[] =
   readonlyIntegerDefinition("中性点节点号", "neutral_node"),
   { cnName: "高压侧电压等级", enName: "highVbase", valueType: "string", typicalValue: "0", readonly: false },
   { cnName: "高压侧额定容量", enName: "highRatedCapacity", valueType: "string", typicalValue: "90 MVA", readonly: false },
-  { cnName: "高压侧电阻（标幺值）", enName: "highResistancePu", valueType: "float", typicalValue: "0.0", readonly: false },
-  { cnName: "高压侧电抗（标幺值）", enName: "highReactancePu", valueType: "float", typicalValue: "0.1", readonly: false },
-  { cnName: "高压侧励磁电导（标幺值）", enName: "highMagnetizingConductancePu", valueType: "float", typicalValue: "0.0", readonly: false },
-  { cnName: "高压侧励磁电纳（标幺值）", enName: "highMagnetizingSusceptancePu", valueType: "float", typicalValue: "0.0", readonly: false },
-  { cnName: "高压侧分接头档位/变比", enName: "highTapRatio", valueType: "float", typicalValue: "1.0", readonly: false },
-  { cnName: "高压侧相移", enName: "highShift", valueType: "float", typicalValue: "0", readonly: false },
   { cnName: "中压侧电压等级", enName: "mediumVbase", valueType: "string", typicalValue: "0", readonly: false },
   { cnName: "中压侧额定容量", enName: "mediumRatedCapacity", valueType: "string", typicalValue: "90 MVA", readonly: false },
-  { cnName: "中压侧电阻（标幺值）", enName: "mediumResistancePu", valueType: "float", typicalValue: "0.0", readonly: false },
-  { cnName: "中压侧电抗（标幺值）", enName: "mediumReactancePu", valueType: "float", typicalValue: "0.1", readonly: false },
-  { cnName: "中压侧励磁电导（标幺值）", enName: "mediumMagnetizingConductancePu", valueType: "float", typicalValue: "0.0", readonly: false },
-  { cnName: "中压侧励磁电纳（标幺值）", enName: "mediumMagnetizingSusceptancePu", valueType: "float", typicalValue: "0.0", readonly: false },
-  { cnName: "中压侧分接头档位/变比", enName: "mediumTapRatio", valueType: "float", typicalValue: "1.0", readonly: false },
-  { cnName: "中压侧相移", enName: "mediumShift", valueType: "float", typicalValue: "0", readonly: false },
   { cnName: "低压侧电压等级", enName: "lowVbase", valueType: "string", typicalValue: "0", readonly: false },
-  { cnName: "低压侧额定容量", enName: "lowRatedCapacity", valueType: "string", typicalValue: "90 MVA", readonly: false },
-  { cnName: "低压侧电阻（标幺值）", enName: "lowResistancePu", valueType: "float", typicalValue: "0.0", readonly: false },
-  { cnName: "低压侧电抗（标幺值）", enName: "lowReactancePu", valueType: "float", typicalValue: "0.1", readonly: false },
-  { cnName: "低压侧励磁电导（标幺值）", enName: "lowMagnetizingConductancePu", valueType: "float", typicalValue: "0.0", readonly: false },
-  { cnName: "低压侧励磁电纳（标幺值）", enName: "lowMagnetizingSusceptancePu", valueType: "float", typicalValue: "0.0", readonly: false },
-  { cnName: "低压侧分接头档位/变比", enName: "lowTapRatio", valueType: "float", typicalValue: "1.0", readonly: false },
-  { cnName: "低压侧相移", enName: "lowShift", valueType: "float", typicalValue: "0", readonly: false }
+  { cnName: "低压侧额定容量", enName: "lowRatedCapacity", valueType: "string", typicalValue: "90 MVA", readonly: false }
 ];
+
+const THREE_WINDING_TRANSFORMER_E_DEFAULT_PARAMS = {
+  r1: "0.0",
+  x1: "0.1",
+  gt1: "0.0",
+  bt1: "0.0",
+  tap1: "1.0",
+  shift1: "0",
+  r2: "0.0",
+  x2: "0.1",
+  gt2: "0.0",
+  bt2: "0.0",
+  tap2: "1.0",
+  shift2: "0",
+  r3: "0.0",
+  x3: "0.1",
+  gt3: "0.0",
+  bt3: "0.0",
+  tap3: "1.0",
+  shift3: "0"
+} as const;
+
+const THREE_WINDING_TRANSFORMER_PARAMETER_ALIASES = [
+  ["r1", ["high_resistance_pu", "highResistancePu"]],
+  ["x1", ["high_reactance_pu", "highReactancePu"]],
+  ["gt1", ["high_magnetizing_conductance_pu", "highMagnetizingConductancePu"]],
+  ["bt1", ["high_magnetizing_susceptance_pu", "highMagnetizingSusceptancePu"]],
+  ["tap1", ["high_tap_ratio", "highTapRatio"]],
+  ["shift1", ["high_shift", "highShift"]],
+  ["r2", ["medium_resistance_pu", "mediumResistancePu"]],
+  ["x2", ["medium_reactance_pu", "mediumReactancePu"]],
+  ["gt2", ["medium_magnetizing_conductance_pu", "mediumMagnetizingConductancePu"]],
+  ["bt2", ["medium_magnetizing_susceptance_pu", "mediumMagnetizingSusceptancePu"]],
+  ["tap2", ["medium_tap_ratio", "mediumTapRatio"]],
+  ["shift2", ["medium_shift", "mediumShift"]],
+  ["r3", ["low_resistance_pu", "lowResistancePu"]],
+  ["x3", ["low_reactance_pu", "lowReactancePu"]],
+  ["gt3", ["low_magnetizing_conductance_pu", "lowMagnetizingConductancePu"]],
+  ["bt3", ["low_magnetizing_susceptance_pu", "lowMagnetizingSusceptancePu"]],
+  ["tap3", ["low_tap_ratio", "lowTapRatio"]],
+  ["shift3", ["low_shift", "lowShift"]]
+] as const;
+
+const RETIRED_THREE_WINDING_TRANSFORMER_PARAMETER_NAMES = new Set(
+  THREE_WINDING_TRANSFORMER_PARAMETER_ALIASES.flatMap(([, aliases]) =>
+    aliases.map((alias) => toSnakeCaseDeviceParamName(alias))
+  )
+);
+
+function isRetiredThreeWindingTransformerParameterName(name: string): boolean {
+  return RETIRED_THREE_WINDING_TRANSFORMER_PARAMETER_NAMES.has(toSnakeCaseDeviceParamName(name));
+}
 
 function isStaticButtonComponentParams(params?: Record<string, string>): boolean {
   return staticComponentLibraryFromParams(params) === "StaticButton";
@@ -4843,7 +4988,16 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "双绕组主变",
     categoryLibrary: "交流设备",
     size: { width: 92, height: 70 },
-    params: { ratedCapacity: "50 MVA", voltageRatio: "110/10 kV", impedance: "10.5%" },
+    params: {
+      ratedCapacity: "50 MVA",
+      voltageRatio: "110/10 kV",
+      impedance: "10.5%",
+      r: "0.0",
+      x: "0.1",
+      gt: "0.0",
+      bt: "0.0",
+      tap: "1.0"
+    },
     terminalType: "ac",
     terminalCount: 2,
     isContainer: false,
@@ -4854,7 +5008,13 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "三绕组主变",
     categoryLibrary: "交流设备",
     size: { width: 104, height: 76 },
-    params: { ratedCapacity: "90 MVA", voltageRatio: "220/110/10 kV", windingType: "三绕组", impedance: "12.0%" },
+    params: {
+      ratedCapacity: "90 MVA",
+      voltageRatio: "220/110/10 kV",
+      windingType: "三绕组",
+      impedance: "12.0%",
+      ...THREE_WINDING_TRANSFORMER_E_DEFAULT_PARAMS
+    },
     terminalType: "ac",
     terminalCount: 3,
     terminalAnchors: THREE_WINDING_TRANSFORMER_TERMINAL_ANCHORS,
@@ -4866,7 +5026,13 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "三绕组主变(中性点)",
     categoryLibrary: "交流设备",
     size: { width: 112, height: 92 },
-    params: { ratedCapacity: "90 MVA", voltageRatio: "220/110/10/0.4 kV", windingType: "三绕组带中性点", impedance: "12.0%" },
+    params: {
+      ratedCapacity: "90 MVA",
+      voltageRatio: "220/110/10/0.4 kV",
+      windingType: "三绕组带中性点",
+      impedance: "12.0%",
+      ...THREE_WINDING_TRANSFORMER_E_DEFAULT_PARAMS
+    },
     terminalType: "ac",
     terminalCount: 4,
     terminalLabels: ["高压绕组端", "中压绕组端", "低压绕组端", "中性点"],
@@ -5137,6 +5303,304 @@ const makeId = (prefix: string) => `${prefix}-${Math.random().toString(36).slice
 const makeNodeNumber = () => `N${nodeNumberSeed++}`;
 export const CUSTOM_PARAM_DEFINITIONS_KEY = "_customParamDefinitions";
 export const CUSTOM_DEVICE_TEMPLATE_KEY = "_customDeviceTemplate";
+
+function normalizeDcacControlParameterDefinition(
+  definition: DeviceParameterDefinition
+): DeviceParameterDefinition | null {
+  const enName = toSnakeCaseDeviceParamName(definition.enName);
+  if (enName === "control_type") {
+    return null;
+  }
+  if (enName !== "ac_control_type" && enName !== "dc_control_type") {
+    return definition;
+  }
+  const options = enName === "ac_control_type" ? [...DCAC_AC_CONTROL_TYPES] : [...DCAC_DC_CONTROL_TYPES];
+  const normalizeValue = enName === "ac_control_type" ? normalizeDcacAcControlTypeForE : normalizeDcacDcControlTypeForE;
+  const exportName = definition.exportName && toSnakeCaseDeviceParamName(definition.exportName) === "control_type"
+    ? enName
+    : definition.exportName;
+  return {
+    ...definition,
+    enName,
+    valueType: "stringEnum",
+    typicalValue: normalizeValue(definition.typicalValue),
+    enumValues: options,
+    enumOptions: options.map((value) => ({ value })),
+    ...(typeof exportName === "string" ? { exportName } : {})
+  };
+}
+
+function normalizeDcacControlParameterDefinitions(
+  definitions: readonly DeviceParameterDefinition[]
+): DeviceParameterDefinition[] {
+  const normalized: DeviceParameterDefinition[] = [];
+  const seen = new Set<string>();
+  for (const definition of definitions) {
+    const nextDefinition = normalizeDcacControlParameterDefinition(definition);
+    if (!nextDefinition || seen.has(nextDefinition.enName)) {
+      continue;
+    }
+    seen.add(nextDefinition.enName);
+    normalized.push(nextDefinition);
+  }
+  return normalized;
+}
+
+function normalizeStoredDcacControlParameterDefinitions(value?: string): string | undefined {
+  if (!value) {
+    return value;
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return value;
+    }
+    const definitions = parsed.filter(
+      (definition): definition is DeviceParameterDefinition => Boolean(definition && typeof definition === "object")
+    );
+    const normalized = normalizeDcacControlParameterDefinitions(definitions);
+    const serialized = JSON.stringify(normalized);
+    return serialized === value ? value : serialized;
+  } catch {
+    return value;
+  }
+}
+
+function normalizeDcacConverterControlParams(params: Record<string, string>): Record<string, string> {
+  const pair = dcacConverterControlTypePairForE(params);
+  const nextParams = { ...params };
+  let changed = false;
+  for (const legacyKey of ["control_type", "controlType", "acControlType", "dcControlType"]) {
+    if (Object.prototype.hasOwnProperty.call(nextParams, legacyKey)) {
+      delete nextParams[legacyKey];
+      changed = true;
+    }
+  }
+  if (nextParams.ac_control_type !== pair.ac_control_type) {
+    nextParams.ac_control_type = pair.ac_control_type;
+    changed = true;
+  }
+  if (nextParams.dc_control_type !== pair.dc_control_type) {
+    nextParams.dc_control_type = pair.dc_control_type;
+    changed = true;
+  }
+  const storedDefinitions = normalizeStoredDcacControlParameterDefinitions(nextParams[CUSTOM_PARAM_DEFINITIONS_KEY]);
+  if (storedDefinitions !== nextParams[CUSTOM_PARAM_DEFINITIONS_KEY]) {
+    if (storedDefinitions) {
+      nextParams[CUSTOM_PARAM_DEFINITIONS_KEY] = storedDefinitions;
+    } else {
+      delete nextParams[CUSTOM_PARAM_DEFINITIONS_KEY];
+    }
+    changed = true;
+  }
+  return changed ? nextParams : params;
+}
+
+function normalizeDcacConverterNodeControlParams(node: ModelNode): ModelNode {
+  if (inferESection(node.kind, node.params) !== "DCACConverter") {
+    return node;
+  }
+  const params = normalizeDcacConverterControlParams(node.params);
+  return params === node.params ? node : { ...node, params };
+}
+
+type EndpointControlSection = "ACACConverter" | "DCDCConverter";
+
+function endpointControlOptionsForSection(section: EndpointControlSection): readonly string[] {
+  return section === "ACACConverter" ? ACAC_SIDE_CONTROL_TYPES : DCDC_CONVERTER_CONTROL_TYPES;
+}
+
+function normalizeEndpointControlTypeForSection(
+  section: EndpointControlSection,
+  value: string | undefined,
+  endpoint: "i" | "j"
+) {
+  if (section === "ACACConverter") {
+    return normalizeAcacEndpointControlTypeForE(value);
+  }
+  if (value) {
+    return normalizeDcdcEndpointControlTypeForE(value);
+  }
+  return endpoint === "i" ? "P" : "NONE";
+}
+
+function endpointConverterControlTypePairForSection(
+  section: EndpointControlSection,
+  params: Record<string, string>
+) {
+  return section === "ACACConverter"
+    ? acacConverterControlTypePairForE(params)
+    : dcdcConverterControlTypePairForE(params);
+}
+
+function normalizedEndpointControlDefinition(
+  section: EndpointControlSection,
+  endpoint: "i" | "j",
+  source: DeviceParameterDefinition | undefined,
+  typicalValue: string | undefined
+): DeviceParameterDefinition {
+  const enName = `${endpoint}_control_type`;
+  const options = [...endpointControlOptionsForSection(section)];
+  const normalizedExportName = source?.exportName
+    ? toSnakeCaseDeviceParamName(source.exportName)
+    : "";
+  const exportName = normalizedExportName && ![
+    "control_type",
+    "source_control_type",
+    "target_control_type",
+    "i_control_type",
+    "j_control_type"
+  ].includes(normalizedExportName)
+    ? source?.exportName
+    : enName;
+  return {
+    ...(source ?? {}),
+    cnName: source?.cnName || (endpoint === "i" ? "首端控制类型" : "末端控制类型"),
+    enName,
+    valueType: "stringEnum",
+    typicalValue: normalizeEndpointControlTypeForSection(section, typicalValue, endpoint),
+    enumValues: options,
+    enumOptions: options.map((value) => ({ value })),
+    ...(source?.exportEnabled !== undefined ? { exportEnabled: source.exportEnabled } : {}),
+    ...(exportName ? { exportName } : {})
+  };
+}
+
+function normalizeEndpointControlParameterDefinitions(
+  section: EndpointControlSection,
+  definitions: readonly DeviceParameterDefinition[]
+): DeviceParameterDefinition[] {
+  type Candidate = { definition: DeviceParameterDefinition; typicalValue: string | undefined; rank: number };
+  let insertionIndex = -1;
+  let iCandidate: Candidate | undefined;
+  let jCandidate: Candidate | undefined;
+  const retained: DeviceParameterDefinition[] = [];
+  const assignCandidate = (endpoint: "i" | "j", candidate: Candidate) => {
+    if (endpoint === "i") {
+      if (!iCandidate || candidate.rank >= iCandidate.rank) iCandidate = candidate;
+      return;
+    }
+    if (!jCandidate || candidate.rank >= jCandidate.rank) jCandidate = candidate;
+  };
+
+  for (const definition of definitions) {
+    const enName = toSnakeCaseDeviceParamName(definition.enName);
+    if (!["control_type", "source_control_type", "target_control_type", "i_control_type", "j_control_type"].includes(enName)) {
+      retained.push(definition);
+      continue;
+    }
+    if (insertionIndex < 0) {
+      insertionIndex = retained.length;
+    }
+    if (enName === "i_control_type") {
+      assignCandidate("i", { definition, typicalValue: definition.typicalValue, rank: 3 });
+      continue;
+    }
+    if (enName === "j_control_type") {
+      assignCandidate("j", { definition, typicalValue: definition.typicalValue, rank: 3 });
+      continue;
+    }
+    if (enName === "control_type") {
+      const pair = endpointConverterControlTypePairForSection(section, { control_type: definition.typicalValue });
+      assignCandidate("i", { definition, typicalValue: pair.i_control_type, rank: 2 });
+      assignCandidate("j", { definition, typicalValue: pair.j_control_type, rank: 2 });
+      continue;
+    }
+    if (enName === "source_control_type") {
+      assignCandidate("i", { definition, typicalValue: definition.typicalValue, rank: 1 });
+      continue;
+    }
+    assignCandidate("j", { definition, typicalValue: definition.typicalValue, rank: 1 });
+  }
+
+  if (insertionIndex < 0) {
+    return retained;
+  }
+  const fallbackDefinition = iCandidate?.definition ?? jCandidate?.definition;
+  const endpointDefinitions = [
+    normalizedEndpointControlDefinition(section, "i", iCandidate?.definition ?? fallbackDefinition, iCandidate?.typicalValue),
+    normalizedEndpointControlDefinition(section, "j", jCandidate?.definition ?? fallbackDefinition, jCandidate?.typicalValue)
+  ];
+  retained.splice(insertionIndex, 0, ...endpointDefinitions);
+  return retained;
+}
+
+function normalizeStoredEndpointControlParameterDefinitions(
+  section: EndpointControlSection,
+  value?: string
+): string | undefined {
+  if (!value) {
+    return value;
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return value;
+    }
+    const definitions = parsed.filter(
+      (definition): definition is DeviceParameterDefinition => Boolean(definition && typeof definition === "object")
+    );
+    const normalized = normalizeEndpointControlParameterDefinitions(section, definitions);
+    const serialized = JSON.stringify(normalized);
+    return serialized === value ? value : serialized;
+  } catch {
+    return value;
+  }
+}
+
+function normalizeEndpointConverterControlParams(
+  section: EndpointControlSection,
+  params: Record<string, string>
+): Record<string, string> {
+  const pair = endpointConverterControlTypePairForSection(section, params);
+  const nextParams = { ...params };
+  let changed = false;
+  for (const legacyKey of [
+    "control_type",
+    "controlType",
+    "source_control_type",
+    "sourceControlType",
+    "target_control_type",
+    "targetControlType",
+    "iControlType",
+    "jControlType"
+  ]) {
+    if (Object.prototype.hasOwnProperty.call(nextParams, legacyKey)) {
+      delete nextParams[legacyKey];
+      changed = true;
+    }
+  }
+  if (nextParams.i_control_type !== pair.i_control_type) {
+    nextParams.i_control_type = pair.i_control_type;
+    changed = true;
+  }
+  if (nextParams.j_control_type !== pair.j_control_type) {
+    nextParams.j_control_type = pair.j_control_type;
+    changed = true;
+  }
+  const storedDefinitions = normalizeStoredEndpointControlParameterDefinitions(
+    section,
+    nextParams[CUSTOM_PARAM_DEFINITIONS_KEY]
+  );
+  if (storedDefinitions !== nextParams[CUSTOM_PARAM_DEFINITIONS_KEY]) {
+    if (storedDefinitions) {
+      nextParams[CUSTOM_PARAM_DEFINITIONS_KEY] = storedDefinitions;
+    } else {
+      delete nextParams[CUSTOM_PARAM_DEFINITIONS_KEY];
+    }
+    changed = true;
+  }
+  return changed ? nextParams : params;
+}
+
+function normalizeEndpointConverterNodeControlParams(node: ModelNode): ModelNode {
+  const section = inferESection(node.kind, node.params);
+  if (section !== "ACACConverter" && section !== "DCDCConverter") {
+    return node;
+  }
+  const params = normalizeEndpointConverterControlParams(section, node.params);
+  return params === node.params ? node : { ...node, params };
+}
 
 const DEFAULT_INITIAL_TERMINAL_VBASE = "0";
 
@@ -6142,6 +6606,8 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   i_set: "float",
   i_control_type: "stringEnum",
   j_control_type: "stringEnum",
+  ac_control_type: "stringEnum",
+  dc_control_type: "stringEnum",
   p_ac_set: "float",
   q_ac_set: "float",
   v_ac_set: "float",
@@ -6165,7 +6631,8 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   x_pu: "float",
   b: "float",
   gt: "float",
-  bt: "float"
+  bt: "float",
+  tap: "float"
 };
 
 function inferDefinitionValueType(key: string, value: string): DeviceParameterValueType {
@@ -6359,15 +6826,20 @@ function templateTerminalTypes(template: DeviceTemplate): TerminalType[] {
 
 export function getTemplateParameterDefinitions(template: DeviceTemplate): DeviceParameterDefinition[] {
   if (template.parameterDefinitions?.length) {
-    const paramDefs = template.parameterDefinitions
+    const normalizedParamDefs = template.parameterDefinitions
       .map((definition) => normalizeTemplateDefinition(definition))
       .filter((definition): definition is DeviceParameterDefinition => Boolean(definition));
+    const section = inferESection(template.kind, template.params);
+    const paramDefs = section === "DCACConverter"
+      ? normalizeDcacControlParameterDefinitions(normalizedParamDefs)
+      : section === "ACACConverter" || section === "DCDCConverter"
+        ? normalizeEndpointControlParameterDefinitions(section, normalizedParamDefs)
+        : normalizedParamDefs;
     // 对属 E 分区的图元，合并 eKeys（E_SECTION_COLUMNS 内置列）+ dev_type，确保所有字段都显示
     const eKeys = getEParameterKeys(template.kind, template.params);
     if (eKeys.length > 0) {
       const existingEnNames = new Set(paramDefs.map(d => d.enName));
       // 过滤掉已被 parameterDefinitions 映射 legacyColumn 的 eKeys，避免覆盖参数定义的 exportName（如 resistancePu -> resistance）
-      const section = inferESection(template.kind, template.params);
       const existingLegacyColumns = new Set(
         paramDefs.map(d => section ? legacyEColumnForDefinition(section, d.enName) : "").filter(Boolean)
       );
@@ -6449,7 +6921,7 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
     }
   }
   const uniqueKeys = Array.from(new Set(keys.filter((key) => key && key !== ALLOW_RESIZE_TRANSFORM_PARAM && !key.startsWith("_"))));
-  return uniqueKeys.map((key) => {
+  const generatedDefinitions = uniqueKeys.map((key) => {
     const base = {
       cnName: key,
       enName: key,
@@ -6463,6 +6935,10 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
     }
     return base;
   });
+  const section = inferESection(template.kind, template.params);
+  return section === "ACACConverter" || section === "DCDCConverter"
+    ? normalizeEndpointControlParameterDefinitions(section, generatedDefinitions)
+    : generatedDefinitions;
 }
 
 function stripThreeWindingTransformerContainerParams(params: Record<string, string>): Record<string, string> {
@@ -6479,6 +6955,34 @@ function stripThreeWindingTransformerContainerParams(params: Record<string, stri
   return changed ? Object.fromEntries(entries) : params;
 }
 
+function normalizeThreeWindingTransformerParams(params: Record<string, string>): Record<string, string> {
+  let next = stripThreeWindingTransformerContainerParams(params);
+  let changed = next !== params;
+  for (const [canonicalKey, legacyKeys] of THREE_WINDING_TRANSFORMER_PARAMETER_ALIASES) {
+    const canonicalValue = String(next[canonicalKey] ?? "").trim();
+    const legacyValues = legacyKeys.map((legacyKey) => next[legacyKey]);
+    const legacyValue = legacyValues.find((value) => String(value ?? "").trim()) ??
+      legacyValues.find((value) => value !== undefined);
+    if (!canonicalValue && legacyValue !== undefined) {
+      if (!changed) {
+        next = { ...next };
+        changed = true;
+      }
+      next[canonicalKey] = legacyValue;
+    }
+    for (const legacyKey of legacyKeys) {
+      if (Object.prototype.hasOwnProperty.call(next, legacyKey)) {
+        if (!changed) {
+          next = { ...next };
+          changed = true;
+        }
+        delete next[legacyKey];
+      }
+    }
+  }
+  return changed ? next : params;
+}
+
 function isTwoWindingTransformerTemplateKind(kind: string): boolean {
   const templateKind = baseDeviceKind(kind);
   return templateKind === "ac-transformer" || templateKind === "ac-two-winding-transformer";
@@ -6488,15 +6992,15 @@ function normalizeTwoWindingTransformerParams(params: Record<string, string>): R
   let next = stripThreeWindingTransformerContainerParams(params);
   let changed = next !== params;
   const aliases = [
-    ["resistancePu", "r"],
-    ["reactancePu", "x"],
-    ["magnetizingConductancePu", "gt"],
-    ["magnetizingSusceptancePu", "bt"],
-    ["tapRatio", "tap"]
+    ["r", ["resistance_pu", "resistancePu"]],
+    ["x", ["reactance_pu", "reactancePu"]],
+    ["gt", ["magnetizing_conductance_pu", "magnetizingConductancePu"]],
+    ["bt", ["magnetizing_susceptance_pu", "magnetizingSusceptancePu"]],
+    ["tap", ["tap_ratio", "tapRatio"]]
   ] as const;
-  for (const [canonicalKey, legacyKey] of aliases) {
+  for (const [canonicalKey, legacyKeys] of aliases) {
     const canonicalValue = String(next[canonicalKey] ?? "").trim();
-    const legacyValue = next[legacyKey];
+    const legacyValue = legacyKeys.map((legacyKey) => next[legacyKey]).find((value) => value !== undefined);
     if (!canonicalValue && legacyValue !== undefined) {
       if (!changed) {
         next = { ...next };
@@ -6504,12 +7008,23 @@ function normalizeTwoWindingTransformerParams(params: Record<string, string>): R
       }
       next[canonicalKey] = legacyValue;
     }
-    if (Object.prototype.hasOwnProperty.call(next, legacyKey)) {
+    for (const legacyKey of legacyKeys) {
+      if (Object.prototype.hasOwnProperty.call(next, legacyKey)) {
+        if (!changed) {
+          next = { ...next };
+          changed = true;
+        }
+        delete next[legacyKey];
+      }
+    }
+  }
+  for (const legacyNodeKey of ["t1_node", "t2_node"]) {
+    if (Object.prototype.hasOwnProperty.call(next, legacyNodeKey)) {
       if (!changed) {
         next = { ...next };
         changed = true;
       }
-      delete next[legacyKey];
+      delete next[legacyNodeKey];
     }
   }
   return changed ? next : params;
@@ -6640,7 +7155,10 @@ export function applyDeviceTemplateDefinitionOverride(
       terminalAssociations: undefined,
       isContainer: false,
       params: normalizeTwoWindingTransformerParams(mergedTemplate.params),
-      parameterDefinitions: mergeCanonicalParameterDefinitions(twoWindingTransformerParameterDefinitions, parameterDefinitions)
+      parameterDefinitions: mergeCanonicalParameterDefinitions(
+        twoWindingTransformerParameterDefinitions,
+        parameterDefinitions.filter((definition) => !isRetiredTwoWindingTransformerParameterName(definition.enName))
+      )
     };
   }
   if (!isThreeWindingTransformer(template)) {
@@ -6657,8 +7175,11 @@ export function applyDeviceTemplateDefinitionOverride(
     terminalRoles: undefined,
     terminalAssociations: undefined,
     isContainer: false,
-    params: stripThreeWindingTransformerContainerParams(mergedTemplate.params),
-    parameterDefinitions: mergeCanonicalParameterDefinitions(threeWindingTransformerParameterDefinitions, parameterDefinitions)
+    params: normalizeThreeWindingTransformerParams(mergedTemplate.params),
+    parameterDefinitions: mergeCanonicalParameterDefinitions(
+      threeWindingTransformerParameterDefinitions,
+      parameterDefinitions.filter((definition) => !isRetiredThreeWindingTransformerParameterName(definition.enName))
+    )
   };
 }
 
@@ -6988,11 +7509,11 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       highVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       lowVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       ratedCapacity: "50 MVA",
-      resistancePu: "0.0",
-      reactancePu: "0.1",
-      magnetizingConductancePu: "0.0",
-      magnetizingSusceptancePu: "0.0",
-      tapRatio: "1.0",
+      r: "0.0",
+      x: "0.1",
+      gt: "0.0",
+      bt: "0.0",
+      tap: "1.0",
       shift: "0"
     }));
   }
@@ -7005,58 +7526,42 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       mediumVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       lowVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       highRatedCapacity: "90 MVA",
-      highResistancePu: "0.0",
-      highReactancePu: "0.1",
-      highMagnetizingConductancePu: "0.0",
-      highMagnetizingSusceptancePu: "0.0",
-      highTapRatio: "1.0",
       mediumRatedCapacity: "90 MVA",
-      mediumResistancePu: "0.0",
-      mediumReactancePu: "0.1",
-      mediumMagnetizingConductancePu: "0.0",
-      mediumMagnetizingSusceptancePu: "0.0",
-      mediumTapRatio: "1.0",
       lowRatedCapacity: "90 MVA",
-      lowResistancePu: "0.0",
-      lowReactancePu: "0.1",
-      lowMagnetizingConductancePu: "0.0",
-      lowMagnetizingSusceptancePu: "0.0",
-      lowTapRatio: "1.0"
+      ...THREE_WINDING_TRANSFORMER_E_DEFAULT_PARAMS
     }));
   }
   if (templateKind === "dcdc-converter") {
-    return withTemplateDefinitions(withRunStat({
+    return normalizeEndpointConverterControlParams("DCDCConverter", withTemplateDefinitions(withRunStat({
       sourceVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       targetVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       sourceEquivalentResistance: "0.0",
       targetEquivalentResistance: "0.0",
-      i_control_type: "CTRL_P",
-      j_control_type: "SLACK"
-    }));
+      i_control_type: "P",
+      j_control_type: "NONE"
+    })));
   }
   if (templateKind === "acdc-converter" || templateKind === "dcac-converter") {
-    return withTemplateDefinitions(withRunStat({
+    return normalizeDcacConverterControlParams(withTemplateDefinitions(withRunStat({
       sourceVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       targetVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       sourceEquivalentResistance: "0.0",
       targetEquivalentResistance: "0.0",
-      control_type: "DCV",
+      ac_control_type: "PQ",
+      dc_control_type: "V",
       v_ac_set: "0.0",
-      v_dc_set: "0.0",
-      acControlType: "定PQ",
-      dcControlType: "不定"
-    }));
+      v_dc_set: "0.0"
+    })));
   }
   if (templateKind === "acac-converter") {
-    return withTemplateDefinitions(withRunStat({
+    return normalizeEndpointConverterControlParams("ACACConverter", withTemplateDefinitions(withRunStat({
       sourceVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       targetVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       sourceEquivalentResistance: "0.0",
       targetEquivalentResistance: "0.0",
-      control_type: "PQQ",
-      sourceControlType: "定PQ",
-      targetControlType: "不定"
-    }));
+      i_control_type: "PQ",
+      j_control_type: "PQ"
+    })));
   }
   if (
     templateKind === "ac-switch" ||
@@ -8981,23 +9486,35 @@ function virtualBusTerminal(node: Pick<ModelNode, "kind" | "terminals">, termina
 }
 
 export function normalizeNodeTerminalsWithTemplate(node: ModelNode, template: DeviceTemplate | undefined): ModelNode {
-  let normalizedNode = normalizeRoutableLineDeviceStrokeWidthParam(node);
+  let normalizedNode = normalizeEndpointConverterNodeControlParams(
+    normalizeDcacConverterNodeControlParams(normalizeRoutableLineDeviceStrokeWidthParam(node))
+  );
   if (template) {
     normalizedNode = migrateElectricGenerationContainerParams(normalizedNode, template);
   }
   if (template && !template.isContainer && (isThreeWindingTransformer(normalizedNode) || isTwoWindingTransformerTemplateKind(normalizedNode.kind))) {
     const parameterDefinitions = isThreeWindingTransformer(normalizedNode)
-      ? threeWindingTransformerParameterDefinitions.map(normalizeDeviceParameterDefinition)
-      : twoWindingTransformerParameterDefinitions.map(normalizeDeviceParameterDefinition);
+      ? mergeCanonicalParameterDefinitions(
+          threeWindingTransformerParameterDefinitions,
+          (template.parameterDefinitions ?? []).filter(
+            (definition) => !isRetiredThreeWindingTransformerParameterName(definition.enName)
+          )
+        )
+      : mergeCanonicalParameterDefinitions(
+          twoWindingTransformerParameterDefinitions,
+          (template.parameterDefinitions ?? []).filter(
+            (definition) => !isRetiredTwoWindingTransformerParameterName(definition.enName)
+          )
+        );
     const sourceParams = isThreeWindingTransformer(normalizedNode)
-      ? stripThreeWindingTransformerContainerParams(normalizedNode.params)
+      ? normalizeThreeWindingTransformerParams(normalizedNode.params)
       : normalizeTwoWindingTransformerParams(normalizedNode.params);
     const sourceNode = sourceParams === normalizedNode.params ? normalizedNode : { ...normalizedNode, params: sourceParams };
     const reconciledNode = reconcileNodeParamsWithTemplateDefinitions(sourceNode, {
       parameterDefinitions
     });
     const params = isThreeWindingTransformer(reconciledNode)
-      ? stripThreeWindingTransformerContainerParams(reconciledNode.params)
+      ? normalizeThreeWindingTransformerParams(reconciledNode.params)
       : normalizeTwoWindingTransformerParams(reconciledNode.params);
     normalizedNode = params === reconciledNode.params ? reconciledNode : { ...reconciledNode, params };
   }
@@ -11736,9 +12253,9 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
     if (section === "DCDCConverter") {
       const sourceControl = normalizeDcdcEndpointControlTypeForE(params.i_control_type || params.sourceControlType || params.control_type);
       const targetControl = normalizeDcdcEndpointControlTypeForE(params.j_control_type || params.targetControlType);
-      const controlledTerminal = targetControl === "CTRL_V"
+      const controlledTerminal = targetControl === "V"
         ? terminals[1]
-        : sourceControl === "CTRL_V"
+        : sourceControl === "V"
           ? terminals[0]
           : terminals[0];
       assignIfZero("v_set", controlledTerminal);
@@ -11785,14 +12302,10 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
     const dcTopologyNode = Number(terminals.find((terminal) => terminal.type === "dc")?.nodeNumber ?? 0);
     let params = applyVoltageSetpointDefaults(node, terminals);
     if (isTwoWindingTransformerNode(node)) {
-      params = {
-        ...params,
-        t1_node: terminals[0]?.nodeNumber ?? "",
-        t2_node: terminals[1]?.nodeNumber ?? ""
-      };
+      params = normalizeTwoWindingTransformerParams(params);
     } else if (isThreeWindingTransformer(node)) {
       params = {
-        ...params,
+        ...normalizeThreeWindingTransformerParams(params),
         t1_node: terminals[0]?.nodeNumber ?? "",
         t2_node: terminals[1]?.nodeNumber ?? "",
         t3_node: terminals[2]?.nodeNumber ?? ""
@@ -11991,7 +12504,7 @@ export function validateVoltageSetpointDeviations(nodes: ModelNode[], edges: Edg
     if (section === "DCDCConverter") {
       const sourceControl = normalizeDcdcEndpointControlTypeForE(node.params.i_control_type || node.params.sourceControlType || node.params.control_type);
       const targetControl = normalizeDcdcEndpointControlTypeForE(node.params.j_control_type || node.params.targetControlType);
-      addNodeVoltageSetpointDeviation("v_set", targetControl === "CTRL_V" ? node.terminals[1] : sourceControl === "CTRL_V" ? node.terminals[0] : node.terminals[0]);
+      addNodeVoltageSetpointDeviation("v_set", targetControl === "V" ? node.terminals[1] : sourceControl === "V" ? node.terminals[0] : node.terminals[0]);
     }
     if (section === "DCACConverter") {
       addNodeVoltageSetpointDeviation("v_ac_set", node.terminals.find((terminal) => terminal.type === "ac") ?? node.terminals[0]);

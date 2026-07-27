@@ -238,8 +238,11 @@ describe("measurement canvas interactions", () => {
     expect(positions.map((position: any) => ({ value: position.value, label: position.label }))).toEqual([
       { value: "device", label: "设备本体" }
     ]);
-    expect(positions[0].parameterDefinitions.map((definition: any) => definition.enName)).toContain("highResistancePu");
-    expect(positions[0].parameterDefinitions.map((definition: any) => definition.enName)).not.toContain("idx_xf_t1");
+    const fieldNames = positions[0].parameterDefinitions.map((definition: any) => definition.enName);
+    expect(fieldNames).toContain("r1");
+    expect(fieldNames).not.toContain("high_resistance_pu");
+    expect(fieldNames).not.toContain("highResistancePu");
+    expect(fieldNames).not.toContain("idx_xf_t1");
   });
 
   test("offers base fields before derived fields for derived device measurements", () => {

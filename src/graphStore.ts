@@ -340,6 +340,8 @@ const topologyParamRelevant = (key: string) => {
     normalized === "control_type" ||
     normalized === "i_control_type" ||
     normalized === "j_control_type" ||
+    normalized === "ac_control_type" ||
+    normalized === "dc_control_type" ||
     normalized.includes("vbase") ||
     normalized.endsWith("v_set") ||
     normalized === "v_set" ||
