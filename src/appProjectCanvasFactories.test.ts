@@ -103,7 +103,7 @@ function createLoadScope(overrides: Record<string, unknown> = {}) {
 }
 
 describe("saved project definition migration", () => {
-  test("upgrades known nodes and measurements while preserving orphaned nodes", () => {
+  test("keeps the loaded project clean after automatic definition and measurement migration", () => {
     const knownNode = {
       id: "known-node",
       kind: "known-device",
@@ -160,10 +160,10 @@ describe("saved project definition migration", () => {
       scope.measurementConfig
     );
     expect(setProjectMeasurements).toHaveBeenCalledWith(migratedMeasurements);
-    expect(setHasUnsavedChanges).toHaveBeenLastCalledWith(true);
+    expect(setHasUnsavedChanges).toHaveBeenLastCalledWith(false);
   });
 
-  test("marks a loaded project dirty when legacy measurement storage is normalized", () => {
+  test("keeps the loaded project clean when legacy measurement storage is normalized", () => {
     const storedMeasurements = { version: 1 as const, groups: [{ id: "legacy", nodeId: "node-1", items: [] }] };
     const normalizedMeasurements = {
       version: 1 as const,
@@ -189,7 +189,7 @@ describe("saved project definition migration", () => {
       }
     } as any, "scheme-1");
 
-    expect(setHasUnsavedChanges).toHaveBeenLastCalledWith(true);
+    expect(setHasUnsavedChanges).toHaveBeenLastCalledWith(false);
   });
 });
 

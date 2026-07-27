@@ -113,4 +113,37 @@ describe("definition instance node reconciliation", () => {
 
     expect(reconcileNodeWithDefinition(first, template)).toBe(first);
   });
+
+  test("preserves a saved single-terminal instance anchor while reconciling its definition", () => {
+    const source = createDefaultNode("ac-source", { x: 160, y: 120 });
+    const node = {
+      ...source,
+      terminals: source.terminals.map((terminal) => ({
+        ...terminal,
+        anchor: { x: 0, y: -0.5 }
+      }))
+    };
+    const template: DeviceTemplate = {
+      kind: "ac-source",
+      label: "交流电源",
+      categoryLibrary: "交流设备",
+      size: { width: 96, height: 72 },
+      params: source.params,
+      terminalType: "ac",
+      terminalCount: 1,
+      terminalTypes: ["ac"],
+      terminalLabels: ["交流端"],
+      terminalAnchors: [{ x: 0.5, y: 0 }]
+    };
+
+    const reconciled = reconcileNodeWithDefinition(node, template);
+
+    expect(reconciled.terminals).toHaveLength(1);
+    expect(reconciled.terminals[0]).toMatchObject({
+      id: "t1",
+      type: "ac",
+      label: "交流端",
+      anchor: { x: 0, y: -0.5 }
+    });
+  });
 });

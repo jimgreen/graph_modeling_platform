@@ -2594,16 +2594,11 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
       schemeId = findSchemeForProject(project.id)?.id ?? "";
     }
     clearRefreshRecoveryProject();
-    let definitionMigrationChanged = false;
     const normalizedNodes = project.project.nodes.map((node) => {
       const template = libraryTemplateByKind?.get(node.kind);
       if (template) {
         const normalized = normalizeNodeTerminalsWithTemplate(node, template);
-        const reconciled = reconcileNodeWithDefinition(normalized, template);
-        if (reconciled !== node) {
-          definitionMigrationChanged = true;
-        }
-        return reconciled;
+        return reconcileNodeWithDefinition(normalized, template);
       }
       return libraryTemplateByKind ? node : normalizeNodeTerminalsByTemplate(node);
     });
@@ -2613,14 +2608,10 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
       nodes: indexed.nodes
     });
     const layeredProject = normalizeProjectLayers(lockedProject);
-    const storedMeasurements = layeredProject.measurements ?? { version: 1, groups: [] };
     const normalizedMeasurements = normalizeProjectMeasurements(layeredProject.measurements, layeredProject.nodes);
     const reconciledMeasurements = typeof reconcileProjectMeasurementsWithConfig === "function" && measurementConfig
       ? reconcileProjectMeasurementsWithConfig(normalizedMeasurements, layeredProject.nodes, measurementConfig)
       : normalizedMeasurements;
-    const measurementMigrationChanged =
-      JSON.stringify(normalizedMeasurements) !== JSON.stringify(storedMeasurements) ||
-      reconciledMeasurements !== normalizedMeasurements;
     const nextCanvasBounds = {
       width: project.project.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
       height: project.project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT
@@ -2686,7 +2677,7 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
     setMarquee(null);
     setModifierSelectionPress(null);
     setCanvasPanning(null);
-    setHasUnsavedChanges(definitionMigrationChanged || measurementMigrationChanged);
+    setHasUnsavedChanges(false);
     writeOperationLog(`加载模型：${project.name}`);
     requestCanvasFrameCenter();
   };

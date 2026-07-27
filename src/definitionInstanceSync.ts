@@ -189,10 +189,13 @@ function syncDefinitionTerminals(node: ModelNode, template: DefinitionSyncTempla
   const terminalCount = Math.max(0, Math.min(8, Math.round(Number(template.terminalCount) || 0)));
   const fallbackType = template.terminalType ?? template.terminalTypes?.[0] ?? node.terminals[0]?.type ?? "ac";
   const generated = createTerminals(fallbackType, terminalCount);
+  const preserveSingleTerminalInstanceAnchor = terminalCount === 1 && node.terminals.length === 1;
   const terminals = generated.map((terminal, index) => {
     const current = node.terminals[index];
     const type = template.terminalTypes?.[index] ?? fallbackType;
-    const anchor = template.terminalAnchors?.[index] ?? defaultTerminalAnchor(terminalCount, index);
+    const anchor = preserveSingleTerminalInstanceAnchor && current?.anchor
+      ? current.anchor
+      : template.terminalAnchors?.[index] ?? defaultTerminalAnchor(terminalCount, index);
     return {
       ...terminal,
       id: `t${index + 1}`,

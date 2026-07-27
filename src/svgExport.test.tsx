@@ -293,6 +293,33 @@ describe("SVG export", () => {
     expect(svg).not.toContain('href="data:image/svg+xml');
   });
 
+  test("does not add a white image cover behind terminal device icons", () => {
+    const windIconSvg = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 72">',
+      '<path class="transparent-wind-icon" d="M48 12V60M48 28L30 38M48 28L66 38" fill="none" stroke="#2563eb"/>',
+      "</svg>"
+    ].join("");
+    const node = {
+      ...createDefaultNode("ac-source", { x: 120, y: 90 }),
+      id: "wind-generator-node"
+    };
+    node.params = {
+      ...node.params,
+      backgroundImage: `data:image/svg+xml;utf8,${encodeURIComponent(windIconSvg)}`
+    };
+
+    const svg = buildSvgDocument([node], [], {
+      width: 320,
+      height: 180,
+      backgroundColor: "#ffffff"
+    });
+    const defs = svgDefsSection(svg);
+
+    expect(node.terminals.length).toBeGreaterThan(0);
+    expect(defs).toContain('class="transparent-wind-icon"');
+    expect(defs).not.toMatch(/<rect\b[^>]*rx="8"[^>]*fill="#ffffff"[^>]*stroke="none"\/>/);
+  });
+
   test("keeps backend image api hrefs when embedded image data is unavailable", () => {
     const svg = buildSvgDocument([], [], {
       width: 320,

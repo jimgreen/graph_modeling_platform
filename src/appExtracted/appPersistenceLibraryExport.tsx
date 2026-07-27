@@ -3938,7 +3938,7 @@ ${rules.join("\n")}
             })
           : "";
         const imageCoverMarkup =
-          imageHref && allowNodeImage && !isStaticNode(symbolNode)
+          imageHref && allowNodeImage && !isStaticNode(symbolNode) && symbolNode.terminals.length === 0
             ? `<rect x="${-symbolNode.size.width / 2}" y="${-symbolNode.size.height / 2}" width="${symbolNode.size.width}" height="${symbolNode.size.height}" rx="8" fill="#ffffff" stroke="none"/>`
             : "";
         return `<title>${escapeXml(template?.label ?? exportNodeType(symbolNode))}</title>
