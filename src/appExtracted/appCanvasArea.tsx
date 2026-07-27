@@ -75,6 +75,84 @@ function generatedStateIconVisualTransform(imageHref: string, nodeSize: { width:
   return null;
 }
 
+export function adjustGeneratedStateIconTerminalStub(
+  terminal: { anchor: { x: number; y: number } },
+  renderPoint: { x: number; y: number },
+  stub: { from: { x: number; y: number }; to: { x: number; y: number } },
+  nodeScaleX: number,
+  nodeScaleY: number,
+  terminalVisualTransform: { x: number; y: number; scale: number; rotation: number } | null
+) {
+  if (!terminalVisualTransform) {
+    return stub;
+  }
+  const safeScaleX = nodeScaleX === 0 ? 1 : nodeScaleX;
+  const safeScaleY = nodeScaleY === 0 ? 1 : nodeScaleY;
+  const inverseScaleX = 1 / safeScaleX;
+  const inverseScaleY = 1 / safeScaleY;
+  const displayedAnchor = {
+    x: terminal.anchor.x * (Math.sign(safeScaleX) || 1),
+    y: terminal.anchor.y * (Math.sign(safeScaleY) || 1)
+  };
+  const horizontal = Math.abs(displayedAnchor.x) >= Math.abs(displayedAnchor.y);
+  const radians = ((Number(terminalVisualTransform.rotation) || 0) * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const basePoint = {
+    x: renderPoint.x + stub.from.x * inverseScaleX,
+    y: renderPoint.y + stub.from.y * inverseScaleY
+  };
+  const visualPoint = {
+    x: terminalVisualTransform.x + (basePoint.x * cos - basePoint.y * sin) * terminalVisualTransform.scale,
+    y: terminalVisualTransform.y + (basePoint.x * sin + basePoint.y * cos) * terminalVisualTransform.scale
+  };
+  return {
+    ...stub,
+    from: horizontal
+      ? { x: (visualPoint.x - renderPoint.x) * safeScaleX, y: stub.from.y }
+      : { x: stub.from.x, y: (visualPoint.y - renderPoint.y) * safeScaleY }
+  };
+}
+
+export function singleTerminalPointerPreviewGeometry({
+  nodePosition,
+  nodeRotation,
+  nodeScaleX,
+  nodeScaleY,
+  pointer,
+  terminalRenderPoint,
+  stubFrom
+}: {
+  nodePosition: { x: number; y: number };
+  nodeRotation: number;
+  nodeScaleX: number;
+  nodeScaleY: number;
+  pointer: { x: number; y: number };
+  terminalRenderPoint: { x: number; y: number };
+  stubFrom: { x: number; y: number };
+}) {
+  const safeScaleX = nodeScaleX === 0 ? 1 : nodeScaleX;
+  const safeScaleY = nodeScaleY === 0 ? 1 : nodeScaleY;
+  const radians = ((Number(nodeRotation) || 0) * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const deltaX = pointer.x - nodePosition.x;
+  const deltaY = pointer.y - nodePosition.y;
+  const unrotatedX = deltaX * cos + deltaY * sin;
+  const unrotatedY = -deltaX * sin + deltaY * cos;
+
+  return {
+    bodyPoint: {
+      x: terminalRenderPoint.x + stubFrom.x / safeScaleX,
+      y: terminalRenderPoint.y + stubFrom.y / safeScaleY
+    },
+    pointerPoint: {
+      x: unrotatedX / safeScaleX,
+      y: unrotatedY / safeScaleY
+    }
+  };
+}
+
 /**
  * 自定义比较器：深度比较画布相关的所有值。
  * 只有当画布实际使用的值发生变化时，才触发重渲染。
@@ -94,7 +172,7 @@ export function areCanvasPropsEqual(prevProps: any, nextProps: any) {
     'staticDrawing', 'libraryPlacement', 'contextMarqueeSelection', 'activeDropReady',
     'isEditMode', 'isBrowseMode', 'rewiring', 'routableLinePlacement',
     'routableLineEndpointDrag', 'transformDrag', 'nodeLabelDrag', 'nodeLabelRotateDrag',
-    'manualPathDrag', 'hasCanvasSelectionModifier', 'isRepeatedEdgePointerClick'
+    'manualPathDrag', 'terminalPress', 'hasCanvasSelectionModifier', 'isRepeatedEdgePointerClick'
   ];
 
   for (const key of stateKeys) {
@@ -198,7 +276,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     canvasRenderBounds, canvasScrollSurfaceWidth, canvasScrollSurfaceHeight,
     canvasHorizontalScrollbarsActive, canvasVerticalScrollbarsActive,
     canvasBackgroundColor, canvasBackgroundImageUrl, canvasBackgroundImageFit,
-    connectSource, staticDrawing, libraryPlacement, contextMarqueeSelection,
+    connectSource, terminalPress, staticDrawing, libraryPlacement, contextMarqueeSelection,
     activeDropReady, panning, multiNodeDragging, singleNodeDragging,
     isEditMode, isBrowseMode, isReadonlyCanvasMode, mode,
     nodeLabelDrag, nodeLabelRotateDrag, manualPathDrag, transformDrag,
@@ -263,7 +341,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     isCanvasGraphicContextMenuTarget,
     isStaticButtonEnabledForNode, isStaticBoxLikeNode,
     resolveNodeStateVisual, resolveConnectPreviewPoint, resolveRoutableLinePreviewPoint,
-    sameOptionalPoint, pointsToOrthogonalPath,
+    sameOptionalPoint, snapSingleTerminalAnchorToNearestSide, pointsToOrthogonalPath,
     routableLineDeviceCanvasPoints, routableLineDeviceRenderLocalPoints,
     formatSvgNumber, svgImageContentMarkup,
     appendConnectPreviewManualPoint, appendRoutableLinePreviewManualPoint,
@@ -410,7 +488,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         event.stopPropagation();
         fitWholeCanvasToFrame();
     }}>
-            <svg ref={svgRef} className={`diagram-canvas ${connectSource ? "connect-mode" : ""} ${staticDrawing ? "static-draw-mode" : ""} ${libraryPlacement ? "library-place-mode" : ""} ${contextMarqueeSelection ? "context-marquee-mode" : ""} ${activeDropReady ? "connect-drop-ready" : ""} ${panning ? "panning" : ""} ${multiNodeDragging ? "multi-node-dragging" : ""} ${singleNodeDragging ? "single-node-dragging" : ""}`} style={{ width: canvasDisplayWidth, height: canvasDisplayHeight, left: canvasDisplayOffsetX, top: canvasDisplayOffsetY }} viewBox={`0 0 ${canvasRenderBounds.width} ${canvasRenderBounds.height}`} onDrop={handleDrop} onDragOver={(event) => event.preventDefault()} onWheel={handleWheel} onDoubleClick={fitWholeCanvasFromBlankDoubleClick} onPointerDownCapture={handleCanvasPointerDownCapture} onPointerMove={handlePointerMove} onPointerEnter={(event) => {
+            <svg ref={svgRef} className={`diagram-canvas ${connectSource ? "connect-mode" : ""} ${terminalPress?.moved ? "terminal-dragging" : ""} ${staticDrawing ? "static-draw-mode" : ""} ${libraryPlacement ? "library-place-mode" : ""} ${contextMarqueeSelection ? "context-marquee-mode" : ""} ${activeDropReady ? "connect-drop-ready" : ""} ${panning ? "panning" : ""} ${multiNodeDragging ? "multi-node-dragging" : ""} ${singleNodeDragging ? "single-node-dragging" : ""}`} style={{ width: canvasDisplayWidth, height: canvasDisplayHeight, left: canvasDisplayOffsetX, top: canvasDisplayOffsetY }} viewBox={`0 0 ${canvasRenderBounds.width} ${canvasRenderBounds.height}`} onDrop={handleDrop} onDragOver={(event) => event.preventDefault()} onWheel={handleWheel} onDoubleClick={fitWholeCanvasFromBlankDoubleClick} onPointerDownCapture={handleCanvasPointerDownCapture} onPointerMove={handlePointerMove} onPointerEnter={(event) => {
         canvasInteractionRef.current = true;
         projectListPointerInsideRef.current = false;
         const rawPointer = screenToSvgPoint(event.currentTarget, event.clientX, event.clientY);
@@ -959,33 +1037,6 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         const inverseScaleY = nodeScaleY === 0 ? 1 : 1 / nodeScaleY;
         const terminalStubDashArray = svgStrokeDashArray(node.params.strokeStyle);
         const terminalControlTransform = (x: number, y: number) => `translate(${x} ${y}) scale(${inverseScaleX} ${inverseScaleY})`;
-        const adjustedTerminalStub = (terminal: any, renderPoint: any, stub: any) => {
-            if (!terminalVisualTransform) {
-                return stub;
-            }
-            const displayedAnchor = {
-                x: terminal.anchor.x * (Math.sign(nodeScaleX) || 1),
-                y: terminal.anchor.y * (Math.sign(nodeScaleY) || 1)
-            };
-            const horizontal = Math.abs(displayedAnchor.x) >= Math.abs(displayedAnchor.y);
-            const radians = ((Number(terminalVisualTransform.rotation) || 0) * Math.PI) / 180;
-            const cos = Math.cos(radians);
-            const sin = Math.sin(radians);
-            const basePoint = {
-                x: renderPoint.x + stub.from.x,
-                y: renderPoint.y + stub.from.y
-            };
-            const visualPoint = {
-                x: terminalVisualTransform.x + (basePoint.x * cos - basePoint.y * sin) * terminalVisualTransform.scale,
-                y: terminalVisualTransform.y + (basePoint.x * sin + basePoint.y * cos) * terminalVisualTransform.scale
-            };
-            return {
-                ...stub,
-                from: horizontal
-                    ? { x: (visualPoint.x - renderPoint.x) * nodeScaleX, y: stub.from.y }
-                    : { x: stub.from.x, y: (visualPoint.y - renderPoint.y) * nodeScaleY }
-            };
-        };
         const handleTransform = (x: number, y: number) => `translate(${x} ${y})`;
         const handleGapX = 14;
         const handleGapY = 14;
@@ -1022,6 +1073,43 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         const routableLineDeviceHitPath = nodeIsRoutableLineDevice
             ? pointsToOrthogonalPath(routableLineDeviceRenderLocalPoints(node))
             : "";
+        const terminalDragTerminal = terminalPress?.moved &&
+            terminalPress.nodeId === node.id &&
+            !nodeIsBus &&
+            !nodeIsStatic &&
+            !nodeIsRoutableLineDevice &&
+            node.terminals.length === 1
+            ? node.terminals.find((terminal) => terminal.id === terminalPress.terminalId)
+            : undefined;
+        const terminalDragPreview = terminalDragTerminal ? (() => {
+            const previewAnchor = snapSingleTerminalAnchorToNearestSide(node, terminalPress.currentPoint);
+            const previewTerminal = { ...terminalDragTerminal, anchor: previewAnchor };
+            const previewRenderPoint = terminalRenderLocalPoint(previewTerminal, node.size, nodeScaleX, nodeScaleY, node.kind);
+            const previewStub = adjustGeneratedStateIconTerminalStub(
+                previewTerminal,
+                previewRenderPoint,
+                terminalStubSegment(previewTerminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size),
+                nodeScaleX,
+                nodeScaleY,
+                terminalVisualTransform
+            );
+            const previewGeometry = singleTerminalPointerPreviewGeometry({
+                nodePosition: renderPosition,
+                nodeRotation: node.rotation,
+                nodeScaleX,
+                nodeScaleY,
+                pointer: terminalPress.currentPoint,
+                terminalRenderPoint: previewRenderPoint,
+                stubFrom: previewStub.from
+            });
+            return {
+                terminalId: terminalDragTerminal.id,
+                type: terminalDragTerminal.type,
+                color: getTerminalDisplayColor(node, terminalDragTerminal, colorDisplayMode, colorPalette),
+                previewStrokeWidth: terminalStubStrokeWidth(node, previewTerminal),
+                ...previewGeometry
+            };
+        })() : null;
         return (<g key={node.id} ref={(element) => bindCanvasNodeElement(node.id, element)} className={`diagram-node ${nodeIsBus ? "bus-node" : ""} ${nodeIsRoutableLineDevice ? "routable-line-node" : ""} ${isStorageBus ? "storage-node" : ""} ${uprightStaticSelectionOutline ? "static-upright-selection-node" : ""} ${staticButtonEnabled ? "static-button-enabled" : ""} ${staticButtonState ? `static-button-${staticButtonState}` : ""} ${multiNodeDragging && draggingNodeIdSet.has(node.id) ? "multi-drag-origin" : ""} ${singleNodeDragging && draggingNodeIdSet.has(node.id) ? "single-drag-origin" : ""} ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${isConnectSource ? "connect-source" : ""} ${inactiveLayerGraphic ? "inactive-layer-graphic" : ""}`} transform={`translate(${renderPosition.x} ${renderPosition.y})`} data-node-id={node.id} data-export-device-id={nodeIsStatic ? undefined : node.id} data-export-device-idx={nodeIsStatic ? undefined : node.params.idx ?? ""} data-export-device-name={nodeIsStatic ? undefined : node.name} data-export-device-kind={nodeIsStatic ? undefined : node.kind} onPointerDown={nodeIsRoutableLineDevice ? undefined : (event) => handleNodePointerDown(event, node)} onPointerEnter={() => {
                 if (staticButtonEnabled) {
                     setStaticButtonFeedback(node.id, "hover");
@@ -1112,6 +1200,12 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                         </g>)}
                     </g>)}
                   <g className="node-terminal-layer" transform={nodeGeometryTransformValue}>
+                    {terminalDragPreview && (<g className="terminal-drag-overlay" style={{ "--terminal-drag-color": terminalDragPreview.color } as CSSProperties}>
+                        <line className="terminal-drag-preview-line" style={{ "--terminal-drag-width": terminalDragPreview.previewStrokeWidth } as CSSProperties} x1={terminalDragPreview.bodyPoint.x} y1={terminalDragPreview.bodyPoint.y} x2={terminalDragPreview.pointerPoint.x} y2={terminalDragPreview.pointerPoint.y}/>
+                        <g className="terminal-drag-current" transform={terminalControlTransform(terminalDragPreview.pointerPoint.x, terminalDragPreview.pointerPoint.y)}>
+                          <circle className={`terminal-dot ${terminalDragPreview.type} terminal-drag-preview-dot`} style={{ "--terminal-color": terminalDragPreview.color } as CSSProperties} cx="0" cy="0" r="7"/>
+                        </g>
+                      </g>)}
                     {node.terminals.map((terminal) => {
                 const hideFixedTerminal = nodeIsBus || isStaticNode(node) || isRoutableLineDeviceKind(node.kind);
                 const disabled = !hideFixedTerminal &&
@@ -1122,9 +1216,16 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                             terminal.type !== routableLineActiveTerminalType));
                 const overlapped = isEditMode && overlappedTerminalKeys.has(`${node.id}:${terminal.id}`);
                 const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
-                const stub = adjustedTerminalStub(terminal, renderPoint, terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size));
+                const stub = adjustGeneratedStateIconTerminalStub(
+                    terminal,
+                    renderPoint,
+                    terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size),
+                    nodeScaleX,
+                    nodeScaleY,
+                    terminalVisualTransform
+                );
                 const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
-                return hideFixedTerminal ? null : (<g key={terminal.id} transform={terminalControlTransform(renderPoint.x, renderPoint.y)}>
+                return hideFixedTerminal ? null : (<g key={terminal.id} className={`terminal-control ${terminalDragPreview?.terminalId === terminal.id ? "terminal-drag-active" : ""}`} transform={terminalControlTransform(renderPoint.x, renderPoint.y)}>
                           <line className={`terminal-stub ${terminal.type} ${disabled ? "disabled" : ""}`} strokeDasharray={terminalStubDashArray} style={{
                         "--terminal-stub-color": disabled ? "#cbd5e1" : terminalDisplayColor,
                         "--terminal-stub-width": terminalStubStrokeWidth(node, terminal)

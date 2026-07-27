@@ -2,6 +2,8 @@ import { Children, isValidElement, type ReactElement } from "react";
 import { readFileSync } from "node:fs";
 import { describe, expect, test, vi } from "vitest";
 import {
+  adjustGeneratedStateIconTerminalStub,
+  areCanvasPropsEqual,
   CanvasConnectionPaths,
   shouldRenderBaseCanvasEdge
 } from "./appExtracted/appCanvasArea";
@@ -76,5 +78,92 @@ describe("live canvas edge DOM", () => {
 
     expect(css).toMatch(/\.connection-group\s*>\s*\.connection-line\s*\{[^}]*pointer-events:\s*none;/s);
     expect(css).not.toContain(".background-page-edge .connection-line");
+  });
+
+  test("maps generated state-icon terminal stubs through the inverse signed node scale", () => {
+    const source = readFileSync(new URL("./appExtracted/appCanvasArea.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("renderPoint.x + stub.from.x * inverseScaleX");
+    expect(source).toContain("renderPoint.y + stub.from.y * inverseScaleY");
+  });
+
+  test("keeps a mirrored state-icon terminal stub pointed toward the device body", () => {
+    const terminal = { anchor: { x: -0.5, y: -0.032 } };
+    const renderPoint = { x: -79, y: -3.008 };
+    const visualTransform = { x: 0, y: -2.279329, scale: 0.798496, rotation: 0 };
+    const normal = adjustGeneratedStateIconTerminalStub(
+      terminal,
+      renderPoint,
+      { from: { x: 46, y: 0 }, to: { x: 0, y: 0 } },
+      1,
+      1,
+      visualTransform
+    );
+    const mirrored = adjustGeneratedStateIconTerminalStub(
+      terminal,
+      renderPoint,
+      { from: { x: -46, y: 0 }, to: { x: 0, y: 0 } },
+      -1,
+      1,
+      visualTransform
+    );
+
+    expect(normal.from.x).toBeGreaterThan(0);
+    expect(mirrored.from.x).toBeLessThan(0);
+    expect(mirrored.from.x).toBeCloseTo(-normal.from.x);
+  });
+
+  test("rerenders the canvas when a terminal press starts", () => {
+    const terminalPress = {
+      nodeId: "node-1",
+      terminalId: "t1",
+      pointerId: 7,
+      startPoint: { x: 10, y: 20 },
+      currentPoint: { x: 10, y: 20 },
+      moved: false
+    };
+
+    expect(
+      areCanvasPropsEqual(
+        { scope: { terminalPress: null } },
+        { scope: { terminalPress } }
+      )
+    ).toBe(false);
+  });
+
+  test("maps the live pointer and device-body stub point into terminal-layer coordinates", async () => {
+    const canvasModule = await import("./appExtracted/appCanvasArea");
+    const previewGeometry = (canvasModule as any).singleTerminalPointerPreviewGeometry;
+
+    expect(previewGeometry).toBeTypeOf("function");
+    expect(
+      previewGeometry({
+        nodePosition: { x: 100, y: 100 },
+        nodeRotation: 0,
+        nodeScaleX: 1,
+        nodeScaleY: 1,
+        pointer: { x: 150, y: 75 },
+        terminalRenderPoint: { x: 54, y: 0 },
+        stubFrom: { x: -20, y: 0 }
+      })
+    ).toEqual({
+      bodyPoint: { x: 34, y: 0 },
+      pointerPoint: { x: 50, y: -25 }
+    });
+  });
+
+  test("shows a hand cursor and a pointer-following terminal extension while dragging", () => {
+    const source = readFileSync(new URL("./appExtracted/appCanvasArea.tsx", import.meta.url), "utf8");
+    const css = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+
+    expect(source).toContain('terminalPress?.moved ? "terminal-dragging" : ""');
+    expect(source).toContain('className="terminal-drag-overlay"');
+    expect(source).toContain('className="terminal-drag-preview-line"');
+    expect(source).toContain('terminal-drag-preview-dot');
+    expect(source).toContain('terminal-drag-active');
+    expect(source).not.toContain('className="terminal-drag-trajectory"');
+    expect(source).not.toContain('terminal-drag-origin');
+    expect(css).toMatch(/\.diagram-canvas\.terminal-dragging[\s\S]*cursor:\s*grabbing\s*!important/);
+    expect(css).not.toContain(".terminal-drag-trajectory");
   });
 });

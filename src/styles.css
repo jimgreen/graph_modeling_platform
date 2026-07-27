@@ -1633,6 +1633,11 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   cursor: grabbing;
 }
 
+.diagram-canvas.terminal-dragging,
+.diagram-canvas.terminal-dragging * {
+  cursor: grabbing !important;
+}
+
 .app-shell.browse-mode .diagram-canvas {
   cursor: grab;
 }
@@ -2880,7 +2885,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   fill: var(--terminal-color, #2563eb);
   stroke: #ffffff;
   stroke-width: 2;
-  cursor: crosshair;
+  cursor: grab;
   transform-box: fill-box;
   transform-origin: center;
   transition:
@@ -2888,6 +2893,36 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
     stroke-width 120ms ease,
     filter 120ms ease,
     transform 120ms ease;
+}
+
+.terminal-dot:not(.disabled):active {
+  cursor: grabbing;
+}
+
+.terminal-drag-overlay {
+  pointer-events: none;
+}
+
+.terminal-drag-preview-line {
+  stroke: var(--terminal-drag-color, #f59e0b);
+  stroke-width: var(--terminal-drag-width, 2);
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.92;
+}
+
+.terminal-drag-preview-line,
+.terminal-drag-preview-dot {
+  filter: drop-shadow(0 0 6px var(--terminal-drag-color, #f59e0b));
+}
+
+.terminal-drag-preview-dot {
+  stroke: #f59e0b;
+  stroke-width: 3;
+}
+
+.terminal-drag-active {
+  opacity: 0;
 }
 
 .diagram-canvas .export-terminal-dot {
