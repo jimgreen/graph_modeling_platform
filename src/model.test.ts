@@ -12642,7 +12642,7 @@ describe("power system model", () => {
     expect(rowByName.get("旧ACP")).toMatchObject({ ac_control_type: "PQ", dc_control_type: "NONE" });
   });
 
-  test("migrates a legacy DCAC E interface control_type field to both split fields", () => {
+  test("keeps an explicitly configured DCAC E interface control_type column unchanged", () => {
     const converter = createDefaultNode("acdc-converter", { x: 100, y: 100 });
     converter.name = "接口迁移";
     converter.params.control_type = "DCV";
@@ -12667,12 +12667,9 @@ describe("power system model", () => {
       }]
     }).text);
 
-    expect(payload.DCACConverter.columns).toEqual(["idx", "name", "ac_control_type", "dc_control_type"]);
-    expect(payload.DCACConverter.rows[0]).toMatchObject({
-      name: "接口迁移",
-      ac_control_type: "PQ",
-      dc_control_type: "V"
-    });
+    expect(payload.DCACConverter.columns).toEqual(["idx", "name", "control_type"]);
+    expect(payload.DCACConverter.columns).not.toContain("ac_control_type");
+    expect(payload.DCACConverter.columns).not.toContain("dc_control_type");
   });
 
   test("migrates legacy DCAC converter control_type values to the split fields", () => {
@@ -12792,7 +12789,7 @@ describe("power system model", () => {
     }
   });
 
-  test("migrates legacy ACAC and DCDC E interface control_type fields to both endpoint fields", () => {
+  test("keeps explicitly configured ACAC and DCDC E interface control_type columns unchanged", () => {
     const cases = [
       { kind: "dcdc-converter" as const, section: "DCDCConverter", legacy: "V", expectedI: "V", expectedJ: "NONE" },
       { kind: "acac-converter" as const, section: "ACACConverter", legacy: "PVQ", expectedI: "PV", expectedJ: "PQ" }
@@ -12823,11 +12820,9 @@ describe("power system model", () => {
         }]
       }).text);
 
-      expect(payload[item.section].columns).toEqual(["idx", "name", "i_control_type", "j_control_type"]);
-      expect(payload[item.section].rows[0]).toMatchObject({
-        i_control_type: item.expectedI,
-        j_control_type: item.expectedJ
-      });
+      expect(payload[item.section].columns).toEqual(["idx", "name", "control_type"]);
+      expect(payload[item.section].columns).not.toContain("i_control_type");
+      expect(payload[item.section].columns).not.toContain("j_control_type");
     }
   });
 

@@ -1235,7 +1235,32 @@ button:disabled {
   min-width: 0;
   min-height: 30px;
   padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
   gap: 8px;
+  background: transparent;
+  box-shadow: none;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    transform 80ms ease;
+}
+
+.action-cluster .topbar-dropdown-menu button:not(:disabled):hover,
+.action-cluster .topbar-dropdown-menu button:not(:disabled):focus-visible {
+  color: #1d4ed8;
+  background: #eff6ff;
+  outline: none;
+}
+
+.action-cluster .topbar-dropdown-menu button:not(:disabled):active {
+  color: #1e40af;
+  background: #dbeafe;
+  transform: translateY(1px);
+}
+
+.action-cluster .topbar-dropdown-menu button:disabled {
+  background: transparent;
 }
 
 .topbar-dropdown-menu button span {
@@ -7663,10 +7688,10 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   width: 100%;
   min-height: 24px;
   padding: 0 6px;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: 5px;
   color: #0f172a;
-  background: #ffffff;
+  background: transparent;
   font-size: 11px;
   font-weight: 750;
   white-space: nowrap;
@@ -7674,14 +7699,13 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .state-icon-context-menu button:hover,
 .state-icon-context-menu button:focus-visible {
-  border-color: #bfdbfe;
   background: #eff6ff;
   outline: none;
 }
 
 .state-icon-context-menu button:disabled {
   color: #94a3b8;
-  background: #f8fafc;
+  background: transparent;
   cursor: not-allowed;
 }
 

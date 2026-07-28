@@ -2244,18 +2244,6 @@ function eParameterFieldsFromInterfaceDefinition(
     if (!configuredSourceName || !exportName) {
       continue;
     }
-    if (toSnakeCaseDeviceParamName(configuredSourceName) === "control_type") {
-      if (section === "DCACConverter") {
-        appendField({ sourceName: "ac_control_type", exportName: "ac_control_type" });
-        appendField({ sourceName: "dc_control_type", exportName: "dc_control_type" });
-        continue;
-      }
-      if (section === "ACACConverter" || section === "DCDCConverter") {
-        appendField({ sourceName: "i_control_type", exportName: "i_control_type" });
-        appendField({ sourceName: "j_control_type", exportName: "j_control_type" });
-        continue;
-      }
-    }
     appendField({
       sourceName: legacyEColumnForDefinition(section, configuredSourceName) || configuredSourceName,
       exportName,

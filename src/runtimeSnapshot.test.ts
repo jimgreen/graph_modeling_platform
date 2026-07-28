@@ -279,7 +279,7 @@ describe("serializeSvg", () => {
 
 describe("serializeEFile", () => {
   it("返回 E 文件文本", () => {
-    const buildEFileExport = vi.fn(() => ({
+    const buildEFileExport = vi.fn((_project: any, _schemePath: string[], _options: any) => ({
       filename: "model.e",
       text: "E file content",
       mime: "text/plain"
@@ -298,6 +298,7 @@ describe("serializeEFile", () => {
       PARAM_LABELS: {},
       eDeviceDefinitionLabels: { ACGenerator: "GeneratorTable" },
       eDeviceDefinitionClassExportEnabled: { ACGenerator: true },
+      eDeviceDefinitionFieldOrder: { ACGenerator: ["dev_type", "name", "idx"] },
       resolveTemplateComponentLibrary: () => "ACGenerator"
     }));
     expect(res.ok).toBe(true);
@@ -320,6 +321,15 @@ describe("serializeEFile", () => {
         ])
       })
     );
+    const exportOptions = buildEFileExport.mock.calls[0]?.[2];
+    const generatorDefinition = exportOptions.interfaceDefinitions.find(
+      (definition: any) => definition.componentLibrary === "ACGenerator"
+    );
+    expect(generatorDefinition.fields.slice(0, 3).map((field: any) => field.sourceName)).toEqual([
+      "dev_type",
+      "name",
+      "idx"
+    ]);
   });
 
   it("无活动模型时返回 no-active-model", () => {

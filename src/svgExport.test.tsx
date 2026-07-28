@@ -26,24 +26,34 @@ describe("SVG export", () => {
   const svgEdgeGroupTag = (svg: string, id: string) =>
     svg.match(new RegExp(`<path id="${id}"(?=\\s|/?>)[^>]*>`))?.[0] ?? "";
 
-  test("downloads SVG exports in voltage color mode", async () => {
+  test("writes E, JSON, and SVG files to one selected directory with model-based names", async () => {
     const buildDocument = vi.fn((_nodes: unknown, _edges: unknown, _options: unknown) => "<svg/>");
-    const saveTextFile = vi.fn(async () => true);
+    const buildEFileExport = vi.fn(() => ({ filename: "ignored-name.e", text: "<Model/>", mime: "text/plain" }));
+    const currentProject = vi.fn(() => ({ version: 1, name: "voltage-export", nodes: [], edges: [] }));
+    const directoryHandle = { name: "exports" };
+    const ensureSavedBeforeExport = vi.fn(() => true);
+    const showDirectoryPicker = vi.fn(async () => directoryHandle);
+    const serializeProject = vi.fn(() => '{"name":"voltage-export"}');
     const alert = vi.fn();
+    const writeTextFileToDirectory = vi.fn(async (_directory: unknown, _filename: string, _text: string, _mime: string) => undefined);
     const writeOperationLog = vi.fn();
-    vi.stubGlobal("window", { alert });
+    vi.stubGlobal("window", { alert, showDirectoryPicker });
     const exportSvg = createExportSvg({
       DEFAULT_CANVAS_BACKGROUND: "#ffffff",
+      activeSchemeKey: "scheme-1",
       activeLayerId: "default-layer",
       backgroundPageRender: null,
+      buildEFileExport,
       buildSvgDocument: buildDocument,
       canvasBackgroundColor: "#ffffff",
       canvasBackgroundImageUrl: "",
       canvasBounds: { width: 320, height: 180 },
       colorDisplayMode: "energy",
       colorPalette: DEFAULT_COLOR_PALETTE,
+      currentProject,
       edges: [],
-      ensureSavedBeforeExport: () => true,
+      ensureSavedBeforeExport,
+      getEExportWarnings: () => [],
       layers: [],
       libraryTemplates: DEVICE_LIBRARY,
       loadSvgImageExportPathById: async () => ({}),
@@ -52,34 +62,61 @@ describe("SVG export", () => {
       projectMeasurements: { groups: [] },
       projectName: "voltage-export",
       safeFilePart: (value: string) => value,
-      saveTextFile,
+      schemePathForScheme: () => ["主方案", "子方案"],
+      serializeProject,
+      writeTextFileToDirectory,
       writeOperationLog
     });
 
     await exportSvg();
 
+    expect(ensureSavedBeforeExport).toHaveBeenCalledOnce();
+    expect(buildEFileExport).toHaveBeenCalledWith(
+      currentProject.mock.results[0]?.value,
+      ["主方案", "子方案"],
+      expect.objectContaining({ interfaceDefinitions: expect.any(Array) })
+    );
     expect(buildDocument).toHaveBeenCalledOnce();
     expect(buildDocument.mock.calls[0]?.[2]).toMatchObject({ colorDisplayMode: "voltage" });
-    expect(saveTextFile).toHaveBeenCalledOnce();
+    expect(serializeProject).toHaveBeenCalledWith(currentProject.mock.results[0]?.value);
+    expect(showDirectoryPicker).toHaveBeenCalledOnce();
+    expect(showDirectoryPicker).toHaveBeenCalledWith({ id: "model-bundle-export", mode: "readwrite" });
+    expect(writeTextFileToDirectory).toHaveBeenCalledTimes(3);
+    expect(writeTextFileToDirectory.mock.calls).toEqual([
+      [directoryHandle, "voltage-export.e", "<Model/>", "text/plain"],
+      [directoryHandle, "voltage-export.json", '{"name":"voltage-export"}', "application/json"],
+      [directoryHandle, "voltage-export.svg", "<svg/>", "image/svg+xml"]
+    ]);
+    expect(writeOperationLog).toHaveBeenCalledWith("导出模型文件：voltage-export.e");
+    expect(writeOperationLog).toHaveBeenCalledWith("导出模型文件：voltage-export.json");
     expect(writeOperationLog).toHaveBeenCalledWith("导出图形文件：voltage-export.svg");
-    expect(alert).toHaveBeenCalledWith("SVG 文件导出成功：voltage-export.svg");
+    expect(alert).toHaveBeenCalledOnce();
+    expect(alert).toHaveBeenCalledWith("E、JSON 和 SVG 文件导出成功。\n目录：exports\nE：voltage-export.e\nJSON：voltage-export.json\nSVG：voltage-export.svg");
   });
 
-  test("does not report SVG export success when saving is cancelled", async () => {
+  test("stops the combined export silently when directory selection is cancelled", async () => {
     const alert = vi.fn();
+    const writeTextFileToDirectory = vi.fn();
     const writeOperationLog = vi.fn();
-    vi.stubGlobal("window", { alert });
+    const showDirectoryPicker = vi.fn(async () => {
+      throw new DOMException("cancelled", "AbortError");
+    });
+    vi.stubGlobal("window", { alert, showDirectoryPicker });
     const exportSvg = createExportSvg({
       DEFAULT_CANVAS_BACKGROUND: "#ffffff",
+      activeSchemeKey: "scheme-1",
       activeLayerId: "default-layer",
       backgroundPageRender: null,
+      buildEFileExport: () => ({ filename: "cancelled-export.e", text: "<Model/>", mime: "text/plain" }),
       buildSvgDocument: vi.fn(() => "<svg/>"),
       canvasBackgroundColor: "#ffffff",
       canvasBackgroundImageUrl: "",
       canvasBounds: { width: 320, height: 180 },
       colorPalette: DEFAULT_COLOR_PALETTE,
+      currentProject: () => ({ version: 1, name: "cancelled-export", nodes: [], edges: [] }),
       edges: [],
       ensureSavedBeforeExport: () => true,
+      getEExportWarnings: () => [],
       layers: [],
       libraryTemplates: DEVICE_LIBRARY,
       loadSvgImageExportPathById: async () => ({}),
@@ -88,14 +125,72 @@ describe("SVG export", () => {
       projectMeasurements: { groups: [] },
       projectName: "cancelled-export",
       safeFilePart: (value: string) => value,
-      saveTextFile: vi.fn(async () => false),
+      isPickerAbort: (error: unknown) => error instanceof DOMException && error.name === "AbortError",
+      schemePathForScheme: () => ["默认方案"],
+      serializeProject: vi.fn(() => "{}"),
+      writeTextFileToDirectory,
       writeOperationLog
     });
 
     await exportSvg();
 
     expect(writeOperationLog).not.toHaveBeenCalled();
+    expect(writeTextFileToDirectory).not.toHaveBeenCalled();
     expect(alert).not.toHaveBeenCalled();
+  });
+
+  test("waits for every directory write before reporting a combined export failure", async () => {
+    const alert = vi.fn();
+    const directoryHandle = { name: "exports" };
+    const writeTextFileToDirectory = vi.fn(async (_directory: unknown, filename: string) => {
+      if (filename.endsWith(".json")) {
+        throw new Error("disk full");
+      }
+    });
+    const writeOperationLog = vi.fn();
+    vi.stubGlobal("window", { alert, showDirectoryPicker: vi.fn(async () => directoryHandle) });
+    const exportSvg = createExportSvg({
+      DEFAULT_CANVAS_BACKGROUND: "#ffffff",
+      activeSchemeKey: "scheme-1",
+      activeLayerId: "default-layer",
+      backgroundPageRender: null,
+      buildEFileExport: () => ({ filename: "ignored.e", text: "<Model/>", mime: "text/plain" }),
+      buildSvgDocument: () => "<svg/>",
+      canvasBackgroundColor: "#ffffff",
+      canvasBackgroundImageUrl: "",
+      canvasBounds: { width: 320, height: 180 },
+      colorPalette: DEFAULT_COLOR_PALETTE,
+      currentProject: () => ({ version: 1, name: "partial-export", nodes: [], edges: [] }),
+      edges: [],
+      ensureSavedBeforeExport: () => true,
+      getEExportWarnings: () => [{ nodeName: "未导出设备", kind: "custom", reason: "未配置接口" }],
+      layers: [],
+      libraryTemplates: DEVICE_LIBRARY,
+      loadSvgImageExportPathById: async () => ({}),
+      measurementConfig: undefined,
+      nodes: [],
+      projectMeasurements: { groups: [] },
+      projectName: "partial-export",
+      safeFilePart: (value: string) => value,
+      schemePathForScheme: () => ["默认方案"],
+      serializeProject: () => "{}",
+      writeTextFileToDirectory,
+      writeOperationLog
+    });
+
+    await exportSvg();
+
+    expect(writeTextFileToDirectory).toHaveBeenCalledTimes(3);
+    expect(alert).toHaveBeenCalledOnce();
+    expect(alert.mock.invocationCallOrder[0]).toBeGreaterThan(
+      Math.max(...writeTextFileToDirectory.mock.invocationCallOrder)
+    );
+    expect(alert.mock.calls[0]?.[0]).toContain("部分文件导出失败");
+    expect(alert.mock.calls[0]?.[0]).toContain("partial-export.json：disk full");
+    expect(alert.mock.calls[0]?.[0]).toContain("有 1 个图上设备未导出到 E 文件");
+    expect(writeOperationLog).toHaveBeenCalledWith("导出模型文件：partial-export.e");
+    expect(writeOperationLog).not.toHaveBeenCalledWith("导出模型文件：partial-export.json");
+    expect(writeOperationLog).toHaveBeenCalledWith("导出图形文件：partial-export.svg");
   });
 
   test("reports successful E file export after saving completes", async () => {

@@ -445,6 +445,7 @@ export function serializeEFile(appScope: Record<string, any>): V1Result<{
         labels: appScope.PARAM_LABELS,
         eDeviceDefinitionLabels: appScope.eDeviceDefinitionLabels,
         eDeviceDefinitionClassExportEnabled: appScope.eDeviceDefinitionClassExportEnabled,
+        eDeviceDefinitionFieldOrder: appScope.eDeviceDefinitionFieldOrder,
         resolveDefinitionComponentLibrary: appScope.resolveTemplateComponentLibrary
       })
     );

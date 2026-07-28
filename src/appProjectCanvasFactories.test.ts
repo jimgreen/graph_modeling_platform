@@ -4,7 +4,8 @@ import {
   createAutoSpreadCanvasGraphics,
   createCommitLayoutNodePositions,
   createHandlePointerMove,
-  createLoadSavedProject
+  createLoadSavedProject,
+  createSaveCurrentProject
 } from "./appExtracted/appProjectCanvasFactories";
 import { clampCanvasNoScrollOffset } from "./canvasViewport";
 
@@ -101,6 +102,86 @@ function createLoadScope(overrides: Record<string, unknown> = {}) {
     ...overrides
   };
 }
+
+describe("save current project E export options", () => {
+  test("uses the configured E interface field order when generating saved artifacts", async () => {
+    const noop = vi.fn();
+    const project = { version: 1, name: "模型一", nodes: [], edges: [] };
+    const projectRecord = { id: "project-1", name: "模型一", project };
+    const scheme = { id: "scheme-1", name: "方案一", projects: [projectRecord], children: [] };
+    let generatedExportOptions: any;
+    const saveCurrentProject = createSaveCurrentProject({
+      activeProjectKey: "project-1",
+      activeSchemeKey: "scheme-1",
+      backgroundPageRender: null,
+      buildEFileExport: vi.fn((_project: any, _path: string[], options: any) => {
+        generatedExportOptions = options;
+        return { filename: "模型一.e", text: "", mime: "text/plain" };
+      }),
+      buildSvgDocument: vi.fn(() => "<svg/>"),
+      clearRefreshRecoveryProject: noop,
+      colorPalette: {},
+      createSavedProject: vi.fn(),
+      currentGraphDirtyBaseline: () => "baseline",
+      currentProject: () => project,
+      DEFAULT_CANVAS_BACKGROUND: "#ffffff",
+      deferredMoveOptimizationCancelRef: { current: null },
+      deferredRoutableLineRouteRepairCancelRef: { current: null },
+      eDeviceDefinitionClassExportEnabled: { ACGenerator: true },
+      eDeviceDefinitionFieldOrder: { ACGenerator: ["dev_type", "name", "idx"] },
+      eDeviceDefinitionLabels: { ACGenerator: "ACGenerator" },
+      findProjectRecordByNameInScheme: vi.fn(),
+      findSavedSchemeById: vi.fn(),
+      findSchemeForProject: () => scheme,
+      getEExportWarnings: vi.fn(() => []),
+      graphDirtyBaselineRef: { current: null },
+      libraryTemplates: [{
+        kind: "ac-source",
+        label: "交流电源",
+        categoryLibrary: "交流设备",
+        size: { width: 84, height: 56 },
+        params: {},
+        terminalType: "ac",
+        terminalCount: 1
+      }],
+      loadSvgImageExportPathById: async () => ({}),
+      measurementConfig: undefined,
+      PARAM_LABELS: {},
+      projectById: new Map([["project-1", projectRecord]]),
+      projectMeasurements: undefined,
+      projectName: "模型一",
+      rememberPersistedSchemesPayload: noop,
+      requireEditMode: () => true,
+      resolveTemplateComponentLibrary: () => "ACGenerator",
+      saveActiveProjectPointer: noop,
+      saveBackendProjectRecord: vi.fn(async () => projectRecord),
+      savedSchemePathForId: () => ["方案一"],
+      schemePathForScheme: () => ["方案一"],
+      schemes: [scheme],
+      selectedSchemeId: "scheme-1",
+      serializeSchemesForStorage: () => "{}",
+      setActiveProjectKey: noop,
+      setActiveSchemeKey: noop,
+      setHasUnsavedChanges: noop,
+      setProjectName: noop,
+      setSchemes: noop,
+      suppressNextGraphDirtyRef: { current: 0 },
+      upsertSavedProjectInScheme: () => [scheme],
+      writeOperationLog: noop
+    });
+
+    await expect(saveCurrentProject()).resolves.toBe(true);
+
+    const generatorDefinition = generatedExportOptions.interfaceDefinitions.find(
+      (definition: any) => definition.componentLibrary === "ACGenerator"
+    );
+    expect(generatorDefinition.fields.slice(0, 3).map((field: any) => field.sourceName)).toEqual([
+      "dev_type",
+      "name",
+      "idx"
+    ]);
+  });
+});
 
 describe("saved project definition migration", () => {
   test("keeps the loaded project clean after automatic definition and measurement migration", () => {

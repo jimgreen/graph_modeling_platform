@@ -388,6 +388,61 @@ describe("app view device definition parameter rows", () => {
     expect(source).toMatch(/event\.key\.toLowerCase\(\) === "s"/);
   });
 
+  test("keeps the top toolbar compact with icon-only mode and export actions", () => {
+    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const modeButton = source.match(
+      /<button type="button" className=\{`topbar-primary-button[^`]*`\} onClick=\{toggleInteractionMode\}[\s\S]*?<\/button>/
+    )?.[0] ?? "";
+    const exportActions = source.match(
+      /<input ref=\{__appScope\.userCustomizationImportInputRef\}[\s\S]*?<\/div>\s*<RuntimeWsIndicator/
+    )?.[0] ?? "";
+    const toolbarPreviewButton = source.match(
+      /\{ENABLE_REACT_FLOW_PREVIEW && \(<button className="topbar-primary-button react-flow-preview-button"[\s\S]*?<\/button>\)\}/
+    );
+
+    expect(modeButton).toContain("toggleInteractionMode");
+    expect(modeButton).toMatch(/isEditMode \? <Pencil size=\{16\}\/> : <Eye size=\{16\}\/>/);
+    expect(modeButton).not.toContain("编辑模式</span>");
+    expect(modeButton).not.toContain("浏览模式</span>");
+    expect(modeButton).not.toContain("mode-toggle-button");
+    expect(exportActions.match(/onClick=\{exportSvg\}/g)).toHaveLength(1);
+    expect(exportActions).not.toContain("onClick={exportEFile}");
+    expect(exportActions).toContain("导出 E、JSON 和 SVG 文件");
+    expect(toolbarPreviewButton).toBeNull();
+  });
+
+  test("combines grouping actions into a borderless popup menu", () => {
+    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+    const actionCluster = source.match(
+      /<div className="action-cluster">[\s\S]*?<input ref=\{imageInputRef\}/
+    )?.[0] ?? "";
+    const groupDropdown = actionCluster.match(
+      /<div className="topbar-dropdown group-dropdown">[\s\S]*?<div className="topbar-dropdown display-layer-dropdown">/
+    )?.[0] ?? "";
+    const topbarMenuButtonRule = styles.match(
+      /\.action-cluster \.topbar-dropdown-menu button\s*\{([\s\S]*?)\}/
+    )?.[1] ?? "";
+    const stateIconMenuButtonRule = styles.match(
+      /\.state-icon-context-menu button\s*\{([\s\S]*?)\}/
+    )?.[1] ?? "";
+
+    expect(groupDropdown).toContain('title="组合操作"');
+    expect(groupDropdown).toContain('aria-label="组合操作"');
+    expect(groupDropdown).toContain('role="menu" aria-label="组合操作"');
+    expect(groupDropdown).toContain("onClick={groupSelectedGraphics}");
+    expect(groupDropdown).toContain("onClick={ungroupSelectedGraphics}");
+    expect(groupDropdown).toContain("<span>组合</span>");
+    expect(groupDropdown).toContain("<span>解除组合</span>");
+    expect(actionCluster).toMatch(
+      /<div className="action-cluster">\s*<div className="topbar-dropdown group-dropdown">/
+    );
+    expect(topbarMenuButtonRule).toMatch(/border:\s*0/);
+    expect(topbarMenuButtonRule).toMatch(/background:\s*transparent/);
+    expect(stateIconMenuButtonRule).toMatch(/border:\s*0/);
+    expect(stateIconMenuButtonRule).toMatch(/background:\s*transparent/);
+  });
+
   test("keeps export configuration columns only in the E interface definition dialog", () => {
     const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
     const eInterfaceStart = source.indexOf("{eDeviceDefinitionInterfaceDialogOpen &&");

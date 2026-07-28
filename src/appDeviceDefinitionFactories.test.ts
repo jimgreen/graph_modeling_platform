@@ -19,6 +19,7 @@ import {
   applyEDeviceDefinitionSectionsToLibraryState,
   buildEDeviceInterfaceDefinitionRows,
   createExportEFile,
+  createExportSchemeRecord,
   createExportEDeviceDefinitionFile,
   createRouteSegmentPointerDistance,
   createResolveDuplicateModelImport,
@@ -2885,6 +2886,60 @@ describe("createExportEFile", () => {
     const acGenerator = generatedExportOptions.interfaceDefinitions
       .find((row: any) => row.componentLibrary === "ACGenerator");
     expect(acGenerator.fields.slice(0, 3).map((field: any) => field.sourceName)).toEqual([
+      "dev_type",
+      "name",
+      "idx"
+    ]);
+  });
+
+  test("uses the configured field order when refreshing E files for a scheme export", async () => {
+    let generatedExportOptions: any;
+    const project = { version: 1, name: "方案模型", nodes: [], edges: [] };
+    const projectRecord = { id: "project-1", name: "方案模型", project };
+    const scheme = { id: "scheme-1", name: "方案一", projects: [projectRecord], children: [] };
+    const exportScheme = createExportSchemeRecord({
+      DEFAULT_CANVAS_BACKGROUND: "#ffffff",
+      PARAM_LABELS: {},
+      backgroundPageRender: null,
+      buildEFileExport: vi.fn((_project: any, _path: string[], options: any) => {
+        generatedExportOptions = options;
+        return { filename: "方案模型.e", text: "", mime: "text/plain" };
+      }),
+      buildSvgDocument: vi.fn(() => "<svg/>"),
+      colorPalette: {},
+      downloadBackendSchemeArchive: vi.fn(async () => false),
+      eDeviceDefinitionClassExportEnabled: { ACGenerator: true },
+      eDeviceDefinitionFieldOrder: { ACGenerator: ["dev_type", "name", "idx"] },
+      eDeviceDefinitionLabels: { ACGenerator: "ACGenerator" },
+      fetchBackendProjectRecord: vi.fn(),
+      flattenSavedProjects: () => [projectRecord],
+      libraryTemplates: [{
+        kind: "ac-source",
+        label: "交流电源",
+        categoryLibrary: "交流设备",
+        size: { width: 84, height: 56 },
+        params: {},
+        terminalType: "ac",
+        terminalCount: 1
+      }],
+      loadSvgImageExportPathById: async () => ({}),
+      measurementConfig: undefined,
+      resolveTemplateComponentLibrary: () => "ACGenerator",
+      safeFilePart: (value: string) => value,
+      saveBackendProjectArtifacts: vi.fn(async () => undefined),
+      savedProjectRecordIsSummary: () => false,
+      schemePathForRecord: () => ["方案一"],
+      schemePathForScheme: () => ["方案一"],
+      schemes: [scheme],
+      writeOperationLog: vi.fn()
+    });
+
+    await exportScheme(scheme as any);
+
+    const generatorDefinition = generatedExportOptions.interfaceDefinitions.find(
+      (definition: any) => definition.componentLibrary === "ACGenerator"
+    );
+    expect(generatorDefinition.fields.slice(0, 3).map((field: any) => field.sourceName)).toEqual([
       "dev_type",
       "name",
       "idx"

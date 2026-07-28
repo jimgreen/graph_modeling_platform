@@ -1159,9 +1159,8 @@ export function renderAppView(__appScope: Record<string, any>) {
               {renderLayerManager()}
             </div>
           </div>
-          <button type="button" className={`topbar-primary-button mode-toggle-button ${isEditMode ? "active" : ""}`} onClick={toggleInteractionMode} title={isEditMode ? "当前为编辑模式，点击切换到浏览模式" : "当前为浏览模式，点击切换到编辑模式"} aria-label={isEditMode ? "切换到浏览模式" : "切换到编辑模式"}>
+          <button type="button" className={`topbar-primary-button ${isEditMode ? "active" : ""}`} onClick={toggleInteractionMode} title={isEditMode ? "当前为编辑模式，点击切换到浏览模式" : "当前为浏览模式，点击切换到编辑模式"} aria-label={isEditMode ? "切换到浏览模式" : "切换到编辑模式"}>
             {isEditMode ? <Pencil size={16}/> : <Eye size={16}/>}
-            <span>{isEditMode ? "编辑模式" : "浏览模式"}</span>
           </button>
           <button type="button" className={`topbar-primary-button ${smartAlignmentEnabled ? "active" : ""}`} onClick={() => setSmartAlignmentEnabled((current) => !current)} title={smartAlignmentEnabled ? "对齐到标线已开启，点击关闭" : "对齐到标线已关闭，点击开启"} aria-label={smartAlignmentEnabled ? "关闭对齐到标线" : "开启对齐到标线"}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
@@ -1190,17 +1189,23 @@ export function renderAppView(__appScope: Record<string, any>) {
           <button className="topbar-primary-button" onClick={() => setImageTarget({ kind: "canvasIcon" })} disabled={isBrowseMode} title="分类图标库" aria-label="分类图标库">
             <FolderOpen size={16}/>
           </button>
-          {ENABLE_REACT_FLOW_PREVIEW && (<button className="topbar-primary-button react-flow-preview-button" onClick={() => setReactFlowPreviewOpen(true)} title="React Flow 预览" aria-label="React Flow 预览">
-              <Route size={16}/>
-            </button>)}
           <div className="action-cluster">
-            
-            <button onClick={groupSelectedGraphics} disabled={isBrowseMode || !canGroupSelectedGraphics} title="组合" aria-label="组合">
-              <Group size={16}/>
-            </button>
-            <button onClick={ungroupSelectedGraphics} disabled={isBrowseMode || !canUngroupSelectedGraphics} title="解散" aria-label="解散">
-              <Ungroup size={16}/>
-            </button>
+            <div className="topbar-dropdown group-dropdown">
+              <button type="button" className="topbar-dropdown-trigger" disabled={isBrowseMode || (!canGroupSelectedGraphics && !canUngroupSelectedGraphics)} title="组合操作" aria-label="组合操作">
+                <Group size={16}/>
+                <ChevronDown size={13}/>
+              </button>
+              <div className="topbar-dropdown-menu" role="menu" aria-label="组合操作">
+                <button onClick={groupSelectedGraphics} disabled={isBrowseMode || !canGroupSelectedGraphics} title="组合" aria-label="组合">
+                  <Group size={16}/>
+                  <span>组合</span>
+                </button>
+                <button onClick={ungroupSelectedGraphics} disabled={isBrowseMode || !canUngroupSelectedGraphics} title="解除组合" aria-label="解除组合">
+                  <Ungroup size={16}/>
+                  <span>解除组合</span>
+                </button>
+              </div>
+            </div>
             <div className="topbar-dropdown display-layer-dropdown">
               <button type="button" className="topbar-dropdown-trigger" disabled={!canAdjustSelectedDisplayLayer} title="显示层级" aria-label="显示层级">
                 <Layers2 size={16}/>
@@ -1300,11 +1305,8 @@ export function renderAppView(__appScope: Record<string, any>) {
             <input ref={schemeImportInputRef} type="file" accept=".zip,application/zip,.json,application/json" hidden onChange={importSchemeFile}/>
             <input ref={__appScope.libraryPackageImportInputRef} type="file" accept=".json,application/json" hidden onChange={__appScope.importLibraryPackageFile}/>
             <input ref={__appScope.userCustomizationImportInputRef} type="file" accept=".json,application/json" hidden onChange={__appScope.importUserCustomizationFile}/>
-            <button onClick={exportSvg} disabled={!canExportCurrentModel} title={canExportCurrentModel ? "导出 SVG 图形文件" : "请先保存当前模型后再导出图形文件"} aria-label="导出图形文件">
+            <button onClick={exportSvg} disabled={!canExportCurrentModel} title={canExportCurrentModel ? "导出 E、JSON 和 SVG 文件" : "请先保存当前模型后再导出文件"} aria-label="导出 E、JSON 和 SVG 文件">
               <Download size={16}/>
-            </button>
-            <button onClick={exportEFile} disabled={!canExportCurrentModel} title={canExportCurrentModel ? "导出 E 模型文件" : "请先保存当前模型后再导出模型文件"} aria-label="导出模型文件">
-              <FileJson size={16}/>
             </button>
           </div>
           <RuntimeWsIndicator __appScope={__appScope}/>

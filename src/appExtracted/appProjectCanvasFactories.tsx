@@ -4507,7 +4507,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
 
 export function createSaveCurrentProject(__appScope: Record<string, any>) {
   return async (targetId?: string) => {
-  const { activeProjectKey, activeSchemeKey, backgroundPageRender, buildEFileExport, buildSvgDocument, clearRefreshRecoveryProject, colorPalette, createSavedProject, currentGraphDirtyBaseline, currentProject, DEFAULT_CANVAS_BACKGROUND, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionLabels, findProjectRecordByNameInScheme, findSavedSchemeById, findSchemeForProject, getEExportWarnings, graphDirtyBaselineRef, libraryTemplates, loadSvgImageExportPathById, measurementConfig, PARAM_LABELS, projectById, projectMeasurements, projectName, rememberPersistedSchemesPayload, requireEditMode, resolveTemplateComponentLibrary, saveActiveProjectPointer, saveBackendProjectRecord, savedSchemePathForId, schemePathForScheme, schemes, selectedSchemeId, serializeSchemesForStorage, setActiveProjectKey, setActiveSchemeKey, setHasUnsavedChanges, setProjectName, setSchemes, suppressNextGraphDirtyRef, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
+  const { activeProjectKey, activeSchemeKey, backgroundPageRender, buildEFileExport, buildSvgDocument, clearRefreshRecoveryProject, colorPalette, createSavedProject, currentGraphDirtyBaseline, currentProject, DEFAULT_CANVAS_BACKGROUND, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionLabels, findProjectRecordByNameInScheme, findSavedSchemeById, findSchemeForProject, getEExportWarnings, graphDirtyBaselineRef, libraryTemplates, loadSvgImageExportPathById, measurementConfig, PARAM_LABELS, projectById, projectMeasurements, projectName, rememberPersistedSchemesPayload, requireEditMode, resolveTemplateComponentLibrary, saveActiveProjectPointer, saveBackendProjectRecord, savedSchemePathForId, schemePathForScheme, schemes, selectedSchemeId, serializeSchemesForStorage, setActiveProjectKey, setActiveSchemeKey, setHasUnsavedChanges, setProjectName, setSchemes, suppressNextGraphDirtyRef, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
     if (targetId === undefined) {
       targetId = activeProjectKey;
     }
@@ -4553,6 +4553,7 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
             labels: PARAM_LABELS,
             eDeviceDefinitionLabels,
             eDeviceDefinitionClassExportEnabled,
+            eDeviceDefinitionFieldOrder,
             resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
           })
         );

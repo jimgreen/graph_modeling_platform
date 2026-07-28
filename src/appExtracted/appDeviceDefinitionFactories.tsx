@@ -2564,37 +2564,176 @@ export function createLoadSvgImageExportPathById(__appScope: Record<string, any>
 
 export function createExportSvg(__appScope: Record<string, any>) {
   return async () => {
-  const { DEFAULT_CANVAS_BACKGROUND, activeLayerId, backgroundPageRender, buildSvgDocument, canvasBackgroundColor, canvasBackgroundImageUrl, canvasBounds, colorPalette, edges, ensureSavedBeforeExport, layers, libraryTemplates, loadSvgImageExportPathById, measurementConfig, nodes, projectMeasurements, projectName, safeFilePart, saveTextFile, writeOperationLog } = __appScope;
+  const {
+    DEFAULT_CANVAS_BACKGROUND,
+    PARAM_LABELS,
+    activeLayerId,
+    activeSchemeKey,
+    backgroundPageRender,
+    buildEFileExport,
+    buildSvgDocument,
+    canvasBackgroundColor,
+    canvasBackgroundImageUrl,
+    canvasBounds,
+    colorPalette,
+    currentProject,
+    eDeviceDefinitionClassExportEnabled,
+    eDeviceDefinitionFieldOrder,
+    eDeviceDefinitionLabels,
+    edges,
+    ensureSavedBeforeExport,
+    getEExportWarnings,
+    isPickerAbort,
+    layers,
+    libraryTemplates,
+    loadSvgImageExportPathById,
+    measurementConfig,
+    nodes,
+    projectMeasurements,
+    projectName,
+    resolveTemplateComponentLibrary,
+    safeFilePart,
+    schemePathForScheme,
+    serializeProject,
+    writeTextFileToDirectory,
+    writeOperationLog
+  } = __appScope;
     if (!ensureSavedBeforeExport()) {
       return;
     }
-    const imageExportPathById = await loadSvgImageExportPathById();
-    const filename = `${safeFilePart(projectName)}.svg`;
-    const saved = await saveTextFile({
-      filename,
-      text: buildSvgDocument(nodes, edges, {
-        ...canvasBounds,
-        backgroundColor: canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND,
-        backgroundImage: canvasBackgroundImageUrl,
-        imageExportPathById,
-        colorDisplayMode: "voltage",
-        colorPalette,
-        deviceTemplates: libraryTemplates,
-        layers,
-        activeLayerId,
-        backgroundPage: backgroundPageRender,
-        measurements: projectMeasurements,
-        measurementConfig
-      }),
-      mime: "image/svg+xml",
-      description: "SVG 图形文件",
-      extensions: [".svg"]
-    });
-    if (!saved) {
+
+    const directoryPicker = (window as Window & {
+      showDirectoryPicker?: (options?: { id?: string; mode?: "read" | "readwrite" }) => Promise<any>;
+    }).showDirectoryPicker;
+    if (typeof directoryPicker !== "function") {
+      window.alert("导出失败：当前浏览器不支持选择导出目录，请使用最新版 Chrome 或 Edge。");
       return;
     }
-    writeOperationLog(`导出图形文件：${filename}`);
-    window.alert(`SVG 文件导出成功：${filename}`);
+    let directoryHandle: any;
+    try {
+      directoryHandle = await directoryPicker.call(window, {
+        id: "model-bundle-export",
+        mode: "readwrite"
+      });
+    } catch (error) {
+      if (typeof isPickerAbort === "function" && isPickerAbort(error)) {
+        return;
+      }
+      const message = error instanceof Error ? error.message : String(error ?? "未知错误");
+      window.alert(`导出失败：无法打开目标目录。\n${message}`);
+      return;
+    }
+
+    try {
+      const project = currentProject();
+      const exportOptions = buildEFileExportOptionsFromLibrary({
+        libraryTemplates,
+        labels: PARAM_LABELS,
+        eDeviceDefinitionLabels,
+        eDeviceDefinitionClassExportEnabled,
+        eDeviceDefinitionFieldOrder,
+        resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
+      });
+      const warnings = getEExportWarnings(project, exportOptions);
+      const schemePath = typeof schemePathForScheme === "function"
+        ? schemePathForScheme(activeSchemeKey)
+        : [];
+      const eFile = buildEFileExport(
+        project,
+        Array.isArray(schemePath) && schemePath.length > 0 ? schemePath : ["默认方案"],
+        exportOptions
+      );
+      const imageExportPathById = await loadSvgImageExportPathById();
+      const baseFilename = safeFilePart(projectName);
+      const exportFiles = [
+        {
+          label: "E",
+          filename: `${baseFilename}.e`,
+          text: eFile.text,
+          mime: eFile.mime,
+          operationLog: `导出模型文件：${baseFilename}.e`
+        },
+        {
+          label: "JSON",
+          filename: `${baseFilename}.json`,
+          text: serializeProject(project),
+          mime: "application/json",
+          operationLog: `导出模型文件：${baseFilename}.json`
+        },
+        {
+          label: "SVG",
+          filename: `${baseFilename}.svg`,
+          text: buildSvgDocument(nodes, edges, {
+            ...canvasBounds,
+            backgroundColor: canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND,
+            backgroundImage: canvasBackgroundImageUrl,
+            imageExportPathById,
+            colorDisplayMode: "voltage",
+            colorPalette,
+            deviceTemplates: libraryTemplates,
+            layers,
+            activeLayerId,
+            backgroundPage: backgroundPageRender,
+            measurements: projectMeasurements,
+            measurementConfig
+          }),
+          mime: "image/svg+xml",
+          operationLog: `导出图形文件：${baseFilename}.svg`
+        }
+      ];
+      const results = await Promise.allSettled(
+        exportFiles.map((file) => writeTextFileToDirectory(
+          directoryHandle,
+          file.filename,
+          file.text,
+          file.mime
+        ))
+      );
+      const failures: string[] = [];
+      results.forEach((result, index) => {
+        const file = exportFiles[index];
+        if (!file) {
+          return;
+        }
+        if (result.status === "fulfilled") {
+          writeOperationLog(file.operationLog);
+          return;
+        }
+        const reason = result.reason instanceof Error
+          ? result.reason.message
+          : String(result.reason ?? "未知错误");
+        failures.push(`${file.filename}：${reason}`);
+      });
+      const warningLines = warnings.length > 0
+        ? [
+            "",
+            `有 ${warnings.length} 个图上设备未导出到 E 文件：`,
+            ...warnings.slice(0, 20).map((warning: any) => `- ${warning.nodeName}（${warning.kind}）：${warning.reason}`),
+            warnings.length > 20 ? `... 还有 ${warnings.length - 20} 个设备未列出。` : ""
+          ].filter(Boolean)
+        : [];
+      const directoryName = String(directoryHandle?.name ?? "").trim() || "已选择目录";
+      if (failures.length === 0) {
+        window.alert([
+          "E、JSON 和 SVG 文件导出成功。",
+          `目录：${directoryName}`,
+          ...exportFiles.map((file) => `${file.label}：${file.filename}`),
+          ...warningLines
+        ].join("\n"));
+        return;
+      }
+      window.alert([
+        "部分文件导出失败。",
+        `目录：${directoryName}`,
+        `成功：${exportFiles.length - failures.length} / ${exportFiles.length}`,
+        "失败文件：",
+        ...failures.map((failure) => `- ${failure}`),
+        ...warningLines
+      ].join("\n"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "未知错误");
+      window.alert(`导出失败：${message}`);
+    }
   };
 }
 
@@ -3358,7 +3497,7 @@ export function createResolveDuplicateModelImport(__appScope: Record<string, any
 
 export function createExportSchemeRecord(__appScope: Record<string, any>) {
   return async (scheme: SavedSchemeRecord) => {
-  const { DEFAULT_CANVAS_BACKGROUND, PARAM_LABELS, backgroundPageRender, buildEFileExport, buildSvgDocument, colorPalette, downloadBackendSchemeArchive, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionLabels, fetchBackendProjectRecord, flattenSavedProjects, isPickerAbort, libraryTemplates, loadSvgImageExportPathById, measurementConfig, resolveTemplateComponentLibrary, safeFilePart, saveBackendProjectArtifacts, savedProjectRecordIsSummary, schemePathForRecord, schemePathForScheme, schemes, writeOperationLog } = __appScope;
+  const { DEFAULT_CANVAS_BACKGROUND, PARAM_LABELS, backgroundPageRender, buildEFileExport, buildSvgDocument, colorPalette, downloadBackendSchemeArchive, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionLabels, fetchBackendProjectRecord, flattenSavedProjects, isPickerAbort, libraryTemplates, loadSvgImageExportPathById, measurementConfig, resolveTemplateComponentLibrary, safeFilePart, saveBackendProjectArtifacts, savedProjectRecordIsSummary, schemePathForRecord, schemePathForScheme, schemes, writeOperationLog } = __appScope;
     try {
       const schemePath = schemePathForRecord(scheme);
       // 导出前用前端逻辑刷新方案下所有模型的 SVG/E，保证与右上角导出按钮产物一致
@@ -3369,6 +3508,7 @@ export function createExportSchemeRecord(__appScope: Record<string, any>) {
           labels: PARAM_LABELS,
           eDeviceDefinitionLabels,
           eDeviceDefinitionClassExportEnabled,
+          eDeviceDefinitionFieldOrder,
           resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
         });
         const findOwnerSchemeForProject = (root: SavedSchemeRecord, projectId: string): SavedSchemeRecord | null => {
