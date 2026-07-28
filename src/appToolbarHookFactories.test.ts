@@ -169,7 +169,7 @@ describe("batch common model parameter hook", () => {
     })();
 
     const expectedOrderedKeys = [
-      "rated_power",
+      "rated_capacity",
       "rated_voltage",
       "frequency",
       "short_circuit_capacity",

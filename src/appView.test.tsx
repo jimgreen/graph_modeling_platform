@@ -9,6 +9,8 @@ import {
   resolveDeviceDefinitionParameterRowsForDisplay,
   resolveDeviceModelPanelParameterKeys,
   resolveCustomDeviceParameterRowsForDisplay,
+  resolveEDeviceInterfaceFieldsForDisplay,
+  moveEDeviceInterfaceFieldOrder,
   resolveInspectorGraphId,
   resolveInspectorTopologyEntry
 } from "./appExtracted/appView";
@@ -135,14 +137,14 @@ describe("app view device model parameter keys", () => {
       "name",
       "dev_type",
       "node",
+      "rated_capacity",
+      "rated_voltage",
       "control_type",
       "p_set",
       "q_set",
       "v_set",
       "alpha",
       "run_stat",
-      "rated_power",
-      "rated_voltage",
       "frequency",
       "short_circuit_capacity",
       "status",
@@ -158,6 +160,68 @@ describe("app view device model parameter keys", () => {
 });
 
 describe("app view device definition parameter rows", () => {
+  test("shows core E fields first and keeps device parameters last in definition order", () => {
+    const acGeneratorFields = [
+      "rated_capacity",
+      "rated_voltage",
+      "frequency",
+      "short_circuit_capacity",
+      "idx",
+      "name",
+      "dev_type",
+      "node",
+      "control_type",
+      "p_set",
+      "q_set",
+      "v_set",
+      "alpha",
+      "run_stat",
+      "status",
+      "source_type"
+    ].map((sourceName) => ({ sourceName, exportName: sourceName }));
+    const acBranchFields = ["r", "x", "b", "idx", "name", "dev_type", "i_node", "j_node", "run_stat"]
+      .map((sourceName) => ({ sourceName, exportName: sourceName }));
+
+    expect(resolveEDeviceInterfaceFieldsForDisplay("ACGenerator", acGeneratorFields).map((field) => field.sourceName)).toEqual([
+      "idx",
+      "name",
+      "dev_type",
+      "node",
+      "control_type",
+      "p_set",
+      "q_set",
+      "v_set",
+      "alpha",
+      "run_stat",
+      "status",
+      "source_type",
+      "rated_capacity",
+      "rated_voltage",
+      "frequency",
+      "short_circuit_capacity"
+    ]);
+    expect(resolveEDeviceInterfaceFieldsForDisplay("ACBranch", acBranchFields).map((field) => field.sourceName)).toEqual([
+      "idx",
+      "name",
+      "dev_type",
+      "i_node",
+      "j_node",
+      "run_stat",
+      "r",
+      "x",
+      "b"
+    ]);
+  });
+
+  test("moves every E interface field, including fixed fields, only within valid bounds", () => {
+    const fields = ["idx", "name", "dev_type", "node"].map((sourceName) => ({ sourceName }));
+
+    expect(moveEDeviceInterfaceFieldOrder(fields, "dev_type", -1)).toEqual(["idx", "dev_type", "name", "node"]);
+    expect(moveEDeviceInterfaceFieldOrder(fields, "idx", -1)).toEqual(["idx", "name", "dev_type", "node"]);
+    expect(moveEDeviceInterfaceFieldOrder(fields, "node", 1)).toEqual(["idx", "name", "dev_type", "node"]);
+    expect(moveEDeviceInterfaceFieldOrder(fields, "idx", 1)).toEqual(["name", "idx", "dev_type", "node"]);
+  });
+
   test("shows only icon definition for concrete static graphics", () => {
     expect(customDeviceDefinitionUsesIconOnly(
       { kind: "component", categoryLibraryName: "静态图元", templateKind: "custom-static-symbol" },
@@ -203,6 +267,10 @@ describe("app view device definition parameter rows", () => {
     expect(signatureFor(rows.map((row: any) => ({
       ...row,
       fields: row.fields.map((field: any) => field.sourceName === "node" ? { ...field, exportName: "inode" } : field)
+    })))).not.toBe(baseline);
+    expect(signatureFor(rows.map((row: any) => ({
+      ...row,
+      fields: [...row.fields].reverse()
     })))).not.toBe(baseline);
   });
 
@@ -302,7 +370,7 @@ describe("app view device definition parameter rows", () => {
     expect(source).toContain("e-device-interface-tree-branch");
     expect(source).toContain("e-device-interface-detail");
     expect(source).toContain("selectedEDeviceInterfaceRow");
-    expect(source).toMatch(/selectedEDeviceInterfaceRow\?\.fields\.map/);
+    expect(source).toMatch(/selectedEDeviceInterfaceFields\.map/);
   });
 
   test("renders explicit save and exit actions with Ctrl+S handling", () => {
@@ -332,6 +400,8 @@ describe("app view device definition parameter rows", () => {
     expect(deviceDefinitionSource).not.toContain("<th>导出名称</th>");
     expect(eInterfaceSource).toContain("<th>是否导出</th>");
     expect(eInterfaceSource).toContain("<th>导出名称</th>");
+    expect(eInterfaceSource).toContain("<th>顺序</th>");
+    expect(eInterfaceSource).toContain("e-device-interface-order-actions");
   });
 
   test("filters polluted base rows from derived component parameter tables", () => {

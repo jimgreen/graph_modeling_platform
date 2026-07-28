@@ -385,6 +385,81 @@ describe("scheme file persistence", () => {
     }
   });
 
+  test("writes AC and DC generator rated capacity and voltage to backend-generated E files", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-e-generator-ratings-"));
+    try {
+      const filesRoot = join(root, "files");
+      const trashRoot = join(root, "trash");
+      await saveSchemeProjectRecord({
+        filesRoot,
+        trashRoot,
+        schemePath: ["默认方案"],
+        record: {
+          name: "电源额定参数",
+          updatedAt: "2026-07-28T00:00:00.000Z",
+          project: {
+            version: 1,
+            name: "电源额定参数",
+            nodes: [
+              {
+                id: "ac-source-1",
+                kind: "ac-source",
+                name: "交流电源-1",
+                position: { x: 100, y: 100 },
+                size: { width: 84, height: 56 },
+                params: {
+                  idx: "1",
+                  rated_capacity: "10 MW",
+                  rated_voltage: "35 kV",
+                  control_type: "PV",
+                  run_stat: "1"
+                },
+                terminals: [{ id: "t1", type: "ac", nodeNumber: "1" }]
+              },
+              {
+                id: "dc-source-1",
+                kind: "dc-source",
+                name: "直流电源-1",
+                position: { x: 240, y: 100 },
+                size: { width: 84, height: 56 },
+                params: {
+                  idx: "1",
+                  rated_capacity: "",
+                  rated_power: "5 MW",
+                  rated_voltage: "750 V",
+                  control_type: "V",
+                  run_stat: "1"
+                },
+                terminals: [{ id: "t1", type: "dc", nodeNumber: "2" }]
+              }
+            ],
+            edges: []
+          }
+        },
+        measurementConfig: {}
+      });
+
+      const eFile = await readFile(join(filesRoot, "默认方案", "电源额定参数.e"), "utf-8");
+      for (const expected of [
+        { section: "ACGenerator", ratedCapacity: "10", ratedVoltage: "35" },
+        { section: "DCGenerator", ratedCapacity: "5", ratedVoltage: "750" }
+      ]) {
+        const lines = eSectionLines(eFile, expected.section);
+        const columns = lines.find((line) => line.startsWith("@"))?.trim().split(/\s+/u).slice(1) ?? [];
+        const values = lines.find((line) => line.startsWith("#"))?.trim().split(/\s+/u).slice(1) ?? [];
+        const row = Object.fromEntries(columns.map((column, index) => [column, values[index]]));
+
+        expect(columns).toEqual(expect.arrayContaining(["rated_capacity", "rated_voltage"]));
+        expect(row).toMatchObject({
+          rated_capacity: expected.ratedCapacity,
+          rated_voltage: expected.ratedVoltage
+        });
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("applies persisted parameter export controls to backend-generated E files", async () => {
     const root = await mkdtemp(join(tmpdir(), "scheme-e-export-controls-"));
     try {

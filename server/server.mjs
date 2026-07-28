@@ -114,8 +114,8 @@ export const eSectionColumns = {
   DCBranch: ["idx", "name", "i_node", "j_node", "r", "run_stat"],
   ACLoad: ["idx", "name", "node", "pbase", "pv0", "pv1", "pv2", "qbase", "qv0", "qv1", "qv2", "run_stat"],
   DCLoad: ["idx", "name", "node", "pbase", "pv0", "pv1", "pv2", "run_stat"],
-  ACGenerator: ["idx", "name", "node", "control_type", "p_set", "q_set", "v_set", "alpha", "run_stat"],
-  DCGenerator: ["idx", "name", "node", "control_type", "v_set", "p_set", "i_set", "run_stat"],
+  ACGenerator: ["idx", "name", "node", "rated_capacity", "rated_voltage", "control_type", "p_set", "q_set", "v_set", "alpha", "run_stat"],
+  DCGenerator: ["idx", "name", "node", "rated_capacity", "rated_voltage", "control_type", "v_set", "p_set", "i_set", "run_stat"],
   ACShuntCompensator: ["idx", "name", "node", "control_type", "q_set", "g_set", "b_set", "v_set", "run_stat"],
   ACZeroBranch: ["idx", "name", "i_node", "j_node", "run_stat"],
   DCZeroBranch: ["idx", "name", "i_node", "j_node", "run_stat"],
@@ -1374,7 +1374,17 @@ function terminalNodeNumber(node, index) {
   return node?.terminals?.[index]?.nodeNumber ?? (index === 0 ? node?.nodeNumber : "") ?? "";
 }
 
+function firstNumericEValue(value) {
+  return String(value ?? "").match(/[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?/u)?.[0] ?? "";
+}
+
 function mappedLegacyEValue(key, params = {}) {
+  if (key === "rated_capacity" || key === "rated_power") {
+    return firstNumericEValue(params.rated_capacity || params.ratedCapacity || params.rated_power || params.ratedPower);
+  }
+  if (key === "rated_voltage") {
+    return firstNumericEValue(params.rated_voltage || params.ratedVoltage);
+  }
   if (key === "pbase") return params.pbase ?? params.ratedActivePower ?? "";
   if (key === "qbase") return params.qbase ?? params.ratedReactivePower ?? "";
   if (key === "r") return params.r ?? params.resistancePu ?? "";
@@ -1466,6 +1476,10 @@ function getRawEParamValue(key, node, options = {}) {
 }
 
 const legacyEDefinitionColumnAliases = {
+  ratedCapacity: "rated_capacity",
+  ratedPower: "rated_capacity",
+  rated_power: "rated_capacity",
+  ratedVoltage: "rated_voltage",
   ratedActivePower: "pbase",
   ratedReactivePower: "qbase",
   resistancePu: "r",

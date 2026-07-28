@@ -154,6 +154,7 @@ export function emptyUserDeviceLibrary(): DeviceLibraryPersistencePayload {
     deviceDefinitionOverrides: {},
     eDeviceDefinitionLabels: {},
     eDeviceDefinitionClassExportEnabled: {},
+    eDeviceDefinitionFieldOrder: {},
     customGraphTemplateTypes: [],
     customGraphTemplates: []
   };
@@ -222,6 +223,13 @@ const normalizeDeviceLibrarySnapshot = (
       Object.entries(source.eDeviceDefinitionClassExportEnabled ?? {})
         .map(([key, enabled]) => [normalizedText(key), Boolean(enabled)] as const)
         .filter(([key]) => Boolean(key))
+    ),
+    eDeviceDefinitionFieldOrder: Object.fromEntries(
+      Object.entries(source.eDeviceDefinitionFieldOrder ?? {}).flatMap(([key, fieldOrder]) => {
+        const componentLibrary = normalizedText(key);
+        const fields = uniqueStrings(fieldOrder);
+        return componentLibrary && fields.length > 0 ? [[componentLibrary, fields]] : [];
+      })
     ),
     customGraphTemplateTypes: uniqueStrings(source.customGraphTemplateTypes),
     customGraphTemplates: (Array.isArray(source.customGraphTemplates) ? source.customGraphTemplates : [])
@@ -490,7 +498,8 @@ export function buildUserCustomizationInventory(
 
   const eKinds = new Set<string>([
     ...Object.keys(snapshot.deviceLibrary.eDeviceDefinitionLabels ?? {}),
-    ...Object.keys(snapshot.deviceLibrary.eDeviceDefinitionClassExportEnabled ?? {})
+    ...Object.keys(snapshot.deviceLibrary.eDeviceDefinitionClassExportEnabled ?? {}),
+    ...Object.keys(snapshot.deviceLibrary.eDeviceDefinitionFieldOrder ?? {})
   ]);
   snapshot.deviceLibrary.customDeviceTemplates.forEach((template) => {
     if (definitionsHaveExportMetadata(templateParameterDefinitions(template))) {
@@ -669,6 +678,10 @@ const mergeDeviceLibraries = (
   eDeviceDefinitionClassExportEnabled: {
     ...cloneValue(current.eDeviceDefinitionClassExportEnabled ?? {}),
     ...cloneValue(imported.eDeviceDefinitionClassExportEnabled ?? {})
+  },
+  eDeviceDefinitionFieldOrder: {
+    ...cloneValue(current.eDeviceDefinitionFieldOrder ?? {}),
+    ...cloneValue(imported.eDeviceDefinitionFieldOrder ?? {})
   },
   customGraphTemplateTypes: uniqueStrings([
     ...current.customGraphTemplateTypes,
@@ -859,6 +872,7 @@ const removeCustomDeviceCascade = (snapshot: UserCustomizationSnapshot, kind: st
   delete snapshot.deviceLibrary.deviceDefinitionOverrides[kind];
   delete snapshot.deviceLibrary.eDeviceDefinitionLabels?.[kind];
   delete snapshot.deviceLibrary.eDeviceDefinitionClassExportEnabled?.[kind];
+  delete snapshot.deviceLibrary.eDeviceDefinitionFieldOrder?.[kind];
   snapshot.measurementConfig.deviceProfiles = snapshot.measurementConfig.deviceProfiles.filter((profile) => profile.deviceKind !== kind);
 };
 
@@ -941,6 +955,7 @@ export function restoreUserCustomizationItems(
     } else if (domain === "e-interface-definitions") {
       delete snapshot.deviceLibrary.eDeviceDefinitionLabels?.[itemId];
       delete snapshot.deviceLibrary.eDeviceDefinitionClassExportEnabled?.[itemId];
+      delete snapshot.deviceLibrary.eDeviceDefinitionFieldOrder?.[itemId];
       snapshot.deviceLibrary.customDeviceTemplates = snapshot.deviceLibrary.customDeviceTemplates.map((template) => (
         template.kind === itemId ? stripDefinitionExportMetadata(template) : template
       ));

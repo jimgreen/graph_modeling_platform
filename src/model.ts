@@ -763,8 +763,8 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   DCBranch: ["idx", "name", "i_node", "j_node", "r", "run_stat"],
   ACLoad: ["idx", "name", "node", "pbase", "pv0", "pv1", "pv2", "qbase", "qv0", "qv1", "qv2", "run_stat"],
   DCLoad: ["idx", "name", "node", "pbase", "pv0", "pv1", "pv2", "run_stat"],
-  ACGenerator: ["idx", "name", "node", "control_type", "p_set", "q_set", "v_set", "alpha", "run_stat"],
-  DCGenerator: ["idx", "name", "node", "control_type", "v_set", "p_set", "i_set", "run_stat"],
+  ACGenerator: ["idx", "name", "node", "rated_capacity", "rated_voltage", "control_type", "p_set", "q_set", "v_set", "alpha", "run_stat"],
+  DCGenerator: ["idx", "name", "node", "rated_capacity", "rated_voltage", "control_type", "v_set", "p_set", "i_set", "run_stat"],
   ACShuntCompensator: ["idx", "name", "node", "control_type", "q_set", "g_set", "b_set", "v_set", "run_stat"],
   ACZeroBranch: ["idx", "name", "i_node", "j_node", "run_stat"],
   DCZeroBranch: ["idx", "name", "i_node", "j_node", "run_stat"],
@@ -1819,6 +1819,9 @@ function topologyNodeNumberForEField(
 }
 
 function mappedLegacyEValue(key: string, params: Record<string, string>) {
+  if (key === "rated_capacity" || key === "rated_power") {
+    return deviceParamValue(params, "rated_capacity") ?? deviceParamValue(params, "rated_power") ?? "";
+  }
   if (key === "pbase") return params.pbase ?? deviceParamValue(params, "rated_active_power") ?? "";
   if (key === "qbase") return params.qbase ?? deviceParamValue(params, "rated_reactive_power") ?? "";
   if (key === "r") return params.r ?? deviceParamValue(params, "resistance_pu") ?? "";
@@ -1926,6 +1929,8 @@ const E_FLOAT_COLUMNS = new Set([
   "angle",
   "pbase",
   "qbase",
+  "rated_capacity",
+  "rated_voltage",
   "pv0",
   "pv1",
   "pv2",
@@ -2074,15 +2079,22 @@ type EParameterField = {
 
 export type EFileInterfaceFieldDefinition = {
   sourceName: string;
+  cnName?: string;
   exportEnabled?: boolean;
   exportName?: string;
+  readonly?: boolean;
   definition?: DeviceParameterDefinition;
 };
 
 export type EFileInterfaceSectionDefinition = {
   componentLibrary: string;
+  categoryLibrary?: string;
+  label?: string;
   exportEnabled?: boolean;
   exportName?: string;
+  derivedFromComponentLibrary?: string;
+  isDerivedComponentLibrary?: boolean;
+  isContainerComponentLibrary?: boolean;
   fields?: readonly EFileInterfaceFieldDefinition[];
 };
 
@@ -2099,6 +2111,8 @@ function eFileInterfaceDefinitionIndex(options: EFileExportOptions = {}) {
 }
 
 const LEGACY_E_DEFINITION_COLUMN_ALIASES: Record<string, string> = {
+  ratedPower: "rated_capacity",
+  rated_power: "rated_capacity",
   ratedActivePower: "pbase",
   rated_active_power: "pbase",
   ratedReactivePower: "qbase",
@@ -3102,6 +3116,8 @@ export function buildEFileExport(
 
 // 元件定义 E 文件：每个元件一个 section，标签=英文名（带属性），@ 字段行 + // 注释行，无 # 数据行
 export type EDeviceDefinitionField = {
+  sourceName?: string;
+  exportEnabled?: boolean;
   exportName: string;
   cnName: string;
 };
@@ -3115,6 +3131,7 @@ export type EDeviceDefinitionSection = {
   derivedFromComponentLibrary?: string;
   isDerivedComponentLibrary?: boolean;
   isContainerComponentLibrary?: boolean;
+  exportEnabled?: boolean;
   fields: EDeviceDefinitionField[];
 };
 
@@ -3123,8 +3140,9 @@ function escapeEDefinitionAttr(value: string): string {
 }
 
 function formatEDeviceDefinitionSection(section: EDeviceDefinitionSection): string {
-  const columns = section.fields.map((field) => field.exportName);
-  const comments = section.fields.map((field) => field.cnName);
+  const enabledFields = section.fields.filter((field) => field.exportEnabled !== false);
+  const columns = enabledFields.map((field) => field.exportName);
+  const comments = enabledFields.map((field) => field.cnName);
   const widths = columns.map((_, index) =>
     Math.max(eFileCellDisplayWidth(columns[index]), eFileCellDisplayWidth(comments[index]))
   );
@@ -3138,7 +3156,17 @@ function formatEDeviceDefinitionSection(section: EDeviceDefinitionSection): stri
   const derivedAttr = section.isDerivedComponentLibrary ? ` 是否派生新类="是"` : "";
   const derivedBaseAttr = section.derivedFromComponentLibrary ? ` 派生基类="${escapeEDefinitionAttr(section.derivedFromComponentLibrary)}"` : "";
   const containerAttr = section.isContainerComponentLibrary ? ` 是否容器="是"` : "";
-  const attrs = `中文名="${escapeEDefinitionAttr(section.label)}" 类别库="${escapeEDefinitionAttr(section.categoryLibrary)}"${libraryAttr}${derivedAttr}${derivedBaseAttr}${containerAttr}`;
+  const classExportAttr = section.exportEnabled === false ? ` 是否导出="否"` : "";
+  const interfaceConfig = section.fields.some((field) => Boolean(field.sourceName))
+    ? encodeURIComponent(JSON.stringify(section.fields.map((field) => ({
+        sourceName: String(field.sourceName ?? field.exportName).trim(),
+        cnName: String(field.cnName ?? field.sourceName ?? field.exportName).trim(),
+        exportEnabled: field.exportEnabled !== false,
+        exportName: String(field.exportName ?? field.sourceName ?? "").trim()
+      }))))
+    : "";
+  const interfaceConfigAttr = interfaceConfig ? ` 接口配置="${interfaceConfig}"` : "";
+  const attrs = `中文名="${escapeEDefinitionAttr(section.label)}" 类别库="${escapeEDefinitionAttr(section.categoryLibrary)}"${libraryAttr}${derivedAttr}${derivedBaseAttr}${containerAttr}${classExportAttr}${interfaceConfigAttr}`;
   return [`<${section.kind} ${attrs}>`, fieldRow, commentRow, `</${section.kind}>`].join("\n");
 }
 
@@ -3338,6 +3366,48 @@ export function buildEDeviceDefinitionFile(
   };
 }
 
+export function buildEDeviceDefinitionFileFromInterfaceDefinitions(
+  definitions: readonly EFileInterfaceSectionDefinition[] = []
+): TextFileExport {
+  const sections = (definitions ?? []).flatMap((definition): EDeviceDefinitionSection[] => {
+    const componentLibrary = String(definition.componentLibrary ?? "").trim();
+    const kind = String(definition.exportName ?? componentLibrary).trim() || componentLibrary;
+    const fields = (definition.fields ?? []).flatMap((field): EDeviceDefinitionField[] => {
+      const sourceName = String(field.sourceName ?? "").trim();
+      const exportName = String(field.exportName ?? sourceName).trim();
+      if (!sourceName || !exportName) {
+        return [];
+      }
+      return [{
+        sourceName,
+        cnName: String(field.cnName ?? sourceName).trim() || sourceName,
+        exportEnabled: field.exportEnabled !== false,
+        exportName
+      }];
+    });
+    if (!componentLibrary || definition.exportEnabled === false || !fields.some((field) => field.exportEnabled !== false)) {
+      return [];
+    }
+    return [{
+      kind,
+      label: String(definition.label ?? componentLibrary).trim() || componentLibrary,
+      categoryLibrary: String(definition.categoryLibrary ?? "").trim(),
+      componentLibrary,
+      originalComponentLibrary: kind !== componentLibrary ? componentLibrary : undefined,
+      derivedFromComponentLibrary: definition.derivedFromComponentLibrary,
+      isDerivedComponentLibrary: Boolean(definition.isDerivedComponentLibrary),
+      isContainerComponentLibrary: Boolean(definition.isContainerComponentLibrary),
+      exportEnabled: true,
+      fields
+    }];
+  });
+  return {
+    filename: "图元E文件定义.e",
+    text: sections.length > 0 ? `${sections.map(formatEDeviceDefinitionSection).join("\n\n")}\n` : "",
+    mime: "text/plain"
+  };
+}
+
 export function parseEDeviceDefinitionFile(text: string): EDeviceDefinitionSection[] {
   const sections: EDeviceDefinitionSection[] = [];
   const sectionRegex = /<(\S+)([^>]*)>([\s\S]*?)<\/\1>/g;
@@ -3356,17 +3426,46 @@ export function parseEDeviceDefinitionFile(text: string): EDeviceDefinitionSecti
         cnNames.push(...splitEDefinitionCells(line.slice(2)));
       }
     }
-    const count = Math.max(exportNames.length, cnNames.length);
-    const fields: EDeviceDefinitionField[] = [];
-    for (let index = 0; index < count; index += 1) {
-      fields.push({
-        exportName: exportNames[index] ?? "",
-        cnName: cnNames[index] ?? ""
-      });
+    const interfaceConfigAttr = matchEDefinitionAttr(attrText, "接口配置");
+    let fields: EDeviceDefinitionField[] = [];
+    if (interfaceConfigAttr) {
+      try {
+        const configuredFields = JSON.parse(decodeURIComponent(interfaceConfigAttr));
+        if (Array.isArray(configuredFields)) {
+          fields = configuredFields.flatMap((field): EDeviceDefinitionField[] => {
+            if (!field || typeof field !== "object") {
+              return [];
+            }
+            const sourceName = String(field.sourceName ?? "").trim();
+            const exportName = String(field.exportName ?? sourceName).trim();
+            if (!sourceName || !exportName) {
+              return [];
+            }
+            return [{
+              sourceName,
+              cnName: String(field.cnName ?? sourceName).trim() || sourceName,
+              exportEnabled: field.exportEnabled !== false,
+              exportName
+            }];
+          });
+        }
+      } catch {
+        fields = [];
+      }
+    }
+    if (fields.length === 0) {
+      const count = Math.max(exportNames.length, cnNames.length);
+      for (let index = 0; index < count; index += 1) {
+        fields.push({
+          exportName: exportNames[index] ?? "",
+          cnName: cnNames[index] ?? ""
+        });
+      }
     }
     const componentLibraryAttr = matchEDefinitionAttr(attrText, "元件库");
     const derivedAttr = matchEDefinitionAttr(attrText, "是否派生新类");
     const containerAttr = matchEDefinitionAttr(attrText, "是否容器");
+    const exportEnabledAttr = matchEDefinitionAttr(attrText, "是否导出");
     sections.push({
       kind,
       label: matchEDefinitionAttr(attrText, "中文名"),
@@ -3376,6 +3475,7 @@ export function parseEDeviceDefinitionFile(text: string): EDeviceDefinitionSecti
       derivedFromComponentLibrary: matchEDefinitionAttr(attrText, "派生基类") || undefined,
       isDerivedComponentLibrary: derivedAttr ? eDefinitionAttrIsYes(derivedAttr) : undefined,
       isContainerComponentLibrary: containerAttr ? eDefinitionAttrIsYes(containerAttr) : undefined,
+      exportEnabled: exportEnabledAttr ? eDefinitionAttrIsYes(exportEnabledAttr) : true,
       fields
     });
   }
@@ -3516,9 +3616,9 @@ const twoWindingTransformerParameterDefinitions: DeviceParameterDefinition[] = [
   { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
   { cnName: "运行状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: false },
   { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false },
-  { cnName: "高压侧电压等级", enName: "highVbase", valueType: "string", typicalValue: "0", readonly: false },
-  { cnName: "低压侧电压等级", enName: "lowVbase", valueType: "string", typicalValue: "0", readonly: false },
-  { cnName: "额定容量", enName: "ratedCapacity", valueType: "string", typicalValue: "50 MVA", readonly: false },
+  { cnName: "高压侧电压等级", enName: "highVbase", valueType: "float", typicalValue: "0", readonly: false },
+  { cnName: "低压侧电压等级", enName: "lowVbase", valueType: "float", typicalValue: "0", readonly: false },
+  { cnName: "额定容量", enName: "ratedCapacity", valueType: "float", typicalValue: "50", readonly: false },
   { cnName: "相移（度）", enName: "shift", valueType: "float", typicalValue: "0", readonly: false }
 ];
 
@@ -3545,12 +3645,12 @@ const threeWindingTransformerParameterDefinitions: DeviceParameterDefinition[] =
   readonlyIntegerDefinition("中压侧节点号", "t2_node"),
   readonlyIntegerDefinition("低压侧节点号", "t3_node"),
   readonlyIntegerDefinition("中性点节点号", "neutral_node"),
-  { cnName: "高压侧电压等级", enName: "highVbase", valueType: "string", typicalValue: "0", readonly: false },
-  { cnName: "高压侧额定容量", enName: "highRatedCapacity", valueType: "string", typicalValue: "90 MVA", readonly: false },
-  { cnName: "中压侧电压等级", enName: "mediumVbase", valueType: "string", typicalValue: "0", readonly: false },
-  { cnName: "中压侧额定容量", enName: "mediumRatedCapacity", valueType: "string", typicalValue: "90 MVA", readonly: false },
-  { cnName: "低压侧电压等级", enName: "lowVbase", valueType: "string", typicalValue: "0", readonly: false },
-  { cnName: "低压侧额定容量", enName: "lowRatedCapacity", valueType: "string", typicalValue: "90 MVA", readonly: false }
+  { cnName: "高压侧电压等级", enName: "highVbase", valueType: "float", typicalValue: "0", readonly: false },
+  { cnName: "高压侧额定容量", enName: "highRatedCapacity", valueType: "float", typicalValue: "90", readonly: false },
+  { cnName: "中压侧电压等级", enName: "mediumVbase", valueType: "float", typicalValue: "0", readonly: false },
+  { cnName: "中压侧额定容量", enName: "mediumRatedCapacity", valueType: "float", typicalValue: "90", readonly: false },
+  { cnName: "低压侧电压等级", enName: "lowVbase", valueType: "float", typicalValue: "0", readonly: false },
+  { cnName: "低压侧额定容量", enName: "lowRatedCapacity", valueType: "float", typicalValue: "90", readonly: false }
 ];
 
 const THREE_WINDING_TRANSFORMER_E_DEFAULT_PARAMS = {
@@ -3719,6 +3819,16 @@ const electricGenerationIntegerDefinition = (
   readonly: false
 });
 
+const electricGenerationFloatDefinition = (
+  cnName: string,
+  enName: string
+): ElectricGenerationParameterDefinitionSpec => ({
+  cnName,
+  enName,
+  valueType: "float",
+  readonly: false
+});
+
 const electricGenerationStringEnumDefinition = (
   cnName: string,
   enName: string,
@@ -3740,19 +3850,19 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     derivedComponentSuffix: "WindGen",
     parameterDefinitions: [
       electricGenerationStringDefinition("风机型号", "windTurbineModel"),
-      electricGenerationStringDefinition("切入风速", "cutInWindSpeed"),
-      electricGenerationStringDefinition("额定风速", "ratedWindSpeed"),
-      electricGenerationStringDefinition("切出风速", "cutOutWindSpeed"),
-      electricGenerationStringDefinition("叶轮直径", "rotorDiameter"),
-      electricGenerationStringDefinition("轮毂高度", "hubHeight")
+      electricGenerationFloatDefinition("切入风速", "cutInWindSpeed"),
+      electricGenerationFloatDefinition("额定风速", "ratedWindSpeed"),
+      electricGenerationFloatDefinition("切出风速", "cutOutWindSpeed"),
+      electricGenerationFloatDefinition("叶轮直径", "rotorDiameter"),
+      electricGenerationFloatDefinition("轮毂高度", "hubHeight")
     ],
     commonParams: {
       windTurbineModel: "WT-5MW",
-      cutInWindSpeed: "3 m/s",
-      ratedWindSpeed: "12 m/s",
-      cutOutWindSpeed: "25 m/s",
-      rotorDiameter: "170 m",
-      hubHeight: "110 m"
+      cutInWindSpeed: "3",
+      ratedWindSpeed: "12",
+      cutOutWindSpeed: "25",
+      rotorDiameter: "170",
+      hubHeight: "110"
     },
     defaultsByTerminalType: {
       ac: { ratedVoltage: "35 kV", ratedPower: "50 MW" },
@@ -3767,17 +3877,17 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     derivedComponentSuffix: "PVGen",
     parameterDefinitions: [
       electricGenerationStringDefinition("光伏组件型号", "pvModuleModel"),
-      electricGenerationStringDefinition("组件效率", "moduleEfficiency"),
-      electricGenerationStringDefinition("阵列面积", "arrayArea"),
+      electricGenerationFloatDefinition("组件效率", "moduleEfficiency"),
+      electricGenerationFloatDefinition("阵列面积", "arrayArea"),
       electricGenerationIntegerDefinition("MPPT 路数", "mpptCount")
     ],
     commonParams: {
       pvModuleModel: "Mono-550W",
-      moduleEfficiency: "21.3%"
+      moduleEfficiency: "21.3"
     },
     paramsByTerminalType: {
-      ac: { arrayArea: "100000 m2", mpptCount: "100" },
-      dc: { arrayArea: "25000 m2", mpptCount: "25" }
+      ac: { arrayArea: "100000", mpptCount: "100" },
+      dc: { arrayArea: "25000", mpptCount: "25" }
     },
     defaultsByTerminalType: {
       ac: { ratedVoltage: "10 kV", ratedPower: "20 MW" },
@@ -3798,18 +3908,18 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
         { value: "oil", label: "燃油" },
         { value: "biomass", label: "生物质" }
       ]),
-      electricGenerationStringDefinition("热效率", "thermalEfficiency"),
-      electricGenerationStringDefinition("热耗率", "heatRate"),
-      electricGenerationStringDefinition("主蒸汽压力", "mainSteamPressure"),
-      electricGenerationStringDefinition("主蒸汽温度", "mainSteamTemperature")
+      electricGenerationFloatDefinition("热效率", "thermalEfficiency"),
+      electricGenerationFloatDefinition("热耗率", "heatRate"),
+      electricGenerationFloatDefinition("主蒸汽压力", "mainSteamPressure"),
+      electricGenerationFloatDefinition("主蒸汽温度", "mainSteamTemperature")
     ],
     commonParams: {
       thermalUnitModel: "600 MW超超临界机组",
       fuelType: "coal",
-      thermalEfficiency: "45%",
-      heatRate: "8000 kJ/kWh",
-      mainSteamPressure: "25 MPa",
-      mainSteamTemperature: "600 C"
+      thermalEfficiency: "45",
+      heatRate: "8000",
+      mainSteamPressure: "25",
+      mainSteamTemperature: "600"
     },
     defaultsByTerminalType: {
       ac: { ratedVoltage: "220 kV", ratedPower: "600 MW" },
@@ -3825,18 +3935,18 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     parameterDefinitions: [
       electricGenerationStringDefinition("柴油机组型号", "dieselUnitModel"),
       electricGenerationStringDefinition("燃油牌号", "fuelGrade"),
-      electricGenerationStringDefinition("单位油耗", "specificFuelConsumption"),
-      electricGenerationStringDefinition("油箱容量", "fuelTankCapacity"),
-      electricGenerationStringDefinition("额定转速", "ratedSpeed"),
-      electricGenerationStringDefinition("启动时间", "startTime")
+      electricGenerationFloatDefinition("单位油耗", "specificFuelConsumption"),
+      electricGenerationFloatDefinition("油箱容量", "fuelTankCapacity"),
+      electricGenerationFloatDefinition("额定转速", "ratedSpeed"),
+      electricGenerationFloatDefinition("启动时间", "startTime")
     ],
     commonParams: {
       dieselUnitModel: "DG-2500",
       fuelGrade: "0#柴油",
-      specificFuelConsumption: "200 g/kWh",
-      fuelTankCapacity: "20 m3",
-      ratedSpeed: "1500 r/min",
-      startTime: "10 s"
+      specificFuelConsumption: "200",
+      fuelTankCapacity: "20",
+      ratedSpeed: "1500",
+      startTime: "10"
     },
     defaultsByTerminalType: {
       ac: { ratedVoltage: "10 kV", ratedPower: "5 MW" },
@@ -3857,18 +3967,18 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
         { value: "pelton", label: "冲击式" },
         { value: "bulb", label: "贯流式" }
       ]),
-      electricGenerationStringDefinition("设计水头", "designHead"),
-      electricGenerationStringDefinition("设计流量", "designFlow"),
-      electricGenerationStringDefinition("额定转速", "ratedSpeed"),
-      electricGenerationStringDefinition("发电机效率", "generatorEfficiency")
+      electricGenerationFloatDefinition("设计水头", "designHead"),
+      electricGenerationFloatDefinition("设计流量", "designFlow"),
+      electricGenerationFloatDefinition("额定转速", "ratedSpeed"),
+      electricGenerationFloatDefinition("发电机效率", "generatorEfficiency")
     ],
     commonParams: {
       hydroUnitModel: "300 MW混流式机组",
       turbineType: "francis",
-      designHead: "120 m",
-      designFlow: "280 m3/s",
-      ratedSpeed: "150 r/min",
-      generatorEfficiency: "98.5%"
+      designHead: "120",
+      designFlow: "280",
+      ratedSpeed: "150",
+      generatorEfficiency: "98.5"
     },
     defaultsByTerminalType: {
       ac: { ratedVoltage: "220 kV", ratedPower: "300 MW" },
@@ -3890,22 +4000,22 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
         { value: "htgr", label: "高温气冷堆" },
         { value: "fbr", label: "快中子增殖堆" }
       ]),
-      electricGenerationStringDefinition("反应堆热功率", "reactorThermalPower"),
-      electricGenerationStringDefinition("热效率", "thermalEfficiency"),
-      electricGenerationStringDefinition("一回路压力", "primaryLoopPressure"),
-      electricGenerationStringDefinition("主蒸汽压力", "mainSteamPressure"),
-      electricGenerationStringDefinition("主蒸汽温度", "mainSteamTemperature"),
-      electricGenerationStringDefinition("容量因子", "capacityFactor")
+      electricGenerationFloatDefinition("反应堆热功率", "reactorThermalPower"),
+      electricGenerationFloatDefinition("热效率", "thermalEfficiency"),
+      electricGenerationFloatDefinition("一回路压力", "primaryLoopPressure"),
+      electricGenerationFloatDefinition("主蒸汽压力", "mainSteamPressure"),
+      electricGenerationFloatDefinition("主蒸汽温度", "mainSteamTemperature"),
+      electricGenerationFloatDefinition("容量因子", "capacityFactor")
     ],
     commonParams: {
       nuclearUnitModel: "1000 MW压水堆机组",
       reactorType: "pwr",
-      reactorThermalPower: "2900 MWth",
-      thermalEfficiency: "34.5%",
-      primaryLoopPressure: "15.5 MPa",
-      mainSteamPressure: "6.8 MPa",
-      mainSteamTemperature: "285 C",
-      capacityFactor: "90%"
+      reactorThermalPower: "2900",
+      thermalEfficiency: "34.5",
+      primaryLoopPressure: "15.5",
+      mainSteamPressure: "6.8",
+      mainSteamTemperature: "285",
+      capacityFactor: "90"
     },
     defaultsByTerminalType: {
       ac: { ratedVoltage: "500 kV", ratedPower: "1000 MW" },
@@ -3927,24 +4037,24 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
         { value: "supercapacitor", label: "超级电容" }
       ]),
       electricGenerationIntegerDefinition("电池簇/电池架数量", "batteryRackCount"),
-      electricGenerationStringDefinition("储能容量", "energyCapacity"),
-      electricGenerationStringDefinition("充放电效率", "chargeDischargeEfficiency"),
-      electricGenerationStringDefinition("最大充电功率", "maxChargePower"),
-      electricGenerationStringDefinition("最大放电功率", "maxDischargePower"),
-      electricGenerationStringDefinition("荷电状态", "stateOfCharge"),
-      electricGenerationStringDefinition("SOC上限", "socUpperLimit"),
-      electricGenerationStringDefinition("SOC下限", "socLowerLimit")
+      electricGenerationFloatDefinition("储能容量", "energyCapacity"),
+      electricGenerationFloatDefinition("充放电效率", "chargeDischargeEfficiency"),
+      electricGenerationFloatDefinition("最大充电功率", "maxChargePower"),
+      electricGenerationFloatDefinition("最大放电功率", "maxDischargePower"),
+      electricGenerationFloatDefinition("荷电状态", "stateOfCharge"),
+      electricGenerationFloatDefinition("SOC上限", "socUpperLimit"),
+      electricGenerationFloatDefinition("SOC下限", "socLowerLimit")
     ],
     commonParams: {
       storageTechnology: "lithium",
       batteryRackCount: "20",
-      energyCapacity: "20 MWh",
-      chargeDischargeEfficiency: "90%",
-      maxChargePower: "5 MW",
-      maxDischargePower: "5 MW",
-      stateOfCharge: "50%",
-      socUpperLimit: "90%",
-      socLowerLimit: "10%"
+      energyCapacity: "20",
+      chargeDischargeEfficiency: "90",
+      maxChargePower: "5",
+      maxDischargePower: "5",
+      stateOfCharge: "50",
+      socUpperLimit: "90",
+      socLowerLimit: "10"
     },
     defaultsByTerminalType: {
       ac: { ratedVoltage: "10 kV", ratedPower: "5 MW" },
@@ -4090,7 +4200,7 @@ function createElectricGenerationDeviceTemplate(
   const terminalLabel = `${terminalPrefix}发电机端`;
   const params: Record<string, string> = {
     sourceType: family.sourceType,
-    ratedPower: electricalDefaults.ratedPower,
+    ratedCapacity: electricalDefaults.ratedPower,
     ratedVoltage: electricalDefaults.ratedVoltage,
     ...family.commonParams,
     ...(family.paramsByTerminalType?.[terminalType] ?? {})
@@ -4492,11 +4602,11 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流电源",
     categoryLibrary: "交流设备",
     size: { width: 84, height: 56 },
-    params: { ratedPower: "10 MW", ratedVoltage: "10 kV", frequency: "50 Hz", shortCircuitCapacity: "500 MVA" },
+    params: { ratedCapacity: "10 MW", ratedVoltage: "10 kV", frequency: "50 Hz", shortCircuitCapacity: "500 MVA" },
     terminalType: "ac",
     terminalCount: 1,
     parameterDefinitions: [
-      { cnName: "额定功率", enName: "ratedPower", valueType: "string", typicalValue: "10 MW", readonly: false },
+      { cnName: "额定容量", enName: "ratedCapacity", valueType: "string", typicalValue: "10 MW", readonly: false },
       { cnName: "额定电压", enName: "ratedVoltage", valueType: "string", typicalValue: "10 kV", readonly: false },
       { cnName: "频率", enName: "frequency", valueType: "string", typicalValue: "50 Hz", readonly: false },
       { cnName: "短路容量", enName: "shortCircuitCapacity", valueType: "string", typicalValue: "500 MVA", readonly: false }
@@ -5011,7 +5121,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     categoryLibrary: "交流设备",
     size: { width: 92, height: 70 },
     params: {
-      ratedCapacity: "50 MVA",
+      ratedCapacity: "50",
       voltageRatio: "110/10 kV",
       impedance: "10.5%",
       r: "0.0",
@@ -5031,7 +5141,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     categoryLibrary: "交流设备",
     size: { width: 104, height: 76 },
     params: {
-      ratedCapacity: "90 MVA",
+      ratedCapacity: "90",
       voltageRatio: "220/110/10 kV",
       windingType: "三绕组",
       impedance: "12.0%",
@@ -5049,7 +5159,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     categoryLibrary: "交流设备",
     size: { width: 112, height: 92 },
     params: {
-      ratedCapacity: "90 MVA",
+      ratedCapacity: "90",
       voltageRatio: "220/110/10/0.4 kV",
       windingType: "三绕组带中性点",
       impedance: "12.0%",
@@ -5067,11 +5177,11 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流电源",
     categoryLibrary: "直流设备",
     size: { width: 84, height: 56 },
-    params: { ratedPower: "10 MW", ratedVoltage: "750 V", maxCurrent: "2000 A" },
+    params: { ratedCapacity: "10 MW", ratedVoltage: "750 V", maxCurrent: "2000 A" },
     terminalType: "dc",
     terminalCount: 1,
     parameterDefinitions: [
-      { cnName: "额定功率", enName: "ratedPower", valueType: "string", typicalValue: "10 MW", readonly: false },
+      { cnName: "额定容量", enName: "ratedCapacity", valueType: "string", typicalValue: "10 MW", readonly: false },
       { cnName: "额定电压", enName: "ratedVoltage", valueType: "string", typicalValue: "750 V", readonly: false },
       { cnName: "最大电流", enName: "maxCurrent", valueType: "string", typicalValue: "2000 A", readonly: false }
     ]
@@ -5250,6 +5360,208 @@ function legacyCamelCaseParamName(name: string): string {
   return name.replace(/_([a-z0-9])/g, (_match, char: string) => char.toUpperCase());
 }
 
+const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> = {
+  idx: "integer",
+  node: "integer",
+  node1: "integer",
+  node2: "integer",
+  node3: "integer",
+  node4: "integer",
+  i_node: "integer",
+  j_node: "integer",
+  ac_node: "integer",
+  dc_node: "integer",
+  t1_node: "integer",
+  t2_node: "integer",
+  t3_node: "integer",
+  neutral_node: "integer",
+  isl: "integer",
+  battery_rack_count: "integer",
+  mppt_count: "integer",
+  status: "numberEnum",
+  run_stat: "stringEnum",
+  control_type: "stringEnum",
+  i_control_type: "stringEnum",
+  j_control_type: "stringEnum",
+  ac_control_type: "stringEnum",
+  dc_control_type: "stringEnum",
+  fuel_type: "stringEnum",
+  reactor_type: "stringEnum",
+  storage_technology: "stringEnum",
+  turbine_type: "stringEnum",
+  ac_voltage: "float",
+  active_power: "float",
+  alpha: "float",
+  angle: "float",
+  array_area: "float",
+  b: "float",
+  b_set: "float",
+  bt: "float",
+  bt1: "float",
+  bt2: "float",
+  bt3: "float",
+  capacity: "float",
+  capacity_factor: "float",
+  charge_discharge_efficiency: "float",
+  cut_in_wind_speed: "float",
+  cut_out_wind_speed: "float",
+  dc_voltage: "float",
+  design_flow: "float",
+  design_head: "float",
+  efficiency: "float",
+  energy_capacity: "float",
+  flow_rate: "float",
+  frequency: "float",
+  fuel_tank_capacity: "float",
+  g_set: "float",
+  generator_efficiency: "float",
+  gt: "float",
+  gt1: "float",
+  gt2: "float",
+  gt3: "float",
+  head: "float",
+  heat_demand: "float",
+  heat_power: "float",
+  heat_rate: "float",
+  high_rated_capacity: "float",
+  high_vbase: "float",
+  hub_height: "float",
+  hydrogen_demand: "float",
+  hydrogen_flow: "float",
+  impedance: "float",
+  inlet_pressure: "float",
+  input_voltage: "float",
+  i_q_set: "float",
+  i_set: "float",
+  i_v_set: "float",
+  j_q_set: "float",
+  j_v_set: "float",
+  length: "float",
+  low_rated_capacity: "float",
+  low_vbase: "float",
+  main_steam_pressure: "float",
+  main_steam_temperature: "float",
+  max_charge_power: "float",
+  max_current: "float",
+  max_discharge_power: "float",
+  medium_rated_capacity: "float",
+  medium_vbase: "float",
+  module_efficiency: "float",
+  outlet_pressure: "float",
+  output_voltage: "float",
+  p_ac_set: "float",
+  p_set: "float",
+  pbase: "float",
+  power: "float",
+  power_factor: "float",
+  pressure: "float",
+  primary_loop_pressure: "float",
+  pv0: "float",
+  pv1: "float",
+  pv2: "float",
+  q_ac_set: "float",
+  q_set: "float",
+  qbase: "float",
+  qv0: "float",
+  qv1: "float",
+  qv2: "float",
+  r: "float",
+  r1: "float",
+  r2: "float",
+  r3: "float",
+  rated_capacity: "float",
+  rated_current: "float",
+  rated_power: "float",
+  rated_speed: "float",
+  rated_voltage: "float",
+  rated_wind_speed: "float",
+  reactive_power: "float",
+  reactor_thermal_power: "float",
+  return_temperature: "float",
+  rotor_diameter: "float",
+  shift: "float",
+  shift1: "float",
+  shift2: "float",
+  shift3: "float",
+  short_circuit_capacity: "float",
+  soc_lower_limit: "float",
+  soc_upper_limit: "float",
+  specific_fuel_consumption: "float",
+  start_time: "float",
+  state_of_charge: "float",
+  supply_temperature: "float",
+  tap: "float",
+  tap1: "float",
+  tap2: "float",
+  tap3: "float",
+  temperature: "float",
+  thermal_efficiency: "float",
+  v_ac_set: "float",
+  v_dc_set: "float",
+  v_set: "float",
+  vbase: "float",
+  voltage: "float",
+  voltage_level: "float",
+  x: "float",
+  x1: "float",
+  x2: "float",
+  x3: "float",
+  x_pu: "float"
+};
+
+function semanticParameterValueType(name: string): DeviceParameterValueType | undefined {
+  const normalizedName = toSnakeCaseDeviceParamName(name);
+  const definedType = TEMPLATE_DEFINITION_VALUE_TYPES[normalizedName];
+  if (definedType) {
+    return definedType;
+  }
+  if (/^idx_(?:ac2|dc2|h22|heat2|ac|dc|h2|heat)_(?:unit|load|transformer)_t\d+$/.test(normalizedName)) {
+    return "integer";
+  }
+  return undefined;
+}
+
+function normalizeSemanticNumericValue(value: string, valueType: "integer" | "float"): string {
+  const token = String(value ?? "").trim().match(/[-+]?(?:\d+(?:\.\d*)?|\.\d+)/)?.[0] ?? "";
+  if (!token) {
+    return "";
+  }
+  if (valueType === "float") {
+    return token.endsWith(".") ? token.slice(0, -1) : token;
+  }
+  const numericValue = Number(token);
+  return Number.isFinite(numericValue) ? String(Math.trunc(numericValue)) : "";
+}
+
+function normalizeSemanticParameterValue(name: string, value: string): string {
+  const valueType = semanticParameterValueType(name);
+  if (valueType !== "integer" && valueType !== "float") {
+    return value;
+  }
+  const normalizedValue = normalizeSemanticNumericValue(value, valueType);
+  return normalizedValue || (String(value ?? "").trim() ? value : "");
+}
+
+function normalizeSemanticParameterValues(params: Record<string, string>): Record<string, string> {
+  let next = params;
+  let changed = false;
+  for (const [name, value] of Object.entries(params)) {
+    if (name.startsWith("_")) {
+      continue;
+    }
+    const normalizedValue = normalizeSemanticParameterValue(name, value);
+    if (normalizedValue === value) {
+      continue;
+    }
+    if (!changed) {
+      next = { ...params };
+      changed = true;
+    }
+    next[name] = normalizedValue;
+  }
+  return next;
+}
+
 function deviceParamValue(params: Record<string, string>, key: string): string | undefined {
   const snakeKey = toSnakeCaseDeviceParamName(key);
   const camelKey = legacyCamelCaseParamName(snakeKey);
@@ -5262,7 +5574,8 @@ function normalizeDeviceParamRecord(params?: Record<string, string>): Record<str
   }
   const normalized: Record<string, string> = {};
   for (const [key, value] of Object.entries(params)) {
-    normalized[key.startsWith("_") ? key : toSnakeCaseDeviceParamName(key)] = value;
+    const normalizedKey = key.startsWith("_") ? key : toSnakeCaseDeviceParamName(key);
+    normalized[normalizedKey] = key.startsWith("_") ? value : normalizeSemanticParameterValue(normalizedKey, value);
   }
   return normalized;
 }
@@ -5366,6 +5679,49 @@ function normalizeDcacControlParameterDefinitions(
     normalized.push(nextDefinition);
   }
   return normalized;
+}
+
+type GeneratorControlSection = "ACGenerator" | "DCGenerator";
+
+function normalizeGeneratorControlParameterDefinitions(
+  section: GeneratorControlSection,
+  definitions: readonly DeviceParameterDefinition[]
+): DeviceParameterDefinition[] {
+  const options = section === "ACGenerator"
+    ? [...AC_GENERATOR_CONTROL_TYPES]
+    : [...DC_GENERATOR_CONTROL_TYPES];
+  const normalizeValue = section === "ACGenerator"
+    ? normalizeAcGeneratorControlTypeForE
+    : normalizeDcGeneratorControlTypeForE;
+  return definitions.map((definition) => {
+    if (toSnakeCaseDeviceParamName(definition.enName) !== "control_type") {
+      return definition;
+    }
+    return {
+      ...definition,
+      enName: "control_type",
+      valueType: "stringEnum",
+      typicalValue: normalizeValue(definition.typicalValue),
+      enumValues: options,
+      enumOptions: options.map((value) => ({ value }))
+    };
+  });
+}
+
+function normalizeESectionParameterDefinitions(
+  section: string,
+  definitions: readonly DeviceParameterDefinition[]
+): DeviceParameterDefinition[] {
+  if (section === "DCACConverter") {
+    return normalizeDcacControlParameterDefinitions(definitions);
+  }
+  if (section === "ACACConverter" || section === "DCDCConverter") {
+    return normalizeEndpointControlParameterDefinitions(section, definitions);
+  }
+  if (section === "ACGenerator" || section === "DCGenerator") {
+    return normalizeGeneratorControlParameterDefinitions(section, definitions);
+  }
+  return [...definitions];
 }
 
 function normalizeStoredDcacControlParameterDefinitions(value?: string): string | undefined {
@@ -5622,6 +5978,105 @@ function normalizeEndpointConverterNodeControlParams(node: ModelNode): ModelNode
   }
   const params = normalizeEndpointConverterControlParams(section, node.params);
   return params === node.params ? node : { ...node, params };
+}
+
+function normalizeStoredElectricGenerationRatedDefinitions(value?: string): string | undefined {
+  if (!value) {
+    return value;
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return value;
+    }
+    const definitions = parsed.filter(
+      (definition): definition is DeviceParameterDefinition => Boolean(definition && typeof definition === "object")
+    );
+    const hasRatedCapacity = definitions.some(
+      (definition) => toSnakeCaseDeviceParamName(String(definition.enName ?? "")) === "rated_capacity"
+    );
+    const normalized: DeviceParameterDefinition[] = [];
+    const seen = new Set<string>();
+    for (const definition of definitions) {
+      const normalizedName = toSnakeCaseDeviceParamName(String(definition.enName ?? ""));
+      if (normalizedName === "rated_power" && hasRatedCapacity) {
+        continue;
+      }
+      let nextDefinition = definition;
+      if (normalizedName === "rated_power" || normalizedName === "rated_capacity") {
+        const exportName = String(definition.exportName ?? "").trim();
+        nextDefinition = {
+          ...definition,
+          cnName: definition.cnName === "额定功率" ? "额定容量" : definition.cnName,
+          enName: "rated_capacity",
+          ...(exportName && toSnakeCaseDeviceParamName(exportName) === "rated_power"
+            ? { exportName: "rated_capacity" }
+            : {})
+        };
+      } else if (normalizedName === "rated_voltage") {
+        nextDefinition = { ...definition, enName: "rated_voltage" };
+      }
+      if (seen.has(nextDefinition.enName)) {
+        continue;
+      }
+      seen.add(nextDefinition.enName);
+      normalized.push(nextDefinition);
+    }
+    const serialized = JSON.stringify(normalized);
+    return serialized === value ? value : serialized;
+  } catch {
+    return value;
+  }
+}
+
+function normalizeElectricGenerationRatedParams(node: ModelNode, template?: DeviceTemplate): ModelNode {
+  const section = inferESection(node.kind, node.params);
+  if (section !== "ACGenerator" && section !== "DCGenerator") {
+    return node;
+  }
+  const templateParams = template?.params ?? {};
+  const ratedCapacity = deviceParamValue(node.params, "rated_capacity") ??
+    deviceParamValue(node.params, "rated_power") ??
+    deviceParamValue(templateParams, "rated_capacity") ??
+    deviceParamValue(templateParams, "rated_power") ??
+    "10 MW";
+  const ratedVoltage = deviceParamValue(node.params, "rated_voltage") ??
+    deviceParamValue(templateParams, "rated_voltage") ??
+    (section === "ACGenerator" ? "10 kV" : "750 V");
+  const nextParams = { ...node.params };
+  let changed = false;
+  for (const key of Object.keys(nextParams)) {
+    if (key.startsWith("_")) {
+      continue;
+    }
+    const normalizedName = toSnakeCaseDeviceParamName(key);
+    if (
+      normalizedName === "rated_power" ||
+      (normalizedName === "rated_capacity" && key !== "rated_capacity") ||
+      (normalizedName === "rated_voltage" && key !== "rated_voltage")
+    ) {
+      delete nextParams[key];
+      changed = true;
+    }
+  }
+  if (nextParams.rated_capacity !== ratedCapacity) {
+    nextParams.rated_capacity = ratedCapacity;
+    changed = true;
+  }
+  if (nextParams.rated_voltage !== ratedVoltage) {
+    nextParams.rated_voltage = ratedVoltage;
+    changed = true;
+  }
+  const storedDefinitions = normalizeStoredElectricGenerationRatedDefinitions(nextParams[CUSTOM_PARAM_DEFINITIONS_KEY]);
+  if (storedDefinitions !== nextParams[CUSTOM_PARAM_DEFINITIONS_KEY]) {
+    if (storedDefinitions) {
+      nextParams[CUSTOM_PARAM_DEFINITIONS_KEY] = storedDefinitions;
+    } else {
+      delete nextParams[CUSTOM_PARAM_DEFINITIONS_KEY];
+    }
+    changed = true;
+  }
+  return changed ? { ...node, params: nextParams } : node;
 }
 
 const DEFAULT_INITIAL_TERMINAL_VBASE = "0";
@@ -6615,50 +7070,8 @@ export function templateDefinitionIsReadonly(enName: string, readonly?: boolean)
   }
   return Boolean(readonly || TEMPLATE_DEFINITION_READONLY_KEYS.has(normalizedName));
 }
-const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> = {
-  idx: "integer",
-  node: "integer",
-  i_node: "integer",
-  j_node: "integer",
-  ac_node: "integer",
-  dc_node: "integer",
-  p_set: "float",
-  q_set: "float",
-  v_set: "float",
-  i_set: "float",
-  i_control_type: "stringEnum",
-  j_control_type: "stringEnum",
-  ac_control_type: "stringEnum",
-  dc_control_type: "stringEnum",
-  p_ac_set: "float",
-  q_ac_set: "float",
-  v_ac_set: "float",
-  v_dc_set: "float",
-  i_v_set: "float",
-  j_v_set: "float",
-  i_q_set: "float",
-  j_q_set: "float",
-  pv0: "float",
-  pv1: "float",
-  pv2: "float",
-  qv0: "float",
-  qv1: "float",
-  qv2: "float",
-  pbase: "float",
-  qbase: "float",
-  r1: "float",
-  r2: "float",
-  r: "float",
-  x: "float",
-  x_pu: "float",
-  b: "float",
-  gt: "float",
-  bt: "float",
-  tap: "float"
-};
-
 function inferDefinitionValueType(key: string, value: string): DeviceParameterValueType {
-  const definedType = TEMPLATE_DEFINITION_VALUE_TYPES[key];
+  const definedType = semanticParameterValueType(key);
   if (definedType) {
     return definedType;
   }
@@ -6805,8 +7218,11 @@ function normalizeTemplateDefinition(definition: DeviceParameterDefinition): Dev
   if (!enName || enName === "is_container" || enName === ALLOW_RESIZE_TRANSFORM_PARAM) {
     return null;
   }
-  const valueType = TEMPLATE_DEFINITION_VALUE_TYPES[enName] ?? (["integer", "float", "string", "stringEnum", "numberEnum", "enum"].includes(definition.valueType) ? definition.valueType : "string");
-  const typicalValue = String(definition.typicalValue ?? "");
+  const valueType = semanticParameterValueType(enName) ?? (["integer", "float", "string", "stringEnum", "numberEnum", "enum"].includes(definition.valueType) ? definition.valueType : "string");
+  const rawTypicalValue = String(definition.typicalValue ?? "");
+  const typicalValue = valueType === "integer" || valueType === "float"
+    ? normalizeSemanticNumericValue(rawTypicalValue, valueType)
+    : rawTypicalValue;
   const exportSettings = {
     ...(typeof definition.exportEnabled === "boolean" ? { exportEnabled: definition.exportEnabled } : {}),
     ...(typeof definition.exportName === "string" ? { exportName: definition.exportName.trim() } : {})
@@ -6852,11 +7268,8 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
       .map((definition) => normalizeTemplateDefinition(definition))
       .filter((definition): definition is DeviceParameterDefinition => Boolean(definition));
     const section = inferESection(template.kind, template.params);
-    const paramDefs = section === "DCACConverter"
-      ? normalizeDcacControlParameterDefinitions(normalizedParamDefs)
-      : section === "ACACConverter" || section === "DCDCConverter"
-        ? normalizeEndpointControlParameterDefinitions(section, normalizedParamDefs)
-        : normalizedParamDefs;
+    const derivedComponentInfo = templateDerivedComponentLibraryInfo(template);
+    const paramDefs = normalizeESectionParameterDefinitions(section, normalizedParamDefs);
     // 对属 E 分区的图元，合并 eKeys（E_SECTION_COLUMNS 内置列）+ dev_type，确保所有字段都显示
     const eKeys = getEParameterKeys(template.kind, template.params);
     if (eKeys.length > 0) {
@@ -6875,7 +7288,13 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
           keysToAdd.unshift("dev_type");
         }
       }
-      const keysToAppend = keysToAdd.filter(k => !existingEnNames.has(k) && !existingLegacyColumns.has(k) && k !== ALLOW_RESIZE_TRANSFORM_PARAM && !k.startsWith("_"));
+      const keysToAppend = keysToAdd.filter((key) => (
+        !existingEnNames.has(key) &&
+        !existingLegacyColumns.has(key) &&
+        key !== ALLOW_RESIZE_TRANSFORM_PARAM &&
+        !key.startsWith("_") &&
+        (!derivedComponentInfo || !["rated_power", "rated_capacity", "rated_voltage"].includes(toSnakeCaseDeviceParamName(key)))
+      ));
       if (keysToAppend.length > 0) {
         const eDefs = keysToAppend.map((key) => {
           const base = {
@@ -6887,9 +7306,9 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
           };
           // dev_type 固定列默认勾选导出，导出名称为 dev_type
           if (key === "dev_type") {
-            return { ...base, exportEnabled: true, exportName: "dev_type" };
+            return normalizeTemplateDefinition({ ...base, exportEnabled: true, exportName: "dev_type" })!;
           }
-          return base;
+          return normalizeTemplateDefinition(base)!;
         });
         const allDefs = [...paramDefs, ...eDefs];
         // dev_type 移到 name 之后，确保表格中紧跟名称行
@@ -6901,7 +7320,7 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
             allDefs.splice(nameIndex + 1, 0, devTypeDef);
           }
         }
-        return allDefs;
+        return normalizeESectionParameterDefinitions(section, allDefs);
       }
     }
     return paramDefs;
@@ -6929,7 +7348,9 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
         typicalValue: template.params[key] ?? "",
         readonly: TEMPLATE_DEFINITION_READONLY_KEYS.has(key)
       }))
-    ];
+    ]
+      .map((definition) => normalizeTemplateDefinition(definition))
+      .filter((definition): definition is DeviceParameterDefinition => Boolean(definition));
   }
   const eKeys = getEParameterKeys(template.kind, template.params);
   const keys = eKeys.length > 0 ? [...eKeys] : Object.keys(template.params);
@@ -6953,14 +7374,12 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
     };
     // dev_type 固定列默认勾选导出，导出名称为 dev_type
     if (key === "dev_type") {
-      return { ...base, exportEnabled: true, exportName: "dev_type" };
+      return normalizeTemplateDefinition({ ...base, exportEnabled: true, exportName: "dev_type" })!;
     }
-    return base;
+    return normalizeTemplateDefinition(base)!;
   });
   const section = inferESection(template.kind, template.params);
-  return section === "ACACConverter" || section === "DCDCConverter"
-    ? normalizeEndpointControlParameterDefinitions(section, generatedDefinitions)
-    : generatedDefinitions;
+  return normalizeESectionParameterDefinitions(section, generatedDefinitions);
 }
 
 function stripThreeWindingTransformerContainerParams(params: Record<string, string>): Record<string, string> {
@@ -7085,6 +7504,62 @@ function mergeCanonicalParameterDefinitions(
   return merged;
 }
 
+function mergeCanonicalFloatParameterDefinitions(
+  canonicalDefinitions: readonly DeviceParameterDefinition[],
+  overrideDefinitions: readonly DeviceParameterDefinition[]
+): DeviceParameterDefinition[] {
+  const canonicalFloatDefinitions = new Map(
+    canonicalDefinitions
+      .map(normalizeDeviceParameterDefinition)
+      .filter((definition) => definition.valueType === "float")
+      .map((definition) => [definition.enName, definition])
+  );
+  return mergeCanonicalParameterDefinitions(canonicalDefinitions, overrideDefinitions).map((definition) => {
+    const canonicalDefinition = canonicalFloatDefinitions.get(definition.enName);
+    if (!canonicalDefinition) {
+      return definition;
+    }
+    return {
+      ...definition,
+      valueType: "float",
+      typicalValue: firstNumericToken(definition.typicalValue) ||
+        firstNumericToken(canonicalDefinition.typicalValue) ||
+        "0"
+    };
+  });
+}
+
+function normalizeCanonicalFloatParameterValues(
+  params: Record<string, string>,
+  canonicalDefinitions: readonly DeviceParameterDefinition[]
+): Record<string, string> {
+  let next = params;
+  let changed = false;
+  for (const rawDefinition of canonicalDefinitions) {
+    const definition = normalizeDeviceParameterDefinition(rawDefinition);
+    if (definition.valueType !== "float") {
+      continue;
+    }
+    const key = definition.enName;
+    const legacyKey = legacyCamelCaseParamName(key);
+    const normalizedValue = firstNumericToken(deviceParamValue(next, key) ?? "") ||
+      firstNumericToken(definition.typicalValue) ||
+      "0";
+    if (next[key] === normalizedValue && (legacyKey === key || !Object.prototype.hasOwnProperty.call(next, legacyKey))) {
+      continue;
+    }
+    if (!changed) {
+      next = { ...next };
+      changed = true;
+    }
+    next[key] = normalizedValue;
+    if (legacyKey !== key) {
+      delete next[legacyKey];
+    }
+  }
+  return next;
+}
+
 export function applyDeviceTemplateDefinitionOverride(
   template: DeviceTemplate,
   override?: DeviceTemplateDefinitionOverride
@@ -7097,6 +7572,22 @@ export function applyDeviceTemplateDefinitionOverride(
     .filter((definition): definition is DeviceParameterDefinition => Boolean(definition));
   const baseKind = baseDeviceKind(template.kind);
   const electricGenerationDerivedInfo = electricGenerationDerivedComponentLibraryInfo(baseKind);
+  const isElectricGenerationBase = baseKind === "ac-source" || baseKind === "dc-source";
+  const isElectricGenerationTemplate = isElectricGenerationBase || Boolean(electricGenerationDerivedInfo);
+  const normalizedOverrideParameterDefinitions = isElectricGenerationTemplate
+    ? overrideParameterDefinitions.map((definition) => (
+        definition.enName === "rated_power"
+          ? {
+              ...definition,
+              cnName: definition.cnName === "额定功率" ? "额定容量" : definition.cnName,
+              enName: "rated_capacity",
+              ...(definition.exportName && toSnakeCaseDeviceParamName(definition.exportName) === "rated_power"
+                ? { exportName: "rated_capacity" }
+                : {})
+            }
+          : definition
+      ))
+    : overrideParameterDefinitions;
   const retiredElectricGenerationParameterNames = new Set(
     electricGenerationDerivedInfo
       ? Object.entries(RETIRED_ELECTRIC_GENERATION_PARAMETER_NAMES_BY_KIND_SUFFIX)
@@ -7104,13 +7595,14 @@ export function applyDeviceTemplateDefinitionOverride(
       : []
   );
   const canonicalOverrideParameterDefinitions = electricGenerationDerivedInfo
-    ? overrideParameterDefinitions.filter((definition) => (
+    ? normalizedOverrideParameterDefinitions.filter((definition) => (
         definition.enName !== "rated_power" &&
+        definition.enName !== "rated_capacity" &&
         definition.enName !== "rated_voltage" &&
         !retiredElectricGenerationParameterNames.has(definition.enName)
       ))
-    : overrideParameterDefinitions;
-  const parameterDefinitions = baseKind === "ac-source" || baseKind === "dc-source" || electricGenerationDerivedInfo
+    : normalizedOverrideParameterDefinitions;
+  const parameterDefinitions = isElectricGenerationBase || electricGenerationDerivedInfo
     ? mergeCanonicalParameterDefinitions(template.parameterDefinitions ?? [], canonicalOverrideParameterDefinitions)
     : canonicalOverrideParameterDefinitions;
   const hasStateDefinitionsOverride = Array.isArray(override.stateDefinitions);
@@ -7122,7 +7614,7 @@ export function applyDeviceTemplateDefinitionOverride(
     ))
   );
   const params = { ...template.params, ...overrideParams };
-  for (const definition of overrideParameterDefinitions) {
+  for (const definition of normalizedOverrideParameterDefinitions) {
     if (
       definition.enName === "name" ||
       retiredElectricGenerationParameterNames.has(definition.enName)
@@ -7136,6 +7628,39 @@ export function applyDeviceTemplateDefinitionOverride(
       delete params[key];
     }
   }
+  if (isElectricGenerationTemplate) {
+    const ratedCapacityDefinition = normalizedOverrideParameterDefinitions.find(
+      (definition) => definition.enName === "rated_capacity"
+    );
+    const ratedVoltageDefinition = normalizedOverrideParameterDefinitions.find(
+      (definition) => definition.enName === "rated_voltage"
+    );
+    const ratedCapacity = ratedCapacityDefinition?.typicalValue ??
+      deviceParamValue(overrideParams, "rated_capacity") ??
+      deviceParamValue(overrideParams, "rated_power") ??
+      deviceParamValue(template.params, "rated_capacity") ??
+      deviceParamValue(template.params, "rated_power") ??
+      "10 MW";
+    const ratedVoltage = ratedVoltageDefinition?.typicalValue ??
+      deviceParamValue(overrideParams, "rated_voltage") ??
+      deviceParamValue(template.params, "rated_voltage") ??
+      (template.terminalType === "ac" ? "10 kV" : "750 V");
+    for (const key of Object.keys(params)) {
+      if (key.startsWith("_")) {
+        continue;
+      }
+      const normalizedName = toSnakeCaseDeviceParamName(key);
+      if (
+        normalizedName === "rated_power" ||
+        (normalizedName === "rated_capacity" && key !== "rated_capacity") ||
+        (normalizedName === "rated_voltage" && key !== "rated_voltage")
+      ) {
+        delete params[key];
+      }
+    }
+    params.rated_capacity = ratedCapacity;
+    params.rated_voltage = ratedVoltage;
+  }
   const terminalTypes = override.terminalTypes?.length
     ? override.terminalTypes.slice(0, Math.max(0, override.terminalCount ?? override.terminalTypes.length))
     : template.terminalTypes;
@@ -7144,6 +7669,7 @@ export function applyDeviceTemplateDefinitionOverride(
     Math.round(override.terminalCount ?? terminalTypes?.length ?? template.terminalCount)
   );
   const terminalType = override.terminalType ?? terminalTypes?.[0] ?? template.terminalType;
+  const normalizedParams = normalizeSemanticParameterValues(params);
   const mergedTemplate: DeviceTemplate = {
     ...template,
     size: override.size ? { ...override.size } : template.size,
@@ -7160,7 +7686,7 @@ export function applyDeviceTemplateDefinitionOverride(
     derivedComponentLibrary: override.derivedComponentLibrary ?? template.derivedComponentLibrary,
     derivedComponentLibraryLabel: override.derivedComponentLibraryLabel ?? template.derivedComponentLibraryLabel,
     allowResizeTransform: override.allowResizeTransform ?? template.allowResizeTransform,
-    params,
+    params: normalizedParams,
     parameterDefinitions,
     ...(stateDefinitions ? { stateDefinitions } : {})
   };
@@ -7176,8 +7702,11 @@ export function applyDeviceTemplateDefinitionOverride(
       terminalRoles: undefined,
       terminalAssociations: undefined,
       isContainer: false,
-      params: normalizeTwoWindingTransformerParams(mergedTemplate.params),
-      parameterDefinitions: mergeCanonicalParameterDefinitions(
+      params: normalizeCanonicalFloatParameterValues(
+        normalizeTwoWindingTransformerParams(mergedTemplate.params),
+        twoWindingTransformerParameterDefinitions
+      ),
+      parameterDefinitions: mergeCanonicalFloatParameterDefinitions(
         twoWindingTransformerParameterDefinitions,
         parameterDefinitions.filter((definition) => !isRetiredTwoWindingTransformerParameterName(definition.enName))
       )
@@ -7197,8 +7726,11 @@ export function applyDeviceTemplateDefinitionOverride(
     terminalRoles: undefined,
     terminalAssociations: undefined,
     isContainer: false,
-    params: normalizeThreeWindingTransformerParams(mergedTemplate.params),
-    parameterDefinitions: mergeCanonicalParameterDefinitions(
+    params: normalizeCanonicalFloatParameterValues(
+      normalizeThreeWindingTransformerParams(mergedTemplate.params),
+      threeWindingTransformerParameterDefinitions
+    ),
+    parameterDefinitions: mergeCanonicalFloatParameterDefinitions(
       threeWindingTransformerParameterDefinitions,
       parameterDefinitions.filter((definition) => !isRetiredThreeWindingTransformerParameterName(definition.enName))
     )
@@ -7469,9 +8001,9 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       controlType: type === "ac" ? "PV" : "P"
     };
     if (templateKind.includes("wind-source")) {
-      base.cutInWindSpeed = "3 m/s";
-      base.ratedWindSpeed = "12 m/s";
-      base.cutOutWindSpeed = "25 m/s";
+      base.cutInWindSpeed = "3";
+      base.ratedWindSpeed = "12";
+      base.cutOutWindSpeed = "25";
     }
     return withTemplateDefinitions(withRunStat(withDefaultVbase({ ...template.params, ...base })));
   }
@@ -7530,7 +8062,7 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
     return withTemplateDefinitions(withRunStat({
       highVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       lowVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
-      ratedCapacity: "50 MVA",
+      ratedCapacity: "50",
       r: "0.0",
       x: "0.1",
       gt: "0.0",
@@ -7547,9 +8079,9 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       highVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       mediumVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       lowVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
-      highRatedCapacity: "90 MVA",
-      mediumRatedCapacity: "90 MVA",
-      lowRatedCapacity: "90 MVA",
+      highRatedCapacity: "90",
+      mediumRatedCapacity: "90",
+      lowRatedCapacity: "90",
       ...THREE_WINDING_TRANSFORMER_E_DEFAULT_PARAMS
     }));
   }
@@ -9508,9 +10040,12 @@ function virtualBusTerminal(node: Pick<ModelNode, "kind" | "terminals">, termina
 }
 
 export function normalizeNodeTerminalsWithTemplate(node: ModelNode, template: DeviceTemplate | undefined): ModelNode {
+  const semanticParams = normalizeSemanticParameterValues(node.params);
+  const semanticNode = semanticParams === node.params ? node : { ...node, params: semanticParams };
   let normalizedNode = normalizeEndpointConverterNodeControlParams(
-    normalizeDcacConverterNodeControlParams(normalizeRoutableLineDeviceStrokeWidthParam(node))
+    normalizeDcacConverterNodeControlParams(normalizeRoutableLineDeviceStrokeWidthParam(semanticNode))
   );
+  normalizedNode = normalizeElectricGenerationRatedParams(normalizedNode, template);
   if (template) {
     normalizedNode = migrateElectricGenerationContainerParams(normalizedNode, template);
   }

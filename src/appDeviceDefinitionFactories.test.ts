@@ -2622,7 +2622,7 @@ describe("applyEDeviceDefinitionSectionsToLibraryState", () => {
 });
 
 describe("buildEDeviceInterfaceDefinitionRows", () => {
-  test("shows rated power and voltage on base generator interfaces instead of derived interfaces", () => {
+  test("shows rated capacity and voltage on base generator interfaces instead of derived interfaces", () => {
     const includedKinds = new Set([
       "ac-source",
       "dc-source",
@@ -2637,7 +2637,7 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
       const fieldNames = rows
         .find((row: any) => row.componentLibrary === componentLibrary)
         ?.fields.map((field: any) => field.sourceName);
-      expect(fieldNames).toEqual(expect.arrayContaining(["rated_power", "rated_voltage"]));
+      expect(fieldNames).toEqual(expect.arrayContaining(["rated_capacity", "rated_voltage"]));
       expect(fieldNames).not.toContain("wind_turbine_model");
       expect(fieldNames).not.toContain("cut_in_wind_speed");
     }
@@ -2652,8 +2652,9 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
         "wind_turbine_model",
         "cut_in_wind_speed"
       ]));
-      expect(fieldNames).not.toContain("rated_power");
+      expect(fieldNames).not.toContain("rated_capacity");
       expect(fieldNames).not.toContain("rated_voltage");
+      expect(fieldNames).not.toContain("rated_power");
       expect(fieldNames).not.toContain("unit_rated_power");
     }
   });
@@ -2730,6 +2731,8 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
       "dev_type",
       "node",
       "run_stat",
+      "rated_capacity",
+      "rated_voltage",
       "control_type",
       "p_set",
       "q_set",
@@ -2760,6 +2763,31 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
       "dev_type",
       "node",
       "run_stat"
+    ]);
+  });
+
+  test("applies a saved complete field order including fixed E fields", () => {
+    const rows = buildEDeviceInterfaceDefinitionRows({
+      libraryTemplates: [
+        {
+          kind: "hydrogen-source",
+          label: "氢源",
+          categoryLibrary: "氢能设备",
+          params: { component_type: "HydroSource" }
+        }
+      ],
+      eDeviceDefinitionFieldOrder: {
+        HydroSource: ["run_stat", "dev_type", "idx", "node", "name"]
+      },
+      resolveDefinitionComponentLibrary: () => "HydroSource"
+    });
+
+    expect(rows[0].fields.map((field: any) => field.sourceName)).toEqual([
+      "run_stat",
+      "dev_type",
+      "idx",
+      "node",
+      "name"
     ]);
   });
 
@@ -2806,7 +2834,11 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
 describe("createExportEFile", () => {
   test("passes the current E interface definition into warnings and file generation", async () => {
     const project = { version: 1, name: "当前模型", nodes: [], edges: [] };
-    const buildEFileExport = vi.fn(() => ({ filename: "当前模型.e", text: "", mime: "text/plain" }));
+    let generatedExportOptions: any;
+    const buildEFileExport = vi.fn((_project: any, _schemePath: string[], options: any) => {
+      generatedExportOptions = options;
+      return { filename: "当前模型.e", text: "", mime: "text/plain" };
+    });
     const getEExportWarnings = vi.fn(() => []);
     const saveTextFile = vi.fn(async () => false);
     const exportEFile = createExportEFile({
@@ -2830,6 +2862,7 @@ describe("createExportEFile", () => {
       PARAM_LABELS: {},
       eDeviceDefinitionLabels: { ACGenerator: "GeneratorTable" },
       eDeviceDefinitionClassExportEnabled: { ACGenerator: true },
+      eDeviceDefinitionFieldOrder: { ACGenerator: ["dev_type", "name", "idx"] },
       resolveTemplateComponentLibrary: () => "ACGenerator"
     });
 
@@ -2849,6 +2882,13 @@ describe("createExportEFile", () => {
     });
     expect(getEExportWarnings).toHaveBeenCalledWith(project, exportOptions);
     expect(buildEFileExport).toHaveBeenCalledWith(project, ["默认方案"], exportOptions);
+    const acGenerator = generatedExportOptions.interfaceDefinitions
+      .find((row: any) => row.componentLibrary === "ACGenerator");
+    expect(acGenerator.fields.slice(0, 3).map((field: any) => field.sourceName)).toEqual([
+      "dev_type",
+      "name",
+      "idx"
+    ]);
   });
 });
 

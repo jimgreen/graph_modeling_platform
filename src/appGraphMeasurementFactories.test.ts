@@ -258,11 +258,15 @@ describe("measurement canvas interactions", () => {
     });
 
     const fieldNames = positions[0].parameterDefinitions.map((definition: any) => definition.enName);
+    expect(fieldNames).toContain("rated_capacity");
+    expect(fieldNames).toContain("rated_voltage");
     expect(fieldNames).toContain("p_set");
     expect(fieldNames).toContain("run_stat");
-    expect(fieldNames).toContain("nuclearUnitModel");
-    expect(fieldNames.indexOf("p_set")).toBeLessThan(fieldNames.indexOf("nuclearUnitModel"));
-    expect(fieldNames.indexOf("run_stat")).toBeLessThan(fieldNames.indexOf("nuclearUnitModel"));
+    expect(fieldNames).toContain("nuclear_unit_model");
+    expect(fieldNames.indexOf("rated_capacity")).toBeLessThan(fieldNames.indexOf("nuclear_unit_model"));
+    expect(fieldNames.indexOf("rated_voltage")).toBeLessThan(fieldNames.indexOf("nuclear_unit_model"));
+    expect(fieldNames.indexOf("p_set")).toBeLessThan(fieldNames.indexOf("nuclear_unit_model"));
+    expect(fieldNames.indexOf("run_stat")).toBeLessThan(fieldNames.indexOf("nuclear_unit_model"));
     expect(fieldNames.filter((name: string) => name === "p_set")).toHaveLength(1);
   });
 

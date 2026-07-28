@@ -8,8 +8,8 @@ import {
   visibleIconLibraryIcons
 } from "../iconLibraryCatalog";
 import { buildExportDeviceIdMap } from "../svgExportUtils";
-import { inferESection, getTemplateParameterDefinitions, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo } from "../model";
-import { buildEDeviceInterfaceDefinitionRows } from "./appDeviceDefinitionFactories";
+import { E_SECTION_COLUMNS, inferESection, getTemplateParameterDefinitions, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo } from "../model";
+import { applyEDeviceInterfaceFieldOrder, buildEDeviceInterfaceDefinitionRows } from "./appDeviceDefinitionFactories";
 import { UserCustomizationManagerDialog } from "../UserCustomizationManagerDialog";
 
 export type ImagePickerLibraryTab = "image" | "icon";
@@ -157,6 +157,79 @@ export function buildEDeviceInterfaceDefinitionTree(rows: readonly any[] = []) {
   });
 }
 
+const E_DEVICE_INTERFACE_DISPLAY_FIXED_FIELDS = new Set(["idx", "name", "dev_type"]);
+
+function eDeviceInterfaceDisplayCoreFieldName(value: unknown) {
+  const fieldName = String(value ?? "").trim().toLowerCase();
+  return (
+    E_DEVICE_INTERFACE_DISPLAY_FIXED_FIELDS.has(fieldName) ||
+    /^node\d*$/u.test(fieldName) ||
+    /_node$/u.test(fieldName) ||
+    fieldName === "status" ||
+    fieldName === "run_stat" ||
+    fieldName === "vbase" ||
+    fieldName === "alpha" ||
+    fieldName === "source_type" ||
+    fieldName.endsWith("control_type") ||
+    fieldName.endsWith("_set")
+  ) ? fieldName : "";
+}
+
+export function resolveEDeviceInterfaceFieldsForDisplay(
+  componentLibrary: string,
+  fields: readonly any[] = [],
+  configuredOrder: readonly string[] = []
+) {
+  if ((configuredOrder ?? []).length > 0) {
+    return applyEDeviceInterfaceFieldOrder(fields, configuredOrder);
+  }
+  const preferredOrder = [...(E_SECTION_COLUMNS[componentLibrary] ?? [])].map((fieldName) => fieldName.toLowerCase());
+  if (!preferredOrder.includes("dev_type")) {
+    const nameIndex = preferredOrder.indexOf("name");
+    preferredOrder.splice(nameIndex >= 0 ? nameIndex + 1 : 0, 0, "dev_type");
+  }
+  const preferredIndex = new Map(
+    preferredOrder
+      .filter((fieldName) => eDeviceInterfaceDisplayCoreFieldName(fieldName))
+      .map((fieldName, index) => [fieldName, index])
+  );
+
+  return fields
+    .map((field, index) => {
+      const candidateNames = [field?.sourceName, field?.exportName]
+        .map((fieldName) => eDeviceInterfaceDisplayCoreFieldName(fieldName))
+        .filter(Boolean);
+      const coreName = candidateNames.find((fieldName) => preferredIndex.has(fieldName)) ?? candidateNames[0] ?? "";
+      return {
+        field,
+        index,
+        core: Boolean(coreName),
+        preferredIndex: preferredIndex.get(coreName) ?? Number.MAX_SAFE_INTEGER
+      };
+    })
+    .sort((first, second) => {
+      if (first.core !== second.core) {
+        return first.core ? -1 : 1;
+      }
+      if (first.core && first.preferredIndex !== second.preferredIndex) {
+        return first.preferredIndex - second.preferredIndex;
+      }
+      return first.index - second.index;
+    })
+    .map(({ field }) => field);
+}
+
+export function moveEDeviceInterfaceFieldOrder(fields: readonly any[] = [], sourceName: string, direction: -1 | 1) {
+  const order = (fields ?? []).map((field) => String(field?.sourceName ?? "").trim()).filter(Boolean);
+  const currentIndex = order.indexOf(String(sourceName ?? "").trim());
+  const targetIndex = currentIndex + direction;
+  if (currentIndex < 0 || targetIndex < 0 || targetIndex >= order.length) {
+    return order;
+  }
+  [order[currentIndex], order[targetIndex]] = [order[targetIndex], order[currentIndex]];
+  return order;
+}
+
 export function eDeviceInterfaceDefinitionSignature(rows: readonly any[] = []) {
   const normalizedRows = (rows ?? []).map((row) => ({
     componentLibrary: String(row?.componentLibrary ?? "").trim(),
@@ -168,7 +241,6 @@ export function eDeviceInterfaceDefinitionSignature(rows: readonly any[] = []) {
         exportEnabled: Boolean(field?.exportEnabled),
         exportName: String(field?.exportName ?? field?.sourceName ?? "").trim()
       }))
-      .sort((left: any, right: any) => left.sourceName.localeCompare(right.sourceName))
   }));
   normalizedRows.sort((left, right) => left.componentLibrary.localeCompare(right.componentLibrary));
   return JSON.stringify(normalizedRows);
@@ -188,7 +260,6 @@ export function eDeviceInterfaceClassDefinitionSignature(row: any) {
         exportEnabled: Boolean(field?.exportEnabled),
         exportName: String(field?.exportName ?? field?.sourceName ?? "").trim()
       }))
-      .sort((left: any, right: any) => left.sourceName.localeCompare(right.sourceName))
   });
 }
 
@@ -376,6 +447,8 @@ export function renderAppView(__appScope: Record<string, any>) {
     setEDeviceDefinitionLabels,
     eDeviceDefinitionClassExportEnabled,
     setEDeviceDefinitionClassExportEnabled,
+    eDeviceDefinitionFieldOrder,
+    setEDeviceDefinitionFieldOrder,
     eDeviceDefinitionInterfaceDialogOpen,
     setEDeviceDefinitionInterfaceDialogOpen,
     libraryTemplates,
@@ -420,6 +493,7 @@ export function renderAppView(__appScope: Record<string, any>) {
     labels: PARAM_LABELS,
     eDeviceDefinitionLabels,
     eDeviceDefinitionClassExportEnabled,
+    eDeviceDefinitionFieldOrder,
     resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
   });
   const [selectedEDeviceInterfaceComponentLibrary, setSelectedEDeviceInterfaceComponentLibrary] = useState("");
@@ -438,6 +512,13 @@ export function renderAppView(__appScope: Record<string, any>) {
     eDeviceInterfaceDefinitionRows.find((row) => row.componentLibrary === selectedEDeviceInterfaceComponentLibrary) ??
     eDeviceInterfaceDefinitionRows[0] ??
     null;
+  const selectedEDeviceInterfaceFields = selectedEDeviceInterfaceRow
+    ? resolveEDeviceInterfaceFieldsForDisplay(
+        selectedEDeviceInterfaceRow.componentLibrary,
+        selectedEDeviceInterfaceRow.fields,
+        eDeviceDefinitionFieldOrder[selectedEDeviceInterfaceRow.componentLibrary] ?? []
+      )
+    : [];
   const eDeviceInterfaceClassSwitchTargetRow =
     eDeviceInterfaceDefinitionRows.find((row) => row.componentLibrary === eDeviceInterfaceClassSwitchTarget) ??
     null;
@@ -460,6 +541,7 @@ export function renderAppView(__appScope: Record<string, any>) {
     const componentLibrary = String(row.componentLibrary ?? "").trim();
     const hasLabelOverride = Object.prototype.hasOwnProperty.call(eDeviceDefinitionLabels, componentLibrary);
     const hasClassExportOverride = Object.prototype.hasOwnProperty.call(eDeviceDefinitionClassExportEnabled, componentLibrary);
+    const hasFieldOrderOverride = Object.prototype.hasOwnProperty.call(eDeviceDefinitionFieldOrder, componentLibrary);
     const rowSnapshot = {
       componentLibrary,
       exportEnabled: Boolean(row.exportEnabled),
@@ -475,7 +557,8 @@ export function renderAppView(__appScope: Record<string, any>) {
       signature: eDeviceInterfaceClassDefinitionSignature(rowSnapshot),
       row: rowSnapshot,
       labelOverride: hasLabelOverride ? eDeviceDefinitionLabels[componentLibrary] : undefined,
-      classExportOverride: hasClassExportOverride ? eDeviceDefinitionClassExportEnabled[componentLibrary] : undefined
+      classExportOverride: hasClassExportOverride ? eDeviceDefinitionClassExportEnabled[componentLibrary] : undefined,
+      fieldOrderOverride: hasFieldOrderOverride ? [...eDeviceDefinitionFieldOrder[componentLibrary]] : undefined
     };
   };
   const captureEDeviceInterfaceDefinitionSnapshot = () => ({
@@ -483,7 +566,8 @@ export function renderAppView(__appScope: Record<string, any>) {
     customDeviceTemplates,
     deviceDefinitionOverrides,
     eDeviceDefinitionLabels,
-    eDeviceDefinitionClassExportEnabled
+    eDeviceDefinitionClassExportEnabled,
+    eDeviceDefinitionFieldOrder
   });
   const runAfterEDeviceInterfaceInputCommit = (callback: () => void) => {
     const activeElement = document.activeElement;
@@ -503,7 +587,8 @@ export function renderAppView(__appScope: Record<string, any>) {
       customDeviceTemplates: snapshot.customDeviceTemplates,
       deviceDefinitionOverrides: snapshot.deviceDefinitionOverrides,
       eDeviceDefinitionLabels: snapshot.eDeviceDefinitionLabels,
-      eDeviceDefinitionClassExportEnabled: snapshot.eDeviceDefinitionClassExportEnabled
+      eDeviceDefinitionClassExportEnabled: snapshot.eDeviceDefinitionClassExportEnabled,
+      eDeviceDefinitionFieldOrder: snapshot.eDeviceDefinitionFieldOrder
     }, {
       failure: "E文件接口定义保存到后台失败"
     });
@@ -565,6 +650,15 @@ export function renderAppView(__appScope: Record<string, any>) {
       }
       return next;
     });
+    setEDeviceDefinitionFieldOrder((current) => {
+      const next = { ...current };
+      if (baseline.fieldOrderOverride === undefined) {
+        delete next[componentLibrary];
+      } else {
+        next[componentLibrary] = [...baseline.fieldOrderOverride];
+      }
+      return next;
+    });
     for (const field of baseline.row.fields ?? []) {
       const currentField = currentRow?.fields?.find((item: any) => item.sourceName === field.sourceName);
       if (!field.sourceName || eDeviceInterfaceFieldDefinitionMatches(currentField, field)) {
@@ -606,6 +700,22 @@ export function renderAppView(__appScope: Record<string, any>) {
   const requestSelectEDeviceInterfaceComponentLibrary = (componentLibrary: string) => {
     runAfterEDeviceInterfaceInputCommit(() => eDeviceInterfaceClassSelectRef.current(componentLibrary));
   };
+  const moveSelectedEDeviceInterfaceField = (sourceName: string, direction: -1 | 1) => {
+    if (!selectedEDeviceInterfaceRow) {
+      return;
+    }
+    const currentOrder = selectedEDeviceInterfaceFields
+      .map((field) => String(field?.sourceName ?? "").trim())
+      .filter(Boolean);
+    const nextOrder = moveEDeviceInterfaceFieldOrder(selectedEDeviceInterfaceFields, sourceName, direction);
+    if (nextOrder.every((fieldName, index) => fieldName === currentOrder[index])) {
+      return;
+    }
+    setEDeviceDefinitionFieldOrder((current) => ({
+      ...current,
+      [selectedEDeviceInterfaceRow.componentLibrary]: nextOrder
+    }));
+  };
   const discardEDeviceInterfaceDefinitionChanges = () => {
     const baseline = eDeviceInterfaceDefinitionBaseline;
     if (baseline) {
@@ -613,11 +723,13 @@ export function renderAppView(__appScope: Record<string, any>) {
       setDeviceDefinitionOverrides(baseline.deviceDefinitionOverrides);
       setEDeviceDefinitionLabels(baseline.eDeviceDefinitionLabels);
       setEDeviceDefinitionClassExportEnabled(baseline.eDeviceDefinitionClassExportEnabled);
+      setEDeviceDefinitionFieldOrder(baseline.eDeviceDefinitionFieldOrder);
       persistDeviceLibraryChange?.({
         customDeviceTemplates: baseline.customDeviceTemplates,
         deviceDefinitionOverrides: baseline.deviceDefinitionOverrides,
         eDeviceDefinitionLabels: baseline.eDeviceDefinitionLabels,
-        eDeviceDefinitionClassExportEnabled: baseline.eDeviceDefinitionClassExportEnabled
+        eDeviceDefinitionClassExportEnabled: baseline.eDeviceDefinitionClassExportEnabled,
+        eDeviceDefinitionFieldOrder: baseline.eDeviceDefinitionFieldOrder
       }, {
         failure: "放弃E文件接口定义修改时恢复后台数据失败"
       });
@@ -674,7 +786,8 @@ export function renderAppView(__appScope: Record<string, any>) {
     customDeviceTemplates,
     deviceDefinitionOverrides,
     eDeviceDefinitionLabels,
-    eDeviceDefinitionClassExportEnabled
+    eDeviceDefinitionClassExportEnabled,
+    eDeviceDefinitionFieldOrder
   ]);
   const toggleEDeviceInterfaceTreeNode = (key: string) => {
     setCollapsedEDeviceInterfaceTreeNodes((current) => ({
@@ -3835,6 +3948,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                     <table className="custom-param-table e-device-interface-table">
                       <thead>
                         <tr>
+                          <th>顺序</th>
                           <th>参数</th>
                           <th>英文名称</th>
                           <th>是否导出</th>
@@ -3842,7 +3956,32 @@ export function renderAppView(__appScope: Record<string, any>) {
                         </tr>
                       </thead>
                       <tbody>
-                        {selectedEDeviceInterfaceRow?.fields.map((field) => (<tr key={`${selectedEDeviceInterfaceRow.componentLibrary}:${field.sourceName}`} className={selectedEDeviceInterfaceRow.exportEnabled ? "" : "disabled"}>
+                        {selectedEDeviceInterfaceFields.map((field, fieldIndex) => (<tr key={`${selectedEDeviceInterfaceRow.componentLibrary}:${field.sourceName}`} className={selectedEDeviceInterfaceRow.exportEnabled ? "" : "disabled"}>
+                          <td className="e-device-interface-order-cell">
+                            <span className="e-device-interface-order-index" aria-label={`当前顺序${fieldIndex + 1}`}>{fieldIndex + 1}</span>
+                            <span className="e-device-interface-order-actions">
+                              <button
+                                type="button"
+                                className="e-device-interface-order-button"
+                                aria-label={`上移${field.cnName || field.sourceName}`}
+                                title="上移"
+                                disabled={fieldIndex === 0}
+                                onClick={() => moveSelectedEDeviceInterfaceField(field.sourceName, -1)}
+                              >
+                                <ArrowUp size={13} aria-hidden="true" />
+                              </button>
+                              <button
+                                type="button"
+                                className="e-device-interface-order-button"
+                                aria-label={`下移${field.cnName || field.sourceName}`}
+                                title="下移"
+                                disabled={fieldIndex === selectedEDeviceInterfaceFields.length - 1}
+                                onClick={() => moveSelectedEDeviceInterfaceField(field.sourceName, 1)}
+                              >
+                                <ArrowDown size={13} aria-hidden="true" />
+                              </button>
+                            </span>
+                          </td>
                           <td className="e-device-interface-param-name">{field.cnName || field.sourceName}</td>
                           <td><code>{field.sourceName}</code></td>
                           <td className="custom-param-export-toggle">
@@ -3864,7 +4003,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                           </td>
                         </tr>))}
                         {selectedEDeviceInterfaceRow.fields.length === 0 ? (<tr>
-                          <td colSpan={4}>该设备类暂无可配置参数</td>
+                          <td colSpan={5}>该设备类暂无可配置参数</td>
                         </tr>) : null}
                       </tbody>
                     </table>

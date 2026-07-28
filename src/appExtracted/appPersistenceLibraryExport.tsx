@@ -895,6 +895,7 @@ const emptyDeviceLibraryPersistencePayload = (): DeviceLibraryPersistencePayload
   deviceDefinitionOverrides: {},
   eDeviceDefinitionLabels: {},
   eDeviceDefinitionClassExportEnabled: {},
+  eDeviceDefinitionFieldOrder: {},
   customGraphTemplateTypes: [],
   customGraphTemplates: []
 });
@@ -1011,7 +1012,8 @@ export function deviceLibraryPayloadForPackageScope(
       customComponentLibraries: normalizedImported.customComponentLibraries,
       deviceDefinitionOverrides: normalizedImported.deviceDefinitionOverrides,
       eDeviceDefinitionLabels: normalizedImported.eDeviceDefinitionLabels,
-      eDeviceDefinitionClassExportEnabled: normalizedImported.eDeviceDefinitionClassExportEnabled
+      eDeviceDefinitionClassExportEnabled: normalizedImported.eDeviceDefinitionClassExportEnabled,
+      eDeviceDefinitionFieldOrder: normalizedImported.eDeviceDefinitionFieldOrder
     };
   }
   return normalizedImported;
@@ -1396,8 +1398,38 @@ function normalizeBooleanRecord(value: unknown): Record<string, boolean> {
   }, {});
 }
 
+function normalizeStringArrayRecord(value: unknown): Record<string, string[]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return Object.entries(value as Record<string, unknown>).reduce<Record<string, string[]>>((record, [rawKey, rawValue]) => {
+    const key = normalizeComponentLibraryName(String(rawKey ?? ""));
+    if (!key || !Array.isArray(rawValue)) {
+      return record;
+    }
+    const seen = new Set<string>();
+    const values = rawValue.flatMap((item) => {
+      if (typeof item !== "string") {
+        return [];
+      }
+      const text = item.trim();
+      const normalized = text.toLowerCase();
+      if (!text || seen.has(normalized)) {
+        return [];
+      }
+      seen.add(normalized);
+      return [text];
+    });
+    if (values.length > 0) {
+      record[key] = values;
+    }
+    return record;
+  }, {});
+}
+
 const E_DEVICE_DEFINITION_LABELS_STORAGE_KEY = "power-system-e-device-definition-labels";
 const E_DEVICE_DEFINITION_CLASS_EXPORT_STORAGE_KEY = "power-system-e-device-definition-class-export-enabled";
+const E_DEVICE_DEFINITION_FIELD_ORDER_STORAGE_KEY = "power-system-e-device-definition-field-order";
 
 export function normalizeCustomComponentLibraries(value: unknown, reservedTypes: readonly string[] = E_SECTION_OPTIONS): CustomComponentLibraryDefinition[] {
   if (!Array.isArray(value)) {
@@ -2469,6 +2501,7 @@ export function normalizeDeviceLibraryPersistencePayload(value: unknown): Device
     deviceDefinitionOverrides: normalizeDeviceDefinitionOverrides(source.deviceDefinitionOverrides),
     eDeviceDefinitionLabels: normalizeStringRecord((source as any).eDeviceDefinitionLabels),
     eDeviceDefinitionClassExportEnabled: normalizeBooleanRecord((source as any).eDeviceDefinitionClassExportEnabled),
+    eDeviceDefinitionFieldOrder: normalizeStringArrayRecord((source as any).eDeviceDefinitionFieldOrder),
     customGraphTemplateTypes: normalizeGraphTemplateTypes(source.customGraphTemplateTypes),
     customGraphTemplates: normalizeGraphTemplates(source.customGraphTemplates)
   };
@@ -2533,6 +2566,10 @@ export function readEDeviceDefinitionClassExportEnabled(): Record<string, boolea
   return readLocalStorageJson(E_DEVICE_DEFINITION_CLASS_EXPORT_STORAGE_KEY, "{}", normalizeBooleanRecord, {});
 }
 
+export function readEDeviceDefinitionFieldOrder(): Record<string, string[]> {
+  return readLocalStorageJson(E_DEVICE_DEFINITION_FIELD_ORDER_STORAGE_KEY, "{}", normalizeStringArrayRecord, {});
+}
+
 export function readCustomGraphTemplateTypes(): string[] {
   return readLocalStorageJson(CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, "[]", normalizeGraphTemplateTypes, []);
 }
@@ -2549,6 +2586,7 @@ export function readLocalDeviceLibraryPersistencePayload(): DeviceLibraryPersist
     deviceDefinitionOverrides: readDeviceDefinitionOverrides(),
     eDeviceDefinitionLabels: readEDeviceDefinitionLabels(),
     eDeviceDefinitionClassExportEnabled: readEDeviceDefinitionClassExportEnabled(),
+    eDeviceDefinitionFieldOrder: readEDeviceDefinitionFieldOrder(),
     customGraphTemplateTypes: readCustomGraphTemplateTypes(),
     customGraphTemplates: readCustomGraphTemplates()
   };
@@ -2568,6 +2606,7 @@ function fallbackToLocalStorage(data: DeviceLibraryPersistencePayload): void {
     window.localStorage.setItem(DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, JSON.stringify(data.deviceDefinitionOverrides));
     window.localStorage.setItem(E_DEVICE_DEFINITION_LABELS_STORAGE_KEY, JSON.stringify(data.eDeviceDefinitionLabels ?? {}));
     window.localStorage.setItem(E_DEVICE_DEFINITION_CLASS_EXPORT_STORAGE_KEY, JSON.stringify(data.eDeviceDefinitionClassExportEnabled ?? {}));
+    window.localStorage.setItem(E_DEVICE_DEFINITION_FIELD_ORDER_STORAGE_KEY, JSON.stringify(data.eDeviceDefinitionFieldOrder ?? {}));
     window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, JSON.stringify(data.customGraphTemplateTypes));
     window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, JSON.stringify(data.customGraphTemplates));
   } catch {
@@ -2579,6 +2618,7 @@ export function writeLocalDeviceLibraryPersistencePayload(normalizedDeviceLibrar
   try {
     window.localStorage.setItem(E_DEVICE_DEFINITION_LABELS_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionLabels ?? {}));
     window.localStorage.setItem(E_DEVICE_DEFINITION_CLASS_EXPORT_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionClassExportEnabled ?? {}));
+    window.localStorage.setItem(E_DEVICE_DEFINITION_FIELD_ORDER_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionFieldOrder ?? {}));
   } catch {
     // 本地接口定义缓存不可写时，不阻断元件库保存。
   }

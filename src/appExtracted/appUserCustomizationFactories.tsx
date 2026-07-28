@@ -168,6 +168,7 @@ export function createApplyUserCustomizationSnapshotToState(scope: Record<string
     scope.setDeviceDefinitionOverrides?.(target.deviceLibrary.deviceDefinitionOverrides);
     scope.setEDeviceDefinitionLabels?.(target.deviceLibrary.eDeviceDefinitionLabels ?? {});
     scope.setEDeviceDefinitionClassExportEnabled?.(target.deviceLibrary.eDeviceDefinitionClassExportEnabled ?? {});
+    scope.setEDeviceDefinitionFieldOrder?.(target.deviceLibrary.eDeviceDefinitionFieldOrder ?? {});
     scope.setCustomGraphTemplateTypes?.(target.deviceLibrary.customGraphTemplateTypes);
     scope.setCustomGraphTemplates?.(target.deviceLibrary.customGraphTemplates);
     if (scope.lastPersistedDeviceLibraryPayloadRef) {

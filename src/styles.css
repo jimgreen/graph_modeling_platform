@@ -5820,6 +5820,64 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   min-width: 720px;
 }
 
+.e-device-interface-table th:first-child,
+.e-device-interface-order-cell {
+  width: 104px;
+  min-width: 104px;
+  text-align: center;
+}
+
+.e-device-interface-order-cell {
+  white-space: nowrap;
+}
+
+.e-device-interface-order-index {
+  display: inline-block;
+  min-width: 20px;
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-align: right;
+}
+
+.e-device-interface-order-actions {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.e-device-interface-order-button {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  color: #334155;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.e-device-interface-order-button:hover:not(:disabled),
+.e-device-interface-order-button:focus-visible:not(:disabled) {
+  border-color: #64748b;
+  color: #0f172a;
+  background: #f1f5f9;
+}
+
+.e-device-interface-order-button:focus-visible {
+  outline: 2px solid #0284c7;
+  outline-offset: 1px;
+}
+
+.e-device-interface-order-button:disabled {
+  color: #cbd5e1;
+  background: #f8fafc;
+  cursor: not-allowed;
+}
+
 .e-device-interface-param-name {
   color: #334155;
   font-weight: 700;

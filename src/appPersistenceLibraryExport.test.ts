@@ -255,7 +255,7 @@ describe("graph template library filtering", () => {
     expect("attributeLibrary" in normalized.customDeviceTemplates[0]).toBe(false);
   });
 
-  test("preserves E interface definition labels and class export flags", () => {
+  test("preserves E interface labels, class export flags and normalized field order", () => {
     const normalized = normalizeDeviceLibraryPersistencePayload({
       customDeviceTemplates: [],
       customCategoryLibraries: [],
@@ -271,11 +271,17 @@ describe("graph template library filtering", () => {
         ACLoad: false,
         DCLoad: true,
         EmptyKey: "no"
+      },
+      eDeviceDefinitionFieldOrder: {
+        ACLoad: ["name", "idx", "name", "", 5],
+        "": ["idx"],
+        DCLoad: "idx,name"
       }
     } as any);
 
     expect((normalized as any).eDeviceDefinitionLabels).toEqual({ ACLoad: "LoadTable" });
     expect((normalized as any).eDeviceDefinitionClassExportEnabled).toEqual({ ACLoad: false, DCLoad: true });
+    expect((normalized as any).eDeviceDefinitionFieldOrder).toEqual({ ACLoad: ["name", "idx"] });
   });
 
   test("keeps custom component library Chinese labels for bilingual display", () => {

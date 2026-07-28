@@ -11,6 +11,7 @@ import {
   buildEFileExport,
   buildEDeviceParameterFile,
   buildEDeviceDefinitionFile,
+  buildEDeviceDefinitionFileFromInterfaceDefinitions,
   parseEDeviceDefinitionFile,
   calculateElectricalTopology,
   clearVoltageBaseValuesForScope,
@@ -1448,22 +1449,24 @@ describe("power system model", () => {
     expect(synchronized.edges).toBe(edges);
   });
 
-  test("creates electric generation parameters without generic generator-body defaults", () => {
+  test("creates electric generation parameters with shared rated defaults but without generic control defaults", () => {
     const acWind = createDefaultNode("ac-wind-source", { x: 100, y: 100 });
     const dcPv = createDefaultNode("dc-pv-source", { x: 240, y: 100 });
 
     expect(isGeneratorNode(acWind)).toBe(true);
     expect(acWind.nodeNumber).toMatch(/^N\d+$/);
-    expect(acWind.params.rated_power).toBe("50 MW");
-    expect(acWind.params.rated_capacity).toBeUndefined();
+    expect(acWind.params.rated_capacity).toBe("50");
+    expect(acWind.params.rated_voltage).toBe("35");
+    expect(acWind.params.rated_power).toBeUndefined();
     expect(acWind.params.control_type).toBeUndefined();
     expect(acWind.params.vbase).toBeUndefined();
-    expect(acWind.params.cut_in_wind_speed).toBe("3 m/s");
-    expect(acWind.params.rated_wind_speed).toBe("12 m/s");
-    expect(acWind.params.cut_out_wind_speed).toBe("25 m/s");
+    expect(acWind.params.cut_in_wind_speed).toBe("3");
+    expect(acWind.params.rated_wind_speed).toBe("12");
+    expect(acWind.params.cut_out_wind_speed).toBe("25");
 
-    expect(dcPv.params.rated_power).toBe("5 MW");
-    expect(dcPv.params.rated_capacity).toBeUndefined();
+    expect(dcPv.params.rated_capacity).toBe("5");
+    expect(dcPv.params.rated_voltage).toBe("1500");
+    expect(dcPv.params.rated_power).toBeUndefined();
     expect(dcPv.params.control_type).toBeUndefined();
     expect(dcPv.params.vbase).toBeUndefined();
   });
@@ -1486,6 +1489,7 @@ describe("power system model", () => {
 
       expect(fieldNames).toEqual(expect.arrayContaining(expectedWindFields));
       expect(fieldNames).not.toContain("rated_power");
+      expect(fieldNames).not.toContain("rated_capacity");
       expect(fieldNames).not.toContain("rated_voltage");
       expect(fieldNames).not.toContain("unit_rated_power");
     }
@@ -1499,7 +1503,8 @@ describe("power system model", () => {
       });
       const fieldNames = getTemplateParameterDefinitions(overridden).map((definition) => definition.enName);
 
-      expect(fieldNames).toEqual(expect.arrayContaining(["rated_power", "rated_voltage"]));
+      expect(fieldNames).toEqual(expect.arrayContaining(["rated_capacity", "rated_voltage"]));
+      expect(fieldNames).not.toContain("rated_power");
     }
   });
 
@@ -1563,7 +1568,7 @@ describe("power system model", () => {
         terminalType: expected.terminalType,
         terminalCount: 1,
         params: expect.objectContaining({
-          rated_power: "5 MW",
+          rated_capacity: "5",
           source_type: "柴油",
           diesel_unit_model: "DG-2500"
         })
@@ -1579,7 +1584,8 @@ describe("power system model", () => {
         type: expected.terminalType,
         label: expected.terminalType === "ac" ? "交流发电机端" : "直流发电机端"
       }]);
-      expect(node.params.rated_capacity).toBeUndefined();
+      expect(node.params.rated_capacity).toBe("5");
+      expect(node.params.rated_power).toBeUndefined();
       expect(node.params.control_type).toBeUndefined();
       expect(node.params.source_type).toBe("柴油");
       expect(inferESection(expected.kind, node.params)).toBe(expected.componentLibrary);
@@ -2457,6 +2463,44 @@ describe("power system model", () => {
       expect(sections[0].fields.find((f) => f.exportName === "p_load")?.cnName).toBe("有功功率");
       expect(sections[0].fields.find((f) => f.exportName === "dev_type")?.cnName).toBe("设备类型");
       expect(sections[0].fields.find((f) => f.exportName === "idx")).toBeDefined();
+    });
+
+    test("round trips the complete configured field order through an interface definition file", () => {
+      const file = buildEDeviceDefinitionFileFromInterfaceDefinitions([{
+        componentLibrary: "ACGenerator",
+        categoryLibrary: "交流设备",
+        label: "交流电源",
+        exportEnabled: true,
+        exportName: "GeneratorTable",
+        fields: [
+          { sourceName: "control_type", cnName: "控制类型", exportEnabled: true, exportName: "mode" },
+          { sourceName: "dev_type", cnName: "设备类型", exportEnabled: true, exportName: "dev_type" },
+          { sourceName: "rated_voltage", cnName: "额定电压", exportEnabled: false, exportName: "rated_voltage" },
+          { sourceName: "idx", cnName: "序号", exportEnabled: true, exportName: "idx" },
+          { sourceName: "name", cnName: "名称", exportEnabled: true, exportName: "name" }
+        ]
+      }]);
+
+      const [section] = parseEDeviceDefinitionFile(file.text);
+
+      expect(section.kind).toBe("GeneratorTable");
+      expect(section.componentLibrary).toBe("ACGenerator");
+      expect(section.exportEnabled).toBe(true);
+      expect(section.fields.map((field) => field.sourceName)).toEqual([
+        "control_type",
+        "dev_type",
+        "rated_voltage",
+        "idx",
+        "name"
+      ]);
+      expect(section.fields.map((field) => field.exportEnabled)).toEqual([true, true, false, true, true]);
+      expect(section.fields.map((field) => field.exportName)).toEqual([
+        "mode",
+        "dev_type",
+        "rated_voltage",
+        "idx",
+        "name"
+      ]);
     });
 
     test("exports and parses custom derived component library metadata", () => {
@@ -4934,7 +4978,9 @@ describe("power system model", () => {
     expect(acLine.params.b).toBe("0.0");
 
     expect(twoWinding.terminals).toHaveLength(2);
-    expect(twoWinding.params.rated_capacity).toBe("50 MVA");
+    expect(twoWinding.params.high_vbase).toBe("0");
+    expect(twoWinding.params.low_vbase).toBe("0");
+    expect(twoWinding.params.rated_capacity).toBe("50");
     expect(twoWinding.params.r).toBe("0.0");
     expect(twoWinding.params.x).toBe("0.1");
     expect(twoWinding.params.gt).toBe("0.0");
@@ -4942,9 +4988,12 @@ describe("power system model", () => {
     expect(twoWinding.params.tap).toBe("1.0");
 
     expect(threeWinding.terminals).toHaveLength(3);
-    expect(threeWinding.params.high_rated_capacity).toBe("90 MVA");
-    expect(threeWinding.params.medium_rated_capacity).toBe("90 MVA");
-    expect(threeWinding.params.low_rated_capacity).toBe("90 MVA");
+    expect(threeWinding.params.high_vbase).toBe("0");
+    expect(threeWinding.params.medium_vbase).toBe("0");
+    expect(threeWinding.params.low_vbase).toBe("0");
+    expect(threeWinding.params.high_rated_capacity).toBe("90");
+    expect(threeWinding.params.medium_rated_capacity).toBe("90");
+    expect(threeWinding.params.low_rated_capacity).toBe("90");
     expect(threeWinding.params.tap1).toBe("1.0");
     expect(threeWinding.params.tap2).toBe("1.0");
     expect(threeWinding.params.tap3).toBe("1.0");
@@ -4955,6 +5004,28 @@ describe("power system model", () => {
     expect(threeWinding.params.idx_xf_t2).toBeUndefined();
     expect(threeWinding.params.idx_xf_t3).toBeUndefined();
     expect(threeWinding.params.idx_ac_transformer_t1).toBeUndefined();
+
+    const twoWindingDefinitions = new Map(
+      getTemplateParameterDefinitions(DEVICE_LIBRARY.find((item) => item.kind === "ac-transformer")!)
+        .map((definition) => [definition.enName, definition])
+    );
+    for (const fieldName of ["high_vbase", "low_vbase", "rated_capacity"]) {
+      expect(twoWindingDefinitions.get(fieldName)?.valueType, fieldName).toBe("float");
+    }
+    const threeWindingDefinitions = new Map(
+      getTemplateParameterDefinitions(DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer")!)
+        .map((definition) => [definition.enName, definition])
+    );
+    for (const fieldName of [
+      "high_vbase",
+      "medium_vbase",
+      "low_vbase",
+      "high_rated_capacity",
+      "medium_rated_capacity",
+      "low_rated_capacity"
+    ]) {
+      expect(threeWindingDefinitions.get(fieldName)?.valueType, fieldName).toBe("float");
+    }
 
     const dcdc = createDefaultNode("dcdc-converter", { x: 600, y: 100 });
     expect(dcdc.terminals[0].nodeNumber).toMatch(/^N\d+$/);
@@ -4992,7 +5063,7 @@ describe("power system model", () => {
     const dcBreaker = createDefaultNode("dc-breaker", { x: 1100, y: 100 });
     expect(acSwitch.terminals[0].nodeNumber).toMatch(/^N\d+$/);
     expect(acSwitch.terminals[1].nodeNumber).toMatch(/^N\d+$/);
-    expect(acSwitch.params.rated_capacity).toBe("1250 A");
+    expect(acSwitch.params.rated_capacity).toBe("1250");
     expect(acSwitch.params.status).toBe("1");
     expect(acSwitch.params.closed_status).toBeUndefined();
     expect(getSwitchVisualState(acSwitch)).toBe("closed");
@@ -5005,6 +5076,76 @@ describe("power system model", () => {
     expect(getSwitchVisualState(dcBreaker)).toBe("open");
     dcBreaker.params.status = "1";
     expect(getSwitchVisualState(dcBreaker)).toBe("closed");
+  });
+
+  test("migrates saved transformer engineering fields to float definitions and numeric defaults", () => {
+    const twoWindingTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-transformer")!;
+    const twoWinding = applyDeviceTemplateDefinitionOverride(twoWindingTemplate, {
+      kind: twoWindingTemplate.kind,
+      params: {
+        high_vbase: "110 kV",
+        low_vbase: "10 kV",
+        rated_capacity: "50 MVA"
+      },
+      parameterDefinitions: [
+        { cnName: "高压侧电压等级", enName: "high_vbase", valueType: "string", typicalValue: "110 kV" },
+        { cnName: "低压侧电压等级", enName: "low_vbase", valueType: "string", typicalValue: "10 kV" },
+        { cnName: "额定容量", enName: "rated_capacity", valueType: "string", typicalValue: "50 MVA" }
+      ]
+    });
+    const twoWindingDefinitions = new Map(
+      getTemplateParameterDefinitions(twoWinding).map((definition) => [definition.enName, definition])
+    );
+
+    expect(twoWinding.params).toMatchObject({
+      high_vbase: "110",
+      low_vbase: "10",
+      rated_capacity: "50"
+    });
+    for (const fieldName of ["high_vbase", "low_vbase", "rated_capacity"]) {
+      expect(twoWindingDefinitions.get(fieldName), fieldName).toMatchObject({
+        valueType: "float",
+        typicalValue: twoWinding.params[fieldName]
+      });
+    }
+
+    const threeWindingTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer")!;
+    const legacyThreeWindingValues = {
+      high_vbase: "220 kV",
+      high_rated_capacity: "90 MVA",
+      medium_vbase: "110 kV",
+      medium_rated_capacity: "90 MVA",
+      low_vbase: "10 kV",
+      low_rated_capacity: "90 MVA"
+    };
+    const threeWinding = applyDeviceTemplateDefinitionOverride(threeWindingTemplate, {
+      kind: threeWindingTemplate.kind,
+      params: legacyThreeWindingValues,
+      parameterDefinitions: Object.entries(legacyThreeWindingValues).map(([enName, typicalValue]) => ({
+        cnName: enName,
+        enName,
+        valueType: "string",
+        typicalValue
+      }))
+    });
+    const threeWindingDefinitions = new Map(
+      getTemplateParameterDefinitions(threeWinding).map((definition) => [definition.enName, definition])
+    );
+
+    expect(threeWinding.params).toMatchObject({
+      high_vbase: "220",
+      high_rated_capacity: "90",
+      medium_vbase: "110",
+      medium_rated_capacity: "90",
+      low_vbase: "10",
+      low_rated_capacity: "90"
+    });
+    for (const fieldName of Object.keys(legacyThreeWindingValues)) {
+      expect(threeWindingDefinitions.get(fieldName), fieldName).toMatchObject({
+        valueType: "float",
+        typicalValue: threeWinding.params[fieldName]
+      });
+    }
   });
 
   test("formats load base power display values without units", () => {
@@ -9463,20 +9604,20 @@ describe("power system model", () => {
   });
 
   const electricGenerationCases = [
-    { kind: "ac-wind-source", family: "wind", label: "交流风力发电机", source_type: "风力", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "35 kV", rated_power: "50 MW", derivedClassCnName: "交流风电", derivedComponentType: "ACWindGen" },
-    { kind: "dc-wind-source", family: "wind", label: "直流风力发电机", source_type: "风力", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "1500 V", rated_power: "10 MW", derivedClassCnName: "直流风电", derivedComponentType: "DCWindGen" },
-    { kind: "ac-pv-source", family: "pv", label: "交流光伏发电机", source_type: "光伏", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "10 kV", rated_power: "20 MW", derivedClassCnName: "交流光伏", derivedComponentType: "ACPVGen" },
-    { kind: "dc-pv-source", family: "pv", label: "直流光伏发电机", source_type: "光伏", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "1500 V", rated_power: "5 MW", derivedClassCnName: "直流光伏", derivedComponentType: "DCPVGen" },
-    { kind: "ac-thermal-source", family: "thermal", label: "交流火力发电机", source_type: "火力", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "220 kV", rated_power: "600 MW", derivedClassCnName: "交流火电", derivedComponentType: "ACThermalGen" },
-    { kind: "dc-thermal-source", family: "thermal", label: "直流火力发电机", source_type: "火力", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "1500 V", rated_power: "600 MW", derivedClassCnName: "直流火电", derivedComponentType: "DCThermalGen" },
-    { kind: "ac-diesel-source", family: "diesel", label: "交流柴油发电机", source_type: "柴油", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "10 kV", rated_power: "5 MW", derivedClassCnName: "交流柴发", derivedComponentType: "ACDieselGen" },
-    { kind: "dc-diesel-source", family: "diesel", label: "直流柴油发电机", source_type: "柴油", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "750 V", rated_power: "5 MW", derivedClassCnName: "直流柴发", derivedComponentType: "DCDieselGen" },
-    { kind: "ac-hydro-source", family: "hydro", label: "交流水力发电机", source_type: "水力", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "220 kV", rated_power: "300 MW", derivedClassCnName: "交流水电", derivedComponentType: "ACHydroGen" },
-    { kind: "dc-hydro-source", family: "hydro", label: "直流水力发电机", source_type: "水力", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "1500 V", rated_power: "300 MW", derivedClassCnName: "直流水电", derivedComponentType: "DCHydroGen" },
-    { kind: "ac-nuclear-source", family: "nuclear", label: "交流核能发电机", source_type: "核能", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "500 kV", rated_power: "1000 MW", derivedClassCnName: "交流核电", derivedComponentType: "ACNuclearGen" },
-    { kind: "dc-nuclear-source", family: "nuclear", label: "直流核能发电机", source_type: "核能", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "1500 V", rated_power: "1000 MW", derivedClassCnName: "直流核电", derivedComponentType: "DCNuclearGen" },
-    { kind: "ac-storage", family: "storage", label: "交流电化学储能", source_type: "储能", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "10 kV", rated_power: "5 MW", derivedClassCnName: "交流储能", derivedComponentType: "ACStorageGen" },
-    { kind: "dc-storage", family: "storage", label: "直流电化学储能", source_type: "储能", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "750 V", rated_power: "5 MW", derivedClassCnName: "直流储能", derivedComponentType: "DCStorageGen" }
+    { kind: "ac-wind-source", family: "wind", label: "交流风力发电机", source_type: "风力", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "35", rated_power: "50", derivedClassCnName: "交流风电", derivedComponentType: "ACWindGen" },
+    { kind: "dc-wind-source", family: "wind", label: "直流风力发电机", source_type: "风力", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "1500", rated_power: "10", derivedClassCnName: "直流风电", derivedComponentType: "DCWindGen" },
+    { kind: "ac-pv-source", family: "pv", label: "交流光伏发电机", source_type: "光伏", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "10", rated_power: "20", derivedClassCnName: "交流光伏", derivedComponentType: "ACPVGen" },
+    { kind: "dc-pv-source", family: "pv", label: "直流光伏发电机", source_type: "光伏", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "1500", rated_power: "5", derivedClassCnName: "直流光伏", derivedComponentType: "DCPVGen" },
+    { kind: "ac-thermal-source", family: "thermal", label: "交流火力发电机", source_type: "火力", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "220", rated_power: "600", derivedClassCnName: "交流火电", derivedComponentType: "ACThermalGen" },
+    { kind: "dc-thermal-source", family: "thermal", label: "直流火力发电机", source_type: "火力", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "1500", rated_power: "600", derivedClassCnName: "直流火电", derivedComponentType: "DCThermalGen" },
+    { kind: "ac-diesel-source", family: "diesel", label: "交流柴油发电机", source_type: "柴油", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "10", rated_power: "5", derivedClassCnName: "交流柴发", derivedComponentType: "ACDieselGen" },
+    { kind: "dc-diesel-source", family: "diesel", label: "直流柴油发电机", source_type: "柴油", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "750", rated_power: "5", derivedClassCnName: "直流柴发", derivedComponentType: "DCDieselGen" },
+    { kind: "ac-hydro-source", family: "hydro", label: "交流水力发电机", source_type: "水力", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "220", rated_power: "300", derivedClassCnName: "交流水电", derivedComponentType: "ACHydroGen" },
+    { kind: "dc-hydro-source", family: "hydro", label: "直流水力发电机", source_type: "水力", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "1500", rated_power: "300", derivedClassCnName: "直流水电", derivedComponentType: "DCHydroGen" },
+    { kind: "ac-nuclear-source", family: "nuclear", label: "交流核能发电机", source_type: "核能", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "500", rated_power: "1000", derivedClassCnName: "交流核电", derivedComponentType: "ACNuclearGen" },
+    { kind: "dc-nuclear-source", family: "nuclear", label: "直流核能发电机", source_type: "核能", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "1500", rated_power: "1000", derivedClassCnName: "直流核电", derivedComponentType: "DCNuclearGen" },
+    { kind: "ac-storage", family: "storage", label: "交流电化学储能", source_type: "储能", terminalType: "ac", terminalLabel: "交流发电机端", association: "ac-generator", relationKey: "idx_acgenerator", rated_voltage: "10", rated_power: "5", derivedClassCnName: "交流储能", derivedComponentType: "ACStorageGen" },
+    { kind: "dc-storage", family: "storage", label: "直流电化学储能", source_type: "储能", terminalType: "dc", terminalLabel: "直流发电机端", association: "dc-generator", relationKey: "idx_dcgenerator", rated_voltage: "750", rated_power: "5", derivedClassCnName: "直流储能", derivedComponentType: "DCStorageGen" }
   ] as const;
 
   const legacyElectricGenerationKinds = new Set<string>([
@@ -9502,7 +9643,7 @@ describe("power system model", () => {
         params: expect.objectContaining({
           source_type: expected.source_type,
           rated_voltage: expected.rated_voltage,
-          rated_power: expected.rated_power
+          rated_capacity: expected.rated_power
         })
       });
       expect(template?.terminalAssociations).toBeUndefined();
@@ -9516,14 +9657,14 @@ describe("power system model", () => {
       expect(node.params).toMatchObject({
         source_type: expected.source_type,
         rated_voltage: expected.rated_voltage,
-        rated_power: expected.rated_power
+        rated_capacity: expected.rated_power
       });
+      expect(node.params).not.toHaveProperty("rated_power");
       expect(node.params).not.toHaveProperty("is_container");
       expect(node.params).not.toHaveProperty(expected.relationKey);
       if (expected.family === "storage") {
         expect(node.params.vbase).toBe("0");
       } else {
-        expect(node.params).not.toHaveProperty("rated_capacity");
         expect(node.params).not.toHaveProperty("control_type");
         expect(node.params).not.toHaveProperty("vbase");
       }
@@ -9539,27 +9680,82 @@ describe("power system model", () => {
       expect(definitions.get(expected.relationKey)).toBeUndefined();
       expect(definitions.get("source_type")).toMatchObject({ valueType: "string", readonly: true });
       expect(definitions.has("rated_power")).toBe(false);
+      expect(definitions.has("rated_capacity")).toBe(false);
       expect(definitions.has("rated_voltage")).toBe(false);
     }
   });
 
-  test("defines rated power and rated voltage on the AC and DC generator base classes", () => {
+  test("defines rated capacity and rated voltage as AC and DC generator defaults and exports them to E", () => {
     const baseCases = [
-      { kind: "ac-source", ratedPower: "10 MW", ratedVoltage: "10 kV" },
-      { kind: "dc-source", ratedPower: "10 MW", ratedVoltage: "750 V" }
+      { kind: "ac-source", section: "ACGenerator", ratedCapacity: "10", ratedVoltage: "10", exportedVoltage: "10" },
+      { kind: "dc-source", section: "DCGenerator", ratedCapacity: "10", ratedVoltage: "750", exportedVoltage: "750" }
     ] as const;
 
     for (const expected of baseCases) {
       const template = DEVICE_LIBRARY.find((item) => item.kind === expected.kind)!;
       const definitions = new Map(getTemplateParameterDefinitions(template).map((definition) => [definition.enName, definition]));
+      const node = assignPermanentDeviceIndex(createDefaultNode(expected.kind, { x: 100, y: 100 }), {}).node;
+      const payload = parseESections(buildEDeviceParameterFile({
+        version: 1,
+        name: `${expected.kind}额定参数导出测试`,
+        nodes: [node],
+        edges: []
+      }));
 
       expect(template.params).toMatchObject({
-        rated_power: expected.ratedPower,
+        rated_capacity: expected.ratedCapacity,
         rated_voltage: expected.ratedVoltage
       });
-      expect(definitions.get("rated_power")).toMatchObject({ cnName: "额定功率", valueType: "string", readonly: false });
-      expect(definitions.get("rated_voltage")).toMatchObject({ cnName: "额定电压", valueType: "string", readonly: false });
+      expect(template.params).not.toHaveProperty("rated_power");
+      expect(node.params).toMatchObject({
+        rated_capacity: expected.ratedCapacity,
+        rated_voltage: expected.ratedVoltage
+      });
+      expect(node.params).not.toHaveProperty("rated_power");
+      expect(definitions.get("rated_capacity")).toMatchObject({ cnName: "额定容量", valueType: "float", readonly: false });
+      expect(definitions.get("rated_voltage")).toMatchObject({ cnName: "额定电压", valueType: "float", readonly: false });
+      expect(definitions.has("rated_power")).toBe(false);
+      expect(payload[expected.section].columns).toEqual(expect.arrayContaining(["rated_capacity", "rated_voltage"]));
+      expect(payload[expected.section].rows[0]).toMatchObject({
+        rated_capacity: "10",
+        rated_voltage: expected.exportedVoltage
+      });
     }
+  });
+
+  test("inherits generator rated defaults in derived sources and migrates legacy rated power values", () => {
+    const acWind = createDefaultNode("ac-wind-source", { x: 100, y: 100 });
+    const dcPv = createDefaultNode("dc-pv-source", { x: 240, y: 100 });
+
+    expect(acWind.params).toMatchObject({ rated_capacity: "50", rated_voltage: "35" });
+    expect(dcPv.params).toMatchObject({ rated_capacity: "5", rated_voltage: "1500" });
+    expect(acWind.params).not.toHaveProperty("rated_power");
+    expect(dcPv.params).not.toHaveProperty("rated_power");
+
+    const legacyWind: ModelNode = {
+      ...acWind,
+      params: {
+        ...acWind.params,
+        rated_power: "42 MW"
+      }
+    };
+    delete legacyWind.params.rated_capacity;
+
+    const normalized = normalizeNodeTerminalsByTemplate(legacyWind);
+    expect(normalized.params.rated_capacity).toBe("42");
+    expect(normalized.params.rated_voltage).toBe("35");
+    expect(normalized.params).not.toHaveProperty("rated_power");
+
+    const payload = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: "旧派生电源额定参数导出测试",
+      nodes: [legacyWind],
+      edges: []
+    }));
+    expect(payload.ACGenerator.rows[0]).toMatchObject({
+      rated_capacity: "42",
+      rated_voltage: "35"
+    });
   });
 
   test("omits equipment-count fields from generation derived classes and historical overrides", () => {
@@ -9677,16 +9873,16 @@ describe("power system model", () => {
 
       expect(definitions.get("soc_upper_limit")).toMatchObject({
         cnName: "SOC上限",
-        valueType: "string",
+        valueType: "float",
         readonly: false
       });
       expect(definitions.get("soc_lower_limit")).toMatchObject({
         cnName: "SOC下限",
-        valueType: "string",
+        valueType: "float",
         readonly: false
       });
-      expect(node.params.soc_upper_limit).toBe("90%");
-      expect(node.params.soc_lower_limit).toBe("10%");
+      expect(node.params.soc_upper_limit).toBe("90");
+      expect(node.params.soc_lower_limit).toBe("10");
     }
   });
 
@@ -9712,8 +9908,10 @@ describe("power system model", () => {
       const fieldNames = getTemplateParameterDefinitions(overridden).map((definition) => definition.enName);
 
       expect(fieldNames).not.toContain("rated_power");
+      expect(fieldNames).not.toContain("rated_capacity");
       expect(fieldNames).not.toContain("rated_voltage");
-      expect(overridden.params.rated_power).toBe(expected.rated_power);
+      expect(overridden.params.rated_capacity).toBe(expected.rated_power);
+      expect(overridden.params).not.toHaveProperty("rated_power");
       expect(overridden.params.rated_voltage).toBe(expected.rated_voltage);
       if (expected.family === "wind") {
         expect(fieldNames).not.toContain("unit_rated_power");
@@ -9917,62 +10115,62 @@ describe("power system model", () => {
     const familyDefinitions = {
       wind: {
         wind_turbine_model: "string",
-        cut_in_wind_speed: "string",
-        rated_wind_speed: "string",
-        cut_out_wind_speed: "string",
-        rotor_diameter: "string",
-        hub_height: "string"
+        cut_in_wind_speed: "float",
+        rated_wind_speed: "float",
+        cut_out_wind_speed: "float",
+        rotor_diameter: "float",
+        hub_height: "float"
       },
       pv: {
         pv_module_model: "string",
-        module_efficiency: "string",
-        array_area: "string",
+        module_efficiency: "float",
+        array_area: "float",
         mppt_count: "integer"
       },
       thermal: {
         thermal_unit_model: "string",
         fuel_type: "stringEnum",
-        thermal_efficiency: "string",
-        heat_rate: "string",
-        main_steam_pressure: "string",
-        main_steam_temperature: "string"
+        thermal_efficiency: "float",
+        heat_rate: "float",
+        main_steam_pressure: "float",
+        main_steam_temperature: "float"
       },
       diesel: {
         diesel_unit_model: "string",
         fuel_grade: "string",
-        specific_fuel_consumption: "string",
-        fuel_tank_capacity: "string",
-        rated_speed: "string",
-        start_time: "string"
+        specific_fuel_consumption: "float",
+        fuel_tank_capacity: "float",
+        rated_speed: "float",
+        start_time: "float"
       },
       hydro: {
         hydro_unit_model: "string",
         turbine_type: "stringEnum",
-        design_head: "string",
-        design_flow: "string",
-        rated_speed: "string",
-        generator_efficiency: "string"
+        design_head: "float",
+        design_flow: "float",
+        rated_speed: "float",
+        generator_efficiency: "float"
       },
       nuclear: {
         nuclear_unit_model: "string",
         reactor_type: "stringEnum",
-        reactor_thermal_power: "string",
-        thermal_efficiency: "string",
-        primary_loop_pressure: "string",
-        main_steam_pressure: "string",
-        main_steam_temperature: "string",
-        capacity_factor: "string"
+        reactor_thermal_power: "float",
+        thermal_efficiency: "float",
+        primary_loop_pressure: "float",
+        main_steam_pressure: "float",
+        main_steam_temperature: "float",
+        capacity_factor: "float"
       },
       storage: {
         storage_technology: "stringEnum",
         battery_rack_count: "integer",
-        energy_capacity: "string",
-        charge_discharge_efficiency: "string",
-        max_charge_power: "string",
-        max_discharge_power: "string",
-        state_of_charge: "string",
-        soc_upper_limit: "string",
-        soc_lower_limit: "string"
+        energy_capacity: "float",
+        charge_discharge_efficiency: "float",
+        max_charge_power: "float",
+        max_discharge_power: "float",
+        state_of_charge: "float",
+        soc_upper_limit: "float",
+        soc_lower_limit: "float"
       }
     } as const;
 
@@ -9988,10 +10186,70 @@ describe("power system model", () => {
 
     const wind = createDefaultNode("ac-wind-source", { x: 100, y: 100 });
     expect(wind.params).toMatchObject({
-      cut_in_wind_speed: "3 m/s",
-      rated_wind_speed: "12 m/s",
-      cut_out_wind_speed: "25 m/s"
+      cut_in_wind_speed: "3",
+      rated_wind_speed: "12",
+      cut_out_wind_speed: "25",
+      rotor_diameter: "170",
+      hub_height: "110"
     });
+    const thermal = createDefaultNode("ac-thermal-source", { x: 100, y: 100 });
+    expect(thermal.params).toMatchObject({
+      thermal_efficiency: "45",
+      heat_rate: "8000",
+      main_steam_pressure: "25",
+      main_steam_temperature: "600"
+    });
+    const pv = createDefaultNode("ac-pv-source", { x: 100, y: 100 });
+    expect(pv.params).toMatchObject({
+      module_efficiency: "21.3",
+      array_area: "100000"
+    });
+    const diesel = createDefaultNode("ac-diesel-source", { x: 100, y: 100 });
+    expect(diesel.params).toMatchObject({
+      specific_fuel_consumption: "200",
+      fuel_tank_capacity: "20",
+      rated_speed: "1500",
+      start_time: "10"
+    });
+    const hydro = createDefaultNode("ac-hydro-source", { x: 100, y: 100 });
+    expect(hydro.params).toMatchObject({
+      design_head: "120",
+      design_flow: "280",
+      rated_speed: "150",
+      generator_efficiency: "98.5"
+    });
+    const nuclear = createDefaultNode("ac-nuclear-source", { x: 100, y: 100 });
+    expect(nuclear.params).toMatchObject({
+      reactor_thermal_power: "2900",
+      thermal_efficiency: "34.5",
+      primary_loop_pressure: "15.5",
+      main_steam_pressure: "6.8",
+      main_steam_temperature: "285",
+      capacity_factor: "90"
+    });
+    const storage = createDefaultNode("ac-storage", { x: 100, y: 100 });
+    expect(storage.params).toMatchObject({
+      energy_capacity: "20",
+      charge_discharge_efficiency: "90",
+      max_charge_power: "5",
+      max_discharge_power: "5",
+      state_of_charge: "50",
+      soc_upper_limit: "90",
+      soc_lower_limit: "10"
+    });
+
+    const legacyThermalTemplate = {
+      ...DEVICE_LIBRARY.find((item) => item.kind === "ac-thermal-source")!,
+      parameterDefinitions: DEVICE_LIBRARY.find((item) => item.kind === "ac-thermal-source")!.parameterDefinitions?.map((definition) => (
+        definition.enName === "thermal_efficiency"
+          ? { ...definition, valueType: "string" as const }
+          : definition
+      ))
+    };
+    expect(
+      getTemplateParameterDefinitions(legacyThermalTemplate)
+        .find((definition) => definition.enName === "thermal_efficiency")?.valueType
+    ).toBe("float");
 
     const enumOptions = (kind: DeviceKind, fieldName: string) => {
       const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
@@ -10119,7 +10377,6 @@ describe("power system model", () => {
         });
         expect(normalized.params).toMatchObject({
           rated_voltage: "保留电压",
-          rated_power: "保留容量",
           rated_capacity: "保留通用额定容量",
           control_type: "保留通用控制类型",
           vbase: "保留通用电压基准",
@@ -10127,6 +10384,7 @@ describe("power system model", () => {
           is_container: "0",
           legacyCustomValue: "保留自定义值"
         });
+        expect(normalized.params).not.toHaveProperty("rated_power");
         expect(normalized.params).not.toHaveProperty(expected.relationKey);
         expect(normalized.terminals).toMatchObject([{
           id: "t1",
@@ -10146,7 +10404,7 @@ describe("power system model", () => {
     }
   });
 
-  test("does not migrate newly added electric generation kinds as legacy nodes", () => {
+  test("adds shared rated defaults to newer electric generation kinds without legacy container metadata", () => {
     for (const expected of electricGenerationCases.filter(({ kind }) => !legacyElectricGenerationKinds.has(kind))) {
       const donor = createDefaultNode(expected.terminalType === "ac" ? "ac-source" : "dc-source", { x: 12, y: 34 });
       const baseTemplate = DEVICE_LIBRARY.find((item) => item.kind === expected.kind)!;
@@ -10163,8 +10421,13 @@ describe("power system model", () => {
 
         const normalized = normalizeNodeTerminalsWithTemplate(node, template);
 
-        expect(normalized.params).toBe(params);
-        expect(normalized.params).toEqual({ is_container: "0", legacyCustomValue: "保持原值" });
+        expect(normalized.params).toMatchObject({
+          is_container: "0",
+          legacyCustomValue: "保持原值",
+          rated_capacity: expected.rated_power,
+          rated_voltage: expected.rated_voltage
+        });
+        expect(normalized.params).not.toHaveProperty("rated_power");
         expect(normalized.params[expected.relationKey]).toBeUndefined();
         expect(normalized.params.source_type).toBeUndefined();
       }
@@ -10186,8 +10449,8 @@ describe("power system model", () => {
     expect(node.terminals[0].type).toBe("dc");
     expect(node.params).toMatchObject({
       source_type: "储能",
-      energy_capacity: "20 MWh",
-      state_of_charge: "50%"
+      energy_capacity: "20",
+      state_of_charge: "50"
     });
     expect(node.params.vbase).toBe("0");
     expect(getDeviceGlyphVariant("dc-storage")).toBe("battery-storage");
@@ -10208,8 +10471,8 @@ describe("power system model", () => {
     expect(node.terminals[0].type).toBe("ac");
     expect(node.params).toMatchObject({
       source_type: "储能",
-      energy_capacity: "20 MWh",
-      state_of_charge: "50%"
+      energy_capacity: "20",
+      state_of_charge: "50"
     });
     expect(node.params.vbase).toBe("0");
     expect(getDeviceGlyphVariant("ac-storage")).toBe("battery-storage");
@@ -11298,6 +11561,87 @@ describe("power system model", () => {
       i_control_type: "stringEnum",
       j_control_type: "stringEnum"
     });
+  });
+
+  test("keeps every built-in device parameter aligned with its semantic type and numeric default", () => {
+    const floatNames = new Set([
+      "ac_voltage", "active_power", "alpha", "angle", "array_area", "b", "b_set", "bt", "bt1", "bt2", "bt3",
+      "capacity", "capacity_factor", "charge_discharge_efficiency", "cut_in_wind_speed", "cut_out_wind_speed", "dc_voltage",
+      "design_flow", "design_head", "efficiency", "energy_capacity", "flow_rate", "frequency", "fuel_tank_capacity",
+      "g_set", "generator_efficiency", "gt", "gt1", "gt2", "gt3", "head", "heat_demand", "heat_power", "heat_rate",
+      "high_rated_capacity", "high_vbase", "hub_height", "hydrogen_demand", "hydrogen_flow", "impedance", "inlet_pressure",
+      "input_voltage", "i_q_set", "i_set", "i_v_set", "j_q_set", "j_v_set", "length", "low_rated_capacity", "low_vbase", "main_steam_pressure",
+      "main_steam_temperature", "max_charge_power", "max_current", "max_discharge_power", "medium_rated_capacity",
+      "medium_vbase", "module_efficiency", "outlet_pressure", "output_voltage", "p_ac_set", "p_set", "pbase", "power",
+      "power_factor", "pressure", "primary_loop_pressure", "pv0", "pv1", "pv2", "q_ac_set", "q_set", "qbase", "qv0",
+      "qv1", "qv2", "r", "r1", "r2", "r3", "rated_capacity", "rated_current", "rated_power", "rated_speed",
+      "rated_voltage", "rated_wind_speed", "reactive_power", "reactor_thermal_power", "return_temperature", "rotor_diameter",
+      "shift", "shift1", "shift2", "shift3", "short_circuit_capacity", "soc_lower_limit", "soc_upper_limit",
+      "specific_fuel_consumption", "start_time", "state_of_charge", "supply_temperature", "tap", "tap1", "tap2", "tap3",
+      "temperature", "thermal_efficiency", "v_ac_set", "v_dc_set", "v_set", "vbase", "voltage", "voltage_level", "x",
+      "x1", "x2", "x3", "x_pu"
+    ]);
+    const integerNames = new Set(["battery_rack_count", "idx", "isl", "mppt_count"]);
+    const stringEnumNames = new Set([
+      "ac_control_type", "control_type", "dc_control_type", "fuel_type", "i_control_type", "j_control_type", "reactor_type",
+      "run_stat", "storage_technology", "turbine_type"
+    ]);
+    const numericText = /^[-+]?(?:\d+(?:\.\d+)?|\.\d+)$/;
+    const integerText = /^[-+]?\d+$/;
+    const expectedType = (name: string) => {
+      if (name === "status") return "numberEnum";
+      if (stringEnumNames.has(name)) return "stringEnum";
+      if (
+        integerNames.has(name) ||
+        /^idx_(?:ac2|dc2|h22|heat2|ac|dc|h2|heat)_(?:unit|load|transformer)_t\d+$/.test(name) ||
+        /^(?:node|node[1-4]|i_node|j_node|ac_node|dc_node|t[123]_node|neutral_node)$/.test(name)
+      ) {
+        return "integer";
+      }
+      if (floatNames.has(name)) return "float";
+      return "string";
+    };
+
+    for (const template of DEVICE_LIBRARY.filter((item) => !isStaticNode({ kind: item.kind } as any))) {
+      const section = inferESection(template.kind, template.params);
+      const definitions = getTemplateParameterDefinitions(template);
+      for (const definition of definitions) {
+        const context = `${template.label}.${definition.enName}`;
+        const semanticType = expectedType(definition.enName);
+        expect(definition.valueType, context).toBe(semanticType);
+        if (semanticType === "float" && definition.typicalValue !== "") {
+          expect(definition.typicalValue, context).toMatch(numericText);
+        }
+        if (semanticType === "integer" && definition.typicalValue !== "") {
+          expect(definition.typicalValue, context).toMatch(integerText);
+        }
+        if (semanticType === "stringEnum" || semanticType === "numberEnum") {
+          const optionValues = (definition.enumOptions ?? []).map((option) => option.value);
+          expect(optionValues.length, context).toBeGreaterThan(0);
+          expect(optionValues, context).toContain(definition.typicalValue);
+        }
+        if (definition.enName === "control_type") {
+          const expectedOptions = section === "ACGenerator"
+            ? [...AC_GENERATOR_CONTROL_TYPES]
+            : [...DC_GENERATOR_CONTROL_TYPES];
+          expect((definition.enumOptions ?? []).map((option) => option.value), context).toEqual(expectedOptions);
+          expect(definition.typicalValue, context).toBe(section === "ACGenerator" ? "PV" : "P");
+        }
+      }
+
+      const node = createNodeFromTemplate(template, { x: 100, y: 100 });
+      for (const params of [template.params, node.params]) {
+        for (const [rawName, rawValue] of Object.entries(params)) {
+          const name = rawName.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+          if (floatNames.has(name) && rawValue !== "") {
+            expect(rawValue, `${template.label}.${name}`).toMatch(numericText);
+          }
+          if (integerNames.has(name) && rawValue !== "") {
+            expect(rawValue, `${template.label}.${name}`).toMatch(integerText);
+          }
+        }
+      }
+    }
   });
 
   test("builds a three-level element tree grouped by component library, device, and graphic instance", () => {
@@ -12715,7 +13059,7 @@ describe("power system model", () => {
     expect(fieldNames).not.toContain("t2_node");
     expect(fieldNames).not.toContain("resistance_pu");
     expect(fieldNames).not.toContain("tap_ratio");
-    expect(node.params.rated_capacity).toBe("50 MVA");
+    expect(node.params.rated_capacity).toBe("50");
     expect(node.params.x).toBe("0.1");
     expect(node.params.shift).toBe("0");
 

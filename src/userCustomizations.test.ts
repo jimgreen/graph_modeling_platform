@@ -182,6 +182,19 @@ describe("user customization inventory", () => {
     expect(inventory.countsByDomain["parameter-definitions"]).toBe(1);
     expect(inventory.countsByDomain["e-interface-definitions"]).toBe(1);
   });
+
+  test("reports and restores a customized E interface field order", () => {
+    const snapshot = defaultSnapshot();
+    snapshot.deviceLibrary.eDeviceDefinitionFieldOrder = {
+      ACGenerator: ["name", "idx", "dev_type"]
+    };
+
+    const inventory = buildUserCustomizationInventory(snapshot, DEVICE_LIBRARY);
+    const restored = restoreUserCustomizationItems(snapshot, ["e-interface-definitions:ACGenerator"]);
+
+    expect(inventory.countsByDomain["e-interface-definitions"]).toBe(1);
+    expect(restored.deviceLibrary.eDeviceDefinitionFieldOrder?.ACGenerator).toBeUndefined();
+  });
 });
 
 describe("user customization merge and restore", () => {
@@ -242,6 +255,7 @@ describe("user customization merge and restore", () => {
     };
     snapshot.deviceLibrary.eDeviceDefinitionLabels = { "custom-source": "CustomSource" };
     snapshot.deviceLibrary.eDeviceDefinitionClassExportEnabled = { "custom-source": true };
+    snapshot.deviceLibrary.eDeviceDefinitionFieldOrder = { "custom-source": ["name", "idx"] };
     snapshot.measurementConfig.deviceProfiles.push({ deviceKind: "custom-source", items: [] });
 
     const restored = restoreUserCustomizationItems(snapshot, ["custom-devices:custom-source"]);
@@ -250,6 +264,7 @@ describe("user customization merge and restore", () => {
     expect(restored.deviceLibrary.deviceDefinitionOverrides["custom-source"]).toBeUndefined();
     expect(restored.deviceLibrary.eDeviceDefinitionLabels?.["custom-source"]).toBeUndefined();
     expect(restored.deviceLibrary.eDeviceDefinitionClassExportEnabled?.["custom-source"]).toBeUndefined();
+    expect(restored.deviceLibrary.eDeviceDefinitionFieldOrder?.["custom-source"]).toBeUndefined();
     expect(restored.measurementConfig.deviceProfiles.some((profile) => profile.deviceKind === "custom-source")).toBe(false);
   });
 
