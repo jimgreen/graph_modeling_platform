@@ -18,6 +18,7 @@ import {
   createDeleteCustomComponentLibrary,
   applyEDeviceDefinitionSectionsToLibraryState,
   buildEDeviceInterfaceDefinitionRows,
+  buildEFileExportOptionsFromLibrary,
   createExportEFile,
   createExportSchemeRecord,
   createExportEDeviceDefinitionFile,
@@ -53,6 +54,8 @@ import {
 } from "./customDeviceUtils";
 import {
   applyDeviceTemplateDefinitionOverride,
+  buildEFileExport,
+  createDefaultNode,
   DEVICE_LIBRARY,
   getTemplateParameterDefinitions,
   Point,
@@ -2623,6 +2626,45 @@ describe("applyEDeviceDefinitionSectionsToLibraryState", () => {
 });
 
 describe("buildEDeviceInterfaceDefinitionRows", () => {
+  test("uses the interface table default order for exported base generator fields", () => {
+    const exportOptions = buildEFileExportOptionsFromLibrary({
+      libraryTemplates: DEVICE_LIBRARY.filter((template) => template.kind === "ac-source")
+    });
+    const rows = exportOptions.interfaceDefinitions;
+    const generator = rows.find((row: any) => row.componentLibrary === "ACGenerator");
+    const expectedOrder = [
+      "idx",
+      "name",
+      "dev_type",
+      "node",
+      "control_type",
+      "p_set",
+      "q_set",
+      "v_set",
+      "alpha",
+      "run_stat",
+      "rated_capacity",
+      "rated_voltage"
+    ];
+
+    expect(generator?.fields
+      .filter((field: any) => field.exportEnabled)
+      .map((field: any) => field.sourceName)).toEqual(expectedOrder);
+
+    const generatorNode = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const eFile = buildEFileExport({
+      version: 1,
+      name: "默认接口顺序",
+      nodes: [generatorNode],
+      edges: []
+    }, ["默认方案"], exportOptions).text;
+    const exportedHeader = eFile.match(/<ACGenerator>\s*\r?\n@\s*([^\r\n]+)/)?.[1]
+      .trim()
+      .split(/\s+/u);
+
+    expect(exportedHeader).toEqual(expectedOrder);
+  });
+
   test("shows rated capacity and voltage on base generator interfaces instead of derived interfaces", () => {
     const includedKinds = new Set([
       "ac-source",

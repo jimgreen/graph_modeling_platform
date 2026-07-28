@@ -719,6 +719,29 @@ function normalizeDeviceLibraryConfig(payload) {
         return key && typeof rawValue === "boolean" ? [[key, rawValue]] : [];
       }))
       : {};
+  const eDeviceDefinitionFieldOrder =
+    source.eDeviceDefinitionFieldOrder && typeof source.eDeviceDefinitionFieldOrder === "object" && !Array.isArray(source.eDeviceDefinitionFieldOrder)
+      ? Object.fromEntries(Object.entries(source.eDeviceDefinitionFieldOrder).flatMap(([rawKey, rawValue]) => {
+        const key = String(rawKey ?? "").trim();
+        if (!key || !Array.isArray(rawValue)) {
+          return [];
+        }
+        const seen = new Set();
+        const values = rawValue.flatMap((item) => {
+          if (typeof item !== "string") {
+            return [];
+          }
+          const value = item.trim();
+          const normalizedValue = value.toLowerCase();
+          if (!value || seen.has(normalizedValue)) {
+            return [];
+          }
+          seen.add(normalizedValue);
+          return [value];
+        });
+        return values.length > 0 ? [[key, values]] : [];
+      }))
+      : {};
   return {
     customDeviceTemplates,
     customCategoryLibraries,
@@ -727,7 +750,8 @@ function normalizeDeviceLibraryConfig(payload) {
     customGraphTemplates,
     deviceDefinitionOverrides,
     eDeviceDefinitionLabels,
-    eDeviceDefinitionClassExportEnabled
+    eDeviceDefinitionClassExportEnabled,
+    eDeviceDefinitionFieldOrder
   };
 }
 

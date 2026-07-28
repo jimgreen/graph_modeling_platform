@@ -362,16 +362,25 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
         customComponentLibraries: [],
         customCategoryLibraries: [],
         eDeviceDefinitionLabels: { ACGenerator: "ACGeneratorRenamed" },
-        eDeviceDefinitionClassExportEnabled: { ACGenerator: false }
+        eDeviceDefinitionClassExportEnabled: { ACGenerator: false },
+        eDeviceDefinitionFieldOrder: {
+          ACGenerator: ["idx", "name", "dev_type", "node", "rated_capacity", "rated_voltage"]
+        }
       })
     });
     expect(saved.status).toBe(200);
     expect(saved.json.ok).toBe(true);
     expect(saved.json.eDeviceDefinitionLabels).toEqual({ ACGenerator: "ACGeneratorRenamed" });
     expect(saved.json.eDeviceDefinitionClassExportEnabled).toEqual({ ACGenerator: false });
+    expect(saved.json.eDeviceDefinitionFieldOrder).toEqual({
+      ACGenerator: ["idx", "name", "dev_type", "node", "rated_capacity", "rated_voltage"]
+    });
     const got = await fetchJson(apiPath("/device-library"));
     expect(got.status).toBe(200);
     expect(got.json.eDeviceDefinitionLabels).toEqual({ ACGenerator: "ACGeneratorRenamed" });
     expect(got.json.eDeviceDefinitionClassExportEnabled).toEqual({ ACGenerator: false });
+    expect(got.json.eDeviceDefinitionFieldOrder).toEqual({
+      ACGenerator: ["idx", "name", "dev_type", "node", "rated_capacity", "rated_voltage"]
+    });
   });
 });

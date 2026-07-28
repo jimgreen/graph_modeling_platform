@@ -140,6 +140,68 @@ export function applyEDeviceInterfaceFieldOrder(fields: readonly any[] = [], con
   return ordered;
 }
 
+const E_DEVICE_INTERFACE_DISPLAY_FIXED_FIELDS = new Set(["idx", "name", "dev_type"]);
+
+function eDeviceInterfaceDisplayCoreFieldName(value: unknown) {
+  const fieldName = String(value ?? "").trim().toLowerCase();
+  return (
+    E_DEVICE_INTERFACE_DISPLAY_FIXED_FIELDS.has(fieldName) ||
+    /^node\d*$/u.test(fieldName) ||
+    /_node$/u.test(fieldName) ||
+    fieldName === "status" ||
+    fieldName === "run_stat" ||
+    fieldName === "vbase" ||
+    fieldName === "alpha" ||
+    fieldName === "source_type" ||
+    fieldName.endsWith("control_type") ||
+    fieldName.endsWith("_set")
+  ) ? fieldName : "";
+}
+
+export function orderEDeviceInterfaceFields(
+  componentLibrary: string,
+  fields: readonly any[] = [],
+  configuredOrder: readonly string[] = []
+) {
+  if ((configuredOrder ?? []).length > 0) {
+    return applyEDeviceInterfaceFieldOrder(fields, configuredOrder);
+  }
+  const preferredOrder = [...(E_SECTION_COLUMNS[componentLibrary] ?? [])].map((fieldName) => fieldName.toLowerCase());
+  if (!preferredOrder.includes("dev_type")) {
+    const nameIndex = preferredOrder.indexOf("name");
+    preferredOrder.splice(nameIndex >= 0 ? nameIndex + 1 : 0, 0, "dev_type");
+  }
+  const preferredIndex = new Map(
+    preferredOrder
+      .filter((fieldName) => eDeviceInterfaceDisplayCoreFieldName(fieldName))
+      .map((fieldName, index) => [fieldName, index])
+  );
+
+  return fields
+    .map((field, index) => {
+      const candidateNames = [field?.sourceName, field?.exportName]
+        .map((fieldName) => eDeviceInterfaceDisplayCoreFieldName(fieldName))
+        .filter(Boolean);
+      const coreName = candidateNames.find((fieldName) => preferredIndex.has(fieldName)) ?? candidateNames[0] ?? "";
+      return {
+        field,
+        index,
+        core: Boolean(coreName),
+        preferredIndex: preferredIndex.get(coreName) ?? Number.MAX_SAFE_INTEGER
+      };
+    })
+    .sort((first, second) => {
+      if (first.core !== second.core) {
+        return first.core ? -1 : 1;
+      }
+      if (first.core && first.preferredIndex !== second.preferredIndex) {
+        return first.preferredIndex - second.preferredIndex;
+      }
+      return first.index - second.index;
+    })
+    .map(({ field }) => field);
+}
+
 export function buildEDeviceInterfaceDefinitionRows(options: {
   libraryTemplates?: readonly any[];
   labels?: Record<string, string>;
@@ -316,8 +378,16 @@ export function buildEFileExportOptionsFromLibrary(options: {
   eDeviceDefinitionFieldOrder?: Record<string, readonly string[]>;
   resolveDefinitionComponentLibrary?: (template: any) => string;
 }) {
+  const interfaceDefinitions = buildEDeviceInterfaceDefinitionRows(options);
   return {
-    interfaceDefinitions: buildEDeviceInterfaceDefinitionRows(options)
+    interfaceDefinitions: interfaceDefinitions.map((definition) => ({
+      ...definition,
+      fields: orderEDeviceInterfaceFields(
+        definition.componentLibrary,
+        definition.fields,
+        options.eDeviceDefinitionFieldOrder?.[definition.componentLibrary] ?? []
+      )
+    }))
   };
 }
 
@@ -2804,14 +2874,14 @@ export function createExportEDeviceDefinitionFile(__appScope: Record<string, any
   return async () => {
     const { libraryTemplates, PARAM_LABELS, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, resolveTemplateComponentLibrary, saveTextFile, writeOperationLog } = __appScope;
     // libraryTemplates 已合并内置 + 自定义元件并应用 deviceDefinitionOverrides，导出范围覆盖所有元件（含内置）
-    const interfaceDefinitions = buildEDeviceInterfaceDefinitionRows({
+    const interfaceDefinitions = buildEFileExportOptionsFromLibrary({
       libraryTemplates,
       labels: PARAM_LABELS,
       eDeviceDefinitionLabels,
       eDeviceDefinitionClassExportEnabled,
       eDeviceDefinitionFieldOrder,
       resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
-    });
+    }).interfaceDefinitions;
     const file = buildEDeviceDefinitionFileFromInterfaceDefinitions(interfaceDefinitions);
     if (!file.text) {
       window.alert("没有可导出的元件定义：所有元件均未勾选导出字段。");
@@ -2908,14 +2978,14 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
 export function createProgrammaticExportEDeviceDefinition(__appScope: Record<string, any>) {
   return () => {
     const { libraryTemplates, PARAM_LABELS, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, resolveTemplateComponentLibrary } = __appScope;
-    return buildEDeviceDefinitionFileFromInterfaceDefinitions(buildEDeviceInterfaceDefinitionRows({
+    return buildEDeviceDefinitionFileFromInterfaceDefinitions(buildEFileExportOptionsFromLibrary({
       libraryTemplates,
       labels: PARAM_LABELS,
       eDeviceDefinitionLabels,
       eDeviceDefinitionClassExportEnabled,
       eDeviceDefinitionFieldOrder,
       resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
-    }));
+    }).interfaceDefinitions);
   };
 }
 

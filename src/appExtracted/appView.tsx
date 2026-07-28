@@ -9,7 +9,7 @@ import {
 } from "../iconLibraryCatalog";
 import { buildExportDeviceIdMap } from "../svgExportUtils";
 import { E_SECTION_COLUMNS, inferESection, getTemplateParameterDefinitions, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo } from "../model";
-import { applyEDeviceInterfaceFieldOrder, buildEDeviceInterfaceDefinitionRows } from "./appDeviceDefinitionFactories";
+import { buildEDeviceInterfaceDefinitionRows, orderEDeviceInterfaceFields } from "./appDeviceDefinitionFactories";
 import { UserCustomizationManagerDialog } from "../UserCustomizationManagerDialog";
 
 export type ImagePickerLibraryTab = "image" | "icon";
@@ -157,66 +157,12 @@ export function buildEDeviceInterfaceDefinitionTree(rows: readonly any[] = []) {
   });
 }
 
-const E_DEVICE_INTERFACE_DISPLAY_FIXED_FIELDS = new Set(["idx", "name", "dev_type"]);
-
-function eDeviceInterfaceDisplayCoreFieldName(value: unknown) {
-  const fieldName = String(value ?? "").trim().toLowerCase();
-  return (
-    E_DEVICE_INTERFACE_DISPLAY_FIXED_FIELDS.has(fieldName) ||
-    /^node\d*$/u.test(fieldName) ||
-    /_node$/u.test(fieldName) ||
-    fieldName === "status" ||
-    fieldName === "run_stat" ||
-    fieldName === "vbase" ||
-    fieldName === "alpha" ||
-    fieldName === "source_type" ||
-    fieldName.endsWith("control_type") ||
-    fieldName.endsWith("_set")
-  ) ? fieldName : "";
-}
-
 export function resolveEDeviceInterfaceFieldsForDisplay(
   componentLibrary: string,
   fields: readonly any[] = [],
   configuredOrder: readonly string[] = []
 ) {
-  if ((configuredOrder ?? []).length > 0) {
-    return applyEDeviceInterfaceFieldOrder(fields, configuredOrder);
-  }
-  const preferredOrder = [...(E_SECTION_COLUMNS[componentLibrary] ?? [])].map((fieldName) => fieldName.toLowerCase());
-  if (!preferredOrder.includes("dev_type")) {
-    const nameIndex = preferredOrder.indexOf("name");
-    preferredOrder.splice(nameIndex >= 0 ? nameIndex + 1 : 0, 0, "dev_type");
-  }
-  const preferredIndex = new Map(
-    preferredOrder
-      .filter((fieldName) => eDeviceInterfaceDisplayCoreFieldName(fieldName))
-      .map((fieldName, index) => [fieldName, index])
-  );
-
-  return fields
-    .map((field, index) => {
-      const candidateNames = [field?.sourceName, field?.exportName]
-        .map((fieldName) => eDeviceInterfaceDisplayCoreFieldName(fieldName))
-        .filter(Boolean);
-      const coreName = candidateNames.find((fieldName) => preferredIndex.has(fieldName)) ?? candidateNames[0] ?? "";
-      return {
-        field,
-        index,
-        core: Boolean(coreName),
-        preferredIndex: preferredIndex.get(coreName) ?? Number.MAX_SAFE_INTEGER
-      };
-    })
-    .sort((first, second) => {
-      if (first.core !== second.core) {
-        return first.core ? -1 : 1;
-      }
-      if (first.core && first.preferredIndex !== second.preferredIndex) {
-        return first.preferredIndex - second.preferredIndex;
-      }
-      return first.index - second.index;
-    })
-    .map(({ field }) => field);
+  return orderEDeviceInterfaceFields(componentLibrary, fields, configuredOrder);
 }
 
 export function moveEDeviceInterfaceFieldOrder(fields: readonly any[] = [], sourceName: string, direction: -1 | 1) {
