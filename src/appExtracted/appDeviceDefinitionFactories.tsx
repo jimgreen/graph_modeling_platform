@@ -7090,12 +7090,13 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       setCustomDeviceDraft((current) => ({ ...current, error: message }));
       return false;
     }
+    const draftRows = normalizeCustomDeviceDraftParamRows(customDeviceDraft.params, normalizeDefinitionRowEnumFields);
     const defaultRows = customDefaultDefinitions(terminalTypes, {
       isContainer: isContainerComponent,
       isDerivedComponentLibrary: derivedRequested,
-      terminalAssociations
+      terminalAssociations,
+      existingDefinitions: draftRows
     });
-    const draftRows = normalizeCustomDeviceDraftParamRows(customDeviceDraft.params, normalizeDefinitionRowEnumFields);
     const visibleDraftRows = derivedRequested && typeof isDerivedComponentBaseParamName === "function"
       ? draftRows.filter((row) => {
           const enName = String(row.enName ?? "").trim();
@@ -7371,12 +7372,13 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       setCustomDeviceDraft((current) => ({ ...current, error: message }));
       return false;
     }
+    const draftRows = normalizeCustomDeviceDraftParamRows(customDeviceDraft.params, normalizeDefinitionRowEnumFields);
     const defaultRows = customDefaultDefinitions(terminalTypes, {
       isContainer: customDeviceDraft.isContainer,
       isDerivedComponentLibrary: customDeviceDraft.isDerivedComponentLibrary,
-      terminalAssociations
+      terminalAssociations,
+      existingDefinitions: draftRows
     });
-    const draftRows = normalizeCustomDeviceDraftParamRows(customDeviceDraft.params, normalizeDefinitionRowEnumFields);
     const derivedBaseComponentLibrary = customDeviceDraft.derivedFromComponentLibrary || componentLibrary;
     const visibleDraftRows = customDeviceDraft.isDerivedComponentLibrary && typeof isDerivedComponentBaseParamName === "function"
       ? draftRows.filter((row) => {
@@ -7396,12 +7398,13 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
         baseDraft.terminalAssociations,
         baseDraft.terminalCount
       );
+      const baseDraftRows = normalizeCustomDeviceDraftParamRows(baseDraft.params, normalizeDefinitionRowEnumFields);
       const baseDefaultRows = customDefaultDefinitions(baseTerminalTypes, {
         isContainer: baseDraft.isContainer,
         isDerivedComponentLibrary: baseDraft.isDerivedComponentLibrary,
-        terminalAssociations: baseTerminalAssociations
+        terminalAssociations: baseTerminalAssociations,
+        existingDefinitions: baseDraftRows
       });
-      const baseDraftRows = normalizeCustomDeviceDraftParamRows(baseDraft.params, normalizeDefinitionRowEnumFields);
       const baseDerivedComponentLibrary = baseDraft.derivedFromComponentLibrary || baseDraft.componentLibrary;
       const visibleBaseDraftRows = baseDraft.isDerivedComponentLibrary && typeof isDerivedComponentBaseParamName === "function"
         ? baseDraftRows.filter((row) => {

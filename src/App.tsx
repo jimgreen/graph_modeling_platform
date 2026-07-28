@@ -4856,7 +4856,8 @@ Object.assign(__appScope, { customDraftTerminalAssociations });
 const customDraftDefaultParams = customDefaultDefinitions(customDraftTerminalTypes, {
     isContainer: customDeviceDraft.isContainer,
     isDerivedComponentLibrary: customDeviceDraft.isDerivedComponentLibrary,
-    terminalAssociations: customDraftTerminalAssociations
+    terminalAssociations: customDraftTerminalAssociations,
+    existingDefinitions: customDeviceDraft.params
   }).map((definition) => ({
     ...definition,
     ...resolveDeviceParameterDefinitionExportSettings(

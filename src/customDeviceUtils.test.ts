@@ -156,6 +156,37 @@ describe("electric generation device library classification", () => {
     expect(rows).toEqual([]);
   });
 
+  test.each([
+    [["ac", "ac"], ["i_node", "j_node"]],
+    [["dc", "dc"], ["i_node", "j_node"]],
+    [["ac", "dc"], ["ac_node", "dc_node"]],
+    [["heat", "heat", "heat"], ["node1", "node2", "node3"]]
+  ] as const)(
+    "does not inject terminal defaults for %j when existing node definitions already cover every terminal",
+    (terminalTypes, existingNodeNames) => {
+      const rows = customDefaultDefinitions([...terminalTypes], {
+        existingDefinitions: existingNodeNames.map((enName) => ({ enName }))
+      } as any);
+
+      expect(rows.map((row) => row.enName)).toEqual(["idx", "name", "status", "run_stat"]);
+    }
+  );
+
+  test("keeps generated terminal defaults when existing node definitions are incomplete", () => {
+    const rows = customDefaultDefinitions(["ac", "ac"], {
+      existingDefinitions: [{ enName: "i_node" }]
+    } as any);
+
+    expect(rows.map((row) => row.enName)).toEqual([
+      "idx",
+      "name",
+      "status",
+      "run_stat",
+      "t1_node",
+      "t2_node"
+    ]);
+  });
+
   test("restores custom derived component library metadata into the editable draft", () => {
     const template = {
       kind: "custom-user-wind",

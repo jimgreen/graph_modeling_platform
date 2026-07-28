@@ -19,7 +19,8 @@ import {
   inferESection,
   isDoubleContainerTerminalAssociation,
   resolveDeviceParameterDefinitionExportSettings,
-  templateDerivedComponentLibraryInfo as modelTemplateDerivedComponentLibraryInfo
+  templateDerivedComponentLibraryInfo as modelTemplateDerivedComponentLibraryInfo,
+  toSnakeCaseDeviceParamName
 } from "./model";
 import type { OrthogonalAxis } from "./App";
 import {
@@ -384,12 +385,28 @@ export function customDefaultDefinitions(
     isDerivedComponentLibrary?: boolean;
     terminalRoles?: ContainerTerminalRole[];
     terminalAssociations?: ContainerTerminalAssociationValue[];
+    existingDefinitions?: readonly Pick<DeviceParameterDefinition, "enName">[];
   } = {}
 ): DeviceParameterDefinition[] {
   if (options.isDerivedComponentLibrary) {
     return [];
   }
-  return buildDefaultDeviceParameterDefinitions(terminalTypes, options);
+  const definitions = buildDefaultDeviceParameterDefinitions(terminalTypes, options);
+  if (options.isContainer || terminalTypes.length === 0) {
+    return definitions;
+  }
+  const existingTerminalNodeNames = new Set(
+    (options.existingDefinitions ?? [])
+      .map((definition) => toSnakeCaseDeviceParamName(String(definition.enName ?? "")))
+      .filter((enName) => (
+        enName !== "neutral_node" &&
+        /^(?:node|i_node|j_node|ac_node|dc_node|t\d+_node|node\d+)$/.test(enName)
+      ))
+  );
+  if (existingTerminalNodeNames.size < terminalTypes.length) {
+    return definitions;
+  }
+  return definitions.filter((definition) => !/^(?:node|t\d+_node)$/.test(toSnakeCaseDeviceParamName(definition.enName)));
 }
 
 export function generateCustomDeviceImage(label: string, terminalTypes: TerminalType[]) {
