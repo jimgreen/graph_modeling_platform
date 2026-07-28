@@ -4,7 +4,8 @@ import {
   createDeleteGraphTemplateType,
   createLightweightMovedEndpointRoute,
   createRoutePointsForMovedEdgesBlockedByStationaryNodes,
-  createShouldRunDeferredMoveOptimization
+  createShouldRunDeferredMoveOptimization,
+  createSwitchInspectorTabForCanvasSelection
 } from "./appExtracted/appSelectionDragFactories";
 import {
   calculateNodeBodyBounds,
@@ -16,6 +17,7 @@ import {
   getRouteEndpointNormal,
   getTerminalPoint,
   isBusNode,
+  isStaticGraphicNode,
   pointsToOrthogonalPath,
   preserveDraggedRouteShape,
   rebuildRoutableLineDeviceRouteUpdates,
@@ -79,6 +81,50 @@ function sameOptionalPointList(first: Point[] | undefined, second: Point[] | und
 function nodeForRoutingList(nodes: ModelNode[], nodeId: string) {
   return nodes.find((node) => node.id === nodeId);
 }
+
+describe("canvas selection inspector routing", () => {
+  test("opens the model page when a single device graphic is selected", () => {
+    const device = {
+      ...createDefaultNode("ac-source", { x: 120, y: 120 }),
+      id: "selected-device"
+    };
+    const inspectorTabs: string[] = [];
+    const deviceInfoViews: string[] = [];
+    const switchInspectorTabForCanvasSelection = createSwitchInspectorTabForCanvasSelection({
+      isStaticGraphicNode,
+      nodeById: new Map([[device.id, device]]),
+      setInspectorTab: (tab: string) => inspectorTabs.push(tab),
+      setSelectedDeviceInfoView: (view: string) => deviceInfoViews.push(view)
+    });
+
+    switchInspectorTabForCanvasSelection([device.id], [], "single");
+
+    expect(inspectorTabs).toEqual(["device"]);
+    expect(deviceInfoViews).toEqual(["model"]);
+  });
+
+  test("keeps static graphics and connections on the graph page", () => {
+    const staticGraphic = {
+      id: "selected-static-graphic",
+      kind: "static-rect",
+      params: {}
+    };
+    const inspectorTabs: string[] = [];
+    const deviceInfoViews: string[] = [];
+    const switchInspectorTabForCanvasSelection = createSwitchInspectorTabForCanvasSelection({
+      isStaticGraphicNode,
+      nodeById: new Map([[staticGraphic.id, staticGraphic]]),
+      setInspectorTab: (tab: string) => inspectorTabs.push(tab),
+      setSelectedDeviceInfoView: (view: string) => deviceInfoViews.push(view)
+    });
+
+    switchInspectorTabForCanvasSelection([staticGraphic.id], [], "single");
+    switchInspectorTabForCanvasSelection([], ["selected-edge"], "single");
+
+    expect(inspectorTabs).toEqual(["graph", "graph"]);
+    expect(deviceInfoViews).toEqual([]);
+  });
+});
 
 describe("graph template library actions", () => {
   test("deletes a graph template and persists the template library", () => {

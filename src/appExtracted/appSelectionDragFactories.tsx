@@ -284,7 +284,7 @@ export function createSwitchInspectorTabForCanvasSelection(__appScope: Record<st
     edgeIds: readonly string[] = [],
     source: "single" | "marquee" | "blank" = "single"
   ) => {
-  const { setInspectorTab } = __appScope;
+  const { isStaticGraphicNode, nodeById, setInspectorTab, setSelectedDeviceInfoView } = __appScope;
     if (source === "blank" || (nodeIds.length === 0 && edgeIds.length === 0)) {
       setInspectorTab("model");
       return;
@@ -295,6 +295,14 @@ export function createSwitchInspectorTabForCanvasSelection(__appScope: Record<st
       return;
     }
     if (selectedGraphicCount === 1) {
+      const selectedNode = nodeIds.length === 1 && edgeIds.length === 0
+        ? nodeById?.get(nodeIds[0])
+        : undefined;
+      if (selectedNode && !isStaticGraphicNode(selectedNode)) {
+        setInspectorTab("device");
+        setSelectedDeviceInfoView("model");
+        return;
+      }
       setInspectorTab("graph");
     }
   };
