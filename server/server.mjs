@@ -114,8 +114,8 @@ export const eSectionColumns = {
   DCBranch: ["idx", "name", "i_node", "j_node", "r", "run_stat"],
   ACLoad: ["idx", "name", "node", "pbase", "pv0", "pv1", "pv2", "qbase", "qv0", "qv1", "qv2", "run_stat"],
   DCLoad: ["idx", "name", "node", "pbase", "pv0", "pv1", "pv2", "run_stat"],
-  ACGenerator: ["idx", "name", "node", "rated_capacity", "rated_voltage", "control_type", "p_set", "q_set", "v_set", "alpha", "run_stat"],
-  DCGenerator: ["idx", "name", "node", "rated_capacity", "rated_voltage", "control_type", "v_set", "p_set", "i_set", "run_stat"],
+  ACGenerator: ["idx", "name", "node", "rated_capacity", "rated_voltage", "control_type", "p_set", "p_max", "p_min", "q_set", "q_max", "q_min", "v_set", "alpha", "run_stat"],
+  DCGenerator: ["idx", "name", "node", "rated_capacity", "rated_voltage", "control_type", "v_set", "p_set", "p_max", "p_min", "i_set", "run_stat"],
   ACShuntCompensator: ["idx", "name", "node", "control_type", "q_set", "g_set", "b_set", "v_set", "run_stat"],
   ACZeroBranch: ["idx", "name", "i_node", "j_node", "run_stat"],
   DCZeroBranch: ["idx", "name", "i_node", "j_node", "run_stat"],
@@ -1409,6 +1409,9 @@ function mappedLegacyEValue(key, params = {}) {
   if (key === "rated_voltage") {
     return firstNumericEValue(params.rated_voltage || params.ratedVoltage);
   }
+  if (key === "p_max" || key === "p_min" || key === "q_max" || key === "q_min") {
+    return firstNumericEValue(params[key]);
+  }
   if (key === "pbase") return params.pbase ?? params.ratedActivePower ?? "";
   if (key === "qbase") return params.qbase ?? params.ratedReactivePower ?? "";
   if (key === "r") return params.r ?? params.resistancePu ?? "";
@@ -1712,6 +1715,25 @@ function eFileCellText(value) {
   return String(value ?? "");
 }
 
+function defaultEFileColumnValue(column, rowIndex) {
+  if (column === "idx") return String(rowIndex + 1);
+  if (column === "name") return `unnamed_${rowIndex + 1}`;
+  if (column === "run_stat" || column === "status") return "1";
+  if (column === "control_type") return "0";
+  if (column === "i_control_type" || column === "j_control_type") return "NONE";
+  if (column === "ac_control_type") return "PQ";
+  if (column === "dc_control_type") return "V";
+  if (column === "tap" || /^tap[123]$/u.test(column) || column === "alpha" || column === "voltage" || column === "vbase") {
+    return "1.0";
+  }
+  return "0";
+}
+
+function eFileRecordCellText(column, value, rowIndex) {
+  const text = eFileCellText(value).trim();
+  return text || defaultEFileColumnValue(column, rowIndex);
+}
+
 function eFileCellDisplayWidth(value) {
   let width = 0;
   for (const char of eFileCellText(value)) {
@@ -1748,7 +1770,9 @@ function formatESection(section, columns, records) {
   if (!columns.length || !records.length) {
     return "";
   }
-  const rows = records.map((record) => columns.map((column) => eFileCellText(record.params?.[column])));
+  const rows = records.map((record, rowIndex) =>
+    columns.map((column) => eFileRecordCellText(column, record.params?.[column], rowIndex))
+  );
   const widths = columns.map((column, columnIndex) =>
     Math.max(eFileCellDisplayWidth(column), ...rows.map((row) => eFileCellDisplayWidth(row[columnIndex])))
   );

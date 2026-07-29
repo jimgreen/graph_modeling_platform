@@ -2639,7 +2639,11 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
       "node",
       "control_type",
       "p_set",
+      "p_max",
+      "p_min",
       "q_set",
+      "q_max",
+      "q_min",
       "v_set",
       "alpha",
       "run_stat",
@@ -2778,7 +2782,11 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
       "rated_voltage",
       "control_type",
       "p_set",
+      "p_max",
+      "p_min",
       "q_set",
+      "q_max",
+      "q_min",
       "v_set",
       "alpha"
     ]);

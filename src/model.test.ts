@@ -9723,6 +9723,105 @@ describe("power system model", () => {
     }
   });
 
+  test("defines AC and DC generator operating limits as inherited float defaults and exports them to E", () => {
+    const acTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-source")!;
+    const dcTemplate = DEVICE_LIBRARY.find((item) => item.kind === "dc-source")!;
+    const acDefinitions = new Map(getTemplateParameterDefinitions(acTemplate).map((definition) => [definition.enName, definition]));
+    const dcDefinitions = new Map(getTemplateParameterDefinitions(dcTemplate).map((definition) => [definition.enName, definition]));
+
+    expect(E_SECTION_COLUMNS.ACGenerator).toEqual([
+      "idx",
+      "name",
+      "node",
+      "rated_capacity",
+      "rated_voltage",
+      "control_type",
+      "p_set",
+      "p_max",
+      "p_min",
+      "q_set",
+      "q_max",
+      "q_min",
+      "v_set",
+      "alpha",
+      "run_stat"
+    ]);
+    expect(E_SECTION_COLUMNS.DCGenerator).toEqual([
+      "idx",
+      "name",
+      "node",
+      "rated_capacity",
+      "rated_voltage",
+      "control_type",
+      "v_set",
+      "p_set",
+      "p_max",
+      "p_min",
+      "i_set",
+      "run_stat"
+    ]);
+
+    for (const [name, cnName] of [
+      ["p_max", "有功上限"],
+      ["p_min", "有功下限"],
+      ["q_max", "无功上限"],
+      ["q_min", "无功下限"]
+    ] as const) {
+      expect(acDefinitions.get(name), name).toMatchObject({
+        cnName,
+        valueType: "float",
+        typicalValue: "0",
+        readonly: false
+      });
+    }
+    for (const [name, cnName] of [
+      ["p_max", "有功上限"],
+      ["p_min", "有功下限"]
+    ] as const) {
+      expect(dcDefinitions.get(name), name).toMatchObject({
+        cnName,
+        valueType: "float",
+        typicalValue: "0",
+        readonly: false
+      });
+    }
+    expect(dcDefinitions.has("q_max")).toBe(false);
+    expect(dcDefinitions.has("q_min")).toBe(false);
+
+    const acSource = assignPermanentDeviceIndex(createDefaultNode("ac-source", { x: 100, y: 100 }), {}).node;
+    const dcSource = assignPermanentDeviceIndex(createDefaultNode("dc-source", { x: 240, y: 100 }), {}).node;
+    const acWind = createDefaultNode("ac-wind-source", { x: 380, y: 100 });
+    const dcWind = createDefaultNode("dc-wind-source", { x: 520, y: 100 });
+    expect(acSource.params).toMatchObject({ p_max: "0", p_min: "0", q_max: "0", q_min: "0" });
+    expect(dcSource.params).toMatchObject({ p_max: "0", p_min: "0" });
+    expect(acWind.params).toMatchObject({ p_max: "0", p_min: "0", q_max: "0", q_min: "0" });
+    expect(dcWind.params).toMatchObject({ p_max: "0", p_min: "0" });
+    expect(dcSource.params).not.toHaveProperty("q_max");
+    expect(dcSource.params).not.toHaveProperty("q_min");
+    expect(dcWind.params).not.toHaveProperty("q_max");
+    expect(dcWind.params).not.toHaveProperty("q_min");
+
+    Object.assign(acSource.params, { p_max: "12.5", p_min: "-1.5", q_max: "6.25", q_min: "-4.75" });
+    Object.assign(dcSource.params, { p_max: "8.5", p_min: "-2.5" });
+    const payload = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: "电源出力上下限导出测试",
+      nodes: [acSource, dcSource],
+      edges: []
+    }));
+
+    expect(payload.ACGenerator.rows[0]).toMatchObject({
+      p_max: "12.5",
+      p_min: "-1.5",
+      q_max: "6.25",
+      q_min: "-4.75"
+    });
+    expect(payload.DCGenerator.rows[0]).toMatchObject({
+      p_max: "8.5",
+      p_min: "-2.5"
+    });
+  });
+
   test("inherits generator rated defaults in derived sources and migrates legacy rated power values", () => {
     const acWind = createDefaultNode("ac-wind-source", { x: 100, y: 100 });
     const dcPv = createDefaultNode("dc-pv-source", { x: 240, y: 100 });
@@ -11516,13 +11615,19 @@ describe("power system model", () => {
       idx: "integer",
       node: "integer",
       p_set: "float",
+      p_max: "float",
+      p_min: "float",
       q_set: "float",
+      q_max: "float",
+      q_min: "float",
       v_set: "float"
     });
     expect(definitionTypes("dc-source")).toMatchObject({
       idx: "integer",
       node: "integer",
       p_set: "float",
+      p_max: "float",
+      p_min: "float",
       i_set: "float",
       v_set: "float"
     });
@@ -11572,8 +11677,8 @@ describe("power system model", () => {
       "high_rated_capacity", "high_vbase", "hub_height", "hydrogen_demand", "hydrogen_flow", "impedance", "inlet_pressure",
       "input_voltage", "i_q_set", "i_set", "i_v_set", "j_q_set", "j_v_set", "length", "low_rated_capacity", "low_vbase", "main_steam_pressure",
       "main_steam_temperature", "max_charge_power", "max_current", "max_discharge_power", "medium_rated_capacity",
-      "medium_vbase", "module_efficiency", "outlet_pressure", "output_voltage", "p_ac_set", "p_set", "pbase", "power",
-      "power_factor", "pressure", "primary_loop_pressure", "pv0", "pv1", "pv2", "q_ac_set", "q_set", "qbase", "qv0",
+      "medium_vbase", "module_efficiency", "outlet_pressure", "output_voltage", "p_ac_set", "p_max", "p_min", "p_set", "pbase", "power",
+      "power_factor", "pressure", "primary_loop_pressure", "pv0", "pv1", "pv2", "q_ac_set", "q_max", "q_min", "q_set", "qbase", "qv0",
       "qv1", "qv2", "r", "r1", "r2", "r3", "rated_capacity", "rated_current", "rated_power", "rated_speed",
       "rated_voltage", "rated_wind_speed", "reactive_power", "reactor_thermal_power", "return_temperature", "rotor_diameter",
       "shift", "shift1", "shift2", "shift3", "short_circuit_capacity", "soc_lower_limit", "soc_upper_limit",

@@ -385,7 +385,7 @@ describe("scheme file persistence", () => {
     }
   });
 
-  test("writes AC and DC generator rated capacity and voltage to backend-generated E files", async () => {
+  test("writes AC and DC generator ratings and operating limits to backend-generated E files", async () => {
     const root = await mkdtemp(join(tmpdir(), "scheme-e-generator-ratings-"));
     try {
       const filesRoot = join(root, "files");
@@ -412,6 +412,10 @@ describe("scheme file persistence", () => {
                   rated_capacity: "10 MW",
                   rated_voltage: "35 kV",
                   control_type: "PV",
+                  p_max: "12.5 MW",
+                  p_min: "-1.5 MW",
+                  q_max: "6.25 Mvar",
+                  q_min: "-4.75 Mvar",
                   run_stat: "1"
                 },
                 terminals: [{ id: "t1", type: "ac", nodeNumber: "1" }]
@@ -428,6 +432,8 @@ describe("scheme file persistence", () => {
                   rated_power: "5 MW",
                   rated_voltage: "750 V",
                   control_type: "V",
+                  p_max: "8.5 MW",
+                  p_min: "-2.5 MW",
                   run_stat: "1"
                 },
                 terminals: [{ id: "t1", type: "dc", nodeNumber: "2" }]
@@ -441,18 +447,29 @@ describe("scheme file persistence", () => {
 
       const eFile = await readFile(join(filesRoot, "默认方案", "电源额定参数.e"), "utf-8");
       for (const expected of [
-        { section: "ACGenerator", ratedCapacity: "10", ratedVoltage: "35" },
-        { section: "DCGenerator", ratedCapacity: "5", ratedVoltage: "750" }
+        {
+          section: "ACGenerator",
+          ratedCapacity: "10",
+          ratedVoltage: "35",
+          limits: { p_max: "12.5", p_min: "-1.5", q_max: "6.25", q_min: "-4.75" }
+        },
+        {
+          section: "DCGenerator",
+          ratedCapacity: "5",
+          ratedVoltage: "750",
+          limits: { p_max: "8.5", p_min: "-2.5" }
+        }
       ]) {
         const lines = eSectionLines(eFile, expected.section);
         const columns = lines.find((line) => line.startsWith("@"))?.trim().split(/\s+/u).slice(1) ?? [];
         const values = lines.find((line) => line.startsWith("#"))?.trim().split(/\s+/u).slice(1) ?? [];
         const row = Object.fromEntries(columns.map((column, index) => [column, values[index]]));
 
-        expect(columns).toEqual(expect.arrayContaining(["rated_capacity", "rated_voltage"]));
+        expect(columns).toEqual(expect.arrayContaining(["rated_capacity", "rated_voltage", ...Object.keys(expected.limits)]));
         expect(row).toMatchObject({
           rated_capacity: expected.ratedCapacity,
-          rated_voltage: expected.ratedVoltage
+          rated_voltage: expected.ratedVoltage,
+          ...expected.limits
         });
       }
     } finally {

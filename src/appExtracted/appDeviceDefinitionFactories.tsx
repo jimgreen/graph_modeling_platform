@@ -153,6 +153,10 @@ function eDeviceInterfaceDisplayCoreFieldName(value: unknown) {
     fieldName === "vbase" ||
     fieldName === "alpha" ||
     fieldName === "source_type" ||
+    fieldName === "p_max" ||
+    fieldName === "p_min" ||
+    fieldName === "q_max" ||
+    fieldName === "q_min" ||
     fieldName.endsWith("control_type") ||
     fieldName.endsWith("_set")
   ) ? fieldName : "";
