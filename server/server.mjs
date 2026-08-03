@@ -521,8 +521,20 @@ const builtinMeasurementTypeIds = new Set([
   "temperature",
   "flow",
   "level",
+  "soc",
   "status"
 ]);
+const storageSocMeasurementType = {
+  id: "soc",
+  key: "soc",
+  name: "soc",
+  shortLabel: "soc",
+  defaultUnit: "%",
+  valueType: "number",
+  defaultDecimals: 1,
+  defaultVisible: true
+};
+const electricStorageMeasurementProfileKinds = new Set(["ac-storage", "dc-storage"]);
 
 const defaultMeasurementGroupDefaults = Object.freeze({
   backgroundColor: "transparent",
@@ -583,8 +595,18 @@ function normalizeMeasurementStyleOverride(value) {
 function normalizeMeasurementConfig(payload) {
   const source = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
   const groupDefaults = normalizeMeasurementGroupDefaults(source.groupDefaults);
+  const rawProfiles = Array.isArray(source.deviceProfiles) ? source.deviceProfiles : [];
+  const configuredTypes = Array.isArray(source.measurementTypes) ? source.measurementTypes : [];
+  const migratesLegacyStorageLevel = rawProfiles.some((profile) => {
+    const deviceKind = String(profile?.deviceKind ?? "").trim();
+    return electricStorageMeasurementProfileKinds.has(deviceKind) &&
+      (Array.isArray(profile?.items) ? profile.items : []).some((item) => String(item?.measurementTypeId ?? "").trim() === "level");
+  });
+  const rawTypes = migratesLegacyStorageLevel && !configuredTypes.some((item) => String(item?.id ?? "").trim() === "soc")
+    ? [...configuredTypes, storageSocMeasurementType]
+    : configuredTypes;
   const seenTypes = new Set();
-  const measurementTypes = (Array.isArray(source.measurementTypes) ? source.measurementTypes : []).flatMap((item) => {
+  const measurementTypes = rawTypes.flatMap((item) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
       return [];
     }
@@ -612,7 +634,7 @@ function normalizeMeasurementConfig(payload) {
   });
   const validTypeIds = new Set(measurementTypes.map((item) => item.id));
   const seenProfiles = new Set();
-  const deviceProfiles = (Array.isArray(source.deviceProfiles) ? source.deviceProfiles : []).flatMap((profile) => {
+  const deviceProfiles = rawProfiles.flatMap((profile) => {
     if (!profile || typeof profile !== "object" || Array.isArray(profile)) {
       return [];
     }
@@ -625,7 +647,10 @@ function normalizeMeasurementConfig(payload) {
       if (!item || typeof item !== "object" || Array.isArray(item)) {
         return [];
       }
-      const measurementTypeId = String(item.measurementTypeId ?? "").trim();
+      const rawMeasurementTypeId = String(item.measurementTypeId ?? "").trim();
+      const measurementTypeId = electricStorageMeasurementProfileKinds.has(deviceKind) && rawMeasurementTypeId === "level"
+        ? "soc"
+        : rawMeasurementTypeId;
       if (!measurementTypeId || !validTypeIds.has(measurementTypeId)) {
         return [];
       }

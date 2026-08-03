@@ -195,6 +195,89 @@ describe("measurement domain", () => {
     expect(config.deviceProfiles.find((item) => item.deviceKind === "ac-load")?.items).toHaveLength(1);
   });
 
+  test("uses soc instead of liquid level for AC and DC storage measurements", () => {
+    expect(DEFAULT_MEASUREMENT_CONFIG.measurementTypes.find((item) => item.id === "soc")).toMatchObject({
+      key: "soc",
+      name: "soc",
+      shortLabel: "soc",
+      defaultUnit: "%",
+      valueType: "number",
+      defaultDecimals: 1,
+      defaultVisible: true
+    });
+
+    expect(DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.find((item) => item.deviceKind === "ac-storage")?.items.map((item) => item.measurementTypeId)).toEqual([
+      "activePower",
+      "reactivePower",
+      "voltage",
+      "soc"
+    ]);
+    expect(DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.find((item) => item.deviceKind === "dc-storage")?.items.map((item) => item.measurementTypeId)).toEqual([
+      "activePower",
+      "voltage",
+      "current",
+      "soc"
+    ]);
+
+    const acStorageGroup = createDefaultMeasurementGroupForNode(node("ac-storage-node", "ac-storage"), DEFAULT_MEASUREMENT_CONFIG);
+    const dcStorageGroup = createDefaultMeasurementGroupForNode(node("dc-storage-node", "dc-storage"), DEFAULT_MEASUREMENT_CONFIG);
+    expect(acStorageGroup?.items.at(-1)).toMatchObject({ measurementTypeId: "soc", sourcePoint: "ac-storage-node.soc" });
+    expect(dcStorageGroup?.items.at(-1)).toMatchObject({ measurementTypeId: "soc", sourcePoint: "dc-storage-node.soc" });
+
+    for (const kind of ["hydrogen-tank", "thermal-storage-tank"]) {
+      expect(DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.find((item) => item.deviceKind === kind)?.items.map((item) => item.measurementTypeId)).toContain("level");
+    }
+  });
+
+  test("migrates persisted storage level definitions and generated items to soc", () => {
+    const legacyConfig = {
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes.filter((item) => item.id !== "soc"),
+      deviceProfiles: [
+        { deviceKind: "ac-storage", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "level" }] },
+        { deviceKind: "dc-storage", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "level" }] },
+        { deviceKind: "hydrogen-tank", items: [{ measurementTypeId: "level" }] }
+      ]
+    };
+    const migratedConfig = normalizeMeasurementConfig(legacyConfig);
+
+    expect(migratedConfig.measurementTypes.find((item) => item.id === "soc")).toMatchObject({
+      key: "soc",
+      name: "soc",
+      shortLabel: "soc",
+      defaultUnit: "%"
+    });
+    expect(migratedConfig.deviceProfiles.find((item) => item.deviceKind === "ac-storage")?.items.map((item) => item.measurementTypeId)).toEqual(["activePower", "soc"]);
+    expect(migratedConfig.deviceProfiles.find((item) => item.deviceKind === "dc-storage")?.items.map((item) => item.measurementTypeId)).toEqual(["activePower", "soc"]);
+    expect(migratedConfig.deviceProfiles.find((item) => item.deviceKind === "hydrogen-tank")?.items.map((item) => item.measurementTypeId)).toEqual(["level"]);
+
+    const storageNode = node("legacy-storage-node", "ac-storage");
+    const currentGroup = createDefaultMeasurementGroupForNode(storageNode, DEFAULT_MEASUREMENT_CONFIG)!;
+    const legacyGroup = {
+      ...currentGroup,
+      items: currentGroup.items.map((item, index) => index === currentGroup.items.length - 1
+        ? {
+            ...item,
+            id: `measurement-${storageNode.id}-level-${index}`,
+            measurementTypeId: "level",
+            sourcePoint: `${storageNode.id}.level`
+          }
+        : item)
+    };
+    const reconciled = reconcileProjectMeasurementsWithConfig(
+      { version: 1, groups: [legacyGroup] },
+      [storageNode],
+      DEFAULT_MEASUREMENT_CONFIG
+    );
+
+    expect(reconciled.groups[0].items.map((item) => item.measurementTypeId)).toEqual([
+      "activePower",
+      "reactivePower",
+      "voltage",
+      "soc"
+    ]);
+    expect(reconciled.groups[0].items.at(-1)?.sourcePoint).toBe("legacy-storage-node.soc");
+  });
+
   test("creates a default device measurement group from the device type profile", () => {
     const group = createDefaultMeasurementGroupForNode(node("node-1", "ac-load"), DEFAULT_MEASUREMENT_CONFIG);
 

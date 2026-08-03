@@ -278,6 +278,21 @@ const DEFAULT_TYPE_VALUES = {
   defaultVisible: true
 };
 const LEGACY_DEFAULT_MEASUREMENT_FONT_SIZE = 12;
+const STORAGE_SOC_MEASUREMENT_TYPE: MeasurementTypeDefinition = {
+  id: "soc",
+  key: "soc",
+  name: "soc",
+  shortLabel: "soc",
+  defaultUnit: "%",
+  valueType: "number",
+  defaultDecimals: 1,
+  defaultColor: "#334155",
+  defaultFontFamily: "Arial",
+  defaultFontSize: 14,
+  defaultFontWeight: "500",
+  defaultVisible: true
+};
+const ELECTRIC_STORAGE_MEASUREMENT_PROFILE_KINDS = new Set(["ac-storage", "dc-storage"]);
 
 function normalizedDefaultMeasurementFontSize(value: unknown, fallback?: MeasurementTypeDefinition) {
   const next = clampNumber(finiteNumber(value, fallback?.defaultFontSize ?? DEFAULT_TYPE_VALUES.defaultFontSize), 6, 96);
@@ -303,6 +318,7 @@ export const DEFAULT_MEASUREMENT_CONFIG: PlatformMeasurementConfig = {
     { id: "temperature", key: "temperature", name: "温度", shortLabel: "温度", defaultUnit: "degC", valueType: "number", defaultDecimals: 1, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false },
     { id: "flow", key: "flow", name: "流量", shortLabel: "流量", defaultUnit: "kg/s", valueType: "number", defaultDecimals: 2, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
     { id: "level", key: "level", name: "液位", shortLabel: "液位", defaultUnit: "%", valueType: "number", defaultDecimals: 1, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
+    STORAGE_SOC_MEASUREMENT_TYPE,
     { id: "status", key: "status", name: "状态", shortLabel: "状态", defaultUnit: "", valueType: "string", defaultDecimals: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false }
   ],
   deviceProfiles: [
@@ -317,8 +333,8 @@ export const DEFAULT_MEASUREMENT_CONFIG: PlatformMeasurementConfig = {
     { deviceKind: "dc-source", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
     { deviceKind: "dc-wind-source", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
     { deviceKind: "dc-pv-source", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
-    { deviceKind: "ac-storage", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "level" }] },
-    { deviceKind: "dc-storage", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }, { measurementTypeId: "level" }] },
+    { deviceKind: "ac-storage", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "soc" }] },
+    { deviceKind: "dc-storage", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }, { measurementTypeId: "soc" }] },
     { deviceKind: "ac-line", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "current" }] },
     { deviceKind: "dc-line", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
     { deviceKind: "ac-bus", items: [{ measurementTypeId: "voltage" }, { measurementTypeId: "frequency" }] },
@@ -553,9 +569,18 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
     borderWidth: normalizedGroupBorderWidth(rawGroupDefaults.borderWidth) ?? DEFAULT_MEASUREMENT_GROUP_BORDER_WIDTH
   };
   const defaults = typeById(DEFAULT_MEASUREMENT_CONFIG.measurementTypes);
-  const rawTypes = Array.isArray(input?.measurementTypes) && input.measurementTypes.length > 0
+  const configuredTypes = Array.isArray(input?.measurementTypes) && input.measurementTypes.length > 0
     ? input.measurementTypes
     : DEFAULT_MEASUREMENT_CONFIG.measurementTypes;
+  const rawProfiles = Array.isArray(input?.deviceProfiles) ? input.deviceProfiles : [];
+  const migratesLegacyStorageLevel = rawProfiles.some((profile) => {
+    const deviceKind = String((profile as Partial<DeviceMeasurementProfile>)?.deviceKind ?? "").trim();
+    return ELECTRIC_STORAGE_MEASUREMENT_PROFILE_KINDS.has(deviceKind) &&
+      (Array.isArray(profile.items) ? profile.items : []).some((item) => String(item.measurementTypeId ?? "").trim() === "level");
+  });
+  const rawTypes = migratesLegacyStorageLevel && !configuredTypes.some((item) => String(item.id ?? "").trim() === "soc")
+    ? [...configuredTypes, STORAGE_SOC_MEASUREMENT_TYPE]
+    : configuredTypes;
   const seenTypes = new Set<string>();
   const measurementTypes = rawTypes.flatMap((item) => {
     const id = String((item as Partial<MeasurementTypeDefinition>)?.id ?? "").trim();
@@ -582,7 +607,6 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
     }];
   });
   const validTypeIds = new Set(measurementTypes.map((item) => item.id));
-  const rawProfiles = Array.isArray(input?.deviceProfiles) ? input.deviceProfiles : [];
   const seenProfiles = new Set<string>();
   const deviceProfiles = [...rawProfiles, ...DEFAULT_MEASUREMENT_CONFIG.deviceProfiles].flatMap((profile) => {
     const deviceKind = String((profile as Partial<DeviceMeasurementProfile>)?.deviceKind ?? "").trim();
@@ -591,15 +615,21 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
     }
     seenProfiles.add(deviceKind);
     const items = (Array.isArray(profile.items) ? profile.items : []).flatMap((item) => {
-      const measurementTypeId = String(item.measurementTypeId ?? "").trim();
+      const rawMeasurementTypeId = String(item.measurementTypeId ?? "").trim();
+      const measurementTypeId = ELECTRIC_STORAGE_MEASUREMENT_PROFILE_KINDS.has(deviceKind) && rawMeasurementTypeId === "level"
+        ? "soc"
+        : rawMeasurementTypeId;
       if (!measurementTypeId || !validTypeIds.has(measurementTypeId)) {
         return [];
       }
+      const associatedField = normalizedAssociatedField(item.associatedField);
       return [{
         name: item.name !== undefined ? String(item.name) : undefined,
         measurementTypeId,
         position: normalizedProfilePosition(item.position),
-        associatedField: normalizedAssociatedField(item.associatedField),
+        associatedField: rawMeasurementTypeId === "level" && measurementTypeId === "soc" && associatedField === "level"
+          ? "soc"
+          : associatedField,
         role: item.role ? String(item.role) : undefined,
         defaultVisible: item.defaultVisible,
         labelOverride: item.labelOverride ? String(item.labelOverride) : undefined,
