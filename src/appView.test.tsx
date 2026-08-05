@@ -661,6 +661,28 @@ describe("canvas memoization", () => {
       { scope: { ...sharedScope, visibleMeasurementGroups: [nextGroup] } }
     )).toBe(false);
   });
+
+  test("rerenders when color display mode or palette changes", () => {
+    const sharedScope = {
+      visibleNodes: [],
+      visibleEdges: [],
+      selectedNodeIdSet: new Set<string>(),
+      selectedEdgeIds: []
+    };
+    const previousScope = { ...sharedScope, colorDisplayMode: "energy", colorPalette: { voltage: {} } };
+
+    // 切换着色模式（刷子按钮）
+    expect(areCanvasPropsEqual(
+      { scope: previousScope },
+      { scope: { ...sharedScope, colorDisplayMode: "voltage", colorPalette: previousScope.colorPalette } }
+    )).toBe(false);
+
+    // 保存配色（颜色配置按钮）
+    expect(areCanvasPropsEqual(
+      { scope: previousScope },
+      { scope: { ...sharedScope, colorDisplayMode: "energy", colorPalette: { voltage: {}, energy: {} } } }
+    )).toBe(false);
+  });
 });
 
 describe("user customization manager entry", () => {
