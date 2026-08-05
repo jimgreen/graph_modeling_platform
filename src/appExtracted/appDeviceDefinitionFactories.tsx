@@ -212,6 +212,7 @@ export function buildEDeviceInterfaceDefinitionRows(options: {
   eDeviceDefinitionLabels?: Record<string, string>;
   eDeviceDefinitionClassExportEnabled?: Record<string, boolean>;
   eDeviceDefinitionFieldOrder?: Record<string, readonly string[]>;
+  eDeviceDefinitionTemplateFields?: Record<string, Array<{ sourceName?: string; exportName: string; cnName: string }>>;
   resolveDefinitionComponentLibrary?: (template: any) => string;
 }) {
   const {
@@ -220,6 +221,7 @@ export function buildEDeviceInterfaceDefinitionRows(options: {
     eDeviceDefinitionLabels = {},
     eDeviceDefinitionClassExportEnabled = {},
     eDeviceDefinitionFieldOrder = {},
+    eDeviceDefinitionTemplateFields = {},
     resolveDefinitionComponentLibrary
   } = options;
   const groups = new Map<string, any>();
@@ -367,9 +369,30 @@ export function buildEDeviceInterfaceDefinitionRows(options: {
 
   return Array.from(groups.values()).map((group) => {
     const { fieldBySourceName, ...row } = group;
+    const orderedFields = applyEDeviceInterfaceFieldOrder(row.fields, eDeviceDefinitionFieldOrder[row.componentLibrary] ?? []);
+    // 有模板字段定义时，用模板字段的 exportName 覆盖设备参数名
+    const templateFields = eDeviceDefinitionTemplateFields[row.componentLibrary];
+    if (templateFields && templateFields.length > 0) {
+      const templateFieldsBySourceName = new Map<string, { sourceName?: string; exportName: string; cnName: string }>();
+      for (const tf of templateFields) {
+        const key = deviceDefinitionComplianceKey(tf.sourceName || tf.exportName);
+        if (key) {
+          templateFieldsBySourceName.set(key, tf);
+        }
+      }
+      const remappedFields = orderedFields.map((field) => {
+        const sourceKey = deviceDefinitionComplianceKey(field.sourceName);
+        const templateField = sourceKey ? templateFieldsBySourceName.get(sourceKey) : undefined;
+        if (templateField) {
+          return { ...field, exportName: templateField.exportName, cnName: templateField.cnName || field.cnName };
+        }
+        return field;
+      });
+      return { ...row, fields: remappedFields };
+    }
     return {
       ...row,
-      fields: applyEDeviceInterfaceFieldOrder(row.fields, eDeviceDefinitionFieldOrder[row.componentLibrary] ?? [])
+      fields: orderedFields
     };
   });
 }
@@ -380,6 +403,7 @@ export function buildEFileExportOptionsFromLibrary(options: {
   eDeviceDefinitionLabels?: Record<string, string>;
   eDeviceDefinitionClassExportEnabled?: Record<string, boolean>;
   eDeviceDefinitionFieldOrder?: Record<string, readonly string[]>;
+  eDeviceDefinitionTemplateFields?: Record<string, Array<{ sourceName?: string; exportName: string; cnName: string }>>;
   resolveDefinitionComponentLibrary?: (template: any) => string;
 }) {
   const interfaceDefinitions = buildEDeviceInterfaceDefinitionRows(options);
@@ -392,7 +416,8 @@ export function buildEFileExportOptionsFromLibrary(options: {
         options.eDeviceDefinitionFieldOrder?.[definition.componentLibrary] ?? []
       )
     })),
-    eDeviceDefinitionLabels: options.eDeviceDefinitionLabels ?? {}
+    eDeviceDefinitionLabels: options.eDeviceDefinitionLabels ?? {},
+    eDeviceDefinitionTemplateFields: options.eDeviceDefinitionTemplateFields ?? {}
   };
 }
 
@@ -511,6 +536,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
   eDeviceDefinitionLabels?: Record<string, string>;
   eDeviceDefinitionClassExportEnabled?: Record<string, boolean>;
   eDeviceDefinitionFieldOrder?: Record<string, string[]>;
+  eDeviceDefinitionTemplateFields?: Record<string, Array<{ sourceName?: string; exportName: string; cnName: string }>>;
   labels?: Record<string, string>;
   deviceDefinitionKeyForTemplate?: (template: any) => string;
   deviceDefinitionOverrideForTemplate?: (template: any, overrides: Record<string, any>) => any;
@@ -524,6 +550,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     eDeviceDefinitionLabels = {},
     eDeviceDefinitionClassExportEnabled = {},
     eDeviceDefinitionFieldOrder = {},
+    eDeviceDefinitionTemplateFields = {},
     labels,
     deviceDefinitionKeyForTemplate,
     deviceDefinitionOverrideForTemplate,
@@ -535,12 +562,14 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     eDeviceDefinitionLabels,
     eDeviceDefinitionClassExportEnabled,
     eDeviceDefinitionFieldOrder,
+    eDeviceDefinitionTemplateFields,
     resolveDefinitionComponentLibrary
   });
   const sectionByComponentLibrary = eDeviceInterfaceSectionByComponentLibrary(sections);
   const nextLabels: Record<string, string> = { ...eDeviceDefinitionLabels };
   const nextClassExportEnabled: Record<string, boolean> = { ...eDeviceDefinitionClassExportEnabled };
   const nextFieldOrder: Record<string, string[]> = { ...eDeviceDefinitionFieldOrder };
+  const nextTemplateFields: Record<string, Array<{ sourceName?: string; exportName: string; cnName: string }>> = {};
   const fieldPatchesByComponentLibrary = new Map<string, Map<string, { exportEnabled: boolean; exportName: string }>>();
 
   // 从模板角度出发，检查每个模板section是否匹配元件库
@@ -566,6 +595,17 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
       // 运行时生成的表（node/substation 等）仍记录表名映射（如 ACNode->node），供导出时使用
       if (RUNTIME_GENERATED_SECTIONS.has(sectionKind) && componentLibrary && sectionKind && sectionKind !== componentLibrary) {
         nextLabels[componentLibrary] = sectionKind;
+        // 对运行时生成的表（如 node），也存储模板字段定义，供导出时使用
+        if (section.fields && section.fields.length > 0) {
+          const templateFields = section.fields.map((f: any) => ({
+            sourceName: undefined as string | undefined,
+            exportName: String(f.exportName ?? "").trim(),
+            cnName: String(f.cnName ?? "").trim() || String(f.exportName ?? "").trim()
+          })).filter((f: any) => f.exportName);
+          if (templateFields.length > 0) {
+            nextTemplateFields[componentLibrary] = templateFields;
+          }
+        }
       }
       skipped.push({
         section: sectionKind,
@@ -640,6 +680,25 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
         reason: `字段未匹配设备属性`,
         fields: sectionUnmatchedFields
       });
+    }
+
+    // 存储模板字段定义（含匹配的设备字段名），供导出时覆盖 exportName
+    if (section.fields && section.fields.length > 0) {
+      const templateFields = section.fields.map((f: any) => {
+        const templateExportName = String(f.exportName ?? "").trim();
+        const matchedField = sectionMatchedFields.find((mf) => mf.template === templateExportName);
+        const deviceSourceName = matchedField && !matchedField.device.startsWith("（")
+          ? matchedField.device
+          : undefined;
+        return {
+          sourceName: deviceSourceName || undefined,
+          exportName: templateExportName,
+          cnName: String(f.cnName ?? "").trim() || templateExportName
+        };
+      }).filter((f: any) => f.exportName);
+      if (templateFields.length > 0) {
+        nextTemplateFields[componentLibrary] = templateFields;
+      }
     }
 
     // 继续原有的应用逻辑
@@ -730,6 +789,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     eDeviceDefinitionLabels: nextLabels,
     eDeviceDefinitionClassExportEnabled: nextClassExportEnabled,
     eDeviceDefinitionFieldOrder: nextFieldOrder,
+    eDeviceDefinitionTemplateFields: nextTemplateFields,
     matched,
     skipped
   };
@@ -2749,6 +2809,7 @@ export function createExportSvg(__appScope: Record<string, any>) {
     eDeviceDefinitionClassExportEnabled,
     eDeviceDefinitionFieldOrder,
     eDeviceDefinitionLabels,
+    eDeviceDefinitionTemplateFields,
     edges,
     ensureSavedBeforeExport,
     getEExportWarnings,
@@ -2801,6 +2862,7 @@ export function createExportSvg(__appScope: Record<string, any>) {
         eDeviceDefinitionLabels,
         eDeviceDefinitionClassExportEnabled,
         eDeviceDefinitionFieldOrder,
+        eDeviceDefinitionTemplateFields,
         resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
       });
       const warnings = getEExportWarnings(project, exportOptions);
@@ -3015,6 +3077,7 @@ export function createExportEFile(__appScope: Record<string, any>) {
       eDeviceDefinitionClassExportEnabled,
       eDeviceDefinitionFieldOrder,
       eDeviceDefinitionLabels,
+      eDeviceDefinitionTemplateFields,
       ensureSavedBeforeExport,
       getEExportWarnings,
       libraryTemplates,
@@ -3035,6 +3098,7 @@ export function createExportEFile(__appScope: Record<string, any>) {
       eDeviceDefinitionLabels,
       eDeviceDefinitionClassExportEnabled,
       eDeviceDefinitionFieldOrder,
+      eDeviceDefinitionTemplateFields,
       resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
     });
     const warnings = getEExportWarnings(project, exportOptions);
@@ -3072,7 +3136,7 @@ export function createExportEFile(__appScope: Record<string, any>) {
 
 export function createExportEDeviceDefinitionFile(__appScope: Record<string, any>) {
   return async () => {
-    const { libraryTemplates, PARAM_LABELS, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, resolveTemplateComponentLibrary, saveTextFile, writeOperationLog } = __appScope;
+    const { libraryTemplates, PARAM_LABELS, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTemplateFields, resolveTemplateComponentLibrary, saveTextFile, writeOperationLog } = __appScope;
     // libraryTemplates 已合并内置 + 自定义元件并应用 deviceDefinitionOverrides，导出范围覆盖所有元件（含内置）
     const interfaceDefinitions = buildEFileExportOptionsFromLibrary({
       libraryTemplates,
@@ -3080,6 +3144,7 @@ export function createExportEDeviceDefinitionFile(__appScope: Record<string, any
       eDeviceDefinitionLabels,
       eDeviceDefinitionClassExportEnabled,
       eDeviceDefinitionFieldOrder,
+      eDeviceDefinitionTemplateFields,
       resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
     }).interfaceDefinitions;
     const file = buildEDeviceDefinitionFileFromInterfaceDefinitions(interfaceDefinitions);
@@ -3115,6 +3180,7 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
       eDeviceDefinitionLabels,
       eDeviceDefinitionClassExportEnabled,
       eDeviceDefinitionFieldOrder,
+      eDeviceDefinitionTemplateFields,
       libraryTemplates,
       persistDeviceLibraryChange,
       setCustomDeviceTemplates,
@@ -3122,6 +3188,7 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
       setEDeviceDefinitionLabels,
       setEDeviceDefinitionClassExportEnabled,
       setEDeviceDefinitionFieldOrder,
+      setEDeviceDefinitionTemplateFields,
       setEDeviceInterfaceLoadedTemplateName,
       setEDeviceInterfaceReadonlyMode,
       writeOperationLog
@@ -3142,6 +3209,7 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
           eDeviceDefinitionLabels: {},
           eDeviceDefinitionClassExportEnabled: {},
           eDeviceDefinitionFieldOrder,
+          eDeviceDefinitionTemplateFields: {},
           labels: __appScope.PARAM_LABELS,
           deviceDefinitionKeyForTemplate: __appScope.deviceDefinitionKeyForTemplate,
           deviceDefinitionOverrideForTemplate: __appScope.deviceDefinitionOverrideForTemplate,
@@ -3152,12 +3220,14 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
         setEDeviceDefinitionLabels(result.eDeviceDefinitionLabels);
         setEDeviceDefinitionClassExportEnabled(result.eDeviceDefinitionClassExportEnabled);
         setEDeviceDefinitionFieldOrder(result.eDeviceDefinitionFieldOrder);
+        setEDeviceDefinitionTemplateFields(result.eDeviceDefinitionTemplateFields);
         persistDeviceLibraryChange({
           customDeviceTemplates: result.customDeviceTemplates,
           deviceDefinitionOverrides: result.deviceDefinitionOverrides,
           eDeviceDefinitionLabels: result.eDeviceDefinitionLabels,
           eDeviceDefinitionClassExportEnabled: result.eDeviceDefinitionClassExportEnabled,
-          eDeviceDefinitionFieldOrder: result.eDeviceDefinitionFieldOrder
+          eDeviceDefinitionFieldOrder: result.eDeviceDefinitionFieldOrder,
+          eDeviceDefinitionTemplateFields: result.eDeviceDefinitionTemplateFields
         }, {
           success: `元件定义导入成功：匹配 ${result.matched.length} 个，跳过 ${result.skipped.length} 个。`,
           failure: `元件定义已更新本地，后台保存失败：匹配 ${result.matched.length} 个。`
@@ -3188,13 +3258,14 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
 // 程序化导出 E 文件定义（经 WS control 指令调用，返回文本不触发浏览器下载）
 export function createProgrammaticExportEDeviceDefinition(__appScope: Record<string, any>) {
   return () => {
-    const { libraryTemplates, PARAM_LABELS, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, resolveTemplateComponentLibrary } = __appScope;
+    const { libraryTemplates, PARAM_LABELS, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTemplateFields, resolveTemplateComponentLibrary } = __appScope;
     return buildEDeviceDefinitionFileFromInterfaceDefinitions(buildEFileExportOptionsFromLibrary({
       libraryTemplates,
       labels: PARAM_LABELS,
       eDeviceDefinitionLabels,
       eDeviceDefinitionClassExportEnabled,
       eDeviceDefinitionFieldOrder,
+      eDeviceDefinitionTemplateFields,
       resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
     }).interfaceDefinitions);
   };
@@ -3778,7 +3849,7 @@ export function createResolveDuplicateModelImport(__appScope: Record<string, any
 
 export function createExportSchemeRecord(__appScope: Record<string, any>) {
   return async (scheme: SavedSchemeRecord) => {
-  const { DEFAULT_CANVAS_BACKGROUND, PARAM_LABELS, backgroundPageRender, buildEFileExport, buildSvgDocument, colorPalette, downloadBackendSchemeArchive, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionLabels, fetchBackendProjectRecord, flattenSavedProjects, isPickerAbort, libraryTemplates, loadSvgImageExportPathById, measurementConfig, resolveTemplateComponentLibrary, safeFilePart, saveBackendProjectArtifacts, savedProjectRecordIsSummary, schemePathForRecord, schemePathForScheme, schemes, writeOperationLog } = __appScope;
+  const { DEFAULT_CANVAS_BACKGROUND, PARAM_LABELS, backgroundPageRender, buildEFileExport, buildSvgDocument, colorPalette, downloadBackendSchemeArchive, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionLabels, eDeviceDefinitionTemplateFields, fetchBackendProjectRecord, flattenSavedProjects, isPickerAbort, libraryTemplates, loadSvgImageExportPathById, measurementConfig, resolveTemplateComponentLibrary, safeFilePart, saveBackendProjectArtifacts, savedProjectRecordIsSummary, schemePathForRecord, schemePathForScheme, schemes, writeOperationLog } = __appScope;
     try {
       const schemePath = schemePathForRecord(scheme);
       // 导出前用前端逻辑刷新方案下所有模型的 SVG/E，保证与右上角导出按钮产物一致
@@ -3790,6 +3861,7 @@ export function createExportSchemeRecord(__appScope: Record<string, any>) {
           eDeviceDefinitionLabels,
           eDeviceDefinitionClassExportEnabled,
           eDeviceDefinitionFieldOrder,
+          eDeviceDefinitionTemplateFields,
           resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
         });
         const findOwnerSchemeForProject = (root: SavedSchemeRecord, projectId: string): SavedSchemeRecord | null => {

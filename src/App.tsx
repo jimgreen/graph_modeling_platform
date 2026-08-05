@@ -1217,6 +1217,8 @@ const [eDeviceDefinitionClassExportEnabled, setEDeviceDefinitionClassExportEnabl
 Object.assign(__appScope, { eDeviceDefinitionClassExportEnabled, setEDeviceDefinitionClassExportEnabled });
 const [eDeviceDefinitionFieldOrder, setEDeviceDefinitionFieldOrder] = useState<Record<string, string[]>>(() => (initialDeviceLibrary as any).eDeviceDefinitionFieldOrder ?? {});
 Object.assign(__appScope, { eDeviceDefinitionFieldOrder, setEDeviceDefinitionFieldOrder });
+const [eDeviceDefinitionTemplateFields, setEDeviceDefinitionTemplateFields] = useState<Record<string, Array<{ sourceName?: string; exportName: string; cnName: string }>>>(() => (initialDeviceLibrary as any).eDeviceDefinitionTemplateFields ?? {});
+Object.assign(__appScope, { eDeviceDefinitionTemplateFields, setEDeviceDefinitionTemplateFields });
 const [customDeviceSaveToast, setCustomDeviceSaveToast] = useState("");
 const customDeviceSaveToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 Object.assign(__appScope, { customDeviceSaveToast, setCustomDeviceSaveToast, customDeviceSaveToastTimerRef });
@@ -3502,6 +3504,7 @@ const currentDeviceLibraryPersistencePayload = () => normalizeDeviceLibraryPersi
   eDeviceDefinitionLabels,
   eDeviceDefinitionClassExportEnabled,
   eDeviceDefinitionFieldOrder,
+  eDeviceDefinitionTemplateFields,
   customGraphTemplateTypes,
   customGraphTemplates
 });
@@ -3695,6 +3698,7 @@ const applyImportedDeviceOrTemplateLibrary = (packagePayload: LibraryPackagePayl
   setEDeviceDefinitionLabels(next.eDeviceDefinitionLabels ?? {});
   setEDeviceDefinitionClassExportEnabled(next.eDeviceDefinitionClassExportEnabled ?? {});
   setEDeviceDefinitionFieldOrder(next.eDeviceDefinitionFieldOrder ?? {});
+  setEDeviceDefinitionTemplateFields(next.eDeviceDefinitionTemplateFields ?? {});
   setCustomGraphTemplateTypes(next.customGraphTemplateTypes);
   setCustomGraphTemplates(next.customGraphTemplates);
   persistDeviceLibraryChange(next, {

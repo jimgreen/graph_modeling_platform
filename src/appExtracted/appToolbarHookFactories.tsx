@@ -2802,7 +2802,7 @@ export function createAppHookCallback81(__appScope: Record<string, any>) {
 
 export function createAppHookCallback82(__appScope: Record<string, any>) {
   return () => {
-  const { backendDeviceLibraryLoadedRef, customCategoryLibraries, customComponentLibraries, customDeviceTemplates, customGraphTemplateTypes, customGraphTemplates, deviceDefinitionOverrides, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionInterfaceDialogOpen, lastPersistedDeviceLibraryPayloadRef, normalizeDeviceLibraryPersistencePayload, saveBackendDeviceLibraryPayload, suppressNextBackendDeviceLibrarySyncRef, writeLocalDeviceLibraryPersistencePayload } = __appScope;
+  const { backendDeviceLibraryLoadedRef, customCategoryLibraries, customComponentLibraries, customDeviceTemplates, customGraphTemplateTypes, customGraphTemplates, deviceDefinitionOverrides, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTemplateFields, eDeviceDefinitionInterfaceDialogOpen, lastPersistedDeviceLibraryPayloadRef, normalizeDeviceLibraryPersistencePayload, saveBackendDeviceLibraryPayload, suppressNextBackendDeviceLibrarySyncRef, writeLocalDeviceLibraryPersistencePayload } = __appScope;
     if (eDeviceDefinitionInterfaceDialogOpen) {
       return undefined;
     }
@@ -2815,6 +2815,7 @@ export function createAppHookCallback82(__appScope: Record<string, any>) {
         eDeviceDefinitionLabels,
         eDeviceDefinitionClassExportEnabled,
         eDeviceDefinitionFieldOrder,
+        eDeviceDefinitionTemplateFields,
         customGraphTemplateTypes,
         customGraphTemplates
       });

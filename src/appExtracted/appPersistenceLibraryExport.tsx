@@ -900,6 +900,7 @@ const emptyDeviceLibraryPersistencePayload = (): DeviceLibraryPersistencePayload
   eDeviceDefinitionLabels: {},
   eDeviceDefinitionClassExportEnabled: {},
   eDeviceDefinitionFieldOrder: {},
+  eDeviceDefinitionTemplateFields: {},
   customGraphTemplateTypes: [],
   customGraphTemplates: []
 });
@@ -1017,7 +1018,8 @@ export function deviceLibraryPayloadForPackageScope(
       deviceDefinitionOverrides: normalizedImported.deviceDefinitionOverrides,
       eDeviceDefinitionLabels: normalizedImported.eDeviceDefinitionLabels,
       eDeviceDefinitionClassExportEnabled: normalizedImported.eDeviceDefinitionClassExportEnabled,
-      eDeviceDefinitionFieldOrder: normalizedImported.eDeviceDefinitionFieldOrder
+      eDeviceDefinitionFieldOrder: normalizedImported.eDeviceDefinitionFieldOrder,
+      eDeviceDefinitionTemplateFields: normalizedImported.eDeviceDefinitionTemplateFields
     };
   }
   return normalizedImported;
@@ -1426,6 +1428,37 @@ function normalizeStringArrayRecord(value: unknown): Record<string, string[]> {
     });
     if (values.length > 0) {
       record[key] = values;
+    }
+    return record;
+  }, {});
+}
+
+function normalizeObjectRecord(value: unknown): Record<string, Array<{ sourceName?: string; exportName: string; cnName: string }>> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return Object.entries(value as Record<string, unknown>).reduce<Record<string, Array<{ sourceName?: string; exportName: string; cnName: string }>>>((record, [rawKey, rawValue]) => {
+    const key = normalizeComponentLibraryName(String(rawKey ?? ""));
+    if (!key || !Array.isArray(rawValue)) {
+      return record;
+    }
+    const fields = rawValue.flatMap((item) => {
+      if (!item || typeof item !== "object") {
+        return [];
+      }
+      const src = item as Partial<{ sourceName: string; exportName: string; cnName: string }>;
+      const exportName = String(src.exportName ?? "").trim();
+      if (!exportName) {
+        return [];
+      }
+      return [{
+        sourceName: String(src.sourceName ?? "").trim() || undefined,
+        exportName,
+        cnName: String(src.cnName ?? "").trim() || exportName
+      }];
+    });
+    if (fields.length > 0) {
+      record[key] = fields;
     }
     return record;
   }, {});
@@ -2506,6 +2539,7 @@ export function normalizeDeviceLibraryPersistencePayload(value: unknown): Device
     eDeviceDefinitionLabels: normalizeStringRecord((source as any).eDeviceDefinitionLabels),
     eDeviceDefinitionClassExportEnabled: normalizeBooleanRecord((source as any).eDeviceDefinitionClassExportEnabled),
     eDeviceDefinitionFieldOrder: normalizeStringArrayRecord((source as any).eDeviceDefinitionFieldOrder),
+    eDeviceDefinitionTemplateFields: normalizeObjectRecord((source as any).eDeviceDefinitionTemplateFields),
     customGraphTemplateTypes: normalizeGraphTemplateTypes(source.customGraphTemplateTypes),
     customGraphTemplates: normalizeGraphTemplates(source.customGraphTemplates)
   };

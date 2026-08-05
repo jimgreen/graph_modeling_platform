@@ -453,6 +453,8 @@ export function renderAppView(__appScope: Record<string, any>) {
     setEDeviceDefinitionClassExportEnabled,
     eDeviceDefinitionFieldOrder,
     setEDeviceDefinitionFieldOrder,
+    eDeviceDefinitionTemplateFields,
+    setEDeviceDefinitionTemplateFields,
     eDeviceDefinitionInterfaceDialogOpen,
     setEDeviceDefinitionInterfaceDialogOpen,
     libraryTemplates,
@@ -498,6 +500,7 @@ export function renderAppView(__appScope: Record<string, any>) {
     eDeviceDefinitionLabels,
     eDeviceDefinitionClassExportEnabled,
     eDeviceDefinitionFieldOrder,
+    eDeviceDefinitionTemplateFields,
     resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
   });
   const [selectedEDeviceInterfaceComponentLibrary, setSelectedEDeviceInterfaceComponentLibrary] = useState("");
@@ -544,6 +547,7 @@ export function renderAppView(__appScope: Record<string, any>) {
         deviceDefinitionOverrides,
         eDeviceDefinitionLabels: clearedLabels,
         eDeviceDefinitionClassExportEnabled: clearedClassExportEnabled,
+        eDeviceDefinitionTemplateFields: {},
         labels: __appScope.PARAM_LABELS,
         deviceDefinitionKeyForTemplate: __appScope.deviceDefinitionKeyForTemplate,
         deviceDefinitionOverrideForTemplate: __appScope.deviceDefinitionOverrideForTemplate,
@@ -553,11 +557,13 @@ export function renderAppView(__appScope: Record<string, any>) {
       setDeviceDefinitionOverrides(result.deviceDefinitionOverrides);
       setEDeviceDefinitionLabels(result.eDeviceDefinitionLabels);
       setEDeviceDefinitionClassExportEnabled(result.eDeviceDefinitionClassExportEnabled);
+      setEDeviceDefinitionTemplateFields(result.eDeviceDefinitionTemplateFields ?? {});
       persistDeviceLibraryChange({
         customDeviceTemplates: result.customDeviceTemplates,
         deviceDefinitionOverrides: result.deviceDefinitionOverrides,
         eDeviceDefinitionLabels: result.eDeviceDefinitionLabels,
-        eDeviceDefinitionClassExportEnabled: result.eDeviceDefinitionClassExportEnabled
+        eDeviceDefinitionClassExportEnabled: result.eDeviceDefinitionClassExportEnabled,
+        eDeviceDefinitionTemplateFields: result.eDeviceDefinitionTemplateFields ?? {}
       }, {
         success: `预定义模板导入成功：匹配 ${result.matched.length} 个，跳过 ${result.skipped.length} 个。`,
         failure: `预定义模板已更新本地，后台保存失败：匹配 ${result.matched.length} 个。`

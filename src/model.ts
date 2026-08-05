@@ -2144,14 +2144,31 @@ export type EFileInterfaceSectionDefinition = {
 export type EFileExportOptions = {
   interfaceDefinitions?: readonly EFileInterfaceSectionDefinition[];
   eDeviceDefinitionLabels?: Record<string, string>;
+  eDeviceDefinitionTemplateFields?: Record<string, Array<{ sourceName?: string; exportName: string; cnName: string }>>;
 };
 
 function eFileInterfaceDefinitionIndex(options: EFileExportOptions = {}) {
-  return new Map(
+  const index = new Map(
     (options.interfaceDefinitions ?? [])
       .map((definition) => [String(definition.componentLibrary ?? "").trim(), definition] as const)
       .filter(([componentLibrary]) => Boolean(componentLibrary))
   );
+  // 从模板字段定义为运行时生成的表（ACNode/DCNode）构造接口定义
+  if (options.eDeviceDefinitionTemplateFields) {
+    for (const [componentLibrary, templateFields] of Object.entries(options.eDeviceDefinitionTemplateFields)) {
+      if (componentLibrary && templateFields && templateFields.length > 0 && !index.has(componentLibrary)) {
+        index.set(componentLibrary, {
+          componentLibrary,
+          fields: templateFields.map((tf) => ({
+            sourceName: String(tf.sourceName ?? tf.exportName).trim(),
+            exportName: tf.exportName,
+            cnName: tf.cnName
+          }))
+        });
+      }
+    }
+  }
+  return index;
 }
 
 const LEGACY_E_DEFINITION_COLUMN_ALIASES: Record<string, string> = {
@@ -3119,12 +3136,12 @@ function buildPowerBaseSection(project: ProjectFile, schemePath: string[]): stri
 
 function buildBasevoltageSection(): string {
   const settings = readVoltageLevelSettings();
-  const allLevels: Array<{ type: "ac" | "dc"; name: string; vltp: string }> = [
-    ...settings.ac.map((row) => ({ type: "ac" as const, name: row.name, vltp: row.vltp })),
-    ...settings.dc.map((row) => ({ type: "dc" as const, name: row.name, vltp: row.vltp }))
+  const allLevels: Array<{ name: string; vltp: string }> = [
+    ...settings.ac.map((row) => ({ name: row.name, vltp: row.vltp })),
+    ...settings.dc.map((row) => ({ name: row.name, vltp: row.vltp }))
   ];
-  const rows = allLevels.map((level, index) => [String(index + 1), level.name, level.vltp, level.type]);
-  const columns = ["idx", "name", "vltp", "type"];
+  const rows = allLevels.map((level, index) => [String(index + 1), level.name, level.vltp]);
+  const columns = ["idx", "name", "vltp"];
   return formatEFileSectionRows("basevoltage", columns, rows);
 }
 
