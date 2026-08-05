@@ -872,13 +872,13 @@ const [deviceIndexCounters, setDeviceIndexCounters] = useState<DeviceIndexCounte
 Object.assign(__appScope, { deviceIndexCounters, setDeviceIndexCounters });
 const [projectName, setProjectName] = useState(() => initialDraft?.projectName ?? "");
 Object.assign(__appScope, { projectName, setProjectName });
-const [subcontrolarea, setSubcontrolarea] = useState(() => initialDraft?.subcontrolarea ?? "默认区域");
+const [subcontrolarea, setSubcontrolarea] = useState(() => initialDraft?.subcontrolarea || "默认区域");
 Object.assign(__appScope, { subcontrolarea, setSubcontrolarea });
 const [modelType, setModelType] = useState(() => initialDraft?.modelType ?? "厂站");
 Object.assign(__appScope, { modelType, setModelType });
-const [substation, setSubstation] = useState(() => initialDraft?.substation ?? "默认厂站");
+const [substation, setSubstation] = useState(() => initialDraft?.substation || "默认厂站");
 Object.assign(__appScope, { substation, setSubstation });
-const [feeder, setFeeder] = useState(() => initialDraft?.feeder ?? "默认馈线");
+const [feeder, setFeeder] = useState(() => initialDraft?.feeder || "默认馈线");
 Object.assign(__appScope, { feeder, setFeeder });
 const [taiqu, setTaiqu] = useState(() => (initialDraft as any)?.taiqu ?? "");
 Object.assign(__appScope, { taiqu, setTaiqu });

@@ -3101,13 +3101,15 @@ function buildBasevalueSection(project: ProjectFile): string {
 
 function buildSubcontrolareaSection(project: ProjectFile): string {
   const columns = ["idx", "name"];
-  const rows = [["1", formatEColumnValue("subcontrolarea", "name", String(project.subcontrolarea ?? ""), 0)]];
+  const name = String(project.subcontrolarea ?? "").trim() || "默认区域";
+  const rows = [["1", formatEColumnValue("subcontrolarea", "name", name, 0)]];
   return formatEFileSectionRows("subcontrolarea", columns, rows);
 }
 
 function buildSubstationSection(project: ProjectFile): string {
   const columns = ["idx", "name", "idv"];
-  const rows = [["1", formatEColumnValue("substation", "name", String(project.substation ?? ""), 0), "0"]];
+  const name = String(project.substation ?? "").trim() || "默认厂站";
+  const rows = [["1", formatEColumnValue("substation", "name", name, 0), "0"]];
   return formatEFileSectionRows("substation", columns, rows);
 }
 
