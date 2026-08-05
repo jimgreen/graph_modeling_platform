@@ -53,7 +53,7 @@ const STATE_ICON_STATIC_TEMPLATE_SECTIONS_COVERED_BY_BASIC_TOOLS = new Set([
 const STATE_ICON_DRAWING_FRAME_WIDTH = 240;
 const STATE_ICON_DRAWING_FRAME_HEIGHT = 160;
 
-const deviceDefinitionComplianceKey = (value: unknown) => String(value ?? "").trim().toLowerCase();
+const deviceDefinitionComplianceKey = (value: unknown) => String(value ?? "").trim().toLowerCase().replace(/_/g, "");
 
 const E_DEVICE_INTERFACE_FIXED_FIELD_NAMES = new Set(["idx", "name", "dev_type"]);
 // 拓扑引用字段：生成 E 文件时由拓扑连接关系填入 ACNode 的 idx，不对应元件属性
@@ -499,6 +499,20 @@ function eDeviceInterfaceFieldOrderForRow(row: any, section: any | undefined) {
   const used = new Set<string>();
   const ordered: string[] = [];
   const findMatchingField = (sectionField: any) => {
+    const exportKey = deviceDefinitionComplianceKey(sectionField.exportName ?? sectionField.sourceName);
+    // 优先按 exportName/sourceName 精确匹配（如 runstat<->run_stat），避免误匹配同中文不同字段
+    const exact = rowFields.find((field: any) => {
+      const sourceName = String(field.sourceName ?? "").trim();
+      const sourceKey = deviceDefinitionComplianceKey(sourceName);
+      if (!sourceKey || used.has(sourceKey)) {
+        return false;
+      }
+      return sourceKey === exportKey || deviceDefinitionComplianceKey(field.exportName) === exportKey;
+    });
+    if (exact) {
+      return exact;
+    }
+    // 再按 cnName 模糊匹配
     const sectionKeys = [sectionField.sourceName, sectionField.exportName, sectionField.cnName]
       .map(deviceDefinitionComplianceKey)
       .filter(Boolean);
