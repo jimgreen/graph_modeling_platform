@@ -119,27 +119,23 @@ function eDeviceInterfaceFieldCnName(definition: any, labels?: Record<string, st
 }
 
 export function applyEDeviceInterfaceFieldOrder(fields: readonly any[] = [], configuredOrder: readonly string[] = []) {
+  if ((configuredOrder ?? []).length === 0) {
+    return fields;
+  }
   const fieldByName = new Map(
     (fields ?? []).map((field) => [deviceDefinitionComplianceKey(field?.sourceName), field] as const)
   );
   const ordered: any[] = [];
   const used = new Set<string>();
-  for (const sourceName of configuredOrder ?? []) {
+  // 严格按模板字段顺序：设备有匹配用设备 field，无匹配用占位 field（sourceName=exportName），不追加设备独有字段
+  for (const sourceName of configuredOrder) {
     const key = deviceDefinitionComplianceKey(sourceName);
-    const field = fieldByName.get(key);
-    if (!key || !field || used.has(key)) {
-      continue;
-    }
-    used.add(key);
-    ordered.push(field);
-  }
-  for (const field of fields ?? []) {
-    const key = deviceDefinitionComplianceKey(field?.sourceName);
     if (!key || used.has(key)) {
       continue;
     }
     used.add(key);
-    ordered.push(field);
+    const field = fieldByName.get(key);
+    ordered.push(field ?? { sourceName, cnName: sourceName, exportEnabled: true, exportName: sourceName });
   }
   return ordered;
 }
@@ -395,7 +391,8 @@ export function buildEFileExportOptionsFromLibrary(options: {
         definition.fields,
         options.eDeviceDefinitionFieldOrder?.[definition.componentLibrary] ?? []
       )
-    }))
+    })),
+    eDeviceDefinitionLabels: options.eDeviceDefinitionLabels ?? {}
   };
 }
 
@@ -492,18 +489,10 @@ function eDeviceInterfaceFieldOrderForRow(row: any, section: any | undefined) {
       return sectionKeys.some((key) => fieldKeys.includes(key));
     });
   };
+  // 严格按模板字段顺序：设备有匹配用设备 sourceName，无匹配用模板 exportName 占位（值由导出时默认/引用解析填充）
   for (const sectionField of section.fields ?? []) {
     const field = findMatchingField(sectionField);
-    const sourceName = String(field?.sourceName ?? "").trim();
-    const sourceKey = deviceDefinitionComplianceKey(sourceName);
-    if (!sourceKey || used.has(sourceKey)) {
-      continue;
-    }
-    used.add(sourceKey);
-    ordered.push(sourceName);
-  }
-  for (const field of rowFields) {
-    const sourceName = String(field?.sourceName ?? "").trim();
+    const sourceName = String(field?.sourceName ?? "").trim() || String(sectionField.exportName ?? "").trim();
     const sourceKey = deviceDefinitionComplianceKey(sourceName);
     if (!sourceKey || used.has(sourceKey)) {
       continue;
@@ -570,16 +559,14 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     const componentLibrary = section.componentLibrary;
     const sectionKind = section.kind;
 
-    // 运行时生成的表，忽略匹配
-    if (RUNTIME_GENERATED_SECTIONS.has(sectionKind)) {
-      continue;
-    }
-
     // 查找对应的元件库行
     const row = rowsByComponentLibrary.get(componentLibrary);
 
     if (!row) {
-      // 模板section没有找到对应的元件库设备
+      // 运行时生成的表（node/substation 等）仍记录表名映射（如 ACNode->node），供导出时使用
+      if (RUNTIME_GENERATED_SECTIONS.has(sectionKind) && componentLibrary && sectionKind && sectionKind !== componentLibrary) {
+        nextLabels[componentLibrary] = sectionKind;
+      }
       skipped.push({
         section: sectionKind,
         reason: `未找到对应的元件库设备：${componentLibrary}`

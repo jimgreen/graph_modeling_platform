@@ -1805,6 +1805,9 @@ const E_NODE_REFERENCE_COLUMNS = new Set([
   "node",
   "i_node",
   "j_node",
+  "ind",
+  "znd",
+  "nd",
   "ac_node",
   "dc_node",
   "node1",
@@ -1837,9 +1840,9 @@ function topologyNodeNumberForEField(
   }
   const numberedNodeMatch = /^node([1-4])$/.exec(key);
   const transformerNodeMatch = /^t([123])_node$/.exec(key);
-  const terminalIndex = key === "node" || key === "i_node"
+  const terminalIndex = key === "node" || key === "i_node" || key === "ind" || key === "nd"
     ? 0
-    : key === "j_node"
+    : key === "j_node" || key === "znd"
       ? 1
       : key === "neutral_node"
         ? 3
@@ -2067,6 +2070,9 @@ function getRawEParamValue(
   if (key === "vbase") {
     return node.params.vbase ?? node.terminals[0]?.vbase ?? "";
   }
+  if (key === "ist") {
+    return "1";
+  }
   if (E_NODE_REFERENCE_COLUMNS.has(key)) {
     if (key === "neutral_node" && isThreeWindingTransformer(node) && node.kind !== "ac-three-winding-transformer-neutral") {
       return "0";
@@ -2137,6 +2143,7 @@ export type EFileInterfaceSectionDefinition = {
 
 export type EFileExportOptions = {
   interfaceDefinitions?: readonly EFileInterfaceSectionDefinition[];
+  eDeviceDefinitionLabels?: Record<string, string>;
 };
 
 function eFileInterfaceDefinitionIndex(options: EFileExportOptions = {}) {
@@ -2276,8 +2283,8 @@ function eParameterFieldsFromInterfaceDefinition(
     if (configuredField.exportEnabled === false) {
       continue;
     }
-    const configuredSourceName = String(configuredField.sourceName ?? "").trim();
-    const exportName = String(configuredField.exportName ?? configuredSourceName).trim();
+    const exportName = String(configuredField.exportName ?? configuredField.sourceName ?? "").trim();
+    const configuredSourceName = String(configuredField.sourceName ?? "").trim() || exportName;
     if (!configuredSourceName || !exportName) {
       continue;
     }
@@ -3064,7 +3071,29 @@ function formatESection(section: string, rows: EDeviceExport[], outputSection = 
   return formatEFileSectionRows(outputSection, columns, formattedRows);
 }
 
-function buildPowerBaseSection(project: ProjectFile, schemePath: string[]) {
+function buildBasevalueSection(project: ProjectFile): string {
+  const columns = ["p_base", "p_scale", "u_scale"];
+  const rows = [[
+    formatEColumnValue("basevalue", "p_base", String(project.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE), 0),
+    "1.0",
+    "1.0"
+  ]];
+  return formatEFileSectionRows("basevalue", columns, rows);
+}
+
+function buildSubcontrolareaSection(project: ProjectFile): string {
+  const columns = ["idx", "name"];
+  const rows = [["1", formatEColumnValue("subcontrolarea", "name", String(project.subcontrolarea ?? ""), 0)]];
+  return formatEFileSectionRows("subcontrolarea", columns, rows);
+}
+
+function buildSubstationSection(project: ProjectFile): string {
+  const columns = ["idx", "name", "idv"];
+  const rows = [["1", formatEColumnValue("substation", "name", String(project.substation ?? ""), 0), "0"]];
+  return formatEFileSectionRows("substation", columns, rows);
+}
+
+function buildPowerBaseSection(project: ProjectFile, schemePath: string[]): string {
   const normalizedSchemePath = schemePath
     .map((part) => String(part ?? "").trim())
     .filter(Boolean)
@@ -3122,10 +3151,16 @@ export function buildEDeviceParameterFile(
   ];
   const sectionBlocks = orderedSections
     .map((section) => {
-      const outputSection = String(interfaceDefinitionBySection.get(section)?.exportName ?? "").trim() || section;
+      const outputSection = String(interfaceDefinitionBySection.get(section)?.exportName ?? "").trim()
+        || String(options.eDeviceDefinitionLabels?.[section] ?? "").trim()
+        || section;
       return formatESection(section, recordsBySection.get(section) ?? [], outputSection);
     });
-  return [buildPowerBaseSection(project, schemePath), buildBasevoltageSection(), ...sectionBlocks].join("\n\n") + "\n";
+  const hasTemplateConfig = Boolean(options.eDeviceDefinitionLabels) && Object.keys(options.eDeviceDefinitionLabels ?? {}).length > 0;
+  const headerSections = hasTemplateConfig
+    ? [buildBasevalueSection(project), buildBasevoltageSection(), buildSubcontrolareaSection(project), buildSubstationSection(project)]
+    : [buildPowerBaseSection(project, schemePath), buildBasevoltageSection()];
+  return [...headerSections, ...sectionBlocks].join("\n\n") + "\n";
 }
 
 export type TextFileExport = {
