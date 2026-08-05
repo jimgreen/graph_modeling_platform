@@ -56,6 +56,10 @@ const STATE_ICON_DRAWING_FRAME_HEIGHT = 160;
 const deviceDefinitionComplianceKey = (value: unknown) => String(value ?? "").trim().toLowerCase();
 
 const E_DEVICE_INTERFACE_FIXED_FIELD_NAMES = new Set(["idx", "name", "dev_type"]);
+// 拓扑引用字段：生成 E 文件时由拓扑连接关系填入 ACNode 的 idx，不对应元件属性
+const E_DEVICE_INTERFACE_TOPOLOGY_FIELD_NAMES = new Set(["ind", "znd", "nd"]);
+// 量测字段：生成 E 文件时由量测系统填充，不对应元件属性
+const E_DEVICE_INTERFACE_MEASUREMENT_FIELD_NAMES = new Set(["p", "q", "v", "i"]);
 const E_DEVICE_INTERFACE_DERIVED_BASE_FIELD_NAMES = new Set([
   "idx",
   "name",
@@ -398,7 +402,7 @@ export function buildEFileExportOptionsFromLibrary(options: {
 function eDeviceInterfaceSectionByComponentLibrary(sections: readonly any[] = []) {
   const sectionByComponentLibrary = new Map<string, any>();
   for (const section of sections ?? []) {
-    const componentLibrary = String(section.originalComponentLibrary || section.componentLibrary || section.kind || "").trim();
+    const componentLibrary = String(section.componentLibrary || section.originalComponentLibrary || section.kind || "").trim();
     if (componentLibrary) {
       sectionByComponentLibrary.set(componentLibrary, section);
     }
@@ -549,26 +553,130 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
   const nextClassExportEnabled: Record<string, boolean> = { ...eDeviceDefinitionClassExportEnabled };
   const nextFieldOrder: Record<string, string[]> = { ...eDeviceDefinitionFieldOrder };
   const fieldPatchesByComponentLibrary = new Map<string, Map<string, { exportEnabled: boolean; exportName: string }>>();
-  const matched: string[] = [];
-  const skipped: string[] = [];
+
+  // 从模板角度出发，检查每个模板section是否匹配元件库
+  const matched: Array<{ section: string; fields: string[] }> = [];
+  const skipped: Array<{ section: string; reason: string; fields?: string[] }> = [];
+
+  // 运行时生成内容的表，不参与元件匹配
+  const RUNTIME_GENERATED_SECTIONS = new Set(["basevalue", "basevoltage", "subcontrolarea", "substation", "node"]);
+
+  // 预构建行索引，避免 O(n*m) 查找
+  const rowsByComponentLibrary = new Map<string, any>(
+    (rows ?? []).map((r) => [r.componentLibrary, r])
+  );
+
+  for (const section of sections) {
+    const componentLibrary = section.componentLibrary;
+    const sectionKind = section.kind;
+
+    // 运行时生成的表，忽略匹配
+    if (RUNTIME_GENERATED_SECTIONS.has(sectionKind)) {
+      continue;
+    }
+
+    // 查找对应的元件库行
+    const row = rowsByComponentLibrary.get(componentLibrary);
+
+    if (!row) {
+      // 模板section没有找到对应的元件库设备
+      skipped.push({
+        section: sectionKind,
+        reason: `未找到对应的元件库设备：${componentLibrary}`
+      });
+      continue;
+    }
+
+    // 找到了对应的设备，为每个模板字段找到对应的设备属性名
+    const rowFieldsByKey = new Map<string, string>();
+    const rowFieldsByCnName = new Map<string, string>();
+    for (const rf of row.fields ?? []) {
+      const sourceName = String(rf.sourceName ?? "").trim();
+      const key = deviceDefinitionComplianceKey(sourceName);
+      if (key) {
+        rowFieldsByKey.set(key, sourceName);
+      }
+      const cnKey = deviceDefinitionComplianceKey(String(rf.cnName ?? "").trim());
+      if (cnKey) {
+        rowFieldsByCnName.set(cnKey, sourceName);
+      }
+    }
+    const sectionMatchedFields: Array<{ template: string; device: string }> = [];
+    const sectionUnmatchedFields: string[] = [];
+    for (const f of section.fields) {
+      const templateField = String(f.exportName ?? "").trim();
+      const cnName = String(f.cnName ?? "").trim();
+      // 固定字段（idx/name/dev_type）视为始终匹配
+      if (E_DEVICE_INTERFACE_FIXED_FIELD_NAMES.has(templateField)) {
+        sectionMatchedFields.push({ template: templateField, device: templateField });
+        continue;
+      }
+      // 拓扑引用字段（ind/znd/nd）由拓扑关系填充，视为匹配
+      if (E_DEVICE_INTERFACE_TOPOLOGY_FIELD_NAMES.has(templateField)) {
+        sectionMatchedFields.push({ template: templateField, device: "（拓扑生成）" });
+        continue;
+      }
+      // 量测字段（p/q/v/i）由量测系统填充，视为匹配
+      if (E_DEVICE_INTERFACE_MEASUREMENT_FIELD_NAMES.has(templateField)) {
+        sectionMatchedFields.push({ template: templateField, device: "（量测生成）" });
+        continue;
+      }
+      // 按 exportName/sourceName 或 cnName 精确匹配设备属性
+      const candidates = [templateField, cnName].map(deviceDefinitionComplianceKey).filter(Boolean);
+      let deviceField = "";
+      for (const candidate of candidates) {
+        if (rowFieldsByKey.has(candidate)) {
+          deviceField = rowFieldsByKey.get(candidate) ?? "";
+          break;
+        }
+        if (rowFieldsByCnName.has(candidate)) {
+          deviceField = rowFieldsByCnName.get(candidate) ?? "";
+          break;
+        }
+      }
+      if (deviceField) {
+        sectionMatchedFields.push({ template: templateField, device: deviceField });
+      } else {
+        sectionUnmatchedFields.push(templateField);
+      }
+    }
+    if (sectionMatchedFields.length > 0) {
+      matched.push({
+        section: sectionKind,
+        device: componentLibrary,
+        fields: sectionMatchedFields
+      });
+    }
+    if (sectionUnmatchedFields.length > 0) {
+      skipped.push({
+        section: sectionKind,
+        reason: `字段未匹配设备属性`,
+        fields: sectionUnmatchedFields
+      });
+    }
+
+    // 继续原有的应用逻辑
+    nextClassExportEnabled[componentLibrary] = Boolean(section.exportEnabled !== false);
+    const exportName = String(sectionKind ?? "").trim();
+    if (exportName && exportName !== componentLibrary) {
+      nextLabels[componentLibrary] = exportName;
+    } else {
+      delete nextLabels[componentLibrary];
+    }
+    fieldPatchesByComponentLibrary.set(componentLibrary, eDeviceInterfacePatchesForRow(row, section));
+    nextFieldOrder[componentLibrary] = eDeviceInterfaceFieldOrderForRow(row, section);
+  }
+
+  // 确保所有元件库都设置导出标志（即使没有匹配的section）
   for (const row of rows) {
     const componentLibrary = row.componentLibrary;
     const section = sectionByComponentLibrary.get(componentLibrary);
-    nextClassExportEnabled[componentLibrary] = Boolean(section && section.exportEnabled !== false);
-    if (section) {
-      matched.push(componentLibrary);
-      const exportName = String(section.kind ?? "").trim();
-      if (exportName && exportName !== componentLibrary) {
-        nextLabels[componentLibrary] = exportName;
-      } else {
-        delete nextLabels[componentLibrary];
-      }
-    } else {
-      skipped.push(componentLibrary);
+    if (!(componentLibrary in nextClassExportEnabled)) {
+      nextClassExportEnabled[componentLibrary] = Boolean(section && section.exportEnabled !== false);
     }
-    fieldPatchesByComponentLibrary.set(componentLibrary, eDeviceInterfacePatchesForRow(row, section));
-    if (section) {
-      nextFieldOrder[componentLibrary] = eDeviceInterfaceFieldOrderForRow(row, section);
+    // 为所有行生成字段补丁（即使没有匹配的section）
+    if (!fieldPatchesByComponentLibrary.has(componentLibrary)) {
+      fieldPatchesByComponentLibrary.set(componentLibrary, eDeviceInterfacePatchesForRow(row, section));
     }
   }
 
@@ -2737,20 +2845,11 @@ export function createExportSvg(__appScope: Record<string, any>) {
         {
           label: "SVG",
           filename: `${baseFilename}.svg`,
-          text: buildSvgDocument(nodes, edges, {
-            ...canvasBounds,
-            backgroundColor: canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND,
-            backgroundImage: canvasBackgroundImageUrl,
-            imageExportPathById,
-            colorDisplayMode: "voltage",
-            colorPalette,
-            deviceTemplates: libraryTemplates,
-            layers,
-            activeLayerId,
-            backgroundPage: backgroundPageRender,
-            measurements: projectMeasurements,
-            measurementConfig
-          }),
+          text: buildSvgDocument(nodes, edges, buildSvgExportOptions({
+            canvasBounds, canvasBackgroundColor, DEFAULT_CANVAS_BACKGROUND, canvasBackgroundImageUrl,
+            imageExportPathById, colorPalette, libraryTemplates, layers, activeLayerId,
+            backgroundPageRender, projectMeasurements, measurementConfig
+          })),
           mime: "image/svg+xml",
           operationLog: `导出图形文件：${baseFilename}.svg`
         }
@@ -2811,6 +2910,115 @@ export function createExportSvg(__appScope: Record<string, any>) {
   };
 }
 
+// SVG 导出选项构建器，避免 createExportSvg 和 createExportSvgFile 重复
+function buildSvgExportOptions(params: {
+  canvasBounds: any; canvasBackgroundColor: string; DEFAULT_CANVAS_BACKGROUND: string;
+  canvasBackgroundImageUrl: string; imageExportPathById: any; colorPalette: any;
+  libraryTemplates: any[]; layers: any; activeLayerId: any;
+  backgroundPageRender: any; projectMeasurements: any; measurementConfig: any;
+}) {
+  return {
+    ...params.canvasBounds,
+    backgroundColor: params.canvasBackgroundColor || params.DEFAULT_CANVAS_BACKGROUND,
+    backgroundImage: params.canvasBackgroundImageUrl,
+    imageExportPathById: params.imageExportPathById,
+    colorDisplayMode: "voltage" as const,
+    colorPalette: params.colorPalette,
+    deviceTemplates: params.libraryTemplates,
+    layers: params.layers,
+    activeLayerId: params.activeLayerId,
+    backgroundPage: params.backgroundPageRender,
+    measurements: params.projectMeasurements,
+    measurementConfig: params.measurementConfig
+  };
+}
+
+export function createExportSvgFile(__appScope: Record<string, any>) {
+  return async () => {
+    const {
+      DEFAULT_CANVAS_BACKGROUND,
+      activeLayerId,
+      backgroundPageRender,
+      buildSvgDocument,
+      canvasBackgroundColor,
+      canvasBackgroundImageUrl,
+      canvasBounds,
+      colorPalette,
+      currentProject,
+      edges,
+      ensureSavedBeforeExport,
+      layers,
+      libraryTemplates,
+      loadSvgImageExportPathById,
+      measurementConfig,
+      nodes,
+      projectMeasurements,
+      projectName,
+      safeFilePart,
+      saveTextFile,
+      showGlobalMessage = () => undefined,
+      writeOperationLog
+    } = __appScope;
+    if (!ensureSavedBeforeExport()) {
+      return;
+    }
+    const imageExportPathById = typeof loadSvgImageExportPathById === "function"
+      ? await loadSvgImageExportPathById()
+      : undefined;
+    const baseFilename = safeFilePart(projectName);
+    const svgText = buildSvgDocument(nodes, edges, buildSvgExportOptions({
+      canvasBounds, canvasBackgroundColor, DEFAULT_CANVAS_BACKGROUND, canvasBackgroundImageUrl,
+      imageExportPathById, colorPalette, libraryTemplates, layers, activeLayerId,
+      backgroundPageRender, projectMeasurements, measurementConfig
+    }));
+    const saved = await saveTextFile({
+      filename: `${baseFilename}.svg`,
+      text: svgText,
+      mime: "image/svg+xml",
+      description: "SVG 图形文件",
+      extensions: [".svg"]
+    });
+    if (!saved) {
+      return;
+    }
+    writeOperationLog(`导出图形文件：${baseFilename}.svg`);
+    showGlobalMessage(`SVG 文件导出成功：${baseFilename}.svg`, "success");
+  };
+}
+
+export function createExportJsonFile(__appScope: Record<string, any>) {
+  return async () => {
+    const {
+      currentProject,
+      ensureSavedBeforeExport,
+      projectName,
+      safeFilePart,
+      saveTextFile,
+      serializeProject,
+      showGlobalMessage = () => undefined,
+      writeOperationLog
+    } = __appScope;
+    if (!ensureSavedBeforeExport()) {
+      return;
+    }
+    const project = currentProject();
+    const baseFilename = safeFilePart(projectName);
+    const jsonText = serializeProject(project);
+    const saved = await saveTextFile({
+      filename: `${baseFilename}.json`,
+      text: jsonText,
+      mime: "application/json",
+      description: "JSON 模型文件",
+      extensions: [".json"]
+    });
+    if (!saved) {
+      return;
+    }
+    writeOperationLog(`导出模型文件：${baseFilename}.json`);
+    showGlobalMessage(`JSON 文件导出成功：${baseFilename}.json`, "success");
+  };
+}
+
 export function createExportEFile(__appScope: Record<string, any>) {
   return async () => {
     const {
@@ -2827,6 +3035,7 @@ export function createExportEFile(__appScope: Record<string, any>) {
       resolveTemplateComponentLibrary,
       saveTextFile,
       schemePathForScheme,
+      showGlobalMessage = () => undefined,
       writeOperationLog
     } = __appScope;
     if (!ensureSavedBeforeExport()) {
@@ -2870,7 +3079,7 @@ export function createExportEFile(__appScope: Record<string, any>) {
       return;
     }
     writeOperationLog(`导出模型文件：${file.filename}`);
-    window.alert(`E 文件导出成功：${file.filename}`);
+    showGlobalMessage(`E 文件导出成功：${file.filename}`, "success");
   };
 }
 
@@ -2926,6 +3135,8 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
       setEDeviceDefinitionLabels,
       setEDeviceDefinitionClassExportEnabled,
       setEDeviceDefinitionFieldOrder,
+      setEDeviceInterfaceLoadedTemplateName,
+      setEDeviceInterfaceReadonlyMode,
       writeOperationLog
     } = __appScope;
     const reader = new FileReader();
@@ -2941,8 +3152,8 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
           customDeviceTemplates,
           libraryTemplates,
           deviceDefinitionOverrides,
-          eDeviceDefinitionLabels,
-          eDeviceDefinitionClassExportEnabled,
+          eDeviceDefinitionLabels: {},
+          eDeviceDefinitionClassExportEnabled: {},
           eDeviceDefinitionFieldOrder,
           labels: __appScope.PARAM_LABELS,
           deviceDefinitionKeyForTemplate: __appScope.deviceDefinitionKeyForTemplate,
@@ -2965,6 +3176,15 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
           failure: `元件定义已更新本地，后台保存失败：匹配 ${result.matched.length} 个。`
         });
         writeOperationLog(`导入元件定义文件：${file.name}`);
+        // 设置文件名和只读模式（与预定义模板逻辑一致）
+        if (typeof setEDeviceInterfaceLoadedTemplateName === "function") {
+          setEDeviceInterfaceLoadedTemplateName(file.name);
+          try { localStorage.setItem("eDeviceInterfaceLoadedTemplateName", file.name); } catch { /* ignore */ }
+        }
+        if (typeof setEDeviceInterfaceReadonlyMode === "function") {
+          setEDeviceInterfaceReadonlyMode(true);
+          try { localStorage.setItem("eDeviceInterfaceReadonlyMode", "true"); } catch { /* ignore */ }
+        }
         const detail = result.skipped.length > 0 ? `\n未匹配（跳过）：${result.skipped.length} 个` : "";
         window.alert(`元件定义导入成功。\n匹配元件：${result.matched.length} 个${detail}`);
       } catch (error) {

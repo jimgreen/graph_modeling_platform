@@ -406,7 +406,7 @@ describe("app view device definition parameter rows", () => {
       /<button type="button" className=\{`topbar-primary-button[^`]*`\} onClick=\{toggleInteractionMode\}[\s\S]*?<\/button>/
     )?.[0] ?? "";
     const exportActions = source.match(
-      /<input ref=\{__appScope\.userCustomizationImportInputRef\}[\s\S]*?<\/div>\s*<RuntimeWsIndicator/
+      /<div className="topbar-center-actions">[\s\S]*?<\/div>\s*(?:<div className="action-cluster"|<button)/
     )?.[0] ?? "";
     const toolbarPreviewButton = source.match(
       /\{ENABLE_REACT_FLOW_PREVIEW && \(<button className="topbar-primary-button react-flow-preview-button"[\s\S]*?<\/button>\)\}/
@@ -418,7 +418,12 @@ describe("app view device definition parameter rows", () => {
     expect(modeButton).not.toContain("浏览模式</span>");
     expect(modeButton).not.toContain("mode-toggle-button");
     expect(exportActions.match(/onClick=\{exportSvg\}/g)).toHaveLength(1);
-    expect(exportActions).not.toContain("onClick={exportEFile}");
+    expect(exportActions).toContain("onClick={exportEFile}");
+    expect(exportActions).toContain("onClick={exportSvgFile}");
+    expect(exportActions).toContain("onClick={exportJsonFile}");
+    expect(exportActions).toContain("导出 E 文件");
+    expect(exportActions).toContain("导出 SVG");
+    expect(exportActions).toContain("导出 JSON");
     expect(exportActions).toContain("导出 E、JSON 和 SVG 文件");
     expect(toolbarPreviewButton).toBeNull();
   });

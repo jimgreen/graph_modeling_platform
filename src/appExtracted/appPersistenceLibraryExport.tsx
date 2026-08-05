@@ -540,6 +540,10 @@ export function normalizeProjectForBackend(project: ProjectFile): ProjectFile {
       typeof project.powerBaseValue === "number" && Number.isFinite(project.powerBaseValue)
         ? project.powerBaseValue
         : DEFAULT_POWER_BASE_VALUE,
+    subcontrolarea: project.subcontrolarea ?? "",
+    modelType: project.modelType ?? "",
+    substation: project.substation ?? "",
+    feeder: project.feeder ?? "",
     nodes: project.nodes.map((node) => {
       const assetId = node.params.backgroundImageAssetId;
       const backgroundImage = node.params.backgroundImage;
@@ -4004,7 +4008,7 @@ ${rules.join("\n")}
             })
           : "";
         const imageCoverMarkup =
-          imageHref && allowNodeImage && !isStaticNode(symbolNode) && symbolNode.terminals.length === 0
+          imageHref && allowNodeImage && symbolNode.terminals.length === 0 && !isStaticNode(symbolNode)
             ? `<rect x="${-symbolNode.size.width / 2}" y="${-symbolNode.size.height / 2}" width="${symbolNode.size.width}" height="${symbolNode.size.height}" rx="8" fill="#ffffff" stroke="none"/>`
             : "";
         return `<title>${escapeXml(template?.label ?? exportNodeType(symbolNode))}</title>

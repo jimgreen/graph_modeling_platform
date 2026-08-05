@@ -536,6 +536,10 @@ export type ProjectFile = {
   measurements?: ProjectMeasurementConfig;
   nodes: ModelNode[];
   edges: Edge[];
+  subcontrolarea?: string;
+  modelType?: string;
+  substation?: string;
+  feeder?: string;
 };
 
 export const DEFAULT_MODEL_LAYER_ID = "layer-default";
@@ -3084,6 +3088,17 @@ function buildPowerBaseSection(project: ProjectFile, schemePath: string[]) {
   ]);
 }
 
+function buildBasevoltageSection(): string {
+  const settings = readVoltageLevelSettings();
+  const allLevels: Array<{ type: "ac" | "dc"; name: string; vltp: string }> = [
+    ...settings.ac.map((row) => ({ type: "ac" as const, name: row.name, vltp: row.vltp })),
+    ...settings.dc.map((row) => ({ type: "dc" as const, name: row.name, vltp: row.vltp }))
+  ];
+  const rows = allLevels.map((level, index) => [String(index + 1), level.name, level.vltp, level.type]);
+  const columns = ["idx", "name", "vltp", "type"];
+  return formatEFileSectionRows("basevoltage", columns, rows);
+}
+
 export function buildEDeviceParameterFile(
   project: ProjectFile,
   schemePath: string[] = ["默认方案"],
@@ -3110,7 +3125,7 @@ export function buildEDeviceParameterFile(
       const outputSection = String(interfaceDefinitionBySection.get(section)?.exportName ?? "").trim() || section;
       return formatESection(section, recordsBySection.get(section) ?? [], outputSection);
     });
-  return [buildPowerBaseSection(project, schemePath), ...sectionBlocks].join("\n\n") + "\n";
+  return [buildPowerBaseSection(project, schemePath), buildBasevoltageSection(), ...sectionBlocks].join("\n\n") + "\n";
 }
 
 export type TextFileExport = {
@@ -3202,7 +3217,7 @@ function eDefinitionAttrIsYes(value: string): boolean {
 }
 
 function splitEDefinitionCells(line: string): string[] {
-  return line.split(/\s{2,}/).map((cell) => cell.trim()).filter((cell) => cell.length > 0);
+  return line.split(/\s{2,}|\|/).map((cell) => cell.trim()).filter((cell) => cell.length > 0);
 }
 
 export function buildEDeviceDefinitionFile(
@@ -3487,12 +3502,21 @@ export function parseEDeviceDefinitionFile(text: string): EDeviceDefinitionSecti
     const derivedAttr = matchEDefinitionAttr(attrText, "是否派生新类");
     const containerAttr = matchEDefinitionAttr(attrText, "是否容器");
     const exportEnabledAttr = matchEDefinitionAttr(attrText, "是否导出");
+    // 如果元件库是中文名，反向映射为英文元件库名
+    let resolvedComponentLibrary = componentLibraryAttr || kind;
+    if (componentLibraryAttr && !/^[A-Za-z]/.test(componentLibraryAttr)) {
+      // 中文名称，尝试反向查找
+      const mapped = COMPONENT_LIBRARY_REVERSE_MAPPING[componentLibraryAttr];
+      if (mapped) {
+        resolvedComponentLibrary = mapped;
+      }
+    }
     sections.push({
       kind,
       label: matchEDefinitionAttr(attrText, "中文名"),
       categoryLibrary: matchEDefinitionAttr(attrText, "类别库"),
-      componentLibrary: componentLibraryAttr || kind,
-      originalComponentLibrary: componentLibraryAttr && componentLibraryAttr !== kind ? componentLibraryAttr : undefined,
+      componentLibrary: resolvedComponentLibrary,
+      originalComponentLibrary: componentLibraryAttr && resolvedComponentLibrary !== componentLibraryAttr ? componentLibraryAttr : undefined,
       derivedFromComponentLibrary: matchEDefinitionAttr(attrText, "派生基类") || undefined,
       isDerivedComponentLibrary: derivedAttr ? eDefinitionAttrIsYes(derivedAttr) : undefined,
       isContainerComponentLibrary: containerAttr ? eDefinitionAttrIsYes(containerAttr) : undefined,
@@ -6777,6 +6801,8 @@ export type ColorPalette = {
   voltage: Record<string, string>;
 };
 
+export const BUILTIN_VOLTAGE_LEVELS = ["0", "0.4", "6", "10", "10.5", "35", "66", "110", "220", "330", "500", "750", "800"];
+
 export const VOLTAGE_LEVEL_COLORS: Record<string, string> = {
   "0": "#64748b",
   "0.4": "#22c55e",
@@ -6808,6 +6834,40 @@ export const DEFAULT_COLOR_PALETTE: ColorPalette = {
   energy: { ...TERMINAL_TYPE_COLORS },
   voltage: buildDefaultVoltagePalette()
 };
+
+export type VoltageLevelConfig = {
+  name: string;
+  vltp: string;
+};
+
+export type VoltageLevelSettings = {
+  ac: VoltageLevelConfig[];
+  dc: VoltageLevelConfig[];
+};
+
+const VOLTAGE_LEVEL_SETTINGS_KEY = "graph-model-voltage-levels";
+
+export function readVoltageLevelSettings(): VoltageLevelSettings {
+  try {
+    const stored = localStorage.getItem(VOLTAGE_LEVEL_SETTINGS_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (parsed && typeof parsed === "object" && Array.isArray(parsed.ac) && Array.isArray(parsed.dc)) {
+        return parsed as VoltageLevelSettings;
+      }
+    }
+  } catch {}
+  return {
+    ac: BUILTIN_VOLTAGE_LEVELS.map((v) => ({ name: v, vltp: v })),
+    dc: BUILTIN_VOLTAGE_LEVELS.map((v) => ({ name: v, vltp: v }))
+  };
+}
+
+export function writeVoltageLevelSettings(settings: VoltageLevelSettings): void {
+  try {
+    localStorage.setItem(VOLTAGE_LEVEL_SETTINGS_KEY, JSON.stringify(settings));
+  } catch {}
+}
 
 function normalizeColorRecord(source: unknown, fallback: Record<string, string>): Record<string, string> {
   if (!source || typeof source !== "object") {
@@ -11518,6 +11578,16 @@ const ELEMENT_TREE_COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   HeatExchanger: "换热器",
   HeatPump: "热泵",
   HeatBus: "热母线"
+};
+
+// 反向映射表：支持多个中文名映射到同一个英文元件库名
+// 从 ELEMENT_TREE_COMPONENT_LIBRARY_LABELS 生成反向映射，附加别名
+const COMPONENT_LIBRARY_REVERSE_MAPPING: Record<string, string> = {
+  ...Object.fromEntries(
+    Object.entries(ELEMENT_TREE_COMPONENT_LIBRARY_LABELS).map(([en, cn]) => [cn, en])
+  ),
+  "交流线路": "ACBranch",
+  "双绕组主变+三绕组主变": "ACTransformer"
 };
 
 function elementTreeComponentLibraryLabel(componentLibrary: string): string {

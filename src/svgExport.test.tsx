@@ -196,6 +196,7 @@ describe("SVG export", () => {
   test("reports successful E file export after saving completes", async () => {
     const alert = vi.fn();
     const writeOperationLog = vi.fn();
+    const showGlobalMessage = vi.fn();
     const buildEFileExport = vi.fn(() => ({ filename: "模型.e", text: "<Model/>", mime: "text/plain" }));
     vi.stubGlobal("window", { alert });
     const exportEFile = createExportEFile({
@@ -206,13 +207,14 @@ describe("SVG export", () => {
       getEExportWarnings: () => [],
       saveTextFile: vi.fn(async () => true),
       schemePathForScheme: () => ["主方案", "子方案"],
+      showGlobalMessage,
       writeOperationLog
     });
 
     await exportEFile();
 
     expect(writeOperationLog).toHaveBeenCalledWith("导出模型文件：模型.e");
-    expect(alert).toHaveBeenCalledWith("E 文件导出成功：模型.e");
+    expect(showGlobalMessage).toHaveBeenCalledWith("E 文件导出成功：模型.e", "success");
     expect(buildEFileExport).toHaveBeenCalledWith(
       expect.anything(),
       ["主方案", "子方案"],

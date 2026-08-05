@@ -2677,6 +2677,7 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
     setMarquee(null);
     setModifierSelectionPress(null);
     setCanvasPanning(null);
+    // ponytail: normalize/reconcile 是幂等函数，对已存储的归一化数据返回相同引用/结构，旧 dirty flag 永远为 false
     setHasUnsavedChanges(false);
     writeOperationLog(`加载模型：${project.name}`);
     requestCanvasFrameCenter();
@@ -3672,7 +3673,11 @@ export function createDeleteModelLayer(__appScope: Record<string, any>) {
 }
 
 const DEVICE_DEFINITION_MEASUREMENT_PROFILE_ALIASES: Record<string, readonly string[]> = {
-  ACTransformer: ["ac-transformer"]
+  ACTransformer: ["ac-transformer"],
+  ACGenerator: ["ac-source"],
+  DCGenerator: ["dc-source"],
+  ACLoad: ["ac-load"],
+  DCLoad: ["dc-load"]
 };
 
 export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<string, any>) {

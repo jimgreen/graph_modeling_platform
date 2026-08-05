@@ -778,7 +778,8 @@ describe("graph template library filtering", () => {
     const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
 
     expect(appViewSource.match(/<th>是否导出<\/th>/gu)).toHaveLength(1);
-    expect(appViewSource.match(/<th>导出名称<\/th>/gu)).toHaveLength(1);
+    expect(appViewSource.match(/<th>导出名称<\/th>/gu)).toHaveLength(2);
+    expect(appViewSource).toContain("e-device-interface-group-export-all");
     expect(appViewSource).toContain("e-device-interface-table");
     expect(appViewSource).toContain("exportEnabled");
     expect(appViewSource).toContain("exportName");

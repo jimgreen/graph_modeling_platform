@@ -2620,8 +2620,10 @@ describe("applyEDeviceDefinitionSectionsToLibraryState", () => {
     expect(result.customDeviceTemplates[0].parameterDefinitions).toEqual(expect.arrayContaining([
       expect.objectContaining({ enName: "p", exportEnabled: false, exportName: "p" })
     ]));
-    expect(result.matched).toEqual(["ACLoad"]);
-    expect(result.skipped).toEqual(["DCLoad"]);
+    expect(result.matched).toEqual([
+      expect.objectContaining({ section: "LoadTable" })
+    ]);
+    expect(result.skipped).toEqual([]);
   });
 });
 
