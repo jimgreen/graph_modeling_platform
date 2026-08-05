@@ -417,8 +417,9 @@ describe("app view device definition parameter rows", () => {
     expect(modeButton).not.toContain("编辑模式</span>");
     expect(modeButton).not.toContain("浏览模式</span>");
     expect(modeButton).not.toContain("mode-toggle-button");
-    expect(exportActions.match(/onClick=\{exportSvg\}/g)).toHaveLength(1);
-    expect(exportActions).toContain("onClick={exportEFile}");
+    expect(exportActions).toContain("exportSvg();");
+    expect(exportActions).toContain("exportEFile();");
+    expect(exportActions).toContain("modelTypeMismatchMessage()");
     expect(exportActions).toContain("onClick={exportSvgFile}");
     expect(exportActions).toContain("onClick={exportJsonFile}");
     expect(exportActions).toContain("导出 E 文件");

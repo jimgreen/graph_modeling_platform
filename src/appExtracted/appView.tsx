@@ -524,6 +524,27 @@ export function renderAppView(__appScope: Record<string, any>) {
     try { return localStorage.getItem("eDeviceInterfaceReadonlyMode") === "true"; } catch { return false; }
   });
   Object.assign(__appScope, { setEDeviceInterfaceLoadedTemplateName, setEDeviceInterfaceReadonlyMode });
+  // 预定义模板对模型类型的限制：国网E格式/主网实时库=主网(厂站)，配网实时库=配网(馈线)，台区实时库=台区；自定义不限
+  const TEMPLATE_ALLOWED_MODEL_TYPES: Record<string, string[]> = {
+    "国网E格式": ["厂站"],
+    "主网实时库": ["厂站"],
+    "配网实时库": ["馈线"],
+    "台区实时库": ["台区"]
+  };
+  const MODEL_TYPE_NETWORK_LABEL: Record<string, string> = { "厂站": "主网", "馈线": "配网", "台区": "台区" };
+  const modelTypeMismatchMessage = (): string | null => {
+    const templateName = eDeviceInterfaceLoadedTemplateName;
+    if (!templateName || templateName === "自定义") {
+      return null;
+    }
+    const allowed = TEMPLATE_ALLOWED_MODEL_TYPES[templateName];
+    if (!allowed || allowed.includes(modelType)) {
+      return null;
+    }
+    const allowedLabels = allowed.map((t) => MODEL_TYPE_NETWORK_LABEL[t] ?? t).join("、");
+    const currentLabel = MODEL_TYPE_NETWORK_LABEL[modelType] ?? modelType;
+    return `当前模板「${templateName}」仅支持${allowedLabels}模型，当前模型类型为「${currentLabel}」。请转为自定义配置或切换模型类型后重试。`;
+  };
   const loadPredefinedEDeviceTemplate = async (templateFile: string) => {
     try {
       const response = await fetch(`/e-templates/${templateFile}`);
@@ -1389,12 +1410,12 @@ export function renderAppView(__appScope: Record<string, any>) {
               <FileJson size={16}/>
             </button>
             <div className="topbar-dropdown export-dropdown" onMouseEnter={() => setExportDropdownOpen(true)} onMouseLeave={() => setExportDropdownOpen(false)}>
-              <button className="topbar-primary-button" onClick={exportSvg} disabled={!canExportCurrentModel} title={canExportCurrentModel ? "导出 E、JSON 和 SVG 文件" : "请先保存当前模型后再导出文件"} aria-label="导出 E、JSON 和 SVG 文件">
+              <button className="topbar-primary-button" onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { window.alert(mismatch); return; } exportSvg(); }} disabled={!canExportCurrentModel} title={canExportCurrentModel ? "导出 E、JSON 和 SVG 文件" : "请先保存当前模型后再导出文件"} aria-label="导出 E、JSON 和 SVG 文件">
                 <Download size={16}/>
               </button>
               {exportDropdownOpen && (
                 <div className="topbar-dropdown-menu" role="menu" aria-label="导出选项">
-                  <button onClick={exportEFile} disabled={!canExportCurrentModel} title="导出 E 文件" aria-label="导出 E 文件">
+                  <button onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { window.alert(mismatch); return; } exportEFile(); }} disabled={!canExportCurrentModel} title="导出 E 文件" aria-label="导出 E 文件">
                     <FileJson size={16}/>
                     <span>导出 E 文件</span>
                   </button>
