@@ -880,6 +880,8 @@ const [substation, setSubstation] = useState(() => initialDraft?.substation ?? "
 Object.assign(__appScope, { substation, setSubstation });
 const [feeder, setFeeder] = useState(() => initialDraft?.feeder ?? "默认馈线");
 Object.assign(__appScope, { feeder, setFeeder });
+const [taiqu, setTaiqu] = useState(() => (initialDraft as any)?.taiqu ?? "");
+Object.assign(__appScope, { taiqu, setTaiqu });
 const [canvasWidth, setCanvasWidth] = useState(() => initialDraft?.canvasWidth ?? DEFAULT_CANVAS_WIDTH);
 Object.assign(__appScope, { canvasWidth, setCanvasWidth });
 const [canvasHeight, setCanvasHeight] = useState(() => initialDraft?.canvasHeight ?? DEFAULT_CANVAS_HEIGHT);

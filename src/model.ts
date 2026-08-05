@@ -540,6 +540,7 @@ export type ProjectFile = {
   modelType?: string;
   substation?: string;
   feeder?: string;
+  taiqu?: string;
 };
 
 export const DEFAULT_MODEL_LAYER_ID = "layer-default";

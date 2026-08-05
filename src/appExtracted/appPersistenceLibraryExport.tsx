@@ -544,6 +544,7 @@ export function normalizeProjectForBackend(project: ProjectFile): ProjectFile {
     modelType: project.modelType ?? "",
     substation: project.substation ?? "",
     feeder: project.feeder ?? "",
+    taiqu: project.taiqu ?? "",
     nodes: project.nodes.map((node) => {
       const assetId = node.params.backgroundImageAssetId;
       const backgroundImage = node.params.backgroundImage;
