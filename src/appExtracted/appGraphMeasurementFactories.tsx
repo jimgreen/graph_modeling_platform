@@ -3782,7 +3782,15 @@ export function createPushUndoSnapshot(__appScope: Record<string, any>) {
     deferredRoutableLineRouteRepairCancelRef.current = null;
     const snapshot = cloneProjectState(deepModelSnapshot, graphPatchScope);
     snapshot.label = label;
-    snapshot.target = target;
+    if (target) {
+      snapshot.target = target;
+    } else {
+      const selected = __appScope.inspectorSelectedNode;
+      if (selected) {
+        const idx = selected.params?.idx || selected.id;
+        snapshot.target = `${idx} ${selected.name ?? ""}`.trim();
+      }
+    }
     setUndoStack((current) => [...current.slice(-49), snapshot]);
     if (markDirty) {
       setHasUnsavedChanges(true);
@@ -3804,8 +3812,12 @@ export function createUniqueUndoScopeIds(__appScope: Record<string, any>) {
 
 export function createPushNodeOnlyUndoSnapshot(__appScope: Record<string, any>) {
   return (nodeId: string, label?: string, target?: string) => {
-  const { pushUndoSnapshot, undoScopeForGraphPatch } = __appScope;
-    pushUndoSnapshot(true, false, undoScopeForGraphPatch([nodeId], []), label, target);
+  const { pushUndoSnapshot, undoScopeForGraphPatch, nodeById } = __appScope;
+    const resolvedTarget = target || (() => {
+      const node = nodeById?.get?.(nodeId);
+      return node ? `${node.params?.idx || node.id} ${node.name ?? ""}`.trim() : undefined;
+    })();
+    pushUndoSnapshot(true, false, undoScopeForGraphPatch([nodeId], []), label, resolvedTarget);
   };
 }
 
