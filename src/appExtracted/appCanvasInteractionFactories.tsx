@@ -1983,9 +1983,9 @@ export function createUpdateSelectedNode(__appScope: Record<string, any>) {
     }
     if (changesCanvasFootprint) {
       const footprintEdges = edgeListForNodeIds([selectedNodeId]);
-      pushUndoSnapshot(true, false, undoScopeForGraphPatch([selectedNodeId], footprintEdges.map((edge) => edge.id)));
+      pushUndoSnapshot(true, false, undoScopeForGraphPatch([selectedNodeId], footprintEdges.map((edge) => edge.id)), "移动设备", (() => { const n = nodeById.get(selectedNodeId); return n ? `${n.params?.idx || n.id} ${n.name ?? ""}`.trim() : ""; })());
     } else {
-      pushNodeOnlyUndoSnapshot(selectedNodeId, undefined, nodeById.get(selectedNodeId)?.name);
+      pushNodeOnlyUndoSnapshot(selectedNodeId, "移动设备");
     }
     const nextSelectedNode = { ...currentSelectedNode, ...nextPatch };
     const nextNodes = overlayGraphStoreNodes(graphStore, [nextSelectedNode]);
