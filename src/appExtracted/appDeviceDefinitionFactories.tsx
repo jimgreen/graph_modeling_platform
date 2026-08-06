@@ -3033,8 +3033,7 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
       showGlobalMessage = () => undefined,
       writeOperationLog
     } = __appScope;
-    // 使用模块级变量，避免闭包捕获旧值
-    if (!getSkipSaveCheck() && !ensureSavedBeforeExport()) {
+    if (!ensureSavedBeforeExport()) {
       return;
     }
     const imageExportPathById = typeof loadSvgImageExportPathById === "function"
@@ -3073,8 +3072,7 @@ export function createExportJsonFile(__appScope: Record<string, any>) {
       showGlobalMessage = () => undefined,
       writeOperationLog
     } = __appScope;
-    // 使用模块级变量，避免闭包捕获旧值
-    if (!getSkipSaveCheck() && !ensureSavedBeforeExport()) {
+    if (!ensureSavedBeforeExport()) {
       return;
     }
     const project = currentProject();
@@ -3115,8 +3113,7 @@ export function createExportEFile(__appScope: Record<string, any>) {
       showGlobalMessage = () => undefined,
       writeOperationLog
     } = __appScope;
-    // 使用模块级变量，避免闭包捕获旧值
-    if (!getSkipSaveCheck() && !ensureSavedBeforeExport()) {
+    if (!ensureSavedBeforeExport()) {
       return;
     }
     const project = currentProject();

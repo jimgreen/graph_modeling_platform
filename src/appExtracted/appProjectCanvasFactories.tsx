@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { clampNumber } from "../canvasViewport";
 import { DEFAULT_MEASUREMENT_CONFIG } from "../measurements";
-import { buildEFileExportOptionsFromLibrary, setSkipSaveCheck, getSkipSaveCheck } from "./appDeviceDefinitionFactories";
+import { buildEFileExportOptionsFromLibrary, setSkipSaveCheck } from "./appDeviceDefinitionFactories";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
   return (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget, manualPoints?: Point[]) => {
