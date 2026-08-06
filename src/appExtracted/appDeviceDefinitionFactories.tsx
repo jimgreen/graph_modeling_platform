@@ -2705,8 +2705,8 @@ export function createHandleTerminalPointerDown(__appScope: Record<string, any>)
 
 export function createEnsureSavedBeforeExport(__appScope: Record<string, any>) {
   return () => {
-  const { canExportCurrentModel, skipSaveCheck } = __appScope;
-    if (skipSaveCheck || canExportCurrentModel) {
+    // 直接访问 __appScope 属性，避免解构导致闭包捕获旧值
+    if (__appScope.skipSaveCheck || __appScope.canExportCurrentModel) {
       return true;
     }
     window.alert("当前模型存在未保存修改，请先保存后再导出文件。");
@@ -3102,7 +3102,8 @@ export function createExportEFile(__appScope: Record<string, any>) {
       showGlobalMessage = () => undefined,
       writeOperationLog
     } = __appScope;
-    if (!ensureSavedBeforeExport()) {
+    // 检查 skipSaveCheck 标志，如果为 true 则跳过保存检查
+    if (!__appScope.skipSaveCheck && !ensureSavedBeforeExport()) {
       return;
     }
     const project = currentProject();
