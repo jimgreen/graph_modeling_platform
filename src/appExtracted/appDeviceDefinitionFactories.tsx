@@ -2707,24 +2707,19 @@ export function createHandleTerminalPointerDown(__appScope: Record<string, any>)
 let skipSaveCheckFlag = false;
 
 export function setSkipSaveCheck(value: boolean) {
-  console.log('[DEBUG] setSkipSaveCheck: setting to', value);
   skipSaveCheckFlag = value;
 }
 
 export function getSkipSaveCheck(): boolean {
-  console.log('[DEBUG] getSkipSaveCheck: returning', skipSaveCheckFlag);
   return skipSaveCheckFlag;
 }
 
 export function createEnsureSavedBeforeExport(__appScope: Record<string, any>) {
   return () => {
-    console.log('[DEBUG] ensureSavedBeforeExport: checking skipSaveCheck =', getSkipSaveCheck(), 'canExportCurrentModel =', __appScope.canExportCurrentModel);
     // 使用模块级变量，避免闭包捕获旧值
     if (getSkipSaveCheck() || __appScope.canExportCurrentModel) {
-      console.log('[DEBUG] ensureSavedBeforeExport: returning true');
       return true;
     }
-    console.log('[DEBUG] ensureSavedBeforeExport: returning false, showing alert');
     window.alert("当前模型存在未保存修改，请先保存后再导出文件。");
     return false;
   };
@@ -3014,7 +3009,6 @@ function buildSvgExportOptions(params: {
 
 export function createExportSvgFile(__appScope: Record<string, any>) {
   return async () => {
-    console.log('[DEBUG] createExportSvgFile: starting, skipSaveCheck =', __appScope.skipSaveCheck);
     const {
       DEFAULT_CANVAS_BACKGROUND,
       activeLayerId,
@@ -3041,10 +3035,8 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
     } = __appScope;
     // 使用模块级变量，避免闭包捕获旧值
     if (!getSkipSaveCheck() && !ensureSavedBeforeExport()) {
-      console.log('[DEBUG] createExportSvgFile: ensureSavedBeforeExport returned false, returning');
       return;
     }
-    console.log('[DEBUG] createExportSvgFile: proceeding with export');
     const imageExportPathById = typeof loadSvgImageExportPathById === "function"
       ? await loadSvgImageExportPathById()
       : undefined;
@@ -3071,7 +3063,6 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
 
 export function createExportJsonFile(__appScope: Record<string, any>) {
   return async () => {
-    console.log('[DEBUG] createExportJsonFile: starting, skipSaveCheck =', __appScope.skipSaveCheck);
     const {
       currentProject,
       ensureSavedBeforeExport,
@@ -3084,10 +3075,8 @@ export function createExportJsonFile(__appScope: Record<string, any>) {
     } = __appScope;
     // 使用模块级变量，避免闭包捕获旧值
     if (!getSkipSaveCheck() && !ensureSavedBeforeExport()) {
-      console.log('[DEBUG] createExportJsonFile: ensureSavedBeforeExport returned false, returning');
       return;
     }
-    console.log('[DEBUG] createExportJsonFile: proceeding with export');
     const project = currentProject();
     const baseFilename = safeFilePart(projectName);
     const jsonText = serializeProject(project);
@@ -3108,8 +3097,6 @@ export function createExportJsonFile(__appScope: Record<string, any>) {
 
 export function createExportEFile(__appScope: Record<string, any>) {
   return async () => {
-    console.log('[DEBUG] createExportEFile: starting');
-    console.log('[DEBUG] createExportEFile: __appScope.skipSaveCheck =', __appScope.skipSaveCheck);
     const {
       activeSchemeKey,
       buildEFileExport,
@@ -3130,10 +3117,8 @@ export function createExportEFile(__appScope: Record<string, any>) {
     } = __appScope;
     // 使用模块级变量，避免闭包捕获旧值
     if (!getSkipSaveCheck() && !ensureSavedBeforeExport()) {
-      console.log('[DEBUG] createExportEFile: ensureSavedBeforeExport returned false, returning');
       return;
     }
-    console.log('[DEBUG] createExportEFile: proceeding with export');
     const project = currentProject();
     const exportOptions = buildEFileExportOptionsFromLibrary({
       libraryTemplates,
