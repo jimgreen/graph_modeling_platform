@@ -2783,11 +2783,17 @@ export function createResolveUnsavedChangeAction(__appScope: Record<string, any>
       enterBrowseMode();
     } else if (action.kind === "export" && resolution === "save") {
       // 设置标志跳过保存检查，因为刚刚保存完成
+      console.log('[DEBUG] resolveUnsavedChangeAction: setting skipSaveCheck = true');
+      console.log('[DEBUG] __appScope object:', __appScope);
       __appScope.skipSaveCheck = true;
+      console.log('[DEBUG] after setting, __appScope.skipSaveCheck =', __appScope.skipSaveCheck);
       try {
+        console.log('[DEBUG] calling action.onResolved()');
         await action.onResolved();
+        console.log('[DEBUG] action.onResolved() completed');
       } finally {
         // 重置标志
+        console.log('[DEBUG] resetting skipSaveCheck = false');
         __appScope.skipSaveCheck = false;
       }
     }
