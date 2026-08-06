@@ -516,6 +516,7 @@ export function renderAppView(__appScope: Record<string, any>) {
   const [collapsedEDeviceInterfaceTreeNodes, setCollapsedEDeviceInterfaceTreeNodes] = useState<Record<string, boolean>>({});
   const [eDeviceInterfaceSelectedGroupKey, setEDeviceInterfaceSelectedGroupKey] = useState<string | null>(null);
   const [eDeviceInterfaceDefinitionBaseline, setEDeviceInterfaceDefinitionBaseline] = useState<any>(null);
+  Object.assign(__appScope, { setEDeviceInterfaceDefinitionBaseline });
   const [eDeviceInterfaceSelectedClassBaseline, setEDeviceInterfaceSelectedClassBaseline] = useState<any>(null);
   const [eDeviceInterfaceClassSwitchTarget, setEDeviceInterfaceClassSwitchTarget] = useState("");
   const [eDeviceInterfaceExitPromptOpen, setEDeviceInterfaceExitPromptOpen] = useState(false);
@@ -696,10 +697,6 @@ export function renderAppView(__appScope: Record<string, any>) {
         if (__appScope.hasUnsavedChanges && typeof __appScope.saveCurrentProject === "function") {
           void __appScope.saveCurrentProject();
         }
-      }, 0);
-      // 更新 E 文件接口定义基线，避免显示"有未保存修改"
-      window.setTimeout(() => {
-        eDeviceInterfaceSaveRef.current();
       }, 0);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "加载预定义模板失败。");
