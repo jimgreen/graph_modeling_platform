@@ -1197,6 +1197,12 @@ button:disabled {
   background: #e8eef5;
 }
 
+.topbar-primary-button.browse-mode-toggle {
+  color: #fff;
+  border-color: #dc2626;
+  background: #ef4444;
+}
+
 .topbar-dropdown {
   position: relative;
   flex: 0 0 auto;
