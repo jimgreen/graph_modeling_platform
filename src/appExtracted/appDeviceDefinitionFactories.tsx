@@ -3261,6 +3261,9 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
         if (typeof __appScope.setEDeviceInterfaceDefinitionBaseline === "function") {
           __appScope.setEDeviceInterfaceDefinitionBaseline(null);
         }
+        if (typeof __appScope.setEDeviceInterfaceSelectedClassBaseline === "function") {
+          __appScope.setEDeviceInterfaceSelectedClassBaseline(null);
+        }
         writeOperationLog(`导入元件定义文件：${file.name}`);
         // 设置文件名和只读模式（与预定义模板逻辑一致）
         if (typeof setEDeviceInterfaceLoadedTemplateName === "function") {

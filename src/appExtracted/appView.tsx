@@ -516,8 +516,8 @@ export function renderAppView(__appScope: Record<string, any>) {
   const [collapsedEDeviceInterfaceTreeNodes, setCollapsedEDeviceInterfaceTreeNodes] = useState<Record<string, boolean>>({});
   const [eDeviceInterfaceSelectedGroupKey, setEDeviceInterfaceSelectedGroupKey] = useState<string | null>(null);
   const [eDeviceInterfaceDefinitionBaseline, setEDeviceInterfaceDefinitionBaseline] = useState<any>(null);
-  Object.assign(__appScope, { setEDeviceInterfaceDefinitionBaseline });
   const [eDeviceInterfaceSelectedClassBaseline, setEDeviceInterfaceSelectedClassBaseline] = useState<any>(null);
+  Object.assign(__appScope, { setEDeviceInterfaceDefinitionBaseline, setEDeviceInterfaceSelectedClassBaseline });
   const [eDeviceInterfaceClassSwitchTarget, setEDeviceInterfaceClassSwitchTarget] = useState("");
   const [eDeviceInterfaceExitPromptOpen, setEDeviceInterfaceExitPromptOpen] = useState(false);
   const [eDeviceInterfaceSaveMessage, setEDeviceInterfaceSaveMessage] = useState("");
@@ -603,6 +603,7 @@ export function renderAppView(__appScope: Record<string, any>) {
         failure: `预定义模板已更新本地，后台保存失败：匹配 ${result.matched.length} 个。`
       });
       setEDeviceInterfaceDefinitionBaseline(null);
+      setEDeviceInterfaceSelectedClassBaseline(null);
       writeOperationLog(`导入预定义模板：${templateFile}`);
       setTemplateImportResult({ matched: result.matched, skipped: result.skipped });
       // 设置模板名称和只读模式
