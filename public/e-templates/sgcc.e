@@ -33,7 +33,7 @@
 //序号|名称|运行状态|状态|节点ID|有功上限|有功下限|无功上限|无功下限|有功|无功
 </load>
 
-<estore 中文名="储能" 类别库="交流设备" 元件库="交流储能">
+<estore 中文名="储能" 类别库="交流设备" 元件库="交流电化学储能">
 @idx|name|type|runstat|ild|regable|p_charge_max|p_charge_min|p_discharge_max|p_discharge_min|soc|cn_max|dcn_max|charge_efficiency|discharge_efficiency|slorate|soc_max|soc_min
 //序号|名称|类型|运行状态|状态|可调节|最大充电功率|最小充电功率|最大放电功率|最小放电功率|荷电状态|最大充电容量|最大放电容量|充电效率|放电效率|自损耗率|SOC上限|SOC下限
 </estore>

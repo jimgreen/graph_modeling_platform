@@ -465,7 +465,15 @@ export function renderAppView(__appScope: Record<string, any>) {
     writeOperationLog
   } = __appScope;
   const { globalMessage, setGlobalMessage } = __appScope;
-  const { unsavedChangesDialogOpen, setUnsavedChangesDialogOpen, savedUndoStackLengthRef } = __appScope;
+  const { unsavedChangesDialogOpen, setUnsavedChangesDialogOpen, savedUndoStackLengthRef, setHasUnsavedChanges } = __appScope;
+  useEffect(() => {
+    if (unsavedChangesDialogOpen) {
+      const baseline = savedUndoStackLengthRef?.current ?? 0;
+      if (undoStack.length <= baseline && saveRequired) {
+        setHasUnsavedChanges(false);
+      }
+    }
+  }, [unsavedChangesDialogOpen, undoStack, saveRequired, savedUndoStackLengthRef, setHasUnsavedChanges]);
   // 选中元件库节点（"元件定义"对话框）时：计算该库共有参数（enName 交集，排除 dev_type）+ E 文件标签 key
   const componentLibrarySectionKey = customComponentTreeSelection?.kind === "componentLibrary" ? normalizeComponentLibraryName(customComponentTreeSelection?.section ?? "") : "";
   const componentLibraryTemplates = componentLibrarySectionKey
@@ -2893,6 +2901,9 @@ export function renderAppView(__appScope: Record<string, any>) {
                           undoLastOperation();
                           remaining -= 1;
                         }
+                        if (undoStack.length - count <= baseline) {
+                          setHasUnsavedChanges(false);
+                        }
                       };
                       return (<div key={label} className="unsaved-changes-group">
                           <div className="unsaved-changes-group-header">
@@ -2907,7 +2918,12 @@ export function renderAppView(__appScope: Record<string, any>) {
                     <h3>操作明细（共 {totalOps} 项）</h3>
                     {unsavedOps.map((op, index) => {
                       const label = op.label || "编辑操作";
-                      const undoOne = () => { undoLastOperation(); };
+                      const undoOne = () => {
+                        undoLastOperation();
+                        if (undoStack.length - 1 <= baseline) {
+                          setHasUnsavedChanges(false);
+                        }
+                      };
                       return (<div key={index} className="unsaved-changes-operation">
                           <span className="unsaved-changes-operation-label">{label}</span>
                           <span className="unsaved-changes-operation-index">#{totalOps - index}</span>
@@ -2920,7 +2936,7 @@ export function renderAppView(__appScope: Record<string, any>) {
             </div>
             <div className="unsaved-changes-footer">
               <button type="button" onClick={() => { void saveCurrentProject(); setUnsavedChangesDialogOpen(false); }}>保存</button>
-              <button type="button" onClick={() => { while (undoStack.length > (savedUndoStackLengthRef?.current ?? 0)) { undoLastOperation(); } }}>全部撤回</button>
+              <button type="button" onClick={() => { while (undoStack.length > (savedUndoStackLengthRef?.current ?? 0)) { undoLastOperation(); } setHasUnsavedChanges(false); }}>全部撤回</button>
             </div>
           </section>
         </div>)}
