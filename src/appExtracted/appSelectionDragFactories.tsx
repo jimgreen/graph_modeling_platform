@@ -2,11 +2,14 @@
 
 export function createEnsureDraggingUndoSnapshot(__appScope: Record<string, any>) {
   return () => {
-  const { dragUndoCapturedRef, draggingRef, pushUndoSnapshot, undoScopeForDraggingState } = __appScope;
+  const { dragUndoCapturedRef, draggingRef, nodeById, pushUndoSnapshot, undoScopeForDraggingState } = __appScope;
     if (dragUndoCapturedRef.current) {
       return;
     }
-    pushUndoSnapshot(true, false, undoScopeForDraggingState(draggingRef.current));
+    const dragState = draggingRef.current;
+    const nodeIds = dragState?.nodeIds ?? [];
+    const target = nodeIds.length === 1 ? (() => { const n = nodeById?.get?.(nodeIds[0]); return n ? `${n.params?.idx || n.id} ${n.name ?? ""}`.trim() : ""; })() : (nodeIds.length > 1 ? `${nodeIds.length} 个设备` : "");
+    pushUndoSnapshot(true, false, undoScopeForDraggingState(dragState), "移动设备", target);
     dragUndoCapturedRef.current = true;
   };
 }
