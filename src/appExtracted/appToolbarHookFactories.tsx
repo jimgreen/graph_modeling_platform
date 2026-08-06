@@ -3093,7 +3093,8 @@ export function createAppHookCallback92(__appScope: Record<string, any>) {
     };
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       persistRefreshRecoveryNow();
-      if (!saveRequired || isViteFullReload) {
+      // 开发模式下不提示未保存，避免 HMR/full reload 干扰开发
+      if (!saveRequired || isViteFullReload || import.meta.env.DEV) {
         return;
       }
       event.preventDefault();
