@@ -3086,9 +3086,14 @@ export function createAppHookCallback91(__appScope: Record<string, any>) {
 export function createAppHookCallback92(__appScope: Record<string, any>) {
   return () => {
   const { persistRefreshRecoveryNow, saveRequired } = __appScope;
+    let isViteFullReload = false;
+    const handleViteBeforeFullReload = () => {
+      isViteFullReload = true;
+      persistRefreshRecoveryNow();
+    };
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       persistRefreshRecoveryNow();
-      if (!saveRequired) {
+      if (!saveRequired || isViteFullReload) {
         return;
       }
       event.preventDefault();
@@ -3097,11 +3102,11 @@ export function createAppHookCallback92(__appScope: Record<string, any>) {
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     window.addEventListener("pagehide", persistRefreshRecoveryNow);
-    window.addEventListener("vite:beforeFullReload", persistRefreshRecoveryNow);
+    window.addEventListener("vite:beforeFullReload", handleViteBeforeFullReload);
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
       window.removeEventListener("pagehide", persistRefreshRecoveryNow);
-      window.removeEventListener("vite:beforeFullReload", persistRefreshRecoveryNow);
+      window.removeEventListener("vite:beforeFullReload", handleViteBeforeFullReload);
     };
   };
 }
