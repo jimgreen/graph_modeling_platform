@@ -413,7 +413,9 @@ describe("app view device definition parameter rows", () => {
     );
 
     expect(modeButton).toContain("toggleInteractionMode");
-    expect(modeButton).toMatch(/isEditMode \? <Pencil size=\{16\}\/> : <EyeOff size=\{16\}\/>/);
+    expect(modeButton).toContain("isEditMode ? <Pencil");
+    expect(modeButton).toContain("browse-mode-toggle");
+    expect(modeButton).toMatch(/<svg[^>]*>[\s\S]*<line/);
     expect(modeButton).not.toContain("编辑模式</span>");
     expect(modeButton).not.toContain("浏览模式</span>");
     expect(modeButton).not.toContain("mode-toggle-button");
