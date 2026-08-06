@@ -156,6 +156,8 @@ describe("save current project E export options", () => {
       saveActiveProjectPointer: noop,
       saveBackendProjectRecord: vi.fn(async () => projectRecord),
       savedSchemePathForId: () => ["方案一"],
+      savedUndoStackLengthRef: { current: 0 },
+      undoStack: [],
       schemePathForScheme: () => ["方案一"],
       schemes: [scheme],
       selectedSchemeId: "scheme-1",

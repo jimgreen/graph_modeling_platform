@@ -48,7 +48,7 @@ export function createCommitRoutableLineDevice(__appScope: Record<string, any>) 
       markBusTerminalSyncDirtyForEdges(dropSourceEdges);
     }
     const indexed = assignPermanentDeviceIndex(shiftedLine, deviceIndexCounters);
-    pushUndoSnapshot();
+    pushUndoSnapshot(true, false, undefined, "添加线路");
     setDeviceIndexCounters(indexed.counters);
     setGraphArrays([...dropSourceNodes, indexed.node], dropSourceEdges);
     setCanvasSelectionScope("group");
@@ -216,7 +216,7 @@ export function createFinishRoutableLineEndpointDrag(__appScope: Record<string, 
           commitNodeById,
           canvasBounds
         );
-        pushUndoSnapshot();
+        pushUndoSnapshot(true, false, undefined, "调整线路端点");
         patchGraphNodes([routedLine]);
         setCanvasSelectionScope("group");
         setSelectedNodeIds([routedLine.id]);
@@ -279,7 +279,7 @@ export function createCommitNewConnectionEdge(__appScope: Record<string, any>) {
       return false;
     }
     const preparedEdge = prepared.edge;
-    pushUndoSnapshot();
+    pushUndoSnapshot(true, false, undefined, "添加联络线");
     markRouteEdgesDirty([preparedEdge.id]);
     markStoredRouteEdgesDirty([preparedEdge.id]);
     markBusTerminalSyncDirtyForEdges([preparedEdge]);
@@ -416,7 +416,7 @@ export function createFinishRewiring(__appScope: Record<string, any>) {
         : null;
       if (prepared?.ok && prepared.edge) {
         const preparedEdge = prepared.edge;
-        pushUndoSnapshot();
+        pushUndoSnapshot(true, false, undefined, "调整联络线端子");
         markRouteEdgesDirty([rewiring.edgeId]);
         markStoredRouteEdgesDirty([rewiring.edgeId]);
         markBusTerminalSyncDirtyForEdges([edge, preparedEdge]);
@@ -3477,7 +3477,7 @@ export function createSetActiveLayer(__appScope: Record<string, any>) {
     if (!requireEditMode("激活图层")) {
       return;
     }
-    pushUndoSnapshot();
+    pushUndoSnapshot(true, false, undefined, "切换图层");
     setActiveLayerId(layerId);
     setLayers((current) => current.map((layer) => layer.id === layerId ? { ...layer, visible: true } : layer));
     writeOperationLog(`激活图层：${layers.find((layer) => layer.id === layerId)?.name ?? layerId}`);
@@ -3502,7 +3502,7 @@ export function createAddModelLayer(__appScope: Record<string, any>) {
     if (!requireEditMode("新增图层")) {
       return;
     }
-    pushUndoSnapshot();
+    pushUndoSnapshot(true, false, undefined, "添加图层");
     const layer = createModelLayer(nextDefaultModelLayerName(), layers);
     setLayers((current) => [...current, layer]);
     setActiveLayerId(layer.id);
@@ -3544,7 +3544,7 @@ export function createCommitModelLayerName(__appScope: Record<string, any>) {
     if (!requireEditMode("重命名图层")) {
       return;
     }
-    pushUndoSnapshot();
+    pushUndoSnapshot(true, false, undefined, "重命名图层");
     setLayers((current) => current.map((item) => item.id === layerId ? { ...item, name: nextName } : item));
     writeOperationLog(`重命名图层：${layer.name} -> ${nextName}`);
   };
@@ -4512,7 +4512,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
 
 export function createSaveCurrentProject(__appScope: Record<string, any>) {
   return async (targetId?: string) => {
-  const { activeProjectKey, activeSchemeKey, backgroundPageRender, buildEFileExport, buildSvgDocument, clearRefreshRecoveryProject, colorPalette, createSavedProject, currentGraphDirtyBaseline, currentProject, DEFAULT_CANVAS_BACKGROUND, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionLabels, eDeviceDefinitionTemplateFields, findProjectRecordByNameInScheme, findSavedSchemeById, findSchemeForProject, getEExportWarnings, graphDirtyBaselineRef, libraryTemplates, loadSvgImageExportPathById, measurementConfig, PARAM_LABELS, projectById, projectMeasurements, projectName, rememberPersistedSchemesPayload, requireEditMode, resolveTemplateComponentLibrary, saveActiveProjectPointer, saveBackendProjectRecord, savedSchemePathForId, schemePathForScheme, schemes, selectedSchemeId, serializeSchemesForStorage, setActiveProjectKey, setActiveSchemeKey, setHasUnsavedChanges, setProjectName, setSchemes, suppressNextGraphDirtyRef, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
+  const { activeProjectKey, activeSchemeKey, backgroundPageRender, buildEFileExport, buildSvgDocument, clearRefreshRecoveryProject, colorPalette, createSavedProject, currentGraphDirtyBaseline, currentProject, DEFAULT_CANVAS_BACKGROUND, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionLabels, eDeviceDefinitionTemplateFields, findProjectRecordByNameInScheme, findSavedSchemeById, findSchemeForProject, getEExportWarnings, graphDirtyBaselineRef, libraryTemplates, loadSvgImageExportPathById, measurementConfig, PARAM_LABELS, projectById, projectMeasurements, projectName, rememberPersistedSchemesPayload, requireEditMode, resolveTemplateComponentLibrary, saveActiveProjectPointer, saveBackendProjectRecord, savedSchemePathForId, savedUndoStackLengthRef, schemePathForScheme, schemes, selectedSchemeId, serializeSchemesForStorage, setActiveProjectKey, setActiveSchemeKey, setHasUnsavedChanges, setProjectName, setSchemes, suppressNextGraphDirtyRef, undoStack, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
     if (targetId === undefined) {
       targetId = activeProjectKey;
     }
@@ -4604,6 +4604,7 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
         setProjectName(savedRecord.name);
       }
       graphDirtyBaselineRef.current = currentGraphDirtyBaseline();
+      savedUndoStackLengthRef.current = undoStack.length;
       setHasUnsavedChanges(false);
       saveActiveProjectPointer(targetId, activeSchemeKey || ownerScheme.id || selectedSchemeId, nextSchemes);
       clearRefreshRecoveryProject();
@@ -4647,6 +4648,7 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
     setActiveProjectKey(savedRecord.id);
     setActiveSchemeKey(resolvedSchemeId);
     graphDirtyBaselineRef.current = currentGraphDirtyBaseline();
+    savedUndoStackLengthRef.current = undoStack.length;
     setHasUnsavedChanges(false);
     saveActiveProjectPointer(savedRecord.id, resolvedSchemeId, nextSchemes);
     clearRefreshRecoveryProject();
@@ -4927,7 +4929,7 @@ export function createRunTopologyCalculation(__appScope: Record<string, any>) {
     const nonBlockingWarnings = errors.filter((error) => !isBlockingTopologyValidationError(error));
     setTopologyErrors(errors);
     if (blockingErrors.length === 0) {
-      pushUndoSnapshot();
+      pushUndoSnapshot(true, false, undefined, "拓扑计算");
       const calculatedNodes = calculateElectricalTopology(nodes, edges);
       const nextTopology = buildTopology(calculatedNodes, edges);
       const voltageSetpointWarnings = validateVoltageSetpointDeviations(calculatedNodes, edges);

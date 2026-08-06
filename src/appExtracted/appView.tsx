@@ -465,6 +465,7 @@ export function renderAppView(__appScope: Record<string, any>) {
     writeOperationLog
   } = __appScope;
   const { globalMessage, setGlobalMessage } = __appScope;
+  const { unsavedChangesDialogOpen, setUnsavedChangesDialogOpen, savedUndoStackLengthRef } = __appScope;
   // 选中元件库节点（"元件定义"对话框）时：计算该库共有参数（enName 交集，排除 dev_type）+ E 文件标签 key
   const componentLibrarySectionKey = customComponentTreeSelection?.kind === "componentLibrary" ? normalizeComponentLibraryName(customComponentTreeSelection?.section ?? "") : "";
   const componentLibraryTemplates = componentLibrarySectionKey
@@ -1638,7 +1639,7 @@ export function renderAppView(__appScope: Record<string, any>) {
           {selectedNodeTransformStatus && (<span className="status-pill status-transform" title={selectedNodeTransformStatus.title}>
               图元 缩放 {selectedNodeTransformStatus.scaleText} 旋转 {selectedNodeTransformStatus.rotationText}
             </span>)}
-          {saveRequired && <strong>未保存</strong>}
+          {saveRequired && <strong onClick={() => setUnsavedChangesDialogOpen(true)} style={{ cursor: "pointer" }} title="点击查看未保存的修改">未保存</strong>}
           {mode === "connect" && <strong>{connectSource ? "选择同类型目标端子" : "选择起点端子"}</strong>}
           {mode === "static-draw" && <strong>点击落点，双击或 Enter 完成，Esc 取消</strong>}
         </footer>
@@ -2860,6 +2861,67 @@ export function renderAppView(__appScope: Record<string, any>) {
               <button type="button" onClick={() => resolveUnsavedChangeAction("cancel")}>退出操作</button>
             </div>
             <p className="unsaved-change-note">关闭网页时，浏览器也会在离开前提示当前模型未保存。</p>
+          </section>
+        </div>)}
+      {unsavedChangesDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setUnsavedChangesDialogOpen(false)}>
+          <section className="unsaved-changes-dialog" style={{ width: "80vw", height: "80vh" }} onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="unsaved-changes-list-title">
+            <div className="unsaved-changes-header">
+              <h2 id="unsaved-changes-list-title">未保存的修改</h2>
+              <button type="button" onClick={() => setUnsavedChangesDialogOpen(false)}>关闭</button>
+            </div>
+            <div className="unsaved-changes-body" style={{ overflow: "auto", flex: 1, minHeight: 0 }}>
+              {(() => {
+                const baseline = savedUndoStackLengthRef?.current ?? 0;
+                const unsavedOps = undoStack.slice(baseline);
+                if (unsavedOps.length === 0) {
+                  return <p className="unsaved-changes-empty">无未保存修改</p>;
+                }
+                const groupCounts = new Map<string, number>();
+                for (const op of unsavedOps) {
+                  const label = op.label || "编辑操作";
+                  groupCounts.set(label, (groupCounts.get(label) ?? 0) + 1);
+                }
+                const groupLabels = Array.from(groupCounts.keys());
+                const totalOps = unsavedOps.length;
+                return (<>
+                  <div className="unsaved-changes-summary">
+                    {groupLabels.map((label) => {
+                      const count = groupCounts.get(label) ?? 0;
+                      const undoGroup = () => {
+                        let remaining = count;
+                        while (remaining > 0) {
+                          undoLastOperation();
+                          remaining -= 1;
+                        }
+                      };
+                      return (<div key={label} className="unsaved-changes-group">
+                          <div className="unsaved-changes-group-header">
+                            <span className="unsaved-changes-group-label">{label}</span>
+                            <span className="unsaved-changes-group-count">{count} 次操作</span>
+                            <button type="button" onClick={undoGroup}>撤回该组</button>
+                          </div>
+                        </div>);
+                    })}
+                  </div>
+                  <div className="unsaved-changes-operations">
+                    <h3>操作明细（共 {totalOps} 项）</h3>
+                    {unsavedOps.map((op, index) => {
+                      const label = op.label || "编辑操作";
+                      const undoOne = () => { undoLastOperation(); };
+                      return (<div key={index} className="unsaved-changes-operation">
+                          <span className="unsaved-changes-operation-label">{label}</span>
+                          <span className="unsaved-changes-operation-index">#{totalOps - index}</span>
+                          <button type="button" onClick={undoOne}>撤回</button>
+                        </div>);
+                    })}
+                  </div>
+                </>);
+              })()}
+            </div>
+            <div className="unsaved-changes-footer">
+              <button type="button" onClick={() => { void saveCurrentProject(); setUnsavedChangesDialogOpen(false); }}>保存</button>
+              <button type="button" onClick={() => { while (undoStack.length > (savedUndoStackLengthRef?.current ?? 0)) { undoLastOperation(); } }}>全部撤回</button>
+            </div>
           </section>
         </div>)}
       {voltageBaseSetDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setVoltageBaseSetDialogOpen(false)}>

@@ -33,7 +33,7 @@ export function createProgrammaticAddDevice(__appScope: Record<string, any>) {
         }
       }
     }
-    pushUndoSnapshot();
+    pushUndoSnapshot(true, false, undefined, "添加设备");
     setNodes((prev: any[]) => [...prev, node]);
     return { id: node.id };
   };
@@ -186,7 +186,7 @@ export function createProgrammaticGroupSelected(__appScope: Record<string, any>)
       e.code = "control-failed";
       throw e;
     }
-    pushUndoSnapshot();
+    pushUndoSnapshot(true, false, undefined, "组合");
     const nextGroups = normalizeModelGroups(result.groups, nodes, edges);
     setGroups(nextGroups);
     const selection = expandSelectionByGroups(nextGroups, currentNodes, currentEdges);
@@ -218,7 +218,7 @@ export function createProgrammaticDeleteDevices(__appScope: Record<string, any>)
       throw e;
     }
     const selectedEdgeSet = new Set<string>();
-    pushUndoSnapshot();
+    pushUndoSnapshot(true, false, undefined, "删除设备");
     const deletedEdges = edgeListForNodeIds(targetNodeIds, selectedEdgeSet);
     markRouteEdgesDirty(deletedEdges.map((edge: any) => edge.id));
     markStoredRouteEdgesDirty(deletedEdges.map((edge: any) => edge.id));
@@ -269,7 +269,7 @@ export function createProgrammaticUpdateDeviceProperty(__appScope: Record<string
       e.code = "bad-request";
       throw e;
     }
-    pushUndoSnapshot();
+    pushUndoSnapshot(true, false, undefined, "修改参数");
     updateGraphNodeById(id, (node: any) => {
       const next = { ...node };
       for (const key of Object.keys(patch)) {

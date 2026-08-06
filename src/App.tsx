@@ -827,6 +827,7 @@ const selectedLayoutUnitsCacheRef = useRef<CanvasLayoutUnit[]>([]); Object.assig
 const graphDirtyBaselineRef = useRef<GraphDirtyBaseline | null>(null); Object.assign(__appScope, { graphDirtyBaselineRef });
 const suppressNextGraphDirtyRef = useRef(0); Object.assign(__appScope, { suppressNextGraphDirtyRef });
 const saveRequiredRef = useRef(false); Object.assign(__appScope, { saveRequiredRef });
+const savedUndoStackLengthRef = useRef(0); Object.assign(__appScope, { savedUndoStackLengthRef });
 const refreshRecoveryProjectRef = useRef<RefreshRecoveryProjectState | null>(null); Object.assign(__appScope, { refreshRecoveryProjectRef });
 const latestNodesRef = useRef<ModelNode[]>([]); Object.assign(__appScope, { latestNodesRef });
 const latestEdgesRef = useRef<Edge[]>([]); Object.assign(__appScope, { latestEdgesRef });
@@ -2017,6 +2018,7 @@ const selectedProjectRecord = projectById.get(selectedProjectId); Object.assign(
 const activeProjectRecord = projectById.get(activeProjectKey); Object.assign(__appScope, { activeProjectRecord });
 const saveRequired = hasUnsavedChanges; Object.assign(__appScope, { saveRequired });
 const canExportCurrentModel = !saveRequired; Object.assign(__appScope, { canExportCurrentModel });
+const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false); Object.assign(__appScope, { unsavedChangesDialogOpen, setUnsavedChangesDialogOpen });
 const activeModelName = projectName || activeProjectRecord?.name || (activeProjectKey ? "未命名模型" : "未选择模型"); Object.assign(__appScope, { activeModelName });
 const activeSchemeRecord =
     findSavedSchemeById(schemes, activeSchemeKey) ??

@@ -1431,6 +1431,7 @@ export type UndoSnapshot = {
   deviceIndexCounters: DeviceIndexCounters;
   groups: ModelGroup[];
   measurements: ProjectMeasurementConfig;
+  label?: string;
 };
 
 export type UndoGraphPatchScope = {

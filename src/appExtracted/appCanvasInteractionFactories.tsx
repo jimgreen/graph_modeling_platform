@@ -1844,7 +1844,7 @@ export function createMoveSelection(__appScope: Record<string, any>) {
       writeOperationLog("移动已到显示边界，联络线或图元接近边界，已停止移动");
       return;
     }
-    pushUndoSnapshot(true, false, undoScopeForGraphPatch(moveNodeIds, affectedEdgesForMove.map((edge) => edge.id)));
+    pushUndoSnapshot(true, false, undoScopeForGraphPatch(moveNodeIds, affectedEdgesForMove.map((edge) => edge.id)), "移动设备");
     const finalBounds = canvasBoundsForMoveDelta(moveNodeIds, originalPositions, boundedDelta.x, boundedDelta.y);
     applyCanvasBounds(finalBounds);
     const deltasByNode = Object.fromEntries(moveNodeIds.map((id) => [id, boundedDelta]));
@@ -2182,7 +2182,7 @@ export function createAssignSelectedNodesToModelLayer(__appScope: Record<string,
     if (changedCount === 0) {
       return;
     }
-    pushUndoSnapshot();
+    pushUndoSnapshot(true, false, undefined, "修改图层");
     patchGraphNodes(
       activeSelectedNodeIds.flatMap((nodeId) => {
         const node = nodeById.get(nodeId);
@@ -2232,7 +2232,7 @@ export function createRotateSelectedLayoutUnits(__appScope: Record<string, any>)
       return;
     }
     const degrees = direction === "left" ? -90 : 90;
-    pushUndoSnapshot();
+    pushUndoSnapshot(true, false, undefined, "旋转图元");
     setSelectedEdgeId("");
     const nodeUpdates = rotateLayoutUnitNodeUpdates(selectedLayoutUnits, degrees);
     const transformedNodeIds = nodeUpdates.map((node) => node.id);
@@ -2263,7 +2263,7 @@ export function createMirrorSelectedNodes(__appScope: Record<string, any>) {
     if (selectedLayoutUnits.length === 0) {
       return;
     }
-    pushUndoSnapshot();
+    pushUndoSnapshot(true, false, undefined, "镜像图元");
     setSelectedEdgeId("");
     const nodeUpdates = mirrorLayoutUnitNodeUpdates(selectedLayoutUnits, axis);
     const transformedNodeIds = nodeUpdates.map((node) => node.id);
@@ -2298,7 +2298,7 @@ export function createUpdateCanvasSize(__appScope: Record<string, any>) {
     if (!canvasBoundsChangeIsMeaningful(currentBounds, nextBounds)) {
       return;
     }
-    pushUndoSnapshot();
+    pushUndoSnapshot(true, false, undefined, "修改画布尺寸");
     applyCanvasBounds(nextBounds);
     setGraphArrays(
       nodes.map((node) => ({ ...node, position: clampNodePositionToBounds(node, nextBounds) })),
@@ -3261,7 +3261,7 @@ export function createFinishInteractiveStaticDrawing(__appScope: Record<string, 
     const node = isStaticBoxLikeTemplate(staticDrawing.template)
       ? createStaticBoxNodeFromDrawing(staticDrawing.template, points, activeLayerId)
       : createInteractiveStaticDrawingNode(staticDrawing.template, points, activeLayerId);
-    pushUndoSnapshot();
+    pushUndoSnapshot(true, false, undefined, "绘制图元");
     setGraphArrays([...nodes, node], edges);
     setCanvasSelectionScope("group");
     setSelectedNodeIds([node.id]);
@@ -3466,7 +3466,7 @@ export function createPlaceLibraryDeviceAtPoint(__appScope: Record<string, any>)
     lastRawCanvasPointerRef.current = shiftedPointerPosition;
     lastCanvasPointerRef.current = clampPointToBounds(shiftedPointerPosition, dropCanvasBounds);
     const indexed = assignPermanentDeviceIndex(placedNode, deviceIndexCounters);
-    pushUndoSnapshot();
+    pushUndoSnapshot(true, false, undefined, "放置图元");
     setDeviceIndexCounters(indexed.counters);
     setGraphArrays([...dropSourceNodes, indexed.node], dropSourceEdges);
     setCanvasSelectionScope("group");
