@@ -4191,11 +4191,29 @@ const mirrorSelectedNodes = createMirrorSelectedNodes(__appScope); Object.assign
 const updateCanvasSize = createUpdateCanvasSize(__appScope); Object.assign(__appScope, { updateCanvasSize });
 // 收紧画布：以内容包围盒 + 2*GAP 重设画布，四边均留间隙；某方向达到最小值时内容在该方向居中
 const shrinkCanvasToFitContent = () => {
-  const { canvasWidth, canvasHeight, edges, nodes, routedEdges, translateNodeBy, translateEdgeBy, shiftCachedRoutesForCanvasOrigin, clampNodePositionToBounds, clampEdgeGeometryToBounds, setGraphArrays, pushUndoSnapshot, requireEditMode, applyCanvasBounds } = __appScope;
+  const { canvasWidth, canvasHeight, edges, nodes, routedEdges, translateNodeBy, translateEdgeBy, shiftCachedRoutesForCanvasOrigin, clampNodePositionToBounds, clampEdgeGeometryToBounds, setGraphArrays, pushUndoSnapshot, requireEditMode, applyCanvasBounds, includeMeasurementGroupBounds } = __appScope;
   if (!requireEditMode("收紧画布")) {
     return;
   }
-  const bounds = calculateModelGeometryBounds(nodes, routedEdges, 0);
+  // 设备量测文本画在节点外部，calculateNodeVisualBounds 未纳入，需合并量测组边界，避免收紧后量测溢出画布
+  const baseBounds = calculateModelGeometryBounds(nodes, routedEdges, 0);
+  let left = baseBounds ? baseBounds.left : Number.POSITIVE_INFINITY;
+  let right = baseBounds ? baseBounds.right : Number.NEGATIVE_INFINITY;
+  let top = baseBounds ? baseBounds.top : Number.POSITIVE_INFINITY;
+  let bottom = baseBounds ? baseBounds.bottom : Number.NEGATIVE_INFINITY;
+  let hasBounds = Boolean(baseBounds);
+  if (includeMeasurementGroupBounds) {
+    for (const node of nodes) {
+      includeMeasurementGroupBounds(node, (box: { left: number; right: number; top: number; bottom: number }) => {
+        left = Math.min(left, box.left);
+        right = Math.max(right, box.right);
+        top = Math.min(top, box.top);
+        bottom = Math.max(bottom, box.bottom);
+        hasBounds = true;
+      });
+    }
+  }
+  const bounds = hasBounds ? { left, right, top, bottom } : null;
   const GAP = MOVE_BOUNDARY_GUARD;
   const contentWidth = bounds ? bounds.right - bounds.left : 0;
   const contentHeight = bounds ? bounds.bottom - bounds.top : 0;
