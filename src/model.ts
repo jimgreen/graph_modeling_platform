@@ -15222,8 +15222,30 @@ function routeSegmentBlockerIntersectionBox(a: Point, b: Point, node: ModelNode,
       routableLineDeviceLabelIntersectionBox(a, b, node, padding)
     );
   }
-  const box = routeBlockerBox(node, padding);
-  return segmentIntersectsBox(a, b, box) ? box : null;
+  const mergedBox = routeBlockerBox(node, padding);
+  if (!segmentIntersectsBox(a, b, mergedBox)) {
+    return null;
+  }
+  if (!isBusNode(node)) {
+    return mergedBox;
+  }
+
+  const effectivePadding = routeBlockerPadding(node, padding);
+  const bodyBox = routeBodyBlockerBox(node, padding);
+  if (segmentIntersectsBox(a, b, bodyBox)) {
+    return bodyBox;
+  }
+
+  const labelBox = nodeLabelRouteBlockerBox(node, effectivePadding);
+  if (!labelBox) {
+    return null;
+  }
+  if (segmentIntersectsBox(a, b, labelBox)) {
+    return labelBox;
+  }
+
+  const bridgeBox = nodeLabelBridgeBlockerBox(node, bodyBox, labelBox, effectivePadding);
+  return bridgeBox && segmentIntersectsBox(a, b, bridgeBox) ? bridgeBox : null;
 }
 
 export function segmentIntersectsNodeBody(a: Point, b: Point, node: ModelNode, padding = ROUTE_BLOCKER_PADDING) {

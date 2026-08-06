@@ -5985,6 +5985,60 @@ describe("power system model", () => {
     expect(route?.points[route.points.length - 1]).toEqual(busPoint);
   });
 
+  test("commits through empty space beside a stretched bus with a distant label", () => {
+    const breaker = {
+      ...createDefaultNode("dc-breaker", { x: 837, y: 1673 }),
+      id: "dc-breaker-33",
+      name: "直流断路器-33"
+    };
+    const load = {
+      ...createDefaultNode("dc-load", { x: 1006, y: 1805 }),
+      id: "dc-load-1",
+      name: "直流负荷-1"
+    };
+    const busTemplate = createDefaultNode("dc-bus-vertical", { x: 765, y: 953 });
+    const distantBus = {
+      ...busTemplate,
+      id: "distant-vertical-bus",
+      name: "直流母线（竖向）-1",
+      size: { width: 150, height: 36 },
+      rotation: 90,
+      scale: 1,
+      scaleX: 11.66667,
+      scaleY: 1,
+      params: {
+        ...busTemplate.params,
+        _labelVisible: "1",
+        _labelX: "1.6",
+        _labelY: "947",
+        _labelFontSize: "14",
+        _labelRotation: "0"
+      }
+    };
+    const sourcePoint = getTerminalPoint(breaker, "t2");
+    const targetPoint = getTerminalPoint(load, "t1");
+    const elbow = { x: targetPoint.x, y: sourcePoint.y };
+    const edge: Edge = {
+      id: "breaker-33-to-load-1",
+      sourceId: breaker.id,
+      targetId: load.id,
+      sourceTerminalId: "t2",
+      sourcePoint,
+      targetTerminalId: "t1",
+      targetPoint
+    };
+    const nodes = [breaker, load, distantBus];
+
+    expect(segmentIntersectsNodeBody(sourcePoint, elbow, distantBus)).toBe(false);
+    expect(segmentIntersectsNodeBody(elbow, targetPoint, distantBus)).toBe(false);
+
+    const prepared = prepareConnectionEdgeForCommit(nodes, [edge], edge.id, { width: 2457, height: 2143 });
+
+    expect(prepared.ok).toBe(true);
+    expect(prepared.issues).toEqual([]);
+    expect(prepared.edge).toBeDefined();
+  });
+
   test("branches a second connection from the same terminal without treating the shared endpoint stub as impossible", () => {
     const source = { ...createDefaultNode("ac-source", { x: 120, y: 140 }), id: "source" };
     const loadA = createRightTerminalLoad({ x: 420, y: 80 }, { id: "load-a" });
