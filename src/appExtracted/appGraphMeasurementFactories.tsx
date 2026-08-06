@@ -1192,6 +1192,115 @@ export function createCollectCurrentModelVoltageColorKeys(__appScope: Record<str
   };
 }
 
+// 将颜色解析为 HSL（h:0-360, s:0-1, l:0-1），支持 hex 与 hsl() 两种实际出现的格式
+function parseColorToHsl(color: string): { h: number; s: number; l: number } | null {
+  const text = String(color ?? "").trim();
+  const hexMatch = text.match(/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i);
+  if (hexMatch) {
+    let hex = hexMatch[1];
+    if (hex.length === 3) {
+      hex = hex.split("").map((c) => c + c).join("");
+    } else if (hex.length === 8) {
+      hex = hex.slice(0, 6);
+    }
+    return rgbToHsl(
+      parseInt(hex.slice(0, 2), 16) / 255,
+      parseInt(hex.slice(2, 4), 16) / 255,
+      parseInt(hex.slice(4, 6), 16) / 255
+    );
+  }
+  const hslMatch = text.match(/^hsla?\(\s*([0-9.]+)(?:deg)?\s*[,\s]\s*([0-9.]+)%\s*[,\s]\s*([0-9.]+)%/i);
+  if (hslMatch) {
+    return {
+      h: ((parseFloat(hslMatch[1]) % 360) + 360) % 360,
+      s: parseFloat(hslMatch[2]) / 100,
+      l: parseFloat(hslMatch[3]) / 100
+    };
+  }
+  return null;
+}
+
+function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: number } {
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) {
+    return { h: 0, s: 0, l };
+  }
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h: number;
+  if (max === r) {
+    h = (g - b) / d + (g < b ? 6 : 0);
+  } else if (max === g) {
+    h = (b - r) / d + 2;
+  } else {
+    h = (r - g) / d + 4;
+  }
+  return { h: h * 60, s, l };
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  const sector = ((h % 360) + 360) % 360;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((sector / 60) % 2 - 1));
+  const m = l - c / 2;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  if (sector < 60) { r = c; g = x; }
+  else if (sector < 120) { r = x; g = c; }
+  else if (sector < 180) { g = c; b = x; }
+  else if (sector < 240) { g = x; b = c; }
+  else if (sector < 300) { r = x; b = c; }
+  else { r = c; b = x; }
+  const toHex = (v: number) => Math.round((v + m) * 255).toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function colorToHex(color: string): string | null {
+  const hsl = parseColorToHsl(color);
+  return hsl ? hslToHex(hsl.h, hsl.s, hsl.l) : null;
+}
+
+// 基于参考色派生一个未使用的颜色：保持饱和度/明度，按黄金角旋转色相生成可区分的新色；
+// 色相耗尽则调整明度、饱和度兜底，确保不与 usedColors 中任意颜色重复。
+function deriveUnusedColor(baseColor: string, usedColors: Iterable<string>): string {
+  const base = parseColorToHsl(baseColor);
+  if (!base) {
+    return baseColor;
+  }
+  const usedSet = new Set<string>();
+  for (const color of usedColors) {
+    const hex = colorToHex(color);
+    if (hex) {
+      usedSet.add(hex);
+    }
+  }
+  const GOLDEN_ANGLE = 137.508;
+  for (let i = 1; i <= 12; i += 1) {
+    const hex = hslToHex(base.h + GOLDEN_ANGLE * i, base.s, base.l);
+    if (!usedSet.has(hex)) {
+      return hex;
+    }
+  }
+  for (const delta of [0.12, -0.12, 0.2, -0.2, 0.06, -0.06]) {
+    const l = Math.min(0.78, Math.max(0.22, base.l + delta));
+    const hex = hslToHex(base.h, base.s, l);
+    if (!usedSet.has(hex)) {
+      return hex;
+    }
+  }
+  for (const delta of [0.15, -0.15, 0.3, -0.3]) {
+    const s = Math.min(1, Math.max(0.15, base.s + delta));
+    const hex = hslToHex(base.h, s, base.l);
+    if (!usedSet.has(hex)) {
+      return hex;
+    }
+  }
+  return baseColor;
+}
+
 export function createNearestVoltageColor(__appScope: Record<string, any>) {
   return (missingKey: string, voltageColors: Record<string, string>) => {
   const { DEFAULT_COLOR_PALETTE } = __appScope;
@@ -1205,12 +1314,15 @@ export function createNearestVoltageColor(__appScope: Record<string, any>) {
         voltage: Number(key.slice(targetType.length + 1))
       }))
       .filter((entry) => Number.isFinite(entry.voltage));
+    const usedColors = Object.values(voltageColors);
     if (Number.isFinite(targetVoltage) && candidates.length > 0) {
-      return candidates
+      const baseColor = candidates
         .sort((left, right) => Math.abs(left.voltage - targetVoltage) - Math.abs(right.voltage - targetVoltage) || left.key.localeCompare(right.key))[0]
         .color;
+      return deriveUnusedColor(baseColor, usedColors);
     }
-    return DEFAULT_COLOR_PALETTE.voltage[missingKey] ?? DEFAULT_COLOR_PALETTE.voltage[`${targetType}:0`] ?? "#64748b";
+    const fallbackColor = DEFAULT_COLOR_PALETTE.voltage[missingKey] ?? DEFAULT_COLOR_PALETTE.voltage[`${targetType}:0`] ?? "#64748b";
+    return deriveUnusedColor(fallbackColor, usedColors);
   };
 }
 
