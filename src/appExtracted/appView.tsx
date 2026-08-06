@@ -2923,6 +2923,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                     <h3>操作明细（共 {totalOps} 项）</h3>
                     {unsavedOps.map((op, index) => {
                       const label = op.label || "编辑操作";
+                      const target = op.target || "";
                       const undoOne = () => {
                         undoLastOperation();
                         if (undoStack.length - 1 <= baseline) {
@@ -2931,6 +2932,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                       };
                       return (<div key={index} className="unsaved-changes-operation">
                           <span className="unsaved-changes-operation-label">{label}</span>
+                          {target && <span className="unsaved-changes-operation-target">{target}</span>}
                           <span className="unsaved-changes-operation-index">#{totalOps - index}</span>
                           <button type="button" onClick={undoOne}>撤回</button>
                         </div>);

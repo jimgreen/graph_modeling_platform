@@ -3774,7 +3774,7 @@ export function createApplyUndoGraphSnapshot(__appScope: Record<string, any>) {
 }
 
 export function createPushUndoSnapshot(__appScope: Record<string, any>) {
-  return (markDirty = true, deepModelSnapshot = false, graphPatchScope?: UndoGraphPatchScope, label?: string) => {
+  return (markDirty = true, deepModelSnapshot = false, graphPatchScope?: UndoGraphPatchScope, label?: string, target?: string) => {
   const { cloneProjectState, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, setHasUnsavedChanges, setUndoStack } = __appScope;
     deferredMoveOptimizationCancelRef.current?.();
     deferredMoveOptimizationCancelRef.current = null;
@@ -3782,6 +3782,7 @@ export function createPushUndoSnapshot(__appScope: Record<string, any>) {
     deferredRoutableLineRouteRepairCancelRef.current = null;
     const snapshot = cloneProjectState(deepModelSnapshot, graphPatchScope);
     snapshot.label = label;
+    snapshot.target = target;
     setUndoStack((current) => [...current.slice(-49), snapshot]);
     if (markDirty) {
       setHasUnsavedChanges(true);
@@ -3802,9 +3803,9 @@ export function createUniqueUndoScopeIds(__appScope: Record<string, any>) {
 }
 
 export function createPushNodeOnlyUndoSnapshot(__appScope: Record<string, any>) {
-  return (nodeId: string, label?: string) => {
+  return (nodeId: string, label?: string, target?: string) => {
   const { pushUndoSnapshot, undoScopeForGraphPatch } = __appScope;
-    pushUndoSnapshot(true, false, undoScopeForGraphPatch([nodeId], []), label);
+    pushUndoSnapshot(true, false, undoScopeForGraphPatch([nodeId], []), label, target);
   };
 }
 

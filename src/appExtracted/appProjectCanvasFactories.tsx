@@ -48,7 +48,7 @@ export function createCommitRoutableLineDevice(__appScope: Record<string, any>) 
       markBusTerminalSyncDirtyForEdges(dropSourceEdges);
     }
     const indexed = assignPermanentDeviceIndex(shiftedLine, deviceIndexCounters);
-    pushUndoSnapshot(true, false, undefined, "添加线路");
+    pushUndoSnapshot(true, false, undefined, "添加线路", indexed.node.name);
     setDeviceIndexCounters(indexed.counters);
     setGraphArrays([...dropSourceNodes, indexed.node], dropSourceEdges);
     setCanvasSelectionScope("group");
@@ -216,7 +216,7 @@ export function createFinishRoutableLineEndpointDrag(__appScope: Record<string, 
           commitNodeById,
           canvasBounds
         );
-        pushUndoSnapshot(true, false, undefined, "调整线路端点");
+        pushUndoSnapshot(true, false, undefined, "调整线路端点", routedLine.name);
         patchGraphNodes([routedLine]);
         setCanvasSelectionScope("group");
         setSelectedNodeIds([routedLine.id]);
@@ -279,7 +279,7 @@ export function createCommitNewConnectionEdge(__appScope: Record<string, any>) {
       return false;
     }
     const preparedEdge = prepared.edge;
-    pushUndoSnapshot(true, false, undefined, "添加联络线");
+    pushUndoSnapshot(true, false, undefined, "添加联络线", sourceName + " -> " + targetName);
     markRouteEdgesDirty([preparedEdge.id]);
     markStoredRouteEdgesDirty([preparedEdge.id]);
     markBusTerminalSyncDirtyForEdges([preparedEdge]);
@@ -416,7 +416,7 @@ export function createFinishRewiring(__appScope: Record<string, any>) {
         : null;
       if (prepared?.ok && prepared.edge) {
         const preparedEdge = prepared.edge;
-        pushUndoSnapshot(true, false, undefined, "调整联络线端子");
+        pushUndoSnapshot(true, false, undefined, "调整联络线端子", rewiring.edgeId);
         markRouteEdgesDirty([rewiring.edgeId]);
         markStoredRouteEdgesDirty([rewiring.edgeId]);
         markBusTerminalSyncDirtyForEdges([edge, preparedEdge]);
@@ -3481,7 +3481,7 @@ export function createSetActiveLayer(__appScope: Record<string, any>) {
     if (!requireEditMode("激活图层")) {
       return;
     }
-    pushUndoSnapshot(true, false, undefined, "切换图层");
+    pushUndoSnapshot(true, false, undefined, "切换图层", layers.find((layer) => layer.id === layerId)?.name ?? layerId);
     setActiveLayerId(layerId);
     setLayers((current) => current.map((layer) => layer.id === layerId ? { ...layer, visible: true } : layer));
     writeOperationLog(`激活图层：${layers.find((layer) => layer.id === layerId)?.name ?? layerId}`);

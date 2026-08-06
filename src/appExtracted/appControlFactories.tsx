@@ -33,7 +33,7 @@ export function createProgrammaticAddDevice(__appScope: Record<string, any>) {
         }
       }
     }
-    pushUndoSnapshot(true, false, undefined, "添加设备");
+    pushUndoSnapshot(true, false, undefined, "添加设备", node.name);
     setNodes((prev: any[]) => [...prev, node]);
     return { id: node.id };
   };
@@ -269,7 +269,7 @@ export function createProgrammaticUpdateDeviceProperty(__appScope: Record<string
       e.code = "bad-request";
       throw e;
     }
-    pushUndoSnapshot(true, false, undefined, "修改参数");
+    pushUndoSnapshot(true, false, undefined, "修改参数", id);
     updateGraphNodeById(id, (node: any) => {
       const next = { ...node };
       for (const key of Object.keys(patch)) {

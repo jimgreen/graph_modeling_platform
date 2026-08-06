@@ -12422,7 +12422,17 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .unsaved-changes-operation-label {
   font-size: 13px;
   color: #334155;
+  flex: 0 0 auto;
+}
+
+.unsaved-changes-operation-target {
+  font-size: 12px;
+  color: #64748b;
+  margin-left: 4px;
   flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .unsaved-changes-operation-index {

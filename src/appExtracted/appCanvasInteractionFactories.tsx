@@ -1844,7 +1844,7 @@ export function createMoveSelection(__appScope: Record<string, any>) {
       writeOperationLog("移动已到显示边界，联络线或图元接近边界，已停止移动");
       return;
     }
-    pushUndoSnapshot(true, false, undoScopeForGraphPatch(moveNodeIds, affectedEdgesForMove.map((edge) => edge.id)), "移动设备");
+    pushUndoSnapshot(true, false, undoScopeForGraphPatch(moveNodeIds, affectedEdgesForMove.map((edge) => edge.id)), "移动设备", moveNodeIds.length === 1 ? nodeById.get(moveNodeIds[0])?.name || "" : "");
     const finalBounds = canvasBoundsForMoveDelta(moveNodeIds, originalPositions, boundedDelta.x, boundedDelta.y);
     applyCanvasBounds(finalBounds);
     const deltasByNode = Object.fromEntries(moveNodeIds.map((id) => [id, boundedDelta]));
@@ -1985,7 +1985,7 @@ export function createUpdateSelectedNode(__appScope: Record<string, any>) {
       const footprintEdges = edgeListForNodeIds([selectedNodeId]);
       pushUndoSnapshot(true, false, undoScopeForGraphPatch([selectedNodeId], footprintEdges.map((edge) => edge.id)));
     } else {
-      pushNodeOnlyUndoSnapshot(selectedNodeId);
+      pushNodeOnlyUndoSnapshot(selectedNodeId, undefined, nodeById.get(selectedNodeId)?.name);
     }
     const nextSelectedNode = { ...currentSelectedNode, ...nextPatch };
     const nextNodes = overlayGraphStoreNodes(graphStore, [nextSelectedNode]);
@@ -2408,7 +2408,7 @@ export function createUpdateParam(__appScope: Record<string, any>) {
       commitNodeFootprintUpdates([nextNode]);
       return;
     }
-    pushNodeOnlyUndoSnapshot(selectedNodeId);
+    pushNodeOnlyUndoSnapshot(selectedNodeId, undefined, nodeById.get(selectedNodeId)?.name);
     patchGraphNodes([nextNode]);
   };
 }
@@ -2538,7 +2538,7 @@ export function createCommitElementTreeNodeIdentity(__appScope: Record<string, a
     if (draftKey) {
       updateElementTreeDraft(draftKey, value);
     }
-    pushNodeOnlyUndoSnapshot(nodeId);
+    pushNodeOnlyUndoSnapshot(nodeId, undefined, nodeById.get(nodeId)?.name);
     updateGraphNodeById(nodeId, (node) =>
       field === "name" ? { ...node, name: value } : { ...node, params: { ...node.params, idx: value } }
     );
@@ -2576,7 +2576,7 @@ export function createCommitElementTreeContainerChildParam(__appScope: Record<st
     if (draftKey) {
       updateElementTreeDraft(draftKey, value);
     }
-    pushNodeOnlyUndoSnapshot(nodeId);
+    pushNodeOnlyUndoSnapshot(nodeId, undefined, nodeById.get(nodeId)?.name);
     updateGraphNodeById(nodeId, (node) => ({ ...node, params: { ...node.params, [key]: value } }));
   };
 }
@@ -2795,7 +2795,7 @@ export function createConfirmNodeDoubleClickDialog(__appScope: Record<string, an
     const draftNode =
       nodeDoubleClickDraft?.nodeId === dialog.nodeId ? nodeDoubleClickDraft.node : undefined;
     if (currentNode && draftNode && nodeDoubleClickDraftHasModelChanges(currentNode, draftNode)) {
-      pushNodeOnlyUndoSnapshot(currentNode.id);
+      pushNodeOnlyUndoSnapshot(currentNode.id, undefined, currentNode.name);
       patchGraphNodes([
         {
           ...currentNode,
@@ -3261,7 +3261,7 @@ export function createFinishInteractiveStaticDrawing(__appScope: Record<string, 
     const node = isStaticBoxLikeTemplate(staticDrawing.template)
       ? createStaticBoxNodeFromDrawing(staticDrawing.template, points, activeLayerId)
       : createInteractiveStaticDrawingNode(staticDrawing.template, points, activeLayerId);
-    pushUndoSnapshot(true, false, undefined, "绘制图元");
+    pushUndoSnapshot(true, false, undefined, "绘制图元", node.name);
     setGraphArrays([...nodes, node], edges);
     setCanvasSelectionScope("group");
     setSelectedNodeIds([node.id]);
@@ -3466,7 +3466,7 @@ export function createPlaceLibraryDeviceAtPoint(__appScope: Record<string, any>)
     lastRawCanvasPointerRef.current = shiftedPointerPosition;
     lastCanvasPointerRef.current = clampPointToBounds(shiftedPointerPosition, dropCanvasBounds);
     const indexed = assignPermanentDeviceIndex(placedNode, deviceIndexCounters);
-    pushUndoSnapshot(true, false, undefined, "放置图元");
+    pushUndoSnapshot(true, false, undefined, "放置图元", indexed.node.name);
     setDeviceIndexCounters(indexed.counters);
     setGraphArrays([...dropSourceNodes, indexed.node], dropSourceEdges);
     setCanvasSelectionScope("group");

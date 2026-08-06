@@ -1437,6 +1437,7 @@ export type UndoSnapshot = {
   groups: ModelGroup[];
   measurements: ProjectMeasurementConfig;
   label?: string;
+  target?: string;
 };
 
 export type UndoGraphPatchScope = {
