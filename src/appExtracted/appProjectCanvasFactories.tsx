@@ -2785,7 +2785,7 @@ export function createResolveUnsavedChangeAction(__appScope: Record<string, any>
       // 设置标志跳过保存检查，因为刚刚保存完成
       __appScope.skipSaveCheck = true;
       try {
-        action.onResolved();
+        await action.onResolved();
       } finally {
         // 重置标志
         __appScope.skipSaveCheck = false;
