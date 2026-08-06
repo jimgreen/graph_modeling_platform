@@ -2738,6 +2738,8 @@ export function createRequestUnsavedChangeAction(__appScope: Record<string, any>
         void loadSavedProjectRecord(action.project, action.schemeId);
       } else if (action.kind === "enter-browse") {
         enterBrowseMode();
+      } else if (action.kind === "export") {
+        action.onResolved();
       }
       return;
     }
@@ -2779,6 +2781,8 @@ export function createResolveUnsavedChangeAction(__appScope: Record<string, any>
       void loadSavedProjectRecord(action.project, action.schemeId);
     } else if (action.kind === "enter-browse") {
       enterBrowseMode();
+    } else if (action.kind === "export" && resolution === "save") {
+      action.onResolved();
     }
   };
 }

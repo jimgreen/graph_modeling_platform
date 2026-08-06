@@ -1001,6 +1001,11 @@ export type UnsavedChangeAction =
   | {
       kind: "enter-browse";
       label: string;
+    }
+  | {
+      kind: "export";
+      label: string;
+      onResolved: () => void;
     };
 
 export type ModelImportCompletionFeedback = {
