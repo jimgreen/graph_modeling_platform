@@ -2943,7 +2943,7 @@ export function renderAppView(__appScope: Record<string, any>) {
             </div>
             <div className="unsaved-changes-footer">
               <button type="button" onClick={() => { void saveCurrentProject(); setUnsavedChangesDialogOpen(false); }}>保存</button>
-              <button type="button" onClick={() => { while (undoStack.length > (savedUndoStackLengthRef?.current ?? 0)) { undoLastOperation(); } setHasUnsavedChanges(false); }}>全部撤回</button>
+              <button type="button" onClick={() => { const baseline = savedUndoStackLengthRef?.current ?? 0; const count = undoStack.length - baseline; for (let i = 0; i < count; i++) { undoLastOperation(); } setHasUnsavedChanges(false); }}>全部撤回</button>
             </div>
           </section>
         </div>)}
