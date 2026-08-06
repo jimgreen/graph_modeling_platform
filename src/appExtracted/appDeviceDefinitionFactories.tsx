@@ -3022,7 +3022,7 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
       showGlobalMessage = () => undefined,
       writeOperationLog
     } = __appScope;
-    if (!ensureSavedBeforeExport()) {
+    if (!__appScope.skipSaveCheck && !ensureSavedBeforeExport()) {
       return;
     }
     const imageExportPathById = typeof loadSvgImageExportPathById === "function"
@@ -3061,7 +3061,7 @@ export function createExportJsonFile(__appScope: Record<string, any>) {
       showGlobalMessage = () => undefined,
       writeOperationLog
     } = __appScope;
-    if (!ensureSavedBeforeExport()) {
+    if (!__appScope.skipSaveCheck && !ensureSavedBeforeExport()) {
       return;
     }
     const project = currentProject();
