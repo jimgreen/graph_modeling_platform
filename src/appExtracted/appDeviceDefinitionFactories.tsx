@@ -2705,8 +2705,8 @@ export function createHandleTerminalPointerDown(__appScope: Record<string, any>)
 
 export function createEnsureSavedBeforeExport(__appScope: Record<string, any>) {
   return () => {
-  const { canExportCurrentModel } = __appScope;
-    if (canExportCurrentModel) {
+  const { canExportCurrentModel, skipSaveCheck } = __appScope;
+    if (skipSaveCheck || canExportCurrentModel) {
       return true;
     }
     window.alert("当前模型存在未保存修改，请先保存后再导出文件。");
@@ -4211,13 +4211,21 @@ export function createApplyIconLibraryCatalogIcon(__appScope: Record<string, any
           window.alert("未找到静态图片图元定义，无法插入图标。");
           return;
         }
+        // 获取 SVG 内容转为 data URL，确保内联渲染（外部 SVG 文件在 <image href> 中可能不渲染）
+        let imageData = iconUrl;
+        try {
+          const response = await fetch(iconUrl);
+          if (response.ok) {
+            imageData = `data:image/svg+xml,${encodeURIComponent(await response.text())}`;
+          }
+        } catch { /* 回退到 URL 路径 */ }
         startLibraryDevicePlacement({
           ...baseTemplate,
           label: entry.name || baseTemplate.label || "图标",
           params: {
             ...baseTemplate.params,
             text: entry.name || baseTemplate.params?.text || "",
-            backgroundImage: iconUrl,
+            backgroundImage: imageData,
             backgroundImageAssetId: ""
           }
         });
