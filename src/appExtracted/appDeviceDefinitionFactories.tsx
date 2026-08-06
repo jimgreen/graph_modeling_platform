@@ -4211,21 +4211,13 @@ export function createApplyIconLibraryCatalogIcon(__appScope: Record<string, any
           window.alert("未找到静态图片图元定义，无法插入图标。");
           return;
         }
-        // 获取 SVG 内容转为 data URL，确保内联渲染（外部 SVG 文件在 <image href> 中可能不渲染）
-        let imageData = iconUrl;
-        try {
-          const response = await fetch(iconUrl);
-          if (response.ok) {
-            imageData = `data:image/svg+xml,${encodeURIComponent(await response.text())}`;
-          }
-        } catch { /* 回退到 URL 路径 */ }
         startLibraryDevicePlacement({
           ...baseTemplate,
           label: entry.name || baseTemplate.label || "图标",
           params: {
             ...baseTemplate.params,
             text: entry.name || baseTemplate.params?.text || "",
-            backgroundImage: imageData,
+            backgroundImage: iconUrl,
             backgroundImageAssetId: ""
           }
         });
