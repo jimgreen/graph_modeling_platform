@@ -679,6 +679,12 @@ export function renderAppView(__appScope: Record<string, any>) {
           }
         }
       }
+      // 模板导入可能为画布节点添加量测组，自动保存模型避免“未保存”提示
+      window.setTimeout(() => {
+        if (__appScope.hasUnsavedChanges && typeof __appScope.saveCurrentProject === "function") {
+          void __appScope.saveCurrentProject();
+        }
+      }, 0);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "加载预定义模板失败。");
     }
