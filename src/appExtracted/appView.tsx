@@ -589,6 +589,7 @@ export function renderAppView(__appScope: Record<string, any>) {
         success: `预定义模板导入成功：匹配 ${result.matched.length} 个，跳过 ${result.skipped.length} 个。`,
         failure: `预定义模板已更新本地，后台保存失败：匹配 ${result.matched.length} 个。`
       });
+      setEDeviceInterfaceDefinitionBaseline(null);
       writeOperationLog(`导入预定义模板：${templateFile}`);
       setTemplateImportResult({ matched: result.matched, skipped: result.skipped });
       // 设置模板名称和只读模式
