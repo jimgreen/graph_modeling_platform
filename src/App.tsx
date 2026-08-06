@@ -1392,7 +1392,9 @@ const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
 Object.assign(__appScope, { selectedProjectIds, setSelectedProjectIds });
 const [selectedSchemeIds, setSelectedSchemeIds] = useState<string[]>([]);
 Object.assign(__appScope, { selectedSchemeIds, setSelectedSchemeIds });
-const [hasUnsavedChanges, setHasUnsavedChanges] = useState(() => initialProjectSources.recoveredFromRefresh);
+// 刷新恢复只还原画布数据，undoStack（未保存清单）未持久化、恢复后为空；
+// 故恢复后视为无未保存操作，避免显示"未保存"标签却弹出空清单
+const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 Object.assign(__appScope, { hasUnsavedChanges, setHasUnsavedChanges });
 const [expandedSchemeIds, setExpandedSchemeIds] = useState<string[]>(() => {
     const preferredSchemeId = initialDraft?.activeSchemeKey || schemes[0]?.id;
