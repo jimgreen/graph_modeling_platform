@@ -3257,6 +3257,10 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
           success: `元件定义导入成功：匹配 ${result.matched.length} 个，跳过 ${result.skipped.length} 个。`,
           failure: `元件定义已更新本地，后台保存失败：匹配 ${result.matched.length} 个。`
         });
+        // 更新 E 文件接口定义基线，避免显示"有未保存修改"
+        if (typeof __appScope.eDeviceInterfaceSaveRef?.current === "function") {
+          __appScope.eDeviceInterfaceSaveRef.current();
+        }
         writeOperationLog(`导入元件定义文件：${file.name}`);
         // 设置文件名和只读模式（与预定义模板逻辑一致）
         if (typeof setEDeviceInterfaceLoadedTemplateName === "function") {

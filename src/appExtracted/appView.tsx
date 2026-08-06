@@ -691,11 +691,15 @@ export function renderAppView(__appScope: Record<string, any>) {
           }
         }
       }
-      // 模板导入可能为画布节点添加量测组，自动保存模型避免“未保存”提示
+      // 模板导入可能为画布节点添加量测组，自动保存模型避免"未保存"提示
       window.setTimeout(() => {
         if (__appScope.hasUnsavedChanges && typeof __appScope.saveCurrentProject === "function") {
           void __appScope.saveCurrentProject();
         }
+      }, 0);
+      // 更新 E 文件接口定义基线，避免显示"有未保存修改"
+      window.setTimeout(() => {
+        eDeviceInterfaceSaveRef.current();
       }, 0);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "加载预定义模板失败。");
@@ -2814,7 +2818,7 @@ export function renderAppView(__appScope: Record<string, any>) {
               <div>
                 <h2 id="record-paste-conflict-title">名称重复</h2>
                 <p>
-                  当前{pendingRecordPasteConflict.kind === "scheme" ? "模型库" : pendingRecordPasteConflict.kind === "scheme-drag" ? "目标方案" : "方案"}中已存在“{pendingRecordPasteConflict.duplicateName}”。请选择{pendingRecordPasteConflict.kind === "project-drag" || pendingRecordPasteConflict.kind === "scheme-drag" ? "拖拽" : "粘贴"}处理方式。
+                  当前{pendingRecordPasteConflict.kind === "scheme" ? "模型库" : pendingRecordPasteConflict.kind === "scheme-drag" ? "目标方案" : "方案"}中已存在"{pendingRecordPasteConflict.duplicateName}"。请选择{pendingRecordPasteConflict.kind === "project-drag" || pendingRecordPasteConflict.kind === "scheme-drag" ? "拖拽" : "粘贴"}处理方式。
                 </p>
               </div>
             </div>
@@ -2831,7 +2835,7 @@ export function renderAppView(__appScope: Record<string, any>) {
               <div>
                 <h2 id="model-import-conflict-title">模型名称重复</h2>
                 <p>
-                  当前方案中已存在模型“{pendingModelImportConflict.duplicateProjectName}”。请选择导入处理方式。
+                  当前方案中已存在模型"{pendingModelImportConflict.duplicateProjectName}"。请选择导入处理方式。
                 </p>
               </div>
             </div>
@@ -2848,7 +2852,7 @@ export function renderAppView(__appScope: Record<string, any>) {
               <div>
                 <h2 id="scheme-import-conflict-title">方案名称重复</h2>
                 <p>
-                  当前模型库中已存在方案“{pendingSchemeImportConflict.duplicateSchemeName}”。请选择导入处理方式。
+                  当前模型库中已存在方案"{pendingSchemeImportConflict.duplicateSchemeName}"。请选择导入处理方式。
                 </p>
               </div>
             </div>
@@ -2864,7 +2868,7 @@ export function renderAppView(__appScope: Record<string, any>) {
             <div className="image-picker-title">
               <div>
                 <h2 id="unsaved-change-title">当前模型尚未保存</h2>
-                <p>当前模型“{projectName}”存在未保存修改。{pendingUnsavedAction.label}之前，请选择如何处理这些修改。</p>
+                <p>当前模型"{projectName}"存在未保存修改。{pendingUnsavedAction.label}之前，请选择如何处理这些修改。</p>
               </div>
             </div>
             <div className="unsaved-change-actions">
@@ -4630,8 +4634,8 @@ export function renderAppView(__appScope: Record<string, any>) {
               <div>
                 <h2 id="e-device-interface-class-switch-title">当前设备类定义尚未保存</h2>
                 <p>
-                  “{selectedEDeviceInterfaceRow?.label || selectedEDeviceInterfaceRow?.componentLibrary}”存在未保存修改。
-                  切换到“{eDeviceInterfaceClassSwitchTargetRow?.label || eDeviceInterfaceClassSwitchTarget}”之前，请选择如何处理这些修改。
+                  "{selectedEDeviceInterfaceRow?.label || selectedEDeviceInterfaceRow?.componentLibrary}"存在未保存修改。
+                  切换到"{eDeviceInterfaceClassSwitchTargetRow?.label || eDeviceInterfaceClassSwitchTarget}"之前，请选择如何处理这些修改。
                 </p>
               </div>
             </div>
