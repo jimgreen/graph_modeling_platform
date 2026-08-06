@@ -2703,11 +2703,24 @@ export function createHandleTerminalPointerDown(__appScope: Record<string, any>)
   };
 }
 
+// 模块级变量，用于跨渲染周期传递跳过保存检查的标志
+let skipSaveCheckFlag = false;
+
+export function setSkipSaveCheck(value: boolean) {
+  console.log('[DEBUG] setSkipSaveCheck: setting to', value);
+  skipSaveCheckFlag = value;
+}
+
+export function getSkipSaveCheck(): boolean {
+  console.log('[DEBUG] getSkipSaveCheck: returning', skipSaveCheckFlag);
+  return skipSaveCheckFlag;
+}
+
 export function createEnsureSavedBeforeExport(__appScope: Record<string, any>) {
   return () => {
-    console.log('[DEBUG] ensureSavedBeforeExport: checking skipSaveCheck =', __appScope.skipSaveCheck, 'canExportCurrentModel =', __appScope.canExportCurrentModel);
-    // 直接访问 __appScope 属性，避免解构导致闭包捕获旧值
-    if (__appScope.skipSaveCheck || __appScope.canExportCurrentModel) {
+    console.log('[DEBUG] ensureSavedBeforeExport: checking skipSaveCheck =', getSkipSaveCheck(), 'canExportCurrentModel =', __appScope.canExportCurrentModel);
+    // 使用模块级变量，避免闭包捕获旧值
+    if (getSkipSaveCheck() || __appScope.canExportCurrentModel) {
       console.log('[DEBUG] ensureSavedBeforeExport: returning true');
       return true;
     }
@@ -3026,7 +3039,8 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
       showGlobalMessage = () => undefined,
       writeOperationLog
     } = __appScope;
-    if (!__appScope.skipSaveCheck && !ensureSavedBeforeExport()) {
+    // 使用模块级变量，避免闭包捕获旧值
+    if (!getSkipSaveCheck() && !ensureSavedBeforeExport()) {
       console.log('[DEBUG] createExportSvgFile: ensureSavedBeforeExport returned false, returning');
       return;
     }
@@ -3068,7 +3082,8 @@ export function createExportJsonFile(__appScope: Record<string, any>) {
       showGlobalMessage = () => undefined,
       writeOperationLog
     } = __appScope;
-    if (!__appScope.skipSaveCheck && !ensureSavedBeforeExport()) {
+    // 使用模块级变量，避免闭包捕获旧值
+    if (!getSkipSaveCheck() && !ensureSavedBeforeExport()) {
       console.log('[DEBUG] createExportJsonFile: ensureSavedBeforeExport returned false, returning');
       return;
     }
@@ -3113,9 +3128,8 @@ export function createExportEFile(__appScope: Record<string, any>) {
       showGlobalMessage = () => undefined,
       writeOperationLog
     } = __appScope;
-    // 检查 skipSaveCheck 标志，如果为 true 则跳过保存检查
-    console.log('[DEBUG] createExportEFile: checking skipSaveCheck =', __appScope.skipSaveCheck);
-    if (!__appScope.skipSaveCheck && !ensureSavedBeforeExport()) {
+    // 使用模块级变量，避免闭包捕获旧值
+    if (!getSkipSaveCheck() && !ensureSavedBeforeExport()) {
       console.log('[DEBUG] createExportEFile: ensureSavedBeforeExport returned false, returning');
       return;
     }

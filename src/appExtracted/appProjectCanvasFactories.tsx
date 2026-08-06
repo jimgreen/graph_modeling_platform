@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { clampNumber } from "../canvasViewport";
 import { DEFAULT_MEASUREMENT_CONFIG } from "../measurements";
-import { buildEFileExportOptionsFromLibrary } from "./appDeviceDefinitionFactories";
+import { buildEFileExportOptionsFromLibrary, setSkipSaveCheck, getSkipSaveCheck } from "./appDeviceDefinitionFactories";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
   return (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget, manualPoints?: Point[]) => {
@@ -2784,9 +2784,8 @@ export function createResolveUnsavedChangeAction(__appScope: Record<string, any>
     } else if (action.kind === "export" && resolution === "save") {
       // 设置标志跳过保存检查，因为刚刚保存完成
       console.log('[DEBUG] resolveUnsavedChangeAction: setting skipSaveCheck = true');
-      console.log('[DEBUG] __appScope object:', __appScope);
-      __appScope.skipSaveCheck = true;
-      console.log('[DEBUG] after setting, __appScope.skipSaveCheck =', __appScope.skipSaveCheck);
+      setSkipSaveCheck(true);
+      console.log('[DEBUG] after setting, getSkipSaveCheck() =', getSkipSaveCheck());
       try {
         console.log('[DEBUG] calling action.onResolved()');
         await action.onResolved();
@@ -2794,7 +2793,7 @@ export function createResolveUnsavedChangeAction(__appScope: Record<string, any>
       } finally {
         // 重置标志
         console.log('[DEBUG] resetting skipSaveCheck = false');
-        __appScope.skipSaveCheck = false;
+        setSkipSaveCheck(false);
       }
     }
   };
