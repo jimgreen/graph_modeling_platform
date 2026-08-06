@@ -2782,6 +2782,8 @@ export function createResolveUnsavedChangeAction(__appScope: Record<string, any>
     } else if (action.kind === "enter-browse") {
       enterBrowseMode();
     } else if (action.kind === "export" && resolution === "save") {
+      // 等待 React state 更新完成（saveCurrentProject 调用 setHasUnsavedChanges(false) 后）
+      await new Promise((resolve) => setTimeout(resolve, 0));
       action.onResolved();
     }
   };
