@@ -56,7 +56,6 @@ import {
   Save,
   ScanSearch,
   Search,
-  Settings2,
   Shrink,
   Trash2,
   Type,
@@ -5718,18 +5717,6 @@ const renderLibraryPanel = () => (
         >
           <Download size={14} aria-hidden="true" />
           <span>导出</span>
-        </button>
-      </div>
-      <div className="library-scope-actions" aria-label="用户自定义管理" style={{ marginTop: 5 }}>
-        <button
-          type="button"
-          className="library-icon-action"
-          title="管理用户自定义内容"
-          onClick={() => void openUserCustomizationManager()}
-          style={{ width: "100%", justifyContent: "center" }}
-        >
-          <Settings2 size={14} aria-hidden="true" />
-          <span>用户自定义修改管理</span>
         </button>
       </div>
       <div className="library-display-mode" role="radiogroup" aria-label="图元库展开方式">

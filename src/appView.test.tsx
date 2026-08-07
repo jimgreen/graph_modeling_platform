@@ -689,18 +689,26 @@ describe("canvas memoization", () => {
 });
 
 describe("user customization manager entry", () => {
-  test("keeps the customization manager in the component library toolbar", () => {
-    const source = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
-    const templateActions = source.match(
-      /<div className="template-library-actions library-scope-actions"[\s\S]*?<\/div>\s*<div className="library-display-mode"/
-    )?.[0] ?? "";
-    const componentActions = source.match(
-      /<div className="component-library-actions library-scope-actions"[\s\S]*?<\/div>\s*<div className="library-display-mode"/
+  test("keeps the customization manager in the topbar to the left of the save button", () => {
+    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const topbarActions = source.match(
+      /<div className="topbar-center-actions">[\s\S]*?<\/div>\s*<div className="action-cluster">/
     )?.[0] ?? "";
 
-    expect(templateActions).not.toContain("自定义管理");
-    expect(componentActions).toContain("自定义管理");
-    expect(componentActions).toContain("openUserCustomizationManager");
+    expect(topbarActions).toContain("openUserCustomizationManager");
+    expect(topbarActions).toContain("用户自定义修改管理");
+    // 自定义管理按钮位于保存按钮左侧
+    const managerIndex = topbarActions.indexOf("openUserCustomizationManager");
+    const saveIndex = topbarActions.indexOf("saveCurrentProject");
+    expect(managerIndex).toBeGreaterThan(-1);
+    expect(saveIndex).toBeGreaterThan(managerIndex);
+
+    // 已从图元库 tab 移除
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const componentActions = appSource.match(
+      /<div className="component-library-actions library-scope-actions"[\s\S]*?<\/div>\s*<div className="library-display-mode"/
+    )?.[0] ?? "";
+    expect(componentActions).not.toContain("openUserCustomizationManager");
   });
 
   test("keeps the customization table readable on narrow screens", () => {
