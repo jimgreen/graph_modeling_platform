@@ -592,12 +592,14 @@ export function renderAppView(__appScope: Record<string, any>) {
       setEDeviceDefinitionLabels(result.eDeviceDefinitionLabels);
       setEDeviceDefinitionClassExportEnabled(result.eDeviceDefinitionClassExportEnabled);
       setEDeviceDefinitionTemplateFields(result.eDeviceDefinitionTemplateFields ?? {});
+      setEDeviceDefinitionFieldOrder(result.eDeviceDefinitionFieldOrder ?? {});
       persistDeviceLibraryChange({
         customDeviceTemplates: result.customDeviceTemplates,
         deviceDefinitionOverrides: result.deviceDefinitionOverrides,
         eDeviceDefinitionLabels: result.eDeviceDefinitionLabels,
         eDeviceDefinitionClassExportEnabled: result.eDeviceDefinitionClassExportEnabled,
-        eDeviceDefinitionTemplateFields: result.eDeviceDefinitionTemplateFields ?? {}
+        eDeviceDefinitionTemplateFields: result.eDeviceDefinitionTemplateFields ?? {},
+        eDeviceDefinitionFieldOrder: result.eDeviceDefinitionFieldOrder ?? {}
       }, {
         success: `预定义模板导入成功：匹配 ${result.matched.length} 个，跳过 ${result.skipped.length} 个。`,
         failure: `预定义模板已更新本地，后台保存失败：匹配 ${result.matched.length} 个。`

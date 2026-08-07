@@ -2662,6 +2662,44 @@ describe("applyEDeviceDefinitionSectionsToLibraryState", () => {
     expect(enNames).not.toContain("storage_technology");
     expect(enNames).not.toContain("battery_rack_count");
   });
+
+  test("加载模板后 fieldOrder 严格按模板字段，导出不追加 dev_type", () => {
+    const acSource = DEVICE_LIBRARY.find((t) => t.kind === "ac-source")!;
+    const result = applyEDeviceDefinitionSectionsToLibraryState({
+      sections: [
+        {
+          kind: "unit",
+          label: "机组",
+          categoryLibrary: "交流设备",
+          componentLibrary: "ACGenerator",
+          fields: [
+            { exportName: "idx", cnName: "序号" },
+            { exportName: "name", cnName: "名称" },
+            { exportName: "type", cnName: "类型" }
+          ]
+        }
+      ],
+      libraryTemplates: [acSource],
+      deviceDefinitionOverrides: {},
+      eDeviceDefinitionLabels: {},
+      eDeviceDefinitionClassExportEnabled: {},
+      deviceDefinitionKeyForTemplate,
+      deviceDefinitionOverrideForTemplate,
+      resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
+    });
+
+    expect(result.eDeviceDefinitionFieldOrder.ACGenerator).not.toContain("dev_type");
+
+    const exportOptions = buildEFileExportOptionsFromLibrary({
+      libraryTemplates: [acSource],
+      eDeviceDefinitionFieldOrder: result.eDeviceDefinitionFieldOrder,
+      resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
+    });
+    const generator = exportOptions.interfaceDefinitions.find((d: any) => d.componentLibrary === "ACGenerator");
+    const fieldNames = (generator?.fields ?? []).map((f: any) => f.sourceName);
+    expect(fieldNames).not.toContain("dev_type");
+    expect(fieldNames).toEqual(["idx", "name", "type"]);
+  });
 });
 
 describe("buildEDeviceInterfaceDefinitionRows", () => {
