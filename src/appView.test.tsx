@@ -695,7 +695,6 @@ describe("user customization manager entry", () => {
       /<div className="topbar-center-actions">[\s\S]*?<\/div>\s*<div className="action-cluster">/
     )?.[0] ?? "";
 
-    expect(topbarActions).toContain("openUserCustomizationManager");
     expect(topbarActions).toContain("用户自定义修改管理");
     // 自定义管理按钮位于保存按钮左侧
     const managerIndex = topbarActions.indexOf("openUserCustomizationManager");

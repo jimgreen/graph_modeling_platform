@@ -1429,7 +1429,7 @@ export function renderAppView(__appScope: Record<string, any>) {
             <FolderOpen size={16}/>
           </button>
           <div className="topbar-center-actions">
-            <button className="topbar-primary-button" onClick={() => void openUserCustomizationManager()} title="用户自定义修改管理" aria-label="用户自定义修改管理">
+            <button className="topbar-primary-button" onClick={() => void openUserCustomizationManager()} disabled={isBrowseMode} title="用户自定义修改管理" aria-label="用户自定义修改管理">
               <Settings2 size={16}/>
             </button>
             <button className="topbar-primary-button" onClick={() => void saveCurrentProject()} disabled={isBrowseMode || !saveRequired} title={saveRequired ? "保存当前模型" : "当前模型没有新的修改"} aria-label="保存">
