@@ -62,6 +62,7 @@ import {
   createDefaultNode,
   DEVICE_LIBRARY,
   getTemplateParameterDefinitions,
+  parseEDeviceDefinitionFile,
   Point,
   templateDerivedComponentLibraryInfo
 } from "./model";
@@ -3170,5 +3171,67 @@ describe("createExportEDeviceDefinitionFile", () => {
 
     expect(saveTextFile).not.toHaveBeenCalled();
     expect(alert).toHaveBeenCalledWith("没有可导出的元件定义：所有元件均未勾选导出字段。");
+  });
+});
+
+describe("导出 E 文件与国网 E 格式模板一致性", () => {
+  test("加载 sgcc.e 模板后导出的表和字段与模板严格一致（无缺失/新增表或字段）", () => {
+    const templateText = readFileSync(new URL("../public/e-templates/sgcc.e", import.meta.url), "utf8");
+    const templateSections = parseEDeviceDefinitionFile(templateText);
+    const templateTables = new Map<string, Set<string>>();
+    for (const section of templateSections) {
+      templateTables.set(section.kind, new Set((section.fields ?? []).map((f: any) => f.exportName)));
+    }
+
+    const libraryTemplates = DEVICE_LIBRARY;
+    const result = applyEDeviceDefinitionSectionsToLibraryState({
+      sections: templateSections,
+      libraryTemplates,
+      deviceDefinitionOverrides: {},
+      eDeviceDefinitionLabels: {},
+      eDeviceDefinitionClassExportEnabled: {},
+      deviceDefinitionKeyForTemplate,
+      deviceDefinitionOverrideForTemplate,
+      resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
+    });
+    const exportOptions = buildEFileExportOptionsFromLibrary({
+      libraryTemplates,
+      eDeviceDefinitionLabels: result.eDeviceDefinitionLabels,
+      eDeviceDefinitionClassExportEnabled: result.eDeviceDefinitionClassExportEnabled,
+      eDeviceDefinitionFieldOrder: result.eDeviceDefinitionFieldOrder,
+      eDeviceDefinitionTemplateFields: result.eDeviceDefinitionTemplateFields,
+      resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
+    });
+
+    const nodes = ([
+      "ac-source", "ac-load", "ac-storage", "ac-switch", "ac-line", "ac-transformer"
+    ] as const).map((kind, i) => createDefaultNode(kind, { x: (i + 1) * 100, y: 100 }));
+    const project = { version: 1 as const, name: "模板一致性测试", nodes, edges: [] };
+
+    const eFileText = buildEFileExport(project, ["默认方案"], exportOptions).text;
+
+    const exportedTables = new Map<string, Set<string>>();
+    const sectionPattern = /<([^/][^>]*)>\s*\r?\n@ ([^\r\n]+)/g;
+    for (const match of eFileText.matchAll(sectionPattern)) {
+      const [, name, header] = match;
+      exportedTables.set(name, new Set(header.trim().split(/\s+/)));
+    }
+
+    const missingTables = [...templateTables.keys()].filter((t) => !exportedTables.has(t));
+    const extraTables = [...exportedTables.keys()].filter((t) => !templateTables.has(t));
+    const fieldMismatches: Array<{ table: string; missingFields: string[]; extraFields: string[] }> = [];
+    for (const [name, fields] of templateTables) {
+      const exportedFields = exportedTables.get(name);
+      if (!exportedFields) continue;
+      const missingFields = [...fields].filter((f) => !exportedFields.has(f));
+      const extraFields = [...exportedFields].filter((f) => !fields.has(f));
+      if (missingFields.length || extraFields.length) {
+        fieldMismatches.push({ table: name, missingFields, extraFields });
+      }
+    }
+
+    expect(missingTables, `缺失表: ${JSON.stringify(missingTables)}`).toEqual([]);
+    expect(extraTables, `新增表: ${JSON.stringify(extraTables)}`).toEqual([]);
+    expect(fieldMismatches, `字段不一致: ${JSON.stringify(fieldMismatches)}`).toEqual([]);
   });
 });

@@ -3804,7 +3804,7 @@ export function parseEDeviceDefinitionFile(text: string): EDeviceDefinitionSecti
     const exportEnabledAttr = matchEDefinitionAttr(attrText, "是否导出");
     // 如果元件库是中文名，反向映射为英文元件库名
     let resolvedComponentLibrary = componentLibraryAttr || kind;
-    if (componentLibraryAttr && !/^[A-Za-z]/.test(componentLibraryAttr)) {
+    if (componentLibraryAttr) {
       // 中文名称，尝试反向查找
       const mapped = COMPONENT_LIBRARY_REVERSE_MAPPING[componentLibraryAttr];
       if (mapped) {
@@ -12176,7 +12176,8 @@ const COMPONENT_LIBRARY_REVERSE_MAPPING: Record<string, string> = {
     Object.entries(ELEMENT_TREE_COMPONENT_LIBRARY_LABELS).map(([en, cn]) => [cn, en])
   ),
   "交流线路": "ACBranch",
-  "双绕组主变+三绕组主变": "ACTransformer"
+  "双绕组主变+三绕组主变": "ACTransformer",
+  "ACNode+交流母线": "ACNode"
 };
 
 function elementTreeComponentLibraryLabel(componentLibrary: string): string {
