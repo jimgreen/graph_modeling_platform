@@ -777,6 +777,14 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     if (template.custom || customTemplateKinds.has(template.kind)) {
       continue;
     }
+    // 派生元件库模板（风电/光伏/储能等）的 definitionKey 塌缩到基类（如 ACGenerator），
+    // 写入共享 key 会被后遍历的派生模板覆盖，导致基类（交流电源）经 override 合并派生专属参数
+    // （如储能的 storage_technology 出现在交流电源下）。派生模板自身不读 override
+    // （deviceDefinitionOverrideForTemplate 返回 undefined），其参数定义与 E 文件导出
+    // 均走 template.parameterDefinitions，故跳过 override 写入。
+    if (templateDerivedComponentLibraryInfo(template)) {
+      continue;
+    }
     const definitionKey = typeof deviceDefinitionKeyForTemplate === "function"
       ? deviceDefinitionKeyForTemplate(template)
       : (eDeviceInterfaceComponentLibraryForTemplate(template, resolveDefinitionComponentLibrary) || template.kind);

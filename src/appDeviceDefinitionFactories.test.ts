@@ -48,9 +48,12 @@ import {
   createDefinitionVisualDraft,
   createCustomDeviceDraftFromTemplate,
   customDefaultDefinitions,
+  deviceDefinitionKeyForTemplate,
+  deviceDefinitionOverrideForTemplate,
   isDerivedComponentBaseParamName,
   isReservedDeviceDefinitionParamName,
-  normalizeContainerTerminalAssociations
+  normalizeContainerTerminalAssociations,
+  resolveTemplateComponentLibrary
 } from "./customDeviceUtils";
 import {
   applyDeviceTemplateDefinitionOverride,
@@ -2624,6 +2627,39 @@ describe("applyEDeviceDefinitionSectionsToLibraryState", () => {
       expect.objectContaining({ section: "LoadTable" })
     ]);
     expect(result.skipped).toEqual([]);
+  });
+
+  test("派生元件库模板不污染基类 ACGenerator 的 override（储能属性不进交流电源）", () => {
+    const libraryTemplates = DEVICE_LIBRARY.filter((template) =>
+      template.kind === "ac-source" || template.kind === "ac-storage"
+    );
+    const result = applyEDeviceDefinitionSectionsToLibraryState({
+      sections: [
+        {
+          kind: "unit",
+          label: "机组",
+          categoryLibrary: "交流设备",
+          componentLibrary: "ACGenerator",
+          fields: [
+            { exportName: "idx", cnName: "序号" },
+            { exportName: "name", cnName: "名称" }
+          ]
+        }
+      ],
+      libraryTemplates,
+      deviceDefinitionOverrides: {},
+      eDeviceDefinitionLabels: {},
+      eDeviceDefinitionClassExportEnabled: {},
+      deviceDefinitionKeyForTemplate,
+      deviceDefinitionOverrideForTemplate,
+      resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
+    });
+
+    const acGeneratorOverride = result.deviceDefinitionOverrides["ACGenerator"];
+    expect(acGeneratorOverride).toBeDefined();
+    const enNames = (acGeneratorOverride.parameterDefinitions ?? []).map((d: any) => d.enName);
+    expect(enNames).not.toContain("storage_technology");
+    expect(enNames).not.toContain("battery_rack_count");
   });
 });
 
