@@ -11627,7 +11627,7 @@ function getElementTreeTypeLabel(node: ModelNode, templateByKind: ReadonlyMap<st
   return templateByKind.get(node.kind)?.label ?? node.kind;
 }
 
-const ELEMENT_TREE_COMPONENT_LIBRARY_LABELS: Record<string, string> = {
+export const ELEMENT_TREE_COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   StaticTextSymbol: "静态文本",
   StaticMediaSymbol: "静态媒体",
   StaticBasicShape: "基础图形",
@@ -11675,12 +11675,11 @@ const ELEMENT_TREE_COMPONENT_LIBRARY_LABELS: Record<string, string> = {
 };
 
 // 派生元件库标签从内置图元定义（ELECTRIC_GENERATION_FAMILY_SPECS）动态生成，
-// 与 template.label 保持一致（交流电化学储能 / 交流风力发电机 等），不维护两套定义
+// 复用 electricGenerationDerivedInfoForFamily 的派生推导，与 template.label 保持一致
 for (const family of ELECTRIC_GENERATION_FAMILY_SPECS) {
   for (const terminalType of ELECTRIC_GENERATION_TERMINAL_TYPES) {
-    const terminalPrefix = terminalType === "ac" ? "交流" : "直流";
-    const derivedComponentLibrary = `${terminalType.toUpperCase()}${family.derivedComponentSuffix}`;
-    ELEMENT_TREE_COMPONENT_LIBRARY_LABELS[derivedComponentLibrary] = `${terminalPrefix}${family.label}`;
+    const info = electricGenerationDerivedInfoForFamily(terminalType, family);
+    ELEMENT_TREE_COMPONENT_LIBRARY_LABELS[info.derivedComponentLibrary] = info.label;
   }
 }
 

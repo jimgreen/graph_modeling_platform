@@ -3,6 +3,7 @@ import { ChangeEvent, DragEvent, Fragment, Suspense, isValidElement, lazy, memo,
 import { createPortal, flushSync } from "react-dom";
 import { useTransition } from "react";
 import { apiPath } from "../config";
+import { ELEMENT_TREE_COMPONENT_LIBRARY_LABELS } from "../model";
 import {
   AlignCenter,
   AlignEndHorizontal,
@@ -2100,20 +2101,6 @@ export const COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   DCLoad: "直流负荷",
   ACGenerator: "交流电源",
   DCGenerator: "直流电源",
-  ACWindGen: "交流风电",
-  DCWindGen: "直流风电",
-  ACPVGen: "交流光伏",
-  DCPVGen: "直流光伏",
-  ACThermalGen: "交流火电",
-  DCThermalGen: "直流火电",
-  ACDieselGen: "交流柴发",
-  DCDieselGen: "直流柴发",
-  ACHydroGen: "交流水电",
-  DCHydroGen: "直流水电",
-  ACNuclearGen: "交流核电",
-  DCNuclearGen: "直流核电",
-  ACStorageGen: "交流储能",
-  DCStorageGen: "直流储能",
   ACShuntCompensator: "交流无功补偿",
   ACZeroBranch: "交流零阻支路",
   DCZeroBranch: "直流零阻支路",
@@ -2158,6 +2145,13 @@ export const COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   HeatExchanger4: "四端换热器",
   HeatPump: "热泵"
 };
+
+// 派生元件库标签复用 model.ts 动态生成（与内置图元定义一致，不维护两套）
+for (const [key, value] of Object.entries(ELEMENT_TREE_COMPONENT_LIBRARY_LABELS)) {
+  if (!(key in COMPONENT_LIBRARY_LABELS)) {
+    COMPONENT_LIBRARY_LABELS[key] = value;
+  }
+}
 
 export const SCALE_HANDLE_CONFIGS: ScaleHandleConfig[] = [
   { id: "north-west", kind: "scale-both", xDirection: -1, yDirection: -1, className: "diagonal-nwse" },

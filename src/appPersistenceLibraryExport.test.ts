@@ -401,11 +401,11 @@ describe("graph template library filtering", () => {
   });
 
   test("shows built-in electric generation derived component library labels", () => {
-    expect(componentLibraryDisplayParts("ACWindGen").title).toBe("交流风电 / ACWindGen");
-    expect(componentLibraryDisplayParts("DCHydroGen").title).toBe("直流水电 / DCHydroGen");
-    expect(componentLibraryDisplayParts("ACNuclearGen").chinese).toBe("交流核电");
-    expect(componentLibraryDisplayParts("ACDieselGen").title).toBe("交流柴发 / ACDieselGen");
-    expect(componentLibraryDisplayParts("DCDieselGen").chinese).toBe("直流柴发");
+    expect(componentLibraryDisplayParts("ACWindGen").title).toBe("交流风力发电机 / ACWindGen");
+    expect(componentLibraryDisplayParts("DCHydroGen").title).toBe("直流水力发电机 / DCHydroGen");
+    expect(componentLibraryDisplayParts("ACNuclearGen").chinese).toBe("交流核能发电机");
+    expect(componentLibraryDisplayParts("ACDieselGen").title).toBe("交流柴油发电机 / ACDieselGen");
+    expect(componentLibraryDisplayParts("DCDieselGen").chinese).toBe("直流柴油发电机");
   });
 
   test("groups built-in generation derived classes under the base power-source component library", () => {
