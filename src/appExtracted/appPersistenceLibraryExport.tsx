@@ -138,6 +138,7 @@ import {
   getEParameterKeys,
   getEParamValue,
   getEExportWarnings,
+  formatRatioParameterDisplayValue,
   formatPowerBaseDisplayValue,
   getTemplateParameterDefinitions,
   findSavedProjectRecordInSchemes,
@@ -169,6 +170,7 @@ import {
   defaultAllowsResizeTransformForKind,
   templateDefinitionIsReadonly,
   normalizeSavedProjectRecordNames,
+  normalizeRatioParameterInputValue,
   getTemplateStateDefinitions,
   normalizeDeviceStateDefinitions,
   savedProjectRecordNameKey,
@@ -1744,9 +1746,14 @@ export const renderTypicalValueEditor = <T extends DeviceParameterDefinition & {
   }
   return (
     <BufferedTextInput
-      value={String(row.typicalValue ?? "")}
+      value={formatRatioParameterDisplayValue(row.enName, String(row.typicalValue ?? ""))}
       disabled={disabled}
-      onCommit={(value) => updateRow(row.id, { typicalValue: value } as Partial<T>)}
+      onCommit={(value) => {
+        const storedValue = normalizeRatioParameterInputValue(row.enName, value);
+        if (storedValue !== null) {
+          updateRow(row.id, { typicalValue: storedValue } as Partial<T>);
+        }
+      }}
     />
   );
 };

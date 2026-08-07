@@ -581,16 +581,77 @@ export const DEFAULT_CURRENT_UNIT = "A";
 export const DEFAULT_POWER_BASE_VALUE = 100;
 
 const POWER_VALUE_NUMERIC_PREFIX_PATTERN = /^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)/;
+const RATIO_PARAMETER_INPUT_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+const PERCENTAGE_RATIO_PARAMETER_NAMES = new Set([
+  "eta",
+  "soc",
+  "soc_lower_limit",
+  "soc_upper_limit",
+  "state_of_charge"
+]);
 
 function numericPrefixForPowerDisplay(value: string) {
   const text = String(value ?? "").trim();
   return POWER_VALUE_NUMERIC_PREFIX_PATTERN.exec(text)?.[1] ?? text;
 }
 
+function compactRatioNumber(value: number) {
+  const rounded = Math.round(value * 1e12) / 1e12;
+  return String(Object.is(rounded, -0) ? 0 : rounded);
+}
+
+export function isPercentageRatioParameterName(name: string) {
+  const normalizedName = toSnakeCaseDeviceParamName(String(name ?? ""));
+  return normalizedName === "efficiency" ||
+    normalizedName.endsWith("_efficiency") ||
+    PERCENTAGE_RATIO_PARAMETER_NAMES.has(normalizedName);
+}
+
+export function normalizeRatioParameterInputValue(name: string, value: string): string | null {
+  if (!isPercentageRatioParameterName(name)) {
+    return value;
+  }
+  const text = String(value ?? "").trim();
+  if (!text) {
+    return "";
+  }
+  const hasPercentSuffix = text.endsWith("%");
+  const numericText = (hasPercentSuffix ? text.slice(0, -1) : text).trim();
+  if (!RATIO_PARAMETER_INPUT_PATTERN.test(numericText)) {
+    return null;
+  }
+  const numericValue = Number(numericText);
+  if (!Number.isFinite(numericValue)) {
+    return null;
+  }
+  const ratioValue = hasPercentSuffix || Math.abs(numericValue) > 1
+    ? numericValue / 100
+    : numericValue;
+  if (ratioValue < 0 || ratioValue > 1) {
+    return null;
+  }
+  return compactRatioNumber(ratioValue);
+}
+
+export function formatRatioParameterDisplayValue(name: string, value: string) {
+  const text = String(value ?? "").trim();
+  if (!text || !isPercentageRatioParameterName(name)) {
+    return text;
+  }
+  const normalizedValue = normalizeRatioParameterInputValue(name, text);
+  if (normalizedValue === null || !normalizedValue) {
+    return text;
+  }
+  return `${compactRatioNumber(Number(normalizedValue) * 100)}%`;
+}
+
 export function formatPowerBaseDisplayValue(key: string, value: string) {
   const text = String(value ?? "").trim();
   if (!text) {
     return "";
+  }
+  if (isPercentageRatioParameterName(key)) {
+    return formatRatioParameterDisplayValue(key, text);
   }
   if (key === "pbase" || key === "qbase") {
     return numericPrefixForPowerDisplay(text);
@@ -3983,7 +4044,7 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     ],
     commonParams: {
       pvModuleModel: "Mono-550W",
-      moduleEfficiency: "21.3"
+      moduleEfficiency: "0.213"
     },
     paramsByTerminalType: {
       ac: { arrayArea: "100000", mpptCount: "100" },
@@ -4016,7 +4077,7 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     commonParams: {
       thermalUnitModel: "600 MW超超临界机组",
       fuelType: "coal",
-      thermalEfficiency: "45",
+      thermalEfficiency: "0.45",
       heatRate: "8000",
       mainSteamPressure: "25",
       mainSteamTemperature: "600"
@@ -4078,7 +4139,7 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
       designHead: "120",
       designFlow: "280",
       ratedSpeed: "150",
-      generatorEfficiency: "98.5"
+      generatorEfficiency: "0.985"
     },
     defaultsByTerminalType: {
       ac: { ratedVoltage: "220 kV", ratedPower: "300 MW" },
@@ -4111,7 +4172,7 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
       nuclearUnitModel: "1000 MW压水堆机组",
       reactorType: "pwr",
       reactorThermalPower: "2900",
-      thermalEfficiency: "34.5",
+      thermalEfficiency: "0.345",
       primaryLoopPressure: "15.5",
       mainSteamPressure: "6.8",
       mainSteamTemperature: "285",
@@ -4149,12 +4210,12 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
       storageTechnology: "lithium",
       batteryRackCount: "20",
       energyCapacity: "20",
-      chargeDischargeEfficiency: "90",
+      chargeDischargeEfficiency: "0.9",
       maxChargePower: "5",
       maxDischargePower: "5",
-      stateOfCharge: "50",
-      socUpperLimit: "90",
-      socLowerLimit: "10"
+      stateOfCharge: "0.5",
+      socUpperLimit: "0.9",
+      socLowerLimit: "0.1"
     },
     defaultsByTerminalType: {
       ac: { ratedVoltage: "10 kV", ratedPower: "5 MW" },

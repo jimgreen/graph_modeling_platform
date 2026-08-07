@@ -144,3 +144,52 @@ describe("batch common generator control types", () => {
     }, libraryTemplateByKind)).toEqual(["", "RUN", "STOP", "CHARGE", "DISCHARGE"]);
   });
 });
+
+describe("ratio parameter editors", () => {
+  test("displays batch SOC as a percentage and stores double-click edits as decimals", () => {
+    const node = createDefaultNode("ac-storage", { x: 100, y: 100 });
+    let nextDraft: { nodeId: string; node: ModelNode } | null = null;
+    const setNodeDoubleClickDraft = vi.fn((updater) => {
+      const current = { nodeId: node.id, node };
+      nextDraft = typeof updater === "function" ? updater(current) : updater;
+    });
+    const editors = useBatchEditors({
+      isBrowseMode: false,
+      activeSelectedNodeIds: [node.id],
+      nodeById: new Map([[node.id, node]]),
+      selectedNode: node,
+      inspectorSelectedNode: node,
+      selectedNodeIdsWithMeasurementGroups: new Set(),
+      batchCommonGraphicParamRows: [],
+      batchCommonModelParamRows: [{
+        key: "state_of_charge",
+        label: "荷电状态",
+        value: "0.5",
+        mixed: false,
+        definition: undefined
+      }],
+      batchCommonMeasurementGroupRows: [],
+      batchCommonPropertyRowCount: 1,
+      layers: [],
+      schemes: [],
+      projectMeasurements: { version: 1, groups: [] },
+      nodeDoubleClickDraft: { nodeId: node.id, node },
+      setNodeDoubleClickDraft,
+      updateParam: vi.fn(),
+      applyBatchCommonParam: vi.fn(),
+      applyBatchCommonParamPatch: vi.fn(),
+      applyBatchCommonMeasurementGroupSetting: vi.fn(),
+      assignSelectedNodesToModelLayer: vi.fn(),
+      updateSelectedNode: vi.fn(),
+      requireEditMode: () => true,
+      libraryTemplateByKind: new Map(DEVICE_LIBRARY.map((template) => [template.kind, template]))
+    });
+
+    const html = renderToStaticMarkup(createElement("div", null, editors.renderBatchCommonPropertyPanel()));
+    expect(html).toContain('value="50%"');
+
+    editors.updateNodeDoubleClickDraftParam(node.id, "state_of_charge", "99%");
+    const committedDraft = nextDraft as { nodeId: string; node: ModelNode } | null;
+    expect(committedDraft?.node.params.state_of_charge).toBe("0.99");
+  });
+});

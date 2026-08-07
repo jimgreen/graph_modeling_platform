@@ -2375,7 +2375,7 @@ export function createHandleCanvasSizeKeyDown(__appScope: Record<string, any>) {
 
 export function createUpdateParam(__appScope: Record<string, any>) {
   return (key: string, value: string) => {
-  const { NODE_LABEL_FOOTPRINT_PARAM_KEYS, commitNodeFootprintUpdates, nodeById, normalizeNodeLabelDisplayMode, patchGraphNodes, pushNodeOnlyUndoSnapshot, pushUndoSnapshot, requireEditMode, selectedNodeId, undoScopeForNodeFootprintPatch } = __appScope;
+  const { NODE_LABEL_FOOTPRINT_PARAM_KEYS, commitNodeFootprintUpdates, nodeById, normalizeNodeLabelDisplayMode, normalizeRatioParameterInputValue, patchGraphNodes, pushNodeOnlyUndoSnapshot, pushUndoSnapshot, requireEditMode, selectedNodeId, undoScopeForNodeFootprintPatch } = __appScope;
     if (!requireEditMode("修改图元参数")) {
       return;
     }
@@ -2386,20 +2386,26 @@ export function createUpdateParam(__appScope: Record<string, any>) {
     if (!currentNode) {
       return;
     }
-    if (key !== "_labelDisplayMode" && currentNode.params[key] === value) {
+    const storedValue = typeof normalizeRatioParameterInputValue === "function"
+      ? normalizeRatioParameterInputValue(key, value)
+      : value;
+    if (storedValue === null) {
+      return;
+    }
+    if (key !== "_labelDisplayMode" && currentNode.params[key] === storedValue) {
       return;
     }
     const nextNode =
       key === "_labelDisplayMode"
         ? (() => {
-            const mode = normalizeNodeLabelDisplayMode(value);
+            const mode = normalizeNodeLabelDisplayMode(storedValue);
             const visible = mode === "hidden" ? "0" : "1";
             if (currentNode.params._labelDisplayMode === mode && currentNode.params._labelVisible === visible) {
               return currentNode;
             }
             return { ...currentNode, params: { ...currentNode.params, _labelDisplayMode: mode, _labelVisible: visible } };
           })()
-        : { ...currentNode, params: { ...currentNode.params, [key]: value } };
+        : { ...currentNode, params: { ...currentNode.params, [key]: storedValue } };
     if (nextNode === currentNode) {
       return;
     }
@@ -2465,17 +2471,23 @@ export function createApplyBatchCommonParamPatch(__appScope: Record<string, any>
 
 export function createApplyBatchCommonParam(__appScope: Record<string, any>) {
   return (key: string, value: string) => {
-  const { PARAM_LABELS, applyBatchCommonParamPatch, canBatchEditParam, normalizeNodeLabelDisplayMode } = __appScope;
+  const { PARAM_LABELS, applyBatchCommonParamPatch, canBatchEditParam, normalizeNodeLabelDisplayMode, normalizeRatioParameterInputValue } = __appScope;
     if (!canBatchEditParam(key)) {
       return;
     }
-    const normalizedLabelDisplayMode = key === "_labelDisplayMode" ? normalizeNodeLabelDisplayMode(value) : undefined;
+    const storedValue = typeof normalizeRatioParameterInputValue === "function"
+      ? normalizeRatioParameterInputValue(key, value)
+      : value;
+    if (storedValue === null) {
+      return;
+    }
+    const normalizedLabelDisplayMode = key === "_labelDisplayMode" ? normalizeNodeLabelDisplayMode(storedValue) : undefined;
     const normalizedLabelVisible = normalizedLabelDisplayMode === "hidden" ? "0" : "1";
     applyBatchCommonParamPatch(
       PARAM_LABELS[key] ?? key,
       () => normalizedLabelDisplayMode
         ? { _labelDisplayMode: normalizedLabelDisplayMode, _labelVisible: normalizedLabelVisible }
-        : { [key]: value },
+        : { [key]: storedValue },
       normalizedLabelDisplayMode ? ["_labelDisplayMode", "_labelVisible"] : [key]
     );
   };

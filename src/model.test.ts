@@ -197,6 +197,7 @@ import {
   terminalStubStrokeWidth,
   terminalVoltageBaseNumber,
   formatPowerBaseDisplayValue,
+  normalizeRatioParameterInputValue,
   topologyCalculationMessage,
   voltageLevelColor,
   boundaryBusInternalConnectorSegment,
@@ -5158,6 +5159,21 @@ describe("power system model", () => {
     expect(formatPowerBaseDisplayValue("pv0", "1.0 kW")).toBe("1.0 kW");
   });
 
+  test("formats SOC and efficiency values as percentages while storing decimal ratios", () => {
+    expect(formatPowerBaseDisplayValue("state_of_charge", "0.5")).toBe("50%");
+    expect(formatPowerBaseDisplayValue("soc_upper_limit", "0.99")).toBe("99%");
+    expect(formatPowerBaseDisplayValue("module_efficiency", "0.213")).toBe("21.3%");
+    expect(formatPowerBaseDisplayValue("generator_efficiency", "98.5")).toBe("98.5%");
+    expect(formatPowerBaseDisplayValue("rated_voltage", "10")).toBe("10");
+
+    expect(normalizeRatioParameterInputValue("state_of_charge", "99%")).toBe("0.99");
+    expect(normalizeRatioParameterInputValue("state_of_charge", "99")).toBe("0.99");
+    expect(normalizeRatioParameterInputValue("state_of_charge", "0.99")).toBe("0.99");
+    expect(normalizeRatioParameterInputValue("charge_discharge_efficiency", "100%")).toBe("1");
+    expect(normalizeRatioParameterInputValue("charge_discharge_efficiency", "101%")).toBeNull();
+    expect(normalizeRatioParameterInputValue("rated_voltage", "99%")).toBe("99%");
+  });
+
   test("places three-winding transformer terminals on visible winding lead exits", () => {
     const node = createDefaultNode("ac-three-winding-transformer", { x: 500, y: 100 });
     const terminalPoints = node.terminals.map((terminal) => ({
@@ -10018,7 +10034,7 @@ describe("power system model", () => {
     }
   });
 
-  test("defines SOC upper and lower limits for AC and DC storage", () => {
+  test("defines 0-1 SOC defaults and limits for AC and DC storage", () => {
     for (const kind of ["ac-storage", "dc-storage"] as const) {
       const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
       const node = createDefaultNode(kind, { x: 100, y: 100 });
@@ -10034,8 +10050,9 @@ describe("power system model", () => {
         valueType: "float",
         readonly: false
       });
-      expect(node.params.soc_upper_limit).toBe("90");
-      expect(node.params.soc_lower_limit).toBe("10");
+      expect(node.params.state_of_charge).toBe("0.5");
+      expect(node.params.soc_upper_limit).toBe("0.9");
+      expect(node.params.soc_lower_limit).toBe("0.1");
     }
   });
 
@@ -10177,8 +10194,8 @@ describe("power system model", () => {
 
   test("exports storage SOC limits through the derived E interface", () => {
     const indexed = assignPermanentDeviceIndex(createDefaultNode("ac-storage", { x: 100, y: 100 }), {}).node;
-    indexed.params.soc_upper_limit = "95%";
-    indexed.params.soc_lower_limit = "15%";
+    indexed.params.soc_upper_limit = "0.95";
+    indexed.params.soc_lower_limit = "0.15";
 
     const payload = parseESections(buildEDeviceParameterFile({
       version: 1,
@@ -10197,8 +10214,8 @@ describe("power system model", () => {
       expect.objectContaining({
         idx: indexed.params.idx,
         idx_acgenerator: indexed.params.idx,
-        soc_upper_limit: "95%",
-        soc_lower_limit: "15%"
+        soc_upper_limit: "0.95",
+        soc_lower_limit: "0.15"
       })
     ]);
   });
@@ -10347,14 +10364,14 @@ describe("power system model", () => {
     });
     const thermal = createDefaultNode("ac-thermal-source", { x: 100, y: 100 });
     expect(thermal.params).toMatchObject({
-      thermal_efficiency: "45",
+      thermal_efficiency: "0.45",
       heat_rate: "8000",
       main_steam_pressure: "25",
       main_steam_temperature: "600"
     });
     const pv = createDefaultNode("ac-pv-source", { x: 100, y: 100 });
     expect(pv.params).toMatchObject({
-      module_efficiency: "21.3",
+      module_efficiency: "0.213",
       array_area: "100000"
     });
     const diesel = createDefaultNode("ac-diesel-source", { x: 100, y: 100 });
@@ -10369,12 +10386,12 @@ describe("power system model", () => {
       design_head: "120",
       design_flow: "280",
       rated_speed: "150",
-      generator_efficiency: "98.5"
+      generator_efficiency: "0.985"
     });
     const nuclear = createDefaultNode("ac-nuclear-source", { x: 100, y: 100 });
     expect(nuclear.params).toMatchObject({
       reactor_thermal_power: "2900",
-      thermal_efficiency: "34.5",
+      thermal_efficiency: "0.345",
       primary_loop_pressure: "15.5",
       main_steam_pressure: "6.8",
       main_steam_temperature: "285",
@@ -10383,12 +10400,12 @@ describe("power system model", () => {
     const storage = createDefaultNode("ac-storage", { x: 100, y: 100 });
     expect(storage.params).toMatchObject({
       energy_capacity: "20",
-      charge_discharge_efficiency: "90",
+      charge_discharge_efficiency: "0.9",
       max_charge_power: "5",
       max_discharge_power: "5",
-      state_of_charge: "50",
-      soc_upper_limit: "90",
-      soc_lower_limit: "10"
+      state_of_charge: "0.5",
+      soc_upper_limit: "0.9",
+      soc_lower_limit: "0.1"
     });
 
     const legacyThermalTemplate = {
@@ -10603,7 +10620,7 @@ describe("power system model", () => {
     expect(node.params).toMatchObject({
       source_type: "储能",
       energy_capacity: "20",
-      state_of_charge: "50"
+      state_of_charge: "0.5"
     });
     expect(node.params.vbase).toBe("0");
     expect(getDeviceGlyphVariant("dc-storage")).toBe("battery-storage");
@@ -10625,7 +10642,7 @@ describe("power system model", () => {
     expect(node.params).toMatchObject({
       source_type: "储能",
       energy_capacity: "20",
-      state_of_charge: "50"
+      state_of_charge: "0.5"
     });
     expect(node.params.vbase).toBe("0");
     expect(getDeviceGlyphVariant("ac-storage")).toBe("battery-storage");

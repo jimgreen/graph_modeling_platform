@@ -11,7 +11,9 @@ import {
   isStaticButtonCapableNode,
   flattenSavedSchemes,
   DEFAULT_MODEL_LAYER_ID,
+  formatPowerBaseDisplayValue,
   getTemplateStateDefinitions,
+  normalizeRatioParameterInputValue,
 } from "../model";
 
 import { normalizeNodeLabelDisplayMode } from "../nodeLabelUtils";
@@ -330,19 +332,23 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
   };
 
   const updateNodeDoubleClickDraftParam = (nodeId: string, key: string, value: string) => {
+    const storedValue = normalizeRatioParameterInputValue(key, value);
+    if (storedValue === null) {
+      return;
+    }
     updateNodeDoubleClickDraftNode(nodeId, (node) => {
-      if (key !== "_labelDisplayMode" && node.params[key] === value) {
+      if (key !== "_labelDisplayMode" && node.params[key] === storedValue) {
         return node;
       }
       if (key === "_labelDisplayMode") {
-        const mode = normalizeNodeLabelDisplayMode(value);
+        const mode = normalizeNodeLabelDisplayMode(storedValue);
         const visible = mode === "hidden" ? "0" : "1";
         if (node.params._labelDisplayMode === mode && node.params._labelVisible === visible) {
           return node;
         }
         return { ...node, params: { ...node.params, _labelDisplayMode: mode, _labelVisible: visible } };
       }
-      return { ...node, params: { ...node.params, [key]: value } };
+      return { ...node, params: { ...node.params, [key]: storedValue } };
     });
   };
 
@@ -532,7 +538,7 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
   };
 
   const renderBatchCommonParamEditor = (row: BatchCommonParamRow): ReactNode => {
-    const value = row.mixed ? "" : row.value;
+    const value = row.mixed ? "" : formatPowerBaseDisplayValue(row.key, row.value);
     if (isColorParamKey(row.key)) {
       return renderBatchCommonColorParamEditor(row);
     }
