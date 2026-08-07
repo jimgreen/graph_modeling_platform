@@ -2580,6 +2580,16 @@ describe("power system model", () => {
         { exportName: "i_out", cnName: "输出电流" }
       ]);
     });
+
+    test("动态反向映射：国网模板的'交流电化学储能'解析为 ACStorageGen", () => {
+      const text = `<estore 中文名="储能" 类别库="交流设备" 元件库="交流电化学储能">
+@    idx    name
+//   序号   名称
+</estore>`;
+      const sections = parseEDeviceDefinitionFile(text);
+      expect(sections).toHaveLength(1);
+      expect(sections[0].componentLibrary).toBe("ACStorageGen");
+    });
   });
 
   test("preserves the per-model automatic canvas expansion setting", () => {
@@ -10124,7 +10134,7 @@ describe("power system model", () => {
       });
       expect(derivedSection).toMatchObject({
         kind: expected.derivedComponentType,
-        label: expected.derivedClassCnName,
+        label: expected.label,
         categoryLibrary: expected.terminalType === "ac" ? "交流设备" : "直流设备",
         componentLibrary: expected.derivedComponentType,
         derivedFromComponentLibrary: expectedComponentLibrary,

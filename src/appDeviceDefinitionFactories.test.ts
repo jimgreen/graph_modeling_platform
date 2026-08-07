@@ -580,7 +580,7 @@ describe("manual bend interaction helpers", () => {
         component_type: "ACGenerator",
         derived_component_type: "ACHydroGen",
         derived_from_component_type: "ACGenerator",
-        derived_component_library_label: "交流水电",
+        derived_component_library_label: "交流水力发电机",
         is_derived_component_library: "1",
         hydroUnitModel: "300 MW混流式机组"
       },

@@ -3952,7 +3952,6 @@ type ElectricGenerationFamilySpec = {
   kindSuffix: ElectricGenerationFamilyKindSuffix;
   label: string;
   sourceType: string;
-  derivedClassLabel: string;
   derivedComponentSuffix: string;
   parameterDefinitions: ElectricGenerationParameterDefinitionSpec[];
   commonParams: Record<string, string>;
@@ -4007,7 +4006,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     kindSuffix: "wind-source",
     label: "风力发电机",
     sourceType: "风力",
-    derivedClassLabel: "风电",
     derivedComponentSuffix: "WindGen",
     parameterDefinitions: [
       electricGenerationStringDefinition("风机型号", "windTurbineModel"),
@@ -4034,7 +4032,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     kindSuffix: "pv-source",
     label: "光伏发电机",
     sourceType: "光伏",
-    derivedClassLabel: "光伏",
     derivedComponentSuffix: "PVGen",
     parameterDefinitions: [
       electricGenerationStringDefinition("光伏组件型号", "pvModuleModel"),
@@ -4059,7 +4056,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     kindSuffix: "thermal-source",
     label: "火力发电机",
     sourceType: "火力",
-    derivedClassLabel: "火电",
     derivedComponentSuffix: "ThermalGen",
     parameterDefinitions: [
       electricGenerationStringDefinition("火电机组型号", "thermalUnitModel"),
@@ -4091,7 +4087,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     kindSuffix: "diesel-source",
     label: "柴油发电机",
     sourceType: "柴油",
-    derivedClassLabel: "柴发",
     derivedComponentSuffix: "DieselGen",
     parameterDefinitions: [
       electricGenerationStringDefinition("柴油机组型号", "dieselUnitModel"),
@@ -4118,7 +4113,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     kindSuffix: "hydro-source",
     label: "水力发电机",
     sourceType: "水力",
-    derivedClassLabel: "水电",
     derivedComponentSuffix: "HydroGen",
     parameterDefinitions: [
       electricGenerationStringDefinition("水电机组型号", "hydroUnitModel"),
@@ -4150,7 +4144,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     kindSuffix: "nuclear-source",
     label: "核能发电机",
     sourceType: "核能",
-    derivedClassLabel: "核电",
     derivedComponentSuffix: "NuclearGen",
     parameterDefinitions: [
       electricGenerationStringDefinition("核电机组型号", "nuclearUnitModel"),
@@ -4187,7 +4180,6 @@ const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = [
     kindSuffix: "storage",
     label: "电化学储能",
     sourceType: "储能",
-    derivedClassLabel: "储能",
     derivedComponentSuffix: "StorageGen",
     parameterDefinitions: [
       electricGenerationStringEnumDefinition("储能技术类型", "storageTechnology", [
@@ -4253,7 +4245,7 @@ function electricGenerationDerivedInfoForFamily(
     kind: `${terminalType}-${family.kindSuffix}`,
     componentLibrary: baseComponentLibrary,
     derivedComponentLibrary: `${terminalType.toUpperCase()}${family.derivedComponentSuffix}`,
-    label: `${terminalPrefix}${family.derivedClassLabel}`,
+    label: `${terminalPrefix}${family.label}`,
     categoryLibrary: `${terminalPrefix}设备`,
     terminalType,
     baseComponentLibrary,
@@ -11654,20 +11646,6 @@ const ELEMENT_TREE_COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   DCLoad: "直流负荷",
   ACGenerator: "交流电源",
   DCGenerator: "直流电源",
-  ACWindGen: "交流风电",
-  DCWindGen: "直流风电",
-  ACPVGen: "交流光伏",
-  DCPVGen: "直流光伏",
-  ACThermalGen: "交流火电",
-  DCThermalGen: "直流火电",
-  ACDieselGen: "交流柴发",
-  DCDieselGen: "直流柴发",
-  ACHydroGen: "交流水电",
-  DCHydroGen: "直流水电",
-  ACNuclearGen: "交流核电",
-  DCNuclearGen: "直流核电",
-  ACStorageGen: "交流储能",
-  DCStorageGen: "直流储能",
   ACShuntCompensator: "交流无功补偿",
   ACZeroBranch: "交流零阻支路",
   DCZeroBranch: "直流零阻支路",
@@ -11695,6 +11673,16 @@ const ELEMENT_TREE_COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   HeatPump: "热泵",
   HeatBus: "热母线"
 };
+
+// 派生元件库标签从内置图元定义（ELECTRIC_GENERATION_FAMILY_SPECS）动态生成，
+// 与 template.label 保持一致（交流电化学储能 / 交流风力发电机 等），不维护两套定义
+for (const family of ELECTRIC_GENERATION_FAMILY_SPECS) {
+  for (const terminalType of ELECTRIC_GENERATION_TERMINAL_TYPES) {
+    const terminalPrefix = terminalType === "ac" ? "交流" : "直流";
+    const derivedComponentLibrary = `${terminalType.toUpperCase()}${family.derivedComponentSuffix}`;
+    ELEMENT_TREE_COMPONENT_LIBRARY_LABELS[derivedComponentLibrary] = `${terminalPrefix}${family.label}`;
+  }
+}
 
 // 反向映射表：支持多个中文名映射到同一个英文元件库名
 // 从 ELEMENT_TREE_COMPONENT_LIBRARY_LABELS 生成反向映射，附加别名
