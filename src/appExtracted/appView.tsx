@@ -527,6 +527,7 @@ export function renderAppView(__appScope: Record<string, any>) {
     matched: Array<{ section: string; device: string; fields: Array<{ template: string; device: string }> }>;
     skipped: Array<{ section: string; reason: string; fields?: string[] }>;
   } | null>(null);
+  const [showImportResultDialog, setShowImportResultDialog] = useState(false);
   const [eDeviceInterfaceLoadedTemplateName, setEDeviceInterfaceLoadedTemplateName] = useState<string | null>(() => {
     try { return localStorage.getItem("eDeviceInterfaceLoadedTemplateName"); } catch { return null; }
   });
@@ -4249,7 +4250,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                     </button>
                   )}
                   {templateImportResult && (
-                    <button type="button" className="e-device-interface-convert-button" onClick={() => setTemplateImportResult(templateImportResult)}>
+                    <button type="button" className="e-device-interface-convert-button" onClick={() => setShowImportResultDialog(true)}>
                       查看导入结果
                     </button>
                   )}
@@ -4655,14 +4656,14 @@ export function renderAppView(__appScope: Record<string, any>) {
             </div>
           </section>
         </div>)}
-      {templateImportResult && (<div className="image-picker-backdrop" onPointerDown={() => setTemplateImportResult(null)}>
+      {showImportResultDialog && templateImportResult && (<div className="image-picker-backdrop" onPointerDown={() => setShowImportResultDialog(false)}>
           <section className="template-import-result-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
             <div className="image-picker-title">
               <div>
                 <h2>预定义模板导入结果</h2>
                 <p>匹配：{templateImportResult.matched.length} 个，未匹配：{templateImportResult.skipped.length} 个</p>
               </div>
-              <button type="button" onClick={() => setTemplateImportResult(null)} title="关闭">
+              <button type="button" onClick={() => setShowImportResultDialog(false)} title="关闭">
                 <X size={16} />
               </button>
             </div>
@@ -4731,7 +4732,7 @@ export function renderAppView(__appScope: Record<string, any>) {
               </div>
             </div>
             <div className="template-import-result-footer">
-              <button type="button" onClick={() => setTemplateImportResult(null)}>关闭</button>
+              <button type="button" onClick={() => setShowImportResultDialog(false)}>关闭</button>
             </div>
           </section>
         </div>)}
