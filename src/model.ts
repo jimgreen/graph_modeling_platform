@@ -2498,6 +2498,73 @@ const ELECTRIC_GENERATION_DEVICE_TEMPLATES = ELECTRIC_GENERATION_FAMILY_SPECS.fl
   ELECTRIC_GENERATION_TERMINAL_TYPES.map((terminalType) => createElectricGenerationDeviceTemplate(terminalType, family))
 );
 
+// 元件库标签映射
+export const ELEMENT_TREE_COMPONENT_LIBRARY_LABELS: Record<string, string> = {
+  StaticTextSymbol: "静态文本",
+  StaticMediaSymbol: "静态媒体",
+  StaticBasicShape: "基础图形",
+  StaticFlowNode: "流程节点",
+  StaticButton: "按钮图元",
+  StaticContainerSymbol: "容器图元",
+  StaticConnectorSymbol: "连接图元",
+  StaticAnnotationSymbol: "标注图元",
+  ACRealBs: "交流母线",
+  DCRealBs: "直流母线",
+  ACNode: "交流节点",
+  DCNode: "直流节点",
+  ACBranch: "交流支路",
+  DCBranch: "直流支路",
+  ACLoad: "交流负荷",
+  DCLoad: "直流负荷",
+  ACGenerator: "交流电源",
+  DCGenerator: "直流电源",
+  ACShuntCompensator: "交流无功补偿",
+  ACZeroBranch: "交流零阻支路",
+  DCZeroBranch: "直流零阻支路",
+  ACSwitch: "交流开关",
+  DCSwitch: "直流开关",
+  ACBreak: "交流断路器",
+  DCBreak: "直流断路器",
+  GroundDisconnector: "接地刀闸",
+  ACTransformer: "双绕组变压器",
+  ACTransWinding: "变压器绕组",
+  ACTransfomer3: "三绕组变压器",
+  DCDCConverter: "直流变换器",
+  DCACConverter: "交直流变换器",
+  ACACConverter: "交流变换器",
+  HydroSource: "氢源",
+  HydroLoad: "氢负荷",
+  HydroPipe: "输氢管道",
+  HydroCompressor: "氢压缩机",
+  HydroPressRegulator: "氢调压器",
+  HydroStopValve: "氢截止阀",
+  HydroBus: "氢母线",
+  HeatSource: "热源",
+  HeatLoad: "热负荷",
+  HeatPipe: "热管道",
+  HeatExchanger: "换热器",
+  HeatPump: "热泵",
+  HeatBus: "热母线"
+};
+
+// 派生元件库标签从内置图元定义动态生成
+for (const family of ELECTRIC_GENERATION_FAMILY_SPECS) {
+  for (const terminalType of ELECTRIC_GENERATION_TERMINAL_TYPES) {
+    const info = electricGenerationDerivedInfoForFamily(terminalType, family);
+    ELEMENT_TREE_COMPONENT_LIBRARY_LABELS[info.derivedComponentLibrary] = info.label;
+  }
+}
+
+// 反向映射表
+export const COMPONENT_LIBRARY_REVERSE_MAPPING: Record<string, string> = {
+  ...Object.fromEntries(
+    Object.entries(ELEMENT_TREE_COMPONENT_LIBRARY_LABELS).map(([en, cn]) => [cn, en])
+  ),
+  "交流线路": "ACBranch",
+  "双绕组主变+三绕组主变": "ACTransformer",
+  "ACNode+交流母线": "ACNode"
+};
+
 const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-text",
