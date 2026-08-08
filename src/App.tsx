@@ -616,14 +616,6 @@ type PendingUserCustomizationImport = {
   mode: UserCustomizationImportMode;
   preview: UserCustomizationImportPreview;
 };
-const LIBRARY_PACKAGE_DIALOG_SCOPES: LibraryPackageScope[] = [
-  "all",
-  "component-library",
-  "measurement",
-  "device-library",
-  "template-library",
-  "icon-library"
-];
 
 export function App() {
   const __renderCount = useRef(0);
@@ -689,7 +681,7 @@ const stateIconDrawingDragRef = useRef<StateIconDrawingDragState | null>(null); 
 const stateIconDrawingDragDeltaRef = useRef<{ overrides: Record<string, any>; guides?: any[] } | null>(null); Object.assign(__appScope, { stateIconDrawingDragDeltaRef });
 const stateIconDrawingHistoryRef = useRef<StateIconDrawingElement[][]>([]); Object.assign(__appScope, { stateIconDrawingHistoryRef });
 const stateIconDrawingClipboardRef = useRef<StateIconDrawingElement[]>([]); Object.assign(__appScope, { stateIconDrawingClipboardRef });
-const stateIconDrawingInitialImageRef = useRef<{ key: string; image: string; sourceImage: string } | null>(null);
+const stateIconDrawingInitialImageRef = useRef<{ key: string; image: string; sourceImage: string } | null>(null); Object.assign(__appScope, { stateIconDrawingInitialImageRef });
 const modelImportInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { modelImportInputRef });
 const svgModelImportInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { svgModelImportInputRef, parseSvgModel });
 const modelImportTargetSchemeIdRef = useRef<string>(""); Object.assign(__appScope, { modelImportTargetSchemeIdRef });

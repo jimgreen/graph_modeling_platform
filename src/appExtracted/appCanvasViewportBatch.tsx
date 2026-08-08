@@ -606,8 +606,17 @@ import { MemoizedCanvasArea } from "./appCanvasArea";
 
 export function useCanvasViewportBatch(__appScope: Record<string, any>) {
   const {
+    activeLayerEdgeIdSet,
+    activeLayerEdges,
+    activeLayerGroups,
+    activeLayerNodeIdSet,
+    activeLayerNodes,
     activeProjectKey,
     activeSchemeKey,
+    activeSelectedEdgeIds,
+    activeSelectedEdgeSet,
+    activeSelectedNodeIds,
+    busNodeIdSet,
     cachedRouteStoreRef,
     canvasBackgroundImage,
     canvasBackgroundImageAssetId,
@@ -625,41 +634,74 @@ export function useCanvasViewportBatch(__appScope: Record<string, any>) {
     colorPalette,
     connectDropReady,
     connectSource,
+    connectionLineStyle,
     containerParamViewId,
+    displaySelectedEdgeKey,
+    displaySelectedNodeKey,
     dragging,
+    draggingNodeIdSet,
+    draggingNodeKey,
+    edgeById,
     edges,
+    editHotInteractionActive,
+    elementTree,
     elementTreeEditDrafts,
     elementTreeItemLimits,
+    elementTreeLayerSignature,
+    elementTreeSearchQuery,
+    focusedGroupedNodeMovesGroup,
     graphStore,
+    graphTreePanelActive,
     hasUnsavedChanges,
     imageAssets,
     imperativeSingleNodeDragActiveRef,
+    inspectorTopologyErrors,
+    isEditMode,
+    isReadonlyCanvasMode,
+    layers,
     leftPanelAutoVisible,
     leftPanelMode,
     libraryPlacement,
+    libraryTemplateByKind,
     manualPathDrag,
     mode,
-    nodes,
+    nodeById,
     nodeTerminalSnapTargetRef,
+    nodes,
     pendingCanvasNoScrollOffsetRef,
     rewiring,
     rightPanelAutoVisible,
     rightPanelMode,
     routableLineEndpointDrag,
+    routableLineNodeIdsByEndpointNodeId,
     routableLinePlacement,
     routableLinePreview,
     routeDirtyGenerationRef,
     routeRenderingReady,
+    selectedContainerParameterViews,
+    selectedEdge,
     selectedEdgeId,
+    selectedNode,
+    selectedNodeCount,
+    selectedNodeIdSet,
     setElementTreeItemHeights,
     setElementTreeItemWindows,
     staticDrawing,
     staticTerminalOverlapReadyKey,
     terminalPress,
     transformDrag,
-    viewBox
+    viewBox,
+    visibleEdgeIdSet,
+    visibleEdges,
+    visibleEdgesByTerminalRef,
+    visibleNodeById,
+    visibleNodeIdSet,
+    visibleNodeSpatialIndex,
+    visibleNodes
   } = __appScope;
-  const filteredElementTree = useMemo(createAppHookCallback31(__appScope), [elementTree, elementTreeSearchNeedle, libraryTemplateByKind, visibleNodeById]);
+  const selectedElementTreeItemKey = useMemo(createAppHookCallback30(__appScope), [activeLayerEdgeIdSet, activeLayerNodeIdSet, activeSelectedEdgeIds, activeSelectedNodeIds, graphTreePanelActive]); Object.assign(__appScope, { selectedElementTreeItemKey });
+  const elementTreeSearchNeedle = elementTreeSearchQuery.trim().toLocaleLowerCase(); Object.assign(__appScope, { elementTreeSearchNeedle });
+  const filteredElementTree = useMemo(createAppHookCallback31(__appScope), [elementTree, elementTreeSearchNeedle, libraryTemplateByKind, visibleNodeById]); Object.assign(__appScope, { filteredElementTree });
   const elementTreeDraftValue = (key: string, fallback: string) =>
       Object.prototype.hasOwnProperty.call(elementTreeEditDrafts, key) ? elementTreeEditDrafts[key] : fallback;
   Object.assign(__appScope, { elementTreeDraftValue });
@@ -1442,4 +1484,5 @@ export function useCanvasViewportBatch(__appScope: Record<string, any>) {
   Object.assign(__appScope, { dragGhostRoutableLineNodeIdSet });
   useEffect(createAppHookCallback76(__appScope), [containerParamViewId, selectedContainerParameterViews]);
   const clearLocalSchemeModelCache = createClearLocalSchemeModelCache(__appScope); Object.assign(__appScope, { clearLocalSchemeModelCache });
+  const rememberPersistedSchemesPayload = createRememberPersistedSchemesPayload(__appScope); Object.assign(__appScope, { rememberPersistedSchemesPayload });
 }

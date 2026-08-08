@@ -47,6 +47,7 @@ import * as StateIconDrawingScope from "../stateIconDrawing";
 import * as CustomDeviceUtilsScope from "../customDeviceUtils";
 import * as AppCoreCanvasUtilitiesScope from "./appCoreCanvasUtilities";
 import * as AppPersistenceLibraryExportScope from "./appPersistenceLibraryExport";
+import * as AppInlineUtilityFunctionsScope from "./appInlineUtilityFunctions";
 
 // Module-level bindings that extracted App factories read through __appScope.
 // This restores the lexical visibility those factories had before App.tsx was split.
@@ -77,6 +78,7 @@ export const APP_STATIC_SCOPE = Object.assign(
   CustomDeviceUtilsScope,
   AppCoreCanvasUtilitiesScope,
   AppPersistenceLibraryExportScope,
+  AppInlineUtilityFunctionsScope,
   {
     CSS: globalThis.CSS,
     ResizeObserver: globalThis.ResizeObserver,

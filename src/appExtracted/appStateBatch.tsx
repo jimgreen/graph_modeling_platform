@@ -1,6 +1,6 @@
 // @ts-nocheck
 // 从 App.tsx 第 901-2261 行提取
-import { useMemo, useEffect, useRef, useTransition, useDeferredValue } from "react";
+import { useMemo, useEffect, useLayoutEffect, useRef, useTransition, useDeferredValue } from "react";
 import {
   AlignCenter,
   AlignEndHorizontal,
@@ -606,6 +606,12 @@ import { MemoizedCanvasArea } from "./appCanvasArea";
 
 export function useAppStateBatch(__appScope: Record<string, any>) {
   const {
+    BatchCommonMeasurementGroupRow,
+    BatchCommonParamRow,
+    DraggingState,
+    RefreshRecoveryProjectState,
+    RenderViewportBounds,
+    StaticButtonComponents,
     activeLayerId,
     activeProjectKey,
     activeSchemeKey,
@@ -622,10 +628,12 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
     canvasSelectionScope,
     canvasSelectionShortcutActiveRef,
     canvasWidth,
+    colorDisplayMode,
     colorPalette,
     colorPaletteDialogOpen,
     colorPaletteDraft,
     componentLibraryDisplayMode,
+    componentLibraryKey,
     connectSource,
     containerParamViewId,
     currentUnit,
@@ -636,17 +644,23 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
     customDeviceDraft,
     customDeviceStatePageId,
     customDeviceTemplates,
-    customGraphTemplates,
     customGraphTemplateTypes,
+    customGraphTemplates,
     definitionDraftRows,
     definitionDraftSection,
     definitionStateDraftRows,
     definitionStatePageId,
     deviceDefinitionOverrides,
     deviceDefinitionSearchQuery,
+    deviceIndexCounters,
+    draggedEdgeIds,
     dragging,
     edges,
+    edgesByTerminalRef,
     expandedCategoryLibraryComponentLibraries,
+    globalMessage,
+    globalMessageTimerRef,
+    graphStore,
     groups,
     hasUnsavedChanges,
     hoveredCategoryLibraryComponentLibrary,
@@ -656,6 +670,7 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
     latestActiveProjectPointerRef,
     latestEdgesRef,
     latestNodesRef,
+    layerSignature,
     layers,
     leftPanelTab,
     libraryFlyoutCloseTimerRef,
@@ -666,10 +681,16 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
     marquee,
     measurementConfig,
     measurementConfigDraft,
+    measurementEditorColumnWidths,
     modifierSelectionPress,
+    moved,
+    movedBusNodeIds,
+    movedNodeIds,
     nodeLabelDrag,
     nodeLabelRotateDrag,
+    nodeSpatialIndex,
     nodes,
+    nodesByLayerId,
     panning,
     powerBaseValue,
     powerUnit,
@@ -677,7 +698,9 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
     projectName,
     projectSearchQuery,
     refreshRecoveryProjectRef,
+    revision,
     rewiring,
+    routePointsByEdgeId,
     saveRequiredRef,
     selectedDefinitionKind,
     selectedEdgeId,
@@ -685,9 +708,13 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
     selectedNodeIds,
     selectedProjectId,
     selectedSchemeId,
+    setGlobalMessage,
     setGraphArrays,
     setHoveredGraphTemplateType,
     setLibraryFlyoutPositions,
+    setMeasurementEditorColumnWidths,
+    singleNodeDragCache,
+    stateIconDrawing,
     staticDrawing,
     suppressNextGraphDirtyRef,
     templateLibraryDisplayMode,
@@ -696,37 +723,12 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
     topologyErrors,
     topologyWarningPage,
     transformDrag,
+    tree,
     undoStack,
     viewBox,
     viewBoxRef,
     voltageColorVisibility,
-    voltageUnit,
-    BatchCommonMeasurementGroupRow,
-    BatchCommonParamRow,
-    colorDisplayMode,
-    componentLibraryKey,
-    draggedEdgeIds,
-    DraggingState,
-    edgesByTerminalRef,
-    globalMessage,
-    globalMessageTimerRef,
-    layerSignature,
-    measurementEditorColumnWidths,
-    moved,
-    movedBusNodeIds,
-    movedNodeIds,
-    nodesByLayerId,
-    nodeSpatialIndex,
-    RefreshRecoveryProjectState,
-    RenderViewportBounds,
-    revision,
-    routePointsByEdgeId,
-    setGlobalMessage,
-    setMeasurementEditorColumnWidths,
-    singleNodeDragCache,
-    stateIconDrawing,
-    StaticButtonComponents,
-    tree
+    voltageUnit
   } = __appScope;
   const { latestSchemesRef, schemes } = __appScope;
   latestSchemesRef.current = schemes;
@@ -1138,7 +1140,7 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
   const projects = useMemo(() => flattenSavedProjects(schemes), [schemes]); Object.assign(__appScope, { projects });
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]); Object.assign(__appScope, { projectById });
   const projectSearchNeedle = normalizeLibrarySearchText(projectSearchQuery); Object.assign(__appScope, { projectSearchNeedle });
-  const filteredProjectSchemes = useMemo<SavedSchemeRecord[]>(createAppHookCallback14(__appScope), [projectSearchNeedle, schemes]);
+  const filteredProjectSchemes = useMemo<SavedSchemeRecord[]>(createAppHookCallback14(__appScope), [projectSearchNeedle, schemes]); Object.assign(__appScope, { filteredProjectSchemes });
   const baseLibraryTemplates = useMemo<DeviceTemplate[]>(() => [...DEVICE_LIBRARY, ...customDeviceTemplates], [customDeviceTemplates]); Object.assign(__appScope, { baseLibraryTemplates });
   const libraryTemplates = useMemo<DeviceTemplate[]>(
       () => baseLibraryTemplates.map((template) => applyDeviceTemplateDefinitionOverride(template, deviceDefinitionOverrideForTemplate(template, deviceDefinitionOverrides))),
@@ -1591,4 +1593,5 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
   Object.assign(__appScope, { elementTreeSignature });
   const elementTree = useMemo(() => createAppHookCallback29(__appScope)(), [deferredElementTreeSource, elementTreeSignature, graphTreePanelActive, libraryTemplates]);
   Object.assign(__appScope, { elementTree });
+  const elementTreeItemChildren = createElementTreeItemChildren(__appScope); Object.assign(__appScope, { elementTreeItemChildren });
 }
