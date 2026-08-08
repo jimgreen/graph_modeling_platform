@@ -3888,27 +3888,35 @@ export function parseEDeviceDefinitionFile(text: string): EDeviceDefinitionSecti
     const derivedAttr = matchEDefinitionAttr(attrText, "是否派生新类");
     const containerAttr = matchEDefinitionAttr(attrText, "是否容器");
     const exportEnabledAttr = matchEDefinitionAttr(attrText, "是否导出");
-    // 如果元件库是中文名，反向映射为英文元件库名
-    let resolvedComponentLibrary = componentLibraryAttr || kind;
-    if (componentLibraryAttr) {
-      // 中文名称，尝试反向查找
-      const mapped = COMPONENT_LIBRARY_REVERSE_MAPPING[componentLibraryAttr];
-      if (mapped) {
-        resolvedComponentLibrary = mapped;
+
+    // 支持 + 号分割的多对一映射（如 "双绕组变压器+三绕组变压器" → 同一个 exportName）
+    const componentLibraryParts = componentLibraryAttr.includes("+")
+      ? componentLibraryAttr.split("+").map((part) => part.trim()).filter(Boolean)
+      : [componentLibraryAttr];
+
+    for (const part of componentLibraryParts) {
+      // 如果元件库是中文名，反向映射为英文元件库名
+      let resolvedComponentLibrary = part || kind;
+      if (part) {
+        // 中文名称，尝试反向查找
+        const mapped = COMPONENT_LIBRARY_REVERSE_MAPPING[part];
+        if (mapped) {
+          resolvedComponentLibrary = mapped;
+        }
       }
+      sections.push({
+        kind,
+        label: matchEDefinitionAttr(attrText, "中文名"),
+        categoryLibrary: matchEDefinitionAttr(attrText, "类别库"),
+        componentLibrary: resolvedComponentLibrary,
+        originalComponentLibrary: part && resolvedComponentLibrary !== part ? part : undefined,
+        derivedFromComponentLibrary: matchEDefinitionAttr(attrText, "派生基类") || undefined,
+        isDerivedComponentLibrary: derivedAttr ? eDefinitionAttrIsYes(derivedAttr) : undefined,
+        isContainerComponentLibrary: containerAttr ? eDefinitionAttrIsYes(containerAttr) : undefined,
+        exportEnabled: exportEnabledAttr ? eDefinitionAttrIsYes(exportEnabledAttr) : true,
+        fields
+      });
     }
-    sections.push({
-      kind,
-      label: matchEDefinitionAttr(attrText, "中文名"),
-      categoryLibrary: matchEDefinitionAttr(attrText, "类别库"),
-      componentLibrary: resolvedComponentLibrary,
-      originalComponentLibrary: componentLibraryAttr && resolvedComponentLibrary !== componentLibraryAttr ? componentLibraryAttr : undefined,
-      derivedFromComponentLibrary: matchEDefinitionAttr(attrText, "派生基类") || undefined,
-      isDerivedComponentLibrary: derivedAttr ? eDefinitionAttrIsYes(derivedAttr) : undefined,
-      isContainerComponentLibrary: containerAttr ? eDefinitionAttrIsYes(containerAttr) : undefined,
-      exportEnabled: exportEnabledAttr ? eDefinitionAttrIsYes(exportEnabledAttr) : true,
-      fields
-    });
   }
   return sections;
 }

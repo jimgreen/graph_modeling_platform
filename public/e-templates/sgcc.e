@@ -18,7 +18,7 @@
 @    idx    name    idv
 </substation>
 
-<node 中文名="节点" 类别库="交流设备" 元件库="ACNode">
+<node 中文名="节点" 类别库="交流设备" 元件库="ACNode+交流母线">
 //   序号    名称    真实母线    所属厂站    电压等级    电压幅值    电压相角    电压上限    电压下限
 @    idx    name    realbs    ist    vltp    v    a    vmax    vmin
 </node>
@@ -48,7 +48,7 @@
 @    idx    name    runstat    ind    znd    ist    zst    mva    imax    rij    xij    bch
 </line>
 
-<trfm  中文名="变压器" 类别库="交流设备" 元件库="双绕组主变+三绕组主变">
+<trfm  中文名="变压器" 类别库="交流设备" 元件库="双绕组变压器+三绕组变压器">
 //   序号    名称   所属厂站    运行状态    容量
 @    idx    name    ist    runstat    mva
 </trfm>
