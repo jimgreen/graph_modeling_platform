@@ -2305,6 +2305,9 @@ function getRawEParamValue(
   if (key === "vbase") {
     return node.params.vbase ?? node.terminals[0]?.vbase ?? "";
   }
+  if (key === "vltp") {
+    return String(node.params.vltp ?? node.params.vbase ?? node.terminals[0]?.vbase ?? "").trim();
+  }
   if (key === "ist") {
     return "1";
   }
@@ -3403,10 +3406,10 @@ function buildSubcontrolareaSection(project: ProjectFile): string {
   return formatEFileSectionRows("subcontrolarea", columns, rows);
 }
 
-function buildSubstationSection(project: ProjectFile): string {
+function buildSubstationSection(project: ProjectFile, idv: string): string {
   const columns = ["idx", "name", "idv"];
   const name = String(project.substation ?? "").trim() || "默认厂站";
-  const rows = [["1", formatEColumnValue("substation", "name", name, 0), "0"]];
+  const rows = [["1", formatEColumnValue("substation", "name", name, 0), idv]];
   return formatEFileSectionRows("substation", columns, rows);
 }
 
@@ -3474,8 +3477,16 @@ export function buildEDeviceParameterFile(
       return formatESection(section, recordsBySection.get(section) ?? [], outputSection);
     });
   const hasTemplateConfig = Boolean(options.eDeviceDefinitionLabels) && Object.keys(options.eDeviceDefinitionLabels ?? {}).length > 0;
+  // substation idv = max（属于该厂站的 node vltp）对应的 basevoltage idx
+  const basevoltageLevels = readVoltageLevelSettings();
+  const allBasevoltageLevels = [...basevoltageLevels.ac, ...basevoltageLevels.dc];
+  const nodeRecords = recordsBySection.get("ACNode") ?? [];
+  const nodeVltps = nodeRecords.map((r) => r.params.vltp).filter(Boolean);
+  const maxVltp = nodeVltps.length > 0 ? nodeVltps.sort((a, b) => Number(b) - Number(a))[0] : "";
+  const idvIndex = allBasevoltageLevels.findIndex((level) => String(level.vltp) === String(maxVltp));
+  const substationIdv = idvIndex >= 0 ? String(idvIndex + 1) : "0";
   const headerSections = hasTemplateConfig
-    ? [buildBasevalueSection(project), buildBasevoltageSection(), buildSubcontrolareaSection(project), buildSubstationSection(project)]
+    ? [buildBasevalueSection(project), buildBasevoltageSection(), buildSubcontrolareaSection(project), buildSubstationSection(project, substationIdv)]
     : [buildPowerBaseSection(project, schemePath), buildBasevoltageSection()];
   return [...headerSections, ...sectionBlocks].join("\n\n") + "\n";
 }

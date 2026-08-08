@@ -650,6 +650,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
           })).filter((f: any) => f.exportName);
           if (templateFields.length > 0) {
             nextTemplateFields[componentLibrary] = templateFields;
+            nextFieldOrder[componentLibrary] = templateFields.map((f: any) => f.exportName);
           }
         }
       }
