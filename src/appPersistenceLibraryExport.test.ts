@@ -565,7 +565,10 @@ describe("graph template library filtering", () => {
   });
 
   test("opens the right-floating template group flyout when the pointer enters the type row", () => {
-    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appStateBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appCanvasViewportBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appRenderBatch.tsx", import.meta.url), "utf8");
     const sectionMatch = appSource.match(
       /className=\{`library-group-section template-library-type-section[\s\S]*?onMouseLeave=\{\(\) => \{/u
     );
@@ -598,7 +601,10 @@ describe("graph template library filtering", () => {
   });
 
   test("uses one library package import/export entry with direct component and template actions", () => {
-    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appStateBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appCanvasViewportBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appRenderBatch.tsx", import.meta.url), "utf8");
     const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
     const projectFactorySource = readFileSync(new URL("./appExtracted/appProjectCanvasFactories.tsx", import.meta.url), "utf8");
 
@@ -640,7 +646,10 @@ describe("graph template library filtering", () => {
   });
 
   test("refreshes the library panel callback after measurement defaults are saved", () => {
-    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appStateBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appCanvasViewportBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appRenderBatch.tsx", import.meta.url), "utf8");
     const libraryPanelContentMatch = appSource.match(
       /const libraryPanelContent = useMemo\([\s\S]*?Object\.assign\(__appScope, \{ libraryPanelContent \}\);/u
     );
@@ -649,7 +658,10 @@ describe("graph template library filtering", () => {
   });
 
   test("alerts after a library package import succeeds", () => {
-    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appStateBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appCanvasViewportBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appRenderBatch.tsx", import.meta.url), "utf8");
     const importHandlerMatch = appSource.match(
       /const importLibraryPackageFile = \(event: ChangeEvent<HTMLInputElement>\) => \{[\s\S]*?Object\.assign\(__appScope, \{ importLibraryPackageFile \}\);/u
     );

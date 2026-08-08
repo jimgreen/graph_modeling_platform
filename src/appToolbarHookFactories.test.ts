@@ -195,7 +195,10 @@ describe("batch common model parameter hook", () => {
   });
 
   test("recomputes inherited fields when device library definitions change", () => {
-    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appStateBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appCanvasViewportBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appRenderBatch.tsx", import.meta.url), "utf8");
     const normalizedSource = appSource.replace(/\s+/g, " ");
 
     expect(normalizedSource).toContain(
@@ -339,7 +342,10 @@ describe("graph dirty baseline hook", () => {
 
 describe("toolbar hook scope ordering", () => {
   test("registers the routable-line endpoint preview helper before hook callback 61 consumes it", () => {
-    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appStateBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appCanvasViewportBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appRenderBatch.tsx", import.meta.url), "utf8");
     const registration = appSource.indexOf(
       "const routableLineEndpointPreviewRoutePoints = createRoutableLineEndpointPreviewRoutePoints(__appScope);"
     );

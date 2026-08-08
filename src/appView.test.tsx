@@ -526,7 +526,10 @@ describe("app view device definition parameter rows", () => {
   });
 
   test("keeps derived edit dialogs from injecting base default parameters", () => {
-    const source = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const source = readFileSync(new URL("./App.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appStateBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appCanvasViewportBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appRenderBatch.tsx", import.meta.url), "utf8");
 
     expect(source).toMatch(/isDerivedComponentLibrary:\s*customDeviceDraft\.isDerivedComponentLibrary/);
   });
@@ -562,7 +565,10 @@ describe("app view device definition parameter rows", () => {
   });
 
   test("passes derived metadata into custom device measurement positions", () => {
-    const source = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const source = readFileSync(new URL("./App.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appStateBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appCanvasViewportBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appRenderBatch.tsx", import.meta.url), "utf8");
 
     expect(source).toMatch(
       /const customDeviceMeasurementPositionDefinitions = buildMeasurementProfilePositionDefinitions\(\{[\s\S]*source:\s*\{[\s\S]*is_derived_component_library:\s*"1"[\s\S]*isDerivedComponentLibrary:\s*customDeviceDraft\.isDerivedComponentLibrary[\s\S]*derivedFromComponentLibrary:\s*customDeviceDraft\.isDerivedComponentLibrary[\s\S]*customDeviceDraft\.derivedFromComponentLibrary \|\| customDeviceDraft\.componentLibrary[\s\S]*derivedComponentLibrary:\s*customDeviceDraft\.isDerivedComponentLibrary \? customDeviceDraft\.derivedComponentLibrary : ""[\s\S]*derivedComponentLibraryLabel:\s*customDeviceDraft\.isDerivedComponentLibrary \? customDeviceDraft\.derivedComponentLibraryLabel : ""/
@@ -703,7 +709,10 @@ describe("user customization manager entry", () => {
     expect(saveIndex).toBeGreaterThan(managerIndex);
 
     // 已从图元库 tab 移除
-    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appStateBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appCanvasViewportBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appRenderBatch.tsx", import.meta.url), "utf8");
     const componentActions = appSource.match(
       /<div className="component-library-actions library-scope-actions"[\s\S]*?<\/div>\s*<div className="library-display-mode"/
     )?.[0] ?? "";

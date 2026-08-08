@@ -5,7 +5,10 @@ import { createAppHookCallback140 } from "./appExtracted/appToolbarHookFactories
 
 describe("background page rendering", () => {
   test("keeps background page content ready when only visible layer selection changes", () => {
-    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appStateBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appCanvasViewportBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appRenderBatch.tsx", import.meta.url), "utf8");
     const dependencyMatch = appSource.match(/useEffect\(createAppHookCallback140\(__appScope\), \[([^\]]*)\]\);/u);
 
     expect(dependencyMatch).toBeTruthy();

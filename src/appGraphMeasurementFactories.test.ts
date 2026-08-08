@@ -1140,7 +1140,10 @@ describe("measurement canvas interactions", () => {
   });
 
   test("allows the measurement display editor dialog to be dragged by its title", () => {
-    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appStateBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appCanvasViewportBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appRenderBatch.tsx", import.meta.url), "utf8");
     const coreSource = readFileSync(new URL("./appExtracted/appCoreCanvasUtilities.tsx", import.meta.url), "utf8");
     const measurementDialogSource = readFileSync(
       new URL("./appExtracted/appProjectCanvasFactories.tsx", import.meta.url),
@@ -1158,7 +1161,10 @@ describe("measurement canvas interactions", () => {
   });
 
   test("renders draggable column width handles in the measurement display editor table", () => {
-    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appStateBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appCanvasViewportBatch.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appRenderBatch.tsx", import.meta.url), "utf8");
     const measurementDialogSource = readFileSync(
       new URL("./appExtracted/appProjectCanvasFactories.tsx", import.meta.url),
       "utf8"
