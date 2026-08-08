@@ -386,6 +386,19 @@ export function buildEDeviceInterfaceDefinitionRows(options: {
     }
   }
 
+  // ac-transformer 同时导出 ACTransWinding（绕组表），字段镜像 ACTransformer
+  const acTransformerGroup = groups.get("ACTransformer");
+  if (acTransformerGroup && !groups.has("ACTransWinding")) {
+    groups.set("ACTransWinding", {
+      ...acTransformerGroup,
+      componentLibrary: "ACTransWinding",
+      label: "变压器绕组",
+      exportName: eDeviceDefinitionLabels["ACTransWinding"] ?? "ACTransWinding",
+      exportEnabled: eDeviceDefinitionClassExportEnabled["ACTransWinding"] !== false,
+      fields: acTransformerGroup.fields.map((field: any) => ({ ...field })),
+      fieldBySourceName: new Map(acTransformerGroup.fieldBySourceName)
+    });
+  }
   return Array.from(groups.values()).map((group) => {
     const { fieldBySourceName, ...row } = group;
     const orderedFields = applyEDeviceInterfaceFieldOrder(row.fields, eDeviceDefinitionFieldOrder[row.componentLibrary] ?? []);

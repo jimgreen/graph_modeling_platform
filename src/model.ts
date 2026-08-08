@@ -922,6 +922,7 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
     "shift",
     "run_stat"
   ],
+  ACTransWinding: ["idx", "name", "i_node", "j_node", "r", "x", "gt", "bt", "tap", "shift", "run_stat"],
   ACTransfomer3: [
     "idx",
     "name",
@@ -3108,6 +3109,23 @@ function buildEDeviceRecords(project: ProjectFile, options: EFileExportOptions =
       params,
       columns
     });
+    // ac-transformer 同时导出 ACTransWinding（绕组表），字段按模板 trans 配置
+    if (section === "ACTransformer") {
+      const windingInterface = interfaceDefinitionBySection.get("ACTransWinding");
+      if (windingInterface) {
+        const windingFields = eParameterFieldsFromInterfaceDefinition("ACTransWinding", windingInterface);
+        if (windingFields.length > 0) {
+          const windingParams = buildEDeviceValuesFromFields(node, windingFields, { preferTopologyNodeNumbers: true });
+          deviceRecords.push({
+            id: `${node.id}:winding`,
+            kind: node.kind,
+            section: "ACTransWinding",
+            params: windingParams,
+            columns: windingFields.map((field) => field.exportName)
+          });
+        }
+      }
+    }
     const derivedInfo = templateDerivedComponentLibraryInfo({ kind: node.kind, params: node.params });
     if (derivedInfo) {
       const derivedSectionRowCount = (derivedSectionRowCounts.get(derivedInfo.derivedComponentLibrary) ?? 0) + 1;
@@ -12141,6 +12159,7 @@ export const ELEMENT_TREE_COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   DCBreak: "直流断路器",
   GroundDisconnector: "接地刀闸",
   ACTransformer: "双绕组变压器",
+  ACTransWinding: "变压器绕组",
   ACTransfomer3: "三绕组变压器",
   DCDCConverter: "直流变换器",
   DCACConverter: "交直流变换器",
