@@ -3230,6 +3230,21 @@ describe("导出 E 文件与国网 E 格式模板一致性", () => {
       }
     }
 
+    // 验证所有含 ist 列的表，ist=1（只有一个厂站）
+    const istSectionPattern = /<(\w+)[^>]*>\s*\r?\n@ ([^\r\n]+)\r?\n([\s\S]*?)<\/\1>/g;
+    let istSectionMatch;
+    while ((istSectionMatch = istSectionPattern.exec(eFileText)) !== null) {
+      const [, sectionName, header, body] = istSectionMatch;
+      const cols = header.trim().split(/\s+/);
+      const istColIdx = cols.indexOf("ist");
+      if (istColIdx < 0) continue;
+      for (const line of body.split("\n")) {
+        if (!line.trim().startsWith("#")) continue;
+        const values = line.replace(/^#\s*/, "").trim().split(/\s+/);
+        expect(values[istColIdx], `${sectionName}.ist`).toBe("1");
+      }
+    }
+
     expect(missingTables, `缺失表: ${JSON.stringify(missingTables)}`).toEqual([]);
     expect(extraTables, `新增表: ${JSON.stringify(extraTables)}`).toEqual([]);
     expect(fieldMismatches, `字段不一致: ${JSON.stringify(fieldMismatches)}`).toEqual([]);
