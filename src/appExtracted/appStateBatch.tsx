@@ -1,6 +1,6 @@
 // @ts-nocheck
 // 从 App.tsx 第 901-2261 行提取
-import { useMemo, useEffect, useRef } from "react";
+import { useMemo, useEffect, useRef, useTransition, useDeferredValue } from "react";
 import {
   AlignCenter,
   AlignEndHorizontal,
