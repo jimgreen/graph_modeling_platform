@@ -3085,8 +3085,13 @@ function applyEInterfaceDefinitionToRecord(
   };
 }
 
+/** 判断是否有模板配置（eDeviceDefinitionLabels 非空） */
+function hasTemplateConfig(options: EFileExportOptions): boolean {
+  return Boolean(options.eDeviceDefinitionLabels) && Object.keys(options.eDeviceDefinitionLabels ?? {}).length > 0;
+}
+
 function buildEDeviceRecords(project: ProjectFile, options: EFileExportOptions = {}): EDeviceExport[] {
-  const hasTemplateConfig = Boolean(options.eDeviceDefinitionLabels) && Object.keys(options.eDeviceDefinitionLabels ?? {}).length > 0;
+  const hasTemplateConfigValue = hasTemplateConfig(options);
   const interfaceDefinitionBySection = eFileInterfaceDefinitionIndex(options);
   const topologyNodes = calculateElectricalTopology(project.nodes, project.edges);
   const topologyNodeDevices = buildTopologyNodeDevices(topologyNodes).map((record) =>
@@ -3103,7 +3108,7 @@ function buildEDeviceRecords(project: ProjectFile, options: EFileExportOptions =
   for (const node of topologyNodes) {
     const originalSection = inferESection(node.kind, node.params);
     // 模板模式下 ACRealBs 合并到 node 表（ACNode+交流母线），realbs=1 标识母线
-    const section = (originalSection === "ACRealBs" && hasTemplateConfig) ? "ACNode" : originalSection;
+    const section = (originalSection === "ACRealBs" && hasTemplateConfigValue) ? "ACNode" : originalSection;
     if (!section || originalSection === "ACNode" || originalSection === "DCNode") {
       continue;
     }
@@ -3279,6 +3284,12 @@ function defaultContainerAssociatedColumnValue(section: string, column: string, 
   return defaultEColumnValue(column, rowIndex);
 }
 
+/** 判断设备是否可调（风力、光伏、水力、储能默认可调） */
+function isAdjustableDevice(deviceType: string): boolean {
+  const adjustableTypes = ["ac-wind-source", "ac-pv-source", "ac-hydro-source", "ac-storage"];
+  return adjustableTypes.includes(deviceType);
+}
+
 function formatEColumnValue(section: string, column: string, value: string | undefined, rowIndex: number) {
   if (column === "ist") {
     return "1";
@@ -3405,8 +3416,7 @@ function formatESection(section: string, rows: EDeviceExport[], outputSection = 
       // regable 默认值：风力、光伏、水力、储能为 1，其他为 0
       if (column === "regable" && !record.params[column]) {
         const deviceType = record.params.type || record.params.dev_type || "";
-        const adjustableTypes = ["ac-wind-source", "ac-pv-source", "ac-hydro-source", "ac-storage"];
-        return adjustableTypes.includes(deviceType) ? "1" : "0";
+        return isAdjustableDevice(deviceType) ? "1" : "0";
       }
       return formatEColumnValue(section, column, record.params[column], rowIndex);
     }));
@@ -3518,7 +3528,7 @@ export function buildEDeviceParameterFile(
     }
     return formatESection(groups[0].section, allRecords, outputSection);
   });
-  const hasTemplateConfig = Boolean(options.eDeviceDefinitionLabels) && Object.keys(options.eDeviceDefinitionLabels ?? {}).length > 0;
+  const hasTemplateConfigValue = hasTemplateConfig(options);
   // substation idv = max(unit 的 ind 对应的 node 的 vbase 对应的 basevoltage idx)
   const basevoltageLevels = readVoltageLevelSettings();
   const allBasevoltageLevels = [...basevoltageLevels.ac, ...basevoltageLevels.dc];
@@ -3534,7 +3544,7 @@ export function buildEDeviceParameterFile(
     return idx >= 0 ? idx + 1 : 0;
   }).filter((idx) => idx > 0);
   const substationIdv = basevoltageIdxs.length > 0 ? String(Math.max(...basevoltageIdxs)) : "0";
-  const headerSections = hasTemplateConfig
+  const headerSections = hasTemplateConfigValue
     ? [buildBasevalueSection(project), buildBasevoltageSection(), buildSubcontrolareaSection(project), buildSubstationSection(project, substationIdv)]
     : [buildPowerBaseSection(project, schemePath), buildBasevoltageSection()];
   return [...headerSections, ...sectionBlocks].join("\n\n") + "\n";
@@ -3922,14 +3932,7 @@ export function parseEDeviceDefinitionFile(text: string): EDeviceDefinitionSecti
 
     for (const part of componentLibraryParts) {
       // 如果元件库是中文名，反向映射为英文元件库名
-      let resolvedComponentLibrary = part || kind;
-      if (part) {
-        // 中文名称，尝试反向查找
-        const mapped = COMPONENT_LIBRARY_REVERSE_MAPPING[part];
-        if (mapped) {
-          resolvedComponentLibrary = mapped;
-        }
-      }
+      const resolvedComponentLibrary = part ? (COMPONENT_LIBRARY_REVERSE_MAPPING[part] ?? part) : kind;
       sections.push({
         kind,
         label: matchEDefinitionAttr(attrText, "中文名"),
