@@ -571,6 +571,7 @@ export function legacyEColumnForDefinition(section: string, enName: string): str
     return enName;
   }
   if (section === "DCACConverter") {
+
     const normalizedName = toSnakeCaseDeviceParamName(enName);
     if (normalizedName === "control_type") return "";
     if (normalizedName === "ac_control_type") return "ac_control_type";
@@ -771,6 +772,7 @@ export function getEParameterKeys(kind: string, params: Record<string, string>) 
 function buildEDeviceValuesFromFields(
   node: Pick<ModelNode, "kind" | "name" | "nodeNumber" | "terminals" | "params">,
   fields: readonly EParameterField[],
+
   options: EParamValueOptions = {}
 ) {
   const values: Record<string, string> = {};
@@ -1170,6 +1172,7 @@ function buildContainerAssociatedDevices(nodes: ModelNode[]): EDeviceExport[] {
 function applyEInterfaceDefinitionToRecord(
   record: EDeviceExport,
   interfaceDefinition?: EFileInterfaceSectionDefinition
+
 ): EDeviceExport {
   if (!interfaceDefinition) {
     return record;
@@ -1370,6 +1373,7 @@ export function firstNumericToken(value: string) {
 
 function defaultEColumnValue(column: string, rowIndex: number) {
   if (column === "idx") return String(rowIndex + 1);
+
   if (column === "name") return `unnamed_${rowIndex + 1}`;
   if (column === "run_stat") return "1";
   if (column === "status") return "1";
@@ -1490,7 +1494,7 @@ const E_FILE_WIDE_CHAR_WIDTH = 5 / 3;
 function eFileCellDisplayWidth(value: string) {
   let width = 0;
   for (const char of value) {
-    width += /[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6]/u.test(char)
+    width += /[ᄀ-ᅟ〈〉⺀-꓏가-힣豈-﫿︐-︙︰-﹯＀-｠￠-￦]/u.test(char)
       ? E_FILE_WIDE_CHAR_WIDTH
       : 1;
   }
@@ -1770,6 +1774,7 @@ export function buildEDeviceDefinitionFile(
     options: Partial<Omit<EDeviceDefinitionGroup, "fields">> = {}
   ): EDeviceDefinitionGroup => {
     let group = groups.get(componentLibrary);
+
     if (!group) {
       group = {
         categoryLibrary: options.categoryLibrary ?? "",
@@ -1970,6 +1975,7 @@ export function buildEDeviceDefinitionFileFromInterfaceDefinitions(
     filename: "图元E文件定义.e",
     text: sections.length > 0 ? `${sections.map(formatEDeviceDefinitionSection).join("\n\n")}\n` : "",
     mime: "text/plain"
+
   };
 }
 
@@ -2056,4 +2062,3 @@ export function parseEDeviceDefinitionFile(text: string): EDeviceDefinitionSecti
   }
   return sections;
 }
-
