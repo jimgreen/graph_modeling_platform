@@ -1244,13 +1244,8 @@ button:disabled {
   gap: 2px;
 }
 
-.export-dropdown .topbar-dropdown-menu {
-  left: 50%;
-  right: auto;
-  transform: translateX(-50%);
-}
-
-.export-dropdown .topbar-dropdown-menu button {
+/* 通用下拉菜单按钮样式 - 所有下拉菜单统一使用 */
+.topbar-dropdown-menu button {
   justify-content: flex-start;
   width: 100%;
   min-width: 0;
@@ -1265,51 +1260,34 @@ button:disabled {
   cursor: pointer;
   display: flex;
   align-items: center;
-}
-
-.export-dropdown .topbar-dropdown-menu button:not(:disabled):hover,
-.export-dropdown .topbar-dropdown-menu button:not(:disabled):focus-visible {
-  background: #f1f5f9;
-  color: #0f172a;
-}
-
-.export-dropdown .topbar-dropdown-menu button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.action-cluster .topbar-dropdown-menu button {
-  justify-content: flex-start;
-  width: 100%;
-  min-width: 0;
-  min-height: 30px;
-  padding: 0 9px;
-  border: 0;
-  border-radius: 6px;
-  gap: 8px;
-  background: transparent;
-  box-shadow: none;
   transition:
     background-color 120ms ease,
     color 120ms ease,
     transform 80ms ease;
 }
 
-.action-cluster .topbar-dropdown-menu button:not(:disabled):hover,
-.action-cluster .topbar-dropdown-menu button:not(:disabled):focus-visible {
+.topbar-dropdown-menu button:not(:disabled):hover,
+.topbar-dropdown-menu button:not(:disabled):focus-visible {
   color: #1d4ed8;
   background: #eff6ff;
   outline: none;
 }
 
-.action-cluster .topbar-dropdown-menu button:not(:disabled):active {
+.topbar-dropdown-menu button:not(:disabled):active {
   color: #1e40af;
   background: #dbeafe;
   transform: translateY(1px);
 }
 
-.action-cluster .topbar-dropdown-menu button:disabled {
-  background: transparent;
+.topbar-dropdown-menu button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.export-dropdown .topbar-dropdown-menu {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
 }
 
 .topbar-dropdown-menu button span {
