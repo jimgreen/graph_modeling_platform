@@ -1399,7 +1399,6 @@ Object.assign(__appScope, { imageAssets, setImageAssets });
 const [imageAssetContextMenu, setImageAssetContextMenu] = useState<{ assetId: string; x: number; y: number } | null>(null);
 Object.assign(__appScope, { imageAssetContextMenu, setImageAssetContextMenu });
 const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false); Object.assign(__appScope, { unsavedChangesDialogOpen, setUnsavedChangesDialogOpen });
-const previousAutoInspectorSelectionKeyRef = useRef(activeSelectionKey); Object.assign(__appScope, { previousAutoInspectorSelectionKeyRef });
 
 // 提取到 useAppStateBatch（原第 901-2261 行）
 useAppStateBatch(__appScope);

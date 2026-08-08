@@ -1,6 +1,6 @@
 // @ts-nocheck
 // 从 App.tsx 第 901-2261 行提取
-import { useMemo, useEffect } from "react";
+import { useMemo, useEffect, useRef } from "react";
 import {
   AlignCenter,
   AlignEndHorizontal,
@@ -826,6 +826,7 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
       [activeSelectedEdgeIds, activeSelectedNodeIds]
     );
   Object.assign(__appScope, { activeSelectionKey });
+  const previousAutoInspectorSelectionKeyRef = useRef(activeSelectionKey); Object.assign(__appScope, { previousAutoInspectorSelectionKeyRef });
   const activeSelectedEdgeSet = useMemo(() => new Set(displaySelectedEdgeIds), [displaySelectedEdgeIds]); Object.assign(__appScope, { activeSelectedEdgeSet });
   const displaySelectedEdgeKey = useMemo(() => displaySelectedEdgeIds.join("|"), [displaySelectedEdgeIds]); Object.assign(__appScope, { displaySelectedEdgeKey });
   const batchCommonParamRows = useMemo<BatchCommonParamRow[]>(
