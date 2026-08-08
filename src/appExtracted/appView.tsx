@@ -526,7 +526,12 @@ export function renderAppView(__appScope: Record<string, any>) {
   const [templateImportResult, setTemplateImportResult] = useState<{
     matched: Array<{ section: string; device: string; fields: Array<{ template: string; device: string }> }>;
     skipped: Array<{ section: string; reason: string; fields?: string[] }>;
-  } | null>(null);
+  } | null>(() => {
+    try {
+      const stored = localStorage.getItem("eDeviceTemplateImportResult");
+      return stored ? JSON.parse(stored) : null;
+    } catch { return null; }
+  });
   const [showImportResultDialog, setShowImportResultDialog] = useState(false);
   const [eDeviceInterfaceLoadedTemplateName, setEDeviceInterfaceLoadedTemplateName] = useState<string | null>(() => {
     try { return localStorage.getItem("eDeviceInterfaceLoadedTemplateName"); } catch { return null; }
@@ -609,6 +614,9 @@ export function renderAppView(__appScope: Record<string, any>) {
       setEDeviceInterfaceSelectedClassBaseline(null);
       writeOperationLog(`导入预定义模板：${templateFile}`);
       setTemplateImportResult({ matched: result.matched, skipped: result.skipped });
+      try {
+        localStorage.setItem("eDeviceTemplateImportResult", JSON.stringify({ matched: result.matched, skipped: result.skipped }));
+      } catch { /* ignore */ }
       // 设置模板名称和只读模式
       const templateNameMap: Record<string, string> = {
         "sgcc.e": "国网E格式",
@@ -4244,6 +4252,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                       try {
                         localStorage.setItem("eDeviceInterfaceReadonlyMode", "false");
                         localStorage.setItem("eDeviceInterfaceLoadedTemplateName", "自定义");
+                        localStorage.removeItem("eDeviceTemplateImportResult");
                       } catch { /* ignore */ }
                     }}>
                       转为自定义配置
