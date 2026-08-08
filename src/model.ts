@@ -3127,6 +3127,9 @@ function buildEDeviceRecords(project: ProjectFile, options: EFileExportOptions =
           for (let side = 0; side < nodeKeys.length; side += 1) {
             const windingParams = buildEDeviceValuesFromFields(node, windingFields, { preferTopologyNodeNumbers: true });
             setField(windingParams, "itrfm", baseIdx);
+            // name = 所属变压器name + '_' + '高/中/低'
+            const sideLabel = section === "ACTransformer" ? ["高", "低"][side] : ["高", "中", "低"][side];
+            setField(windingParams, "name", `${node.name}_${sideLabel}`);
             // 阻抗参数：双绕组阻抗归高压侧(side 0)，低压侧为 0；三绕组 r1/r2/r3
             const sideSuffix = section === "ACTransformer" ? (side === 0 ? "" : null) : String(side + 1);
             const impVal = (base: string) => sideSuffix === null ? "0" : String(node.params[sideSuffix === "" ? base : `${base}${sideSuffix}`] ?? "0");
