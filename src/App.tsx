@@ -535,6 +535,24 @@ import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_IC
 import { fallbackComponentLibraryForCategoryLibrary, resolveTemplateComponentLibrary, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, isReservedDeviceDefinitionParamName, isDerivedComponentBaseParamName, createDefinitionDraftRows, normalizeCustomDeviceTerminalAnchorCoordinate, projectCustomDeviceTerminalAnchorToBoundary, customDeviceTerminalAnchorKey, hasOverlappingCustomDeviceTerminalAnchors, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, createCustomDeviceDraftFromTemplate, createDefinitionVisualDraft, defaultContainerAssociationForTerminalType, isAssociationAllowedForTerminal, normalizeContainerTerminalAssociations, customDefaultDefinitions, generateCustomDeviceImage, customDeviceImageWithTerminalConnectors, customDeviceGeneratedDefaultImageCandidates, syncInheritedCustomDeviceStateVisuals, parseCustomDefinitions, screenToSvgPoint, primaryOrthogonalAxis, constrainPointToOrthogonalAxis } from "./customDeviceUtils";
 import { useBatchEditors } from "./hooks/useBatchEditors";
 import { APP_STATIC_SCOPE } from "./appExtracted/appStaticScope";
+import {
+  sameOptionalPoint, sameConnectTarget, sameOptionalPointList,
+  shouldFinalizeMovedNodeEdgesSynchronously, shouldDeferSingleNodeTerminalReconciliation,
+  shouldPatchRouteCacheForHighFanoutMove,
+  safeFilePart, serializeSchemeRecordForFile, isObjectRecord,
+  topologyWarningDisplayMessage, isStaticButtonEnabledForNode,
+  timestampForLibraryPackageFilename
+} from "./appExtracted/appInlineUtilityFunctions";
+import {
+  createRenderLayerManager, createRenderLibraryDefinitionActions,
+  createRenderGraphTemplateButton, createRenderGraphTemplateFlyout,
+  createRenderProjectPanel, createRenderElementTreePanel
+} from "./appExtracted/appRenderPanels";
+import {
+  createFloatingToolbarBounds, createCanvasPointToSurfaceCss,
+  createRotateControlAvoidRectFromCanvas, createFloatingToolbarWrapperStyle,
+  createMapPointToMinimap
+} from "./appExtracted/appCanvasViewportCalculations";
 import { createRuntimeWsClient } from "./runtimeWsClient";
 import { createRuntimeSnapshotHandler } from "./runtimeSnapshot";
 import { createRuntimeScreenshotHandler } from "./runtimeScreenshot";
@@ -3514,11 +3532,6 @@ const currentDeviceLibraryPersistencePayload = () => normalizeDeviceLibraryPersi
   customGraphTemplates
 });
 Object.assign(__appScope, { currentDeviceLibraryPersistencePayload });
-const timestampForLibraryPackageFilename = () => {
-  const now = new Date();
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-};
 Object.assign(__appScope, { timestampForLibraryPackageFilename });
 const userIconLibraryAssets = async () => {
   const folders = await fetchBackendImageFolders();
@@ -3981,39 +3994,14 @@ const localRouteOptimizationCandidateEdges = createLocalRouteOptimizationCandida
 const routePointsForMovedNodeBlockers = createRoutePointsForMovedNodeBlockers(__appScope); Object.assign(__appScope, { routePointsForMovedNodeBlockers });
 const routePointsForMovedEdgesBlockedByStationaryNodes = createRoutePointsForMovedEdgesBlockedByStationaryNodes(__appScope); Object.assign(__appScope, { routePointsForMovedEdgesBlockedByStationaryNodes });
 const routePointsNearOriginalMovedNodes = createRoutePointsNearOriginalMovedNodes(__appScope); Object.assign(__appScope, { routePointsNearOriginalMovedNodes });
-const sameOptionalPoint = (first?: Point, second?: Point) =>
-    (!first && !second) || (Boolean(first && second) && first?.x === second?.x && first?.y === second?.y);
-Object.assign(__appScope, { sameOptionalPoint });
-const sameConnectTarget = (first?: ConnectTarget, second?: ConnectTarget | null) =>
-    (!first && !second) ||
-    Boolean(
-      first &&
-        second &&
-        first.node.id === second.node.id &&
-        first.terminalId === second.terminalId &&
-        sameOptionalPoint(first.point, second.point)
-    );
-Object.assign(__appScope, { sameConnectTarget });
-const sameOptionalPointList = (first?: Point[], second?: Point[]) =>
-    (!first && !second) ||
-    (Boolean(first && second) &&
-      first?.length === second?.length &&
-      first?.every((point, index) => point.x === second?.[index]?.x && point.y === second?.[index]?.y));
+Object.assign(__appScope, { sameOptionalPoint, sameConnectTarget });
 Object.assign(__appScope, { sameOptionalPointList });
 const adjustEdgesAfterNodeMove = createAdjustEdgesAfterNodeMove(__appScope); Object.assign(__appScope, { adjustEdgesAfterNodeMove });
 const rebuildSingleAffectedConnectionRoute = createRebuildSingleAffectedConnectionRoute(__appScope); Object.assign(__appScope, { rebuildSingleAffectedConnectionRoute });
 const synchronousEdgeAdjustmentCandidates = createSynchronousEdgeAdjustmentCandidates(__appScope); Object.assign(__appScope, { synchronousEdgeAdjustmentCandidates });
 const shouldAdjustEdgeSynchronouslyAfterMove = createShouldAdjustEdgeSynchronouslyAfterMove(__appScope); Object.assign(__appScope, { shouldAdjustEdgeSynchronouslyAfterMove });
 const mergeAdjustedCandidateEdges = createMergeAdjustedCandidateEdges(__appScope); Object.assign(__appScope, { mergeAdjustedCandidateEdges });
-const shouldFinalizeMovedNodeEdgesSynchronously = (movedNodeIds: string[], candidateEdges: Edge[]) =>
-    movedNodeIds.length > 0 &&
-    candidateEdges.length <= CANVAS_SINGLE_NODE_DRAG_SYNC_EDGE_LIMIT &&
-    (movedNodeIds.length > 1 || candidateEdges.length === 0);
 Object.assign(__appScope, { shouldFinalizeMovedNodeEdgesSynchronously });
-const shouldDeferSingleNodeTerminalReconciliation = (movedNodeIds: string[], candidateEdges: Edge[]) =>
-    movedNodeIds.length === 1 &&
-    candidateEdges.length > 0 &&
-    candidateEdges.length <= CANVAS_SINGLE_NODE_DRAG_SYNC_EDGE_LIMIT;
 Object.assign(__appScope, { shouldDeferSingleNodeTerminalReconciliation });
 const terminalReconcileNodeScope = createTerminalReconcileNodeScope(__appScope); Object.assign(__appScope, { terminalReconcileNodeScope });
 const finalizeMovedNodeEdgesFast = createFinalizeMovedNodeEdgesFast(__appScope); Object.assign(__appScope, { finalizeMovedNodeEdgesFast });
@@ -4022,8 +4010,6 @@ const shouldRunDeferredMoveOptimization = createShouldRunDeferredMoveOptimizatio
 const scheduleMovedEdgeOptimization = createScheduleMovedEdgeOptimization(__appScope); Object.assign(__appScope, { scheduleMovedEdgeOptimization });
 const scheduleDeferredMovedConnectionRepair = createScheduleDeferredMovedConnectionRepair(__appScope); Object.assign(__appScope, { scheduleDeferredMovedConnectionRepair });
 const moveRouteRepairSeedEdges = createMoveRouteRepairSeedEdges(__appScope); Object.assign(__appScope, { moveRouteRepairSeedEdges });
-const shouldPatchRouteCacheForHighFanoutMove = (movedNodeIds: string[], candidateEdges: Edge[]) =>
-    movedNodeIds.length > 0 && candidateEdges.length > MAX_DEFERRED_MOVE_REPAIR_CANDIDATE_EDGES;
 Object.assign(__appScope, { shouldPatchRouteCacheForHighFanoutMove });
 const lightweightMovedEndpointRoute = createLightweightMovedEndpointRoute(__appScope); Object.assign(__appScope, { lightweightMovedEndpointRoute });
 const patchCachedRoutesForHighFanoutMove = createPatchCachedRoutesForHighFanoutMove(__appScope); Object.assign(__appScope, { patchCachedRoutesForHighFanoutMove });
@@ -4670,50 +4656,7 @@ const toggleModelLayerVisibility = createToggleModelLayerVisibility(__appScope);
 const setAllModelLayersVisibility = createSetAllModelLayersVisibility(__appScope); Object.assign(__appScope, { setAllModelLayersVisibility });
 const moveModelLayer = createMoveModelLayer(__appScope); Object.assign(__appScope, { moveModelLayer });
 const deleteModelLayer = createDeleteModelLayer(__appScope); Object.assign(__appScope, { deleteModelLayer });
-const renderLayerManager = () => (
-    <div className="layer-manager">
-      <div className="layer-manager-toolbar">
-        <button type="button" onClick={addModelLayer}>新增图层</button>
-        <button type="button" onClick={() => setAllModelLayersVisibility(true)}>全部显示</button>
-        <button type="button" onClick={() => setAllModelLayersVisibility(false)}>全部隐藏</button>
-      </div>
-      <div className="layer-list">
-        {layers.map((layer, index) => (
-          <div key={layer.id} className={`layer-row ${layer.id === activeLayerId ? "active" : ""}`}>
-            <label className="layer-row-control" title={layer.id === activeLayerId ? "激活图层必须显示" : "显示/隐藏图层"}>
-              <input
-                type="checkbox"
-                checked={layer.visible}
-                disabled={layer.id === activeLayerId}
-                onChange={() => toggleModelLayerVisibility(layer.id)}
-              />
-              显示
-            </label>
-            <label className="layer-row-control">
-              <input
-                type="radio"
-                name="active-layer"
-                checked={layer.id === activeLayerId}
-                onChange={() => setActiveLayer(layer.id)}
-              />
-              激活
-            </label>
-            <BufferedTextInput
-              className="layer-name-input"
-              aria-label={`图层名称：${layer.name}`}
-              value={layer.name}
-              disabled={isBrowseMode}
-              onCommit={(nextValue) => commitModelLayerName(layer.id, nextValue)}
-              onKeyDown={(event) => event.stopPropagation()}
-            />
-            <button type="button" onClick={() => moveModelLayer(layer.id, -1)} disabled={index === 0} title="图层上移">上移</button>
-            <button type="button" onClick={() => moveModelLayer(layer.id, 1)} disabled={index === layers.length - 1} title="图层下移">下移</button>
-            <button type="button" onClick={() => deleteModelLayer(layer.id)} disabled={layers.length <= 1} title="删除图层">删除</button>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+const renderLayerManager = createRenderLayerManager(__appScope);
 Object.assign(__appScope, { renderLayerManager });
 const renderDeviceDefinitionMeasurementPanel = createRenderDeviceDefinitionMeasurementPanel(__appScope); Object.assign(__appScope, { renderDeviceDefinitionMeasurementPanel });
 const renderMeasurementConfigDialog = createRenderMeasurementConfigDialog(__appScope); Object.assign(__appScope, { renderMeasurementConfigDialog });
@@ -4801,24 +4744,8 @@ const exportEDeviceDefinitionFile = createExportEDeviceDefinitionFile(__appScope
 const importEDeviceDefinitionFile = createImportEDeviceDefinitionFile(__appScope); Object.assign(__appScope, { importEDeviceDefinitionFile });
 const programmaticExportEDeviceDefinition = createProgrammaticExportEDeviceDefinition(__appScope); Object.assign(__appScope, { programmaticExportEDeviceDefinition });
 const programmaticImportEDeviceDefinition = createProgrammaticImportEDeviceDefinition(__appScope); Object.assign(__appScope, { programmaticImportEDeviceDefinition });
-const safeFilePart = (name: string) => name.trim().replace(/[\\/:*?"<>|]+/g, "_") || "未命名"; Object.assign(__appScope, { safeFilePart });
-const serializeSchemeRecordForFile = (scheme: SavedSchemeRecord): string =>
-    JSON.stringify(
-      {
-        version: 1,
-        name: scheme.name,
-        projects: scheme.projects.map((project) => ({
-          name: project.name,
-          project: normalizeProjectLayers(lockProjectEdgeTerminals(project.project))
-        })),
-        children: (scheme.children ?? []).map((child): unknown => JSON.parse(serializeSchemeRecordForFile(child)))
-      },
-      null,
-      2
-    );
+Object.assign(__appScope, { safeFilePart });
 Object.assign(__appScope, { serializeSchemeRecordForFile });
-const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
-    typeof value === "object" && value !== null && !Array.isArray(value);
 Object.assign(__appScope, { isObjectRecord });
 const isProjectFilePayload = createIsProjectFilePayload(__appScope); Object.assign(__appScope, { isProjectFilePayload });
 const createImportedSchemeRecord = createCreateImportedSchemeRecord(__appScope); Object.assign(__appScope, { createImportedSchemeRecord });
@@ -4852,45 +4779,7 @@ const startSchemeRecordDrag = createStartSchemeRecordDrag(__appScope); Object.as
 const finishSchemeRecordDrag = createFinishSchemeRecordDrag(__appScope); Object.assign(__appScope, { finishSchemeRecordDrag });
 const renderProjectSchemeNode = createRenderProjectSchemeNode(__appScope); Object.assign(__appScope, { renderProjectSchemeNode });
 const openBlankProjectLibraryContextMenu = createOpenBlankProjectLibraryContextMenu(__appScope); Object.assign(__appScope, { openBlankProjectLibraryContextMenu });
-const renderProjectPanel = () => (
-    <section className="project-panel" onContextMenu={openBlankProjectLibraryContextMenu}>
-      <div className="library-search project-search">
-        <Search size={15} aria-hidden="true" />
-        <input
-          value={projectSearchQuery}
-          onChange={(event) => setProjectSearchQuery(event.target.value)}
-          placeholder="搜索方案/模型"
-          aria-label="搜索模型库"
-        />
-        {projectSearchQuery && (
-          <button type="button" aria-label="清空模型库搜索" title="清空" onClick={() => setProjectSearchQuery("")}>
-            <X size={14} />
-          </button>
-        )}
-      </div>
-      <div
-        className="project-list listbox"
-        role="listbox"
-        aria-label="绘图模型列表"
-        onPointerEnter={() => {
-          projectListPointerInsideRef.current = true;
-        }}
-        onPointerLeave={() => {
-          projectListPointerInsideRef.current = false;
-        }}
-        onContextMenu={openBlankProjectLibraryContextMenu}
-      >
-        {schemes.length === 0 ? (
-          <p className="project-empty">暂无方案</p>
-        ) : filteredProjectSchemes.length === 0 ? (
-          <p className="project-empty project-search-empty">未找到匹配方案或模型</p>
-        ) : (
-          filteredProjectSchemes.map((scheme) => renderProjectSchemeNode(scheme))
-        )}
-      </div>
-    </section>
-  );
-Object.assign(__appScope, { renderProjectPanel });
+const renderProjectPanel = createRenderProjectPanel(__appScope); Object.assign(__appScope, { renderProjectPanel });
 const customDraftTerminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount); Object.assign(__appScope, { customDraftTerminalTypes });
 const customDraftTerminalAssociations = normalizeContainerTerminalAssociations(
     customDraftTerminalTypes,
@@ -5437,90 +5326,10 @@ const saveBuiltinDeviceDefinitionFromCustomDraft = createSaveBuiltinDeviceDefini
 const saveCustomDeviceDefinitionDialog = createSaveCustomDeviceDefinitionDialog(__appScope); Object.assign(__appScope, { saveCustomDeviceDefinitionDialog });
 const renderStateVisualPager = createRenderStateVisualPager(__appScope); Object.assign(__appScope, { renderStateVisualPager });
 const renderDeviceDefinitionVisualPanel = createRenderDeviceDefinitionVisualPanel(__appScope); Object.assign(__appScope, { renderDeviceDefinitionVisualPanel });
-const renderLibraryDefinitionActions = () => (
-    <div className="library-definition-actions">
-      <button
-        type="button"
-        className="custom-device-create-button measurement-config-open-button"
-        disabled={isBrowseMode}
-        onClick={openMeasurementConfigDialog}
-      >
-        量测定义
-      </button>
-      <button type="button" className="custom-device-create-button" disabled={isBrowseMode} onClick={openDeviceDefinitionDialog}>
-        元件定义
-      </button>
-    </div>
-  );
-Object.assign(__appScope, { renderLibraryDefinitionActions });
+const renderLibraryDefinitionActions = createRenderLibraryDefinitionActions(__appScope); Object.assign(__appScope, { renderLibraryDefinitionActions });
 const renderGraphTemplatePreview = createRenderGraphTemplatePreview(__appScope); Object.assign(__appScope, { renderGraphTemplatePreview });
-const renderGraphTemplateButton = (template: GraphTemplate) => (
-    <button
-      key={template.id}
-      type="button"
-      className="template-library-item"
-      draggable={isEditMode}
-      disabled={isBrowseMode}
-      title={`${template.typeName} / ${template.name} / ${template.sourceSize.width}×${template.sourceSize.height}`}
-      onClick={() => startLibraryGraphTemplatePlacement(template)}
-      onContextMenu={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        cancelLibraryPlacement();
-        setContextMenu(null);
-        setProjectMenu(null);
-        if (templateLibraryDisplayMode === "right") {
-          clearLibraryFlyoutCloseTimer();
-          setHoveredGraphTemplateType(template.typeName);
-        }
-        setTemplateMenu({
-          x: event.clientX,
-          y: event.clientY,
-          templateId: template.id
-        });
-      }}
-      onDragStart={(event) => {
-        if (!isEditMode) {
-          event.preventDefault();
-          return;
-        }
-        cancelLibraryPlacement();
-        event.dataTransfer.setData("application/graph-template-id", template.id);
-        event.dataTransfer.effectAllowed = "copy";
-        if (templateLibraryDisplayMode === "right") {
-          hideLibraryFlyout();
-        }
-      }}
-    >
-      <span className="template-library-icon">
-        {renderGraphTemplatePreview(template)}
-      </span>
-      <span className="template-library-name">{template.name}</span>
-      <small>{template.sourceSize.width}×{template.sourceSize.height}</small>
-    </button>
-  );
-Object.assign(__appScope, { renderGraphTemplateButton });
-const renderGraphTemplateFlyout = (flyoutListKey: string, typeName: string, templates: GraphTemplate[]) => {
-    const flyout = (
-      <div
-        className="library-group flyout-library-group template-library-flyout"
-        ref={setLibraryComponentListRef(flyoutListKey)}
-        style={libraryFlyoutStyle(flyoutListKey)}
-        onMouseEnter={() => {
-          clearLibraryFlyoutCloseTimer();
-          setHoveredGraphTemplateType(typeName);
-        }}
-        onMouseLeave={() => scheduleGraphTemplateFlyoutClose(typeName)}
-      >
-        {templates.map(renderGraphTemplateButton)}
-      </div>
-    );
-    if (typeof document === "undefined") {
-      return flyout;
-    }
-    return createPortal(flyout, document.body);
-  };
-Object.assign(__appScope, { renderGraphTemplateFlyout });
+const renderGraphTemplateButton = createRenderGraphTemplateButton(__appScope); Object.assign(__appScope, { renderGraphTemplateButton });
+const renderGraphTemplateFlyout = createRenderGraphTemplateFlyout(__appScope); Object.assign(__appScope, { renderGraphTemplateFlyout });
 const renderTemplateLibraryPanel = () => (
     <div className="template-library-panel library-panel-stack">
       <div className="library-search">
@@ -5876,272 +5685,7 @@ const renderLibraryPanel = () => (
     </div>
   );
 Object.assign(__appScope, { renderLibraryPanel });
-const renderElementTreePanel = () => (
-    <div className="element-tree" role="tree" aria-label="图元树">
-      <div className="element-tree-search" role="presentation">
-        <Search size={14} aria-hidden="true" />
-        <input
-          value={elementTreeSearchQuery}
-          onChange={(event) => setElementTreeSearchQuery(event.target.value)}
-          placeholder="搜索图元名称"
-          aria-label="搜索图元树"
-        />
-        {elementTreeSearchQuery && (
-          <button type="button" aria-label="清空图元树搜索" title="清空" onClick={() => setElementTreeSearchQuery("")}>
-            <X size={13} />
-          </button>
-        )}
-      </div>
-      {elementTree.length === 0 ? (
-        <div className="empty-state compact">
-          <Grid2X2 size={24} />
-          <p>当前画布暂无图元。</p>
-        </div>
-      ) : filteredElementTree.length === 0 ? (
-        <div className="empty-state compact element-tree-search-empty">
-          <Search size={22} />
-          <p>未找到匹配图元。</p>
-        </div>
-      ) : (
-        filteredElementTree.map((group) => {
-          const expanded = Boolean(elementTreeSearchNeedle) || !collapsedElementTreeGroups.includes(group.typeKey);
-          const deviceGroups = group.deviceGroups ?? [];
-          return (
-            <section className="element-tree-group" key={group.typeKey}>
-              <button
-                type="button"
-                className="element-tree-type"
-                role="treeitem"
-                aria-expanded={expanded}
-                onClick={() => toggleElementTreeGroup(group.typeKey)}
-              >
-                <span className="element-tree-type-label">
-                  {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                  <span className="element-tree-bilingual">
-                    <span>{group.typeLabel}</span>
-                    {group.typeEnglishLabel ? <small>{group.typeEnglishLabel}</small> : null}
-                  </span>
-                </span>
-                <strong>{group.items.length}</strong>
-              </button>
-              {expanded && (
-                <div className="element-tree-items" role="group">
-                  {deviceGroups.map((deviceGroup) => {
-                    const deviceExpanded = Boolean(elementTreeSearchNeedle) || !collapsedElementTreeDeviceGroups.includes(deviceGroup.deviceKey);
-                    const visibleLimit = elementTreeItemLimits[deviceGroup.deviceKey] ?? ELEMENT_TREE_INITIAL_ITEM_LIMIT;
-                    // 虚拟化窗口：搜索时全量显示；否则按 [start,end) 滑窗
-                    // windowState 由 effect 仅在 total > WINDOW 时设置，故存在即生效
-                    const windowState = elementTreeItemWindows[deviceGroup.deviceKey];
-                    const totalItems = deviceGroup.items.length;
-                    let windowStart = 0;
-                    let windowEnd = totalItems;
-                    const windowEffective = !elementTreeSearchNeedle && Boolean(windowState);
-                    if (windowEffective) {
-                      windowStart = clampNumber(totalItems, 0, windowState!.start);
-                      windowEnd = Math.min(totalItems, Math.max(windowStart + 1, windowState!.end));
-                    }
-                    // 窗口生效且非全显时由滚动接管，不显示"显示更多"
-                    const windowActive = windowEffective && !(windowStart === 0 && windowEnd === totalItems);
-                    const visibleItems = elementTreeSearchNeedle
-                      ? deviceGroup.items
-                      : (windowEffective
-                          ? (windowStart === 0 && windowEnd === totalItems
-                              ? deviceGroup.items
-                              : deviceGroup.items.slice(windowStart, windowEnd))
-                          : deviceGroup.items.slice(0, visibleLimit));
-                    // 窗口激活时不显示"显示更多"（滚动已接管）；仅在非窗口回退模式下统计隐藏数
-                    const hiddenItemCount = windowActive ? 0 : Math.max(0, deviceGroup.items.length - visibleItems.length);
-                    // 前后占位高度：用该 group 实测高度，避免跨组高度差导致 spacer 失真
-                    const ESTIMATED_ITEM_HEIGHT = elementTreeItemHeights[deviceGroup.deviceKey] ?? 32;
-                    const spacerBeforeHeight = windowStart * ESTIMATED_ITEM_HEIGHT;
-                    const spacerAfterHeight = Math.max(0, totalItems - windowEnd) * ESTIMATED_ITEM_HEIGHT;
-                    return (
-                      <section className="element-tree-device-group" key={deviceGroup.deviceKey}>
-                        <button
-                          type="button"
-                          className="element-tree-device-type"
-                          role="treeitem"
-                          aria-level={2}
-                          aria-expanded={deviceExpanded}
-                          onClick={() => toggleElementTreeDeviceGroup(deviceGroup.deviceKey)}
-                        >
-                          <span className="element-tree-type-label">
-                            {deviceExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                            <span className="element-tree-bilingual">
-                              <span>{deviceGroup.deviceLabel}</span>
-                              {deviceGroup.deviceEnglishLabel ? <small>{deviceGroup.deviceEnglishLabel}</small> : null}
-                            </span>
-                          </span>
-                          <strong>{deviceGroup.items.length}</strong>
-                        </button>
-                        {deviceExpanded && (
-                          <div className="element-tree-device-items" role="group" data-device-key={deviceGroup.deviceKey} data-total-items={totalItems}>
-                            {spacerBeforeHeight > 0 && (
-                              <div className="element-tree-virtual-spacer" aria-hidden="true" style={{ height: spacerBeforeHeight }} />
-                            )}
-                            {visibleItems.map((item) => {
-                              const editable = item.kind === "node" ? activeLayerNodeIdSet.has(item.id) : activeLayerEdgeIdSet.has(item.id);
-                              const selected = editable && (item.kind === "node" ? selectedNodeIdSet.has(item.id) : activeSelectedEdgeSet.has(item.id));
-                              const itemChildren = elementTreeItemChildren(item);
-                              const treeItemKey = `${item.kind}:${item.id}`;
-                              const selectTreeItem = () => {
-                                if (!editable) {
-                                  return;
-                                }
-                                if (item.kind === "node") {
-                                  selectCanvasGraphics([item.id], []);
-                                  clearRecordSelection();
-                                } else {
-                                  selectCanvasGraphics([], [item.id]);
-                                }
-                              };
-                              return (
-                                <div
-                                  role="treeitem"
-                                  aria-level={3}
-                                  aria-selected={selected}
-                                  className={`element-tree-item ${selected ? "selected" : ""}`}
-                                  key={treeItemKey}
-                                  ref={(element) => {
-                                    elementTreeItemRefs.current[treeItemKey] = element;
-                                  }}
-                                  title="双击定位并选中图元"
-                                  tabIndex={0}
-                                  onPointerDown={selectTreeItem}
-                                  onClick={selectTreeItem}
-                                  onDoubleClick={() => focusElementTreeItem(item, true)}
-                                  onContextMenu={(event) => openElementTreeItemContextMenu(event, item)}
-                                  onKeyDown={(event) => {
-                                    if (event.key === "Enter") {
-                                      event.preventDefault();
-                                      focusElementTreeItem(item);
-                                    }
-                                  }}
-                                >
-                                  <div className="element-tree-item-main">
-                                    {item.kind === "node" && item.editableDevice ? (
-                                      <div className="element-tree-device-fields">
-                                        <label>
-                                          <span>idx</span>
-                                          <BufferedTextInput
-                                            value={item.idx ?? ""}
-                                            inputMode="numeric"
-                                            onClick={(event) => event.stopPropagation()}
-                                            onDoubleClick={(event) => event.stopPropagation()}
-                                            onKeyDown={(event) => event.stopPropagation()}
-                                            disabled={!editable || isBrowseMode}
-                                            onCommit={(nextValue) => commitElementTreeNodeIdentity(item.id, "idx", nextValue)}
-                                          />
-                                        </label>
-                                        <label>
-                                          <span>name</span>
-                                          <BufferedTextInput
-                                            value={item.name}
-                                            onClick={(event) => event.stopPropagation()}
-                                            onDoubleClick={(event) => event.stopPropagation()}
-                                            onKeyDown={(event) => event.stopPropagation()}
-                                            disabled={!editable || isBrowseMode}
-                                            onCommit={(nextValue) => commitElementTreeNodeIdentity(item.id, "name", nextValue)}
-                                          />
-                                        </label>
-                                      </div>
-                                    ) : (
-                                      <span className="element-tree-bilingual">
-                                        <span>{item.name}</span>
-                                      </span>
-                                    )}
-                                  </div>
-                                  {itemChildren.length ? (
-                                    <div className="element-tree-child-list" role="group" aria-label={`${item.name}关联子设备`}>
-                                      {itemChildren.map((child) => {
-                                        const childIdxKey = child.relationKeys[0] ?? "";
-                                        return (
-                                          <div className="element-tree-child-item" key={child.id}>
-                                            <span className="element-tree-child-type" title={child.componentLibrary}>
-                                              <span>{child.componentLibraryLabel || child.componentLibrary}</span>
-                                              {child.componentLibrary ? <small>{child.componentLibrary}</small> : null}
-                                            </span>
-                                            <label>
-                                              <span>idx</span>
-                                              <BufferedTextInput
-                                                value={child.idx}
-                                                inputMode="numeric"
-                                                onClick={(event) => event.stopPropagation()}
-                                                onDoubleClick={(event) => event.stopPropagation()}
-                                                onKeyDown={(event) => event.stopPropagation()}
-                                                disabled={!editable || isBrowseMode}
-                                                onCommit={(nextValue) => commitElementTreeContainerChildParam(item.id, childIdxKey, nextValue)}
-                                              />
-                                            </label>
-                                            <label className="element-tree-child-name-field">
-                                              <span>name</span>
-                                              <BufferedTextInput
-                                                value={child.name}
-                                                onClick={(event) => event.stopPropagation()}
-                                                onDoubleClick={(event) => event.stopPropagation()}
-                                                onKeyDown={(event) => event.stopPropagation()}
-                                                disabled={!editable || isBrowseMode}
-                                                onCommit={(nextValue) => commitElementTreeContainerChildParam(item.id, child.nameKey, nextValue)}
-                                              />
-                                            </label>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  ) : null}
-                                  {selected ? (
-                                    <button
-                                      type="button"
-                                      className="element-tree-jump-button"
-                                      title="跳转到画布中心并以 100% 显示"
-                                      aria-label={`跳转到图元：${item.name}`}
-                                      onPointerDown={(event) => event.stopPropagation()}
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        jumpToElementTreeItem(item);
-                                      }}
-                                      onDoubleClick={(event) => event.stopPropagation()}
-                                    >
-                                      <LocateFixed size={13} />
-                                      <span>跳转</span>
-                                    </button>
-                                  ) : null}
-                                </div>
-                              );
-                            })}
-                            {spacerAfterHeight > 0 && (
-                              <div className="element-tree-virtual-spacer" aria-hidden="true" style={{ height: spacerAfterHeight }} />
-                            )}
-                            {hiddenItemCount > 0 && (
-                              <button
-                                type="button"
-                                className="element-tree-more"
-                                onClick={() =>
-                                  setElementTreeItemLimits((current) => ({
-                                    ...current,
-                                    [deviceGroup.deviceKey]: visibleLimit + ELEMENT_TREE_ITEM_LIMIT_STEP
-                                  }))
-                                }
-                              >
-                                显示更多（还有 {hiddenItemCount} 个）
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </section>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-          );
-        })
-      )}
-    </div>
-  );
-Object.assign(__appScope, { renderElementTreePanel });
-const topologyWarningDisplayMessage = (message: string) =>
-    message.replace(/^(?:图上拓扑失败|拓扑失败)\s*[:：]\s*/, "");
+const renderElementTreePanel = createRenderElementTreePanel(__appScope); Object.assign(__appScope, { renderElementTreePanel });
 Object.assign(__appScope, { topologyWarningDisplayMessage });
 const warningStatusText = topologyErrors.length > 0
     ? `告警 ${topologyErrors.length} 条：${topologyWarningDisplayMessage(topologyErrors[0]?.message ?? "请查看拓扑告警")}`
@@ -6355,10 +5899,7 @@ const floatingToolbarButtonSize = Math.max(24, Math.round(30 * floatingToolbarSc
 const floatingToolbarIconSize = Math.max(12, Math.round(15 * floatingToolbarScreenScale)); Object.assign(__appScope, { floatingToolbarIconSize });
 const floatingToolbarViewportCanvas =
     canvasVisibleViewBox.width > 0 && canvasVisibleViewBox.height > 0 ? canvasVisibleViewBox : viewBox; Object.assign(__appScope, { floatingToolbarViewportCanvas });
-const canvasPointToSurfaceCss = (point: Point): Point => ({
-    x: canvasDisplayOffsetX + point.x * canvasScrollScale.x,
-    y: canvasDisplayOffsetY + point.y * canvasScrollScale.y
-  });
+const canvasPointToSurfaceCss = createCanvasPointToSurfaceCss(__appScope);
 Object.assign(__appScope, { canvasPointToSurfaceCss });
 const floatingToolbarViewport = {
     left: canvasDisplayOffsetX + floatingToolbarViewportCanvas.x * canvasScrollScale.x,
@@ -6368,21 +5909,12 @@ const floatingToolbarViewport = {
   };
 Object.assign(__appScope, { floatingToolbarViewport });
 const clampFloatingToolbarPosition = createClampFloatingToolbarPosition(__appScope); Object.assign(__appScope, { clampFloatingToolbarPosition });
-const floatingToolbarBounds = (toolbar: FloatingToolbarPlacement) => ({
-    left: toolbar.x,
-    right: toolbar.x + toolbar.width,
-    top: toolbar.y,
-    bottom: toolbar.y + toolbar.height
-  });
+const floatingToolbarBounds = createFloatingToolbarBounds(__appScope);
 Object.assign(__appScope, { floatingToolbarBounds });
 const toolbarOverlapArea = createToolbarOverlapArea(__appScope); Object.assign(__appScope, { toolbarOverlapArea });
 const canvasRectToSurfaceCssRect = createCanvasRectToSurfaceCssRect(__appScope); Object.assign(__appScope, { canvasRectToSurfaceCssRect });
 const rotateControlAvoidRectFromCanvasPoints = createRotateControlAvoidRectFromCanvasPoints(__appScope); Object.assign(__appScope, { rotateControlAvoidRectFromCanvasPoints });
-const rotateControlAvoidRectFromCanvas = (centerX: number, topY: number): RenderViewportBounds =>
-    rotateControlAvoidRectFromCanvasPoints([
-      { x: centerX, y: topY - 52 },
-      { x: centerX, y: topY - 6 }
-    ]);
+const rotateControlAvoidRectFromCanvas = createRotateControlAvoidRectFromCanvas(__appScope);
 Object.assign(__appScope, { rotateControlAvoidRectFromCanvas });
 const selectedRotateControlAvoidRects: RenderViewportBounds[] = [];
 Object.assign(__appScope, { selectedRotateControlAvoidRects });
@@ -6462,16 +5994,7 @@ const edgeFloatingToolbar =
         })()
       : null;
 Object.assign(__appScope, { edgeFloatingToolbar });
-const floatingToolbarWrapperStyle = (toolbar: FloatingToolbarPlacement) => ({
-    left: toolbar.x,
-    top: toolbar.y,
-    width: toolbar.width,
-    height: toolbar.height,
-    "--canvas-floating-toolbar-button-size": `${floatingToolbarButtonSize}px`,
-    "--canvas-floating-toolbar-gap": `${Math.max(2, Math.round(4 * toolbar.scale))}px`,
-    "--canvas-floating-toolbar-padding": `${Math.max(3, Math.round(4 * toolbar.scale))}px`,
-    "--canvas-floating-toolbar-radius": `${Math.max(6, Math.round(8 * toolbar.scale))}px`
-  } as CSSProperties);
+const floatingToolbarWrapperStyle = createFloatingToolbarWrapperStyle(__appScope);
 Object.assign(__appScope, { floatingToolbarWrapperStyle });
 const renderMeasurementGroup = createRenderMeasurementGroup(__appScope); Object.assign(__appScope, { renderMeasurementGroup });
 const resizeSizeHint =
@@ -6522,10 +6045,7 @@ const minimapNodes = useMemo(createAppHookCallback138(__appScope), [editHotInter
 Object.assign(__appScope, { minimapNodes });
 const minimapRoutes = useMemo(createAppHookCallback139(__appScope), [editHotInteractionActive, minimapRouteStep, minimapSamplingReady, routedEdges]);
 Object.assign(__appScope, { minimapRoutes });
-const mapPointToMinimap = (point: Point) => ({
-    x: minimapOffsetX + point.x * minimapScale,
-    y: minimapOffsetY + point.y * minimapScale
-  });
+const mapPointToMinimap = createMapPointToMinimap(__appScope);
 Object.assign(__appScope, { mapPointToMinimap });
 const minimapViewportLeft = clampNumber(minimapOffsetX + canvasVisibleViewBox.x * minimapScale, minimapOffsetX, minimapOffsetX + minimapContentWidth); Object.assign(__appScope, { minimapViewportLeft });
 const minimapViewportTop = clampNumber(minimapOffsetY + canvasVisibleViewBox.y * minimapScale, minimapOffsetY, minimapOffsetY + minimapContentHeight); Object.assign(__appScope, { minimapViewportTop });
@@ -6534,8 +6054,6 @@ const minimapViewportBottom = clampNumber(minimapOffsetY + (canvasVisibleViewBox
 const handleMinimapNavigate = createHandleMinimapNavigate(__appScope); Object.assign(__appScope, { handleMinimapNavigate });
 const centerSelectedInView = createCenterSelectedInView(__appScope); Object.assign(__appScope, { centerSelectedInView });
 const fitViewToSelection = createFitViewToSelection(__appScope); Object.assign(__appScope, { fitViewToSelection });
-const isStaticButtonEnabledForNode = (node: ModelNode) =>
-    isStaticButtonCapableNode(node) && node.params.buttonEnabled === "1";
 Object.assign(__appScope, { isStaticButtonEnabledForNode });
 const clearStaticButtonFeedbackTimer = createClearStaticButtonFeedbackTimer(__appScope); Object.assign(__appScope, { clearStaticButtonFeedbackTimer });
 const setStaticButtonFeedback = createSetStaticButtonFeedback(__appScope); Object.assign(__appScope, { setStaticButtonFeedback });

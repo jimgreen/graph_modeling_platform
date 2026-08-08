@@ -588,9 +588,9 @@ describe("graph template library filtering", () => {
   });
 
   test("keeps the right-floating template flyout open when opening a template item context menu", () => {
-    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
-    const templateButtonMatch = appSource.match(
-      /const renderGraphTemplateButton = \(template: GraphTemplate\) => \([\s\S]*?onDragStart=\{\(event\) => \{/u
+    const panelSource = readFileSync(new URL("./appExtracted/appRenderPanels.tsx", import.meta.url), "utf8");
+    const templateButtonMatch = panelSource.match(
+      /createRenderGraphTemplateButton[\s\S]*?onDragStart=\{\(event\) => \{/u
     );
 
     expect(templateButtonMatch?.[0]).toContain("clearLibraryFlyoutCloseTimer()");

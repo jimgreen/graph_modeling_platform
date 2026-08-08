@@ -14,12 +14,15 @@
 | `appView.tsx` | `renderAppView(__appScope)`：渲染 topbar/画布/面板/弹窗整体视图；含 RT-WS 指示灯组件 |
 | `appCanvasArea.tsx` | 画布区域渲染（SVG `<rect data-canvas-background>` 背景层、网格、节点、边、resize handles） |
 | `appCanvasInteractionFactories.tsx` | 画布交互工厂（指针/拖拽/连接预览） |
+| `appCanvasViewportCalculations.ts` | 视口计算工厂（浮动工具栏/小地图坐标映射） |
 | `appControlFactories.tsx` | 控制台写操作程序化方法（9 工厂：add/select/group/delete/update/save/scheme/model/template），经 WS 指令调用，绕过 UI 对话框 |
 | `appCoreCanvasUtilities.tsx` | 画布核心工具（坐标变换、命中检测、`DEFAULT_CANVAS_BACKGROUND` 等常量） |
 | `appDeviceDefinitionFactories.tsx` | 设备定义工厂（含 `buildSvgDocument` 导出 SVG 调用） |
 | `appGraphMeasurementFactories.tsx` | 图形量测工厂 |
+| `appInlineUtilityFunctions.ts` | 内联工具函数（纯函数：点比较、文件名安全化、方案序列化等） |
 | `appPersistenceLibraryExport.tsx` | 持久化与导出：`buildSvgDocument`（自包含 SVG，内联样式）、E 文件导出 |
 | `appProjectCanvasFactories.tsx` | 项目画布工厂（保存/删除/重命名/导入导出） |
+| `appRenderPanels.tsx` | 面板渲染工厂（图层管理/项目面板/图元树/模板按钮/浮动面板） |
 | `appSelectionDragFactories.tsx` | 选择与拖拽工厂（含 `canvasBackgroundColor` 持久化） |
 | `appToolbarHookFactories.tsx` | 工具栏 Hook 工厂（背景页渲染、对齐、图层） |
 
