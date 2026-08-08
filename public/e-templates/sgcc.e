@@ -54,6 +54,6 @@
 </trfm>
 
 <trans 中文名="变压器绕组" 类别库="交流设备" 元件库="ACTransWinding">
-//   序号    名称    所属厂站    变压器节点    运行状态    首端节点    末端节点    容量    最大电流    电阻    电抗    电导    电纳    电压等级    阻抗电压    分接头类型    分接头
+//   序号    名称    所属厂站    所属变压器    运行状态    首端节点    末端节点    容量    最大电流    电阻    电抗    电导    电纳    电压等级    阻抗电压    分接头类型    分接头
 @    idx    name    ist    itrfm    runstat    ind    znd    mva    imax    rij    xij    gti    bti    vl    zvl    tij    taptype    tap
 </trans>

@@ -3085,6 +3085,7 @@ function buildEDeviceRecords(project: ProjectFile, options: EFileExportOptions =
   const derivedDeviceRecords: EDeviceExport[] = [];
   const sectionRowCounts = new Map<string, number>();
   const derivedSectionRowCounts = new Map<string, number>();
+  const windingRowCounts = new Map<string, number>();
   for (const node of topologyNodes) {
     const section = inferESection(node.kind, node.params);
     if (!section || section === "ACNode" || section === "DCNode") {
@@ -3109,20 +3110,50 @@ function buildEDeviceRecords(project: ProjectFile, options: EFileExportOptions =
       params,
       columns
     });
-    // ac-transformer 同时导出 ACTransWinding（绕组表），字段按模板 trans 配置
-    if (section === "ACTransformer") {
+    // ac-transformer/ac-three-winding-transformer 同时导出 ACTransWinding（绕组表）：
+    // 双绕组生成 2 条绕组，三绕组生成 3 条；itrfm 指向所属变压器 idx
+    if (section === "ACTransformer" || section === "ACTransfomer3") {
       const windingInterface = interfaceDefinitionBySection.get("ACTransWinding");
       if (windingInterface) {
         const windingFields = eParameterFieldsFromInterfaceDefinition("ACTransWinding", windingInterface);
         if (windingFields.length > 0) {
-          const windingParams = buildEDeviceValuesFromFields(node, windingFields, { preferTopologyNodeNumbers: true });
-          deviceRecords.push({
-            id: `${node.id}:winding`,
-            kind: node.kind,
-            section: "ACTransWinding",
-            params: windingParams,
-            columns: windingFields.map((field) => field.exportName)
-          });
+          const fieldByExportName = new Map(windingFields.map((f) => [f.exportName, f]));
+          const setField = (params: Record<string, string>, exportName: string, value: string) => {
+            if (fieldByExportName.has(exportName)) {
+              params[exportName] = value;
+            }
+          };
+          const nodeKeys = section === "ACTransformer" ? ["i_node", "j_node"] : ["t1_node", "t2_node", "t3_node"];
+          for (let side = 0; side < nodeKeys.length; side += 1) {
+            const windingParams = buildEDeviceValuesFromFields(node, windingFields, { preferTopologyNodeNumbers: true });
+            setField(windingParams, "itrfm", baseIdx);
+            // 阻抗参数：双绕组阻抗归高压侧(side 0)，低压侧为 0；三绕组 r1/r2/r3
+            const sideSuffix = section === "ACTransformer" ? (side === 0 ? "" : null) : String(side + 1);
+            const impVal = (base: string) => sideSuffix === null ? "0" : String(node.params[sideSuffix === "" ? base : `${base}${sideSuffix}`] ?? "0");
+            setField(windingParams, "rij", impVal("r"));
+            setField(windingParams, "xij", impVal("x"));
+            setField(windingParams, "gti", impVal("gt"));
+            setField(windingParams, "bti", impVal("bt"));
+            setField(windingParams, "tap", sideSuffix === null ? "1.0" : String(node.params[sideSuffix === "" ? "tap" : `tap${sideSuffix}`] ?? "1.0"));
+            // vl = 该侧端子电压
+            setField(windingParams, "vl", String(node.terminals[side]?.vbase ?? "").trim() || "0");
+            // ind = 该侧节点号；znd = 双绕组互为末端，三绕组为中性点
+            setField(windingParams, "ind", topologyNodeNumberForEField(node, nodeKeys[side]) ?? "0");
+            setField(windingParams, "znd", section === "ACTransformer"
+              ? (topologyNodeNumberForEField(node, nodeKeys[1 - side]) ?? "0")
+              : (String(node.params.neutral_node ?? "0") || "0"));
+            // idx 自增
+            const windingIdx = (windingRowCounts.get("ACTransWinding") ?? 0) + 1;
+            windingRowCounts.set("ACTransWinding", windingIdx);
+            setField(windingParams, "idx", String(windingIdx));
+            deviceRecords.push({
+              id: `${node.id}:winding:${side}`,
+              kind: node.kind,
+              section: "ACTransWinding",
+              params: windingParams,
+              columns: windingFields.map((field) => field.exportName)
+            });
+          }
         }
       }
     }
