@@ -2308,6 +2308,9 @@ function getRawEParamValue(
   if (key === "vltp") {
     return String(node.params.vltp ?? node.params.vbase ?? node.terminals[0]?.vbase ?? "").trim();
   }
+  if (key === "realbs") {
+    return section === "ACRealBs" ? "1" : "0";
+  }
   if (key === "ist") {
     return "1";
   }
@@ -3083,6 +3086,7 @@ function applyEInterfaceDefinitionToRecord(
 }
 
 function buildEDeviceRecords(project: ProjectFile, options: EFileExportOptions = {}): EDeviceExport[] {
+  const hasTemplateConfig = Boolean(options.eDeviceDefinitionLabels) && Object.keys(options.eDeviceDefinitionLabels ?? {}).length > 0;
   const interfaceDefinitionBySection = eFileInterfaceDefinitionIndex(options);
   const topologyNodes = calculateElectricalTopology(project.nodes, project.edges);
   const topologyNodeDevices = buildTopologyNodeDevices(topologyNodes).map((record) =>
@@ -3097,8 +3101,10 @@ function buildEDeviceRecords(project: ProjectFile, options: EFileExportOptions =
   const derivedSectionRowCounts = new Map<string, number>();
   const windingRowCounts = new Map<string, number>();
   for (const node of topologyNodes) {
-    const section = inferESection(node.kind, node.params);
-    if (!section || section === "ACNode" || section === "DCNode") {
+    const originalSection = inferESection(node.kind, node.params);
+    // 模板模式下 ACRealBs 合并到 node 表（ACNode+交流母线），realbs=1 标识母线
+    const section = (originalSection === "ACRealBs" && hasTemplateConfig) ? "ACNode" : originalSection;
+    if (!section || originalSection === "ACNode" || originalSection === "DCNode") {
       continue;
     }
     const fields = resolveEParameterFields(node.kind, node.params, interfaceDefinitionBySection.get(section));
