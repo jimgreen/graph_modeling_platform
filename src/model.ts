@@ -2980,6 +2980,13 @@ function buildTopologyNodeDevices(nodes: ModelNode[]): EDeviceExport[] {
           name: representative.name || representative.node.name || `${section}_${idx}`,
           vbase,
           voltage,
+          vltp: vbase,
+          ist: "1",
+          realbs: "0",
+          v: "0",
+          a: "0",
+          vmax: "0",
+          vmin: "0",
           isl: representative.node.params.isl ?? "0",
           run_stat: runStat
         };
@@ -3477,12 +3484,14 @@ export function buildEDeviceParameterFile(
       return formatESection(section, recordsBySection.get(section) ?? [], outputSection);
     });
   const hasTemplateConfig = Boolean(options.eDeviceDefinitionLabels) && Object.keys(options.eDeviceDefinitionLabels ?? {}).length > 0;
-  // substation idv = max（属于该厂站的 node vltp）对应的 basevoltage idx
+  // substation idv = max(属于该厂站的 unit 的 node vltp) 对应的 basevoltage idx
   const basevoltageLevels = readVoltageLevelSettings();
   const allBasevoltageLevels = [...basevoltageLevels.ac, ...basevoltageLevels.dc];
   const nodeRecords = recordsBySection.get("ACNode") ?? [];
-  const nodeVltps = nodeRecords.map((r) => r.params.vltp).filter(Boolean);
-  const maxVltp = nodeVltps.length > 0 ? nodeVltps.sort((a, b) => Number(b) - Number(a))[0] : "";
+  const unitRecords = recordsBySection.get("ACGenerator") ?? [];
+  const unitNodeIdxs = new Set(unitRecords.map((r) => r.params.ind).filter(Boolean));
+  const unitNodeVltps = nodeRecords.filter((r) => unitNodeIdxs.has(r.params.idx)).map((r) => r.params.vltp).filter(Boolean);
+  const maxVltp = unitNodeVltps.length > 0 ? unitNodeVltps.sort((a, b) => Number(b) - Number(a))[0] : "";
   const idvIndex = allBasevoltageLevels.findIndex((level) => String(level.vltp) === String(maxVltp));
   const substationIdv = idvIndex >= 0 ? String(idvIndex + 1) : "0";
   const headerSections = hasTemplateConfig
