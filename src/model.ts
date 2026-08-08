@@ -3485,13 +3485,31 @@ export function buildEDeviceParameterFile(
     ...E_SECTION_OUTPUT_ORDER.filter((section) => recordsBySection.has(section)),
     ...Array.from(recordsBySection.keys()).filter((section) => !E_SECTION_OUTPUT_ORDER.includes(section))
   ];
-  const sectionBlocks = orderedSections
-    .map((section) => {
-      const outputSection = String(interfaceDefinitionBySection.get(section)?.exportName ?? "").trim()
-        || String(options.eDeviceDefinitionLabels?.[section] ?? "").trim()
-        || section;
-      return formatESection(section, recordsBySection.get(section) ?? [], outputSection);
-    });
+  // 按 outputSection 分组，合并同名的 records（如 ACTransformer 和 ACTransfomer3 都输出到 trfm）
+  const recordsByOutputSection = new Map<string, { section: string; records: EDeviceExport[] }[]>();
+  for (const section of orderedSections) {
+    const outputSection = String(interfaceDefinitionBySection.get(section)?.exportName ?? "").trim()
+      || String(options.eDeviceDefinitionLabels?.[section] ?? "").trim()
+      || section;
+    const existing = recordsByOutputSection.get(outputSection) ?? [];
+    existing.push({ section, records: recordsBySection.get(section) ?? [] });
+    recordsByOutputSection.set(outputSection, existing);
+  }
+
+  const sectionBlocks = Array.from(recordsByOutputSection.entries()).map(([outputSection, groups]) => {
+    // 合并所有 records
+    const allRecords = groups.flatMap((group) => group.records);
+    // 只有当有多个 group 合并时（即同名 section），才重排 idx
+    if (groups.length > 1) {
+      const columns = eSectionColumns(groups[0].section, allRecords);
+      if (columns.includes("idx")) {
+        allRecords.forEach((record, index) => {
+          record.params.idx = String(index + 1);
+        });
+      }
+    }
+    return formatESection(groups[0].section, allRecords, outputSection);
+  });
   const hasTemplateConfig = Boolean(options.eDeviceDefinitionLabels) && Object.keys(options.eDeviceDefinitionLabels ?? {}).length > 0;
   // substation idv = max(unit 的 ind 对应的 node 的 vbase 对应的 basevoltage idx)
   const basevoltageLevels = readVoltageLevelSettings();
