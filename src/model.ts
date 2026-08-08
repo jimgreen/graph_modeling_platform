@@ -3280,6 +3280,9 @@ function defaultContainerAssociatedColumnValue(section: string, column: string, 
 }
 
 function formatEColumnValue(section: string, column: string, value: string | undefined, rowIndex: number) {
+  if (column === "ist") {
+    return "1";
+  }
   const fallback = section === "ACACConverter" && (column === "i_control_type" || column === "j_control_type")
     ? "PQ"
     : section === "DCDCConverter" && column === "i_control_type"
