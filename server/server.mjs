@@ -106,25 +106,25 @@ export const eSectionColumns = {
   StaticContainerSymbol: [],
   StaticConnectorSymbol: [],
   StaticAnnotationSymbol: [],
-  ACRealBs: ["idx", "name", "node", "run_stat"],
-  DCRealBs: ["idx", "name", "node", "run_stat"],
+  ACRealBs: ["idx", "name", "node", "v_max", "v_min", "run_stat"],
+  DCRealBs: ["idx", "name", "node", "v_max", "v_min", "run_stat"],
   ACNode: ["idx", "name", "vbase", "run_stat"],
   DCNode: ["idx", "name", "vbase", "voltage", "isl", "run_stat"],
-  ACBranch: ["idx", "name", "i_node", "j_node", "r", "x", "b", "run_stat"],
-  DCBranch: ["idx", "name", "i_node", "j_node", "r", "run_stat"],
-  ACLoad: ["idx", "name", "node", "pbase", "pv0", "pv1", "pv2", "qbase", "qv0", "qv1", "qv2", "run_stat"],
-  DCLoad: ["idx", "name", "node", "pbase", "pv0", "pv1", "pv2", "run_stat"],
-  ACGenerator: ["idx", "name", "node", "rated_capacity", "rated_voltage", "control_type", "p_set", "p_max", "p_min", "q_set", "q_max", "q_min", "v_set", "alpha", "run_stat"],
-  DCGenerator: ["idx", "name", "node", "rated_capacity", "rated_voltage", "control_type", "v_set", "p_set", "p_max", "p_min", "i_set", "run_stat"],
+  ACBranch: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "r", "x", "b", "run_stat"],
+  DCBranch: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "r", "run_stat"],
+  ACLoad: ["idx", "name", "node", "rated_capacity", "pbase", "p_max", "p_min", "pv0", "pv1", "pv2", "qbase", "q_max", "q_min", "qv0", "qv1", "qv2", "v_max", "v_min", "run_stat"],
+  DCLoad: ["idx", "name", "node", "rated_capacity", "pbase", "p_max", "p_min", "pv0", "pv1", "pv2", "v_max", "v_min", "run_stat"],
+  ACGenerator: ["idx", "name", "node", "rated_capacity", "rated_voltage", "control_type", "p_set", "p_max", "p_min", "q_set", "q_max", "q_min", "v_set", "v_max", "v_min", "alpha", "run_stat"],
+  DCGenerator: ["idx", "name", "node", "rated_capacity", "rated_voltage", "control_type", "v_set", "p_set", "p_max", "p_min", "i_set", "v_max", "v_min", "run_stat"],
   ACShuntCompensator: ["idx", "name", "node", "control_type", "q_set", "g_set", "b_set", "v_set", "run_stat"],
   ACZeroBranch: ["idx", "name", "i_node", "j_node", "run_stat"],
   DCZeroBranch: ["idx", "name", "i_node", "j_node", "run_stat"],
-  ACSwitch: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
-  DCSwitch: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
-  ACBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
-  DCBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
-  GroundDisconnector: ["idx", "name", "node", "status", "run_stat"],
-  ACTransformer: ["idx", "name", "i_node", "j_node", "r", "x", "gt", "bt", "tap", "shift", "run_stat"],
+  ACSwitch: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "status", "run_stat"],
+  DCSwitch: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "status", "run_stat"],
+  ACBreak: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "status", "run_stat"],
+  DCBreak: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "status", "run_stat"],
+  GroundDisconnector: ["idx", "name", "node", "rated_capacity", "i_max", "status", "run_stat"],
+  ACTransformer: ["idx", "name", "i_node", "j_node", "rated_capacity", "high_i_max", "low_i_max", "r", "x", "gt", "bt", "tap", "shift", "run_stat"],
   ACTransfomer3: [
     "idx",
     "name",
@@ -132,6 +132,12 @@ export const eSectionColumns = {
     "t2_node",
     "t3_node",
     "neutral_node",
+    "high_rated_capacity",
+    "high_i_max",
+    "medium_rated_capacity",
+    "medium_i_max",
+    "low_rated_capacity",
+    "low_i_max",
     "r1",
     "x1",
     "gt1",
@@ -152,9 +158,9 @@ export const eSectionColumns = {
     "shift3",
     "run_stat"
   ],
-  DCDCConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "i_control_type", "j_control_type", "p_set", "i_set", "v_set", "run_stat"],
-  DCACConverter: ["idx", "name", "ac_node", "dc_node", "r1", "r2", "ac_control_type", "dc_control_type", "p_ac_set", "q_ac_set", "v_ac_set", "v_dc_set", "run_stat"],
-  ACACConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "i_control_type", "j_control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"],
+  DCDCConverter: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_p_max", "i_p_min", "i_i_max", "i_v_max", "i_v_min", "j_p_max", "j_p_min", "j_i_max", "j_v_max", "j_v_min", "r1", "r2", "i_control_type", "j_control_type", "p_set", "i_set", "v_set", "run_stat"],
+  DCACConverter: ["idx", "name", "ac_node", "dc_node", "rated_capacity", "ac_p_max", "ac_p_min", "ac_i_max", "ac_v_max", "ac_v_min", "dc_p_max", "dc_p_min", "dc_i_max", "dc_v_max", "dc_v_min", "r1", "r2", "ac_control_type", "dc_control_type", "p_ac_set", "q_ac_set", "v_ac_set", "v_dc_set", "run_stat"],
+  ACACConverter: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_p_max", "i_p_min", "i_i_max", "i_v_max", "i_v_min", "j_p_max", "j_p_min", "j_i_max", "j_v_max", "j_v_min", "r1", "r2", "i_control_type", "j_control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"],
   HydroSource: ["idx", "name", "node", "run_stat"],
   HydroLoad: ["idx", "name", "node", "run_stat"],
   HydroPipe: ["idx", "name", "i_node", "j_node", "run_stat"],
@@ -186,6 +192,95 @@ export const eSectionColumns = {
   HeatExchanger4: ["idx", "name", "node1", "node2", "node3", "node4", "run_stat"],
   HeatPump: ["idx", "name", "i_node", "j_node", "run_stat"]
 };
+
+const eFloatColumns = new Set([
+  "vbase",
+  "voltage",
+  "angle",
+  "pbase",
+  "qbase",
+  "rated_capacity",
+  "rated_voltage",
+  "i_max",
+  "high_rated_capacity",
+  "high_i_max",
+  "medium_rated_capacity",
+  "medium_i_max",
+  "low_rated_capacity",
+  "low_i_max",
+  "pv0",
+  "pv1",
+  "pv2",
+  "qv0",
+  "qv1",
+  "qv2",
+  "p_set",
+  "p_max",
+  "p_min",
+  "q_set",
+  "q_max",
+  "q_min",
+  "v_max",
+  "v_min",
+  "ac_p_max",
+  "ac_p_min",
+  "ac_i_max",
+  "ac_v_max",
+  "ac_v_min",
+  "dc_p_max",
+  "dc_p_min",
+  "dc_i_max",
+  "dc_v_max",
+  "dc_v_min",
+  "i_p_max",
+  "i_p_min",
+  "i_i_max",
+  "i_v_max",
+  "i_v_min",
+  "j_p_max",
+  "j_p_min",
+  "j_i_max",
+  "j_v_max",
+  "j_v_min",
+  "i_set",
+  "v_set",
+  "alpha",
+  "g_set",
+  "b_set",
+  "r",
+  "x",
+  "b",
+  "gt",
+  "bt",
+  "tap",
+  "shift",
+  "r1",
+  "x1",
+  "gt1",
+  "bt1",
+  "tap1",
+  "shift1",
+  "r2",
+  "x2",
+  "gt2",
+  "bt2",
+  "tap2",
+  "shift2",
+  "r3",
+  "x3",
+  "gt3",
+  "bt3",
+  "tap3",
+  "shift3",
+  "p_ac_set",
+  "q_ac_set",
+  "v_ac_set",
+  "v_dc_set",
+  "i_q_set",
+  "j_q_set",
+  "i_v_set",
+  "j_v_set"
+]);
 
 const mimeExt = {
   "image/png": ".png",
@@ -1431,6 +1526,15 @@ function mappedLegacyEValue(key, params = {}) {
   if (key === "rated_capacity" || key === "rated_power") {
     return firstNumericEValue(params.rated_capacity || params.ratedCapacity || params.rated_power || params.ratedPower);
   }
+  const currentLimitAliases = {
+    i_max: ["i_max", "iMax", "max_current", "maxCurrent"],
+    high_i_max: ["high_i_max", "highIMax", "high_max_current", "highMaxCurrent"],
+    medium_i_max: ["medium_i_max", "mediumIMax", "medium_max_current", "mediumMaxCurrent"],
+    low_i_max: ["low_i_max", "lowIMax", "low_max_current", "lowMaxCurrent"]
+  }[key];
+  if (currentLimitAliases) {
+    return firstNumericEValue(currentLimitAliases.map((alias) => params[alias]).find((value) => value !== undefined));
+  }
   if (key === "rated_voltage") {
     return firstNumericEValue(params.rated_voltage || params.ratedVoltage);
   }
@@ -1528,6 +1632,18 @@ function getRawEParamValue(key, node, options = {}) {
 }
 
 const legacyEDefinitionColumnAliases = {
+  maxCurrent: "i_max",
+  max_current: "i_max",
+  iMax: "i_max",
+  highMaxCurrent: "high_i_max",
+  high_max_current: "high_i_max",
+  highIMax: "high_i_max",
+  mediumMaxCurrent: "medium_i_max",
+  medium_max_current: "medium_i_max",
+  mediumIMax: "medium_i_max",
+  lowMaxCurrent: "low_i_max",
+  low_max_current: "low_i_max",
+  lowIMax: "low_i_max",
   ratedCapacity: "rated_capacity",
   ratedPower: "rated_capacity",
   rated_power: "rated_capacity",
@@ -1720,7 +1836,10 @@ function getEParameterKeys(kind, params = {}) {
 function buildEDeviceValuesFromFields(node, fields, options = {}) {
   const values = {};
   for (const field of fields) {
-    const value = getRawEParamValue(field.sourceName, node, options);
+    const rawValue = getRawEParamValue(field.sourceName, node, options);
+    const value = eFloatColumns.has(field.sourceName) || field.definition?.valueType === "float"
+      ? firstNumericEValue(rawValue)
+      : rawValue;
     if (value !== "") {
       values[field.exportName] = value;
     }

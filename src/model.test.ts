@@ -4461,8 +4461,8 @@ describe("power system model", () => {
       exportName: "r"
     });
     expect(resolveDeviceParameterDefinitionExportSettings(transformer.kind, transformer.params, rated_capacityDefinition!)).toEqual({
-      exportEnabled: false,
-      exportName: ""
+      exportEnabled: true,
+      exportName: "rated_capacity"
     });
     expect(getEParameterKeys(transformer.kind, transformer.params)).toEqual(E_SECTION_COLUMNS.ACTransformer);
   });
@@ -4688,12 +4688,16 @@ describe("power system model", () => {
       idx: "21",
       name: "ac_bus",
       node: "1",
+      v_max: "1.1",
+      v_min: "0.9",
       run_stat: "1"
     });
     expect(dcRealBus).toEqual({
       idx: "1",
       name: "dc_bus",
       node: "1",
+      v_max: "1.1",
+      v_min: "0.9",
       run_stat: "1"
     });
   });
@@ -4829,6 +4833,12 @@ describe("power system model", () => {
       "t2_node",
       "t3_node",
       "neutral_node",
+      "high_rated_capacity",
+      "high_i_max",
+      "medium_rated_capacity",
+      "medium_i_max",
+      "low_rated_capacity",
+      "low_i_max",
       "r1",
       "x1",
       "gt1",
@@ -4856,6 +4866,12 @@ describe("power system model", () => {
       t2_node: "2",
       t3_node: "3",
       neutral_node: "0",
+      high_rated_capacity: "90",
+      high_i_max: "0",
+      medium_rated_capacity: "90",
+      medium_i_max: "0",
+      low_rated_capacity: "90",
+      low_i_max: "0",
       r1: "0.01",
       x1: "0.11",
       gt1: "0.001",
@@ -4973,6 +4989,8 @@ describe("power system model", () => {
 
     expect(acLoad.nodeNumber).toMatch(/^N\d+$/);
     expect(acLoad.params.rated_active_power).toBe("5 MW");
+    expect(acLoad.params.rated_capacity).toBe("5");
+    expect(acLoad.params).toMatchObject({ p_max: "5", p_min: "0", q_max: "1.2", q_min: "0", v_max: "1.1", v_min: "0.9" });
     expect(acLoad.params.pv0).toBe("1.0");
     expect(acLoad.params.pv1).toBe("0.0");
     expect(acLoad.params.pv2).toBe("0.0");
@@ -4981,17 +4999,22 @@ describe("power system model", () => {
     expect(acLoad.params.qv1).toBe("0.0");
     expect(acLoad.params.qv2).toBe("0.0");
     expect(dcLoad.params.rated_reactive_power).toBeUndefined();
+    expect(dcLoad.params).toMatchObject({ rated_capacity: "1.5", p_max: "1.5", p_min: "0", v_max: "1.1", v_min: "0.9" });
+    expect(dcLoad.params.q_max).toBeUndefined();
+    expect(dcLoad.params.q_min).toBeUndefined();
 
     expect(acLine.terminals[0].nodeNumber).toMatch(/^N\d+$/);
     expect(acLine.terminals[1].nodeNumber).toMatch(/^N\d+$/);
     expect(acLine.params.r).toBe("0.1");
     expect(acLine.params.x).toBe("1.0");
     expect(acLine.params.b).toBe("0.0");
+    expect(acLine.params).toMatchObject({ rated_capacity: "0", i_max: "0" });
 
     expect(twoWinding.terminals).toHaveLength(2);
     expect(twoWinding.params.high_vbase).toBe("0");
     expect(twoWinding.params.low_vbase).toBe("0");
     expect(twoWinding.params.rated_capacity).toBe("50");
+    expect(twoWinding.params).toMatchObject({ high_i_max: "0", low_i_max: "0" });
     expect(twoWinding.params.r).toBe("0.0");
     expect(twoWinding.params.x).toBe("0.1");
     expect(twoWinding.params.gt).toBe("0.0");
@@ -5005,6 +5028,7 @@ describe("power system model", () => {
     expect(threeWinding.params.high_rated_capacity).toBe("90");
     expect(threeWinding.params.medium_rated_capacity).toBe("90");
     expect(threeWinding.params.low_rated_capacity).toBe("90");
+    expect(threeWinding.params).toMatchObject({ high_i_max: "0", medium_i_max: "0", low_i_max: "0" });
     expect(threeWinding.params.tap1).toBe("1.0");
     expect(threeWinding.params.tap2).toBe("1.0");
     expect(threeWinding.params.tap3).toBe("1.0");
@@ -5020,7 +5044,7 @@ describe("power system model", () => {
       getTemplateParameterDefinitions(DEVICE_LIBRARY.find((item) => item.kind === "ac-transformer")!)
         .map((definition) => [definition.enName, definition])
     );
-    for (const fieldName of ["high_vbase", "low_vbase", "rated_capacity"]) {
+    for (const fieldName of ["high_vbase", "low_vbase", "rated_capacity", "high_i_max", "low_i_max"]) {
       expect(twoWindingDefinitions.get(fieldName)?.valueType, fieldName).toBe("float");
     }
     const threeWindingDefinitions = new Map(
@@ -5033,7 +5057,10 @@ describe("power system model", () => {
       "low_vbase",
       "high_rated_capacity",
       "medium_rated_capacity",
-      "low_rated_capacity"
+      "low_rated_capacity",
+      "high_i_max",
+      "medium_i_max",
+      "low_i_max"
     ]) {
       expect(threeWindingDefinitions.get(fieldName)?.valueType, fieldName).toBe("float");
     }
@@ -5045,6 +5072,19 @@ describe("power system model", () => {
     expect(dcdc.params.target_equivalent_resistance).toBe("0.0");
     expect(dcdc.params.i_control_type).toBe("P");
     expect(dcdc.params.j_control_type).toBe("NONE");
+    expect(dcdc.params).toMatchObject({
+      rated_capacity: "5",
+      i_p_max: "5",
+      i_p_min: "-5",
+      i_i_max: "0",
+      i_v_max: "1.1",
+      i_v_min: "0.9",
+      j_p_max: "5",
+      j_p_min: "-5",
+      j_i_max: "0",
+      j_v_max: "1.1",
+      j_v_min: "0.9"
+    });
     expect(dcdc.params.control_type).toBeUndefined();
 
     const acdc = createDefaultNode("acdc-converter", { x: 700, y: 100 });
@@ -5055,12 +5095,38 @@ describe("power system model", () => {
     expect(acdc.params.control_type).toBeUndefined();
     expect(acdc.params.ac_control_type).toBe("PQ");
     expect(acdc.params.dc_control_type).toBe("V");
+    expect(acdc.params).toMatchObject({
+      rated_capacity: "10",
+      ac_p_max: "10",
+      ac_p_min: "-10",
+      ac_i_max: "0",
+      ac_v_max: "1.1",
+      ac_v_min: "0.9",
+      dc_p_max: "10",
+      dc_p_min: "-10",
+      dc_i_max: "0",
+      dc_v_max: "1.1",
+      dc_v_min: "0.9"
+    });
 
     const acac = createDefaultNode("acac-converter", { x: 800, y: 100 });
     expect(acac.params.source_equivalent_resistance).toBe("0.0");
     expect(acac.params.target_equivalent_resistance).toBe("0.0");
     expect(acac.params.i_control_type).toBe("PQ");
     expect(acac.params.j_control_type).toBe("PQ");
+    expect(acac.params).toMatchObject({
+      rated_capacity: "10",
+      i_p_max: "10",
+      i_p_min: "-10",
+      i_i_max: "0",
+      i_v_max: "1.1",
+      i_v_min: "0.9",
+      j_p_max: "10",
+      j_p_min: "-10",
+      j_i_max: "0",
+      j_v_max: "1.1",
+      j_v_min: "0.9"
+    });
     expect(acac.params.control_type).toBeUndefined();
     expect(acac.params.source_control_type).toBeUndefined();
     expect(acac.params.target_control_type).toBeUndefined();
@@ -5069,12 +5135,13 @@ describe("power system model", () => {
     expect(dcLine.params.r).toBe("1.0");
     expect(dcLine.params.x).toBeUndefined();
     expect(dcLine.params.b).toBeUndefined();
+    expect(dcLine.params).toMatchObject({ rated_capacity: "0", i_max: "0" });
 
     const acSwitch = createDefaultNode("ac-switch", { x: 1000, y: 100 });
     const dcBreaker = createDefaultNode("dc-breaker", { x: 1100, y: 100 });
     expect(acSwitch.terminals[0].nodeNumber).toMatch(/^N\d+$/);
     expect(acSwitch.terminals[1].nodeNumber).toMatch(/^N\d+$/);
-    expect(acSwitch.params.rated_capacity).toBe("1250");
+    expect(acSwitch.params).toMatchObject({ rated_capacity: "0", i_max: "1250" });
     expect(acSwitch.params.status).toBe("1");
     expect(acSwitch.params.closed_status).toBeUndefined();
     expect(getSwitchVisualState(acSwitch)).toBe("closed");
@@ -5087,6 +5154,56 @@ describe("power system model", () => {
     expect(getSwitchVisualState(dcBreaker)).toBe("open");
     dcBreaker.params.status = "1";
     expect(getSwitchVisualState(dcBreaker)).toBe("closed");
+  });
+
+  test("migrates legacy maximum-current fields to i_max names without losing saved values", () => {
+    const lineTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-line")!;
+    const line = createDefaultNode("ac-line", { x: 100, y: 100 });
+    delete line.params.i_max;
+    line.params.max_current = "630 A";
+    line.params[CUSTOM_PARAM_DEFINITIONS_KEY] = JSON.stringify([
+      { cnName: "最大电流", enName: "max_current", valueType: "float", typicalValue: "0", exportName: "max_current" }
+    ]);
+
+    const normalizedLine = normalizeNodeTerminalsWithTemplate(line, lineTemplate);
+    const storedDefinitions = JSON.parse(normalizedLine.params[CUSTOM_PARAM_DEFINITIONS_KEY]) as DeviceParameterDefinition[];
+
+    expect(normalizedLine.params.i_max).toBe("630");
+    expect(normalizedLine.params.max_current).toBeUndefined();
+    expect(storedDefinitions).toEqual([
+      expect.objectContaining({ enName: "i_max", exportName: "i_max" })
+    ]);
+    expect(getEParamValue("i_max", line)).toBe("630 A");
+    const linePayload = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: "最大电流字段迁移",
+      nodes: [normalizedLine],
+      edges: []
+    }));
+    expect(linePayload.ACBranch.columns).toContain("i_max");
+    expect(linePayload.ACBranch.columns).not.toContain("max_current");
+    expect(linePayload.ACBranch.rows[0].i_max).toBe("630");
+
+    const transformerTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer")!;
+    const transformer = createDefaultNode("ac-three-winding-transformer", { x: 240, y: 100 });
+    delete transformer.params.high_i_max;
+    delete transformer.params.medium_i_max;
+    delete transformer.params.low_i_max;
+    Object.assign(transformer.params, {
+      high_max_current: "300 A",
+      medium_max_current: "315 A",
+      low_max_current: "1600 A"
+    });
+
+    const normalizedTransformer = normalizeNodeTerminalsWithTemplate(transformer, transformerTemplate);
+    expect(normalizedTransformer.params).toMatchObject({
+      high_i_max: "300",
+      medium_i_max: "315",
+      low_i_max: "1600"
+    });
+    expect(normalizedTransformer.params).not.toHaveProperty("high_max_current");
+    expect(normalizedTransformer.params).not.toHaveProperty("medium_max_current");
+    expect(normalizedTransformer.params).not.toHaveProperty("low_max_current");
   });
 
   test("migrates saved transformer engineering fields to float definitions and numeric defaults", () => {
@@ -9823,6 +9940,8 @@ describe("power system model", () => {
       "q_max",
       "q_min",
       "v_set",
+      "v_max",
+      "v_min",
       "alpha",
       "run_stat"
     ]);
@@ -9838,6 +9957,8 @@ describe("power system model", () => {
       "p_max",
       "p_min",
       "i_set",
+      "v_max",
+      "v_min",
       "run_stat"
     ]);
 
@@ -9845,23 +9966,27 @@ describe("power system model", () => {
       ["p_max", "有功上限"],
       ["p_min", "有功下限"],
       ["q_max", "无功上限"],
-      ["q_min", "无功下限"]
+      ["q_min", "无功下限"],
+      ["v_max", "电压上限"],
+      ["v_min", "电压下限"]
     ] as const) {
       expect(acDefinitions.get(name), name).toMatchObject({
         cnName,
         valueType: "float",
-        typicalValue: "0",
+        typicalValue: name === "v_max" ? "1.1" : name === "v_min" ? "0.9" : "0",
         readonly: false
       });
     }
     for (const [name, cnName] of [
       ["p_max", "有功上限"],
-      ["p_min", "有功下限"]
+      ["p_min", "有功下限"],
+      ["v_max", "电压上限"],
+      ["v_min", "电压下限"]
     ] as const) {
       expect(dcDefinitions.get(name), name).toMatchObject({
         cnName,
         valueType: "float",
-        typicalValue: "0",
+        typicalValue: name === "v_max" ? "1.1" : name === "v_min" ? "0.9" : "0",
         readonly: false
       });
     }
@@ -9872,17 +9997,17 @@ describe("power system model", () => {
     const dcSource = assignPermanentDeviceIndex(createDefaultNode("dc-source", { x: 240, y: 100 }), {}).node;
     const acWind = createDefaultNode("ac-wind-source", { x: 380, y: 100 });
     const dcWind = createDefaultNode("dc-wind-source", { x: 520, y: 100 });
-    expect(acSource.params).toMatchObject({ p_max: "0", p_min: "0", q_max: "0", q_min: "0" });
-    expect(dcSource.params).toMatchObject({ p_max: "0", p_min: "0" });
-    expect(acWind.params).toMatchObject({ p_max: "0", p_min: "0", q_max: "0", q_min: "0" });
-    expect(dcWind.params).toMatchObject({ p_max: "0", p_min: "0" });
+    expect(acSource.params).toMatchObject({ p_max: "0", p_min: "0", q_max: "0", q_min: "0", v_max: "1.1", v_min: "0.9" });
+    expect(dcSource.params).toMatchObject({ p_max: "0", p_min: "0", v_max: "1.1", v_min: "0.9" });
+    expect(acWind.params).toMatchObject({ p_max: "0", p_min: "0", q_max: "0", q_min: "0", v_max: "1.1", v_min: "0.9" });
+    expect(dcWind.params).toMatchObject({ p_max: "0", p_min: "0", v_max: "1.1", v_min: "0.9" });
     expect(dcSource.params).not.toHaveProperty("q_max");
     expect(dcSource.params).not.toHaveProperty("q_min");
     expect(dcWind.params).not.toHaveProperty("q_max");
     expect(dcWind.params).not.toHaveProperty("q_min");
 
-    Object.assign(acSource.params, { p_max: "12.5", p_min: "-1.5", q_max: "6.25", q_min: "-4.75" });
-    Object.assign(dcSource.params, { p_max: "8.5", p_min: "-2.5" });
+    Object.assign(acSource.params, { p_max: "12.5", p_min: "-1.5", q_max: "6.25", q_min: "-4.75", v_max: "1.08", v_min: "0.92" });
+    Object.assign(dcSource.params, { p_max: "8.5", p_min: "-2.5", v_max: "1.06", v_min: "0.94" });
     const payload = parseESections(buildEDeviceParameterFile({
       version: 1,
       name: "电源出力上下限导出测试",
@@ -9894,11 +10019,15 @@ describe("power system model", () => {
       p_max: "12.5",
       p_min: "-1.5",
       q_max: "6.25",
-      q_min: "-4.75"
+      q_min: "-4.75",
+      v_max: "1.08",
+      v_min: "0.92"
     });
     expect(payload.DCGenerator.rows[0]).toMatchObject({
       p_max: "8.5",
-      p_min: "-2.5"
+      p_min: "-2.5",
+      v_max: "1.06",
+      v_min: "0.94"
     });
   });
 
@@ -9933,8 +10062,29 @@ describe("power system model", () => {
     }));
     expect(payload.ACGenerator.rows[0]).toMatchObject({
       rated_capacity: "42",
-      rated_voltage: "35"
+      rated_voltage: "35",
+      v_max: "1.1",
+      v_min: "0.9"
     });
+  });
+
+  test("migrates voltage limits into historical derived generators without overwriting saved values", () => {
+    const acWind = createDefaultNode("ac-wind-source", { x: 100, y: 100 });
+    const dcWind = createDefaultNode("dc-wind-source", { x: 240, y: 100 });
+    delete acWind.params.v_max;
+    delete acWind.params.v_min;
+    dcWind.params.vMax = "1.07";
+    dcWind.params.vMin = "0.93";
+    delete dcWind.params.v_max;
+    delete dcWind.params.v_min;
+
+    const normalizedAcWind = normalizeNodeTerminalsByTemplate(acWind);
+    const normalizedDcWind = normalizeNodeTerminalsByTemplate(dcWind);
+
+    expect(normalizedAcWind.params).toMatchObject({ v_max: "1.1", v_min: "0.9" });
+    expect(normalizedDcWind.params).toMatchObject({ v_max: "1.07", v_min: "0.93" });
+    expect(normalizedDcWind.params).not.toHaveProperty("vMax");
+    expect(normalizedDcWind.params).not.toHaveProperty("vMin");
   });
 
   test("omits equipment-count fields from generation derived classes and historical overrides", () => {
@@ -11695,36 +11845,64 @@ describe("power system model", () => {
     expect(definitionTypes("ac-source")).toMatchObject({
       idx: "integer",
       node: "integer",
+      rated_capacity: "float",
+      rated_voltage: "float",
       p_set: "float",
       p_max: "float",
       p_min: "float",
       q_set: "float",
       q_max: "float",
       q_min: "float",
-      v_set: "float"
+      v_set: "float",
+      v_max: "float",
+      v_min: "float"
     });
     expect(definitionTypes("dc-source")).toMatchObject({
       idx: "integer",
       node: "integer",
+      rated_capacity: "float",
+      rated_voltage: "float",
       p_set: "float",
       p_max: "float",
       p_min: "float",
       i_set: "float",
-      v_set: "float"
+      v_set: "float",
+      v_max: "float",
+      v_min: "float"
     });
     expect(definitionTypes("ac-load")).toMatchObject({
+      rated_capacity: "float",
       pbase: "float",
+      p_max: "float",
+      p_min: "float",
       qbase: "float",
+      q_max: "float",
+      q_min: "float",
       pv0: "float",
       pv1: "float",
       pv2: "float",
       qv0: "float",
       qv1: "float",
-      qv2: "float"
+      qv2: "float",
+      v_max: "float",
+      v_min: "float"
+    });
+    expect(definitionTypes("dc-load")).toMatchObject({
+      rated_capacity: "float",
+      pbase: "float",
+      p_max: "float",
+      p_min: "float",
+      pv0: "float",
+      pv1: "float",
+      pv2: "float",
+      v_max: "float",
+      v_min: "float"
     });
     expect(definitionTypes("ac-line")).toMatchObject({
       i_node: "integer",
       j_node: "integer",
+      rated_capacity: "float",
+      i_max: "float",
       r: "float",
       x: "float",
       b: "float"
@@ -11732,6 +11910,9 @@ describe("power system model", () => {
     expect(definitionTypes("ac-transformer")).toMatchObject({
       i_node: "integer",
       j_node: "integer",
+      rated_capacity: "float",
+      high_i_max: "float",
+      low_i_max: "float",
       r: "float",
       x: "float",
       gt: "float",
@@ -11742,29 +11923,66 @@ describe("power system model", () => {
     expect(definitionTypes("dcdc-converter")).toMatchObject({
       i_node: "integer",
       j_node: "integer",
+      rated_capacity: "float",
+      i_p_max: "float",
+      i_p_min: "float",
+      i_i_max: "float",
+      i_v_max: "float",
+      i_v_min: "float",
+      j_p_max: "float",
+      j_p_min: "float",
+      j_i_max: "float",
+      j_v_max: "float",
+      j_v_min: "float",
       r1: "float",
       r2: "float",
       i_control_type: "stringEnum",
       j_control_type: "stringEnum"
     });
+    expect(definitionTypes("acdc-converter")).toMatchObject({
+      rated_capacity: "float",
+      ac_p_max: "float",
+      ac_p_min: "float",
+      ac_i_max: "float",
+      ac_v_max: "float",
+      ac_v_min: "float",
+      dc_p_max: "float",
+      dc_p_min: "float",
+      dc_i_max: "float",
+      dc_v_max: "float",
+      dc_v_min: "float"
+    });
+    expect(definitionTypes("acac-converter")).toMatchObject({
+      rated_capacity: "float",
+      i_p_max: "float",
+      i_p_min: "float",
+      i_i_max: "float",
+      i_v_max: "float",
+      i_v_min: "float",
+      j_p_max: "float",
+      j_p_min: "float",
+      j_i_max: "float",
+      j_v_max: "float",
+      j_v_min: "float"
+    });
   });
 
   test("keeps every built-in device parameter aligned with its semantic type and numeric default", () => {
     const floatNames = new Set([
-      "ac_voltage", "active_power", "alpha", "angle", "array_area", "b", "b_set", "bt", "bt1", "bt2", "bt3",
+      "ac_i_max", "ac_p_max", "ac_p_min", "ac_v_max", "ac_v_min", "ac_voltage", "active_power", "alpha", "angle", "array_area", "b", "b_set", "bt", "bt1", "bt2", "bt3",
       "capacity", "capacity_factor", "charge_discharge_efficiency", "cut_in_wind_speed", "cut_out_wind_speed", "dc_voltage",
-      "design_flow", "design_head", "efficiency", "energy_capacity", "flow_rate", "frequency", "fuel_tank_capacity",
+      "dc_i_max", "dc_p_max", "dc_p_min", "dc_v_max", "dc_v_min", "design_flow", "design_head", "efficiency", "energy_capacity", "flow_rate", "frequency", "fuel_tank_capacity",
       "g_set", "generator_efficiency", "gt", "gt1", "gt2", "gt3", "head", "heat_demand", "heat_power", "heat_rate",
-      "high_rated_capacity", "high_vbase", "hub_height", "hydrogen_demand", "hydrogen_flow", "impedance", "inlet_pressure",
-      "input_voltage", "i_q_set", "i_set", "i_v_set", "j_q_set", "j_v_set", "length", "low_rated_capacity", "low_vbase", "main_steam_pressure",
-      "main_steam_temperature", "max_charge_power", "max_current", "max_discharge_power", "medium_rated_capacity",
+      "high_i_max", "high_rated_capacity", "high_vbase", "hub_height", "hydrogen_demand", "hydrogen_flow", "impedance", "inlet_pressure",
+      "input_voltage", "i_i_max", "i_max", "i_p_max", "i_p_min", "i_q_set", "i_set", "i_v_max", "i_v_min", "i_v_set", "j_i_max", "j_p_max", "j_p_min", "j_q_set", "j_v_max", "j_v_min", "j_v_set", "length", "low_i_max", "low_rated_capacity", "low_vbase", "main_steam_pressure",
+      "main_steam_temperature", "max_charge_power", "max_discharge_power", "medium_i_max", "medium_rated_capacity",
       "medium_vbase", "module_efficiency", "outlet_pressure", "output_voltage", "p_ac_set", "p_max", "p_min", "p_set", "pbase", "power",
       "power_factor", "pressure", "primary_loop_pressure", "pv0", "pv1", "pv2", "q_ac_set", "q_max", "q_min", "q_set", "qbase", "qv0",
       "qv1", "qv2", "r", "r1", "r2", "r3", "rated_capacity", "rated_current", "rated_power", "rated_speed",
       "rated_voltage", "rated_wind_speed", "reactive_power", "reactor_thermal_power", "return_temperature", "rotor_diameter",
       "shift", "shift1", "shift2", "shift3", "short_circuit_capacity", "soc_lower_limit", "soc_upper_limit",
       "specific_fuel_consumption", "start_time", "state_of_charge", "supply_temperature", "tap", "tap1", "tap2", "tap3",
-      "temperature", "thermal_efficiency", "v_ac_set", "v_dc_set", "v_set", "vbase", "voltage", "voltage_level", "x",
+      "temperature", "thermal_efficiency", "v_ac_set", "v_dc_set", "v_max", "v_min", "v_set", "vbase", "voltage", "voltage_level", "x",
       "x1", "x2", "x3", "x_pu"
     ]);
     const integerNames = new Set(["battery_rack_count", "idx", "isl", "mppt_count"]);

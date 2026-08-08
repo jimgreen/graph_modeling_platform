@@ -821,14 +821,48 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   StaticContainerSymbol: [],
   StaticConnectorSymbol: [],
   StaticAnnotationSymbol: [],
-  ACRealBs: ["idx", "name", "node", "run_stat"],
-  DCRealBs: ["idx", "name", "node", "run_stat"],
+  ACRealBs: ["idx", "name", "node", "v_max", "v_min", "run_stat"],
+  DCRealBs: ["idx", "name", "node", "v_max", "v_min", "run_stat"],
   ACNode: ["idx", "name", "vbase", "run_stat"],
   DCNode: ["idx", "name", "vbase", "voltage", "isl", "run_stat"],
-  ACBranch: ["idx", "name", "i_node", "j_node", "r", "x", "b", "run_stat"],
-  DCBranch: ["idx", "name", "i_node", "j_node", "r", "run_stat"],
-  ACLoad: ["idx", "name", "node", "pbase", "pv0", "pv1", "pv2", "qbase", "qv0", "qv1", "qv2", "run_stat"],
-  DCLoad: ["idx", "name", "node", "pbase", "pv0", "pv1", "pv2", "run_stat"],
+  ACBranch: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "r", "x", "b", "run_stat"],
+  DCBranch: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "r", "run_stat"],
+  ACLoad: [
+    "idx",
+    "name",
+    "node",
+    "rated_capacity",
+    "pbase",
+    "p_max",
+    "p_min",
+    "pv0",
+    "pv1",
+    "pv2",
+    "qbase",
+    "q_max",
+    "q_min",
+    "qv0",
+    "qv1",
+    "qv2",
+    "v_max",
+    "v_min",
+    "run_stat"
+  ],
+  DCLoad: [
+    "idx",
+    "name",
+    "node",
+    "rated_capacity",
+    "pbase",
+    "p_max",
+    "p_min",
+    "pv0",
+    "pv1",
+    "pv2",
+    "v_max",
+    "v_min",
+    "run_stat"
+  ],
   ACGenerator: [
     "idx",
     "name",
@@ -843,6 +877,8 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
     "q_max",
     "q_min",
     "v_set",
+    "v_max",
+    "v_min",
     "alpha",
     "run_stat"
   ],
@@ -858,17 +894,34 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
     "p_max",
     "p_min",
     "i_set",
+    "v_max",
+    "v_min",
     "run_stat"
   ],
   ACShuntCompensator: ["idx", "name", "node", "control_type", "q_set", "g_set", "b_set", "v_set", "run_stat"],
   ACZeroBranch: ["idx", "name", "i_node", "j_node", "run_stat"],
   DCZeroBranch: ["idx", "name", "i_node", "j_node", "run_stat"],
-  ACSwitch: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
-  DCSwitch: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
-  ACBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
-  DCBreak: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
-  GroundDisconnector: ["idx", "name", "node", "status", "run_stat"],
-  ACTransformer: ["idx", "name", "i_node", "j_node", "r", "x", "gt", "bt", "tap", "shift", "run_stat"],
+  ACSwitch: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "status", "run_stat"],
+  DCSwitch: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "status", "run_stat"],
+  ACBreak: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "status", "run_stat"],
+  DCBreak: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "status", "run_stat"],
+  GroundDisconnector: ["idx", "name", "node", "rated_capacity", "i_max", "status", "run_stat"],
+  ACTransformer: [
+    "idx",
+    "name",
+    "i_node",
+    "j_node",
+    "rated_capacity",
+    "high_i_max",
+    "low_i_max",
+    "r",
+    "x",
+    "gt",
+    "bt",
+    "tap",
+    "shift",
+    "run_stat"
+  ],
   ACTransfomer3: [
     "idx",
     "name",
@@ -876,6 +929,12 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
     "t2_node",
     "t3_node",
     "neutral_node",
+    "high_rated_capacity",
+    "high_i_max",
+    "medium_rated_capacity",
+    "medium_i_max",
+    "low_rated_capacity",
+    "low_i_max",
     "r1",
     "x1",
     "gt1",
@@ -896,9 +955,84 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
     "shift3",
     "run_stat"
   ],
-  DCDCConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "i_control_type", "j_control_type", "p_set", "i_set", "v_set", "run_stat"],
-  DCACConverter: ["idx", "name", "ac_node", "dc_node", "r1", "r2", "ac_control_type", "dc_control_type", "p_ac_set", "q_ac_set", "v_ac_set", "v_dc_set", "run_stat"],
-  ACACConverter: ["idx", "name", "i_node", "j_node", "r1", "r2", "i_control_type", "j_control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"],
+  DCDCConverter: [
+    "idx",
+    "name",
+    "i_node",
+    "j_node",
+    "rated_capacity",
+    "i_p_max",
+    "i_p_min",
+    "i_i_max",
+    "i_v_max",
+    "i_v_min",
+    "j_p_max",
+    "j_p_min",
+    "j_i_max",
+    "j_v_max",
+    "j_v_min",
+    "r1",
+    "r2",
+    "i_control_type",
+    "j_control_type",
+    "p_set",
+    "i_set",
+    "v_set",
+    "run_stat"
+  ],
+  DCACConverter: [
+    "idx",
+    "name",
+    "ac_node",
+    "dc_node",
+    "rated_capacity",
+    "ac_p_max",
+    "ac_p_min",
+    "ac_i_max",
+    "ac_v_max",
+    "ac_v_min",
+    "dc_p_max",
+    "dc_p_min",
+    "dc_i_max",
+    "dc_v_max",
+    "dc_v_min",
+    "r1",
+    "r2",
+    "ac_control_type",
+    "dc_control_type",
+    "p_ac_set",
+    "q_ac_set",
+    "v_ac_set",
+    "v_dc_set",
+    "run_stat"
+  ],
+  ACACConverter: [
+    "idx",
+    "name",
+    "i_node",
+    "j_node",
+    "rated_capacity",
+    "i_p_max",
+    "i_p_min",
+    "i_i_max",
+    "i_v_max",
+    "i_v_min",
+    "j_p_max",
+    "j_p_min",
+    "j_i_max",
+    "j_v_max",
+    "j_v_min",
+    "r1",
+    "r2",
+    "i_control_type",
+    "j_control_type",
+    "p_set",
+    "i_q_set",
+    "j_q_set",
+    "i_v_set",
+    "j_v_set",
+    "run_stat"
+  ],
   HydroSource: ["idx", "name", "node", "run_stat"],
   HydroLoad: ["idx", "name", "node", "run_stat"],
   HydroPipe: ["idx", "name", "i_node", "j_node", "run_stat"],
@@ -1920,6 +2054,15 @@ function mappedLegacyEValue(key: string, params: Record<string, string>) {
   if (key === "rated_capacity" || key === "rated_power") {
     return deviceParamValue(params, "rated_capacity") ?? deviceParamValue(params, "rated_power") ?? "";
   }
+  const legacyCurrentKey = ({
+    i_max: "max_current",
+    high_i_max: "high_max_current",
+    medium_i_max: "medium_max_current",
+    low_i_max: "low_max_current"
+  } as Record<string, string>)[key];
+  if (legacyCurrentKey) {
+    return deviceParamValue(params, key) ?? deviceParamValue(params, legacyCurrentKey) ?? "";
+  }
   if (key === "pbase") return params.pbase ?? deviceParamValue(params, "rated_active_power") ?? "";
   if (key === "qbase") return params.qbase ?? deviceParamValue(params, "rated_reactive_power") ?? "";
   if (key === "r") return params.r ?? deviceParamValue(params, "resistance_pu") ?? "";
@@ -2029,6 +2172,13 @@ const E_FLOAT_COLUMNS = new Set([
   "qbase",
   "rated_capacity",
   "rated_voltage",
+  "i_max",
+  "high_rated_capacity",
+  "high_i_max",
+  "medium_rated_capacity",
+  "medium_i_max",
+  "low_rated_capacity",
+  "low_i_max",
   "pv0",
   "pv1",
   "pv2",
@@ -2041,6 +2191,28 @@ const E_FLOAT_COLUMNS = new Set([
   "q_set",
   "q_max",
   "q_min",
+  "v_max",
+  "v_min",
+  "ac_p_max",
+  "ac_p_min",
+  "ac_i_max",
+  "ac_v_max",
+  "ac_v_min",
+  "dc_p_max",
+  "dc_p_min",
+  "dc_i_max",
+  "dc_v_max",
+  "dc_v_min",
+  "i_p_max",
+  "i_p_min",
+  "i_i_max",
+  "i_v_max",
+  "i_v_min",
+  "j_p_max",
+  "j_p_min",
+  "j_i_max",
+  "j_v_max",
+  "j_v_min",
   "i_set",
   "v_set",
   "alpha",
@@ -2234,6 +2406,18 @@ function eFileInterfaceDefinitionIndex(options: EFileExportOptions = {}) {
 }
 
 const LEGACY_E_DEFINITION_COLUMN_ALIASES: Record<string, string> = {
+  maxCurrent: "i_max",
+  max_current: "i_max",
+  iMax: "i_max",
+  highMaxCurrent: "high_i_max",
+  high_max_current: "high_i_max",
+  highIMax: "high_i_max",
+  mediumMaxCurrent: "medium_i_max",
+  medium_max_current: "medium_i_max",
+  mediumIMax: "medium_i_max",
+  lowMaxCurrent: "low_i_max",
+  low_max_current: "low_i_max",
+  lowIMax: "low_i_max",
   ratedPower: "rated_capacity",
   rated_power: "rated_capacity",
   ratedActivePower: "pbase",
@@ -3780,6 +3964,8 @@ const twoWindingTransformerParameterDefinitions: DeviceParameterDefinition[] = [
   { cnName: "高压侧电压等级", enName: "highVbase", valueType: "float", typicalValue: "0", readonly: false },
   { cnName: "低压侧电压等级", enName: "lowVbase", valueType: "float", typicalValue: "0", readonly: false },
   { cnName: "额定容量", enName: "ratedCapacity", valueType: "float", typicalValue: "50", readonly: false },
+  { cnName: "高压侧最大电流", enName: "highIMax", valueType: "float", typicalValue: "0", readonly: false },
+  { cnName: "低压侧最大电流", enName: "lowIMax", valueType: "float", typicalValue: "0", readonly: false },
   { cnName: "相移（度）", enName: "shift", valueType: "float", typicalValue: "0", readonly: false }
 ];
 
@@ -3808,10 +3994,13 @@ const threeWindingTransformerParameterDefinitions: DeviceParameterDefinition[] =
   readonlyIntegerDefinition("中性点节点号", "neutral_node"),
   { cnName: "高压侧电压等级", enName: "highVbase", valueType: "float", typicalValue: "0", readonly: false },
   { cnName: "高压侧额定容量", enName: "highRatedCapacity", valueType: "float", typicalValue: "90", readonly: false },
+  { cnName: "高压侧最大电流", enName: "highIMax", valueType: "float", typicalValue: "0", readonly: false },
   { cnName: "中压侧电压等级", enName: "mediumVbase", valueType: "float", typicalValue: "0", readonly: false },
   { cnName: "中压侧额定容量", enName: "mediumRatedCapacity", valueType: "float", typicalValue: "90", readonly: false },
+  { cnName: "中压侧最大电流", enName: "mediumIMax", valueType: "float", typicalValue: "0", readonly: false },
   { cnName: "低压侧电压等级", enName: "lowVbase", valueType: "float", typicalValue: "0", readonly: false },
-  { cnName: "低压侧额定容量", enName: "lowRatedCapacity", valueType: "float", typicalValue: "90", readonly: false }
+  { cnName: "低压侧额定容量", enName: "lowRatedCapacity", valueType: "float", typicalValue: "90", readonly: false },
+  { cnName: "低压侧最大电流", enName: "lowIMax", valueType: "float", typicalValue: "0", readonly: false }
 ];
 
 const THREE_WINDING_TRANSFORMER_E_DEFAULT_PARAMS = {
@@ -4357,6 +4546,8 @@ function createElectricGenerationDeviceTemplate(
     ratedVoltage: electricalDefaults.ratedVoltage,
     pMax: "0",
     pMin: "0",
+    vMax: "1.1",
+    vMin: "0.9",
     ...(terminalType === "ac" ? { qMax: "0", qMin: "0" } : {}),
     ...family.commonParams,
     ...(family.paramsByTerminalType?.[terminalType] ?? {})
@@ -4766,13 +4957,17 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       pMax: "0",
       pMin: "0",
       qMax: "0",
-      qMin: "0"
+      qMin: "0",
+      vMax: "1.1",
+      vMin: "0.9"
     },
     terminalType: "ac",
     terminalCount: 1,
     parameterDefinitions: [
       { cnName: "额定容量", enName: "ratedCapacity", valueType: "string", typicalValue: "10 MW", readonly: false },
       { cnName: "额定电压", enName: "ratedVoltage", valueType: "string", typicalValue: "10 kV", readonly: false },
+      { cnName: "电压上限", enName: "vMax", valueType: "float", typicalValue: "1.1", readonly: false },
+      { cnName: "电压下限", enName: "vMin", valueType: "float", typicalValue: "0.9", readonly: false },
       { cnName: "频率", enName: "frequency", valueType: "string", typicalValue: "50 Hz", readonly: false },
       { cnName: "短路容量", enName: "shortCircuitCapacity", valueType: "string", typicalValue: "500 MVA", readonly: false },
       { cnName: "有功上限", enName: "pMax", valueType: "float", typicalValue: "0", readonly: false },
@@ -5174,7 +5369,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流线路",
     categoryLibrary: "交流设备",
     size: { width: 108, height: 36 },
-    params: { r: "0.1", x: "1.0", b: "0.0" },
+    params: { ratedCapacity: "0", iMax: "0", r: "0.1", x: "1.0", b: "0.0" },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -5183,7 +5378,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流线路（自适应）",
     categoryLibrary: "交流设备",
     size: { width: 150, height: 36 },
-    params: { r: "0.1", x: "1.0", b: "0.0", component_type: "ACBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
+    params: { ratedCapacity: "0", iMax: "0", r: "0.1", x: "1.0", b: "0.0", component_type: "ACBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -5210,7 +5405,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流母线",
     categoryLibrary: "交流设备",
     size: { width: 120, height: 28 },
-    params: { voltageLevel: "10 kV", section: "I段" },
+    params: { voltageLevel: "10 kV", vMax: "1.1", vMin: "0.9", section: "I段" },
     terminalType: "ac",
     terminalCount: 0
   },
@@ -5219,7 +5414,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流开关",
     categoryLibrary: "交流设备",
     size: { width: 72, height: 48 },
-    params: { status: "1", ratedCurrent: "1250 A" },
+    params: { status: "1", ratedCapacity: "0", iMax: "1250 A" },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -5228,7 +5423,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "接地刀闸",
     categoryLibrary: "交流设备",
     size: { width: 78, height: 58 },
-    params: { status: "0", ratedCurrent: "1250 A" },
+    params: { status: "0", ratedCapacity: "0", iMax: "1250 A" },
     terminalType: "ac",
     terminalCount: 1,
     terminalLabels: ["交流系统端"],
@@ -5239,7 +5434,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "竖向接地刀闸",
     categoryLibrary: "交流设备",
     size: { width: 58, height: 78 },
-    params: { status: "0", ratedCurrent: "1250 A" },
+    params: { status: "0", ratedCapacity: "0", iMax: "1250 A" },
     terminalType: "ac",
     terminalCount: 1,
     terminalLabels: ["交流系统端"],
@@ -5250,7 +5445,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流断路器",
     categoryLibrary: "交流设备",
     size: { width: 78, height: 50 },
-    params: {},
+    params: { ratedCapacity: "0", iMax: "1250 A" },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -5259,7 +5454,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "盒型开关",
     categoryLibrary: "交流设备",
     size: { width: 86, height: 44 },
-    params: { status: "1", ratedCurrent: "1250 A" },
+    params: { status: "1", ratedCapacity: "0", iMax: "1250 A" },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -5268,7 +5463,18 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流负荷",
     categoryLibrary: "交流设备",
     size: { width: 86, height: 58 },
-    params: { activePower: "5 MW", reactivePower: "1.2 Mvar", powerFactor: "0.95" },
+    params: {
+      activePower: "5 MW",
+      reactivePower: "1.2 Mvar",
+      powerFactor: "0.95",
+      ratedCapacity: "5 MW",
+      pMax: "5 MW",
+      pMin: "0",
+      qMax: "1.2 Mvar",
+      qMin: "0",
+      vMax: "1.1",
+      vMin: "0.9"
+    },
     terminalType: "ac",
     terminalCount: 1,
     terminalAnchors: [{ x: 0, y: -0.5 }]
@@ -5278,7 +5484,18 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "终端变负荷",
     categoryLibrary: "交流设备",
     size: { width: 92, height: 70 },
-    params: { activePower: "5 MW", reactivePower: "1.2 Mvar", powerFactor: "0.95" },
+    params: {
+      activePower: "5 MW",
+      reactivePower: "1.2 Mvar",
+      powerFactor: "0.95",
+      ratedCapacity: "5 MW",
+      pMax: "5 MW",
+      pMin: "0",
+      qMax: "1.2 Mvar",
+      qMin: "0",
+      vMax: "1.1",
+      vMin: "0.9"
+    },
     terminalType: "ac",
     terminalCount: 1,
     terminalLabels: ["交流设备端1"],
@@ -5291,6 +5508,8 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     size: { width: 92, height: 70 },
     params: {
       ratedCapacity: "50",
+      highIMax: "0",
+      lowIMax: "0",
       voltageRatio: "110/10 kV",
       impedance: "10.5%",
       r: "0.0",
@@ -5311,6 +5530,9 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     size: { width: 104, height: 76 },
     params: {
       ratedCapacity: "90",
+      highIMax: "0",
+      mediumIMax: "0",
+      lowIMax: "0",
       voltageRatio: "220/110/10 kV",
       windingType: "三绕组",
       impedance: "12.0%",
@@ -5329,6 +5551,9 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     size: { width: 112, height: 92 },
     params: {
       ratedCapacity: "90",
+      highIMax: "0",
+      mediumIMax: "0",
+      lowIMax: "0",
       voltageRatio: "220/110/10/0.4 kV",
       windingType: "三绕组带中性点",
       impedance: "12.0%",
@@ -5346,13 +5571,15 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流电源",
     categoryLibrary: "直流设备",
     size: { width: 84, height: 56 },
-    params: { ratedCapacity: "10 MW", ratedVoltage: "750 V", maxCurrent: "2000 A", pMax: "0", pMin: "0" },
+    params: { ratedCapacity: "10 MW", ratedVoltage: "750 V", iMax: "2000 A", pMax: "0", pMin: "0", vMax: "1.1", vMin: "0.9" },
     terminalType: "dc",
     terminalCount: 1,
     parameterDefinitions: [
       { cnName: "额定容量", enName: "ratedCapacity", valueType: "string", typicalValue: "10 MW", readonly: false },
       { cnName: "额定电压", enName: "ratedVoltage", valueType: "string", typicalValue: "750 V", readonly: false },
-      { cnName: "最大电流", enName: "maxCurrent", valueType: "string", typicalValue: "2000 A", readonly: false },
+      { cnName: "电压上限", enName: "vMax", valueType: "float", typicalValue: "1.1", readonly: false },
+      { cnName: "电压下限", enName: "vMin", valueType: "float", typicalValue: "0.9", readonly: false },
+      { cnName: "最大电流", enName: "iMax", valueType: "string", typicalValue: "2000 A", readonly: false },
       { cnName: "有功上限", enName: "pMax", valueType: "float", typicalValue: "0", readonly: false },
       { cnName: "有功下限", enName: "pMin", valueType: "float", typicalValue: "0", readonly: false }
     ]
@@ -5363,7 +5590,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流线路",
     categoryLibrary: "直流设备",
     size: { width: 108, height: 36 },
-    params: { r: "1.0" },
+    params: { ratedCapacity: "0", iMax: "0", r: "1.0" },
     terminalType: "dc",
     terminalCount: 2
   },
@@ -5372,7 +5599,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流线路（自适应）",
     categoryLibrary: "直流设备",
     size: { width: 150, height: 36 },
-    params: { r: "1.0", component_type: "DCBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
+    params: { ratedCapacity: "0", iMax: "0", r: "1.0", component_type: "DCBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
     terminalType: "dc",
     terminalCount: 2
   },
@@ -5399,7 +5626,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流母线",
     categoryLibrary: "直流设备",
     size: { width: 120, height: 28 },
-    params: { voltageLevel: "750 V", pole: "正负极" },
+    params: { voltageLevel: "750 V", vMax: "1.1", vMin: "0.9", pole: "正负极" },
     terminalType: "dc",
     terminalCount: 0
   },
@@ -5408,7 +5635,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流开关",
     categoryLibrary: "直流设备",
     size: { width: 72, height: 48 },
-    params: { status: "1", ratedCurrent: "1600 A" },
+    params: { status: "1", ratedCapacity: "0", iMax: "1600 A" },
     terminalType: "dc",
     terminalCount: 2
   },
@@ -5417,7 +5644,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流断路器",
     categoryLibrary: "直流设备",
     size: { width: 78, height: 50 },
-    params: {},
+    params: { ratedCapacity: "0", iMax: "1600 A" },
     terminalType: "dc",
     terminalCount: 2
   },
@@ -5426,7 +5653,15 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流负荷",
     categoryLibrary: "直流设备",
     size: { width: 86, height: 58 },
-    params: { power: "1.5 MW", voltage: "750 V" },
+    params: {
+      power: "1.5 MW",
+      voltage: "750 V",
+      ratedCapacity: "1.5 MW",
+      pMax: "1.5 MW",
+      pMin: "0",
+      vMax: "1.1",
+      vMin: "0.9"
+    },
     terminalType: "dc",
     terminalCount: 1,
     terminalAnchors: [{ x: 0, y: -0.5 }]
@@ -5436,7 +5671,21 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "DCDC变流器",
     categoryLibrary: "直流设备",
     size: { width: 112, height: 66 },
-    params: { ratedPower: "5 MW", inputVoltage: "1500 V", outputVoltage: "750 V" },
+    params: {
+      ratedCapacity: "5 MW",
+      inputVoltage: "1500 V",
+      outputVoltage: "750 V",
+      iPMax: "5 MW",
+      iPMin: "-5 MW",
+      iIMax: "0",
+      iVMax: "1.1",
+      iVMin: "0.9",
+      jPMax: "5 MW",
+      jPMin: "-5 MW",
+      jIMax: "0",
+      jVMax: "1.1",
+      jVMin: "0.9"
+    },
     terminalType: "dc",
     terminalCount: 2
   },
@@ -5445,7 +5694,21 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "ACDC变流器",
     categoryLibrary: "直流设备",
     size: { width: 112, height: 66 },
-    params: { ratedPower: "10 MW", acVoltage: "10 kV", dcVoltage: "750 V" },
+    params: {
+      ratedCapacity: "10 MW",
+      acVoltage: "10 kV",
+      dcVoltage: "750 V",
+      acPMax: "10 MW",
+      acPMin: "-10 MW",
+      acIMax: "0",
+      acVMax: "1.1",
+      acVMin: "0.9",
+      dcPMax: "10 MW",
+      dcPMin: "-10 MW",
+      dcIMax: "0",
+      dcVMax: "1.1",
+      dcVMin: "0.9"
+    },
     terminalType: "ac",
     terminalCount: 2,
     terminalTypes: ["ac", "dc"]
@@ -5455,7 +5718,21 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "DCAC变流器",
     categoryLibrary: "直流设备",
     size: { width: 112, height: 66 },
-    params: { ratedPower: "10 MW", dcVoltage: "750 V", acVoltage: "10 kV" },
+    params: {
+      ratedCapacity: "10 MW",
+      dcVoltage: "750 V",
+      acVoltage: "10 kV",
+      acPMax: "10 MW",
+      acPMin: "-10 MW",
+      acIMax: "0",
+      acVMax: "1.1",
+      acVMin: "0.9",
+      dcPMax: "10 MW",
+      dcPMin: "-10 MW",
+      dcIMax: "0",
+      dcVMax: "1.1",
+      dcVMin: "0.9"
+    },
     terminalType: "dc",
     terminalCount: 2,
     terminalTypes: ["dc", "ac"]
@@ -5465,7 +5742,19 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "ACAC变流器",
     categoryLibrary: "交流设备",
     size: { width: 112, height: 66 },
-    params: {},
+    params: {
+      ratedCapacity: "10 MW",
+      iPMax: "10 MW",
+      iPMin: "-10 MW",
+      iIMax: "0",
+      iVMax: "1.1",
+      iVMin: "0.9",
+      jPMax: "10 MW",
+      jPMin: "-10 MW",
+      jIMax: "0",
+      jVMax: "1.1",
+      jVMin: "0.9"
+    },
     terminalType: "ac",
     terminalCount: 2
   }
@@ -5527,6 +5816,31 @@ export function toSnakeCaseDeviceParamName(name: string): string {
     .toLowerCase();
 }
 
+const CURRENT_LIMIT_PARAM_NAME_ALIASES: Readonly<Record<string, string>> = {
+  max_current: "i_max",
+  i_max: "i_max",
+  high_max_current: "high_i_max",
+  high_i_max: "high_i_max",
+  medium_max_current: "medium_i_max",
+  medium_i_max: "medium_i_max",
+  low_max_current: "low_i_max",
+  low_i_max: "low_i_max",
+  i_i_max: "i_i_max",
+  j_i_max: "j_i_max",
+  ac_i_max: "ac_i_max",
+  dc_i_max: "dc_i_max"
+};
+
+function canonicalDeviceParamName(name: string): string {
+  const normalizedName = toSnakeCaseDeviceParamName(name);
+  return CURRENT_LIMIT_PARAM_NAME_ALIASES[normalizedName] ?? normalizedName;
+}
+
+function canonicalCurrentLimitDefinitionName(name: string): string {
+  const trimmedName = String(name ?? "").trim();
+  return CURRENT_LIMIT_PARAM_NAME_ALIASES[toSnakeCaseDeviceParamName(trimmedName)] ?? trimmedName;
+}
+
 function legacyCamelCaseParamName(name: string): string {
   return name.replace(/_([a-z0-9])/g, (_match, char: string) => char.toUpperCase());
 }
@@ -5560,6 +5874,11 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   reactor_type: "stringEnum",
   storage_technology: "stringEnum",
   turbine_type: "stringEnum",
+  ac_i_max: "float",
+  ac_p_max: "float",
+  ac_p_min: "float",
+  ac_v_max: "float",
+  ac_v_min: "float",
   ac_voltage: "float",
   active_power: "float",
   alpha: "float",
@@ -5576,6 +5895,11 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   charge_discharge_efficiency: "float",
   cut_in_wind_speed: "float",
   cut_out_wind_speed: "float",
+  dc_i_max: "float",
+  dc_p_max: "float",
+  dc_p_min: "float",
+  dc_v_max: "float",
+  dc_v_min: "float",
   dc_voltage: "float",
   design_flow: "float",
   design_head: "float",
@@ -5594,6 +5918,7 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   heat_demand: "float",
   heat_power: "float",
   heat_rate: "float",
+  high_i_max: "float",
   high_rated_capacity: "float",
   high_vbase: "float",
   hub_height: "float",
@@ -5602,19 +5927,31 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   impedance: "float",
   inlet_pressure: "float",
   input_voltage: "float",
+  i_i_max: "float",
+  i_max: "float",
+  i_p_max: "float",
+  i_p_min: "float",
   i_q_set: "float",
   i_set: "float",
+  i_v_max: "float",
+  i_v_min: "float",
   i_v_set: "float",
+  j_i_max: "float",
+  j_p_max: "float",
+  j_p_min: "float",
   j_q_set: "float",
+  j_v_max: "float",
+  j_v_min: "float",
   j_v_set: "float",
   length: "float",
+  low_i_max: "float",
   low_rated_capacity: "float",
   low_vbase: "float",
   main_steam_pressure: "float",
   main_steam_temperature: "float",
   max_charge_power: "float",
-  max_current: "float",
   max_discharge_power: "float",
+  medium_i_max: "float",
   medium_rated_capacity: "float",
   medium_vbase: "float",
   module_efficiency: "float",
@@ -5673,6 +6010,8 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   thermal_efficiency: "float",
   v_ac_set: "float",
   v_dc_set: "float",
+  v_max: "float",
+  v_min: "float",
   v_set: "float",
   vbase: "float",
   voltage: "float",
@@ -5749,15 +6088,15 @@ function normalizeDeviceParamRecord(params?: Record<string, string>): Record<str
   }
   const normalized: Record<string, string> = {};
   for (const [key, value] of Object.entries(params)) {
-    const normalizedKey = key.startsWith("_") ? key : toSnakeCaseDeviceParamName(key);
+    const normalizedKey = key.startsWith("_") ? key : canonicalDeviceParamName(key);
     normalized[normalizedKey] = key.startsWith("_") ? value : normalizeSemanticParameterValue(normalizedKey, value);
   }
   return normalized;
 }
 
 function normalizeDeviceParameterDefinition(definition: DeviceParameterDefinition): DeviceParameterDefinition {
-  const enName = toSnakeCaseDeviceParamName(definition.enName);
-  const exportName = definition.exportName ? toSnakeCaseDeviceParamName(definition.exportName) : definition.exportName;
+  const enName = canonicalDeviceParamName(definition.enName);
+  const exportName = definition.exportName ? canonicalDeviceParamName(definition.exportName) : definition.exportName;
   return {
     ...definition,
     enName,
@@ -5813,6 +6152,77 @@ const makeId = (prefix: string) => `${prefix}-${Math.random().toString(36).slice
 const makeNodeNumber = () => `N${nodeNumberSeed++}`;
 export const CUSTOM_PARAM_DEFINITIONS_KEY = "_customParamDefinitions";
 export const CUSTOM_DEVICE_TEMPLATE_KEY = "_customDeviceTemplate";
+
+function normalizeStoredCurrentLimitParameterDefinitions(value?: string): string | undefined {
+  if (!value) {
+    return value;
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return value;
+    }
+    const normalized: DeviceParameterDefinition[] = [];
+    const seen = new Set<string>();
+    for (const rawDefinition of parsed) {
+      if (!rawDefinition || typeof rawDefinition !== "object") {
+        continue;
+      }
+      const definition = rawDefinition as DeviceParameterDefinition;
+      const enName = canonicalCurrentLimitDefinitionName(definition.enName);
+      if (!enName || seen.has(enName)) {
+        continue;
+      }
+      seen.add(enName);
+      normalized.push({
+        ...definition,
+        enName,
+        ...(typeof definition.exportName === "string"
+          ? { exportName: canonicalCurrentLimitDefinitionName(definition.exportName) }
+          : {})
+      });
+    }
+    const serialized = JSON.stringify(normalized);
+    return serialized === value ? value : serialized;
+  } catch {
+    return value;
+  }
+}
+
+function normalizeCurrentLimitParamNames(params: Record<string, string>): Record<string, string> {
+  let next = params;
+  let changed = false;
+  for (const [key, value] of Object.entries(params)) {
+    if (key.startsWith("_")) {
+      continue;
+    }
+    const canonicalName = CURRENT_LIMIT_PARAM_NAME_ALIASES[toSnakeCaseDeviceParamName(key)];
+    if (!canonicalName || key === canonicalName) {
+      continue;
+    }
+    if (!changed) {
+      next = { ...params };
+      changed = true;
+    }
+    if (!Object.prototype.hasOwnProperty.call(next, canonicalName) || !String(next[canonicalName] ?? "").trim()) {
+      next[canonicalName] = value;
+    }
+    delete next[key];
+  }
+  const storedDefinitions = normalizeStoredCurrentLimitParameterDefinitions(next[CUSTOM_PARAM_DEFINITIONS_KEY]);
+  if (storedDefinitions !== next[CUSTOM_PARAM_DEFINITIONS_KEY]) {
+    if (!changed) {
+      next = { ...params };
+      changed = true;
+    }
+    if (storedDefinitions) {
+      next[CUSTOM_PARAM_DEFINITIONS_KEY] = storedDefinitions;
+    } else {
+      delete next[CUSTOM_PARAM_DEFINITIONS_KEY];
+    }
+  }
+  return changed ? next : params;
+}
 
 function normalizeDcacControlParameterDefinition(
   definition: DeviceParameterDefinition
@@ -6218,6 +6628,12 @@ function normalizeElectricGenerationRatedParams(node: ModelNode, template?: Devi
   const ratedVoltage = deviceParamValue(node.params, "rated_voltage") ??
     deviceParamValue(templateParams, "rated_voltage") ??
     (section === "ACGenerator" ? "10 kV" : "750 V");
+  const voltageMaximum = deviceParamValue(node.params, "v_max") ??
+    deviceParamValue(templateParams, "v_max") ??
+    "1.1";
+  const voltageMinimum = deviceParamValue(node.params, "v_min") ??
+    deviceParamValue(templateParams, "v_min") ??
+    "0.9";
   const nextParams = { ...node.params };
   let changed = false;
   for (const key of Object.keys(nextParams)) {
@@ -6228,7 +6644,9 @@ function normalizeElectricGenerationRatedParams(node: ModelNode, template?: Devi
     if (
       normalizedName === "rated_power" ||
       (normalizedName === "rated_capacity" && key !== "rated_capacity") ||
-      (normalizedName === "rated_voltage" && key !== "rated_voltage")
+      (normalizedName === "rated_voltage" && key !== "rated_voltage") ||
+      (normalizedName === "v_max" && key !== "v_max") ||
+      (normalizedName === "v_min" && key !== "v_min")
     ) {
       delete nextParams[key];
       changed = true;
@@ -6240,6 +6658,14 @@ function normalizeElectricGenerationRatedParams(node: ModelNode, template?: Devi
   }
   if (nextParams.rated_voltage !== ratedVoltage) {
     nextParams.rated_voltage = ratedVoltage;
+    changed = true;
+  }
+  if (nextParams.v_max !== voltageMaximum) {
+    nextParams.v_max = voltageMaximum;
+    changed = true;
+  }
+  if (nextParams.v_min !== voltageMinimum) {
+    nextParams.v_min = voltageMinimum;
     changed = true;
   }
   const storedDefinitions = normalizeStoredElectricGenerationRatedDefinitions(nextParams[CUSTOM_PARAM_DEFINITIONS_KEY]);
@@ -7425,7 +7851,7 @@ function enumExportValueForDefinition(definition: DeviceParameterDefinition, val
 }
 
 function normalizeTemplateDefinition(definition: DeviceParameterDefinition): DeviceParameterDefinition | null {
-  const enName = String(definition.enName ?? "").trim();
+  const enName = canonicalCurrentLimitDefinitionName(definition.enName);
   if (!enName || enName === "is_container" || enName === ALLOW_RESIZE_TRANSFORM_PARAM) {
     return null;
   }
@@ -7436,7 +7862,9 @@ function normalizeTemplateDefinition(definition: DeviceParameterDefinition): Dev
     : rawTypicalValue;
   const exportSettings = {
     ...(typeof definition.exportEnabled === "boolean" ? { exportEnabled: definition.exportEnabled } : {}),
-    ...(typeof definition.exportName === "string" ? { exportName: definition.exportName.trim() } : {})
+    ...(typeof definition.exportName === "string"
+      ? { exportName: canonicalCurrentLimitDefinitionName(definition.exportName) }
+      : {})
   };
   const normalized: DeviceParameterDefinition = {
     cnName: String(definition.cnName ?? enName).trim() || enName,
@@ -8005,13 +8433,15 @@ export function reconcileNodeParamsWithTemplateDefinitions(
   template: Pick<DeviceTemplate, "parameterDefinitions">,
   previousDefinitions?: readonly DeviceParameterDefinition[]
 ): ModelNode {
+  const normalizedParams = normalizeCurrentLimitParamNames(node.params);
+  const sourceNode = normalizedParams === node.params ? node : { ...node, params: normalizedParams };
   const nextDefinitions = normalizeTemplateDefinitionList(template.parameterDefinitions);
   const previousDefinitionList = previousDefinitions
     ? normalizeTemplateDefinitionList(previousDefinitions)
-    : parseStoredTemplateParameterDefinitions(node.params);
+    : parseStoredTemplateParameterDefinitions(sourceNode.params);
   const nextDefinitionKeys = new Set(nextDefinitions.map((definition) => definition.enName));
   let changed = false;
-  const nextParams: Record<string, string> = { ...node.params };
+  const nextParams: Record<string, string> = { ...sourceNode.params };
 
   for (const definition of previousDefinitionList) {
     if (!isTemplateDefinitionStoredParam(definition.enName) || nextDefinitionKeys.has(definition.enName)) {
@@ -8044,7 +8474,7 @@ export function reconcileNodeParamsWithTemplateDefinitions(
     changed = true;
   }
 
-  return changed ? { ...node, params: nextParams } : node;
+  return changed ? { ...sourceNode, params: nextParams } : sourceNode;
 }
 
 function applyContainerRelationDefaults(params: Record<string, string>, template: DeviceTemplate): Record<string, string> {
@@ -8220,22 +8650,34 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   }
   if (templateKind === "ac-load" || templateKind === "ac-terminal-transformer-load") {
     return withTemplateDefinitions(withRunStat(withDefaultVbase({
+      ratedCapacity: deviceParamValue(template.params, "rated_capacity") ?? "5 MW",
       ratedActivePower: "5 MW",
+      pMax: deviceParamValue(template.params, "p_max") ?? "5 MW",
+      pMin: deviceParamValue(template.params, "p_min") ?? "0",
       pv0: "1.0",
       pv1: "0.0",
       pv2: "0.0",
       ratedReactivePower: "1.2 Mvar",
+      qMax: deviceParamValue(template.params, "q_max") ?? "1.2 Mvar",
+      qMin: deviceParamValue(template.params, "q_min") ?? "0",
       qv0: "1.0",
       qv1: "0.0",
-      qv2: "0.0"
+      qv2: "0.0",
+      vMax: deviceParamValue(template.params, "v_max") ?? "1.1",
+      vMin: deviceParamValue(template.params, "v_min") ?? "0.9"
     })));
   }
   if (templateKind === "dc-load") {
     return withTemplateDefinitions(withRunStat(withDefaultVbase({
+      ratedCapacity: deviceParamValue(template.params, "rated_capacity") ?? "1.5 MW",
       ratedActivePower: "1.5 MW",
+      pMax: deviceParamValue(template.params, "p_max") ?? "1.5 MW",
+      pMin: deviceParamValue(template.params, "p_min") ?? "0",
       pv0: "1.0",
       pv1: "0.0",
-      pv2: "0.0"
+      pv2: "0.0",
+      vMax: deviceParamValue(template.params, "v_max") ?? "1.1",
+      vMin: deviceParamValue(template.params, "v_min") ?? "0.9"
     })));
   }
   if (
@@ -8260,10 +8702,14 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   if (templateKind === "ac-line" || templateKind === "dc-line") {
     if (templateKind === "dc-line") {
       return withTemplateDefinitions(withRunStat(withDefaultVbase({
+        ratedCapacity: deviceParamValue(template.params, "rated_capacity") ?? "0",
+        iMax: deviceParamValue(template.params, "i_max") ?? deviceParamValue(template.params, "max_current") ?? "0",
         r: "1.0"
       })));
     }
     return withTemplateDefinitions(withRunStat(withDefaultVbase({
+      ratedCapacity: deviceParamValue(template.params, "rated_capacity") ?? "0",
+      iMax: deviceParamValue(template.params, "i_max") ?? deviceParamValue(template.params, "max_current") ?? "0",
       r: "0.1",
       x: "1.0",
       b: "0.0"
@@ -8274,6 +8720,8 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       highVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       lowVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       ratedCapacity: "50",
+      highIMax: deviceParamValue(template.params, "high_i_max") ?? deviceParamValue(template.params, "high_max_current") ?? "0",
+      lowIMax: deviceParamValue(template.params, "low_i_max") ?? deviceParamValue(template.params, "low_max_current") ?? "0",
       r: "0.0",
       x: "0.1",
       gt: "0.0",
@@ -8291,8 +8739,11 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
       mediumVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       lowVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       highRatedCapacity: "90",
+      highIMax: deviceParamValue(template.params, "high_i_max") ?? deviceParamValue(template.params, "high_max_current") ?? "0",
       mediumRatedCapacity: "90",
+      mediumIMax: deviceParamValue(template.params, "medium_i_max") ?? deviceParamValue(template.params, "medium_max_current") ?? "0",
       lowRatedCapacity: "90",
+      lowIMax: deviceParamValue(template.params, "low_i_max") ?? deviceParamValue(template.params, "low_max_current") ?? "0",
       ...THREE_WINDING_TRANSFORMER_E_DEFAULT_PARAMS
     }));
   }
@@ -8300,6 +8751,17 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
     return normalizeEndpointConverterControlParams("DCDCConverter", withTemplateDefinitions(withRunStat({
       sourceVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       targetVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
+      ratedCapacity: deviceParamValue(template.params, "rated_capacity") ?? "5 MW",
+      iPMax: deviceParamValue(template.params, "i_p_max") ?? "5 MW",
+      iPMin: deviceParamValue(template.params, "i_p_min") ?? "-5 MW",
+      iIMax: deviceParamValue(template.params, "i_i_max") ?? "0",
+      iVMax: deviceParamValue(template.params, "i_v_max") ?? "1.1",
+      iVMin: deviceParamValue(template.params, "i_v_min") ?? "0.9",
+      jPMax: deviceParamValue(template.params, "j_p_max") ?? "5 MW",
+      jPMin: deviceParamValue(template.params, "j_p_min") ?? "-5 MW",
+      jIMax: deviceParamValue(template.params, "j_i_max") ?? "0",
+      jVMax: deviceParamValue(template.params, "j_v_max") ?? "1.1",
+      jVMin: deviceParamValue(template.params, "j_v_min") ?? "0.9",
       sourceEquivalentResistance: "0.0",
       targetEquivalentResistance: "0.0",
       i_control_type: "P",
@@ -8310,6 +8772,17 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
     return normalizeDcacConverterControlParams(withTemplateDefinitions(withRunStat({
       sourceVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       targetVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
+      ratedCapacity: deviceParamValue(template.params, "rated_capacity") ?? "10 MW",
+      acPMax: deviceParamValue(template.params, "ac_p_max") ?? "10 MW",
+      acPMin: deviceParamValue(template.params, "ac_p_min") ?? "-10 MW",
+      acIMax: deviceParamValue(template.params, "ac_i_max") ?? "0",
+      acVMax: deviceParamValue(template.params, "ac_v_max") ?? "1.1",
+      acVMin: deviceParamValue(template.params, "ac_v_min") ?? "0.9",
+      dcPMax: deviceParamValue(template.params, "dc_p_max") ?? "10 MW",
+      dcPMin: deviceParamValue(template.params, "dc_p_min") ?? "-10 MW",
+      dcIMax: deviceParamValue(template.params, "dc_i_max") ?? "0",
+      dcVMax: deviceParamValue(template.params, "dc_v_max") ?? "1.1",
+      dcVMin: deviceParamValue(template.params, "dc_v_min") ?? "0.9",
       sourceEquivalentResistance: "0.0",
       targetEquivalentResistance: "0.0",
       ac_control_type: "PQ",
@@ -8322,6 +8795,17 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
     return normalizeEndpointConverterControlParams("ACACConverter", withTemplateDefinitions(withRunStat({
       sourceVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       targetVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
+      ratedCapacity: deviceParamValue(template.params, "rated_capacity") ?? "10 MW",
+      iPMax: deviceParamValue(template.params, "i_p_max") ?? "10 MW",
+      iPMin: deviceParamValue(template.params, "i_p_min") ?? "-10 MW",
+      iIMax: deviceParamValue(template.params, "i_i_max") ?? "0",
+      iVMax: deviceParamValue(template.params, "i_v_max") ?? "1.1",
+      iVMin: deviceParamValue(template.params, "i_v_min") ?? "0.9",
+      jPMax: deviceParamValue(template.params, "j_p_max") ?? "10 MW",
+      jPMin: deviceParamValue(template.params, "j_p_min") ?? "-10 MW",
+      jIMax: deviceParamValue(template.params, "j_i_max") ?? "0",
+      jVMax: deviceParamValue(template.params, "j_v_max") ?? "1.1",
+      jVMin: deviceParamValue(template.params, "j_v_min") ?? "0.9",
       sourceEquivalentResistance: "0.0",
       targetEquivalentResistance: "0.0",
       i_control_type: "PQ",
@@ -8341,7 +8825,8 @@ function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   ) {
     const isGroundDisconnector = templateKind === "ac-ground-disconnector" || templateKind === "ac-ground-disconnector-vertical";
     return withTemplateDefinitions(withRunStat(withDefaultVbase({
-      ratedCapacity: template.terminalType === "ac" ? "1250 A" : "1600 A",
+      ratedCapacity: deviceParamValue(template.params, "rated_capacity") ?? "0",
+      iMax: deviceParamValue(template.params, "i_max") ?? deviceParamValue(template.params, "max_current") ?? (template.terminalType === "ac" ? "1250 A" : "1600 A"),
       status: isGroundDisconnector ? "0" : "1"
     })));
   }
@@ -10251,7 +10736,8 @@ function virtualBusTerminal(node: Pick<ModelNode, "kind" | "terminals">, termina
 }
 
 export function normalizeNodeTerminalsWithTemplate(node: ModelNode, template: DeviceTemplate | undefined): ModelNode {
-  const semanticParams = normalizeSemanticParameterValues(node.params);
+  const currentLimitParams = normalizeCurrentLimitParamNames(node.params);
+  const semanticParams = normalizeSemanticParameterValues(currentLimitParams);
   const semanticNode = semanticParams === node.params ? node : { ...node, params: semanticParams };
   let normalizedNode = normalizeEndpointConverterNodeControlParams(
     normalizeDcacConverterNodeControlParams(normalizeRoutableLineDeviceStrokeWidthParam(semanticNode))

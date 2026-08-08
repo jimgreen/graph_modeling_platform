@@ -16,6 +16,7 @@ import {
   createConfirmCustomLibraryCreateDialog,
   createDeleteCustomCategoryLibrary,
   createDeleteCustomComponentLibrary,
+  applyEDeviceInterfaceFieldOrder,
   applyEDeviceDefinitionSectionsToLibraryState,
   buildEDeviceInterfaceDefinitionRows,
   buildEFileExportOptionsFromLibrary,
@@ -2664,6 +2665,19 @@ describe("applyEDeviceDefinitionSectionsToLibraryState", () => {
 });
 
 describe("buildEDeviceInterfaceDefinitionRows", () => {
+  test("migrates saved max_current field order entries to i_max", () => {
+    const ordered = applyEDeviceInterfaceFieldOrder(
+      [
+        { sourceName: "idx" },
+        { sourceName: "i_max" },
+        { sourceName: "run_stat" }
+      ],
+      ["idx", "max_current", "run_stat"]
+    );
+
+    expect(ordered.map((field: any) => field.sourceName)).toEqual(["idx", "i_max", "run_stat"]);
+  });
+
   test("uses the interface table default order for exported base generator fields", () => {
     const exportOptions = buildEFileExportOptionsFromLibrary({
       libraryTemplates: DEVICE_LIBRARY.filter((template) => template.kind === "ac-source")
@@ -2686,7 +2700,9 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
       "alpha",
       "run_stat",
       "rated_capacity",
-      "rated_voltage"
+      "rated_voltage",
+      "v_max",
+      "v_min"
     ];
 
     expect(generator?.fields
@@ -2826,6 +2842,8 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
       "q_max",
       "q_min",
       "v_set",
+      "v_max",
+      "v_min",
       "alpha"
     ]);
     expect(rows.some((row: any) => row.componentLibrary === "ACThermalGen")).toBe(false);

@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   CUSTOM_PARAM_DEFINITIONS_KEY,
   createDefaultNode,
+  DEVICE_LIBRARY,
   type DeviceParameterDefinition,
   type DeviceTemplate
 } from "./model";
@@ -144,6 +145,59 @@ describe("definition instance node reconciliation", () => {
       type: "ac",
       label: "交流端",
       anchor: { x: 0, y: -0.5 }
+    });
+  });
+
+  test("adds newly defined load and converter limits to historical instances while preserving saved values", () => {
+    const loadTemplate = DEVICE_LIBRARY.find((template) => template.kind === "ac-load")!;
+    const converterTemplate = DEVICE_LIBRARY.find((template) => template.kind === "acdc-converter")!;
+    const load = createDefaultNode("ac-load", { x: 100, y: 100 });
+    const converter = createDefaultNode("acdc-converter", { x: 260, y: 100 });
+
+    load.params.p_max = "7.5";
+    for (const key of ["rated_capacity", "p_min", "q_max", "q_min", "v_max", "v_min"]) {
+      delete load.params[key];
+    }
+    converter.params.ac_p_max = "12.5";
+    for (const key of [
+      "rated_capacity",
+      "ac_p_min",
+      "ac_i_max",
+      "ac_v_max",
+      "ac_v_min",
+      "dc_p_max",
+      "dc_p_min",
+      "dc_i_max",
+      "dc_v_max",
+      "dc_v_min"
+    ]) {
+      delete converter.params[key];
+    }
+
+    const reconciledLoad = reconcileNodeWithDefinition(load, loadTemplate);
+    const reconciledConverter = reconcileNodeWithDefinition(converter, converterTemplate);
+
+    expect(reconciledLoad.params).toMatchObject({
+      rated_capacity: "5",
+      p_max: "7.5",
+      p_min: "0",
+      q_max: "1.2",
+      q_min: "0",
+      v_max: "1.1",
+      v_min: "0.9"
+    });
+    expect(reconciledConverter.params).toMatchObject({
+      rated_capacity: "10",
+      ac_p_max: "12.5",
+      ac_p_min: "-10",
+      ac_i_max: "0",
+      ac_v_max: "1.1",
+      ac_v_min: "0.9",
+      dc_p_max: "10",
+      dc_p_min: "-10",
+      dc_i_max: "0",
+      dc_v_max: "1.1",
+      dc_v_min: "0.9"
     });
   });
 });

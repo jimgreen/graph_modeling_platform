@@ -287,7 +287,7 @@ describe("scheme file persistence", () => {
                 name: "交流母线-1",
                 position: { x: 0, y: 0 },
                 size: { width: 120, height: 8 },
-                params: { idx: "1", vbase: "110", voltage: "110", run_stat: "1" },
+                params: { idx: "1", vbase: "110", voltage: "110", v_max: "1.1", v_min: "0.9", run_stat: "1" },
                 terminals: [{ id: "t1", type: "ac", vbase: "110" }]
               },
               {
@@ -296,7 +296,7 @@ describe("scheme file persistence", () => {
                 name: "交流母线-2",
                 position: { x: 280, y: 0 },
                 size: { width: 120, height: 8 },
-                params: { idx: "2", vbase: "110", voltage: "110", run_stat: "1" },
+                params: { idx: "2", vbase: "110", voltage: "110", v_max: "1.08", v_min: "0.92", run_stat: "1" },
                 terminals: [{ id: "t1", type: "ac", vbase: "110" }]
               },
               {
@@ -305,7 +305,7 @@ describe("scheme file persistence", () => {
                 name: "交流线路（自适应）-1",
                 position: { x: 120, y: 80 },
                 size: { width: 160, height: 40 },
-                params: { idx: "1", r: "0.1", x: "1.0", b: "0.0", run_stat: "1" },
+                params: { idx: "1", rated_capacity: "80 MVA", max_current: "630 A", r: "0.1", x: "1.0", b: "0.0", run_stat: "1" },
                 terminals: [
                   { id: "i", type: "ac" },
                   { id: "j", type: "ac" }
@@ -317,7 +317,7 @@ describe("scheme file persistence", () => {
                 name: "盒型开关-1",
                 position: { x: 60, y: 80 },
                 size: { width: 80, height: 40 },
-                params: { idx: "1", status: "1", run_stat: "1" },
+                params: { idx: "1", rated_capacity: "80 MVA", max_current: "1250 A", status: "1", run_stat: "1" },
                 terminals: [
                   { id: "i", type: "ac" },
                   { id: "j", type: "ac" }
@@ -359,26 +359,28 @@ describe("scheme file persistence", () => {
         "1"
       ]);
       expectEFieldsAlignedWithHeader(eFile, "ACNode", ["idx", "name", "vbase", "run_stat"], ["1", "交流母线-1", "110", "1"]);
+      expectEFieldsAlignedWithHeader(
+        eFile,
+        "ACRealBs",
+        ["idx", "name", "node", "v_max", "v_min", "run_stat"],
+        ["1", "交流母线-1", "1", "1.1", "0.9", "1"]
+      );
       expect(eFile).toContain("<ACBranch>\n");
-      expect(eFile).toContain("@    idx    name                 i_node    j_node    r      x      b      run_stat\n");
-      expect(eFile).toContain("#    1      交流线路（自适应）-1    3         2         0.1    1.0    0.0    1\n");
       expect(eFile).toContain("<ACBreak>\n");
-      expect(eFile).toContain("@    idx    name         i_node    j_node    status    run_stat\n");
-      expect(eFile).toContain("#    1      盒型开关-1    1         3         1         1\n");
       expect(eFile.trimEnd()).toContain("</ACBreak>");
       expect(eFile).not.toContain('"modelParameters"');
       expect(eFile).not.toContain('"devices"');
       expectEFieldsAlignedWithHeader(
         eFile,
         "ACBranch",
-        ["idx", "name", "i_node", "j_node", "r", "x", "b", "run_stat"],
-        ["1", "交流线路（自适应）-1", "3", "2", "0.1", "1.0", "0.0", "1"]
+        ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "r", "x", "b", "run_stat"],
+        ["1", "交流线路（自适应）-1", "3", "2", "80", "630", "0.1", "1.0", "0.0", "1"]
       );
       expectEFieldsAlignedWithHeader(
         eFile,
         "ACBreak",
-        ["idx", "name", "i_node", "j_node", "status", "run_stat"],
-        ["1", "盒型开关-1", "1", "3", "1", "1"]
+        ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "status", "run_stat"],
+        ["1", "盒型开关-1", "1", "3", "80", "1250", "1", "1"]
       );
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -416,6 +418,8 @@ describe("scheme file persistence", () => {
                   p_min: "-1.5 MW",
                   q_max: "6.25 Mvar",
                   q_min: "-4.75 Mvar",
+                  v_max: "1.08",
+                  v_min: "0.92",
                   run_stat: "1"
                 },
                 terminals: [{ id: "t1", type: "ac", nodeNumber: "1" }]
@@ -434,6 +438,8 @@ describe("scheme file persistence", () => {
                   control_type: "V",
                   p_max: "8.5 MW",
                   p_min: "-2.5 MW",
+                  v_max: "1.06",
+                  v_min: "0.94",
                   run_stat: "1"
                 },
                 terminals: [{ id: "t1", type: "dc", nodeNumber: "2" }]
@@ -451,13 +457,13 @@ describe("scheme file persistence", () => {
           section: "ACGenerator",
           ratedCapacity: "10",
           ratedVoltage: "35",
-          limits: { p_max: "12.5", p_min: "-1.5", q_max: "6.25", q_min: "-4.75" }
+          limits: { p_max: "12.5", p_min: "-1.5", q_max: "6.25", q_min: "-4.75", v_max: "1.08", v_min: "0.92" }
         },
         {
           section: "DCGenerator",
           ratedCapacity: "5",
           ratedVoltage: "750",
-          limits: { p_max: "8.5", p_min: "-2.5" }
+          limits: { p_max: "8.5", p_min: "-2.5", v_max: "1.06", v_min: "0.94" }
         }
       ]) {
         const lines = eSectionLines(eFile, expected.section);
@@ -574,7 +580,12 @@ describe("scheme file persistence", () => {
             version: 1,
             name: "DCAC双控制类型",
             nodes: [
-              converterNode("dcac-new", "独立控制", 1, { ac_control_type: "PV", dc_control_type: "I" }),
+              converterNode("dcac-new", "独立控制", 1, {
+                ac_control_type: "PV",
+                dc_control_type: "I",
+                ac_i_max: "1000 A",
+                dc_i_max: "1200 A"
+              }),
               converterNode("dcac-dcv", "旧DCV", 2, { control_type: "DCV" }),
               converterNode("dcac-acv", "旧ACV", 3, { control_type: "ACV" }),
               converterNode("dcac-acp", "旧ACP", 4, {
@@ -606,8 +617,10 @@ describe("scheme file persistence", () => {
 
       expect(columns).toContain("ac_control_type");
       expect(columns).toContain("dc_control_type");
+      expect(columns).toContain("ac_i_max");
+      expect(columns).toContain("dc_i_max");
       expect(columns).not.toContain("control_type");
-      expect(rowByName.get("独立控制")).toMatchObject({ ac_control_type: "PV", dc_control_type: "I" });
+      expect(rowByName.get("独立控制")).toMatchObject({ ac_control_type: "PV", dc_control_type: "I", ac_i_max: "1000", dc_i_max: "1200" });
       expect(rowByName.get("旧DCV")).toMatchObject({ ac_control_type: "PQ", dc_control_type: "V" });
       expect(rowByName.get("旧ACV")).toMatchObject({ ac_control_type: "PH", dc_control_type: "NONE" });
       expect(rowByName.get("旧ACP")).toMatchObject({ ac_control_type: "PQ", dc_control_type: "NONE" });
@@ -657,12 +670,22 @@ describe("scheme file persistence", () => {
             version: 1,
             name: "端点控制类型",
             nodes: [
-              converterNode("dcdc-converter", "dcdc-new", "DCDC独立控制", 1, "dc", { i_control_type: "V", j_control_type: "I" }),
+              converterNode("dcdc-converter", "dcdc-new", "DCDC独立控制", 1, "dc", {
+                i_control_type: "V",
+                j_control_type: "I",
+                i_i_max: "800 A",
+                j_i_max: "900 A"
+              }),
               converterNode("dcdc-converter", "dcdc-old", "DCDC旧控制", 2, "dc", {
                 control_type: "P",
                 _customParamDefinitions: JSON.stringify([{ enName: "control_type", exportEnabled: true, exportName: "control_type" }])
               }),
-              converterNode("acac-converter", "acac-new", "ACAC独立控制", 1, "ac", { i_control_type: "PH", j_control_type: "NONE" }),
+              converterNode("acac-converter", "acac-new", "ACAC独立控制", 1, "ac", {
+                i_control_type: "PH",
+                j_control_type: "NONE",
+                i_i_max: "1000 A",
+                j_i_max: "1100 A"
+              }),
               converterNode("acac-converter", "acac-old", "ACAC旧控制", 2, "ac", {
                 control_type: "PQV",
                 _customParamDefinitions: JSON.stringify([{ enName: "control_type", exportEnabled: true, exportName: "control_type" }])
@@ -689,13 +712,17 @@ describe("scheme file persistence", () => {
 
       expect(dcdc.columns).toContain("i_control_type");
       expect(dcdc.columns).toContain("j_control_type");
+      expect(dcdc.columns).toContain("i_i_max");
+      expect(dcdc.columns).toContain("j_i_max");
       expect(dcdc.columns).not.toContain("control_type");
-      expect(dcdc.rowByName.get("DCDC独立控制")).toMatchObject({ i_control_type: "V", j_control_type: "I" });
+      expect(dcdc.rowByName.get("DCDC独立控制")).toMatchObject({ i_control_type: "V", j_control_type: "I", i_i_max: "800", j_i_max: "900" });
       expect(dcdc.rowByName.get("DCDC旧控制")).toMatchObject({ i_control_type: "P", j_control_type: "NONE" });
       expect(acac.columns).toContain("i_control_type");
       expect(acac.columns).toContain("j_control_type");
+      expect(acac.columns).toContain("i_i_max");
+      expect(acac.columns).toContain("j_i_max");
       expect(acac.columns).not.toContain("control_type");
-      expect(acac.rowByName.get("ACAC独立控制")).toMatchObject({ i_control_type: "PH", j_control_type: "NONE" });
+      expect(acac.rowByName.get("ACAC独立控制")).toMatchObject({ i_control_type: "PH", j_control_type: "NONE", i_i_max: "1000", j_i_max: "1100" });
       expect(acac.rowByName.get("ACAC旧控制")).toMatchObject({ i_control_type: "PQ", j_control_type: "PV" });
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -726,6 +753,12 @@ describe("scheme file persistence", () => {
                 size: { width: 100, height: 100 },
                 params: {
                   idx: "1",
+                  high_rated_capacity: "90 MVA",
+                  high_max_current: "300 A",
+                  medium_rated_capacity: "60 MVA",
+                  medium_max_current: "315 A",
+                  low_rated_capacity: "30 MVA",
+                  low_max_current: "1600 A",
                   r1: "0.01",
                   x1: "0.11",
                   gt1: "0.001",
@@ -769,6 +802,12 @@ describe("scheme file persistence", () => {
         "t2_node",
         "t3_node",
         "neutral_node",
+        "high_rated_capacity",
+        "high_i_max",
+        "medium_rated_capacity",
+        "medium_i_max",
+        "low_rated_capacity",
+        "low_i_max",
         "r1",
         "x1",
         "gt1",
@@ -796,6 +835,12 @@ describe("scheme file persistence", () => {
         "2",
         "3",
         "0",
+        "90",
+        "300",
+        "60",
+        "315",
+        "30",
+        "1600",
         "0.01",
         "0.11",
         "0.001",

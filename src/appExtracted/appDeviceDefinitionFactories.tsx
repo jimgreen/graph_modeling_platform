@@ -55,6 +55,24 @@ const STATE_ICON_DRAWING_FRAME_HEIGHT = 160;
 
 const deviceDefinitionComplianceKey = (value: unknown) => String(value ?? "").trim().toLowerCase().replace(/_/g, "");
 
+const E_DEVICE_INTERFACE_CURRENT_FIELD_ALIASES: Record<string, string> = {
+  max_current: "i_max",
+  high_max_current: "high_i_max",
+  medium_max_current: "medium_i_max",
+  low_max_current: "low_i_max"
+};
+
+function eDeviceInterfaceOrderFieldName(value: unknown) {
+  const rawName = String(value ?? "").trim();
+  const snakeName = rawName
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[^A-Za-z0-9_]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
+  return E_DEVICE_INTERFACE_CURRENT_FIELD_ALIASES[snakeName] ?? rawName;
+}
+
 const E_DEVICE_INTERFACE_FIXED_FIELD_NAMES = new Set(["idx", "name", "dev_type"]);
 // 拓扑引用字段：生成 E 文件时由拓扑连接关系填入 ACNode 的 idx，不对应元件属性
 const E_DEVICE_INTERFACE_TOPOLOGY_FIELD_NAMES = new Set(["ind", "znd", "nd"]);
@@ -123,19 +141,20 @@ export function applyEDeviceInterfaceFieldOrder(fields: readonly any[] = [], con
     return fields;
   }
   const fieldByName = new Map(
-    (fields ?? []).map((field) => [deviceDefinitionComplianceKey(field?.sourceName), field] as const)
+    (fields ?? []).map((field) => [deviceDefinitionComplianceKey(eDeviceInterfaceOrderFieldName(field?.sourceName)), field] as const)
   );
   const ordered: any[] = [];
   const used = new Set<string>();
   // 严格按模板字段顺序：设备有匹配用设备 field，无匹配用占位 field（sourceName=exportName），不追加设备独有字段
   for (const sourceName of configuredOrder) {
-    const key = deviceDefinitionComplianceKey(sourceName);
+    const canonicalSourceName = eDeviceInterfaceOrderFieldName(sourceName);
+    const key = deviceDefinitionComplianceKey(canonicalSourceName);
     if (!key || used.has(key)) {
       continue;
     }
     used.add(key);
     const field = fieldByName.get(key);
-    ordered.push(field ?? { sourceName, cnName: sourceName, exportEnabled: true, exportName: sourceName });
+    ordered.push(field ?? { sourceName: canonicalSourceName, cnName: canonicalSourceName, exportEnabled: true, exportName: canonicalSourceName });
   }
   return ordered;
 }
