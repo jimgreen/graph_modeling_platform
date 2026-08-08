@@ -3401,7 +3401,15 @@ function formatEFileSectionRows(section: string, columns: string[], rows: string
 function formatESection(section: string, rows: EDeviceExport[], outputSection = section) {
   const columns = eSectionColumns(section, rows);
   const formattedRows = sortESectionRecordsByIdx(rows)
-    .map((record, rowIndex) => columns.map((column) => formatEColumnValue(section, column, record.params[column], rowIndex)));
+    .map((record, rowIndex) => columns.map((column) => {
+      // regable 默认值：风力、光伏、水力、储能为 1，其他为 0
+      if (column === "regable" && !record.params[column]) {
+        const deviceType = record.params.type || record.params.dev_type || "";
+        const adjustableTypes = ["ac-wind-source", "ac-pv-source", "ac-hydro-source", "ac-storage"];
+        return adjustableTypes.includes(deviceType) ? "1" : "0";
+      }
+      return formatEColumnValue(section, column, record.params[column], rowIndex);
+    }));
   return formatEFileSectionRows(outputSection, columns, formattedRows);
 }
 
