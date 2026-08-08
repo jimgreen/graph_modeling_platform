@@ -4239,12 +4239,18 @@ export function renderAppView(__appScope: Record<string, any>) {
                     <button type="button" className="e-device-interface-convert-button" onClick={() => {
                       setEDeviceInterfaceReadonlyMode(false);
                       setEDeviceInterfaceLoadedTemplateName("自定义");
+                      setTemplateImportResult(null);
                       try {
                         localStorage.setItem("eDeviceInterfaceReadonlyMode", "false");
                         localStorage.setItem("eDeviceInterfaceLoadedTemplateName", "自定义");
                       } catch { /* ignore */ }
                     }}>
                       转为自定义配置
+                    </button>
+                  )}
+                  {templateImportResult && (
+                    <button type="button" className="e-device-interface-convert-button" onClick={() => setTemplateImportResult(templateImportResult)}>
+                      查看导入结果
                     </button>
                   )}
                 </div>
