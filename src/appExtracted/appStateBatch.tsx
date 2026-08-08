@@ -724,7 +724,6 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
     setGlobalMessage,
     setMeasurementEditorColumnWidths,
     singleNodeDragCache,
-    startCustomComponentSelectionTransition,
     stateIconDrawing,
     StaticButtonComponents,
     tree
