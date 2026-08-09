@@ -671,21 +671,35 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     }
   }
 
-  // 元件字段补充：eDeviceDefinitionTemplateFields / eDeviceDefinitionFieldOrder 中已声明但 row.fields 尚未列出的字段
-  // 补齐后匹配逻辑可识别（解决「UI 已显示该字段但匹配仍判未匹配」的情况）
+  // 元件字段补充：eDeviceDefinitionTemplateFields / eDeviceDefinitionFieldOrder / 模板 sections 中已声明但 row.fields 尚未列出的字段
+  // 补齐后匹配逻辑可识别（解决首次导入时 UI 已显示字段仍判未匹配）
   // 记录本次根据模板新增的设备字段（用于 UI 标记「（新增）」）
   const newlyAddedDeviceFields = new Set<string>();
+  // 从模板 sections 构建「元件库名 -> 模板字段」映射（含反向映射解析）
+  const sectionFieldsByComponentLibrary = new Map<string, any[]>();
+  for (const section of mergedSections) {
+    const cl = section.componentLibrary;
+    const resolved = reverseLabelToComponentLibrary.get(cl) ?? cl;
+    const existing = sectionFieldsByComponentLibrary.get(resolved) ?? [];
+    for (const f of section.fields ?? []) {
+      if (!existing.some((ef: any) => deviceDefinitionComplianceKey(String(ef.exportName ?? "").trim()) === deviceDefinitionComplianceKey(String(f.exportName ?? "").trim()))) {
+        existing.push(f);
+      }
+    }
+    sectionFieldsByComponentLibrary.set(resolved, existing);
+  }
   for (const row of rows ?? []) {
     const key = row.componentLibrary;
-    const supplementFields =
-      eDeviceDefinitionTemplateFields?.[key] ??
-      (eDeviceDefinitionFieldOrder?.[key]
+    const remembered = eDeviceDefinitionTemplateFields?.[key]
+      ?? (eDeviceDefinitionFieldOrder?.[key]
         ? eDeviceDefinitionFieldOrder[key].map((exportName: string) => ({
             sourceName: exportName,
             exportName,
             cnName: exportName
           }))
         : undefined);
+    const fromTemplate = sectionFieldsByComponentLibrary.get(key);
+    const supplementFields = [...(remembered ?? []), ...(fromTemplate ?? [])];
     if (!supplementFields || supplementFields.length === 0) continue;
     const existingKeys = new Set(
       (row.fields ?? []).map((f: any) =>
@@ -861,9 +875,9 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
       const templateFields = section.fields.map((f: any) => {
         const templateExportName = String(f.exportName ?? "").trim();
         const matchedField = sectionMatchedFields.find((mf) => mf.template === templateExportName);
-        const deviceSourceName = matchedField && !matchedField.device.startsWith("（")
-          ? matchedField.device
-          : undefined;
+        // 去掉「（新增）」标记后缀，确保 sourceName 为纯字段名（避免破坏 exportName 覆盖匹配）
+        const rawDevice = matchedField && !matchedField.device.startsWith("（") ? matchedField.device : "";
+        const deviceSourceName = rawDevice ? rawDevice.replace(/（新增）$/, "") : "";
         return {
           sourceName: deviceSourceName || templateExportName || undefined,
           exportName: templateExportName,
