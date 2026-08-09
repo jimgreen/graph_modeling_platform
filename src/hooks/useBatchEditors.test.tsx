@@ -1,10 +1,22 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
 import { describe, expect, test, vi } from "vitest";
 
 import { createDefaultNode, DEVICE_LIBRARY, type DeviceKind, type DeviceParameterDefinition, type DeviceTemplate, type ModelNode } from "../model";
 import type { BatchCommonParamRow } from "../App";
 import { useBatchEditors } from "./useBatchEditors";
+
+describe("batch common measurement scope wiring", () => {
+  test("publishes measurement rows before the render batch consumes them", () => {
+    const source = readFileSync(new URL("../appExtracted/appStateBatch.tsx", import.meta.url), "utf8");
+    const declarationIndex = source.indexOf("const batchCommonMeasurementGroupRows = useMemo");
+    const publishIndex = source.indexOf("Object.assign(__appScope, { batchCommonMeasurementGroupRows });");
+
+    expect(declarationIndex).toBeGreaterThan(-1);
+    expect(publishIndex).toBeGreaterThan(declarationIndex);
+  });
+});
 
 function batchParamOptions(
   nodes: ModelNode[],

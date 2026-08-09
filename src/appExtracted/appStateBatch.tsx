@@ -982,6 +982,7 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
     ), [activeSelectedNodeIds, nodeById, projectMeasurements]);
   Object.assign(__appScope, { selectedNodeIdsWithMeasurementGroups });
   const batchCommonMeasurementGroupRows = useMemo<BatchCommonMeasurementGroupRow[]>(createAppHookCallback13(__appScope), [activeSelectedNodeIds, nodeById, projectMeasurements]);
+  Object.assign(__appScope, { batchCommonMeasurementGroupRows });
   const hasBatchCommonPropertyRows =
       batchCommonGraphicParamRows.length > 0 ||
       batchCommonModelParamRows.length > 0 ||
