@@ -526,6 +526,7 @@ export function renderAppView(__appScope: Record<string, any>) {
   const [templateImportResult, setTemplateImportResult] = useState<{
     matched: Array<{ section: string; device: string; fields: Array<{ template: string; device: string }> }>;
     skipped: Array<{ section: string; reason: string; fields?: string[] }>;
+    runtimeGenerated: Array<{ section: string; fields?: string[] }>;
   } | null>(() => {
     try {
       const stored = localStorage.getItem("eDeviceTemplateImportResult");
@@ -613,13 +614,13 @@ export function renderAppView(__appScope: Record<string, any>) {
         eDeviceDefinitionTemplateFields: result.eDeviceDefinitionTemplateFields ?? {},
         eDeviceDefinitionFieldOrder: result.eDeviceDefinitionFieldOrder ?? {}
       }, {
-        success: `预定义模板导入成功：匹配 ${result.matched.length} 个，跳过 ${result.skipped.length} 个。`,
+        success: `预定义模板导入成功：匹配 ${result.matched.length} 个，跳过 ${result.skipped.length} 个，无需匹配 ${(result.runtimeGenerated ?? []).length} 个。`,
         failure: `预定义模板已更新本地，后台保存失败：匹配 ${result.matched.length} 个。`
       });
       setEDeviceInterfaceDefinitionBaseline(null);
       setEDeviceInterfaceSelectedClassBaseline(null);
       writeOperationLog(`导入预定义模板：${templateFile}`);
-      setTemplateImportResult({ matched: result.matched, skipped: result.skipped });
+      setTemplateImportResult({ matched: result.matched, skipped: result.skipped, runtimeGenerated: result.runtimeGenerated ?? [] });
       try {
         localStorage.setItem("eDeviceTemplateImportResult", JSON.stringify({ matched: result.matched, skipped: result.skipped }));
       } catch { /* ignore */ }
@@ -4707,7 +4708,7 @@ export function renderAppView(__appScope: Record<string, any>) {
             <div className="image-picker-title">
               <div>
                 <h2>预定义模板导入结果</h2>
-                <p>匹配：{templateImportResult.matched.length} 个，未匹配：{templateImportResult.skipped.length} 个</p>
+                <p>匹配：{templateImportResult.matched.length} 个，未匹配：{templateImportResult.skipped.length} 个，无需匹配：{(templateImportResult.runtimeGenerated ?? []).length} 个</p>
               </div>
               <button type="button" onClick={() => setShowImportResultDialog(false)} title="关闭">
                 <X size={16} />
@@ -4774,6 +4775,34 @@ export function renderAppView(__appScope: Record<string, any>) {
                   </table>
                 ) : (
                   <p className="template-import-result-empty">所有表/字段均已匹配</p>
+                )}
+              </div>
+              <div className="template-import-result-section">
+                <h3>无需匹配 ({(templateImportResult.runtimeGenerated ?? []).length})</h3>
+                {(templateImportResult.runtimeGenerated ?? []).length > 0 ? (
+                  <table className="template-import-result-table">
+                    <thead>
+                      <tr>
+                        <th>模板表名</th>
+                        <th>字段</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(templateImportResult.runtimeGenerated ?? []).map((item, idx) => {
+                        const fields = item.fields && item.fields.length > 0 ? item.fields : [""];
+                        return fields.map((f, fi) => (
+                          <tr key={`${idx}-${fi}`} className="template-import-result-row-runtime">
+                            {fi === 0 && (<td className="template-import-result-cell-section" rowSpan={fields.length}>{item.section}</td>)}
+                            <td className="template-import-result-cell-fields">
+                              {f ? (<span className="template-import-result-field-tag template-import-result-field-tag-runtime">{f}</span>) : (<span className="template-import-result-cell-empty">-</span>)}
+                            </td>
+                          </tr>
+                        ));
+                      })}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="template-import-result-empty">无运行时生成表</p>
                 )}
               </div>
             </div>

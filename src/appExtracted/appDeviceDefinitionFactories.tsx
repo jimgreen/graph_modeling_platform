@@ -621,9 +621,10 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
   // 从模板角度出发，检查每个模板section是否匹配元件库
   const matched: Array<{ section: string; fields: string[] }> = [];
   const skipped: Array<{ section: string; reason: string; fields?: string[] }> = [];
+  const runtimeGenerated: Array<{ section: string; fields?: string[] }> = [];
 
   // 运行时生成内容的表，不参与元件匹配
-  const RUNTIME_GENERATED_SECTIONS = new Set(["basevalue", "basevoltage", "subcontrolarea", "substation", "node"]);
+  const RUNTIME_GENERATED_SECTIONS = new Set(["basevalue", "basevoltage", "subcontrolarea", "substation", "node", "trans"]);
 
   // 预构建行索引，避免 O(n*m) 查找
   const rowsByComponentLibrary = new Map<string, any>(
@@ -654,10 +655,19 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
           }
         }
       }
-      skipped.push({
-        section: sectionKind,
-        reason: `未找到对应的元件库设备：${componentLibrary}`
-      });
+      if (RUNTIME_GENERATED_SECTIONS.has(sectionKind)) {
+        runtimeGenerated.push({
+          section: sectionKind,
+          fields: section.fields && section.fields.length > 0
+            ? section.fields.map((f: any) => String(f.exportName ?? "").trim()).filter(Boolean)
+            : undefined
+        });
+      } else {
+        skipped.push({
+          section: sectionKind,
+          reason: `未找到对应的元件库设备：${componentLibrary}`
+        });
+      }
       continue;
     }
 
@@ -846,7 +856,8 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     eDeviceDefinitionFieldOrder: nextFieldOrder,
     eDeviceDefinitionTemplateFields: nextTemplateFields,
     matched,
-    skipped
+    skipped,
+    runtimeGenerated
   };
 }
 
