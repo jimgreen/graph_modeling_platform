@@ -663,11 +663,30 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     }
   }
 
+  // 构建反向映射：导出标签 → 元件库名（如 "estore" → "ACStorageGen"）
+  const reverseLabelToComponentLibrary = new Map<string, string>();
+  for (const [componentLibraryKey, label] of Object.entries(eDeviceDefinitionLabels)) {
+    if (label && label !== componentLibraryKey) {
+      reverseLabelToComponentLibrary.set(label, componentLibraryKey);
+    }
+  }
+
   sectionByComponentLibrary = eDeviceInterfaceSectionByComponentLibrary(mergedSections);
 
   for (const section of mergedSections) {
-    const componentLibrary = section.componentLibrary;
+    let componentLibrary = section.componentLibrary;
     const sectionKind = section.kind;
+
+    // 通过反向映射解析：模板中 "元件库" 为导出标签（如 "estore"）时，映射为元件库名（如 "ACStorageGen"）
+    if (!rowsByComponentLibrary.has(componentLibrary)) {
+      const resolved = reverseLabelToComponentLibrary.get(componentLibrary);
+      if (resolved && rowsByComponentLibrary.has(resolved)) {
+        componentLibrary = resolved;
+      } else if (sectionKind && rowsByComponentLibrary.has(sectionKind)) {
+        // 兜底：以 kind 作为元件库名（如 estore 模板标签直接对应派生元件库 ACStorageGen 时，kind="estore" 可能已是元件库名）
+        componentLibrary = sectionKind;
+      }
+    }
 
     // 查找对应的元件库行（node 表特殊：合并 ACNode+ACRealBs 两行匹配）
     const row = rowsByComponentLibrary.get(componentLibrary);
