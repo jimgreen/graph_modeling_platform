@@ -719,13 +719,17 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     for (const r of candidateRows) {
       for (const rf of r.fields ?? []) {
         const sourceName = String(rf.sourceName ?? "").trim();
-        const key = deviceDefinitionComplianceKey(sourceName);
-        if (key && !rowFieldsByKey.has(key)) {
-          rowFieldsByKey.set(key, sourceName);
+        const exportName = String(rf.exportName ?? "").trim();
+        // 同时以 sourceName 与 exportName 作为匹配键（覆盖 "run_stat"/"runstat" 等命名差异）
+        for (const keyName of [sourceName, exportName]) {
+          const key = deviceDefinitionComplianceKey(keyName);
+          if (key && !rowFieldsByKey.has(key)) {
+            rowFieldsByKey.set(key, sourceName || exportName);
+          }
         }
         const cnKey = deviceDefinitionComplianceKey(String(rf.cnName ?? "").trim());
         if (cnKey && !rowFieldsByCnName.has(cnKey)) {
-          rowFieldsByCnName.set(cnKey, sourceName);
+          rowFieldsByCnName.set(cnKey, sourceName || exportName);
         }
       }
     }
