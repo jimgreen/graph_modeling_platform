@@ -55,6 +55,29 @@ const STATE_ICON_DRAWING_FRAME_HEIGHT = 160;
 
 const deviceDefinitionComplianceKey = (value: unknown) => String(value ?? "").trim().toLowerCase().replace(/_/g, "");
 
+// 字段去重合并：按 complianceKey 去重，将 source 中 target 尚未包含的字段追加到 target
+const appendUniqueFields = (target: any[], source: any[]) => {
+  const seen = new Set(target.map((f) => deviceDefinitionComplianceKey(String(f.sourceName ?? f.exportName ?? "").trim())).filter(Boolean));
+  for (const f of source) {
+    const key = deviceDefinitionComplianceKey(String(f.sourceName ?? f.exportName ?? "").trim());
+    if (key && !seen.has(key)) {
+      target.push(f);
+      seen.add(key);
+    }
+  }
+};
+
+// 反向解析元件库名：模板 section 的 componentLibrary 可能是导出标签（如 "estore"），映射为元件库名（如 "ACStorageGen"）
+const resolveComponentLibrary = (section: any, reverseMap: Map<string, string>, rowsByComponentLibrary: Map<string, any>) => {
+  const cl = String(section.componentLibrary ?? "").trim();
+  if (rowsByComponentLibrary.has(cl)) return cl;
+  const resolved = reverseMap.get(cl);
+  if (resolved && rowsByComponentLibrary.has(resolved)) return resolved;
+  const kind = String(section.kind ?? "").trim();
+  if (kind && rowsByComponentLibrary.has(kind)) return kind;
+  return cl;
+};
+
 const E_DEVICE_INTERFACE_CURRENT_FIELD_ALIASES: Record<string, string> = {
   max_current: "i_max",
   high_max_current: "high_i_max",
@@ -650,16 +673,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
       mergedByComponentLibrary.set(key, merged);
       mergedSections.push(merged);
     } else {
-      const existingKeys = new Set(
-        (existing.fields ?? []).map((f: any) => deviceDefinitionComplianceKey(String(f.exportName ?? f.sourceName ?? "").trim())).filter(Boolean)
-      );
-      for (const f of section.fields ?? []) {
-        const fname = deviceDefinitionComplianceKey(String(f.exportName ?? f.sourceName ?? "").trim());
-        if (fname && !existingKeys.has(fname)) {
-          existing.fields.push(f);
-          existingKeys.add(fname);
-        }
-      }
+      appendUniqueFields(existing.fields, section.fields ?? []);
     }
   }
 
@@ -678,14 +692,9 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
   // 从模板 sections 构建「元件库名 -> 模板字段」映射（含反向映射解析）
   const sectionFieldsByComponentLibrary = new Map<string, any[]>();
   for (const section of mergedSections) {
-    const cl = section.componentLibrary;
-    const resolved = reverseLabelToComponentLibrary.get(cl) ?? cl;
+    const resolved = resolveComponentLibrary(section, reverseLabelToComponentLibrary, rowsByComponentLibrary);
     const existing = sectionFieldsByComponentLibrary.get(resolved) ?? [];
-    for (const f of section.fields ?? []) {
-      if (!existing.some((ef: any) => deviceDefinitionComplianceKey(String(ef.exportName ?? "").trim()) === deviceDefinitionComplianceKey(String(f.exportName ?? "").trim()))) {
-        existing.push(f);
-      }
-    }
+    appendUniqueFields(existing, section.fields ?? []);
     sectionFieldsByComponentLibrary.set(resolved, existing);
   }
   for (const row of rows ?? []) {
@@ -700,7 +709,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
         : undefined);
     const fromTemplate = sectionFieldsByComponentLibrary.get(key);
     const supplementFields = [...(remembered ?? []), ...(fromTemplate ?? [])];
-    if (!supplementFields || supplementFields.length === 0) continue;
+    if (supplementFields.length === 0) continue;
     const existingKeys = new Set(
       (row.fields ?? []).map((f: any) =>
         deviceDefinitionComplianceKey(String(f.sourceName ?? f.exportName ?? "").trim())
@@ -719,7 +728,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
         exportEnabled: true,
         exportName
       });
-      newlyAddedDeviceFields.add(deviceDefinitionComplianceKey(sourceName || exportName));
+      if (keyName) newlyAddedDeviceFields.add(keyName);
       if (keyName) existingKeys.add(keyName);
     }
   }
@@ -727,19 +736,8 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
   sectionByComponentLibrary = eDeviceInterfaceSectionByComponentLibrary(mergedSections);
 
   for (const section of mergedSections) {
-    let componentLibrary = section.componentLibrary;
+    const componentLibrary = resolveComponentLibrary(section, reverseLabelToComponentLibrary, rowsByComponentLibrary);
     const sectionKind = section.kind;
-
-    // 通过反向映射解析：模板中 "元件库" 为导出标签（如 "estore"）时，映射为元件库名（如 "ACStorageGen"）
-    if (!rowsByComponentLibrary.has(componentLibrary)) {
-      const resolved = reverseLabelToComponentLibrary.get(componentLibrary);
-      if (resolved && rowsByComponentLibrary.has(resolved)) {
-        componentLibrary = resolved;
-      } else if (sectionKind && rowsByComponentLibrary.has(sectionKind)) {
-        // 兜底：以 kind 作为元件库名（如 estore 模板标签直接对应派生元件库 ACStorageGen 时，kind="estore" 可能已是元件库名）
-        componentLibrary = sectionKind;
-      }
-    }
 
     // 查找对应的元件库行（node 表特殊：合并 ACNode+ACRealBs 两行匹配）
     const row = rowsByComponentLibrary.get(componentLibrary);
