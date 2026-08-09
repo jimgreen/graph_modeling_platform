@@ -624,7 +624,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
   const runtimeGenerated: Array<{ section: string; fields?: string[] }> = [];
 
   // 运行时生成内容的表，不参与元件匹配
-  const RUNTIME_GENERATED_SECTIONS = new Set(["basevalue", "basevoltage", "subcontrolarea", "substation", "node", "trans"]);
+  const RUNTIME_GENERATED_SECTIONS = new Set(["basevalue", "basevoltage", "subcontrolarea", "substation", "trans"]);
 
   // 预构建行索引，避免 O(n*m) 查找
   const rowsByComponentLibrary = new Map<string, any>(
@@ -635,10 +635,14 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     const componentLibrary = section.componentLibrary;
     const sectionKind = section.kind;
 
-    // 查找对应的元件库行
+    // 查找对应的元件库行（node 表特殊：合并 ACNode+ACRealBs 两行匹配）
     const row = rowsByComponentLibrary.get(componentLibrary);
+    const isNodeMergedSection = componentLibrary === "node" || sectionKind === "node";
+    const nodeSecondaryRows = isNodeMergedSection && !row
+      ? [rowsByComponentLibrary.get("ACNode"), rowsByComponentLibrary.get("ACRealBs")].filter(Boolean)
+      : [];
 
-    if (!row) {
+    if (!row && nodeSecondaryRows.length === 0) {
       // 运行时生成的表（node/substation 等）仍记录表名映射（如 ACNode->node），供导出时使用
       if (RUNTIME_GENERATED_SECTIONS.has(sectionKind) && componentLibrary && sectionKind && sectionKind !== componentLibrary) {
         nextLabels[componentLibrary] = sectionKind;
@@ -671,20 +675,29 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
       continue;
     }
 
-    // 找到了对应的设备，为每个模板字段找到对应的设备属性名
+    // 找到了对应的设备（或多行合并），为每个模板字段找到对应的设备属性名
+    // 多行合并时（node 表 = ACNode + ACRealBs），以第一个匹配行为准显示 device 来源
+    const candidateRows: any[] = row ? [row] : nodeSecondaryRows;
     const rowFieldsByKey = new Map<string, string>();
     const rowFieldsByCnName = new Map<string, string>();
-    for (const rf of row.fields ?? []) {
-      const sourceName = String(rf.sourceName ?? "").trim();
-      const key = deviceDefinitionComplianceKey(sourceName);
-      if (key) {
-        rowFieldsByKey.set(key, sourceName);
-      }
-      const cnKey = deviceDefinitionComplianceKey(String(rf.cnName ?? "").trim());
-      if (cnKey) {
-        rowFieldsByCnName.set(cnKey, sourceName);
+    const fieldSourceRowByCandidate = new Map<string, string>(); // 候选 key → 来源 sourceName
+    const fieldSourceRowByCnKey = new Map<string, string>();
+    for (const r of candidateRows) {
+      for (const rf of r.fields ?? []) {
+        const sourceName = String(rf.sourceName ?? "").trim();
+        const key = deviceDefinitionComplianceKey(sourceName);
+        if (key && !rowFieldsByKey.has(key)) {
+          rowFieldsByKey.set(key, sourceName);
+        }
+        const cnKey = deviceDefinitionComplianceKey(String(rf.cnName ?? "").trim());
+        if (cnKey && !rowFieldsByCnName.has(cnKey)) {
+          rowFieldsByCnName.set(cnKey, sourceName);
+        }
       }
     }
+    const matchedDeviceLabel = row
+      ? componentLibrary
+      : (candidateRows.length > 1 ? "ACNode+交流母线" : (candidateRows[0]?.componentLibrary ?? componentLibrary));
     const sectionMatchedFields: Array<{ template: string; device: string }> = [];
     const sectionUnmatchedFields: string[] = [];
     for (const f of section.fields) {
@@ -727,7 +740,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     if (sectionMatchedFields.length > 0) {
       matched.push({
         section: sectionKind,
-        device: componentLibrary,
+        device: matchedDeviceLabel,
         fields: sectionMatchedFields
       });
     }
@@ -766,8 +779,8 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     } else {
       delete nextLabels[componentLibrary];
     }
-    fieldPatchesByComponentLibrary.set(componentLibrary, eDeviceInterfacePatchesForRow(row, section));
-    nextFieldOrder[componentLibrary] = eDeviceInterfaceFieldOrderForRow(row, section);
+    fieldPatchesByComponentLibrary.set(componentLibrary, eDeviceInterfacePatchesForRow(row ?? candidateRows[0], section));
+    nextFieldOrder[componentLibrary] = eDeviceInterfaceFieldOrderForRow(row ?? candidateRows[0], section);
   }
 
   // 确保所有元件库都设置导出标志（即使没有匹配的section）
