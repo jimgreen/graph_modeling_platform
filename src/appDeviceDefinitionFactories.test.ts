@@ -2980,20 +2980,30 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
 describe("createExportEFile", () => {
   test("uses warnings returned by E generation without rebuilding export records", async () => {
     const project = { version: 1, name: "当前模型", nodes: [], edges: [] };
+    const currentProject = vi.fn(() => project);
+    const executionOrder: string[] = [];
     let generatedExportOptions: any;
     const buildEFileExport = vi.fn((_project: any, _schemePath: string[], options: any) => {
+      executionOrder.push("generate");
       generatedExportOptions = options;
       return { filename: "当前模型.e", text: "", mime: "text/plain", warnings: [] };
     });
     const getEExportWarnings = vi.fn(() => []);
-    const saveTextFile = vi.fn(async () => false);
+    const saveLazyTextFile = vi.fn(async ({ loadText }: { loadText: () => Promise<string> | string }) => {
+      executionOrder.push("save-picker");
+      await loadText();
+      return false;
+    });
     const exportEFile = createExportEFile({
       activeSchemeKey: "scheme-1",
       buildEFileExport,
-      currentProject: () => project,
+      currentProject,
+      edges: project.edges,
       ensureSavedBeforeExport: () => true,
       getEExportWarnings,
-      saveTextFile,
+      nodes: project.nodes,
+      projectName: project.name,
+      saveLazyTextFile,
       schemePathForScheme: () => ["默认方案"],
       writeOperationLog: vi.fn(),
       libraryTemplates: [{
@@ -3027,7 +3037,18 @@ describe("createExportEFile", () => {
       ])
     });
     expect(getEExportWarnings).not.toHaveBeenCalled();
-    expect(buildEFileExport).toHaveBeenCalledWith(project, ["默认方案"], exportOptions);
+    expect(executionOrder.slice(0, 2)).toEqual(["save-picker", "generate"]);
+    expect(currentProject).not.toHaveBeenCalled();
+    expect(buildEFileExport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        version: 1,
+        name: project.name,
+        nodes: project.nodes,
+        edges: project.edges
+      }),
+      ["默认方案"],
+      exportOptions
+    );
     const acGenerator = generatedExportOptions.interfaceDefinitions
       .find((row: any) => row.componentLibrary === "ACGenerator");
     expect(acGenerator.fields.slice(0, 3).map((field: any) => field.sourceName)).toEqual([

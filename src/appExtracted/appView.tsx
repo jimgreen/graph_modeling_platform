@@ -1455,7 +1455,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                 <Download size={16}/>
               </button>
               <div className="topbar-dropdown-menu" role="menu" aria-label="导出选项">
-                <button onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { window.alert(mismatch); return; } requestExportWithSave(exportEFile); }} title="导出 E 文件" aria-label="导出 E 文件">
+                <button onPointerDown={() => { exportPointerDownAtRef.current = performance.now(); }} onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { exportPointerDownAtRef.current = 0; window.alert(mismatch); return; } requestExportWithSave(exportEFile); }} title="导出 E 文件" aria-label="导出 E 文件">
                   <FileJson size={16}/>
                   <span>导出 E 文件</span>
                 </button>

@@ -49,6 +49,9 @@ export type TextSaveOptions = {
   description: string;
   extensions: string[];
 };
+export type LazyTextSaveOptions = Omit<TextSaveOptions, "text"> & {
+  loadText: () => Promise<string> | string;
+};
 export type BlobSaveOptions = {
   filename: string;
   blob: Blob;
@@ -98,6 +101,71 @@ export async function saveTextFile(options: TextSaveOptions): Promise<boolean> {
     }
     window.alert("保存文件失败，已改为浏览器下载。");
     downloadText(options.filename, options.text, options.mime);
+    return true;
+  }
+}
+
+export async function saveLazyTextFile(options: LazyTextSaveOptions): Promise<boolean> {
+  const picker = (window as SaveFilePickerWindow).showSaveFilePicker;
+  if (typeof picker !== "function") {
+    downloadText(options.filename, await options.loadText(), options.mime);
+    return true;
+  }
+
+  let handlePromise: ReturnType<NonNullable<SaveFilePickerWindow["showSaveFilePicker"]>>;
+  try {
+    // Keep this call inside the pointer/click activation stack. E text generation starts immediately
+    // afterwards and runs while the user is choosing the save target.
+    handlePromise = picker.call(window, {
+      id: EXPORT_SAVE_PICKER_ID,
+      suggestedName: options.filename,
+      types: [
+        {
+          description: options.description,
+          accept: {
+            [options.mime]: options.extensions
+          }
+        }
+      ],
+      excludeAcceptAllOption: false
+    });
+  } catch (error) {
+    const text = await options.loadText();
+    window.alert("打开保存窗口失败，已改为浏览器下载。");
+    downloadText(options.filename, text, options.mime);
+    return true;
+  }
+
+  const textPromise = Promise.resolve().then(options.loadText);
+  // The picker can remain open after generation finishes. Attach a rejection handler now so a
+  // generation failure does not become an unhandled rejection while waiting for the user.
+  void textPromise.catch(() => undefined);
+
+  let handle: Awaited<typeof handlePromise>;
+  try {
+    handle = await handlePromise;
+  } catch (error) {
+    if (isPickerAbort(error)) {
+      return false;
+    }
+    const text = await textPromise;
+    window.alert("打开保存窗口失败，已改为浏览器下载。");
+    downloadText(options.filename, text, options.mime);
+    return true;
+  }
+
+  const text = await textPromise;
+  try {
+    const writable = await handle.createWritable();
+    await writable.write(text);
+    await writable.close();
+    return true;
+  } catch (error) {
+    if (isPickerAbort(error)) {
+      return false;
+    }
+    window.alert("保存文件失败，已改为浏览器下载。");
+    downloadText(options.filename, text, options.mime);
     return true;
   }
 }

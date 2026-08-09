@@ -3186,71 +3186,139 @@ export function createExportJsonFile(__appScope: Record<string, any>) {
   };
 }
 
+export function buildEFileExportProjectSnapshot(__appScope: Record<string, any>) {
+  const {
+    currentProject,
+    currentUnit,
+    edges,
+    feeder,
+    modelType,
+    nodes,
+    powerBaseValue,
+    powerUnit,
+    projectName,
+    subcontrolarea,
+    substation,
+    taiqu,
+    voltageUnit
+  } = __appScope;
+  if (!Array.isArray(nodes) || !Array.isArray(edges)) {
+    return currentProject();
+  }
+  return {
+    version: 1,
+    name: String(projectName ?? ""),
+    nodes,
+    edges,
+    powerBaseValue,
+    powerUnit,
+    voltageUnit,
+    currentUnit,
+    subcontrolarea,
+    substation,
+    modelType,
+    feeder,
+    taiqu
+  };
+}
+
 export function createExportEFile(__appScope: Record<string, any>) {
   return async () => {
     const {
       activeSchemeKey,
       buildEFileExport,
-      currentProject,
       eDeviceDefinitionClassExportEnabled,
       eDeviceDefinitionFieldOrder,
       eDeviceDefinitionLabels,
       eDeviceDefinitionTemplateFields,
       ensureSavedBeforeExport,
+      exportPointerDownAtRef,
       getEExportWarnings,
       libraryTemplates,
       PARAM_LABELS,
+      projectName,
       resolveTemplateComponentLibrary,
+      safeFilePart,
+      saveLazyTextFile,
       saveTextFile,
       schemePathForScheme,
       showGlobalMessage = () => undefined,
       writeOperationLog
     } = __appScope;
+    const exportStartedAt = Number(exportPointerDownAtRef?.current) > 0
+      ? Number(exportPointerDownAtRef.current)
+      : performance.now();
+    if (exportPointerDownAtRef) {
+      exportPointerDownAtRef.current = 0;
+    }
     if (!ensureSavedBeforeExport()) {
       return;
     }
-    const project = currentProject();
-    const exportOptions = buildEFileExportOptionsFromLibrary({
-      libraryTemplates,
-      labels: PARAM_LABELS,
-      eDeviceDefinitionLabels,
-      eDeviceDefinitionClassExportEnabled,
-      eDeviceDefinitionFieldOrder,
-      eDeviceDefinitionTemplateFields,
-      resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
-    });
-    const schemePath = typeof schemePathForScheme === "function"
-      ? schemePathForScheme(activeSchemeKey)
-      : [];
-    const file = buildEFileExport(
-      project,
-      Array.isArray(schemePath) && schemePath.length > 0 ? schemePath : ["默认方案"],
-      exportOptions
-    );
-    const warnings = Array.isArray(file?.warnings)
-      ? file.warnings
-      : getEExportWarnings(project, exportOptions);
-    if (warnings.length > 0) {
-      window.alert(
-        [
-          `有 ${warnings.length} 个图上设备未导出到 E 文件：`,
-          ...warnings.slice(0, 20).map((warning) => `- ${warning.nodeName}（${warning.kind}）：${warning.reason}`),
-          warnings.length > 20 ? `... 还有 ${warnings.length - 20} 个设备未列出。` : ""
-        ].filter(Boolean).join("\n")
+
+    const generatedFilePromise = Promise.resolve().then(() => {
+      const project = buildEFileExportProjectSnapshot(__appScope);
+      const exportOptions = buildEFileExportOptionsFromLibrary({
+        libraryTemplates,
+        labels: PARAM_LABELS,
+        eDeviceDefinitionLabels,
+        eDeviceDefinitionClassExportEnabled,
+        eDeviceDefinitionFieldOrder,
+        eDeviceDefinitionTemplateFields,
+        resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
+      });
+      const schemePath = typeof schemePathForScheme === "function"
+        ? schemePathForScheme(activeSchemeKey)
+        : [];
+      const file = buildEFileExport(
+        project,
+        Array.isArray(schemePath) && schemePath.length > 0 ? schemePath : ["默认方案"],
+        exportOptions
       );
-    }
-    const saved = await saveTextFile({
-      filename: file.filename,
-      text: file.text,
-      mime: file.mime,
-      description: "E 模型文件",
-      extensions: [".e"]
+      return {
+        file,
+        warnings: Array.isArray(file?.warnings)
+          ? file.warnings
+          : getEExportWarnings(project, exportOptions)
+      };
     });
+    const filenameBase = typeof safeFilePart === "function"
+      ? safeFilePart(String(projectName ?? ""))
+      : String(projectName ?? "").trim().replace(/[\\/:*?"<>|]+/g, "_") || "未命名";
+    const saved = typeof saveLazyTextFile === "function"
+      ? await saveLazyTextFile({
+          filename: `${filenameBase}.e`,
+          loadText: async () => (await generatedFilePromise).file.text,
+          mime: "text/plain",
+          description: "E 模型文件",
+          extensions: [".e"]
+        })
+      : await (async () => {
+          const { file } = await generatedFilePromise;
+          return saveTextFile({
+            filename: file.filename,
+            text: file.text,
+            mime: file.mime,
+            description: "E 模型文件",
+            extensions: [".e"]
+          });
+        })();
     if (!saved) {
       return;
     }
+    const { file, warnings } = await generatedFilePromise;
     writeOperationLog(`导出模型文件：${file.filename}`);
-    showGlobalMessage(`E 文件导出成功：${file.filename}`, "success");
+    const elapsedSeconds = ((performance.now() - exportStartedAt) / 1000).toFixed(2);
+    const successMessage = `E 文件导出成功：${file.filename}；总耗时：${elapsedSeconds} 秒`;
+    showGlobalMessage(successMessage, "success");
+    window.alert(successMessage);
+    if (warnings.length > 0) {
+      const warningMessage = [
+        `有 ${warnings.length} 个图上设备未导出到 E 文件：`,
+        ...warnings.slice(0, 20).map((warning) => `- ${warning.nodeName}（${warning.kind}）：${warning.reason}`),
+        warnings.length > 20 ? `... 还有 ${warnings.length - 20} 个设备未列出。` : ""
+      ].filter(Boolean).join("\n");
+      setTimeout(() => window.alert(warningMessage), 0);
+    }
   };
 }
 

@@ -204,23 +204,47 @@ describe("SVG export", () => {
     const writeOperationLog = vi.fn();
     const showGlobalMessage = vi.fn();
     const buildEFileExport = vi.fn(() => ({ filename: "模型.e", text: "<Model/>", mime: "text/plain" }));
+    let finishSave!: () => void;
+    const saveCompletion = new Promise<void>((resolve) => {
+      finishSave = resolve;
+    });
+    const saveLazyTextFile = vi.fn(async ({ loadText }: { loadText: () => Promise<string> | string }) => {
+      await loadText();
+      await saveCompletion;
+      return true;
+    });
+    const exportPointerDownAtRef = { current: 1000 };
+    vi.spyOn(performance, "now").mockReturnValue(2500);
     vi.stubGlobal("window", { alert });
     const exportEFile = createExportEFile({
       activeSchemeKey: "scheme-1",
       buildEFileExport,
       currentProject: () => ({ version: 1, name: "模型", nodes: [], edges: [] }),
+      edges: [],
       ensureSavedBeforeExport: () => true,
+      exportPointerDownAtRef,
       getEExportWarnings: () => [],
-      saveTextFile: vi.fn(async () => true),
+      nodes: [],
+      projectName: "模型",
+      saveLazyTextFile,
       schemePathForScheme: () => ["主方案", "子方案"],
       showGlobalMessage,
       writeOperationLog
     });
 
-    await exportEFile();
+    const exportPromise = exportEFile();
+
+    await vi.waitFor(() => expect(buildEFileExport).toHaveBeenCalledOnce());
+    expect(showGlobalMessage).not.toHaveBeenCalled();
+    expect(alert).not.toHaveBeenCalled();
+
+    finishSave();
+    await exportPromise;
 
     expect(writeOperationLog).toHaveBeenCalledWith("导出模型文件：模型.e");
-    expect(showGlobalMessage).toHaveBeenCalledWith("E 文件导出成功：模型.e", "success");
+    expect(showGlobalMessage).toHaveBeenCalledWith("E 文件导出成功：模型.e；总耗时：1.50 秒", "success");
+    expect(alert).toHaveBeenCalledWith("E 文件导出成功：模型.e；总耗时：1.50 秒");
+    expect(exportPointerDownAtRef.current).toBe(0);
     expect(buildEFileExport).toHaveBeenCalledWith(
       expect.anything(),
       ["主方案", "子方案"],
@@ -231,19 +255,29 @@ describe("SVG export", () => {
   test("does not report E file export success when saving is cancelled", async () => {
     const alert = vi.fn();
     const writeOperationLog = vi.fn();
+    const showGlobalMessage = vi.fn();
+    const saveLazyTextFile = vi.fn(async ({ loadText }: { loadText: () => Promise<string> | string }) => {
+      await loadText();
+      return false;
+    });
     vi.stubGlobal("window", { alert });
     const exportEFile = createExportEFile({
       buildEFileExport: () => ({ filename: "模型.e", text: "<PowerBase/>", mime: "text/plain" }),
       currentProject: () => ({ version: 1, name: "模型", nodes: [], edges: [] }),
+      edges: [],
       ensureSavedBeforeExport: () => true,
       getEExportWarnings: () => [],
-      saveTextFile: vi.fn(async () => false),
+      nodes: [],
+      projectName: "模型",
+      saveLazyTextFile,
+      showGlobalMessage,
       writeOperationLog
     });
 
     await exportEFile();
 
     expect(writeOperationLog).not.toHaveBeenCalled();
+    expect(showGlobalMessage).not.toHaveBeenCalled();
     expect(alert).not.toHaveBeenCalled();
   });
 
