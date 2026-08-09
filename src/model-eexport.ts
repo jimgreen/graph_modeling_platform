@@ -89,6 +89,7 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
     "v_max",
     "v_min",
     "alpha",
+    "regable",
     "run_stat"
   ],
   DCGenerator: [

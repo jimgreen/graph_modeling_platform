@@ -2741,12 +2741,14 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
       "rated_capacity",
       "rated_voltage",
       "v_max",
-      "v_min"
+      "v_min",
+      "regable"
     ];
 
-    expect(generator?.fields
+    const actualOrder = generator?.fields
       .filter((field: any) => field.exportEnabled)
-      .map((field: any) => field.sourceName)).toEqual(expectedOrder);
+      .map((field: any) => field.sourceName);
+    expect(actualOrder).toEqual(expectedOrder);
 
     const generatorNode = createDefaultNode("ac-source", { x: 100, y: 100 });
     const eFile = buildEFileExport({
@@ -2883,7 +2885,8 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
       "v_set",
       "v_max",
       "v_min",
-      "alpha"
+      "alpha",
+      "regable"
     ]);
     expect(rows.some((row: any) => row.componentLibrary === "ACThermalGen")).toBe(false);
   });

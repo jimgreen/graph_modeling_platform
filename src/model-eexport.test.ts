@@ -1547,6 +1547,7 @@ test("defines AC and DC generator operating limits as inherited float defaults a
     "v_max",
     "v_min",
     "alpha",
+    "regable",
     "run_stat"
   ]);
   expect(E_SECTION_COLUMNS.DCGenerator).toEqual([

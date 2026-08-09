@@ -80,7 +80,8 @@ const E_DEVICE_INTERFACE_TOPOLOGY_FIELD_NAMES = new Set(["ind", "znd", "nd"]);
 const E_DEVICE_INTERFACE_MEASUREMENT_FIELD_NAMES = new Set(["p", "q", "v", "i"]);
 // 运行时派生字段：生成 E 文件时由运行时关系（所属厂站等）填充，不对应元件属性
 const E_DEVICE_INTERFACE_RUNTIME_DERIVED_FIELD_NAMES: Record<string, string> = {
-  ist: "（所属厂站）"
+  ist: "（所属厂站）",
+  zst: "（末端所属厂站）"
 };
 const E_DEVICE_INTERFACE_DERIVED_BASE_FIELD_NAMES = new Set([
   "idx",
@@ -615,7 +616,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     eDeviceDefinitionTemplateFields,
     resolveDefinitionComponentLibrary
   });
-  const sectionByComponentLibrary = eDeviceInterfaceSectionByComponentLibrary(sections);
+  let sectionByComponentLibrary = eDeviceInterfaceSectionByComponentLibrary(sections);
   const nextLabels: Record<string, string> = { ...eDeviceDefinitionLabels };
   const nextClassExportEnabled: Record<string, boolean> = { ...eDeviceDefinitionClassExportEnabled };
   const nextFieldOrder: Record<string, string[]> = { ...eDeviceDefinitionFieldOrder };
@@ -635,7 +636,36 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     (rows ?? []).map((r) => [r.componentLibrary, r])
   );
 
+  // 合并同名模板表：多个 section 拥有相同 componentLibrary 时，合并其字段（保留首个 section 的元信息）
+  const mergedSections: any[] = [];
+  const mergedByComponentLibrary = new Map<string, any>();
   for (const section of sections) {
+    const key = String(section.componentLibrary || section.kind || "").trim();
+    const existing = mergedByComponentLibrary.get(key);
+    if (!existing) {
+      const merged = {
+        ...section,
+        fields: [...(section.fields ?? [])]
+      };
+      mergedByComponentLibrary.set(key, merged);
+      mergedSections.push(merged);
+    } else {
+      const existingKeys = new Set(
+        (existing.fields ?? []).map((f: any) => deviceDefinitionComplianceKey(String(f.exportName ?? f.sourceName ?? "").trim())).filter(Boolean)
+      );
+      for (const f of section.fields ?? []) {
+        const fname = deviceDefinitionComplianceKey(String(f.exportName ?? f.sourceName ?? "").trim());
+        if (fname && !existingKeys.has(fname)) {
+          existing.fields.push(f);
+          existingKeys.add(fname);
+        }
+      }
+    }
+  }
+
+  sectionByComponentLibrary = eDeviceInterfaceSectionByComponentLibrary(mergedSections);
+
+  for (const section of mergedSections) {
     const componentLibrary = section.componentLibrary;
     const sectionKind = section.kind;
 
@@ -761,7 +791,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
       });
     }
 
-    // 存储模板字段定义（含匹配的设备字段名），供导出时覆盖 exportName
+    // 存储模板字段定义（含匹配的设备字段名），供导出时覆盖 exportName；未匹配字段以模板字段名作为 sourceName，加入元件属性列表
     if (section.fields && section.fields.length > 0) {
       const templateFields = section.fields.map((f: any) => {
         const templateExportName = String(f.exportName ?? "").trim();
@@ -770,7 +800,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
           ? matchedField.device
           : undefined;
         return {
-          sourceName: deviceSourceName || undefined,
+          sourceName: deviceSourceName || templateExportName || undefined,
           exportName: templateExportName,
           cnName: String(f.cnName ?? "").trim() || templateExportName
         };

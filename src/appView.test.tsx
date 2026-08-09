@@ -150,6 +150,7 @@ describe("app view device model parameter keys", () => {
       "v_max",
       "v_min",
       "alpha",
+      "regable",
       "run_stat",
       "frequency",
       "short_circuit_capacity",
