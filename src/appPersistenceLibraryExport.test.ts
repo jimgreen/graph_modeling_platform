@@ -801,28 +801,29 @@ describe("graph template library filtering", () => {
     const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
     const appCoreSource = readFileSync(new URL("./appExtracted/appCoreCanvasUtilities.tsx", import.meta.url), "utf8");
     const deviceDefinitionSource = readFileSync(new URL("./appExtracted/appDeviceDefinitionFactories.tsx", import.meta.url), "utf8");
+    const deviceDefinitionRenderersSource = readFileSync(new URL("./appExtracted/appDeviceDefinitionRenderers.tsx", import.meta.url), "utf8");
 
     expect(appCoreSource).toContain('export type CustomDeviceDialogView = "icon" | "parameters" | "measurements"');
     expect(appViewSource).not.toContain("setCustomDeviceDialogView(\"terminals\")");
     expect(appViewSource).not.toContain(">端子定义<");
     expect(appViewSource).toContain('visibleCustomDeviceDialogView === "icon" ?');
     expect(appViewSource).toContain("customDeviceDraft.terminalCount > 0 && <div className=\"custom-terminal-grid\"");
-    expect(deviceDefinitionSource).toContain("const stateIconTerminalFrame = {");
-    expect(deviceDefinitionSource).toContain("x: STATE_ICON_DRAWING_FRAME_WIDTH / 8");
-    expect(deviceDefinitionSource).toContain("width: STATE_ICON_DRAWING_FRAME_WIDTH * 3 / 4");
-    expect(deviceDefinitionSource).toContain("const renderStateIconOuterFrameLayer = () =>");
-    expect(deviceDefinitionSource).toContain("const renderStateIconTerminalBaseLayer = () =>");
-    expect(deviceDefinitionSource).toContain("className=\"state-icon-drawing-icon-frame state-icon-drawing-inner-frame\"");
-    expect(deviceDefinitionSource).toContain("className=\"state-icon-drawing-icon-frame state-icon-drawing-outer-frame\"");
-    expect(deviceDefinitionSource).toContain("className=\"custom-device-terminal-connector state-icon-terminal-connector\"");
-    expect(deviceDefinitionSource).toContain("className={`custom-device-terminal-anchor state-icon-terminal-anchor");
-    expect(deviceDefinitionSource.indexOf("{renderStateIconOuterFrameLayer()}")).toBeLessThan(
-      deviceDefinitionSource.indexOf("{renderStateIconTerminalBaseLayer()}")
+    expect(deviceDefinitionRenderersSource).toContain("const stateIconTerminalFrame = {");
+    expect(deviceDefinitionRenderersSource).toContain("x: STATE_ICON_DRAWING_FRAME_WIDTH / 8");
+    expect(deviceDefinitionRenderersSource).toContain("width: STATE_ICON_DRAWING_FRAME_WIDTH * 3 / 4");
+    expect(deviceDefinitionRenderersSource).toContain("const renderStateIconOuterFrameLayer = () =>");
+    expect(deviceDefinitionRenderersSource).toContain("const renderStateIconTerminalBaseLayer = () =>");
+    expect(deviceDefinitionRenderersSource).toContain("className=\"state-icon-drawing-icon-frame state-icon-drawing-inner-frame\"");
+    expect(deviceDefinitionRenderersSource).toContain("className=\"state-icon-drawing-icon-frame state-icon-drawing-outer-frame\"");
+    expect(deviceDefinitionRenderersSource).toContain("className=\"custom-device-terminal-connector state-icon-terminal-connector\"");
+    expect(deviceDefinitionRenderersSource).toContain("className={`custom-device-terminal-anchor state-icon-terminal-anchor");
+    expect(deviceDefinitionRenderersSource.indexOf("{renderStateIconOuterFrameLayer()}")).toBeLessThan(
+      deviceDefinitionRenderersSource.indexOf("{renderStateIconTerminalBaseLayer()}")
     );
-    expect(deviceDefinitionSource.indexOf("{renderStateIconTerminalBaseLayer()}")).toBeLessThan(
-      deviceDefinitionSource.indexOf("directPreviewElements ? previewElements.map")
+    expect(deviceDefinitionRenderersSource.indexOf("{renderStateIconTerminalBaseLayer()}")).toBeLessThan(
+      deviceDefinitionRenderersSource.indexOf("directPreviewElements ? previewElements.map")
     );
-    expect(deviceDefinitionSource).toContain("definitionVisualDraft.terminalCount > 0 && <div className=\"custom-terminal-grid device-definition-terminal-grid\"");
+    expect(deviceDefinitionRenderersSource).toContain("definitionVisualDraft.terminalCount > 0 && <div className=\"custom-terminal-grid device-definition-terminal-grid\"");
   });
 
   test("normalizes saved custom device templates with persisted terminal connector lines", () => {
