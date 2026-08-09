@@ -673,6 +673,8 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
 
   // 元件字段补充：eDeviceDefinitionTemplateFields / eDeviceDefinitionFieldOrder 中已声明但 row.fields 尚未列出的字段
   // 补齐后匹配逻辑可识别（解决「UI 已显示该字段但匹配仍判未匹配」的情况）
+  // 记录本次根据模板新增的设备字段（用于 UI 标记「（新增）」）
+  const newlyAddedDeviceFields = new Set<string>();
   for (const row of rows ?? []) {
     const key = row.componentLibrary;
     const supplementFields =
@@ -703,6 +705,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
         exportEnabled: true,
         exportName
       });
+      newlyAddedDeviceFields.add(deviceDefinitionComplianceKey(sourceName || exportName));
       if (keyName) existingKeys.add(keyName);
     }
   }
@@ -830,7 +833,10 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
         }
       }
       if (deviceField) {
-        sectionMatchedFields.push({ template: templateField, device: deviceField });
+        // 根据模板新增的设备属性，追加「（新增）」标记
+        const deviceFieldKey = deviceDefinitionComplianceKey(deviceField);
+        const isNewlyAdded = newlyAddedDeviceFields.has(deviceFieldKey);
+        sectionMatchedFields.push({ template: templateField, device: isNewlyAdded ? `${deviceField}（新增）` : deviceField });
       } else {
         sectionUnmatchedFields.push(templateField);
       }
