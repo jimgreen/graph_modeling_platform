@@ -671,6 +671,42 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     }
   }
 
+  // 元件字段补充：eDeviceDefinitionTemplateFields / eDeviceDefinitionFieldOrder 中已声明但 row.fields 尚未列出的字段
+  // 补齐后匹配逻辑可识别（解决「UI 已显示该字段但匹配仍判未匹配」的情况）
+  for (const row of rows ?? []) {
+    const key = row.componentLibrary;
+    const supplementFields =
+      eDeviceDefinitionTemplateFields?.[key] ??
+      (eDeviceDefinitionFieldOrder?.[key]
+        ? eDeviceDefinitionFieldOrder[key].map((exportName: string) => ({
+            sourceName: exportName,
+            exportName,
+            cnName: exportName
+          }))
+        : undefined);
+    if (!supplementFields || supplementFields.length === 0) continue;
+    const existingKeys = new Set(
+      (row.fields ?? []).map((f: any) =>
+        deviceDefinitionComplianceKey(String(f.sourceName ?? f.exportName ?? "").trim())
+      ).filter(Boolean)
+    );
+    for (const f of supplementFields) {
+      const sourceName = String(f.sourceName ?? f.exportName ?? "").trim();
+      const exportName = String(f.exportName ?? sourceName).trim();
+      if (!exportName) continue;
+      const keyName = deviceDefinitionComplianceKey(sourceName || exportName);
+      if (keyName && existingKeys.has(keyName)) continue;
+      if (!row.fields) row.fields = [];
+      row.fields.push({
+        sourceName: sourceName || undefined,
+        cnName: String(f.cnName ?? exportName).trim() || exportName,
+        exportEnabled: true,
+        exportName
+      });
+      if (keyName) existingKeys.add(keyName);
+    }
+  }
+
   sectionByComponentLibrary = eDeviceInterfaceSectionByComponentLibrary(mergedSections);
 
   for (const section of mergedSections) {
