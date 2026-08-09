@@ -963,6 +963,33 @@ test("exports hydrogen, heat, and cross-energy devices to E sections and reports
   ]);
 });
 
+test("returns E export warnings with the generated file", () => {
+  const unsupported: ModelNode = {
+    ...createDefaultNode("ac-load", { x: 100, y: 100 }),
+    id: "unsupported-e-export-node",
+    kind: "unknown-device-kind",
+    name: "未支持设备",
+    params: {}
+  };
+  const project = {
+    version: 1 as const,
+    name: "E 文件警告测试",
+    nodes: [unsupported],
+    edges: []
+  };
+
+  const standaloneWarnings = getEExportWarnings(project);
+  const file = buildEFileExport(project);
+
+  expect(file.warnings).toEqual(standaloneWarnings);
+  expect(file.warnings).toEqual([
+    expect.objectContaining({
+      nodeId: unsupported.id,
+      reason: "元件库没有对应的 E 文件段定义。"
+    })
+  ]);
+});
+
 test("exports electric heat containers to AC and DC specific E sections", () => {
   const acHeater = assignPermanentDeviceIndex(createDefaultNode("ac-heater", { x: 100, y: 100 }), {}).node;
   const dcHeater = assignPermanentDeviceIndex(createDefaultNode("dc-heater", { x: 240, y: 100 }), {}).node;

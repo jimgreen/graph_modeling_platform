@@ -25,7 +25,7 @@ type SaveFilePickerWindow = Window & {
     excludeAcceptAllOption?: boolean;
   }) => Promise<{
     createWritable: () => Promise<{
-      write: (data: Blob) => Promise<void>;
+      write: (data: Blob | string) => Promise<void>;
       close: () => Promise<void>;
     }>;
   }>;
@@ -33,7 +33,7 @@ type SaveFilePickerWindow = Window & {
 
 type DirectoryFileHandle = {
   createWritable: () => Promise<{
-    write: (data: Blob) => Promise<void> | void;
+    write: (data: Blob | string) => Promise<void> | void;
     close: () => Promise<void> | void;
   }>;
 };
@@ -89,7 +89,7 @@ export async function saveTextFile(options: TextSaveOptions): Promise<boolean> {
       excludeAcceptAllOption: false
     });
     const writable = await handle.createWritable();
-    await writable.write(new Blob([options.text], { type: options.mime }));
+    await writable.write(options.text);
     await writable.close();
     return true;
   } catch (error) {
@@ -162,10 +162,10 @@ export const writeTextFileToDirectory = async (
   directoryHandle: WritableDirectoryHandle,
   filename: string,
   text: string,
-  mime: string
+  _mime: string
 ) => {
   const fileHandle = await directoryHandle.getFileHandle(filename, { create: true });
   const writable = await fileHandle.createWritable();
-  await writable.write(new Blob([text], { type: mime }));
+  await writable.write(text);
   await writable.close();
 };

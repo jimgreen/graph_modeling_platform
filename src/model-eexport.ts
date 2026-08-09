@@ -1482,9 +1482,12 @@ export type EExportWarning = {
   reason: string;
 };
 
-export function getEExportWarnings(project: ProjectFile, options: EFileExportOptions = {}): EExportWarning[] {
+function getEExportWarningsFromRecords(
+  project: ProjectFile,
+  records: readonly EDeviceExport[],
+  options: EFileExportOptions = {}
+): EExportWarning[] {
   const interfaceDefinitionBySection = eFileInterfaceDefinitionIndex(options);
-  const records = buildEDeviceRecords(project, options);
   const exportedNodeIds = new Set(records.map((record) => record.id).filter((id) => !id.includes(":")));
   return project.nodes.flatMap((node) => {
     if (isStaticNode(node)) {
@@ -1521,6 +1524,10 @@ export function getEExportWarnings(project: ProjectFile, options: EFileExportOpt
       reason: `E 文件段 ${section} 被导出逻辑过滤。`
     }];
   });
+}
+
+export function getEExportWarnings(project: ProjectFile, options: EFileExportOptions = {}): EExportWarning[] {
+  return getEExportWarningsFromRecords(project, buildEDeviceRecords(project, options), options);
 }
 
 function normalizeEFileToken(value: string) {
@@ -1753,13 +1760,13 @@ function buildBasevoltageSection(): string {
   return formatEFileSectionRows("basevoltage", columns, rows);
 }
 
-export function buildEDeviceParameterFile(
+function buildEDeviceParameterFileFromRecords(
   project: ProjectFile,
-  schemePath: string[] = ["默认方案"],
-  options: EFileExportOptions = {}
+  schemePath: string[],
+  options: EFileExportOptions,
+  records: readonly EDeviceExport[]
 ) {
   const interfaceDefinitionBySection = eFileInterfaceDefinitionIndex(options);
-  const records = buildEDeviceRecords(project, options);
   const recordsBySection = new Map<string, EDeviceExport[]>();
   for (const record of records) {
     const columns = eSectionColumns(record.section, [record]);
@@ -1821,10 +1828,27 @@ export function buildEDeviceParameterFile(
   return [...headerSections, ...sectionBlocks].join("\n\n") + "\n";
 }
 
+export function buildEDeviceParameterFile(
+  project: ProjectFile,
+  schemePath: string[] = ["默认方案"],
+  options: EFileExportOptions = {}
+) {
+  return buildEDeviceParameterFileFromRecords(
+    project,
+    schemePath,
+    options,
+    buildEDeviceRecords(project, options)
+  );
+}
+
 export type TextFileExport = {
   filename: string;
   text: string;
   mime: string;
+};
+
+export type EFileExport = TextFileExport & {
+  warnings: EExportWarning[];
 };
 
 function safeModelFilePart(name: string) {
@@ -1835,11 +1859,13 @@ export function buildEFileExport(
   project: ProjectFile,
   schemePath: string[] = ["默认方案"],
   options: EFileExportOptions = {}
-): TextFileExport {
+): EFileExport {
+  const records = buildEDeviceRecords(project, options);
   return {
     filename: `${safeModelFilePart(project.name)}.e`,
-    text: buildEDeviceParameterFile(project, schemePath, options),
-    mime: "text/plain"
+    text: buildEDeviceParameterFileFromRecords(project, schemePath, options, records),
+    mime: "text/plain",
+    warnings: getEExportWarningsFromRecords(project, records, options)
   };
 }
 

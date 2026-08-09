@@ -522,7 +522,8 @@ export function renderAppView(__appScope: Record<string, any>) {
   const [eDeviceInterfaceExitPromptOpen, setEDeviceInterfaceExitPromptOpen] = useState(false);
   const [eDeviceInterfaceSaveMessage, setEDeviceInterfaceSaveMessage] = useState("");
   const [eDeviceTemplateDropdownOpen, setEDeviceTemplateDropdownOpen] = useState(false);
-  const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
+  const exportPointerDownAtRef = useRef(0);
+  Object.assign(__appScope, { exportPointerDownAtRef });
   const [templateImportResult, setTemplateImportResult] = useState<{
     matched: Array<{ section: string; device: string; fields: Array<{ template: string; device: string }> }>;
     skipped: Array<{ section: string; reason: string; fields?: string[] }>;
@@ -1449,26 +1450,24 @@ export function renderAppView(__appScope: Record<string, any>) {
             <button className="topbar-primary-button" onClick={() => setEDeviceDefinitionInterfaceDialogOpen(true)} title="打开 E 文件接口定义" aria-label="打开 E 文件接口定义">
               <FileJson size={16}/>
             </button>
-            <div className="topbar-dropdown export-dropdown" onMouseEnter={() => setExportDropdownOpen(true)} onMouseLeave={() => setExportDropdownOpen(false)}>
-              <button className="topbar-primary-button" onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { window.alert(mismatch); return; } requestExportWithSave(exportSvg); }} title="导出 E、JSON 和 SVG 文件" aria-label="导出 E、JSON 和 SVG 文件">
+            <div className="topbar-dropdown export-dropdown">
+              <button className="topbar-primary-button" onPointerDown={() => { exportPointerDownAtRef.current = performance.now(); }} onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { window.alert(mismatch); return; } requestExportWithSave(exportSvg); }} title="导出 E、JSON 和 SVG 文件" aria-label="导出 E、JSON 和 SVG 文件">
                 <Download size={16}/>
               </button>
-              {exportDropdownOpen && (
-                <div className="topbar-dropdown-menu" role="menu" aria-label="导出选项">
-                  <button onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { window.alert(mismatch); return; } requestExportWithSave(exportEFile); }} title="导出 E 文件" aria-label="导出 E 文件">
-                    <FileJson size={16}/>
-                    <span>导出 E 文件</span>
-                  </button>
-                  <button onClick={() => requestExportWithSave(exportSvgFile)} title="导出 SVG 文件" aria-label="导出 SVG 文件">
-                    <Download size={16}/>
-                    <span>导出 SVG</span>
-                  </button>
-                  <button onClick={() => requestExportWithSave(exportJsonFile)} title="导出 JSON 文件" aria-label="导出 JSON 文件">
-                    <Download size={16}/>
-                    <span>导出 JSON</span>
-                  </button>
-                </div>
-              )}
+              <div className="topbar-dropdown-menu" role="menu" aria-label="导出选项">
+                <button onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { window.alert(mismatch); return; } requestExportWithSave(exportEFile); }} title="导出 E 文件" aria-label="导出 E 文件">
+                  <FileJson size={16}/>
+                  <span>导出 E 文件</span>
+                </button>
+                <button onClick={() => requestExportWithSave(exportSvgFile)} title="导出 SVG 文件" aria-label="导出 SVG 文件">
+                  <Download size={16}/>
+                  <span>导出 SVG</span>
+                </button>
+                <button onClick={() => requestExportWithSave(exportJsonFile)} title="导出 JSON 文件" aria-label="导出 JSON 文件">
+                  <Download size={16}/>
+                  <span>导出 JSON</span>
+                </button>
+              </div>
             </div>
           </div>
           <div className="action-cluster">

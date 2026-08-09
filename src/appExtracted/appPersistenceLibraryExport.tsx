@@ -3981,7 +3981,60 @@ ${rules.join("\n")}
   }
   const nodeSymbolMarkup: string[] = [];
   const symbolIdBySignature = new Map<string, string>();
+  const symbolIdByVisualInput = new Map<string, string>();
   const textLayerMarkup: string[] = [];
+  const cacheableStandardSymbolVisualToken = (symbolNode: ModelNode, stateVisual: DeviceStateVisual | null) => {
+    const glyphVariant = getDeviceGlyphVariant(symbolNode.kind);
+    if (
+      isStaticNode(symbolNode) ||
+      isRoutableLineDeviceKind(symbolNode.kind) ||
+      glyphVariant === "custom-device" ||
+      symbolNode.params[CUSTOM_DEVICE_TEMPLATE_KEY] === "1"
+    ) {
+      return "";
+    }
+    const nodeScaleX = getNodeScaleX(symbolNode);
+    const nodeScaleY = getNodeScaleY(symbolNode);
+    const terminalVisuals = symbolNode.terminals.map((terminal) => {
+      const renderPoint = terminalRenderLocalPoint(terminal, symbolNode.size, nodeScaleX, nodeScaleY, symbolNode.kind);
+      const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, symbolNode.kind, symbolNode.size);
+      return [
+        terminal.type,
+        terminal.anchor.x,
+        terminal.anchor.y,
+        terminal.vbase ?? "",
+        renderPoint.x,
+        renderPoint.y,
+        stub.from.x,
+        stub.from.y,
+        stub.to.x,
+        stub.to.y,
+        terminalStubStrokeWidth(symbolNode, terminal),
+        getTerminalDisplayColor(symbolNode, terminal, colorDisplayMode, colorPalette)
+      ];
+    });
+    const stateVisualImageHref = resolveStateVisualImageHref(stateVisual, imageAssets);
+    return JSON.stringify([
+      symbolNode.kind,
+      glyphVariant,
+      symbolNode.size.width,
+      symbolNode.size.height,
+      nodeGeometryTransform(symbolNode),
+      getDeviceStrokeColor(symbolNode, colorDisplayMode, colorPalette),
+      getDeviceStrokeWidth(symbolNode),
+      getSwitchVisualState(symbolNode),
+      Boolean(nodeExportVoltageDescriptor(symbolNode)),
+      symbolNode.params.strokeStyle ?? "",
+      symbolNode.params.backgroundImageCleared ?? "",
+      stateVisualImageHref,
+      stateVisual?.imageFit ?? stateVisual?.backgroundImageFit ?? symbolNode.params.backgroundImageFit ?? "",
+      resolveNodeImage(symbolNode, imageAssets),
+      resolveNodeForegroundImage(symbolNode, imageAssets),
+      symbolNode.params.foregroundImageFit ?? "",
+      deviceStateVisualToken(stateVisual),
+      terminalVisuals
+    ]);
+  };
   exportNodes.forEach((node) => {
       const layerId = nodeLayerId(node);
       const typeLayerId = nodeTypeLayerIds.get(exportNodeLayerKey(node)) ?? otherLayerId;
@@ -4068,16 +4121,24 @@ ${rules.join("\n")}
       for (const stateInput of stateSymbolInputs) {
         const symbolBaseId = exportSvgSafeId(`symbol_${exportNodeType(node)}_${node.kind}_${stateInput.stateKey}`, "device_symbol");
         const viewBox = `${formatSvgNumber(-node.size.width / 2)} ${formatSvgNumber(-node.size.height / 2)} ${formatSvgNumber(node.size.width)} ${formatSvgNumber(node.size.height)}`;
-        const signatureBody = renderNodeSymbolBody(stateInput.node, stateInput.visual, symbolBaseId);
-        const signature = `${symbolBaseId}\n${viewBox}\n${signatureBody}`;
-        let symbolId = symbolIdBySignature.get(signature);
+        const visualInputToken = cacheableStandardSymbolVisualToken(stateInput.node, stateInput.visual);
+        const visualInputKey = visualInputToken ? `${symbolBaseId}\n${viewBox}\n${visualInputToken}` : "";
+        let symbolId = visualInputKey ? symbolIdByVisualInput.get(visualInputKey) : undefined;
         if (!symbolId) {
-          symbolId = exportSvgUniqueId(symbolBaseId, usedSvgIds, "device_symbol");
-          const symbolBody = symbolId === symbolBaseId ? signatureBody : renderNodeSymbolBody(stateInput.node, stateInput.visual, symbolId);
-          nodeSymbolMarkup.push(`<symbol id="${escapeXml(symbolId)}" viewBox="${viewBox}" overflow="visible">
+          const signatureBody = renderNodeSymbolBody(stateInput.node, stateInput.visual, symbolBaseId);
+          const signature = `${symbolBaseId}\n${viewBox}\n${signatureBody}`;
+          symbolId = symbolIdBySignature.get(signature);
+          if (!symbolId) {
+            symbolId = exportSvgUniqueId(symbolBaseId, usedSvgIds, "device_symbol");
+            const symbolBody = symbolId === symbolBaseId ? signatureBody : renderNodeSymbolBody(stateInput.node, stateInput.visual, symbolId);
+            nodeSymbolMarkup.push(`<symbol id="${escapeXml(symbolId)}" viewBox="${viewBox}" overflow="visible">
   ${symbolBody}
 </symbol>`);
-          symbolIdBySignature.set(signature, symbolId);
+            symbolIdBySignature.set(signature, symbolId);
+          }
+          if (visualInputKey) {
+            symbolIdByVisualInput.set(visualInputKey, symbolId);
+          }
         }
         symbolIdByStateKey.set(stateInput.stateKey, symbolId);
       }

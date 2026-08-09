@@ -430,6 +430,10 @@ describe("app view device definition parameter rows", () => {
     expect(exportActions).toContain("导出 SVG");
     expect(exportActions).toContain("导出 JSON");
     expect(exportActions).toContain("导出 E、JSON 和 SVG 文件");
+    expect(exportActions).toContain("exportPointerDownAtRef.current = performance.now()");
+    expect(exportActions).toContain('role="menu" aria-label="导出选项"');
+    expect(exportActions).not.toContain("exportDropdownOpen");
+    expect(exportActions).not.toContain("setExportDropdownOpen");
     expect(toolbarPreviewButton).toBeNull();
   });
 

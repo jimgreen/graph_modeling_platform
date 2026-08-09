@@ -2820,7 +2820,16 @@ export function createSvgExportReferencedImageHrefById(__appScope: Record<string
 export function createLoadSvgImageExportPathById(__appScope: Record<string, any>) {
   return async () => {
   const { fetchAllBackendImages, fetchBackendImageDataUrl, imageAssetList, imageAssets, imageExportPathByIdFromAssets, isImageDataUrl, svgExportReferencedImageHrefById } = __appScope;
+    const referencedHrefById = svgExportReferencedImageHrefById();
+    if (referencedHrefById.size === 0) {
+      return {};
+    }
     let assets = imageAssetList;
+    let exportHrefById = imageExportPathByIdFromAssets(assets, imageAssets);
+    const hasAllReferencedImages = () => Array.from(referencedHrefById.keys()).every((id) => Boolean(exportHrefById[id]));
+    if (hasAllReferencedImages()) {
+      return exportHrefById;
+    }
     try {
       const backendAssets = await fetchAllBackendImages();
       const mergedById = new Map<string, ImageAsset>();
@@ -2832,12 +2841,11 @@ export function createLoadSvgImageExportPathById(__appScope: Record<string, any>
         mergedById.set(asset.id, existing ? { ...existing, ...asset } : asset);
       }
       assets = Array.from(mergedById.values());
+      exportHrefById = imageExportPathByIdFromAssets(assets, imageAssets);
     } catch {
       // 后端图片清单不可用时，保持现有导出逻辑，不影响本地图形导出。
     }
-    const exportHrefById = imageExportPathByIdFromAssets(assets, imageAssets);
     const assetById = new Map(assets.map((asset) => [asset.id, asset]));
-    const referencedHrefById = svgExportReferencedImageHrefById();
     await Promise.all(Array.from(referencedHrefById.entries()).map(async ([id, href]) => {
       if (exportHrefById[id]) {
         return;
@@ -2878,6 +2886,7 @@ export function createExportSvg(__appScope: Record<string, any>) {
     eDeviceDefinitionTemplateFields,
     edges,
     ensureSavedBeforeExport,
+    exportPointerDownAtRef,
     getEExportWarnings,
     isPickerAbort,
     layers,
@@ -2890,10 +2899,16 @@ export function createExportSvg(__appScope: Record<string, any>) {
     resolveTemplateComponentLibrary,
     safeFilePart,
     schemePathForScheme,
-    serializeProject,
     writeTextFileToDirectory,
     writeOperationLog
   } = __appScope;
+    const exportStartedAt = Number(exportPointerDownAtRef?.current) > 0
+      ? Number(exportPointerDownAtRef.current)
+      : performance.now();
+    if (exportPointerDownAtRef) {
+      exportPointerDownAtRef.current = 0;
+    }
+    const exportElapsedText = () => `${((performance.now() - exportStartedAt) / 1000).toFixed(2)} 秒`;
     if (!ensureSavedBeforeExport()) {
       return;
     }
@@ -2902,7 +2917,7 @@ export function createExportSvg(__appScope: Record<string, any>) {
       showDirectoryPicker?: (options?: { id?: string; mode?: "read" | "readwrite" }) => Promise<any>;
     }).showDirectoryPicker;
     if (typeof directoryPicker !== "function") {
-      window.alert("导出失败：当前浏览器不支持选择导出目录，请使用最新版 Chrome 或 Edge。");
+      window.alert(`导出失败：当前浏览器不支持选择导出目录，请使用最新版 Chrome 或 Edge。\n总耗时：${exportElapsedText()}`);
       return;
     }
     let directoryHandle: any;
@@ -2916,12 +2931,18 @@ export function createExportSvg(__appScope: Record<string, any>) {
         return;
       }
       const message = error instanceof Error ? error.message : String(error ?? "未知错误");
-      window.alert(`导出失败：无法打开目标目录。\n${message}`);
+      window.alert(`导出失败：无法打开目标目录。\n${message}\n总耗时：${exportElapsedText()}`);
       return;
     }
 
     try {
       const project = currentProject();
+      const imageExportPathByIdPromise = Promise.resolve()
+        .then(() => loadSvgImageExportPathById())
+        .then(
+          (value: any) => ({ ok: true as const, value }),
+          (error: unknown) => ({ ok: false as const, error })
+        );
       const exportOptions = buildEFileExportOptionsFromLibrary({
         libraryTemplates,
         labels: PARAM_LABELS,
@@ -2931,59 +2952,82 @@ export function createExportSvg(__appScope: Record<string, any>) {
         eDeviceDefinitionTemplateFields,
         resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
       });
-      const warnings = getEExportWarnings(project, exportOptions);
       const schemePath = typeof schemePathForScheme === "function"
         ? schemePathForScheme(activeSchemeKey)
         : [];
+      const baseFilename = safeFilePart(projectName);
+      type PendingExportFile = {
+        label: string;
+        filename: string;
+        mime: string;
+        operationLog: string;
+        promise: Promise<void>;
+      };
+      const exportFiles: PendingExportFile[] = [];
+      const startFileWrite = (file: Omit<PendingExportFile, "promise">, text: string) => {
+        exportFiles.push({
+          ...file,
+          promise: Promise.resolve().then(() => writeTextFileToDirectory(
+            directoryHandle,
+            file.filename,
+            text,
+            file.mime
+          ))
+        });
+      };
       const eFile = buildEFileExport(
         project,
         Array.isArray(schemePath) && schemePath.length > 0 ? schemePath : ["默认方案"],
         exportOptions
       );
-      const imageExportPathById = await loadSvgImageExportPathById();
-      const baseFilename = safeFilePart(projectName);
-      const exportFiles = [
-        {
-          label: "E",
-          filename: `${baseFilename}.e`,
-          text: eFile.text,
-          mime: eFile.mime,
-          operationLog: `导出模型文件：${baseFilename}.e`
-        },
-        {
-          label: "JSON",
-          filename: `${baseFilename}.json`,
-          text: serializeProject(project),
-          mime: "application/json",
-          operationLog: `导出模型文件：${baseFilename}.json`
-        },
-        {
+      const warnings = Array.isArray(eFile?.warnings)
+        ? eFile.warnings
+        : getEExportWarnings(project, exportOptions);
+      startFileWrite({
+        label: "E",
+        filename: `${baseFilename}.e`,
+        mime: eFile.mime,
+        operationLog: `导出模型文件：${baseFilename}.e`
+      }, eFile.text);
+      startFileWrite({
+        label: "JSON",
+        filename: `${baseFilename}.json`,
+        mime: "application/json",
+        operationLog: `导出模型文件：${baseFilename}.json`
+      }, JSON.stringify(project, null, 2));
+      let svgGenerationError: unknown;
+      try {
+        const imageExportPathByIdResult = await imageExportPathByIdPromise;
+        if (!imageExportPathByIdResult.ok) {
+          throw imageExportPathByIdResult.error;
+        }
+        const imageExportPathById = imageExportPathByIdResult.value;
+        const svgText = buildSvgDocument(nodes, edges, buildSvgExportOptions({
+          canvasBounds, canvasBackgroundColor, DEFAULT_CANVAS_BACKGROUND, canvasBackgroundImageUrl,
+          imageExportPathById, colorPalette, libraryTemplates, layers, activeLayerId,
+          backgroundPageRender, projectMeasurements, measurementConfig
+        }));
+        startFileWrite({
           label: "SVG",
           filename: `${baseFilename}.svg`,
-          text: buildSvgDocument(nodes, edges, buildSvgExportOptions({
-            canvasBounds, canvasBackgroundColor, DEFAULT_CANVAS_BACKGROUND, canvasBackgroundImageUrl,
-            imageExportPathById, colorPalette, libraryTemplates, layers, activeLayerId,
-            backgroundPageRender, projectMeasurements, measurementConfig
-          })),
           mime: "image/svg+xml",
           operationLog: `导出图形文件：${baseFilename}.svg`
-        }
-      ];
+        }, svgText);
+      } catch (error) {
+        svgGenerationError = error;
+      }
       const results = await Promise.allSettled(
-        exportFiles.map((file) => writeTextFileToDirectory(
-          directoryHandle,
-          file.filename,
-          file.text,
-          file.mime
-        ))
+        exportFiles.map((file) => file.promise)
       );
       const failures: string[] = [];
+      let successCount = 0;
       results.forEach((result, index) => {
         const file = exportFiles[index];
         if (!file) {
           return;
         }
         if (result.status === "fulfilled") {
+          successCount += 1;
           writeOperationLog(file.operationLog);
           return;
         }
@@ -2992,6 +3036,12 @@ export function createExportSvg(__appScope: Record<string, any>) {
           : String(result.reason ?? "未知错误");
         failures.push(`${file.filename}：${reason}`);
       });
+      if (svgGenerationError !== undefined) {
+        const reason = svgGenerationError instanceof Error
+          ? svgGenerationError.message
+          : String(svgGenerationError ?? "未知错误");
+        failures.push(`${baseFilename}.svg：${reason}`);
+      }
       const warningLines = warnings.length > 0
         ? [
             "",
@@ -3001,11 +3051,12 @@ export function createExportSvg(__appScope: Record<string, any>) {
           ].filter(Boolean)
         : [];
       const directoryName = String(directoryHandle?.name ?? "").trim() || "已选择目录";
-      if (failures.length === 0) {
+      if (failures.length === 0 && successCount === 3) {
         window.alert([
           "E、JSON 和 SVG 文件导出成功。",
           `目录：${directoryName}`,
           ...exportFiles.map((file) => `${file.label}：${file.filename}`),
+          `总耗时：${exportElapsedText()}`,
           ...warningLines
         ].join("\n"));
         return;
@@ -3013,14 +3064,15 @@ export function createExportSvg(__appScope: Record<string, any>) {
       window.alert([
         "部分文件导出失败。",
         `目录：${directoryName}`,
-        `成功：${exportFiles.length - failures.length} / ${exportFiles.length}`,
+        `成功：${successCount} / 3`,
         "失败文件：",
         ...failures.map((failure) => `- ${failure}`),
+        `总耗时：${exportElapsedText()}`,
         ...warningLines
       ].join("\n"));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error ?? "未知错误");
-      window.alert(`导出失败：${message}`);
+      window.alert(`导出失败：${message}\n总耗时：${exportElapsedText()}`);
     }
   };
 }
@@ -3167,7 +3219,17 @@ export function createExportEFile(__appScope: Record<string, any>) {
       eDeviceDefinitionTemplateFields,
       resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
     });
-    const warnings = getEExportWarnings(project, exportOptions);
+    const schemePath = typeof schemePathForScheme === "function"
+      ? schemePathForScheme(activeSchemeKey)
+      : [];
+    const file = buildEFileExport(
+      project,
+      Array.isArray(schemePath) && schemePath.length > 0 ? schemePath : ["默认方案"],
+      exportOptions
+    );
+    const warnings = Array.isArray(file?.warnings)
+      ? file.warnings
+      : getEExportWarnings(project, exportOptions);
     if (warnings.length > 0) {
       window.alert(
         [
@@ -3177,14 +3239,6 @@ export function createExportEFile(__appScope: Record<string, any>) {
         ].filter(Boolean).join("\n")
       );
     }
-    const schemePath = typeof schemePathForScheme === "function"
-      ? schemePathForScheme(activeSchemeKey)
-      : [];
-    const file = buildEFileExport(
-      project,
-      Array.isArray(schemePath) && schemePath.length > 0 ? schemePath : ["默认方案"],
-      exportOptions
-    );
     const saved = await saveTextFile({
       filename: file.filename,
       text: file.text,

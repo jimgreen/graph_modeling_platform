@@ -2978,12 +2978,12 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
 });
 
 describe("createExportEFile", () => {
-  test("passes the current E interface definition into warnings and file generation", async () => {
+  test("uses warnings returned by E generation without rebuilding export records", async () => {
     const project = { version: 1, name: "当前模型", nodes: [], edges: [] };
     let generatedExportOptions: any;
     const buildEFileExport = vi.fn((_project: any, _schemePath: string[], options: any) => {
       generatedExportOptions = options;
-      return { filename: "当前模型.e", text: "", mime: "text/plain" };
+      return { filename: "当前模型.e", text: "", mime: "text/plain", warnings: [] };
     });
     const getEExportWarnings = vi.fn(() => []);
     const saveTextFile = vi.fn(async () => false);
@@ -3026,7 +3026,7 @@ describe("createExportEFile", () => {
         })
       ])
     });
-    expect(getEExportWarnings).toHaveBeenCalledWith(project, exportOptions);
+    expect(getEExportWarnings).not.toHaveBeenCalled();
     expect(buildEFileExport).toHaveBeenCalledWith(project, ["默认方案"], exportOptions);
     const acGenerator = generatedExportOptions.interfaceDefinitions
       .find((row: any) => row.componentLibrary === "ACGenerator");

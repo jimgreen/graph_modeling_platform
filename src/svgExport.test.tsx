@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { buildSvgDocument } from "./App";
-import { createExportEFile, createExportSvg } from "./appExtracted/appDeviceDefinitionFactories";
+import { createExportEFile, createExportSvg, createLoadSvgImageExportPathById } from "./appExtracted/appDeviceDefinitionFactories";
 import { createDefaultNode, createNodeFromTemplate, DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY, getTerminalPoint, type DeviceKind, type DeviceTemplate, type Edge } from "./model";
 import type { ProjectMeasurementConfig } from "./measurements";
 import { apiPath } from "./config";
+import * as svgUtils from "./svgUtils";
 
 describe("SVG export", () => {
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -28,13 +30,14 @@ describe("SVG export", () => {
 
   test("writes E, JSON, and SVG files to one selected directory with model-based names", async () => {
     const buildDocument = vi.fn((_nodes: unknown, _edges: unknown, _options: unknown) => "<svg/>");
-    const buildEFileExport = vi.fn(() => ({ filename: "ignored-name.e", text: "<Model/>", mime: "text/plain" }));
+    const buildEFileExport = vi.fn(() => ({ filename: "ignored-name.e", text: "<Model/>", mime: "text/plain", warnings: [] }));
     const currentProject = vi.fn(() => ({ version: 1, name: "voltage-export", nodes: [], edges: [] }));
     const directoryHandle = { name: "exports" };
     const ensureSavedBeforeExport = vi.fn(() => true);
     const showDirectoryPicker = vi.fn(async () => directoryHandle);
     const serializeProject = vi.fn(() => '{"name":"voltage-export"}');
     const alert = vi.fn();
+    const getEExportWarnings = vi.fn(() => []);
     const writeTextFileToDirectory = vi.fn(async (_directory: unknown, _filename: string, _text: string, _mime: string) => undefined);
     const writeOperationLog = vi.fn();
     vi.stubGlobal("window", { alert, showDirectoryPicker });
@@ -53,7 +56,7 @@ describe("SVG export", () => {
       currentProject,
       edges: [],
       ensureSavedBeforeExport,
-      getEExportWarnings: () => [],
+      getEExportWarnings,
       layers: [],
       libraryTemplates: DEVICE_LIBRARY,
       loadSvgImageExportPathById: async () => ({}),
@@ -76,22 +79,25 @@ describe("SVG export", () => {
       ["主方案", "子方案"],
       expect.objectContaining({ interfaceDefinitions: expect.any(Array) })
     );
+    expect(getEExportWarnings).not.toHaveBeenCalled();
     expect(buildDocument).toHaveBeenCalledOnce();
     expect(buildDocument.mock.calls[0]?.[2]).toMatchObject({ colorDisplayMode: "voltage" });
-    expect(serializeProject).toHaveBeenCalledWith(currentProject.mock.results[0]?.value);
+    expect(serializeProject).not.toHaveBeenCalled();
     expect(showDirectoryPicker).toHaveBeenCalledOnce();
     expect(showDirectoryPicker).toHaveBeenCalledWith({ id: "model-bundle-export", mode: "readwrite" });
     expect(writeTextFileToDirectory).toHaveBeenCalledTimes(3);
     expect(writeTextFileToDirectory.mock.calls).toEqual([
       [directoryHandle, "voltage-export.e", "<Model/>", "text/plain"],
-      [directoryHandle, "voltage-export.json", '{"name":"voltage-export"}', "application/json"],
+      [directoryHandle, "voltage-export.json", JSON.stringify(currentProject.mock.results[0]?.value, null, 2), "application/json"],
       [directoryHandle, "voltage-export.svg", "<svg/>", "image/svg+xml"]
     ]);
     expect(writeOperationLog).toHaveBeenCalledWith("导出模型文件：voltage-export.e");
     expect(writeOperationLog).toHaveBeenCalledWith("导出模型文件：voltage-export.json");
     expect(writeOperationLog).toHaveBeenCalledWith("导出图形文件：voltage-export.svg");
     expect(alert).toHaveBeenCalledOnce();
-    expect(alert).toHaveBeenCalledWith("E、JSON 和 SVG 文件导出成功。\n目录：exports\nE：voltage-export.e\nJSON：voltage-export.json\nSVG：voltage-export.svg");
+    expect(alert).toHaveBeenCalledWith(expect.stringMatching(
+      /^E、JSON 和 SVG 文件导出成功。\n目录：exports\nE：voltage-export\.e\nJSON：voltage-export\.json\nSVG：voltage-export\.svg\n总耗时：\d+\.\d{2} 秒$/
+    ));
   });
 
   test("stops the combined export silently when directory selection is cancelled", async () => {
@@ -567,6 +573,144 @@ describe("SVG export", () => {
     expect(useTags[1]).toContain('dev-id="switch-closed"');
     expect(svg).not.toContain('<g id="switch-open" class="export-device"');
     expect(svg).not.toContain('<g id="switch-closed" class="export-device"');
+  });
+
+  test("starts E and JSON writes while SVG image preparation is still pending", async () => {
+    let resolveImagePaths: ((value: Record<string, string>) => void) | undefined;
+    const imagePaths = new Promise<Record<string, string>>((resolve) => {
+      resolveImagePaths = resolve;
+    });
+    const buildDocument = vi.fn(() => "<svg/>");
+    const directoryHandle = { name: "exports" };
+    const writeTextFileToDirectory = vi.fn(async (
+      _directory: unknown,
+      _filename: string,
+      _text: string,
+      _mime: string
+    ) => undefined);
+    vi.stubGlobal("window", {
+      alert: vi.fn(),
+      showDirectoryPicker: vi.fn(async () => directoryHandle)
+    });
+    const exportSvg = createExportSvg({
+      DEFAULT_CANVAS_BACKGROUND: "#ffffff",
+      activeSchemeKey: "scheme-1",
+      activeLayerId: "default-layer",
+      backgroundPageRender: null,
+      buildEFileExport: () => ({ filename: "ignored.e", text: "<Model/>", mime: "text/plain", warnings: [] }),
+      buildSvgDocument: buildDocument,
+      canvasBackgroundColor: "#ffffff",
+      canvasBackgroundImageUrl: "",
+      canvasBounds: { width: 320, height: 180 },
+      colorPalette: DEFAULT_COLOR_PALETTE,
+      currentProject: () => ({ version: 1, name: "parallel-export", nodes: [], edges: [] }),
+      edges: [],
+      ensureSavedBeforeExport: () => true,
+      getEExportWarnings: () => [],
+      layers: [],
+      libraryTemplates: DEVICE_LIBRARY,
+      loadSvgImageExportPathById: () => imagePaths,
+      measurementConfig: undefined,
+      nodes: [],
+      projectMeasurements: { groups: [] },
+      projectName: "parallel-export",
+      safeFilePart: (value: string) => value,
+      schemePathForScheme: () => ["默认方案"],
+      writeTextFileToDirectory,
+      writeOperationLog: vi.fn()
+    });
+
+    const exportPromise = exportSvg();
+    await vi.waitFor(() => expect(writeTextFileToDirectory).toHaveBeenCalledTimes(2));
+    expect(writeTextFileToDirectory.mock.calls.map((call) => call[1])).toEqual([
+      "parallel-export.e",
+      "parallel-export.json"
+    ]);
+    expect(buildDocument).not.toHaveBeenCalled();
+
+    resolveImagePaths?.({});
+    await exportPromise;
+
+    expect(buildDocument).toHaveBeenCalledOnce();
+    expect(writeTextFileToDirectory).toHaveBeenCalledTimes(3);
+  });
+
+  test("skips the backend image manifest when the SVG has no image references", async () => {
+    const fetchAllBackendImages = vi.fn(async () => []);
+    const loader = createLoadSvgImageExportPathById({
+      fetchAllBackendImages,
+      fetchBackendImageDataUrl: vi.fn(),
+      imageAssetList: [],
+      imageAssets: {},
+      imageExportPathByIdFromAssets: vi.fn(() => ({})),
+      isImageDataUrl: vi.fn(() => false),
+      svgExportReferencedImageHrefById: () => new Map()
+    });
+
+    await expect(loader()).resolves.toEqual({});
+    expect(fetchAllBackendImages).not.toHaveBeenCalled();
+  });
+
+  test("renders one standard symbol body for repeated devices with model-only parameter differences", () => {
+    const renderMarkup = vi.spyOn(svgUtils, "renderSvgElementMarkup");
+    const nodes = Array.from({ length: 80 }, (_, index) => {
+      const node = { ...createDefaultNode("ac-source", { x: 80 + index * 12, y: 120 }), id: `repeated-source-${index + 1}` };
+      node.name = `交流电源 ${index + 1}`;
+      node.params = {
+        ...node.params,
+        idx: String(index + 1),
+        p_set: String(index * 0.1),
+        q_set: String(index * 0.05)
+      };
+      return node;
+    });
+
+    const svg = buildSvgDocument(nodes, [], { width: 1200, height: 280 });
+    const defs = svgDefsSection(svg);
+
+    expect(defs.match(/<symbol id="symbol_ACGenerator_ac-source_default/g)).toHaveLength(1);
+    expect(renderMarkup).toHaveBeenCalledTimes(2);
+    renderMarkup.mockRestore();
+  });
+
+  test("keeps standard symbols separate when size, style, or terminal geometry changes", () => {
+    const base = { ...createDefaultNode("ac-source", { x: 100, y: 120 }), id: "visual-source-base" };
+    const sameVisual = {
+      ...createDefaultNode("ac-source", { x: 220, y: 120 }),
+      id: "visual-source-same",
+      params: { ...base.params, p_set: "88.8" }
+    };
+    const resized = {
+      ...createDefaultNode("ac-source", { x: 360, y: 120 }),
+      id: "visual-source-resized",
+      size: { width: base.size.width + 20, height: base.size.height + 10 }
+    };
+    const recolored = {
+      ...createDefaultNode("ac-source", { x: 500, y: 120 }),
+      id: "visual-source-recolored",
+      params: { ...base.params, foreground_color: "#ef4444" }
+    };
+    const movedTerminal = {
+      ...createDefaultNode("ac-source", { x: 640, y: 120 }),
+      id: "visual-source-terminal",
+      terminals: base.terminals.map((terminal, index) => index === 0
+        ? { ...terminal, anchor: { x: -0.5, y: 0 } }
+        : terminal)
+    };
+
+    const svg = buildSvgDocument([base, sameVisual, resized, recolored, movedTerminal], [], { width: 760, height: 280 });
+    const defs = svgDefsSection(svg);
+    const symbolIds = Array.from(
+      defs.matchAll(/<symbol id="(symbol_ACGenerator_ac-source_default(?:_\d+)?)"/g),
+      (match) => match[1]
+    );
+
+    expect(symbolIds).toHaveLength(4);
+    expect(svgDeviceUseTag(svg, base.id)).toContain(`href="#${symbolIds[0]}"`);
+    expect(svgDeviceUseTag(svg, sameVisual.id)).toContain(`href="#${symbolIds[0]}"`);
+    expect(svgDeviceUseTag(svg, resized.id)).not.toContain(`href="#${symbolIds[0]}"`);
+    expect(svgDeviceUseTag(svg, recolored.id)).not.toContain(`href="#${symbolIds[0]}"`);
+    expect(svgDeviceUseTag(svg, movedTerminal.id)).not.toContain(`href="#${symbolIds[0]}"`);
   });
 
   test("normalizes device ids from the export type and permanent index", () => {
