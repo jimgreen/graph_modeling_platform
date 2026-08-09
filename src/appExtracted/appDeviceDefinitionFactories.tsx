@@ -78,6 +78,10 @@ const E_DEVICE_INTERFACE_FIXED_FIELD_NAMES = new Set(["idx", "name", "dev_type"]
 const E_DEVICE_INTERFACE_TOPOLOGY_FIELD_NAMES = new Set(["ind", "znd", "nd"]);
 // 量测字段：生成 E 文件时由量测系统填充，不对应元件属性
 const E_DEVICE_INTERFACE_MEASUREMENT_FIELD_NAMES = new Set(["p", "q", "v", "i"]);
+// 运行时派生字段：生成 E 文件时由运行时关系（所属厂站等）填充，不对应元件属性
+const E_DEVICE_INTERFACE_RUNTIME_DERIVED_FIELD_NAMES: Record<string, string> = {
+  ist: "（所属厂站）"
+};
 const E_DEVICE_INTERFACE_DERIVED_BASE_FIELD_NAMES = new Set([
   "idx",
   "name",
@@ -716,6 +720,11 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
       // 量测字段（p/q/v/i）由量测系统填充，视为匹配
       if (E_DEVICE_INTERFACE_MEASUREMENT_FIELD_NAMES.has(templateField)) {
         sectionMatchedFields.push({ template: templateField, device: "（量测生成）" });
+        continue;
+      }
+      // 运行时派生字段（ist 所属厂站等）由运行时关系填充，视为匹配
+      if (templateField in E_DEVICE_INTERFACE_RUNTIME_DERIVED_FIELD_NAMES) {
+        sectionMatchedFields.push({ template: templateField, device: E_DEVICE_INTERFACE_RUNTIME_DERIVED_FIELD_NAMES[templateField] });
         continue;
       }
       // 按 exportName/sourceName 或 cnName 精确匹配设备属性
