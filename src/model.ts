@@ -2137,11 +2137,17 @@ export const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = 
       electricGenerationStringDefinition("光伏组件型号", "pvModuleModel"),
       electricGenerationFloatDefinition("组件效率", "moduleEfficiency"),
       electricGenerationFloatDefinition("阵列面积", "arrayArea"),
-      electricGenerationIntegerDefinition("MPPT 路数", "mpptCount")
+      electricGenerationIntegerDefinition("MPPT 路数", "mpptCount"),
+      electricGenerationFloatDefinition("参考辐照度", "referenceIrradiance"),
+      electricGenerationFloatDefinition("参考温度", "referenceTemperature"),
+      electricGenerationFloatDefinition("温度系数", "temperatureCoefficient")
     ],
     commonParams: {
       pvModuleModel: "Mono-550W",
-      moduleEfficiency: "0.213"
+      moduleEfficiency: "0.213",
+      referenceIrradiance: "1000",
+      referenceTemperature: "25",
+      temperatureCoefficient: "-0.004"
     },
     paramsByTerminalType: {
       ac: { arrayArea: "100000", mpptCount: "100" },
@@ -3945,6 +3951,8 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   rated_wind_speed: "float",
   reactive_power: "float",
   reactor_thermal_power: "float",
+  reference_irradiance: "float",
+  reference_temperature: "float",
   return_temperature: "float",
   rotor_diameter: "float",
   shift: "float",
@@ -3963,6 +3971,7 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   tap2: "float",
   tap3: "float",
   temperature: "float",
+  temperature_coefficient: "float",
   thermal_efficiency: "float",
   v_ac_set: "float",
   v_dc_set: "float",

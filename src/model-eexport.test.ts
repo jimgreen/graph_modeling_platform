@@ -1768,7 +1768,10 @@ test("uses the exact Chinese parameter labels for electric generation definition
     ],
     pv: [
       { cnName: "光伏组件型号", enName: "pv_module_model" },
-      { cnName: "MPPT 路数", enName: "mppt_count" }
+      { cnName: "MPPT 路数", enName: "mppt_count" },
+      { cnName: "参考辐照度", enName: "reference_irradiance" },
+      { cnName: "参考温度", enName: "reference_temperature" },
+      { cnName: "温度系数", enName: "temperature_coefficient" }
     ],
     thermal: [],
     diesel: [
@@ -2166,10 +2169,10 @@ test("keeps every built-in device parameter aligned with its semantic type and n
     "medium_vbase", "module_efficiency", "outlet_pressure", "output_voltage", "p_ac_set", "p_dc_set", "p_max", "p_min", "p_set", "pbase", "power",
     "power_factor", "pressure", "primary_loop_pressure", "pv0", "pv1", "pv2", "q_ac_set", "q_max", "q_min", "q_set", "qbase", "qv0",
     "qv1", "qv2", "r", "r1", "r2", "r3", "rated_capacity", "rated_current", "rated_power", "rated_speed",
-    "rated_voltage", "rated_wind_speed", "reactive_power", "reactor_thermal_power", "return_temperature", "rotor_diameter",
+    "rated_voltage", "rated_wind_speed", "reactive_power", "reactor_thermal_power", "reference_irradiance", "reference_temperature", "return_temperature", "rotor_diameter",
     "shift", "shift1", "shift2", "shift3", "short_circuit_capacity", "soc_lower_limit", "soc_upper_limit",
     "specific_fuel_consumption", "start_time", "state_of_charge", "supply_temperature", "tap", "tap1", "tap2", "tap3",
-    "temperature", "thermal_efficiency", "v_ac_set", "v_dc_set", "v_max", "v_min", "v_set", "vbase", "voltage", "voltage_level", "x",
+    "temperature", "temperature_coefficient", "thermal_efficiency", "v_ac_set", "v_dc_set", "v_max", "v_min", "v_set", "vbase", "voltage", "voltage_level", "x",
     "x1", "x2", "x3", "x_pu"
   ]);
   const integerNames = new Set(["battery_rack_count", "idx", "isl", "mppt_count"]);

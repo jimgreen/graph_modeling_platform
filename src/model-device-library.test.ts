@@ -1776,7 +1776,10 @@ test("defines family-specific electric generation parameters and engineering def
       pv_module_model: "string",
       module_efficiency: "float",
       array_area: "float",
-      mppt_count: "integer"
+      mppt_count: "integer",
+      reference_irradiance: "float",
+      reference_temperature: "float",
+      temperature_coefficient: "float"
     },
     thermal: {
       thermal_unit_model: "string",
@@ -1850,11 +1853,19 @@ test("defines family-specific electric generation parameters and engineering def
     main_steam_pressure: "25",
     main_steam_temperature: "600"
   });
-  const pv = createDefaultNode("ac-pv-source", { x: 100, y: 100 });
-  expect(pv.params).toMatchObject({
-    module_efficiency: "0.213",
-    array_area: "100000"
-  });
+  for (const [kind, expectedArea] of [
+    ["ac-pv-source", "100000"],
+    ["dc-pv-source", "25000"]
+  ] as const) {
+    const pv = createDefaultNode(kind, { x: 100, y: 100 });
+    expect(pv.params).toMatchObject({
+      module_efficiency: "0.213",
+      array_area: expectedArea,
+      reference_irradiance: "1000",
+      reference_temperature: "25",
+      temperature_coefficient: "-0.004"
+    });
+  }
   const diesel = createDefaultNode("ac-diesel-source", { x: 100, y: 100 });
   expect(diesel.params).toMatchObject({
     specific_fuel_consumption: "200",
