@@ -1119,8 +1119,8 @@ test("keeps canonical transformer E fields as export defaults when metadata is a
     exportName: "r"
   });
   expect(resolveDeviceParameterDefinitionExportSettings(transformer.kind, transformer.params, rated_capacityDefinition!)).toEqual({
-    exportEnabled: false,
-    exportName: ""
+    exportEnabled: true,
+    exportName: "rated_capacity"
   });
   expect(getEParameterKeys(transformer.kind, transformer.params)).toEqual(E_SECTION_COLUMNS.ACTransformer);
 });
@@ -1328,12 +1328,16 @@ test("maps graphical AC and DC buses to real bus sections in E parameter files",
     idx: "21",
     name: "ac_bus",
     node: "1",
+    v_max: "1.1",
+    v_min: "0.9",
     run_stat: "1"
   });
   expect(dcRealBus).toEqual({
     idx: "1",
     name: "dc_bus",
     node: "1",
+    v_max: "1.1",
+    v_min: "0.9",
     run_stat: "1"
   });
 });
@@ -1410,6 +1414,12 @@ test("exports a three-winding transformer as one independent device with three-s
     "t2_node",
     "t3_node",
     "neutral_node",
+    "high_rated_capacity",
+    "high_i_max",
+    "medium_rated_capacity",
+    "medium_i_max",
+    "low_rated_capacity",
+    "low_i_max",
     "r1",
     "x1",
     "gt1",
@@ -1437,6 +1447,12 @@ test("exports a three-winding transformer as one independent device with three-s
     t2_node: "2",
     t3_node: "3",
     neutral_node: "0",
+    high_rated_capacity: "90",
+    high_i_max: "0",
+    medium_rated_capacity: "90",
+    medium_i_max: "0",
+    low_rated_capacity: "90",
+    low_i_max: "0",
     r1: "0.01",
     x1: "0.11",
     gt1: "0.001",
@@ -1501,6 +1517,8 @@ test("defines AC and DC generator operating limits as inherited float defaults a
     "q_max",
     "q_min",
     "v_set",
+    "v_max",
+    "v_min",
     "alpha",
     "run_stat"
   ]);
@@ -1516,6 +1534,8 @@ test("defines AC and DC generator operating limits as inherited float defaults a
     "p_max",
     "p_min",
     "i_set",
+    "v_max",
+    "v_min",
     "run_stat"
   ]);
 
@@ -2109,20 +2129,20 @@ test("infers expected value types for built-in component definitions", () => {
 
 test("keeps every built-in device parameter aligned with its semantic type and numeric default", () => {
   const floatNames = new Set([
-    "ac_voltage", "active_power", "alpha", "angle", "array_area", "b", "b_set", "bt", "bt1", "bt2", "bt3",
-    "capacity", "capacity_factor", "charge_discharge_efficiency", "cut_in_wind_speed", "cut_out_wind_speed", "dc_voltage",
+    "ac_i_max", "ac_p_max", "ac_p_min", "ac_v_max", "ac_v_min", "ac_voltage", "active_power", "alpha", "angle", "array_area", "b", "b_set", "bt", "bt1", "bt2", "bt3",
+    "capacity", "capacity_factor", "charge_discharge_efficiency", "cut_in_wind_speed", "cut_out_wind_speed", "dc_i_max", "dc_p_max", "dc_p_min", "dc_v_max", "dc_v_min", "dc_voltage",
     "design_flow", "design_head", "efficiency", "energy_capacity", "flow_rate", "frequency", "fuel_tank_capacity",
     "g_set", "generator_efficiency", "gt", "gt1", "gt2", "gt3", "head", "heat_demand", "heat_power", "heat_rate",
-    "high_rated_capacity", "high_vbase", "hub_height", "hydrogen_demand", "hydrogen_flow", "impedance", "inlet_pressure",
-    "input_voltage", "i_q_set", "i_set", "i_v_set", "j_q_set", "j_v_set", "length", "low_rated_capacity", "low_vbase", "main_steam_pressure",
-    "main_steam_temperature", "max_charge_power", "max_current", "max_discharge_power", "medium_rated_capacity",
+    "high_i_max", "high_rated_capacity", "high_vbase", "hub_height", "hydrogen_demand", "hydrogen_flow", "impedance", "inlet_pressure",
+    "i_i_max", "i_max", "input_voltage", "i_p_max", "i_p_min", "i_q_set", "i_set", "i_v_max", "i_v_min", "i_v_set", "j_i_max", "j_p_max", "j_p_min", "j_q_set", "j_v_max", "j_v_min", "j_v_set", "length", "low_i_max", "low_rated_capacity", "low_vbase", "main_steam_pressure",
+    "main_steam_temperature", "max_charge_power", "max_current", "max_discharge_power", "medium_i_max", "medium_rated_capacity",
     "medium_vbase", "module_efficiency", "outlet_pressure", "output_voltage", "p_ac_set", "p_max", "p_min", "p_set", "pbase", "power",
     "power_factor", "pressure", "primary_loop_pressure", "pv0", "pv1", "pv2", "q_ac_set", "q_max", "q_min", "q_set", "qbase", "qv0",
     "qv1", "qv2", "r", "r1", "r2", "r3", "rated_capacity", "rated_current", "rated_power", "rated_speed",
     "rated_voltage", "rated_wind_speed", "reactive_power", "reactor_thermal_power", "return_temperature", "rotor_diameter",
     "shift", "shift1", "shift2", "shift3", "short_circuit_capacity", "soc_lower_limit", "soc_upper_limit",
     "specific_fuel_consumption", "start_time", "state_of_charge", "supply_temperature", "tap", "tap1", "tap2", "tap3",
-    "temperature", "thermal_efficiency", "v_ac_set", "v_dc_set", "v_set", "vbase", "voltage", "voltage_level", "x",
+    "temperature", "thermal_efficiency", "v_ac_set", "v_dc_set", "v_max", "v_min", "v_set", "vbase", "voltage", "voltage_level", "x",
     "x1", "x2", "x3", "x_pu"
   ]);
   const integerNames = new Set(["battery_rack_count", "idx", "isl", "mppt_count"]);

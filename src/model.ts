@@ -1731,6 +1731,15 @@ export function mappedLegacyEValue(key: string, params: Record<string, string>) 
   if (key === "rated_capacity" || key === "rated_power") {
     return deviceParamValue(params, "rated_capacity") ?? deviceParamValue(params, "rated_power") ?? "";
   }
+  const legacyCurrentKey = ({
+    i_max: "max_current",
+    high_i_max: "high_max_current",
+    medium_i_max: "medium_max_current",
+    low_i_max: "low_max_current"
+  } as Record<string, string>)[key];
+  if (legacyCurrentKey) {
+    return deviceParamValue(params, key) ?? deviceParamValue(params, legacyCurrentKey) ?? "";
+  }
   if (key === "pbase") return params.pbase ?? deviceParamValue(params, "rated_active_power") ?? "";
   if (key === "qbase") return params.qbase ?? deviceParamValue(params, "rated_reactive_power") ?? "";
   if (key === "r") return params.r ?? deviceParamValue(params, "resistance_pu") ?? "";
@@ -1881,6 +1890,8 @@ export const twoWindingTransformerParameterDefinitions: DeviceParameterDefinitio
   { cnName: "高压侧电压等级", enName: "highVbase", valueType: "float", typicalValue: "0", readonly: false },
   { cnName: "低压侧电压等级", enName: "lowVbase", valueType: "float", typicalValue: "0", readonly: false },
   { cnName: "额定容量", enName: "ratedCapacity", valueType: "float", typicalValue: "50", readonly: false },
+  { cnName: "高压侧最大电流", enName: "highIMax", valueType: "float", typicalValue: "0", readonly: false },
+  { cnName: "低压侧最大电流", enName: "lowIMax", valueType: "float", typicalValue: "0", readonly: false },
   { cnName: "相移（度）", enName: "shift", valueType: "float", typicalValue: "0", readonly: false }
 ];
 
@@ -1909,10 +1920,13 @@ export const threeWindingTransformerParameterDefinitions: DeviceParameterDefinit
   readonlyIntegerDefinition("中性点节点号", "neutral_node"),
   { cnName: "高压侧电压等级", enName: "highVbase", valueType: "float", typicalValue: "0", readonly: false },
   { cnName: "高压侧额定容量", enName: "highRatedCapacity", valueType: "float", typicalValue: "90", readonly: false },
+  { cnName: "高压侧最大电流", enName: "highIMax", valueType: "float", typicalValue: "0", readonly: false },
   { cnName: "中压侧电压等级", enName: "mediumVbase", valueType: "float", typicalValue: "0", readonly: false },
   { cnName: "中压侧额定容量", enName: "mediumRatedCapacity", valueType: "float", typicalValue: "90", readonly: false },
+  { cnName: "中压侧最大电流", enName: "mediumIMax", valueType: "float", typicalValue: "0", readonly: false },
   { cnName: "低压侧电压等级", enName: "lowVbase", valueType: "float", typicalValue: "0", readonly: false },
-  { cnName: "低压侧额定容量", enName: "lowRatedCapacity", valueType: "float", typicalValue: "90", readonly: false }
+  { cnName: "低压侧额定容量", enName: "lowRatedCapacity", valueType: "float", typicalValue: "90", readonly: false },
+  { cnName: "低压侧最大电流", enName: "lowIMax", valueType: "float", typicalValue: "0", readonly: false }
 ];
 
 const THREE_WINDING_TRANSFORMER_E_DEFAULT_PARAMS = {
@@ -2458,6 +2472,8 @@ function createElectricGenerationDeviceTemplate(
     ratedVoltage: electricalDefaults.ratedVoltage,
     pMax: "0",
     pMin: "0",
+    vMax: "1.1",
+    vMin: "0.9",
     ...(terminalType === "ac" ? { qMax: "0", qMin: "0" } : {}),
     ...family.commonParams,
     ...(family.paramsByTerminalType?.[terminalType] ?? {})
@@ -2478,6 +2494,8 @@ function createElectricGenerationDeviceTemplate(
       { cnName: "设备状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: false },
       { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false },
       { cnName: "发电类型", enName: "sourceType", valueType: "string", typicalValue: family.sourceType, readonly: true },
+      { cnName: "电压上限", enName: "vMax", valueType: "float", typicalValue: "1.1", readonly: false },
+      { cnName: "电压下限", enName: "vMin", valueType: "float", typicalValue: "0.9", readonly: false },
       ...family.parameterDefinitions.map((definition) => ({
         ...definition,
         typicalValue: params[definition.enName] ?? ""
@@ -2934,13 +2952,17 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       pMax: "0",
       pMin: "0",
       qMax: "0",
-      qMin: "0"
+      qMin: "0",
+      vMax: "1.1",
+      vMin: "0.9"
     },
     terminalType: "ac",
     terminalCount: 1,
     parameterDefinitions: [
       { cnName: "额定容量", enName: "ratedCapacity", valueType: "string", typicalValue: "10 MW", readonly: false },
       { cnName: "额定电压", enName: "ratedVoltage", valueType: "string", typicalValue: "10 kV", readonly: false },
+      { cnName: "电压上限", enName: "vMax", valueType: "float", typicalValue: "1.1", readonly: false },
+      { cnName: "电压下限", enName: "vMin", valueType: "float", typicalValue: "0.9", readonly: false },
       { cnName: "频率", enName: "frequency", valueType: "string", typicalValue: "50 Hz", readonly: false },
       { cnName: "短路容量", enName: "shortCircuitCapacity", valueType: "string", typicalValue: "500 MVA", readonly: false },
       { cnName: "有功上限", enName: "pMax", valueType: "float", typicalValue: "0", readonly: false },
@@ -3342,7 +3364,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流线路",
     categoryLibrary: "交流设备",
     size: { width: 108, height: 36 },
-    params: { r: "0.1", x: "1.0", b: "0.0" },
+    params: { ratedCapacity: "0", iMax: "0", r: "0.1", x: "1.0", b: "0.0" },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -3351,7 +3373,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流线路（自适应）",
     categoryLibrary: "交流设备",
     size: { width: 150, height: 36 },
-    params: { r: "0.1", x: "1.0", b: "0.0", component_type: "ACBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
+    params: { ratedCapacity: "0", iMax: "0", r: "0.1", x: "1.0", b: "0.0", component_type: "ACBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -3378,7 +3400,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流母线",
     categoryLibrary: "交流设备",
     size: { width: 120, height: 28 },
-    params: { voltageLevel: "10 kV", section: "I段" },
+    params: { voltageLevel: "10 kV", vMax: "1.1", vMin: "0.9", section: "I段" },
     terminalType: "ac",
     terminalCount: 0
   },
@@ -3387,7 +3409,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流开关",
     categoryLibrary: "交流设备",
     size: { width: 72, height: 48 },
-    params: { status: "1", ratedCurrent: "1250 A" },
+    params: { status: "1", ratedCapacity: "0", iMax: "1250 A" },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -3396,7 +3418,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "接地刀闸",
     categoryLibrary: "交流设备",
     size: { width: 78, height: 58 },
-    params: { status: "0", ratedCurrent: "1250 A" },
+    params: { status: "0", ratedCapacity: "0", iMax: "1250 A" },
     terminalType: "ac",
     terminalCount: 1,
     terminalLabels: ["交流系统端"],
@@ -3407,7 +3429,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "竖向接地刀闸",
     categoryLibrary: "交流设备",
     size: { width: 58, height: 78 },
-    params: { status: "0", ratedCurrent: "1250 A" },
+    params: { status: "0", ratedCapacity: "0", iMax: "1250 A" },
     terminalType: "ac",
     terminalCount: 1,
     terminalLabels: ["交流系统端"],
@@ -3418,7 +3440,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流断路器",
     categoryLibrary: "交流设备",
     size: { width: 78, height: 50 },
-    params: {},
+    params: { ratedCapacity: "0", iMax: "1250 A" },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -3427,7 +3449,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "盒型开关",
     categoryLibrary: "交流设备",
     size: { width: 86, height: 44 },
-    params: { status: "1", ratedCurrent: "1250 A" },
+    params: { status: "1", ratedCapacity: "0", iMax: "1250 A" },
     terminalType: "ac",
     terminalCount: 2
   },
@@ -3436,7 +3458,18 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流负荷",
     categoryLibrary: "交流设备",
     size: { width: 86, height: 58 },
-    params: { activePower: "5 MW", reactivePower: "1.2 Mvar", powerFactor: "0.95" },
+    params: {
+      activePower: "5 MW",
+      reactivePower: "1.2 Mvar",
+      powerFactor: "0.95",
+      ratedCapacity: "5 MW",
+      pMax: "5 MW",
+      pMin: "0",
+      qMax: "1.2 Mvar",
+      qMin: "0",
+      vMax: "1.1",
+      vMin: "0.9"
+    },
     terminalType: "ac",
     terminalCount: 1,
     terminalAnchors: [{ x: 0, y: -0.5 }]
@@ -3446,7 +3479,18 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "终端变负荷",
     categoryLibrary: "交流设备",
     size: { width: 92, height: 70 },
-    params: { activePower: "5 MW", reactivePower: "1.2 Mvar", powerFactor: "0.95" },
+    params: {
+      activePower: "5 MW",
+      reactivePower: "1.2 Mvar",
+      powerFactor: "0.95",
+      ratedCapacity: "5 MW",
+      pMax: "5 MW",
+      pMin: "0",
+      qMax: "1.2 Mvar",
+      qMin: "0",
+      vMax: "1.1",
+      vMin: "0.9"
+    },
     terminalType: "ac",
     terminalCount: 1,
     terminalLabels: ["交流设备端1"],
@@ -3459,6 +3503,8 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     size: { width: 92, height: 70 },
     params: {
       ratedCapacity: "50",
+      highIMax: "0",
+      lowIMax: "0",
       voltageRatio: "110/10 kV",
       impedance: "10.5%",
       r: "0.0",
@@ -3479,6 +3525,9 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     size: { width: 104, height: 76 },
     params: {
       ratedCapacity: "90",
+      highIMax: "0",
+      mediumIMax: "0",
+      lowIMax: "0",
       voltageRatio: "220/110/10 kV",
       windingType: "三绕组",
       impedance: "12.0%",
@@ -3514,13 +3563,15 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流电源",
     categoryLibrary: "直流设备",
     size: { width: 84, height: 56 },
-    params: { ratedCapacity: "10 MW", ratedVoltage: "750 V", maxCurrent: "2000 A", pMax: "0", pMin: "0" },
+    params: { ratedCapacity: "10 MW", ratedVoltage: "750 V", iMax: "2000 A", pMax: "0", pMin: "0", vMax: "1.1", vMin: "0.9" },
     terminalType: "dc",
     terminalCount: 1,
     parameterDefinitions: [
       { cnName: "额定容量", enName: "ratedCapacity", valueType: "string", typicalValue: "10 MW", readonly: false },
       { cnName: "额定电压", enName: "ratedVoltage", valueType: "string", typicalValue: "750 V", readonly: false },
-      { cnName: "最大电流", enName: "maxCurrent", valueType: "string", typicalValue: "2000 A", readonly: false },
+      { cnName: "电压上限", enName: "vMax", valueType: "float", typicalValue: "1.1", readonly: false },
+      { cnName: "电压下限", enName: "vMin", valueType: "float", typicalValue: "0.9", readonly: false },
+      { cnName: "最大电流", enName: "iMax", valueType: "string", typicalValue: "2000 A", readonly: false },
       { cnName: "有功上限", enName: "pMax", valueType: "float", typicalValue: "0", readonly: false },
       { cnName: "有功下限", enName: "pMin", valueType: "float", typicalValue: "0", readonly: false }
     ]
@@ -3531,7 +3582,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流线路",
     categoryLibrary: "直流设备",
     size: { width: 108, height: 36 },
-    params: { r: "1.0" },
+    params: { ratedCapacity: "0", iMax: "0", r: "1.0" },
     terminalType: "dc",
     terminalCount: 2
   },
@@ -3540,7 +3591,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流线路（自适应）",
     categoryLibrary: "直流设备",
     size: { width: 150, height: 36 },
-    params: { r: "1.0", component_type: "DCBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
+    params: { ratedCapacity: "0", iMax: "0", r: "1.0", component_type: "DCBranch", lineWidth: String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH) },
     terminalType: "dc",
     terminalCount: 2
   },
@@ -3567,7 +3618,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流母线",
     categoryLibrary: "直流设备",
     size: { width: 120, height: 28 },
-    params: { voltageLevel: "750 V", pole: "正负极" },
+    params: { voltageLevel: "750 V", vMax: "1.1", vMin: "0.9", pole: "正负极" },
     terminalType: "dc",
     terminalCount: 0
   },
@@ -3576,7 +3627,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流开关",
     categoryLibrary: "直流设备",
     size: { width: 72, height: 48 },
-    params: { status: "1", ratedCurrent: "1600 A" },
+    params: { status: "1", ratedCapacity: "0", iMax: "1600 A" },
     terminalType: "dc",
     terminalCount: 2
   },
@@ -3585,7 +3636,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流断路器",
     categoryLibrary: "直流设备",
     size: { width: 78, height: 50 },
-    params: {},
+    params: { ratedCapacity: "0", iMax: "1600 A" },
     terminalType: "dc",
     terminalCount: 2
   },
@@ -3594,7 +3645,15 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流负荷",
     categoryLibrary: "直流设备",
     size: { width: 86, height: 58 },
-    params: { power: "1.5 MW", voltage: "750 V" },
+    params: {
+      power: "1.5 MW",
+      voltage: "750 V",
+      ratedCapacity: "1.5 MW",
+      pMax: "1.5 MW",
+      pMin: "0",
+      vMax: "1.1",
+      vMin: "0.9"
+    },
     terminalType: "dc",
     terminalCount: 1,
     terminalAnchors: [{ x: 0, y: -0.5 }]
@@ -3604,7 +3663,21 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "DCDC变流器",
     categoryLibrary: "直流设备",
     size: { width: 112, height: 66 },
-    params: { ratedPower: "5 MW", inputVoltage: "1500 V", outputVoltage: "750 V" },
+    params: {
+      ratedCapacity: "5 MW",
+      inputVoltage: "1500 V",
+      outputVoltage: "750 V",
+      iPMax: "5 MW",
+      iPMin: "-5 MW",
+      iIMax: "0",
+      iVMax: "1.1",
+      iVMin: "0.9",
+      jPMax: "5 MW",
+      jPMin: "-5 MW",
+      jIMax: "0",
+      jVMax: "1.1",
+      jVMin: "0.9"
+    },
     terminalType: "dc",
     terminalCount: 2
   },
@@ -3613,7 +3686,21 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "ACDC变流器",
     categoryLibrary: "直流设备",
     size: { width: 112, height: 66 },
-    params: { ratedPower: "10 MW", acVoltage: "10 kV", dcVoltage: "750 V" },
+    params: {
+      ratedCapacity: "10 MW",
+      acVoltage: "10 kV",
+      dcVoltage: "750 V",
+      acPMax: "10 MW",
+      acPMin: "-10 MW",
+      acIMax: "0",
+      acVMax: "1.1",
+      acVMin: "0.9",
+      dcPMax: "10 MW",
+      dcPMin: "-10 MW",
+      dcIMax: "0",
+      dcVMax: "1.1",
+      dcVMin: "0.9"
+    },
     terminalType: "ac",
     terminalCount: 2,
     terminalTypes: ["ac", "dc"]
@@ -3623,7 +3710,21 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "DCAC变流器",
     categoryLibrary: "直流设备",
     size: { width: 112, height: 66 },
-    params: { ratedPower: "10 MW", dcVoltage: "750 V", acVoltage: "10 kV" },
+    params: {
+      ratedCapacity: "10 MW",
+      dcVoltage: "750 V",
+      acVoltage: "10 kV",
+      acPMax: "10 MW",
+      acPMin: "-10 MW",
+      acIMax: "0",
+      acVMax: "1.1",
+      acVMin: "0.9",
+      dcPMax: "10 MW",
+      dcPMin: "-10 MW",
+      dcIMax: "0",
+      dcVMax: "1.1",
+      dcVMin: "0.9"
+    },
     terminalType: "dc",
     terminalCount: 2,
     terminalTypes: ["dc", "ac"]
@@ -3633,7 +3734,19 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "ACAC变流器",
     categoryLibrary: "交流设备",
     size: { width: 112, height: 66 },
-    params: {},
+    params: {
+      ratedCapacity: "10 MW",
+      iPMax: "10 MW",
+      iPMin: "-10 MW",
+      iIMax: "0",
+      iVMax: "1.1",
+      iVMin: "0.9",
+      jPMax: "10 MW",
+      jPMin: "-10 MW",
+      jIMax: "0",
+      jVMax: "1.1",
+      jVMin: "0.9"
+    },
     terminalType: "ac",
     terminalCount: 2
   }
@@ -3700,6 +3813,32 @@ function legacyCamelCaseParamName(name: string): string {
 }
 
 const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> = {
+  i_max: "float",
+  high_i_max: "float",
+  medium_i_max: "float",
+  low_i_max: "float",
+  v_max: "float",
+  v_min: "float",
+  ac_p_max: "float",
+  ac_p_min: "float",
+  ac_i_max: "float",
+  ac_v_max: "float",
+  ac_v_min: "float",
+  dc_p_max: "float",
+  dc_p_min: "float",
+  dc_i_max: "float",
+  dc_v_max: "float",
+  dc_v_min: "float",
+  i_p_max: "float",
+  i_p_min: "float",
+  i_i_max: "float",
+  i_v_max: "float",
+  i_v_min: "float",
+  j_p_max: "float",
+  j_p_min: "float",
+  j_i_max: "float",
+  j_v_max: "float",
+  j_v_min: "float",
   idx: "integer",
   node: "integer",
   node1: "integer",
