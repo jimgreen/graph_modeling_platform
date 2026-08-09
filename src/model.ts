@@ -1638,35 +1638,20 @@ export type DcacConverterControlTypePair = {
   dc_control_type: string;
 };
 
-const DCAC_LEGACY_CONTROL_TYPE_PAIRS: Record<string, DcacConverterControlTypePair> = {
-  DCV: { ac_control_type: "PQ", dc_control_type: "V" },
-  ACV: { ac_control_type: "PH", dc_control_type: "NONE" },
-  ACP: { ac_control_type: "PQ", dc_control_type: "NONE" },
-  PH: { ac_control_type: "PH", dc_control_type: "NONE" },
-  PQ: { ac_control_type: "PQ", dc_control_type: "NONE" }
-};
-
 export function normalizeDcacAcControlTypeForE(value?: string, fallback = "PQ") {
-  const normalized = normalizeControlTypeForE(value).toUpperCase();
-  const mapped = normalized === "0" ? "NONE" : normalized === "ACV" ? "PH" : normalized === "ACP" ? "PQ" : normalized;
-  return (DCAC_AC_CONTROL_TYPES as readonly string[]).includes(mapped) ? mapped : fallback;
+  const normalized = String(value ?? "").trim().toUpperCase();
+  return (DCAC_AC_CONTROL_TYPES as readonly string[]).includes(normalized) ? normalized : fallback;
 }
 
 export function normalizeDcacDcControlTypeForE(value?: string, fallback = "V") {
-  const normalized = normalizeControlTypeForE(value).toUpperCase();
-  const mapped = normalized === "0" || normalized === "SLACK" ? "NONE" : normalized === "DCV" ? "V" : normalized;
-  return (DCAC_DC_CONTROL_TYPES as readonly string[]).includes(mapped) ? mapped : fallback;
+  const normalized = String(value ?? "").trim().toUpperCase();
+  return (DCAC_DC_CONTROL_TYPES as readonly string[]).includes(normalized) ? normalized : fallback;
 }
 
 export function dcacConverterControlTypePairForE(params: Record<string, string>): DcacConverterControlTypePair {
-  const legacyControlType = normalizeControlTypeForE(deviceParamValue(params, "control_type")).toUpperCase();
-  const legacyPair = DCAC_LEGACY_CONTROL_TYPE_PAIRS[legacyControlType];
-  if (legacyPair) {
-    return legacyPair;
-  }
   return {
-    ac_control_type: normalizeDcacAcControlTypeForE(deviceParamValue(params, "ac_control_type")),
-    dc_control_type: normalizeDcacDcControlTypeForE(deviceParamValue(params, "dc_control_type"))
+    ac_control_type: normalizeDcacAcControlTypeForE(params.ac_control_type),
+    dc_control_type: normalizeDcacDcControlTypeForE(params.dc_control_type)
   };
 }
 
@@ -3928,6 +3913,7 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   outlet_pressure: "float",
   output_voltage: "float",
   p_ac_set: "float",
+  p_dc_set: "float",
   p_max: "float",
   p_min: "float",
   p_set: "float",
@@ -4124,8 +4110,12 @@ export const CUSTOM_DEVICE_TEMPLATE_KEY = "_customDeviceTemplate";
 function normalizeDcacControlParameterDefinition(
   definition: DeviceParameterDefinition
 ): DeviceParameterDefinition | null {
+  const rawEnName = definition.enName.trim();
   const enName = toSnakeCaseDeviceParamName(definition.enName);
   if (enName === "control_type") {
+    return null;
+  }
+  if ((enName === "ac_control_type" || enName === "dc_control_type") && rawEnName !== enName) {
     return null;
   }
   if (enName !== "ac_control_type" && enName !== "dc_control_type") {
@@ -6621,6 +6611,7 @@ export function buildDefaultParams(template: DeviceTemplate): Record<string, str
       targetEquivalentResistance: "0.0",
       ac_control_type: "PQ",
       dc_control_type: "V",
+      p_dc_set: "0.0",
       v_ac_set: "0.0",
       v_dc_set: "0.0"
     })));

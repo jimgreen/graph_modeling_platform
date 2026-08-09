@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { buildSvgDocument } from "./App";
-import { createExportEFile, createExportSvg, createLoadSvgImageExportPathById } from "./appExtracted/appDeviceDefinitionFactories";
+import { createExportEFile, createExportJsonFile, createExportSvg, createExportSvgFile, createLoadSvgImageExportPathById } from "./appExtracted/appDeviceDefinitionFactories";
 import { createDefaultNode, createNodeFromTemplate, DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY, getTerminalPoint, type DeviceKind, type DeviceTemplate, type Edge } from "./model";
 import type { ProjectMeasurementConfig } from "./measurements";
 import { apiPath } from "./config";
@@ -29,16 +29,23 @@ describe("SVG export", () => {
     svg.match(new RegExp(`<path id="${id}"(?=\\s|/?>)[^>]*>`))?.[0] ?? "";
 
   test("writes E, JSON, and SVG files to one selected directory with model-based names", async () => {
+    let now = 1000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
     const buildDocument = vi.fn((_nodes: unknown, _edges: unknown, _options: unknown) => "<svg/>");
     const buildEFileExport = vi.fn(() => ({ filename: "ignored-name.e", text: "<Model/>", mime: "text/plain", warnings: [] }));
     const currentProject = vi.fn(() => ({ version: 1, name: "voltage-export", nodes: [], edges: [] }));
     const directoryHandle = { name: "exports" };
     const ensureSavedBeforeExport = vi.fn(() => true);
-    const showDirectoryPicker = vi.fn(async () => directoryHandle);
+    const showDirectoryPicker = vi.fn(async () => {
+      now = 9000;
+      return directoryHandle;
+    });
     const serializeProject = vi.fn(() => '{"name":"voltage-export"}');
     const alert = vi.fn();
     const getEExportWarnings = vi.fn(() => []);
-    const writeTextFileToDirectory = vi.fn(async (_directory: unknown, _filename: string, _text: string, _mime: string) => undefined);
+    const writeTextFileToDirectory = vi.fn(async (_directory: unknown, _filename: string, _text: string, _mime: string) => {
+      now = 9500;
+    });
     const writeOperationLog = vi.fn();
     vi.stubGlobal("window", { alert, showDirectoryPicker });
     const exportSvg = createExportSvg({
@@ -95,9 +102,9 @@ describe("SVG export", () => {
     expect(writeOperationLog).toHaveBeenCalledWith("导出模型文件：voltage-export.json");
     expect(writeOperationLog).toHaveBeenCalledWith("导出图形文件：voltage-export.svg");
     expect(alert).toHaveBeenCalledOnce();
-    expect(alert).toHaveBeenCalledWith(expect.stringMatching(
-      /^E、JSON 和 SVG 文件导出成功。\n目录：exports\nE：voltage-export\.e\nJSON：voltage-export\.json\nSVG：voltage-export\.svg\n总耗时：\d+\.\d{2} 秒$/
-    ));
+    expect(alert).toHaveBeenCalledWith(
+      "E、JSON 和 SVG 文件导出成功。\n目录：exports\nE：voltage-export.e\nJSON：voltage-export.json\nSVG：voltage-export.svg\n总耗时：0.50 秒"
+    );
   });
 
   test("stops the combined export silently when directory selection is cancelled", async () => {
@@ -199,22 +206,171 @@ describe("SVG export", () => {
     expect(writeOperationLog).toHaveBeenCalledWith("导出图形文件：partial-export.svg");
   });
 
+  test("opens the save picker before generating standalone SVG and reports after saving completes", async () => {
+    const executionOrder: string[] = [];
+    const alert = vi.fn();
+    const showGlobalMessage = vi.fn();
+    const setExportCompletionDialog = vi.fn();
+    const writeOperationLog = vi.fn();
+    const buildDocument = vi.fn(() => {
+      executionOrder.push("build-svg");
+      return "<svg/>";
+    });
+    const loadSvgImageExportPathById = vi.fn(async () => {
+      executionOrder.push("load-images");
+      return {};
+    });
+    let finishSave!: () => void;
+    const saveCompletion = new Promise<void>((resolve) => {
+      finishSave = resolve;
+    });
+    let now = 1000;
+    const saveLazyTextFile = vi.fn(async ({ loadText, onSaveTargetReady }: { loadText: () => Promise<string> | string; onSaveTargetReady?: () => void }) => {
+      executionOrder.push("save-picker");
+      const text = await loadText();
+      expect(text).toBe("<svg/>");
+      now = 3000;
+      onSaveTargetReady?.();
+      executionOrder.push("save-target-ready");
+      executionOrder.push("write-svg");
+      await saveCompletion;
+      executionOrder.push("close-svg");
+      return true;
+    });
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    vi.stubGlobal("window", { alert });
+    const exportSvgFile = createExportSvgFile({
+      DEFAULT_CANVAS_BACKGROUND: "#ffffff",
+      activeLayerId: "default-layer",
+      backgroundPageRender: null,
+      buildSvgDocument: buildDocument,
+      canvasBackgroundColor: "#ffffff",
+      canvasBackgroundImageUrl: "",
+      canvasBounds: { width: 320, height: 180 },
+      colorPalette: {},
+      edges: [],
+      ensureSavedBeforeExport: () => true,
+      layers: [],
+      libraryTemplates: [],
+      loadSvgImageExportPathById,
+      measurementConfig: {},
+      nodes: [],
+      projectMeasurements: [],
+      projectName: "模型",
+      safeFilePart: (value: string) => value,
+      saveLazyTextFile,
+      setExportCompletionDialog,
+      showGlobalMessage,
+      writeOperationLog
+    });
+
+    const exportPromise = exportSvgFile();
+
+    await vi.waitFor(() => expect(buildDocument).toHaveBeenCalledOnce());
+    expect(executionOrder[0]).toBe("save-picker");
+    expect(setExportCompletionDialog).not.toHaveBeenCalled();
+
+    await vi.waitFor(() => expect(executionOrder).toContain("save-target-ready"));
+    now = 4500;
+    finishSave();
+    await exportPromise;
+
+    expect(writeOperationLog).toHaveBeenCalledWith("导出图形文件：模型.svg");
+    expect(showGlobalMessage).not.toHaveBeenCalled();
+    expect(setExportCompletionDialog).toHaveBeenCalledWith({
+      title: "SVG 文件导出完成",
+      message: "SVG 文件导出成功：模型.svg；总耗时：1.50 秒"
+    });
+    expect(alert).not.toHaveBeenCalled();
+    expect(executionOrder).toEqual(["save-picker", "load-images", "build-svg", "save-target-ready", "write-svg", "close-svg"]);
+  });
+
+  test("generates standalone JSON while the save target is being chosen and reports after saving completes", async () => {
+    const executionOrder: string[] = [];
+    const alert = vi.fn();
+    const showGlobalMessage = vi.fn();
+    const setExportCompletionDialog = vi.fn();
+    const writeOperationLog = vi.fn();
+    const currentProject = vi.fn(() => {
+      executionOrder.push("snapshot-json");
+      return { version: 1, name: "模型", nodes: [], edges: [] };
+    });
+    const serializeProject = vi.fn((project: unknown) => {
+      executionOrder.push("serialize-json");
+      return JSON.stringify(project);
+    });
+    let finishSave!: () => void;
+    const saveCompletion = new Promise<void>((resolve) => {
+      finishSave = resolve;
+    });
+    let now = 2000;
+    const saveLazyTextFile = vi.fn(async ({ loadText, onSaveTargetReady }: { loadText: () => Promise<string> | string; onSaveTargetReady?: () => void }) => {
+      executionOrder.push("save-picker");
+      await loadText();
+      now = 4000;
+      onSaveTargetReady?.();
+      executionOrder.push("save-target-ready");
+      executionOrder.push("write-json");
+      await saveCompletion;
+      executionOrder.push("close-json");
+      return true;
+    });
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    vi.stubGlobal("window", { alert });
+    const exportJsonFile = createExportJsonFile({
+      currentProject,
+      ensureSavedBeforeExport: () => true,
+      projectName: "模型",
+      safeFilePart: (value: string) => value,
+      saveLazyTextFile,
+      serializeProject,
+      setExportCompletionDialog,
+      showGlobalMessage,
+      writeOperationLog
+    });
+
+    const exportPromise = exportJsonFile();
+
+    await vi.waitFor(() => expect(serializeProject).toHaveBeenCalledOnce());
+    expect(executionOrder[0]).toBe("save-picker");
+    expect(setExportCompletionDialog).not.toHaveBeenCalled();
+
+    await vi.waitFor(() => expect(executionOrder).toContain("save-target-ready"));
+    now = 5250;
+    finishSave();
+    await exportPromise;
+
+    expect(writeOperationLog).toHaveBeenCalledWith("导出模型文件：模型.json");
+    expect(showGlobalMessage).not.toHaveBeenCalled();
+    expect(setExportCompletionDialog).toHaveBeenCalledWith({
+      title: "JSON 文件导出完成",
+      message: "JSON 文件导出成功：模型.json；总耗时：1.25 秒"
+    });
+    expect(alert).not.toHaveBeenCalled();
+    expect(executionOrder).toEqual(["save-picker", "snapshot-json", "serialize-json", "save-target-ready", "write-json", "close-json"]);
+  });
+
   test("reports successful E file export after saving completes", async () => {
     const alert = vi.fn();
     const writeOperationLog = vi.fn();
     const showGlobalMessage = vi.fn();
+    const setExportCompletionDialog = vi.fn();
     const buildEFileExport = vi.fn(() => ({ filename: "模型.e", text: "<Model/>", mime: "text/plain" }));
     let finishSave!: () => void;
     const saveCompletion = new Promise<void>((resolve) => {
       finishSave = resolve;
     });
-    const saveLazyTextFile = vi.fn(async ({ loadText }: { loadText: () => Promise<string> | string }) => {
+    let now = 1000;
+    let saveTargetReady = false;
+    const saveLazyTextFile = vi.fn(async ({ loadText, onSaveTargetReady }: { loadText: () => Promise<string> | string; onSaveTargetReady?: () => void }) => {
       await loadText();
+      now = 3000;
+      onSaveTargetReady?.();
+      saveTargetReady = true;
       await saveCompletion;
       return true;
     });
-    const exportPointerDownAtRef = { current: 1000 };
-    vi.spyOn(performance, "now").mockReturnValue(2500);
+    vi.spyOn(performance, "now").mockImplementation(() => now);
     vi.stubGlobal("window", { alert });
     const exportEFile = createExportEFile({
       activeSchemeKey: "scheme-1",
@@ -222,12 +378,12 @@ describe("SVG export", () => {
       currentProject: () => ({ version: 1, name: "模型", nodes: [], edges: [] }),
       edges: [],
       ensureSavedBeforeExport: () => true,
-      exportPointerDownAtRef,
       getEExportWarnings: () => [],
       nodes: [],
       projectName: "模型",
       saveLazyTextFile,
       schemePathForScheme: () => ["主方案", "子方案"],
+      setExportCompletionDialog,
       showGlobalMessage,
       writeOperationLog
     });
@@ -238,13 +394,18 @@ describe("SVG export", () => {
     expect(showGlobalMessage).not.toHaveBeenCalled();
     expect(alert).not.toHaveBeenCalled();
 
+    await vi.waitFor(() => expect(saveTargetReady).toBe(true));
+    now = 4500;
     finishSave();
     await exportPromise;
 
     expect(writeOperationLog).toHaveBeenCalledWith("导出模型文件：模型.e");
-    expect(showGlobalMessage).toHaveBeenCalledWith("E 文件导出成功：模型.e；总耗时：1.50 秒", "success");
-    expect(alert).toHaveBeenCalledWith("E 文件导出成功：模型.e；总耗时：1.50 秒");
-    expect(exportPointerDownAtRef.current).toBe(0);
+    expect(showGlobalMessage).not.toHaveBeenCalled();
+    expect(setExportCompletionDialog).toHaveBeenCalledWith({
+      title: "E 文件导出完成",
+      message: "E 文件导出成功：模型.e；总耗时：1.50 秒"
+    });
+    expect(alert).not.toHaveBeenCalled();
     expect(buildEFileExport).toHaveBeenCalledWith(
       expect.anything(),
       ["主方案", "子方案"],
@@ -256,6 +417,7 @@ describe("SVG export", () => {
     const alert = vi.fn();
     const writeOperationLog = vi.fn();
     const showGlobalMessage = vi.fn();
+    const setExportCompletionDialog = vi.fn();
     const saveLazyTextFile = vi.fn(async ({ loadText }: { loadText: () => Promise<string> | string }) => {
       await loadText();
       return false;
@@ -270,6 +432,7 @@ describe("SVG export", () => {
       nodes: [],
       projectName: "模型",
       saveLazyTextFile,
+      setExportCompletionDialog,
       showGlobalMessage,
       writeOperationLog
     });
@@ -278,6 +441,7 @@ describe("SVG export", () => {
 
     expect(writeOperationLog).not.toHaveBeenCalled();
     expect(showGlobalMessage).not.toHaveBeenCalled();
+    expect(setExportCompletionDialog).not.toHaveBeenCalled();
     expect(alert).not.toHaveBeenCalled();
   });
 

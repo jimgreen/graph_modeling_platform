@@ -1,5 +1,7 @@
 // 文件下载与保存工具函数
 
+import { apiPath } from "./config";
+
 export function downloadText(filename: string, text: string, mime: string) {
   const blob = new Blob([text], { type: mime });
   downloadBlob(filename, blob);
@@ -48,6 +50,8 @@ export type TextSaveOptions = {
   mime: string;
   description: string;
   extensions: string[];
+  onSaveTargetReady?: () => void;
+  preferNativeDialog?: boolean;
 };
 export type LazyTextSaveOptions = Omit<TextSaveOptions, "text"> & {
   loadText: () => Promise<string> | string;
@@ -65,14 +69,122 @@ export type LazyBlobSaveOptions = Omit<BlobSaveOptions, "blob"> & {
 };
 
 const EXPORT_SAVE_PICKER_ID = "model-export";
+const LOCAL_NATIVE_EXPORT_HOSTNAMES = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+const NATIVE_EXPORT_SELECT_PATH = "/exports/native/select-file";
+const NATIVE_EXPORT_WRITE_PATH = "/exports/native/write-text";
 
 export function isPickerAbort(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
+function canUseNativeExportDialog(options: Pick<TextSaveOptions, "preferNativeDialog">) {
+  if (!options.preferNativeDialog || typeof fetch !== "function") {
+    return false;
+  }
+  const hostname = String(window.location?.hostname ?? "").trim().toLowerCase();
+  const userAgent = typeof navigator === "undefined" ? "" : String(navigator.userAgent ?? "");
+  return LOCAL_NATIVE_EXPORT_HOSTNAMES.has(hostname) && /windows/iu.test(userAgent);
+}
+
+async function responseErrorMessage(response: Response, fallback: string) {
+  try {
+    const payload = await response.json() as { error?: unknown };
+    const message = String(payload?.error ?? "").trim();
+    return message || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function saveLazyTextFileWithNativeDialog(
+  options: LazyTextSaveOptions,
+  notifySaveTargetReady: () => void
+): Promise<boolean> {
+  const selectPromise = fetch(apiPath(NATIVE_EXPORT_SELECT_PATH), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      filename: options.filename,
+      description: options.description,
+      extensions: options.extensions,
+      title: "另存为"
+    })
+  });
+  const textPromise = Promise.resolve().then(options.loadText);
+  void textPromise.catch(() => undefined);
+
+  const fallbackToBrowserDownload = async (message: string) => {
+    const text = await textPromise;
+    notifySaveTargetReady();
+    if (message) {
+      window.alert(message);
+    }
+    downloadText(options.filename, text, options.mime);
+    return true;
+  };
+
+  let selectResponse: Response;
+  try {
+    selectResponse = await selectPromise;
+  } catch {
+    return fallbackToBrowserDownload("本地快速保存服务不可用，已改为浏览器下载。");
+  }
+  if (!selectResponse.ok) {
+    const message = await responseErrorMessage(selectResponse, "本地快速保存服务不可用，已改为浏览器下载。");
+    return fallbackToBrowserDownload(`${message}\n已改为浏览器下载。`);
+  }
+  const selection = await selectResponse.json() as {
+    cancelled?: boolean;
+    token?: string;
+  };
+  if (selection.cancelled) {
+    return false;
+  }
+  const token = String(selection.token ?? "").trim();
+  if (!token) {
+    return fallbackToBrowserDownload("本地快速保存没有返回有效目标，已改为浏览器下载。");
+  }
+
+  notifySaveTargetReady();
+  const text = await textPromise;
+  let writeResponse: Response;
+  try {
+    writeResponse = await fetch(`${apiPath(NATIVE_EXPORT_WRITE_PATH)}?token=${encodeURIComponent(token)}`, {
+      method: "POST",
+      headers: { "content-type": `${options.mime}; charset=utf-8` },
+      body: text
+    });
+  } catch {
+    window.alert("写入导出文件失败，已改为浏览器下载。");
+    downloadText(options.filename, text, options.mime);
+    return true;
+  }
+  if (!writeResponse.ok) {
+    const message = await responseErrorMessage(writeResponse, "写入导出文件失败。");
+    window.alert(`${message}\n已改为浏览器下载。`);
+    downloadText(options.filename, text, options.mime);
+  }
+  return true;
+}
+
 export async function saveTextFile(options: TextSaveOptions): Promise<boolean> {
+  if (canUseNativeExportDialog(options)) {
+    return saveLazyTextFile({
+      ...options,
+      loadText: () => options.text
+    });
+  }
+  let saveTargetReady = false;
+  const notifySaveTargetReady = () => {
+    if (saveTargetReady) {
+      return;
+    }
+    saveTargetReady = true;
+    options.onSaveTargetReady?.();
+  };
   const picker = (window as SaveFilePickerWindow).showSaveFilePicker;
   if (typeof picker !== "function") {
+    notifySaveTargetReady();
     downloadText(options.filename, options.text, options.mime);
     return true;
   }
@@ -91,6 +203,7 @@ export async function saveTextFile(options: TextSaveOptions): Promise<boolean> {
       ],
       excludeAcceptAllOption: false
     });
+    notifySaveTargetReady();
     const writable = await handle.createWritable();
     await writable.write(options.text);
     await writable.close();
@@ -106,8 +219,20 @@ export async function saveTextFile(options: TextSaveOptions): Promise<boolean> {
 }
 
 export async function saveLazyTextFile(options: LazyTextSaveOptions): Promise<boolean> {
+  let saveTargetReady = false;
+  const notifySaveTargetReady = () => {
+    if (saveTargetReady) {
+      return;
+    }
+    saveTargetReady = true;
+    options.onSaveTargetReady?.();
+  };
+  if (canUseNativeExportDialog(options)) {
+    return saveLazyTextFileWithNativeDialog(options, notifySaveTargetReady);
+  }
   const picker = (window as SaveFilePickerWindow).showSaveFilePicker;
   if (typeof picker !== "function") {
+    notifySaveTargetReady();
     downloadText(options.filename, await options.loadText(), options.mime);
     return true;
   }
@@ -130,6 +255,7 @@ export async function saveLazyTextFile(options: LazyTextSaveOptions): Promise<bo
       excludeAcceptAllOption: false
     });
   } catch (error) {
+    notifySaveTargetReady();
     const text = await options.loadText();
     window.alert("打开保存窗口失败，已改为浏览器下载。");
     downloadText(options.filename, text, options.mime);
@@ -148,12 +274,14 @@ export async function saveLazyTextFile(options: LazyTextSaveOptions): Promise<bo
     if (isPickerAbort(error)) {
       return false;
     }
+    notifySaveTargetReady();
     const text = await textPromise;
     window.alert("打开保存窗口失败，已改为浏览器下载。");
     downloadText(options.filename, text, options.mime);
     return true;
   }
 
+  notifySaveTargetReady();
   const text = await textPromise;
   try {
     const writable = await handle.createWritable();
@@ -164,6 +292,7 @@ export async function saveLazyTextFile(options: LazyTextSaveOptions): Promise<bo
     if (isPickerAbort(error)) {
       return false;
     }
+    notifySaveTargetReady();
     window.alert("保存文件失败，已改为浏览器下载。");
     downloadText(options.filename, text, options.mime);
     return true;

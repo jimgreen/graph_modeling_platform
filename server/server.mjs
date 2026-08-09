@@ -8,6 +8,11 @@ import { promisify } from "node:util";
 import { createHash } from "node:crypto";
 import AdmZip from "adm-zip";
 import { apiPrefix, apiPath, escapeRegExp, backendPort, host, frontendPrefix, stripFrontendBase } from "./config.mjs";
+import {
+  NativeExportSaveError,
+  createNativeExportSaveService,
+  isAllowedNativeExportOrigin
+} from "./nativeExportSave.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = resolve(__dirname, "..");
@@ -159,7 +164,7 @@ export const eSectionColumns = {
     "run_stat"
   ],
   DCDCConverter: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_p_max", "i_p_min", "i_i_max", "i_v_max", "i_v_min", "j_p_max", "j_p_min", "j_i_max", "j_v_max", "j_v_min", "r1", "r2", "i_control_type", "j_control_type", "p_set", "i_set", "v_set", "run_stat"],
-  DCACConverter: ["idx", "name", "ac_node", "dc_node", "rated_capacity", "ac_p_max", "ac_p_min", "ac_i_max", "ac_v_max", "ac_v_min", "dc_p_max", "dc_p_min", "dc_i_max", "dc_v_max", "dc_v_min", "r1", "r2", "ac_control_type", "dc_control_type", "p_ac_set", "q_ac_set", "v_ac_set", "v_dc_set", "run_stat"],
+  DCACConverter: ["idx", "name", "ac_node", "dc_node", "rated_capacity", "ac_p_max", "ac_p_min", "ac_i_max", "ac_v_max", "ac_v_min", "dc_p_max", "dc_p_min", "dc_i_max", "dc_v_max", "dc_v_min", "r1", "r2", "ac_control_type", "dc_control_type", "p_ac_set", "q_ac_set", "v_ac_set", "p_dc_set", "v_dc_set", "run_stat"],
   ACACConverter: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_p_max", "i_p_min", "i_i_max", "i_v_max", "i_v_min", "j_p_max", "j_p_min", "j_i_max", "j_v_max", "j_v_min", "r1", "r2", "i_control_type", "j_control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"],
   HydroSource: ["idx", "name", "node", "run_stat"],
   HydroLoad: ["idx", "name", "node", "run_stat"],
@@ -273,6 +278,7 @@ const eFloatColumns = new Set([
   "tap3",
   "shift3",
   "p_ac_set",
+  "p_dc_set",
   "q_ac_set",
   "v_ac_set",
   "v_dc_set",
@@ -1015,6 +1021,49 @@ async function readJsonBody(request, maxBodyBytes = maxImageBodyBytes, oversizeM
   return JSON.parse(body || "{}");
 }
 
+async function handleSelectNativeExportFile(request, response, nativeExportSaveService) {
+  if (!isAllowedNativeExportOrigin(request)) {
+    sendError(response, 403, "仅允许本机页面调用快速另存为接口。");
+    return;
+  }
+  const payload = await readJsonBody(request, 64 * 1024, "另存为参数过大。");
+  try {
+    const result = await nativeExportSaveService.selectFile(payload);
+    if (!result.supported) {
+      sendError(response, 501, "当前运行环境不支持本地快速另存为。");
+      return;
+    }
+    sendJson(response, 200, result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "打开系统另存为窗口失败。";
+    sendError(response, 500, message);
+  }
+}
+
+async function handleWriteNativeExportText(url, request, response, nativeExportSaveService) {
+  if (!isAllowedNativeExportOrigin(request)) {
+    sendError(response, 403, "仅允许本机页面调用快速另存为接口。");
+    return;
+  }
+  const token = String(url.searchParams.get("token") ?? "").trim();
+  if (!token) {
+    sendError(response, 400, "缺少另存为目标令牌。");
+    return;
+  }
+  const bytes = await readRawBody(request, maxSchemeBodyBytes, "导出文件过大，最大支持 64MB。");
+  try {
+    const result = await nativeExportSaveService.writeText(token, bytes);
+    sendJson(response, 200, { ok: true, ...result });
+  } catch (error) {
+    if (error instanceof NativeExportSaveError && error.code === "invalid-token") {
+      sendError(response, 404, error.message);
+      return;
+    }
+    const message = error instanceof Error ? error.message : "写入导出文件失败。";
+    sendError(response, 500, message);
+  }
+}
+
 function parseDataUrl(dataUrl) {
   const match = /^data:([^;,]+);base64,(.+)$/u.exec(dataUrl);
   if (!match) {
@@ -1325,35 +1374,20 @@ function normalizeControlTypeForE(value) {
 
 const dcacAcControlTypes = new Set(["PQ", "PV", "PH", "NONE"]);
 const dcacDcControlTypes = new Set(["P", "V", "I", "NONE"]);
-const dcacLegacyControlTypePairs = {
-  DCV: { ac_control_type: "PQ", dc_control_type: "V" },
-  ACV: { ac_control_type: "PH", dc_control_type: "NONE" },
-  ACP: { ac_control_type: "PQ", dc_control_type: "NONE" },
-  PH: { ac_control_type: "PH", dc_control_type: "NONE" },
-  PQ: { ac_control_type: "PQ", dc_control_type: "NONE" }
-};
-
 function normalizeDcacAcControlTypeForE(value, fallback = "PQ") {
-  const normalized = normalizeControlTypeForE(value).toUpperCase();
-  const mapped = normalized === "0" ? "NONE" : normalized === "ACV" ? "PH" : normalized === "ACP" ? "PQ" : normalized;
-  return dcacAcControlTypes.has(mapped) ? mapped : fallback;
+  const normalized = String(value ?? "").trim().toUpperCase();
+  return dcacAcControlTypes.has(normalized) ? normalized : fallback;
 }
 
 function normalizeDcacDcControlTypeForE(value, fallback = "V") {
-  const normalized = normalizeControlTypeForE(value).toUpperCase();
-  const mapped = normalized === "0" || normalized === "SLACK" ? "NONE" : normalized === "DCV" ? "V" : normalized;
-  return dcacDcControlTypes.has(mapped) ? mapped : fallback;
+  const normalized = String(value ?? "").trim().toUpperCase();
+  return dcacDcControlTypes.has(normalized) ? normalized : fallback;
 }
 
 function dcacConverterControlTypePairForE(params = {}) {
-  const legacyControlType = normalizeControlTypeForE(params.control_type ?? params.controlType).toUpperCase();
-  const legacyPair = dcacLegacyControlTypePairs[legacyControlType];
-  if (legacyPair) {
-    return legacyPair;
-  }
   return {
-    ac_control_type: normalizeDcacAcControlTypeForE(params.ac_control_type ?? params.acControlType),
-    dc_control_type: normalizeDcacDcControlTypeForE(params.dc_control_type ?? params.dcControlType)
+    ac_control_type: normalizeDcacAcControlTypeForE(params.ac_control_type),
+    dc_control_type: normalizeDcacDcControlTypeForE(params.dc_control_type)
   };
 }
 
@@ -1683,18 +1717,34 @@ function storedEParameterDefinitions(params = {}) {
   }
 }
 
+function isUnsupportedDcacControlField(section, enName) {
+  if (section !== "DCACConverter") {
+    return false;
+  }
+  const rawName = String(enName ?? "").trim();
+  const normalizedName = rawName
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[^A-Za-z0-9_]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
+  if (normalizedName === "control_type") {
+    return true;
+  }
+  return (normalizedName === "ac_control_type" || normalizedName === "dc_control_type")
+    && rawName !== normalizedName;
+}
+
 function legacyEColumnForDefinition(section, enName) {
   const columns = eSectionColumns[section];
   if (!columns) {
     return "";
   }
+  if (isUnsupportedDcacControlField(section, enName)) {
+    return "";
+  }
   if (columns.includes(enName)) {
     return enName;
-  }
-  if (section === "DCACConverter") {
-    if (enName === "control_type" || enName === "controlType") return "";
-    if (enName === "ac_control_type" || enName === "acControlType") return "ac_control_type";
-    if (enName === "dc_control_type" || enName === "dcControlType") return "dc_control_type";
   }
   if (section === "ACACConverter" || section === "DCDCConverter") {
     const normalizedName = String(enName ?? "")
@@ -1763,6 +1813,9 @@ function resolveEParameterFields(kind, params = {}) {
   }
   const splitControlSections = new Set(["DCACConverter", "ACACConverter", "DCDCConverter"]);
   const definitions = storedEParameterDefinitions(params).filter((definition) => {
+    if (section === "DCACConverter") {
+      return !isUnsupportedDcacControlField(section, definition.enName);
+    }
     const normalizedName = String(definition.enName ?? "")
       .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
       .replace(/[^A-Za-z0-9_]+/g, "_")
@@ -4125,6 +4178,7 @@ async function serveIconLibraryAsset(request, response, url) {
 
 export async function createImageServer({ port = 5174, host = "127.0.0.1", staticRoot } = {}) {
   const routeKey = (method, sub) => `${method} ${apiPath(sub)}`;
+  const nativeExportSaveService = createNativeExportSaveService();
   const exactRouteHandlers = new Map([
     ["GET /swigger", async ({ response }) => {
       const { renderSwaggerHtml } = await import("./swaggerPage.mjs");
@@ -4150,6 +4204,12 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
     }],
     [routeKey("POST", "/image-library/import"), async ({ request, response }) => {
       await handleImportIconLibrary(request, response);
+    }],
+    [routeKey("POST", "/exports/native/select-file"), async ({ request, response }) => {
+      await handleSelectNativeExportFile(request, response, nativeExportSaveService);
+    }],
+    [routeKey("POST", "/exports/native/write-text"), async ({ url, request, response }) => {
+      await handleWriteNativeExportText(url, request, response, nativeExportSaveService);
     }],
     [routeKey("GET", "/image-folders"), async ({ request, response }) => {
       const folders = await readImageFolders();

@@ -558,6 +558,7 @@ describe("scheme file persistence", () => {
           r1: "0",
           r2: "0",
           p_ac_set: "0",
+          p_dc_set: "0",
           q_ac_set: "0",
           v_ac_set: "0",
           v_dc_set: "0",
@@ -583,6 +584,7 @@ describe("scheme file persistence", () => {
               converterNode("dcac-new", "独立控制", 1, {
                 ac_control_type: "PV",
                 dc_control_type: "I",
+                p_dc_set: "3.5",
                 ac_i_max: "1000 A",
                 dc_i_max: "1200 A"
               }),
@@ -619,11 +621,12 @@ describe("scheme file persistence", () => {
       expect(columns).toContain("dc_control_type");
       expect(columns).toContain("ac_i_max");
       expect(columns).toContain("dc_i_max");
+      expect(columns).toContain("p_dc_set");
       expect(columns).not.toContain("control_type");
-      expect(rowByName.get("独立控制")).toMatchObject({ ac_control_type: "PV", dc_control_type: "I", ac_i_max: "1000", dc_i_max: "1200" });
+      expect(rowByName.get("独立控制")).toMatchObject({ ac_control_type: "PV", dc_control_type: "I", p_dc_set: "3.5", ac_i_max: "1000", dc_i_max: "1200" });
       expect(rowByName.get("旧DCV")).toMatchObject({ ac_control_type: "PQ", dc_control_type: "V" });
-      expect(rowByName.get("旧ACV")).toMatchObject({ ac_control_type: "PH", dc_control_type: "NONE" });
-      expect(rowByName.get("旧ACP")).toMatchObject({ ac_control_type: "PQ", dc_control_type: "NONE" });
+      expect(rowByName.get("旧ACV")).toMatchObject({ ac_control_type: "PQ", dc_control_type: "V" });
+      expect(rowByName.get("旧ACP")).toMatchObject({ ac_control_type: "PQ", dc_control_type: "V" });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

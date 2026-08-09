@@ -3242,38 +3242,42 @@ test("adds DCAC converter variants with DC first and AC second terminals", () =>
   expect(canConnectTerminals(horizontal, "t2", dcLoad, "t1")).toBe(false);
 });
 
-test("migrates legacy DCAC converter control_type values to the split fields", () => {
+test("keeps only canonical DCAC converter control fields without legacy migration", () => {
   const template = DEVICE_LIBRARY.find((item) => item.kind === "acdc-converter");
   expect(template).toBeTruthy();
-  const cases = [
-    ["DCV", "PQ", "V"],
-    ["ACV", "PH", "NONE"],
-    ["ACP", "PQ", "NONE"],
-    ["PH", "PH", "NONE"],
-    ["PQ", "PQ", "NONE"]
-  ] as const;
+  const legacyOnly = createDefaultNode("acdc-converter", { x: 100, y: 100 });
+  legacyOnly.params.control_type = "ACV";
+  legacyOnly.params.controlType = "ACP";
+  legacyOnly.params.acControlType = "PV";
+  legacyOnly.params.dcControlType = "I";
+  delete legacyOnly.params.ac_control_type;
+  delete legacyOnly.params.dc_control_type;
 
-  for (const [legacyValue, expectedAc, expectedDc] of cases) {
-    const node = createDefaultNode("acdc-converter", { x: 100, y: 100 });
-    node.params.control_type = legacyValue;
-    node.params.acControlType = "定PV";
-    node.params.dcControlType = "定I";
-    delete node.params.ac_control_type;
-    delete node.params.dc_control_type;
+  const normalizedLegacyOnly = normalizeNodeTerminalsWithTemplate(legacyOnly, template);
+  expect(normalizedLegacyOnly.params.ac_control_type).toBe("PQ");
+  expect(normalizedLegacyOnly.params.dc_control_type).toBe("V");
+  expect(normalizedLegacyOnly.params).not.toHaveProperty("control_type");
+  expect(normalizedLegacyOnly.params).not.toHaveProperty("controlType");
+  expect(normalizedLegacyOnly.params).not.toHaveProperty("acControlType");
+  expect(normalizedLegacyOnly.params).not.toHaveProperty("dcControlType");
 
-    const normalized = normalizeNodeTerminalsWithTemplate(node, template);
+  const canonical = createDefaultNode("acdc-converter", { x: 240, y: 100 });
+  canonical.params.ac_control_type = "PV";
+  canonical.params.dc_control_type = "I";
+  canonical.params.control_type = "DCV";
+  canonical.params.acControlType = "PH";
+  canonical.params.dcControlType = "P";
+  const normalizedCanonical = normalizeNodeTerminalsWithTemplate(canonical, template);
+  expect(normalizedCanonical.params.ac_control_type).toBe("PV");
+  expect(normalizedCanonical.params.dc_control_type).toBe("I");
+  expect(normalizedCanonical.params.p_dc_set).toBe("0.0");
 
-    expect(normalized.params.ac_control_type).toBe(expectedAc);
-    expect(normalized.params.dc_control_type).toBe(expectedDc);
-    expect(normalized.params).not.toHaveProperty("control_type");
-    expect(normalized.params).not.toHaveProperty("acControlType");
-    expect(normalized.params).not.toHaveProperty("dcControlType");
-  }
-
-  const definitionKeys = getTemplateParameterDefinitions(template!).map((definition) => definition.enName);
-  expect(definitionKeys).toContain("ac_control_type");
-  expect(definitionKeys).toContain("dc_control_type");
-  expect(definitionKeys).not.toContain("control_type");
+  const definitions = getTemplateParameterDefinitions(template!);
+  const definitionByName = new Map(definitions.map((definition) => [definition.enName, definition]));
+  expect(definitionByName.get("ac_control_type")?.valueType).toBe("stringEnum");
+  expect(definitionByName.get("dc_control_type")?.valueType).toBe("stringEnum");
+  expect(definitionByName.get("p_dc_set")?.valueType).toBe("float");
+  expect(definitionByName.has("control_type")).toBe(false);
 });
 
 test("migrates legacy ACAC and DCDC converter controls to endpoint fields", () => {

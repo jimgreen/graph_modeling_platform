@@ -2163,7 +2163,7 @@ test("keeps every built-in device parameter aligned with its semantic type and n
     "high_i_max", "high_rated_capacity", "high_vbase", "hub_height", "hydrogen_demand", "hydrogen_flow", "impedance", "inlet_pressure",
     "i_i_max", "i_max", "input_voltage", "i_p_max", "i_p_min", "i_q_set", "i_set", "i_v_max", "i_v_min", "i_v_set", "j_i_max", "j_p_max", "j_p_min", "j_q_set", "j_v_max", "j_v_min", "j_v_set", "length", "low_i_max", "low_rated_capacity", "low_vbase", "main_steam_pressure",
     "main_steam_temperature", "max_charge_power", "max_current", "max_discharge_power", "medium_i_max", "medium_rated_capacity",
-    "medium_vbase", "module_efficiency", "outlet_pressure", "output_voltage", "p_ac_set", "p_max", "p_min", "p_set", "pbase", "power",
+    "medium_vbase", "module_efficiency", "outlet_pressure", "output_voltage", "p_ac_set", "p_dc_set", "p_max", "p_min", "p_set", "pbase", "power",
     "power_factor", "pressure", "primary_loop_pressure", "pv0", "pv1", "pv2", "q_ac_set", "q_max", "q_min", "q_set", "qbase", "qv0",
     "qv1", "qv2", "r", "r1", "r2", "r3", "rated_capacity", "rated_current", "rated_power", "rated_speed",
     "rated_voltage", "rated_wind_speed", "reactive_power", "reactor_thermal_power", "return_temperature", "rotor_diameter",
@@ -2354,6 +2354,7 @@ test("exports DCAC converter AC and DC control types as separate columns", () =>
   legacyAcpConverter.name = "旧ACP";
   explicitConverter.params.ac_control_type = "PV";
   explicitConverter.params.dc_control_type = "I";
+  explicitConverter.params.p_dc_set = "3.5";
   for (const [node, legacyValue] of [
     [legacyDcvConverter, "DCV"],
     [legacyAcvConverter, "ACV"],
@@ -2386,6 +2387,7 @@ test("exports DCAC converter AC and DC control types as separate columns", () =>
 
   expect(payload.DCACConverter.columns).toContain("ac_control_type");
   expect(payload.DCACConverter.columns).toContain("dc_control_type");
+  expect(payload.DCACConverter.columns).toContain("p_dc_set");
   expect(payload.DCACConverter.columns).not.toContain("control_type");
   expect(rowByName.get("默认控制")).toMatchObject({
     ac_node: topologyNodeNumberForType(defaultConverter, "ac"),
@@ -2397,23 +2399,27 @@ test("exports DCAC converter AC and DC control types as separate columns", () =>
     ac_node: topologyNodeNumberForType(explicitConverter, "ac"),
     dc_node: topologyNodeNumberForType(explicitConverter, "dc"),
     ac_control_type: "PV",
-    dc_control_type: "I"
+    dc_control_type: "I",
+    p_dc_set: "3.5"
   });
   expect(rowByName.get("旧DCV")).toMatchObject({ ac_control_type: "PQ", dc_control_type: "V" });
-  expect(rowByName.get("旧ACV")).toMatchObject({ ac_control_type: "PH", dc_control_type: "NONE" });
-  expect(rowByName.get("旧ACP")).toMatchObject({ ac_control_type: "PQ", dc_control_type: "NONE" });
+  expect(rowByName.get("旧ACV")).toMatchObject({ ac_control_type: "PQ", dc_control_type: "V" });
+  expect(rowByName.get("旧ACP")).toMatchObject({ ac_control_type: "PQ", dc_control_type: "V" });
 });
 
-test("keeps an explicitly configured DCAC E interface control_type column unchanged", () => {
+test("omits legacy DCAC control fields from explicit E interface definitions", () => {
   const converter = createDefaultNode("acdc-converter", { x: 100, y: 100 });
-  converter.name = "接口迁移";
+  converter.name = "严格接口";
   converter.params.control_type = "DCV";
-  delete converter.params.ac_control_type;
-  delete converter.params.dc_control_type;
+  converter.params.controlType = "ACV";
+  converter.params.acControlType = "PH";
+  converter.params.dcControlType = "I";
+  converter.params.ac_control_type = "PV";
+  converter.params.dc_control_type = "P";
 
   const payload = parseESections(buildEFileExport({
     version: 1,
-    name: "DCAC接口迁移",
+    name: "DCAC严格接口",
     nodes: [converter],
     edges: []
   }, ["默认方案"], {
@@ -2424,14 +2430,22 @@ test("keeps an explicitly configured DCAC E interface control_type column unchan
       fields: [
         { sourceName: "idx", exportEnabled: true, exportName: "idx" },
         { sourceName: "name", exportEnabled: true, exportName: "name" },
-        { sourceName: "control_type", exportEnabled: true, exportName: "control_type" }
+        { sourceName: "control_type", exportEnabled: true, exportName: "control_type" },
+        { sourceName: "controlType", exportEnabled: true, exportName: "controlType" },
+        { sourceName: "acControlType", exportEnabled: true, exportName: "acControlType" },
+        { sourceName: "dcControlType", exportEnabled: true, exportName: "dcControlType" },
+        { sourceName: "ac_control_type", exportEnabled: true, exportName: "ac_control_type" },
+        { sourceName: "dc_control_type", exportEnabled: true, exportName: "dc_control_type" }
       ]
     }]
   }).text);
 
-  expect(payload.DCACConverter.columns).toEqual(["idx", "name", "control_type"]);
-  expect(payload.DCACConverter.columns).not.toContain("ac_control_type");
-  expect(payload.DCACConverter.columns).not.toContain("dc_control_type");
+  expect(payload.DCACConverter.columns).toEqual(["idx", "name", "ac_control_type", "dc_control_type"]);
+  expect(payload.DCACConverter.rows[0]).toMatchObject({
+    name: "严格接口",
+    ac_control_type: "PV",
+    dc_control_type: "P"
+  });
 });
 
 test("exports ACAC converter endpoint control types with only supported values", () => {

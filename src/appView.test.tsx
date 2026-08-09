@@ -404,6 +404,7 @@ describe("app view device definition parameter rows", () => {
 
   test("keeps the top toolbar compact with icon-only mode and export actions", () => {
     const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
     const modeButton = source.match(
       /<button type="button" className=\{`topbar-primary-button[^`]*`\} onClick=\{toggleInteractionMode\}[\s\S]*?<\/button>/
     )?.[0] ?? "";
@@ -430,7 +431,18 @@ describe("app view device definition parameter rows", () => {
     expect(exportActions).toContain("导出 SVG");
     expect(exportActions).toContain("导出 JSON");
     expect(exportActions).toContain("导出 E、JSON 和 SVG 文件");
-    expect(exportActions).toContain("exportPointerDownAtRef.current = performance.now()");
+    expect(source).not.toContain("exportPointerDownAtRef");
+    expect(source).toContain("void doExport()");
+    expect(source).toContain('className="unsaved-change-dialog export-completion-dialog"');
+    expect(source).toContain('aria-labelledby="export-completion-title"');
+    expect(source).toContain("setExportCompletionDialog(null)");
+    expect(source).toContain("确定（{exportCompletionCountdown} 秒）");
+    expect(appSource).toContain("Object.assign(__appScope, { globalMessage, setGlobalMessage, globalMessageTimerRef })");
+    expect(appSource).toContain("exportCompletionCountdown");
+    expect(appSource).toContain("const autoCloseMs = 5000");
+    expect(appSource).toContain("Math.ceil((deadline - Date.now()) / 1000)");
+    expect(appSource).toContain("window.clearInterval(countdownTimer)");
+    expect(appSource).toContain("window.clearTimeout(closeTimer)");
     expect(exportActions).toContain('role="menu" aria-label="导出选项"');
     expect(exportActions).not.toContain("exportDropdownOpen");
     expect(exportActions).not.toContain("setExportDropdownOpen");
@@ -447,7 +459,7 @@ describe("app view device definition parameter rows", () => {
       /<div className="topbar-dropdown group-dropdown">[\s\S]*?<div className="topbar-dropdown display-layer-dropdown">/
     )?.[0] ?? "";
     const topbarMenuButtonRule = styles.match(
-      /\.action-cluster \.topbar-dropdown-menu button\s*\{([\s\S]*?)\}/
+      /\.topbar-dropdown-menu button\s*\{([\s\S]*?)\}/
     )?.[1] ?? "";
     const stateIconMenuButtonRule = styles.match(
       /\.state-icon-context-menu button\s*\{([\s\S]*?)\}/

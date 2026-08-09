@@ -3308,6 +3308,7 @@ export const PARAM_LABELS: Record<string, string> = {
   j_v_max: "末端电压上限",
   j_v_min: "末端电压下限",
   p_ac_set: "交流侧有功设定值",
+  p_dc_set: "直流侧有功设定值",
   q_ac_set: "交流侧无功设定值",
   v_set: "电压设定值",
   v_ac_set: "交流侧电压设定值",

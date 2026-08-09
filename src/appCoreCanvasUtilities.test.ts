@@ -1,11 +1,12 @@
 import { describe, expect, test } from "vitest";
-import { paramOptionsForSection } from "./appExtracted/appCoreCanvasUtilities";
+import { PARAM_LABELS, paramOptionsForSection } from "./appExtracted/appCoreCanvasUtilities";
 
 describe("converter parameter options", () => {
   test("uses independent canonical options for the AC and DC control fields", () => {
     expect(paramOptionsForSection("ac_control_type", "DCACConverter")).toEqual(["PQ", "PV", "PH", "NONE"]);
     expect(paramOptionsForSection("dc_control_type", "DCACConverter")).toEqual(["P", "V", "I", "NONE"]);
     expect(paramOptionsForSection("control_type", "DCACConverter")).toBeUndefined();
+    expect(PARAM_LABELS.p_dc_set).toBe("直流侧有功设定值");
   });
 
   test("uses independent endpoint controls for ACAC and DCDC converters", () => {

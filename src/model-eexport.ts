@@ -198,6 +198,7 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
     "p_ac_set",
     "q_ac_set",
     "v_ac_set",
+    "p_dc_set",
     "v_dc_set",
     "run_stat"
   ],
@@ -512,6 +513,7 @@ const E_FLOAT_COLUMNS = new Set([
   "tap3",
   "shift3",
   "p_ac_set",
+  "p_dc_set",
   "q_ac_set",
   "v_ac_set",
   "v_dc_set",
@@ -722,20 +724,29 @@ const LEGACY_E_DEFINITION_COLUMN_ALIASES: Record<string, string> = {
   closedStatus: "status"
 };
 
+function isUnsupportedDcacControlField(section: string, enName: string): boolean {
+  if (section !== "DCACConverter") {
+    return false;
+  }
+  const rawName = String(enName ?? "").trim();
+  const normalizedName = toSnakeCaseDeviceParamName(rawName);
+  if (normalizedName === "control_type") {
+    return true;
+  }
+  return (normalizedName === "ac_control_type" || normalizedName === "dc_control_type")
+    && rawName !== normalizedName;
+}
+
 export function legacyEColumnForDefinition(section: string, enName: string): string {
   const columns = E_SECTION_COLUMNS[section];
   if (!columns) {
     return "";
   }
+  if (isUnsupportedDcacControlField(section, enName)) {
+    return "";
+  }
   if (columns.includes(enName)) {
     return enName;
-  }
-  if (section === "DCACConverter") {
-
-    const normalizedName = toSnakeCaseDeviceParamName(enName);
-    if (normalizedName === "control_type") return "";
-    if (normalizedName === "ac_control_type") return "ac_control_type";
-    if (normalizedName === "dc_control_type") return "dc_control_type";
   }
   if (section === "ACACConverter" || section === "DCDCConverter") {
     const normalizedName = toSnakeCaseDeviceParamName(enName);
@@ -826,6 +837,9 @@ function eParameterFieldsFromInterfaceDefinition(
     if (!configuredSourceName || !exportName) {
       continue;
     }
+    if (isUnsupportedDcacControlField(section, configuredSourceName)) {
+      continue;
+    }
     appendField({
       sourceName: legacyEColumnForDefinition(section, configuredSourceName) || configuredSourceName,
       exportName,
@@ -848,9 +862,12 @@ function resolveEParameterFields(
     return eParameterFieldsFromInterfaceDefinition(section, interfaceDefinition);
   }
   const splitControlSections = new Set(["DCACConverter", "ACACConverter", "DCDCConverter"]);
-  const definitions = customEParameterDefinitions(params).filter(
-    (definition) => !splitControlSections.has(section) || toSnakeCaseDeviceParamName(definition.enName) !== "control_type"
-  );
+  const definitions = customEParameterDefinitions(params).filter((definition) => {
+    if (section === "DCACConverter") {
+      return !isUnsupportedDcacControlField(section, definition.enName);
+    }
+    return !splitControlSections.has(section) || toSnakeCaseDeviceParamName(definition.enName) !== "control_type";
+  });
   const builtInColumns = E_SECTION_COLUMNS[section];
   const derivedInfo = electricGenerationDerivedComponentLibraryInfo(kind);
   if (definitions.length === 0) {

@@ -465,6 +465,7 @@ export function renderAppView(__appScope: Record<string, any>) {
     writeOperationLog
   } = __appScope;
   const { globalMessage, setGlobalMessage } = __appScope;
+  const { exportCompletionDialog, exportCompletionCountdown, setExportCompletionDialog } = __appScope;
   const { unsavedChangesDialogOpen, setUnsavedChangesDialogOpen, savedUndoStackLengthRef, setHasUnsavedChanges } = __appScope;
   useEffect(() => {
     if (unsavedChangesDialogOpen) {
@@ -522,8 +523,6 @@ export function renderAppView(__appScope: Record<string, any>) {
   const [eDeviceInterfaceExitPromptOpen, setEDeviceInterfaceExitPromptOpen] = useState(false);
   const [eDeviceInterfaceSaveMessage, setEDeviceInterfaceSaveMessage] = useState("");
   const [eDeviceTemplateDropdownOpen, setEDeviceTemplateDropdownOpen] = useState(false);
-  const exportPointerDownAtRef = useRef(0);
-  Object.assign(__appScope, { exportPointerDownAtRef });
   const [templateImportResult, setTemplateImportResult] = useState<{
     matched: Array<{ section: string; device: string; fields: Array<{ template: string; device: string }> }>;
     skipped: Array<{ section: string; reason: string; fields?: string[] }>;
@@ -562,8 +561,14 @@ export function renderAppView(__appScope: Record<string, any>) {
     const currentLabel = MODEL_TYPE_NETWORK_LABEL[modelType] ?? modelType;
     return `当前模板「${templateName}」仅支持${allowedLabels}模型，当前模型类型为「${currentLabel}」。请转为自定义配置或切换模型类型后重试。`;
   };
-  const requestExportWithSave = (doExport: () => void) => {
-    requestUnsavedChangeAction({ kind: "export", label: "导出", onResolved: doExport });
+  const requestExportWithSave = (doExport: () => void | Promise<void>) => {
+    requestUnsavedChangeAction({
+      kind: "export",
+      label: "导出",
+      onResolved: () => {
+        void doExport();
+      }
+    });
   };
   const loadPredefinedEDeviceTemplate = async (templateFile: string) => {
     try {
@@ -1319,7 +1324,40 @@ export function renderAppView(__appScope: Record<string, any>) {
   const inspectorGraphId = inspectorSelectedNode
     ? resolveInspectorGraphId(nodes, inspectorSelectedNode)
     : "";
-  return (<>{globalMessage && <div className={`global-message global-message-${globalMessage.type}`} onClick={() => setGlobalMessage(null)} style={{ cursor: "pointer" }} title="点击关闭"><span className="global-message-icon">{globalMessage.type === "success" ? "✓" : globalMessage.type === "error" ? "✕" : "ℹ"}</span>{globalMessage.text}</div>}<div className={`app-shell ${isBrowseMode ? "browse-mode" : "edit-mode"} left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${topologyWarningPanelResize ? "topology-warning-panel-resizing" : ""} ${nodeDoubleClickDialogDrag || nodeDoubleClickDialogResize ? "node-double-click-dialog-moving" : ""} ${deviceLibraryDialogDrag || deviceLibraryDialogResize ? "device-library-dialog-moving" : ""} ${canvasResizeDrag ? "canvas-resizing" : ""}`} style={appShellStyle}>
+  return (<>
+    {globalMessage && <div className={`global-message global-message-${globalMessage.type}`} onClick={() => setGlobalMessage(null)} style={{ cursor: "pointer" }} title="点击关闭"><span className="global-message-icon">{globalMessage.type === "success" ? "✓" : globalMessage.type === "error" ? "✕" : "ℹ"}</span>{globalMessage.text}</div>}
+    {exportCompletionDialog && (<div className="image-picker-backdrop export-completion-backdrop" onPointerDown={() => setExportCompletionDialog(null)}>
+      <section
+        className="unsaved-change-dialog export-completion-dialog"
+        onPointerDown={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            setExportCompletionDialog(null);
+          }
+        }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="export-completion-title"
+      >
+        <div className="image-picker-title">
+          <div>
+            <h2 id="export-completion-title">{exportCompletionDialog.title}</h2>
+            <p className="export-completion-message">{exportCompletionDialog.message}</p>
+          </div>
+        </div>
+        {Array.isArray(exportCompletionDialog.details) && exportCompletionDialog.details.length > 0 && (
+          <div className="export-completion-details">
+            {exportCompletionDialog.details.map((detail: string, index: number) => <p key={`${index}-${detail}`}>{detail}</p>)}
+          </div>
+        )}
+        <div className="image-picker-actions export-completion-actions">
+          <button type="button" autoFocus onClick={() => setExportCompletionDialog(null)}>
+            确定（{exportCompletionCountdown} 秒）
+          </button>
+        </div>
+      </section>
+    </div>)}
+    <div className={`app-shell ${isBrowseMode ? "browse-mode" : "edit-mode"} left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${topologyWarningPanelResize ? "topology-warning-panel-resizing" : ""} ${nodeDoubleClickDialogDrag || nodeDoubleClickDialogResize ? "node-double-click-dialog-moving" : ""} ${deviceLibraryDialogDrag || deviceLibraryDialogResize ? "device-library-dialog-moving" : ""} ${canvasResizeDrag ? "canvas-resizing" : ""}`} style={appShellStyle}>
       {renderSidePanelEdgeTrigger("left")}
       {renderSidePanelEdgeTrigger("right")}
       <aside ref={leftPanelRef} className={`library-panel floating-side-panel ${leftPanelVisible ? "visible" : "hidden"}`} onPointerDown={stopSidePanelEventPropagation} onPointerMoveCapture={stopSidePanelEventPropagation} onPointerMove={stopSidePanelEventPropagation} onPointerEnter={() => updateAutoPanelVisibility("left", "panel-enter")} onPointerLeave={(event) => handleSidePanelPointerLeave("left", event)} onMouseMoveCapture={stopSidePanelEventPropagation} onMouseMove={stopSidePanelEventPropagation} onClick={stopSidePanelEventPropagation} onDoubleClick={stopSidePanelEventPropagation} onContextMenu={stopSidePanelEventPropagation} onKeyDown={stopSidePanelEventPropagation} onKeyUp={stopSidePanelEventPropagation}>
@@ -1451,11 +1489,11 @@ export function renderAppView(__appScope: Record<string, any>) {
               <FileJson size={16}/>
             </button>
             <div className="topbar-dropdown export-dropdown">
-              <button className="topbar-primary-button" onPointerDown={() => { exportPointerDownAtRef.current = performance.now(); }} onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { window.alert(mismatch); return; } requestExportWithSave(exportSvg); }} title="导出 E、JSON 和 SVG 文件" aria-label="导出 E、JSON 和 SVG 文件">
+              <button className="topbar-primary-button" onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { window.alert(mismatch); return; } requestExportWithSave(exportSvg); }} title="导出 E、JSON 和 SVG 文件" aria-label="导出 E、JSON 和 SVG 文件">
                 <Download size={16}/>
               </button>
               <div className="topbar-dropdown-menu" role="menu" aria-label="导出选项">
-                <button onPointerDown={() => { exportPointerDownAtRef.current = performance.now(); }} onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { exportPointerDownAtRef.current = 0; window.alert(mismatch); return; } requestExportWithSave(exportEFile); }} title="导出 E 文件" aria-label="导出 E 文件">
+                <button onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { window.alert(mismatch); return; } requestExportWithSave(exportEFile); }} title="导出 E 文件" aria-label="导出 E 文件">
                   <FileJson size={16}/>
                   <span>导出 E 文件</span>
                 </button>

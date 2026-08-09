@@ -2886,7 +2886,6 @@ export function createExportSvg(__appScope: Record<string, any>) {
     eDeviceDefinitionTemplateFields,
     edges,
     ensureSavedBeforeExport,
-    exportPointerDownAtRef,
     getEExportWarnings,
     isPickerAbort,
     layers,
@@ -2902,12 +2901,7 @@ export function createExportSvg(__appScope: Record<string, any>) {
     writeTextFileToDirectory,
     writeOperationLog
   } = __appScope;
-    const exportStartedAt = Number(exportPointerDownAtRef?.current) > 0
-      ? Number(exportPointerDownAtRef.current)
-      : performance.now();
-    if (exportPointerDownAtRef) {
-      exportPointerDownAtRef.current = 0;
-    }
+    let exportStartedAt = performance.now();
     const exportElapsedText = () => `${((performance.now() - exportStartedAt) / 1000).toFixed(2)} 秒`;
     if (!ensureSavedBeforeExport()) {
       return;
@@ -2926,6 +2920,7 @@ export function createExportSvg(__appScope: Record<string, any>) {
         id: "model-bundle-export",
         mode: "readwrite"
       });
+      exportStartedAt = performance.now();
     } catch (error) {
       if (typeof isPickerAbort === "function" && isPickerAbort(error)) {
         return;
@@ -3077,6 +3072,24 @@ export function createExportSvg(__appScope: Record<string, any>) {
   };
 }
 
+function showStandaloneExportCompletion(
+  __appScope: Record<string, any>,
+  title: string,
+  message: string,
+  details: string[] = []
+) {
+  const { setExportCompletionDialog } = __appScope;
+  if (typeof setExportCompletionDialog === "function") {
+    setExportCompletionDialog({
+      title,
+      message,
+      ...(details.length > 0 ? { details } : {})
+    });
+    return;
+  }
+  window.alert([message, ...details].join("\n"));
+}
+
 // SVG 导出选项构建器，避免 createExportSvg 和 createExportSvgFile 重复
 function buildSvgExportOptions(params: {
   canvasBounds: any; canvasBackgroundColor: string; DEFAULT_CANVAS_BACKGROUND: string;
@@ -3111,7 +3124,6 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
       canvasBackgroundImageUrl,
       canvasBounds,
       colorPalette,
-      currentProject,
       edges,
       ensureSavedBeforeExport,
       layers,
@@ -3122,34 +3134,58 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
       projectMeasurements,
       projectName,
       safeFilePart,
+      saveLazyTextFile,
       saveTextFile,
-      showGlobalMessage = () => undefined,
       writeOperationLog
     } = __appScope;
+    let exportStartedAt = performance.now();
+    const markSaveTargetReady = () => {
+      exportStartedAt = performance.now();
+    };
     if (!ensureSavedBeforeExport()) {
       return;
     }
-    const imageExportPathById = typeof loadSvgImageExportPathById === "function"
-      ? await loadSvgImageExportPathById()
-      : undefined;
     const baseFilename = safeFilePart(projectName);
-    const svgText = buildSvgDocument(nodes, edges, buildSvgExportOptions({
-      canvasBounds, canvasBackgroundColor, DEFAULT_CANVAS_BACKGROUND, canvasBackgroundImageUrl,
-      imageExportPathById, colorPalette, libraryTemplates, layers, activeLayerId,
-      backgroundPageRender, projectMeasurements, measurementConfig
-    }));
-    const saved = await saveTextFile({
-      filename: `${baseFilename}.svg`,
-      text: svgText,
-      mime: "image/svg+xml",
-      description: "SVG 图形文件",
-      extensions: [".svg"]
-    });
+    let svgTextPromise: Promise<string> | undefined;
+    const loadSvgText = () => {
+      svgTextPromise ??= Promise.resolve().then(async () => {
+        const imageExportPathById = typeof loadSvgImageExportPathById === "function"
+          ? await loadSvgImageExportPathById()
+          : undefined;
+        return buildSvgDocument(nodes, edges, buildSvgExportOptions({
+          canvasBounds, canvasBackgroundColor, DEFAULT_CANVAS_BACKGROUND, canvasBackgroundImageUrl,
+          imageExportPathById, colorPalette, libraryTemplates, layers, activeLayerId,
+          backgroundPageRender, projectMeasurements, measurementConfig
+        }));
+      });
+      return svgTextPromise;
+    };
+    const saved = typeof saveLazyTextFile === "function"
+      ? await saveLazyTextFile({
+          filename: `${baseFilename}.svg`,
+          loadText: loadSvgText,
+          mime: "image/svg+xml",
+          description: "SVG 图形文件",
+          extensions: [".svg"],
+          preferNativeDialog: true,
+          onSaveTargetReady: markSaveTargetReady
+        })
+      : await saveTextFile({
+          filename: `${baseFilename}.svg`,
+          text: await loadSvgText(),
+          mime: "image/svg+xml",
+          description: "SVG 图形文件",
+          extensions: [".svg"],
+          preferNativeDialog: true,
+          onSaveTargetReady: markSaveTargetReady
+        });
     if (!saved) {
       return;
     }
     writeOperationLog(`导出图形文件：${baseFilename}.svg`);
-    showGlobalMessage(`SVG 文件导出成功：${baseFilename}.svg`, "success");
+    const elapsedSeconds = ((performance.now() - exportStartedAt) / 1000).toFixed(2);
+    const successMessage = `SVG 文件导出成功：${baseFilename}.svg；总耗时：${elapsedSeconds} 秒`;
+    showStandaloneExportCompletion(__appScope, "SVG 文件导出完成", successMessage);
   };
 }
 
@@ -3160,29 +3196,50 @@ export function createExportJsonFile(__appScope: Record<string, any>) {
       ensureSavedBeforeExport,
       projectName,
       safeFilePart,
+      saveLazyTextFile,
       saveTextFile,
       serializeProject,
-      showGlobalMessage = () => undefined,
       writeOperationLog
     } = __appScope;
+    let exportStartedAt = performance.now();
+    const markSaveTargetReady = () => {
+      exportStartedAt = performance.now();
+    };
     if (!ensureSavedBeforeExport()) {
       return;
     }
-    const project = currentProject();
     const baseFilename = safeFilePart(projectName);
-    const jsonText = serializeProject(project);
-    const saved = await saveTextFile({
-      filename: `${baseFilename}.json`,
-      text: jsonText,
-      mime: "application/json",
-      description: "JSON 模型文件",
-      extensions: [".json"]
-    });
+    let jsonTextPromise: Promise<string> | undefined;
+    const loadJsonText = () => {
+      jsonTextPromise ??= Promise.resolve().then(() => serializeProject(currentProject()));
+      return jsonTextPromise;
+    };
+    const saved = typeof saveLazyTextFile === "function"
+      ? await saveLazyTextFile({
+          filename: `${baseFilename}.json`,
+          loadText: loadJsonText,
+          mime: "application/json",
+          description: "JSON 模型文件",
+          extensions: [".json"],
+          preferNativeDialog: true,
+          onSaveTargetReady: markSaveTargetReady
+        })
+      : await saveTextFile({
+          filename: `${baseFilename}.json`,
+          text: await loadJsonText(),
+          mime: "application/json",
+          description: "JSON 模型文件",
+          extensions: [".json"],
+          preferNativeDialog: true,
+          onSaveTargetReady: markSaveTargetReady
+        });
     if (!saved) {
       return;
     }
     writeOperationLog(`导出模型文件：${baseFilename}.json`);
-    showGlobalMessage(`JSON 文件导出成功：${baseFilename}.json`, "success");
+    const elapsedSeconds = ((performance.now() - exportStartedAt) / 1000).toFixed(2);
+    const successMessage = `JSON 文件导出成功：${baseFilename}.json；总耗时：${elapsedSeconds} 秒`;
+    showStandaloneExportCompletion(__appScope, "JSON 文件导出完成", successMessage);
   };
 }
 
@@ -3232,7 +3289,6 @@ export function createExportEFile(__appScope: Record<string, any>) {
       eDeviceDefinitionLabels,
       eDeviceDefinitionTemplateFields,
       ensureSavedBeforeExport,
-      exportPointerDownAtRef,
       getEExportWarnings,
       libraryTemplates,
       PARAM_LABELS,
@@ -3242,15 +3298,12 @@ export function createExportEFile(__appScope: Record<string, any>) {
       saveLazyTextFile,
       saveTextFile,
       schemePathForScheme,
-      showGlobalMessage = () => undefined,
       writeOperationLog
     } = __appScope;
-    const exportStartedAt = Number(exportPointerDownAtRef?.current) > 0
-      ? Number(exportPointerDownAtRef.current)
-      : performance.now();
-    if (exportPointerDownAtRef) {
-      exportPointerDownAtRef.current = 0;
-    }
+    let exportStartedAt = performance.now();
+    const markSaveTargetReady = () => {
+      exportStartedAt = performance.now();
+    };
     if (!ensureSavedBeforeExport()) {
       return;
     }
@@ -3290,7 +3343,9 @@ export function createExportEFile(__appScope: Record<string, any>) {
           loadText: async () => (await generatedFilePromise).file.text,
           mime: "text/plain",
           description: "E 模型文件",
-          extensions: [".e"]
+          extensions: [".e"],
+          preferNativeDialog: true,
+          onSaveTargetReady: markSaveTargetReady
         })
       : await (async () => {
           const { file } = await generatedFilePromise;
@@ -3299,7 +3354,9 @@ export function createExportEFile(__appScope: Record<string, any>) {
             text: file.text,
             mime: file.mime,
             description: "E 模型文件",
-            extensions: [".e"]
+            extensions: [".e"],
+            preferNativeDialog: true,
+            onSaveTargetReady: markSaveTargetReady
           });
         })();
     if (!saved) {
@@ -3309,16 +3366,14 @@ export function createExportEFile(__appScope: Record<string, any>) {
     writeOperationLog(`导出模型文件：${file.filename}`);
     const elapsedSeconds = ((performance.now() - exportStartedAt) / 1000).toFixed(2);
     const successMessage = `E 文件导出成功：${file.filename}；总耗时：${elapsedSeconds} 秒`;
-    showGlobalMessage(successMessage, "success");
-    window.alert(successMessage);
-    if (warnings.length > 0) {
-      const warningMessage = [
+    const warningDetails = warnings.length > 0
+      ? [
         `有 ${warnings.length} 个图上设备未导出到 E 文件：`,
         ...warnings.slice(0, 20).map((warning) => `- ${warning.nodeName}（${warning.kind}）：${warning.reason}`),
         warnings.length > 20 ? `... 还有 ${warnings.length - 20} 个设备未列出。` : ""
-      ].filter(Boolean).join("\n");
-      setTimeout(() => window.alert(warningMessage), 0);
-    }
+      ].filter(Boolean)
+      : [];
+    showStandaloneExportCompletion(__appScope, "E 文件导出完成", successMessage, warningDetails);
   };
 }
 
