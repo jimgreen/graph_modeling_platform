@@ -1415,6 +1415,10 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
     const sectionRowCount = (sectionRowCounts.get(section) ?? 0) + 1;
     sectionRowCounts.set(section, sectionRowCount);
     const baseIdx = firstNumericToken(String(params.idx || node.params.idx || "")) || String(sectionRowCount);
+    // 确保所有记录都有 idx 字段，即使 columns 中不包含 "idx"
+    if (!params.idx) {
+      params.idx = baseIdx;
+    }
     if (columns.includes("idx") && !params.idx) {
       params.idx = baseIdx;
     }
