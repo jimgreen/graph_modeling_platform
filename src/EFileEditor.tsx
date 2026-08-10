@@ -82,7 +82,7 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(text).then(() => {
         setCopiedCell(text);
-        window.setTimeout(() => setCopiedCell(null), 1500);
+        window.setTimeout(() => setCopiedCell(null), 1000);
       }).catch(() => {
         // 回退方案：用临时 textarea
         const ta = document.createElement("textarea");
@@ -91,7 +91,7 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
         ta.style.opacity = "0";
         document.body.appendChild(ta);
         ta.select();
-        try { document.execCommand("copy"); setCopiedCell(text); window.setTimeout(() => setCopiedCell(null), 1500); } catch {}
+        try { document.execCommand("copy"); setCopiedCell(text); window.setTimeout(() => setCopiedCell(null), 1000); } catch {}
         document.body.removeChild(ta);
       });
     } else {
@@ -101,7 +101,7 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
       ta.style.opacity = "0";
       document.body.appendChild(ta);
       ta.select();
-      try { document.execCommand("copy"); setCopiedCell(text); window.setTimeout(() => setCopiedCell(null), 1500); } catch {}
+      try { document.execCommand("copy"); setCopiedCell(text); window.setTimeout(() => setCopiedCell(null), 1000); } catch {}
       document.body.removeChild(ta);
     }
   }, [editMode]);
@@ -192,6 +192,9 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
             <X size={16} />
           </button>
         </div>
+        {copiedCell !== null && (
+          <div className="e-file-editor-copied-toast">已复制到剪切板</div>
+        )}
 
         <div className="e-file-editor-content">
           {/* Tab 导航 */}
@@ -226,7 +229,6 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                     </button>
                   </>
                 )}
-                {copiedCell !== null && <span className="e-file-editor-copied-toast">已复制到剪切板</span>}
               </div>
               <div className="e-file-editor-table-scroll">
                 <table className="e-file-editor-table">
