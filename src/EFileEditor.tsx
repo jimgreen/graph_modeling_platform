@@ -28,6 +28,7 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
   // 列宽状态：key = `${sectionName}:${col}`
   const [colWidths, setColWidths] = useState<Record<string, number>>({});
   const [copiedCell, setCopiedCell] = useState<string | null>(null);
+  const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   const resizeRef = useRef<{ colKey: string; startX: number; startWidth: number } | null>(null);
 
   // 按 section 分组记录
@@ -195,6 +196,14 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
         {copiedCell !== null && (
           <div className="e-file-editor-copied-toast">已复制到剪切板</div>
         )}
+        {tooltip && (
+          <div
+            className="e-file-editor-tooltip"
+            style={{ left: `${tooltip.x}px`, top: `${tooltip.y}px` }}
+          >
+            {tooltip.text}
+          </div>
+        )}
 
         <div className="e-file-editor-content">
           {/* Tab 导航 */}
@@ -236,7 +245,19 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                     <tr>
                       {editMode && <th className="e-file-editor-th-action">操作</th>}
                       {columns.map((col) => (
-                        <th key={col} title={getFieldCnName(col)} className="e-file-editor-th">
+                        <th
+                          key={col}
+                          className="e-file-editor-th"
+                          onMouseEnter={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setTooltip({
+                              text: getFieldCnName(col),
+                              x: rect.left + rect.width / 2,
+                              y: rect.top
+                            });
+                          }}
+                          onMouseLeave={() => setTooltip(null)}
+                        >
                           <span className="e-file-editor-th-text">{col}</span>
                           <span
                             className="e-file-editor-col-resizer"

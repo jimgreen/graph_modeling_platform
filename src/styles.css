@@ -12813,6 +12813,31 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   100% { opacity: 0; }
 }
 
+.e-file-editor-tooltip {
+  position: fixed;
+  transform: translate(-50%, -100%);
+  background: #1f2937;
+  color: #f9fafb;
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 10002;
+  white-space: nowrap;
+  pointer-events: none;
+  margin-top: -8px;
+}
+
+.e-file-editor-tooltip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: #1f2937;
+}
+
 .e-file-editor-table-scroll {
   flex: 1;
   overflow: auto;
