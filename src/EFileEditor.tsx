@@ -77,11 +77,32 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
 
   const handleDoubleClickCell = useCallback((value: string) => {
     if (!editMode) return;
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(value).then(() => {
-        setCopiedCell(value);
-        setTimeout(() => setCopiedCell(null), 1500);
-      }).catch(() => {});
+    const text = value || "";
+    if (!text) return;
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopiedCell(text);
+        window.setTimeout(() => setCopiedCell(null), 1500);
+      }).catch(() => {
+        // 回退方案：用临时 textarea
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand("copy"); setCopiedCell(text); window.setTimeout(() => setCopiedCell(null), 1500); } catch {}
+        document.body.removeChild(ta);
+      });
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); setCopiedCell(text); window.setTimeout(() => setCopiedCell(null), 1500); } catch {}
+      document.body.removeChild(ta);
     }
   }, [editMode]);
 
@@ -209,17 +230,11 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
               </div>
               <div className="e-file-editor-table-scroll">
                 <table className="e-file-editor-table">
-                  <colgroup>
-                    {editMode && <col style={{ width: "40px" }} />}
-                    {columns.map((col) => (
-                      <col key={col} style={{ width: `${getColWidth(sectionName, col)}px` }} />
-                    ))}
-                  </colgroup>
                   <thead>
                     <tr>
-                      {editMode && <th>操作</th>}
+                      {editMode && <th className="e-file-editor-th-action">操作</th>}
                       {columns.map((col) => (
-                        <th key={col} title={getFieldCnName(col)}>
+                        <th key={col} title={getFieldCnName(col)} className="e-file-editor-th">
                           <span className="e-file-editor-th-text">{col}</span>
                           <span
                             className="e-file-editor-col-resizer"
@@ -233,7 +248,7 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                     {sectionRecords.map((record) => (
                       <tr key={record.id}>
                         {editMode && (
-                          <td>
+                          <td className="e-file-editor-td-action">
                             <button
                               type="button"
                               onClick={() => handleDeleteRow(record.id)}
@@ -245,17 +260,21 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                         )}
                         {columns.map((col) => {
                           const value = record.params[col] || "";
+                          const colWidth = getColWidth(sectionName, col);
                           return (
                             <td
                               key={col}
+                              className="e-file-editor-td"
+                              style={{ maxWidth: `${colWidth}px` }}
                               title={editMode ? undefined : value}
-                              onDoubleClick={() => handleDoubleClickCell(value)}
                             >
                               {editMode ? (
                                 <input
                                   type="text"
                                   value={value}
                                   onChange={(e) => handleCellEdit(record.id, col, e.target.value)}
+                                  onDoubleClick={(e) => { e.stopPropagation(); handleDoubleClickCell(value); }}
+                                  title="双击复制到剪切板"
                                 />
                               ) : (
                                 <span className="e-file-editor-cell-text">{value}</span>

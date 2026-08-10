@@ -12809,12 +12809,12 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
-  table-layout: fixed;
+  table-layout: auto;
 }
 
-.e-file-editor-table th {
+.e-file-editor-table .e-file-editor-th {
   background: #f9fafb;
-  padding: 0;
+  padding: 8px 12px;
   text-align: left;
   font-weight: 600;
   color: #374151;
@@ -12824,25 +12824,31 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   position: sticky;
   top: 0;
   z-index: 1;
-  overflow: hidden;
+  position: relative;
 }
 
-.e-file-editor-th-text {
-  display: inline-block;
-  padding: 8px 4px 8px 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  vertical-align: middle;
-  max-width: calc(100% - 8px);
+.e-file-editor-table .e-file-editor-th-text {
+  display: inline;
+  white-space: nowrap;
+}
+
+.e-file-editor-table .e-file-editor-th-action {
+  background: #f9fafb;
+  padding: 8px 12px;
+  border-bottom: 2px solid #e5e7eb;
+  border-right: 1px solid #e5e7eb;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .e-file-editor-col-resizer {
-  display: inline-block;
-  width: 6px;
-  height: 100%;
   position: absolute;
   right: 0;
   top: 0;
+  width: 6px;
+  height: 100%;
   cursor: col-resize;
   background: transparent;
   z-index: 2;
@@ -12852,13 +12858,21 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   background: rgba(37, 99, 235, 0.3);
 }
 
-.e-file-editor-table td {
+.e-file-editor-table .e-file-editor-td {
   padding: 6px 12px;
   border-bottom: 1px solid #f3f4f6;
   border-right: 1px solid #f3f4f6;
   color: #1f2937;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100px;
+}
+
+.e-file-editor-table .e-file-editor-td-action {
+  padding: 6px 12px;
+  border-bottom: 1px solid #f3f4f6;
+  border-right: 1px solid #f3f4f6;
   white-space: nowrap;
 }
 
@@ -12873,7 +12887,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   white-space: nowrap;
 }
 
-.e-file-editor-table td input {
+.e-file-editor-table .e-file-editor-td input {
   width: 100%;
   padding: 4px 8px;
   border: 1px solid #d1d5db;
@@ -12883,13 +12897,13 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   box-sizing: border-box;
 }
 
-.e-file-editor-table td input:focus {
+.e-file-editor-table .e-file-editor-td input:focus {
   outline: none;
   border-color: #2563eb;
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
 }
 
-.e-file-editor-table td button {
+.e-file-editor-table .e-file-editor-td-action button {
   padding: 4px;
   border: none;
   background: transparent;
@@ -12899,6 +12913,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   transition: background 0.15s;
 }
 
-.e-file-editor-table td button:hover {
+.e-file-editor-table .e-file-editor-td-action button:hover {
   background: #fef2f2;
 }
