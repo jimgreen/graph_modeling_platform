@@ -983,10 +983,22 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     };
   Object.assign(__appScope, { deleteImageAssetFromContextMenu });
   useEffect(createAppHookCallback84(__appScope), [activeImageFolderId, imageTarget]);
+  // 直接在本地计算 imagePickerUsesIconSourcesCatalog，避免依赖 __appScope 的重建
+  const imagePickerUsesIconSources = imageTarget?.kind === "canvasIcon" || (imageTarget?.kind === "stateIconDrawing" && imageTarget?.sourceMode !== "catalogOnly");
+  const imagePickerActiveSourceFilter = imagePickerUsesIconSources
+    ? imageTarget?.sourceMode === "externalOnly"
+      ? "external"
+      : imageTarget?.sourceMode === "builtinOnly"
+        ? "builtin"
+        : imageTarget?.sourceMode === "catalogOnly"
+          ? "catalog"
+          : imagePickerSourceFilter === "external" ? "external" : imagePickerSourceFilter === "catalog" ? "catalog" : "builtin"
+    : "builtin";
+  const imagePickerUsesIconSourcesCatalog = imagePickerUsesIconSources && imagePickerActiveSourceFilter === "catalog";
   const iconLibraryPickerOpen =
     (imageTarget?.kind === "stateIconDrawing" && imageTarget.sourceMode === "catalogOnly") ||
     (imagePickerUsesLibraryTabs(imageTarget) && imagePickerSourceFilter === "icon-library") ||
-    __appScope.imagePickerUsesIconSourcesCatalog;
+    imagePickerUsesIconSourcesCatalog;
   Object.assign(__appScope, { iconLibraryPickerOpen });
   useEffect(() => {
     if (!iconLibraryPickerOpen) {
