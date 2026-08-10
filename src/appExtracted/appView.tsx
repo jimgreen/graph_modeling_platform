@@ -4830,8 +4830,37 @@ export function renderAppView(__appScope: Record<string, any>) {
           open={eFileEditorDialogOpen}
           onClose={() => setEFileEditorDialogOpen(false)}
           records={eFileEditorRecords}
-          onSave={(records) => {
-            // 保存后不关闭弹窗，仅退出编辑模式（由 EFileEditor 内部处理）
+          onSave={(editedRecords) => {
+            const currentNodes = __appScope.nodes ?? [];
+            const setNodes = __appScope.setNodes;
+            const pushUndoSnapshot = __appScope.pushUndoSnapshot;
+            if (!setNodes) return;
+            // 构建 id -> params 映射（跳过拓扑生成的记录）
+            const editedMap = new Map<string, Record<string, string>>();
+            for (const record of editedRecords) {
+              if (!record.id || record.id.includes(":derived:") || record.id.includes(":winding:") || record.id.includes("-")) {
+                // 只处理真实节点 id（格式如 "node-xxx"）
+                if (!record.id.startsWith("node-")) continue;
+              }
+              editedMap.set(record.id, record.params);
+            }
+            if (editedMap.size === 0) return;
+            let changed = false;
+            const nextNodes = currentNodes.map((node: any) => {
+              const edited = editedMap.get(node.id);
+              if (!edited) return node;
+              changed = true;
+              const newName = edited.name ?? node.name;
+              const newParams = { ...node.params };
+              for (const [key, val] of Object.entries(edited)) {
+                if (key === "name") continue;
+                newParams[key] = val;
+              }
+              return { ...node, name: newName, params: newParams };
+            });
+            if (!changed) return;
+            if (pushUndoSnapshot) pushUndoSnapshot();
+            setNodes(nextNodes);
           }}
         />
       )}
