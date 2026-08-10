@@ -12808,6 +12808,27 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   animation: e-file-editor-toast-fade 1s ease-in-out forwards;
 }
 
+.e-file-editor-saved-toast {
+  position: absolute;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #2563eb;
+  color: #fff;
+  font-size: 13px;
+  padding: 8px 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+  white-space: nowrap;
+  animation: e-file-editor-saved-fade 2s ease-in-out forwards;
+}
+
+@keyframes e-file-editor-saved-fade {
+  0%, 85% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 @keyframes e-file-editor-toast-fade {
   0%, 70% { opacity: 1; }
   100% { opacity: 0; }

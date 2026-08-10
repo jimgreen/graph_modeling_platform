@@ -46,6 +46,7 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
   // 列宽状态：key = `${sectionName}:${col}`
   const [colWidths, setColWidths] = useState<Record<string, number>>({});
   const [copiedCell, setCopiedCell] = useState<string | null>(null);
+  const [savedMessage, setSavedMessage] = useState(false);
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   const [highlightedRow, setHighlightedRow] = useState<string | null>(null);
   const resizeRef = useRef<{ colKey: string; startX: number; startWidth: number } | null>(null);
@@ -192,6 +193,8 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
     if (onSave) {
       onSave(editedRecords);
     }
+    setSavedMessage(true);
+    window.setTimeout(() => setSavedMessage(false), 2000);
   };
 
   const handleCancel = () => {
@@ -239,6 +242,9 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
         </div>
         {copiedCell !== null && (
           <div className="e-file-editor-copied-toast">已复制到剪切板</div>
+        )}
+        {savedMessage && (
+          <div className="e-file-editor-saved-toast">已保存</div>
         )}
         {tooltip && (
           <div
