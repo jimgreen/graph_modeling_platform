@@ -1384,6 +1384,45 @@ function hasTemplateConfig(options: EFileExportOptions): boolean {
   return Boolean(options.eDeviceDefinitionLabels) && Object.keys(options.eDeviceDefinitionLabels ?? {}).length > 0;
 }
 
+// 构建 Model 头部记录
+function buildModelRecord(project: ProjectFile): EDeviceExport {
+  const normalizedSchemePath = project.schemePath?.join("/") || "默认方案";
+  return {
+    id: "Model-1",
+    kind: "model",
+    section: "Model",
+    params: {
+      path: normalizedSchemePath,
+      name: project.name || "未命名",
+      p_base: String(project.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE),
+      u_unit: project.voltageUnit ?? DEFAULT_VOLTAGE_UNIT,
+      p_unit: project.powerUnit ?? DEFAULT_POWER_UNIT,
+      i_unit: project.currentUnit ?? DEFAULT_CURRENT_UNIT
+    },
+    columns: ["path", "name", "p_base", "u_unit", "p_unit", "i_unit"]
+  };
+}
+
+// 构建 basevoltage 记录
+function buildBasevoltageRecords(): EDeviceExport[] {
+  const settings = readVoltageLevelSettings();
+  const allLevels: Array<{ name: string; vltp: string }> = [
+    ...settings.ac.map((row) => ({ name: row.name, vltp: row.vltp })),
+    ...settings.dc.map((row) => ({ name: row.name, vltp: row.vltp }))
+  ];
+  return allLevels.map((level, index) => ({
+    id: `basevoltage-${index + 1}`,
+    kind: "basevoltage",
+    section: "basevoltage",
+    params: {
+      idx: String(index + 1),
+      name: level.name,
+      vltp: level.vltp
+    },
+    columns: ["idx", "name", "vltp"]
+  }));
+}
+
 export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOptions = {}): EDeviceExport[] {
   const hasTemplateConfigValue = hasTemplateConfig(options);
   const interfaceDefinitionBySection = eFileInterfaceDefinitionIndex(options);
@@ -1501,6 +1540,12 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
     ...derivedDeviceRecords,
     ...containerAssociatedDevices
   ].filter((record) => interfaceDefinitionBySection.get(record.section)?.exportEnabled !== false);
+
+  // 添加 Model 和 basevoltage 头部记录
+  const modelRecord = buildModelRecord(project);
+  const basevoltageRecords = buildBasevoltageRecords();
+
+  return [modelRecord, ...basevoltageRecords, ...allRecords];
 }
 
 export type EExportWarning = {
