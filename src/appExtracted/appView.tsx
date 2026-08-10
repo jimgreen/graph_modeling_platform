@@ -1257,8 +1257,11 @@ export function renderAppView(__appScope: Record<string, any>) {
   const eFileEditorRecords = useMemo(() => {
     if (!eFileEditorDialogOpen) return [];
     try {
-      return buildEDeviceRecords({ nodes, edges } as any);
-    } catch {
+      const records = buildEDeviceRecords({ nodes, edges } as any);
+      console.log("[EFileEditor] Generated records:", records.length, records.map(r => ({ section: r.section, id: r.id })));
+      return records;
+    } catch (error) {
+      console.error("[EFileEditor] Error generating records:", error);
       return [];
     }
   }, [eFileEditorDialogOpen, nodes, edges]);
