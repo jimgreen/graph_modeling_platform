@@ -1356,14 +1356,6 @@ export function renderAppView(__appScope: Record<string, any>) {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [colorPaletteDialogOpen]);
   useEffect(() => {
-    if (!voltageLevelDialogOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setVoltageLevelDialogOpen(false);
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [voltageLevelDialogOpen]);
-  useEffect(() => {
     if (!unsavedChangesDialogOpen) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setUnsavedChangesDialogOpen(false);
@@ -1371,14 +1363,6 @@ export function renderAppView(__appScope: Record<string, any>) {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [unsavedChangesDialogOpen]);
-  useEffect(() => {
-    if (!userCustomizationManagerOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setUserCustomizationManagerOpen(false);
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [userCustomizationManagerOpen]);
   useEffect(() => {
     if (!pendingRecordPasteConflict) return;
     const handleKeyDown = (event: KeyboardEvent) => {
