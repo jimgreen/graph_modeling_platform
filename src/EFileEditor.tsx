@@ -76,7 +76,7 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
   }, [colWidths]);
 
   const handleDoubleClickCell = useCallback((value: string) => {
-    if (!editMode) return;
+    if (editMode) return;
     const text = value || "";
     if (!text) return;
     if (navigator.clipboard?.writeText) {
@@ -273,11 +273,13 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                                   type="text"
                                   value={value}
                                   onChange={(e) => handleCellEdit(record.id, col, e.target.value)}
-                                  onDoubleClick={(e) => { e.stopPropagation(); handleDoubleClickCell(value); }}
-                                  title="双击复制到剪切板"
                                 />
                               ) : (
-                                <span className="e-file-editor-cell-text">{value}</span>
+                                <span
+                                  className="e-file-editor-cell-text"
+                                  onDoubleClick={() => handleDoubleClickCell(value)}
+                                  title="双击复制到剪切板"
+                                >{value}</span>
                               )}
                             </td>
                           );
