@@ -192,7 +192,6 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
     if (onSave) {
       onSave(editedRecords);
     }
-    setEditMode(false);
   };
 
   const handleCancel = () => {
