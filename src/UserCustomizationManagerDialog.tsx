@@ -153,6 +153,16 @@ export function UserCustomizationManagerDialog(props: UserCustomizationManagerDi
     setChangeFilter("all");
   }, [props.activeDomain, props.open]);
 
+  // ESC 键关闭弹窗（document 级别监听）
+  useEffect(() => {
+    if (!props.open) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") props.onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [props.open, props.onClose]);
+
   const visibleItems = useMemo(() => {
     const needle = normalizedSearchText(query);
     return props.inventory.items.filter((item) => (
@@ -186,7 +196,7 @@ export function UserCustomizationManagerDialog(props: UserCustomizationManagerDi
 
   return (
     <div className="modal-backdrop user-customization-backdrop" role="presentation">
-      <section className="user-customization-dialog" role="dialog" aria-modal="true" aria-label="用户自定义管理" onKeyDown={(event) => { if (event.key === "Escape") { props.onClose(); } }}>
+      <section className="user-customization-dialog" role="dialog" aria-modal="true" aria-label="用户自定义管理">
         <header className="user-customization-header">
           <div>
             <h2>用户自定义管理</h2>

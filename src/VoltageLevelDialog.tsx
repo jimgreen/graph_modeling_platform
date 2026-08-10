@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X, Save, RotateCcw, Plus, Trash2 } from "lucide-react";
 import { BUILTIN_VOLTAGE_LEVELS, VoltageLevelConfig, VoltageLevelSettings, writeVoltageLevelSettings } from "./model";
 
@@ -15,6 +15,16 @@ export function VoltageLevelDialog({ open, onClose, settings, onSave }: Props) {
   const [draft, setDraft] = useState<VoltageLevelSettings>(settings);
   const [error, setError] = useState<string>("");
   const listRef = useRef<HTMLDivElement>(null);
+
+  // ESC 键关闭弹窗（document 级别监听）
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [open, onClose]);
 
   if (!open) return null;
 
@@ -82,7 +92,7 @@ export function VoltageLevelDialog({ open, onClose, settings, onSave }: Props) {
 
   return (
     <div className="image-picker-backdrop" onPointerDown={onClose}>
-      <section className="e-device-interface-dialog" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === "Escape") { onClose(); } }} style={{ width: 500, display: "flex", flexDirection: "column", maxHeight: "80vh", fontSize: 12 }}>
+      <section className="e-device-interface-dialog" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()} style={{ width: 500, display: "flex", flexDirection: "column", maxHeight: "80vh", fontSize: 12 }}>
         <div className="image-picker-title" style={{ padding: "8px 12px" }}>
           <h2 style={{ fontSize: 14, margin: 0 }}>电压等级设置</h2>
           <button type="button" aria-label="关闭" title="关闭" onClick={onClose} style={{ padding: 4 }}>

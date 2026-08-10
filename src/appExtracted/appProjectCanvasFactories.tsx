@@ -3935,7 +3935,6 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
           onPointerUp={stopDeviceLibraryDialogEvent}
           onPointerCancel={stopDeviceLibraryDialogEvent}
           onLostPointerCapture={stopDeviceLibraryDialogEvent}
-          onKeyDown={(event) => { if (event.key === "Escape") { closeMeasurementConfigDialog(); } }}
           role="dialog"
           aria-modal="true"
           aria-labelledby="measurement-config-title"
