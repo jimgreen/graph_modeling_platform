@@ -985,7 +985,8 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   useEffect(createAppHookCallback84(__appScope), [activeImageFolderId, imageTarget]);
   const iconLibraryPickerOpen =
     (imageTarget?.kind === "stateIconDrawing" && imageTarget.sourceMode === "catalogOnly") ||
-    (imagePickerUsesLibraryTabs(imageTarget) && imagePickerSourceFilter === "icon-library");
+    (imagePickerUsesLibraryTabs(imageTarget) && imagePickerSourceFilter === "icon-library") ||
+    __appScope.imagePickerUsesIconSourcesCatalog;
   Object.assign(__appScope, { iconLibraryPickerOpen });
   useEffect(() => {
     if (!iconLibraryPickerOpen) {

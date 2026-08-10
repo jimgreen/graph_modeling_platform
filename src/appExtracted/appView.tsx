@@ -1218,6 +1218,7 @@ export function renderAppView(__appScope: Record<string, any>) {
           : imagePickerSourceFilter === "external" ? "external" : imagePickerSourceFilter === "catalog" ? "catalog" : "builtin"
     : "builtin";
   const imagePickerUsesIconSourcesCatalog = imagePickerUsesIconSources && imagePickerActiveSourceFilter === "catalog";
+  Object.assign(__appScope, { imagePickerUsesIconSourcesCatalog });
   const imagePickerRendersCatalogSource = imagePickerUsesCatalogSource || imagePickerUsesCatalogTab || imagePickerUsesIconSourcesCatalog;
   const imagePickerShowsLibraryActions = !imagePickerRendersCatalogSource && (!imagePickerSourceLocked || imagePickerLockedSourceMode === "externalOnly");
   const imagePickerTitle =
