@@ -12933,6 +12933,37 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   vertical-align: middle;
 }
 
+/* 编辑模式：ghost span 撑开列宽，input 覆盖在上 */
+.e-file-editor-cell-ghost {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.e-file-editor-cell-input {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: calc(100% - 4px);
+  margin: 0 2px;
+  padding: 4px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 13px;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.e-file-editor-cell-input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+.e-file-editor-td {
+  position: relative;
+}
+
 
 .e-file-editor-td.reference-field {
   position: relative;

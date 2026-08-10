@@ -338,11 +338,15 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                               title={editMode ? undefined : value}
                             >
                               {editMode ? (
-                                <input
-                                  type="text"
-                                  value={value}
-                                  onChange={(e) => handleCellEdit(record.id, col, e.target.value)}
-                                />
+                                <>
+                                  <span className="e-file-editor-cell-text e-file-editor-cell-ghost">{value}</span>
+                                  <input
+                                    type="text"
+                                    className="e-file-editor-cell-input"
+                                    value={value}
+                                    onChange={(e) => handleCellEdit(record.id, col, e.target.value)}
+                                  />
+                                </>
                               ) : (
                                 <>
                                   <span
