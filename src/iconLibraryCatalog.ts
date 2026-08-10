@@ -1,7 +1,7 @@
 import { frontendPath } from "./config";
 
 export const ICON_LIBRARY_CATALOG_URL = frontendPath("/icon-library/catalog.json");
-export const ICON_LIBRARY_PAGE_SIZE = 120;
+export const ICON_LIBRARY_PAGE_SIZE = 100;
 
 const CATALOG_CACHE_KEY = "graph-modeling-platform:icon-library:catalog:v2";
 const MANIFEST_CACHE_KEY_PREFIX = "graph-modeling-platform:icon-library:manifest:v2:";
