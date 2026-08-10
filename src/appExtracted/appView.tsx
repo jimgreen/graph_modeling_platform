@@ -12,6 +12,7 @@ import { E_SECTION_COLUMNS, inferESection, getTemplateParameterDefinitions, reso
 import { buildEDeviceInterfaceDefinitionRows, orderEDeviceInterfaceFields, applyEDeviceDefinitionSectionsToLibraryState } from "./appDeviceDefinitionFactories";
 import { UserCustomizationManagerDialog } from "../UserCustomizationManagerDialog";
 import { VoltageLevelDialog } from "../VoltageLevelDialog";
+import { EFileEditor } from "../EFileEditor";
 
 export type ImagePickerLibraryTab = "image" | "icon";
 
@@ -4431,6 +4432,10 @@ export function renderAppView(__appScope: Record<string, any>) {
                   )}
                 </div>
               )}
+              <button type="button" onClick={() => setEFileEditorDialogOpen(true)}>
+                <Eye size={14} aria-hidden="true" />
+                <span>查看/编辑E文件</span>
+              </button>
               <button type="button" onClick={requestExportEDeviceInterfaceDefinitionFile}>
                 <Download size={14} aria-hidden="true" />
                 <span>保存成文件</span>
@@ -4798,6 +4803,17 @@ export function renderAppView(__appScope: Record<string, any>) {
             </footer>
           </section>
         </div>)}
+      {eFileEditorDialogOpen && (
+        <EFileEditor
+          open={eFileEditorDialogOpen}
+          onClose={() => setEFileEditorDialogOpen(false)}
+          records={[]}
+          onSave={(records) => {
+            console.log("E-file records saved:", records);
+            setEFileEditorDialogOpen(false);
+          }}
+        />
+      )}
       {eDeviceInterfaceExitPromptOpen && (<div className="image-picker-backdrop" onPointerDown={() => setEDeviceInterfaceExitPromptOpen(false)}>
           <section className="unsaved-change-dialog e-device-interface-unsaved-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="e-device-interface-unsaved-title">
             <div className="image-picker-title">

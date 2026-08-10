@@ -1241,6 +1241,8 @@ const customDeviceSaveToastTimerRef = useRef<ReturnType<typeof setTimeout> | nul
 Object.assign(__appScope, { customDeviceSaveToast, setCustomDeviceSaveToast, customDeviceSaveToastTimerRef });
 const [eDeviceDefinitionInterfaceDialogOpen, setEDeviceDefinitionInterfaceDialogOpen] = useState(false);
 Object.assign(__appScope, { eDeviceDefinitionInterfaceDialogOpen, setEDeviceDefinitionInterfaceDialogOpen });
+const [eFileEditorDialogOpen, setEFileEditorDialogOpen] = useState(false);
+Object.assign(__appScope, { eFileEditorDialogOpen, setEFileEditorDialogOpen });
 const [deviceDefinitionDialogOpen, setDeviceDefinitionDialogOpen] = useState(false);
 Object.assign(__appScope, { deviceDefinitionDialogOpen, setDeviceDefinitionDialogOpen });
 const [selectedDefinitionKind, setSelectedDefinitionKind] = useState<DeviceKind | "">("");

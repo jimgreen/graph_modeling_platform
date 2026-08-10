@@ -12641,3 +12641,208 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .global-confirm-ok:hover {
   background: #1d4ed8;
 }
+
+/* E文件查看/编辑弹窗 */
+.e-file-editor-dialog {
+  background: #fff;
+  border-radius: 12px;
+  width: 90vw;
+  max-width: 1200px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.e-file-editor-dialog .image-picker-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e5e7eb;
+  gap: 16px;
+}
+
+.e-file-editor-dialog .image-picker-title h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.e-file-editor-mode-toggle {
+  display: flex;
+  gap: 4px;
+  background: #f3f4f6;
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.e-file-editor-mode-toggle button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #6b7280;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.e-file-editor-mode-toggle button.active {
+  background: #fff;
+  color: #1f2937;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.e-file-editor-mode-toggle button:hover:not(.active) {
+  color: #374151;
+}
+
+.e-file-editor-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.e-file-editor-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 8px 16px 0;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f9fafb;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.e-file-editor-tabs button {
+  padding: 8px 16px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #6b7280;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.e-file-editor-tabs button:hover {
+  color: #374151;
+  background: #f3f4f6;
+}
+
+.e-file-editor-tabs button.active {
+  color: #2563eb;
+  border-bottom-color: #2563eb;
+  background: #fff;
+}
+
+.e-file-editor-table-container {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+}
+
+.e-file-editor-table-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.e-file-editor-table-actions button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: #374151;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.e-file-editor-table-actions button:hover {
+  background: #f9fafb;
+}
+
+.e-file-editor-table-actions button.primary {
+  background: #2563eb;
+  color: #fff;
+  border-color: #2563eb;
+}
+
+.e-file-editor-table-actions button.primary:hover {
+  background: #1d4ed8;
+}
+
+.e-file-editor-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.e-file-editor-table th {
+  background: #f9fafb;
+  padding: 8px 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+  border-bottom: 2px solid #e5e7eb;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.e-file-editor-table th .field-export-name {
+  font-size: 11px;
+  color: #9ca3af;
+  font-weight: 400;
+}
+
+.e-file-editor-table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid #f3f4f6;
+  color: #1f2937;
+}
+
+.e-file-editor-table tr:hover {
+  background: #f9fafb;
+}
+
+.e-file-editor-table td input {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 13px;
+  background: #fff;
+}
+
+.e-file-editor-table td input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+.e-file-editor-table td button {
+  padding: 4px;
+  border: none;
+  background: transparent;
+  color: #ef4444;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.e-file-editor-table td button:hover {
+  background: #fef2f2;
+}
