@@ -83,10 +83,11 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
     resizeRef.current = { colKey: key, startX: e.clientX, startWidth };
 
     const handleMove = (ev: PointerEvent) => {
-      if (!resizeRef.current) return;
-      const delta = ev.clientX - resizeRef.current.startX;
-      const newWidth = Math.max(MIN_COL_WIDTH, Math.min(MAX_COL_WIDTH, resizeRef.current.startWidth + delta));
-      setColWidths((prev) => ({ ...prev, [resizeRef.current!.colKey]: newWidth }));
+      const ref = resizeRef.current;
+      if (!ref) return;
+      const delta = ev.clientX - ref.startX;
+      const newWidth = Math.max(MIN_COL_WIDTH, Math.min(MAX_COL_WIDTH, ref.startWidth + delta));
+      setColWidths((prev) => ({ ...prev, [ref.colKey]: newWidth }));
     };
     const handleUp = () => {
       resizeRef.current = null;
