@@ -12866,6 +12866,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   top: 0;
   z-index: 1;
   position: relative;
+  min-width: max-content;
 }
 
 .e-file-editor-table .e-file-editor-th-text {
