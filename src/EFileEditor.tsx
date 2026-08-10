@@ -17,7 +17,7 @@ export interface EFileEditorProps {
   onSave?: (records: EDeviceRecord[]) => void;
 }
 
-const MAX_COL_WIDTH = 100;
+const MAX_COL_WIDTH = 200;
 const MIN_COL_WIDTH = 40;
 const DEFAULT_COL_WIDTH = 80;
 

@@ -12866,7 +12866,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 100px;
+  max-width: 200px;
 }
 
 .e-file-editor-table .e-file-editor-td-action {
