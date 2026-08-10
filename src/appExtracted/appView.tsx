@@ -1256,17 +1256,14 @@ export function renderAppView(__appScope: Record<string, any>) {
   // 从当前模型生成 E 文件记录（用于查看/编辑）
   const [eFileEditorRecords, setEFileEditorRecords] = useState<EDeviceExport[]>([]);
   useEffect(() => {
-    console.log(`[EFileEditor] useEffect triggered, dialogOpen=${eFileEditorDialogOpen}, nodes=${nodes?.length}, edges=${edges?.length}`);
     if (!eFileEditorDialogOpen) return;
     try {
-      const records = buildEDeviceRecords({ nodes, edges } as any);
-      console.log(`[EFileEditor] buildEDeviceRecords returned ${records.length} records`);
+      const records = buildEDeviceRecords({ nodes: __appScope.nodes ?? [], edges: __appScope.edges ?? [] } as any);
       setEFileEditorRecords(records);
     } catch (error) {
       console.error("[EFileEditor] Error generating records:", error);
       setEFileEditorRecords([]);
     }
-    // 只在弹窗打开时计算一次
   }, [eFileEditorDialogOpen]);
   // ESC 键关闭 E 文件编辑器
   useEffect(() => {
