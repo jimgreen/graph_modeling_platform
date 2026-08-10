@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { X, Edit, Eye, Plus, Trash2, ArrowUpRight } from "lucide-react";
 import { PARAM_LABELS } from "./appExtracted/appCoreCanvasUtilities";
 
@@ -59,16 +59,11 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
       sectionMap.set(record.section, list);
     }
     const result = Array.from(sectionMap.entries());
-    console.log("[EFileEditor] Sections:", result.map(([section, records]) => ({
-      section,
-      count: records.length,
-      columns: records[0]?.columns || []
-    })));
     return result;
   }, [editedRecords]);
 
   // 当 records 变化时重置编辑状态
-  useMemo(() => {
+  useEffect(() => {
     setEditedRecords(records);
     setActiveSection(0);
     setEditMode(false);

@@ -1254,17 +1254,20 @@ export function renderAppView(__appScope: Record<string, any>) {
         : "本地图片会先上传到后台图片库；请再从后台可用图片列表中选择应用。";
   const imagePickerCanClear = imageTarget && imageTarget.kind !== "canvasIcon" && imageTarget.kind !== "stateIconDrawing";
   // 从当前模型生成 E 文件记录（用于查看/编辑）
-  const eFileEditorRecords = useMemo(() => {
-    if (!eFileEditorDialogOpen) return [];
+  const [eFileEditorRecords, setEFileEditorRecords] = useState<EDeviceExport[]>([]);
+  useEffect(() => {
+    console.log(`[EFileEditor] useEffect triggered, dialogOpen=${eFileEditorDialogOpen}, nodes=${nodes?.length}, edges=${edges?.length}`);
+    if (!eFileEditorDialogOpen) return;
     try {
       const records = buildEDeviceRecords({ nodes, edges } as any);
-      console.log("[EFileEditor] Generated records:", records.length, records.map(r => ({ section: r.section, id: r.id })));
-      return records;
+      console.log(`[EFileEditor] buildEDeviceRecords returned ${records.length} records`);
+      setEFileEditorRecords(records);
     } catch (error) {
       console.error("[EFileEditor] Error generating records:", error);
-      return [];
+      setEFileEditorRecords([]);
     }
-  }, [eFileEditorDialogOpen, nodes, edges]);
+    // 只在弹窗打开时计算一次
+  }, [eFileEditorDialogOpen]);
   // ESC 键关闭 E 文件编辑器
   useEffect(() => {
     if (!eFileEditorDialogOpen) return;
