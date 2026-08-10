@@ -347,7 +347,7 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                                   onChange={(e) => handleCellEdit(record.id, col, e.target.value)}
                                 />
                               ) : (
-                                <span className="e-file-editor-cell-content">
+                                <>
                                   <span
                                     className="e-file-editor-cell-text"
                                     onDoubleClick={() => handleDoubleClickCell(value)}
@@ -363,7 +363,7 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                                       <ArrowUpRight size={12} />
                                     </button>
                                   )}
-                                </span>
+                                </>
                               )}
                             </td>
                           );
