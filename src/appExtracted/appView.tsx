@@ -4829,6 +4829,14 @@ export function renderAppView(__appScope: Record<string, any>) {
           <section className={imagePickerDialogClassName} onPointerDown={(event) => {
             setImageAssetContextMenu(null);
             event.stopPropagation();
+          }} onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              setImageAssetContextMenu(null);
+              setImagePickerSourceFilter("");
+              setImagePickerCategoryFilter("");
+              setImagePickerSearchQuery("");
+              setImageTarget(null);
+            }
           }}>
             <div className="image-picker-title">
               <div>
