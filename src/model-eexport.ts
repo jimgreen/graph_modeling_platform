@@ -346,7 +346,7 @@ export function inferESection(kind: string, params: Record<string, string> = {})
   return "";
 }
 
-type EDeviceExport = {
+export type EDeviceExport = {
   id: string;
   kind: string;
   section: string;
@@ -1378,7 +1378,7 @@ function hasTemplateConfig(options: EFileExportOptions): boolean {
   return Boolean(options.eDeviceDefinitionLabels) && Object.keys(options.eDeviceDefinitionLabels ?? {}).length > 0;
 }
 
-function buildEDeviceRecords(project: ProjectFile, options: EFileExportOptions = {}): EDeviceExport[] {
+export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOptions = {}): EDeviceExport[] {
   const hasTemplateConfigValue = hasTemplateConfig(options);
   const interfaceDefinitionBySection = eFileInterfaceDefinitionIndex(options);
   const topologyNodes = calculateElectricalTopology(project.nodes, project.edges);
