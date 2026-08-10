@@ -95,6 +95,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    setupFiles: ["./src/test-setup.ts"],
     // e2e 起真实 Vite+浏览器，慢且依赖环境，不进默认 pnpm test；用 pnpm test:e2e 单独跑
     exclude: ["**/node_modules/**", "**/dist/**", "e2e/**"]
   }

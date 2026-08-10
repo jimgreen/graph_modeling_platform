@@ -1367,7 +1367,7 @@ export function createOpenColorPaletteDialog(__appScope: Record<string, any>) {
     if (filled.missingKeys.length > 0) {
       setColorPalette(filled.palette);
       window.setTimeout(() => {
-        window.alert(`当前模型存在 ${filled.missingKeys.length} 个未配置颜色的电压等级，已按相近电压等级自动赋默认颜色：${filled.missingKeys.join("，")}`);
+        showGlobalMessage(`当前模型存在 ${filled.missingKeys.length} 个未配置颜色的电压等级，已按相近电压等级自动赋默认颜色：${filled.missingKeys.join("，")}`);
       }, 0);
     }
   };
@@ -3544,7 +3544,7 @@ export function createHandleBackendSchemeMutationFailure(__appScope: Record<stri
   return (reason: string, error: unknown) => {
   const { refreshSchemesFromBackendDirectory, writeOperationLog } = __appScope;
     const message = error instanceof Error ? error.message : reason;
-    window.alert(`${reason}失败：${message}\n已按后台目录重新刷新方案/模型树。`);
+    showGlobalMessage(`${reason}失败：${message}\n已按后台目录重新刷新方案/模型树。`);
     writeOperationLog(`${reason}失败：${message}`);
     refreshSchemesFromBackendDirectory(`${reason}失败后刷新`);
   };
@@ -4075,7 +4075,7 @@ export function createSaveMeasurementConfigDialog(__appScope: Record<string, any
     const complianceMessage = measurementConfigComplianceMessage(normalizedMeasurementConfig);
     if (complianceMessage) {
       setMeasurementConfigSaveStatus("error");
-      window.alert(complianceMessage);
+      showGlobalMessage(complianceMessage);
       return;
     }
     const reconciledMeasurements = reconcileProjectMeasurementsWithConfig(
@@ -4102,7 +4102,7 @@ export function createSaveMeasurementConfigDialog(__appScope: Record<string, any
       writeOperationLog("保存动态量测配置");
     } catch {
       setMeasurementConfigSaveStatus("error");
-      window.alert("量测配置已保存到本地，但保存到后台失败，请检查后台服务。");
+      showGlobalMessage("量测配置已保存到本地，但保存到后台失败，请检查后台服务。");
     }
   };
 }
@@ -4128,7 +4128,7 @@ export function createAddMeasurementType(__appScope: Record<string, any>) {
     const currentMeasurementConfig = measurementConfigDraftRef.current ?? measurementConfigDraft ?? measurementConfig;
     const existingNames = new Set(currentMeasurementConfig.measurementTypes.map((type) => String(type.name ?? "").trim()).filter(Boolean));
     if (existingNames.has(normalizedName)) {
-      window.alert(`量测类型名称不能重复：${normalizedName}`);
+      showGlobalMessage(`量测类型名称不能重复：${normalizedName}`);
       return;
     }
     const existingIds = new Set(currentMeasurementConfig.measurementTypes.map((type) => String(type.id ?? "").trim()).filter(Boolean));
@@ -4163,9 +4163,9 @@ export function createAddMeasurementType(__appScope: Record<string, any>) {
 }
 
 export function createDeleteMeasurementType(__appScope: Record<string, any>) {
-  return (typeId: string) => {
+  return async (typeId: string) => {
   const { updateMeasurementConfig } = __appScope;
-    if (!window.confirm("删除该量测类型后，设备类型默认绑定里也会同步移除，是否继续？")) {
+    if (!await showGlobalConfirm("删除该量测类型后，设备类型默认绑定里也会同步移除，是否继续？")) {
       return;
     }
     updateMeasurementConfig((current) => ({
@@ -4215,7 +4215,7 @@ export function createAddMeasurementProfileItem(__appScope: Record<string, any>)
   const { createMeasurementProfileItem, editableMeasurementProfileByKind, setMeasurementProfileItems } = __appScope;
     const item = createMeasurementProfileItem();
     if (!item) {
-      window.alert("请先配置至少一个量测类型。");
+      showGlobalMessage("请先配置至少一个量测类型。");
       return;
     }
     const currentItems = editableMeasurementProfileByKind.get(deviceKind)?.items ?? [];
@@ -4277,7 +4277,7 @@ export function createAddDefaultMeasurementsToNode(__appScope: Record<string, an
     }
     const groups = createDefaultMeasurementGroupsForNode(node, measurementConfig);
     if (groups.length === 0) {
-      window.alert("该设备类型还没有绑定默认量测，请先在基础页配置设备类型可用量测。");
+      showGlobalMessage("该设备类型还没有绑定默认量测，请先在基础页配置设备类型可用量测。");
       return;
     }
     updateProjectMeasurementsWithUndo(
@@ -4430,7 +4430,7 @@ export function createAddMeasurementItemToGroup(__appScope: Record<string, any>)
     }
     const item = createMeasurementItemForNode(node, undefined, group.terminalId, group.items);
     if (!item) {
-      window.alert("请先配置至少一个量测类型。");
+      showGlobalMessage("请先配置至少一个量测类型。");
       return;
     }
     updateProjectMeasurementsWithUndo(
@@ -4538,7 +4538,7 @@ export function createAddMeasurementEditorDraftItem(__appScope: Record<string, a
       existingItems
     );
     if (!item) {
-      window.alert("请先配置至少一个量测类型。");
+      showGlobalMessage("请先配置至少一个量测类型。");
       return;
     }
     setMeasurementEditorDialog((current) => {
@@ -4689,7 +4689,7 @@ export function createConfirmMeasurementEditorDialog(__appScope: Record<string, 
     }
     const duplicateNames = duplicateMeasurementEditorItemNames(measurementEditorDialog.drafts);
     if (duplicateNames.length > 0) {
-      window.alert(`同一个设备下量测名称不能重复：${duplicateNames.join("、")}`);
+      showGlobalMessage(`同一个设备下量测名称不能重复：${duplicateNames.join("、")}`);
       return;
     }
     const drafts = measurementEditorDialog.drafts

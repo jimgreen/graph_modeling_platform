@@ -12,7 +12,8 @@ describe("text file output", () => {
     const showSaveFilePicker = vi.fn(async () => ({
       createWritable: async () => ({ write, close })
     }));
-    vi.stubGlobal("window", { showSaveFilePicker, alert: vi.fn() });
+    vi.stubGlobal("showGlobalMessage", vi.fn());
+    vi.stubGlobal("window", { showSaveFilePicker });
 
     const saved = await saveTextFile({
       filename: "model.e",
@@ -45,7 +46,8 @@ describe("text file output", () => {
       order.push("generate");
       return "<Model/>";
     });
-    vi.stubGlobal("window", { showSaveFilePicker, alert: vi.fn() });
+    vi.stubGlobal("showGlobalMessage", vi.fn());
+    vi.stubGlobal("window", { showSaveFilePicker });
 
     const savePromise = saveLazyTextFile({
       filename: "model.e",
@@ -95,10 +97,10 @@ describe("text file output", () => {
     });
     const onSaveTargetReady = vi.fn(() => order.push("save-target-ready"));
     const showSaveFilePicker = vi.fn();
+    vi.stubGlobal("showGlobalMessage", vi.fn());
     vi.stubGlobal("window", {
       location: { hostname: "127.0.0.1" },
-      showSaveFilePicker,
-      alert: vi.fn()
+      showSaveFilePicker
     });
     vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" });
     vi.stubGlobal("fetch", fetchMock);
@@ -135,12 +137,13 @@ describe("text file output", () => {
   });
 
   test("does not write or report success when the lazy save picker is cancelled", async () => {
-    const alert = vi.fn();
+    const showGlobalMessage = vi.fn();
     const loadText = vi.fn(() => "<Model/>");
     const showSaveFilePicker = vi.fn(async () => {
       throw new DOMException("cancelled", "AbortError");
     });
-    vi.stubGlobal("window", { showSaveFilePicker, alert });
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    vi.stubGlobal("window", { showSaveFilePicker });
 
     const saved = await saveLazyTextFile({
       filename: "model.e",
@@ -152,7 +155,7 @@ describe("text file output", () => {
 
     expect(saved).toBe(false);
     expect(loadText).toHaveBeenCalledOnce();
-    expect(alert).not.toHaveBeenCalled();
+    expect(showGlobalMessage).not.toHaveBeenCalled();
   });
 
   test("writes directory export text without an intermediate Blob", async () => {

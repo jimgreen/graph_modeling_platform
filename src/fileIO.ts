@@ -117,7 +117,7 @@ async function saveLazyTextFileWithNativeDialog(
     const text = await textPromise;
     notifySaveTargetReady();
     if (message) {
-      window.alert(message);
+      showGlobalMessage(message);
     }
     downloadText(options.filename, text, options.mime);
     return true;
@@ -155,13 +155,13 @@ async function saveLazyTextFileWithNativeDialog(
       body: text
     });
   } catch {
-    window.alert("写入导出文件失败，已改为浏览器下载。");
+    showGlobalMessage("写入导出文件失败，已改为浏览器下载。");
     downloadText(options.filename, text, options.mime);
     return true;
   }
   if (!writeResponse.ok) {
     const message = await responseErrorMessage(writeResponse, "写入导出文件失败。");
-    window.alert(`${message}\n已改为浏览器下载。`);
+    showGlobalMessage(`${message}\n已改为浏览器下载。`);
     downloadText(options.filename, text, options.mime);
   }
   return true;
@@ -212,7 +212,7 @@ export async function saveTextFile(options: TextSaveOptions): Promise<boolean> {
     if (isPickerAbort(error)) {
       return false;
     }
-    window.alert("保存文件失败，已改为浏览器下载。");
+    showGlobalMessage("保存文件失败，已改为浏览器下载。");
     downloadText(options.filename, options.text, options.mime);
     return true;
   }
@@ -257,7 +257,7 @@ export async function saveLazyTextFile(options: LazyTextSaveOptions): Promise<bo
   } catch (error) {
     notifySaveTargetReady();
     const text = await options.loadText();
-    window.alert("打开保存窗口失败，已改为浏览器下载。");
+    showGlobalMessage("打开保存窗口失败，已改为浏览器下载。");
     downloadText(options.filename, text, options.mime);
     return true;
   }
@@ -276,7 +276,7 @@ export async function saveLazyTextFile(options: LazyTextSaveOptions): Promise<bo
     }
     notifySaveTargetReady();
     const text = await textPromise;
-    window.alert("打开保存窗口失败，已改为浏览器下载。");
+    showGlobalMessage("打开保存窗口失败，已改为浏览器下载。");
     downloadText(options.filename, text, options.mime);
     return true;
   }
@@ -293,7 +293,7 @@ export async function saveLazyTextFile(options: LazyTextSaveOptions): Promise<bo
       return false;
     }
     notifySaveTargetReady();
-    window.alert("保存文件失败，已改为浏览器下载。");
+    showGlobalMessage("保存文件失败，已改为浏览器下载。");
     downloadText(options.filename, text, options.mime);
     return true;
   }
@@ -335,7 +335,7 @@ export async function saveLazyBlobFile(options: LazyBlobSaveOptions): Promise<bo
     if (isPickerAbort(error)) {
       return false;
     }
-    window.alert("打开保存窗口失败，已改为浏览器下载。");
+    showGlobalMessage("打开保存窗口失败，已改为浏览器下载。");
     downloadBlob(options.filename, await options.loadBlob());
     return true;
   }
@@ -349,7 +349,7 @@ export async function saveLazyBlobFile(options: LazyBlobSaveOptions): Promise<bo
     if (isPickerAbort(error)) {
       return false;
     }
-    window.alert("保存文件失败，已改为浏览器下载。");
+    showGlobalMessage("保存文件失败，已改为浏览器下载。");
     downloadBlob(options.filename, blob);
     return true;
   }

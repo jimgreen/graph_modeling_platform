@@ -575,13 +575,13 @@ export function renderAppView(__appScope: Record<string, any>) {
     try {
       const response = await fetch(`/e-templates/${templateFile}`);
       if (!response.ok) {
-        window.alert(`加载预定义模板失败：${response.statusText}`);
+        showGlobalMessage(`加载预定义模板失败：${response.statusText}`);
         return;
       }
       const text = await response.text();
       const sections = parseEDeviceDefinitionFile(text);
       if (sections.length === 0) {
-        window.alert("未在模板中解析到元件定义。");
+        showGlobalMessage("未在模板中解析到元件定义。");
         return;
       }
       // 先取消所有设备类的导出状态，再导入模板定义
@@ -719,7 +719,7 @@ export function renderAppView(__appScope: Record<string, any>) {
         }
       }, 0);
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "加载预定义模板失败。");
+      showGlobalMessage(error instanceof Error ? error.message : "加载预定义模板失败。");
     }
   };
   const eDeviceInterfaceSaveMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1205,7 +1205,21 @@ export function renderAppView(__appScope: Record<string, any>) {
   const imagePickerUsesSeparateLibraryTabs = imagePickerUsesLibraryTabs(imageTarget);
   const imagePickerActiveLibraryTab: ImagePickerLibraryTab = imagePickerUsesSeparateLibraryTabs && imagePickerSourceFilter === "icon-library" ? "icon" : "image";
   const imagePickerUsesCatalogTab = imagePickerUsesSeparateLibraryTabs && imagePickerActiveLibraryTab === "icon";
-  const imagePickerRendersCatalogSource = imagePickerUsesCatalogSource || imagePickerUsesCatalogTab;
+  const imagePickerUsesIconSources = imageTarget?.kind === "canvasIcon" || (imageTarget?.kind === "stateIconDrawing" && !imagePickerUsesCatalogSource);
+  const imagePickerLockedSourceMode = imageTarget?.kind === "stateIconDrawing" ? imageTarget.sourceMode ?? "" : "";
+  const imagePickerSourceLocked = imagePickerLockedSourceMode === "builtinOnly" || imagePickerLockedSourceMode === "externalOnly" || imagePickerLockedSourceMode === "catalogOnly";
+  const imagePickerActiveSourceFilter = imagePickerUsesIconSources
+    ? imagePickerLockedSourceMode === "externalOnly"
+      ? "external"
+      : imagePickerLockedSourceMode === "builtinOnly"
+        ? "builtin"
+        : imagePickerLockedSourceMode === "catalogOnly"
+          ? "catalog"
+          : imagePickerSourceFilter === "external" ? "external" : imagePickerSourceFilter === "catalog" ? "catalog" : "builtin"
+    : "builtin";
+  const imagePickerUsesIconSourcesCatalog = imagePickerUsesIconSources && imagePickerActiveSourceFilter === "catalog";
+  const imagePickerRendersCatalogSource = imagePickerUsesCatalogSource || imagePickerUsesCatalogTab || imagePickerUsesIconSourcesCatalog;
+  const imagePickerShowsLibraryActions = !imagePickerRendersCatalogSource && (!imagePickerSourceLocked || imagePickerLockedSourceMode === "externalOnly");
   const imagePickerTitle =
     imageTarget?.kind === "canvas"
       ? "选择模型背景图片"
@@ -1235,19 +1249,10 @@ export function renderAppView(__appScope: Record<string, any>) {
             ? "内置 SVG 通过下方列表选择；外部 SVG/PNG 可直接导入，文档图片/图标导入会抽取图片并将可识别矢量图形转成 SVG 素材。"
         : "本地图片会先上传到后台图片库；请再从后台可用图片列表中选择应用。";
   const imagePickerCanClear = imageTarget && imageTarget.kind !== "canvasIcon" && imageTarget.kind !== "stateIconDrawing";
-  const imagePickerUsesIconSources = imageTarget?.kind === "canvasIcon" || (imageTarget?.kind === "stateIconDrawing" && !imagePickerUsesCatalogSource);
-  const imagePickerLockedSourceMode = imageTarget?.kind === "stateIconDrawing" ? imageTarget.sourceMode ?? "" : "";
-  const imagePickerSourceLocked = imagePickerLockedSourceMode === "builtinOnly" || imagePickerLockedSourceMode === "externalOnly" || imagePickerLockedSourceMode === "catalogOnly";
-  const imagePickerShowsLibraryActions = !imagePickerRendersCatalogSource && (!imagePickerSourceLocked || imagePickerLockedSourceMode === "externalOnly");
-  const imagePickerActiveSourceFilter = imagePickerUsesIconSources
-    ? imagePickerLockedSourceMode === "externalOnly"
-      ? "external"
-      : imagePickerLockedSourceMode === "builtinOnly"
-        ? "builtin"
-        : imagePickerSourceFilter === "external" ? "external" : "builtin"
-    : "builtin";
   const sourceFilteredImageAssetList = imagePickerUsesIconSources
-    ? (imageAssetList ?? []).filter((asset) => imagePickerActiveSourceFilter === "builtin" ? imagePickerAssetIsBuiltinIcon(asset) : !imagePickerAssetIsBuiltinIcon(asset))
+    ? imagePickerActiveSourceFilter === "catalog"
+      ? []
+      : (imageAssetList ?? []).filter((asset) => imagePickerActiveSourceFilter === "builtin" ? imagePickerAssetIsBuiltinIcon(asset) : !imagePickerAssetIsBuiltinIcon(asset))
     : imagePickerUsesSeparateLibraryTabs
       ? imagePickerAssetsForLibraryTab(imageAssetList ?? [], imagePickerActiveLibraryTab)
       : (imageAssetList ?? []);
@@ -1491,11 +1496,11 @@ export function renderAppView(__appScope: Record<string, any>) {
               <FileJson size={16}/>
             </button>
             <div className="topbar-dropdown export-dropdown">
-              <button className="topbar-primary-button" onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { window.alert(mismatch); return; } requestExportWithSave(exportSvg); }} title="导出 E、JSON 和 SVG 文件" aria-label="导出 E、JSON 和 SVG 文件">
+              <button className="topbar-primary-button" onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { showGlobalMessage(mismatch); return; } requestExportWithSave(exportSvg); }} title="导出 E、JSON 和 SVG 文件" aria-label="导出 E、JSON 和 SVG 文件">
                 <Download size={16}/>
               </button>
               <div className="topbar-dropdown-menu" role="menu" aria-label="导出选项">
-                <button onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { window.alert(mismatch); return; } requestExportWithSave(exportEFile); }} title="导出 E 文件" aria-label="导出 E 文件">
+                <button onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { showGlobalMessage(mismatch); return; } requestExportWithSave(exportEFile); }} title="导出 E 文件" aria-label="导出 E 文件">
                   <FileJson size={16}/>
                   <span>导出 E 文件</span>
                 </button>
@@ -3987,7 +3992,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                                 const selectedAssociation = event.target.value as ContainerTerminalAssociationType;
                                 if (isDoubleContainerTerminalAssociation(selectedAssociation) && index + 1 >= current.terminalCount) {
                                     const message = `端子${index + 1}是最后一个端子，不能设置为双端热源/热荷。`;
-                                    window.alert(message);
+                                    showGlobalMessage(message);
                                     return { ...current, error: message };
                                 }
                                 const terminalTypes = [...current.terminalTypes];
@@ -4915,6 +4920,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                       disabled={!iconLibraryCatalog}
                     >
                       <option value="">全部图库</option>
+                      <option value="builtin-svg">内置SVG</option>
                       {iconLibraryLibraries.map((library: any) => (
                         <option key={library.id} value={library.id}>
                           {library.label}{typeof library.totalIcons === "number" ? ` (${library.totalIcons})` : ""}
@@ -4976,7 +4982,37 @@ export function renderAppView(__appScope: Record<string, any>) {
                   </button>
                   <span>{iconLibraryLoadedText}</span>
                 </div>
-                {iconLibraryPicker?.status === "error" ? (
+                {iconLibrarySelectedLibraryId === "builtin-svg" ? (
+                  (() => {
+                    const builtinIcons = (imageAssetList ?? []).filter(imagePickerAssetIsBuiltinIcon);
+                    const query = (iconLibraryPicker?.searchQuery ?? "").toLowerCase();
+                    const filtered = query
+                      ? builtinIcons.filter((asset: any) => {
+                          const name = String(asset?.name ?? "").toLowerCase();
+                          return name.includes(query);
+                        })
+                      : builtinIcons;
+                    if (filtered.length === 0) {
+                      return <p className="image-empty">{query ? "没有匹配的内置SVG图标。" : "没有内置SVG图标。"}</p>;
+                    }
+                    return (
+                      <div className="image-asset-list icon-library-catalog-list">
+                        {filtered.map((asset: any, index: number) => (
+                          <button
+                            key={asset.id || index}
+                            className="image-asset-option icon-library-catalog-option"
+                            disabled={isBrowseMode}
+                            onClick={() => applyImageAsset && applyImageAsset(asset)}
+                            title={asset.name || `内置图标 ${index + 1}`}
+                          >
+                            <img src={asset.url} alt={asset.name || `内置图标 ${index + 1}`} loading="lazy"/>
+                            <span>{asset.name || `内置图标 ${index + 1}`}</span>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()
+                ) : iconLibraryPicker?.status === "error" ? (
                   <p className="image-empty">{iconLibraryPicker.error || "读取分类图标库失败。"}</p>
                 ) : !iconLibraryCatalog ? (
                   <p className="image-empty">正在加载分类图标库目录...</p>
@@ -5033,6 +5069,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                         setImagePickerCategoryFilter("");
                       }}>
                         <option value="builtin">内置 SVG</option>
+                        <option value="catalog">开源SVG综合图标库</option>
                         <option value="external">外部导入</option>
                       </select>
                     </label>

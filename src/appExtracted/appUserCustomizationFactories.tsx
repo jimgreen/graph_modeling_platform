@@ -30,14 +30,14 @@ const alertUser = (scope: Record<string, any>, message: string) => {
     scope.alertUser(message);
     return;
   }
-  window.alert(message);
+  showGlobalMessage(message);
 };
 
-const confirmUser = (scope: Record<string, any>, message: string) => {
+const confirmUser = async (scope: Record<string, any>, message: string) => {
   if (typeof scope.confirmUser === "function") {
-    return Boolean(scope.confirmUser(message));
+    return Boolean(await scope.confirmUser(message));
   }
-  return window.confirm(message);
+  return showGlobalConfirm(message);
 };
 
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
@@ -466,7 +466,7 @@ export function createRestoreUserCustomizations(scope: Record<string, any>) {
       alertUser(scope, "所选内容无需恢复。");
       return;
     }
-    if (!confirmUser(scope, `确定恢复所选用户自定义内容吗？预计影响 ${affected} 项；现有模型中的设备和量测实例不会被删除。`)) {
+    if (!await confirmUser(scope, `确定恢复所选用户自定义内容吗？预计影响 ${affected} 项；现有模型中的设备和量测实例不会被删除。`)) {
       return;
     }
     try {

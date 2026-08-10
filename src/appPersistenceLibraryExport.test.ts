@@ -667,7 +667,7 @@ describe("graph template library filtering", () => {
     );
     const importHandler = importHandlerMatch?.[0] ?? "";
     const logIndex = importHandler.indexOf("writeOperationLog(`导入${label}：${file.name}`);");
-    const successAlertIndex = importHandler.indexOf("window.alert(`导入${label}成功。`);");
+    const successAlertIndex = importHandler.indexOf("showGlobalMessage(`导入${label}成功。`);");
     const catchIndex = importHandler.indexOf("} catch (error) {");
 
     expect(logIndex).toBeGreaterThanOrEqual(0);

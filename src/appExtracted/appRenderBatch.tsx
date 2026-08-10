@@ -951,14 +951,14 @@ export function useRenderBatch(__appScope: Record<string, any>) {
           // 后端不可用时保留浏览器本地图片，避免影响画布编辑。
         });
   Object.assign(__appScope, { refreshImagesForFolder });
-  const deleteImageAssetFromContextMenu = () => {
+  const deleteImageAssetFromContextMenu = async () => {
       const menu = imageAssetContextMenu;
       if (!menu) {
         return;
       }
       const asset = imageAssetList.find((item) => item.id === menu.assetId);
       const assetName = asset?.name || asset?.filename || menu.assetId;
-      if (!window.confirm(`确定删除“${assetName}”吗？如果该图片已被图元引用，删除后对应图元可能无法继续显示该图片。`)) {
+      if (!await showGlobalConfirm(`确定删除”${assetName}”吗？如果该图片已被图元引用，删除后对应图元可能无法继续显示该图片。`)) {
         setImageAssetContextMenu(null);
         return;
       }
@@ -977,7 +977,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
           setImageAssetContextMenu(null);
           void refreshImageFolders();
         } catch (error) {
-          window.alert(error instanceof Error ? error.message : "删除图片资源失败。");
+          showGlobalMessage(error instanceof Error ? error.message : "删除图片资源失败。");
         }
       })();
     };
@@ -1526,7 +1526,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
         }
       }
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "导出库文件失败。");
+      showGlobalMessage(error instanceof Error ? error.message : "导出库文件失败。");
     }
   };
   Object.assign(__appScope, { exportLibraryPackage });
@@ -1682,7 +1682,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
             : targetScope === "icon-library"
             ? `确定导入${label}吗？同 ID 图标会被覆盖，其他图标会保留。`
             : `确定导入${label}吗？当前${label}配置会被导入文件中的对应配置覆盖。`;
-          if (!window.confirm(confirmMessage)) {
+          if (!await showGlobalConfirm(confirmMessage)) {
             return;
           }
           if (targetScope === "all") {
@@ -1697,14 +1697,14 @@ export function useRenderBatch(__appScope: Record<string, any>) {
             await applyImportedIconLibrary(packagePayload);
           }
           writeOperationLog(`导入${label}：${file.name}`);
-          window.alert(`导入${label}成功。`);
+          showGlobalMessage(`导入${label}成功。`);
         } catch (error) {
-          window.alert(error instanceof Error ? error.message : "导入库文件失败。");
+          showGlobalMessage(error instanceof Error ? error.message : "导入库文件失败。");
         }
       })();
     };
     reader.onerror = () => {
-      window.alert("读取库文件失败。");
+      showGlobalMessage("读取库文件失败。");
     };
     reader.readAsText(file, "utf-8");
   };

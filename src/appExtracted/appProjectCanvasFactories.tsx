@@ -225,7 +225,7 @@ export function createFinishRoutableLineEndpointDrag(__appScope: Record<string, 
         writeOperationLog(`调整线路端点：${routedLine.name}`);
       }
     } else if (lineNode) {
-      window.alert("线路端点必须连接到同类型设备端子或母线，已保持原连接。");
+      showGlobalMessage("线路端点必须连接到同类型设备端子或母线，已保持原连接。");
       writeOperationLog("线路端点调整失败");
     }
     setRoutableLineEndpointDrag(null);
@@ -260,7 +260,7 @@ export function createCommitNewConnectionEdge(__appScope: Record<string, any>) {
     })();
     const endpointRuleMessage = connectionEndpointRuleFailureMessage(edgeForCommit);
     if (endpointRuleMessage) {
-      window.alert(`联络线绘制失败：${endpointRuleMessage}`);
+      showGlobalMessage(`联络线绘制失败：${endpointRuleMessage}`);
       writeOperationLog(`联络线绘制失败：${endpointRuleMessage}`);
       return false;
     }
@@ -274,7 +274,7 @@ export function createCommitNewConnectionEdge(__appScope: Record<string, any>) {
     );
     if (!prepared.ok || !prepared.edge) {
       const message = connectionCommitFailureMessage(prepared.issues);
-      window.alert(`联络线绘制失败：${message}`);
+      showGlobalMessage(`联络线绘制失败：${message}`);
       writeOperationLog(`联络线绘制失败：${message}`);
       return false;
     }
@@ -424,11 +424,11 @@ export function createFinishRewiring(__appScope: Record<string, any>) {
         writeOperationLog(`调整联络线端子：${rewiring.edgeId}`);
       } else {
         const message = endpointRuleMessage || connectionCommitFailureMessage(prepared?.issues);
-        window.alert(`联络线端子调整失败：${message}`);
+        showGlobalMessage(`联络线端子调整失败：${message}`);
         writeOperationLog(`联络线端子调整失败：${message}`);
       }
     } else {
-      window.alert("联络线端子必须连接到同类型端子或母线，已保持原连接。");
+      showGlobalMessage("联络线端子必须连接到同类型端子或母线，已保持原连接。");
       writeOperationLog("联络线端子调整失败");
     }
     selectCanvasGraphics([], [rewiring.edgeId]);
@@ -2160,7 +2160,7 @@ export function createConfirmVoltageBaseSetDialog(__appScope: Record<string, any
         `${item.nodeName}：${item.sourceTerminalLabel} ${item.sourceVoltageBase} / ${item.targetTerminalLabel} ${item.targetVoltageBase}`
       );
       const suffix = voltageBaseMismatches.length > examples.length ? `\n等 ${voltageBaseMismatches.length} 个两端设备。` : "";
-      window.alert(`两端设备的电压基值必须相同，无法保存本次人工设置。\n\n${examples.join("\n")}${suffix}`);
+      showGlobalMessage(`两端设备的电压基值必须相同，无法保存本次人工设置。\n\n${examples.join("\n")}${suffix}`);
       writeOperationLog(`设置电压基值失败：${voltageBaseMismatches.length} 个两端设备电压基值不一致`);
       return;
     }
@@ -2415,11 +2415,11 @@ export function createPromptUniqueRecordName(__appScope: Record<string, any>) {
     }
     const name = inputName.trim();
     if (!name) {
-      window.alert(emptyMessage);
+      showGlobalMessage(emptyMessage);
       return null;
     }
     if (hasSameName(name, existingNames)) {
-      window.alert(duplicateMessage);
+      showGlobalMessage(duplicateMessage);
       return null;
     }
     return name;
@@ -2703,7 +2703,7 @@ export function createLoadSavedProjectRecord(__appScope: Record<string, any>) {
       const ownerSchemePath = resolvedSchemeId ? schemePathForScheme(resolvedSchemeId, sourceSchemes) : [];
       const schemePath = ownerSchemePath.length > 0 ? ownerSchemePath : schemePathForProject(project.id, sourceSchemes);
       if (schemePath.length === 0) {
-        window.alert(`无法读取模型“${project.name}”：未找到所属方案路径。`);
+        showGlobalMessage(`无法读取模型“${project.name}”：未找到所属方案路径。`);
         writeOperationLog(`读取模型失败：${project.name}`);
         return false;
       }
@@ -2720,7 +2720,7 @@ export function createLoadSavedProjectRecord(__appScope: Record<string, any>) {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : `读取模型失败：${project.name}`;
-        window.alert(message);
+        showGlobalMessage(message);
         writeOperationLog(`读取模型失败：${project.name}`);
         return false;
       }
@@ -2806,11 +2806,11 @@ export function createCreateSchemeRecord(__appScope: Record<string, any>) {
     }
     const name = inputName.trim();
     if (!name) {
-      window.alert("方案名称不能为空。");
+      showGlobalMessage("方案名称不能为空。");
       return;
     }
     if (hasSameName(name, savedChildSchemeNames(schemes, parentSchemeId))) {
-      window.alert("方案名称重复，无法新建方案。");
+      showGlobalMessage("方案名称重复，无法新建方案。");
       return;
     }
     const record = createSavedScheme(name);
@@ -2839,11 +2839,11 @@ export function createRenameSchemeRecord(__appScope: Record<string, any>) {
     }
     const name = nextName.trim();
     if (!name) {
-      window.alert("方案名称不能为空。");
+      showGlobalMessage("方案名称不能为空。");
       return;
     }
     if (hasSameName(name, savedSchemeSiblingNames(schemes, scheme.id, scheme.id))) {
-      window.alert("方案名称重复，无法修改。");
+      showGlobalMessage("方案名称重复，无法修改。");
       return;
     }
     const previousPath = schemePathForScheme(scheme.id);
@@ -2887,7 +2887,7 @@ export function createDuplicateSchemeRecord(__appScope: Record<string, any>) {
 }
 
 export function createDeleteSchemeRecord(__appScope: Record<string, any>) {
-  return (scheme: SavedSchemeRecord) => {
+  return async (scheme: SavedSchemeRecord) => {
   const { activeSchemeKey, clearActiveProjectDisplay, clearRecordSelection, deleteBackendSchemeRecord, deleteSavedScheme, flattenSavedSchemes, handleBackendSchemeMutationFailure, loadSavedProjectRecord, nextSavedProjectAfterSchemeDeletion, requireEditMode, schemePathForScheme, schemes, selectedSchemeId, setSchemes } = __appScope;
     if (!requireEditMode("删除方案")) {
       return;
@@ -2900,7 +2900,7 @@ export function createDeleteSchemeRecord(__appScope: Record<string, any>) {
     const confirmationMessage = deletingActiveScheme
       ? `当前加载模型所在方案“${scheme.name}”将被删除。删除后会自动切换到相邻方案的模型；若没有可用模型，将清空画布。是否继续？`
       : `删除方案“${scheme.name}”及其全部模型？`;
-    if (!window.confirm(confirmationMessage)) {
+    if (!await showGlobalConfirm(confirmationMessage)) {
       return;
     }
     const fallbackSelection = deletingActiveScheme
@@ -2915,7 +2915,7 @@ export function createDeleteSchemeRecord(__appScope: Record<string, any>) {
         .catch((error) => handleBackendSchemeMutationFailure(`删除后台方案：${scheme.name}`, error));
     }
     if (noSchemesAfterDeletion) {
-      window.alert("所有方案已删除，画布已清空。");
+      showGlobalMessage("所有方案已删除，画布已清空。");
       clearActiveProjectDisplay("所有方案已删除，画布已清空");
       return;
     }
@@ -2923,7 +2923,7 @@ export function createDeleteSchemeRecord(__appScope: Record<string, any>) {
       if (fallbackSelection) {
         void loadSavedProjectRecord(fallbackSelection.project, fallbackSelection.scheme.id);
       } else {
-        window.alert(emptyDisplayMessage);
+        showGlobalMessage(emptyDisplayMessage);
         clearActiveProjectDisplay("删除当前方案后已清空画布");
       }
       return;
@@ -2956,7 +2956,7 @@ export function createCopySelectedRecord(__appScope: Record<string, any>) {
 }
 
 export function createDeleteSelectedRecords(__appScope: Record<string, any>) {
-  return () => {
+  return async () => {
   const { activeProjectKey, activeSchemeKey, clearActiveProjectDisplay, clearRecordSelection, deleteBackendProjectRecord, deleteBackendSchemeRecord, deleteSavedProjectsFromSchemes, deleteSavedScheme, findSavedSchemeById, flattenSavedSchemes, handleBackendSchemeMutationFailure, loadSavedProjectRecord, nextSavedProjectAfterProjectBatchDeletion, nextSavedProjectAfterSchemeDeletion, projects, requireEditMode, schemePathForProject, schemePathForScheme, schemes, selectedProjectIds, selectedSchemeIds, setSchemes } = __appScope;
     if (!requireEditMode("删除记录")) {
       return;
@@ -2968,7 +2968,7 @@ export function createDeleteSelectedRecords(__appScope: Record<string, any>) {
       const confirmationMessage = deletingActiveProject
         ? `选中的 ${names.length} 个模型包含当前加载模型。删除后会自动切换到同方案的相邻模型；若没有相邻模型，将清空画布。是否继续？`
         : `删除选中的 ${names.length} 个模型？`;
-      if (!window.confirm(confirmationMessage)) {
+      if (!await showGlobalConfirm(confirmationMessage)) {
         return;
       }
       const fallbackSelection = deletingActiveProject
@@ -2987,7 +2987,7 @@ export function createDeleteSelectedRecords(__appScope: Record<string, any>) {
         if (fallbackSelection) {
           void loadSavedProjectRecord(fallbackSelection.project, fallbackSelection.scheme.id);
         } else {
-          window.alert("当前方案已无模型，画布已清空。");
+          showGlobalMessage("当前方案已无模型，画布已清空。");
           clearActiveProjectDisplay("删除当前模型后已清空画布");
         }
         return;
@@ -3009,7 +3009,7 @@ export function createDeleteSelectedRecords(__appScope: Record<string, any>) {
       const confirmationMessage = deletingActiveScheme
         ? `选中的 ${selectedSchemeIds.length} 个方案包含当前加载模型所在方案。删除后会自动切换到相邻方案的模型；若没有可用模型，将清空画布。是否继续？`
         : `删除选中的 ${selectedSchemeIds.length} 个方案及其全部模型？`;
-      if (!window.confirm(confirmationMessage)) {
+      if (!await showGlobalConfirm(confirmationMessage)) {
         return;
       }
       const fallbackSelection = deletingActiveScheme
@@ -3026,7 +3026,7 @@ export function createDeleteSelectedRecords(__appScope: Record<string, any>) {
           .catch((error) => handleBackendSchemeMutationFailure(`删除后台方案：${item.scheme?.name ?? item.schemeId}`, error));
       }
       if (noSchemesAfterDeletion) {
-        window.alert("所有方案已删除，画布已清空。");
+        showGlobalMessage("所有方案已删除，画布已清空。");
         clearActiveProjectDisplay("所有方案已删除，画布已清空");
         return;
       }
@@ -3034,7 +3034,7 @@ export function createDeleteSelectedRecords(__appScope: Record<string, any>) {
         if (fallbackSelection) {
           void loadSavedProjectRecord(fallbackSelection.project, fallbackSelection.scheme.id);
         } else {
-          window.alert(emptyDisplayMessage);
+          showGlobalMessage(emptyDisplayMessage);
           clearActiveProjectDisplay("删除当前方案后已清空画布");
         }
         return;
@@ -3590,7 +3590,7 @@ export function createToggleModelLayerVisibility(__appScope: Record<string, any>
       return;
     }
     if (layer.id === activeLayerId && layer.visible) {
-      window.alert("激活图层必须显示，不能隐藏。");
+      showGlobalMessage("激活图层必须显示，不能隐藏。");
       return;
     }
     pushUndoSnapshot();
@@ -3639,13 +3639,13 @@ export function createMoveModelLayer(__appScope: Record<string, any>) {
 }
 
 export function createDeleteModelLayer(__appScope: Record<string, any>) {
-  return (layerId: string) => {
+  return async (layerId: string) => {
   const { DEFAULT_MODEL_LAYER_ID, activeLayerId, deleteNodesWithConnectedEdges, edges, groups, layers, nodes, normalizeModelGroups, normalizeProjectMeasurements, pushUndoSnapshot, removeGraphicsFromGroups, requireEditMode, resetConnectPreviewState, setActiveLayerId, setConnectSource, setContextMenu, setGraphArrays, setGroups, setLayers, setProjectMeasurements, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, writeOperationLog } = __appScope;
     if (!requireEditMode("删除图层")) {
       return;
     }
     if (layers.length <= 1) {
-      window.alert("至少需要保留一个图层。");
+      showGlobalMessage("至少需要保留一个图层。");
       return;
     }
     const layer = layers.find((item) => item.id === layerId);
@@ -3655,7 +3655,7 @@ export function createDeleteModelLayer(__appScope: Record<string, any>) {
     const nodeIdsInLayer = nodes
       .filter((node) => (node.layerId ?? DEFAULT_MODEL_LAYER_ID) === layerId)
       .map((node) => node.id);
-    if (nodeIdsInLayer.length > 0 && !window.confirm(`删除图层“${layer.name}”？该图层内共有 ${nodeIdsInLayer.length} 个图元，继续删除将同时删除这些图元及相关联络线。是否继续？`)) {
+    if (nodeIdsInLayer.length > 0 && !await showGlobalConfirm(`删除图层“${layer.name}”？该图层内共有 ${nodeIdsInLayer.length} 个图元，继续删除将同时删除这些图元及相关联络线。是否继续？`)) {
       return;
     }
     pushUndoSnapshot();
@@ -4532,7 +4532,7 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
     }
     const existingTargetProject = targetId ? projectById.get(targetId) : undefined;
     if ((!targetId || !existingTargetProject) && schemes.length === 0) {
-      window.alert("没有可保存的方案和模型，请先新建方案或导入方案。");
+      showGlobalMessage("没有可保存的方案和模型，请先新建方案或导入方案。");
       writeOperationLog("方案为空、模型为空，无法保存");
       return false;
     }
@@ -4592,7 +4592,7 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
       const ownerScheme = findSchemeForProject(targetId);
       const ownerSchemePath = ownerScheme ? savedSchemePathForId(schemes, ownerScheme.id) ?? [ownerScheme.name] : [];
       if (!ownerScheme || ownerSchemePath.length === 0) {
-        window.alert("当前模型没有所属方案路径，无法保存到后台目录。");
+        showGlobalMessage("当前模型没有所属方案路径，无法保存到后台目录。");
         writeOperationLog(`保存模型到后台失败：${record.name}`);
         return false;
       }
@@ -4602,7 +4602,7 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
         savedRecord = await saveBackendProjectRecord(ownerSchemePath, record, existing.name, artifacts);
       } catch (error) {
         const message = error instanceof Error ? error.message : `保存模型到后台失败：${record.name}`;
-        window.alert(message);
+        showGlobalMessage(message);
         writeOperationLog(`保存模型到后台失败：${record.name}`);
         return false;
       }
@@ -4626,7 +4626,7 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
     const fallbackSchemes = schemes;
     const resolvedSchemeId = findSavedSchemeById(fallbackSchemes, targetSchemeId) ? targetSchemeId : fallbackSchemes[0]?.id ?? "";
     if (!resolvedSchemeId) {
-      window.alert("没有可保存的方案和模型，请先新建方案或导入方案。");
+      showGlobalMessage("没有可保存的方案和模型，请先新建方案或导入方案。");
       writeOperationLog("方案为空、模型为空，无法保存");
       return false;
     }
@@ -4649,7 +4649,7 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
       savedRecord = await saveBackendProjectRecord(targetSchemePath, record, recoveredRecord?.name, artifacts);
     } catch (error) {
       const message = error instanceof Error ? error.message : `保存模型到后台失败：${record.name}`;
-      window.alert(message);
+      showGlobalMessage(message);
       writeOperationLog(`保存模型到后台失败：${record.name}`);
       return false;
     }
@@ -4681,11 +4681,11 @@ export function createRenameProjectRecord(__appScope: Record<string, any>) {
     const name = nextName.trim();
     const ownerScheme = findSchemeForProject(project.id);
     if (!name) {
-      window.alert("模型名称不能为空。");
+      showGlobalMessage("模型名称不能为空。");
       return;
     }
     if (ownerScheme && hasSameName(name, ownerScheme.projects.filter((item) => item.id !== project.id).map((item) => item.name))) {
-      window.alert("模型名称重复，无法修改。");
+      showGlobalMessage("模型名称重复，无法修改。");
       return;
     }
     if (ownerScheme) {
@@ -4810,7 +4810,7 @@ export function createDuplicateSelectedSchemeRecords(__appScope: Record<string, 
 }
 
 export function createDeleteProjectRecord(__appScope: Record<string, any>) {
-  return (project: SavedProjectRecord) => {
+  return async (project: SavedProjectRecord) => {
   const { activeProjectKey, clearActiveProjectDisplay, clearRecordSelection, deleteBackendProjectRecord, deleteSavedProjectsFromSchemes, handleBackendSchemeMutationFailure, loadSavedProjectRecord, nextSavedProjectAfterProjectDeletion, requireEditMode, schemePathForProject, schemes, selectedProjectId, setSchemes } = __appScope;
     if (!requireEditMode("删除模型")) {
       return;
@@ -4819,7 +4819,7 @@ export function createDeleteProjectRecord(__appScope: Record<string, any>) {
     const confirmationMessage = deletingActiveProject
       ? `当前加载模型“${project.name}”将被删除。删除后会自动切换到同方案的相邻模型；若没有相邻模型，将清空画布。是否继续？`
       : `删除模型“${project.name}”？`;
-    if (!window.confirm(confirmationMessage)) {
+    if (!await showGlobalConfirm(confirmationMessage)) {
       return;
     }
     const fallbackSelection = deletingActiveProject
@@ -4835,7 +4835,7 @@ export function createDeleteProjectRecord(__appScope: Record<string, any>) {
       if (fallbackSelection) {
         void loadSavedProjectRecord(fallbackSelection.project, fallbackSelection.scheme.id);
       } else {
-        window.alert("当前方案已无模型，画布已清空。");
+        showGlobalMessage("当前方案已无模型，画布已清空。");
         clearActiveProjectDisplay("删除当前模型后已清空画布");
       }
       return;
@@ -4863,11 +4863,11 @@ export function createCreateBlankProject(__appScope: Record<string, any>) {
     }
     const name = inputName.trim();
     if (!name) {
-      window.alert("模型名称不能为空。");
+      showGlobalMessage("模型名称不能为空。");
       return;
     }
     if (targetScheme && hasSameName(name, targetScheme.projects.map((project) => project.name))) {
-      window.alert("模型名称重复，无法新建模型。");
+      showGlobalMessage("模型名称重复，无法新建模型。");
       return;
     }
     const record = createSavedProject(name, {
@@ -4952,19 +4952,19 @@ export function createRunTopologyCalculation(__appScope: Record<string, any>) {
       if (nextWarnings.length === 0) {
         setTopologyStatus({ state: "success", message: `成功，${nextTopology.connectedComponents.length} 个拓扑岛` });
         writeOperationLog(`图上拓扑成功，${nextTopology.connectedComponents.length} 个拓扑岛`);
-        window.alert(topologyCalculationMessage(0));
+        showGlobalMessage(topologyCalculationMessage(0));
       } else {
         setTopologyStatus({ state: "failed", message: `完成，${nextWarnings.length} 条告警` });
         writeOperationLog(`图上拓扑完成，${nextWarnings.length} 条告警`);
         locateTopologyError(nextWarnings[0]);
-        window.alert(topologyCalculationMessage(nextWarnings.length));
+        showGlobalMessage(topologyCalculationMessage(nextWarnings.length));
       }
     } else {
       setTopology(EMPTY_TOPOLOGY);
       setTopologyStatus({ state: "failed", message: `失败，${blockingErrors.length} 条阻断错误` });
       writeOperationLog(`图上拓扑失败，${blockingErrors.length} 条阻断错误`);
       locateTopologyError(blockingErrors[0]);
-      window.alert(topologyCalculationMessage(blockingErrors.length));
+      showGlobalMessage(topologyCalculationMessage(blockingErrors.length));
     }
   };
 }

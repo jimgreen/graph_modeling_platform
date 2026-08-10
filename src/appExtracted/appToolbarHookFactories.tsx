@@ -44,7 +44,7 @@ export function createOpenNodeDoubleClickEditor(__appScope: Record<string, any>)
       setNodeDoubleClickDialog({ kind: editorKind, nodeId: node.id });
       return;
     }
-    window.alert("当前图元没有双击定义。");
+    showGlobalMessage("当前图元没有双击定义。");
   };
 }
 
@@ -367,7 +367,7 @@ export function createExecuteStaticButtonCommand(__appScope: Record<string, any>
     }
     if (command === "centerSelected") {
       if (!selectedCanvasBounds) {
-        window.alert("当前没有选中图元，无法居中选中。");
+        showGlobalMessage("当前没有选中图元，无法居中选中。");
         return false;
       }
       centerSelectedInView();
@@ -375,7 +375,7 @@ export function createExecuteStaticButtonCommand(__appScope: Record<string, any>
     }
     if (command === "fitSelection") {
       if (!selectedCanvasBounds) {
-        window.alert("当前没有选中图元，无法缩放到选中区域。");
+        showGlobalMessage("当前没有选中图元，无法缩放到选中区域。");
         return false;
       }
       fitViewToSelection();
@@ -411,7 +411,7 @@ export function createExecuteStaticButtonAction(__appScope: Record<string, any>)
     if (actionType === "project") {
       const target = resolveStaticButtonTargetProject(node);
       if (!target) {
-        window.alert("按钮动作未找到目标模型，请在右侧图元参数中重新选择。");
+        showGlobalMessage("按钮动作未找到目标模型，请在右侧图元参数中重新选择。");
         return;
       }
       writeOperationLog(`按钮切换模型：${target.project.name}`);
@@ -421,7 +421,7 @@ export function createExecuteStaticButtonAction(__appScope: Record<string, any>)
     if (actionType === "layer") {
       const targetLayers = resolveStaticButtonTargetLayers(node, layers);
       if (targetLayers.length === 0) {
-        window.alert("按钮动作未找到目标图层，请在右侧图元参数中重新选择。");
+        showGlobalMessage("按钮动作未找到目标图层，请在右侧图元参数中重新选择。");
         return;
       }
       const targetLayerIdSet = new Set(targetLayers.map((layer) => layer.id));
@@ -433,7 +433,7 @@ export function createExecuteStaticButtonAction(__appScope: Record<string, any>)
     if (actionType === "command") {
       const command = node.params.buttonCommand || "none";
       if (!executeStaticButtonCommand(command)) {
-        window.alert("按钮动作未配置有效命令，请在右侧图元参数中重新选择。");
+        showGlobalMessage("按钮动作未配置有效命令，请在右侧图元参数中重新选择。");
       } else {
         writeOperationLog(`按钮执行命令：${STATIC_BUTTON_COMMAND_LABELS[command] ?? command}`);
       }
@@ -4471,7 +4471,7 @@ export function createAppHookCallback140(__appScope: Record<string, any>) {
             return;
           }
           const message = error instanceof Error ? error.message : `读取背景页面失败：${backgroundProjectRecord.name}`;
-          window.alert(message);
+          showGlobalMessage(message);
           writeOperationLog(`读取背景页面失败：${backgroundProjectRecord.name}`);
         });
       return () => {

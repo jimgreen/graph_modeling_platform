@@ -713,47 +713,6 @@ describe("power system model", () => {
 
 
 
-  describe("element definition E file", () => {
-    const templates = [
-      {
-        kind: "customAcLoad",
-        label: "交流负荷",
-        categoryLibrary: "交流设备",
-        size: { width: 100, height: 60 },
-        params: { component_type: "ACLoad" },
-        terminalType: "ac",
-        terminalCount: 2,
-        parameterDefinitions: [
-          { cnName: "有功功率", enName: "p_load", valueType: "float", typicalValue: "0", exportEnabled: true, exportName: "p_load" },
-          { cnName: "无功功率", enName: "q_load", valueType: "float", typicalValue: "0", exportEnabled: true, exportName: "q_load" },
-          { cnName: "未导出", enName: "skip_me", valueType: "float", typicalValue: "0", exportEnabled: false }
-        ]
-      },
-      {
-        kind: "customNoExport",
-        label: "无勾选",
-        categoryLibrary: "交流设备",
-        size: { width: 100, height: 60 },
-        params: { component_type: "X" },
-        terminalType: "ac",
-        terminalCount: 2,
-        parameterDefinitions: [
-          { cnName: "未导出", enName: "skip", valueType: "float", typicalValue: "0", exportEnabled: false }
-        ]
-      }
-    ] as unknown as DeviceTemplate[];
-
-
-
-
-
-
-
-
-
-
-
-  });
 
   test("preserves the per-model automatic canvas expansion setting", () => {
     const project: ProjectFile = {

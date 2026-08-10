@@ -1880,7 +1880,7 @@ export function createHandleTerminalPointerDown(__appScope: Record<string, any>)
           patchGraphEdges([preparedEdge]);
         } else {
           const message = endpointRuleMessage || connectionCommitFailureMessage(prepared?.issues);
-          window.alert(`联络线端子调整失败：${message}`);
+          showGlobalMessage(`联络线端子调整失败：${message}`);
           writeOperationLog(`联络线端子调整失败：${message}`);
         }
       }
@@ -1928,7 +1928,7 @@ export function createEnsureSavedBeforeExport(__appScope: Record<string, any>) {
     if (getSkipSaveCheck() || __appScope.canExportCurrentModel) {
       return true;
     }
-    window.alert("当前模型存在未保存修改，请先保存后再导出文件。");
+    showGlobalMessage("当前模型存在未保存修改，请先保存后再导出文件。");
     return false;
   };
 }
@@ -2078,7 +2078,7 @@ export function createExportSvg(__appScope: Record<string, any>) {
       showDirectoryPicker?: (options?: { id?: string; mode?: "read" | "readwrite" }) => Promise<any>;
     }).showDirectoryPicker;
     if (typeof directoryPicker !== "function") {
-      window.alert(`导出失败：当前浏览器不支持选择导出目录，请使用最新版 Chrome 或 Edge。\n总耗时：${exportElapsedText()}`);
+      showGlobalMessage(`导出失败：当前浏览器不支持选择导出目录，请使用最新版 Chrome 或 Edge。\n总耗时：${exportElapsedText()}`);
       return;
     }
     let directoryHandle: any;
@@ -2093,7 +2093,7 @@ export function createExportSvg(__appScope: Record<string, any>) {
         return;
       }
       const message = error instanceof Error ? error.message : String(error ?? "未知错误");
-      window.alert(`导出失败：无法打开目标目录。\n${message}\n总耗时：${exportElapsedText()}`);
+      showGlobalMessage(`导出失败：无法打开目标目录。\n${message}\n总耗时：${exportElapsedText()}`);
       return;
     }
 
@@ -2214,7 +2214,7 @@ export function createExportSvg(__appScope: Record<string, any>) {
         : [];
       const directoryName = String(directoryHandle?.name ?? "").trim() || "已选择目录";
       if (failures.length === 0 && successCount === 3) {
-        window.alert([
+        showGlobalMessage([
           "E、JSON 和 SVG 文件导出成功。",
           `目录：${directoryName}`,
           ...exportFiles.map((file) => `${file.label}：${file.filename}`),
@@ -2223,7 +2223,7 @@ export function createExportSvg(__appScope: Record<string, any>) {
         ].join("\n"));
         return;
       }
-      window.alert([
+      showGlobalMessage([
         "部分文件导出失败。",
         `目录：${directoryName}`,
         `成功：${successCount} / 3`,
@@ -2234,7 +2234,7 @@ export function createExportSvg(__appScope: Record<string, any>) {
       ].join("\n"));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error ?? "未知错误");
-      window.alert(`导出失败：${message}\n总耗时：${exportElapsedText()}`);
+      showGlobalMessage(`导出失败：${message}\n总耗时：${exportElapsedText()}`);
     }
   };
 }
@@ -2254,7 +2254,7 @@ function showStandaloneExportCompletion(
     });
     return;
   }
-  window.alert([message, ...details].join("\n"));
+  showGlobalMessage([message, ...details].join("\n"));
 }
 
 // SVG 导出选项构建器，避免 createExportSvg 和 createExportSvgFile 重复
@@ -2559,7 +2559,7 @@ export function createExportEDeviceDefinitionFile(__appScope: Record<string, any
     }).interfaceDefinitions;
     const file = buildEDeviceDefinitionFileFromInterfaceDefinitions(interfaceDefinitions);
     if (!file.text) {
-      window.alert("没有可导出的元件定义：所有元件均未勾选导出字段。");
+      showGlobalMessage("没有可导出的元件定义：所有元件均未勾选导出字段。");
       return;
     }
     const saved = await saveTextFile({
@@ -2573,7 +2573,7 @@ export function createExportEDeviceDefinitionFile(__appScope: Record<string, any
       return;
     }
     writeOperationLog(`导出元件定义文件：${file.filename}`);
-    window.alert(`元件定义文件导出成功：${file.filename}`);
+    showGlobalMessage(`元件定义文件导出成功：${file.filename}`);
   };
 }
 
@@ -2608,7 +2608,7 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
       try {
         const sections = parseEDeviceDefinitionFile(String(reader.result ?? ""));
         if (sections.length === 0) {
-          window.alert("未在文件中解析到元件定义。");
+          showGlobalMessage("未在文件中解析到元件定义。");
           return;
         }
         const result = applyEDeviceDefinitionSectionsToLibraryState({
@@ -2660,13 +2660,13 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
           try { localStorage.setItem("eDeviceInterfaceReadonlyMode", "true"); } catch { /* ignore */ }
         }
         const detail = result.skipped.length > 0 ? `\n未匹配（跳过）：${result.skipped.length} 个` : "";
-        window.alert(`元件定义导入成功。\n匹配元件：${result.matched.length} 个${detail}`);
+        showGlobalMessage(`元件定义导入成功。\n匹配元件：${result.matched.length} 个${detail}`);
       } catch (error) {
-        window.alert(error instanceof Error ? error.message : "导入元件定义文件失败。");
+        showGlobalMessage(error instanceof Error ? error.message : "导入元件定义文件失败。");
       }
     };
     reader.onerror = () => {
-      window.alert("读取元件定义文件失败。");
+      showGlobalMessage("读取元件定义文件失败。");
     };
     reader.readAsText(file, "utf-8");
   };
@@ -2834,7 +2834,7 @@ export function createCompleteImportedModelFeedback(__appScope: Record<string, a
     for (const warning of feedback.warnings) {
       writeOperationLog(`SVG 导入警告：${warning}`);
     }
-    window.alert(feedback.successMessage);
+    showGlobalMessage(feedback.successMessage);
   };
 }
 
@@ -2986,7 +2986,7 @@ export function createImportSchemeFile(__appScope: Record<string, any>) {
       }
       commitImportedSchemeRecord(importedScheme, parentSchemeId);
     } catch (error) {
-      window.alert(error instanceof Error ? `导入方案失败：${error.message}` : "导入方案失败。");
+      showGlobalMessage(error instanceof Error ? `导入方案失败：${error.message}` : "导入方案失败。");
     } finally {
       schemeImportParentSchemeIdRef.current = "";
       input.value = "";
@@ -3049,7 +3049,7 @@ export function createImportModelFile(__appScope: Record<string, any>) {
       }
       commitImportedModelRecord(targetScheme, createSavedProject(importedName, importedProject));
     } catch (error) {
-      window.alert(error instanceof Error ? `导入模型文件失败：${error.message}` : "导入模型文件失败。");
+      showGlobalMessage(error instanceof Error ? `导入模型文件失败：${error.message}` : "导入模型文件失败。");
     } finally {
       modelImportTargetSchemeIdRef.current = "";
       input.value = "";
@@ -3126,7 +3126,7 @@ export function createImportSvgModelFile(__appScope: Record<string, any>) {
       commitImportedModelRecord(targetScheme, createSavedProject(importedName, result.project));
       completeImportedModelFeedback(completionFeedback);
     } catch (error) {
-      window.alert(error instanceof Error ? `从 SVG 生成模型失败：${error.message}` : "从 SVG 生成模型失败。");
+      showGlobalMessage(error instanceof Error ? `从 SVG 生成模型失败：${error.message}` : "从 SVG 生成模型失败。");
     } finally {
       modelImportTargetSchemeIdRef.current = "";
       input.value = "";
@@ -3153,7 +3153,7 @@ export function createResolveDuplicateSchemeImport(__appScope: Record<string, an
           const payload = await uploadBackendSchemeArchive(conflict.importFile as File, parentPath, { mode: "overwrite", targetName });
           applyBackendSchemeArchiveImport(payload, targetName || conflict.importedName);
         } catch (error) {
-          window.alert(error instanceof Error ? `导入方案压缩包失败：${error.message}` : "导入方案压缩包失败。");
+          showGlobalMessage(error instanceof Error ? `导入方案压缩包失败：${error.message}` : "导入方案压缩包失败。");
         }
       };
       if (action === "rename") {
@@ -3335,12 +3335,12 @@ export function createExportSchemeRecord(__appScope: Record<string, any>) {
         return;
       }
       writeOperationLog(`导出方案：${scheme.name}`);
-      window.alert(`已导出方案“${scheme.name}”，共 ${flattenSavedProjects([scheme]).length} 个模型。`);
+      showGlobalMessage(`已导出方案“${scheme.name}”，共 ${flattenSavedProjects([scheme]).length} 个模型。`);
     } catch (error) {
       if (isPickerAbort(error)) {
         return;
       }
-      window.alert(error instanceof Error ? `导出方案失败：${error.message}` : "导出方案失败。");
+      showGlobalMessage(error instanceof Error ? `导出方案失败：${error.message}` : "导出方案失败。");
     }
   };
 }
@@ -3395,7 +3395,7 @@ export function createChooseImage(__appScope: Record<string, any>) {
         const lowerName = file.name.toLowerCase();
         const isIconArchive = IMAGE_LIBRARY_ARCHIVE_FILE_PATTERN.test(lowerName);
         if (!imageLibraryFileMatchesImportKind(lowerName, importKind)) {
-          window.alert(importKind === "archive"
+          showGlobalMessage(importKind === "archive"
             ? `“${file.name || "所选文件"}”不是 DOCX/PPTX/XLSX/VSDX/WPS/DPS/ZIP 文档图片导入文件，请使用外部图片入口直接导入图片。`
             : `“${file.name || "所选文件"}”不是 SVG/PNG/JPG 等图片文件，请使用文档图片/图标入口导入文档中的图片和矢量图标素材。`);
           continue;
@@ -3404,7 +3404,7 @@ export function createChooseImage(__appScope: Record<string, any>) {
         try {
           imageData = await readFileAsDataUrl(file);
         } catch (error) {
-          window.alert(error instanceof Error ? error.message : `读取 ${file.name || "图片"} 失败。`);
+          showGlobalMessage(error instanceof Error ? error.message : `读取 ${file.name || "图片"} 失败。`);
           continue;
         }
         if (isIconArchive) {
@@ -3415,7 +3415,7 @@ export function createChooseImage(__appScope: Record<string, any>) {
               nextAssetMap[asset.id] = asset.url;
             }
           } catch (error) {
-            window.alert(error instanceof Error ? error.message : `导入 ${file.name || "文档图片"} 失败。`);
+            showGlobalMessage(error instanceof Error ? error.message : `导入 ${file.name || "文档图片"} 失败。`);
           }
           continue;
         }
@@ -3423,7 +3423,7 @@ export function createChooseImage(__appScope: Record<string, any>) {
         try {
           asset = await uploadBackendImage(file.name, imageData, activeImageFolderId);
         } catch (error) {
-          window.alert(error instanceof Error ? error.message : `上传 ${file.name || "图片"} 到后台失败。`);
+          showGlobalMessage(error instanceof Error ? error.message : `上传 ${file.name || "图片"} 到后台失败。`);
           const fallbackId = `asset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
           saveImageAsset(fallbackId, imageData);
           asset = { id: fallbackId, name: file.name || "本地图片", folderId: activeImageFolderId, url: imageData };
@@ -3473,7 +3473,7 @@ export function createApplyExistingImage(__appScope: Record<string, any>) {
     if (imageTarget.kind === "canvasIcon") {
       const baseTemplate = libraryTemplateByKind.get("static-image");
       if (!baseTemplate) {
-        window.alert("未找到静态图片图元定义，无法插入图标。");
+        showGlobalMessage("未找到静态图片图元定义，无法插入图标。");
         return;
       }
       const iconTemplate = {
@@ -3580,14 +3580,14 @@ export function createApplyIconLibraryCatalogIcon(__appScope: Record<string, any
     }
     const entry = iconLibraryPicker?.entries?.find((item: any) => item.id === iconEntryId);
     if (!entry) {
-      window.alert("未找到所选分类图标，请刷新后重试。");
+      showGlobalMessage("未找到所选分类图标，请刷新后重试。");
       return;
     }
     const assetName = `${entry.libraryLabel || entry.libraryId} / ${entry.categoryLabel || entry.categoryId} / ${entry.name || entry.iconId}`;
     if (imageTarget.kind !== "stateIconDrawing") {
       const iconUrl = entry.url;
       if (!iconUrl) {
-        window.alert("未找到所选分类图标文件地址，请刷新后重试。");
+        showGlobalMessage("未找到所选分类图标文件地址，请刷新后重试。");
         return;
       }
       if (imageTarget.kind === "stateIconFrameBackground") {
@@ -3611,7 +3611,7 @@ export function createApplyIconLibraryCatalogIcon(__appScope: Record<string, any
       if (imageTarget.kind === "canvasIcon") {
         const baseTemplate = libraryTemplateByKind?.get("static-image");
         if (!baseTemplate) {
-          window.alert("未找到静态图片图元定义，无法插入图标。");
+          showGlobalMessage("未找到静态图片图元定义，无法插入图标。");
           return;
         }
         // 获取 SVG 内容转为 data URL，确保内联渲染（外部 SVG 文件在 <image href> 中可能不渲染）
@@ -3659,7 +3659,7 @@ export function createApplyIconLibraryCatalogIcon(__appScope: Record<string, any
       svgSource = "";
     }
     if (!svgSource) {
-      window.alert("读取分类图标失败。");
+      showGlobalMessage("读取分类图标失败。");
       return;
     }
     const importedElements = createEditableStateIconElementsFromSvgSource(svgSource, assetName, { preserveImportedSvg: true });
@@ -3777,7 +3777,7 @@ export function createCreateImageFolder(__appScope: Record<string, any>) {
     }
     const name = inputName.trim();
     if (!name) {
-      window.alert("图片文件夹名称不能为空。");
+      showGlobalMessage("图片文件夹名称不能为空。");
       return;
     }
     try {
@@ -3785,7 +3785,7 @@ export function createCreateImageFolder(__appScope: Record<string, any>) {
       await refreshImageFolders();
       setActiveImageFolderId(folder.id);
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "新建图片文件夹失败。");
+      showGlobalMessage(error instanceof Error ? error.message : "新建图片文件夹失败。");
     }
   };
 }
@@ -3798,7 +3798,7 @@ export function createRenameImageFolder(__appScope: Record<string, any>) {
     }
     const folder = imageFolders.find((item) => item.id === activeImageFolderId);
     if (!folder || folder.id === "root") {
-      window.alert("默认文件夹不能重命名。");
+      showGlobalMessage("默认文件夹不能重命名。");
       return;
     }
     const inputName = window.prompt("请输入新的图片文件夹名称", folder.name);
@@ -3807,14 +3807,14 @@ export function createRenameImageFolder(__appScope: Record<string, any>) {
     }
     const name = inputName.trim();
     if (!name) {
-      window.alert("图片文件夹名称不能为空。");
+      showGlobalMessage("图片文件夹名称不能为空。");
       return;
     }
     try {
       await renameBackendImageFolder(folder.id, name);
       await refreshImageFolders();
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "重命名图片文件夹失败。");
+      showGlobalMessage(error instanceof Error ? error.message : "重命名图片文件夹失败。");
     }
   };
 }
@@ -3827,10 +3827,10 @@ export function createDeleteImageFolder(__appScope: Record<string, any>) {
     }
     const folder = imageFolders.find((item) => item.id === activeImageFolderId);
     if (!folder || folder.id === "root") {
-      window.alert("默认文件夹不能删除。");
+      showGlobalMessage("默认文件夹不能删除。");
       return;
     }
-    if (!window.confirm(`删除图片文件夹“${folder.name}”？文件夹内图片将移回默认文件夹。`)) {
+    if (!await showGlobalConfirm(`删除图片文件夹“${folder.name}”？文件夹内图片将移回默认文件夹。`)) {
       return;
     }
     try {
@@ -3838,7 +3838,7 @@ export function createDeleteImageFolder(__appScope: Record<string, any>) {
       setActiveImageFolderId("root");
       await refreshImageFolders();
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "删除图片文件夹失败。");
+      showGlobalMessage(error instanceof Error ? error.message : "删除图片文件夹失败。");
     }
   };
 }
@@ -4949,7 +4949,7 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
     }
     if (hasOverlappingCustomDeviceTerminalAnchors(definitionVisualTerminalAnchors)) {
       const message = "不同端子位置不能重叠，请调整端子位置后再保存。";
-      window.alert(message);
+      showGlobalMessage(message);
       setDefinitionVisualDraft((current) => current ? { ...current, error: message } : current);
       return;
     }
@@ -5277,7 +5277,7 @@ export function createChooseCustomDeviceBackground(__appScope: Record<string, an
         setImageAssets((current) => ({ ...current, [uploadedAsset.id]: uploadedAsset.url }));
         void refreshImageFolders();
       } catch (error) {
-        window.alert(error instanceof Error ? error.message : "上传元件图标到后台失败，将仅保留当前本地预览。");
+        showGlobalMessage(error instanceof Error ? error.message : "上传元件图标到后台失败，将仅保留当前本地预览。");
       }
       setCustomDeviceDraft((current) => ({
         ...current,
@@ -5315,7 +5315,7 @@ export function createChooseDefinitionTemplateIcon(__appScope: Record<string, an
         setImageAssets((current) => ({ ...current, [uploadedAsset.id]: uploadedAsset.url }));
         void refreshImageFolders();
       } catch (error) {
-        window.alert(error instanceof Error ? error.message : "上传元件图标到后台失败，将仅保留当前本地预览。");
+        showGlobalMessage(error instanceof Error ? error.message : "上传元件图标到后台失败，将仅保留当前本地预览。");
       }
       setDefinitionVisualDraft((current) =>
         current
@@ -5358,7 +5358,7 @@ export function createChooseStateVisualImage(__appScope: Record<string, any>) {
         setImageAssets((current) => ({ ...current, [uploadedAsset.id]: uploadedAsset.url }));
         void refreshImageFolders();
       } catch (error) {
-        window.alert(error instanceof Error ? error.message : "上传状态图形到后台失败，将仅保留当前本地预览。");
+        showGlobalMessage(error instanceof Error ? error.message : "上传状态图形到后台失败，将仅保留当前本地预览。");
       }
       const patch: Partial<DeviceDefinitionStateDraftRow> = {
         image: asset?.url ?? imageData,
@@ -5424,7 +5424,7 @@ export function createChooseStateIconDrawingImport(__appScope: Record<string, an
         setImageAssets((current) => ({ ...current, [uploadedAsset.id]: uploadedAsset.url }));
         void refreshImageFolders();
       } catch (error) {
-        window.alert(error instanceof Error ? error.message : "上传图片到后台失败，将以本地预览嵌入。");
+        showGlobalMessage(error instanceof Error ? error.message : "上传图片到后台失败，将以本地预览嵌入。");
       }
       appendImportedElements([createImportedStateIconElement("image", href, file.name)]);
     };
@@ -6347,7 +6347,7 @@ export function createCreateCustomCategoryLibrary(__appScope: Record<string, any
 }
 
 export function createDeleteCustomCategoryLibrary(__appScope: Record<string, any>) {
-  return (targetCategoryLibraryName?: string) => {
+  return async (targetCategoryLibraryName?: string) => {
   const { PROTECTED_CATEGORY_LIBRARIES, customComponentLibraries, customDeviceDraft, customDeviceTemplates, defaultComponentLibraryForCategoryLibrary, isBuiltInComponentLibrary, normalizeCategoryLibraryName, requireEditMode, resolveTemplateComponentLibrary, setCollapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeTypes, setCustomCategoryLibraries, setCustomComponentTreeSelection, setCustomComponentLibraries, setCustomDeviceDraft, setCustomDeviceTemplates, setDefinitionDraftSection, setDeviceDefinitionOverrides, setEditingCustomDeviceKind, setExpandedCategoryLibraries, setExpandedDefinitionGroups, setSelectedDefinitionKind } = __appScope;
     if (targetCategoryLibraryName === undefined) {
       targetCategoryLibraryName = customDeviceDraft.categoryLibraryName;
@@ -6357,11 +6357,11 @@ export function createDeleteCustomCategoryLibrary(__appScope: Record<string, any
     }
     const categoryLibraryName = normalizeCategoryLibraryName(targetCategoryLibraryName);
     if (!categoryLibraryName || categoryLibraryName === "静态图元" || PROTECTED_CATEGORY_LIBRARIES.has(categoryLibraryName)) {
-      window.alert("默认类别库无法删除。");
+      showGlobalMessage("默认类别库无法删除。");
       return;
     }
     const templatesInGroup = customDeviceTemplates.filter((template) => normalizeCategoryLibraryName(template.categoryLibrary) === categoryLibraryName);
-    const confirmed = window.confirm(
+    const confirmed = await showGlobalConfirm(
       templatesInGroup.length > 0
         ? `类别库“${categoryLibraryName}”中共有 ${templatesInGroup.length} 个元件，删除类别库会同时删除这些元件及其自定义元件库，是否继续？`
         : `确认删除类别库“${categoryLibraryName}”？`
@@ -6463,7 +6463,7 @@ export function createCreateCustomComponentLibrary(__appScope: Record<string, an
 }
 
 export function createDeleteCustomComponentLibrary(__appScope: Record<string, any>) {
-  return (targetSection?: string) => {
+  return async (targetSection?: string) => {
   const { E_SECTION_OPTIONS, customComponentTreeSelection, customDeviceDraft, defaultComponentLibraryForCategoryLibrary, libraryTemplates, normalizeCategoryLibraryName, normalizeComponentLibraryName, requireEditMode, resolveTemplateComponentLibrary, setCollapsedCustomComponentTreeTypes, setCustomComponentTreeSelection, setCustomComponentLibraries, setCustomDeviceDraft, setCustomDeviceTemplates, setDefinitionDraftSection, setDeviceDefinitionOverrides, setEditingCustomDeviceKind, setSelectedDefinitionKind } = __appScope;
     if (targetSection === undefined) {
       targetSection = customDeviceDraft.componentLibrary;
@@ -6473,11 +6473,11 @@ export function createDeleteCustomComponentLibrary(__appScope: Record<string, an
     }
     const componentLibrary = normalizeComponentLibraryName(targetSection);
     if (!componentLibrary || E_SECTION_OPTIONS.some((section) => section.toLowerCase() === componentLibrary.toLowerCase())) {
-      window.alert("内置元件库无法删除。");
+      showGlobalMessage("内置元件库无法删除。");
       return;
     }
     const templatesWithType = libraryTemplates.filter((template) => template.custom && resolveTemplateComponentLibrary(template).toLowerCase() === componentLibrary.toLowerCase());
-    const confirmed = window.confirm(
+    const confirmed = await showGlobalConfirm(
       templatesWithType.length > 0
         ? `元件库“${componentLibrary}”下共有 ${templatesWithType.length} 个自定义元件，删除元件库会同时删除这些元件，是否继续？`
         : `确认删除元件库“${componentLibrary}”？`
@@ -6533,7 +6533,7 @@ export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<stri
     if (customComponentTreeSelection.kind === "categoryLibrary") {
       const oldCategoryLibraryName = normalizeCategoryLibraryName(customComponentTreeSelection.categoryLibraryName);
       if (PROTECTED_CATEGORY_LIBRARIES.has(oldCategoryLibraryName) || oldCategoryLibraryName === "静态图元") {
-        window.alert("系统内置类别库不能重命名。");
+        showGlobalMessage("系统内置类别库不能重命名。");
         return;
       }
       const rawName = window.prompt("请输入新的类别库名称", oldCategoryLibraryName);
@@ -6542,11 +6542,11 @@ export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<stri
       }
       const newCategoryLibraryName = normalizeCategoryLibraryName(rawName.trim());
       if (!newCategoryLibraryName) {
-        window.alert("类别库名称不能为空。");
+        showGlobalMessage("类别库名称不能为空。");
         return;
       }
       if (categoryLibraries.some((group) => normalizeCategoryLibraryName(group).toLowerCase() === newCategoryLibraryName.toLowerCase() && normalizeCategoryLibraryName(group) !== oldCategoryLibraryName)) {
-        window.alert("类别库名称已存在，无法重命名。");
+        showGlobalMessage("类别库名称已存在，无法重命名。");
         return;
       }
       setCustomCategoryLibraries((current) => current.map((group) => normalizeCategoryLibraryName(group) === oldCategoryLibraryName ? newCategoryLibraryName : group));
@@ -6583,7 +6583,7 @@ export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<stri
     if (customComponentTreeSelection.kind === "componentLibrary") {
       const oldSection = normalizeComponentLibraryName(customComponentTreeSelection.section);
       if (isBuiltInComponentLibrary(oldSection)) {
-        window.alert("系统内置元件库不能重命名。");
+        showGlobalMessage("系统内置元件库不能重命名。");
         return;
       }
       const rawName = window.prompt("请输入新的元件库英文名称", oldSection);
@@ -6592,11 +6592,11 @@ export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<stri
       }
       const newSection = normalizeComponentLibraryName(rawName);
       if (!isValidComponentLibraryName(newSection)) {
-        window.alert("元件库必须是英文名称，只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。");
+        showGlobalMessage("元件库必须是英文名称，只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。");
         return;
       }
       if (componentLibraryOptions.some((section) => section.toLowerCase() === newSection.toLowerCase() && section.toLowerCase() !== oldSection.toLowerCase())) {
-        window.alert("元件库已存在，无法重命名。");
+        showGlobalMessage("元件库已存在，无法重命名。");
         return;
       }
       const categoryLibraryName = normalizeCategoryLibraryName(customComponentTreeSelection.categoryLibraryName);
@@ -6645,7 +6645,7 @@ export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<stri
     }
     const template = libraryTemplateByKind.get(customComponentTreeSelection.templateKind);
     if (!template?.custom) {
-      window.alert("系统内置元件不能在这里重命名。");
+      showGlobalMessage("系统内置元件不能在这里重命名。");
       return;
     }
     const rawName = window.prompt("请输入新的元件名称", template.label);
@@ -6654,7 +6654,7 @@ export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<stri
     }
     const newLabel = rawName.trim();
     if (!newLabel) {
-      window.alert("元件名称不能为空。");
+      showGlobalMessage("元件名称不能为空。");
       return;
     }
     setCustomDeviceTemplates((current) => current.map((item) => item.kind === template.kind ? { ...item, label: newLabel } : item));
@@ -6667,7 +6667,7 @@ export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<stri
 }
 
 export function createDeleteSelectedCustomDeviceTreeItem(__appScope: Record<string, any>) {
-  return () => {
+  return async () => {
   const { customComponentTreeSelection, deleteCustomCategoryLibrary, deleteCustomComponentLibrary, libraryTemplateByKind, requireEditMode, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceTemplates, setDeviceDefinitionOverrides, setEditingCustomDeviceKind } = __appScope;
     if (!requireEditMode("删除元件库条目")) {
       return;
@@ -6682,10 +6682,10 @@ export function createDeleteSelectedCustomDeviceTreeItem(__appScope: Record<stri
     }
     const template = libraryTemplateByKind.get(customComponentTreeSelection.templateKind);
     if (!template?.custom) {
-      window.alert("系统内置元件不能在这里删除。");
+      showGlobalMessage("系统内置元件不能在这里删除。");
       return;
     }
-    const confirmed = window.confirm(`确认删除元件“${template.label}”？`);
+    const confirmed = await showGlobalConfirm(`确认删除元件“${template.label}”？`);
     if (!confirmed) {
       return;
     }
@@ -6787,14 +6787,14 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
     if (isContainerComponent) {
       const terminalAssociationValidation = validateContainerTerminalAssociations(terminalTypes, terminalAssociations);
       if (!terminalAssociationValidation.valid) {
-        window.alert(terminalAssociationValidation.message);
+        showGlobalMessage(terminalAssociationValidation.message);
         setCustomDeviceDraft((current) => ({ ...current, terminalAssociations, error: terminalAssociationValidation.message }));
         return false;
       }
     }
     if (hasOverlappingCustomDeviceTerminalAnchors(customDeviceTerminalAnchors)) {
       const message = "不同端子位置不能重叠，请调整端子位置后再保存。";
-      window.alert(message);
+      showGlobalMessage(message);
       setCustomDeviceDraft((current) => ({ ...current, error: message }));
       return false;
     }
@@ -7069,14 +7069,14 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     if (customDeviceDraft.isContainer) {
       const terminalAssociationValidation = validateContainerTerminalAssociations(terminalTypes, terminalAssociations);
       if (!terminalAssociationValidation.valid) {
-        window.alert(terminalAssociationValidation.message);
+        showGlobalMessage(terminalAssociationValidation.message);
         setCustomDeviceDraft((current) => ({ ...current, terminalAssociations, error: terminalAssociationValidation.message }));
         return false;
       }
     }
     if (hasOverlappingCustomDeviceTerminalAnchors(customDeviceTerminalAnchors)) {
       const message = "不同端子位置不能重叠，请调整端子位置后再保存。";
-      window.alert(message);
+      showGlobalMessage(message);
       setCustomDeviceDraft((current) => ({ ...current, error: message }));
       return false;
     }

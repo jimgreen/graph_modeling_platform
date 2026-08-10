@@ -2330,7 +2330,7 @@ export function createCommitCanvasSizeDraft(__appScope: Record<string, any>) {
     const height = Math.max(requestedHeight, requiredHeight);
     if (width !== requestedWidth || height !== requestedHeight) {
       const message = `输入的显示区域小于当前图上内容实际占用范围，已调整为 ${width} x ${height}。`;
-      window.alert(message);
+      showGlobalMessage(message);
       writeOperationLog(message);
     }
     setCanvasSizeDraft({ width: String(width), height: String(height) });
@@ -3107,7 +3107,7 @@ export function createOpenMeasurementEditorForNode(__appScope: Record<string, an
     }
     const groups = measurementGroupsForNode(projectMeasurements, node.id);
     if (groups.length === 0) {
-      window.alert("当前设备还没有添加显示量测。");
+      showGlobalMessage("当前设备还没有添加显示量测。");
       return;
     }
     const drafts = groups.map((group) => cloneMeasurementGroupForDraft(group));

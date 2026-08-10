@@ -154,7 +154,7 @@ describe("graph template library actions", () => {
     expect(operationLogs).toContain("删除模板：常用模板 / 删除模板");
   });
 
-  test("deletes a graph template type and all templates under it", () => {
+  test("deletes a graph template type and all templates under it", async () => {
     const firstDeleted = sampleGraphTemplate("template-delete-1", "删除模板1", "自定义类型");
     const secondDeleted = sampleGraphTemplate("template-delete-2", "删除模板2", "自定义类型");
     const remaining = sampleGraphTemplate("template-keep", "保留模板", "其他类型");
@@ -163,14 +163,11 @@ describe("graph template library actions", () => {
     const persistTemplateLibraryChangeCalls: any[] = [];
     const operationLogs: string[] = [];
     let templateMenu: any = { typeName: "自定义类型" };
-    const originalWindow = (globalThis as any).window;
-    (globalThis as any).window = {
-      ...(originalWindow ?? {}),
-      confirm: (message: string) => {
+    const originalShowGlobalConfirm = (globalThis as any).showGlobalConfirm;
+    (globalThis as any).showGlobalConfirm = (message: string) => {
         expect(message).toContain("自定义类型");
         expect(message).toContain("2");
-        return true;
-      }
+        return Promise.resolve(true);
     };
     const deleteGraphTemplateType = createDeleteGraphTemplateType({
       customGraphTemplateTypes: ["自定义类型", "其他类型"],
@@ -184,12 +181,12 @@ describe("graph template library actions", () => {
     });
 
     try {
-      deleteGraphTemplateType("自定义类型");
+      await deleteGraphTemplateType("自定义类型");
     } finally {
-      if (originalWindow === undefined) {
-        delete (globalThis as any).window;
+      if (originalShowGlobalConfirm === undefined) {
+        delete (globalThis as any).showGlobalConfirm;
       } else {
-        (globalThis as any).window = originalWindow;
+        (globalThis as any).showGlobalConfirm = originalShowGlobalConfirm;
       }
     }
 

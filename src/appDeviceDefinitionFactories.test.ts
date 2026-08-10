@@ -195,8 +195,8 @@ describe("SVG model import factories", () => {
   });
 
   test("writes every SVG warning to the operation log before showing completion", () => {
-    const alert = vi.fn();
-    vi.stubGlobal("window", { alert });
+    const showGlobalMessage = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
     const writeOperationLog = vi.fn();
     const complete = createCompleteImportedModelFeedback({ writeOperationLog });
 
@@ -204,7 +204,7 @@ describe("SVG model import factories", () => {
 
     expect(writeOperationLog).toHaveBeenNthCalledWith(1, "SVG 导入警告：第一条");
     expect(writeOperationLog).toHaveBeenNthCalledWith(2, "SVG 导入警告：第二条");
-    expect(alert).toHaveBeenCalledWith("导入完成");
+    expect(showGlobalMessage).toHaveBeenCalledWith("导入完成");
   });
 
   test("shows SVG completion feedback after a duplicate import is renamed", () => {
@@ -1899,9 +1899,10 @@ describe("manual bend interaction helpers", () => {
     expect(appViewSource).not.toContain("customDeviceDraft.isDerivedComponentLibrary || customDeviceDraft.isContainer");
   });
 
-  test("asks for confirmation before deleting an empty category library", () => {
-    const confirm = vi.fn(() => false);
-    vi.stubGlobal("window", { confirm, alert: vi.fn() });
+  test("asks for confirmation before deleting an empty category library", async () => {
+    const showGlobalConfirm = vi.fn(() => Promise.resolve(false));
+    vi.stubGlobal("showGlobalMessage", vi.fn());
+    vi.stubGlobal("showGlobalConfirm", showGlobalConfirm);
     let customCategoryLibraries = ["用户类别"];
     const setCustomCategoryLibraries = vi.fn((updater: any) => {
       customCategoryLibraries = typeof updater === "function" ? updater(customCategoryLibraries) : updater;
@@ -1934,16 +1935,17 @@ describe("manual bend interaction helpers", () => {
       setSelectedDefinitionKind: vi.fn()
     };
 
-    createDeleteCustomCategoryLibrary(scope)("用户类别");
+    await createDeleteCustomCategoryLibrary(scope)("用户类别");
 
-    expect(confirm).toHaveBeenCalledWith("确认删除类别库“用户类别”？");
+    expect(showGlobalConfirm).toHaveBeenCalledWith("确认删除类别库“用户类别”？");
     expect(setCustomCategoryLibraries).not.toHaveBeenCalled();
     expect(customCategoryLibraries).toEqual(["用户类别"]);
   });
 
-  test("asks for confirmation before deleting an empty component library", () => {
-    const confirm = vi.fn(() => false);
-    vi.stubGlobal("window", { confirm, alert: vi.fn() });
+  test("asks for confirmation before deleting an empty component library", async () => {
+    const showGlobalConfirm = vi.fn(() => Promise.resolve(false));
+    vi.stubGlobal("showGlobalMessage", vi.fn());
+    vi.stubGlobal("showGlobalConfirm", showGlobalConfirm);
     let customComponentLibraries = [
       { name: "UserLibrary", categoryLibraryName: "用户类别", label: "用户元件库" }
     ];
@@ -1978,9 +1980,9 @@ describe("manual bend interaction helpers", () => {
       setSelectedDefinitionKind: vi.fn()
     };
 
-    createDeleteCustomComponentLibrary(scope)("UserLibrary");
+    await createDeleteCustomComponentLibrary(scope)("UserLibrary");
 
-    expect(confirm).toHaveBeenCalledWith("确认删除元件库“UserLibrary”？");
+    expect(showGlobalConfirm).toHaveBeenCalledWith("确认删除元件库“UserLibrary”？");
     expect(setCustomComponentLibraries).not.toHaveBeenCalled();
     expect(customComponentLibraries).toEqual([
       { name: "UserLibrary", categoryLibraryName: "用户类别", label: "用户元件库" }
@@ -3126,8 +3128,8 @@ describe("createExportEDeviceDefinitionFile", () => {
   });
 
   test("exports enabled fields from library templates covering both custom and built-in devices", async () => {
-    const alert = vi.fn();
-    vi.stubGlobal("window", { alert });
+    const showGlobalMessage = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
     const saveTextFile = vi.fn().mockResolvedValue(true);
     // libraryTemplates 已合并内置 + 自定义元件并应用 deviceDefinitionOverrides
     const libraryTemplates = [
@@ -3151,12 +3153,12 @@ describe("createExportEDeviceDefinitionFile", () => {
     expect(payload.text).toContain("p_load");
     expect(payload.text).toContain("r");
     expect(payload.filename).toBe("图元E文件定义.e");
-    expect(alert).toHaveBeenCalledWith(expect.stringContaining("导出成功"));
+    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("导出成功"));
   });
 
   test("exports params whose export flag is inferred from E section when exportEnabled is undefined", async () => {
-    const alert = vi.fn();
-    vi.stubGlobal("window", { alert });
+    const showGlobalMessage = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
     const saveTextFile = vi.fn().mockResolvedValue(true);
     // 非内置 component_type，exportEnabled 为 undefined 时按 E 分区推导为 true（与界面一致）
     const libraryTemplates = [
@@ -3177,8 +3179,8 @@ describe("createExportEDeviceDefinitionFile", () => {
   });
 
   test("alerts when no field is marked for export", async () => {
-    const alert = vi.fn();
-    vi.stubGlobal("window", { alert });
+    const showGlobalMessage = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
     const saveTextFile = vi.fn().mockResolvedValue(true);
     const libraryTemplates = [
       buildTemplate("custom_load", "custom_load", [
@@ -3194,7 +3196,7 @@ describe("createExportEDeviceDefinitionFile", () => {
     await exportFn();
 
     expect(saveTextFile).not.toHaveBeenCalled();
-    expect(alert).toHaveBeenCalledWith("没有可导出的元件定义：所有元件均未勾选导出字段。");
+    expect(showGlobalMessage).toHaveBeenCalledWith("没有可导出的元件定义：所有元件均未勾选导出字段。");
   });
 });
 

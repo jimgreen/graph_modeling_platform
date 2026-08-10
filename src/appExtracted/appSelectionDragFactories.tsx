@@ -705,7 +705,7 @@ export function createCutSelection(__appScope: Record<string, any>) {
       hasSelectedEdge: activeSelectedEdgeIds.length > 0
     });
     if (action.kind === "warn") {
-      window.alert(action.message);
+      showGlobalMessage(action.message);
       return;
     }
     const clipboard = buildCanvasClipboard(
@@ -752,7 +752,7 @@ export function createPasteSelection(__appScope: Record<string, any>) {
     }
     const targetPoint = lastRawCanvasPointerRef.current ?? lastCanvasPointerRef.current;
     if (!targetPoint) {
-      window.alert("请先将鼠标移动到画布内，再执行粘贴操作。");
+      showGlobalMessage("请先将鼠标移动到画布内，再执行粘贴操作。");
       return;
     }
     const bounds = canvasClipboardBounds(canvasClipboard);
@@ -774,7 +774,7 @@ export function createPasteSelection(__appScope: Record<string, any>) {
     );
     if (cloned.nodes.length === 0 && cloned.edges.length === 0) {
       if (canvasClipboard.edges.length > 0) {
-        window.alert("不能粘贴悬空联络线：请同时复制联络线两端连接的设备或母线。");
+        showGlobalMessage("不能粘贴悬空联络线：请同时复制联络线两端连接的设备或母线。");
       }
       return;
     }
@@ -858,7 +858,7 @@ export function createCreateGraphTemplateType(__appScope: Record<string, any>) {
     }
     const duplicate = graphTemplateTypes.some((item) => item.toLowerCase() === typeName.toLowerCase());
     if (duplicate) {
-      window.alert("模板类型名称重复，请换一个名称。");
+      showGlobalMessage("模板类型名称重复，请换一个名称。");
       return;
     }
     const nextTypes = [...customGraphTemplateTypes, typeName];
@@ -1061,7 +1061,7 @@ export function createOpenGroupDeviceDefinitionDialog(__appScope: Record<string,
       return;
     }
     if (!canAddTemplateFromSelection) {
-      window.alert("请先选中一个图元组合，再定义为元件。");
+      showGlobalMessage("请先选中一个图元组合，再定义为元件。");
       return;
     }
     const clipboard = buildCanvasClipboard(
@@ -1075,12 +1075,12 @@ export function createOpenGroupDeviceDefinitionDialog(__appScope: Record<string,
     );
     const bounds = canvasClipboardBounds(clipboard);
     if (!bounds || (clipboard.nodes.length === 0 && clipboard.edges.length === 0)) {
-      window.alert("当前组合没有可定义为元件的图元。");
+      showGlobalMessage("当前组合没有可定义为元件的图元。");
       return;
     }
     const terminals = groupDeviceExternalTerminals(clipboard, edges);
     if (terminals.length > MAX_CUSTOM_DEVICE_TERMINALS) {
-      window.alert(`当前组合对外端子为 ${terminals.length} 个，暂时最多支持 ${MAX_CUSTOM_DEVICE_TERMINALS} 个端子。`);
+      showGlobalMessage(`当前组合对外端子为 ${terminals.length} 个，暂时最多支持 ${MAX_CUSTOM_DEVICE_TERMINALS} 个端子。`);
       return;
     }
     const categoryLibraryName = normalizeCategoryLibraryName(customDeviceDraft.categoryLibraryName || "交流设备");
@@ -1111,11 +1111,11 @@ export function createConfirmCreateDeviceFromGroup(__appScope: Record<string, an
     const categoryLibraryName = normalizeCategoryLibraryName(groupDeviceDefinitionDialog.categoryLibraryName);
     const componentLibrary = normalizeComponentLibraryName(groupDeviceDefinitionDialog.componentLibrary);
     if (!componentLibrary) {
-      window.alert("请选择元件库。");
+      showGlobalMessage("请选择元件库。");
       return;
     }
     if (!isValidComponentLibraryName(componentLibrary)) {
-      window.alert("元件库必须是英文名称，只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。");
+      showGlobalMessage("元件库必须是英文名称，只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。");
       return;
     }
     const terminalTypes = groupDeviceDefinitionDialog.terminals.map((terminal) => terminal.type);
@@ -1171,12 +1171,12 @@ export function createConfirmReplaceDeviceIconFromGroup(__appScope: Record<strin
     }
     const targetTemplate = groupDeviceReplacementTemplates.find((template) => template.kind === groupDeviceDefinitionDialog.targetKind);
     if (!targetTemplate) {
-      window.alert("请选择要修改图标的已有元件。");
+      showGlobalMessage("请选择要修改图标的已有元件。");
       return;
     }
     const validation = validateGroupDeviceIconReplacement(targetTemplate, groupDeviceDefinitionDialog.terminals);
     if (!validation.valid) {
-      window.alert(validation.message);
+      showGlobalMessage(validation.message);
       return;
     }
     const groupIcon = groupDeviceDefinitionDialog.iconImage;
@@ -1211,7 +1211,7 @@ export function createOpenAddTemplateDialog(__appScope: Record<string, any>) {
       return;
     }
     if (!canAddTemplateFromSelection) {
-      window.alert("请先选中一个图元组合，再添加模板。");
+      showGlobalMessage("请先选中一个图元组合，再添加模板。");
       return;
     }
     const clipboard = buildCanvasClipboard(
@@ -1225,7 +1225,7 @@ export function createOpenAddTemplateDialog(__appScope: Record<string, any>) {
     );
     const bounds = canvasClipboardBounds(clipboard);
     if (!bounds || (clipboard.nodes.length === 0 && clipboard.edges.length === 0)) {
-      window.alert("当前组合没有可保存为模板的图元。");
+      showGlobalMessage("当前组合没有可保存为模板的图元。");
       return;
     }
     const typeName = graphTemplateTypes.includes(templateDraftType) ? templateDraftType : graphTemplateTypes[0] ?? DEFAULT_GRAPH_TEMPLATE_TYPES[0];
@@ -1260,11 +1260,11 @@ export function createConfirmAddGraphTemplate(__appScope: Record<string, any>) {
     const typeName = normalizeGraphTemplateTypeName(templateDraftType) || DEFAULT_GRAPH_TEMPLATE_TYPES[0];
     const name = templateDraftName.trim();
     if (!name) {
-      window.alert("请输入模板名字。");
+      showGlobalMessage("请输入模板名字。");
       return;
     }
     if (customGraphTemplates.some((template) => template.typeName.toLowerCase() === typeName.toLowerCase() && template.name.toLowerCase() === name.toLowerCase())) {
-      window.alert("模板名称重复，请换一个名称。");
+      showGlobalMessage("模板名称重复，请换一个名称。");
       return;
     }
     const now = new Date().toISOString();
@@ -1314,7 +1314,7 @@ export function createDeleteGraphTemplate(__appScope: Record<string, any>) {
 }
 
 export function createDeleteGraphTemplateType(__appScope: Record<string, any>) {
-  return (typeName: string) => {
+  return async (typeName: string) => {
     const { customGraphTemplateTypes, customGraphTemplates, persistTemplateLibraryChange, requireEditMode, setCustomGraphTemplateTypes, setCustomGraphTemplates, setTemplateMenu, writeOperationLog } = __appScope;
     if (!requireEditMode("删除模板类型")) {
       return;
@@ -1326,7 +1326,7 @@ export function createDeleteGraphTemplateType(__appScope: Record<string, any>) {
       setTemplateMenu(null);
       return;
     }
-    if (!window.confirm(`删除模板类型“${typeName}”及其下 ${deletingTemplates.length} 个模板？`)) {
+    if (!await showGlobalConfirm(`删除模板类型”${typeName}”及其下 ${deletingTemplates.length} 个模板？`)) {
       setTemplateMenu(null);
       return;
     }
@@ -1359,7 +1359,7 @@ export function createDropGraphTemplate(__appScope: Record<string, any>) {
       () => `group-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
     );
     if (cloned.nodes.length === 0 && cloned.edges.length === 0) {
-      window.alert("模板内容为空或包含悬空联络线，无法生成。");
+      showGlobalMessage("模板内容为空或包含悬空联络线，无法生成。");
       return;
     }
     if (rejectAutoCanvasExpansionForContent([...nodes, ...cloned.nodes], [...edges, ...cloned.edges])) {
@@ -1594,7 +1594,7 @@ export function createDeleteSelectedGraphicsFromCanvas(__appScope: Record<string
       hasSelectedEdge: activeSelectedEdgeIds.length > 0
     });
     if (action.kind === "warn") {
-      window.alert(action.message);
+      showGlobalMessage(action.message);
       return;
     }
     deleteSelection();
