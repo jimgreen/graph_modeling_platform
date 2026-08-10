@@ -1,5 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import { X, Edit, Eye, Plus, Trash2 } from "lucide-react";
+import { PARAM_LABELS } from "./appExtracted/appCoreCanvasUtilities";
 
 export type EDeviceRecord = {
   id: string;
@@ -16,10 +17,18 @@ export interface EFileEditorProps {
   onSave?: (records: EDeviceRecord[]) => void;
 }
 
+const MAX_COL_WIDTH = 100;
+const MIN_COL_WIDTH = 40;
+const DEFAULT_COL_WIDTH = 80;
+
 export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps) {
   const [editMode, setEditMode] = useState(false);
   const [activeSection, setActiveSection] = useState(0);
   const [editedRecords, setEditedRecords] = useState<EDeviceRecord[]>(records);
+  // 列宽状态：key = `${sectionName}:${col}`
+  const [colWidths, setColWidths] = useState<Record<string, number>>({});
+  const [copiedCell, setCopiedCell] = useState<string | null>(null);
+  const resizeRef = useRef<{ colKey: string; startX: number; startWidth: number } | null>(null);
 
   // 按 section 分组记录
   const sections = useMemo(() => {
@@ -38,6 +47,43 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
     setActiveSection(0);
     setEditMode(false);
   }, [records]);
+
+  const getColWidth = useCallback((sectionName: string, col: string) => {
+    const key = `${sectionName}:${col}`;
+    return colWidths[key] ?? DEFAULT_COL_WIDTH;
+  }, [colWidths]);
+
+  const handleResizeStart = useCallback((e: React.PointerEvent, sectionName: string, col: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const key = `${sectionName}:${col}`;
+    const startWidth = colWidths[key] ?? DEFAULT_COL_WIDTH;
+    resizeRef.current = { colKey: key, startX: e.clientX, startWidth };
+
+    const handleMove = (ev: PointerEvent) => {
+      if (!resizeRef.current) return;
+      const delta = ev.clientX - resizeRef.current.startX;
+      const newWidth = Math.max(MIN_COL_WIDTH, Math.min(MAX_COL_WIDTH, resizeRef.current.startWidth + delta));
+      setColWidths((prev) => ({ ...prev, [resizeRef.current!.colKey]: newWidth }));
+    };
+    const handleUp = () => {
+      resizeRef.current = null;
+      document.removeEventListener("pointermove", handleMove);
+      document.removeEventListener("pointerup", handleUp);
+    };
+    document.addEventListener("pointermove", handleMove);
+    document.addEventListener("pointerup", handleUp);
+  }, [colWidths]);
+
+  const handleDoubleClickCell = useCallback((value: string) => {
+    if (!editMode) return;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(value).then(() => {
+        setCopiedCell(value);
+        setTimeout(() => setCopiedCell(null), 1500);
+      }).catch(() => {});
+    }
+  }, [editMode]);
 
   if (!open) return null;
 
@@ -86,6 +132,9 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
     setEditedRecords(records);
     setEditMode(false);
   };
+
+  // 获取字段中文名称
+  const getFieldCnName = (col: string) => PARAM_LABELS[col] || col;
 
   return (
     <div className="image-picker-backdrop" onPointerDown={onClose}>
@@ -156,47 +205,69 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                     </button>
                   </>
                 )}
+                {copiedCell !== null && <span className="e-file-editor-copied-toast">已复制到剪切板</span>}
               </div>
-              <table className="e-file-editor-table">
-                <thead>
-                  <tr>
-                    {editMode && <th style={{ width: "40px" }}>操作</th>}
+              <div className="e-file-editor-table-scroll">
+                <table className="e-file-editor-table">
+                  <colgroup>
+                    {editMode && <col style={{ width: "40px" }} />}
                     {columns.map((col) => (
-                      <th key={col}>{col}</th>
+                      <col key={col} style={{ width: `${getColWidth(sectionName, col)}px` }} />
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sectionRecords.map((record) => (
-                    <tr key={record.id}>
-                      {editMode && (
-                        <td>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteRow(record.id)}
-                            title="删除行"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </td>
-                      )}
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      {editMode && <th>操作</th>}
                       {columns.map((col) => (
-                        <td key={col}>
-                          {editMode ? (
-                            <input
-                              type="text"
-                              value={record.params[col] || ""}
-                              onChange={(e) => handleCellEdit(record.id, col, e.target.value)}
-                            />
-                          ) : (
-                            <span>{record.params[col] || ""}</span>
-                          )}
-                        </td>
+                        <th key={col} title={getFieldCnName(col)}>
+                          <span className="e-file-editor-th-text">{col}</span>
+                          <span
+                            className="e-file-editor-col-resizer"
+                            onPointerDown={(e) => handleResizeStart(e, sectionName, col)}
+                          />
+                        </th>
                       ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {sectionRecords.map((record) => (
+                      <tr key={record.id}>
+                        {editMode && (
+                          <td>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteRow(record.id)}
+                              title="删除行"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </td>
+                        )}
+                        {columns.map((col) => {
+                          const value = record.params[col] || "";
+                          return (
+                            <td
+                              key={col}
+                              title={editMode ? undefined : value}
+                              onDoubleClick={() => handleDoubleClickCell(value)}
+                            >
+                              {editMode ? (
+                                <input
+                                  type="text"
+                                  value={value}
+                                  onChange={(e) => handleCellEdit(record.id, col, e.target.value)}
+                                />
+                              ) : (
+                                <span className="e-file-editor-cell-text">{value}</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
