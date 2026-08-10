@@ -39,7 +39,13 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
       list.push(record);
       sectionMap.set(record.section, list);
     }
-    return Array.from(sectionMap.entries());
+    const result = Array.from(sectionMap.entries());
+    console.log("[EFileEditor] Sections:", result.map(([section, records]) => ({
+      section,
+      count: records.length,
+      columns: records[0]?.columns || []
+    })));
+    return result;
   }, [editedRecords]);
 
   // 当 records 变化时重置编辑状态
