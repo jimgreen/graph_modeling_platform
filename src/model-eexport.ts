@@ -1280,11 +1280,17 @@ function buildTopologyNodeDevices(nodes: ModelNode[]): EDeviceExport[] {
           isl: representative.node.params.isl ?? "0",
           run_stat: runStat
         };
+        const params = section === "ACNode" ? { ...commonParams, angle: representative.node.params.angle ?? "0" } : commonParams;
+        // ACNode/DCNode 只导出基本字段
+        const columns = section === "ACNode"
+          ? ["idx", "name", "vbase", "run_stat"]
+          : ["idx", "name", "vbase", "run_stat"];
         return {
           id: `${section}-${idx}`,
           kind: type === "ac" ? "ac-node" : "dc-node",
           section,
-          params: section === "ACNode" ? { ...commonParams, angle: representative.node.params.angle ?? "0" } : commonParams
+          params,
+          columns
         };
       });
 
