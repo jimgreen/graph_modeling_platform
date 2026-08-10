@@ -327,7 +327,7 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                         {columns.map((col) => {
                           const value = record.params[col] || "";
                           const colWidth = getColWidth(sectionName, col);
-                          const isReferenceField = !editMode && REFERENCE_FIELD_MAP[col] && value;
+                          const isReferenceField = REFERENCE_FIELD_MAP[col] && value;
                           return (
                             <td
                               key={col}
