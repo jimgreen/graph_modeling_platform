@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useCallback } from "react";
-import { X, Edit, Eye, Plus, Trash2 } from "lucide-react";
+import { X, Edit, Eye, Plus, Trash2, ArrowUpRight } from "lucide-react";
 import { PARAM_LABELS } from "./appExtracted/appCoreCanvasUtilities";
 
 export type EDeviceRecord = {
@@ -21,6 +21,24 @@ const MAX_COL_WIDTH = 200;
 const MIN_COL_WIDTH = 40;
 const DEFAULT_COL_WIDTH = 80;
 
+// 引用字段映射：字段名 -> 目标表名
+const REFERENCE_FIELD_MAP: Record<string, string> = {
+  // 节点引用
+  i_node: "ACNode",
+  j_node: "ACNode",
+  node: "ACNode",
+  // 三绕组变压器
+  t1_node: "ACNode",
+  t2_node: "ACNode",
+  t3_node: "ACNode",
+  neutral_node: "ACNode",
+  // 变压器绕组
+  itrfm: "ACTransformer",
+  // DC 节点引用
+  source_node: "DCNode",
+  target_node: "DCNode",
+};
+
 export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps) {
   const [editMode, setEditMode] = useState(false);
   const [activeSection, setActiveSection] = useState(0);
@@ -29,6 +47,7 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
   const [colWidths, setColWidths] = useState<Record<string, number>>({});
   const [copiedCell, setCopiedCell] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
+  const [highlightedRow, setHighlightedRow] = useState<string | null>(null);
   const resizeRef = useRef<{ colKey: string; startX: number; startWidth: number } | null>(null);
 
   // 按 section 分组记录
@@ -112,6 +131,29 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
       document.body.removeChild(ta);
     }
   }, [editMode]);
+
+  // 跳转到引用行
+  const handleJumpToReference = useCallback((fieldName: string, targetIdx: string) => {
+    const targetSection = REFERENCE_FIELD_MAP[fieldName];
+    if (!targetSection) return;
+
+    // 找到目标 section 的索引
+    const targetSectionIndex = sections.findIndex(([section]) => section === targetSection);
+    if (targetSectionIndex === -1) return;
+
+    // 切换到目标 section
+    setActiveSection(targetSectionIndex);
+
+    // 高亮目标行
+    const targetRecord = sections[targetSectionIndex][1].find(
+      (record) => record.params.idx === targetIdx
+    );
+    if (targetRecord) {
+      setHighlightedRow(targetRecord.id);
+      // 3秒后取消高亮
+      setTimeout(() => setHighlightedRow(null), 3000);
+    }
+  }, [sections]);
 
   if (!open) return null;
 
@@ -275,7 +317,7 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                   </thead>
                   <tbody>
                     {sectionRecords.map((record) => (
-                      <tr key={record.id}>
+                      <tr key={record.id} className={highlightedRow === record.id ? "highlighted" : ""}>
                         {editMode && (
                           <td className="e-file-editor-td-action">
                             <button
@@ -290,10 +332,11 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                         {columns.map((col) => {
                           const value = record.params[col] || "";
                           const colWidth = getColWidth(sectionName, col);
+                          const isReferenceField = !editMode && REFERENCE_FIELD_MAP[col] && value;
                           return (
                             <td
                               key={col}
-                              className="e-file-editor-td"
+                              className={`e-file-editor-td${isReferenceField ? " reference-field" : ""}`}
                               style={{ maxWidth: `${colWidth}px` }}
                               title={editMode ? undefined : value}
                             >
@@ -304,11 +347,23 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                                   onChange={(e) => handleCellEdit(record.id, col, e.target.value)}
                                 />
                               ) : (
-                                <span
-                                  className="e-file-editor-cell-text"
-                                  onDoubleClick={() => handleDoubleClickCell(value)}
-                                  title="双击复制到剪切板"
-                                >{value}</span>
+                                <span className="e-file-editor-cell-content">
+                                  <span
+                                    className="e-file-editor-cell-text"
+                                    onDoubleClick={() => handleDoubleClickCell(value)}
+                                    title="双击复制到剪切板"
+                                  >{value}</span>
+                                  {isReferenceField && (
+                                    <button
+                                      type="button"
+                                      className="e-file-editor-jump-btn"
+                                      onClick={() => handleJumpToReference(col, value)}
+                                      title={`跳转到 ${REFERENCE_FIELD_MAP[col]} 的 idx=${value}`}
+                                    >
+                                      <ArrowUpRight size={12} />
+                                    </button>
+                                  )}
+                                </span>
                               )}
                             </td>
                           );

@@ -12928,6 +12928,48 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   white-space: nowrap;
 }
 
+.e-file-editor-cell-content {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.e-file-editor-td.reference-field {
+  position: relative;
+}
+
+.e-file-editor-jump-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #f9fafb;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.e-file-editor-jump-btn:hover {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.e-file-editor-table tr.highlighted {
+  background: #fef3c7 !important;
+  animation: e-file-editor-highlight-flash 1s ease-in-out;
+}
+
+@keyframes e-file-editor-highlight-flash {
+  0%, 100% { background: #fef3c7; }
+  50% { background: #fde68a; }
+}
+
 .e-file-editor-table .e-file-editor-td input {
   width: 100%;
   padding: 4px 8px;
