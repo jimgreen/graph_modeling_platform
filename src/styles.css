@@ -12907,7 +12907,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 500px;
   position: relative;
 }
 

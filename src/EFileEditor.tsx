@@ -17,7 +17,7 @@ export interface EFileEditorProps {
   onSave?: (records: EDeviceRecord[]) => void;
 }
 
-const MAX_COL_WIDTH = 200;
+const MAX_COL_WIDTH = 2000;
 const MIN_COL_WIDTH = 40;
 const DEFAULT_COL_WIDTH = 80;
 
@@ -332,7 +332,7 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                             <td
                               key={col}
                               className={`e-file-editor-td${isReferenceField ? " reference-field" : ""}`}
-                              style={{ maxWidth: `${colWidth}px` }}
+                              style={{ width: `${colWidth}px` }}
                               title={editMode ? undefined : value}
                             >
                               {editMode ? (
