@@ -12981,6 +12981,12 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
 }
 
+.e-file-editor-cell-readonly {
+  color: #6b7280;
+  background: #f3f4f6;
+  cursor: not-allowed;
+}
+
 .e-file-editor-td {
   position: relative;
 }

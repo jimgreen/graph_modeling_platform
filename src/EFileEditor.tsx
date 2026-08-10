@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
-import { X, Edit, Eye, Plus, Trash2, ArrowUpRight } from "lucide-react";
+import { X, Edit, Eye, ArrowUpRight } from "lucide-react";
 import { PARAM_LABELS } from "./appExtracted/appCoreCanvasUtilities";
 
 export type EDeviceRecord = {
@@ -38,6 +38,14 @@ const REFERENCE_FIELD_MAP: Record<string, string> = {
   source_node: "DCNode",
   target_node: "DCNode",
 };
+
+// 拓扑相关字段（只读，不可编辑）
+const TOPOLOGY_READONLY_FIELDS = new Set([
+  "ind", "znd", "ist", "zst",
+  "i_node", "j_node", "node",
+  "t1_node", "t2_node", "t3_node", "neutral_node",
+  "itrfm", "source_node", "target_node",
+]);
 
 export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps) {
   const [editMode, setEditMode] = useState(false);
@@ -171,24 +179,6 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
     );
   };
 
-  const handleAddRow = () => {
-    if (!editMode || !currentSection) return;
-    const newId = `new_${Date.now()}`;
-    const newRecord: EDeviceRecord = {
-      id: newId,
-      kind: sectionRecords[0]?.kind || "",
-      section: sectionName,
-      params: Object.fromEntries(columns.map((c) => [c, ""])),
-      columns
-    };
-    setEditedRecords((prev) => [...prev, newRecord]);
-  };
-
-  const handleDeleteRow = (recordId: string) => {
-    if (!editMode) return;
-    setEditedRecords((prev) => prev.filter((r) => r.id !== recordId));
-  };
-
   const handleSave = () => {
     if (onSave) {
       onSave(editedRecords);
@@ -276,10 +266,6 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
               <div className="e-file-editor-table-actions">
                 {editMode && (
                   <>
-                    <button type="button" onClick={handleAddRow} title="添加行">
-                      <Plus size={14} />
-                      <span>添加行</span>
-                    </button>
                     <button type="button" onClick={handleSave} className="primary">
                       保存
                     </button>
@@ -293,7 +279,6 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                 <table className="e-file-editor-table">
                   <thead>
                     <tr>
-                      {editMode && <th className="e-file-editor-th-action">操作</th>}
                       {columns.map((col) => (
                         <th
                           key={col}
@@ -320,17 +305,6 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                   <tbody>
                     {sectionRecords.map((record) => (
                       <tr key={record.id} className={highlightedRow === record.id ? "highlighted" : ""}>
-                        {editMode && (
-                          <td className="e-file-editor-td-action">
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteRow(record.id)}
-                              title="删除行"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </td>
-                        )}
                         {columns.map((col) => {
                           const value = record.params[col] || "";
                           const colWidth = getColWidth(sectionName, col);
@@ -345,12 +319,16 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                               {editMode ? (
                                 <>
                                   <span className="e-file-editor-cell-text e-file-editor-cell-ghost">{value}</span>
-                                  <input
-                                    type="text"
-                                    className="e-file-editor-cell-input"
-                                    value={value}
-                                    onChange={(e) => handleCellEdit(record.id, col, e.target.value)}
-                                  />
+                                  {TOPOLOGY_READONLY_FIELDS.has(col) ? (
+                                    <span className="e-file-editor-cell-input e-file-editor-cell-readonly">{value}</span>
+                                  ) : (
+                                    <input
+                                      type="text"
+                                      className="e-file-editor-cell-input"
+                                      value={value}
+                                      onChange={(e) => handleCellEdit(record.id, col, e.target.value)}
+                                    />
+                                  )}
                                 </>
                               ) : (
                                 <>
