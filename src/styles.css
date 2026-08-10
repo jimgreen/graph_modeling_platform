@@ -12915,6 +12915,9 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   border-bottom: 1px solid #f3f4f6;
   border-right: 1px solid #f3f4f6;
   white-space: nowrap;
+  width: 40px;
+  min-width: 40px;
+  max-width: 40px;
 }
 
 .e-file-editor-table tr:hover {

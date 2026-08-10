@@ -69,16 +69,17 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
     setEditMode(false);
   }, [records]);
 
-  const getColWidth = useCallback((sectionName: string, col: string) => {
+  const getColWidth = useCallback((sectionName: string, col: string): number | undefined => {
     const key = `${sectionName}:${col}`;
-    return colWidths[key] ?? DEFAULT_COL_WIDTH;
+    return colWidths[key];
   }, [colWidths]);
 
   const handleResizeStart = useCallback((e: React.PointerEvent, sectionName: string, col: string) => {
     e.preventDefault();
     e.stopPropagation();
     const key = `${sectionName}:${col}`;
-    const startWidth = colWidths[key] ?? DEFAULT_COL_WIDTH;
+    const th = e.currentTarget.parentElement as HTMLElement;
+    const startWidth = colWidths[key] ?? th.getBoundingClientRect().width;
     resizeRef.current = { colKey: key, startX: e.clientX, startWidth };
 
     const handleMove = (ev: PointerEvent) => {
@@ -332,7 +333,7 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                             <td
                               key={col}
                               className={`e-file-editor-td${isReferenceField ? " reference-field" : ""}`}
-                              style={{ width: `${colWidth}px` }}
+                              style={colWidth ? { width: `${colWidth}px` } : undefined}
                               title={editMode ? undefined : value}
                             >
                               {editMode ? (
