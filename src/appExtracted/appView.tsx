@@ -5065,8 +5065,16 @@ export function renderAppView(__appScope: Record<string, any>) {
                     <label>
                       来源
                       <select value={imagePickerActiveSourceFilter} onChange={(event) => {
-                        setImagePickerSourceFilter(event.target.value);
+                        const nextSource = event.target.value;
+                        setImagePickerSourceFilter(nextSource);
                         setImagePickerCategoryFilter("");
+                        // 切换到开源SVG综合图标库时，重置分页为默认值
+                        if (nextSource === "catalog") {
+                          setIconLibraryPicker((current: any) => ({
+                            ...current,
+                            visibleCount: ICON_LIBRARY_PAGE_SIZE
+                          }));
+                        }
                       }}>
                         <option value="builtin">内置 SVG</option>
                         <option value="catalog">开源SVG综合图标库</option>
