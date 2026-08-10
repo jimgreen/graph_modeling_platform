@@ -12936,7 +12936,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .e-file-editor-td.reference-field .e-file-editor-cell-text {
-  max-width: calc(100% - 28px);
+  max-width: 100%;
 }
 
 .e-file-editor-jump-btn {
