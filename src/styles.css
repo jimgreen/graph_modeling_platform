@@ -12908,10 +12908,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 200px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px;
+  position: relative;
 }
 
 .e-file-editor-table .e-file-editor-td-action {
@@ -12926,11 +12923,12 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .e-file-editor-cell-text {
-  flex: 1;
+  display: inline-block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  min-width: 0;
+  max-width: calc(100% - 28px);
+  vertical-align: middle;
 }
 
 
@@ -12939,6 +12937,10 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .e-file-editor-jump-btn {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
   justify-content: center;
