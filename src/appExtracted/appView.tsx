@@ -4831,8 +4831,7 @@ export function renderAppView(__appScope: Record<string, any>) {
           onClose={() => setEFileEditorDialogOpen(false)}
           records={eFileEditorRecords}
           onSave={(records) => {
-            console.log("E-file records saved:", records);
-            setEFileEditorDialogOpen(false);
+            // 保存后不关闭弹窗，仅退出编辑模式（由 EFileEditor 内部处理）
           }}
         />
       )}
