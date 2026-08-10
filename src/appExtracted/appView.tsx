@@ -2798,7 +2798,7 @@ export function renderAppView(__appScope: Record<string, any>) {
       })()}
       {libraryPackageDialogOpen && (
         <div className="image-picker-backdrop library-package-backdrop" onPointerDown={closeLibraryPackageDialog}>
-          <section className="library-package-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="library-package-title">
+          <section className="library-package-dialog" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { closeLibraryPackageDialog(); } }} role="dialog" aria-modal="true" aria-labelledby="library-package-title">
             <div className="image-picker-title">
               <div>
                 <h2 id="library-package-title">导入/导出库</h2>
@@ -2870,7 +2870,7 @@ export function renderAppView(__appScope: Record<string, any>) {
       {renderMeasurementConfigDialog()}
       {renderMeasurementEditorDialog()}
       {pendingRecordPasteConflict && (<div className="image-picker-backdrop" onPointerDown={() => resolveRecordPasteConflict("cancel")}>
-          <section className="unsaved-change-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="record-paste-conflict-title">
+          <section className="unsaved-change-dialog" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { resolveRecordPasteConflict("cancel"); } }} role="dialog" aria-modal="true" aria-labelledby="record-paste-conflict-title">
             <div className="image-picker-title">
               <div>
                 <h2 id="record-paste-conflict-title">名称重复</h2>
@@ -2887,7 +2887,7 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {pendingModelImportConflict && (<div className="image-picker-backdrop" onPointerDown={() => resolveDuplicateModelImport("cancel")}>
-          <section className="unsaved-change-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="model-import-conflict-title">
+          <section className="unsaved-change-dialog" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { resolveDuplicateModelImport("cancel"); } }} role="dialog" aria-modal="true" aria-labelledby="model-import-conflict-title">
             <div className="image-picker-title">
               <div>
                 <h2 id="model-import-conflict-title">模型名称重复</h2>
@@ -2904,7 +2904,7 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {pendingSchemeImportConflict && (<div className="image-picker-backdrop" onPointerDown={() => resolveDuplicateSchemeImport("cancel")}>
-          <section className="unsaved-change-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="scheme-import-conflict-title">
+          <section className="unsaved-change-dialog" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { resolveDuplicateSchemeImport("cancel"); } }} role="dialog" aria-modal="true" aria-labelledby="scheme-import-conflict-title">
             <div className="image-picker-title">
               <div>
                 <h2 id="scheme-import-conflict-title">方案名称重复</h2>
@@ -2921,7 +2921,7 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {pendingUnsavedAction && (<div className="image-picker-backdrop" onPointerDown={() => resolveUnsavedChangeAction("cancel")}>
-          <section className="unsaved-change-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="unsaved-change-title">
+          <section className="unsaved-change-dialog" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { resolveUnsavedChangeAction("cancel"); } }} role="dialog" aria-modal="true" aria-labelledby="unsaved-change-title">
             <div className="image-picker-title">
               <div>
                 <h2 id="unsaved-change-title">当前模型尚未保存</h2>
@@ -2943,7 +2943,7 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {unsavedChangesDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setUnsavedChangesDialogOpen(false)}>
-          <section className="unsaved-changes-dialog" style={{ width: "80vw", height: "80vh" }} onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="unsaved-changes-list-title">
+          <section className="unsaved-changes-dialog" style={{ width: "80vw", height: "80vh" }} onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { setUnsavedChangesDialogOpen(false); } }} role="dialog" aria-modal="true" aria-labelledby="unsaved-changes-list-title">
             <div className="unsaved-changes-header">
               <h2 id="unsaved-changes-list-title">未保存的修改</h2>
               <button type="button" onClick={() => setUnsavedChangesDialogOpen(false)}>关闭</button>
@@ -3014,7 +3014,7 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {voltageBaseSetDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setVoltageBaseSetDialogOpen(false)}>
-          <section className="connection-redraw-dialog voltage-base-set-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="voltage-base-set-title">
+          <section className="connection-redraw-dialog voltage-base-set-dialog" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { setVoltageBaseSetDialogOpen(false); } }} role="dialog" aria-modal="true" aria-labelledby="voltage-base-set-title">
             <div className="image-picker-title">
               <div>
                 <h2 id="voltage-base-set-title">设置电压基值</h2>
@@ -3067,7 +3067,7 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {voltageBaseClearDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setVoltageBaseClearDialogOpen(false)}>
-          <section className="connection-redraw-dialog voltage-base-clear-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="voltage-base-clear-title">
+          <section className="connection-redraw-dialog voltage-base-clear-dialog" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { setVoltageBaseClearDialogOpen(false); } }} role="dialog" aria-modal="true" aria-labelledby="voltage-base-clear-title">
             <div className="image-picker-title">
               <div>
                 <h2 id="voltage-base-clear-title">清空电压基值</h2>
@@ -3095,7 +3095,7 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {connectionRedrawDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setConnectionRedrawDialogOpen(false)}>
-          <section className="connection-redraw-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="connection-redraw-title">
+          <section className="connection-redraw-dialog" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { setConnectionRedrawDialogOpen(false); } }} role="dialog" aria-modal="true" aria-labelledby="connection-redraw-title">
             <div className="image-picker-title">
               <div>
                 <h2 id="connection-redraw-title">连接线重绘</h2>
@@ -3122,7 +3122,7 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {groupDeviceDefinitionDialog && (<div className="image-picker-backdrop" onPointerDown={() => setGroupDeviceDefinitionDialog(null)}>
-          <section className="group-device-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="group-device-dialog-title">
+          <section className="group-device-dialog" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { setGroupDeviceDefinitionDialog(null); } }} role="dialog" aria-modal="true" aria-labelledby="group-device-dialog-title">
             <div className="image-picker-title">
               <div>
                 <h2 id="group-device-dialog-title">定义为元件</h2>
@@ -3197,7 +3197,7 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {templateDialog && (<div className="image-picker-backdrop" onPointerDown={cancelTemplateDialog}>
-          <section className="template-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="template-dialog-title">
+          <section className="template-dialog" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { cancelTemplateDialog(); } }} role="dialog" aria-modal="true" aria-labelledby="template-dialog-title">
             <div className="image-picker-title">
               <div>
                 <h2 id="template-dialog-title">添加模板</h2>
@@ -3241,7 +3241,7 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {layerAssignmentDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setLayerAssignmentDialogOpen(false)}>
-          <section className="layer-assignment-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="layer-assignment-title">
+          <section className="layer-assignment-dialog" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { setLayerAssignmentDialogOpen(false); } }} role="dialog" aria-modal="true" aria-labelledby="layer-assignment-title">
             <div className="image-picker-title">
               <div>
                 <h2 id="layer-assignment-title">图层修改</h2>
@@ -3267,7 +3267,7 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {filterSelectionDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setFilterSelectionDialogOpen(false)}>
-          <section className="filter-selection-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="filter-selection-title">
+          <section className="filter-selection-dialog" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { setFilterSelectionDialogOpen(false); } }} role="dialog" aria-modal="true" aria-labelledby="filter-selection-title">
             <div className="image-picker-title">
               <div>
                 <h2 id="filter-selection-title">过滤选择</h2>
@@ -3330,7 +3330,7 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {colorPaletteDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setColorPaletteDialogOpen(false)}>
-          <section className="color-palette-dialog" onPointerDown={(event) => event.stopPropagation()}>
+          <section className="color-palette-dialog" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { setColorPaletteDialogOpen(false); } }}>
             <div className="image-picker-title">
               <div>
                 <h2>配色设置</h2>
@@ -3425,7 +3425,7 @@ export function renderAppView(__appScope: Record<string, any>) {
         />
       )}
       {deviceDefinitionDialogOpen && (<div className="image-picker-backdrop" onPointerDown={closeDeviceDefinitionDialog}>
-          <section ref={deviceDefinitionDialogRef} className={`device-definition-dialog${deviceLibraryDialogLayouts.definition ? " floating" : ""}`} style={deviceLibraryDialogStyle("definition")} onPointerDown={stopDeviceLibraryDialogEvent} onPointerUp={stopDeviceLibraryDialogEvent} onPointerCancel={stopDeviceLibraryDialogEvent} onLostPointerCapture={stopDeviceLibraryDialogEvent} onClick={(event) => event.stopPropagation()}>
+          <section ref={deviceDefinitionDialogRef} className={`device-definition-dialog${deviceLibraryDialogLayouts.definition ? " floating" : ""}`} style={deviceLibraryDialogStyle("definition")} onPointerDown={stopDeviceLibraryDialogEvent} onPointerUp={stopDeviceLibraryDialogEvent} onPointerCancel={stopDeviceLibraryDialogEvent} onLostPointerCapture={stopDeviceLibraryDialogEvent} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { closeDeviceDefinitionDialog(); } }}>
             <div className="image-picker-title">
               <div className="device-library-dialog-title" onPointerDown={(event) => startDeviceLibraryDialogDrag("definition", event)}>
                 <h2>修改元件</h2>
@@ -3789,7 +3789,7 @@ export function renderAppView(__appScope: Record<string, any>) {
           </form>
         </div>)}
       {customDeviceDialogOpen && (<div className="image-picker-backdrop" onPointerDown={requestCloseCustomDeviceDialog}>
-          <section ref={customDeviceDialogRef} className={`custom-device-dialog${deviceLibraryDialogLayouts.custom ? " floating" : ""}`} style={deviceLibraryDialogStyle("custom")} onPointerDown={stopDeviceLibraryDialogEvent} onPointerUp={stopDeviceLibraryDialogEvent} onPointerCancel={stopDeviceLibraryDialogEvent} onLostPointerCapture={stopDeviceLibraryDialogEvent} onClick={(event) => event.stopPropagation()}>
+          <section ref={customDeviceDialogRef} className={`custom-device-dialog${deviceLibraryDialogLayouts.custom ? " floating" : ""}`} style={deviceLibraryDialogStyle("custom")} onPointerDown={stopDeviceLibraryDialogEvent} onPointerUp={stopDeviceLibraryDialogEvent} onPointerCancel={stopDeviceLibraryDialogEvent} onLostPointerCapture={stopDeviceLibraryDialogEvent} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { requestCloseCustomDeviceDialog(); } }}>
             <div className="image-picker-title">
               <div className="device-library-dialog-title" onPointerDown={(event) => startDeviceLibraryDialogDrag("custom", event)}>
                 <h2>元件定义</h2>
@@ -4275,7 +4275,7 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {eDeviceDefinitionInterfaceDialogOpen && (<div className="image-picker-backdrop" onPointerDown={requestCloseEDeviceInterfaceDefinition}>
-          <section className="e-device-interface-dialog" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+          <section className="e-device-interface-dialog" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { requestCloseEDeviceInterfaceDefinition(); } }}>
             <div className="image-picker-title">
               <div>
                 <h2>E文件接口定义</h2>

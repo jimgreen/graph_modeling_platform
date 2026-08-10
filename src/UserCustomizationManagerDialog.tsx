@@ -186,7 +186,7 @@ export function UserCustomizationManagerDialog(props: UserCustomizationManagerDi
 
   return (
     <div className="modal-backdrop user-customization-backdrop" role="presentation">
-      <section className="user-customization-dialog" role="dialog" aria-modal="true" aria-label="用户自定义管理">
+      <section className="user-customization-dialog" role="dialog" aria-modal="true" aria-label="用户自定义管理" onKeyDown={(event) => { if (event.key === "Escape") { props.onClose(); } }}>
         <header className="user-customization-header">
           <div>
             <h2>用户自定义管理</h2>
