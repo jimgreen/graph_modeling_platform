@@ -374,8 +374,10 @@ describe("measurement canvas interactions", () => {
   test("shows the hydrogen tank profile in the HydroStorage definition", () => {
     const config = measurementDefinitions.normalizeMeasurementConfig(measurementDefinitions.DEFAULT_MEASUREMENT_CONFIG);
     const tank = DEVICE_LIBRARY.find((template) => template.kind === "hydrogen-tank")!;
+    const BufferedTextInput = (props: any) => createElement("input", props);
+    const updateMeasurementProfileItem = vi.fn();
     const panel = createRenderDeviceDefinitionMeasurementPanel({
-      BufferedTextInput: (props: any) => createElement("input", props),
+      BufferedTextInput,
       addMeasurementProfileItem: vi.fn(),
       deleteMeasurementProfileItem: vi.fn(),
       editableMeasurementProfileByKind: new Map(config.deviceProfiles.map((profile) => [profile.deviceKind, profile])),
@@ -386,7 +388,7 @@ describe("measurement canvas interactions", () => {
       measurementConfigSaveStatus: "idle",
       moveMeasurementProfileItem: vi.fn(),
       normalizeComponentLibraryName: (value: string) => value,
-      updateMeasurementProfileItem: vi.fn()
+      updateMeasurementProfileItem
     } as any)({
       deviceKind: "HydroStorage",
       label: tank.label,
@@ -401,30 +403,42 @@ describe("measurement canvas interactions", () => {
           : String(child)
       ).join("");
     const text = elementText(panel);
+    const nameInputs: ReactElement<any>[] = [];
     const associatedFieldSelects: ReactElement<any>[] = [];
-    const collectAssociatedFieldSelects = (node: ReactNode) => {
+    const collectEditors = (node: ReactNode) => {
       Children.forEach(node, (child) => {
         if (!isValidElement(child)) {
           return;
         }
+        if (child.type === BufferedTextInput) {
+          nameInputs.push(child as ReactElement<any>);
+        }
         if (child.type === "select" && String((child as ReactElement<any>).props.title ?? "").includes("关联")) {
           associatedFieldSelects.push(child as ReactElement<any>);
         }
-        collectAssociatedFieldSelects((child as ReactElement<{ children?: ReactNode }>).props.children);
+        collectEditors((child as ReactElement<{ children?: ReactNode }>).props.children);
       });
     };
-    collectAssociatedFieldSelects(panel);
+    collectEditors(panel);
 
     expect(text).not.toContain("当前元件库还没有默认量测模板");
-    expect(text).toContain("压力");
-    expect(text).toContain("流量");
-    expect(text).toContain("储气量");
+    expect(nameInputs.map((inputElement) => inputElement.props.value)).toEqual([
+      "PRESS",
+      "FLOW",
+      "GAS_QUANTITY",
+      "SOC"
+    ]);
     expect(associatedFieldSelects.map((selectElement) => selectElement.props.value)).toEqual([
       "pressure",
       "flow",
       "gas_quantity",
       "soc"
     ]);
+    nameInputs[0]!.props.onCommit("TANK_PRESSURE");
+    expect(updateMeasurementProfileItem).toHaveBeenCalledWith("hydrogen-tank", 0, {
+      name: "TANK_PRESSURE",
+      labelOverride: undefined
+    });
   });
 
   test("renders associated field as a parameter-name dropdown in device definition measurements", () => {
@@ -1217,7 +1231,8 @@ describe("measurement canvas interactions", () => {
   });
 
   test("renders draggable column width handles in the measurement display editor table", () => {
-    const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8")
+    const appEntrySource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const appSource = appEntrySource
       + readFileSync(new URL("./appExtracted/appStateBatch.tsx", import.meta.url), "utf8")
       + readFileSync(new URL("./appExtracted/appCanvasViewportBatch.tsx", import.meta.url), "utf8")
       + readFileSync(new URL("./appExtracted/appRenderBatch.tsx", import.meta.url), "utf8");
@@ -1239,6 +1254,12 @@ describe("measurement canvas interactions", () => {
     expect(appSource).toContain("moveEvent.buttons === 0");
     expect(appSource).toContain('window.addEventListener("mouseup"');
     expect(appSource).toContain('window.addEventListener("blur"');
+    const stateDeclarationIndex = appEntrySource.indexOf("const [measurementEditorColumnWidths, setMeasurementEditorColumnWidths]");
+    const statePublishIndex = appEntrySource.indexOf("Object.assign(__appScope, { measurementEditorColumnWidths, setMeasurementEditorColumnWidths });");
+    const stateBatchCallIndex = appEntrySource.indexOf("useAppStateBatch(__appScope)");
+    expect(stateDeclarationIndex).toBeGreaterThan(-1);
+    expect(statePublishIndex).toBeGreaterThan(stateDeclarationIndex);
+    expect(stateBatchCallIndex).toBeGreaterThan(statePublishIndex);
   });
 
   test("marks measurement groups through the imperative single-node drag origin path", () => {

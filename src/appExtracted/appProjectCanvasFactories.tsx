@@ -3773,10 +3773,13 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                     <td>{itemIndex + 1}</td>
                     <td>
                       <BufferedTextInput
-                        value={item.name ?? ""}
+                        value={item.name ?? item.labelOverride ?? ""}
                         disabled={isBrowseMode}
                         placeholder={currentType?.name ?? "量测名称"}
-                        onCommit={(nextValue) => updateMeasurementProfileItem(selectedProfileKind, itemIndex, { name: nextValue })}
+                        onCommit={(nextValue) => updateMeasurementProfileItem(selectedProfileKind, itemIndex, {
+                          name: nextValue || undefined,
+                          labelOverride: undefined
+                        })}
                       />
                     </td>
                     <td>

@@ -1298,6 +1298,7 @@ Object.assign(__appScope, { measurementConfigSaveStatus, setMeasurementConfigSav
 const [measurementEditorDialog, setMeasurementEditorDialog] = useState<MeasurementEditorDialogState>(null);
 Object.assign(__appScope, { measurementEditorDialog, setMeasurementEditorDialog });
 const [measurementEditorColumnWidths, setMeasurementEditorColumnWidths] = useState<Record<string, number>>({});
+Object.assign(__appScope, { measurementEditorColumnWidths, setMeasurementEditorColumnWidths });
 const [measurementDrag, setMeasurementDrag] = useState<MeasurementDragState>(null);
 Object.assign(__appScope, { measurementDrag, setMeasurementDrag });
 const [topologyErrors, setTopologyErrors] = useState<TopologyValidationError[]>([]);
