@@ -371,6 +371,62 @@ describe("measurement canvas interactions", () => {
     });
   });
 
+  test("shows the hydrogen tank profile in the HydroStorage definition", () => {
+    const config = measurementDefinitions.normalizeMeasurementConfig(measurementDefinitions.DEFAULT_MEASUREMENT_CONFIG);
+    const tank = DEVICE_LIBRARY.find((template) => template.kind === "hydrogen-tank")!;
+    const panel = createRenderDeviceDefinitionMeasurementPanel({
+      BufferedTextInput: (props: any) => createElement("input", props),
+      addMeasurementProfileItem: vi.fn(),
+      deleteMeasurementProfileItem: vi.fn(),
+      editableMeasurementProfileByKind: new Map(config.deviceProfiles.map((profile) => [profile.deviceKind, profile])),
+      editableMeasurementTypeById: new Map(config.measurementTypes.map((type) => [type.id, type])),
+      isBrowseMode: false,
+      measurementConfig: config,
+      measurementConfigDraft: null,
+      measurementConfigSaveStatus: "idle",
+      moveMeasurementProfileItem: vi.fn(),
+      normalizeComponentLibraryName: (value: string) => value,
+      updateMeasurementProfileItem: vi.fn()
+    } as any)({
+      deviceKind: "HydroStorage",
+      label: tank.label,
+      terminalCount: tank.terminalCount,
+      parameterDefinitions: getTemplateParameterDefinitions(tank)
+    });
+
+    const elementText = (node: ReactNode): string =>
+      Children.toArray(node).map((child) =>
+        isValidElement(child)
+          ? elementText((child as ReactElement<{ children?: ReactNode }>).props.children)
+          : String(child)
+      ).join("");
+    const text = elementText(panel);
+    const associatedFieldSelects: ReactElement<any>[] = [];
+    const collectAssociatedFieldSelects = (node: ReactNode) => {
+      Children.forEach(node, (child) => {
+        if (!isValidElement(child)) {
+          return;
+        }
+        if (child.type === "select" && String((child as ReactElement<any>).props.title ?? "").includes("关联")) {
+          associatedFieldSelects.push(child as ReactElement<any>);
+        }
+        collectAssociatedFieldSelects((child as ReactElement<{ children?: ReactNode }>).props.children);
+      });
+    };
+    collectAssociatedFieldSelects(panel);
+
+    expect(text).not.toContain("当前元件库还没有默认量测模板");
+    expect(text).toContain("压力");
+    expect(text).toContain("流量");
+    expect(text).toContain("储气量");
+    expect(associatedFieldSelects.map((selectElement) => selectElement.props.value)).toEqual([
+      "pressure",
+      "flow",
+      "gas_quantity",
+      "soc"
+    ]);
+  });
+
   test("renders associated field as a parameter-name dropdown in device definition measurements", () => {
     const updateMeasurementProfileItem = vi.fn();
     const panel = createRenderDeviceDefinitionMeasurementPanel({

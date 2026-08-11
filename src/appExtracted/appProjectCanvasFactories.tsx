@@ -3688,7 +3688,8 @@ const DEVICE_DEFINITION_MEASUREMENT_PROFILE_ALIASES: Record<string, readonly str
   ACGenerator: ["ac-source"],
   DCGenerator: ["dc-source"],
   ACLoad: ["ac-load"],
-  DCLoad: ["dc-load"]
+  DCLoad: ["dc-load"],
+  HydroStorage: ["hydrogen-tank"]
 };
 
 export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<string, any>) {
