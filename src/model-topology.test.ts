@@ -98,6 +98,7 @@ import {
   validateConnectionEndpointRules,
   voltageBaseSettingModeForNode,
   validateTopology,
+  validateDeviceOperatingLimits,
   validateTwoTerminalVoltageBaseConsistency,
   validateVoltageSetpointDeviations,
   getTerminalPoint,
@@ -2383,28 +2384,62 @@ test("warns when voltage setpoints deviate more than 30 percent from rated topol
   acBus10.terminals.forEach((terminal) => {
     terminal.vbase = "10 kV";
   });
+  acBus10.params = { ...acBus10.params, v_max: "13", v_min: "7" };
   acBus10B.terminals.forEach((terminal) => {
     terminal.vbase = "10 kV";
   });
+  acBus10B.params = { ...acBus10B.params, v_max: "13", v_min: "7" };
   dcBus750.terminals.forEach((terminal) => {
     terminal.vbase = "750 V";
   });
+  dcBus750.params = { ...dcBus750.params, v_max: "975", v_min: "525" };
   dcBus750B.terminals.forEach((terminal) => {
     terminal.vbase = "750 V";
   });
+  dcBus750B.params = { ...dcBus750B.params, v_max: "975", v_min: "525" };
   source.terminals[0].vbase = "10 kV";
-  source.params.v_set = "14";
+  source.params = {
+    ...source.params,
+    p_max: "10",
+    p_min: "-10",
+    q_max: "5",
+    q_min: "-5",
+    v_max: "13",
+    v_min: "7",
+    v_set: "14"
+  };
   dcdc.terminals[0].vbase = "750 V";
   dcdc.terminals[1].vbase = "750 V";
-  dcdc.params.v_set = "1000";
+  dcdc.params = {
+    ...dcdc.params,
+    i_v_max: "975",
+    i_v_min: "525",
+    j_v_max: "975",
+    j_v_min: "525",
+    v_set: "1000"
+  };
   acdc.terminals[0].vbase = "10 kV";
   acdc.terminals[1].vbase = "750 V";
-  acdc.params.v_ac_set = "12";
-  acdc.params.v_dc_set = "1000";
+  acdc.params = {
+    ...acdc.params,
+    ac_v_max: "13",
+    ac_v_min: "7",
+    dc_v_max: "975",
+    dc_v_min: "525",
+    v_ac_set: "12",
+    v_dc_set: "1000"
+  };
   acac.terminals[0].vbase = "10 kV";
   acac.terminals[1].vbase = "10 kV";
-  acac.params.i_v_set = "14";
-  acac.params.j_v_set = "12";
+  acac.params = {
+    ...acac.params,
+    i_v_max: "13",
+    i_v_min: "7",
+    j_v_max: "13",
+    j_v_min: "7",
+    i_v_set: "14",
+    j_v_set: "12"
+  };
 
   const errors = validateTopology(
     [acBus10, acBus10B, dcBus750, dcBus750B, source, dcdc, acdc, acac],
@@ -2484,9 +2519,104 @@ test("treats duplicate identity and voltage setpoint deviations as non-blocking 
   expect(isBlockingTopologyValidationError({ type: "missing-island-voltage" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "island-voltage-mismatch" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "transformer-island-short" })).toBe(true);
+  expect(isBlockingTopologyValidationError({ type: "device-limit-invalid" })).toBe(true);
+  expect(isBlockingTopologyValidationError({ type: "voltage-limit-out-of-range" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "duplicate-device-idx" })).toBe(false);
   expect(isBlockingTopologyValidationError({ type: "duplicate-device-name" })).toBe(false);
   expect(isBlockingTopologyValidationError({ type: "voltage-setpoint-deviation" })).toBe(false);
+});
+
+test("blocks topology when active, reactive, or voltage limits are zero or reversed", () => {
+  const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+  source.name = "交流电源1";
+  source.terminals[0].vbase = "10";
+  source.params = {
+    ...source.params,
+    p_max: "0",
+    p_min: "0",
+    q_max: "-5",
+    q_min: "5",
+    v_max: "9",
+    v_min: "9"
+  };
+
+  const errors = validateDeviceOperatingLimits([source]);
+
+  expect(errors).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      type: "device-limit-invalid",
+      nodeId: source.id,
+      message: expect.stringContaining("有功上限 p_max 与有功下限 p_min 均为 0")
+    }),
+    expect.objectContaining({
+      type: "device-limit-invalid",
+      nodeId: source.id,
+      message: expect.stringContaining("无功上限 q_max=-5 必须大于无功下限 q_min=5")
+    }),
+    expect.objectContaining({
+      type: "device-limit-invalid",
+      nodeId: source.id,
+      message: expect.stringContaining("电压上限 v_max=9 必须大于电压下限 v_min=9")
+    })
+  ]));
+  expect(errors.every(isBlockingTopologyValidationError)).toBe(true);
+  expect(validateTopology([source], [], { includeVoltageSetpointDeviations: false })).toEqual(
+    expect.arrayContaining([expect.objectContaining({ type: "device-limit-invalid", nodeId: source.id })])
+  );
+});
+
+test("validates named voltage limits against the related base voltage with an inclusive 30 percent boundary", () => {
+  const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+  source.terminals[0].vbase = "10 kV";
+  source.params = { ...source.params, p_max: "10", p_min: "-10", q_max: "5", q_min: "-5", v_max: "13", v_min: "7" };
+
+  const converter = createDefaultNode("acdc-converter", { x: 300, y: 100 });
+  converter.terminals[0].vbase = "10 kV";
+  converter.terminals[1].vbase = "750 V";
+  converter.params = {
+    ...converter.params,
+    ac_p_max: "10",
+    ac_p_min: "-10",
+    ac_v_max: "13",
+    ac_v_min: "7",
+    dc_p_max: "10",
+    dc_p_min: "-10",
+    dc_v_max: "976",
+    dc_v_min: "525"
+  };
+
+  const dcdc = createDefaultNode("dcdc-converter", { x: 500, y: 100 });
+  dcdc.terminals[0].vbase = "750 V";
+  dcdc.terminals[1].vbase = "1500 V";
+  dcdc.params = {
+    ...dcdc.params,
+    i_p_max: "5",
+    i_p_min: "-5",
+    i_v_max: "975",
+    i_v_min: "525",
+    j_p_max: "0",
+    j_p_min: "0",
+    j_v_max: "1950",
+    j_v_min: "1050"
+  };
+
+  const errors = validateDeviceOperatingLimits([source, converter, dcdc]);
+
+  expect(errors).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      type: "voltage-limit-out-of-range",
+      nodeId: converter.id,
+      message: expect.stringContaining("dc_v_max=976")
+    }),
+    expect.objectContaining({
+      type: "device-limit-invalid",
+      nodeId: dcdc.id,
+      message: expect.stringContaining("末端有功上限 j_p_max 与末端有功下限 j_p_min 均为 0")
+    })
+  ]));
+  expect(errors).toHaveLength(2);
+  expect(errors.find((error) => error.type === "voltage-limit-out-of-range")?.message).toContain("基准电压 750");
+  expect(errors.every(isBlockingTopologyValidationError)).toBe(true);
 });
 
 test("validates voltage mismatch across terminals contracted through the same bus", () => {

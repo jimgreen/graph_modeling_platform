@@ -4659,6 +4659,153 @@ function identityValidationEntriesForNode(node: ModelNode): DeviceIdentityValida
   return entries;
 }
 
+type DeviceLimitTerminalSelector = "default" | "ac" | "dc" | "i" | "j";
+
+type DeviceLimitPairSpec = {
+  maxKey: string;
+  minKey: string;
+  label: string;
+  voltage: boolean;
+  terminalSelector: DeviceLimitTerminalSelector;
+};
+
+const DEVICE_LIMIT_PAIR_SPECS: DeviceLimitPairSpec[] = [
+  { maxKey: "p_max", minKey: "p_min", label: "有功", voltage: false, terminalSelector: "default" },
+  { maxKey: "q_max", minKey: "q_min", label: "无功", voltage: false, terminalSelector: "default" },
+  { maxKey: "v_max", minKey: "v_min", label: "电压", voltage: true, terminalSelector: "default" },
+  { maxKey: "ac_p_max", minKey: "ac_p_min", label: "交流侧有功", voltage: false, terminalSelector: "ac" },
+  { maxKey: "ac_v_max", minKey: "ac_v_min", label: "交流侧电压", voltage: true, terminalSelector: "ac" },
+  { maxKey: "dc_p_max", minKey: "dc_p_min", label: "直流侧有功", voltage: false, terminalSelector: "dc" },
+  { maxKey: "dc_v_max", minKey: "dc_v_min", label: "直流侧电压", voltage: true, terminalSelector: "dc" },
+  { maxKey: "i_p_max", minKey: "i_p_min", label: "首端有功", voltage: false, terminalSelector: "i" },
+  { maxKey: "i_v_max", minKey: "i_v_min", label: "首端电压", voltage: true, terminalSelector: "i" },
+  { maxKey: "j_p_max", minKey: "j_p_min", label: "末端有功", voltage: false, terminalSelector: "j" },
+  { maxKey: "j_v_max", minKey: "j_v_min", label: "末端电压", voltage: true, terminalSelector: "j" }
+];
+
+function namedNumericValue(value: string | undefined): number | null {
+  const token = String(value ?? "").trim().match(/[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?/)?.[0];
+  if (!token) {
+    return null;
+  }
+  const numeric = Number(token);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function terminalForDeviceLimit(node: ModelNode, selector: DeviceLimitTerminalSelector): Terminal | undefined {
+  if (selector === "ac" || selector === "dc") {
+    return node.terminals.find((terminal) => terminal.type === selector);
+  }
+  if (selector === "i") {
+    return node.terminals[0];
+  }
+  if (selector === "j") {
+    return node.terminals[1];
+  }
+  return node.terminals.find((terminal) => isElectricalTerminalType(terminal.type)) ?? node.terminals[0];
+}
+
+function validateDeviceLimitPairs(
+  node: ModelNode,
+  ownerName: string,
+  keyFor: (key: string) => string,
+  terminalOverride?: Terminal
+): TopologyValidationError[] {
+  const errors: TopologyValidationError[] = [];
+  for (const spec of DEVICE_LIMIT_PAIR_SPECS) {
+    const maxKey = keyFor(spec.maxKey);
+    const minKey = keyFor(spec.minKey);
+    const maxText = deviceParamValue(node.params, maxKey);
+    const minText = deviceParamValue(node.params, minKey);
+    if (maxText === undefined || minText === undefined) {
+      continue;
+    }
+    const maxValue = namedNumericValue(maxText);
+    const minValue = namedNumericValue(minText);
+    if (maxValue === null || minValue === null) {
+      continue;
+    }
+    const errorKey = `${node.id}:${encodeURIComponent(maxKey)}:${encodeURIComponent(minKey)}`;
+    if (maxValue === 0 && minValue === 0) {
+      errors.push({
+        id: `device-limit-invalid:${errorKey}`,
+        type: "device-limit-invalid",
+        nodeId: node.id,
+        relatedNodeIds: [node.id],
+        message: `图上拓扑失败：${ownerName} 的${spec.label}上限 ${maxKey} 与${spec.label}下限 ${minKey} 均为 0，请设置有效的有名值范围。`
+      });
+      continue;
+    }
+    if (maxValue <= minValue) {
+      errors.push({
+        id: `device-limit-invalid:${errorKey}`,
+        type: "device-limit-invalid",
+        nodeId: node.id,
+        relatedNodeIds: [node.id],
+        message: `图上拓扑失败：${ownerName} 的${spec.label}上限 ${maxKey}=${maxText} 必须大于${spec.label}下限 ${minKey}=${minText}。`
+      });
+      continue;
+    }
+    if (!spec.voltage) {
+      continue;
+    }
+    const terminal = spec.terminalSelector === "default" && terminalOverride
+      ? terminalOverride
+      : terminalForDeviceLimit(node, spec.terminalSelector);
+    const baseVoltageText = terminal
+      ? getTerminalVoltageLevel(node, terminal.id)
+      : getNodeVoltageLevel(node);
+    const baseVoltage = namedNumericValue(baseVoltageText);
+    if (baseVoltage === null || baseVoltage <= 0) {
+      continue;
+    }
+    const allowedDeviation = baseVoltage * 0.3;
+    for (const [boundLabel, boundKey, boundText, boundValue] of [
+      ["上限", maxKey, maxText, maxValue],
+      ["下限", minKey, minText, minValue]
+    ] as const) {
+      if (Math.abs(boundValue - baseVoltage) <= allowedDeviation + Number.EPSILON) {
+        continue;
+      }
+      errors.push({
+        id: `voltage-limit-out-of-range:${node.id}:${encodeURIComponent(boundKey)}`,
+        type: "voltage-limit-out-of-range",
+        nodeId: node.id,
+        relatedNodeIds: [node.id],
+        message: `图上拓扑失败：${ownerName} 的${spec.label}${boundLabel} ${boundKey}=${boundText} 与基准电压 ${baseVoltageText} 的偏差超过基准电压的 30%；电压上下限必须使用有名值。`
+      });
+    }
+  }
+  return errors;
+}
+
+export function validateDeviceOperatingLimits(nodes: ModelNode[]): TopologyValidationError[] {
+  const errors: TopologyValidationError[] = [];
+  for (const node of nodes) {
+    if (isStaticNode(node)) {
+      continue;
+    }
+    errors.push(...validateDeviceLimitPairs(node, node.name, (key) => key));
+    if (!isContainerParams(node.params)) {
+      continue;
+    }
+    for (const fieldName of Object.keys(node.params)) {
+      if (!containerRelationCounterKey(fieldName)) {
+        continue;
+      }
+      const parsed = parseContainerRelationField(fieldName);
+      const terminal = parsed ? node.terminals[parsed.terminalNumber - 1] : undefined;
+      errors.push(...validateDeviceLimitPairs(
+        node,
+        containerAssociatedDeviceName(node, fieldName),
+        (key) => containerRelationParamKey(fieldName, key),
+        terminal
+      ));
+    }
+  }
+  return errors;
+}
+
 function duplicateDeviceIdentityErrors(nodes: ModelNode[]): TopologyValidationError[] {
   const errors: TopologyValidationError[] = [];
   const entries = nodes.flatMap(identityValidationEntriesForNode);
@@ -4715,7 +4862,10 @@ export function validateTopology(
   nodes = synchronized.nodes;
   edges = synchronized.edges;
   const topologyEdges = [...edges, ...routableLineDeviceTopologyEdges(nodes)];
-  const errors: TopologyValidationError[] = duplicateDeviceIdentityErrors(nodes);
+  const errors: TopologyValidationError[] = [
+    ...duplicateDeviceIdentityErrors(nodes),
+    ...validateDeviceOperatingLimits(nodes)
+  ];
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const terminalKey = (nodeId: string, terminalId: string) => `${nodeId}:${terminalId}`;
   const resolveEdgeTerminal = (node: ModelNode, terminalId?: string) => {

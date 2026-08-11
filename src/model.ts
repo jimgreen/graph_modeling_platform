@@ -1833,6 +1833,8 @@ export type TopologyValidationErrorType =
   | "missing-island-voltage"
   | "island-voltage-mismatch"
   | "transformer-island-short"
+  | "device-limit-invalid"
+  | "voltage-limit-out-of-range"
   | "voltage-setpoint-deviation"
   | "duplicate-device-idx"
   | "duplicate-device-name";
@@ -1855,7 +1857,9 @@ export function isBlockingTopologyValidationError(error: Pick<TopologyValidation
     error.type === "voltage-mismatch" ||
     error.type === "missing-island-voltage" ||
     error.type === "island-voltage-mismatch" ||
-    error.type === "transformer-island-short"
+    error.type === "transformer-island-short" ||
+    error.type === "device-limit-invalid" ||
+    error.type === "voltage-limit-out-of-range"
   );
 }
 
