@@ -227,7 +227,7 @@ describe("measurement domain", () => {
     expect(DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.find((item) => item.deviceKind === "thermal-storage-tank")?.items.map((item) => item.measurementTypeId)).toContain("level");
   });
 
-  test("defines gas pressure, flow, and stored gas quantity measurements for hydrogen tanks", () => {
+  test("defines PRESS, FLOW, GAS_QUANTITY, and SOC measurements for hydrogen tanks", () => {
     expect(DEFAULT_MEASUREMENT_CONFIG.measurementTypes.find((item) => item.id === "gasQuantity")).toMatchObject({
       key: "gas_quantity",
       name: "储气量",
@@ -241,16 +241,18 @@ describe("measurement domain", () => {
     for (const kind of ["hydrogen-tank", "hydrogen-tank-horizontal", "hydrogen-tank-container"] as const) {
       const profile = DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.find((item) => item.deviceKind === kind);
       expect(profile?.items).toEqual([
-        expect.objectContaining({ measurementTypeId: "pressure", associatedField: "pressure", labelOverride: "气压", unitOverride: "MPa" }),
-        expect.objectContaining({ measurementTypeId: "flow", associatedField: "flow", labelOverride: "流量", unitOverride: "Nm3/h" }),
-        expect.objectContaining({ measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: "储气量", unitOverride: "Nm3" })
+        expect.objectContaining({ measurementTypeId: "pressure", associatedField: "pressure", labelOverride: "PRESS", unitOverride: "MPa" }),
+        expect.objectContaining({ measurementTypeId: "flow", associatedField: "flow", labelOverride: "FLOW", unitOverride: "Nm3/h" }),
+        expect.objectContaining({ measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: "GAS_QUANTITY", unitOverride: "Nm3" }),
+        expect.objectContaining({ measurementTypeId: "soc", associatedField: "soc", labelOverride: "SOC", unitOverride: "%" })
       ]);
 
       const group = createDefaultMeasurementGroupForNode(node(`${kind}-node`, kind), DEFAULT_MEASUREMENT_CONFIG);
       expect(group?.items).toEqual([
-        expect.objectContaining({ measurementTypeId: "pressure", sourcePoint: `${kind}-node.pressure`, labelOverride: "气压", unitOverride: "MPa" }),
-        expect.objectContaining({ measurementTypeId: "flow", sourcePoint: `${kind}-node.flow`, labelOverride: "流量", unitOverride: "Nm3/h" }),
-        expect.objectContaining({ measurementTypeId: "gasQuantity", sourcePoint: `${kind}-node.gas_quantity`, labelOverride: "储气量", unitOverride: "Nm3" })
+        expect.objectContaining({ measurementTypeId: "pressure", sourcePoint: `${kind}-node.pressure`, labelOverride: "PRESS", unitOverride: "MPa" }),
+        expect.objectContaining({ measurementTypeId: "flow", sourcePoint: `${kind}-node.flow`, labelOverride: "FLOW", unitOverride: "Nm3/h" }),
+        expect.objectContaining({ measurementTypeId: "gasQuantity", sourcePoint: `${kind}-node.gas_quantity`, labelOverride: "GAS_QUANTITY", unitOverride: "Nm3" }),
+        expect.objectContaining({ measurementTypeId: "soc", sourcePoint: `${kind}-node.soc`, labelOverride: "SOC", unitOverride: "%" })
       ]);
     }
   });
@@ -274,9 +276,35 @@ describe("measurement domain", () => {
       defaultUnit: "Nm3"
     });
     expect(migratedConfig.deviceProfiles.find((item) => item.deviceKind === "hydrogen-tank")?.items).toEqual([
-      expect.objectContaining({ measurementTypeId: "pressure", associatedField: "pressure", labelOverride: "气压", unitOverride: "MPa" }),
-      expect.objectContaining({ measurementTypeId: "flow", associatedField: "flow", labelOverride: "流量", unitOverride: "Nm3/h" }),
-      expect.objectContaining({ measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: "储气量", unitOverride: "Nm3" })
+      expect.objectContaining({ measurementTypeId: "pressure", associatedField: "pressure", labelOverride: "PRESS", unitOverride: "MPa" }),
+      expect.objectContaining({ measurementTypeId: "flow", associatedField: "flow", labelOverride: "FLOW", unitOverride: "Nm3/h" }),
+      expect.objectContaining({ measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: "GAS_QUANTITY", unitOverride: "Nm3" }),
+      expect.objectContaining({ measurementTypeId: "soc", associatedField: "soc", labelOverride: "SOC", unitOverride: "%" })
+    ]);
+  });
+
+  test("migrates the persisted three-item hydrogen tank profile and restores the SOC type", () => {
+    const migratedConfig = normalizeMeasurementConfig({
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes.filter((item) => item.id !== "soc"),
+      deviceProfiles: [{
+        deviceKind: "hydrogen-tank",
+        items: [
+          { measurementTypeId: "pressure", associatedField: "pressure", labelOverride: "气压" },
+          { measurementTypeId: "flow", associatedField: "flow", labelOverride: "流量" },
+          { measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: "储气量" }
+        ]
+      }]
+    });
+
+    expect(migratedConfig.measurementTypes.find((item) => item.id === "soc")).toMatchObject({
+      key: "soc",
+      defaultUnit: "%"
+    });
+    expect(migratedConfig.deviceProfiles.find((item) => item.deviceKind === "hydrogen-tank")?.items).toEqual([
+      expect.objectContaining({ measurementTypeId: "pressure", associatedField: "pressure", labelOverride: "PRESS" }),
+      expect.objectContaining({ measurementTypeId: "flow", associatedField: "flow", labelOverride: "FLOW" }),
+      expect.objectContaining({ measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: "GAS_QUANTITY" }),
+      expect.objectContaining({ measurementTypeId: "soc", associatedField: "soc", labelOverride: "SOC" })
     ]);
   });
 

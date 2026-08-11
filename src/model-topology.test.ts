@@ -704,17 +704,27 @@ test("normalizes terminal voltage base values to numeric-only input text", () =>
   expect(normalizeVoltageBaseInput("kV")).toBe("");
 });
 
-test("exports ACNode and DCNode records from calculated graph topology", () => {
+test("exports electrical and multi-energy node records from calculated graph topology", () => {
   const acSource = createDefaultNode("ac-source", { x: 80, y: 100 });
   const acLine = createDefaultNode("ac-line", { x: 220, y: 100 });
   const acLoad = createDefaultNode("ac-load", { x: 360, y: 100 });
   const dcSource = createDefaultNode("dc-source", { x: 80, y: 240 });
   const dcLine = createDefaultNode("dc-line", { x: 220, y: 240 });
   const dcLoad = createDefaultNode("dc-load", { x: 360, y: 240 });
+  const hydrogenSource = createDefaultNode("hydrogen-source", { x: 80, y: 380 });
+  const hydrogenPipe = createDefaultNode("hydrogen-pipeline", { x: 220, y: 380 });
+  const hydrogenLoad = createDefaultNode("hydrogen-load", { x: 360, y: 380 });
+  const heatSource = createDefaultNode("heat-source", { x: 80, y: 520 });
+  const heatPipe = createDefaultNode("heat-pipeline", { x: 220, y: 520 });
+  const heatLoad = createDefaultNode("single-port-heat-load", { x: 360, y: 520 });
   acSource.name = "ac_src";
   acLoad.name = "ac_load";
   dcSource.name = "dc_src";
   dcLoad.name = "dc_load";
+  hydrogenSource.name = "hydrogen_src";
+  hydrogenLoad.name = "hydrogen_load";
+  heatSource.name = "heat_src";
+  heatLoad.name = "heat_load";
   acSource.terminals[0].vbase = "10 kV";
   acLine.terminals[0].vbase = "10 kV";
   acLine.terminals[1].vbase = "10 kV";
@@ -723,6 +733,10 @@ test("exports ACNode and DCNode records from calculated graph topology", () => {
   dcLine.terminals[0].vbase = "750 V";
   dcLine.terminals[1].vbase = "750 V";
   dcLoad.terminals[0].vbase = "750 V";
+  hydrogenSource.params = { ...hydrogenSource.params, pressure: "3.0 MPa" };
+  hydrogenLoad.params = { ...hydrogenLoad.params, pressure: "2.8 MPa" };
+  heatSource.params = { ...heatSource.params, pressure: "10 MPa", supplyTemperature: "95 degC" };
+  heatLoad.params = { ...heatLoad.params, pressure: "6 MPa", returnTemperature: "70 degC" };
   acLine.params = { ...acLine.params, idx: "1", i_node: "99", j_node: "100" };
   acLoad.params = { ...acLoad.params, idx: "1", node: "100" };
   dcLine.params = { ...dcLine.params, idx: "1", i_node: "88", j_node: "89" };
@@ -732,18 +746,37 @@ test("exports ACNode and DCNode records from calculated graph topology", () => {
     buildEDeviceParameterFile({
       version: 1,
       name: "拓扑节点导出",
-      nodes: [acSource, acLine, acLoad, dcSource, dcLine, dcLoad],
+      nodes: [
+        acSource,
+        acLine,
+        acLoad,
+        dcSource,
+        dcLine,
+        dcLoad,
+        hydrogenSource,
+        hydrogenPipe,
+        hydrogenLoad,
+        heatSource,
+        heatPipe,
+        heatLoad
+      ],
       edges: [
         { id: "ac-source-line", sourceId: acSource.id, targetId: acLine.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
         { id: "ac-line-load", sourceId: acLine.id, targetId: acLoad.id, sourceTerminalId: "t2", targetTerminalId: "t1" },
         { id: "dc-source-line", sourceId: dcSource.id, targetId: dcLine.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
-        { id: "dc-line-load", sourceId: dcLine.id, targetId: dcLoad.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
+        { id: "dc-line-load", sourceId: dcLine.id, targetId: dcLoad.id, sourceTerminalId: "t2", targetTerminalId: "t1" },
+        { id: "hydrogen-source-pipe", sourceId: hydrogenSource.id, targetId: hydrogenPipe.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+        { id: "hydrogen-pipe-load", sourceId: hydrogenPipe.id, targetId: hydrogenLoad.id, sourceTerminalId: "t2", targetTerminalId: "t1" },
+        { id: "heat-source-pipe", sourceId: heatSource.id, targetId: heatPipe.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+        { id: "heat-pipe-load", sourceId: heatPipe.id, targetId: heatLoad.id, sourceTerminalId: "t2", targetTerminalId: "t1" }
       ]
     })
   );
 
   const acNodes = payload.ACNode.rows;
   const dcNodes = payload.DCNode.rows;
+  const hydrogenNodes = payload.HydroNode.rows;
+  const heatNodes = payload.HeatNode.rows;
   const acBranch = payload.ACBranch.rows[0];
   const dcBranch = payload.DCBranch.rows[0];
   const exportedAcLoad = payload.ACLoad.rows.find((row) => row.name === "ac_load");
@@ -757,6 +790,23 @@ test("exports ACNode and DCNode records from calculated graph topology", () => {
   expect(dcNodes.map((row) => row.idx)).toEqual(["1", "2"]);
   expect(dcNodes.map((row) => row.name)).toEqual(["dc_src", "dc_load"]);
   expect(dcNodes.map((row) => row.vbase)).toEqual(["750", "750"]);
+  expect(payload.HydroNode.columns).toEqual(["idx", "name", "pressure", "run_stat"]);
+  expect(hydrogenNodes).toEqual([
+    expect.objectContaining({ idx: "1", name: "hydrogen_src", pressure: "3.0", run_stat: "1" }),
+    expect.objectContaining({ idx: "2", name: "hydrogen_load", pressure: "2.8", run_stat: "1" })
+  ]);
+  expect(payload.HeatNode.columns).toEqual([
+    "idx",
+    "name",
+    "pressure",
+    "supply_temperature",
+    "return_temperature",
+    "run_stat"
+  ]);
+  expect(heatNodes).toEqual([
+    expect.objectContaining({ idx: "1", name: "heat_src", pressure: "10", supply_temperature: "95", return_temperature: "0", run_stat: "1" }),
+    expect.objectContaining({ idx: "2", name: "heat_load", pressure: "6", supply_temperature: "0", return_temperature: "70", run_stat: "1" })
+  ]);
   expect(acBranch).toMatchObject({ i_node: "1", j_node: "2" });
   expect(dcBranch).toMatchObject({ i_node: "1", j_node: "2" });
   expect(exportedAcLoad?.node).toBe("2");

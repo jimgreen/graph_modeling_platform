@@ -236,6 +236,7 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
     "j_v_set",
     "run_stat"
   ],
+  HydroNode: ["idx", "name", "pressure", "run_stat"],
   HydroSource: ["idx", "name", "node", "run_stat"],
   HydroLoad: ["idx", "name", "node", "run_stat"],
   HydroPipe: ["idx", "name", "i_node", "j_node", "run_stat"],
@@ -248,6 +249,7 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   DcE2Hydro: ["idx", "name", "run_stat", "idx_dc_load_t1", "idx_h2_unit_t2"],
   Hydro2AcE: ["idx", "name", "run_stat", "idx_ac_unit_t1", "idx_h2_load_t2"],
   Hydro2DcE: ["idx", "name", "run_stat", "idx_dc_unit_t1", "idx_h2_load_t2"],
+  HeatNode: ["idx", "name", "pressure", "supply_temperature", "return_temperature", "run_stat"],
   HeatSource: ["idx", "name", "node", "run_stat"],
   HeatSource2: ["idx", "name", "i_node", "j_node", "run_stat"],
   HeatLoad: ["idx", "name", "node", "run_stat"],
@@ -388,6 +390,7 @@ const E_SECTION_OUTPUT_ORDER = [
   "DCDCConverter",
   "DCACConverter",
   "ACACConverter",
+  "HydroNode",
   "HydroSource",
   "HydroLoad",
   "HydroPipe",
@@ -400,6 +403,7 @@ const E_SECTION_OUTPUT_ORDER = [
   "DcE2Hydro",
   "Hydro2AcE",
   "Hydro2DcE",
+  "HeatNode",
   "HeatSource",
   "HeatSource2",
   "HeatLoad",
@@ -1237,11 +1241,13 @@ export function hasVisibleThreeWindingNeutralTerminal(node: Pick<ModelNode, "kin
 }
 
 function buildTopologyNodeDevices(nodes: ModelNode[]): EDeviceExport[] {
-  type ElectricalTerminalType = Extract<TerminalType, "ac" | "dc">;
   type TopologyNodeCandidate = { node: ModelNode; terminal: Terminal; name?: string; voltage?: string };
-  const groups: Record<ElectricalTerminalType, Map<string, TopologyNodeCandidate[]>> = {
+  type TopologyNodeSection = "ACNode" | "DCNode" | "HydroNode" | "HeatNode";
+  const groups: Record<TerminalType, Map<string, TopologyNodeCandidate[]>> = {
     ac: new Map(),
-    dc: new Map()
+    dc: new Map(),
+    h2: new Map(),
+    heat: new Map()
   };
   for (const node of nodes) {
     if (isStaticNode(node)) {
@@ -1249,9 +1255,6 @@ function buildTopologyNodeDevices(nodes: ModelNode[]): EDeviceExport[] {
     }
     for (const terminal of node.terminals) {
       const terminalType = terminal.type;
-      if (terminalType !== "ac" && terminalType !== "dc") {
-        continue;
-      }
       if (!terminal.nodeNumber) {
         continue;
       }
@@ -1261,7 +1264,13 @@ function buildTopologyNodeDevices(nodes: ModelNode[]): EDeviceExport[] {
     }
   }
 
-  const buildForType = (type: ElectricalTerminalType, section: "ACNode" | "DCNode"): EDeviceExport[] =>
+  const topologyNodeKindByType: Record<TerminalType, string> = {
+    ac: "ac-node",
+    dc: "dc-node",
+    h2: "hydrogen-node",
+    heat: "heat-node"
+  };
+  const buildForType = (type: TerminalType, section: TopologyNodeSection): EDeviceExport[] =>
     Array.from(groups[type].entries())
       .sort(([first], [second]) => Number(first) - Number(second))
       .map(([idx, candidates]) => {
@@ -1271,6 +1280,9 @@ function buildTopologyNodeDevices(nodes: ModelNode[]): EDeviceExport[] {
         const vbase = firstText(candidates.map(({ node, terminal }) => terminalVoltageDisplay(node, terminal)));
         const voltage = firstText([representative.voltage, representative.node.params.voltage, vbase]);
         const runStat = normalizeRunStatForE(representative.node.params.run_stat) || "1";
+        const numericCandidateParam = (...keys: string[]) => firstNumericToken(firstText(
+          keys.flatMap((key) => candidates.map(({ node }) => deviceParamValue(node.params, key)))
+        ));
         const commonParams = {
           idx,
           name: representative.name || representative.node.name || `${section}_${idx}`,
@@ -1286,21 +1298,38 @@ function buildTopologyNodeDevices(nodes: ModelNode[]): EDeviceExport[] {
           isl: representative.node.params.isl ?? "0",
           run_stat: runStat
         };
-        const params = section === "ACNode" ? { ...commonParams, angle: representative.node.params.angle ?? "0" } : commonParams;
-        // ACNode/DCNode 只导出基本字段
+        const params = section === "ACNode"
+          ? { ...commonParams, angle: representative.node.params.angle ?? "0" }
+          : section === "HydroNode"
+            ? { ...commonParams, pressure: numericCandidateParam("pressure") }
+            : section === "HeatNode"
+              ? {
+                  ...commonParams,
+                  pressure: numericCandidateParam("pressure"),
+                  supply_temperature: numericCandidateParam("supply_temperature", "temperature"),
+                  return_temperature: numericCandidateParam("return_temperature", "temperature")
+                }
+              : commonParams;
         const columns = section === "ACNode"
           ? ["idx", "name", "vbase", "run_stat"]
-          : ["idx", "name", "vbase", "run_stat"];
+          : section === "DCNode"
+            ? ["idx", "name", "vbase", "run_stat"]
+            : E_SECTION_COLUMNS[section];
         return {
           id: `${section}-${idx}`,
-          kind: type === "ac" ? "ac-node" : "dc-node",
+          kind: topologyNodeKindByType[type],
           section,
           params,
           columns
         };
       });
 
-  return [...buildForType("ac", "ACNode"), ...buildForType("dc", "DCNode")];
+  return [
+    ...buildForType("ac", "ACNode"),
+    ...buildForType("dc", "DCNode"),
+    ...buildForType("h2", "HydroNode"),
+    ...buildForType("heat", "HeatNode")
+  ];
 }
 
 export const THREE_WINDING_TRANSFORMER_SIDES = [

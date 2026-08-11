@@ -86,14 +86,28 @@ describe("measurement configuration normalization", () => {
       name: "储气量",
       defaultUnit: "Nm3"
     });
+    expect(normalized.measurementTypes.find((item) => item.id === "soc")).toMatchObject({
+      key: "soc",
+      defaultUnit: "%"
+    });
     expect(normalized.deviceProfiles[0].items).toEqual([
-      expect.objectContaining({ measurementTypeId: "pressure", associatedField: "pressure", labelOverride: "气压", unitOverride: "MPa" }),
-      expect.objectContaining({ measurementTypeId: "flow", associatedField: "flow", labelOverride: "流量", unitOverride: "Nm3/h" }),
-      expect.objectContaining({ measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: "储气量", unitOverride: "Nm3" })
+      expect.objectContaining({ measurementTypeId: "pressure", associatedField: "pressure", labelOverride: "PRESS", unitOverride: "MPa" }),
+      expect.objectContaining({ measurementTypeId: "flow", associatedField: "flow", labelOverride: "FLOW", unitOverride: "Nm3/h" }),
+      expect.objectContaining({ measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: "GAS_QUANTITY", unitOverride: "Nm3" }),
+      expect.objectContaining({ measurementTypeId: "soc", associatedField: "soc", labelOverride: "SOC", unitOverride: "%" })
     ]);
   });
 
   test("exports hydrogen tank static parameters through the default E interface", () => {
+    expect(eSectionColumns.HydroNode).toEqual(["idx", "name", "pressure", "run_stat"]);
+    expect(eSectionColumns.HeatNode).toEqual([
+      "idx",
+      "name",
+      "pressure",
+      "supply_temperature",
+      "return_temperature",
+      "run_stat"
+    ]);
     expect(eSectionColumns.HydroStorage).toEqual([
       "idx",
       "name",
@@ -370,12 +384,70 @@ describe("scheme file persistence", () => {
                   { id: "i", type: "ac" },
                   { id: "j", type: "ac" }
                 ]
+              },
+              {
+                id: "hydrogen-source-1",
+                kind: "hydrogen-source",
+                name: "hydrogen_source",
+                position: { x: 0, y: 180 },
+                size: { width: 80, height: 40 },
+                params: { idx: "1", pressure: "3.0 MPa", run_stat: "1" },
+                terminals: [{ id: "t1", type: "h2" }]
+              },
+              {
+                id: "hydrogen-pipe-1",
+                kind: "hydrogen-pipeline",
+                name: "hydrogen_pipe",
+                position: { x: 120, y: 180 },
+                size: { width: 120, height: 40 },
+                params: { idx: "1", run_stat: "1" },
+                terminals: [{ id: "t1", type: "h2" }, { id: "t2", type: "h2" }]
+              },
+              {
+                id: "hydrogen-load-1",
+                kind: "hydrogen-load",
+                name: "hydrogen_load",
+                position: { x: 280, y: 180 },
+                size: { width: 80, height: 40 },
+                params: { idx: "1", pressure: "2.8 MPa", run_stat: "1" },
+                terminals: [{ id: "t1", type: "h2" }]
+              },
+              {
+                id: "heat-source-1",
+                kind: "heat-source",
+                name: "heat_source",
+                position: { x: 0, y: 280 },
+                size: { width: 80, height: 40 },
+                params: { idx: "1", pressure: "10 MPa", supplyTemperature: "95 degC", run_stat: "1" },
+                terminals: [{ id: "t1", type: "heat" }]
+              },
+              {
+                id: "heat-pipe-1",
+                kind: "heat-pipeline",
+                name: "heat_pipe",
+                position: { x: 120, y: 280 },
+                size: { width: 120, height: 40 },
+                params: { idx: "1", run_stat: "1" },
+                terminals: [{ id: "t1", type: "heat" }, { id: "t2", type: "heat" }]
+              },
+              {
+                id: "heat-load-1",
+                kind: "single-port-heat-load",
+                name: "heat_load",
+                position: { x: 280, y: 280 },
+                size: { width: 80, height: 40 },
+                params: { idx: "1", pressure: "6 MPa", returnTemperature: "70 degC", run_stat: "1" },
+                terminals: [{ id: "t1", type: "heat" }]
               }
             ],
             edges: [
               { id: "e-bus1-break", sourceId: "bus-1", sourceTerminalId: "t1", targetId: "break-1", targetTerminalId: "i" },
               { id: "e-break-line", sourceId: "break-1", sourceTerminalId: "j", targetId: "line-1", targetTerminalId: "i" },
-              { id: "e-line-bus2", sourceId: "line-1", sourceTerminalId: "j", targetId: "bus-2", targetTerminalId: "t1" }
+              { id: "e-line-bus2", sourceId: "line-1", sourceTerminalId: "j", targetId: "bus-2", targetTerminalId: "t1" },
+              { id: "e-hydrogen-source-pipe", sourceId: "hydrogen-source-1", sourceTerminalId: "t1", targetId: "hydrogen-pipe-1", targetTerminalId: "t1" },
+              { id: "e-hydrogen-pipe-load", sourceId: "hydrogen-pipe-1", sourceTerminalId: "t2", targetId: "hydrogen-load-1", targetTerminalId: "t1" },
+              { id: "e-heat-source-pipe", sourceId: "heat-source-1", sourceTerminalId: "t1", targetId: "heat-pipe-1", targetTerminalId: "t1" },
+              { id: "e-heat-pipe-load", sourceId: "heat-pipe-1", sourceTerminalId: "t2", targetId: "heat-load-1", targetTerminalId: "t1" }
             ]
           }
         },
@@ -407,6 +479,36 @@ describe("scheme file persistence", () => {
         "1"
       ]);
       expectEFieldsAlignedWithHeader(eFile, "ACNode", ["idx", "name", "vbase", "run_stat"], ["1", "交流母线-1", "110", "1"]);
+      const hydroNodeLines = eSectionLines(eFile, "HydroNode");
+      expect(hydroNodeLines.find((line) => line.startsWith("@"))?.trim().split(/\s+/u).slice(1)).toEqual([
+        "idx",
+        "name",
+        "pressure",
+        "run_stat"
+      ]);
+      expect(hydroNodeLines.find((line) => line.startsWith("#"))?.trim().split(/\s+/u).slice(1)).toEqual([
+        "1",
+        "hydrogen_source",
+        "3.0",
+        "1"
+      ]);
+      const heatNodeLines = eSectionLines(eFile, "HeatNode");
+      expect(heatNodeLines.find((line) => line.startsWith("@"))?.trim().split(/\s+/u).slice(1)).toEqual([
+        "idx",
+        "name",
+        "pressure",
+        "supply_temperature",
+        "return_temperature",
+        "run_stat"
+      ]);
+      expect(heatNodeLines.find((line) => line.startsWith("#"))?.trim().split(/\s+/u).slice(1)).toEqual([
+        "1",
+        "heat_source",
+        "10",
+        "95",
+        "0",
+        "1"
+      ]);
       expectEFieldsAlignedWithHeader(
         eFile,
         "ACRealBs",

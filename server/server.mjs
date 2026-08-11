@@ -166,6 +166,7 @@ export const eSectionColumns = {
   DCDCConverter: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_p_max", "i_p_min", "i_i_max", "i_v_max", "i_v_min", "j_p_max", "j_p_min", "j_i_max", "j_v_max", "j_v_min", "r1", "r2", "i_control_type", "j_control_type", "p_set", "i_set", "v_set", "run_stat"],
   DCACConverter: ["idx", "name", "ac_node", "dc_node", "rated_capacity", "ac_p_max", "ac_p_min", "ac_i_max", "ac_v_max", "ac_v_min", "dc_p_max", "dc_p_min", "dc_i_max", "dc_v_max", "dc_v_min", "r1", "r2", "ac_control_type", "dc_control_type", "p_ac_set", "q_ac_set", "v_ac_set", "p_dc_set", "v_dc_set", "run_stat"],
   ACACConverter: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_p_max", "i_p_min", "i_i_max", "i_v_max", "i_v_min", "j_p_max", "j_p_min", "j_i_max", "j_v_max", "j_v_min", "r1", "r2", "i_control_type", "j_control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"],
+  HydroNode: ["idx", "name", "pressure", "run_stat"],
   HydroSource: ["idx", "name", "node", "run_stat"],
   HydroLoad: ["idx", "name", "node", "run_stat"],
   HydroPipe: ["idx", "name", "i_node", "j_node", "run_stat"],
@@ -178,6 +179,7 @@ export const eSectionColumns = {
   DcE2Hydro: ["idx", "name", "run_stat", "idx_dc_load_t1", "idx_h2_unit_t2"],
   Hydro2AcE: ["idx", "name", "run_stat", "idx_ac_unit_t1", "idx_h2_load_t2"],
   Hydro2DcE: ["idx", "name", "run_stat", "idx_dc_unit_t1", "idx_h2_load_t2"],
+  HeatNode: ["idx", "name", "pressure", "supply_temperature", "return_temperature", "run_stat"],
   HeatSource: ["idx", "name", "node", "run_stat"],
   HeatSource2: ["idx", "name", "i_node", "j_node", "run_stat"],
   HeatLoad: ["idx", "name", "node", "run_stat"],
@@ -658,9 +660,10 @@ const hydrogenTankMeasurementProfileKinds = new Set([
   "hydrogen-tank-container"
 ]);
 const hydrogenTankMeasurementProfileItems = [
-  { measurementTypeId: "pressure", associatedField: "pressure", labelOverride: "气压", unitOverride: "MPa" },
-  { measurementTypeId: "flow", associatedField: "flow", labelOverride: "流量", unitOverride: "Nm3/h" },
-  { measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: "储气量", unitOverride: "Nm3" }
+  { measurementTypeId: "pressure", associatedField: "pressure", labelOverride: "PRESS", unitOverride: "MPa" },
+  { measurementTypeId: "flow", associatedField: "flow", labelOverride: "FLOW", unitOverride: "Nm3/h" },
+  { measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: "GAS_QUANTITY", unitOverride: "Nm3" },
+  { measurementTypeId: "soc", associatedField: "soc", labelOverride: "SOC", unitOverride: "%" }
 ];
 
 function migrateHydrogenTankMeasurementProfileItems(deviceKind, items) {
@@ -668,11 +671,15 @@ function migrateHydrogenTankMeasurementProfileItems(deviceKind, items) {
     return items;
   }
   const legacyIds = items.map((item) => String(item?.measurementTypeId ?? "").trim());
-  if (legacyIds.length !== 3 || legacyIds.join("|") !== "pressure|level|temperature") {
+  const legacySignature = legacyIds.join("|");
+  if (legacyIds.length !== 3 || ![
+    "pressure|level|temperature",
+    "pressure|flow|gasQuantity"
+  ].includes(legacySignature)) {
     return items;
   }
   return hydrogenTankMeasurementProfileItems.map((replacement, index) => ({
-    ...items[index],
+    ...(items[index] ?? {}),
     ...replacement
   }));
 }
@@ -738,13 +745,8 @@ export function normalizeMeasurementConfig(payload) {
   const groupDefaults = normalizeMeasurementGroupDefaults(source.groupDefaults);
   const rawProfiles = Array.isArray(source.deviceProfiles) ? source.deviceProfiles : [];
   const configuredTypes = Array.isArray(source.measurementTypes) ? source.measurementTypes : [];
-  const migratesLegacyStorageLevel = rawProfiles.some((profile) => {
-    const deviceKind = String(profile?.deviceKind ?? "").trim();
-    return electricStorageMeasurementProfileKinds.has(deviceKind) &&
-      (Array.isArray(profile?.items) ? profile.items : []).some((item) => String(item?.measurementTypeId ?? "").trim() === "level");
-  });
   const rawTypes = [...configuredTypes];
-  if (migratesLegacyStorageLevel && !rawTypes.some((item) => String(item?.id ?? "").trim() === "soc")) {
+  if (!rawTypes.some((item) => String(item?.id ?? "").trim() === storageSocMeasurementType.id)) {
     rawTypes.push(storageSocMeasurementType);
   }
   if (!rawTypes.some((item) => String(item?.id ?? "").trim() === gasQuantityMeasurementType.id)) {
@@ -2087,7 +2089,7 @@ function orderedESections(recordsBySection) {
 }
 
 function isBusNode(node) {
-  return node?.kind === "ac-bus" || node?.kind === "dc-bus";
+  return node?.kind === "ac-bus" || node?.kind === "dc-bus" || node?.kind === "hydrogen-bus" || node?.kind === "heat-bus";
 }
 
 function isStaticKind(kind) {
@@ -2225,7 +2227,7 @@ function topologyRepresentativeScore(node) {
 }
 
 function buildTopologyNodeDevices(nodes) {
-  const groups = { ac: new Map(), dc: new Map() };
+  const groups = { ac: new Map(), dc: new Map(), h2: new Map(), heat: new Map() };
   for (const node of nodes) {
     if (isStaticNode(node)) continue;
     for (const terminal of node.terminals ?? []) {
@@ -2238,6 +2240,12 @@ function buildTopologyNodeDevices(nodes) {
     }
   }
 
+  const topologyNodeKindByType = {
+    ac: "ac-node",
+    dc: "dc-node",
+    h2: "hydrogen-node",
+    heat: "heat-node"
+  };
   const buildForType = (type, section) =>
     Array.from(groups[type].entries())
       .sort(([first], [second]) => Number(first) - Number(second))
@@ -2248,6 +2256,9 @@ function buildTopologyNodeDevices(nodes) {
         const vbase = firstText(candidates.map(({ node, terminal }) => terminalVoltageDisplay(node, terminal)));
         const voltage = firstText([representative.node?.params?.voltage, vbase]);
         const runStat = normalizeRunStatForE(representative.node?.params?.run_stat) || "1";
+        const numericCandidateParam = (...keys) => firstNumericEValue(firstText(
+          keys.flatMap((key) => candidates.map(({ node }) => node?.params?.[key]))
+        ));
         const commonParams = {
           idx,
           name: representative.node?.name || `${section}_${idx}`,
@@ -2258,13 +2269,32 @@ function buildTopologyNodeDevices(nodes) {
         };
         return {
           id: `${section}-${idx}`,
-          kind: type === "ac" ? "ac-node" : "dc-node",
+          kind: topologyNodeKindByType[type],
           section,
-          params: section === "ACNode" ? { ...commonParams, angle: representative.node?.params?.angle ?? "0" } : commonParams
+          params: section === "ACNode"
+            ? { ...commonParams, angle: representative.node?.params?.angle ?? "0" }
+            : section === "HydroNode"
+              ? { ...commonParams, pressure: numericCandidateParam("pressure") }
+              : section === "HeatNode"
+                ? {
+                    ...commonParams,
+                    pressure: numericCandidateParam("pressure"),
+                    supply_temperature: numericCandidateParam("supply_temperature", "supplyTemperature", "temperature"),
+                    return_temperature: numericCandidateParam("return_temperature", "returnTemperature", "temperature")
+                  }
+                : commonParams,
+          columns: section === "ACNode" || section === "DCNode"
+            ? ["idx", "name", "vbase", "run_stat"]
+            : eSectionColumns[section]
         };
       });
 
-  return [...buildForType("ac", "ACNode"), ...buildForType("dc", "DCNode")];
+  return [
+    ...buildForType("ac", "ACNode"),
+    ...buildForType("dc", "DCNode"),
+    ...buildForType("h2", "HydroNode"),
+    ...buildForType("heat", "HeatNode")
+  ];
 }
 
 function buildDeviceParameterFile(project, schemePath = ["默认方案"]) {

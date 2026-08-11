@@ -313,9 +313,10 @@ const HYDROGEN_TANK_MEASUREMENT_PROFILE_KINDS = new Set([
   "hydrogen-tank-container"
 ]);
 const HYDROGEN_TANK_MEASUREMENT_PROFILE_ITEMS: DeviceMeasurementProfileItem[] = [
-  { measurementTypeId: "pressure", associatedField: "pressure", labelOverride: "气压", unitOverride: "MPa" },
-  { measurementTypeId: "flow", associatedField: "flow", labelOverride: "流量", unitOverride: "Nm3/h" },
-  { measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: "储气量", unitOverride: "Nm3" }
+  { measurementTypeId: "pressure", associatedField: "pressure", labelOverride: "PRESS", unitOverride: "MPa" },
+  { measurementTypeId: "flow", associatedField: "flow", labelOverride: "FLOW", unitOverride: "Nm3/h" },
+  { measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: "GAS_QUANTITY", unitOverride: "Nm3" },
+  { measurementTypeId: "soc", associatedField: "soc", labelOverride: "SOC", unitOverride: "%" }
 ];
 
 function migrateHydrogenTankMeasurementProfileItems(
@@ -326,11 +327,15 @@ function migrateHydrogenTankMeasurementProfileItems(
     return items;
   }
   const legacyIds = items.map((item) => String(item.measurementTypeId ?? "").trim());
-  if (legacyIds.length !== 3 || legacyIds.join("|") !== "pressure|level|temperature") {
+  const legacySignature = legacyIds.join("|");
+  if (legacyIds.length !== 3 || ![
+    "pressure|level|temperature",
+    "pressure|flow|gasQuantity"
+  ].includes(legacySignature)) {
     return items;
   }
   return HYDROGEN_TANK_MEASUREMENT_PROFILE_ITEMS.map((replacement, index) => ({
-    ...items[index],
+    ...(items[index] ?? {}),
     ...replacement
   }));
 }
@@ -615,13 +620,8 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
     ? input.measurementTypes
     : DEFAULT_MEASUREMENT_CONFIG.measurementTypes;
   const rawProfiles = Array.isArray(input?.deviceProfiles) ? input.deviceProfiles : [];
-  const migratesLegacyStorageLevel = rawProfiles.some((profile) => {
-    const deviceKind = String((profile as Partial<DeviceMeasurementProfile>)?.deviceKind ?? "").trim();
-    return ELECTRIC_STORAGE_MEASUREMENT_PROFILE_KINDS.has(deviceKind) &&
-      (Array.isArray(profile.items) ? profile.items : []).some((item) => String(item.measurementTypeId ?? "").trim() === "level");
-  });
   const rawTypes = [...configuredTypes];
-  if (migratesLegacyStorageLevel && !rawTypes.some((item) => String(item.id ?? "").trim() === "soc")) {
+  if (!rawTypes.some((item) => String(item.id ?? "").trim() === STORAGE_SOC_MEASUREMENT_TYPE.id)) {
     rawTypes.push(STORAGE_SOC_MEASUREMENT_TYPE);
   }
   if (!rawTypes.some((item) => String(item.id ?? "").trim() === GAS_QUANTITY_MEASUREMENT_TYPE.id)) {
