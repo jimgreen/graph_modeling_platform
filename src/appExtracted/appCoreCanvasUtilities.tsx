@@ -118,6 +118,7 @@ import {
   DCAC_DC_CONTROL_TYPES,
   DC_GENERATOR_CONTROL_TYPES,
   DCDC_CONVERTER_CONTROL_TYPES,
+  HYDROGEN_COUPLING_CONTROL_TYPES,
   E_SECTION_COLUMNS,
   getEdgeEndpointPoint as getModelEdgeEndpointPoint,
   getNodeScaleX,
@@ -3285,6 +3286,9 @@ export const PARAM_LABELS: Record<string, string> = {
   isl: "孤岛标志",
   control_type: "控制类型",
   p_set: "有功设定值",
+  flow_set: "流量设定值",
+  e2h_coeff: "电-气效率(Nm3/kWh)",
+  h2e_coeff: "气-电效率(kWh/Nm3)",
   p_max: "有功上限",
   p_min: "有功下限",
   v_max: "电压上限",
@@ -3487,6 +3491,12 @@ export const resolveStaticButtonTargetLayers = (node: ModelNode, availableLayers
 };
 
 export function paramOptionsForSection(key: string, section?: string) {
+  if (
+    key === "control_type" &&
+    ["AcE2Hydro", "DcE2Hydro", "Hydro2AcE", "Hydro2DcE"].includes(section ?? "")
+  ) {
+    return [...HYDROGEN_COUPLING_CONTROL_TYPES];
+  }
   if (key === "control_type" && section === "ACGenerator") {
     return [...AC_GENERATOR_CONTROL_TYPES];
   }

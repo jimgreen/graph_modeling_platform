@@ -17,6 +17,15 @@ describe("converter parameter options", () => {
     expect(paramOptionsForSection("j_control_type", "DCDCConverter")).toEqual(["P", "V", "I", "NONE"]);
     expect(paramOptionsForSection("control_type", "DCDCConverter")).toBeUndefined();
   });
+
+  test("uses P and FLOW only for electric-hydrogen coupling controls", () => {
+    for (const section of ["AcE2Hydro", "DcE2Hydro", "Hydro2AcE", "Hydro2DcE"]) {
+      expect(paramOptionsForSection("control_type", section), section).toEqual(["P", "FLOW"]);
+    }
+    expect(PARAM_LABELS.flow_set).toBe("流量设定值");
+    expect(PARAM_LABELS.e2h_coeff).toBe("电-气效率(Nm3/kWh)");
+    expect(PARAM_LABELS.h2e_coeff).toBe("气-电效率(kWh/Nm3)");
+  });
 });
 
 describe("hydrogen tank parameter labels", () => {

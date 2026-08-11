@@ -1403,6 +1403,16 @@ test("formats SOC and efficiency values as percentages while storing decimal rat
   expect(normalizeRatioParameterInputValue("charge_discharge_efficiency", "100%")).toBe("1");
   expect(normalizeRatioParameterInputValue("charge_discharge_efficiency", "101%")).toBeNull();
   expect(normalizeRatioParameterInputValue("rated_voltage", "99%")).toBe("99%");
+  expect(formatPowerBaseDisplayValue("e2h_coeff", "0.2")).toBe("0.2");
+  expect(formatPowerBaseDisplayValue("h2e_coeff", "1.5")).toBe("1.5");
+  expect(normalizeRatioParameterInputValue("e2h_coeff", "0.1")).toBe("0.1");
+  expect(normalizeRatioParameterInputValue("e2h_coeff", "0.5")).toBe("0.5");
+  expect(normalizeRatioParameterInputValue("e2h_coeff", "0.09")).toBeNull();
+  expect(normalizeRatioParameterInputValue("e2h_coeff", "0.51")).toBeNull();
+  expect(normalizeRatioParameterInputValue("h2e_coeff", "1.0")).toBe("1");
+  expect(normalizeRatioParameterInputValue("h2e_coeff", "2.0")).toBe("2");
+  expect(normalizeRatioParameterInputValue("h2e_coeff", "0.99")).toBeNull();
+  expect(normalizeRatioParameterInputValue("h2e_coeff", "2.01")).toBeNull();
 });
 
 test("routes a box breaker right terminal to a vertical ACAC converter bottom terminal with one visible bend", () => {
@@ -2198,6 +2208,31 @@ test("includes hydrogen equipment library with mixed electric-hydrogen ports", (
   expect(calculatedElectrolyzer.terminals[1].nodeNumber).toBe(calculatedPipeline.terminals[0].nodeNumber);
 });
 
+test("defines electric-hydrogen coupling controls and directional coefficients", () => {
+  const expected = [
+    ["ac-electrolyzer", "FLOW", "e2h_coeff", "0.2", "h2e_coeff"],
+    ["dc-electrolyzer", "FLOW", "e2h_coeff", "0.2", "h2e_coeff"],
+    ["ac-fuel-cell", "P", "h2e_coeff", "1.5", "e2h_coeff"],
+    ["dc-fuel-cell", "P", "h2e_coeff", "1.5", "e2h_coeff"]
+  ] as const;
+
+  for (const [kind, controlType, coefficientKey, coefficientValue, excludedCoefficientKey] of expected) {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
+    const node = createDefaultNode(kind, { x: 100, y: 100 });
+    const definitionByName = new Map(
+      getTemplateParameterDefinitions(template).map((definition) => [definition.enName, definition])
+    );
+
+    expect(node.params.control_type, kind).toBe(controlType);
+    expect(node.params[coefficientKey], kind).toBe(coefficientValue);
+    expect(node.params[excludedCoefficientKey], kind).toBeUndefined();
+    expect(node.params.p_set, kind).toBeUndefined();
+    expect(node.params.flow_set, kind).toBeUndefined();
+    expect(definitionByName.get("control_type"), kind).toMatchObject({ valueType: "stringEnum", typicalValue: controlType });
+    expect(definitionByName.get(coefficientKey), kind).toMatchObject({ valueType: "float", typicalValue: coefficientValue });
+  }
+});
+
 test("includes thermal equipment library with heat network and mixed electric-thermal ports", () => {
   const expected = [
     ["heat-boiler", "供热锅炉", ["heat"], "single-heat-boiler"],
@@ -2475,6 +2510,7 @@ test("builds one body view plus associated device views for container parameters
     expect.objectContaining({ key: "idx", value: "1" }),
     expect.objectContaining({ key: "node", value: "5" }),
     expect.objectContaining({ key: "pbase", value: "0" }),
+    expect.objectContaining({ key: "p_set", value: "0" }),
     expect.objectContaining({ key: "pv0", value: "1.0" }),
     expect.objectContaining({ key: "qbase", value: "0" }),
     expect.objectContaining({ key: "qv0", value: "1.0" })
@@ -2485,6 +2521,9 @@ test("builds one body view plus associated device views for container parameters
     relationKeys: ["idx_h2_unit_t2"],
     terminalIndexes: [1]
   });
+  expect(views[2].rows).toEqual(expect.arrayContaining([
+    expect.objectContaining({ key: "flow_set", value: "0", readonly: false })
+  ]));
 });
 
 test("shows container-associated electric port parameters using the associated E section columns", () => {
@@ -2562,10 +2601,10 @@ test("shows DC fuel-cell electric port parameters using DCGenerator columns", ()
 
 test("filters container body parameters to the current container variant", () => {
   const expected = [
-    ["ac-electrolyzer", ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_h2_unit_t2"], ["idx_dc_load_t1", "is_container"]],
-    ["dc-electrolyzer", ["idx", "name", "run_stat", "idx_dc_load_t1", "idx_h2_unit_t2"], ["idx_ac_load_t1", "is_container"]],
-    ["ac-fuel-cell", ["idx", "name", "run_stat", "idx_ac_unit_t1", "idx_h2_load_t2"], ["idx_dc_unit_t1", "is_container"]],
-    ["dc-fuel-cell", ["idx", "name", "run_stat", "idx_dc_unit_t1", "idx_h2_load_t2"], ["idx_ac_unit_t1", "is_container"]],
+    ["ac-electrolyzer", ["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_ac_load_t1", "idx_h2_unit_t2"], ["h2e_coeff", "idx_dc_load_t1", "is_container", "p_set", "flow_set"]],
+    ["dc-electrolyzer", ["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_dc_load_t1", "idx_h2_unit_t2"], ["h2e_coeff", "idx_ac_load_t1", "is_container", "p_set", "flow_set"]],
+    ["ac-fuel-cell", ["idx", "name", "control_type", "h2e_coeff", "run_stat", "idx_ac_unit_t1", "idx_h2_load_t2"], ["e2h_coeff", "idx_dc_unit_t1", "is_container", "p_set", "flow_set"]],
+    ["dc-fuel-cell", ["idx", "name", "control_type", "h2e_coeff", "run_stat", "idx_dc_unit_t1", "idx_h2_load_t2"], ["e2h_coeff", "idx_ac_unit_t1", "is_container", "p_set", "flow_set"]],
     ["ac-heater", ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_heat_unit_t2"], ["idx_dc_load_t1", "is_container"]],
     ["dc-heater", ["idx", "name", "run_stat", "idx_dc_load_t1", "idx_heat_unit_t2"], ["idx_ac_load_t1", "is_container"]]
   ] as const;

@@ -603,6 +603,10 @@ const PERCENTAGE_RATIO_PARAMETER_NAMES = new Set([
   "soc_upper_limit",
   "state_of_charge"
 ]);
+const BOUNDED_NUMERIC_PARAMETER_RANGES: Record<string, readonly [number, number]> = {
+  e2h_coeff: [0.1, 0.5],
+  h2e_coeff: [1.0, 2.0]
+};
 
 function numericPrefixForPowerDisplay(value: string) {
   const text = String(value ?? "").trim();
@@ -622,6 +626,18 @@ export function isPercentageRatioParameterName(name: string) {
 }
 
 export function normalizeRatioParameterInputValue(name: string, value: string): string | null {
+  const normalizedName = toSnakeCaseDeviceParamName(String(name ?? ""));
+  const numericRange = BOUNDED_NUMERIC_PARAMETER_RANGES[normalizedName];
+  if (numericRange) {
+    const text = String(value ?? "").trim();
+    if (!RATIO_PARAMETER_INPUT_PATTERN.test(text)) {
+      return null;
+    }
+    const numericValue = Number(text);
+    return Number.isFinite(numericValue) && numericValue >= numericRange[0] && numericValue <= numericRange[1]
+      ? compactRatioNumber(numericValue)
+      : null;
+  }
   if (!isPercentageRatioParameterName(name)) {
     return value;
   }
@@ -1549,6 +1565,7 @@ export const ACAC_SIDE_CONTROL_TYPES = DCAC_AC_CONTROL_TYPES;
 export const DCDC_CONVERTER_CONTROL_TYPES = DCAC_DC_CONTROL_TYPES;
 export const AC_GENERATOR_CONTROL_TYPES = ["PV", "PQ", "PH"] as const;
 export const DC_GENERATOR_CONTROL_TYPES = ["P", "V", "I", "NONE"] as const;
+export const HYDROGEN_COUPLING_CONTROL_TYPES = ["P", "FLOW"] as const;
 
 export function normalizeAcGeneratorControlTypeForE(value?: string) {
   if (!value) return "PV";
@@ -2974,7 +2991,13 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流电制氢",
     categoryLibrary: "氢能设备",
     size: { width: 108, height: 62 },
-    params: { ratedVoltage: "10 kV", ratedPower: "5 MW", hydrogenFlow: "1000 Nm3/h" },
+    params: {
+      ratedVoltage: "10 kV",
+      ratedPower: "5 MW",
+      hydrogenFlow: "1000 Nm3/h",
+      controlType: "FLOW",
+      e2hCoeff: "0.2"
+    },
     terminalType: "ac",
     terminalCount: 2,
     terminalTypes: ["ac", "h2"],
@@ -2988,7 +3011,13 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流电制氢",
     categoryLibrary: "氢能设备",
     size: { width: 108, height: 62 },
-    params: { ratedVoltage: "750 V", ratedPower: "5 MW", hydrogenFlow: "1000 Nm3/h" },
+    params: {
+      ratedVoltage: "750 V",
+      ratedPower: "5 MW",
+      hydrogenFlow: "1000 Nm3/h",
+      controlType: "FLOW",
+      e2hCoeff: "0.2"
+    },
     terminalType: "dc",
     terminalCount: 2,
     terminalTypes: ["dc", "h2"],
@@ -3068,7 +3097,13 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流燃料电池",
     categoryLibrary: "氢能设备",
     size: { width: 108, height: 62 },
-    params: { ratedVoltage: "10 kV", ratedPower: "3 MW", hydrogenFlow: "600 Nm3/h" },
+    params: {
+      ratedVoltage: "10 kV",
+      ratedPower: "3 MW",
+      hydrogenFlow: "600 Nm3/h",
+      controlType: "P",
+      h2eCoeff: "1.5"
+    },
     terminalType: "ac",
     terminalCount: 2,
     terminalTypes: ["ac", "h2"],
@@ -3082,7 +3117,13 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流燃料电池",
     categoryLibrary: "氢能设备",
     size: { width: 108, height: 62 },
-    params: { ratedVoltage: "750 V", ratedPower: "3 MW", hydrogenFlow: "600 Nm3/h" },
+    params: {
+      ratedVoltage: "750 V",
+      ratedPower: "3 MW",
+      hydrogenFlow: "600 Nm3/h",
+      controlType: "P",
+      h2eCoeff: "1.5"
+    },
     terminalType: "dc",
     terminalCount: 2,
     terminalTypes: ["dc", "h2"],
@@ -3917,9 +3958,11 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   dc_voltage: "float",
   design_flow: "float",
   design_head: "float",
+  e2h_coeff: "float",
   efficiency: "float",
   energy_capacity: "float",
   flow_rate: "float",
+  flow_set: "float",
   frequency: "float",
   fuel_tank_capacity: "float",
   g_set: "float",
@@ -3937,6 +3980,7 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   hub_height: "float",
   hydrogen_demand: "float",
   hydrogen_flow: "float",
+  h2e_coeff: "float",
   impedance: "float",
   inlet_pressure: "float",
   input_voltage: "float",
@@ -4232,6 +4276,31 @@ function normalizeGeneratorControlParameterDefinitions(
   });
 }
 
+const HYDROGEN_COUPLING_SECTIONS = new Set(["AcE2Hydro", "DcE2Hydro", "Hydro2AcE", "Hydro2DcE"]);
+
+function normalizeHydrogenCouplingControlParameterDefinitions(
+  section: string,
+  definitions: readonly DeviceParameterDefinition[]
+): DeviceParameterDefinition[] {
+  const options = [...HYDROGEN_COUPLING_CONTROL_TYPES];
+  const fallback = section === "AcE2Hydro" || section === "DcE2Hydro" ? "FLOW" : "P";
+  return definitions.map((definition) => {
+    if (toSnakeCaseDeviceParamName(definition.enName) !== "control_type") {
+      return definition;
+    }
+    const normalizedValue = normalizeControlTypeForE(definition.typicalValue).toUpperCase();
+    const typicalValue = options.includes(normalizedValue as (typeof options)[number]) ? normalizedValue : fallback;
+    return {
+      ...definition,
+      enName: "control_type",
+      valueType: "stringEnum",
+      typicalValue,
+      enumValues: options,
+      enumOptions: options.map((value) => ({ value }))
+    };
+  });
+}
+
 function normalizeESectionParameterDefinitions(
   section: string,
   definitions: readonly DeviceParameterDefinition[]
@@ -4244,6 +4313,9 @@ function normalizeESectionParameterDefinitions(
   }
   if (section === "ACGenerator" || section === "DCGenerator") {
     return normalizeGeneratorControlParameterDefinitions(section, definitions);
+  }
+  if (HYDROGEN_COUPLING_SECTIONS.has(section)) {
+    return normalizeHydrogenCouplingControlParameterDefinitions(section, definitions);
   }
   return [...definitions];
 }
@@ -5899,7 +5971,7 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
       !key.startsWith("_") &&
       !defaultKeys.has(key)
     );
-    return [
+    const generatedDefinitions = [
       ...defaultDefinitions,
       ...extraKeys.map((key) => ({
         cnName: key,
@@ -5911,6 +5983,7 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
     ]
       .map((definition) => normalizeTemplateDefinition(definition))
       .filter((definition): definition is DeviceParameterDefinition => Boolean(definition));
+    return normalizeESectionParameterDefinitions(inferESection(template.kind, template.params), generatedDefinitions);
   }
   const eKeys = getEParameterKeys(template.kind, template.params);
   const keys = eKeys.length > 0 ? [...eKeys] : Object.keys(template.params);
@@ -6593,10 +6666,13 @@ export function buildDefaultParams(template: DeviceTemplate): Record<string, str
     templateKind === "ac-fuel-cell" ||
     templateKind === "dc-fuel-cell"
   ) {
+    const controlType = templateKind === "ac-electrolyzer" || templateKind === "dc-electrolyzer"
+      ? "FLOW"
+      : "P";
     return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ...template.params,
       ratedCapacity: deviceParamValue(template.params, "rated_power") ?? "5 MW",
-      controlType: template.terminalType === "ac" ? "PQ" : "P"
+      controlType
     })));
   }
   if (templateKind === "ac-heater" || templateKind === "dc-heater" || templateKind === "ac-two-port-heater" || templateKind === "dc-two-port-heater") {

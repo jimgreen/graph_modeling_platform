@@ -63,6 +63,7 @@ import {
   ACAC_CONVERTER_CONTROL_TYPES,
   AC_GENERATOR_CONTROL_TYPES,
   DC_GENERATOR_CONTROL_TYPES,
+  HYDROGEN_COUPLING_CONTROL_TYPES,
   E_SECTION_COLUMNS,
   tidyOrthogonalRoute,
   renameSavedProject,
@@ -982,6 +983,40 @@ test("exports hydrogen, heat, and cross-energy devices to E sections and reports
       reason: "元件库没有对应的 E 文件段定义。"
     })
   ]);
+});
+
+test("exports electric-hydrogen controls, directional coefficients, and associated setpoints", () => {
+  const expected = [
+    ["ac-electrolyzer", "AcE2Hydro", "FLOW", "e2h_coeff", "0.2", "ACLoad", "ac_load_t1", "HydroSource", "h2_unit_t2"],
+    ["dc-electrolyzer", "DcE2Hydro", "FLOW", "e2h_coeff", "0.2", "DCLoad", "dc_load_t1", "HydroSource", "h2_unit_t2"],
+    ["ac-fuel-cell", "Hydro2AcE", "P", "h2e_coeff", "1.5", "ACGenerator", "ac_unit_t1", "HydroLoad", "h2_load_t2"],
+    ["dc-fuel-cell", "Hydro2DcE", "P", "h2e_coeff", "1.5", "DCGenerator", "dc_unit_t1", "HydroLoad", "h2_load_t2"]
+  ] as const;
+
+  for (const [kind, couplingSection, controlType, coefficientKey, coefficientValue, electricSection, electricRelation, hydrogenSection, hydrogenRelation] of expected) {
+    const node = assignPermanentDeviceIndex(createDefaultNode(kind, { x: 100, y: 100 }), {}).node;
+    node.params[`p_set_${electricRelation}`] = "2.5";
+    node.params[`flow_set_${hydrogenRelation}`] = "300";
+
+    const exported = parseESections(buildEDeviceParameterFile({
+      version: 1,
+      name: `${kind}-控制参数导出`,
+      nodes: [node],
+      edges: []
+    }));
+    const couplingRow = exported[couplingSection].rows[0];
+
+    expect(exported[couplingSection].columns, couplingSection).toEqual(E_SECTION_COLUMNS[couplingSection]);
+    expect(couplingRow, couplingSection).toMatchObject({
+      control_type: controlType,
+      [coefficientKey]: coefficientValue
+    });
+    expect(couplingRow, couplingSection).not.toHaveProperty("efficiency");
+    expect(couplingRow, couplingSection).not.toHaveProperty("p_set");
+    expect(couplingRow, couplingSection).not.toHaveProperty("flow_set");
+    expect(exported[electricSection].rows[0].p_set, electricSection).toBe("2.5");
+    expect(exported[hydrogenSection].rows[0].flow_set, hydrogenSection).toBe("300");
+  }
 });
 
 test("returns E export warnings with the generated file", () => {
@@ -2183,9 +2218,9 @@ test("keeps every built-in device parameter aligned with its semantic type and n
   const floatNames = new Set([
     "ac_i_max", "ac_p_max", "ac_p_min", "ac_q_max", "ac_q_min", "ac_v_max", "ac_v_min", "ac_voltage", "active_power", "alpha", "angle", "array_area", "b", "b_set", "bt", "bt1", "bt2", "bt3",
     "capacity", "capacity_factor", "charge_discharge_efficiency", "cut_in_wind_speed", "cut_out_wind_speed", "dc_i_max", "dc_p_max", "dc_p_min", "dc_v_max", "dc_v_min", "dc_voltage",
-    "design_flow", "design_head", "efficiency", "energy_capacity", "flow_rate", "frequency", "fuel_tank_capacity",
+    "design_flow", "design_head", "e2h_coeff", "efficiency", "energy_capacity", "flow_rate", "flow_set", "frequency", "fuel_tank_capacity",
     "g_set", "generator_efficiency", "gt", "gt1", "gt2", "gt3", "head", "heat_demand", "heat_power", "heat_rate",
-    "high_i_max", "high_rated_capacity", "high_vbase", "hub_height", "hydrogen_demand", "hydrogen_flow", "impedance", "inlet_pressure",
+    "h2e_coeff", "high_i_max", "high_rated_capacity", "high_vbase", "hub_height", "hydrogen_demand", "hydrogen_flow", "impedance", "inlet_pressure",
     "i_i_max", "i_max", "input_voltage", "i_p_max", "i_p_min", "i_q_max", "i_q_min", "i_q_set", "i_set", "i_v_max", "i_v_min", "i_v_set", "j_i_max", "j_p_max", "j_p_min", "j_q_max", "j_q_min", "j_q_set", "j_v_max", "j_v_min", "j_v_set", "length", "low_i_max", "low_rated_capacity", "low_vbase", "main_steam_pressure",
     "main_steam_temperature", "max_charge_power", "max_current", "max_discharge_power", "medium_i_max", "medium_rated_capacity",
     "medium_vbase", "module_efficiency", "outlet_pressure", "output_voltage", "p_ac_set", "p_dc_set", "p_max", "p_min", "p_set", "pbase", "power",
@@ -2237,11 +2272,19 @@ test("keeps every built-in device parameter aligned with its semantic type and n
         expect(optionValues, context).toContain(definition.typicalValue);
       }
       if (definition.enName === "control_type") {
-        const expectedOptions = section === "ACGenerator"
-          ? [...AC_GENERATOR_CONTROL_TYPES]
-          : [...DC_GENERATOR_CONTROL_TYPES];
+        const hydrogenCoupling = ["AcE2Hydro", "DcE2Hydro", "Hydro2AcE", "Hydro2DcE"].includes(section ?? "");
+        const expectedOptions = hydrogenCoupling
+          ? [...HYDROGEN_COUPLING_CONTROL_TYPES]
+          : section === "ACGenerator"
+            ? [...AC_GENERATOR_CONTROL_TYPES]
+            : [...DC_GENERATOR_CONTROL_TYPES];
         expect((definition.enumOptions ?? []).map((option) => option.value), context).toEqual(expectedOptions);
-        expect(definition.typicalValue, context).toBe(section === "ACGenerator" ? "PV" : "P");
+        const expectedDefault = section === "ACGenerator"
+          ? "PV"
+          : section === "AcE2Hydro" || section === "DcE2Hydro"
+            ? "FLOW"
+            : "P";
+        expect(definition.typicalValue, context).toBe(expectedDefault);
       }
     }
 

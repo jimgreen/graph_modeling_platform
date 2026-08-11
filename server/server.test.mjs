@@ -120,6 +120,25 @@ describe("measurement configuration normalization", () => {
       "run_stat"
     ]);
   });
+
+  test("keeps electric-hydrogen control fields aligned with the frontend E interface", () => {
+    expect(eSectionColumns.ACLoad).toContain("p_set");
+    expect(eSectionColumns.DCLoad).toContain("p_set");
+    expect(eSectionColumns.HydroSource).toEqual(["idx", "name", "node", "flow_set", "run_stat"]);
+    expect(eSectionColumns.HydroLoad).toEqual(["idx", "name", "node", "flow_set", "run_stat"]);
+    expect(eSectionColumns.AcE2Hydro).toEqual([
+      "idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_ac_load_t1", "idx_h2_unit_t2"
+    ]);
+    expect(eSectionColumns.DcE2Hydro).toEqual([
+      "idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_dc_load_t1", "idx_h2_unit_t2"
+    ]);
+    expect(eSectionColumns.Hydro2AcE).toEqual([
+      "idx", "name", "control_type", "h2e_coeff", "run_stat", "idx_ac_unit_t1", "idx_h2_load_t2"
+    ]);
+    expect(eSectionColumns.Hydro2DcE).toEqual([
+      "idx", "name", "control_type", "h2e_coeff", "run_stat", "idx_dc_unit_t1", "idx_h2_load_t2"
+    ]);
+  });
 });
 
 describe("icon library import", () => {
