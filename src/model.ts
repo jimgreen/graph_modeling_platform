@@ -1834,6 +1834,7 @@ export type TopologyValidationErrorType =
   | "island-voltage-mismatch"
   | "transformer-island-short"
   | "device-limit-invalid"
+  | "hydrogen-storage-parameter-invalid"
   | "voltage-limit-out-of-range"
   | "voltage-setpoint-deviation"
   | "duplicate-device-idx"
@@ -1857,7 +1858,8 @@ export function isBlockingTopologyValidationError(error: Pick<TopologyValidation
     error.type === "voltage-mismatch" ||
     error.type === "missing-island-voltage" ||
     error.type === "island-voltage-mismatch" ||
-    error.type === "transformer-island-short"
+    error.type === "transformer-island-short" ||
+    error.type === "hydrogen-storage-parameter-invalid"
   );
 }
 
@@ -3007,7 +3009,13 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "储氢罐",
     categoryLibrary: "氢能设备",
     size: { width: 126, height: 58 },
-    params: { pressure: "35 MPa", capacity: "1000 kg" },
+    params: {
+      pressure: "35 MPa",
+      capacity: "1000 kg",
+      waterVolume: "50",
+      pressureMax: "45",
+      pressureMin: "2"
+    },
     terminalType: "h2",
     terminalCount: 0
   },
@@ -3016,7 +3024,14 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "横卧式储氢罐",
     categoryLibrary: "氢能设备",
     size: { width: 150, height: 54 },
-    params: { pressure: "35 MPa", capacity: "1000 kg", storageType: "horizontal" },
+    params: {
+      pressure: "35 MPa",
+      capacity: "1000 kg",
+      waterVolume: "50",
+      pressureMax: "45",
+      pressureMin: "2",
+      storageType: "horizontal"
+    },
     terminalType: "h2",
     terminalCount: 0
   },
@@ -3025,7 +3040,14 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "集装格式储氢罐",
     categoryLibrary: "氢能设备",
     size: { width: 142, height: 66 },
-    params: { pressure: "35 MPa", capacity: "1000 kg", storageType: "container" },
+    params: {
+      pressure: "35 MPa",
+      capacity: "1000 kg",
+      waterVolume: "50",
+      pressureMax: "45",
+      pressureMin: "2",
+      storageType: "container"
+    },
     terminalType: "h2",
     terminalCount: 0
   },
@@ -3943,6 +3965,8 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   power: "float",
   power_factor: "float",
   pressure: "float",
+  pressure_max: "float",
+  pressure_min: "float",
   primary_loop_pressure: "float",
   pv0: "float",
   pv1: "float",
@@ -3995,6 +4019,7 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   vbase: "float",
   voltage: "float",
   voltage_level: "float",
+  water_volume: "float",
   x: "float",
   x1: "float",
   x2: "float",

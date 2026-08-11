@@ -722,4 +722,58 @@ describe("topology calculation operating-limit normalization", () => {
     expect(setNodes.mock.calls[0][0][0].params.untouched).toBe("original");
     expect(showGlobalMessage).toHaveBeenCalledWith("拓扑失败 1");
   });
+
+  test("fails topology when post-topology hydrogen storage validation returns a blocking warning", () => {
+    const node = { id: "tank-1", params: { water_volume: "0", pressure_max: "45", pressure_min: "2" } };
+    const blockingWarning = {
+      type: "hydrogen-storage-parameter-invalid",
+      nodeId: node.id,
+      relatedNodeIds: [node.id],
+      message: "水容积必须为正数"
+    };
+    const emptyTopology = { connectedComponents: [] };
+    const setNodes = vi.fn();
+    const setTopology = vi.fn();
+    const setTopologyErrors = vi.fn();
+    const setTopologyStatus = vi.fn();
+    const locateTopologyError = vi.fn();
+    const showGlobalMessage = vi.fn();
+    (globalThis as any).showGlobalMessage = showGlobalMessage;
+
+    createRunTopologyCalculation({
+      EMPTY_TOPOLOGY: emptyTopology,
+      buildTopology: vi.fn(),
+      calculateElectricalTopology: vi.fn(() => [node]),
+      currentUnit: "A",
+      edges: [],
+      isBlockingTopologyValidationError: (error: { type: string }) => error.type === "hydrogen-storage-parameter-invalid",
+      locateTopologyError,
+      nodes: [node],
+      normalizeDeviceOperatingLimitsAfterTopology: vi.fn(() => ({
+        nodes: [node],
+        warnings: [blockingWarning],
+        corrections: []
+      })),
+      powerUnit: "MW",
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: () => true,
+      setNodes,
+      setTopology,
+      setTopologyErrors,
+      setTopologyStatus,
+      skipNextTopologyStaleRef: { current: false },
+      topologyCalculationMessage: (count: number) => `拓扑失败 ${count}`,
+      validateTopology: vi.fn(() => []),
+      validateVoltageSetpointDeviations: vi.fn(),
+      voltageUnit: "kV",
+      writeOperationLog: vi.fn()
+    })();
+
+    expect(setTopologyErrors).toHaveBeenCalledWith([blockingWarning]);
+    expect(setTopology).toHaveBeenCalledWith(emptyTopology);
+    expect(setTopologyStatus).toHaveBeenCalledWith({ state: "failed", message: "失败，1 条阻断错误" });
+    expect(locateTopologyError).toHaveBeenCalledWith(blockingWarning);
+    expect(showGlobalMessage).toHaveBeenCalledWith("拓扑失败 1");
+    expect(setNodes).not.toHaveBeenCalled();
+  });
 });

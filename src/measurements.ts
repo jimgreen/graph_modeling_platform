@@ -292,7 +292,48 @@ const STORAGE_SOC_MEASUREMENT_TYPE: MeasurementTypeDefinition = {
   defaultFontWeight: "500",
   defaultVisible: true
 };
+const GAS_QUANTITY_MEASUREMENT_TYPE: MeasurementTypeDefinition = {
+  id: "gasQuantity",
+  key: "gas_quantity",
+  name: "储气量",
+  shortLabel: "储气量",
+  defaultUnit: "Nm3",
+  valueType: "number",
+  defaultDecimals: 2,
+  defaultColor: "#334155",
+  defaultFontFamily: "Arial",
+  defaultFontSize: 14,
+  defaultFontWeight: "500",
+  defaultVisible: true
+};
 const ELECTRIC_STORAGE_MEASUREMENT_PROFILE_KINDS = new Set(["ac-storage", "dc-storage"]);
+const HYDROGEN_TANK_MEASUREMENT_PROFILE_KINDS = new Set([
+  "hydrogen-tank",
+  "hydrogen-tank-horizontal",
+  "hydrogen-tank-container"
+]);
+const HYDROGEN_TANK_MEASUREMENT_PROFILE_ITEMS: DeviceMeasurementProfileItem[] = [
+  { measurementTypeId: "pressure", associatedField: "pressure", labelOverride: "气压", unitOverride: "MPa" },
+  { measurementTypeId: "flow", associatedField: "flow", labelOverride: "流量", unitOverride: "Nm3/h" },
+  { measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: "储气量", unitOverride: "Nm3" }
+];
+
+function migrateHydrogenTankMeasurementProfileItems(
+  deviceKind: string,
+  items: readonly DeviceMeasurementProfileItem[]
+): readonly DeviceMeasurementProfileItem[] {
+  if (!HYDROGEN_TANK_MEASUREMENT_PROFILE_KINDS.has(deviceKind)) {
+    return items;
+  }
+  const legacyIds = items.map((item) => String(item.measurementTypeId ?? "").trim());
+  if (legacyIds.length !== 3 || legacyIds.join("|") !== "pressure|level|temperature") {
+    return items;
+  }
+  return HYDROGEN_TANK_MEASUREMENT_PROFILE_ITEMS.map((replacement, index) => ({
+    ...items[index],
+    ...replacement
+  }));
+}
 
 function normalizedDefaultMeasurementFontSize(value: unknown, fallback?: MeasurementTypeDefinition) {
   const next = clampNumber(finiteNumber(value, fallback?.defaultFontSize ?? DEFAULT_TYPE_VALUES.defaultFontSize), 6, 96);
@@ -319,6 +360,7 @@ export const DEFAULT_MEASUREMENT_CONFIG: PlatformMeasurementConfig = {
     { id: "flow", key: "flow", name: "流量", shortLabel: "流量", defaultUnit: "kg/s", valueType: "number", defaultDecimals: 2, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
     { id: "level", key: "level", name: "液位", shortLabel: "液位", defaultUnit: "%", valueType: "number", defaultDecimals: 1, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
     STORAGE_SOC_MEASUREMENT_TYPE,
+    GAS_QUANTITY_MEASUREMENT_TYPE,
     { id: "status", key: "status", name: "状态", shortLabel: "状态", defaultUnit: "", valueType: "string", defaultDecimals: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false }
   ],
   deviceProfiles: [
@@ -351,9 +393,9 @@ export const DEFAULT_MEASUREMENT_CONFIG: PlatformMeasurementConfig = {
     { deviceKind: "dc-fuel-cell", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "flow" }] },
     { deviceKind: "hydrogen-source", items: [{ measurementTypeId: "pressure" }, { measurementTypeId: "flow" }, { measurementTypeId: "status" }] },
     { deviceKind: "hydrogen-load", items: [{ measurementTypeId: "pressure" }, { measurementTypeId: "flow" }] },
-    { deviceKind: "hydrogen-tank", items: [{ measurementTypeId: "pressure" }, { measurementTypeId: "level" }, { measurementTypeId: "temperature" }] },
-    { deviceKind: "hydrogen-tank-horizontal", items: [{ measurementTypeId: "pressure" }, { measurementTypeId: "level" }, { measurementTypeId: "temperature" }] },
-    { deviceKind: "hydrogen-tank-container", items: [{ measurementTypeId: "pressure" }, { measurementTypeId: "level" }, { measurementTypeId: "temperature" }] },
+    { deviceKind: "hydrogen-tank", items: HYDROGEN_TANK_MEASUREMENT_PROFILE_ITEMS },
+    { deviceKind: "hydrogen-tank-horizontal", items: HYDROGEN_TANK_MEASUREMENT_PROFILE_ITEMS },
+    { deviceKind: "hydrogen-tank-container", items: HYDROGEN_TANK_MEASUREMENT_PROFILE_ITEMS },
     { deviceKind: "hydrogen-pipeline", items: [{ measurementTypeId: "pressure" }, { measurementTypeId: "flow" }] },
     { deviceKind: "hydrogen-compressor", items: [{ measurementTypeId: "pressure" }, { measurementTypeId: "flow" }, { measurementTypeId: "status" }] },
     { deviceKind: "heat-bus", items: [{ measurementTypeId: "temperature" }, { measurementTypeId: "flow", defaultVisible: false }] },
@@ -578,9 +620,13 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
     return ELECTRIC_STORAGE_MEASUREMENT_PROFILE_KINDS.has(deviceKind) &&
       (Array.isArray(profile.items) ? profile.items : []).some((item) => String(item.measurementTypeId ?? "").trim() === "level");
   });
-  const rawTypes = migratesLegacyStorageLevel && !configuredTypes.some((item) => String(item.id ?? "").trim() === "soc")
-    ? [...configuredTypes, STORAGE_SOC_MEASUREMENT_TYPE]
-    : configuredTypes;
+  const rawTypes = [...configuredTypes];
+  if (migratesLegacyStorageLevel && !rawTypes.some((item) => String(item.id ?? "").trim() === "soc")) {
+    rawTypes.push(STORAGE_SOC_MEASUREMENT_TYPE);
+  }
+  if (!rawTypes.some((item) => String(item.id ?? "").trim() === GAS_QUANTITY_MEASUREMENT_TYPE.id)) {
+    rawTypes.push(GAS_QUANTITY_MEASUREMENT_TYPE);
+  }
   const seenTypes = new Set<string>();
   const measurementTypes = rawTypes.flatMap((item) => {
     const id = String((item as Partial<MeasurementTypeDefinition>)?.id ?? "").trim();
@@ -614,7 +660,11 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
       return [];
     }
     seenProfiles.add(deviceKind);
-    const items = (Array.isArray(profile.items) ? profile.items : []).flatMap((item) => {
+    const profileItems = migrateHydrogenTankMeasurementProfileItems(
+      deviceKind,
+      Array.isArray(profile.items) ? profile.items : []
+    );
+    const items = profileItems.flatMap((item) => {
       const rawMeasurementTypeId = String(item.measurementTypeId ?? "").trim();
       const measurementTypeId = ELECTRIC_STORAGE_MEASUREMENT_PROFILE_KINDS.has(deviceKind) && rawMeasurementTypeId === "level"
         ? "soc"

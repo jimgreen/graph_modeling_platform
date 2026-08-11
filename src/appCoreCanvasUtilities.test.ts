@@ -18,3 +18,11 @@ describe("converter parameter options", () => {
     expect(paramOptionsForSection("control_type", "DCDCConverter")).toBeUndefined();
   });
 });
+
+describe("hydrogen tank parameter labels", () => {
+  test("includes the requested engineering units", () => {
+    expect(PARAM_LABELS.water_volume).toBe("水容积(m3)");
+    expect(PARAM_LABELS.pressure_max).toBe("储气压力上限(Mpa)");
+    expect(PARAM_LABELS.pressure_min).toBe("储气压力下限(Mpa)");
+  });
+});

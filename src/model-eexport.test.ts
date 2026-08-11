@@ -938,13 +938,32 @@ test("exports hydrogen, heat, and cross-energy devices to E sections and reports
 
   expect(Object.keys(E_SECTION_COLUMNS)).not.toContain("Hydro" + "Tank");
   expect(Object.keys(E_SECTION_COLUMNS)).not.toContain("Heat" + "Tank");
-  expect(E_SECTION_COLUMNS.HydroStorage).toEqual(["idx", "name", "node", "run_stat"]);
+  expect(E_SECTION_COLUMNS.HydroStorage).toEqual([
+    "idx",
+    "name",
+    "node",
+    "pressure",
+    "capacity",
+    "water_volume",
+    "pressure_max",
+    "pressure_min",
+    "run_stat"
+  ]);
   expect(E_SECTION_COLUMNS.HeatStorage).toEqual(["idx", "name", "node", "run_stat"]);
   expect(exported.AcE2Hydro.rows).toHaveLength(1);
   expect(exported.ACLoad.rows).toHaveLength(1);
   expect(exported.HydroSource.rows).toHaveLength(1);
   expect(exported.HydroPipe.rows).toHaveLength(1);
   expect(exported.HydroStorage.rows).toHaveLength(3);
+  for (const row of exported.HydroStorage.rows) {
+    expect(row).toMatchObject({
+      pressure: "35",
+      capacity: "1000",
+      water_volume: "50",
+      pressure_max: "45",
+      pressure_min: "2"
+    });
+  }
   expect(exported.HeatStorage.rows).toHaveLength(1);
   expect(Object.keys(exported)).not.toContain("Hydro" + "Tank");
   expect(Object.keys(exported)).not.toContain("Heat" + "Tank");
@@ -2170,12 +2189,12 @@ test("keeps every built-in device parameter aligned with its semantic type and n
     "i_i_max", "i_max", "input_voltage", "i_p_max", "i_p_min", "i_q_max", "i_q_min", "i_q_set", "i_set", "i_v_max", "i_v_min", "i_v_set", "j_i_max", "j_p_max", "j_p_min", "j_q_max", "j_q_min", "j_q_set", "j_v_max", "j_v_min", "j_v_set", "length", "low_i_max", "low_rated_capacity", "low_vbase", "main_steam_pressure",
     "main_steam_temperature", "max_charge_power", "max_current", "max_discharge_power", "medium_i_max", "medium_rated_capacity",
     "medium_vbase", "module_efficiency", "outlet_pressure", "output_voltage", "p_ac_set", "p_dc_set", "p_max", "p_min", "p_set", "pbase", "power",
-    "power_factor", "pressure", "primary_loop_pressure", "pv0", "pv1", "pv2", "q_ac_set", "q_max", "q_min", "q_set", "qbase", "qv0",
+    "power_factor", "pressure", "pressure_max", "pressure_min", "primary_loop_pressure", "pv0", "pv1", "pv2", "q_ac_set", "q_max", "q_min", "q_set", "qbase", "qv0",
     "qv1", "qv2", "r", "r1", "r2", "r3", "rated_capacity", "rated_current", "rated_power", "rated_speed",
     "rated_voltage", "rated_wind_speed", "reactive_power", "reactor_thermal_power", "reference_irradiance", "reference_temperature", "return_temperature", "rotor_diameter",
     "shift", "shift1", "shift2", "shift3", "short_circuit_capacity", "soc_lower_limit", "soc_upper_limit",
     "specific_fuel_consumption", "start_time", "state_of_charge", "supply_temperature", "tap", "tap1", "tap2", "tap3",
-    "temperature", "temperature_coefficient", "thermal_efficiency", "v_ac_set", "v_dc_set", "v_max", "v_min", "v_set", "vbase", "voltage", "voltage_level", "x",
+    "temperature", "temperature_coefficient", "thermal_efficiency", "v_ac_set", "v_dc_set", "v_max", "v_min", "v_set", "vbase", "voltage", "voltage_level", "water_volume", "x",
     "x1", "x2", "x3", "x_pu"
   ]);
   const integerNames = new Set(["battery_rack_count", "idx", "isl", "mppt_count"]);

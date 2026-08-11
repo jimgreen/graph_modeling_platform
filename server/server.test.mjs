@@ -10,8 +10,10 @@ import {
   createSchemeArchiveBuffer,
   deleteSchemeProjectRecord,
   deleteSchemeRecordDirectory,
+  eSectionColumns,
   extractIconLibraryImageEntries,
   importSchemeArchiveBuffer,
+  normalizeMeasurementConfig,
   readSchemeProjectRecord,
   readSchemesFromFiles,
   saveSchemeProjectRecord,
@@ -59,6 +61,52 @@ const expectEFieldsAlignedWithHeader = (text, section, columns, rowValues) => {
   expect(rowColumns).toHaveLength(headerColumns.length);
   rowColumns.forEach((column, index) => expect(column).toBeCloseTo(headerColumns[index], 0));
 };
+
+describe("measurement configuration normalization", () => {
+  test("migrates hydrogen tank defaults and retains associated source fields", () => {
+    const normalized = normalizeMeasurementConfig({
+      measurementTypes: [
+        { id: "pressure", key: "pressure", name: "压力", defaultUnit: "MPa" },
+        { id: "flow", key: "flow", name: "流量", defaultUnit: "kg/s" },
+        { id: "level", key: "level", name: "液位", defaultUnit: "%" },
+        { id: "temperature", key: "temperature", name: "温度", defaultUnit: "degC" }
+      ],
+      deviceProfiles: [{
+        deviceKind: "hydrogen-tank",
+        items: [
+          { measurementTypeId: "pressure" },
+          { measurementTypeId: "level" },
+          { measurementTypeId: "temperature" }
+        ]
+      }]
+    });
+
+    expect(normalized.measurementTypes.find((item) => item.id === "gasQuantity")).toMatchObject({
+      key: "gas_quantity",
+      name: "储气量",
+      defaultUnit: "Nm3"
+    });
+    expect(normalized.deviceProfiles[0].items).toEqual([
+      expect.objectContaining({ measurementTypeId: "pressure", associatedField: "pressure", labelOverride: "气压", unitOverride: "MPa" }),
+      expect.objectContaining({ measurementTypeId: "flow", associatedField: "flow", labelOverride: "流量", unitOverride: "Nm3/h" }),
+      expect.objectContaining({ measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: "储气量", unitOverride: "Nm3" })
+    ]);
+  });
+
+  test("exports hydrogen tank static parameters through the default E interface", () => {
+    expect(eSectionColumns.HydroStorage).toEqual([
+      "idx",
+      "name",
+      "node",
+      "pressure",
+      "capacity",
+      "water_volume",
+      "pressure_max",
+      "pressure_min",
+      "run_stat"
+    ]);
+  });
+});
 
 describe("icon library import", () => {
   test("extracts browser-displayable icons from Office-style archives", () => {

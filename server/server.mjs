@@ -173,7 +173,7 @@ export const eSectionColumns = {
   HydroPressRegulator: ["idx", "name", "i_node", "j_node", "run_stat"],
   HydroStopValve: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   HydroBus: ["idx", "name", "node", "run_stat"],
-  HydroStorage: ["idx", "name", "node", "run_stat"],
+  HydroStorage: ["idx", "name", "node", "pressure", "capacity", "water_volume", "pressure_max", "pressure_min", "run_stat"],
   AcE2Hydro: ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_h2_unit_t2"],
   DcE2Hydro: ["idx", "name", "run_stat", "idx_dc_load_t1", "idx_h2_unit_t2"],
   Hydro2AcE: ["idx", "name", "run_stat", "idx_ac_unit_t1", "idx_h2_load_t2"],
@@ -204,6 +204,11 @@ const eFloatColumns = new Set([
   "angle",
   "pbase",
   "qbase",
+  "pressure",
+  "capacity",
+  "water_volume",
+  "pressure_max",
+  "pressure_min",
   "rated_capacity",
   "rated_voltage",
   "i_max",
@@ -623,6 +628,7 @@ const builtinMeasurementTypeIds = new Set([
   "flow",
   "level",
   "soc",
+  "gasQuantity",
   "status"
 ]);
 const storageSocMeasurementType = {
@@ -635,7 +641,41 @@ const storageSocMeasurementType = {
   defaultDecimals: 1,
   defaultVisible: true
 };
+const gasQuantityMeasurementType = {
+  id: "gasQuantity",
+  key: "gas_quantity",
+  name: "储气量",
+  shortLabel: "储气量",
+  defaultUnit: "Nm3",
+  valueType: "number",
+  defaultDecimals: 2,
+  defaultVisible: true
+};
 const electricStorageMeasurementProfileKinds = new Set(["ac-storage", "dc-storage"]);
+const hydrogenTankMeasurementProfileKinds = new Set([
+  "hydrogen-tank",
+  "hydrogen-tank-horizontal",
+  "hydrogen-tank-container"
+]);
+const hydrogenTankMeasurementProfileItems = [
+  { measurementTypeId: "pressure", associatedField: "pressure", labelOverride: "气压", unitOverride: "MPa" },
+  { measurementTypeId: "flow", associatedField: "flow", labelOverride: "流量", unitOverride: "Nm3/h" },
+  { measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: "储气量", unitOverride: "Nm3" }
+];
+
+function migrateHydrogenTankMeasurementProfileItems(deviceKind, items) {
+  if (!hydrogenTankMeasurementProfileKinds.has(deviceKind)) {
+    return items;
+  }
+  const legacyIds = items.map((item) => String(item?.measurementTypeId ?? "").trim());
+  if (legacyIds.length !== 3 || legacyIds.join("|") !== "pressure|level|temperature") {
+    return items;
+  }
+  return hydrogenTankMeasurementProfileItems.map((replacement, index) => ({
+    ...items[index],
+    ...replacement
+  }));
+}
 
 const defaultMeasurementGroupDefaults = Object.freeze({
   backgroundColor: "transparent",
@@ -693,7 +733,7 @@ function normalizeMeasurementStyleOverride(value) {
   return Object.keys(style).length > 0 ? style : undefined;
 }
 
-function normalizeMeasurementConfig(payload) {
+export function normalizeMeasurementConfig(payload) {
   const source = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
   const groupDefaults = normalizeMeasurementGroupDefaults(source.groupDefaults);
   const rawProfiles = Array.isArray(source.deviceProfiles) ? source.deviceProfiles : [];
@@ -703,9 +743,13 @@ function normalizeMeasurementConfig(payload) {
     return electricStorageMeasurementProfileKinds.has(deviceKind) &&
       (Array.isArray(profile?.items) ? profile.items : []).some((item) => String(item?.measurementTypeId ?? "").trim() === "level");
   });
-  const rawTypes = migratesLegacyStorageLevel && !configuredTypes.some((item) => String(item?.id ?? "").trim() === "soc")
-    ? [...configuredTypes, storageSocMeasurementType]
-    : configuredTypes;
+  const rawTypes = [...configuredTypes];
+  if (migratesLegacyStorageLevel && !rawTypes.some((item) => String(item?.id ?? "").trim() === "soc")) {
+    rawTypes.push(storageSocMeasurementType);
+  }
+  if (!rawTypes.some((item) => String(item?.id ?? "").trim() === gasQuantityMeasurementType.id)) {
+    rawTypes.push(gasQuantityMeasurementType);
+  }
   const seenTypes = new Set();
   const measurementTypes = rawTypes.flatMap((item) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
@@ -744,7 +788,11 @@ function normalizeMeasurementConfig(payload) {
       return [];
     }
     seenProfiles.add(deviceKind);
-    const items = (Array.isArray(profile.items) ? profile.items : []).flatMap((item) => {
+    const profileItems = migrateHydrogenTankMeasurementProfileItems(
+      deviceKind,
+      Array.isArray(profile.items) ? profile.items : []
+    );
+    const items = profileItems.flatMap((item) => {
       if (!item || typeof item !== "object" || Array.isArray(item)) {
         return [];
       }
@@ -759,6 +807,7 @@ function normalizeMeasurementConfig(payload) {
         name: item.name !== undefined ? String(item.name) : undefined,
         measurementTypeId,
         position: item.position !== undefined ? String(item.position).trim() || undefined : undefined,
+        associatedField: item.associatedField !== undefined ? String(item.associatedField).trim() || undefined : undefined,
         role: item.role ? String(item.role) : undefined,
         defaultVisible: item.defaultVisible,
         labelOverride: item.labelOverride ? String(item.labelOverride) : undefined,

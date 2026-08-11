@@ -4854,6 +4854,39 @@ function validateDeviceLimitPairs(
   const warnings: TopologyValidationError[] = [];
   const powerUnit = defaultQuantityUnit("power", options);
   const currentUnit = defaultQuantityUnit("current", options);
+  if (ownerSection === "HydroStorage") {
+    const waterVolumeKey = keyFor("water_volume");
+    const pressureMaxKey = keyFor("pressure_max");
+    const pressureMinKey = keyFor("pressure_min");
+    const waterVolumeText = deviceParamValue(node.params, waterVolumeKey);
+    const pressureMaxText = deviceParamValue(node.params, pressureMaxKey);
+    const pressureMinText = deviceParamValue(node.params, pressureMinKey);
+    const waterVolume = namedNumericValue(waterVolumeText);
+    const pressureMax = namedNumericValue(pressureMaxText);
+    const pressureMin = namedNumericValue(pressureMinText);
+    const invalidReasons: string[] = [];
+    if (waterVolume === null || waterVolume <= 0) {
+      invalidReasons.push(`${waterVolumeKey}=${waterVolumeText ?? "未设置"} 必须为正数`);
+    }
+    if (pressureMax === null || pressureMax <= 0) {
+      invalidReasons.push(`${pressureMaxKey}=${pressureMaxText ?? "未设置"} 必须为正数`);
+    }
+    if (pressureMin === null || pressureMin <= 0) {
+      invalidReasons.push(`${pressureMinKey}=${pressureMinText ?? "未设置"} 必须为正数`);
+    }
+    if (pressureMax !== null && pressureMax > 0 && pressureMin !== null && pressureMin > 0 && pressureMax <= pressureMin) {
+      invalidReasons.push(`${pressureMaxKey} 必须大于 ${pressureMinKey}`);
+    }
+    if (invalidReasons.length > 0) {
+      warnings.push({
+        id: `hydrogen-storage-parameter-invalid:${node.id}`,
+        type: "hydrogen-storage-parameter-invalid",
+        nodeId: node.id,
+        relatedNodeIds: [node.id],
+        message: `图上拓扑告警：${ownerName} 的储氢参数无效：${invalidReasons.join("；")}。拓扑计算失败。`
+      });
+    }
+  }
   const relevantSpecs = DEVICE_LIMIT_PAIR_SPECS.flatMap((spec) => {
     const maxKey = keyFor(spec.maxKey);
     const minKey = keyFor(spec.minKey);

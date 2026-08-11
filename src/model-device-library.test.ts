@@ -2584,6 +2584,25 @@ test("filters container body parameters to the current container variant", () =>
   }
 });
 
+test("defines numeric storage volume and pressure limits for every hydrogen tank variant", () => {
+  for (const kind of ["hydrogen-tank", "hydrogen-tank-horizontal", "hydrogen-tank-container"] as const) {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
+    const node = createDefaultNode(kind, { x: 0, y: 0 });
+    const definitionByName = new Map(
+      getTemplateParameterDefinitions(template).map((definition) => [definition.enName, definition])
+    );
+
+    expect(node.params).toMatchObject({
+      water_volume: "50",
+      pressure_max: "45",
+      pressure_min: "2"
+    });
+    expect(definitionByName.get("water_volume")).toMatchObject({ valueType: "float", typicalValue: "50" });
+    expect(definitionByName.get("pressure_max")).toMatchObject({ valueType: "float", typicalValue: "45" });
+    expect(definitionByName.get("pressure_min")).toMatchObject({ valueType: "float", typicalValue: "2" });
+  }
+});
+
 test("keeps persisted three-winding transformer overrides structurally non-container", () => {
   const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer")!;
   const overridden = applyDeviceTemplateDefinitionOverride(template, {

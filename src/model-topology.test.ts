@@ -2520,11 +2520,43 @@ test("treats duplicate identity and voltage setpoint deviations as non-blocking 
   expect(isBlockingTopologyValidationError({ type: "missing-island-voltage" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "island-voltage-mismatch" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "transformer-island-short" })).toBe(true);
+  expect(isBlockingTopologyValidationError({ type: "hydrogen-storage-parameter-invalid" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "device-limit-invalid" })).toBe(false);
   expect(isBlockingTopologyValidationError({ type: "voltage-limit-out-of-range" })).toBe(false);
   expect(isBlockingTopologyValidationError({ type: "duplicate-device-idx" })).toBe(false);
   expect(isBlockingTopologyValidationError({ type: "duplicate-device-name" })).toBe(false);
   expect(isBlockingTopologyValidationError({ type: "voltage-setpoint-deviation" })).toBe(false);
+});
+
+test("blocks topology when hydrogen tank volume or pressure limits are invalid", () => {
+  const validTank = createDefaultNode("hydrogen-tank", { x: 100, y: 100 });
+  expect(normalizeDeviceOperatingLimitsAfterTopology([validTank]).warnings).not.toEqual(expect.arrayContaining([
+    expect.objectContaining({ type: "hydrogen-storage-parameter-invalid" })
+  ]));
+
+  const invalidCases = [
+    { params: { water_volume: "0", pressure_max: "45", pressure_min: "2" }, message: "water_volume=0 必须为正数" },
+    { params: { water_volume: "50", pressure_max: "0", pressure_min: "2" }, message: "pressure_max=0 必须为正数" },
+    { params: { water_volume: "50", pressure_max: "45", pressure_min: "-1" }, message: "pressure_min=-1 必须为正数" },
+    { params: { water_volume: "50", pressure_max: "2", pressure_min: "2" }, message: "pressure_max 必须大于 pressure_min" }
+  ];
+
+  for (const invalidCase of invalidCases) {
+    const tank = createDefaultNode("hydrogen-tank", { x: 100, y: 100 });
+    tank.params = { ...tank.params, ...invalidCase.params };
+    const originalParams = { ...tank.params };
+    const result = normalizeDeviceOperatingLimitsAfterTopology([tank]);
+    const warning = result.warnings.find((item) => item.type === "hydrogen-storage-parameter-invalid");
+
+    expect(warning).toMatchObject({
+      nodeId: tank.id,
+      relatedNodeIds: [tank.id],
+      message: expect.stringContaining(invalidCase.message)
+    });
+    expect(isBlockingTopologyValidationError(warning!)).toBe(true);
+    expect(result.nodes[0].params).toEqual(originalParams);
+    expect(result.corrections).toEqual([]);
+  }
 });
 
 test("normalizes generator and storage limits after topology without mutating the input nodes", () => {
