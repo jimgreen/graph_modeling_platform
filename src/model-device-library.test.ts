@@ -2654,7 +2654,7 @@ test("filters container body parameters to the current container variant", () =>
   }
 });
 
-test("defines numeric storage volume and pressure limits for every hydrogen tank variant", () => {
+test("defines static limits and measurement parameters for every hydrogen tank variant", () => {
   for (const kind of ["hydrogen-tank", "hydrogen-tank-horizontal", "hydrogen-tank-container"] as const) {
     const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
     const node = createDefaultNode(kind, { x: 0, y: 0 });
@@ -2665,11 +2665,19 @@ test("defines numeric storage volume and pressure limits for every hydrogen tank
     expect(node.params).toMatchObject({
       water_volume: "50",
       pressure_max: "45",
-      pressure_min: "2"
+      pressure_min: "2",
+      pressure: "35",
+      flow: "0",
+      gas_quantity: "0",
+      soc: "0.5"
     });
     expect(definitionByName.get("water_volume")).toMatchObject({ valueType: "float", typicalValue: "50" });
     expect(definitionByName.get("pressure_max")).toMatchObject({ valueType: "float", typicalValue: "45" });
     expect(definitionByName.get("pressure_min")).toMatchObject({ valueType: "float", typicalValue: "2" });
+    expect(definitionByName.get("pressure")).toMatchObject({ cnName: "储气压(MPa)", valueType: "float", typicalValue: "35" });
+    expect(definitionByName.get("flow")).toMatchObject({ cnName: "流量(Nm3/h)", valueType: "float", typicalValue: "0" });
+    expect(definitionByName.get("gas_quantity")).toMatchObject({ cnName: "储气量(Nm3)", valueType: "float", typicalValue: "0" });
+    expect(definitionByName.get("soc")).toMatchObject({ cnName: "soc", valueType: "float", typicalValue: "0.5" });
   }
 });
 

@@ -14,6 +14,7 @@ import {
   resolveMeasurementItemDisplay
 } from "./measurements";
 import type { MeasurementRuntimeValue, ProjectMeasurementConfig } from "./measurements";
+import { DEVICE_LIBRARY, getTemplateParameterDefinitions } from "./model";
 import type { ModelNode } from "./model";
 
 const node = (id: string, kind = "ac-load"): ModelNode => ({
@@ -240,6 +241,8 @@ describe("measurement domain", () => {
 
     for (const kind of ["hydrogen-tank", "hydrogen-tank-horizontal", "hydrogen-tank-container"] as const) {
       const profile = DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.find((item) => item.deviceKind === kind);
+      const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
+      const parameterNames = new Set(getTemplateParameterDefinitions(template).map((definition) => definition.enName));
       expect(profile?.items).toEqual([
         expect.objectContaining({ measurementTypeId: "pressure", associatedField: "pressure", labelOverride: "PRESS", unitOverride: "MPa" }),
         expect.objectContaining({ measurementTypeId: "flow", associatedField: "flow", labelOverride: "FLOW", unitOverride: "Nm3/h" }),
@@ -254,6 +257,10 @@ describe("measurement domain", () => {
         expect.objectContaining({ measurementTypeId: "gasQuantity", sourcePoint: `${kind}-node.gas_quantity`, labelOverride: "GAS_QUANTITY", unitOverride: "Nm3" }),
         expect.objectContaining({ measurementTypeId: "soc", sourcePoint: `${kind}-node.soc`, labelOverride: "SOC", unitOverride: "%" })
       ]);
+      expect(profile?.items.map((item) => item.associatedField)).toEqual(["pressure", "flow", "gas_quantity", "soc"]);
+      for (const item of profile?.items ?? []) {
+        expect(parameterNames.has(item.associatedField ?? ""), `${kind}:${item.associatedField}`).toBe(true);
+      }
     }
   });
 

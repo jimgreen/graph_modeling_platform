@@ -2594,6 +2594,21 @@ export const COMPONENT_LIBRARY_REVERSE_MAPPING: Record<string, string> = {
   "ACNode+交流母线": "ACNode"
 };
 
+const HYDROGEN_TANK_MEASUREMENT_PARAMETER_DEFINITIONS: DeviceParameterDefinition[] = [
+  {
+    cnName: "储气压(MPa)",
+    enName: "pressure",
+    valueType: "float",
+    typicalValue: "35",
+    readonly: false,
+    exportEnabled: true,
+    exportName: "pressure"
+  },
+  { cnName: "流量(Nm3/h)", enName: "flow", valueType: "float", typicalValue: "0", readonly: false },
+  { cnName: "储气量(Nm3)", enName: "gas_quantity", valueType: "float", typicalValue: "0", readonly: false },
+  { cnName: "soc", enName: "soc", valueType: "float", typicalValue: "0.5", readonly: false }
+];
+
 const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-text",
@@ -3050,10 +3065,14 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       capacity: "1000 kg",
       waterVolume: "50",
       pressureMax: "45",
-      pressureMin: "2"
+      pressureMin: "2",
+      flow: "0",
+      gas_quantity: "0",
+      soc: "0.5"
     },
     terminalType: "h2",
-    terminalCount: 0
+    terminalCount: 0,
+    parameterDefinitions: HYDROGEN_TANK_MEASUREMENT_PARAMETER_DEFINITIONS
   },
   {
     kind: "hydrogen-tank-horizontal",
@@ -3066,10 +3085,14 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       waterVolume: "50",
       pressureMax: "45",
       pressureMin: "2",
-      storageType: "horizontal"
+      storageType: "horizontal",
+      flow: "0",
+      gas_quantity: "0",
+      soc: "0.5"
     },
     terminalType: "h2",
-    terminalCount: 0
+    terminalCount: 0,
+    parameterDefinitions: HYDROGEN_TANK_MEASUREMENT_PARAMETER_DEFINITIONS
   },
   {
     kind: "hydrogen-tank-container",
@@ -3082,10 +3105,14 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       waterVolume: "50",
       pressureMax: "45",
       pressureMin: "2",
-      storageType: "container"
+      storageType: "container",
+      flow: "0",
+      gas_quantity: "0",
+      soc: "0.5"
     },
     terminalType: "h2",
-    terminalCount: 0
+    terminalCount: 0,
+    parameterDefinitions: HYDROGEN_TANK_MEASUREMENT_PARAMETER_DEFINITIONS
   },
   {
     kind: "hydrogen-load",
@@ -3997,7 +4024,9 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   flow_rate: "float",
   flow_set: "float",
   frequency: "float",
+  flow: "float",
   fuel_tank_capacity: "float",
+  gas_quantity: "float",
   g_set: "float",
   generator_efficiency: "float",
   gt: "float",
@@ -4079,6 +4108,7 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   shift2: "float",
   shift3: "float",
   short_circuit_capacity: "float",
+  soc: "float",
   soc_lower_limit: "float",
   soc_upper_limit: "float",
   specific_fuel_consumption: "float",
