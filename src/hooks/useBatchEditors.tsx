@@ -332,11 +332,11 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
   };
 
   const updateNodeDoubleClickDraftParam = (nodeId: string, key: string, value: string) => {
-    const storedValue = normalizeRatioParameterInputValue(key, value);
-    if (storedValue === null) {
-      return;
-    }
     updateNodeDoubleClickDraftNode(nodeId, (node) => {
+      const storedValue = normalizeRatioParameterInputValue(key, value, inferESection(node.kind, node.params));
+      if (storedValue === null) {
+        return node;
+      }
       if (key !== "_labelDisplayMode" && node.params[key] === storedValue) {
         return node;
       }

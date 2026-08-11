@@ -252,8 +252,8 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   Hydro2AcE: ["idx", "name", "control_type", "h2e_coeff", "run_stat", "idx_ac_unit_t1", "idx_h2_load_t2"],
   Hydro2DcE: ["idx", "name", "control_type", "h2e_coeff", "run_stat", "idx_dc_unit_t1", "idx_h2_load_t2"],
   HeatNode: ["idx", "name", "pressure", "supply_temperature", "return_temperature", "run_stat"],
-  HeatSource: ["idx", "name", "node", "run_stat"],
-  HeatSource2: ["idx", "name", "i_node", "j_node", "run_stat"],
+  HeatSource: ["idx", "name", "node", "supply_temperature_set", "run_stat"],
+  HeatSource2: ["idx", "name", "i_node", "j_node", "supply_temperature_set", "run_stat"],
   HeatLoad: ["idx", "name", "node", "run_stat"],
   HeatLoad2: ["idx", "name", "i_node", "j_node", "run_stat"],
   HeatPipe: ["idx", "name", "i_node", "j_node", "run_stat"],
@@ -262,10 +262,10 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   HeatStorage: ["idx", "name", "node", "run_stat"],
   HeatBoiler: ["idx", "name", "run_stat", "idx_heat_unit_t1"],
   HeatBoiler2: ["idx", "name", "run_stat", "idx_heat2_unit_t1"],
-  AcElec2Heat: ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_heat_unit_t2"],
-  DcElec2Heat: ["idx", "name", "run_stat", "idx_dc_load_t1", "idx_heat_unit_t2"],
-  AcElec2Heat2: ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_heat2_unit_t2"],
-  DcElec2Heat2: ["idx", "name", "run_stat", "idx_dc_load_t1", "idx_heat2_unit_t2"],
+  AcE2Heat: ["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_ac_load_t1", "idx_heat_unit_t2"],
+  DcE2Heat: ["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_dc_load_t1", "idx_heat_unit_t2"],
+  AcE2Heat2: ["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_ac_load_t1", "idx_heat2_unit_t2"],
+  DcE2Heat2: ["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_dc_load_t1", "idx_heat2_unit_t2"],
   HeatExchanger: ["idx", "name", "i_node", "j_node", "run_stat"],
   HeatExchanger3: ["idx", "name", "node1", "node2", "node3", "run_stat"],
   HeatExchanger4: ["idx", "name", "node1", "node2", "node3", "node4", "run_stat"],
@@ -298,10 +298,10 @@ const E_KIND_SECTION_MAP: Record<string, string> = {
   "thermal-storage-tank": "HeatStorage",
   "heat-boiler": "HeatBoiler",
   "two-port-heat-boiler": "HeatBoiler2",
-  "ac-heater": "AcElec2Heat",
-  "dc-heater": "DcElec2Heat",
-  "ac-two-port-heater": "AcElec2Heat2",
-  "dc-two-port-heater": "DcElec2Heat2",
+  "ac-heater": "AcE2Heat",
+  "dc-heater": "DcE2Heat",
+  "ac-two-port-heater": "AcE2Heat2",
+  "dc-two-port-heater": "DcE2Heat2",
   "heat-exchanger": "HeatExchanger",
   "three-port-heat-exchanger": "HeatExchanger3",
   "four-port-heat-exchanger": "HeatExchanger4",
@@ -416,10 +416,10 @@ const E_SECTION_OUTPUT_ORDER = [
   "HeatStorage",
   "HeatBoiler",
   "HeatBoiler2",
-  "AcElec2Heat",
-  "DcElec2Heat",
-  "AcElec2Heat2",
-  "DcElec2Heat2",
+  "AcE2Heat",
+  "DcE2Heat",
+  "AcE2Heat2",
+  "DcE2Heat2",
   "HeatExchanger",
   "HeatExchanger3",
   "HeatExchanger4",
@@ -535,6 +535,8 @@ const E_FLOAT_COLUMNS = new Set([
   "j_q_set",
   "i_v_set",
   "j_v_set",
+  "supply_temperature",
+  "supply_temperature_set",
   "e2h_coeff",
   "h2e_coeff"
 ]);
@@ -1672,6 +1674,7 @@ export function defaultContainerAssociatedColumnValue(section: string, column: s
   }
   if (section === "ACGenerator" && column === "control_type") return "PV";
   if (section === "DCGenerator" && column === "control_type") return "P";
+  if ((section === "HeatSource" || section === "HeatSource2") && column === "supply_temperature_set") return "95";
   return defaultEColumnValue(column, rowIndex);
 }
 

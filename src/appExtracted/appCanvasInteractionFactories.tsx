@@ -2375,7 +2375,7 @@ export function createHandleCanvasSizeKeyDown(__appScope: Record<string, any>) {
 
 export function createUpdateParam(__appScope: Record<string, any>) {
   return (key: string, value: string) => {
-  const { NODE_LABEL_FOOTPRINT_PARAM_KEYS, commitNodeFootprintUpdates, nodeById, normalizeNodeLabelDisplayMode, normalizeRatioParameterInputValue, patchGraphNodes, pushNodeOnlyUndoSnapshot, pushUndoSnapshot, requireEditMode, selectedNodeId, undoScopeForNodeFootprintPatch } = __appScope;
+  const { NODE_LABEL_FOOTPRINT_PARAM_KEYS, commitNodeFootprintUpdates, inferESection, nodeById, normalizeNodeLabelDisplayMode, normalizeRatioParameterInputValue, patchGraphNodes, pushNodeOnlyUndoSnapshot, pushUndoSnapshot, requireEditMode, selectedNodeId, undoScopeForNodeFootprintPatch } = __appScope;
     if (!requireEditMode("修改图元参数")) {
       return;
     }
@@ -2387,7 +2387,11 @@ export function createUpdateParam(__appScope: Record<string, any>) {
       return;
     }
     const storedValue = typeof normalizeRatioParameterInputValue === "function"
-      ? normalizeRatioParameterInputValue(key, value)
+      ? normalizeRatioParameterInputValue(
+          key,
+          value,
+          typeof inferESection === "function" ? inferESection(currentNode.kind, currentNode.params) : undefined
+        )
       : value;
     if (storedValue === null) {
       return;
@@ -2471,15 +2475,24 @@ export function createApplyBatchCommonParamPatch(__appScope: Record<string, any>
 
 export function createApplyBatchCommonParam(__appScope: Record<string, any>) {
   return (key: string, value: string) => {
-  const { PARAM_LABELS, applyBatchCommonParamPatch, canBatchEditParam, normalizeNodeLabelDisplayMode, normalizeRatioParameterInputValue } = __appScope;
+  const { PARAM_LABELS, applyBatchCommonParamPatch, canBatchEditParam, inferESection, nodeById, normalizeNodeLabelDisplayMode, normalizeRatioParameterInputValue, selectedNodeIds } = __appScope;
     if (!canBatchEditParam(key)) {
       return;
     }
-    const storedValue = typeof normalizeRatioParameterInputValue === "function"
-      ? normalizeRatioParameterInputValue(key, value)
-      : value;
-    if (storedValue === null) {
-      return;
+    const selectedSections = typeof inferESection === "function" && nodeById instanceof Map && selectedNodeIds
+      ? new Set(Array.from(selectedNodeIds as Iterable<string>).map((nodeId) => {
+          const node = nodeById.get(nodeId);
+          return node ? inferESection(node.kind, node.params) : "";
+        }).filter(Boolean))
+      : new Set<string>();
+    let storedValue = value;
+    if (typeof normalizeRatioParameterInputValue === "function") {
+      const sections = selectedSections.size > 0 ? Array.from(selectedSections) : [undefined];
+      const normalizedValues = sections.map((section) => normalizeRatioParameterInputValue(key, value, section));
+      if (normalizedValues.some((normalizedValue) => normalizedValue === null)) {
+        return;
+      }
+      storedValue = normalizedValues[0] ?? value;
     }
     const normalizedLabelDisplayMode = key === "_labelDisplayMode" ? normalizeNodeLabelDisplayMode(storedValue) : undefined;
     const normalizedLabelVisible = normalizedLabelDisplayMode === "hidden" ? "0" : "1";

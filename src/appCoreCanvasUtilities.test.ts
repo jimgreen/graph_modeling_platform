@@ -26,6 +26,14 @@ describe("converter parameter options", () => {
     expect(PARAM_LABELS.e2h_coeff).toBe("电-气效率(Nm3/kWh)");
     expect(PARAM_LABELS.h2e_coeff).toBe("气-电效率(kWh/Nm3)");
   });
+
+  test("uses P and T only for electric-heat coupling controls", () => {
+    for (const section of ["AcE2Heat", "DcE2Heat", "AcE2Heat2", "DcE2Heat2"]) {
+      expect(paramOptionsForSection("control_type", section), section).toEqual(["P", "T"]);
+    }
+    expect(PARAM_LABELS.supply_temperature).toBe("供水温度");
+    expect(PARAM_LABELS.supply_temperature_set).toBe("出口温度设定值");
+  });
 });
 
 describe("hydrogen tank parameter labels", () => {

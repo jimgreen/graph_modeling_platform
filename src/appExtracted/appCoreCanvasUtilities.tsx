@@ -119,6 +119,7 @@ import {
   DC_GENERATOR_CONTROL_TYPES,
   DCDC_CONVERTER_CONTROL_TYPES,
   HYDROGEN_COUPLING_CONTROL_TYPES,
+  ELECTRIC_HEAT_COUPLING_CONTROL_TYPES,
   E_SECTION_COLUMNS,
   getEdgeEndpointPoint as getModelEdgeEndpointPoint,
   getNodeScaleX,
@@ -2139,10 +2140,10 @@ export const COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   HeatStorage: "储热",
   HeatBoiler: "单端锅炉",
   HeatBoiler2: "双端锅炉",
-  AcElec2Heat: "交流电制热",
-  DcElec2Heat: "直流电制热",
-  AcElec2Heat2: "交流电制热双端",
-  DcElec2Heat2: "直流电制热双端",
+  AcE2Heat: "交流电制热",
+  DcE2Heat: "直流电制热",
+  AcE2Heat2: "交流电制热双端",
+  DcE2Heat2: "直流电制热双端",
   HeatExchanger: "双端换热器",
   HeatExchanger3: "三端换热器",
   HeatExchanger4: "四端换热器",
@@ -3289,6 +3290,8 @@ export const PARAM_LABELS: Record<string, string> = {
   flow_set: "流量设定值",
   e2h_coeff: "电-气效率(Nm3/kWh)",
   h2e_coeff: "气-电效率(kWh/Nm3)",
+  supply_temperature: "供水温度",
+  supply_temperature_set: "出口温度设定值",
   p_max: "有功上限",
   p_min: "有功下限",
   v_max: "电压上限",
@@ -3417,6 +3420,7 @@ export const STATIC_BUTTON_COMMAND_LABELS: Record<string, string> = {
 };
 
 export const PARAM_OPTION_LABELS: Record<string, Record<string, string>> = {
+  control_type: { P: "定电功率", T: "定出口温度", FLOW: "定气流量" },
   fontFamily: FONT_FAMILY_OPTION_LABELS,
   _labelFontFamily: FONT_FAMILY_OPTION_LABELS,
   _labelDisplayMode: { always: "始终显示", hidden: "始终隐藏", follow: "跟随显示" },
@@ -3496,6 +3500,9 @@ export function paramOptionsForSection(key: string, section?: string) {
     ["AcE2Hydro", "DcE2Hydro", "Hydro2AcE", "Hydro2DcE"].includes(section ?? "")
   ) {
     return [...HYDROGEN_COUPLING_CONTROL_TYPES];
+  }
+  if (key === "control_type" && ["AcE2Heat", "DcE2Heat", "AcE2Heat2", "DcE2Heat2"].includes(section ?? "")) {
+    return [...ELECTRIC_HEAT_COUPLING_CONTROL_TYPES];
   }
   if (key === "control_type" && section === "ACGenerator") {
     return [...AC_GENERATOR_CONTROL_TYPES];

@@ -80,6 +80,34 @@ describe("batch common parameter updates", () => {
     expect(patchGraphNodes).toHaveBeenCalledTimes(1);
     expect(patchGraphNodes.mock.calls[0][0].every((node: typeof firstStorage) => node.params.state_of_charge === "0.99")).toBe(true);
   });
+
+  test("validates electric heat coefficients against every selected E section", () => {
+    const acHeater = createDefaultNode("ac-heater", { x: 100, y: 100 });
+    const dcTwoPortHeater = createDefaultNode("dc-two-port-heater", { x: 240, y: 100 });
+    const applyBatchCommonParamPatch = vi.fn();
+    const applyBatchCommonParam = createApplyBatchCommonParam({
+      PARAM_LABELS: { e2h_coeff: "电转热效率" },
+      applyBatchCommonParamPatch,
+      canBatchEditParam: vi.fn(() => true),
+      inferESection: (kind: string) => kind === "ac-heater" ? "AcE2Heat" : "DcE2Heat2",
+      nodeById: new Map([
+        [acHeater.id, acHeater],
+        [dcTwoPortHeater.id, dcTwoPortHeater]
+      ]),
+      normalizeNodeLabelDisplayMode: (value: string) => value,
+      normalizeRatioParameterInputValue,
+      selectedNodeIds: new Set([acHeater.id, dcTwoPortHeater.id])
+    });
+
+    applyBatchCommonParam("e2h_coeff", "2.5");
+
+    expect(applyBatchCommonParamPatch).toHaveBeenCalledTimes(1);
+    expect(applyBatchCommonParamPatch.mock.calls[0][1]()).toEqual({ e2h_coeff: "2.5" });
+
+    applyBatchCommonParam("e2h_coeff", "0.2");
+
+    expect(applyBatchCommonParamPatch).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("single device parameter updates", () => {

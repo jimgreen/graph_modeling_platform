@@ -139,6 +139,27 @@ describe("measurement configuration normalization", () => {
       "idx", "name", "control_type", "h2e_coeff", "run_stat", "idx_dc_unit_t1", "idx_h2_load_t2"
     ]);
   });
+
+  test("keeps electric-heat controls and heat-source setpoints aligned with the frontend E interface", () => {
+    expect(eSectionColumns.HeatSource).toEqual(["idx", "name", "node", "supply_temperature_set", "run_stat"]);
+    expect(eSectionColumns.HeatSource2).toEqual(["idx", "name", "i_node", "j_node", "supply_temperature_set", "run_stat"]);
+    expect(eSectionColumns.AcE2Heat).toEqual([
+      "idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_ac_load_t1", "idx_heat_unit_t2"
+    ]);
+    expect(eSectionColumns.DcE2Heat).toEqual([
+      "idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_dc_load_t1", "idx_heat_unit_t2"
+    ]);
+    expect(eSectionColumns.AcE2Heat2).toEqual([
+      "idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_ac_load_t1", "idx_heat2_unit_t2"
+    ]);
+    expect(eSectionColumns.DcE2Heat2).toEqual([
+      "idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_dc_load_t1", "idx_heat2_unit_t2"
+    ]);
+    expect(eSectionColumns.AcElec2Heat).toBeUndefined();
+    expect(eSectionColumns.DcElec2Heat).toBeUndefined();
+    expect(eSectionColumns.AcElec2Heat2).toBeUndefined();
+    expect(eSectionColumns.DcElec2Heat2).toBeUndefined();
+  });
 });
 
 describe("icon library import", () => {

@@ -64,6 +64,7 @@ import {
   AC_GENERATOR_CONTROL_TYPES,
   DC_GENERATOR_CONTROL_TYPES,
   HYDROGEN_COUPLING_CONTROL_TYPES,
+  ELECTRIC_HEAT_COUPLING_CONTROL_TYPES,
   E_SECTION_COLUMNS,
   tidyOrthogonalRoute,
   renameSavedProject,
@@ -1051,6 +1052,7 @@ test("exports electric heat containers to AC and DC specific E sections", () => 
   const dcHeater = assignPermanentDeviceIndex(createDefaultNode("dc-heater", { x: 240, y: 100 }), {}).node;
   const acTwoPortHeater = assignPermanentDeviceIndex(createDefaultNode("ac-two-port-heater", { x: 380, y: 100 }), {}).node;
   const dcTwoPortHeater = assignPermanentDeviceIndex(createDefaultNode("dc-two-port-heater", { x: 520, y: 100 }), {}).node;
+  acTwoPortHeater.params.control_type = "T";
   const exported = parseESections(buildEDeviceParameterFile({
     version: 1,
     name: "电制热导出",
@@ -1058,16 +1060,28 @@ test("exports electric heat containers to AC and DC specific E sections", () => 
     edges: []
   }));
 
-  expect(exported.AcElec2Heat.columns).toEqual(["idx", "name", "run_stat", "idx_ac_load_t1", "idx_heat_unit_t2"]);
-  expect(exported.DcElec2Heat.columns).toEqual(["idx", "name", "run_stat", "idx_dc_load_t1", "idx_heat_unit_t2"]);
-  expect(exported.AcElec2Heat2.columns).toEqual(["idx", "name", "run_stat", "idx_ac_load_t1", "idx_heat2_unit_t2"]);
-  expect(exported.DcElec2Heat2.columns).toEqual(["idx", "name", "run_stat", "idx_dc_load_t1", "idx_heat2_unit_t2"]);
+  expect(exported.AcE2Heat.columns).toEqual(["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_ac_load_t1", "idx_heat_unit_t2"]);
+  expect(exported.DcE2Heat.columns).toEqual(["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_dc_load_t1", "idx_heat_unit_t2"]);
+  expect(exported.AcE2Heat2.columns).toEqual(["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_ac_load_t1", "idx_heat2_unit_t2"]);
+  expect(exported.DcE2Heat2.columns).toEqual(["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_dc_load_t1", "idx_heat2_unit_t2"]);
+  expect(exported.AcE2Heat.rows[0]).toMatchObject({ control_type: "P", e2h_coeff: "1.0" });
+  expect(exported.DcE2Heat.rows[0]).toMatchObject({ control_type: "P", e2h_coeff: "1.0" });
+  expect(exported.AcE2Heat2.rows[0]).toMatchObject({ control_type: "T", e2h_coeff: "1.0" });
+  expect(exported.DcE2Heat2.rows[0]).toMatchObject({ control_type: "P", e2h_coeff: "1.0" });
+  expect(exported.HeatSource.columns).toEqual(["idx", "name", "node", "supply_temperature_set", "run_stat"]);
+  expect(exported.HeatSource.rows.map((row) => row.supply_temperature_set)).toEqual(["95", "95"]);
+  expect(exported.HeatSource2.columns).toEqual(["idx", "name", "i_node", "j_node", "supply_temperature_set", "run_stat"]);
+  expect(exported.HeatSource2.rows.map((row) => row.supply_temperature_set)).toEqual(["95", "95"]);
   expect(exported.Elec2Heat).toBeUndefined();
   expect(exported.Elec2Heat2).toBeUndefined();
-  expect(inferESection("ac-heater", acHeater.params)).toBe("AcElec2Heat");
-  expect(inferESection("dc-heater", dcHeater.params)).toBe("DcElec2Heat");
-  expect(inferESection("ac-two-port-heater", acTwoPortHeater.params)).toBe("AcElec2Heat2");
-  expect(inferESection("dc-two-port-heater", dcTwoPortHeater.params)).toBe("DcElec2Heat2");
+  expect(exported.AcElec2Heat).toBeUndefined();
+  expect(exported.DcElec2Heat).toBeUndefined();
+  expect(exported.AcElec2Heat2).toBeUndefined();
+  expect(exported.DcElec2Heat2).toBeUndefined();
+  expect(inferESection("ac-heater", acHeater.params)).toBe("AcE2Heat");
+  expect(inferESection("dc-heater", dcHeater.params)).toBe("DcE2Heat");
+  expect(inferESection("ac-two-port-heater", acTwoPortHeater.params)).toBe("AcE2Heat2");
+  expect(inferESection("dc-two-port-heater", dcTwoPortHeater.params)).toBe("DcE2Heat2");
 });
 
 test("allocates permanent device idx by E section without reusing deleted gaps", () => {
@@ -2228,7 +2242,7 @@ test("keeps every built-in device parameter aligned with its semantic type and n
     "qv1", "qv2", "r", "r1", "r2", "r3", "rated_capacity", "rated_current", "rated_power", "rated_speed",
     "rated_voltage", "rated_wind_speed", "reactive_power", "reactor_thermal_power", "reference_irradiance", "reference_temperature", "return_temperature", "rotor_diameter",
     "shift", "shift1", "shift2", "shift3", "short_circuit_capacity", "soc_lower_limit", "soc_upper_limit",
-    "specific_fuel_consumption", "start_time", "state_of_charge", "supply_temperature", "tap", "tap1", "tap2", "tap3",
+    "specific_fuel_consumption", "start_time", "state_of_charge", "supply_temperature", "supply_temperature_set", "tap", "tap1", "tap2", "tap3",
     "temperature", "temperature_coefficient", "thermal_efficiency", "v_ac_set", "v_dc_set", "v_max", "v_min", "v_set", "vbase", "voltage", "voltage_level", "water_volume", "x",
     "x1", "x2", "x3", "x_pu"
   ]);
@@ -2273,8 +2287,11 @@ test("keeps every built-in device parameter aligned with its semantic type and n
       }
       if (definition.enName === "control_type") {
         const hydrogenCoupling = ["AcE2Hydro", "DcE2Hydro", "Hydro2AcE", "Hydro2DcE"].includes(section ?? "");
+        const electricHeatCoupling = ["AcE2Heat", "DcE2Heat", "AcE2Heat2", "DcE2Heat2"].includes(section ?? "");
         const expectedOptions = hydrogenCoupling
           ? [...HYDROGEN_COUPLING_CONTROL_TYPES]
+          : electricHeatCoupling
+            ? [...ELECTRIC_HEAT_COUPLING_CONTROL_TYPES]
           : section === "ACGenerator"
             ? [...AC_GENERATOR_CONTROL_TYPES]
             : [...DC_GENERATOR_CONTROL_TYPES];

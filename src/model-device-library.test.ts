@@ -1409,6 +1409,10 @@ test("formats SOC and efficiency values as percentages while storing decimal rat
   expect(normalizeRatioParameterInputValue("e2h_coeff", "0.5")).toBe("0.5");
   expect(normalizeRatioParameterInputValue("e2h_coeff", "0.09")).toBeNull();
   expect(normalizeRatioParameterInputValue("e2h_coeff", "0.51")).toBeNull();
+  expect(normalizeRatioParameterInputValue("e2h_coeff", "0.5", "AcE2Heat")).toBe("0.5");
+  expect(normalizeRatioParameterInputValue("e2h_coeff", "5.0", "DcE2Heat2")).toBe("5");
+  expect(normalizeRatioParameterInputValue("e2h_coeff", "0.49", "AcE2Heat2")).toBeNull();
+  expect(normalizeRatioParameterInputValue("e2h_coeff", "5.01", "DcE2Heat")).toBeNull();
   expect(normalizeRatioParameterInputValue("h2e_coeff", "1.0")).toBe("1");
   expect(normalizeRatioParameterInputValue("h2e_coeff", "2.0")).toBe("2");
   expect(normalizeRatioParameterInputValue("h2e_coeff", "0.99")).toBeNull();
@@ -2233,6 +2237,33 @@ test("defines electric-hydrogen coupling controls and directional coefficients",
   }
 });
 
+test("defines electric-heat coupling controls and conversion coefficients", () => {
+  for (const kind of ["ac-heater", "dc-heater", "ac-two-port-heater", "dc-two-port-heater"] as const) {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
+    const node = createDefaultNode(kind, { x: 100, y: 100 });
+    const definitionByName = new Map(
+      getTemplateParameterDefinitions(template).map((definition) => [definition.enName, definition])
+    );
+
+    expect(node.params.control_type, kind).toBe("P");
+    expect(node.params.e2h_coeff, kind).toBe("1.0");
+    expect(definitionByName.get("control_type"), kind).toMatchObject({
+      cnName: "控制类型",
+      valueType: "stringEnum",
+      typicalValue: "P",
+      enumOptions: [
+        { value: "P", label: "定电功率" },
+        { value: "T", label: "定出口温度" }
+      ]
+    });
+    expect(definitionByName.get("e2h_coeff"), kind).toMatchObject({
+      cnName: "电转热效率(kWh/kWh)",
+      valueType: "float",
+      typicalValue: "1.0"
+    });
+  }
+});
+
 test("includes thermal equipment library with heat network and mixed electric-thermal ports", () => {
   const expected = [
     ["heat-boiler", "供热锅炉", ["heat"], "single-heat-boiler"],
@@ -2605,8 +2636,8 @@ test("filters container body parameters to the current container variant", () =>
     ["dc-electrolyzer", ["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_dc_load_t1", "idx_h2_unit_t2"], ["h2e_coeff", "idx_ac_load_t1", "is_container", "p_set", "flow_set"]],
     ["ac-fuel-cell", ["idx", "name", "control_type", "h2e_coeff", "run_stat", "idx_ac_unit_t1", "idx_h2_load_t2"], ["e2h_coeff", "idx_dc_unit_t1", "is_container", "p_set", "flow_set"]],
     ["dc-fuel-cell", ["idx", "name", "control_type", "h2e_coeff", "run_stat", "idx_dc_unit_t1", "idx_h2_load_t2"], ["e2h_coeff", "idx_ac_unit_t1", "is_container", "p_set", "flow_set"]],
-    ["ac-heater", ["idx", "name", "run_stat", "idx_ac_load_t1", "idx_heat_unit_t2"], ["idx_dc_load_t1", "is_container"]],
-    ["dc-heater", ["idx", "name", "run_stat", "idx_dc_load_t1", "idx_heat_unit_t2"], ["idx_ac_load_t1", "is_container"]]
+    ["ac-heater", ["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_ac_load_t1", "idx_heat_unit_t2"], ["idx_dc_load_t1", "is_container"]],
+    ["dc-heater", ["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_dc_load_t1", "idx_heat_unit_t2"], ["idx_ac_load_t1", "is_container"]]
   ] as const;
 
   for (const [kind, includedKeys, excludedKeys] of expected) {

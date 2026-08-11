@@ -1734,7 +1734,8 @@ export const normalizeDefinitionRowEnumFields = <T extends DeviceParameterDefini
 export const renderTypicalValueEditor = <T extends DeviceParameterDefinition & { id: string }>(
   row: T,
   updateRow: (rowId: string, patch: Partial<T>) => void,
-  disabled = false
+  disabled = false,
+  section?: string
 ) => {
   if (definitionRowIsEnum(row)) {
     const enumOptions = normalizeEnumOptionsForRow(row);
@@ -1760,7 +1761,7 @@ export const renderTypicalValueEditor = <T extends DeviceParameterDefinition & {
       value={formatRatioParameterDisplayValue(row.enName, String(row.typicalValue ?? ""))}
       disabled={disabled}
       onCommit={(value) => {
-        const storedValue = normalizeRatioParameterInputValue(row.enName, value);
+        const storedValue = normalizeRatioParameterInputValue(row.enName, value, section);
         if (storedValue !== null) {
           updateRow(row.id, { typicalValue: storedValue } as Partial<T>);
         }

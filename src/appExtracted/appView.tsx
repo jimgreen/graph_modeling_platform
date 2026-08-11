@@ -3840,7 +3840,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                                     </select>
                                   </td>
                                   <td>
-                                    {renderTypicalValueEditor(row, updateDefinitionDraftRow, row.readonly)}
+                                    {renderTypicalValueEditor(row, updateDefinitionDraftRow, row.readonly, definitionDraftSection)}
                                   </td>
                                   <td>
                                     {renderEnumValuesEditor(row, updateDefinitionDraftRow, row.readonly)}
@@ -4377,7 +4377,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                             <td>{row.cnName}</td>
                             <td>{row.enName}</td>
                              <td>{parameterValueTypeLabelForDefinitionRow(row)}</td>
-                             <td>{renderTypicalValueEditor(defaultRow, updateDefaultParamRow, defaultRowDisabled)}</td>
+                             <td>{renderTypicalValueEditor(defaultRow, updateDefaultParamRow, defaultRowDisabled, customDeviceDraft.componentLibrary)}</td>
                              <td>{renderEnumValuesEditor(defaultRow, updateDefaultParamRow, defaultRowDisabled)}</td>
                              <td>默认</td>
                           </tr>);
@@ -4411,11 +4411,16 @@ export function renderAppView(__appScope: Record<string, any>) {
                         </select>
                       </td>
                       <td>
-                        {renderTypicalValueEditor(row, (rowId, patch) => setCustomDeviceDraft((current) => ({
-                    ...current,
-                    params: current.params.map((item) => (item.id === rowId ? { ...item, ...patch } : item)),
-                    error: ""
-                })))}
+                        {renderTypicalValueEditor(
+                          row,
+                          (rowId, patch) => setCustomDeviceDraft((current) => ({
+                            ...current,
+                            params: current.params.map((item) => (item.id === rowId ? { ...item, ...patch } : item)),
+                            error: ""
+                          })),
+                          false,
+                          customDeviceDraft.componentLibrary
+                        )}
                       </td>
                        <td>
                          {renderEnumValuesEditor(row, (rowId, patch) => setCustomDeviceDraft((current) => ({

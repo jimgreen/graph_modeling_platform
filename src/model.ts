@@ -607,6 +607,8 @@ const BOUNDED_NUMERIC_PARAMETER_RANGES: Record<string, readonly [number, number]
   e2h_coeff: [0.1, 0.5],
   h2e_coeff: [1.0, 2.0]
 };
+const ELECTRIC_HEAT_COUPLING_SECTIONS = new Set(["AcE2Heat", "DcE2Heat", "AcE2Heat2", "DcE2Heat2"]);
+const ELECTRIC_HEAT_E2H_COEFF_RANGE = [0.5, 5.0] as const;
 
 function numericPrefixForPowerDisplay(value: string) {
   const text = String(value ?? "").trim();
@@ -625,9 +627,11 @@ export function isPercentageRatioParameterName(name: string) {
     PERCENTAGE_RATIO_PARAMETER_NAMES.has(normalizedName);
 }
 
-export function normalizeRatioParameterInputValue(name: string, value: string): string | null {
+export function normalizeRatioParameterInputValue(name: string, value: string, section?: string): string | null {
   const normalizedName = toSnakeCaseDeviceParamName(String(name ?? ""));
-  const numericRange = BOUNDED_NUMERIC_PARAMETER_RANGES[normalizedName];
+  const numericRange = normalizedName === "e2h_coeff" && ELECTRIC_HEAT_COUPLING_SECTIONS.has(section ?? "")
+    ? ELECTRIC_HEAT_E2H_COEFF_RANGE
+    : BOUNDED_NUMERIC_PARAMETER_RANGES[normalizedName];
   if (numericRange) {
     const text = String(value ?? "").trim();
     if (!RATIO_PARAMETER_INPUT_PATTERN.test(text)) {
@@ -1566,6 +1570,7 @@ export const DCDC_CONVERTER_CONTROL_TYPES = DCAC_DC_CONTROL_TYPES;
 export const AC_GENERATOR_CONTROL_TYPES = ["PV", "PQ", "PH"] as const;
 export const DC_GENERATOR_CONTROL_TYPES = ["P", "V", "I", "NONE"] as const;
 export const HYDROGEN_COUPLING_CONTROL_TYPES = ["P", "FLOW"] as const;
+export const ELECTRIC_HEAT_COUPLING_CONTROL_TYPES = ["P", "T"] as const;
 
 export function normalizeAcGeneratorControlTypeForE(value?: string) {
   if (!value) return "PV";
@@ -3282,7 +3287,13 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流电制热",
     categoryLibrary: "热能设备",
     size: { width: 108, height: 62 },
-    params: { ratedVoltage: "10 kV", ratedPower: "5 MW", heatPower: "4.8 MW" },
+    params: {
+      ratedVoltage: "10 kV",
+      ratedPower: "5 MW",
+      heatPower: "4.8 MW",
+      controlType: "P",
+      e2hCoeff: "1.0"
+    },
     terminalType: "ac",
     terminalCount: 2,
     terminalTypes: ["ac", "heat"],
@@ -3296,7 +3307,15 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "交流电制热2",
     categoryLibrary: "热能设备",
     size: { width: 116, height: 68 },
-    params: { ratedVoltage: "10 kV", ratedPower: "5 MW", heatPower: "4.8 MW", supplyTemperature: "95 degC", returnTemperature: "70 degC" },
+    params: {
+      ratedVoltage: "10 kV",
+      ratedPower: "5 MW",
+      heatPower: "4.8 MW",
+      supplyTemperature: "95 degC",
+      returnTemperature: "70 degC",
+      controlType: "P",
+      e2hCoeff: "1.0"
+    },
     terminalType: "ac",
     terminalCount: 3,
     terminalTypes: ["ac", "heat", "heat"],
@@ -3315,7 +3334,13 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流电制热",
     categoryLibrary: "热能设备",
     size: { width: 108, height: 62 },
-    params: { ratedVoltage: "750 V", ratedPower: "5 MW", heatPower: "4.8 MW" },
+    params: {
+      ratedVoltage: "750 V",
+      ratedPower: "5 MW",
+      heatPower: "4.8 MW",
+      controlType: "P",
+      e2hCoeff: "1.0"
+    },
     terminalType: "dc",
     terminalCount: 2,
     terminalTypes: ["dc", "heat"],
@@ -3329,7 +3354,15 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "直流电制热2",
     categoryLibrary: "热能设备",
     size: { width: 116, height: 68 },
-    params: { ratedVoltage: "750 V", ratedPower: "5 MW", heatPower: "4.8 MW", supplyTemperature: "95 degC", returnTemperature: "70 degC" },
+    params: {
+      ratedVoltage: "750 V",
+      ratedPower: "5 MW",
+      heatPower: "4.8 MW",
+      supplyTemperature: "95 degC",
+      returnTemperature: "70 degC",
+      controlType: "P",
+      e2hCoeff: "1.0"
+    },
     terminalType: "dc",
     terminalCount: 3,
     terminalTypes: ["dc", "heat", "heat"],
@@ -4052,6 +4085,7 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   start_time: "float",
   state_of_charge: "float",
   supply_temperature: "float",
+  supply_temperature_set: "float",
   tap: "float",
   tap1: "float",
   tap2: "float",
@@ -4301,6 +4335,43 @@ function normalizeHydrogenCouplingControlParameterDefinitions(
   });
 }
 
+function normalizeElectricHeatCouplingParameterDefinitions(
+  definitions: readonly DeviceParameterDefinition[]
+): DeviceParameterDefinition[] {
+  const options = [...ELECTRIC_HEAT_COUPLING_CONTROL_TYPES];
+  return definitions.map((definition) => {
+    const name = toSnakeCaseDeviceParamName(definition.enName);
+    if (name === "control_type") {
+      const normalizedValue = normalizeControlTypeForE(definition.typicalValue).toUpperCase();
+      const typicalValue = options.includes(normalizedValue as (typeof options)[number]) ? normalizedValue : "P";
+      return {
+        ...definition,
+        cnName: "控制类型",
+        enName: "control_type",
+        valueType: "stringEnum",
+        typicalValue,
+        enumValues: options,
+        enumOptions: [
+          { value: "P", label: "定电功率" },
+          { value: "T", label: "定出口温度" }
+        ]
+      };
+    }
+    if (name === "e2h_coeff") {
+      return {
+        ...definition,
+        cnName: "电转热效率(kWh/kWh)",
+        enName: "e2h_coeff",
+        valueType: "float",
+        typicalValue: definition.typicalValue === "1.0"
+          ? "1.0"
+          : normalizeRatioParameterInputValue("e2h_coeff", definition.typicalValue, "AcE2Heat") ?? "1.0"
+      };
+    }
+    return definition;
+  });
+}
+
 function normalizeESectionParameterDefinitions(
   section: string,
   definitions: readonly DeviceParameterDefinition[]
@@ -4316,6 +4387,9 @@ function normalizeESectionParameterDefinitions(
   }
   if (HYDROGEN_COUPLING_SECTIONS.has(section)) {
     return normalizeHydrogenCouplingControlParameterDefinitions(section, definitions);
+  }
+  if (ELECTRIC_HEAT_COUPLING_SECTIONS.has(section)) {
+    return normalizeElectricHeatCouplingParameterDefinitions(definitions);
   }
   return [...definitions];
 }
@@ -5055,6 +5129,12 @@ export function associatedNodeColumnValue(
   }
   if (column === "run_stat") {
     return node.params[paramKey] ?? (normalizeRunStatForE(node.params.run_stat) || "1");
+  }
+  if (column === "supply_temperature_set") {
+    return node.params[paramKey]
+      ?? deviceParamValue(node.params, "supply_temperature_set")
+      ?? deviceParamValue(node.params, "supply_temperature")
+      ?? defaultContainerAssociatedColumnValue(section, column);
   }
   if (transformerSide) {
     const sideValue = node.params[paramKey];
@@ -6675,11 +6755,17 @@ export function buildDefaultParams(template: DeviceTemplate): Record<string, str
       controlType
     })));
   }
-  if (templateKind === "ac-heater" || templateKind === "dc-heater" || templateKind === "ac-two-port-heater" || templateKind === "dc-two-port-heater") {
+  if (
+    templateKind === "ac-heater" ||
+    templateKind === "dc-heater" ||
+    templateKind === "ac-two-port-heater" ||
+    templateKind === "dc-two-port-heater"
+  ) {
     return withTemplateDefinitions(withRunStat(withDefaultVbase({
       ...template.params,
       ratedCapacity: deviceParamValue(template.params, "rated_power") ?? "5 MW",
-      controlType: template.terminalType === "ac" ? "PQ" : "P"
+      controlType: "P",
+      e2hCoeff: deviceParamValue(template.params, "e2h_coeff") ?? "1.0"
     })));
   }
   if (templateKind === "ac-line" || templateKind === "dc-line") {

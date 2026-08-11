@@ -28,7 +28,7 @@ function baseForESection(section) {
       || section.startsWith("Hydro2")) {
     return "氢能设备";
   }
-  if (section.startsWith("Heat") || section.startsWith("AcElec2Heat") || section.startsWith("DcElec2Heat")) {
+  if (section.startsWith("Heat") || section.startsWith("AcE2Heat") || section.startsWith("DcE2Heat")) {
     return "热能设备";
   }
   return "静态图元";
