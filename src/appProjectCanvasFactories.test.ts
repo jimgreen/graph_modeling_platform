@@ -5,6 +5,7 @@ import {
   createCommitLayoutNodePositions,
   createHandlePointerMove,
   createLoadSavedProject,
+  createRunTopologyCalculation,
   createSaveCurrentProject
 } from "./appExtracted/appProjectCanvasFactories";
 import { clampCanvasNoScrollOffset } from "./canvasViewport";
@@ -578,5 +579,147 @@ describe("automatic canvas layout", () => {
       }]
     });
     expect(pushUndoSnapshot).not.toHaveBeenCalled();
+  });
+});
+
+describe("topology calculation operating-limit normalization", () => {
+  test("calculates topology before validation and passes page units into limit normalization", () => {
+    const calls: string[] = [];
+    const sourceNodes = [{ id: "node-1", params: { ac_q_max: "0", ac_q_min: "0" } }];
+    const calculatedNodes = [{ id: "node-1", nodeNumber: "1", params: { ac_q_max: "0", ac_q_min: "0" } }];
+    const normalizedNodes = [{ id: "node-1", nodeNumber: "1", params: { ac_q_max: "10", ac_q_min: "-10" } }];
+    const setNodes = vi.fn();
+    const setTopology = vi.fn();
+    const setTopologyErrors = vi.fn();
+    const setTopologyStatus = vi.fn();
+    const showGlobalMessage = vi.fn();
+    (globalThis as any).showGlobalMessage = showGlobalMessage;
+    const calculateElectricalTopology = vi.fn(() => {
+      calls.push("calculate");
+      return calculatedNodes;
+    });
+    const validateTopology = vi.fn(() => {
+      calls.push("validate");
+      return [];
+    });
+    const normalizeDeviceOperatingLimitsAfterTopology = vi.fn(() => {
+      calls.push("normalize");
+      return { nodes: normalizedNodes, warnings: [], corrections: [] };
+    });
+    const nextTopology = { connectedComponents: [["node-1"]] };
+
+    createRunTopologyCalculation({
+      EMPTY_TOPOLOGY: { connectedComponents: [] },
+      buildTopology: vi.fn(() => nextTopology),
+      calculateElectricalTopology,
+      currentUnit: "A",
+      edges: [],
+      isBlockingTopologyValidationError: () => false,
+      locateTopologyError: vi.fn(),
+      nodes: sourceNodes,
+      normalizeDeviceOperatingLimitsAfterTopology,
+      powerUnit: "kW",
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: () => true,
+      setNodes,
+      setTopology,
+      setTopologyErrors,
+      setTopologyStatus,
+      skipNextTopologyStaleRef: { current: false },
+      topologyCalculationMessage: () => "拓扑成功",
+      validateTopology,
+      validateVoltageSetpointDeviations: vi.fn(() => []),
+      voltageUnit: "V",
+      writeOperationLog: vi.fn()
+    })();
+
+    expect(calls).toEqual(["calculate", "validate", "normalize"]);
+    expect(validateTopology).toHaveBeenCalledWith(calculatedNodes, [], { includeVoltageSetpointDeviations: false });
+    expect(normalizeDeviceOperatingLimitsAfterTopology).toHaveBeenCalledWith(calculatedNodes, {
+      powerUnit: "kW",
+      voltageUnit: "V",
+      currentUnit: "A",
+      skipVoltageNodeIds: expect.any(Set)
+    });
+    expect(normalizeDeviceOperatingLimitsAfterTopology.mock.calls[0][1].skipVoltageNodeIds.size).toBe(0);
+    expect(setNodes).toHaveBeenCalledWith(normalizedNodes);
+    expect(setTopology).toHaveBeenCalledWith(nextTopology);
+    expect(setTopologyErrors).toHaveBeenLastCalledWith([]);
+    expect(setTopologyStatus).toHaveBeenCalledWith({ state: "success", message: "成功，1 个拓扑岛" });
+    expect(showGlobalMessage).toHaveBeenCalledWith("拓扑成功");
+  });
+
+  test("skips voltage-dependent correction on invalid base voltage and persists only explicit limit corrections when topology is blocked", () => {
+    const originalNode = {
+      id: "node-1",
+      nodeNumber: "",
+      params: { ac_q_max: "0", ac_q_min: "0", untouched: "original" }
+    };
+    const calculatedNode = {
+      id: "node-1",
+      nodeNumber: "99",
+      params: { ac_q_max: "0", ac_q_min: "0", untouched: "calculated" }
+    };
+    const normalizedNode = {
+      ...calculatedNode,
+      params: { ...calculatedNode.params, ac_q_max: "10", ac_q_min: "-10" }
+    };
+    const blockingError = {
+      type: "missing-island-voltage",
+      nodeId: "node-1",
+      relatedNodeIds: ["node-1"],
+      message: "基准电压缺失"
+    };
+    const normalizeDeviceOperatingLimitsAfterTopology = vi.fn(() => ({
+      nodes: [normalizedNode],
+      warnings: [{
+        type: "device-limit-invalid",
+        nodeId: "node-1",
+        relatedNodeIds: ["node-1"],
+        message: "无功限值已修正"
+      }],
+      corrections: [
+        { nodeId: "node-1", paramKey: "ac_q_max", value: "10" },
+        { nodeId: "node-1", paramKey: "ac_q_min", value: "-10" }
+      ]
+    }));
+    const setNodes = vi.fn();
+    const showGlobalMessage = vi.fn();
+    (globalThis as any).showGlobalMessage = showGlobalMessage;
+
+    createRunTopologyCalculation({
+      EMPTY_TOPOLOGY: { connectedComponents: [] },
+      buildTopology: vi.fn(),
+      calculateElectricalTopology: vi.fn(() => [calculatedNode]),
+      currentUnit: "A",
+      edges: [],
+      isBlockingTopologyValidationError: (error: { type: string }) => error.type === "missing-island-voltage",
+      locateTopologyError: vi.fn(),
+      nodes: [originalNode],
+      normalizeDeviceOperatingLimitsAfterTopology,
+      powerUnit: "MW",
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: () => true,
+      setNodes,
+      setTopology: vi.fn(),
+      setTopologyErrors: vi.fn(),
+      setTopologyStatus: vi.fn(),
+      skipNextTopologyStaleRef: { current: false },
+      topologyCalculationMessage: (count: number) => `拓扑失败 ${count}`,
+      validateTopology: vi.fn(() => [blockingError]),
+      validateVoltageSetpointDeviations: vi.fn(),
+      voltageUnit: "kV",
+      writeOperationLog: vi.fn()
+    })();
+
+    const options = normalizeDeviceOperatingLimitsAfterTopology.mock.calls[0][1];
+    expect(options.skipVoltageNodeIds.has("node-1")).toBe(true);
+    expect(setNodes).toHaveBeenCalledWith([{
+      ...originalNode,
+      params: { ...originalNode.params, ac_q_max: "10", ac_q_min: "-10" }
+    }]);
+    expect(setNodes.mock.calls[0][0][0].nodeNumber).toBe("");
+    expect(setNodes.mock.calls[0][0][0].params.untouched).toBe("original");
+    expect(showGlobalMessage).toHaveBeenCalledWith("拓扑失败 1");
   });
 });

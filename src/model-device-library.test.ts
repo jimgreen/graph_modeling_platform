@@ -1219,6 +1219,19 @@ test("creates load, line, and transformer electrical parameter defaults", () => 
   expect(dcdc.terminals[1].nodeNumber).toMatch(/^N\d+$/);
   expect(dcdc.params.source_equivalent_resistance).toBe("0.0");
   expect(dcdc.params.target_equivalent_resistance).toBe("0.0");
+  expect(dcdc.params).toMatchObject({
+    rated_capacity: "5",
+    i_p_max: "5",
+    i_p_min: "-5",
+    i_i_max: "0",
+    i_v_max: "1.1",
+    i_v_min: "0.9",
+    j_p_max: "5",
+    j_p_min: "-5",
+    j_i_max: "0",
+    j_v_max: "1.1",
+    j_v_min: "0.9"
+  });
   expect(dcdc.params.i_control_type).toBe("P");
   expect(dcdc.params.j_control_type).toBe("NONE");
   expect(dcdc.params.control_type).toBeUndefined();
@@ -1228,6 +1241,21 @@ test("creates load, line, and transformer electrical parameter defaults", () => 
   expect(acdc.terminals.map((terminal) => terminal.vbase)).toEqual(["0", "0"]);
   expect(acdc.params.source_equivalent_resistance).toBe("0.0");
   expect(acdc.params.target_equivalent_resistance).toBe("0.0");
+  expect(acdc.params).toMatchObject({
+    rated_capacity: "10",
+    ac_p_max: "10",
+    ac_p_min: "-10",
+    ac_q_max: "10",
+    ac_q_min: "-10",
+    ac_i_max: "0",
+    ac_v_max: "1.1",
+    ac_v_min: "0.9",
+    dc_p_max: "10",
+    dc_p_min: "-10",
+    dc_i_max: "0",
+    dc_v_max: "1.1",
+    dc_v_min: "0.9"
+  });
   expect(acdc.params.control_type).toBeUndefined();
   expect(acdc.params.ac_control_type).toBe("PQ");
   expect(acdc.params.dc_control_type).toBe("V");
@@ -1235,6 +1263,23 @@ test("creates load, line, and transformer electrical parameter defaults", () => 
   const acac = createDefaultNode("acac-converter", { x: 800, y: 100 });
   expect(acac.params.source_equivalent_resistance).toBe("0.0");
   expect(acac.params.target_equivalent_resistance).toBe("0.0");
+  expect(acac.params).toMatchObject({
+    rated_capacity: "10",
+    i_p_max: "10",
+    i_p_min: "-10",
+    i_q_max: "10",
+    i_q_min: "-10",
+    i_i_max: "0",
+    i_v_max: "1.1",
+    i_v_min: "0.9",
+    j_p_max: "10",
+    j_p_min: "-10",
+    j_q_max: "10",
+    j_q_min: "-10",
+    j_i_max: "0",
+    j_v_max: "1.1",
+    j_v_min: "0.9"
+  });
   expect(acac.params.i_control_type).toBe("PQ");
   expect(acac.params.j_control_type).toBe("PQ");
   expect(acac.params.control_type).toBeUndefined();

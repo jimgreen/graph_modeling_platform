@@ -2160,12 +2160,12 @@ test("infers expected value types for built-in component definitions", () => {
 
 test("keeps every built-in device parameter aligned with its semantic type and numeric default", () => {
   const floatNames = new Set([
-    "ac_i_max", "ac_p_max", "ac_p_min", "ac_v_max", "ac_v_min", "ac_voltage", "active_power", "alpha", "angle", "array_area", "b", "b_set", "bt", "bt1", "bt2", "bt3",
+    "ac_i_max", "ac_p_max", "ac_p_min", "ac_q_max", "ac_q_min", "ac_v_max", "ac_v_min", "ac_voltage", "active_power", "alpha", "angle", "array_area", "b", "b_set", "bt", "bt1", "bt2", "bt3",
     "capacity", "capacity_factor", "charge_discharge_efficiency", "cut_in_wind_speed", "cut_out_wind_speed", "dc_i_max", "dc_p_max", "dc_p_min", "dc_v_max", "dc_v_min", "dc_voltage",
     "design_flow", "design_head", "efficiency", "energy_capacity", "flow_rate", "frequency", "fuel_tank_capacity",
     "g_set", "generator_efficiency", "gt", "gt1", "gt2", "gt3", "head", "heat_demand", "heat_power", "heat_rate",
     "high_i_max", "high_rated_capacity", "high_vbase", "hub_height", "hydrogen_demand", "hydrogen_flow", "impedance", "inlet_pressure",
-    "i_i_max", "i_max", "input_voltage", "i_p_max", "i_p_min", "i_q_set", "i_set", "i_v_max", "i_v_min", "i_v_set", "j_i_max", "j_p_max", "j_p_min", "j_q_set", "j_v_max", "j_v_min", "j_v_set", "length", "low_i_max", "low_rated_capacity", "low_vbase", "main_steam_pressure",
+    "i_i_max", "i_max", "input_voltage", "i_p_max", "i_p_min", "i_q_max", "i_q_min", "i_q_set", "i_set", "i_v_max", "i_v_min", "i_v_set", "j_i_max", "j_p_max", "j_p_min", "j_q_max", "j_q_min", "j_q_set", "j_v_max", "j_v_min", "j_v_set", "length", "low_i_max", "low_rated_capacity", "low_vbase", "main_steam_pressure",
     "main_steam_temperature", "max_charge_power", "max_current", "max_discharge_power", "medium_i_max", "medium_rated_capacity",
     "medium_vbase", "module_efficiency", "outlet_pressure", "output_voltage", "p_ac_set", "p_dc_set", "p_max", "p_min", "p_set", "pbase", "power",
     "power_factor", "pressure", "primary_loop_pressure", "pv0", "pv1", "pv2", "q_ac_set", "q_max", "q_min", "q_set", "qbase", "qv0",
@@ -2392,10 +2392,30 @@ test("exports DCAC converter AC and DC control types as separate columns", () =>
   expect(payload.DCACConverter.columns).toContain("ac_control_type");
   expect(payload.DCACConverter.columns).toContain("dc_control_type");
   expect(payload.DCACConverter.columns).toContain("p_dc_set");
+  expect(payload.DCACConverter.columns).toEqual(expect.arrayContaining([
+    "rated_capacity",
+    "ac_p_max",
+    "ac_p_min",
+    "ac_q_max",
+    "ac_q_min",
+    "ac_i_max",
+    "ac_v_max",
+    "ac_v_min",
+    "dc_p_max",
+    "dc_p_min",
+    "dc_i_max",
+    "dc_v_max",
+    "dc_v_min"
+  ]));
   expect(payload.DCACConverter.columns).not.toContain("control_type");
   expect(rowByName.get("默认控制")).toMatchObject({
     ac_node: topologyNodeNumberForType(defaultConverter, "ac"),
     dc_node: topologyNodeNumberForType(defaultConverter, "dc"),
+    rated_capacity: "10",
+    ac_p_max: "10",
+    ac_p_min: "-10",
+    ac_q_max: "10",
+    ac_q_min: "-10",
     ac_control_type: "PQ",
     dc_control_type: "V"
   });
@@ -2484,7 +2504,31 @@ test("exports ACAC converter endpoint control types with only supported values",
 
   expect(payload.ACACConverter.columns).toContain("i_control_type");
   expect(payload.ACACConverter.columns).toContain("j_control_type");
+  expect(payload.ACACConverter.columns).toEqual(expect.arrayContaining([
+    "rated_capacity",
+    "i_p_max",
+    "i_p_min",
+    "i_q_max",
+    "i_q_min",
+    "i_i_max",
+    "i_v_max",
+    "i_v_min",
+    "j_p_max",
+    "j_p_min",
+    "j_q_max",
+    "j_q_min",
+    "j_i_max",
+    "j_v_max",
+    "j_v_min"
+  ]));
   expect(payload.ACACConverter.columns).not.toContain("control_type");
+  expect(payload.ACACConverter.rows[0]).toMatchObject({
+    rated_capacity: "10",
+    i_q_max: "10",
+    i_q_min: "-10",
+    j_q_max: "10",
+    j_q_min: "-10"
+  });
   expect(payload.ACACConverter.rows.map((row) => row.i_control_type)).toEqual(["PQ", "PH", "PQ", "PV"]);
   expect(payload.ACACConverter.rows.map((row) => row.j_control_type)).toEqual(["PQ", "NONE", "PV", "PH"]);
   expect(payload.ACACConverter.rows.flatMap((row) => [row.i_control_type, row.j_control_type]).every((value) => ["PQ", "PV", "PH", "NONE"].includes(value))).toBe(true);

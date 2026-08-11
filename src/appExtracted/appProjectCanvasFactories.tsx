@@ -4931,22 +4931,39 @@ export function createLocateTopologyError(__appScope: Record<string, any>) {
 
 export function createRunTopologyCalculation(__appScope: Record<string, any>) {
   return () => {
-  const { EMPTY_TOPOLOGY, buildTopology, calculateElectricalTopology, edges, isBlockingTopologyValidationError, locateTopologyError, nodes, pushUndoSnapshot, requireEditMode, setNodes, setTopology, setTopologyErrors, setTopologyStatus, skipNextTopologyStaleRef, topologyCalculationMessage, validateTopology, validateVoltageSetpointDeviations, writeOperationLog } = __appScope;
+  const { EMPTY_TOPOLOGY, buildTopology, calculateElectricalTopology, currentUnit, edges, isBlockingTopologyValidationError, locateTopologyError, nodes, normalizeDeviceOperatingLimitsAfterTopology, powerUnit, pushUndoSnapshot, requireEditMode, setNodes, setTopology, setTopologyErrors, setTopologyStatus, skipNextTopologyStaleRef, topologyCalculationMessage, validateTopology, validateVoltageSetpointDeviations, voltageUnit, writeOperationLog } = __appScope;
     if (!requireEditMode("执行图上拓扑计算")) {
       return;
     }
-    const errors = validateTopology(nodes, edges, { includeVoltageSetpointDeviations: false });
+    const calculatedNodes = calculateElectricalTopology(nodes, edges);
+    const topologyErrors = validateTopology(calculatedNodes, edges, { includeVoltageSetpointDeviations: false });
+    const invalidVoltageBaseNodeIds = new Set(
+      topologyErrors
+        .filter((error) => [
+          "voltage-mismatch",
+          "missing-island-voltage",
+          "island-voltage-mismatch",
+          "transformer-island-short"
+        ].includes(error.type))
+        .flatMap((error) => error.relatedNodeIds)
+    );
+    const normalizedLimits = normalizeDeviceOperatingLimitsAfterTopology(calculatedNodes, {
+      powerUnit,
+      voltageUnit,
+      currentUnit,
+      skipVoltageNodeIds: invalidVoltageBaseNodeIds
+    });
+    const errors = [...topologyErrors, ...normalizedLimits.warnings];
     const blockingErrors = errors.filter(isBlockingTopologyValidationError);
     const nonBlockingWarnings = errors.filter((error) => !isBlockingTopologyValidationError(error));
     setTopologyErrors(errors);
     if (blockingErrors.length === 0) {
       pushUndoSnapshot(true, false, undefined, "拓扑计算");
-      const calculatedNodes = calculateElectricalTopology(nodes, edges);
-      const nextTopology = buildTopology(calculatedNodes, edges);
-      const voltageSetpointWarnings = validateVoltageSetpointDeviations(calculatedNodes, edges);
+      const nextTopology = buildTopology(normalizedLimits.nodes, edges);
+      const voltageSetpointWarnings = validateVoltageSetpointDeviations(normalizedLimits.nodes, edges);
       const nextWarnings = [...nonBlockingWarnings, ...voltageSetpointWarnings];
       skipNextTopologyStaleRef.current = true;
-      setNodes(calculatedNodes);
+      setNodes(normalizedLimits.nodes);
       setTopology(nextTopology);
       setTopologyErrors(nextWarnings);
       if (nextWarnings.length === 0) {
@@ -4957,9 +4974,23 @@ export function createRunTopologyCalculation(__appScope: Record<string, any>) {
         setTopologyStatus({ state: "failed", message: `完成，${nextWarnings.length} 条告警` });
         writeOperationLog(`图上拓扑完成，${nextWarnings.length} 条告警`);
         locateTopologyError(nextWarnings[0]);
-        showGlobalMessage(topologyCalculationMessage(nextWarnings.length));
+        showGlobalMessage(`图上拓扑完成：发现 ${nextWarnings.length} 条告警，已定位到第一条告警。`);
       }
     } else {
+      if (normalizedLimits.corrections.length > 0) {
+        const correctionsByNodeId = new Map();
+        for (const correction of normalizedLimits.corrections) {
+          const nodeCorrections = correctionsByNodeId.get(correction.nodeId) ?? {};
+          nodeCorrections[correction.paramKey] = correction.value;
+          correctionsByNodeId.set(correction.nodeId, nodeCorrections);
+        }
+        pushUndoSnapshot(true, false, undefined, "自动修正设备限值");
+        skipNextTopologyStaleRef.current = true;
+        setNodes(nodes.map((node) => {
+          const nodeCorrections = correctionsByNodeId.get(node.id);
+          return nodeCorrections ? { ...node, params: { ...node.params, ...nodeCorrections } } : node;
+        }));
+      }
       setTopology(EMPTY_TOPOLOGY);
       setTopologyStatus({ state: "failed", message: `失败，${blockingErrors.length} 条阻断错误` });
       writeOperationLog(`图上拓扑失败，${blockingErrors.length} 条阻断错误`);

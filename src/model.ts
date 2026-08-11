@@ -1857,9 +1857,7 @@ export function isBlockingTopologyValidationError(error: Pick<TopologyValidation
     error.type === "voltage-mismatch" ||
     error.type === "missing-island-voltage" ||
     error.type === "island-voltage-mismatch" ||
-    error.type === "transformer-island-short" ||
-    error.type === "device-limit-invalid" ||
-    error.type === "voltage-limit-out-of-range"
+    error.type === "transformer-island-short"
   );
 }
 
@@ -3687,6 +3685,8 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       dcVoltage: "750 V",
       acPMax: "10 MW",
       acPMin: "-10 MW",
+      acQMax: "10 MW",
+      acQMin: "-10 MW",
       acIMax: "0",
       acVMax: "1.1",
       acVMin: "0.9",
@@ -3711,6 +3711,8 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       acVoltage: "10 kV",
       acPMax: "10 MW",
       acPMin: "-10 MW",
+      acQMax: "10 MW",
+      acQMin: "-10 MW",
       acIMax: "0",
       acVMax: "1.1",
       acVMin: "0.9",
@@ -3733,11 +3735,15 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       ratedCapacity: "10 MW",
       iPMax: "10 MW",
       iPMin: "-10 MW",
+      iQMax: "10 MW",
+      iQMin: "-10 MW",
       iIMax: "0",
       iVMax: "1.1",
       iVMin: "0.9",
       jPMax: "10 MW",
       jPMin: "-10 MW",
+      jQMax: "10 MW",
+      jQMin: "-10 MW",
       jIMax: "0",
       jVMax: "1.1",
       jVMin: "0.9"
@@ -3816,6 +3822,8 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   v_min: "float",
   ac_p_max: "float",
   ac_p_min: "float",
+  ac_q_max: "float",
+  ac_q_min: "float",
   ac_i_max: "float",
   ac_v_max: "float",
   ac_v_min: "float",
@@ -3826,11 +3834,15 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   dc_v_min: "float",
   i_p_max: "float",
   i_p_min: "float",
+  i_q_max: "float",
+  i_q_min: "float",
   i_i_max: "float",
   i_v_max: "float",
   i_v_min: "float",
   j_p_max: "float",
   j_p_min: "float",
+  j_q_max: "float",
+  j_q_min: "float",
   j_i_max: "float",
   j_v_max: "float",
   j_v_min: "float",
@@ -6608,6 +6620,7 @@ export function buildDefaultParams(template: DeviceTemplate): Record<string, str
   }
   if (templateKind === "dcdc-converter") {
     return normalizeEndpointConverterControlParams("DCDCConverter", withTemplateDefinitions(withRunStat({
+      ...template.params,
       sourceVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       targetVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       sourceEquivalentResistance: "0.0",
@@ -6618,6 +6631,7 @@ export function buildDefaultParams(template: DeviceTemplate): Record<string, str
   }
   if (templateKind === "acdc-converter" || templateKind === "dcac-converter") {
     return normalizeDcacConverterControlParams(withTemplateDefinitions(withRunStat({
+      ...template.params,
       sourceVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       targetVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       sourceEquivalentResistance: "0.0",
@@ -6631,6 +6645,7 @@ export function buildDefaultParams(template: DeviceTemplate): Record<string, str
   }
   if (templateKind === "acac-converter") {
     return normalizeEndpointConverterControlParams("ACACConverter", withTemplateDefinitions(withRunStat({
+      ...template.params,
       sourceVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       targetVbase: DEFAULT_INITIAL_TERMINAL_VBASE,
       sourceEquivalentResistance: "0.0",

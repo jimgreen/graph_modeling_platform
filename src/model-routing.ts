@@ -41,9 +41,12 @@ import type {
 } from "./model";
 import {
   DEFAULT_DEVICE_LABEL_FONT_SIZE,
+  DEFAULT_CURRENT_UNIT,
   DEFAULT_INITIAL_TERMINAL_VBASE,
   DEFAULT_MODEL_LAYER_ID,
   DEFAULT_MODEL_LAYER_NAME,
+  DEFAULT_POWER_UNIT,
+  DEFAULT_VOLTAGE_UNIT,
   DEVICE_LIBRARY,
   DEVICE_LIBRARY_BY_KIND,
   ELECTRIC_GENERATION_FAMILY_SPECS,
@@ -4659,7 +4662,7 @@ function identityValidationEntriesForNode(node: ModelNode): DeviceIdentityValida
   return entries;
 }
 
-type DeviceLimitTerminalSelector = "default" | "ac" | "dc" | "i" | "j";
+type DeviceLimitTerminalSelector = "default" | "ac" | "dc" | "i" | "j" | "t3";
 
 type DeviceLimitPairSpec = {
   maxKey: string;
@@ -4674,14 +4677,75 @@ const DEVICE_LIMIT_PAIR_SPECS: DeviceLimitPairSpec[] = [
   { maxKey: "q_max", minKey: "q_min", label: "无功", voltage: false, terminalSelector: "default" },
   { maxKey: "v_max", minKey: "v_min", label: "电压", voltage: true, terminalSelector: "default" },
   { maxKey: "ac_p_max", minKey: "ac_p_min", label: "交流侧有功", voltage: false, terminalSelector: "ac" },
+  { maxKey: "ac_q_max", minKey: "ac_q_min", label: "交流侧无功", voltage: false, terminalSelector: "ac" },
   { maxKey: "ac_v_max", minKey: "ac_v_min", label: "交流侧电压", voltage: true, terminalSelector: "ac" },
   { maxKey: "dc_p_max", minKey: "dc_p_min", label: "直流侧有功", voltage: false, terminalSelector: "dc" },
   { maxKey: "dc_v_max", minKey: "dc_v_min", label: "直流侧电压", voltage: true, terminalSelector: "dc" },
   { maxKey: "i_p_max", minKey: "i_p_min", label: "首端有功", voltage: false, terminalSelector: "i" },
+  { maxKey: "i_q_max", minKey: "i_q_min", label: "首端无功", voltage: false, terminalSelector: "i" },
   { maxKey: "i_v_max", minKey: "i_v_min", label: "首端电压", voltage: true, terminalSelector: "i" },
   { maxKey: "j_p_max", minKey: "j_p_min", label: "末端有功", voltage: false, terminalSelector: "j" },
+  { maxKey: "j_q_max", minKey: "j_q_min", label: "末端无功", voltage: false, terminalSelector: "j" },
   { maxKey: "j_v_max", minKey: "j_v_min", label: "末端电压", voltage: true, terminalSelector: "j" }
 ];
+
+type DeviceLimitQuantity = "power" | "voltage" | "current";
+
+export type DeviceOperatingLimitNormalizationOptions = {
+  powerUnit?: string;
+  voltageUnit?: string;
+  currentUnit?: string;
+  skipVoltageNodeIds?: ReadonlySet<string>;
+};
+
+export type DeviceOperatingLimitCorrection = {
+  nodeId: string;
+  paramKey: string;
+  value: string;
+};
+
+type RatedCurrentSpec = {
+  currentKey: string;
+  capacityKey: string;
+  terminalSelector: DeviceLimitTerminalSelector;
+  label: string;
+};
+
+const UNIT_FACTOR_BY_QUANTITY: Record<DeviceLimitQuantity, Record<string, number>> = {
+  power: { W: 1, kW: 1_000, MW: 1_000_000 },
+  voltage: { V: 1, kV: 1_000 },
+  current: { A: 1, kA: 1_000 }
+};
+
+const RATED_CURRENT_SPECS_BY_SECTION: Record<string, RatedCurrentSpec[]> = {
+  ACBranch: [{ currentKey: "i_max", capacityKey: "rated_capacity", terminalSelector: "default", label: "最大电流" }],
+  DCBranch: [{ currentKey: "i_max", capacityKey: "rated_capacity", terminalSelector: "default", label: "最大电流" }],
+  ACBreak: [{ currentKey: "i_max", capacityKey: "rated_capacity", terminalSelector: "default", label: "最大电流" }],
+  DCBreak: [{ currentKey: "i_max", capacityKey: "rated_capacity", terminalSelector: "default", label: "最大电流" }],
+  ACTransformer: [
+    { currentKey: "high_i_max", capacityKey: "rated_capacity", terminalSelector: "i", label: "高压侧最大电流" },
+    { currentKey: "low_i_max", capacityKey: "rated_capacity", terminalSelector: "j", label: "低压侧最大电流" }
+  ],
+  ACTransfomer3: [
+    { currentKey: "high_i_max", capacityKey: "high_rated_capacity", terminalSelector: "i", label: "高压侧最大电流" },
+    { currentKey: "medium_i_max", capacityKey: "medium_rated_capacity", terminalSelector: "j", label: "中压侧最大电流" },
+    { currentKey: "low_i_max", capacityKey: "low_rated_capacity", terminalSelector: "t3", label: "低压侧最大电流" }
+  ],
+  DCDCConverter: [
+    { currentKey: "i_i_max", capacityKey: "rated_capacity", terminalSelector: "i", label: "首端最大电流" },
+    { currentKey: "j_i_max", capacityKey: "rated_capacity", terminalSelector: "j", label: "末端最大电流" }
+  ],
+  DCACConverter: [
+    { currentKey: "ac_i_max", capacityKey: "rated_capacity", terminalSelector: "ac", label: "交流侧最大电流" },
+    { currentKey: "dc_i_max", capacityKey: "rated_capacity", terminalSelector: "dc", label: "直流侧最大电流" }
+  ],
+  ACACConverter: [
+    { currentKey: "i_i_max", capacityKey: "rated_capacity", terminalSelector: "i", label: "首端最大电流" },
+    { currentKey: "j_i_max", capacityKey: "rated_capacity", terminalSelector: "j", label: "末端最大电流" }
+  ]
+};
+
+const THREE_PHASE_CURRENT_DIVISOR = 1.732;
 
 function namedNumericValue(value: string | undefined): number | null {
   const token = String(value ?? "").trim().match(/[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?/)?.[0];
@@ -4690,6 +4754,76 @@ function namedNumericValue(value: string | undefined): number | null {
   }
   const numeric = Number(token);
   return Number.isFinite(numeric) ? numeric : null;
+}
+
+function normalizedQuantityUnit(quantity: DeviceLimitQuantity, value: string | undefined): string | null {
+  const token = String(value ?? "").trim().toLowerCase();
+  if (quantity === "power") {
+    return token === "w" ? "W" : token === "kw" ? "kW" : token === "mw" ? "MW" : null;
+  }
+  if (quantity === "voltage") {
+    return token === "v" ? "V" : token === "kv" ? "kV" : null;
+  }
+  return token === "a" ? "A" : token === "ka" ? "kA" : null;
+}
+
+function explicitQuantityUnit(quantity: DeviceLimitQuantity, value: string | undefined): string | null {
+  const text = String(value ?? "").trim();
+  const pattern = quantity === "power"
+    ? /(?:MW|kW|W)\s*$/i
+    : quantity === "voltage"
+      ? /(?:kV|V)\s*$/i
+      : /(?:kA|A)\s*$/i;
+  return normalizedQuantityUnit(quantity, text.match(pattern)?.[0]?.trim());
+}
+
+function defaultQuantityUnit(quantity: DeviceLimitQuantity, options: DeviceOperatingLimitNormalizationOptions): string {
+  const configured = quantity === "power"
+    ? options.powerUnit
+    : quantity === "voltage"
+      ? options.voltageUnit
+      : options.currentUnit;
+  const fallback = quantity === "power"
+    ? DEFAULT_POWER_UNIT
+    : quantity === "voltage"
+      ? DEFAULT_VOLTAGE_UNIT
+      : DEFAULT_CURRENT_UNIT;
+  return normalizedQuantityUnit(quantity, configured) ?? fallback;
+}
+
+function quantityValue(
+  value: string | undefined,
+  quantity: DeviceLimitQuantity,
+  fallbackUnit: string
+): { baseValue: number; unit: string } | null {
+  const numeric = namedNumericValue(value);
+  const unit = explicitQuantityUnit(quantity, value) ?? normalizedQuantityUnit(quantity, fallbackUnit);
+  if (numeric === null || !unit) {
+    return null;
+  }
+  return { baseValue: numeric * UNIT_FACTOR_BY_QUANTITY[quantity][unit], unit };
+}
+
+function compactDeviceLimitNumber(value: number): string {
+  const rounded = Number(value.toPrecision(12));
+  return String(Object.is(rounded, -0) ? 0 : rounded);
+}
+
+function quantityValueInUnit(baseValue: number, quantity: DeviceLimitQuantity, unit: string): string {
+  return compactDeviceLimitNumber(baseValue / UNIT_FACTOR_BY_QUANTITY[quantity][unit]);
+}
+
+function quantitiesDiffer(left: number, right: number): boolean {
+  return Math.abs(left - right) > Math.max(1e-9, Math.abs(right) * 1e-6);
+}
+
+function terminalVoltageTextForDeviceLimit(node: ModelNode, terminal: Terminal | undefined): string {
+  const rawTerminalVoltage = terminal?.vbase;
+  return explicitQuantityUnit("voltage", rawTerminalVoltage)
+    ? String(rawTerminalVoltage)
+    : terminal
+      ? terminalVoltageDisplay(node, terminal)
+      : getNodeVoltageLevel(node);
 }
 
 function terminalForDeviceLimit(node: ModelNode, selector: DeviceLimitTerminalSelector): Terminal | undefined {
@@ -4702,6 +4836,9 @@ function terminalForDeviceLimit(node: ModelNode, selector: DeviceLimitTerminalSe
   if (selector === "j") {
     return node.terminals[1];
   }
+  if (selector === "t3") {
+    return node.terminals[2];
+  }
   return node.terminals.find((terminal) => isElectricalTerminalType(terminal.type)) ?? node.terminals[0];
 }
 
@@ -4709,101 +4846,206 @@ function validateDeviceLimitPairs(
   node: ModelNode,
   ownerName: string,
   keyFor: (key: string) => string,
+  ownerSection: string,
+  options: DeviceOperatingLimitNormalizationOptions,
+  updateParam: (key: string, value: string) => void,
   terminalOverride?: Terminal
 ): TopologyValidationError[] {
-  const errors: TopologyValidationError[] = [];
-  for (const spec of DEVICE_LIMIT_PAIR_SPECS) {
+  const warnings: TopologyValidationError[] = [];
+  const powerUnit = defaultQuantityUnit("power", options);
+  const currentUnit = defaultQuantityUnit("current", options);
+  const relevantSpecs = DEVICE_LIMIT_PAIR_SPECS.flatMap((spec) => {
     const maxKey = keyFor(spec.maxKey);
     const minKey = keyFor(spec.minKey);
     const maxText = deviceParamValue(node.params, maxKey);
     const minText = deviceParamValue(node.params, minKey);
-    if (maxText === undefined || minText === undefined) {
-      continue;
+    return maxText === undefined && minText === undefined
+      ? []
+      : [{ spec, maxKey, minKey, maxText, minText }];
+  });
+  const invalidCapacityKeys = new Set<string>();
+  const capacityFor = (capacityKey: string): { baseValue: number; unit: string } | null => {
+    const capacityText = deviceParamValue(node.params, capacityKey);
+    const capacity = quantityValue(capacityText, "power", powerUnit);
+    if (capacity && capacity.baseValue > 0) {
+      return capacity;
     }
-    const maxValue = namedNumericValue(maxText);
-    const minValue = namedNumericValue(minText);
-    if (maxValue === null || minValue === null) {
-      continue;
-    }
-    const errorKey = `${node.id}:${encodeURIComponent(maxKey)}:${encodeURIComponent(minKey)}`;
-    if (maxValue === 0 && minValue === 0) {
-      errors.push({
-        id: `device-limit-invalid:${errorKey}`,
+    if (!invalidCapacityKeys.has(capacityKey)) {
+      invalidCapacityKeys.add(capacityKey);
+      warnings.push({
+        id: `device-limit-invalid:${node.id}:${encodeURIComponent(capacityKey)}`,
         type: "device-limit-invalid",
         nodeId: node.id,
         relatedNodeIds: [node.id],
-        message: `图上拓扑失败：${ownerName} 的${spec.label}上限 ${maxKey} 与${spec.label}下限 ${minKey} 均为 0，请设置有效的有名值范围。`
+        message: `图上拓扑告警：${ownerName} 的额定容量 ${capacityKey}=${capacityText ?? "未设置"} 无效；对应功率上下限和最大电流未自动修改。`
       });
-      continue;
     }
-    if (maxValue <= minValue) {
-      errors.push({
-        id: `device-limit-invalid:${errorKey}`,
-        type: "device-limit-invalid",
-        nodeId: node.id,
-        relatedNodeIds: [node.id],
-        message: `图上拓扑失败：${ownerName} 的${spec.label}上限 ${maxKey}=${maxText} 必须大于${spec.label}下限 ${minKey}=${minText}。`
-      });
-      continue;
+    return null;
+  };
+
+  const activePowerIsBidirectional = (() => {
+    const kind = baseDeviceKind(node.kind).toLowerCase();
+    const deviceType = String(deviceParamValue(node.params, keyFor("dev_type")) ?? "").toLowerCase();
+    if (kind.includes("storage") || deviceType.includes("储能") || deviceType.includes("storage") || deviceType.includes("battery")) {
+      return true;
     }
+    return !["ACGenerator", "DCGenerator", "ACLoad", "DCLoad"].includes(ownerSection);
+  })();
+
+  for (const { spec, maxKey, minKey, maxText, minText } of relevantSpecs) {
     if (!spec.voltage) {
+      const capacity = capacityFor(keyFor("rated_capacity"));
+      if (!capacity) {
+        continue;
+      }
+      const maxValue = quantityValue(maxText, "power", powerUnit);
+      const minValue = quantityValue(minText, "power", powerUnit);
+      if (maxValue && minValue && maxValue.baseValue > minValue.baseValue) {
+        continue;
+      }
+      const reactivePower = spec.maxKey === "q_max" || spec.maxKey.endsWith("_q_max");
+      const correctedMax = quantityValueInUnit(capacity.baseValue, "power", powerUnit);
+      const correctedMinBase = reactivePower || activePowerIsBidirectional ? -capacity.baseValue : 0;
+      const correctedMin = quantityValueInUnit(correctedMinBase, "power", powerUnit);
+      updateParam(maxKey, correctedMax);
+      updateParam(minKey, correctedMin);
+      warnings.push({
+        id: `device-limit-invalid:${node.id}:${encodeURIComponent(maxKey)}:${encodeURIComponent(minKey)}`,
+        type: "device-limit-invalid",
+        nodeId: node.id,
+        relatedNodeIds: [node.id],
+        message: `图上拓扑告警：${ownerName} 的${spec.label}范围 ${maxKey}=${maxText ?? "未设置"}、${minKey}=${minText ?? "未设置"} 无效，已按额定容量自动修正为 ${correctedMax} ${powerUnit}、${correctedMin} ${powerUnit}。`
+      });
+      continue;
+    }
+
+    if (options.skipVoltageNodeIds?.has(node.id)) {
       continue;
     }
     const terminal = spec.terminalSelector === "default" && terminalOverride
       ? terminalOverride
       : terminalForDeviceLimit(node, spec.terminalSelector);
-    const baseVoltageText = terminal
-      ? getTerminalVoltageLevel(node, terminal.id)
-      : getNodeVoltageLevel(node);
-    const baseVoltage = namedNumericValue(baseVoltageText);
-    if (baseVoltage === null || baseVoltage <= 0) {
+    const baseVoltageText = terminalVoltageTextForDeviceLimit(node, terminal);
+    const baseVoltage = quantityValue(baseVoltageText, "voltage", defaultQuantityUnit("voltage", options));
+    if (!baseVoltage || baseVoltage.baseValue <= 0) {
       continue;
     }
-    const allowedDeviation = baseVoltage * 0.3;
-    for (const [boundLabel, boundKey, boundText, boundValue] of [
-      ["上限", maxKey, maxText, maxValue],
-      ["下限", minKey, minText, minValue]
-    ] as const) {
-      if (Math.abs(boundValue - baseVoltage) <= allowedDeviation + Number.EPSILON) {
+    const voltageUnit = defaultQuantityUnit("voltage", options);
+    const maxValue = quantityValue(maxText, "voltage", voltageUnit);
+    const minValue = quantityValue(minText, "voltage", voltageUnit);
+    const allowedDeviation = baseVoltage.baseValue * 0.3;
+    const pairInvalid = Boolean(maxValue && minValue && maxValue.baseValue <= minValue.baseValue);
+    const maxInvalid = pairInvalid || !maxValue || Math.abs(maxValue.baseValue - baseVoltage.baseValue) > allowedDeviation + Number.EPSILON;
+    const minInvalid = pairInvalid || !minValue || Math.abs(minValue.baseValue - baseVoltage.baseValue) > allowedDeviation + Number.EPSILON;
+    if (!maxInvalid && !minInvalid) {
+      continue;
+    }
+    const correctedMax = quantityValueInUnit(baseVoltage.baseValue * 1.2, "voltage", voltageUnit);
+    const correctedMin = quantityValueInUnit(baseVoltage.baseValue * 0.8, "voltage", voltageUnit);
+    if (maxInvalid) {
+      updateParam(maxKey, correctedMax);
+    }
+    if (minInvalid) {
+      updateParam(minKey, correctedMin);
+    }
+    warnings.push({
+      id: `voltage-limit-out-of-range:${node.id}:${encodeURIComponent(maxKey)}:${encodeURIComponent(minKey)}`,
+      type: "voltage-limit-out-of-range",
+      nodeId: node.id,
+      relatedNodeIds: [node.id],
+      message: `图上拓扑告警：${ownerName} 的${spec.label}范围不满足要求；基准电压为 ${quantityValueInUnit(baseVoltage.baseValue, "voltage", voltageUnit)} ${voltageUnit}，已将${maxInvalid ? `上限 ${maxKey} 修正为 ${correctedMax} ${voltageUnit}` : "上限保持不变"}，${minInvalid ? `下限 ${minKey} 修正为 ${correctedMin} ${voltageUnit}` : "下限保持不变"}。`
+    });
+  }
+
+  if (!options.skipVoltageNodeIds?.has(node.id)) {
+    for (const spec of RATED_CURRENT_SPECS_BY_SECTION[ownerSection] ?? []) {
+      const currentKey = keyFor(spec.currentKey);
+      const capacity = capacityFor(keyFor(spec.capacityKey));
+      const terminal = terminalOverride ?? terminalForDeviceLimit(node, spec.terminalSelector);
+      const baseVoltageText = terminalVoltageTextForDeviceLimit(node, terminal);
+      const baseVoltage = quantityValue(baseVoltageText, "voltage", defaultQuantityUnit("voltage", options));
+      if (!capacity || !baseVoltage || baseVoltage.baseValue <= 0) {
         continue;
       }
-      errors.push({
-        id: `voltage-limit-out-of-range:${node.id}:${encodeURIComponent(boundKey)}`,
-        type: "voltage-limit-out-of-range",
+      const expectedCurrent = capacity.baseValue / baseVoltage.baseValue / THREE_PHASE_CURRENT_DIVISOR;
+      const currentText = deviceParamValue(node.params, currentKey);
+      const current = quantityValue(currentText, "current", currentUnit);
+      if (current && current.baseValue > 0 && !quantitiesDiffer(current.baseValue, expectedCurrent)) {
+        continue;
+      }
+      const correctedCurrent = quantityValueInUnit(expectedCurrent, "current", currentUnit);
+      updateParam(currentKey, correctedCurrent);
+      warnings.push({
+        id: `device-limit-invalid:${node.id}:${encodeURIComponent(currentKey)}`,
+        type: "device-limit-invalid",
         nodeId: node.id,
         relatedNodeIds: [node.id],
-        message: `图上拓扑失败：${ownerName} 的${spec.label}${boundLabel} ${boundKey}=${boundText} 与基准电压 ${baseVoltageText} 的偏差超过基准电压的 30%；电压上下限必须使用有名值。`
+        message: `图上拓扑告警：${ownerName} 的${spec.label} ${currentKey}=${currentText ?? "未设置"} 不满足额定容量/基准电压/1.732，已自动修正为 ${correctedCurrent} ${currentUnit}。`
       });
     }
   }
-  return errors;
+  return warnings;
 }
 
-export function validateDeviceOperatingLimits(nodes: ModelNode[]): TopologyValidationError[] {
-  const errors: TopologyValidationError[] = [];
-  for (const node of nodes) {
+export function normalizeDeviceOperatingLimitsAfterTopology(
+  nodes: ModelNode[],
+  options: DeviceOperatingLimitNormalizationOptions = {}
+): { nodes: ModelNode[]; warnings: TopologyValidationError[]; corrections: DeviceOperatingLimitCorrection[] } {
+  const warnings: TopologyValidationError[] = [];
+  const corrections: DeviceOperatingLimitCorrection[] = [];
+  const normalizedNodes = nodes.map((node) => {
     if (isStaticNode(node)) {
-      continue;
+      return node;
     }
-    errors.push(...validateDeviceLimitPairs(node, node.name, (key) => key));
+    let nextParams = node.params;
+    const updateParam = (paramKey: string, value: string) => {
+      if (deviceParamValue(nextParams, paramKey) === value) {
+        return;
+      }
+      if (nextParams === node.params) {
+        nextParams = { ...node.params };
+      }
+      nextParams[paramKey] = value;
+      corrections.push({ nodeId: node.id, paramKey, value });
+    };
+    warnings.push(...validateDeviceLimitPairs(
+      node,
+      node.name,
+      (key) => key,
+      inferESection(node.kind, node.params),
+      options,
+      updateParam
+    ));
     if (!isContainerParams(node.params)) {
-      continue;
+      return nextParams === node.params ? node : { ...node, params: nextParams };
     }
     for (const fieldName of Object.keys(node.params)) {
-      if (!containerRelationCounterKey(fieldName)) {
+      const relationSection = containerRelationCounterKey(fieldName);
+      if (!relationSection) {
         continue;
       }
       const parsed = parseContainerRelationField(fieldName);
       const terminal = parsed ? node.terminals[parsed.terminalNumber - 1] : undefined;
-      errors.push(...validateDeviceLimitPairs(
+      warnings.push(...validateDeviceLimitPairs(
         node,
         containerAssociatedDeviceName(node, fieldName),
         (key) => containerRelationParamKey(fieldName, key),
+        relationSection,
+        options,
+        updateParam,
         terminal
       ));
     }
-  }
-  return errors;
+    return nextParams === node.params ? node : { ...node, params: nextParams };
+  });
+  return { nodes: normalizedNodes, warnings, corrections };
+}
+
+export function validateDeviceOperatingLimits(
+  nodes: ModelNode[],
+  options: DeviceOperatingLimitNormalizationOptions = {}
+): TopologyValidationError[] {
+  return normalizeDeviceOperatingLimitsAfterTopology(nodes, options).warnings;
 }
 
 function duplicateDeviceIdentityErrors(nodes: ModelNode[]): TopologyValidationError[] {
@@ -4862,10 +5104,7 @@ export function validateTopology(
   nodes = synchronized.nodes;
   edges = synchronized.edges;
   const topologyEdges = [...edges, ...routableLineDeviceTopologyEdges(nodes)];
-  const errors: TopologyValidationError[] = [
-    ...duplicateDeviceIdentityErrors(nodes),
-    ...validateDeviceOperatingLimits(nodes)
-  ];
+  const errors: TopologyValidationError[] = duplicateDeviceIdentityErrors(nodes);
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const terminalKey = (nodeId: string, terminalId: string) => `${nodeId}:${terminalId}`;
   const resolveEdgeTerminal = (node: ModelNode, terminalId?: string) => {

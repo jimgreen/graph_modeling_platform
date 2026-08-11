@@ -99,6 +99,7 @@ import {
   voltageBaseSettingModeForNode,
   validateTopology,
   validateDeviceOperatingLimits,
+  normalizeDeviceOperatingLimitsAfterTopology,
   validateTwoTerminalVoltageBaseConsistency,
   validateVoltageSetpointDeviations,
   getTerminalPoint,
@@ -2519,104 +2520,295 @@ test("treats duplicate identity and voltage setpoint deviations as non-blocking 
   expect(isBlockingTopologyValidationError({ type: "missing-island-voltage" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "island-voltage-mismatch" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "transformer-island-short" })).toBe(true);
-  expect(isBlockingTopologyValidationError({ type: "device-limit-invalid" })).toBe(true);
-  expect(isBlockingTopologyValidationError({ type: "voltage-limit-out-of-range" })).toBe(true);
+  expect(isBlockingTopologyValidationError({ type: "device-limit-invalid" })).toBe(false);
+  expect(isBlockingTopologyValidationError({ type: "voltage-limit-out-of-range" })).toBe(false);
   expect(isBlockingTopologyValidationError({ type: "duplicate-device-idx" })).toBe(false);
   expect(isBlockingTopologyValidationError({ type: "duplicate-device-name" })).toBe(false);
   expect(isBlockingTopologyValidationError({ type: "voltage-setpoint-deviation" })).toBe(false);
 });
 
-test("blocks topology when active, reactive, or voltage limits are zero or reversed", () => {
+test("normalizes generator and storage limits after topology without mutating the input nodes", () => {
   const source = createDefaultNode("ac-source", { x: 100, y: 100 });
   source.name = "交流电源1";
-  source.terminals[0].vbase = "10";
+  source.terminals[0].vbase = "10 kV";
   source.params = {
     ...source.params,
+    rated_capacity: "10 MW",
     p_max: "0",
     p_min: "0",
-    q_max: "-5",
-    q_min: "5",
-    v_max: "9",
+    q_max: "0",
+    q_min: "0",
+    v_max: "20",
+    v_min: "1"
+  };
+
+  const storage = createDefaultNode("ac-storage", { x: 300, y: 100 });
+  storage.name = "交流储能1";
+  storage.terminals[0].vbase = "10 kV";
+  storage.params = {
+    ...storage.params,
+    rated_capacity: "5 MW",
+    p_max: "0",
+    p_min: "0",
+    q_max: "0",
+    q_min: "0",
+    v_max: "10",
     v_min: "9"
   };
+  const originalSourceParams = { ...source.params };
+  const originalStorageParams = { ...storage.params };
 
-  const errors = validateDeviceOperatingLimits([source]);
+  const result = normalizeDeviceOperatingLimitsAfterTopology([source, storage], {
+    powerUnit: "MW",
+    voltageUnit: "kV",
+    currentUnit: "A"
+  });
+  const normalizedSource = result.nodes.find((node) => node.id === source.id)!;
+  const normalizedStorage = result.nodes.find((node) => node.id === storage.id)!;
 
-  expect(errors).toEqual(expect.arrayContaining([
-    expect.objectContaining({
-      type: "device-limit-invalid",
-      nodeId: source.id,
-      message: expect.stringContaining("有功上限 p_max 与有功下限 p_min 均为 0")
-    }),
-    expect.objectContaining({
-      type: "device-limit-invalid",
-      nodeId: source.id,
-      message: expect.stringContaining("无功上限 q_max=-5 必须大于无功下限 q_min=5")
-    }),
-    expect.objectContaining({
-      type: "device-limit-invalid",
-      nodeId: source.id,
-      message: expect.stringContaining("电压上限 v_max=9 必须大于电压下限 v_min=9")
-    })
-  ]));
-  expect(errors.every(isBlockingTopologyValidationError)).toBe(true);
-  expect(validateTopology([source], [], { includeVoltageSetpointDeviations: false })).toEqual(
-    expect.arrayContaining([expect.objectContaining({ type: "device-limit-invalid", nodeId: source.id })])
-  );
+  expect(normalizedSource.params).toMatchObject({
+    p_max: "10",
+    p_min: "0",
+    q_max: "10",
+    q_min: "-10",
+    v_max: "12",
+    v_min: "8"
+  });
+  expect(normalizedStorage.params).toMatchObject({
+    p_max: "5",
+    p_min: "-5",
+    q_max: "5",
+    q_min: "-5",
+    v_max: "10",
+    v_min: "9"
+  });
+  expect(source.params).toEqual(originalSourceParams);
+  expect(storage.params).toEqual(originalStorageParams);
+  expect(result.warnings.length).toBeGreaterThanOrEqual(5);
+  expect(result.warnings.every((warning) => !isBlockingTopologyValidationError(warning))).toBe(true);
 });
 
-test("validates named voltage limits against the related base voltage with an inclusive 30 percent boundary", () => {
-  const source = createDefaultNode("ac-source", { x: 100, y: 100 });
-  source.terminals[0].vbase = "10 kV";
-  source.params = { ...source.params, p_max: "10", p_min: "-10", q_max: "5", q_min: "-5", v_max: "13", v_min: "7" };
-
-  const converter = createDefaultNode("acdc-converter", { x: 300, y: 100 });
-  converter.terminals[0].vbase = "10 kV";
-  converter.terminals[1].vbase = "750 V";
-  converter.params = {
-    ...converter.params,
-    ac_p_max: "10",
-    ac_p_min: "-10",
-    ac_v_max: "13",
-    ac_v_min: "7",
-    dc_p_max: "10",
-    dc_p_min: "-10",
-    dc_v_max: "976",
-    dc_v_min: "525"
-  };
-
+test("normalizes converter active, reactive, voltage, and current limits using page units", () => {
+  const acdc = createDefaultNode("acdc-converter", { x: 100, y: 100 });
+  const dcac = createDefaultNode("dcac-converter", { x: 300, y: 100 });
   const dcdc = createDefaultNode("dcdc-converter", { x: 500, y: 100 });
+  const acac = createDefaultNode("acac-converter", { x: 700, y: 100 });
+
+  for (const converter of [acdc, dcac]) {
+    converter.terminals.find((terminal) => terminal.type === "ac")!.vbase = "10000 V";
+    converter.terminals.find((terminal) => terminal.type === "dc")!.vbase = "750 V";
+    converter.params = {
+      ...converter.params,
+      rated_capacity: "100000",
+      ac_p_max: "0",
+      ac_p_min: "0",
+      ac_q_max: "0",
+      ac_q_min: "0",
+      ac_i_max: "0",
+      ac_v_max: "0",
+      ac_v_min: "0",
+      dc_p_max: "0",
+      dc_p_min: "0",
+      dc_i_max: "0",
+      dc_v_max: "0",
+      dc_v_min: "0"
+    };
+  }
   dcdc.terminals[0].vbase = "750 V";
   dcdc.terminals[1].vbase = "1500 V";
   dcdc.params = {
     ...dcdc.params,
-    i_p_max: "5",
-    i_p_min: "-5",
-    i_v_max: "975",
-    i_v_min: "525",
+    rated_capacity: "100000",
+    i_p_max: "0",
+    i_p_min: "0",
+    i_i_max: "0",
+    i_v_max: "0",
+    i_v_min: "0",
     j_p_max: "0",
     j_p_min: "0",
-    j_v_max: "1950",
-    j_v_min: "1050"
+    j_i_max: "0",
+    j_v_max: "0",
+    j_v_min: "0"
+  };
+  acac.terminals[0].vbase = "10000 V";
+  acac.terminals[1].vbase = "20000 V";
+  acac.params = {
+    ...acac.params,
+    rated_capacity: "100000",
+    i_p_max: "0",
+    i_p_min: "0",
+    i_q_max: "0",
+    i_q_min: "0",
+    i_i_max: "0",
+    i_v_max: "0",
+    i_v_min: "0",
+    j_p_max: "0",
+    j_p_min: "0",
+    j_q_max: "0",
+    j_q_min: "0",
+    j_i_max: "0",
+    j_v_max: "0",
+    j_v_min: "0"
   };
 
-  const errors = validateDeviceOperatingLimits([source, converter, dcdc]);
+  const result = normalizeDeviceOperatingLimitsAfterTopology([acdc, dcac, dcdc, acac], {
+    powerUnit: "kW",
+    voltageUnit: "V",
+    currentUnit: "A"
+  });
+  const byId = new Map(result.nodes.map((node) => [node.id, node]));
 
-  expect(errors).toEqual(expect.arrayContaining([
-    expect.objectContaining({
-      type: "voltage-limit-out-of-range",
-      nodeId: converter.id,
-      message: expect.stringContaining("dc_v_max=976")
-    }),
-    expect.objectContaining({
-      type: "device-limit-invalid",
-      nodeId: dcdc.id,
-      message: expect.stringContaining("末端有功上限 j_p_max 与末端有功下限 j_p_min 均为 0")
-    })
-  ]));
-  expect(errors).toHaveLength(2);
-  expect(errors.find((error) => error.type === "voltage-limit-out-of-range")?.message).toContain("基准电压 750");
-  expect(errors.every(isBlockingTopologyValidationError)).toBe(true);
+  for (const converter of [acdc, dcac]) {
+    const normalized = byId.get(converter.id)!;
+    expect(normalized.params).toMatchObject({
+      ac_p_max: "100000",
+      ac_p_min: "-100000",
+      ac_q_max: "100000",
+      ac_q_min: "-100000",
+      ac_v_max: "12000",
+      ac_v_min: "8000",
+      dc_p_max: "100000",
+      dc_p_min: "-100000",
+      dc_v_max: "900",
+      dc_v_min: "600"
+    });
+    expect(Number(normalized.params.ac_i_max)).toBeCloseTo(5773.67205543, 6);
+    expect(Number(normalized.params.dc_i_max)).toBeCloseTo(76982.2940724, 6);
+  }
+
+  const normalizedDcdc = byId.get(dcdc.id)!;
+  expect(normalizedDcdc.params).toMatchObject({
+    i_p_max: "100000",
+    i_p_min: "-100000",
+    i_v_max: "900",
+    i_v_min: "600",
+    j_p_max: "100000",
+    j_p_min: "-100000",
+    j_v_max: "1800",
+    j_v_min: "1200"
+  });
+  expect(normalizedDcdc.params.i_q_max).toBeUndefined();
+  expect(normalizedDcdc.params.j_q_max).toBeUndefined();
+  expect(Number(normalizedDcdc.params.i_i_max)).toBeCloseTo(76982.2940724, 6);
+  expect(Number(normalizedDcdc.params.j_i_max)).toBeCloseTo(38491.1470362, 6);
+
+  const normalizedAcac = byId.get(acac.id)!;
+  expect(normalizedAcac.params).toMatchObject({
+    i_p_max: "100000",
+    i_p_min: "-100000",
+    i_q_max: "100000",
+    i_q_min: "-100000",
+    i_v_max: "12000",
+    i_v_min: "8000",
+    j_p_max: "100000",
+    j_p_min: "-100000",
+    j_q_max: "100000",
+    j_q_min: "-100000",
+    j_v_max: "24000",
+    j_v_min: "16000"
+  });
+  expect(Number(normalizedAcac.params.i_i_max)).toBeCloseTo(5773.67205543, 6);
+  expect(Number(normalizedAcac.params.j_i_max)).toBeCloseTo(2886.83602771, 6);
+  expect(result.warnings.some((warning) => warning.message.includes("交流侧无功范围"))).toBe(true);
+  expect(result.warnings.some((warning) => warning.message.includes("首端无功范围"))).toBe(true);
+  expect(result.warnings.some((warning) => warning.message.includes("末端无功范围"))).toBe(true);
+});
+
+test("keeps converter power and current limits unchanged when rated capacity is invalid", () => {
+  const converter = createDefaultNode("dcac-converter", { x: 100, y: 100 });
+  converter.terminals.find((terminal) => terminal.type === "ac")!.vbase = "10 kV";
+  converter.terminals.find((terminal) => terminal.type === "dc")!.vbase = "750 V";
+  converter.params = {
+    ...converter.params,
+    rated_capacity: "0",
+    ac_p_max: "0",
+    ac_p_min: "0",
+    ac_q_max: "0",
+    ac_q_min: "0",
+    ac_i_max: "123",
+    dc_i_max: "456"
+  };
+
+  const result = normalizeDeviceOperatingLimitsAfterTopology([converter], {
+    powerUnit: "MW",
+    voltageUnit: "kV",
+    currentUnit: "A"
+  });
+  const normalized = result.nodes[0];
+
+  expect(normalized.params).toMatchObject({
+    ac_p_max: "0",
+    ac_p_min: "0",
+    ac_q_max: "0",
+    ac_q_min: "0",
+    ac_i_max: "123",
+    dc_i_max: "456"
+  });
+  expect(result.warnings.filter((warning) => warning.message.includes("额定容量 rated_capacity=0 无效"))).toHaveLength(1);
+});
+
+test("still repairs converter reactive limits while skipping voltage-dependent corrections for invalid base voltage", () => {
+  const converter = createDefaultNode("acac-converter", { x: 100, y: 100 });
+  converter.terminals[0].vbase = "10 kV";
+  converter.terminals[1].vbase = "20 kV";
+  converter.params = {
+    ...converter.params,
+    rated_capacity: "10 MW",
+    i_q_max: "0",
+    i_q_min: "0",
+    j_q_max: "0",
+    j_q_min: "0",
+    i_i_max: "123",
+    j_i_max: "456",
+    i_v_max: "99",
+    i_v_min: "1",
+    j_v_max: "99",
+    j_v_min: "1"
+  };
+
+  const result = normalizeDeviceOperatingLimitsAfterTopology([converter], {
+    powerUnit: "MW",
+    voltageUnit: "kV",
+    currentUnit: "A",
+    skipVoltageNodeIds: new Set([converter.id])
+  });
+  const normalized = result.nodes[0];
+
+  expect(normalized.params).toMatchObject({
+    i_q_max: "10",
+    i_q_min: "-10",
+    j_q_max: "10",
+    j_q_min: "-10",
+    i_i_max: "123",
+    j_i_max: "456",
+    i_v_max: "99",
+    i_v_min: "1",
+    j_v_max: "99",
+    j_v_min: "1"
+  });
+  expect(result.corrections.map((correction) => correction.paramKey)).toEqual([
+    "i_q_max",
+    "i_q_min",
+    "j_q_max",
+    "j_q_min"
+  ]);
+});
+
+test("does not validate device operating limits before topology calculation", () => {
+  const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+  source.params = {
+    ...source.params,
+    rated_capacity: "10 MW",
+    p_max: "0",
+    p_min: "0",
+    q_max: "0",
+    q_min: "0"
+  };
+
+  const errors = validateTopology([source], [], { includeVoltageSetpointDeviations: false });
+
+  expect(errors.some((error) => error.type === "device-limit-invalid")).toBe(false);
+  expect(errors.some((error) => error.type === "voltage-limit-out-of-range")).toBe(false);
 });
 
 test("validates voltage mismatch across terminals contracted through the same bus", () => {
