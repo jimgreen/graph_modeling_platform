@@ -59,6 +59,9 @@ import {
 import {
   applyDeviceTemplateDefinitionOverride,
   buildEFileExport,
+  buildEDeviceRecords,
+  buildEDeviceHeaderParameterRecords,
+  orderEDeviceRecordsForExport,
   createDefaultNode,
   DEVICE_LIBRARY,
   getTemplateParameterDefinitions,
@@ -3274,5 +3277,100 @@ describe("导出 E 文件与国网 E 格式模板一致性", () => {
     expect(missingTables, `缺失表: ${JSON.stringify(missingTables)}`).toEqual([]);
     expect(extraTables, `新增表: ${JSON.stringify(extraTables)}`).toEqual([]);
     expect(fieldMismatches, `字段不一致: ${JSON.stringify(fieldMismatches)}`).toEqual([]);
+  });
+});
+
+describe("E 文件查看/编辑弹窗头表补全", () => {
+  function parseESectionsForTest(text: string): Record<string, { columns: string[]; rows: Array<Record<string, string>> }> {
+    const sections: Record<string, { columns: string[]; rows: Array<Record<string, string>> }> = {};
+    const sectionPattern = /<([^/][^>]*)>\s*\r?\n@ ([^\r\n]+)\r?\n([\s\S]*?)<\/\1>/g;
+    for (const match of text.matchAll(sectionPattern)) {
+      const [, sectionName, header, body] = match;
+      const columns = header.trim().split(/\s+/);
+      const rows = body.split("\n")
+        .filter((line) => line.trim().startsWith("#"))
+        .map((line) => {
+          const values = line.replace(/^#\s*/, "").trim().split(/\s+/);
+          return Object.fromEntries(columns.map((column, index) => [column, values[index] ?? ""]));
+        });
+      sections[sectionName] = { columns, rows };
+    }
+    return sections;
+  }
+
+  test("头表记录与导出文件逐值一致，且按导出顺序排列", () => {
+    const templateText = readFileSync(new URL("../public/e-templates/sgcc.e", import.meta.url), "utf8");
+    const templateSections = parseEDeviceDefinitionFile(templateText);
+    const libraryTemplates = DEVICE_LIBRARY;
+    const result = applyEDeviceDefinitionSectionsToLibraryState({
+      sections: templateSections,
+      libraryTemplates,
+      deviceDefinitionOverrides: {},
+      eDeviceDefinitionLabels: {},
+      eDeviceDefinitionClassExportEnabled: {},
+      deviceDefinitionKeyForTemplate,
+      deviceDefinitionOverrideForTemplate,
+      resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
+    });
+    const exportOptions = buildEFileExportOptionsFromLibrary({
+      libraryTemplates,
+      eDeviceDefinitionLabels: result.eDeviceDefinitionLabels,
+      eDeviceDefinitionClassExportEnabled: result.eDeviceDefinitionClassExportEnabled,
+      eDeviceDefinitionFieldOrder: result.eDeviceDefinitionFieldOrder,
+      eDeviceDefinitionTemplateFields: result.eDeviceDefinitionTemplateFields,
+      resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
+    });
+
+    const nodes = [
+      createDefaultNode("ac-source", { x: 100, y: 100 }),
+      createDefaultNode("ac-load", { x: 220, y: 100 }),
+      createDefaultNode("ac-line", { x: 340, y: 100 }),
+      createDefaultNode("ac-transformer", { x: 460, y: 100 })
+    ];
+    const project: any = {
+      version: 1,
+      name: "头表补全测试",
+      nodes,
+      edges: [],
+      powerBaseValue: 100,
+      subcontrolarea: "测试区域",
+      substation: "测试厂站"
+    };
+
+    const records = buildEDeviceRecords(project, exportOptions);
+    const headerRecords = buildEDeviceHeaderParameterRecords(project, records, exportOptions, ["默认方案"]);
+
+    // 头表齐全：basevalue + basevoltage + subcontrolarea + substation
+    const headerSections = headerRecords.map((record) => record.section);
+    expect(headerSections[0]).toBe("basevalue");
+    expect(headerSections.filter((section) => section === "basevoltage").length).toBeGreaterThanOrEqual(2);
+    expect(headerSections).toContain("subcontrolarea");
+    expect(headerSections).toContain("substation");
+
+    // 与导出文件逐表逐行逐值一致
+    const payload = parseESectionsForTest(buildEFileExport(project, ["默认方案"], exportOptions).text);
+    const headerBySection: Record<string, any[]> = {};
+    for (const record of headerRecords) {
+      (headerBySection[record.section] ??= []).push(record);
+    }
+    for (const [section, list] of Object.entries(headerBySection)) {
+      const exported = payload[section];
+      expect(exported, `导出文件应有 ${section} 表`).toBeDefined();
+      expect(exported.rows, `${section} 行数应与导出一致`).toHaveLength(list.length);
+      list.forEach((record, rowIndex) => {
+        for (const [key, value] of Object.entries(record.params)) {
+          expect(String(value), `${section} 第${rowIndex + 1}行 ${key} 应与导出一致`).toBe(exported.rows[rowIndex][key]);
+        }
+      });
+    }
+
+    // 编辑器 Tab 顺序 = 头表在前 + 设备表按 E_SECTION_OUTPUT_ORDER（与导出文件一致）
+    const ordered = [...headerRecords, ...orderEDeviceRecordsForExport(records)];
+    const tabSections = Array.from(new Set(ordered.map((record) => record.section)));
+    expect(tabSections[0]).toBe("basevalue");
+    expect(tabSections.indexOf("basevalue")).toBeLessThan(tabSections.indexOf("ACNode"));
+    expect(tabSections.indexOf("ACNode")).toBeLessThan(tabSections.indexOf("ACBranch"));
+    expect(tabSections.indexOf("ACBranch")).toBeLessThan(tabSections.indexOf("ACLoad"));
+    expect(tabSections.indexOf("ACLoad")).toBeLessThan(tabSections.indexOf("ACGenerator"));
   });
 });

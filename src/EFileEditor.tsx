@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { X, Edit, Eye, ArrowUpRight } from "lucide-react";
 import { PARAM_LABELS } from "./appExtracted/appCoreCanvasUtilities";
+import { formatEDeviceRecordColumnValue } from "./model-eexport";
 
 export type EDeviceRecord = {
   id: string;
@@ -8,6 +9,10 @@ export type EDeviceRecord = {
   section: string;
   params: Record<string, string>;
   columns?: string[];
+  /** 模板输出表名（如 ACGenerator -> unit、ACNode -> node），缺省时展示 section */
+  sectionLabel?: string;
+  /** 系统表（basevalue/basevoltage/subcontrolarea/substation 等）只读，编辑模式不提供输入 */
+  readonly?: boolean;
 };
 
 export interface EFileEditorProps {
@@ -21,12 +26,14 @@ const MAX_COL_WIDTH = 2000;
 const MIN_COL_WIDTH = 40;
 const DEFAULT_COL_WIDTH = 80;
 
-// 引用字段映射：字段名 -> 目标表名
+// 引用字段映射：字段名 -> 目标表名（内部 section 名，跳转时按 idx 匹配目标表行）
 const REFERENCE_FIELD_MAP: Record<string, string> = {
   // 节点引用
   i_node: "ACNode",
   j_node: "ACNode",
   node: "ACNode",
+  ind: "ACNode",
+  znd: "ACNode",
   // 三绕组变压器
   t1_node: "ACNode",
   t2_node: "ACNode",
@@ -37,6 +44,9 @@ const REFERENCE_FIELD_MAP: Record<string, string> = {
   // DC 节点引用
   source_node: "DCNode",
   target_node: "DCNode",
+  // 厂站引用（所属厂站/末端所属厂站 -> substation 表 idx）
+  ist: "substation",
+  zst: "substation",
 };
 
 // 拓扑相关字段（只读，不可编辑）
@@ -59,16 +69,20 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
   const [highlightedRow, setHighlightedRow] = useState<string | null>(null);
   const resizeRef = useRef<{ colKey: string; startX: number; startWidth: number } | null>(null);
 
-  // 按 section 分组记录
+  // 按 section 分组记录：key=元件库内部名（供跳转/保存映射），label=模板输出表名（供展示）
   const sections = useMemo(() => {
-    const sectionMap = new Map<string, EDeviceRecord[]>();
+    const sectionMap = new Map<string, { key: string; label: string; records: EDeviceRecord[] }>();
     for (const record of editedRecords) {
-      const list = sectionMap.get(record.section) || [];
-      list.push(record);
-      sectionMap.set(record.section, list);
+      const key = record.section;
+      const label = record.sectionLabel ?? record.section;
+      const existing = sectionMap.get(key);
+      if (existing) {
+        existing.records.push(record);
+      } else {
+        sectionMap.set(key, { key, label, records: [record] });
+      }
     }
-    const result = Array.from(sectionMap.entries());
-    return result;
+    return Array.from(sectionMap.values());
   }, [editedRecords]);
 
   // 当 records 变化时重置编辑状态
@@ -143,15 +157,15 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
     const targetSection = REFERENCE_FIELD_MAP[fieldName];
     if (!targetSection) return;
 
-    // 找到目标 section 的索引
-    const targetSectionIndex = sections.findIndex(([section]) => section === targetSection);
+    // 找到目标 section（元件库内部名）的索引
+    const targetSectionIndex = sections.findIndex((section) => section.key === targetSection);
     if (targetSectionIndex === -1) return;
 
     // 切换到目标 section
     setActiveSection(targetSectionIndex);
 
     // 高亮目标行
-    const targetRecord = sections[targetSectionIndex][1].find(
+    const targetRecord = sections[targetSectionIndex].records.find(
       (record) => record.params.idx === targetIdx
     );
     if (targetRecord) {
@@ -164,8 +178,8 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
   if (!open) return null;
 
   const currentSection = sections[activeSection];
-  const sectionName = currentSection?.[0] || "";
-  const sectionRecords = currentSection?.[1] || [];
+  const sectionName = currentSection?.label || "";
+  const sectionRecords = currentSection?.records || [];
   const columns = sectionRecords[0]?.columns || [];
 
   const handleCellEdit = (recordId: string, column: string, value: string) => {
@@ -248,14 +262,14 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
         <div className="e-file-editor-content">
           {/* Tab 导航 */}
           <div className="e-file-editor-tabs">
-            {sections.map(([section], index) => (
+            {sections.map((section, index) => (
               <button
-                key={section}
+                key={section.key}
                 type="button"
                 className={index === activeSection ? "active" : ""}
                 onClick={() => setActiveSection(index)}
               >
-                {section}
+                {section.label}
               </button>
             ))}
           </div>
@@ -303,10 +317,12 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                     </tr>
                   </thead>
                   <tbody>
-                    {sectionRecords.map((record) => (
-                      <tr key={record.id} className={highlightedRow === record.id ? "highlighted" : ""}>
+                    {sectionRecords.map((record, rowIndex) => (
+                      <tr key={record.id} className={`${highlightedRow === record.id ? "highlighted" : ""}${record.readonly ? " read-only-row" : ""}`}>
                         {columns.map((col) => {
                           const value = record.params[col] || "";
+                          // 查看模式按导出规格展示：空白字段显示与导出 E 文件一致的默认值
+                          const displayValue = formatEDeviceRecordColumnValue(record.section, record, col, rowIndex);
                           const colWidth = getColWidth(sectionName, col);
                           const isReferenceField = REFERENCE_FIELD_MAP[col] && value;
                           return (
@@ -314,11 +330,11 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                               key={col}
                               className={`e-file-editor-td${isReferenceField ? " reference-field" : ""}`}
                               style={colWidth ? { width: `${colWidth}px` } : undefined}
-                              title={editMode ? undefined : value}
+                              title={editMode ? undefined : displayValue}
                             >
-                              {editMode ? (
+                              {editMode && !record.readonly ? (
                                 <>
-                                  <span className="e-file-editor-cell-text e-file-editor-cell-ghost">{value}</span>
+                                  <span className="e-file-editor-cell-text e-file-editor-cell-ghost">{displayValue}</span>
                                   {TOPOLOGY_READONLY_FIELDS.has(col) ? (
                                     <span className="e-file-editor-cell-input e-file-editor-cell-readonly">{value}</span>
                                   ) : (
@@ -326,6 +342,7 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                                       type="text"
                                       className="e-file-editor-cell-input"
                                       value={value}
+                                      placeholder={displayValue}
                                       onChange={(e) => handleCellEdit(record.id, col, e.target.value)}
                                     />
                                   )}
@@ -334,10 +351,10 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                                 <>
                                   <span
                                     className="e-file-editor-cell-text"
-                                    onDoubleClick={() => handleDoubleClickCell(value)}
-                                    title="双击复制到剪切板"
-                                  >{value}</span>
-                                  {isReferenceField && (
+                                    onDoubleClick={() => handleDoubleClickCell(displayValue)}
+                                    title={record.readonly ? displayValue : "双击复制到剪切板"}
+                                  >{displayValue}</span>
+                                  {!record.readonly && isReferenceField && (
                                     <button
                                       type="button"
                                       className="e-file-editor-jump-btn"

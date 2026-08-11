@@ -1766,53 +1766,90 @@ function formatEFileSectionRows(section: string, columns: string[], rows: string
   ].join("\n");
 }
 
+/**
+ * 按 E 文件导出规格格式化单条记录某一列的值：
+ * 未设置（空白）时填充与导出文件完全一致的默认值，保证查看/编辑展示与导出的内网 E 文件一致。
+ * regable 特殊处理与 formatESection 保持一致（风力/光伏/水力/储能默认可调）。
+ */
+export function formatEDeviceRecordColumnValue(
+  section: string,
+  record: Pick<EDeviceExport, "params">,
+  column: string,
+  rowIndex: number
+) {
+  if (column === "regable" && !record.params[column]) {
+    const deviceType = record.params.type || record.params.dev_type || "";
+    return isAdjustableDevice(deviceType) ? "1" : "0";
+  }
+  return formatEColumnValue(section, column, record.params[column], rowIndex);
+}
+
 function formatESection(section: string, rows: EDeviceExport[], outputSection = section) {
   const columns = eSectionColumns(section, rows);
   const formattedRows = sortESectionRecordsByIdx(rows)
-    .map((record, rowIndex) => columns.map((column) => {
-      // regable 默认值：风力、光伏、水力、储能为 1，其他为 0
-      if (column === "regable" && !record.params[column]) {
-        const deviceType = record.params.type || record.params.dev_type || "";
-        return isAdjustableDevice(deviceType) ? "1" : "0";
-      }
-      return formatEColumnValue(section, column, record.params[column], rowIndex);
-    }));
+    .map((record, rowIndex) => columns.map((column) => formatEDeviceRecordColumnValue(section, record, column, rowIndex)));
   return formatEFileSectionRows(outputSection, columns, formattedRows);
 }
 
-function buildBasevalueSection(project: ProjectFile): string {
-  const columns = ["p_base", "p_scale", "u_scale"];
-  const rows = [[
-    formatEColumnValue("basevalue", "p_base", String(project.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE), 0),
-    "1.0",
-    "1.0"
-  ]];
-  return formatEFileSectionRows("basevalue", columns, rows);
+function buildBasevalueParameterRecord(project: ProjectFile): EDeviceExport {
+  return {
+    id: "basevalue-1",
+    kind: "model",
+    section: "basevalue",
+    columns: ["p_base", "p_scale", "u_scale"],
+    params: {
+      p_base: String(project.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE),
+      p_scale: "1.0",
+      u_scale: "1.0"
+    }
+  };
 }
 
-function buildSubcontrolareaSection(project: ProjectFile): string {
-  const columns = ["idx", "name"];
-  const name = String(project.subcontrolarea ?? "").trim() || "默认区域";
-  const rows = [["1", formatEColumnValue("subcontrolarea", "name", name, 0)]];
-  return formatEFileSectionRows("subcontrolarea", columns, rows);
+function buildBasevoltageParameterRecords(): EDeviceExport[] {
+  const settings = readVoltageLevelSettings();
+  const allLevels: Array<{ name: string; vltp: string }> = [
+    ...settings.ac.map((row) => ({ name: row.name, vltp: row.vltp })),
+    ...settings.dc.map((row) => ({ name: row.name, vltp: row.vltp }))
+  ];
+  return allLevels.map((level, index) => ({
+    id: `basevoltage-${index + 1}`,
+    kind: "model",
+    section: "basevoltage",
+    columns: ["idx", "name", "vltp"],
+    params: { idx: String(index + 1), name: level.name, vltp: level.vltp }
+  }));
 }
 
-function buildSubstationSection(project: ProjectFile, idv: string): string {
-  const columns = ["idx", "name", "idv"];
-  const name = String(project.substation ?? "").trim() || "默认厂站";
-  const rows = [["1", formatEColumnValue("substation", "name", name, 0), idv]];
-  return formatEFileSectionRows("substation", columns, rows);
+function buildSubcontrolareaParameterRecord(project: ProjectFile): EDeviceExport {
+  return {
+    id: "subcontrolarea-1",
+    kind: "model",
+    section: "subcontrolarea",
+    columns: ["idx", "name"],
+    params: { idx: "1", name: String(project.subcontrolarea ?? "").trim() || "默认区域" }
+  };
 }
 
-function buildPowerBaseSection(project: ProjectFile, schemePath: string[]): string {
+function buildSubstationParameterRecord(project: ProjectFile, idv: string): EDeviceExport {
+  return {
+    id: "substation-1",
+    kind: "model",
+    section: "substation",
+    columns: ["idx", "name", "idv"],
+    params: { idx: "1", name: String(project.substation ?? "").trim() || "默认厂站", idv }
+  };
+}
+
+function buildPowerBaseParameterRecord(project: ProjectFile, schemePath: string[]): EDeviceExport {
   const normalizedSchemePath = schemePath
     .map((part) => String(part ?? "").trim())
     .filter(Boolean)
     .join("/") || "默认方案";
-  const row: EDeviceExport = {
+  return {
     id: "Model-1",
     kind: "model",
     section: "Model",
+    columns: ["path", "name", "p_base", "u_unit", "p_unit", "i_unit"],
     params: {
       path: normalizedSchemePath,
       name: project.name || "未命名",
@@ -1822,21 +1859,71 @@ function buildPowerBaseSection(project: ProjectFile, schemePath: string[]): stri
       i_unit: project.currentUnit ?? DEFAULT_CURRENT_UNIT
     }
   };
-  const columns = ["path", "name", "p_base", "u_unit", "p_unit", "i_unit"];
-  return formatEFileSectionRows("Model", columns, [
-    columns.map((column) => formatEColumnValue("Model", column, row.params[column], 0))
-  ]);
 }
 
-function buildBasevoltageSection(): string {
-  const settings = readVoltageLevelSettings();
-  const allLevels: Array<{ name: string; vltp: string }> = [
-    ...settings.ac.map((row) => ({ name: row.name, vltp: row.vltp })),
-    ...settings.dc.map((row) => ({ name: row.name, vltp: row.vltp }))
+/**
+ * 构建 E 文件头表记录（模板模式：basevalue/basevoltage/subcontrolarea/substation；
+ * 非模板模式：Model/basevoltage），取值与导出文件完全一致。
+ * 供「查看/编辑E文件」弹窗按导出规格补全缺失的表。
+ */
+export function buildEDeviceHeaderParameterRecords(
+  project: ProjectFile,
+  records: readonly EDeviceExport[] = [],
+  options: EFileExportOptions = {},
+  schemePath: string[] = ["默认方案"]
+): EDeviceExport[] {
+  if (!hasTemplateConfig(options)) {
+    return [buildPowerBaseParameterRecord(project, schemePath), ...buildBasevoltageParameterRecords()];
+  }
+  // substation idv = max(unit 的 ind 对应的 node 的 vbase 对应的 basevoltage idx)（与导出一致）
+  const recordsBySection = new Map<string, EDeviceExport[]>();
+  for (const record of records) {
+    const list = recordsBySection.get(record.section) ?? [];
+    list.push(record);
+    recordsBySection.set(record.section, list);
+  }
+  const basevoltageLevels = readVoltageLevelSettings();
+  const allBasevoltageLevels = [...basevoltageLevels.ac, ...basevoltageLevels.dc];
+  const nodeRecords = recordsBySection.get("ACNode") ?? [];
+  const unitRecords = recordsBySection.get("ACGenerator") ?? [];
+  const unitNodeIdxs = new Set(unitRecords.map((r) => r.params.ind).filter(Boolean));
+  const relevantNodes = unitNodeIdxs.size > 0
+    ? nodeRecords.filter((r) => unitNodeIdxs.has(r.params.idx))
+    : nodeRecords;
+  const nodeVbases = relevantNodes.map((r) => r.params.vbase).filter(Boolean);
+  const basevoltageIdxs = nodeVbases.map((vbase) => {
+    const idx = allBasevoltageLevels.findIndex((level) => String(level.vltp) === String(vbase));
+    return idx >= 0 ? idx + 1 : 0;
+  }).filter((idx) => idx > 0);
+  const substationIdv = basevoltageIdxs.length > 0 ? String(Math.max(...basevoltageIdxs)) : "0";
+  return [
+    buildBasevalueParameterRecord(project),
+    ...buildBasevoltageParameterRecords(),
+    buildSubcontrolareaParameterRecord(project),
+    buildSubstationParameterRecord(project, substationIdv)
   ];
-  const rows = allLevels.map((level, index) => [String(index + 1), level.name, level.vltp]);
-  const columns = ["idx", "name", "vltp"];
-  return formatEFileSectionRows("basevoltage", columns, rows);
+}
+
+/**
+ * 按导出顺序排列设备记录（E_SECTION_OUTPUT_ORDER 优先，其余按首次出现顺序排在最后），
+ * 供「查看/编辑E文件」弹窗 Tab 顺序与导出的 E 文件一致。
+ */
+export function orderEDeviceRecordsForExport(records: readonly EDeviceExport[]): EDeviceExport[] {
+  const sectionRank = new Map<string, number>();
+  E_SECTION_OUTPUT_ORDER.forEach((section, index) => sectionRank.set(section, index));
+  const remainingRank = new Map<string, number>();
+  let nextRank = E_SECTION_OUTPUT_ORDER.length;
+  for (const record of records) {
+    if (!sectionRank.has(record.section) && !remainingRank.has(record.section)) {
+      remainingRank.set(record.section, nextRank);
+      nextRank += 1;
+    }
+  }
+  return [...records].sort((first, second) => {
+    const firstRank = sectionRank.get(first.section) ?? remainingRank.get(first.section) ?? Number.MAX_SAFE_INTEGER;
+    const secondRank = sectionRank.get(second.section) ?? remainingRank.get(second.section) ?? Number.MAX_SAFE_INTEGER;
+    return firstRank - secondRank;
+  });
 }
 
 function buildEDeviceParameterFileFromRecords(
@@ -1856,10 +1943,10 @@ function buildEDeviceParameterFileFromRecords(
     sectionRecords.push(record);
     recordsBySection.set(record.section, sectionRecords);
   }
-  const orderedSections = [
-    ...E_SECTION_OUTPUT_ORDER.filter((section) => recordsBySection.has(section)),
-    ...Array.from(recordsBySection.keys()).filter((section) => !E_SECTION_OUTPUT_ORDER.includes(section))
-  ];
+  const sectionedRecords = Array.from(recordsBySection.values()).flat();
+  const orderedSections = Array.from(new Set(
+    orderEDeviceRecordsForExport(sectionedRecords).map((record) => record.section)
+  ));
   // 按 outputSection 分组，合并同名的 records（如 ACTransformer 和 ACTransfomer3 都输出到 trfm）
   const recordsByOutputSection = new Map<string, { section: string; records: EDeviceExport[] }[]>();
   for (const section of orderedSections) {
@@ -1885,26 +1972,20 @@ function buildEDeviceParameterFileFromRecords(
     }
     return formatESection(groups[0].section, allRecords, outputSection);
   });
-  const hasTemplateConfigValue = hasTemplateConfig(options);
-  // substation idv = max(unit 的 ind 对应的 node 的 vbase 对应的 basevoltage idx)
-  const basevoltageLevels = readVoltageLevelSettings();
-  const allBasevoltageLevels = [...basevoltageLevels.ac, ...basevoltageLevels.dc];
-  const nodeRecords = recordsBySection.get("ACNode") ?? [];
-  const unitRecords = recordsBySection.get("ACGenerator") ?? [];
-  const unitNodeIdxs = new Set(unitRecords.map((r) => r.params.ind).filter(Boolean));
-  const relevantNodes = unitNodeIdxs.size > 0
-    ? nodeRecords.filter((r) => unitNodeIdxs.has(r.params.idx))
-    : nodeRecords;
-  const nodeVbases = relevantNodes.map((r) => r.params.vbase).filter(Boolean);
-  const basevoltageIdxs = nodeVbases.map((vbase) => {
-    const idx = allBasevoltageLevels.findIndex((level) => String(level.vltp) === String(vbase));
-    return idx >= 0 ? idx + 1 : 0;
-  }).filter((idx) => idx > 0);
-  const substationIdv = basevoltageIdxs.length > 0 ? String(Math.max(...basevoltageIdxs)) : "0";
-  const headerSections = hasTemplateConfigValue
-    ? [buildBasevalueSection(project), buildBasevoltageSection(), buildSubcontrolareaSection(project), buildSubstationSection(project, substationIdv)]
-    : [buildPowerBaseSection(project, schemePath), buildBasevoltageSection()];
-  return [...headerSections, ...sectionBlocks].join("\n\n") + "\n";
+  // 头表（模板模式：basevalue/basevoltage/subcontrolarea/substation；非模板模式：Model/basevoltage），
+  // 与「查看/编辑E文件」弹窗展示共用同一份记录，保证展示与导出完全一致
+  const headerRecords = buildEDeviceHeaderParameterRecords(project, sectionedRecords, options, schemePath);
+  const headerBlocks: string[] = [];
+  for (let index = 0; index < headerRecords.length;) {
+    const section = headerRecords[index].section;
+    const group: EDeviceExport[] = [];
+    while (index < headerRecords.length && headerRecords[index].section === section) {
+      group.push(headerRecords[index]);
+      index += 1;
+    }
+    headerBlocks.push(formatESection(section, group, section));
+  }
+  return [...headerBlocks, ...sectionBlocks].join("\n\n") + "\n";
 }
 
 export function buildEDeviceParameterFile(

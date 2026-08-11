@@ -210,6 +210,8 @@ import {
   synchronizeBusTerminalsWithEdges,
   deserializeProject,
   edgeWithSavedRouteGeometry,
+  buildEDeviceRecords,
+  formatEDeviceRecordColumnValue,
   type Edge,
   type DeviceKind,
   type DeviceTemplate,
@@ -2835,4 +2837,66 @@ test("exports edited container-associated device names to E sections", () => {
     name: "自定义氢源"
   });
 });
+});
+
+describe("E 文件查看/编辑展示与导出一致性", () => {
+  test("未设置字段在查看模式下显示与导出 E 文件一致的默认值", () => {
+    const generator = createDefaultNode("ac-source", { x: 100, y: 100 });
+    generator.params = {
+      ...generator.params,
+      idx: "5",
+      p_set: "8.5",
+      run_stat: "1"
+    };
+    const project: ProjectFile = {
+      version: 1,
+      name: "查看展示一致性测试",
+      nodes: [generator],
+      edges: []
+    };
+
+    const records = buildEDeviceRecords(project);
+    const generatorRecord = records.find((record) => record.kind === "ac-source");
+    expect(generatorRecord).toBeDefined();
+
+    const section = generatorRecord!.section;
+    const rowIndex = 0;
+    const formatted: Record<string, string> = {};
+    for (const column of generatorRecord!.columns ?? []) {
+      formatted[column] = formatEDeviceRecordColumnValue(section, generatorRecord!, column, rowIndex);
+    }
+
+    // 已设置字段按实际值展示
+    expect(formatted.name).toBe("交流电源");
+    expect(formatted.p_set).toBe("8.5");
+    expect(formatted.run_stat).toBe("1");
+    // 未设置字段展示导出默认值而非空白
+    expect(formatted.idx).toBe("5");
+    expect(formatted.q_set).toBe("0");
+    expect(formatted.regable).toBe("0");
+    expect(formatted.v_set).toBe("0");
+    // 有默认参数值（PV）的字段按实际值展示
+    expect(formatted.control_type).toBe("PV");
+
+    // 与导出文件中的取值一致
+    const payload = parseESections(
+      buildEDeviceParameterFile(project)
+    );
+    const exportedRow = payload.ACGenerator.rows[0];
+    for (const column of Object.keys(formatted)) {
+      if (column === "name") continue;
+      expect(formatted[column], `列 ${column} 展示值应与导出一致`).toBe(exportedRow[column] ?? "");
+    }
+  });
+
+  test("导出与展示共用 formatEDeviceRecordColumnValue（regable 可调设备默认 1）", () => {
+    const storage = createDefaultNode("ac-storage", { x: 100, y: 100 });
+    const record: any = {
+      section: "ACGenerator",
+      params: { name: "储能", type: "ac-storage", regable: "" }
+    };
+    expect(formatEDeviceRecordColumnValue("ACGenerator", record, "regable", 0)).toBe("1");
+    record.params.type = "ac-line";
+    expect(formatEDeviceRecordColumnValue("ACGenerator", record, "regable", 0)).toBe("0");
+  });
 });

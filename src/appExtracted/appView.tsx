@@ -8,8 +8,8 @@ import {
   visibleIconLibraryIcons
 } from "../iconLibraryCatalog";
 import { buildExportDeviceIdMap } from "../svgExportUtils";
-import { E_SECTION_COLUMNS, inferESection, getTemplateParameterDefinitions, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, type EDeviceExport } from "../model";
-import { buildEDeviceInterfaceDefinitionRows, orderEDeviceInterfaceFields, applyEDeviceDefinitionSectionsToLibraryState } from "./appDeviceDefinitionFactories";
+import { E_SECTION_COLUMNS, inferESection, getTemplateParameterDefinitions, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, type EDeviceExport } from "../model";
+import { buildEDeviceInterfaceDefinitionRows, orderEDeviceInterfaceFields, applyEDeviceDefinitionSectionsToLibraryState, buildEFileExportOptionsFromLibrary } from "./appDeviceDefinitionFactories";
 import { UserCustomizationManagerDialog } from "../UserCustomizationManagerDialog";
 import { VoltageLevelDialog } from "../VoltageLevelDialog";
 import { EFileEditor } from "../EFileEditor";
@@ -1255,16 +1255,73 @@ export function renderAppView(__appScope: Record<string, any>) {
   const imagePickerCanClear = imageTarget && imageTarget.kind !== "canvasIcon" && imageTarget.kind !== "stateIconDrawing";
   // 从当前模型生成 E 文件记录（用于查看/编辑）
   const [eFileEditorRecords, setEFileEditorRecords] = useState<EDeviceExport[]>([]);
+  // 与导出共用同一套接口定义选项：当 E 文件接口定义来自文件或预定义模板时，
+  // 查看/编辑展示的即为模板规格的 E 文件（表名、字段列、取值与导出完全一致）
+  const eFileEditorExportOptions = useMemo(
+    () => buildEFileExportOptionsFromLibrary({
+      libraryTemplates,
+      labels: PARAM_LABELS,
+      eDeviceDefinitionLabels,
+      eDeviceDefinitionClassExportEnabled,
+      eDeviceDefinitionFieldOrder,
+      eDeviceDefinitionTemplateFields,
+      resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [libraryTemplates, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTemplateFields]
+  );
+  // 元件库 -> 模板输出表名（如 ACGenerator -> unit、ACNode -> node），供 E 文件编辑器按模板规格展示
+  const eFileEditorSectionLabels = useMemo(() => {
+    const labelBySection = new Map<string, string>();
+    for (const [componentLibrary, label] of Object.entries(eDeviceDefinitionLabels ?? {})) {
+      if (label && label !== componentLibrary) {
+        labelBySection.set(componentLibrary, label);
+      }
+    }
+    for (const definition of eFileEditorExportOptions.interfaceDefinitions ?? []) {
+      const componentLibrary = String(definition.componentLibrary ?? "").trim();
+      const outputLabel = String(definition.exportName ?? "").trim()
+        || labelBySection.get(componentLibrary)
+        || componentLibrary;
+      if (componentLibrary && outputLabel) {
+        labelBySection.set(componentLibrary, outputLabel);
+      }
+    }
+    return labelBySection;
+  }, [eFileEditorExportOptions, eDeviceDefinitionLabels]);
   useEffect(() => {
     if (!eFileEditorDialogOpen) return;
     try {
-      const records = buildEDeviceRecords({ nodes: __appScope.nodes ?? [], edges: __appScope.edges ?? [] } as any);
-      setEFileEditorRecords(records);
+      // 使用完整项目（含 powerBaseValue/subcontrolarea/substation/名称/单位等），保证头表取值与导出一致
+      const project = (typeof __appScope.currentProject === "function"
+        ? __appScope.currentProject()
+        : { nodes: __appScope.nodes ?? [], edges: __appScope.edges ?? [] });
+      const schemePath = typeof __appScope.schemePathForScheme === "function"
+        ? __appScope.schemePathForScheme(__appScope.activeSchemeKey)
+        : ["默认方案"];
+      const records = buildEDeviceRecords(project, eFileEditorExportOptions);
+      // 头表（basevalue/basevoltage/subcontrolarea/substation 或 Model）为系统表，随项目设置生成，只读展示
+      const headerRecords = buildEDeviceHeaderParameterRecords(project, records, eFileEditorExportOptions, schemePath);
+      const headerSectionSet = new Set(headerRecords.map((record) => record.section));
+      // 按导出顺序排列（头表在前，设备表按 E_SECTION_OUTPUT_ORDER），Tab 顺序与导出的 E 文件一致
+      const orderedRecords = [...headerRecords, ...orderEDeviceRecordsForExport(records)];
+      setEFileEditorRecords(orderedRecords.map((record) => {
+        const sectionLabel = eFileEditorSectionLabels.get(record.section);
+        const next: EDeviceExport & { sectionLabel?: string; readonly?: boolean } = { ...record };
+        if (sectionLabel && sectionLabel !== record.section) {
+          // section 保持元件库内部名（供跳转/保存反向映射），sectionLabel 为模板输出表名（供展示）
+          next.sectionLabel = sectionLabel;
+        }
+        if (headerSectionSet.has(record.section)) {
+          next.readonly = true;
+        }
+        return next;
+      }));
     } catch (error) {
       console.error("[EFileEditor] Error generating records:", error);
       setEFileEditorRecords([]);
     }
-  }, [eFileEditorDialogOpen]);
+  }, [eFileEditorDialogOpen, eFileEditorExportOptions, eFileEditorSectionLabels]);
   // ESC 键关闭 E 文件编辑器
   useEffect(() => {
     if (!eFileEditorDialogOpen) return;
@@ -4835,6 +4892,29 @@ export function renderAppView(__appScope: Record<string, any>) {
             const setNodes = __appScope.setNodes;
             const pushUndoSnapshot = __appScope.pushUndoSnapshot;
             if (!setNodes) return;
+            // 反向映射：exportName(模板列名) -> sourceName(设备参数名)。
+            // 模板模式下展示/编辑的是模板规格的 E 文件列名，保存时需写回设备参数名，
+            // 否则编辑结果在重新导出时无法被读取，破坏「导出与内网完全一致」。
+            const sourceNameByExport = new Map<string, string>(); // key = `${section}\0${exportName}`
+            for (const definition of eFileEditorExportOptions.interfaceDefinitions ?? []) {
+              const section = String(definition.componentLibrary ?? "").trim();
+              if (!section) continue;
+              for (const field of definition.fields ?? []) {
+                if (field.exportEnabled === false) continue;
+                const exportName = String(field.exportName ?? field.sourceName ?? "").trim();
+                const sourceName = String(field.sourceName ?? exportName).trim();
+                if (exportName && sourceName) sourceNameByExport.set(`${section}\0${exportName}`, sourceName);
+              }
+            }
+            // 运行时生成表（ACNode/ACRealBs 等）的字段定义仅存于 eDeviceDefinitionTemplateFields
+            for (const [componentLibrary, templateFields] of Object.entries(eDeviceDefinitionTemplateFields ?? {})) {
+              if (!componentLibrary || !Array.isArray(templateFields)) continue;
+              for (const field of templateFields) {
+                const exportName = String(field.exportName ?? "").trim();
+                const sourceName = String(field.sourceName ?? exportName).trim();
+                if (exportName && sourceName) sourceNameByExport.set(`${componentLibrary}\0${exportName}`, sourceName);
+              }
+            }
             // 构建 id -> params 映射（跳过拓扑生成的记录）
             const editedMap = new Map<string, Record<string, string>>();
             for (const record of editedRecords) {
@@ -4842,7 +4922,17 @@ export function renderAppView(__appScope: Record<string, any>) {
                 // 只处理真实节点 id（格式如 "node-xxx"）
                 if (!record.id.startsWith("node-")) continue;
               }
-              editedMap.set(record.id, record.params);
+              const section = record.section;
+              const params: Record<string, string> = {};
+              for (const [exportName, value] of Object.entries(record.params)) {
+                if (exportName === "name") {
+                  params.name = value;
+                  continue;
+                }
+                const sourceName = sourceNameByExport.get(`${section}\0${exportName}`) ?? exportName;
+                params[sourceName] = value;
+              }
+              editedMap.set(record.id, params);
             }
             if (editedMap.size === 0) return;
             let changed = false;

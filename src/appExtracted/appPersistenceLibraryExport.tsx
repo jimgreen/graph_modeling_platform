@@ -1460,8 +1460,18 @@ function normalizeObjectRecord(value: unknown): Record<string, Array<{ sourceNam
         cnName: String(src.cnName ?? "").trim() || exportName
       }];
     });
-    if (fields.length > 0) {
-      record[key] = fields;
+    // 按 exportName 去重（与后端归一化保持一致，避免脏数据重复列）
+    const seen = new Set<string>();
+    const uniqueFields = fields.filter((field) => {
+      const key = field.exportName.toLowerCase();
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+    if (uniqueFields.length > 0) {
+      record[key] = uniqueFields;
     }
     return record;
   }, {});
@@ -1470,6 +1480,7 @@ function normalizeObjectRecord(value: unknown): Record<string, Array<{ sourceNam
 const E_DEVICE_DEFINITION_LABELS_STORAGE_KEY = "power-system-e-device-definition-labels";
 const E_DEVICE_DEFINITION_CLASS_EXPORT_STORAGE_KEY = "power-system-e-device-definition-class-export-enabled";
 const E_DEVICE_DEFINITION_FIELD_ORDER_STORAGE_KEY = "power-system-e-device-definition-field-order";
+const E_DEVICE_DEFINITION_TEMPLATE_FIELDS_STORAGE_KEY = "power-system-e-device-definition-template-fields";
 
 export function normalizeCustomComponentLibraries(value: unknown, reservedTypes: readonly string[] = E_SECTION_OPTIONS): CustomComponentLibraryDefinition[] {
   if (!Array.isArray(value)) {
@@ -2616,6 +2627,10 @@ export function readEDeviceDefinitionFieldOrder(): Record<string, string[]> {
   return readLocalStorageJson(E_DEVICE_DEFINITION_FIELD_ORDER_STORAGE_KEY, "{}", normalizeStringArrayRecord, {});
 }
 
+export function readEDeviceDefinitionTemplateFields(): Record<string, Array<{ sourceName?: string; exportName: string; cnName: string }>> {
+  return readLocalStorageJson(E_DEVICE_DEFINITION_TEMPLATE_FIELDS_STORAGE_KEY, "{}", normalizeObjectRecord, {});
+}
+
 export function readCustomGraphTemplateTypes(): string[] {
   return readLocalStorageJson(CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, "[]", normalizeGraphTemplateTypes, []);
 }
@@ -2633,6 +2648,7 @@ export function readLocalDeviceLibraryPersistencePayload(): DeviceLibraryPersist
     eDeviceDefinitionLabels: readEDeviceDefinitionLabels(),
     eDeviceDefinitionClassExportEnabled: readEDeviceDefinitionClassExportEnabled(),
     eDeviceDefinitionFieldOrder: readEDeviceDefinitionFieldOrder(),
+    eDeviceDefinitionTemplateFields: readEDeviceDefinitionTemplateFields(),
     customGraphTemplateTypes: readCustomGraphTemplateTypes(),
     customGraphTemplates: readCustomGraphTemplates()
   };
@@ -2653,6 +2669,7 @@ function fallbackToLocalStorage(data: DeviceLibraryPersistencePayload): void {
     window.localStorage.setItem(E_DEVICE_DEFINITION_LABELS_STORAGE_KEY, JSON.stringify(data.eDeviceDefinitionLabels ?? {}));
     window.localStorage.setItem(E_DEVICE_DEFINITION_CLASS_EXPORT_STORAGE_KEY, JSON.stringify(data.eDeviceDefinitionClassExportEnabled ?? {}));
     window.localStorage.setItem(E_DEVICE_DEFINITION_FIELD_ORDER_STORAGE_KEY, JSON.stringify(data.eDeviceDefinitionFieldOrder ?? {}));
+    window.localStorage.setItem(E_DEVICE_DEFINITION_TEMPLATE_FIELDS_STORAGE_KEY, JSON.stringify(data.eDeviceDefinitionTemplateFields ?? {}));
     window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, JSON.stringify(data.customGraphTemplateTypes));
     window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, JSON.stringify(data.customGraphTemplates));
   } catch {
@@ -2665,6 +2682,7 @@ export function writeLocalDeviceLibraryPersistencePayload(normalizedDeviceLibrar
     window.localStorage.setItem(E_DEVICE_DEFINITION_LABELS_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionLabels ?? {}));
     window.localStorage.setItem(E_DEVICE_DEFINITION_CLASS_EXPORT_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionClassExportEnabled ?? {}));
     window.localStorage.setItem(E_DEVICE_DEFINITION_FIELD_ORDER_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionFieldOrder ?? {}));
+    window.localStorage.setItem(E_DEVICE_DEFINITION_TEMPLATE_FIELDS_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionTemplateFields ?? {}));
   } catch {
     // 本地接口定义缓存不可写时，不阻断元件库保存。
   }

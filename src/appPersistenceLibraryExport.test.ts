@@ -276,12 +276,24 @@ describe("graph template library filtering", () => {
         ACLoad: ["name", "idx", "name", "", 5],
         "": ["idx"],
         DCLoad: "idx,name"
+      },
+      eDeviceDefinitionTemplateFields: {
+        ACNode: [
+          { sourceName: "node", exportName: "realbs", cnName: "真实母线" },
+          { sourceName: "node", exportName: "realbs", cnName: "重复列" },
+          { sourceName: "", exportName: "", cnName: "" },
+          "invalid"
+        ],
+        "": [{ exportName: "idx" }]
       }
     } as any);
 
     expect((normalized as any).eDeviceDefinitionLabels).toEqual({ ACLoad: "LoadTable" });
     expect((normalized as any).eDeviceDefinitionClassExportEnabled).toEqual({ ACLoad: false, DCLoad: true });
     expect((normalized as any).eDeviceDefinitionFieldOrder).toEqual({ ACLoad: ["name", "idx"] });
+    expect((normalized as any).eDeviceDefinitionTemplateFields).toEqual({
+      ACNode: [{ sourceName: "node", exportName: "realbs", cnName: "真实母线" }]
+    });
   });
 
   test("keeps custom component library Chinese labels for bilingual display", () => {

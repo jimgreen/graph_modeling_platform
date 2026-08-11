@@ -406,6 +406,15 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
         eDeviceDefinitionClassExportEnabled: { ACGenerator: false },
         eDeviceDefinitionFieldOrder: {
           ACGenerator: ["idx", "name", "dev_type", "node", "rated_capacity", "rated_voltage"]
+        },
+        eDeviceDefinitionTemplateFields: {
+          ACNode: [
+            { sourceName: "idx", exportName: "idx", cnName: "序号" },
+            { sourceName: "name", exportName: "name", cnName: "名称" },
+            { sourceName: "node", exportName: "realbs", cnName: "真实母线" },
+            { sourceName: "ist", exportName: "ist", cnName: "所属厂站" },
+            { sourceName: "vltp", exportName: "vltp", cnName: "电压等级" }
+          ]
         }
       })
     });
@@ -416,12 +425,30 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
     expect(saved.json.eDeviceDefinitionFieldOrder).toEqual({
       ACGenerator: ["idx", "name", "dev_type", "node", "rated_capacity", "rated_voltage"]
     });
+    expect(saved.json.eDeviceDefinitionTemplateFields).toEqual({
+      ACNode: [
+        { sourceName: "idx", exportName: "idx", cnName: "序号" },
+        { sourceName: "name", exportName: "name", cnName: "名称" },
+        { sourceName: "node", exportName: "realbs", cnName: "真实母线" },
+        { sourceName: "ist", exportName: "ist", cnName: "所属厂站" },
+        { sourceName: "vltp", exportName: "vltp", cnName: "电压等级" }
+      ]
+    });
     const got = await fetchJson(apiPath("/device-library"));
     expect(got.status).toBe(200);
     expect(got.json.eDeviceDefinitionLabels).toEqual({ ACGenerator: "ACGeneratorRenamed" });
     expect(got.json.eDeviceDefinitionClassExportEnabled).toEqual({ ACGenerator: false });
     expect(got.json.eDeviceDefinitionFieldOrder).toEqual({
       ACGenerator: ["idx", "name", "dev_type", "node", "rated_capacity", "rated_voltage"]
+    });
+    expect(got.json.eDeviceDefinitionTemplateFields).toEqual({
+      ACNode: [
+        { sourceName: "idx", exportName: "idx", cnName: "序号" },
+        { sourceName: "name", exportName: "name", cnName: "名称" },
+        { sourceName: "node", exportName: "realbs", cnName: "真实母线" },
+        { sourceName: "ist", exportName: "ist", cnName: "所属厂站" },
+        { sourceName: "vltp", exportName: "vltp", cnName: "电压等级" }
+      ]
     });
   });
 });

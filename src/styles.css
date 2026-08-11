@@ -12991,6 +12991,10 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   position: relative;
 }
 
+.e-file-editor-table tr.read-only-row .e-file-editor-cell-text {
+  color: #6b7280;
+}
+
 
 .e-file-editor-td.reference-field {
   position: relative;

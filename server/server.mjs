@@ -868,6 +868,36 @@ function normalizeDeviceLibraryConfig(payload) {
         return values.length > 0 ? [[key, values]] : [];
       }))
       : {};
+  // 模板字段列定义（模板导入后用于 E 文件导出覆盖列名），必须持久化，
+  // 否则重启后 node/unit 等表回退为旧列，与模板（如 sgcc.e）不一致。
+  const eDeviceDefinitionTemplateFields =
+    source.eDeviceDefinitionTemplateFields && typeof source.eDeviceDefinitionTemplateFields === "object" && !Array.isArray(source.eDeviceDefinitionTemplateFields)
+      ? Object.fromEntries(Object.entries(source.eDeviceDefinitionTemplateFields).flatMap(([rawKey, rawValue]) => {
+        const key = String(rawKey ?? "").trim();
+        if (!key || !Array.isArray(rawValue)) {
+          return [];
+        }
+        const seen = new Set();
+        const fields = rawValue.flatMap((item) => {
+          if (!item || typeof item !== "object" || Array.isArray(item)) {
+            return [];
+          }
+          const exportName = String(item.exportName ?? "").trim();
+          if (!exportName) {
+            return [];
+          }
+          const normalizedExportName = exportName.toLowerCase();
+          if (seen.has(normalizedExportName)) {
+            return [];
+          }
+          seen.add(normalizedExportName);
+          const cnName = String(item.cnName ?? "").trim();
+          const sourceName = typeof item.sourceName === "string" ? item.sourceName.trim() : "";
+          return [{ sourceName: sourceName || undefined, exportName, cnName: cnName || exportName }];
+        });
+        return fields.length > 0 ? [[key, fields]] : [];
+      }))
+      : {};
   return {
     customDeviceTemplates,
     customCategoryLibraries,
@@ -877,7 +907,8 @@ function normalizeDeviceLibraryConfig(payload) {
     deviceDefinitionOverrides,
     eDeviceDefinitionLabels,
     eDeviceDefinitionClassExportEnabled,
-    eDeviceDefinitionFieldOrder
+    eDeviceDefinitionFieldOrder,
+    eDeviceDefinitionTemplateFields
   };
 }
 
