@@ -2570,6 +2570,7 @@ test("treats duplicate identity and voltage setpoint deviations as non-blocking 
   expect(isBlockingTopologyValidationError({ type: "missing-island-voltage" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "island-voltage-mismatch" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "transformer-island-short" })).toBe(true);
+  expect(isBlockingTopologyValidationError({ type: "device-setpoint-out-of-range" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "hydrogen-storage-parameter-invalid" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "hydrogen-coupling-parameter-invalid" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "device-limit-invalid" })).toBe(false);
@@ -2626,11 +2627,15 @@ test("blocks invalid electric-hydrogen coupling limits without automatically cor
     { kind: "dc-fuel-cell", params: { h2e_coeff: "bad" }, message: "h2e_coeff=bad 必须为正数" },
     { kind: "ac-electrolyzer", params: { rated_capacity_ac_load_t1: "0" }, message: "rated_capacity_ac_load_t1=0 必须为正数" },
     { kind: "dc-electrolyzer", params: { p_max_dc_load_t1: "5", p_min_dc_load_t1: "5" }, message: "p_max_dc_load_t1 必须大于 p_min_dc_load_t1" },
+    { kind: "dc-electrolyzer", params: { p_set_dc_load_t1: "6" }, message: "p_set_dc_load_t1=6 必须位于 p_min_dc_load_t1 与 p_max_dc_load_t1 之间" },
     { kind: "ac-fuel-cell", params: { q_max_ac_unit_t1: "4", q_min_ac_unit_t1: "4" }, message: "q_max_ac_unit_t1 必须大于 q_min_ac_unit_t1" },
+    { kind: "ac-fuel-cell", params: { q_set_ac_unit_t1: "4" }, message: "q_set_ac_unit_t1=4 必须位于 q_min_ac_unit_t1 与 q_max_ac_unit_t1 之间" },
     { kind: "ac-fuel-cell", params: { rated_capacity_ac_unit_t1: "3", q_max_ac_unit_t1: "3.1" }, message: "q_max_ac_unit_t1 不能大于 rated_capacity_ac_unit_t1" },
     { kind: "dc-fuel-cell", params: { rated_capacity_dc_unit_t1: "3 MW", p_max_dc_unit_t1: "3100 kW" }, message: "p_max_dc_unit_t1 不能大于 rated_capacity_dc_unit_t1" },
     { kind: "ac-electrolyzer", params: { pressure_max_h2_unit_t2: "1", pressure_min_h2_unit_t2: "1" }, message: "pressure_max_h2_unit_t2 必须大于 pressure_min_h2_unit_t2" },
+    { kind: "ac-electrolyzer", params: { pressure_set_h2_unit_t2: "0" }, message: "pressure_set_h2_unit_t2=0 必须位于 pressure_min_h2_unit_t2 与 pressure_max_h2_unit_t2 之间" },
     { kind: "dc-electrolyzer", params: { flow_max_h2_unit_t2: "100", flow_min_h2_unit_t2: "100" }, message: "flow_max_h2_unit_t2 必须大于 flow_min_h2_unit_t2" },
+    { kind: "dc-electrolyzer", params: { flow_set_h2_unit_t2: "bad" }, message: "flow_set_h2_unit_t2=bad 必须位于 flow_min_h2_unit_t2 与 flow_max_h2_unit_t2 之间" },
     { kind: "ac-fuel-cell", params: { rated_capacity_h2_load_t2: "600", flow_max_h2_load_t2: "601" }, message: "flow_max_h2_load_t2 不能大于 rated_capacity_h2_load_t2" }
   ] as const;
 
@@ -2650,6 +2655,171 @@ test("blocks invalid electric-hydrogen coupling limits without automatically cor
     expect(result.nodes[0].params).toEqual(originalParams);
     expect(result.corrections).toEqual([]);
   }
+});
+
+test("blocks setpoints outside their limits while allowing exact boundary values", () => {
+  const sourceAtMinimum = createDefaultNode("ac-source", { x: 100, y: 100 });
+  sourceAtMinimum.params = {
+    ...sourceAtMinimum.params,
+    rated_capacity: "10 MW",
+    p_set: "-2 MW",
+    p_max: "10 MW",
+    p_min: "-2 MW"
+  };
+  const sourceAtMaximum = createDefaultNode("ac-source", { x: 300, y: 100 });
+  sourceAtMaximum.params = {
+    ...sourceAtMaximum.params,
+    rated_capacity: "10 MW",
+    p_set: "10 MW",
+    p_max: "10 MW",
+    p_min: "-2 MW"
+  };
+  const invalidSource = createDefaultNode("ac-source", { x: 500, y: 100 });
+  invalidSource.params = {
+    ...invalidSource.params,
+    rated_capacity: "10 MW",
+    p_set: "10.1 MW",
+    p_max: "10 MW",
+    p_min: "-2 MW"
+  };
+
+  const result = normalizeDeviceOperatingLimitsAfterTopology(
+    [sourceAtMinimum, sourceAtMaximum, invalidSource],
+    { powerUnit: "MW" }
+  );
+  const setpointWarnings = result.warnings.filter((warning) => warning.type === "device-setpoint-out-of-range");
+
+  expect(setpointWarnings).toEqual([
+    expect.objectContaining({
+      nodeId: invalidSource.id,
+      message: expect.stringContaining("p_set=10.1 MW")
+    })
+  ]);
+  expect(isBlockingTopologyValidationError(setpointWarnings[0])).toBe(true);
+  expect(result.nodes[2].params.p_set).toBe("10.1 MW");
+});
+
+test("maps converter setpoints to the corresponding side limits", () => {
+  const dcac = createDefaultNode("dcac-converter", { x: 100, y: 100 });
+  dcac.terminals.find((terminal) => terminal.type === "ac")!.vbase = "10000 V";
+  dcac.terminals.find((terminal) => terminal.type === "dc")!.vbase = "750 V";
+  dcac.params = {
+    ...dcac.params,
+    rated_capacity: "10 MW",
+    ac_p_max: "10 MW",
+    ac_p_min: "-10 MW",
+    ac_q_max: "10 MW",
+    ac_q_min: "-10 MW",
+    ac_v_max: "12000 V",
+    ac_v_min: "8000 V",
+    dc_p_max: "10 MW",
+    dc_p_min: "-10 MW",
+    dc_v_max: "900 V",
+    dc_v_min: "600 V",
+    p_ac_set: "10.1 MW",
+    q_ac_set: "0 MW",
+    v_ac_set: "10000 V",
+    p_dc_set: "0 MW",
+    v_dc_set: "750 V"
+  };
+
+  const result = normalizeDeviceOperatingLimitsAfterTopology([dcac], {
+    powerUnit: "MW",
+    voltageUnit: "V"
+  });
+  const setpointWarnings = result.warnings.filter((warning) => warning.type === "device-setpoint-out-of-range");
+
+  expect(setpointWarnings).toEqual([
+    expect.objectContaining({ message: expect.stringContaining("p_ac_set=10.1 MW") })
+  ]);
+});
+
+test("validates reactive, voltage, hydrogen, and endpoint setpoints against their matching limits", () => {
+  const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+  source.terminals[0].vbase = "10 kV";
+  source.params = {
+    ...source.params,
+    rated_capacity: "10 MW",
+    p_set: "0 MW",
+    p_max: "10 MW",
+    p_min: "-10 MW",
+    q_set: "10.1 MW",
+    q_max: "10 MW",
+    q_min: "-10 MW",
+    v_set: "12.1 kV",
+    v_max: "12 kV",
+    v_min: "8 kV"
+  };
+  const hydrogenSource = createDefaultNode("hydrogen-source", { x: 300, y: 100 });
+  hydrogenSource.params = {
+    ...hydrogenSource.params,
+    pressure_set: "26",
+    pressure_max: "25",
+    pressure_min: "1",
+    flow_set: "1000",
+    flow_max: "1000",
+    flow_min: "0"
+  };
+  const acac = createDefaultNode("acac-converter", { x: 500, y: 100 });
+  acac.terminals[0].vbase = "10 kV";
+  acac.terminals[1].vbase = "20 kV";
+  acac.params = {
+    ...acac.params,
+    rated_capacity: "10 MW",
+    i_p_max: "10 MW",
+    i_p_min: "-10 MW",
+    j_p_max: "10 MW",
+    j_p_min: "-10 MW",
+    i_q_set: "-10 MW",
+    i_q_max: "10 MW",
+    i_q_min: "-10 MW",
+    j_q_set: "10.1 MW",
+    j_q_max: "10 MW",
+    j_q_min: "-10 MW",
+    i_v_set: "10 kV",
+    i_v_max: "12 kV",
+    i_v_min: "8 kV",
+    j_v_set: "20 kV",
+    j_v_max: "24 kV",
+    j_v_min: "16 kV"
+  };
+  const dcdc = createDefaultNode("dcdc-converter", { x: 700, y: 100 });
+  dcdc.terminals[0].vbase = "750 V";
+  dcdc.terminals[1].vbase = "1500 V";
+  dcdc.params = {
+    ...dcdc.params,
+    rated_capacity: "10 MW",
+    i_control_type: "P",
+    j_control_type: "V",
+    p_set: "0 MW",
+    i_p_max: "10 MW",
+    i_p_min: "-10 MW",
+    j_p_max: "10 MW",
+    j_p_min: "-10 MW",
+    i_v_max: "900 V",
+    i_v_min: "600 V",
+    j_v_max: "1800 V",
+    j_v_min: "1200 V",
+    v_set: "1801 V"
+  };
+
+  const result = normalizeDeviceOperatingLimitsAfterTopology([source, hydrogenSource, acac, dcdc], {
+    powerUnit: "MW",
+    voltageUnit: "V"
+  });
+  const messages = result.warnings
+    .filter((warning) => warning.type === "device-setpoint-out-of-range")
+    .map((warning) => warning.message);
+
+  expect(messages).toEqual(expect.arrayContaining([
+    expect.stringContaining("q_set=10.1 MW"),
+    expect.stringContaining("v_set=12.1 kV"),
+    expect.stringContaining("pressure_set=26"),
+    expect.stringContaining("j_q_set=10.1 MW"),
+    expect.stringContaining("v_set=1801 V")
+  ]));
+  expect(messages).toHaveLength(5);
+  expect(messages.some((message) => message.includes("i_q_set=-10 MW"))).toBe(false);
 });
 
 test("normalizes generator and storage limits after topology without mutating the input nodes", () => {

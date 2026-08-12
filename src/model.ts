@@ -1857,6 +1857,7 @@ export type TopologyValidationErrorType =
   | "island-voltage-mismatch"
   | "transformer-island-short"
   | "device-limit-invalid"
+  | "device-setpoint-out-of-range"
   | "hydrogen-storage-parameter-invalid"
   | "hydrogen-coupling-parameter-invalid"
   | "voltage-limit-out-of-range"
@@ -1883,6 +1884,7 @@ export function isBlockingTopologyValidationError(error: Pick<TopologyValidation
     error.type === "missing-island-voltage" ||
     error.type === "island-voltage-mismatch" ||
     error.type === "transformer-island-short" ||
+    error.type === "device-setpoint-out-of-range" ||
     error.type === "hydrogen-storage-parameter-invalid" ||
     error.type === "hydrogen-coupling-parameter-invalid"
   );

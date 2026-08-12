@@ -4672,6 +4672,14 @@ type DeviceLimitPairSpec = {
   terminalSelector: DeviceLimitTerminalSelector;
 };
 
+type DeviceSetpointLimitSpec = {
+  setKey: string;
+  maxKey: string;
+  minKey: string;
+  label: string;
+  quantity: "power" | "voltage" | "numeric";
+};
+
 const DEVICE_LIMIT_PAIR_SPECS: DeviceLimitPairSpec[] = [
   { maxKey: "p_max", minKey: "p_min", label: "有功", voltage: false, terminalSelector: "default" },
   { maxKey: "q_max", minKey: "q_min", label: "无功", voltage: false, terminalSelector: "default" },
@@ -4688,6 +4696,53 @@ const DEVICE_LIMIT_PAIR_SPECS: DeviceLimitPairSpec[] = [
   { maxKey: "j_q_max", minKey: "j_q_min", label: "末端无功", voltage: false, terminalSelector: "j" },
   { maxKey: "j_v_max", minKey: "j_v_min", label: "末端电压", voltage: true, terminalSelector: "j" }
 ];
+
+const DEVICE_SETPOINT_LIMIT_SPECS_BY_SECTION: Record<string, DeviceSetpointLimitSpec[]> = {
+  ACGenerator: [
+    { setKey: "p_set", maxKey: "p_max", minKey: "p_min", label: "有功设定值", quantity: "power" },
+    { setKey: "q_set", maxKey: "q_max", minKey: "q_min", label: "无功设定值", quantity: "power" },
+    { setKey: "v_set", maxKey: "v_max", minKey: "v_min", label: "电压设定值", quantity: "voltage" }
+  ],
+  DCGenerator: [
+    { setKey: "p_set", maxKey: "p_max", minKey: "p_min", label: "有功设定值", quantity: "power" },
+    { setKey: "v_set", maxKey: "v_max", minKey: "v_min", label: "电压设定值", quantity: "voltage" }
+  ],
+  ACLoad: [
+    { setKey: "p_set", maxKey: "p_max", minKey: "p_min", label: "有功设定值", quantity: "power" }
+  ],
+  DCLoad: [
+    { setKey: "p_set", maxKey: "p_max", minKey: "p_min", label: "有功设定值", quantity: "power" }
+  ],
+  DCACConverter: [
+    { setKey: "p_ac_set", maxKey: "ac_p_max", minKey: "ac_p_min", label: "交流侧有功设定值", quantity: "power" },
+    { setKey: "q_ac_set", maxKey: "ac_q_max", minKey: "ac_q_min", label: "交流侧无功设定值", quantity: "power" },
+    { setKey: "v_ac_set", maxKey: "ac_v_max", minKey: "ac_v_min", label: "交流侧电压设定值", quantity: "voltage" },
+    { setKey: "ac_v_set", maxKey: "ac_v_max", minKey: "ac_v_min", label: "交流侧电压设定值", quantity: "voltage" },
+    { setKey: "p_dc_set", maxKey: "dc_p_max", minKey: "dc_p_min", label: "直流侧有功设定值", quantity: "power" },
+    { setKey: "v_dc_set", maxKey: "dc_v_max", minKey: "dc_v_min", label: "直流侧电压设定值", quantity: "voltage" },
+    { setKey: "dc_v_set", maxKey: "dc_v_max", minKey: "dc_v_min", label: "直流侧电压设定值", quantity: "voltage" }
+  ],
+  ACACConverter: [
+    { setKey: "p_set", maxKey: "i_p_max", minKey: "i_p_min", label: "有功设定值（首端范围）", quantity: "power" },
+    { setKey: "p_set", maxKey: "j_p_max", minKey: "j_p_min", label: "有功设定值（末端范围）", quantity: "power" },
+    { setKey: "i_q_set", maxKey: "i_q_max", minKey: "i_q_min", label: "首端无功设定值", quantity: "power" },
+    { setKey: "j_q_set", maxKey: "j_q_max", minKey: "j_q_min", label: "末端无功设定值", quantity: "power" },
+    { setKey: "i_v_set", maxKey: "i_v_max", minKey: "i_v_min", label: "首端电压设定值", quantity: "voltage" },
+    { setKey: "j_v_set", maxKey: "j_v_max", minKey: "j_v_min", label: "末端电压设定值", quantity: "voltage" }
+  ],
+  DCDCConverter: [
+    { setKey: "p_set", maxKey: "i_p_max", minKey: "i_p_min", label: "有功设定值（首端范围）", quantity: "power" },
+    { setKey: "p_set", maxKey: "j_p_max", minKey: "j_p_min", label: "有功设定值（末端范围）", quantity: "power" }
+  ],
+  HydroSource: [
+    { setKey: "pressure_set", maxKey: "pressure_max", minKey: "pressure_min", label: "压力设定值", quantity: "numeric" },
+    { setKey: "flow_set", maxKey: "flow_max", minKey: "flow_min", label: "流量设定值", quantity: "numeric" }
+  ],
+  HydroLoad: [
+    { setKey: "pressure_set", maxKey: "pressure_max", minKey: "pressure_min", label: "压力设定值", quantity: "numeric" },
+    { setKey: "flow_set", maxKey: "flow_max", minKey: "flow_min", label: "流量设定值", quantity: "numeric" }
+  ]
+};
 
 type DeviceLimitQuantity = "power" | "voltage" | "current";
 
@@ -4840,6 +4895,77 @@ function terminalForDeviceLimit(node: ModelNode, selector: DeviceLimitTerminalSe
     return node.terminals[2];
   }
   return node.terminals.find((terminal) => isElectricalTerminalType(terminal.type)) ?? node.terminals[0];
+}
+
+function deviceSetpointLimitSpecs(node: ModelNode, ownerSection: string): DeviceSetpointLimitSpec[] {
+  const specs = [...(DEVICE_SETPOINT_LIMIT_SPECS_BY_SECTION[ownerSection] ?? [])];
+  if (ownerSection !== "DCDCConverter") {
+    return specs;
+  }
+  const sourceControl = normalizeDcdcEndpointControlTypeForE(
+    node.params.i_control_type || node.params.sourceControlType || node.params.control_type
+  );
+  const targetControl = normalizeDcdcEndpointControlTypeForE(
+    node.params.j_control_type || node.params.targetControlType
+  );
+  const voltageSide = targetControl === "V" ? "j" : sourceControl === "V" ? "i" : "i";
+  specs.push({
+    setKey: "v_set",
+    maxKey: `${voltageSide}_v_max`,
+    minKey: `${voltageSide}_v_min`,
+    label: `${voltageSide === "i" ? "首端" : "末端"}电压设定值`,
+    quantity: "voltage"
+  });
+  return specs;
+}
+
+function validateDeviceSetpointLimits(
+  node: ModelNode,
+  ownerName: string,
+  keyFor: (key: string) => string,
+  ownerSection: string,
+  options: DeviceOperatingLimitNormalizationOptions
+): TopologyValidationError[] {
+  const warnings: TopologyValidationError[] = [];
+  for (const spec of deviceSetpointLimitSpecs(node, ownerSection)) {
+    const setKey = keyFor(spec.setKey);
+    const maxKey = keyFor(spec.maxKey);
+    const minKey = keyFor(spec.minKey);
+    const setText = deviceParamValue(node.params, setKey);
+    if (setText === undefined || !String(setText).trim()) {
+      continue;
+    }
+    const maxText = deviceParamValue(node.params, maxKey);
+    const minText = deviceParamValue(node.params, minKey);
+    const defaultUnit = spec.quantity === "power"
+      ? defaultQuantityUnit("power", options)
+      : spec.quantity === "voltage"
+        ? defaultQuantityUnit("voltage", options)
+        : "";
+    const valueOf = (text: string | undefined): number | null => {
+      if (spec.quantity === "numeric") {
+        return namedNumericValue(text);
+      }
+      return quantityValue(text, spec.quantity, defaultUnit)?.baseValue ?? null;
+    };
+    const setValue = valueOf(setText);
+    const maxValue = valueOf(maxText);
+    const minValue = valueOf(minText);
+    if (maxValue === null || minValue === null || maxValue <= minValue) {
+      continue;
+    }
+    if (setValue !== null && setValue >= minValue && setValue <= maxValue) {
+      continue;
+    }
+    warnings.push({
+      id: `device-setpoint-out-of-range:${node.id}:${encodeURIComponent(setKey)}:${encodeURIComponent(minKey)}:${encodeURIComponent(maxKey)}`,
+      type: "device-setpoint-out-of-range",
+      nodeId: node.id,
+      relatedNodeIds: [node.id],
+      message: `图上拓扑失败：${ownerName} 的${spec.label} ${setKey}=${setText} 必须位于 ${minKey}=${minText} 与 ${maxKey}=${maxText} 之间。`
+    });
+  }
+  return warnings;
 }
 
 function validateDeviceLimitPairs(
@@ -5080,10 +5206,13 @@ function validateHydrogenCouplingParameters(
     const validatePowerPair = (prefix: "p" | "q") => {
       const maxKey = containerRelationParamKey(fieldName, `${prefix}_max`);
       const minKey = containerRelationParamKey(fieldName, `${prefix}_min`);
+      const setKey = containerRelationParamKey(fieldName, `${prefix}_set`);
       const maxText = deviceParamValue(node.params, maxKey);
       const minText = deviceParamValue(node.params, minKey);
+      const setText = deviceParamValue(node.params, setKey);
       const maximum = quantityValue(maxText, "power", powerUnit);
       const minimum = quantityValue(minText, "power", powerUnit);
+      const setpoint = quantityValue(setText, "power", powerUnit);
       if (!maximum || maximum.baseValue <= 0) {
         relationIssues.push(`${maxKey}=${maxText ?? "未设置"} 必须为正数`);
       }
@@ -5095,6 +5224,15 @@ function validateHydrogenCouplingParameters(
       }
       if (capacity && capacity.baseValue > 0 && maximum && maximum.baseValue > capacity.baseValue) {
         relationIssues.push(`${maxKey} 不能大于 ${capacityKey}`);
+      }
+      if (
+        setText !== undefined &&
+        maximum &&
+        minimum &&
+        maximum.baseValue > minimum.baseValue &&
+        (!setpoint || setpoint.baseValue < minimum.baseValue || setpoint.baseValue > maximum.baseValue)
+      ) {
+        relationIssues.push(`${setKey}=${setText} 必须位于 ${minKey} 与 ${maxKey} 之间`);
       }
     };
     validatePowerPair("p");
@@ -5116,8 +5254,10 @@ function validateHydrogenCouplingParameters(
     const capacity = numeric("rated_capacity");
     const pressureMaximum = numeric("pressure_max");
     const pressureMinimum = numeric("pressure_min");
+    const pressureSetpoint = numeric("pressure_set");
     const flowMaximum = numeric("flow_max");
     const flowMinimum = numeric("flow_min");
+    const flowSetpoint = numeric("flow_set");
     const relationIssues: string[] = [];
 
     if (capacity === null || capacity <= 0) {
@@ -5132,6 +5272,15 @@ function validateHydrogenCouplingParameters(
     if (pressureMaximum !== null && pressureMinimum !== null && pressureMaximum <= pressureMinimum) {
       relationIssues.push(`${key("pressure_max")} 必须大于 ${key("pressure_min")}`);
     }
+    if (
+      value("pressure_set") !== undefined &&
+      pressureMaximum !== null &&
+      pressureMinimum !== null &&
+      pressureMaximum > pressureMinimum &&
+      (pressureSetpoint === null || pressureSetpoint < pressureMinimum || pressureSetpoint > pressureMaximum)
+    ) {
+      relationIssues.push(`${key("pressure_set")}=${value("pressure_set")} 必须位于 ${key("pressure_min")} 与 ${key("pressure_max")} 之间`);
+    }
     if (flowMaximum === null || flowMaximum <= 0) {
       relationIssues.push(`${key("flow_max")}=${value("flow_max") ?? "未设置"} 必须为正数`);
     }
@@ -5140,6 +5289,15 @@ function validateHydrogenCouplingParameters(
     }
     if (flowMaximum !== null && flowMinimum !== null && flowMaximum <= flowMinimum) {
       relationIssues.push(`${key("flow_max")} 必须大于 ${key("flow_min")}`);
+    }
+    if (
+      value("flow_set") !== undefined &&
+      flowMaximum !== null &&
+      flowMinimum !== null &&
+      flowMaximum > flowMinimum &&
+      (flowSetpoint === null || flowSetpoint < flowMinimum || flowSetpoint > flowMaximum)
+    ) {
+      relationIssues.push(`${key("flow_set")}=${value("flow_set")} 必须位于 ${key("flow_min")} 与 ${key("flow_max")} 之间`);
     }
     if (capacity !== null && capacity > 0 && flowMaximum !== null && flowMaximum > capacity) {
       relationIssues.push(`${key("flow_max")} 不能大于 ${key("rated_capacity")}`);
@@ -5198,6 +5356,13 @@ export function normalizeDeviceOperatingLimitsAfterTopology(
       options,
       updateParam
     ));
+    warnings.push(...validateDeviceSetpointLimits(
+      nextParams === node.params ? node : { ...node, params: nextParams },
+      node.name,
+      (key) => key,
+      inferESection(node.kind, nextParams),
+      options
+    ));
     if (!isContainerParams(node.params)) {
       return nextParams === node.params ? node : { ...node, params: nextParams };
     }
@@ -5219,6 +5384,13 @@ export function normalizeDeviceOperatingLimitsAfterTopology(
         options,
         updateParam,
         terminal
+      ));
+      warnings.push(...validateDeviceSetpointLimits(
+        nextParams === node.params ? node : { ...node, params: nextParams },
+        containerAssociatedDeviceName(node, fieldName),
+        (key) => containerRelationParamKey(fieldName, key),
+        relationSection,
+        options
       ));
     }
     return nextParams === node.params ? node : { ...node, params: nextParams };
