@@ -24,7 +24,7 @@ describe("text file output", () => {
     });
 
     expect(saved).toBe(true);
-    expect(write).toHaveBeenCalledWith("<Model/>");
+    expect(write).toHaveBeenCalledWith(new TextEncoder().encode("<Model/>"));
     expect(write.mock.calls[0]?.[0]).not.toBeInstanceOf(Blob);
     expect(close).toHaveBeenCalledOnce();
   });
@@ -68,7 +68,7 @@ describe("text file output", () => {
 
     expect(order).toEqual(["picker", "generate", "save-target-ready"]);
     expect(onSaveTargetReady).toHaveBeenCalledOnce();
-    expect(write).toHaveBeenCalledWith("<Model/>");
+    expect(write).toHaveBeenCalledWith(new TextEncoder().encode("<Model/>"));
     expect(close).toHaveBeenCalledOnce();
   });
 
@@ -85,7 +85,7 @@ describe("text file output", () => {
       })
       .mockImplementationOnce(async (_url: string, init?: RequestInit) => {
         order.push("write");
-        expect(init?.body).toBe("<Model/>");
+        expect(init?.body).toEqual(new TextEncoder().encode("<Model/>"));
         return new Response(JSON.stringify({ ok: true, filename: "model.e" }), {
           status: 200,
           headers: { "content-type": "application/json" }

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, test } from "vitest";
 import AdmZip from "adm-zip";
+import iconv from "iconv-lite";
 import { apiPath } from "./config.mjs";
 import {
   archiveStaleSchemeFiles,
@@ -31,6 +32,12 @@ const svgSectionBetween = (svg, start, end) => {
 
 const svgDefsSection = (svg) => svg.match(/<defs[^>]*>[\s\S]*?<\/defs>/)?.[0] ?? "";
 const svgUseTags = (svg) => Array.from(svg.matchAll(/<use\b[^>]*>/g), (match) => match[0]);
+
+// E 文件统一为 GBK 编码（导出/保存强制 GBK），读取测试断言时需按 GBK 解码
+const readEFileText = async (filePath) => {
+  const bytes = await readFile(filePath);
+  return iconv.decode(bytes, "gbk");
+};
 
 const eSectionLines = (text, section) => {
   const match = new RegExp(`<${section}>\\n([\\s\\S]*?)\\n<\\/${section}>`, "u").exec(text);
@@ -742,7 +749,7 @@ describe("scheme file persistence", () => {
         measurementConfig: {}
       });
 
-      const eFile = await readFile(join(filesRoot, "默认方案", "子方案", "新模型.e"), "utf-8");
+      const eFile = await readEFileText(join(filesRoot, "默认方案", "子方案", "新模型.e"));
 
       expect(eFile).toContain("<Model>\n");
       expect(eFile).not.toContain("<PowerBase>\n");
@@ -889,7 +896,7 @@ describe("scheme file persistence", () => {
         measurementConfig: {}
       });
 
-      const eFile = await readFile(join(filesRoot, "默认方案", "电源额定参数.e"), "utf-8");
+      const eFile = await readEFileText(join(filesRoot, "默认方案", "电源额定参数.e"));
       for (const expected of [
         {
           section: "ACGenerator",
@@ -967,7 +974,7 @@ describe("scheme file persistence", () => {
         measurementConfig: {}
       });
 
-      const eFile = await readFile(join(filesRoot, "默认方案", "参数导出控制.e"), "utf-8");
+      const eFile = await readEFileText(join(filesRoot, "默认方案", "参数导出控制.e"));
       const lines = eSectionLines(eFile, "ACBranch");
       const columns = lines.find((line) => line.startsWith("@"))?.trim().split(/\s+/u).slice(1) ?? [];
 
@@ -1046,7 +1053,7 @@ describe("scheme file persistence", () => {
         measurementConfig: {}
       });
 
-      const eFile = await readFile(join(filesRoot, "默认方案", "DCAC双控制类型.e"), "utf-8");
+      const eFile = await readEFileText(join(filesRoot, "默认方案", "DCAC双控制类型.e"));
       const lines = eSectionLines(eFile, "DCACConverter");
       const columns = lines.find((line) => line.startsWith("@"))?.trim().split(/\s+/u).slice(1) ?? [];
       const rows = lines
@@ -1138,7 +1145,7 @@ describe("scheme file persistence", () => {
         measurementConfig: {}
       });
 
-      const eFile = await readFile(join(filesRoot, "默认方案", "端点控制类型.e"), "utf-8");
+      const eFile = await readEFileText(join(filesRoot, "默认方案", "端点控制类型.e"));
       const rowsForSection = (section) => {
         const lines = eSectionLines(eFile, section);
         const columns = lines.find((line) => line.startsWith("@"))?.trim().split(/\s+/u).slice(1) ?? [];
@@ -1233,7 +1240,7 @@ describe("scheme file persistence", () => {
         measurementConfig: {}
       });
 
-      const eFile = await readFile(join(filesRoot, "默认方案", "三绕组主变模型.e"), "utf-8");
+      const eFile = await readEFileText(join(filesRoot, "默认方案", "三绕组主变模型.e"));
       const lines = eSectionLines(eFile, "ACTransfomer3");
 
       expect(lines.find((line) => line.startsWith("@"))?.trim().split(/\s+/u).slice(1)).toEqual([

@@ -1,9 +1,20 @@
 // 文件下载与保存工具函数
 
 import { apiPath } from "./config";
+import { encodeGbk } from "./encoding/gbk";
 
-export function downloadText(filename: string, text: string, mime: string) {
-  const blob = new Blob([text], { type: mime });
+export type EFileTextEncoding = "utf-8" | "gbk";
+
+/** 将文本按指定编码转为字节（默认 utf-8；E 文件统一使用 gbk） */
+export function encodeTextAsBytes(text: string, encoding: EFileTextEncoding = "utf-8"): Uint8Array {
+  if (encoding === "gbk") {
+    return encodeGbk(text);
+  }
+  return new TextEncoder().encode(text);
+}
+
+export function downloadText(filename: string, text: string, mime: string, encoding: EFileTextEncoding = "utf-8") {
+  const blob = new Blob([encodeTextAsBytes(text, encoding) as BlobPart], { type: mime });
   downloadBlob(filename, blob);
 }
 
@@ -50,6 +61,7 @@ export type TextSaveOptions = {
   mime: string;
   description: string;
   extensions: string[];
+  encoding?: EFileTextEncoding;
   onSaveTargetReady?: () => void;
   preferNativeDialog?: boolean;
 };
@@ -119,7 +131,7 @@ async function saveLazyTextFileWithNativeDialog(
     if (message) {
       showGlobalMessage(message);
     }
-    downloadText(options.filename, text, options.mime);
+    downloadText(options.filename, text, options.mime, options.encoding);
     return true;
   };
 
@@ -147,22 +159,23 @@ async function saveLazyTextFileWithNativeDialog(
 
   notifySaveTargetReady();
   const text = await textPromise;
+  const charset = options.encoding === "gbk" ? "gbk" : "utf-8";
   let writeResponse: Response;
   try {
     writeResponse = await fetch(`${apiPath(NATIVE_EXPORT_WRITE_PATH)}?token=${encodeURIComponent(token)}`, {
       method: "POST",
-      headers: { "content-type": `${options.mime}; charset=utf-8` },
-      body: text
+      headers: { "content-type": `${options.mime}; charset=${charset}` },
+      body: encodeTextAsBytes(text, options.encoding) as unknown as BodyInit
     });
   } catch {
     showGlobalMessage("写入导出文件失败，已改为浏览器下载。");
-    downloadText(options.filename, text, options.mime);
+    downloadText(options.filename, text, options.mime, options.encoding);
     return true;
   }
   if (!writeResponse.ok) {
     const message = await responseErrorMessage(writeResponse, "写入导出文件失败。");
     showGlobalMessage(`${message}\n已改为浏览器下载。`);
-    downloadText(options.filename, text, options.mime);
+    downloadText(options.filename, text, options.mime, options.encoding);
   }
   return true;
 }
@@ -185,7 +198,7 @@ export async function saveTextFile(options: TextSaveOptions): Promise<boolean> {
   const picker = (window as SaveFilePickerWindow).showSaveFilePicker;
   if (typeof picker !== "function") {
     notifySaveTargetReady();
-    downloadText(options.filename, options.text, options.mime);
+    downloadText(options.filename, options.text, options.mime, options.encoding);
     return true;
   }
   try {
@@ -205,7 +218,7 @@ export async function saveTextFile(options: TextSaveOptions): Promise<boolean> {
     });
     notifySaveTargetReady();
     const writable = await handle.createWritable();
-    await writable.write(options.text);
+    await writable.write(encodeTextAsBytes(options.text, options.encoding) as unknown as Blob);
     await writable.close();
     return true;
   } catch (error) {
@@ -213,7 +226,7 @@ export async function saveTextFile(options: TextSaveOptions): Promise<boolean> {
       return false;
     }
     showGlobalMessage("保存文件失败，已改为浏览器下载。");
-    downloadText(options.filename, options.text, options.mime);
+    downloadText(options.filename, options.text, options.mime, options.encoding);
     return true;
   }
 }
@@ -233,7 +246,7 @@ export async function saveLazyTextFile(options: LazyTextSaveOptions): Promise<bo
   const picker = (window as SaveFilePickerWindow).showSaveFilePicker;
   if (typeof picker !== "function") {
     notifySaveTargetReady();
-    downloadText(options.filename, await options.loadText(), options.mime);
+    downloadText(options.filename, await options.loadText(), options.mime, options.encoding);
     return true;
   }
 
@@ -258,7 +271,7 @@ export async function saveLazyTextFile(options: LazyTextSaveOptions): Promise<bo
     notifySaveTargetReady();
     const text = await options.loadText();
     showGlobalMessage("打开保存窗口失败，已改为浏览器下载。");
-    downloadText(options.filename, text, options.mime);
+    downloadText(options.filename, text, options.mime, options.encoding);
     return true;
   }
 
@@ -277,7 +290,7 @@ export async function saveLazyTextFile(options: LazyTextSaveOptions): Promise<bo
     notifySaveTargetReady();
     const text = await textPromise;
     showGlobalMessage("打开保存窗口失败，已改为浏览器下载。");
-    downloadText(options.filename, text, options.mime);
+    downloadText(options.filename, text, options.mime, options.encoding);
     return true;
   }
 
@@ -285,7 +298,7 @@ export async function saveLazyTextFile(options: LazyTextSaveOptions): Promise<bo
   const text = await textPromise;
   try {
     const writable = await handle.createWritable();
-    await writable.write(text);
+    await writable.write(encodeTextAsBytes(text, options.encoding) as unknown as Blob);
     await writable.close();
     return true;
   } catch (error) {
@@ -294,7 +307,7 @@ export async function saveLazyTextFile(options: LazyTextSaveOptions): Promise<bo
     }
     notifySaveTargetReady();
     showGlobalMessage("保存文件失败，已改为浏览器下载。");
-    downloadText(options.filename, text, options.mime);
+    downloadText(options.filename, text, options.mime, options.encoding);
     return true;
   }
 }

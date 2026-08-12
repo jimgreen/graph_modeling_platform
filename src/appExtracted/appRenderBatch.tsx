@@ -704,6 +704,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     eDeviceDefinitionClassExportEnabled,
     eDeviceDefinitionFieldOrder,
     eDeviceDefinitionLabels,
+    eDeviceDefinitionTableIds,
     eDeviceDefinitionTemplateFields,
     edgeById,
     edges,
@@ -847,6 +848,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     setEDeviceDefinitionClassExportEnabled,
     setEDeviceDefinitionFieldOrder,
     setEDeviceDefinitionLabels,
+    setEDeviceDefinitionTableIds,
     setEDeviceDefinitionTemplateFields,
     setExpandedCategoryLibraries,
     setExpandedGraphTemplateTypes,
@@ -1416,6 +1418,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     eDeviceDefinitionClassExportEnabled,
     eDeviceDefinitionFieldOrder,
     eDeviceDefinitionTemplateFields,
+    eDeviceDefinitionTableIds,
     customGraphTemplateTypes,
     customGraphTemplates
   });
@@ -1605,6 +1608,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     setEDeviceDefinitionClassExportEnabled(next.eDeviceDefinitionClassExportEnabled ?? {});
     setEDeviceDefinitionFieldOrder(next.eDeviceDefinitionFieldOrder ?? {});
     setEDeviceDefinitionTemplateFields(next.eDeviceDefinitionTemplateFields ?? {});
+    setEDeviceDefinitionTableIds(next.eDeviceDefinitionTableIds ?? {});
     setCustomGraphTemplateTypes(next.customGraphTemplateTypes);
     setCustomGraphTemplates(next.customGraphTemplates);
     persistDeviceLibraryChange(next, {

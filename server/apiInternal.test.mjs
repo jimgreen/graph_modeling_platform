@@ -420,6 +420,11 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
             { sourceName: "gasquantity", exportName: "gasQuantity", cnName: "储气量" },
             { sourceName: "gas_quantity", exportName: "customGasQuantity", cnName: "自定义储气量" }
           ]
+        },
+        eDeviceDefinitionTableIds: {
+          ACGenerator: "00411",
+          substation: "00405",
+          basevoltage: "00401"
         }
       })
     });
@@ -444,6 +449,11 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
         { sourceName: "gas_quantity", exportName: "customGasQuantity", cnName: "自定义储气量" }
       ]
     });
+    expect(saved.json.eDeviceDefinitionTableIds).toEqual({
+      ACGenerator: "00411",
+      substation: "00405",
+      basevoltage: "00401"
+    });
     const got = await fetchJson(apiPath("/device-library"));
     expect(got.status).toBe(200);
     expect(got.json.eDeviceDefinitionLabels).toEqual({ ACGenerator: "ACGeneratorRenamed" });
@@ -464,6 +474,11 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
         { sourceName: "gas_quantity", exportName: "gas_quantity", cnName: "储气量" },
         { sourceName: "gas_quantity", exportName: "customGasQuantity", cnName: "自定义储气量" }
       ]
+    });
+    expect(got.json.eDeviceDefinitionTableIds).toEqual({
+      ACGenerator: "00411",
+      substation: "00405",
+      basevoltage: "00401"
     });
   });
 });

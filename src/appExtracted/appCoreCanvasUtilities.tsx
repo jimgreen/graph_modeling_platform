@@ -1718,6 +1718,7 @@ export type DeviceLibraryPersistencePayload = {
   eDeviceDefinitionClassExportEnabled?: Record<string, boolean>;
   eDeviceDefinitionFieldOrder?: Record<string, string[]>;
   eDeviceDefinitionTemplateFields?: Record<string, Array<{ sourceName?: string; exportName: string; cnName: string }>>;
+  eDeviceDefinitionTableIds?: Record<string, string>;
   customGraphTemplateTypes: string[];
   customGraphTemplates: GraphTemplate[];
 };

@@ -10,6 +10,7 @@ import {
 import { buildExportDeviceIdMap } from "../svgExportUtils";
 import { E_SECTION_COLUMNS, inferESection, getTemplateParameterDefinitions, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, type EDeviceExport } from "../model";
 import { buildEDeviceInterfaceDefinitionRows, orderEDeviceInterfaceFields, applyEDeviceDefinitionSectionsToLibraryState, buildEFileExportOptionsFromLibrary } from "./appDeviceDefinitionFactories";
+import { decodeGbk } from "../encoding/gbk";
 import { UserCustomizationManagerDialog } from "../UserCustomizationManagerDialog";
 import { VoltageLevelDialog } from "../VoltageLevelDialog";
 import { EFileEditor } from "../EFileEditor";
@@ -467,6 +468,8 @@ export function renderAppView(__appScope: Record<string, any>) {
     setEDeviceDefinitionClassExportEnabled,
     eDeviceDefinitionFieldOrder,
     setEDeviceDefinitionFieldOrder,
+    eDeviceDefinitionTableIds,
+    setEDeviceDefinitionTableIds,
     eDeviceDefinitionTemplateFields,
     setEDeviceDefinitionTemplateFields,
     eDeviceDefinitionInterfaceDialogOpen,
@@ -548,6 +551,7 @@ export function renderAppView(__appScope: Record<string, any>) {
     } catch { return null; }
   });
   const [showImportResultDialog, setShowImportResultDialog] = useState(false);
+  const [importResultActiveTab, setImportResultActiveTab] = useState<"matched" | "skipped" | "runtimeGenerated">("matched");
   const [eDeviceInterfaceLoadedTemplateName, setEDeviceInterfaceLoadedTemplateName] = useState<string | null>(() => {
     try { return localStorage.getItem("eDeviceInterfaceLoadedTemplateName"); } catch { return null; }
   });
@@ -585,14 +589,35 @@ export function renderAppView(__appScope: Record<string, any>) {
       }
     });
   };
+  Object.assign(__appScope, { setTemplateImportResult, setShowImportResultDialog, setImportResultActiveTab });
   const loadPredefinedEDeviceTemplate = async (templateFile: string) => {
     try {
-      const response = await fetch(`/e-templates/${templateFile}`);
+      // 切换模板先清空「查看导入结果」旧数据，避免新模板加载期间显示上一模板结果
+      setTemplateImportResult(null);
+      setShowImportResultDialog(false);
+      setImportResultActiveTab("matched");
+      try {
+        localStorage.removeItem("eDeviceTemplateImportResult");
+      } catch { /* ignore */ }
+      // 禁用缓存，确保加载到最新模板（含表号属性，用于导出 id 计算）
+      const response = await fetch(`/e-templates/${templateFile}`, { cache: "no-store" });
       if (!response.ok) {
         showGlobalMessage(`加载预定义模板失败：${response.statusText}`);
         return;
       }
-      const text = await response.text();
+      // 模板可能为 UTF-8（本平台生成）或 GBK（内网模板），按字节读取并兼容解码
+      const buffer = await response.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let text: string;
+      if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+        text = new TextDecoder("utf-8").decode(bytes);
+      } else {
+        try {
+          text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+        } catch {
+          text = decodeGbk(bytes);
+        }
+      }
       const sections = parseEDeviceDefinitionFile(text);
       if (sections.length === 0) {
         showGlobalMessage("未在模板中解析到元件定义。");
@@ -621,34 +646,37 @@ export function renderAppView(__appScope: Record<string, any>) {
       setEDeviceDefinitionClassExportEnabled(result.eDeviceDefinitionClassExportEnabled);
       setEDeviceDefinitionTemplateFields(result.eDeviceDefinitionTemplateFields ?? {});
       setEDeviceDefinitionFieldOrder(result.eDeviceDefinitionFieldOrder ?? {});
+      setEDeviceDefinitionTableIds(result.eDeviceDefinitionTableIds ?? {});
       persistDeviceLibraryChange({
         customDeviceTemplates: result.customDeviceTemplates,
         deviceDefinitionOverrides: result.deviceDefinitionOverrides,
         eDeviceDefinitionLabels: result.eDeviceDefinitionLabels,
         eDeviceDefinitionClassExportEnabled: result.eDeviceDefinitionClassExportEnabled,
         eDeviceDefinitionTemplateFields: result.eDeviceDefinitionTemplateFields ?? {},
-        eDeviceDefinitionFieldOrder: result.eDeviceDefinitionFieldOrder ?? {}
+        eDeviceDefinitionFieldOrder: result.eDeviceDefinitionFieldOrder ?? {},
+        eDeviceDefinitionTableIds: result.eDeviceDefinitionTableIds ?? {}
       }, {
         success: `预定义模板导入成功：匹配 ${result.matched.length} 个，跳过 ${result.skipped.length} 个，无需匹配 ${(result.runtimeGenerated ?? []).length} 个。`,
         failure: `预定义模板已更新本地，后台保存失败：匹配 ${result.matched.length} 个。`
       });
-      setEDeviceInterfaceDefinitionBaseline(null);
-      setEDeviceInterfaceSelectedClassBaseline(null);
+      __appScope.setEDeviceInterfaceDefinitionBaseline?.(null);
+      __appScope.setEDeviceInterfaceSelectedClassBaseline?.(null);
       writeOperationLog(`导入预定义模板：${templateFile}`);
+      showGlobalMessage(`预定义模板导入成功：匹配 ${result.matched.length} 个，跳过 ${result.skipped.length} 个${(result.runtimeGenerated ?? []).length > 0 ? `，自动生成 ${result.runtimeGenerated.length} 个` : ""}。`);
       setTemplateImportResult({ matched: result.matched, skipped: result.skipped, runtimeGenerated: result.runtimeGenerated ?? [] });
       try {
-        localStorage.setItem("eDeviceTemplateImportResult", JSON.stringify({ matched: result.matched, skipped: result.skipped }));
+        localStorage.setItem("eDeviceTemplateImportResult", JSON.stringify({ matched: result.matched, skipped: result.skipped, runtimeGenerated: result.runtimeGenerated ?? [] }));
       } catch { /* ignore */ }
       // 设置模板名称和只读模式
       const templateNameMap: Record<string, string> = {
         "sgcc.e": "国网E格式",
-        "main-grid.e": "主网实时库",
+        "ems_rtdb.e": "主网实时库",
         "dist-grid.e": "配网实时库",
         "station-area.e": "台区实时库"
       };
       const templateName = templateNameMap[templateFile] ?? templateFile;
-      setEDeviceInterfaceLoadedTemplateName(templateName);
-      setEDeviceInterfaceReadonlyMode(true);
+      __appScope.setEDeviceInterfaceLoadedTemplateName?.(templateName);
+      __appScope.setEDeviceInterfaceReadonlyMode?.(true);
       try {
         localStorage.setItem("eDeviceInterfaceLoadedTemplateName", templateName);
         localStorage.setItem("eDeviceInterfaceReadonlyMode", "true");
@@ -698,7 +726,7 @@ export function renderAppView(__appScope: Record<string, any>) {
             ...currentConfig,
             deviceProfiles: [...(currentConfig.deviceProfiles ?? []), ...newProfiles]
           };
-          setMeasurementConfig(nextConfig);
+          __appScope.setMeasurementConfig?.(nextConfig);
         }
         // 为画布上的节点添加量测组
         const canvasNodes = __appScope.nodes as any[];
@@ -1275,11 +1303,12 @@ export function renderAppView(__appScope: Record<string, any>) {
       eDeviceDefinitionLabels,
       eDeviceDefinitionClassExportEnabled,
       eDeviceDefinitionFieldOrder,
+      eDeviceDefinitionTableIds,
       eDeviceDefinitionTemplateFields,
       resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [libraryTemplates, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTemplateFields]
+    [libraryTemplates, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTableIds, eDeviceDefinitionTemplateFields]
   );
   // 元件库 -> 模板输出表名（如 ACGenerator -> unit、ACNode -> node），供 E 文件编辑器按模板规格展示
   const eFileEditorSectionLabels = useMemo(() => {
@@ -4558,7 +4587,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                     }}>国网E格式</button>
                     <button type="button" onClick={async () => {
                       setEDeviceTemplateDropdownOpen(false);
-                      await loadPredefinedEDeviceTemplate("main-grid.e");
+                      await loadPredefinedEDeviceTemplate("ems_rtdb.e");
                     }}>主网实时库</button>
                     <button type="button" onClick={async () => {
                       setEDeviceTemplateDropdownOpen(false);
@@ -5019,9 +5048,19 @@ export function renderAppView(__appScope: Record<string, any>) {
                 <X size={16} />
               </button>
             </div>
+            <div className="template-import-result-tabs">
+              <button type="button" className={`template-import-result-tab${importResultActiveTab === "matched" ? " active" : ""}`} onClick={() => setImportResultActiveTab("matched")}>
+                已匹配 ({templateImportResult.matched.length})
+              </button>
+              <button type="button" className={`template-import-result-tab${importResultActiveTab === "skipped" ? " active" : ""}`} onClick={() => setImportResultActiveTab("skipped")}>
+                未匹配 ({templateImportResult.skipped.length})
+              </button>
+              <button type="button" className={`template-import-result-tab${importResultActiveTab === "runtimeGenerated" ? " active" : ""}`} onClick={() => setImportResultActiveTab("runtimeGenerated")}>
+                无需匹配 ({(templateImportResult.runtimeGenerated ?? []).length})
+              </button>
+            </div>
             <div className="template-import-result-content">
-              <div className="template-import-result-section">
-                <h3>已匹配 ({templateImportResult.matched.length})</h3>
+              {importResultActiveTab === "matched" && (<div className="template-import-result-section">
                 {templateImportResult.matched.length > 0 ? (
                   <table className="template-import-result-table">
                     <thead>
@@ -5053,9 +5092,8 @@ export function renderAppView(__appScope: Record<string, any>) {
                 ) : (
                   <p className="template-import-result-empty">无匹配表/字段</p>
                 )}
-              </div>
-              <div className="template-import-result-section">
-                <h3>未匹配 ({templateImportResult.skipped.length})</h3>
+              </div>)}
+              {importResultActiveTab === "skipped" && (<div className="template-import-result-section">
                 {templateImportResult.skipped.length > 0 ? (
                   <table className="template-import-result-table">
                     <thead>
@@ -5081,9 +5119,8 @@ export function renderAppView(__appScope: Record<string, any>) {
                 ) : (
                   <p className="template-import-result-empty">所有表/字段均已匹配</p>
                 )}
-              </div>
-              <div className="template-import-result-section">
-                <h3>无需匹配 ({(templateImportResult.runtimeGenerated ?? []).length})</h3>
+              </div>)}
+              {importResultActiveTab === "runtimeGenerated" && (<div className="template-import-result-section">
                 {(templateImportResult.runtimeGenerated ?? []).length > 0 ? (
                   <table className="template-import-result-table">
                     <thead>
@@ -5109,7 +5146,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                 ) : (
                   <p className="template-import-result-empty">无运行时生成表</p>
                 )}
-              </div>
+              </div>)}
             </div>
             <div className="template-import-result-footer">
               <button type="button" onClick={() => setShowImportResultDialog(false)}>关闭</button>
