@@ -1567,8 +1567,12 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
   const windingRowCounts = new Map<string, number>();
   for (const node of topologyNodes) {
     const originalSection = inferESection(node.kind, node.params);
-    // 模板模式下 ACRealBs 合并到 node 表（ACNode+交流母线），realbs=1 标识母线
-    const section = (originalSection === "ACRealBs" && hasTemplateConfigValue) ? "ACNode" : originalSection;
+    // 模板模式下 ACRealBs 合并到 node 表（ACNode+交流母线），realbs=1 标识母线。
+    // 仅当模板确实定义了 node/ACNode 表（如 sgcc.e 的 <node 元件库="ACNode+交流母线">）时才合并；
+    // 否则（如 ems_rtdb.e 使用独立的 <busbarsection> 表）保持 ACRealBs，避免记录被过滤。
+    const section = (originalSection === "ACRealBs" && hasTemplateConfigValue && interfaceDefinitionBySection.has("ACNode"))
+      ? "ACNode"
+      : originalSection;
     if (!section || originalSection === "ACNode" || originalSection === "DCNode") {
       continue;
     }
