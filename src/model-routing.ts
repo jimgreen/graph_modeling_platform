@@ -62,6 +62,7 @@ import {
   STATIC_DRAWING_MIN_SIZE,
   STATIC_DRAWING_PADDING,
   STATIC_DRAW_POINTS_PARAM,
+  applyContainerAssociatedDeviceDefaults,
   baseDeviceKind,
   buildContainerDeviceParameterViews,
   containerAssociatedDeviceName,
@@ -5192,24 +5193,30 @@ function validateHydrogenCouplingParameters(
     issues.push(`${spec.coefficientKey}=${coefficientText ?? "未设置"} 必须为正数`);
   }
 
+  const template = DEVICE_LIBRARY_BY_KIND.get(node.kind) ?? DEVICE_LIBRARY_BY_KIND.get(baseDeviceKind(node.kind));
+  const associatedViews = buildContainerDeviceParameterViews(node, template).filter((view) => view.kind === "associated");
+  const relationView = (fieldName: string) =>
+    associatedViews.find((view) => view.relationKeys?.includes(fieldName));
+  const relationValue = (fieldName: string, key: string) =>
+    relationView(fieldName)?.rows.find((row) => row.key === key)?.value;
+
   const validateElectricRelation = (fieldName: string) => {
     const ownerName = containerAssociatedDeviceName(node, fieldName);
-    const capacityKey = containerRelationParamKey(fieldName, "rated_capacity");
     const powerUnit = defaultQuantityUnit("power", options);
-    const capacityText = deviceParamValue(node.params, capacityKey);
+    const capacityText = relationValue(fieldName, "rated_capacity");
     const capacity = quantityValue(capacityText, "power", powerUnit);
     const relationIssues: string[] = [];
 
     if (!capacity || capacity.baseValue <= 0) {
-      relationIssues.push(`${capacityKey}=${capacityText ?? "未设置"} 必须为正数`);
+      relationIssues.push(`rated_capacity=${capacityText ?? "未设置"} 必须为正数`);
     }
     const validatePowerPair = (prefix: "p" | "q") => {
-      const maxKey = containerRelationParamKey(fieldName, `${prefix}_max`);
-      const minKey = containerRelationParamKey(fieldName, `${prefix}_min`);
-      const setKey = containerRelationParamKey(fieldName, `${prefix}_set`);
-      const maxText = deviceParamValue(node.params, maxKey);
-      const minText = deviceParamValue(node.params, minKey);
-      const setText = deviceParamValue(node.params, setKey);
+      const maxKey = `${prefix}_max`;
+      const minKey = `${prefix}_min`;
+      const setKey = `${prefix}_set`;
+      const maxText = relationValue(fieldName, maxKey);
+      const minText = relationValue(fieldName, minKey);
+      const setText = relationValue(fieldName, setKey);
       const maximum = quantityValue(maxText, "power", powerUnit);
       const minimum = quantityValue(minText, "power", powerUnit);
       const setpoint = quantityValue(setText, "power", powerUnit);
@@ -5223,7 +5230,7 @@ function validateHydrogenCouplingParameters(
         relationIssues.push(`${maxKey} 必须大于 ${minKey}`);
       }
       if (capacity && capacity.baseValue > 0 && maximum && maximum.baseValue > capacity.baseValue) {
-        relationIssues.push(`${maxKey} 不能大于 ${capacityKey}`);
+        relationIssues.push(`${maxKey} 不能大于 rated_capacity`);
       }
       if (
         setText !== undefined &&
@@ -5248,8 +5255,7 @@ function validateHydrogenCouplingParameters(
 
   const validateHydrogenRelation = (fieldName: string) => {
     const ownerName = containerAssociatedDeviceName(node, fieldName);
-    const key = (column: string) => containerRelationParamKey(fieldName, column);
-    const value = (column: string) => deviceParamValue(node.params, key(column));
+    const value = (column: string) => relationValue(fieldName, column);
     const numeric = (column: string) => namedNumericValue(value(column));
     const capacity = numeric("rated_capacity");
     const pressureMaximum = numeric("pressure_max");
@@ -5261,16 +5267,16 @@ function validateHydrogenCouplingParameters(
     const relationIssues: string[] = [];
 
     if (capacity === null || capacity <= 0) {
-      relationIssues.push(`${key("rated_capacity")}=${value("rated_capacity") ?? "未设置"} 必须为正数`);
+      relationIssues.push(`rated_capacity=${value("rated_capacity") ?? "未设置"} 必须为正数`);
     }
     if (pressureMaximum === null || pressureMaximum <= 0) {
-      relationIssues.push(`${key("pressure_max")}=${value("pressure_max") ?? "未设置"} 必须为正数`);
+      relationIssues.push(`pressure_max=${value("pressure_max") ?? "未设置"} 必须为正数`);
     }
     if (pressureMinimum === null) {
-      relationIssues.push(`${key("pressure_min")}=${value("pressure_min") ?? "未设置"} 必须为数字`);
+      relationIssues.push(`pressure_min=${value("pressure_min") ?? "未设置"} 必须为数字`);
     }
     if (pressureMaximum !== null && pressureMinimum !== null && pressureMaximum <= pressureMinimum) {
-      relationIssues.push(`${key("pressure_max")} 必须大于 ${key("pressure_min")}`);
+      relationIssues.push("pressure_max 必须大于 pressure_min");
     }
     if (
       value("pressure_set") !== undefined &&
@@ -5279,16 +5285,16 @@ function validateHydrogenCouplingParameters(
       pressureMaximum > pressureMinimum &&
       (pressureSetpoint === null || pressureSetpoint < pressureMinimum || pressureSetpoint > pressureMaximum)
     ) {
-      relationIssues.push(`${key("pressure_set")}=${value("pressure_set")} 必须位于 ${key("pressure_min")} 与 ${key("pressure_max")} 之间`);
+      relationIssues.push(`pressure_set=${value("pressure_set")} 必须位于 pressure_min 与 pressure_max 之间`);
     }
     if (flowMaximum === null || flowMaximum <= 0) {
-      relationIssues.push(`${key("flow_max")}=${value("flow_max") ?? "未设置"} 必须为正数`);
+      relationIssues.push(`flow_max=${value("flow_max") ?? "未设置"} 必须为正数`);
     }
     if (flowMinimum === null) {
-      relationIssues.push(`${key("flow_min")}=${value("flow_min") ?? "未设置"} 必须为数字`);
+      relationIssues.push(`flow_min=${value("flow_min") ?? "未设置"} 必须为数字`);
     }
     if (flowMaximum !== null && flowMinimum !== null && flowMaximum <= flowMinimum) {
-      relationIssues.push(`${key("flow_max")} 必须大于 ${key("flow_min")}`);
+      relationIssues.push("flow_max 必须大于 flow_min");
     }
     if (
       value("flow_set") !== undefined &&
@@ -5297,10 +5303,10 @@ function validateHydrogenCouplingParameters(
       flowMaximum > flowMinimum &&
       (flowSetpoint === null || flowSetpoint < flowMinimum || flowSetpoint > flowMaximum)
     ) {
-      relationIssues.push(`${key("flow_set")}=${value("flow_set")} 必须位于 ${key("flow_min")} 与 ${key("flow_max")} 之间`);
+      relationIssues.push(`flow_set=${value("flow_set")} 必须位于 flow_min 与 flow_max 之间`);
     }
     if (capacity !== null && capacity > 0 && flowMaximum !== null && flowMaximum > capacity) {
-      relationIssues.push(`${key("flow_max")} 不能大于 ${key("rated_capacity")}`);
+      relationIssues.push("flow_max 不能大于 rated_capacity");
     }
     if (relationIssues.length > 0) {
       invalidRelationFields.add(fieldName);
@@ -5346,27 +5352,39 @@ export function normalizeDeviceOperatingLimitsAfterTopology(
       nextParams[paramKey] = value;
       corrections.push({ nodeId: node.id, paramKey, value });
     };
-    const hydrogenCouplingValidation = validateHydrogenCouplingParameters(node, options);
+    const template = DEVICE_LIBRARY_BY_KIND.get(node.kind) ?? DEVICE_LIBRARY_BY_KIND.get(baseDeviceKind(node.kind));
+    if (template) {
+      const defaultedParams = applyContainerAssociatedDeviceDefaults(nextParams, template);
+      if (defaultedParams !== nextParams) {
+        for (const [paramKey, value] of Object.entries(defaultedParams)) {
+          if (!Object.prototype.hasOwnProperty.call(nextParams, paramKey)) {
+            updateParam(paramKey, value);
+          }
+        }
+      }
+    }
+    const currentNode = () => nextParams === node.params ? node : { ...node, params: nextParams };
+    const hydrogenCouplingValidation = validateHydrogenCouplingParameters(currentNode(), options);
     warnings.push(...hydrogenCouplingValidation.warnings);
     warnings.push(...validateDeviceLimitPairs(
-      node,
+      currentNode(),
       node.name,
       (key) => key,
-      inferESection(node.kind, node.params),
+      inferESection(node.kind, nextParams),
       options,
       updateParam
     ));
     warnings.push(...validateDeviceSetpointLimits(
-      nextParams === node.params ? node : { ...node, params: nextParams },
+      currentNode(),
       node.name,
       (key) => key,
       inferESection(node.kind, nextParams),
       options
     ));
-    if (!isContainerParams(node.params)) {
+    if (!isContainerParams(nextParams)) {
       return nextParams === node.params ? node : { ...node, params: nextParams };
     }
-    for (const fieldName of Object.keys(node.params)) {
+    for (const fieldName of Object.keys(nextParams)) {
       const relationSection = containerRelationCounterKey(fieldName);
       if (!relationSection) {
         continue;
@@ -5377,7 +5395,7 @@ export function normalizeDeviceOperatingLimitsAfterTopology(
       const parsed = parseContainerRelationField(fieldName);
       const terminal = parsed ? node.terminals[parsed.terminalNumber - 1] : undefined;
       warnings.push(...validateDeviceLimitPairs(
-        node,
+        currentNode(),
         containerAssociatedDeviceName(node, fieldName),
         (key) => containerRelationParamKey(fieldName, key),
         relationSection,
@@ -5386,7 +5404,7 @@ export function normalizeDeviceOperatingLimitsAfterTopology(
         terminal
       ));
       warnings.push(...validateDeviceSetpointLimits(
-        nextParams === node.params ? node : { ...node, params: nextParams },
+        currentNode(),
         containerAssociatedDeviceName(node, fieldName),
         (key) => containerRelationParamKey(fieldName, key),
         relationSection,

@@ -51,6 +51,7 @@ import {
   deleteSavedScheme,
   deleteSavedProject,
   DEVICE_LIBRARY,
+  DEVICE_LIBRARY_BY_KIND,
   distributeNodes,
   duplicateSavedProject,
   routeOrthogonalEdge,
@@ -2621,22 +2622,78 @@ test("accepts the default electric-hydrogen coupling parameter limits", () => {
   }
 });
 
+test("restores missing associated-device defaults on historical electric-hydrogen coupling nodes", () => {
+  for (const kind of ["ac-electrolyzer", "dc-electrolyzer", "ac-fuel-cell", "dc-fuel-cell"] as const) {
+    const node = createDefaultNode(kind, { x: 100, y: 100 });
+    const relationViews = buildContainerDeviceParameterViews(node, DEVICE_LIBRARY_BY_KIND.get(kind))
+      .filter((view) => view.kind === "associated");
+    const removedKeys = relationViews.flatMap((view) =>
+      view.rows.flatMap((row) => row.paramKey ? [row.paramKey] : [])
+    );
+    for (const key of removedKeys) {
+      delete node.params[key];
+    }
+
+    const result = normalizeDeviceOperatingLimitsAfterTopology([node], { powerUnit: "MW" });
+    const normalized = result.nodes[0];
+
+    expect(result.warnings, kind).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "hydrogen-coupling-parameter-invalid" })
+    ]));
+    expect(normalized.params).toMatchObject(kind.includes("electrolyzer")
+      ? {
+          [`rated_capacity_${kind.startsWith("ac") ? "ac" : "dc"}_load_t1`]: "5",
+          rated_capacity_h2_unit_t2: "1000",
+          flow_max_h2_unit_t2: "1000"
+        }
+      : {
+          [`rated_capacity_${kind.startsWith("ac") ? "ac" : "dc"}_unit_t1`]: "3",
+          rated_capacity_h2_load_t2: "600",
+          flow_max_h2_load_t2: "600"
+        });
+  }
+});
+
+test("derives restored coupling associated-device limits from the current instance", () => {
+  const node = createDefaultNode("ac-electrolyzer", { x: 100, y: 100 });
+  const relationViews = buildContainerDeviceParameterViews(node, DEVICE_LIBRARY_BY_KIND.get(node.kind))
+    .filter((view) => view.kind === "associated");
+  for (const key of relationViews.flatMap((view) => view.rows.flatMap((row) => row.paramKey ? [row.paramKey] : []))) {
+    delete node.params[key];
+  }
+  node.params.rated_power = "8 MW";
+  node.params.hydrogen_flow = "1600 Nm3/h";
+
+  const result = normalizeDeviceOperatingLimitsAfterTopology([node], { powerUnit: "MW" });
+
+  expect(result.nodes[0].params).toMatchObject({
+    rated_capacity_ac_load_t1: "8",
+    p_max_ac_load_t1: "8",
+    rated_capacity_h2_unit_t2: "1600",
+    flow_set_h2_unit_t2: "1600",
+    flow_max_h2_unit_t2: "1600"
+  });
+  expect(result.warnings).not.toEqual(expect.arrayContaining([
+    expect.objectContaining({ type: "hydrogen-coupling-parameter-invalid" })
+  ]));
+});
+
 test("blocks invalid electric-hydrogen coupling limits without automatically correcting them", () => {
   const invalidCases = [
     { kind: "ac-electrolyzer", params: { e2h_coeff: "0" }, message: "e2h_coeff=0 必须为正数" },
     { kind: "dc-fuel-cell", params: { h2e_coeff: "bad" }, message: "h2e_coeff=bad 必须为正数" },
-    { kind: "ac-electrolyzer", params: { rated_capacity_ac_load_t1: "0" }, message: "rated_capacity_ac_load_t1=0 必须为正数" },
-    { kind: "dc-electrolyzer", params: { p_max_dc_load_t1: "5", p_min_dc_load_t1: "5" }, message: "p_max_dc_load_t1 必须大于 p_min_dc_load_t1" },
-    { kind: "dc-electrolyzer", params: { p_set_dc_load_t1: "6" }, message: "p_set_dc_load_t1=6 必须位于 p_min_dc_load_t1 与 p_max_dc_load_t1 之间" },
-    { kind: "ac-fuel-cell", params: { q_max_ac_unit_t1: "4", q_min_ac_unit_t1: "4" }, message: "q_max_ac_unit_t1 必须大于 q_min_ac_unit_t1" },
-    { kind: "ac-fuel-cell", params: { q_set_ac_unit_t1: "4" }, message: "q_set_ac_unit_t1=4 必须位于 q_min_ac_unit_t1 与 q_max_ac_unit_t1 之间" },
-    { kind: "ac-fuel-cell", params: { rated_capacity_ac_unit_t1: "3", q_max_ac_unit_t1: "3.1" }, message: "q_max_ac_unit_t1 不能大于 rated_capacity_ac_unit_t1" },
-    { kind: "dc-fuel-cell", params: { rated_capacity_dc_unit_t1: "3 MW", p_max_dc_unit_t1: "3100 kW" }, message: "p_max_dc_unit_t1 不能大于 rated_capacity_dc_unit_t1" },
-    { kind: "ac-electrolyzer", params: { pressure_max_h2_unit_t2: "1", pressure_min_h2_unit_t2: "1" }, message: "pressure_max_h2_unit_t2 必须大于 pressure_min_h2_unit_t2" },
-    { kind: "ac-electrolyzer", params: { pressure_set_h2_unit_t2: "0" }, message: "pressure_set_h2_unit_t2=0 必须位于 pressure_min_h2_unit_t2 与 pressure_max_h2_unit_t2 之间" },
-    { kind: "dc-electrolyzer", params: { flow_max_h2_unit_t2: "100", flow_min_h2_unit_t2: "100" }, message: "flow_max_h2_unit_t2 必须大于 flow_min_h2_unit_t2" },
-    { kind: "dc-electrolyzer", params: { flow_set_h2_unit_t2: "bad" }, message: "flow_set_h2_unit_t2=bad 必须位于 flow_min_h2_unit_t2 与 flow_max_h2_unit_t2 之间" },
-    { kind: "ac-fuel-cell", params: { rated_capacity_h2_load_t2: "600", flow_max_h2_load_t2: "601" }, message: "flow_max_h2_load_t2 不能大于 rated_capacity_h2_load_t2" }
+    { kind: "ac-electrolyzer", params: { rated_capacity_ac_load_t1: "0" }, message: "rated_capacity=0 必须为正数" },
+    { kind: "dc-electrolyzer", params: { p_max_dc_load_t1: "5", p_min_dc_load_t1: "5" }, message: "p_max 必须大于 p_min" },
+    { kind: "dc-electrolyzer", params: { p_set_dc_load_t1: "6" }, message: "p_set=6 必须位于 p_min 与 p_max 之间" },
+    { kind: "ac-fuel-cell", params: { q_max_ac_unit_t1: "4", q_min_ac_unit_t1: "4" }, message: "q_max 必须大于 q_min" },
+    { kind: "ac-fuel-cell", params: { q_set_ac_unit_t1: "4" }, message: "q_set=4 必须位于 q_min 与 q_max 之间" },
+    { kind: "ac-fuel-cell", params: { rated_capacity_ac_unit_t1: "3", q_max_ac_unit_t1: "3.1" }, message: "q_max 不能大于 rated_capacity" },
+    { kind: "dc-fuel-cell", params: { rated_capacity_dc_unit_t1: "3 MW", p_max_dc_unit_t1: "3100 kW" }, message: "p_max 不能大于 rated_capacity" },
+    { kind: "ac-electrolyzer", params: { pressure_max_h2_unit_t2: "1", pressure_min_h2_unit_t2: "1" }, message: "pressure_max 必须大于 pressure_min" },
+    { kind: "ac-electrolyzer", params: { pressure_set_h2_unit_t2: "0" }, message: "pressure_set=0 必须位于 pressure_min 与 pressure_max 之间" },
+    { kind: "dc-electrolyzer", params: { flow_max_h2_unit_t2: "100", flow_min_h2_unit_t2: "100" }, message: "flow_max 必须大于 flow_min" },
+    { kind: "dc-electrolyzer", params: { flow_set_h2_unit_t2: "bad" }, message: "flow_set=bad 必须位于 flow_min 与 flow_max 之间" },
+    { kind: "ac-fuel-cell", params: { rated_capacity_h2_load_t2: "600", flow_max_h2_load_t2: "601" }, message: "flow_max 不能大于 rated_capacity" }
   ] as const;
 
   for (const invalidCase of invalidCases) {
@@ -2651,6 +2708,9 @@ test("blocks invalid electric-hydrogen coupling limits without automatically cor
       relatedNodeIds: [node.id],
       message: expect.stringContaining(invalidCase.message)
     });
+    for (const qualifiedKey of Object.keys(invalidCase.params).filter((key) => /_t\d+$/.test(key))) {
+      expect(warning?.message).not.toContain(qualifiedKey);
+    }
     expect(isBlockingTopologyValidationError(warning!)).toBe(true);
     expect(result.nodes[0].params).toEqual(originalParams);
     expect(result.corrections).toEqual([]);

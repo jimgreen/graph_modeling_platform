@@ -6760,7 +6760,7 @@ function applyContainerRelationDefaults(params: Record<string, string>, template
   return next;
 }
 
-function applyContainerAssociatedDeviceDefaults(
+export function applyContainerAssociatedDeviceDefaults(
   params: Record<string, string>,
   template: DeviceTemplate
 ): Record<string, string> {
@@ -6770,9 +6770,13 @@ function applyContainerAssociatedDeviceDefaults(
   if (!template.isContainer || (!electrolyzer && !fuelCell)) {
     return params;
   }
-  const ratedPower = firstNumericToken(deviceParamValue(template.params, "rated_power") ?? "") || (electrolyzer ? "5" : "3");
-  const ratedVoltage = firstNumericToken(deviceParamValue(template.params, "rated_voltage") ?? "") || (template.terminalType === "ac" ? "10" : "750");
-  const hydrogenFlow = firstNumericToken(deviceParamValue(template.params, "hydrogen_flow") ?? "") || (electrolyzer ? "1000" : "600");
+  const instanceOrTemplateNumber = (key: string, fallback: string) =>
+    firstNumericToken(deviceParamValue(params, key) ?? "") ||
+    firstNumericToken(deviceParamValue(template.params, key) ?? "") ||
+    fallback;
+  const ratedPower = instanceOrTemplateNumber("rated_power", electrolyzer ? "5" : "3");
+  const ratedVoltage = instanceOrTemplateNumber("rated_voltage", template.terminalType === "ac" ? "10" : "750");
+  const hydrogenFlow = instanceOrTemplateNumber("hydrogen_flow", electrolyzer ? "1000" : "600");
   const terminalTypes = templateTerminalTypes(template);
   const terminalAssociations = template.terminalAssociations ?? [];
   const terminalRoles = template.terminalRoles ?? [];
