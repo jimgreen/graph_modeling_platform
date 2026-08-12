@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { saveLazyTextFile, saveTextFile, writeTextFileToDirectory } from "./fileIO";
+import { decodeGbk } from "./encoding/gbk";
 
 describe("text file output", () => {
   afterEach(() => {
@@ -7,7 +8,7 @@ describe("text file output", () => {
   });
 
   test("writes text directly through the save-file stream", async () => {
-    const write = vi.fn(async (_data: Blob | string) => undefined);
+    const write = vi.fn(async (_data: Blob | Uint8Array | string) => undefined);
     const close = vi.fn(async () => undefined);
     const showSaveFilePicker = vi.fn(async () => ({
       createWritable: async () => ({ write, close })
@@ -158,8 +159,8 @@ describe("text file output", () => {
     expect(showGlobalMessage).not.toHaveBeenCalled();
   });
 
-  test("writes directory export text without an intermediate Blob", async () => {
-    const write = vi.fn(async (_data: Blob | string) => undefined);
+  test("writes directory export text as UTF-8 bytes without an intermediate Blob", async () => {
+    const write = vi.fn(async (_data: Blob | Uint8Array | string) => undefined);
     const close = vi.fn(async () => undefined);
     const getFileHandle = vi.fn(async () => ({
       createWritable: async () => ({ write, close })
@@ -173,8 +174,30 @@ describe("text file output", () => {
     );
 
     expect(getFileHandle).toHaveBeenCalledWith("model.svg", { create: true });
-    expect(write).toHaveBeenCalledWith("<svg/>");
+    expect(write).toHaveBeenCalledWith(new TextEncoder().encode("<svg/>"));
     expect(write.mock.calls[0]?.[0]).not.toBeInstanceOf(Blob);
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  test("writes directory export text with the selected GBK encoding", async () => {
+    const write = vi.fn(async (_data: Blob | Uint8Array | string) => undefined);
+    const close = vi.fn(async () => undefined);
+    const getFileHandle = vi.fn(async () => ({
+      createWritable: async () => ({ write, close })
+    }));
+
+    await writeTextFileToDirectory(
+      { getFileHandle },
+      "model.e",
+      "<名称>电源</名称>",
+      "text/plain",
+      "gbk"
+    );
+
+    const bytes = write.mock.calls[0]?.[0];
+    expect(bytes).toBeInstanceOf(Uint8Array);
+    expect(decodeGbk(bytes as Uint8Array)).toBe("<名称>电源</名称>");
+    expect(bytes).not.toEqual(new TextEncoder().encode("<名称>电源</名称>"));
     expect(close).toHaveBeenCalledOnce();
   });
 });

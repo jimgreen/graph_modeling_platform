@@ -1753,22 +1753,46 @@ export function renderAppView(__appScope: Record<string, any>) {
               <FileJson size={16}/>
             </button>
             <div className="topbar-dropdown export-dropdown">
-              <button className="topbar-primary-button" onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { showGlobalMessage(mismatch); return; } requestExportWithSave(exportSvg); }} title="导出 E、JSON 和 SVG 文件" aria-label="导出 E、JSON 和 SVG 文件">
+              <button type="button" className="topbar-primary-button" title="导出文件" aria-label="导出文件" aria-haspopup="menu">
                 <Download size={16}/>
               </button>
               <div className="topbar-dropdown-menu" role="menu" aria-label="导出选项">
-                <button onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { showGlobalMessage(mismatch); return; } requestExportWithSave(exportEFile); }} title="导出 E 文件" aria-label="导出 E 文件">
-                  <FileJson size={16}/>
-                  <span>导出 E 文件</span>
-                </button>
-                <button onClick={() => requestExportWithSave(exportSvgFile)} title="导出 SVG 文件" aria-label="导出 SVG 文件">
-                  <Download size={16}/>
-                  <span>导出 SVG</span>
-                </button>
-                <button onClick={() => requestExportWithSave(exportJsonFile)} title="导出 JSON 文件" aria-label="导出 JSON 文件">
-                  <Download size={16}/>
-                  <span>导出 JSON</span>
-                </button>
+                <div className="export-submenu">
+                  <button type="button" className="export-submenu-trigger" title="导出 E、JSON 和 SVG 文件" aria-label="导出 E、JSON 和 SVG 文件" aria-haspopup="menu">
+                    <Download size={16}/><span>导出全部文件</span><ChevronRight className="export-submenu-chevron" size={13}/>
+                  </button>
+                  <div className="export-encoding-menu" role="menu" aria-label="导出全部文件字符编码">
+                    <button type="button" onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { showGlobalMessage(mismatch); return; } requestExportWithSave(() => exportSvg("gbk")); }}><span>GBK</span></button>
+                    <button type="button" onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { showGlobalMessage(mismatch); return; } requestExportWithSave(() => exportSvg("utf-8")); }}><span>UTF-8</span></button>
+                  </div>
+                </div>
+                <div className="export-submenu">
+                  <button type="button" className="export-submenu-trigger" title="导出 E 文件" aria-label="导出 E 文件" aria-haspopup="menu">
+                    <FileJson size={16}/><span>导出 E 文件</span><ChevronRight className="export-submenu-chevron" size={13}/>
+                  </button>
+                  <div className="export-encoding-menu" role="menu" aria-label="导出 E 文件字符编码">
+                    <button type="button" onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { showGlobalMessage(mismatch); return; } requestExportWithSave(() => exportEFile("gbk")); }}><span>GBK</span></button>
+                    <button type="button" onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { showGlobalMessage(mismatch); return; } requestExportWithSave(() => exportEFile("utf-8")); }}><span>UTF-8</span></button>
+                  </div>
+                </div>
+                <div className="export-submenu">
+                  <button type="button" className="export-submenu-trigger" title="导出 SVG 文件" aria-label="导出 SVG 文件" aria-haspopup="menu">
+                    <Download size={16}/><span>导出 SVG</span><ChevronRight className="export-submenu-chevron" size={13}/>
+                  </button>
+                  <div className="export-encoding-menu" role="menu" aria-label="导出 SVG 文件字符编码">
+                    <button type="button" onClick={() => requestExportWithSave(() => exportSvgFile("gbk"))}><span>GBK</span></button>
+                    <button type="button" onClick={() => requestExportWithSave(() => exportSvgFile("utf-8"))}><span>UTF-8</span></button>
+                  </div>
+                </div>
+                <div className="export-submenu">
+                  <button type="button" className="export-submenu-trigger" title="导出 JSON 文件" aria-label="导出 JSON 文件" aria-haspopup="menu">
+                    <Download size={16}/><span>导出 JSON</span><ChevronRight className="export-submenu-chevron" size={13}/>
+                  </button>
+                  <div className="export-encoding-menu" role="menu" aria-label="导出 JSON 文件字符编码">
+                    <button type="button" onClick={() => requestExportWithSave(() => exportJsonFile("gbk"))}><span>GBK</span></button>
+                    <button type="button" onClick={() => requestExportWithSave(() => exportJsonFile("utf-8"))}><span>UTF-8</span></button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
