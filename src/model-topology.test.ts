@@ -2571,6 +2571,7 @@ test("treats duplicate identity and voltage setpoint deviations as non-blocking 
   expect(isBlockingTopologyValidationError({ type: "island-voltage-mismatch" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "transformer-island-short" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "hydrogen-storage-parameter-invalid" })).toBe(true);
+  expect(isBlockingTopologyValidationError({ type: "hydrogen-coupling-parameter-invalid" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "device-limit-invalid" })).toBe(false);
   expect(isBlockingTopologyValidationError({ type: "voltage-limit-out-of-range" })).toBe(false);
   expect(isBlockingTopologyValidationError({ type: "duplicate-device-idx" })).toBe(false);
@@ -2601,6 +2602,48 @@ test("blocks topology when hydrogen tank volume or pressure limits are invalid",
     expect(warning).toMatchObject({
       nodeId: tank.id,
       relatedNodeIds: [tank.id],
+      message: expect.stringContaining(invalidCase.message)
+    });
+    expect(isBlockingTopologyValidationError(warning!)).toBe(true);
+    expect(result.nodes[0].params).toEqual(originalParams);
+    expect(result.corrections).toEqual([]);
+  }
+});
+
+test("accepts the default electric-hydrogen coupling parameter limits", () => {
+  for (const kind of ["ac-electrolyzer", "dc-electrolyzer", "ac-fuel-cell", "dc-fuel-cell"] as const) {
+    const node = createDefaultNode(kind, { x: 100, y: 100 });
+    const result = normalizeDeviceOperatingLimitsAfterTopology([node], { powerUnit: "MW" });
+    expect(result.warnings, kind).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "hydrogen-coupling-parameter-invalid" })
+    ]));
+  }
+});
+
+test("blocks invalid electric-hydrogen coupling limits without automatically correcting them", () => {
+  const invalidCases = [
+    { kind: "ac-electrolyzer", params: { e2h_coeff: "0" }, message: "e2h_coeff=0 必须为正数" },
+    { kind: "dc-fuel-cell", params: { h2e_coeff: "bad" }, message: "h2e_coeff=bad 必须为正数" },
+    { kind: "ac-electrolyzer", params: { rated_capacity_ac_load_t1: "0" }, message: "rated_capacity_ac_load_t1=0 必须为正数" },
+    { kind: "dc-electrolyzer", params: { p_max_dc_load_t1: "5", p_min_dc_load_t1: "5" }, message: "p_max_dc_load_t1 必须大于 p_min_dc_load_t1" },
+    { kind: "ac-fuel-cell", params: { q_max_ac_unit_t1: "4", q_min_ac_unit_t1: "4" }, message: "q_max_ac_unit_t1 必须大于 q_min_ac_unit_t1" },
+    { kind: "ac-fuel-cell", params: { rated_capacity_ac_unit_t1: "3", q_max_ac_unit_t1: "3.1" }, message: "q_max_ac_unit_t1 不能大于 rated_capacity_ac_unit_t1" },
+    { kind: "dc-fuel-cell", params: { rated_capacity_dc_unit_t1: "3 MW", p_max_dc_unit_t1: "3100 kW" }, message: "p_max_dc_unit_t1 不能大于 rated_capacity_dc_unit_t1" },
+    { kind: "ac-electrolyzer", params: { pressure_max_h2_unit_t2: "1", pressure_min_h2_unit_t2: "1" }, message: "pressure_max_h2_unit_t2 必须大于 pressure_min_h2_unit_t2" },
+    { kind: "dc-electrolyzer", params: { flow_max_h2_unit_t2: "100", flow_min_h2_unit_t2: "100" }, message: "flow_max_h2_unit_t2 必须大于 flow_min_h2_unit_t2" },
+    { kind: "ac-fuel-cell", params: { rated_capacity_h2_load_t2: "600", flow_max_h2_load_t2: "601" }, message: "flow_max_h2_load_t2 不能大于 rated_capacity_h2_load_t2" }
+  ] as const;
+
+  for (const invalidCase of invalidCases) {
+    const node = createDefaultNode(invalidCase.kind, { x: 100, y: 100 });
+    node.params = { ...node.params, ...invalidCase.params };
+    const originalParams = { ...node.params };
+    const result = normalizeDeviceOperatingLimitsAfterTopology([node], { powerUnit: "MW" });
+    const warning = result.warnings.find((item) => item.type === "hydrogen-coupling-parameter-invalid");
+
+    expect(warning, invalidCase.kind).toMatchObject({
+      nodeId: node.id,
+      relatedNodeIds: [node.id],
       message: expect.stringContaining(invalidCase.message)
     });
     expect(isBlockingTopologyValidationError(warning!)).toBe(true);

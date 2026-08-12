@@ -265,6 +265,21 @@ describe("measurement domain", () => {
     }
   });
 
+  test("binds hydrogen source and load pressure and flow measurements to engineering fields", () => {
+    for (const kind of ["hydrogen-source", "hydrogen-load"] as const) {
+      const profile = DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.find((item) => item.deviceKind === kind);
+      expect(profile?.items.slice(0, 2)).toEqual([
+        expect.objectContaining({ measurementTypeId: "pressure", associatedField: "pressure", unitOverride: "MPa" }),
+        expect.objectContaining({ measurementTypeId: "flow", associatedField: "flow", unitOverride: "Nm3/h" })
+      ]);
+      const group = createDefaultMeasurementGroupForNode(node(`${kind}-node`, kind), DEFAULT_MEASUREMENT_CONFIG);
+      expect(group?.items.slice(0, 2)).toEqual([
+        expect.objectContaining({ sourcePoint: `${kind}-node.pressure`, unitOverride: "MPa" }),
+        expect.objectContaining({ sourcePoint: `${kind}-node.flow`, unitOverride: "Nm3/h" })
+      ]);
+    }
+  });
+
   test("migrates the legacy default hydrogen tank profile to gas measurements", () => {
     const migratedConfig = normalizeMeasurementConfig({
       measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes.filter((item) => item.id !== "gasQuantity"),

@@ -503,6 +503,47 @@ test("keeps required AC and DC wind parameters when legacy visual overrides cont
   }
 });
 
+test("merges canonical hydrogen endpoint parameters into persisted visual overrides", () => {
+  const template = DEVICE_LIBRARY.find((item) => item.kind === "hydrogen-source")!;
+  const overridden = applyDeviceTemplateDefinitionOverride(template, {
+    kind: "HydroSource",
+    params: {
+      backgroundImage: "data:image/svg+xml,<svg />",
+      bb: "7"
+    },
+    size: { width: 132, height: 76 },
+    terminalType: "h2",
+    terminalCount: 1,
+    terminalTypes: ["h2"],
+    terminalLabels: ["自定义氢端"],
+    terminalAnchors: [{ x: 0.5, y: 0 }],
+    parameterDefinitions: [
+      { cnName: "自定义参数", enName: "bb", valueType: "float", typicalValue: "7", readonly: false }
+    ]
+  } as DeviceTemplateDefinitionOverride & Partial<DeviceTemplate>);
+  const definitions = getTemplateParameterDefinitions(overridden);
+  const definitionNames = definitions.map((definition) => definition.enName);
+
+  expect(overridden).toMatchObject({
+    size: { width: 132, height: 76 },
+    terminalLabels: ["自定义氢端"],
+    terminalAnchors: [{ x: 0.5, y: 0 }],
+    params: expect.objectContaining({
+      backgroundImage: "data:image/svg+xml,<svg />",
+      bb: "7"
+    })
+  });
+  expect(definitionNames).toEqual(expect.arrayContaining([
+    "rated_capacity", "control_type", "pressure_set", "pressure_max", "pressure_min",
+    "flow_set", "flow_max", "flow_min", "pressure", "flow", "bb"
+  ]));
+  expect(definitions.find((definition) => definition.enName === "control_type")).toMatchObject({
+    valueType: "stringEnum",
+    typicalValue: "FLOW",
+    enumValues: ["FLOW", "PRESSURE"]
+  });
+});
+
 test("adds AC and DC diesel generators as derived generator classes", () => {
   const cases = [
     { kind: "ac-diesel-source", terminalType: "ac", componentLibrary: "ACGenerator", derivedComponentLibrary: "ACDieselGen" },
@@ -2553,8 +2594,37 @@ test("builds one body view plus associated device views for container parameters
     terminalIndexes: [1]
   });
   expect(views[2].rows).toEqual(expect.arrayContaining([
-    expect.objectContaining({ key: "flow_set", value: "0", readonly: false })
+    expect.objectContaining({ key: "rated_capacity", value: "1000", readonly: false }),
+    expect.objectContaining({ key: "control_type", value: "FLOW", readonly: false }),
+    expect.objectContaining({ key: "pressure_max", value: "25", readonly: false }),
+    expect.objectContaining({ key: "pressure_min", value: "1", readonly: false }),
+    expect.objectContaining({ key: "flow_set", value: "1000", readonly: false }),
+    expect.objectContaining({ key: "flow_max", value: "1000", readonly: false }),
+    expect.objectContaining({ key: "flow_min", value: "0", readonly: false })
   ]));
+});
+
+test("defines hydrogen source and load capacities, control modes, limits, and measurements", () => {
+  const expectedOrder = [
+    "idx", "name", "dev_type", "node", "rated_capacity", "control_type",
+    "pressure_set", "pressure_max", "pressure_min",
+    "flow_set", "flow_max", "flow_min", "pressure", "flow", "run_stat"
+  ];
+  for (const kind of ["hydrogen-source", "hydrogen-load"] as const) {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
+    const definitions = getTemplateParameterDefinitions(template);
+    const byName = new Map(definitions.map((definition) => [definition.enName, definition]));
+
+    expect(definitions.map((definition) => definition.enName)).toEqual(expectedOrder);
+    expect(byName.get("control_type")).toMatchObject({
+      valueType: "stringEnum",
+      typicalValue: "FLOW",
+      enumValues: ["FLOW", "PRESSURE"]
+    });
+    for (const field of ["rated_capacity", "pressure_set", "pressure_max", "pressure_min", "flow_set", "flow_max", "flow_min", "pressure", "flow"]) {
+      expect(byName.get(field), `${kind}.${field}`).toMatchObject({ valueType: "float", readonly: false });
+    }
+  }
 });
 
 test("shows container-associated electric port parameters using the associated E section columns", () => {

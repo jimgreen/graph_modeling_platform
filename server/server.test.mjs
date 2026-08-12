@@ -151,8 +151,13 @@ describe("measurement configuration normalization", () => {
   test("keeps electric-hydrogen control fields aligned with the frontend E interface", () => {
     expect(eSectionColumns.ACLoad).toContain("p_set");
     expect(eSectionColumns.DCLoad).toContain("p_set");
-    expect(eSectionColumns.HydroSource).toEqual(["idx", "name", "node", "flow_set", "run_stat"]);
-    expect(eSectionColumns.HydroLoad).toEqual(["idx", "name", "node", "flow_set", "run_stat"]);
+    const hydrogenEndpointColumns = [
+      "idx", "name", "node", "rated_capacity", "control_type",
+      "pressure_set", "pressure_max", "pressure_min",
+      "flow_set", "flow_max", "flow_min", "run_stat"
+    ];
+    expect(eSectionColumns.HydroSource).toEqual(hydrogenEndpointColumns);
+    expect(eSectionColumns.HydroLoad).toEqual(hydrogenEndpointColumns);
     expect(eSectionColumns.AcE2Hydro).toEqual([
       "idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_ac_load_t1", "idx_h2_unit_t2"
     ]);

@@ -239,8 +239,8 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
     "run_stat"
   ],
   HydroNode: ["idx", "name", "pressure", "run_stat"],
-  HydroSource: ["idx", "name", "node", "flow_set", "run_stat"],
-  HydroLoad: ["idx", "name", "node", "flow_set", "run_stat"],
+  HydroSource: ["idx", "name", "node", "rated_capacity", "control_type", "pressure_set", "pressure_max", "pressure_min", "flow_set", "flow_max", "flow_min", "run_stat"],
+  HydroLoad: ["idx", "name", "node", "rated_capacity", "control_type", "pressure_set", "pressure_max", "pressure_min", "flow_set", "flow_max", "flow_min", "run_stat"],
   HydroPipe: ["idx", "name", "i_node", "j_node", "run_stat"],
   HydroCompressor: ["idx", "name", "i_node", "j_node", "run_stat"],
   HydroPressRegulator: ["idx", "name", "i_node", "j_node", "run_stat"],
@@ -469,6 +469,11 @@ const E_FLOAT_COLUMNS = new Set([
   "qv2",
   "p_set",
   "flow_set",
+  "pressure_set",
+  "pressure_max",
+  "pressure_min",
+  "flow_max",
+  "flow_min",
   "p_max",
   "p_min",
   "q_set",
@@ -1674,6 +1679,7 @@ export function defaultContainerAssociatedColumnValue(section: string, column: s
   }
   if (section === "ACGenerator" && column === "control_type") return "PV";
   if (section === "DCGenerator" && column === "control_type") return "P";
+  if ((section === "HydroSource" || section === "HydroLoad") && column === "control_type") return "FLOW";
   if ((section === "HeatSource" || section === "HeatSource2") && column === "supply_temperature_set") return "95";
   return defaultEColumnValue(column, rowIndex);
 }
@@ -1692,6 +1698,8 @@ function formatEColumnValue(section: string, column: string, value: string | und
     ? "PQ"
     : section === "DCDCConverter" && column === "i_control_type"
       ? "P"
+      : (section === "HydroSource" || section === "HydroLoad") && column === "control_type"
+        ? "FLOW"
       : defaultEColumnValue(column, rowIndex);
   const text = String(value ?? "").trim();
   if (!text) {

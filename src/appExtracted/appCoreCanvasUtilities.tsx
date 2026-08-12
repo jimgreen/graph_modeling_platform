@@ -119,6 +119,7 @@ import {
   DC_GENERATOR_CONTROL_TYPES,
   DCDC_CONVERTER_CONTROL_TYPES,
   HYDROGEN_COUPLING_CONTROL_TYPES,
+  HYDROGEN_ENDPOINT_CONTROL_TYPES,
   ELECTRIC_HEAT_COUPLING_CONTROL_TYPES,
   E_SECTION_COLUMNS,
   getEdgeEndpointPoint as getModelEdgeEndpointPoint,
@@ -3170,6 +3171,9 @@ export const PARAM_LABELS: Record<string, string> = {
   water_volume: "水容积(m3)",
   pressure_max: "储气压力上限(Mpa)",
   pressure_min: "储气压力下限(Mpa)",
+  pressure_set: "压力设定值(MPa)",
+  flow_max: "流量上限(Nm3/h)",
+  flow_min: "流量下限(Nm3/h)",
   i_max: "最大电流",
   frequency: "频率",
   short_circuit_capacity: "短路容量",
@@ -3420,7 +3424,7 @@ export const STATIC_BUTTON_COMMAND_LABELS: Record<string, string> = {
 };
 
 export const PARAM_OPTION_LABELS: Record<string, Record<string, string>> = {
-  control_type: { P: "定电功率", T: "定出口温度", FLOW: "定气流量" },
+  control_type: { P: "定电功率", T: "定出口温度", FLOW: "定气流量", PRESSURE: "定压力" },
   fontFamily: FONT_FAMILY_OPTION_LABELS,
   _labelFontFamily: FONT_FAMILY_OPTION_LABELS,
   _labelDisplayMode: { always: "始终显示", hidden: "始终隐藏", follow: "跟随显示" },
@@ -3495,6 +3499,9 @@ export const resolveStaticButtonTargetLayers = (node: ModelNode, availableLayers
 };
 
 export function paramOptionsForSection(key: string, section?: string) {
+  if (key === "control_type" && (section === "HydroSource" || section === "HydroLoad")) {
+    return [...HYDROGEN_ENDPOINT_CONTROL_TYPES];
+  }
   if (
     key === "control_type" &&
     ["AcE2Hydro", "DcE2Hydro", "Hydro2AcE", "Hydro2DcE"].includes(section ?? "")

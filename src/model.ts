@@ -1570,6 +1570,7 @@ export const DCDC_CONVERTER_CONTROL_TYPES = DCAC_DC_CONTROL_TYPES;
 export const AC_GENERATOR_CONTROL_TYPES = ["PV", "PQ", "PH"] as const;
 export const DC_GENERATOR_CONTROL_TYPES = ["P", "V", "I", "NONE"] as const;
 export const HYDROGEN_COUPLING_CONTROL_TYPES = ["P", "FLOW"] as const;
+export const HYDROGEN_ENDPOINT_CONTROL_TYPES = ["FLOW", "PRESSURE"] as const;
 export const ELECTRIC_HEAT_COUPLING_CONTROL_TYPES = ["P", "T"] as const;
 
 export function normalizeAcGeneratorControlTypeForE(value?: string) {
@@ -1857,6 +1858,7 @@ export type TopologyValidationErrorType =
   | "transformer-island-short"
   | "device-limit-invalid"
   | "hydrogen-storage-parameter-invalid"
+  | "hydrogen-coupling-parameter-invalid"
   | "voltage-limit-out-of-range"
   | "voltage-setpoint-deviation"
   | "duplicate-device-idx"
@@ -1881,7 +1883,8 @@ export function isBlockingTopologyValidationError(error: Pick<TopologyValidation
     error.type === "missing-island-voltage" ||
     error.type === "island-voltage-mismatch" ||
     error.type === "transformer-island-short" ||
-    error.type === "hydrogen-storage-parameter-invalid"
+    error.type === "hydrogen-storage-parameter-invalid" ||
+    error.type === "hydrogen-coupling-parameter-invalid"
   );
 }
 
@@ -2609,6 +2612,69 @@ const HYDROGEN_TANK_MEASUREMENT_PARAMETER_DEFINITIONS: DeviceParameterDefinition
   { cnName: "soc", enName: "soc", valueType: "float", typicalValue: "0.5", readonly: false }
 ];
 
+type HydrogenEndpointDefaults = {
+  ratedCapacity: string;
+  pressure: string;
+  pressureMax: string;
+  pressureMin: string;
+  flow: string;
+  flowMax: string;
+  flowMin: string;
+};
+
+function hydrogenEndpointParameterDefinitions(defaults: HydrogenEndpointDefaults): DeviceParameterDefinition[] {
+  return [
+    readonlyIntegerDefinition("序号", "idx"),
+    { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
+    readonlyIntegerDefinition("氢节点号", "node"),
+    { cnName: "额定容量(Nm3/h)", enName: "rated_capacity", valueType: "float", typicalValue: defaults.ratedCapacity, readonly: false },
+    {
+      cnName: "控制模式",
+      enName: "control_type",
+      valueType: "stringEnum",
+      typicalValue: "FLOW",
+      enumValues: [...HYDROGEN_ENDPOINT_CONTROL_TYPES],
+      enumOptions: [
+        { value: "FLOW", label: "定流量" },
+        { value: "PRESSURE", label: "定压力" }
+      ],
+      readonly: false
+    },
+    { cnName: "压力设定值(MPa)", enName: "pressure_set", valueType: "float", typicalValue: defaults.pressure, readonly: false },
+    { cnName: "压力上限(MPa)", enName: "pressure_max", valueType: "float", typicalValue: defaults.pressureMax, readonly: false },
+    { cnName: "压力下限(MPa)", enName: "pressure_min", valueType: "float", typicalValue: defaults.pressureMin, readonly: false },
+    { cnName: "流量设定值(Nm3/h)", enName: "flow_set", valueType: "float", typicalValue: defaults.flow, readonly: false },
+    { cnName: "流量上限(Nm3/h)", enName: "flow_max", valueType: "float", typicalValue: defaults.flowMax, readonly: false },
+    { cnName: "流量下限(Nm3/h)", enName: "flow_min", valueType: "float", typicalValue: defaults.flowMin, readonly: false },
+    { cnName: "压力(MPa)", enName: "pressure", valueType: "float", typicalValue: defaults.pressure, readonly: false },
+    { cnName: "流量(Nm3/h)", enName: "flow", valueType: "float", typicalValue: defaults.flow, readonly: false },
+    { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false }
+  ];
+}
+
+const HYDROGEN_SOURCE_DEFAULTS: HydrogenEndpointDefaults = {
+  ratedCapacity: "1000",
+  pressure: "20",
+  pressureMax: "25",
+  pressureMin: "1",
+  flow: "1000",
+  flowMax: "1000",
+  flowMin: "0"
+};
+
+const HYDROGEN_LOAD_DEFAULTS: HydrogenEndpointDefaults = {
+  ratedCapacity: "500",
+  pressure: "2",
+  pressureMax: "5",
+  pressureMin: "0.1",
+  flow: "500",
+  flowMax: "500",
+  flowMin: "0"
+};
+
+const HYDROGEN_SOURCE_PARAMETER_DEFINITIONS = hydrogenEndpointParameterDefinitions(HYDROGEN_SOURCE_DEFAULTS);
+const HYDROGEN_LOAD_PARAMETER_DEFINITIONS = hydrogenEndpointParameterDefinitions(HYDROGEN_LOAD_DEFAULTS);
+
 const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   {
     kind: "static-text",
@@ -3016,7 +3082,20 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       ratedPower: "5 MW",
       hydrogenFlow: "1000 Nm3/h",
       controlType: "FLOW",
-      e2hCoeff: "0.2"
+      e2hCoeff: "0.2",
+      rated_capacity_ac_load_t1: "5",
+      p_max_ac_load_t1: "5",
+      p_min_ac_load_t1: "0",
+      q_max_ac_load_t1: "5",
+      q_min_ac_load_t1: "-5",
+      rated_capacity_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.ratedCapacity,
+      control_type_h2_unit_t2: "FLOW",
+      pressure_set_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.pressure,
+      pressure_max_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.pressureMax,
+      pressure_min_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.pressureMin,
+      flow_set_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.flow,
+      flow_max_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.flowMax,
+      flow_min_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.flowMin
     },
     terminalType: "ac",
     terminalCount: 2,
@@ -3036,7 +3115,18 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       ratedPower: "5 MW",
       hydrogenFlow: "1000 Nm3/h",
       controlType: "FLOW",
-      e2hCoeff: "0.2"
+      e2hCoeff: "0.2",
+      rated_capacity_dc_load_t1: "5",
+      p_max_dc_load_t1: "5",
+      p_min_dc_load_t1: "0",
+      rated_capacity_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.ratedCapacity,
+      control_type_h2_unit_t2: "FLOW",
+      pressure_set_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.pressure,
+      pressure_max_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.pressureMax,
+      pressure_min_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.pressureMin,
+      flow_set_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.flow,
+      flow_max_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.flowMax,
+      flow_min_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.flowMin
     },
     terminalType: "dc",
     terminalCount: 2,
@@ -3051,9 +3141,21 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "氢源",
     categoryLibrary: "氢能设备",
     size: { width: 84, height: 56 },
-    params: { pressure: "20 MPa", hydrogenFlow: "1000 Nm3/h" },
+    params: {
+      rated_capacity: HYDROGEN_SOURCE_DEFAULTS.ratedCapacity,
+      control_type: "FLOW",
+      pressure_set: HYDROGEN_SOURCE_DEFAULTS.pressure,
+      pressure_max: HYDROGEN_SOURCE_DEFAULTS.pressureMax,
+      pressure_min: HYDROGEN_SOURCE_DEFAULTS.pressureMin,
+      flow_set: HYDROGEN_SOURCE_DEFAULTS.flow,
+      flow_max: HYDROGEN_SOURCE_DEFAULTS.flowMax,
+      flow_min: HYDROGEN_SOURCE_DEFAULTS.flowMin,
+      pressure: HYDROGEN_SOURCE_DEFAULTS.pressure,
+      flow: HYDROGEN_SOURCE_DEFAULTS.flow
+    },
     terminalType: "h2",
-    terminalCount: 1
+    terminalCount: 1,
+    parameterDefinitions: HYDROGEN_SOURCE_PARAMETER_DEFINITIONS
   },
   {
     kind: "hydrogen-tank",
@@ -3119,10 +3221,22 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "氢荷",
     categoryLibrary: "氢能设备",
     size: { width: 86, height: 58 },
-    params: { pressure: "2 MPa", hydrogenDemand: "500 Nm3/h" },
+    params: {
+      rated_capacity: HYDROGEN_LOAD_DEFAULTS.ratedCapacity,
+      control_type: "FLOW",
+      pressure_set: HYDROGEN_LOAD_DEFAULTS.pressure,
+      pressure_max: HYDROGEN_LOAD_DEFAULTS.pressureMax,
+      pressure_min: HYDROGEN_LOAD_DEFAULTS.pressureMin,
+      flow_set: HYDROGEN_LOAD_DEFAULTS.flow,
+      flow_max: HYDROGEN_LOAD_DEFAULTS.flowMax,
+      flow_min: HYDROGEN_LOAD_DEFAULTS.flowMin,
+      pressure: HYDROGEN_LOAD_DEFAULTS.pressure,
+      flow: HYDROGEN_LOAD_DEFAULTS.flow
+    },
     terminalType: "h2",
     terminalCount: 1,
-    terminalAnchors: [{ x: 0, y: -0.5 }]
+    terminalAnchors: [{ x: 0, y: -0.5 }],
+    parameterDefinitions: HYDROGEN_LOAD_PARAMETER_DEFINITIONS
   },
   {
     kind: "ac-fuel-cell",
@@ -3134,7 +3248,20 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       ratedPower: "3 MW",
       hydrogenFlow: "600 Nm3/h",
       controlType: "P",
-      h2eCoeff: "1.5"
+      h2eCoeff: "1.5",
+      rated_capacity_ac_unit_t1: "3",
+      p_max_ac_unit_t1: "3",
+      p_min_ac_unit_t1: "0",
+      q_max_ac_unit_t1: "3",
+      q_min_ac_unit_t1: "-3",
+      rated_capacity_h2_load_t2: "600",
+      control_type_h2_load_t2: "FLOW",
+      pressure_set_h2_load_t2: HYDROGEN_LOAD_DEFAULTS.pressure,
+      pressure_max_h2_load_t2: HYDROGEN_LOAD_DEFAULTS.pressureMax,
+      pressure_min_h2_load_t2: HYDROGEN_LOAD_DEFAULTS.pressureMin,
+      flow_set_h2_load_t2: "600",
+      flow_max_h2_load_t2: "600",
+      flow_min_h2_load_t2: HYDROGEN_LOAD_DEFAULTS.flowMin
     },
     terminalType: "ac",
     terminalCount: 2,
@@ -3154,7 +3281,18 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       ratedPower: "3 MW",
       hydrogenFlow: "600 Nm3/h",
       controlType: "P",
-      h2eCoeff: "1.5"
+      h2eCoeff: "1.5",
+      rated_capacity_dc_unit_t1: "3",
+      p_max_dc_unit_t1: "3",
+      p_min_dc_unit_t1: "0",
+      rated_capacity_h2_load_t2: "600",
+      control_type_h2_load_t2: "FLOW",
+      pressure_set_h2_load_t2: HYDROGEN_LOAD_DEFAULTS.pressure,
+      pressure_max_h2_load_t2: HYDROGEN_LOAD_DEFAULTS.pressureMax,
+      pressure_min_h2_load_t2: HYDROGEN_LOAD_DEFAULTS.pressureMin,
+      flow_set_h2_load_t2: "600",
+      flow_max_h2_load_t2: "600",
+      flow_min_h2_load_t2: HYDROGEN_LOAD_DEFAULTS.flowMin
     },
     terminalType: "dc",
     terminalCount: 2,
@@ -3939,6 +4077,38 @@ function legacyCamelCaseParamName(name: string): string {
 }
 
 const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> = {
+  rated_capacity_ac_load_t1: "float",
+  p_max_ac_load_t1: "float",
+  p_min_ac_load_t1: "float",
+  q_max_ac_load_t1: "float",
+  q_min_ac_load_t1: "float",
+  rated_capacity_dc_load_t1: "float",
+  p_max_dc_load_t1: "float",
+  p_min_dc_load_t1: "float",
+  rated_capacity_ac_unit_t1: "float",
+  p_max_ac_unit_t1: "float",
+  p_min_ac_unit_t1: "float",
+  q_max_ac_unit_t1: "float",
+  q_min_ac_unit_t1: "float",
+  rated_capacity_dc_unit_t1: "float",
+  p_max_dc_unit_t1: "float",
+  p_min_dc_unit_t1: "float",
+  rated_capacity_h2_unit_t2: "float",
+  control_type_h2_unit_t2: "stringEnum",
+  pressure_set_h2_unit_t2: "float",
+  pressure_max_h2_unit_t2: "float",
+  pressure_min_h2_unit_t2: "float",
+  flow_set_h2_unit_t2: "float",
+  flow_max_h2_unit_t2: "float",
+  flow_min_h2_unit_t2: "float",
+  rated_capacity_h2_load_t2: "float",
+  control_type_h2_load_t2: "stringEnum",
+  pressure_set_h2_load_t2: "float",
+  pressure_max_h2_load_t2: "float",
+  pressure_min_h2_load_t2: "float",
+  flow_set_h2_load_t2: "float",
+  flow_max_h2_load_t2: "float",
+  flow_min_h2_load_t2: "float",
   i_max: "float",
   high_i_max: "float",
   medium_i_max: "float",
@@ -6317,6 +6487,7 @@ export function applyDeviceTemplateDefinitionOverride(
   const electricGenerationDerivedInfo = electricGenerationDerivedComponentLibraryInfo(baseKind);
   const isElectricGenerationBase = baseKind === "ac-source" || baseKind === "dc-source";
   const isElectricGenerationTemplate = isElectricGenerationBase || Boolean(electricGenerationDerivedInfo);
+  const isCanonicalHydrogenEndpoint = baseKind === "hydrogen-source" || baseKind === "hydrogen-load";
   const normalizedOverrideParameterDefinitions = isElectricGenerationTemplate
     ? overrideParameterDefinitions.map((definition) => (
         definition.enName === "rated_power"
@@ -6345,7 +6516,7 @@ export function applyDeviceTemplateDefinitionOverride(
         !retiredElectricGenerationParameterNames.has(definition.enName)
       ))
     : normalizedOverrideParameterDefinitions;
-  const parameterDefinitions = isElectricGenerationBase || electricGenerationDerivedInfo
+  const parameterDefinitions = isElectricGenerationBase || electricGenerationDerivedInfo || isCanonicalHydrogenEndpoint
     ? mergeCanonicalParameterDefinitions(template.parameterDefinitions ?? [], canonicalOverrideParameterDefinitions)
     : canonicalOverrideParameterDefinitions;
   const hasStateDefinitionsOverride = Array.isArray(override.stateDefinitions);

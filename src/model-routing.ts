@@ -5020,6 +5020,153 @@ function validateDeviceLimitPairs(
   return warnings;
 }
 
+type HydrogenCouplingValidationSpec = {
+  coefficientKey: "e2h_coeff" | "h2e_coeff";
+  electricRelationField: string;
+  hydrogenRelationField: string;
+};
+
+const HYDROGEN_COUPLING_VALIDATION_SPECS: Partial<Record<DeviceKind, HydrogenCouplingValidationSpec>> = {
+  "ac-electrolyzer": {
+    coefficientKey: "e2h_coeff",
+    electricRelationField: "idx_ac_load_t1",
+    hydrogenRelationField: "idx_h2_unit_t2"
+  },
+  "dc-electrolyzer": {
+    coefficientKey: "e2h_coeff",
+    electricRelationField: "idx_dc_load_t1",
+    hydrogenRelationField: "idx_h2_unit_t2"
+  },
+  "ac-fuel-cell": {
+    coefficientKey: "h2e_coeff",
+    electricRelationField: "idx_ac_unit_t1",
+    hydrogenRelationField: "idx_h2_load_t2"
+  },
+  "dc-fuel-cell": {
+    coefficientKey: "h2e_coeff",
+    electricRelationField: "idx_dc_unit_t1",
+    hydrogenRelationField: "idx_h2_load_t2"
+  }
+};
+
+function validateHydrogenCouplingParameters(
+  node: ModelNode,
+  options: DeviceOperatingLimitNormalizationOptions
+): { warnings: TopologyValidationError[]; invalidRelationFields: Set<string> } {
+  const spec = HYDROGEN_COUPLING_VALIDATION_SPECS[baseDeviceKind(node.kind)];
+  if (!spec) {
+    return { warnings: [], invalidRelationFields: new Set() };
+  }
+
+  const issues: string[] = [];
+  const invalidRelationFields = new Set<string>();
+  const coefficientText = deviceParamValue(node.params, spec.coefficientKey);
+  const coefficient = namedNumericValue(coefficientText);
+  if (coefficient === null || coefficient <= 0) {
+    issues.push(`${spec.coefficientKey}=${coefficientText ?? "未设置"} 必须为正数`);
+  }
+
+  const validateElectricRelation = (fieldName: string) => {
+    const ownerName = containerAssociatedDeviceName(node, fieldName);
+    const capacityKey = containerRelationParamKey(fieldName, "rated_capacity");
+    const powerUnit = defaultQuantityUnit("power", options);
+    const capacityText = deviceParamValue(node.params, capacityKey);
+    const capacity = quantityValue(capacityText, "power", powerUnit);
+    const relationIssues: string[] = [];
+
+    if (!capacity || capacity.baseValue <= 0) {
+      relationIssues.push(`${capacityKey}=${capacityText ?? "未设置"} 必须为正数`);
+    }
+    const validatePowerPair = (prefix: "p" | "q") => {
+      const maxKey = containerRelationParamKey(fieldName, `${prefix}_max`);
+      const minKey = containerRelationParamKey(fieldName, `${prefix}_min`);
+      const maxText = deviceParamValue(node.params, maxKey);
+      const minText = deviceParamValue(node.params, minKey);
+      const maximum = quantityValue(maxText, "power", powerUnit);
+      const minimum = quantityValue(minText, "power", powerUnit);
+      if (!maximum || maximum.baseValue <= 0) {
+        relationIssues.push(`${maxKey}=${maxText ?? "未设置"} 必须为正数`);
+      }
+      if (!minimum) {
+        relationIssues.push(`${minKey}=${minText ?? "未设置"} 必须为数字`);
+      }
+      if (maximum && minimum && maximum.baseValue <= minimum.baseValue) {
+        relationIssues.push(`${maxKey} 必须大于 ${minKey}`);
+      }
+      if (capacity && capacity.baseValue > 0 && maximum && maximum.baseValue > capacity.baseValue) {
+        relationIssues.push(`${maxKey} 不能大于 ${capacityKey}`);
+      }
+    };
+    validatePowerPair("p");
+    const relationSection = containerRelationCounterKey(fieldName);
+    if (relationSection === "ACGenerator" || relationSection === "ACLoad") {
+      validatePowerPair("q");
+    }
+    if (relationIssues.length > 0) {
+      invalidRelationFields.add(fieldName);
+      issues.push(`${ownerName}：${relationIssues.join("，")}`);
+    }
+  };
+
+  const validateHydrogenRelation = (fieldName: string) => {
+    const ownerName = containerAssociatedDeviceName(node, fieldName);
+    const key = (column: string) => containerRelationParamKey(fieldName, column);
+    const value = (column: string) => deviceParamValue(node.params, key(column));
+    const numeric = (column: string) => namedNumericValue(value(column));
+    const capacity = numeric("rated_capacity");
+    const pressureMaximum = numeric("pressure_max");
+    const pressureMinimum = numeric("pressure_min");
+    const flowMaximum = numeric("flow_max");
+    const flowMinimum = numeric("flow_min");
+    const relationIssues: string[] = [];
+
+    if (capacity === null || capacity <= 0) {
+      relationIssues.push(`${key("rated_capacity")}=${value("rated_capacity") ?? "未设置"} 必须为正数`);
+    }
+    if (pressureMaximum === null || pressureMaximum <= 0) {
+      relationIssues.push(`${key("pressure_max")}=${value("pressure_max") ?? "未设置"} 必须为正数`);
+    }
+    if (pressureMinimum === null) {
+      relationIssues.push(`${key("pressure_min")}=${value("pressure_min") ?? "未设置"} 必须为数字`);
+    }
+    if (pressureMaximum !== null && pressureMinimum !== null && pressureMaximum <= pressureMinimum) {
+      relationIssues.push(`${key("pressure_max")} 必须大于 ${key("pressure_min")}`);
+    }
+    if (flowMaximum === null || flowMaximum <= 0) {
+      relationIssues.push(`${key("flow_max")}=${value("flow_max") ?? "未设置"} 必须为正数`);
+    }
+    if (flowMinimum === null) {
+      relationIssues.push(`${key("flow_min")}=${value("flow_min") ?? "未设置"} 必须为数字`);
+    }
+    if (flowMaximum !== null && flowMinimum !== null && flowMaximum <= flowMinimum) {
+      relationIssues.push(`${key("flow_max")} 必须大于 ${key("flow_min")}`);
+    }
+    if (capacity !== null && capacity > 0 && flowMaximum !== null && flowMaximum > capacity) {
+      relationIssues.push(`${key("flow_max")} 不能大于 ${key("rated_capacity")}`);
+    }
+    if (relationIssues.length > 0) {
+      invalidRelationFields.add(fieldName);
+      issues.push(`${ownerName}：${relationIssues.join("，")}`);
+    }
+  };
+
+  validateElectricRelation(spec.electricRelationField);
+  validateHydrogenRelation(spec.hydrogenRelationField);
+  if (issues.length === 0) {
+    return { warnings: [], invalidRelationFields };
+  }
+  return {
+    warnings: [{
+      id: `hydrogen-coupling-parameter-invalid:${node.id}`,
+      type: "hydrogen-coupling-parameter-invalid",
+      nodeId: node.id,
+      relatedNodeIds: [node.id],
+      message: `图上拓扑失败：${node.name} 的电-气参数无效：${issues.join("；")}。`
+    }],
+    invalidRelationFields
+  };
+}
+
 export function normalizeDeviceOperatingLimitsAfterTopology(
   nodes: ModelNode[],
   options: DeviceOperatingLimitNormalizationOptions = {}
@@ -5041,6 +5188,8 @@ export function normalizeDeviceOperatingLimitsAfterTopology(
       nextParams[paramKey] = value;
       corrections.push({ nodeId: node.id, paramKey, value });
     };
+    const hydrogenCouplingValidation = validateHydrogenCouplingParameters(node, options);
+    warnings.push(...hydrogenCouplingValidation.warnings);
     warnings.push(...validateDeviceLimitPairs(
       node,
       node.name,
@@ -5055,6 +5204,9 @@ export function normalizeDeviceOperatingLimitsAfterTopology(
     for (const fieldName of Object.keys(node.params)) {
       const relationSection = containerRelationCounterKey(fieldName);
       if (!relationSection) {
+        continue;
+      }
+      if (hydrogenCouplingValidation.invalidRelationFields.has(fieldName)) {
         continue;
       }
       const parsed = parseContainerRelationField(fieldName);

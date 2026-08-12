@@ -64,6 +64,7 @@ import {
   AC_GENERATOR_CONTROL_TYPES,
   DC_GENERATOR_CONTROL_TYPES,
   HYDROGEN_COUPLING_CONTROL_TYPES,
+  HYDROGEN_ENDPOINT_CONTROL_TYPES,
   ELECTRIC_HEAT_COUPLING_CONTROL_TYPES,
   E_SECTION_COLUMNS,
   tidyOrthogonalRoute,
@@ -1018,6 +1019,29 @@ test("exports electric-hydrogen controls, directional coefficients, and associat
     expect(exported[electricSection].rows[0].p_set, electricSection).toBe("2.5");
     expect(exported[hydrogenSection].rows[0].flow_set, hydrogenSection).toBe("300");
   }
+});
+
+test("exports hydrogen source and load fields in canonical order and defaults missing control mode to FLOW", () => {
+  const source = assignPermanentDeviceIndex(createDefaultNode("hydrogen-source", { x: 100, y: 100 }), {}).node;
+  const load = assignPermanentDeviceIndex(createDefaultNode("hydrogen-load", { x: 300, y: 100 }), { HydroLoad: 0 }).node;
+  delete source.params.control_type;
+  delete load.params.control_type;
+  const exported = parseESections(buildEDeviceParameterFile({
+    version: 1,
+    name: "氢源荷接口字段",
+    nodes: [source, load],
+    edges: []
+  }));
+  const expectedColumns = [
+    "idx", "name", "node", "rated_capacity", "control_type",
+    "pressure_set", "pressure_max", "pressure_min",
+    "flow_set", "flow_max", "flow_min", "run_stat"
+  ];
+
+  expect(exported.HydroSource.columns).toEqual(expectedColumns);
+  expect(exported.HydroLoad.columns).toEqual(expectedColumns);
+  expect(exported.HydroSource.rows[0].control_type).toBe("FLOW");
+  expect(exported.HydroLoad.rows[0].control_type).toBe("FLOW");
 });
 
 test("returns E export warnings with the generated file", () => {
@@ -2232,13 +2256,13 @@ test("keeps every built-in device parameter aligned with its semantic type and n
   const floatNames = new Set([
     "ac_i_max", "ac_p_max", "ac_p_min", "ac_q_max", "ac_q_min", "ac_v_max", "ac_v_min", "ac_voltage", "active_power", "alpha", "angle", "array_area", "b", "b_set", "bt", "bt1", "bt2", "bt3",
     "capacity", "capacity_factor", "charge_discharge_efficiency", "cut_in_wind_speed", "cut_out_wind_speed", "dc_i_max", "dc_p_max", "dc_p_min", "dc_v_max", "dc_v_min", "dc_voltage",
-    "design_flow", "design_head", "e2h_coeff", "efficiency", "energy_capacity", "flow", "flow_rate", "flow_set", "frequency", "fuel_tank_capacity",
+    "design_flow", "design_head", "e2h_coeff", "efficiency", "energy_capacity", "flow", "flow_rate", "flow_set", "flow_max", "flow_min", "frequency", "fuel_tank_capacity",
     "g_set", "gas_quantity", "generator_efficiency", "gt", "gt1", "gt2", "gt3", "head", "heat_demand", "heat_power", "heat_rate",
     "h2e_coeff", "high_i_max", "high_rated_capacity", "high_vbase", "hub_height", "hydrogen_demand", "hydrogen_flow", "impedance", "inlet_pressure",
     "i_i_max", "i_max", "input_voltage", "i_p_max", "i_p_min", "i_q_max", "i_q_min", "i_q_set", "i_set", "i_v_max", "i_v_min", "i_v_set", "j_i_max", "j_p_max", "j_p_min", "j_q_max", "j_q_min", "j_q_set", "j_v_max", "j_v_min", "j_v_set", "length", "low_i_max", "low_rated_capacity", "low_vbase", "main_steam_pressure",
     "main_steam_temperature", "max_charge_power", "max_current", "max_discharge_power", "medium_i_max", "medium_rated_capacity",
     "medium_vbase", "module_efficiency", "outlet_pressure", "output_voltage", "p_ac_set", "p_dc_set", "p_max", "p_min", "p_set", "pbase", "power",
-    "power_factor", "pressure", "pressure_max", "pressure_min", "primary_loop_pressure", "pv0", "pv1", "pv2", "q_ac_set", "q_max", "q_min", "q_set", "qbase", "qv0",
+    "power_factor", "pressure", "pressure_set", "pressure_max", "pressure_min", "primary_loop_pressure", "pv0", "pv1", "pv2", "q_ac_set", "q_max", "q_min", "q_set", "qbase", "qv0",
     "qv1", "qv2", "r", "r1", "r2", "r3", "rated_capacity", "rated_current", "rated_power", "rated_speed",
     "rated_voltage", "rated_wind_speed", "reactive_power", "reactor_thermal_power", "reference_irradiance", "reference_temperature", "return_temperature", "rotor_diameter",
     "shift", "shift1", "shift2", "shift3", "short_circuit_capacity", "soc", "soc_lower_limit", "soc_upper_limit",
@@ -2254,8 +2278,9 @@ test("keeps every built-in device parameter aligned with its semantic type and n
   const numericText = /^[-+]?(?:\d+(?:\.\d+)?|\.\d+)$/;
   const integerText = /^[-+]?\d+$/;
   const expectedType = (name: string) => {
-    if (name === "status") return "numberEnum";
-    if (stringEnumNames.has(name)) return "stringEnum";
+    const containerBaseName = name.replace(/_(?:ac2|dc2|h22|heat2|ac|dc|h2|heat)_(?:unit|load|transformer)_t\d+$/, "");
+    if (containerBaseName === "status") return "numberEnum";
+    if (stringEnumNames.has(containerBaseName)) return "stringEnum";
     if (
       integerNames.has(name) ||
       /^idx_(?:ac2|dc2|h22|heat2|ac|dc|h2|heat)_(?:unit|load|transformer)_t\d+$/.test(name) ||
@@ -2263,7 +2288,7 @@ test("keeps every built-in device parameter aligned with its semantic type and n
     ) {
       return "integer";
     }
-    if (floatNames.has(name)) return "float";
+    if (floatNames.has(containerBaseName)) return "float";
     return "string";
   };
 
@@ -2287,9 +2312,12 @@ test("keeps every built-in device parameter aligned with its semantic type and n
       }
       if (definition.enName === "control_type") {
         const hydrogenCoupling = ["AcE2Hydro", "DcE2Hydro", "Hydro2AcE", "Hydro2DcE"].includes(section ?? "");
+        const hydrogenEndpoint = section === "HydroSource" || section === "HydroLoad";
         const electricHeatCoupling = ["AcE2Heat", "DcE2Heat", "AcE2Heat2", "DcE2Heat2"].includes(section ?? "");
         const expectedOptions = hydrogenCoupling
           ? [...HYDROGEN_COUPLING_CONTROL_TYPES]
+          : hydrogenEndpoint
+            ? [...HYDROGEN_ENDPOINT_CONTROL_TYPES]
           : electricHeatCoupling
             ? [...ELECTRIC_HEAT_COUPLING_CONTROL_TYPES]
           : section === "ACGenerator"
@@ -2298,6 +2326,8 @@ test("keeps every built-in device parameter aligned with its semantic type and n
         expect((definition.enumOptions ?? []).map((option) => option.value), context).toEqual(expectedOptions);
         const expectedDefault = section === "ACGenerator"
           ? "PV"
+          : hydrogenEndpoint
+            ? "FLOW"
           : section === "AcE2Hydro" || section === "DcE2Hydro"
             ? "FLOW"
             : "P";
