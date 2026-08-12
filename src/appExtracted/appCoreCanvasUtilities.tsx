@@ -1432,6 +1432,11 @@ export type UndoSnapshot = {
   voltageUnit: string;
   currentUnit: string;
   powerBaseValue: number;
+  modelType?: string;
+  subcontrolarea?: string;
+  substation?: string;
+  feeder?: string;
+  taiqu?: string;
   nodes: ModelNode[];
   edges: Edge[];
   topologyErrors: TopologyValidationError[];
@@ -1504,6 +1509,11 @@ export type DraftProjectState = {
   deviceIndexCounters?: DeviceIndexCounters;
   groups?: ModelGroup[];
   measurements?: ProjectMeasurementConfig;
+  modelType?: string;
+  subcontrolarea?: string;
+  substation?: string;
+  feeder?: string;
+  taiqu?: string;
   nodes: ModelNode[];
   edges: Edge[];
 };
@@ -3923,6 +3933,11 @@ export function draftProjectFromSavedSchemes(
       voltageUnit: record.project.voltageUnit,
       currentUnit: record.project.currentUnit,
       powerBaseValue: record.project.powerBaseValue,
+      modelType: record.project.modelType,
+      subcontrolarea: record.project.subcontrolarea,
+      substation: record.project.substation,
+      feeder: record.project.feeder,
+      taiqu: record.project.taiqu,
       deviceIndexCounters: record.project.deviceIndexCounters,
       layers: record.project.layers,
       activeLayerId: record.project.activeLayerId,
