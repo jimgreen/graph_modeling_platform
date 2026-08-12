@@ -10,7 +10,7 @@ import {
 import { buildExportDeviceIdMap } from "../svgExportUtils";
 import { E_SECTION_COLUMNS, inferESection, getTemplateParameterDefinitions, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, type EDeviceExport } from "../model";
 import { buildEDeviceInterfaceDefinitionRows, orderEDeviceInterfaceFields, applyEDeviceDefinitionSectionsToLibraryState, buildEFileExportOptionsFromLibrary } from "./appDeviceDefinitionFactories";
-import { decodeGbk } from "../encoding/gbk";
+import { decodeAuto } from "../encoding/gbk";
 import { UserCustomizationManagerDialog } from "../UserCustomizationManagerDialog";
 import { VoltageLevelDialog } from "../VoltageLevelDialog";
 import { EFileEditor } from "../EFileEditor";
@@ -607,17 +607,7 @@ export function renderAppView(__appScope: Record<string, any>) {
       }
       // 模板可能为 UTF-8（本平台生成）或 GBK（内网模板），按字节读取并兼容解码
       const buffer = await response.arrayBuffer();
-      const bytes = new Uint8Array(buffer);
-      let text: string;
-      if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
-        text = new TextDecoder("utf-8").decode(bytes);
-      } else {
-        try {
-          text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-        } catch {
-          text = decodeGbk(bytes);
-        }
-      }
+      const text = decodeAuto(new Uint8Array(buffer));
       const sections = parseEDeviceDefinitionFile(text);
       if (sections.length === 0) {
         showGlobalMessage("未在模板中解析到元件定义。");
@@ -4467,13 +4457,13 @@ export function renderAppView(__appScope: Record<string, any>) {
                           customDeviceDraft.componentLibrary
                         )}
                       </td>
-                       <td>
-                         {renderEnumValuesEditor(row, (rowId, patch) => setCustomDeviceDraft((current) => ({
-                    ...current,
-                    params: current.params.map((item) => (item.id === rowId ? { ...item, ...patch } : item)),
-                    error: ""
-                 })))}
-                       </td>
+                      <td>
+                        {renderEnumValuesEditor(row, (rowId, patch) => setCustomDeviceDraft((current) => ({
+                          ...current,
+                          params: current.params.map((item) => (item.id === rowId ? { ...item, ...patch } : item)),
+                          error: ""
+                        })))}
+                      </td>
                        <td>
                         <div className="custom-param-actions">
                           <button type="button" onClick={() => moveVisibleCustomParam(row.id, -1)} disabled={index === 0}>

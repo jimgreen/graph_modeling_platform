@@ -87,3 +87,15 @@ export function looksLikeGbk(bytes: Uint8Array): boolean {
 export function decodeGbk(bytes: Uint8Array): string {
   return new TextDecoder("gbk").decode(bytes);
 }
+
+/** 自动识别编码解码字节流：UTF-8 BOM → UTF-8；fatal UTF-8 解码成功 → UTF-8；否则 GBK */
+export function decodeAuto(bytes: Uint8Array): string {
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    return new TextDecoder("utf-8").decode(bytes);
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return decodeGbk(bytes);
+  }
+}
