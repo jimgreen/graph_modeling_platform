@@ -1469,6 +1469,82 @@ function applyEInterfaceDefinitionToRecord(
   };
 }
 
+// aclinesegment/dclinesegment 同时生成 aclineend/dclineend（端点表）：
+// 每条线段生成 2 条端点记录（首端/末端），name = 线段name + "_首端/_末端"，
+// aclnseg_id/dcln_id 指向所属线段的 idx，nd 继承线段 ind/jnd 拓扑节点号。
+function buildLineEndRecords(
+  node: ModelNode,
+  section: string,
+  segmentParams: Record<string, string>,
+  baseIdx: string,
+  interfaceDefinitionBySection: Map<string, EFileInterfaceSectionDefinition>,
+  sectionRowCounts: Map<string, number>,
+  deviceRecords: EDeviceExport[]
+): void {
+  if (section !== "ACBranch" && section !== "DCBranch") {
+    return;
+  }
+  const endSection = section === "ACBranch" ? "aclineend" : "dclineend";
+  const linkField = section === "ACBranch" ? "aclnseg_id" : "dcln_id";
+  const endInterface = interfaceDefinitionBySection.get(endSection);
+  if (!endInterface) {
+    return;
+  }
+  const endFields = eParameterFieldsFromInterfaceDefinition(endSection, endInterface);
+  if (endFields.length === 0) {
+    return;
+  }
+  const fieldByExportName = new Map(endFields.map((f) => [f.exportName, f]));
+  const setEndField = (recordParams: Record<string, string>, exportName: string, value: string) => {
+    if (fieldByExportName.has(exportName)) {
+      recordParams[exportName] = value;
+    }
+  };
+  const sideLabels = ["首端", "末端"] as const;
+  const nodeKeys = ["i_node", "j_node"] as const;
+  const segmentNodeKeys = ["ind", "jnd"] as const;
+  const copyFromSegment: Array<[string, string]> = [
+    ["st_id", "ist_id"],
+    ["bv_id", "bv_id"],
+    ["status", "status"],
+    ["run_state", "run_stat"],
+    ["tpcolor", "tpcolor"],
+    ["record_app", "record_app"]
+  ];
+  for (let side = 0; side < sideLabels.length; side += 1) {
+    const endParams = buildEDeviceValuesFromFields(node, endFields, { preferTopologyNodeNumbers: true });
+    // name = 线段 name + _首端/_末端
+    setEndField(endParams, "name", `${String(segmentParams.name ?? baseIdx)}_${sideLabels[side]}`);
+    // 指向所属线段 idx（实时库模板下 applyEReferenceIdValues 会进一步换算为目标表 id）
+    setEndField(endParams, linkField, baseIdx);
+    // nd：首端取线段 ind（i_node 拓扑号），末端取 jnd（j_node 拓扑号）
+    const endNodeKey = nodeKeys[side];
+    const segmentNodeField = segmentNodeKeys[side];
+    const topologyNd = topologyNodeNumberForEField(node, endNodeKey);
+    if (topologyNd !== undefined && topologyNd !== null && topologyNd !== "") {
+      setEndField(endParams, "nd", String(topologyNd));
+    } else if (segmentParams[segmentNodeField]) {
+      setEndField(endParams, "nd", String(segmentParams[segmentNodeField]));
+    }
+    // 从线段继承厂站/电压/状态等公共字段
+    for (const [endName, segmentName] of copyFromSegment) {
+      if (segmentParams[segmentName] && !endParams[endName]) {
+        setEndField(endParams, endName, String(segmentParams[segmentName]));
+      }
+    }
+    const endIdx = (sectionRowCounts.get(endSection) ?? 0) + 1;
+    sectionRowCounts.set(endSection, endIdx);
+    setEndField(endParams, "idx", String(endIdx));
+    deviceRecords.push({
+      id: `${node.id}:end:${side}`,
+      kind: node.kind,
+      section: endSection,
+      params: endParams,
+      columns: endFields.map((field) => field.exportName)
+    });
+  }
+}
+
 /** 判断是否有模板配置（eDeviceDefinitionLabels 非空） */
 function hasTemplateConfig(options: EFileExportOptions): boolean {
   return Boolean(options.eDeviceDefinitionLabels) && Object.keys(options.eDeviceDefinitionLabels ?? {}).length > 0;
@@ -1573,68 +1649,8 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
         }
       }
     }
-    // aclinesegment/dclinesegment 同时生成 aclineend/dclineend（端点表）：
-    // 每条线段生成 2 条端点记录（首端/末端），name = 线段name + "_首端/_末端"，
-    // aclnseg_id/dcln_id 指向所属线段的 idx，nd 继承线段 ind/jnd 拓扑节点号。
-    if (section === "ACBranch" || section === "DCBranch") {
-      const endSection = section === "ACBranch" ? "aclineend" : "dclineend";
-      const linkField = section === "ACBranch" ? "aclnseg_id" : "dcln_id";
-      const endInterface = interfaceDefinitionBySection.get(endSection);
-      if (endInterface) {
-        const endFields = eParameterFieldsFromInterfaceDefinition(endSection, endInterface);
-        if (endFields.length > 0) {
-          const fieldByExportName = new Map(endFields.map((f) => [f.exportName, f]));
-          const setEndField = (recordParams: Record<string, string>, exportName: string, value: string) => {
-            if (fieldByExportName.has(exportName)) {
-              recordParams[exportName] = value;
-            }
-          };
-          const sideLabels = ["首端", "末端"] as const;
-          const nodeKeys = ["i_node", "j_node"] as const;
-          const segmentNodeKeys = ["ind", "jnd"] as const;
-          const copyFromSegment: Array<[string, string]> = [
-            ["st_id", "ist_id"],
-            ["bv_id", "bv_id"],
-            ["status", "status"],
-            ["run_state", "run_stat"],
-            ["tpcolor", "tpcolor"],
-            ["record_app", "record_app"]
-          ];
-          for (let side = 0; side < sideLabels.length; side += 1) {
-            const endParams = buildEDeviceValuesFromFields(node, endFields, { preferTopologyNodeNumbers: true });
-            // name = 线段 name + _首端/_末端
-            setEndField(endParams, "name", `${String(params.name ?? baseIdx)}_${sideLabels[side]}`);
-            // 指向所属线段 idx（实时库模板下 applyEReferenceIdValues 会进一步换算为目标表 id）
-            setEndField(endParams, linkField, baseIdx);
-            // nd：首端取线段 ind（i_node 拓扑号），末端取 jnd（j_node 拓扑号）
-            const endNodeKey = nodeKeys[side];
-            const segmentNodeField = segmentNodeKeys[side];
-            const topologyNd = topologyNodeNumberForEField(node, endNodeKey);
-            if (topologyNd !== undefined && topologyNd !== null && topologyNd !== "") {
-              setEndField(endParams, "nd", String(topologyNd));
-            } else if (params[segmentNodeField]) {
-              setEndField(endParams, "nd", String(params[segmentNodeField]));
-            }
-            // 从线段继承厂站/电压/状态等公共字段
-            for (const [endName, segmentName] of copyFromSegment) {
-              if (params[segmentName] && !endParams[endName]) {
-                setEndField(endParams, endName, String(params[segmentName]));
-              }
-            }
-            const endIdx = (sectionRowCounts.get(endSection) ?? 0) + 1;
-            sectionRowCounts.set(endSection, endIdx);
-            setEndField(endParams, "idx", String(endIdx));
-            deviceRecords.push({
-              id: `${node.id}:end:${side}`,
-              kind: node.kind,
-              section: endSection,
-              params: endParams,
-              columns: endFields.map((field) => field.exportName)
-            });
-          }
-        }
-      }
-    }
+    // aclinesegment/dclinesegment 同时生成 aclineend/dclineend（端点表）
+    buildLineEndRecords(node, section, params, baseIdx, interfaceDefinitionBySection, sectionRowCounts, deviceRecords);
     const derivedInfo = templateDerivedComponentLibraryInfo({ kind: node.kind, params: node.params });
     if (derivedInfo) {
       const derivedSectionRowCount = (derivedSectionRowCounts.get(derivedInfo.derivedComponentLibrary) ?? 0) + 1;

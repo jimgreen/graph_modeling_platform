@@ -472,8 +472,7 @@ export function buildEFileExportOptionsFromLibrary(options: {
   // 但 buildEDeviceInterfaceDefinitionRows 仅遍历 libraryTemplates，不会包含这些
   // 无对应设备模板的段。此处按 sectionKind 注入，使导出时
   // interfaceDefinitionBySection.get(sectionKind) 可命中，保证表号/字段/过滤均生效。
-  const RUNTIME_STANDALONE = ["aclineend", "dclineend"];
-  for (const sectionKind of RUNTIME_STANDALONE) {
+  for (const sectionKind of RUNTIME_GENERATED_STANDALONE_SECTIONS) {
     const templateFields = options.eDeviceDefinitionTemplateFields?.[sectionKind];
     if (!templateFields || templateFields.length === 0) {
       continue;
@@ -580,6 +579,12 @@ function eDeviceInterfacePatchesForRow(row: any, section: any | undefined) {
   return patches;
 }
 
+// 模板导出名 → 元件属性名：模板 id 字段对应元件 idx 属性（导出名为 id，元件属性仍为 idx）
+function templateFieldToDeviceSourceName(sectionField: any): string {
+  const templateExportName = String(sectionField.exportName ?? sectionField.sourceName ?? "").trim();
+  return templateExportName === "id" ? "idx" : templateExportName;
+}
+
 function eDeviceInterfaceFieldOrderForRow(row: any, section: any | undefined) {
   if (!section) {
     return [];
@@ -587,14 +592,6 @@ function eDeviceInterfaceFieldOrderForRow(row: any, section: any | undefined) {
   const rowFields = row.fields ?? [];
   const used = new Set<string>();
   const ordered: string[] = [];
-  // 模板 id 字段对应元件的 idx 属性（导出名为 id，元件属性仍为 idx，不修改元件属性本身）
-  const templateFieldToDeviceSourceName = (sectionField: any) => {
-    const templateExportName = String(sectionField.exportName ?? sectionField.sourceName ?? "").trim();
-    if (templateExportName === "id") {
-      return "idx";
-    }
-    return templateExportName;
-  };
   const findMatchingField = (sectionField: any) => {
     const exportKey = deviceDefinitionComplianceKey(templateFieldToDeviceSourceName(sectionField));
     // 优先按 exportName/sourceName 精确匹配（如 runstat<->run_stat），避免误匹配同中文不同字段
@@ -638,6 +635,18 @@ function eDeviceInterfaceFieldOrderForRow(row: any, section: any | undefined) {
   }
   return ordered;
 }
+
+// 运行时生成内容的表，不参与元件匹配
+// aclineend/dclineend/transformerwinding 也是运行时生成（从线段/变压器派生），需加入此集合
+const RUNTIME_GENERATED_SECTIONS = new Set([
+  "basevalue", "basevoltage", "subcontrolarea", "substation", "trans",
+  "aclineend", "dclineend", "transformerwinding"
+]);
+// 独立导出表：运行时生成的表中，导出代码按 kind 名查找接口定义（如 aclineend/dclineend），
+// 模板字段需存储在 sectionKind 名下。
+// 非 standalone 的运行时表（如 trans/transformerwinding）是元件库的导出别名，
+// 模板字段存储在 componentLibrary 名下（如 ACTransWinding）。
+const RUNTIME_GENERATED_STANDALONE_SECTIONS = new Set(["aclineend", "dclineend"]);
 
 export function applyEDeviceDefinitionSectionsToLibraryState(options: {
   sections: readonly any[];
@@ -687,18 +696,6 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
   const matched: Array<{ section: string; fields: string[] }> = [];
   const skipped: Array<{ section: string; reason: string; fields?: string[] }> = [];
   const runtimeGenerated: Array<{ section: string; fields?: string[] }> = [];
-
-  // 运行时生成内容的表，不参与元件匹配
-  // aclineend/dclineend/transformerwinding 也是运行时生成（从线段/变压器派生），需加入此集合
-  const RUNTIME_GENERATED_SECTIONS = new Set([
-    "basevalue", "basevoltage", "subcontrolarea", "substation", "trans",
-    "aclineend", "dclineend", "transformerwinding"
-  ]);
-  // 独立导出表：运行时生成的表中，导出代码按 kind 名查找接口定义（如 aclineend/dclineend），
-  // 模板字段需存储在 sectionKind 名下。
-  // 非 standalone 的运行时表（如 trans/transformerwinding）是元件库的导出别名，
-  // 模板字段存储在 componentLibrary 名下（如 ACTransWinding）。
-  const RUNTIME_GENERATED_STANDALONE_SECTIONS = new Set(["aclineend", "dclineend"]);
   // standalone 运行时表的表号映射（sectionKind -> tableId），合并到最终 eDeviceDefinitionTableIds
   const runtimeGeneratedTableIds: Record<string, string> = {};
 
@@ -805,7 +802,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
         const templateFields = section.fields.map((f: any) => {
           const exportName = String(f.exportName ?? "").trim();
           // 模板 id 字段对应元件 idx 属性（sourceName=idx, exportName=id），与匹配逻辑一致
-          const sourceName = exportName === "id" ? "idx" : undefined;
+          const sourceName = templateFieldToDeviceSourceName(f) === "idx" ? "idx" : undefined;
           return {
             sourceName: sourceName as string | undefined,
             exportName,
