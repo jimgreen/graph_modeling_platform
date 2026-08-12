@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { buildSvgDocument } from "./App";
 import { createExportEFile, createExportJsonFile, createExportSvg, createExportSvgFile, createLoadSvgImageExportPathById } from "./appExtracted/appDeviceDefinitionFactories";
-import { createDefaultNode, createNodeFromTemplate, DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY, getTerminalPoint, type DeviceKind, type DeviceTemplate, type Edge } from "./model";
+import { assignPermanentDeviceIndex, createDefaultNode, createNodeFromTemplate, DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY, getTerminalPoint, type DeviceKind, type DeviceTemplate, type Edge } from "./model";
 import {
-  DEFAULT_MEASUREMENT_CONFIG,
+  INITIAL_MEASUREMENT_CONFIG,
   normalizeMeasurementConfig,
   normalizeProjectMeasurements,
   type ProjectMeasurementConfig
@@ -1355,7 +1355,7 @@ describe("SVG export", () => {
     expect(svg).not.toContain('动态量测</title>');
     expect(svg).not.toContain('m-text=');
     expect(svg).not.toContain('mv="1"');
-    expect(svg).toContain('mt="activePower"');
+    expect(svg).toContain('mt="p"');
     expect(svg).toContain('mti="activePower"');
     expect(svg).not.toContain('measure_type="activePower"');
     const measurementRow = svg.match(/<text\b[^>]*><tspan>P<\/tspan><tspan id="mv-load-export-m-active"[\s\S]*?<\/text>/)?.[0] ?? "";
@@ -1363,7 +1363,7 @@ describe("SVG export", () => {
     const unitText = measurementRow.match(/<tspan dx="[^"]+">kW<\/tspan>/)?.[0] ?? "";
     expect(measurementRow).toContain('<tspan>P</tspan>');
     expect(valueText).not.toContain('mid=');
-    expect(valueText).toContain('mt="activePower"');
+    expect(valueText).toContain('mt="p"');
     expect(valueText).toContain('mti="activePower"');
     expect(valueText).not.toContain('mf=');
     expect(measurementRow).toContain('fill="#dc2626"');
@@ -1421,8 +1421,8 @@ describe("SVG export", () => {
       }]
     }, [tank]);
     const measurementConfig = normalizeMeasurementConfig({
-      ...DEFAULT_MEASUREMENT_CONFIG,
-      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes.map((type) => ({
+      ...INITIAL_MEASUREMENT_CONFIG,
+      measurementTypes: INITIAL_MEASUREMENT_CONFIG.measurementTypes.map((type) => ({
         ...type,
         shortLabel: ({
           pressure: "储气压",
@@ -1494,8 +1494,51 @@ describe("SVG export", () => {
     expect(measurementLayer).toContain('id="mv-ACLoad-2-reactivePower-1"');
     expect(measurementLayer).not.toContain('mid=');
     expect(measurementLayer).not.toContain('mf="reactivePower"');
-    expect(measurementLayer).toContain('mt="reactivePower" mti="reactivePower" mf="plant.load.1.p"');
+    expect(measurementLayer).toContain('mt="q" mti="reactivePower" mf="plant.load.1.p"');
     expect(measurementLayer).not.toContain(load.id);
+  });
+
+  test("binds coupling measurements to associated endpoint devices in exported SVG", () => {
+    const coupling = assignPermanentDeviceIndex(createDefaultNode("ac-electrolyzer", { x: 160, y: 110 }), {}).node;
+    const measurements = normalizeProjectMeasurements({
+      version: 1,
+      groups: [
+        {
+          id: `measurement-${coupling.id}-t1`, nodeId: coupling.id, terminalId: "t1", visible: true,
+          anchor: "custom", offset: { x: -70, y: 0 }, layout: "vertical",
+          items: [
+            { id: `measurement-${coupling.id}-t1-activePower-0`, measurementTypeId: "activePower", sourcePoint: `${coupling.id}.t1.p` },
+            { id: `measurement-${coupling.id}-t1-voltage-1`, measurementTypeId: "voltage", sourcePoint: `${coupling.id}.t1.u` }
+          ]
+        },
+        {
+          id: `measurement-${coupling.id}-t2`, nodeId: coupling.id, terminalId: "t2", visible: true,
+          anchor: "custom", offset: { x: 70, y: 0 }, layout: "vertical",
+          items: [{ id: `measurement-${coupling.id}-t2-flow-0`, measurementTypeId: "flow", sourcePoint: `${coupling.id}.t2.flow` }]
+        }
+      ]
+    }, [coupling]);
+    const ownerId = `AcE2Hydro-${coupling.params.idx}`;
+    const electricId = `ACLoad-${coupling.params.idx_ac_load_t1}`;
+    const hydrogenId = `HydroSource-${coupling.params.idx_h2_unit_t2}`;
+
+    const svg = buildSvgDocument([coupling], [], {
+      width: 420,
+      height: 260,
+      measurements,
+      measurementConfig: INITIAL_MEASUREMENT_CONFIG,
+      deviceTemplates: DEVICE_LIBRARY
+    });
+
+    expect(svg).toContain(`dev="${electricId}" owner-dev="${ownerId}" term="t1"`);
+    expect(svg).toContain(`dev="${hydrogenId}" owner-dev="${ownerId}" term="t2"`);
+    expect(svg).toContain('mt="p" mti="activePower" mf="t1.p"');
+    expect(svg).toContain('mt="u" mti="voltage" mf="t1.u"');
+    expect(svg).toContain('mt="flow" mti="flow" mf="t2.flow"');
+    expect(svg).toContain(`<g device-type="ACLoad">`);
+    expect(svg).toContain(`dev-id="${electricId}"`);
+    expect(svg).toContain(`<g device-type="HydroSource">`);
+    expect(svg).toContain(`dev-id="${hydrogenId}"`);
   });
 
   test("uses a custom device profile field as the SVG binding name", () => {
@@ -1523,15 +1566,19 @@ describe("SVG export", () => {
         defaultFontSize: 14,
         defaultFontWeight: "500",
         defaultVisible: true
-      }],
-      deviceProfiles: [{
-        deviceKind: "custom-binding-device",
-        items: [
-          { measurementTypeId: "customMetric", position: "t1", associatedField: "custom_metric_1" },
-          { measurementTypeId: "customMetric", position: "t2", associatedField: "custom_metric_2" }
-        ]
       }]
     });
+    const customTemplate: DeviceTemplate = {
+      ...DEVICE_LIBRARY.find((template) => template.kind === "ac-load")!,
+      kind: customNode.kind,
+      terminalCount: 2,
+      terminalTypes: ["ac", "ac"],
+      terminalLabels: ["端1", "端2"],
+      measurementDefinitions: [
+        { measurementTypeId: "customMetric", position: "t1", associatedField: "custom_metric_1" },
+        { measurementTypeId: "customMetric", position: "t2", associatedField: "custom_metric_2" }
+      ]
+    };
     const measurements: ProjectMeasurementConfig = {
       version: 1,
       groups: [{
@@ -1551,7 +1598,13 @@ describe("SVG export", () => {
       }]
     };
 
-    const svg = buildSvgDocument([customNode], [], { width: 320, height: 220, measurements, measurementConfig });
+    const svg = buildSvgDocument([customNode], [], {
+      width: 320,
+      height: 220,
+      measurements,
+      measurementConfig,
+      deviceTemplates: [...DEVICE_LIBRARY, customTemplate]
+    });
     const valueText = svg.match(/<tspan[^>]*class="mv"[^>]*>--<\/tspan>/)?.[0] ?? "";
 
     expect(valueText).toContain('mt="custom_metric_2"');

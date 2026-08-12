@@ -2,7 +2,9 @@ import {
   DEFAULT_MODEL_LAYER_ID,
   DEFAULT_MODEL_LAYER_NAME,
   DEVICE_LIBRARY,
+  containerRelationNameKey,
   createNodeFromTemplate,
+  describeContainerTerminalAssociations,
   getSafeNodeScaleX,
   getSafeNodeScaleY,
   getTerminalPoint,
@@ -887,6 +889,29 @@ async function parsePlatformSvg(
   }
 
   const measurements: MeasurementGroup[] = [];
+  const associatedDeviceMetadataById = new Map<string, {
+    deviceModel: string;
+    index: string;
+    name: string;
+  }>();
+  const associatedDeviceLayer = [root, ...walkElements(root)].find((element) =>
+    elementName(element) === "g" && hasClass(element, "export-associated-device-definitions")
+  );
+  if (associatedDeviceLayer) {
+    for (const element of walkElements(associatedDeviceLayer)) {
+      const deviceId = String(element.getAttribute("dev-id") || "").trim();
+      const index = String(element.getAttribute("idx") || "").trim();
+      if (!deviceId || !index) {
+        continue;
+      }
+      const parent = element.parentNode?.nodeType === 1 ? element.parentNode as Element : undefined;
+      associatedDeviceMetadataById.set(deviceId, {
+        deviceModel: String(parent?.getAttribute("device-type") || "").trim(),
+        index,
+        name: String(element.getAttribute("name") || "").trim()
+      });
+    }
+  }
   const measurementLayer = findById(root, "Measurement_Layer");
   const measurementElements = measurementLayer
     ? walkElements(measurementLayer).filter((element) => elementName(element) === "g" && hasClass(element, "mg"))
@@ -894,16 +919,49 @@ async function parsePlatformSvg(
   for (let index = 0; index < measurementElements.length; index += 1) {
     const groupElement = measurementElements[index];
     const svgDeviceId = String(groupElement.getAttribute("dev") || "").trim();
-    const nodeId = nodeIdBySvgId.get(svgDeviceId);
-    const node = nodeId ? nodeById.get(nodeId) : undefined;
+    const ownerSvgDeviceId = String(groupElement.getAttribute("owner-dev") || "").trim() || svgDeviceId;
+    const nodeId = nodeIdBySvgId.get(ownerSvgDeviceId);
+    let node = nodeId ? nodeById.get(nodeId) : undefined;
     const terminalId = String(groupElement.getAttribute("term") || "").trim() || undefined;
     if (!node) {
-      warnings.push(`量测组引用的设备“${svgDeviceId}”不存在，已跳过。`);
+      warnings.push(`量测组引用的设备“${ownerSvgDeviceId}”不存在，已跳过。`);
       continue;
     }
     if (terminalId && !node.terminals.some((terminal) => terminal.id === terminalId) && !isBusNode(node)) {
       warnings.push(`设备“${node.name}”不存在端子“${terminalId}”，对应量测组已跳过。`);
       continue;
+    }
+    if (terminalId && svgDeviceId && svgDeviceId !== ownerSvgDeviceId) {
+      const template = templateByKind.get(node.kind);
+      const terminalIndex = node.terminals.findIndex((terminal) => terminal.id === terminalId);
+      const associations = template ? describeContainerTerminalAssociations(template) : [];
+      const requestedAssociation = associations.find((association) => association.terminalIndex === terminalIndex);
+      const sourceAssociation = requestedAssociation?.dependent
+        ? associations.find((association) =>
+            association.terminalIndex === requestedAssociation.sourceTerminalIndex && !association.dependent
+          )
+        : requestedAssociation;
+      const relationKey = String(sourceAssociation?.relationKey || "").trim();
+      const metadata = associatedDeviceMetadataById.get(svgDeviceId);
+      if (relationKey && metadata) {
+        const expectedDeviceModel = String(sourceAssociation?.deviceModel || "").trim();
+        if (expectedDeviceModel && metadata.deviceModel && metadata.deviceModel !== expectedDeviceModel) {
+          warnings.push(
+            `量测组关联设备“${svgDeviceId}”的类型“${metadata.deviceModel}”与端子“${terminalId}”要求的“${expectedDeviceModel}”不一致，未恢复关联索引。`
+          );
+        } else {
+          const nextNode: ModelNode = {
+            ...node,
+            params: {
+              ...node.params,
+              [relationKey]: metadata.index,
+              ...(metadata.name ? { [containerRelationNameKey(relationKey)]: metadata.name } : {})
+            }
+          };
+          updateNode(nextNode);
+          node = nextNode;
+        }
+      }
     }
     const { textRows, items } = measurementItemsForGroup(groupElement, node, terminalId, warnings);
     if (items.length === 0) {

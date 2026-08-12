@@ -8,13 +8,14 @@ import {
   visibleIconLibraryIcons
 } from "../iconLibraryCatalog";
 import { buildExportDeviceIdMap } from "../svgExportUtils";
-import { E_SECTION_COLUMNS, inferESection, getTemplateParameterDefinitions, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, DEVICE_LIBRARY, type EDeviceExport } from "../model";
+import { E_SECTION_COLUMNS, inferESection, getTemplateParameterDefinitions, resolveDeviceParameterDefinitionExportSettings, resolveEffectiveTemplateParameterDefinitionGroups, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, DEVICE_LIBRARY, type EDeviceExport } from "../model";
 import { buildEDeviceInterfaceDefinitionRows, orderEDeviceInterfaceFields, applyEDeviceDefinitionSectionsToLibraryState, buildEFileExportOptionsFromLibrary } from "./appDeviceDefinitionFactories";
 import { decodeAuto } from "../encoding/gbk";
 import { UserCustomizationManagerDialog } from "../UserCustomizationManagerDialog";
 import { VoltageLevelDialog } from "../VoltageLevelDialog";
 import { EFileEditor } from "../EFileEditor";
 import { buildUserCustomizationInventory, restoreUserCustomizationItems, type UserCustomizationDomain } from "../userCustomizations";
+import { createMeasurementFieldParameterDefinition } from "../measurementDefinitionTypes";
 
 export type ImagePickerLibraryTab = "image" | "icon";
 
@@ -739,78 +740,7 @@ export function renderAppView(__appScope: Record<string, any>) {
         localStorage.setItem("eDeviceInterfaceReadonlyMode", "true");
       } catch { /* ignore */ }
 
-      // 量测字段映射：模板字段 -> 量测类型ID
-      const MEASUREMENT_FIELD_MAP: Record<string, string> = {
-        p: "activePower",
-        q: "reactivePower",
-        v: "voltage",
-        i: "current"
-      };
-      // 检查已匹配 section 中的量测字段，为缺少量测配置的设备类型添加量测定义，并为画布上的节点添加量测组
-      const currentConfig = __appScope.measurementConfig;
-      if (currentConfig) {
-        const existingProfiles = new Set((currentConfig.deviceProfiles ?? []).map((p) => p.deviceKind));
-        const newProfiles: any[] = [];
-        const deviceKindsNeedingMeasurements: string[] = [];
-        for (const item of result.matched) {
-          const measurementFields = item.fields
-            .filter((f) => MEASUREMENT_FIELD_MAP[f.template])
-            .map((f) => MEASUREMENT_FIELD_MAP[f.template]);
-          if (measurementFields.length === 0) {
-            continue;
-          }
-          // 查找该元件库对应的设备 kind
-          const template = (libraryTemplates ?? []).find((t) => {
-            const derivedInfo = templateDerivedComponentLibraryInfo(t);
-            const cl = derivedInfo?.componentLibrary ?? (resolveTemplateComponentLibrary ? resolveTemplateComponentLibrary(t) : inferESection(t.kind, t.params ?? {}));
-            return cl === item.device;
-          });
-          const deviceKind = template?.kind ?? item.device;
-          deviceKindsNeedingMeasurements.push(deviceKind);
-          // 检查是否已有量测配置
-          if (existingProfiles.has(deviceKind) || existingProfiles.has(item.device)) {
-            continue;
-          }
-          // 创建量测配置
-          newProfiles.push({
-            deviceKind,
-            items: measurementFields.map((id) => ({ measurementTypeId: id }))
-          });
-          existingProfiles.add(deviceKind);
-        }
-        if (newProfiles.length > 0) {
-          const nextConfig = {
-            ...currentConfig,
-            deviceProfiles: [...(currentConfig.deviceProfiles ?? []), ...newProfiles]
-          };
-          __appScope.setMeasurementConfig?.(nextConfig);
-        }
-        // 为画布上的节点添加量测组
-        const canvasNodes = __appScope.nodes as any[];
-        const createDefaultMeasurementGroupsForNode = __appScope.createDefaultMeasurementGroupsForNode;
-        const upsertMeasurementGroups = __appScope.upsertMeasurementGroups;
-        const updateProjectMeasurementsWithUndo = __appScope.updateProjectMeasurementsWithUndo;
-        if (canvasNodes && createDefaultMeasurementGroupsForNode && upsertMeasurementGroups && updateProjectMeasurementsWithUndo) {
-          const nodesNeedingMeasurements = canvasNodes.filter((node) => {
-            const componentLibrary = inferESection(node.kind, node.params);
-            return deviceKindsNeedingMeasurements.some((dk) => dk === node.kind || dk === componentLibrary);
-          });
-          if (nodesNeedingMeasurements.length > 0) {
-            const configForGroups = newProfiles.length > 0
-              ? { ...currentConfig, deviceProfiles: [...(currentConfig.deviceProfiles ?? []), ...newProfiles] }
-              : currentConfig;
-            const allNewGroups = nodesNeedingMeasurements.flatMap((node) =>
-              createDefaultMeasurementGroupsForNode(node, configForGroups)
-            );
-            if (allNewGroups.length > 0) {
-              updateProjectMeasurementsWithUndo(
-                (current) => upsertMeasurementGroups(current, allNewGroups),
-                `模板导入：为 ${nodesNeedingMeasurements.length} 个元件添加量测`
-              );
-            }
-          }
-        }
-      }
+      // E 文件接口模板只定义列映射；设备默认量测由各设备定义表统一维护。
       // 模板导入可能为画布节点添加量测组，自动保存模型避免"未保存"提示
       window.setTimeout(() => {
         if (__appScope.hasUnsavedChanges && typeof __appScope.saveCurrentProject === "function") {
@@ -2722,18 +2652,8 @@ export function renderAppView(__appScope: Record<string, any>) {
                         const eKeys = getEParameterKeys(inspectorSelectedNode.kind, inspectorSelectedNode.params);
                         const customDefinitions = parseCustomDefinitions(inspectorSelectedNode.params);
                         const selectedTemplate = libraryTemplates.find((template) => template.kind === inspectorSelectedNode.kind);
-                        const selectedDerivedInfo = selectedTemplate ? templateDerivedComponentLibraryInfo(selectedTemplate) : null;
-                        const baseTemplate = selectedDerivedInfo
-                          ? libraryTemplates.find((template) => (
-                              !templateDerivedComponentLibraryInfo(template) &&
-                              String(resolveTemplateComponentLibrary(template) ?? "").trim().toLowerCase() === selectedDerivedInfo.baseComponentLibrary.trim().toLowerCase()
-                            ))
-                          : null;
-                        const definitionGroups = selectedTemplate && selectedDerivedInfo
-                          ? {
-                              baseDefinitions: baseTemplate ? getTemplateParameterDefinitions(baseTemplate) : [],
-                              derivedDefinitions: getTemplateParameterDefinitions(selectedTemplate)
-                            }
+                        const definitionGroups = selectedTemplate
+                          ? resolveEffectiveTemplateParameterDefinitionGroups(selectedTemplate, libraryTemplates)
                           : undefined;
                         const panelDefinitions = definitionGroups
                           ? [...definitionGroups.baseDefinitions, ...definitionGroups.derivedDefinitions]
@@ -3999,7 +3919,22 @@ export function renderAppView(__appScope: Record<string, any>) {
                 terminalCount: selectedDefinitionTemplate.terminalCount,
                 terminalLabels: selectedDefinitionTemplate.terminalLabels,
                 parameterDefinitions: definitionDraftRows,
-                positionDefinitions: __appScope.selectedDefinitionMeasurementPositionDefinitions
+                positionDefinitions: __appScope.selectedDefinitionMeasurementPositionDefinitions,
+                items: definitionMeasurementDraft,
+                setItems: setDefinitionMeasurementDraft,
+                ensureAssociatedField: (position, associatedField, measurementTypeId) => {
+                  if (position !== "device") return;
+                  const measurementType = (measurementConfigDraft ?? measurementConfig).measurementTypes
+                    .find((type) => type.id === measurementTypeId);
+                  const definition = createMeasurementFieldParameterDefinition(associatedField, {
+                    cnName: measurementType?.name,
+                    valueType: measurementType?.valueType === "string" || measurementType?.valueType === "boolean" ? "string" : "float"
+                  });
+                  if (!definition) return;
+                  setDefinitionDraftRows((current) => current.some((row) => row.enName.trim().toLowerCase() === definition.enName.toLowerCase())
+                    ? current
+                    : [...current, { ...definition, id: deviceDefinitionRowId() }]);
+                }
             }))}
                   </>) : (<div className="empty-state compact">
                     <Grid2X2 size={24}/>

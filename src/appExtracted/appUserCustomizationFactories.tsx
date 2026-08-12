@@ -218,7 +218,9 @@ export function createReconcileOpenModelAfterCustomizationChange(scope: Record<s
       scope.projectMeasurements,
       reconciledNodes.nodes,
       target.measurementConfig,
-      before.measurementConfig
+      before.measurementConfig,
+      Array.from(effectiveTemplateMap(target).values()),
+      Array.from(effectiveTemplateMap(before).values())
     );
     const measurementsChanged = nextMeasurements !== scope.projectMeasurements;
     if (!reconciledNodes.changed && !measurementsChanged) {

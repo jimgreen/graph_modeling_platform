@@ -2,7 +2,8 @@ import { describe, expect, test } from "vitest";
 import {
   createDeleteGraphTemplate,
   createDeleteGraphTemplateType,
-  createLightweightMovedEndpointRoute,
+    createLightweightMovedEndpointRoute,
+    createCurrentProject,
   createRoutePointsForMovedEdgesBlockedByStationaryNodes,
   createShouldRunDeferredMoveOptimization,
   createSwitchInspectorTabForCanvasSelection
@@ -123,6 +124,55 @@ describe("canvas selection inspector routing", () => {
 
     expect(inspectorTabs).toEqual(["graph", "graph"]);
     expect(deviceInfoViews).toEqual([]);
+  });
+});
+
+describe("current project snapshot", () => {
+  test("materializes effective parameter defaults before save and export snapshots", () => {
+    const source = createDefaultNode("ac-wind-source", { x: 120, y: 120 });
+    delete source.params.p_max;
+    const reconciled = {
+      ...source,
+      params: { ...source.params, p_max: "0", frequency: "50" }
+    };
+    const currentProject = createCurrentProject({
+      activeLayerId: "layer-default",
+      allowAutoExpandCanvas: false,
+      backgroundLayerIds: [],
+      backgroundProjectId: "",
+      canvasBackgroundColor: "#ffffff",
+      canvasBackgroundImage: "",
+      canvasBackgroundImageAssetId: "",
+      canvasBackgroundImageFit: "contain",
+      canvasHeight: 800,
+      canvasWidth: 1200,
+      currentUnit: "A",
+      deviceIndexCounters: {},
+      edgeWithCurrentRouteGeometryForSave: (edge: Edge) => edge,
+      edges: [],
+      groups: [],
+      layers: [],
+      libraryTemplates: [],
+      lockProjectEdgeTerminals: (project: unknown) => project,
+      nodes: [source],
+      normalizeModelGroups: (groups: unknown) => groups,
+      normalizeProjectLayers: (project: unknown) => project,
+      normalizeProjectMeasurements: (measurements: unknown) => measurements,
+      powerBaseValue: 100,
+      powerUnit: "MW",
+      projectMeasurements: { version: 1, groups: [] },
+      projectName: "旧模型",
+      reconcileNodesWithEffectiveTemplateDefinitions: () => [reconciled],
+      voltageUnit: "kV",
+      substation: "",
+      feeder: "",
+      modelType: "",
+      subcontrolarea: "",
+      taiqu: ""
+    });
+
+    expect(currentProject().nodes[0]).toBe(reconciled);
+    expect(currentProject().nodes[0].params).toMatchObject({ p_max: "0", frequency: "50" });
   });
 });
 

@@ -2514,6 +2514,18 @@ export function buildEDeviceDefinitionFile(
       : template.params ?? {};
     // 无 parameterDefinitions 的图元（如 ac-source）按 E 分区推导内置列参数，避免整类丢失
     const definitions = getTemplateParameterDefinitions(template);
+    const derivedFields = derivedInfo
+      ? resolveDerivedComponentParameterFields(
+          template.kind,
+          template.params ?? {},
+          definitions,
+          derivedInfo.baseComponentLibrary,
+          derivedInfo.derivedComponentLibrary
+        )
+      : [];
+    const derivedFieldNames = new Set(
+      derivedFields.flatMap((field) => [field.sourceName, field.exportName])
+    );
     const group = ensureGroup(componentLibrary, {
       categoryLibrary: derivedInfo?.categoryLibrary ?? template.categoryLibrary ?? ""
     });
@@ -2524,6 +2536,9 @@ export function buildEDeviceDefinitionFile(
       }
       const exportName = (settings.exportName || definition.enName).trim();
       if (!exportName) {
+        continue;
+      }
+      if (derivedInfo && (derivedFieldNames.has(definition.enName) || derivedFieldNames.has(exportName))) {
         continue;
       }
       const rawCnName = (definition.cnName ?? "").trim();
@@ -2540,13 +2555,6 @@ export function buildEDeviceDefinitionFile(
         isContainerComponentLibrary: false
       });
       appendGroupField(derivedGroup, derivedComponentBaseRelationKey(derivedInfo.baseComponentLibrary), "原类关联idx");
-      const derivedFields = resolveDerivedComponentParameterFields(
-        template.kind,
-        template.params ?? {},
-        definitions,
-        derivedInfo.baseComponentLibrary,
-        derivedInfo.derivedComponentLibrary
-      );
       for (const field of derivedFields) {
         const rawCnName = (field.definition?.cnName ?? "").trim();
         const cnName = (rawCnName === field.exportName && labels?.[field.exportName]) ? labels[field.exportName] : rawCnName;

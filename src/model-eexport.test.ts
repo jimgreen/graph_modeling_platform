@@ -739,7 +739,11 @@ test("exports parallel and series AC compensators with the defined columns and t
   expect(E_SECTION_COLUMNS.ACSeriCompensator).toEqual([
     "idx", "name", "dev_type", "i_node", "j_node", "rated_voltage", "rated_reactive_power", "reactance", "run_stat"
   ]);
-  expect(exported.ACCompensator.columns).toEqual(E_SECTION_COLUMNS.ACCompensator);
+  expect(exported.ACCompensator.columns).toEqual([
+    ...E_SECTION_COLUMNS.ACCompensator,
+    "q",
+    "current"
+  ]);
   expect(exported.ACCompensator.rows).toEqual([expect.objectContaining({
     idx: "1",
     name: "并联电容器1",
@@ -749,7 +753,12 @@ test("exports parallel and series AC compensators with the defined columns and t
     reactance: "100"
   })]);
   expect(exported.ACCompensator.rows[0].node).toMatch(/^\d+$/);
-  expect(exported.ACSeriCompensator.columns).toEqual(E_SECTION_COLUMNS.ACSeriCompensator);
+  expect(exported.ACSeriCompensator.columns).toEqual([
+    ...E_SECTION_COLUMNS.ACSeriCompensator,
+    "p",
+    "q",
+    "current"
+  ]);
   expect(exported.ACSeriCompensator.rows).toEqual([expect.objectContaining({
     idx: "1",
     name: "串联电抗器1",
@@ -1502,7 +1511,13 @@ test("keeps canonical transformer E fields as export defaults when metadata is a
     exportEnabled: true,
     exportName: "rated_capacity"
   });
-  expect(getEParameterKeys(transformer.kind, transformer.params)).toEqual(E_SECTION_COLUMNS.ACTransformer);
+  expect(getEParameterKeys(transformer.kind, transformer.params)).toEqual([
+    ...E_SECTION_COLUMNS.ACTransformer,
+    "p",
+    "q",
+    "u",
+    "i"
+  ]);
 });
 
 test("removes a canonical E column when its parameter definition disables export", () => {
@@ -1710,7 +1725,9 @@ test("maps graphical AC and DC buses to real bus sections in E parameter files",
     node: "1",
     v_max: "1.1",
     v_min: "0.9",
-    run_stat: "1"
+    run_stat: "1",
+    u: "0",
+    f: "0"
   });
   expect(dcRealBus).toEqual({
     idx: "1",
@@ -1718,7 +1735,9 @@ test("maps graphical AC and DC buses to real bus sections in E parameter files",
     node: "1",
     v_max: "1.1",
     v_min: "0.9",
-    run_stat: "1"
+    run_stat: "1",
+    u: "0",
+    i: "0"
   });
 });
 
@@ -1818,7 +1837,11 @@ test("exports a three-winding transformer as one independent device with three-s
     "bt3",
     "tap3",
     "shift3",
-    "run_stat"
+    "run_stat",
+    "p",
+    "q",
+    "u",
+    "i"
   ]);
   expect(acTransfomer3).toEqual({
     idx: "1",
@@ -1851,7 +1874,11 @@ test("exports a three-winding transformer as one independent device with three-s
     bt3: "0.006",
     tap3: "1.03",
     shift3: "3",
-    run_stat: "1"
+    run_stat: "1",
+    p: "0",
+    q: "0",
+    u: "0",
+    i: "0"
   });
 });
 
@@ -2518,7 +2545,7 @@ test("keeps every built-in device parameter aligned with its semantic type and n
     "design_flow", "design_head", "e2h_coeff", "efficiency", "energy_capacity", "flow", "flow_rate", "flow_set", "flow_max", "flow_min", "frequency", "fuel_tank_capacity",
     "g_set", "gas_quantity", "generator_efficiency", "gt", "gt1", "gt2", "gt3", "head", "heat_demand", "heat_power", "heat_rate",
     "h2e_coeff", "high_i_max", "high_rated_capacity", "high_vbase", "hub_height", "hydrogen_demand", "hydrogen_flow", "impedance", "initial_soc", "inlet_pressure",
-    "i_i_max", "i_max", "input_voltage", "i_p_max", "i_p_min", "i_q_max", "i_q_min", "i_q_set", "i_set", "i_v_max", "i_v_min", "i_v_set", "j_i_max", "j_p_max", "j_p_min", "j_q_max", "j_q_min", "j_q_set", "j_v_max", "j_v_min", "j_v_set", "length", "low_i_max", "low_rated_capacity", "low_vbase", "main_steam_pressure",
+    "i_i_max", "i_max", "input_voltage", "i_p_max", "i_p_min", "i_q_max", "i_q_min", "i_q_set", "i_set", "i_v_max", "i_v_min", "i_v_set", "j_i_max", "j_p_max", "j_p_min", "j_q_max", "j_q_min", "j_q_set", "j_v_max", "j_v_min", "j_v_set", "length", "level", "low_i_max", "low_rated_capacity", "low_vbase", "main_steam_pressure",
     "main_steam_temperature", "max_charge_power", "max_current", "max_discharge_power", "medium_i_max", "medium_rated_capacity",
     "medium_vbase", "module_efficiency", "outlet_pressure", "output_voltage", "p_ac_set", "p_dc_set", "p_max", "p_min", "p_set", "pbase", "power",
     "power_factor", "pressure", "pressure_set", "pressure_max", "pressure_min", "primary_loop_pressure", "pv0", "pv1", "pv2", "q_ac_set", "q_max", "q_min", "q_set", "qbase", "qv0",
@@ -2527,7 +2554,7 @@ test("keeps every built-in device parameter aligned with its semantic type and n
     "shift", "shift1", "shift2", "shift3", "short_circuit_capacity", "soc", "soc_lower_limit", "soc_upper_limit",
     "specific_fuel_consumption", "start_time", "state_of_charge", "supply_temperature", "supply_temperature_set", "tap", "tap1", "tap2", "tap3",
     "temperature", "temperature_coefficient", "thermal_efficiency", "v_ac_set", "v_dc_set", "v_max", "v_min", "v_set", "vbase", "voltage", "voltage_level", "water_volume", "x",
-    "x1", "x2", "x3", "x_pu"
+    "current", "f", "i", "p", "q", "u", "x1", "x2", "x3", "x_pu"
   ]);
   const integerNames = new Set(["battery_rack_count", "idx", "isl", "mppt_count"]);
   const compensatorKinds = new Set([
