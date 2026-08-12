@@ -2751,6 +2751,79 @@ test("defines static limits and measurement parameters for every hydrogen tank v
   }
 });
 
+test("keeps associated endpoint definitions out of hydrogen coupling device bodies", () => {
+  const expectedEndpointFields = [
+    "rated_capacity",
+    "control_type",
+    "p_set",
+    "p_max",
+    "p_min",
+    "q_set",
+    "q_max",
+    "q_min",
+    "pressure_set",
+    "pressure_max",
+    "pressure_min",
+    "flow_set",
+    "flow_max",
+    "flow_min"
+  ];
+
+  for (const kind of ["ac-electrolyzer", "dc-electrolyzer", "ac-fuel-cell", "dc-fuel-cell"] as const) {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
+    const relationSuffixes = describeContainerTerminalAssociations(template)
+      .map((association) => association.relationKey.replace(/^idx_/, ""))
+      .filter(Boolean);
+    const bodyDefinitions = getTemplateParameterDefinitions(template);
+    const bodyKeys = bodyDefinitions.map((definition) => definition.enName);
+
+    const associatedFieldNames = relationSuffixes.flatMap((suffix) =>
+      expectedEndpointFields.map((field) => `${field}_${suffix}`)
+    );
+    for (const fieldName of associatedFieldNames) {
+      expect(bodyKeys, `${kind}:${fieldName}`).not.toContain(fieldName);
+    }
+    expect(new Set(bodyKeys).size, kind).toBe(bodyKeys.length);
+
+    const node = assignPermanentDeviceIndex(createDefaultNode(kind, { x: 100, y: 100 }), {}).node;
+    const associatedViews = buildContainerDeviceParameterViews(node, template).filter((view) => view.kind === "associated");
+    expect(associatedViews, kind).toHaveLength(2);
+    for (const view of associatedViews) {
+      const keys = view.rows.map((row) => row.key);
+      expect(new Set(keys).size, `${kind}:${view.componentLibrary}`).toBe(keys.length);
+      expect(keys, `${kind}:${view.componentLibrary}`).toEqual(E_SECTION_COLUMNS[view.componentLibrary!]);
+    }
+  }
+});
+
+test("merges legacy associated endpoint overrides without restoring duplicate body definitions", () => {
+  const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-electrolyzer")!;
+  const overridden = applyDeviceTemplateDefinitionOverride(template, {
+    kind: template.kind,
+    params: {
+      rated_capacity_ac_load_t1: "8",
+      p_max_ac_load_t1: "8"
+    },
+    parameterDefinitions: [
+      { cnName: "控制类型", enName: "control_type", valueType: "stringEnum", typicalValue: "P", readonly: false },
+      { cnName: "关联负荷额定容量", enName: "rated_capacity_ac_load_t1", valueType: "float", typicalValue: "8", readonly: false },
+      { cnName: "关联负荷有功上限", enName: "p_max_ac_load_t1", valueType: "float", typicalValue: "8", readonly: false }
+    ]
+  });
+  const bodyKeys = getTemplateParameterDefinitions(overridden).map((definition) => definition.enName);
+  const node = assignPermanentDeviceIndex(createNodeFromTemplate(overridden, { x: 100, y: 100 }), {}).node;
+  const acLoadView = buildContainerDeviceParameterViews(node, overridden)
+    .find((view) => view.componentLibrary === "ACLoad");
+
+  expect(bodyKeys).toContain("control_type");
+  expect(bodyKeys).not.toContain("rated_capacity_ac_load_t1");
+  expect(bodyKeys).not.toContain("p_max_ac_load_t1");
+  expect(acLoadView?.rows).toEqual(expect.arrayContaining([
+    expect.objectContaining({ key: "rated_capacity", value: "8" }),
+    expect.objectContaining({ key: "p_max", value: "8" })
+  ]));
+});
+
 test("keeps persisted three-winding transformer overrides structurally non-container", () => {
   const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer")!;
   const overridden = applyDeviceTemplateDefinitionOverride(template, {

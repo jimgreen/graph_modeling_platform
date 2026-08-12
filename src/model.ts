@@ -1237,6 +1237,36 @@ export function containerRelationParamKey(fieldName: string, column: string): st
   return `${column}_${fieldName.replace(/^idx_/, "")}`;
 }
 
+function isContainerAssociatedParameterName(template: DeviceTemplate, paramName: string): boolean {
+  if (!template.isContainer || !paramName || paramName.startsWith("_")) {
+    return false;
+  }
+  const normalizedName = toSnakeCaseDeviceParamName(paramName);
+  const terminalTypes = templateTerminalTypes(template);
+  const terminalAssociations = template.terminalAssociations ?? [];
+  const terminalRoles = template.terminalRoles ?? [];
+  return terminalTypes.some((terminalType, terminalIndex) => {
+    const dependent = terminalAssociations.length
+      ? isContainerTerminalAssociationDependent(terminalAssociations, terminalIndex)
+      : isContainerTerminalRoleDependent(terminalRoles, terminalIndex);
+    if (dependent) {
+      return false;
+    }
+    const association = getEffectiveContainerTerminalAssociation(
+      terminalAssociations,
+      terminalTypes,
+      terminalIndex,
+      terminalRoles
+    );
+    const role = getEffectiveContainerTerminalRole(terminalRoles, terminalIndex);
+    const relationKey = terminalAssociations.length
+      ? getContainerAssociationRelationKey(association, terminalIndex)
+      : getContainerRelationKey(terminalType, role, terminalIndex);
+    const relationSuffix = relationKey.replace(/^idx_/, "");
+    return normalizedName.endsWith(`_${relationSuffix}`) && normalizedName !== relationKey;
+  });
+}
+
 function containerRelationRoleDisplayLabel(fieldName: string): string {
   const parsed = parseContainerRelationField(fieldName);
   if (!parsed) {
@@ -3084,20 +3114,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       ratedPower: "5 MW",
       hydrogenFlow: "1000 Nm3/h",
       controlType: "FLOW",
-      e2hCoeff: "0.2",
-      rated_capacity_ac_load_t1: "5",
-      p_max_ac_load_t1: "5",
-      p_min_ac_load_t1: "0",
-      q_max_ac_load_t1: "5",
-      q_min_ac_load_t1: "-5",
-      rated_capacity_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.ratedCapacity,
-      control_type_h2_unit_t2: "FLOW",
-      pressure_set_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.pressure,
-      pressure_max_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.pressureMax,
-      pressure_min_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.pressureMin,
-      flow_set_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.flow,
-      flow_max_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.flowMax,
-      flow_min_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.flowMin
+      e2hCoeff: "0.2"
     },
     terminalType: "ac",
     terminalCount: 2,
@@ -3117,18 +3134,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       ratedPower: "5 MW",
       hydrogenFlow: "1000 Nm3/h",
       controlType: "FLOW",
-      e2hCoeff: "0.2",
-      rated_capacity_dc_load_t1: "5",
-      p_max_dc_load_t1: "5",
-      p_min_dc_load_t1: "0",
-      rated_capacity_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.ratedCapacity,
-      control_type_h2_unit_t2: "FLOW",
-      pressure_set_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.pressure,
-      pressure_max_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.pressureMax,
-      pressure_min_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.pressureMin,
-      flow_set_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.flow,
-      flow_max_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.flowMax,
-      flow_min_h2_unit_t2: HYDROGEN_SOURCE_DEFAULTS.flowMin
+      e2hCoeff: "0.2"
     },
     terminalType: "dc",
     terminalCount: 2,
@@ -3250,20 +3256,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       ratedPower: "3 MW",
       hydrogenFlow: "600 Nm3/h",
       controlType: "P",
-      h2eCoeff: "1.5",
-      rated_capacity_ac_unit_t1: "3",
-      p_max_ac_unit_t1: "3",
-      p_min_ac_unit_t1: "0",
-      q_max_ac_unit_t1: "3",
-      q_min_ac_unit_t1: "-3",
-      rated_capacity_h2_load_t2: "600",
-      control_type_h2_load_t2: "FLOW",
-      pressure_set_h2_load_t2: HYDROGEN_LOAD_DEFAULTS.pressure,
-      pressure_max_h2_load_t2: HYDROGEN_LOAD_DEFAULTS.pressureMax,
-      pressure_min_h2_load_t2: HYDROGEN_LOAD_DEFAULTS.pressureMin,
-      flow_set_h2_load_t2: "600",
-      flow_max_h2_load_t2: "600",
-      flow_min_h2_load_t2: HYDROGEN_LOAD_DEFAULTS.flowMin
+      h2eCoeff: "1.5"
     },
     terminalType: "ac",
     terminalCount: 2,
@@ -3283,18 +3276,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       ratedPower: "3 MW",
       hydrogenFlow: "600 Nm3/h",
       controlType: "P",
-      h2eCoeff: "1.5",
-      rated_capacity_dc_unit_t1: "3",
-      p_max_dc_unit_t1: "3",
-      p_min_dc_unit_t1: "0",
-      rated_capacity_h2_load_t2: "600",
-      control_type_h2_load_t2: "FLOW",
-      pressure_set_h2_load_t2: HYDROGEN_LOAD_DEFAULTS.pressure,
-      pressure_max_h2_load_t2: HYDROGEN_LOAD_DEFAULTS.pressureMax,
-      pressure_min_h2_load_t2: HYDROGEN_LOAD_DEFAULTS.pressureMin,
-      flow_set_h2_load_t2: "600",
-      flow_max_h2_load_t2: "600",
-      flow_min_h2_load_t2: HYDROGEN_LOAD_DEFAULTS.flowMin
+      h2eCoeff: "1.5"
     },
     terminalType: "dc",
     terminalCount: 2,
@@ -6180,7 +6162,9 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
   if (template.parameterDefinitions?.length) {
     const normalizedParamDefs = template.parameterDefinitions
       .map((definition) => normalizeTemplateDefinition(definition))
-      .filter((definition): definition is DeviceParameterDefinition => Boolean(definition));
+      .filter((definition): definition is DeviceParameterDefinition => (
+        Boolean(definition) && !isContainerAssociatedParameterName(template, definition?.enName ?? "")
+      ));
     const section = inferESection(template.kind, template.params);
     const derivedComponentInfo = templateDerivedComponentLibraryInfo(template);
     const paramDefs = normalizeESectionParameterDefinitions(section, normalizedParamDefs);
@@ -6251,7 +6235,8 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
       key !== "is_container" &&
       key !== ALLOW_RESIZE_TRANSFORM_PARAM &&
       !key.startsWith("_") &&
-      !defaultKeys.has(key)
+      !defaultKeys.has(key) &&
+      !isContainerAssociatedParameterName(template, key)
     );
     const generatedDefinitions = [
       ...defaultDefinitions,
@@ -6484,7 +6469,9 @@ export function applyDeviceTemplateDefinitionOverride(
   }
   const overrideParameterDefinitions = (override.parameterDefinitions ?? [])
     .map((definition) => normalizeTemplateDefinition(definition))
-    .filter((definition): definition is DeviceParameterDefinition => Boolean(definition));
+    .filter((definition): definition is DeviceParameterDefinition => (
+      Boolean(definition) && !isContainerAssociatedParameterName(template, definition?.enName ?? "")
+    ));
   const baseKind = baseDeviceKind(template.kind);
   const electricGenerationDerivedInfo = electricGenerationDerivedComponentLibraryInfo(baseKind);
   const isElectricGenerationBase = baseKind === "ac-source" || baseKind === "dc-source";
@@ -6773,6 +6760,86 @@ function applyContainerRelationDefaults(params: Record<string, string>, template
   return next;
 }
 
+function applyContainerAssociatedDeviceDefaults(
+  params: Record<string, string>,
+  template: DeviceTemplate
+): Record<string, string> {
+  const templateKind = baseDeviceKind(template.kind);
+  const electrolyzer = templateKind === "ac-electrolyzer" || templateKind === "dc-electrolyzer";
+  const fuelCell = templateKind === "ac-fuel-cell" || templateKind === "dc-fuel-cell";
+  if (!template.isContainer || (!electrolyzer && !fuelCell)) {
+    return params;
+  }
+  const ratedPower = firstNumericToken(deviceParamValue(template.params, "rated_power") ?? "") || (electrolyzer ? "5" : "3");
+  const ratedVoltage = firstNumericToken(deviceParamValue(template.params, "rated_voltage") ?? "") || (template.terminalType === "ac" ? "10" : "750");
+  const hydrogenFlow = firstNumericToken(deviceParamValue(template.params, "hydrogen_flow") ?? "") || (electrolyzer ? "1000" : "600");
+  const terminalTypes = templateTerminalTypes(template);
+  const terminalAssociations = template.terminalAssociations ?? [];
+  const terminalRoles = template.terminalRoles ?? [];
+  let next = params;
+  for (let terminalIndex = 0; terminalIndex < terminalTypes.length; terminalIndex += 1) {
+    const dependent = terminalAssociations.length
+      ? isContainerTerminalAssociationDependent(terminalAssociations, terminalIndex)
+      : isContainerTerminalRoleDependent(terminalRoles, terminalIndex);
+    if (dependent) {
+      continue;
+    }
+    const association = getEffectiveContainerTerminalAssociation(
+      terminalAssociations,
+      terminalTypes,
+      terminalIndex,
+      terminalRoles
+    );
+    const role = getEffectiveContainerTerminalRole(terminalRoles, terminalIndex);
+    const relationKey = terminalAssociations.length
+      ? getContainerAssociationRelationKey(association, terminalIndex)
+      : getContainerRelationKey(terminalTypes[terminalIndex], role, terminalIndex);
+    const section = containerRelationCounterKey(relationKey);
+    const defaults = section === "ACLoad"
+      ? { rated_capacity: ratedPower, p_max: ratedPower, p_min: "0", q_max: ratedPower, q_min: `-${ratedPower}` }
+      : section === "DCLoad"
+        ? { rated_capacity: ratedPower, p_max: ratedPower, p_min: "0" }
+        : section === "ACGenerator"
+          ? { rated_capacity: ratedPower, rated_voltage: ratedVoltage, p_max: ratedPower, p_min: "0", q_max: ratedPower, q_min: `-${ratedPower}` }
+          : section === "DCGenerator"
+            ? { rated_capacity: ratedPower, rated_voltage: ratedVoltage, p_max: ratedPower, p_min: "0" }
+            : section === "HydroSource"
+              ? {
+                  rated_capacity: hydrogenFlow,
+                  control_type: "FLOW",
+                  pressure_set: HYDROGEN_SOURCE_DEFAULTS.pressure,
+                  pressure_max: HYDROGEN_SOURCE_DEFAULTS.pressureMax,
+                  pressure_min: HYDROGEN_SOURCE_DEFAULTS.pressureMin,
+                  flow_set: hydrogenFlow,
+                  flow_max: hydrogenFlow,
+                  flow_min: HYDROGEN_SOURCE_DEFAULTS.flowMin
+                }
+              : section === "HydroLoad"
+                ? {
+                    rated_capacity: hydrogenFlow,
+                    control_type: "FLOW",
+                    pressure_set: HYDROGEN_LOAD_DEFAULTS.pressure,
+                    pressure_max: HYDROGEN_LOAD_DEFAULTS.pressureMax,
+                    pressure_min: HYDROGEN_LOAD_DEFAULTS.pressureMin,
+                    flow_set: hydrogenFlow,
+                    flow_max: hydrogenFlow,
+                    flow_min: HYDROGEN_LOAD_DEFAULTS.flowMin
+                  }
+                : {};
+    for (const [column, value] of Object.entries(defaults)) {
+      const paramKey = containerRelationParamKey(relationKey, column);
+      if (next[paramKey] !== undefined) {
+        continue;
+      }
+      if (next === params) {
+        next = { ...params };
+      }
+      next[paramKey] = value;
+    }
+  }
+  return next;
+}
+
 export function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
   const templateKind = baseDeviceKind(template.kind) as DeviceKind;
   const templateStaticComponentLibrary = staticComponentLibraryForNodeLike(template.kind, template.params);
@@ -6843,7 +6910,10 @@ export function buildDefaultParams(template: DeviceTemplate): Record<string, str
       withStatusDefault(
         applyTemplateDefinitionDefaults(
           applyContainerRelationDefaults(
-            withStaticButtonCapability(template.kind, withStaticGraphicDefaults(withoutResizeTransformParam(params))),
+            applyContainerAssociatedDeviceDefaults(
+              withStaticButtonCapability(template.kind, withStaticGraphicDefaults(withoutResizeTransformParam(params))),
+              template
+            ),
             template
           ),
           template,

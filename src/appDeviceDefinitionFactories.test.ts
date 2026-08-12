@@ -2916,6 +2916,14 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
       "name",
       "dev_type",
       "node",
+      "rated_capacity",
+      "control_type",
+      "pressure_set",
+      "pressure_max",
+      "pressure_min",
+      "flow_set",
+      "flow_max",
+      "flow_min",
       "run_stat"
     ]);
   });
