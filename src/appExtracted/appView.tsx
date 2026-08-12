@@ -1386,6 +1386,34 @@ export function renderAppView(__appScope: Record<string, any>) {
     }
     return labelBySection;
   }, [eFileEditorExportOptions, eDeviceDefinitionLabels]);
+  // E 文件编辑器表头 tooltip 的字段中文名：读取模板文件中的中文注释（cnName）。
+  // 来源优先 eDeviceDefinitionTemplateFields（含 aclineend/dclineend 等独立运行时表），
+  // 其次 interfaceDefinitions（设备库行字段的 cnName 已被模板注释覆盖）。
+  const eFileEditorFieldCnNames = useMemo(() => {
+    const cnBySection: Record<string, Record<string, string>> = {};
+    const setField = (section: string, exportName: string, cnName: string) => {
+      const key = String(section ?? "").trim();
+      const col = String(exportName ?? "").trim();
+      const label = String(cnName ?? "").trim();
+      if (!key || !col || !label || label === col) {
+        return;
+      }
+      (cnBySection[key] ??= {})[col] = label;
+    };
+    for (const [section, fields] of Object.entries(eFileEditorExportOptions.eDeviceDefinitionTemplateFields ?? {})) {
+      for (const field of fields ?? []) {
+        setField(section, String(field.exportName ?? "").trim(), String(field.cnName ?? "").trim());
+      }
+    }
+    for (const definition of eFileEditorExportOptions.interfaceDefinitions ?? []) {
+      const section = String(definition.componentLibrary ?? "").trim();
+      if (!section) continue;
+      for (const field of definition.fields ?? []) {
+        setField(section, String(field.exportName ?? "").trim(), String(field.cnName ?? "").trim());
+      }
+    }
+    return cnBySection;
+  }, [eFileEditorExportOptions]);
   useEffect(() => {
     if (!eFileEditorDialogOpen) return;
     try {
@@ -4994,6 +5022,7 @@ export function renderAppView(__appScope: Record<string, any>) {
           open={eFileEditorDialogOpen}
           onClose={() => setEFileEditorDialogOpen(false)}
           records={eFileEditorRecords}
+          fieldCnNames={eFileEditorFieldCnNames}
           onSave={(editedRecords) => {
             const currentNodes = __appScope.nodes ?? [];
             const setNodes = __appScope.setNodes;

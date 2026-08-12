@@ -20,6 +20,8 @@ export interface EFileEditorProps {
   onClose: () => void;
   records: EDeviceRecord[];
   onSave?: (records: EDeviceRecord[]) => void;
+  /** 字段中文名映射：section 内部名 -> 列名(exportName) -> 中文名（来自模板文件中文注释），供表头 tooltip 展示 */
+  fieldCnNames?: Record<string, Record<string, string>>;
 }
 
 const MAX_COL_WIDTH = 2000;
@@ -57,7 +59,7 @@ const TOPOLOGY_READONLY_FIELDS = new Set([
   "itrfm", "source_node", "target_node",
 ]);
 
-export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps) {
+export function EFileEditor({ open, onClose, records, onSave, fieldCnNames }: EFileEditorProps) {
   const [editMode, setEditMode] = useState(false);
   const [activeSection, setActiveSection] = useState(0);
   const [editedRecords, setEditedRecords] = useState<EDeviceRecord[]>(records);
@@ -206,8 +208,13 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
     setEditMode(false);
   };
 
-  // 获取字段中文名称
-  const getFieldCnName = (col: string) => PARAM_LABELS[col] || col;
+  // 获取字段中文名称：优先读取模板文件中的中文注释（fieldCnNames），
+  // 其次使用通用参数标签（PARAM_LABELS），最后回退英文列名
+  const getFieldCnName = (sectionKey: string, col: string) => {
+    const templateCn = fieldCnNames?.[sectionKey]?.[col];
+    if (templateCn) return templateCn;
+    return PARAM_LABELS[col] || col;
+  };
 
   return (
     <div className="image-picker-backdrop" onPointerDown={onClose}>
@@ -300,7 +307,7 @@ export function EFileEditor({ open, onClose, records, onSave }: EFileEditorProps
                           onMouseEnter={(e) => {
                             const rect = e.currentTarget.getBoundingClientRect();
                             setTooltip({
-                              text: getFieldCnName(col),
+                              text: getFieldCnName(currentSection.key, col),
                               x: rect.left + rect.width / 2,
                               y: rect.top
                             });
