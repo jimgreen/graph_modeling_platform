@@ -8,12 +8,13 @@ import {
   visibleIconLibraryIcons
 } from "../iconLibraryCatalog";
 import { buildExportDeviceIdMap } from "../svgExportUtils";
-import { E_SECTION_COLUMNS, inferESection, getTemplateParameterDefinitions, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, type EDeviceExport } from "../model";
+import { E_SECTION_COLUMNS, inferESection, getTemplateParameterDefinitions, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, DEVICE_LIBRARY, type EDeviceExport } from "../model";
 import { buildEDeviceInterfaceDefinitionRows, orderEDeviceInterfaceFields, applyEDeviceDefinitionSectionsToLibraryState, buildEFileExportOptionsFromLibrary } from "./appDeviceDefinitionFactories";
 import { decodeAuto } from "../encoding/gbk";
 import { UserCustomizationManagerDialog } from "../UserCustomizationManagerDialog";
 import { VoltageLevelDialog } from "../VoltageLevelDialog";
 import { EFileEditor } from "../EFileEditor";
+import { buildUserCustomizationInventory, restoreUserCustomizationItems, type UserCustomizationDomain } from "../userCustomizations";
 
 export type ImagePickerLibraryTab = "image" | "icon";
 
@@ -552,6 +553,19 @@ export function renderAppView(__appScope: Record<string, any>) {
   });
   const [showImportResultDialog, setShowImportResultDialog] = useState(false);
   const [importResultActiveTab, setImportResultActiveTab] = useState<"matched" | "skipped" | "runtimeGenerated">("matched");
+  // 导入结果表格按模板表名折叠，记录已展开的表（key = tab:section）
+  const [expandedImportResultSections, setExpandedImportResultSections] = useState<Set<string>>(new Set());
+  const toggleImportResultSection = (sectionKey: string) => {
+    setExpandedImportResultSections((current) => {
+      const next = new Set(current);
+      if (next.has(sectionKey)) {
+        next.delete(sectionKey);
+      } else {
+        next.add(sectionKey);
+      }
+      return next;
+    });
+  };
   const [eDeviceInterfaceLoadedTemplateName, setEDeviceInterfaceLoadedTemplateName] = useState<string | null>(() => {
     try { return localStorage.getItem("eDeviceInterfaceLoadedTemplateName"); } catch { return null; }
   });
@@ -590,6 +604,55 @@ export function renderAppView(__appScope: Record<string, any>) {
     });
   };
   Object.assign(__appScope, { setTemplateImportResult, setShowImportResultDialog, setImportResultActiveTab });
+  // 加载预定义模板前，将用户自定义中的 参数定义/量测定义/E文件接口定义 恢复到默认状态
+  // （用户自定义管理对话框左侧的 3 个菜单项），使模板从干净基线应用。
+  // 返回恢复后的快照（无自定义项时返回 null），供模板应用直接使用恢复后的值，
+  // 避免模板应用仍基于本次渲染闭包中的旧值（否则恢复会被模板结果覆盖）。
+  const restoreTemplateBaselineCustomizationDomains = async () => {
+    const { captureUserCustomizationSnapshot, persistUserCustomizationSnapshot, applyUserCustomizationSnapshotToState, reconcileOpenModelAfterCustomizationChange, referencedUserAssetIds } = __appScope;
+    if (typeof captureUserCustomizationSnapshot !== "function" || typeof persistUserCustomizationSnapshot !== "function") {
+      return null;
+    }
+    try {
+      const current = await captureUserCustomizationSnapshot(true);
+      const baselineDomains = new Set<UserCustomizationDomain>([
+        "parameter-definitions",
+        "measurement-definitions",
+        "e-interface-definitions"
+      ]);
+      const inventory = buildUserCustomizationInventory(current, DEVICE_LIBRARY, referencedUserAssetIds ?? new Set());
+      const itemKeys = inventory.items
+        .filter((item) => baselineDomains.has(item.domain))
+        .map((item) => item.key);
+      if (itemKeys.length === 0) {
+        return null;
+      }
+      const target = restoreUserCustomizationItems(current, itemKeys);
+      // restoreUserCustomizationItems 未清理 eDeviceDefinitionTemplateFields（模板导入生成的字段定义），
+      // 这里一并清空，使 E 文件接口定义完整恢复到默认状态
+      if (target.deviceLibrary.eDeviceDefinitionTemplateFields) {
+        target.deviceLibrary = {
+          ...target.deviceLibrary,
+          eDeviceDefinitionTemplateFields: {}
+        };
+      }
+      await persistUserCustomizationSnapshot(target, {
+        replaceAssets: true,
+        protectedAssetIds: referencedUserAssetIds ?? new Set()
+      });
+      if (typeof applyUserCustomizationSnapshotToState === "function") {
+        applyUserCustomizationSnapshotToState(target);
+      }
+      if (typeof reconcileOpenModelAfterCustomizationChange === "function") {
+        reconcileOpenModelAfterCustomizationChange(current, target);
+      }
+      return target;
+    } catch (error) {
+      // 恢复基线失败不阻断模板加载，提示用户即可
+      showGlobalMessage("恢复参数/量测/E文件接口定义默认状态失败，继续加载模板。");
+      return null;
+    }
+  };
   const loadPredefinedEDeviceTemplate = async (templateFile: string) => {
     try {
       // 切换模板先清空「查看导入结果」旧数据，避免新模板加载期间显示上一模板结果
@@ -613,18 +676,22 @@ export function renderAppView(__appScope: Record<string, any>) {
         showGlobalMessage("未在模板中解析到元件定义。");
         return;
       }
+      // 加载预定义模板前，先将 参数定义/量测定义/E文件接口定义 恢复到默认状态，
+      // 模板应用基于恢复后的基线值（避免本次渲染闭包中的旧自定义覆盖恢复结果）
+      const baseline = await restoreTemplateBaselineCustomizationDomains();
+      const baselineLibrary = baseline?.deviceLibrary;
       // 先取消所有设备类的导出状态，再导入模板定义
       const clearedClassExportEnabled: Record<string, boolean> = {};
       const clearedLabels: Record<string, string> = {};
       const result = applyEDeviceDefinitionSectionsToLibraryState({
         sections,
-        customDeviceTemplates,
+        customDeviceTemplates: baselineLibrary?.customDeviceTemplates ?? customDeviceTemplates,
         libraryTemplates,
-        deviceDefinitionOverrides,
+        deviceDefinitionOverrides: baselineLibrary?.deviceDefinitionOverrides ?? deviceDefinitionOverrides,
         eDeviceDefinitionLabels: clearedLabels,
         eDeviceDefinitionClassExportEnabled: clearedClassExportEnabled,
-        eDeviceDefinitionTemplateFields: __appScope.eDeviceDefinitionTemplateFields ?? {},
-        eDeviceDefinitionFieldOrder: __appScope.eDeviceDefinitionFieldOrder ?? {},
+        eDeviceDefinitionTemplateFields: baselineLibrary?.eDeviceDefinitionTemplateFields ?? {},
+        eDeviceDefinitionFieldOrder: baselineLibrary?.eDeviceDefinitionFieldOrder ?? {},
         labels: __appScope.PARAM_LABELS,
         deviceDefinitionKeyForTemplate: __appScope.deviceDefinitionKeyForTemplate,
         deviceDefinitionOverrideForTemplate: __appScope.deviceDefinitionOverrideForTemplate,
@@ -5064,18 +5131,60 @@ export function renderAppView(__appScope: Record<string, any>) {
                     <tbody>
                       {templateImportResult.matched.map((item, idx) => {
                         const fields = item.fields && item.fields.length > 0 ? item.fields : [{ template: "", device: "" }];
-                        return fields.map((f, fi) => (
-                          <tr key={`${idx}-${fi}`}>
-                            {fi === 0 && (<td className="template-import-result-cell-section" rowSpan={fields.length}>{item.section}</td>)}
-                            {fi === 0 && (<td className="template-import-result-cell-device" rowSpan={fields.length}>{item.device}</td>)}
-                            <td className="template-import-result-cell-fields">
-                              {f.template ? (<span className="template-import-result-field-tag">{f.template}</span>) : (<span className="template-import-result-cell-empty">-</span>)}
-                            </td>
-                            <td className="template-import-result-cell-fields">
-                              {f.device ? (<span className="template-import-result-field-tag template-import-result-field-tag-device">{f.device}</span>) : (<span className="template-import-result-cell-empty">未匹配</span>)}
-                            </td>
-                          </tr>
-                        ));
+                        const sectionKey = `matched:${item.section}`;
+                        const expanded = expandedImportResultSections.has(sectionKey);
+                        // 设备属性统计：匹配 / 新增 / 拓扑生成
+                        let matchedFieldCount = 0;
+                        let newlyAddedFieldCount = 0;
+                        let topologyGeneratedFieldCount = 0;
+                        for (const f of fields) {
+                          const deviceValue = f.device ?? "";
+                          if (deviceValue.endsWith("（新增）")) {
+                            newlyAddedFieldCount += 1;
+                          } else if (deviceValue === "（拓扑生成）") {
+                            topologyGeneratedFieldCount += 1;
+                          } else if (deviceValue) {
+                            matchedFieldCount += 1;
+                          }
+                        }
+                        return (
+                          <Fragment key={idx}>
+                            <tr className="template-import-result-section-row" onClick={() => toggleImportResultSection(sectionKey)}>
+                              <td className="template-import-result-cell-section">
+                                <span className="template-import-result-expand-icon">
+                                  {expanded ? (<ChevronDown size={13}/>) : (<ChevronRight size={13}/>)}
+                                </span>
+                                {item.section}
+                              </td>
+                              <td className="template-import-result-cell-device">{item.device}</td>
+                              <td className="template-import-result-cell-fields">
+                                <span className="template-import-result-cell-empty">{fields.length} 个模板字段</span>
+                              </td>
+                              <td className="template-import-result-cell-fields">
+                                <span className="template-import-result-stat">{matchedFieldCount}个匹配</span>
+                                <span className="template-import-result-stat template-import-result-stat-new">{newlyAddedFieldCount}个新增</span>
+                                <span className="template-import-result-stat template-import-result-stat-topology">{topologyGeneratedFieldCount}个拓扑生成</span>
+                              </td>
+                            </tr>
+                            {expanded && fields.map((f, fi) => {
+                              const deviceValue = f.device ?? "";
+                              const isNewlyAdded = deviceValue.endsWith("（新增）");
+                              return (
+                                <tr key={`${idx}-${fi}`}>
+                                  <td colSpan={2} className="template-import-result-cell-fields"/>
+                                  <td className="template-import-result-cell-fields">
+                                    {f.template ? (<span className="template-import-result-field-tag">{f.template}</span>) : (<span className="template-import-result-cell-empty">-</span>)}
+                                  </td>
+                                  <td className="template-import-result-cell-fields">
+                                    {deviceValue ? (
+                                      <span className={`template-import-result-field-tag template-import-result-field-tag-device${isNewlyAdded ? " template-import-result-field-tag-added" : ""}`}>{deviceValue}</span>
+                                    ) : (<span className="template-import-result-cell-empty">未匹配</span>)}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </Fragment>
+                        );
                       })}
                     </tbody>
                   </table>
@@ -5095,14 +5204,31 @@ export function renderAppView(__appScope: Record<string, any>) {
                     <tbody>
                       {templateImportResult.skipped.map((item, idx) => {
                         const fields = item.fields && item.fields.length > 0 ? item.fields : [""];
-                        return fields.map((f, fi) => (
-                          <tr key={`${idx}-${fi}`} className="template-import-result-row-skipped">
-                            {fi === 0 && (<td className="template-import-result-cell-section" rowSpan={fields.length}>{item.section}</td>)}
-                            <td className="template-import-result-cell-fields">
-                              {f ? (<span className="template-import-result-field-tag template-import-result-field-tag-skipped">{f}</span>) : (<span className="template-import-result-cell-empty">-</span>)}
-                            </td>
-                          </tr>
-                        ));
+                        const sectionKey = `skipped:${item.section}`;
+                        const expanded = expandedImportResultSections.has(sectionKey);
+                        return (
+                          <Fragment key={idx}>
+                            <tr className="template-import-result-section-row" onClick={() => toggleImportResultSection(sectionKey)}>
+                              <td className="template-import-result-cell-section">
+                                <span className="template-import-result-expand-icon">
+                                  {expanded ? (<ChevronDown size={13}/>) : (<ChevronRight size={13}/>)}
+                                </span>
+                                {item.section}
+                              </td>
+                              <td className="template-import-result-cell-fields">
+                                <span className="template-import-result-cell-empty">{fields.length} 个未匹配字段，点击展开</span>
+                              </td>
+                            </tr>
+                            {expanded && fields.map((f, fi) => (
+                              <tr key={`${idx}-${fi}`} className="template-import-result-row-skipped">
+                                <td className="template-import-result-cell-section"/>
+                                <td className="template-import-result-cell-fields">
+                                  {f ? (<span className="template-import-result-field-tag template-import-result-field-tag-skipped">{f}</span>) : (<span className="template-import-result-cell-empty">-</span>)}
+                                </td>
+                              </tr>
+                            ))}
+                          </Fragment>
+                        );
                       })}
                     </tbody>
                   </table>
@@ -5122,14 +5248,31 @@ export function renderAppView(__appScope: Record<string, any>) {
                     <tbody>
                       {(templateImportResult.runtimeGenerated ?? []).map((item, idx) => {
                         const fields = item.fields && item.fields.length > 0 ? item.fields : [""];
-                        return fields.map((f, fi) => (
-                          <tr key={`${idx}-${fi}`} className="template-import-result-row-runtime">
-                            {fi === 0 && (<td className="template-import-result-cell-section" rowSpan={fields.length}>{item.section}</td>)}
-                            <td className="template-import-result-cell-fields">
-                              {f ? (<span className="template-import-result-field-tag template-import-result-field-tag-runtime">{f}</span>) : (<span className="template-import-result-cell-empty">-</span>)}
-                            </td>
-                          </tr>
-                        ));
+                        const sectionKey = `runtimeGenerated:${item.section}`;
+                        const expanded = expandedImportResultSections.has(sectionKey);
+                        return (
+                          <Fragment key={idx}>
+                            <tr className="template-import-result-section-row" onClick={() => toggleImportResultSection(sectionKey)}>
+                              <td className="template-import-result-cell-section">
+                                <span className="template-import-result-expand-icon">
+                                  {expanded ? (<ChevronDown size={13}/>) : (<ChevronRight size={13}/>)}
+                                </span>
+                                {item.section}
+                              </td>
+                              <td className="template-import-result-cell-fields">
+                                <span className="template-import-result-cell-empty">{fields.length} 个字段，点击展开</span>
+                              </td>
+                            </tr>
+                            {expanded && fields.map((f, fi) => (
+                              <tr key={`${idx}-${fi}`} className="template-import-result-row-runtime">
+                                <td className="template-import-result-cell-section"/>
+                                <td className="template-import-result-cell-fields">
+                                  {f ? (<span className="template-import-result-field-tag template-import-result-field-tag-runtime">{f}</span>) : (<span className="template-import-result-cell-empty">-</span>)}
+                                </td>
+                              </tr>
+                            ))}
+                          </Fragment>
+                        );
                       })}
                     </tbody>
                   </table>

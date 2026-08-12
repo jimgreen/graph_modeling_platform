@@ -5799,6 +5799,59 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   background: #eff6ff;
 }
 
+/* 按模板表名折叠的可点击表头行 */
+.template-import-result-section-row {
+  cursor: pointer;
+  user-select: none;
+}
+
+.template-import-result-section-row:hover td {
+  background: #f8fafc;
+}
+
+.template-import-result-section-row td {
+  background: #fafbfc;
+  border-top: 1px solid #e2e8f0;
+}
+
+.template-import-result-expand-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+  color: #64748b;
+  vertical-align: -2px;
+}
+
+/* 折叠行设备属性统计（N个匹配 / N个新增 / N个拓扑生成） */
+.template-import-result-stat {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 10px;
+  font-size: 11px;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.template-import-result-stat-new {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.template-import-result-stat-topology {
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+/* 展开行中「（新增）」标记的设备属性强调显示 */
+.template-import-result-field-tag-added {
+  color: #dc2626;
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
 .template-import-result-cell-section {
   font-weight: 600;
   color: #0f172a;

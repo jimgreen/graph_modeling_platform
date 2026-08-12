@@ -923,11 +923,24 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
       }
     }
     if (sectionMatchedFields.length > 0) {
-      matched.push({
-        section: sectionKind,
-        device: matchedDeviceLabel,
-        fields: sectionMatchedFields
-      });
+      const existingMatched = matched.find((m) => m.section === sectionKind && m.device === matchedDeviceLabel);
+      if (existingMatched) {
+        // node 表（sgcc.e 的 <node 元件库="ACNode+交流母线">）解析为 ACNode/ACRealBs 两个 section，
+        // 两者匹配到同一设备行且表名均为 node，合并字段避免「已匹配」出现重复行
+        const seenTemplates = new Set((existingMatched.fields as any[]).map((f: any) => f.template));
+        for (const f of sectionMatchedFields) {
+          if (!seenTemplates.has(f.template)) {
+            (existingMatched.fields as any[]).push(f);
+            seenTemplates.add(f.template);
+          }
+        }
+      } else {
+        matched.push({
+          section: sectionKind,
+          device: matchedDeviceLabel,
+          fields: sectionMatchedFields
+        });
+      }
     }
     if (sectionUnmatchedFields.length > 0) {
       skipped.push({
