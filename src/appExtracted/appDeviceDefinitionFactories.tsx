@@ -10,6 +10,7 @@ import { buildEDeviceDefinitionFileFromInterfaceDefinitions, E_SECTION_COLUMNS, 
 import { clampNumber } from "../canvasViewport";
 import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
 import { apiPath } from "../config";
+import { decodeGbk } from "../encoding/gbk";
 import { DEFAULT_STATE_ICON_DRAWING_FRAME, stateIconSvgVisibleViewBox } from "../stateIconDrawing";
 import { decodeSvgImageSource } from "../svgUtils";
 import { buildMeasurementProfilePositionDefinitions } from "../measurements";
@@ -2050,6 +2051,7 @@ export function createExportSvg(__appScope: Record<string, any>) {
     eDeviceDefinitionClassExportEnabled,
     eDeviceDefinitionFieldOrder,
     eDeviceDefinitionLabels,
+    eDeviceDefinitionTableIds,
     eDeviceDefinitionTemplateFields,
     edges,
     ensureSavedBeforeExport,
@@ -2112,6 +2114,7 @@ export function createExportSvg(__appScope: Record<string, any>) {
         eDeviceDefinitionClassExportEnabled,
         eDeviceDefinitionFieldOrder,
         eDeviceDefinitionTemplateFields,
+        eDeviceDefinitionTableIds,
         resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
       });
       const schemePath = typeof schemePathForScheme === "function"
@@ -2454,6 +2457,7 @@ export function createExportEFile(__appScope: Record<string, any>) {
       eDeviceDefinitionClassExportEnabled,
       eDeviceDefinitionFieldOrder,
       eDeviceDefinitionLabels,
+      eDeviceDefinitionTableIds,
       eDeviceDefinitionTemplateFields,
       ensureSavedBeforeExport,
       getEExportWarnings,
@@ -2484,6 +2488,7 @@ export function createExportEFile(__appScope: Record<string, any>) {
         eDeviceDefinitionClassExportEnabled,
         eDeviceDefinitionFieldOrder,
         eDeviceDefinitionTemplateFields,
+        eDeviceDefinitionTableIds,
         resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
       });
       const schemePath = typeof schemePathForScheme === "function"
@@ -2511,6 +2516,7 @@ export function createExportEFile(__appScope: Record<string, any>) {
           mime: "text/plain",
           description: "E 模型文件",
           extensions: [".e"],
+          encoding: "gbk",
           preferNativeDialog: true,
           onSaveTargetReady: markSaveTargetReady
         })
@@ -2522,6 +2528,7 @@ export function createExportEFile(__appScope: Record<string, any>) {
             mime: file.mime,
             description: "E 模型文件",
             extensions: [".e"],
+            encoding: "gbk",
             preferNativeDialog: true,
             onSaveTargetReady: markSaveTargetReady
           });
@@ -2546,7 +2553,7 @@ export function createExportEFile(__appScope: Record<string, any>) {
 
 export function createExportEDeviceDefinitionFile(__appScope: Record<string, any>) {
   return async () => {
-    const { libraryTemplates, PARAM_LABELS, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTemplateFields, resolveTemplateComponentLibrary, saveTextFile, writeOperationLog } = __appScope;
+    const { libraryTemplates, PARAM_LABELS, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTableIds, eDeviceDefinitionTemplateFields, resolveTemplateComponentLibrary, saveTextFile, writeOperationLog } = __appScope;
     // libraryTemplates 已合并内置 + 自定义元件并应用 deviceDefinitionOverrides，导出范围覆盖所有元件（含内置）
     const interfaceDefinitions = buildEFileExportOptionsFromLibrary({
       libraryTemplates,
@@ -2555,6 +2562,7 @@ export function createExportEDeviceDefinitionFile(__appScope: Record<string, any
       eDeviceDefinitionClassExportEnabled,
       eDeviceDefinitionFieldOrder,
       eDeviceDefinitionTemplateFields,
+      eDeviceDefinitionTableIds,
       resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
     }).interfaceDefinitions;
     const file = buildEDeviceDefinitionFileFromInterfaceDefinitions(interfaceDefinitions);
@@ -2567,7 +2575,8 @@ export function createExportEDeviceDefinitionFile(__appScope: Record<string, any
       text: file.text,
       mime: file.mime,
       description: "E 元件定义文件",
-      extensions: [".e"]
+      extensions: [".e"],
+      encoding: "gbk"
     });
     if (!saved) {
       return;
@@ -2606,7 +2615,8 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const sections = parseEDeviceDefinitionFile(String(reader.result ?? ""));
+        // E 文件统一为 GBK 编码（导出强制 GBK），导入时按字节解码以兼容 GBK/UTF-8
+        const sections = parseEDeviceDefinitionFile(decodeEFileText(reader.result));
         if (sections.length === 0) {
           showGlobalMessage("未在文件中解析到元件定义。");
           return;
@@ -2668,14 +2678,35 @@ export function createImportEDeviceDefinitionFile(__appScope: Record<string, any
     reader.onerror = () => {
       showGlobalMessage("读取元件定义文件失败。");
     };
-    reader.readAsText(file, "utf-8");
+    reader.readAsArrayBuffer(file);
   };
+}
+
+// E 文件统一为 GBK 编码（导出强制 GBK）。导入时按字节读取：
+// 有 UTF-8 BOM 或可按 UTF-8 无损解码时按 UTF-8，否则按 GBK 解码。
+function decodeEFileText(result: unknown): string {
+  if (typeof result === "string") {
+    return result;
+  }
+  if (result instanceof ArrayBuffer) {
+    const bytes = new Uint8Array(result);
+    if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+      return new TextDecoder("utf-8").decode(bytes);
+    }
+    try {
+      const decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      return decoded;
+    } catch {
+      return decodeGbk(bytes);
+    }
+  }
+  return "";
 }
 
 // 程序化导出 E 文件定义（经 WS control 指令调用，返回文本不触发浏览器下载）
 export function createProgrammaticExportEDeviceDefinition(__appScope: Record<string, any>) {
   return () => {
-    const { libraryTemplates, PARAM_LABELS, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTemplateFields, resolveTemplateComponentLibrary } = __appScope;
+    const { libraryTemplates, PARAM_LABELS, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTableIds, eDeviceDefinitionTemplateFields, resolveTemplateComponentLibrary } = __appScope;
     return buildEDeviceDefinitionFileFromInterfaceDefinitions(buildEFileExportOptionsFromLibrary({
       libraryTemplates,
       labels: PARAM_LABELS,
@@ -2683,6 +2714,7 @@ export function createProgrammaticExportEDeviceDefinition(__appScope: Record<str
       eDeviceDefinitionClassExportEnabled,
       eDeviceDefinitionFieldOrder,
       eDeviceDefinitionTemplateFields,
+      eDeviceDefinitionTableIds,
       resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
     }).interfaceDefinitions);
   };
@@ -3266,7 +3298,7 @@ export function createResolveDuplicateModelImport(__appScope: Record<string, any
 
 export function createExportSchemeRecord(__appScope: Record<string, any>) {
   return async (scheme: SavedSchemeRecord) => {
-  const { DEFAULT_CANVAS_BACKGROUND, PARAM_LABELS, backgroundPageRender, buildEFileExport, buildSvgDocument, colorPalette, downloadBackendSchemeArchive, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionLabels, eDeviceDefinitionTemplateFields, fetchBackendProjectRecord, flattenSavedProjects, isPickerAbort, libraryTemplates, loadSvgImageExportPathById, measurementConfig, resolveTemplateComponentLibrary, safeFilePart, saveBackendProjectArtifacts, savedProjectRecordIsSummary, schemePathForRecord, schemePathForScheme, schemes, writeOperationLog } = __appScope;
+  const { DEFAULT_CANVAS_BACKGROUND, PARAM_LABELS, backgroundPageRender, buildEFileExport, buildSvgDocument, colorPalette, downloadBackendSchemeArchive, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionLabels, eDeviceDefinitionTableIds, eDeviceDefinitionTemplateFields, fetchBackendProjectRecord, flattenSavedProjects, isPickerAbort, libraryTemplates, loadSvgImageExportPathById, measurementConfig, resolveTemplateComponentLibrary, safeFilePart, saveBackendProjectArtifacts, savedProjectRecordIsSummary, schemePathForRecord, schemePathForScheme, schemes, writeOperationLog } = __appScope;
     try {
       const schemePath = schemePathForRecord(scheme);
       // 导出前用前端逻辑刷新方案下所有模型的 SVG/E，保证与右上角导出按钮产物一致
@@ -3279,6 +3311,7 @@ export function createExportSchemeRecord(__appScope: Record<string, any>) {
           eDeviceDefinitionClassExportEnabled,
           eDeviceDefinitionFieldOrder,
           eDeviceDefinitionTemplateFields,
+          eDeviceDefinitionTableIds,
           resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
         });
         const findOwnerSchemeForProject = (root: SavedSchemeRecord, projectId: string): SavedSchemeRecord | null => {

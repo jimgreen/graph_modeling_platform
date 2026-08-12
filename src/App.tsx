@@ -1236,6 +1236,8 @@ const [eDeviceDefinitionFieldOrder, setEDeviceDefinitionFieldOrder] = useState<R
 Object.assign(__appScope, { eDeviceDefinitionFieldOrder, setEDeviceDefinitionFieldOrder });
 const [eDeviceDefinitionTemplateFields, setEDeviceDefinitionTemplateFields] = useState<Record<string, Array<{ sourceName?: string; exportName: string; cnName: string }>>>(() => (initialDeviceLibrary as any).eDeviceDefinitionTemplateFields ?? {});
 Object.assign(__appScope, { eDeviceDefinitionTemplateFields, setEDeviceDefinitionTemplateFields });
+const [eDeviceDefinitionTableIds, setEDeviceDefinitionTableIds] = useState<Record<string, string>>(() => (initialDeviceLibrary as any).eDeviceDefinitionTableIds ?? {});
+Object.assign(__appScope, { eDeviceDefinitionTableIds, setEDeviceDefinitionTableIds });
 const [customDeviceSaveToast, setCustomDeviceSaveToast] = useState("");
 const customDeviceSaveToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 Object.assign(__appScope, { customDeviceSaveToast, setCustomDeviceSaveToast, customDeviceSaveToastTimerRef });

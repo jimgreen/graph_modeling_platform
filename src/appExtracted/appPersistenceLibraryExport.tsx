@@ -1022,7 +1022,8 @@ export function deviceLibraryPayloadForPackageScope(
       eDeviceDefinitionLabels: normalizedImported.eDeviceDefinitionLabels,
       eDeviceDefinitionClassExportEnabled: normalizedImported.eDeviceDefinitionClassExportEnabled,
       eDeviceDefinitionFieldOrder: normalizedImported.eDeviceDefinitionFieldOrder,
-      eDeviceDefinitionTemplateFields: normalizedImported.eDeviceDefinitionTemplateFields
+      eDeviceDefinitionTemplateFields: normalizedImported.eDeviceDefinitionTemplateFields,
+      eDeviceDefinitionTableIds: normalizedImported.eDeviceDefinitionTableIds
     };
   }
   return normalizedImported;
@@ -1486,6 +1487,7 @@ const E_DEVICE_DEFINITION_LABELS_STORAGE_KEY = "power-system-e-device-definition
 const E_DEVICE_DEFINITION_CLASS_EXPORT_STORAGE_KEY = "power-system-e-device-definition-class-export-enabled";
 const E_DEVICE_DEFINITION_FIELD_ORDER_STORAGE_KEY = "power-system-e-device-definition-field-order";
 const E_DEVICE_DEFINITION_TEMPLATE_FIELDS_STORAGE_KEY = "power-system-e-device-definition-template-fields";
+const E_DEVICE_DEFINITION_TABLE_IDS_STORAGE_KEY = "power-system-e-device-definition-table-ids";
 
 export function normalizeCustomComponentLibraries(value: unknown, reservedTypes: readonly string[] = E_SECTION_OPTIONS): CustomComponentLibraryDefinition[] {
   if (!Array.isArray(value)) {
@@ -2565,6 +2567,7 @@ export function normalizeDeviceLibraryPersistencePayload(value: unknown): Device
     eDeviceDefinitionClassExportEnabled: normalizeBooleanRecord((source as any).eDeviceDefinitionClassExportEnabled),
     eDeviceDefinitionFieldOrder: normalizeStringArrayRecord((source as any).eDeviceDefinitionFieldOrder),
     eDeviceDefinitionTemplateFields: normalizeObjectRecord((source as any).eDeviceDefinitionTemplateFields),
+    eDeviceDefinitionTableIds: normalizeStringRecord((source as any).eDeviceDefinitionTableIds),
     customGraphTemplateTypes: normalizeGraphTemplateTypes(source.customGraphTemplateTypes),
     customGraphTemplates: normalizeGraphTemplates(source.customGraphTemplates)
   };
@@ -2637,6 +2640,10 @@ export function readEDeviceDefinitionTemplateFields(): Record<string, Array<{ so
   return readLocalStorageJson(E_DEVICE_DEFINITION_TEMPLATE_FIELDS_STORAGE_KEY, "{}", normalizeObjectRecord, {});
 }
 
+export function readEDeviceDefinitionTableIds(): Record<string, string> {
+  return readLocalStorageJson(E_DEVICE_DEFINITION_TABLE_IDS_STORAGE_KEY, "{}", normalizeStringRecord, {});
+}
+
 export function readCustomGraphTemplateTypes(): string[] {
   return readLocalStorageJson(CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, "[]", normalizeGraphTemplateTypes, []);
 }
@@ -2655,6 +2662,7 @@ export function readLocalDeviceLibraryPersistencePayload(): DeviceLibraryPersist
     eDeviceDefinitionClassExportEnabled: readEDeviceDefinitionClassExportEnabled(),
     eDeviceDefinitionFieldOrder: readEDeviceDefinitionFieldOrder(),
     eDeviceDefinitionTemplateFields: readEDeviceDefinitionTemplateFields(),
+    eDeviceDefinitionTableIds: readEDeviceDefinitionTableIds(),
     customGraphTemplateTypes: readCustomGraphTemplateTypes(),
     customGraphTemplates: readCustomGraphTemplates()
   };
@@ -2676,6 +2684,7 @@ function fallbackToLocalStorage(data: DeviceLibraryPersistencePayload): void {
     window.localStorage.setItem(E_DEVICE_DEFINITION_CLASS_EXPORT_STORAGE_KEY, JSON.stringify(data.eDeviceDefinitionClassExportEnabled ?? {}));
     window.localStorage.setItem(E_DEVICE_DEFINITION_FIELD_ORDER_STORAGE_KEY, JSON.stringify(data.eDeviceDefinitionFieldOrder ?? {}));
     window.localStorage.setItem(E_DEVICE_DEFINITION_TEMPLATE_FIELDS_STORAGE_KEY, JSON.stringify(data.eDeviceDefinitionTemplateFields ?? {}));
+    window.localStorage.setItem(E_DEVICE_DEFINITION_TABLE_IDS_STORAGE_KEY, JSON.stringify(data.eDeviceDefinitionTableIds ?? {}));
     window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, JSON.stringify(data.customGraphTemplateTypes));
     window.localStorage.setItem(CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, JSON.stringify(data.customGraphTemplates));
   } catch {
@@ -2689,6 +2698,7 @@ export function writeLocalDeviceLibraryPersistencePayload(normalizedDeviceLibrar
     window.localStorage.setItem(E_DEVICE_DEFINITION_CLASS_EXPORT_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionClassExportEnabled ?? {}));
     window.localStorage.setItem(E_DEVICE_DEFINITION_FIELD_ORDER_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionFieldOrder ?? {}));
     window.localStorage.setItem(E_DEVICE_DEFINITION_TEMPLATE_FIELDS_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionTemplateFields ?? {}));
+    window.localStorage.setItem(E_DEVICE_DEFINITION_TABLE_IDS_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionTableIds ?? {}));
   } catch {
     // 本地接口定义缓存不可写时，不阻断元件库保存。
   }

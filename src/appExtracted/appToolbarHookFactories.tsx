@@ -2707,7 +2707,7 @@ export function createAppHookCallback78(__appScope: Record<string, any>) {
 
 export function createAppHookCallback79(__appScope: Record<string, any>) {
   return () => {
-  const { backendDeviceLibraryLoadedRef, customCategoryLibraries, customComponentLibraries, customDeviceTemplates, customGraphTemplateTypes, customGraphTemplates, deviceDefinitionOverrides, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTemplateFields, fetchBackendDeviceLibrary, lastPersistedDeviceLibraryPayloadRef, saveBackendDeviceLibraryPayload, serializeDeviceLibraryForStorage, setCustomCategoryLibraries, setCustomComponentLibraries, setCustomDeviceTemplates, setCustomGraphTemplateTypes, setCustomGraphTemplates, setDeviceDefinitionOverrides, setEDeviceDefinitionLabels, setEDeviceDefinitionClassExportEnabled, setEDeviceDefinitionFieldOrder, setEDeviceDefinitionTemplateFields, suppressNextBackendDeviceLibrarySyncRef } = __appScope;
+  const { backendDeviceLibraryLoadedRef, customCategoryLibraries, customComponentLibraries, customDeviceTemplates, customGraphTemplateTypes, customGraphTemplates, deviceDefinitionOverrides, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTableIds, eDeviceDefinitionTemplateFields, fetchBackendDeviceLibrary, lastPersistedDeviceLibraryPayloadRef, saveBackendDeviceLibraryPayload, serializeDeviceLibraryForStorage, setCustomCategoryLibraries, setCustomComponentLibraries, setCustomDeviceTemplates, setCustomGraphTemplateTypes, setCustomGraphTemplates, setDeviceDefinitionOverrides, setEDeviceDefinitionLabels, setEDeviceDefinitionClassExportEnabled, setEDeviceDefinitionFieldOrder, setEDeviceDefinitionTableIds, setEDeviceDefinitionTemplateFields, suppressNextBackendDeviceLibrarySyncRef } = __appScope;
     fetchBackendDeviceLibrary()
       .then((backendDeviceLibrary) => {
         backendDeviceLibraryLoadedRef.current = true;
@@ -2723,6 +2723,7 @@ export function createAppHookCallback79(__appScope: Record<string, any>) {
           setEDeviceDefinitionClassExportEnabled(backendDeviceLibrary.eDeviceDefinitionClassExportEnabled ?? {});
           setEDeviceDefinitionFieldOrder(backendDeviceLibrary.eDeviceDefinitionFieldOrder ?? {});
           setEDeviceDefinitionTemplateFields(backendDeviceLibrary.eDeviceDefinitionTemplateFields ?? {});
+          setEDeviceDefinitionTableIds(backendDeviceLibrary.eDeviceDefinitionTableIds ?? {});
           setCustomGraphTemplateTypes(backendDeviceLibrary.customGraphTemplateTypes);
           setCustomGraphTemplates(backendDeviceLibrary.customGraphTemplates);
           return;
@@ -2736,6 +2737,7 @@ export function createAppHookCallback79(__appScope: Record<string, any>) {
           eDeviceDefinitionClassExportEnabled,
           eDeviceDefinitionFieldOrder,
           eDeviceDefinitionTemplateFields,
+          eDeviceDefinitionTableIds,
           customGraphTemplateTypes,
           customGraphTemplates
         });
