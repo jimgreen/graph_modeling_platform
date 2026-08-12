@@ -10,6 +10,7 @@
     "backend": "node server/server.mjs",
     "build": "tsc -b && vite build",
     "audit:icons": "node scripts/audit-icon-library-quality.mjs",
+    "gen:gbk-table": "node scripts/gen-gbk-table.mjs",
     "test": "vitest run",
     "test:e2e": "vitest run --config vite.e2e.config.ts",
     "preview": "vite preview --host 127.0.0.1"
@@ -18,6 +19,7 @@
     "@vitejs/plugin-react": "^5.0.0",
     "@xyflow/react": "^12.10.2",
     "adm-zip": "^0.5.17",
+    "iconv-lite": "^0.7.3",
     "idb": "^8.0.3",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",

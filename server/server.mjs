@@ -7,6 +7,7 @@ import { gzip } from "node:zlib";
 import { promisify } from "node:util";
 import { createHash } from "node:crypto";
 import AdmZip from "adm-zip";
+import iconv from "iconv-lite";
 import { apiPrefix, apiPath, escapeRegExp, backendPort, host, frontendPrefix, stripFrontendBase } from "./config.mjs";
 import {
   NativeExportSaveError,
@@ -330,16 +331,19 @@ const maxIconLibraryExtractedAssets = 500;
 
 const stringifyJson = (value) => JSON.stringify(value, null, 2);
 
-async function writeTextIfChanged(filePath, content) {
+// 统一将 E 文件（.e）按 GBK 编码写入；JSON/SVG 等仍用 UTF-8。
+// GBK 内容比较时按字节对比，避免 UTF-8 解码乱码导致误判变更。
+async function writeTextIfChanged(filePath, content, encoding = "utf-8") {
+  const bytes = encoding === "gbk" ? iconv.encode(String(content ?? ""), "gbk") : Buffer.from(String(content ?? ""), "utf-8");
   try {
-    const current = await readFile(filePath, "utf-8");
-    if (current === content) {
+    const current = await readFile(filePath);
+    if (current.equals(bytes)) {
       return;
     }
   } catch {
     // File is missing or unreadable; write a fresh copy below.
   }
-  await writeFile(filePath, content, "utf-8");
+  await writeFile(filePath, bytes);
 }
 
 async function fileExists(filePath) {
@@ -976,6 +980,20 @@ function normalizeDeviceLibraryConfig(payload) {
         return fields.length > 0 ? [[key, fields]] : [];
       }))
       : {};
+  // 元件库 → 表号 映射（如 ACGenerator -> "00411"），导出 E 文件时
+  // 按 key_to_long(表号, 0, 行号) 计算 id 字段。必须持久化，否则重启
+  // 后加载的实时库模板（ems_rtdb.e 等）导出的 id 仍为原值。
+  const eDeviceDefinitionTableIds =
+    source.eDeviceDefinitionTableIds && typeof source.eDeviceDefinitionTableIds === "object" && !Array.isArray(source.eDeviceDefinitionTableIds)
+      ? Object.fromEntries(Object.entries(source.eDeviceDefinitionTableIds).flatMap(([rawKey, rawValue]) => {
+        const key = String(rawKey ?? "").trim();
+        const value = typeof rawValue === "string" ? rawValue.trim() : "";
+        if (!key || !value) {
+          return [];
+        }
+        return [[key, value]];
+      }))
+      : {};
   return {
     customDeviceTemplates,
     customCategoryLibraries,
@@ -986,7 +1004,8 @@ function normalizeDeviceLibraryConfig(payload) {
     eDeviceDefinitionLabels,
     eDeviceDefinitionClassExportEnabled,
     eDeviceDefinitionFieldOrder,
-    eDeviceDefinitionTemplateFields
+    eDeviceDefinitionTemplateFields,
+    eDeviceDefinitionTableIds
   };
 }
 
@@ -3812,7 +3831,7 @@ export async function saveSchemeProjectRecord(options) {
   const eContent = options.eFile ?? buildDeviceParameterFile(storedRecord.project, schemePath);
   await Promise.all([
     writeTextIfChanged(jsonPath, stringifyJson(storedRecord.project)),
-    writeTextIfChanged(ePath, eContent),
+    writeTextIfChanged(ePath, eContent, "gbk"),
     writeTextIfChanged(svgPath, svgContent)
   ]);
   return storedRecord;
@@ -3858,7 +3877,7 @@ async function writeSchemeFiles(schemes, options = {}) {
         writeTasks.push(writeTextIfChanged(svgPath, buildSvgFile(record.project, measurementConfig, { imagePathById })));
       }
       if (!eExists) {
-        writeTasks.push(writeTextIfChanged(ePath, buildDeviceParameterFile(record.project, currentSchemePath)));
+        writeTasks.push(writeTextIfChanged(ePath, buildDeviceParameterFile(record.project, currentSchemePath), "gbk"));
       }
     }
     for (const childScheme of scheme.children ?? []) {
@@ -4462,7 +4481,7 @@ async function handleSaveSchemeProjectArtifacts(request, response) {
     tasks.push(writeTextIfChanged(svgPath, payload.svg));
   }
   if (typeof payload.eFile === "string") {
-    tasks.push(writeTextIfChanged(ePath, payload.eFile));
+    tasks.push(writeTextIfChanged(ePath, payload.eFile, "gbk"));
   }
   await Promise.all(tasks);
   sendJson(response, 200, { ok: true, savedAt: new Date().toISOString() });

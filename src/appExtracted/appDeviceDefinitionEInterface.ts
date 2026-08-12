@@ -464,9 +464,37 @@ export function buildEFileExportOptionsFromLibrary(options: {
   eDeviceDefinitionClassExportEnabled?: Record<string, boolean>;
   eDeviceDefinitionFieldOrder?: Record<string, readonly string[]>;
   eDeviceDefinitionTemplateFields?: Record<string, Array<{ sourceName?: string; exportName: string; cnName: string }>>;
+  eDeviceDefinitionTableIds?: Record<string, string>;
   resolveDefinitionComponentLibrary?: (template: any) => string;
 }) {
   const interfaceDefinitions = buildEDeviceInterfaceDefinitionRows(options);
+  // 独立运行时表（aclineend/dclineend）：模板解析时已按 sectionKind 存储字段/表号，
+  // 但 buildEDeviceInterfaceDefinitionRows 仅遍历 libraryTemplates，不会包含这些
+  // 无对应设备模板的段。此处按 sectionKind 注入，使导出时
+  // interfaceDefinitionBySection.get(sectionKind) 可命中，保证表号/字段/过滤均生效。
+  const RUNTIME_STANDALONE = ["aclineend", "dclineend"];
+  for (const sectionKind of RUNTIME_STANDALONE) {
+    const templateFields = options.eDeviceDefinitionTemplateFields?.[sectionKind];
+    if (!templateFields || templateFields.length === 0) {
+      continue;
+    }
+    const existing = interfaceDefinitions.find((definition) => definition.componentLibrary === sectionKind);
+    if (existing) {
+      continue;
+    }
+    interfaceDefinitions.push({
+      componentLibrary: sectionKind,
+      categoryLibrary: "",
+      label: sectionKind,
+      exportEnabled: true,
+      tableId: options.eDeviceDefinitionTableIds?.[sectionKind],
+      fields: templateFields.map((field) => ({
+        sourceName: field.sourceName || field.exportName,
+        exportName: field.exportName,
+        cnName: field.cnName || field.exportName
+      }))
+    });
+  }
   return {
     interfaceDefinitions: interfaceDefinitions.map((definition) => ({
       ...definition,
@@ -477,7 +505,8 @@ export function buildEFileExportOptionsFromLibrary(options: {
       )
     })),
     eDeviceDefinitionLabels: options.eDeviceDefinitionLabels ?? {},
-    eDeviceDefinitionTemplateFields: options.eDeviceDefinitionTemplateFields ?? {}
+    eDeviceDefinitionTemplateFields: options.eDeviceDefinitionTemplateFields ?? {},
+    eDeviceDefinitionTableIds: options.eDeviceDefinitionTableIds ?? {}
   };
 }
 
@@ -558,8 +587,16 @@ function eDeviceInterfaceFieldOrderForRow(row: any, section: any | undefined) {
   const rowFields = row.fields ?? [];
   const used = new Set<string>();
   const ordered: string[] = [];
+  // 模板 id 字段对应元件的 idx 属性（导出名为 id，元件属性仍为 idx，不修改元件属性本身）
+  const templateFieldToDeviceSourceName = (sectionField: any) => {
+    const templateExportName = String(sectionField.exportName ?? sectionField.sourceName ?? "").trim();
+    if (templateExportName === "id") {
+      return "idx";
+    }
+    return templateExportName;
+  };
   const findMatchingField = (sectionField: any) => {
-    const exportKey = deviceDefinitionComplianceKey(sectionField.exportName ?? sectionField.sourceName);
+    const exportKey = deviceDefinitionComplianceKey(templateFieldToDeviceSourceName(sectionField));
     // 优先按 exportName/sourceName 精确匹配（如 runstat<->run_stat），避免误匹配同中文不同字段
     const exact = rowFields.find((field: any) => {
       const sourceName = String(field.sourceName ?? "").trim();
@@ -591,7 +628,7 @@ function eDeviceInterfaceFieldOrderForRow(row: any, section: any | undefined) {
   // 严格按模板字段顺序：设备有匹配用设备 sourceName，无匹配用模板 exportName 占位（值由导出时默认/引用解析填充）
   for (const sectionField of section.fields ?? []) {
     const field = findMatchingField(sectionField);
-    const sourceName = String(field?.sourceName ?? "").trim() || String(sectionField.exportName ?? "").trim();
+    const sourceName = String(field?.sourceName ?? "").trim() || templateFieldToDeviceSourceName(sectionField);
     const sourceKey = deviceDefinitionComplianceKey(sourceName);
     if (!sourceKey || used.has(sourceKey)) {
       continue;
@@ -652,7 +689,18 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
   const runtimeGenerated: Array<{ section: string; fields?: string[] }> = [];
 
   // 运行时生成内容的表，不参与元件匹配
-  const RUNTIME_GENERATED_SECTIONS = new Set(["basevalue", "basevoltage", "subcontrolarea", "substation", "trans"]);
+  // aclineend/dclineend/transformerwinding 也是运行时生成（从线段/变压器派生），需加入此集合
+  const RUNTIME_GENERATED_SECTIONS = new Set([
+    "basevalue", "basevoltage", "subcontrolarea", "substation", "trans",
+    "aclineend", "dclineend", "transformerwinding"
+  ]);
+  // 独立导出表：运行时生成的表中，导出代码按 kind 名查找接口定义（如 aclineend/dclineend），
+  // 模板字段需存储在 sectionKind 名下。
+  // 非 standalone 的运行时表（如 trans/transformerwinding）是元件库的导出别名，
+  // 模板字段存储在 componentLibrary 名下（如 ACTransWinding）。
+  const RUNTIME_GENERATED_STANDALONE_SECTIONS = new Set(["aclineend", "dclineend"]);
+  // standalone 运行时表的表号映射（sectionKind -> tableId），合并到最终 eDeviceDefinitionTableIds
+  const runtimeGeneratedTableIds: Record<string, string> = {};
 
   // 预构建行索引，避免 O(n*m) 查找
   const rowsByComponentLibrary = new Map<string, any>(
@@ -739,6 +787,50 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     const componentLibrary = resolveComponentLibrary(section, reverseLabelToComponentLibrary, rowsByComponentLibrary);
     const sectionKind = section.kind;
 
+    // 运行时生成的表，不参与元件匹配（即使 componentLibrary 对应已有元件库行也跳过）
+    // 包括：basevalue/basevoltage/subcontrolarea/substation（基础表）、trans/transformerwinding（绕组表别名）、
+    // aclineend/dclineend（线段端点表，导出时从 ACBranch/DCBranch 派生）
+    if (RUNTIME_GENERATED_SECTIONS.has(sectionKind)) {
+      const isStandalone = RUNTIME_GENERATED_STANDALONE_SECTIONS.has(sectionKind);
+      const storageKey = isStandalone ? sectionKind : componentLibrary;
+
+      // 非 standalone 的运行时表（如 trans→ACTransWinding, transformerwinding→ACTransWinding）
+      // 设置导出标签映射，使导出时元件库行输出为对应的表名
+      if (!isStandalone && componentLibrary && sectionKind && sectionKind !== componentLibrary) {
+        nextLabels[componentLibrary] = sectionKind;
+      }
+      // 存储模板字段定义，供导出时使用
+      // standalone 表存储在 sectionKind 名下（导出代码按 kind 查找），非 standalone 存储在 componentLibrary 名下
+      if (section.fields && section.fields.length > 0 && storageKey) {
+        const templateFields = section.fields.map((f: any) => {
+          const exportName = String(f.exportName ?? "").trim();
+          // 模板 id 字段对应元件 idx 属性（sourceName=idx, exportName=id），与匹配逻辑一致
+          const sourceName = exportName === "id" ? "idx" : undefined;
+          return {
+            sourceName: sourceName as string | undefined,
+            exportName,
+            cnName: String(f.cnName ?? "").trim() || exportName
+          };
+        }).filter((f: any) => f.exportName);
+        if (templateFields.length > 0) {
+          nextTemplateFields[storageKey] = templateFields;
+          // 字段顺序用 sourceName（如 idx），确保 applyEDeviceInterfaceFieldOrder 能匹配到设备库行字段
+          nextFieldOrder[storageKey] = templateFields.map((f: any) => f.sourceName || f.exportName);
+        }
+      }
+      // standalone 表的表号也存储在 sectionKind 名下（导出时按 sectionKind 查找表号计算 id）
+      if (isStandalone && section.tableId && storageKey) {
+        runtimeGeneratedTableIds[storageKey] = String(section.tableId).trim();
+      }
+      runtimeGenerated.push({
+        section: sectionKind,
+        fields: section.fields && section.fields.length > 0
+          ? section.fields.map((f: any) => String(f.exportName ?? "").trim()).filter(Boolean)
+          : undefined
+      });
+      continue;
+    }
+
     // 查找对应的元件库行（node 表特殊：合并 ACNode+ACRealBs 两行匹配）
     const row = rowsByComponentLibrary.get(componentLibrary);
     const isNodeMergedSection = componentLibrary === "node" || sectionKind === "node";
@@ -747,35 +839,10 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
       : [];
 
     if (!row && nodeSecondaryRows.length === 0) {
-      // 运行时生成的表（node/substation 等）仍记录表名映射（如 ACNode->node），供导出时使用
-      if (RUNTIME_GENERATED_SECTIONS.has(sectionKind) && componentLibrary && sectionKind && sectionKind !== componentLibrary) {
-        nextLabels[componentLibrary] = sectionKind;
-        // 对运行时生成的表（如 node），也存储模板字段定义，供导出时使用
-        if (section.fields && section.fields.length > 0) {
-          const templateFields = section.fields.map((f: any) => ({
-            sourceName: undefined as string | undefined,
-            exportName: String(f.exportName ?? "").trim(),
-            cnName: String(f.cnName ?? "").trim() || String(f.exportName ?? "").trim()
-          })).filter((f: any) => f.exportName);
-          if (templateFields.length > 0) {
-            nextTemplateFields[componentLibrary] = templateFields;
-            nextFieldOrder[componentLibrary] = templateFields.map((f: any) => f.exportName);
-          }
-        }
-      }
-      if (RUNTIME_GENERATED_SECTIONS.has(sectionKind)) {
-        runtimeGenerated.push({
-          section: sectionKind,
-          fields: section.fields && section.fields.length > 0
-            ? section.fields.map((f: any) => String(f.exportName ?? "").trim()).filter(Boolean)
-            : undefined
-        });
-      } else {
-        skipped.push({
-          section: sectionKind,
-          reason: `未找到对应的元件库设备：${componentLibrary}`
-        });
-      }
+      skipped.push({
+        section: sectionKind,
+        reason: `未找到对应的元件库设备：${componentLibrary}`
+      });
       continue;
     }
 
@@ -814,6 +881,11 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
       // 固定字段（idx/name/dev_type）视为始终匹配
       if (E_DEVICE_INTERFACE_FIXED_FIELD_NAMES.has(templateField)) {
         sectionMatchedFields.push({ template: templateField, device: templateField });
+        continue;
+      }
+      // XX实时库模板：模板 id 字段对应元件的 idx 属性（导出时经 key_to_long 计算为 id）
+      if (templateField === "id") {
+        sectionMatchedFields.push({ template: templateField, device: "idx" });
         continue;
       }
       // 拓扑引用字段（ind/znd/nd）由拓扑关系填充，视为匹配
@@ -984,8 +1056,37 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     eDeviceDefinitionClassExportEnabled: nextClassExportEnabled,
     eDeviceDefinitionFieldOrder: nextFieldOrder,
     eDeviceDefinitionTemplateFields: nextTemplateFields,
+    eDeviceDefinitionTableIds: {
+      ...eDeviceDefinitionTableIdsFromSections(sections, reverseLabelToComponentLibrary),
+      ...runtimeGeneratedTableIds
+    },
     matched,
     skipped,
     runtimeGenerated
   };
+}
+
+/**
+ * 从模板 sections 提取「元件库 -> 表号」映射（如 ACGenerator -> "00411"）。
+ * 表号用于导出时按 key_to_long(表号, 0, 行号) 计算 id 字段。
+ */
+function eDeviceDefinitionTableIdsFromSections(
+  sections: readonly any[],
+  reverseLabelToComponentLibrary: Map<string, string>
+): Record<string, string> {
+  const tableIds: Record<string, string> = {};
+  for (const section of sections ?? []) {
+    const tableId = String(section.tableId ?? "").trim();
+    if (!tableId) {
+      continue;
+    }
+    const componentLibrary = String(section.componentLibrary || section.originalComponentLibrary || section.kind || "").trim();
+    const resolved = componentLibrary
+      ? (reverseLabelToComponentLibrary.get(componentLibrary) ?? componentLibrary)
+      : "";
+    if (resolved && tableIds[resolved] !== tableId) {
+      tableIds[resolved] = tableId;
+    }
+  }
+  return tableIds;
 }

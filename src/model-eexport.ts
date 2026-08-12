@@ -676,6 +676,7 @@ export type EFileInterfaceSectionDefinition = {
   derivedFromComponentLibrary?: string;
   isDerivedComponentLibrary?: boolean;
   isContainerComponentLibrary?: boolean;
+  tableId?: string;
   fields?: readonly EFileInterfaceFieldDefinition[];
 };
 
@@ -683,6 +684,8 @@ export type EFileExportOptions = {
   interfaceDefinitions?: readonly EFileInterfaceSectionDefinition[];
   eDeviceDefinitionLabels?: Record<string, string>;
   eDeviceDefinitionTemplateFields?: Record<string, Array<{ sourceName?: string; exportName: string; cnName: string }>>;
+  /** 元件库 -> 表号（如 ACGenerator -> "00411"），用于导出时计算 id */
+  eDeviceDefinitionTableIds?: Record<string, string>;
 };
 
 function normalizeGasQuantityFieldName(value: unknown): string {
@@ -720,12 +723,21 @@ function eFileInterfaceDefinitionIndex(options: EFileExportOptions = {}) {
       if (componentLibrary && templateFields && templateFields.length > 0 && !index.has(componentLibrary)) {
         index.set(componentLibrary, {
           componentLibrary,
+          tableId: options.eDeviceDefinitionTableIds?.[componentLibrary],
           fields: templateFields.map((tf) => ({
             sourceName: normalizeGasQuantityFieldName(tf.sourceName ?? tf.exportName),
             exportName: normalizeGasQuantityFieldName(tf.exportName),
             cnName: tf.cnName
           }))
         });
+      }
+    }
+  }
+  // 若 interfaceDefinitions 未携带表号，从 eDeviceDefinitionTableIds 补充
+  if (options.eDeviceDefinitionTableIds) {
+    for (const [componentLibrary, definition] of index) {
+      if (!definition.tableId && options.eDeviceDefinitionTableIds[componentLibrary]) {
+        definition.tableId = options.eDeviceDefinitionTableIds[componentLibrary];
       }
     }
   }
@@ -1151,6 +1163,9 @@ function buildDerivedComponentEDeviceRecord(
     return null;
   }
   const params = buildEDeviceValuesFromFields(node, fields, { preferTopologyNodeNumbers: true });
+  if (!params._vbase) {
+    params._vbase = String(node.params.vbase ?? node.terminals[0]?.vbase ?? "").trim();
+  }
   if (configuredFields) {
     const idxField = configuredFields.find((field) => field.sourceName === "idx");
     const relationField = configuredFields.find((field) => field.sourceName === relationKey);
@@ -1459,45 +1474,6 @@ function hasTemplateConfig(options: EFileExportOptions): boolean {
   return Boolean(options.eDeviceDefinitionLabels) && Object.keys(options.eDeviceDefinitionLabels ?? {}).length > 0;
 }
 
-// 构建 Model 头部记录
-function buildModelRecord(project: ProjectFile): EDeviceExport {
-  const normalizedSchemePath = project.schemePath?.join("/") || "默认方案";
-  return {
-    id: "Model-1",
-    kind: "model",
-    section: "Model",
-    params: {
-      path: normalizedSchemePath,
-      name: project.name || "未命名",
-      p_base: String(project.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE),
-      u_unit: project.voltageUnit ?? DEFAULT_VOLTAGE_UNIT,
-      p_unit: project.powerUnit ?? DEFAULT_POWER_UNIT,
-      i_unit: project.currentUnit ?? DEFAULT_CURRENT_UNIT
-    },
-    columns: ["path", "name", "p_base", "u_unit", "p_unit", "i_unit"]
-  };
-}
-
-// 构建 basevoltage 记录
-function buildBasevoltageRecords(): EDeviceExport[] {
-  const settings = readVoltageLevelSettings();
-  const allLevels: Array<{ name: string; vltp: string }> = [
-    ...settings.ac.map((row) => ({ name: row.name, vltp: row.vltp })),
-    ...settings.dc.map((row) => ({ name: row.name, vltp: row.vltp }))
-  ];
-  return allLevels.map((level, index) => ({
-    id: `basevoltage-${index + 1}`,
-    kind: "basevoltage",
-    section: "basevoltage",
-    params: {
-      idx: String(index + 1),
-      name: level.name,
-      vltp: level.vltp
-    },
-    columns: ["idx", "name", "vltp"]
-  }));
-}
-
 export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOptions = {}): EDeviceExport[] {
   const hasTemplateConfigValue = hasTemplateConfig(options);
   const interfaceDefinitionBySection = eFileInterfaceDefinitionIndex(options);
@@ -1526,6 +1502,10 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
       continue;
     }
     const params = buildEDeviceValuesFromFields(node, fields, { preferTopologyNodeNumbers: true });
+    // 注入内部电压信息（下划线前缀不会导出为列），供 bv_id 等引用字段匹配 basevoltage 行号
+    if (!params._vbase) {
+      params._vbase = String(node.params.vbase ?? node.terminals[0]?.vbase ?? "").trim();
+    }
     const sectionRowCount = (sectionRowCounts.get(section) ?? 0) + 1;
     sectionRowCounts.set(section, sectionRowCount);
     const baseIdx = firstNumericToken(String(params.idx || node.params.idx || "")) || String(sectionRowCount);
@@ -1593,6 +1573,68 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
         }
       }
     }
+    // aclinesegment/dclinesegment 同时生成 aclineend/dclineend（端点表）：
+    // 每条线段生成 2 条端点记录（首端/末端），name = 线段name + "_首端/_末端"，
+    // aclnseg_id/dcln_id 指向所属线段的 idx，nd 继承线段 ind/jnd 拓扑节点号。
+    if (section === "ACBranch" || section === "DCBranch") {
+      const endSection = section === "ACBranch" ? "aclineend" : "dclineend";
+      const linkField = section === "ACBranch" ? "aclnseg_id" : "dcln_id";
+      const endInterface = interfaceDefinitionBySection.get(endSection);
+      if (endInterface) {
+        const endFields = eParameterFieldsFromInterfaceDefinition(endSection, endInterface);
+        if (endFields.length > 0) {
+          const fieldByExportName = new Map(endFields.map((f) => [f.exportName, f]));
+          const setEndField = (recordParams: Record<string, string>, exportName: string, value: string) => {
+            if (fieldByExportName.has(exportName)) {
+              recordParams[exportName] = value;
+            }
+          };
+          const sideLabels = ["首端", "末端"] as const;
+          const nodeKeys = ["i_node", "j_node"] as const;
+          const segmentNodeKeys = ["ind", "jnd"] as const;
+          const copyFromSegment: Array<[string, string]> = [
+            ["st_id", "ist_id"],
+            ["bv_id", "bv_id"],
+            ["status", "status"],
+            ["run_state", "run_stat"],
+            ["tpcolor", "tpcolor"],
+            ["record_app", "record_app"]
+          ];
+          for (let side = 0; side < sideLabels.length; side += 1) {
+            const endParams = buildEDeviceValuesFromFields(node, endFields, { preferTopologyNodeNumbers: true });
+            // name = 线段 name + _首端/_末端
+            setEndField(endParams, "name", `${String(params.name ?? baseIdx)}_${sideLabels[side]}`);
+            // 指向所属线段 idx（实时库模板下 applyEReferenceIdValues 会进一步换算为目标表 id）
+            setEndField(endParams, linkField, baseIdx);
+            // nd：首端取线段 ind（i_node 拓扑号），末端取 jnd（j_node 拓扑号）
+            const endNodeKey = nodeKeys[side];
+            const segmentNodeField = segmentNodeKeys[side];
+            const topologyNd = topologyNodeNumberForEField(node, endNodeKey);
+            if (topologyNd !== undefined && topologyNd !== null && topologyNd !== "") {
+              setEndField(endParams, "nd", String(topologyNd));
+            } else if (params[segmentNodeField]) {
+              setEndField(endParams, "nd", String(params[segmentNodeField]));
+            }
+            // 从线段继承厂站/电压/状态等公共字段
+            for (const [endName, segmentName] of copyFromSegment) {
+              if (params[segmentName] && !endParams[endName]) {
+                setEndField(endParams, endName, String(params[segmentName]));
+              }
+            }
+            const endIdx = (sectionRowCounts.get(endSection) ?? 0) + 1;
+            sectionRowCounts.set(endSection, endIdx);
+            setEndField(endParams, "idx", String(endIdx));
+            deviceRecords.push({
+              id: `${node.id}:end:${side}`,
+              kind: node.kind,
+              section: endSection,
+              params: endParams,
+              columns: endFields.map((field) => field.exportName)
+            });
+          }
+        }
+      }
+    }
     const derivedInfo = templateDerivedComponentLibraryInfo({ kind: node.kind, params: node.params });
     if (derivedInfo) {
       const derivedSectionRowCount = (derivedSectionRowCounts.get(derivedInfo.derivedComponentLibrary) ?? 0) + 1;
@@ -1614,13 +1656,14 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
     ...deviceRecords,
     ...derivedDeviceRecords,
     ...containerAssociatedDevices
-  ].filter((record) => interfaceDefinitionBySection.get(record.section)?.exportEnabled !== false);
-
-  // 添加 Model 和 basevoltage 头部记录
-  const modelRecord = buildModelRecord(project);
-  const basevoltageRecords = buildBasevoltageRecords();
-
-  return [modelRecord, ...basevoltageRecords, ...allRecords];
+  ].filter((record) => {
+    const definition = interfaceDefinitionBySection.get(record.section);
+    // 模板模式：模板未定义的 section 一律不输出（如 ems_rtdb 未定义 ACNode/DCNode）
+    if (hasTemplateConfigValue && !definition) {
+      return false;
+    }
+    return definition?.exportEnabled !== false;
+  });
 }
 
 export type EExportWarning = {
@@ -1864,19 +1907,45 @@ export function formatEDeviceRecordColumnValue(
   return formatEColumnValue(section, column, record.params[column], rowIndex);
 }
 
-function formatESection(section: string, rows: EDeviceExport[], outputSection = section) {
+/**
+ * XX实时库 id 计算：key_to_long(table_id, field_id, key_no, area_no=0)
+ * = (table_id << 48) + (field_id << 32) + (area_no << 24) + key_no
+ * 平台实际输出：记录 id 的 field_id 恒为 0（如 generatingunit 第一行 = key_to_long(411,0,1)），
+ * key_no 为表内行号（从 1 开始）。
+ * 注意：结果可能超过 JS Number 安全整数范围（2^48 * 表号 > 2^53），必须用 BigInt 计算并返回字符串。
+ */
+export function keyToLong(tableId: string | number, fieldId: number, keyNo: number, areaNo = 0): string {
+  const table = Number.parseInt(String(tableId).trim(), 10);
+  if (!Number.isFinite(table) || table < 0) {
+    return "0";
+  }
+  const result =
+    (BigInt(table) << 48n) +
+    (BigInt(fieldId) << 32n) +
+    (BigInt(areaNo) << 24n) +
+    BigInt(keyNo);
+  return result.toString();
+}
+
+function formatESection(section: string, rows: EDeviceExport[], outputSection = section, tableId?: string) {
   const columns = eSectionColumns(section, rows);
   const formattedRows = sortESectionRecordsByIdx(rows)
-    .map((record, rowIndex) => columns.map((column) => formatEDeviceRecordColumnValue(section, record, column, rowIndex)));
+    .map((record, rowIndex) => columns.map((column) => {
+      // XX实时库模板：id 字段按 key_to_long(表号, 0, 行号) 计算（行号从 1 开始）
+      if (column === "id" && tableId) {
+        return keyToLong(tableId, 0, rowIndex + 1);
+      }
+      return formatEDeviceRecordColumnValue(section, record, column, rowIndex);
+    }));
   return formatEFileSectionRows(outputSection, columns, formattedRows);
 }
 
-function buildBasevalueParameterRecord(project: ProjectFile): EDeviceExport {
+function buildBasevalueParameterRecord(project: ProjectFile, columns?: string[]): EDeviceExport {
   return {
     id: "basevalue-1",
     kind: "model",
     section: "basevalue",
-    columns: ["p_base", "p_scale", "u_scale"],
+    columns: columns?.length ? columns : ["p_base", "p_scale", "u_scale"],
     params: {
       p_base: String(project.powerBaseValue ?? DEFAULT_POWER_BASE_VALUE),
       p_scale: "1.0",
@@ -1885,37 +1954,45 @@ function buildBasevalueParameterRecord(project: ProjectFile): EDeviceExport {
   };
 }
 
-function buildBasevoltageParameterRecords(): EDeviceExport[] {
+function buildBasevoltageParameterRecords(columns?: string[]): EDeviceExport[] {
   const settings = readVoltageLevelSettings();
   const allLevels: Array<{ name: string; vltp: string }> = [
     ...settings.ac.map((row) => ({ name: row.name, vltp: row.vltp })),
     ...settings.dc.map((row) => ({ name: row.name, vltp: row.vltp }))
   ];
-  return allLevels.map((level, index) => ({
-    id: `basevoltage-${index + 1}`,
-    kind: "model",
-    section: "basevoltage",
-    columns: ["idx", "name", "vltp"],
-    params: { idx: String(index + 1), name: level.name, vltp: level.vltp }
-  }));
+  return allLevels.map((level, index) => {
+    // 模板模式下电压值写入模板电压字段（nomvol/name 等），非模板模式用 idx/name/vltp
+    const params: Record<string, string> = { idx: String(index + 1), name: level.name, vltp: level.vltp };
+    if (columns?.length) {
+      if (columns.includes("nomvol")) params.nomvol = level.vltp;
+      if (columns.includes("name")) params.name = level.name;
+    }
+    return {
+      id: `basevoltage-${index + 1}`,
+      kind: "model",
+      section: "basevoltage",
+      columns: columns?.length ? columns : ["idx", "name", "vltp"],
+      params
+    };
+  });
 }
 
-function buildSubcontrolareaParameterRecord(project: ProjectFile): EDeviceExport {
+function buildSubcontrolareaParameterRecord(project: ProjectFile, columns?: string[]): EDeviceExport {
   return {
     id: "subcontrolarea-1",
     kind: "model",
     section: "subcontrolarea",
-    columns: ["idx", "name"],
+    columns: columns?.length ? columns : ["idx", "name"],
     params: { idx: "1", name: String(project.subcontrolarea ?? "").trim() || "默认区域" }
   };
 }
 
-function buildSubstationParameterRecord(project: ProjectFile, idv: string): EDeviceExport {
+function buildSubstationParameterRecord(project: ProjectFile, idv: string, columns?: string[]): EDeviceExport {
   return {
     id: "substation-1",
     kind: "model",
     section: "substation",
-    columns: ["idx", "name", "idv"],
+    columns: columns?.length ? columns : ["idx", "name", "idv"],
     params: { idx: "1", name: String(project.substation ?? "").trim() || "默认厂站", idv }
   };
 }
@@ -1955,6 +2032,17 @@ export function buildEDeviceHeaderParameterRecords(
   if (!hasTemplateConfig(options)) {
     return [buildPowerBaseParameterRecord(project, schemePath), ...buildBasevoltageParameterRecords()];
   }
+  // 模板模式下头表按模板字段输出（含 id 列，导出时经 key_to_long 计算），与「查看/编辑E文件」展示一致
+  const interfaceDefinitionBySection = eFileInterfaceDefinitionIndex(options);
+  const templateColumnsForSection = (section: string) => {
+    const definition = interfaceDefinitionBySection.get(section);
+    if (!definition?.fields || definition.fields.length === 0) {
+      return undefined;
+    }
+    return definition.fields
+      .map((field) => String(field.exportName ?? field.sourceName ?? "").trim())
+      .filter(Boolean);
+  };
   // substation idv = max(unit 的 ind 对应的 node 的 vbase 对应的 basevoltage idx)（与导出一致）
   const recordsBySection = new Map<string, EDeviceExport[]>();
   for (const record of records) {
@@ -1977,10 +2065,10 @@ export function buildEDeviceHeaderParameterRecords(
   }).filter((idx) => idx > 0);
   const substationIdv = basevoltageIdxs.length > 0 ? String(Math.max(...basevoltageIdxs)) : "0";
   return [
-    buildBasevalueParameterRecord(project),
-    ...buildBasevoltageParameterRecords(),
-    buildSubcontrolareaParameterRecord(project),
-    buildSubstationParameterRecord(project, substationIdv)
+    buildBasevalueParameterRecord(project, templateColumnsForSection("basevalue")),
+    ...buildBasevoltageParameterRecords(templateColumnsForSection("basevoltage")),
+    buildSubcontrolareaParameterRecord(project, templateColumnsForSection("subcontrolarea")),
+    buildSubstationParameterRecord(project, substationIdv, templateColumnsForSection("substation"))
   ];
 }
 
@@ -2006,12 +2094,155 @@ export function orderEDeviceRecordsForExport(records: readonly EDeviceExport[]):
   });
 }
 
+/**
+ * XX实时库引用字段 → 目标表表号 映射（依据平台真实输出 result_rtdb.e）：
+ * st_id/ist_id/jst_id → substation(00405)；bv_id → basevoltage(00401)；
+ * subarea_id → subcontrolarea(00404)；aclnseg_id → aclinesegment(00414)；
+ * tr_id/itrfm → powertransformer(00416)；tapty_id → taptype(00418)。
+ * ind/jnd/nd/tpnd 为节点号（小数字），不参与 id 计算。
+ */
+const E_REFERENCE_FIELD_TABLE_IDS: Record<string, string> = {
+  st_id: "00405",
+  ist_id: "00405",
+  jst_id: "00405",
+  bv_id: "00401",
+  subarea_id: "00404",
+  aclnseg_id: "00414",
+  tr_id: "00416",
+  itrfm: "00416",
+  tapty_id: "00418",
+  dcln_id: "00426"
+};
+
+/**
+ * 对模板模式下的记录，将指向其他表 id 的引用字段（st_id/bv_id 等）替换为
+ * 目标表记录的计算后 id（key_to_long(目标表号, 0, 目标行号)）。
+ * 目标行号：st_id 等厂站/区域引用取第 1 行（默认厂站/默认区域）；bv_id 按设备
+ * vbase 匹配 basevoltage 行号；tr_id/itrfm 按绕组所属变压器 idx 映射到
+ * powertransformer 行号；其余按记录内已有值映射（无值时取 1）。
+ */
+function applyEReferenceIdValues(
+  project: ProjectFile,
+  records: readonly EDeviceExport[],
+  options: EFileExportOptions
+): void {
+  if (!hasTemplateConfig(options)) {
+    return;
+  }
+  // 构建每个 section 的「idx → 行号」映射（按 idx 数值排序后从 1 计数）
+  const sectionRowByIdx = new Map<string, Map<string, number>>();
+  const recordsBySection = new Map<string, EDeviceExport[]>();
+  for (const record of records) {
+    const list = recordsBySection.get(record.section) ?? [];
+    list.push(record);
+    recordsBySection.set(record.section, list);
+  }
+  for (const [section, sectionRecords] of recordsBySection) {
+    const sorted = sortESectionRecordsByIdx(sectionRecords);
+    const rowByIdx = new Map<string, number>();
+    sorted.forEach((record, index) => {
+      const idx = String(record.params.idx ?? "").trim();
+      if (idx) {
+        rowByIdx.set(idx, index + 1);
+      }
+    });
+    sectionRowByIdx.set(section, rowByIdx);
+  }
+  // basevoltage 行号：vltp 值 → 行号（导出中 basevoltage 段的行号，ac 在前 dc 在后）
+  const basevoltageLevels = readVoltageLevelSettings();
+  const allLevels = [...basevoltageLevels.ac, ...basevoltageLevels.dc];
+  const basevoltageRowForVltp = (vltp: string): number => {
+    // 精确匹配（ac 优先，dc 的 0 不会覆盖 ac 的 0）
+    const acIndex = basevoltageLevels.ac.findIndex((level) => String(level.vltp).trim() === vltp);
+    if (acIndex >= 0) {
+      return acIndex + 1;
+    }
+    const dcIndex = basevoltageLevels.dc.findIndex((level) => String(level.vltp).trim() === vltp);
+    return dcIndex >= 0 ? basevoltageLevels.ac.length + dcIndex + 1 : 1;
+  };
+
+  const targetRowFor = (record: EDeviceExport, column: string, options: { preferSection?: string } = {}): number => {
+    if (column === "bv_id") {
+      const vbase = String(record.params._vbase ?? record.params.vbase ?? "").trim() || "0";
+      return basevoltageRowForVltp(vbase);
+    }
+    if (column === "tr_id" || column === "itrfm") {
+      // 绕组记录中已携带所属变压器 idx（itrfm 字段）
+      const transformerIdx = String(record.params.itrfm ?? record.params.tr_id ?? "").trim();
+      const rowByIdx = sectionRowByIdx.get("ACTransformer") ?? sectionRowByIdx.get("powertransformer");
+      if (transformerIdx && rowByIdx) {
+        const row = rowByIdx.get(transformerIdx);
+        if (row) {
+          return row;
+        }
+      }
+      return 1;
+    }
+    if (column === "aclnseg_id") {
+      const segmentIdx = String(record.params.aclnseg_id ?? "").trim();
+      const rowByIdx = sectionRowByIdx.get("ACBranch");
+      if (segmentIdx && rowByIdx) {
+        const row = rowByIdx.get(segmentIdx);
+        if (row) {
+          return row;
+        }
+      }
+      return 1;
+    }
+    if (column === "dcln_id") {
+      const segmentIdx = String(record.params.dcln_id ?? "").trim();
+      const rowByIdx = sectionRowByIdx.get("DCBranch");
+      if (segmentIdx && rowByIdx) {
+        const row = rowByIdx.get(segmentIdx);
+        if (row) {
+          return row;
+        }
+      }
+      return 1;
+    }
+    if (column === "tapty_id") {
+      const taptyIdx = String(record.params.tapty_id ?? "").trim();
+      const rowByIdx = sectionRowByIdx.get("taptype");
+      if (taptyIdx && rowByIdx) {
+        const row = rowByIdx.get(taptyIdx);
+        if (row) {
+          return row;
+        }
+      }
+      return 1;
+    }
+    // st_id / ist_id / jst_id / subarea_id：默认厂站/区域第 1 行
+    return 1;
+  };
+
+  for (const record of records) {
+    const columns = eSectionColumns(record.section, [record]);
+    for (const column of columns) {
+      const targetTableId = E_REFERENCE_FIELD_TABLE_IDS[column];
+      if (!targetTableId) {
+        continue;
+      }
+      const current = String(record.params[column] ?? "").trim();
+      // 已有合法 id（大数字）或模板未配置引用时跳过；空值/0/小序号则替换为目标表计算 id
+      const numeric = Number(current);
+      if (current && Number.isFinite(numeric) && numeric > 10 ** 14) {
+        continue;
+      }
+      if (current === "" || current === "0" || (Number.isFinite(numeric) && numeric < 10 ** 14)) {
+        record.params[column] = keyToLong(targetTableId, 0, targetRowFor(record, column));
+      }
+    }
+  }
+}
+
 function buildEDeviceParameterFileFromRecords(
   project: ProjectFile,
   schemePath: string[],
   options: EFileExportOptions,
   records: readonly EDeviceExport[]
 ) {
+  // XX实时库模板：将指向其他表 id 的引用字段（st_id/bv_id 等）替换为目标表记录的计算后 id
+  applyEReferenceIdValues(project, records, options);
   const interfaceDefinitionBySection = eFileInterfaceDefinitionIndex(options);
   const recordsBySection = new Map<string, EDeviceExport[]>();
   for (const record of records) {
@@ -2050,11 +2281,13 @@ function buildEDeviceParameterFileFromRecords(
         });
       }
     }
-    return formatESection(groups[0].section, allRecords, outputSection);
+    return formatESection(groups[0].section, allRecords, outputSection, interfaceDefinitionBySection.get(groups[0].section)?.tableId);
   });
   // 头表（模板模式：basevalue/basevoltage/subcontrolarea/substation；非模板模式：Model/basevoltage），
   // 与「查看/编辑E文件」弹窗展示共用同一份记录，保证展示与导出完全一致
   const headerRecords = buildEDeviceHeaderParameterRecords(project, sectionedRecords, options, schemePath);
+  // 头表引用字段（如 substation.subarea_id → subcontrolarea）同步为目标表 id
+  applyEReferenceIdValues(project, headerRecords, options);
   const headerBlocks: string[] = [];
   for (let index = 0; index < headerRecords.length;) {
     const section = headerRecords[index].section;
@@ -2063,7 +2296,7 @@ function buildEDeviceParameterFileFromRecords(
       group.push(headerRecords[index]);
       index += 1;
     }
-    headerBlocks.push(formatESection(section, group, section));
+    headerBlocks.push(formatESection(section, group, section, interfaceDefinitionBySection.get(section)?.tableId));
   }
   return [...headerBlocks, ...sectionBlocks].join("\n\n") + "\n";
 }
@@ -2127,6 +2360,7 @@ export type EDeviceDefinitionSection = {
   isDerivedComponentLibrary?: boolean;
   isContainerComponentLibrary?: boolean;
   exportEnabled?: boolean;
+  tableId?: string;
   fields: EDeviceDefinitionField[];
 };
 
@@ -2482,6 +2716,7 @@ export function parseEDeviceDefinitionFile(text: string): EDeviceDefinitionSecti
         isDerivedComponentLibrary: derivedAttr ? eDefinitionAttrIsYes(derivedAttr) : undefined,
         isContainerComponentLibrary: containerAttr ? eDefinitionAttrIsYes(containerAttr) : undefined,
         exportEnabled: exportEnabledAttr ? eDefinitionAttrIsYes(exportEnabledAttr) : true,
+        tableId: matchEDefinitionAttr(attrText, "表号") || undefined,
         fields
       });
     }
