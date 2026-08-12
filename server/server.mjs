@@ -662,51 +662,6 @@ const gasQuantityMeasurementType = {
   defaultDecimals: 2,
   defaultVisible: true
 };
-const electricStorageMeasurementProfileKinds = new Set(["ac-storage", "dc-storage"]);
-const hydrogenTankMeasurementProfileKinds = new Set([
-  "hydrogen-tank",
-  "hydrogen-tank-horizontal",
-  "hydrogen-tank-container"
-]);
-const hydrogenTankLegacyLabelOverrides = new Map([
-  ["pressure", "PRESS"],
-  ["flow", "FLOW"],
-  ["gasQuantity", "GAS_QUANTITY"],
-  ["soc", "SOC"]
-]);
-const hydrogenTankMeasurementProfileItems = [
-  { measurementTypeId: "pressure", associatedField: "pressure", unitOverride: "MPa" },
-  { measurementTypeId: "flow", associatedField: "flow", unitOverride: "Nm3/h" },
-  { measurementTypeId: "gasQuantity", associatedField: "gas_quantity", unitOverride: "Nm3" },
-  { measurementTypeId: "soc", associatedField: "soc", unitOverride: "%" }
-];
-
-function migrateHydrogenTankLegacyLabelOverride(item) {
-  const legacyLabel = hydrogenTankLegacyLabelOverrides.get(String(item?.measurementTypeId ?? "").trim());
-  if (!legacyLabel || String(item?.labelOverride ?? "").trim() !== legacyLabel) {
-    return item;
-  }
-  return { ...item, labelOverride: undefined };
-}
-
-function migrateHydrogenTankMeasurementProfileItems(deviceKind, items) {
-  if (!hydrogenTankMeasurementProfileKinds.has(deviceKind)) {
-    return items;
-  }
-  const legacyIds = items.map((item) => String(item?.measurementTypeId ?? "").trim());
-  const legacySignature = legacyIds.join("|");
-  const migratedItems = legacyIds.length === 3 && [
-    "pressure|level|temperature",
-    "pressure|flow|gasQuantity"
-  ].includes(legacySignature)
-    ? hydrogenTankMeasurementProfileItems.map((replacement, index) => ({
-        ...(items[index] ?? {}),
-        ...replacement
-      }))
-    : items;
-  return migratedItems.map(migrateHydrogenTankLegacyLabelOverride);
-}
-
 const defaultMeasurementGroupDefaults = Object.freeze({
   backgroundColor: "transparent",
   borderColor: "#64748b",
@@ -737,36 +692,9 @@ function normalizeMeasurementDefaultFontSize(id, value) {
   return builtinMeasurementTypeIds.has(id) && size === 12 ? 14 : size;
 }
 
-function normalizeMeasurementStyleOverride(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return undefined;
-  }
-  const style = {};
-  if (typeof value.color === "string" && value.color.trim()) {
-    style.color = value.color.trim();
-  }
-  if (typeof value.fontFamily === "string" && value.fontFamily.trim()) {
-    style.fontFamily = value.fontFamily.trim();
-  }
-  if (Number.isFinite(Number(value.fontSize))) {
-    style.fontSize = Math.max(6, Math.min(96, Number(value.fontSize)));
-  }
-  if (value.fontWeight === "400" || value.fontWeight === "500" || value.fontWeight === "700") {
-    style.fontWeight = value.fontWeight;
-  }
-  if (value.fontStyle === "italic") {
-    style.fontStyle = "italic";
-  }
-  if (value.textDecoration === "underline") {
-    style.textDecoration = "underline";
-  }
-  return Object.keys(style).length > 0 ? style : undefined;
-}
-
 export function normalizeMeasurementConfig(payload) {
   const source = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
   const groupDefaults = normalizeMeasurementGroupDefaults(source.groupDefaults);
-  const rawProfiles = Array.isArray(source.deviceProfiles) ? source.deviceProfiles : [];
   const configuredTypes = Array.isArray(source.measurementTypes) ? source.measurementTypes : [];
   const rawTypes = [...configuredTypes];
   if (!rawTypes.some((item) => String(item?.id ?? "").trim() === storageSocMeasurementType.id)) {
@@ -803,52 +731,7 @@ export function normalizeMeasurementConfig(payload) {
       defaultVisible: item.defaultVisible !== false
     }];
   });
-  const validTypeIds = new Set(measurementTypes.map((item) => item.id));
-  const seenProfiles = new Set();
-  const deviceProfiles = rawProfiles.flatMap((profile) => {
-    if (!profile || typeof profile !== "object" || Array.isArray(profile)) {
-      return [];
-    }
-    const deviceKind = String(profile.deviceKind ?? "").trim();
-    if (!deviceKind || seenProfiles.has(deviceKind)) {
-      return [];
-    }
-    seenProfiles.add(deviceKind);
-    const profileItems = migrateHydrogenTankMeasurementProfileItems(
-      deviceKind,
-      Array.isArray(profile.items) ? profile.items : []
-    );
-    const items = profileItems.flatMap((item) => {
-      if (!item || typeof item !== "object" || Array.isArray(item)) {
-        return [];
-      }
-      const rawMeasurementTypeId = String(item.measurementTypeId ?? "").trim();
-      const measurementTypeId = electricStorageMeasurementProfileKinds.has(deviceKind) && rawMeasurementTypeId === "level"
-        ? "soc"
-        : rawMeasurementTypeId;
-      if (!measurementTypeId || !validTypeIds.has(measurementTypeId)) {
-        return [];
-      }
-      return [{
-        name: item.name !== undefined ? String(item.name) : undefined,
-        measurementTypeId,
-        position: item.position !== undefined ? String(item.position).trim() || undefined : undefined,
-        associatedField: item.associatedField !== undefined
-          ? String(item.associatedField).trim().replace(/^(?:gasQuantity|gasquantity)$/u, "gas_quantity") || undefined
-          : undefined,
-        role: item.role ? String(item.role) : undefined,
-        defaultVisible: item.defaultVisible,
-        labelOverride: item.labelOverride ? String(item.labelOverride) : undefined,
-        unitOverride: item.unitOverride ? String(item.unitOverride) : undefined,
-        decimalsOverride: item.decimalsOverride === undefined
-          ? undefined
-          : Math.max(0, Math.min(8, Number.isFinite(Number(item.decimalsOverride)) ? Number(item.decimalsOverride) : 3)),
-        styleOverride: normalizeMeasurementStyleOverride(item.styleOverride)
-      }];
-    });
-    return [{ deviceKind, items }];
-  });
-  return { groupDefaults, measurementTypes, deviceProfiles };
+  return { groupDefaults, measurementTypes };
 }
 
 export async function readMeasurementConfig() {
@@ -862,8 +745,7 @@ export async function readMeasurementConfig() {
   return {
     exists: false,
     groupDefaults: { ...defaultMeasurementGroupDefaults },
-    measurementTypes: [],
-    deviceProfiles: []
+    measurementTypes: []
   };
 }
 
@@ -3045,83 +2927,15 @@ function serverMeasurementTypeById(config) {
   return new Map((config?.measurementTypes ?? []).map((item) => [item.id, item]));
 }
 
-function serverBaseMeasurementDeviceKind(kind) {
-  return kind?.endsWith("-vertical") && kind !== "ac-ground-disconnector-vertical"
-    ? kind.slice(0, -"-vertical".length)
-    : kind;
+function serverMeasurementDefinitionsForNode(node, templateByKind) {
+  const template = templateByKind?.get(String(node?.kind ?? ""));
+  return Array.isArray(template?.measurementDefinitions) ? template.measurementDefinitions : [];
 }
 
-function serverFallbackMeasurementProfileKinds(kind) {
-  const baseKind = serverBaseMeasurementDeviceKind(kind);
-  const fallbacks = [];
-  const push = (profileKind) => {
-    if (profileKind !== baseKind && !fallbacks.includes(profileKind)) fallbacks.push(profileKind);
-  };
-  if (baseKind.includes("transformer")) push("ac-transformer");
-  if (baseKind.includes("converter")) push("converter");
-  if (baseKind.includes("line") || baseKind.includes("branch")) {
-    if (baseKind.startsWith("ac-")) push("ac-line");
-    if (baseKind.startsWith("dc-")) push("dc-line");
-    if (baseKind.startsWith("heat-")) push("heat-pipeline");
-  }
-  if (baseKind.includes("pipeline")) {
-    if (baseKind.startsWith("hydrogen-")) push("hydrogen-pipeline");
-    if (baseKind.startsWith("heat-")) push("heat-pipeline");
-  }
-  if (baseKind.includes("bus")) {
-    if (baseKind.startsWith("ac-")) push("ac-bus");
-    if (baseKind.startsWith("dc-")) push("dc-bus");
-    if (baseKind.startsWith("heat-")) push("heat-bus");
-    if (baseKind.startsWith("hydrogen-")) push("hydrogen-pipeline");
-  }
-  if (baseKind.includes("switch") || baseKind.includes("disconnector")) {
-    if (baseKind.startsWith("ac-")) push("ac-switch");
-    if (baseKind.startsWith("dc-")) push("dc-switch");
-  }
-  if (baseKind.includes("breaker")) {
-    if (baseKind.startsWith("ac-")) push("ac-breaker");
-    if (baseKind.startsWith("dc-")) push("dc-breaker");
-  }
-  if (baseKind.includes("storage")) {
-    if (baseKind.startsWith("ac-")) push("ac-storage");
-    if (baseKind.startsWith("dc-")) push("dc-storage");
-  }
-  if (baseKind.includes("load")) {
-    if (baseKind.startsWith("ac-")) push("ac-load");
-    if (baseKind.startsWith("dc-")) push("dc-load");
-    if (baseKind.startsWith("heat-") || baseKind.startsWith("single-port-heat-") || baseKind.startsWith("two-port-heat-")) push("heat-load");
-    if (baseKind.startsWith("hydrogen-")) push("hydrogen-load");
-  }
-  if (baseKind.includes("source") || baseKind.includes("generator")) {
-    if (baseKind.startsWith("ac-")) push("ac-source");
-    if (baseKind.startsWith("dc-")) push("dc-source");
-    if (baseKind.startsWith("heat-") || baseKind.startsWith("two-port-heat-")) push("heat-source");
-    if (baseKind.startsWith("hydrogen-")) push("hydrogen-source");
-  }
-  if (baseKind.includes("heater")) {
-    if (baseKind.startsWith("ac-")) push("ac-source");
-    if (baseKind.startsWith("dc-")) push("dc-source");
-  }
-  if (baseKind.startsWith("heat-") || baseKind.startsWith("two-port-heat-") || baseKind.startsWith("three-port-heat-") || baseKind.startsWith("four-port-heat-")) push("heat-source");
-  if (baseKind.startsWith("hydrogen-")) push("hydrogen-source");
-  if (baseKind.startsWith("ac-")) push("ac-source");
-  if (baseKind.startsWith("dc-")) push("dc-source");
-  return fallbacks;
-}
-
-function serverMeasurementProfileForNode(node, config) {
-  const profiles = config?.deviceProfiles ?? [];
-  const kind = String(node?.kind ?? "");
-  const baseKind = serverBaseMeasurementDeviceKind(kind);
-  const directKeys = [...new Set([inferESection(kind, node?.params ?? {}), kind, baseKind].filter(Boolean))];
-  return directKeys.flatMap((profileKind) => profiles.find((profile) => profile.deviceKind === profileKind) ?? [])[0]
-    ?? serverFallbackMeasurementProfileKinds(baseKind).flatMap((profileKind) => profiles.find((profile) => profile.deviceKind === profileKind) ?? [])[0];
-}
-
-function resolveServerMeasurementBindingMetadata(node, group, item, measurementConfig) {
+function resolveServerMeasurementBindingMetadata(node, group, item, templateByKind) {
   const measurementTypeId = String(item?.measurementTypeId ?? "").trim();
   const sourcePoint = String(item?.sourcePoint ?? "").trim();
-  const profileItems = serverMeasurementProfileForNode(node, measurementConfig)?.items?.filter((candidate) =>
+  const profileItems = serverMeasurementDefinitionsForNode(node, templateByKind).filter((candidate) =>
     candidate.measurementTypeId === measurementTypeId && (candidate.role ?? "") === (item?.role ?? "")
   ) ?? [];
   const profileItem = profileItems.find((candidate) => group?.terminalId
@@ -3147,10 +2961,10 @@ function resolveServerMeasurementBindingMetadata(node, group, item, measurementC
   return { measurementTypeId, bindingField, sourcePoint };
 }
 
-function resolveServerMeasurementItemDisplay(node, group, item, measurementConfig) {
+function resolveServerMeasurementItemDisplay(node, group, item, measurementConfig, templateByKind) {
   const type = serverMeasurementTypeById(measurementConfig).get(item?.measurementTypeId);
-  const profileItem = serverMeasurementProfileForNode(node, measurementConfig)
-    ?.items?.find((candidate) => candidate.measurementTypeId === item?.measurementTypeId && (candidate.role ?? "") === (item?.role ?? ""));
+  const profileItem = serverMeasurementDefinitionsForNode(node, templateByKind)
+    .find((candidate) => candidate.measurementTypeId === item?.measurementTypeId && (candidate.role ?? "") === (item?.role ?? ""));
   const style = {
     ...(profileItem?.styleOverride ?? {}),
     ...(group?.groupStyleOverride ?? {}),
@@ -3228,13 +3042,78 @@ function serverExportMeasurementValueElementId(itemId, deviceId) {
   return `mv-${itemKey || stableDeviceId || "measurement"}`;
 }
 
-function buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, usedIds, deviceId = node.id) {
+const serverContainerRelationDeviceModelByKey = Object.freeze({
+  ac_unit: "ACGenerator",
+  ac_load: "ACLoad",
+  ac_transformer: "ACTransformer",
+  ac2_unit: "TwoPortACGenerator",
+  ac2_load: "TwoPortACLoad",
+  dc_unit: "DCGenerator",
+  dc_load: "DCLoad",
+  dc2_unit: "TwoPortDCGenerator",
+  dc2_load: "TwoPortDCLoad",
+  h2_unit: "HydroSource",
+  h2_load: "HydroLoad",
+  h22_unit: "TwoPortHydrogenSource",
+  h22_load: "TwoPortHydrogenLoad",
+  heat_unit: "HeatSource",
+  heat_load: "HeatLoad",
+  heat2_unit: "HeatSource2",
+  heat2_load: "HeatLoad2"
+});
+
+function parseServerContainerRelationKey(relationKey) {
+  const transformerMatch = /^idx_xf_t(\d+)$/u.exec(String(relationKey ?? ""));
+  if (transformerMatch) {
+    return { relationKey, deviceModel: "ACTransformer", terminalNumber: Number(transformerMatch[1]), doublePort: false };
+  }
+  const match = /^idx_(ac2|dc2|h22|heat2|ac|dc|h2|heat)_(unit|load|transformer)_t(\d+)$/u.exec(String(relationKey ?? ""));
+  if (!match) return undefined;
+  const [, energy, role, terminalNumber] = match;
+  const deviceModel = serverContainerRelationDeviceModelByKey[`${energy}_${role}`];
+  if (!deviceModel) return undefined;
+  return {
+    relationKey,
+    deviceModel,
+    terminalNumber: Number(terminalNumber),
+    doublePort: energy === "ac2" || energy === "dc2" || energy === "h22" || energy === "heat2"
+  };
+}
+
+function serverAssociatedDeviceIdentityForTerminal(node, terminalId) {
+  const normalizedTerminalId = String(terminalId ?? "").trim();
+  if (!normalizedTerminalId) return undefined;
+  const terminalIndex = (node?.terminals ?? []).findIndex((terminal) => String(terminal?.id ?? "") === normalizedTerminalId);
+  const terminalNumber = terminalIndex >= 0
+    ? terminalIndex + 1
+    : Number(/^t(\d+)$/u.exec(normalizedTerminalId)?.[1] ?? 0);
+  if (!terminalNumber) return undefined;
+  const relations = Object.keys(node?.params ?? {})
+    .map(parseServerContainerRelationKey)
+    .filter(Boolean);
+  const relation = relations.find((candidate) => candidate.terminalNumber === terminalNumber)
+    ?? relations.find((candidate) => candidate.doublePort && candidate.terminalNumber + 1 === terminalNumber);
+  if (!relation) return undefined;
+  const index = String(node?.params?.[relation.relationKey] ?? "").trim();
+  if (!index) return undefined;
+  const nameKey = relation.relationKey.replace(/^idx_/u, "name_");
+  const terminalLabel = String(node?.terminals?.[terminalNumber - 1]?.label ?? `端子${terminalNumber}`).trim();
+  const name = String(node?.params?.[nameKey] ?? "").trim() || `${String(node?.name ?? "耦合设备").trim()}_${terminalLabel}`;
+  return {
+    deviceModel: relation.deviceModel,
+    index,
+    deviceId: `${relation.deviceModel}-${index}`,
+    name
+  };
+}
+
+function buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, usedIds, options = {}) {
   if (!group?.visible) {
     return "";
   }
   const fontScale = measurementFontScaleForServerNode(node);
   const rows = (group.items ?? []).flatMap((item) => {
-    const display = resolveServerMeasurementItemDisplay(node, group, item, measurementConfig);
+    const display = resolveServerMeasurementItemDisplay(node, group, item, measurementConfig, options.templateByKind);
     if (!display.visible) {
       return [];
     }
@@ -3257,16 +3136,17 @@ function buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, us
   const position = serverMeasurementGroupPosition(node, group);
   const dashArray = measurementBorderDashArray(group);
   const dashAttribute = dashArray ? ` stroke-dasharray="${escapeSvgAttribute(dashArray)}"` : "";
-  const stableDeviceId = String(deviceId ?? node.id ?? "");
+  const stableDeviceId = String(options.deviceId ?? node.id ?? "");
+  const ownerDeviceId = String(options.ownerDeviceId ?? stableDeviceId);
   const rowsMarkup = rows.map((row, index) => {
     const col = columns <= 1 ? 0 : index % columns;
     const rowIndex = columns <= 1 ? index : Math.floor(index / columns);
     const textX = -width / 2 + col * columnWidth + 7;
     const textY = -height / 2 + rowIndex * lineHeight + lineHeight / 2;
     const textGap = Math.max(4, row.fontSize * 0.36);
-    const exportedItemId = serverExportMeasurementScopedId(row.item?.id, node?.id, stableDeviceId);
+    const exportedItemId = serverExportMeasurementScopedId(row.item?.id, node?.id, ownerDeviceId);
     const measurementTypeId = String(row.item?.measurementTypeId ?? "").trim();
-    const binding = resolveServerMeasurementBindingMetadata(node, group, row.item, measurementConfig);
+    const binding = resolveServerMeasurementBindingMetadata(node, group, row.item, options.templateByKind);
     const sourceField = serverExportMeasurementSourcePoint(binding.sourcePoint, node?.id, stableDeviceId);
     const itemMetadata = [
       `mt="${escapeSvgAttribute(binding.bindingField)}"`,
@@ -3288,6 +3168,7 @@ function buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, us
   }).join("");
   const groupMetadata = [
     `dev="${escapeSvgAttribute(stableDeviceId)}"`,
+    ownerDeviceId && ownerDeviceId !== stableDeviceId ? `owner-dev="${escapeSvgAttribute(ownerDeviceId)}"` : "",
     group.terminalId ? `term="${escapeSvgAttribute(group.terminalId)}"` : ""
   ].filter(Boolean).join(" ");
   const projectLayerId = String(node?.layerId ?? "layer-default");
@@ -3297,7 +3178,7 @@ ${rowsMarkup}
 </g>`;
 }
 
-export function buildSvgFile(project, measurementConfig = { measurementTypes: [], deviceProfiles: [] }, options = {}) {
+export function buildSvgFile(project, measurementConfig = { measurementTypes: [] }, options = {}) {
   const width = Number(project.canvasWidth ?? 1920);
   const height = Number(project.canvasHeight ?? 1024);
   const nodes = Array.isArray(project.nodes) ? project.nodes : [];
@@ -3310,6 +3191,7 @@ export function buildSvgFile(project, measurementConfig = { measurementTypes: []
     : Array.isArray(project.deviceTemplates)
       ? project.deviceTemplates
       : [];
+  const normalizedMeasurementConfig = normalizeMeasurementConfig(measurementConfig);
   const templateByKind = new Map(deviceTemplates.map((template) => [template?.kind, template]).filter(([kind]) => kind));
   const usedIds = new Set(["root_g"]);
   const backgroundLayerId = uniqueSvgId(svgLayerId("Background", "Background"), usedIds, "Background_Layer");
@@ -3454,13 +3336,40 @@ ${(nodeMarkupByLayer.get(layerId) ?? []).join("\n")}
 </g>`)
     .join("\n");
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const associatedDeviceIdentityByNodeTerminal = new Map();
+  const associatedDeviceIdentity = (node, terminalId) => {
+    const key = `${String(node?.id ?? "")}:${String(terminalId ?? "")}`;
+    if (!associatedDeviceIdentityByNodeTerminal.has(key)) {
+      associatedDeviceIdentityByNodeTerminal.set(key, serverAssociatedDeviceIdentityForTerminal(node, terminalId));
+    }
+    return associatedDeviceIdentityByNodeTerminal.get(key);
+  };
   const measurementMarkup = (project.measurements?.groups ?? [])
     .map((group) => {
       const node = nodeById.get(group.nodeId);
       if (!node || isStaticNode(node)) return "";
-      return buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, usedIds, exportDeviceIdByNodeId.get(node.id) ?? node.id);
+      const ownerDeviceId = exportDeviceIdByNodeId.get(node.id) ?? node.id;
+      const associatedDevice = associatedDeviceIdentity(node, group.terminalId);
+      return buildServerSvgMeasurementGroupMarkup(node, group, normalizedMeasurementConfig, usedIds, {
+        deviceId: associatedDevice?.deviceId ?? ownerDeviceId,
+        ownerDeviceId,
+        templateByKind
+      });
     })
     .filter(Boolean)
+    .join("\n");
+  const associatedDevices = Array.from(associatedDeviceIdentityByNodeTerminal.values())
+    .filter(Boolean)
+    .filter((identity, index, identities) => identities.findIndex((candidate) => candidate.deviceId === identity.deviceId) === index);
+  const associatedDeviceMetadataMarkup = Array.from(new Set(associatedDevices.map((identity) => identity.deviceModel)))
+    .sort((left, right) => left.localeCompare(right))
+    .map((deviceModel) => `<g device-type="${escapeSvgAttribute(deviceModel)}">
+${associatedDevices
+      .filter((identity) => identity.deviceModel === deviceModel)
+      .sort((left, right) => left.index.localeCompare(right.index))
+      .map((identity) => `<g dev-id="${escapeSvgAttribute(identity.deviceId)}" name="${escapeSvgAttribute(identity.name)}" idx="${escapeSvgAttribute(identity.index)}"/>`)
+      .join("\n")}
+</g>`)
     .join("\n");
   const backgroundMarkup = `<rect width="100%" height="100%" fill="${escapeSvgAttribute(backgroundColor)}"/>
 ${backgroundImage ? svgImageContentMarkup(backgroundImage, {
@@ -3477,6 +3386,9 @@ ${backgroundImage ? svgImageContentMarkup(backgroundImage, {
 ${symbolMarkup.join("\n")}
 </defs>
 <g id="root_g">
+<g class="export-associated-device-definitions" style="display:none">
+${associatedDeviceMetadataMarkup}
+</g>
 <g id="${escapeSvgAttribute(backgroundLayerId)}">
 ${backgroundMarkup}
 </g>
@@ -3825,9 +3737,9 @@ export async function saveSchemeProjectRecord(options) {
     await Promise.all(Object.values(previousPaths).map((filePath) => archiveSchemeStoreEntry(filePath, filesRoot, trashRoot, schemeArchiveId())));
   }
   const { jsonPath, ePath, svgPath } = projectFilePathsForName(schemeDir, name);
-  const measurementConfig = options.measurementConfig ?? { measurementTypes: [], deviceProfiles: [] };
+  const measurementConfig = options.measurementConfig ?? { measurementTypes: [] };
   const imagePathById = options.imagePathById ?? (await imageExportPathByIdFromManifest(await readManifest()));
-  const svgContent = options.svg ?? buildSvgFile(storedRecord.project, measurementConfig, { imagePathById });
+  const svgContent = options.svg ?? buildSvgFile(storedRecord.project, measurementConfig, { imagePathById, deviceTemplates: options.deviceTemplates });
   const eContent = options.eFile ?? buildDeviceParameterFile(storedRecord.project, schemePath);
   await Promise.all([
     writeTextIfChanged(jsonPath, stringifyJson(storedRecord.project)),
@@ -4458,6 +4370,7 @@ async function handleSaveSchemeProject(request, response) {
     record,
     previousName: payload.previousName,
     measurementConfig: await readMeasurementConfig(),
+    deviceTemplates: payload.deviceTemplates,
     imagePathById: await imageExportPathByIdFromManifest(await readManifest()),
     svg: typeof payload.svg === "string" ? payload.svg : undefined,
     eFile: typeof payload.eFile === "string" ? payload.eFile : undefined

@@ -400,7 +400,7 @@ import {
   type SidePanelSide
 } from "./sidePanelVisibility";
 import {
-  DEFAULT_MEASUREMENT_CONFIG,
+  INITIAL_MEASUREMENT_CONFIG,
   DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR,
   DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR,
   DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE,
@@ -1259,6 +1259,8 @@ const [deviceDefinitionSearchQuery, setDeviceDefinitionSearchQuery] = useState("
 Object.assign(__appScope, { deviceDefinitionSearchQuery, setDeviceDefinitionSearchQuery });
 const [definitionDraftRows, setDefinitionDraftRows] = useState<DeviceDefinitionDraftRow[]>([]);
 Object.assign(__appScope, { definitionDraftRows, setDefinitionDraftRows });
+const [definitionMeasurementDraft, setDefinitionMeasurementDraft] = useState<DeviceMeasurementProfileItem[]>([]);
+Object.assign(__appScope, { definitionMeasurementDraft, setDefinitionMeasurementDraft });
 const [definitionDraftSection, setDefinitionDraftSection] = useState("");
 Object.assign(__appScope, { definitionDraftSection, setDefinitionDraftSection });
 const [definitionDraftSectionEditing, setDefinitionDraftSectionEditing] = useState(false);

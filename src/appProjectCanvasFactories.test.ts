@@ -38,8 +38,9 @@ function createLoadScope(overrides: Record<string, unknown> = {}) {
     hideImperativeMultiNodeDragOverlay: noop,
     lastBusTerminalSyncEndpointRevisionRef: { current: 0 },
     libraryTemplateByKind: new Map(),
+    libraryTemplates: [],
     lockProjectEdgeTerminals: (project: unknown) => project,
-    measurementConfig: { groupDefaults: {}, measurementTypes: [], deviceProfiles: [] },
+    measurementConfig: { groupDefaults: {}, measurementTypes: [] },
     normalizeModelGroups: () => [],
     normalizeNodeTerminalsByTemplate: (node: unknown) => node,
     normalizeNodeTerminalsWithTemplate: (node: unknown) => node,
@@ -48,7 +49,7 @@ function createLoadScope(overrides: Record<string, unknown> = {}) {
     pendingBusTerminalSyncNodeIdsRef: { current: new Set() },
     pendingRouteEdgeIdsRef: { current: new Set() },
     pendingStoredRouteEdgeIdsRef: { current: new Set() },
-    reconcileNodeWithDefinition: (node: unknown) => node,
+    reconcileNodesWithEffectiveTemplateDefinitions: (nodes: unknown[]) => nodes,
     reconcileProjectMeasurementsWithConfig: (measurements: unknown) => measurements,
     requestCanvasFrameCenter: noop,
     resetConnectPreviewState: noop,
@@ -212,14 +213,16 @@ describe("saved project definition migration", () => {
     const storedMeasurements = { version: 1 as const, groups: [{ id: "old-measurement" }] };
     const migratedMeasurements = { version: 1 as const, groups: [{ id: "new-measurement" }] };
     const template = { kind: "known-device" };
-    const reconcileNodeWithDefinition = vi.fn((node) => node.id === knownNode.id ? migratedNode : node);
+    const reconcileNodesWithEffectiveTemplateDefinitions = vi.fn((nodes: Array<typeof knownNode>) =>
+      nodes.map((node) => node.id === knownNode.id ? migratedNode : node)
+    );
     const reconcileProjectMeasurementsWithConfig = vi.fn(() => migratedMeasurements);
     const setGraphArrays = vi.fn();
     const setProjectMeasurements = vi.fn();
     const setHasUnsavedChanges = vi.fn();
     const scope = createLoadScope({
       libraryTemplateByKind: new Map([["known-device", template]]),
-      reconcileNodeWithDefinition,
+      reconcileNodesWithEffectiveTemplateDefinitions,
       reconcileProjectMeasurementsWithConfig,
       setGraphArrays,
       setHasUnsavedChanges,
@@ -240,13 +243,15 @@ describe("saved project definition migration", () => {
       }
     } as any, "scheme-1");
 
-    expect(reconcileNodeWithDefinition).toHaveBeenCalledTimes(1);
-    expect(reconcileNodeWithDefinition).toHaveBeenCalledWith(knownNode, template);
+    expect(reconcileNodesWithEffectiveTemplateDefinitions).toHaveBeenCalledTimes(1);
+    expect(reconcileNodesWithEffectiveTemplateDefinitions).toHaveBeenCalledWith([knownNode, orphanNode], []);
     expect(setGraphArrays).toHaveBeenCalledWith([migratedNode, orphanNode], []);
     expect(reconcileProjectMeasurementsWithConfig).toHaveBeenCalledWith(
       storedMeasurements,
       [migratedNode, orphanNode],
-      scope.measurementConfig
+      scope.measurementConfig,
+      undefined,
+      []
     );
     expect(setProjectMeasurements).toHaveBeenCalledWith(migratedMeasurements);
     expect(setHasUnsavedChanges).toHaveBeenLastCalledWith(false);
@@ -607,7 +612,10 @@ describe("topology calculation operating-limit normalization", () => {
       calls.push("validate");
       return [];
     });
-    const normalizeDeviceOperatingLimitsAfterTopology = vi.fn(() => {
+    const normalizeDeviceOperatingLimitsAfterTopology = vi.fn((
+      _nodes: unknown[],
+      _options: { skipVoltageNodeIds: Set<string> }
+    ) => {
       calls.push("normalize");
       return { nodes: normalizedNodes, warnings: [], corrections: [] };
     });
@@ -675,7 +683,10 @@ describe("topology calculation operating-limit normalization", () => {
       relatedNodeIds: ["node-1"],
       message: "基准电压缺失"
     };
-    const normalizeDeviceOperatingLimitsAfterTopology = vi.fn(() => ({
+    const normalizeDeviceOperatingLimitsAfterTopology = vi.fn((
+      _nodes: unknown[],
+      _options: { skipVoltageNodeIds: Set<string> }
+    ) => ({
       nodes: [normalizedNode],
       warnings: [{
         type: "device-limit-invalid",

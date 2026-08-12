@@ -3,6 +3,12 @@ import type { ProjectMeasurementConfig } from "./measurements";
 import { degreesToRadians } from "./formatUtils";
 import { clampNumber } from "./canvasViewport";
 import { normalizeImageFitMode } from "./imageFit";
+import {
+  cloneDeviceMeasurementDefinitions,
+  createMeasurementFieldParameterDefinition,
+  normalizeDeviceMeasurementDefinitions,
+  type DeviceMeasurementDefinition
+} from "./measurementDefinitionTypes";
 
 // E 文件导出相关代码（从 model.ts 提取到独立模块）
 export * from "./model-eexport";
@@ -378,6 +384,7 @@ export type DeviceTemplate = {
   allowResizeTransform?: boolean;
   custom?: boolean;
   parameterDefinitions?: DeviceParameterDefinition[];
+  measurementDefinitions?: DeviceMeasurementDefinition[];
   stateDefinitions?: DeviceStateDefinition[];
   rotation?: number;
 };
@@ -400,6 +407,7 @@ export type DeviceTemplateDefinitionOverride = {
   derivedComponentLibraryLabel?: string;
   allowResizeTransform?: boolean;
   parameterDefinitions?: DeviceParameterDefinition[];
+  measurementDefinitions?: DeviceMeasurementDefinition[];
   stateDefinitions?: DeviceStateDefinition[];
   updatedAt?: string;
 };
@@ -4683,8 +4691,255 @@ function normalizeDeviceTemplateParameterNames(template: DeviceTemplate): Device
   return {
     ...template,
     params: normalizeDeviceParamRecord(template.params) ?? template.params,
-    parameterDefinitions: template.parameterDefinitions?.map(normalizeDeviceParameterDefinition)
+    parameterDefinitions: template.parameterDefinitions?.map(normalizeDeviceParameterDefinition),
+    measurementDefinitions: cloneDeviceMeasurementDefinitions(template.measurementDefinitions)
   };
+}
+
+const AC_SOURCE_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = [
+  { measurementTypeId: "activePower", associatedField: "p" },
+  { measurementTypeId: "reactivePower", associatedField: "q" },
+  { measurementTypeId: "voltage", associatedField: "u" },
+  { measurementTypeId: "frequency", associatedField: "f" }
+];
+const DC_SOURCE_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = [
+  { measurementTypeId: "activePower", associatedField: "p" },
+  { measurementTypeId: "voltage", associatedField: "u" },
+  { measurementTypeId: "current", associatedField: "i" }
+];
+const AC_LOAD_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = [
+  { measurementTypeId: "activePower", associatedField: "p" },
+  { measurementTypeId: "reactivePower", associatedField: "q" },
+  { measurementTypeId: "voltage", associatedField: "u" },
+  { measurementTypeId: "current", associatedField: "i" }
+];
+const DC_LOAD_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = [
+  { measurementTypeId: "activePower", associatedField: "p" },
+  { measurementTypeId: "voltage", associatedField: "u" },
+  { measurementTypeId: "current", associatedField: "i" }
+];
+const HYDROGEN_COUPLING_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = [
+  { measurementTypeId: "activePower", position: "t1", associatedField: "p" },
+  { measurementTypeId: "voltage", position: "t1", associatedField: "u" },
+  { measurementTypeId: "flow", position: "t2", associatedField: "flow", unitOverride: "Nm3/h" }
+];
+const HYDROGEN_TANK_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = [
+  { measurementTypeId: "pressure", associatedField: "pressure", unitOverride: "MPa" },
+  { measurementTypeId: "flow", associatedField: "flow", unitOverride: "Nm3/h" },
+  { measurementTypeId: "gasQuantity", associatedField: "gas_quantity", unitOverride: "Nm3" },
+  { measurementTypeId: "soc", associatedField: "soc", unitOverride: "%" }
+];
+
+function builtInMeasurementDefinitionsForTemplate(template: DeviceTemplate): DeviceMeasurementDefinition[] | undefined {
+  if (template.measurementDefinitions) {
+    return cloneDeviceMeasurementDefinitions(template.measurementDefinitions);
+  }
+  if (isStaticKind(template.kind)) {
+    return undefined;
+  }
+  const kind = baseDeviceKind(template.kind);
+  const copy = (items: readonly DeviceMeasurementDefinition[]) => cloneDeviceMeasurementDefinitions(items);
+  if (kind === "ac-electrolyzer" || kind === "dc-electrolyzer" || kind === "ac-fuel-cell" || kind === "dc-fuel-cell") {
+    return copy(HYDROGEN_COUPLING_MEASUREMENT_DEFINITIONS);
+  }
+  if (kind === "hydrogen-tank" || kind === "hydrogen-tank-horizontal" || kind === "hydrogen-tank-container") {
+    return copy(HYDROGEN_TANK_MEASUREMENT_DEFINITIONS);
+  }
+  if (kind === "hydrogen-source") {
+    return copy([
+      { measurementTypeId: "pressure", associatedField: "pressure", unitOverride: "MPa" },
+      { measurementTypeId: "flow", associatedField: "flow", unitOverride: "Nm3/h" },
+      { measurementTypeId: "status", associatedField: "run_stat" }
+    ]);
+  }
+  if (kind === "hydrogen-load") {
+    return copy([
+      { measurementTypeId: "pressure", associatedField: "pressure", unitOverride: "MPa" },
+      { measurementTypeId: "flow", associatedField: "flow", unitOverride: "Nm3/h" }
+    ]);
+  }
+  if (kind === "hydrogen-compressor") {
+    return copy([
+      { measurementTypeId: "pressure", associatedField: "pressure" },
+      { measurementTypeId: "flow", associatedField: "flow" },
+      { measurementTypeId: "status", associatedField: "status" }
+    ]);
+  }
+  if (kind.startsWith("hydrogen-") && (kind.includes("pipeline") || kind.includes("bus"))) {
+    return copy([
+      { measurementTypeId: "pressure", associatedField: "pressure" },
+      { measurementTypeId: "flow", associatedField: "flow" }
+    ]);
+  }
+  if (kind === "thermal-storage-tank") {
+    return copy([
+      { measurementTypeId: "temperature", associatedField: "temperature" },
+      { measurementTypeId: "flow", associatedField: "flow" },
+      { measurementTypeId: "level", associatedField: "level" }
+    ]);
+  }
+  if (kind.startsWith("heat-") || kind.startsWith("single-port-heat-") || kind.startsWith("two-port-heat-")) {
+    if (kind.includes("pipeline") || kind.includes("bus")) {
+      return copy([
+        { measurementTypeId: "temperature", associatedField: "temperature" },
+        { measurementTypeId: "flow", associatedField: "flow", ...(kind.includes("bus") ? { defaultVisible: false } : {}) }
+      ]);
+    }
+    if (kind.includes("source") || kind.includes("load")) {
+      return copy([
+        { measurementTypeId: "temperature", associatedField: "temperature" },
+        { measurementTypeId: "flow", associatedField: "flow" },
+        { measurementTypeId: "activePower", associatedField: "p" }
+      ]);
+    }
+  }
+  if (kind === "ac-capacitor" || kind === "ac-reactor") {
+    return copy([
+      { measurementTypeId: "reactivePower", associatedField: "q" },
+      { measurementTypeId: "current", associatedField: "current" }
+    ]);
+  }
+  if (kind === "ac-series-capacitor" || kind === "ac-series-reactor") {
+    return copy([
+      { measurementTypeId: "activePower", associatedField: "p" },
+      { measurementTypeId: "reactivePower", associatedField: "q" },
+      { measurementTypeId: "current", associatedField: "current" }
+    ]);
+  }
+  if (kind === "ac-storage") {
+    return copy([
+      { measurementTypeId: "activePower", associatedField: "p" },
+      { measurementTypeId: "reactivePower", associatedField: "q" },
+      { measurementTypeId: "voltage", associatedField: "u" },
+      { measurementTypeId: "soc", associatedField: "soc" }
+    ]);
+  }
+  if (kind === "dc-storage") {
+    return copy([
+      { measurementTypeId: "activePower", associatedField: "p" },
+      { measurementTypeId: "voltage", associatedField: "u" },
+      { measurementTypeId: "current", associatedField: "i" },
+      { measurementTypeId: "soc", associatedField: "soc" }
+    ]);
+  }
+  if (kind === "ac-bus") {
+    return copy([
+      { measurementTypeId: "voltage", associatedField: "u" },
+      { measurementTypeId: "frequency", associatedField: "f" }
+    ]);
+  }
+  if (kind === "dc-bus") {
+    return copy([
+      { measurementTypeId: "voltage", associatedField: "u" },
+      { measurementTypeId: "current", associatedField: "i", defaultVisible: false }
+    ]);
+  }
+  if (kind.includes("switch") || kind.includes("disconnector") || kind.includes("breaker")) {
+    return copy([
+      { measurementTypeId: "status", associatedField: "status" },
+      { measurementTypeId: "current", associatedField: "i" }
+    ]);
+  }
+  if (kind.includes("transformer")) {
+    return copy([
+      { measurementTypeId: "activePower", associatedField: "p" },
+      { measurementTypeId: "reactivePower", associatedField: "q" },
+      { measurementTypeId: "voltage", associatedField: "u" },
+      { measurementTypeId: "current", associatedField: "i" }
+    ]);
+  }
+  if (kind.includes("converter")) {
+    return copy([
+      { measurementTypeId: "activePower", associatedField: "p" },
+      { measurementTypeId: "voltage", associatedField: "u" },
+      { measurementTypeId: "current", associatedField: "i" }
+    ]);
+  }
+  if (kind.includes("line") || kind.includes("branch")) {
+    return copy(template.terminalType === "ac" ? [
+      { measurementTypeId: "activePower", associatedField: "p" },
+      { measurementTypeId: "reactivePower", associatedField: "q" },
+      { measurementTypeId: "current", associatedField: "i" }
+    ] : DC_LOAD_MEASUREMENT_DEFINITIONS);
+  }
+  if (kind.includes("load")) {
+    return copy(template.terminalType === "ac" ? AC_LOAD_MEASUREMENT_DEFINITIONS : DC_LOAD_MEASUREMENT_DEFINITIONS);
+  }
+  if (kind === "ac-source" || electricGenerationDerivedComponentLibraryInfo(kind)?.terminalType === "ac") {
+    return copy(AC_SOURCE_MEASUREMENT_DEFINITIONS);
+  }
+  if (kind === "dc-source" || electricGenerationDerivedComponentLibraryInfo(kind)?.terminalType === "dc") {
+    return copy(DC_SOURCE_MEASUREMENT_DEFINITIONS);
+  }
+  return undefined;
+}
+
+function associationTargetKind(value: ContainerTerminalAssociationValue | undefined): string {
+  const targetByAssociation: Partial<Record<ContainerTerminalAssociationType, string>> = {
+    "ac-generator": "ac-source",
+    "ac-load": "ac-load",
+    "dc-generator": "dc-source",
+    "dc-load": "dc-load",
+    "h2-source": "hydrogen-source",
+    "h2-load": "hydrogen-load",
+    "heat-source": "heat-source",
+    "heat2-source": "two-port-heat-source",
+    "heat-load": "single-port-heat-load",
+    "heat2-load": "two-port-heat-load"
+  };
+  return value ? targetByAssociation[value as ContainerTerminalAssociationType] ?? "" : "";
+}
+
+export function materializeDeviceMeasurementDefinitionFields(templates: readonly DeviceTemplate[]): DeviceTemplate[] {
+  const additionsByKind = new Map<string, string[]>();
+  for (const template of templates) {
+    for (const definition of template.measurementDefinitions ?? []) {
+      const field = String(definition.associatedField ?? "").trim();
+      if (!field) continue;
+      const position = String(definition.position ?? "device").trim();
+      let targetKind = template.kind;
+      const terminalMatch = /^t(\d+)$/u.exec(position);
+      if (terminalMatch) {
+        const terminalIndex = Number(terminalMatch[1]) - 1;
+        targetKind = associationTargetKind(template.terminalAssociations?.[terminalIndex]) as DeviceKind;
+      }
+      if (!targetKind) continue;
+      const fields = additionsByKind.get(targetKind) ?? [];
+      if (!fields.some((candidate) => candidate.toLowerCase() === field.toLowerCase())) fields.push(field);
+      additionsByKind.set(targetKind, fields);
+    }
+  }
+  return templates.map((template) => {
+    const additions = additionsByKind.get(template.kind) ?? [];
+    if (additions.length === 0) return template;
+    const definitions = [...(template.parameterDefinitions ?? [])];
+    const known = new Set(definitions.map((definition) => String(definition.enName).trim().toLowerCase()));
+    const derivedInfo = templateDerivedComponentLibraryInfo(template);
+    const baseTemplate = derivedInfo
+      ? templates.find((candidate) => (
+          candidate.kind !== template.kind &&
+          !templateDerivedComponentLibraryInfo(candidate) &&
+          String(inferESection(candidate.kind, candidate.params ?? {})).trim().toLowerCase() === derivedInfo.baseComponentLibrary.trim().toLowerCase()
+        ))
+      : undefined;
+    const inherited = new Set([
+      ...(baseTemplate?.parameterDefinitions ?? []).map((definition) => String(definition.enName).trim().toLowerCase()),
+      ...(baseTemplate ? additionsByKind.get(baseTemplate.kind) ?? [] : []).map((field) => field.toLowerCase())
+    ]);
+    for (const field of additions) {
+      if (known.has(field.toLowerCase()) || inherited.has(field.toLowerCase())) continue;
+      const generatedDefinition = createMeasurementFieldParameterDefinition(field);
+      if (!generatedDefinition) continue;
+      known.add(field.toLowerCase());
+      definitions.push(generatedDefinition);
+    }
+    return { ...template, parameterDefinitions: definitions };
+  });
+}
+
+function attachBuiltInDeviceMeasurementDefinitions(template: DeviceTemplate): DeviceTemplate {
+  const measurementDefinitions = builtInMeasurementDefinitionsForTemplate(template);
+  return measurementDefinitions ? { ...template, measurementDefinitions } : template;
 }
 
 function createVerticalDeviceTemplate(template: DeviceTemplate): DeviceTemplate {
@@ -4700,14 +4955,16 @@ function createVerticalDeviceTemplate(template: DeviceTemplate): DeviceTemplate 
     terminalRoles: template.terminalRoles ? [...template.terminalRoles] : undefined,
     terminalAssociations: template.terminalAssociations ? [...template.terminalAssociations] : undefined,
     parameterDefinitions: template.parameterDefinitions?.map((definition) => ({ ...definition })),
+    measurementDefinitions: cloneDeviceMeasurementDefinitions(template.measurementDefinitions),
     stateDefinitions: template.stateDefinitions?.map(cloneDeviceStateDefinition),
     rotation: 90
   };
 }
 
-const NORMALIZED_BASE_DEVICE_LIBRARY = BASE_DEVICE_LIBRARY
+const NORMALIZED_BASE_DEVICE_LIBRARY = materializeDeviceMeasurementDefinitionFields(BASE_DEVICE_LIBRARY
   .map(normalizeDeviceTemplateDefaultSize)
-  .map(normalizeDeviceTemplateParameterNames);
+  .map(normalizeDeviceTemplateParameterNames)
+  .map(attachBuiltInDeviceMeasurementDefinitions));
 
 export const DEVICE_LIBRARY: DeviceTemplate[] = [
   ...NORMALIZED_BASE_DEVICE_LIBRARY,
@@ -6641,6 +6898,52 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
   return normalizeESectionParameterDefinitions(section, generatedDefinitions);
 }
 
+export type EffectiveTemplateParameterDefinitionGroups = {
+  baseDefinitions: DeviceParameterDefinition[];
+  derivedDefinitions: DeviceParameterDefinition[];
+};
+
+function templateComponentLibraryForDefinitionInheritance(template: DeviceTemplate): string {
+  return String(inferESection(template.kind, template.params ?? {})).trim().toLowerCase();
+}
+
+export function resolveEffectiveTemplateParameterDefinitionGroups(
+  template: DeviceTemplate,
+  templates: readonly DeviceTemplate[] = DEVICE_LIBRARY
+): EffectiveTemplateParameterDefinitionGroups {
+  const derivedInfo = templateDerivedComponentLibraryInfo(template);
+  const ownDefinitions = getTemplateParameterDefinitions(template);
+  if (!derivedInfo) {
+    return { baseDefinitions: [], derivedDefinitions: ownDefinitions };
+  }
+
+  const baseComponentLibrary = derivedInfo.baseComponentLibrary.trim().toLowerCase();
+  const baseTemplate = templates.find((candidate) => (
+    candidate.kind !== template.kind &&
+    !templateDerivedComponentLibraryInfo(candidate) &&
+    templateComponentLibraryForDefinitionInheritance(candidate) === baseComponentLibrary
+  ));
+  const baseDefinitions = baseTemplate ? getTemplateParameterDefinitions(baseTemplate) : [];
+  const seenNames = new Set(baseDefinitions.map((definition) => definition.enName));
+  const derivedDefinitions = ownDefinitions.filter((definition) => {
+    const enName = String(definition.enName ?? "").trim();
+    if (!enName || seenNames.has(enName)) {
+      return false;
+    }
+    seenNames.add(enName);
+    return true;
+  });
+  return { baseDefinitions, derivedDefinitions };
+}
+
+export function resolveEffectiveTemplateParameterDefinitions(
+  template: DeviceTemplate,
+  templates: readonly DeviceTemplate[] = DEVICE_LIBRARY
+): DeviceParameterDefinition[] {
+  const groups = resolveEffectiveTemplateParameterDefinitionGroups(template, templates);
+  return [...groups.baseDefinitions, ...groups.derivedDefinitions];
+}
+
 function stripThreeWindingTransformerContainerParams(params: Record<string, string>): Record<string, string> {
   const legacyContainerParamPattern =
     /(?:^|_)(?:xf_t\d+|(?:ac2|dc2|h22|heat2|ac|dc|h2|heat)_(?:unit|load|transformer)_t\d+)$/;
@@ -6869,6 +7172,9 @@ export function applyDeviceTemplateDefinitionOverride(
     : canonicalOverrideParameterDefinitions;
   const hasStateDefinitionsOverride = Array.isArray(override.stateDefinitions);
   const stateDefinitions = hasStateDefinitionsOverride ? normalizeDeviceStateDefinitions(override.stateDefinitions) : template.stateDefinitions?.map(cloneDeviceStateDefinition);
+  const measurementDefinitions = Array.isArray(override.measurementDefinitions)
+    ? normalizeDeviceMeasurementDefinitions(override.measurementDefinitions)
+    : cloneDeviceMeasurementDefinitions(template.measurementDefinitions);
   const overrideParams = Object.fromEntries(
     Object.entries(override.params ?? {}).filter(([key]) => (
       key !== ALLOW_RESIZE_TRANSFORM_PARAM &&
@@ -6950,6 +7256,7 @@ export function applyDeviceTemplateDefinitionOverride(
     allowResizeTransform: override.allowResizeTransform ?? template.allowResizeTransform,
     params: normalizedParams,
     parameterDefinitions,
+    measurementDefinitions,
     ...(stateDefinitions ? { stateDefinitions } : {})
   };
   if (isTwoWindingTransformerTemplateKind(template.kind)) {
@@ -7088,18 +7395,29 @@ function sectionEnumParameterDefinition(section: string, enName: string): Device
 
 export function resolveNodeParameterDefinitions(
   node: Pick<ModelNode, "kind" | "params">,
-  template?: DeviceTemplate
+  template?: DeviceTemplate,
+  templates: readonly DeviceTemplate[] = DEVICE_LIBRARY
 ): DeviceParameterDefinition[] {
   const storedDefinitions = parseStoredTemplateParameterDefinitions(node.params);
   const resolvedTemplate = template ?? DEVICE_LIBRARY_BY_KIND.get(node.kind) ?? DEVICE_LIBRARY_BY_KIND.get(baseDeviceKind(node.kind));
+  const templateDefinitions = resolvedTemplate
+    ? resolveEffectiveTemplateParameterDefinitions(resolvedTemplate, templates)
+    : [];
   if (node.params[CUSTOM_DEVICE_TEMPLATE_KEY] === "1") {
-    return storedDefinitions.length > 0
-      ? storedDefinitions
-      : resolvedTemplate
-        ? getTemplateParameterDefinitions(resolvedTemplate)
-        : [];
+    const derivedInfo = resolvedTemplate ? templateDerivedComponentLibraryInfo(resolvedTemplate) : null;
+    if (storedDefinitions.length === 0) {
+      return templateDefinitions;
+    }
+    if (!derivedInfo) {
+      return storedDefinitions;
+    }
+    const storedDefinitionNames = new Set(storedDefinitions.map((definition) => definition.enName));
+    const baseDefinitions = templateDefinitions.filter((definition) => !storedDefinitionNames.has(definition.enName));
+    return normalizeESectionParameterDefinitions(
+      inferESection(node.kind, node.params),
+      [...baseDefinitions, ...storedDefinitions]
+    );
   }
-  const templateDefinitions = resolvedTemplate ? getTemplateParameterDefinitions(resolvedTemplate) : [];
   const storedDefinitionByName = new Map(storedDefinitions.map((definition) => [definition.enName, definition]));
   const sourceDefinitions = [
     ...templateDefinitions.map((definition) => storedDefinitionByName.get(definition.enName) ?? definition),

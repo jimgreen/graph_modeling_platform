@@ -3014,6 +3014,52 @@ test("normalizes generator and storage limits after topology without mutating th
   expect(result.warnings.every((warning) => !isBlockingTopologyValidationError(warning))).toBe(true);
 });
 
+test("warns and repairs missing derived generator limits that the inspector displays as zero defaults", () => {
+  const wind = createDefaultNode("ac-wind-source", { x: 100, y: 100 });
+  wind.name = "风机发电机-3";
+  wind.terminals[0].vbase = "380 V";
+  wind.params = {
+    ...wind.params,
+    rated_capacity: "10.1",
+    p_set: "3.0",
+    q_set: "0.5",
+    v_set: "380",
+    v_max: "456",
+    v_min: "304"
+  };
+  delete wind.params.p_max;
+  delete wind.params.p_min;
+  delete wind.params.q_max;
+  delete wind.params.q_min;
+
+  const calculated = calculateElectricalTopology([wind], []);
+  const result = normalizeDeviceOperatingLimitsAfterTopology(calculated, {
+    powerUnit: "kW",
+    voltageUnit: "V",
+    currentUnit: "A"
+  });
+
+  expect(result.nodes[0].params).toMatchObject({
+    p_max: "10.1",
+    p_min: "0",
+    q_max: "10.1",
+    q_min: "-10.1"
+  });
+  expect(result.warnings).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      type: "device-limit-invalid",
+      nodeId: wind.id,
+      message: expect.stringContaining("有功范围")
+    }),
+    expect.objectContaining({
+      type: "device-limit-invalid",
+      nodeId: wind.id,
+      message: expect.stringContaining("无功范围")
+    })
+  ]));
+  expect(result.warnings.filter((warning) => warning.type === "device-limit-invalid")).toHaveLength(2);
+});
+
 test("normalizes converter active, reactive, voltage, and current limits using page units", () => {
   const acdc = createDefaultNode("acdc-converter", { x: 100, y: 100 });
   const dcac = createDefaultNode("dcac-converter", { x: 300, y: 100 });

@@ -21,6 +21,7 @@ import {
   buildEDeviceInterfaceDefinitionRows,
   buildEFileExportOptionsFromLibrary,
   createExportEFile,
+  createExportProjectRecordFile,
   createExportSchemeRecord,
   createExportEDeviceDefinitionFile,
   createRouteSegmentPointerDistance,
@@ -71,6 +72,8 @@ import {
 } from "./model";
 import { stateIconDrawingToImage } from "./stateIconDrawing";
 import { apiPath } from "./config";
+import { reconcileNodesWithEffectiveTemplateDefinitions } from "./definitionInstanceSync";
+import { INITIAL_MEASUREMENT_CONFIG } from "./measurements";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -373,7 +376,7 @@ describe("manual bend interaction helpers", () => {
     const pushUndoSnapshot = vi.fn();
     const projectMeasurements = { version: 1 as const, groups: [] };
     const migratedMeasurements = { version: 1 as const, groups: [{ id: "measurement-node-1" }] } as any;
-    const measurementConfig = { groupDefaults: {}, measurementTypes: [], deviceProfiles: [] } as any;
+    const measurementConfig = { groupDefaults: {}, measurementTypes: [] } as any;
     const reconcileProjectMeasurementsWithConfig = vi.fn(() => migratedMeasurements);
     const setProjectMeasurements = vi.fn();
     const syncExistingNodesWithTemplateDefinitions = createSyncExistingNodesWithTemplateDefinitions({
@@ -432,7 +435,9 @@ describe("manual bend interaction helpers", () => {
       projectMeasurements,
       [updated],
       measurementConfig,
-      measurementConfig
+      measurementConfig,
+      undefined,
+      undefined
     );
     expect(setProjectMeasurements).toHaveBeenCalledWith(migratedMeasurements);
   });
@@ -546,7 +551,7 @@ describe("manual bend interaction helpers", () => {
       getTemplateParameterDefinitions: () => [],
       isReservedDeviceDefinitionParamName: () => false,
       libraryTemplates: [],
-      measurementConfig: { measurementTypes: [], deviceProfiles: [] },
+      measurementConfig: INITIAL_MEASUREMENT_CONFIG,
       measurementConfigDraft: null,
       measurementConfigDraftRef: { current: null },
       normalizeComponentLibraryName: (value: string) => value.trim(),
@@ -641,7 +646,7 @@ describe("manual bend interaction helpers", () => {
       getTemplateParameterDefinitions: () => [],
       isReservedDeviceDefinitionParamName: () => false,
       libraryTemplates: [],
-      measurementConfig: { measurementTypes: [], deviceProfiles: [] },
+      measurementConfig: INITIAL_MEASUREMENT_CONFIG,
       measurementConfigDraft: null,
       measurementConfigDraftRef: { current: null },
       normalizeComponentLibraryName: (value: string) => value.trim(),
@@ -720,7 +725,7 @@ describe("manual bend interaction helpers", () => {
       getTemplateParameterDefinitions: () => [],
       isReservedDeviceDefinitionParamName: () => false,
       libraryTemplates: [],
-      measurementConfig: { measurementTypes: [], deviceProfiles: [] },
+      measurementConfig: INITIAL_MEASUREMENT_CONFIG,
       measurementConfigDraft: null,
       measurementConfigDraftRef: { current: null },
       normalizeComponentLibraryName: (value: string) => value.trim(),
@@ -892,7 +897,7 @@ describe("manual bend interaction helpers", () => {
       hasOverlappingCustomDeviceTerminalAnchors: () => false,
       isReservedDeviceDefinitionParamName: () => false,
       isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
-      measurementConfig: { measurementTypes: [], deviceProfiles: [] },
+      measurementConfig: INITIAL_MEASUREMENT_CONFIG,
       measurementConfigDraft: undefined,
       measurementConfigDraftRef: undefined,
       nextCustomTemplateKind: vi.fn(() => "custom-userlibrary"),
@@ -995,7 +1000,7 @@ describe("manual bend interaction helpers", () => {
       isDerivedComponentBaseParamName: (name: unknown) =>
         ["idx", "name", "status", "run_stat", "node", "ratedPower"].includes(String(name ?? "").trim()),
       isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
-      measurementConfig: { measurementTypes: [], deviceProfiles: [] },
+      measurementConfig: INITIAL_MEASUREMENT_CONFIG,
       measurementConfigDraft: undefined,
       measurementConfigDraftRef: undefined,
       nextCustomTemplateKind: vi.fn(() => "custom-user-wind-generator"),
@@ -1114,7 +1119,7 @@ describe("manual bend interaction helpers", () => {
         !String(name ?? "").trim() ||
         ["idx", "name", "status", "run_stat", "node", "ratedPower"].includes(String(name ?? "").trim()),
       isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
-      measurementConfig: { measurementTypes: [], deviceProfiles: [] },
+      measurementConfig: INITIAL_MEASUREMENT_CONFIG,
       measurementConfigDraft: undefined,
       measurementConfigDraftRef: undefined,
       nextCustomTemplateKind: vi.fn(() => "custom-user-wind-generator"),
@@ -1238,7 +1243,7 @@ describe("manual bend interaction helpers", () => {
       isReservedDeviceDefinitionParamName: reservedPredicate,
       isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
       libraryTemplates: [template],
-      measurementConfig: { measurementTypes: [], deviceProfiles: [] },
+      measurementConfig: INITIAL_MEASUREMENT_CONFIG,
       measurementConfigDraft: undefined,
       measurementConfigDraftRef: undefined,
       normalizeComponentLibraryName: (name: string) => name.trim(),
@@ -1449,7 +1454,7 @@ describe("manual bend interaction helpers", () => {
       isReservedDeviceDefinitionParamName: () => false,
       isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
       libraryTemplates: [template],
-      measurementConfig: { measurementTypes: [], deviceProfiles: [] },
+      measurementConfig: INITIAL_MEASUREMENT_CONFIG,
       measurementConfigDraft: undefined,
       measurementConfigDraftRef: undefined,
       normalizeComponentLibraryName: (name: string) => name.trim(),
@@ -1566,7 +1571,7 @@ describe("manual bend interaction helpers", () => {
       isReservedDeviceDefinitionParamName: () => false,
       isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
       libraryTemplates: [template],
-      measurementConfig: { measurementTypes: [], deviceProfiles: [] },
+      measurementConfig: INITIAL_MEASUREMENT_CONFIG,
       measurementConfigDraft: undefined,
       measurementConfigDraftRef: undefined,
       normalizeComponentLibraryName: (name: string) => name.trim(),
@@ -2038,7 +2043,7 @@ describe("manual bend interaction helpers", () => {
       isDefaultStatePageId: (rowId: string) => rowId === "__default__",
       isReservedDeviceDefinitionParamName: () => false,
       isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
-      measurementConfig: { measurementTypes: [], deviceProfiles: [] },
+      measurementConfig: INITIAL_MEASUREMENT_CONFIG,
       measurementConfigDraft: undefined,
       measurementConfigDraftRef: undefined,
       nextCustomTemplateKind: vi.fn(() => "custom-StaticButton-2"),
@@ -2747,6 +2752,10 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
       "rated_voltage",
       "v_max",
       "v_min",
+      "p",
+      "q",
+      "u",
+      "f",
       "regable"
     ];
 
@@ -2993,6 +3002,39 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
   });
 });
 
+describe("historical project parameter materialization during export", () => {
+  test("materializes inherited defaults when directly exporting an unopened project", async () => {
+    const node = createDefaultNode("ac-wind-source", { x: 100, y: 100 });
+    for (const key of ["p_max", "p_min", "q_max", "q_min"]) {
+      delete node.params[key];
+    }
+    const projectFile = { version: 1 as const, name: "旧风电模型", nodes: [node], edges: [] };
+    const saveTextFile = vi.fn(async (_options: any) => true);
+    const exportProject = createExportProjectRecordFile({
+      activeProjectKey: "active-project",
+      currentProject: vi.fn(),
+      libraryTemplates: DEVICE_LIBRARY,
+      projectName: "当前模型",
+      reconcileNodesWithEffectiveTemplateDefinitions,
+      safeFilePart: (value: string) => value,
+      saveTextFile,
+      serializeProject: JSON.stringify,
+      writeOperationLog: vi.fn()
+    });
+
+    await exportProject({ id: "historical-project", name: projectFile.name, project: projectFile } as any);
+
+    const exportedProject = JSON.parse(saveTextFile.mock.calls[0][0].text);
+    expect(exportedProject.nodes[0].params).toMatchObject({
+      p_max: "0",
+      p_min: "0",
+      q_max: "0",
+      q_min: "0"
+    });
+    expect(node.params).not.toHaveProperty("p_max");
+  });
+});
+
 describe("createExportEFile", () => {
   test("uses warnings returned by E generation without rebuilding export records", async () => {
     const project = { version: 1, name: "当前模型", nodes: [], edges: [] };
@@ -3106,9 +3148,10 @@ describe("createExportEFile", () => {
       }],
       loadSvgImageExportPathById: async () => ({}),
       measurementConfig: undefined,
+      reconcileNodesWithEffectiveTemplateDefinitions,
       resolveTemplateComponentLibrary: () => "ACGenerator",
       safeFilePart: (value: string) => value,
-      saveBackendProjectArtifacts: vi.fn(async () => undefined),
+      saveBackendProjectRecord: vi.fn(async (_path, record) => record),
       savedProjectRecordIsSummary: () => false,
       schemePathForRecord: () => ["方案一"],
       schemePathForScheme: () => ["方案一"],
@@ -3126,6 +3169,64 @@ describe("createExportEFile", () => {
       "name",
       "idx"
     ]);
+  });
+
+  test("uses one materialized historical snapshot for scheme JSON, SVG and E artifacts", async () => {
+    const node = createDefaultNode("ac-wind-source", { x: 100, y: 100 });
+    for (const key of ["p_max", "p_min", "q_max", "q_min"]) {
+      delete node.params[key];
+    }
+    const project = { version: 1 as const, name: "旧方案模型", nodes: [node], edges: [] };
+    const projectRecord = { id: "project-1", name: project.name, project };
+    const scheme = { id: "scheme-1", name: "旧方案", projects: [projectRecord], children: [] };
+    const buildSvgDocument = vi.fn((_nodes: any[], _edges: any[], _options: any) => "<svg/>");
+    const buildEFileExport = vi.fn((_project: any, _schemePath: string[], _options: any) => ({
+      filename: "旧方案模型.e",
+      text: "E-CONTENT",
+      mime: "text/plain"
+    }));
+    const saveBackendProjectRecord = vi.fn(async (
+      _path: string[],
+      record: any,
+      _previousName: string,
+      _options: any
+    ) => record);
+    const exportScheme = createExportSchemeRecord({
+      DEFAULT_CANVAS_BACKGROUND: "#ffffff",
+      PARAM_LABELS: {},
+      backgroundPageRender: null,
+      buildEFileExport,
+      buildSvgDocument,
+      colorPalette: {},
+      downloadBackendSchemeArchive: vi.fn(async () => false),
+      eDeviceDefinitionClassExportEnabled: {},
+      eDeviceDefinitionFieldOrder: {},
+      eDeviceDefinitionLabels: {},
+      fetchBackendProjectRecord: vi.fn(),
+      flattenSavedProjects: () => [projectRecord],
+      libraryTemplates: DEVICE_LIBRARY,
+      loadSvgImageExportPathById: async () => ({}),
+      measurementConfig: undefined,
+      reconcileNodesWithEffectiveTemplateDefinitions,
+      resolveTemplateComponentLibrary: () => "ACGenerator",
+      safeFilePart: (value: string) => value,
+      saveBackendProjectRecord,
+      savedProjectRecordIsSummary: () => false,
+      schemePathForRecord: () => [scheme.name],
+      schemePathForScheme: () => [scheme.name],
+      schemes: [scheme],
+      writeOperationLog: vi.fn()
+    });
+
+    await exportScheme(scheme as any);
+
+    const svgNodes = buildSvgDocument.mock.calls[0][0];
+    const eProject = buildEFileExport.mock.calls[0][0];
+    const savedProject = saveBackendProjectRecord.mock.calls[0][1].project;
+    for (const params of [svgNodes[0].params, eProject.nodes[0].params, savedProject.nodes[0].params]) {
+      expect(params).toMatchObject({ p_max: "0", p_min: "0", q_max: "0", q_min: "0" });
+    }
+    expect(saveBackendProjectRecord.mock.calls[0][3]).toEqual({ svg: "<svg/>", eFile: "E-CONTENT" });
   });
 });
 

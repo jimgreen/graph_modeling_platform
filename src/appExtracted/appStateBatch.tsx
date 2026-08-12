@@ -399,7 +399,7 @@ import {
   type SidePanelSide
 } from "../sidePanelVisibility";
 import {
-  DEFAULT_MEASUREMENT_CONFIG,
+  INITIAL_MEASUREMENT_CONFIG,
   DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR,
   DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR,
   DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE,
@@ -697,6 +697,7 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
     projectMeasurements,
     projectName,
     projectSearchQuery,
+    reconcileNodesWithEffectiveTemplateDefinitions,
     refreshRecoveryProjectRef,
     revision,
     rewiring,
@@ -1028,22 +1029,12 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
       [measurementConfig.measurementTypes]
     );
   Object.assign(__appScope, { measurementTypeById });
-  const measurementProfileByKind = useMemo(
-      () => new Map(measurementConfig.deviceProfiles.map((profile) => [profile.deviceKind, profile])),
-      [measurementConfig.deviceProfiles]
-    );
-  Object.assign(__appScope, { measurementProfileByKind });
   const editableMeasurementConfig = measurementConfigDraft ?? measurementConfig; Object.assign(__appScope, { editableMeasurementConfig });
   const editableMeasurementTypeById = useMemo(
       () => new Map(editableMeasurementConfig.measurementTypes.map((item) => [item.id, item])),
       [editableMeasurementConfig.measurementTypes]
     );
   Object.assign(__appScope, { editableMeasurementTypeById });
-  const editableMeasurementProfileByKind = useMemo(
-      () => new Map(editableMeasurementConfig.deviceProfiles.map((profile) => [profile.deviceKind, profile])),
-      [editableMeasurementConfig.deviceProfiles]
-    );
-  Object.assign(__appScope, { editableMeasurementProfileByKind });
   const inspectorSelectedEdge = selectedEdge; Object.assign(__appScope, { inspectorSelectedEdge });
   const inspectorTopologyErrors = useDeferredValue(topologyErrors); Object.assign(__appScope, { inspectorTopologyErrors });
   const connectionStrokeColorCacheToken = useMemo(
@@ -1159,19 +1150,27 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
         return;
       }
       let changed = false;
-      const normalizedNodes = nodes.map((node) => {
-        const normalized = normalizeNodeTerminalsWithTemplate(node, libraryTemplateByKind.get(node.kind));
+      const terminalNormalizedNodes = nodes.map((node) => {
+        const template = libraryTemplateByKind.get(node.kind);
+        const normalized = normalizeNodeTerminalsWithTemplate(node, template);
         if (normalized !== node) {
           changed = true;
         }
         return normalized;
       });
+      const normalizedNodes = reconcileNodesWithEffectiveTemplateDefinitions(
+        terminalNormalizedNodes,
+        libraryTemplates
+      );
+      if (normalizedNodes !== terminalNormalizedNodes) {
+        changed = true;
+      }
       if (!changed) {
         return;
       }
       suppressNextGraphDirtyRef.current += 1;
       setGraphArrays(normalizedNodes, edges);
-    }, [edges, libraryTemplateByKind, nodes]);
+    }, [edges, libraryTemplateByKind, libraryTemplates, nodes]);
   const resolveNodeStateVisual = createResolveNodeStateVisual(__appScope); Object.assign(__appScope, { resolveNodeStateVisual });
   useEffect(createAppHookCallback15(__appScope), [customDeviceDraft.stateDefinitions, customDeviceStatePageId]);
   useEffect(createAppHookCallback16(__appScope), [definitionStateDraftRows, definitionStatePageId]);

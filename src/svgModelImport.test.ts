@@ -1,8 +1,8 @@
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import { describe, expect, test } from "vitest";
 
-import { DEFAULT_MODEL_LAYER_ID, DEVICE_LIBRARY, createDefaultNode, createSavedProject, type Edge } from "./model";
-import { DEFAULT_MEASUREMENT_CONFIG } from "./measurements";
+import { DEFAULT_MODEL_LAYER_ID, DEVICE_LIBRARY, assignPermanentDeviceIndex, createDefaultNode, createSavedProject, type Edge } from "./model";
+import { INITIAL_MEASUREMENT_CONFIG, createDefaultMeasurementGroupsForNode } from "./measurements";
 import { buildSvgDocument } from "./appExtracted/appPersistenceLibraryExport";
 import { parseSvgModel, type SvgDomAdapter } from "./svgModelImport";
 
@@ -385,7 +385,7 @@ describe("parseSvgModel round trip and batching", () => {
       layers: [{ id: DEFAULT_MODEL_LAYER_ID, name: "默认图层", visible: true }],
       activeLayerId: DEFAULT_MODEL_LAYER_ID,
       deviceTemplates: DEVICE_LIBRARY,
-      measurementConfig: DEFAULT_MEASUREMENT_CONFIG,
+      measurementConfig: INITIAL_MEASUREMENT_CONFIG,
       measurements
     });
 
@@ -412,7 +412,7 @@ describe("parseSvgModel round trip and batching", () => {
       layers: imported.project.layers,
       activeLayerId: imported.project.activeLayerId,
       deviceTemplates: DEVICE_LIBRARY,
-      measurementConfig: DEFAULT_MEASUREMENT_CONFIG,
+      measurementConfig: INITIAL_MEASUREMENT_CONFIG,
       measurements: imported.project.measurements
     });
     expect(reExported).toContain('dev-kind="ac-breaker"');
@@ -433,6 +433,43 @@ describe("parseSvgModel round trip and batching", () => {
       measurementTypeId: "activePower",
       sourcePoint: `${breaker?.id}.t1.r`
     });
+  });
+
+  test("round-trips associated endpoint measurements through owner-dev metadata", async () => {
+    const coupling = assignPermanentDeviceIndex(createDefaultNode("ac-electrolyzer", { x: 180, y: 140 }), {}).node;
+    const ownerId = `AcE2Hydro-${coupling.params.idx}`;
+    const electricId = `ACLoad-${coupling.params.idx_ac_load_t1}`;
+    const hydrogenId = `HydroSource-${coupling.params.idx_h2_unit_t2}`;
+    const exported = buildSvgDocument([coupling], [], {
+      width: 480,
+      height: 320,
+      deviceTemplates: DEVICE_LIBRARY,
+      measurementConfig: INITIAL_MEASUREMENT_CONFIG,
+      measurements: { version: 1, groups: createDefaultMeasurementGroupsForNode(coupling, INITIAL_MEASUREMENT_CONFIG, DEVICE_LIBRARY) }
+    });
+    expect(exported).toContain(`dev="${electricId}" owner-dev="${ownerId}" term="t1"`);
+    expect(exported).toContain(`dev="${hydrogenId}" owner-dev="${ownerId}" term="t2"`);
+
+    const imported = await parse(exported, "耦合量测往返");
+    const importedCoupling = imported.project.nodes.find((node) => node.kind === "ac-electrolyzer")!;
+    expect(importedCoupling.params.idx_ac_load_t1).toBe(coupling.params.idx_ac_load_t1);
+    expect(importedCoupling.params.idx_h2_unit_t2).toBe(coupling.params.idx_h2_unit_t2);
+    expect(imported.project.measurements?.groups.map((group) => group.terminalId)).toEqual(["t1", "t2"]);
+    expect(imported.project.measurements?.groups.flatMap((group) => group.items.map((item) => item.sourcePoint))).toEqual([
+      `${importedCoupling.id}.t1.p`,
+      `${importedCoupling.id}.t1.u`,
+      `${importedCoupling.id}.t2.flow`
+    ]);
+
+    const reExported = buildSvgDocument(imported.project.nodes, imported.project.edges, {
+      width: imported.project.canvasWidth ?? 480,
+      height: imported.project.canvasHeight ?? 320,
+      deviceTemplates: DEVICE_LIBRARY,
+      measurementConfig: INITIAL_MEASUREMENT_CONFIG,
+      measurements: imported.project.measurements
+    });
+    expect(reExported).toContain(`dev="${electricId}" owner-dev="${ownerId}" term="t1"`);
+    expect(reExported).toContain(`dev="${hydrogenId}" owner-dev="${ownerId}" term="t2"`);
   });
 
   test("restores a stable type id when the SVG binding field has a different name", async () => {

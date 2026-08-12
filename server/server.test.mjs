@@ -70,68 +70,6 @@ const expectEFieldsAlignedWithHeader = (text, section, columns, rowValues) => {
 };
 
 describe("measurement configuration normalization", () => {
-  test("migrates hydrogen tank defaults and retains associated source fields", () => {
-    const normalized = normalizeMeasurementConfig({
-      measurementTypes: [
-        { id: "pressure", key: "pressure", name: "压力", defaultUnit: "MPa" },
-        { id: "flow", key: "flow", name: "流量", defaultUnit: "kg/s" },
-        { id: "level", key: "level", name: "液位", defaultUnit: "%" },
-        { id: "temperature", key: "temperature", name: "温度", defaultUnit: "degC" }
-      ],
-      deviceProfiles: [{
-        deviceKind: "hydrogen-tank",
-        items: [
-          { measurementTypeId: "pressure" },
-          { measurementTypeId: "level" },
-          { measurementTypeId: "temperature" }
-        ]
-      }]
-    });
-
-    expect(normalized.measurementTypes.find((item) => item.id === "gasQuantity")).toMatchObject({
-      key: "gas_quantity",
-      name: "储气量",
-      defaultUnit: "Nm3"
-    });
-    expect(normalized.measurementTypes.find((item) => item.id === "soc")).toMatchObject({
-      key: "soc",
-      defaultUnit: "%"
-    });
-    expect(normalized.deviceProfiles[0].items).toEqual([
-      expect.objectContaining({ measurementTypeId: "pressure", associatedField: "pressure", labelOverride: undefined, unitOverride: "MPa" }),
-      expect.objectContaining({ measurementTypeId: "flow", associatedField: "flow", labelOverride: undefined, unitOverride: "Nm3/h" }),
-      expect.objectContaining({ measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: undefined, unitOverride: "Nm3" }),
-      expect.objectContaining({ measurementTypeId: "soc", associatedField: "soc", labelOverride: undefined, unitOverride: "%" })
-    ]);
-  });
-
-  test("removes only historical hydrogen tank label overrides", () => {
-    const normalized = normalizeMeasurementConfig({
-      measurementTypes: [
-        { id: "pressure", key: "pressure", name: "压力", shortLabel: "压力", defaultUnit: "MPa" },
-        { id: "flow", key: "flow", name: "流量", shortLabel: "流量", defaultUnit: "Nm3/h" },
-        { id: "gasQuantity", key: "gas_quantity", name: "储气量", shortLabel: "储气量", defaultUnit: "Nm3" },
-        { id: "soc", key: "soc", name: "soc", shortLabel: "soc", defaultUnit: "%" }
-      ],
-      deviceProfiles: [{
-        deviceKind: "hydrogen-tank",
-        items: [
-          { measurementTypeId: "pressure", labelOverride: "PRESS" },
-          { measurementTypeId: "flow", labelOverride: "自定义流量" },
-          { measurementTypeId: "gasQuantity", labelOverride: "GAS_QUANTITY" },
-          { measurementTypeId: "soc", labelOverride: "SOC" }
-        ]
-      }]
-    });
-
-    expect(normalized.deviceProfiles[0].items.map((item) => item.labelOverride)).toEqual([
-      undefined,
-      "自定义流量",
-      undefined,
-      undefined
-    ]);
-  });
-
   test("exports hydrogen tank static parameters through the default E interface", () => {
     expect(eSectionColumns.HydroNode).toEqual(["idx", "name", "pressure", "run_stat"]);
     expect(eSectionColumns.HeatNode).toEqual([
@@ -233,12 +171,12 @@ describe("scheme enum validation", () => {
           }
         },
         svg: "<svg/>",
-        measurementConfig: { measurementTypes: [], deviceProfiles: [] }
+        measurementConfig: { measurementTypes: [] }
       });
 
       const loaded = await readSchemeProjectRecord({ filesRoot, schemePath: ["枚举测试"], name: "旧控制值" });
       expect(loaded.project.nodes[0].params.control_type).toBe("P");
-      const eText = await readFile(join(filesRoot, "枚举测试", "旧控制值.e"), "utf8");
+      const eText = iconv.decode(await readFile(join(filesRoot, "枚举测试", "旧控制值.e")), "gbk");
       expect(eText).toMatch(/<AcE2Hydro>[\s\S]*#\s+1\s+交流电制氢-1\s+P\s/u);
     } finally {
       await rm(filesRoot, { recursive: true, force: true });
@@ -277,7 +215,7 @@ describe("scheme enum validation", () => {
           }
         },
         svg: "<svg/>",
-        measurementConfig: { measurementTypes: [], deviceProfiles: [] }
+        measurementConfig: { measurementTypes: [] }
       })).rejects.toThrow(/mode.*BAD.*AUTO、MANUAL/u);
       await expect(readFile(join(filesRoot, "枚举测试", "非法枚举.json"), "utf8")).rejects.toThrow();
     } finally {
@@ -333,7 +271,7 @@ describe("legacy gas quantity parameter normalization", () => {
           }
         },
         svg: "<svg/>",
-        measurementConfig: { measurementTypes: [], deviceProfiles: [] }
+        measurementConfig: { measurementTypes: [] }
       });
 
       const jsonText = await readFile(join(filesRoot, "字段迁移", "储氢罐.json"), "utf8");
@@ -369,7 +307,7 @@ describe("legacy gas quantity parameter normalization", () => {
           }
         },
         svg: "<svg/>",
-        measurementConfig: { measurementTypes: [], deviceProfiles: [] }
+        measurementConfig: { measurementTypes: [] }
       });
 
       const saved = JSON.parse(await readFile(join(filesRoot, "字段迁移", "历史储气量.json"), "utf8"));
@@ -477,7 +415,7 @@ describe("scheme file persistence", () => {
       { id: "series-cap", kind: "ac-series-capacitor", name: "串联电容器", position: { x: 320, y: 80 }, size: { width: 108, height: 52 }, params: { idx: "1" }, terminals: [] },
       { id: "series-reactor", kind: "ac-series-reactor", name: "串联电抗器", position: { x: 440, y: 80 }, size: { width: 108, height: 52 }, params: { idx: "1" }, terminals: [] }
     ];
-    const svg = buildSvgFile({ version: 1, name: "无功补偿SVG", canvasWidth: 540, canvasHeight: 180, nodes, edges: [] }, { measurementTypes: [], deviceProfiles: [] });
+    const svg = buildSvgFile({ version: 1, name: "无功补偿SVG", canvasWidth: 540, canvasHeight: 180, nodes, edges: [] }, { measurementTypes: [] });
     const defs = svgDefsSection(svg);
 
     expect(defs).toContain("ac-shunt-compensator-glyph ac-shunt-capacitor");
@@ -1516,7 +1454,7 @@ describe("scheme file persistence", () => {
         ],
         edges: []
       },
-      { measurementTypes: [], deviceProfiles: [] }
+      { measurementTypes: [] }
     );
     const defs = svgDefsSection(svg);
     const useTags = svgUseTags(svg);
@@ -1714,7 +1652,7 @@ describe("scheme file persistence", () => {
           ]
         }
       },
-      { measurementTypes: [], deviceProfiles: [] }
+      { measurementTypes: [] }
     );
     const defs = svgDefsSection(svg);
     const textLayer = svgSectionBetween(svg, '<g id="Text_Layer">', '<g id="Measurement_Layer">');
@@ -1836,8 +1774,13 @@ describe("scheme file persistence", () => {
         }
       },
       {
-        measurementTypes: [{ id: "reactivePower", name: "无功功率", shortLabel: "Q", defaultUnit: "Mvar" }],
-        deviceProfiles: [{ deviceKind: "ac-load", items: [{ measurementTypeId: "reactivePower" }] }]
+        measurementTypes: [{ id: "reactivePower", name: "无功功率", shortLabel: "Q", defaultUnit: "Mvar" }]
+      },
+      {
+        deviceTemplates: [{
+          kind: "ac-load",
+          measurementDefinitions: [{ measurementTypeId: "reactivePower", position: "device", associatedField: "q" }]
+        }]
       }
     );
     const measurementLayer = svgSectionBetween(svg, '<g id="Measurement_Layer">', '<g id="Other_Layer">');
@@ -1853,8 +1796,82 @@ describe("scheme file persistence", () => {
     expect(measurementLayer).toContain('id="mv-ACLoad-2-reactivePower-1"');
     expect(measurementLayer).not.toContain('mid=');
     expect(measurementLayer).not.toContain('mf="reactivePower"');
-    expect(measurementLayer).toContain('mt="reactivePower" mti="reactivePower" mf="plant.load.1.p"');
+    expect(measurementLayer).toContain('mt="q" mti="reactivePower" mf="plant.load.1.p"');
     expect(measurementLayer).not.toContain(nodeId);
+  });
+
+  test("binds server SVG coupling measurements to associated endpoint devices", () => {
+    const nodeId = "electrolyzer-server";
+    const svg = buildSvgFile(
+      {
+        version: 1,
+        name: "电制氢关联量测",
+        canvasWidth: 480,
+        canvasHeight: 320,
+        nodes: [{
+          id: nodeId,
+          kind: "ac-electrolyzer",
+          name: "交流电制氢-1",
+          position: { x: 220, y: 140 },
+          size: { width: 108, height: 62 },
+          params: {
+            idx: "1",
+            idx_ac_load_t1: "4",
+            name_ac_load_t1: "制氢电负荷",
+            idx_h2_unit_t2: "7",
+            name_h2_unit_t2: "制氢氢源"
+          },
+          terminals: [
+            { id: "t1", label: "交流设备端", anchor: { x: -0.5, y: 0 } },
+            { id: "t2", label: "氢能设备端", anchor: { x: 0.5, y: 0 } }
+          ]
+        }],
+        edges: [],
+        measurements: {
+          version: 1,
+          groups: [{
+            id: `measurement-${nodeId}-t1`, nodeId, terminalId: "t1", visible: true,
+            anchor: "custom", offset: { x: -70, y: 0 }, layout: "vertical",
+            items: [
+              { id: `measurement-${nodeId}-t1-activePower-0`, measurementTypeId: "activePower", sourcePoint: `${nodeId}.t1.p` },
+              { id: `measurement-${nodeId}-t1-voltage-1`, measurementTypeId: "voltage", sourcePoint: `${nodeId}.t1.u` }
+            ]
+          }, {
+            id: `measurement-${nodeId}-t2`, nodeId, terminalId: "t2", visible: true,
+            anchor: "custom", offset: { x: 70, y: 0 }, layout: "vertical",
+            items: [{ id: `measurement-${nodeId}-t2-flow-0`, measurementTypeId: "flow", sourcePoint: `${nodeId}.t2.flow` }]
+          }]
+        }
+      },
+      {
+        measurementTypes: [
+          { id: "activePower", key: "p", name: "有功功率", shortLabel: "P", defaultUnit: "MW" },
+          { id: "voltage", key: "u", name: "电压", shortLabel: "U", defaultUnit: "kV" },
+          { id: "flow", key: "flow", name: "流量", shortLabel: "流量", defaultUnit: "Nm3/h" }
+        ]
+      },
+      {
+        deviceTemplates: [{
+          kind: "ac-electrolyzer",
+          measurementDefinitions: [
+            { measurementTypeId: "activePower", position: "t1", associatedField: "p" },
+            { measurementTypeId: "voltage", position: "t1", associatedField: "u" },
+            { measurementTypeId: "flow", position: "t2", associatedField: "flow" }
+          ]
+        }]
+      }
+    );
+    const measurementLayer = svgSectionBetween(svg, '<g id="Measurement_Layer">', '<g id="Other_Layer">');
+
+    expect(measurementLayer).toContain('dev="ACLoad-4" owner-dev="AcE2Hydro-1" term="t1"');
+    expect(measurementLayer).toContain('dev="HydroSource-7" owner-dev="AcE2Hydro-1" term="t2"');
+    expect(measurementLayer).toContain('mt="p" mti="activePower" mf="t1.p"');
+    expect(measurementLayer).toContain('mt="u" mti="voltage" mf="t1.u"');
+    expect(measurementLayer).toContain('mt="flow" mti="flow" mf="t2.flow"');
+    expect(svg).toContain('<g device-type="ACLoad">');
+    expect(svg).toContain('<g dev-id="ACLoad-4" name="制氢电负荷" idx="4"/>');
+    expect(svg).toContain('<g device-type="HydroSource">');
+    expect(svg).toContain('<g dev-id="HydroSource-7" name="制氢氢源" idx="7"/>');
   });
 
   test("exports the canonical measurement field separately from its stable type id", () => {
@@ -1891,8 +1908,13 @@ describe("scheme file persistence", () => {
         }
       },
       {
-        measurementTypes: [{ id: "gasQuantity", key: "gas_quantity", name: "储气量", shortLabel: "储气量", defaultUnit: "Nm3" }],
-        deviceProfiles: [{ deviceKind: "hydrogen-tank", items: [{ measurementTypeId: "gasQuantity", associatedField: "gas_quantity" }] }]
+        measurementTypes: [{ id: "gasQuantity", key: "gas_quantity", name: "储气量", shortLabel: "储气量", defaultUnit: "Nm3" }]
+      },
+      {
+        deviceTemplates: [{
+          kind: "hydrogen-tank",
+          measurementDefinitions: [{ measurementTypeId: "gasQuantity", position: "device", associatedField: "gas_quantity" }]
+        }]
       }
     );
     const measurementLayer = svgSectionBetween(svg, '<g id="Measurement_Layer">', '<g id="Other_Layer">');
@@ -1904,7 +1926,7 @@ describe("scheme file persistence", () => {
     expect(valueText).not.toContain('mf=');
   });
 
-  test("uses a custom device profile field as the server SVG binding name", () => {
+  test("uses a custom device measurement definition field as the server SVG binding name", () => {
     const svg = buildSvgFile(
       {
         version: 1,
@@ -1942,10 +1964,12 @@ describe("scheme file persistence", () => {
         }
       },
       {
-        measurementTypes: [{ id: "customMetric", key: "custom_metric", name: "自定义量测", shortLabel: "CM", defaultUnit: "u" }],
-        deviceProfiles: [{
-          deviceKind: "custom-binding-device",
-          items: [
+        measurementTypes: [{ id: "customMetric", key: "custom_metric", name: "自定义量测", shortLabel: "CM", defaultUnit: "u" }]
+      },
+      {
+        deviceTemplates: [{
+          kind: "custom-binding-device-vertical",
+          measurementDefinitions: [
             { measurementTypeId: "customMetric", position: "t1", associatedField: "custom_metric_1" },
             { measurementTypeId: "customMetric", position: "t2", associatedField: "custom_metric_2" }
           ]
@@ -2044,8 +2068,7 @@ describe("scheme file persistence", () => {
             defaultUnit: "A",
             defaultVisible: false
           }
-        ],
-        deviceProfiles: [{ deviceKind: "ac-breaker", items: [{ measurementTypeId: "current" }] }]
+        ]
       }
     );
 

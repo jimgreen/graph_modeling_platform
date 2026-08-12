@@ -3,10 +3,15 @@ import {
   CUSTOM_PARAM_DEFINITIONS_KEY,
   createDefaultNode,
   DEVICE_LIBRARY,
+  resolveEffectiveTemplateParameterDefinitionGroups,
+  resolveEffectiveTemplateParameterDefinitions,
   type DeviceParameterDefinition,
   type DeviceTemplate
 } from "./model";
-import { reconcileNodeWithDefinition } from "./definitionInstanceSync";
+import {
+  reconcileNodesWithEffectiveTemplateDefinitions,
+  reconcileNodeWithDefinition
+} from "./definitionInstanceSync";
 
 const oldDefinitions: DeviceParameterDefinition[] = [
   { cnName: "保留字段", enName: "keepField", valueType: "string", typicalValue: "old-default" },
@@ -42,6 +47,159 @@ function latestTemplate(): DeviceTemplate {
 }
 
 describe("definition instance node reconciliation", () => {
+  test("resolves base definitions before derived definitions without duplicate fields", () => {
+    const template = DEVICE_LIBRARY.find((candidate) => candidate.kind === "ac-wind-source")!;
+    const groups = resolveEffectiveTemplateParameterDefinitionGroups(template, DEVICE_LIBRARY);
+    const definitions = resolveEffectiveTemplateParameterDefinitions(template, DEVICE_LIBRARY);
+    const definitionNames = definitions.map((definition) => definition.enName);
+
+    expect(groups.baseDefinitions.map((definition) => definition.enName)).toContain("p_max");
+    expect(groups.baseDefinitions.map((definition) => definition.enName)).toContain("frequency");
+    expect(groups.derivedDefinitions.map((definition) => definition.enName)).toContain("cut_in_wind_speed");
+    expect(definitionNames.indexOf("frequency")).toBeLessThan(definitionNames.indexOf("cut_in_wind_speed"));
+    expect(definitionNames.filter((name) => name === "v_max")).toHaveLength(1);
+  });
+
+  test("materializes missing base and derived defaults without overwriting stored or explicitly empty values", () => {
+    const source = createDefaultNode("ac-wind-source", { x: 80, y: 80 });
+    const node = {
+      ...source,
+      params: {
+        ...source.params,
+        p_max: "23.5",
+        q_max: ""
+      } as Record<string, string>
+    };
+    for (const key of ["p_min", "q_min", "frequency", "short_circuit_capacity", "cut_in_wind_speed"]) {
+      delete node.params[key];
+    }
+
+    const reconciled = reconcileNodesWithEffectiveTemplateDefinitions([node], DEVICE_LIBRARY)[0];
+
+    expect(reconciled.params).toMatchObject({
+      p_max: "23.5",
+      p_min: "0",
+      q_max: "",
+      q_min: "0",
+      frequency: "50",
+      short_circuit_capacity: "500",
+      cut_in_wind_speed: "3"
+    });
+    expect(reconcileNodesWithEffectiveTemplateDefinitions([reconciled], DEVICE_LIBRARY)[0]).toBe(reconciled);
+  });
+
+  test("inherits parameter defaults for user-defined derived component libraries", () => {
+    const baseTemplate: DeviceTemplate = {
+      kind: "custom-base-source",
+      label: "自定义基类",
+      categoryLibrary: "自定义设备",
+      size: { width: 80, height: 60 },
+      params: { component_type: "CustomSource" },
+      terminalType: "ac",
+      terminalCount: 1,
+      custom: true,
+      parameterDefinitions: [
+        { cnName: "基类参数", enName: "base_value", valueType: "float", typicalValue: "1.5" }
+      ]
+    };
+    const derivedTemplate: DeviceTemplate = {
+      ...baseTemplate,
+      kind: "custom-derived-source",
+      label: "自定义派生类",
+      params: {
+        component_type: "CustomSource",
+        derived_from_component_type: "CustomSource",
+        derived_component_type: "CustomDerivedSource",
+        is_derived_component_library: "1"
+      },
+      isDerivedComponentLibrary: true,
+      derivedFromComponentLibrary: "CustomSource",
+      derivedComponentLibrary: "CustomDerivedSource",
+      parameterDefinitions: [
+        { cnName: "派生参数", enName: "derived_value", valueType: "float", typicalValue: "2.5" }
+      ]
+    };
+    const source = createDefaultNode("ac-source", { x: 0, y: 0 });
+    const node = {
+      ...source,
+      kind: derivedTemplate.kind,
+      params: { ...derivedTemplate.params, _customDeviceTemplate: "1" }
+    };
+
+    const reconciled = reconcileNodesWithEffectiveTemplateDefinitions(
+      [node],
+      [baseTemplate, derivedTemplate]
+    )[0];
+
+    expect(reconciled.params.base_value).toBe("1.5");
+    expect(reconciled.params.derived_value).toBe("2.5");
+  });
+
+  test("materializes stored custom definitions even when the custom template is unavailable", () => {
+    const source = createDefaultNode("ac-source", { x: 0, y: 0 });
+    const storedDefinitions: DeviceParameterDefinition[] = [
+      { cnName: "离线自定义参数", enName: "offline_value", valueType: "float", typicalValue: "7.5" }
+    ];
+    const node = {
+      ...source,
+      kind: "removed-custom-template",
+      params: {
+        [CUSTOM_PARAM_DEFINITIONS_KEY]: JSON.stringify(storedDefinitions)
+      }
+    };
+
+    const reconciled = reconcileNodesWithEffectiveTemplateDefinitions([node], []);
+
+    expect(reconciled[0].params.offline_value).toBe("7.5");
+  });
+
+  test("materializes every built-in business definition without adding definition metadata", () => {
+    const metadataKeys = new Set([
+      "name",
+      "component_type",
+      "is_container",
+      "allow_resize_transform",
+      CUSTOM_PARAM_DEFINITIONS_KEY,
+      "_customDeviceTemplate"
+    ]);
+
+    for (const template of DEVICE_LIBRARY) {
+      const definitions = resolveEffectiveTemplateParameterDefinitions(template, DEVICE_LIBRARY)
+        .filter((definition) => !metadataKeys.has(definition.enName));
+      if (definitions.length === 0) {
+        continue;
+      }
+      const source = createDefaultNode(template.kind, { x: 0, y: 0 });
+      if (source.params._customDeviceTemplate === "1") {
+        continue;
+      }
+      const params = { ...source.params };
+      delete params[CUSTOM_PARAM_DEFINITIONS_KEY];
+      for (const definition of definitions) {
+        delete params[definition.enName];
+      }
+
+      const reconciled = reconcileNodesWithEffectiveTemplateDefinitions(
+        [{ ...source, params }],
+        DEVICE_LIBRARY
+      )[0];
+
+      for (const definition of definitions) {
+        expect(
+          Object.prototype.hasOwnProperty.call(reconciled.params, definition.enName),
+          `${template.kind}.${definition.enName}`
+        ).toBe(true);
+        expect(reconciled.params[definition.enName], `${template.kind}.${definition.enName}`)
+          .toBe(definition.typicalValue);
+      }
+      expect(reconciled.params, template.kind).not.toHaveProperty(CUSTOM_PARAM_DEFINITIONS_KEY);
+      expect(
+        reconcileNodesWithEffectiveTemplateDefinitions([reconciled], DEVICE_LIBRARY)[0],
+        template.kind
+      ).toBe(reconciled);
+    }
+  });
+
   test("updates definition-owned data while preserving instance-owned data", () => {
     const source = createDefaultNode("ac-source", { x: 320, y: 180 });
     const node = {
