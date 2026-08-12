@@ -91,10 +91,37 @@ describe("measurement configuration normalization", () => {
       defaultUnit: "%"
     });
     expect(normalized.deviceProfiles[0].items).toEqual([
-      expect.objectContaining({ measurementTypeId: "pressure", associatedField: "pressure", labelOverride: "PRESS", unitOverride: "MPa" }),
-      expect.objectContaining({ measurementTypeId: "flow", associatedField: "flow", labelOverride: "FLOW", unitOverride: "Nm3/h" }),
-      expect.objectContaining({ measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: "GAS_QUANTITY", unitOverride: "Nm3" }),
-      expect.objectContaining({ measurementTypeId: "soc", associatedField: "soc", labelOverride: "SOC", unitOverride: "%" })
+      expect.objectContaining({ measurementTypeId: "pressure", associatedField: "pressure", labelOverride: undefined, unitOverride: "MPa" }),
+      expect.objectContaining({ measurementTypeId: "flow", associatedField: "flow", labelOverride: undefined, unitOverride: "Nm3/h" }),
+      expect.objectContaining({ measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: undefined, unitOverride: "Nm3" }),
+      expect.objectContaining({ measurementTypeId: "soc", associatedField: "soc", labelOverride: undefined, unitOverride: "%" })
+    ]);
+  });
+
+  test("removes only historical hydrogen tank label overrides", () => {
+    const normalized = normalizeMeasurementConfig({
+      measurementTypes: [
+        { id: "pressure", key: "pressure", name: "压力", shortLabel: "压力", defaultUnit: "MPa" },
+        { id: "flow", key: "flow", name: "流量", shortLabel: "流量", defaultUnit: "Nm3/h" },
+        { id: "gasQuantity", key: "gas_quantity", name: "储气量", shortLabel: "储气量", defaultUnit: "Nm3" },
+        { id: "soc", key: "soc", name: "soc", shortLabel: "soc", defaultUnit: "%" }
+      ],
+      deviceProfiles: [{
+        deviceKind: "hydrogen-tank",
+        items: [
+          { measurementTypeId: "pressure", labelOverride: "PRESS" },
+          { measurementTypeId: "flow", labelOverride: "自定义流量" },
+          { measurementTypeId: "gasQuantity", labelOverride: "GAS_QUANTITY" },
+          { measurementTypeId: "soc", labelOverride: "SOC" }
+        ]
+      }]
+    });
+
+    expect(normalized.deviceProfiles[0].items.map((item) => item.labelOverride)).toEqual([
+      undefined,
+      "自定义流量",
+      undefined,
+      undefined
     ]);
   });
 

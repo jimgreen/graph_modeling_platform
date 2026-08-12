@@ -423,10 +423,16 @@ describe("measurement canvas interactions", () => {
 
     expect(text).not.toContain("当前元件库还没有默认量测模板");
     expect(nameInputs.map((inputElement) => inputElement.props.value)).toEqual([
-      "PRESS",
-      "FLOW",
-      "GAS_QUANTITY",
-      "SOC"
+      "",
+      "",
+      "",
+      ""
+    ]);
+    expect(nameInputs.map((inputElement) => inputElement.props.placeholder)).toEqual([
+      "压力",
+      "流量",
+      "储气量",
+      "soc"
     ]);
     expect(associatedFieldSelects.map((selectElement) => selectElement.props.value)).toEqual([
       "pressure",

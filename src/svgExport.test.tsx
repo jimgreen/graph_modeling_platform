@@ -2,7 +2,12 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { buildSvgDocument } from "./App";
 import { createExportEFile, createExportJsonFile, createExportSvg, createExportSvgFile, createLoadSvgImageExportPathById } from "./appExtracted/appDeviceDefinitionFactories";
 import { createDefaultNode, createNodeFromTemplate, DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY, getTerminalPoint, type DeviceKind, type DeviceTemplate, type Edge } from "./model";
-import type { ProjectMeasurementConfig } from "./measurements";
+import {
+  DEFAULT_MEASUREMENT_CONFIG,
+  normalizeMeasurementConfig,
+  normalizeProjectMeasurements,
+  type ProjectMeasurementConfig
+} from "./measurements";
 import { apiPath } from "./config";
 import * as svgUtils from "./svgUtils";
 
@@ -1390,6 +1395,57 @@ describe("SVG export", () => {
     expect(svg).toContain(">P</tspan>");
     expect(svg).toContain(">kW</tspan>");
     expect(svg).not.toContain(">P -- kW</text>");
+  });
+
+  test("exports hydrogen tank labels from measurement types instead of stale template overrides", () => {
+    const tank = { ...createDefaultNode("hydrogen-tank", { x: 160, y: 100 }), id: "tank-export-labels" };
+    const staleMeasurements = normalizeProjectMeasurements({
+      version: 1,
+      groups: [{
+        id: `measurement-${tank.id}`,
+        nodeId: tank.id,
+        visible: true,
+        labelVisible: true,
+        unitVisible: true,
+        anchor: "bottom",
+        offset: { x: 0, y: 80 },
+        layout: "vertical",
+        items: [
+          { id: `measurement-${tank.id}-pressure-0`, measurementTypeId: "pressure", sourcePoint: `${tank.id}.pressure`, labelOverride: "PRESS", unitOverride: "MPa" },
+          { id: `measurement-${tank.id}-flow-1`, measurementTypeId: "flow", sourcePoint: `${tank.id}.flow`, labelOverride: "FLOW", unitOverride: "Nm3/h" },
+          { id: `measurement-${tank.id}-gasQuantity-2`, measurementTypeId: "gasQuantity", sourcePoint: `${tank.id}.gas_quantity`, labelOverride: "GAS_QUANTITY", unitOverride: "Nm3" },
+          { id: `measurement-${tank.id}-soc-3`, measurementTypeId: "soc", sourcePoint: `${tank.id}.soc`, labelOverride: "SOC", unitOverride: "%" }
+        ]
+      }]
+    }, [tank]);
+    const measurementConfig = normalizeMeasurementConfig({
+      ...DEFAULT_MEASUREMENT_CONFIG,
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes.map((type) => ({
+        ...type,
+        shortLabel: ({
+          pressure: "储气压",
+          flow: "储气流量",
+          gasQuantity: "储气量",
+          soc: "荷气状态"
+        } as Record<string, string>)[type.id] ?? type.shortLabel
+      }))
+    });
+
+    const svg = buildSvgDocument([tank], [], {
+      width: 340,
+      height: 260,
+      measurements: staleMeasurements,
+      measurementConfig
+    });
+
+    expect(svg).toContain(">储气压</tspan>");
+    expect(svg).toContain(">储气流量</tspan>");
+    expect(svg).toContain(">储气量</tspan>");
+    expect(svg).toContain(">荷气状态</tspan>");
+    expect(svg).not.toContain(">PRESS</tspan>");
+    expect(svg).not.toContain(">FLOW</tspan>");
+    expect(svg).not.toContain(">GAS_QUANTITY</tspan>");
+    expect(svg).not.toContain(">SOC</tspan>");
   });
 
   test("keys exported measurement metadata by the stable device id", () => {

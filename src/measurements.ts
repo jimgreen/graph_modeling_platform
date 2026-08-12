@@ -312,12 +312,32 @@ const HYDROGEN_TANK_MEASUREMENT_PROFILE_KINDS = new Set([
   "hydrogen-tank-horizontal",
   "hydrogen-tank-container"
 ]);
+const HYDROGEN_TANK_LEGACY_LABEL_OVERRIDES = new Map([
+  ["pressure", "PRESS"],
+  ["flow", "FLOW"],
+  ["gasQuantity", "GAS_QUANTITY"],
+  ["soc", "SOC"]
+]);
+const HYDROGEN_TANK_GENERATED_MEASUREMENT_INDEX = new Map([
+  ["pressure", 0],
+  ["flow", 1],
+  ["gasQuantity", 2],
+  ["soc", 3]
+]);
 const HYDROGEN_TANK_MEASUREMENT_PROFILE_ITEMS: DeviceMeasurementProfileItem[] = [
-  { measurementTypeId: "pressure", associatedField: "pressure", labelOverride: "PRESS", unitOverride: "MPa" },
-  { measurementTypeId: "flow", associatedField: "flow", labelOverride: "FLOW", unitOverride: "Nm3/h" },
-  { measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: "GAS_QUANTITY", unitOverride: "Nm3" },
-  { measurementTypeId: "soc", associatedField: "soc", labelOverride: "SOC", unitOverride: "%" }
+  { measurementTypeId: "pressure", associatedField: "pressure", unitOverride: "MPa" },
+  { measurementTypeId: "flow", associatedField: "flow", unitOverride: "Nm3/h" },
+  { measurementTypeId: "gasQuantity", associatedField: "gas_quantity", unitOverride: "Nm3" },
+  { measurementTypeId: "soc", associatedField: "soc", unitOverride: "%" }
 ];
+
+function migrateHydrogenTankLegacyLabelOverride<T extends { measurementTypeId?: string; labelOverride?: string }>(item: T): T {
+  const legacyLabel = HYDROGEN_TANK_LEGACY_LABEL_OVERRIDES.get(String(item.measurementTypeId ?? "").trim());
+  if (!legacyLabel || String(item.labelOverride ?? "").trim() !== legacyLabel) {
+    return item;
+  }
+  return { ...item, labelOverride: undefined };
+}
 
 function migrateHydrogenTankMeasurementProfileItems(
   deviceKind: string,
@@ -328,16 +348,16 @@ function migrateHydrogenTankMeasurementProfileItems(
   }
   const legacyIds = items.map((item) => String(item.measurementTypeId ?? "").trim());
   const legacySignature = legacyIds.join("|");
-  if (legacyIds.length !== 3 || ![
+  const migratedItems = legacyIds.length === 3 && [
     "pressure|level|temperature",
     "pressure|flow|gasQuantity"
-  ].includes(legacySignature)) {
-    return items;
-  }
-  return HYDROGEN_TANK_MEASUREMENT_PROFILE_ITEMS.map((replacement, index) => ({
-    ...(items[index] ?? {}),
-    ...replacement
-  }));
+  ].includes(legacySignature)
+    ? HYDROGEN_TANK_MEASUREMENT_PROFILE_ITEMS.map((replacement, index) => ({
+        ...(items[index] ?? {}),
+        ...replacement
+      }))
+    : items;
+  return migratedItems.map(migrateHydrogenTankLegacyLabelOverride);
 }
 
 function normalizedDefaultMeasurementFontSize(value: unknown, fallback?: MeasurementTypeDefinition) {
@@ -745,9 +765,26 @@ export function measurementGroupsForExistingNodes(groups: readonly MeasurementGr
 
 export function normalizeProjectMeasurements(input: ProjectMeasurementConfig | undefined, nodes: readonly ModelNode[]): ProjectMeasurementConfig {
   const nodeIds = new Set(nodes.map((node) => node.id));
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
   return {
     version: 1,
-    groups: measurementGroupsForExistingNodes(input?.groups ?? [], nodeIds)
+    groups: measurementGroupsForExistingNodes(input?.groups ?? [], nodeIds).map((group) => {
+      const node = nodeById.get(group.nodeId);
+      if (!node || !HYDROGEN_TANK_MEASUREMENT_PROFILE_KINDS.has(node.kind) || group.id !== `measurement-${node.id}`) {
+        return group;
+      }
+      let changed = false;
+      const items = group.items.map((item) => {
+        const expectedIndex = HYDROGEN_TANK_GENERATED_MEASUREMENT_INDEX.get(item.measurementTypeId);
+        if (expectedIndex === undefined || item.id !== `${group.id}-${item.measurementTypeId}-${expectedIndex}`) {
+          return item;
+        }
+        const migratedItem = migrateHydrogenTankLegacyLabelOverride(item);
+        changed ||= migratedItem !== item;
+        return migratedItem;
+      });
+      return changed ? { ...group, items } : group;
+    })
   };
 }
 

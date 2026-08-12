@@ -663,12 +663,26 @@ const hydrogenTankMeasurementProfileKinds = new Set([
   "hydrogen-tank-horizontal",
   "hydrogen-tank-container"
 ]);
+const hydrogenTankLegacyLabelOverrides = new Map([
+  ["pressure", "PRESS"],
+  ["flow", "FLOW"],
+  ["gasQuantity", "GAS_QUANTITY"],
+  ["soc", "SOC"]
+]);
 const hydrogenTankMeasurementProfileItems = [
-  { measurementTypeId: "pressure", associatedField: "pressure", labelOverride: "PRESS", unitOverride: "MPa" },
-  { measurementTypeId: "flow", associatedField: "flow", labelOverride: "FLOW", unitOverride: "Nm3/h" },
-  { measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: "GAS_QUANTITY", unitOverride: "Nm3" },
-  { measurementTypeId: "soc", associatedField: "soc", labelOverride: "SOC", unitOverride: "%" }
+  { measurementTypeId: "pressure", associatedField: "pressure", unitOverride: "MPa" },
+  { measurementTypeId: "flow", associatedField: "flow", unitOverride: "Nm3/h" },
+  { measurementTypeId: "gasQuantity", associatedField: "gas_quantity", unitOverride: "Nm3" },
+  { measurementTypeId: "soc", associatedField: "soc", unitOverride: "%" }
 ];
+
+function migrateHydrogenTankLegacyLabelOverride(item) {
+  const legacyLabel = hydrogenTankLegacyLabelOverrides.get(String(item?.measurementTypeId ?? "").trim());
+  if (!legacyLabel || String(item?.labelOverride ?? "").trim() !== legacyLabel) {
+    return item;
+  }
+  return { ...item, labelOverride: undefined };
+}
 
 function migrateHydrogenTankMeasurementProfileItems(deviceKind, items) {
   if (!hydrogenTankMeasurementProfileKinds.has(deviceKind)) {
@@ -676,16 +690,16 @@ function migrateHydrogenTankMeasurementProfileItems(deviceKind, items) {
   }
   const legacyIds = items.map((item) => String(item?.measurementTypeId ?? "").trim());
   const legacySignature = legacyIds.join("|");
-  if (legacyIds.length !== 3 || ![
+  const migratedItems = legacyIds.length === 3 && [
     "pressure|level|temperature",
     "pressure|flow|gasQuantity"
-  ].includes(legacySignature)) {
-    return items;
-  }
-  return hydrogenTankMeasurementProfileItems.map((replacement, index) => ({
-    ...(items[index] ?? {}),
-    ...replacement
-  }));
+  ].includes(legacySignature)
+    ? hydrogenTankMeasurementProfileItems.map((replacement, index) => ({
+        ...(items[index] ?? {}),
+        ...replacement
+      }))
+    : items;
+  return migratedItems.map(migrateHydrogenTankLegacyLabelOverride);
 }
 
 const defaultMeasurementGroupDefaults = Object.freeze({
