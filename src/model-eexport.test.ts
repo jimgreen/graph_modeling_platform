@@ -1044,6 +1044,9 @@ test("exports hydrogen, heat, and cross-energy devices to E sections and reports
   const hydrogenTank = assignPermanentDeviceIndex(createDefaultNode("hydrogen-tank", { x: 380, y: 100 }), {}).node;
   const horizontalHydrogenTank = assignPermanentDeviceIndex(createDefaultNode("hydrogen-tank-horizontal", { x: 520, y: 100 }), {}).node;
   const containerHydrogenTank = assignPermanentDeviceIndex(createDefaultNode("hydrogen-tank-container", { x: 660, y: 100 }), {}).node;
+  hydrogenTank.params.water_volume = "10";
+  horizontalHydrogenTank.params.water_volume = "50";
+  containerHydrogenTank.params.water_volume = "80";
   const heatTank = assignPermanentDeviceIndex(createDefaultNode("thermal-storage-tank", { x: 800, y: 100 }), {}).node;
   const custom: ModelNode = {
     ...createDefaultNode("ac-load", { x: 940, y: 100 }),
@@ -1064,12 +1067,19 @@ test("exports hydrogen, heat, and cross-energy devices to E sections and reports
     "idx",
     "name",
     "node",
+    "control_type",
+    "pressure_set",
+    "flow_set",
+    "alpha",
+    "flow_min",
+    "flow_max",
+    "run_stat",
     "pressure",
     "capacity",
     "water_volume",
+    "initial_soc",
     "pressure_max",
-    "pressure_min",
-    "run_stat"
+    "pressure_min"
   ]);
   expect(E_SECTION_COLUMNS.HeatStorage).toEqual(["idx", "name", "node", "run_stat"]);
   expect(exported.AcE2Hydro.rows).toHaveLength(1);
@@ -1079,13 +1089,20 @@ test("exports hydrogen, heat, and cross-energy devices to E sections and reports
   expect(exported.HydroStorage.rows).toHaveLength(3);
   for (const row of exported.HydroStorage.rows) {
     expect(row).toMatchObject({
-      pressure: "35",
+      control_type: "PRESSURE",
+      pressure_set: "1",
+      flow_set: "0",
+      alpha: "1",
+      flow_min: "-10",
+      flow_max: "10",
+      pressure: "1",
       capacity: "1000",
-      water_volume: "50",
+      initial_soc: "0.5",
       pressure_max: "45",
-      pressure_min: "2"
+      pressure_min: "0.1"
     });
   }
+  expect(exported.HydroStorage.rows.map((row) => row.water_volume)).toEqual(["10", "50", "80"]);
   expect(exported.HeatStorage.rows).toHaveLength(1);
   expect(Object.keys(exported)).not.toContain("Hydro" + "Tank");
   expect(Object.keys(exported)).not.toContain("Heat" + "Tank");
@@ -2500,7 +2517,7 @@ test("keeps every built-in device parameter aligned with its semantic type and n
     "capacity", "capacity_factor", "charge_discharge_efficiency", "cut_in_wind_speed", "cut_out_wind_speed", "dc_i_max", "dc_p_max", "dc_p_min", "dc_v_max", "dc_v_min", "dc_voltage",
     "design_flow", "design_head", "e2h_coeff", "efficiency", "energy_capacity", "flow", "flow_rate", "flow_set", "flow_max", "flow_min", "frequency", "fuel_tank_capacity",
     "g_set", "gas_quantity", "generator_efficiency", "gt", "gt1", "gt2", "gt3", "head", "heat_demand", "heat_power", "heat_rate",
-    "h2e_coeff", "high_i_max", "high_rated_capacity", "high_vbase", "hub_height", "hydrogen_demand", "hydrogen_flow", "impedance", "inlet_pressure",
+    "h2e_coeff", "high_i_max", "high_rated_capacity", "high_vbase", "hub_height", "hydrogen_demand", "hydrogen_flow", "impedance", "initial_soc", "inlet_pressure",
     "i_i_max", "i_max", "input_voltage", "i_p_max", "i_p_min", "i_q_max", "i_q_min", "i_q_set", "i_set", "i_v_max", "i_v_min", "i_v_set", "j_i_max", "j_p_max", "j_p_min", "j_q_max", "j_q_min", "j_q_set", "j_v_max", "j_v_min", "j_v_set", "length", "low_i_max", "low_rated_capacity", "low_vbase", "main_steam_pressure",
     "main_steam_temperature", "max_charge_power", "max_current", "max_discharge_power", "medium_i_max", "medium_rated_capacity",
     "medium_vbase", "module_efficiency", "outlet_pressure", "output_voltage", "p_ac_set", "p_dc_set", "p_max", "p_min", "p_set", "pbase", "power",
@@ -2561,7 +2578,7 @@ test("keeps every built-in device parameter aligned with its semantic type and n
       }
       if (definition.enName === "control_type") {
         const hydrogenCoupling = ["AcE2Hydro", "DcE2Hydro", "Hydro2AcE", "Hydro2DcE"].includes(section ?? "");
-        const hydrogenEndpoint = section === "HydroSource" || section === "HydroLoad";
+        const hydrogenEndpoint = section === "HydroSource" || section === "HydroLoad" || section === "HydroStorage";
         const electricHeatCoupling = ["AcE2Heat", "DcE2Heat", "AcE2Heat2", "DcE2Heat2"].includes(section ?? "");
         const expectedOptions = hydrogenCoupling
           ? [...HYDROGEN_COUPLING_CONTROL_TYPES]
@@ -2576,7 +2593,7 @@ test("keeps every built-in device parameter aligned with its semantic type and n
         const expectedDefault = section === "ACGenerator"
           ? "PV"
           : hydrogenEndpoint
-            ? "FLOW"
+            ? section === "HydroStorage" ? "PRESSURE" : "FLOW"
           : section === "AcE2Hydro" || section === "DcE2Hydro"
             ? "FLOW"
             : "P";

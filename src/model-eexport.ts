@@ -248,7 +248,11 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   HydroPressRegulator: ["idx", "name", "i_node", "j_node", "run_stat"],
   HydroStopValve: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   HydroBus: ["idx", "name", "node", "run_stat"],
-  HydroStorage: ["idx", "name", "node", "pressure", "capacity", "water_volume", "pressure_max", "pressure_min", "run_stat"],
+  HydroStorage: [
+    "idx", "name", "node", "control_type", "pressure_set", "flow_set", "alpha",
+    "flow_min", "flow_max", "run_stat", "pressure", "capacity", "water_volume",
+    "initial_soc", "pressure_max", "pressure_min"
+  ],
   AcE2Hydro: ["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_ac_load_t1", "idx_h2_unit_t2"],
   DcE2Hydro: ["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_dc_load_t1", "idx_h2_unit_t2"],
   Hydro2AcE: ["idx", "name", "control_type", "h2e_coeff", "run_stat", "idx_ac_unit_t1", "idx_h2_load_t2"],

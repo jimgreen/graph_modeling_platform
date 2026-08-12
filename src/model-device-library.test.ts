@@ -2784,20 +2784,27 @@ test("defines static limits and measurement parameters for every hydrogen tank v
     );
 
     expect(node.params).toMatchObject({
+      control_type: "PRESSURE",
+      pressure_set: "1",
+      flow_set: "0",
+      alpha: "1",
+      flow_min: "-10",
+      flow_max: "10",
       water_volume: "50",
       pressure_max: "45",
-      pressure_min: "2",
-      pressure: "35",
+      pressure_min: "0.1",
+      initial_soc: "0.5",
+      pressure: "1",
       flow: "0",
-      gas_quantity: "0",
+      gas_quantity: "500",
       soc: "0.5"
     });
-    expect(definitionByName.get("water_volume")).toMatchObject({ valueType: "float", typicalValue: "50" });
+    expect(definitionByName.get("water_volume")).toMatchObject({ valueType: "float", readonly: false });
     expect(definitionByName.get("pressure_max")).toMatchObject({ valueType: "float", typicalValue: "45" });
-    expect(definitionByName.get("pressure_min")).toMatchObject({ valueType: "float", typicalValue: "2" });
-    expect(definitionByName.get("pressure")).toMatchObject({ cnName: "储气压(MPa)", valueType: "float", typicalValue: "35" });
+    expect(definitionByName.get("pressure_min")).toMatchObject({ valueType: "float", typicalValue: "0.1" });
+    expect(definitionByName.get("pressure")).toMatchObject({ cnName: "储气压(MPa)", valueType: "float", typicalValue: "1" });
     expect(definitionByName.get("flow")).toMatchObject({ cnName: "流量(Nm3/h)", valueType: "float", typicalValue: "0" });
-    expect(definitionByName.get("gas_quantity")).toMatchObject({ cnName: "储气量(Nm3)", valueType: "float", typicalValue: "0" });
+    expect(definitionByName.get("gas_quantity")).toMatchObject({ cnName: "储气量(Nm3)", valueType: "float", typicalValue: "500" });
     expect(definitionByName.get("soc")).toMatchObject({ cnName: "soc", valueType: "float", typicalValue: "0.5" });
   }
 });

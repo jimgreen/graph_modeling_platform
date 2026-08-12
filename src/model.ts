@@ -2663,18 +2663,44 @@ export const COMPONENT_LIBRARY_REVERSE_MAPPING: Record<string, string> = {
   "ACNode+交流母线": "ACNode"
 };
 
-const HYDROGEN_TANK_MEASUREMENT_PARAMETER_DEFINITIONS: DeviceParameterDefinition[] = [
+const HYDROGEN_TANK_PARAMETER_DEFINITIONS: DeviceParameterDefinition[] = [
+  readonlyIntegerDefinition("序号", "idx"),
+  { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
+  readonlyIntegerDefinition("氢节点号", "node"),
+  {
+    cnName: "控制模式",
+    enName: "control_type",
+    valueType: "stringEnum",
+    typicalValue: "PRESSURE",
+    enumValues: [...HYDROGEN_ENDPOINT_CONTROL_TYPES],
+    enumOptions: [
+      { value: "FLOW", label: "定流量" },
+      { value: "PRESSURE", label: "定压力" }
+    ],
+    readonly: false
+  },
+  { cnName: "压力设定值(MPa)", enName: "pressure_set", valueType: "float", typicalValue: "1", readonly: false },
+  { cnName: "流量设定值(Nm3/h)", enName: "flow_set", valueType: "float", typicalValue: "0", readonly: false },
+  { cnName: "压力平衡系数", enName: "alpha", valueType: "float", typicalValue: "1", readonly: false },
+  { cnName: "流量下限(Nm3/h)", enName: "flow_min", valueType: "float", typicalValue: "-10", readonly: false },
+  { cnName: "流量上限(Nm3/h)", enName: "flow_max", valueType: "float", typicalValue: "10", readonly: false },
+  { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false },
   {
     cnName: "储气压(MPa)",
     enName: "pressure",
     valueType: "float",
-    typicalValue: "35",
+    typicalValue: "1",
     readonly: false,
     exportEnabled: true,
     exportName: "pressure"
   },
+  { cnName: "额定储气量(Nm3)", enName: "capacity", valueType: "float", typicalValue: "1000", readonly: false },
+  { cnName: "水容积(m3)", enName: "water_volume", valueType: "float", typicalValue: "50", readonly: false },
+  { cnName: "初始SOC", enName: "initial_soc", valueType: "float", typicalValue: "0.5", readonly: false },
+  { cnName: "压力上限(MPa)", enName: "pressure_max", valueType: "float", typicalValue: "45", readonly: false },
+  { cnName: "压力下限(MPa)", enName: "pressure_min", valueType: "float", typicalValue: "0.1", readonly: false },
   { cnName: "流量(Nm3/h)", enName: "flow", valueType: "float", typicalValue: "0", readonly: false },
-  { cnName: "储气量(Nm3)", enName: "gas_quantity", valueType: "float", typicalValue: "0", readonly: false },
+  { cnName: "储气量(Nm3)", enName: "gas_quantity", valueType: "float", typicalValue: "500", readonly: false },
   { cnName: "soc", enName: "soc", valueType: "float", typicalValue: "0.5", readonly: false }
 ];
 
@@ -3205,18 +3231,25 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     categoryLibrary: "氢能设备",
     size: { width: 126, height: 58 },
     params: {
-      pressure: "35 MPa",
-      capacity: "1000 kg",
-      waterVolume: "50",
-      pressureMax: "45",
-      pressureMin: "2",
+      control_type: "PRESSURE",
+      pressure_set: "1",
+      flow_set: "0",
+      alpha: "1",
+      flow_min: "-10",
+      flow_max: "10",
+      pressure: "1",
+      capacity: "1000",
+      water_volume: "50",
+      initial_soc: "0.5",
+      pressure_max: "45",
+      pressure_min: "0.1",
       flow: "0",
-      gas_quantity: "0",
+      gas_quantity: "500",
       soc: "0.5"
     },
     terminalType: "h2",
     terminalCount: 0,
-    parameterDefinitions: HYDROGEN_TANK_MEASUREMENT_PARAMETER_DEFINITIONS
+    parameterDefinitions: HYDROGEN_TANK_PARAMETER_DEFINITIONS
   },
   {
     kind: "hydrogen-tank-horizontal",
@@ -3224,19 +3257,26 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     categoryLibrary: "氢能设备",
     size: { width: 150, height: 54 },
     params: {
-      pressure: "35 MPa",
-      capacity: "1000 kg",
-      waterVolume: "50",
-      pressureMax: "45",
-      pressureMin: "2",
+      control_type: "PRESSURE",
+      pressure_set: "1",
+      flow_set: "0",
+      alpha: "1",
+      flow_min: "-10",
+      flow_max: "10",
+      pressure: "1",
+      capacity: "1000",
+      water_volume: "50",
+      initial_soc: "0.5",
+      pressure_max: "45",
+      pressure_min: "0.1",
       storageType: "horizontal",
       flow: "0",
-      gas_quantity: "0",
+      gas_quantity: "500",
       soc: "0.5"
     },
     terminalType: "h2",
     terminalCount: 0,
-    parameterDefinitions: HYDROGEN_TANK_MEASUREMENT_PARAMETER_DEFINITIONS
+    parameterDefinitions: HYDROGEN_TANK_PARAMETER_DEFINITIONS
   },
   {
     kind: "hydrogen-tank-container",
@@ -3244,19 +3284,26 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     categoryLibrary: "氢能设备",
     size: { width: 142, height: 66 },
     params: {
-      pressure: "35 MPa",
-      capacity: "1000 kg",
-      waterVolume: "50",
-      pressureMax: "45",
-      pressureMin: "2",
+      control_type: "PRESSURE",
+      pressure_set: "1",
+      flow_set: "0",
+      alpha: "1",
+      flow_min: "-10",
+      flow_max: "10",
+      pressure: "1",
+      capacity: "1000",
+      water_volume: "50",
+      initial_soc: "0.5",
+      pressure_max: "45",
+      pressure_min: "0.1",
       storageType: "container",
       flow: "0",
-      gas_quantity: "0",
+      gas_quantity: "500",
       soc: "0.5"
     },
     terminalType: "h2",
     terminalCount: 0,
-    parameterDefinitions: HYDROGEN_TANK_MEASUREMENT_PARAMETER_DEFINITIONS
+    parameterDefinitions: HYDROGEN_TANK_PARAMETER_DEFINITIONS
   },
   {
     kind: "hydrogen-load",
@@ -4297,6 +4344,7 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   ac_voltage: "float",
   active_power: "float",
   alpha: "float",
+  initial_soc: "float",
   angle: "float",
   array_area: "float",
   b: "float",
