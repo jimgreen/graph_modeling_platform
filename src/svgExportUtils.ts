@@ -279,10 +279,16 @@ function exportMeasurementValueElementId(itemId: string, deviceId: string) {
   return `mv-${itemKey || stableDeviceId || "measurement"}`;
 }
 
-export function exportMeasurementGroupMetadataAttributes(node: ModelNode, group: MeasurementGroup, deviceId = node.id) {
+export function exportMeasurementGroupMetadataAttributes(
+  node: ModelNode,
+  group: MeasurementGroup,
+  deviceId = node.id,
+  ownerDeviceId = deviceId
+) {
   const terminalId = String(group.terminalId ?? "").trim();
   return [
     `dev="${escapeXml(deviceId)}"`,
+    ownerDeviceId && ownerDeviceId !== deviceId ? `owner-dev="${escapeXml(ownerDeviceId)}"` : "",
     terminalId ? `term="${escapeXml(terminalId)}"` : ""
   ].filter(Boolean).join(" ");
 }
@@ -366,7 +372,7 @@ export function buildExportMeasurementGroupMarkup(
   group: MeasurementGroup,
   measurementConfig: PlatformMeasurementConfig,
   usedSvgIds?: Set<string>,
-  options: { layerId?: string; visible?: boolean; deviceId?: string } = {}
+  options: { layerId?: string; visible?: boolean; deviceId?: string; ownerDeviceId?: string } = {}
 ) {
   const metrics = exportMeasurementGroupMetrics(node, group, measurementConfig);
   if (!metrics) {
@@ -378,13 +384,14 @@ export function buildExportMeasurementGroupMarkup(
   const borderDashArray = exportMeasurementGroupBorderDashArray(group);
   const borderDashAttribute = borderDashArray ? ` stroke-dasharray="${escapeXml(borderDashArray)}"` : "";
   const deviceId = options.deviceId ?? node.id;
+  const ownerDeviceId = options.ownerDeviceId ?? deviceId;
   const rowsMarkup = metrics.rows.map((row, index) => {
     const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
     const rowIndex = metrics.columns <= 1 ? index : Math.floor(index / metrics.columns);
     const textX = -metrics.width / 2 + col * metrics.columnWidth + 7;
     const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
     const textGap = Math.max(4, row.fontSize * 0.36);
-    const exportedItemId = exportMeasurementScopedId(row.item.id, node.id, deviceId);
+    const exportedItemId = exportMeasurementScopedId(row.item.id, node.id, ownerDeviceId);
     const binding = resolveMeasurementItemBindingMetadata({ config: measurementConfig, node, group, item: row.item });
     const itemMetadata = exportMeasurementItemMetadataAttributes(row.item, node.id, deviceId, binding.sourcePoint, binding.bindingField);
     const commonAttributes = `x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
@@ -403,7 +410,7 @@ export function buildExportMeasurementGroupMarkup(
     return `<text ${commonAttributes}>${labelMarkup}${valueMarkup}${unitMarkup}</text>`;
   }).join("");
   const layerAttribute = options.layerId ? ` layer-id="${escapeXml(options.layerId)}"` : "";
-  return `<g class="mg"${layerAttribute} transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group, deviceId)}${svgDisplayAttribute(options.visible !== false)}>
+  return `<g class="mg"${layerAttribute} transform="translate(${formatSvgNumber(position.x)} ${formatSvgNumber(position.y)})" ${exportMeasurementGroupMetadataAttributes(node, group, deviceId, options.ownerDeviceId ?? deviceId)}${svgDisplayAttribute(options.visible !== false)}>
   <rect x="${formatSvgNumber(-metrics.width / 2)}" y="${formatSvgNumber(-metrics.height / 2)}" width="${formatSvgNumber(metrics.width)}" height="${formatSvgNumber(metrics.height)}" rx="4" fill="${escapeXml(exportMeasurementGroupBackgroundColor(group))}" stroke="${escapeXml(exportMeasurementGroupBorderColor(group))}" stroke-width="${formatSvgNumber(exportMeasurementGroupBorderWidth(group))}"${borderDashAttribute}/>
   ${rowsMarkup}
 </g>`;

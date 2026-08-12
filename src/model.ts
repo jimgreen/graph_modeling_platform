@@ -1343,6 +1343,54 @@ export function containerAssociatedDeviceName(
   return node.params[containerRelationNameKey(fieldName)]?.trim() || containerAssociatedDeviceDisplayName(node, fieldName);
 }
 
+export type ContainerAssociatedDeviceIdentity = {
+  terminalId: string;
+  relationKey: string;
+  deviceModel: string;
+  index: string;
+  deviceId: string;
+  name: string;
+};
+
+export function containerAssociatedDeviceIdentityForTerminal(
+  node: Pick<ModelNode, "name" | "terminals" | "params">,
+  template: DeviceTemplate | undefined,
+  terminalId: string | undefined
+): ContainerAssociatedDeviceIdentity | undefined {
+  const normalizedTerminalId = String(terminalId ?? "").trim();
+  if (!template?.isContainer || !normalizedTerminalId) {
+    return undefined;
+  }
+  const terminalIndex = node.terminals.findIndex((terminal) => terminal.id === normalizedTerminalId);
+  if (terminalIndex < 0) {
+    return undefined;
+  }
+  const associations = describeContainerTerminalAssociations(template);
+  const requestedAssociation = associations.find((association) => association.terminalIndex === terminalIndex);
+  if (!requestedAssociation) {
+    return undefined;
+  }
+  const sourceAssociation = requestedAssociation.dependent
+    ? associations.find((association) =>
+        association.terminalIndex === requestedAssociation.sourceTerminalIndex && !association.dependent
+      )
+    : requestedAssociation;
+  const relationKey = String(sourceAssociation?.relationKey ?? "").trim();
+  const deviceModel = String(sourceAssociation?.deviceModel ?? "").trim();
+  const index = String(node.params[relationKey] ?? "").trim();
+  if (!relationKey || !deviceModel || !index) {
+    return undefined;
+  }
+  return {
+    terminalId: normalizedTerminalId,
+    relationKey,
+    deviceModel,
+    index,
+    deviceId: `${deviceModel}-${index}`,
+    name: containerAssociatedDeviceName(node, relationKey)
+  };
+}
+
 function deriveContainerRelationCounters(params: Record<string, string>, counters: DeviceIndexCounters) {
   for (const [fieldName, value] of Object.entries(params)) {
     const counterKey = containerRelationCounterKey(fieldName);
@@ -3170,9 +3218,6 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     categoryLibrary: "氢能设备",
     size: { width: 108, height: 62 },
     params: {
-      ratedVoltage: "10 kV",
-      ratedPower: "5 MW",
-      hydrogenFlow: "1000 Nm3/h",
       controlType: "FLOW",
       e2hCoeff: "0.2"
     },
@@ -3190,9 +3235,6 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     categoryLibrary: "氢能设备",
     size: { width: 108, height: 62 },
     params: {
-      ratedVoltage: "750 V",
-      ratedPower: "5 MW",
-      hydrogenFlow: "1000 Nm3/h",
       controlType: "FLOW",
       e2hCoeff: "0.2"
     },
@@ -3333,9 +3375,6 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     categoryLibrary: "氢能设备",
     size: { width: 108, height: 62 },
     params: {
-      ratedVoltage: "10 kV",
-      ratedPower: "3 MW",
-      hydrogenFlow: "600 Nm3/h",
       controlType: "P",
       h2eCoeff: "1.5"
     },
@@ -3353,9 +3392,6 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     categoryLibrary: "氢能设备",
     size: { width: 108, height: 62 },
     params: {
-      ratedVoltage: "750 V",
-      ratedPower: "3 MW",
-      hydrogenFlow: "600 Nm3/h",
       controlType: "P",
       h2eCoeff: "1.5"
     },
@@ -7277,13 +7313,9 @@ export function applyContainerAssociatedDeviceDefaults(
   if (!template.isContainer || (!electrolyzer && !fuelCell)) {
     return params;
   }
-  const instanceOrTemplateNumber = (key: string, fallback: string) =>
-    firstNumericToken(deviceParamValue(params, key) ?? "") ||
-    firstNumericToken(deviceParamValue(template.params, key) ?? "") ||
-    fallback;
-  const ratedPower = instanceOrTemplateNumber("rated_power", electrolyzer ? "5" : "3");
-  const ratedVoltage = instanceOrTemplateNumber("rated_voltage", template.terminalType === "ac" ? "10" : "750");
-  const hydrogenFlow = instanceOrTemplateNumber("hydrogen_flow", electrolyzer ? "1000" : "600");
+  const ratedPower = electrolyzer ? "5" : "3";
+  const ratedVoltage = template.terminalType === "ac" ? "10" : "750";
+  const hydrogenFlow = electrolyzer ? "1000" : "600";
   const terminalTypes = templateTerminalTypes(template);
   const terminalAssociations = template.terminalAssociations ?? [];
   const terminalRoles = template.terminalRoles ?? [];
@@ -7349,6 +7381,42 @@ export function applyContainerAssociatedDeviceDefaults(
     }
   }
   return next;
+}
+
+const HYDROGEN_COUPLING_BODY_RUNTIME_FIELDS = new Set([
+  "rated_voltage",
+  "rated_power",
+  "rated_capacity",
+  "hydrogen_flow",
+  "vbase",
+  "p",
+  "q",
+  "u",
+  "voltage",
+  "flow"
+]);
+
+export function normalizeHydrogenCouplingBodyParams(node: ModelNode, template?: DeviceTemplate): ModelNode {
+  const templateKind = baseDeviceKind(template?.kind ?? node.kind);
+  if (![
+    "ac-electrolyzer",
+    "dc-electrolyzer",
+    "ac-fuel-cell",
+    "dc-fuel-cell"
+  ].includes(templateKind)) {
+    return node;
+  }
+  let params = node.params;
+  for (const field of HYDROGEN_COUPLING_BODY_RUNTIME_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(params, field)) {
+      continue;
+    }
+    if (params === node.params) {
+      params = { ...node.params };
+    }
+    delete params[field];
+  }
+  return params === node.params ? node : { ...node, params };
 }
 
 export function buildDefaultParams(template: DeviceTemplate): Record<string, string> {
@@ -7533,11 +7601,10 @@ export function buildDefaultParams(template: DeviceTemplate): Record<string, str
     const controlType = templateKind === "ac-electrolyzer" || templateKind === "dc-electrolyzer"
       ? "FLOW"
       : "P";
-    return withTemplateDefinitions(withRunStat(withDefaultVbase({
+    return withTemplateDefinitions(withRunStat({
       ...template.params,
-      ratedCapacity: deviceParamValue(template.params, "rated_power") ?? "5 MW",
       controlType
-    })));
+    }));
   }
   if (
     templateKind === "ac-heater" ||

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   DEFAULT_MEASUREMENT_CONFIG,
+  buildMeasurementProfilePositionDefinitions,
   createDefaultMeasurementGroupForNode,
   createDefaultMeasurementGroupsForNode,
   formatMeasurementDisplayValue,
@@ -14,7 +15,7 @@ import {
   resolveMeasurementItemDisplay
 } from "./measurements";
 import type { MeasurementRuntimeValue, ProjectMeasurementConfig } from "./measurements";
-import { DEVICE_LIBRARY, getTemplateParameterDefinitions } from "./model";
+import { DEVICE_LIBRARY, assignPermanentDeviceIndex, createDefaultNode, getTemplateParameterDefinitions } from "./model";
 import type { ModelNode } from "./model";
 
 const node = (id: string, kind = "ac-load"): ModelNode => ({
@@ -36,6 +37,34 @@ const node = (id: string, kind = "ac-load"): ModelNode => ({
 });
 
 describe("measurement domain", () => {
+  test("binds electric-hydrogen coupling measurements to associated endpoint fields", () => {
+    for (const kind of ["ac-electrolyzer", "dc-electrolyzer", "ac-fuel-cell", "dc-fuel-cell"] as const) {
+      const profile = DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.find((candidate) => candidate.deviceKind === kind);
+      expect(profile?.items, kind).toEqual([
+        expect.objectContaining({ measurementTypeId: "activePower", position: "t1", associatedField: "p" }),
+        expect.objectContaining({ measurementTypeId: "voltage", position: "t1", associatedField: "u" }),
+        expect.objectContaining({ measurementTypeId: "flow", position: "t2", associatedField: "flow", unitOverride: "Nm3/h" })
+      ]);
+
+      const node = assignPermanentDeviceIndex(createDefaultNode(kind, { x: 100, y: 120 }), {}).node;
+      const groups = createDefaultMeasurementGroupsForNode(node, DEFAULT_MEASUREMENT_CONFIG);
+      expect(groups.map((group) => group.id)).toEqual([`measurement-${node.id}-t1`, `measurement-${node.id}-t2`]);
+      expect(groups[0].items.map((item) => item.sourcePoint)).toEqual([`${node.id}.t1.p`, `${node.id}.t1.u`]);
+      expect(groups[1].items.map((item) => item.sourcePoint)).toEqual([`${node.id}.t2.flow`]);
+    }
+  });
+
+  test("offers runtime measurement fields on coupling-associated endpoints", () => {
+    const template = DEVICE_LIBRARY.find((candidate) => candidate.kind === "ac-electrolyzer")!;
+    const positions = buildMeasurementProfilePositionDefinitions({ source: template, libraryTemplates: DEVICE_LIBRARY });
+    const fields = (terminalId: string) => positions.find((position) => position.value === terminalId)
+      ?.parameterDefinitions.map((definition) => definition.enName) ?? [];
+
+    expect(fields("device")).not.toEqual(expect.arrayContaining(["p", "u", "flow"]));
+    expect(fields("t1")).toEqual(expect.arrayContaining(["p", "q", "u", "i"]));
+    expect(fields("t2")).toEqual(expect.arrayContaining(["pressure", "flow"]));
+  });
+
   test("binds AC compensator measurements to canonical SVG runtime fields", () => {
     const expectedItems = {
       "ac-capacitor": [

@@ -115,6 +115,39 @@ function mergeMeasurementParameterDefinitions(
   return merged;
 }
 
+const ASSOCIATED_RUNTIME_MEASUREMENT_FIELDS: Record<string, readonly DeviceParameterDefinition[]> = {
+  ACLoad: [
+    { cnName: "有功值", enName: "p", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "无功值", enName: "q", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "电压值", enName: "u", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "电流值", enName: "i", valueType: "float", typicalValue: "0", readonly: true }
+  ],
+  DCLoad: [
+    { cnName: "有功值", enName: "p", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "电压值", enName: "u", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "电流值", enName: "i", valueType: "float", typicalValue: "0", readonly: true }
+  ],
+  ACGenerator: [
+    { cnName: "有功值", enName: "p", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "无功值", enName: "q", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "电压值", enName: "u", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "频率值", enName: "f", valueType: "float", typicalValue: "0", readonly: true }
+  ],
+  DCGenerator: [
+    { cnName: "有功值", enName: "p", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "电压值", enName: "u", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "电流值", enName: "i", valueType: "float", typicalValue: "0", readonly: true }
+  ],
+  HydroSource: [
+    { cnName: "压力值", enName: "pressure", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "流量值", enName: "flow", valueType: "float", typicalValue: "0", readonly: true }
+  ],
+  HydroLoad: [
+    { cnName: "压力值", enName: "pressure", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "流量值", enName: "flow", valueType: "float", typicalValue: "0", readonly: true }
+  ]
+};
+
 function derivedBaseTemplateForMeasurementSource(
   source: MeasurementProfilePositionSource,
   libraryTemplates: readonly DeviceTemplate[] = []
@@ -186,7 +219,10 @@ export function buildMeasurementProfilePositionDefinitions(options: {
       value: `t${association.terminalIndex + 1}`,
       label: `端${association.terminalIndex + 1}${roleLabel ? `（${roleLabel}）` : ""}`,
       deviceModel: association.deviceModel,
-      parameterDefinitions: associatedTemplate ? getTemplateParameterDefinitions(associatedTemplate) : []
+      parameterDefinitions: mergeMeasurementParameterDefinitions(
+        associatedTemplate ? getTemplateParameterDefinitions(associatedTemplate) : undefined,
+        ASSOCIATED_RUNTIME_MEASUREMENT_FIELDS[association.deviceModel]
+      )
     });
   }
   return positions;
@@ -360,6 +396,35 @@ function migrateHydrogenTankMeasurementProfileItems(
   return migratedItems.map(migrateHydrogenTankLegacyLabelOverride);
 }
 
+const HYDROGEN_COUPLING_MEASUREMENT_PROFILE_KINDS = new Set([
+  "ac-electrolyzer",
+  "dc-electrolyzer",
+  "ac-fuel-cell",
+  "dc-fuel-cell"
+]);
+
+function migrateHydrogenCouplingMeasurementProfileItems(
+  deviceKind: string,
+  items: readonly Partial<DeviceMeasurementProfileItem>[]
+) {
+  if (!HYDROGEN_COUPLING_MEASUREMENT_PROFILE_KINDS.has(deviceKind)) {
+    return items;
+  }
+  return items.map((item) => {
+    const measurementTypeId = String(item.measurementTypeId ?? "").trim();
+    if (measurementTypeId === "activePower") {
+      return { ...item, position: "t1", associatedField: "p" };
+    }
+    if (measurementTypeId === "voltage") {
+      return { ...item, position: "t1", associatedField: "u" };
+    }
+    if (measurementTypeId === "flow") {
+      return { ...item, position: "t2", associatedField: "flow", unitOverride: item.unitOverride || "Nm3/h" };
+    }
+    return item;
+  });
+}
+
 function normalizedDefaultMeasurementFontSize(value: unknown, fallback?: MeasurementTypeDefinition) {
   const next = clampNumber(finiteNumber(value, fallback?.defaultFontSize ?? DEFAULT_TYPE_VALUES.defaultFontSize), 6, 96);
   return fallback?.defaultFontSize === DEFAULT_TYPE_VALUES.defaultFontSize && next === LEGACY_DEFAULT_MEASUREMENT_FONT_SIZE
@@ -416,10 +481,26 @@ export const DEFAULT_MEASUREMENT_CONFIG: PlatformMeasurementConfig = {
     { deviceKind: "dc-breaker", items: [{ measurementTypeId: "status" }, { measurementTypeId: "current" }] },
     { deviceKind: "ac-transformer", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
     { deviceKind: "converter", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
-    { deviceKind: "ac-electrolyzer", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "flow" }] },
-    { deviceKind: "dc-electrolyzer", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "flow" }] },
-    { deviceKind: "ac-fuel-cell", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "flow" }] },
-    { deviceKind: "dc-fuel-cell", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "flow" }] },
+    { deviceKind: "ac-electrolyzer", items: [
+      { measurementTypeId: "activePower", position: "t1", associatedField: "p" },
+      { measurementTypeId: "voltage", position: "t1", associatedField: "u" },
+      { measurementTypeId: "flow", position: "t2", associatedField: "flow", unitOverride: "Nm3/h" }
+    ] },
+    { deviceKind: "dc-electrolyzer", items: [
+      { measurementTypeId: "activePower", position: "t1", associatedField: "p" },
+      { measurementTypeId: "voltage", position: "t1", associatedField: "u" },
+      { measurementTypeId: "flow", position: "t2", associatedField: "flow", unitOverride: "Nm3/h" }
+    ] },
+    { deviceKind: "ac-fuel-cell", items: [
+      { measurementTypeId: "activePower", position: "t1", associatedField: "p" },
+      { measurementTypeId: "voltage", position: "t1", associatedField: "u" },
+      { measurementTypeId: "flow", position: "t2", associatedField: "flow", unitOverride: "Nm3/h" }
+    ] },
+    { deviceKind: "dc-fuel-cell", items: [
+      { measurementTypeId: "activePower", position: "t1", associatedField: "p" },
+      { measurementTypeId: "voltage", position: "t1", associatedField: "u" },
+      { measurementTypeId: "flow", position: "t2", associatedField: "flow", unitOverride: "Nm3/h" }
+    ] },
     { deviceKind: "hydrogen-source", items: [{ measurementTypeId: "pressure", associatedField: "pressure", unitOverride: "MPa" }, { measurementTypeId: "flow", associatedField: "flow", unitOverride: "Nm3/h" }, { measurementTypeId: "status" }] },
     { deviceKind: "hydrogen-load", items: [{ measurementTypeId: "pressure", associatedField: "pressure", unitOverride: "MPa" }, { measurementTypeId: "flow", associatedField: "flow", unitOverride: "Nm3/h" }] },
     { deviceKind: "hydrogen-tank", items: HYDROGEN_TANK_MEASUREMENT_PROFILE_ITEMS },
@@ -739,9 +820,12 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
       return [];
     }
     seenProfiles.add(deviceKind);
-    const profileItems = migrateHydrogenTankMeasurementProfileItems(
+    const profileItems = migrateHydrogenCouplingMeasurementProfileItems(
       deviceKind,
-      Array.isArray(profile.items) ? profile.items : []
+      migrateHydrogenTankMeasurementProfileItems(
+        deviceKind,
+        Array.isArray(profile.items) ? profile.items : []
+      )
     );
     const items = profileItems.flatMap((item) => {
       const rawMeasurementTypeId = String(item.measurementTypeId ?? "").trim();
