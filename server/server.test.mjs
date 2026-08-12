@@ -194,6 +194,192 @@ describe("measurement configuration normalization", () => {
   });
 });
 
+describe("scheme enum validation", () => {
+  test("migrates known electric-hydrogen control aliases before writing JSON and E", async () => {
+    const filesRoot = await mkdtemp(join(tmpdir(), "graph-enum-migrate-"));
+    try {
+      await saveSchemeProjectRecord({
+        filesRoot,
+        schemePath: ["枚举测试"],
+        record: {
+          name: "旧控制值",
+          project: {
+            version: 1,
+            name: "旧控制值",
+            nodes: [{
+              id: "electrolyzer-1",
+              kind: "ac-electrolyzer",
+              name: "交流电制氢-1",
+              params: {
+                control_type: "PQ",
+                _customParamDefinitions: JSON.stringify([{
+                  cnName: "控制模式",
+                  enName: "control_type",
+                  valueType: "stringEnum",
+                  typicalValue: "FLOW",
+                  enumValues: ["P", "FLOW"]
+                }])
+              },
+              terminals: []
+            }],
+            edges: []
+          }
+        },
+        svg: "<svg/>",
+        measurementConfig: { measurementTypes: [], deviceProfiles: [] }
+      });
+
+      const loaded = await readSchemeProjectRecord({ filesRoot, schemePath: ["枚举测试"], name: "旧控制值" });
+      expect(loaded.project.nodes[0].params.control_type).toBe("P");
+      const eText = await readFile(join(filesRoot, "枚举测试", "旧控制值.e"), "utf8");
+      expect(eText).toMatch(/<AcE2Hydro>[\s\S]*#\s+1\s+交流电制氢-1\s+P\s/u);
+    } finally {
+      await rm(filesRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects unknown enum values before writing project artifacts", async () => {
+    const filesRoot = await mkdtemp(join(tmpdir(), "graph-enum-invalid-"));
+    try {
+      await expect(saveSchemeProjectRecord({
+        filesRoot,
+        schemePath: ["枚举测试"],
+        record: {
+          name: "非法枚举",
+          project: {
+            version: 1,
+            name: "非法枚举",
+            nodes: [{
+              id: "custom-1",
+              kind: "custom-enum-device",
+              name: "自定义枚举-1",
+              params: {
+                _customDeviceTemplate: "1",
+                mode: "BAD",
+                _customParamDefinitions: JSON.stringify([{
+                  cnName: "模式",
+                  enName: "mode",
+                  valueType: "stringEnum",
+                  typicalValue: "AUTO",
+                  enumValues: ["AUTO", "MANUAL"]
+                }])
+              },
+              terminals: []
+            }],
+            edges: []
+          }
+        },
+        svg: "<svg/>",
+        measurementConfig: { measurementTypes: [], deviceProfiles: [] }
+      })).rejects.toThrow(/mode.*BAD.*AUTO、MANUAL/u);
+      await expect(readFile(join(filesRoot, "枚举测试", "非法枚举.json"), "utf8")).rejects.toThrow();
+    } finally {
+      await rm(filesRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("legacy gas quantity parameter normalization", () => {
+  test("persists only gas_quantity and gives the canonical key precedence", async () => {
+    const filesRoot = await mkdtemp(join(tmpdir(), "graph-gas-quantity-"));
+    try {
+      await saveSchemeProjectRecord({
+        filesRoot,
+        schemePath: ["字段迁移"],
+        record: {
+          name: "储氢罐",
+          project: {
+            version: 1,
+            name: "储氢罐",
+            nodes: [{
+              id: "tank-1",
+              kind: "hydrogen-tank",
+              name: "储氢罐-1",
+              params: {
+                gas_quantity: "31",
+                gasQuantity: "32",
+                gasquantity: "33",
+                _customParamDefinitions: JSON.stringify([{
+                  cnName: "储气量",
+                  enName: "gasquantity",
+                  valueType: "float",
+                  typicalValue: "0",
+                  exportEnabled: true,
+                  exportName: "gasQuantity"
+                }])
+              },
+              terminals: []
+            }],
+            edges: [],
+            measurements: {
+              version: 1,
+              groups: [{
+                id: "measurement-tank-1",
+                nodeId: "tank-1",
+                items: [{
+                  id: "measurement-tank-1-gasQuantity-0",
+                  measurementTypeId: "gasQuantity",
+                  sourcePoint: "tank-1.gasquantity"
+                }]
+              }]
+            }
+          }
+        },
+        svg: "<svg/>",
+        measurementConfig: { measurementTypes: [], deviceProfiles: [] }
+      });
+
+      const jsonText = await readFile(join(filesRoot, "字段迁移", "储氢罐.json"), "utf8");
+      const saved = JSON.parse(jsonText);
+      expect(saved.nodes[0].params.gas_quantity).toBe("31");
+      expect(saved.nodes[0].params).not.toHaveProperty("gasQuantity");
+      expect(saved.nodes[0].params).not.toHaveProperty("gasquantity");
+      expect(JSON.parse(saved.nodes[0].params._customParamDefinitions)).toEqual([
+        expect.objectContaining({ enName: "gas_quantity", exportName: "gas_quantity" })
+      ]);
+      expect(saved.measurements.groups[0].items[0].sourcePoint).toBe("tank-1.gas_quantity");
+    } finally {
+      await rm(filesRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("migrates camel and lowercase legacy values independently", async () => {
+    const filesRoot = await mkdtemp(join(tmpdir(), "graph-gas-aliases-"));
+    try {
+      await saveSchemeProjectRecord({
+        filesRoot,
+        schemePath: ["字段迁移"],
+        record: {
+          name: "历史储气量",
+          project: {
+            version: 1,
+            name: "历史储气量",
+            nodes: [
+              { id: "camel", kind: "hydrogen-tank", name: "驼峰", params: { gasQuantity: "41" }, terminals: [] },
+              { id: "lower", kind: "hydrogen-tank", name: "全小写", params: { gasquantity: "42" }, terminals: [] }
+            ],
+            edges: []
+          }
+        },
+        svg: "<svg/>",
+        measurementConfig: { measurementTypes: [], deviceProfiles: [] }
+      });
+
+      const saved = JSON.parse(await readFile(join(filesRoot, "字段迁移", "历史储气量.json"), "utf8"));
+      expect(saved.nodes.map((node) => node.params)).toEqual([
+        expect.objectContaining({ gas_quantity: "41" }),
+        expect.objectContaining({ gas_quantity: "42" })
+      ]);
+      for (const node of saved.nodes) {
+        expect(node.params).not.toHaveProperty("gasQuantity");
+        expect(node.params).not.toHaveProperty("gasquantity");
+      }
+    } finally {
+      await rm(filesRoot, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("icon library import", () => {
   test("extracts browser-displayable icons from Office-style archives", () => {
     const zip = new AdmZip();
@@ -1528,6 +1714,7 @@ describe("scheme file persistence", () => {
     expect(measurementLayer).toMatch(/<rect\b[^>]*fill="transparent"[^>]*stroke-width="0"/);
     expect(measurementLayer).not.toContain('mf="activePower"');
     expect(measurementLayer).toContain('mt="activePower"');
+    expect(measurementLayer).toContain('mti="activePower"');
     expect(measurementLayer).not.toContain('mid=');
     expect(measurementLayer).not.toContain('m-name=');
     expect(measurementLayer).not.toContain('m-value=');
@@ -1543,6 +1730,7 @@ describe("scheme file persistence", () => {
     expect(measurementRow).toContain('<tspan>P主</tspan>');
     expect(valueText).not.toContain('mid=');
     expect(valueText).toContain('mt="activePower"');
+    expect(valueText).toContain('mti="activePower"');
     expect(valueText).not.toContain('mf=');
     expect(measurementRow).toContain('fill="#dc2626"');
     expect(measurementRow).toContain('font-size="18"');
@@ -1628,8 +1816,112 @@ describe("scheme file persistence", () => {
     expect(measurementLayer).toContain('id="mv-ACLoad-2-reactivePower-1"');
     expect(measurementLayer).not.toContain('mid=');
     expect(measurementLayer).not.toContain('mf="reactivePower"');
-    expect(measurementLayer).toContain('mf="plant.load.1.p"');
+    expect(measurementLayer).toContain('mt="reactivePower" mti="reactivePower" mf="plant.load.1.p"');
     expect(measurementLayer).not.toContain(nodeId);
+  });
+
+  test("exports the canonical measurement field separately from its stable type id", () => {
+    const svg = buildSvgFile(
+      {
+        version: 1,
+        name: "量测字段测试",
+        nodes: [{
+          id: "tank-server",
+          kind: "hydrogen-tank",
+          name: "储氢罐-1",
+          position: { x: 140, y: 100 },
+          size: { width: 80, height: 80 },
+          params: { idx: "1" },
+          terminals: []
+        }],
+        edges: [],
+        measurements: {
+          version: 1,
+          groups: [{
+            id: "measurement-tank-server",
+            nodeId: "tank-server",
+            visible: true,
+            anchor: "custom",
+            offset: { x: 0, y: 80 },
+            layout: "vertical",
+            items: [{
+              id: "measurement-tank-server-gasQuantity-0",
+              measurementTypeId: "gasQuantity",
+              sourcePoint: "tank-server.gas_quantity",
+              visible: true
+            }]
+          }]
+        }
+      },
+      {
+        measurementTypes: [{ id: "gasQuantity", key: "gas_quantity", name: "储气量", shortLabel: "储气量", defaultUnit: "Nm3" }],
+        deviceProfiles: [{ deviceKind: "hydrogen-tank", items: [{ measurementTypeId: "gasQuantity", associatedField: "gas_quantity" }] }]
+      }
+    );
+    const measurementLayer = svgSectionBetween(svg, '<g id="Measurement_Layer">', '<g id="Other_Layer">');
+    const valueText = measurementLayer.match(/<tspan[^>]*class="mv"[^>]*>--<\/tspan>/)?.[0] ?? "";
+
+    expect(valueText).toContain('mt="gas_quantity"');
+    expect(valueText).toContain('mti="gasQuantity"');
+    expect(valueText).not.toContain('mt="gasQuantity"');
+    expect(valueText).not.toContain('mf=');
+  });
+
+  test("uses a custom device profile field as the server SVG binding name", () => {
+    const svg = buildSvgFile(
+      {
+        version: 1,
+        name: "自定义量测字段测试",
+        nodes: [{
+          id: "custom-binding-server",
+          kind: "custom-binding-device-vertical",
+          name: "自定义设备-1",
+          position: { x: 140, y: 100 },
+          size: { width: 80, height: 80 },
+          params: { idx: "1" },
+          terminals: [
+            { id: "t1", label: "端1", anchor: { x: -0.5, y: 0 } },
+            { id: "t2", label: "端2", anchor: { x: 0.5, y: 0 } }
+          ]
+        }],
+        edges: [],
+        measurements: {
+          version: 1,
+          groups: [{
+            id: "custom-binding-server-group",
+            nodeId: "custom-binding-server",
+            terminalId: "t2",
+            visible: true,
+            anchor: "custom",
+            offset: { x: 0, y: 70 },
+            layout: "vertical",
+            items: [{
+              id: "custom-binding-server-item",
+              measurementTypeId: "customMetric",
+              sourcePoint: "custom-binding-server.customMetric",
+              visible: true
+            }]
+          }]
+        }
+      },
+      {
+        measurementTypes: [{ id: "customMetric", key: "custom_metric", name: "自定义量测", shortLabel: "CM", defaultUnit: "u" }],
+        deviceProfiles: [{
+          deviceKind: "custom-binding-device",
+          items: [
+            { measurementTypeId: "customMetric", position: "t1", associatedField: "custom_metric_1" },
+            { measurementTypeId: "customMetric", position: "t2", associatedField: "custom_metric_2" }
+          ]
+        }]
+      }
+    );
+    const measurementLayer = svgSectionBetween(svg, '<g id="Measurement_Layer">', '<g id="Other_Layer">');
+    const valueText = measurementLayer.match(/<tspan[^>]*class="mv"[^>]*>--<\/tspan>/)?.[0] ?? "";
+
+    expect(valueText).toContain('mt="custom_metric_2"');
+    expect(valueText).toContain('mti="customMetric"');
+    expect(valueText).not.toContain('mt="customMetric"');
+    expect(valueText).not.toContain('mf=');
   });
 
   test("writes vertical device label tokens with absolute x and y coordinates", () => {

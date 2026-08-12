@@ -780,7 +780,8 @@ export function normalizeMeasurementConfig(payload) {
       return [];
     }
     seenTypes.add(id);
-    const key = String(item.key ?? id).trim() || id;
+    const rawKey = String(item.key ?? id).trim() || id;
+    const key = /^(?:gasQuantity|gasquantity)$/.test(rawKey) ? "gas_quantity" : rawKey;
     const name = String(item.name ?? key).trim() || key;
     return [{
       id,
@@ -827,7 +828,9 @@ export function normalizeMeasurementConfig(payload) {
         name: item.name !== undefined ? String(item.name) : undefined,
         measurementTypeId,
         position: item.position !== undefined ? String(item.position).trim() || undefined : undefined,
-        associatedField: item.associatedField !== undefined ? String(item.associatedField).trim() || undefined : undefined,
+        associatedField: item.associatedField !== undefined
+          ? String(item.associatedField).trim().replace(/^(?:gasQuantity|gasquantity)$/u, "gas_quantity") || undefined
+          : undefined,
         role: item.role ? String(item.role) : undefined,
         defaultVisible: item.defaultVisible,
         labelOverride: item.labelOverride ? String(item.labelOverride) : undefined,
@@ -866,6 +869,11 @@ async function writeMeasurementConfig(config) {
   };
   await writeJsonStoreFile(settingsDataDir, measurementConfigPath, normalized);
   return normalized;
+}
+
+function normalizeGasQuantityFieldName(value) {
+  const text = String(value ?? "").trim();
+  return /^(?:gasQuantity|gasquantity)$/u.test(text) ? "gas_quantity" : text;
 }
 
 function normalizeDeviceLibraryConfig(payload) {
@@ -926,7 +934,7 @@ function normalizeDeviceLibraryConfig(payload) {
           if (typeof item !== "string") {
             return [];
           }
-          const value = item.trim();
+          const value = normalizeGasQuantityFieldName(item);
           const normalizedValue = value.toLowerCase();
           if (!value || seen.has(normalizedValue)) {
             return [];
@@ -951,7 +959,7 @@ function normalizeDeviceLibraryConfig(payload) {
           if (!item || typeof item !== "object" || Array.isArray(item)) {
             return [];
           }
-          const exportName = String(item.exportName ?? "").trim();
+          const exportName = normalizeGasQuantityFieldName(item.exportName);
           if (!exportName) {
             return [];
           }
@@ -961,7 +969,7 @@ function normalizeDeviceLibraryConfig(payload) {
           }
           seen.add(normalizedExportName);
           const cnName = String(item.cnName ?? "").trim();
-          const sourceName = typeof item.sourceName === "string" ? item.sourceName.trim() : "";
+          const sourceName = typeof item.sourceName === "string" ? normalizeGasQuantityFieldName(item.sourceName) : "";
           return [{ sourceName: sourceName || undefined, exportName, cnName: cnName || exportName }];
         });
         return fields.length > 0 ? [[key, fields]] : [];
@@ -1198,7 +1206,228 @@ function safeFilePart(name, fallback = "未命名") {
     .slice(0, maxFilePartLength) || fallback;
 }
 
+const enumDefinitionIsEnum = (definition) => ["stringEnum", "numberEnum", "enum"].includes(definition?.valueType);
+
+function enumOptionsForStoredDefinition(definition) {
+  const source = Array.isArray(definition?.enumOptions) && definition.enumOptions.length > 0
+    ? definition.enumOptions
+    : Array.isArray(definition?.enumValues)
+      ? definition.enumValues
+      : [];
+  const seen = new Set();
+  const options = [];
+  for (const rawOption of source) {
+    const value = String(rawOption && typeof rawOption === "object" ? rawOption.value : rawOption ?? "").trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    const label = String(rawOption && typeof rawOption === "object" ? rawOption.label ?? "" : "").trim();
+    options.push({ value, label });
+  }
+  return options;
+}
+
+function sectionEnumValues(section, name) {
+  if (name === "status" || name === "run_stat") return ["1", "0"];
+  if (name === "control_type") {
+    if (section === "ACGenerator") return ["PV", "PQ", "PH"];
+    if (section === "DCGenerator") return ["P", "V", "I", "NONE"];
+    if (section === "HydroSource" || section === "HydroLoad") return ["FLOW", "PRESSURE"];
+    if (["AcE2Hydro", "DcE2Hydro", "Hydro2AcE", "Hydro2DcE"].includes(section)) return ["P", "FLOW"];
+    if (["AcE2Heat", "DcE2Heat", "AcE2Heat2", "DcE2Heat2"].includes(section)) return ["P", "T"];
+  }
+  if (section === "DCACConverter" && name === "ac_control_type") return ["PQ", "PV", "PH", "NONE"];
+  if (section === "DCACConverter" && name === "dc_control_type") return ["P", "V", "I", "NONE"];
+  if (section === "ACACConverter" && (name === "i_control_type" || name === "j_control_type")) return ["PQ", "PV", "PH", "NONE"];
+  if (section === "DCDCConverter" && (name === "i_control_type" || name === "j_control_type")) return ["P", "V", "I", "NONE"];
+  return [];
+}
+
+function containerEnumSection(paramKey) {
+  const match = /^(?:control_type|status|run_stat)_(ac2|dc2|h22|heat2|ac|dc|h2|heat)_(unit|load|transformer)_t\d+$/.exec(paramKey);
+  if (!match) return "";
+  const mapping = {
+    ac_unit: "ACGenerator",
+    ac_load: "ACLoad",
+    dc_unit: "DCGenerator",
+    dc_load: "DCLoad",
+    h2_unit: "HydroSource",
+    h2_load: "HydroLoad",
+    heat_unit: "HeatSource",
+    heat_load: "HeatLoad"
+  };
+  return mapping[`${match[1].replace(/2$/, "")}_${match[2]}`] ?? "";
+}
+
+function storedNodeEnumBindings(node) {
+  const params = node?.params ?? {};
+  const section = inferESection(node?.kind, params);
+  const definitions = storedEParameterDefinitions(params).filter(enumDefinitionIsEnum);
+  const definitionByName = new Map(definitions.map((definition) => [definition.enName, definition]));
+  const bindings = definitions.flatMap((definition) => {
+    const sectionValues = params._customDeviceTemplate === "1" ? [] : sectionEnumValues(section, definition.enName);
+    const options = sectionValues.length > 0
+      ? sectionValues.map((value) => ({ value, label: "" }))
+      : enumOptionsForStoredDefinition(definition);
+    if (options.length === 0) return [];
+    return [{ paramKey: definition.enName, definition, options, section, value: String(params[definition.enName] ?? "").trim() }];
+  });
+  for (const paramKey of ["control_type", "ac_control_type", "dc_control_type", "i_control_type", "j_control_type"]) {
+    if (definitionByName.has(paramKey) || !Object.prototype.hasOwnProperty.call(params, paramKey)) continue;
+    const values = sectionEnumValues(section, paramKey);
+    if (values.length === 0) continue;
+    bindings.push({
+      paramKey,
+      definition: { enName: paramKey, cnName: paramKey, valueType: "stringEnum" },
+      options: values.map((value) => ({ value, label: "" })),
+      section,
+      value: String(params[paramKey] ?? "").trim()
+    });
+  }
+  for (const paramKey of Object.keys(params)) {
+    const associatedSection = containerEnumSection(paramKey);
+    if (!associatedSection) continue;
+    const enumName = paramKey.replace(/_(?:ac2|dc2|h22|heat2|ac|dc|h2|heat)_(?:unit|load|transformer)_t\d+$/, "");
+    const values = sectionEnumValues(associatedSection, enumName);
+    if (values.length === 0) continue;
+    bindings.push({
+      paramKey,
+      definition: { enName: enumName, cnName: enumName, valueType: "stringEnum" },
+      options: values.map((value) => ({ value, label: "" })),
+      section: associatedSection,
+      value: String(params[paramKey] ?? "").trim()
+    });
+  }
+  return bindings;
+}
+
+function normalizeKnownStoredEnumValue(binding) {
+  const { options, paramKey, section } = binding;
+  const value = binding.value;
+  const values = options.map((option) => option.value);
+  if (values.includes(value)) return value;
+  const labelMatch = options.find((option) => option.label === value);
+  if (labelMatch) return labelMatch.value;
+  const caseInsensitiveMatch = values.find((candidate) => candidate.toUpperCase() === value.toUpperCase());
+  if (caseInsensitiveMatch) return caseInsensitiveMatch;
+  if (paramKey === "status") {
+    const lower = value.toLowerCase();
+    const normalized = ["0", "打开", "开断", "打开/开断", "分闸", "open", "off", "false"].includes(lower) ? "0"
+      : ["1", "闭合", "合闸", "closed", "on", "true"].includes(lower) ? "1" : value;
+    if (values.includes(normalized)) return normalized;
+  }
+  if (paramKey === "run_stat") {
+    const normalized = value === "运行" ? "1" : ["停运", "检修"].includes(value) ? "0" : value;
+    const aliases = normalized === "1" ? ["1", "运行"] : normalized === "0" ? ["0", "停运"] : [];
+    const match = aliases.find((candidate) => values.includes(candidate));
+    if (match) return match;
+  }
+  if (paramKey.includes("control_type")) {
+    const aliases = { 定P: "P", 定V: "V", 定I: "I", 定PQ: "PQ", 定PV: "PV", 定PH: "PH", 不定: "0" };
+    const normalized = String(aliases[value] ?? value).toUpperCase();
+    if (values.includes(normalized)) return normalized;
+    if (["AcE2Hydro", "DcE2Hydro", "Hydro2AcE", "Hydro2DcE"].includes(section) && ["PQ", "PV", "PH"].includes(normalized) && values.includes("P")) {
+      return "P";
+    }
+    if (["0", "SLACK"].includes(normalized) && values.includes("NONE")) return "NONE";
+  }
+  return value;
+}
+
+function normalizeProjectEnumValuesForStorage(project) {
+  let changed = false;
+  const nodes = (Array.isArray(project?.nodes) ? project.nodes : []).map((node) => {
+    let params = node?.params ?? {};
+    for (const binding of storedNodeEnumBindings(node)) {
+      const normalized = normalizeKnownStoredEnumValue(binding);
+      if (normalized === binding.value) continue;
+      if (params === node.params) params = { ...params };
+      params[binding.paramKey] = normalized;
+    }
+    if (params === node.params) return node;
+    changed = true;
+    return { ...node, params };
+  });
+  return changed ? { ...project, nodes } : project;
+}
+
+function normalizeStoredDeviceParameterDefinitionNames(value) {
+  try {
+    const parsed = JSON.parse(value ?? "[]");
+    if (!Array.isArray(parsed)) return value;
+    const normalized = parsed.map((definition) => {
+      if (!definition || typeof definition !== "object" || Array.isArray(definition)) return definition;
+      const normalizeName = (name) => {
+        const text = String(name ?? "").trim();
+        return /^(?:gasQuantity|gasquantity)$/u.test(text) ? "gas_quantity" : text;
+      };
+      const enName = normalizeName(definition.enName);
+      const exportName = typeof definition.exportName === "string" ? normalizeName(definition.exportName) : definition.exportName;
+      if (enName === definition.enName && exportName === definition.exportName) return definition;
+      return {
+        ...definition,
+        enName,
+        ...(definition.exportName !== undefined ? { exportName } : {})
+      };
+    });
+    const serialized = JSON.stringify(normalized);
+    return serialized === value ? value : serialized;
+  } catch {
+    return value;
+  }
+}
+
+function normalizeStoredDeviceParams(params = {}) {
+  const next = {};
+  const priorities = new Map();
+  for (const [key, value] of Object.entries(params)) {
+    const normalizedKey = /^(?:gasQuantity|gasquantity)$/u.test(key) ? "gas_quantity" : key;
+    const priority = normalizedKey !== "gas_quantity"
+      ? 0
+      : key === "gas_quantity"
+        ? 3
+        : key === "gasQuantity"
+          ? 2
+          : 1;
+    if ((priorities.get(normalizedKey) ?? -1) > priority) continue;
+    priorities.set(normalizedKey, priority);
+    next[normalizedKey] = key === "_customParamDefinitions"
+      ? normalizeStoredDeviceParameterDefinitionNames(value)
+      : value;
+  }
+  return next;
+}
+
+function normalizeProjectDeviceParameterNamesForStorage(project) {
+  const nodes = (Array.isArray(project?.nodes) ? project.nodes : []).map((node) => ({
+    ...node,
+    params: normalizeStoredDeviceParams(node?.params ?? {})
+  }));
+  const measurements = project?.measurements && typeof project.measurements === "object"
+    ? {
+        ...project.measurements,
+        groups: (Array.isArray(project.measurements.groups) ? project.measurements.groups : []).map((group) => ({
+          ...group,
+          items: (Array.isArray(group?.items) ? group.items : []).map((item) => ({
+            ...item,
+            sourcePoint: String(item?.sourcePoint ?? "").trim().replace(/(^|\.)(?:gasQuantity|gasquantity)$/u, "$1gas_quantity")
+          }))
+        }))
+      }
+    : project?.measurements;
+  return { ...project, nodes, ...(measurements ? { measurements } : {}) };
+}
+
+function invalidProjectEnumParameters(project) {
+  return (Array.isArray(project?.nodes) ? project.nodes : []).flatMap((node) => storedNodeEnumBindings(node).flatMap((binding) => {
+    const allowedValues = binding.options.map((option) => option.value);
+    if (!binding.value && binding.definition?.typicalValue && allowedValues.includes(String(binding.definition.typicalValue).trim())) return [];
+    return allowedValues.includes(binding.value) ? [] : [{ node, binding, allowedValues }];
+  }));
+}
+
 function normalizeProjectForStorage(project) {
+  project = normalizeProjectDeviceParameterNamesForStorage(project);
+  project = normalizeProjectEnumValuesForStorage(project);
   const indexed = assignMissingDeviceIndexes(Array.isArray(project?.nodes) ? project.nodes : [], project?.deviceIndexCounters);
   return {
     ...project,
@@ -1475,13 +1704,19 @@ function normalizeControlTypeForE(value) {
 const dcacAcControlTypes = new Set(["PQ", "PV", "PH", "NONE"]);
 const dcacDcControlTypes = new Set(["P", "V", "I", "NONE"]);
 function normalizeDcacAcControlTypeForE(value, fallback = "PQ") {
-  const normalized = String(value ?? "").trim().toUpperCase();
-  return dcacAcControlTypes.has(normalized) ? normalized : fallback;
+  const text = String(value ?? "").trim();
+  if (!text) return fallback;
+  const normalized = normalizeControlTypeForE(text).toUpperCase();
+  const mapped = normalized === "Q" ? "PQ" : normalized === "V" ? "PV" : normalized === "0" ? "NONE" : normalized;
+  return dcacAcControlTypes.has(mapped) ? mapped : text;
 }
 
 function normalizeDcacDcControlTypeForE(value, fallback = "V") {
-  const normalized = String(value ?? "").trim().toUpperCase();
-  return dcacDcControlTypes.has(normalized) ? normalized : fallback;
+  const text = String(value ?? "").trim();
+  if (!text) return fallback;
+  const normalized = normalizeControlTypeForE(text).toUpperCase();
+  const mapped = { CTRL_P: "P", CTRL_V: "V", CTRL_I: "I", SLACK: "NONE", 0: "NONE" }[normalized] ?? normalized;
+  return dcacDcControlTypes.has(mapped) ? mapped : text;
 }
 
 function dcacConverterControlTypePairForE(params = {}) {
@@ -1501,7 +1736,9 @@ const acacLegacyControlTypePairs = {
 const dcdcEndpointControlTypes = new Set(["P", "V", "I", "NONE"]);
 
 function normalizeAcacEndpointControlTypeForE(value, fallback = "PQ") {
-  const normalized = normalizeControlTypeForE(value).toUpperCase();
+  const text = String(value ?? "").trim();
+  if (!text) return fallback;
+  const normalized = normalizeControlTypeForE(text).toUpperCase();
   const mapped = normalized === "Q"
     ? "PQ"
     : normalized === "V"
@@ -1509,11 +1746,13 @@ function normalizeAcacEndpointControlTypeForE(value, fallback = "PQ") {
       : normalized === "0"
         ? "NONE"
         : normalized;
-  return acacSideControlTypes.has(mapped) ? mapped : fallback;
+  return acacSideControlTypes.has(mapped) ? mapped : text;
 }
 
 function normalizeDcdcEndpointControlTypeForE(value, fallback = "NONE") {
-  const normalized = normalizeControlTypeForE(value).toUpperCase();
+  const text = String(value ?? "").trim();
+  if (!text) return fallback;
+  const normalized = normalizeControlTypeForE(text).toUpperCase();
   const mapped = {
     CTRL_P: "P",
     CTRL_V: "V",
@@ -1521,7 +1760,7 @@ function normalizeDcdcEndpointControlTypeForE(value, fallback = "NONE") {
     SLACK: "NONE",
     0: "NONE"
   }[normalized] ?? normalized;
-  return dcdcEndpointControlTypes.has(mapped) ? mapped : fallback;
+  return dcdcEndpointControlTypes.has(mapped) ? mapped : text;
 }
 
 function acacConverterControlTypePairForE(params = {}) {
@@ -1674,6 +1913,9 @@ function mappedLegacyEValue(key, params = {}) {
   }
   if (key === "p_max" || key === "p_min" || key === "q_max" || key === "q_min") {
     return firstNumericEValue(params[key]);
+  }
+  if (key === "gas_quantity" || key === "gasQuantity" || key === "gasquantity") {
+    return params.gas_quantity ?? params.gasQuantity ?? params.gasquantity ?? "";
   }
   if (key === "pbase") return params.pbase ?? params.ratedActivePower ?? "";
   if (key === "qbase") return params.qbase ?? params.ratedReactivePower ?? "";
@@ -2257,7 +2499,6 @@ function buildTopologyNodeDevices(nodes) {
       group.set(terminal.nodeNumber, candidates);
     }
   }
-
   const topologyNodeKindByType = {
     ac: "ac-node",
     dc: "dc-node",
@@ -2778,8 +3019,106 @@ function serverMeasurementTypeById(config) {
   return new Map((config?.measurementTypes ?? []).map((item) => [item.id, item]));
 }
 
+function serverBaseMeasurementDeviceKind(kind) {
+  return kind?.endsWith("-vertical") && kind !== "ac-ground-disconnector-vertical"
+    ? kind.slice(0, -"-vertical".length)
+    : kind;
+}
+
+function serverFallbackMeasurementProfileKinds(kind) {
+  const baseKind = serverBaseMeasurementDeviceKind(kind);
+  const fallbacks = [];
+  const push = (profileKind) => {
+    if (profileKind !== baseKind && !fallbacks.includes(profileKind)) fallbacks.push(profileKind);
+  };
+  if (baseKind.includes("transformer")) push("ac-transformer");
+  if (baseKind.includes("converter")) push("converter");
+  if (baseKind.includes("line") || baseKind.includes("branch")) {
+    if (baseKind.startsWith("ac-")) push("ac-line");
+    if (baseKind.startsWith("dc-")) push("dc-line");
+    if (baseKind.startsWith("heat-")) push("heat-pipeline");
+  }
+  if (baseKind.includes("pipeline")) {
+    if (baseKind.startsWith("hydrogen-")) push("hydrogen-pipeline");
+    if (baseKind.startsWith("heat-")) push("heat-pipeline");
+  }
+  if (baseKind.includes("bus")) {
+    if (baseKind.startsWith("ac-")) push("ac-bus");
+    if (baseKind.startsWith("dc-")) push("dc-bus");
+    if (baseKind.startsWith("heat-")) push("heat-bus");
+    if (baseKind.startsWith("hydrogen-")) push("hydrogen-pipeline");
+  }
+  if (baseKind.includes("switch") || baseKind.includes("disconnector")) {
+    if (baseKind.startsWith("ac-")) push("ac-switch");
+    if (baseKind.startsWith("dc-")) push("dc-switch");
+  }
+  if (baseKind.includes("breaker")) {
+    if (baseKind.startsWith("ac-")) push("ac-breaker");
+    if (baseKind.startsWith("dc-")) push("dc-breaker");
+  }
+  if (baseKind.includes("storage")) {
+    if (baseKind.startsWith("ac-")) push("ac-storage");
+    if (baseKind.startsWith("dc-")) push("dc-storage");
+  }
+  if (baseKind.includes("load")) {
+    if (baseKind.startsWith("ac-")) push("ac-load");
+    if (baseKind.startsWith("dc-")) push("dc-load");
+    if (baseKind.startsWith("heat-") || baseKind.startsWith("single-port-heat-") || baseKind.startsWith("two-port-heat-")) push("heat-load");
+    if (baseKind.startsWith("hydrogen-")) push("hydrogen-load");
+  }
+  if (baseKind.includes("source") || baseKind.includes("generator")) {
+    if (baseKind.startsWith("ac-")) push("ac-source");
+    if (baseKind.startsWith("dc-")) push("dc-source");
+    if (baseKind.startsWith("heat-") || baseKind.startsWith("two-port-heat-")) push("heat-source");
+    if (baseKind.startsWith("hydrogen-")) push("hydrogen-source");
+  }
+  if (baseKind.includes("heater")) {
+    if (baseKind.startsWith("ac-")) push("ac-source");
+    if (baseKind.startsWith("dc-")) push("dc-source");
+  }
+  if (baseKind.startsWith("heat-") || baseKind.startsWith("two-port-heat-") || baseKind.startsWith("three-port-heat-") || baseKind.startsWith("four-port-heat-")) push("heat-source");
+  if (baseKind.startsWith("hydrogen-")) push("hydrogen-source");
+  if (baseKind.startsWith("ac-")) push("ac-source");
+  if (baseKind.startsWith("dc-")) push("dc-source");
+  return fallbacks;
+}
+
 function serverMeasurementProfileForNode(node, config) {
-  return (config?.deviceProfiles ?? []).find((profile) => profile.deviceKind === node?.kind);
+  const profiles = config?.deviceProfiles ?? [];
+  const kind = String(node?.kind ?? "");
+  const baseKind = serverBaseMeasurementDeviceKind(kind);
+  const directKeys = [...new Set([inferESection(kind, node?.params ?? {}), kind, baseKind].filter(Boolean))];
+  return directKeys.flatMap((profileKind) => profiles.find((profile) => profile.deviceKind === profileKind) ?? [])[0]
+    ?? serverFallbackMeasurementProfileKinds(baseKind).flatMap((profileKind) => profiles.find((profile) => profile.deviceKind === profileKind) ?? [])[0];
+}
+
+function resolveServerMeasurementBindingMetadata(node, group, item, measurementConfig) {
+  const measurementTypeId = String(item?.measurementTypeId ?? "").trim();
+  const sourcePoint = String(item?.sourcePoint ?? "").trim();
+  const profileItems = serverMeasurementProfileForNode(node, measurementConfig)?.items?.filter((candidate) =>
+    candidate.measurementTypeId === measurementTypeId && (candidate.role ?? "") === (item?.role ?? "")
+  ) ?? [];
+  const profileItem = profileItems.find((candidate) => group?.terminalId
+    ? candidate.position === group.terminalId
+    : candidate.position === "device" || !candidate.position
+  ) ?? profileItems[0];
+  const associatedField = String(profileItem?.associatedField ?? "").trim();
+  const bindingField = associatedField || measurementTypeId;
+  if (!associatedField) return { measurementTypeId, bindingField, sourcePoint: sourcePoint || `${node?.id ?? ""}.${bindingField}` };
+  if (!sourcePoint) return { measurementTypeId, bindingField, sourcePoint: `${node?.id ?? ""}.${associatedField}` };
+  const nodePrefix = `${String(node?.id ?? "").trim()}.`;
+  if (!nodePrefix || !sourcePoint.startsWith(nodePrefix)) return { measurementTypeId, bindingField, sourcePoint };
+  const localField = sourcePoint.slice(nodePrefix.length);
+  if (localField === measurementTypeId) return { measurementTypeId, bindingField, sourcePoint: `${nodePrefix}${associatedField}` };
+  const typeSuffix = `.${measurementTypeId}`;
+  if (measurementTypeId && localField.endsWith(typeSuffix)) {
+    return {
+      measurementTypeId,
+      bindingField,
+      sourcePoint: `${nodePrefix}${localField.slice(0, -measurementTypeId.length)}${associatedField}`
+    };
+  }
+  return { measurementTypeId, bindingField, sourcePoint };
 }
 
 function resolveServerMeasurementItemDisplay(node, group, item, measurementConfig) {
@@ -2901,10 +3240,12 @@ function buildServerSvgMeasurementGroupMarkup(node, group, measurementConfig, us
     const textGap = Math.max(4, row.fontSize * 0.36);
     const exportedItemId = serverExportMeasurementScopedId(row.item?.id, node?.id, stableDeviceId);
     const measurementTypeId = String(row.item?.measurementTypeId ?? "").trim();
-    const sourceField = serverExportMeasurementSourcePoint(row.item?.sourcePoint, node?.id, stableDeviceId);
+    const binding = resolveServerMeasurementBindingMetadata(node, group, row.item, measurementConfig);
+    const sourceField = serverExportMeasurementSourcePoint(binding.sourcePoint, node?.id, stableDeviceId);
     const itemMetadata = [
-      `mt="${escapeSvgAttribute(measurementTypeId)}"`,
-      sourceField && sourceField !== measurementTypeId ? `mf="${escapeSvgAttribute(sourceField)}"` : "",
+      `mt="${escapeSvgAttribute(binding.bindingField)}"`,
+      `mti="${escapeSvgAttribute(measurementTypeId)}"`,
+      sourceField && sourceField !== binding.bindingField ? `mf="${escapeSvgAttribute(sourceField)}"` : "",
       row.item?.role ? `mr="${escapeSvgAttribute(row.item.role)}"` : ""
     ].filter(Boolean).join(" ");
     const textStyle = `x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeSvgAttribute(row.display.color)}" font-family="${escapeSvgAttribute(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeSvgAttribute(row.display.fontWeight)}" font-style="${escapeSvgAttribute(row.display.fontStyle)}" text-decoration="${escapeSvgAttribute(row.display.textDecoration)}"`;
@@ -3409,6 +3750,14 @@ export async function saveSchemeProjectRecord(options) {
       name
     }
   };
+  const invalidEnumParameters = invalidProjectEnumParameters(storedRecord.project);
+  if (invalidEnumParameters.length > 0) {
+    const details = invalidEnumParameters.slice(0, 20).map(({ node, binding, allowedValues }) =>
+      `设备“${node?.name || node?.id || "未命名"}”的 ${binding.definition?.cnName || binding.paramKey}（${binding.paramKey}）值“${binding.value || "<空>"}”无效，允许值为：${allowedValues.join("、")}`
+    );
+    const remaining = invalidEnumParameters.length > details.length ? `；另有 ${invalidEnumParameters.length - details.length} 项未列出` : "";
+    throw new Error(`保存失败：模型存在非法枚举参数。${details.join("；")}${remaining}`);
+  }
   const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
   await mkdir(schemeDir, { recursive: true });
   if (options.previousName && storageProjectNameKey(options.previousName) !== storageProjectNameKey(name)) {

@@ -1356,6 +1356,7 @@ describe("SVG export", () => {
     expect(svg).not.toContain('m-text=');
     expect(svg).not.toContain('mv="1"');
     expect(svg).toContain('mt="activePower"');
+    expect(svg).toContain('mti="activePower"');
     expect(svg).not.toContain('measure_type="activePower"');
     const measurementRow = svg.match(/<text\b[^>]*><tspan>P<\/tspan><tspan id="mv-load-export-m-active"[\s\S]*?<\/text>/)?.[0] ?? "";
     const valueText = measurementRow.match(/<tspan id="mv-load-export-m-active" class="mv"[^>]*>--<\/tspan>/)?.[0] ?? "";
@@ -1363,6 +1364,7 @@ describe("SVG export", () => {
     expect(measurementRow).toContain('<tspan>P</tspan>');
     expect(valueText).not.toContain('mid=');
     expect(valueText).toContain('mt="activePower"');
+    expect(valueText).toContain('mti="activePower"');
     expect(valueText).not.toContain('mf=');
     expect(measurementRow).toContain('fill="#dc2626"');
     expect(measurementRow).toContain('font-size="18"');
@@ -1446,6 +1448,11 @@ describe("SVG export", () => {
     expect(svg).not.toContain(">FLOW</tspan>");
     expect(svg).not.toContain(">GAS_QUANTITY</tspan>");
     expect(svg).not.toContain(">SOC</tspan>");
+    const gasQuantityValue = svg.match(/<tspan[^>]*class="mv"[^>]*mti="gasQuantity"[^>]*>--<\/tspan>/)?.[0] ?? "";
+    expect(gasQuantityValue).toContain('mt="gas_quantity"');
+    expect(gasQuantityValue).toContain('mti="gasQuantity"');
+    expect(gasQuantityValue).not.toContain('mt="gasQuantity"');
+    expect(gasQuantityValue).not.toContain('mf=');
   });
 
   test("keys exported measurement metadata by the stable device id", () => {
@@ -1487,8 +1494,70 @@ describe("SVG export", () => {
     expect(measurementLayer).toContain('id="mv-ACLoad-2-reactivePower-1"');
     expect(measurementLayer).not.toContain('mid=');
     expect(measurementLayer).not.toContain('mf="reactivePower"');
-    expect(measurementLayer).toContain('mf="plant.load.1.p"');
+    expect(measurementLayer).toContain('mt="reactivePower" mti="reactivePower" mf="plant.load.1.p"');
     expect(measurementLayer).not.toContain(load.id);
+  });
+
+  test("uses a custom device profile field as the SVG binding name", () => {
+    const baseNode = createDefaultNode("ac-load", { x: 140, y: 100 });
+    const customNode = {
+      ...baseNode,
+      id: "custom-binding-node",
+      kind: "custom-binding-device-vertical",
+      terminals: [
+        ...baseNode.terminals,
+        { ...baseNode.terminals[0], id: "t2", label: "端2", anchor: { x: 0.5, y: 0 } }
+      ]
+    };
+    const measurementConfig = normalizeMeasurementConfig({
+      measurementTypes: [{
+        id: "customMetric",
+        key: "custom_metric",
+        name: "自定义量测",
+        shortLabel: "CM",
+        defaultUnit: "u",
+        valueType: "number",
+        defaultDecimals: 2,
+        defaultColor: "#334155",
+        defaultFontFamily: "Arial",
+        defaultFontSize: 14,
+        defaultFontWeight: "500",
+        defaultVisible: true
+      }],
+      deviceProfiles: [{
+        deviceKind: "custom-binding-device",
+        items: [
+          { measurementTypeId: "customMetric", position: "t1", associatedField: "custom_metric_1" },
+          { measurementTypeId: "customMetric", position: "t2", associatedField: "custom_metric_2" }
+        ]
+      }]
+    });
+    const measurements: ProjectMeasurementConfig = {
+      version: 1,
+      groups: [{
+        id: "custom-binding-group",
+        nodeId: customNode.id,
+        terminalId: "t2",
+        visible: true,
+        anchor: "custom",
+        offset: { x: 0, y: 70 },
+        layout: "vertical",
+        items: [{
+          id: "custom-binding-item",
+          measurementTypeId: "customMetric",
+          sourcePoint: `${customNode.id}.customMetric`,
+          visible: true
+        }]
+      }]
+    };
+
+    const svg = buildSvgDocument([customNode], [], { width: 320, height: 220, measurements, measurementConfig });
+    const valueText = svg.match(/<tspan[^>]*class="mv"[^>]*>--<\/tspan>/)?.[0] ?? "";
+
+    expect(valueText).toContain('mt="custom_metric_2"');
+    expect(valueText).toContain('mti="customMetric"');
+    expect(valueText).not.toContain('mt="customMetric"');
+    expect(valueText).not.toContain('mf=');
   });
 
   test("keeps device labels in Text_Layer and measurements in Measurement_Layer instead of defs", () => {

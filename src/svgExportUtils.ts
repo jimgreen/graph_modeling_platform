@@ -1,7 +1,7 @@
 import type { ModelNode, Point } from "./model";
 import { getTerminalPoint, inferESection, isStaticNode } from "./model";
 import type { MeasurementGroup, MeasurementItemBinding, PlatformMeasurementConfig } from "./measurements";
-import { DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR, DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR, DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE, measurementFontScaleForNode, measurementOffsetScaleForNode, resolveMeasurementItemDisplay } from "./measurements";
+import { DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR, DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR, DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE, measurementFontScaleForNode, measurementOffsetScaleForNode, resolveMeasurementItemBindingMetadata, resolveMeasurementItemDisplay } from "./measurements";
 import { escapeXml, formatSvgNumber, svgStrokeDashArray } from "./svgUtils";
 import { nodeLabelText, nodeLabelFontSize, nodeLabelShouldRender, nodeLabelTextAnchor, nodeLabelTransform, nodeLabelVertical, nodeLabelVerticalSegments, nodeLabelVerticalTokenY, nodeLabelCanvasCenter } from "./nodeLabelUtils";
 import { clampNumber } from "./canvasViewport";
@@ -287,13 +287,22 @@ export function exportMeasurementGroupMetadataAttributes(node: ModelNode, group:
   ].filter(Boolean).join(" ");
 }
 
-export function exportMeasurementItemMetadataAttributes(item: MeasurementItemBinding, nodeId = "", deviceId = nodeId) {
+export function exportMeasurementItemMetadataAttributes(
+  item: MeasurementItemBinding,
+  nodeId = "",
+  deviceId = nodeId,
+  bindingSourcePoint = item.sourcePoint,
+  bindingField = item.measurementTypeId
+) {
   const role = String(item.role ?? "").trim();
   const measurementTypeId = String(item.measurementTypeId ?? "").trim();
-  const sourceField = exportMeasurementSourcePoint(item.sourcePoint, nodeId, deviceId);
+  const sourceField = exportMeasurementSourcePoint(bindingSourcePoint, nodeId, deviceId);
+  const canonicalBindingField = String(bindingField ?? "").trim() || measurementTypeId;
+  // mt is the runtime binding field; mti preserves the platform type id for SVG round trips.
   return [
-    `mt="${escapeXml(measurementTypeId)}"`,
-    sourceField && sourceField !== measurementTypeId ? `mf="${escapeXml(sourceField)}"` : "",
+    `mt="${escapeXml(canonicalBindingField)}"`,
+    `mti="${escapeXml(measurementTypeId)}"`,
+    sourceField && sourceField !== canonicalBindingField ? `mf="${escapeXml(sourceField)}"` : "",
     role ? `mr="${escapeXml(role)}"` : ""
   ].filter(Boolean).join(" ");
 }
@@ -376,7 +385,8 @@ export function buildExportMeasurementGroupMarkup(
     const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
     const textGap = Math.max(4, row.fontSize * 0.36);
     const exportedItemId = exportMeasurementScopedId(row.item.id, node.id, deviceId);
-    const itemMetadata = exportMeasurementItemMetadataAttributes(row.item, node.id, deviceId);
+    const binding = resolveMeasurementItemBindingMetadata({ config: measurementConfig, node, group, item: row.item });
+    const itemMetadata = exportMeasurementItemMetadataAttributes(row.item, node.id, deviceId, binding.sourcePoint, binding.bindingField);
     const commonAttributes = `x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
     const labelMarkup = row.labelText
       ? `<tspan>${escapeXml(row.labelText)}</tspan>`

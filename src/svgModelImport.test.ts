@@ -123,7 +123,7 @@ const PLATFORM_SVG = `
       <g class="mg" layer-id="layer-operating" transform="translate(265 125)" dev="ACBreaker-7" term="t1">
         <rect x="-48" y="-15" width="96" height="30" rx="4" fill="transparent" stroke="#64748b" stroke-width="2" stroke-dasharray="10 6"/>
         <text x="-41" y="0" dominant-baseline="middle" fill="#0f766e" font-family="Arial" font-size="18" font-weight="500" font-style="normal" text-decoration="none">
-          <tspan>有功</tspan><tspan id="mv-ACBreaker-7-t1-activePower-0" class="mv" mt="activePower" mf="t1.r" dx="5">--</tspan><tspan dx="5">MW</tspan>
+          <tspan>有功</tspan><tspan id="mv-ACBreaker-7-t1-activePower-0" class="mv" mt="activePower" mti="activePower" mf="t1.r" dx="5">--</tspan><tspan dx="5">MW</tspan>
         </text>
       </g>
     </g>
@@ -419,7 +419,35 @@ describe("parseSvgModel round trip and batching", () => {
     expect(reExported).toContain(`source-dev-id="${importedBreaker?.id}"`);
     expect(reExported).toContain(`target-dev-id="${importedBus?.id}"`);
     expect(reExported).toContain('class="mg"');
-    expect(reExported).toContain('mt="activePower"');
+    expect(reExported).toContain('mt="activePower" mti="activePower"');
+  });
+
+  test("imports legacy measurement metadata that used mt as the type id and mf as the binding field", async () => {
+    const legacy = PLATFORM_SVG
+      .replace('mt="activePower" mti="activePower" mf="t1.r"', 'mt="activePower" mf="t1.r"');
+
+    const imported = await parse(legacy, "旧量测协议");
+    const breaker = imported.project.nodes.find((node) => node.kind === "ac-breaker");
+
+    expect(imported.project.measurements?.groups[0]?.items[0]).toMatchObject({
+      measurementTypeId: "activePower",
+      sourcePoint: `${breaker?.id}.t1.r`
+    });
+  });
+
+  test("restores a stable type id when the SVG binding field has a different name", async () => {
+    const source = PLATFORM_SVG.replace(
+      'mt="activePower" mti="activePower" mf="t1.r"',
+      'mt="gas_quantity" mti="gasQuantity"'
+    );
+
+    const imported = await parse(source, "量测字段回读");
+    const breaker = imported.project.nodes.find((node) => node.kind === "ac-breaker");
+
+    expect(imported.project.measurements?.groups[0]?.items[0]).toMatchObject({
+      measurementTypeId: "gasQuantity",
+      sourcePoint: `${breaker?.id}.gas_quantity`
+    });
   });
 
   test("yields between batches while importing a large platform SVG", async () => {

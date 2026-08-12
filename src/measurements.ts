@@ -510,7 +510,14 @@ function normalizedAssociatedField(value: unknown): string | undefined {
     return undefined;
   }
   const associatedField = String(value).trim();
-  return associatedField ? associatedField : undefined;
+  if (!associatedField) {
+    return undefined;
+  }
+  return /^(?:gasQuantity|gasquantity)$/.test(associatedField) ? "gas_quantity" : associatedField;
+}
+
+function normalizedMeasurementSourcePoint(value: unknown): string {
+  return String(value ?? "").trim().replace(/(^|\.)(?:gasQuantity|gasquantity)$/u, "$1gas_quantity");
 }
 
 function baseDeviceKind(kind: string): string {
@@ -600,6 +607,53 @@ function measurementProfileForNode(node: ModelNode, config: PlatformMeasurementC
     fallbackMeasurementProfileKinds(baseKind).flatMap((profileKind) => config.deviceProfiles.find((profile) => profile.deviceKind === profileKind) ?? [])[0];
 }
 
+export function resolveMeasurementItemBindingMetadata({
+  config,
+  node,
+  group,
+  item
+}: {
+  config: PlatformMeasurementConfig;
+  node: ModelNode;
+  group?: Pick<MeasurementGroup, "terminalId">;
+  item: MeasurementItemBinding;
+}): { measurementTypeId: string; bindingField: string; sourcePoint: string } {
+  const measurementTypeId = String(item.measurementTypeId ?? "").trim();
+  const sourcePoint = String(item.sourcePoint ?? "").trim();
+  const profileItems = measurementProfileForNode(node, config)?.items.filter((candidate) =>
+    candidate.measurementTypeId === measurementTypeId && (candidate.role ?? "") === (item.role ?? "")
+  ) ?? [];
+  const profileItem = profileItems.find((candidate) => group?.terminalId
+    ? candidate.position === group.terminalId
+    : candidate.position === "device" || !candidate.position
+  ) ?? profileItems[0];
+  const associatedField = String(profileItem?.associatedField ?? "").trim();
+  const bindingField = associatedField || measurementTypeId;
+  if (!associatedField) {
+    return { measurementTypeId, bindingField, sourcePoint: sourcePoint || `${node.id}.${bindingField}` };
+  }
+  if (!sourcePoint) {
+    return { measurementTypeId, bindingField, sourcePoint: `${node.id}.${associatedField}` };
+  }
+  const nodePrefix = `${node.id}.`;
+  if (!sourcePoint.startsWith(nodePrefix)) {
+    return { measurementTypeId, bindingField, sourcePoint };
+  }
+  const localField = sourcePoint.slice(nodePrefix.length);
+  if (localField === measurementTypeId) {
+    return { measurementTypeId, bindingField, sourcePoint: `${nodePrefix}${associatedField}` };
+  }
+  const typeSuffix = `.${measurementTypeId}`;
+  if (measurementTypeId && localField.endsWith(typeSuffix)) {
+    return {
+      measurementTypeId,
+      bindingField,
+      sourcePoint: `${nodePrefix}${localField.slice(0, -measurementTypeId.length)}${associatedField}`
+    };
+  }
+  return { measurementTypeId, bindingField, sourcePoint };
+}
+
 function normalizeStyleOverride(value: unknown): MeasurementStyleOverride | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
@@ -655,7 +709,8 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
     }
     seenTypes.add(id);
     const fallback = defaults.get(id);
-    const key = String(item.key ?? fallback?.key ?? id).trim() || id;
+    const rawKey = String(item.key ?? fallback?.key ?? id).trim() || id;
+    const key = /^(?:gasQuantity|gasquantity)$/.test(rawKey) ? "gas_quantity" : rawKey;
     const name = String(item.name ?? fallback?.name ?? key).trim() || key;
     return [{
       id,
@@ -724,7 +779,7 @@ function normalizeMeasurementItem(item: Partial<MeasurementItemBinding>, validTy
     name: item.name !== undefined ? String(item.name) : undefined,
     measurementTypeId,
     role: item.role ? String(item.role) : undefined,
-    sourcePoint: String(item.sourcePoint ?? "").trim(),
+    sourcePoint: normalizedMeasurementSourcePoint(item.sourcePoint),
     visible: item.visible,
     labelOverride: item.labelOverride !== undefined ? String(item.labelOverride) : undefined,
     unitOverride: item.unitOverride !== undefined ? String(item.unitOverride) : undefined,

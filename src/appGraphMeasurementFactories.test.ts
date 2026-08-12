@@ -857,7 +857,7 @@ describe("measurement canvas interactions", () => {
       { id: "measurement-group-1", nodeId: "node-42", items: [item] } as any
     );
 
-    expect(markup).toContain('<text class="measurement-item mi" mt="activePower" mr="value"');
+    expect(markup).toContain('<text class="measurement-item mi" mt="activePower" mti="activePower" mr="value"');
     expect(markup).not.toContain(' mid=');
     expect(markup).not.toContain(' mf=');
     expect(markup).toContain('<tspan class="measurement-label ml">P</tspan>');

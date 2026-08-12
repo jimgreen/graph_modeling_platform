@@ -1352,14 +1352,19 @@ function measurementItemsForGroup(
       continue;
     }
     const valueSpan = spans[valueIndex];
-    const measurementTypeId = String(valueSpan.getAttribute("mt") || "").trim();
+    const bindingField = String(valueSpan.getAttribute("mt") || "").trim();
+    const explicitMeasurementTypeId = String(valueSpan.getAttribute("mti") || "").trim();
+    const measurementTypeId = explicitMeasurementTypeId || bindingField;
     if (!measurementTypeId) {
-      warnings.push(`设备“${node.name}”的量测项缺少 mt，已跳过。`);
+      warnings.push(`设备“${node.name}”的量测项缺少 mti/mt，已跳过。`);
       continue;
     }
     const rawValueId = String(valueSpan.getAttribute("id") || `${node.id}-${terminalId ? `${terminalId}-` : ""}${measurementTypeId}-${rowIndex}`)
       .replace(/^mv-/u, "");
-    const sourceField = String(valueSpan.getAttribute("mf") || "").trim();
+    const legacySourceField = String(valueSpan.getAttribute("mf") || "").trim();
+    const sourceField = legacySourceField || (explicitMeasurementTypeId
+      ? bindingField
+      : `${terminalId ? `${terminalId}.` : ""}${bindingField}`);
     const sourcePoint = sourceField
       ? (sourceField.startsWith(`${node.id}.`) ? sourceField : `${node.id}.${sourceField}`)
       : `${node.id}.${terminalId ? `${terminalId}.` : ""}${measurementTypeId}`;
