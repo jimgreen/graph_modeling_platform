@@ -23,6 +23,7 @@ import {
   canConnectTerminals,
   buildDefaultDeviceParameterDefinitions,
   buildContainerDeviceParameterViews,
+  containerAssociatedDeviceIdentityForTerminal,
   describeContainerTerminalAssociations,
   calculateNodeVisualBounds,
   calculateModelGeometryBounds,
@@ -2834,6 +2835,12 @@ test("keeps associated endpoint definitions out of hydrogen coupling device bodi
       .filter(Boolean);
     const bodyDefinitions = getTemplateParameterDefinitions(template);
     const bodyKeys = bodyDefinitions.map((definition) => definition.enName);
+    const node = assignPermanentDeviceIndex(createDefaultNode(kind, { x: 100, y: 100 }), {}).node;
+
+    for (const bodyField of ["rated_voltage", "rated_power", "rated_capacity", "hydrogen_flow", "vbase", "p", "q", "u", "voltage", "flow"]) {
+      expect(bodyKeys, `${kind}:${bodyField}`).not.toContain(bodyField);
+      expect(node.params, `${kind}:${bodyField}`).not.toHaveProperty(bodyField);
+    }
 
     const associatedFieldNames = relationSuffixes.flatMap((suffix) =>
       expectedEndpointFields.map((field) => `${field}_${suffix}`)
@@ -2843,7 +2850,6 @@ test("keeps associated endpoint definitions out of hydrogen coupling device bodi
     }
     expect(new Set(bodyKeys).size, kind).toBe(bodyKeys.length);
 
-    const node = assignPermanentDeviceIndex(createDefaultNode(kind, { x: 100, y: 100 }), {}).node;
     const associatedViews = buildContainerDeviceParameterViews(node, template).filter((view) => view.kind === "associated");
     expect(associatedViews, kind).toHaveLength(2);
     for (const view of associatedViews) {
@@ -2851,6 +2857,33 @@ test("keeps associated endpoint definitions out of hydrogen coupling device bodi
       expect(new Set(keys).size, `${kind}:${view.componentLibrary}`).toBe(keys.length);
       expect(keys, `${kind}:${view.componentLibrary}`).toEqual(E_SECTION_COLUMNS[view.componentLibrary!]);
     }
+  }
+});
+
+test("resolves coupling terminals to stable associated device identities", () => {
+  const expected = [
+    ["ac-electrolyzer", "ACLoad", "HydroSource"],
+    ["dc-electrolyzer", "DCLoad", "HydroSource"],
+    ["ac-fuel-cell", "ACGenerator", "HydroLoad"],
+    ["dc-fuel-cell", "DCGenerator", "HydroLoad"]
+  ] as const;
+
+  for (const [kind, electricModel, hydrogenModel] of expected) {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
+    const node = assignPermanentDeviceIndex(createDefaultNode(kind, { x: 100, y: 100 }), {}).node;
+    const electric = containerAssociatedDeviceIdentityForTerminal(node, template, "t1");
+    const hydrogen = containerAssociatedDeviceIdentityForTerminal(node, template, "t2");
+
+    expect(electric, `${kind}:t1`).toMatchObject({
+      terminalId: "t1",
+      deviceModel: electricModel,
+      deviceId: `${electricModel}-${electric?.index}`
+    });
+    expect(hydrogen, `${kind}:t2`).toMatchObject({
+      terminalId: "t2",
+      deviceModel: hydrogenModel,
+      deviceId: `${hydrogenModel}-${hydrogen?.index}`
+    });
   }
 });
 

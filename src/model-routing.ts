@@ -92,6 +92,7 @@ import {
   normalizeDcdcEndpointControlTypeForE,
   normalizeElectricGenerationRatedParams,
   normalizeEndpointConverterNodeControlParams,
+  normalizeHydrogenCouplingBodyParams,
   normalizeKnownLegacyNodeEnumValues,
   normalizeLegacyGasQuantityDeviceParams,
   normalizeRoutableLineDeviceStrokeWidthParam,
@@ -1599,6 +1600,7 @@ export function normalizeNodeTerminalsWithTemplate(node: ModelNode, template: De
   if (template) {
     normalizedNode = migrateElectricGenerationContainerParams(normalizedNode, template);
   }
+  normalizedNode = normalizeHydrogenCouplingBodyParams(normalizedNode, template);
   normalizedNode = normalizeKnownLegacyNodeEnumValues(normalizedNode, template);
   if (template && !template.isContainer && (isThreeWindingTransformer(normalizedNode) || isTwoWindingTransformerTemplateKind(normalizedNode.kind))) {
     const parameterDefinitions = isThreeWindingTransformer(normalizedNode)

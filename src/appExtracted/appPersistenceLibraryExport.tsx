@@ -98,6 +98,7 @@ import {
   createNodeFromTemplate,
   createRoutableLineDeviceFromEndpoints,
   createStaticBoxNodeFromDrawing,
+  containerAssociatedDeviceIdentityForTerminal,
   containerRelationNameKey,
   CONVERTER_GLYPH_BORDER_INSET,
   CUSTOM_DEVICE_TEMPLATE_KEY,
@@ -4195,6 +4196,17 @@ ${rules.join("\n")}
   const measurementConfig = canvasSize.measurementConfig ?? DEFAULT_MEASUREMENT_CONFIG;
   const measurements = canvasSize.measurements ?? EMPTY_PROJECT_MEASUREMENTS;
   const measurementNodeById = new Map(exportNodes.map((node) => [node.id, node]));
+  const associatedDeviceIdentityByNodeTerminal = new Map<string, ReturnType<typeof containerAssociatedDeviceIdentityForTerminal>>();
+  const associatedDeviceIdentity = (node: ModelNode, terminalId?: string) => {
+    const key = `${node.id}:${String(terminalId ?? "")}`;
+    if (!associatedDeviceIdentityByNodeTerminal.has(key)) {
+      associatedDeviceIdentityByNodeTerminal.set(
+        key,
+        containerAssociatedDeviceIdentityForTerminal(node, resolveSvgNodeTemplate(node), terminalId)
+      );
+    }
+    return associatedDeviceIdentityByNodeTerminal.get(key);
+  };
   const measurementMarkup = measurements.groups
     .map((group) => {
       const node = measurementNodeById.get(group.nodeId);
@@ -4202,8 +4214,11 @@ ${rules.join("\n")}
         return "";
       }
       const layerId = nodeLayerId(node);
+      const ownerDeviceId = exportDeviceIdByNodeId.get(node.id) ?? node.id;
+      const associatedDevice = associatedDeviceIdentity(node, group.terminalId);
       const groupMarkup = buildExportMeasurementGroupMarkup(node, group, measurementConfig, usedSvgIds, {
-        deviceId: exportDeviceIdByNodeId.get(node.id) ?? node.id,
+        deviceId: associatedDevice?.deviceId ?? ownerDeviceId,
+        ownerDeviceId,
         layerId,
         visible: layerVisible(layerId)
       });
@@ -4213,6 +4228,21 @@ ${rules.join("\n")}
       return groupMarkup;
     })
     .filter(Boolean)
+    .join("\n");
+  const measurementAssociatedDevices = Array.from(associatedDeviceIdentityByNodeTerminal.values())
+    .filter((identity): identity is NonNullable<typeof identity> => Boolean(identity))
+    .filter((identity, index, identities) => identities.findIndex((candidate) => candidate.deviceId === identity.deviceId) === index);
+  const associatedDeviceMetadataMarkup = Array.from(
+    new Set(measurementAssociatedDevices.map((identity) => identity.deviceModel))
+  )
+    .sort((left, right) => left.localeCompare(right))
+    .map((deviceModel) => `<g device-type="${escapeXml(deviceModel)}">
+${measurementAssociatedDevices
+      .filter((identity) => identity.deviceModel === deviceModel)
+      .sort((left, right) => left.index.localeCompare(right.index))
+      .map((identity) => `<g dev-id="${escapeXml(identity.deviceId)}" name="${escapeXml(identity.name)}" idx="${escapeXml(identity.index)}"/>`)
+      .join("\n")}
+</g>`)
     .join("\n");
   const backgroundMarkup = `<rect width="100%" height="100%" fill="${escapedBackgroundColor}"/>
 ${backgroundImage ? svgImageContentMarkup(backgroundImage, {
@@ -4238,6 +4268,9 @@ ${nodeSymbolMarkup.join("\n")}
 <g id="${rootId}">
 <g class="export-layer-definitions" style="display:none">
 ${exportLayerDefinitionsMarkup}
+</g>
+<g class="export-associated-device-definitions" style="display:none">
+${associatedDeviceMetadataMarkup}
 </g>
 <g id="${escapeXml(backgroundLayerId)}">
 ${backgroundMarkup}
