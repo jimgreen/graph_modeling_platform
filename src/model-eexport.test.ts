@@ -715,6 +715,58 @@ test("exports built-in E columns for devices without parameterDefinitions (e.g. 
   expect(file.text).toContain("dev_type");
 });
 
+test("exports parallel and series AC compensators with the defined columns and topology node numbers", () => {
+  const shunt = createDefaultNode("ac-capacitor", { x: 100, y: 100 });
+  shunt.name = "并联电容器1";
+  shunt.params.idx = "1";
+  shunt.terminals[0].nodeNumber = "11";
+  const series = createDefaultNode("ac-series-reactor", { x: 240, y: 100 });
+  series.name = "串联电抗器1";
+  series.params.idx = "1";
+  series.terminals[0].nodeNumber = "12";
+  series.terminals[1].nodeNumber = "13";
+
+  const exported = parseESections(buildEDeviceParameterFile({
+    version: 1,
+    name: "无功补偿设备",
+    nodes: [shunt, series],
+    edges: []
+  }));
+
+  expect(E_SECTION_COLUMNS.ACCompensator).toEqual([
+    "idx", "name", "dev_type", "node", "rated_voltage", "rated_reactive_power", "reactance", "run_stat"
+  ]);
+  expect(E_SECTION_COLUMNS.ACSeriCompensator).toEqual([
+    "idx", "name", "dev_type", "i_node", "j_node", "rated_voltage", "rated_reactive_power", "reactance", "run_stat"
+  ]);
+  expect(exported.ACCompensator.columns).toEqual(E_SECTION_COLUMNS.ACCompensator);
+  expect(exported.ACCompensator.rows).toEqual([expect.objectContaining({
+    idx: "1",
+    name: "并联电容器1",
+    dev_type: "CAPACITOR",
+    rated_voltage: "10",
+    rated_reactive_power: "1",
+    reactance: "100"
+  })]);
+  expect(exported.ACCompensator.rows[0].node).toMatch(/^\d+$/);
+  expect(exported.ACSeriCompensator.columns).toEqual(E_SECTION_COLUMNS.ACSeriCompensator);
+  expect(exported.ACSeriCompensator.rows).toEqual([expect.objectContaining({
+    idx: "1",
+    name: "串联电抗器1",
+    dev_type: "REACTOR",
+    rated_voltage: "10",
+    rated_reactive_power: "1",
+    reactance: "100"
+  })]);
+  expect(exported.ACSeriCompensator.rows[0].i_node).toMatch(/^\d+$/);
+  expect(exported.ACSeriCompensator.rows[0].j_node).toMatch(/^\d+$/);
+  expect(Object.keys(exported)).not.toContain("ACShuntCompensator");
+});
+
+test("normalizes legacy AC shunt component metadata to ACCompensator", () => {
+  expect(inferESection("ac-shunt", { component_type: "ACShuntCompensator" })).toBe("ACCompensator");
+});
+
 test("uses fixed cnName for idx/name and filters enName-only cnName in union", () => {
   // ac-source 无 parameterDefinitions（idx cnName=enName="idx"），ac-storage 有 parameterDefinitions（idx cnName="序号"）
   // 两者同属 ACGenerator，idx/name 应固定为"序号"/"名称"，p_set 过滤英文后保留"有功设定"
@@ -2461,6 +2513,11 @@ test("keeps every built-in device parameter aligned with its semantic type and n
     "x1", "x2", "x3", "x_pu"
   ]);
   const integerNames = new Set(["battery_rack_count", "idx", "isl", "mppt_count"]);
+  const compensatorKinds = new Set([
+    "ac-capacitor", "ac-reactor", "ac-series-capacitor", "ac-series-reactor",
+    "ac-series-capacitor-vertical", "ac-series-reactor-vertical"
+  ]);
+  const compensatorFloatNames = new Set(["rated_reactive_power", "reactance"]);
   const stringEnumNames = new Set([
     "ac_control_type", "control_type", "dc_control_type", "fuel_type", "i_control_type", "j_control_type", "reactor_type",
     "run_stat", "storage_technology", "turbine_type"
@@ -2487,7 +2544,9 @@ test("keeps every built-in device parameter aligned with its semantic type and n
     const definitions = getTemplateParameterDefinitions(template);
     for (const definition of definitions) {
       const context = `${template.label}.${definition.enName}`;
-      const semanticType = expectedType(definition.enName);
+      const semanticType = compensatorKinds.has(template.kind) && compensatorFloatNames.has(definition.enName)
+        ? "float"
+        : expectedType(definition.enName);
       expect(definition.valueType, context).toBe(semanticType);
       if (semanticType === "float" && definition.typicalValue !== "") {
         expect(definition.typicalValue, context).toMatch(numericText);
@@ -2529,7 +2588,8 @@ test("keeps every built-in device parameter aligned with its semantic type and n
     for (const params of [template.params, node.params]) {
       for (const [rawName, rawValue] of Object.entries(params)) {
         const name = rawName.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
-        if (floatNames.has(name) && rawValue !== "") {
+        const isFloat = floatNames.has(name) || (compensatorKinds.has(template.kind) && compensatorFloatNames.has(name));
+        if (isFloat && rawValue !== "") {
           expect(rawValue, `${template.label}.${name}`).toMatch(numericText);
         }
         if (integerNames.has(name) && rawValue !== "") {

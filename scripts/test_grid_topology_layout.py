@@ -38,6 +38,37 @@ def segment_intersects_rect(a, b, rect):
 
 
 class GridTopologyLayoutTest(unittest.TestCase):
+    def test_imports_new_and_legacy_ac_compensator_sections(self):
+        sections = {
+            "ACNode": layout.ESection("ACNode", rows=[
+                {"idx": "1", "name": "Bus 1"},
+                {"idx": "2", "name": "Bus 2"},
+            ]),
+            "ACCompensator": layout.ESection("ACCompensator", rows=[
+                {"idx": "1", "name": "Shunt capacitor", "node": "1", "dev_type": "CAPACITOR"},
+                {"idx": "2", "name": "Shunt reactor", "node": "2", "dev_type": "REACTOR"},
+            ]),
+            "ACShuntCompensator": layout.ESection("ACShuntCompensator", rows=[
+                {"idx": "3", "name": "Legacy reactor", "node": "1", "b_set": "-0.2"},
+            ]),
+            "ACSeriCompensator": layout.ESection("ACSeriCompensator", rows=[
+                {"idx": "1", "name": "Series capacitor", "i_node": "1", "j_node": "2", "dev_type": "CAPACITOR"},
+                {"idx": "2", "name": "Series reactor", "i_node": "2", "j_node": "1", "dev_type": "REACTOR"},
+            ]),
+        }
+
+        devices, connections = layout.e_sections_to_model(sections)
+        kinds = {device.name: device.kind for device in devices}
+
+        self.assertEqual(kinds["Shunt capacitor"], "ac-capacitor")
+        self.assertEqual(kinds["Shunt reactor"], "ac-reactor")
+        self.assertEqual(kinds["Legacy reactor"], "ac-reactor")
+        self.assertEqual(kinds["Series capacitor"], "ac-series-capacitor")
+        self.assertEqual(kinds["Series reactor"], "ac-series-reactor")
+        series_device_ids = {device.id for device in devices if device.kind.startswith("ac-series-")}
+        for device_id in series_device_ids:
+            self.assertEqual(sum(edge.source == device_id or edge.target == device_id for edge in connections), 2)
+
     def test_attached_devices_are_spaced_without_overlap(self):
         devices = [layout.Device(id="bus-1", name="Bus 1", kind="ac-bus")]
         connections = []

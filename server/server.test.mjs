@@ -453,6 +453,36 @@ describe("icon library import", () => {
 });
 
 describe("scheme file persistence", () => {
+  test("keeps AC compensator E columns aligned with the frontend definition", () => {
+    expect(eSectionColumns.ACCompensator).toEqual([
+      "idx", "name", "dev_type", "node", "rated_voltage", "rated_reactive_power", "reactance", "run_stat"
+    ]);
+    expect(eSectionColumns.ACSeriCompensator).toEqual([
+      "idx", "name", "dev_type", "i_node", "j_node", "rated_voltage", "rated_reactive_power", "reactance", "run_stat"
+    ]);
+    expect(eSectionColumns).not.toHaveProperty("ACShuntCompensator");
+  });
+
+  test("renders standard parallel and series compensator symbols in server SVG", () => {
+    const nodes = [
+      { id: "shunt-cap", kind: "ac-capacitor", name: "并联电容器", position: { x: 80, y: 80 }, size: { width: 84, height: 68 }, params: { idx: "1" }, terminals: [{ id: "t1", anchor: { x: 0, y: -0.5 } }] },
+      { id: "shunt-reactor", kind: "ac-reactor", name: "并联电抗器", position: { x: 200, y: 80 }, size: { width: 84, height: 68 }, params: { idx: "1" }, terminals: [{ id: "t1", anchor: { x: 0, y: -0.5 } }] },
+      { id: "series-cap", kind: "ac-series-capacitor", name: "串联电容器", position: { x: 320, y: 80 }, size: { width: 108, height: 52 }, params: { idx: "1" }, terminals: [] },
+      { id: "series-reactor", kind: "ac-series-reactor", name: "串联电抗器", position: { x: 440, y: 80 }, size: { width: 108, height: 52 }, params: { idx: "1" }, terminals: [] }
+    ];
+    const svg = buildSvgFile({ version: 1, name: "无功补偿SVG", canvasWidth: 540, canvasHeight: 180, nodes, edges: [] }, { measurementTypes: [], deviceProfiles: [] });
+    const defs = svgDefsSection(svg);
+
+    expect(defs).toContain("ac-shunt-compensator-glyph ac-shunt-capacitor");
+    expect(defs).toContain("ac-shunt-compensator-glyph ac-shunt-reactor");
+    expect(defs).toContain("ac-series-compensator-glyph ac-series-capacitor");
+    expect(defs).toContain("ac-series-compensator-glyph ac-series-reactor");
+    expect(defs.match(/class="ac-reactor-coil"/g)).toHaveLength(2);
+    expect(defs.match(/M 0 -7 H -18 C -18 -17 -10 -25 0 -25/g)).toHaveLength(2);
+    expect(defs).toContain('transform="rotate(-90)"');
+    expect(defs).not.toContain('fill="#ffffff" stroke="#94a3b8"');
+  });
+
   test("reads scheme directories as lightweight project summaries by default", async () => {
     const root = await mkdtemp(join(tmpdir(), "scheme-summary-read-"));
     try {

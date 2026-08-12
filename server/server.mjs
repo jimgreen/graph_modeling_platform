@@ -121,7 +121,8 @@ export const eSectionColumns = {
   DCLoad: ["idx", "name", "node", "rated_capacity", "pbase", "p_set", "p_max", "p_min", "pv0", "pv1", "pv2", "v_max", "v_min", "run_stat"],
   ACGenerator: ["idx", "name", "node", "rated_capacity", "rated_voltage", "control_type", "p_set", "p_max", "p_min", "q_set", "q_max", "q_min", "v_set", "v_max", "v_min", "alpha", "run_stat"],
   DCGenerator: ["idx", "name", "node", "rated_capacity", "rated_voltage", "control_type", "v_set", "p_set", "p_max", "p_min", "i_set", "v_max", "v_min", "run_stat"],
-  ACShuntCompensator: ["idx", "name", "node", "control_type", "q_set", "g_set", "b_set", "v_set", "run_stat"],
+  ACCompensator: ["idx", "name", "dev_type", "node", "rated_voltage", "rated_reactive_power", "reactance", "run_stat"],
+  ACSeriCompensator: ["idx", "name", "dev_type", "i_node", "j_node", "rated_voltage", "rated_reactive_power", "reactance", "run_stat"],
   ACZeroBranch: ["idx", "name", "i_node", "j_node", "run_stat"],
   DCZeroBranch: ["idx", "name", "i_node", "j_node", "run_stat"],
   ACSwitch: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "status", "run_stat"],
@@ -1552,14 +1553,20 @@ function normalizeSchemesForStorage(schemes) {
 }
 
 function inferESection(kind, params = {}) {
+  kind = String(kind ?? "").endsWith("-vertical") && kind !== "ac-ground-disconnector-vertical"
+    ? kind.slice(0, -"-vertical".length)
+    : kind;
   if (kind === "ac-bus") return "ACRealBs";
   if (kind === "dc-bus") return "DCRealBs";
   if (isStaticKind(kind)) {
     const componentLibrary = String(params.component_type ?? "").trim();
     return componentLibrary && componentLibrary !== "StaticSymbol" ? componentLibrary : staticComponentLibraryForKind(kind);
   }
+  if (params.component_type === "ACShuntCompensator") return "ACCompensator";
   if (params.component_type && eSectionColumns[params.component_type]) return params.component_type;
   if (kind === "ac-line") return "ACBranch";
+  if (kind === "ac-capacitor" || kind === "ac-reactor" || kind === "ac-shunt") return "ACCompensator";
+  if (kind === "ac-series-capacitor" || kind === "ac-series-reactor") return "ACSeriCompensator";
   if (kind === "dc-line") return "DCBranch";
   if (kind === "ac-load" || kind === "ac-terminal-transformer-load") return "ACLoad";
   if (kind === "dc-load") return "DCLoad";
@@ -3340,6 +3347,40 @@ export function buildSvgFile(project, measurementConfig = { measurementTypes: []
     const renderServerNodeSymbolBody = (symbolNode, symbolBaseId) => {
       const stroke = String(symbolNode.kind ?? "").startsWith("dc") || String(symbolNode.kind ?? "").includes("dcdc") ? "#0f766e" : "#2563eb";
       const isBus = String(symbolNode.kind ?? "").includes("bus");
+      const baseKind = String(symbolNode.kind ?? "").endsWith("-vertical")
+        ? String(symbolNode.kind).slice(0, -"-vertical".length)
+        : String(symbolNode.kind ?? "");
+      const isShuntCapacitor = baseKind === "ac-capacitor";
+      const isShuntReactor = baseKind === "ac-reactor" || baseKind === "ac-shunt";
+      const isSeriesCapacitor = baseKind === "ac-series-capacitor";
+      const isSeriesReactor = baseKind === "ac-series-reactor";
+      if (isShuntCapacitor || isShuntReactor || isSeriesCapacitor || isSeriesReactor) {
+        const left = -nodeWidth / 2;
+        const right = nodeWidth / 2;
+        let symbolMarkup = "";
+        if (isShuntCapacitor || isShuntReactor) {
+          const anchor = symbolNode.terminals?.[0]?.anchor ?? { x: 0, y: -0.5 };
+          const terminalRotation = Math.abs(Number(anchor.x ?? 0)) > Math.abs(Number(anchor.y ?? 0))
+            ? (Number(anchor.x ?? 0) > 0 ? 90 : -90)
+            : (Number(anchor.y ?? 0) > 0 ? 180 : 0);
+          const extent = Math.min(nodeWidth, nodeHeight);
+          const terminalY = -extent / 2;
+          const groundY = extent / 2 - 5;
+          const body = isShuntCapacitor
+            ? `<path d="M 0 ${formatSvgNumber(terminalY)} V -8 M -14 -8 H 14 M -14 0 H 14 M 0 0 V ${formatSvgNumber(groundY - 8)}"/>`
+            : `<path class="ac-reactor-coil" d="M 0 ${formatSvgNumber(terminalY)} V -7 M 0 -7 H -18 C -18 -17 -10 -25 0 -25 C 10 -25 18 -17 18 -7 C 18 3 10 11 0 11 V ${formatSvgNumber(groundY - 8)}"/>`;
+          symbolMarkup = `<g class="ac-shunt-compensator-glyph ${isShuntCapacitor ? "ac-shunt-capacitor" : "ac-shunt-reactor"}" transform="rotate(${terminalRotation})" fill="none" stroke="${stroke}" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">${body}<path d="M -13 ${formatSvgNumber(groundY - 8)} H 13 M -9 ${formatSvgNumber(groundY - 3)} H 9 M -4 ${formatSvgNumber(groundY + 2)} H 4"/></g>`;
+        } else {
+          const body = isSeriesCapacitor
+            ? `<path d="M ${formatSvgNumber(left)} 0 H -7 M -7 -15 V 15 M 7 -15 V 15 M 7 0 H ${formatSvgNumber(right)}"/>`
+            : `<g transform="rotate(-90)"><path class="ac-reactor-coil" d="M 0 ${formatSvgNumber(left)} V -7 M 0 -7 H -18 C -18 -17 -10 -25 0 -25 C 10 -25 18 -17 18 -7 C 18 3 10 11 0 11 V ${formatSvgNumber(right)}"/></g>`;
+          symbolMarkup = `<g class="ac-series-compensator-glyph ${isSeriesCapacitor ? "ac-series-capacitor" : "ac-series-reactor"}" fill="none" stroke="${stroke}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${body}</g>`;
+        }
+        return `<title>${escapeSvgText(nodeLayerKey(symbolNode))}</title>
+<g transform="${escapeSvgAttribute(geometryTransform)}">
+${symbolMarkup}
+</g>`;
+      }
       const image = svgImageHref(
         symbolNode.params?.backgroundImageAssetId ? apiPath(`/images/${symbolNode.params.backgroundImageAssetId}`) : symbolNode.params?.backgroundImage ?? "",
         imagePathById

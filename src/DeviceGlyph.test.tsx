@@ -177,3 +177,39 @@ describe("DeviceGlyph converter terminal ordering", () => {
     }
   });
 });
+
+describe("DeviceGlyph AC compensators", () => {
+  it("renders distinct shunt capacitor and reactor symbols connected to the terminal side", () => {
+    const capacitor = createDefaultNode("ac-capacitor", { x: 0, y: 0 });
+    const reactor = createDefaultNode("ac-reactor", { x: 0, y: 0 });
+    const capacitorMarkup = renderToStaticMarkup(<svg><DeviceGlyph node={capacitor} /></svg>);
+    const reactorMarkup = renderToStaticMarkup(<svg><DeviceGlyph node={reactor} /></svg>);
+
+    expect(capacitorMarkup).toContain("ac-shunt-compensator-glyph ac-shunt-capacitor");
+    expect(capacitorMarkup).toContain("M -14 -8 H 14");
+    expect(reactorMarkup).toContain("ac-shunt-compensator-glyph ac-shunt-reactor");
+    expect(reactorMarkup).toContain('class="ac-reactor-coil"');
+    expect(reactorMarkup).toContain("M 0 -7 H -18");
+    expect(reactorMarkup).toContain("C -18 -17 -10 -25 0 -25");
+    expect(reactorMarkup).toContain("C 18 3 10 11 0 11");
+
+    const rightTerminalReactor = {
+      ...reactor,
+      terminals: [{ ...reactor.terminals[0], anchor: { x: 0.5, y: 0 } }]
+    };
+    const rightMarkup = renderToStaticMarkup(<svg><DeviceGlyph node={rightTerminalReactor} /></svg>);
+    expect(rightMarkup).toContain('transform="rotate(90)"');
+  });
+
+  it("renders continuous, distinct series capacitor and reactor symbols", () => {
+    const capacitorMarkup = renderToStaticMarkup(<svg><DeviceGlyph node={createDefaultNode("ac-series-capacitor", { x: 0, y: 0 })} /></svg>);
+    const reactorMarkup = renderToStaticMarkup(<svg><DeviceGlyph node={createDefaultNode("ac-series-reactor", { x: 0, y: 0 })} /></svg>);
+
+    expect(capacitorMarkup).toContain("ac-series-compensator-glyph ac-series-capacitor");
+    expect(capacitorMarkup).toContain("M -50 0 H -7");
+    expect(reactorMarkup).toContain("ac-series-compensator-glyph ac-series-reactor");
+    expect(reactorMarkup).toContain('transform="rotate(-90)"');
+    expect(reactorMarkup).toContain('class="ac-reactor-coil"');
+    expect(reactorMarkup).toContain("M 0 -50 V -7 M 0 -7 H -18");
+  });
+});

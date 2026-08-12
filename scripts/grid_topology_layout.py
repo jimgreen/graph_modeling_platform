@@ -236,6 +236,19 @@ def add_bus_connected_devices(
         connections.append(Connection(id=f"conn-{device_id}-{node}", source=device_id, target=e_node_id(node), raw={"section": section_name, **row}))
 
 
+def compensator_kind(row: dict[str, str], series: bool = False) -> str:
+    device_type = (row.get("dev_type") or row.get("device_type") or row.get("type") or "").strip().upper()
+    is_reactor = "REACT" in device_type or "电抗" in device_type
+    if not device_type:
+        try:
+            is_reactor = float(row.get("b_set", "0") or "0") < 0
+        except ValueError:
+            is_reactor = False
+    if series:
+        return "ac-series-reactor" if is_reactor else "ac-series-capacitor"
+    return "ac-reactor" if is_reactor else "ac-capacitor"
+
+
 def e_sections_to_model(sections: dict[str, ESection]) -> tuple[list[Device], list[Connection]]:
     devices: list[Device] = []
     connections: list[Connection] = []
@@ -279,14 +292,23 @@ def e_sections_to_model(sections: dict[str, ESection]) -> tuple[list[Device], li
 
     add_bus_connected_devices(devices, connections, "ACGenerator", sections.get("ACGenerator", ESection("ACGenerator")).rows, "ac-source", "gen")
     add_bus_connected_devices(devices, connections, "ACLoad", sections.get("ACLoad", ESection("ACLoad")).rows, "ac-load", "load")
-    add_bus_connected_devices(
-        devices,
-        connections,
-        "ACShuntCompensator",
-        sections.get("ACShuntCompensator", ESection("ACShuntCompensator")).rows,
-        "ac-shunt",
-        "shunt",
-    )
+    for section_name in ("ACCompensator", "ACShuntCompensator"):
+        rows = sections.get(section_name, ESection(section_name)).rows
+        for kind in ("ac-capacitor", "ac-reactor"):
+            matching_rows = [row for row in rows if compensator_kind(row) == kind]
+            add_bus_connected_devices(devices, connections, section_name, matching_rows, kind, "compensator")
+
+    for row in sections.get("ACSeriCompensator", ESection("ACSeriCompensator")).rows:
+        if not is_running(row):
+            continue
+        i_node = row.get("i_node", "").strip()
+        j_node = row.get("j_node", "").strip()
+        if not i_node or not j_node or e_node_id(i_node) not in bus_ids or e_node_id(j_node) not in bus_ids:
+            continue
+        device_id = e_equipment_id("ACSeriCompensator", row)
+        devices.append(Device(id=device_id, name=row.get("name") or device_id, kind=compensator_kind(row, series=True), raw={"section": "ACSeriCompensator", **row}))
+        connections.append(Connection(id=f"{device_id}-i", source=e_node_id(i_node), target=device_id, raw={"section": "ACSeriCompensator", **row}))
+        connections.append(Connection(id=f"{device_id}-j", source=device_id, target=e_node_id(j_node), raw={"section": "ACSeriCompensator", **row}))
     return devices, connections
 
 

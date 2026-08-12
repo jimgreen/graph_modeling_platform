@@ -36,6 +36,37 @@ const node = (id: string, kind = "ac-load"): ModelNode => ({
 });
 
 describe("measurement domain", () => {
+  test("binds AC compensator measurements to canonical SVG runtime fields", () => {
+    const expectedItems = {
+      "ac-capacitor": [
+        { measurementTypeId: "reactivePower", associatedField: "q" },
+        { measurementTypeId: "current", associatedField: "current" }
+      ],
+      "ac-reactor": [
+        { measurementTypeId: "reactivePower", associatedField: "q" },
+        { measurementTypeId: "current", associatedField: "current" }
+      ],
+      "ac-series-capacitor": [
+        { measurementTypeId: "activePower", associatedField: "p" },
+        { measurementTypeId: "reactivePower", associatedField: "q" },
+        { measurementTypeId: "current", associatedField: "current" }
+      ],
+      "ac-series-reactor": [
+        { measurementTypeId: "activePower", associatedField: "p" },
+        { measurementTypeId: "reactivePower", associatedField: "q" },
+        { measurementTypeId: "current", associatedField: "current" }
+      ]
+    } as const;
+
+    for (const [kind, items] of Object.entries(expectedItems)) {
+      expect(DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.find((profile) => profile.deviceKind === kind)?.items).toEqual(items);
+      const group = createDefaultMeasurementGroupForNode(node(`${kind}-node`, kind), DEFAULT_MEASUREMENT_CONFIG);
+      expect(group?.items.map((item) => ({ measurementTypeId: item.measurementTypeId, sourcePoint: item.sourcePoint }))).toEqual(
+        items.map((item) => ({ measurementTypeId: item.measurementTypeId, sourcePoint: `${kind}-node.${item.associatedField}` }))
+      );
+    }
+  });
+
   test("normalizes legacy gas quantity field names while retaining the measurement type id", () => {
     const config = normalizeMeasurementConfig({
       measurementTypes: [{

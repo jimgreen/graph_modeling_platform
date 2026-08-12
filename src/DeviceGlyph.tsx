@@ -901,6 +901,73 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     );
   }
 
+  if (glyphVariant === "ac-shunt-capacitor" || glyphVariant === "ac-shunt-reactor") {
+    if (mode === "text") {
+      return null;
+    }
+    const anchor = node.terminals[0]?.anchor ?? { x: 0, y: -0.5 };
+    const terminalRotation = Math.abs(anchor.x) > Math.abs(anchor.y)
+      ? (anchor.x > 0 ? 90 : -90)
+      : (anchor.y > 0 ? 180 : 0);
+    const extent = Math.min(w, h);
+    const terminalY = -extent / 2;
+    const groundY = extent / 2 - 5;
+    const symbolStrokeWidth = miniature ? 2.2 : 2.8;
+    return (
+      <g
+        className={`ac-shunt-compensator-glyph ${glyphVariant}`}
+        transform={`rotate(${terminalRotation})`}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={symbolStrokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        {glyphVariant === "ac-shunt-capacitor" ? (
+          <>
+            <path d={`M 0 ${terminalY} V -8 M -14 -8 H 14 M -14 0 H 14 M 0 0 V ${groundY - 8}`} />
+          </>
+        ) : (
+          <path
+            className="ac-reactor-coil"
+            d={`M 0 ${terminalY} V -7 M 0 -7 H -18 C -18 -17 -10 -25 0 -25 C 10 -25 18 -17 18 -7 C 18 3 10 11 0 11 V ${groundY - 8}`}
+          />
+        )}
+        <path d={`M -13 ${groundY - 8} H 13 M -9 ${groundY - 3} H 9 M -4 ${groundY + 2} H 4`} />
+      </g>
+    );
+  }
+
+  if (glyphVariant === "ac-series-capacitor" || glyphVariant === "ac-series-reactor") {
+    if (mode === "text") {
+      return null;
+    }
+    const left = -w / 2;
+    const right = w / 2;
+    const symbolStrokeWidth = miniature ? 2.4 : 3;
+    return (
+      <g
+        className={`ac-series-compensator-glyph ${glyphVariant}`}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={symbolStrokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        {glyphVariant === "ac-series-capacitor" ? (
+          <path d={`M ${left} 0 H -7 M -7 -15 V 15 M 7 -15 V 15 M 7 0 H ${right}`} />
+        ) : (
+          <g transform="rotate(-90)">
+            <path
+              className="ac-reactor-coil"
+              d={`M 0 ${left} V -7 M 0 -7 H -18 C -18 -17 -10 -25 0 -25 C 10 -25 18 -17 18 -7 C 18 3 10 11 0 11 V ${right}`}
+            />
+          </g>
+        )}
+      </g>
+    );
+  }
+
   if (glyphVariant === "battery-storage") {
     if (mode === "text") {
       return null;

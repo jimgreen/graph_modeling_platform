@@ -72,6 +72,10 @@ export type DeviceKind =
   | "static-input"
   | "static-button"
   | "ac-source"
+  | "ac-capacitor"
+  | "ac-reactor"
+  | "ac-series-capacitor"
+  | "ac-series-reactor"
   | "ac-wind-source"
   | "dc-wind-source"
   | "ac-pv-source"
@@ -158,6 +162,10 @@ export type DeviceKind =
 export type DeviceGlyphVariant =
   | "static"
   | "ac-generator"
+  | "ac-shunt-capacitor"
+  | "ac-shunt-reactor"
+  | "ac-series-capacitor"
+  | "ac-series-reactor"
   | "dc-generator"
   | "wind-source"
   | "pv-source"
@@ -2604,7 +2612,9 @@ export const ELEMENT_TREE_COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   DCLoad: "直流负荷",
   ACGenerator: "交流电源",
   DCGenerator: "直流电源",
-  ACShuntCompensator: "交流无功补偿",
+  ACCompensator: "并联无功补偿装置",
+  ACSeriCompensator: "串联无功补偿装置",
+  ACShuntCompensator: "并联无功补偿装置（旧格式）",
   ACZeroBranch: "交流零阻支路",
   DCZeroBranch: "直流零阻支路",
   ACSwitch: "交流开关",
@@ -3631,6 +3641,112 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     params: { ratedCapacity: "0", iMax: "0", r: "0.1", x: "1.0", b: "0.0" },
     terminalType: "ac",
     terminalCount: 2
+  },
+  {
+    kind: "ac-capacitor",
+    label: "并联电容器",
+    categoryLibrary: "交流设备",
+    size: { width: 84, height: 68 },
+    params: {
+      dev_type: "CAPACITOR",
+      rated_voltage: "10",
+      rated_reactive_power: "1",
+      reactance: "100"
+    },
+    terminalType: "ac",
+    terminalCount: 1,
+    terminalLabels: ["交流设备端1"],
+    terminalAnchors: [{ x: 0, y: -0.5 }],
+    parameterDefinitions: [
+      { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
+      { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
+      { cnName: "设备类型", enName: "dev_type", valueType: "string", typicalValue: "CAPACITOR", readonly: true },
+      { cnName: "节点号", enName: "node", valueType: "integer", typicalValue: "", readonly: true },
+      { cnName: "额定电压(kV)", enName: "rated_voltage", valueType: "float", typicalValue: "10", readonly: false },
+      { cnName: "额定无功(Mvar)", enName: "rated_reactive_power", valueType: "float", typicalValue: "1", readonly: false },
+      { cnName: "电抗值(Ω)", enName: "reactance", valueType: "float", typicalValue: "100", readonly: false },
+      { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false }
+    ]
+  },
+  {
+    kind: "ac-reactor",
+    label: "并联电抗器",
+    categoryLibrary: "交流设备",
+    size: { width: 84, height: 68 },
+    params: {
+      dev_type: "REACTOR",
+      rated_voltage: "10",
+      rated_reactive_power: "1",
+      reactance: "100"
+    },
+    terminalType: "ac",
+    terminalCount: 1,
+    terminalLabels: ["交流设备端1"],
+    terminalAnchors: [{ x: 0, y: -0.5 }],
+    parameterDefinitions: [
+      { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
+      { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
+      { cnName: "设备类型", enName: "dev_type", valueType: "string", typicalValue: "REACTOR", readonly: true },
+      { cnName: "节点号", enName: "node", valueType: "integer", typicalValue: "", readonly: true },
+      { cnName: "额定电压(kV)", enName: "rated_voltage", valueType: "float", typicalValue: "10", readonly: false },
+      { cnName: "额定无功(Mvar)", enName: "rated_reactive_power", valueType: "float", typicalValue: "1", readonly: false },
+      { cnName: "电抗值(Ω)", enName: "reactance", valueType: "float", typicalValue: "100", readonly: false },
+      { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false }
+    ]
+  },
+  {
+    kind: "ac-series-capacitor",
+    label: "串联电容器",
+    categoryLibrary: "交流设备",
+    size: { width: 108, height: 52 },
+    params: {
+      dev_type: "CAPACITOR",
+      rated_voltage: "10",
+      rated_reactive_power: "1",
+      reactance: "100"
+    },
+    terminalType: "ac",
+    terminalCount: 2,
+    terminalTypes: ["ac", "ac"],
+    terminalLabels: ["交流设备首端", "交流设备末端"],
+    parameterDefinitions: [
+      { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
+      { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
+      { cnName: "设备类型", enName: "dev_type", valueType: "string", typicalValue: "CAPACITOR", readonly: true },
+      { cnName: "首端节点号", enName: "i_node", valueType: "integer", typicalValue: "", readonly: true },
+      { cnName: "末端节点号", enName: "j_node", valueType: "integer", typicalValue: "", readonly: true },
+      { cnName: "额定电压(kV)", enName: "rated_voltage", valueType: "float", typicalValue: "10", readonly: false },
+      { cnName: "额定无功(Mvar)", enName: "rated_reactive_power", valueType: "float", typicalValue: "1", readonly: false },
+      { cnName: "电抗值(Ω)", enName: "reactance", valueType: "float", typicalValue: "100", readonly: false },
+      { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false }
+    ]
+  },
+  {
+    kind: "ac-series-reactor",
+    label: "串联电抗器",
+    categoryLibrary: "交流设备",
+    size: { width: 108, height: 52 },
+    params: {
+      dev_type: "REACTOR",
+      rated_voltage: "10",
+      rated_reactive_power: "1",
+      reactance: "100"
+    },
+    terminalType: "ac",
+    terminalCount: 2,
+    terminalTypes: ["ac", "ac"],
+    terminalLabels: ["交流设备首端", "交流设备末端"],
+    parameterDefinitions: [
+      { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
+      { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
+      { cnName: "设备类型", enName: "dev_type", valueType: "string", typicalValue: "REACTOR", readonly: true },
+      { cnName: "首端节点号", enName: "i_node", valueType: "integer", typicalValue: "", readonly: true },
+      { cnName: "末端节点号", enName: "j_node", valueType: "integer", typicalValue: "", readonly: true },
+      { cnName: "额定电压(kV)", enName: "rated_voltage", valueType: "float", typicalValue: "10", readonly: false },
+      { cnName: "额定无功(Mvar)", enName: "rated_reactive_power", valueType: "float", typicalValue: "1", readonly: false },
+      { cnName: "电抗值(Ω)", enName: "reactance", valueType: "float", typicalValue: "100", readonly: false },
+      { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false }
+    ]
   },
   {
     kind: "ac-routable-line",
@@ -5620,6 +5736,10 @@ export function getDeviceGlyphVariant(kind: DeviceKind): DeviceGlyphVariant {
   const glyphKind = baseDeviceKind(kind) as DeviceKind;
   if (glyphKind.startsWith("static-")) return "static";
   if (glyphKind === "ac-source") return "ac-generator";
+  if (glyphKind === "ac-capacitor") return "ac-shunt-capacitor";
+  if (glyphKind === "ac-reactor") return "ac-shunt-reactor";
+  if (glyphKind === "ac-series-capacitor") return "ac-series-capacitor";
+  if (glyphKind === "ac-series-reactor") return "ac-series-reactor";
   if (glyphKind === "dc-source") return "dc-generator";
   if (glyphKind === "ac-storage") return "battery-storage";
   if (glyphKind === "dc-storage") return "battery-storage";

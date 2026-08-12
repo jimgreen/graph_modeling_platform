@@ -111,7 +111,8 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
     "v_min",
     "run_stat"
   ],
-  ACShuntCompensator: ["idx", "name", "node", "control_type", "q_set", "g_set", "b_set", "v_set", "run_stat"],
+  ACCompensator: ["idx", "name", "dev_type", "node", "rated_voltage", "rated_reactive_power", "reactance", "run_stat"],
+  ACSeriCompensator: ["idx", "name", "dev_type", "i_node", "j_node", "rated_voltage", "rated_reactive_power", "reactance", "run_stat"],
   ACZeroBranch: ["idx", "name", "i_node", "j_node", "run_stat"],
   DCZeroBranch: ["idx", "name", "i_node", "j_node", "run_stat"],
   ACSwitch: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_max", "status", "run_stat"],
@@ -319,7 +320,7 @@ export function inferESection(kind: string, params: Record<string, string> = {})
     return componentLibrary && componentLibrary !== "StaticSymbol" ? componentLibrary : staticComponentLibrary;
   }
   if (componentLibrary) {
-    return componentLibrary;
+    return componentLibrary === "ACShuntCompensator" ? "ACCompensator" : componentLibrary;
   }
   const mappedSection = E_KIND_SECTION_MAP[sectionKind];
   if (mappedSection) {
@@ -333,6 +334,8 @@ export function inferESection(kind: string, params: Record<string, string> = {})
     return "";
   }
   if (sectionKind === "ac-line") return "ACBranch";
+  if (sectionKind === "ac-capacitor" || sectionKind === "ac-reactor" || sectionKind === "ac-shunt") return "ACCompensator";
+  if (sectionKind === "ac-series-capacitor" || sectionKind === "ac-series-reactor") return "ACSeriCompensator";
   if (sectionKind === "dc-line") return "DCBranch";
   if (sectionKind === "ac-zero-branch") return "ACZeroBranch";
   if (sectionKind === "ac-zero-routable-branch") return "ACZeroBranch";
@@ -375,7 +378,8 @@ const E_SECTION_OUTPUT_ORDER = [
   "ACBranch",
   "ACLoad",
   "ACGenerator",
-  "ACShuntCompensator",
+  "ACCompensator",
+  "ACSeriCompensator",
   "ACZeroBranch",
   "ACSwitch",
   "ACBreak",

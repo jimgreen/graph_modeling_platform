@@ -544,6 +544,57 @@ test("merges canonical hydrogen endpoint parameters into persisted visual overri
   });
 });
 
+describe("AC reactive compensation device library", () => {
+  test("defines parallel and series capacitor/reactor devices with canonical parameters", () => {
+    const cases = [
+      { kind: "ac-capacitor", label: "并联电容器", section: "ACCompensator", devType: "CAPACITOR", terminals: 1, glyph: "ac-shunt-capacitor" },
+      { kind: "ac-reactor", label: "并联电抗器", section: "ACCompensator", devType: "REACTOR", terminals: 1, glyph: "ac-shunt-reactor" },
+      { kind: "ac-series-capacitor", label: "串联电容器", section: "ACSeriCompensator", devType: "CAPACITOR", terminals: 2, glyph: "ac-series-capacitor" },
+      { kind: "ac-series-reactor", label: "串联电抗器", section: "ACSeriCompensator", devType: "REACTOR", terminals: 2, glyph: "ac-series-reactor" }
+    ] as const;
+
+    for (const expected of cases) {
+      const template = DEVICE_LIBRARY.find((item) => item.kind === expected.kind)!;
+      const definitions = getTemplateParameterDefinitions(template);
+      const node = createDefaultNode(expected.kind, { x: 100, y: 100 });
+      expect(template).toMatchObject({
+        label: expected.label,
+        categoryLibrary: "交流设备",
+        terminalType: "ac",
+        terminalCount: expected.terminals,
+        params: {
+          dev_type: expected.devType,
+          rated_voltage: "10",
+          rated_reactive_power: "1",
+          reactance: "100"
+        }
+      });
+      expect(node.terminals).toHaveLength(expected.terminals);
+      expect(node.terminals.every((terminal) => terminal.type === "ac")).toBe(true);
+      expect(inferESection(expected.kind, node.params)).toBe(expected.section);
+      expect(getDeviceGlyphVariant(expected.kind)).toBe(expected.glyph);
+      for (const field of ["rated_voltage", "rated_reactive_power", "reactance"]) {
+        expect(definitions.find((definition) => definition.enName === field)).toMatchObject({ valueType: "float", readonly: false });
+      }
+      expect(definitions.find((definition) => definition.enName === "dev_type")).toMatchObject({
+        valueType: "string",
+        typicalValue: expected.devType,
+        readonly: true
+      });
+    }
+  });
+
+  test("creates vertical variants only for the two-terminal series devices", () => {
+    expect(DEVICE_LIBRARY.some((item) => item.kind === "ac-capacitor-vertical")).toBe(false);
+    expect(DEVICE_LIBRARY.some((item) => item.kind === "ac-reactor-vertical")).toBe(false);
+    for (const kind of ["ac-series-capacitor", "ac-series-reactor"] as const) {
+      const vertical = DEVICE_LIBRARY.find((item) => item.kind === `${kind}-vertical`);
+      expect(vertical).toMatchObject({ terminalCount: 2, rotation: 90 });
+      expect(createDefaultNode(`${kind}-vertical`, { x: 100, y: 100 }).terminals).toHaveLength(2);
+    }
+  });
+});
+
 test("adds AC and DC diesel generators as derived generator classes", () => {
   const cases = [
     { kind: "ac-diesel-source", terminalType: "ac", componentLibrary: "ACGenerator", derivedComponentLibrary: "ACDieselGen" },
