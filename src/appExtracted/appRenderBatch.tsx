@@ -153,6 +153,8 @@ import {
   getEExportWarnings,
   formatPowerBaseDisplayValue,
   getTemplateParameterDefinitions,
+  enumSelectOptionsWithCurrentValue,
+  invalidEnumOptionLabel,
   findSavedProjectRecordInSchemes,
   findSavedSchemeById,
   findSavedSchemeParentById,
@@ -2164,8 +2166,9 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const renderNodeDoubleClickDeviceParamRows = createRenderNodeDoubleClickDeviceParamRows(__appScope); Object.assign(__appScope, { renderNodeDoubleClickDeviceParamRows });
   const renderNodeDoubleClickContainerParamRows = (node: ModelNode, view: ContainerDeviceParameterView) => (
       view.rows.map((row) => {
-        const options = paramOptionsForSection(row.key, view.componentLibrary);
         const displayValue = formatDeviceModelParamDisplayValue(row.key, row.value);
+        const optionConfig = enumSelectOptionsWithCurrentValue(paramOptionsForSection(row.key, view.componentLibrary), displayValue);
+        const options = optionConfig.options;
         return (
           <tr key={row.key}>
             {batchEditors.renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}
@@ -2177,8 +2180,8 @@ export function useRenderBatch(__appScope: Record<string, any>) {
               ) : options ? (
                 <select value={displayValue} onChange={(event) => batchEditors.updateNodeDoubleClickDraftParam(node.id, row.paramKey!, event.target.value)}>
                   {options.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
+                    <option key={option} value={option} disabled={option === optionConfig.invalidValue}>
+                      {option === optionConfig.invalidValue ? invalidEnumOptionLabel(option) : option}
                     </option>
                   ))}
                 </select>

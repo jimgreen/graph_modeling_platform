@@ -36,6 +36,49 @@ const node = (id: string, kind = "ac-load"): ModelNode => ({
 });
 
 describe("measurement domain", () => {
+  test("normalizes legacy gas quantity field names while retaining the measurement type id", () => {
+    const config = normalizeMeasurementConfig({
+      measurementTypes: [{
+        id: "gasQuantity",
+        key: "gasquantity",
+        name: "储气量",
+        defaultUnit: "Nm3"
+      }],
+      deviceProfiles: [{
+        deviceKind: "hydrogen-tank",
+        items: [{ measurementTypeId: "gasQuantity", associatedField: "gasQuantity" }]
+      }]
+    });
+    expect(config.measurementTypes.find((item) => item.id === "gasQuantity")).toMatchObject({
+      id: "gasQuantity",
+      key: "gas_quantity"
+    });
+    expect(config.deviceProfiles.find((profile) => profile.deviceKind === "hydrogen-tank")?.items).toEqual(
+      expect.arrayContaining([expect.objectContaining({
+        measurementTypeId: "gasQuantity",
+        associatedField: "gas_quantity"
+      })])
+    );
+
+    const tank = node("tank-legacy-field", "hydrogen-tank");
+    const measurements = normalizeProjectMeasurements({
+      version: 1,
+      groups: [{
+        id: "custom-measurement-group",
+        nodeId: tank.id,
+        visible: true,
+        anchor: "bottom",
+        offset: { x: 0, y: 70 },
+        layout: "vertical",
+        items: [{
+          id: "gas-item",
+          measurementTypeId: "gasQuantity",
+          sourcePoint: `${tank.id}.gasquantity`
+        }]
+      }]
+    }, [tank]);
+    expect(measurements.groups[0].items[0].sourcePoint).toBe(`${tank.id}.gas_quantity`);
+  });
   test("reconciles generated measurements while preserving instance and manual overrides", () => {
     const sourceNode = {
       ...node("sync-node", "sync-device"),

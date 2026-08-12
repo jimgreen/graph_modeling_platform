@@ -18,11 +18,11 @@ describe("batch common measurement scope wiring", () => {
   });
 });
 
-function batchParamOptions(
+function batchParamHtml(
   nodes: ModelNode[],
   row: BatchCommonParamRow,
   libraryTemplateByKind = new Map(DEVICE_LIBRARY.map((template) => [template.kind, template]))
-): string[] {
+): string {
   const firstNode = nodes[0]!;
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const editors = useBatchEditors({
@@ -50,8 +50,15 @@ function batchParamOptions(
     requireEditMode: () => true,
     libraryTemplateByKind
   });
-  const html = renderToStaticMarkup(createElement("div", null, editors.renderBatchCommonPropertyPanel()));
+  return renderToStaticMarkup(createElement("div", null, editors.renderBatchCommonPropertyPanel()));
+}
 
+function batchParamOptions(
+  nodes: ModelNode[],
+  row: BatchCommonParamRow,
+  libraryTemplateByKind = new Map(DEVICE_LIBRARY.map((template) => [template.kind, template]))
+): string[] {
+  const html = batchParamHtml(nodes, row, libraryTemplateByKind);
   return Array.from(html.matchAll(/<option value="([^"]*)"/g), (match) => match[1]);
 }
 
@@ -71,6 +78,22 @@ function batchControlTypeOptions(kinds: DeviceKind[], values: string[]): string[
 }
 
 describe("batch common generator control types", () => {
+  test("shows an invalid current enum value explicitly instead of disguising it as the first option", () => {
+    const node = createDefaultNode("ac-electrolyzer", { x: 100, y: 100 });
+    node.params.control_type = "BAD";
+    const html = batchParamHtml([node], {
+      key: "control_type",
+      label: "控制类型",
+      value: "BAD",
+      mixed: false,
+      definition: undefined
+    });
+
+    expect(html).toMatch(/<option value="BAD" disabled="" selected="">非法历史值：BAD<\/option>/u);
+    expect(html).toContain('<option value="P">定电功率</option>');
+    expect(html).toContain('<option value="FLOW">定气流量</option>');
+  });
+
   test("limits AC generators to PV PQ and PH", () => {
     expect(batchControlTypeOptions(["ac-wind-source", "ac-wind-source"], ["PV", "PV"])).toEqual(["PV", "PQ", "PH"]);
   });

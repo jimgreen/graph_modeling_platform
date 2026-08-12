@@ -92,6 +92,8 @@ import {
   normalizeDcdcEndpointControlTypeForE,
   normalizeElectricGenerationRatedParams,
   normalizeEndpointConverterNodeControlParams,
+  normalizeKnownLegacyNodeEnumValues,
+  normalizeLegacyGasQuantityDeviceParams,
   normalizeRoutableLineDeviceStrokeWidthParam,
   normalizeSemanticParameterValues,
   normalizeStaticDrawingPoints,
@@ -110,6 +112,7 @@ import {
   terminalVoltageBaseNumber,
   threeWindingTransformerParameterDefinitions,
   topologyNodeNumberForEField,
+  validateNodeEnumParameters,
   twoWindingTransformerParameterDefinitions,
   ELEMENT_TREE_COMPONENT_LIBRARY_LABELS,
   COMPONENT_LIBRARY_REVERSE_MAPPING
@@ -1586,7 +1589,8 @@ export function virtualBusTerminal(node: Pick<ModelNode, "kind" | "terminals">, 
 }
 
 export function normalizeNodeTerminalsWithTemplate(node: ModelNode, template: DeviceTemplate | undefined): ModelNode {
-  const semanticParams = normalizeSemanticParameterValues(node.params);
+  const normalizedParamNames = normalizeLegacyGasQuantityDeviceParams(node.params);
+  const semanticParams = normalizeSemanticParameterValues(normalizedParamNames);
   const semanticNode = semanticParams === node.params ? node : { ...node, params: semanticParams };
   let normalizedNode = normalizeEndpointConverterNodeControlParams(
     normalizeDcacConverterNodeControlParams(normalizeRoutableLineDeviceStrokeWidthParam(semanticNode))
@@ -1595,6 +1599,7 @@ export function normalizeNodeTerminalsWithTemplate(node: ModelNode, template: De
   if (template) {
     normalizedNode = migrateElectricGenerationContainerParams(normalizedNode, template);
   }
+  normalizedNode = normalizeKnownLegacyNodeEnumValues(normalizedNode, template);
   if (template && !template.isContainer && (isThreeWindingTransformer(normalizedNode) || isTwoWindingTransformerTemplateKind(normalizedNode.kind))) {
     const parameterDefinitions = isThreeWindingTransformer(normalizedNode)
       ? mergeCanonicalParameterDefinitions(
@@ -5480,6 +5485,18 @@ export function validateTopology(
   edges = synchronized.edges;
   const topologyEdges = [...edges, ...routableLineDeviceTopologyEdges(nodes)];
   const errors: TopologyValidationError[] = duplicateDeviceIdentityErrors(nodes);
+  for (const node of nodes) {
+    for (const issue of validateNodeEnumParameters(node)) {
+      const parameterLabel = issue.definition.cnName || issue.definition.enName;
+      errors.push({
+        id: `device-enum-invalid:${node.id}:${issue.paramKey}`,
+        type: "device-enum-invalid",
+        nodeId: node.id,
+        relatedNodeIds: [node.id],
+        message: `图上拓扑失败：设备“${node.name}”的枚举参数 ${parameterLabel}（${issue.paramKey}）值“${issue.value || "<空>"}”无效，允许值为：${issue.allowedValues.join("、")}。`
+      });
+    }
+  }
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const terminalKey = (nodeId: string, terminalId: string) => `${nodeId}:${terminalId}`;
   const resolveEdgeTerminal = (node: ModelNode, terminalId?: string) => {

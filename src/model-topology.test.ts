@@ -2571,6 +2571,7 @@ test("treats duplicate identity and voltage setpoint deviations as non-blocking 
   expect(isBlockingTopologyValidationError({ type: "missing-island-voltage" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "island-voltage-mismatch" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "transformer-island-short" })).toBe(true);
+  expect(isBlockingTopologyValidationError({ type: "device-enum-invalid" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "device-setpoint-out-of-range" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "hydrogen-storage-parameter-invalid" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "hydrogen-coupling-parameter-invalid" })).toBe(true);
@@ -2610,6 +2611,76 @@ test("blocks topology when hydrogen tank volume or pressure limits are invalid",
     expect(result.nodes[0].params).toEqual(originalParams);
     expect(result.corrections).toEqual([]);
   }
+});
+
+test("blocks topology for invalid enum values from built-in and custom definitions", () => {
+  const generator = createDefaultNode("ac-wind-source", { x: 100, y: 100 });
+  generator.name = "风电机组-非法控制";
+  generator.params.control_type = "BAD";
+
+  const custom = createDefaultNode("static-default-node", { x: 260, y: 100 });
+  custom.kind = "custom-enum-device";
+  custom.name = "自定义枚举设备";
+  custom.params = {
+    [CUSTOM_DEVICE_TEMPLATE_KEY]: "1",
+    mode: "UNKNOWN",
+    [CUSTOM_PARAM_DEFINITIONS_KEY]: JSON.stringify([
+      {
+        cnName: "运行模式",
+        enName: "mode",
+        valueType: "stringEnum",
+        typicalValue: "AUTO",
+        enumValues: ["AUTO", "MANUAL"]
+      }
+    ])
+  };
+
+  const converter = createDefaultNode("dcdc-converter", { x: 420, y: 100 });
+  converter.name = "DCDC变流器-非法控制";
+  converter.params.i_control_type = "BAD";
+
+  const errors = validateTopology([generator, custom, converter], []);
+
+  expect(errors).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      type: "device-enum-invalid",
+      nodeId: generator.id,
+      message: expect.stringContaining("control_type")
+    }),
+    expect.objectContaining({
+      type: "device-enum-invalid",
+      nodeId: custom.id,
+      message: expect.stringContaining("AUTO、MANUAL")
+    }),
+    expect.objectContaining({
+      type: "device-enum-invalid",
+      nodeId: converter.id,
+      message: expect.stringContaining("BAD")
+    })
+  ]));
+});
+
+test("migrates only known legacy enum aliases and leaves unknown values invalid", () => {
+  for (const [kind, legacyValue, expectedValue] of [
+    ["ac-electrolyzer", "PQ", "P"],
+    ["dc-electrolyzer", "定P", "P"],
+    ["ac-fuel-cell", "PV", "P"],
+    ["dc-fuel-cell", "PH", "P"]
+  ] as const) {
+    const node = createDefaultNode(kind, { x: 100, y: 100 });
+    node.params.control_type = legacyValue;
+    const normalized = normalizeNodeTerminalsByTemplate(node);
+    expect(normalized.params.control_type, kind).toBe(expectedValue);
+    expect(normalizeNodeTerminalsByTemplate(normalized), kind).toBe(normalized);
+  }
+
+  const unknown = createDefaultNode("ac-electrolyzer", { x: 100, y: 100 });
+  unknown.params.control_type = "UNKNOWN";
+  const normalizedUnknown = normalizeNodeTerminalsByTemplate(unknown);
+  expect(normalizedUnknown.params.control_type).toBe("UNKNOWN");
+  expect(validateTopology([normalizedUnknown], [])).toEqual(expect.arrayContaining([
+    expect.objectContaining({ type: "device-enum-invalid", nodeId: unknown.id })
+  ]));
 });
 
 test("accepts the default electric-hydrogen coupling parameter limits", () => {

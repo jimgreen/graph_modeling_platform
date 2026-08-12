@@ -5,6 +5,7 @@ import * as appViewModule from "./appExtracted/appView";
 import {
   inspectorTabShowsDevicePanel,
   customDeviceDefinitionUsesIconOnly,
+  resolveContainerParameterViewComponentLibrary,
   resolveDeviceModelPanelDevType,
   resolveDeviceDefinitionParameterRowsForDisplay,
   resolveDeviceModelPanelParameterKeys,
@@ -14,6 +15,7 @@ import {
   resolveInspectorGraphId,
   resolveInspectorTopologyEntry
 } from "./appExtracted/appView";
+import { paramOptionsForSection } from "./appExtracted/appCoreCanvasUtilities";
 import {
   DEVICE_LIBRARY,
   createDefaultNode,
@@ -163,6 +165,30 @@ describe("app view device model parameter keys", () => {
       "rated_speed",
       "generator_efficiency"
     ]);
+  });
+});
+
+describe("container device parameter options", () => {
+  test.each([
+    ["ac-electrolyzer", "AcE2Hydro"],
+    ["dc-electrolyzer", "DcE2Hydro"],
+    ["ac-fuel-cell", "Hydro2AcE"],
+    ["dc-fuel-cell", "Hydro2DcE"]
+  ] as const)("resolves %s container rows to the dedicated E section", (kind, expectedSection) => {
+    const node = createDefaultNode(kind, { x: 100, y: 100 });
+    const section = resolveContainerParameterViewComponentLibrary(node, { kind: "container" });
+
+    expect(section).toBe(expectedSection);
+    expect(paramOptionsForSection("control_type", section)).toEqual(["P", "FLOW"]);
+  });
+
+  test("keeps the explicit component library for associated-device rows", () => {
+    const node = createDefaultNode("ac-electrolyzer", { x: 100, y: 100 });
+
+    expect(resolveContainerParameterViewComponentLibrary(node, {
+      kind: "associated",
+      componentLibrary: "ACLoad"
+    })).toBe("ACLoad");
   });
 });
 

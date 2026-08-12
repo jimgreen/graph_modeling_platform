@@ -303,6 +303,17 @@ export type DeviceParameterDefinition = {
   exportName?: string;
 };
 
+export type DeviceEnumParameterBinding = {
+  paramKey: string;
+  definition: DeviceParameterDefinition;
+  value: string;
+  section: string;
+};
+
+export type DeviceEnumParameterIssue = DeviceEnumParameterBinding & {
+  allowedValues: string[];
+};
+
 export type DeviceStateDefinition = {
   value: string;
   name: string;
@@ -1605,19 +1616,22 @@ export const ELECTRIC_HEAT_COUPLING_CONTROL_TYPES = ["P", "T"] as const;
 
 export function normalizeAcGeneratorControlTypeForE(value?: string) {
   if (!value) return "PV";
+  const text = value.trim();
   const normalized = normalizeControlTypeForE(value);
-  return (AC_GENERATOR_CONTROL_TYPES as readonly string[]).includes(normalized) ? normalized : "PV";
+  return (AC_GENERATOR_CONTROL_TYPES as readonly string[]).includes(normalized) ? normalized : text;
 }
 
 export function normalizeDcGeneratorControlTypeForE(value?: string) {
   if (!value) return "P";
+  const text = value.trim();
   const normalized = normalizeControlTypeForE(value);
-  return (DC_GENERATOR_CONTROL_TYPES as readonly string[]).includes(normalized) ? normalized : "P";
+  return (DC_GENERATOR_CONTROL_TYPES as readonly string[]).includes(normalized) ? normalized : text;
 }
 
 export function normalizeDcdcEndpointControlTypeForE(value?: string, fallback = "NONE") {
-  if (!value) return fallback;
-  const normalized = normalizeControlTypeForE(value).toUpperCase();
+  const text = String(value ?? "").trim();
+  if (!text) return fallback;
+  const normalized = normalizeControlTypeForE(text).toUpperCase();
   const map: Record<string, string> = {
     CTRL_P: "P",
     CTRL_V: "V",
@@ -1626,7 +1640,7 @@ export function normalizeDcdcEndpointControlTypeForE(value?: string, fallback = 
     "0": "NONE"
   };
   const mapped = map[normalized] ?? normalized;
-  return (DCDC_CONVERTER_CONTROL_TYPES as readonly string[]).includes(mapped) ? mapped : fallback;
+  return (DCDC_CONVERTER_CONTROL_TYPES as readonly string[]).includes(mapped) ? mapped : text;
 }
 
 export type EndpointConverterControlTypePair = {
@@ -1642,7 +1656,9 @@ const ACAC_LEGACY_CONTROL_TYPE_PAIRS: Record<string, EndpointConverterControlTyp
 };
 
 export function normalizeAcacEndpointControlTypeForE(value?: string, fallback = "PQ") {
-  const normalized = normalizeControlTypeForE(value).toUpperCase();
+  const text = String(value ?? "").trim();
+  if (!text) return fallback;
+  const normalized = normalizeControlTypeForE(text).toUpperCase();
   const mapped = normalized === "Q"
     ? "PQ"
     : normalized === "V"
@@ -1650,7 +1666,7 @@ export function normalizeAcacEndpointControlTypeForE(value?: string, fallback = 
       : normalized === "0"
         ? "NONE"
         : normalized;
-  return (ACAC_SIDE_CONTROL_TYPES as readonly string[]).includes(mapped) ? mapped : fallback;
+  return (ACAC_SIDE_CONTROL_TYPES as readonly string[]).includes(mapped) ? mapped : text;
 }
 
 export function acacConverterControlTypePairForE(params: Record<string, string>): EndpointConverterControlTypePair {
@@ -1692,13 +1708,19 @@ export type DcacConverterControlTypePair = {
 };
 
 export function normalizeDcacAcControlTypeForE(value?: string, fallback = "PQ") {
-  const normalized = String(value ?? "").trim().toUpperCase();
-  return (DCAC_AC_CONTROL_TYPES as readonly string[]).includes(normalized) ? normalized : fallback;
+  const text = String(value ?? "").trim();
+  if (!text) return fallback;
+  const normalized = normalizeControlTypeForE(text).toUpperCase();
+  const mapped = normalized === "Q" ? "PQ" : normalized === "V" ? "PV" : normalized === "0" ? "NONE" : normalized;
+  return (DCAC_AC_CONTROL_TYPES as readonly string[]).includes(mapped) ? mapped : text;
 }
 
 export function normalizeDcacDcControlTypeForE(value?: string, fallback = "V") {
-  const normalized = String(value ?? "").trim().toUpperCase();
-  return (DCAC_DC_CONTROL_TYPES as readonly string[]).includes(normalized) ? normalized : fallback;
+  const text = String(value ?? "").trim();
+  if (!text) return fallback;
+  const normalized = normalizeControlTypeForE(text).toUpperCase();
+  const mapped = ({ CTRL_P: "P", CTRL_V: "V", CTRL_I: "I", SLACK: "NONE", "0": "NONE" } as Record<string, string>)[normalized] ?? normalized;
+  return (DCAC_DC_CONTROL_TYPES as readonly string[]).includes(mapped) ? mapped : text;
 }
 
 export function dcacConverterControlTypePairForE(params: Record<string, string>): DcacConverterControlTypePair {
@@ -1886,6 +1908,7 @@ export type TopologyValidationErrorType =
   | "missing-island-voltage"
   | "island-voltage-mismatch"
   | "transformer-island-short"
+  | "device-enum-invalid"
   | "device-limit-invalid"
   | "device-setpoint-out-of-range"
   | "hydrogen-storage-parameter-invalid"
@@ -1914,6 +1937,7 @@ export function isBlockingTopologyValidationError(error: Pick<TopologyValidation
     error.type === "missing-island-voltage" ||
     error.type === "island-voltage-mismatch" ||
     error.type === "transformer-island-short" ||
+    error.type === "device-enum-invalid" ||
     error.type === "device-setpoint-out-of-range" ||
     error.type === "hydrogen-storage-parameter-invalid" ||
     error.type === "hydrogen-coupling-parameter-invalid"
@@ -4046,7 +4070,7 @@ function normalizeDeviceTemplateDefaultSize(template: DeviceTemplate): DeviceTem
 }
 
 export function toSnakeCaseDeviceParamName(name: string): string {
-  return name
+  const normalized = name
     .trim()
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
     .replace(/([A-Z]+)([A-Z][a-z0-9])/g, "$1_$2")
@@ -4054,6 +4078,7 @@ export function toSnakeCaseDeviceParamName(name: string): string {
     .replace(/_+/g, "_")
     .replace(/^_+|_+$/g, "")
     .toLowerCase();
+  return normalized === "gasquantity" ? "gas_quantity" : normalized;
 }
 
 function legacyCamelCaseParamName(name: string): string {
@@ -4346,18 +4371,97 @@ export function normalizeSemanticParameterValues(params: Record<string, string>)
 
 export function deviceParamValue(params: Record<string, string>, key: string): string | undefined {
   const snakeKey = toSnakeCaseDeviceParamName(key);
+  if (snakeKey === "gas_quantity") {
+    return params.gas_quantity ?? params.gasQuantity ?? params.gasquantity;
+  }
   const camelKey = legacyCamelCaseParamName(snakeKey);
   return params[key] ?? params[snakeKey] ?? params[camelKey];
 }
 
-function normalizeDeviceParamRecord(params?: Record<string, string>): Record<string, string> | undefined {
+export function normalizeLegacyGasQuantityDeviceParams(params: Record<string, string>): Record<string, string> {
+  const hasCamel = Object.prototype.hasOwnProperty.call(params, "gasQuantity");
+  const hasLower = Object.prototype.hasOwnProperty.call(params, "gasquantity");
+  const storedDefinitions = params[CUSTOM_PARAM_DEFINITIONS_KEY];
+  const normalizedDefinitions = storedDefinitions === undefined
+    ? storedDefinitions
+    : normalizeStoredDeviceParameterDefinitionNames(storedDefinitions, true);
+  if (!hasCamel && !hasLower && normalizedDefinitions === storedDefinitions) {
+    return params;
+  }
+  const next = { ...params };
+  if (!Object.prototype.hasOwnProperty.call(next, "gas_quantity")) {
+    next.gas_quantity = hasCamel ? next.gasQuantity : next.gasquantity;
+  }
+  delete next.gasQuantity;
+  delete next.gasquantity;
+  if (normalizedDefinitions !== undefined) {
+    next[CUSTOM_PARAM_DEFINITIONS_KEY] = normalizedDefinitions;
+  }
+  return next;
+}
+
+function normalizedDeviceParamKeyPriority(key: string, normalizedKey: string): number {
+  if (normalizedKey !== "gas_quantity") {
+    return key === normalizedKey ? 1 : 0;
+  }
+  if (key === "gas_quantity") return 3;
+  if (key === "gasQuantity") return 2;
+  if (key === "gasquantity") return 1;
+  return 0;
+}
+
+function normalizeStoredDeviceParameterDefinitionNames(value: string, gasQuantityOnly = false): string {
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return value;
+    }
+    const normalized = parsed.map((definition) => {
+      if (!definition || typeof definition !== "object") {
+        return definition;
+      }
+      const source = definition as DeviceParameterDefinition;
+      const rawEnName = String(source.enName ?? "").trim();
+      const rawExportName = typeof source.exportName === "string" ? source.exportName.trim() : source.exportName;
+      const normalizeName = (name: string) => gasQuantityOnly
+        ? /^(?:gasQuantity|gasquantity)$/.test(name) ? "gas_quantity" : name
+        : toSnakeCaseDeviceParamName(name);
+      const enName = normalizeName(rawEnName);
+      const exportName = typeof rawExportName === "string" ? normalizeName(rawExportName) : rawExportName;
+      if (enName === rawEnName && exportName === rawExportName) {
+        return definition;
+      }
+      return {
+        ...source,
+        enName,
+        ...(source.exportName !== undefined ? { exportName } : {})
+      };
+    });
+    const serialized = JSON.stringify(normalized);
+    return serialized === value ? value : serialized;
+  } catch {
+    return value;
+  }
+}
+
+export function normalizeDeviceParamRecord(params?: Record<string, string>): Record<string, string> | undefined {
   if (!params) {
     return params;
   }
   const normalized: Record<string, string> = {};
+  const priorities = new Map<string, number>();
   for (const [key, value] of Object.entries(params)) {
     const normalizedKey = key.startsWith("_") ? key : toSnakeCaseDeviceParamName(key);
-    normalized[normalizedKey] = key.startsWith("_") ? value : normalizeSemanticParameterValue(normalizedKey, value);
+    const priority = normalizedDeviceParamKeyPriority(key, normalizedKey);
+    if ((priorities.get(normalizedKey) ?? -1) > priority) {
+      continue;
+    }
+    priorities.set(normalizedKey, priority);
+    normalized[normalizedKey] = key === "_customParamDefinitions"
+      ? normalizeStoredDeviceParameterDefinitionNames(value, true)
+      : key.startsWith("_")
+        ? value
+        : normalizeSemanticParameterValue(normalizedKey, value);
   }
   return normalized;
 }
@@ -6109,8 +6213,53 @@ export function enumExportValueForDefinition(definition: DeviceParameterDefiniti
   return enumValueForDefinition(definition, value);
 }
 
+export function isEnumParameterDefinition(
+  definition: Pick<DeviceParameterDefinition, "valueType">
+): boolean {
+  return templateDefinitionValueTypeIsEnum(definition.valueType);
+}
+
+export function enumValuesForParameterDefinition(definition: DeviceParameterDefinition): string[] {
+  if (!isEnumParameterDefinition(definition)) {
+    return [];
+  }
+  return normalizeTemplateEnumOptions(definition, definition.typicalValue).map((option) => option.value);
+}
+
+export function enumOptionLabelsForParameterDefinition(
+  definition: DeviceParameterDefinition
+): Record<string, string> {
+  if (!isEnumParameterDefinition(definition)) {
+    return {};
+  }
+  return Object.fromEntries(
+    normalizeTemplateEnumOptions(definition, definition.typicalValue).map((option) => [
+      option.value,
+      option.label || option.value
+    ])
+  );
+}
+
+export const invalidEnumOptionLabel = (value: string) => `非法历史值：${value}`;
+
+export function enumSelectOptionsWithCurrentValue(
+  options: readonly string[] | undefined,
+  value: string
+): { options: string[] | undefined; invalidValue?: string } {
+  if (!options) {
+    return { options: undefined };
+  }
+  const normalizedOptions = Array.from(new Set(options.map((option) => String(option ?? "").trim()).filter(Boolean)));
+  const currentValue = String(value ?? "").trim();
+  if (normalizedOptions.includes(currentValue)) {
+    return { options: normalizedOptions };
+  }
+  return { options: [currentValue, ...normalizedOptions], invalidValue: currentValue };
+}
+
 function normalizeTemplateDefinition(definition: DeviceParameterDefinition): DeviceParameterDefinition | null {
-  const enName = String(definition.enName ?? "").trim();
+  const rawEnName = String(definition.enName ?? "").trim();
+  const enName = /^(?:gasQuantity|gasquantity)$/.test(rawEnName) ? "gas_quantity" : rawEnName;
   if (!enName || enName === "is_container" || enName === ALLOW_RESIZE_TRANSFORM_PARAM) {
     return null;
   }
@@ -6121,7 +6270,13 @@ function normalizeTemplateDefinition(definition: DeviceParameterDefinition): Dev
     : rawTypicalValue;
   const exportSettings = {
     ...(typeof definition.exportEnabled === "boolean" ? { exportEnabled: definition.exportEnabled } : {}),
-    ...(typeof definition.exportName === "string" ? { exportName: definition.exportName.trim() } : {})
+    ...(typeof definition.exportName === "string"
+      ? {
+          exportName: /^(?:gasQuantity|gasquantity)$/.test(definition.exportName.trim())
+            ? "gas_quantity"
+            : definition.exportName.trim()
+        }
+      : {})
   };
   const normalized: DeviceParameterDefinition = {
     cnName: String(definition.cnName ?? enName).trim() || enName,
@@ -6686,6 +6841,190 @@ function parseStoredTemplateParameterDefinitions(params: Record<string, string>)
   } catch {
     return [];
   }
+}
+
+function sectionEnumParameterDefinition(section: string, enName: string): DeviceParameterDefinition | undefined {
+  const base = (values: readonly string[], labels?: Record<string, string>): DeviceParameterDefinition => ({
+    cnName: enName,
+    enName,
+    valueType: "stringEnum",
+    typicalValue: values[0] ?? "",
+    enumValues: [...values],
+    enumOptions: values.map((value) => ({ value, ...(labels?.[value] ? { label: labels[value] } : {}) }))
+  });
+  if (enName === "status") {
+    return base(["1", "0"], { "1": "闭合", "0": "打开/开断" });
+  }
+  if (enName === "run_stat") {
+    return base(["1", "0"], { "1": "运行", "0": "停运" });
+  }
+  if (enName === "control_type") {
+    if (section === "ACGenerator") return base(AC_GENERATOR_CONTROL_TYPES);
+    if (section === "DCGenerator") return base(DC_GENERATOR_CONTROL_TYPES);
+    if (section === "HydroSource" || section === "HydroLoad") {
+      return base(HYDROGEN_ENDPOINT_CONTROL_TYPES, { FLOW: "定流量", PRESSURE: "定压力" });
+    }
+    if (HYDROGEN_COUPLING_SECTIONS.has(section)) {
+      return base(HYDROGEN_COUPLING_CONTROL_TYPES, { P: "定电功率", FLOW: "定气流量" });
+    }
+    if (ELECTRIC_HEAT_COUPLING_SECTIONS.has(section)) {
+      return base(ELECTRIC_HEAT_COUPLING_CONTROL_TYPES, { P: "定电功率", T: "定出口温度" });
+    }
+  }
+  if (section === "DCACConverter" && enName === "ac_control_type") return base(DCAC_AC_CONTROL_TYPES);
+  if (section === "DCACConverter" && enName === "dc_control_type") return base(DCAC_DC_CONTROL_TYPES);
+  if (section === "ACACConverter" && (enName === "i_control_type" || enName === "j_control_type")) {
+    return base(ACAC_SIDE_CONTROL_TYPES);
+  }
+  if (section === "DCDCConverter" && (enName === "i_control_type" || enName === "j_control_type")) {
+    return base(DCDC_CONVERTER_CONTROL_TYPES);
+  }
+  return undefined;
+}
+
+export function resolveNodeParameterDefinitions(
+  node: Pick<ModelNode, "kind" | "params">,
+  template?: DeviceTemplate
+): DeviceParameterDefinition[] {
+  const storedDefinitions = parseStoredTemplateParameterDefinitions(node.params);
+  const resolvedTemplate = template ?? DEVICE_LIBRARY_BY_KIND.get(node.kind) ?? DEVICE_LIBRARY_BY_KIND.get(baseDeviceKind(node.kind));
+  if (node.params[CUSTOM_DEVICE_TEMPLATE_KEY] === "1") {
+    return storedDefinitions.length > 0
+      ? storedDefinitions
+      : resolvedTemplate
+        ? getTemplateParameterDefinitions(resolvedTemplate)
+        : [];
+  }
+  const templateDefinitions = resolvedTemplate ? getTemplateParameterDefinitions(resolvedTemplate) : [];
+  const storedDefinitionByName = new Map(storedDefinitions.map((definition) => [definition.enName, definition]));
+  const sourceDefinitions = [
+    ...templateDefinitions.map((definition) => storedDefinitionByName.get(definition.enName) ?? definition),
+    ...storedDefinitions.filter((definition) => !templateDefinitions.some((candidate) => candidate.enName === definition.enName))
+  ];
+  return normalizeESectionParameterDefinitions(inferESection(node.kind, node.params), sourceDefinitions);
+}
+
+function normalizeKnownLegacyEnumValue(
+  section: string,
+  definition: DeviceParameterDefinition,
+  value: string
+): string {
+  const text = String(value ?? "").trim();
+  const allowedValues = enumValuesForParameterDefinition(definition);
+  if (allowedValues.includes(text)) {
+    return text;
+  }
+  const optionValue = enumValueForDefinition(definition, text);
+  if (allowedValues.includes(optionValue)) {
+    return optionValue;
+  }
+  const caseInsensitiveMatch = allowedValues.find((allowed) => allowed.toUpperCase() === text.toUpperCase());
+  if (caseInsensitiveMatch) {
+    return caseInsensitiveMatch;
+  }
+  const enName = toSnakeCaseDeviceParamName(definition.enName);
+  if (enName === "status") {
+    const normalizedStatus = normalizeDeviceStatusForE(text);
+    if (allowedValues.includes(normalizedStatus)) {
+      return normalizedStatus;
+    }
+  }
+  if (enName === "run_stat") {
+    const normalizedRunStat = normalizeRunStatForE(text);
+    const runStatAliases: Record<string, string[]> = {
+      "1": ["1", "运行"],
+      "0": ["0", "停运"]
+    };
+    const mapped = runStatAliases[normalizedRunStat]?.find((candidate) => allowedValues.includes(candidate));
+    if (mapped) {
+      return mapped;
+    }
+  }
+  if (enName.includes("control_type")) {
+    const normalizedControlType = normalizeControlTypeForE(text).toUpperCase();
+    if (allowedValues.includes(normalizedControlType)) {
+      return normalizedControlType;
+    }
+    if (HYDROGEN_COUPLING_SECTIONS.has(section) && ["PQ", "PV", "PH"].includes(normalizedControlType)) {
+      return allowedValues.includes("P") ? "P" : text;
+    }
+    if ((normalizedControlType === "0" || normalizedControlType === "SLACK") && allowedValues.includes("NONE")) {
+      return "NONE";
+    }
+  }
+  return text;
+}
+
+export function resolveNodeEnumParameterBindings(
+  node: Pick<ModelNode, "kind" | "name" | "terminals" | "params">,
+  template?: DeviceTemplate
+): DeviceEnumParameterBinding[] {
+  const section = inferESection(node.kind, node.params);
+  const bindings: DeviceEnumParameterBinding[] = resolveNodeParameterDefinitions(node, template)
+    .filter(isEnumParameterDefinition)
+    .map((definition) => ({
+      paramKey: definition.enName,
+      definition,
+      value: String(node.params[definition.enName] ?? "").trim(),
+      section
+    }));
+  if (!isContainerParams(node.params)) {
+    return bindings;
+  }
+  const resolvedTemplate = template ?? DEVICE_LIBRARY_BY_KIND.get(node.kind) ?? DEVICE_LIBRARY_BY_KIND.get(baseDeviceKind(node.kind));
+  for (const view of buildContainerDeviceParameterViews(node, resolvedTemplate)) {
+    const componentLibrary = String(view.componentLibrary ?? "").trim();
+    if (view.kind === "container" || !componentLibrary) {
+      continue;
+    }
+    for (const row of view.rows) {
+      if (!row.paramKey || !Object.prototype.hasOwnProperty.call(node.params, row.paramKey)) {
+        continue;
+      }
+      const definition = sectionEnumParameterDefinition(componentLibrary, row.key);
+      if (!definition) {
+        continue;
+      }
+      bindings.push({
+        paramKey: row.paramKey,
+        definition,
+        value: String(node.params[row.paramKey] ?? "").trim(),
+        section: componentLibrary
+      });
+    }
+  }
+  return bindings;
+}
+
+export function validateNodeEnumParameters(
+  node: Pick<ModelNode, "kind" | "name" | "terminals" | "params">,
+  template?: DeviceTemplate
+): DeviceEnumParameterIssue[] {
+  return resolveNodeEnumParameterBindings(node, template).flatMap((binding) => {
+    const allowedValues = enumValuesForParameterDefinition(binding.definition);
+    if (!binding.value && binding.definition.typicalValue && allowedValues.includes(binding.definition.typicalValue)) {
+      return [];
+    }
+    return allowedValues.includes(binding.value) ? [] : [{ ...binding, allowedValues }];
+  });
+}
+
+export function normalizeKnownLegacyNodeEnumValues(
+  node: ModelNode,
+  template?: DeviceTemplate
+): ModelNode {
+  let nextParams = node.params;
+  for (const binding of resolveNodeEnumParameterBindings(node, template)) {
+    const normalizedValue = normalizeKnownLegacyEnumValue(binding.section, binding.definition, binding.value);
+    if (normalizedValue === binding.value) {
+      continue;
+    }
+    if (nextParams === node.params) {
+      nextParams = { ...node.params };
+    }
+    nextParams[binding.paramKey] = normalizedValue;
+  }
+  return nextParams === node.params ? node : { ...node, params: nextParams };
 }
 
 function isTemplateDefinitionStoredParam(enName: string) {

@@ -18,7 +18,8 @@ import {
   containerRelationCounterKey, parseContainerRelationField, isContainerTransformerRelationKey,
   DEFAULT_POWER_BASE_VALUE, DEFAULT_VOLTAGE_UNIT, DEFAULT_POWER_UNIT, DEFAULT_CURRENT_UNIT,
   ELEMENT_TREE_COMPONENT_LIBRARY_LABELS, COMPONENT_LIBRARY_REVERSE_MAPPING,
-  topologyNodeNumberForEField, normalizeTemplateDefinitionList
+  topologyNodeNumberForEField, normalizeTemplateDefinitionList,
+  validateNodeEnumParameters
 } from "./model";
 
 export const E_SECTION_COLUMNS: Record<string, string[]> = {
@@ -680,10 +681,33 @@ export type EFileExportOptions = {
   eDeviceDefinitionTemplateFields?: Record<string, Array<{ sourceName?: string; exportName: string; cnName: string }>>;
 };
 
+function normalizeGasQuantityFieldName(value: unknown): string {
+  const text = String(value ?? "").trim();
+  return /^(?:gasQuantity|gasquantity)$/.test(text) ? "gas_quantity" : text;
+}
+
+function normalizeEFileInterfaceDefinition(
+  definition: EFileInterfaceSectionDefinition
+): EFileInterfaceSectionDefinition {
+  return {
+    ...definition,
+    fields: (definition.fields ?? []).map((field) => ({
+      ...field,
+      sourceName: normalizeGasQuantityFieldName(field.sourceName),
+      ...(field.exportName !== undefined
+        ? { exportName: normalizeGasQuantityFieldName(field.exportName) }
+        : {})
+    }))
+  };
+}
+
 function eFileInterfaceDefinitionIndex(options: EFileExportOptions = {}) {
   const index = new Map(
     (options.interfaceDefinitions ?? [])
-      .map((definition) => [String(definition.componentLibrary ?? "").trim(), definition] as const)
+      .map((definition) => [
+        String(definition.componentLibrary ?? "").trim(),
+        normalizeEFileInterfaceDefinition(definition)
+      ] as const)
       .filter(([componentLibrary]) => Boolean(componentLibrary))
   );
   // 从模板字段定义为运行时生成的表（ACNode/DCNode）构造接口定义
@@ -693,8 +717,8 @@ function eFileInterfaceDefinitionIndex(options: EFileExportOptions = {}) {
         index.set(componentLibrary, {
           componentLibrary,
           fields: templateFields.map((tf) => ({
-            sourceName: String(tf.sourceName ?? tf.exportName).trim(),
-            exportName: tf.exportName,
+            sourceName: normalizeGasQuantityFieldName(tf.sourceName ?? tf.exportName),
+            exportName: normalizeGasQuantityFieldName(tf.exportName),
             cnName: tf.cnName
           }))
         });
@@ -855,8 +879,8 @@ function eParameterFieldsFromInterfaceDefinition(
     if (configuredField.exportEnabled === false) {
       continue;
     }
-    const exportName = String(configuredField.exportName ?? configuredField.sourceName ?? "").trim();
-    const configuredSourceName = String(configuredField.sourceName ?? "").trim() || exportName;
+    const exportName = normalizeGasQuantityFieldName(configuredField.exportName ?? configuredField.sourceName);
+    const configuredSourceName = normalizeGasQuantityFieldName(configuredField.sourceName) || exportName;
     if (!configuredSourceName || !exportName) {
       continue;
     }
@@ -1609,7 +1633,13 @@ function getEExportWarningsFromRecords(
 ): EExportWarning[] {
   const interfaceDefinitionBySection = eFileInterfaceDefinitionIndex(options);
   const exportedNodeIds = new Set(records.map((record) => record.id).filter((id) => !id.includes(":")));
-  return project.nodes.flatMap((node) => {
+  const enumWarnings = project.nodes.flatMap((node) => validateNodeEnumParameters(node).map((issue) => ({
+    nodeId: node.id,
+    nodeName: node.name,
+    kind: node.kind,
+    reason: `枚举参数 ${issue.definition.cnName || issue.definition.enName}（${issue.paramKey}）值“${issue.value || "<空>"}”无效，允许值为：${issue.allowedValues.join("、")}。`
+  })));
+  const recordWarnings = project.nodes.flatMap((node) => {
     if (isStaticNode(node)) {
       return [];
     }
@@ -1644,6 +1674,7 @@ function getEExportWarningsFromRecords(
       reason: `E 文件段 ${section} 被导出逻辑过滤。`
     }];
   });
+  return [...enumWarnings, ...recordWarnings];
 }
 
 export function getEExportWarnings(project: ProjectFile, options: EFileExportOptions = {}): EExportWarning[] {
@@ -2334,8 +2365,8 @@ export function buildEDeviceDefinitionFileFromInterfaceDefinitions(
     const componentLibrary = String(definition.componentLibrary ?? "").trim();
     const kind = String(definition.exportName ?? componentLibrary).trim() || componentLibrary;
     const fields = (definition.fields ?? []).flatMap((field): EDeviceDefinitionField[] => {
-      const sourceName = String(field.sourceName ?? "").trim();
-      const exportName = String(field.exportName ?? sourceName).trim();
+      const sourceName = normalizeGasQuantityFieldName(field.sourceName);
+      const exportName = normalizeGasQuantityFieldName(field.exportName ?? sourceName);
       if (!sourceName || !exportName) {
         return [];
       }
@@ -2398,8 +2429,8 @@ export function parseEDeviceDefinitionFile(text: string): EDeviceDefinitionSecti
             if (!field || typeof field !== "object") {
               return [];
             }
-            const sourceName = String(field.sourceName ?? "").trim();
-            const exportName = String(field.exportName ?? sourceName).trim();
+            const sourceName = normalizeGasQuantityFieldName(field.sourceName);
+            const exportName = normalizeGasQuantityFieldName(field.exportName ?? sourceName);
             if (!sourceName || !exportName) {
               return [];
             }
@@ -2419,7 +2450,7 @@ export function parseEDeviceDefinitionFile(text: string): EDeviceDefinitionSecti
       const count = Math.max(exportNames.length, cnNames.length);
       for (let index = 0; index < count; index += 1) {
         fields.push({
-          exportName: exportNames[index] ?? "",
+          exportName: normalizeGasQuantityFieldName(exportNames[index]),
           cnName: cnNames[index] ?? ""
         });
       }

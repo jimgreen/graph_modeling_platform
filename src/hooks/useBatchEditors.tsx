@@ -13,6 +13,8 @@ import {
   DEFAULT_MODEL_LAYER_ID,
   formatPowerBaseDisplayValue,
   getTemplateStateDefinitions,
+  enumSelectOptionsWithCurrentValue,
+  invalidEnumOptionLabel,
   normalizeRatioParameterInputValue,
 } from "../model";
 
@@ -147,8 +149,11 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     );
   };
 
+  const selectOptionConfig = (options: string[] | undefined, value: string) =>
+    enumSelectOptionsWithCurrentValue(options, value);
+
   const withCurrentOption = (options: string[] | undefined, value: string): string[] | undefined =>
-    options && value && !options.includes(value) ? [value, ...options] : options;
+    options;
 
   const paramOptionsForNode = (key: string, node: ModelNode | undefined, value: string): string[] | undefined => {
     if (key === "status") {
@@ -294,13 +299,14 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
   const renderParamEditor = (key: string, value: string, wrapLabel = true, definition?: DeviceParameterDefinition): ReactNode => {
     const label = PARAM_LABELS[key] ?? key;
     const editorNode = inspectorSelectedNode ?? selectedNode;
-    const options = paramOptionsForDefinition(key, editorNode, value, definition);
+    const rawOptions = paramOptionsForDefinition(key, editorNode, value, definition);
     const optionLabels = paramOptionLabelsForDefinition(key, editorNode, value, definition);
+    const { options, invalidValue } = selectOptionConfig(rawOptions, value);
     const control: ReactNode = options ? (
       <select value={value} disabled={isBrowseMode} onChange={(event) => updateParam(key, event.target.value)}>
         {options.map((option: string) => (
-          <option key={option} value={option}>
-            {optionLabels[option] ?? option}
+          <option key={option} value={option} disabled={option === invalidValue}>
+            {option === invalidValue ? invalidEnumOptionLabel(option) : optionLabels[option] ?? option}
           </option>
         ))}
       </select>
@@ -368,13 +374,14 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
 
   const renderNodeDoubleClickParamEditor = (node: ModelNode, key: string, value: string, wrapLabel = true, definition?: DeviceParameterDefinition): ReactNode => {
     const label = PARAM_LABELS[key] ?? key;
-    const options = paramOptionsForDefinition(key, node, value, definition);
+    const rawOptions = paramOptionsForDefinition(key, node, value, definition);
     const optionLabels = paramOptionLabelsForDefinition(key, node, value, definition);
+    const { options, invalidValue } = selectOptionConfig(rawOptions, value);
     const control: ReactNode = options ? (
       <select value={value} disabled={isBrowseMode} onChange={(event) => updateNodeDoubleClickDraftParam(node.id, key, event.target.value)}>
         {options.map((option: string) => (
-          <option key={option} value={option}>
-            {optionLabels[option] ?? option}
+          <option key={option} value={option} disabled={option === invalidValue}>
+            {option === invalidValue ? invalidEnumOptionLabel(option) : optionLabels[option] ?? option}
           </option>
         ))}
       </select>
@@ -557,14 +564,17 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     if (row.key === "buttonTargetLayerId" || row.key === "buttonTargetLayerName") {
       return renderBatchCommonLayerSelect(row);
     }
-    const { options, optionLabels } = batchParamOptionConfig(row, value);
+    const { options: rawOptions, optionLabels } = batchParamOptionConfig(row, value);
+    const { options, invalidValue } = row.mixed
+      ? { options: rawOptions, invalidValue: undefined }
+      : selectOptionConfig(rawOptions, value);
     if (options) {
       return (
         <select value={value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonParam(row.key, event.target.value)}>
           {row.mixed && <option value="">多个不同值</option>}
           {options.map((option: string) => (
-            <option key={option} value={option}>
-              {optionLabels[option] ?? option}
+            <option key={option} value={option} disabled={option === invalidValue}>
+              {option === invalidValue ? invalidEnumOptionLabel(option) : optionLabels[option] ?? option}
             </option>
           ))}
         </select>

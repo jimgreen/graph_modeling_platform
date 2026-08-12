@@ -1407,6 +1407,11 @@ function normalizeBooleanRecord(value: unknown): Record<string, boolean> {
   }, {});
 }
 
+function normalizeGasQuantityFieldName(value: unknown): string {
+  const text = String(value ?? "").trim();
+  return /^(?:gasQuantity|gasquantity)$/.test(text) ? "gas_quantity" : text;
+}
+
 function normalizeStringArrayRecord(value: unknown): Record<string, string[]> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
@@ -1421,7 +1426,7 @@ function normalizeStringArrayRecord(value: unknown): Record<string, string[]> {
       if (typeof item !== "string") {
         return [];
       }
-      const text = item.trim();
+      const text = normalizeGasQuantityFieldName(item);
       const normalized = text.toLowerCase();
       if (!text || seen.has(normalized)) {
         return [];
@@ -1450,12 +1455,12 @@ function normalizeObjectRecord(value: unknown): Record<string, Array<{ sourceNam
         return [];
       }
       const src = item as Partial<{ sourceName: string; exportName: string; cnName: string }>;
-      const exportName = String(src.exportName ?? "").trim();
+      const exportName = normalizeGasQuantityFieldName(src.exportName);
       if (!exportName) {
         return [];
       }
       return [{
-        sourceName: String(src.sourceName ?? "").trim() || undefined,
+        sourceName: normalizeGasQuantityFieldName(src.sourceName) || undefined,
         exportName,
         cnName: String(src.cnName ?? "").trim() || exportName
       }];

@@ -405,7 +405,8 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
         eDeviceDefinitionLabels: { ACGenerator: "ACGeneratorRenamed" },
         eDeviceDefinitionClassExportEnabled: { ACGenerator: false },
         eDeviceDefinitionFieldOrder: {
-          ACGenerator: ["idx", "name", "dev_type", "node", "rated_capacity", "rated_voltage"]
+          ACGenerator: ["idx", "name", "dev_type", "node", "rated_capacity", "rated_voltage"],
+          HydroStorage: ["idx", "gasQuantity", "my_gasQuantity_field", "gasquantity", "gas_quantity"]
         },
         eDeviceDefinitionTemplateFields: {
           ACNode: [
@@ -414,6 +415,10 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
             { sourceName: "node", exportName: "realbs", cnName: "真实母线" },
             { sourceName: "ist", exportName: "ist", cnName: "所属厂站" },
             { sourceName: "vltp", exportName: "vltp", cnName: "电压等级" }
+          ],
+          HydroStorage: [
+            { sourceName: "gasquantity", exportName: "gasQuantity", cnName: "储气量" },
+            { sourceName: "gas_quantity", exportName: "customGasQuantity", cnName: "自定义储气量" }
           ]
         }
       })
@@ -423,7 +428,8 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
     expect(saved.json.eDeviceDefinitionLabels).toEqual({ ACGenerator: "ACGeneratorRenamed" });
     expect(saved.json.eDeviceDefinitionClassExportEnabled).toEqual({ ACGenerator: false });
     expect(saved.json.eDeviceDefinitionFieldOrder).toEqual({
-      ACGenerator: ["idx", "name", "dev_type", "node", "rated_capacity", "rated_voltage"]
+      ACGenerator: ["idx", "name", "dev_type", "node", "rated_capacity", "rated_voltage"],
+      HydroStorage: ["idx", "gas_quantity", "my_gasQuantity_field"]
     });
     expect(saved.json.eDeviceDefinitionTemplateFields).toEqual({
       ACNode: [
@@ -432,6 +438,10 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
         { sourceName: "node", exportName: "realbs", cnName: "真实母线" },
         { sourceName: "ist", exportName: "ist", cnName: "所属厂站" },
         { sourceName: "vltp", exportName: "vltp", cnName: "电压等级" }
+      ],
+      HydroStorage: [
+        { sourceName: "gas_quantity", exportName: "gas_quantity", cnName: "储气量" },
+        { sourceName: "gas_quantity", exportName: "customGasQuantity", cnName: "自定义储气量" }
       ]
     });
     const got = await fetchJson(apiPath("/device-library"));
@@ -439,7 +449,8 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
     expect(got.json.eDeviceDefinitionLabels).toEqual({ ACGenerator: "ACGeneratorRenamed" });
     expect(got.json.eDeviceDefinitionClassExportEnabled).toEqual({ ACGenerator: false });
     expect(got.json.eDeviceDefinitionFieldOrder).toEqual({
-      ACGenerator: ["idx", "name", "dev_type", "node", "rated_capacity", "rated_voltage"]
+      ACGenerator: ["idx", "name", "dev_type", "node", "rated_capacity", "rated_voltage"],
+      HydroStorage: ["idx", "gas_quantity", "my_gasQuantity_field"]
     });
     expect(got.json.eDeviceDefinitionTemplateFields).toEqual({
       ACNode: [
@@ -448,6 +459,10 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
         { sourceName: "node", exportName: "realbs", cnName: "真实母线" },
         { sourceName: "ist", exportName: "ist", cnName: "所属厂站" },
         { sourceName: "vltp", exportName: "vltp", cnName: "电压等级" }
+      ],
+      HydroStorage: [
+        { sourceName: "gas_quantity", exportName: "gas_quantity", cnName: "储气量" },
+        { sourceName: "gas_quantity", exportName: "customGasQuantity", cnName: "自定义储气量" }
       ]
     });
   });

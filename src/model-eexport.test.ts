@@ -199,6 +199,7 @@ import {
   terminalStubSegment,
   terminalStubStrokeWidth,
   terminalVoltageBaseNumber,
+  toSnakeCaseDeviceParamName,
   formatPowerBaseDisplayValue,
   normalizeRatioParameterInputValue,
   topologyCalculationMessage,
@@ -842,6 +843,72 @@ test("round trips the complete configured field order through an interface defin
   ]);
 });
 
+test("normalizes legacy gas quantity names across E interface definition import and runtime export", () => {
+  const tank = assignPermanentDeviceIndex(createDefaultNode("hydrogen-tank", { x: 100, y: 100 }), {}).node;
+  tank.params.gas_quantity = "321";
+
+  for (const legacyName of ["gasQuantity", "gasquantity"]) {
+    const interfaceDefinitions = [{
+      componentLibrary: "HydroStorage",
+      categoryLibrary: "氢能设备",
+      label: "储氢罐",
+      exportEnabled: true,
+      exportName: "HydroStorage",
+      fields: [
+        { sourceName: "idx", cnName: "序号", exportEnabled: true, exportName: "idx" },
+        { sourceName: legacyName, cnName: "储气量", exportEnabled: true, exportName: legacyName },
+        { sourceName: "gas_quantity", cnName: "自定义储气量", exportEnabled: true, exportName: "customGasQuantity" }
+      ]
+    }];
+    const definitionFile = buildEDeviceDefinitionFileFromInterfaceDefinitions(interfaceDefinitions);
+    const [parsedDefinition] = parseEDeviceDefinitionFile(definitionFile.text);
+    const payload = parseESections(buildEFileExport({
+      version: 1,
+      name: `储气量接口迁移-${legacyName}`,
+      nodes: [tank],
+      edges: []
+    }, ["默认方案"], { interfaceDefinitions }).text);
+
+    expect(parsedDefinition.fields.map((field) => field.sourceName)).toEqual([
+      "idx",
+      "gas_quantity",
+      "gas_quantity"
+    ]);
+    expect(parsedDefinition.fields.map((field) => field.exportName)).toEqual([
+      "idx",
+      "gas_quantity",
+      "customGasQuantity"
+    ]);
+    expect(payload.HydroStorage.columns).toEqual(["idx", "gas_quantity", "customGasQuantity"]);
+    expect(payload.HydroStorage.rows[0]).toMatchObject({
+      gas_quantity: "321",
+      customGasQuantity: "321"
+    });
+  }
+
+  const [handWritten] = parseEDeviceDefinitionFile(`<HydroStorage 中文名="储氢罐" 类别库="氢能设备">
+@  gasquantity  my_gasQuantity_field
+// 储气量       自定义字段
+</HydroStorage>`);
+  expect(handWritten.fields.map((field) => field.exportName)).toEqual(["gas_quantity", "my_gasQuantity_field"]);
+
+  const templatePayload = parseESections(buildEFileExport({
+    version: 1,
+    name: "储气量历史模板导出",
+    nodes: [tank],
+    edges: []
+  }, ["默认方案"], {
+    eDeviceDefinitionTemplateFields: {
+      HydroStorage: [
+        { sourceName: "idx", exportName: "idx", cnName: "序号" },
+        { sourceName: "gasquantity", exportName: "gasQuantity", cnName: "储气量" }
+      ]
+    }
+  }).text);
+  expect(templatePayload.HydroStorage.columns).toEqual(["idx", "gas_quantity"]);
+  expect(templatePayload.HydroStorage.rows[0].gas_quantity).toBe("321");
+});
+
 test("exports and parses custom derived component library metadata", () => {
   const template = {
     kind: "custom-user-wind",
@@ -987,6 +1054,55 @@ test("exports hydrogen, heat, and cross-energy devices to E sections and reports
   ]);
 });
 
+test("migrates legacy gas quantity parameter names without overriding the canonical value", () => {
+  expect(toSnakeCaseDeviceParamName("gasQuantity")).toBe("gas_quantity");
+  expect(toSnakeCaseDeviceParamName("gasquantity")).toBe("gas_quantity");
+
+  const createLegacyTank = (id: string, params: Record<string, string>) => {
+    const tank = createDefaultNode("hydrogen-tank", { x: 100, y: 100 });
+    tank.id = id;
+    delete tank.params.gas_quantity;
+    Object.assign(tank.params, params);
+    return tank;
+  };
+  const camel = createLegacyTank("tank-camel", {
+    gasQuantity: "21",
+    [CUSTOM_PARAM_DEFINITIONS_KEY]: JSON.stringify([{
+      cnName: "储气量",
+      enName: "gasQuantity",
+      valueType: "float",
+      typicalValue: "0",
+      exportEnabled: true,
+      exportName: "gasQuantity"
+    }])
+  });
+  const lower = createLegacyTank("tank-lower", { gasquantity: "22" });
+  const canonical = createLegacyTank("tank-canonical", {
+    gas_quantity: "23",
+    gasQuantity: "24",
+    gasquantity: "25"
+  });
+
+  const loaded = deserializeProject(JSON.stringify({
+    version: 1,
+    name: "储气量字段迁移",
+    nodes: [camel, lower, canonical],
+    edges: []
+  }));
+
+  expect(loaded.nodes[0].params.gas_quantity).toBe("21");
+  expect(loaded.nodes[1].params.gas_quantity).toBe("22");
+  expect(loaded.nodes[2].params.gas_quantity).toBe("23");
+  for (const node of loaded.nodes) {
+    expect(node.params).not.toHaveProperty("gasQuantity");
+    expect(node.params).not.toHaveProperty("gasquantity");
+  }
+  expect(JSON.parse(loaded.nodes[0].params[CUSTOM_PARAM_DEFINITIONS_KEY])).toEqual([
+    expect.objectContaining({ enName: "gas_quantity", exportName: "gas_quantity" })
+  ]);
+  expect(getEParamValue("gas_quantity", lower)).toBe("22");
+});
+
 test("exports electric-hydrogen controls, directional coefficients, and associated setpoints", () => {
   const expected = [
     ["ac-electrolyzer", "AcE2Hydro", "FLOW", "e2h_coeff", "0.2", "ACLoad", "ac_load_t1", "HydroSource", "h2_unit_t2"],
@@ -1018,6 +1134,60 @@ test("exports electric-hydrogen controls, directional coefficients, and associat
     expect(couplingRow, couplingSection).not.toHaveProperty("flow_set");
     expect(exported[electricSection].rows[0].p_set, electricSection).toBe("2.5");
     expect(exported[hydrogenSection].rows[0].flow_set, hydrogenSection).toBe("300");
+  }
+});
+
+test("preserves explicit P and FLOW controls for every electric-hydrogen coupling section", () => {
+  const cases = [
+    ["ac-electrolyzer", "AcE2Hydro"],
+    ["dc-electrolyzer", "DcE2Hydro"],
+    ["ac-fuel-cell", "Hydro2AcE"],
+    ["dc-fuel-cell", "Hydro2DcE"]
+  ] as const;
+
+  for (const [kind, section] of cases) {
+    for (const controlType of ["P", "FLOW"] as const) {
+      const node = assignPermanentDeviceIndex(createDefaultNode(kind, { x: 100, y: 100 }), {}).node;
+      node.params.control_type = controlType;
+      const project = {
+        version: 1 as const,
+        name: `${section}-${controlType}`,
+        nodes: [node],
+        edges: []
+      };
+      const records = buildEDeviceRecords(project);
+      const record = records.find((item) => item.section === section);
+      const defaultExport = parseESections(buildEDeviceParameterFile(project));
+      const configuredExport = parseESections(buildEFileExport(project, ["默认方案"], {
+        interfaceDefinitions: [{
+          componentLibrary: section,
+          exportEnabled: true,
+          exportName: section,
+          fields: [
+            { sourceName: "idx", exportEnabled: true, exportName: "idx" },
+            { sourceName: "name", exportEnabled: true, exportName: "name" },
+            {
+              sourceName: "control_type",
+              exportEnabled: true,
+              exportName: "control_type",
+              definition: {
+                cnName: "控制类型",
+                enName: "control_type",
+                valueType: "stringEnum",
+                typicalValue: controlType,
+                readonly: false,
+                enumValues: ["P", "FLOW"],
+                enumOptions: [{ value: "P" }, { value: "FLOW" }]
+              }
+            }
+          ]
+        }]
+      }).text);
+
+      expect(record?.params.control_type, `${section}:${controlType}:record`).toBe(controlType);
+      expect(defaultExport[section].rows[0].control_type, `${section}:${controlType}:default`).toBe(controlType);
+      expect(configuredExport[section].rows[0].control_type, `${section}:${controlType}:configured`).toBe(controlType);
+    }
   }
 });
 
@@ -1106,6 +1276,26 @@ test("exports electric heat containers to AC and DC specific E sections", () => 
   expect(inferESection("dc-heater", dcHeater.params)).toBe("DcE2Heat");
   expect(inferESection("ac-two-port-heater", acTwoPortHeater.params)).toBe("AcE2Heat2");
   expect(inferESection("dc-two-port-heater", dcTwoPortHeater.params)).toBe("DcE2Heat2");
+});
+
+test("returns E export warnings for invalid enum parameters instead of hiding them", () => {
+  const generator = createDefaultNode("ac-wind-source", { x: 100, y: 100 });
+  generator.params.control_type = "BAD";
+  const custom = createDefaultNode("static-default-node", { x: 240, y: 100 });
+  custom.kind = "custom-export-enum";
+  custom.params = {
+    [CUSTOM_DEVICE_TEMPLATE_KEY]: "1",
+    mode: "UNKNOWN",
+    [CUSTOM_PARAM_DEFINITIONS_KEY]: JSON.stringify([
+      { cnName: "模式", enName: "mode", valueType: "stringEnum", typicalValue: "AUTO", enumValues: ["AUTO", "MANUAL"] }
+    ])
+  };
+  const project: ProjectFile = { version: 1, name: "非法枚举导出", nodes: [generator, custom], edges: [] };
+
+  expect(buildEFileExport(project).warnings).toEqual(expect.arrayContaining([
+    expect.objectContaining({ nodeId: generator.id, reason: expect.stringContaining("control_type") }),
+    expect.objectContaining({ nodeId: custom.id, reason: expect.stringContaining("AUTO、MANUAL") })
+  ]));
 });
 
 test("allocates permanent device idx by E section without reusing deleted gaps", () => {
@@ -2408,11 +2598,19 @@ test("exports DCDC converter endpoint control types with supported values", () =
   expect(payload.DCDCConverter.columns).toContain("i_control_type");
   expect(payload.DCDCConverter.columns).toContain("j_control_type");
   expect(payload.DCDCConverter.columns).not.toContain("control_type");
-  expect(payload.DCDCConverter.rows.map((row) => row.i_control_type)).toEqual(["V", "P", "V", "NONE"]);
+  expect(payload.DCDCConverter.rows.map((row) => row.i_control_type)).toEqual(["V", "P", "V", "BAD"]);
   expect(payload.DCDCConverter.rows.map((row) => row.j_control_type)).toEqual(["I", "NONE", "NONE", "V"]);
+  expect(getEExportWarnings({
+    version: 1,
+    name: "DCDC非法控制类型",
+    nodes: [invalidConverter],
+    edges: []
+  })).toEqual(expect.arrayContaining([
+    expect.objectContaining({ nodeId: invalidConverter.id, reason: expect.stringContaining("BAD") })
+  ]));
 });
 
-test("exports AC generator control_type with only PV PQ PH values", () => {
+test("preserves an invalid AC generator control_type and reports it", () => {
   const voltageControlledGenerator = createDefaultNode("ac-source", { x: 100, y: 100 });
   const powerControlledGenerator = createDefaultNode("ac-source", { x: 240, y: 100 });
   const phaseControlledGenerator = createDefaultNode("ac-source", { x: 380, y: 100 });
@@ -2430,11 +2628,18 @@ test("exports AC generator control_type with only PV PQ PH values", () => {
   }));
   const values = payload.ACGenerator.rows.map((row) => row.control_type);
 
-  expect(values).toEqual(["PV", "PQ", "PH", "PV"]);
-  expect(values.every((value) => (AC_GENERATOR_CONTROL_TYPES as readonly string[]).includes(value))).toBe(true);
+  expect(values).toEqual(["PV", "PQ", "PH", "P"]);
+  expect(getEExportWarnings({
+    version: 1,
+    name: "交流电源非法控制类型",
+    nodes: [invalidGenerator],
+    edges: []
+  })).toEqual(expect.arrayContaining([
+    expect.objectContaining({ nodeId: invalidGenerator.id, reason: expect.stringContaining("P") })
+  ]));
 });
 
-test("exports DC generator control_type with only P V I values", () => {
+test("preserves an invalid DC generator control_type and reports it", () => {
   const powerControlledGenerator = createDefaultNode("dc-source", { x: 100, y: 100 });
   const voltageControlledGenerator = createDefaultNode("dc-source", { x: 240, y: 100 });
   const currentControlledGenerator = createDefaultNode("dc-source", { x: 380, y: 100 });
@@ -2452,8 +2657,15 @@ test("exports DC generator control_type with only P V I values", () => {
   }));
   const values = payload.DCGenerator.rows.map((row) => row.control_type);
 
-  expect(values).toEqual(["P", "V", "I", "P"]);
-  expect(values.every((value) => (DC_GENERATOR_CONTROL_TYPES as readonly string[]).includes(value))).toBe(true);
+  expect(values).toEqual(["P", "V", "I", "PQ"]);
+  expect(getEExportWarnings({
+    version: 1,
+    name: "直流电源非法控制类型",
+    nodes: [invalidGenerator],
+    edges: []
+  })).toEqual(expect.arrayContaining([
+    expect.objectContaining({ nodeId: invalidGenerator.id, reason: expect.stringContaining("PQ") })
+  ]));
 });
 
 test("exports DCAC converter AC and DC control types as separate columns", () => {

@@ -8,7 +8,7 @@ import {
   visibleIconLibraryIcons
 } from "../iconLibraryCatalog";
 import { buildExportDeviceIdMap } from "../svgExportUtils";
-import { E_SECTION_COLUMNS, inferESection, getTemplateParameterDefinitions, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, type EDeviceExport } from "../model";
+import { E_SECTION_COLUMNS, inferESection, getTemplateParameterDefinitions, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, type EDeviceExport } from "../model";
 import { buildEDeviceInterfaceDefinitionRows, orderEDeviceInterfaceFields, applyEDeviceDefinitionSectionsToLibraryState, buildEFileExportOptionsFromLibrary } from "./appDeviceDefinitionFactories";
 import { UserCustomizationManagerDialog } from "../UserCustomizationManagerDialog";
 import { VoltageLevelDialog } from "../VoltageLevelDialog";
@@ -108,6 +108,17 @@ export function resolveDeviceModelPanelDevType(kind: string, params: Record<stri
     params.component_type ?? params.componentType ?? params.componentLibrary ?? ""
   ).trim();
   return componentLibrary || inferESection(kind, params as Record<string, string>) || String(kind ?? "").trim();
+}
+
+export function resolveContainerParameterViewComponentLibrary(
+  node: { kind: string; params?: Record<string, string> },
+  view?: { kind?: string; componentLibrary?: string } | null
+): string {
+  const explicitComponentLibrary = String(view?.componentLibrary ?? "").trim();
+  if (explicitComponentLibrary) {
+    return explicitComponentLibrary;
+  }
+  return view?.kind === "container" ? inferESection(node.kind, node.params ?? {}) : "";
 }
 
 export function buildEDeviceInterfaceDefinitionTree(rows: readonly any[] = [], libraryTemplates: readonly any[] = []) {
@@ -2572,14 +2583,19 @@ export function renderAppView(__appScope: Record<string, any>) {
                     {selectedContainerParameterView ? (<table className="param-table">
                         <tbody>
                           {selectedContainerParameterView.rows.map((row) => {
-                        const options = paramOptionsForSection(row.key, selectedContainerParameterView.componentLibrary);
+                        const componentLibrary = resolveContainerParameterViewComponentLibrary(
+                          inspectorSelectedNode,
+                          selectedContainerParameterView
+                        );
                         const displayValue = formatDeviceModelParamDisplayValue(row.key, row.value);
+                        const optionConfig = enumSelectOptionsWithCurrentValue(paramOptionsForSection(row.key, componentLibrary), displayValue);
+                        const options = optionConfig.options;
                         return (<tr key={row.key}>
                                   {batchEditors.renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}
                                   <td>
                                     {row.key === "name" && selectedContainerParameterView.kind === "container" ? (<BufferedTextInput value={inspectorSelectedNode.name} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/>) : row.readonly || !row.paramKey ? (<input value={displayValue} readOnly/>) : options ? (<select value={displayValue} onChange={(event) => updateParam(row.paramKey!, event.target.value)}>
-                                      {options.map((option) => (<option key={option} value={option}>
-                                          {option}
+                                      {options.map((option) => (<option key={option} value={option} disabled={option === optionConfig.invalidValue}>
+                                          {option === optionConfig.invalidValue ? invalidEnumOptionLabel(option) : option}
                                         </option>))}
                                     </select>) : (<BufferedTextInput value={displayValue} onCommit={(nextValue) => updateParam(row.paramKey!, nextValue)}/>)}
                                 </td>

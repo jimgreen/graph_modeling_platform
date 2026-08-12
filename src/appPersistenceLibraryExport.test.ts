@@ -274,6 +274,7 @@ describe("graph template library filtering", () => {
       },
       eDeviceDefinitionFieldOrder: {
         ACLoad: ["name", "idx", "name", "", 5],
+        HydroStorage: ["idx", "gasQuantity", "my_gasQuantity_field", "gasquantity", "gas_quantity"],
         "": ["idx"],
         DCLoad: "idx,name"
       },
@@ -284,15 +285,26 @@ describe("graph template library filtering", () => {
           { sourceName: "", exportName: "", cnName: "" },
           "invalid"
         ],
+        HydroStorage: [
+          { sourceName: "gasquantity", exportName: "gasQuantity", cnName: "储气量" },
+          { sourceName: "gas_quantity", exportName: "customGasQuantity", cnName: "自定义储气量" }
+        ],
         "": [{ exportName: "idx" }]
       }
     } as any);
 
     expect((normalized as any).eDeviceDefinitionLabels).toEqual({ ACLoad: "LoadTable" });
     expect((normalized as any).eDeviceDefinitionClassExportEnabled).toEqual({ ACLoad: false, DCLoad: true });
-    expect((normalized as any).eDeviceDefinitionFieldOrder).toEqual({ ACLoad: ["name", "idx"] });
+    expect((normalized as any).eDeviceDefinitionFieldOrder).toEqual({
+      ACLoad: ["name", "idx"],
+      HydroStorage: ["idx", "gas_quantity", "my_gasQuantity_field"]
+    });
     expect((normalized as any).eDeviceDefinitionTemplateFields).toEqual({
-      ACNode: [{ sourceName: "node", exportName: "realbs", cnName: "真实母线" }]
+      ACNode: [{ sourceName: "node", exportName: "realbs", cnName: "真实母线" }],
+      HydroStorage: [
+        { sourceName: "gas_quantity", exportName: "gas_quantity", cnName: "储气量" },
+        { sourceName: "gas_quantity", exportName: "customGasQuantity", cnName: "自定义储气量" }
+      ]
     });
   });
 
