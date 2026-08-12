@@ -23,7 +23,7 @@ export function createRequestCanvasFrameCenter(__appScope: Record<string, any>) 
 
 export function createUndoLastOperation(__appScope: Record<string, any>) {
   return () => {
-  const { applyUndoGraphSnapshot, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, pendingBusTerminalSyncNodeIdsRef, pendingStoredRouteEdgeIdsRef, resetConnectPreviewState, setActiveLayerId, setAllowAutoExpandCanvas, setBackgroundLayerIds, setBackgroundProjectId, setCanvasBackgroundColor, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasBackgroundImageFit, setCanvasHeight, setCanvasSelectionScope, setCanvasWidth, setConnectSource, setContextMenu, setCurrentUnit, setDeviceIndexCounters, setGroups, setHasUnsavedChanges, setLayers, setOperationLogText, setPowerBaseValue, setPowerUnit, setProjectMeasurements, setProjectMenu, setProjectName, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setTopology, setTopologyErrors, setTopologyStatus, setUndoStack, setVoltageUnit, skipNextTopologyStaleRef } = __appScope;
+  const { applyUndoGraphSnapshot, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, pendingBusTerminalSyncNodeIdsRef, pendingStoredRouteEdgeIdsRef, resetConnectPreviewState, setActiveLayerId, setAllowAutoExpandCanvas, setBackgroundLayerIds, setBackgroundProjectId, setCanvasBackgroundColor, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasBackgroundImageFit, setCanvasHeight, setCanvasSelectionScope, setCanvasWidth, setConnectSource, setContextMenu, setCurrentUnit, setDeviceIndexCounters, setFeeder, setGroups, setHasUnsavedChanges, setLayers, setModelType, setOperationLogText, setPowerBaseValue, setPowerUnit, setProjectMeasurements, setProjectMenu, setProjectName, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setSubcontrolarea, setSubstation, setTaiqu, setTopology, setTopologyErrors, setTopologyStatus, setUndoStack, setVoltageUnit, skipNextTopologyStaleRef } = __appScope;
     deferredMoveOptimizationCancelRef.current?.();
     deferredMoveOptimizationCancelRef.current = null;
     deferredRoutableLineRouteRepairCancelRef.current?.();
@@ -51,6 +51,11 @@ export function createUndoLastOperation(__appScope: Record<string, any>) {
       setVoltageUnit(snapshot.voltageUnit);
       setCurrentUnit(snapshot.currentUnit);
       setPowerBaseValue(snapshot.powerBaseValue);
+      setModelType(snapshot.modelType ?? "");
+      setSubcontrolarea(snapshot.subcontrolarea ?? "");
+      setSubstation(snapshot.substation ?? "");
+      setFeeder(snapshot.feeder ?? "");
+      setTaiqu(snapshot.taiqu ?? "");
       setDeviceIndexCounters(snapshot.deviceIndexCounters);
       skipNextTopologyStaleRef.current = true;
       applyUndoGraphSnapshot(snapshot);
