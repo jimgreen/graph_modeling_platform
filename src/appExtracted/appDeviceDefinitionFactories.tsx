@@ -16,6 +16,7 @@ import { decodeSvgImageSource } from "../svgUtils";
 import { buildMeasurementProfilePositionDefinitions, materializeNewMeasurementDefinitionFields } from "../measurements";
 import { measurementProfileItemsComplianceMessage } from "./appGraphMeasurementFactories";
 import { cloneDeviceMeasurementDefinitions, normalizeDeviceMeasurementDefinitions } from "../measurementDefinitionTypes";
+import type { TextFileEncoding } from "../fileIO";
 
 
 
@@ -2103,7 +2104,7 @@ export function createLoadSvgImageExportPathById(__appScope: Record<string, any>
 }
 
 export function createExportSvg(__appScope: Record<string, any>) {
-  return async () => {
+  return async (encoding: TextFileEncoding = "utf-8") => {
   const {
     DEFAULT_CANVAS_BACKGROUND,
     PARAM_LABELS,
@@ -2205,7 +2206,8 @@ export function createExportSvg(__appScope: Record<string, any>) {
             directoryHandle,
             file.filename,
             text,
-            file.mime
+            file.mime,
+            encoding
           ))
         });
       };
@@ -2236,11 +2238,11 @@ export function createExportSvg(__appScope: Record<string, any>) {
           throw imageExportPathByIdResult.error;
         }
         const imageExportPathById = imageExportPathByIdResult.value;
-        const svgText = buildSvgDocument(nodes, edges, buildSvgExportOptions({
+        const svgText = svgTextForEncoding(buildSvgDocument(nodes, edges, buildSvgExportOptions({
           canvasBounds, canvasBackgroundColor, DEFAULT_CANVAS_BACKGROUND, canvasBackgroundImageUrl,
           imageExportPathById, colorPalette, libraryTemplates, layers, activeLayerId,
           backgroundPageRender, projectMeasurements, measurementConfig
-        }));
+        })), encoding);
         startFileWrite({
           label: "SVG",
           filename: `${baseFilename}.svg`,
@@ -2329,6 +2331,14 @@ function showStandaloneExportCompletion(
   showGlobalMessage([message, ...details].join("\n"));
 }
 
+export function svgTextForEncoding(svgText: string, encoding: TextFileEncoding) {
+  const withoutDeclaration = String(svgText ?? "").replace(/^\s*<\?xml\b[^?]*\?>\s*/iu, "");
+  if (encoding === "gbk") {
+    return `<?xml version="1.0" encoding="GBK"?>\n${withoutDeclaration}`;
+  }
+  return withoutDeclaration;
+}
+
 // SVG 导出选项构建器，避免 createExportSvg 和 createExportSvgFile 重复
 function buildSvgExportOptions(params: {
   canvasBounds: any; canvasBackgroundColor: string; DEFAULT_CANVAS_BACKGROUND: string;
@@ -2353,7 +2363,7 @@ function buildSvgExportOptions(params: {
 }
 
 export function createExportSvgFile(__appScope: Record<string, any>) {
-  return async () => {
+  return async (encoding: TextFileEncoding = "utf-8") => {
     const {
       DEFAULT_CANVAS_BACKGROUND,
       activeLayerId,
@@ -2391,11 +2401,11 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
         const imageExportPathById = typeof loadSvgImageExportPathById === "function"
           ? await loadSvgImageExportPathById()
           : undefined;
-        return buildSvgDocument(nodes, edges, buildSvgExportOptions({
+        return svgTextForEncoding(buildSvgDocument(nodes, edges, buildSvgExportOptions({
           canvasBounds, canvasBackgroundColor, DEFAULT_CANVAS_BACKGROUND, canvasBackgroundImageUrl,
           imageExportPathById, colorPalette, libraryTemplates, layers, activeLayerId,
           backgroundPageRender, projectMeasurements, measurementConfig
-        }));
+        })), encoding);
       });
       return svgTextPromise;
     };
@@ -2406,6 +2416,7 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
           mime: "image/svg+xml",
           description: "SVG 图形文件",
           extensions: [".svg"],
+          encoding,
           preferNativeDialog: true,
           onSaveTargetReady: markSaveTargetReady
         })
@@ -2415,6 +2426,7 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
           mime: "image/svg+xml",
           description: "SVG 图形文件",
           extensions: [".svg"],
+          encoding,
           preferNativeDialog: true,
           onSaveTargetReady: markSaveTargetReady
         });
@@ -2429,7 +2441,7 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
 }
 
 export function createExportJsonFile(__appScope: Record<string, any>) {
-  return async () => {
+  return async (encoding: TextFileEncoding = "utf-8") => {
     const {
       currentProject,
       ensureSavedBeforeExport,
@@ -2460,6 +2472,7 @@ export function createExportJsonFile(__appScope: Record<string, any>) {
           mime: "application/json",
           description: "JSON 模型文件",
           extensions: [".json"],
+          encoding,
           preferNativeDialog: true,
           onSaveTargetReady: markSaveTargetReady
         })
@@ -2469,6 +2482,7 @@ export function createExportJsonFile(__appScope: Record<string, any>) {
           mime: "application/json",
           description: "JSON 模型文件",
           extensions: [".json"],
+          encoding,
           preferNativeDialog: true,
           onSaveTargetReady: markSaveTargetReady
         });
@@ -2519,7 +2533,7 @@ export function buildEFileExportProjectSnapshot(__appScope: Record<string, any>)
 }
 
 export function createExportEFile(__appScope: Record<string, any>) {
-  return async () => {
+  return async (encoding: TextFileEncoding = "gbk") => {
     const {
       activeSchemeKey,
       buildEFileExport,
@@ -2585,7 +2599,7 @@ export function createExportEFile(__appScope: Record<string, any>) {
           mime: "text/plain",
           description: "E 模型文件",
           extensions: [".e"],
-          encoding: "gbk",
+          encoding,
           preferNativeDialog: true,
           onSaveTargetReady: markSaveTargetReady
         })
@@ -2597,7 +2611,7 @@ export function createExportEFile(__appScope: Record<string, any>) {
             mime: file.mime,
             description: "E 模型文件",
             extensions: [".e"],
-            encoding: "gbk",
+            encoding,
             preferNativeDialog: true,
             onSaveTargetReady: markSaveTargetReady
           });

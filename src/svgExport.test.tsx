@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { buildSvgDocument } from "./App";
-import { createExportEFile, createExportJsonFile, createExportSvg, createExportSvgFile, createLoadSvgImageExportPathById } from "./appExtracted/appDeviceDefinitionFactories";
+import { createExportEFile, createExportJsonFile, createExportSvg, createExportSvgFile, createLoadSvgImageExportPathById, svgTextForEncoding } from "./appExtracted/appDeviceDefinitionFactories";
 import { assignPermanentDeviceIndex, createDefaultNode, createNodeFromTemplate, DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY, getTerminalPoint, type DeviceKind, type DeviceTemplate, type Edge } from "./model";
 import {
   INITIAL_MEASUREMENT_CONFIG,
@@ -84,7 +84,7 @@ describe("SVG export", () => {
       writeOperationLog
     });
 
-    await exportSvg();
+    await exportSvg("gbk");
 
     expect(ensureSavedBeforeExport).toHaveBeenCalledOnce();
     expect(buildEFileExport).toHaveBeenCalledWith(
@@ -100,9 +100,9 @@ describe("SVG export", () => {
     expect(showDirectoryPicker).toHaveBeenCalledWith({ id: "model-bundle-export", mode: "readwrite" });
     expect(writeTextFileToDirectory).toHaveBeenCalledTimes(3);
     expect(writeTextFileToDirectory.mock.calls).toEqual([
-      [directoryHandle, "voltage-export.e", "<Model/>", "text/plain"],
-      [directoryHandle, "voltage-export.json", JSON.stringify(currentProject.mock.results[0]?.value, null, 2), "application/json"],
-      [directoryHandle, "voltage-export.svg", "<svg/>", "image/svg+xml"]
+      [directoryHandle, "voltage-export.e", "<Model/>", "text/plain", "gbk"],
+      [directoryHandle, "voltage-export.json", JSON.stringify(currentProject.mock.results[0]?.value, null, 2), "application/json", "gbk"],
+      [directoryHandle, "voltage-export.svg", '<?xml version="1.0" encoding="GBK"?>\n<svg/>', "image/svg+xml", "gbk"]
     ]);
     expect(writeOperationLog).toHaveBeenCalledWith("导出模型文件：voltage-export.e");
     expect(writeOperationLog).toHaveBeenCalledWith("导出模型文件：voltage-export.json");
@@ -111,6 +111,13 @@ describe("SVG export", () => {
     expect(showGlobalMessage).toHaveBeenCalledWith(
       "E、JSON 和 SVG 文件导出成功。\n目录：exports\nE：voltage-export.e\nJSON：voltage-export.json\nSVG：voltage-export.svg\n总耗时：0.50 秒"
     );
+  });
+
+  test("keeps SVG XML declaration consistent with the selected file encoding", () => {
+    expect(svgTextForEncoding("<svg/>", "utf-8")).toBe("<svg/>");
+    expect(svgTextForEncoding("<svg/>", "gbk")).toBe('<?xml version="1.0" encoding="GBK"?>\n<svg/>');
+    expect(svgTextForEncoding('<?xml version="1.0" encoding="UTF-8"?>\n<svg/>', "gbk"))
+      .toBe('<?xml version="1.0" encoding="GBK"?>\n<svg/>');
   });
 
   test("stops the combined export silently when directory selection is cancelled", async () => {
@@ -232,10 +239,12 @@ describe("SVG export", () => {
       finishSave = resolve;
     });
     let now = 1000;
-    const saveLazyTextFile = vi.fn(async ({ loadText, onSaveTargetReady }: { loadText: () => Promise<string> | string; onSaveTargetReady?: () => void }) => {
+    let selectedEncoding = "";
+    const saveLazyTextFile = vi.fn(async ({ loadText, onSaveTargetReady, encoding }: { loadText: () => Promise<string> | string; onSaveTargetReady?: () => void; encoding?: string }) => {
       executionOrder.push("save-picker");
       const text = await loadText();
-      expect(text).toBe("<svg/>");
+      selectedEncoding = String(encoding ?? "");
+      expect(text).toBe('<?xml version="1.0" encoding="GBK"?>\n<svg/>');
       now = 3000;
       onSaveTargetReady?.();
       executionOrder.push("save-target-ready");
@@ -271,7 +280,7 @@ describe("SVG export", () => {
       writeOperationLog
     });
 
-    const exportPromise = exportSvgFile();
+    const exportPromise = exportSvgFile("gbk");
 
     await vi.waitFor(() => expect(buildDocument).toHaveBeenCalledOnce());
     expect(executionOrder[0]).toBe("save-picker");
@@ -284,6 +293,7 @@ describe("SVG export", () => {
 
     expect(writeOperationLog).toHaveBeenCalledWith("导出图形文件：模型.svg");
     expect(showGlobalMessage).not.toHaveBeenCalled();
+    expect(selectedEncoding).toBe("gbk");
     expect(setExportCompletionDialog).toHaveBeenCalledWith({
       title: "SVG 文件导出完成",
       message: "SVG 文件导出成功：模型.svg；总耗时：1.50 秒"
@@ -310,8 +320,10 @@ describe("SVG export", () => {
       finishSave = resolve;
     });
     let now = 2000;
-    const saveLazyTextFile = vi.fn(async ({ loadText, onSaveTargetReady }: { loadText: () => Promise<string> | string; onSaveTargetReady?: () => void }) => {
+    let selectedEncoding = "";
+    const saveLazyTextFile = vi.fn(async ({ loadText, onSaveTargetReady, encoding }: { loadText: () => Promise<string> | string; onSaveTargetReady?: () => void; encoding?: string }) => {
       executionOrder.push("save-picker");
+      selectedEncoding = String(encoding ?? "");
       await loadText();
       now = 4000;
       onSaveTargetReady?.();
@@ -335,7 +347,7 @@ describe("SVG export", () => {
       writeOperationLog
     });
 
-    const exportPromise = exportJsonFile();
+    const exportPromise = exportJsonFile("gbk");
 
     await vi.waitFor(() => expect(serializeProject).toHaveBeenCalledOnce());
     expect(executionOrder[0]).toBe("save-picker");
@@ -348,6 +360,7 @@ describe("SVG export", () => {
 
     expect(writeOperationLog).toHaveBeenCalledWith("导出模型文件：模型.json");
     expect(showGlobalMessage).not.toHaveBeenCalled();
+    expect(selectedEncoding).toBe("gbk");
     expect(setExportCompletionDialog).toHaveBeenCalledWith({
       title: "JSON 文件导出完成",
       message: "JSON 文件导出成功：模型.json；总耗时：1.25 秒"
@@ -367,7 +380,9 @@ describe("SVG export", () => {
     });
     let now = 1000;
     let saveTargetReady = false;
-    const saveLazyTextFile = vi.fn(async ({ loadText, onSaveTargetReady }: { loadText: () => Promise<string> | string; onSaveTargetReady?: () => void }) => {
+    let selectedEncoding = "";
+    const saveLazyTextFile = vi.fn(async ({ loadText, onSaveTargetReady, encoding }: { loadText: () => Promise<string> | string; onSaveTargetReady?: () => void; encoding?: string }) => {
+      selectedEncoding = String(encoding ?? "");
       await loadText();
       now = 3000;
       onSaveTargetReady?.();
@@ -393,10 +408,11 @@ describe("SVG export", () => {
       writeOperationLog
     });
 
-    const exportPromise = exportEFile();
+    const exportPromise = exportEFile("utf-8");
 
     await vi.waitFor(() => expect(buildEFileExport).toHaveBeenCalledOnce());
     expect(showGlobalMessage).not.toHaveBeenCalled();
+    expect(selectedEncoding).toBe("utf-8");
     expect(showGlobalMessage).not.toHaveBeenCalled();
 
     await vi.waitFor(() => expect(saveTargetReady).toBe(true));
