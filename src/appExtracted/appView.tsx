@@ -15,6 +15,8 @@ import { UserCustomizationManagerDialog } from "../UserCustomizationManagerDialo
 import { VoltageLevelDialog } from "../VoltageLevelDialog";
 import { EFileEditor } from "../EFileEditor";
 import { buildUserCustomizationInventory, restoreUserCustomizationItems, type UserCustomizationDomain } from "../userCustomizations";
+import { createMeasurementFieldParameterDefinition } from "../measurementDefinitionTypes";
+import { moveSelectedTableRows, nextTableRowSelection, uniqueCopiedFieldName } from "../definitionTableSelection";
 
 export type ImagePickerLibraryTab = "image" | "icon";
 
@@ -1180,6 +1182,258 @@ export function renderAppView(__appScope: Record<string, any>) {
         isDerivedComponentBaseParamName: __appScope.isDerivedComponentBaseParamName
       })
     : definitionDraftRows;
+  const selectedDefinitionParameterRowIds: string[] = __appScope.selectedDefinitionParameterRowIds ?? [];
+  const selectedDefinitionParameterRowIdSet = new Set(selectedDefinitionParameterRowIds);
+  const definitionParameterRowIds = definitionDraftRowsForDisplay.map((row) => row.id);
+  const selectDefinitionParameterRow = (rowId: string, event: any) => {
+    const result = nextTableRowSelection(
+      selectedDefinitionParameterRowIds,
+      rowId,
+      definitionParameterRowIds,
+      __appScope.definitionParameterSelectionAnchorRef.current,
+      event
+    );
+    __appScope.definitionParameterSelectionAnchorRef.current = result.anchorKey;
+    __appScope.setSelectedDefinitionParameterRowIds(result.selectedKeys);
+  };
+  const copySelectedDefinitionParameterRows = () => {
+    if (!__appScope.requireEditMode("修改元件定义")) return;
+    const selectedRows = definitionDraftRowsForDisplay.filter((row) => selectedDefinitionParameterRowIdSet.has(row.id));
+    if (selectedRows.length === 0) return;
+    const existingNames = new Set(definitionDraftRows.map((row) => String(row.enName ?? "").trim().toLowerCase()).filter(Boolean));
+    const copies = selectedRows.map((row) => {
+      const enName = uniqueCopiedFieldName(row.enName, existingNames);
+      return {
+        ...row,
+        id: __appScope.deviceDefinitionRowId(),
+        enName,
+        readonly: false,
+        exportName: enName,
+        enumOptions: row.enumOptions?.map((option) => ({ ...option })),
+        enumValues: row.enumValues ? [...row.enumValues] : undefined
+      };
+    });
+    const selectedSourceIds = new Set(selectedRows.map((row) => row.id));
+    const lastSourceIndex = definitionDraftRows.reduce(
+      (lastIndex, row, index) => selectedSourceIds.has(row.id) ? index : lastIndex,
+      -1
+    );
+    const insertIndex = lastSourceIndex >= 0 ? lastSourceIndex + 1 : definitionDraftRows.length;
+    __appScope.setDefinitionDraftRows([
+      ...definitionDraftRows.slice(0, insertIndex),
+      ...copies,
+      ...definitionDraftRows.slice(insertIndex)
+    ]);
+    const copiedIds = copies.map((row) => row.id);
+    __appScope.setSelectedDefinitionParameterRowIds(copiedIds);
+    __appScope.definitionParameterSelectionAnchorRef.current = copiedIds[0] ?? null;
+    __appScope.setDefinitionDraftError("");
+  };
+  const moveSelectedDefinitionParameterRows = (direction: -1 | 1) => {
+    if (!__appScope.requireEditMode("修改元件定义")) return;
+    const movedVisibleRows = moveSelectedTableRows(
+      definitionDraftRowsForDisplay,
+      selectedDefinitionParameterRowIdSet,
+      (row) => row.id,
+      direction,
+      (row) => !row.readonly
+    );
+    const visibleIds = new Set(definitionDraftRowsForDisplay.map((row) => row.id));
+    const movedQueue = [...movedVisibleRows];
+    __appScope.setDefinitionDraftRows(definitionDraftRows.map((row) => visibleIds.has(row.id) ? movedQueue.shift()! : row));
+    __appScope.setDefinitionDraftError("");
+  };
+  const deleteSelectedDefinitionParameterRows = () => {
+    if (!__appScope.requireEditMode("修改元件定义")) return;
+    if (__appScope.definitionDeleteAllParametersRequestedRef) {
+      __appScope.definitionDeleteAllParametersRequestedRef.current = false;
+    }
+    const editableSelectedIds = new Set(
+      definitionDraftRowsForDisplay
+        .filter((row) => !row.readonly && selectedDefinitionParameterRowIdSet.has(row.id))
+        .map((row) => row.id)
+    );
+    if (editableSelectedIds.size === 0) return;
+    __appScope.setDefinitionDraftRows(definitionDraftRows.filter((row) => !editableSelectedIds.has(row.id)));
+    const remainingSelection = selectedDefinitionParameterRowIds.filter((id) => !editableSelectedIds.has(id));
+    __appScope.setSelectedDefinitionParameterRowIds(remainingSelection);
+    if (!remainingSelection.includes(__appScope.definitionParameterSelectionAnchorRef.current)) {
+      __appScope.definitionParameterSelectionAnchorRef.current = remainingSelection[0] ?? null;
+    }
+    __appScope.setDefinitionDraftError("");
+  };
+  const deleteAllDefinitionParameterRows = () => {
+    if (!__appScope.requireEditMode("删除全部参数")) return;
+    if (!selectedDefinitionTemplate || selectedDefinitionTemplate.custom || definitionDraftRows.length === 0) return;
+    if (!window.confirm(`确认删除“${selectedDefinitionTemplate.label}”的全部参数定义？`)) return;
+    __appScope.definitionDeleteAllParametersRequestedRef.current = true;
+    __appScope.setDefinitionDraftRows([]);
+    __appScope.setSelectedDefinitionParameterRowIds([]);
+    __appScope.definitionParameterSelectionAnchorRef.current = null;
+    __appScope.setDefinitionDraftError("已标记删除全部参数，点击保存后生效。");
+  };
+  const selectedDefinitionEditableParameterCount = definitionDraftRowsForDisplay.filter(
+    (row) => !row.readonly && selectedDefinitionParameterRowIdSet.has(row.id)
+  ).length;
+  const customDefaultParamKeySet = new Set(customDraftDefaultParams.map((item) => item.enName.trim().toLowerCase()));
+  const customDefaultParamOverrideMap = new Map(customDeviceDraft.params
+    .filter((item) => customDefaultParamKeySet.has(item.enName.trim().toLowerCase()))
+    .map((item) => [item.enName.trim().toLowerCase(), item]));
+  const mergedCustomDefaultParams = customDraftDefaultParams.map((item) => {
+    const override = customDefaultParamOverrideMap.get(item.enName.trim().toLowerCase());
+    return override
+      ? normalizeDefinitionRowEnumFields({
+          ...item,
+          valueType: override.valueType,
+          typicalValue: override.typicalValue,
+          enumOptions: override.enumOptions,
+          enumValues: override.enumValues,
+          readonly: item.readonly,
+          ...(typeof override.exportEnabled === "boolean" ? { exportEnabled: override.exportEnabled } : {}),
+          ...(typeof override.exportName === "string" ? { exportName: override.exportName } : {})
+        })
+      : item;
+  });
+  const visibleCustomParams = customDeviceDraft.params.filter(
+    (item) => !customDefaultParamKeySet.has(item.enName.trim().toLowerCase())
+  );
+  const displayedCustomParameterRows = resolveCustomDeviceParameterRowsForDisplay(mergedCustomDefaultParams, visibleCustomParams, {
+    isDerivedComponentLibrary: customDeviceDraft.isDerivedComponentLibrary,
+    baseComponentLibrary: customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary,
+    isDerivedComponentBaseParamName: __appScope.isDerivedComponentBaseParamName
+  });
+  const displayedMergedCustomDefaultParams = displayedCustomParameterRows.defaultRows;
+  const displayedVisibleCustomParams = displayedCustomParameterRows.customRows;
+  const displayedCustomParameterRowIds = [
+    ...displayedMergedCustomDefaultParams.map((row) => `default-${row.enName}`),
+    ...displayedVisibleCustomParams.map((row) => row.id)
+  ];
+  const selectedCustomParameterRowIds: string[] = (__appScope.selectedCustomParameterRowIds ?? [])
+    .filter((id: string) => displayedCustomParameterRowIds.includes(id));
+  const selectedCustomParameterRowIdSet = new Set(selectedCustomParameterRowIds);
+  const selectCustomParameterRow = (rowId: string, event: any) => {
+    const result = nextTableRowSelection(
+      selectedCustomParameterRowIds,
+      rowId,
+      displayedCustomParameterRowIds,
+      __appScope.customParameterSelectionAnchorRef.current,
+      event
+    );
+    __appScope.customParameterSelectionAnchorRef.current = result.anchorKey;
+    __appScope.setSelectedCustomParameterRowIds(result.selectedKeys);
+  };
+  const updateCustomDefaultParamRow = (rowId: string, patch: Partial<CustomParamDraft>) => {
+    const enName = rowId.replace(/^default-/, "");
+    const sourceRow = mergedCustomDefaultParams.find((item) => item.enName === enName)
+      ?? customDraftDefaultParams.find((item) => item.enName === enName);
+    const exportOnlyPatch = Object.keys(patch).every((key) => key === "exportEnabled" || key === "exportName");
+    if (!sourceRow || (sourceRow.readonly && !exportOnlyPatch)) return;
+    setCustomDeviceDraft((current) => {
+      const key = sourceRow.enName.trim().toLowerCase();
+      const existing = current.params.find((item) => item.enName.trim().toLowerCase() === key);
+      const nextRow = normalizeDefinitionRowEnumFields({
+        ...sourceRow,
+        ...(existing ?? {}),
+        ...patch,
+        id: existing?.id ?? customParamId(),
+        cnName: sourceRow.cnName,
+        enName: sourceRow.enName,
+        readonly: sourceRow.readonly
+      });
+      return {
+        ...current,
+        params: existing
+          ? current.params.map((item) => item.id === existing.id ? nextRow : item)
+          : [...current.params, nextRow],
+        error: ""
+      };
+    });
+  };
+  const addCustomParameterRow = () => {
+    const row = {
+      id: customParamId(),
+      cnName: "",
+      enName: "",
+      valueType: "string" as DeviceParameterValueType,
+      typicalValue: "",
+      exportEnabled: false,
+      exportName: ""
+    };
+    setCustomDeviceDraft((current) => ({ ...current, params: [...current.params, row], error: "" }));
+    __appScope.setSelectedCustomParameterRowIds([row.id]);
+    __appScope.customParameterSelectionAnchorRef.current = row.id;
+  };
+  const copySelectedCustomParameterRows = () => {
+    const defaultRows = displayedMergedCustomDefaultParams
+      .filter((row) => selectedCustomParameterRowIdSet.has(`default-${row.enName}`));
+    const customRows = displayedVisibleCustomParams.filter((row) => selectedCustomParameterRowIdSet.has(row.id));
+    const sourceRows = [...defaultRows, ...customRows];
+    if (sourceRows.length === 0) return;
+    const existingNames = new Set([
+      ...customDraftDefaultParams.map((row) => row.enName),
+      ...customDeviceDraft.params.map((row) => row.enName)
+    ].map((name) => String(name ?? "").trim().toLowerCase()).filter(Boolean));
+    const copies = sourceRows.map((row) => {
+      const enName = uniqueCopiedFieldName(row.enName, existingNames);
+      return {
+        ...row,
+        id: customParamId(),
+        enName,
+        readonly: false,
+        exportName: enName,
+        enumOptions: row.enumOptions?.map((option) => ({ ...option })),
+        enumValues: row.enumValues ? [...row.enumValues] : undefined
+      };
+    });
+    const selectedCustomIds = new Set(customRows.map((row) => row.id));
+    const lastSourceIndex = customDeviceDraft.params.reduce(
+      (lastIndex, row, index) => selectedCustomIds.has(row.id) ? index : lastIndex,
+      -1
+    );
+    const insertIndex = lastSourceIndex >= 0 ? lastSourceIndex + 1 : customDeviceDraft.params.length;
+    setCustomDeviceDraft((current) => ({
+      ...current,
+      params: [...current.params.slice(0, insertIndex), ...copies, ...current.params.slice(insertIndex)],
+      error: ""
+    }));
+    const copiedIds = copies.map((row) => row.id);
+    __appScope.setSelectedCustomParameterRowIds(copiedIds);
+    __appScope.customParameterSelectionAnchorRef.current = copiedIds[0] ?? null;
+  };
+  const moveSelectedCustomParameterRows = (direction: -1 | 1) => {
+    const movedVisibleRows = moveSelectedTableRows(
+      displayedVisibleCustomParams,
+      selectedCustomParameterRowIdSet,
+      (row) => row.id,
+      direction
+    );
+    const visibleIds = new Set(displayedVisibleCustomParams.map((row) => row.id));
+    const movedQueue = [...movedVisibleRows];
+    setCustomDeviceDraft((current) => ({
+      ...current,
+      params: current.params.map((row) => visibleIds.has(row.id) ? movedQueue.shift()! : row),
+      error: ""
+    }));
+  };
+  const deleteSelectedCustomParameterRows = () => {
+    const selectedEditableIds = new Set(displayedVisibleCustomParams
+      .filter((row) => selectedCustomParameterRowIdSet.has(row.id))
+      .map((row) => row.id));
+    if (selectedEditableIds.size === 0) return;
+    setCustomDeviceDraft((current) => ({
+      ...current,
+      params: current.params.filter((row) => !selectedEditableIds.has(row.id)),
+      error: ""
+    }));
+    const remainingSelection = selectedCustomParameterRowIds.filter((id) => !selectedEditableIds.has(id));
+    __appScope.setSelectedCustomParameterRowIds(remainingSelection);
+    if (!remainingSelection.includes(__appScope.customParameterSelectionAnchorRef.current)) {
+      __appScope.customParameterSelectionAnchorRef.current = remainingSelection[0] ?? null;
+    }
+  };
+  const selectedCustomEditableParameterCount = displayedVisibleCustomParams.filter(
+    (row) => selectedCustomParameterRowIdSet.has(row.id)
+  ).length;
   const customDeviceDerivedBaseLibrary = normalizeComponentLibraryName(
     customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary || ""
   );
@@ -3934,20 +4188,65 @@ export function renderAppView(__appScope: Record<string, any>) {
                             </div>
                           </section>)}
                         {definitionDraftError && <p className="custom-device-error">{definitionDraftError}</p>}
+                        <div className="definition-table-toolbar" aria-label="参数定义表格操作">
+                          <button type="button" onClick={addDefinitionDraftRow}>新增参数</button>
+                          <button
+                            type="button"
+                            onClick={copySelectedDefinitionParameterRows}
+                            disabled={selectedDefinitionParameterRowIds.length === 0}
+                          >
+                            复制
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveSelectedDefinitionParameterRows(-1)}
+                            disabled={selectedDefinitionEditableParameterCount === 0}
+                          >
+                            上移
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveSelectedDefinitionParameterRows(1)}
+                            disabled={selectedDefinitionEditableParameterCount === 0}
+                          >
+                            下移
+                          </button>
+                          <button
+                            type="button"
+                            onClick={deleteSelectedDefinitionParameterRows}
+                            disabled={selectedDefinitionEditableParameterCount === 0}
+                          >
+                            删除
+                          </button>
+                          <button
+                            type="button"
+                            onClick={deleteAllDefinitionParameterRows}
+                            disabled={!selectedDefinitionTemplate || selectedDefinitionTemplate.custom || definitionDraftRows.length === 0}
+                          >
+                            删除全部参数
+                          </button>
+                          <span>{selectedDefinitionParameterRowIds.length > 0 ? `已选 ${selectedDefinitionParameterRowIds.length} 行` : "点击行选择，Ctrl/Shift 可多选"}</span>
+                        </div>
                         <div className="custom-param-table-wrap device-definition-table-wrap">
                           <table className="custom-param-table">
                             <thead>
                               <tr>
+                                <th className="definition-table-sequence">序号</th>
                                 <th>中文名称</th>
                                 <th>英文名称</th>
                                  <th>取值类型</th>
                                  <th>默认值</th>
                                  <th>枚举项</th>
-                                 <th>操作</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {definitionDraftRowsForDisplay.map((row) => (<tr key={row.id} className={row.readonly ? "readonly-row" : ""}>
+                              {definitionDraftRowsForDisplay.map((row, rowIndex) => (<tr
+                                  key={row.id}
+                                  className={`definition-table-row${selectedDefinitionParameterRowIdSet.has(row.id) ? " selected" : ""}${row.readonly ? " readonly-row" : ""}`}
+                                  aria-selected={selectedDefinitionParameterRowIdSet.has(row.id)}
+                                  onClick={(event) => selectDefinitionParameterRow(row.id, event)}
+                                >
+                                  <td className="definition-table-sequence">{rowIndex + 1}</td>
                                   <td>
                                     <BufferedTextInput value={row.cnName} disabled={row.readonly} onCommit={(value) => updateDefinitionDraftRow(row.id, { cnName: value })}/>
                                   </td>
@@ -3978,22 +4277,11 @@ export function renderAppView(__appScope: Record<string, any>) {
                                   <td>
                                     {renderEnumValuesEditor(row, updateDefinitionDraftRow, row.readonly)}
                                   </td>
-                                  <td>
-                                    <div className="custom-param-actions">
-                                      <button type="button" onClick={() => deleteDefinitionDraftRow(row.id)} disabled={row.readonly}>
-                                        删除
-                                      </button>
-                                    </div>
-                                  </td>
                                 </tr>))}
                             </tbody>
                           </table>
                         </div>
                         <div className="custom-device-actions">
-                          <button type="button" onClick={addDefinitionDraftRow}>新增参数</button>
-                          <button type="button" onClick={deleteAllDefinitionParameters} disabled={!selectedDefinitionTemplate || selectedDefinitionTemplate.custom || definitionDraftRows.length === 0}>
-                            删除全部参数
-                          </button>
                           <button type="button" onClick={saveDeviceDefinitionDraft}>保存定义</button>
                           <button type="button" onClick={resetDeviceDefinitionDraft} disabled={!selectedDefinitionBaseTemplate}>
                             恢复默认
@@ -4005,7 +4293,28 @@ export function renderAppView(__appScope: Record<string, any>) {
                 terminalCount: selectedDefinitionTemplate.terminalCount,
                 terminalLabels: selectedDefinitionTemplate.terminalLabels,
                 parameterDefinitions: definitionDraftRows,
-                positionDefinitions: __appScope.selectedDefinitionMeasurementPositionDefinitions
+                positionDefinitions: __appScope.selectedDefinitionMeasurementPositionDefinitions,
+                items: definitionMeasurementDraft,
+                setItems: setDefinitionMeasurementDraft,
+                selectedRowIndexes: __appScope.selectedDefinitionMeasurementRowIndexes,
+                setSelectedRowIndexes: __appScope.setSelectedDefinitionMeasurementRowIndexes,
+                selectionAnchorIndex: __appScope.definitionMeasurementSelectionAnchorRef.current,
+                setSelectionAnchorIndex: (index) => {
+                  __appScope.definitionMeasurementSelectionAnchorRef.current = index;
+                },
+                ensureAssociatedField: (position, associatedField, measurementTypeId) => {
+                  if (position !== "device") return;
+                  const measurementType = (measurementConfigDraft ?? measurementConfig).measurementTypes
+                    .find((type) => type.id === measurementTypeId);
+                  const definition = createMeasurementFieldParameterDefinition(associatedField, {
+                    cnName: measurementType?.name,
+                    valueType: measurementType?.valueType === "string" || measurementType?.valueType === "boolean" ? "string" : "float"
+                  });
+                  if (!definition) return;
+                  setDefinitionDraftRows((current) => current.some((row) => row.enName.trim().toLowerCase() === definition.enName.toLowerCase())
+                    ? current
+                    : [...current, { ...definition, id: deviceDefinitionRowId() }]);
+                }
             }))}
                   </>) : (<div className="empty-state compact">
                     <Grid2X2 size={24}/>
@@ -4407,118 +4716,51 @@ export function renderAppView(__appScope: Record<string, any>) {
                   {componentLibraryCommonParams.length === 0 && <p className="custom-device-error">该元件库下元件无共有参数。</p>}
                 </section>
               ) : (<>
+            <div className="definition-table-toolbar" aria-label="参数定义表格操作">
+              <button type="button" onClick={addCustomParameterRow}>新增参数</button>
+              <button type="button" onClick={copySelectedCustomParameterRows} disabled={selectedCustomParameterRowIds.length === 0}>复制</button>
+              <button type="button" onClick={() => moveSelectedCustomParameterRows(-1)} disabled={selectedCustomEditableParameterCount === 0}>上移</button>
+              <button type="button" onClick={() => moveSelectedCustomParameterRows(1)} disabled={selectedCustomEditableParameterCount === 0}>下移</button>
+              <button type="button" onClick={deleteSelectedCustomParameterRows} disabled={selectedCustomEditableParameterCount === 0}>删除</button>
+              <span>{selectedCustomParameterRowIds.length > 0 ? `已选 ${selectedCustomParameterRowIds.length} 行` : "点击行选择，Ctrl/Shift 可多选"}</span>
+            </div>
             <div className="custom-param-table-wrap">
               <table className="custom-param-table">
                 <thead>
                   <tr>
+                    <th className="definition-table-sequence">序号</th>
                     <th>中文名称</th>
                     <th>英文名称</th>
                      <th>取值类型</th>
                      <th>默认值</th>
                      <th>枚举项</th>
-                     <th>操作</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(() => {
-                const defaultParamKeySet = new Set(customDraftDefaultParams.map((item) => item.enName.trim().toLowerCase()));
-                const customDefaultParamOverrideMap = new Map(customDeviceDraft.params
-                    .filter((item) => defaultParamKeySet.has(item.enName.trim().toLowerCase()))
-                    .map((item) => [item.enName.trim().toLowerCase(), item]));
-                const mergedDefaultParams = customDraftDefaultParams.map((item) => {
-                    const override = customDefaultParamOverrideMap.get(item.enName.trim().toLowerCase());
-                    return override
-                        ? normalizeDefinitionRowEnumFields({
-                            ...item,
-                            valueType: override.valueType,
-                            typicalValue: override.typicalValue,
-                            enumOptions: override.enumOptions,
-                            enumValues: override.enumValues,
-                            readonly: item.readonly,
-                            ...(typeof override.exportEnabled === "boolean" ? { exportEnabled: override.exportEnabled } : {}),
-                            ...(typeof override.exportName === "string" ? { exportName: override.exportName } : {})
-                        })
-                        : item;
-                });
-                const visibleCustomParams = customDeviceDraft.params.filter((item) => !defaultParamKeySet.has(item.enName.trim().toLowerCase()));
-                const displayedCustomRows = resolveCustomDeviceParameterRowsForDisplay(mergedDefaultParams, visibleCustomParams, {
-                    isDerivedComponentLibrary: customDeviceDraft.isDerivedComponentLibrary,
-                    baseComponentLibrary: customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary,
-                    isDerivedComponentBaseParamName: __appScope.isDerivedComponentBaseParamName
-                });
-                const displayedMergedDefaultParams = displayedCustomRows.defaultRows;
-                const displayedVisibleCustomParams = displayedCustomRows.customRows;
-                const updateDefaultParamRow = (rowId: string, patch: Partial<CustomParamDraft>) => {
-                    const enName = rowId.replace(/^default-/, "");
-                    const sourceRow = mergedDefaultParams.find((item) => item.enName === enName) ?? customDraftDefaultParams.find((item) => item.enName === enName);
-                    const exportOnlyPatch = Object.keys(patch).every((key) => key === "exportEnabled" || key === "exportName");
-                    if (!sourceRow || (sourceRow.readonly && !exportOnlyPatch)) {
-                        return;
-                    }
-                    setCustomDeviceDraft((current) => {
-                        const key = sourceRow.enName.trim().toLowerCase();
-                        const existing = current.params.find((item) => item.enName.trim().toLowerCase() === key);
-                        const nextRow = normalizeDefinitionRowEnumFields({
-                            ...sourceRow,
-                            ...(existing ?? {}),
-                            ...patch,
-                            id: existing?.id ?? customParamId(),
-                            cnName: sourceRow.cnName,
-                            enName: sourceRow.enName,
-                            readonly: sourceRow.readonly
-                        });
-                        return {
-                            ...current,
-                            params: existing
-                                ? current.params.map((item) => (item.id === existing.id ? nextRow : item))
-                                : [...current.params, nextRow],
-                            error: ""
-                        };
-                    });
-                };
-                const moveVisibleCustomParam = (rowId: string, direction: -1 | 1) => {
-                    setCustomDeviceDraft((current) => {
-                        const visibleIds = current.params
-                            .filter((item) => {
-                            if (defaultParamKeySet.has(item.enName.trim().toLowerCase())) {
-                                return false;
-                            }
-                            return resolveCustomDeviceParameterRowsForDisplay([], [item], {
-                                isDerivedComponentLibrary: current.isDerivedComponentLibrary,
-                                baseComponentLibrary: current.derivedFromComponentLibrary || current.componentLibrary,
-                                isDerivedComponentBaseParamName: __appScope.isDerivedComponentBaseParamName
-                            }).customRows.length > 0;
-                        })
-                            .map((item) => item.id);
-                        const visibleIndex = visibleIds.indexOf(rowId);
-                        const targetId = visibleIds[visibleIndex + direction];
-                        if (visibleIndex < 0 || !targetId) {
-                            return current;
-                        }
-                        const params = [...current.params];
-                        const currentIndex = params.findIndex((item) => item.id === rowId);
-                        const targetIndex = params.findIndex((item) => item.id === targetId);
-                        if (currentIndex < 0 || targetIndex < 0) {
-                            return current;
-                        }
-                        [params[currentIndex], params[targetIndex]] = [params[targetIndex], params[currentIndex]];
-                        return { ...current, params };
-                    });
-                };
-                return (<>
-                    {displayedMergedDefaultParams.map((row) => {
+                    {displayedMergedCustomDefaultParams.map((row, rowIndex) => {
                         const defaultRow: CustomParamDraft = { ...row, id: `default-${row.enName}` };
                         const defaultRowDisabled = Boolean(row.readonly);
-                        return (<tr key={`default-${row.enName}`} className={defaultRowDisabled ? "readonly-row" : ""}>
+                        return (<tr
+                            key={`default-${row.enName}`}
+                            className={`definition-table-row${selectedCustomParameterRowIdSet.has(defaultRow.id) ? " selected" : ""}${defaultRowDisabled ? " readonly-row" : ""}`}
+                            aria-selected={selectedCustomParameterRowIdSet.has(defaultRow.id)}
+                            onClick={(event) => selectCustomParameterRow(defaultRow.id, event)}
+                          >
+                            <td className="definition-table-sequence">{rowIndex + 1}</td>
                             <td>{row.cnName}</td>
                             <td>{row.enName}</td>
                              <td>{parameterValueTypeLabelForDefinitionRow(row)}</td>
-                             <td>{renderTypicalValueEditor(defaultRow, updateDefaultParamRow, defaultRowDisabled, customDeviceDraft.componentLibrary)}</td>
-                             <td>{renderEnumValuesEditor(defaultRow, updateDefaultParamRow, defaultRowDisabled)}</td>
-                             <td>默认</td>
-                          </tr>);
+                             <td>{renderTypicalValueEditor(defaultRow, updateCustomDefaultParamRow, defaultRowDisabled, customDeviceDraft.componentLibrary)}</td>
+                             <td>{renderEnumValuesEditor(defaultRow, updateCustomDefaultParamRow, defaultRowDisabled)}</td>
+                           </tr>);
                     })}
-                    {displayedVisibleCustomParams.map((row, index) => (<tr key={row.id}>
+                    {displayedVisibleCustomParams.map((row, index) => (<tr
+                      key={row.id}
+                      className={`definition-table-row${selectedCustomParameterRowIdSet.has(row.id) ? " selected" : ""}`}
+                      aria-selected={selectedCustomParameterRowIdSet.has(row.id)}
+                      onClick={(event) => selectCustomParameterRow(row.id, event)}
+                    >
+                      <td className="definition-table-sequence">{displayedMergedCustomDefaultParams.length + index + 1}</td>
                       <td>
                         <BufferedTextInput value={row.cnName} onCommit={(value) => setCustomDeviceDraft((current) => ({
                     ...current,
@@ -4565,43 +4807,9 @@ export function renderAppView(__appScope: Record<string, any>) {
                           error: ""
                         })))}
                       </td>
-                       <td>
-                        <div className="custom-param-actions">
-                          <button type="button" onClick={() => moveVisibleCustomParam(row.id, -1)} disabled={index === 0}>
-                            上移
-                          </button>
-                          <button type="button" onClick={() => moveVisibleCustomParam(row.id, 1)} disabled={index >= displayedVisibleCustomParams.length - 1}>
-                            下移
-                          </button>
-                          <button type="button" onClick={() => setCustomDeviceDraft((current) => ({ ...current, params: current.params.filter((item) => item.id !== row.id) }))}>
-                            删除
-                          </button>
-                        </div>
-                      </td>
                     </tr>))}
-                  </>);
-            })()}
                 </tbody>
               </table>
-            </div>
-            <div className="custom-device-actions">
-              <button type="button" onClick={() => setCustomDeviceDraft((current) => ({
-                ...current,
-                params: [
-                    ...current.params,
-                    {
-                        id: customParamId(),
-                        cnName: "",
-                        enName: "",
-                        valueType: "string",
-                        typicalValue: "",
-                        exportEnabled: false,
-                        exportName: ""
-                    }
-                ]
-            }))}>
-                新增参数
-              </button>
             </div>
               </>)) : (renderDeviceDefinitionMeasurementPanel(customDeviceMeasurementTarget))}
             </div>

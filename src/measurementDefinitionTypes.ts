@@ -27,8 +27,11 @@ export type DeviceMeasurementDefinition = {
 export type MeasurementFieldParameterDefinition = {
   cnName: string;
   enName: string;
-  valueType: "float" | "string";
+  valueType: "float" | "string" | "numberEnum";
   typicalValue: string;
+  enumValues?: string[];
+  enumValueType?: "number" | "string";
+  enumOptions?: Array<{ value: string; label?: string }>;
   readonly: false;
   exportEnabled: true;
 };
@@ -37,6 +40,9 @@ const MEASUREMENT_FIELD_PARAMETER_METADATA: Record<string, {
   cnName: string;
   valueType?: MeasurementFieldParameterDefinition["valueType"];
   typicalValue?: string;
+  enumValues?: string[];
+  enumValueType?: MeasurementFieldParameterDefinition["enumValueType"];
+  enumOptions?: MeasurementFieldParameterDefinition["enumOptions"];
 }> = {
   p: { cnName: "有功值" },
   q: { cnName: "无功值" },
@@ -51,7 +57,17 @@ const MEASUREMENT_FIELD_PARAMETER_METADATA: Record<string, {
   temperature: { cnName: "温度值" },
   level: { cnName: "液位值" },
   status: { cnName: "状态", valueType: "string", typicalValue: "" },
-  run_stat: { cnName: "工作状态", valueType: "string", typicalValue: "" }
+  run_stat: {
+    cnName: "工作状态",
+    valueType: "numberEnum",
+    typicalValue: "1",
+    enumValues: ["1", "0"],
+    enumValueType: "number",
+    enumOptions: [
+      { value: "1", label: "运行" },
+      { value: "0", label: "停运" }
+    ]
+  }
 };
 
 export function createMeasurementFieldParameterDefinition(
@@ -69,6 +85,9 @@ export function createMeasurementFieldParameterDefinition(
     enName: field,
     valueType,
     typicalValue: metadata.typicalValue ?? (valueType === "string" ? "" : "0"),
+    ...(metadata.enumValues ? { enumValues: [...metadata.enumValues] } : {}),
+    ...(metadata.enumValueType ? { enumValueType: metadata.enumValueType } : {}),
+    ...(metadata.enumOptions ? { enumOptions: metadata.enumOptions.map((option) => ({ ...option })) } : {}),
     readonly: false,
     exportEnabled: true
   };

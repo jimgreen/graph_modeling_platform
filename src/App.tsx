@@ -1261,6 +1261,36 @@ const [deviceDefinitionSearchQuery, setDeviceDefinitionSearchQuery] = useState("
 Object.assign(__appScope, { deviceDefinitionSearchQuery, setDeviceDefinitionSearchQuery });
 const [definitionDraftRows, setDefinitionDraftRows] = useState<DeviceDefinitionDraftRow[]>([]);
 Object.assign(__appScope, { definitionDraftRows, setDefinitionDraftRows });
+const [selectedDefinitionParameterRowIds, setSelectedDefinitionParameterRowIds] = useState<string[]>([]);
+const definitionParameterSelectionAnchorRef = useRef<string | null>(null);
+Object.assign(__appScope, {
+  selectedDefinitionParameterRowIds,
+  setSelectedDefinitionParameterRowIds,
+  definitionParameterSelectionAnchorRef
+});
+const [selectedCustomParameterRowIds, setSelectedCustomParameterRowIds] = useState<string[]>([]);
+const customParameterSelectionAnchorRef = useRef<string | null>(null);
+Object.assign(__appScope, {
+  selectedCustomParameterRowIds,
+  setSelectedCustomParameterRowIds,
+  customParameterSelectionAnchorRef
+});
+const [definitionMeasurementDraft, setDefinitionMeasurementDraft] = useState<DeviceMeasurementProfileItem[]>([]);
+Object.assign(__appScope, { definitionMeasurementDraft, setDefinitionMeasurementDraft });
+const [selectedDefinitionMeasurementRowIndexes, setSelectedDefinitionMeasurementRowIndexes] = useState<number[]>([]);
+const definitionMeasurementSelectionAnchorRef = useRef<number | null>(null);
+Object.assign(__appScope, {
+  selectedDefinitionMeasurementRowIndexes,
+  setSelectedDefinitionMeasurementRowIndexes,
+  definitionMeasurementSelectionAnchorRef
+});
+const [selectedCustomMeasurementRowIndexes, setSelectedCustomMeasurementRowIndexes] = useState<number[]>([]);
+const customMeasurementSelectionAnchorRef = useRef<number | null>(null);
+Object.assign(__appScope, {
+  selectedCustomMeasurementRowIndexes,
+  setSelectedCustomMeasurementRowIndexes,
+  customMeasurementSelectionAnchorRef
+});
 const [definitionDraftSection, setDefinitionDraftSection] = useState("");
 Object.assign(__appScope, { definitionDraftSection, setDefinitionDraftSection });
 const [definitionDraftSectionEditing, setDefinitionDraftSectionEditing] = useState(false);

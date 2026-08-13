@@ -174,6 +174,10 @@ import {
   normalizeRatioParameterInputValue,
   getTemplateStateDefinitions,
   normalizeDeviceStateDefinitions,
+  normalizeRunStatParameterDefinition,
+  normalizeRunStatValue,
+  RUN_STAT_ENUM_OPTIONS,
+  RUN_STAT_ENUM_VALUES,
   savedProjectRecordNameKey,
   normalizeColorPalette,
   normalizeVoltageBaseInput,
@@ -1555,7 +1559,7 @@ export const templateAllowsResizeTransform = (template: Pick<DeviceTemplate, "ki
 
 export const DEFAULT_PARAMETER_ENUM_VALUES: Record<string, string[]> = {
   status: ["1", "0"],
-  run_stat: ["运行", "停运"]
+  run_stat: [...RUN_STAT_ENUM_VALUES]
 };
 
 export const DEFAULT_PARAMETER_ENUM_OPTIONS: Record<string, DeviceParameterEnumOption[]> = {
@@ -1563,10 +1567,7 @@ export const DEFAULT_PARAMETER_ENUM_OPTIONS: Record<string, DeviceParameterEnumO
     { value: "1", label: "闭合" },
     { value: "0", label: "打开/开断" }
   ],
-  run_stat: [
-    { value: "运行" },
-    { value: "停运" }
-  ]
+  run_stat: RUN_STAT_ENUM_OPTIONS.map((option) => ({ ...option }))
 };
 
 export const normalizeEnumValueList = (values: unknown, typicalValue = ""): string[] => {
@@ -1723,19 +1724,21 @@ export const enumValuesForRow = (row: Pick<DeviceParameterDefinition, "enName" |
 };
 
 export const normalizeDefinitionRowEnumFields = <T extends DeviceParameterDefinition>(row: T): T => {
-  if (!definitionRowIsEnum(row)) {
-    const { enumValues: _enumValues, enumValueType: _enumValueType, enumOptions: _enumOptions, ...plainRow } = row;
+  const sourceRow = normalizeRunStatParameterDefinition(row);
+  if (!definitionRowIsEnum(sourceRow)) {
+    const { enumValues: _enumValues, enumValueType: _enumValueType, enumOptions: _enumOptions, ...plainRow } = sourceRow;
     return plainRow as T;
   }
-  const enumOptions = normalizeEnumOptionsForRow(row);
-  const enumValueType = enumValueTypeForDefinitionRow(row, enumOptions);
+  const enumOptions = normalizeEnumOptionsForRow(sourceRow);
+  const enumValueType = enumValueTypeForDefinitionRow(sourceRow, enumOptions);
   const enumValues = normalizeEnumValueList(enumOptions.map((option) => option.value), "");
-  const typicalValue = enumValueFromOptions(String(row.typicalValue ?? ""), enumOptions);
-  const { enumValueType: _enumValueType, ...plainRow } = row;
+  const typicalValue = enumValueFromOptions(String(sourceRow.typicalValue ?? ""), enumOptions);
+  const { enumValueType: _enumValueType, ...plainRow } = sourceRow;
   return {
     ...plainRow,
     valueType: enumDefinitionValueTypeForEnumValueType(enumValueType),
     typicalValue: typicalValue || enumValues[0] || "",
+    ...(sourceRow.enName.trim() === "run_stat" ? { enumValueType: "number" as const } : {}),
     enumOptions,
     enumValues
   } as T;
@@ -2119,8 +2122,15 @@ export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[]
           !(key === "status" && stateDefinitions.length > 0)
         )
       );
+      if (params.run_stat === undefined && (rawParams as { runStat?: unknown }).runStat !== undefined) {
+        params.run_stat = String((rawParams as { runStat?: unknown }).runStat ?? "");
+        delete params.runStat;
+      }
       if (normalizedComponentLibraryParam) {
         params.component_type = normalizedComponentLibraryParam;
+      }
+      if (!isStaticNode({ kind: String(template.kind ?? "") as DeviceKind, params })) {
+        params.run_stat = normalizeRunStatValue(params.run_stat, "1");
       }
       const derivedFromComponentLibrary = normalizeComponentLibraryName(String(
         template.derivedFromComponentLibrary ??
@@ -2519,7 +2529,10 @@ export function normalizeDeviceDefinitionOverrides(value: unknown): Record<strin
         params: Object.fromEntries(
           Object.entries(override.params ?? {})
             .filter(([key]) => !isReservedDeviceDefinitionParamName(key))
-            .map(([key, val]) => [key, String(val ?? "")])
+            .map(([key, val]) => [
+              key,
+              key === "run_stat" ? normalizeRunStatValue(val, "1") : String(val ?? "")
+            ])
         ),
         size: normalizeDefinitionOverrideSize(rawOverride.size),
         terminalType: normalizeDefinitionOverrideTerminalType(rawOverride.terminalType),

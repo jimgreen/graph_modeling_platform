@@ -93,6 +93,7 @@ import {
   normalizeElectricGenerationRatedParams,
   normalizeEndpointConverterNodeControlParams,
   normalizeHydrogenCouplingBodyParams,
+  normalizeHydrogenStorageParams,
   normalizeKnownLegacyNodeEnumValues,
   normalizeLegacyGasQuantityDeviceParams,
   normalizeRoutableLineDeviceStrokeWidthParam,
@@ -1602,6 +1603,7 @@ export function normalizeNodeTerminalsWithTemplate(node: ModelNode, template: De
     normalizedNode = migrateElectricGenerationContainerParams(normalizedNode, template);
   }
   normalizedNode = normalizeHydrogenCouplingBodyParams(normalizedNode, template);
+  normalizedNode = normalizeHydrogenStorageParams(normalizedNode);
   normalizedNode = normalizeKnownLegacyNodeEnumValues(normalizedNode, template);
   if (template && !template.isContainer && (isThreeWindingTransformer(normalizedNode) || isTwoWindingTransformerTemplateKind(normalizedNode.kind))) {
     const effectiveTemplateDefinitions = resolveEffectiveTemplateParameterDefinitions(template);
@@ -4991,16 +4993,22 @@ function validateDeviceLimitPairs(
   const powerUnit = defaultQuantityUnit("power", options);
   const currentUnit = defaultQuantityUnit("current", options);
   if (ownerSection === "HydroStorage") {
+    const ratedCapacityKey = keyFor("rated_capacity");
     const waterVolumeKey = keyFor("water_volume");
     const pressureMaxKey = keyFor("pressure_max");
     const pressureMinKey = keyFor("pressure_min");
+    const ratedCapacityText = deviceParamValue(node.params, ratedCapacityKey);
     const waterVolumeText = deviceParamValue(node.params, waterVolumeKey);
     const pressureMaxText = deviceParamValue(node.params, pressureMaxKey);
     const pressureMinText = deviceParamValue(node.params, pressureMinKey);
+    const ratedCapacity = namedNumericValue(ratedCapacityText);
     const waterVolume = namedNumericValue(waterVolumeText);
     const pressureMax = namedNumericValue(pressureMaxText);
     const pressureMin = namedNumericValue(pressureMinText);
     const invalidReasons: string[] = [];
+    if (ratedCapacity === null || ratedCapacity <= 0) {
+      invalidReasons.push(`${ratedCapacityKey}=${ratedCapacityText ?? "未设置"} 必须为正数`);
+    }
     if (waterVolume === null || waterVolume <= 0) {
       invalidReasons.push(`${waterVolumeKey}=${waterVolumeText ?? "未设置"} 必须为正数`);
     }

@@ -2582,13 +2582,14 @@ test("treats duplicate identity and voltage setpoint deviations as non-blocking 
   expect(isBlockingTopologyValidationError({ type: "voltage-setpoint-deviation" })).toBe(false);
 });
 
-test("blocks topology when hydrogen tank volume or pressure limits are invalid", () => {
+test("blocks topology when hydrogen tank capacity, volume, or pressure limits are invalid", () => {
   const validTank = createDefaultNode("hydrogen-tank", { x: 100, y: 100 });
   expect(normalizeDeviceOperatingLimitsAfterTopology([validTank]).warnings).not.toEqual(expect.arrayContaining([
     expect.objectContaining({ type: "hydrogen-storage-parameter-invalid" })
   ]));
 
-  const invalidCases = [
+  const invalidCases: Array<{ params: Record<string, string>; message: string }> = [
+    { params: { rated_capacity: "0", water_volume: "50", pressure_max: "45", pressure_min: "2" }, message: "rated_capacity=0 必须为正数" },
     { params: { water_volume: "0", pressure_max: "45", pressure_min: "2" }, message: "water_volume=0 必须为正数" },
     { params: { water_volume: "50", pressure_max: "0", pressure_min: "2" }, message: "pressure_max=0 必须为正数" },
     { params: { water_volume: "50", pressure_max: "45", pressure_min: "-1" }, message: "pressure_min=-1 必须为正数" },
@@ -2681,6 +2682,49 @@ test("migrates only known legacy enum aliases and leaves unknown values invalid"
   expect(validateTopology([normalizedUnknown], [])).toEqual(expect.arrayContaining([
     expect.objectContaining({ type: "device-enum-invalid", nodeId: unknown.id })
   ]));
+
+  for (const [legacyValue, expectedValue] of [
+    ["运行", "1"], ["投运", "1"], ["on", "1"], ["true", "1"], ["", "1"],
+    ["停运", "0"], ["检修", "0"], ["off", "0"], ["false", "0"]
+  ] as const) {
+    const node = createDefaultNode("ac-load", { x: 100, y: 100 });
+    node.params.run_stat = legacyValue;
+    const normalized = normalizeNodeTerminalsByTemplate(node);
+    expect(normalized.params.run_stat, legacyValue || "empty").toBe(expectedValue);
+    expect(validateTopology([normalized], []), legacyValue || "empty").not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "device-enum-invalid", nodeId: node.id })
+    ]));
+  }
+
+  const invalidRunStat = createDefaultNode("ac-load", { x: 100, y: 100 });
+  invalidRunStat.params.run_stat = "UNKNOWN";
+  const normalizedInvalidRunStat = normalizeNodeTerminalsByTemplate(invalidRunStat);
+  expect(normalizedInvalidRunStat.params.run_stat).toBe("UNKNOWN");
+  expect(validateTopology([normalizedInvalidRunStat], [])).toEqual(expect.arrayContaining([
+    expect.objectContaining({ type: "device-enum-invalid", nodeId: invalidRunStat.id })
+  ]));
+});
+
+test("accepts only PRESSURE and FLOW for every hydrogen storage control type", () => {
+  for (const kind of ["hydrogen-tank", "hydrogen-tank-horizontal", "hydrogen-tank-container"] as const) {
+    for (const controlType of ["PRESSURE", "FLOW"] as const) {
+      const tank = createDefaultNode(kind, { x: 100, y: 100 });
+      tank.params.control_type = controlType;
+      expect(validateTopology([tank], []), `${kind}:${controlType}`).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: "device-enum-invalid", nodeId: tank.id })
+      ]));
+    }
+
+    const invalidTank = createDefaultNode(kind, { x: 100, y: 100 });
+    invalidTank.params.control_type = "PV";
+    expect(validateTopology([invalidTank], []), `${kind}:PV`).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "device-enum-invalid",
+        nodeId: invalidTank.id,
+        message: expect.stringContaining("PRESSURE、FLOW")
+      })
+    ]));
+  }
 });
 
 test("accepts the default electric-hydrogen coupling parameter limits", () => {

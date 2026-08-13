@@ -164,10 +164,10 @@ describe("user customization inventory", () => {
       ...definition,
       ...resolveDeviceParameterDefinitionExportSettings(template!.kind, template!.params, definition)
     }));
-    const changedDefinitions = defaultDefinitions.map((definition, index) => index === 0
+    const changedDefinitions = defaultDefinitions.map((definition) => definition.enName === "control_type"
       ? {
           ...definition,
-          typicalValue: `${definition.typicalValue || "0"}-changed`,
+          typicalValue: definition.typicalValue === "PQ" ? "PV" : "PQ",
           exportEnabled: !definition.exportEnabled,
           exportName: definition.exportEnabled ? "" : definition.enName
         }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { applyDeviceTemplateDefinitionOverride, DEVICE_LIBRARY, resolveEffectiveTemplateParameterDefinitions } from "./model";
+import { applyDeviceTemplateDefinitionOverride, buildContainerDeviceParameterViews, DEVICE_LIBRARY, resolveEffectiveTemplateParameterDefinitions } from "./model";
 import {
   createDefinitionDraftRows,
   createCustomDeviceDraftFromTemplate,
@@ -173,6 +173,112 @@ describe("electric generation device library classification", () => {
     expect(verticalOverride.size).toEqual({ width: 88, height: 150 });
     expect(normalized[horizontal.kind].parameterDefinitions).toBeUndefined();
     expect(normalized[vertical.kind].measurementDefinitions).toBeUndefined();
+  });
+
+  test.each([
+    ["ac-electrolyzer", ["control_type", "e2h_coeff"]],
+    ["dc-electrolyzer", ["control_type", "e2h_coeff"]],
+    ["ac-fuel-cell", ["control_type", "h2e_coeff"]],
+    ["dc-fuel-cell", ["control_type", "h2e_coeff"]],
+    ["ac-heater", ["control_type", "e2h_coeff"]],
+    ["dc-heater", ["control_type", "e2h_coeff"]],
+    ["ac-two-port-heater", ["control_type", "e2h_coeff"]],
+    ["dc-two-port-heater", ["control_type", "e2h_coeff"]]
+  ] as const)("ignores a corrupt empty shared parameter table for %s", (kind, requiredFields) => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
+    const override = deviceDefinitionOverrideForTemplate(template, {
+      [sharedKey]: {
+        kind: sharedKey,
+        parameterDefinitions: [],
+        measurementDefinitions: [{ measurementTypeId: "activePower", associatedField: "p" }],
+        updatedAt: "2026-08-13T00:00:00.000Z"
+      },
+      [kind]: {
+        kind,
+        params: { backgroundImage: "custom.svg" },
+        updatedAt: "2026-08-13T00:00:00.000Z"
+      }
+    });
+    const appliedTemplate = applyDeviceTemplateDefinitionOverride(template, override);
+    const node = {
+      kind,
+      name: template.label,
+      terminals: (template.terminalTypes ?? []).map((type, index) => ({
+        id: `t${index + 1}`,
+        label: template.terminalLabels?.[index] ?? `t${index + 1}`,
+        type,
+        anchor: { x: 0, y: 0 }
+      })),
+      params: { ...appliedTemplate.params, is_container: "1" }
+    } as any;
+    const bodyFields = buildContainerDeviceParameterViews(node, appliedTemplate)[0].rows.map((row) => row.key);
+
+    expect(override?.parameterDefinitions?.map((definition) => definition.enName)).toEqual(
+      expect.arrayContaining([...requiredFields])
+    );
+    expect(override?.measurementDefinitions).toHaveLength(1);
+    expect(override?.params?.backgroundImage).toBe("custom.svg");
+    expect(bodyFields).toEqual(expect.arrayContaining([...requiredFields]));
+    expect(bodyFields).not.toEqual(expect.arrayContaining([
+      "backgroundImage",
+      "backgroundImageAssetId",
+      "backgroundImageFit",
+      "backgroundImageCleared"
+    ]));
+  });
+
+  test("keeps every built-in business definition effective after an unmarked empty shared override", () => {
+    for (const template of DEVICE_LIBRARY) {
+      const declaredDefinitions = resolveEffectiveTemplateParameterDefinitions(template, DEVICE_LIBRARY);
+      if (template.custom || declaredDefinitions.length === 0) continue;
+
+      const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
+      const normalized = normalizeSharedDeviceDefinitionOverrides({
+        [sharedKey]: {
+          kind: sharedKey,
+          parameterDefinitions: [],
+          updatedAt: "2026-08-13T00:00:00.000Z"
+        }
+      }, DEVICE_LIBRARY);
+      const applied = applyDeviceTemplateDefinitionOverride(
+        template,
+        deviceDefinitionOverrideForTemplate(template, normalized)
+      );
+      const effectiveNames = new Set(
+        resolveEffectiveTemplateParameterDefinitions(applied, DEVICE_LIBRARY).map((definition) => definition.enName)
+      );
+
+      for (const definition of declaredDefinitions) {
+        expect(effectiveNames.has(definition.enName), `${template.kind}.${definition.enName}`).toBe(true);
+      }
+    }
+  });
+
+  test("keeps an explicit delete-all marker while dropping stale markers on non-empty tables", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-wind-source")!;
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
+    const explicitlyEmpty = normalizeSharedDeviceDefinitionOverrides({
+      [sharedKey]: {
+        kind: sharedKey,
+        parameterDefinitions: [],
+        parameterDefinitionsIntent: "delete-all"
+      }
+    }, DEVICE_LIBRARY);
+    const explicitTemplate = applyDeviceTemplateDefinitionOverride(
+      template,
+      deviceDefinitionOverrideForTemplate(template, explicitlyEmpty)
+    );
+    expect(resolveEffectiveTemplateParameterDefinitions(explicitTemplate, DEVICE_LIBRARY)).toEqual([]);
+
+    const nonEmpty = normalizeSharedDeviceDefinitionOverrides({
+      [sharedKey]: {
+        kind: sharedKey,
+        parameterDefinitions: [{ cnName: "风机型号", enName: "wind_turbine_model", valueType: "string", typicalValue: "" }],
+        parameterDefinitionsIntent: "delete-all"
+      }
+    }, DEVICE_LIBRARY);
+    expect(nonEmpty[sharedKey].parameterDefinitionsIntent).toBeUndefined();
   });
 
   test("defaults dev_type to the current component english name", () => {

@@ -818,6 +818,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     scheduleLibraryFlyoutClose,
     schemes,
     selectedCustomComponentTemplate,
+    selectedCustomMeasurementRowIndexes,
     selectedDefinitionKind,
     selectedDefinitionTemplate,
     selectedEdge,
@@ -845,6 +846,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     setCustomCategoryLibraries,
     setCustomComponentLibraries,
     setCustomDeviceDraft,
+    setSelectedCustomMeasurementRowIndexes,
     setCustomDeviceTemplates,
     setCustomGraphTemplateTypes,
     setCustomGraphTemplates,
@@ -927,6 +929,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     voltageBaseTerminalValues,
     voltageUnit
   } = __appScope;
+  const { customMeasurementSelectionAnchorRef } = __appScope;
   const refreshSchemesFromBackendDirectory = createRefreshSchemesFromBackendDirectory(__appScope);
   const handleBackendSchemeMutationFailure = createHandleBackendSchemeMutationFailure(__appScope);
   const saveSchemeTreeToBackend = createSaveSchemeTreeToBackend(__appScope);
@@ -2780,7 +2783,28 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       terminalCount: Math.max(0, customDeviceDraft.terminalCount),
       terminalLabels: customDeviceDraft.terminalLabels,
       parameterDefinitions: customDeviceMeasurementParameterDefinitions,
-      positionDefinitions: customDeviceMeasurementPositionDefinitions
+      positionDefinitions: customDeviceMeasurementPositionDefinitions,
+      items: customDeviceDraft.measurementDefinitions,
+      setItems: (items) => setCustomDeviceDraft((current) => ({ ...current, measurementDefinitions: items, error: "" })),
+      selectedRowIndexes: selectedCustomMeasurementRowIndexes,
+      setSelectedRowIndexes: setSelectedCustomMeasurementRowIndexes,
+      selectionAnchorIndex: customMeasurementSelectionAnchorRef.current,
+      setSelectionAnchorIndex: (index) => {
+        customMeasurementSelectionAnchorRef.current = index;
+      },
+      ensureAssociatedField: (position, associatedField, measurementTypeId) => {
+        if (position !== "device") return;
+        const measurementType = (measurementConfigDraft ?? measurementConfig).measurementTypes
+          .find((type) => type.id === measurementTypeId);
+        const definition = createMeasurementFieldParameterDefinition(associatedField, {
+          cnName: measurementType?.name,
+          valueType: measurementType?.valueType === "string" || measurementType?.valueType === "boolean" ? "string" : "float"
+        });
+        if (!definition) return;
+        setCustomDeviceDraft((current) => current.params.some((row) => row.enName.trim().toLowerCase() === definition.enName.toLowerCase())
+          ? current
+          : { ...current, params: [...current.params, { ...definition, id: customParamId() }], error: "" });
+      }
     };
   Object.assign(__appScope, { customDeviceMeasurementTarget });
   const customIconStatePageId = customDeviceStatePageId;

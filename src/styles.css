@@ -5354,7 +5354,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .custom-device-tab-panel-parameters {
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
 }
 
@@ -7119,6 +7119,26 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .device-definition-measurement-actions {
   margin-top: 2px;
   justify-content: flex-start;
+}
+
+.definition-table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+}
+
+.definition-table-toolbar button {
+  min-height: 26px;
+  padding: 2px 9px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.definition-table-toolbar span {
+  color: #64748b;
+  font-size: 12px;
 }
 
 .device-definition-visual-panel {
@@ -12171,6 +12191,30 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   background: #f8fafc;
 }
 
+.device-definition-dialog .definition-table-row,
+.custom-device-dialog .definition-table-row {
+  cursor: pointer;
+}
+
+.device-definition-dialog .definition-table-row.selected td,
+.custom-device-dialog .definition-table-row.selected td,
+.device-definition-dialog .definition-table-row.selected:hover td,
+.custom-device-dialog .definition-table-row.selected:hover td {
+  background: #dbeafe;
+}
+
+.device-definition-dialog .definition-table-row.selected td:focus-within,
+.custom-device-dialog .definition-table-row.selected td:focus-within {
+  background: #eff6ff;
+}
+
+.definition-table-sequence {
+  width: 52px;
+  min-width: 52px !important;
+  text-align: center;
+  user-select: none;
+}
+
 .device-definition-dialog .measurement-table td:has(> input),
 .device-definition-dialog .measurement-table td:has(> select),
 .device-definition-dialog .custom-param-table td:has(> input),
@@ -12242,6 +12286,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .measurement-profile-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   color: #64748b;

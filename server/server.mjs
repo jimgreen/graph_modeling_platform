@@ -176,7 +176,7 @@ export const eSectionColumns = {
   HydroPressRegulator: ["idx", "name", "i_node", "j_node", "run_stat"],
   HydroStopValve: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   HydroBus: ["idx", "name", "node", "run_stat"],
-  HydroStorage: ["idx", "name", "node", "pressure", "capacity", "water_volume", "pressure_max", "pressure_min", "run_stat"],
+  HydroStorage: ["idx", "name", "node", "pressure", "rated_capacity", "water_volume", "pressure_max", "pressure_min", "run_stat"],
   AcE2Hydro: ["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_ac_load_t1", "idx_h2_unit_t2"],
   DcE2Hydro: ["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_dc_load_t1", "idx_h2_unit_t2"],
   Hydro2AcE: ["idx", "name", "control_type", "h2e_coeff", "run_stat", "idx_ac_unit_t1", "idx_h2_load_t2"],
@@ -881,7 +881,55 @@ function normalizeGasQuantityFieldName(value) {
   return /^(?:gasQuantity|gasquantity)$/u.test(text) ? "gas_quantity" : text;
 }
 
+const runStatEnumValues = ["1", "0"];
+const runStatEnumOptions = [
+  { value: "1", label: "运行" },
+  { value: "0", label: "停运" }
+];
+
 export const deviceLibrarySchemaVersion = 2;
+
+function normalizeRunStatValue(value, fallback = "") {
+  const text = String(value ?? "").trim();
+  if (!text) return fallback;
+  const lower = text.toLowerCase();
+  if (["1", "运行", "投运", "on", "true"].includes(lower)) return "1";
+  if (["0", "停运", "检修", "off", "false"].includes(lower)) return "0";
+  return text;
+}
+
+function normalizeRunStatParameterDefinition(definition) {
+  if (!definition || typeof definition !== "object" || Array.isArray(definition)) return definition;
+  const enName = String(definition.enName ?? "").trim();
+  if (!/^(?:run_stat|runStat)$/u.test(enName)) return definition;
+  const typicalValue = normalizeRunStatValue(definition.typicalValue, "1");
+  return {
+    ...definition,
+    enName: "run_stat",
+    valueType: "numberEnum",
+    typicalValue: runStatEnumValues.includes(typicalValue) ? typicalValue : "1",
+    enumValueType: "number",
+    enumValues: [...runStatEnumValues],
+    enumOptions: runStatEnumOptions.map((option) => ({ ...option }))
+  };
+}
+
+function normalizeDeviceLibraryParameterDefinitions(value) {
+  return Array.isArray(value) ? value.map(normalizeRunStatParameterDefinition) : value;
+}
+
+function normalizeDeviceLibraryParams(value, addRunStatDefault = false) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const params = { ...source };
+  if (params.run_stat === undefined && params.runStat !== undefined) {
+    params.run_stat = params.runStat;
+  }
+  delete params.runStat;
+  if (addRunStatDefault || Object.prototype.hasOwnProperty.call(params, "run_stat")) {
+    params.run_stat = normalizeRunStatValue(params.run_stat, "1");
+  }
+  return params;
+}
 
 function migrateDeviceLibraryConfigV0ToV1(source) {
   return {
@@ -931,7 +979,9 @@ export function normalizeDeviceLibraryConfig(payload) {
     .map((template) => template && typeof template === "object" && !Array.isArray(template)
       ? {
         ...template,
-        categoryLibrary: template.categoryLibrary ?? template.attributeLibrary ?? "交流设备"
+        categoryLibrary: template.categoryLibrary ?? template.attributeLibrary ?? "交流设备",
+        params: normalizeDeviceLibraryParams(template.params, !String(template.kind ?? "").startsWith("static-")),
+        parameterDefinitions: normalizeDeviceLibraryParameterDefinitions(template.parameterDefinitions)
       }
       : template);
   const customCategoryLibraries = Array.isArray(source.customCategoryLibraries)
@@ -952,7 +1002,7 @@ export function normalizeDeviceLibraryConfig(payload) {
       : definition);
   const customGraphTemplateTypes = Array.isArray(source.customGraphTemplateTypes) ? source.customGraphTemplateTypes : [];
   const customGraphTemplates = Array.isArray(source.customGraphTemplates) ? source.customGraphTemplates : [];
-  const deviceDefinitionOverrides =
+  const rawDeviceDefinitionOverrides =
     source.deviceDefinitionOverrides && typeof source.deviceDefinitionOverrides === "object" && !Array.isArray(source.deviceDefinitionOverrides)
       ? Object.fromEntries(Object.entries(source.deviceDefinitionOverrides).map(([kind, rawOverride]) => {
         if (!rawOverride || typeof rawOverride !== "object" || Array.isArray(rawOverride)) {
@@ -970,6 +1020,28 @@ export function normalizeDeviceLibraryConfig(payload) {
         return [kind, override];
       }))
       : {};
+  const deviceDefinitionOverrides = Object.fromEntries(
+    Object.entries(rawDeviceDefinitionOverrides).map(([kind, override]) => {
+      if (!override || typeof override !== "object" || Array.isArray(override)) {
+        return [kind, override];
+      }
+      const parameterDefinitions = Array.isArray(override.parameterDefinitions)
+        ? normalizeDeviceLibraryParameterDefinitions(override.parameterDefinitions)
+        : undefined;
+      const explicitlyDeletesAllParameters = parameterDefinitions?.length === 0 &&
+        override.parameterDefinitionsIntent === "delete-all";
+      return [kind, {
+        ...override,
+        params: normalizeDeviceLibraryParams(override.params),
+        ...(parameterDefinitions && (parameterDefinitions.length > 0 || explicitlyDeletesAllParameters)
+          ? { parameterDefinitions }
+          : {}),
+        ...(explicitlyDeletesAllParameters
+          ? { parameterDefinitionsIntent: "delete-all" }
+          : { parameterDefinitionsIntent: undefined })
+      }];
+    })
+  );
   const eDeviceDefinitionLabels =
     source.eDeviceDefinitionLabels && typeof source.eDeviceDefinitionLabels === "object" && !Array.isArray(source.eDeviceDefinitionLabels)
       ? Object.fromEntries(Object.entries(source.eDeviceDefinitionLabels).flatMap(([rawKey, rawValue]) => {
@@ -1078,7 +1150,7 @@ export async function readDeviceLibraryConfig() {
     ) {
       await writeJsonStoreFile(deviceLibraryDataDir, deviceLibraryPath, {
         ...normalized,
-        savedAt: new Date().toISOString()
+        savedAt: typeof parsed.savedAt === "string" ? parsed.savedAt : new Date().toISOString()
       });
     }
     return {
@@ -1405,8 +1477,8 @@ function normalizeKnownStoredEnumValue(binding) {
     if (values.includes(normalized)) return normalized;
   }
   if (paramKey === "run_stat") {
-    const normalized = value === "运行" ? "1" : ["停运", "检修"].includes(value) ? "0" : value;
-    const aliases = normalized === "1" ? ["1", "运行"] : normalized === "0" ? ["0", "停运"] : [];
+    const normalized = normalizeRunStatValue(value, "1");
+    const aliases = normalized === "1" ? ["1", "运行", "投运"] : normalized === "0" ? ["0", "停运", "检修"] : [];
     const match = aliases.find((candidate) => values.includes(candidate));
     if (match) return match;
   }
@@ -1451,12 +1523,11 @@ function normalizeStoredDeviceParameterDefinitionNames(value) {
       };
       const enName = normalizeName(definition.enName);
       const exportName = typeof definition.exportName === "string" ? normalizeName(definition.exportName) : definition.exportName;
-      if (enName === definition.enName && exportName === definition.exportName) return definition;
-      return {
+      return normalizeRunStatParameterDefinition({
         ...definition,
         enName,
         ...(definition.exportName !== undefined ? { exportName } : {})
-      };
+      });
     });
     const serialized = JSON.stringify(normalized);
     return serialized === value ? value : serialized;
@@ -1469,8 +1540,14 @@ function normalizeStoredDeviceParams(params = {}) {
   const next = {};
   const priorities = new Map();
   for (const [key, value] of Object.entries(params)) {
-    const normalizedKey = /^(?:gasQuantity|gasquantity)$/u.test(key) ? "gas_quantity" : key;
-    const priority = normalizedKey !== "gas_quantity"
+    const normalizedKey = /^(?:gasQuantity|gasquantity)$/u.test(key)
+      ? "gas_quantity"
+      : key === "runStat"
+        ? "run_stat"
+        : key;
+    const priority = normalizedKey === "run_stat"
+      ? key === "run_stat" ? 2 : 1
+      : normalizedKey !== "gas_quantity"
       ? 0
       : key === "gas_quantity"
         ? 3
@@ -1481,7 +1558,73 @@ function normalizeStoredDeviceParams(params = {}) {
     priorities.set(normalizedKey, priority);
     next[normalizedKey] = key === "_customParamDefinitions"
       ? normalizeStoredDeviceParameterDefinitionNames(value)
-      : value;
+      : normalizedKey === "run_stat"
+        ? normalizeRunStatValue(value, "1")
+        : value;
+  }
+  return next;
+}
+
+const hydrogenStorageKinds = new Set([
+  "hydrogen-tank",
+  "hydrogen-tank-horizontal",
+  "hydrogen-tank-container"
+]);
+
+function normalizeStoredHydrogenStorageParameterDefinitions(value) {
+  try {
+    const parsed = JSON.parse(value ?? "[]");
+    if (!Array.isArray(parsed)) return value;
+    let ratedCapacityIndex = -1;
+    let ratedCapacityIsCanonical = false;
+    const normalized = [];
+    for (const entry of parsed) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        normalized.push(entry);
+        continue;
+      }
+      const rawName = String(entry.enName ?? "").trim();
+      if (rawName !== "capacity" && rawName !== "rated_capacity") {
+        normalized.push(entry);
+        continue;
+      }
+      const normalizedDefinition = {
+        ...entry,
+        cnName: "额定容量(m3)",
+        enName: "rated_capacity",
+        valueType: "float",
+        ...(entry.exportName !== undefined
+          ? { exportName: String(entry.exportName).trim() === "capacity" ? "rated_capacity" : entry.exportName }
+          : {})
+      };
+      const canonical = rawName === "rated_capacity";
+      if (ratedCapacityIndex < 0) {
+        ratedCapacityIndex = normalized.length;
+        ratedCapacityIsCanonical = canonical;
+        normalized.push(normalizedDefinition);
+      } else if (canonical && !ratedCapacityIsCanonical) {
+        normalized[ratedCapacityIndex] = normalizedDefinition;
+        ratedCapacityIsCanonical = true;
+      }
+    }
+    const serialized = JSON.stringify(normalized);
+    return serialized === value ? value : serialized;
+  } catch {
+    return value;
+  }
+}
+
+function normalizeStoredHydrogenStorageParams(kind, params) {
+  if (!hydrogenStorageKinds.has(String(kind ?? ""))) return params;
+  const next = { ...params };
+  if (Object.prototype.hasOwnProperty.call(next, "capacity")) {
+    if (!String(next.rated_capacity ?? "").trim()) {
+      next.rated_capacity = next.capacity;
+    }
+    delete next.capacity;
+  }
+  if (next._customParamDefinitions !== undefined) {
+    next._customParamDefinitions = normalizeStoredHydrogenStorageParameterDefinitions(next._customParamDefinitions);
   }
   return next;
 }
@@ -1489,7 +1632,7 @@ function normalizeStoredDeviceParams(params = {}) {
 function normalizeProjectDeviceParameterNamesForStorage(project) {
   const nodes = (Array.isArray(project?.nodes) ? project.nodes : []).map((node) => ({
     ...node,
-    params: normalizeStoredDeviceParams(node?.params ?? {})
+    params: normalizeStoredHydrogenStorageParams(node?.kind, normalizeStoredDeviceParams(node?.params ?? {}))
   }));
   const measurements = project?.measurements && typeof project.measurements === "object"
     ? {
@@ -1776,10 +1919,7 @@ function assignMissingDeviceIndexes(nodes, counters) {
 }
 
 function normalizeRunStatForE(value) {
-  if (!value) return "";
-  if (value === "运行") return "1";
-  if (value === "停运" || value === "检修") return "0";
-  return value;
+  return normalizeRunStatValue(value);
 }
 
 function normalizeControlTypeForE(value) {
@@ -2029,6 +2169,9 @@ function getRawEParamValue(key, node, options = {}) {
   const params = node?.params ?? {};
   const section = inferESection(node?.kind, params);
   if (key === "name") return node?.name ?? "";
+  if (section === "HydroStorage" && key === "rated_capacity") {
+    return params.rated_capacity ?? params.capacity ?? "";
+  }
   if (key === "run_stat") return normalizeRunStatForE(params.run_stat);
   if (key === "status") return normalizeSwitchStatusForE(params.status ?? params.closedStatus);
   if ((key === "ac_control_type" || key === "dc_control_type") && section === "DCACConverter") {

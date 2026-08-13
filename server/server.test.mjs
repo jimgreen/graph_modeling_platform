@@ -178,7 +178,7 @@ describe("measurement configuration normalization", () => {
       "name",
       "node",
       "pressure",
-      "capacity",
+      "rated_capacity",
       "water_volume",
       "pressure_max",
       "pressure_min",
@@ -233,6 +233,117 @@ describe("measurement configuration normalization", () => {
 });
 
 describe("scheme enum validation", () => {
+  test("migrates run_stat values and definitions to numeric enums before writing JSON and E", async () => {
+    const filesRoot = await mkdtemp(join(tmpdir(), "graph-run-stat-migrate-"));
+    try {
+      await saveSchemeProjectRecord({
+        filesRoot,
+        schemePath: ["枚举测试"],
+        record: {
+          name: "旧工作状态",
+          project: {
+            version: 1,
+            name: "旧工作状态",
+            nodes: [{
+              id: "load-1",
+              kind: "ac-load",
+              name: "交流负荷-1",
+              params: {
+                run_stat: "投运",
+                _customParamDefinitions: JSON.stringify([{
+                  cnName: "工作状态",
+                  enName: "run_stat",
+                  valueType: "stringEnum",
+                  typicalValue: "运行",
+                  enumValues: ["运行", "停运"]
+                }])
+              },
+              terminals: []
+            }],
+            edges: []
+          }
+        },
+        svg: "<svg/>",
+        measurementConfig: { measurementTypes: [] }
+      });
+
+      const loaded = await readSchemeProjectRecord({ filesRoot, schemePath: ["枚举测试"], name: "旧工作状态" });
+      const params = loaded.project.nodes[0].params;
+      expect(params.run_stat).toBe("1");
+      expect(JSON.parse(params._customParamDefinitions)[0]).toMatchObject({
+        enName: "run_stat",
+        valueType: "numberEnum",
+        typicalValue: "1",
+        enumValueType: "number",
+        enumValues: ["1", "0"],
+        enumOptions: [
+          { value: "1", label: "运行" },
+          { value: "0", label: "停运" }
+        ]
+      });
+      const eText = iconv.decode(await readFile(join(filesRoot, "枚举测试", "旧工作状态.e")), "gbk");
+      expect(eText).toMatch(/<ACLoad>[\s\S]*\s1\s*$/mu);
+    } finally {
+      await rm(filesRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("migrates legacy hydrogen storage capacity when saving JSON and E files", async () => {
+    const filesRoot = await mkdtemp(join(tmpdir(), "graph-hydrogen-storage-capacity-"));
+    try {
+      const savedRecord = await saveSchemeProjectRecord({
+        filesRoot,
+        schemePath: ["字段迁移"],
+        record: {
+          name: "储氢罐容量",
+          project: {
+            version: 1,
+            name: "储氢罐容量",
+            nodes: [{
+              id: "tank-capacity-1",
+              kind: "hydrogen-tank-container",
+              name: "集装格式储氢罐-1",
+              params: {
+                idx: "1",
+                capacity: "1234",
+                _customParamDefinitions: JSON.stringify([{
+                  cnName: "旧额定储气量",
+                  enName: "capacity",
+                  valueType: "float",
+                  typicalValue: "1234",
+                  exportName: "capacity"
+                }])
+              },
+              terminals: []
+            }],
+            edges: []
+          }
+        },
+        svg: "<svg/>",
+        measurementConfig: { measurementTypes: [] }
+      });
+
+      expect(savedRecord.project.nodes[0].params.rated_capacity).toBe("1234");
+      expect(savedRecord.project.nodes[0].params).not.toHaveProperty("capacity");
+      expect(JSON.parse(savedRecord.project.nodes[0].params._customParamDefinitions)).toEqual([
+        expect.objectContaining({ cnName: "额定容量(m3)", enName: "rated_capacity", valueType: "float", exportName: "rated_capacity" })
+      ]);
+
+      const jsonText = await readFile(join(filesRoot, "字段迁移", "储氢罐容量.json"), "utf8");
+      const savedJson = JSON.parse(jsonText);
+      expect(savedJson.nodes[0].params.rated_capacity).toBe("1234");
+      expect(savedJson.nodes[0].params).not.toHaveProperty("capacity");
+
+      const eText = await readEFileText(join(filesRoot, "字段迁移", "储氢罐容量.e"));
+      const hydroStorageLines = eSectionLines(eText, "HydroStorage");
+      expect(hydroStorageLines[0]).toContain("rated_capacity");
+      expect(hydroStorageLines[0]).not.toMatch(/(^|\s)capacity(?=\s|$)/u);
+      expect(hydroStorageLines[1]).toContain("1234");
+    } finally {
+      await rm(filesRoot, { recursive: true, force: true });
+    }
+  });
+
   test("migrates known electric-hydrogen control aliases before writing JSON and E", async () => {
     const filesRoot = await mkdtemp(join(tmpdir(), "graph-enum-migrate-"));
     try {

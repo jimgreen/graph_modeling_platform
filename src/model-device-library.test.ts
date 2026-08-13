@@ -646,7 +646,7 @@ test("defines template device status states separately from run_stat", () => {
 
   const switchNode = createDefaultNode("ac-switch", { x: 100, y: 100 });
   expect(switchNode.params.status).toBe("1");
-  expect(switchNode.params.run_stat).toBe("运行");
+  expect(switchNode.params.run_stat).toBe("1");
   expect(switchNode.params).not.toHaveProperty("_stateDefinitions");
 
   expect(normalizeDeviceStatusForE("0")).toBe("0");
@@ -698,7 +698,13 @@ test("adds terminal transformer load as a single-terminal ACLoad device", () => 
   expect(node.terminals).toHaveLength(1);
   expect(node.terminals[0]).toMatchObject({ type: "ac", label: "交流设备端1", anchor: { x: -0.5, y: 0 } });
   expect(getDeviceGlyphVariant("ac-terminal-transformer-load")).toBe("terminal-transformer-load");
-  expect(getEParameterKeys("ac-terminal-transformer-load", node.params)).toEqual(E_SECTION_COLUMNS.ACLoad);
+  expect(getEParameterKeys("ac-terminal-transformer-load", node.params)).toEqual([
+    ...E_SECTION_COLUMNS.ACLoad,
+    "p",
+    "q",
+    "u",
+    "i"
+  ]);
 
   const exported = parseESections(buildEDeviceParameterFile({
     version: 1,
@@ -1032,11 +1038,17 @@ test("adds an AC grounding disconnector as a single-terminal grounding device", 
   expect(node.terminals).toHaveLength(1);
   expect(node.terminals[0]).toMatchObject({ type: "ac", label: "交流系统端", anchor: { x: -0.5, y: 0 } });
   expect(getDeviceGlyphVariant("ac-ground-disconnector")).toBe("ground-disconnector");
-  expect(getEParameterKeys("ac-ground-disconnector", node.params)).toEqual(E_SECTION_COLUMNS.GroundDisconnector);
+  expect(getEParameterKeys("ac-ground-disconnector", node.params)).toEqual([
+    ...E_SECTION_COLUMNS.GroundDisconnector,
+    "i"
+  ]);
   expect(verticalNode.terminals).toHaveLength(1);
   expect(verticalNode.terminals[0]).toMatchObject({ type: "ac", label: "交流系统端", anchor: { x: 0, y: -0.5 } });
   expect(getDeviceGlyphVariant("ac-ground-disconnector-vertical")).toBe("ground-disconnector-vertical");
-  expect(getEParameterKeys("ac-ground-disconnector-vertical", verticalNode.params)).toEqual(E_SECTION_COLUMNS.GroundDisconnector);
+  expect(getEParameterKeys("ac-ground-disconnector-vertical", verticalNode.params)).toEqual([
+    ...E_SECTION_COLUMNS.GroundDisconnector,
+    "i"
+  ]);
 
   const exported = parseESections(buildEDeviceParameterFile({
     version: 1,
@@ -1046,8 +1058,8 @@ test("adds an AC grounding disconnector as a single-terminal grounding device", 
   }));
 
   expect(exported.GroundDisconnector.rows).toEqual([
-    expect.objectContaining({ idx: "1", name: "接地刀闸1", node: "1", status: "0", run_stat: "1" }),
-    expect.objectContaining({ idx: "2", name: "竖向接地刀闸1", node: "2", status: "0", run_stat: "1" })
+    expect.objectContaining({ idx: "1", name: "接地刀闸1", node: "1", status: "1", run_stat: "1" }),
+    expect.objectContaining({ idx: "2", name: "竖向接地刀闸1", node: "2", status: "1", run_stat: "1" })
   ]);
 });
 
@@ -2658,7 +2670,7 @@ test("builds one body view plus associated device views for container parameters
 
 test("defines hydrogen source and load capacities, control modes, limits, and measurements", () => {
   const expectedOrder = [
-    "idx", "name", "dev_type", "node", "rated_capacity", "control_type",
+    "rdf_id", "idx", "name", "dev_type", "node", "rated_capacity", "control_type",
     "pressure_set", "pressure_max", "pressure_min",
     "flow_set", "flow_max", "flow_min", "pressure", "flow", "run_stat"
   ];
@@ -2786,6 +2798,7 @@ test("defines static limits and measurement parameters for every hydrogen tank v
 
     expect(node.params).toMatchObject({
       control_type: "PRESSURE",
+      rated_capacity: "1000",
       pressure_set: "1",
       flow_set: "0",
       alpha: "1",
@@ -2800,6 +2813,23 @@ test("defines static limits and measurement parameters for every hydrogen tank v
       gas_quantity: "500",
       soc: "0.5"
     });
+    expect(node.params).not.toHaveProperty("capacity");
+    expect(definitionByName.get("control_type")).toMatchObject({
+      valueType: "stringEnum",
+      typicalValue: "PRESSURE",
+      enumValues: ["PRESSURE", "FLOW"],
+      enumOptions: [
+        { value: "PRESSURE", label: "定压力" },
+        { value: "FLOW", label: "定流量" }
+      ]
+    });
+    expect(definitionByName.get("rated_capacity")).toMatchObject({
+      cnName: "额定容量(m3)",
+      valueType: "float",
+      typicalValue: "1000",
+      readonly: false
+    });
+    expect(definitionByName.has("capacity")).toBe(false);
     expect(definitionByName.get("water_volume")).toMatchObject({ valueType: "float", readonly: false });
     expect(definitionByName.get("pressure_max")).toMatchObject({ valueType: "float", typicalValue: "45" });
     expect(definitionByName.get("pressure_min")).toMatchObject({ valueType: "float", typicalValue: "0.1" });
@@ -2808,6 +2838,29 @@ test("defines static limits and measurement parameters for every hydrogen tank v
     expect(definitionByName.get("gas_quantity")).toMatchObject({ cnName: "储气量(Nm3)", valueType: "float", typicalValue: "500" });
     expect(definitionByName.get("soc")).toMatchObject({ cnName: "soc", valueType: "float", typicalValue: "0.5" });
   }
+});
+
+test("migrates legacy hydrogen tank capacity to rated_capacity without overriding canonical values", () => {
+  const legacy = createDefaultNode("hydrogen-tank", { x: 0, y: 0 });
+  delete legacy.params.rated_capacity;
+  legacy.params.capacity = "1234";
+  legacy.params[CUSTOM_PARAM_DEFINITIONS_KEY] = JSON.stringify([
+    { cnName: "旧额定储气量", enName: "capacity", valueType: "float", typicalValue: "1234", exportName: "capacity" }
+  ]);
+
+  const migrated = normalizeNodeTerminalsByTemplate(legacy);
+  expect(migrated.params.rated_capacity).toBe("1234");
+  expect(migrated.params).not.toHaveProperty("capacity");
+  expect(JSON.parse(migrated.params[CUSTOM_PARAM_DEFINITIONS_KEY])).toEqual([
+    expect.objectContaining({ cnName: "额定容量(m3)", enName: "rated_capacity", valueType: "float", exportName: "rated_capacity" })
+  ]);
+
+  const canonical = createDefaultNode("hydrogen-tank-horizontal", { x: 0, y: 0 });
+  canonical.params.rated_capacity = "2000";
+  canonical.params.capacity = "999";
+  const normalized = normalizeNodeTerminalsByTemplate(canonical);
+  expect(normalized.params.rated_capacity).toBe("2000");
+  expect(normalized.params).not.toHaveProperty("capacity");
 });
 
 test("keeps associated endpoint definitions out of hydrogen coupling device bodies", () => {
@@ -3794,7 +3847,7 @@ test("keeps two-winding and three-winding transformers as separate non-container
   expect(fieldNames).not.toContain("idx_xf_t2");
   expect(fieldNames).not.toContain("idx_xf_t3");
   expect(getEParameterKeys("ac-three-winding-transformer", createDefaultNode("ac-three-winding-transformer", { x: 100, y: 100 }).params)).toEqual(
-    E_SECTION_COLUMNS.ACTransfomer3
+    [...E_SECTION_COLUMNS.ACTransfomer3, "p", "q", "u", "i"]
   );
 });
 
