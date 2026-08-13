@@ -635,6 +635,37 @@ describe("electric generation device library classification", () => {
     expect(devTypeRow?.typicalValue).toBe(template?.kind);
   });
 
+  test("copies effective shared measurement definitions into an isolated edit draft", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "dcdc-converter")!;
+    const measurementDefinitions = [
+      { measurementTypeId: "activePower", associatedField: "i_p" },
+      { measurementTypeId: "voltage", associatedField: "i_v" },
+      { measurementTypeId: "current", associatedField: "i_i" }
+    ];
+    const applied = applyDeviceTemplateDefinitionOverride(template, {
+      kind: template.kind,
+      measurementDefinitions
+    });
+
+    const draft = createCustomDeviceDraftFromTemplate(applied);
+
+    expect(draft.measurementDefinitions).toEqual(measurementDefinitions);
+    expect(draft.measurementDefinitions).not.toBe(applied.measurementDefinitions);
+    draft.measurementDefinitions[0].associatedField = "changed";
+    expect(applied.measurementDefinitions?.[0].associatedField).toBe("i_p");
+  });
+
+  test("keeps every built-in measurement definition in its edit draft", () => {
+    for (const template of DEVICE_LIBRARY) {
+      if (template.custom || !template.measurementDefinitions?.length) continue;
+
+      const draft = createCustomDeviceDraftFromTemplate(template);
+
+      expect(draft.measurementDefinitions, template.kind).toEqual(template.measurementDefinitions);
+      expect(draft.measurementDefinitions, template.kind).not.toBe(template.measurementDefinitions);
+    }
+  });
+
   test("keeps every built-in business definition effective after an unmarked empty shared override", () => {
     for (const template of DEVICE_LIBRARY) {
       const declaredDefinitions = resolveEffectiveTemplateParameterDefinitions(template, DEVICE_LIBRARY);

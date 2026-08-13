@@ -333,7 +333,7 @@ const STATE_ICON_DRAWING_SMART_ALIGNMENT_TOLERANCE = 3;
 const STATE_ICON_DRAWING_SMART_ALIGNMENT_GUIDE_PADDING = 8;
 export const STATE_ICON_DRAWING_MIN_FONT_SIZE = 8;
 
-export function customDeviceDraftDirtyToken(draft: CustomDeviceDraft, anchors: readonly Point[] = [], measurementConfig: PlatformMeasurementConfig | null = null) {
+export function customDeviceDraftDirtyToken(draft: CustomDeviceDraft, anchors: readonly Point[] = []) {
   const terminalCount = Math.max(0, Math.round(draft.terminalCount || 0));
   return JSON.stringify({
     draft: {
@@ -344,37 +344,30 @@ export function customDeviceDraftDirtyToken(draft: CustomDeviceDraft, anchors: r
       terminalAnchors: anchors.slice(0, terminalCount).map((anchor) => ({ x: anchor.x, y: anchor.y })),
       terminalRoles: draft.terminalRoles.slice(0, terminalCount),
       terminalAssociations: draft.terminalAssociations.slice(0, terminalCount)
-    },
-    measurementConfig
+    }
   });
 }
 
 export function createSetCustomDeviceDraftCleanBaseline(__appScope: Record<string, any>) {
   return (draft: CustomDeviceDraft, anchors?: readonly Point[]) => {
-  const { createDefaultCustomDeviceTerminalAnchors, customDeviceDraftBaselineRef, customDeviceDraftCleanTokenRef, measurementConfigBaselineRef, measurementConfigDraft, measurementConfigDraftRef } = __appScope;
+  const { createDefaultCustomDeviceTerminalAnchors, customDeviceDraftBaselineRef, customDeviceDraftCleanTokenRef } = __appScope;
     const nextAnchors = anchors ?? createDefaultCustomDeviceTerminalAnchors(draft.terminalCount, draft.terminalAnchors);
     customDeviceDraftCleanTokenRef.current = customDeviceDraftDirtyToken(
       draft,
-      nextAnchors,
-      measurementConfigDraftRef.current ?? measurementConfigDraft ?? null
+      nextAnchors
     );
     if (customDeviceDraftBaselineRef) {
       customDeviceDraftBaselineRef.current = JSON.parse(JSON.stringify(draft));
-    }
-    if (measurementConfigBaselineRef) {
-      const currentMeasurement = measurementConfigDraftRef.current ?? measurementConfigDraft ?? null;
-      measurementConfigBaselineRef.current = currentMeasurement ? JSON.parse(JSON.stringify(currentMeasurement)) : null;
     }
   };
 }
 
 export function createCustomDeviceDraftHasUnsavedChanges(__appScope: Record<string, any>) {
   return () => {
-  const { customDeviceDraft, customDeviceDraftCleanTokenRef, customDeviceTerminalAnchors, measurementConfigDraft, measurementConfigDraftRef } = __appScope;
+  const { customDeviceDraft, customDeviceDraftCleanTokenRef, customDeviceTerminalAnchors } = __appScope;
     const currentToken = customDeviceDraftDirtyToken(
       customDeviceDraft,
-      customDeviceTerminalAnchors,
-      measurementConfigDraftRef.current ?? measurementConfigDraft ?? null
+      customDeviceTerminalAnchors
     );
     return customDeviceDraftCleanTokenRef.current !== currentToken;
   };
@@ -383,7 +376,7 @@ export function createCustomDeviceDraftHasUnsavedChanges(__appScope: Record<stri
 // 还原当前 tab 或全部 tab 到预设定义
 export function createRevertCustomDeviceDraftCurrentTab(__appScope: Record<string, any>) {
   return () => {
-  const { customDeviceDraftBaselineRef, customDeviceDialogView, customDeviceDraft, measurementConfigBaselineRef, setCustomDeviceDraft, setMeasurementConfigDraft, setStateIconDrawingDialog } = __appScope;
+  const { customDeviceDraftBaselineRef, customDeviceDialogView, setCustomDeviceDraft, setStateIconDrawingDialog } = __appScope;
     const baseline: CustomDeviceDraft | null = customDeviceDraftBaselineRef?.current ?? null;
     if (!baseline) return;
     if (customDeviceDialogView === "icon") {
@@ -411,18 +404,18 @@ export function createRevertCustomDeviceDraftCurrentTab(__appScope: Record<strin
         error: ""
       }));
     } else if (customDeviceDialogView === "measurements") {
-      const measurementBaseline = measurementConfigBaselineRef?.current ?? null;
-      if (measurementBaseline) {
-        const next = JSON.parse(JSON.stringify(measurementBaseline));
-        setMeasurementConfigDraft(next);
-      }
+      setCustomDeviceDraft((current: CustomDeviceDraft) => ({
+        ...current,
+        measurementDefinitions: cloneDeviceMeasurementDefinitions(baseline.measurementDefinitions) ?? [],
+        error: ""
+      }));
     }
   };
 }
 
 export function createRevertCustomDeviceDraftAll(__appScope: Record<string, any>) {
   return () => {
-  const { customDeviceDraftBaselineRef, measurementConfigBaselineRef, setCustomDeviceDraft, setMeasurementConfigDraft, setStateIconDrawingDialog, editingCustomDeviceKind, selectedDefinitionKind, baseLibraryTemplateByKind, createCustomDeviceDraftFromTemplate, prepareMeasurementConfigDraft, resolveTemplateComponentLibrary } = __appScope;
+  const { customDeviceDraftBaselineRef, setCustomDeviceDraft, setStateIconDrawingDialog, editingCustomDeviceKind, selectedDefinitionKind, baseLibraryTemplateByKind, createCustomDeviceDraftFromTemplate, resolveTemplateComponentLibrary } = __appScope;
     if (typeof setStateIconDrawingDialog === "function") setStateIconDrawingDialog(null);
     // 内置元件：从源码原始定义还原
     if (!editingCustomDeviceKind && selectedDefinitionKind && baseLibraryTemplateByKind && typeof createCustomDeviceDraftFromTemplate === "function") {
@@ -431,7 +424,6 @@ export function createRevertCustomDeviceDraftAll(__appScope: Record<string, any>
         const section = typeof resolveTemplateComponentLibrary === "function" ? resolveTemplateComponentLibrary(baseTemplate) : (baseTemplate.categoryLibrary ?? "");
         const freshDraft = createCustomDeviceDraftFromTemplate(baseTemplate, section);
         setCustomDeviceDraft({ ...freshDraft, error: "" });
-        if (typeof prepareMeasurementConfigDraft === "function") prepareMeasurementConfigDraft();
         return;
       }
     }
@@ -439,10 +431,6 @@ export function createRevertCustomDeviceDraftAll(__appScope: Record<string, any>
     const baseline: CustomDeviceDraft | null = customDeviceDraftBaselineRef?.current ?? null;
     if (!baseline) return;
     setCustomDeviceDraft(JSON.parse(JSON.stringify(baseline)));
-    const measurementBaseline = measurementConfigBaselineRef?.current ?? null;
-    if (measurementBaseline) {
-      setMeasurementConfigDraft(JSON.parse(JSON.stringify(measurementBaseline)));
-    }
   };
 }
 
@@ -6225,6 +6213,7 @@ function customDeviceDraftPatchForComponentLibrarySelection(__appScope: Record<s
   if (!representativeTemplate || typeof createCustomDeviceDraftFromTemplate !== "function") {
     return {
       params: [],
+      measurementDefinitions: [],
       stateDefinitions: []
     };
   }
@@ -6240,6 +6229,7 @@ function customDeviceDraftPatchForComponentLibrarySelection(__appScope: Record<s
     terminalAssociations: representativeDraft.terminalAssociations,
     isContainer: representativeDraft.isContainer,
     params: representativeDraft.params ?? [],
+    measurementDefinitions: cloneDeviceMeasurementDefinitions(representativeDraft.measurementDefinitions) ?? [],
     stateDefinitions: []
   };
 }
@@ -7023,7 +7013,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       return false;
     }
     const currentMeasurementConfig = measurementConfigDraftRef?.current ?? measurementConfigDraft ?? measurementConfig;
-    const profileItems = currentMeasurementConfig?.deviceProfiles?.find((profile) => profile.deviceKind === componentLibrary)?.items ?? [];
+    const profileItems = normalizeDeviceMeasurementDefinitions(customDeviceDraft.measurementDefinitions);
     const measurementProfileMessage = measurementProfileItemsComplianceMessage(profileItems, {
       measurementTypes: currentMeasurementConfig?.measurementTypes ?? [],
       parameterDefinitions: definitions,
@@ -7159,7 +7149,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
         } : {})
       }),
       parameterDefinitions: definitions,
-      measurementDefinitions: cloneDeviceMeasurementDefinitions(customDeviceDraft.measurementDefinitions ?? profileItems) ?? [],
+      measurementDefinitions: profileItems,
       updatedAt: new Date().toISOString()
     };
     const rawNextDeviceDefinitionOverrides = {
@@ -7210,6 +7200,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       backgroundImageAssetId,
       backgroundImageFit: draftBackgroundImageFit,
       backgroundImageCleared: draftBackgroundImageCleared,
+      measurementDefinitions: cloneDeviceMeasurementDefinitions(profileItems) ?? [],
       error: ""
     };
     setCustomDeviceDraft((current) => ({ ...current, ...cleanDraft }));
@@ -7377,7 +7368,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       return false;
     }
     const currentMeasurementConfig = measurementConfigDraftRef?.current ?? measurementConfigDraft ?? measurementConfig;
-    const profileItems = currentMeasurementConfig?.deviceProfiles?.find((profile) => profile.deviceKind === componentLibrary)?.items ?? [];
+    const profileItems = normalizeDeviceMeasurementDefinitions(customDeviceDraft.measurementDefinitions);
     const measurementProfileMessage = measurementProfileItemsComplianceMessage(profileItems, {
       measurementTypes: currentMeasurementConfig?.measurementTypes ?? [],
       parameterDefinitions: definitions,
@@ -7518,7 +7509,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
         ...definitionDerivedParams
       }),
       ...(parameterDefinitionsMatchBuiltIn ? {} : { parameterDefinitions: definitions }),
-      measurementDefinitions: profileItems,
+      measurementDefinitions: cloneDeviceMeasurementDefinitions(profileItems) ?? [],
       updatedAt: nextTemplateOverride.updatedAt
     };
     const nextDeviceDefinitionOverrides: Record<string, DeviceTemplateDefinitionOverride> = {
@@ -7551,6 +7542,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       backgroundImageCleared: draftBackgroundImageCleared,
       size,
       terminalLabels,
+      measurementDefinitions: cloneDeviceMeasurementDefinitions(profileItems) ?? [],
       error: ""
     };
     setCustomDeviceDraft((current) => ({
@@ -7565,6 +7557,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       backgroundImageCleared: draftBackgroundImageCleared,
       size,
       terminalLabels,
+      measurementDefinitions: cloneDeviceMeasurementDefinitions(profileItems) ?? [],
       error: ""
     }));
     setCustomDeviceDraftCleanBaseline(cleanDraft, terminalAnchors);
@@ -7587,7 +7580,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
 
 export function createSaveCustomDeviceDefinitionDialog(__appScope: Record<string, any>) {
   return (options: { closeAfterSave?: boolean } = {}) => {
-  const { customDeviceDefinitionMode, editingCustomDeviceKind, measurementConfigDraft, measurementConfigDraftRef, saveBuiltinDeviceDefinitionFromCustomDraft, saveCustomDeviceTemplate, saveMeasurementConfigDialog, selectedCustomComponentTemplate, selectedDefinitionKind, selectedDefinitionTemplate } = __appScope;
+  const { customDeviceDefinitionMode, editingCustomDeviceKind, saveBuiltinDeviceDefinitionFromCustomDraft, saveCustomDeviceTemplate, selectedCustomComponentTemplate, selectedDefinitionKind, selectedDefinitionTemplate } = __appScope;
     const targetTemplate = selectedDefinitionTemplate && selectedDefinitionTemplate.kind === selectedDefinitionKind
       ? selectedDefinitionTemplate
       : selectedCustomComponentTemplate;
@@ -7596,9 +7589,6 @@ export function createSaveCustomDeviceDefinitionDialog(__appScope: Record<string
       saved = saveBuiltinDeviceDefinitionFromCustomDraft(targetTemplate, options) === true;
     } else {
       saved = saveCustomDeviceTemplate(options) === true;
-    }
-    if (saved && (measurementConfigDraftRef.current ?? measurementConfigDraft)) {
-      void saveMeasurementConfigDialog();
     }
   };
 }
