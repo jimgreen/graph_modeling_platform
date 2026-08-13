@@ -2111,7 +2111,7 @@ export function createLoadSvgImageExportPathById(__appScope: Record<string, any>
 }
 
 export function createExportSvg(__appScope: Record<string, any>) {
-  return async () => {
+  return async (textEncoding: TextFileEncoding = "utf-8") => {
   const {
     DEFAULT_CANVAS_BACKGROUND,
     PARAM_LABELS,
@@ -2213,7 +2213,8 @@ export function createExportSvg(__appScope: Record<string, any>) {
             directoryHandle,
             file.filename,
             text,
-            file.mime
+            file.mime,
+            textEncoding
           ))
         });
       };
@@ -2244,11 +2245,11 @@ export function createExportSvg(__appScope: Record<string, any>) {
           throw imageExportPathByIdResult.error;
         }
         const imageExportPathById = imageExportPathByIdResult.value;
-        const svgText = buildSvgDocument(nodes, edges, buildSvgExportOptions({
+        const svgText = svgTextWithEncodingDeclaration(buildSvgDocument(nodes, edges, buildSvgExportOptions({
           canvasBounds, canvasBackgroundColor, DEFAULT_CANVAS_BACKGROUND, canvasBackgroundImageUrl,
           imageExportPathById, colorPalette, libraryTemplates, layers, activeLayerId,
           backgroundPageRender, projectMeasurements, measurementConfig
-        }));
+        })), textEncoding);
         startFileWrite({
           label: "SVG",
           filename: `${baseFilename}.svg`,
@@ -2297,6 +2298,7 @@ export function createExportSvg(__appScope: Record<string, any>) {
         showGlobalMessage([
           "E、JSON 和 SVG 文件导出成功。",
           `目录：${directoryName}`,
+          `字符编码：${textFileEncodingLabel(textEncoding)}`,
           ...exportFiles.map((file) => `${file.label}：${file.filename}`),
           `总耗时：${exportElapsedText()}`,
           ...warningLines
@@ -2306,6 +2308,7 @@ export function createExportSvg(__appScope: Record<string, any>) {
       showGlobalMessage([
         "部分文件导出失败。",
         `目录：${directoryName}`,
+        `字符编码：${textFileEncodingLabel(textEncoding)}`,
         `成功：${successCount} / 3`,
         "失败文件：",
         ...failures.map((failure) => `- ${failure}`),
@@ -2361,7 +2364,7 @@ function buildSvgExportOptions(params: {
 }
 
 export function createExportSvgFile(__appScope: Record<string, any>) {
-  return async () => {
+  return async (textEncoding: TextFileEncoding = "utf-8") => {
     const {
       DEFAULT_CANVAS_BACKGROUND,
       activeLayerId,
@@ -2399,11 +2402,11 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
         const imageExportPathById = typeof loadSvgImageExportPathById === "function"
           ? await loadSvgImageExportPathById()
           : undefined;
-        return buildSvgDocument(nodes, edges, buildSvgExportOptions({
+        return svgTextWithEncodingDeclaration(buildSvgDocument(nodes, edges, buildSvgExportOptions({
           canvasBounds, canvasBackgroundColor, DEFAULT_CANVAS_BACKGROUND, canvasBackgroundImageUrl,
           imageExportPathById, colorPalette, libraryTemplates, layers, activeLayerId,
           backgroundPageRender, projectMeasurements, measurementConfig
-        }));
+        })), textEncoding);
       });
       return svgTextPromise;
     };
@@ -2414,6 +2417,7 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
           mime: "image/svg+xml",
           description: "SVG 图形文件",
           extensions: [".svg"],
+          encoding: textEncoding,
           preferNativeDialog: true,
           onSaveTargetReady: markSaveTargetReady
         })
@@ -2423,6 +2427,7 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
           mime: "image/svg+xml",
           description: "SVG 图形文件",
           extensions: [".svg"],
+          encoding: textEncoding,
           preferNativeDialog: true,
           onSaveTargetReady: markSaveTargetReady
         });
@@ -2431,13 +2436,13 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
     }
     writeOperationLog(`导出图形文件：${baseFilename}.svg`);
     const elapsedSeconds = ((performance.now() - exportStartedAt) / 1000).toFixed(2);
-    const successMessage = `SVG 文件导出成功：${baseFilename}.svg；总耗时：${elapsedSeconds} 秒`;
+    const successMessage = `SVG 文件导出成功：${baseFilename}.svg；字符编码：${textFileEncodingLabel(textEncoding)}；总耗时：${elapsedSeconds} 秒`;
     showStandaloneExportCompletion(__appScope, "SVG 文件导出完成", successMessage);
   };
 }
 
 export function createExportJsonFile(__appScope: Record<string, any>) {
-  return async () => {
+  return async (textEncoding: TextFileEncoding = "utf-8") => {
     const {
       currentProject,
       ensureSavedBeforeExport,
@@ -2468,6 +2473,7 @@ export function createExportJsonFile(__appScope: Record<string, any>) {
           mime: "application/json",
           description: "JSON 模型文件",
           extensions: [".json"],
+          encoding: textEncoding,
           preferNativeDialog: true,
           onSaveTargetReady: markSaveTargetReady
         })
@@ -2477,6 +2483,7 @@ export function createExportJsonFile(__appScope: Record<string, any>) {
           mime: "application/json",
           description: "JSON 模型文件",
           extensions: [".json"],
+          encoding: textEncoding,
           preferNativeDialog: true,
           onSaveTargetReady: markSaveTargetReady
         });
@@ -2485,7 +2492,7 @@ export function createExportJsonFile(__appScope: Record<string, any>) {
     }
     writeOperationLog(`导出模型文件：${baseFilename}.json`);
     const elapsedSeconds = ((performance.now() - exportStartedAt) / 1000).toFixed(2);
-    const successMessage = `JSON 文件导出成功：${baseFilename}.json；总耗时：${elapsedSeconds} 秒`;
+    const successMessage = `JSON 文件导出成功：${baseFilename}.json；字符编码：${textFileEncodingLabel(textEncoding)}；总耗时：${elapsedSeconds} 秒`;
     showStandaloneExportCompletion(__appScope, "JSON 文件导出完成", successMessage);
   };
 }
@@ -2527,7 +2534,7 @@ export function buildEFileExportProjectSnapshot(__appScope: Record<string, any>)
 }
 
 export function createExportEFile(__appScope: Record<string, any>) {
-  return async () => {
+  return async (textEncoding: TextFileEncoding = "gbk") => {
     const {
       activeSchemeKey,
       buildEFileExport,
@@ -2593,7 +2600,7 @@ export function createExportEFile(__appScope: Record<string, any>) {
           mime: "text/plain",
           description: "E 模型文件",
           extensions: [".e"],
-          encoding: "gbk",
+          encoding: textEncoding,
           preferNativeDialog: true,
           onSaveTargetReady: markSaveTargetReady
         })
@@ -2605,7 +2612,7 @@ export function createExportEFile(__appScope: Record<string, any>) {
             mime: file.mime,
             description: "E 模型文件",
             extensions: [".e"],
-            encoding: "gbk",
+            encoding: textEncoding,
             preferNativeDialog: true,
             onSaveTargetReady: markSaveTargetReady
           });
@@ -2616,7 +2623,7 @@ export function createExportEFile(__appScope: Record<string, any>) {
     const { file, warnings } = await generatedFilePromise;
     writeOperationLog(`导出模型文件：${file.filename}`);
     const elapsedSeconds = ((performance.now() - exportStartedAt) / 1000).toFixed(2);
-    const successMessage = `E 文件导出成功：${file.filename}；总耗时：${elapsedSeconds} 秒`;
+    const successMessage = `E 文件导出成功：${file.filename}；字符编码：${textFileEncodingLabel(textEncoding)}；总耗时：${elapsedSeconds} 秒`;
     const warningDetails = warnings.length > 0
       ? [
         `有 ${warnings.length} 个图上设备未导出到 E 文件：`,
@@ -7602,5 +7609,14 @@ export function createSaveCustomDeviceDefinitionDialog(__appScope: Record<string
       saved = saveCustomDeviceTemplate(options) === true;
     }
   };
+}
+
+function textFileEncodingLabel(encoding: TextFileEncoding) {
+  return encoding === "gbk" ? "GBK" : "UTF-8";
+}
+
+export function svgTextWithEncodingDeclaration(svgText: string, encoding: TextFileEncoding) {
+  const content = String(svgText ?? "").replace(/^\uFEFF?\s*<\?xml\b[^?]*\?>\s*/iu, "");
+  return `<?xml version="1.0" encoding="${textFileEncodingLabel(encoding)}"?>\n${content}`;
 }
 

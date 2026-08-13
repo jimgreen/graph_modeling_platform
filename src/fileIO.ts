@@ -3,7 +3,8 @@
 import { apiPath } from "./config";
 import { encodeGbk } from "./encoding/gbk";
 
-export type EFileTextEncoding = "utf-8" | "gbk";
+export type TextFileEncoding = "utf-8" | "gbk";
+export type EFileTextEncoding = TextFileEncoding;
 
 /** 将文本按指定编码转为字节（默认 utf-8；E 文件统一使用 gbk） */
 export function encodeTextAsBytes(text: string, encoding: EFileTextEncoding = "utf-8"): Uint8Array {
@@ -372,10 +373,11 @@ export const writeTextFileToDirectory = async (
   directoryHandle: WritableDirectoryHandle,
   filename: string,
   text: string,
-  _mime: string
+  _mime: string,
+  encoding: TextFileEncoding = "utf-8"
 ) => {
   const fileHandle = await directoryHandle.getFileHandle(filename, { create: true });
   const writable = await fileHandle.createWritable();
-  await writable.write(text);
+  await writable.write(encodeTextAsBytes(text, encoding) as unknown as Blob);
   await writable.close();
 };

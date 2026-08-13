@@ -283,7 +283,7 @@
       "derivedComponentLibrary": "",
       "allowResizeTransform": false,
       "stateDefinitions": [],
-      "updatedAt": "2026-08-13T19:17:36.084Z"
+      "updatedAt": "2026-08-13T20:10:07.663Z"
     },
     "dcdc-converter-vertical": {
       "kind": "dcdc-converter-vertical",
@@ -732,9 +732,6 @@
         "status": "1",
         "run_stat": "1",
         "dev_type": "dcdc-converter",
-        "i_p": "0",
-        "i_v": "0",
-        "i_i": "0",
         "i_node": "",
         "j_node": "",
         "r1": "",
@@ -747,6 +744,9 @@
         "j_p_set": "",
         "j_i_set": "",
         "j_v_set": "",
+        "i_p": "0",
+        "i_v": "0",
+        "i_i": "0",
         "j_p": "",
         "j_i": "",
         "j_v": ""
@@ -825,33 +825,6 @@
           "readonly": false,
           "exportEnabled": true,
           "exportName": "dev_type"
-        },
-        {
-          "cnName": "首端有功值",
-          "enName": "i_p",
-          "valueType": "float",
-          "typicalValue": "0",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "p"
-        },
-        {
-          "cnName": "首端电压值",
-          "enName": "i_v",
-          "valueType": "float",
-          "typicalValue": "0",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "u"
-        },
-        {
-          "cnName": "首端电流值",
-          "enName": "i_i",
-          "valueType": "float",
-          "typicalValue": "0",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "i"
         },
         {
           "cnName": "首端节点",
@@ -1101,7 +1074,34 @@
           "exportName": ""
         },
         {
-          "cnName": "末端有功设定值",
+          "cnName": "首端有功值",
+          "enName": "i_p",
+          "valueType": "float",
+          "typicalValue": "0",
+          "readonly": false,
+          "exportEnabled": true,
+          "exportName": "p"
+        },
+        {
+          "cnName": "首端电压值",
+          "enName": "i_v",
+          "valueType": "float",
+          "typicalValue": "0",
+          "readonly": false,
+          "exportEnabled": true,
+          "exportName": "u"
+        },
+        {
+          "cnName": "首端电流值",
+          "enName": "i_i",
+          "valueType": "float",
+          "typicalValue": "0",
+          "readonly": false,
+          "exportEnabled": true,
+          "exportName": "i"
+        },
+        {
+          "cnName": "末端有功值",
           "enName": "j_p",
           "valueType": "float",
           "typicalValue": "",
@@ -1110,7 +1110,7 @@
           "exportName": ""
         },
         {
-          "cnName": "末端电流设定值",
+          "cnName": "末端电流值",
           "enName": "j_i",
           "valueType": "float",
           "typicalValue": "",
@@ -1119,7 +1119,7 @@
           "exportName": ""
         },
         {
-          "cnName": "末端电压设定值",
+          "cnName": "末端电压值",
           "enName": "j_v",
           "valueType": "float",
           "typicalValue": "",
@@ -1131,18 +1131,21 @@
       "measurementDefinitions": [
         {
           "measurementTypeId": "activePower",
+          "name": "有功",
           "associatedField": "i_p"
         },
         {
           "measurementTypeId": "voltage",
+          "name": "电压",
           "associatedField": "i_v"
         },
         {
           "measurementTypeId": "current",
+          "name": "电流",
           "associatedField": "i_i"
         }
       ],
-      "updatedAt": "2026-08-13T19:32:03.079Z"
+      "updatedAt": "2026-08-13T20:10:07.663Z"
     },
     "shared:DCACConverter": {
       "kind": "shared:DCACConverter",
@@ -3157,5 +3160,5 @@
   "eDeviceDefinitionFieldOrder": {},
   "eDeviceDefinitionTemplateFields": {},
   "eDeviceDefinitionTableIds": {},
-  "savedAt": "2026-08-13T19:32:03.111Z"
+  "savedAt": "2026-08-13T20:26:04.738Z"
 }
