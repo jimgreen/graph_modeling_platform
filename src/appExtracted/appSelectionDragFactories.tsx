@@ -1039,9 +1039,9 @@ export function createValidateGroupDeviceIconReplacement(__appScope: Record<stri
 
 export function createReplaceBuiltinDeviceIconOverride(__appScope: Record<string, any>) {
   return (targetTemplate: DeviceTemplate, groupIcon: string) => {
-  const { deviceDefinitionOverrideForTemplate, setDeviceDefinitionOverrides } = __appScope;
+  const { deviceDefinitionOverrideForTemplate, libraryTemplates, setDeviceDefinitionOverrides } = __appScope;
     setDeviceDefinitionOverrides((current) => {
-      const existingOverride = deviceDefinitionOverrideForTemplate(targetTemplate, current);
+      const existingOverride = deviceDefinitionOverrideForTemplate(targetTemplate, current, libraryTemplates);
       return {
         ...current,
         [targetTemplate.kind]: {

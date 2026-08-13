@@ -4294,8 +4294,10 @@ export function renderAppView(__appScope: Record<string, any>) {
                 terminalLabels: selectedDefinitionTemplate.terminalLabels,
                 parameterDefinitions: definitionDraftRows,
                 positionDefinitions: __appScope.selectedDefinitionMeasurementPositionDefinitions,
-                items: definitionMeasurementDraft,
-                setItems: setDefinitionMeasurementDraft,
+                items: Array.isArray(__appScope.definitionMeasurementDraft)
+                  ? __appScope.definitionMeasurementDraft
+                  : [],
+                setItems: __appScope.setDefinitionMeasurementDraft,
                 selectedRowIndexes: __appScope.selectedDefinitionMeasurementRowIndexes,
                 setSelectedRowIndexes: __appScope.setSelectedDefinitionMeasurementRowIndexes,
                 selectionAnchorIndex: __appScope.definitionMeasurementSelectionAnchorRef.current,

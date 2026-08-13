@@ -89,7 +89,7 @@ describe("device library schema migration", () => {
     };
     const migrated = migrateDeviceLibraryConfig(legacy);
     const normalized = normalizeDeviceLibraryConfig(legacy);
-    expect(migrated.schemaVersion).toBe(2);
+    expect(migrated.schemaVersion).toBe(3);
     expect(migrated.deviceDefinitionOverrides["shared:ACGenerator"].parameterDefinitions).toBeUndefined();
     expect(normalized.deviceDefinitionOverrides["shared:DCDCConverter"]).toMatchObject({
       parameterDefinitions: [],
@@ -149,6 +149,138 @@ describe("device library schema migration", () => {
     }
     expect(normalized.deviceDefinitionOverrides["shared:ACACConverter::acac-converter"].params.run_stat).toBe("1");
     expect(normalizeDeviceLibraryConfig(normalized)).toEqual(normalized);
+  });
+
+  test("moves concrete business definitions to the mapped shared class and permanently strips the graphic", () => {
+    const normalized = normalizeDeviceLibraryConfig({
+      schemaVersion: 2,
+      deviceDefinitionSharedKeys: {
+        "dcdc-converter": "shared:DCDCConverter",
+        "dcdc-converter-vertical": "shared:DCDCConverter"
+      },
+      deviceDefinitionOverrides: {
+        "dcdc-converter": {
+          kind: "dcdc-converter",
+          params: { backgroundImage: "horizontal.svg", i_p: "10" },
+          size: { width: 150, height: 88 },
+          parameterDefinitions: [
+            { cnName: "首端有功", enName: "i_p", valueType: "float", typicalValue: "10" }
+          ],
+          measurementDefinitions: [
+            { measurementTypeId: "activePower", associatedField: "i_p" }
+          ],
+          updatedAt: "2026-08-13T00:00:00.000Z"
+        },
+        "dcdc-converter-vertical": {
+          kind: "dcdc-converter-vertical",
+          params: { backgroundImage: "vertical.svg", i_p: "20" },
+          size: { width: 88, height: 150 }
+        }
+      }
+    });
+
+    expect(normalized.schemaVersion).toBe(3);
+    expect(normalized.deviceDefinitionOverrides["shared:DCDCConverter"]).toMatchObject({
+      params: { i_p: "10" },
+      parameterDefinitions: [{ enName: "i_p" }],
+      measurementDefinitions: [{ measurementTypeId: "activePower", associatedField: "i_p" }]
+    });
+    expect(normalized.deviceDefinitionOverrides["dcdc-converter"]).toMatchObject({
+      params: { backgroundImage: "horizontal.svg" },
+      size: { width: 150, height: 88 }
+    });
+    expect(normalized.deviceDefinitionOverrides["dcdc-converter-vertical"]).toMatchObject({
+      params: { backgroundImage: "vertical.svg" },
+      size: { width: 88, height: 150 }
+    });
+    for (const [kind, override] of Object.entries(normalized.deviceDefinitionOverrides)) {
+      if (kind.startsWith("shared:")) continue;
+      expect(override.parameterDefinitions).toBeUndefined();
+      expect(override.parameterDefinitionsIntent).toBeUndefined();
+      expect(override.measurementDefinitions).toBeUndefined();
+      expect(override.params.i_p).toBeUndefined();
+    }
+    expect(normalizeDeviceLibraryConfig(normalized)).toEqual(normalized);
+  });
+
+  test("moves a custom graphic business default into its existing shared class", () => {
+    const normalized = normalizeDeviceLibraryConfig({
+      schemaVersion: 2,
+      deviceDefinitionSharedKeys: {
+        "custom-shared-default": "shared:SharedDefaultDevice"
+      },
+      customDeviceTemplates: [{
+        kind: "custom-shared-default",
+        label: "共享默认值设备",
+        categoryLibrary: "交流设备",
+        size: { width: 104, height: 64 },
+        params: {
+          component_type: "SharedDefaultDevice",
+          p_set: "12",
+          backgroundImage: "shared-default.svg"
+        },
+        terminalType: "ac",
+        terminalCount: 1,
+        custom: true
+      }],
+      deviceDefinitionOverrides: {
+        "shared:SharedDefaultDevice": {
+          kind: "shared:SharedDefaultDevice",
+          params: { component_type: "SharedDefaultDevice" },
+          parameterDefinitions: [{
+            cnName: "有功设定值",
+            enName: "p_set",
+            valueType: "float",
+            typicalValue: "0"
+          }]
+        }
+      }
+    });
+
+    expect(normalized.customDeviceTemplates[0].params).toMatchObject({
+      component_type: "SharedDefaultDevice",
+      backgroundImage: "shared-default.svg"
+    });
+    expect(normalized.customDeviceTemplates[0].params.p_set).toBeUndefined();
+    expect(normalized.deviceDefinitionOverrides["shared:SharedDefaultDevice"]).toMatchObject({
+      params: {
+        component_type: "SharedDefaultDevice",
+        p_set: "12"
+      },
+      parameterDefinitions: [{ enName: "p_set" }]
+    });
+  });
+
+  test("creates a mapped shared class for a definition-free custom business default", () => {
+    const normalized = normalizeDeviceLibraryConfig({
+      schemaVersion: 2,
+      deviceDefinitionSharedKeys: {
+        "custom-shared-default-only": "shared:SharedDefaultOnlyDevice"
+      },
+      customDeviceTemplates: [{
+        kind: "custom-shared-default-only",
+        label: "仅默认值设备",
+        categoryLibrary: "交流设备",
+        size: { width: 104, height: 64 },
+        params: {
+          component_type: "SharedDefaultOnlyDevice",
+          p_set: "24",
+          backgroundImage: "shared-default-only.svg"
+        },
+        terminalType: "ac",
+        terminalCount: 1,
+        custom: true
+      }]
+    });
+
+    expect(normalized.customDeviceTemplates[0].params.p_set).toBeUndefined();
+    expect(normalized.deviceDefinitionOverrides["shared:SharedDefaultOnlyDevice"]).toMatchObject({
+      kind: "shared:SharedDefaultOnlyDevice",
+      params: {
+        component_type: "SharedDefaultOnlyDevice",
+        p_set: "24"
+      }
+    });
   });
 });
 

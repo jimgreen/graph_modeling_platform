@@ -6,6 +6,7 @@ import { apiPath } from "../config";
 import { DEFAULT_STATE_ICON_DRAWING_FRAME, stateIconSvgVisibleViewBox } from "../stateIconDrawing";
 import { decodeSvgImageSource } from "../svgUtils";
 import { buildMeasurementProfilePositionDefinitions } from "../measurements";
+import { deviceDefinitionSharedKeyForTemplate, normalizeSharedDeviceDefinitionOverrides } from "../customDeviceUtils";
 import { measurementProfileItemsComplianceMessage } from "./appGraphMeasurementFactories";
 
 export const STATE_ICON_DRAFT_FRAME = DEFAULT_STATE_ICON_DRAWING_FRAME;
@@ -665,7 +666,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
   eDeviceDefinitionTemplateFields?: Record<string, Array<{ sourceName?: string; exportName: string; cnName: string }>>;
   labels?: Record<string, string>;
   deviceDefinitionKeyForTemplate?: (template: any) => string;
-  deviceDefinitionOverrideForTemplate?: (template: any, overrides: Record<string, any>) => any;
+  deviceDefinitionOverrideForTemplate?: (template: any, overrides: Record<string, any>, templates?: readonly any[]) => any;
   resolveDefinitionComponentLibrary?: (template: any) => string;
 }) {
   const {
@@ -1032,15 +1033,15 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
   };
 
   const customTemplateKinds = new Set((customDeviceTemplates ?? []).map((template: any) => template.kind));
-  const nextCustomDeviceTemplates = (customDeviceTemplates ?? []).map((template: any) => ({
-    ...template,
-    parameterDefinitions: patchDefinitions(template)
-  }));
+  const nextCustomDeviceTemplates = (customDeviceTemplates ?? []).map((template: any) => {
+    const next = { ...template };
+    delete next.parameterDefinitions;
+    delete next.parameterDefinitionsIntent;
+    delete next.measurementDefinitions;
+    return next;
+  });
   const nextDeviceDefinitionOverrides: Record<string, any> = { ...deviceDefinitionOverrides };
   for (const template of libraryTemplates ?? []) {
-    if (template.custom || customTemplateKinds.has(template.kind)) {
-      continue;
-    }
     // 派生元件库模板（风电/光伏/储能等）的 definitionKey 塌缩到基类（如 ACGenerator），
     // 写入共享 key 会被后遍历的派生模板覆盖，导致基类（交流电源）经 override 合并派生专属参数
     // （如储能的 storage_technology 出现在交流电源下）。派生模板的参数定义与 E 文件导出均走
@@ -1049,11 +1050,9 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     if (derivedInfo) {
       continue;
     }
-    const definitionKey = typeof deviceDefinitionKeyForTemplate === "function"
-      ? deviceDefinitionKeyForTemplate(template)
-      : (eDeviceInterfaceComponentLibraryForTemplate(template, resolveDefinitionComponentLibrary) || template.kind);
+    const definitionKey = deviceDefinitionSharedKeyForTemplate(template);
     const existingOverride = typeof deviceDefinitionOverrideForTemplate === "function"
-      ? deviceDefinitionOverrideForTemplate(template, nextDeviceDefinitionOverrides)
+      ? deviceDefinitionOverrideForTemplate(template, nextDeviceDefinitionOverrides, libraryTemplates)
       : (nextDeviceDefinitionOverrides[template.kind] ?? nextDeviceDefinitionOverrides[definitionKey] ?? {});
     const parameterDefinitions = patchDefinitions(template, derivedInfo);
     delete nextDeviceDefinitionOverrides[template.kind];
@@ -1071,7 +1070,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
 
   return {
     customDeviceTemplates: nextCustomDeviceTemplates,
-    deviceDefinitionOverrides: nextDeviceDefinitionOverrides,
+    deviceDefinitionOverrides: normalizeSharedDeviceDefinitionOverrides(nextDeviceDefinitionOverrides, libraryTemplates),
     eDeviceDefinitionLabels: nextLabels,
     eDeviceDefinitionClassExportEnabled: nextClassExportEnabled,
     eDeviceDefinitionFieldOrder: nextFieldOrder,

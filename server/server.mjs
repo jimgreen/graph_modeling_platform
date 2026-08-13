@@ -887,7 +887,70 @@ const runStatEnumOptions = [
   { value: "0", label: "停运" }
 ];
 
-export const deviceLibrarySchemaVersion = 2;
+const concreteDeviceDefinitionParamNames = new Set([
+  "component_type",
+  "derived_from_component_type",
+  "derived_component_type",
+  "derived_component_library_label",
+  "is_derived_component_library",
+  "icon",
+  "image",
+  "imageAssetId",
+  "imageFit",
+  "backgroundImage",
+  "backgroundImageAssetId",
+  "backgroundImageCleared",
+  "backgroundImageFit",
+  "foregroundColor",
+  "foregroundImage",
+  "foregroundImageAssetId",
+  "foregroundImageFit",
+  "fillColor",
+  "strokeColor",
+  "textColor",
+  "lineWidth",
+  "fontSize",
+  "fontFamily",
+  "fontWeight",
+  "fontStyle",
+  "textDecoration",
+  "strokeStyle",
+  "text",
+  "cornerRadius",
+  "accentColor",
+  "shadowEnabled",
+  "padding",
+  "textAlign",
+  "verticalAlign",
+  "markerStart",
+  "markerEnd",
+  "arrowSize",
+  "handleColor",
+  "handleSize",
+  "routeAvoidance",
+  "staticWidth",
+  "staticHeight"
+]);
+
+function concreteDeviceDefinitionParams(params) {
+  return Object.fromEntries(Object.entries(params ?? {}).filter(([name]) => (
+    concreteDeviceDefinitionParamNames.has(name) || name.startsWith("button")
+  )));
+}
+
+function sharedDeviceDefinitionParams(params) {
+  return Object.fromEntries(Object.entries(params ?? {}).filter(([name]) => (
+    !concreteDeviceDefinitionParamNames.has(name) || [
+      "component_type",
+      "derived_from_component_type",
+      "derived_component_type",
+      "derived_component_library_label",
+      "is_derived_component_library"
+    ].includes(name)
+  )));
+}
+
+export const deviceLibrarySchemaVersion = 3;
 
 function normalizeRunStatValue(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -960,6 +1023,10 @@ function migrateDeviceLibraryConfigV1ToV2(source) {
   return { ...source, deviceDefinitionOverrides, schemaVersion: 2 };
 }
 
+function migrateDeviceLibraryConfigV2ToV3(source) {
+  return { ...source, schemaVersion: 3 };
+}
+
 export function migrateDeviceLibraryConfig(payload) {
   let source = payload && typeof payload === "object" && !Array.isArray(payload) ? { ...payload } : {};
   let version = Number.isInteger(Number(source.schemaVersion)) ? Number(source.schemaVersion) : 0;
@@ -969,21 +1036,24 @@ export function migrateDeviceLibraryConfig(payload) {
   }
   if (version < 2) {
     source = migrateDeviceLibraryConfigV1ToV2(source);
+    version = 2;
+  }
+  if (version < 3) {
+    source = migrateDeviceLibraryConfigV2ToV3(source);
   }
   return { ...source, schemaVersion: deviceLibrarySchemaVersion };
 }
 
 export function normalizeDeviceLibraryConfig(payload) {
   const source = migrateDeviceLibraryConfig(payload);
-  const customDeviceTemplates = (Array.isArray(source.customDeviceTemplates) ? source.customDeviceTemplates : [])
-    .map((template) => template && typeof template === "object" && !Array.isArray(template)
-      ? {
-        ...template,
-        categoryLibrary: template.categoryLibrary ?? template.attributeLibrary ?? "交流设备",
-        params: normalizeDeviceLibraryParams(template.params, !String(template.kind ?? "").startsWith("static-")),
-        parameterDefinitions: normalizeDeviceLibraryParameterDefinitions(template.parameterDefinitions)
-      }
-      : template);
+  const rawCustomDeviceTemplates = (Array.isArray(source.customDeviceTemplates) ? source.customDeviceTemplates : [])
+    .filter((template) => template && typeof template === "object" && !Array.isArray(template))
+    .map((template) => ({
+      ...template,
+      categoryLibrary: template.categoryLibrary ?? template.attributeLibrary ?? "交流设备",
+      params: normalizeDeviceLibraryParams(template.params, !String(template.kind ?? "").startsWith("static-")),
+      parameterDefinitions: normalizeDeviceLibraryParameterDefinitions(template.parameterDefinitions)
+    }));
   const customCategoryLibraries = Array.isArray(source.customCategoryLibraries)
     ? source.customCategoryLibraries
     : Array.isArray(source.customAttributeLibraries)
@@ -1020,7 +1090,7 @@ export function normalizeDeviceLibraryConfig(payload) {
         return [kind, override];
       }))
       : {};
-  const deviceDefinitionOverrides = Object.fromEntries(
+  const normalizedDeviceDefinitionOverrides = Object.fromEntries(
     Object.entries(rawDeviceDefinitionOverrides).map(([kind, override]) => {
       if (!override || typeof override !== "object" || Array.isArray(override)) {
         return [kind, override];
@@ -1042,6 +1112,110 @@ export function normalizeDeviceLibraryConfig(payload) {
       }];
     })
   );
+  const deviceDefinitionSharedKeys = source.deviceDefinitionSharedKeys &&
+    typeof source.deviceDefinitionSharedKeys === "object" &&
+    !Array.isArray(source.deviceDefinitionSharedKeys)
+    ? Object.fromEntries(Object.entries(source.deviceDefinitionSharedKeys).flatMap(([rawKind, rawSharedKey]) => {
+        const kind = String(rawKind ?? "").trim();
+        const sharedKey = String(rawSharedKey ?? "").trim();
+        return kind && !kind.startsWith("shared:") && sharedKey.startsWith("shared:")
+          ? [[kind, sharedKey]]
+          : [];
+      }))
+    : {};
+  const deviceDefinitionOverrides = { ...normalizedDeviceDefinitionOverrides };
+  for (const template of rawCustomDeviceTemplates) {
+    const kind = String(template.kind ?? "").trim();
+    const sharedKey = deviceDefinitionSharedKeys[kind];
+    if (!kind || !sharedKey) continue;
+    const parameterDefinitions = Array.isArray(template.parameterDefinitions)
+      ? template.parameterDefinitions
+      : undefined;
+    const measurementDefinitions = Array.isArray(template.measurementDefinitions)
+      ? template.measurementDefinitions
+      : undefined;
+    if (!parameterDefinitions && !measurementDefinitions) continue;
+    const existingConcrete = deviceDefinitionOverrides[kind] ?? {};
+    deviceDefinitionOverrides[kind] = {
+      ...template,
+      ...existingConcrete,
+      kind,
+      params: {
+        ...(template.params ?? {}),
+        ...(existingConcrete.params ?? {})
+      },
+      ...(parameterDefinitions ? { parameterDefinitions } : {}),
+      ...(measurementDefinitions ? { measurementDefinitions } : {})
+    };
+  }
+  for (const [kind, sharedKey] of Object.entries(deviceDefinitionSharedKeys)) {
+    const rawConcrete = deviceDefinitionOverrides[kind];
+    const concrete = rawConcrete && typeof rawConcrete === "object" && !Array.isArray(rawConcrete)
+      ? rawConcrete
+      : undefined;
+    const concreteTemplate = rawCustomDeviceTemplates.find((template) => String(template.kind ?? "").trim() === kind);
+    if (!concrete && !concreteTemplate) continue;
+    const parameterDefinitions = Array.isArray(concrete?.parameterDefinitions)
+      ? concrete.parameterDefinitions
+      : undefined;
+    const measurementDefinitions = Array.isArray(concrete?.measurementDefinitions)
+      ? concrete.measurementDefinitions
+      : undefined;
+    const existingShared = deviceDefinitionOverrides[sharedKey] &&
+      typeof deviceDefinitionOverrides[sharedKey] === "object" &&
+      !Array.isArray(deviceDefinitionOverrides[sharedKey])
+      ? deviceDefinitionOverrides[sharedKey]
+      : {};
+    const sharedAlreadyDefinesParameters = Array.isArray(existingShared.parameterDefinitions);
+    const sharedAlreadyDefinesMeasurements = Array.isArray(existingShared.measurementDefinitions);
+    const concreteBusinessParams = {
+      ...sharedDeviceDefinitionParams(concreteTemplate?.params),
+      ...sharedDeviceDefinitionParams(concrete?.params)
+    };
+    if (parameterDefinitions || measurementDefinitions || Object.keys(concreteBusinessParams).length > 0) {
+      deviceDefinitionOverrides[sharedKey] = {
+        ...existingShared,
+        kind: sharedKey,
+        params: {
+          ...concreteBusinessParams,
+          ...(existingShared.params ?? {})
+        },
+        ...(!sharedAlreadyDefinesParameters && parameterDefinitions ? { parameterDefinitions } : {}),
+        ...(!sharedAlreadyDefinesParameters && concrete?.parameterDefinitionsIntent === "delete-all"
+          ? { parameterDefinitionsIntent: "delete-all" }
+          : {}),
+        ...(!sharedAlreadyDefinesMeasurements && measurementDefinitions ? { measurementDefinitions } : {}),
+        updatedAt: existingShared.updatedAt ?? concrete?.updatedAt
+      };
+    }
+    if (!concrete) continue;
+    const visual = {
+      ...concrete,
+      params: concreteDeviceDefinitionParams(concrete.params)
+    };
+    delete visual.parameterDefinitions;
+    delete visual.parameterDefinitionsIntent;
+    delete visual.measurementDefinitions;
+    const hasVisualContent = Object.entries(visual).some(([key, value]) => (
+      !["kind", "updatedAt", "params"].includes(key) && value !== undefined
+    )) || Object.keys(visual.params ?? {}).length > 0;
+    if (hasVisualContent) {
+      deviceDefinitionOverrides[kind] = visual;
+    } else {
+      delete deviceDefinitionOverrides[kind];
+    }
+  }
+  const customDeviceTemplates = rawCustomDeviceTemplates.map((template) => {
+    const next = {
+      ...template,
+      params: concreteDeviceDefinitionParams(template.params)
+    };
+    delete next.parameterDefinitions;
+    delete next.parameterDefinitionsIntent;
+    delete next.parameterDefinitionsComplete;
+    delete next.measurementDefinitions;
+    return next;
+  });
   const eDeviceDefinitionLabels =
     source.eDeviceDefinitionLabels && typeof source.eDeviceDefinitionLabels === "object" && !Array.isArray(source.eDeviceDefinitionLabels)
       ? Object.fromEntries(Object.entries(source.eDeviceDefinitionLabels).flatMap(([rawKey, rawValue]) => {
@@ -1132,6 +1306,7 @@ export function normalizeDeviceLibraryConfig(payload) {
     customGraphTemplateTypes,
     customGraphTemplates,
     deviceDefinitionOverrides,
+    deviceDefinitionSharedKeys,
     eDeviceDefinitionLabels,
     eDeviceDefinitionClassExportEnabled,
     eDeviceDefinitionFieldOrder,
@@ -1146,7 +1321,9 @@ export async function readDeviceLibraryConfig() {
     const normalized = normalizeDeviceLibraryConfig(parsed);
     if (
       Number(parsed.schemaVersion) !== deviceLibrarySchemaVersion ||
-      JSON.stringify(parsed.deviceDefinitionOverrides ?? {}) !== JSON.stringify(normalized.deviceDefinitionOverrides)
+      JSON.stringify(parsed.customDeviceTemplates ?? []) !== JSON.stringify(normalized.customDeviceTemplates) ||
+      JSON.stringify(parsed.deviceDefinitionOverrides ?? {}) !== JSON.stringify(normalized.deviceDefinitionOverrides) ||
+      JSON.stringify(parsed.deviceDefinitionSharedKeys ?? {}) !== JSON.stringify(normalized.deviceDefinitionSharedKeys)
     ) {
       await writeJsonStoreFile(deviceLibraryDataDir, deviceLibraryPath, {
         ...normalized,

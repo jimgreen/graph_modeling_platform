@@ -2,11 +2,16 @@ import { describe, expect, test, vi } from "vitest";
 import {
   DEFAULT_COLOR_PALETTE,
   DEVICE_LIBRARY,
+  applyDeviceTemplateDefinitionOverride,
   getTemplateParameterDefinitions,
   resolveDeviceParameterDefinitionExportSettings,
   type DeviceTemplate,
   type ModelNode
 } from "./model";
+import {
+  deviceDefinitionOverrideForTemplate,
+  deviceDefinitionSharedKeyForTemplate
+} from "./customDeviceUtils";
 import { DEFAULT_MEASUREMENT_CONFIG } from "./measurements";
 import { apiPath } from "./config";
 import {
@@ -230,6 +235,60 @@ describe("user customization merge and restore", () => {
     expect(replaced.colorConfig.colorPalette.energy.ac).toBe("#123456");
   });
 
+  test("migrates legacy custom business tables to the shared class during snapshot normalization", () => {
+    const legacyTemplate = {
+      ...customTemplate("custom-source-horizontal", "自定义电源"),
+      params: {
+        component_type: "CustomSource",
+        custom_field: "12",
+        backgroundImage: "custom-source.svg"
+      },
+      parameterDefinitions: [{
+        cnName: "自定义字段",
+        enName: "custom_field",
+        valueType: "float" as const,
+        typicalValue: "12"
+      }],
+      measurementDefinitions: [{
+        measurementTypeId: "activePower",
+        associatedField: "custom_field"
+      }]
+    };
+
+    const normalized = normalizeUserCustomizationSnapshot({
+      ...defaultSnapshot(),
+      deviceLibrary: {
+        ...emptyUserDeviceLibrary(),
+        customDeviceTemplates: [legacyTemplate]
+      }
+    });
+    const concrete = normalized.deviceLibrary.customDeviceTemplates[0];
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(legacyTemplate);
+    const shared = normalized.deviceLibrary.deviceDefinitionOverrides[sharedKey];
+    const templates = [...DEVICE_LIBRARY, ...normalized.deviceLibrary.customDeviceTemplates];
+    const effective = applyDeviceTemplateDefinitionOverride(
+      concrete,
+      deviceDefinitionOverrideForTemplate(
+        concrete,
+        normalized.deviceLibrary.deviceDefinitionOverrides,
+        templates
+      )
+    );
+
+    expect(concrete.parameterDefinitions).toBeUndefined();
+    expect(concrete.measurementDefinitions).toBeUndefined();
+    expect(concrete.params.custom_field).toBeUndefined();
+    expect(concrete.params.backgroundImage).toContain("custom-source.svg");
+    expect(shared.parameterDefinitions?.map((definition) => definition.enName)).toEqual(["custom_field"]);
+    expect(shared.measurementDefinitions).toEqual([{
+      measurementTypeId: "activePower",
+      associatedField: "custom_field"
+    }]);
+    expect(shared.params?.custom_field).toBe("12");
+    expect(effective.parameterDefinitions?.map((definition) => definition.enName)).toEqual(["custom_field"]);
+    expect(effective.measurementDefinitions).toEqual(shared.measurementDefinitions);
+  });
+
   test("same-name different-ID rows are conflicts and imported content wins", () => {
     const current = defaultSnapshot();
     current.deviceLibrary.customDeviceTemplates = [customTemplate("old-id", "重复名称")];
@@ -268,6 +327,37 @@ describe("user customization merge and restore", () => {
     expect(restored.measurementConfig.deviceProfiles.some((profile) => profile.deviceKind === "custom-source")).toBe(false);
   });
 
+  test("restoring every custom graphic still keeps the shared class definitions", () => {
+    const horizontal = customTemplate("custom-source-horizontal", "自定义电源-横向");
+    const vertical = customTemplate("custom-source-vertical", "自定义电源-纵向");
+    const snapshot = normalizeUserCustomizationSnapshot({
+      ...defaultSnapshot(),
+      deviceLibrary: {
+        ...emptyUserDeviceLibrary(),
+        customDeviceTemplates: [horizontal, vertical],
+        deviceDefinitionOverrides: {
+          [horizontal.kind]: {
+            kind: horizontal.kind,
+            parameterDefinitions: [{
+              cnName: "自定义字段",
+              enName: "custom_field",
+              valueType: "float",
+              typicalValue: "12"
+            }]
+          }
+        }
+      }
+    });
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(horizontal);
+
+    const afterFirstRemoval = restoreUserCustomizationItems(snapshot, [`custom-devices:${horizontal.kind}`]);
+    const afterFinalRemoval = restoreUserCustomizationItems(afterFirstRemoval, [`custom-devices:${vertical.kind}`]);
+
+    expect(afterFirstRemoval.deviceLibrary.deviceDefinitionOverrides[sharedKey]?.parameterDefinitions).toHaveLength(1);
+    expect(afterFinalRemoval.deviceLibrary.deviceDefinitionOverrides[sharedKey]?.parameterDefinitions).toHaveLength(1);
+    expect(afterFinalRemoval.deviceLibrary.customDeviceTemplates).toEqual([]);
+  });
+
   test("restoring parameter definitions keeps unrelated visual overrides", () => {
     const snapshot = defaultSnapshot();
     snapshot.deviceLibrary.deviceDefinitionOverrides["ac-source"] = {
@@ -288,6 +378,10 @@ describe("user customization merge and restore", () => {
       size: { width: 96, height: 56 }
     });
     expect(restored.deviceLibrary.deviceDefinitionOverrides["ac-source"].parameterDefinitions).toBeUndefined();
+    const acSource = DEVICE_LIBRARY.find((template) => template.kind === "ac-source")!;
+    expect(restored.deviceLibrary.deviceDefinitionOverrides[
+      deviceDefinitionSharedKeyForTemplate(acSource)
+    ]?.parameterDefinitions).toBeUndefined();
   });
 });
 

@@ -1726,6 +1726,7 @@ export type DeviceLibraryPersistencePayload = {
   customCategoryLibraries: CategoryLibrary[];
   customComponentLibraries: CustomComponentLibraryDefinition[];
   deviceDefinitionOverrides: Record<string, DeviceTemplateDefinitionOverride>;
+  deviceDefinitionSharedKeys?: Record<string, string>;
   eDeviceDefinitionLabels?: Record<string, string>;
   eDeviceDefinitionClassExportEnabled?: Record<string, boolean>;
   eDeviceDefinitionFieldOrder?: Record<string, string[]>;

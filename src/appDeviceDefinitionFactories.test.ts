@@ -997,6 +997,7 @@ describe("manual bend interaction helpers", () => {
       error: ""
     };
     let savedTemplates: any[] = [];
+    let savedDefinitionOverrides: Record<string, any> = {};
     const scope = {
       ALLOW_RESIZE_TRANSFORM_PARAM: "allowResizeTransform",
       TERMINAL_TYPE_LIBRARY_LABELS: { ac: "交流" },
@@ -1036,6 +1037,9 @@ describe("manual bend interaction helpers", () => {
       customDeviceSaveToastTimerRef: { current: null },
       setCustomDeviceTemplates: (templates: any[]) => {
         savedTemplates = templates;
+      },
+      setDeviceDefinitionOverrides: (overrides: Record<string, any>) => {
+        savedDefinitionOverrides = overrides;
       },
       setEditingCustomDeviceKind: vi.fn(),
       setExpandedCategoryLibraries: vi.fn(),
@@ -1090,6 +1094,7 @@ describe("manual bend interaction helpers", () => {
       error: ""
     };
     let savedTemplates: any[] = [];
+    let savedDefinitionOverrides: Record<string, any> = {};
     const setCustomComponentLibraries = vi.fn();
     const customDefaultDefinitions = vi.fn((_terminalTypes: any[], options?: { isDerivedComponentLibrary?: boolean }) =>
       options?.isDerivedComponentLibrary
@@ -1142,6 +1147,9 @@ describe("manual bend interaction helpers", () => {
       setCustomDeviceTemplates: (templates: any[]) => {
         savedTemplates = templates;
       },
+      setDeviceDefinitionOverrides: (overrides: Record<string, any>) => {
+        savedDefinitionOverrides = overrides;
+      },
       setEditingCustomDeviceKind: vi.fn(),
       setExpandedCategoryLibraries: vi.fn(),
       showGlobalMessage: vi.fn(),
@@ -1174,7 +1182,12 @@ describe("manual bend interaction helpers", () => {
     });
     expect(savedTemplates[0]).not.toHaveProperty("derivedComponentLibraryLabel");
     expect(savedTemplates[0].params).not.toHaveProperty("derived_component_library_label");
-    expect(savedTemplates[0].parameterDefinitions.map((row: any) => row.enName)).toEqual(["installedCapacity"]);
+    expect(savedTemplates[0].parameterDefinitions).toBeUndefined();
+    expect(savedTemplates[0].measurementDefinitions).toBeUndefined();
+    const sharedOverride = Object.values(savedDefinitionOverrides).find((override: any) =>
+      String(override.kind).startsWith("shared:")
+    ) as any;
+    expect(sharedOverride.parameterDefinitions.map((row: any) => row.enName)).toEqual(["installedCapacity"]);
     expect(setCustomComponentLibraries).not.toHaveBeenCalled();
     expect(scope.ensureCustomComponentTreeExpanded).toHaveBeenCalledWith("交流设备", "ACGenerator");
     expect(scope.setCustomComponentTreeSelection).toHaveBeenCalledWith({
@@ -1479,6 +1492,62 @@ describe("manual bend interaction helpers", () => {
 
     expect(harness.save()).toBe(true);
     expect(harness.savedDefinitionOverride().parameterDefinitions).toEqual([changedDefinition]);
+  });
+
+  test("persists reordered built-in parameters in the draft row order", () => {
+    const defaultDefinitions = [
+      {
+        cnName: "首端有功值",
+        enName: "i_p",
+        valueType: "float",
+        typicalValue: "0",
+        readonly: false
+      },
+      {
+        cnName: "首端节点",
+        enName: "i_node",
+        valueType: "integer",
+        typicalValue: "",
+        readonly: true
+      },
+      {
+        cnName: "末端节点",
+        enName: "j_node",
+        valueType: "integer",
+        typicalValue: "",
+        readonly: true
+      }
+    ];
+    const template = {
+      kind: "dcdc-converter",
+      label: "DCDC变流器",
+      categoryLibrary: "直流设备",
+      params: { component_type: "DCDCConverter" },
+      size: { width: 104, height: 64 },
+      terminalType: "dc",
+      terminalCount: 2,
+      terminalTypes: ["dc", "dc"],
+      terminalLabels: ["直流端1", "直流端2"],
+      terminalAnchors: [{ x: -0.5, y: 0 }, { x: 0.5, y: 0 }],
+      parameterDefinitions: defaultDefinitions
+    };
+    const reorderedDefinitions = [
+      defaultDefinitions[1],
+      defaultDefinitions[2],
+      defaultDefinitions[0]
+    ];
+    const harness = createBuiltinDeviceDefinitionSaveHarness({
+      template,
+      draftDefinitions: reorderedDefinitions,
+      defaultDefinitionsFactory: () => defaultDefinitions
+    });
+
+    expect(harness.save()).toBe(true);
+    expect(harness.savedDefinitionOverride().parameterDefinitions.map((definition: any) => definition.enName)).toEqual([
+      "i_node",
+      "j_node",
+      "i_p"
+    ]);
   });
 
   test("removes legacy copied parameter definitions after they are restored to built-in defaults", () => {
@@ -2744,19 +2813,21 @@ describe("applyEDeviceDefinitionSectionsToLibraryState", () => {
       eDeviceDefinitionLabels: {},
       eDeviceDefinitionClassExportEnabled: {},
       deviceDefinitionKeyForTemplate: (template: any) => template.params.component_type,
-      deviceDefinitionOverrideForTemplate: (_template: any, overrides: any) => overrides[_template.params.component_type],
+      deviceDefinitionOverrideForTemplate,
       resolveDefinitionComponentLibrary: (template: any) => template.params.component_type
     });
 
     expect(result.eDeviceDefinitionLabels).toEqual({ ACLoad: "LoadTable" });
     expect(result.eDeviceDefinitionClassExportEnabled).toEqual({ ACLoad: true, DCLoad: false });
-    expect(result.deviceDefinitionOverrides.ACLoad.parameterDefinitions).toEqual(expect.arrayContaining([
+    expect(result.deviceDefinitionOverrides["shared:ACLoad"].parameterDefinitions).toEqual(expect.arrayContaining([
       expect.objectContaining({ enName: "p", exportEnabled: true, exportName: "p_custom" }),
       expect.objectContaining({ enName: "q", exportEnabled: false, exportName: "q_old" })
     ]));
-    expect(result.customDeviceTemplates[0].parameterDefinitions).toEqual(expect.arrayContaining([
+    expect(result.deviceDefinitionOverrides["shared:DCLoad"].parameterDefinitions).toEqual(expect.arrayContaining([
       expect.objectContaining({ enName: "p", exportEnabled: false, exportName: "p" })
     ]));
+    expect(result.customDeviceTemplates[0].parameterDefinitions).toBeUndefined();
+    expect(result.customDeviceTemplates[0].measurementDefinitions).toBeUndefined();
     expect(result.matched).toEqual([
       expect.objectContaining({ section: "LoadTable" })
     ]);
@@ -2789,7 +2860,7 @@ describe("applyEDeviceDefinitionSectionsToLibraryState", () => {
       resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
     });
 
-    const acGeneratorOverride = result.deviceDefinitionOverrides["ACGenerator"];
+    const acGeneratorOverride = result.deviceDefinitionOverrides["shared:ACGenerator"];
     expect(acGeneratorOverride).toBeDefined();
     const enNames = (acGeneratorOverride.parameterDefinitions ?? []).map((d: any) => d.enName);
     expect(enNames).not.toContain("storage_technology");

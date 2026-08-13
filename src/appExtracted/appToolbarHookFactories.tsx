@@ -1011,12 +1011,13 @@ export function createAppHookCallback12(__appScope: Record<string, any>) {
       return [];
     }
     const firstNode = selectedNodes[0];
-    const libraryTemplates = [
+    const baseLibraryTemplates = [
       ...(Array.isArray(DEVICE_LIBRARY) ? DEVICE_LIBRARY : []),
       ...(Array.isArray(customDeviceTemplates) ? customDeviceTemplates : [])
-    ].map((template) => applyDeviceTemplateDefinitionOverride(
+    ];
+    const libraryTemplates = baseLibraryTemplates.map((template) => applyDeviceTemplateDefinitionOverride(
       template,
-      deviceDefinitionOverrideForTemplate(template, deviceDefinitionOverrides ?? {})
+      deviceDefinitionOverrideForTemplate(template, deviceDefinitionOverrides ?? {}, baseLibraryTemplates)
     ));
     const libraryTemplateByKind = new Map<string, any>();
     libraryTemplates.forEach((template) => {
@@ -2715,6 +2716,11 @@ export function createAppHookCallback79(__appScope: Record<string, any>) {
           setEDeviceDefinitionTableIds(backendDeviceLibrary.eDeviceDefinitionTableIds ?? {});
           setCustomGraphTemplateTypes(backendDeviceLibrary.customGraphTemplateTypes);
           setCustomGraphTemplates(backendDeviceLibrary.customGraphTemplates);
+          if (backendDeviceLibrary.needsPersistenceMigration) {
+            void saveBackendDeviceLibraryPayload(backendPayload).catch(() => {
+              lastPersistedDeviceLibraryPayloadRef.current = null;
+            });
+          }
           return;
         }
         const localPayload = serializeDeviceLibraryForStorage({

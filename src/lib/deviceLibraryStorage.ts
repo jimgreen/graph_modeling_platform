@@ -8,6 +8,7 @@
 import { initDeviceLibraryDB } from "./deviceLibraryDB";
 import type { DeviceTemplate, DeviceTemplateDefinitionOverride } from "../model";
 import type { GraphTemplate } from "../appExtracted/appCoreCanvasUtilities";
+import { concreteDeviceDefinitionParams } from "../customDeviceUtils";
 
 // ============ 设备模板 ============
 
@@ -33,11 +34,20 @@ function normalizeStoredDefinitionOverride(override: DeviceTemplateDefinitionOve
 }
 
 function normalizeStoredDeviceTemplate(template: LegacyDeviceTemplate): DeviceTemplate {
-  const { attributeLibrary, ...rest } = template;
-  return {
+  const {
+    attributeLibrary,
+    parameterDefinitions: _parameterDefinitions,
+    parameterDefinitionsIntent: _parameterDefinitionsIntent,
+    parameterDefinitionsComplete: _parameterDefinitionsComplete,
+    measurementDefinitions: _measurementDefinitions,
+    ...rest
+  } = template;
+  const normalized: DeviceTemplate = {
     ...rest,
-    categoryLibrary: template.categoryLibrary ?? attributeLibrary ?? "交流设备"
+    categoryLibrary: template.categoryLibrary ?? attributeLibrary ?? "交流设备",
+    params: concreteDeviceDefinitionParams(template.params)
   };
+  return normalized;
 }
 
 /**
@@ -54,16 +64,17 @@ export async function saveDeviceTemplate(
   const tx = db.transaction(["templates", "templateImages"], "readwrite");
 
   // 保存模板（移除图片 base64）
+  const normalizedTemplate = normalizeStoredDeviceTemplate(template as LegacyDeviceTemplate);
   const templateWithoutImages = {
-    ...normalizeStoredDeviceTemplate(template as LegacyDeviceTemplate),
+    ...normalizedTemplate,
     params: {
-      ...template.params,
-      backgroundImage: template.params.backgroundImage?.startsWith("data:")
+      ...normalizedTemplate.params,
+      backgroundImage: normalizedTemplate.params.backgroundImage?.startsWith("data:")
         ? undefined
-        : template.params.backgroundImage,
-      foregroundImage: template.params.foregroundImage?.startsWith("data:")
+        : normalizedTemplate.params.backgroundImage,
+      foregroundImage: normalizedTemplate.params.foregroundImage?.startsWith("data:")
         ? undefined
-        : template.params.foregroundImage
+        : normalizedTemplate.params.foregroundImage
     },
     updatedAt: Date.now()
   };
@@ -95,6 +106,7 @@ export async function getDeviceTemplate(kind: string): Promise<DeviceTemplate | 
   const db = await initDeviceLibraryDB();
   const template = await db.get("templates", kind);
   if (!template) return null;
+  const normalizedTemplate = normalizeStoredDeviceTemplate(template as LegacyDeviceTemplate);
 
   // 加载关联图片
   const images = await db.getAllFromIndex("templateImages", "templateKind", kind);
@@ -104,9 +116,9 @@ export async function getDeviceTemplate(kind: string): Promise<DeviceTemplate | 
   }
 
   return {
-    ...normalizeStoredDeviceTemplate(template as LegacyDeviceTemplate),
+    ...normalizedTemplate,
     params: {
-      ...template.params,
+      ...normalizedTemplate.params,
       ...imageUrls
     }
   };
@@ -300,7 +312,8 @@ export async function saveDeviceTemplates(templates: DeviceTemplate[]): Promise<
   const tx = db.transaction("templates", "readwrite");
   const store = tx.objectStore("templates");
 
-  // 批量 put，不等待每个（事务提交时统一等待）
+  // 模板是完整快照；先清空，避免已删除图元和历史具体图元业务表残留。
+  store.clear();
   for (const template of templates) {
     store.put({
       ...normalizeStoredDeviceTemplate(template as LegacyDeviceTemplate),
