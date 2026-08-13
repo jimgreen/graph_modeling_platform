@@ -70,6 +70,7 @@ import {
   Point,
   templateDerivedComponentLibraryInfo
 } from "./model";
+import { normalizeDeviceLibraryPersistencePayload } from "./appExtracted/appPersistenceLibraryExport";
 import { stateIconDrawingToImage } from "./stateIconDrawing";
 import { apiPath } from "./config";
 
@@ -1296,6 +1297,7 @@ describe("manual bend interaction helpers", () => {
     template,
     draftDefinitions,
     existingOverride,
+    existingOverrides,
     initialDraft,
     createDraftFromTemplate,
     defaultDefinitionsFactory = () => [],
@@ -1307,6 +1309,7 @@ describe("manual bend interaction helpers", () => {
     template: any;
     draftDefinitions: any[];
     existingOverride?: any;
+    existingOverrides?: Record<string, any>;
     initialDraft?: any;
     createDraftFromTemplate?: (item: any) => any;
     defaultDefinitionsFactory?: (...args: any[]) => any[];
@@ -1339,13 +1342,14 @@ describe("manual bend interaction helpers", () => {
       terminalAssociations: template.terminalAssociations ?? ["ac-generator"],
       isContainer: false,
       params: draftDefinitions.map((definition, index) => ({ ...definition, id: `draft-${index}` })),
+      measurementDefinitions: [],
       stateDefinitions: [],
       error: ""
     };
     let savedOverrides: any = {};
-    const deviceDefinitionOverrides = existingOverride
+    const deviceDefinitionOverrides = existingOverrides ?? (existingOverride
       ? { [template.kind]: existingOverride }
-      : {};
+      : {});
     const scope = {
       ALLOW_RESIZE_TRANSFORM_PARAM: "allowResizeTransform",
       TERMINAL_TYPE_LIBRARY_LABELS: { ac: "交流" },
@@ -1375,7 +1379,12 @@ describe("manual bend interaction helpers", () => {
       isReservedDeviceDefinitionParamName: reservedPredicate,
       isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
       libraryTemplates: [template],
-      measurementConfig: { measurementTypes: [], deviceProfiles: [] },
+      measurementConfig: {
+        measurementTypes: Array.from(new Set(
+          (customDeviceDraft.measurementDefinitions ?? []).map((item: any) => item.measurementTypeId)
+        )).map((id) => ({ id })),
+        deviceProfiles: []
+      },
       measurementConfigDraft: undefined,
       measurementConfigDraftRef: undefined,
       normalizeComponentLibraryName: (name: string) => name.trim(),
@@ -1403,7 +1412,9 @@ describe("manual bend interaction helpers", () => {
     return {
       save: () => createSaveBuiltinDeviceDefinitionFromCustomDraft(scope)(template),
       savedOverride: () => savedOverrides[template.kind],
-      savedDefinitionOverride: () => savedOverrides[deviceDefinitionSharedKeyForTemplate(template)]
+      savedDefinitionOverride: () => savedOverrides[deviceDefinitionSharedKeyForTemplate(template)],
+      savedOverrides: () => savedOverrides,
+      draft: () => customDeviceDraft
     };
   };
 
@@ -1548,6 +1559,105 @@ describe("manual bend interaction helpers", () => {
       "j_node",
       "i_p"
     ]);
+  });
+
+  test("persists built-in measurement definitions from the draft instead of the global profile", () => {
+    const parameterDefinitions = [
+      { cnName: "首端有功值", enName: "i_p", valueType: "float", typicalValue: "0" },
+      { cnName: "首端电压值", enName: "i_v", valueType: "float", typicalValue: "0" },
+      { cnName: "首端电流值", enName: "i_i", valueType: "float", typicalValue: "0" }
+    ];
+    const measurementDefinitions = [
+      { measurementTypeId: "activePower", associatedField: "i_p" },
+      { measurementTypeId: "voltage", associatedField: "i_v" },
+      { measurementTypeId: "current", associatedField: "i_i" }
+    ];
+    const template = {
+      kind: "dcdc-converter",
+      label: "DCDC变流器",
+      categoryLibrary: "直流设备",
+      params: { component_type: "DCDCConverter" },
+      size: { width: 104, height: 64 },
+      terminalType: "dc",
+      terminalCount: 2,
+      terminalTypes: ["dc", "dc"],
+      terminalLabels: ["直流端1", "直流端2"],
+      terminalAnchors: [{ x: -0.5, y: 0 }, { x: 0.5, y: 0 }],
+      parameterDefinitions,
+      measurementDefinitions
+    };
+    const initialDraft = createCustomDeviceDraftFromTemplate(template as any);
+    const harness = createBuiltinDeviceDefinitionSaveHarness({
+      template,
+      draftDefinitions: initialDraft.params,
+      initialDraft,
+      createDraftFromTemplate: createCustomDeviceDraftFromTemplate,
+      defaultDefinitionsFactory: () => parameterDefinitions
+    });
+
+    expect(harness.save(), harness.draft().error).toBe(true);
+    expect(harness.savedDefinitionOverride().measurementDefinitions).toEqual(measurementDefinitions);
+  });
+
+  test("round-trips reordered DCDC parameters and shared measurements through persistence reload", () => {
+    const horizontal = DEVICE_LIBRARY.find((item) => item.kind === "dcdc-converter")!;
+    const vertical = DEVICE_LIBRARY.find((item) => item.kind === "dcdc-converter-vertical")!;
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(horizontal);
+    const originalDefinitions = getTemplateParameterDefinitions(horizontal);
+    const measurementDefinitions = horizontal.measurementDefinitions ?? [];
+    const effectiveHorizontal = applyDeviceTemplateDefinitionOverride(horizontal, {
+      kind: horizontal.kind,
+      parameterDefinitions: originalDefinitions,
+      measurementDefinitions
+    });
+    const initialDraft = createCustomDeviceDraftFromTemplate(effectiveHorizontal);
+    const reorderedDefinitions = [
+      initialDraft.params[0],
+      initialDraft.params[1],
+      initialDraft.params[2],
+      initialDraft.params[3],
+      initialDraft.params[5],
+      initialDraft.params[4],
+      ...initialDraft.params.slice(6)
+    ];
+    const harness = createBuiltinDeviceDefinitionSaveHarness({
+      template: effectiveHorizontal,
+      draftDefinitions: reorderedDefinitions,
+      initialDraft,
+      createDraftFromTemplate: createCustomDeviceDraftFromTemplate,
+      defaultDefinitionsFactory: (terminalTypes: any, options: any) => customDefaultDefinitions(terminalTypes, options),
+      normalizeDefinition: normalizeDefinitionRowEnumFields,
+      normalizeAssociations: normalizeContainerTerminalAssociations,
+      reservedPredicate: isReservedDeviceDefinitionParamName
+    });
+
+    expect(harness.save(), harness.draft().error).toBe(true);
+    const savedNames = harness.savedDefinitionOverride().parameterDefinitions.map((definition: any) => definition.enName);
+    const frontendPayload = normalizeDeviceLibraryPersistencePayload({
+      deviceDefinitionOverrides: harness.savedOverrides()
+    });
+    const refreshedOverrides = normalizeDeviceLibraryPersistencePayload(
+      JSON.parse(JSON.stringify(frontendPayload))
+    ).deviceDefinitionOverrides;
+    const reopen = (template: any) => createCustomDeviceDraftFromTemplate(
+      applyDeviceTemplateDefinitionOverride(
+        template,
+        deviceDefinitionOverrideForTemplate(template, refreshedOverrides, DEVICE_LIBRARY)
+      )
+    );
+    const horizontalDraft = reopen(horizontal);
+    const verticalDraft = reopen(vertical);
+
+    expect(savedNames.indexOf(reorderedDefinitions[4].enName)).toBeLessThan(savedNames.indexOf(reorderedDefinitions[5].enName));
+    expect(refreshedOverrides[sharedKey].parameterDefinitions.map((definition: { enName: string }) => definition.enName)).toEqual(savedNames);
+    expect(horizontalDraft.params.map((definition) => definition.enName)).toEqual(savedNames);
+    expect(verticalDraft.params.map((definition) => definition.enName)).toEqual(savedNames);
+    expect(horizontalDraft.measurementDefinitions).toEqual(measurementDefinitions);
+    expect(verticalDraft.measurementDefinitions).toEqual(measurementDefinitions);
+    expect(refreshedOverrides[horizontal.kind].parameterDefinitions).toBeUndefined();
+    expect(refreshedOverrides[horizontal.kind].measurementDefinitions).toBeUndefined();
+    expect(refreshedOverrides[vertical.kind]?.parameterDefinitions).toBeUndefined();
+    expect(refreshedOverrides[vertical.kind]?.measurementDefinitions).toBeUndefined();
   });
 
   test("removes legacy copied parameter definitions after they are restored to built-in defaults", () => {

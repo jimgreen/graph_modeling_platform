@@ -1784,6 +1784,7 @@ export type CustomDeviceDraft = {
   terminalAssociations: ContainerTerminalAssociationValue[];
   isContainer: boolean;
   params: CustomParamDraft[];
+  measurementDefinitions: DeviceMeasurementProfileItem[];
   stateDefinitions: DeviceDefinitionStateDraftRow[];
   error: string;
 };
