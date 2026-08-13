@@ -1785,6 +1785,7 @@ export type CustomDeviceDraft = {
   params: CustomParamDraft[];
   measurementDefinitions: DeviceMeasurementProfileItem[];
   stateDefinitions: DeviceDefinitionStateDraftRow[];
+  measurementDefinitions?: DeviceMeasurementProfileItem[];
   error: string;
 };
 

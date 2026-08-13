@@ -846,6 +846,59 @@ export function renderAppView(__appScope: Record<string, any>) {
       showGlobalMessage(error instanceof Error ? error.message : "加载预定义模板失败。");
     }
   };
+  // 撤销 E文件接口定义所有修改：将 E 文件接口定义恢复到原始（默认）状态，
+  // 清除类/字段的导出名称、导出启用、字段顺序及模板导入字段等全部自定义，
+  // 与「加载预定义模板」前的恢复基线逻辑一致（仅作用于 E 接口定义域）。
+  const restoreEDeviceInterfaceOriginalDefinition = async () => {
+    const { captureUserCustomizationSnapshot, persistUserCustomizationSnapshot, applyUserCustomizationSnapshotToState, reconcileOpenModelAfterCustomizationChange, referencedUserAssetIds } = __appScope;
+    if (typeof captureUserCustomizationSnapshot !== "function" || typeof persistUserCustomizationSnapshot !== "function") {
+      showGlobalMessage("恢复E文件接口定义原始状态失败：用户自定义快照能力不可用。");
+      return;
+    }
+    // 先提交当前输入框内容，避免恢复前最后一个字段的修改丢失
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement && activeElement.closest(".e-device-interface-dialog")) {
+      activeElement.blur();
+    }
+    try {
+      const current = await captureUserCustomizationSnapshot(true);
+      const inventory = buildUserCustomizationInventory(current, DEVICE_LIBRARY, referencedUserAssetIds ?? new Set());
+      const itemKeys = inventory.items
+        .filter((item) => item.domain === "e-interface-definitions")
+        .map((item) => item.key);
+      const target = restoreUserCustomizationItems(current, itemKeys);
+      await persistUserCustomizationSnapshot(target, {
+        replaceAssets: true,
+        protectedAssetIds: referencedUserAssetIds ?? new Set()
+      });
+      if (typeof applyUserCustomizationSnapshotToState === "function") {
+        applyUserCustomizationSnapshotToState(target);
+      }
+      if (typeof reconcileOpenModelAfterCustomizationChange === "function") {
+        reconcileOpenModelAfterCustomizationChange(current, target);
+      }
+      // 模板导入生成的字段定义/表号映射不属于自定义快照，需显式清空
+      setEDeviceDefinitionTemplateFields({});
+      setEDeviceDefinitionTableIds({});
+      // 重置对话框基线，避免关闭时的「放弃」或未保存提示恢复到旧的自定义状态
+      __appScope.setEDeviceInterfaceDefinitionBaseline?.(null);
+      __appScope.setEDeviceInterfaceSelectedClassBaseline?.(null);
+      // 退出模板只读模式并清理导入结果展示
+      setEDeviceInterfaceLoadedTemplateName("自定义");
+      setEDeviceInterfaceReadonlyMode(false);
+      setTemplateImportResult(null);
+      setShowImportResultDialog(false);
+      try {
+        localStorage.setItem("eDeviceInterfaceReadonlyMode", "false");
+        localStorage.setItem("eDeviceInterfaceLoadedTemplateName", "自定义");
+        localStorage.removeItem("eDeviceTemplateImportResult");
+      } catch { /* ignore */ }
+      writeOperationLog?.("已恢复E文件接口定义为原始定义");
+      showGlobalMessage("已恢复E文件接口定义原始状态。");
+    } catch (error) {
+      showGlobalMessage(error instanceof Error ? error.message : "恢复E文件接口定义原始状态失败。");
+    }
+  };
   const eDeviceInterfaceSaveMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const eDeviceInterfaceSaveRef = useRef<(options?: { closeAfterSave?: boolean }) => void>(() => undefined);
   const eDeviceInterfaceExportFileRef = useRef<() => void>(() => undefined);
@@ -4921,6 +4974,10 @@ export function renderAppView(__appScope: Record<string, any>) {
                   </div>
                 )}
               </div>
+              <button type="button" onClick={() => void restoreEDeviceInterfaceOriginalDefinition()}>
+                <RotateCcw size={14} aria-hidden="true" />
+                <span>原始定义</span>
+              </button>
             </div>
             <div className="e-device-interface-layout">
               <aside className="e-device-interface-class-list" aria-label="设备类树" role="tree">
