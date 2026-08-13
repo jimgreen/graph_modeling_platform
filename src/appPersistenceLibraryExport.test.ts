@@ -186,6 +186,24 @@ describe("graph template library filtering", () => {
     });
   });
 
+  test("preserves an explicitly emptied definition table across persistence normalization", () => {
+    const normalized = normalizeDeviceDefinitionOverrides({
+      "dcdc-converter": {
+        kind: "dcdc-converter",
+        parameterDefinitions: [],
+        measurementDefinitions: [],
+        updatedAt: "2026-08-13T00:00:00.000Z"
+      }
+    });
+
+    expect(normalized["shared:DCDCConverter"]).toMatchObject({
+      kind: "shared:DCDCConverter",
+      parameterDefinitions: [],
+      measurementDefinitions: []
+    });
+    expect(normalized["dcdc-converter"]).toBeUndefined();
+  });
+
   test("keeps imported device and template scopes isolated from current library state", () => {
     const current = {
       customDeviceTemplates: [

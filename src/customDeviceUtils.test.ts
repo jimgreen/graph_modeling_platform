@@ -7,6 +7,9 @@ import {
   customDefaultDefinitions,
   deviceDefinitionOverrideForTemplate,
   deviceDefinitionKeyForTemplate,
+  deviceDefinitionSharedKeyForTemplate,
+  deviceTemplatesShareParameterDefinitions,
+  normalizeSharedDeviceDefinitionOverrides,
   resolveTemplateComponentLibrary,
   templateDerivedComponentLibraryInfo
 } from "./customDeviceUtils";
@@ -80,6 +83,96 @@ describe("electric generation device library classification", () => {
       derivedComponentLibrary: "ACWindGen"
     });
     expect(createCustomDeviceDraftFromTemplate(appliedTemplate).params.map((row) => row.enName)).toContain("wind_turbine_model");
+  });
+
+  test("keeps base and derived parameter-definition identities separate while sharing generated directions", () => {
+    const base = DEVICE_LIBRARY.find((item) => item.kind === "ac-source")!;
+    const derived = DEVICE_LIBRARY.find((item) => item.kind === "ac-wind-source")!;
+    const derivedVertical = { ...derived, kind: "ac-wind-source-vertical" } as typeof derived;
+
+    expect(deviceTemplatesShareParameterDefinitions(base, derived)).toBe(false);
+    expect(deviceTemplatesShareParameterDefinitions(derived, derivedVertical)).toBe(true);
+    expect(deviceDefinitionSharedKeyForTemplate(base)).not.toBe(deviceDefinitionSharedKeyForTemplate(derived));
+    expect(deviceDefinitionSharedKeyForTemplate(derived)).toBe(deviceDefinitionSharedKeyForTemplate(derivedVertical));
+  });
+
+  test("normalizes base and derived definition tables independently", () => {
+    const base = DEVICE_LIBRARY.find((item) => item.kind === "ac-source")!;
+    const derived = DEVICE_LIBRARY.find((item) => item.kind === "ac-wind-source")!;
+    const baseDefinitions = [
+      { cnName: "基类字段", enName: "base_only", valueType: "float" as const, typicalValue: "1" }
+    ];
+    const derivedDefinitions = [
+      { cnName: "派生字段", enName: "derived_only", valueType: "float" as const, typicalValue: "2" }
+    ];
+    const normalized = normalizeSharedDeviceDefinitionOverrides({
+      [base.kind]: {
+        kind: base.kind,
+        parameterDefinitions: baseDefinitions,
+        updatedAt: "2026-08-13T00:00:00.000Z"
+      },
+      [derived.kind]: {
+        kind: derived.kind,
+        parameterDefinitions: derivedDefinitions,
+        updatedAt: "2026-08-13T00:01:00.000Z"
+      }
+    }, DEVICE_LIBRARY);
+
+    expect(deviceDefinitionOverrideForTemplate(base, normalized)?.parameterDefinitions).toEqual(baseDefinitions);
+    expect(deviceDefinitionOverrideForTemplate(derived, normalized)?.parameterDefinitions).toEqual(derivedDefinitions);
+  });
+
+  test("does not merge distinct device classes that only share an E section", () => {
+    const capacitor = DEVICE_LIBRARY.find((item) => item.kind === "ac-capacitor")!;
+    const reactor = DEVICE_LIBRARY.find((item) => item.kind === "ac-reactor")!;
+
+    expect(resolveTemplateComponentLibrary(capacitor)).toBe("ACCompensator");
+    expect(resolveTemplateComponentLibrary(reactor)).toBe("ACCompensator");
+    expect(deviceTemplatesShareParameterDefinitions(capacitor, reactor)).toBe(false);
+  });
+
+  test("migrates the newest split DCDC definitions to one shared table and preserves variant visuals", () => {
+    const horizontal = DEVICE_LIBRARY.find((item) => item.kind === "dcdc-converter")!;
+    const vertical = DEVICE_LIBRARY.find((item) => item.kind === "dcdc-converter-vertical")!;
+    const horizontalDefinitions = [
+      { cnName: "首端有功", enName: "i_p", valueType: "float" as const, typicalValue: "0" }
+    ];
+    const verticalDefinitions = [
+      { cnName: "旧有功", enName: "p", valueType: "float" as const, typicalValue: "0" }
+    ];
+    const normalized = normalizeSharedDeviceDefinitionOverrides({
+      [horizontal.kind]: {
+        kind: horizontal.kind,
+        params: { backgroundImage: "horizontal.svg", i_p: "0" },
+        size: { width: 150, height: 88 },
+        parameterDefinitions: horizontalDefinitions,
+        measurementDefinitions: [{ measurementTypeId: "activePower", associatedField: "i_p" }],
+        updatedAt: "2026-08-12T16:49:15.722Z"
+      },
+      [vertical.kind]: {
+        kind: vertical.kind,
+        params: { backgroundImage: "vertical.svg", p: "0" },
+        size: { width: 88, height: 150 },
+        parameterDefinitions: verticalDefinitions,
+        measurementDefinitions: [{ measurementTypeId: "activePower", associatedField: "p" }],
+        updatedAt: "2026-08-12T16:48:53.901Z"
+      }
+    }, DEVICE_LIBRARY);
+    const horizontalOverride = deviceDefinitionOverrideForTemplate(horizontal, normalized)!;
+    const verticalOverride = deviceDefinitionOverrideForTemplate(vertical, normalized)!;
+
+    expect(horizontalOverride.parameterDefinitions).toEqual(horizontalDefinitions);
+    expect(verticalOverride.parameterDefinitions).toEqual(horizontalDefinitions);
+    expect(horizontalOverride.measurementDefinitions).toEqual([
+      { measurementTypeId: "activePower", associatedField: "i_p" }
+    ]);
+    expect(verticalOverride.measurementDefinitions).toEqual(horizontalOverride.measurementDefinitions);
+    expect(horizontalOverride.params?.backgroundImage).toBe("horizontal.svg");
+    expect(verticalOverride.params?.backgroundImage).toBe("vertical.svg");
+    expect(horizontalOverride.size).toEqual({ width: 150, height: 88 });
+    expect(verticalOverride.size).toEqual({ width: 88, height: 150 });
+    expect(normalized[horizontal.kind].parameterDefinitions).toBeUndefined();
+    expect(normalized[vertical.kind].measurementDefinitions).toBeUndefined();
   });
 
   test("defaults dev_type to the current component english name", () => {

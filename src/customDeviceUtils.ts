@@ -11,7 +11,9 @@ import type {
 } from "./model";
 import {
   ALLOW_RESIZE_TRANSFORM_PARAM,
+  DEVICE_LIBRARY,
   buildDefaultDeviceParameterDefinitions,
+  baseDeviceKind,
   CUSTOM_PARAM_DEFINITIONS_KEY,
   E_SECTION_COLUMNS,
   TERMINAL_TYPE_LIBRARY_LABELS,
@@ -69,18 +71,193 @@ export function deviceDefinitionKeyForTemplate(template: DeviceTemplate) {
   return normalizeComponentLibraryName(resolveTemplateComponentLibrary(template)) || template.kind;
 }
 
+const SHARED_DEFINITION_METADATA_PARAM_NAMES = new Set([
+  "component_type",
+  "derived_from_component_type",
+  "derived_component_type",
+  "derived_component_library_label",
+  "is_derived_component_library"
+]);
+
+function deviceDefinitionSharedIdentityForTemplate(template: DeviceTemplate) {
+  const baseKind = baseDeviceKind(template.kind);
+  if (modelTemplateDerivedComponentLibraryInfo(template)) {
+    return baseKind;
+  }
+  const componentLibrary = normalizeComponentLibraryName(resolveTemplateComponentLibrary(template));
+  const devType = String(template.params?.dev_type ?? "").trim();
+  if (!componentLibrary || componentLibrary.startsWith("Static")) {
+    return baseKind;
+  }
+  return devType ? `${componentLibrary}::${devType}` : componentLibrary;
+}
+
+export function deviceDefinitionSharedKeyForTemplate(template: DeviceTemplate) {
+  return `shared:${deviceDefinitionSharedIdentityForTemplate(template)}`;
+}
+
+export function deviceTemplatesShareParameterDefinitions(
+  first: Pick<DeviceTemplate, "kind" | "params"> & Partial<DeviceTemplate>,
+  second: Pick<DeviceTemplate, "kind" | "params"> & Partial<DeviceTemplate>
+) {
+  return deviceDefinitionSharedIdentityForTemplate(first as DeviceTemplate) ===
+    deviceDefinitionSharedIdentityForTemplate(second as DeviceTemplate);
+}
+
+function overrideTimestamp(override: DeviceTemplateDefinitionOverride | undefined) {
+  const timestamp = Date.parse(String(override?.updatedAt ?? ""));
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function sharedDefinitionParams(override: DeviceTemplateDefinitionOverride | undefined) {
+  if (!override?.params) return {};
+  const definitionNames = new Set((override.parameterDefinitions ?? []).map((definition) => definition.enName));
+  return Object.fromEntries(Object.entries(override.params).filter(([key]) => (
+    definitionNames.has(key) || SHARED_DEFINITION_METADATA_PARAM_NAMES.has(key)
+  )));
+}
+
+function visualOnlyOverride(override: DeviceTemplateDefinitionOverride | undefined) {
+  if (!override) return undefined;
+  const sharedParams = sharedDefinitionParams(override);
+  const next: DeviceTemplateDefinitionOverride = {
+    ...override,
+    params: Object.fromEntries(Object.entries(override.params ?? {}).filter(([key]) => (
+      !Object.prototype.hasOwnProperty.call(sharedParams, key)
+    )))
+  };
+  delete next.parameterDefinitions;
+  delete next.measurementDefinitions;
+  return next;
+}
+
+function sharedDefinitionSourceForTemplate(
+  template: DeviceTemplate,
+  overrides: Record<string, DeviceTemplateDefinitionOverride>
+) {
+  const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
+  const legacySharedKey = deviceDefinitionSharedIdentityForTemplate(template);
+  const derived = Boolean(modelTemplateDerivedComponentLibraryInfo(template));
+  const peerKinds = DEVICE_LIBRARY
+    .filter((candidate) => deviceDefinitionSharedKeyForTemplate(candidate) === sharedKey)
+    .map((candidate) => candidate.kind);
+  const candidateKeys = Array.from(new Set([
+    sharedKey,
+    legacySharedKey,
+    ...(derived ? [] : [deviceDefinitionKeyForTemplate(template)]),
+    template.kind,
+    baseDeviceKind(template.kind),
+    ...peerKinds
+  ]));
+  const candidates = candidateKeys.map((key) => overrides[key]).filter(Boolean);
+  return {
+    parameterSource: candidates
+      .filter((override) => Array.isArray(override.parameterDefinitions))
+      .sort((left, right) => overrideTimestamp(right) - overrideTimestamp(left))[0],
+    measurementSource: candidates
+      .filter((override) => Array.isArray(override.measurementDefinitions))
+      .sort((left, right) => overrideTimestamp(right) - overrideTimestamp(left))[0]
+  };
+}
+
 export function deviceDefinitionOverrideForTemplate(
   template: DeviceTemplate,
   overrides: Record<string, DeviceTemplateDefinitionOverride>
 ) {
-  const templateOverride = overrides[template.kind];
-  if (templateOverride) {
-    return templateOverride;
+  const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
+  const { parameterSource, measurementSource } = sharedDefinitionSourceForTemplate(template, overrides);
+  const sharedOverride = parameterSource ?? measurementSource ?? overrides[sharedKey];
+  const exactOverride = overrides[template.kind];
+  const visualOverride = visualOnlyOverride(exactOverride);
+  if (!sharedOverride && !visualOverride) return undefined;
+  return {
+    ...(visualOverride ?? {}),
+    kind: template.kind,
+    params: {
+      ...sharedDefinitionParams(parameterSource),
+      ...sharedDefinitionParams(measurementSource),
+      ...(visualOverride?.params ?? {})
+    },
+    ...(Array.isArray(parameterSource?.parameterDefinitions)
+      ? { parameterDefinitions: parameterSource.parameterDefinitions.map((definition) => ({ ...definition })) }
+      : {}),
+    ...(Array.isArray(measurementSource?.measurementDefinitions)
+      ? { measurementDefinitions: cloneDeviceMeasurementDefinitions(measurementSource.measurementDefinitions) }
+      : {})
+  };
+}
+
+export function normalizeSharedDeviceDefinitionOverrides(
+  overrides: Record<string, DeviceTemplateDefinitionOverride>,
+  templates: readonly DeviceTemplate[]
+) {
+  const next = { ...overrides };
+  const templatesBySharedIdentity = new Map<string, DeviceTemplate[]>();
+  for (const template of templates) {
+    const identity = deviceDefinitionSharedIdentityForTemplate(template);
+    templatesBySharedIdentity.set(identity, [...(templatesBySharedIdentity.get(identity) ?? []), template]);
   }
-  if (modelTemplateDerivedComponentLibraryInfo(template)) {
-    return undefined;
+  for (const [sharedIdentity, peers] of templatesBySharedIdentity) {
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(peers[0]);
+    const candidateKeys = Array.from(new Set([
+      sharedKey,
+      sharedIdentity,
+      ...peers.flatMap((template) => modelTemplateDerivedComponentLibraryInfo(template)
+        ? []
+        : [deviceDefinitionKeyForTemplate(template)]),
+      ...peers.map((template) => template.kind)
+    ]));
+    const candidates = candidateKeys.map((key) => next[key]).filter(Boolean);
+    const parameterSource = candidates
+      .filter((override) => Array.isArray(override.parameterDefinitions))
+      .sort((left, right) => overrideTimestamp(right) - overrideTimestamp(left))[0];
+    const measurementSource = candidates
+      .filter((override) => Array.isArray(override.measurementDefinitions))
+      .sort((left, right) => overrideTimestamp(right) - overrideTimestamp(left))[0];
+    const sharedSource = parameterSource ?? measurementSource;
+    if (!sharedSource) continue;
+    const currentShared = next[sharedKey];
+    next[sharedKey] = {
+      kind: sharedKey,
+      params: {
+        ...sharedDefinitionParams(currentShared),
+        ...sharedDefinitionParams(parameterSource),
+        ...sharedDefinitionParams(measurementSource)
+      },
+      ...(Array.isArray(parameterSource?.parameterDefinitions)
+        ? { parameterDefinitions: parameterSource.parameterDefinitions.map((definition) => ({ ...definition })) }
+        : {}),
+      ...(Array.isArray(measurementSource?.measurementDefinitions)
+        ? { measurementDefinitions: cloneDeviceMeasurementDefinitions(measurementSource.measurementDefinitions) }
+        : {}),
+      updatedAt: overrideTimestamp(parameterSource) >= overrideTimestamp(measurementSource)
+        ? parameterSource?.updatedAt
+        : measurementSource?.updatedAt
+    };
+    for (const peer of peers) {
+      if (peer.kind === sharedKey || !next[peer.kind]) continue;
+      const visual = visualOnlyOverride(next[peer.kind]);
+      const hasVisualContent = visual && Object.keys(visual).some((key) => ![
+        "kind",
+        "updatedAt",
+        "params",
+        "isDerivedComponentLibrary",
+        "derivedFromComponentLibrary",
+        "derivedComponentLibrary",
+        "derivedComponentLibraryLabel"
+      ].includes(key)) ||
+        Boolean(visual && Object.keys(visual.params ?? {}).length > 0);
+      if (hasVisualContent) {
+        next[peer.kind] = visual!;
+      } else {
+        delete next[peer.kind];
+      }
+    }
+    if (sharedIdentity !== sharedKey && !peers.some((peer) => peer.kind === sharedIdentity)) {
+      delete next[sharedIdentity];
+    }
   }
-  return overrides[deviceDefinitionKeyForTemplate(template)];
+  return next;
 }
 
 export const isReservedDeviceDefinitionParamName = (enName: string) =>

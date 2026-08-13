@@ -51,6 +51,7 @@ import {
   createCustomDeviceDraftFromTemplate,
   customDefaultDefinitions,
   deviceDefinitionKeyForTemplate,
+  deviceDefinitionSharedKeyForTemplate,
   deviceDefinitionOverrideForTemplate,
   isDerivedComponentBaseParamName,
   isReservedDeviceDefinitionParamName,
@@ -582,10 +583,11 @@ describe("manual bend interaction helpers", () => {
 
     createSaveDeviceDefinitionDraft(scope)();
 
-    expect(nextOverrides).toHaveProperty("ac-hydro-source");
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(scope.selectedDefinitionTemplate as any);
+    expect(nextOverrides).toHaveProperty(sharedKey);
     expect(nextOverrides).not.toHaveProperty("ACGenerator");
-    expect(nextOverrides["ac-hydro-source"]).toMatchObject({
-      kind: "ac-hydro-source",
+    expect(nextOverrides[sharedKey]).toMatchObject({
+      kind: sharedKey,
       params: {
         component_type: "ACGenerator",
         derived_component_type: "ACHydroGen",
@@ -677,11 +679,12 @@ describe("manual bend interaction helpers", () => {
 
     createSaveDeviceDefinitionDraft(scope)();
 
-    expect(nextOverrides["ac-hydro-source"].parameterDefinitions.map((row: any) => row.enName)).toEqual([
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(scope.selectedDefinitionTemplate as any);
+    expect(nextOverrides[sharedKey].parameterDefinitions.map((row: any) => row.enName)).toEqual([
       "hydroUnitModel",
       "ownerName"
     ]);
-    expect(nextOverrides["ac-hydro-source"].params).toMatchObject({
+    expect(nextOverrides[sharedKey].params).toMatchObject({
       hydroUnitModel: "300 MW混流式机组",
       ownerName: "示例业主"
     });
@@ -1270,7 +1273,8 @@ describe("manual bend interaction helpers", () => {
     };
     return {
       save: () => createSaveBuiltinDeviceDefinitionFromCustomDraft(scope)(template),
-      savedOverride: () => savedOverrides[template.kind]
+      savedOverride: () => savedOverrides[template.kind],
+      savedDefinitionOverride: () => savedOverrides[deviceDefinitionSharedKeyForTemplate(template)]
     };
   };
 
@@ -1358,7 +1362,7 @@ describe("manual bend interaction helpers", () => {
     });
 
     expect(harness.save()).toBe(true);
-    expect(harness.savedOverride().parameterDefinitions).toEqual([changedDefinition]);
+    expect(harness.savedDefinitionOverride().parameterDefinitions).toEqual([changedDefinition]);
   });
 
   test("removes legacy copied parameter definitions after they are restored to built-in defaults", () => {
@@ -1487,7 +1491,9 @@ describe("manual bend interaction helpers", () => {
       kind: "ac-diesel-source",
       isDerivedComponentLibrary: true,
       derivedFromComponentLibrary: "ACGenerator",
-      derivedComponentLibrary: "UserDieselGen",
+      derivedComponentLibrary: "UserDieselGen"
+    });
+    expect(savedOverrides[deviceDefinitionSharedKeyForTemplate(template as any)]).toMatchObject({
       params: {
         component_type: "ACGenerator",
         derived_from_component_type: "ACGenerator",
