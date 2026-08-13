@@ -1978,7 +1978,8 @@ export type TopologyValidationErrorType =
   | "voltage-limit-out-of-range"
   | "voltage-setpoint-deviation"
   | "duplicate-device-idx"
-  | "duplicate-device-name";
+  | "duplicate-device-name"
+  | "voltage-level-out-of-model-range";
 
 export type TopologyValidationError = {
   id: string;
@@ -2002,7 +2003,8 @@ export function isBlockingTopologyValidationError(error: Pick<TopologyValidation
     error.type === "device-enum-invalid" ||
     error.type === "device-setpoint-out-of-range" ||
     error.type === "hydrogen-storage-parameter-invalid" ||
-    error.type === "hydrogen-coupling-parameter-invalid"
+    error.type === "hydrogen-coupling-parameter-invalid" ||
+    error.type === "voltage-level-out-of-model-range"
   );
 }
 

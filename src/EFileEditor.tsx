@@ -63,6 +63,12 @@ const REFERENCE_FIELD_MAP: Record<string, string> = {
   dcln_id: "DCBranch",
   bulk_id: "dms_def_bulk",
   source_id: "dms_def_source",
+  // 配网实时库引用：feeder_id → dms_def_feeder；node_id/inode_id/znode_id → dms_def_node
+  // （dms_def_node 元件库映射为 ACNode，内部 section 为 ACNode）
+  feeder_id: "dms_def_feeder",
+  node_id: "ACNode",
+  inode_id: "ACNode",
+  znode_id: "ACNode",
 };
 
 // 拓扑相关字段（只读，不可编辑）
@@ -73,6 +79,23 @@ const TOPOLOGY_READONLY_FIELDS = new Set([
   "itrfm", "source_node", "target_node",
 ]);
 
+/**
+ * 拓扑结构字段判定：编辑模式下禁止修改的字段。
+ * 编辑模式下不允许修改模型的拓扑结构，因此以下字段一律只读：
+ * 1. 行标识字段：`id`（行主标识）、`idx`（行序号）；
+ * 2. 外键/引用字段：指向其他表 `id`（或 idx）的字段，包括
+ *    - REFERENCE_FIELD_MAP 中已定义的引用字段（节点号/厂站引用/模板引用）；
+ *    - E_REFERENCE_FIELD_TABLE_IDS 中定义的实时库引用 id 字段；
+ *    - 遵循 `xxx_id` 命名约定的通用外键字段。
+ */
+export const isTopologyField = (col: string): boolean =>
+  col === "id" ||
+  col === "idx" ||
+  REFERENCE_FIELD_MAP[col] !== undefined ||
+  E_REFERENCE_FIELD_TABLE_IDS[col] !== undefined ||
+  TOPOLOGY_READONLY_FIELDS.has(col) ||
+  col.endsWith("_id");
+
 export function EFileEditor({ open, onClose, records, onSave, fieldCnNames }: EFileEditorProps) {
   const [editMode, setEditMode] = useState(false);
   const [activeSection, setActiveSection] = useState(0);
@@ -81,6 +104,9 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames }: EF
   const [colWidths, setColWidths] = useState<Record<string, number>>({});
   const [copiedCell, setCopiedCell] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState(false);
+  // 点击只读拓扑字段时的提示（禁止修改提示）
+  const [protectedToast, setProtectedToast] = useState<string | null>(null);
+  const protectedToastTimer = useRef<number | null>(null);
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   const [highlightedRow, setHighlightedRow] = useState<string | null>(null);
   const resizeRef = useRef<{ colKey: string; startX: number; startWidth: number } | null>(null);
@@ -215,6 +241,8 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames }: EF
 
   const handleCellEdit = (recordId: string, column: string, value: string) => {
     if (!editMode) return;
+    // 拓扑结构字段（id/idx/外键引用）禁止修改，输入一律忽略
+    if (isTopologyField(column)) return;
     setEditedRecords((prev) =>
       prev.map((r) =>
         r.id === recordId
@@ -243,6 +271,14 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames }: EF
     const templateCn = fieldCnNames?.[sectionKey]?.[col];
     if (templateCn) return templateCn;
     return PARAM_LABELS[col] || col;
+  };
+
+  // 用户尝试编辑拓扑结构字段时：禁止修改并提示
+  const showProtectedToast = (col: string) => {
+    if (protectedToastTimer.current) window.clearTimeout(protectedToastTimer.current);
+    const cnName = getFieldCnName(currentSection?.key ?? "", col);
+    setProtectedToast(`「${cnName}」为模型拓扑字段（行标识/外键引用），编辑模式下不可修改`);
+    protectedToastTimer.current = window.setTimeout(() => setProtectedToast(null), 2500);
   };
 
   return (
@@ -285,6 +321,9 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames }: EF
         )}
         {savedMessage && (
           <div className="e-file-editor-saved-toast">已保存</div>
+        )}
+        {protectedToast && (
+          <div className="e-file-editor-protected-toast">{protectedToast}</div>
         )}
         {tooltip && (
           <div
@@ -371,8 +410,12 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames }: EF
                               {editMode && !record.readonly ? (
                                 <>
                                   <span className="e-file-editor-cell-text e-file-editor-cell-ghost">{displayValue}</span>
-                                  {TOPOLOGY_READONLY_FIELDS.has(col) ? (
-                                    <span className="e-file-editor-cell-input e-file-editor-cell-readonly">{value}</span>
+                                  {isTopologyField(col) ? (
+                                    <span
+                                      className="e-file-editor-cell-input e-file-editor-cell-readonly"
+                                      title="拓扑结构字段（行标识/外键引用），编辑模式下不可修改"
+                                      onClick={() => showProtectedToast(col)}
+                                    >{value}</span>
                                   ) : (
                                     <input
                                       type="text"

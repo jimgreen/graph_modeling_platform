@@ -615,6 +615,29 @@ function getRawEParamValue(
   if (key === "ist") {
     return "1";
   }
+  // 配网实时库引用字段：feeder_id 取馈线序号（单行馈线 idx=1）；
+  // node_id/inode_id/znode_id 取对应端子拓扑节点号，供 applyEReferenceIdValues 换算为目标表计算 id
+  if (key === "feeder_id") {
+    return "1";
+  }
+  if (key === "node_id" || key === "inode_id" || key === "znode_id") {
+    const nodeKeys = key === "inode_id"
+      ? ["i_node", "ind"]
+      : key === "znode_id"
+        ? ["j_node", "znd"]
+        : ["node", "i_node", "ind"];
+    for (const nodeKey of nodeKeys) {
+      const topologyNodeNumber = topologyNodeNumberForEField(node, nodeKey);
+      if (topologyNodeNumber) {
+        return topologyNodeNumber;
+      }
+      const raw = numericNodeReference(node.params[nodeKey]);
+      if (raw) {
+        return raw;
+      }
+    }
+    return "";
+  }
   if (E_NODE_REFERENCE_COLUMNS.has(key)) {
     if (key === "neutral_node" && isThreeWindingTransformer(node) && node.kind !== "ac-three-winding-transformer-neutral") {
       return "0";
@@ -1466,6 +1489,11 @@ function applyEInterfaceDefinitionToRecord(
       params[field.exportName] = value;
     }
   }
+  // 保留内部行号 idx（模板字段可能不含 idx 列）：applyEReferenceIdValues 依赖它
+  // 建立 section 的 idx→行号映射（如 dms_def_node 的节点号），编辑器跳转也按 idx 排序
+  if (record.params.idx && !params.idx) {
+    params.idx = record.params.idx;
+  }
   return {
     ...record,
     params,
@@ -2256,7 +2284,11 @@ export const E_REFERENCE_FIELD_TABLE_IDS: Record<string, string> = {
   area_id: "00404",        // dms_def_bulk.area_id → subcontrolarea
   bulk_id: "12001",        // dms_def_feeder/dms_def_source.bulk_id → dms_def_bulk
   source_id: "12004",      // dms_def_feeder.source_id → dms_def_source
-  trfm_id: "12012"         // dms_def_trwd.trfm_id → dms_def_trfm
+  trfm_id: "12012",        // dms_def_trwd.trfm_id → dms_def_trfm
+  feeder_id: "12002",      // 配网设备.feeder_id → dms_def_feeder
+  node_id: "12006",        // 配网设备/端点/绕组.node_id → dms_def_node
+  inode_id: "12006",       // 配网线段/开关.inode_id → dms_def_node
+  znode_id: "12006"        // 配网线段/开关.znode_id → dms_def_node
 };
 
 /**
@@ -2350,6 +2382,30 @@ export function applyEReferenceIdValues(
       const rowByIdx = sectionRowByIdx.get("taptype");
       if (taptyIdx && rowByIdx) {
         const row = rowByIdx.get(taptyIdx);
+        if (row) {
+          return row;
+        }
+      }
+      return 1;
+    }
+    if (column === "feeder_id") {
+      // 配网馈线：记录内已有 feeder_id（馈线序号）→ dms_def_feeder 行号；默认第 1 行（单行馈线）
+      const feederIdx = String(record.params.feeder_id ?? "").trim();
+      const rowByIdx = sectionRowByIdx.get("dms_def_feeder");
+      if (feederIdx && rowByIdx) {
+        const row = rowByIdx.get(feederIdx);
+        if (row) {
+          return row;
+        }
+      }
+      return 1;
+    }
+    if (column === "node_id" || column === "inode_id" || column === "znode_id") {
+      // 配网连接节点：记录内已有节点号 → dms_def_node（内部 section ACNode）行号；默认第 1 行
+      const nodeIdx = String(record.params[column] ?? "").trim();
+      const rowByIdx = sectionRowByIdx.get("ACNode");
+      if (nodeIdx && rowByIdx) {
+        const row = rowByIdx.get(nodeIdx);
         if (row) {
           return row;
         }
