@@ -88,13 +88,19 @@ const TOPOLOGY_READONLY_FIELDS = new Set([
  *    - E_REFERENCE_FIELD_TABLE_IDS 中定义的实时库引用 id 字段；
  *    - 遵循 `xxx_id` 命名约定的通用外键字段。
  */
-export const isTopologyField = (col: string): boolean =>
-  col === "id" ||
-  col === "idx" ||
-  REFERENCE_FIELD_MAP[col] !== undefined ||
-  E_REFERENCE_FIELD_TABLE_IDS[col] !== undefined ||
-  TOPOLOGY_READONLY_FIELDS.has(col) ||
-  col.endsWith("_id");
+export const EDITABLE_ID_FIELDS = new Set(["rdf_id"]);
+
+export const isTopologyField = (col: string): boolean => {
+  if (EDITABLE_ID_FIELDS.has(col)) return false;
+  return (
+    col === "id" ||
+    col === "idx" ||
+    REFERENCE_FIELD_MAP[col] !== undefined ||
+    E_REFERENCE_FIELD_TABLE_IDS[col] !== undefined ||
+    TOPOLOGY_READONLY_FIELDS.has(col) ||
+    col.endsWith("_id")
+  );
+};
 
 export function EFileEditor({ open, onClose, records, onSave, fieldCnNames }: EFileEditorProps) {
   const [editMode, setEditMode] = useState(false);

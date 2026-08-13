@@ -3245,7 +3245,8 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       qMax: "0",
       qMin: "0",
       vMax: "1.1",
-      vMin: "0.9"
+      vMin: "0.9",
+      regable: "0"
     },
     terminalType: "ac",
     terminalCount: 1,
@@ -3259,7 +3260,8 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       { cnName: "有功上限", enName: "pMax", valueType: "float", typicalValue: "0", readonly: false },
       { cnName: "有功下限", enName: "pMin", valueType: "float", typicalValue: "0", readonly: false },
       { cnName: "无功上限", enName: "qMax", valueType: "float", typicalValue: "0", readonly: false },
-      { cnName: "无功下限", enName: "qMin", valueType: "float", typicalValue: "0", readonly: false }
+      { cnName: "无功下限", enName: "qMin", valueType: "float", typicalValue: "0", readonly: false },
+      { cnName: "是否可调", enName: "regable", valueType: "numberEnum", typicalValue: "0", enumValues: ["0", "1"], enumValueType: "number", enumOptions: [{ value: "0", label: "不可调" }, { value: "1", label: "可调" }], readonly: false }
     ]
   },
   ...ELECTRIC_GENERATION_DEVICE_TEMPLATES.filter((template) => template.terminalType === "ac"),

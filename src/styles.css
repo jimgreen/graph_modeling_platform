@@ -12805,8 +12805,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   position: relative;
   background: #fff;
   border-radius: 12px;
-  width: 90vw;
-  max-width: 1200px;
+  width: 80vw;
   height: 80vh;
   display: flex;
   flex-direction: column;

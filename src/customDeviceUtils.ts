@@ -719,6 +719,7 @@ export function createEmptyCustomDeviceDraft(categoryLibraryName = "交流设备
     params: [],
     measurementDefinitions: [],
     stateDefinitions: [],
+    measurementDefinitions: [],
     error: ""
   };
 }
