@@ -754,7 +754,7 @@ export function renderAppView(__appScope: Record<string, any>) {
         "sgcc.e": "国网E格式",
         "ems_rtdb.e": "主网实时库",
         "dms_rtdb.e": "配网实时库",
-        "station-area.e": "台区实时库"
+        "taiqu_rtdb.e": "台区实时库"
       };
       const templateName = templateNameMap[templateFile] ?? templateFile;
       __appScope.setEDeviceInterfaceLoadedTemplateName?.(templateName);
@@ -1692,10 +1692,11 @@ export function renderAppView(__appScope: Record<string, any>) {
       eDeviceDefinitionFieldOrder,
       eDeviceDefinitionTableIds,
       eDeviceDefinitionTemplateFields,
+      templateName: eDeviceInterfaceLoadedTemplateName,
       resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [libraryTemplates, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTableIds, eDeviceDefinitionTemplateFields]
+    [libraryTemplates, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTableIds, eDeviceDefinitionTemplateFields, eDeviceInterfaceLoadedTemplateName]
   );
   // 元件库 -> 模板输出表名（如 ACGenerator -> unit、ACNode -> node），供 E 文件编辑器按模板规格展示
   const eFileEditorSectionLabels = useMemo(() => {
@@ -4969,7 +4970,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                     }}>配网实时库</button>
                     <button type="button" onClick={async () => {
                       setEDeviceTemplateDropdownOpen(false);
-                      await loadPredefinedEDeviceTemplate("station-area.e");
+                      await loadPredefinedEDeviceTemplate("taiqu_rtdb.e");
                     }}>台区实时库</button>
                   </div>
                 )}
@@ -5316,6 +5317,8 @@ export function renderAppView(__appScope: Record<string, any>) {
           onClose={() => setEFileEditorDialogOpen(false)}
           records={eFileEditorRecords}
           fieldCnNames={eFileEditorFieldCnNames}
+          tableIds={eDeviceDefinitionTableIds}
+          isRealtimeDbTemplate={/实时库$|_rtdb\.e$/i.test(eDeviceInterfaceLoadedTemplateName ?? "")}
           onSave={(editedRecords) => {
             const currentNodes = __appScope.nodes ?? [];
             const setNodes = __appScope.setNodes;

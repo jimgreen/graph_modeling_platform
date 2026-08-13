@@ -549,7 +549,7 @@ export function normalizeProjectForBackend(project: ProjectFile): ProjectFile {
       typeof project.powerBaseValue === "number" && Number.isFinite(project.powerBaseValue)
         ? project.powerBaseValue
         : DEFAULT_POWER_BASE_VALUE,
-    subcontrolarea: project.subcontrolarea ?? "",
+    subcontrolarea: project.subcontrolarea ?? "默认区域",
     modelType: project.modelType ?? "",
     substation: project.substation ?? "",
     feeder: project.feeder ?? "",

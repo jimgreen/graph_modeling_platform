@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { X, Edit, Eye, ArrowUpRight } from "lucide-react";
 import { PARAM_LABELS } from "./appExtracted/appCoreCanvasUtilities";
-import { formatEDeviceRecordColumnValue, E_REFERENCE_FIELD_TABLE_IDS } from "./model-eexport";
+import { formatEDeviceRecordColumnValue, E_REFERENCE_FIELD_TABLE_IDS, keyToLong } from "./model-eexport";
 
 export type EDeviceRecord = {
   id: string;
@@ -22,6 +22,10 @@ export interface EFileEditorProps {
   onSave?: (records: EDeviceRecord[]) => void;
   /** 字段中文名映射：section 内部名 -> 列名(exportName) -> 中文名（来自模板文件中文注释），供表头 tooltip 展示 */
   fieldCnNames?: Record<string, Record<string, string>>;
+  /** 元件库 -> 表号映射（实时库模板下用于 id 计算） */
+  tableIds?: Record<string, string>;
+  /** 是否为 XX 实时库模板（ems_rtdb.e / dms_rtdb.e / taiqu_rtdb.e 等） */
+  isRealtimeDbTemplate?: boolean;
 }
 
 const MAX_COL_WIDTH = 2000;
@@ -57,7 +61,7 @@ const REFERENCE_FIELD_MAP: Record<string, string> = {
   jst_id: "substation",
   bv_id: "basevoltage",
   subarea_id: "subcontrolarea",
-  area_id: "subcontrolarea",
+  area_id: "dms_def_area",
   aclnseg_id: "ACBranch",
   tapty_id: "taptype",
   dcln_id: "DCBranch",
@@ -102,7 +106,7 @@ export const isTopologyField = (col: string): boolean => {
   );
 };
 
-export function EFileEditor({ open, onClose, records, onSave, fieldCnNames }: EFileEditorProps) {
+export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tableIds, isRealtimeDbTemplate }: EFileEditorProps) {
   const [editMode, setEditMode] = useState(false);
   const [activeSection, setActiveSection] = useState(0);
   const [editedRecords, setEditedRecords] = useState<EDeviceRecord[]>(records);
@@ -398,12 +402,17 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames }: EF
                     </tr>
                   </thead>
                   <tbody>
-                    {sectionRecords.map((record, rowIndex) => (
+                    {sectionRecords.map((record, rowIndex) => {
+                      // XX实时库模板：id 字段一律显示 key_to_long 计算的长 id（每行计算一次）
+                      const rtdbTableId = isRealtimeDbTemplate ? tableIds?.[currentSection.key] : undefined;
+                      const rtdbIdValue = rtdbTableId ? keyToLong(rtdbTableId, 0, rowIndex + 1) : undefined;
+                      return (
                       <tr key={record.id} className={`${highlightedRow === record.id ? "highlighted" : ""}${record.readonly ? " read-only-row" : ""}`}>
                         {columns.map((col) => {
-                          const value = record.params[col] || "";
+                          const isIdColumn = col === "id";
+                          const value = isIdColumn && rtdbIdValue ? rtdbIdValue : (record.params[col] || "");
                           // 查看模式按导出规格展示：空白字段显示与导出 E 文件一致的默认值
-                          const displayValue = formatEDeviceRecordColumnValue(record.section, record, col, rowIndex);
+                          const displayValue = isIdColumn && rtdbIdValue ? rtdbIdValue : formatEDeviceRecordColumnValue(record.section, record, col, rowIndex);
                           const colWidth = getColWidth(sectionName, col);
                           const isReferenceField = REFERENCE_FIELD_MAP[col] && value;
                           return (
@@ -457,7 +466,7 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames }: EF
                           );
                         })}
                       </tr>
-                    ))}
+                    );})}
                   </tbody>
                 </table>
               </div>
