@@ -384,6 +384,8 @@ export type DeviceTemplate = {
   allowResizeTransform?: boolean;
   custom?: boolean;
   parameterDefinitions?: DeviceParameterDefinition[];
+  /** An applied persisted override is a complete table; omitted fields were explicitly deleted. */
+  parameterDefinitionsComplete?: boolean;
   measurementDefinitions?: DeviceMeasurementDefinition[];
   stateDefinitions?: DeviceStateDefinition[];
   rotation?: number;
@@ -6775,6 +6777,17 @@ export function templateTerminalTypes(template: DeviceTemplate): TerminalType[] 
 }
 
 export function getTemplateParameterDefinitions(template: DeviceTemplate): DeviceParameterDefinition[] {
+  if (template.parameterDefinitionsComplete && Array.isArray(template.parameterDefinitions)) {
+    const normalizedParamDefs = template.parameterDefinitions
+      .map((definition) => normalizeTemplateDefinition(definition))
+      .filter((definition): definition is DeviceParameterDefinition => (
+        Boolean(definition) && !isContainerAssociatedParameterName(template, definition?.enName ?? "")
+      ));
+    return normalizeESectionParameterDefinitions(
+      inferESection(template.kind, template.params),
+      normalizedParamDefs
+    );
+  }
   if (template.parameterDefinitions?.length) {
     const normalizedParamDefs = template.parameterDefinitions
       .map((definition) => normalizeTemplateDefinition(definition))
@@ -7129,6 +7142,7 @@ export function applyDeviceTemplateDefinitionOverride(
   if (!override) {
     return template;
   }
+  const hasParameterDefinitionsOverride = Array.isArray(override.parameterDefinitions);
   const overrideParameterDefinitions = (override.parameterDefinitions ?? [])
     .map((definition) => normalizeTemplateDefinition(definition))
     .filter((definition): definition is DeviceParameterDefinition => (
@@ -7167,9 +7181,11 @@ export function applyDeviceTemplateDefinitionOverride(
         !retiredElectricGenerationParameterNames.has(definition.enName)
       ))
     : normalizedOverrideParameterDefinitions;
-  const parameterDefinitions = isElectricGenerationBase || electricGenerationDerivedInfo || isCanonicalHydrogenEndpoint
-    ? mergeCanonicalParameterDefinitions(template.parameterDefinitions ?? [], canonicalOverrideParameterDefinitions)
-    : canonicalOverrideParameterDefinitions;
+  const parameterDefinitions = hasParameterDefinitionsOverride
+    ? (isElectricGenerationBase || electricGenerationDerivedInfo || isCanonicalHydrogenEndpoint
+        ? mergeCanonicalParameterDefinitions(template.parameterDefinitions ?? [], canonicalOverrideParameterDefinitions)
+        : canonicalOverrideParameterDefinitions)
+    : template.parameterDefinitions?.map((definition) => ({ ...definition }));
   const hasStateDefinitionsOverride = Array.isArray(override.stateDefinitions);
   const stateDefinitions = hasStateDefinitionsOverride ? normalizeDeviceStateDefinitions(override.stateDefinitions) : template.stateDefinitions?.map(cloneDeviceStateDefinition);
   const measurementDefinitions = Array.isArray(override.measurementDefinitions)
@@ -7256,6 +7272,7 @@ export function applyDeviceTemplateDefinitionOverride(
     allowResizeTransform: override.allowResizeTransform ?? template.allowResizeTransform,
     params: normalizedParams,
     parameterDefinitions,
+    parameterDefinitionsComplete: hasParameterDefinitionsOverride || template.parameterDefinitionsComplete,
     measurementDefinitions,
     ...(stateDefinitions ? { stateDefinitions } : {})
   };
@@ -7275,9 +7292,10 @@ export function applyDeviceTemplateDefinitionOverride(
         normalizeTwoWindingTransformerParams(mergedTemplate.params),
         twoWindingTransformerParameterDefinitions
       ),
+      parameterDefinitionsComplete: false,
       parameterDefinitions: mergeCanonicalFloatParameterDefinitions(
         twoWindingTransformerParameterDefinitions,
-        parameterDefinitions.filter((definition) => !isRetiredTwoWindingTransformerParameterName(definition.enName))
+        (parameterDefinitions ?? []).filter((definition) => !isRetiredTwoWindingTransformerParameterName(definition.enName))
       )
     };
   }
@@ -7299,9 +7317,10 @@ export function applyDeviceTemplateDefinitionOverride(
       normalizeThreeWindingTransformerParams(mergedTemplate.params),
       threeWindingTransformerParameterDefinitions
     ),
+    parameterDefinitionsComplete: false,
     parameterDefinitions: mergeCanonicalFloatParameterDefinitions(
       threeWindingTransformerParameterDefinitions,
-      parameterDefinitions.filter((definition) => !isRetiredThreeWindingTransformerParameterName(definition.enName))
+      (parameterDefinitions ?? []).filter((definition) => !isRetiredThreeWindingTransformerParameterName(definition.enName))
     )
   };
 }

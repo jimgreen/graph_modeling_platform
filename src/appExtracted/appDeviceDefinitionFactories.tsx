@@ -16,6 +16,11 @@ import { decodeSvgImageSource } from "../svgUtils";
 import { buildMeasurementProfilePositionDefinitions, materializeNewMeasurementDefinitionFields } from "../measurements";
 import { measurementProfileItemsComplianceMessage } from "./appGraphMeasurementFactories";
 import { cloneDeviceMeasurementDefinitions, normalizeDeviceMeasurementDefinitions } from "../measurementDefinitionTypes";
+import {
+  deviceDefinitionSharedKeyForTemplate,
+  deviceTemplatesShareParameterDefinitions,
+  normalizeSharedDeviceDefinitionOverrides
+} from "../customDeviceUtils";
 import type { TextFileEncoding } from "../fileIO";
 
 
@@ -4797,14 +4802,13 @@ export function createUpdateDefinitionComponentLibraryCommonParamExport(__appSco
         if (template.custom) {
           continue;
         }
-        const definitionKey = deviceDefinitionKeyForTemplate(template);
+        const definitionKey = deviceDefinitionSharedKeyForTemplate(template);
         const existingOverride = deviceDefinitionOverrideForTemplate(template, next);
         const parameterDefinitions = getTemplateParameterDefinitions(template).map((definition) =>
           definition.enName === enName ? applyPatch(definition) : definition
         );
-        delete next[template.kind];
         next[definitionKey] = {
-          ...existingOverride,
+          ...(next[definitionKey] ?? {}),
           kind: definitionKey,
           params: { ...(existingOverride?.params ?? {}) },
           parameterDefinitions,
@@ -4995,7 +4999,7 @@ export function createUpdateSelectedDefinitionResizePermission(__appScope: Recor
       );
     } else {
       setDeviceDefinitionOverrides((current) => {
-        const existingOverride = deviceDefinitionOverrideForTemplate(selectedDefinitionTemplate, current);
+        const existingOverride = current[targetKind];
         return {
           ...current,
           [targetKind]: {
@@ -5045,7 +5049,7 @@ export function createSaveDeviceDefinitionStateVisualDraft(__appScope: Record<st
       );
     } else {
       setDeviceDefinitionOverrides((current) => {
-        const existingOverride = deviceDefinitionOverrideForTemplate(selectedDefinitionTemplate, current);
+        const existingOverride = current[selectedDefinitionTemplate.kind];
         return {
           ...current,
           [selectedDefinitionTemplate.kind]: {
@@ -5120,7 +5124,7 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
       backgroundImageFit: hasGeneratedDefinitionBackground ? "cover" : draftBackground.backgroundImageFit,
       backgroundImageCleared: hasGeneratedDefinitionBackground ? "" : draftBackground.backgroundImageCleared
     };
-    const parameterDefinitions = selectedDefinitionTemplate.parameterDefinitions ?? getTemplateParameterDefinitions(selectedDefinitionTemplate);
+    const parameterDefinitions = getTemplateParameterDefinitions(selectedDefinitionTemplate);
     if (selectedDefinitionTemplate.custom) {
       setCustomDeviceTemplates((current) =>
         current.map((template) => {
@@ -5147,14 +5151,14 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
       );
     } else {
       setDeviceDefinitionOverrides((current) => {
-        const existingOverride = deviceDefinitionOverrideForTemplate(selectedDefinitionTemplate, current);
+        const existingExactOverride = current[selectedDefinitionTemplate.kind];
         return {
           ...current,
           [selectedDefinitionTemplate.kind]: {
-            ...existingOverride,
+            ...existingExactOverride,
             kind: selectedDefinitionTemplate.kind,
             params: {
-              ...(existingOverride?.params ?? {}),
+              ...(existingExactOverride?.params ?? {}),
               ...backgroundParams
             },
             size,
@@ -5163,11 +5167,10 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
             terminalTypes,
             terminalLabels,
             terminalAnchors,
-            terminalRoles: existingOverride?.terminalRoles ?? selectedDefinitionTemplate.terminalRoles,
-            terminalAssociations: existingOverride?.terminalAssociations ?? selectedDefinitionTemplate.terminalAssociations,
-            isContainer: existingOverride?.isContainer ?? selectedDefinitionTemplate.isContainer,
-            allowResizeTransform: existingOverride?.allowResizeTransform ?? templateAllowsResizeTransform(selectedDefinitionTemplate),
-            parameterDefinitions: existingOverride?.parameterDefinitions ?? parameterDefinitions,
+            terminalRoles: existingExactOverride?.terminalRoles ?? selectedDefinitionTemplate.terminalRoles,
+            terminalAssociations: existingExactOverride?.terminalAssociations ?? selectedDefinitionTemplate.terminalAssociations,
+            isContainer: existingExactOverride?.isContainer ?? selectedDefinitionTemplate.isContainer,
+            allowResizeTransform: existingExactOverride?.allowResizeTransform ?? templateAllowsResizeTransform(selectedDefinitionTemplate),
             stateDefinitions,
             updatedAt: new Date().toISOString()
           }
@@ -5260,7 +5263,7 @@ export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>)
       }));
     }
     const definitionKey = normalizeComponentLibraryName(definitionDraftSection) || deviceDefinitionKeyForTemplate(selectedDefinitionTemplate);
-    const overrideKey = derivedInfo ? selectedDefinitionTemplate.kind : definitionKey;
+    const overrideKey = deviceDefinitionSharedKeyForTemplate(selectedDefinitionTemplate);
     const paramsSeed = derivedInfo
       ? {
           component_type: derivedInfo.componentLibrary || derivedInfo.baseComponentLibrary,
@@ -5315,7 +5318,10 @@ export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>)
     syncExistingNodesWithTemplateDefinitions(
       { parameterDefinitions: completedRows },
       previousDefinitions,
-      (node) => node.kind === selectedDefinitionTemplate.kind
+      (node) => {
+        const nodeTemplate = libraryTemplates.find((template) => template.kind === node.kind);
+        return Boolean(nodeTemplate && deviceTemplatesShareParameterDefinitions(selectedDefinitionTemplate, nodeTemplate));
+      }
     );
     setDeviceDefinitionOverrides((current) => {
       const next = appendAssociatedMeasurementFieldsToOverrides({ ...current }, materializedFields.additions, {
@@ -5324,8 +5330,14 @@ export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>)
         deviceDefinitionOverrideForTemplate,
         getTemplateParameterDefinitions
       });
-      const existingOverride = derivedInfo ? current[overrideKey] : deviceDefinitionOverrideForTemplate(selectedDefinitionTemplate, current);
-      delete next[selectedDefinitionTemplate.kind];
+      const existingOverride = current[overrideKey];
+      for (const peer of libraryTemplates.filter((template) => deviceTemplatesShareParameterDefinitions(selectedDefinitionTemplate, template))) {
+        if (!next[peer.kind] || peer.kind === overrideKey) continue;
+        const peerOverride = { ...next[peer.kind] };
+        delete peerOverride.parameterDefinitions;
+        delete peerOverride.measurementDefinitions;
+        next[peer.kind] = peerOverride;
+      }
       next[overrideKey] = {
         ...existingOverride,
         kind: overrideKey,
@@ -5333,15 +5345,11 @@ export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>)
           ...(existingOverride?.params ?? {}),
           ...params
         },
-        allowResizeTransform: templateAllowsResizeTransform(selectedDefinitionTemplate),
         parameterDefinitions: completedRows,
         measurementDefinitions: selectedProfileItems,
-        stateDefinitions: Array.isArray(existingOverride?.stateDefinitions)
-          ? existingOverride.stateDefinitions
-          : selectedDefinitionTemplate.stateDefinitions,
         updatedAt: new Date().toISOString()
       };
-      return next;
+      return normalizeSharedDeviceDefinitionOverrides(next, libraryTemplates);
     });
     syncAssociatedMeasurementFieldAdditions(
       materializedFields.additions,
@@ -5365,12 +5373,20 @@ export function createResetDeviceDefinitionDraft(__appScope: Record<string, any>
       return;
     }
     loadDefinitionTemplateDraft(selectedDefinitionBaseTemplate);
-    const definitionKey = deviceDefinitionKeyForTemplate(selectedDefinitionBaseTemplate);
+    const definitionKey = deviceDefinitionSharedKeyForTemplate(selectedDefinitionBaseTemplate);
     setDeviceDefinitionOverrides((current) => {
       const next = { ...current };
       delete next[definitionKey];
-      delete next[selectedDefinitionBaseTemplate.kind];
-      return next;
+      for (const peer of (__appScope.libraryTemplates ?? []).filter((template: DeviceTemplate) => (
+        deviceTemplatesShareParameterDefinitions(selectedDefinitionBaseTemplate, template)
+      ))) {
+        if (!next[peer.kind]) continue;
+        const peerOverride = { ...next[peer.kind] };
+        delete peerOverride.parameterDefinitions;
+        delete peerOverride.measurementDefinitions;
+        next[peer.kind] = peerOverride;
+      }
+      return normalizeSharedDeviceDefinitionOverrides(next, __appScope.libraryTemplates ?? []);
     });
   };
 }
@@ -7449,16 +7465,18 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
         stateDefinitions
       },
       previousDefinitions,
-      (node) => node.kind === template.kind
+      (node) => {
+        const nodeTemplate = libraryTemplates.find((candidate) => candidate.kind === node.kind);
+        return Boolean(nodeTemplate && deviceTemplatesShareParameterDefinitions(template, nodeTemplate));
+      }
     );
-    const existingOverride = deviceDefinitionOverrideForTemplate(template, deviceDefinitionOverrides);
+    const sharedOverrideKey = deviceDefinitionSharedKeyForTemplate(template);
+    const existingExactOverride = deviceDefinitionOverrides[template.kind];
     const nextTemplateOverride: DeviceTemplateDefinitionOverride = {
-      ...existingOverride,
+      ...existingExactOverride,
       kind: template.kind,
       params: {
-        ...withoutDerivedDefinitionParams(existingOverride?.params ?? {}),
-        component_type: componentLibrary,
-        ...definitionDerivedParams,
+        ...(existingExactOverride?.params ?? {}),
         backgroundImage,
         backgroundImageAssetId,
         backgroundImageFit: draftBackgroundImageFit,
@@ -7478,19 +7496,38 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       derivedComponentLibrary: derivedRequested ? derivedComponentLibrary : "",
       ...(derivedRequested && derivedComponentLibraryLabel ? { derivedComponentLibraryLabel } : {}),
       allowResizeTransform: customDeviceDraft.allowResizeTransform === "1",
-      measurementDefinitions: profileItems,
       stateDefinitions,
       updatedAt: new Date().toISOString()
     };
-    if (parameterDefinitionsMatchBuiltIn) {
-      delete nextTemplateOverride.parameterDefinitions;
-    } else {
-      nextTemplateOverride.parameterDefinitions = definitions;
-    }
+    const exactVisualOverride = { ...nextTemplateOverride };
+    delete exactVisualOverride.parameterDefinitions;
+    delete exactVisualOverride.measurementDefinitions;
+    const sharedDefinitionOverride: DeviceTemplateDefinitionOverride = {
+      kind: sharedOverrideKey,
+      params: definitions.reduce<Record<string, string>>((acc, definition) => {
+        if (definition.enName !== "name") acc[definition.enName] = definition.typicalValue;
+        return acc;
+      }, {
+        component_type: componentLibrary,
+        ...definitionDerivedParams
+      }),
+      ...(parameterDefinitionsMatchBuiltIn ? {} : { parameterDefinitions: definitions }),
+      measurementDefinitions: profileItems,
+      updatedAt: nextTemplateOverride.updatedAt
+    };
     let nextDeviceDefinitionOverrides: Record<string, DeviceTemplateDefinitionOverride> = {
       ...deviceDefinitionOverrides,
-      [template.kind]: nextTemplateOverride
+      [sharedOverrideKey]: sharedDefinitionOverride,
+      [template.kind]: exactVisualOverride
     };
+    for (const peer of libraryTemplates.filter((candidate) => deviceTemplatesShareParameterDefinitions(template, candidate))) {
+      if (!nextDeviceDefinitionOverrides[peer.kind] || peer.kind === sharedOverrideKey) continue;
+      const peerOverride = { ...nextDeviceDefinitionOverrides[peer.kind] };
+      delete peerOverride.parameterDefinitions;
+      delete peerOverride.measurementDefinitions;
+      nextDeviceDefinitionOverrides[peer.kind] = peerOverride;
+    }
+    nextDeviceDefinitionOverrides = normalizeSharedDeviceDefinitionOverrides(nextDeviceDefinitionOverrides, libraryTemplates);
     nextDeviceDefinitionOverrides = appendAssociatedMeasurementFieldsToOverrides(
       nextDeviceDefinitionOverrides,
       materializedFields.additions,

@@ -3724,6 +3724,22 @@ test("migrates legacy ACAC and DCDC converter controls to endpoint fields", () =
   }
 });
 
+test("treats persisted converter parameter definitions as a complete table", () => {
+  const template = DEVICE_LIBRARY.find((candidate) => candidate.kind === "dcdc-converter")!;
+  const retainedDefinitions = getTemplateParameterDefinitions(template).filter((definition) => (
+    !["p_set", "i_set", "v_set", "i_p_set", "i_i_set", "i_v_set", "j_p_set", "j_i_set", "j_v_set"].includes(definition.enName)
+  ));
+  const overridden = applyDeviceTemplateDefinitionOverride(template, {
+    kind: "shared:DCDCConverter",
+    parameterDefinitions: retainedDefinitions,
+    updatedAt: "2026-08-13T00:00:00.000Z"
+  });
+  const reopenedFields = getTemplateParameterDefinitions(overridden).map((definition) => definition.enName);
+
+  expect(reopenedFields).toEqual(retainedDefinitions.map((definition) => definition.enName));
+  expect(reopenedFields).not.toEqual(expect.arrayContaining(["p_set", "i_set", "v_set"]));
+});
+
 test("keeps two-winding and three-winding transformers as separate non-container device types", () => {
   const acTransformer = DEVICE_LIBRARY.find((item) => item.kind === "ac-transformer");
   const twoWinding = DEVICE_LIBRARY.find((item) => item.kind === "ac-two-winding-transformer");
