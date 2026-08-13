@@ -250,7 +250,7 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   HydroBus: ["idx", "name", "node", "run_stat"],
   HydroStorage: [
     "idx", "name", "node", "control_type", "pressure_set", "flow_set", "alpha",
-    "flow_min", "flow_max", "run_stat", "pressure", "capacity", "water_volume",
+    "flow_min", "flow_max", "run_stat", "pressure", "rated_capacity", "water_volume",
     "initial_soc", "pressure_max", "pressure_min"
   ],
   AcE2Hydro: ["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_ac_load_t1", "idx_h2_unit_t2"],
@@ -567,6 +567,9 @@ function getRawEParamValue(
   if (key === "dev_type") {
     return String(node.params.dev_type ?? "").trim() || node.kind;
   }
+  if (section === "HydroStorage" && key === "rated_capacity") {
+    return deviceParamValue(node.params, "rated_capacity") ?? deviceParamValue(node.params, "capacity") ?? "";
+  }
   if (key === "run_stat") {
     return normalizeRunStatForE(node.params.run_stat);
   }
@@ -720,16 +723,22 @@ function normalizeGasQuantityFieldName(value: unknown): string {
   return /^(?:gasQuantity|gasquantity)$/.test(text) ? "gas_quantity" : text;
 }
 
+function normalizeEInterfaceFieldName(componentLibrary: string, value: unknown): string {
+  const normalized = normalizeGasQuantityFieldName(value);
+  return componentLibrary === "HydroStorage" && normalized === "capacity" ? "rated_capacity" : normalized;
+}
+
 function normalizeEFileInterfaceDefinition(
   definition: EFileInterfaceSectionDefinition
 ): EFileInterfaceSectionDefinition {
+  const componentLibrary = String(definition.componentLibrary ?? "").trim();
   return {
     ...definition,
     fields: (definition.fields ?? []).map((field) => ({
       ...field,
-      sourceName: normalizeGasQuantityFieldName(field.sourceName),
+      sourceName: normalizeEInterfaceFieldName(componentLibrary, field.sourceName),
       ...(field.exportName !== undefined
-        ? { exportName: normalizeGasQuantityFieldName(field.exportName) }
+        ? { exportName: normalizeEInterfaceFieldName(componentLibrary, field.exportName) }
         : {})
     }))
   };
@@ -752,8 +761,8 @@ function eFileInterfaceDefinitionIndex(options: EFileExportOptions = {}) {
           componentLibrary,
           tableId: options.eDeviceDefinitionTableIds?.[componentLibrary],
           fields: templateFields.map((tf) => ({
-            sourceName: normalizeGasQuantityFieldName(tf.sourceName ?? tf.exportName),
-            exportName: normalizeGasQuantityFieldName(tf.exportName),
+            sourceName: normalizeEInterfaceFieldName(componentLibrary, tf.sourceName ?? tf.exportName),
+            exportName: normalizeEInterfaceFieldName(componentLibrary, tf.exportName),
             cnName: tf.cnName
           }))
         });
@@ -2767,7 +2776,7 @@ export function buildEDeviceDefinitionFile(
       i_node: "首节点",
       j_node: "末节点",
       status: "运行状态",
-      run_stat: "运行状态（运行/停运）"
+      run_stat: "工作状态（0:停运，1:运行）"
     };
     fields.push({ exportName: "idx", cnName: fixedCnName.idx });
     if (!group.isDerivedComponentLibrary) {
@@ -2820,8 +2829,8 @@ export function buildEDeviceDefinitionFileFromInterfaceDefinitions(
     const componentLibrary = String(definition.componentLibrary ?? "").trim();
     const kind = String(definition.exportName ?? componentLibrary).trim() || componentLibrary;
     const fields = (definition.fields ?? []).flatMap((field): EDeviceDefinitionField[] => {
-      const sourceName = normalizeGasQuantityFieldName(field.sourceName);
-      const exportName = normalizeGasQuantityFieldName(field.exportName ?? sourceName);
+      const sourceName = normalizeEInterfaceFieldName(componentLibrary, field.sourceName);
+      const exportName = normalizeEInterfaceFieldName(componentLibrary, field.exportName ?? sourceName);
       if (!sourceName || !exportName) {
         return [];
       }
@@ -2923,6 +2932,13 @@ export function parseEDeviceDefinitionFile(text: string): EDeviceDefinitionSecti
     for (const part of componentLibraryParts) {
       // 如果元件库是中文名，反向映射为英文元件库名
       const resolvedComponentLibrary = part ? (COMPONENT_LIBRARY_REVERSE_MAPPING[part] ?? part) : kind;
+      const normalizedFields = fields.map((field) => ({
+        ...field,
+        ...(field.sourceName !== undefined
+          ? { sourceName: normalizeEInterfaceFieldName(resolvedComponentLibrary, field.sourceName) }
+          : {}),
+        exportName: normalizeEInterfaceFieldName(resolvedComponentLibrary, field.exportName)
+      }));
       sections.push({
         kind,
         label: matchEDefinitionAttr(attrText, "中文名"),
@@ -2934,7 +2950,7 @@ export function parseEDeviceDefinitionFile(text: string): EDeviceDefinitionSecti
         isContainerComponentLibrary: containerAttr ? eDefinitionAttrIsYes(containerAttr) : undefined,
         exportEnabled: exportEnabledAttr ? eDefinitionAttrIsYes(exportEnabledAttr) : true,
         tableId: matchEDefinitionAttr(attrText, "表号") || undefined,
-        fields
+        fields: normalizedFields
       });
     }
   }

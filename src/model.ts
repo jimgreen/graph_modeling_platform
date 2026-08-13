@@ -1,6 +1,10 @@
 import { normalizeProjectMeasurements } from "./measurements";
 import type { ProjectMeasurementConfig } from "./measurements";
-import { cloneDeviceMeasurementDefinitions, normalizeDeviceMeasurementDefinitions } from "./measurementDefinitionTypes";
+import {
+  cloneDeviceMeasurementDefinitions,
+  createMeasurementFieldParameterDefinition,
+  normalizeDeviceMeasurementDefinitions
+} from "./measurementDefinitionTypes";
 import type { DeviceMeasurementDefinition } from "./measurementDefinitionTypes";
 import { degreesToRadians } from "./formatUtils";
 import { clampNumber } from "./canvasViewport";
@@ -1574,10 +1578,42 @@ export function assignMissingDeviceIndexes<T extends Pick<ModelNode, "kind" | "n
 }
 
 export function normalizeRunStatForE(value?: string) {
-  if (!value) return "";
-  if (value === "运行") return "1";
-  if (value === "停运" || value === "检修") return "0";
-  return value;
+  return normalizeRunStatValue(value);
+}
+
+export const RUN_STAT_ENUM_VALUES = ["1", "0"] as const;
+
+export const RUN_STAT_ENUM_OPTIONS: readonly DeviceParameterEnumOption[] = [
+  { value: "1", label: "运行" },
+  { value: "0", label: "停运" }
+];
+
+export function normalizeRunStatValue(value?: unknown, fallback = "") {
+  const text = String(value ?? "").trim();
+  if (!text) return fallback;
+  const lower = text.toLowerCase();
+  if (["1", "运行", "投运", "on", "true"].includes(lower)) return "1";
+  if (["0", "停运", "检修", "off", "false"].includes(lower)) return "0";
+  return text;
+}
+
+export function normalizeRunStatParameterDefinition<T extends DeviceParameterDefinition>(definition: T): T {
+  const enName = String(definition.enName ?? "").trim();
+  if (!/^(?:run_stat|runStat)$/u.test(enName)) {
+    return definition;
+  }
+  const normalizedTypicalValue = normalizeRunStatValue(definition.typicalValue, "1");
+  return {
+    ...definition,
+    enName: "run_stat",
+    valueType: "numberEnum",
+    typicalValue: RUN_STAT_ENUM_VALUES.includes(normalizedTypicalValue as (typeof RUN_STAT_ENUM_VALUES)[number])
+      ? normalizedTypicalValue
+      : "1",
+    enumValueType: "number",
+    enumValues: [...RUN_STAT_ENUM_VALUES],
+    enumOptions: RUN_STAT_ENUM_OPTIONS.map((option) => ({ ...option }))
+  };
 }
 
 const DEFAULT_BINARY_DEVICE_STATE_DEFINITIONS: DeviceStateDefinition[] = [
@@ -1676,6 +1712,7 @@ export const AC_GENERATOR_CONTROL_TYPES = ["PV", "PQ", "PH"] as const;
 export const DC_GENERATOR_CONTROL_TYPES = ["P", "V", "I", "NONE"] as const;
 export const HYDROGEN_COUPLING_CONTROL_TYPES = ["P", "FLOW"] as const;
 export const HYDROGEN_ENDPOINT_CONTROL_TYPES = ["FLOW", "PRESSURE"] as const;
+export const HYDROGEN_STORAGE_CONTROL_TYPES = ["PRESSURE", "FLOW"] as const;
 export const ELECTRIC_HEAT_COUPLING_CONTROL_TYPES = ["P", "T"] as const;
 
 export function normalizeAcGeneratorControlTypeForE(value?: string) {
@@ -2022,7 +2059,7 @@ export const twoWindingTransformerParameterDefinitions: DeviceParameterDefinitio
   readonlyIntegerDefinition("序号", "idx"),
   { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
   { cnName: "运行状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: false },
-  { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false },
+  { cnName: "工作状态", enName: "run_stat", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], enumValueType: "number", enumOptions: [{ value: "1", label: "运行" }, { value: "0", label: "停运" }], readonly: false },
   { cnName: "高压侧电压等级", enName: "highVbase", valueType: "float", typicalValue: "0", readonly: false },
   { cnName: "低压侧电压等级", enName: "lowVbase", valueType: "float", typicalValue: "0", readonly: false },
   { cnName: "额定容量", enName: "ratedCapacity", valueType: "float", typicalValue: "50", readonly: false },
@@ -2049,7 +2086,7 @@ export const threeWindingTransformerParameterDefinitions: DeviceParameterDefinit
   readonlyIntegerDefinition("序号", "idx"),
   { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
   { cnName: "运行状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: false },
-  { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false },
+  { cnName: "工作状态", enName: "run_stat", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], enumValueType: "number", enumOptions: [{ value: "1", label: "运行" }, { value: "0", label: "停运" }], readonly: false },
   readonlyIntegerDefinition("高压侧节点号", "t1_node"),
   readonlyIntegerDefinition("中压侧节点号", "t2_node"),
   readonlyIntegerDefinition("低压侧节点号", "t3_node"),
@@ -2634,7 +2671,7 @@ function createElectricGenerationDeviceTemplate(
       readonlyIntegerDefinition("序号", "idx"),
       { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
       { cnName: "设备状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: false },
-      { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false },
+      { cnName: "工作状态", enName: "run_stat", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], enumValueType: "number", enumOptions: [{ value: "1", label: "运行" }, { value: "0", label: "停运" }], readonly: false },
       { cnName: "发电类型", enName: "sourceType", valueType: "string", typicalValue: family.sourceType, readonly: true },
       { cnName: "电压上限", enName: "vMax", valueType: "float", typicalValue: "1.1", readonly: false },
       { cnName: "电压下限", enName: "vMin", valueType: "float", typicalValue: "0.9", readonly: false },
@@ -2730,10 +2767,10 @@ const HYDROGEN_TANK_PARAMETER_DEFINITIONS: DeviceParameterDefinition[] = [
     enName: "control_type",
     valueType: "stringEnum",
     typicalValue: "PRESSURE",
-    enumValues: [...HYDROGEN_ENDPOINT_CONTROL_TYPES],
+    enumValues: [...HYDROGEN_STORAGE_CONTROL_TYPES],
     enumOptions: [
-      { value: "FLOW", label: "定流量" },
-      { value: "PRESSURE", label: "定压力" }
+      { value: "PRESSURE", label: "定压力" },
+      { value: "FLOW", label: "定流量" }
     ],
     readonly: false
   },
@@ -2742,7 +2779,7 @@ const HYDROGEN_TANK_PARAMETER_DEFINITIONS: DeviceParameterDefinition[] = [
   { cnName: "压力平衡系数", enName: "alpha", valueType: "float", typicalValue: "1", readonly: false },
   { cnName: "流量下限(Nm3/h)", enName: "flow_min", valueType: "float", typicalValue: "-10", readonly: false },
   { cnName: "流量上限(Nm3/h)", enName: "flow_max", valueType: "float", typicalValue: "10", readonly: false },
-  { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false },
+  { cnName: "工作状态", enName: "run_stat", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], enumValueType: "number", enumOptions: [{ value: "1", label: "运行" }, { value: "0", label: "停运" }], readonly: false },
   {
     cnName: "储气压(MPa)",
     enName: "pressure",
@@ -2752,7 +2789,7 @@ const HYDROGEN_TANK_PARAMETER_DEFINITIONS: DeviceParameterDefinition[] = [
     exportEnabled: true,
     exportName: "pressure"
   },
-  { cnName: "额定储气量(Nm3)", enName: "capacity", valueType: "float", typicalValue: "1000", readonly: false },
+  { cnName: "额定容量(m3)", enName: "rated_capacity", valueType: "float", typicalValue: "1000", readonly: false },
   { cnName: "水容积(m3)", enName: "water_volume", valueType: "float", typicalValue: "50", readonly: false },
   { cnName: "初始SOC", enName: "initial_soc", valueType: "float", typicalValue: "0.5", readonly: false },
   { cnName: "压力上限(MPa)", enName: "pressure_max", valueType: "float", typicalValue: "45", readonly: false },
@@ -2798,7 +2835,7 @@ function hydrogenEndpointParameterDefinitions(defaults: HydrogenEndpointDefaults
     { cnName: "流量下限(Nm3/h)", enName: "flow_min", valueType: "float", typicalValue: defaults.flowMin, readonly: false },
     { cnName: "压力(MPa)", enName: "pressure", valueType: "float", typicalValue: defaults.pressure, readonly: false },
     { cnName: "流量(Nm3/h)", enName: "flow", valueType: "float", typicalValue: defaults.flow, readonly: false },
-    { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false }
+    { cnName: "工作状态", enName: "run_stat", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], enumValueType: "number", enumOptions: [{ value: "1", label: "运行" }, { value: "0", label: "停运" }], readonly: false }
   ];
 }
 
@@ -3290,7 +3327,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       flow_min: "-10",
       flow_max: "10",
       pressure: "1",
-      capacity: "1000",
+      rated_capacity: "1000",
       water_volume: "50",
       initial_soc: "0.5",
       pressure_max: "45",
@@ -3316,7 +3353,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       flow_min: "-10",
       flow_max: "10",
       pressure: "1",
-      capacity: "1000",
+      rated_capacity: "1000",
       water_volume: "50",
       initial_soc: "0.5",
       pressure_max: "45",
@@ -3343,7 +3380,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       flow_min: "-10",
       flow_max: "10",
       pressure: "1",
-      capacity: "1000",
+      rated_capacity: "1000",
       water_volume: "50",
       initial_soc: "0.5",
       pressure_max: "45",
@@ -3758,7 +3795,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       { cnName: "额定电压(kV)", enName: "rated_voltage", valueType: "float", typicalValue: "10", readonly: false },
       { cnName: "额定无功(Mvar)", enName: "rated_reactive_power", valueType: "float", typicalValue: "1", readonly: false },
       { cnName: "电抗值(Ω)", enName: "reactance", valueType: "float", typicalValue: "100", readonly: false },
-      { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false }
+      { cnName: "工作状态", enName: "run_stat", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], enumValueType: "number", enumOptions: [{ value: "1", label: "运行" }, { value: "0", label: "停运" }], readonly: false }
     ]
   },
   {
@@ -3784,7 +3821,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       { cnName: "额定电压(kV)", enName: "rated_voltage", valueType: "float", typicalValue: "10", readonly: false },
       { cnName: "额定无功(Mvar)", enName: "rated_reactive_power", valueType: "float", typicalValue: "1", readonly: false },
       { cnName: "电抗值(Ω)", enName: "reactance", valueType: "float", typicalValue: "100", readonly: false },
-      { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false }
+      { cnName: "工作状态", enName: "run_stat", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], enumValueType: "number", enumOptions: [{ value: "1", label: "运行" }, { value: "0", label: "停运" }], readonly: false }
     ]
   },
   {
@@ -3811,7 +3848,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       { cnName: "额定电压(kV)", enName: "rated_voltage", valueType: "float", typicalValue: "10", readonly: false },
       { cnName: "额定无功(Mvar)", enName: "rated_reactive_power", valueType: "float", typicalValue: "1", readonly: false },
       { cnName: "电抗值(Ω)", enName: "reactance", valueType: "float", typicalValue: "100", readonly: false },
-      { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false }
+      { cnName: "工作状态", enName: "run_stat", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], enumValueType: "number", enumOptions: [{ value: "1", label: "运行" }, { value: "0", label: "停运" }], readonly: false }
     ]
   },
   {
@@ -3838,7 +3875,7 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       { cnName: "额定电压(kV)", enName: "rated_voltage", valueType: "float", typicalValue: "10", readonly: false },
       { cnName: "额定无功(Mvar)", enName: "rated_reactive_power", valueType: "float", typicalValue: "1", readonly: false },
       { cnName: "电抗值(Ω)", enName: "reactance", valueType: "float", typicalValue: "100", readonly: false },
-      { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false }
+      { cnName: "工作状态", enName: "run_stat", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], enumValueType: "number", enumOptions: [{ value: "1", label: "运行" }, { value: "0", label: "停运" }], readonly: false }
     ]
   },
   {
@@ -4377,7 +4414,7 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   battery_rack_count: "integer",
   mppt_count: "integer",
   status: "numberEnum",
-  run_stat: "stringEnum",
+  run_stat: "numberEnum",
   control_type: "stringEnum",
   i_control_type: "stringEnum",
   j_control_type: "stringEnum",
@@ -4610,6 +4647,81 @@ export function normalizeLegacyGasQuantityDeviceParams(params: Record<string, st
   return next;
 }
 
+const HYDROGEN_STORAGE_KINDS = new Set<string>([
+  "hydrogen-tank",
+  "hydrogen-tank-horizontal",
+  "hydrogen-tank-container"
+]);
+
+function normalizeStoredHydrogenStorageParameterDefinitions(value: string): string {
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return value;
+    }
+    let ratedCapacityIndex = -1;
+    let ratedCapacityIsCanonical = false;
+    const normalized: unknown[] = [];
+    for (const entry of parsed) {
+      if (!entry || typeof entry !== "object") {
+        normalized.push(entry);
+        continue;
+      }
+      const definition = entry as DeviceParameterDefinition;
+      const rawName = toSnakeCaseDeviceParamName(String(definition.enName ?? ""));
+      if (rawName !== "capacity" && rawName !== "rated_capacity") {
+        normalized.push(entry);
+        continue;
+      }
+      const normalizedDefinition: DeviceParameterDefinition = {
+        ...definition,
+        cnName: "额定容量(m3)",
+        enName: "rated_capacity",
+        valueType: "float",
+        ...(definition.exportName !== undefined
+          ? { exportName: toSnakeCaseDeviceParamName(definition.exportName) === "capacity" ? "rated_capacity" : definition.exportName }
+          : {})
+      };
+      const canonical = rawName === "rated_capacity";
+      if (ratedCapacityIndex < 0) {
+        ratedCapacityIndex = normalized.length;
+        ratedCapacityIsCanonical = canonical;
+        normalized.push(normalizedDefinition);
+      } else if (canonical && !ratedCapacityIsCanonical) {
+        normalized[ratedCapacityIndex] = normalizedDefinition;
+        ratedCapacityIsCanonical = true;
+      }
+    }
+    const serialized = JSON.stringify(normalized);
+    return serialized === value ? value : serialized;
+  } catch {
+    return value;
+  }
+}
+
+export function normalizeHydrogenStorageParams<T extends { kind: string; params: Record<string, string> }>(value: T): T {
+  if (!HYDROGEN_STORAGE_KINDS.has(baseDeviceKind(value.kind))) {
+    return value;
+  }
+  const hasLegacyCapacity = Object.prototype.hasOwnProperty.call(value.params, "capacity");
+  const storedDefinitions = value.params._customParamDefinitions;
+  const normalizedDefinitions = storedDefinitions === undefined
+    ? storedDefinitions
+    : normalizeStoredHydrogenStorageParameterDefinitions(storedDefinitions);
+  if (!hasLegacyCapacity && normalizedDefinitions === storedDefinitions) {
+    return value;
+  }
+  const params = { ...value.params };
+  if (hasLegacyCapacity && !String(params.rated_capacity ?? "").trim()) {
+    params.rated_capacity = params.capacity;
+  }
+  delete params.capacity;
+  if (normalizedDefinitions !== undefined) {
+    params._customParamDefinitions = normalizedDefinitions;
+  }
+  return { ...value, params };
+}
+
 function normalizedDeviceParamKeyPriority(key: string, normalizedKey: string): number {
   if (normalizedKey !== "gas_quantity") {
     return key === normalizedKey ? 1 : 0;
@@ -4638,14 +4750,15 @@ function normalizeStoredDeviceParameterDefinitionNames(value: string, gasQuantit
         : toSnakeCaseDeviceParamName(name);
       const enName = normalizeName(rawEnName);
       const exportName = typeof rawExportName === "string" ? normalizeName(rawExportName) : rawExportName;
-      if (enName === rawEnName && exportName === rawExportName) {
-        return definition;
-      }
-      return {
+      const normalizedDefinition = normalizeRunStatParameterDefinition({
         ...source,
         enName,
         ...(source.exportName !== undefined ? { exportName } : {})
-      };
+      });
+      const serializedSource = JSON.stringify(source);
+      return JSON.stringify(normalizedDefinition) === serializedSource
+        ? definition
+        : normalizedDefinition;
     });
     const serialized = JSON.stringify(normalized);
     return serialized === value ? value : serialized;
@@ -4669,9 +4782,11 @@ export function normalizeDeviceParamRecord(params?: Record<string, string>): Rec
     priorities.set(normalizedKey, priority);
     normalized[normalizedKey] = key === "_customParamDefinitions"
       ? normalizeStoredDeviceParameterDefinitionNames(value, true)
-      : key.startsWith("_")
-        ? value
-        : normalizeSemanticParameterValue(normalizedKey, value);
+      : normalizedKey === "run_stat"
+          ? normalizeRunStatValue(value, "1")
+          : key.startsWith("_")
+            ? value
+            : normalizeSemanticParameterValue(normalizedKey, value);
   }
   return normalized;
 }
@@ -4679,22 +4794,269 @@ export function normalizeDeviceParamRecord(params?: Record<string, string>): Rec
 function normalizeDeviceParameterDefinition(definition: DeviceParameterDefinition): DeviceParameterDefinition {
   const enName = toSnakeCaseDeviceParamName(definition.enName);
   const exportName = definition.exportName ? toSnakeCaseDeviceParamName(definition.exportName) : definition.exportName;
-  return {
+  return normalizeRunStatParameterDefinition({
     ...definition,
     enName,
     exportName
-  };
+  });
 }
 
 function normalizeDeviceTemplateParameterNames(template: DeviceTemplate): DeviceTemplate {
   if (isStaticNode({ kind: template.kind } as ModelNode)) {
     return template;
   }
-  return {
+  return normalizeHydrogenStorageParams({
     ...template,
     params: normalizeDeviceParamRecord(template.params) ?? template.params,
-    parameterDefinitions: template.parameterDefinitions?.map(normalizeDeviceParameterDefinition)
+    parameterDefinitions: template.parameterDefinitions?.map(normalizeDeviceParameterDefinition),
+    measurementDefinitions: cloneDeviceMeasurementDefinitions(template.measurementDefinitions)
+  });
+}
+
+const AC_SOURCE_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = [
+  { measurementTypeId: "activePower", associatedField: "p" },
+  { measurementTypeId: "reactivePower", associatedField: "q" },
+  { measurementTypeId: "voltage", associatedField: "u" },
+  { measurementTypeId: "frequency", associatedField: "f" }
+];
+const DC_SOURCE_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = [
+  { measurementTypeId: "activePower", associatedField: "p" },
+  { measurementTypeId: "voltage", associatedField: "u" },
+  { measurementTypeId: "current", associatedField: "i" }
+];
+const AC_LOAD_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = [
+  { measurementTypeId: "activePower", associatedField: "p" },
+  { measurementTypeId: "reactivePower", associatedField: "q" },
+  { measurementTypeId: "voltage", associatedField: "u" },
+  { measurementTypeId: "current", associatedField: "i" }
+];
+const DC_LOAD_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = [
+  { measurementTypeId: "activePower", associatedField: "p" },
+  { measurementTypeId: "voltage", associatedField: "u" },
+  { measurementTypeId: "current", associatedField: "i" }
+];
+const HYDROGEN_COUPLING_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = [
+  { measurementTypeId: "activePower", position: "t1", associatedField: "p" },
+  { measurementTypeId: "voltage", position: "t1", associatedField: "u" },
+  { measurementTypeId: "flow", position: "t2", associatedField: "flow", unitOverride: "Nm3/h" }
+];
+const HYDROGEN_TANK_MEASUREMENT_DEFINITIONS: readonly DeviceMeasurementDefinition[] = [
+  { measurementTypeId: "pressure", associatedField: "pressure", unitOverride: "MPa" },
+  { measurementTypeId: "flow", associatedField: "flow", unitOverride: "Nm3/h" },
+  { measurementTypeId: "gasQuantity", associatedField: "gas_quantity", unitOverride: "Nm3" },
+  { measurementTypeId: "soc", associatedField: "soc", unitOverride: "%" }
+];
+
+function builtInMeasurementDefinitionsForTemplate(template: DeviceTemplate): DeviceMeasurementDefinition[] | undefined {
+  if (template.measurementDefinitions) {
+    return cloneDeviceMeasurementDefinitions(template.measurementDefinitions);
+  }
+  if (isStaticKind(template.kind)) {
+    return undefined;
+  }
+  const kind = baseDeviceKind(template.kind);
+  const copy = (items: readonly DeviceMeasurementDefinition[]) => cloneDeviceMeasurementDefinitions(items);
+  if (kind === "ac-electrolyzer" || kind === "dc-electrolyzer" || kind === "ac-fuel-cell" || kind === "dc-fuel-cell") {
+    return copy(HYDROGEN_COUPLING_MEASUREMENT_DEFINITIONS);
+  }
+  if (kind === "hydrogen-tank" || kind === "hydrogen-tank-horizontal" || kind === "hydrogen-tank-container") {
+    return copy(HYDROGEN_TANK_MEASUREMENT_DEFINITIONS);
+  }
+  if (kind === "hydrogen-source") {
+    return copy([
+      { measurementTypeId: "pressure", associatedField: "pressure", unitOverride: "MPa" },
+      { measurementTypeId: "flow", associatedField: "flow", unitOverride: "Nm3/h" },
+      { measurementTypeId: "status", associatedField: "run_stat" }
+    ]);
+  }
+  if (kind === "hydrogen-load") {
+    return copy([
+      { measurementTypeId: "pressure", associatedField: "pressure", unitOverride: "MPa" },
+      { measurementTypeId: "flow", associatedField: "flow", unitOverride: "Nm3/h" }
+    ]);
+  }
+  if (kind === "hydrogen-compressor") {
+    return copy([
+      { measurementTypeId: "pressure", associatedField: "pressure" },
+      { measurementTypeId: "flow", associatedField: "flow" },
+      { measurementTypeId: "status", associatedField: "status" }
+    ]);
+  }
+  if (kind.startsWith("hydrogen-") && (kind.includes("pipeline") || kind.includes("bus"))) {
+    return copy([
+      { measurementTypeId: "pressure", associatedField: "pressure" },
+      { measurementTypeId: "flow", associatedField: "flow" }
+    ]);
+  }
+  if (kind === "thermal-storage-tank") {
+    return copy([
+      { measurementTypeId: "temperature", associatedField: "temperature" },
+      { measurementTypeId: "flow", associatedField: "flow" },
+      { measurementTypeId: "level", associatedField: "level" }
+    ]);
+  }
+  if (kind.startsWith("heat-") || kind.startsWith("single-port-heat-") || kind.startsWith("two-port-heat-")) {
+    if (kind.includes("pipeline") || kind.includes("bus")) {
+      return copy([
+        { measurementTypeId: "temperature", associatedField: "temperature" },
+        { measurementTypeId: "flow", associatedField: "flow", ...(kind.includes("bus") ? { defaultVisible: false } : {}) }
+      ]);
+    }
+    if (kind.includes("source") || kind.includes("load")) {
+      return copy([
+        { measurementTypeId: "temperature", associatedField: "temperature" },
+        { measurementTypeId: "flow", associatedField: "flow" },
+        { measurementTypeId: "activePower", associatedField: "p" }
+      ]);
+    }
+  }
+  if (kind === "ac-capacitor" || kind === "ac-reactor") {
+    return copy([
+      { measurementTypeId: "reactivePower", associatedField: "q" },
+      { measurementTypeId: "current", associatedField: "current" }
+    ]);
+  }
+  if (kind === "ac-series-capacitor" || kind === "ac-series-reactor") {
+    return copy([
+      { measurementTypeId: "activePower", associatedField: "p" },
+      { measurementTypeId: "reactivePower", associatedField: "q" },
+      { measurementTypeId: "current", associatedField: "current" }
+    ]);
+  }
+  if (kind === "ac-storage") {
+    return copy([
+      { measurementTypeId: "activePower", associatedField: "p" },
+      { measurementTypeId: "reactivePower", associatedField: "q" },
+      { measurementTypeId: "voltage", associatedField: "u" },
+      { measurementTypeId: "soc", associatedField: "soc" }
+    ]);
+  }
+  if (kind === "dc-storage") {
+    return copy([
+      { measurementTypeId: "activePower", associatedField: "p" },
+      { measurementTypeId: "voltage", associatedField: "u" },
+      { measurementTypeId: "current", associatedField: "i" },
+      { measurementTypeId: "soc", associatedField: "soc" }
+    ]);
+  }
+  if (kind === "ac-bus") {
+    return copy([
+      { measurementTypeId: "voltage", associatedField: "u" },
+      { measurementTypeId: "frequency", associatedField: "f" }
+    ]);
+  }
+  if (kind === "dc-bus") {
+    return copy([
+      { measurementTypeId: "voltage", associatedField: "u" },
+      { measurementTypeId: "current", associatedField: "i", defaultVisible: false }
+    ]);
+  }
+  if (kind.includes("switch") || kind.includes("disconnector") || kind.includes("breaker")) {
+    return copy([
+      { measurementTypeId: "status", associatedField: "status" },
+      { measurementTypeId: "current", associatedField: "i" }
+    ]);
+  }
+  if (kind.includes("transformer")) {
+    return copy([
+      { measurementTypeId: "activePower", associatedField: "p" },
+      { measurementTypeId: "reactivePower", associatedField: "q" },
+      { measurementTypeId: "voltage", associatedField: "u" },
+      { measurementTypeId: "current", associatedField: "i" }
+    ]);
+  }
+  if (kind.includes("converter")) {
+    return copy([
+      { measurementTypeId: "activePower", associatedField: "p" },
+      { measurementTypeId: "voltage", associatedField: "u" },
+      { measurementTypeId: "current", associatedField: "i" }
+    ]);
+  }
+  if (kind.includes("line") || kind.includes("branch")) {
+    return copy(template.terminalType === "ac" ? [
+      { measurementTypeId: "activePower", associatedField: "p" },
+      { measurementTypeId: "reactivePower", associatedField: "q" },
+      { measurementTypeId: "current", associatedField: "i" }
+    ] : DC_LOAD_MEASUREMENT_DEFINITIONS);
+  }
+  if (kind.includes("load")) {
+    return copy(template.terminalType === "ac" ? AC_LOAD_MEASUREMENT_DEFINITIONS : DC_LOAD_MEASUREMENT_DEFINITIONS);
+  }
+  if (kind === "ac-source" || electricGenerationDerivedComponentLibraryInfo(kind)?.terminalType === "ac") {
+    return copy(AC_SOURCE_MEASUREMENT_DEFINITIONS);
+  }
+  if (kind === "dc-source" || electricGenerationDerivedComponentLibraryInfo(kind)?.terminalType === "dc") {
+    return copy(DC_SOURCE_MEASUREMENT_DEFINITIONS);
+  }
+  return undefined;
+}
+
+function associationTargetKind(value: ContainerTerminalAssociationValue | undefined): string {
+  const targetByAssociation: Partial<Record<ContainerTerminalAssociationType, string>> = {
+    "ac-generator": "ac-source",
+    "ac-load": "ac-load",
+    "dc-generator": "dc-source",
+    "dc-load": "dc-load",
+    "h2-source": "hydrogen-source",
+    "h2-load": "hydrogen-load",
+    "heat-source": "heat-source",
+    "heat2-source": "two-port-heat-source",
+    "heat-load": "single-port-heat-load",
+    "heat2-load": "two-port-heat-load"
   };
+  return value ? targetByAssociation[value as ContainerTerminalAssociationType] ?? "" : "";
+}
+
+export function materializeDeviceMeasurementDefinitionFields(templates: readonly DeviceTemplate[]): DeviceTemplate[] {
+  const additionsByKind = new Map<string, string[]>();
+  for (const template of templates) {
+    for (const definition of template.measurementDefinitions ?? []) {
+      const field = String(definition.associatedField ?? "").trim();
+      if (!field) continue;
+      const position = String(definition.position ?? "device").trim();
+      let targetKind = template.kind;
+      const terminalMatch = /^t(\d+)$/u.exec(position);
+      if (terminalMatch) {
+        const terminalIndex = Number(terminalMatch[1]) - 1;
+        targetKind = associationTargetKind(template.terminalAssociations?.[terminalIndex]) as DeviceKind;
+      }
+      if (!targetKind) continue;
+      const fields = additionsByKind.get(targetKind) ?? [];
+      if (!fields.some((candidate) => candidate.toLowerCase() === field.toLowerCase())) fields.push(field);
+      additionsByKind.set(targetKind, fields);
+    }
+  }
+  return templates.map((template) => {
+    const additions = additionsByKind.get(template.kind) ?? [];
+    if (additions.length === 0) return template;
+    const definitions = [...(template.parameterDefinitions ?? [])];
+    const known = new Set(definitions.map((definition) => String(definition.enName).trim().toLowerCase()));
+    const derivedInfo = templateDerivedComponentLibraryInfo(template);
+    const baseTemplate = derivedInfo
+      ? templates.find((candidate) => (
+          candidate.kind !== template.kind &&
+          !templateDerivedComponentLibraryInfo(candidate) &&
+          String(inferESection(candidate.kind, candidate.params ?? {})).trim().toLowerCase() === derivedInfo.baseComponentLibrary.trim().toLowerCase()
+        ))
+      : undefined;
+    const inherited = new Set([
+      ...(baseTemplate?.parameterDefinitions ?? []).map((definition) => String(definition.enName).trim().toLowerCase()),
+      ...(baseTemplate ? additionsByKind.get(baseTemplate.kind) ?? [] : []).map((field) => field.toLowerCase())
+    ]);
+    for (const field of additions) {
+      if (known.has(field.toLowerCase()) || inherited.has(field.toLowerCase())) continue;
+      const generatedDefinition = createMeasurementFieldParameterDefinition(field);
+      if (!generatedDefinition) continue;
+      known.add(field.toLowerCase());
+      definitions.push(generatedDefinition);
+    }
+    return { ...template, parameterDefinitions: definitions };
+  });
+}
+
+function attachBuiltInDeviceMeasurementDefinitions(template: DeviceTemplate): DeviceTemplate {
+  const measurementDefinitions = builtInMeasurementDefinitionsForTemplate(template);
+  return measurementDefinitions ? { ...template, measurementDefinitions } : template;
 }
 
 function createVerticalDeviceTemplate(template: DeviceTemplate): DeviceTemplate {
@@ -4710,6 +5072,7 @@ function createVerticalDeviceTemplate(template: DeviceTemplate): DeviceTemplate 
     terminalRoles: template.terminalRoles ? [...template.terminalRoles] : undefined,
     terminalAssociations: template.terminalAssociations ? [...template.terminalAssociations] : undefined,
     parameterDefinitions: template.parameterDefinitions?.map((definition) => ({ ...definition })),
+    measurementDefinitions: cloneDeviceMeasurementDefinitions(template.measurementDefinitions),
     stateDefinitions: template.stateDefinitions?.map(cloneDeviceStateDefinition),
     rotation: 90
   };
@@ -4730,10 +5093,11 @@ function withRdfIdParameter(template: DeviceTemplate): DeviceTemplate {
   };
 }
 
-const NORMALIZED_BASE_DEVICE_LIBRARY = BASE_DEVICE_LIBRARY
+const NORMALIZED_BASE_DEVICE_LIBRARY = materializeDeviceMeasurementDefinitionFields(BASE_DEVICE_LIBRARY
   .map(normalizeDeviceTemplateDefaultSize)
   .map(normalizeDeviceTemplateParameterNames)
-  .map(withRdfIdParameter);
+  .map(attachBuiltInDeviceMeasurementDefinitions)
+  .map(withRdfIdParameter));
 
 export const DEVICE_LIBRARY: DeviceTemplate[] = [
   ...NORMALIZED_BASE_DEVICE_LIBRARY,
@@ -4849,6 +5213,58 @@ function normalizeHydrogenCouplingControlParameterDefinitions(
   });
 }
 
+function normalizeHydrogenStorageControlParameterDefinitions(
+  definitions: readonly DeviceParameterDefinition[]
+): DeviceParameterDefinition[] {
+  const options = [...HYDROGEN_STORAGE_CONTROL_TYPES];
+  const normalized: DeviceParameterDefinition[] = [];
+  let ratedCapacityIndex = -1;
+  let ratedCapacityIsCanonical = false;
+  for (const definition of definitions) {
+    const parameterName = toSnakeCaseDeviceParamName(definition.enName);
+    if (parameterName === "capacity" || parameterName === "rated_capacity") {
+      const nextDefinition: DeviceParameterDefinition = {
+        ...definition,
+        cnName: "额定容量(m3)",
+        enName: "rated_capacity",
+        valueType: "float",
+        ...(definition.exportName !== undefined
+          ? { exportName: toSnakeCaseDeviceParamName(definition.exportName) === "capacity" ? "rated_capacity" : definition.exportName }
+          : {})
+      };
+      const canonical = parameterName === "rated_capacity";
+      if (ratedCapacityIndex < 0) {
+        ratedCapacityIndex = normalized.length;
+        ratedCapacityIsCanonical = canonical;
+        normalized.push(nextDefinition);
+      } else if (canonical && !ratedCapacityIsCanonical) {
+        normalized[ratedCapacityIndex] = nextDefinition;
+        ratedCapacityIsCanonical = true;
+      }
+      continue;
+    }
+    if (parameterName !== "control_type") {
+      normalized.push(definition);
+      continue;
+    }
+    const normalizedValue = normalizeControlTypeForE(definition.typicalValue).toUpperCase();
+    const typicalValue = options.includes(normalizedValue as (typeof options)[number]) ? normalizedValue : "PRESSURE";
+    normalized.push({
+      ...definition,
+      cnName: "控制类型",
+      enName: "control_type",
+      valueType: "stringEnum",
+      typicalValue,
+      enumValues: options,
+      enumOptions: [
+        { value: "PRESSURE", label: "定压力" },
+        { value: "FLOW", label: "定流量" }
+      ]
+    });
+  }
+  return normalized;
+}
+
 function normalizeElectricHeatCouplingParameterDefinitions(
   definitions: readonly DeviceParameterDefinition[]
 ): DeviceParameterDefinition[] {
@@ -4901,6 +5317,9 @@ function normalizeESectionParameterDefinitions(
   }
   if (HYDROGEN_COUPLING_SECTIONS.has(section)) {
     return normalizeHydrogenCouplingControlParameterDefinitions(section, definitions);
+  }
+  if (section === "HydroStorage") {
+    return normalizeHydrogenStorageControlParameterDefinitions(definitions);
   }
   if (ELECTRIC_HEAT_COUPLING_SECTIONS.has(section)) {
     return normalizeElectricHeatCouplingParameterDefinitions(definitions);
@@ -5788,7 +6207,7 @@ export function buildDefaultDeviceParameterDefinitions(
     { cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "", readonly: true },
     { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
     { cnName: "运行状态", enName: "status", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], readonly: false },
-    { cnName: "工作状态", enName: "run_stat", valueType: "stringEnum", typicalValue: "运行", enumValues: ["运行", "停运"], readonly: false }
+    { cnName: "工作状态", enName: "run_stat", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], enumValueType: "number", enumOptions: [{ value: "1", label: "运行" }, { value: "0", label: "停运" }], readonly: false }
   ];
   if (options.isContainer) {
     const relationDefinitions: DeviceParameterDefinition[] = [];
@@ -6316,7 +6735,7 @@ function inferDefinitionValueType(key: string, value: string): DeviceParameterVa
 
 const DEFAULT_TEMPLATE_ENUM_VALUES: Record<string, string[]> = {
   status: ["1", "0"],
-  run_stat: ["运行", "停运"]
+  run_stat: [...RUN_STAT_ENUM_VALUES]
 };
 
 const DEFAULT_TEMPLATE_ENUM_OPTIONS: Record<string, DeviceParameterEnumOption[]> = {
@@ -6324,10 +6743,7 @@ const DEFAULT_TEMPLATE_ENUM_OPTIONS: Record<string, DeviceParameterEnumOption[]>
     { value: "1", label: "闭合" },
     { value: "0", label: "打开/开断" }
   ],
-  run_stat: [
-    { value: "运行" },
-    { value: "停运" }
-  ]
+  run_stat: RUN_STAT_ENUM_OPTIONS.map((option) => ({ ...option }))
 };
 
 function normalizeTemplateEnumValueType(value: unknown, enumOptions: readonly DeviceParameterEnumOption[] = []): DeviceParameterEnumValueType {
@@ -6493,37 +6909,39 @@ function normalizeTemplateDefinition(definition: DeviceParameterDefinition): Dev
   if (!enName || enName === "is_container" || enName === ALLOW_RESIZE_TRANSFORM_PARAM) {
     return null;
   }
-  const valueType = semanticParameterValueType(enName) ?? (["integer", "float", "string", "stringEnum", "numberEnum", "enum"].includes(definition.valueType) ? definition.valueType : "string");
-  const rawTypicalValue = String(definition.typicalValue ?? "");
+  const sourceDefinition = normalizeRunStatParameterDefinition({ ...definition, enName });
+  const valueType = semanticParameterValueType(enName) ?? (["integer", "float", "string", "stringEnum", "numberEnum", "enum"].includes(sourceDefinition.valueType) ? sourceDefinition.valueType : "string");
+  const rawTypicalValue = String(sourceDefinition.typicalValue ?? "");
   const typicalValue = valueType === "integer" || valueType === "float"
     ? normalizeSemanticNumericValue(rawTypicalValue, valueType)
     : rawTypicalValue;
   const exportSettings = {
-    ...(typeof definition.exportEnabled === "boolean" ? { exportEnabled: definition.exportEnabled } : {}),
-    ...(typeof definition.exportName === "string"
+    ...(typeof sourceDefinition.exportEnabled === "boolean" ? { exportEnabled: sourceDefinition.exportEnabled } : {}),
+    ...(typeof sourceDefinition.exportName === "string"
       ? {
-          exportName: /^(?:gasQuantity|gasquantity)$/.test(definition.exportName.trim())
+          exportName: /^(?:gasQuantity|gasquantity)$/.test(sourceDefinition.exportName.trim())
             ? "gas_quantity"
-            : definition.exportName.trim()
+            : sourceDefinition.exportName.trim()
         }
       : {})
   };
   const normalized: DeviceParameterDefinition = {
-    cnName: String(definition.cnName ?? enName).trim() || enName,
+    cnName: String(sourceDefinition.cnName ?? enName).trim() || enName,
     enName,
     valueType,
     typicalValue,
-    readonly: templateDefinitionIsReadonly(enName, definition.readonly),
+    readonly: templateDefinitionIsReadonly(enName, sourceDefinition.readonly),
     ...exportSettings
   };
   if (!templateDefinitionValueTypeIsEnum(valueType)) {
     return normalized;
   }
-  const enumOptions = normalizeTemplateEnumOptions(definition, typicalValue);
-  const enumValueType = enumValueTypeForTemplateDefinition({ ...definition, valueType }, enumOptions);
+  const enumOptions = normalizeTemplateEnumOptions(sourceDefinition, typicalValue);
+  const enumValueType = enumValueTypeForTemplateDefinition({ ...sourceDefinition, valueType }, enumOptions);
   const normalizedDefinition: DeviceParameterDefinition = {
     ...normalized,
     valueType: enumDefinitionValueTypeForEnumValueType(enumValueType),
+    ...(enName === "run_stat" ? { enumValueType: "number" as const } : {}),
     enumOptions
   };
   const normalizedTypicalValue = enumValueForDefinition(normalizedDefinition, typicalValue);
@@ -7203,13 +7621,16 @@ function sectionEnumParameterDefinition(section: string, enName: string): Device
     return base(["1", "0"], { "1": "闭合", "0": "打开/开断" });
   }
   if (enName === "run_stat") {
-    return base(["1", "0"], { "1": "运行", "0": "停运" });
+    return normalizeRunStatParameterDefinition(base(["1", "0"], { "1": "运行", "0": "停运" }));
   }
   if (enName === "control_type") {
     if (section === "ACGenerator") return base(AC_GENERATOR_CONTROL_TYPES);
     if (section === "DCGenerator") return base(DC_GENERATOR_CONTROL_TYPES);
     if (section === "HydroSource" || section === "HydroLoad") {
       return base(HYDROGEN_ENDPOINT_CONTROL_TYPES, { FLOW: "定流量", PRESSURE: "定压力" });
+    }
+    if (section === "HydroStorage") {
+      return base(HYDROGEN_STORAGE_CONTROL_TYPES, { PRESSURE: "定压力", FLOW: "定流量" });
     }
     if (HYDROGEN_COUPLING_SECTIONS.has(section)) {
       return base(HYDROGEN_COUPLING_CONTROL_TYPES, { P: "定电功率", FLOW: "定气流量" });
@@ -7280,14 +7701,9 @@ function normalizeKnownLegacyEnumValue(
     }
   }
   if (enName === "run_stat") {
-    const normalizedRunStat = normalizeRunStatForE(text);
-    const runStatAliases: Record<string, string[]> = {
-      "1": ["1", "运行"],
-      "0": ["0", "停运"]
-    };
-    const mapped = runStatAliases[normalizedRunStat]?.find((candidate) => allowedValues.includes(candidate));
-    if (mapped) {
-      return mapped;
+    const normalizedRunStat = normalizeRunStatValue(text, "1");
+    if (allowedValues.includes(normalizedRunStat)) {
+      return normalizedRunStat;
     }
   }
   if (enName.includes("control_type")) {
@@ -7410,6 +7826,20 @@ export function reconcileNodeParamsWithTemplateDefinitions(
     }
     if (!Object.prototype.hasOwnProperty.call(nextParams, definition.enName)) {
       nextParams[definition.enName] = definition.typicalValue;
+      changed = true;
+    }
+  }
+
+  const runStatDefinition = nextDefinitions.find((definition) => definition.enName === "run_stat");
+  if (runStatDefinition && Object.prototype.hasOwnProperty.call(nextParams, "run_stat")) {
+    const runStatValue = normalizeRunStatValue(nextParams.run_stat, "1");
+    const normalizedRunStat = normalizeKnownLegacyEnumValue(
+      inferESection(node.kind, node.params),
+      runStatDefinition,
+      runStatValue
+    );
+    if (normalizedRunStat !== nextParams.run_stat) {
+      nextParams.run_stat = normalizedRunStat;
       changed = true;
     }
   }
@@ -7651,7 +8081,7 @@ export function buildDefaultParams(template: DeviceTemplate): Record<string, str
   if (templateIsStaticGraphic) {
     return withTemplateDefinitions({ ...template.params });
   }
-  const withRunStat = (params: Record<string, string>) => ({ run_stat: "运行", ...params });
+  const withRunStat = (params: Record<string, string>) => ({ run_stat: "1", ...params });
   const withDefaultVbase = (params: Record<string, string>) => ({
     vbase: defaultTerminalVbase(template.terminalType),
     ...params
@@ -7663,7 +8093,7 @@ export function buildDefaultParams(template: DeviceTemplate): Record<string, str
       ...template.params,
       [CUSTOM_DEVICE_TEMPLATE_KEY]: "1",
       [CUSTOM_PARAM_DEFINITIONS_KEY]: JSON.stringify(effectiveParameterDefinitions),
-      run_stat: template.params.run_stat ?? "运行"
+      run_stat: normalizeRunStatValue(template.params.run_stat, "1")
     };
     for (const definition of effectiveParameterDefinitions) {
       if (definition.enName === "name" || definition.enName === "is_container" || definition.enName === ALLOW_RESIZE_TRANSFORM_PARAM) {

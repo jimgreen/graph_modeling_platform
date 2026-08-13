@@ -311,7 +311,9 @@ export function createDefinitionDraftRows(template: DeviceTemplate): DeviceDefin
   return editableDefinitions
     .filter((definition) =>
       derivedInfo
-        ? isDerivedComponentSpecificDefinition(template, derivedInfo.baseComponentLibrary, definition)
+        ? isDerivedComponentSpecificDefinition(template, derivedInfo.baseComponentLibrary, definition) &&
+          !SHARED_DEFINITION_METADATA_PARAM_NAMES.has(definition.enName) &&
+          !isReservedDeviceDefinitionParamName(definition.enName)
         : definition.enName !== "component_type" && !isReservedDeviceDefinitionParamName(definition.enName)
     )
     .map((definition) => ({
@@ -498,7 +500,9 @@ export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, se
   const customParams = editableDefinitions
     .filter((definition) =>
       derivedInfo
-        ? isDerivedComponentSpecificDefinition(template, derivedInfo.baseComponentLibrary, definition)
+        ? isDerivedComponentSpecificDefinition(template, derivedInfo.baseComponentLibrary, definition) &&
+          !SHARED_DEFINITION_METADATA_PARAM_NAMES.has(definition.enName) &&
+          !isReservedDeviceDefinitionParamName(definition.enName)
         : definition.enName !== "component_type" && !isReservedDeviceDefinitionParamName(definition.enName)
     )
     .map((definition) => {

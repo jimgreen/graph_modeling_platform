@@ -607,7 +607,10 @@ describe("topology calculation operating-limit normalization", () => {
       calls.push("validate");
       return [];
     });
-    const normalizeDeviceOperatingLimitsAfterTopology = vi.fn(() => {
+    const normalizeDeviceOperatingLimitsAfterTopology = vi.fn((
+      _nodes: unknown[],
+      _options: { skipVoltageNodeIds: Set<string> }
+    ) => {
       calls.push("normalize");
       return { nodes: normalizedNodes, warnings: [], corrections: [] };
     });
@@ -639,7 +642,10 @@ describe("topology calculation operating-limit normalization", () => {
     })();
 
     expect(calls).toEqual(["calculate", "validate", "normalize"]);
-    expect(validateTopology).toHaveBeenCalledWith(calculatedNodes, [], { includeVoltageSetpointDeviations: false });
+    expect(validateTopology).toHaveBeenCalledWith(calculatedNodes, [], {
+      includeVoltageSetpointDeviations: false,
+      modelType: undefined
+    });
     expect(normalizeDeviceOperatingLimitsAfterTopology).toHaveBeenCalledWith(calculatedNodes, {
       powerUnit: "kW",
       voltageUnit: "V",
@@ -675,7 +681,10 @@ describe("topology calculation operating-limit normalization", () => {
       relatedNodeIds: ["node-1"],
       message: "基准电压缺失"
     };
-    const normalizeDeviceOperatingLimitsAfterTopology = vi.fn(() => ({
+    const normalizeDeviceOperatingLimitsAfterTopology = vi.fn((
+      _nodes: unknown[],
+      _options: { skipVoltageNodeIds: Set<string> }
+    ) => ({
       nodes: [normalizedNode],
       warnings: [{
         type: "device-limit-invalid",

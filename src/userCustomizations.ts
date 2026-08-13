@@ -346,7 +346,10 @@ const overrideParameterDefinitions = (
   templates: readonly DeviceTemplate[]
 ) => {
   if (Array.isArray(override.parameterDefinitions) && override.parameterDefinitions.length > 0) {
-    return override.parameterDefinitions;
+    return resolveEffectiveTemplateParameterDefinitions({
+      parameterDefinitions: override.parameterDefinitions,
+      parameterDefinitionsIntent: override.parameterDefinitionsIntent
+    });
   }
   if (template) {
     return resolveEffectiveTemplateParameterDefinitions(template, templates);

@@ -12,6 +12,7 @@ import {
 } from "./model";
 import { finiteNumber, degreesToRadians } from "./formatUtils";
 import { clampNumber } from "./canvasViewport";
+import { createMeasurementFieldParameterDefinition } from "./measurementDefinitionTypes";
 
 export type MeasurementValueType = "number" | "string" | "boolean";
 export type MeasurementQuality = "good" | "bad" | "stale" | "missing";
@@ -77,6 +78,65 @@ export type MeasurementProfilePositionDefinition = {
   deviceModel?: string;
   parameterDefinitions: readonly DeviceParameterDefinition[];
 };
+
+export type MaterializedMeasurementFieldAddition = {
+  position: string;
+  deviceKind?: string;
+  field: string;
+  definition: DeviceParameterDefinition;
+};
+
+export function materializeNewMeasurementDefinitionFields(options: {
+  previousItems?: readonly DeviceMeasurementProfileItem[];
+  nextItems: readonly DeviceMeasurementProfileItem[];
+  measurementTypes?: readonly MeasurementTypeDefinition[];
+  parameterDefinitions: readonly DeviceParameterDefinition[];
+  positionDefinitions?: readonly MeasurementProfilePositionDefinition[];
+  materializeDeviceFields?: boolean;
+}): {
+  parameterDefinitions: DeviceParameterDefinition[];
+  positionDefinitions: MeasurementProfilePositionDefinition[];
+  additions: MaterializedMeasurementFieldAddition[];
+} {
+  const positionDefinitions = (options.positionDefinitions?.length
+    ? options.positionDefinitions
+    : [{ value: "device", label: "设备本体", parameterDefinitions: options.parameterDefinitions }]
+  ).map((position) => ({ ...position, parameterDefinitions: [...position.parameterDefinitions] }));
+  const positionByValue = new Map(positionDefinitions.map((position) => [position.value, position]));
+  const previousReferences = new Set((options.previousItems ?? []).flatMap((item) => {
+    const field = String(item.associatedField ?? "").trim().toLowerCase();
+    return field ? [`${String(item.position ?? "device").trim() || "device"}\u0000${field}`] : [];
+  }));
+  const typeById = new Map((options.measurementTypes ?? []).map((type) => [type.id, type]));
+  const additions: MaterializedMeasurementFieldAddition[] = [];
+  const addedReferences = new Set<string>();
+
+  for (const item of options.nextItems) {
+    const position = String(item.position ?? "device").trim() || "device";
+    if (position === "device" && options.materializeDeviceFields === false) continue;
+    const field = String(item.associatedField ?? "").trim();
+    if (!field) continue;
+    const referenceKey = `${position}\u0000${field.toLowerCase()}`;
+    if (previousReferences.has(referenceKey) || addedReferences.has(referenceKey)) continue;
+    const target = positionByValue.get(position);
+    if (!target || target.parameterDefinitions.some((definition) => measurementParameterDefinitionKey(definition) === field.toLowerCase())) {
+      continue;
+    }
+    const measurementType = typeById.get(item.measurementTypeId);
+    const definition = createMeasurementFieldParameterDefinition(field, {
+      cnName: item.name || measurementType?.name,
+      valueType: measurementType?.valueType === "string" || measurementType?.valueType === "boolean" ? "string" : "float"
+    });
+    if (!definition) continue;
+    const addition = { position, deviceKind: target.deviceModel, field: definition.enName, definition };
+    target.parameterDefinitions = [...target.parameterDefinitions, definition];
+    additions.push(addition);
+    addedReferences.add(referenceKey);
+  }
+
+  const bodyDefinitions = positionByValue.get("device")?.parameterDefinitions ?? [...options.parameterDefinitions];
+  return { parameterDefinitions: [...bodyDefinitions], positionDefinitions, additions };
+}
 
 export type MeasurementProfilePositionSource = Pick<DeviceTemplate, "kind" | "terminalCount"> &
   Partial<Pick<DeviceTemplate,

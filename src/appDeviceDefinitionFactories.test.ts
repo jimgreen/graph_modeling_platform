@@ -607,6 +607,67 @@ describe("manual bend interaction helpers", () => {
     ]);
   });
 
+  test("rejects an accidental empty built-in parameter table", () => {
+    const setDefinitionDraftError = vi.fn();
+    const setDeviceDefinitionOverrides = vi.fn();
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-source")!;
+
+    createSaveDeviceDefinitionDraft({
+      definitionDraftRows: [],
+      definitionDeleteAllParametersRequestedRef: { current: false },
+      requireEditMode: () => true,
+      selectedDefinitionTemplate: template,
+      setDefinitionDraftError,
+      setDeviceDefinitionOverrides
+    })();
+
+    expect(setDefinitionDraftError).toHaveBeenCalledWith(expect.stringContaining("不会保存"));
+    expect(setDeviceDefinitionOverrides).not.toHaveBeenCalled();
+  });
+
+  test("persists an empty built-in parameter table only after explicit delete-all", () => {
+    let nextOverrides: Record<string, any> = {};
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-source")!;
+    const deleteAllRef = { current: true };
+    const setDefinitionDraftError = vi.fn();
+
+    createSaveDeviceDefinitionDraft({
+      ALLOW_RESIZE_TRANSFORM_PARAM: "allow_resize_transform",
+      definitionDeleteAllParametersRequestedRef: deleteAllRef,
+      definitionDraftRows: [],
+      definitionDraftSection: "ACGenerator",
+      definitionMeasurementDraft: [],
+      deviceDefinitionKeyForTemplate: (candidate: any) => candidate.kind,
+      deviceDefinitionOverrideForTemplate: (candidate: any, overrides: Record<string, any>) => overrides[candidate.kind],
+      deviceDefinitionRowId: () => "row",
+      getTemplateParameterDefinitions,
+      isReservedDeviceDefinitionParamName: () => false,
+      libraryTemplates: DEVICE_LIBRARY,
+      measurementConfig: { measurementTypes: [], deviceProfiles: [] },
+      measurementConfigDraft: null,
+      measurementConfigDraftRef: { current: null },
+      normalizeComponentLibraryName: (value: string) => value.trim(),
+      normalizeDefinitionRowEnumFields: (row: any) => row,
+      requireEditMode: () => true,
+      selectedDefinitionTemplate: template,
+      setDefinitionDraftError,
+      setDefinitionDraftRows: vi.fn(),
+      setDefinitionMeasurementDraft: vi.fn(),
+      setDeviceDefinitionOverrides: (updater: (current: Record<string, any>) => Record<string, any>) => {
+        nextOverrides = updater({});
+      },
+      syncExistingNodesWithTemplateDefinitions: vi.fn()
+    })();
+
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
+    expect(nextOverrides[sharedKey]).toMatchObject({
+      parameterDefinitions: [],
+      parameterDefinitionsIntent: "delete-all"
+    });
+    expect(deleteAllRef.current).toBe(false);
+    expect(setDefinitionDraftError).toHaveBeenLastCalledWith("");
+  });
+
   test("saving a derived definition parameter draft keeps newly added derived fields", () => {
     let nextOverrides: Record<string, any> = {};
     const scope = {
@@ -2813,6 +2874,10 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
       "rated_voltage",
       "v_max",
       "v_min",
+      "p",
+      "q",
+      "u",
+      "f",
       "regable"
     ];
 

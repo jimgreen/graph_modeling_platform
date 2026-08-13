@@ -35,6 +35,10 @@ describe("converter parameter options", () => {
     expect(PARAM_LABELS.flow_min).toBe("流量下限(Nm3/h)");
   });
 
+  test("uses PRESSURE and FLOW only for hydrogen storage", () => {
+    expect(paramOptionsForSection("control_type", "HydroStorage")).toEqual(["PRESSURE", "FLOW"]);
+  });
+
   test("uses P and T only for electric-heat coupling controls", () => {
     for (const section of ["AcE2Heat", "DcE2Heat", "AcE2Heat2", "DcE2Heat2"]) {
       expect(paramOptionsForSection("control_type", section), section).toEqual(["P", "T"]);

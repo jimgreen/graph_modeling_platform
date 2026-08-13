@@ -111,6 +111,7 @@ import {
   getDeviceStrokeWidth,
   getTemplateStateDefinitions,
   normalizeDeviceStateDefinitions,
+  normalizeDeviceParamRecord,
   normalizeDeviceStatusForE,
   resolveDeviceStateVisual,
   nodeAllowsResizeTransform,
@@ -685,7 +686,7 @@ describe("power system model", () => {
     expect(node.terminals.map((terminal) => terminal.type)).toEqual(["ac", "ac"]);
     expect(node.terminals.map((terminal) => terminal.anchor)).toEqual([{ x: -0.5, y: 0 }, { x: 0.5, y: 0 }]);
     expect(getDeviceGlyphVariant("ac-box-breaker")).toBe("box-breaker");
-    expect(getEParameterKeys("ac-box-breaker", node.params)).toEqual(E_SECTION_COLUMNS.ACBreak);
+    expect(getEParameterKeys("ac-box-breaker", node.params)).toEqual([...E_SECTION_COLUMNS.ACBreak, "i"]);
 
     const exported = parseESections(buildEDeviceParameterFile({
       version: 1,
@@ -1117,7 +1118,17 @@ describe("power system model", () => {
       expect(definitions.get("idx")).toMatchObject({ valueType: "integer", readonly: true });
       expect(definitions.get("name")).toMatchObject({ valueType: "string", readonly: true });
       expect(definitions.get("status")).toMatchObject({ valueType: "numberEnum", enumValues: ["1", "0"], readonly: false });
-      expect(definitions.get("run_stat")).toMatchObject({ valueType: "stringEnum", enumValues: ["运行", "停运"], readonly: false });
+      expect(definitions.get("run_stat")).toMatchObject({
+        valueType: "numberEnum",
+        typicalValue: "1",
+        enumValueType: "number",
+        enumValues: ["1", "0"],
+        enumOptions: [
+          { value: "1", label: "运行" },
+          { value: "0", label: "停运" }
+        ],
+        readonly: false
+      });
       expect(definitions.get(expected.relationKey)).toBeUndefined();
       expect(definitions.get("source_type")).toMatchObject({ valueType: "string", readonly: true });
       expect(definitions.has("rated_power")).toBe(false);
@@ -1216,14 +1227,64 @@ describe("power system model", () => {
   test("adds run_stat operating status to every device type", () => {
     expect(buildDefaultDeviceParameterDefinitions(["ac"]).find((definition) => definition.enName === "run_stat")).toMatchObject({
       cnName: "工作状态",
-      valueType: "stringEnum",
-      typicalValue: "运行",
+      valueType: "numberEnum",
+      typicalValue: "1",
+      enumValueType: "number",
+      enumValues: ["1", "0"],
+      enumOptions: [
+        { value: "1", label: "运行" },
+        { value: "0", label: "停运" }
+      ],
       readonly: false
     });
     for (const template of DEVICE_LIBRARY.filter((item) => !item.kind.startsWith("static-"))) {
       const node = createDefaultNode(template.kind, { x: 100, y: 100 });
-      expect(node.params.run_stat).toBe("运行");
+      expect(node.params.run_stat).toBe("1");
+      expect(getTemplateParameterDefinitions(template).find((definition) => definition.enName === "run_stat"), template.kind).toMatchObject({
+        valueType: "numberEnum",
+        typicalValue: "1",
+        enumValueType: "number",
+        enumValues: ["1", "0"],
+        enumOptions: [
+          { value: "1", label: "运行" },
+          { value: "0", label: "停运" }
+        ]
+      });
     }
+  });
+
+  test("migrates known run_stat aliases and empty values without hiding unknown values", () => {
+    const expected = new Map<string, string>([
+      ["运行", "1"], ["投运", "1"], ["on", "1"], ["true", "1"],
+      ["停运", "0"], ["检修", "0"], ["off", "0"], ["false", "0"],
+      ["", "1"], ["UNKNOWN", "UNKNOWN"]
+    ]);
+
+    for (const [source, target] of expected) {
+      expect(normalizeDeviceParamRecord({ run_stat: source })?.run_stat).toBe(target);
+    }
+
+    const storedDefinitions = JSON.stringify([{
+      cnName: "工作状态",
+      enName: "run_stat",
+      valueType: "stringEnum",
+      typicalValue: "运行",
+      enumValues: ["运行", "停运"]
+    }]);
+    const normalizedDefinitions = JSON.parse(
+      normalizeDeviceParamRecord({ _customParamDefinitions: storedDefinitions })!._customParamDefinitions
+    );
+    expect(normalizedDefinitions[0]).toMatchObject({
+      enName: "run_stat",
+      valueType: "numberEnum",
+      typicalValue: "1",
+      enumValueType: "number",
+      enumValues: ["1", "0"],
+      enumOptions: [
+        { value: "1", label: "运行" },
+        { value: "0", label: "停运" }
+      ]
+    });
   });
 
 

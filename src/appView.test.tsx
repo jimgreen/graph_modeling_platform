@@ -154,6 +154,11 @@ describe("app view device model parameter keys", () => {
       "alpha",
       "regable",
       "run_stat",
+      "p",
+      "q",
+      "u",
+      "f",
+      "rdf_id",
       "frequency",
       "short_circuit_capacity",
       "status",
@@ -566,8 +571,33 @@ describe("app view device definition parameter rows", () => {
   test("renders the parameter table from display-filtered rows", () => {
     const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
 
-    expect(source).toMatch(/definitionDraftRowsForDisplay\.map\(\(row\)/);
+    expect(source).toMatch(/definitionDraftRowsForDisplay\.map\(\(row, rowIndex\)/);
     expect(source).not.toMatch(/definitionDraftRows\.map\(\(row\)\s*=>\s*\(<tr key=\{row\.id\}/);
+  });
+
+  test("renders sequence columns and bulk operation toolbars above definition tables", () => {
+    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const measurementSource = readFileSync(new URL("./appExtracted/appProjectCanvasFactories.tsx", import.meta.url), "utf8");
+    const stylesSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+
+    const parameterToolbarIndex = viewSource.indexOf('className="definition-table-toolbar" aria-label="参数定义表格操作"');
+    const parameterTableIndex = viewSource.indexOf('className="custom-param-table-wrap device-definition-table-wrap"', parameterToolbarIndex);
+    expect(parameterToolbarIndex).toBeGreaterThan(-1);
+    expect(parameterTableIndex).toBeGreaterThan(parameterToolbarIndex);
+    expect(viewSource).toContain('<th className="definition-table-sequence">序号</th>');
+    expect(viewSource).toContain('aria-selected={selectedDefinitionParameterRowIdSet.has(row.id)}');
+    expect(stylesSource).toMatch(/\.custom-device-tab-panel-parameters\s*\{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\)/s);
+
+    const measurementToolbarIndex = measurementSource.indexOf('className="measurement-profile-toolbar"');
+    const measurementTableIndex = measurementSource.indexOf('className="measurement-table-wrap"', measurementToolbarIndex);
+    const measurementPanelSource = measurementSource.slice(
+      measurementSource.indexOf("export function createRenderDeviceDefinitionMeasurementPanel"),
+      measurementSource.indexOf("export function createRenderMeasurementConfigDialog")
+    );
+    expect(measurementToolbarIndex).toBeGreaterThan(-1);
+    expect(measurementTableIndex).toBeGreaterThan(measurementToolbarIndex);
+    expect(measurementPanelSource).not.toContain('<th>操作</th>');
+    expect(measurementPanelSource).toContain('aria-selected={selectedRowIndexSet.has(itemIndex)}');
   });
 
   test("keeps derived edit dialogs from injecting base default parameters", () => {

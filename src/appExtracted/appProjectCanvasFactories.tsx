@@ -2,6 +2,7 @@
 import { clampNumber } from "../canvasViewport";
 import { DEFAULT_MEASUREMENT_CONFIG } from "../measurements";
 import { buildEFileExportOptionsFromLibrary, setSkipSaveCheck } from "./appDeviceDefinitionFactories";
+import { moveSelectedTableRows, nextTableRowSelection } from "../definitionTableSelection";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
   return (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget, manualPoints?: Point[]) => {
@@ -3699,14 +3700,63 @@ const DEVICE_DEFINITION_MEASUREMENT_PROFILE_ALIASES: Record<string, readonly str
 
 export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<string, any>) {
   return (target: DeviceDefinitionMeasurementPanelTarget) => {
-  const { BufferedTextInput, PARAM_LABELS, addMeasurementProfileItem, button, deleteMeasurementProfileItem, div, editableMeasurementProfileByKind, editableMeasurementTypeById, footer, isBrowseMode, measurementConfig, measurementConfigDraft, measurementConfigSaveStatus, moveMeasurementProfileItem, normalizeComponentLibraryName, section, select, span, table, tbody, td, th, thead, tr, updateMeasurementProfileItem } = __appScope;
+  const { BufferedTextInput, PARAM_LABELS, button, div, editableMeasurementTypeById, footer, isBrowseMode, measurementConfig, measurementConfigDraft, measurementConfigSaveStatus, section, select, span, table, tbody, td, th, thead, tr } = __appScope;
     const draftConfig = measurementConfigDraft ?? measurementConfig;
-    const selectedKind = normalizeComponentLibraryName(target.deviceKind);
-    const selectedProfileKind = [
-      selectedKind,
-      ...(DEVICE_DEFINITION_MEASUREMENT_PROFILE_ALIASES[selectedKind] ?? [])
-    ].find((profileKind) => editableMeasurementProfileByKind.has(profileKind)) ?? selectedKind;
-    const selectedProfileItems = editableMeasurementProfileByKind.get(selectedProfileKind)?.items ?? [];
+    const selectedKind = target.deviceKind;
+    const selectedProfileItems = [...target.items];
+    const selectedRowIndexes = (target.selectedRowIndexes ?? []).filter(
+      (index) => index >= 0 && index < selectedProfileItems.length
+    );
+    const selectedRowIndexSet = new Set(selectedRowIndexes);
+    const selectRow = (index: number, event: any) => {
+      const orderedIndexes = selectedProfileItems.map((_, itemIndex) => itemIndex);
+      const result = nextTableRowSelection(
+        selectedRowIndexes,
+        index,
+        orderedIndexes,
+        target.selectionAnchorIndex,
+        event
+      );
+      target.setSelectedRowIndexes?.(result.selectedKeys);
+      target.setSelectionAnchorIndex?.(result.anchorKey);
+    };
+    const updateItem = (index: number, patch: Partial<DeviceMeasurementProfileItem>) => {
+      target.setItems(selectedProfileItems.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
+    };
+    const copySelectedItems = () => {
+      if (selectedRowIndexes.length === 0) return;
+      const copies = selectedRowIndexes.map((index) => ({ ...selectedProfileItems[index] }));
+      const insertIndex = Math.max(...selectedRowIndexes) + 1;
+      const items = [
+        ...selectedProfileItems.slice(0, insertIndex),
+        ...copies,
+        ...selectedProfileItems.slice(insertIndex)
+      ];
+      target.setItems(items);
+      const copiedIndexes = copies.map((_, index) => insertIndex + index);
+      target.setSelectedRowIndexes?.(copiedIndexes);
+      target.setSelectionAnchorIndex?.(copiedIndexes[0] ?? null);
+    };
+    const moveSelectedItems = (direction: -1 | 1) => {
+      const selectedItems = new Set(selectedRowIndexes.map((index) => selectedProfileItems[index]));
+      if (selectedItems.size === 0) return;
+      const items = moveSelectedTableRows(
+        selectedProfileItems,
+        selectedItems,
+        (item) => item,
+        direction
+      );
+      const nextSelectedIndexes = items.flatMap((item, index) => selectedItems.has(item) ? [index] : []);
+      target.setItems(items);
+      target.setSelectedRowIndexes?.(nextSelectedIndexes);
+      target.setSelectionAnchorIndex?.(nextSelectedIndexes[0] ?? null);
+    };
+    const deleteSelectedItems = () => {
+      if (selectedRowIndexes.length === 0) return;
+      target.setItems(selectedProfileItems.filter((_, index) => !selectedRowIndexSet.has(index)));
+      target.setSelectedRowIndexes?.([]);
+      target.setSelectionAnchorIndex?.(null);
+    };
     const measurementProfilePositionDefinitions = target.positionDefinitions?.length
       ? [...target.positionDefinitions]
       : [{
@@ -3718,6 +3768,19 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
     const positionDefinitionByValue = new Map(
       measurementProfilePositionDefinitions.map((definition) => [definition.value, definition])
     );
+    const ensureAssociatedField = (
+      position: string,
+      associatedField: string | undefined,
+      measurementTypeId: string
+    ) => {
+      const field = String(associatedField ?? "").trim();
+      if (!field) return;
+      const existingDefinitions = positionDefinitionByValue.get(position)?.parameterDefinitions ?? [];
+      if (existingDefinitions.some((definition) => String(definition.enName ?? "").trim().toLowerCase() === field.toLowerCase())) {
+        return;
+      }
+      target.ensureAssociatedField?.(position, field, measurementTypeId);
+    };
     const associatedFieldOptionsForPosition = (position: string) => {
       const seen = new Set<string>();
       return (positionDefinitionByValue.get(position)?.parameterDefinitions ?? []).flatMap((definition) => {
@@ -3749,10 +3812,30 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
           <button
             type="button"
             disabled={isBrowseMode || draftConfig.measurementTypes.length === 0 || !selectedKind}
-            onClick={() => addMeasurementProfileItem(selectedProfileKind)}
+            onClick={() => {
+              const type = draftConfig.measurementTypes[0];
+              if (!type) return;
+              const associatedField = type.key || type.id;
+              target.setItems([...selectedProfileItems, {
+                measurementTypeId: type.id,
+                name: type.name,
+                position: "device",
+                associatedField,
+                defaultVisible: type.defaultVisible
+              }]);
+              const addedIndex = selectedProfileItems.length;
+              target.setSelectedRowIndexes?.([addedIndex]);
+              target.setSelectionAnchorIndex?.(addedIndex);
+              ensureAssociatedField("device", associatedField, type.id);
+            }}
           >
             添加量测
           </button>
+          <button type="button" disabled={isBrowseMode || selectedRowIndexes.length === 0} onClick={copySelectedItems}>复制</button>
+          <button type="button" disabled={isBrowseMode || selectedRowIndexes.length === 0} onClick={() => moveSelectedItems(-1)}>上移</button>
+          <button type="button" disabled={isBrowseMode || selectedRowIndexes.length === 0} onClick={() => moveSelectedItems(1)}>下移</button>
+          <button type="button" disabled={isBrowseMode || selectedRowIndexes.length === 0} onClick={deleteSelectedItems}>删除</button>
+          <span>{selectedRowIndexes.length > 0 ? `已选 ${selectedRowIndexes.length} 行` : "点击行选择，Ctrl/Shift 可多选"}</span>
           <span>元件库 {selectedKind || "未设置"} / 参考图元 {target.label}</span>
         </div>
         <div className="measurement-table-wrap">
@@ -3765,7 +3848,6 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                 <th>量测位置</th>
                 <th>关联字段</th>
                 <th>默认显示</th>
-                <th>操作</th>
               </tr>
             </thead>
             <tbody>
@@ -3774,14 +3856,19 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                 const itemPosition = measurementProfilePositionValue(item);
                 const associatedFieldOptions = associatedFieldOptionsForPosition(itemPosition);
                 return (
-                  <tr key={`${selectedProfileKind}-${item.measurementTypeId}-${item.position ?? "legacy"}-${item.role ?? "item"}-${itemIndex}`}>
-                    <td>{itemIndex + 1}</td>
+                  <tr
+                    key={`${selectedKind}-${item.measurementTypeId}-${item.position ?? "legacy"}-${item.role ?? "item"}-${itemIndex}`}
+                    className={`definition-table-row${selectedRowIndexSet.has(itemIndex) ? " selected" : ""}`}
+                    aria-selected={selectedRowIndexSet.has(itemIndex)}
+                    onClick={(event) => selectRow(itemIndex, event)}
+                  >
+                    <td className="definition-table-sequence">{itemIndex + 1}</td>
                     <td>
                       <BufferedTextInput
                         value={item.name ?? item.labelOverride ?? ""}
                         disabled={isBrowseMode}
                         placeholder={currentType?.name ?? "量测名称"}
-                        onCommit={(nextValue) => updateMeasurementProfileItem(selectedProfileKind, itemIndex, {
+                        onCommit={(nextValue) => updateItem(itemIndex, {
                           name: nextValue || undefined,
                           labelOverride: undefined
                         })}
@@ -3794,10 +3881,20 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                         onChange={(event) => {
                           const nextTypeId = event.target.value;
                           const nextType = editableMeasurementTypeById.get(nextTypeId);
-                          updateMeasurementProfileItem(selectedProfileKind, itemIndex, {
+                          const previousType = editableMeasurementTypeById.get(item.measurementTypeId);
+                          const currentAssociatedField = String(item.associatedField ?? "").trim();
+                          const replaceAssociatedField = !currentAssociatedField ||
+                            currentAssociatedField === previousType?.key ||
+                            currentAssociatedField === previousType?.id;
+                          const nextAssociatedField = replaceAssociatedField
+                            ? nextType?.key || nextTypeId
+                            : currentAssociatedField;
+                          updateItem(itemIndex, {
                             measurementTypeId: nextTypeId,
-                            name: item.name || nextType?.name || item.name
+                            name: item.name || nextType?.name || item.name,
+                            associatedField: nextAssociatedField || undefined
                           });
+                          ensureAssociatedField(itemPosition, nextAssociatedField, nextTypeId);
                         }}
                       >
                         {!editableMeasurementTypeById.has(item.measurementTypeId) && (
@@ -3814,18 +3911,11 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                         disabled={isBrowseMode}
                         onChange={(event) => {
                           const nextPosition = event.target.value;
-                          const validAssociatedFields = new Set(
-                            (positionDefinitionByValue.get(nextPosition)?.parameterDefinitions ?? [])
-                              .map((definition) => String(definition?.enName ?? "").trim().toLowerCase())
-                              .filter(Boolean)
-                          );
                           const currentAssociatedField = String(item.associatedField ?? "").trim();
-                          updateMeasurementProfileItem(selectedProfileKind, itemIndex, {
-                            position: nextPosition,
-                            ...(currentAssociatedField && !validAssociatedFields.has(currentAssociatedField.toLowerCase())
-                              ? { associatedField: undefined }
-                              : {})
+                          updateItem(itemIndex, {
+                            position: nextPosition
                           });
+                          ensureAssociatedField(nextPosition, currentAssociatedField, item.measurementTypeId);
                         }}
                       >
                         {measurementProfilePositionOptions.map((option) => (
@@ -3840,9 +3930,11 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                         title={item.associatedField && !associatedFieldOptions.some((option) => option.value === item.associatedField)
                           ? "当前关联字段不在元件属性名称列表中"
                           : "关联到元件属性名称"}
-                        onChange={(event) => updateMeasurementProfileItem(selectedProfileKind, itemIndex, {
-                          associatedField: event.target.value || undefined
-                        })}
+                        onChange={(event) => {
+                          const nextAssociatedField = event.target.value || undefined;
+                          updateItem(itemIndex, { associatedField: nextAssociatedField });
+                          ensureAssociatedField(itemPosition, nextAssociatedField, item.measurementTypeId);
+                        }}
                       >
                         <option value="">未关联（使用量测类型ID）</option>
                         {item.associatedField && !associatedFieldOptions.some((option) => option.value === item.associatedField) && (
@@ -3857,7 +3949,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                       <select
                         value={item.defaultVisible === undefined ? "type" : item.defaultVisible ? "1" : "0"}
                         disabled={isBrowseMode}
-                        onChange={(event) => updateMeasurementProfileItem(selectedProfileKind, itemIndex, {
+                        onChange={(event) => updateItem(itemIndex, {
                           defaultVisible: event.target.value === "type" ? undefined : event.target.value === "1"
                         })}
                       >
@@ -3866,36 +3958,11 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                         <option value="0">隐藏</option>
                       </select>
                     </td>
-                    <td>
-                      <div className="measurement-profile-row-actions">
-                        <button
-                          type="button"
-                          disabled={isBrowseMode || itemIndex === 0}
-                          onClick={() => moveMeasurementProfileItem(selectedProfileKind, itemIndex, -1)}
-                        >
-                          上移
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isBrowseMode || itemIndex === selectedProfileItems.length - 1}
-                          onClick={() => moveMeasurementProfileItem(selectedProfileKind, itemIndex, 1)}
-                        >
-                          下移
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isBrowseMode}
-                          onClick={() => deleteMeasurementProfileItem(selectedProfileKind, itemIndex)}
-                        >
-                          删除
-                        </button>
-                      </div>
-                    </td>
                   </tr>
                 );
               }) : (
                 <tr>
-                  <td colSpan={7}>当前元件库还没有默认量测模板。</td>
+                  <td colSpan={6}>当前元件库还没有默认量测模板。</td>
                 </tr>
               )}
             </tbody>

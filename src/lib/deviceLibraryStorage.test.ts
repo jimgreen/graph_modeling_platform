@@ -249,6 +249,10 @@ describe("deviceLibraryStorage", () => {
       });
       const replaced = await getAllOverrides();
       expect(Object.keys(replaced)).toEqual(["shared:ACLoad"]);
+      expect(replaced["shared:ACLoad"]).toMatchObject({
+        kind: "shared:ACLoad",
+        params: { component_type: "ACLoad" }
+      });
     });
   });
 

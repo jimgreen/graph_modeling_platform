@@ -218,6 +218,7 @@ describe("graph template library filtering", () => {
       }
     });
     expect(normalized["shared:DCDCConverter"]).toMatchObject({
+      kind: "shared:DCDCConverter",
       parameterDefinitions: [],
       parameterDefinitionsIntent: "delete-all"
     });
@@ -228,7 +229,11 @@ describe("graph template library filtering", () => {
       customAttributeLibraries: ["旧类别库"],
       customComponentTypes: [{ name: "LegacyDevice", attributeLibraryName: "旧类别库" }],
       deviceDefinitionOverrides: {
-        "shared:ACGenerator": { kind: "shared:ACGenerator", parameterDefinitions: [] },
+        "shared:ACGenerator": {
+          kind: "shared:ACGenerator",
+          params: { component_type: "ACGenerator" },
+          parameterDefinitions: []
+        },
         "shared:DCDCConverter": {
           kind: "shared:DCDCConverter",
           parameterDefinitions: [],
@@ -843,8 +848,63 @@ describe("graph template library filtering", () => {
 
     expect(definitions.find((definition) => definition.enName === "idx")).toMatchObject({ readonly: true });
     expect(definitions.find((definition) => definition.enName === "status")).toMatchObject({ readonly: false });
-    expect(definitions.find((definition) => definition.enName === "run_stat")).toMatchObject({ readonly: false });
+    expect(definitions.find((definition) => definition.enName === "run_stat")).toMatchObject({
+      readonly: false,
+      valueType: "numberEnum",
+      typicalValue: "1",
+      enumValueType: "number",
+      enumValues: ["1", "0"],
+      enumOptions: [
+        { value: "1", label: "运行" },
+        { value: "0", label: "停运" }
+      ]
+    });
     expect(definitions.find((definition) => definition.enName === "node")).toMatchObject({ readonly: true });
+  });
+
+  test("normalizes run_stat values and definitions in persisted templates and overrides", () => {
+    const [template] = normalizeCustomDeviceTemplates([{
+      kind: "custom-legacy-run-stat",
+      label: "旧工作状态设备",
+      categoryLibrary: "交流设备",
+      size: { width: 104, height: 64 },
+      params: { component_type: "LegacyRunStat", run_stat: "投运" },
+      terminalType: "ac",
+      terminalCount: 1,
+      parameterDefinitions: [{
+        cnName: "工作状态",
+        enName: "run_stat",
+        valueType: "stringEnum",
+        typicalValue: "运行",
+        enumValues: ["运行", "停运"]
+      }]
+    }]);
+    const overrides = normalizeDeviceDefinitionOverrides({
+      "ac-load": {
+        kind: "ac-load",
+        params: { run_stat: "停运" },
+        parameterDefinitions: [{
+          cnName: "工作状态",
+          enName: "run_stat",
+          valueType: "stringEnum",
+          typicalValue: "运行",
+          enumValues: ["运行", "停运"]
+        }]
+      }
+    });
+
+    expect(template.params.run_stat).toBe("1");
+    expect(template.parameterDefinitions?.[0]).toMatchObject({
+      valueType: "numberEnum",
+      typicalValue: "1",
+      enumValues: ["1", "0"]
+    });
+    expect(overrides["shared:ACLoad"]?.params?.run_stat).toBe("0");
+    expect(overrides["shared:ACLoad"]?.parameterDefinitions?.[0]).toMatchObject({
+      valueType: "numberEnum",
+      typicalValue: "1",
+      enumValues: ["1", "0"]
+    });
   });
 
   test("preserves parameter E export settings while normalizing persisted definitions", () => {

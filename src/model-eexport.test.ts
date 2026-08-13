@@ -65,6 +65,7 @@ import {
   DC_GENERATOR_CONTROL_TYPES,
   HYDROGEN_COUPLING_CONTROL_TYPES,
   HYDROGEN_ENDPOINT_CONTROL_TYPES,
+  HYDROGEN_STORAGE_CONTROL_TYPES,
   ELECTRIC_HEAT_COUPLING_CONTROL_TYPES,
   E_SECTION_COLUMNS,
   tidyOrthogonalRoute,
@@ -573,7 +574,7 @@ test("resolves custom multi-state visual overrides without changing E export sha
 
   const node = createNodeFromTemplate(template, { x: 100, y: 100 });
   expect(node.params.status).toBeUndefined();
-  expect(node.params.run_stat).toBe("运行");
+  expect(node.params.run_stat).toBe("1");
   expect(resolveDeviceStateVisual(template, node)).toBeNull();
 
   const visual = resolveDeviceStateVisual(template, { ...node, params: { ...node.params, status: "2" } });
@@ -739,7 +740,11 @@ test("exports parallel and series AC compensators with the defined columns and t
   expect(E_SECTION_COLUMNS.ACSeriCompensator).toEqual([
     "idx", "name", "dev_type", "i_node", "j_node", "rated_voltage", "rated_reactive_power", "reactance", "run_stat"
   ]);
-  expect(exported.ACCompensator.columns).toEqual(E_SECTION_COLUMNS.ACCompensator);
+  expect(exported.ACCompensator.columns).toEqual([
+    ...E_SECTION_COLUMNS.ACCompensator,
+    "q",
+    "current"
+  ]);
   expect(exported.ACCompensator.rows).toEqual([expect.objectContaining({
     idx: "1",
     name: "并联电容器1",
@@ -749,7 +754,12 @@ test("exports parallel and series AC compensators with the defined columns and t
     reactance: "100"
   })]);
   expect(exported.ACCompensator.rows[0].node).toMatch(/^\d+$/);
-  expect(exported.ACSeriCompensator.columns).toEqual(E_SECTION_COLUMNS.ACSeriCompensator);
+  expect(exported.ACSeriCompensator.columns).toEqual([
+    ...E_SECTION_COLUMNS.ACSeriCompensator,
+    "p",
+    "q",
+    "current"
+  ]);
   expect(exported.ACSeriCompensator.rows).toEqual([expect.objectContaining({
     idx: "1",
     name: "串联电抗器1",
@@ -833,7 +843,7 @@ test("uses fixed cnName for node/i_node/j_node/run_stat columns", () => {
   const bus = sections.find((s) => s.kind === "ACRealBs");
   expect(bus).toBeDefined();
   expect(bus!.fields.find((f) => f.exportName === "node")?.cnName).toBe("节点");
-  expect(bus!.fields.find((f) => f.exportName === "run_stat")?.cnName).toBe("运行状态（运行/停运）");
+  expect(bus!.fields.find((f) => f.exportName === "run_stat")?.cnName).toBe("工作状态（0:停运，1:运行）");
   const branch = sections.find((s) => s.kind === "ACBranch");
   expect(branch).toBeDefined();
   expect(branch!.fields.find((f) => f.exportName === "i_node")?.cnName).toBe("首节点");
@@ -961,6 +971,47 @@ test("normalizes legacy gas quantity names across E interface definition import 
   expect(templatePayload.HydroStorage.rows[0].gas_quantity).toBe("321");
 });
 
+test("normalizes legacy HydroStorage capacity interface fields to rated_capacity", () => {
+  const tank = assignPermanentDeviceIndex(createDefaultNode("hydrogen-tank", { x: 100, y: 100 }), {}).node;
+  tank.params.rated_capacity = "1234";
+
+  const payload = parseESections(buildEFileExport({
+    version: 1,
+    name: "储氢罐额定容量接口迁移",
+    nodes: [tank],
+    edges: []
+  }, ["默认方案"], {
+    interfaceDefinitions: [{
+      componentLibrary: "HydroStorage",
+      exportEnabled: true,
+      exportName: "HydroStorage",
+      fields: [
+        { sourceName: "idx", cnName: "序号", exportEnabled: true, exportName: "idx" },
+        { sourceName: "capacity", cnName: "旧额定储气量", exportEnabled: true, exportName: "capacity" }
+      ]
+    }]
+  }).text);
+
+  expect(payload.HydroStorage.columns).toEqual(["idx", "rated_capacity"]);
+  expect(payload.HydroStorage.rows[0].rated_capacity).toBe("1234");
+  expect(payload.HydroStorage.rows[0]).not.toHaveProperty("capacity");
+
+  const definitionFile = buildEDeviceDefinitionFileFromInterfaceDefinitions([{
+    componentLibrary: "HydroStorage",
+    categoryLibrary: "氢能设备",
+    label: "储氢罐",
+    exportEnabled: true,
+    exportName: "HydroStorage",
+    fields: [
+      { sourceName: "idx", cnName: "序号", exportEnabled: true, exportName: "idx" },
+      { sourceName: "capacity", cnName: "旧额定储气量", exportEnabled: true, exportName: "capacity" }
+    ]
+  }]);
+  const [parsedDefinition] = parseEDeviceDefinitionFile(definitionFile.text);
+  expect(parsedDefinition.fields.map((field) => field.sourceName)).toEqual(["idx", "rated_capacity"]);
+  expect(parsedDefinition.fields.map((field) => field.exportName)).toEqual(["idx", "rated_capacity"]);
+});
+
 test("exports and parses custom derived component library metadata", () => {
   const template = {
     kind: "custom-user-wind",
@@ -1075,7 +1126,7 @@ test("exports hydrogen, heat, and cross-energy devices to E sections and reports
     "flow_max",
     "run_stat",
     "pressure",
-    "capacity",
+    "rated_capacity",
     "water_volume",
     "initial_soc",
     "pressure_max",
@@ -1096,7 +1147,7 @@ test("exports hydrogen, heat, and cross-energy devices to E sections and reports
       flow_min: "-10",
       flow_max: "10",
       pressure: "1",
-      capacity: "1000",
+      rated_capacity: "1000",
       initial_soc: "0.5",
       pressure_max: "45",
       pressure_min: "0.1"
@@ -1502,7 +1553,13 @@ test("keeps canonical transformer E fields as export defaults when metadata is a
     exportEnabled: true,
     exportName: "rated_capacity"
   });
-  expect(getEParameterKeys(transformer.kind, transformer.params)).toEqual(E_SECTION_COLUMNS.ACTransformer);
+  expect(getEParameterKeys(transformer.kind, transformer.params)).toEqual([
+    ...E_SECTION_COLUMNS.ACTransformer,
+    "p",
+    "q",
+    "u",
+    "i"
+  ]);
 });
 
 test("removes a canonical E column when its parameter definition disables export", () => {
@@ -1710,7 +1767,9 @@ test("maps graphical AC and DC buses to real bus sections in E parameter files",
     node: "1",
     v_max: "1.1",
     v_min: "0.9",
-    run_stat: "1"
+    run_stat: "1",
+    u: "0",
+    f: "0"
   });
   expect(dcRealBus).toEqual({
     idx: "1",
@@ -1718,7 +1777,9 @@ test("maps graphical AC and DC buses to real bus sections in E parameter files",
     node: "1",
     v_max: "1.1",
     v_min: "0.9",
-    run_stat: "1"
+    run_stat: "1",
+    u: "0",
+    i: "0"
   });
 });
 
@@ -1818,7 +1879,11 @@ test("exports a three-winding transformer as one independent device with three-s
     "bt3",
     "tap3",
     "shift3",
-    "run_stat"
+    "run_stat",
+    "p",
+    "q",
+    "u",
+    "i"
   ]);
   expect(acTransfomer3).toEqual({
     idx: "1",
@@ -1851,7 +1916,11 @@ test("exports a three-winding transformer as one independent device with three-s
     bt3: "0.006",
     tap3: "1.03",
     shift3: "3",
-    run_stat: "1"
+    run_stat: "1",
+    p: "0",
+    q: "0",
+    u: "0",
+    i: "0"
   });
 });
 
@@ -2206,7 +2275,7 @@ test("reconciles existing device params when template definitions change", () =>
   expect(reconciled.params.old_param).toBeUndefined();
   expect(reconciled.params.new_param).toBe("12.5");
   expect(reconciled.params.status).toBe("0");
-  expect(reconciled.params.run_stat).toBe("停运");
+  expect(reconciled.params.run_stat).toBe("0");
   expect(reconciled.params._labelText).toBe("保留标签");
   expect(reconciled.params.free_note).toBe("非定义参数");
   expect(JSON.parse(reconciled.params[CUSTOM_PARAM_DEFINITIONS_KEY])).toEqual(getTemplateParameterDefinitions(updatedTemplate));
@@ -2514,19 +2583,19 @@ test("infers expected value types for built-in component definitions", () => {
 test("keeps every built-in device parameter aligned with its semantic type and numeric default", () => {
   const floatNames = new Set([
     "ac_i_max", "ac_p_max", "ac_p_min", "ac_q_max", "ac_q_min", "ac_v_max", "ac_v_min", "ac_voltage", "active_power", "alpha", "angle", "array_area", "b", "b_set", "bt", "bt1", "bt2", "bt3",
-    "capacity", "capacity_factor", "charge_discharge_efficiency", "cut_in_wind_speed", "cut_out_wind_speed", "dc_i_max", "dc_p_max", "dc_p_min", "dc_v_max", "dc_v_min", "dc_voltage",
+    "capacity", "capacity_factor", "charge_discharge_efficiency", "current", "cut_in_wind_speed", "cut_out_wind_speed", "dc_i_max", "dc_p_max", "dc_p_min", "dc_v_max", "dc_v_min", "dc_voltage",
     "design_flow", "design_head", "e2h_coeff", "efficiency", "energy_capacity", "flow", "flow_rate", "flow_set", "flow_max", "flow_min", "frequency", "fuel_tank_capacity",
-    "g_set", "gas_quantity", "generator_efficiency", "gt", "gt1", "gt2", "gt3", "head", "heat_demand", "heat_power", "heat_rate",
+    "f", "g_set", "gas_quantity", "generator_efficiency", "gt", "gt1", "gt2", "gt3", "head", "heat_demand", "heat_power", "heat_rate",
     "h2e_coeff", "high_i_max", "high_rated_capacity", "high_vbase", "hub_height", "hydrogen_demand", "hydrogen_flow", "impedance", "initial_soc", "inlet_pressure",
-    "i_i_max", "i_max", "input_voltage", "i_p_max", "i_p_min", "i_q_max", "i_q_min", "i_q_set", "i_set", "i_v_max", "i_v_min", "i_v_set", "j_i_max", "j_p_max", "j_p_min", "j_q_max", "j_q_min", "j_q_set", "j_v_max", "j_v_min", "j_v_set", "length", "low_i_max", "low_rated_capacity", "low_vbase", "main_steam_pressure",
+    "i", "i_i_max", "i_max", "input_voltage", "i_p_max", "i_p_min", "i_q_max", "i_q_min", "i_q_set", "i_set", "i_v_max", "i_v_min", "i_v_set", "j_i_max", "j_p_max", "j_p_min", "j_q_max", "j_q_min", "j_q_set", "j_v_max", "j_v_min", "j_v_set", "length", "level", "low_i_max", "low_rated_capacity", "low_vbase", "main_steam_pressure",
     "main_steam_temperature", "max_charge_power", "max_current", "max_discharge_power", "medium_i_max", "medium_rated_capacity",
-    "medium_vbase", "module_efficiency", "outlet_pressure", "output_voltage", "p_ac_set", "p_dc_set", "p_max", "p_min", "p_set", "pbase", "power",
-    "power_factor", "pressure", "pressure_set", "pressure_max", "pressure_min", "primary_loop_pressure", "pv0", "pv1", "pv2", "q_ac_set", "q_max", "q_min", "q_set", "qbase", "qv0",
+    "medium_vbase", "module_efficiency", "outlet_pressure", "output_voltage", "p", "p_ac_set", "p_dc_set", "p_max", "p_min", "p_set", "pbase", "power",
+    "power_factor", "pressure", "pressure_set", "pressure_max", "pressure_min", "primary_loop_pressure", "pv0", "pv1", "pv2", "q", "q_ac_set", "q_max", "q_min", "q_set", "qbase", "qv0",
     "qv1", "qv2", "r", "r1", "r2", "r3", "rated_capacity", "rated_current", "rated_power", "rated_speed",
     "rated_voltage", "rated_wind_speed", "reactive_power", "reactor_thermal_power", "reference_irradiance", "reference_temperature", "return_temperature", "rotor_diameter",
     "shift", "shift1", "shift2", "shift3", "short_circuit_capacity", "soc", "soc_lower_limit", "soc_upper_limit",
     "specific_fuel_consumption", "start_time", "state_of_charge", "supply_temperature", "supply_temperature_set", "tap", "tap1", "tap2", "tap3",
-    "temperature", "temperature_coefficient", "thermal_efficiency", "v_ac_set", "v_dc_set", "v_max", "v_min", "v_set", "vbase", "voltage", "voltage_level", "water_volume", "x",
+    "temperature", "temperature_coefficient", "thermal_efficiency", "u", "v_ac_set", "v_dc_set", "v_max", "v_min", "v_set", "vbase", "voltage", "voltage_level", "water_volume", "x",
     "x1", "x2", "x3", "x_pu"
   ]);
   const integerNames = new Set(["battery_rack_count", "idx", "isl", "mppt_count"]);
@@ -2537,13 +2606,13 @@ test("keeps every built-in device parameter aligned with its semantic type and n
   const compensatorFloatNames = new Set(["rated_reactive_power", "reactance"]);
   const stringEnumNames = new Set([
     "ac_control_type", "control_type", "dc_control_type", "fuel_type", "i_control_type", "j_control_type", "reactor_type",
-    "run_stat", "storage_technology", "turbine_type"
+    "storage_technology", "turbine_type"
   ]);
   const numericText = /^[-+]?(?:\d+(?:\.\d+)?|\.\d+)$/;
   const integerText = /^[-+]?\d+$/;
   const expectedType = (name: string) => {
     const containerBaseName = name.replace(/_(?:ac2|dc2|h22|heat2|ac|dc|h2|heat)_(?:unit|load|transformer)_t\d+$/, "");
-    if (containerBaseName === "status") return "numberEnum";
+    if (containerBaseName === "status" || containerBaseName === "run_stat") return "numberEnum";
     if (stringEnumNames.has(containerBaseName)) return "stringEnum";
     if (
       integerNames.has(name) ||
@@ -2578,10 +2647,13 @@ test("keeps every built-in device parameter aligned with its semantic type and n
       }
       if (definition.enName === "control_type") {
         const hydrogenCoupling = ["AcE2Hydro", "DcE2Hydro", "Hydro2AcE", "Hydro2DcE"].includes(section ?? "");
-        const hydrogenEndpoint = section === "HydroSource" || section === "HydroLoad" || section === "HydroStorage";
+        const hydrogenEndpoint = section === "HydroSource" || section === "HydroLoad";
+        const hydrogenStorage = section === "HydroStorage";
         const electricHeatCoupling = ["AcE2Heat", "DcE2Heat", "AcE2Heat2", "DcE2Heat2"].includes(section ?? "");
         const expectedOptions = hydrogenCoupling
           ? [...HYDROGEN_COUPLING_CONTROL_TYPES]
+          : hydrogenStorage
+            ? [...HYDROGEN_STORAGE_CONTROL_TYPES]
           : hydrogenEndpoint
             ? [...HYDROGEN_ENDPOINT_CONTROL_TYPES]
           : electricHeatCoupling
@@ -2592,8 +2664,10 @@ test("keeps every built-in device parameter aligned with its semantic type and n
         expect((definition.enumOptions ?? []).map((option) => option.value), context).toEqual(expectedOptions);
         const expectedDefault = section === "ACGenerator"
           ? "PV"
+          : hydrogenStorage
+            ? "PRESSURE"
           : hydrogenEndpoint
-            ? section === "HydroStorage" ? "PRESSURE" : "FLOW"
+            ? "FLOW"
           : section === "AcE2Hydro" || section === "DcE2Hydro"
             ? "FLOW"
             : "P";

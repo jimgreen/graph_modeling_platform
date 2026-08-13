@@ -120,6 +120,7 @@ import {
   DCDC_CONVERTER_CONTROL_TYPES,
   HYDROGEN_COUPLING_CONTROL_TYPES,
   HYDROGEN_ENDPOINT_CONTROL_TYPES,
+  HYDROGEN_STORAGE_CONTROL_TYPES,
   ELECTRIC_HEAT_COUPLING_CONTROL_TYPES,
   E_SECTION_COLUMNS,
   getEdgeEndpointPoint as getModelEdgeEndpointPoint,
@@ -1806,6 +1807,17 @@ export type DeviceDefinitionMeasurementPanelTarget = {
   terminalLabels?: readonly string[];
   parameterDefinitions?: readonly DeviceParameterDefinition[];
   positionDefinitions?: readonly MeasurementProfilePositionDefinition[];
+  items: readonly DeviceMeasurementProfileItem[];
+  setItems: (items: DeviceMeasurementProfileItem[]) => void;
+  selectedRowIndexes?: readonly number[];
+  setSelectedRowIndexes?: (indexes: number[]) => void;
+  selectionAnchorIndex?: number | null;
+  setSelectionAnchorIndex?: (index: number | null) => void;
+  ensureAssociatedField?: (
+    position: string,
+    associatedField: string,
+    measurementTypeId: string
+  ) => void;
 };
 
 export type TemplateDialogState = {
@@ -3455,7 +3467,7 @@ export const PARAM_OPTION_LABELS: Record<string, Record<string, string>> = {
   routeAvoidance: { "1": "参与", "0": "不参与" },
   shadowEnabled: { "1": "启用", "0": "禁用" },
   status: { "1": "闭合", "0": "打开" },
-  run_stat: { "1": "投运", "0": "停运" },
+  run_stat: { "1": "运行", "0": "停运" },
   strokeStyle: { solid: "实线", dashed: "虚线", dotted: "点线" },
   fontStyle: { normal: "常规", italic: "斜体" },
   textDecoration: { none: "无", underline: "下划线" },
@@ -3513,6 +3525,9 @@ export const resolveStaticButtonTargetLayers = (node: ModelNode, availableLayers
 };
 
 export function paramOptionsForSection(key: string, section?: string) {
+  if (key === "control_type" && section === "HydroStorage") {
+    return [...HYDROGEN_STORAGE_CONTROL_TYPES];
+  }
   if (key === "control_type" && (section === "HydroSource" || section === "HydroLoad")) {
     return [...HYDROGEN_ENDPOINT_CONTROL_TYPES];
   }
