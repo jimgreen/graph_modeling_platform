@@ -26,6 +26,7 @@ import {
   describeContainerTerminalAssociations,
   calculateNodeVisualBounds,
   calculateModelGeometryBounds,
+  buildDefaultParams,
   canvasResizeMinimumBoundsForGeometry,
   clampNodePositionToBounds,
   canvasResizeBoundsFromPointerDrag,
@@ -1237,10 +1238,15 @@ describe("power system model", () => {
       ],
       readonly: false
     });
-    for (const template of DEVICE_LIBRARY.filter((item) => !item.kind.startsWith("static-"))) {
-      const node = createDefaultNode(template.kind, { x: 100, y: 100 });
-      expect(node.params.run_stat).toBe("1");
-      expect(getTemplateParameterDefinitions(template).find((definition) => definition.enName === "run_stat"), template.kind).toMatchObject({
+    const deviceTemplates = DEVICE_LIBRARY.filter((template) => (
+      !isStaticNode({ kind: template.kind, params: template.params } as ModelNode)
+    ));
+    expect(deviceTemplates.length).toBeGreaterThan(0);
+    for (const template of deviceTemplates) {
+      const definitions = getTemplateParameterDefinitions(template)
+        .filter((definition) => definition.enName === "run_stat");
+      expect(definitions, `${template.label} (${template.kind})`).toHaveLength(1);
+      expect(definitions[0], `${template.label} (${template.kind})`).toMatchObject({
         valueType: "numberEnum",
         typicalValue: "1",
         enumValueType: "number",
@@ -1250,6 +1256,9 @@ describe("power system model", () => {
           { value: "0", label: "停运" }
         ]
       });
+      expect(buildDefaultParams(template).run_stat, `${template.label} (${template.kind})`).toBe("1");
+      const node = createDefaultNode(template.kind, { x: 100, y: 100 });
+      expect(node.params.run_stat).toBe("1");
     }
   });
 

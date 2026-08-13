@@ -98,6 +98,58 @@ describe("device library schema migration", () => {
     expect(normalized.deviceDefinitionOverrides["shared:ACLoad"].parameterDefinitions).toHaveLength(1);
     expect(normalizeDeviceLibraryConfig(normalized)).toEqual(normalized);
   });
+
+  test("normalizes legacy run_stat definitions and values to the numeric operating-state enum", () => {
+    const legacyStringDefinition = {
+      cnName: "工作状态",
+      enName: "run_stat",
+      valueType: "string",
+      typicalValue: ""
+    };
+    const legacyEnumDefinition = {
+      cnName: "工作状态",
+      enName: "run_stat",
+      valueType: "stringEnum",
+      typicalValue: "运行",
+      enumValues: ["运行", "停运"],
+      enumOptions: [{ value: "运行" }, { value: "停运" }]
+    };
+    const normalized = normalizeDeviceLibraryConfig({
+      deviceDefinitionOverrides: {
+        "shared:HydroSource": {
+          kind: "shared:HydroSource",
+          parameterDefinitions: [legacyStringDefinition]
+        },
+        "shared:DCDCConverter": {
+          kind: "shared:DCDCConverter",
+          parameterDefinitions: [legacyEnumDefinition]
+        },
+        "shared:ACACConverter::acac-converter": {
+          kind: "shared:ACACConverter::acac-converter",
+          params: { run_stat: "运行" },
+          parameterDefinitions: [legacyEnumDefinition]
+        }
+      }
+    });
+    const expectedDefinition = {
+      enName: "run_stat",
+      valueType: "numberEnum",
+      typicalValue: "1",
+      enumValueType: "number",
+      enumValues: ["1", "0"],
+      enumOptions: [
+        { value: "1", label: "运行" },
+        { value: "0", label: "停运" }
+      ]
+    };
+
+    for (const override of Object.values(normalized.deviceDefinitionOverrides)) {
+      expect(override.parameterDefinitions).toHaveLength(1);
+      expect(override.parameterDefinitions[0]).toMatchObject(expectedDefinition);
+    }
+    expect(normalized.deviceDefinitionOverrides["shared:ACACConverter::acac-converter"].params.run_stat).toBe("1");
+    expect(normalizeDeviceLibraryConfig(normalized)).toEqual(normalized);
+  });
 });
 
 describe("measurement configuration normalization", () => {
