@@ -1304,7 +1304,8 @@ describe("manual bend interaction helpers", () => {
     normalizeDefinition = (row: any) => row,
     normalizeAssociations = (_terminalTypes: any, values: any[]) => values,
     derivedBasePredicate = () => false,
-    reservedPredicate = () => false
+    reservedPredicate = () => false,
+    baseTemplates
   }: {
     template: any;
     draftDefinitions: any[];
@@ -1317,6 +1318,7 @@ describe("manual bend interaction helpers", () => {
     normalizeAssociations?: (_terminalTypes: any, values: any[], count: number) => any[];
     derivedBasePredicate?: (fieldName: unknown, baseComponentLibrary?: string) => boolean;
     reservedPredicate?: (fieldName: string) => boolean;
+    baseTemplates?: any[];
   }) => {
     let customDeviceDraft = initialDraft ? {
       ...structuredClone(initialDraft),
@@ -1353,7 +1355,7 @@ describe("manual bend interaction helpers", () => {
     const scope = {
       ALLOW_RESIZE_TRANSFORM_PARAM: "allowResizeTransform",
       TERMINAL_TYPE_LIBRARY_LABELS: { ac: "交流" },
-      baseLibraryTemplates: [template],
+      baseLibraryTemplates: baseTemplates ?? [template],
       closeCustomDeviceDialog: vi.fn(),
       createCustomDeviceDraftFromTemplate: createDraftFromTemplate ?? ((item: any) => ({
         ...customDeviceDraft,
@@ -1412,7 +1414,10 @@ describe("manual bend interaction helpers", () => {
     return {
       save: () => createSaveBuiltinDeviceDefinitionFromCustomDraft(scope)(template),
       savedOverride: () => savedOverrides[template.kind],
-      savedDefinitionOverride: () => savedOverrides[deviceDefinitionSharedKeyForTemplate(template)],
+      savedDefinitionOverride: () => {
+        const baseTemplate = (baseTemplates ?? [template]).find((candidate) => candidate.kind === template.kind) ?? template;
+        return savedOverrides[deviceDefinitionSharedKeyForTemplate(baseTemplate)];
+      },
       savedOverrides: () => savedOverrides,
       draft: () => customDeviceDraft
     };
@@ -1604,21 +1609,39 @@ describe("manual bend interaction helpers", () => {
     const vertical = DEVICE_LIBRARY.find((item) => item.kind === "dcdc-converter-vertical")!;
     const sharedKey = deviceDefinitionSharedKeyForTemplate(horizontal);
     const originalDefinitions = getTemplateParameterDefinitions(horizontal);
-    const measurementDefinitions = horizontal.measurementDefinitions ?? [];
+    const contaminatedDefinitions = originalDefinitions.map((definition) => {
+      if (definition.enName === "dev_type") {
+        return { ...definition, typicalValue: "dcdc-converter" };
+      }
+      return definition;
+    });
+    const measurementDefinitions = [
+      { measurementTypeId: "current" },
+      { measurementTypeId: "activePower" }
+    ];
     const effectiveHorizontal = applyDeviceTemplateDefinitionOverride(horizontal, {
       kind: horizontal.kind,
-      parameterDefinitions: originalDefinitions,
+      parameterDefinitions: contaminatedDefinitions,
       measurementDefinitions
     });
+    expect(effectiveHorizontal.params?.dev_type).toBe("dcdc-converter");
+    expect(deviceDefinitionSharedKeyForTemplate(effectiveHorizontal)).toBe("shared:DCDCConverter::dcdc-converter");
     const initialDraft = createCustomDeviceDraftFromTemplate(effectiveHorizontal);
+    const editedFieldName = initialDraft.params.find((definition) => definition.enName === "i_p")?.enName ?? initialDraft.params[0].enName;
+    const editedFieldCnName = `${initialDraft.params.find((definition) => definition.enName === editedFieldName)?.cnName ?? editedFieldName}（已修改）`;
+    const editedDraftParameters = initialDraft.params.map((definition) => (
+      definition.enName === editedFieldName
+        ? { ...definition, cnName: editedFieldCnName }
+        : definition
+    ));
     const reorderedDefinitions = [
-      initialDraft.params[0],
-      initialDraft.params[1],
-      initialDraft.params[2],
-      initialDraft.params[3],
-      initialDraft.params[5],
-      initialDraft.params[4],
-      ...initialDraft.params.slice(6)
+      editedDraftParameters[0],
+      editedDraftParameters[1],
+      editedDraftParameters[2],
+      editedDraftParameters[3],
+      editedDraftParameters[5],
+      editedDraftParameters[4],
+      ...editedDraftParameters.slice(6)
     ];
     const harness = createBuiltinDeviceDefinitionSaveHarness({
       template: effectiveHorizontal,
@@ -1628,7 +1651,15 @@ describe("manual bend interaction helpers", () => {
       defaultDefinitionsFactory: (terminalTypes: any, options: any) => customDefaultDefinitions(terminalTypes, options),
       normalizeDefinition: normalizeDefinitionRowEnumFields,
       normalizeAssociations: normalizeContainerTerminalAssociations,
-      reservedPredicate: isReservedDeviceDefinitionParamName
+      reservedPredicate: isReservedDeviceDefinitionParamName,
+      baseTemplates: DEVICE_LIBRARY,
+      existingOverrides: {
+        "shared:DCDCConverter::dcdc-converter": {
+          kind: "shared:DCDCConverter::dcdc-converter",
+          parameterDefinitions: contaminatedDefinitions,
+          measurementDefinitions
+        }
+      }
     });
 
     expect(harness.save(), harness.draft().error).toBe(true);
@@ -1654,6 +1685,9 @@ describe("manual bend interaction helpers", () => {
     expect(verticalDraft.params.map((definition) => definition.enName)).toEqual(savedNames);
     expect(horizontalDraft.measurementDefinitions).toEqual(measurementDefinitions);
     expect(verticalDraft.measurementDefinitions).toEqual(measurementDefinitions);
+    expect(horizontalDraft.params.find((definition) => definition.enName === editedFieldName)?.cnName).toBe(editedFieldCnName);
+    expect(verticalDraft.params.find((definition) => definition.enName === editedFieldName)?.cnName).toBe(editedFieldCnName);
+    expect(refreshedOverrides["shared:DCDCConverter::dcdc-converter"]).toBeUndefined();
     expect(refreshedOverrides[horizontal.kind].parameterDefinitions).toBeUndefined();
     expect(refreshedOverrides[horizontal.kind].measurementDefinitions).toBeUndefined();
     expect(refreshedOverrides[vertical.kind]?.parameterDefinitions).toBeUndefined();
