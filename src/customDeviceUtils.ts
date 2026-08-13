@@ -17,10 +17,11 @@ import {
   CUSTOM_PARAM_DEFINITIONS_KEY,
   E_SECTION_COLUMNS,
   TERMINAL_TYPE_LIBRARY_LABELS,
-  getTemplateParameterDefinitions,
   inferESection,
   isDoubleContainerTerminalAssociation,
   resolveDeviceParameterDefinitionExportSettings,
+  resolveEffectiveTemplateParameterDefinitionGroups,
+  resolveEffectiveTemplateParameterDefinitions,
   templateDerivedComponentLibraryInfo as modelTemplateDerivedComponentLibraryInfo,
   toSnakeCaseDeviceParamName
 } from "./model";
@@ -127,6 +128,7 @@ function visualOnlyOverride(override: DeviceTemplateDefinitionOverride | undefin
     )))
   };
   delete next.parameterDefinitions;
+  delete next.parameterDefinitionsIntent;
   delete next.measurementDefinitions;
   return next;
 }
@@ -152,7 +154,9 @@ function sharedDefinitionSourceForTemplate(
   const candidates = candidateKeys.map((key) => overrides[key]).filter(Boolean);
   return {
     parameterSource: candidates
-      .filter((override) => Array.isArray(override.parameterDefinitions))
+      .filter((override) => Array.isArray(override.parameterDefinitions) && (
+        override.parameterDefinitions.length > 0 || override.parameterDefinitionsIntent === "delete-all"
+      ))
       .sort((left, right) => overrideTimestamp(right) - overrideTimestamp(left))[0],
     measurementSource: candidates
       .filter((override) => Array.isArray(override.measurementDefinitions))
@@ -170,6 +174,19 @@ export function deviceDefinitionOverrideForTemplate(
   const exactOverride = overrides[template.kind];
   const visualOverride = visualOnlyOverride(exactOverride);
   if (!sharedOverride && !visualOverride) return undefined;
+  const storedParameterDefinitions = parameterSource?.parameterDefinitions;
+  const explicitlyDeletesAllParameterDefinitions =
+    parameterSource?.parameterDefinitionsIntent === "delete-all" &&
+    Array.isArray(storedParameterDefinitions) &&
+    storedParameterDefinitions.length === 0;
+  const builtInParameterDefinitions = template.custom ? [] : resolveEffectiveTemplateParameterDefinitions(template);
+  const parameterDefinitions = explicitlyDeletesAllParameterDefinitions
+    ? []
+    : Array.isArray(storedParameterDefinitions) && storedParameterDefinitions.length > 0
+      ? storedParameterDefinitions
+      : builtInParameterDefinitions.length > 0
+        ? builtInParameterDefinitions
+        : undefined;
   return {
     ...(visualOverride ?? {}),
     kind: template.kind,
@@ -178,9 +195,10 @@ export function deviceDefinitionOverrideForTemplate(
       ...sharedDefinitionParams(measurementSource),
       ...(visualOverride?.params ?? {})
     },
-    ...(Array.isArray(parameterSource?.parameterDefinitions)
-      ? { parameterDefinitions: parameterSource.parameterDefinitions.map((definition) => ({ ...definition })) }
+    ...(Array.isArray(parameterDefinitions)
+      ? { parameterDefinitions: parameterDefinitions.map((definition) => ({ ...definition })) }
       : {}),
+    ...(explicitlyDeletesAllParameterDefinitions ? { parameterDefinitionsIntent: "delete-all" as const } : {}),
     ...(Array.isArray(measurementSource?.measurementDefinitions)
       ? { measurementDefinitions: cloneDeviceMeasurementDefinitions(measurementSource.measurementDefinitions) }
       : {})
@@ -191,7 +209,23 @@ export function normalizeSharedDeviceDefinitionOverrides(
   overrides: Record<string, DeviceTemplateDefinitionOverride>,
   templates: readonly DeviceTemplate[]
 ) {
-  const next = { ...overrides };
+  const next = Object.fromEntries(Object.entries(overrides).map(([key, override]) => {
+    if (!Array.isArray(override.parameterDefinitions)) {
+      return [key, override];
+    }
+    if (override.parameterDefinitions.length > 0) {
+      const sanitized = { ...override };
+      delete sanitized.parameterDefinitionsIntent;
+      return [key, sanitized];
+    }
+    if (override.parameterDefinitionsIntent === "delete-all") {
+      return [key, { ...override, parameterDefinitions: [] }];
+    }
+    const sanitized = { ...override };
+    delete sanitized.parameterDefinitions;
+    delete sanitized.parameterDefinitionsIntent;
+    return [key, sanitized];
+  })) as Record<string, DeviceTemplateDefinitionOverride>;
   const templatesBySharedIdentity = new Map<string, DeviceTemplate[]>();
   for (const template of templates) {
     const identity = deviceDefinitionSharedIdentityForTemplate(template);
@@ -209,7 +243,9 @@ export function normalizeSharedDeviceDefinitionOverrides(
     ]));
     const candidates = candidateKeys.map((key) => next[key]).filter(Boolean);
     const parameterSource = candidates
-      .filter((override) => Array.isArray(override.parameterDefinitions))
+      .filter((override) => Array.isArray(override.parameterDefinitions) && (
+        override.parameterDefinitions.length > 0 || override.parameterDefinitionsIntent === "delete-all"
+      ))
       .sort((left, right) => overrideTimestamp(right) - overrideTimestamp(left))[0];
     const measurementSource = candidates
       .filter((override) => Array.isArray(override.measurementDefinitions))
@@ -226,6 +262,9 @@ export function normalizeSharedDeviceDefinitionOverrides(
       },
       ...(Array.isArray(parameterSource?.parameterDefinitions)
         ? { parameterDefinitions: parameterSource.parameterDefinitions.map((definition) => ({ ...definition })) }
+        : {}),
+      ...(parameterSource?.parameterDefinitionsIntent === "delete-all"
+        ? { parameterDefinitionsIntent: "delete-all" as const }
         : {}),
       ...(Array.isArray(measurementSource?.measurementDefinitions)
         ? { measurementDefinitions: cloneDeviceMeasurementDefinitions(measurementSource.measurementDefinitions) }
@@ -265,10 +304,11 @@ export const isReservedDeviceDefinitionParamName = (enName: string) =>
 
 export function createDefinitionDraftRows(template: DeviceTemplate): DeviceDefinitionDraftRow[] {
   const derivedInfo = modelTemplateDerivedComponentLibraryInfo(template);
+  const editableDefinitions = resolveEffectiveTemplateParameterDefinitionGroups(template).derivedDefinitions;
   const exportContextParams = derivedInfo
     ? { ...template.params, component_type: derivedInfo.derivedComponentLibrary }
     : template.params;
-  return getTemplateParameterDefinitions(template)
+  return editableDefinitions
     .filter((definition) =>
       derivedInfo
         ? isDerivedComponentSpecificDefinition(template, derivedInfo.baseComponentLibrary, definition)
@@ -454,7 +494,8 @@ export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, se
   );
   const parameterExportComponentLibrary = derivedInfo?.derivedComponentLibrary ?? section;
   const exportContextParams = { ...template.params, component_type: parameterExportComponentLibrary };
-  const customParams = getTemplateParameterDefinitions(template)
+  const editableDefinitions = resolveEffectiveTemplateParameterDefinitionGroups(template).derivedDefinitions;
+  const customParams = editableDefinitions
     .filter((definition) =>
       derivedInfo
         ? isDerivedComponentSpecificDefinition(template, derivedInfo.baseComponentLibrary, definition)

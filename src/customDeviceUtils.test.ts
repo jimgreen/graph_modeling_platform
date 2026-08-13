@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { applyDeviceTemplateDefinitionOverride, DEVICE_LIBRARY } from "./model";
+import { applyDeviceTemplateDefinitionOverride, DEVICE_LIBRARY, resolveEffectiveTemplateParameterDefinitions } from "./model";
 import {
   createDefinitionDraftRows,
   createCustomDeviceDraftFromTemplate,
@@ -182,6 +182,59 @@ describe("electric generation device library classification", () => {
 
     expect(devTypeRow).toBeDefined();
     expect(devTypeRow?.typicalValue).toBe(template?.kind);
+  });
+
+  test("keeps every built-in business definition effective after an unmarked empty shared override", () => {
+    for (const template of DEVICE_LIBRARY) {
+      const declaredDefinitions = resolveEffectiveTemplateParameterDefinitions(template, DEVICE_LIBRARY);
+      if (template.custom || declaredDefinitions.length === 0) continue;
+
+      const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
+      const normalized = normalizeSharedDeviceDefinitionOverrides({
+        [sharedKey]: {
+          kind: sharedKey,
+          parameterDefinitions: [],
+          updatedAt: "2026-08-13T00:00:00.000Z"
+        }
+      }, DEVICE_LIBRARY);
+      const applied = applyDeviceTemplateDefinitionOverride(
+        template,
+        deviceDefinitionOverrideForTemplate(template, normalized)
+      );
+      const effectiveNames = new Set(
+        resolveEffectiveTemplateParameterDefinitions(applied, DEVICE_LIBRARY).map((definition) => definition.enName)
+      );
+
+      for (const definition of declaredDefinitions) {
+        expect(effectiveNames.has(definition.enName), `${template.kind}.${definition.enName}`).toBe(true);
+      }
+    }
+  });
+
+  test("keeps explicit delete-all while dropping stale markers on non-empty tables", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-wind-source")!;
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
+    const explicitlyEmpty = normalizeSharedDeviceDefinitionOverrides({
+      [sharedKey]: {
+        kind: sharedKey,
+        parameterDefinitions: [],
+        parameterDefinitionsIntent: "delete-all"
+      }
+    }, DEVICE_LIBRARY);
+    const explicitTemplate = applyDeviceTemplateDefinitionOverride(
+      template,
+      deviceDefinitionOverrideForTemplate(template, explicitlyEmpty)
+    );
+    expect(resolveEffectiveTemplateParameterDefinitions(explicitTemplate, DEVICE_LIBRARY)).toEqual([]);
+
+    const nonEmpty = normalizeSharedDeviceDefinitionOverrides({
+      [sharedKey]: {
+        kind: sharedKey,
+        parameterDefinitions: [{ cnName: "风机型号", enName: "wind_turbine_model", valueType: "string", typicalValue: "" }],
+        parameterDefinitionsIntent: "delete-all"
+      }
+    }, DEVICE_LIBRARY);
+    expect(nonEmpty[sharedKey].parameterDefinitionsIntent).toBeUndefined();
   });
 
   test("shows only derived-specific parameters when editing a derived generation device", () => {

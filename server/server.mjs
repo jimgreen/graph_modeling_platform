@@ -881,8 +881,52 @@ function normalizeGasQuantityFieldName(value) {
   return /^(?:gasQuantity|gasquantity)$/u.test(text) ? "gas_quantity" : text;
 }
 
-function normalizeDeviceLibraryConfig(payload) {
-  const source = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
+export const deviceLibrarySchemaVersion = 2;
+
+function migrateDeviceLibraryConfigV0ToV1(source) {
+  return {
+    ...source,
+    customCategoryLibraries: source.customCategoryLibraries ?? source.customAttributeLibraries,
+    customComponentLibraries: source.customComponentLibraries ?? source.customComponentTypes,
+    schemaVersion: 1
+  };
+}
+
+function migrateDeviceLibraryConfigV1ToV2(source) {
+  const rawOverrides = source.deviceDefinitionOverrides && typeof source.deviceDefinitionOverrides === "object" &&
+    !Array.isArray(source.deviceDefinitionOverrides)
+    ? source.deviceDefinitionOverrides
+    : {};
+  const deviceDefinitionOverrides = Object.fromEntries(Object.entries(rawOverrides).map(([kind, rawOverride]) => {
+    if (!rawOverride || typeof rawOverride !== "object" || Array.isArray(rawOverride)) {
+      return [kind, rawOverride];
+    }
+    const override = { ...rawOverride };
+    if (Array.isArray(override.parameterDefinitions) && override.parameterDefinitions.length === 0 &&
+      override.parameterDefinitionsIntent !== "delete-all") {
+      delete override.parameterDefinitions;
+      delete override.parameterDefinitionsIntent;
+    }
+    return [kind, override];
+  }));
+  return { ...source, deviceDefinitionOverrides, schemaVersion: 2 };
+}
+
+export function migrateDeviceLibraryConfig(payload) {
+  let source = payload && typeof payload === "object" && !Array.isArray(payload) ? { ...payload } : {};
+  let version = Number.isInteger(Number(source.schemaVersion)) ? Number(source.schemaVersion) : 0;
+  if (version < 1) {
+    source = migrateDeviceLibraryConfigV0ToV1(source);
+    version = 1;
+  }
+  if (version < 2) {
+    source = migrateDeviceLibraryConfigV1ToV2(source);
+  }
+  return { ...source, schemaVersion: deviceLibrarySchemaVersion };
+}
+
+export function normalizeDeviceLibraryConfig(payload) {
+  const source = migrateDeviceLibraryConfig(payload);
   const customDeviceTemplates = (Array.isArray(source.customDeviceTemplates) ? source.customDeviceTemplates : [])
     .map((template) => template && typeof template === "object" && !Array.isArray(template)
       ? {
@@ -910,7 +954,21 @@ function normalizeDeviceLibraryConfig(payload) {
   const customGraphTemplates = Array.isArray(source.customGraphTemplates) ? source.customGraphTemplates : [];
   const deviceDefinitionOverrides =
     source.deviceDefinitionOverrides && typeof source.deviceDefinitionOverrides === "object" && !Array.isArray(source.deviceDefinitionOverrides)
-      ? source.deviceDefinitionOverrides
+      ? Object.fromEntries(Object.entries(source.deviceDefinitionOverrides).map(([kind, rawOverride]) => {
+        if (!rawOverride || typeof rawOverride !== "object" || Array.isArray(rawOverride)) {
+          return [kind, rawOverride];
+        }
+        const override = { ...rawOverride };
+        const markedDeleteAll = Array.isArray(override.parameterDefinitions) &&
+          override.parameterDefinitions.length === 0 && override.parameterDefinitionsIntent === "delete-all";
+        if (Array.isArray(override.parameterDefinitions) && override.parameterDefinitions.length === 0 && !markedDeleteAll) {
+          delete override.parameterDefinitions;
+        }
+        if (!markedDeleteAll) {
+          delete override.parameterDefinitionsIntent;
+        }
+        return [kind, override];
+      }))
       : {};
   const eDeviceDefinitionLabels =
     source.eDeviceDefinitionLabels && typeof source.eDeviceDefinitionLabels === "object" && !Array.isArray(source.eDeviceDefinitionLabels)
@@ -995,6 +1053,7 @@ function normalizeDeviceLibraryConfig(payload) {
       }))
       : {};
   return {
+    schemaVersion: deviceLibrarySchemaVersion,
     customDeviceTemplates,
     customCategoryLibraries,
     customComponentLibraries,
@@ -1012,9 +1071,19 @@ function normalizeDeviceLibraryConfig(payload) {
 export async function readDeviceLibraryConfig() {
   const parsed = await readOptionalJsonStoreFile(deviceLibraryDataDir, deviceLibraryPath);
   if (parsed) {
+    const normalized = normalizeDeviceLibraryConfig(parsed);
+    if (
+      Number(parsed.schemaVersion) !== deviceLibrarySchemaVersion ||
+      JSON.stringify(parsed.deviceDefinitionOverrides ?? {}) !== JSON.stringify(normalized.deviceDefinitionOverrides)
+    ) {
+      await writeJsonStoreFile(deviceLibraryDataDir, deviceLibraryPath, {
+        ...normalized,
+        savedAt: new Date().toISOString()
+      });
+    }
     return {
       exists: true,
-      ...normalizeDeviceLibraryConfig(parsed)
+      ...normalized
     };
   }
   return {

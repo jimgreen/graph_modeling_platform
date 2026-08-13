@@ -1720,6 +1720,7 @@ export type BackendColorConfigResponse = {
 };
 
 export type DeviceLibraryPersistencePayload = {
+  schemaVersion?: number;
   customDeviceTemplates: DeviceTemplate[];
   customCategoryLibraries: CategoryLibrary[];
   customComponentLibraries: CustomComponentLibraryDefinition[];

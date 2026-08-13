@@ -224,6 +224,32 @@ describe("deviceLibraryStorage", () => {
       const stats = await getDBStats();
       expect(stats.overrides).toBe(2);
     });
+
+    it("批量保存按完整快照替换，并在读取时迁移历史空参数表", async () => {
+      await saveOverrides({
+        "shared:ACGenerator": {
+          kind: "shared:ACGenerator",
+          parameterDefinitions: []
+        },
+        "shared:DCDCConverter": {
+          kind: "shared:DCDCConverter",
+          parameterDefinitions: [],
+          parameterDefinitionsIntent: "delete-all"
+        }
+      });
+      const migrated = await getAllOverrides();
+      expect(migrated["shared:ACGenerator"]?.parameterDefinitions).toBeUndefined();
+      expect(migrated["shared:DCDCConverter"]).toMatchObject({
+        parameterDefinitions: [],
+        parameterDefinitionsIntent: "delete-all"
+      });
+
+      await saveOverrides({
+        "shared:ACLoad": { kind: "shared:ACLoad", params: { component_type: "ACLoad" } }
+      });
+      const replaced = await getAllOverrides();
+      expect(Object.keys(replaced)).toEqual(["shared:ACLoad"]);
+    });
   });
 
   describe("数据库统计", () => {

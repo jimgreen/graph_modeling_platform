@@ -869,6 +869,7 @@ export async function saveBackendMeasurementConfigPayload(normalizedMeasurementC
 
 export const LIBRARY_PACKAGE_FORMAT = "graph-modeling-platform-library-package";
 export const LIBRARY_PACKAGE_VERSION = 2;
+export const DEVICE_LIBRARY_SCHEMA_VERSION = 2;
 export type SupportedLibraryPackageVersion = 1 | typeof LIBRARY_PACKAGE_VERSION;
 export type LibraryPackageScope = "measurement" | "device-library" | "template-library" | "icon-library" | "component-library" | "all";
 export type IconLibraryPackageAsset = ImageAsset & { dataUrl: string };
@@ -897,6 +898,7 @@ export type LibraryPackagePayload = {
 };
 
 const emptyDeviceLibraryPersistencePayload = (): DeviceLibraryPersistencePayload => ({
+  schemaVersion: DEVICE_LIBRARY_SCHEMA_VERSION,
   customDeviceTemplates: [],
   customCategoryLibraries: [],
   customComponentLibraries: [],
@@ -2542,6 +2544,13 @@ export function normalizeDeviceDefinitionOverrides(value: unknown): Record<strin
         parameterDefinitions: Array.isArray(override.parameterDefinitions)
           ? normalizeDefinitionRows(override.parameterDefinitions)
           : undefined,
+        parameterDefinitionsIntent: rawOverride.parameterDefinitionsIntent === "delete-all" &&
+          Array.isArray(rawOverride.parameterDefinitions) && rawOverride.parameterDefinitions.length === 0
+          ? "delete-all"
+          : undefined,
+        measurementDefinitions: Array.isArray(rawOverride.measurementDefinitions)
+          ? rawOverride.measurementDefinitions.map((definition) => ({ ...definition }))
+          : undefined,
         stateDefinitions,
         updatedAt: typeof override.updatedAt === "string" ? override.updatedAt : undefined
       };
@@ -2555,15 +2564,63 @@ export function normalizeDeviceDefinitionOverrides(value: unknown): Record<strin
   return normalizeSharedDeviceDefinitionOverrides(normalized, DEVICE_LIBRARY);
 }
 
-export function normalizeDeviceLibraryPersistencePayload(value: unknown): DeviceLibraryPersistencePayload {
-  const source = value && typeof value === "object" && !Array.isArray(value)
-    ? value as Partial<DeviceLibraryPersistencePayload> & {
-      customAttributeLibraries?: unknown;
-      customComponentTypes?: unknown;
-    }
+type MigratableDeviceLibraryPayload = Partial<DeviceLibraryPersistencePayload> & {
+  schemaVersion?: unknown;
+  customAttributeLibraries?: unknown;
+  customComponentTypes?: unknown;
+};
+
+function migrateDeviceLibraryPayloadV0ToV1(source: MigratableDeviceLibraryPayload): MigratableDeviceLibraryPayload {
+  return {
+    ...source,
+    customCategoryLibraries: source.customCategoryLibraries ?? source.customAttributeLibraries as any,
+    customComponentLibraries: source.customComponentLibraries ?? source.customComponentTypes as any,
+    schemaVersion: 1
+  };
+}
+
+function migrateDeviceLibraryPayloadV1ToV2(source: MigratableDeviceLibraryPayload): MigratableDeviceLibraryPayload {
+  const rawOverrides = source.deviceDefinitionOverrides && typeof source.deviceDefinitionOverrides === "object" &&
+    !Array.isArray(source.deviceDefinitionOverrides)
+    ? source.deviceDefinitionOverrides
     : {};
+  const deviceDefinitionOverrides = Object.fromEntries(
+    Object.entries(rawOverrides).map(([kind, rawOverride]) => {
+      if (!rawOverride || typeof rawOverride !== "object" || Array.isArray(rawOverride)) {
+        return [kind, rawOverride];
+      }
+      const override = { ...rawOverride } as DeviceTemplateDefinitionOverride;
+      if (Array.isArray(override.parameterDefinitions) && override.parameterDefinitions.length === 0 &&
+        override.parameterDefinitionsIntent !== "delete-all") {
+        delete override.parameterDefinitions;
+        delete override.parameterDefinitionsIntent;
+      }
+      return [kind, override];
+    })
+  );
+  return { ...source, deviceDefinitionOverrides, schemaVersion: 2 };
+}
+
+export function migrateDeviceLibraryPersistencePayload(value: unknown): MigratableDeviceLibraryPayload {
+  let source = value && typeof value === "object" && !Array.isArray(value)
+    ? { ...(value as MigratableDeviceLibraryPayload) }
+    : {};
+  let version = Number.isInteger(Number(source.schemaVersion)) ? Number(source.schemaVersion) : 0;
+  if (version < 1) {
+    source = migrateDeviceLibraryPayloadV0ToV1(source);
+    version = 1;
+  }
+  if (version < 2) {
+    source = migrateDeviceLibraryPayloadV1ToV2(source);
+  }
+  return { ...source, schemaVersion: DEVICE_LIBRARY_SCHEMA_VERSION };
+}
+
+export function normalizeDeviceLibraryPersistencePayload(value: unknown): DeviceLibraryPersistencePayload {
+  const source = migrateDeviceLibraryPersistencePayload(value);
   const customDeviceTemplates = normalizeCustomDeviceTemplates(source.customDeviceTemplates);
   return {
+    schemaVersion: DEVICE_LIBRARY_SCHEMA_VERSION,
     customDeviceTemplates,
     customCategoryLibraries: normalizeCustomCategoryLibraries(source.customCategoryLibraries ?? source.customAttributeLibraries),
     customComponentLibraries: normalizeCustomComponentLibraries(source.customComponentLibraries ?? source.customComponentTypes),
@@ -2661,7 +2718,7 @@ export function readCustomGraphTemplates(): GraphTemplate[] {
 }
 
 export function readLocalDeviceLibraryPersistencePayload(): DeviceLibraryPersistencePayload {
-  return {
+  return normalizeDeviceLibraryPersistencePayload({
     customDeviceTemplates: readCustomDeviceTemplates(),
     customCategoryLibraries: readCustomCategoryLibraries(),
     customComponentLibraries: readCustomComponentLibraries(),
@@ -2673,7 +2730,7 @@ export function readLocalDeviceLibraryPersistencePayload(): DeviceLibraryPersist
     eDeviceDefinitionTableIds: readEDeviceDefinitionTableIds(),
     customGraphTemplateTypes: readCustomGraphTemplateTypes(),
     customGraphTemplates: readCustomGraphTemplates()
-  };
+  });
 }
 
 // 缓存 IndexedDB 存储模块的动态导入
@@ -2701,6 +2758,7 @@ function fallbackToLocalStorage(data: DeviceLibraryPersistencePayload): void {
 }
 
 export function writeLocalDeviceLibraryPersistencePayload(normalizedDeviceLibrary: DeviceLibraryPersistencePayload): void {
+  normalizedDeviceLibrary = normalizeDeviceLibraryPersistencePayload(normalizedDeviceLibrary);
   try {
     window.localStorage.setItem(E_DEVICE_DEFINITION_LABELS_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionLabels ?? {}));
     window.localStorage.setItem(E_DEVICE_DEFINITION_CLASS_EXPORT_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionClassExportEnabled ?? {}));

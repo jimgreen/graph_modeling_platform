@@ -13,6 +13,25 @@ import type { GraphTemplate } from "../appExtracted/appCoreCanvasUtilities";
 
 type LegacyDeviceTemplate = DeviceTemplate & { attributeLibrary?: string };
 
+function normalizeStoredDefinitionOverride(override: DeviceTemplateDefinitionOverride): DeviceTemplateDefinitionOverride {
+  if (!Array.isArray(override.parameterDefinitions)) {
+    return override;
+  }
+  if (override.parameterDefinitions.length > 0) {
+    if (override.parameterDefinitionsIntent !== "delete-all") return override;
+    const normalized = { ...override };
+    delete normalized.parameterDefinitionsIntent;
+    return normalized;
+  }
+  if (override.parameterDefinitionsIntent === "delete-all") {
+    return override;
+  }
+  const normalized = { ...override };
+  delete normalized.parameterDefinitions;
+  delete normalized.parameterDefinitionsIntent;
+  return normalized;
+}
+
 function normalizeStoredDeviceTemplate(template: LegacyDeviceTemplate): DeviceTemplate {
   const { attributeLibrary, ...rest } = template;
   return {
@@ -231,7 +250,12 @@ export async function saveOverride(
 export async function getOverride(kind: string): Promise<DeviceTemplateDefinitionOverride | null> {
   const db = await initDeviceLibraryDB();
   const override = await db.get("overrides", kind);
-  return override ?? null;
+  if (!override) return null;
+  const normalized = normalizeStoredDefinitionOverride(override as DeviceTemplateDefinitionOverride);
+  if (JSON.stringify(override) !== JSON.stringify(normalized)) {
+    await saveOverride(kind, normalized);
+  }
+  return normalized;
 }
 
 /**
@@ -242,7 +266,16 @@ export async function getOverride(kind: string): Promise<DeviceTemplateDefinitio
 export async function getAllOverrides(): Promise<Record<string, DeviceTemplateDefinitionOverride>> {
   const db = await initDeviceLibraryDB();
   const overrides = await db.getAll("overrides");
-  return Object.fromEntries(overrides.map(o => [o.kind, o]));
+  const stored: Record<string, DeviceTemplateDefinitionOverride> = Object.fromEntries(
+    overrides.map(o => [o.kind, o as DeviceTemplateDefinitionOverride])
+  );
+  const normalized = Object.fromEntries(
+    Object.entries(stored).map(([kind, override]) => [kind, normalizeStoredDefinitionOverride(override)])
+  );
+  if (JSON.stringify(stored) !== JSON.stringify(normalized)) {
+    await saveOverrides(normalized);
+  }
+  return normalized;
 }
 
 /**
@@ -311,7 +344,8 @@ export async function saveOverrides(
   const tx = db.transaction("overrides", "readwrite");
   const store = tx.objectStore("overrides");
 
-  // 批量 put，不等待每个
+  // 覆盖是完整快照；先清空，确保迁移后已删除的历史损坏记录不会残留。
+  store.clear();
   for (const [kind, override] of Object.entries(overrides)) {
     store.put({
       ...override,

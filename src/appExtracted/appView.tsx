@@ -8,7 +8,7 @@ import {
   visibleIconLibraryIcons
 } from "../iconLibraryCatalog";
 import { buildExportDeviceIdMap } from "../svgExportUtils";
-import { E_SECTION_COLUMNS, inferESection, getTemplateParameterDefinitions, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, applyEReferenceIdValues, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, DEVICE_LIBRARY, type EDeviceExport } from "../model";
+import { E_SECTION_COLUMNS, inferESection, resolveEffectiveTemplateParameterDefinitions, resolveDeviceParameterDefinitionExportSettings, resolveEffectiveTemplateParameterDefinitionGroups, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, applyEReferenceIdValues, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, DEVICE_LIBRARY, type EDeviceExport } from "../model";
 import { buildEDeviceInterfaceDefinitionRows, orderEDeviceInterfaceFields, applyEDeviceDefinitionSectionsToLibraryState, buildEFileExportOptionsFromLibrary } from "./appDeviceDefinitionFactories";
 import { decodeAuto } from "../encoding/gbk";
 import { UserCustomizationManagerDialog } from "../UserCustomizationManagerDialog";
@@ -503,14 +503,14 @@ export function renderAppView(__appScope: Record<string, any>) {
       return [];
     }
     const perTemplateEnNames = componentLibraryTemplates.map((template) =>
-      new Set(getTemplateParameterDefinitions(template).filter((definition) => definition.enName !== "dev_type").map((definition) => definition.enName))
+      new Set(resolveEffectiveTemplateParameterDefinitions(template, libraryTemplates).filter((definition) => definition.enName !== "dev_type").map((definition) => definition.enName))
     );
     const intersection = perTemplateEnNames.reduce(
       (acc, set) => new Set(Array.from(acc).filter((name) => set.has(name))),
       perTemplateEnNames[0]
     );
     const firstTemplate = componentLibraryTemplates[0];
-    const firstDefinitions = getTemplateParameterDefinitions(firstTemplate);
+    const firstDefinitions = resolveEffectiveTemplateParameterDefinitions(firstTemplate, libraryTemplates);
     return Array.from(intersection).map((enName) => {
       const definition = firstDefinitions.find((item) => item.enName === enName);
       const settings = definition ? resolveDeviceParameterDefinitionExportSettings(firstTemplate.kind, firstTemplate.params ?? {}, definition) : { exportEnabled: false, exportName: enName };
@@ -522,6 +522,15 @@ export function renderAppView(__appScope: Record<string, any>) {
     ? inferESection(componentLibraryTemplates[0].kind, componentLibraryTemplates[0].params ?? {})
     : componentLibrarySectionKey;
   const componentLibraryLabelValue = eDeviceDefinitionLabels[componentLibraryLabelKey] ?? componentLibraryLabelKey;
+  const deleteAllDefinitionParameters = () => {
+    if (!__appScope.requireEditMode("删除全部参数")) return;
+    const template = __appScope.selectedDefinitionTemplate;
+    if (!template || template.custom || __appScope.definitionDraftRows.length === 0) return;
+    if (!window.confirm(`确认删除“${template.label}”的全部参数定义？`)) return;
+    __appScope.definitionDeleteAllParametersRequestedRef.current = true;
+    __appScope.setDefinitionDraftRows([]);
+    __appScope.setDefinitionDraftError("已标记删除全部参数，点击保存后生效。");
+  };
   const eDeviceInterfaceDefinitionRows = buildEDeviceInterfaceDefinitionRows({
     libraryTemplates,
     labels: PARAM_LABELS,
@@ -2726,17 +2735,8 @@ export function renderAppView(__appScope: Record<string, any>) {
                         const customDefinitions = parseCustomDefinitions(inspectorSelectedNode.params);
                         const selectedTemplate = libraryTemplates.find((template) => template.kind === inspectorSelectedNode.kind);
                         const selectedDerivedInfo = selectedTemplate ? templateDerivedComponentLibraryInfo(selectedTemplate) : null;
-                        const baseTemplate = selectedDerivedInfo
-                          ? libraryTemplates.find((template) => (
-                              !templateDerivedComponentLibraryInfo(template) &&
-                              String(resolveTemplateComponentLibrary(template) ?? "").trim().toLowerCase() === selectedDerivedInfo.baseComponentLibrary.trim().toLowerCase()
-                            ))
-                          : null;
                         const definitionGroups = selectedTemplate && selectedDerivedInfo
-                          ? {
-                              baseDefinitions: baseTemplate ? getTemplateParameterDefinitions(baseTemplate) : [],
-                              derivedDefinitions: getTemplateParameterDefinitions(selectedTemplate)
-                            }
+                          ? resolveEffectiveTemplateParameterDefinitionGroups(selectedTemplate, libraryTemplates)
                           : undefined;
                         const panelDefinitions = definitionGroups
                           ? [...definitionGroups.baseDefinitions, ...definitionGroups.derivedDefinitions]
@@ -3991,6 +3991,9 @@ export function renderAppView(__appScope: Record<string, any>) {
                         </div>
                         <div className="custom-device-actions">
                           <button type="button" onClick={addDefinitionDraftRow}>新增参数</button>
+                          <button type="button" onClick={deleteAllDefinitionParameters} disabled={!selectedDefinitionTemplate || selectedDefinitionTemplate.custom || definitionDraftRows.length === 0}>
+                            删除全部参数
+                          </button>
                           <button type="button" onClick={saveDeviceDefinitionDraft}>保存定义</button>
                           <button type="button" onClick={resetDeviceDefinitionDraft} disabled={!selectedDefinitionBaseTemplate}>
                             恢复默认

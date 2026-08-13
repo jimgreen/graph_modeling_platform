@@ -145,6 +145,7 @@ import {
   getEExportWarnings,
   formatPowerBaseDisplayValue,
   getTemplateParameterDefinitions,
+  resolveEffectiveTemplateParameterDefinitions,
   findSavedProjectRecordInSchemes,
   findSavedSchemeById,
   findSavedSchemeParentById,
@@ -674,6 +675,7 @@ const imageInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__app
 const imageArchiveInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { imageArchiveInputRef });
 const customDeviceImageInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { customDeviceImageInputRef });
 const definitionTemplateIconInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { definitionTemplateIconInputRef });
+const definitionDeleteAllParametersRequestedRef = useRef(false); Object.assign(__appScope, { definitionDeleteAllParametersRequestedRef });
 const stateVisualImageInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { stateVisualImageInputRef });
 const stateIconDrawingImportInputRef = useRef<HTMLInputElement | null>(null); Object.assign(__appScope, { stateIconDrawingImportInputRef });
 const stateIconDrawingSvgRef = useRef<SVGSVGElement | null>(null); Object.assign(__appScope, { stateIconDrawingSvgRef });
