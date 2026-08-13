@@ -410,7 +410,7 @@ import {
   type SidePanelSide
 } from "../sidePanelVisibility";
 import {
-  INITIAL_MEASUREMENT_CONFIG,
+  DEFAULT_MEASUREMENT_CONFIG,
   DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR,
   DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR,
   DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE,
@@ -542,7 +542,6 @@ import {
   createProgrammaticImportEDeviceDefinition
 } from "./appDeviceDefinitionFactories";
 import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_ICON_DRAWING_FRAME, DEFAULT_STATE_PAGE_ID, isDefaultStatePageId, createStateDraftRow, createStateDraftRowFromDefaultVisual, defaultStateDraftRow, createDefinitionStateDraftRows, normalizeStateDraftRows, validateStateDraftRows, stateVisualFromDraftRow, activeStateDraftRow, normalizeStatePageId, stateDraftImageValue, stateIconDrawingDraftSourceImage, stateIconDrawingInlineNeedsDraftReload, stateIconDrawingInlineCanPersistDraft, stateVisualShapeLabel, generateStateVisualShapeImage, stateIconDrawingElementId, visibleStateIconColor, createStateIconDrawingElement, createImportedStateIconElement, svgSourceFromDataUrl, parseStateIconSvgSource, stateIconSvgElementSource, parseSvgStyleAttribute, stateIconSvgReactAttributes, stateIconSvgNodeChildren, stateIconSvgNodeToReact, stateIconSvgSourceToReactNodes, createEditableStateIconElementsFromSvgSource, createStateIconDrawingInitialElements, svgSourceToDataUrl, stateIconDrawingSvgElementMarkup, stateIconDrawingElementMarkup, stateIconDrawingToImage, stateIconDrawingToPersistedImage, stateIconDrawingFrameRect, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "../stateIconDrawing";
-import { createMeasurementFieldParameterDefinition } from "../measurementDefinitionTypes";
 import { fallbackComponentLibraryForCategoryLibrary, resolveTemplateComponentLibrary, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, isReservedDeviceDefinitionParamName, isDerivedComponentBaseParamName, createDefinitionDraftRows, normalizeCustomDeviceTerminalAnchorCoordinate, projectCustomDeviceTerminalAnchorToBoundary, customDeviceTerminalAnchorKey, hasOverlappingCustomDeviceTerminalAnchors, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, createCustomDeviceDraftFromTemplate, createDefinitionVisualDraft, defaultContainerAssociationForTerminalType, isAssociationAllowedForTerminal, normalizeContainerTerminalAssociations, customDefaultDefinitions, generateCustomDeviceImage, customDeviceImageWithTerminalConnectors, customDeviceGeneratedDefaultImageCandidates, syncInheritedCustomDeviceStateVisuals, parseCustomDefinitions, screenToSvgPoint, primaryOrthogonalAxis, constrainPointToOrthogonalAxis } from "../customDeviceUtils";
 import { useBatchEditors } from "../hooks/useBatchEditors";
 import { APP_STATIC_SCOPE } from "./appStaticScope";
@@ -1275,7 +1274,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   Object.assign(__appScope, { createMeasurementEditorGroupShellForNode });
   const measurementSourcePointForNodeItem = createMeasurementSourcePointForNodeItem(__appScope); Object.assign(__appScope, { measurementSourcePointForNodeItem });
   const measurementProfileItemsForMeasurementGroup = (node: ModelNode, terminalId?: string) =>
-      measurementProfileItemsForNodePosition(node, measurementConfig, terminalId, libraryTemplates);
+      measurementProfileItemsForNodePosition(node, measurementConfig, terminalId);
   Object.assign(__appScope, { measurementProfileItemsForMeasurementGroup });
   const measurementTypeOptionsForMeasurementGroup = createMeasurementTypeOptionsForMeasurementGroup(__appScope); Object.assign(__appScope, { measurementTypeOptionsForMeasurementGroup });
   const createMeasurementItemForNode = createCreateMeasurementItemForNode(__appScope); Object.assign(__appScope, { createMeasurementItemForNode });
@@ -2781,22 +2780,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       terminalCount: Math.max(0, customDeviceDraft.terminalCount),
       terminalLabels: customDeviceDraft.terminalLabels,
       parameterDefinitions: customDeviceMeasurementParameterDefinitions,
-      positionDefinitions: customDeviceMeasurementPositionDefinitions,
-      items: customDeviceDraft.measurementDefinitions,
-      setItems: (items) => setCustomDeviceDraft((current) => ({ ...current, measurementDefinitions: items, error: "" })),
-      ensureAssociatedField: (position, associatedField, measurementTypeId) => {
-        if (position !== "device") return;
-        const measurementType = (measurementConfigDraft ?? measurementConfig).measurementTypes
-          .find((type) => type.id === measurementTypeId);
-        const definition = createMeasurementFieldParameterDefinition(associatedField, {
-          cnName: measurementType?.name,
-          valueType: measurementType?.valueType === "string" || measurementType?.valueType === "boolean" ? "string" : "float"
-        });
-        if (!definition) return;
-        setCustomDeviceDraft((current) => current.params.some((row) => row.enName.trim().toLowerCase() === definition.enName.toLowerCase())
-          ? current
-          : { ...current, params: [...current.params, { ...definition, id: customParamId() }], error: "" });
-      }
+      positionDefinitions: customDeviceMeasurementPositionDefinitions
     };
   Object.assign(__appScope, { customDeviceMeasurementTarget });
   const customIconStatePageId = customDeviceStatePageId;

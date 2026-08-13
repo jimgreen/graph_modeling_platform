@@ -88,7 +88,8 @@ export async function handleV1LibraryMeasurements({ request, response }) {
     const config = await readMeasurementConfig();
     await sendV1Json(request, response, {
       groupDefaults: config.groupDefaults ?? {},
-      measurementTypes: config.measurementTypes ?? []
+      measurementTypes: config.measurementTypes ?? [],
+      deviceProfiles: config.deviceProfiles ?? []
     });
   } catch (error) {
     sendV1Error(response, "internal", error instanceof Error ? error.message : "后端处理失败。");
@@ -132,7 +133,8 @@ export async function handleV1Library({ request, response }) {
       devices: buildDevices(deviceLibrary),
       measurements: {
         groupDefaults: measurementConfig.groupDefaults ?? {},
-        measurementTypes: measurementConfig.measurementTypes ?? []
+        measurementTypes: measurementConfig.measurementTypes ?? [],
+        deviceProfiles: measurementConfig.deviceProfiles ?? []
       },
       deviceDefinitions: {
         deviceDefinitionOverrides: deviceLibrary.deviceDefinitionOverrides ?? {},

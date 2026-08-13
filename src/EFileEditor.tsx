@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { X, Edit, Eye, ArrowUpRight } from "lucide-react";
 import { PARAM_LABELS } from "./appExtracted/appCoreCanvasUtilities";
-import { formatEDeviceRecordColumnValue } from "./model-eexport";
+import { formatEDeviceRecordColumnValue, E_REFERENCE_FIELD_TABLE_IDS } from "./model-eexport";
 
 export type EDeviceRecord = {
   id: string;
@@ -43,12 +43,26 @@ const REFERENCE_FIELD_MAP: Record<string, string> = {
   neutral_node: "ACNode",
   // 变压器绕组
   itrfm: "ACTransformer",
+  trfm_id: "ACTransformer",
+  tr_id: "ACTransformer",
   // DC 节点引用
   source_node: "DCNode",
   target_node: "DCNode",
   // 厂站引用（所属厂站/末端所属厂站 -> substation 表 idx）
   ist: "substation",
   zst: "substation",
+  // 实时库模板引用字段（值 = key_to_long 计算 id，跳转时按表号还原行号）
+  st_id: "substation",
+  ist_id: "substation",
+  jst_id: "substation",
+  bv_id: "basevoltage",
+  subarea_id: "subcontrolarea",
+  area_id: "subcontrolarea",
+  aclnseg_id: "ACBranch",
+  tapty_id: "taptype",
+  dcln_id: "DCBranch",
+  bulk_id: "dms_def_bulk",
+  source_id: "dms_def_source",
 };
 
 // 拓扑相关字段（只读，不可编辑）
@@ -155,7 +169,7 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames }: EF
   }, [editMode]);
 
   // 跳转到引用行
-  const handleJumpToReference = useCallback((fieldName: string, targetIdx: string) => {
+  const handleJumpToReference = useCallback((fieldName: string, targetValue: string) => {
     const targetSection = REFERENCE_FIELD_MAP[fieldName];
     if (!targetSection) return;
 
@@ -166,10 +180,25 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames }: EF
     // 切换到目标 section
     setActiveSection(targetSectionIndex);
 
-    // 高亮目标行
-    const targetRecord = sections[targetSectionIndex].records.find(
-      (record) => record.params.idx === targetIdx
-    );
+    const targetRecords = sections[targetSectionIndex].records;
+    let targetRecord: EDeviceRecord | undefined;
+    const tableId = E_REFERENCE_FIELD_TABLE_IDS[fieldName];
+    if (tableId) {
+      // 实时库引用字段：值 = key_to_long(表号, 0, 行号)，还原行号（低 48 位 = field<<32|area<<24|key_no，
+      // 因 field_id=0 且 area_no=0，行号 = value - (表号<<48)），再按 idx 排序取第 rowNo 行
+      const valueBig = BigInt(String(targetValue ?? "").trim());
+      const rowNo = Number(valueBig - (BigInt(String(tableId).trim()) << 48n));
+      if (Number.isFinite(rowNo) && rowNo >= 1) {
+        const sorted = [...targetRecords].sort((a, b) =>
+          Number(a.params.idx ?? 0) - Number(b.params.idx ?? 0)
+        );
+        targetRecord = sorted[rowNo - 1];
+      }
+    }
+    if (!targetRecord) {
+      // 旧字段（i_node/ind 等）：值即目标 idx，直接匹配
+      targetRecord = targetRecords.find((record) => record.params.idx === targetValue);
+    }
     if (targetRecord) {
       setHighlightedRow(targetRecord.id);
       // 3秒后取消高亮
@@ -361,12 +390,14 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames }: EF
                                     onDoubleClick={() => handleDoubleClickCell(displayValue)}
                                     title={record.readonly ? displayValue : "双击复制到剪切板"}
                                   >{displayValue}</span>
-                                  {!record.readonly && isReferenceField && (
+                                  {isReferenceField && (
                                     <button
                                       type="button"
                                       className="e-file-editor-jump-btn"
                                       onClick={() => handleJumpToReference(col, value)}
-                                      title={`跳转到 ${REFERENCE_FIELD_MAP[col]} 的 idx=${value}`}
+                                      title={`跳转到 ${REFERENCE_FIELD_MAP[col]} 的 ${E_REFERENCE_FIELD_TABLE_IDS[col] ? "行号" : "idx"}=${E_REFERENCE_FIELD_TABLE_IDS[col]
+                                        ? (Number(BigInt(String(value ?? "0").trim()) - (BigInt(String(E_REFERENCE_FIELD_TABLE_IDS[col]).trim()) << 48n)) || "1")
+                                        : value}`}
                                     >
                                       <ArrowUpRight size={12} />
                                     </button>

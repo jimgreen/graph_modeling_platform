@@ -7,7 +7,7 @@ import {
   type DeviceTemplate,
   type ModelNode
 } from "./model";
-import { INITIAL_MEASUREMENT_CONFIG } from "./measurements";
+import { DEFAULT_MEASUREMENT_CONFIG } from "./measurements";
 import { apiPath } from "./config";
 import {
   buildUserCustomizationInventory,
@@ -24,7 +24,7 @@ import {
 
 const defaultSnapshot = (): UserCustomizationSnapshot => normalizeUserCustomizationSnapshot({
   deviceLibrary: emptyUserDeviceLibrary(),
-  measurementConfig: structuredClone(INITIAL_MEASUREMENT_CONFIG),
+  measurementConfig: structuredClone(DEFAULT_MEASUREMENT_CONFIG),
   colorConfig: {
     colorDisplayMode: "energy",
     colorPalette: structuredClone(DEFAULT_COLOR_PALETTE)
@@ -246,12 +246,9 @@ describe("user customization merge and restore", () => {
     expect(preview.target.deviceLibrary.customDeviceTemplates.map((item) => item.kind)).toEqual(["new-id"]);
   });
 
-  test("restoring a custom device removes its dependent override, measurements and E metadata", () => {
+  test("restoring a custom device removes its dependent override, profile and E metadata", () => {
     const snapshot = defaultSnapshot();
-    snapshot.deviceLibrary.customDeviceTemplates = [{
-      ...customTemplate("custom-source", "自定义电源"),
-      measurementDefinitions: [{ measurementTypeId: "activePower", associatedField: "p" }]
-    }];
+    snapshot.deviceLibrary.customDeviceTemplates = [customTemplate("custom-source", "自定义电源")];
     snapshot.deviceLibrary.deviceDefinitionOverrides["custom-source"] = {
       kind: "custom-source",
       size: { width: 90, height: 50 }
@@ -259,6 +256,7 @@ describe("user customization merge and restore", () => {
     snapshot.deviceLibrary.eDeviceDefinitionLabels = { "custom-source": "CustomSource" };
     snapshot.deviceLibrary.eDeviceDefinitionClassExportEnabled = { "custom-source": true };
     snapshot.deviceLibrary.eDeviceDefinitionFieldOrder = { "custom-source": ["name", "idx"] };
+    snapshot.measurementConfig.deviceProfiles.push({ deviceKind: "custom-source", items: [] });
 
     const restored = restoreUserCustomizationItems(snapshot, ["custom-devices:custom-source"]);
 
@@ -267,6 +265,7 @@ describe("user customization merge and restore", () => {
     expect(restored.deviceLibrary.eDeviceDefinitionLabels?.["custom-source"]).toBeUndefined();
     expect(restored.deviceLibrary.eDeviceDefinitionClassExportEnabled?.["custom-source"]).toBeUndefined();
     expect(restored.deviceLibrary.eDeviceDefinitionFieldOrder?.["custom-source"]).toBeUndefined();
+    expect(restored.measurementConfig.deviceProfiles.some((profile) => profile.deviceKind === "custom-source")).toBe(false);
   });
 
   test("restoring parameter definitions keeps unrelated visual overrides", () => {

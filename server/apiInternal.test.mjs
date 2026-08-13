@@ -332,6 +332,7 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         measurementTypes: [{ id: "m1", name: "测点1" }],
+        deviceProfiles: [],
         groupDefaults: {
           backgroundColor: "#fef3c7",
           borderColor: "#d97706",
@@ -351,6 +352,47 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
       borderWidth: 3,
       borderStyle: "dashed"
     });
+  });
+
+  test("measurement-config 将储能液位量测迁移为 soc 并保留储罐液位", async () => {
+    const saved = await fetchJson(apiPath("/measurement-config"), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        measurementTypes: [{
+          id: "level",
+          key: "level",
+          name: "液位",
+          shortLabel: "液位",
+          defaultUnit: "%",
+          valueType: "number",
+          defaultDecimals: 1,
+          defaultVisible: true
+        }],
+        deviceProfiles: [
+          { deviceKind: "ac-storage", items: [{ measurementTypeId: "level" }] },
+          { deviceKind: "dc-storage", items: [{ measurementTypeId: "level" }] },
+          { deviceKind: "hydrogen-tank", items: [{ measurementTypeId: "level" }] }
+        ]
+      })
+    });
+    expect(saved.status).toBe(200);
+
+    const got = await fetchJson(apiPath("/measurement-config"));
+    expect(got.status).toBe(200);
+    expect(got.json.measurementTypes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "level", name: "液位" }),
+      expect.objectContaining({ id: "soc", key: "soc", name: "soc", shortLabel: "soc", defaultUnit: "%" })
+    ]));
+    expect(got.json.deviceProfiles.find((profile) => profile.deviceKind === "ac-storage")?.items).toEqual([
+      expect.objectContaining({ measurementTypeId: "soc" })
+    ]);
+    expect(got.json.deviceProfiles.find((profile) => profile.deviceKind === "dc-storage")?.items).toEqual([
+      expect.objectContaining({ measurementTypeId: "soc" })
+    ]);
+    expect(got.json.deviceProfiles.find((profile) => profile.deviceKind === "hydrogen-tank")?.items).toEqual([
+      expect.objectContaining({ measurementTypeId: "level" })
+    ]);
   });
 
   test("device-library 保存 → 读取", async () => {

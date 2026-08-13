@@ -28,7 +28,7 @@ import {
   renderEnumValuesEditor
 } from "./appExtracted/appPersistenceLibraryExport";
 import { DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY } from "./model";
-import { INITIAL_MEASUREMENT_CONFIG } from "./measurements";
+import { DEFAULT_MEASUREMENT_CONFIG } from "./measurements";
 import { svgSourceFromDataUrl } from "./stateIconDrawing";
 import { emptyUserDeviceLibrary } from "./userCustomizations";
 
@@ -117,7 +117,8 @@ describe("graph template library filtering", () => {
       version: 1,
       scope: "measurement",
       measurementConfig: {
-        measurementTypes: [{ id: "freq", name: "频率", shortLabel: "f", defaultUnit: "Hz" }]
+        measurementTypes: [{ id: "freq", name: "频率", shortLabel: "f", defaultUnit: "Hz" }],
+        deviceProfiles: []
       }
     });
 
@@ -134,7 +135,7 @@ describe("graph template library filtering", () => {
     const packagePayload = createLibraryPackage({
       scope: "all",
       exportedAt: "2026-07-21T00:00:00.000Z",
-      measurementConfig: INITIAL_MEASUREMENT_CONFIG,
+      measurementConfig: DEFAULT_MEASUREMENT_CONFIG,
       deviceLibrary: emptyUserDeviceLibrary(),
       iconLibrary: { folders: [{ id: "root", name: "默认文件夹" }], assets: [] },
       colorConfig: { colorDisplayMode: "energy", colorPalette: DEFAULT_COLOR_PALETTE },
@@ -505,7 +506,7 @@ describe("graph template library filtering", () => {
     const measurementPackage = createLibraryPackage({
       scope: "measurement",
       exportedAt: "2026-06-28T00:00:00.000Z",
-      measurementConfig: INITIAL_MEASUREMENT_CONFIG
+      measurementConfig: DEFAULT_MEASUREMENT_CONFIG
     });
 
     expect(measurementPackage.measurementConfig?.measurementTypes.length).toBeGreaterThan(0);
@@ -517,7 +518,7 @@ describe("graph template library filtering", () => {
     const componentPackage = createLibraryPackage({
       scope: "component-library",
       exportedAt: "2026-06-28T00:00:00.000Z",
-      measurementConfig: INITIAL_MEASUREMENT_CONFIG,
+      measurementConfig: DEFAULT_MEASUREMENT_CONFIG,
       deviceLibrary: {
         customDeviceTemplates: [
           {

@@ -76,11 +76,11 @@ const ENDPOINTS = [
   { group: "配置", method: "PUT", path: "/webgrp/color-config", desc: "保存颜色配置", body: { colorDisplayMode: "default", colorPalette: {} }, response: "{ok:true,...colorConfig}", examples: [
     { label: "设为默认配色", params: { __body__: { colorDisplayMode: "default", colorPalette: {} } } }
   ]},
-  { group: "配置", method: "GET", path: "/webgrp/measurement-config", desc: "量测配置", response: "{ok:true,groupDefaults,measurementTypes}", examples: [
+  { group: "配置", method: "GET", path: "/webgrp/measurement-config", desc: "量测配置", response: "{ok:true,groupDefaults,measurementTypes,deviceProfiles}", examples: [
     { label: "当前量测配置", params: {} }
   ]},
-  { group: "配置", method: "PUT", path: "/webgrp/measurement-config", desc: "保存量测配置", body: { groupDefaults: { backgroundColor: "transparent", borderColor: "#64748b", borderStyle: "none", borderWidth: 0 }, measurementTypes: [] }, response: "{ok:true,...measurementConfig}", examples: [
-    { label: "清空量测配置", params: { __body__: { groupDefaults: { backgroundColor: "transparent", borderColor: "#64748b", borderStyle: "none", borderWidth: 0 }, measurementTypes: [] } } }
+  { group: "配置", method: "PUT", path: "/webgrp/measurement-config", desc: "保存量测配置", body: { groupDefaults: { backgroundColor: "transparent", borderColor: "#64748b", borderStyle: "none", borderWidth: 0 }, measurementTypes: [], deviceProfiles: [] }, response: "{ok:true,...measurementConfig}", examples: [
+    { label: "清空量测配置", params: { __body__: { groupDefaults: { backgroundColor: "transparent", borderColor: "#64748b", borderStyle: "none", borderWidth: 0 }, measurementTypes: [], deviceProfiles: [] } } }
   ]},
   { group: "配置", method: "GET", path: "/webgrp/device-library", desc: "图元库配置", response: "{ok:true,...deviceLibrary}", examples: [
     { label: "当前图元库配置", params: {} }
@@ -123,7 +123,7 @@ const ENDPOINTS = [
   { group: "v1 图元库域", method: "GET", path: "/webgrp/v1/library/devices", desc: "各类图元信息", response: "{ok:true,data:{eSections,staticComponentLibraries,customComponentLibraries}}", examples: [
     { label: "图元信息", params: {} }
   ]},
-  { group: "v1 图元库域", method: "GET", path: "/webgrp/v1/library/measurements", desc: "量测类型与样式", response: "{ok:true,data:{groupDefaults,measurementTypes}}", examples: [
+  { group: "v1 图元库域", method: "GET", path: "/webgrp/v1/library/measurements", desc: "量测定义", response: "{ok:true,data:{groupDefaults,measurementTypes,deviceProfiles}}", examples: [
     { label: "量测定义", params: {} }
   ]},
   { group: "v1 图元库域", method: "GET", path: "/webgrp/v1/library/device-definitions", desc: "图元定义", response: "{ok:true,data:{deviceDefinitionOverrides,customComponentLibraries,customCategoryLibraries}}", examples: [

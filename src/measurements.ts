@@ -10,14 +10,6 @@ import {
   type DeviceTemplate,
   type ModelNode
 } from "./model";
-import type {
-  DeviceMeasurementDefinition,
-  MeasurementFontStyle,
-  MeasurementFontWeight,
-  MeasurementStyleOverride,
-  MeasurementTextDecoration
-} from "./measurementDefinitionTypes";
-import { createMeasurementFieldParameterDefinition } from "./measurementDefinitionTypes";
 import { finiteNumber, degreesToRadians } from "./formatUtils";
 import { clampNumber } from "./canvasViewport";
 
@@ -25,7 +17,9 @@ export type MeasurementValueType = "number" | "string" | "boolean";
 export type MeasurementQuality = "good" | "bad" | "stale" | "missing";
 export type MeasurementGroupAnchor = "top" | "bottom" | "left" | "right" | "custom";
 export type MeasurementGroupLayout = "vertical" | "horizontal" | "grid";
-export type { MeasurementFontStyle, MeasurementFontWeight, MeasurementStyleOverride, MeasurementTextDecoration } from "./measurementDefinitionTypes";
+export type MeasurementFontWeight = "400" | "500" | "700";
+export type MeasurementFontStyle = "normal" | "italic";
+export type MeasurementTextDecoration = "none" | "underline";
 export type MeasurementGroupBorderStyle = "none" | "solid" | "dashed" | "dotted";
 
 export type MeasurementGroupDefaults = {
@@ -33,6 +27,15 @@ export type MeasurementGroupDefaults = {
   borderColor: string;
   borderStyle: MeasurementGroupBorderStyle;
   borderWidth: number;
+};
+
+export type MeasurementStyleOverride = {
+  color?: string;
+  fontFamily?: string;
+  fontSize?: number;
+  fontWeight?: MeasurementFontWeight;
+  fontStyle?: MeasurementFontStyle;
+  textDecoration?: MeasurementTextDecoration;
 };
 
 export type MeasurementTypeDefinition = {
@@ -50,74 +53,30 @@ export type MeasurementTypeDefinition = {
   defaultVisible: boolean;
 };
 
-export type DeviceMeasurementProfileItem = DeviceMeasurementDefinition;
+export type DeviceMeasurementProfileItem = {
+  name?: string;
+  measurementTypeId: string;
+  position?: string;
+  associatedField?: string;
+  role?: string;
+  defaultVisible?: boolean;
+  labelOverride?: string;
+  unitOverride?: string;
+  decimalsOverride?: number;
+  styleOverride?: MeasurementStyleOverride;
+};
+
+export type DeviceMeasurementProfile = {
+  deviceKind: string;
+  items: DeviceMeasurementProfileItem[];
+};
 
 export type MeasurementProfilePositionDefinition = {
   value: string;
   label: string;
   deviceModel?: string;
-  deviceKind?: string;
   parameterDefinitions: readonly DeviceParameterDefinition[];
 };
-
-export type MaterializedMeasurementFieldAddition = {
-  position: string;
-  deviceKind?: string;
-  field: string;
-  definition: DeviceParameterDefinition;
-};
-
-export function materializeNewMeasurementDefinitionFields(options: {
-  previousItems?: readonly DeviceMeasurementProfileItem[];
-  nextItems: readonly DeviceMeasurementProfileItem[];
-  measurementTypes?: readonly MeasurementTypeDefinition[];
-  parameterDefinitions: readonly DeviceParameterDefinition[];
-  positionDefinitions?: readonly MeasurementProfilePositionDefinition[];
-  materializeDeviceFields?: boolean;
-}): {
-  parameterDefinitions: DeviceParameterDefinition[];
-  positionDefinitions: MeasurementProfilePositionDefinition[];
-  additions: MaterializedMeasurementFieldAddition[];
-} {
-  const positionDefinitions = (options.positionDefinitions?.length
-    ? options.positionDefinitions
-    : [{ value: "device", label: "设备本体", parameterDefinitions: options.parameterDefinitions }]
-  ).map((position) => ({ ...position, parameterDefinitions: [...position.parameterDefinitions] }));
-  const positionByValue = new Map(positionDefinitions.map((position) => [position.value, position]));
-  const previousReferences = new Set((options.previousItems ?? []).flatMap((item) => {
-    const field = String(item.associatedField ?? "").trim().toLowerCase();
-    return field ? [`${String(item.position ?? "device").trim() || "device"}\u0000${field}`] : [];
-  }));
-  const typeById = new Map((options.measurementTypes ?? []).map((type) => [type.id, type]));
-  const additions: MaterializedMeasurementFieldAddition[] = [];
-  const addedReferences = new Set<string>();
-
-  for (const item of options.nextItems) {
-    const position = String(item.position ?? "device").trim() || "device";
-    if (position === "device" && options.materializeDeviceFields === false) continue;
-    const field = String(item.associatedField ?? "").trim();
-    if (!field) continue;
-    const referenceKey = `${position}\u0000${field.toLowerCase()}`;
-    if (previousReferences.has(referenceKey) || addedReferences.has(referenceKey)) continue;
-    const target = positionByValue.get(position);
-    if (!target || target.parameterDefinitions.some((definition) => measurementParameterDefinitionKey(definition) === field.toLowerCase())) {
-      continue;
-    }
-    const measurementType = typeById.get(item.measurementTypeId);
-    const definition = createMeasurementFieldParameterDefinition(field, {
-      cnName: item.name || measurementType?.name,
-      valueType: measurementType?.valueType === "string" || measurementType?.valueType === "boolean" ? "string" : "float"
-    });
-    if (!definition) continue;
-    const addition = { position, deviceKind: target.deviceKind, field: definition.enName, definition };
-    target.parameterDefinitions = [...target.parameterDefinitions, definition];
-    additions.push(addition);
-    addedReferences.add(referenceKey);
-  }
-
-  const bodyDefinitions = positionByValue.get("device")?.parameterDefinitions ?? [...options.parameterDefinitions];
-  return { parameterDefinitions: [...bodyDefinitions], positionDefinitions, additions };
-}
 
 export type MeasurementProfilePositionSource = Pick<DeviceTemplate, "kind" | "terminalCount"> &
   Partial<Pick<DeviceTemplate,
@@ -155,6 +114,39 @@ function mergeMeasurementParameterDefinitions(
   }
   return merged;
 }
+
+const ASSOCIATED_RUNTIME_MEASUREMENT_FIELDS: Record<string, readonly DeviceParameterDefinition[]> = {
+  ACLoad: [
+    { cnName: "有功值", enName: "p", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "无功值", enName: "q", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "电压值", enName: "u", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "电流值", enName: "i", valueType: "float", typicalValue: "0", readonly: true }
+  ],
+  DCLoad: [
+    { cnName: "有功值", enName: "p", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "电压值", enName: "u", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "电流值", enName: "i", valueType: "float", typicalValue: "0", readonly: true }
+  ],
+  ACGenerator: [
+    { cnName: "有功值", enName: "p", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "无功值", enName: "q", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "电压值", enName: "u", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "频率值", enName: "f", valueType: "float", typicalValue: "0", readonly: true }
+  ],
+  DCGenerator: [
+    { cnName: "有功值", enName: "p", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "电压值", enName: "u", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "电流值", enName: "i", valueType: "float", typicalValue: "0", readonly: true }
+  ],
+  HydroSource: [
+    { cnName: "压力值", enName: "pressure", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "流量值", enName: "flow", valueType: "float", typicalValue: "0", readonly: true }
+  ],
+  HydroLoad: [
+    { cnName: "压力值", enName: "pressure", valueType: "float", typicalValue: "0", readonly: true },
+    { cnName: "流量值", enName: "flow", valueType: "float", typicalValue: "0", readonly: true }
+  ]
+};
 
 function derivedBaseTemplateForMeasurementSource(
   source: MeasurementProfilePositionSource,
@@ -227,9 +219,9 @@ export function buildMeasurementProfilePositionDefinitions(options: {
       value: `t${association.terminalIndex + 1}`,
       label: `端${association.terminalIndex + 1}${roleLabel ? `（${roleLabel}）` : ""}`,
       deviceModel: association.deviceModel,
-      deviceKind: associatedTemplate?.kind,
       parameterDefinitions: mergeMeasurementParameterDefinitions(
-        associatedTemplate ? getTemplateParameterDefinitions(associatedTemplate) : undefined
+        associatedTemplate ? getTemplateParameterDefinitions(associatedTemplate) : undefined,
+        ASSOCIATED_RUNTIME_MEASUREMENT_FIELDS[association.deviceModel]
       )
     });
   }
@@ -239,11 +231,13 @@ export function buildMeasurementProfilePositionDefinitions(options: {
 export type PlatformMeasurementConfig = {
   groupDefaults: MeasurementGroupDefaults;
   measurementTypes: MeasurementTypeDefinition[];
+  deviceProfiles: DeviceMeasurementProfile[];
 };
 
 export type PlatformMeasurementConfigInput = {
   groupDefaults?: Partial<MeasurementGroupDefaults>;
   measurementTypes?: Array<Partial<MeasurementTypeDefinition>>;
+  deviceProfiles?: Array<Partial<DeviceMeasurementProfile> & { items?: Partial<DeviceMeasurementProfileItem>[] }>;
 };
 
 export type MeasurementItemBinding = {
@@ -409,12 +403,6 @@ const HYDROGEN_COUPLING_MEASUREMENT_PROFILE_KINDS = new Set([
   "dc-fuel-cell"
 ]);
 
-const LEGACY_HYDROGEN_COUPLING_MEASUREMENT_ITEMS = [
-  { measurementTypeId: "activePower", legacyIndex: 0, terminalId: "t1", terminalIndex: 0, associatedField: "p" },
-  { measurementTypeId: "voltage", legacyIndex: 1, terminalId: "t1", terminalIndex: 1, associatedField: "u" },
-  { measurementTypeId: "flow", legacyIndex: 2, terminalId: "t2", terminalIndex: 0, associatedField: "flow" }
-] as const;
-
 function migrateHydrogenCouplingMeasurementProfileItems(
   deviceKind: string,
   items: readonly Partial<DeviceMeasurementProfileItem>[]
@@ -444,29 +432,88 @@ function normalizedDefaultMeasurementFontSize(value: unknown, fallback?: Measure
     : next;
 }
 
-export const BUILT_IN_MEASUREMENT_TYPES: readonly MeasurementTypeDefinition[] = [
-  { id: "activePower", key: "p", name: "有功功率", shortLabel: "P", defaultUnit: "MW", valueType: "number", defaultDecimals: 3, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
-  { id: "reactivePower", key: "q", name: "无功功率", shortLabel: "Q", defaultUnit: "Mvar", valueType: "number", defaultDecimals: 3, defaultColor: "#475569", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
-  { id: "voltage", key: "u", name: "电压", shortLabel: "U", defaultUnit: "kV", valueType: "number", defaultDecimals: 2, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
-  { id: "current", key: "i", name: "电流", shortLabel: "I", defaultUnit: "A", valueType: "number", defaultDecimals: 1, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false },
-  { id: "frequency", key: "f", name: "频率", shortLabel: "f", defaultUnit: "Hz", valueType: "number", defaultDecimals: 2, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false },
-  { id: "pressure", key: "pressure", name: "压力", shortLabel: "压力", defaultUnit: "MPa", valueType: "number", defaultDecimals: 3, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
-  { id: "temperature", key: "temperature", name: "温度", shortLabel: "温度", defaultUnit: "degC", valueType: "number", defaultDecimals: 1, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false },
-  { id: "flow", key: "flow", name: "流量", shortLabel: "流量", defaultUnit: "kg/s", valueType: "number", defaultDecimals: 2, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
-  { id: "level", key: "level", name: "液位", shortLabel: "液位", defaultUnit: "%", valueType: "number", defaultDecimals: 1, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
-  STORAGE_SOC_MEASUREMENT_TYPE,
-  GAS_QUANTITY_MEASUREMENT_TYPE,
-  { id: "status", key: "status", name: "状态", shortLabel: "状态", defaultUnit: "", valueType: "string", defaultDecimals: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false }
-];
-
-export const INITIAL_MEASUREMENT_CONFIG: PlatformMeasurementConfig = {
+export const DEFAULT_MEASUREMENT_CONFIG: PlatformMeasurementConfig = {
   groupDefaults: {
     backgroundColor: DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR,
     borderColor: DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR,
     borderStyle: DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE,
     borderWidth: DEFAULT_MEASUREMENT_GROUP_BORDER_WIDTH
   },
-  measurementTypes: BUILT_IN_MEASUREMENT_TYPES.map((definition) => ({ ...definition }))
+  measurementTypes: [
+    { id: "activePower", key: "p", name: "有功功率", shortLabel: "P", defaultUnit: "MW", valueType: "number", defaultDecimals: 3, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
+    { id: "reactivePower", key: "q", name: "无功功率", shortLabel: "Q", defaultUnit: "Mvar", valueType: "number", defaultDecimals: 3, defaultColor: "#475569", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
+    { id: "voltage", key: "u", name: "电压", shortLabel: "U", defaultUnit: "kV", valueType: "number", defaultDecimals: 2, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
+    { id: "current", key: "i", name: "电流", shortLabel: "I", defaultUnit: "A", valueType: "number", defaultDecimals: 1, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false },
+    { id: "frequency", key: "f", name: "频率", shortLabel: "f", defaultUnit: "Hz", valueType: "number", defaultDecimals: 2, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false },
+    { id: "pressure", key: "pressure", name: "压力", shortLabel: "压力", defaultUnit: "MPa", valueType: "number", defaultDecimals: 3, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
+    { id: "temperature", key: "temperature", name: "温度", shortLabel: "温度", defaultUnit: "degC", valueType: "number", defaultDecimals: 1, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false },
+    { id: "flow", key: "flow", name: "流量", shortLabel: "流量", defaultUnit: "kg/s", valueType: "number", defaultDecimals: 2, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
+    { id: "level", key: "level", name: "液位", shortLabel: "液位", defaultUnit: "%", valueType: "number", defaultDecimals: 1, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
+    STORAGE_SOC_MEASUREMENT_TYPE,
+    GAS_QUANTITY_MEASUREMENT_TYPE,
+    { id: "status", key: "status", name: "状态", shortLabel: "状态", defaultUnit: "", valueType: "string", defaultDecimals: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false }
+  ],
+  deviceProfiles: [
+    { deviceKind: "ac-load", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
+    { deviceKind: "dc-load", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
+    { deviceKind: "ac-source", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "frequency" }] },
+    { deviceKind: "ac-wind-source", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "frequency" }] },
+    { deviceKind: "ac-pv-source", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "frequency" }] },
+    { deviceKind: "ac-thermal-source", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "frequency" }] },
+    { deviceKind: "ac-hydro-source", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "frequency" }] },
+    { deviceKind: "ac-nuclear-source", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "frequency" }] },
+    { deviceKind: "dc-source", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
+    { deviceKind: "dc-wind-source", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
+    { deviceKind: "dc-pv-source", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
+    { deviceKind: "ac-storage", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "soc" }] },
+    { deviceKind: "dc-storage", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }, { measurementTypeId: "soc" }] },
+    { deviceKind: "ac-line", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "current" }] },
+    { deviceKind: "ac-capacitor", items: [{ measurementTypeId: "reactivePower", associatedField: "q" }, { measurementTypeId: "current", associatedField: "current" }] },
+    { deviceKind: "ac-reactor", items: [{ measurementTypeId: "reactivePower", associatedField: "q" }, { measurementTypeId: "current", associatedField: "current" }] },
+    { deviceKind: "ac-series-capacitor", items: [{ measurementTypeId: "activePower", associatedField: "p" }, { measurementTypeId: "reactivePower", associatedField: "q" }, { measurementTypeId: "current", associatedField: "current" }] },
+    { deviceKind: "ac-series-reactor", items: [{ measurementTypeId: "activePower", associatedField: "p" }, { measurementTypeId: "reactivePower", associatedField: "q" }, { measurementTypeId: "current", associatedField: "current" }] },
+    { deviceKind: "dc-line", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
+    { deviceKind: "ac-bus", items: [{ measurementTypeId: "voltage" }, { measurementTypeId: "frequency" }] },
+    { deviceKind: "dc-bus", items: [{ measurementTypeId: "voltage" }, { measurementTypeId: "current", defaultVisible: false }] },
+    { deviceKind: "ac-switch", items: [{ measurementTypeId: "status" }, { measurementTypeId: "current" }] },
+    { deviceKind: "dc-switch", items: [{ measurementTypeId: "status" }, { measurementTypeId: "current" }] },
+    { deviceKind: "ac-breaker", items: [{ measurementTypeId: "status" }, { measurementTypeId: "current" }] },
+    { deviceKind: "dc-breaker", items: [{ measurementTypeId: "status" }, { measurementTypeId: "current" }] },
+    { deviceKind: "ac-transformer", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
+    { deviceKind: "converter", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
+    { deviceKind: "ac-electrolyzer", items: [
+      { measurementTypeId: "activePower", position: "t1", associatedField: "p" },
+      { measurementTypeId: "voltage", position: "t1", associatedField: "u" },
+      { measurementTypeId: "flow", position: "t2", associatedField: "flow", unitOverride: "Nm3/h" }
+    ] },
+    { deviceKind: "dc-electrolyzer", items: [
+      { measurementTypeId: "activePower", position: "t1", associatedField: "p" },
+      { measurementTypeId: "voltage", position: "t1", associatedField: "u" },
+      { measurementTypeId: "flow", position: "t2", associatedField: "flow", unitOverride: "Nm3/h" }
+    ] },
+    { deviceKind: "ac-fuel-cell", items: [
+      { measurementTypeId: "activePower", position: "t1", associatedField: "p" },
+      { measurementTypeId: "voltage", position: "t1", associatedField: "u" },
+      { measurementTypeId: "flow", position: "t2", associatedField: "flow", unitOverride: "Nm3/h" }
+    ] },
+    { deviceKind: "dc-fuel-cell", items: [
+      { measurementTypeId: "activePower", position: "t1", associatedField: "p" },
+      { measurementTypeId: "voltage", position: "t1", associatedField: "u" },
+      { measurementTypeId: "flow", position: "t2", associatedField: "flow", unitOverride: "Nm3/h" }
+    ] },
+    { deviceKind: "hydrogen-source", items: [{ measurementTypeId: "pressure", associatedField: "pressure", unitOverride: "MPa" }, { measurementTypeId: "flow", associatedField: "flow", unitOverride: "Nm3/h" }, { measurementTypeId: "status" }] },
+    { deviceKind: "hydrogen-load", items: [{ measurementTypeId: "pressure", associatedField: "pressure", unitOverride: "MPa" }, { measurementTypeId: "flow", associatedField: "flow", unitOverride: "Nm3/h" }] },
+    { deviceKind: "hydrogen-tank", items: HYDROGEN_TANK_MEASUREMENT_PROFILE_ITEMS },
+    { deviceKind: "hydrogen-tank-horizontal", items: HYDROGEN_TANK_MEASUREMENT_PROFILE_ITEMS },
+    { deviceKind: "hydrogen-tank-container", items: HYDROGEN_TANK_MEASUREMENT_PROFILE_ITEMS },
+    { deviceKind: "hydrogen-pipeline", items: [{ measurementTypeId: "pressure" }, { measurementTypeId: "flow" }] },
+    { deviceKind: "hydrogen-compressor", items: [{ measurementTypeId: "pressure" }, { measurementTypeId: "flow" }, { measurementTypeId: "status" }] },
+    { deviceKind: "heat-bus", items: [{ measurementTypeId: "temperature" }, { measurementTypeId: "flow", defaultVisible: false }] },
+    { deviceKind: "heat-pipeline", items: [{ measurementTypeId: "temperature" }, { measurementTypeId: "flow" }] },
+    { deviceKind: "thermal-storage-tank", items: [{ measurementTypeId: "temperature" }, { measurementTypeId: "flow" }, { measurementTypeId: "level" }] },
+    { deviceKind: "heat-source", items: [{ measurementTypeId: "temperature" }, { measurementTypeId: "flow" }, { measurementTypeId: "activePower" }] },
+    { deviceKind: "heat-load", items: [{ measurementTypeId: "temperature" }, { measurementTypeId: "flow" }, { measurementTypeId: "activePower" }] }
+  ]
 };
 
 export const EMPTY_PROJECT_MEASUREMENTS: ProjectMeasurementConfig = {
@@ -558,32 +605,107 @@ function normalizedMeasurementSourcePoint(value: unknown): string {
   return String(value ?? "").trim().replace(/(^|\.)(?:gasQuantity|gasquantity)$/u, "$1gas_quantity");
 }
 
-export function resolveEffectiveDeviceMeasurementDefinitions(
-  nodeOrTemplate: Pick<ModelNode, "kind"> | DeviceTemplate,
-  templates: readonly DeviceTemplate[] = []
-): readonly DeviceMeasurementDefinition[] {
-  const template = "measurementDefinitions" in nodeOrTemplate
-    ? nodeOrTemplate as DeviceTemplate
-    : templates.find((candidate) => candidate.kind === nodeOrTemplate.kind);
-  return template?.measurementDefinitions ?? [];
+function baseDeviceKind(kind: string): string {
+  return kind.endsWith("-vertical") && kind !== "ac-ground-disconnector-vertical"
+    ? kind.slice(0, -"-vertical".length)
+    : kind;
+}
+
+function fallbackMeasurementProfileKinds(kind: string): string[] {
+  const baseKind = baseDeviceKind(kind);
+  const fallbacks: string[] = [];
+  const push = (profileKind: string) => {
+    if (profileKind !== baseKind && !fallbacks.includes(profileKind)) {
+      fallbacks.push(profileKind);
+    }
+  };
+  if (baseKind.includes("transformer")) {
+    push("ac-transformer");
+  }
+  if (baseKind.includes("converter")) {
+    push("converter");
+  }
+  if (baseKind.includes("line") || baseKind.includes("branch")) {
+    if (baseKind.startsWith("ac-")) push("ac-line");
+    if (baseKind.startsWith("dc-")) push("dc-line");
+    if (baseKind.startsWith("heat-")) push("heat-pipeline");
+  }
+  if (baseKind.includes("pipeline")) {
+    if (baseKind.startsWith("hydrogen-")) push("hydrogen-pipeline");
+    if (baseKind.startsWith("heat-")) push("heat-pipeline");
+  }
+  if (baseKind.includes("bus")) {
+    if (baseKind.startsWith("ac-")) push("ac-bus");
+    if (baseKind.startsWith("dc-")) push("dc-bus");
+    if (baseKind.startsWith("heat-")) push("heat-bus");
+    if (baseKind.startsWith("hydrogen-")) push("hydrogen-pipeline");
+  }
+  if (baseKind.includes("switch") || baseKind.includes("disconnector")) {
+    if (baseKind.startsWith("ac-")) push("ac-switch");
+    if (baseKind.startsWith("dc-")) push("dc-switch");
+  }
+  if (baseKind.includes("breaker")) {
+    if (baseKind.startsWith("ac-")) push("ac-breaker");
+    if (baseKind.startsWith("dc-")) push("dc-breaker");
+  }
+  if (baseKind.includes("storage")) {
+    if (baseKind.startsWith("ac-")) push("ac-storage");
+    if (baseKind.startsWith("dc-")) push("dc-storage");
+  }
+  if (baseKind.includes("load")) {
+    if (baseKind.startsWith("ac-")) push("ac-load");
+    if (baseKind.startsWith("dc-")) push("dc-load");
+    if (baseKind.startsWith("heat-") || baseKind.startsWith("single-port-heat-") || baseKind.startsWith("two-port-heat-")) push("heat-load");
+    if (baseKind.startsWith("hydrogen-")) push("hydrogen-load");
+  }
+  if (baseKind.includes("source") || baseKind.includes("generator")) {
+    if (baseKind.startsWith("ac-")) push("ac-source");
+    if (baseKind.startsWith("dc-")) push("dc-source");
+    if (baseKind.startsWith("heat-") || baseKind.startsWith("two-port-heat-")) push("heat-source");
+    if (baseKind.startsWith("hydrogen-")) push("hydrogen-source");
+  }
+  if (baseKind.includes("heater")) {
+    if (baseKind.startsWith("ac-")) push("ac-source");
+    if (baseKind.startsWith("dc-")) push("dc-source");
+  }
+  if (baseKind.startsWith("heat-") || baseKind.startsWith("two-port-heat-") || baseKind.startsWith("three-port-heat-") || baseKind.startsWith("four-port-heat-")) {
+    push("heat-source");
+  }
+  if (baseKind.startsWith("hydrogen-")) {
+    push("hydrogen-source");
+  }
+  if (baseKind.startsWith("ac-")) {
+    push("ac-source");
+  }
+  if (baseKind.startsWith("dc-")) {
+    push("dc-source");
+  }
+  return fallbacks;
+}
+
+function measurementProfileForNode(node: ModelNode, config: PlatformMeasurementConfig): DeviceMeasurementProfile | undefined {
+  const kind = node.kind;
+  const baseKind = baseDeviceKind(kind);
+  const componentLibrary = inferESection(node.kind, node.params);
+  const directKeys = Array.from(new Set([componentLibrary, kind, baseKind].filter(Boolean)));
+  return directKeys.flatMap((profileKind) => config.deviceProfiles.find((profile) => profile.deviceKind === profileKind) ?? [])[0] ??
+    fallbackMeasurementProfileKinds(baseKind).flatMap((profileKind) => config.deviceProfiles.find((profile) => profile.deviceKind === profileKind) ?? [])[0];
 }
 
 export function resolveMeasurementItemBindingMetadata({
   config,
   node,
-  templates,
   group,
   item
 }: {
   config: PlatformMeasurementConfig;
   node: ModelNode;
-  templates?: readonly DeviceTemplate[];
   group?: Pick<MeasurementGroup, "terminalId">;
   item: MeasurementItemBinding;
 }): { measurementTypeId: string; bindingField: string; sourcePoint: string } {
   const measurementTypeId = String(item.measurementTypeId ?? "").trim();
   const sourcePoint = String(item.sourcePoint ?? "").trim();
-  const profileItems = resolveEffectiveDeviceMeasurementDefinitions(node, templates).filter((candidate) =>
+  const profileItems = measurementProfileForNode(node, config)?.items.filter((candidate) =>
     candidate.measurementTypeId === measurementTypeId && (candidate.role ?? "") === (item.role ?? "")
   ) ?? [];
   const profileItem = profileItems.find((candidate) => group?.terminalId
@@ -645,17 +767,18 @@ function normalizeStyleOverride(value: unknown): MeasurementStyleOverride | unde
 }
 
 export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput | undefined): PlatformMeasurementConfig {
-  const rawGroupDefaults = input?.groupDefaults ?? INITIAL_MEASUREMENT_CONFIG.groupDefaults;
+  const rawGroupDefaults = input?.groupDefaults ?? DEFAULT_MEASUREMENT_CONFIG.groupDefaults;
   const groupDefaults: MeasurementGroupDefaults = {
     backgroundColor: normalizedGroupColor(rawGroupDefaults.backgroundColor) ?? DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR,
     borderColor: normalizedGroupColor(rawGroupDefaults.borderColor) ?? DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR,
     borderStyle: normalizedGroupBorderStyle(rawGroupDefaults.borderStyle) ?? DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE,
     borderWidth: normalizedGroupBorderWidth(rawGroupDefaults.borderWidth) ?? DEFAULT_MEASUREMENT_GROUP_BORDER_WIDTH
   };
-  const defaults = typeById(BUILT_IN_MEASUREMENT_TYPES);
+  const defaults = typeById(DEFAULT_MEASUREMENT_CONFIG.measurementTypes);
   const configuredTypes = Array.isArray(input?.measurementTypes) && input.measurementTypes.length > 0
     ? input.measurementTypes
-    : BUILT_IN_MEASUREMENT_TYPES;
+    : DEFAULT_MEASUREMENT_CONFIG.measurementTypes;
+  const rawProfiles = Array.isArray(input?.deviceProfiles) ? input.deviceProfiles : [];
   const rawTypes = [...configuredTypes];
   if (!rawTypes.some((item) => String(item.id ?? "").trim() === STORAGE_SOC_MEASUREMENT_TYPE.id)) {
     rawTypes.push(STORAGE_SOC_MEASUREMENT_TYPE);
@@ -689,7 +812,48 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
       defaultVisible: item.defaultVisible ?? fallback?.defaultVisible ?? DEFAULT_TYPE_VALUES.defaultVisible
     }];
   });
-  return { groupDefaults, measurementTypes };
+  const validTypeIds = new Set(measurementTypes.map((item) => item.id));
+  const seenProfiles = new Set<string>();
+  const deviceProfiles = [...rawProfiles, ...DEFAULT_MEASUREMENT_CONFIG.deviceProfiles].flatMap((profile) => {
+    const deviceKind = String((profile as Partial<DeviceMeasurementProfile>)?.deviceKind ?? "").trim();
+    if (!deviceKind || seenProfiles.has(deviceKind)) {
+      return [];
+    }
+    seenProfiles.add(deviceKind);
+    const profileItems = migrateHydrogenCouplingMeasurementProfileItems(
+      deviceKind,
+      migrateHydrogenTankMeasurementProfileItems(
+        deviceKind,
+        Array.isArray(profile.items) ? profile.items : []
+      )
+    );
+    const items = profileItems.flatMap((item) => {
+      const rawMeasurementTypeId = String(item.measurementTypeId ?? "").trim();
+      const measurementTypeId = ELECTRIC_STORAGE_MEASUREMENT_PROFILE_KINDS.has(deviceKind) && rawMeasurementTypeId === "level"
+        ? "soc"
+        : rawMeasurementTypeId;
+      if (!measurementTypeId || !validTypeIds.has(measurementTypeId)) {
+        return [];
+      }
+      const associatedField = normalizedAssociatedField(item.associatedField);
+      return [{
+        name: item.name !== undefined ? String(item.name) : undefined,
+        measurementTypeId,
+        position: normalizedProfilePosition(item.position),
+        associatedField: rawMeasurementTypeId === "level" && measurementTypeId === "soc" && associatedField === "level"
+          ? "soc"
+          : associatedField,
+        role: item.role ? String(item.role) : undefined,
+        defaultVisible: item.defaultVisible,
+        labelOverride: item.labelOverride ? String(item.labelOverride) : undefined,
+        unitOverride: item.unitOverride ? String(item.unitOverride) : undefined,
+        decimalsOverride: item.decimalsOverride === undefined ? undefined : clampNumber(finiteNumber(item.decimalsOverride, 3), 0, 8),
+        styleOverride: normalizeStyleOverride(item.styleOverride)
+      }];
+    });
+    return [{ deviceKind, items }];
+  });
+  return { groupDefaults, measurementTypes, deviceProfiles };
 }
 
 function normalizeMeasurementItem(item: Partial<MeasurementItemBinding>, validTypeIds?: ReadonlySet<string>): MeasurementItemBinding | null {
@@ -745,7 +909,7 @@ export function measurementGroupsForExistingNodes(groups: readonly MeasurementGr
 export function normalizeProjectMeasurements(input: ProjectMeasurementConfig | undefined, nodes: readonly ModelNode[]): ProjectMeasurementConfig {
   const nodeIds = new Set(nodes.map((node) => node.id));
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const normalized: ProjectMeasurementConfig = {
+  return {
     version: 1,
     groups: measurementGroupsForExistingNodes(input?.groups ?? [], nodeIds).map((group) => {
       const node = nodeById.get(group.nodeId);
@@ -765,90 +929,6 @@ export function normalizeProjectMeasurements(input: ProjectMeasurementConfig | u
       return changed ? { ...group, items } : group;
     })
   };
-  return migrateLegacyHydrogenCouplingMeasurementGroups(normalized, nodes);
-}
-
-function migrateLegacyHydrogenCouplingMeasurementGroups(
-  measurements: ProjectMeasurementConfig,
-  nodes: readonly ModelNode[]
-): ProjectMeasurementConfig {
-  let groups = measurements.groups;
-  let changed = false;
-
-  for (const node of nodes) {
-    if (!HYDROGEN_COUPLING_MEASUREMENT_PROFILE_KINDS.has(node.kind)) {
-      continue;
-    }
-    const legacyGroupId = `measurement-${node.id}`;
-    const legacyGroupIndex = groups.findIndex((group) =>
-      group.id === legacyGroupId && group.nodeId === node.id && !group.terminalId
-    );
-    if (legacyGroupIndex < 0) {
-      continue;
-    }
-    const legacyGroup = groups[legacyGroupIndex];
-    const migratedByTerminal = new Map<string, MeasurementItemBinding[]>();
-    const retainedItems: MeasurementItemBinding[] = [];
-
-    for (const item of legacyGroup.items) {
-      const migration = LEGACY_HYDROGEN_COUPLING_MEASUREMENT_ITEMS.find((candidate) =>
-        candidate.measurementTypeId === item.measurementTypeId &&
-        item.id === `${legacyGroupId}-${candidate.measurementTypeId}-${candidate.legacyIndex}`
-      );
-      if (!migration) {
-        retainedItems.push(item);
-        continue;
-      }
-      const localSourcePoints = new Set([
-        `${node.id}.${migration.measurementTypeId}`,
-        `${node.id}.${migration.associatedField}`
-      ]);
-      const sourcePoint = localSourcePoints.has(item.sourcePoint)
-        ? `${node.id}.${migration.terminalId}.${migration.associatedField}`
-        : item.sourcePoint;
-      const terminalGroupId = `${legacyGroupId}-${migration.terminalId}`;
-      const migratedItems = migratedByTerminal.get(migration.terminalId) ?? [];
-      migratedItems.push({
-        ...item,
-        id: `${terminalGroupId}-${migration.measurementTypeId}-${migration.terminalIndex}`,
-        sourcePoint
-      });
-      migratedByTerminal.set(migration.terminalId, migratedItems);
-    }
-    if (migratedByTerminal.size === 0) {
-      continue;
-    }
-
-    const nextGroups = [...groups];
-    if (retainedItems.length > 0) {
-      nextGroups[legacyGroupIndex] = { ...legacyGroup, items: retainedItems };
-    } else {
-      nextGroups.splice(legacyGroupIndex, 1);
-    }
-    for (const [terminalId, migratedItems] of migratedByTerminal) {
-      const terminalGroupId = `${legacyGroupId}-${terminalId}`;
-      const existingIndex = nextGroups.findIndex((group) => group.id === terminalGroupId);
-      if (existingIndex >= 0) {
-        const existing = nextGroups[existingIndex];
-        const existingItemIds = new Set(existing.items.map((item) => item.id));
-        nextGroups[existingIndex] = {
-          ...existing,
-          items: [...existing.items, ...migratedItems.filter((item) => !existingItemIds.has(item.id))]
-        };
-      } else {
-        nextGroups.push({
-          ...legacyGroup,
-          id: terminalGroupId,
-          terminalId,
-          items: migratedItems
-        });
-      }
-    }
-    groups = nextGroups;
-    changed = true;
-  }
-
-  return changed ? { version: 1, groups } : measurements;
 }
 
 export function measurementGroupForNode(measurements: ProjectMeasurementConfig, nodeId: string): MeasurementGroup | undefined {
@@ -891,20 +971,19 @@ export function removeMeasurementGroupForNode(measurements: ProjectMeasurementCo
 
 export function createDefaultMeasurementGroupForNode(
   node: ModelNode,
-  config: PlatformMeasurementConfig,
-  templates: readonly DeviceTemplate[] = []
+  config: PlatformMeasurementConfig
 ): MeasurementGroup | null {
-  return createDefaultMeasurementGroupsForNode(node, config, templates)[0] ?? null;
+  return createDefaultMeasurementGroupsForNode(node, config)[0] ?? null;
 }
 
 export function measurementProfileItemsForNodePosition(
   node: ModelNode,
   config: PlatformMeasurementConfig,
-  terminalId?: string,
-  templates: readonly DeviceTemplate[] = []
+  terminalId?: string
 ): DeviceMeasurementProfileItem[] {
-  const definitions = resolveEffectiveDeviceMeasurementDefinitions(node, templates);
-  if (definitions.length === 0) {
+  const normalizedConfig = normalizeMeasurementConfig(config);
+  const profile = measurementProfileForNode(node, normalizedConfig);
+  if (!profile || profile.items.length === 0) {
     return [];
   }
   if (terminalId) {
@@ -912,9 +991,9 @@ export function measurementProfileItemsForNodePosition(
     if (!terminalExists) {
       return [];
     }
-    return definitions.filter((item) => item.position === terminalId);
+    return profile.items.filter((item) => item.position === terminalId);
   }
-  return definitions.filter((item) =>
+  return profile.items.filter((item) =>
     item.position === "device" || !item.position
   );
 }
@@ -952,7 +1031,7 @@ function defaultMeasurementGroupEstimatedHeight(
 function defaultMeasurementGroupDeviceOffsetY(
   node: ModelNode,
   items: readonly DeviceMeasurementProfileItem[] = [],
-  config: PlatformMeasurementConfig = INITIAL_MEASUREMENT_CONFIG
+  config: PlatformMeasurementConfig = DEFAULT_MEASUREMENT_CONFIG
 ) {
   const baseOffset = Math.round(node.size.height / 2 + 42);
   if (node.params._labelVisible === "0") {
@@ -998,12 +1077,11 @@ function defaultMeasurementGroupOffsetForNode(
 
 export function createDefaultMeasurementGroupsForNode(
   node: ModelNode,
-  config: PlatformMeasurementConfig,
-  templates: readonly DeviceTemplate[] = []
+  config: PlatformMeasurementConfig
 ): MeasurementGroup[] {
   const normalizedConfig = normalizeMeasurementConfig(config);
-  const definitions = resolveEffectiveDeviceMeasurementDefinitions(node, templates);
-  if (definitions.length === 0) {
+  const profile = measurementProfileForNode(node, normalizedConfig);
+  if (!profile || profile.items.length === 0) {
     return [];
   }
   const groupPositions = [
@@ -1011,7 +1089,7 @@ export function createDefaultMeasurementGroupsForNode(
     ...node.terminals.map((terminal) => ({ key: terminal.id, terminal }))
   ];
   return groupPositions.flatMap(({ terminal }) => {
-    const items = measurementProfileItemsForNodePosition(node, normalizedConfig, terminal?.id, templates);
+    const items = measurementProfileItemsForNodePosition(node, normalizedConfig, terminal?.id);
     if (items.length === 0) {
       return [];
     }
@@ -1058,11 +1136,10 @@ function canonicalMeasurementGroupId(group: Pick<MeasurementGroup, "nodeId" | "t
 
 function generatedMeasurementGroupsById(
   nodes: readonly ModelNode[],
-  config: PlatformMeasurementConfig,
-  templates: readonly DeviceTemplate[]
+  config: PlatformMeasurementConfig
 ) {
   return new Map(
-    nodes.flatMap((node) => createDefaultMeasurementGroupsForNode(node, config, templates))
+    nodes.flatMap((node) => createDefaultMeasurementGroupsForNode(node, config))
       .map((group) => [group.id, group] as const)
   );
 }
@@ -1167,16 +1244,14 @@ export function reconcileProjectMeasurementsWithConfig(
   measurements: ProjectMeasurementConfig,
   nodes: readonly ModelNode[],
   nextConfigInput: PlatformMeasurementConfig,
-  previousConfigInput?: PlatformMeasurementConfig,
-  nextTemplates: readonly DeviceTemplate[] = [],
-  previousTemplates: readonly DeviceTemplate[] = nextTemplates
+  previousConfigInput?: PlatformMeasurementConfig
 ): ProjectMeasurementConfig {
   const normalizedMeasurements = normalizeProjectMeasurements(measurements, nodes);
   const nextConfig = normalizeMeasurementConfig(nextConfigInput);
   const previousConfig = previousConfigInput ? normalizeMeasurementConfig(previousConfigInput) : undefined;
-  const nextGeneratedGroups = generatedMeasurementGroupsById(nodes, nextConfig, nextTemplates);
+  const nextGeneratedGroups = generatedMeasurementGroupsById(nodes, nextConfig);
   const previousGeneratedGroups = previousConfig
-    ? generatedMeasurementGroupsById(nodes, previousConfig, previousTemplates)
+    ? generatedMeasurementGroupsById(nodes, previousConfig)
     : new Map<string, MeasurementGroup>();
   const reconciledGroups: MeasurementGroup[] = [];
   const handledGroupIds = new Set<string>();
@@ -1221,20 +1296,18 @@ export function reconcileProjectMeasurementsWithConfig(
 export function resolveMeasurementItemDisplay({
   config,
   node,
-  templates,
   group,
   item
 }: {
   config: PlatformMeasurementConfig;
   node: ModelNode;
-  templates?: readonly DeviceTemplate[];
   group: MeasurementGroup;
   item: MeasurementItemBinding;
 }): ResolvedMeasurementDisplay {
   const normalizedConfig = normalizeMeasurementConfig(config);
   const type = normalizedConfig.measurementTypes.find((candidate) => candidate.id === item.measurementTypeId);
-  const profileItem = resolveEffectiveDeviceMeasurementDefinitions(node, templates)
-    .find((candidate) => candidate.measurementTypeId === item.measurementTypeId && (candidate.role ?? "") === (item.role ?? ""));
+  const profileItem = measurementProfileForNode(node, normalizedConfig)
+    ?.items.find((candidate) => candidate.measurementTypeId === item.measurementTypeId && (candidate.role ?? "") === (item.role ?? ""));
   const style = {
     ...(profileItem?.styleOverride ?? {}),
     ...(group.groupStyleOverride ?? {}),

@@ -1483,12 +1483,15 @@ function buildLineEndRecords(
   baseIdx: string,
   interfaceDefinitionBySection: Map<string, EFileInterfaceSectionDefinition>,
   sectionRowCounts: Map<string, number>,
-  deviceRecords: EDeviceExport[]
+  deviceRecords: EDeviceExport[],
+  isDms = false
 ): void {
   if (section !== "ACBranch" && section !== "DCBranch") {
     return;
   }
-  const endSection = section === "ACBranch" ? "aclineend" : "dclineend";
+  const endSection = isDms
+    ? "dms_def_lnseg_dot"
+    : (section === "ACBranch" ? "aclineend" : "dclineend");
   const linkField = section === "ACBranch" ? "aclnseg_id" : "dcln_id";
   const endInterface = interfaceDefinitionBySection.get(endSection);
   if (!endInterface) {
@@ -1520,17 +1523,21 @@ function buildLineEndRecords(
     // name = 线段 name + _首端/_末端
     setEndField(endParams, "name", `${String(segmentParams.name ?? baseIdx)}_${sideLabels[side]}`);
     // 指向所属线段 idx（实时库模板下 applyEReferenceIdValues 会进一步换算为目标表 id）
-    setEndField(endParams, linkField, baseIdx);
+    if (!isDms) {
+      setEndField(endParams, linkField, baseIdx);
+    }
     // nd：首端取线段 ind（i_node 拓扑号），末端取 jnd（j_node 拓扑号）
+    // 配网线段端点表用 node_id 列（等同主网 nd 的节点号语义）
+    const nodeFieldName = isDms ? "node_id" : "nd";
     const endNodeKey = nodeKeys[side];
     const segmentNodeField = segmentNodeKeys[side];
     const topologyNd = topologyNodeNumberForEField(node, endNodeKey);
     if (topologyNd !== undefined && topologyNd !== null && topologyNd !== "") {
-      setEndField(endParams, "nd", String(topologyNd));
+      setEndField(endParams, nodeFieldName, String(topologyNd));
     } else if (segmentParams[segmentNodeField]) {
-      setEndField(endParams, "nd", String(segmentParams[segmentNodeField]));
+      setEndField(endParams, nodeFieldName, String(segmentParams[segmentNodeField]));
     }
-    // 从线段继承厂站/电压/状态等公共字段
+    // 从线段继承厂站/电压/状态等公共字段（仅字段存在时）
     for (const [endName, segmentName] of copyFromSegment) {
       if (segmentParams[segmentName] && !endParams[endName]) {
         setEndField(endParams, endName, String(segmentParams[segmentName]));
@@ -1556,6 +1563,7 @@ function hasTemplateConfig(options: EFileExportOptions): boolean {
 
 export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOptions = {}): EDeviceExport[] {
   const hasTemplateConfigValue = hasTemplateConfig(options);
+  const isDms = looksLikeDmsRtdbTemplate(options);
   const interfaceDefinitionBySection = eFileInterfaceDefinitionIndex(options);
   const topologyNodes = calculateElectricalTopology(project.nodes, project.edges);
   const topologyNodeDevices = buildTopologyNodeDevices(topologyNodes).map((record) =>
@@ -1607,58 +1615,84 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
       params,
       columns
     });
-    // ac-transformer/ac-three-winding-transformer 同时导出 ACTransWinding（绕组表）：
-    // 双绕组生成 2 条绕组，三绕组生成 3 条；itrfm 指向所属变压器 idx
+    // ac-transformer/ac-three-winding-transformer 同时导出绕组表：
+    // 双绕组生成 2 条绕组，三绕组生成 3 条；主网用 itrfm 指向所属变压器 idx，
+    // 配网（dms_def_trwd）用 trfm_id 指向所属变压器 idx、node_id 指向节点号
     if (section === "ACTransformer" || section === "ACTransfomer3") {
-      const windingInterface = interfaceDefinitionBySection.get("ACTransWinding");
-      if (windingInterface) {
-        const windingFields = eParameterFieldsFromInterfaceDefinition("ACTransWinding", windingInterface);
-        if (windingFields.length > 0) {
-          const fieldByExportName = new Map(windingFields.map((f) => [f.exportName, f]));
-          const setField = (params: Record<string, string>, exportName: string, value: string) => {
-            if (fieldByExportName.has(exportName)) {
-              params[exportName] = value;
+      // 配网实时库只有双绕组台变（dms_def_trfm/trwd），三绕组不派生绕组
+      if (!(isDms && section !== "ACTransformer")) {
+        const windingInterface = interfaceDefinitionBySection.get("ACTransWinding");
+        if (windingInterface) {
+          const windingFields = eParameterFieldsFromInterfaceDefinition("ACTransWinding", windingInterface);
+          if (windingFields.length > 0) {
+            const fieldByExportName = new Map(windingFields.map((f) => [f.exportName, f]));
+            const setField = (params: Record<string, string>, exportName: string, value: string) => {
+              if (fieldByExportName.has(exportName)) {
+                params[exportName] = value;
+              }
+            };
+            const nodeKeys = section === "ACTransformer" ? ["i_node", "j_node"] : ["t1_node", "t2_node", "t3_node"];
+            for (let side = 0; side < nodeKeys.length; side += 1) {
+              const windingParams = buildEDeviceValuesFromFields(node, windingFields, { preferTopologyNodeNumbers: true });
+              if (!windingParams._vbase) {
+                windingParams._vbase = String(node.params.vbase ?? node.terminals[0]?.vbase ?? "").trim();
+              }
+              if (isDms) {
+                // 配网绕组表（dms_def_trwd）：trfm_id 指向所属变压器 idx；三相阻抗归高压侧(side 0)
+                setField(windingParams, "trfm_id", baseIdx);
+                setField(windingParams, "name", `${node.name}_${["高", "低"][side]}`);
+                const sideSuffix = side === 0 ? "" : null;
+                const impVal = (base: string) => sideSuffix === null ? "0" : String(node.params[sideSuffix === "" ? base : `${base}${sideSuffix}`] ?? "0");
+                const rVal = impVal("r");
+                const xVal = impVal("x");
+                const gVal = impVal("gt");
+                const bVal = impVal("bt");
+                setField(windingParams, "raa", rVal); setField(windingParams, "rbb", rVal); setField(windingParams, "rcc", rVal);
+                setField(windingParams, "xaa", xVal); setField(windingParams, "xbb", xVal); setField(windingParams, "xcc", xVal);
+                setField(windingParams, "gda", gVal); setField(windingParams, "gdb", gVal); setField(windingParams, "gdc", gVal);
+                setField(windingParams, "bda", bVal); setField(windingParams, "bdb", bVal); setField(windingParams, "bdc", bVal);
+                setField(windingParams, "node_id", topologyNodeNumberForEField(node, nodeKeys[side]) ?? "0");
+                setField(windingParams, "p0", String(node.params.p0 ?? "0"));
+                setField(windingParams, "pk", String(node.params.pk ?? "0"));
+              } else {
+                // 主网绕组表（transformerwinding）：itrfm 指向所属变压器 idx
+                setField(windingParams, "itrfm", baseIdx);
+                // name = 所属变压器name + '_' + '高/中/低'
+                const sideLabel = section === "ACTransformer" ? ["高", "低"][side] : ["高", "中", "低"][side];
+                setField(windingParams, "name", `${node.name}_${sideLabel}`);
+                // 阻抗参数：双绕组阻抗归高压侧(side 0)，低压侧为 0；三绕组 r1/r2/r3
+                const sideSuffix = section === "ACTransformer" ? (side === 0 ? "" : null) : String(side + 1);
+                const impVal = (base: string) => sideSuffix === null ? "0" : String(node.params[sideSuffix === "" ? base : `${base}${sideSuffix}`] ?? "0");
+                setField(windingParams, "rij", impVal("r"));
+                setField(windingParams, "xij", impVal("x"));
+                setField(windingParams, "gti", impVal("gt"));
+                setField(windingParams, "bti", impVal("bt"));
+                setField(windingParams, "tap", sideSuffix === null ? "1.0" : String(node.params[sideSuffix === "" ? "tap" : `tap${sideSuffix}`] ?? "1.0"));
+                // vl = 该侧端子电压
+                setField(windingParams, "vl", String(node.terminals[side]?.vbase ?? "").trim() || "0");
+                // ind = 该侧节点号；znd = 双绕组互为末端，三绕组为中性点
+                setField(windingParams, "ind", topologyNodeNumberForEField(node, nodeKeys[side]) ?? "0");
+                setField(windingParams, "znd", section === "ACTransformer"
+                  ? (topologyNodeNumberForEField(node, nodeKeys[1 - side]) ?? "0")
+                  : (String(node.params.neutral_node ?? "0") || "0"));
+              }
+              // idx 自增
+              const windingIdx = (windingRowCounts.get("ACTransWinding") ?? 0) + 1;
+              windingRowCounts.set("ACTransWinding", windingIdx);
+              setField(windingParams, "idx", String(windingIdx));
+              deviceRecords.push({
+                id: `${node.id}:winding:${side}`,
+                kind: node.kind,
+                section: "ACTransWinding",
+                params: windingParams,
+                columns: windingFields.map((field) => field.exportName)
+              });
             }
-          };
-          const nodeKeys = section === "ACTransformer" ? ["i_node", "j_node"] : ["t1_node", "t2_node", "t3_node"];
-          for (let side = 0; side < nodeKeys.length; side += 1) {
-            const windingParams = buildEDeviceValuesFromFields(node, windingFields, { preferTopologyNodeNumbers: true });
-            setField(windingParams, "itrfm", baseIdx);
-            // name = 所属变压器name + '_' + '高/中/低'
-            const sideLabel = section === "ACTransformer" ? ["高", "低"][side] : ["高", "中", "低"][side];
-            setField(windingParams, "name", `${node.name}_${sideLabel}`);
-            // 阻抗参数：双绕组阻抗归高压侧(side 0)，低压侧为 0；三绕组 r1/r2/r3
-            const sideSuffix = section === "ACTransformer" ? (side === 0 ? "" : null) : String(side + 1);
-            const impVal = (base: string) => sideSuffix === null ? "0" : String(node.params[sideSuffix === "" ? base : `${base}${sideSuffix}`] ?? "0");
-            setField(windingParams, "rij", impVal("r"));
-            setField(windingParams, "xij", impVal("x"));
-            setField(windingParams, "gti", impVal("gt"));
-            setField(windingParams, "bti", impVal("bt"));
-            setField(windingParams, "tap", sideSuffix === null ? "1.0" : String(node.params[sideSuffix === "" ? "tap" : `tap${sideSuffix}`] ?? "1.0"));
-            // vl = 该侧端子电压
-            setField(windingParams, "vl", String(node.terminals[side]?.vbase ?? "").trim() || "0");
-            // ind = 该侧节点号；znd = 双绕组互为末端，三绕组为中性点
-            setField(windingParams, "ind", topologyNodeNumberForEField(node, nodeKeys[side]) ?? "0");
-            setField(windingParams, "znd", section === "ACTransformer"
-              ? (topologyNodeNumberForEField(node, nodeKeys[1 - side]) ?? "0")
-              : (String(node.params.neutral_node ?? "0") || "0"));
-            // idx 自增
-            const windingIdx = (windingRowCounts.get("ACTransWinding") ?? 0) + 1;
-            windingRowCounts.set("ACTransWinding", windingIdx);
-            setField(windingParams, "idx", String(windingIdx));
-            deviceRecords.push({
-              id: `${node.id}:winding:${side}`,
-              kind: node.kind,
-              section: "ACTransWinding",
-              params: windingParams,
-              columns: windingFields.map((field) => field.exportName)
-            });
           }
         }
       }
     }
-    // aclinesegment/dclinesegment 同时生成 aclineend/dclineend（端点表）
-    buildLineEndRecords(node, section, params, baseIdx, interfaceDefinitionBySection, sectionRowCounts, deviceRecords);
+    buildLineEndRecords(node, section, params, baseIdx, interfaceDefinitionBySection, sectionRowCounts, deviceRecords, isDms);
     const derivedInfo = templateDerivedComponentLibraryInfo({ kind: node.kind, params: node.params });
     if (derivedInfo) {
       const derivedSectionRowCount = (derivedSectionRowCounts.get(derivedInfo.derivedComponentLibrary) ?? 0) + 1;
@@ -2042,6 +2076,83 @@ function buildPowerBaseParameterRecord(project: ProjectFile, schemePath: string[
   };
 }
 
+/** 判断当前模板是否为配网实时库（dms_rtdb.e）——以配网特有的表段名映射为特征 */
+function looksLikeDmsRtdbTemplate(options: EFileExportOptions): boolean {
+  const labels = options.eDeviceDefinitionLabels ?? {};
+  return labels["ACBreak"] === "dms_def_cb" && labels["ACBranch"] === "dms_def_lnseg";
+}
+
+/**
+ * 构建配网实时库单行表记录（dms_def_bulk / dms_def_feeder / dms_def_source）。
+ * 规则：
+ * 1. dms_def_bulk 内容与 substation 一致（name 等公共字段取厂站），st_id 指向 substation 的 id；
+ * 2. dms_def_feeder 记录馈线信息（当前模板类型为馈线），有且只有一行；
+ * 3. dms_def_source 与 dms_def_feeder 相同字段保持一致（同名复制），
+ *    dms_def_feeder.source_id 指向 dms_def_source 的 id。
+ * 引用字段（st_id/area_id/source_id/bulk_id）由 applyEReferenceIdValues 统一换算为目标表计算 id。
+ */
+function buildDmsSingleRowRecords(
+  project: ProjectFile,
+  templateColumnsForSection: (section: string) => string[] | undefined
+): EDeviceExport[] {
+  const records: EDeviceExport[] = [];
+  const substationName = String(project.substation ?? "").trim() || "默认厂站";
+  const feederName = String(project.name ?? "").trim() || "馈线1";
+
+  // 1. dms_def_bulk：内容与 substation 一致
+  const bulkColumns = templateColumnsForSection("dms_def_bulk");
+  if (bulkColumns && bulkColumns.length > 0) {
+    const bulkParams: Record<string, string> = { name: substationName, code: "", descr: "", rdf_id: "" };
+    records.push({
+      id: "dms-bulk-1",
+      kind: "model",
+      section: "dms_def_bulk",
+      columns: bulkColumns,
+      params: bulkParams
+    });
+  }
+
+  // 2. dms_def_feeder：一行馈线
+  const feederColumns = templateColumnsForSection("dms_def_feeder");
+  if (feederColumns && feederColumns.length > 0) {
+    const feederParams: Record<string, string> = { name: feederName, code: "", descr: "", rdf_id: "" };
+    for (const column of feederColumns) {
+      if (column.startsWith("p_") || column.startsWith("q_") || column === "p" || column === "q" || column === "p_loss") {
+        feederParams[column] = "0";
+      }
+    }
+    records.push({
+      id: "dms-feeder-1",
+      kind: "model",
+      section: "dms_def_feeder",
+      columns: feederColumns,
+      params: feederParams
+    });
+  }
+
+  // 3. dms_def_source：与 feeder 相同字段保持一致（同名复制）
+  const sourceColumns = templateColumnsForSection("dms_def_source");
+  const feederRecord = records.find((record) => record.section === "dms_def_feeder");
+  if (sourceColumns && sourceColumns.length > 0) {
+    const sourceParams: Record<string, string> = {};
+    for (const column of sourceColumns) {
+      const value = feederRecord?.params?.[column];
+      if (value !== undefined && value !== "") {
+        sourceParams[column] = value;
+      }
+    }
+    records.push({
+      id: "dms-source-1",
+      kind: "model",
+      section: "dms_def_source",
+      columns: sourceColumns,
+      params: sourceParams
+    });
+  }
+
+  return records;
+}
+
 /**
  * 构建 E 文件头表记录（模板模式：basevalue/basevoltage/subcontrolarea/substation；
  * 非模板模式：Model/basevoltage），取值与导出文件完全一致。
@@ -2088,12 +2199,17 @@ export function buildEDeviceHeaderParameterRecords(
     return idx >= 0 ? idx + 1 : 0;
   }).filter((idx) => idx > 0);
   const substationIdv = basevoltageIdxs.length > 0 ? String(Math.max(...basevoltageIdxs)) : "0";
-  return [
+  const headerRecords = [
     buildBasevalueParameterRecord(project, templateColumnsForSection("basevalue")),
     ...buildBasevoltageParameterRecords(templateColumnsForSection("basevoltage")),
     buildSubcontrolareaParameterRecord(project, templateColumnsForSection("subcontrolarea")),
     buildSubstationParameterRecord(project, substationIdv, templateColumnsForSection("substation"))
   ];
+  // 配网实时库：追加单行表 dms_def_bulk / dms_def_feeder / dms_def_source
+  if (looksLikeDmsRtdbTemplate(options)) {
+    headerRecords.push(...buildDmsSingleRowRecords(project, templateColumnsForSection));
+  }
+  return headerRecords;
 }
 
 /**
@@ -2125,7 +2241,7 @@ export function orderEDeviceRecordsForExport(records: readonly EDeviceExport[]):
  * tr_id/itrfm → powertransformer(00416)；tapty_id → taptype(00418)。
  * ind/jnd/nd/tpnd 为节点号（小数字），不参与 id 计算。
  */
-const E_REFERENCE_FIELD_TABLE_IDS: Record<string, string> = {
+export const E_REFERENCE_FIELD_TABLE_IDS: Record<string, string> = {
   st_id: "00405",
   ist_id: "00405",
   jst_id: "00405",
@@ -2135,7 +2251,12 @@ const E_REFERENCE_FIELD_TABLE_IDS: Record<string, string> = {
   tr_id: "00416",
   itrfm: "00416",
   tapty_id: "00418",
-  dcln_id: "00426"
+  dcln_id: "00426",
+  // 配网实时库（dms_rtdb.e）引用字段
+  area_id: "00404",        // dms_def_bulk.area_id → subcontrolarea
+  bulk_id: "12001",        // dms_def_feeder/dms_def_source.bulk_id → dms_def_bulk
+  source_id: "12004",      // dms_def_feeder.source_id → dms_def_source
+  trfm_id: "12012"         // dms_def_trwd.trfm_id → dms_def_trfm
 };
 
 /**
@@ -2145,7 +2266,7 @@ const E_REFERENCE_FIELD_TABLE_IDS: Record<string, string> = {
  * vbase 匹配 basevoltage 行号；tr_id/itrfm 按绕组所属变压器 idx 映射到
  * powertransformer 行号；其余按记录内已有值映射（无值时取 1）。
  */
-function applyEReferenceIdValues(
+export function applyEReferenceIdValues(
   project: ProjectFile,
   records: readonly EDeviceExport[],
   options: EFileExportOptions
@@ -2190,9 +2311,9 @@ function applyEReferenceIdValues(
       const vbase = String(record.params._vbase ?? record.params.vbase ?? "").trim() || "0";
       return basevoltageRowForVltp(vbase);
     }
-    if (column === "tr_id" || column === "itrfm") {
-      // 绕组记录中已携带所属变压器 idx（itrfm 字段）
-      const transformerIdx = String(record.params.itrfm ?? record.params.tr_id ?? "").trim();
+    if (column === "tr_id" || column === "itrfm" || column === "trfm_id") {
+      // 绕组记录中已携带所属变压器 idx（itrfm/trfm_id 字段）
+      const transformerIdx = String(record.params.itrfm ?? record.params.tr_id ?? record.params.trfm_id ?? "").trim();
       const rowByIdx = sectionRowByIdx.get("ACTransformer") ?? sectionRowByIdx.get("powertransformer");
       if (transformerIdx && rowByIdx) {
         const row = rowByIdx.get(transformerIdx);
@@ -2514,18 +2635,6 @@ export function buildEDeviceDefinitionFile(
       : template.params ?? {};
     // 无 parameterDefinitions 的图元（如 ac-source）按 E 分区推导内置列参数，避免整类丢失
     const definitions = getTemplateParameterDefinitions(template);
-    const derivedFields = derivedInfo
-      ? resolveDerivedComponentParameterFields(
-          template.kind,
-          template.params ?? {},
-          definitions,
-          derivedInfo.baseComponentLibrary,
-          derivedInfo.derivedComponentLibrary
-        )
-      : [];
-    const derivedFieldNames = new Set(
-      derivedFields.flatMap((field) => [field.sourceName, field.exportName])
-    );
     const group = ensureGroup(componentLibrary, {
       categoryLibrary: derivedInfo?.categoryLibrary ?? template.categoryLibrary ?? ""
     });
@@ -2536,9 +2645,6 @@ export function buildEDeviceDefinitionFile(
       }
       const exportName = (settings.exportName || definition.enName).trim();
       if (!exportName) {
-        continue;
-      }
-      if (derivedInfo && (derivedFieldNames.has(definition.enName) || derivedFieldNames.has(exportName))) {
         continue;
       }
       const rawCnName = (definition.cnName ?? "").trim();
@@ -2555,6 +2661,13 @@ export function buildEDeviceDefinitionFile(
         isContainerComponentLibrary: false
       });
       appendGroupField(derivedGroup, derivedComponentBaseRelationKey(derivedInfo.baseComponentLibrary), "原类关联idx");
+      const derivedFields = resolveDerivedComponentParameterFields(
+        template.kind,
+        template.params ?? {},
+        definitions,
+        derivedInfo.baseComponentLibrary,
+        derivedInfo.derivedComponentLibrary
+      );
       for (const field of derivedFields) {
         const rawCnName = (field.definition?.cnName ?? "").trim();
         const cnName = (rawCnName === field.exportName && labels?.[field.exportName]) ? labels[field.exportName] : rawCnName;

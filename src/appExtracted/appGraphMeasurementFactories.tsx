@@ -400,7 +400,7 @@ export function createMeasurementGroupRenderMetrics(__appScope: Record<string, a
     }
     const measurementFontScale = measurementFontScaleForNode(node);
     const rows = group.items.flatMap((item) => {
-      const display = resolveMeasurementItemDisplay({ config: measurementConfig, node, group, item, templates: __appScope.libraryTemplates });
+      const display = resolveMeasurementItemDisplay({ config: measurementConfig, node, group, item });
       if (!display.visible) {
         return [];
       }
@@ -3827,7 +3827,7 @@ export function createSyncExistingNodesWithTemplateDefinitions(__appScope: Recor
     previousDefinitions: readonly DeviceParameterDefinition[] | undefined,
     matchesNode: (node: ModelNode) => boolean
   ) => {
-  const { libraryTemplates, measurementConfig, nodes, patchGraphNodes, projectMeasurements, pushUndoSnapshot, reconcileProjectMeasurementsWithConfig, setProjectMeasurements, undoScopeForGraphPatch } = __appScope;
+  const { measurementConfig, nodes, patchGraphNodes, projectMeasurements, pushUndoSnapshot, reconcileProjectMeasurementsWithConfig, setProjectMeasurements, undoScopeForGraphPatch } = __appScope;
     const nodeUpdates: ModelNode[] = [];
     for (const node of nodes) {
       if (!matchesNode(node)) {
@@ -3849,9 +3849,7 @@ export function createSyncExistingNodesWithTemplateDefinitions(__appScope: Recor
         projectMeasurements,
         nextNodes,
         measurementConfig,
-        measurementConfig,
-        libraryTemplates,
-        libraryTemplates
+        measurementConfig
       );
       if (reconciledMeasurements !== projectMeasurements) {
         setProjectMeasurements(reconciledMeasurements);
@@ -4031,7 +4029,7 @@ export const measurementProfileItemsComplianceMessage = (
       : validFieldNames;
     const shouldValidateAssociatedField = Boolean(positionDefinitionByValue) || hasParameterDefinitions;
     if (associatedField && shouldValidateAssociatedField && !positionFieldNames.has(measurementComplianceKey(associatedField))) {
-      messages.push(`${rowLabel}：关联字段 ${associatedField} 已形成悬空引用，请先在对应参数表中新增该字段，或修改/删除这条量测定义。`);
+      messages.push(`${rowLabel}：关联字段 ${associatedField} 不在元件属性名称列表中。`);
     }
     const bindingKey = [
       measurementComplianceKey(position || "device"),
@@ -4056,12 +4054,21 @@ export const measurementConfigComplianceMessage = (config: PlatformMeasurementCo
   if (typeMessage) {
     messages.push(typeMessage);
   }
+  config.deviceProfiles.forEach((profile) => {
+    const profileMessage = measurementProfileItemsComplianceMessage(profile.items, {
+      measurementTypes: config.measurementTypes,
+      targetLabel: profile.deviceKind ? `${profile.deviceKind} ` : ""
+    });
+    if (profileMessage) {
+      messages.push(profileMessage);
+    }
+  });
   return messages.join("\n");
 };
 
 export function createSaveMeasurementConfigDialog(__appScope: Record<string, any>) {
   return async () => {
-  const { backendMeasurementConfigLoadedRef, flushMeasurementConfigDialogDraftInputs, lastPersistedMeasurementConfigPayloadRef, libraryTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, nodes, normalizeMeasurementConfig, projectMeasurements, pushUndoSnapshot, reconcileProjectMeasurementsWithConfig, saveBackendMeasurementConfigPayload, serializeMeasurementConfigForStorage, setMeasurementConfig, setMeasurementConfigDraft, setMeasurementConfigSaveStatus, setProjectMeasurements, writeMeasurementConfig, writeOperationLog } = __appScope;
+  const { backendMeasurementConfigLoadedRef, flushMeasurementConfigDialogDraftInputs, lastPersistedMeasurementConfigPayloadRef, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, nodes, normalizeMeasurementConfig, projectMeasurements, pushUndoSnapshot, reconcileProjectMeasurementsWithConfig, saveBackendMeasurementConfigPayload, serializeMeasurementConfigForStorage, setMeasurementConfig, setMeasurementConfigDraft, setMeasurementConfigSaveStatus, setProjectMeasurements, writeMeasurementConfig, writeOperationLog } = __appScope;
     flushMeasurementConfigDialogDraftInputs?.();
     const previousMeasurementConfig = normalizeMeasurementConfig(measurementConfig);
     const normalizedMeasurementConfig = normalizeMeasurementConfig(measurementConfigDraftRef.current ?? measurementConfigDraft ?? measurementConfig);
@@ -4075,9 +4082,7 @@ export function createSaveMeasurementConfigDialog(__appScope: Record<string, any
       projectMeasurements,
       nodes,
       normalizedMeasurementConfig,
-      previousMeasurementConfig,
-      libraryTemplates,
-      libraryTemplates
+      previousMeasurementConfig
     );
     if (reconciledMeasurements !== projectMeasurements) {
       pushUndoSnapshot();
@@ -4164,20 +4169,27 @@ export function createDeleteMeasurementType(__appScope: Record<string, any>) {
       return;
     }
     updateMeasurementConfig((current) => ({
-      ...current,
-      measurementTypes: current.measurementTypes.filter((item) => item.id !== typeId)
+      measurementTypes: current.measurementTypes.filter((item) => item.id !== typeId),
+      deviceProfiles: current.deviceProfiles.map((profile) => ({
+        ...profile,
+        items: profile.items.filter((item) => item.measurementTypeId !== typeId)
+      }))
     }));
   };
 }
 
 export function createSetMeasurementProfileItems(__appScope: Record<string, any>) {
-  return (_deviceKind: string, items: DeviceMeasurementProfileItem[]) => {
-  const { customDeviceDialogOpen, setCustomDeviceDraft, setDefinitionMeasurementDraft } = __appScope;
-    if (customDeviceDialogOpen) {
-      setCustomDeviceDraft((current) => ({ ...current, measurementDefinitions: items, error: "" }));
-      return;
-    }
-    setDefinitionMeasurementDraft(items);
+  return (deviceKind: string, items: DeviceMeasurementProfileItem[]) => {
+  const { updateMeasurementConfig } = __appScope;
+    updateMeasurementConfig((current) => {
+      const exists = current.deviceProfiles.some((profile) => profile.deviceKind === deviceKind);
+      return {
+        ...current,
+        deviceProfiles: exists
+          ? current.deviceProfiles.map((profile) => profile.deviceKind === deviceKind ? { ...profile, items } : profile)
+          : [...current.deviceProfiles, { deviceKind, items }]
+      };
+    });
   };
 }
 
@@ -4200,21 +4212,21 @@ export function createCreateMeasurementProfileItem(__appScope: Record<string, an
 
 export function createAddMeasurementProfileItem(__appScope: Record<string, any>) {
   return (deviceKind: string) => {
-  const { createMeasurementProfileItem, customDeviceDialogOpen, customDeviceDraft, definitionMeasurementDraft, setMeasurementProfileItems } = __appScope;
+  const { createMeasurementProfileItem, editableMeasurementProfileByKind, setMeasurementProfileItems } = __appScope;
     const item = createMeasurementProfileItem();
     if (!item) {
       showGlobalMessage("请先配置至少一个量测类型。");
       return;
     }
-    const currentItems = customDeviceDialogOpen ? customDeviceDraft.measurementDefinitions : definitionMeasurementDraft;
+    const currentItems = editableMeasurementProfileByKind.get(deviceKind)?.items ?? [];
     setMeasurementProfileItems(deviceKind, [...currentItems, item]);
   };
 }
 
 export function createUpdateMeasurementProfileItem(__appScope: Record<string, any>) {
   return (deviceKind: string, index: number, patch: Partial<DeviceMeasurementProfileItem>) => {
-  const { customDeviceDialogOpen, customDeviceDraft, definitionMeasurementDraft, setMeasurementProfileItems } = __appScope;
-    const currentItems = customDeviceDialogOpen ? customDeviceDraft.measurementDefinitions : definitionMeasurementDraft;
+  const { editableMeasurementProfileByKind, setMeasurementProfileItems } = __appScope;
+    const currentItems = editableMeasurementProfileByKind.get(deviceKind)?.items ?? [];
     if (index < 0 || index >= currentItems.length) {
       return;
     }
@@ -4226,16 +4238,16 @@ export function createUpdateMeasurementProfileItem(__appScope: Record<string, an
 
 export function createDeleteMeasurementProfileItem(__appScope: Record<string, any>) {
   return (deviceKind: string, index: number) => {
-  const { customDeviceDialogOpen, customDeviceDraft, definitionMeasurementDraft, setMeasurementProfileItems } = __appScope;
-    const currentItems = customDeviceDialogOpen ? customDeviceDraft.measurementDefinitions : definitionMeasurementDraft;
+  const { editableMeasurementProfileByKind, setMeasurementProfileItems } = __appScope;
+    const currentItems = editableMeasurementProfileByKind.get(deviceKind)?.items ?? [];
     setMeasurementProfileItems(deviceKind, currentItems.filter((_, itemIndex) => itemIndex !== index));
   };
 }
 
 export function createMoveMeasurementProfileItem(__appScope: Record<string, any>) {
   return (deviceKind: string, index: number, direction: -1 | 1) => {
-  const { customDeviceDialogOpen, customDeviceDraft, definitionMeasurementDraft, setMeasurementProfileItems } = __appScope;
-    const currentItems = customDeviceDialogOpen ? customDeviceDraft.measurementDefinitions : definitionMeasurementDraft;
+  const { editableMeasurementProfileByKind, setMeasurementProfileItems } = __appScope;
+    const currentItems = editableMeasurementProfileByKind.get(deviceKind)?.items ?? [];
     const nextIndex = index + direction;
     if (index < 0 || nextIndex < 0 || nextIndex >= currentItems.length) {
       return;
@@ -4259,11 +4271,11 @@ export function createUpdateProjectMeasurementsWithUndo(__appScope: Record<strin
 
 export function createAddDefaultMeasurementsToNode(__appScope: Record<string, any>) {
   return (node: ModelNode) => {
-  const { createDefaultMeasurementGroupsForNode, isStaticNode, libraryTemplates, measurementConfig, updateProjectMeasurementsWithUndo, upsertMeasurementGroups } = __appScope;
+  const { createDefaultMeasurementGroupsForNode, isStaticNode, measurementConfig, updateProjectMeasurementsWithUndo, upsertMeasurementGroups } = __appScope;
     if (isStaticNode(node)) {
       return;
     }
-    const groups = createDefaultMeasurementGroupsForNode(node, measurementConfig, libraryTemplates);
+    const groups = createDefaultMeasurementGroupsForNode(node, measurementConfig);
     if (groups.length === 0) {
       showGlobalMessage("该设备类型还没有绑定默认量测，请先在基础页配置设备类型可用量测。");
       return;

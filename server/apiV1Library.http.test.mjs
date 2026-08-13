@@ -64,6 +64,7 @@ describe(apiPath("/v1/library") + " HTTP 路由", () => {
     const { status, json } = await fetchV1(apiPath("/v1/library/measurements"));
     expect(status).toBe(200);
     expect(Array.isArray(json.data.measurementTypes)).toBe(true);
+    expect(Array.isArray(json.data.deviceProfiles)).toBe(true);
   });
 
   test(apiPath("/v1/library/device-definitions") + " 返图元定义", async () => {

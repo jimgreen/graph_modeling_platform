@@ -400,7 +400,7 @@ import {
   type SidePanelSide
 } from "../sidePanelVisibility";
 import {
-  INITIAL_MEASUREMENT_CONFIG,
+  DEFAULT_MEASUREMENT_CONFIG,
   EMPTY_PROJECT_MEASUREMENTS,
   createDefaultMeasurementGroupsForNode,
   formatMeasurementDisplayValue,
@@ -422,7 +422,6 @@ import {
   type PlatformMeasurementConfig,
   type ProjectMeasurementConfig
 } from "../measurements";
-import { normalizeDeviceMeasurementDefinitions } from "../measurementDefinitionTypes";
 import type { UserCustomizationDomain } from "../userCustomizations";
 import {
   StaticButtonLayerMultiSelect,
@@ -2201,7 +2200,6 @@ export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[]
         allowResizeTransform: templateAllowsResizeTransform({ ...template, params: rawParams }),
         custom: true,
         parameterDefinitions: normalizeDefinitionRows(template.parameterDefinitions ?? []),
-        measurementDefinitions: normalizeDeviceMeasurementDefinitions(template.measurementDefinitions),
         stateDefinitions
       };
     })
@@ -2544,9 +2542,6 @@ export function normalizeDeviceDefinitionOverrides(value: unknown): Record<strin
         parameterDefinitions: Array.isArray(override.parameterDefinitions)
           ? normalizeDefinitionRows(override.parameterDefinitions)
           : undefined,
-        measurementDefinitions: Array.isArray(rawOverride.measurementDefinitions)
-          ? normalizeDeviceMeasurementDefinitions(rawOverride.measurementDefinitions)
-          : undefined,
         stateDefinitions,
         updatedAt: typeof override.updatedAt === "string" ? override.updatedAt : undefined
       };
@@ -2731,9 +2726,9 @@ export function writeLocalDeviceLibraryPersistencePayload(normalizedDeviceLibrar
 export function readMeasurementConfig(): PlatformMeasurementConfig {
   try {
     const raw = window.localStorage.getItem(MEASUREMENT_CONFIG_STORAGE_KEY);
-    return normalizeMeasurementConfig(raw ? JSON.parse(raw) as Partial<PlatformMeasurementConfig> : INITIAL_MEASUREMENT_CONFIG);
+    return normalizeMeasurementConfig(raw ? JSON.parse(raw) as Partial<PlatformMeasurementConfig> : DEFAULT_MEASUREMENT_CONFIG);
   } catch {
-    return normalizeMeasurementConfig(INITIAL_MEASUREMENT_CONFIG);
+    return normalizeMeasurementConfig(DEFAULT_MEASUREMENT_CONFIG);
   }
 }
 
@@ -4205,7 +4200,7 @@ ${rules.join("\n")}
       }
       nodeLayerMarkup.get(typeLayerId)?.push(`<use id="${escapeXml(useId)}"${nodeClassAttribute} layer-id="${escapeXml(layerId)}"${deviceMetadataAttributes ? ` ${deviceMetadataAttributes}` : ""}${topologyNodeAttributes}${voltageAttributes} href="#${escapeXml(symbolId)}" x="${formatSvgNumber(node.position.x - node.size.width / 2)}" y="${formatSvgNumber(node.position.y - node.size.height / 2)}" width="${formatSvgNumber(node.size.width)}" height="${formatSvgNumber(node.size.height)}"${exportButtonAttributes}${svgDisplayAttribute(layerVisible(layerId))}/>`);
   });
-  const measurementConfig = canvasSize.measurementConfig ?? INITIAL_MEASUREMENT_CONFIG;
+  const measurementConfig = canvasSize.measurementConfig ?? DEFAULT_MEASUREMENT_CONFIG;
   const measurements = canvasSize.measurements ?? EMPTY_PROJECT_MEASUREMENTS;
   const measurementNodeById = new Map(exportNodes.map((node) => [node.id, node]));
   const associatedDeviceIdentityByNodeTerminal = new Map<string, ReturnType<typeof containerAssociatedDeviceIdentityForTerminal>>();
@@ -4232,8 +4227,7 @@ ${rules.join("\n")}
         deviceId: associatedDevice?.deviceId ?? ownerDeviceId,
         ownerDeviceId,
         layerId,
-        visible: layerVisible(layerId),
-        templates: canvasSize.deviceTemplates ?? DEVICE_LIBRARY
+        visible: layerVisible(layerId)
       });
       if (!groupMarkup) {
         return "";
