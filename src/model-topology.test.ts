@@ -3256,4 +3256,35 @@ test("validates voltage mismatch across terminals contracted through the same bu
 
   expect(errors.some((error) => error.type === "voltage-mismatch" && error.relatedNodeIds.includes(load10.id) && error.relatedNodeIds.includes(load35.id))).toBe(true);
 });
+
+test("reports voltage level out of model range for 厂站/馈线/台区 models", () => {
+  const lowLoad = createDefaultNode("ac-load", { x: 100, y: 100 });
+  lowLoad.name = "低压负荷";
+  lowLoad.terminals[0].vbase = "6";
+  const highLoad = createDefaultNode("ac-load", { x: 260, y: 100 });
+  highLoad.name = "高压负荷";
+  highLoad.terminals[0].vbase = "110";
+
+  const taiquErrors = validateTopology([lowLoad, highLoad], [], { modelType: "台区" });
+  expect(taiquErrors.filter((error) => error.type === "voltage-level-out-of-model-range").map((error) => error.nodeId)).toEqual([highLoad.id]);
+
+  const feideErrors = validateTopology([lowLoad, highLoad], [], { modelType: "馈线" });
+  expect(feideErrors.filter((error) => error.type === "voltage-level-out-of-model-range").map((error) => error.nodeId)).toEqual([highLoad.id]);
+
+  const zhuwangErrors = validateTopology([lowLoad, highLoad], [], { modelType: "厂站" });
+  expect(zhuwangErrors.filter((error) => error.type === "voltage-level-out-of-model-range").map((error) => error.nodeId)).toEqual([lowLoad.id]);
+
+  const otherErrors = validateTopology([lowLoad, highLoad], [], { modelType: "自定义" });
+  expect(otherErrors.filter((error) => error.type === "voltage-level-out-of-model-range")).toHaveLength(0);
+});
+
+test("skips zero or blank voltage bases when checking model range", () => {
+  const blank = createDefaultNode("ac-load", { x: 100, y: 100 });
+  blank.terminals[0].vbase = "0";
+  const zero = createDefaultNode("ac-load", { x: 260, y: 100 });
+  zero.terminals[0].vbase = "";
+
+  const errors = validateTopology([blank, zero], [], { modelType: "厂站" });
+  expect(errors.filter((error) => error.type === "voltage-level-out-of-model-range")).toHaveLength(0);
+});
 });

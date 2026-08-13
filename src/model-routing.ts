@@ -5477,10 +5477,17 @@ function duplicateDeviceIdentityErrors(nodes: ModelNode[]): TopologyValidationEr
   return errors;
 }
 
+function modelTypeVoltageRangeFor(modelType?: string): { min: number; max: number; label: string } | null {
+  if (modelType === "厂站") return { min: 10, max: Infinity, label: "10kV 及以上" };
+  if (modelType === "馈线") return { min: 0, max: 35, label: "35kV 及以下" };
+  if (modelType === "台区") return { min: 0, max: 10, label: "10kV 及以下" };
+  return null;
+}
+
 export function validateTopology(
   nodes: ModelNode[],
   edges: Edge[],
-  options: { includeVoltageSetpointDeviations?: boolean } = {}
+  options: { includeVoltageSetpointDeviations?: boolean; modelType?: string } = {}
 ): TopologyValidationError[] {
   const synchronized = synchronizeBusTerminalsWithEdges(nodes, edges);
   nodes = synchronized.nodes;
@@ -5775,6 +5782,28 @@ export function validateTopology(
           relatedNodeIds: [node.id],
           message: `${node.name} 的 ${terminal.label} 悬空，未连接到任何设备。`
         });
+      }
+    }
+  }
+
+  const modelTypeVoltageRange = modelTypeVoltageRangeFor(options.modelType);
+  if (modelTypeVoltageRange) {
+    for (const node of nodes) {
+      for (const terminal of node.terminals) {
+        if (!isElectricalTerminalType(terminal.type)) continue;
+        const voltageText = terminalVoltageBaseNumber(terminal.vbase);
+        if (!voltageText || isZeroNumericText(voltageText)) continue;
+        const voltage = Number(voltageText);
+        if (!Number.isFinite(voltage)) continue;
+        if (voltage < modelTypeVoltageRange.min || voltage > modelTypeVoltageRange.max) {
+          errors.push({
+            id: `voltage-level-out-of-model-range:${node.id}:${terminal.id}`,
+            type: "voltage-level-out-of-model-range",
+            nodeId: node.id,
+            relatedNodeIds: [node.id],
+            message: `图上拓扑失败：${options.modelType}模型仅支持 ${modelTypeVoltageRange.label} 电压等级，设备"${node.name}"的 ${terminal.label} 电压基值 ${voltageText} 超出范围。`
+          });
+        }
       }
     }
   }

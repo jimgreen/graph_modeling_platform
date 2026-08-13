@@ -4941,12 +4941,12 @@ export function createLocateTopologyError(__appScope: Record<string, any>) {
 
 export function createRunTopologyCalculation(__appScope: Record<string, any>) {
   return () => {
-  const { EMPTY_TOPOLOGY, buildTopology, calculateElectricalTopology, currentUnit, edges, isBlockingTopologyValidationError, locateTopologyError, nodes, normalizeDeviceOperatingLimitsAfterTopology, powerUnit, pushUndoSnapshot, requireEditMode, setNodes, setTopology, setTopologyErrors, setTopologyStatus, skipNextTopologyStaleRef, topologyCalculationMessage, validateTopology, validateVoltageSetpointDeviations, voltageUnit, writeOperationLog } = __appScope;
+  const { EMPTY_TOPOLOGY, buildTopology, calculateElectricalTopology, currentUnit, edges, isBlockingTopologyValidationError, locateTopologyError, modelType, nodes, normalizeDeviceOperatingLimitsAfterTopology, powerUnit, pushUndoSnapshot, requireEditMode, setNodes, setTopology, setTopologyErrors, setTopologyStatus, skipNextTopologyStaleRef, topologyCalculationMessage, validateTopology, validateVoltageSetpointDeviations, voltageUnit, writeOperationLog } = __appScope;
     if (!requireEditMode("执行图上拓扑计算")) {
       return;
     }
     const calculatedNodes = calculateElectricalTopology(nodes, edges);
-    const topologyErrors = validateTopology(calculatedNodes, edges, { includeVoltageSetpointDeviations: false });
+    const topologyErrors = validateTopology(calculatedNodes, edges, { includeVoltageSetpointDeviations: false, modelType });
     const invalidVoltageBaseNodeIds = new Set(
       topologyErrors
         .filter((error) => [
