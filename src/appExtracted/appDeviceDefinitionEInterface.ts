@@ -640,13 +640,17 @@ function eDeviceInterfaceFieldOrderForRow(row: any, section: any | undefined) {
 // aclineend/dclineend/transformerwinding 也是运行时生成（从线段/变压器派生），需加入此集合
 const RUNTIME_GENERATED_SECTIONS = new Set([
   "basevalue", "basevoltage", "subcontrolarea", "substation", "trans",
-  "aclineend", "dclineend", "transformerwinding"
+  "aclineend", "dclineend", "transformerwinding",
+  // 配网实时库：线段端点表（dms_def_lnseg_dot）由线段派生，等同主网 aclineend；
+  // 单行表（dms_def_bulk/feeder/source）由头表逻辑构建，不参与元件匹配但需存储模板字段；
+  // 连接节点表（dms_def_node，元件库=ACNode）由拓扑节点生成，模板字段存 ACNode 名下
+  "dms_def_lnseg_dot", "dms_def_bulk", "dms_def_feeder", "dms_def_source", "dms_def_node"
 ]);
 // 独立导出表：运行时生成的表中，导出代码按 kind 名查找接口定义（如 aclineend/dclineend），
 // 模板字段需存储在 sectionKind 名下。
 // 非 standalone 的运行时表（如 trans/transformerwinding）是元件库的导出别名，
 // 模板字段存储在 componentLibrary 名下（如 ACTransWinding）。
-const RUNTIME_GENERATED_STANDALONE_SECTIONS = new Set(["aclineend", "dclineend"]);
+const RUNTIME_GENERATED_STANDALONE_SECTIONS = new Set(["aclineend", "dclineend", "dms_def_lnseg_dot"]);
 
 export function applyEDeviceDefinitionSectionsToLibraryState(options: {
   sections: readonly any[];
@@ -704,11 +708,15 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     (rows ?? []).map((r) => [r.componentLibrary, r])
   );
 
-  // 合并同名模板表：多个 section 拥有相同 componentLibrary 时，合并其字段（保留首个 section 的元信息）
+  // 合并同名模板表：多个 section 拥有相同 componentLibrary 时，合并其字段（保留首个 section 的元信息）。
+  // 运行时生成表（basevalue/aclineend/dms_def_lnseg_dot 等）按 kind 独立保留——它们可能共享同一
+  // componentLibrary（如 dms_def_node 与 dms_def_lnseg_dot 都是 ACNode）但各自独立导出，不能合并。
   const mergedSections: any[] = [];
   const mergedByComponentLibrary = new Map<string, any>();
   for (const section of sections) {
-    const key = String(section.componentLibrary || section.kind || "").trim();
+    const sectionKind = String(section.kind || "").trim();
+    const isRuntime = RUNTIME_GENERATED_SECTIONS.has(sectionKind);
+    const key = isRuntime ? sectionKind : String(section.componentLibrary || section.kind || "").trim();
     const existing = mergedByComponentLibrary.get(key);
     if (!existing) {
       const merged = {
@@ -1094,7 +1102,9 @@ function eDeviceDefinitionTableIdsFromSections(
     const resolved = componentLibrary
       ? (reverseLabelToComponentLibrary.get(componentLibrary) ?? componentLibrary)
       : "";
-    if (resolved && tableIds[resolved] !== tableId) {
+    // 同一元件库映射多个表段（如 交流线路→acline+aclinesegment）时取首个表段（与 labels 先写一致），
+    // 保证「输出段名」与「表号」对应同一张表（如 ACBranch→acline→00413）
+    if (resolved && !tableIds[resolved]) {
       tableIds[resolved] = tableId;
     }
   }

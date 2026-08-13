@@ -11,11 +11,10 @@ vi.mock("./server.mjs", () => ({
   createSchemeArchiveBuffer: vi.fn(),
   readSchemeProjectRecord: vi.fn(),
   buildSvgFile: vi.fn(),
-  readMeasurementConfig: vi.fn(),
-  readDeviceLibraryConfig: vi.fn()
+  readMeasurementConfig: vi.fn()
 }));
 
-import { readSchemes, createSchemeArchiveBuffer, readSchemeProjectRecord, buildSvgFile, readMeasurementConfig, readDeviceLibraryConfig } from "./server.mjs";
+import { readSchemes, createSchemeArchiveBuffer, readSchemeProjectRecord, buildSvgFile, readMeasurementConfig } from "./server.mjs";
 
 function createMockResponse() {
   const chunks = [];
@@ -151,8 +150,7 @@ describe("handleV1ModelJson 正路径", () => {
 describe("handleV1ModelSvg 正路径", () => {
   test("成功返 SVG 文本", async () => {
     readSchemeProjectRecord.mockResolvedValue({ name: "m", project: { name: "m", nodes: [], edges: [] } });
-    readMeasurementConfig.mockResolvedValue({ measurementTypes: [] });
-    readDeviceLibraryConfig.mockResolvedValue({ customDeviceTemplates: [], deviceDefinitionOverrides: {} });
+    readMeasurementConfig.mockResolvedValue({ measurementTypes: [], deviceProfiles: [] });
     buildSvgFile.mockReturnValue("<svg>...</svg>");
     const res = createMockResponse();
     const sp = encodeURIComponent(JSON.stringify(["方案A"]));

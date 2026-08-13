@@ -26,7 +26,7 @@ import { exportMeasurementItemMetadataAttributes } from "./svgExportUtils";
 
 describe("measurement canvas interactions", () => {
   test("migrates current measurement instances before saving a new measurement definition", async () => {
-    const previousConfig = measurementDefinitions.normalizeMeasurementConfig(measurementDefinitions.INITIAL_MEASUREMENT_CONFIG);
+    const previousConfig = measurementDefinitions.normalizeMeasurementConfig(measurementDefinitions.DEFAULT_MEASUREMENT_CONFIG);
     const nextConfig = measurementDefinitions.normalizeMeasurementConfig({
       ...previousConfig,
       groupDefaults: { ...previousConfig.groupDefaults, backgroundColor: "#f8fafc" }
@@ -40,7 +40,6 @@ describe("measurement canvas interactions", () => {
       backendMeasurementConfigLoadedRef: { current: false },
       flushMeasurementConfigDialogDraftInputs: vi.fn(),
       lastPersistedMeasurementConfigPayloadRef: { current: "" },
-      libraryTemplates: DEVICE_LIBRARY,
       measurementConfig: previousConfig,
       measurementConfigDraft: nextConfig,
       measurementConfigDraftRef: { current: nextConfig },
@@ -65,23 +64,20 @@ describe("measurement canvas interactions", () => {
       projectMeasurements,
       [{ id: "node-1" }],
       nextConfig,
-      previousConfig,
-      DEVICE_LIBRARY,
-      DEVICE_LIBRARY
+      previousConfig
     );
     expect(pushUndoSnapshot).toHaveBeenCalledTimes(1);
     expect(setProjectMeasurements).toHaveBeenCalledWith(migratedMeasurements);
   });
 
   test("does not create a measurement undo snapshot when definition migration is unchanged", async () => {
-    const config = measurementDefinitions.normalizeMeasurementConfig(measurementDefinitions.INITIAL_MEASUREMENT_CONFIG);
+    const config = measurementDefinitions.normalizeMeasurementConfig(measurementDefinitions.DEFAULT_MEASUREMENT_CONFIG);
     const projectMeasurements = { version: 1 as const, groups: [] };
     const pushUndoSnapshot = vi.fn();
     const setProjectMeasurements = vi.fn();
     const saveMeasurementConfigDialog = createSaveMeasurementConfigDialog({
       backendMeasurementConfigLoadedRef: { current: false },
       lastPersistedMeasurementConfigPayloadRef: { current: "" },
-      libraryTemplates: DEVICE_LIBRARY,
       measurementConfig: config,
       measurementConfigDraft: config,
       measurementConfigDraftRef: { current: config },
@@ -107,7 +103,7 @@ describe("measurement canvas interactions", () => {
   });
 
   test("places automatically added device measurements below the device label by default", () => {
-    const config = measurementDefinitions.normalizeMeasurementConfig(measurementDefinitions.INITIAL_MEASUREMENT_CONFIG);
+    const config = measurementDefinitions.normalizeMeasurementConfig(measurementDefinitions.DEFAULT_MEASUREMENT_CONFIG);
     const node = {
       id: "ac-source-1",
       kind: "ac-source",
@@ -124,7 +120,7 @@ describe("measurement canvas interactions", () => {
       }
     };
 
-    const [group] = measurementDefinitions.createDefaultMeasurementGroupsForNode(node as any, config, DEVICE_LIBRARY);
+    const [group] = measurementDefinitions.createDefaultMeasurementGroupsForNode(node as any, config);
 
     expect(group).toBeTruthy();
     const lineHeight = 20;
@@ -181,7 +177,7 @@ describe("measurement canvas interactions", () => {
       targetLabel: "测试元件"
     });
 
-    expect(profileMessage).toContain("测试元件量测第 1 行：关联字段 missingField 已形成悬空引用，请先在对应参数表中新增该字段，或修改/删除这条量测定义。");
+    expect(profileMessage).toContain("测试元件量测第 1 行：关联字段 missingField 不在元件属性名称列表中。");
     expect(profileMessage).toContain("测试元件量测第 2 行：与第 1 行量测重复。");
     expect(profileMessage).toContain("测试元件量测第 3 行：量测类型 missingType 不存在。");
   });
@@ -208,8 +204,8 @@ describe("measurement canvas interactions", () => {
       targetLabel: "三绕组主变"
     } as any);
 
-    expect(profileMessage).not.toContain("三绕组主变量测第 1 行：关联字段 r 已形成悬空引用");
-    expect(profileMessage).toContain("三绕组主变量测第 2 行：关联字段 r 已形成悬空引用，请先在对应参数表中新增该字段，或修改/删除这条量测定义。");
+    expect(profileMessage).not.toContain("三绕组主变量测第 1 行：关联字段 r 不在元件属性名称列表中。");
+    expect(profileMessage).toContain("三绕组主变量测第 2 行：关联字段 r 不在元件属性名称列表中。");
   });
 
   test("offers only the device body position for non-container devices", () => {
@@ -316,23 +312,27 @@ describe("measurement canvas interactions", () => {
   });
 
   test("shows the legacy two-winding transformer profile in the ACTransformer definition", () => {
-    const config = measurementDefinitions.normalizeMeasurementConfig(measurementDefinitions.INITIAL_MEASUREMENT_CONFIG);
-    const setItems = vi.fn();
+    const config = measurementDefinitions.normalizeMeasurementConfig(measurementDefinitions.DEFAULT_MEASUREMENT_CONFIG);
+    const updateMeasurementProfileItem = vi.fn();
     const transformer = DEVICE_LIBRARY.find((template) => template.kind === "ac-transformer")!;
     const panel = createRenderDeviceDefinitionMeasurementPanel({
       BufferedTextInput: (props: any) => createElement("input", props),
+      addMeasurementProfileItem: vi.fn(),
+      deleteMeasurementProfileItem: vi.fn(),
+      editableMeasurementProfileByKind: new Map(config.deviceProfiles.map((profile) => [profile.deviceKind, profile])),
       editableMeasurementTypeById: new Map(config.measurementTypes.map((type) => [type.id, type])),
       isBrowseMode: false,
       measurementConfig: config,
       measurementConfigDraft: null,
-      measurementConfigSaveStatus: "idle"
+      measurementConfigSaveStatus: "idle",
+      moveMeasurementProfileItem: vi.fn(),
+      normalizeComponentLibraryName: (value: string) => value,
+      updateMeasurementProfileItem
     } as any)({
       deviceKind: "ACTransformer",
       label: transformer.label,
       terminalCount: transformer.terminalCount,
-      parameterDefinitions: getTemplateParameterDefinitions(transformer),
-      items: transformer.measurementDefinitions ?? [],
-      setItems
+      parameterDefinitions: getTemplateParameterDefinitions(transformer)
     });
 
     const elementText = (node: ReactNode): string =>
@@ -365,31 +365,35 @@ describe("measurement canvas interactions", () => {
     });
     expect(measurementTypeSelect).toBeDefined();
     measurementTypeSelect!.props.onChange({ target: { value: "reactivePower" } });
-    expect(setItems).toHaveBeenCalledWith([
-      expect.objectContaining({ measurementTypeId: "reactivePower", name: "无功功率" }),
-      ...(transformer.measurementDefinitions ?? []).slice(1)
-    ]);
+    expect(updateMeasurementProfileItem).toHaveBeenCalledWith("ac-transformer", 0, {
+      measurementTypeId: "reactivePower",
+      name: "无功功率"
+    });
   });
 
   test("shows the hydrogen tank profile in the HydroStorage definition", () => {
-    const config = measurementDefinitions.normalizeMeasurementConfig(measurementDefinitions.INITIAL_MEASUREMENT_CONFIG);
+    const config = measurementDefinitions.normalizeMeasurementConfig(measurementDefinitions.DEFAULT_MEASUREMENT_CONFIG);
     const tank = DEVICE_LIBRARY.find((template) => template.kind === "hydrogen-tank")!;
     const BufferedTextInput = (props: any) => createElement("input", props);
-    const setItems = vi.fn();
+    const updateMeasurementProfileItem = vi.fn();
     const panel = createRenderDeviceDefinitionMeasurementPanel({
       BufferedTextInput,
+      addMeasurementProfileItem: vi.fn(),
+      deleteMeasurementProfileItem: vi.fn(),
+      editableMeasurementProfileByKind: new Map(config.deviceProfiles.map((profile) => [profile.deviceKind, profile])),
       editableMeasurementTypeById: new Map(config.measurementTypes.map((type) => [type.id, type])),
       isBrowseMode: false,
       measurementConfig: config,
       measurementConfigDraft: null,
-      measurementConfigSaveStatus: "idle"
+      measurementConfigSaveStatus: "idle",
+      moveMeasurementProfileItem: vi.fn(),
+      normalizeComponentLibraryName: (value: string) => value,
+      updateMeasurementProfileItem
     } as any)({
       deviceKind: "HydroStorage",
       label: tank.label,
       terminalCount: tank.terminalCount,
-      parameterDefinitions: getTemplateParameterDefinitions(tank),
-      items: tank.measurementDefinitions ?? [],
-      setItems
+      parameterDefinitions: getTemplateParameterDefinitions(tank)
     });
 
     const elementText = (node: ReactNode): string =>
@@ -437,27 +441,40 @@ describe("measurement canvas interactions", () => {
       "soc"
     ]);
     nameInputs[0]!.props.onCommit("TANK_PRESSURE");
-    expect(setItems).toHaveBeenCalledWith([
-      expect.objectContaining({ name: "TANK_PRESSURE", labelOverride: undefined }),
-      ...(tank.measurementDefinitions ?? []).slice(1)
-    ]);
+    expect(updateMeasurementProfileItem).toHaveBeenCalledWith("hydrogen-tank", 0, {
+      name: "TANK_PRESSURE",
+      labelOverride: undefined
+    });
   });
 
   test("renders associated field as a parameter-name dropdown in device definition measurements", () => {
-    const items = [
-      { name: "有功功率", measurementTypeId: "activePower", position: "device", associatedField: "activePower" },
-      { name: "旧字段", measurementTypeId: "activePower", position: "device", associatedField: "legacyField" }
-    ];
-    const setItems = vi.fn();
+    const updateMeasurementProfileItem = vi.fn();
     const panel = createRenderDeviceDefinitionMeasurementPanel({
       BufferedTextInput: (props: any) => createElement("input", props),
+      addMeasurementProfileItem: vi.fn(),
+      deleteMeasurementProfileItem: vi.fn(),
+      editableMeasurementProfileByKind: new Map([
+        [
+          "CustomDevice",
+          {
+            items: [
+              { name: "有功功率", measurementTypeId: "activePower", position: "device", associatedField: "activePower" },
+              { name: "旧字段", measurementTypeId: "activePower", position: "device", associatedField: "legacyField" }
+            ]
+          }
+        ]
+      ]),
       editableMeasurementTypeById: new Map([["activePower", { id: "activePower", name: "有功功率", defaultVisible: true }]]),
       isBrowseMode: false,
       measurementConfig: {
-        measurementTypes: [{ id: "activePower", name: "有功功率", defaultVisible: true }]
+        measurementTypes: [{ id: "activePower", name: "有功功率", defaultVisible: true }],
+        deviceProfiles: []
       },
       measurementConfigDraft: null,
-      measurementConfigSaveStatus: "idle"
+      measurementConfigSaveStatus: "idle",
+      moveMeasurementProfileItem: vi.fn(),
+      normalizeComponentLibraryName: (value: string) => value,
+      updateMeasurementProfileItem
     } as any)({
       deviceKind: "CustomDevice",
       label: "自定义元件",
@@ -465,9 +482,7 @@ describe("measurement canvas interactions", () => {
       parameterDefinitions: [
         { cnName: "有功功率", enName: "activePower", valueType: "float", typicalValue: "0" },
         { cnName: "额定功率", enName: "ratedPower", valueType: "float", typicalValue: "0" }
-      ],
-      items,
-      setItems
+      ]
     });
 
     const selects: ReactElement[] = [];
@@ -503,32 +518,11 @@ describe("measurement canvas interactions", () => {
 
     (selects[0] as ReactElement<{ onChange: (event: any) => void }>).props.onChange({ target: { value: "ratedPower" } });
 
-    expect(setItems).toHaveBeenCalledWith([
-      { ...items[0], associatedField: "ratedPower" },
-      items[1]
-    ]);
-
-    const buttons: ReactElement<any>[] = [];
-    const collectButtons = (node: ReactNode) => {
-      Children.forEach(node, (child) => {
-        if (!isValidElement(child)) return;
-        if (child.type === "button") buttons.push(child as ReactElement<any>);
-        collectButtons((child as ReactElement<{ children?: ReactNode }>).props.children);
-      });
-    };
-    collectButtons(panel);
-    const deleteButtons = buttons.filter((button) => elementText(button.props.children) === "删除");
-    expect(deleteButtons).toHaveLength(2);
-    deleteButtons[0].props.onClick();
-    expect(setItems).toHaveBeenCalledWith([items[1]]);
+    expect(updateMeasurementProfileItem).toHaveBeenCalledWith("CustomDevice", 0, { associatedField: "ratedPower" });
   });
 
   test("switches associated fields with the selected container terminal", () => {
-    const items = [
-      { name: "本体有功", measurementTypeId: "activePower", position: "device", associatedField: "parentOnly" },
-      { name: "首端有功", measurementTypeId: "activePower", position: "t1", associatedField: "r" }
-    ];
-    const setItems = vi.fn();
+    const updateMeasurementProfileItem = vi.fn();
     const parentDefinitions = [
       { cnName: "容器字段", enName: "parentOnly", valueType: "float", typicalValue: "0" }
     ];
@@ -538,13 +532,30 @@ describe("measurement canvas interactions", () => {
     ];
     const panel = createRenderDeviceDefinitionMeasurementPanel({
       BufferedTextInput: (props: any) => createElement("input", props),
+      addMeasurementProfileItem: vi.fn(),
+      deleteMeasurementProfileItem: vi.fn(),
+      editableMeasurementProfileByKind: new Map([
+        [
+          "ACTransfomer3",
+          {
+            items: [
+              { name: "本体有功", measurementTypeId: "activePower", position: "device", associatedField: "parentOnly" },
+              { name: "首端有功", measurementTypeId: "activePower", position: "t1", associatedField: "r" }
+            ]
+          }
+        ]
+      ]),
       editableMeasurementTypeById: new Map([["activePower", { id: "activePower", name: "有功功率", defaultVisible: true }]]),
       isBrowseMode: false,
       measurementConfig: {
-        measurementTypes: [{ id: "activePower", name: "有功功率", defaultVisible: true }]
+        measurementTypes: [{ id: "activePower", name: "有功功率", defaultVisible: true }],
+        deviceProfiles: []
       },
       measurementConfigDraft: null,
-      measurementConfigSaveStatus: "idle"
+      measurementConfigSaveStatus: "idle",
+      moveMeasurementProfileItem: vi.fn(),
+      normalizeComponentLibraryName: (value: string) => value,
+      updateMeasurementProfileItem
     } as any)({
       deviceKind: "ACTransfomer3",
       label: "三绕组主变",
@@ -555,9 +566,7 @@ describe("measurement canvas interactions", () => {
         { value: "t1", label: "端1（双绕组主变首端）", parameterDefinitions: terminalDefinitions },
         { value: "t2", label: "端2（双绕组主变首端）", parameterDefinitions: terminalDefinitions },
         { value: "t3", label: "端3（双绕组主变首端）", parameterDefinitions: terminalDefinitions }
-      ],
-      items,
-      setItems
+      ]
     });
 
     const elementText = (node: ReactNode): string =>
@@ -609,10 +618,10 @@ describe("measurement canvas interactions", () => {
 
     positionSelects[0].props.onChange({ target: { value: "t1" } });
 
-    expect(setItems).toHaveBeenCalledWith([
-      { ...items[0], position: "t1" },
-      items[1]
-    ]);
+    expect(updateMeasurementProfileItem).toHaveBeenCalledWith("ACTransfomer3", 0, {
+      position: "t1",
+      associatedField: undefined
+    });
   });
 
   test("keeps only the measurement-group add action in the selected-node measurement panel", () => {

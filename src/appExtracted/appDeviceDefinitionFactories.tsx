@@ -13,7 +13,7 @@ import { apiPath } from "../config";
 import { decodeGbk } from "../encoding/gbk";
 import { DEFAULT_STATE_ICON_DRAWING_FRAME, stateIconSvgVisibleViewBox } from "../stateIconDrawing";
 import { decodeSvgImageSource } from "../svgUtils";
-import { buildMeasurementProfilePositionDefinitions, materializeNewMeasurementDefinitionFields } from "../measurements";
+import { buildMeasurementProfilePositionDefinitions } from "../measurements";
 import { measurementProfileItemsComplianceMessage } from "./appGraphMeasurementFactories";
 import { cloneDeviceMeasurementDefinitions, normalizeDeviceMeasurementDefinitions } from "../measurementDefinitionTypes";
 import {
@@ -136,86 +136,6 @@ const mergeDefaultAndCustomDefinitionRows = (
   };
 };
 
-const appendAssociatedMeasurementFieldsToOverrides = (
-  current: Record<string, DeviceTemplateDefinitionOverride>,
-  additions: readonly { position: string; deviceKind?: string; field: string; definition: DeviceParameterDefinition }[],
-  options: {
-    libraryTemplates: readonly DeviceTemplate[];
-    deviceDefinitionKeyForTemplate: (template: DeviceTemplate) => string;
-    deviceDefinitionOverrideForTemplate: (
-      template: DeviceTemplate,
-      overrides: Record<string, DeviceTemplateDefinitionOverride>
-    ) => DeviceTemplateDefinitionOverride | undefined;
-    getTemplateParameterDefinitions: (template: DeviceTemplate) => DeviceParameterDefinition[];
-  }
-) => {
-  let next = current;
-  for (const addition of additions) {
-    if (addition.position === "device" || !addition.deviceKind) continue;
-    const targetTemplate = options.libraryTemplates.find((template) => template.kind === addition.deviceKind);
-    if (!targetTemplate) continue;
-    const overrideKey = options.deviceDefinitionKeyForTemplate(targetTemplate);
-    const existingOverride = options.deviceDefinitionOverrideForTemplate(targetTemplate, next);
-    const parameterDefinitions = existingOverride?.parameterDefinitions
-      ? [...existingOverride.parameterDefinitions]
-      : options.getTemplateParameterDefinitions(targetTemplate);
-    if (parameterDefinitions.some((definition) => deviceDefinitionComplianceKey(definition.enName) === deviceDefinitionComplianceKey(addition.field))) {
-      continue;
-    }
-    parameterDefinitions.push({ ...addition.definition });
-    if (next === current) next = { ...current };
-    next[overrideKey] = {
-      ...existingOverride,
-      kind: overrideKey,
-      params: {
-        ...(existingOverride?.params ?? {}),
-        [addition.field]: addition.definition.typicalValue
-      },
-      parameterDefinitions,
-      updatedAt: new Date().toISOString()
-    };
-  }
-  return next;
-};
-
-const syncAssociatedMeasurementFieldAdditions = (
-  additions: readonly { position: string; deviceKind?: string; field: string; definition: DeviceParameterDefinition }[],
-  libraryTemplates: readonly DeviceTemplate[],
-  getTemplateParameterDefinitions: (template: DeviceTemplate) => DeviceParameterDefinition[],
-  syncExistingNodesWithTemplateDefinitions?: (
-    template: Pick<DeviceTemplate, "parameterDefinitions">,
-    previousDefinitions: readonly DeviceParameterDefinition[] | undefined,
-    predicate: (node: ModelNode) => boolean
-  ) => void
-) => {
-  if (typeof syncExistingNodesWithTemplateDefinitions !== "function") return;
-  const additionsByKind = new Map<string, DeviceParameterDefinition[]>();
-  for (const addition of additions) {
-    if (addition.position === "device" || !addition.deviceKind) continue;
-    const definitions = additionsByKind.get(addition.deviceKind) ?? [];
-    if (!definitions.some((definition) => deviceDefinitionComplianceKey(definition.enName) === deviceDefinitionComplianceKey(addition.field))) {
-      definitions.push(addition.definition);
-      additionsByKind.set(addition.deviceKind, definitions);
-    }
-  }
-  for (const [kind, additionsForKind] of additionsByKind) {
-    const targetTemplate = libraryTemplates.find((template) => template.kind === kind);
-    if (!targetTemplate) continue;
-    const previousDefinitions = getTemplateParameterDefinitions(targetTemplate);
-    const known = new Set(previousDefinitions.map((definition) => deviceDefinitionComplianceKey(definition.enName)));
-    const nextDefinitions = [
-      ...previousDefinitions,
-      ...additionsForKind.filter((definition) => !known.has(deviceDefinitionComplianceKey(definition.enName)))
-    ];
-    if (nextDefinitions.length === previousDefinitions.length) continue;
-    syncExistingNodesWithTemplateDefinitions(
-      { parameterDefinitions: nextDefinitions },
-      previousDefinitions,
-      (node) => node.kind === kind
-    );
-  }
-};
-
 const canonicalDeviceParameterDefinitionValue = (value: unknown): unknown => {
   if (Array.isArray(value)) {
     return value.map(canonicalDeviceParameterDefinitionValue);
@@ -331,7 +251,7 @@ const STATE_ICON_DRAWING_SMART_ALIGNMENT_TOLERANCE = 3;
 const STATE_ICON_DRAWING_SMART_ALIGNMENT_GUIDE_PADDING = 8;
 export const STATE_ICON_DRAWING_MIN_FONT_SIZE = 8;
 
-export function customDeviceDraftDirtyToken(draft: CustomDeviceDraft, anchors: readonly Point[] = []) {
+export function customDeviceDraftDirtyToken(draft: CustomDeviceDraft, anchors: readonly Point[] = [], measurementConfig: PlatformMeasurementConfig | null = null) {
   const terminalCount = Math.max(0, Math.round(draft.terminalCount || 0));
   return JSON.stringify({
     draft: {
@@ -342,30 +262,37 @@ export function customDeviceDraftDirtyToken(draft: CustomDeviceDraft, anchors: r
       terminalAnchors: anchors.slice(0, terminalCount).map((anchor) => ({ x: anchor.x, y: anchor.y })),
       terminalRoles: draft.terminalRoles.slice(0, terminalCount),
       terminalAssociations: draft.terminalAssociations.slice(0, terminalCount)
-    }
+    },
+    measurementConfig
   });
 }
 
 export function createSetCustomDeviceDraftCleanBaseline(__appScope: Record<string, any>) {
   return (draft: CustomDeviceDraft, anchors?: readonly Point[]) => {
-  const { createDefaultCustomDeviceTerminalAnchors, customDeviceDraftBaselineRef, customDeviceDraftCleanTokenRef } = __appScope;
+  const { createDefaultCustomDeviceTerminalAnchors, customDeviceDraftBaselineRef, customDeviceDraftCleanTokenRef, measurementConfigBaselineRef, measurementConfigDraft, measurementConfigDraftRef } = __appScope;
     const nextAnchors = anchors ?? createDefaultCustomDeviceTerminalAnchors(draft.terminalCount, draft.terminalAnchors);
     customDeviceDraftCleanTokenRef.current = customDeviceDraftDirtyToken(
       draft,
-      nextAnchors
+      nextAnchors,
+      measurementConfigDraftRef.current ?? measurementConfigDraft ?? null
     );
     if (customDeviceDraftBaselineRef) {
       customDeviceDraftBaselineRef.current = JSON.parse(JSON.stringify(draft));
+    }
+    if (measurementConfigBaselineRef) {
+      const currentMeasurement = measurementConfigDraftRef.current ?? measurementConfigDraft ?? null;
+      measurementConfigBaselineRef.current = currentMeasurement ? JSON.parse(JSON.stringify(currentMeasurement)) : null;
     }
   };
 }
 
 export function createCustomDeviceDraftHasUnsavedChanges(__appScope: Record<string, any>) {
   return () => {
-  const { customDeviceDraft, customDeviceDraftCleanTokenRef, customDeviceTerminalAnchors } = __appScope;
+  const { customDeviceDraft, customDeviceDraftCleanTokenRef, customDeviceTerminalAnchors, measurementConfigDraft, measurementConfigDraftRef } = __appScope;
     const currentToken = customDeviceDraftDirtyToken(
       customDeviceDraft,
-      customDeviceTerminalAnchors
+      customDeviceTerminalAnchors,
+      measurementConfigDraftRef.current ?? measurementConfigDraft ?? null
     );
     return customDeviceDraftCleanTokenRef.current !== currentToken;
   };
@@ -374,7 +301,7 @@ export function createCustomDeviceDraftHasUnsavedChanges(__appScope: Record<stri
 // 还原当前 tab 或全部 tab 到预设定义
 export function createRevertCustomDeviceDraftCurrentTab(__appScope: Record<string, any>) {
   return () => {
-  const { customDeviceDraftBaselineRef, customDeviceDialogView, setCustomDeviceDraft, setStateIconDrawingDialog } = __appScope;
+  const { customDeviceDraftBaselineRef, customDeviceDialogView, customDeviceDraft, measurementConfigBaselineRef, setCustomDeviceDraft, setMeasurementConfigDraft, setStateIconDrawingDialog } = __appScope;
     const baseline: CustomDeviceDraft | null = customDeviceDraftBaselineRef?.current ?? null;
     if (!baseline) return;
     if (customDeviceDialogView === "icon") {
@@ -402,18 +329,18 @@ export function createRevertCustomDeviceDraftCurrentTab(__appScope: Record<strin
         error: ""
       }));
     } else if (customDeviceDialogView === "measurements") {
-      setCustomDeviceDraft((current: CustomDeviceDraft) => ({
-        ...current,
-        measurementDefinitions: JSON.parse(JSON.stringify(baseline.measurementDefinitions)),
-        error: ""
-      }));
+      const measurementBaseline = measurementConfigBaselineRef?.current ?? null;
+      if (measurementBaseline) {
+        const next = JSON.parse(JSON.stringify(measurementBaseline));
+        setMeasurementConfigDraft(next);
+      }
     }
   };
 }
 
 export function createRevertCustomDeviceDraftAll(__appScope: Record<string, any>) {
   return () => {
-  const { customDeviceDraftBaselineRef, setCustomDeviceDraft, setStateIconDrawingDialog, editingCustomDeviceKind, selectedDefinitionKind, baseLibraryTemplateByKind, createCustomDeviceDraftFromTemplate, resolveTemplateComponentLibrary } = __appScope;
+  const { customDeviceDraftBaselineRef, measurementConfigBaselineRef, setCustomDeviceDraft, setMeasurementConfigDraft, setStateIconDrawingDialog, editingCustomDeviceKind, selectedDefinitionKind, baseLibraryTemplateByKind, createCustomDeviceDraftFromTemplate, prepareMeasurementConfigDraft, resolveTemplateComponentLibrary } = __appScope;
     if (typeof setStateIconDrawingDialog === "function") setStateIconDrawingDialog(null);
     // 内置元件：从源码原始定义还原
     if (!editingCustomDeviceKind && selectedDefinitionKind && baseLibraryTemplateByKind && typeof createCustomDeviceDraftFromTemplate === "function") {
@@ -422,6 +349,7 @@ export function createRevertCustomDeviceDraftAll(__appScope: Record<string, any>
         const section = typeof resolveTemplateComponentLibrary === "function" ? resolveTemplateComponentLibrary(baseTemplate) : (baseTemplate.categoryLibrary ?? "");
         const freshDraft = createCustomDeviceDraftFromTemplate(baseTemplate, section);
         setCustomDeviceDraft({ ...freshDraft, error: "" });
+        if (typeof prepareMeasurementConfigDraft === "function") prepareMeasurementConfigDraft();
         return;
       }
     }
@@ -429,6 +357,10 @@ export function createRevertCustomDeviceDraftAll(__appScope: Record<string, any>
     const baseline: CustomDeviceDraft | null = customDeviceDraftBaselineRef?.current ?? null;
     if (!baseline) return;
     setCustomDeviceDraft(JSON.parse(JSON.stringify(baseline)));
+    const measurementBaseline = measurementConfigBaselineRef?.current ?? null;
+    if (measurementBaseline) {
+      setMeasurementConfigDraft(JSON.parse(JSON.stringify(measurementBaseline)));
+    }
   };
 }
 
@@ -2109,7 +2041,7 @@ export function createLoadSvgImageExportPathById(__appScope: Record<string, any>
 }
 
 export function createExportSvg(__appScope: Record<string, any>) {
-  return async (encoding: TextFileEncoding = "utf-8") => {
+  return async () => {
   const {
     DEFAULT_CANVAS_BACKGROUND,
     PARAM_LABELS,
@@ -2211,8 +2143,7 @@ export function createExportSvg(__appScope: Record<string, any>) {
             directoryHandle,
             file.filename,
             text,
-            file.mime,
-            encoding
+            file.mime
           ))
         });
       };
@@ -2243,11 +2174,11 @@ export function createExportSvg(__appScope: Record<string, any>) {
           throw imageExportPathByIdResult.error;
         }
         const imageExportPathById = imageExportPathByIdResult.value;
-        const svgText = svgTextForEncoding(buildSvgDocument(nodes, edges, buildSvgExportOptions({
+        const svgText = buildSvgDocument(nodes, edges, buildSvgExportOptions({
           canvasBounds, canvasBackgroundColor, DEFAULT_CANVAS_BACKGROUND, canvasBackgroundImageUrl,
           imageExportPathById, colorPalette, libraryTemplates, layers, activeLayerId,
           backgroundPageRender, projectMeasurements, measurementConfig
-        })), encoding);
+        }));
         startFileWrite({
           label: "SVG",
           filename: `${baseFilename}.svg`,
@@ -2336,14 +2267,6 @@ function showStandaloneExportCompletion(
   showGlobalMessage([message, ...details].join("\n"));
 }
 
-export function svgTextForEncoding(svgText: string, encoding: TextFileEncoding) {
-  const withoutDeclaration = String(svgText ?? "").replace(/^\s*<\?xml\b[^?]*\?>\s*/iu, "");
-  if (encoding === "gbk") {
-    return `<?xml version="1.0" encoding="GBK"?>\n${withoutDeclaration}`;
-  }
-  return withoutDeclaration;
-}
-
 // SVG 导出选项构建器，避免 createExportSvg 和 createExportSvgFile 重复
 function buildSvgExportOptions(params: {
   canvasBounds: any; canvasBackgroundColor: string; DEFAULT_CANVAS_BACKGROUND: string;
@@ -2368,7 +2291,7 @@ function buildSvgExportOptions(params: {
 }
 
 export function createExportSvgFile(__appScope: Record<string, any>) {
-  return async (encoding: TextFileEncoding = "utf-8") => {
+  return async () => {
     const {
       DEFAULT_CANVAS_BACKGROUND,
       activeLayerId,
@@ -2406,11 +2329,11 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
         const imageExportPathById = typeof loadSvgImageExportPathById === "function"
           ? await loadSvgImageExportPathById()
           : undefined;
-        return svgTextForEncoding(buildSvgDocument(nodes, edges, buildSvgExportOptions({
+        return buildSvgDocument(nodes, edges, buildSvgExportOptions({
           canvasBounds, canvasBackgroundColor, DEFAULT_CANVAS_BACKGROUND, canvasBackgroundImageUrl,
           imageExportPathById, colorPalette, libraryTemplates, layers, activeLayerId,
           backgroundPageRender, projectMeasurements, measurementConfig
-        })), encoding);
+        }));
       });
       return svgTextPromise;
     };
@@ -2421,7 +2344,6 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
           mime: "image/svg+xml",
           description: "SVG 图形文件",
           extensions: [".svg"],
-          encoding,
           preferNativeDialog: true,
           onSaveTargetReady: markSaveTargetReady
         })
@@ -2431,7 +2353,6 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
           mime: "image/svg+xml",
           description: "SVG 图形文件",
           extensions: [".svg"],
-          encoding,
           preferNativeDialog: true,
           onSaveTargetReady: markSaveTargetReady
         });
@@ -2446,7 +2367,7 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
 }
 
 export function createExportJsonFile(__appScope: Record<string, any>) {
-  return async (encoding: TextFileEncoding = "utf-8") => {
+  return async () => {
     const {
       currentProject,
       ensureSavedBeforeExport,
@@ -2477,7 +2398,6 @@ export function createExportJsonFile(__appScope: Record<string, any>) {
           mime: "application/json",
           description: "JSON 模型文件",
           extensions: [".json"],
-          encoding,
           preferNativeDialog: true,
           onSaveTargetReady: markSaveTargetReady
         })
@@ -2487,7 +2407,6 @@ export function createExportJsonFile(__appScope: Record<string, any>) {
           mime: "application/json",
           description: "JSON 模型文件",
           extensions: [".json"],
-          encoding,
           preferNativeDialog: true,
           onSaveTargetReady: markSaveTargetReady
         });
@@ -2538,7 +2457,7 @@ export function buildEFileExportProjectSnapshot(__appScope: Record<string, any>)
 }
 
 export function createExportEFile(__appScope: Record<string, any>) {
-  return async (encoding: TextFileEncoding = "gbk") => {
+  return async () => {
     const {
       activeSchemeKey,
       buildEFileExport,
@@ -2604,7 +2523,7 @@ export function createExportEFile(__appScope: Record<string, any>) {
           mime: "text/plain",
           description: "E 模型文件",
           extensions: [".e"],
-          encoding,
+          encoding: "gbk",
           preferNativeDialog: true,
           onSaveTargetReady: markSaveTargetReady
         })
@@ -2616,7 +2535,7 @@ export function createExportEFile(__appScope: Record<string, any>) {
             mime: file.mime,
             description: "E 模型文件",
             extensions: [".e"],
-            encoding,
+            encoding: "gbk",
             preferNativeDialog: true,
             onSaveTargetReady: markSaveTargetReady
           });
@@ -2892,15 +2811,8 @@ export function createCreateImportedSchemeRecord(__appScope: Record<string, any>
 
 export function createExportProjectRecordFile(__appScope: Record<string, any>) {
   return async (project: SavedProjectRecord) => {
-  const { activeProjectKey, currentProject, libraryTemplates, projectName, reconcileNodesWithEffectiveTemplateDefinitions, safeFilePart, saveTextFile, serializeProject, writeOperationLog } = __appScope;
-    const storedProjectFile = project.id === activeProjectKey ? currentProject() : project.project;
-    const reconciledNodes = reconcileNodesWithEffectiveTemplateDefinitions(
-      storedProjectFile.nodes ?? [],
-      libraryTemplates
-    );
-    const projectFile = reconciledNodes === storedProjectFile.nodes
-      ? storedProjectFile
-      : { ...storedProjectFile, nodes: reconciledNodes };
+  const { activeProjectKey, currentProject, projectName, safeFilePart, saveTextFile, serializeProject, writeOperationLog } = __appScope;
+    const projectFile = project.id === activeProjectKey ? currentProject() : project.project;
     const exportName = project.id === activeProjectKey ? projectName : project.name;
     await saveTextFile({
       filename: `${safeFilePart(exportName)}.json`,
@@ -3393,7 +3305,7 @@ export function createResolveDuplicateModelImport(__appScope: Record<string, any
 
 export function createExportSchemeRecord(__appScope: Record<string, any>) {
   return async (scheme: SavedSchemeRecord) => {
-  const { DEFAULT_CANVAS_BACKGROUND, PARAM_LABELS, backgroundPageRender, buildEFileExport, buildSvgDocument, colorPalette, downloadBackendSchemeArchive, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionLabels, eDeviceDefinitionTableIds, eDeviceDefinitionTemplateFields, fetchBackendProjectRecord, flattenSavedProjects, isPickerAbort, libraryTemplates, loadSvgImageExportPathById, measurementConfig, reconcileNodesWithEffectiveTemplateDefinitions, resolveTemplateComponentLibrary, safeFilePart, saveBackendProjectRecord, savedProjectRecordIsSummary, schemePathForRecord, schemePathForScheme, schemes, writeOperationLog } = __appScope;
+  const { DEFAULT_CANVAS_BACKGROUND, PARAM_LABELS, backgroundPageRender, buildEFileExport, buildSvgDocument, colorPalette, downloadBackendSchemeArchive, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionLabels, eDeviceDefinitionTableIds, eDeviceDefinitionTemplateFields, fetchBackendProjectRecord, flattenSavedProjects, isPickerAbort, libraryTemplates, loadSvgImageExportPathById, measurementConfig, resolveTemplateComponentLibrary, safeFilePart, saveBackendProjectArtifacts, savedProjectRecordIsSummary, schemePathForRecord, schemePathForScheme, schemes, writeOperationLog } = __appScope;
     try {
       const schemePath = schemePathForRecord(scheme);
       // 导出前用前端逻辑刷新方案下所有模型的 SVG/E，保证与右上角导出按钮产物一致
@@ -3425,15 +3337,8 @@ export function createExportSchemeRecord(__appScope: Record<string, any>) {
             if (typeof savedProjectRecordIsSummary === "function" && savedProjectRecordIsSummary(record)) {
               projectRecord = await fetchBackendProjectRecord(ownerPath, record.name);
             }
-            const storedProject = projectRecord?.project;
-            if (!storedProject) continue;
-            const reconciledNodes = reconcileNodesWithEffectiveTemplateDefinitions(
-              storedProject.nodes ?? [],
-              libraryTemplates
-            );
-            const project = reconciledNodes === storedProject.nodes
-              ? storedProject
-              : { ...storedProject, nodes: reconciledNodes };
+            const project = projectRecord?.project;
+            if (!project) continue;
             const svg = buildSvgDocument(project.nodes ?? [], project.edges ?? [], {
               width: project.canvasWidth ?? 1920,
               height: project.canvasHeight ?? 1024,
@@ -3454,12 +3359,7 @@ export function createExportSchemeRecord(__appScope: Record<string, any>) {
               ownerPath && ownerPath.length > 0 ? ownerPath : ["默认方案"],
               eFileExportOptions
             );
-            await saveBackendProjectRecord(
-              ownerPath,
-              { ...projectRecord, project },
-              "",
-              { svg, eFile: eResult?.text }
-            );
+            await saveBackendProjectArtifacts(ownerPath, projectRecord.name, { svg, eFile: eResult?.text });
           } catch (error) {
             // eslint-disable-next-line no-console
             console.error(`刷新方案模型 SVG/E 失败（${record.name}）：`, error);
@@ -4556,7 +4456,7 @@ export function createUpdateDefinitionTerminalAnchorFromPreview(__appScope: Reco
 
 export function createLoadDefinitionTemplateDraft(__appScope: Record<string, any>) {
   return (template: DeviceTemplate) => {
-  const { DEFAULT_STATE_PAGE_ID, categoryLibraryComponentLibraryKey, createDefinitionDraftRows, createDefinitionVisualDraft, normalizeCategoryLibraryName, resolveTemplateComponentLibrary, setCollapsedDefinitionComponentLibraries, setDefinitionDraftError, setDefinitionDraftRows, setDefinitionDraftSection, setDefinitionMeasurementDraft, setDefinitionStateDraftRows, setDefinitionStatePageId, setDefinitionTerminalAnchorDragIndex, setDefinitionVisualDraft, setExpandedDefinitionGroups, setSelectedDefinitionKind } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, categoryLibraryComponentLibraryKey, createDefinitionDraftRows, createDefinitionVisualDraft, normalizeCategoryLibraryName, resolveTemplateComponentLibrary, setCollapsedDefinitionComponentLibraries, setDefinitionDraftError, setDefinitionDraftRows, setDefinitionDraftSection, setDefinitionStateDraftRows, setDefinitionStatePageId, setDefinitionTerminalAnchorDragIndex, setDefinitionVisualDraft, setExpandedDefinitionGroups, setSelectedDefinitionKind } = __appScope;
     const stateRows = createDefinitionStateDraftRowsWithDefaultImages(__appScope, template);
     const visualDraft = clearGeneratedDefinitionVisualDraftImage(template, createDefinitionVisualDraft(template));
     setSelectedDefinitionKind(template.kind);
@@ -4565,7 +4465,6 @@ export function createLoadDefinitionTemplateDraft(__appScope: Record<string, any
     setExpandedDefinitionGroups((current) => (current.includes(group) ? current : [...current, group]));
     setCollapsedDefinitionComponentLibraries((current) => current.filter((item) => item !== categoryLibraryComponentLibraryKey(group, componentLibrary)));
     setDefinitionDraftRows(createDefinitionDraftRows(template));
-    setDefinitionMeasurementDraft(cloneDeviceMeasurementDefinitions(template.measurementDefinitions) ?? []);
     setDefinitionStateDraftRows(stateRows);
     setDefinitionStatePageId(DEFAULT_STATE_PAGE_ID);
     setDefinitionDraftSection(componentLibrary);
@@ -5207,7 +5106,7 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
 
 export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>) {
   return () => {
-  const { ALLOW_RESIZE_TRANSFORM_PARAM, createDefinitionDraftRows, definitionDraftRows, definitionDraftSection, definitionMeasurementDraft, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, deviceDefinitionRowId, getTemplateParameterDefinitions, isReservedDeviceDefinitionParamName, libraryTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeComponentLibraryName, normalizeDefinitionRowEnumFields, requireEditMode, selectedDefinitionTemplate, setDefinitionDraftError, setDefinitionDraftRows, setDefinitionMeasurementDraft = () => undefined, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, templateAllowsResizeTransform } = __appScope;
+  const { ALLOW_RESIZE_TRANSFORM_PARAM, createDefinitionDraftRows, definitionDraftRows, definitionDraftSection, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, deviceDefinitionRowId, getTemplateParameterDefinitions, isReservedDeviceDefinitionParamName, libraryTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeComponentLibraryName, normalizeDefinitionRowEnumFields, requireEditMode, selectedDefinitionTemplate, setDefinitionDraftError, setDefinitionDraftRows, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, templateAllowsResizeTransform } = __appScope;
     if (!requireEditMode("保存元件定义")) {
       return;
     }
@@ -5282,30 +5181,15 @@ export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>)
       return acc;
     }, paramsSeed);
     const currentMeasurementConfig = measurementConfigDraftRef?.current ?? measurementConfigDraft ?? measurementConfig;
-    const selectedProfileItems = normalizeDeviceMeasurementDefinitions(definitionMeasurementDraft);
-    const measurementPositionDefinitions = buildMeasurementProfilePositionDefinitions({
-      source: { ...selectedDefinitionTemplate, parameterDefinitions: normalizedRows },
-      parameterDefinitions: normalizedRows,
-      libraryTemplates
-    });
-    const materializedFields = materializeNewMeasurementDefinitionFields({
-      previousItems: selectedDefinitionTemplate.measurementDefinitions ?? [],
-      nextItems: selectedProfileItems,
-      measurementTypes: currentMeasurementConfig?.measurementTypes ?? [],
-      parameterDefinitions: normalizedRows,
-      positionDefinitions: measurementPositionDefinitions,
-      materializeDeviceFields: false
-    });
-    const completedRows = materializedFields.parameterDefinitions;
-    for (const row of completedRows) {
-      if (row.enName !== "name" && !(row.enName in params)) {
-        params[row.enName] = row.typicalValue;
-      }
-    }
+    const selectedProfileItems = currentMeasurementConfig?.deviceProfiles?.find((profile) => profile.deviceKind === definitionKey)?.items ?? [];
     const measurementProfileMessage = measurementProfileItemsComplianceMessage(selectedProfileItems, {
       measurementTypes: currentMeasurementConfig?.measurementTypes ?? [],
-      parameterDefinitions: completedRows,
-      positionDefinitions: materializedFields.positionDefinitions,
+      parameterDefinitions: normalizedRows,
+      positionDefinitions: buildMeasurementProfilePositionDefinitions({
+        source: { ...selectedDefinitionTemplate, parameterDefinitions: normalizedRows },
+        parameterDefinitions: normalizedRows,
+        libraryTemplates
+      }),
       targetLabel: selectedDefinitionTemplate.label
     });
     if (measurementProfileMessage) {
@@ -5316,7 +5200,7 @@ export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>)
       ? createDefinitionDraftRows(selectedDefinitionTemplate)
       : getTemplateParameterDefinitions(selectedDefinitionTemplate);
     syncExistingNodesWithTemplateDefinitions(
-      { parameterDefinitions: completedRows },
+      { parameterDefinitions: normalizedRows },
       previousDefinitions,
       (node) => {
         const nodeTemplate = libraryTemplates.find((template) => template.kind === node.kind);
@@ -5324,12 +5208,7 @@ export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>)
       }
     );
     setDeviceDefinitionOverrides((current) => {
-      const next = appendAssociatedMeasurementFieldsToOverrides({ ...current }, materializedFields.additions, {
-        libraryTemplates,
-        deviceDefinitionKeyForTemplate,
-        deviceDefinitionOverrideForTemplate,
-        getTemplateParameterDefinitions
-      });
+      const next = { ...current };
       const existingOverride = current[overrideKey];
       for (const peer of libraryTemplates.filter((template) => deviceTemplatesShareParameterDefinitions(selectedDefinitionTemplate, template))) {
         if (!next[peer.kind] || peer.kind === overrideKey) continue;
@@ -5345,20 +5224,12 @@ export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>)
           ...(existingOverride?.params ?? {}),
           ...params
         },
-        parameterDefinitions: completedRows,
-        measurementDefinitions: selectedProfileItems,
+        parameterDefinitions: normalizedRows,
         updatedAt: new Date().toISOString()
       };
       return normalizeSharedDeviceDefinitionOverrides(next, libraryTemplates);
     });
-    syncAssociatedMeasurementFieldAdditions(
-      materializedFields.additions,
-      libraryTemplates,
-      getTemplateParameterDefinitions,
-      syncExistingNodesWithTemplateDefinitions
-    );
-    setDefinitionDraftRows(completedRows.map((row) => ({ ...row, id: deviceDefinitionRowId() })));
-    setDefinitionMeasurementDraft(selectedProfileItems);
+    setDefinitionDraftRows(normalizedRows.map((row) => ({ ...row, id: deviceDefinitionRowId() })));
     setDefinitionDraftError("");
   };
 }
@@ -6906,7 +6777,7 @@ export function createNextCustomTemplateKind(__appScope: Record<string, any>) {
 
 export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) {
   return (options: { closeAfterSave?: boolean } = {}) => {
-  const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, closeCustomDeviceDialog, customComponentLibraries = [], customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTemplates, customDeviceTerminalAnchors, defaultComponentLibraryForCategoryLibrary, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, deviceDefinitionOverrides, editingCustomDeviceKind, ensureCustomComponentTreeExpanded, generateCustomDeviceImage, getTemplateParameterDefinitions, hasOverlappingCustomDeviceTerminalAnchors, isBuiltInComponentLibrary, isDerivedComponentBaseParamName, isReservedDeviceDefinitionParamName, isValidComponentLibraryName, libraryTemplates = customDeviceTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, nextCustomTemplateKind, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, normalizeCustomComponentLibraries, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, requireEditMode, setCustomComponentLibraries, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceSaveToast, customDeviceSaveToastTimerRef, setCustomDeviceTemplates, setDeviceDefinitionOverrides, setEditingCustomDeviceKind, setExpandedCategoryLibraries, showGlobalMessage = () => undefined, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
+  const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, closeCustomDeviceDialog, customComponentLibraries = [], customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTemplates, customDeviceTerminalAnchors, defaultComponentLibraryForCategoryLibrary, editingCustomDeviceKind, ensureCustomComponentTreeExpanded, generateCustomDeviceImage, hasOverlappingCustomDeviceTerminalAnchors, isBuiltInComponentLibrary, isDerivedComponentBaseParamName, isReservedDeviceDefinitionParamName, isValidComponentLibraryName, libraryTemplates = customDeviceTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, nextCustomTemplateKind, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, normalizeCustomComponentLibraries, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, requireEditMode, setCustomComponentLibraries, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceSaveToast, customDeviceSaveToastTimerRef, setCustomDeviceTemplates, setEditingCustomDeviceKind, setExpandedCategoryLibraries, showGlobalMessage = () => undefined, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
     if (!requireEditMode("保存元件")) {
       return false;
     }
@@ -6992,7 +6863,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
         })
       : draftRows;
     const { definitions: mergedDefaultRows, customRows } = mergeDefaultAndCustomDefinitionRows(defaultRows, visibleDraftRows, normalizeDefinitionRowEnumFields);
-    let definitions = [...mergedDefaultRows, ...customRows];
+    const definitions = [...mergedDefaultRows, ...customRows];
     const definitionsComplianceMessage = deviceParameterDefinitionsComplianceMessage(definitions);
     if (definitionsComplianceMessage) {
       setCustomDeviceDraft((current) => ({ ...current, error: definitionsComplianceMessage }));
@@ -7018,52 +6889,39 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       return false;
     }
     const currentMeasurementConfig = measurementConfigDraftRef?.current ?? measurementConfigDraft ?? measurementConfig;
-    const profileItems = normalizeDeviceMeasurementDefinitions(customDeviceDraft.measurementDefinitions);
-    const previousCustomTemplate = editingCustomDeviceKind
-      ? customDeviceTemplates.find((item) => item.kind === editingCustomDeviceKind)
-      : undefined;
-    const measurementPositionDefinitions = buildMeasurementProfilePositionDefinitions({
-      source: {
-        kind: editingCustomDeviceKind || requestedCustomKind || customDeviceDraft.componentKind || componentLibrary,
-        label: componentLabel,
-        params: {
-          component_type: componentLibrary,
-          ...(derivedRequested ? {
-            derived_from_component_type: derivedFromComponentLibrary,
-            derived_component_type: derivedComponentLibrary,
-            ...(derivedComponentLibraryLabel ? { derived_component_library_label: derivedComponentLibraryLabel } : {}),
-            is_derived_component_library: "1"
-          } : {})
-        },
-        isDerivedComponentLibrary: derivedRequested,
-        derivedFromComponentLibrary: derivedRequested ? derivedFromComponentLibrary : "",
-        derivedComponentLibrary: derivedRequested ? derivedComponentLibrary : "",
-        derivedComponentLibraryLabel: derivedRequested ? derivedComponentLibraryLabel : "",
-        terminalType: terminalTypes[0] ?? "ac",
-        terminalCount: terminalTypes.length,
-        terminalTypes,
-        terminalLabels: customDeviceDraft.terminalLabels.slice(0, terminalTypes.length),
-        terminalRoles: customDeviceDraft.terminalRoles.slice(0, terminalTypes.length),
-        terminalAssociations: isContainerComponent ? terminalAssociations : undefined,
-        isContainer: isContainerComponent,
-        parameterDefinitions: definitions
-      },
-      parameterDefinitions: definitions,
-      libraryTemplates
-    });
-    const materializedFields = materializeNewMeasurementDefinitionFields({
-      previousItems: previousCustomTemplate?.measurementDefinitions ?? [],
-      nextItems: profileItems,
-      measurementTypes: currentMeasurementConfig?.measurementTypes ?? [],
-      parameterDefinitions: definitions,
-      positionDefinitions: measurementPositionDefinitions,
-      materializeDeviceFields: false
-    });
-    definitions = materializedFields.parameterDefinitions;
+    const profileItems = currentMeasurementConfig?.deviceProfiles?.find((profile) => profile.deviceKind === componentLibrary)?.items ?? [];
     const measurementProfileMessage = measurementProfileItemsComplianceMessage(profileItems, {
       measurementTypes: currentMeasurementConfig?.measurementTypes ?? [],
       parameterDefinitions: definitions,
-      positionDefinitions: materializedFields.positionDefinitions,
+      positionDefinitions: buildMeasurementProfilePositionDefinitions({
+        source: {
+          kind: editingCustomDeviceKind || requestedCustomKind || customDeviceDraft.componentKind || componentLibrary,
+          label: componentLabel,
+          params: {
+            component_type: componentLibrary,
+            ...(derivedRequested ? {
+              derived_from_component_type: derivedFromComponentLibrary,
+              derived_component_type: derivedComponentLibrary,
+              ...(derivedComponentLibraryLabel ? { derived_component_library_label: derivedComponentLibraryLabel } : {}),
+              is_derived_component_library: "1"
+            } : {})
+          },
+          isDerivedComponentLibrary: derivedRequested,
+          derivedFromComponentLibrary: derivedRequested ? derivedFromComponentLibrary : "",
+          derivedComponentLibrary: derivedRequested ? derivedComponentLibrary : "",
+          derivedComponentLibraryLabel: derivedRequested ? derivedComponentLibraryLabel : "",
+          terminalType: terminalTypes[0] ?? "ac",
+          terminalCount: terminalTypes.length,
+          terminalTypes,
+          terminalLabels: customDeviceDraft.terminalLabels.slice(0, terminalTypes.length),
+          terminalRoles: customDeviceDraft.terminalRoles.slice(0, terminalTypes.length),
+          terminalAssociations: isContainerComponent ? terminalAssociations : undefined,
+          isContainer: isContainerComponent,
+          parameterDefinitions: definitions
+        },
+        parameterDefinitions: definitions,
+        libraryTemplates
+      }),
       targetLabel: componentLabel
     });
     if (measurementProfileMessage) {
@@ -7103,6 +6961,9 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       defaultImageCandidates
     );
     const customKind = editingCustomDeviceKind || requestedCustomKind || nextCustomTemplateKind(componentLibrary);
+    const previousCustomTemplate = editingCustomDeviceKind
+      ? customDeviceTemplates.find((item) => item.kind === editingCustomDeviceKind)
+      : undefined;
     const template: DeviceTemplate = {
       kind: customKind,
       label: componentLabel,
@@ -7142,21 +7003,12 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       allowResizeTransform: customDeviceDraft.allowResizeTransform === "1",
       custom: true,
       parameterDefinitions: definitions,
-      measurementDefinitions: profileItems,
       stateDefinitions,
     };
     const nextTemplates = editingCustomDeviceKind && customDeviceTemplates.some((item) => item.kind === editingCustomDeviceKind)
       ? customDeviceTemplates.map((item) => item.kind === editingCustomDeviceKind ? template : item)
       : [...customDeviceTemplates, template];
     setCustomDeviceTemplates(nextTemplates);
-    const nextDeviceDefinitionOverrides = appendAssociatedMeasurementFieldsToOverrides(
-      deviceDefinitionOverrides,
-      materializedFields.additions,
-      { libraryTemplates, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, getTemplateParameterDefinitions }
-    );
-    if (nextDeviceDefinitionOverrides !== deviceDefinitionOverrides) {
-      setDeviceDefinitionOverrides(nextDeviceDefinitionOverrides);
-    }
     if (editingCustomDeviceKind) {
       syncExistingNodesWithTemplateDefinitions(
         template,
@@ -7164,16 +7016,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
         (node) => node.kind === customKind
       );
     }
-    syncAssociatedMeasurementFieldAdditions(
-      materializedFields.additions,
-      libraryTemplates,
-      getTemplateParameterDefinitions,
-      syncExistingNodesWithTemplateDefinitions
-    );
-    persistDeviceLibraryChange({
-      customDeviceTemplates: nextTemplates,
-      deviceDefinitionOverrides: nextDeviceDefinitionOverrides
-    }, {
+    persistDeviceLibraryChange({ customDeviceTemplates: nextTemplates }, {
       success: `自定义元件已保存到后台：${componentLabel}`,
       failure: `自定义元件已保存到本地，后台保存失败：${componentLabel}`
     });
@@ -7216,7 +7059,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
 
 export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Record<string, any>) {
   return (template: DeviceTemplate, options: { closeAfterSave?: boolean } = {}) => {
-  const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, baseLibraryTemplates = [], closeCustomDeviceDialog, createCustomDeviceDraftFromTemplate, customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTerminalAnchors, deviceDefinitionKeyForTemplate = (candidate: DeviceTemplate) => candidate.kind, deviceDefinitionOverrideForTemplate, deviceDefinitionOverrides, getTemplateParameterDefinitions, hasOverlappingCustomDeviceTerminalAnchors, isDerivedComponentBaseParamName, isReservedDeviceDefinitionParamName, isValidComponentLibraryName, libraryTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, requireEditMode, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceSaveToast, customDeviceSaveToastTimerRef, setDeviceDefinitionOverrides, showGlobalMessage, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
+  const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, baseLibraryTemplates = [], closeCustomDeviceDialog, createCustomDeviceDraftFromTemplate, customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTerminalAnchors, deviceDefinitionOverrideForTemplate, deviceDefinitionOverrides, getTemplateParameterDefinitions, hasOverlappingCustomDeviceTerminalAnchors, isDerivedComponentBaseParamName, isReservedDeviceDefinitionParamName, isValidComponentLibraryName, libraryTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, requireEditMode, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceSaveToast, customDeviceSaveToastTimerRef, setDeviceDefinitionOverrides, showGlobalMessage, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
     if (!requireEditMode("保存元件定义")) {
       return false;
     }
@@ -7303,7 +7146,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
         })
       : draftRows;
     const { definitions: mergedDefaultRows, customRows } = mergeDefaultAndCustomDefinitionRows(defaultRows, visibleDraftRows, normalizeDefinitionRowEnumFields);
-    let definitions = [...mergedDefaultRows, ...customRows];
+    const definitions = [...mergedDefaultRows, ...customRows];
     const baseTemplate = baseLibraryTemplates.find((candidate: DeviceTemplate) => candidate.kind === template.kind) ?? template;
     let builtInDefinitions = getTemplateParameterDefinitions(baseTemplate);
     if (typeof createCustomDeviceDraftFromTemplate === "function") {
@@ -7335,6 +7178,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       );
       builtInDefinitions = [...mergedBaseDefaultRows, ...baseCustomRows];
     }
+    const parameterDefinitionsMatchBuiltIn = deviceParameterDefinitionListsEqual(definitions, builtInDefinitions);
     const definitionsComplianceMessage = deviceParameterDefinitionsComplianceMessage(definitions);
     if (definitionsComplianceMessage) {
       setCustomDeviceDraft((current) => ({ ...current, error: definitionsComplianceMessage }));
@@ -7360,45 +7204,34 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       return false;
     }
     const currentMeasurementConfig = measurementConfigDraftRef?.current ?? measurementConfigDraft ?? measurementConfig;
-    const profileItems = normalizeDeviceMeasurementDefinitions(customDeviceDraft.measurementDefinitions);
-    const measurementPositionDefinitions = buildMeasurementProfilePositionDefinitions({
-      source: {
-        ...template,
-        params: {
-          ...withoutDerivedDefinitionParams(template.params ?? {}),
-          component_type: componentLibrary,
-          ...definitionDerivedParams
-        },
-        isDerivedComponentLibrary: derivedRequested,
-        derivedFromComponentLibrary: derivedRequested ? derivedFromComponentLibrary : "",
-        derivedComponentLibrary: derivedRequested ? derivedComponentLibrary : "",
-        derivedComponentLibraryLabel: derivedRequested ? derivedComponentLibraryLabel : "",
-        terminalType: terminalTypes[0] ?? template.terminalType,
-        terminalCount: terminalTypes.length,
-        terminalTypes,
-        terminalLabels: customDeviceDraft.terminalLabels.slice(0, terminalTypes.length),
-        terminalRoles: customDeviceDraft.terminalRoles.slice(0, terminalTypes.length),
-        terminalAssociations: customDeviceDraft.isContainer ? terminalAssociations : undefined,
-        isContainer: customDeviceDraft.isContainer,
-        parameterDefinitions: definitions
-      },
-      parameterDefinitions: definitions,
-      libraryTemplates
-    });
-    const materializedFields = materializeNewMeasurementDefinitionFields({
-      previousItems: template.measurementDefinitions ?? [],
-      nextItems: profileItems,
-      measurementTypes: currentMeasurementConfig?.measurementTypes ?? [],
-      parameterDefinitions: definitions,
-      positionDefinitions: measurementPositionDefinitions,
-      materializeDeviceFields: false
-    });
-    definitions = materializedFields.parameterDefinitions;
-    const parameterDefinitionsMatchBuiltIn = deviceParameterDefinitionListsEqual(definitions, builtInDefinitions);
+    const profileItems = currentMeasurementConfig?.deviceProfiles?.find((profile) => profile.deviceKind === componentLibrary)?.items ?? [];
     const measurementProfileMessage = measurementProfileItemsComplianceMessage(profileItems, {
       measurementTypes: currentMeasurementConfig?.measurementTypes ?? [],
       parameterDefinitions: definitions,
-      positionDefinitions: materializedFields.positionDefinitions,
+      positionDefinitions: buildMeasurementProfilePositionDefinitions({
+        source: {
+          ...template,
+          params: {
+            ...withoutDerivedDefinitionParams(template.params ?? {}),
+            component_type: componentLibrary,
+            ...definitionDerivedParams
+          },
+          isDerivedComponentLibrary: derivedRequested,
+          derivedFromComponentLibrary: derivedRequested ? derivedFromComponentLibrary : "",
+          derivedComponentLibrary: derivedRequested ? derivedComponentLibrary : "",
+          derivedComponentLibraryLabel: derivedRequested ? derivedComponentLibraryLabel : "",
+          terminalType: terminalTypes[0] ?? template.terminalType,
+          terminalCount: terminalTypes.length,
+          terminalTypes,
+          terminalLabels: customDeviceDraft.terminalLabels.slice(0, terminalTypes.length),
+          terminalRoles: customDeviceDraft.terminalRoles.slice(0, terminalTypes.length),
+          terminalAssociations: customDeviceDraft.isContainer ? terminalAssociations : undefined,
+          isContainer: customDeviceDraft.isContainer,
+          parameterDefinitions: definitions
+        },
+        parameterDefinitions: definitions,
+        libraryTemplates
+      }),
       targetLabel: customDeviceDraft.componentName.trim() || template.label
     });
     if (measurementProfileMessage) {
@@ -7515,7 +7348,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       measurementDefinitions: profileItems,
       updatedAt: nextTemplateOverride.updatedAt
     };
-    let nextDeviceDefinitionOverrides: Record<string, DeviceTemplateDefinitionOverride> = {
+    const nextDeviceDefinitionOverrides: Record<string, DeviceTemplateDefinitionOverride> = {
       ...deviceDefinitionOverrides,
       [sharedOverrideKey]: sharedDefinitionOverride,
       [template.kind]: exactVisualOverride
@@ -7534,12 +7367,6 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       { libraryTemplates, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, getTemplateParameterDefinitions }
     );
     setDeviceDefinitionOverrides(nextDeviceDefinitionOverrides);
-    syncAssociatedMeasurementFieldAdditions(
-      materializedFields.additions,
-      libraryTemplates,
-      getTemplateParameterDefinitions,
-      syncExistingNodesWithTemplateDefinitions
-    );
     persistDeviceLibraryChange({ deviceDefinitionOverrides: nextDeviceDefinitionOverrides }, {
       success: `元件定义已保存到后台：${template.label}`,
       failure: `元件定义已保存到本地，后台保存失败：${template.label}`

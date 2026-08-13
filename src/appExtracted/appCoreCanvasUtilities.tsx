@@ -400,7 +400,7 @@ import {
   type SidePanelSide
 } from "../sidePanelVisibility";
 import {
-  INITIAL_MEASUREMENT_CONFIG,
+  DEFAULT_MEASUREMENT_CONFIG,
   EMPTY_PROJECT_MEASUREMENTS,
   createDefaultMeasurementGroupsForNode,
   formatMeasurementDisplayValue,
@@ -1781,7 +1781,6 @@ export type CustomDeviceDraft = {
   terminalAssociations: ContainerTerminalAssociationValue[];
   isContainer: boolean;
   params: CustomParamDraft[];
-  measurementDefinitions: DeviceMeasurementProfileItem[];
   stateDefinitions: DeviceDefinitionStateDraftRow[];
   error: string;
 };
@@ -1806,13 +1805,6 @@ export type DeviceDefinitionMeasurementPanelTarget = {
   terminalLabels?: readonly string[];
   parameterDefinitions?: readonly DeviceParameterDefinition[];
   positionDefinitions?: readonly MeasurementProfilePositionDefinition[];
-  items: readonly DeviceMeasurementProfileItem[];
-  setItems: (items: DeviceMeasurementProfileItem[]) => void;
-  ensureAssociatedField?: (
-    position: string,
-    associatedField: string,
-    measurementTypeId: string
-  ) => void;
 };
 
 export type TemplateDialogState = {

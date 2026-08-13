@@ -4705,16 +4705,6 @@ const DEVICE_LIMIT_PAIR_SPECS: DeviceLimitPairSpec[] = [
   { maxKey: "j_v_max", minKey: "j_v_min", label: "末端电压", voltage: true, terminalSelector: "j" }
 ];
 
-const REQUIRED_DEVICE_LIMIT_PAIR_MAX_KEYS_BY_SECTION: Record<string, ReadonlySet<string>> = {
-  ACGenerator: new Set(["p_max", "q_max", "v_max"]),
-  DCGenerator: new Set(["p_max", "v_max"]),
-  ACLoad: new Set(["p_max", "q_max", "v_max"]),
-  DCLoad: new Set(["p_max", "v_max"]),
-  DCACConverter: new Set(["ac_p_max", "ac_q_max", "ac_v_max", "dc_p_max", "dc_v_max"]),
-  ACACConverter: new Set(["i_p_max", "i_q_max", "i_v_max", "j_p_max", "j_q_max", "j_v_max"]),
-  DCDCConverter: new Set(["i_p_max", "i_v_max", "j_p_max", "j_v_max"])
-};
-
 const DEVICE_SETPOINT_LIMIT_SPECS_BY_SECTION: Record<string, DeviceSetpointLimitSpec[]> = {
   ACGenerator: [
     { setKey: "p_set", maxKey: "p_max", minKey: "p_min", label: "有功设定值", quantity: "power" },
@@ -5031,13 +5021,12 @@ function validateDeviceLimitPairs(
       });
     }
   }
-  const requiredMaxKeys = REQUIRED_DEVICE_LIMIT_PAIR_MAX_KEYS_BY_SECTION[ownerSection];
   const relevantSpecs = DEVICE_LIMIT_PAIR_SPECS.flatMap((spec) => {
     const maxKey = keyFor(spec.maxKey);
     const minKey = keyFor(spec.minKey);
     const maxText = deviceParamValue(node.params, maxKey);
     const minText = deviceParamValue(node.params, minKey);
-    return maxText === undefined && minText === undefined && !requiredMaxKeys?.has(spec.maxKey)
+    return maxText === undefined && minText === undefined
       ? []
       : [{ spec, maxKey, minKey, maxText, minText }];
   });

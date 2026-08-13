@@ -20,7 +20,7 @@ import {
   type ModelNode
 } from "./model";
 import {
-  INITIAL_MEASUREMENT_CONFIG,
+  DEFAULT_MEASUREMENT_CONFIG,
   normalizeMeasurementConfig,
   type PlatformMeasurementConfig
 } from "./measurements";
@@ -294,7 +294,7 @@ export function normalizeUserCustomizationSnapshot(
   const source = value ?? {};
   return {
     deviceLibrary: normalizeDeviceLibrarySnapshot(source.deviceLibrary),
-    measurementConfig: normalizeMeasurementConfig(source.measurementConfig ?? INITIAL_MEASUREMENT_CONFIG),
+    measurementConfig: normalizeMeasurementConfig(source.measurementConfig ?? DEFAULT_MEASUREMENT_CONFIG),
     colorConfig: {
       colorDisplayMode: source.colorConfig?.colorDisplayMode === "voltage" ? "voltage" : "energy",
       colorPalette: normalizeColorPalette(source.colorConfig?.colorPalette ?? DEFAULT_COLOR_PALETTE)
@@ -424,8 +424,7 @@ const overrideHasNonParameterChanges = (override: DeviceTemplateDefinitionOverri
   const keys = Object.keys(override).filter((key) => ![
     "kind",
     "updatedAt",
-    "parameterDefinitions",
-    "measurementDefinitions"
+    "parameterDefinitions"
   ].includes(key));
   return keys.some((key) => {
     if (key !== "params") {
@@ -482,9 +481,6 @@ export function buildUserCustomizationInventory(
     if (definitions.length > 0) {
       pushItem("parameter-definitions", template.kind, template.label || template.kind, "自定义元件", "added", `${definitions.length} 项参数定义`);
     }
-    if ((template.measurementDefinitions ?? []).length > 0) {
-      pushItem("measurement-definitions", `profile:${template.kind}`, template.label || template.kind, "设备量测配置", "added", `${template.measurementDefinitions?.length ?? 0} 项量测关联`);
-    }
   });
   Object.entries(snapshot.deviceLibrary.deviceDefinitionOverrides).forEach(([kind, override]) => {
     const template = customByKind.get(kind) ?? builtInByKind.get(kind);
@@ -497,9 +493,6 @@ export function buildUserCustomizationInventory(
     }
     if (definitions.length > 0 && (!builtInTemplate || !builtInParameterDefinitionsMatch(definitions, builtInTemplate))) {
       pushItem("parameter-definitions", kind, label, template?.categoryLibrary || "元件定义", builtInByKind.has(kind) ? "modified" : "added", `${definitions.length} 项参数定义`);
-    }
-    if (Array.isArray(override.measurementDefinitions) && !canonicalEqual(override.measurementDefinitions, builtInTemplate?.measurementDefinitions ?? [])) {
-      pushItem("measurement-definitions", `profile:${kind}`, label, "设备量测配置", "modified", `${override.measurementDefinitions.length} 项量测关联`);
     }
   });
 
@@ -534,7 +527,7 @@ export function buildUserCustomizationInventory(
     pushItem("graph-templates", `template:${template.id}`, template.name || template.id, template.typeName || "未分类", "added", "新增自定义模板");
   });
 
-  const defaultTypeById = new Map(INITIAL_MEASUREMENT_CONFIG.measurementTypes.map((type) => [type.id, type]));
+  const defaultTypeById = new Map(DEFAULT_MEASUREMENT_CONFIG.measurementTypes.map((type) => [type.id, type]));
   const currentTypeById = new Map(snapshot.measurementConfig.measurementTypes.map((type) => [type.id, type]));
   new Set([...defaultTypeById.keys(), ...currentTypeById.keys()]).forEach((id) => {
     const current = currentTypeById.get(id);
@@ -550,7 +543,24 @@ export function buildUserCustomizationInventory(
       );
     }
   });
-  if (!canonicalEqual(snapshot.measurementConfig.groupDefaults, INITIAL_MEASUREMENT_CONFIG.groupDefaults)) {
+  const defaultProfileByKind = new Map(DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.map((profile) => [profile.deviceKind, profile]));
+  const currentProfileByKind = new Map(snapshot.measurementConfig.deviceProfiles.map((profile) => [profile.deviceKind, profile]));
+  new Set([...defaultProfileByKind.keys(), ...currentProfileByKind.keys()]).forEach((kind) => {
+    const current = currentProfileByKind.get(kind);
+    const fallback = defaultProfileByKind.get(kind);
+    if (!canonicalEqual(current, fallback)) {
+      const template = customByKind.get(kind) ?? builtInByKind.get(kind);
+      pushItem(
+        "measurement-definitions",
+        `profile:${kind}`,
+        template?.label || kind,
+        "设备量测配置",
+        fallback ? "modified" : "added",
+        current ? `${current.items.length} 项量测关联` : "内置量测关联已删除"
+      );
+    }
+  });
+  if (!canonicalEqual(snapshot.measurementConfig.groupDefaults, DEFAULT_MEASUREMENT_CONFIG.groupDefaults)) {
     pushItem("measurement-definitions", "group-defaults", "新增量测框默认样式", "量测全局设置", "modified", "背景、边框或字体默认值已修改");
   }
 
@@ -698,6 +708,13 @@ const mergeMeasurementConfigs = (
     imported: imported.measurementTypes,
     id: (item) => item.id,
     name: (item) => item.name,
+    domain: "measurement-definitions",
+    onConflict
+  }),
+  deviceProfiles: mergeRecords({
+    current: current.deviceProfiles,
+    imported: imported.deviceProfiles,
+    id: (item) => item.deviceKind,
     domain: "measurement-definitions",
     onConflict
   })
@@ -856,32 +873,34 @@ const removeCustomDeviceCascade = (snapshot: UserCustomizationSnapshot, kind: st
   delete snapshot.deviceLibrary.eDeviceDefinitionLabels?.[kind];
   delete snapshot.deviceLibrary.eDeviceDefinitionClassExportEnabled?.[kind];
   delete snapshot.deviceLibrary.eDeviceDefinitionFieldOrder?.[kind];
+  snapshot.measurementConfig.deviceProfiles = snapshot.measurementConfig.deviceProfiles.filter((profile) => profile.deviceKind !== kind);
 };
 
 const restoreMeasurementItem = (snapshot: UserCustomizationSnapshot, itemId: string) => {
   if (itemId === "group-defaults") {
-    snapshot.measurementConfig.groupDefaults = cloneValue(INITIAL_MEASUREMENT_CONFIG.groupDefaults);
+    snapshot.measurementConfig.groupDefaults = cloneValue(DEFAULT_MEASUREMENT_CONFIG.groupDefaults);
     return;
   }
   if (itemId.startsWith("type:")) {
     const id = itemId.slice("type:".length);
-    const fallback = INITIAL_MEASUREMENT_CONFIG.measurementTypes.find((type) => type.id === id);
+    const fallback = DEFAULT_MEASUREMENT_CONFIG.measurementTypes.find((type) => type.id === id);
     snapshot.measurementConfig.measurementTypes = snapshot.measurementConfig.measurementTypes.filter((type) => type.id !== id);
     if (fallback) {
       snapshot.measurementConfig.measurementTypes.push(cloneValue(fallback));
+    } else {
+      snapshot.measurementConfig.deviceProfiles = snapshot.measurementConfig.deviceProfiles.map((profile) => ({
+        ...profile,
+        items: profile.items.filter((item) => item.measurementTypeId !== id)
+      }));
     }
     return;
   }
   if (itemId.startsWith("profile:")) {
     const kind = itemId.slice("profile:".length);
-    snapshot.deviceLibrary.customDeviceTemplates = snapshot.deviceLibrary.customDeviceTemplates.map((template) => (
-      template.kind === kind ? { ...template, measurementDefinitions: [] } : template
-    ));
-    const override = snapshot.deviceLibrary.deviceDefinitionOverrides[kind];
-    if (override) {
-      const nextOverride = { ...override };
-      delete nextOverride.measurementDefinitions;
-      snapshot.deviceLibrary.deviceDefinitionOverrides[kind] = nextOverride;
+    const fallback = DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.find((profile) => profile.deviceKind === kind);
+    snapshot.measurementConfig.deviceProfiles = snapshot.measurementConfig.deviceProfiles.filter((profile) => profile.deviceKind !== kind);
+    if (fallback) {
+      snapshot.measurementConfig.deviceProfiles.push(cloneValue(fallback));
     }
   }
 };

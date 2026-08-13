@@ -1,4 +1,4 @@
-import type { DeviceTemplate, ModelNode, Point } from "./model";
+import type { ModelNode, Point } from "./model";
 import { getTerminalPoint, inferESection, isStaticNode } from "./model";
 import type { MeasurementGroup, MeasurementItemBinding, PlatformMeasurementConfig } from "./measurements";
 import { DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR, DEFAULT_MEASUREMENT_GROUP_BORDER_COLOR, DEFAULT_MEASUREMENT_GROUP_BORDER_STYLE, measurementFontScaleForNode, measurementOffsetScaleForNode, resolveMeasurementItemBindingMetadata, resolveMeasurementItemDisplay } from "./measurements";
@@ -339,13 +339,13 @@ export function exportMeasurementGroupLocalOffset(node: ModelNode, group: Measur
   };
 }
 
-export function exportMeasurementGroupMetrics(node: ModelNode, group: MeasurementGroup, measurementConfig: PlatformMeasurementConfig, templates: readonly DeviceTemplate[] = []) {
+export function exportMeasurementGroupMetrics(node: ModelNode, group: MeasurementGroup, measurementConfig: PlatformMeasurementConfig) {
   if (!group.visible) {
     return null;
   }
   const measurementFontScale = measurementFontScaleForNode(node);
   const rows = group.items.flatMap((item) => {
-    const display = resolveMeasurementItemDisplay({ config: measurementConfig, node, group, item, templates });
+    const display = resolveMeasurementItemDisplay({ config: measurementConfig, node, group, item });
     if (!display.visible) {
       return [];
     }
@@ -372,9 +372,9 @@ export function buildExportMeasurementGroupMarkup(
   group: MeasurementGroup,
   measurementConfig: PlatformMeasurementConfig,
   usedSvgIds?: Set<string>,
-  options: { layerId?: string; visible?: boolean; deviceId?: string; ownerDeviceId?: string; templates?: readonly DeviceTemplate[] } = {}
+  options: { layerId?: string; visible?: boolean; deviceId?: string; ownerDeviceId?: string } = {}
 ) {
-  const metrics = exportMeasurementGroupMetrics(node, group, measurementConfig, options.templates);
+  const metrics = exportMeasurementGroupMetrics(node, group, measurementConfig);
   if (!metrics) {
     return "";
   }
@@ -392,7 +392,7 @@ export function buildExportMeasurementGroupMarkup(
     const textY = -metrics.height / 2 + rowIndex * metrics.lineHeight + metrics.lineHeight / 2;
     const textGap = Math.max(4, row.fontSize * 0.36);
     const exportedItemId = exportMeasurementScopedId(row.item.id, node.id, ownerDeviceId);
-    const binding = resolveMeasurementItemBindingMetadata({ config: measurementConfig, node, group, item: row.item, templates: options.templates });
+    const binding = resolveMeasurementItemBindingMetadata({ config: measurementConfig, node, group, item: row.item });
     const itemMetadata = exportMeasurementItemMetadataAttributes(row.item, node.id, deviceId, binding.sourcePoint, binding.bindingField);
     const commonAttributes = `x="${formatSvgNumber(textX)}" y="${formatSvgNumber(textY)}" dominant-baseline="middle" fill="${escapeXml(row.display.color)}" font-family="${escapeXml(row.display.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
     const labelMarkup = row.labelText

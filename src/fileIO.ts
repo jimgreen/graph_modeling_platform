@@ -3,18 +3,17 @@
 import { apiPath } from "./config";
 import { encodeGbk } from "./encoding/gbk";
 
-export type TextFileEncoding = "utf-8" | "gbk";
-export type EFileTextEncoding = TextFileEncoding;
+export type EFileTextEncoding = "utf-8" | "gbk";
 
-/** 将文本按指定编码转为字节，未指定时使用 UTF-8。 */
-export function encodeTextAsBytes(text: string, encoding: TextFileEncoding = "utf-8"): Uint8Array {
+/** 将文本按指定编码转为字节（默认 utf-8；E 文件统一使用 gbk） */
+export function encodeTextAsBytes(text: string, encoding: EFileTextEncoding = "utf-8"): Uint8Array {
   if (encoding === "gbk") {
     return encodeGbk(text);
   }
   return new TextEncoder().encode(text);
 }
 
-export function downloadText(filename: string, text: string, mime: string, encoding: TextFileEncoding = "utf-8") {
+export function downloadText(filename: string, text: string, mime: string, encoding: EFileTextEncoding = "utf-8") {
   const blob = new Blob([encodeTextAsBytes(text, encoding) as BlobPart], { type: mime });
   downloadBlob(filename, blob);
 }
@@ -47,7 +46,7 @@ type SaveFilePickerWindow = Window & {
 
 type DirectoryFileHandle = {
   createWritable: () => Promise<{
-    write: (data: Blob | Uint8Array | string) => Promise<void> | void;
+    write: (data: Blob | string) => Promise<void> | void;
     close: () => Promise<void> | void;
   }>;
 };
@@ -62,7 +61,7 @@ export type TextSaveOptions = {
   mime: string;
   description: string;
   extensions: string[];
-  encoding?: TextFileEncoding;
+  encoding?: EFileTextEncoding;
   onSaveTargetReady?: () => void;
   preferNativeDialog?: boolean;
 };
@@ -373,11 +372,10 @@ export const writeTextFileToDirectory = async (
   directoryHandle: WritableDirectoryHandle,
   filename: string,
   text: string,
-  _mime: string,
-  encoding: TextFileEncoding = "utf-8"
+  _mime: string
 ) => {
   const fileHandle = await directoryHandle.getFileHandle(filename, { create: true });
   const writable = await fileHandle.createWritable();
-  await writable.write(encodeTextAsBytes(text, encoding));
+  await writable.write(text);
   await writable.close();
 };

@@ -25,7 +25,6 @@ import {
   toSnakeCaseDeviceParamName
 } from "./model";
 import type { OrthogonalAxis } from "./App";
-import { cloneDeviceMeasurementDefinitions } from "./measurementDefinitionTypes";
 import {
   CONTAINER_TERMINAL_ASSOCIATION_OPTIONS,
   CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION,
@@ -41,6 +40,7 @@ import type { CustomDeviceDraft, DeviceDefinitionDraftRow, DeviceDefinitionVisua
 import { createDefinitionStateDraftRows, customParamId, deviceDefinitionRowId } from "./stateIconDrawing";
 import { decodeSvgImageSource, escapeXml, formatSvgNumber } from "./svgUtils";
 import { clampNumber } from "./canvasViewport";
+import { cloneDeviceMeasurementDefinitions } from "./measurementDefinitionTypes";
 
 export function fallbackComponentLibraryForCategoryLibrary(categoryLibraryName: string) {
   const normalized = normalizeCategoryLibraryName(categoryLibraryName);
@@ -434,7 +434,6 @@ export function createEmptyCustomDeviceDraft(categoryLibraryName = "交流设备
     terminalAssociations: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, () => "ac-load") as ContainerTerminalAssociationValue[],
     isContainer: false,
     params: [],
-    measurementDefinitions: [],
     stateDefinitions: [],
     error: ""
   };
@@ -498,7 +497,6 @@ export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, se
     terminalAssociations: Array.from({ length: MAX_CUSTOM_DEVICE_TERMINALS }, (_, index) => terminalAssociations[index] ?? "ac-load") as ContainerTerminalAssociationValue[],
     isContainer: Boolean(template.isContainer),
     params: customParams,
-    measurementDefinitions: cloneDeviceMeasurementDefinitions(template.measurementDefinitions) ?? [],
     stateDefinitions: stateRows,
     error: template.custom ? "" : "当前选中的是系统内置元件，可查看并复制为新自定义元件，不能直接覆盖内置定义。"
   };

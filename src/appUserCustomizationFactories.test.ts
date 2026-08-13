@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { DEFAULT_COLOR_PALETTE } from "./model";
-import { INITIAL_MEASUREMENT_CONFIG } from "./measurements";
+import { DEFAULT_MEASUREMENT_CONFIG } from "./measurements";
 import {
   createApplyUserCustomizationSnapshot,
   createCaptureUserCustomizationSnapshot,
@@ -12,7 +12,7 @@ import { apiPath } from "./config";
 
 const snapshot = (assetIds: string[] = []) => normalizeUserCustomizationSnapshot({
   deviceLibrary: emptyUserDeviceLibrary(),
-  measurementConfig: INITIAL_MEASUREMENT_CONFIG,
+  measurementConfig: DEFAULT_MEASUREMENT_CONFIG,
   colorConfig: { colorDisplayMode: "energy", colorPalette: DEFAULT_COLOR_PALETTE },
   imageLibrary: {
     folders: [{ id: "root", name: "默认文件夹" }],
@@ -32,7 +32,7 @@ describe("user customization application factories", () => {
       currentDeviceLibraryPersistencePayload: () => emptyUserDeviceLibrary(),
       measurementConfigDraftRef: { current: null },
       measurementConfigDraft: null,
-      measurementConfig: INITIAL_MEASUREMENT_CONFIG,
+      measurementConfig: DEFAULT_MEASUREMENT_CONFIG,
       colorDisplayMode: "energy",
       colorPalette: DEFAULT_COLOR_PALETTE,
       fetchBackendImageFolders: vi.fn(async () => [

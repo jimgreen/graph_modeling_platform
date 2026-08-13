@@ -8,8 +8,7 @@ import {
   createSchemeArchiveBuffer,
   readSchemeProjectRecord,
   buildSvgFile,
-  readMeasurementConfig,
-  readDeviceLibraryConfig
+  readMeasurementConfig
 } from "./server.mjs";
 import { sendV1Json, sendV1Error } from "./v1Response.mjs";
 import { parseSchemePathParam, requireSchemePath } from "./schemePath.mjs";
@@ -166,8 +165,7 @@ export async function handleV1ModelSvg({ url, response }) {
     return;
   }
   const measurementConfig = await readMeasurementConfig();
-  const deviceLibrary = await readDeviceLibraryConfig();
-  const svg = buildSvgFile(record.project, measurementConfig, { imagePathById: {}, deviceTemplates: deviceLibrary.customDeviceTemplates });
+  const svg = buildSvgFile(record.project, measurementConfig, { imagePathById: {} });
   response.writeHead(200, {
     "content-type": "image/svg+xml; charset=utf-8",
     "cache-control": "no-cache",

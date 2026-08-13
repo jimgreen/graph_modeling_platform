@@ -698,13 +698,7 @@ test("adds terminal transformer load as a single-terminal ACLoad device", () => 
   expect(node.terminals).toHaveLength(1);
   expect(node.terminals[0]).toMatchObject({ type: "ac", label: "交流设备端1", anchor: { x: -0.5, y: 0 } });
   expect(getDeviceGlyphVariant("ac-terminal-transformer-load")).toBe("terminal-transformer-load");
-  expect(getEParameterKeys("ac-terminal-transformer-load", node.params)).toEqual([
-    ...E_SECTION_COLUMNS.ACLoad,
-    "p",
-    "q",
-    "u",
-    "i"
-  ]);
+  expect(getEParameterKeys("ac-terminal-transformer-load", node.params)).toEqual(E_SECTION_COLUMNS.ACLoad);
 
   const exported = parseESections(buildEDeviceParameterFile({
     version: 1,
@@ -1038,17 +1032,11 @@ test("adds an AC grounding disconnector as a single-terminal grounding device", 
   expect(node.terminals).toHaveLength(1);
   expect(node.terminals[0]).toMatchObject({ type: "ac", label: "交流系统端", anchor: { x: -0.5, y: 0 } });
   expect(getDeviceGlyphVariant("ac-ground-disconnector")).toBe("ground-disconnector");
-  expect(getEParameterKeys("ac-ground-disconnector", node.params)).toEqual([
-    ...E_SECTION_COLUMNS.GroundDisconnector,
-    "i"
-  ]);
+  expect(getEParameterKeys("ac-ground-disconnector", node.params)).toEqual(E_SECTION_COLUMNS.GroundDisconnector);
   expect(verticalNode.terminals).toHaveLength(1);
   expect(verticalNode.terminals[0]).toMatchObject({ type: "ac", label: "交流系统端", anchor: { x: 0, y: -0.5 } });
   expect(getDeviceGlyphVariant("ac-ground-disconnector-vertical")).toBe("ground-disconnector-vertical");
-  expect(getEParameterKeys("ac-ground-disconnector-vertical", verticalNode.params)).toEqual([
-    ...E_SECTION_COLUMNS.GroundDisconnector,
-    "i"
-  ]);
+  expect(getEParameterKeys("ac-ground-disconnector-vertical", verticalNode.params)).toEqual(E_SECTION_COLUMNS.GroundDisconnector);
 
   const exported = parseESections(buildEDeviceParameterFile({
     version: 1,
@@ -1058,8 +1046,8 @@ test("adds an AC grounding disconnector as a single-terminal grounding device", 
   }));
 
   expect(exported.GroundDisconnector.rows).toEqual([
-    expect.objectContaining({ idx: "1", name: "接地刀闸1", node: "1", status: "1", run_stat: "1" }),
-    expect.objectContaining({ idx: "2", name: "竖向接地刀闸1", node: "2", status: "1", run_stat: "1" })
+    expect.objectContaining({ idx: "1", name: "接地刀闸1", node: "1", status: "0", run_stat: "1" }),
+    expect.objectContaining({ idx: "2", name: "竖向接地刀闸1", node: "2", status: "0", run_stat: "1" })
   ]);
 });
 
@@ -3806,7 +3794,7 @@ test("keeps two-winding and three-winding transformers as separate non-container
   expect(fieldNames).not.toContain("idx_xf_t2");
   expect(fieldNames).not.toContain("idx_xf_t3");
   expect(getEParameterKeys("ac-three-winding-transformer", createDefaultNode("ac-three-winding-transformer", { x: 100, y: 100 }).params)).toEqual(
-    [...E_SECTION_COLUMNS.ACTransfomer3, "p", "q", "u", "i"]
+    E_SECTION_COLUMNS.ACTransfomer3
   );
 });
 

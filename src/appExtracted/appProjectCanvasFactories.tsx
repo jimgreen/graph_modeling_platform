@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { clampNumber } from "../canvasViewport";
-import { INITIAL_MEASUREMENT_CONFIG } from "../measurements";
+import { DEFAULT_MEASUREMENT_CONFIG } from "../measurements";
 import { buildEFileExportOptionsFromLibrary, setSkipSaveCheck } from "./appDeviceDefinitionFactories";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
@@ -2589,22 +2589,19 @@ export function createClearActiveProjectDisplay(__appScope: Record<string, any>)
 
 export function createLoadSavedProject(__appScope: Record<string, any>) {
   return (project: SavedProjectRecord, schemeId?: string) => {
-  const { CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT, DEFAULT_CANVAS_BACKGROUND, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_CURRENT_UNIT, DEFAULT_MODEL_LAYER_ID, DEFAULT_POWER_BASE_VALUE, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, EMPTY_TOPOLOGY, INITIAL_TOPOLOGY_STATUS, assignMissingDeviceIndexes, cachedRoutedEdgesRef, canvasFrameRef, clearNodeDragMoveSchedule, clearRefreshRecoveryProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, dragUndoCapturedRef, draggingRef, findSchemeForProject, fitWholeCanvasViewBox, hideImperativeMultiNodeDragOverlay, lastBusTerminalSyncEndpointRevisionRef, libraryTemplateByKind, libraryTemplates, lockProjectEdgeTerminals, measurementConfig, normalizeModelGroups, normalizeNodeTerminalsByTemplate, normalizeNodeTerminalsWithTemplate, normalizeProjectLayers, normalizeProjectMeasurements, pendingBusTerminalSyncNodeIdsRef, pendingRouteEdgeIdsRef, pendingStoredRouteEdgeIdsRef, reconcileNodesWithEffectiveTemplateDefinitions, reconcileProjectMeasurementsWithConfig, requestCanvasFrameCenter, resetConnectPreviewState, resolveConfiguredBackgroundLayerIds, selectSingleProject, setActiveLayerId, setActiveProjectKey, setActiveSchemeKey, setAllowAutoExpandCanvas, setBackgroundLayerIds, setBackgroundProjectId, setCanvasBackgroundColor, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasHeight, setCanvasPanning, setCanvasSelectionScope, setCanvasVisibleViewBox, setCanvasWidth, setConnectSource, setCurrentUnit, setDeviceIndexCounters, setDragging, setFeeder, setGraphArrays, setGroups, setHasUnsavedChanges, setInitialCanvasDetailHydrationLimit, setInitialCanvasLodActive, setLayers, setManualPathDrag, setMarquee, setModelType, setModifierSelectionPress, setPowerBaseValue, setPowerUnit, setProjectMeasurements, setProjectName, setRewiring, setRouteRenderingReady, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setSubcontrolarea, setSubstation, setTaiqu, setTerminalPress, setTopology, setTopologyErrors, setTopologyStatus, setTransformDrag, setUndoStack, setViewBox, setVoltageUnit, suppressNextGraphDirtyRef, writeOperationLog } = __appScope;
+  const { CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT, DEFAULT_CANVAS_BACKGROUND, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_CURRENT_UNIT, DEFAULT_MODEL_LAYER_ID, DEFAULT_POWER_BASE_VALUE, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, EMPTY_TOPOLOGY, INITIAL_TOPOLOGY_STATUS, assignMissingDeviceIndexes, cachedRoutedEdgesRef, canvasFrameRef, clearNodeDragMoveSchedule, clearRefreshRecoveryProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, dragUndoCapturedRef, draggingRef, findSchemeForProject, fitWholeCanvasViewBox, hideImperativeMultiNodeDragOverlay, lastBusTerminalSyncEndpointRevisionRef, libraryTemplateByKind, lockProjectEdgeTerminals, measurementConfig, normalizeModelGroups, normalizeNodeTerminalsByTemplate, normalizeNodeTerminalsWithTemplate, normalizeProjectLayers, normalizeProjectMeasurements, pendingBusTerminalSyncNodeIdsRef, pendingRouteEdgeIdsRef, pendingStoredRouteEdgeIdsRef, reconcileNodeWithDefinition, reconcileProjectMeasurementsWithConfig, requestCanvasFrameCenter, resetConnectPreviewState, resolveConfiguredBackgroundLayerIds, selectSingleProject, setActiveLayerId, setActiveProjectKey, setActiveSchemeKey, setAllowAutoExpandCanvas, setBackgroundLayerIds, setBackgroundProjectId, setCanvasBackgroundColor, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasHeight, setCanvasPanning, setCanvasSelectionScope, setCanvasVisibleViewBox, setCanvasWidth, setConnectSource, setCurrentUnit, setDeviceIndexCounters, setDragging, setFeeder, setGraphArrays, setGroups, setHasUnsavedChanges, setInitialCanvasDetailHydrationLimit, setInitialCanvasLodActive, setLayers, setManualPathDrag, setMarquee, setModelType, setModifierSelectionPress, setPowerBaseValue, setPowerUnit, setProjectMeasurements, setProjectName, setRewiring, setRouteRenderingReady, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setSubcontrolarea, setSubstation, setTaiqu, setTerminalPress, setTopology, setTopologyErrors, setTopologyStatus, setTransformDrag, setUndoStack, setViewBox, setVoltageUnit, suppressNextGraphDirtyRef, writeOperationLog } = __appScope;
     if (schemeId === undefined) {
       schemeId = findSchemeForProject(project.id)?.id ?? "";
     }
     clearRefreshRecoveryProject();
-    const terminalNormalizedNodes = project.project.nodes.map((node) => {
+    const normalizedNodes = project.project.nodes.map((node) => {
       const template = libraryTemplateByKind?.get(node.kind);
       if (template) {
-        return normalizeNodeTerminalsWithTemplate(node, template);
+        const normalized = normalizeNodeTerminalsWithTemplate(node, template);
+        return reconcileNodeWithDefinition(normalized, template);
       }
       return libraryTemplateByKind ? node : normalizeNodeTerminalsByTemplate(node);
     });
-    const normalizedNodes = reconcileNodesWithEffectiveTemplateDefinitions(
-      terminalNormalizedNodes,
-      libraryTemplates
-    );
     const indexed = assignMissingDeviceIndexes(normalizedNodes, project.project.deviceIndexCounters);
     const lockedProject = lockProjectEdgeTerminals({
       ...project.project,
@@ -2613,7 +2610,7 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
     const layeredProject = normalizeProjectLayers(lockedProject);
     const normalizedMeasurements = normalizeProjectMeasurements(layeredProject.measurements, layeredProject.nodes);
     const reconciledMeasurements = typeof reconcileProjectMeasurementsWithConfig === "function" && measurementConfig
-      ? reconcileProjectMeasurementsWithConfig(normalizedMeasurements, layeredProject.nodes, measurementConfig, undefined, libraryTemplates)
+      ? reconcileProjectMeasurementsWithConfig(normalizedMeasurements, layeredProject.nodes, measurementConfig)
       : normalizedMeasurements;
     const nextCanvasBounds = {
       width: project.project.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
@@ -3691,22 +3688,25 @@ export function createDeleteModelLayer(__appScope: Record<string, any>) {
   };
 }
 
+const DEVICE_DEFINITION_MEASUREMENT_PROFILE_ALIASES: Record<string, readonly string[]> = {
+  ACTransformer: ["ac-transformer"],
+  ACGenerator: ["ac-source"],
+  DCGenerator: ["dc-source"],
+  ACLoad: ["ac-load"],
+  DCLoad: ["dc-load"],
+  HydroStorage: ["hydrogen-tank"]
+};
+
 export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<string, any>) {
   return (target: DeviceDefinitionMeasurementPanelTarget) => {
-  const { BufferedTextInput, PARAM_LABELS, button, div, editableMeasurementTypeById, footer, isBrowseMode, measurementConfig, measurementConfigDraft, measurementConfigSaveStatus, section, select, span, table, tbody, td, th, thead, tr } = __appScope;
+  const { BufferedTextInput, PARAM_LABELS, addMeasurementProfileItem, button, deleteMeasurementProfileItem, div, editableMeasurementProfileByKind, editableMeasurementTypeById, footer, isBrowseMode, measurementConfig, measurementConfigDraft, measurementConfigSaveStatus, moveMeasurementProfileItem, normalizeComponentLibraryName, section, select, span, table, tbody, td, th, thead, tr, updateMeasurementProfileItem } = __appScope;
     const draftConfig = measurementConfigDraft ?? measurementConfig;
-    const selectedKind = target.deviceKind;
-    const selectedProfileItems = [...target.items];
-    const updateItem = (index: number, patch: Partial<DeviceMeasurementProfileItem>) => {
-      target.setItems(selectedProfileItems.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
-    };
-    const moveItem = (index: number, direction: -1 | 1) => {
-      const nextIndex = index + direction;
-      if (nextIndex < 0 || nextIndex >= selectedProfileItems.length) return;
-      const items = [...selectedProfileItems];
-      [items[index], items[nextIndex]] = [items[nextIndex], items[index]];
-      target.setItems(items);
-    };
+    const selectedKind = normalizeComponentLibraryName(target.deviceKind);
+    const selectedProfileKind = [
+      selectedKind,
+      ...(DEVICE_DEFINITION_MEASUREMENT_PROFILE_ALIASES[selectedKind] ?? [])
+    ].find((profileKind) => editableMeasurementProfileByKind.has(profileKind)) ?? selectedKind;
+    const selectedProfileItems = editableMeasurementProfileByKind.get(selectedProfileKind)?.items ?? [];
     const measurementProfilePositionDefinitions = target.positionDefinitions?.length
       ? [...target.positionDefinitions]
       : [{
@@ -3718,19 +3718,6 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
     const positionDefinitionByValue = new Map(
       measurementProfilePositionDefinitions.map((definition) => [definition.value, definition])
     );
-    const ensureAssociatedField = (
-      position: string,
-      associatedField: string | undefined,
-      measurementTypeId: string
-    ) => {
-      const field = String(associatedField ?? "").trim();
-      if (!field) return;
-      const existingDefinitions = positionDefinitionByValue.get(position)?.parameterDefinitions ?? [];
-      if (existingDefinitions.some((definition) => String(definition.enName ?? "").trim().toLowerCase() === field.toLowerCase())) {
-        return;
-      }
-      target.ensureAssociatedField?.(position, field, measurementTypeId);
-    };
     const associatedFieldOptionsForPosition = (position: string) => {
       const seen = new Set<string>();
       return (positionDefinitionByValue.get(position)?.parameterDefinitions ?? []).flatMap((definition) => {
@@ -3762,19 +3749,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
           <button
             type="button"
             disabled={isBrowseMode || draftConfig.measurementTypes.length === 0 || !selectedKind}
-            onClick={() => {
-              const type = draftConfig.measurementTypes[0];
-              if (!type) return;
-              const associatedField = type.key || type.id;
-              target.setItems([...selectedProfileItems, {
-                measurementTypeId: type.id,
-                name: type.name,
-                position: "device",
-                associatedField,
-                defaultVisible: type.defaultVisible
-              }]);
-              ensureAssociatedField("device", associatedField, type.id);
-            }}
+            onClick={() => addMeasurementProfileItem(selectedProfileKind)}
           >
             添加量测
           </button>
@@ -3799,14 +3774,14 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                 const itemPosition = measurementProfilePositionValue(item);
                 const associatedFieldOptions = associatedFieldOptionsForPosition(itemPosition);
                 return (
-                  <tr key={`${selectedKind}-${item.measurementTypeId}-${item.position ?? "legacy"}-${item.role ?? "item"}-${itemIndex}`}>
+                  <tr key={`${selectedProfileKind}-${item.measurementTypeId}-${item.position ?? "legacy"}-${item.role ?? "item"}-${itemIndex}`}>
                     <td>{itemIndex + 1}</td>
                     <td>
                       <BufferedTextInput
                         value={item.name ?? item.labelOverride ?? ""}
                         disabled={isBrowseMode}
                         placeholder={currentType?.name ?? "量测名称"}
-                        onCommit={(nextValue) => updateItem(itemIndex, {
+                        onCommit={(nextValue) => updateMeasurementProfileItem(selectedProfileKind, itemIndex, {
                           name: nextValue || undefined,
                           labelOverride: undefined
                         })}
@@ -3819,20 +3794,10 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                         onChange={(event) => {
                           const nextTypeId = event.target.value;
                           const nextType = editableMeasurementTypeById.get(nextTypeId);
-                          const previousType = editableMeasurementTypeById.get(item.measurementTypeId);
-                          const currentAssociatedField = String(item.associatedField ?? "").trim();
-                          const replaceAssociatedField = !currentAssociatedField ||
-                            currentAssociatedField === previousType?.key ||
-                            currentAssociatedField === previousType?.id;
-                          const nextAssociatedField = replaceAssociatedField
-                            ? nextType?.key || nextTypeId
-                            : currentAssociatedField;
-                          updateItem(itemIndex, {
+                          updateMeasurementProfileItem(selectedProfileKind, itemIndex, {
                             measurementTypeId: nextTypeId,
-                            name: item.name || nextType?.name || item.name,
-                            associatedField: nextAssociatedField || undefined
+                            name: item.name || nextType?.name || item.name
                           });
-                          ensureAssociatedField(itemPosition, nextAssociatedField, nextTypeId);
                         }}
                       >
                         {!editableMeasurementTypeById.has(item.measurementTypeId) && (
@@ -3849,11 +3814,18 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                         disabled={isBrowseMode}
                         onChange={(event) => {
                           const nextPosition = event.target.value;
+                          const validAssociatedFields = new Set(
+                            (positionDefinitionByValue.get(nextPosition)?.parameterDefinitions ?? [])
+                              .map((definition) => String(definition?.enName ?? "").trim().toLowerCase())
+                              .filter(Boolean)
+                          );
                           const currentAssociatedField = String(item.associatedField ?? "").trim();
-                          updateItem(itemIndex, {
-                            position: nextPosition
+                          updateMeasurementProfileItem(selectedProfileKind, itemIndex, {
+                            position: nextPosition,
+                            ...(currentAssociatedField && !validAssociatedFields.has(currentAssociatedField.toLowerCase())
+                              ? { associatedField: undefined }
+                              : {})
                           });
-                          ensureAssociatedField(nextPosition, currentAssociatedField, item.measurementTypeId);
                         }}
                       >
                         {measurementProfilePositionOptions.map((option) => (
@@ -3868,11 +3840,9 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                         title={item.associatedField && !associatedFieldOptions.some((option) => option.value === item.associatedField)
                           ? "当前关联字段不在元件属性名称列表中"
                           : "关联到元件属性名称"}
-                        onChange={(event) => {
-                          const nextAssociatedField = event.target.value || undefined;
-                          updateItem(itemIndex, { associatedField: nextAssociatedField });
-                          ensureAssociatedField(itemPosition, nextAssociatedField, item.measurementTypeId);
-                        }}
+                        onChange={(event) => updateMeasurementProfileItem(selectedProfileKind, itemIndex, {
+                          associatedField: event.target.value || undefined
+                        })}
                       >
                         <option value="">未关联（使用量测类型ID）</option>
                         {item.associatedField && !associatedFieldOptions.some((option) => option.value === item.associatedField) && (
@@ -3887,7 +3857,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                       <select
                         value={item.defaultVisible === undefined ? "type" : item.defaultVisible ? "1" : "0"}
                         disabled={isBrowseMode}
-                        onChange={(event) => updateItem(itemIndex, {
+                        onChange={(event) => updateMeasurementProfileItem(selectedProfileKind, itemIndex, {
                           defaultVisible: event.target.value === "type" ? undefined : event.target.value === "1"
                         })}
                       >
@@ -3901,21 +3871,21 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                         <button
                           type="button"
                           disabled={isBrowseMode || itemIndex === 0}
-                          onClick={() => moveItem(itemIndex, -1)}
+                          onClick={() => moveMeasurementProfileItem(selectedProfileKind, itemIndex, -1)}
                         >
                           上移
                         </button>
                         <button
                           type="button"
                           disabled={isBrowseMode || itemIndex === selectedProfileItems.length - 1}
-                          onClick={() => moveItem(itemIndex, 1)}
+                          onClick={() => moveMeasurementProfileItem(selectedProfileKind, itemIndex, 1)}
                         >
                           下移
                         </button>
                         <button
                           type="button"
                           disabled={isBrowseMode}
-                          onClick={() => target.setItems(selectedProfileItems.filter((_, index) => index !== itemIndex))}
+                          onClick={() => deleteMeasurementProfileItem(selectedProfileKind, itemIndex)}
                         >
                           删除
                         </button>
@@ -3948,11 +3918,11 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
       return null;
     }
     const draftConfig = measurementConfigDraft ?? measurementConfig;
-    const groupDefaults = draftConfig.groupDefaults ?? INITIAL_MEASUREMENT_CONFIG.groupDefaults;
+    const groupDefaults = draftConfig.groupDefaults ?? DEFAULT_MEASUREMENT_CONFIG.groupDefaults;
     const updateGroupDefaults = (patch: Record<string, unknown>) => updateMeasurementConfig((current) => ({
       ...current,
       groupDefaults: {
-        ...(current.groupDefaults ?? INITIAL_MEASUREMENT_CONFIG.groupDefaults),
+        ...(current.groupDefaults ?? DEFAULT_MEASUREMENT_CONFIG.groupDefaults),
         ...patch
       }
     }));

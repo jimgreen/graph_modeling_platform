@@ -127,9 +127,8 @@ export function createRouteForCurrentEdgeSave(__appScope: Record<string, any>) {
 
 export function createCurrentProject(__appScope: Record<string, any>) {
   return (): ProjectFile => {
-  const { activeLayerId, allowAutoExpandCanvas, backgroundLayerIds, backgroundProjectId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasBackgroundImageFit, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edgeWithCurrentRouteGeometryForSave, edges, groups, layers, libraryTemplates, lockProjectEdgeTerminals, nodes, normalizeModelGroups, normalizeProjectLayers, normalizeProjectMeasurements, powerBaseValue, powerUnit, projectMeasurements, projectName, reconcileNodesWithEffectiveTemplateDefinitions, voltageUnit, substation, feeder, modelType, subcontrolarea, taiqu } = __appScope;
+  const { activeLayerId, allowAutoExpandCanvas, backgroundLayerIds, backgroundProjectId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasBackgroundImageFit, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edgeWithCurrentRouteGeometryForSave, edges, groups, layers, lockProjectEdgeTerminals, nodes, normalizeModelGroups, normalizeProjectLayers, normalizeProjectMeasurements, powerBaseValue, powerUnit, projectMeasurements, projectName, voltageUnit, substation, feeder, modelType, subcontrolarea, taiqu } = __appScope;
     const projectEdges = edges.map(edgeWithCurrentRouteGeometryForSave);
-    const projectNodes = reconcileNodesWithEffectiveTemplateDefinitions(nodes, libraryTemplates);
     return normalizeProjectLayers(lockProjectEdgeTerminals({
       version: 1,
       name: projectName,
@@ -154,9 +153,9 @@ export function createCurrentProject(__appScope: Record<string, any>) {
       feeder,
       taiqu,
       deviceIndexCounters,
-      groups: normalizeModelGroups(groups, projectNodes, projectEdges),
-      measurements: normalizeProjectMeasurements(projectMeasurements, projectNodes),
-      nodes: projectNodes,
+      groups: normalizeModelGroups(groups, nodes, projectEdges),
+      measurements: normalizeProjectMeasurements(projectMeasurements, nodes),
+      nodes,
       edges: projectEdges
     }));
   };

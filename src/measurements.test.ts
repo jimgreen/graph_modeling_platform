@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
-  INITIAL_MEASUREMENT_CONFIG,
+  DEFAULT_MEASUREMENT_CONFIG,
   buildMeasurementProfilePositionDefinitions,
   createDefaultMeasurementGroupForNode,
   createDefaultMeasurementGroupsForNode,
@@ -16,30 +16,7 @@ import {
 } from "./measurements";
 import type { MeasurementRuntimeValue, ProjectMeasurementConfig } from "./measurements";
 import { DEVICE_LIBRARY, assignPermanentDeviceIndex, createDefaultNode, getTemplateParameterDefinitions } from "./model";
-import type { DeviceTemplate, ModelNode } from "./model";
-
-const measurementTemplate = (
-  kind: string,
-  measurementDefinitions: NonNullable<DeviceTemplate["measurementDefinitions"]>,
-  source?: DeviceTemplate
-): DeviceTemplate => ({
-  ...(source ?? DEVICE_LIBRARY.find((template) => template.kind === kind) ?? {
-    kind,
-    label: kind,
-    categoryLibrary: "测试",
-    size: { width: 100, height: 60 },
-    params: {},
-    terminalType: "ac" as const,
-    terminalCount: 0
-  }),
-  kind,
-  measurementDefinitions
-});
-
-const templatesWith = (...templates: DeviceTemplate[]) => [
-  ...DEVICE_LIBRARY.filter((template) => !templates.some((replacement) => replacement.kind === template.kind)),
-  ...templates
-];
+import type { ModelNode } from "./model";
 
 const node = (id: string, kind = "ac-load"): ModelNode => ({
   id,
@@ -62,15 +39,15 @@ const node = (id: string, kind = "ac-load"): ModelNode => ({
 describe("measurement domain", () => {
   test("binds electric-hydrogen coupling measurements to associated endpoint fields", () => {
     for (const kind of ["ac-electrolyzer", "dc-electrolyzer", "ac-fuel-cell", "dc-fuel-cell"] as const) {
-      const template = DEVICE_LIBRARY.find((candidate) => candidate.kind === kind);
-      expect(template?.measurementDefinitions, kind).toEqual([
+      const profile = DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.find((candidate) => candidate.deviceKind === kind);
+      expect(profile?.items, kind).toEqual([
         expect.objectContaining({ measurementTypeId: "activePower", position: "t1", associatedField: "p" }),
         expect.objectContaining({ measurementTypeId: "voltage", position: "t1", associatedField: "u" }),
         expect.objectContaining({ measurementTypeId: "flow", position: "t2", associatedField: "flow", unitOverride: "Nm3/h" })
       ]);
 
       const node = assignPermanentDeviceIndex(createDefaultNode(kind, { x: 100, y: 120 }), {}).node;
-      const groups = createDefaultMeasurementGroupsForNode(node, INITIAL_MEASUREMENT_CONFIG, DEVICE_LIBRARY);
+      const groups = createDefaultMeasurementGroupsForNode(node, DEFAULT_MEASUREMENT_CONFIG);
       expect(groups.map((group) => group.id)).toEqual([`measurement-${node.id}-t1`, `measurement-${node.id}-t2`]);
       expect(groups[0].items.map((item) => item.sourcePoint)).toEqual([`${node.id}.t1.p`, `${node.id}.t1.u`]);
       expect(groups[1].items.map((item) => item.sourcePoint)).toEqual([`${node.id}.t2.flow`]);
@@ -86,43 +63,6 @@ describe("measurement domain", () => {
     expect(fields("device")).not.toEqual(expect.arrayContaining(["p", "u", "flow"]));
     expect(fields("t1")).toEqual(expect.arrayContaining(["p", "q", "u", "i"]));
     expect(fields("t2")).toEqual(expect.arrayContaining(["pressure", "flow"]));
-  });
-
-  test("migrates legacy coupling body measurements to associated terminal groups", () => {
-    const coupling = createDefaultNode("ac-electrolyzer", { x: 100, y: 120 });
-    const legacyGroupId = `measurement-${coupling.id}`;
-    const normalized = normalizeProjectMeasurements({
-      version: 1,
-      groups: [{
-        id: legacyGroupId,
-        nodeId: coupling.id,
-        visible: false,
-        labelVisible: true,
-        unitVisible: true,
-        anchor: "custom",
-        offset: { x: 33, y: 44 },
-        layout: "horizontal",
-        items: [
-          { id: `${legacyGroupId}-activePower-0`, measurementTypeId: "activePower", sourcePoint: `${coupling.id}.activePower`, visible: false, labelOverride: "自定义P" },
-          { id: `${legacyGroupId}-voltage-1`, measurementTypeId: "voltage", sourcePoint: `${coupling.id}.voltage`, unitOverride: "V" },
-          { id: `${legacyGroupId}-flow-2`, measurementTypeId: "flow", sourcePoint: `${coupling.id}.flow`, styleOverride: { color: "#dc2626" } },
-          { id: "manual-body-item", measurementTypeId: "status", sourcePoint: `${coupling.id}.status`, labelOverride: "本体状态" }
-        ]
-      }]
-    }, [coupling]);
-
-    const bodyGroup = normalized.groups.find((group) => group.id === legacyGroupId);
-    const electricGroup = normalized.groups.find((group) => group.terminalId === "t1");
-    const hydrogenGroup = normalized.groups.find((group) => group.terminalId === "t2");
-    expect(bodyGroup?.items).toEqual([expect.objectContaining({ id: "manual-body-item", sourcePoint: `${coupling.id}.status` })]);
-    expect(electricGroup).toMatchObject({ visible: false, offset: { x: 33, y: 44 }, layout: "horizontal" });
-    expect(electricGroup?.items).toEqual([
-      expect.objectContaining({ id: `${legacyGroupId}-t1-activePower-0`, sourcePoint: `${coupling.id}.t1.p`, visible: false, labelOverride: "自定义P" }),
-      expect.objectContaining({ id: `${legacyGroupId}-t1-voltage-1`, sourcePoint: `${coupling.id}.t1.u`, unitOverride: "V" })
-    ]);
-    expect(hydrogenGroup?.items).toEqual([
-      expect.objectContaining({ id: `${legacyGroupId}-t2-flow-0`, sourcePoint: `${coupling.id}.t2.flow`, styleOverride: { color: "#dc2626" } })
-    ]);
   });
 
   test("binds AC compensator measurements to canonical SVG runtime fields", () => {
@@ -148,27 +88,38 @@ describe("measurement domain", () => {
     } as const;
 
     for (const [kind, items] of Object.entries(expectedItems)) {
-      expect(DEVICE_LIBRARY.find((template) => template.kind === kind)?.measurementDefinitions).toEqual(items);
-      const group = createDefaultMeasurementGroupForNode(node(`${kind}-node`, kind), INITIAL_MEASUREMENT_CONFIG, DEVICE_LIBRARY);
+      expect(DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.find((profile) => profile.deviceKind === kind)?.items).toEqual(items);
+      const group = createDefaultMeasurementGroupForNode(node(`${kind}-node`, kind), DEFAULT_MEASUREMENT_CONFIG);
       expect(group?.items.map((item) => ({ measurementTypeId: item.measurementTypeId, sourcePoint: item.sourcePoint }))).toEqual(
         items.map((item) => ({ measurementTypeId: item.measurementTypeId, sourcePoint: `${kind}-node.${item.associatedField}` }))
       );
     }
   });
 
-  test("normalizes legacy gas quantity type and project source-point names", () => {
+  test("normalizes legacy gas quantity field names while retaining the measurement type id", () => {
     const config = normalizeMeasurementConfig({
       measurementTypes: [{
         id: "gasQuantity",
         key: "gasquantity",
         name: "储气量",
         defaultUnit: "Nm3"
+      }],
+      deviceProfiles: [{
+        deviceKind: "hydrogen-tank",
+        items: [{ measurementTypeId: "gasQuantity", associatedField: "gasQuantity" }]
       }]
     });
     expect(config.measurementTypes.find((item) => item.id === "gasQuantity")).toMatchObject({
       id: "gasQuantity",
       key: "gas_quantity"
     });
+    expect(config.deviceProfiles.find((profile) => profile.deviceKind === "hydrogen-tank")?.items).toEqual(
+      expect.arrayContaining([expect.objectContaining({
+        measurementTypeId: "gasQuantity",
+        associatedField: "gas_quantity"
+      })])
+    );
+
     const tank = node("tank-legacy-field", "hydrogen-tank");
     const measurements = normalizeProjectMeasurements({
       version: 1,
@@ -195,21 +146,27 @@ describe("measurement domain", () => {
     };
     const previousConfig = normalizeMeasurementConfig({
       groupDefaults: { backgroundColor: "#ffffff", borderColor: "#111111", borderStyle: "solid", borderWidth: 1 },
-      measurementTypes: INITIAL_MEASUREMENT_CONFIG.measurementTypes
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{
+        deviceKind: "sync-device",
+        items: [
+          { measurementTypeId: "activePower", position: "device", associatedField: "p_old", labelOverride: "旧有功", unitOverride: "MW", decimalsOverride: 2, styleOverride: { color: "#111111" } },
+          { measurementTypeId: "voltage", position: "t1", associatedField: "u_old" }
+        ]
+      }]
     });
     const nextConfig = normalizeMeasurementConfig({
       groupDefaults: { backgroundColor: "#eeeeee", borderColor: "#222222", borderStyle: "dashed", borderWidth: 2 },
-      measurementTypes: INITIAL_MEASUREMENT_CONFIG.measurementTypes
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{
+        deviceKind: "sync-device",
+        items: [
+          { measurementTypeId: "activePower", position: "device", associatedField: "p_new", labelOverride: "新有功", unitOverride: "kW", decimalsOverride: 1, styleOverride: { color: "#dc2626" } },
+          { measurementTypeId: "reactivePower", position: "device", associatedField: "q_new" }
+        ]
+      }]
     });
-    const previousTemplates = [measurementTemplate("sync-device", [
-      { measurementTypeId: "activePower", position: "device", associatedField: "p_old", labelOverride: "旧有功", unitOverride: "MW", decimalsOverride: 2, styleOverride: { color: "#111111" } },
-      { measurementTypeId: "voltage", position: "t1", associatedField: "u_old" }
-    ])];
-    const nextTemplates = [measurementTemplate("sync-device", [
-      { measurementTypeId: "activePower", position: "device", associatedField: "p_new", labelOverride: "新有功", unitOverride: "kW", decimalsOverride: 1, styleOverride: { color: "#dc2626" } },
-      { measurementTypeId: "reactivePower", position: "device", associatedField: "q_new" }
-    ])];
-    const generated = createDefaultMeasurementGroupsForNode(sourceNode, previousConfig, previousTemplates);
+    const generated = createDefaultMeasurementGroupsForNode(sourceNode, previousConfig);
     const deviceGroup = generated.find((group) => !group.terminalId)!;
     const terminalGroup = generated.find((group) => group.terminalId === "t1")!;
     const manualItem = {
@@ -246,9 +203,7 @@ describe("measurement domain", () => {
       measurements,
       [sourceNode],
       nextConfig,
-      previousConfig,
-      nextTemplates,
-      previousTemplates
+      previousConfig
     );
 
     const nextDeviceGroup = reconciled.groups.find((group) => group.id === "measurement-sync-node")!;
@@ -288,14 +243,14 @@ describe("measurement domain", () => {
     };
     const nextNode = { ...oldNode, terminals: oldNode.terminals.slice(0, 1) };
     const previousConfig = normalizeMeasurementConfig({
-      measurementTypes: INITIAL_MEASUREMENT_CONFIG.measurementTypes
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{ deviceKind: "sync-device", items: [{ measurementTypeId: "voltage", position: "t2" }] }]
     });
     const nextConfig = normalizeMeasurementConfig({
-      measurementTypes: INITIAL_MEASUREMENT_CONFIG.measurementTypes
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{ deviceKind: "sync-device", items: [] }]
     });
-    const previousTemplates = [measurementTemplate("sync-device", [{ measurementTypeId: "voltage", position: "t2" }])];
-    const nextTemplates = [measurementTemplate("sync-device", [])];
-    const group = createDefaultMeasurementGroupsForNode(oldNode, previousConfig, previousTemplates)[0];
+    const group = createDefaultMeasurementGroupsForNode(oldNode, previousConfig)[0];
     const manualItem = {
       id: "measurement-terminal-sync-t2-voltage-mabc1234-z9x8",
       measurementTypeId: "voltage",
@@ -306,7 +261,7 @@ describe("measurement domain", () => {
       groups: [{ ...group, items: [...group.items, manualItem] }]
     };
 
-    const reconciled = reconcileProjectMeasurementsWithConfig(measurements, [nextNode], nextConfig, previousConfig, nextTemplates, previousTemplates);
+    const reconciled = reconcileProjectMeasurementsWithConfig(measurements, [nextNode], nextConfig, previousConfig);
 
     expect(reconciled.groups).toHaveLength(1);
     expect(reconciled.groups[0].terminalId).toBe("t2");
@@ -317,22 +272,21 @@ describe("measurement domain", () => {
     const sourceNode = node("same-node", "ac-load");
     const measurements = {
       version: 1 as const,
-      groups: createDefaultMeasurementGroupsForNode(sourceNode, INITIAL_MEASUREMENT_CONFIG, DEVICE_LIBRARY)
+      groups: createDefaultMeasurementGroupsForNode(sourceNode, DEFAULT_MEASUREMENT_CONFIG)
     };
 
     expect(reconcileProjectMeasurementsWithConfig(
       measurements,
       [sourceNode],
-      INITIAL_MEASUREMENT_CONFIG,
-      INITIAL_MEASUREMENT_CONFIG,
-      DEVICE_LIBRARY,
-      DEVICE_LIBRARY
+      DEFAULT_MEASUREMENT_CONFIG,
+      DEFAULT_MEASUREMENT_CONFIG
     )).toBe(measurements);
   });
 
   test("normalizes platform measurement types and keeps default active power settings", () => {
     const config = normalizeMeasurementConfig({
-      measurementTypes: [{ id: "activePower", key: "p", name: "有功功率", shortLabel: "P" }]
+      measurementTypes: [{ id: "activePower", key: "p", name: "有功功率", shortLabel: "P" }],
+      deviceProfiles: [{ deviceKind: "ac-load", items: [{ measurementTypeId: "activePower" }] }]
     });
 
     expect(config.measurementTypes.find((item) => item.id === "activePower")).toMatchObject({
@@ -342,10 +296,11 @@ describe("measurement domain", () => {
       defaultFontSize: 14,
       defaultVisible: true
     });
+    expect(config.deviceProfiles.find((item) => item.deviceKind === "ac-load")?.items).toHaveLength(1);
   });
 
   test("uses soc instead of liquid level for AC and DC storage measurements", () => {
-    expect(INITIAL_MEASUREMENT_CONFIG.measurementTypes.find((item) => item.id === "soc")).toMatchObject({
+    expect(DEFAULT_MEASUREMENT_CONFIG.measurementTypes.find((item) => item.id === "soc")).toMatchObject({
       key: "soc",
       name: "soc",
       shortLabel: "soc",
@@ -355,29 +310,29 @@ describe("measurement domain", () => {
       defaultVisible: true
     });
 
-    expect(DEVICE_LIBRARY.find((item) => item.kind === "ac-storage")?.measurementDefinitions?.map((item) => item.measurementTypeId)).toEqual([
+    expect(DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.find((item) => item.deviceKind === "ac-storage")?.items.map((item) => item.measurementTypeId)).toEqual([
       "activePower",
       "reactivePower",
       "voltage",
       "soc"
     ]);
-    expect(DEVICE_LIBRARY.find((item) => item.kind === "dc-storage")?.measurementDefinitions?.map((item) => item.measurementTypeId)).toEqual([
+    expect(DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.find((item) => item.deviceKind === "dc-storage")?.items.map((item) => item.measurementTypeId)).toEqual([
       "activePower",
       "voltage",
       "current",
       "soc"
     ]);
 
-    const acStorageGroup = createDefaultMeasurementGroupForNode(node("ac-storage-node", "ac-storage"), INITIAL_MEASUREMENT_CONFIG, DEVICE_LIBRARY);
-    const dcStorageGroup = createDefaultMeasurementGroupForNode(node("dc-storage-node", "dc-storage"), INITIAL_MEASUREMENT_CONFIG, DEVICE_LIBRARY);
+    const acStorageGroup = createDefaultMeasurementGroupForNode(node("ac-storage-node", "ac-storage"), DEFAULT_MEASUREMENT_CONFIG);
+    const dcStorageGroup = createDefaultMeasurementGroupForNode(node("dc-storage-node", "dc-storage"), DEFAULT_MEASUREMENT_CONFIG);
     expect(acStorageGroup?.items.at(-1)).toMatchObject({ measurementTypeId: "soc", sourcePoint: "ac-storage-node.soc" });
     expect(dcStorageGroup?.items.at(-1)).toMatchObject({ measurementTypeId: "soc", sourcePoint: "dc-storage-node.soc" });
 
-    expect(DEVICE_LIBRARY.find((item) => item.kind === "thermal-storage-tank")?.measurementDefinitions?.map((item) => item.measurementTypeId)).toContain("level");
+    expect(DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.find((item) => item.deviceKind === "thermal-storage-tank")?.items.map((item) => item.measurementTypeId)).toContain("level");
   });
 
   test("defines pressure, flow, gas quantity, and soc measurements for hydrogen tanks", () => {
-    expect(INITIAL_MEASUREMENT_CONFIG.measurementTypes.find((item) => item.id === "gasQuantity")).toMatchObject({
+    expect(DEFAULT_MEASUREMENT_CONFIG.measurementTypes.find((item) => item.id === "gasQuantity")).toMatchObject({
       key: "gas_quantity",
       name: "储气量",
       shortLabel: "储气量",
@@ -388,26 +343,26 @@ describe("measurement domain", () => {
     });
 
     for (const kind of ["hydrogen-tank", "hydrogen-tank-horizontal", "hydrogen-tank-container"] as const) {
+      const profile = DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.find((item) => item.deviceKind === kind);
       const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
-      const definitions = template.measurementDefinitions;
       const parameterNames = new Set(getTemplateParameterDefinitions(template).map((definition) => definition.enName));
-      expect(definitions).toEqual([
+      expect(profile?.items).toEqual([
         expect.objectContaining({ measurementTypeId: "pressure", associatedField: "pressure", unitOverride: "MPa" }),
         expect.objectContaining({ measurementTypeId: "flow", associatedField: "flow", unitOverride: "Nm3/h" }),
         expect.objectContaining({ measurementTypeId: "gasQuantity", associatedField: "gas_quantity", unitOverride: "Nm3" }),
         expect.objectContaining({ measurementTypeId: "soc", associatedField: "soc", unitOverride: "%" })
       ]);
-      expect(definitions?.every((item) => !("labelOverride" in item))).toBe(true);
+      expect(profile?.items.every((item) => !("labelOverride" in item))).toBe(true);
 
-      const group = createDefaultMeasurementGroupForNode(node(`${kind}-node`, kind), INITIAL_MEASUREMENT_CONFIG, DEVICE_LIBRARY);
+      const group = createDefaultMeasurementGroupForNode(node(`${kind}-node`, kind), DEFAULT_MEASUREMENT_CONFIG);
       expect(group?.items).toEqual([
         expect.objectContaining({ measurementTypeId: "pressure", sourcePoint: `${kind}-node.pressure`, labelOverride: undefined, unitOverride: "MPa" }),
         expect.objectContaining({ measurementTypeId: "flow", sourcePoint: `${kind}-node.flow`, labelOverride: undefined, unitOverride: "Nm3/h" }),
         expect.objectContaining({ measurementTypeId: "gasQuantity", sourcePoint: `${kind}-node.gas_quantity`, labelOverride: undefined, unitOverride: "Nm3" }),
         expect.objectContaining({ measurementTypeId: "soc", sourcePoint: `${kind}-node.soc`, labelOverride: undefined, unitOverride: "%" })
       ]);
-      expect(definitions?.map((item) => item.associatedField)).toEqual(["pressure", "flow", "gas_quantity", "soc"]);
-      for (const item of definitions ?? []) {
+      expect(profile?.items.map((item) => item.associatedField)).toEqual(["pressure", "flow", "gas_quantity", "soc"]);
+      for (const item of profile?.items ?? []) {
         expect(parameterNames.has(item.associatedField ?? ""), `${kind}:${item.associatedField}`).toBe(true);
       }
     }
@@ -415,12 +370,12 @@ describe("measurement domain", () => {
 
   test("binds hydrogen source and load pressure and flow measurements to engineering fields", () => {
     for (const kind of ["hydrogen-source", "hydrogen-load"] as const) {
-      const definitions = DEVICE_LIBRARY.find((item) => item.kind === kind)?.measurementDefinitions;
-      expect(definitions?.slice(0, 2)).toEqual([
+      const profile = DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.find((item) => item.deviceKind === kind);
+      expect(profile?.items.slice(0, 2)).toEqual([
         expect.objectContaining({ measurementTypeId: "pressure", associatedField: "pressure", unitOverride: "MPa" }),
         expect.objectContaining({ measurementTypeId: "flow", associatedField: "flow", unitOverride: "Nm3/h" })
       ]);
-      const group = createDefaultMeasurementGroupForNode(node(`${kind}-node`, kind), INITIAL_MEASUREMENT_CONFIG, DEVICE_LIBRARY);
+      const group = createDefaultMeasurementGroupForNode(node(`${kind}-node`, kind), DEFAULT_MEASUREMENT_CONFIG);
       expect(group?.items.slice(0, 2)).toEqual([
         expect.objectContaining({ sourcePoint: `${kind}-node.pressure`, unitOverride: "MPa" }),
         expect.objectContaining({ sourcePoint: `${kind}-node.flow`, unitOverride: "Nm3/h" })
@@ -428,16 +383,102 @@ describe("measurement domain", () => {
     }
   });
 
-  test("reconciles legacy storage level instances to the device-local soc definition", () => {
+  test("migrates the legacy default hydrogen tank profile to gas measurements", () => {
+    const migratedConfig = normalizeMeasurementConfig({
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes.filter((item) => item.id !== "gasQuantity"),
+      deviceProfiles: [{
+        deviceKind: "hydrogen-tank",
+        items: [
+          { measurementTypeId: "pressure" },
+          { measurementTypeId: "level" },
+          { measurementTypeId: "temperature" }
+        ]
+      }]
+    });
+
+    expect(migratedConfig.measurementTypes.find((item) => item.id === "gasQuantity")).toMatchObject({
+      key: "gas_quantity",
+      name: "储气量",
+      defaultUnit: "Nm3"
+    });
+    expect(migratedConfig.deviceProfiles.find((item) => item.deviceKind === "hydrogen-tank")?.items).toEqual([
+      expect.objectContaining({ measurementTypeId: "pressure", associatedField: "pressure", labelOverride: undefined, unitOverride: "MPa" }),
+      expect.objectContaining({ measurementTypeId: "flow", associatedField: "flow", labelOverride: undefined, unitOverride: "Nm3/h" }),
+      expect.objectContaining({ measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: undefined, unitOverride: "Nm3" }),
+      expect.objectContaining({ measurementTypeId: "soc", associatedField: "soc", labelOverride: undefined, unitOverride: "%" })
+    ]);
+  });
+
+  test("migrates the persisted three-item hydrogen tank profile and restores the SOC type", () => {
+    const migratedConfig = normalizeMeasurementConfig({
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes.filter((item) => item.id !== "soc"),
+      deviceProfiles: [{
+        deviceKind: "hydrogen-tank",
+        items: [
+          { measurementTypeId: "pressure", associatedField: "pressure", labelOverride: "气压" },
+          { measurementTypeId: "flow", associatedField: "flow", labelOverride: "流量" },
+          { measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: "储气量" }
+        ]
+      }]
+    });
+
+    expect(migratedConfig.measurementTypes.find((item) => item.id === "soc")).toMatchObject({
+      key: "soc",
+      defaultUnit: "%"
+    });
+    expect(migratedConfig.deviceProfiles.find((item) => item.deviceKind === "hydrogen-tank")?.items).toEqual([
+      expect.objectContaining({ measurementTypeId: "pressure", associatedField: "pressure", labelOverride: "气压" }),
+      expect.objectContaining({ measurementTypeId: "flow", associatedField: "flow", labelOverride: "流量" }),
+      expect.objectContaining({ measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: "储气量" }),
+      expect.objectContaining({ measurementTypeId: "soc", associatedField: "soc", labelOverride: undefined })
+    ]);
+  });
+
+  test("removes legacy hydrogen tank label overrides while preserving custom labels", () => {
+    const migratedConfig = normalizeMeasurementConfig({
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{
+        deviceKind: "hydrogen-tank",
+        items: [
+          { measurementTypeId: "pressure", associatedField: "pressure", labelOverride: "PRESS" },
+          { measurementTypeId: "flow", associatedField: "flow", labelOverride: "入口流量" },
+          { measurementTypeId: "gasQuantity", associatedField: "gas_quantity", labelOverride: "GAS_QUANTITY" },
+          { measurementTypeId: "soc", associatedField: "soc", labelOverride: "SOC" }
+        ]
+      }]
+    });
+
+    expect(migratedConfig.deviceProfiles[0].items.map((item) => item.labelOverride)).toEqual([
+      undefined,
+      "入口流量",
+      undefined,
+      undefined
+    ]);
+  });
+
+  test("migrates persisted storage level definitions and generated items to soc", () => {
+    const legacyConfig = {
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes.filter((item) => item.id !== "soc"),
+      deviceProfiles: [
+        { deviceKind: "ac-storage", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "level" }] },
+        { deviceKind: "dc-storage", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "level" }] },
+        { deviceKind: "hydrogen-tank", items: [{ measurementTypeId: "level" }] }
+      ]
+    };
+    const migratedConfig = normalizeMeasurementConfig(legacyConfig);
+
+    expect(migratedConfig.measurementTypes.find((item) => item.id === "soc")).toMatchObject({
+      key: "soc",
+      name: "soc",
+      shortLabel: "soc",
+      defaultUnit: "%"
+    });
+    expect(migratedConfig.deviceProfiles.find((item) => item.deviceKind === "ac-storage")?.items.map((item) => item.measurementTypeId)).toEqual(["activePower", "soc"]);
+    expect(migratedConfig.deviceProfiles.find((item) => item.deviceKind === "dc-storage")?.items.map((item) => item.measurementTypeId)).toEqual(["activePower", "soc"]);
+    expect(migratedConfig.deviceProfiles.find((item) => item.deviceKind === "hydrogen-tank")?.items.map((item) => item.measurementTypeId)).toEqual(["level"]);
+
     const storageNode = node("legacy-storage-node", "ac-storage");
-    const currentTemplate = DEVICE_LIBRARY.find((template) => template.kind === "ac-storage")!;
-    const legacyTemplate = measurementTemplate("ac-storage", [
-      { measurementTypeId: "activePower" },
-      { measurementTypeId: "reactivePower" },
-      { measurementTypeId: "voltage" },
-      { measurementTypeId: "level", associatedField: "level" }
-    ], currentTemplate);
-    const currentGroup = createDefaultMeasurementGroupForNode(storageNode, INITIAL_MEASUREMENT_CONFIG, [currentTemplate])!;
+    const currentGroup = createDefaultMeasurementGroupForNode(storageNode, DEFAULT_MEASUREMENT_CONFIG)!;
     const legacyGroup = {
       ...currentGroup,
       items: currentGroup.items.map((item, index) => index === currentGroup.items.length - 1
@@ -452,10 +493,7 @@ describe("measurement domain", () => {
     const reconciled = reconcileProjectMeasurementsWithConfig(
       { version: 1, groups: [legacyGroup] },
       [storageNode],
-      INITIAL_MEASUREMENT_CONFIG,
-      INITIAL_MEASUREMENT_CONFIG,
-      [currentTemplate],
-      [legacyTemplate]
+      DEFAULT_MEASUREMENT_CONFIG
     );
 
     expect(reconciled.groups[0].items.map((item) => item.measurementTypeId)).toEqual([
@@ -468,7 +506,7 @@ describe("measurement domain", () => {
   });
 
   test("creates a default device measurement group from the device type profile", () => {
-    const group = createDefaultMeasurementGroupForNode(node("node-1", "ac-load"), INITIAL_MEASUREMENT_CONFIG, DEVICE_LIBRARY);
+    const group = createDefaultMeasurementGroupForNode(node("node-1", "ac-load"), DEFAULT_MEASUREMENT_CONFIG);
 
     expect(group).toMatchObject({
       nodeId: "node-1",
@@ -481,12 +519,13 @@ describe("measurement domain", () => {
       borderWidth: 0
     });
     expect(group?.items.map((item) => item.measurementTypeId)).toEqual(["activePower", "reactivePower", "voltage", "current"]);
-    expect(group?.items[0].sourcePoint).toBe("node-1.p");
+    expect(group?.items[0].sourcePoint).toBe("node-1.activePower");
   });
 
   test("applies configured defaults only when creating new measurement groups", () => {
     const config = normalizeMeasurementConfig({
-      measurementTypes: INITIAL_MEASUREMENT_CONFIG.measurementTypes,
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: DEFAULT_MEASUREMENT_CONFIG.deviceProfiles,
       groupDefaults: {
         backgroundColor: "#fef3c7",
         borderColor: "#d97706",
@@ -501,35 +540,35 @@ describe("measurement domain", () => {
       borderWidth: 3,
       borderStyle: "dashed"
     });
-    expect(createDefaultMeasurementGroupForNode(node("node-default-style"), config, DEVICE_LIBRARY)).toMatchObject(config.groupDefaults);
+    expect(createDefaultMeasurementGroupForNode(node("node-default-style"), config)).toMatchObject(config.groupDefaults);
   });
 
   test("shows an added device measurement unless the profile explicitly hides it", () => {
     const config = normalizeMeasurementConfig({
-      measurementTypes: INITIAL_MEASUREMENT_CONFIG.measurementTypes
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{ deviceKind: "ac-breaker", items: [{ measurementTypeId: "current" }] }]
     });
     const breaker = node("box-breaker-1", "ac-box-breaker");
-    const templates = [measurementTemplate("ac-box-breaker", [{ measurementTypeId: "current" }])];
 
-    const group = createDefaultMeasurementGroupForNode(breaker, config, templates);
+    const group = createDefaultMeasurementGroupForNode(breaker, config);
     const item = group?.items[0];
 
     expect(item?.visible).toBe(true);
-    expect(item && group ? resolveMeasurementItemDisplay({ config, node: breaker, templates, group, item }).visible : false).toBe(true);
+    expect(item && group ? resolveMeasurementItemDisplay({ config, node: breaker, group, item }).visible : false).toBe(true);
   });
 
   test("keeps explicitly hidden device profile measurements hidden", () => {
     const config = normalizeMeasurementConfig({
-      measurementTypes: INITIAL_MEASUREMENT_CONFIG.measurementTypes
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{ deviceKind: "ac-breaker", items: [{ measurementTypeId: "current", defaultVisible: false }] }]
     });
     const breaker = node("box-breaker-2", "ac-box-breaker");
-    const templates = [measurementTemplate("ac-box-breaker", [{ measurementTypeId: "current", defaultVisible: false }])];
 
-    const group = createDefaultMeasurementGroupForNode(breaker, config, templates);
+    const group = createDefaultMeasurementGroupForNode(breaker, config);
     const item = group?.items[0];
 
     expect(item?.visible).toBe(false);
-    expect(item && group ? resolveMeasurementItemDisplay({ config, node: breaker, templates, group, item }).visible : true).toBe(false);
+    expect(item && group ? resolveMeasurementItemDisplay({ config, node: breaker, group, item }).visible : true).toBe(false);
   });
 
   test("keeps legacy unspecified profile items on the device measurement group for multi-terminal devices", () => {
@@ -542,21 +581,27 @@ describe("measurement domain", () => {
       ]
     };
 
-    const groups = createDefaultMeasurementGroupsForNode(threeTerminalNode, INITIAL_MEASUREMENT_CONFIG, DEVICE_LIBRARY);
+    const groups = createDefaultMeasurementGroupsForNode(threeTerminalNode, DEFAULT_MEASUREMENT_CONFIG);
 
     expect(groups).toHaveLength(1);
     expect(groups[0].terminalId).toBeUndefined();
     expect(groups[0].id).toBe("measurement-transformer-1");
-    expect(groups[0].items[0].sourcePoint).toBe("transformer-1.p");
+    expect(groups[0].items[0].sourcePoint).toBe("transformer-1.activePower");
   });
 
-  test("keeps device-local measurement row names and positions", () => {
-    const template = measurementTemplate("ac-transformer", [
-      { name: "整机状态", measurementTypeId: "status", position: "device", associatedField: "device.status" },
-      { name: "高压侧电压", measurementTypeId: "voltage", position: "t1" }
-    ]);
+  test("keeps device profile row names and measurement positions", () => {
+    const config = normalizeMeasurementConfig({
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{
+        deviceKind: "ac-transformer",
+        items: [
+          { name: "整机状态", measurementTypeId: "status", position: "device", associatedField: "device.status" },
+          { name: "高压侧电压", measurementTypeId: "voltage", position: "t1" }
+        ]
+      }]
+    });
 
-    expect(template.measurementDefinitions).toEqual([
+    expect(config.deviceProfiles.find((item) => item.deviceKind === "ac-transformer")?.items).toEqual([
       expect.objectContaining({ name: "整机状态", measurementTypeId: "status", position: "device", associatedField: "device.status" }),
       expect.objectContaining({ name: "高压侧电压", measurementTypeId: "voltage", position: "t1" })
     ]);
@@ -571,14 +616,19 @@ describe("measurement domain", () => {
         { id: "t3", label: "低压", type: "ac", anchor: { x: 0, y: 0.5 }, nodeNumber: "" }
       ]
     };
-    const config = normalizeMeasurementConfig(INITIAL_MEASUREMENT_CONFIG);
-    const templates = [measurementTemplate("ac-transformer", [
-      { name: "整机状态", measurementTypeId: "status", position: "device" },
-      { name: "高压P", measurementTypeId: "activePower", position: "t1" },
-      { name: "低压U", measurementTypeId: "voltage", position: "t3" }
-    ])];
+    const config = normalizeMeasurementConfig({
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{
+        deviceKind: "ac-transformer",
+        items: [
+          { name: "整机状态", measurementTypeId: "status", position: "device" },
+          { name: "高压P", measurementTypeId: "activePower", position: "t1" },
+          { name: "低压U", measurementTypeId: "voltage", position: "t3" }
+        ]
+      }]
+    });
 
-    const groups = createDefaultMeasurementGroupsForNode(threeTerminalNode, config, templates);
+    const groups = createDefaultMeasurementGroupsForNode(threeTerminalNode, config);
 
     expect(groups.map((group) => group.terminalId)).toEqual([undefined, "t1", "t3"]);
     expect(groups[0].items).toEqual([
@@ -605,12 +655,17 @@ describe("measurement domain", () => {
   });
 
   test("uses the associated field as the generated measurement source point key", () => {
-    const config = normalizeMeasurementConfig(INITIAL_MEASUREMENT_CONFIG);
-    const templates = [measurementTemplate("ac-load", [
-      { name: "负荷有功", measurementTypeId: "activePower", position: "device", associatedField: "load.p" }
-    ])];
+    const config = normalizeMeasurementConfig({
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{
+        deviceKind: "ac-load",
+        items: [
+          { name: "负荷有功", measurementTypeId: "activePower", position: "device", associatedField: "load.p" }
+        ]
+      }]
+    });
 
-    const group = createDefaultMeasurementGroupForNode(node("node-2", "ac-load"), config, templates);
+    const group = createDefaultMeasurementGroupForNode(node("node-2", "ac-load"), config);
 
     expect(group?.items[0]).toMatchObject({
       measurementTypeId: "activePower",
@@ -628,24 +683,32 @@ describe("measurement domain", () => {
         { id: "t3", label: "低压", type: "ac", anchor: { x: 0, y: 0.5 }, nodeNumber: "" }
       ]
     };
-    const config = normalizeMeasurementConfig(INITIAL_MEASUREMENT_CONFIG);
-    const templates = [measurementTemplate("ac-transformer", [
-      { name: "整机状态", measurementTypeId: "status", position: "device" },
-      { name: "未指定电压", measurementTypeId: "voltage" },
-      { name: "高压P", measurementTypeId: "activePower", position: "t1" },
-      { name: "中压I", measurementTypeId: "current", position: "t2" }
-    ])];
+    const config = normalizeMeasurementConfig({
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{
+        deviceKind: "ac-transformer",
+        items: [
+          { name: "整机状态", measurementTypeId: "status", position: "device" },
+          { name: "未指定电压", measurementTypeId: "voltage" },
+          { name: "高压P", measurementTypeId: "activePower", position: "t1" },
+          { name: "中压I", measurementTypeId: "current", position: "t2" }
+        ]
+      }]
+    });
 
-    expect(measurementProfileItemsForNodePosition(threeTerminalNode, config, undefined, templates).map((item) => item.name)).toEqual(["整机状态", "未指定电压"]);
-    expect(measurementProfileItemsForNodePosition(threeTerminalNode, config, "t1", templates).map((item) => item.name)).toEqual(["高压P"]);
-    expect(measurementProfileItemsForNodePosition(threeTerminalNode, config, "t2", templates).map((item) => item.name)).toEqual(["中压I"]);
-    expect(measurementProfileItemsForNodePosition(threeTerminalNode, config, "t3", templates).map((item) => item.name)).toEqual([]);
+    expect(measurementProfileItemsForNodePosition(threeTerminalNode, config).map((item) => item.name)).toEqual(["整机状态", "未指定电压"]);
+    expect(measurementProfileItemsForNodePosition(threeTerminalNode, config, "t1").map((item) => item.name)).toEqual(["高压P"]);
+    expect(measurementProfileItemsForNodePosition(threeTerminalNode, config, "t2").map((item) => item.name)).toEqual(["中压I"]);
+    expect(measurementProfileItemsForNodePosition(threeTerminalNode, config, "t3").map((item) => item.name)).toEqual([]);
   });
 
-  test("reads default device measurements from templates when the global config only contains types", () => {
-    const config = normalizeMeasurementConfig({ measurementTypes: INITIAL_MEASUREMENT_CONFIG.measurementTypes });
-    const source = node("dc-source-node", "dc-source");
-    expect(createDefaultMeasurementGroupForNode(source, config, DEVICE_LIBRARY)?.items.map((item) => item.measurementTypeId)).toEqual([
+  test("keeps platform default device profiles when persisted config has none", () => {
+    const config = normalizeMeasurementConfig({
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: []
+    });
+
+    expect(config.deviceProfiles.find((item) => item.deviceKind === "dc-source")?.items.map((item) => item.measurementTypeId)).toEqual([
       "activePower",
       "voltage",
       "current"
@@ -653,31 +716,36 @@ describe("measurement domain", () => {
   });
 
   test("creates default measurements for specialized source devices through their generic profile", () => {
-    const group = createDefaultMeasurementGroupForNode(node("node-1", "dc-pv-source"), INITIAL_MEASUREMENT_CONFIG, DEVICE_LIBRARY);
+    const group = createDefaultMeasurementGroupForNode(node("node-1", "dc-pv-source"), DEFAULT_MEASUREMENT_CONFIG);
 
     expect(group?.items.map((item) => item.measurementTypeId)).toEqual(["activePower", "voltage", "current"]);
-    expect(group?.items[0].sourcePoint).toBe("node-1.p");
+    expect(group?.items[0].sourcePoint).toBe("node-1.activePower");
   });
 
-  test("uses concrete device-template measurement definitions", () => {
+  test("uses component library measurement profiles for concrete device templates", () => {
     const dcLineNode = node("line-1", "dc-routable-line");
     dcLineNode.params = { component_type: "DCBranch" };
     dcLineNode.terminals = [
       { id: "t1", label: "首端", type: "dc", anchor: { x: -0.5, y: 0 }, nodeNumber: "" },
       { id: "t2", label: "末端", type: "dc", anchor: { x: 0.5, y: 0 }, nodeNumber: "" }
     ];
-    const config = normalizeMeasurementConfig(INITIAL_MEASUREMENT_CONFIG);
-    const templates = [measurementTemplate("dc-routable-line", [
-      { name: "线路P", measurementTypeId: "activePower", position: "device" },
-      { name: "首端U", measurementTypeId: "voltage", position: "t1" }
-    ])];
+    const config = normalizeMeasurementConfig({
+      measurementTypes: DEFAULT_MEASUREMENT_CONFIG.measurementTypes,
+      deviceProfiles: [{
+        deviceKind: "DCBranch",
+        items: [
+          { name: "线路P", measurementTypeId: "activePower", position: "device" },
+          { name: "首端U", measurementTypeId: "voltage", position: "t1" }
+        ]
+      }]
+    });
 
-    expect(measurementProfileItemsForNodePosition(dcLineNode, config, undefined, templates).map((item) => item.name)).toEqual(["线路P"]);
-    expect(measurementProfileItemsForNodePosition(dcLineNode, config, "t1", templates).map((item) => item.name)).toEqual(["首端U"]);
+    expect(measurementProfileItemsForNodePosition(dcLineNode, config).map((item) => item.name)).toEqual(["线路P"]);
+    expect(measurementProfileItemsForNodePosition(dcLineNode, config, "t1").map((item) => item.name)).toEqual(["首端U"]);
   });
 
   test("resolves display settings from type defaults, profile overrides, and item overrides", () => {
-    const config = normalizeMeasurementConfig(INITIAL_MEASUREMENT_CONFIG);
+    const config = normalizeMeasurementConfig(DEFAULT_MEASUREMENT_CONFIG);
     const group: ProjectMeasurementConfig = {
       version: 1,
       groups: [{
@@ -716,7 +784,7 @@ describe("measurement domain", () => {
   });
 
   test("applies measurement group font style when an item has no override", () => {
-    const config = normalizeMeasurementConfig(INITIAL_MEASUREMENT_CONFIG);
+    const config = normalizeMeasurementConfig(DEFAULT_MEASUREMENT_CONFIG);
     const group: ProjectMeasurementConfig["groups"][number] = {
       id: "group-style",
       nodeId: "node-1",
@@ -743,7 +811,7 @@ describe("measurement domain", () => {
   });
 
   test("lets an item override one group font field while inheriting the other", () => {
-    const config = normalizeMeasurementConfig(INITIAL_MEASUREMENT_CONFIG);
+    const config = normalizeMeasurementConfig(DEFAULT_MEASUREMENT_CONFIG);
     const group: ProjectMeasurementConfig["groups"][number] = {
       id: "group-partial-style",
       nodeId: "node-1",

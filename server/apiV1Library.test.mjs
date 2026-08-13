@@ -63,6 +63,7 @@ const fullLib = {
 
 const fullMeasurement = {
   measurementTypes: [{ id: "voltage", name: "电压" }],
+  deviceProfiles: [{ deviceKind: "ac-bus", items: [] }],
   groupDefaults: {
     backgroundColor: "transparent",
     borderColor: "#64748b",
@@ -129,12 +130,13 @@ describe("handleV1LibraryMeasurements", () => {
     await handleV1LibraryMeasurements({ request, response });
     expect(response.jsonBody().data).toEqual({
       measurementTypes: [{ id: "voltage", name: "电压" }],
+      deviceProfiles: [{ deviceKind: "ac-bus", items: [] }],
       groupDefaults: fullMeasurement.groupDefaults
     });
   });
 
   test("空量测配置返空数组", async () => {
-    readMeasurementConfig.mockResolvedValue({ exists: false, measurementTypes: [] });
+    readMeasurementConfig.mockResolvedValue({ exists: false, measurementTypes: [], deviceProfiles: [] });
     const { request, response } = ctx();
     await handleV1LibraryMeasurements({ request, response });
     expect(response.jsonBody().data.measurementTypes).toEqual([]);
