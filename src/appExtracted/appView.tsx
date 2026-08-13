@@ -614,6 +614,20 @@ export function renderAppView(__appScope: Record<string, any>) {
       }
     });
   };
+  const requestEncodedExport = (
+    doExport: (encoding: "utf-8" | "gbk") => void | Promise<void>,
+    encoding: "utf-8" | "gbk",
+    validatesEInterface = false
+  ) => {
+    if (validatesEInterface) {
+      const mismatch = modelTypeMismatchMessage();
+      if (mismatch) {
+        showGlobalMessage(mismatch);
+        return;
+      }
+    }
+    requestExportWithSave(() => doExport(encoding));
+  };
   Object.assign(__appScope, { setTemplateImportResult, setShowImportResultDialog, setImportResultActiveTab });
   // 加载预定义模板前，将用户自定义中的 参数定义/量测定义/E文件接口定义 恢复到默认状态
   // （用户自定义管理对话框左侧的 3 个菜单项），使模板从干净基线应用。
@@ -2089,22 +2103,28 @@ export function renderAppView(__appScope: Record<string, any>) {
               <FileJson size={16}/>
             </button>
             <div className="topbar-dropdown export-dropdown">
-              <button className="topbar-primary-button" onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { showGlobalMessage(mismatch); return; } requestExportWithSave(exportSvg); }} title="导出 E、JSON 和 SVG 文件" aria-label="导出 E、JSON 和 SVG 文件">
+              <button type="button" className="topbar-primary-button" title="导出文件" aria-label="导出文件" aria-haspopup="menu">
                 <Download size={16}/>
               </button>
               <div className="topbar-dropdown-menu" role="menu" aria-label="导出选项">
-                <button onClick={() => { const mismatch = modelTypeMismatchMessage(); if (mismatch) { showGlobalMessage(mismatch); return; } requestExportWithSave(exportEFile); }} title="导出 E 文件" aria-label="导出 E 文件">
-                  <FileJson size={16}/>
-                  <span>导出 E 文件</span>
-                </button>
-                <button onClick={() => requestExportWithSave(exportSvgFile)} title="导出 SVG 文件" aria-label="导出 SVG 文件">
-                  <Download size={16}/>
-                  <span>导出 SVG</span>
-                </button>
-                <button onClick={() => requestExportWithSave(exportJsonFile)} title="导出 JSON 文件" aria-label="导出 JSON 文件">
-                  <Download size={16}/>
-                  <span>导出 JSON</span>
-                </button>
+                {[
+                  { key: "bundle", label: "导出 E、JSON 和 SVG", icon: <Download size={16}/>, action: exportSvg, validatesEInterface: true },
+                  { key: "e", label: "导出 E 文件", icon: <FileJson size={16}/>, action: exportEFile, validatesEInterface: true },
+                  { key: "svg", label: "导出 SVG", icon: <Download size={16}/>, action: exportSvgFile, validatesEInterface: false },
+                  { key: "json", label: "导出 JSON", icon: <Download size={16}/>, action: exportJsonFile, validatesEInterface: false }
+                ].map((item) => (
+                  <div className="export-menu-item" key={item.key}>
+                    <button type="button" className="export-menu-trigger" title={item.label} aria-label={item.label} aria-haspopup="menu">
+                      {item.icon}
+                      <span>{item.label}</span>
+                      <ChevronRight className="export-submenu-chevron" size={14}/>
+                    </button>
+                    <div className="export-encoding-submenu" role="menu" aria-label={`${item.label}字符编码`}>
+                      <button type="button" role="menuitem" onClick={() => requestEncodedExport(item.action, "utf-8", item.validatesEInterface)} aria-label={`${item.label}，UTF-8 编码`}>UTF-8</button>
+                      <button type="button" role="menuitem" onClick={() => requestEncodedExport(item.action, "gbk", item.validatesEInterface)} aria-label={`${item.label}，GBK 编码`}>GBK</button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>

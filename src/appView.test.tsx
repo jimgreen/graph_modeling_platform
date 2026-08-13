@@ -437,6 +437,7 @@ describe("app view device definition parameter rows", () => {
   test("keeps the top toolbar compact with icon-only mode and export actions", () => {
     const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
     const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
     const modeButton = source.match(
       /<button type="button" className=\{`topbar-primary-button[^`]*`\} onClick=\{toggleInteractionMode\}[\s\S]*?<\/button>/
     )?.[0] ?? "";
@@ -454,15 +455,23 @@ describe("app view device definition parameter rows", () => {
     expect(modeButton).not.toContain("编辑模式</span>");
     expect(modeButton).not.toContain("浏览模式</span>");
     expect(modeButton).not.toContain("mode-toggle-button");
-    expect(exportActions).toContain("requestExportWithSave(exportSvg)");
-    expect(exportActions).toContain("requestExportWithSave(exportEFile)");
-    expect(exportActions).toContain("modelTypeMismatchMessage()");
-    expect(exportActions).toContain("requestExportWithSave(exportSvgFile)");
-    expect(exportActions).toContain("requestExportWithSave(exportJsonFile)");
+    expect(source).toContain("requestExportWithSave(() => doExport(encoding))");
+    expect(source).toContain("modelTypeMismatchMessage()");
+    expect(exportActions).toContain('action: exportSvg, validatesEInterface: true');
+    expect(exportActions).toContain('action: exportEFile, validatesEInterface: true');
+    expect(exportActions).toContain('action: exportSvgFile, validatesEInterface: false');
+    expect(exportActions).toContain('action: exportJsonFile, validatesEInterface: false');
+    expect(exportActions).toContain('requestEncodedExport(item.action, "utf-8", item.validatesEInterface)');
+    expect(exportActions).toContain('requestEncodedExport(item.action, "gbk", item.validatesEInterface)');
+    expect(exportActions).toContain('className="export-encoding-submenu"');
+    expect(exportActions).toContain("UTF-8</button>");
+    expect(exportActions).toContain("GBK</button>");
+    expect(styles).toMatch(/\.export-encoding-submenu\s*\{[\s\S]*?right:\s*calc\(100% \+ 6px\)/);
+    expect(styles).toMatch(/\.export-submenu-chevron\s*\{[\s\S]*?transform:\s*rotate\(180deg\)/);
     expect(exportActions).toContain("导出 E 文件");
     expect(exportActions).toContain("导出 SVG");
     expect(exportActions).toContain("导出 JSON");
-    expect(exportActions).toContain("导出 E、JSON 和 SVG 文件");
+    expect(exportActions).toContain("导出 E、JSON 和 SVG");
     expect(source).not.toContain("exportPointerDownAtRef");
     expect(source).toContain("void doExport()");
     expect(source).toContain('className="unsaved-change-dialog export-completion-dialog"');

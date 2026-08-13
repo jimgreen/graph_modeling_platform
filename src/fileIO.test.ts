@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { saveLazyTextFile, saveTextFile, writeTextFileToDirectory } from "./fileIO";
+import { encodeGbk } from "./encoding/gbk";
 
 describe("text file output", () => {
   afterEach(() => {
@@ -158,7 +159,7 @@ describe("text file output", () => {
     expect(showGlobalMessage).not.toHaveBeenCalled();
   });
 
-  test("writes directory export text without an intermediate Blob", async () => {
+  test("writes directory export text as bytes in the selected encoding", async () => {
     const write = vi.fn(async (_data: Blob | string) => undefined);
     const close = vi.fn(async () => undefined);
     const getFileHandle = vi.fn(async () => ({
@@ -168,12 +169,13 @@ describe("text file output", () => {
     await writeTextFileToDirectory(
       { getFileHandle },
       "model.svg",
-      "<svg/>",
-      "image/svg+xml"
+      "<svg>中文</svg>",
+      "image/svg+xml",
+      "gbk"
     );
 
     expect(getFileHandle).toHaveBeenCalledWith("model.svg", { create: true });
-    expect(write).toHaveBeenCalledWith("<svg/>");
+    expect(write).toHaveBeenCalledWith(encodeGbk("<svg>中文</svg>"));
     expect(write.mock.calls[0]?.[0]).not.toBeInstanceOf(Blob);
     expect(close).toHaveBeenCalledOnce();
   });
