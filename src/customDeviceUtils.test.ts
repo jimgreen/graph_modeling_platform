@@ -9,7 +9,10 @@ import {
   deviceDefinitionKeyForTemplate,
   deviceDefinitionSharedKeyForTemplate,
   deviceTemplatesShareParameterDefinitions,
+  migrateSharedDeviceDefinitionOverrideForTemplateChange,
+  normalizeDeviceDefinitionOwnership,
   normalizeSharedDeviceDefinitionOverrides,
+  removeDeviceTemplateDefinitionOverrides,
   resolveTemplateComponentLibrary,
   templateDerivedComponentLibraryInfo
 } from "./customDeviceUtils";
@@ -173,6 +176,348 @@ describe("electric generation device library classification", () => {
     expect(verticalOverride.size).toEqual({ width: 88, height: 150 });
     expect(normalized[horizontal.kind].parameterDefinitions).toBeUndefined();
     expect(normalized[vertical.kind].measurementDefinitions).toBeUndefined();
+    expect(normalized[horizontal.kind].params?.i_p).toBeUndefined();
+    expect(normalized[vertical.kind].params?.p).toBeUndefined();
+  });
+
+  test("migrates legacy custom business definitions to the owning class and leaves concrete graphics visual-only", () => {
+    const parameterDefinitions = [
+      { cnName: "工作状态", enName: "run_stat", valueType: "numberEnum" as const, typicalValue: "1" },
+      { cnName: "有功值", enName: "p", valueType: "float" as const, typicalValue: "2" }
+    ];
+    const measurementDefinitions = [
+      { measurementTypeId: "activePower", associatedField: "p", defaultVisible: true }
+    ];
+    const horizontal = {
+      kind: "custom-demo-source",
+      label: "自定义电源",
+      categoryLibrary: "交流设备",
+      size: { width: 104, height: 64 },
+      params: {
+        component_type: "DemoSource",
+        run_stat: "1",
+        p: "2",
+        backgroundImage: "horizontal.svg"
+      },
+      terminalType: "ac" as const,
+      terminalCount: 1,
+      terminalAnchors: [{ x: 0.5, y: 0 }],
+      custom: true,
+      parameterDefinitions,
+      measurementDefinitions
+    };
+    const vertical = {
+      ...horizontal,
+      kind: "custom-demo-source-vertical",
+      size: { width: 64, height: 104 },
+      params: {
+        ...horizontal.params,
+        backgroundImage: "vertical.svg"
+      },
+      terminalAnchors: [{ x: 0, y: 0.5 }]
+    };
+
+    const normalized = normalizeDeviceDefinitionOwnership([horizontal, vertical], {});
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(horizontal);
+
+    expect(normalized.deviceDefinitionSharedKeys).toMatchObject({
+      [horizontal.kind]: sharedKey,
+      [vertical.kind]: sharedKey
+    });
+    expect(normalized.deviceDefinitionOverrides[sharedKey]).toMatchObject({
+      kind: sharedKey,
+      params: { component_type: "DemoSource", run_stat: "1", p: "2" },
+      parameterDefinitions,
+      measurementDefinitions
+    });
+    for (const template of normalized.customDeviceTemplates) {
+      expect(template.parameterDefinitions).toBeUndefined();
+      expect(template.measurementDefinitions).toBeUndefined();
+      expect(template.params.run_stat).toBeUndefined();
+      expect(template.params.p).toBeUndefined();
+      expect(template.params.backgroundImage).toMatch(/^(?:horizontal|vertical)\.svg$/u);
+    }
+    const resolvedHorizontal = applyDeviceTemplateDefinitionOverride(
+      normalized.customDeviceTemplates[0],
+      deviceDefinitionOverrideForTemplate(
+        normalized.customDeviceTemplates[0],
+        normalized.deviceDefinitionOverrides,
+        normalized.customDeviceTemplates
+      )
+    );
+    const resolvedVertical = applyDeviceTemplateDefinitionOverride(
+      normalized.customDeviceTemplates[1],
+      deviceDefinitionOverrideForTemplate(
+        normalized.customDeviceTemplates[1],
+        normalized.deviceDefinitionOverrides,
+        normalized.customDeviceTemplates
+      )
+    );
+    expect(resolvedHorizontal.parameterDefinitions?.map((row) => row.enName)).toEqual(["run_stat", "p"]);
+    expect(resolvedVertical.parameterDefinitions?.map((row) => row.enName)).toEqual(["run_stat", "p"]);
+    expect(resolvedHorizontal.measurementDefinitions).toEqual(measurementDefinitions);
+    expect(resolvedVertical.measurementDefinitions).toEqual(measurementDefinitions);
+    expect(resolvedHorizontal.params.backgroundImage).toBe("horizontal.svg");
+    expect(resolvedVertical.params.backgroundImage).toBe("vertical.svg");
+  });
+
+  test("moves a legacy concrete business default into an existing shared class definition", () => {
+    const template = {
+      kind: "custom-shared-default",
+      label: "共享默认值设备",
+      categoryLibrary: "交流设备",
+      size: { width: 104, height: 64 },
+      params: {
+        component_type: "SharedDefaultDevice",
+        p_set: "12",
+        backgroundImage: "shared-default.svg"
+      },
+      terminalType: "ac" as const,
+      terminalCount: 1,
+      custom: true
+    };
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
+    const normalized = normalizeDeviceDefinitionOwnership([template], {
+      [sharedKey]: {
+        kind: sharedKey,
+        params: { component_type: "SharedDefaultDevice" },
+        parameterDefinitions: [{
+          cnName: "有功设定值",
+          enName: "p_set",
+          valueType: "float",
+          typicalValue: "0"
+        }]
+      }
+    });
+
+    expect(normalized.customDeviceTemplates[0].params.p_set).toBeUndefined();
+    expect(normalized.customDeviceTemplates[0].params.backgroundImage).toBe("shared-default.svg");
+    expect(normalized.deviceDefinitionOverrides[sharedKey]).toMatchObject({
+      kind: sharedKey,
+      params: {
+        component_type: "SharedDefaultDevice",
+        p_set: "12"
+      },
+      parameterDefinitions: [{ enName: "p_set" }]
+    });
+  });
+
+  test("creates the shared class when a legacy concrete graphic only contains a business default", () => {
+    const template = {
+      kind: "custom-shared-default-only",
+      label: "仅默认值设备",
+      categoryLibrary: "交流设备",
+      size: { width: 104, height: 64 },
+      params: {
+        component_type: "SharedDefaultOnlyDevice",
+        p_set: "24",
+        backgroundImage: "shared-default-only.svg"
+      },
+      terminalType: "ac" as const,
+      terminalCount: 1,
+      custom: true
+    };
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
+    const normalized = normalizeDeviceDefinitionOwnership([template], {});
+
+    expect(normalized.customDeviceTemplates[0].params.p_set).toBeUndefined();
+    expect(normalized.deviceDefinitionOverrides[sharedKey]).toMatchObject({
+      kind: sharedKey,
+      params: {
+        component_type: "SharedDefaultOnlyDevice",
+        p_set: "24"
+      }
+    });
+  });
+
+  test("moves a definition-free built-in concrete default into its shared class", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-source")!;
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
+    const normalized = normalizeSharedDeviceDefinitionOverrides({
+      [template.kind]: {
+        kind: template.kind,
+        params: {
+          backgroundImage: "legacy-source.svg",
+          p_set: "36"
+        }
+      }
+    }, DEVICE_LIBRARY);
+
+    expect(normalized[template.kind].params?.p_set).toBeUndefined();
+    expect(normalized[template.kind].params?.backgroundImage).toBe("legacy-source.svg");
+    expect(normalized[sharedKey]).toMatchObject({
+      kind: sharedKey,
+      params: { p_set: "36" }
+    });
+    expect(deviceDefinitionOverrideForTemplate(template, normalized, DEVICE_LIBRARY)?.params?.p_set).toBe("36");
+  });
+
+  test("keeps derived custom classes isolated while sharing directional variants", () => {
+    const base = {
+      kind: "custom-source",
+      label: "自定义电源",
+      categoryLibrary: "交流设备",
+      size: { width: 104, height: 64 },
+      params: { component_type: "CustomSource", base_only: "1" },
+      terminalType: "ac" as const,
+      terminalCount: 1,
+      custom: true,
+      parameterDefinitions: [
+        { cnName: "基类字段", enName: "base_only", valueType: "float" as const, typicalValue: "1" }
+      ]
+    };
+    const derived = {
+      ...base,
+      kind: "custom-wind-source",
+      label: "自定义风电",
+      params: {
+        component_type: "CustomSource",
+        derived_from_component_type: "CustomSource",
+        derived_component_type: "CustomWindSource",
+        is_derived_component_library: "1",
+        derived_only: "2"
+      },
+      isDerivedComponentLibrary: true,
+      derivedFromComponentLibrary: "CustomSource",
+      derivedComponentLibrary: "CustomWindSource",
+      parameterDefinitions: [
+        { cnName: "派生字段", enName: "derived_only", valueType: "float" as const, typicalValue: "2" }
+      ]
+    };
+    const derivedVertical = { ...derived, kind: "custom-wind-source-vertical" };
+
+    const normalized = normalizeDeviceDefinitionOwnership([base, derived, derivedVertical], {});
+    const baseKey = normalized.deviceDefinitionSharedKeys[base.kind];
+    const derivedKey = normalized.deviceDefinitionSharedKeys[derived.kind];
+
+    expect(baseKey).not.toBe(derivedKey);
+    expect(normalized.deviceDefinitionSharedKeys[derivedVertical.kind]).toBe(derivedKey);
+    expect(normalized.deviceDefinitionOverrides[baseKey].parameterDefinitions?.map((row) => row.enName)).toEqual(["base_only"]);
+    expect(normalized.deviceDefinitionOverrides[derivedKey].parameterDefinitions?.map((row) => row.enName)).toEqual(["derived_only"]);
+  });
+
+  test("keeps an existing shared table ahead of stale concrete tables regardless of timestamps", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "dcdc-converter")!;
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
+    const normalized = normalizeSharedDeviceDefinitionOverrides({
+      [sharedKey]: {
+        kind: sharedKey,
+        params: { i_p: "10" },
+        parameterDefinitions: [{ cnName: "共享有功", enName: "i_p", valueType: "float", typicalValue: "10" }],
+        measurementDefinitions: [{ measurementTypeId: "activePower", associatedField: "i_p" }],
+        updatedAt: "2026-08-13T00:00:00.000Z"
+      },
+      [template.kind]: {
+        kind: template.kind,
+        params: { i_p: "99", backgroundImage: "stale.svg" },
+        parameterDefinitions: [{ cnName: "旧有功", enName: "i_p", valueType: "float", typicalValue: "99" }],
+        measurementDefinitions: [{ measurementTypeId: "current", associatedField: "i_i" }],
+        updatedAt: "2026-08-14T00:00:00.000Z"
+      }
+    }, DEVICE_LIBRARY);
+
+    expect(normalized[sharedKey]).toMatchObject({
+      params: { i_p: "10" },
+      parameterDefinitions: [{ cnName: "共享有功" }],
+      measurementDefinitions: [{ measurementTypeId: "activePower" }]
+    });
+    expect(normalized[template.kind].params).toEqual({ backgroundImage: "stale.svg" });
+  });
+
+  test("preserves an explicit shared delete-all table", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "dcdc-converter")!;
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
+    const normalized = normalizeSharedDeviceDefinitionOverrides({
+      [sharedKey]: {
+        kind: sharedKey,
+        parameterDefinitions: [],
+        parameterDefinitionsIntent: "delete-all"
+      },
+      [template.kind]: {
+        kind: template.kind,
+        parameterDefinitions: [{ cnName: "旧有功", enName: "i_p", valueType: "float", typicalValue: "99" }]
+      }
+    }, DEVICE_LIBRARY);
+
+    expect(normalized[sharedKey]).toMatchObject({
+      parameterDefinitions: [],
+      parameterDefinitionsIntent: "delete-all"
+    });
+  });
+
+  test("moves a custom class definition when its component library is renamed", () => {
+    const previous = {
+      kind: "custom-demo",
+      label: "示例",
+      categoryLibrary: "交流设备",
+      size: { width: 80, height: 48 },
+      params: { component_type: "OldClass", backgroundImage: "demo.svg" },
+      terminalType: "ac" as const,
+      terminalCount: 1,
+      custom: true
+    };
+    const nextTemplate = { ...previous, params: { ...previous.params, component_type: "NewClass" } };
+    const previousKey = deviceDefinitionSharedKeyForTemplate(previous);
+    const nextKey = deviceDefinitionSharedKeyForTemplate(nextTemplate);
+    const normalized = migrateSharedDeviceDefinitionOverrideForTemplateChange({
+      [previousKey]: {
+        kind: previousKey,
+        params: { component_type: "OldClass", p: "1" },
+        parameterDefinitions: [{ cnName: "有功", enName: "p", valueType: "float", typicalValue: "1" }]
+      }
+    }, previous, nextTemplate, [nextTemplate]);
+
+    expect(normalized[previousKey]).toBeUndefined();
+    expect(normalized[nextKey]).toMatchObject({
+      kind: nextKey,
+      params: { component_type: "NewClass", p: "1" },
+      parameterDefinitions: [{ enName: "p" }]
+    });
+  });
+
+  test("keeps a shared class after every concrete graphic is removed", () => {
+    const horizontal = {
+      kind: "custom-demo",
+      label: "示例",
+      categoryLibrary: "交流设备",
+      size: { width: 80, height: 48 },
+      params: { component_type: "DemoClass" },
+      terminalType: "ac" as const,
+      terminalCount: 1,
+      custom: true
+    };
+    const vertical = { ...horizontal, kind: "custom-demo-vertical" };
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(horizontal);
+    const overrides = {
+      [sharedKey]: {
+        kind: sharedKey,
+        params: { p: "1" },
+        parameterDefinitions: [{ cnName: "有功", enName: "p", valueType: "float" as const, typicalValue: "1" }],
+        measurementDefinitions: [{ measurementTypeId: "activePower", associatedField: "p" }]
+      }
+    };
+
+    const oneRemoved = removeDeviceTemplateDefinitionOverrides(overrides, [horizontal], [vertical]);
+    expect(oneRemoved[sharedKey]).toBeDefined();
+    const allRemoved = removeDeviceTemplateDefinitionOverrides(oneRemoved, [vertical], []);
+    expect(allRemoved[sharedKey]).toMatchObject({
+      kind: sharedKey,
+      params: { p: "1" },
+      parameterDefinitions: overrides[sharedKey].parameterDefinitions,
+      measurementDefinitions: overrides[sharedKey].measurementDefinitions
+    });
+  });
+
+  test("keeps every built-in business definition available after an accidental empty shared override", () => {
+    for (const template of DEVICE_LIBRARY) {
+      const builtIn = resolveEffectiveTemplateParameterDefinitions(template, DEVICE_LIBRARY);
+      if (builtIn.length === 0) continue;
+      const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
+      const resolved = applyDeviceTemplateDefinitionOverride(template, deviceDefinitionOverrideForTemplate(template, {
+        [sharedKey]: { kind: sharedKey, parameterDefinitions: [] }
+      }, DEVICE_LIBRARY));
+      expect(resolveEffectiveTemplateParameterDefinitions(resolved, DEVICE_LIBRARY).length, template.kind).toBeGreaterThan(0);
+    }
   });
 
   test.each([

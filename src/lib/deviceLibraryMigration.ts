@@ -8,8 +8,6 @@
 import { initDeviceLibraryDB, clearDeviceLibraryDB } from "./deviceLibraryDB";
 import {
   saveDeviceTemplate,
-  saveGraphTemplate,
-  saveOverride,
   saveDeviceTemplates,
   saveGraphTemplates,
   saveOverrides
@@ -19,8 +17,11 @@ import {
   CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY,
   DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY
 } from "../appExtracted/appCoreCanvasUtilities";
-import type { DeviceTemplate } from "../model";
+import { DEVICE_LIBRARY, type DeviceTemplate } from "../model";
+import { normalizeDeviceDefinitionOwnership } from "../customDeviceUtils";
 import type { GraphTemplate } from "../appExtracted/appCoreCanvasUtilities";
+
+const DEVICE_LIBRARY_INDEXEDDB_SCHEMA_VERSION = 3;
 
 /**
  * 从 localStorage 读取自定义设备模板
@@ -107,7 +108,7 @@ export async function migrateFromLocalStorage(options: {
     // 检查是否已迁移
     if (!force) {
       const migrationStatus = await db.get("migration", "deviceLibrary");
-      if (migrationStatus?.completed) {
+      if (migrationStatus?.completed && Number(migrationStatus.schemaVersion) >= DEVICE_LIBRARY_INDEXEDDB_SCHEMA_VERSION) {
         return {
           success: true,
           migrated,
@@ -122,26 +123,32 @@ export async function migrateFromLocalStorage(options: {
       await clearDeviceLibraryDB();
     }
 
-    // 1. 迁移自定义设备模板
-    const templates = readCustomDeviceTemplatesFromLocalStorage();
-    for (let i = 0; i < templates.length; i += batchSize) {
-      const batch = templates.slice(i, i + batchSize);
-      for (const template of batch) {
+    // 参数和量测必须先迁移到共享类，再允许具体图元写入 IndexedDB。
+    const rawTemplates = readCustomDeviceTemplatesFromLocalStorage();
+    const ownership = normalizeDeviceDefinitionOwnership(
+      [...DEVICE_LIBRARY, ...rawTemplates],
+      readDeviceDefinitionOverridesFromLocalStorage()
+    );
+    const templates = ownership.customDeviceTemplates;
+    try {
+      await saveDeviceTemplates(templates);
+      migrated.templates = templates.length;
+    } catch (error) {
+      errors.push(`Failed to migrate templates: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    for (const template of templates) {
+      const imageBlobs: Record<string, Blob> = {};
+      if (template.params.backgroundImage?.startsWith("data:")) {
+        imageBlobs.backgroundImage = dataUrlToBlob(template.params.backgroundImage);
+      }
+      if (template.params.foregroundImage?.startsWith("data:")) {
+        imageBlobs.foregroundImage = dataUrlToBlob(template.params.foregroundImage);
+      }
+      if (Object.keys(imageBlobs).length > 0) {
         try {
-          // 提取图片 base64 并转换为 Blob
-          const imageBlobs: Record<string, Blob> = {};
-
-          if (template.params.backgroundImage?.startsWith("data:")) {
-            imageBlobs.backgroundImage = dataUrlToBlob(template.params.backgroundImage);
-          }
-          if (template.params.foregroundImage?.startsWith("data:")) {
-            imageBlobs.foregroundImage = dataUrlToBlob(template.params.foregroundImage);
-          }
-
-          await saveDeviceTemplate(template, Object.keys(imageBlobs).length > 0 ? imageBlobs : undefined);
-          migrated.templates++;
+          await saveDeviceTemplate(template, imageBlobs);
         } catch (error) {
-          errors.push(`Failed to migrate template ${template.kind}: ${error instanceof Error ? error.message : String(error)}`);
+          errors.push(`Failed to migrate template images ${template.kind}: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }
@@ -159,22 +166,18 @@ export async function migrateFromLocalStorage(options: {
     }
 
     // 3. 迁移设备定义覆盖
-    const overrides = readDeviceDefinitionOverridesFromLocalStorage();
-    const overrideEntries = Object.entries(overrides);
-    for (let i = 0; i < overrideEntries.length; i += batchSize) {
-      const batch = Object.fromEntries(overrideEntries.slice(i, i + batchSize));
-      try {
-        await saveOverrides(batch);
-        migrated.overrides += Object.keys(batch).length;
-      } catch (error) {
-        errors.push(`Failed to migrate overrides batch: ${error instanceof Error ? error.message : String(error)}`);
-      }
+    try {
+      await saveOverrides(ownership.deviceDefinitionOverrides);
+      migrated.overrides = Object.keys(ownership.deviceDefinitionOverrides).length;
+    } catch (error) {
+      errors.push(`Failed to migrate overrides: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     // 标记迁移完成
     await db.put("migration", {
       key: "deviceLibrary",
       completed: true,
+      schemaVersion: DEVICE_LIBRARY_INDEXEDDB_SCHEMA_VERSION,
       timestamp: Date.now(),
       migrated
     });
@@ -200,6 +203,7 @@ export async function migrateFromLocalStorage(options: {
  */
 export async function getMigrationStatus(): Promise<{
   completed: boolean;
+  schemaVersion?: number;
   timestamp?: number;
   migrated?: {
     templates: number;
@@ -210,7 +214,11 @@ export async function getMigrationStatus(): Promise<{
   try {
     const db = await initDeviceLibraryDB();
     const status = await db.get("migration", "deviceLibrary");
-    return status ?? null;
+    if (!status) return null;
+    return {
+      ...status,
+      completed: Boolean(status.completed) && Number(status.schemaVersion) >= DEVICE_LIBRARY_INDEXEDDB_SCHEMA_VERSION
+    };
   } catch {
     return null;
   }

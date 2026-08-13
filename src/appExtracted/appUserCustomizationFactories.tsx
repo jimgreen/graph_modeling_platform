@@ -48,7 +48,11 @@ const effectiveTemplateMap = (snapshot: UserCustomizationSnapshot) => {
     template.kind,
     applyDeviceTemplateDefinitionOverride(
       template,
-      deviceDefinitionOverrideForTemplate(template, snapshot.deviceLibrary.deviceDefinitionOverrides)
+      deviceDefinitionOverrideForTemplate(
+        template,
+        snapshot.deviceLibrary.deviceDefinitionOverrides,
+        templates
+      )
     )
   ]));
 };

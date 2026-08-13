@@ -12,6 +12,7 @@ import {
   verifyMigrationIntegrity
 } from "./deviceLibraryMigration";
 import { clearDeviceLibraryDB, getDBStats } from "./deviceLibraryDB";
+import { getAllCustomTemplates, getAllOverrides } from "./deviceLibraryStorage";
 import type { DeviceTemplate } from "../model";
 import type { GraphTemplate } from "../appExtracted/appCoreCanvasUtilities";
 
@@ -162,6 +163,50 @@ describe("deviceLibraryMigration", () => {
 
       expect(result.success).toBe(true);
       expect(result.migrated.overrides).toBe(1);
+    });
+
+    it("应该把旧图元业务表迁移到共享类并从具体图元删除", async () => {
+      const template: DeviceTemplate = {
+        kind: "custom-shared-device",
+        label: "共享定义设备",
+        categoryLibrary: "交流设备",
+        size: { width: 100, height: 80 },
+        params: {
+          component_type: "SharedDevice",
+          p_set: "12",
+          backgroundImage: "device.svg"
+        },
+        terminalType: "ac",
+        terminalCount: 1,
+        custom: true,
+        parameterDefinitions: [{
+          cnName: "有功设定值",
+          enName: "p_set",
+          valueType: "float",
+          typicalValue: "12"
+        }],
+        measurementDefinitions: [{
+          measurementTypeId: "activePower",
+          associatedField: "p_set"
+        }]
+      };
+      localStorageMock.setItem("power-system-custom-device-library", JSON.stringify([template]));
+
+      const result = await migrateFromLocalStorage();
+      const [storedTemplate] = await getAllCustomTemplates();
+      const storedOverrides = await getAllOverrides();
+      const shared = storedOverrides["shared:SharedDevice"];
+
+      expect(result.success).toBe(true);
+      expect(storedTemplate.parameterDefinitions).toBeUndefined();
+      expect(storedTemplate.measurementDefinitions).toBeUndefined();
+      expect(storedTemplate.params.p_set).toBeUndefined();
+      expect(shared?.parameterDefinitions?.map((definition) => definition.enName)).toEqual(["p_set"]);
+      expect(shared?.measurementDefinitions).toEqual([{
+        measurementTypeId: "activePower",
+        associatedField: "p_set"
+      }]);
+      expect(shared?.params?.p_set).toBe("12");
     });
 
     it("应该跳过已完成的迁移（非强制模式）", async () => {

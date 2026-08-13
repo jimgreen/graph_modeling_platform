@@ -1149,7 +1149,10 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
   const filteredProjectSchemes = useMemo<SavedSchemeRecord[]>(createAppHookCallback14(__appScope), [projectSearchNeedle, schemes]); Object.assign(__appScope, { filteredProjectSchemes });
   const baseLibraryTemplates = useMemo<DeviceTemplate[]>(() => [...DEVICE_LIBRARY, ...customDeviceTemplates], [customDeviceTemplates]); Object.assign(__appScope, { baseLibraryTemplates });
   const libraryTemplates = useMemo<DeviceTemplate[]>(
-      () => baseLibraryTemplates.map((template) => applyDeviceTemplateDefinitionOverride(template, deviceDefinitionOverrideForTemplate(template, deviceDefinitionOverrides))),
+      () => baseLibraryTemplates.map((template) => applyDeviceTemplateDefinitionOverride(
+        template,
+        deviceDefinitionOverrideForTemplate(template, deviceDefinitionOverrides, baseLibraryTemplates)
+      )),
       [baseLibraryTemplates, deviceDefinitionOverrides]
     );
   Object.assign(__appScope, { libraryTemplates });

@@ -29,7 +29,8 @@ import {
   enumValuesSummaryText,
   renderEnumValuesEditor
 } from "./appExtracted/appPersistenceLibraryExport";
-import { DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY } from "./model";
+import { applyDeviceTemplateDefinitionOverride, DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY } from "./model";
+import { deviceDefinitionOverrideForTemplate, deviceDefinitionSharedKeyForTemplate } from "./customDeviceUtils";
 import { DEFAULT_MEASUREMENT_CONFIG } from "./measurements";
 import { svgSourceFromDataUrl } from "./stateIconDrawing";
 import { emptyUserDeviceLibrary } from "./userCustomizations";
@@ -259,6 +260,101 @@ describe("graph template library filtering", () => {
       customComponentLibraries: [{ name: "LegacyDevice", categoryLibraryName: "旧类别库" }]
     });
     expect(normalizeDeviceLibraryPersistencePayload(normalized)).toEqual(normalized);
+  });
+
+  test("round-trips legacy concrete business definitions as shared class definitions only", () => {
+    const legacy = {
+      schemaVersion: 2,
+      customDeviceTemplates: [
+        {
+          kind: "custom-demo",
+          label: "横向示例",
+          categoryLibrary: "交流设备",
+          size: { width: 104, height: 64 },
+          params: { component_type: "DemoClass", backgroundImage: "horizontal.svg", run_stat: "1", p: "2" },
+          terminalType: "ac",
+          terminalCount: 1,
+          custom: true,
+          parameterDefinitions: [
+            { cnName: "工作状态", enName: "run_stat", valueType: "numberEnum", typicalValue: "1" },
+            { cnName: "有功", enName: "p", valueType: "float", typicalValue: "2" }
+          ],
+          measurementDefinitions: [{ measurementTypeId: "activePower", associatedField: "p" }]
+        },
+        {
+          kind: "custom-demo-vertical",
+          label: "竖向示例",
+          categoryLibrary: "交流设备",
+          size: { width: 64, height: 104 },
+          params: { component_type: "DemoClass", backgroundImage: "vertical.svg", run_stat: "1", p: "2" },
+          terminalType: "ac",
+          terminalCount: 1,
+          custom: true
+        }
+      ],
+      deviceDefinitionOverrides: {
+        "custom-demo-vertical": {
+          kind: "custom-demo-vertical",
+          params: { backgroundImageFit: "contain", p: "99" }
+        }
+      }
+    };
+    const normalized = normalizeDeviceLibraryPersistencePayload(legacy);
+    const roundTripped = normalizeDeviceLibraryPersistencePayload(JSON.parse(JSON.stringify(normalized)));
+    expect(roundTripped).toEqual(normalized);
+
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(normalized.customDeviceTemplates[0]);
+    expect(normalized.deviceDefinitionOverrides[sharedKey]).toMatchObject({
+      params: { run_stat: "1", p: "2" },
+      parameterDefinitions: [{ enName: "run_stat" }, { enName: "p" }],
+      measurementDefinitions: [{ measurementTypeId: "activePower", associatedField: "p" }]
+    });
+    for (const template of normalized.customDeviceTemplates) {
+      expect(template.parameterDefinitions).toBeUndefined();
+      expect(template.measurementDefinitions).toBeUndefined();
+      expect(template.params.run_stat).toBeUndefined();
+      expect(template.params.p).toBeUndefined();
+    }
+    for (const [kind, override] of Object.entries(normalized.deviceDefinitionOverrides) as Array<[string, any]>) {
+      if (kind.startsWith("shared:")) continue;
+      expect(override.parameterDefinitions, kind).toBeUndefined();
+      expect(override.parameterDefinitionsIntent, kind).toBeUndefined();
+      expect(override.measurementDefinitions, kind).toBeUndefined();
+      expect(override.params?.p, kind).toBeUndefined();
+    }
+    const effective = applyDeviceTemplateDefinitionOverride(
+      normalized.customDeviceTemplates[1],
+      deviceDefinitionOverrideForTemplate(
+        normalized.customDeviceTemplates[1],
+        normalized.deviceDefinitionOverrides,
+        normalized.customDeviceTemplates
+      )
+    );
+    expect(effective.parameterDefinitions?.map((row) => row.enName)).toEqual(["run_stat", "p"]);
+    expect(effective.measurementDefinitions).toEqual([{ measurementTypeId: "activePower", associatedField: "p" }]);
+    expect(effective.params.backgroundImage).toContain("vertical.svg");
+    expect(effective.params.backgroundImageFit).toBe("contain");
+  });
+
+  test("persists no business tables on any concrete built-in override", () => {
+    const normalized = normalizeDeviceLibraryPersistencePayload({
+      schemaVersion: 2,
+      deviceDefinitionOverrides: Object.fromEntries(DEVICE_LIBRARY.map((template) => [
+        template.kind,
+        {
+          kind: template.kind,
+          params: { ...template.params, backgroundImage: `${template.kind}.svg` },
+          parameterDefinitions: template.parameterDefinitions,
+          measurementDefinitions: template.measurementDefinitions
+        }
+      ]))
+    });
+    for (const [kind, override] of Object.entries(normalized.deviceDefinitionOverrides) as Array<[string, any]>) {
+      if (kind.startsWith("shared:")) continue;
+      expect(override.parameterDefinitions, kind).toBeUndefined();
+      expect(override.parameterDefinitionsIntent, kind).toBeUndefined();
+      expect(override.measurementDefinitions, kind).toBeUndefined();
+    }
   });
 
   test("keeps imported device and template scopes isolated from current library state", () => {

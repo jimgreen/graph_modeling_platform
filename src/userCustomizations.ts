@@ -9,6 +9,7 @@ import {
   ALLOW_RESIZE_TRANSFORM_PARAM,
   CUSTOM_PARAM_DEFINITIONS_KEY,
   DEFAULT_COLOR_PALETTE,
+  DEVICE_LIBRARY,
   normalizeColorPalette,
   resolveDeviceParameterDefinitionExportSettings,
   resolveEffectiveTemplateParameterDefinitions,
@@ -24,6 +25,11 @@ import {
   normalizeMeasurementConfig,
   type PlatformMeasurementConfig
 } from "./measurements";
+import { normalizeDeviceLibraryPersistencePayload } from "./appExtracted/appPersistenceLibraryExport";
+import {
+  deviceDefinitionSharedKeyForTemplate,
+  removeDeviceTemplateDefinitionOverrides
+} from "./customDeviceUtils";
 
 export type UserCustomizationDomain =
   | "category-libraries"
@@ -172,83 +178,7 @@ export function userCustomizationAssetIsBuiltIn(
 
 const normalizeDeviceLibrarySnapshot = (
   value: Partial<DeviceLibraryPersistencePayload> | undefined
-): DeviceLibraryPersistencePayload => {
-  const source = value ?? {};
-  const seenComponentLibraries = new Set<string>();
-  const customComponentLibraries = (Array.isArray(source.customComponentLibraries)
-    ? source.customComponentLibraries
-    : []).flatMap((item) => {
-      const name = normalizedText(item?.name);
-      const categoryLibraryName = normalizedText(item?.categoryLibraryName);
-      const key = `${normalizedNameKey(categoryLibraryName)}::${normalizedNameKey(name)}`;
-      if (!name || !categoryLibraryName || seenComponentLibraries.has(key)) {
-        return [];
-      }
-      seenComponentLibraries.add(key);
-      return [{ ...cloneValue(item), name, categoryLibraryName }];
-    });
-  const customDeviceTemplates = (Array.isArray(source.customDeviceTemplates)
-    ? source.customDeviceTemplates
-    : []).reduce<DeviceTemplate[]>((result, item) => {
-      const kind = normalizedText(item?.kind);
-      if (!kind) {
-        return result;
-      }
-      const existingIndex = result.findIndex((candidate) => candidate.kind === kind);
-      const normalized = { ...cloneValue(item), kind } as DeviceTemplate;
-      if (existingIndex >= 0) {
-        result[existingIndex] = normalized;
-      } else {
-        result.push(normalized);
-      }
-      return result;
-    }, []);
-  const deviceDefinitionOverrides = Object.fromEntries(
-    Object.entries(source.deviceDefinitionOverrides ?? {}).flatMap(([key, item]) => {
-      const kind = normalizedText(item?.kind || key);
-      return kind ? [[kind, { ...cloneValue(item), kind }]] : [];
-    })
-  );
-  return {
-    customDeviceTemplates,
-    customCategoryLibraries: uniqueStrings(source.customCategoryLibraries),
-    customComponentLibraries,
-    deviceDefinitionOverrides,
-    eDeviceDefinitionLabels: Object.fromEntries(
-      Object.entries(source.eDeviceDefinitionLabels ?? {})
-        .map(([key, label]) => [normalizedText(key), normalizedText(label)] as const)
-        .filter(([key, label]) => Boolean(key && label))
-    ),
-    eDeviceDefinitionClassExportEnabled: Object.fromEntries(
-      Object.entries(source.eDeviceDefinitionClassExportEnabled ?? {})
-        .map(([key, enabled]) => [normalizedText(key), Boolean(enabled)] as const)
-        .filter(([key]) => Boolean(key))
-    ),
-    eDeviceDefinitionFieldOrder: Object.fromEntries(
-      Object.entries(source.eDeviceDefinitionFieldOrder ?? {}).flatMap(([key, fieldOrder]) => {
-        const componentLibrary = normalizedText(key);
-        const fields = uniqueStrings(fieldOrder);
-        return componentLibrary && fields.length > 0 ? [[componentLibrary, fields]] : [];
-      })
-    ),
-    customGraphTemplateTypes: uniqueStrings(source.customGraphTemplateTypes),
-    customGraphTemplates: (Array.isArray(source.customGraphTemplates) ? source.customGraphTemplates : [])
-      .reduce<DeviceLibraryPersistencePayload["customGraphTemplates"]>((result, item) => {
-        const id = normalizedText(item?.id);
-        if (!id) {
-          return result;
-        }
-        const existingIndex = result.findIndex((candidate) => candidate.id === id);
-        const normalized = { ...cloneValue(item), id };
-        if (existingIndex >= 0) {
-          result[existingIndex] = normalized;
-        } else {
-          result.push(normalized);
-        }
-        return result;
-      }, [])
-  };
-};
+): DeviceLibraryPersistencePayload => normalizeDeviceLibraryPersistencePayload(value ?? {});
 
 const normalizeUserImageLibrary = (
   value: Partial<UserCustomizationSnapshot["imageLibrary"]> | undefined
@@ -466,6 +396,16 @@ export function buildUserCustomizationInventory(
   const snapshot = normalizeUserCustomizationSnapshot(value);
   const builtInByKind = new Map(builtInTemplates.map((template) => [template.kind, template]));
   const customByKind = new Map(snapshot.deviceLibrary.customDeviceTemplates.map((template) => [template.kind, template]));
+  const definitionTemplates = [...builtInTemplates, ...snapshot.deviceLibrary.customDeviceTemplates];
+  const definitionOwnerTemplate = (key: string) => (
+    customByKind.get(key) ??
+    builtInByKind.get(key) ??
+    definitionTemplates.find((template) => deviceDefinitionSharedKeyForTemplate(template) === key)
+  );
+  const builtInDefinitionOwnerTemplate = (key: string) => (
+    builtInByKind.get(key) ??
+    builtInTemplates.find((template) => deviceDefinitionSharedKeyForTemplate(template) === key)
+  );
   const items: UserCustomizationItem[] = [];
   const pushItem = (
     domain: UserCustomizationDomain,
@@ -503,17 +443,31 @@ export function buildUserCustomizationInventory(
     }
   });
   Object.entries(snapshot.deviceLibrary.deviceDefinitionOverrides).forEach(([kind, override]) => {
-    const template = customByKind.get(kind) ?? builtInByKind.get(kind);
-    const builtInTemplate = builtInByKind.get(kind);
+    const template = definitionOwnerTemplate(kind);
+    const builtInTemplate = builtInDefinitionOwnerTemplate(kind);
+    const isSharedDefinitionOverride = kind.startsWith("shared:");
     const label = template?.label || kind;
     const definitions = overrideParameterDefinitions(override, builtInTemplate, builtInTemplates);
     const deletesAllParameterDefinitions = overrideExplicitlyDeletesAllParameterDefinitions(override);
-    if (overrideHasNonParameterChanges(override)) {
+    if (!isSharedDefinitionOverride && overrideHasNonParameterChanges(override)) {
       const changedFields = Object.keys(override).filter((key) => !["kind", "updatedAt", "parameterDefinitions"].includes(key));
       pushItem("device-definition-overrides", kind, label, template?.categoryLibrary || "内置元件", "modified", `${changedFields.length} 组图形或端子设置`);
     }
     if (deletesAllParameterDefinitions || (definitions.length > 0 && (!builtInTemplate || !builtInParameterDefinitionsMatch(definitions, builtInTemplate)))) {
       pushItem("parameter-definitions", kind, label, template?.categoryLibrary || "元件定义", builtInByKind.has(kind) ? "modified" : "added", `${definitions.length} 项参数定义`);
+    }
+    if (
+      Array.isArray(override.measurementDefinitions) &&
+      !canonicalEqual(override.measurementDefinitions, builtInTemplate?.measurementDefinitions ?? [])
+    ) {
+      pushItem(
+        "measurement-definitions",
+        `definition:${kind}`,
+        label,
+        "设备量测定义",
+        builtInTemplate ? "modified" : "added",
+        `${override.measurementDefinitions.length} 项量测定义`
+      );
     }
   });
 
@@ -528,8 +482,8 @@ export function buildUserCustomizationInventory(
     }
   });
   Object.entries(snapshot.deviceLibrary.deviceDefinitionOverrides).forEach(([kind, override]) => {
-    const definitions = overrideParameterDefinitions(override, builtInByKind.get(kind), builtInTemplates);
-    const builtInTemplate = builtInByKind.get(kind);
+    const builtInTemplate = builtInDefinitionOwnerTemplate(kind);
+    const definitions = overrideParameterDefinitions(override, builtInTemplate, builtInTemplates);
     if (builtInTemplate
       ? overrideExplicitlyDeletesAllParameterDefinitions(override) || (definitions.length > 0 && !builtInParameterExportSettingsMatch(definitions, builtInTemplate, override))
       : definitionsHaveExportMetadata(definitions)) {
@@ -537,7 +491,7 @@ export function buildUserCustomizationInventory(
     }
   });
   eKinds.forEach((kind) => {
-    const template = customByKind.get(kind) ?? builtInByKind.get(kind);
+    const template = definitionOwnerTemplate(kind);
     pushItem("e-interface-definitions", kind, template?.label || kind, "E 文件接口", "modified", "类或参数导出设置已修改");
   });
 
@@ -889,9 +843,34 @@ const stripDefinitionExportMetadata = <T extends DeviceTemplate | DeviceTemplate
   return next;
 };
 
+const allDeviceDefinitionTemplates = (snapshot: UserCustomizationSnapshot) => [
+  ...DEVICE_LIBRARY,
+  ...snapshot.deviceLibrary.customDeviceTemplates
+];
+
+const definitionOverrideKeyForItem = (snapshot: UserCustomizationSnapshot, itemId: string) => {
+  if (itemId.startsWith("shared:")) return itemId;
+  const mappedKey = snapshot.deviceLibrary.deviceDefinitionSharedKeys?.[itemId];
+  if (mappedKey) return mappedKey;
+  const templates = allDeviceDefinitionTemplates(snapshot);
+  const template = templates.find((candidate) => candidate.kind === itemId);
+  if (template) return deviceDefinitionSharedKeyForTemplate(template);
+  const prefixedKey = `shared:${itemId}`;
+  return snapshot.deviceLibrary.deviceDefinitionOverrides[prefixedKey] ? prefixedKey : itemId;
+};
+
 const removeCustomDeviceCascade = (snapshot: UserCustomizationSnapshot, kind: string) => {
+  const removedTemplate = snapshot.deviceLibrary.customDeviceTemplates.find((item) => item.kind === kind);
   snapshot.deviceLibrary.customDeviceTemplates = snapshot.deviceLibrary.customDeviceTemplates.filter((item) => item.kind !== kind);
-  delete snapshot.deviceLibrary.deviceDefinitionOverrides[kind];
+  if (removedTemplate) {
+    snapshot.deviceLibrary.deviceDefinitionOverrides = removeDeviceTemplateDefinitionOverrides(
+      snapshot.deviceLibrary.deviceDefinitionOverrides,
+      [removedTemplate],
+      allDeviceDefinitionTemplates(snapshot)
+    );
+  } else {
+    delete snapshot.deviceLibrary.deviceDefinitionOverrides[kind];
+  }
   delete snapshot.deviceLibrary.eDeviceDefinitionLabels?.[kind];
   delete snapshot.deviceLibrary.eDeviceDefinitionClassExportEnabled?.[kind];
   delete snapshot.deviceLibrary.eDeviceDefinitionFieldOrder?.[kind];
@@ -923,6 +902,17 @@ const restoreMeasurementItem = (snapshot: UserCustomizationSnapshot, itemId: str
     snapshot.measurementConfig.deviceProfiles = snapshot.measurementConfig.deviceProfiles.filter((profile) => profile.deviceKind !== kind);
     if (fallback) {
       snapshot.measurementConfig.deviceProfiles.push(cloneValue(fallback));
+    }
+    return;
+  }
+  if (itemId.startsWith("definition:")) {
+    const requestedKey = itemId.slice("definition:".length);
+    const overrideKey = definitionOverrideKeyForItem(snapshot, requestedKey);
+    const override = snapshot.deviceLibrary.deviceDefinitionOverrides[overrideKey];
+    if (override) {
+      const next = cloneValue(override);
+      delete next.measurementDefinitions;
+      snapshot.deviceLibrary.deviceDefinitionOverrides[overrideKey] = next;
     }
   }
 };
@@ -965,25 +955,27 @@ export function restoreUserCustomizationItems(
     } else if (domain === "device-definition-overrides") {
       delete snapshot.deviceLibrary.deviceDefinitionOverrides[itemId];
     } else if (domain === "parameter-definitions") {
+      const overrideKey = definitionOverrideKeyForItem(snapshot, itemId);
       snapshot.deviceLibrary.customDeviceTemplates = snapshot.deviceLibrary.customDeviceTemplates.map((template) => (
         template.kind === itemId ? stripParameterDefinitions(template) : template
       ));
-      const override = snapshot.deviceLibrary.deviceDefinitionOverrides[itemId];
+      const override = snapshot.deviceLibrary.deviceDefinitionOverrides[overrideKey];
       if (override) {
-        snapshot.deviceLibrary.deviceDefinitionOverrides[itemId] = stripParameterDefinitions(override);
+        snapshot.deviceLibrary.deviceDefinitionOverrides[overrideKey] = stripParameterDefinitions(override);
       }
     } else if (domain === "measurement-definitions") {
       restoreMeasurementItem(snapshot, itemId);
     } else if (domain === "e-interface-definitions") {
+      const overrideKey = definitionOverrideKeyForItem(snapshot, itemId);
       delete snapshot.deviceLibrary.eDeviceDefinitionLabels?.[itemId];
       delete snapshot.deviceLibrary.eDeviceDefinitionClassExportEnabled?.[itemId];
       delete snapshot.deviceLibrary.eDeviceDefinitionFieldOrder?.[itemId];
       snapshot.deviceLibrary.customDeviceTemplates = snapshot.deviceLibrary.customDeviceTemplates.map((template) => (
         template.kind === itemId ? stripDefinitionExportMetadata(template) : template
       ));
-      const override = snapshot.deviceLibrary.deviceDefinitionOverrides[itemId];
+      const override = snapshot.deviceLibrary.deviceDefinitionOverrides[overrideKey];
       if (override) {
-        snapshot.deviceLibrary.deviceDefinitionOverrides[itemId] = stripDefinitionExportMetadata(override);
+        snapshot.deviceLibrary.deviceDefinitionOverrides[overrideKey] = stripDefinitionExportMetadata(override);
       }
     } else if (domain === "graph-templates") {
       if (itemId.startsWith("type:")) {

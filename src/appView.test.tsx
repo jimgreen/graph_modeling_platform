@@ -600,6 +600,16 @@ describe("app view device definition parameter rows", () => {
     expect(measurementPanelSource).toContain('aria-selected={selectedRowIndexSet.has(itemIndex)}');
   });
 
+  test("passes the published measurement draft into the definition measurement panel", () => {
+    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("Array.isArray(__appScope.definitionMeasurementDraft)");
+    expect(source).toContain("? __appScope.definitionMeasurementDraft");
+    expect(source).toContain("setItems: __appScope.setDefinitionMeasurementDraft");
+    expect(source).not.toContain("items: definitionMeasurementDraft");
+    expect(source).not.toContain("setItems: setDefinitionMeasurementDraft");
+  });
+
   test("keeps derived edit dialogs from injecting base default parameters", () => {
     const source = readFileSync(new URL("./App.tsx", import.meta.url), "utf8")
       + readFileSync(new URL("./appExtracted/appStateBatch.tsx", import.meta.url), "utf8")

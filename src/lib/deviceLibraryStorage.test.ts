@@ -116,6 +116,36 @@ describe("deviceLibraryStorage", () => {
       const stats = await getDBStats();
       expect(stats.templates).toBe(3);
     });
+
+    it("具体图元永远不持久化参数或量测业务表", async () => {
+      const template: DeviceTemplate = {
+        ...mockTemplate,
+        params: {
+          component_type: "CustomDevice",
+          p_set: "12",
+          backgroundImage: "device.svg"
+        },
+        parameterDefinitions: [{
+          cnName: "有功设定值",
+          enName: "p_set",
+          valueType: "float",
+          typicalValue: "12"
+        }],
+        measurementDefinitions: [{
+          measurementTypeId: "activePower",
+          associatedField: "p_set"
+        }]
+      };
+
+      await saveDeviceTemplate(template);
+      const retrieved = await getDeviceTemplate(template.kind);
+
+      expect(retrieved?.parameterDefinitions).toBeUndefined();
+      expect(retrieved?.measurementDefinitions).toBeUndefined();
+      expect(retrieved?.params.p_set).toBeUndefined();
+      expect(retrieved?.params.component_type).toBe("CustomDevice");
+      expect(retrieved?.params.backgroundImage).toBe("device.svg");
+    });
   });
 
   describe("图元模板 CRUD", () => {

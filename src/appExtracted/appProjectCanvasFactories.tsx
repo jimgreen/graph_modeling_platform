@@ -3703,7 +3703,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
   const { BufferedTextInput, PARAM_LABELS, button, div, editableMeasurementTypeById, footer, isBrowseMode, measurementConfig, measurementConfigDraft, measurementConfigSaveStatus, section, select, span, table, tbody, td, th, thead, tr } = __appScope;
     const draftConfig = measurementConfigDraft ?? measurementConfig;
     const selectedKind = target.deviceKind;
-    const selectedProfileItems = [...target.items];
+    const selectedProfileItems = Array.isArray(target.items) ? [...target.items] : [];
     const selectedRowIndexes = (target.selectedRowIndexes ?? []).filter(
       (index) => index >= 0 && index < selectedProfileItems.length
     );

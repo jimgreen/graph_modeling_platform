@@ -367,6 +367,26 @@ describe("measurement canvas interactions", () => {
     ]);
   });
 
+  test("does not crash the measurement definition panel when runtime items are malformed", () => {
+    const config = measurementDefinitions.normalizeMeasurementConfig(measurementDefinitions.DEFAULT_MEASUREMENT_CONFIG);
+    const renderPanel = createRenderDeviceDefinitionMeasurementPanel({
+      BufferedTextInput: (props: any) => createElement("input", props),
+      editableMeasurementTypeById: new Map(config.measurementTypes.map((type) => [type.id, type])),
+      isBrowseMode: false,
+      measurementConfig: config,
+      measurementConfigDraft: null,
+      measurementConfigSaveStatus: "idle"
+    } as any);
+
+    expect(() => renderPanel({
+      deviceKind: "ACBranch",
+      label: "交流线路",
+      terminalCount: 2,
+      items: {} as any,
+      setItems: vi.fn()
+    })).not.toThrow();
+  });
+
   test("shows the hydrogen tank profile in the HydroStorage definition", () => {
     const config = measurementDefinitions.normalizeMeasurementConfig(measurementDefinitions.DEFAULT_MEASUREMENT_CONFIG);
     const tank = DEVICE_LIBRARY.find((template) => template.kind === "hydrogen-tank")!;
