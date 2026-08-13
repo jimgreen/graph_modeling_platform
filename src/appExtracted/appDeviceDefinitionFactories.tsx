@@ -7311,8 +7311,11 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
         })
       : draftRows;
     const { definitions, customRows } = mergeDefaultAndCustomDefinitionRows(defaultRows, visibleDraftRows, normalizeDefinitionRowEnumFields);
-    const baseTemplate = baseLibraryTemplates.find((candidate: DeviceTemplate) => candidate.kind === template.kind) ?? template;
-    let builtInDefinitions = resolveEffectiveTemplateParameterDefinitions(baseTemplate, baseLibraryTemplates);
+    const canonicalLibraryTemplates: DeviceTemplate[] = baseLibraryTemplates.length > 0
+      ? baseLibraryTemplates
+      : libraryTemplates;
+    const baseTemplate = canonicalLibraryTemplates.find((candidate: DeviceTemplate) => candidate.kind === template.kind) ?? template;
+    let builtInDefinitions = resolveEffectiveTemplateParameterDefinitions(baseTemplate, canonicalLibraryTemplates);
     if (typeof createCustomDeviceDraftFromTemplate === "function") {
       const baseDraft = createCustomDeviceDraftFromTemplate(baseTemplate);
       const baseTerminalTypes = baseDraft.terminalTypes.slice(0, baseDraft.terminalCount);
@@ -7464,10 +7467,12 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       previousDefinitions,
       (node) => {
         const nodeTemplate = libraryTemplates.find((candidate) => candidate.kind === node.kind);
-        return Boolean(nodeTemplate && deviceTemplatesShareParameterDefinitions(template, nodeTemplate));
+        const nodeBaseTemplate = canonicalLibraryTemplates.find((candidate) => candidate.kind === node.kind) ?? nodeTemplate;
+        return Boolean(nodeBaseTemplate && deviceTemplatesShareParameterDefinitions(baseTemplate, nodeBaseTemplate));
       }
     );
-    const sharedOverrideKey = deviceDefinitionSharedKeyForTemplate(template);
+    const sharedOverrideKey = deviceDefinitionSharedKeyForTemplate(baseTemplate);
+    const effectiveTemplateSharedKey = deviceDefinitionSharedKeyForTemplate(template);
     const existingExactOverride = deviceDefinitionOverrides[template.kind];
     const nextTemplateOverride: DeviceTemplateDefinitionOverride = {
       ...existingExactOverride,
@@ -7517,14 +7522,20 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       [sharedOverrideKey]: sharedDefinitionOverride,
       [template.kind]: exactVisualOverride
     };
-    for (const peer of libraryTemplates.filter((candidate) => deviceTemplatesShareParameterDefinitions(template, candidate))) {
+    if (effectiveTemplateSharedKey !== sharedOverrideKey) {
+      delete nextDeviceDefinitionOverrides[effectiveTemplateSharedKey];
+    }
+    for (const peer of canonicalLibraryTemplates.filter((candidate) => deviceTemplatesShareParameterDefinitions(baseTemplate, candidate))) {
       if (!nextDeviceDefinitionOverrides[peer.kind] || peer.kind === sharedOverrideKey) continue;
       const peerOverride = { ...nextDeviceDefinitionOverrides[peer.kind] };
       delete peerOverride.parameterDefinitions;
       delete peerOverride.measurementDefinitions;
       nextDeviceDefinitionOverrides[peer.kind] = peerOverride;
     }
-    const normalizedDeviceDefinitionOverrides = normalizeSharedDeviceDefinitionOverrides(nextDeviceDefinitionOverrides, libraryTemplates);
+    const normalizedDeviceDefinitionOverrides = normalizeSharedDeviceDefinitionOverrides(
+      nextDeviceDefinitionOverrides,
+      canonicalLibraryTemplates
+    );
     setDeviceDefinitionOverrides(normalizedDeviceDefinitionOverrides);
     persistDeviceLibraryChange({ deviceDefinitionOverrides: normalizedDeviceDefinitionOverrides }, {
       success: `元件定义已保存到后台：${template.label}`,
