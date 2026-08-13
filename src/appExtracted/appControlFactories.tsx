@@ -97,6 +97,7 @@ export function createProgrammaticCreateBlankProject(__appScope: Record<string, 
       voltageUnit: DEFAULT_VOLTAGE_UNIT,
       currentUnit: DEFAULT_CURRENT_UNIT,
       powerBaseValue: DEFAULT_POWER_BASE_VALUE,
+      subcontrolarea: "默认区域",
       deviceIndexCounters: {},
       nodes: [],
       edges: []

@@ -3826,7 +3826,8 @@ export function normalizeStoredDraftProject(parsed: DraftProjectState): DraftPro
     voltageUnit: parsed.voltageUnit,
     currentUnit: parsed.currentUnit,
     powerBaseValue: parsed.powerBaseValue,
-    deviceIndexCounters: parsed.deviceIndexCounters
+    deviceIndexCounters: parsed.deviceIndexCounters,
+    subcontrolarea: parsed.subcontrolarea || "默认区域"
   };
 }
 

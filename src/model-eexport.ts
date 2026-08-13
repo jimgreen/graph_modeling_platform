@@ -720,6 +720,8 @@ export type EFileExportOptions = {
   eDeviceDefinitionTemplateFields?: Record<string, Array<{ sourceName?: string; exportName: string; cnName: string }>>;
   /** 元件库 -> 表号（如 ACGenerator -> "00411"），用于导出时计算 id */
   eDeviceDefinitionTableIds?: Record<string, string>;
+  /** 当前加载的模板名（如 "台区实时库"、"配网实时库"），用于区分模板类型 */
+  templateName?: string;
 };
 
 function normalizeGasQuantityFieldName(value: unknown): string {
@@ -2144,33 +2146,73 @@ function buildPowerBaseParameterRecord(project: ProjectFile, schemePath: string[
   };
 }
 
-/** 判断当前模板是否为配网实时库（dms_rtdb.e）——以配网特有的表段名映射为特征 */
+/** 判断当前模板是否为配网/台区实时库——以配网特有的表段名映射为特征 */
 function looksLikeDmsRtdbTemplate(options: EFileExportOptions): boolean {
   const labels = options.eDeviceDefinitionLabels ?? {};
-  return labels["ACBreak"] === "dms_def_cb" && labels["ACBranch"] === "dms_def_lnseg";
+  // 配网：ACBreak→dms_def_cb，ACBranch→dms_def_lnseg
+  // 台区：无 ABBreak，但 ACBranch→dms_def_lnseg（元件库"交流线路"→dms_def_lnseg）
+  const hasDmsLnseg = labels["ACBranch"] === "dms_def_lnseg" || labels["交流线路"] === "dms_def_lnseg";
+  const hasDmsCb = labels["ACBreak"] === "dms_def_cb" || labels["交流断路器"] === "dms_def_cb";
+  return hasDmsLnseg || hasDmsCb;
+}
+
+/** 判断当前模板是否为台区实时库（taiqu_rtdb.e）——按模板名或 dms_def_feeder 中文名判定 */
+function looksLikeTaiquRtdbTemplate(options: EFileExportOptions): boolean {
+  const templateName = options.templateName ?? "";
+  if (templateName.includes("台区")) {
+    return true;
+  }
+  const fields = options.eDeviceDefinitionTemplateFields?.["dms_def_feeder"] ?? [];
+  return fields.some((f) => f.cnName.includes("台区"));
 }
 
 /**
- * 构建配网实时库单行表记录（dms_def_bulk / dms_def_feeder / dms_def_source）。
+ * 构建配网/台区实时库单行表记录（dms_def_area / dms_def_bulk / dms_def_feeder / dms_def_source）。
  * 规则：
- * 1. dms_def_bulk 内容与 substation 一致（name 等公共字段取厂站），st_id 指向 substation 的 id；
- * 2. dms_def_feeder 记录馈线信息（当前模板类型为馈线），有且只有一行；
+ * 1. dms_def_area 的 id/name 与 subcontrolarea 保持一致，其他字段默认为 0；
+ * 2. 配网模式：dms_def_bulk 内容与 substation 一致，dms_def_feeder 记录馈线信息；
+ *    台区模式：dms_def_bulk 记录所属馈线信息，dms_def_feeder 记录台区信息；
  * 3. dms_def_source 与 dms_def_feeder 相同字段保持一致（同名复制），
  *    dms_def_feeder.source_id 指向 dms_def_source 的 id。
  * 引用字段（st_id/area_id/source_id/bulk_id）由 applyEReferenceIdValues 统一换算为目标表计算 id。
  */
 function buildDmsSingleRowRecords(
   project: ProjectFile,
-  templateColumnsForSection: (section: string) => string[] | undefined
+  templateColumnsForSection: (section: string) => string[] | undefined,
+  isTaiqu: boolean
 ): EDeviceExport[] {
   const records: EDeviceExport[] = [];
   const substationName = String(project.substation ?? "").trim() || "默认厂站";
-  const feederName = String(project.name ?? "").trim() || "馈线1";
+  const subcontrolareaName = String(project.subcontrolarea ?? "").trim() || "默认区域";
+  const feederName = String(project.feeder ?? "").trim() || "馈线1";
+  const taiquName = String(project.taiqu ?? "").trim() || "台区1";
+  // 配网：feeder.name = project.name（馈线名），bulk.name = substation
+  // 台区：feeder.name = taiqu，bulk.name = feeder
+  const feederDisplayName = isTaiqu ? taiquName : (String(project.name ?? "").trim() || "馈线1");
+  const bulkDisplayName = isTaiqu ? feederName : substationName;
 
-  // 1. dms_def_bulk：内容与 substation 一致
+  // 0. dms_def_area：id/name 与 subcontrolarea 一致，其他字段默认 0
+  const areaColumns = templateColumnsForSection("dms_def_area");
+  if (areaColumns && areaColumns.length > 0) {
+    const areaParams: Record<string, string> = { id: "1", code: "", name: subcontrolareaName };
+    for (const column of areaColumns) {
+      if (column !== "id" && column !== "code" && column !== "name") {
+        areaParams[column] = "0";
+      }
+    }
+    records.push({
+      id: "dms-area-1",
+      kind: "model",
+      section: "dms_def_area",
+      columns: areaColumns,
+      params: areaParams
+    });
+  }
+
+  // 1. dms_def_bulk：配网=厂站，台区=馈线
   const bulkColumns = templateColumnsForSection("dms_def_bulk");
   if (bulkColumns && bulkColumns.length > 0) {
-    const bulkParams: Record<string, string> = { name: substationName, code: "", descr: "", rdf_id: "" };
+    const bulkParams: Record<string, string> = { name: bulkDisplayName, code: "", descr: "", rdf_id: "" };
     records.push({
       id: "dms-bulk-1",
       kind: "model",
@@ -2180,10 +2222,10 @@ function buildDmsSingleRowRecords(
     });
   }
 
-  // 2. dms_def_feeder：一行馈线
+  // 2. dms_def_feeder：配网=馈线，台区=台区
   const feederColumns = templateColumnsForSection("dms_def_feeder");
   if (feederColumns && feederColumns.length > 0) {
-    const feederParams: Record<string, string> = { name: feederName, code: "", descr: "", rdf_id: "" };
+    const feederParams: Record<string, string> = { name: feederDisplayName, code: "", descr: "", rdf_id: "" };
     for (const column of feederColumns) {
       if (column.startsWith("p_") || column.startsWith("q_") || column === "p" || column === "q" || column === "p_loss") {
         feederParams[column] = "0";
@@ -2273,9 +2315,10 @@ export function buildEDeviceHeaderParameterRecords(
     buildSubcontrolareaParameterRecord(project, templateColumnsForSection("subcontrolarea")),
     buildSubstationParameterRecord(project, substationIdv, templateColumnsForSection("substation"))
   ];
-  // 配网实时库：追加单行表 dms_def_bulk / dms_def_feeder / dms_def_source
+  // 配网/台区实时库：追加单行表 dms_def_area / dms_def_bulk / dms_def_feeder / dms_def_source
   if (looksLikeDmsRtdbTemplate(options)) {
-    headerRecords.push(...buildDmsSingleRowRecords(project, templateColumnsForSection));
+    const isTaiqu = looksLikeTaiquRtdbTemplate(options);
+    headerRecords.push(...buildDmsSingleRowRecords(project, templateColumnsForSection, isTaiqu));
   }
   return headerRecords;
 }
@@ -2321,7 +2364,7 @@ export const E_REFERENCE_FIELD_TABLE_IDS: Record<string, string> = {
   tapty_id: "00418",
   dcln_id: "00426",
   // 配网实时库（dms_rtdb.e）引用字段
-  area_id: "00404",        // dms_def_bulk.area_id → subcontrolarea
+  area_id: "12038",        // dms_def_bulk.area_id → dms_def_area
   bulk_id: "12001",        // dms_def_feeder/dms_def_source.bulk_id → dms_def_bulk
   source_id: "12004",      // dms_def_feeder.source_id → dms_def_source
   trfm_id: "12012",        // dms_def_trwd.trfm_id → dms_def_trfm
