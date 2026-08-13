@@ -380,6 +380,7 @@ export type DeviceTemplate = {
   allowResizeTransform?: boolean;
   custom?: boolean;
   parameterDefinitions?: DeviceParameterDefinition[];
+  parameterDefinitionsIntent?: "delete-all";
   /** An applied persisted override is a complete table; omitted fields were explicitly deleted. */
   parameterDefinitionsComplete?: boolean;
   measurementDefinitions?: DeviceMeasurementDefinition[];
@@ -405,6 +406,7 @@ export type DeviceTemplateDefinitionOverride = {
   derivedComponentLibraryLabel?: string;
   allowResizeTransform?: boolean;
   parameterDefinitions?: DeviceParameterDefinition[];
+  parameterDefinitionsIntent?: "delete-all";
   measurementDefinitions?: DeviceMeasurementDefinition[];
   stateDefinitions?: DeviceStateDefinition[];
   updatedAt?: string;
@@ -5532,7 +5534,7 @@ export function describeContainerTerminalAssociations(template: DeviceTemplate):
   const terminalTypes = templateTerminalTypes(template);
   const terminalRoles = template.terminalRoles ?? [];
   const terminalAssociations = template.terminalAssociations ?? [];
-  const definitions = getTemplateParameterDefinitions(template);
+  const definitions = resolveEffectiveTemplateParameterDefinitions(template);
 
   if (isThreeWindingTransformer({ kind: template.kind })) {
     return THREE_WINDING_TRANSFORMER_SIDES.map((side) => {
@@ -5703,7 +5705,7 @@ export function buildContainerDeviceParameterViews(
   if (associations.length === 0) {
     return [];
   }
-  const containerRows = getTemplateParameterDefinitions(fallbackTemplate).map((definition) => {
+  const containerRows = resolveEffectiveTemplateParameterDefinitions(fallbackTemplate).map((definition) => {
     const value = definition.enName === "name"
       ? node.name
       : node.params[definition.enName] ?? definition.typicalValue;
@@ -6676,6 +6678,77 @@ export function getTemplateParameterDefinitions(template: DeviceTemplate): Devic
   return normalizeESectionParameterDefinitions(section, generatedDefinitions);
 }
 
+export type EffectiveTemplateParameterDefinitionGroups = {
+  baseDefinitions: DeviceParameterDefinition[];
+  derivedDefinitions: DeviceParameterDefinition[];
+};
+
+function templateComponentLibraryForDefinitionInheritance(template: DeviceTemplate): string {
+  return String(inferESection(template.kind, template.params ?? {})).trim().toLowerCase();
+}
+
+export function resolveEffectiveTemplateParameterDefinitionGroups(
+  template: DeviceTemplate,
+  templates: readonly DeviceTemplate[] = DEVICE_LIBRARY
+): EffectiveTemplateParameterDefinitionGroups {
+  if (
+    template.parameterDefinitionsIntent === "delete-all" &&
+    Array.isArray(template.parameterDefinitions) &&
+    template.parameterDefinitions.length === 0
+  ) {
+    return { baseDefinitions: [], derivedDefinitions: [] };
+  }
+  const derivedInfo = templateDerivedComponentLibraryInfo(template);
+  const ownDefinitions = getTemplateParameterDefinitions(template);
+  if (!derivedInfo) {
+    return { baseDefinitions: [], derivedDefinitions: ownDefinitions };
+  }
+
+  const baseComponentLibrary = derivedInfo.baseComponentLibrary.trim().toLowerCase();
+  const findBaseTemplate = (candidates: readonly DeviceTemplate[]) => candidates.find((candidate) => (
+    candidate.kind !== template.kind &&
+    !templateDerivedComponentLibraryInfo(candidate) &&
+    templateComponentLibraryForDefinitionInheritance(candidate) === baseComponentLibrary
+  ));
+  const baseTemplate = findBaseTemplate(templates) ?? findBaseTemplate(DEVICE_LIBRARY);
+  const ownDefinitionByName = new Map(ownDefinitions.map((definition) => [definition.enName, definition]));
+  const baseDefinitions = (baseTemplate ? getTemplateParameterDefinitions(baseTemplate) : []).map((definition) => {
+    const ownDefinition = ownDefinitionByName.get(definition.enName);
+    const baseCnName = String(definition.cnName ?? "").trim();
+    const ownCnName = String(ownDefinition?.cnName ?? "").trim();
+    return ownDefinition && (!baseCnName || baseCnName === definition.enName) && ownCnName && ownCnName !== ownDefinition.enName
+      ? { ...definition, cnName: ownCnName }
+      : definition;
+  });
+  const seenNames = new Set(baseDefinitions.map((definition) => definition.enName));
+  const derivedDefinitions = ownDefinitions.filter((definition) => {
+    const enName = String(definition.enName ?? "").trim();
+    if (!enName || seenNames.has(enName)) {
+      return false;
+    }
+    seenNames.add(enName);
+    return true;
+  });
+  return { baseDefinitions, derivedDefinitions };
+}
+
+export function resolveEffectiveTemplateParameterDefinitions(
+  template: DeviceTemplate | Pick<DeviceTemplate, "parameterDefinitions" | "parameterDefinitionsIntent">,
+  templates: readonly DeviceTemplate[] = DEVICE_LIBRARY
+): DeviceParameterDefinition[] {
+  if (!("kind" in template) || !("params" in template)) {
+    if (
+      template.parameterDefinitionsIntent === "delete-all" &&
+      Array.isArray(template.parameterDefinitions) &&
+      template.parameterDefinitions.length === 0
+    ) {
+      return [];
+    }
+    return normalizeTemplateDefinitionList(template.parameterDefinitions);
+  }
+  const groups = resolveEffectiveTemplateParameterDefinitionGroups(template, templates);
+  return [...groups.baseDefinitions, ...groups.derivedDefinitions];
+}
 function stripThreeWindingTransformerContainerParams(params: Record<string, string>): Record<string, string> {
   const legacyContainerParamPattern =
     /(?:^|_)(?:xf_t\d+|(?:ac2|dc2|h22|heat2|ac|dc|h2|heat)_(?:unit|load|transformer)_t\d+)$/;
@@ -6861,7 +6934,12 @@ export function applyDeviceTemplateDefinitionOverride(
   if (!override) {
     return template;
   }
-  const hasParameterDefinitionsOverride = Array.isArray(override.parameterDefinitions);
+  const explicitlyDeletesAllParameterDefinitions =
+    override.parameterDefinitionsIntent === "delete-all" &&
+    Array.isArray(override.parameterDefinitions) &&
+    override.parameterDefinitions.length === 0;
+  const hasParameterDefinitionsOverride = Array.isArray(override.parameterDefinitions) &&
+    (override.parameterDefinitions.length > 0 || explicitlyDeletesAllParameterDefinitions);
   const overrideParameterDefinitions = (override.parameterDefinitions ?? [])
     .map((definition) => normalizeTemplateDefinition(definition))
     .filter((definition): definition is DeviceParameterDefinition => (
@@ -6900,7 +6978,9 @@ export function applyDeviceTemplateDefinitionOverride(
         !retiredElectricGenerationParameterNames.has(definition.enName)
       ))
     : normalizedOverrideParameterDefinitions;
-  const parameterDefinitions = hasParameterDefinitionsOverride
+  const parameterDefinitions = explicitlyDeletesAllParameterDefinitions
+    ? []
+    : hasParameterDefinitionsOverride
     ? (isElectricGenerationBase || electricGenerationDerivedInfo || isCanonicalHydrogenEndpoint
         ? mergeCanonicalParameterDefinitions(template.parameterDefinitions ?? [], canonicalOverrideParameterDefinitions)
         : canonicalOverrideParameterDefinitions)
@@ -6992,6 +7072,7 @@ export function applyDeviceTemplateDefinitionOverride(
     allowResizeTransform: override.allowResizeTransform ?? template.allowResizeTransform,
     params: normalizedParams,
     parameterDefinitions,
+    parameterDefinitionsIntent: explicitlyDeletesAllParameterDefinitions ? "delete-all" : undefined,
     parameterDefinitionsComplete: hasParameterDefinitionsOverride || template.parameterDefinitionsComplete,
     measurementDefinitions,
     ...(stateDefinitions ? { stateDefinitions } : {})
@@ -7012,11 +7093,13 @@ export function applyDeviceTemplateDefinitionOverride(
         normalizeTwoWindingTransformerParams(mergedTemplate.params),
         twoWindingTransformerParameterDefinitions
       ),
-      parameterDefinitionsComplete: false,
-      parameterDefinitions: mergeCanonicalFloatParameterDefinitions(
-        twoWindingTransformerParameterDefinitions,
-        (parameterDefinitions ?? []).filter((definition) => !isRetiredTwoWindingTransformerParameterName(definition.enName))
-      )
+      parameterDefinitionsComplete: explicitlyDeletesAllParameterDefinitions,
+      parameterDefinitions: explicitlyDeletesAllParameterDefinitions
+        ? []
+        : mergeCanonicalFloatParameterDefinitions(
+            twoWindingTransformerParameterDefinitions,
+            (parameterDefinitions ?? []).filter((definition) => !isRetiredTwoWindingTransformerParameterName(definition.enName))
+          )
     };
   }
   if (!isThreeWindingTransformer(template)) {
@@ -7037,11 +7120,13 @@ export function applyDeviceTemplateDefinitionOverride(
       normalizeThreeWindingTransformerParams(mergedTemplate.params),
       threeWindingTransformerParameterDefinitions
     ),
-    parameterDefinitionsComplete: false,
-    parameterDefinitions: mergeCanonicalFloatParameterDefinitions(
-      threeWindingTransformerParameterDefinitions,
-      (parameterDefinitions ?? []).filter((definition) => !isRetiredThreeWindingTransformerParameterName(definition.enName))
-    )
+    parameterDefinitionsComplete: explicitlyDeletesAllParameterDefinitions,
+    parameterDefinitions: explicitlyDeletesAllParameterDefinitions
+      ? []
+      : mergeCanonicalFloatParameterDefinitions(
+          threeWindingTransformerParameterDefinitions,
+          (parameterDefinitions ?? []).filter((definition) => !isRetiredThreeWindingTransformerParameterName(definition.enName))
+        )
   };
 }
 
@@ -7050,7 +7135,10 @@ function applyTemplateDefinitionDefaults(
   template: DeviceTemplate,
   definitionFilter?: (definition: DeviceParameterDefinition) => boolean
 ): Record<string, string> {
-  const parameterDefinitions = normalizeTemplateDefinitionList(template.parameterDefinitions)
+  const ownDefinitionNames = new Set(
+    normalizeTemplateDefinitionList(template.parameterDefinitions).map((definition) => definition.enName)
+  );
+  const parameterDefinitions = resolveEffectiveTemplateParameterDefinitions(template)
     .filter((definition) => definitionFilter ? definitionFilter(definition) : true);
   if (parameterDefinitions.length === 0) {
     return params;
@@ -7064,7 +7152,16 @@ function applyTemplateDefinitionDefaults(
     if (!enName || enName === "name" || enName === "is_container" || enName === ALLOW_RESIZE_TRANSFORM_PARAM) {
       continue;
     }
-    next[enName] = definition.typicalValue;
+    if (ownDefinitionNames.has(enName)) {
+      next[enName] = definition.typicalValue;
+      continue;
+    }
+    if (
+      deviceParamValue(next, enName) === undefined &&
+      (definition.typicalValue !== "" || template.isContainer || template.params.is_container === "1")
+    ) {
+      next[enName] = definition.typicalValue;
+    }
   }
   return next;
 }
@@ -7134,7 +7231,8 @@ function sectionEnumParameterDefinition(section: string, enName: string): Device
 
 export function resolveNodeParameterDefinitions(
   node: Pick<ModelNode, "kind" | "params">,
-  template?: DeviceTemplate
+  template?: DeviceTemplate,
+  templates: readonly DeviceTemplate[] = DEVICE_LIBRARY
 ): DeviceParameterDefinition[] {
   const storedDefinitions = parseStoredTemplateParameterDefinitions(node.params);
   const resolvedTemplate = template ?? DEVICE_LIBRARY_BY_KIND.get(node.kind) ?? DEVICE_LIBRARY_BY_KIND.get(baseDeviceKind(node.kind));
@@ -7142,10 +7240,12 @@ export function resolveNodeParameterDefinitions(
     return storedDefinitions.length > 0
       ? storedDefinitions
       : resolvedTemplate
-        ? getTemplateParameterDefinitions(resolvedTemplate)
+        ? resolveEffectiveTemplateParameterDefinitions(resolvedTemplate, templates)
         : [];
   }
-  const templateDefinitions = resolvedTemplate ? getTemplateParameterDefinitions(resolvedTemplate) : [];
+  const templateDefinitions = resolvedTemplate
+    ? resolveEffectiveTemplateParameterDefinitions(resolvedTemplate, templates)
+    : [];
   const storedDefinitionByName = new Map(storedDefinitions.map((definition) => [definition.enName, definition]));
   const sourceDefinitions = [
     ...templateDefinitions.map((definition) => storedDefinitionByName.get(definition.enName) ?? definition),
@@ -7283,10 +7383,10 @@ function isTemplateDefinitionStoredParam(enName: string) {
 
 export function reconcileNodeParamsWithTemplateDefinitions(
   node: ModelNode,
-  template: Pick<DeviceTemplate, "parameterDefinitions">,
+  template: Pick<DeviceTemplate, "parameterDefinitions" | "parameterDefinitionsIntent">,
   previousDefinitions?: readonly DeviceParameterDefinition[]
 ): ModelNode {
-  const nextDefinitions = normalizeTemplateDefinitionList(template.parameterDefinitions);
+  const nextDefinitions = resolveEffectiveTemplateParameterDefinitions(template);
   const previousDefinitionList = previousDefinitions
     ? normalizeTemplateDefinitionList(previousDefinitions)
     : parseStoredTemplateParameterDefinitions(node.params);
@@ -7333,7 +7433,7 @@ function applyContainerRelationDefaults(params: Record<string, string>, template
     return params;
   }
   const next: Record<string, string> = { ...params, is_container: params.is_container ?? "1" };
-  if (template.parameterDefinitions?.length) {
+  if (resolveEffectiveTemplateParameterDefinitions(template).length > 0) {
     return next;
   }
   for (const definition of buildDefaultDeviceParameterDefinitions(templateTerminalTypes(template), {
@@ -7558,13 +7658,14 @@ export function buildDefaultParams(template: DeviceTemplate): Record<string, str
   });
   const type = template.terminalType;
   if (template.custom) {
+    const effectiveParameterDefinitions = resolveEffectiveTemplateParameterDefinitions(template);
     const params: Record<string, string> = {
       ...template.params,
       [CUSTOM_DEVICE_TEMPLATE_KEY]: "1",
-      [CUSTOM_PARAM_DEFINITIONS_KEY]: JSON.stringify(template.parameterDefinitions ?? []),
+      [CUSTOM_PARAM_DEFINITIONS_KEY]: JSON.stringify(effectiveParameterDefinitions),
       run_stat: template.params.run_stat ?? "运行"
     };
-    for (const definition of template.parameterDefinitions ?? []) {
+    for (const definition of effectiveParameterDefinitions) {
       if (definition.enName === "name" || definition.enName === "is_container" || definition.enName === ALLOW_RESIZE_TRANSFORM_PARAM) {
         continue;
       }

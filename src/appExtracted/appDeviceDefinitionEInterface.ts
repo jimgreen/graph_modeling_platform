@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { buildEDeviceDefinitionFileFromInterfaceDefinitions, E_SECTION_COLUMNS, electricGenerationDerivedComponentLibraryInfo, getTemplateParameterDefinitions, inferESection, parseEDeviceDefinitionFile, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo } from "../model";
+import { buildEDeviceDefinitionFileFromInterfaceDefinitions, E_SECTION_COLUMNS, electricGenerationDerivedComponentLibraryInfo, inferESection, parseEDeviceDefinitionFile, resolveDeviceParameterDefinitionExportSettings, resolveEffectiveTemplateParameterDefinitionGroups, resolveEffectiveTemplateParameterDefinitions, templateDerivedComponentLibraryInfo } from "../model";
 import { clampNumber } from "../canvasViewport";
 import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
 import { apiPath } from "../config";
@@ -348,7 +348,9 @@ export function buildEDeviceInterfaceDefinitionRows(options: {
     const baseParams = derivedInfo
       ? { ...(template.params ?? {}), component_type: derivedInfo.baseComponentLibrary }
       : template.params ?? {};
-    for (const definition of getTemplateParameterDefinitions(template) ?? []) {
+    const definitionGroups = resolveEffectiveTemplateParameterDefinitionGroups(template, libraryTemplates);
+    const baseDefinitions = derivedInfo ? definitionGroups.baseDefinitions : definitionGroups.derivedDefinitions;
+    for (const definition of baseDefinitions) {
       const enName = String(definition.enName ?? "").trim();
       const settings = resolveDeviceParameterDefinitionExportSettings(template.kind, baseParams, definition);
       const exportName = String(settings.exportName || enName).trim();
@@ -394,7 +396,7 @@ export function buildEDeviceInterfaceDefinitionRows(options: {
       readonly: true
     });
     const derivedParams = { ...(template.params ?? {}), component_type: derivedInfo.derivedComponentLibrary };
-    for (const definition of getTemplateParameterDefinitions(template) ?? []) {
+    for (const definition of definitionGroups.derivedDefinitions) {
       const enName = String(definition.enName ?? "").trim();
       const settings = resolveDeviceParameterDefinitionExportSettings(template.kind, derivedParams, definition);
       const exportName = String(settings.exportName || enName).trim();
@@ -1009,7 +1011,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     const derivedPatches = derivedInfo
       ? fieldPatchesByComponentLibrary.get(derivedInfo.derivedComponentLibrary) ?? new Map()
       : new Map();
-    return (getTemplateParameterDefinitions(template) ?? []).map((definition: any) => {
+    return (resolveEffectiveTemplateParameterDefinitions(template, libraryTemplates) ?? []).map((definition: any) => {
       const enName = String(definition.enName ?? "").trim();
       const definitionKey = deviceDefinitionComplianceKey(enName);
       const derivedSpecific = derivedInfo
@@ -1042,7 +1044,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     // 派生元件库模板（风电/光伏/储能等）的 definitionKey 塌缩到基类（如 ACGenerator），
     // 写入共享 key 会被后遍历的派生模板覆盖，导致基类（交流电源）经 override 合并派生专属参数
     // （如储能的 storage_technology 出现在交流电源下）。派生模板的参数定义与 E 文件导出均走
-    // template.parameterDefinitions（不依赖此 override），故跳过避免污染基类。
+    // 统一的有效定义解析器（不依赖此 override），故跳过避免污染基类。
     const derivedInfo = templateDerivedComponentLibraryInfo(template);
     if (derivedInfo) {
       continue;

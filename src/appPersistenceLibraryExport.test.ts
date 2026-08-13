@@ -17,6 +17,8 @@ import {
   normalizeLibraryPackage,
   normalizeDeviceLibraryPersistencePayload,
   normalizeDeviceDefinitionOverrides,
+  migrateDeviceLibraryPersistencePayload,
+  DEVICE_LIBRARY_SCHEMA_VERSION,
   selectableCategoryLibraryList,
   normalizeCustomComponentLibraries,
   normalizeCustomDeviceTemplates,
@@ -187,7 +189,7 @@ describe("graph template library filtering", () => {
     });
   });
 
-  test("preserves an explicitly emptied definition table across persistence normalization", () => {
+  test("removes an unmarked historical empty built-in definition table", () => {
     const normalized = normalizeDeviceDefinitionOverrides({
       "dcdc-converter": {
         kind: "dcdc-converter",
@@ -199,10 +201,59 @@ describe("graph template library filtering", () => {
 
     expect(normalized["shared:DCDCConverter"]).toMatchObject({
       kind: "shared:DCDCConverter",
-      parameterDefinitions: [],
       measurementDefinitions: []
     });
+    expect(normalized["shared:DCDCConverter"].parameterDefinitions).toBeUndefined();
+    expect(normalized["shared:DCDCConverter"].parameterDefinitionsIntent).toBeUndefined();
     expect(normalized["dcdc-converter"]).toBeUndefined();
+  });
+
+  test("preserves only a marked delete-all definition table", () => {
+    const normalized = normalizeDeviceDefinitionOverrides({
+      "dcdc-converter": {
+        kind: "dcdc-converter",
+        parameterDefinitions: [],
+        parameterDefinitionsIntent: "delete-all",
+        updatedAt: "2026-08-13T00:00:00.000Z"
+      }
+    });
+    expect(normalized["shared:DCDCConverter"]).toMatchObject({
+      parameterDefinitions: [],
+      parameterDefinitionsIntent: "delete-all"
+    });
+  });
+
+  test("migrates unversioned libraries to the current schema and is idempotent", () => {
+    const legacy = {
+      customAttributeLibraries: ["旧类别库"],
+      customComponentTypes: [{ name: "LegacyDevice", attributeLibraryName: "旧类别库" }],
+      deviceDefinitionOverrides: {
+        "shared:ACGenerator": { kind: "shared:ACGenerator", parameterDefinitions: [] },
+        "shared:DCDCConverter": {
+          kind: "shared:DCDCConverter",
+          parameterDefinitions: [],
+          parameterDefinitionsIntent: "delete-all"
+        },
+        "shared:ACLoad": {
+          kind: "shared:ACLoad",
+          parameterDefinitions: [{ cnName: "有功", enName: "p", valueType: "float", typicalValue: "0" }]
+        }
+      }
+    };
+    const migrated = migrateDeviceLibraryPersistencePayload(legacy);
+    const normalized = normalizeDeviceLibraryPersistencePayload(legacy);
+    expect(migrated.schemaVersion).toBe(DEVICE_LIBRARY_SCHEMA_VERSION);
+    expect(migrated.deviceDefinitionOverrides?.["shared:ACGenerator"]?.parameterDefinitions).toBeUndefined();
+    expect(migrated.deviceDefinitionOverrides?.["shared:DCDCConverter"]).toMatchObject({
+      parameterDefinitions: [],
+      parameterDefinitionsIntent: "delete-all"
+    });
+    expect(normalized).toMatchObject({
+      schemaVersion: DEVICE_LIBRARY_SCHEMA_VERSION,
+      customCategoryLibraries: ["旧类别库"],
+      customComponentLibraries: [{ name: "LegacyDevice", categoryLibraryName: "旧类别库" }]
+    });
+    expect(normalizeDeviceLibraryPersistencePayload(normalized)).toEqual(normalized);
   });
 
   test("keeps imported device and template scopes isolated from current library state", () => {

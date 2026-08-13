@@ -14,6 +14,8 @@ import {
   eSectionColumns,
   extractIconLibraryImageEntries,
   importSchemeArchiveBuffer,
+  migrateDeviceLibraryConfig,
+  normalizeDeviceLibraryConfig,
   normalizeMeasurementConfig,
   readSchemeProjectRecord,
   readSchemesFromFiles,
@@ -68,6 +70,35 @@ const expectEFieldsAlignedWithHeader = (text, section, columns, rowValues) => {
   expect(rowColumns).toHaveLength(headerColumns.length);
   rowColumns.forEach((column, index) => expect(column).toBeCloseTo(headerColumns[index], 0));
 };
+
+describe("device library schema migration", () => {
+  test("removes damaged empty overrides while preserving explicit deletion and non-empty definitions", () => {
+    const legacy = {
+      deviceDefinitionOverrides: {
+        "shared:ACGenerator": { kind: "shared:ACGenerator", parameterDefinitions: [] },
+        "shared:DCDCConverter": {
+          kind: "shared:DCDCConverter",
+          parameterDefinitions: [],
+          parameterDefinitionsIntent: "delete-all"
+        },
+        "shared:ACLoad": {
+          kind: "shared:ACLoad",
+          parameterDefinitions: [{ cnName: "有功", enName: "p", valueType: "float", typicalValue: "0" }]
+        }
+      }
+    };
+    const migrated = migrateDeviceLibraryConfig(legacy);
+    const normalized = normalizeDeviceLibraryConfig(legacy);
+    expect(migrated.schemaVersion).toBe(2);
+    expect(migrated.deviceDefinitionOverrides["shared:ACGenerator"].parameterDefinitions).toBeUndefined();
+    expect(normalized.deviceDefinitionOverrides["shared:DCDCConverter"]).toMatchObject({
+      parameterDefinitions: [],
+      parameterDefinitionsIntent: "delete-all"
+    });
+    expect(normalized.deviceDefinitionOverrides["shared:ACLoad"].parameterDefinitions).toHaveLength(1);
+    expect(normalizeDeviceLibraryConfig(normalized)).toEqual(normalized);
+  });
+});
 
 describe("measurement configuration normalization", () => {
   test("migrates hydrogen tank defaults and retains associated source fields", () => {

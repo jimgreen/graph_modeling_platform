@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { clampNumber } from "../canvasViewport";
 import { mergeBuiltinSharedIconAssets } from "../sharedIconLibrary";
+import { resolveEffectiveTemplateParameterDefinitions } from "../model";
 
 export function createOpenNodeDoubleClickEditor(__appScope: Record<string, any>) {
   return (node: ModelNode) => {
@@ -1004,7 +1005,7 @@ export function createAppHookCallback11(__appScope: Record<string, any>) {
 
 export function createAppHookCallback12(__appScope: Record<string, any>) {
   return () => {
-  const { DEFAULT_MODEL_LAYER_ID, DEVICE_LIBRARY, PARAM_LABELS, activeSelectedNodeIds, applyDeviceTemplateDefinitionOverride, canBatchEditParam, customDeviceTemplates, deviceDefinitionOverrideForTemplate, deviceDefinitionOverrides, enumValuesForRow, getEParamValue, getTemplateParameterDefinitions, nodeById, parseCustomDefinitions, resolveTemplateComponentLibrary, templateDerivedComponentLibraryInfo } = __appScope;
+  const { DEFAULT_MODEL_LAYER_ID, DEVICE_LIBRARY, PARAM_LABELS, activeSelectedNodeIds, applyDeviceTemplateDefinitionOverride, canBatchEditParam, customDeviceTemplates, deviceDefinitionOverrideForTemplate, deviceDefinitionOverrides, enumValuesForRow, getEParamValue, nodeById, parseCustomDefinitions, templateDerivedComponentLibraryInfo } = __appScope;
     const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []);
     if (selectedNodes.length < 2) {
       return [];
@@ -1018,17 +1019,12 @@ export function createAppHookCallback12(__appScope: Record<string, any>) {
       deviceDefinitionOverrideForTemplate(template, deviceDefinitionOverrides ?? {})
     ));
     const libraryTemplateByKind = new Map<string, any>();
-    const baseTemplateByComponentLibrary = new Map<string, any>();
     libraryTemplates.forEach((template) => {
       if (!libraryTemplateByKind.has(template.kind)) {
         libraryTemplateByKind.set(template.kind, template);
       }
       if (templateDerivedComponentLibraryInfo(template)) {
         return;
-      }
-      const componentLibrary = String(resolveTemplateComponentLibrary(template) ?? "").trim().toLowerCase();
-      if (componentLibrary && !baseTemplateByComponentLibrary.has(componentLibrary)) {
-        baseTemplateByComponentLibrary.set(componentLibrary, template);
       }
     });
     const effectiveDefinitionsByNode = selectedNodes.map((node) => {
@@ -1037,14 +1033,7 @@ export function createAppHookCallback12(__appScope: Record<string, any>) {
       if (!selectedTemplate) {
         return storedDefinitions;
       }
-      const derivedInfo = templateDerivedComponentLibraryInfo(selectedTemplate);
-      const baseTemplate = derivedInfo
-        ? baseTemplateByComponentLibrary.get(derivedInfo.baseComponentLibrary.trim().toLowerCase())
-        : null;
-      const definitions = [
-        ...(baseTemplate ? getTemplateParameterDefinitions(baseTemplate) : []),
-        ...getTemplateParameterDefinitions(selectedTemplate)
-      ];
+      const definitions = resolveEffectiveTemplateParameterDefinitions(selectedTemplate, libraryTemplates);
       const seenKeys = new Set<string>();
       return definitions.filter((definition) => {
         const key = String(definition.enName ?? "").trim();

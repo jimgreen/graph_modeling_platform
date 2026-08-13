@@ -9,9 +9,9 @@ import {
   ALLOW_RESIZE_TRANSFORM_PARAM,
   CUSTOM_PARAM_DEFINITIONS_KEY,
   DEFAULT_COLOR_PALETTE,
-  getTemplateParameterDefinitions,
   normalizeColorPalette,
   resolveDeviceParameterDefinitionExportSettings,
+  resolveEffectiveTemplateParameterDefinitions,
   type ColorDisplayMode,
   type ColorPalette,
   type DeviceParameterDefinition,
@@ -335,15 +335,30 @@ const parameterDefinitionsFromParams = (params: Record<string, string> | undefin
   }
 };
 
-const templateParameterDefinitions = (template: Pick<DeviceTemplate, "parameterDefinitions" | "params">) =>
-  Array.isArray(template.parameterDefinitions) && template.parameterDefinitions.length > 0
-    ? template.parameterDefinitions
-    : parameterDefinitionsFromParams(template.params);
+const templateParameterDefinitions = (template: DeviceTemplate, templates: readonly DeviceTemplate[] = [template]) => {
+  const effective = resolveEffectiveTemplateParameterDefinitions(template, templates);
+  return effective.length > 0 ? effective : parameterDefinitionsFromParams(template.params);
+};
 
-const overrideParameterDefinitions = (override: DeviceTemplateDefinitionOverride) =>
-  Array.isArray(override.parameterDefinitions) && override.parameterDefinitions.length > 0
-    ? override.parameterDefinitions
-    : parameterDefinitionsFromParams(override.params);
+const overrideParameterDefinitions = (
+  override: DeviceTemplateDefinitionOverride,
+  template: DeviceTemplate | undefined,
+  templates: readonly DeviceTemplate[]
+) => {
+  if (Array.isArray(override.parameterDefinitions) && override.parameterDefinitions.length > 0) {
+    return override.parameterDefinitions;
+  }
+  if (template) {
+    return resolveEffectiveTemplateParameterDefinitions(template, templates);
+  }
+  return parameterDefinitionsFromParams(override.params);
+};
+
+const overrideExplicitlyDeletesAllParameterDefinitions = (override: DeviceTemplateDefinitionOverride) => (
+  override.parameterDefinitionsIntent === "delete-all" &&
+  Array.isArray(override.parameterDefinitions) &&
+  override.parameterDefinitions.length === 0
+);
 
 const definitionsHaveExportMetadata = (definitions: readonly DeviceParameterDefinition[]) =>
   definitions.some((definition) => (
@@ -351,7 +366,7 @@ const definitionsHaveExportMetadata = (definitions: readonly DeviceParameterDefi
   ));
 
 const editableBuiltInParameterDefinitions = (template: DeviceTemplate) =>
-  getTemplateParameterDefinitions(template).filter((definition) => ![
+  resolveEffectiveTemplateParameterDefinitions(template).filter((definition) => ![
     "component_type",
     "is_container",
     ALLOW_RESIZE_TRANSFORM_PARAM
@@ -384,9 +399,11 @@ const builtInParameterDefinitionsMatch = (
   if (definitions.length !== builtInDefinitions.length) {
     return false;
   }
-  return definitions.every((definition, index) => canonicalEqual(
-    comparableParameterDefinition(definition, builtInDefinitions[index]),
-    comparableParameterDefinition(builtInDefinitions[index], builtInDefinitions[index])
+  return definitions.every((definition, index) => (
+    canonicalEqual(
+      comparableParameterDefinition(definition, builtInDefinitions[index]),
+      comparableParameterDefinition(builtInDefinitions[index], builtInDefinitions[index])
+    ) && normalizedText(definition.typicalValue) === normalizedText(builtInDefinitions[index].typicalValue)
   ));
 };
 
@@ -477,7 +494,7 @@ export function buildUserCustomizationInventory(
   });
   snapshot.deviceLibrary.customDeviceTemplates.forEach((template) => {
     pushItem("custom-devices", template.kind, template.label || template.kind, template.categoryLibrary || "未分类", "added", "新增自定义元件");
-    const definitions = templateParameterDefinitions(template);
+    const definitions = templateParameterDefinitions(template, snapshot.deviceLibrary.customDeviceTemplates);
     if (definitions.length > 0) {
       pushItem("parameter-definitions", template.kind, template.label || template.kind, "自定义元件", "added", `${definitions.length} 项参数定义`);
     }
@@ -486,12 +503,13 @@ export function buildUserCustomizationInventory(
     const template = customByKind.get(kind) ?? builtInByKind.get(kind);
     const builtInTemplate = builtInByKind.get(kind);
     const label = template?.label || kind;
-    const definitions = overrideParameterDefinitions(override);
+    const definitions = overrideParameterDefinitions(override, builtInTemplate, builtInTemplates);
+    const deletesAllParameterDefinitions = overrideExplicitlyDeletesAllParameterDefinitions(override);
     if (overrideHasNonParameterChanges(override)) {
       const changedFields = Object.keys(override).filter((key) => !["kind", "updatedAt", "parameterDefinitions"].includes(key));
       pushItem("device-definition-overrides", kind, label, template?.categoryLibrary || "内置元件", "modified", `${changedFields.length} 组图形或端子设置`);
     }
-    if (definitions.length > 0 && (!builtInTemplate || !builtInParameterDefinitionsMatch(definitions, builtInTemplate))) {
+    if (deletesAllParameterDefinitions || (definitions.length > 0 && (!builtInTemplate || !builtInParameterDefinitionsMatch(definitions, builtInTemplate)))) {
       pushItem("parameter-definitions", kind, label, template?.categoryLibrary || "元件定义", builtInByKind.has(kind) ? "modified" : "added", `${definitions.length} 项参数定义`);
     }
   });
@@ -502,15 +520,15 @@ export function buildUserCustomizationInventory(
     ...Object.keys(snapshot.deviceLibrary.eDeviceDefinitionFieldOrder ?? {})
   ]);
   snapshot.deviceLibrary.customDeviceTemplates.forEach((template) => {
-    if (definitionsHaveExportMetadata(templateParameterDefinitions(template))) {
+    if (definitionsHaveExportMetadata(templateParameterDefinitions(template, snapshot.deviceLibrary.customDeviceTemplates))) {
       eKinds.add(template.kind);
     }
   });
   Object.entries(snapshot.deviceLibrary.deviceDefinitionOverrides).forEach(([kind, override]) => {
-    const definitions = overrideParameterDefinitions(override);
+    const definitions = overrideParameterDefinitions(override, builtInByKind.get(kind), builtInTemplates);
     const builtInTemplate = builtInByKind.get(kind);
     if (builtInTemplate
-      ? definitions.length > 0 && !builtInParameterExportSettingsMatch(definitions, builtInTemplate, override)
+      ? overrideExplicitlyDeletesAllParameterDefinitions(override) || (definitions.length > 0 && !builtInParameterExportSettingsMatch(definitions, builtInTemplate, override))
       : definitionsHaveExportMetadata(definitions)) {
       eKinds.add(kind);
     }
@@ -837,6 +855,7 @@ export function previewUserCustomizationImport(
 const stripParameterDefinitions = <T extends DeviceTemplate | DeviceTemplateDefinitionOverride>(value: T): T => {
   const next = cloneValue(value);
   delete next.parameterDefinitions;
+  delete next.parameterDefinitionsIntent;
   if (next.params && Object.prototype.hasOwnProperty.call(next.params, CUSTOM_PARAM_DEFINITIONS_KEY)) {
     const params = { ...next.params };
     delete params[CUSTOM_PARAM_DEFINITIONS_KEY];
@@ -1025,7 +1044,15 @@ export function reconcileNodesAfterCustomizationChange(
       return node;
     }
     const previousTemplate = previousTemplates.get(node.kind);
-    const reconciled = reconcileNodeWithDefinition(node, nextTemplate, previousTemplate?.parameterDefinitions);
+    const previousDefinitions = previousTemplate
+      ? resolveEffectiveTemplateParameterDefinitions(previousTemplate, Array.from(previousTemplates.values()))
+      : undefined;
+    const reconciled = reconcileNodeWithDefinition(
+      node,
+      nextTemplate,
+      previousDefinitions,
+      Array.from(nextTemplates.values())
+    );
     if (reconciled !== node) {
       changed = true;
     }

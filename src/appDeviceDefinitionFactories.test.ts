@@ -498,7 +498,9 @@ describe("manual bend interaction helpers", () => {
     expect(syncExistingNodesWithTemplateDefinitions).toHaveBeenCalledTimes(1);
     expect(syncExistingNodesWithTemplateDefinitions).toHaveBeenCalledWith(
       expect.objectContaining({
-        parameterDefinitions,
+        parameterDefinitions: expect.arrayContaining([
+          expect.objectContaining(parameterDefinitions[0])
+        ]),
         params: expect.objectContaining({
           component_type: "UserLibrary",
           backgroundImage: "data:image/svg+xml,new",
@@ -516,7 +518,9 @@ describe("manual bend interaction helpers", () => {
         ],
         stateDefinitions
       }),
-      parameterDefinitions,
+      expect.arrayContaining([
+        expect.objectContaining(parameterDefinitions[0])
+      ]),
       expect.any(Function)
     );
     expect(syncExistingNodesWithTemplateDefinitions.mock.calls[0][2]({ kind: "custom-userlibrary" })).toBe(true);
@@ -683,6 +687,62 @@ describe("manual bend interaction helpers", () => {
       hydroUnitModel: "300 MW混流式机组",
       ownerName: "示例业主"
     });
+  });
+
+  test("rejects an accidental empty built-in parameter table", () => {
+    const setDefinitionDraftError = vi.fn();
+    const setDeviceDefinitionOverrides = vi.fn();
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-source")!;
+
+    createSaveDeviceDefinitionDraft({
+      definitionDraftRows: [],
+      definitionDeleteAllParametersRequestedRef: { current: false },
+      requireEditMode: () => true,
+      selectedDefinitionTemplate: template,
+      setDefinitionDraftError,
+      setDeviceDefinitionOverrides
+    })();
+
+    expect(setDefinitionDraftError).toHaveBeenCalledWith(expect.stringContaining("不会保存"));
+    expect(setDeviceDefinitionOverrides).not.toHaveBeenCalled();
+  });
+
+  test("persists an empty built-in parameter table only after explicit delete-all", () => {
+    let nextOverrides: Record<string, any> = {};
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-source")!;
+    const deleteAllRef = { current: true };
+    const setDefinitionDraftError = vi.fn();
+
+    createSaveDeviceDefinitionDraft({
+      ALLOW_RESIZE_TRANSFORM_PARAM: "allowResizeTransform",
+      definitionDeleteAllParametersRequestedRef: deleteAllRef,
+      definitionDraftRows: [],
+      definitionDraftSection: "ACGenerator",
+      deviceDefinitionKeyForTemplate: (candidate: any) => candidate.kind,
+      deviceDefinitionOverrideForTemplate: (candidate: any, overrides: Record<string, any>) => overrides[candidate.kind],
+      deviceDefinitionRowId: () => "row",
+      getTemplateParameterDefinitions,
+      isReservedDeviceDefinitionParamName: () => false,
+      libraryTemplates: DEVICE_LIBRARY,
+      normalizeComponentLibraryName: (value: string) => value.trim(),
+      normalizeDefinitionRowEnumFields: (row: any) => row,
+      requireEditMode: () => true,
+      selectedDefinitionTemplate: template,
+      setDefinitionDraftError,
+      setDefinitionDraftRows: vi.fn(),
+      setDeviceDefinitionOverrides: (updater: (current: Record<string, any>) => Record<string, any>) => {
+        nextOverrides = updater({});
+      },
+      syncExistingNodesWithTemplateDefinitions: vi.fn()
+    })();
+
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
+    expect(nextOverrides[sharedKey]).toMatchObject({
+      parameterDefinitions: [],
+      parameterDefinitionsIntent: "delete-all"
+    });
+    expect(deleteAllRef.current).toBe(false);
+    expect(setDefinitionDraftError).toHaveBeenLastCalledWith("");
   });
 
   test("rejects derived definition parameters that duplicate base component fields", () => {

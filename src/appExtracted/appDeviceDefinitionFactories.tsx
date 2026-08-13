@@ -6,7 +6,7 @@ export * from "./appDeviceDefinitionRenderers";
 // 内部使用已提取的符号
 import { STATE_ICON_DRAFT_FRAME, STATE_ICON_DRAWING_FRAME_WIDTH, STATE_ICON_DRAWING_FRAME_HEIGHT, deviceDefinitionComplianceKey, stateIconDrawingFrameHasPersistedContent, buildEFileExportOptionsFromLibrary, applyEDeviceDefinitionSectionsToLibraryState } from "./appDeviceDefinitionEInterface";
 
-import { buildEDeviceDefinitionFileFromInterfaceDefinitions, E_SECTION_COLUMNS, electricGenerationDerivedComponentLibraryInfo, getTemplateParameterDefinitions, inferESection, parseEDeviceDefinitionFile, resolveDeviceParameterDefinitionExportSettings, templateDerivedComponentLibraryInfo } from "../model";
+import { buildEDeviceDefinitionFileFromInterfaceDefinitions, E_SECTION_COLUMNS, electricGenerationDerivedComponentLibraryInfo, getTemplateParameterDefinitions, inferESection, parseEDeviceDefinitionFile, resolveDeviceParameterDefinitionExportSettings, resolveEffectiveTemplateParameterDefinitionGroups, resolveEffectiveTemplateParameterDefinitions, templateDerivedComponentLibraryInfo } from "../model";
 import { clampNumber } from "../canvasViewport";
 import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
 import { apiPath } from "../config";
@@ -51,9 +51,7 @@ function derivedDefinitionBaseParameterNameSet(
     if (candidateLibraryKey !== baseLibraryKey) {
       continue;
     }
-    const definitions = typeof getTemplateParameterDefinitions === "function"
-      ? getTemplateParameterDefinitions(candidate)
-      : candidate.parameterDefinitions;
+    const definitions = resolveEffectiveTemplateParameterDefinitions(candidate, libraryTemplates);
     for (const definition of definitions ?? []) {
       appendName(definition.enName);
     }
@@ -4456,7 +4454,7 @@ export function createUpdateDefinitionTerminalAnchorFromPreview(__appScope: Reco
 
 export function createLoadDefinitionTemplateDraft(__appScope: Record<string, any>) {
   return (template: DeviceTemplate) => {
-  const { DEFAULT_STATE_PAGE_ID, categoryLibraryComponentLibraryKey, createDefinitionDraftRows, createDefinitionVisualDraft, normalizeCategoryLibraryName, resolveTemplateComponentLibrary, setCollapsedDefinitionComponentLibraries, setDefinitionDraftError, setDefinitionDraftRows, setDefinitionDraftSection, setDefinitionStateDraftRows, setDefinitionStatePageId, setDefinitionTerminalAnchorDragIndex, setDefinitionVisualDraft, setExpandedDefinitionGroups, setSelectedDefinitionKind } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, categoryLibraryComponentLibraryKey, createDefinitionDraftRows, createDefinitionVisualDraft, definitionDeleteAllParametersRequestedRef, normalizeCategoryLibraryName, resolveTemplateComponentLibrary, setCollapsedDefinitionComponentLibraries, setDefinitionDraftError, setDefinitionDraftRows, setDefinitionDraftSection, setDefinitionStateDraftRows, setDefinitionStatePageId, setDefinitionTerminalAnchorDragIndex, setDefinitionVisualDraft, setExpandedDefinitionGroups, setSelectedDefinitionKind } = __appScope;
     const stateRows = createDefinitionStateDraftRowsWithDefaultImages(__appScope, template);
     const visualDraft = clearGeneratedDefinitionVisualDraftImage(template, createDefinitionVisualDraft(template));
     setSelectedDefinitionKind(template.kind);
@@ -4465,6 +4463,7 @@ export function createLoadDefinitionTemplateDraft(__appScope: Record<string, any
     setExpandedDefinitionGroups((current) => (current.includes(group) ? current : [...current, group]));
     setCollapsedDefinitionComponentLibraries((current) => current.filter((item) => item !== categoryLibraryComponentLibraryKey(group, componentLibrary)));
     setDefinitionDraftRows(createDefinitionDraftRows(template));
+    if (definitionDeleteAllParametersRequestedRef) definitionDeleteAllParametersRequestedRef.current = false;
     setDefinitionStateDraftRows(stateRows);
     setDefinitionStatePageId(DEFAULT_STATE_PAGE_ID);
     setDefinitionDraftSection(componentLibrary);
@@ -4703,7 +4702,7 @@ export function createUpdateDefinitionComponentLibraryCommonParamExport(__appSco
         }
         const definitionKey = deviceDefinitionSharedKeyForTemplate(template);
         const existingOverride = deviceDefinitionOverrideForTemplate(template, next);
-        const parameterDefinitions = getTemplateParameterDefinitions(template).map((definition) =>
+        const parameterDefinitions = resolveEffectiveTemplateParameterDefinitions(template, libraryTemplates).map((definition) =>
           definition.enName === enName ? applyPatch(definition) : definition
         );
         next[definitionKey] = {
@@ -4726,7 +4725,7 @@ export function createUpdateDefinitionComponentLibraryCommonParamExport(__appSco
           if (!template.custom || !componentLibraryTemplates.some((item) => item.kind === template.kind)) {
             return template;
           }
-          const parameterDefinitions = (template.parameterDefinitions ?? []).map((definition) =>
+          const parameterDefinitions = resolveEffectiveTemplateParameterDefinitionGroups(template, libraryTemplates).derivedDefinitions.map((definition) =>
             definition.enName === enName ? applyPatch(definition) : definition
           );
           return { ...template, parameterDefinitions };
@@ -4757,7 +4756,8 @@ export function createToggleElementTreeDeviceGroup(__appScope: Record<string, an
 
 export function createUpdateDefinitionDraftRow(__appScope: Record<string, any>) {
   return (rowId: string, patch: Partial<DeviceDefinitionDraftRow>) => {
-  const { setDefinitionDraftError, setDefinitionDraftRows } = __appScope;
+  const { definitionDeleteAllParametersRequestedRef, setDefinitionDraftError, setDefinitionDraftRows } = __appScope;
+    if (definitionDeleteAllParametersRequestedRef) definitionDeleteAllParametersRequestedRef.current = false;
     setDefinitionDraftRows((current) => current.map((row) => (row.id === rowId ? { ...row, ...patch } : row)));
     setDefinitionDraftError("");
   };
@@ -4765,7 +4765,8 @@ export function createUpdateDefinitionDraftRow(__appScope: Record<string, any>) 
 
 export function createAddDefinitionDraftRow(__appScope: Record<string, any>) {
   return () => {
-  const { deviceDefinitionRowId, setDefinitionDraftError, setDefinitionDraftRows } = __appScope;
+  const { definitionDeleteAllParametersRequestedRef, deviceDefinitionRowId, setDefinitionDraftError, setDefinitionDraftRows } = __appScope;
+    if (definitionDeleteAllParametersRequestedRef) definitionDeleteAllParametersRequestedRef.current = false;
     setDefinitionDraftRows((current) => [
       ...current,
       {
@@ -4784,10 +4785,11 @@ export function createAddDefinitionDraftRow(__appScope: Record<string, any>) {
 
 export function createDeleteDefinitionDraftRow(__appScope: Record<string, any>) {
   return (rowId: string) => {
-  const { requireEditMode, setDefinitionDraftError, setDefinitionDraftRows } = __appScope;
+  const { definitionDeleteAllParametersRequestedRef, requireEditMode, setDefinitionDraftError, setDefinitionDraftRows } = __appScope;
     if (!requireEditMode("修改元件定义")) {
       return;
     }
+    if (definitionDeleteAllParametersRequestedRef) definitionDeleteAllParametersRequestedRef.current = false;
     setDefinitionDraftRows((current) => current.filter((row) => row.id !== rowId || row.readonly));
     setDefinitionDraftError("");
   };
@@ -4963,10 +4965,10 @@ export function createSaveDeviceDefinitionStateVisualDraft(__appScope: Record<st
     }
     syncExistingNodesWithTemplateDefinitions(
       {
-        parameterDefinitions: getTemplateParameterDefinitions(selectedDefinitionTemplate),
+        parameterDefinitions: resolveEffectiveTemplateParameterDefinitions(selectedDefinitionTemplate, __appScope.libraryTemplates),
         stateDefinitions
       },
-      getTemplateParameterDefinitions(selectedDefinitionTemplate),
+      resolveEffectiveTemplateParameterDefinitions(selectedDefinitionTemplate, __appScope.libraryTemplates),
       (node) => node.kind === selectedDefinitionTemplate.kind
     );
     const nextStateRows = stateDefinitions.map((definition) => createStateDraftRow(definition));
@@ -5023,7 +5025,7 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
       backgroundImageFit: hasGeneratedDefinitionBackground ? "cover" : draftBackground.backgroundImageFit,
       backgroundImageCleared: hasGeneratedDefinitionBackground ? "" : draftBackground.backgroundImageCleared
     };
-    const parameterDefinitions = getTemplateParameterDefinitions(selectedDefinitionTemplate);
+    const parameterDefinitions = resolveEffectiveTemplateParameterDefinitions(selectedDefinitionTemplate, __appScope.libraryTemplates);
     if (selectedDefinitionTemplate.custom) {
       setCustomDeviceTemplates((current) =>
         current.map((template) => {
@@ -5106,7 +5108,7 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
 
 export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>) {
   return () => {
-  const { ALLOW_RESIZE_TRANSFORM_PARAM, createDefinitionDraftRows, definitionDraftRows, definitionDraftSection, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, deviceDefinitionRowId, getTemplateParameterDefinitions, isReservedDeviceDefinitionParamName, libraryTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeComponentLibraryName, normalizeDefinitionRowEnumFields, requireEditMode, selectedDefinitionTemplate, setDefinitionDraftError, setDefinitionDraftRows, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, templateAllowsResizeTransform } = __appScope;
+  const { ALLOW_RESIZE_TRANSFORM_PARAM, createDefinitionDraftRows, definitionDeleteAllParametersRequestedRef, definitionDraftRows, definitionDraftSection, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, deviceDefinitionRowId, getTemplateParameterDefinitions, isReservedDeviceDefinitionParamName, libraryTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeComponentLibraryName, normalizeDefinitionRowEnumFields, requireEditMode, selectedDefinitionTemplate, setDefinitionDraftError, setDefinitionDraftRows, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, templateAllowsResizeTransform } = __appScope;
     if (!requireEditMode("保存元件定义")) {
       return;
     }
@@ -5125,6 +5127,12 @@ export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>)
       return;
     }
     const rowsForSave = definitionDraftRows;
+    const explicitlyDeletesAllParameters = !selectedDefinitionTemplate.custom && rowsForSave.length === 0 &&
+      definitionDeleteAllParametersRequestedRef?.current === true;
+    if (!selectedDefinitionTemplate.custom && rowsForSave.length === 0 && !explicitlyDeletesAllParameters) {
+      setDefinitionDraftError("内置设备的空参数表不会保存；如需清空，请使用“删除全部参数”。");
+      return;
+    }
     const definitionComplianceMessage = deviceParameterDefinitionsComplianceMessage(rowsForSave);
     if (definitionComplianceMessage) {
       setDefinitionDraftError(definitionComplianceMessage);
@@ -5198,7 +5206,7 @@ export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>)
     }
     const previousDefinitions = derivedInfo && typeof createDefinitionDraftRows === "function"
       ? createDefinitionDraftRows(selectedDefinitionTemplate)
-      : getTemplateParameterDefinitions(selectedDefinitionTemplate);
+      : resolveEffectiveTemplateParameterDefinitions(selectedDefinitionTemplate, libraryTemplates);
     syncExistingNodesWithTemplateDefinitions(
       { parameterDefinitions: normalizedRows },
       previousDefinitions,
@@ -5225,10 +5233,13 @@ export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>)
           ...params
         },
         parameterDefinitions: normalizedRows,
+        ...(explicitlyDeletesAllParameters ? { parameterDefinitionsIntent: "delete-all" as const } : {}),
+        measurementDefinitions: selectedProfileItems,
         updatedAt: new Date().toISOString()
       };
       return normalizeSharedDeviceDefinitionOverrides(next, libraryTemplates);
     });
+    if (definitionDeleteAllParametersRequestedRef) definitionDeleteAllParametersRequestedRef.current = false;
     setDefinitionDraftRows(normalizedRows.map((row) => ({ ...row, id: deviceDefinitionRowId() })));
     setDefinitionDraftError("");
   };
@@ -7012,7 +7023,9 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
     if (editingCustomDeviceKind) {
       syncExistingNodesWithTemplateDefinitions(
         template,
-        previousCustomTemplate?.parameterDefinitions,
+        previousCustomTemplate
+          ? resolveEffectiveTemplateParameterDefinitions(previousCustomTemplate, libraryTemplates)
+          : undefined,
         (node) => node.kind === customKind
       );
     }
@@ -7148,7 +7161,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     const { definitions: mergedDefaultRows, customRows } = mergeDefaultAndCustomDefinitionRows(defaultRows, visibleDraftRows, normalizeDefinitionRowEnumFields);
     const definitions = [...mergedDefaultRows, ...customRows];
     const baseTemplate = baseLibraryTemplates.find((candidate: DeviceTemplate) => candidate.kind === template.kind) ?? template;
-    let builtInDefinitions = getTemplateParameterDefinitions(baseTemplate);
+    let builtInDefinitions = resolveEffectiveTemplateParameterDefinitions(baseTemplate, baseLibraryTemplates);
     if (typeof createCustomDeviceDraftFromTemplate === "function") {
       const baseDraft = createCustomDeviceDraftFromTemplate(baseTemplate);
       const baseTerminalTypes = baseDraft.terminalTypes.slice(0, baseDraft.terminalCount);
@@ -7276,7 +7289,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     const terminalLabels = customDeviceDraft.terminalLabels.slice(0, terminalTypes.length).map(
       (label, index) => label.trim() || `${TERMINAL_TYPE_LIBRARY_LABELS[terminalTypes[index]] ?? terminalTypes[index]}端${index + 1}`
     );
-    const previousDefinitions = getTemplateParameterDefinitions(template);
+    const previousDefinitions = resolveEffectiveTemplateParameterDefinitions(template, libraryTemplates);
     syncExistingNodesWithTemplateDefinitions(
       {
         parameterDefinitions: definitions,
@@ -7360,14 +7373,9 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       delete peerOverride.measurementDefinitions;
       nextDeviceDefinitionOverrides[peer.kind] = peerOverride;
     }
-    nextDeviceDefinitionOverrides = normalizeSharedDeviceDefinitionOverrides(nextDeviceDefinitionOverrides, libraryTemplates);
-    nextDeviceDefinitionOverrides = appendAssociatedMeasurementFieldsToOverrides(
-      nextDeviceDefinitionOverrides,
-      materializedFields.additions,
-      { libraryTemplates, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, getTemplateParameterDefinitions }
-    );
-    setDeviceDefinitionOverrides(nextDeviceDefinitionOverrides);
-    persistDeviceLibraryChange({ deviceDefinitionOverrides: nextDeviceDefinitionOverrides }, {
+    const normalizedDeviceDefinitionOverrides = normalizeSharedDeviceDefinitionOverrides(nextDeviceDefinitionOverrides, libraryTemplates);
+    setDeviceDefinitionOverrides(normalizedDeviceDefinitionOverrides);
+    persistDeviceLibraryChange({ deviceDefinitionOverrides: normalizedDeviceDefinitionOverrides }, {
       success: `元件定义已保存到后台：${template.label}`,
       failure: `元件定义已保存到本地，后台保存失败：${template.label}`
     });

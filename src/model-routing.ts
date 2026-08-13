@@ -105,6 +105,7 @@ import {
   parseContainerRelationField,
   parseDeviceIndex,
   reconcileNodeParamsWithTemplateDefinitions,
+  resolveEffectiveTemplateParameterDefinitions,
   roundStaticDrawingCoordinate,
   serializeStaticDrawPoints,
   staticNodeParticipatesInRoutingAvoidance,
@@ -1603,16 +1604,17 @@ export function normalizeNodeTerminalsWithTemplate(node: ModelNode, template: De
   normalizedNode = normalizeHydrogenCouplingBodyParams(normalizedNode, template);
   normalizedNode = normalizeKnownLegacyNodeEnumValues(normalizedNode, template);
   if (template && !template.isContainer && (isThreeWindingTransformer(normalizedNode) || isTwoWindingTransformerTemplateKind(normalizedNode.kind))) {
+    const effectiveTemplateDefinitions = resolveEffectiveTemplateParameterDefinitions(template);
     const parameterDefinitions = isThreeWindingTransformer(normalizedNode)
       ? mergeCanonicalParameterDefinitions(
           threeWindingTransformerParameterDefinitions,
-          (template.parameterDefinitions ?? []).filter(
+          effectiveTemplateDefinitions.filter(
             (definition) => !isRetiredThreeWindingTransformerParameterName(definition.enName)
           )
         )
       : mergeCanonicalParameterDefinitions(
           twoWindingTransformerParameterDefinitions,
-          (template.parameterDefinitions ?? []).filter(
+          effectiveTemplateDefinitions.filter(
             (definition) => !isRetiredTwoWindingTransformerParameterName(definition.enName)
           )
         );

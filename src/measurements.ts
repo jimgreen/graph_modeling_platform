@@ -3,7 +3,7 @@ import {
   describeContainerTerminalAssociations,
   getSafeNodeScaleX,
   getSafeNodeScaleY,
-  getTemplateParameterDefinitions,
+  resolveEffectiveTemplateParameterDefinitions,
   inferESection,
   templateDerivedComponentLibraryInfo,
   type DeviceParameterDefinition,
@@ -172,10 +172,12 @@ export function buildMeasurementProfilePositionDefinitions(options: {
   libraryTemplates?: readonly DeviceTemplate[];
 }): MeasurementProfilePositionDefinition[] {
   const { source } = options;
-  const directParameterDefinitions = options.parameterDefinitions ?? source.parameterDefinitions ?? [];
+  const sourceTemplate = source as DeviceTemplate;
+  const directParameterDefinitions = options.parameterDefinitions ??
+    resolveEffectiveTemplateParameterDefinitions(sourceTemplate, options.libraryTemplates);
   const derivedBaseTemplate = derivedBaseTemplateForMeasurementSource(source, options.libraryTemplates);
   const parentParameterDefinitions = mergeMeasurementParameterDefinitions(
-    derivedBaseTemplate ? getTemplateParameterDefinitions(derivedBaseTemplate) : undefined,
+    derivedBaseTemplate ? resolveEffectiveTemplateParameterDefinitions(derivedBaseTemplate, options.libraryTemplates) : undefined,
     directParameterDefinitions
   );
   const positions: MeasurementProfilePositionDefinition[] = [{
@@ -220,7 +222,7 @@ export function buildMeasurementProfilePositionDefinitions(options: {
       label: `端${association.terminalIndex + 1}${roleLabel ? `（${roleLabel}）` : ""}`,
       deviceModel: association.deviceModel,
       parameterDefinitions: mergeMeasurementParameterDefinitions(
-        associatedTemplate ? getTemplateParameterDefinitions(associatedTemplate) : undefined,
+        associatedTemplate ? resolveEffectiveTemplateParameterDefinitions(associatedTemplate, options.libraryTemplates) : undefined,
         ASSOCIATED_RUNTIME_MEASUREMENT_FIELDS[association.deviceModel]
       )
     });

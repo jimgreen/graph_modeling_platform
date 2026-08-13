@@ -1,8 +1,12 @@
 import {
+  CUSTOM_DEVICE_TEMPLATE_KEY,
+  CUSTOM_PARAM_DEFINITIONS_KEY,
   TERMINAL_TYPE_LIBRARY_LABELS,
   createTerminals,
-  getTemplateParameterDefinitions,
+  DEVICE_LIBRARY,
   reconcileNodeParamsWithTemplateDefinitions,
+  resolveEffectiveTemplateParameterDefinitions,
+  resolveNodeParameterDefinitions,
   type DeviceParameterDefinition,
   type DeviceTemplate,
   type ModelNode,
@@ -11,7 +15,7 @@ import {
   type TerminalType
 } from "./model";
 
-export type DefinitionSyncTemplate = Pick<DeviceTemplate, "parameterDefinitions"> &
+export type DefinitionSyncTemplate = Pick<DeviceTemplate, "parameterDefinitions" | "parameterDefinitionsIntent"> &
   Partial<Pick<
     DeviceTemplate,
     | "kind"
@@ -90,11 +94,31 @@ function isCompleteTemplate(template: DefinitionSyncTemplate): template is Devic
   );
 }
 
-function effectiveParameterDefinitions(template: DefinitionSyncTemplate) {
-  if (Array.isArray(template.parameterDefinitions)) {
-    return template.parameterDefinitions;
+const EFFECTIVE_DEFINITION_METADATA_KEYS = new Set([
+  "name",
+  "component_type",
+  "is_container",
+  "allow_resize_transform",
+  CUSTOM_DEVICE_TEMPLATE_KEY,
+  CUSTOM_PARAM_DEFINITIONS_KEY
+]);
+
+function materializeDefinitionDefaults(
+  node: ModelNode,
+  definitions: readonly DeviceParameterDefinition[]
+): ModelNode {
+  let params = node.params;
+  for (const definition of definitions) {
+    const key = String(definition.enName ?? "").trim();
+    if (!key || EFFECTIVE_DEFINITION_METADATA_KEYS.has(key) || Object.prototype.hasOwnProperty.call(params, key)) {
+      continue;
+    }
+    if (params === node.params) {
+      params = { ...node.params };
+    }
+    params[key] = String(definition.typicalValue ?? "");
   }
-  return isCompleteTemplate(template) ? getTemplateParameterDefinitions(template) : undefined;
+  return params === node.params ? node : { ...node, params };
 }
 
 function syncDefinitionParams(node: ModelNode, template: DefinitionSyncTemplate): ModelNode {
@@ -213,13 +237,67 @@ function syncDefinitionTerminals(node: ModelNode, template: DefinitionSyncTempla
 export function reconcileNodeWithDefinition(
   node: ModelNode,
   template: DefinitionSyncTemplate,
-  previousDefinitions?: readonly DeviceParameterDefinition[]
+  previousDefinitions?: readonly DeviceParameterDefinition[],
+  templates: readonly DeviceTemplate[] = DEVICE_LIBRARY
 ): ModelNode {
-  const definitions = effectiveParameterDefinitions(template);
+  const definitions = resolveEffectiveTemplateParameterDefinitions(template, templates);
   let reconciled = definitions
     ? reconcileNodeParamsWithTemplateDefinitions(node, { parameterDefinitions: [...definitions] }, previousDefinitions)
     : node;
   reconciled = syncDefinitionParams(reconciled, template);
   reconciled = syncDefinitionSize(reconciled, template);
   return syncDefinitionTerminals(reconciled, template);
+}
+
+export function reconcileNodeWithEffectiveTemplateDefinition(
+  node: ModelNode,
+  template: DeviceTemplate,
+  templates: readonly DeviceTemplate[] = DEVICE_LIBRARY
+): ModelNode {
+  const definitions = resolveEffectiveTemplateParameterDefinitions(template, templates);
+  const keepStoredDefinitions = template.custom === true ||
+    node.params[CUSTOM_DEVICE_TEMPLATE_KEY] === "1" ||
+    Object.prototype.hasOwnProperty.call(node.params, CUSTOM_PARAM_DEFINITIONS_KEY);
+  if (keepStoredDefinitions) {
+    return reconcileNodeWithDefinition(
+      node,
+      { ...template, parameterDefinitions: definitions },
+      undefined,
+      templates
+    );
+  }
+  let reconciled = materializeDefinitionDefaults(node, definitions);
+  reconciled = syncDefinitionParams(reconciled, template);
+  reconciled = syncDefinitionSize(reconciled, template);
+  return syncDefinitionTerminals(reconciled, template);
+}
+
+export function reconcileNodesWithEffectiveTemplateDefinitions(
+  nodes: readonly ModelNode[],
+  templates: readonly DeviceTemplate[] = DEVICE_LIBRARY
+): ModelNode[] {
+  const templateByKind = new Map(templates.map((template) => [template.kind, template]));
+  let changed = false;
+  const reconciledNodes = nodes.map((node) => {
+    const template = templateByKind.get(node.kind);
+    if (!template) {
+      const storedDefinitions = resolveNodeParameterDefinitions(node, undefined, templates);
+      if (storedDefinitions.length === 0) {
+        return node;
+      }
+      const reconciled = reconcileNodeParamsWithTemplateDefinitions(node, {
+        parameterDefinitions: storedDefinitions
+      });
+      if (reconciled !== node) {
+        changed = true;
+      }
+      return reconciled;
+    }
+    const reconciled = reconcileNodeWithEffectiveTemplateDefinition(node, template, templates);
+    if (reconciled !== node) {
+      changed = true;
+    }
+    return reconciled;
+  });
+  return changed ? reconciledNodes : nodes as ModelNode[];
 }

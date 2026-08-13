@@ -14,7 +14,7 @@ import {
   CUSTOM_PARAM_DEFINITIONS_KEY, deviceParamValue, enumExportValueForDefinition,
   toSnakeCaseDeviceParamName, normalizeVoltageBaseInput, terminalVoltageBaseNumber,
   readVoltageLevelSettings, calculateElectricalTopology, isStaticNode, isBusNode,
-  getTemplateParameterDefinitions, associatedNodeColumnValue,
+  resolveEffectiveTemplateParameterDefinitionGroups, associatedNodeColumnValue,
   containerRelationCounterKey, parseContainerRelationField, isContainerTransformerRelationKey,
   DEFAULT_POWER_BASE_VALUE, DEFAULT_VOLTAGE_UNIT, DEFAULT_POWER_UNIT, DEFAULT_CURRENT_UNIT,
   ELEMENT_TREE_COMPONENT_LIBRARY_LABELS, COMPONENT_LIBRARY_REVERSE_MAPPING,
@@ -951,14 +951,21 @@ function resolveEParameterFields(
   if (interfaceDefinition) {
     return eParameterFieldsFromInterfaceDefinition(section, interfaceDefinition);
   }
+  const builtInColumns = E_SECTION_COLUMNS[section];
   const splitControlSections = new Set(["DCACConverter", "ACACConverter", "DCDCConverter"]);
   const definitions = customEParameterDefinitions(params).filter((definition) => {
+    if (
+      builtInColumns &&
+      !builtInColumns.includes("dev_type") &&
+      toSnakeCaseDeviceParamName(definition.enName) === "dev_type"
+    ) {
+      return false;
+    }
     if (section === "DCACConverter") {
       return !isUnsupportedDcacControlField(section, definition.enName);
     }
     return !splitControlSections.has(section) || toSnakeCaseDeviceParamName(definition.enName) !== "control_type";
   });
-  const builtInColumns = E_SECTION_COLUMNS[section];
   const derivedInfo = electricGenerationDerivedComponentLibraryInfo(kind);
   if (definitions.length === 0) {
     return (builtInColumns ?? []).map((column) => ({ sourceName: column, exportName: column }));
@@ -2690,7 +2697,20 @@ export function buildEDeviceDefinitionFile(
       ? { ...(template.params ?? {}), component_type: componentLibrary }
       : template.params ?? {};
     // 无 parameterDefinitions 的图元（如 ac-source）按 E 分区推导内置列参数，避免整类丢失
-    const definitions = getTemplateParameterDefinitions(template);
+    const definitionGroups = resolveEffectiveTemplateParameterDefinitionGroups(template, templates);
+    const definitions = derivedInfo ? definitionGroups.baseDefinitions : definitionGroups.derivedDefinitions;
+    const derivedFields = derivedInfo
+      ? resolveDerivedComponentParameterFields(
+          template.kind,
+          template.params ?? {},
+          definitionGroups.derivedDefinitions,
+          derivedInfo.baseComponentLibrary,
+          derivedInfo.derivedComponentLibrary
+        )
+      : [];
+    const derivedFieldNames = new Set(
+      derivedFields.flatMap((field) => [field.sourceName, field.exportName])
+    );
     const group = ensureGroup(componentLibrary, {
       categoryLibrary: derivedInfo?.categoryLibrary ?? template.categoryLibrary ?? ""
     });
@@ -2701,6 +2721,9 @@ export function buildEDeviceDefinitionFile(
       }
       const exportName = (settings.exportName || definition.enName).trim();
       if (!exportName) {
+        continue;
+      }
+      if (derivedInfo && (derivedFieldNames.has(definition.enName) || derivedFieldNames.has(exportName))) {
         continue;
       }
       const rawCnName = (definition.cnName ?? "").trim();
@@ -2717,13 +2740,6 @@ export function buildEDeviceDefinitionFile(
         isContainerComponentLibrary: false
       });
       appendGroupField(derivedGroup, derivedComponentBaseRelationKey(derivedInfo.baseComponentLibrary), "原类关联idx");
-      const derivedFields = resolveDerivedComponentParameterFields(
-        template.kind,
-        template.params ?? {},
-        definitions,
-        derivedInfo.baseComponentLibrary,
-        derivedInfo.derivedComponentLibrary
-      );
       for (const field of derivedFields) {
         const rawCnName = (field.definition?.cnName ?? "").trim();
         const cnName = (rawCnName === field.exportName && labels?.[field.exportName]) ? labels[field.exportName] : rawCnName;
