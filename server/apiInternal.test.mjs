@@ -2,7 +2,7 @@
 // 打真实请求测图片/方案/配置 CRUD + 错误码（400/404/409）。
 // 动态 import：在设 env 后加载 server.mjs，确保 dataRoot 指向 tmpdir。
 
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, test, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
@@ -430,6 +430,7 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
     });
     expect(saved.status).toBe(200);
     expect(saved.json.ok).toBe(true);
+    expect(saved.json).not.toHaveProperty("savedAt");
     expect(saved.json.eDeviceDefinitionLabels).toEqual({ ACGenerator: "ACGeneratorRenamed" });
     expect(saved.json.eDeviceDefinitionClassExportEnabled).toEqual({ ACGenerator: false });
     expect(saved.json.eDeviceDefinitionFieldOrder).toEqual({
@@ -456,6 +457,7 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
     });
     const got = await fetchJson(apiPath("/device-library"));
     expect(got.status).toBe(200);
+    expect(got.json).not.toHaveProperty("savedAt");
     expect(got.json.eDeviceDefinitionLabels).toEqual({ ACGenerator: "ACGeneratorRenamed" });
     expect(got.json.eDeviceDefinitionClassExportEnabled).toEqual({ ACGenerator: false });
     expect(got.json.eDeviceDefinitionFieldOrder).toEqual({
@@ -480,5 +482,15 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
       substation: "00405",
       basevoltage: "00401"
     });
+
+    const libraryPath = join(dataDir, "device-library", "library.json");
+    const stored = JSON.parse(await readFile(libraryPath, "utf8"));
+    expect(stored).not.toHaveProperty("savedAt");
+
+    await writeFile(libraryPath, JSON.stringify({ ...stored, savedAt: "2026-08-14T00:00:00.000Z" }, null, 2));
+    const migrated = await fetchJson(apiPath("/device-library"));
+    expect(migrated.status).toBe(200);
+    expect(migrated.json).not.toHaveProperty("savedAt");
+    expect(JSON.parse(await readFile(libraryPath, "utf8"))).not.toHaveProperty("savedAt");
   });
 });

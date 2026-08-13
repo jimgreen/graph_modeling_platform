@@ -1738,7 +1738,6 @@ export type DeviceLibraryPersistencePayload = {
 
 export type BackendDeviceLibraryResponse = Partial<DeviceLibraryPersistencePayload> & {
   exists?: boolean;
-  savedAt?: string;
 };
 
 export type BackendMeasurementConfigResponse = Partial<PlatformMeasurementConfig> & {

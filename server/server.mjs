@@ -1321,14 +1321,12 @@ export async function readDeviceLibraryConfig() {
     const normalized = normalizeDeviceLibraryConfig(parsed);
     if (
       Number(parsed.schemaVersion) !== deviceLibrarySchemaVersion ||
+      Object.prototype.hasOwnProperty.call(parsed, "savedAt") ||
       JSON.stringify(parsed.customDeviceTemplates ?? []) !== JSON.stringify(normalized.customDeviceTemplates) ||
       JSON.stringify(parsed.deviceDefinitionOverrides ?? {}) !== JSON.stringify(normalized.deviceDefinitionOverrides) ||
       JSON.stringify(parsed.deviceDefinitionSharedKeys ?? {}) !== JSON.stringify(normalized.deviceDefinitionSharedKeys)
     ) {
-      await writeJsonStoreFile(deviceLibraryDataDir, deviceLibraryPath, {
-        ...normalized,
-        savedAt: typeof parsed.savedAt === "string" ? parsed.savedAt : new Date().toISOString()
-      });
+      await writeJsonStoreFile(deviceLibraryDataDir, deviceLibraryPath, normalized);
     }
     return {
       exists: true,
@@ -1342,10 +1340,7 @@ export async function readDeviceLibraryConfig() {
 }
 
 async function writeDeviceLibraryConfig(config) {
-  const normalized = {
-    ...normalizeDeviceLibraryConfig(config),
-    savedAt: new Date().toISOString()
-  };
+  const normalized = normalizeDeviceLibraryConfig(config);
   await writeJsonStoreFile(deviceLibraryDataDir, deviceLibraryPath, normalized);
   return normalized;
 }
