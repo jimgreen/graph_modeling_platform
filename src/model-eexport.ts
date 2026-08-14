@@ -569,7 +569,7 @@ function getRawEParamValue(
     return node.name;
   }
   if (key === "dev_type") {
-    return String(node.params.dev_type ?? "").trim() || node.kind;
+    return String(node.params.dev_type ?? "").trim() || baseDeviceKind(node.kind);
   }
   if (section === "HydroStorage" && key === "rated_capacity") {
     return deviceParamValue(node.params, "rated_capacity") ?? deviceParamValue(node.params, "capacity") ?? "";
@@ -1524,7 +1524,7 @@ function applyEInterfaceDefinitionToRecord(
   const params: Record<string, string> = {};
   for (const field of fields) {
     const sourceValue = field.sourceName === "dev_type"
-      ? String(record.params.dev_type ?? "").trim() || record.kind.split(":", 1)[0] || record.section
+      ? String(record.params.dev_type ?? "").trim() || baseDeviceKind(record.kind.split(":", 1)[0]) || record.section
       : record.params[field.sourceName] ?? "";
     const value = field.definition ? enumExportValueForDefinition(field.definition, sourceValue) : sourceValue;
     if (value !== "") {
@@ -2833,7 +2833,7 @@ export function buildEDeviceDefinitionFile(
     if (group.fields.size === 0) {
       continue;
     }
-    // 字段顺序：普通设备 idx/name/dev_type 固定在前；派生类只保留 idx、原类关联字段和个性化字段
+    // 字段顺序：idx/dev_type 固定在前，普通设备再补 name；派生类只保留 idx、dev_type、原类关联字段和个性化字段
     const fields: EDeviceDefinitionField[] = [];
     // E 文件固定标准列的中文名映射（不取图元 cnName 并集，避免混入英文 key）
     const fixedCnName: Record<string, string> = {
@@ -2849,12 +2849,13 @@ export function buildEDeviceDefinitionFile(
     fields.push({ exportName: "idx", cnName: fixedCnName.idx });
     if (!group.isDerivedComponentLibrary) {
       fields.push({ exportName: "name", cnName: fixedCnName.name });
-      fields.push({ exportName: "dev_type", cnName: fixedCnName.dev_type });
     }
+    fields.push({ exportName: "dev_type", cnName: fixedCnName.dev_type });
     for (const [exportName, cnNames] of group.fields) {
       if (
         exportName === "idx" ||
-        (!group.isDerivedComponentLibrary && (exportName === "name" || exportName === "dev_type")) ||
+        exportName === "dev_type" ||
+        (!group.isDerivedComponentLibrary && exportName === "name") ||
         (group.isDerivedComponentLibrary && DERIVED_COMPONENT_COMMON_PARAM_NAMES.has(exportName))
       ) {
         continue;

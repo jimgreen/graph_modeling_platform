@@ -1935,14 +1935,13 @@ test("defines electric generation derived classes within the base power-source l
       isDerivedComponentLibrary: true,
       isContainerComponentLibrary: undefined
     });
-    expect(derivedSection?.fields.map((field) => field.exportName).slice(0, 2)).toEqual(["idx", expected.relationKey]);
+    expect(derivedSection?.fields.map((field) => field.exportName).slice(0, 3)).toEqual(["idx", "dev_type", expected.relationKey]);
     expect(derivedSection?.fields.map((field) => field.exportName)).not.toContain("name");
-    expect(derivedSection?.fields.map((field) => field.exportName)).not.toContain("dev_type");
     expect(derivedSection?.fields.map((field) => field.exportName)).not.toContain("rated_power");
     expect(derivedSection?.fields.map((field) => field.exportName)).not.toContain("rated_voltage");
     const baseFieldNames = new Set(baseSection?.fields.map((field) => field.exportName));
     for (const field of derivedSection?.fields ?? []) {
-      if (field.exportName !== "idx" && field.exportName !== expected.relationKey) {
+      if (field.exportName !== "idx" && field.exportName !== "dev_type" && field.exportName !== expected.relationKey) {
         expect(baseFieldNames.has(field.exportName)).toBe(false);
       }
     }
