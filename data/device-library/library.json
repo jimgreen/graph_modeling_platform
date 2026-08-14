@@ -343,7 +343,8 @@
         "v_max": "1.1",
         "v_min": "0.9",
         "component_type": "ACGenerator"
-      }
+      },
+      "updatedAt": "2026-07-22T08:25:20.579Z"
     },
     "shared:ac-wind-source": {
       "kind": "shared:ac-wind-source",
@@ -665,6 +666,7 @@
     "shared:HydroStorage": {
       "kind": "shared:HydroStorage",
       "params": {
+        "soc": "0.5",
         "control_type": "PRESSURE",
         "pressure_set": "1",
         "flow_set": "0",
@@ -679,10 +681,12 @@
         "pressure_min": "0.1",
         "flow": "0",
         "gas_quantity": "500",
-        "soc": "0.5",
+        "soc_upper_limit": "0.9",
+        "soc_lower_limit": "0.1",
         "storage_type": "container",
         "component_type": "HydroStorage"
-      }
+      },
+      "updatedAt": "2026-08-11T19:27:04.886Z"
     },
     "shared:Hydro2DcE": {
       "kind": "shared:Hydro2DcE",
@@ -1165,6 +1169,7 @@
         "dc_i_max": "0",
         "dc_v_max": "1.1",
         "dc_v_min": "0.9",
+        "i_dc_set": "",
         "component_type": "DCACConverter"
       },
       "parameterDefinitions": [
@@ -1490,6 +1495,15 @@
           "exportName": "p_dc_set"
         },
         {
+          "cnName": "直流侧电流设定值",
+          "enName": "i_dc_set",
+          "valueType": "float",
+          "typicalValue": "",
+          "readonly": false,
+          "exportEnabled": true,
+          "exportName": "i_dc_set"
+        },
+        {
           "cnName": "直流电压设定值",
           "enName": "v_dc_set",
           "valueType": "float",
@@ -1607,6 +1621,8 @@
         "r2": "",
         "i_control_type": "PQ",
         "j_control_type": "PQ",
+        "i_p_set": "",
+        "j_p_set": "",
         "i_q_set": "",
         "j_q_set": "",
         "i_v_set": "",
@@ -1614,7 +1630,11 @@
         "i_p": "",
         "i_q": "",
         "i_v": "",
-        "i_i": ""
+        "i_i": "",
+        "j_p": "",
+        "j_q": "",
+        "j_v": "",
+        "j_i": ""
       },
       "parameterDefinitions": [
         {
@@ -1654,7 +1674,9 @@
               "label": "打开/开断"
             }
           ],
-          "readonly": false
+          "readonly": false,
+          "exportEnabled": false,
+          "exportName": ""
         },
         {
           "cnName": "工作状态",
@@ -1919,6 +1941,24 @@
           "exportName": "j_control_type"
         },
         {
+          "cnName": "首端有功设定值",
+          "enName": "i_p_set",
+          "valueType": "float",
+          "typicalValue": "",
+          "readonly": false,
+          "exportEnabled": true,
+          "exportName": "p_set"
+        },
+        {
+          "cnName": "末端有功设定值",
+          "enName": "j_p_set",
+          "valueType": "float",
+          "typicalValue": "",
+          "readonly": false,
+          "exportEnabled": false,
+          "exportName": ""
+        },
+        {
           "cnName": "首端无功设定值",
           "enName": "i_q_set",
           "valueType": "float",
@@ -1957,7 +1997,7 @@
         {
           "cnName": "首端有功",
           "enName": "i_p",
-          "valueType": "string",
+          "valueType": "float",
           "typicalValue": "",
           "readonly": false,
           "exportEnabled": false,
@@ -1966,7 +2006,7 @@
         {
           "cnName": "首端无功",
           "enName": "i_q",
-          "valueType": "string",
+          "valueType": "float",
           "typicalValue": "",
           "readonly": false,
           "exportEnabled": false,
@@ -1975,7 +2015,7 @@
         {
           "cnName": "首端电压",
           "enName": "i_v",
-          "valueType": "string",
+          "valueType": "float",
           "typicalValue": "",
           "readonly": false,
           "exportEnabled": false,
@@ -1984,11 +2024,47 @@
         {
           "cnName": "首端电流",
           "enName": "i_i",
-          "valueType": "string",
+          "valueType": "float",
           "typicalValue": "",
           "readonly": false,
           "exportEnabled": false,
           "exportName": ""
+        },
+        {
+          "cnName": "末端有功",
+          "enName": "j_p",
+          "valueType": "float",
+          "typicalValue": "",
+          "readonly": false,
+          "exportEnabled": false,
+          "exportName": "i_p_copy"
+        },
+        {
+          "cnName": "末端无功",
+          "enName": "j_q",
+          "valueType": "float",
+          "typicalValue": "",
+          "readonly": false,
+          "exportEnabled": false,
+          "exportName": "i_q_copy"
+        },
+        {
+          "cnName": "末端电压",
+          "enName": "j_v",
+          "valueType": "float",
+          "typicalValue": "",
+          "readonly": false,
+          "exportEnabled": false,
+          "exportName": "i_v_copy"
+        },
+        {
+          "cnName": "末端电流",
+          "enName": "j_i",
+          "valueType": "float",
+          "typicalValue": "",
+          "readonly": false,
+          "exportEnabled": false,
+          "exportName": "i_i_copy"
         }
       ],
       "measurementDefinitions": [
@@ -2014,7 +2090,7 @@
           "associatedField": "i_q"
         }
       ],
-      "updatedAt": "2026-08-13T00:17:13.372Z"
+      "updatedAt": "2026-08-14T00:55:59.192Z"
     },
     "acac-converter": {
       "kind": "acac-converter",
@@ -2058,447 +2134,7 @@
       "derivedComponentLibrary": "",
       "allowResizeTransform": false,
       "stateDefinitions": [],
-      "updatedAt": "2026-08-13T00:17:13.372Z"
-    },
-    "shared:ACACConverter::acac-converter": {
-      "kind": "shared:ACACConverter::acac-converter",
-      "params": {
-        "component_type": "ACACConverter",
-        "idx": "",
-        "status": "1",
-        "run_stat": "1",
-        "dev_type": "acac-converter",
-        "i_node": "",
-        "j_node": "",
-        "rated_capacity": "10",
-        "i_p_max": "10",
-        "i_p_min": "-10",
-        "i_q_max": "10",
-        "i_q_min": "-10",
-        "i_i_max": "0",
-        "i_v_max": "1.1",
-        "i_v_min": "0.9",
-        "j_p_max": "10",
-        "j_p_min": "-10",
-        "j_q_max": "10",
-        "j_q_min": "-10",
-        "j_i_max": "0",
-        "j_v_max": "1.1",
-        "j_v_min": "0.9",
-        "r1": "",
-        "r2": "",
-        "i_control_type": "PQ",
-        "j_control_type": "PQ",
-        "i_q_set": "",
-        "j_q_set": "",
-        "i_v_set": "",
-        "j_v_set": "",
-        "i_p": "",
-        "i_q": "",
-        "i_v": "",
-        "i_i": ""
-      },
-      "parameterDefinitions": [
-        {
-          "cnName": "序号",
-          "enName": "idx",
-          "valueType": "integer",
-          "typicalValue": "",
-          "readonly": true,
-          "exportEnabled": true,
-          "exportName": "idx"
-        },
-        {
-          "cnName": "名称",
-          "enName": "name",
-          "valueType": "string",
-          "typicalValue": "",
-          "readonly": true,
-          "exportEnabled": true,
-          "exportName": "name"
-        },
-        {
-          "cnName": "运行状态",
-          "enName": "status",
-          "valueType": "numberEnum",
-          "typicalValue": "1",
-          "enumValues": [
-            "1",
-            "0"
-          ],
-          "enumOptions": [
-            {
-              "value": "1",
-              "label": "闭合"
-            },
-            {
-              "value": "0",
-              "label": "打开/开断"
-            }
-          ],
-          "readonly": false,
-          "exportEnabled": false,
-          "exportName": ""
-        },
-        {
-          "cnName": "工作状态",
-          "enName": "run_stat",
-          "valueType": "numberEnum",
-          "typicalValue": "1",
-          "enumValues": [
-            "1",
-            "0"
-          ],
-          "enumOptions": [
-            {
-              "value": "1",
-              "label": "运行"
-            },
-            {
-              "value": "0",
-              "label": "停运"
-            }
-          ],
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "run_stat",
-          "enumValueType": "number"
-        },
-        {
-          "cnName": "设备类型",
-          "enName": "dev_type",
-          "valueType": "string",
-          "typicalValue": "acac-converter",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "dev_type"
-        },
-        {
-          "cnName": "首端节点",
-          "enName": "i_node",
-          "valueType": "integer",
-          "typicalValue": "",
-          "readonly": true,
-          "exportEnabled": true,
-          "exportName": "i_node"
-        },
-        {
-          "cnName": "末端节点",
-          "enName": "j_node",
-          "valueType": "integer",
-          "typicalValue": "",
-          "readonly": true,
-          "exportEnabled": true,
-          "exportName": "j_node"
-        },
-        {
-          "cnName": "额定容量",
-          "enName": "rated_capacity",
-          "valueType": "float",
-          "typicalValue": "10",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "rated_capacity"
-        },
-        {
-          "cnName": "首端有功上限",
-          "enName": "i_p_max",
-          "valueType": "float",
-          "typicalValue": "10",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "i_p_max"
-        },
-        {
-          "cnName": "首端有功下限",
-          "enName": "i_p_min",
-          "valueType": "float",
-          "typicalValue": "-10",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "i_p_min"
-        },
-        {
-          "cnName": "首端无功上限",
-          "enName": "i_q_max",
-          "valueType": "float",
-          "typicalValue": "10",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "i_q_max"
-        },
-        {
-          "cnName": "首端无功下限",
-          "enName": "i_q_min",
-          "valueType": "float",
-          "typicalValue": "-10",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "i_q_min"
-        },
-        {
-          "cnName": "首端电流上限",
-          "enName": "i_i_max",
-          "valueType": "float",
-          "typicalValue": "0",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "i_i_max"
-        },
-        {
-          "cnName": "首端电压上限",
-          "enName": "i_v_max",
-          "valueType": "float",
-          "typicalValue": "1.1",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "i_v_max"
-        },
-        {
-          "cnName": "首端电压下限",
-          "enName": "i_v_min",
-          "valueType": "float",
-          "typicalValue": "0.9",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "i_v_min"
-        },
-        {
-          "cnName": "末端有功上限",
-          "enName": "j_p_max",
-          "valueType": "float",
-          "typicalValue": "10",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "j_p_max"
-        },
-        {
-          "cnName": "末端有功下限",
-          "enName": "j_p_min",
-          "valueType": "float",
-          "typicalValue": "-10",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "j_p_min"
-        },
-        {
-          "cnName": "末端无功上限",
-          "enName": "j_q_max",
-          "valueType": "float",
-          "typicalValue": "10",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "j_q_max"
-        },
-        {
-          "cnName": "末端无功下限",
-          "enName": "j_q_min",
-          "valueType": "float",
-          "typicalValue": "-10",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "j_q_min"
-        },
-        {
-          "cnName": "末端电流上限",
-          "enName": "j_i_max",
-          "valueType": "float",
-          "typicalValue": "0",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "j_i_max"
-        },
-        {
-          "cnName": "末端电压上限",
-          "enName": "j_v_max",
-          "valueType": "float",
-          "typicalValue": "1.1",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "j_v_max"
-        },
-        {
-          "cnName": "末端电压下限",
-          "enName": "j_v_min",
-          "valueType": "float",
-          "typicalValue": "0.9",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "j_v_min"
-        },
-        {
-          "cnName": "首端等值电阻",
-          "enName": "r1",
-          "valueType": "float",
-          "typicalValue": "",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "r1"
-        },
-        {
-          "cnName": "末端等值电阻",
-          "enName": "r2",
-          "valueType": "float",
-          "typicalValue": "",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "r2"
-        },
-        {
-          "cnName": "首端控制类型",
-          "enName": "i_control_type",
-          "valueType": "stringEnum",
-          "typicalValue": "PQ",
-          "enumValues": [
-            "PQ",
-            "PV",
-            "PH",
-            "NONE"
-          ],
-          "enumOptions": [
-            {
-              "value": "PQ"
-            },
-            {
-              "value": "PV"
-            },
-            {
-              "value": "PH"
-            },
-            {
-              "value": "NONE"
-            }
-          ],
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "i_control_type"
-        },
-        {
-          "cnName": "末端控制类型",
-          "enName": "j_control_type",
-          "valueType": "stringEnum",
-          "typicalValue": "PQ",
-          "enumValues": [
-            "PQ",
-            "PV",
-            "PH",
-            "NONE"
-          ],
-          "enumOptions": [
-            {
-              "value": "PQ"
-            },
-            {
-              "value": "PV"
-            },
-            {
-              "value": "PH"
-            },
-            {
-              "value": "NONE"
-            }
-          ],
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "j_control_type"
-        },
-        {
-          "cnName": "首端无功设定值",
-          "enName": "i_q_set",
-          "valueType": "float",
-          "typicalValue": "",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "i_q_set"
-        },
-        {
-          "cnName": "末端无功设定值",
-          "enName": "j_q_set",
-          "valueType": "float",
-          "typicalValue": "",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "j_q_set"
-        },
-        {
-          "cnName": "首端电压设定值",
-          "enName": "i_v_set",
-          "valueType": "float",
-          "typicalValue": "",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "i_v_set"
-        },
-        {
-          "cnName": "末端电压设定值",
-          "enName": "j_v_set",
-          "valueType": "float",
-          "typicalValue": "",
-          "readonly": false,
-          "exportEnabled": true,
-          "exportName": "j_v_set"
-        },
-        {
-          "cnName": "首端有功",
-          "enName": "i_p",
-          "valueType": "string",
-          "typicalValue": "",
-          "readonly": false,
-          "exportEnabled": false,
-          "exportName": ""
-        },
-        {
-          "cnName": "首端无功",
-          "enName": "i_q",
-          "valueType": "string",
-          "typicalValue": "",
-          "readonly": false,
-          "exportEnabled": false,
-          "exportName": ""
-        },
-        {
-          "cnName": "首端电压",
-          "enName": "i_v",
-          "valueType": "string",
-          "typicalValue": "",
-          "readonly": false,
-          "exportEnabled": false,
-          "exportName": ""
-        },
-        {
-          "cnName": "首端电流",
-          "enName": "i_i",
-          "valueType": "string",
-          "typicalValue": "",
-          "readonly": false,
-          "exportEnabled": false,
-          "exportName": ""
-        }
-      ],
-      "measurementDefinitions": [
-        {
-          "measurementTypeId": "activePower",
-          "name": "有功",
-          "associatedField": "i_p"
-        },
-        {
-          "measurementTypeId": "voltage",
-          "name": "电压",
-          "associatedField": "i_v"
-        },
-        {
-          "measurementTypeId": "current",
-          "name": "电流",
-          "associatedField": "i_i"
-        },
-        {
-          "measurementTypeId": "reactivePower",
-          "name": "无功",
-          "position": "device",
-          "associatedField": "i_q"
-        }
-      ],
-      "updatedAt": "2026-08-13T00:17:20.618Z"
+      "updatedAt": "2026-08-14T00:55:59.192Z"
     },
     "acac-converter-vertical": {
       "kind": "acac-converter-vertical",

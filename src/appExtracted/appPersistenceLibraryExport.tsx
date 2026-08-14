@@ -3,6 +3,7 @@ import { ChangeEvent, DragEvent, Fragment, Suspense, isValidElement, lazy, memo,
 import { createPortal, flushSync } from "react-dom";
 import { useTransition } from "react";
 import { apiPath } from "../config";
+import { normalizeDeviceMeasurementDefinitions } from "../measurementDefinitionTypes";
 import {
   AlignCenter,
   AlignEndHorizontal,
@@ -280,6 +281,7 @@ import {
   buildManualConnectionPreviewPath,
   mirrorNodes,
   moveSavedSchemeToParent,
+  normalizeLegacyGasQuantityDeviceParams,
   renameSavedScheme,
   renameSavedProject,
   replaceSavedSchemeById,
@@ -1434,7 +1436,9 @@ function normalizeBooleanRecord(value: unknown): Record<string, boolean> {
 
 function normalizeGasQuantityFieldName(value: unknown): string {
   const text = String(value ?? "").trim();
-  return /^(?:gasQuantity|gasquantity)$/.test(text) ? "gas_quantity" : text;
+  if (/^(?:gasQuantity|gasquantity)$/.test(text)) return "gas_quantity";
+  if (/^(?:state_of_charge|stateOfCharge)$/.test(text)) return "soc";
+  return text;
 }
 
 function normalizeStringArrayRecord(value: unknown): Record<string, string[]> {
@@ -2139,15 +2143,16 @@ export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[]
           !(key === "status" && stateDefinitions.length > 0)
         )
       );
-      if (params.run_stat === undefined && (rawParams as { runStat?: unknown }).runStat !== undefined) {
-        params.run_stat = String((rawParams as { runStat?: unknown }).runStat ?? "");
-        delete params.runStat;
+      const normalizedParams = normalizeLegacyGasQuantityDeviceParams(params);
+      if (normalizedParams.run_stat === undefined && (rawParams as { runStat?: unknown }).runStat !== undefined) {
+        normalizedParams.run_stat = String((rawParams as { runStat?: unknown }).runStat ?? "");
+        delete normalizedParams.runStat;
       }
       if (normalizedComponentLibraryParam) {
-        params.component_type = normalizedComponentLibraryParam;
+        normalizedParams.component_type = normalizedComponentLibraryParam;
       }
       if (!isStaticNode({ kind: String(template.kind ?? "") as DeviceKind, params })) {
-        params.run_stat = normalizeRunStatValue(params.run_stat, "1");
+        normalizedParams.run_stat = normalizeRunStatValue(normalizedParams.run_stat, "1");
       }
       const derivedFromComponentLibrary = normalizeComponentLibraryName(String(
         template.derivedFromComponentLibrary ??
@@ -2177,32 +2182,32 @@ export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[]
         persistenceFlagIsYes(rawParams.is_derived_component_library ?? (rawParams as { isDerivedComponentLibrary?: unknown }).isDerivedComponentLibrary) ||
         Boolean(derivedFromComponentLibrary && migratedDerivedComponentLibrary);
       if (isDerivedComponentLibrary && derivedFromComponentLibrary) {
-        params.component_type = derivedFromComponentLibrary;
-        params.derived_from_component_type = derivedFromComponentLibrary;
-        params.is_derived_component_library = "1";
+        normalizedParams.component_type = derivedFromComponentLibrary;
+        normalizedParams.derived_from_component_type = derivedFromComponentLibrary;
+        normalizedParams.is_derived_component_library = "1";
         if (migratedDerivedComponentLibrary) {
-          params.derived_component_type = migratedDerivedComponentLibrary;
+          normalizedParams.derived_component_type = migratedDerivedComponentLibrary;
         } else {
-          delete params.derived_component_type;
+          delete normalizedParams.derived_component_type;
         }
         if (derivedComponentLibraryLabel) {
-          params.derived_component_library_label = derivedComponentLibraryLabel;
+          normalizedParams.derived_component_library_label = derivedComponentLibraryLabel;
         }
       } else {
-        delete params.derived_component_type;
-        delete params.derived_from_component_type;
-        delete params.derived_component_library_label;
-        delete params.is_derived_component_library;
+        delete normalizedParams.derived_component_type;
+        delete normalizedParams.derived_from_component_type;
+        delete normalizedParams.derived_component_library_label;
+        delete normalizedParams.is_derived_component_library;
       }
       const backgroundImage = customDeviceImageWithTerminalConnectors(
-        String(params.backgroundImage ?? ""),
+        String(normalizedParams.backgroundImage ?? ""),
         terminalTypes.slice(0, terminalCount),
         terminalAnchors
       );
       if (backgroundImage) {
-        params.backgroundImage = backgroundImage;
-        params.backgroundImageAssetId = params.backgroundImageAssetId && backgroundImage === apiPath(`/images/${params.backgroundImageAssetId}`)
-          ? params.backgroundImageAssetId
+        normalizedParams.backgroundImage = backgroundImage;
+        normalizedParams.backgroundImageAssetId = normalizedParams.backgroundImageAssetId && backgroundImage === apiPath(`/images/${normalizedParams.backgroundImageAssetId}`)
+          ? normalizedParams.backgroundImageAssetId
           : "";
       }
       return {
@@ -2211,7 +2216,7 @@ export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[]
         label: String(template.label ?? template.kind ?? ""),
         categoryLibrary: normalizeCategoryLibraryName(String(template.categoryLibrary ?? template.attributeLibrary ?? "自定义类别库")),
         size: template.size ?? { width: 96, height: 62 },
-        params,
+        params: normalizedParams,
         terminalType: (template.terminalType ?? "ac") as TerminalType,
         terminalCount,
         terminalTypes,
@@ -2223,12 +2228,13 @@ export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[]
         ...(isDerivedComponentLibrary ? {
           isDerivedComponentLibrary: true,
           derivedFromComponentLibrary,
-          derivedComponentLibrary: params.derived_component_type ?? "",
+          derivedComponentLibrary: normalizedParams.derived_component_type ?? "",
           derivedComponentLibraryLabel
         } : {}),
         allowResizeTransform: templateAllowsResizeTransform({ ...template, params: rawParams }),
         custom: true,
         parameterDefinitions: normalizeDefinitionRows(template.parameterDefinitions ?? []),
+        measurementDefinitions: normalizeDeviceMeasurementDefinitions(template.measurementDefinitions),
         stateDefinitions
       };
     })
@@ -2427,7 +2433,8 @@ export function normalizeDefinitionRows(value: unknown): DeviceParameterDefiniti
   return value
     .filter((item): item is DeviceParameterDefinition => Boolean(item && typeof item === "object"))
     .map((item) => {
-      const enName = String((item as DeviceParameterDefinition).enName ?? "").trim();
+      const rawEnName = String((item as DeviceParameterDefinition).enName ?? "").trim();
+      const enName = normalizeGasQuantityFieldName(rawEnName);
       const cnName = String((item as DeviceParameterDefinition).cnName ?? enName).trim() || enName;
       const valueType = (["integer", "float", "string", "stringEnum", "numberEnum", "enum"].includes((item as DeviceParameterDefinition).valueType)
         ? (item as DeviceParameterDefinition).valueType
@@ -2436,7 +2443,9 @@ export function normalizeDefinitionRows(value: unknown): DeviceParameterDefiniti
         cnName,
         enName,
         valueType,
-        typicalValue: String((item as DeviceParameterDefinition).typicalValue ?? ""),
+        typicalValue: enName === "soc"
+          ? normalizeRatioParameterInputValue("soc", String((item as DeviceParameterDefinition).typicalValue ?? "")) ?? String((item as DeviceParameterDefinition).typicalValue ?? "")
+          : String((item as DeviceParameterDefinition).typicalValue ?? ""),
         enumValues: (item as DeviceParameterDefinition).enumValues,
         enumValueType: (item as DeviceParameterDefinition).enumValueType,
         enumOptions: (item as DeviceParameterDefinition).enumOptions,
@@ -2445,7 +2454,7 @@ export function normalizeDefinitionRows(value: unknown): DeviceParameterDefiniti
           ? { exportEnabled: (item as DeviceParameterDefinition).exportEnabled }
           : {}),
         ...(typeof (item as DeviceParameterDefinition).exportName === "string"
-          ? { exportName: (item as DeviceParameterDefinition).exportName?.trim() ?? "" }
+          ? { exportName: normalizeGasQuantityFieldName((item as DeviceParameterDefinition).exportName) }
           : {})
       });
     })
@@ -2541,16 +2550,17 @@ export function normalizeDeviceDefinitionOverrides(value: unknown): Record<strin
       const hasDerivedFrom = Object.prototype.hasOwnProperty.call(rawOverride, "derivedFromComponentLibrary");
       const hasDerivedComponent = Object.prototype.hasOwnProperty.call(rawOverride, "derivedComponentLibrary");
       const hasDerivedLabel = Object.prototype.hasOwnProperty.call(rawOverride, "derivedComponentLibraryLabel");
+      const normalizedParams = normalizeLegacyGasQuantityDeviceParams(Object.fromEntries(
+        Object.entries(override.params ?? {})
+          .filter(([key]) => !isReservedDeviceDefinitionParamName(key))
+          .map(([key, val]) => [
+            key,
+            key === "run_stat" ? normalizeRunStatValue(val, "1") : String(val ?? "")
+          ])
+      ));
       const normalizedOverride: DeviceTemplateDefinitionOverride = {
         kind: normalizedKind,
-        params: Object.fromEntries(
-          Object.entries(override.params ?? {})
-            .filter(([key]) => !isReservedDeviceDefinitionParamName(key))
-            .map(([key, val]) => [
-              key,
-              key === "run_stat" ? normalizeRunStatValue(val, "1") : String(val ?? "")
-            ])
-        ),
+        params: normalizedParams,
         size: normalizeDefinitionOverrideSize(rawOverride.size),
         terminalType: normalizeDefinitionOverrideTerminalType(rawOverride.terminalType),
         terminalCount: terminalCount > 0 ? terminalCount : undefined,
@@ -2579,7 +2589,7 @@ export function normalizeDeviceDefinitionOverrides(value: unknown): Record<strin
           ? "delete-all"
           : undefined,
         measurementDefinitions: Array.isArray(rawOverride.measurementDefinitions)
-          ? rawOverride.measurementDefinitions.map((definition) => ({ ...definition }))
+          ? normalizeDeviceMeasurementDefinitions(rawOverride.measurementDefinitions)
           : undefined,
         stateDefinitions,
         updatedAt: typeof override.updatedAt === "string" ? override.updatedAt : undefined

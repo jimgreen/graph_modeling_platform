@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { createMeasurementFieldParameterDefinition } from "./measurementDefinitionTypes";
+import { createMeasurementFieldParameterDefinition, normalizeDeviceMeasurementDefinitions } from "./measurementDefinitionTypes";
 
 describe("measurement field parameter definitions", () => {
   test("materializes run_stat as the canonical numeric enum", () => {
@@ -17,5 +17,15 @@ describe("measurement field parameter definitions", () => {
       readonly: false,
       exportEnabled: true
     });
+  });
+
+  test("normalizes legacy SOC measurement type and field names", () => {
+    expect(normalizeDeviceMeasurementDefinitions([{
+      measurementTypeId: "state_of_charge",
+      associatedField: "stateOfCharge"
+    }])).toEqual([{
+      measurementTypeId: "soc",
+      associatedField: "soc"
+    }]);
   });
 });

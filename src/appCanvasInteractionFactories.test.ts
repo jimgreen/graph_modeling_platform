@@ -68,17 +68,17 @@ describe("batch common parameter updates", () => {
       writeOperationLog: vi.fn()
     });
     const applyBatchCommonParam = createApplyBatchCommonParam({
-      PARAM_LABELS: { state_of_charge: "荷电状态" },
+      PARAM_LABELS: { soc: "SOC" },
       applyBatchCommonParamPatch,
       canBatchEditParam,
       normalizeNodeLabelDisplayMode: (value: string) => value,
       normalizeRatioParameterInputValue
     });
 
-    applyBatchCommonParam("state_of_charge", "99%");
+    applyBatchCommonParam("soc", "99%");
 
     expect(patchGraphNodes).toHaveBeenCalledTimes(1);
-    expect(patchGraphNodes.mock.calls[0][0].every((node: typeof firstStorage) => node.params.state_of_charge === "0.99")).toBe(true);
+    expect(patchGraphNodes.mock.calls[0][0].every((node: typeof firstStorage) => node.params.soc === "0.99")).toBe(true);
   });
 
   test("validates electric heat coefficients against every selected E section", () => {
@@ -151,7 +151,7 @@ describe("single device parameter updates", () => {
       undoScopeForNodeFootprintPatch: vi.fn(() => ({}))
     });
 
-    updateParam("state_of_charge", "120%");
+    updateParam("soc", "120%");
 
     expect(patchGraphNodes).not.toHaveBeenCalled();
   });

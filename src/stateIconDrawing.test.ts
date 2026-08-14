@@ -60,6 +60,14 @@ import {
 } from "./appExtracted/appDeviceDefinitionFactories";
 import { createCustomDeviceDraftFromTemplate, customDeviceImageWithTerminalConnectors, generateCustomDeviceImage, projectCustomDeviceTerminalAnchorToBoundary, resolveTemplateComponentLibrary } from "./customDeviceUtils";
 
+const DEFINITION_MEASUREMENT_DRAFT_SCOPE = {
+  definitionMeasurementSelectionAnchorRef: { current: null },
+  definitionParameterSelectionAnchorRef: { current: null },
+  setDefinitionMeasurementDraft: () => undefined,
+  setSelectedDefinitionMeasurementRowIndexes: () => undefined,
+  setSelectedDefinitionParameterRowIds: () => undefined
+};
+
 describe("default device state draft rows", () => {
   test("uses a transparent borderless frame when no definition frame is configured", () => {
     expect(DEFAULT_STATE_ICON_DRAWING_FRAME).toMatchObject({
@@ -1024,6 +1032,7 @@ describe("default device state draft rows", () => {
     }
     let stateRows: any[] = [];
     const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
+      ...DEFINITION_MEASUREMENT_DRAFT_SCOPE,
       DEFAULT_STATE_PAGE_ID,
       DeviceGlyph: ({ node, stateVisual }: any) => `<path data-status="${node.params.status}" data-state="${stateVisual?.value ?? ""}"/>`,
       categoryLibraryComponentLibraryKey: (group: string, componentLibrary: string) => `${group}:${componentLibrary}`,
@@ -1086,6 +1095,7 @@ describe("default device state draft rows", () => {
     }
     let stateRows: any[] = [];
     const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
+      ...DEFINITION_MEASUREMENT_DRAFT_SCOPE,
       DEFAULT_STATE_PAGE_ID,
       DeviceGlyph: ({ node, stateVisual }: any) => `<path data-status="${node.params.status}" data-state="${stateVisual?.value ?? ""}"/>`,
       categoryLibraryComponentLibraryKey: (group: string, componentLibrary: string) => `${group}:${componentLibrary}`,
@@ -1159,6 +1169,7 @@ describe("default device state draft rows", () => {
     let stateRows: any[] = [];
     const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
       ...APP_STATIC_SCOPE,
+      ...DEFINITION_MEASUREMENT_DRAFT_SCOPE,
       setCollapsedDefinitionComponentLibraries: (updater: any) => {
         updater([]);
       },
@@ -1207,6 +1218,7 @@ describe("default device state draft rows", () => {
       let stateRows: any[] = [];
       const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
         ...APP_STATIC_SCOPE,
+        ...DEFINITION_MEASUREMENT_DRAFT_SCOPE,
         setCollapsedDefinitionComponentLibraries: (updater: any) => {
           updater([]);
         },
@@ -1248,6 +1260,7 @@ describe("default device state draft rows", () => {
     let stateRows: any[] = [];
     const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
       ...APP_STATIC_SCOPE,
+      ...DEFINITION_MEASUREMENT_DRAFT_SCOPE,
       imageAssets: {
         staleFallback: staleFallbackImage
       },
@@ -1294,6 +1307,7 @@ describe("default device state draft rows", () => {
       '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160"><g data-state-icon-layer-width="180" data-state-icon-layer-height="120"></g></svg>'
     )}`;
     const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
+      ...DEFINITION_MEASUREMENT_DRAFT_SCOPE,
       DEFAULT_STATE_PAGE_ID,
       categoryLibraryComponentLibraryKey: (group: string, componentLibrary: string) => `${group}:${componentLibrary}`,
       createDefinitionDraftRows: () => [],
@@ -1340,6 +1354,7 @@ describe("default device state draft rows", () => {
     )}`;
     let visualDraft: any = null;
     const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft({
+      ...DEFINITION_MEASUREMENT_DRAFT_SCOPE,
       DEFAULT_STATE_PAGE_ID,
       categoryLibraryComponentLibraryKey: (group: string, componentLibrary: string) => `${group}:${componentLibrary}`,
       createDefinitionDraftRows: () => [],

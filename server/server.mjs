@@ -166,7 +166,7 @@ export const eSectionColumns = {
     "run_stat"
   ],
   DCDCConverter: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_p_max", "i_p_min", "i_i_max", "i_v_max", "i_v_min", "j_p_max", "j_p_min", "j_i_max", "j_v_max", "j_v_min", "r1", "r2", "i_control_type", "j_control_type", "p_set", "i_set", "v_set", "run_stat"],
-  DCACConverter: ["idx", "name", "ac_node", "dc_node", "rated_capacity", "ac_p_max", "ac_p_min", "ac_i_max", "ac_v_max", "ac_v_min", "dc_p_max", "dc_p_min", "dc_i_max", "dc_v_max", "dc_v_min", "r1", "r2", "ac_control_type", "dc_control_type", "p_ac_set", "q_ac_set", "v_ac_set", "p_dc_set", "v_dc_set", "run_stat"],
+  DCACConverter: ["idx", "name", "ac_node", "dc_node", "rated_capacity", "ac_p_max", "ac_p_min", "ac_i_max", "ac_v_max", "ac_v_min", "dc_p_max", "dc_p_min", "dc_i_max", "dc_v_max", "dc_v_min", "r1", "r2", "ac_control_type", "dc_control_type", "p_ac_set", "q_ac_set", "v_ac_set", "p_dc_set", "i_dc_set", "v_dc_set", "run_stat"],
   ACACConverter: ["idx", "name", "i_node", "j_node", "rated_capacity", "i_p_max", "i_p_min", "i_i_max", "i_v_max", "i_v_min", "j_p_max", "j_p_min", "j_i_max", "j_v_max", "j_v_min", "r1", "r2", "i_control_type", "j_control_type", "p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set", "run_stat"],
   HydroNode: ["idx", "name", "pressure", "run_stat"],
   HydroSource: ["idx", "name", "node", "rated_capacity", "control_type", "pressure_set", "pressure_max", "pressure_min", "flow_set", "flow_max", "flow_min", "run_stat"],
@@ -176,7 +176,7 @@ export const eSectionColumns = {
   HydroPressRegulator: ["idx", "name", "i_node", "j_node", "run_stat"],
   HydroStopValve: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   HydroBus: ["idx", "name", "node", "run_stat"],
-  HydroStorage: ["idx", "name", "node", "pressure", "rated_capacity", "water_volume", "pressure_max", "pressure_min", "run_stat"],
+  HydroStorage: ["idx", "name", "node", "control_type", "pressure_set", "flow_set", "alpha", "flow_min", "flow_max", "run_stat", "pressure", "rated_capacity", "water_volume", "initial_soc", "soc", "soc_upper_limit", "soc_lower_limit", "pressure_max", "pressure_min"],
   AcE2Hydro: ["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_ac_load_t1", "idx_h2_unit_t2"],
   DcE2Hydro: ["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_dc_load_t1", "idx_h2_unit_t2"],
   Hydro2AcE: ["idx", "name", "control_type", "h2e_coeff", "run_stat", "idx_ac_unit_t1", "idx_h2_load_t2"],
@@ -189,7 +189,7 @@ export const eSectionColumns = {
   HeatPipe: ["idx", "name", "i_node", "j_node", "run_stat"],
   HeatStopValve: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   HeatBus: ["idx", "name", "node", "run_stat"],
-  HeatStorage: ["idx", "name", "node", "run_stat"],
+  HeatStorage: ["idx", "name", "node", "capacity", "temperature", "soc", "soc_upper_limit", "soc_lower_limit", "run_stat"],
   HeatBoiler: ["idx", "name", "run_stat", "idx_heat_unit_t1"],
   HeatBoiler2: ["idx", "name", "run_stat", "idx_heat2_unit_t1"],
   AcE2Heat: ["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_ac_load_t1", "idx_heat_unit_t2"],
@@ -298,7 +298,10 @@ const eFloatColumns = new Set([
   "i_v_set",
   "j_v_set",
   "e2h_coeff",
-  "h2e_coeff"
+  "h2e_coeff",
+  "soc",
+  "soc_upper_limit",
+  "soc_lower_limit"
 ]);
 
 const mimeExt = {
@@ -780,13 +783,18 @@ export function normalizeMeasurementConfig(payload) {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
       return [];
     }
-    const id = String(item.id ?? "").trim();
+    const rawId = String(item.id ?? "").trim();
+    const id = /^(?:state_of_charge|stateOfCharge)$/u.test(rawId) ? "soc" : rawId;
     if (!id || seenTypes.has(id)) {
       return [];
     }
     seenTypes.add(id);
     const rawKey = String(item.key ?? id).trim() || id;
-    const key = /^(?:gasQuantity|gasquantity)$/.test(rawKey) ? "gas_quantity" : rawKey;
+    const key = /^(?:gasQuantity|gasquantity)$/.test(rawKey)
+      ? "gas_quantity"
+      : /^(?:state_of_charge|stateOfCharge)$/u.test(rawKey)
+        ? "soc"
+        : rawKey;
     const name = String(item.name ?? key).trim() || key;
     return [{
       id,
@@ -825,7 +833,9 @@ export function normalizeMeasurementConfig(payload) {
       const rawMeasurementTypeId = String(item.measurementTypeId ?? "").trim();
       const measurementTypeId = electricStorageMeasurementProfileKinds.has(deviceKind) && rawMeasurementTypeId === "level"
         ? "soc"
-        : rawMeasurementTypeId;
+        : /^(?:state_of_charge|stateOfCharge)$/u.test(rawMeasurementTypeId)
+          ? "soc"
+          : rawMeasurementTypeId;
       if (!measurementTypeId || !validTypeIds.has(measurementTypeId)) {
         return [];
       }
@@ -834,7 +844,10 @@ export function normalizeMeasurementConfig(payload) {
         measurementTypeId,
         position: item.position !== undefined ? String(item.position).trim() || undefined : undefined,
         associatedField: item.associatedField !== undefined
-          ? String(item.associatedField).trim().replace(/^(?:gasQuantity|gasquantity)$/u, "gas_quantity") || undefined
+          ? String(item.associatedField)
+              .trim()
+              .replace(/^(?:gasQuantity|gasquantity)$/u, "gas_quantity")
+              .replace(/^(?:state_of_charge|stateOfCharge)$/u, "soc") || undefined
           : undefined,
         role: item.role ? String(item.role) : undefined,
         defaultVisible: item.defaultVisible,
@@ -878,7 +891,9 @@ async function writeMeasurementConfig(config) {
 
 function normalizeGasQuantityFieldName(value) {
   const text = String(value ?? "").trim();
-  return /^(?:gasQuantity|gasquantity)$/u.test(text) ? "gas_quantity" : text;
+  if (/^(?:gasQuantity|gasquantity)$/u.test(text)) return "gas_quantity";
+  if (/^(?:state_of_charge|stateOfCharge)$/u.test(text)) return "soc";
+  return text;
 }
 
 const runStatEnumValues = ["1", "0"];
@@ -978,7 +993,59 @@ function normalizeRunStatParameterDefinition(definition) {
 }
 
 function normalizeDeviceLibraryParameterDefinitions(value) {
-  return Array.isArray(value) ? value.map(normalizeRunStatParameterDefinition) : value;
+  if (!Array.isArray(value)) return value;
+  const normalized = [];
+  let socDefinitionIndex = -1;
+  let socDefinitionIsCanonical = false;
+  for (const rawDefinition of value) {
+    if (!rawDefinition || typeof rawDefinition !== "object" || Array.isArray(rawDefinition)) {
+      normalized.push(rawDefinition);
+      continue;
+    }
+    const rawName = String(rawDefinition.enName ?? "").trim();
+    const enName = /^(?:state_of_charge|stateOfCharge)$/u.test(rawName) ? "soc" : rawName;
+    const rawExportName = rawDefinition.exportName;
+    const definition = normalizeRunStatParameterDefinition({
+      ...rawDefinition,
+      enName,
+      ...(enName === "soc" && String(rawDefinition.typicalValue ?? "").trim()
+        ? { typicalValue: normalizeDeviceLibraryParams({ soc: rawDefinition.typicalValue }).soc }
+        : {}),
+      ...(typeof rawExportName === "string" && /^(?:state_of_charge|stateOfCharge)$/u.test(rawExportName.trim())
+        ? { exportName: "soc" }
+        : {})
+    });
+    if (enName !== "soc") {
+      normalized.push(definition);
+      continue;
+    }
+    const canonical = rawName === "soc";
+    if (socDefinitionIndex < 0) {
+      socDefinitionIndex = normalized.length;
+      socDefinitionIsCanonical = canonical;
+      normalized.push(definition);
+    } else if (canonical && !socDefinitionIsCanonical) {
+      normalized[socDefinitionIndex] = definition;
+      socDefinitionIsCanonical = true;
+    }
+  }
+  return normalized;
+}
+
+function normalizeDeviceLibraryMeasurementDefinitions(value) {
+  if (!Array.isArray(value)) return value;
+  return value.map((rawDefinition) => {
+    if (!rawDefinition || typeof rawDefinition !== "object" || Array.isArray(rawDefinition)) {
+      return rawDefinition;
+    }
+    const measurementTypeId = /^(?:state_of_charge|stateOfCharge)$/u.test(String(rawDefinition.measurementTypeId ?? "").trim())
+      ? "soc"
+      : rawDefinition.measurementTypeId;
+    const associatedField = /^(?:state_of_charge|stateOfCharge)$/u.test(String(rawDefinition.associatedField ?? "").trim())
+      ? "soc"
+      : rawDefinition.associatedField;
+    return { ...rawDefinition, measurementTypeId, associatedField };
+  });
 }
 
 function normalizeDeviceLibraryParams(value, addRunStatDefault = false) {
@@ -988,6 +1055,18 @@ function normalizeDeviceLibraryParams(value, addRunStatDefault = false) {
     params.run_stat = params.runStat;
   }
   delete params.runStat;
+  if (params.soc === undefined) {
+    params.soc = params.state_of_charge ?? params.stateOfCharge;
+  }
+  delete params.state_of_charge;
+  delete params.stateOfCharge;
+  for (const key of ["soc", "soc_upper_limit", "soc_lower_limit"]) {
+    if (params[key] === undefined || params[key] === null || String(params[key]).trim() === "") continue;
+    const numeric = Number(String(params[key]).trim().replace(/%$/u, ""));
+    if (Number.isFinite(numeric)) {
+      params[key] = String(Math.abs(numeric) > 1 || String(params[key]).trim().endsWith("%") ? numeric / 100 : numeric);
+    }
+  }
   if (addRunStatDefault || Object.prototype.hasOwnProperty.call(params, "run_stat")) {
     params.run_stat = normalizeRunStatValue(params.run_stat, "1");
   }
@@ -1052,7 +1131,8 @@ export function normalizeDeviceLibraryConfig(payload) {
       ...template,
       categoryLibrary: template.categoryLibrary ?? template.attributeLibrary ?? "交流设备",
       params: normalizeDeviceLibraryParams(template.params, !String(template.kind ?? "").startsWith("static-")),
-      parameterDefinitions: normalizeDeviceLibraryParameterDefinitions(template.parameterDefinitions)
+      parameterDefinitions: normalizeDeviceLibraryParameterDefinitions(template.parameterDefinitions),
+      measurementDefinitions: normalizeDeviceLibraryMeasurementDefinitions(template.measurementDefinitions)
     }));
   const customCategoryLibraries = Array.isArray(source.customCategoryLibraries)
     ? source.customCategoryLibraries
@@ -1098,6 +1178,9 @@ export function normalizeDeviceLibraryConfig(payload) {
       const parameterDefinitions = Array.isArray(override.parameterDefinitions)
         ? normalizeDeviceLibraryParameterDefinitions(override.parameterDefinitions)
         : undefined;
+      const measurementDefinitions = Array.isArray(override.measurementDefinitions)
+        ? normalizeDeviceLibraryMeasurementDefinitions(override.measurementDefinitions)
+        : undefined;
       const explicitlyDeletesAllParameters = parameterDefinitions?.length === 0 &&
         override.parameterDefinitionsIntent === "delete-all";
       return [kind, {
@@ -1106,6 +1189,7 @@ export function normalizeDeviceLibraryConfig(payload) {
         ...(parameterDefinitions && (parameterDefinitions.length > 0 || explicitlyDeletesAllParameters)
           ? { parameterDefinitions }
           : {}),
+        ...(measurementDefinitions ? { measurementDefinitions } : {}),
         ...(explicitlyDeletesAllParameters
           ? { parameterDefinitionsIntent: "delete-all" }
           : { parameterDefinitionsIntent: undefined })
@@ -1691,13 +1775,18 @@ function normalizeStoredDeviceParameterDefinitionNames(value) {
       if (!definition || typeof definition !== "object" || Array.isArray(definition)) return definition;
       const normalizeName = (name) => {
         const text = String(name ?? "").trim();
-        return /^(?:gasQuantity|gasquantity)$/u.test(text) ? "gas_quantity" : text;
+        if (/^(?:gasQuantity|gasquantity)$/u.test(text)) return "gas_quantity";
+        if (/^(?:state_of_charge|stateOfCharge)$/u.test(text)) return "soc";
+        return text;
       };
       const enName = normalizeName(definition.enName);
       const exportName = typeof definition.exportName === "string" ? normalizeName(definition.exportName) : definition.exportName;
       return normalizeRunStatParameterDefinition({
         ...definition,
         enName,
+        ...(enName === "soc" && String(definition.typicalValue ?? "").trim()
+          ? { typicalValue: normalizeDeviceLibraryParams({ soc: definition.typicalValue }).soc }
+          : {}),
         ...(definition.exportName !== undefined ? { exportName } : {})
       });
     });
@@ -1714,10 +1803,14 @@ function normalizeStoredDeviceParams(params = {}) {
   for (const [key, value] of Object.entries(params)) {
     const normalizedKey = /^(?:gasQuantity|gasquantity)$/u.test(key)
       ? "gas_quantity"
+      : /^(?:state_of_charge|stateOfCharge)$/u.test(key)
+        ? "soc"
       : key === "runStat"
         ? "run_stat"
         : key;
-    const priority = normalizedKey === "run_stat"
+    const priority = normalizedKey === "soc"
+      ? key === "soc" ? 2 : 1
+      : normalizedKey === "run_stat"
       ? key === "run_stat" ? 2 : 1
       : normalizedKey !== "gas_quantity"
       ? 0
@@ -1732,7 +1825,15 @@ function normalizeStoredDeviceParams(params = {}) {
       ? normalizeStoredDeviceParameterDefinitionNames(value)
       : normalizedKey === "run_stat"
         ? normalizeRunStatValue(value, "1")
-        : value;
+        : ["soc", "soc_upper_limit", "soc_lower_limit"].includes(normalizedKey) && String(value ?? "").trim()
+          ? (() => {
+              const text = String(value).trim();
+              const numeric = Number(text.replace(/%$/u, ""));
+              return Number.isFinite(numeric)
+                ? String(Math.abs(numeric) > 1 || text.endsWith("%") ? numeric / 100 : numeric)
+                : value;
+            })()
+          : value;
   }
   return next;
 }
@@ -1813,7 +1914,16 @@ function normalizeProjectDeviceParameterNamesForStorage(project) {
           ...group,
           items: (Array.isArray(group?.items) ? group.items : []).map((item) => ({
             ...item,
-            sourcePoint: String(item?.sourcePoint ?? "").trim().replace(/(^|\.)(?:gasQuantity|gasquantity)$/u, "$1gas_quantity")
+            measurementTypeId: /^(?:state_of_charge|stateOfCharge)$/u.test(String(item?.measurementTypeId ?? "").trim())
+              ? "soc"
+              : item?.measurementTypeId,
+            associatedField: /^(?:state_of_charge|stateOfCharge)$/u.test(String(item?.associatedField ?? "").trim())
+              ? "soc"
+              : item?.associatedField,
+            sourcePoint: String(item?.sourcePoint ?? "")
+              .trim()
+              .replace(/(^|\.)(?:gasQuantity|gasquantity)$/u, "$1gas_quantity")
+              .replace(/(^|\.)(?:state_of_charge|stateOfCharge)$/u, "$1soc")
           }))
         }))
       }
@@ -2578,7 +2688,14 @@ function resolveEParameterFields(kind, params = {}) {
   });
   const builtInColumns = eSectionColumns[section];
   if (!definitions.length) {
-    return (builtInColumns ?? []).map((column) => ({ sourceName: column, exportName: column }));
+    return (builtInColumns ?? []).map((column) => ({
+      sourceName: section === "DCDCConverter"
+        ? ({ p_set: "i_p_set", i_set: "i_i_set", v_set: "i_v_set" })[column] ?? column
+        : section === "ACACConverter" && column === "p_set"
+          ? "i_p_set"
+          : column,
+      exportName: column
+    }));
   }
   const fields = [];
   const seenExportNames = new Set();
@@ -2593,7 +2710,9 @@ function resolveEParameterFields(kind, params = {}) {
     const definitionByLegacyColumn = new Map();
     const definitionsMappedToLegacyColumns = new Set();
     for (const definition of definitions) {
-      const legacyColumn = legacyEColumnForDefinition(section, definition.enName);
+      const settings = parameterDefinitionExportSettings(kind, params, definition);
+      const legacyColumn = legacyEColumnForDefinition(section, definition.enName) ||
+        (builtInColumns.includes(settings.exportName) ? settings.exportName : "");
       if (!legacyColumn) {
         continue;
       }
@@ -2606,12 +2725,17 @@ function resolveEParameterFields(kind, params = {}) {
     for (const column of builtInColumns) {
       const definition = definitionByLegacyColumn.get(column);
       if (!definition) {
-        appendField({ sourceName: column, exportName: column });
+        const sourceName = section === "DCDCConverter"
+          ? ({ p_set: "i_p_set", i_set: "i_i_set", v_set: "i_v_set" })[column] ?? column
+          : section === "ACACConverter" && column === "p_set"
+            ? "i_p_set"
+            : column;
+        appendField({ sourceName, exportName: column });
         continue;
       }
       const settings = parameterDefinitionExportSettings(kind, params, definition);
       if (settings.exportEnabled) {
-        appendField({ sourceName: column, exportName: settings.exportName, definition });
+        appendField({ sourceName: definition.enName, exportName: settings.exportName, definition });
       }
     }
     for (const definition of definitions) {
@@ -2774,6 +2898,11 @@ function getTerminal(node, terminalId) {
   return node?.terminals?.find((terminal) => terminal.id === terminalId) ?? node?.terminals?.[0];
 }
 
+function shouldAssignVoltageSetpointDefault(value) {
+  const normalized = normalizeVoltageBaseInput(value);
+  return value === undefined || String(value).trim() === "" || (normalized !== "" && Number(normalized) === 0);
+}
+
 function calculateElectricalTopology(nodes = [], edges = []) {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const terminalKey = (nodeId, terminalId) => `${nodeId}:${terminalId}`;
@@ -2836,10 +2965,54 @@ function calculateElectricalTopology(nodes = [], edges = []) {
     return next;
   };
 
+  const voltageGroups = new Map();
+  for (const node of nodes) {
+    for (const terminal of node.terminals ?? []) {
+      if (terminal.type !== "ac" && terminal.type !== "dc") continue;
+      const voltage = terminalVoltageDisplay(node, terminal);
+      if (!voltage || Number(voltage) === 0) continue;
+      const groupKey = `${terminal.type}:${find(terminalKey(node.id, terminal.id))}`;
+      const voltages = voltageGroups.get(groupKey) ?? new Map();
+      voltages.set(voltage, voltage);
+      voltageGroups.set(groupKey, voltages);
+    }
+  }
+  const voltageForTerminal = (nodeId, terminal) => {
+    if (!terminal || (terminal.type !== "ac" && terminal.type !== "dc")) return "";
+    const groupKey = `${terminal.type}:${find(terminalKey(nodeId, terminal.id))}`;
+    const voltages = voltageGroups.get(groupKey);
+    return voltages?.size === 1 ? Array.from(voltages.values())[0] : "";
+  };
+  const applyVoltageSetpointDefaults = (node, terminals) => {
+    const section = inferESection(node.kind, node.params ?? {});
+    const specs = section === "ACGenerator"
+      ? [["v_set", terminals.find((terminal) => terminal.type === "ac") ?? terminals[0]]]
+      : section === "DCGenerator"
+        ? [["v_set", terminals.find((terminal) => terminal.type === "dc") ?? terminals[0]]]
+        : section === "DCDCConverter" || section === "ACACConverter"
+          ? [["i_v_set", terminals[0]], ["j_v_set", terminals[1]]]
+          : section === "DCACConverter"
+            ? [
+                ["v_ac_set", terminals.find((terminal) => terminal.type === "ac") ?? terminals[0]],
+                ["v_dc_set", terminals.find((terminal) => terminal.type === "dc") ?? terminals[1]]
+              ]
+            : [];
+    let params = node.params ?? {};
+    for (const [paramKey, terminal] of specs) {
+      if (!shouldAssignVoltageSetpointDefault(params[paramKey])) continue;
+      const voltage = voltageForTerminal(node.id, terminal);
+      if (!voltage) continue;
+      if (params === node.params) params = { ...params };
+      params[paramKey] = voltage;
+    }
+    return params;
+  };
+
   return nodes.map((node) => {
     const terminals = (node.terminals ?? []).map((terminal) => {
       const key = terminalKey(node.id, terminal.id);
-      return { ...terminal, nodeNumber: getTopologyNumber(key, terminal.type) };
+      const voltage = voltageForTerminal(node.id, terminal);
+      return { ...terminal, vbase: voltage || terminal.vbase, nodeNumber: getTopologyNumber(key, terminal.type) };
     });
     const acTopologyNode = Number(terminals.find((terminal) => terminal.type === "ac")?.nodeNumber ?? 0);
     const dcTopologyNode = Number(terminals.find((terminal) => terminal.type === "dc")?.nodeNumber ?? 0);
@@ -2848,6 +3021,7 @@ function calculateElectricalTopology(nodes = [], edges = []) {
       acTopologyNode,
       dcTopologyNode,
       nodeNumber: terminals.length === 1 ? terminals[0].nodeNumber : node.nodeNumber,
+      params: applyVoltageSetpointDefaults(node, terminals),
       terminals
     };
   });
@@ -2925,9 +3099,13 @@ function buildTopologyNodeDevices(nodes) {
         const vbase = firstText(candidates.map(({ node, terminal }) => terminalVoltageDisplay(node, terminal)));
         const voltage = firstText([representative.node?.params?.voltage, vbase]);
         const runStat = normalizeRunStatForE(representative.node?.params?.run_stat) || "1";
-        const numericCandidateParam = (...keys) => firstNumericEValue(firstText(
-          keys.flatMap((key) => candidates.map(({ node }) => node?.params?.[key]))
-        ));
+        const numericCandidateParam = (...keys) => {
+          const values = keys
+            .flatMap((key) => candidates.map(({ node }) => node?.params?.[key]))
+            .map((value) => firstNumericEValue(value))
+            .filter((value) => value !== "");
+          return values.find((value) => Number(value) !== 0) ?? values[0] ?? "";
+        };
         const commonParams = {
           idx,
           name: representative.node?.name || `${section}_${idx}`,

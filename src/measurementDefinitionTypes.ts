@@ -111,7 +111,15 @@ function normalizedOptionalString(value: unknown): string | undefined {
 function normalizedAssociatedField(value: unknown): string | undefined {
   const field = normalizedOptionalString(value);
   if (!field) return undefined;
-  return /^(?:gasQuantity|gasquantity)$/u.test(field) ? "gas_quantity" : field;
+  if (/^(?:gasQuantity|gasquantity)$/u.test(field)) return "gas_quantity";
+  if (/^(?:state_of_charge|stateOfCharge)$/u.test(field)) return "soc";
+  return field;
+}
+
+function normalizedMeasurementTypeId(value: unknown): string | undefined {
+  const measurementTypeId = normalizedOptionalString(value);
+  if (!measurementTypeId) return undefined;
+  return /^(?:state_of_charge|stateOfCharge)$/u.test(measurementTypeId) ? "soc" : measurementTypeId;
 }
 
 export function normalizeDeviceMeasurementDefinitions(
@@ -122,7 +130,7 @@ export function normalizeDeviceMeasurementDefinitions(
   return input.flatMap((raw): DeviceMeasurementDefinition[] => {
     if (!raw || typeof raw !== "object") return [];
     const source = raw as Partial<DeviceMeasurementDefinition>;
-    const measurementTypeId = normalizedOptionalString(source.measurementTypeId);
+    const measurementTypeId = normalizedMeasurementTypeId(source.measurementTypeId);
     if (!measurementTypeId || (validMeasurementTypeIds && !validMeasurementTypeIds.has(measurementTypeId))) return [];
     const styleSource = source.styleOverride && typeof source.styleOverride === "object"
       ? source.styleOverride

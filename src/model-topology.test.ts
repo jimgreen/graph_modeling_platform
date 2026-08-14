@@ -735,8 +735,15 @@ test("exports electrical and multi-energy node records from calculated graph top
   dcLine.terminals[1].vbase = "750 V";
   dcLoad.terminals[0].vbase = "750 V";
   hydrogenSource.params = { ...hydrogenSource.params, pressure: "3.0 MPa" };
+  hydrogenPipe.params = { ...hydrogenPipe.params, pressure: "0" };
   hydrogenLoad.params = { ...hydrogenLoad.params, pressure: "2.8 MPa" };
   heatSource.params = { ...heatSource.params, pressure: "10 MPa", supplyTemperature: "95 degC" };
+  heatPipe.params = {
+    ...heatPipe.params,
+    pressure: "0",
+    supply_temperature: "0",
+    return_temperature: "0"
+  };
   heatLoad.params = { ...heatLoad.params, pressure: "6 MPa", returnTemperature: "70 degC" };
   acLine.params = { ...acLine.params, idx: "1", i_node: "99", j_node: "100" };
   acLoad.params = { ...acLoad.params, idx: "1", node: "100" };
@@ -1859,7 +1866,7 @@ test("sets connected converter terminals through uniform topology island setting
     j_vbase: "10",
     i_v_set: "110",
     j_v_set: "10",
-    v_set: "110"
+    v_set: "legacy"
   };
   const edges = [
     { id: "source-converter", sourceId: source.id, targetId: converter.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
@@ -1875,7 +1882,7 @@ test("sets connected converter terminals through uniform topology island setting
   expect(nextConverter?.terminals.map((terminal) => terminal.vbase)).toEqual(["110", "35"]);
   expect(nextConverter?.params.i_vbase).toBe("110");
   expect(nextConverter?.params.i_v_set).toBe("110");
-  expect(nextConverter?.params.v_set).toBe("110");
+  expect(nextConverter?.params.v_set).toBe("legacy");
   expect(nextConverter?.params.j_vbase).toBe("35");
   expect(nextConverter?.params.j_v_set).toBe("35");
   expect(nextConverter?.params.vbase).toBe("110");
@@ -1938,7 +1945,7 @@ test("sets terminal voltage base through each transformer or converter terminal 
     j_vbase: "10",
     i_v_set: "110",
     j_v_set: "10",
-    v_set: "110"
+    v_set: "legacy"
   };
   const edges = [
     { id: "source-converter", sourceId: source.id, targetId: converter.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
@@ -1960,7 +1967,7 @@ test("sets terminal voltage base through each transformer or converter terminal 
   expect(nextConverter?.terminals.map((terminal) => terminal.vbase)).toEqual(["220", "35"]);
   expect(nextConverter?.params.i_vbase).toBe("220");
   expect(nextConverter?.params.i_v_set).toBe("220");
-  expect(nextConverter?.params.v_set).toBe("220");
+  expect(nextConverter?.params.v_set).toBe("legacy");
   expect(nextConverter?.params.j_vbase).toBe("35");
   expect(nextConverter?.params.j_v_set).toBe("35");
   expect(byId.get(load.id)?.terminals[0].vbase).toBe("35");
@@ -1969,13 +1976,13 @@ test("sets terminal voltage base through each transformer or converter terminal 
 
 test("fills zero converter voltage setpoints from the related topology node rated voltage", () => {
   const dcdc = createDefaultNode("dcdc-converter", { x: 100, y: 100 });
-  dcdc.params.v_set = "0.0";
+  dcdc.params.i_v_set = "0.0";
+  dcdc.params.j_v_set = "0.0";
   dcdc.params.i_control_type = "P";
   dcdc.params.j_control_type = "V";
   dcdc.terminals[0].vbase = "1500 V";
   dcdc.terminals[1].vbase = "750 V";
   const acdc = createDefaultNode("acdc-converter", { x: 260, y: 100 });
-  acdc.params.v_set = "0.0";
   acdc.params.v_ac_set = "0.0";
   acdc.params.v_dc_set = "0.0";
   acdc.terminals[0].vbase = "35 kV";
@@ -1989,10 +1996,11 @@ test("fills zero converter voltage setpoints from the related topology node rate
   const calculated = calculateElectricalTopology([dcdc, acdc, acac], []);
   const byId = new Map(calculated.map((node) => [node.id, node]));
 
-  expect(byId.get(dcdc.id)?.params.v_set).toBe("750");
-  expect(byId.get(acdc.id)?.params.v_set).toBe("35");
+  expect(byId.get(dcdc.id)?.params).toMatchObject({ i_v_set: "1500", j_v_set: "750" });
+  expect(byId.get(dcdc.id)?.params).not.toHaveProperty("v_set");
   expect(byId.get(acdc.id)?.params.v_ac_set).toBe("35");
   expect(byId.get(acdc.id)?.params.v_dc_set).toBe("800");
+  expect(byId.get(acdc.id)?.params).not.toHaveProperty("v_set");
   expect(byId.get(acac.id)?.params.i_v_set).toBe("110");
   expect(byId.get(acac.id)?.params.j_v_set).toBe("10");
 });
@@ -2010,7 +2018,8 @@ test("warns and records topology defaults for zero voltage setpoints on sources 
 
   const dcdc = createDefaultNode("dcdc-converter", { x: 420, y: 100 });
   dcdc.name = "直流变换器";
-  dcdc.params.v_set = "0";
+  dcdc.params.i_v_set = "0";
+  dcdc.params.j_v_set = "0";
   dcdc.params.i_control_type = "P";
   dcdc.params.j_control_type = "V";
   dcdc.terminals[0].vbase = "1500 V";
@@ -2041,19 +2050,20 @@ test("warns and records topology defaults for zero voltage setpoints on sources 
   expect(warnings.map((warning) => warning.message)).toEqual(expect.arrayContaining([
     expect.stringContaining("交流电源 的 v_set=0"),
     expect.stringContaining("直流电源 的 v_set=0.0 V"),
-    expect.stringContaining("直流变换器 的 v_set=0"),
+    expect.stringContaining("直流变换器 的 i_v_set=0、j_v_set=0"),
     expect.stringContaining("交直流变换器 的 v_ac_set=0、v_dc_set=0.0"),
     expect.stringContaining("交流变换器 的 i_v_set=0、j_v_set=0")
   ]));
   expect(byId.get(acSource.id)?.params.v_set).toBe("35");
   expect(byId.get(dcSource.id)?.params.v_set).toBe("750");
-  expect(byId.get(dcdc.id)?.params.v_set).toBe("750");
+  expect(byId.get(dcdc.id)?.params).toMatchObject({ i_v_set: "1500", j_v_set: "750" });
   expect(byId.get(dcac.id)?.params).toMatchObject({ v_ac_set: "10", v_dc_set: "800" });
   expect(byId.get(acac.id)?.params).toMatchObject({ i_v_set: "110", j_v_set: "10" });
   expect(result.corrections).toEqual(expect.arrayContaining([
     { nodeId: acSource.id, paramKey: "v_set", value: "35" },
     { nodeId: dcSource.id, paramKey: "v_set", value: "750" },
-    { nodeId: dcdc.id, paramKey: "v_set", value: "750" },
+    { nodeId: dcdc.id, paramKey: "i_v_set", value: "1500" },
+    { nodeId: dcdc.id, paramKey: "j_v_set", value: "750" },
     { nodeId: dcac.id, paramKey: "v_ac_set", value: "10" },
     { nodeId: dcac.id, paramKey: "v_dc_set", value: "800" },
     { nodeId: acac.id, paramKey: "i_v_set", value: "110" },
@@ -2105,7 +2115,6 @@ test("checks voltage setpoint deviations after topology fills zero defaults", ()
   });
   acdc.terminals[0].vbase = "35 kV";
   acdc.terminals[1].vbase = "800 V";
-  acdc.params.v_set = "0.0";
   acdc.params.v_ac_set = "0.0";
 
   const calculated = calculateElectricalTopology(
@@ -2114,8 +2123,8 @@ test("checks voltage setpoint deviations after topology fills zero defaults", ()
   );
   const byId = new Map(calculated.map((node) => [node.id, node]));
 
-  expect(byId.get(acdc.id)?.params.v_set).toBe("35");
   expect(byId.get(acdc.id)?.params.v_ac_set).toBe("35");
+  expect(byId.get(acdc.id)?.params).not.toHaveProperty("v_set");
   expect(validateVoltageSetpointDeviations(calculated, []).some((error) => error.type === "voltage-setpoint-deviation")).toBe(false);
 });
 
@@ -2568,7 +2577,8 @@ test("warns when voltage setpoints deviate more than 30 percent from rated topol
     i_v_min: "525",
     j_v_max: "975",
     j_v_min: "525",
-    v_set: "1000"
+    i_v_set: "1000",
+    j_v_set: "750"
   };
   acdc.terminals[0].vbase = "10 kV";
   acdc.terminals[1].vbase = "750 V";
@@ -2608,7 +2618,7 @@ test("warns when voltage setpoints deviate more than 30 percent from rated topol
 
   expect(errors).toEqual(expect.arrayContaining([
     expect.objectContaining({ type: "voltage-setpoint-deviation", nodeId: source.id, message: expect.stringContaining("v_set=14") }),
-    expect.objectContaining({ type: "voltage-setpoint-deviation", nodeId: dcdc.id, message: expect.stringContaining("v_set=1000") }),
+    expect.objectContaining({ type: "voltage-setpoint-deviation", nodeId: dcdc.id, message: expect.stringContaining("i_v_set=1000") }),
     expect.objectContaining({ type: "voltage-setpoint-deviation", nodeId: acdc.id, message: expect.stringContaining("v_dc_set=1000") }),
     expect.objectContaining({ type: "voltage-setpoint-deviation", nodeId: acac.id, message: expect.stringContaining("i_v_set=14") })
   ]));
@@ -2633,7 +2643,7 @@ test("does not warn zero voltage setpoints before topology can fill them", () =>
   expect(errors.some((error) => error.type === "voltage-setpoint-deviation")).toBe(false);
 });
 
-test("checks legacy ac_v_set and dc_v_set converter voltage setpoint aliases", () => {
+test("ignores legacy DCAC voltage setpoint aliases", () => {
   const acBus = createDefaultNode("ac-bus", { x: 160, y: 100 });
   const dcBus = createDefaultNode("dc-bus", { x: 160, y: 260 });
   const acdc = createDefaultNode("acdc-converter", { x: 360, y: 180 });
@@ -2656,10 +2666,7 @@ test("checks legacy ac_v_set and dc_v_set converter voltage setpoint aliases", (
     ]
   );
 
-  expect(errors).toEqual(expect.arrayContaining([
-    expect.objectContaining({ type: "voltage-setpoint-deviation", nodeId: acdc.id, message: expect.stringContaining("ac_v_set=14") }),
-    expect.objectContaining({ type: "voltage-setpoint-deviation", nodeId: acdc.id, message: expect.stringContaining("dc_v_set=1000") })
-  ]));
+  expect(errors.some((error) => error.type === "voltage-setpoint-deviation" && error.nodeId === acdc.id)).toBe(false);
 });
 
 test("treats duplicate identity and voltage setpoint deviations as non-blocking topology warnings", () => {
@@ -2673,6 +2680,8 @@ test("treats duplicate identity and voltage setpoint deviations as non-blocking 
   expect(isBlockingTopologyValidationError({ type: "transformer-island-short" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "device-enum-invalid" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "device-setpoint-out-of-range" })).toBe(true);
+  expect(isBlockingTopologyValidationError({ type: "device-setpoint-auto-corrected" })).toBe(false);
+  expect(isBlockingTopologyValidationError({ type: "storage-soc-parameter-invalid" })).toBe(false);
   expect(isBlockingTopologyValidationError({ type: "hydrogen-storage-parameter-invalid" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "hydrogen-coupling-parameter-invalid" })).toBe(true);
   expect(isBlockingTopologyValidationError({ type: "device-limit-invalid" })).toBe(false);
@@ -2711,6 +2720,79 @@ test("blocks topology when hydrogen tank capacity, volume, or pressure limits ar
     expect(isBlockingTopologyValidationError(warning!)).toBe(true);
     expect(result.nodes[0].params).toEqual(originalParams);
     expect(result.corrections).toEqual([]);
+  }
+});
+
+test("warns and restores SOC defaults for electrical, hydrogen, and thermal storage", () => {
+  const storageKinds = [
+    "ac-storage",
+    "dc-storage",
+    "hydrogen-tank",
+    "hydrogen-tank-horizontal",
+    "hydrogen-tank-container",
+    "thermal-storage-tank"
+  ] as const;
+
+  for (const kind of storageKinds) {
+    const valid = createDefaultNode(kind, { x: 100, y: 100 });
+    valid.params = { ...valid.params, soc_upper_limit: "1", soc: "0.5", soc_lower_limit: "0" };
+    expect(
+      normalizeDeviceOperatingLimitsAfterTopology([valid]).warnings.filter((warning) => warning.type === "storage-soc-parameter-invalid"),
+      `${kind}: valid boundary values`
+    ).toEqual([]);
+
+    const invalid = createDefaultNode(kind, { x: 100, y: 100 });
+    invalid.params = { ...invalid.params, soc_upper_limit: "0.5", soc: "0.5", soc_lower_limit: "0.1" };
+    const result = normalizeDeviceOperatingLimitsAfterTopology([invalid]);
+    const warning = result.warnings.find(
+      (candidate) => candidate.type === "storage-soc-parameter-invalid"
+    );
+    expect(warning, kind).toMatchObject({
+      nodeId: invalid.id,
+      relatedNodeIds: [invalid.id],
+      message: expect.stringContaining("已自动修正为 soc_upper_limit=0.9、soc=0.5、soc_lower_limit=0.1")
+    });
+    expect(isBlockingTopologyValidationError(warning!)).toBe(false);
+    expect(result.nodes[0].params).toMatchObject({
+      soc_upper_limit: "0.9",
+      soc: "0.5",
+      soc_lower_limit: "0.1"
+    });
+    expect(result.corrections).toEqual(expect.arrayContaining([
+      { nodeId: invalid.id, paramKey: "soc_upper_limit", value: "0.9" }
+    ]));
+  }
+});
+
+test("warns and restores defaults for missing, non-numeric, unordered, and out-of-range storage SOC values", () => {
+  const cases: Array<{ params: Partial<Record<"soc_upper_limit" | "soc" | "soc_lower_limit", string | undefined>>; label: string }> = [
+    { params: { soc_upper_limit: undefined }, label: "missing upper limit" },
+    { params: { soc: "" }, label: "blank SOC" },
+    { params: { soc_lower_limit: "not-a-number" }, label: "non-numeric lower limit" },
+    { params: { soc_upper_limit: "1.01" }, label: "upper limit above one" },
+    { params: { soc_lower_limit: "-0.01" }, label: "lower limit below zero" },
+    { params: { soc_upper_limit: "0.4", soc: "0.5" }, label: "upper limit below SOC" },
+    { params: { soc: "0.1", soc_lower_limit: "0.1" }, label: "SOC equal to lower limit" },
+    { params: { soc: "0.05", soc_lower_limit: "0.1" }, label: "SOC below lower limit" }
+  ];
+
+  for (const invalidCase of cases) {
+    const storage = createDefaultNode("ac-storage", { x: 100, y: 100 });
+    for (const [key, value] of Object.entries(invalidCase.params)) {
+      if (value === undefined) delete storage.params[key];
+      else storage.params[key] = value;
+    }
+    const result = normalizeDeviceOperatingLimitsAfterTopology([storage]);
+    const warning = result.warnings.find(
+      (candidate) => candidate.type === "storage-soc-parameter-invalid"
+    );
+    expect(warning, invalidCase.label).toBeDefined();
+    expect(isBlockingTopologyValidationError(warning!), invalidCase.label).toBe(false);
+    expect(result.nodes[0].params, invalidCase.label).toMatchObject({
+      soc_upper_limit: "0.9",
+      soc: "0.5",
+      soc_lower_limit: "0.1"
+    });
   }
 });
 
@@ -2869,7 +2951,7 @@ test("restores missing associated-device defaults on historical electric-hydroge
   }
 });
 
-test("derives restored coupling associated-device limits from the current instance", () => {
+test("restores coupling associated-device defaults without consulting retired body fields", () => {
   const node = createDefaultNode("ac-electrolyzer", { x: 100, y: 100 });
   const relationViews = buildContainerDeviceParameterViews(node, DEVICE_LIBRARY_BY_KIND.get(node.kind))
     .filter((view) => view.kind === "associated");
@@ -2882,28 +2964,22 @@ test("derives restored coupling associated-device limits from the current instan
   const result = normalizeDeviceOperatingLimitsAfterTopology([node], { powerUnit: "MW" });
 
   expect(result.nodes[0].params).toMatchObject({
-    rated_capacity_ac_load_t1: "8",
-    p_max_ac_load_t1: "8",
-    rated_capacity_h2_unit_t2: "1600",
-    flow_set_h2_unit_t2: "1600",
-    flow_max_h2_unit_t2: "1600"
+    rated_capacity_ac_load_t1: "5",
+    p_max_ac_load_t1: "5",
+    rated_capacity_h2_unit_t2: "1000",
+    flow_set_h2_unit_t2: "1000",
+    flow_max_h2_unit_t2: "1000"
   });
   expect(result.warnings).not.toEqual(expect.arrayContaining([
     expect.objectContaining({ type: "hydrogen-coupling-parameter-invalid" })
   ]));
 });
 
-test("blocks invalid electric-hydrogen coupling limits without automatically correcting them", () => {
+test("blocks invalid electric-hydrogen coupling parameters without changing the invalid fields", () => {
   const invalidCases = [
     { kind: "ac-electrolyzer", params: { e2h_coeff: "0" }, message: "e2h_coeff=0 必须为正数" },
     { kind: "dc-fuel-cell", params: { h2e_coeff: "bad" }, message: "h2e_coeff=bad 必须为正数" },
     { kind: "ac-electrolyzer", params: { rated_capacity_ac_load_t1: "0" }, message: "rated_capacity=0 必须为正数" },
-    { kind: "dc-electrolyzer", params: { p_max_dc_load_t1: "5", p_min_dc_load_t1: "5" }, message: "p_max 必须大于 p_min" },
-    { kind: "dc-electrolyzer", params: { p_set_dc_load_t1: "6" }, message: "p_set=6 必须位于 p_min 与 p_max 之间" },
-    { kind: "ac-fuel-cell", params: { q_max_ac_unit_t1: "4", q_min_ac_unit_t1: "4" }, message: "q_max 必须大于 q_min" },
-    { kind: "ac-fuel-cell", params: { q_set_ac_unit_t1: "4" }, message: "q_set=4 必须位于 q_min 与 q_max 之间" },
-    { kind: "ac-fuel-cell", params: { rated_capacity_ac_unit_t1: "3", q_max_ac_unit_t1: "3.1" }, message: "q_max 不能大于 rated_capacity" },
-    { kind: "dc-fuel-cell", params: { rated_capacity_dc_unit_t1: "3 MW", p_max_dc_unit_t1: "3100 kW" }, message: "p_max 不能大于 rated_capacity" },
     { kind: "ac-electrolyzer", params: { pressure_max_h2_unit_t2: "1", pressure_min_h2_unit_t2: "1" }, message: "pressure_max 必须大于 pressure_min" },
     { kind: "ac-electrolyzer", params: { pressure_set_h2_unit_t2: "0" }, message: "pressure_set=0 必须位于 pressure_min 与 pressure_max 之间" },
     { kind: "dc-electrolyzer", params: { flow_max_h2_unit_t2: "100", flow_min_h2_unit_t2: "100" }, message: "flow_max 必须大于 flow_min" },
@@ -2927,17 +3003,62 @@ test("blocks invalid electric-hydrogen coupling limits without automatically cor
       expect(warning?.message).not.toContain(qualifiedKey);
     }
     expect(isBlockingTopologyValidationError(warning!)).toBe(true);
-    expect(result.nodes[0].params).toEqual(originalParams);
-    expect(result.corrections).toEqual([]);
+    for (const [paramKey, value] of Object.entries(invalidCase.params)) {
+      expect(result.nodes[0].params[paramKey]).toBe(value);
+      expect(result.corrections.some((correction) => correction.paramKey === paramKey)).toBe(false);
+    }
   }
 });
 
-test("blocks setpoints outside their limits while allowing exact boundary values", () => {
+test("automatically corrects associated electric-device power limits and setpoints on coupling nodes", () => {
+  const electrolyzer = createDefaultNode("ac-electrolyzer", { x: 100, y: 100 });
+  electrolyzer.params = {
+    ...electrolyzer.params,
+    rated_capacity_ac_load_t1: "5 MW",
+    p_max_ac_load_t1: "0",
+    p_min_ac_load_t1: "0",
+    p_set_ac_load_t1: "bad"
+  };
+  const fuelCell = createDefaultNode("ac-fuel-cell", { x: 300, y: 100 });
+  fuelCell.params = {
+    ...fuelCell.params,
+    rated_capacity_ac_unit_t1: "5 MW",
+    p_max_ac_unit_t1: "5 MW",
+    p_min_ac_unit_t1: "0 MW",
+    p_set_ac_unit_t1: "0 MW",
+    q_max_ac_unit_t1: "6 MW",
+    q_min_ac_unit_t1: "-5 MW",
+    q_set_ac_unit_t1: "8 MW"
+  };
+
+  const result = normalizeDeviceOperatingLimitsAfterTopology([electrolyzer, fuelCell], { powerUnit: "MW" });
+  const byId = new Map(result.nodes.map((node) => [node.id, node]));
+
+  expect(byId.get(electrolyzer.id)!.params).toMatchObject({
+    p_max_ac_load_t1: "5",
+    p_min_ac_load_t1: "0",
+    p_set_ac_load_t1: "0"
+  });
+  expect(byId.get(fuelCell.id)!.params).toMatchObject({
+    q_max_ac_unit_t1: "5",
+    q_min_ac_unit_t1: "-5",
+    q_set_ac_unit_t1: "0"
+  });
+  expect(result.warnings).toEqual(expect.arrayContaining([
+    expect.objectContaining({ type: "device-limit-invalid", message: expect.stringContaining("交流设备端交流电负荷") }),
+    expect.objectContaining({ type: "device-setpoint-auto-corrected", message: expect.stringContaining("p_set_ac_load_t1=bad") }),
+    expect.objectContaining({ type: "device-setpoint-auto-corrected", message: expect.stringContaining("q_set_ac_unit_t1=8 MW") })
+  ]));
+  expect(result.warnings.some((warning) => warning.type === "hydrogen-coupling-parameter-invalid")).toBe(false);
+});
+
+test("automatically corrects power setpoints outside their limits while allowing exact boundary values", () => {
   const sourceAtMinimum = createDefaultNode("ac-source", { x: 100, y: 100 });
   sourceAtMinimum.params = {
     ...sourceAtMinimum.params,
     rated_capacity: "10 MW",
     p_set: "-2 MW",
+    q_set: "0 MW",
     p_max: "10 MW",
     p_min: "-2 MW"
   };
@@ -2946,6 +3067,7 @@ test("blocks setpoints outside their limits while allowing exact boundary values
     ...sourceAtMaximum.params,
     rated_capacity: "10 MW",
     p_set: "10 MW",
+    q_set: "0 MW",
     p_max: "10 MW",
     p_min: "-2 MW"
   };
@@ -2954,6 +3076,7 @@ test("blocks setpoints outside their limits while allowing exact boundary values
     ...invalidSource.params,
     rated_capacity: "10 MW",
     p_set: "10.1 MW",
+    q_set: "0 MW",
     p_max: "10 MW",
     p_min: "-2 MW"
   };
@@ -2962,7 +3085,7 @@ test("blocks setpoints outside their limits while allowing exact boundary values
     [sourceAtMinimum, sourceAtMaximum, invalidSource],
     { powerUnit: "MW" }
   );
-  const setpointWarnings = result.warnings.filter((warning) => warning.type === "device-setpoint-out-of-range");
+  const setpointWarnings = result.warnings.filter((warning) => warning.type === "device-setpoint-auto-corrected");
 
   expect(setpointWarnings).toEqual([
     expect.objectContaining({
@@ -2970,8 +3093,111 @@ test("blocks setpoints outside their limits while allowing exact boundary values
       message: expect.stringContaining("p_set=10.1 MW")
     })
   ]);
-  expect(isBlockingTopologyValidationError(setpointWarnings[0])).toBe(true);
-  expect(result.nodes[2].params.p_set).toBe("10.1 MW");
+  expect(isBlockingTopologyValidationError(setpointWarnings[0])).toBe(false);
+  expect(result.nodes[0].params.p_set).toBe("-2 MW");
+  expect(result.nodes[1].params.p_set).toBe("10 MW");
+  expect(result.nodes[2].params.p_set).toBe("0");
+});
+
+test("fills missing power and current setpoints with zero after topology", () => {
+  const acSource = createDefaultNode("ac-source", { x: 100, y: 100 });
+  acSource.terminals[0].vbase = "10 kV";
+  acSource.params = {
+    ...acSource.params,
+    rated_capacity: "10 MW",
+    p_max: "10 MW",
+    p_min: "0 MW",
+    q_max: "10 MW",
+    q_min: "-10 MW",
+    v_max: "12 kV",
+    v_min: "8 kV"
+  };
+  delete acSource.params.p_set;
+  delete acSource.params.q_set;
+
+  const dcSource = createDefaultNode("dc-source", { x: 300, y: 100 });
+  dcSource.terminals[0].vbase = "750 V";
+  dcSource.params = {
+    ...dcSource.params,
+    rated_capacity: "1.5 MW",
+    p_max: "1.5 MW",
+    p_min: "0 MW",
+    v_max: "900 V",
+    v_min: "600 V",
+    i_max: "0"
+  };
+  delete dcSource.params.p_set;
+  delete dcSource.params.i_set;
+
+  const result = normalizeDeviceOperatingLimitsAfterTopology([acSource, dcSource], {
+    powerUnit: "MW",
+    voltageUnit: "V",
+    currentUnit: "A"
+  });
+  const byId = new Map(result.nodes.map((node) => [node.id, node]));
+
+  expect(byId.get(acSource.id)!.params).toMatchObject({ p_set: "0", q_set: "0" });
+  expect(byId.get(dcSource.id)!.params).toMatchObject({ p_set: "0", i_set: "0" });
+  expect(Number(byId.get(dcSource.id)!.params.i_max)).toBeCloseTo(1154.73441109, 6);
+  const warnings = result.warnings.filter((warning) => warning.type === "device-setpoint-auto-corrected");
+  expect(warnings).toHaveLength(4);
+  expect(warnings.every((warning) => !isBlockingTopologyValidationError(warning))).toBe(true);
+});
+
+test("maps DCDC current setpoints to the current-controlled side and keeps invalid-base values unchanged", () => {
+  const converter = createDefaultNode("dcdc-converter", { x: 100, y: 100 });
+  converter.terminals[0].vbase = "750 V";
+  converter.terminals[1].vbase = "1500 V";
+  converter.params = {
+    ...converter.params,
+    rated_capacity: "1.5 MW",
+    i_control_type: "P",
+    j_control_type: "I",
+    i_p_max: "1.5 MW",
+    i_p_min: "-1.5 MW",
+    j_p_max: "1.5 MW",
+    j_p_min: "-1.5 MW",
+    i_v_max: "900 V",
+    i_v_min: "600 V",
+    j_v_max: "1800 V",
+    j_v_min: "1200 V",
+    i_p_set: "0",
+    j_p_set: "0",
+    i_i_set: "0",
+    j_i_set: "bad",
+    i_v_set: "750",
+    j_v_set: "1500",
+    i_i_max: "0",
+    j_i_max: "0"
+  };
+  const validResult = normalizeDeviceOperatingLimitsAfterTopology([converter], {
+    powerUnit: "MW",
+    voltageUnit: "V",
+    currentUnit: "A"
+  });
+  expect(validResult.nodes[0].params.j_i_set).toBe("0");
+  expect(validResult.nodes[0].params).not.toHaveProperty("i_set");
+  expect(Number(validResult.nodes[0].params.j_i_max)).toBeCloseTo(577.367205543, 6);
+  expect(validResult.warnings).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      type: "device-setpoint-auto-corrected",
+      message: expect.stringContaining("末端电流设定值")
+    })
+  ]));
+
+  const invalidBase = {
+    ...converter,
+    id: `${converter.id}-invalid-base`,
+    terminals: converter.terminals.map((terminal) => ({ ...terminal, vbase: "0" })),
+    params: { ...converter.params, j_i_set: "bad", i_i_max: "123", j_i_max: "456" }
+  };
+  const invalidResult = normalizeDeviceOperatingLimitsAfterTopology([invalidBase], {
+    powerUnit: "MW",
+    voltageUnit: "V",
+    currentUnit: "A",
+    skipVoltageNodeIds: new Set([invalidBase.id])
+  });
+  expect(invalidResult.nodes[0].params).toMatchObject({ j_i_set: "bad", i_i_max: "123", j_i_max: "456" });
 });
 
 test("maps converter setpoints to the corresponding side limits", () => {
@@ -2995,18 +3221,21 @@ test("maps converter setpoints to the corresponding side limits", () => {
     q_ac_set: "0 MW",
     v_ac_set: "10000 V",
     p_dc_set: "0 MW",
+    i_dc_set: "0 A",
     v_dc_set: "750 V"
   };
 
   const result = normalizeDeviceOperatingLimitsAfterTopology([dcac], {
     powerUnit: "MW",
-    voltageUnit: "V"
+    voltageUnit: "V",
+    currentUnit: "A"
   });
-  const setpointWarnings = result.warnings.filter((warning) => warning.type === "device-setpoint-out-of-range");
+  const setpointWarnings = result.warnings.filter((warning) => warning.type === "device-setpoint-auto-corrected");
 
   expect(setpointWarnings).toEqual([
     expect.objectContaining({ message: expect.stringContaining("p_ac_set=10.1 MW") })
   ]);
+  expect(result.nodes[0].params.p_ac_set).toBe("0");
 });
 
 test("validates reactive, voltage, hydrogen, and endpoint setpoints against their matching limits", () => {
@@ -3045,6 +3274,8 @@ test("validates reactive, voltage, hydrogen, and endpoint setpoints against thei
     i_p_min: "-10 MW",
     j_p_max: "10 MW",
     j_p_min: "-10 MW",
+    i_p_set: "0 MW",
+    j_p_set: "0 MW",
     i_q_set: "-10 MW",
     i_q_max: "10 MW",
     i_q_min: "-10 MW",
@@ -3066,7 +3297,10 @@ test("validates reactive, voltage, hydrogen, and endpoint setpoints against thei
     rated_capacity: "10 MW",
     i_control_type: "P",
     j_control_type: "V",
-    p_set: "0 MW",
+    i_p_set: "0 MW",
+    j_p_set: "0 MW",
+    i_i_set: "0 A",
+    j_i_set: "0 A",
     i_p_max: "10 MW",
     i_p_min: "-10 MW",
     j_p_max: "10 MW",
@@ -3075,26 +3309,41 @@ test("validates reactive, voltage, hydrogen, and endpoint setpoints against thei
     i_v_min: "600 V",
     j_v_max: "1800 V",
     j_v_min: "1200 V",
-    v_set: "1801 V"
+    i_v_set: "750 V",
+    j_v_set: "1801 V"
   };
 
   const result = normalizeDeviceOperatingLimitsAfterTopology([source, hydrogenSource, acac, dcdc], {
     powerUnit: "MW",
     voltageUnit: "V"
   });
-  const messages = result.warnings
+  const autoCorrectedMessages = result.warnings
+    .filter((warning) => warning.type === "device-setpoint-auto-corrected")
+    .map((warning) => warning.message);
+  const voltageMessages = result.warnings
+    .filter((warning) => warning.type === "voltage-setpoint-deviation")
+    .map((warning) => warning.message);
+  const blockingMessages = result.warnings
     .filter((warning) => warning.type === "device-setpoint-out-of-range")
     .map((warning) => warning.message);
 
-  expect(messages).toEqual(expect.arrayContaining([
+  expect(autoCorrectedMessages).toEqual(expect.arrayContaining([
     expect.stringContaining("q_set=10.1 MW"),
-    expect.stringContaining("v_set=12.1 kV"),
-    expect.stringContaining("pressure_set=26"),
-    expect.stringContaining("j_q_set=10.1 MW"),
-    expect.stringContaining("v_set=1801 V")
+    expect.stringContaining("j_q_set=10.1 MW")
   ]));
-  expect(messages).toHaveLength(5);
-  expect(messages.some((message) => message.includes("i_q_set=-10 MW"))).toBe(false);
+  expect(autoCorrectedMessages).toHaveLength(2);
+  expect(voltageMessages).toEqual(expect.arrayContaining([
+    expect.stringContaining("v_set=12.1 kV"),
+    expect.stringContaining("j_v_set=1801 V")
+  ]));
+  expect(voltageMessages).toHaveLength(2);
+  expect(blockingMessages).toEqual([expect.stringContaining("pressure_set=26")]);
+  expect(result.nodes[0].params).toMatchObject({ q_set: "0", v_set: "10000" });
+  expect(result.nodes[2].params).toMatchObject({ i_p_set: "0 MW", j_p_set: "0 MW", i_q_set: "-10 MW", j_q_set: "0" });
+  expect(result.nodes[2].params).not.toHaveProperty("p_set");
+  expect(result.nodes[3].params).toMatchObject({ i_i_set: "0 A", j_i_set: "0 A", i_v_set: "750 V", j_v_set: "1500" });
+  expect(result.nodes[3].params).not.toHaveProperty("i_set");
+  expect(result.nodes[3].params).not.toHaveProperty("v_set");
 });
 
 test("normalizes generator and storage limits after topology without mutating the input nodes", () => {
@@ -3360,8 +3609,14 @@ test("still repairs converter reactive limits while skipping voltage-dependent c
     "i_q_max",
     "i_q_min",
     "j_q_max",
-    "j_q_min"
+    "j_q_min",
+    "i_p_set",
+    "j_p_set",
+    "i_q_set",
+    "j_q_set"
   ]);
+  expect(normalized.params).toMatchObject({ i_p_set: "0", j_p_set: "0", i_q_set: "0", j_q_set: "0" });
+  expect(normalized.params).not.toHaveProperty("p_set");
 });
 
 test("does not validate device operating limits before topology calculation", () => {

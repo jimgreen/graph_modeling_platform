@@ -285,6 +285,22 @@ describe("device library schema migration", () => {
 });
 
 describe("measurement configuration normalization", () => {
+  test("normalizes legacy SOC measurement types, keys, and associated fields", () => {
+    const normalized = normalizeMeasurementConfig({
+      measurementTypes: [{ id: "state_of_charge", key: "stateOfCharge", name: "SOC" }],
+      deviceProfiles: [{
+        deviceKind: "ac-storage",
+        items: [{ measurementTypeId: "stateOfCharge", associatedField: "state_of_charge" }]
+      }]
+    });
+
+    expect(normalized.measurementTypes.find((item) => item.id === "soc")).toMatchObject({ key: "soc" });
+    expect(normalized.deviceProfiles[0].items[0]).toMatchObject({
+      measurementTypeId: "soc",
+      associatedField: "soc"
+    });
+  });
+
   test("migrates hydrogen tank defaults and retains associated source fields", () => {
     const normalized = normalizeMeasurementConfig({
       measurementTypes: [
@@ -361,12 +377,25 @@ describe("measurement configuration normalization", () => {
       "idx",
       "name",
       "node",
+      "control_type",
+      "pressure_set",
+      "flow_set",
+      "alpha",
+      "flow_min",
+      "flow_max",
+      "run_stat",
       "pressure",
       "rated_capacity",
       "water_volume",
+      "initial_soc",
+      "soc",
+      "soc_upper_limit",
+      "soc_lower_limit",
       "pressure_max",
-      "pressure_min",
-      "run_stat"
+      "pressure_min"
+    ]);
+    expect(eSectionColumns.HeatStorage).toEqual([
+      "idx", "name", "node", "capacity", "temperature", "soc", "soc_upper_limit", "soc_lower_limit", "run_stat"
     ]);
   });
 
@@ -1021,7 +1050,7 @@ describe("scheme file persistence", () => {
                 name: "hydrogen_pipe",
                 position: { x: 120, y: 180 },
                 size: { width: 120, height: 40 },
-                params: { idx: "1", run_stat: "1" },
+                params: { idx: "1", pressure: "0", run_stat: "1" },
                 terminals: [{ id: "t1", type: "h2" }, { id: "t2", type: "h2" }]
               },
               {
@@ -1048,7 +1077,13 @@ describe("scheme file persistence", () => {
                 name: "heat_pipe",
                 position: { x: 120, y: 280 },
                 size: { width: 120, height: 40 },
-                params: { idx: "1", run_stat: "1" },
+                params: {
+                  idx: "1",
+                  pressure: "0",
+                  supply_temperature: "0",
+                  return_temperature: "0",
+                  run_stat: "1"
+                },
                 terminals: [{ id: "t1", type: "heat" }, { id: "t2", type: "heat" }]
               },
               {
@@ -1107,11 +1142,9 @@ describe("scheme file persistence", () => {
         "pressure",
         "run_stat"
       ]);
-      expect(hydroNodeLines.find((line) => line.startsWith("#"))?.trim().split(/\s+/u).slice(1)).toEqual([
-        "1",
-        "hydrogen_source",
-        "3.0",
-        "1"
+      expect(hydroNodeLines.filter((line) => line.startsWith("#")).map((line) => line.trim().split(/\s+/u).slice(1))).toEqual([
+        ["1", "hydrogen_source", "3.0", "1"],
+        ["2", "hydrogen_load", "2.8", "1"]
       ]);
       const heatNodeLines = eSectionLines(eFile, "HeatNode");
       expect(heatNodeLines.find((line) => line.startsWith("@"))?.trim().split(/\s+/u).slice(1)).toEqual([
@@ -1122,13 +1155,9 @@ describe("scheme file persistence", () => {
         "return_temperature",
         "run_stat"
       ]);
-      expect(heatNodeLines.find((line) => line.startsWith("#"))?.trim().split(/\s+/u).slice(1)).toEqual([
-        "1",
-        "heat_source",
-        "10",
-        "95",
-        "0",
-        "1"
+      expect(heatNodeLines.filter((line) => line.startsWith("#")).map((line) => line.trim().split(/\s+/u).slice(1))).toEqual([
+        ["1", "heat_source", "10", "95", "0", "1"],
+        ["2", "heat_load", "6", "0", "70", "1"]
       ]);
       expectEFieldsAlignedWithHeader(
         eFile,
@@ -1333,6 +1362,7 @@ describe("scheme file persistence", () => {
           q_ac_set: "0",
           v_ac_set: "0",
           v_dc_set: "0",
+          i_dc_set: "0",
           run_stat: "1",
           ...params
         },
@@ -1356,6 +1386,7 @@ describe("scheme file persistence", () => {
                 ac_control_type: "PV",
                 dc_control_type: "I",
                 p_dc_set: "3.5",
+                i_dc_set: "1200",
                 ac_i_max: "1000 A",
                 dc_i_max: "1200 A"
               }),
@@ -1393,8 +1424,9 @@ describe("scheme file persistence", () => {
       expect(columns).toContain("ac_i_max");
       expect(columns).toContain("dc_i_max");
       expect(columns).toContain("p_dc_set");
+      expect(columns).toContain("i_dc_set");
       expect(columns).not.toContain("control_type");
-      expect(rowByName.get("独立控制")).toMatchObject({ ac_control_type: "PV", dc_control_type: "I", p_dc_set: "3.5", ac_i_max: "1000", dc_i_max: "1200" });
+      expect(rowByName.get("独立控制")).toMatchObject({ ac_control_type: "PV", dc_control_type: "I", p_dc_set: "3.5", i_dc_set: "1200", ac_i_max: "1000", dc_i_max: "1200" });
       expect(rowByName.get("旧DCV")).toMatchObject({ ac_control_type: "PQ", dc_control_type: "V" });
       expect(rowByName.get("旧ACV")).toMatchObject({ ac_control_type: "PQ", dc_control_type: "V" });
       expect(rowByName.get("旧ACP")).toMatchObject({ ac_control_type: "PQ", dc_control_type: "V" });
@@ -1418,13 +1450,17 @@ describe("scheme file persistence", () => {
           idx: String(idx),
           r1: "0",
           r2: "0",
-          p_set: "0",
-          i_set: "0",
-          v_set: "0",
+          i_p_set: "0",
+          j_p_set: "0",
+          i_i_set: "0",
+          j_i_set: "0",
           i_q_set: "0",
           j_q_set: "0",
           i_v_set: "1",
           j_v_set: "1",
+          p_set: "91",
+          i_set: "92",
+          v_set: "93",
           run_stat: "1",
           ...params
         },
@@ -1447,6 +1483,9 @@ describe("scheme file persistence", () => {
               converterNode("dcdc-converter", "dcdc-new", "DCDC独立控制", 1, "dc", {
                 i_control_type: "V",
                 j_control_type: "I",
+                i_p_set: "1.25",
+                i_i_set: "2.5",
+                i_v_set: "750",
                 i_i_max: "800 A",
                 j_i_max: "900 A"
               }),
@@ -1457,6 +1496,7 @@ describe("scheme file persistence", () => {
               converterNode("acac-converter", "acac-new", "ACAC独立控制", 1, "ac", {
                 i_control_type: "PH",
                 j_control_type: "NONE",
+                i_p_set: "4.5",
                 i_i_max: "1000 A",
                 j_i_max: "1100 A"
               }),
@@ -1488,16 +1528,117 @@ describe("scheme file persistence", () => {
       expect(dcdc.columns).toContain("j_control_type");
       expect(dcdc.columns).toContain("i_i_max");
       expect(dcdc.columns).toContain("j_i_max");
+      expect(dcdc.columns).toEqual(expect.arrayContaining(["p_set", "i_set", "v_set"]));
       expect(dcdc.columns).not.toContain("control_type");
-      expect(dcdc.rowByName.get("DCDC独立控制")).toMatchObject({ i_control_type: "V", j_control_type: "I", i_i_max: "800", j_i_max: "900" });
+      expect(dcdc.rowByName.get("DCDC独立控制")).toMatchObject({
+        i_control_type: "V",
+        j_control_type: "I",
+        i_i_max: "800",
+        j_i_max: "900",
+        p_set: "1.25",
+        i_set: "2.5",
+        v_set: "750"
+      });
       expect(dcdc.rowByName.get("DCDC旧控制")).toMatchObject({ i_control_type: "P", j_control_type: "NONE" });
       expect(acac.columns).toContain("i_control_type");
       expect(acac.columns).toContain("j_control_type");
       expect(acac.columns).toContain("i_i_max");
       expect(acac.columns).toContain("j_i_max");
+      expect(acac.columns).toContain("p_set");
       expect(acac.columns).not.toContain("control_type");
-      expect(acac.rowByName.get("ACAC独立控制")).toMatchObject({ i_control_type: "PH", j_control_type: "NONE", i_i_max: "1000", j_i_max: "1100" });
+      expect(acac.rowByName.get("ACAC独立控制")).toMatchObject({ i_control_type: "PH", j_control_type: "NONE", i_i_max: "1000", j_i_max: "1100", p_set: "4.5" });
       expect(acac.rowByName.get("ACAC旧控制")).toMatchObject({ i_control_type: "PQ", j_control_type: "PV" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("fills zero source and converter voltage setpoints before backend E export", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-e-voltage-setpoint-defaults-"));
+    try {
+      const filesRoot = join(root, "files");
+      const trashRoot = join(root, "trash");
+      const deviceNode = (kind, id, name, idx, params, terminals) => ({
+        id,
+        kind,
+        name,
+        position: { x: idx * 120, y: 100 },
+        size: { width: 112, height: 66 },
+        params: { idx: String(idx), run_stat: "1", ...params },
+        terminals
+      });
+      await saveSchemeProjectRecord({
+        filesRoot,
+        trashRoot,
+        schemePath: ["默认方案"],
+        record: {
+          name: "电压设定值默认修正",
+          updatedAt: "2026-08-14T00:00:00.000Z",
+          project: {
+            version: 1,
+            name: "电压设定值默认修正",
+            nodes: [
+              deviceNode("ac-source", "ac-source-1", "交流电源", 1, { v_set: "0" }, [
+                { id: "t1", type: "ac", vbase: "35 kV" }
+              ]),
+              deviceNode("dc-source", "dc-source-1", "直流电源", 1, { v_set: "0.0 V" }, [
+                { id: "t1", type: "dc", vbase: "750 V" }
+              ]),
+              deviceNode("dcdc-converter", "dcdc-1", "直流变换器", 1, {
+                i_v_set: "0",
+                j_v_set: "0"
+              }, [
+                { id: "t1", type: "dc", vbase: "0" },
+                { id: "t2", type: "dc", vbase: "750 V" }
+              ]),
+              deviceNode("acdc-converter", "dcac-1", "交直流变换器", 1, {
+                v_ac_set: "0",
+                v_dc_set: "0.0"
+              }, [
+                { id: "t1", type: "ac", vbase: "10 kV" },
+                { id: "t2", type: "dc", vbase: "800 V" }
+              ]),
+              deviceNode("acac-converter", "acac-1", "交流变换器", 1, {
+                i_v_set: "0",
+                j_v_set: "0"
+              }, [
+                { id: "t1", type: "ac", vbase: "110 kV" },
+                { id: "t2", type: "ac", vbase: "10 kV" }
+              ]),
+              deviceNode("dc-bus", "dc-bus-1500", "1500V直流母线", 1, {}, [
+                { id: "t1", type: "dc", vbase: "1500 V" }
+              ])
+            ],
+            edges: [{
+              id: "dcdc-to-1500v-bus",
+              sourceId: "dcdc-1",
+              targetId: "dc-bus-1500",
+              sourceTerminalId: "t1",
+              targetTerminalId: "t1"
+            }]
+          }
+        },
+        measurementConfig: {}
+      });
+
+      const eFile = await readEFileText(join(filesRoot, "默认方案", "电压设定值默认修正.e"));
+      const rowForSection = (section) => {
+        const lines = eSectionLines(eFile, section);
+        const columns = lines.find((line) => line.startsWith("@"))?.trim().split(/\s+/u).slice(1) ?? [];
+        const values = lines.find((line) => line.startsWith("#"))?.trim().split(/\s+/u).slice(1) ?? [];
+        return Object.fromEntries(columns.map((column, index) => [column, values[index] ?? ""]));
+      };
+
+      expect(rowForSection("ACGenerator").v_set).toBe("35");
+      expect(rowForSection("DCGenerator").v_set).toBe("750");
+      expect(rowForSection("DCDCConverter")).toMatchObject({ v_set: "1500" });
+      expect(rowForSection("DCACConverter")).toMatchObject({ v_ac_set: "10", v_dc_set: "800" });
+      expect(rowForSection("ACACConverter")).toMatchObject({ i_v_set: "110", j_v_set: "10" });
+
+      const savedProject = JSON.parse(await readFile(join(filesRoot, "默认方案", "电压设定值默认修正.json"), "utf-8"));
+      expect(savedProject.nodes.find((node) => node.id === "dcdc-1").params).not.toHaveProperty("v_set");
+      expect(savedProject.nodes.find((node) => node.id === "acac-1").params).not.toHaveProperty("v_set");
+      expect(savedProject.nodes.find((node) => node.id === "dcac-1").params).not.toHaveProperty("v_set");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

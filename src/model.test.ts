@@ -1296,6 +1296,26 @@ describe("power system model", () => {
     });
   });
 
+  test("migrates legacy SOC params and definitions while preferring canonical values", () => {
+    const legacyDefinitions = JSON.stringify([
+      { cnName: "荷电状态", enName: "state_of_charge", valueType: "float", typicalValue: "50" },
+      { cnName: "SOC", enName: "soc", valueType: "float", typicalValue: "0.6" }
+    ]);
+    const normalized = normalizeDeviceParamRecord({
+      state_of_charge: "50",
+      soc: "0.6",
+      soc_upper_limit: "90",
+      soc_lower_limit: "10%",
+      _customParamDefinitions: legacyDefinitions
+    })!;
+
+    expect(normalized).toMatchObject({ soc: "0.6", soc_upper_limit: "0.9", soc_lower_limit: "0.1" });
+    expect(normalized).not.toHaveProperty("state_of_charge");
+    expect(JSON.parse(normalized._customParamDefinitions)).toEqual([
+      expect.objectContaining({ cnName: "SOC", enName: "soc", typicalValue: "0.6" })
+    ]);
+  });
+
 
 
 
