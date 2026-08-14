@@ -1148,6 +1148,10 @@ function derivedComponentBaseRelationKey(baseComponentLibrary: string): string {
 }
 
 export function isDerivedComponentCommonFieldName(fieldName: string, baseComponentLibrary: string): boolean {
+  // dev_type 例外：派生类参数定义中保留设备类型字段
+  if (fieldName === "dev_type") {
+    return false;
+  }
   if (!fieldName || fieldName.startsWith("_")) {
     return true;
   }

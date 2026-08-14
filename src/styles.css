@@ -7285,6 +7285,11 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   font-weight: 900;
 }
 
+.device-definition-summary-value.derived-base-link {
+  color: #2563eb;
+  cursor: pointer;
+}
+
 .device-definition-summary-value:hover,
 .device-definition-summary-value:focus-visible {
   border-color: #cbd5e1;
