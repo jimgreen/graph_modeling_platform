@@ -197,8 +197,8 @@ describe("ratio parameter editors", () => {
       selectedNodeIdsWithMeasurementGroups: new Set(),
       batchCommonGraphicParamRows: [],
       batchCommonModelParamRows: [{
-        key: "state_of_charge",
-        label: "荷电状态",
+        key: "soc",
+        label: "SOC",
         value: "0.5",
         mixed: false,
         definition: undefined
@@ -223,8 +223,8 @@ describe("ratio parameter editors", () => {
     const html = renderToStaticMarkup(createElement("div", null, editors.renderBatchCommonPropertyPanel()));
     expect(html).toContain('value="50%"');
 
-    editors.updateNodeDoubleClickDraftParam(node.id, "state_of_charge", "99%");
+    editors.updateNodeDoubleClickDraftParam(node.id, "soc", "99%");
     const committedDraft = nextDraft as { nodeId: string; node: ModelNode } | null;
-    expect(committedDraft?.node.params.state_of_charge).toBe("0.99");
+    expect(committedDraft?.node.params.soc).toBe("0.99");
   });
 });

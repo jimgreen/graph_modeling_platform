@@ -206,6 +206,7 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
     "q_ac_set",
     "v_ac_set",
     "p_dc_set",
+    "i_dc_set",
     "v_dc_set",
     "run_stat"
   ],
@@ -251,7 +252,7 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   HydroStorage: [
     "idx", "name", "node", "control_type", "pressure_set", "flow_set", "alpha",
     "flow_min", "flow_max", "run_stat", "pressure", "rated_capacity", "water_volume",
-    "initial_soc", "pressure_max", "pressure_min"
+    "initial_soc", "soc", "soc_upper_limit", "soc_lower_limit", "pressure_max", "pressure_min"
   ],
   AcE2Hydro: ["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_ac_load_t1", "idx_h2_unit_t2"],
   DcE2Hydro: ["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_dc_load_t1", "idx_h2_unit_t2"],
@@ -265,7 +266,7 @@ export const E_SECTION_COLUMNS: Record<string, string[]> = {
   HeatPipe: ["idx", "name", "i_node", "j_node", "run_stat"],
   HeatStopValve: ["idx", "name", "i_node", "j_node", "status", "run_stat"],
   HeatBus: ["idx", "name", "node", "run_stat"],
-  HeatStorage: ["idx", "name", "node", "run_stat"],
+  HeatStorage: ["idx", "name", "node", "capacity", "temperature", "soc", "soc_upper_limit", "soc_lower_limit", "run_stat"],
   HeatBoiler: ["idx", "name", "run_stat", "idx_heat_unit_t1"],
   HeatBoiler2: ["idx", "name", "run_stat", "idx_heat2_unit_t1"],
   AcE2Heat: ["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_ac_load_t1", "idx_heat_unit_t2"],
@@ -552,7 +553,10 @@ const E_FLOAT_COLUMNS = new Set([
   "supply_temperature",
   "supply_temperature_set",
   "e2h_coeff",
-  "h2e_coeff"
+  "h2e_coeff",
+  "soc",
+  "soc_upper_limit",
+  "soc_lower_limit"
 ]);
 
 function getRawEParamValue(
@@ -720,7 +724,9 @@ export type EFileExportOptions = {
 
 function normalizeGasQuantityFieldName(value: unknown): string {
   const text = String(value ?? "").trim();
-  return /^(?:gasQuantity|gasquantity)$/.test(text) ? "gas_quantity" : text;
+  if (/^(?:gasQuantity|gasquantity)$/.test(text)) return "gas_quantity";
+  if (/^(?:state_of_charge|stateOfCharge)$/.test(text)) return "soc";
+  return text;
 }
 
 function normalizeEInterfaceFieldName(componentLibrary: string, value: unknown): string {
@@ -977,7 +983,14 @@ function resolveEParameterFields(
   });
   const derivedInfo = electricGenerationDerivedComponentLibraryInfo(kind);
   if (definitions.length === 0) {
-    return (builtInColumns ?? []).map((column) => ({ sourceName: column, exportName: column }));
+    return (builtInColumns ?? []).map((column) => ({
+      sourceName: section === "DCDCConverter"
+        ? ({ p_set: "i_p_set", i_set: "i_i_set", v_set: "i_v_set" } as Record<string, string>)[column] ?? column
+        : section === "ACACConverter" && column === "p_set"
+          ? "i_p_set"
+          : column,
+      exportName: column
+    }));
   }
 
   const fields: EParameterField[] = [];
@@ -997,7 +1010,9 @@ function resolveEParameterFields(
       ? definitions.filter((definition) => isDerivedComponentCommonFieldName(definition.enName, derivedInfo.baseComponentLibrary))
       : definitions;
     for (const definition of baseDefinitions) {
-      const legacyColumn = legacyEColumnForDefinition(section, definition.enName);
+      const settings = resolveDeviceParameterDefinitionExportSettings(kind, params, definition);
+      const legacyColumn = legacyEColumnForDefinition(section, definition.enName) ||
+        (builtInColumns.includes(settings.exportName) ? settings.exportName : "");
       if (!legacyColumn) {
         continue;
       }
@@ -1010,12 +1025,17 @@ function resolveEParameterFields(
     for (const column of builtInColumns) {
       const definition = definitionByLegacyColumn.get(column);
       if (!definition) {
-        appendField({ sourceName: column, exportName: column });
+        const sourceName = section === "DCDCConverter"
+          ? ({ p_set: "i_p_set", i_set: "i_i_set", v_set: "i_v_set" } as Record<string, string>)[column] ?? column
+          : section === "ACACConverter" && column === "p_set"
+            ? "i_p_set"
+            : column;
+        appendField({ sourceName, exportName: column });
         continue;
       }
       const settings = resolveDeviceParameterDefinitionExportSettings(kind, params, definition);
       if (settings.exportEnabled) {
-        appendField({ sourceName: column, exportName: settings.exportName, definition });
+        appendField({ sourceName: definition.enName, exportName: settings.exportName, definition });
       }
     }
     for (const definition of definitions) {
@@ -1378,9 +1398,13 @@ function buildTopologyNodeDevices(nodes: ModelNode[]): EDeviceExport[] {
         const vbase = firstText(candidates.map(({ node, terminal }) => terminalVoltageDisplay(node, terminal)));
         const voltage = firstText([representative.voltage, representative.node.params.voltage, vbase]);
         const runStat = normalizeRunStatForE(representative.node.params.run_stat) || "1";
-        const numericCandidateParam = (...keys: string[]) => firstNumericToken(firstText(
-          keys.flatMap((key) => candidates.map(({ node }) => deviceParamValue(node.params, key)))
-        ));
+        const numericCandidateParam = (...keys: string[]) => {
+          const values = keys
+            .flatMap((key) => candidates.map(({ node }) => deviceParamValue(node.params, key)))
+            .map((value) => firstNumericToken(value ?? ""))
+            .filter((value) => value !== "");
+          return values.find((value) => Number(value) !== 0) ?? values[0] ?? "";
+        };
         const commonParams = {
           idx,
           name: representative.name || representative.node.name || `${section}_${idx}`,

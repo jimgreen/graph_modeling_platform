@@ -37,6 +37,43 @@ const node = (id: string, kind = "ac-load"): ModelNode => ({
 });
 
 describe("measurement domain", () => {
+  test("migrates legacy SOC measurement definitions and project bindings", () => {
+    const config = normalizeMeasurementConfig({
+      measurementTypes: [{ id: "state_of_charge", key: "stateOfCharge", name: "SOC" }],
+      deviceProfiles: [{
+        deviceKind: "ac-storage",
+        items: [{ measurementTypeId: "stateOfCharge", associatedField: "state_of_charge" }]
+      }]
+    });
+    expect(config.measurementTypes.find((item) => item.id === "soc")).toMatchObject({ key: "soc" });
+    expect(config.deviceProfiles.find((item) => item.deviceKind === "ac-storage")?.items[0]).toMatchObject({
+      measurementTypeId: "soc",
+      associatedField: "soc"
+    });
+
+    const storage = node("legacy-storage-soc", "ac-storage");
+    const project = normalizeProjectMeasurements({
+      version: 1,
+      groups: [{
+        id: "custom-soc-group",
+        nodeId: storage.id,
+        visible: true,
+        anchor: "bottom",
+        offset: { x: 0, y: 70 },
+        layout: "vertical",
+        items: [{
+          id: "legacy-soc-item",
+          measurementTypeId: "state_of_charge",
+          sourcePoint: `${storage.id}.stateOfCharge`
+        }]
+      }]
+    }, [storage]);
+    expect(project.groups[0].items[0]).toMatchObject({
+      measurementTypeId: "soc",
+      sourcePoint: `${storage.id}.soc`
+    });
+  });
+
   test("binds electric-hydrogen coupling measurements to associated endpoint fields", () => {
     for (const kind of ["ac-electrolyzer", "dc-electrolyzer", "ac-fuel-cell", "dc-fuel-cell"] as const) {
       const profile = DEFAULT_MEASUREMENT_CONFIG.deviceProfiles.find((candidate) => candidate.deviceKind === kind);

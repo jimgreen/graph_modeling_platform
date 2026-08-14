@@ -3660,6 +3660,26 @@ function isVoltageBaseValueParamKey(key: string): boolean {
   );
 }
 
+function isSupportedVoltageBaseValueParamKey(node: ModelNode, key: string): boolean {
+  if (!isVoltageBaseValueParamKey(key)) {
+    return false;
+  }
+  const section = inferESection(node.kind, node.params);
+  const normalized = key.trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[^A-Za-z0-9_]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
+  if ((section === "DCDCConverter" || section === "ACACConverter") && normalized === "v_set") {
+    return false;
+  }
+  if (section === "DCACConverter" && ["v_set", "ac_v_set", "dc_v_set"].includes(normalized)) {
+    return false;
+  }
+  return true;
+}
+
 const TWO_TERMINAL_EQUAL_VOLTAGE_BASE_SECTIONS = new Set([
   "ACBranch",
   "DCBranch",
@@ -3746,7 +3766,7 @@ export function validateTwoTerminalVoltageBaseConsistency(nodes: ModelNode[]): T
 function setNodeVoltageBaseValues(node: ModelNode, value: string): ModelNode {
   let params = node.params;
   for (const key of Object.keys(node.params)) {
-    if (!isVoltageBaseValueParamKey(key) || node.params[key] === value) {
+    if (!isSupportedVoltageBaseValueParamKey(node, key) || node.params[key] === value) {
       continue;
     }
     if (params === node.params) {
@@ -3870,7 +3890,7 @@ function setNodeVoltageBaseValuesForTerminals(node: ModelNode, targetTerminalIds
   }
   let params = node.params;
   for (const key of Object.keys(node.params)) {
-    if (!isVoltageBaseValueParamKey(key) || node.params[key] === value) {
+    if (!isSupportedVoltageBaseValueParamKey(node, key) || node.params[key] === value) {
       continue;
     }
     if (!shouldUpdateVoltageBaseParamForTerminals(node, key, targetTerminalIds)) {
@@ -3936,7 +3956,7 @@ function setNodeVoltageBaseValuesByTerminal(
   }
   let params = node.params;
   for (const key of Object.keys(node.params)) {
-    if (!isVoltageBaseValueParamKey(key)) {
+    if (!isSupportedVoltageBaseValueParamKey(node, key)) {
       continue;
     }
     const value = voltageBaseValueForParamTerminals(node, key, valueByTerminalId);
@@ -4306,27 +4326,16 @@ export function calculateElectricalTopology(nodes: ModelNode[], edges: Edge[]): 
       assignIfZero("v_set", terminals.find((terminal) => terminal.type === type) ?? terminals[0]);
     }
     if (section === "DCDCConverter") {
-      const sourceControl = normalizeDcdcEndpointControlTypeForE(params.i_control_type || params.sourceControlType || params.control_type);
-      const targetControl = normalizeDcdcEndpointControlTypeForE(params.j_control_type || params.targetControlType);
-      const controlledTerminal = targetControl === "V"
-        ? terminals[1]
-        : sourceControl === "V"
-          ? terminals[0]
-          : terminals[0];
-      assignIfZero("v_set", controlledTerminal);
+      assignIfZero("i_v_set", terminals[0]);
+      assignIfZero("j_v_set", terminals[1]);
     }
     if (section === "DCACConverter") {
       assignIfZero("v_ac_set", terminals.find((terminal) => terminal.type === "ac") ?? terminals[0]);
       assignIfZero("v_dc_set", terminals.find((terminal) => terminal.type === "dc") ?? terminals[1]);
-      assignIfZero("ac_v_set", terminals.find((terminal) => terminal.type === "ac") ?? terminals[0]);
-      assignIfZero("dc_v_set", terminals.find((terminal) => terminal.type === "dc") ?? terminals[1]);
     }
     if (section === "ACACConverter") {
       assignIfZero("i_v_set", terminals[0]);
       assignIfZero("j_v_set", terminals[1]);
-    }
-    if (section === "DCDCConverter" || section === "DCACConverter" || section === "ACACConverter") {
-      assignIfZero("v_set", terminals[0]);
     }
     if (isContainerParams(node.params)) {
       for (const fieldName of Object.keys(node.params)) {
@@ -4597,24 +4606,16 @@ export function validateVoltageSetpointDeviations(nodes: ModelNode[], edges: Edg
       addNodeVoltageSetpointDeviation("v_set", node.terminals.find((terminal) => terminal.type === expectedType) ?? node.terminals[0]);
     }
     if (section === "DCDCConverter") {
-      const sourceControl = normalizeDcdcEndpointControlTypeForE(node.params.i_control_type || node.params.sourceControlType || node.params.control_type);
-      const targetControl = normalizeDcdcEndpointControlTypeForE(node.params.j_control_type || node.params.targetControlType);
-      addNodeVoltageSetpointDeviation("v_set", targetControl === "V" ? node.terminals[1] : sourceControl === "V" ? node.terminals[0] : node.terminals[0]);
+      addNodeVoltageSetpointDeviation("i_v_set", node.terminals[0]);
+      addNodeVoltageSetpointDeviation("j_v_set", node.terminals[1]);
     }
     if (section === "DCACConverter") {
       addNodeVoltageSetpointDeviation("v_ac_set", node.terminals.find((terminal) => terminal.type === "ac") ?? node.terminals[0]);
       addNodeVoltageSetpointDeviation("v_dc_set", node.terminals.find((terminal) => terminal.type === "dc") ?? node.terminals[1]);
-      addNodeVoltageSetpointDeviation("ac_v_set", node.terminals.find((terminal) => terminal.type === "ac") ?? node.terminals[0]);
-      addNodeVoltageSetpointDeviation("dc_v_set", node.terminals.find((terminal) => terminal.type === "dc") ?? node.terminals[1]);
     }
     if (section === "ACACConverter") {
       addNodeVoltageSetpointDeviation("i_v_set", node.terminals[0]);
       addNodeVoltageSetpointDeviation("j_v_set", node.terminals[1]);
-    }
-    if (section === "DCDCConverter" || section === "DCACConverter" || section === "ACACConverter") {
-      addNodeVoltageSetpointDeviation("v_set", node.terminals[0]);
-      addNodeVoltageSetpointDeviation("v_ac_set", node.terminals.find((terminal) => terminal.type === "ac") ?? node.terminals[0]);
-      addNodeVoltageSetpointDeviation("v_dc_set", node.terminals.find((terminal) => terminal.type === "dc") ?? node.terminals[1]);
     }
     if (isContainerParams(node.params)) {
       for (const fieldName of Object.keys(node.params)) {
@@ -4687,9 +4688,12 @@ type DeviceLimitPairSpec = {
 type DeviceSetpointLimitSpec = {
   setKey: string;
   maxKey: string;
-  minKey: string;
+  minKey?: string;
+  implicitMin?: number;
   label: string;
-  quantity: "power" | "voltage" | "numeric";
+  quantity: "power" | "voltage" | "current" | "numeric";
+  terminalSelector?: DeviceLimitTerminalSelector;
+  legacyAlias?: boolean;
 };
 
 const DEVICE_LIMIT_PAIR_SPECS: DeviceLimitPairSpec[] = [
@@ -4713,11 +4717,12 @@ const DEVICE_SETPOINT_LIMIT_SPECS_BY_SECTION: Record<string, DeviceSetpointLimit
   ACGenerator: [
     { setKey: "p_set", maxKey: "p_max", minKey: "p_min", label: "有功设定值", quantity: "power" },
     { setKey: "q_set", maxKey: "q_max", minKey: "q_min", label: "无功设定值", quantity: "power" },
-    { setKey: "v_set", maxKey: "v_max", minKey: "v_min", label: "电压设定值", quantity: "voltage" }
+    { setKey: "v_set", maxKey: "v_max", minKey: "v_min", label: "电压设定值", quantity: "voltage", terminalSelector: "default" }
   ],
   DCGenerator: [
     { setKey: "p_set", maxKey: "p_max", minKey: "p_min", label: "有功设定值", quantity: "power" },
-    { setKey: "v_set", maxKey: "v_max", minKey: "v_min", label: "电压设定值", quantity: "voltage" }
+    { setKey: "i_set", maxKey: "i_max", implicitMin: 0, label: "电流设定值", quantity: "current" },
+    { setKey: "v_set", maxKey: "v_max", minKey: "v_min", label: "电压设定值", quantity: "voltage", terminalSelector: "default" }
   ],
   ACLoad: [
     { setKey: "p_set", maxKey: "p_max", minKey: "p_min", label: "有功设定值", quantity: "power" }
@@ -4728,23 +4733,21 @@ const DEVICE_SETPOINT_LIMIT_SPECS_BY_SECTION: Record<string, DeviceSetpointLimit
   DCACConverter: [
     { setKey: "p_ac_set", maxKey: "ac_p_max", minKey: "ac_p_min", label: "交流侧有功设定值", quantity: "power" },
     { setKey: "q_ac_set", maxKey: "ac_q_max", minKey: "ac_q_min", label: "交流侧无功设定值", quantity: "power" },
-    { setKey: "v_ac_set", maxKey: "ac_v_max", minKey: "ac_v_min", label: "交流侧电压设定值", quantity: "voltage" },
-    { setKey: "ac_v_set", maxKey: "ac_v_max", minKey: "ac_v_min", label: "交流侧电压设定值", quantity: "voltage" },
+    { setKey: "v_ac_set", maxKey: "ac_v_max", minKey: "ac_v_min", label: "交流侧电压设定值", quantity: "voltage", terminalSelector: "ac" },
     { setKey: "p_dc_set", maxKey: "dc_p_max", minKey: "dc_p_min", label: "直流侧有功设定值", quantity: "power" },
-    { setKey: "v_dc_set", maxKey: "dc_v_max", minKey: "dc_v_min", label: "直流侧电压设定值", quantity: "voltage" },
-    { setKey: "dc_v_set", maxKey: "dc_v_max", minKey: "dc_v_min", label: "直流侧电压设定值", quantity: "voltage" }
+    { setKey: "i_dc_set", maxKey: "dc_i_max", implicitMin: 0, label: "直流侧电流设定值", quantity: "current", terminalSelector: "dc" },
+    { setKey: "v_dc_set", maxKey: "dc_v_max", minKey: "dc_v_min", label: "直流侧电压设定值", quantity: "voltage", terminalSelector: "dc" }
   ],
   ACACConverter: [
-    { setKey: "p_set", maxKey: "i_p_max", minKey: "i_p_min", label: "有功设定值（首端范围）", quantity: "power" },
-    { setKey: "p_set", maxKey: "j_p_max", minKey: "j_p_min", label: "有功设定值（末端范围）", quantity: "power" },
+    { setKey: "i_p_set", maxKey: "i_p_max", minKey: "i_p_min", label: "首端有功设定值", quantity: "power" },
+    { setKey: "j_p_set", maxKey: "j_p_max", minKey: "j_p_min", label: "末端有功设定值", quantity: "power" },
     { setKey: "i_q_set", maxKey: "i_q_max", minKey: "i_q_min", label: "首端无功设定值", quantity: "power" },
     { setKey: "j_q_set", maxKey: "j_q_max", minKey: "j_q_min", label: "末端无功设定值", quantity: "power" },
-    { setKey: "i_v_set", maxKey: "i_v_max", minKey: "i_v_min", label: "首端电压设定值", quantity: "voltage" },
-    { setKey: "j_v_set", maxKey: "j_v_max", minKey: "j_v_min", label: "末端电压设定值", quantity: "voltage" }
+    { setKey: "i_v_set", maxKey: "i_v_max", minKey: "i_v_min", label: "首端电压设定值", quantity: "voltage", terminalSelector: "i" },
+    { setKey: "j_v_set", maxKey: "j_v_max", minKey: "j_v_min", label: "末端电压设定值", quantity: "voltage", terminalSelector: "j" }
   ],
   DCDCConverter: [
-    { setKey: "p_set", maxKey: "i_p_max", minKey: "i_p_min", label: "有功设定值（首端范围）", quantity: "power" },
-    { setKey: "p_set", maxKey: "j_p_max", minKey: "j_p_min", label: "有功设定值（末端范围）", quantity: "power" }
+    // DCDC setpoints are endpoint-specific and resolved per instance below.
   ],
   HydroSource: [
     { setKey: "pressure_set", maxKey: "pressure_max", minKey: "pressure_min", label: "压力设定值", quantity: "numeric" },
@@ -4754,6 +4757,28 @@ const DEVICE_SETPOINT_LIMIT_SPECS_BY_SECTION: Record<string, DeviceSetpointLimit
     { setKey: "pressure_set", maxKey: "pressure_max", minKey: "pressure_min", label: "压力设定值", quantity: "numeric" },
     { setKey: "flow_set", maxKey: "flow_max", minKey: "flow_min", label: "流量设定值", quantity: "numeric" }
   ]
+};
+
+const REQUIRED_VOLTAGE_LIMIT_KEYS_BY_SECTION: Record<string, ReadonlySet<string>> = {
+  ACRealBs: new Set(["v_max"]),
+  DCRealBs: new Set(["v_max"]),
+  ACLoad: new Set(["v_max"]),
+  DCLoad: new Set(["v_max"]),
+  ACGenerator: new Set(["v_max"]),
+  DCGenerator: new Set(["v_max"]),
+  DCDCConverter: new Set(["i_v_max", "j_v_max"]),
+  DCACConverter: new Set(["ac_v_max", "dc_v_max"]),
+  ACACConverter: new Set(["i_v_max", "j_v_max"])
+};
+
+const REQUIRED_POWER_LIMIT_KEYS_BY_SECTION: Record<string, ReadonlySet<string>> = {
+  ACLoad: new Set(["p_max", "q_max"]),
+  DCLoad: new Set(["p_max"]),
+  ACGenerator: new Set(["p_max", "q_max"]),
+  DCGenerator: new Set(["p_max"]),
+  DCDCConverter: new Set(["i_p_max", "j_p_max"]),
+  DCACConverter: new Set(["ac_p_max", "ac_q_max", "dc_p_max"]),
+  ACACConverter: new Set(["i_p_max", "i_q_max", "j_p_max", "j_q_max"])
 };
 
 type DeviceLimitQuantity = "power" | "voltage" | "current";
@@ -4799,6 +4824,9 @@ const RATED_CURRENT_SPECS_BY_SECTION: Record<string, RatedCurrentSpec[]> = {
     { currentKey: "medium_i_max", capacityKey: "medium_rated_capacity", terminalSelector: "j", label: "中压侧最大电流" },
     { currentKey: "low_i_max", capacityKey: "low_rated_capacity", terminalSelector: "t3", label: "低压侧最大电流" }
   ],
+  DCGenerator: [
+    { currentKey: "i_max", capacityKey: "rated_capacity", terminalSelector: "default", label: "最大电流" }
+  ],
   DCDCConverter: [
     { currentKey: "i_i_max", capacityKey: "rated_capacity", terminalSelector: "i", label: "首端最大电流" },
     { currentKey: "j_i_max", capacityKey: "rated_capacity", terminalSelector: "j", label: "末端最大电流" }
@@ -4822,6 +4850,64 @@ function namedNumericValue(value: string | undefined): number | null {
   }
   const numeric = Number(token);
   return Number.isFinite(numeric) ? numeric : null;
+}
+
+const STORAGE_SOC_SECTIONS = new Set(["ACGenerator", "DCGenerator", "HydroStorage", "HeatStorage"]);
+
+function isStorageSocNode(node: ModelNode, ownerSection: string): boolean {
+  const kind = baseDeviceKind(node.kind).toLowerCase();
+  if (kind === "ac-storage" || kind === "dc-storage" || kind.includes("storage-tank")) {
+    return true;
+  }
+  if (ownerSection === "HydroStorage" || ownerSection === "HeatStorage") {
+    return true;
+  }
+  const sourceType = String(deviceParamValue(node.params, "source_type") ?? "").trim().toLowerCase();
+  return STORAGE_SOC_SECTIONS.has(ownerSection) && (
+    sourceType === "储能" || sourceType === "storage" || sourceType === "battery"
+  );
+}
+
+function validateStorageSocParameters(
+  node: ModelNode,
+  ownerName: string,
+  keyFor: (key: string) => string,
+  ownerSection: string,
+  updateParam: (key: string, value: string) => void
+): TopologyValidationError[] {
+  if (!isStorageSocNode(node, ownerSection)) {
+    return [];
+  }
+  const upperKey = keyFor("soc_upper_limit");
+  const socKey = keyFor("soc");
+  const lowerKey = keyFor("soc_lower_limit");
+  const upperText = deviceParamValue(node.params, upperKey);
+  const socText = deviceParamValue(node.params, socKey);
+  const lowerText = deviceParamValue(node.params, lowerKey);
+  const upper = namedNumericValue(upperText);
+  const soc = namedNumericValue(socText);
+  const lower = namedNumericValue(lowerText);
+  if (
+    upper !== null &&
+    soc !== null &&
+    lower !== null &&
+    upper <= 1 &&
+    upper > soc &&
+    soc > lower &&
+    lower >= 0
+  ) {
+    return [];
+  }
+  updateParam(upperKey, "0.9");
+  updateParam(socKey, "0.5");
+  updateParam(lowerKey, "0.1");
+  return [{
+    id: `storage-soc-parameter-invalid:${node.id}:${encodeURIComponent(upperKey)}:${encodeURIComponent(socKey)}:${encodeURIComponent(lowerKey)}`,
+    type: "storage-soc-parameter-invalid",
+    nodeId: node.id,
+    relatedNodeIds: [node.id],
+    message: `图上拓扑告警：${ownerName} 的SOC参数无效，修正前为 ${upperKey}=${upperText ?? "未设置"}、${socKey}=${socText ?? "未设置"}、${lowerKey}=${lowerText ?? "未设置"}；必须满足 1 >= ${upperKey} > ${socKey} > ${lowerKey} >= 0，已自动修正为 ${upperKey}=0.9、${socKey}=0.5、${lowerKey}=0.1。`
+  }];
 }
 
 function normalizedQuantityUnit(quantity: DeviceLimitQuantity, value: string | undefined): string | null {
@@ -4924,31 +5010,23 @@ function voltageSetpointDefaultSpecs(node: ModelNode): VoltageSetpointDefaultSpe
     return [{ paramKey: "v_set", terminalSelector: "dc" }];
   }
   if (section === "DCDCConverter") {
-    const sourceControl = normalizeDcdcEndpointControlTypeForE(
-      node.params.i_control_type || node.params.sourceControlType || node.params.control_type
-    );
-    const targetControl = normalizeDcdcEndpointControlTypeForE(
-      node.params.j_control_type || node.params.targetControlType
-    );
-    return [{
-      paramKey: "v_set",
-      terminalSelector: targetControl === "V" ? "j" : sourceControl === "V" ? "i" : "i"
-    }];
+    return deviceSetpointLimitSpecs(node, section)
+      .filter((spec) => spec.quantity === "voltage")
+      .map((spec) => ({
+        paramKey: spec.setKey,
+        terminalSelector: spec.terminalSelector ?? "default"
+      }));
   }
   if (section === "DCACConverter") {
     return [
       { paramKey: "v_ac_set", terminalSelector: "ac" },
-      { paramKey: "v_dc_set", terminalSelector: "dc" },
-      { paramKey: "ac_v_set", terminalSelector: "ac" },
-      { paramKey: "dc_v_set", terminalSelector: "dc" },
-      { paramKey: "v_set", terminalSelector: "i" }
+      { paramKey: "v_dc_set", terminalSelector: "dc" }
     ];
   }
   if (section === "ACACConverter") {
     return [
       { paramKey: "i_v_set", terminalSelector: "i" },
-      { paramKey: "j_v_set", terminalSelector: "j" },
-      { paramKey: "v_set", terminalSelector: "i" }
+      { paramKey: "j_v_set", terminalSelector: "j" }
     ];
   }
   return [];
@@ -4959,20 +5037,14 @@ function deviceSetpointLimitSpecs(node: ModelNode, ownerSection: string): Device
   if (ownerSection !== "DCDCConverter") {
     return specs;
   }
-  const sourceControl = normalizeDcdcEndpointControlTypeForE(
-    node.params.i_control_type || node.params.sourceControlType || node.params.control_type
+  specs.push(
+    { setKey: "i_p_set", maxKey: "i_p_max", minKey: "i_p_min", label: "首端有功设定值", quantity: "power" },
+    { setKey: "j_p_set", maxKey: "j_p_max", minKey: "j_p_min", label: "末端有功设定值", quantity: "power" },
+    { setKey: "i_i_set", maxKey: "i_i_max", implicitMin: 0, label: "首端电流设定值", quantity: "current", terminalSelector: "i" },
+    { setKey: "j_i_set", maxKey: "j_i_max", implicitMin: 0, label: "末端电流设定值", quantity: "current", terminalSelector: "j" },
+    { setKey: "i_v_set", maxKey: "i_v_max", minKey: "i_v_min", label: "首端电压设定值", quantity: "voltage", terminalSelector: "i" },
+    { setKey: "j_v_set", maxKey: "j_v_max", minKey: "j_v_min", label: "末端电压设定值", quantity: "voltage", terminalSelector: "j" }
   );
-  const targetControl = normalizeDcdcEndpointControlTypeForE(
-    node.params.j_control_type || node.params.targetControlType
-  );
-  const voltageSide = targetControl === "V" ? "j" : sourceControl === "V" ? "i" : "i";
-  specs.push({
-    setKey: "v_set",
-    maxKey: `${voltageSide}_v_max`,
-    minKey: `${voltageSide}_v_min`,
-    label: `${voltageSide === "i" ? "首端" : "末端"}电压设定值`,
-    quantity: "voltage"
-  });
   return specs;
 }
 
@@ -4981,24 +5053,35 @@ function validateDeviceSetpointLimits(
   ownerName: string,
   keyFor: (key: string) => string,
   ownerSection: string,
-  options: DeviceOperatingLimitNormalizationOptions
+  options: DeviceOperatingLimitNormalizationOptions,
+  updateParam: (key: string, value: string) => void,
+  terminalOverride?: Terminal
 ): TopologyValidationError[] {
   const warnings: TopologyValidationError[] = [];
+  const stagedValues = new Map<string, string>();
+  const valueFor = (key: string): string | undefined => stagedValues.get(key) ?? deviceParamValue(node.params, key);
+  const stageParam = (key: string, value: string) => {
+    stagedValues.set(key, value);
+    updateParam(key, value);
+  };
   for (const spec of deviceSetpointLimitSpecs(node, ownerSection)) {
     const setKey = keyFor(spec.setKey);
     const maxKey = keyFor(spec.maxKey);
-    const minKey = keyFor(spec.minKey);
-    const setText = deviceParamValue(node.params, setKey);
-    if (setText === undefined || !String(setText).trim()) {
+    const minKey = spec.minKey ? keyFor(spec.minKey) : undefined;
+    const setText = valueFor(setKey);
+    const setpointMissing = setText === undefined || !String(setText).trim();
+    if (setpointMissing && (spec.quantity === "numeric" || spec.legacyAlias)) {
       continue;
     }
-    const maxText = deviceParamValue(node.params, maxKey);
-    const minText = deviceParamValue(node.params, minKey);
+    const maxText = valueFor(maxKey);
+    const minText = minKey ? valueFor(minKey) : compactDeviceLimitNumber(spec.implicitMin ?? 0);
     const defaultUnit = spec.quantity === "power"
       ? defaultQuantityUnit("power", options)
       : spec.quantity === "voltage"
         ? defaultQuantityUnit("voltage", options)
-        : "";
+        : spec.quantity === "current"
+          ? defaultQuantityUnit("current", options)
+          : "";
     const valueOf = (text: string | undefined): number | null => {
       if (spec.quantity === "numeric") {
         return namedNumericValue(text);
@@ -5014,12 +5097,65 @@ function validateDeviceSetpointLimits(
     if (setValue !== null && setValue >= minValue && setValue <= maxValue) {
       continue;
     }
+    if (spec.quantity === "voltage") {
+      if (options.skipVoltageNodeIds?.has(node.id)) {
+        continue;
+      }
+      const terminal = terminalOverride ?? terminalForDeviceLimit(node, spec.terminalSelector ?? "default");
+      const voltageUnit = defaultQuantityUnit("voltage", options);
+      const baseVoltageText = terminalVoltageTextForDeviceLimit(node, terminal);
+      const baseVoltage = quantityValue(baseVoltageText, "voltage", voltageUnit);
+      if (!baseVoltage || baseVoltage.baseValue <= 0) {
+        continue;
+      }
+      const correctedSetpoint = quantityValueInUnit(baseVoltage.baseValue, "voltage", voltageUnit);
+      stageParam(setKey, correctedSetpoint);
+      warnings.push({
+        id: `voltage-setpoint-deviation:${node.id}:${encodeURIComponent(setKey)}:${encodeURIComponent(minKey ?? "")}:${encodeURIComponent(maxKey)}`,
+        type: "voltage-setpoint-deviation",
+        nodeId: node.id,
+        relatedNodeIds: [node.id],
+        message: `图上拓扑告警：${ownerName} 的${spec.label} ${setKey}=${setText ?? "未设置"} 不在 ${minKey}=${minText} 与 ${maxKey}=${maxText} 的有效范围内，已按基准电压 ${quantityValueInUnit(baseVoltage.baseValue, "voltage", voltageUnit)} ${voltageUnit} 自动修正为 ${correctedSetpoint} ${voltageUnit}。`
+      });
+      continue;
+    }
+    if (spec.quantity === "power" || spec.quantity === "current") {
+      if (spec.quantity === "current") {
+        if (options.skipVoltageNodeIds?.has(node.id)) {
+          continue;
+        }
+        const terminal = terminalOverride ?? terminalForDeviceLimit(node, spec.terminalSelector ?? "default");
+        const baseVoltage = quantityValue(
+          terminalVoltageTextForDeviceLimit(node, terminal),
+          "voltage",
+          defaultQuantityUnit("voltage", options)
+        );
+        if (!baseVoltage || baseVoltage.baseValue <= 0) {
+          continue;
+        }
+      }
+      const capacity = quantityValue(valueFor(keyFor("rated_capacity")), "power", defaultQuantityUnit("power", options));
+      if (!capacity || capacity.baseValue <= 0) {
+        continue;
+      }
+      const correctedBaseValue = Math.min(maxValue, Math.max(minValue, 0));
+      const correctedSetpoint = quantityValueInUnit(correctedBaseValue, spec.quantity, defaultUnit);
+      stageParam(setKey, correctedSetpoint);
+      warnings.push({
+        id: `device-setpoint-auto-corrected:${node.id}:${encodeURIComponent(setKey)}:${encodeURIComponent(minKey ?? "0")}:${encodeURIComponent(maxKey)}`,
+        type: "device-setpoint-auto-corrected",
+        nodeId: node.id,
+        relatedNodeIds: [node.id],
+        message: `图上拓扑告警：${ownerName} 的${spec.label} ${setKey}=${setText ?? "未设置"} 不在 ${minKey ? `${minKey}=${minText}` : "隐式下限=0"} 与 ${maxKey}=${maxText} 的有效范围内，已自动修正为 ${correctedSetpoint} ${defaultUnit}。`
+      });
+      continue;
+    }
     warnings.push({
-      id: `device-setpoint-out-of-range:${node.id}:${encodeURIComponent(setKey)}:${encodeURIComponent(minKey)}:${encodeURIComponent(maxKey)}`,
+      id: `device-setpoint-out-of-range:${node.id}:${encodeURIComponent(setKey)}:${encodeURIComponent(minKey ?? "0")}:${encodeURIComponent(maxKey)}`,
       type: "device-setpoint-out-of-range",
       nodeId: node.id,
       relatedNodeIds: [node.id],
-      message: `图上拓扑失败：${ownerName} 的${spec.label} ${setKey}=${setText} 必须位于 ${minKey}=${minText} 与 ${maxKey}=${maxText} 之间。`
+      message: `图上拓扑失败：${ownerName} 的${spec.label} ${setKey}=${setText} 必须位于 ${minKey ? `${minKey}=${minText}` : "隐式下限=0"} 与 ${maxKey}=${maxText} 之间。`
     });
   }
   return warnings;
@@ -5076,12 +5212,15 @@ function validateDeviceLimitPairs(
       });
     }
   }
+  warnings.push(...validateStorageSocParameters(node, ownerName, keyFor, ownerSection, updateParam));
   const relevantSpecs = DEVICE_LIMIT_PAIR_SPECS.flatMap((spec) => {
     const maxKey = keyFor(spec.maxKey);
     const minKey = keyFor(spec.minKey);
     const maxText = deviceParamValue(node.params, maxKey);
     const minText = deviceParamValue(node.params, minKey);
-    return maxText === undefined && minText === undefined
+    const requiredVoltageLimit = spec.voltage && REQUIRED_VOLTAGE_LIMIT_KEYS_BY_SECTION[ownerSection]?.has(spec.maxKey);
+    const requiredPowerLimit = !spec.voltage && REQUIRED_POWER_LIMIT_KEYS_BY_SECTION[ownerSection]?.has(spec.maxKey);
+    return maxText === undefined && minText === undefined && !requiredVoltageLimit && !requiredPowerLimit
       ? []
       : [{ spec, maxKey, minKey, maxText, minText }];
   });
@@ -5122,7 +5261,13 @@ function validateDeviceLimitPairs(
       }
       const maxValue = quantityValue(maxText, "power", powerUnit);
       const minValue = quantityValue(minText, "power", powerUnit);
-      if (maxValue && minValue && maxValue.baseValue > minValue.baseValue) {
+      if (
+        maxValue &&
+        minValue &&
+        maxValue.baseValue > 0 &&
+        maxValue.baseValue > minValue.baseValue &&
+        maxValue.baseValue <= capacity.baseValue + Number.EPSILON
+      ) {
         continue;
       }
       const reactivePower = spec.maxKey === "q_max" || spec.maxKey.endsWith("_q_max");
@@ -5271,43 +5416,6 @@ function validateHydrogenCouplingParameters(
 
     if (!capacity || capacity.baseValue <= 0) {
       relationIssues.push(`rated_capacity=${capacityText ?? "未设置"} 必须为正数`);
-    }
-    const validatePowerPair = (prefix: "p" | "q") => {
-      const maxKey = `${prefix}_max`;
-      const minKey = `${prefix}_min`;
-      const setKey = `${prefix}_set`;
-      const maxText = relationValue(fieldName, maxKey);
-      const minText = relationValue(fieldName, minKey);
-      const setText = relationValue(fieldName, setKey);
-      const maximum = quantityValue(maxText, "power", powerUnit);
-      const minimum = quantityValue(minText, "power", powerUnit);
-      const setpoint = quantityValue(setText, "power", powerUnit);
-      if (!maximum || maximum.baseValue <= 0) {
-        relationIssues.push(`${maxKey}=${maxText ?? "未设置"} 必须为正数`);
-      }
-      if (!minimum) {
-        relationIssues.push(`${minKey}=${minText ?? "未设置"} 必须为数字`);
-      }
-      if (maximum && minimum && maximum.baseValue <= minimum.baseValue) {
-        relationIssues.push(`${maxKey} 必须大于 ${minKey}`);
-      }
-      if (capacity && capacity.baseValue > 0 && maximum && maximum.baseValue > capacity.baseValue) {
-        relationIssues.push(`${maxKey} 不能大于 rated_capacity`);
-      }
-      if (
-        setText !== undefined &&
-        maximum &&
-        minimum &&
-        maximum.baseValue > minimum.baseValue &&
-        (!setpoint || setpoint.baseValue < minimum.baseValue || setpoint.baseValue > maximum.baseValue)
-      ) {
-        relationIssues.push(`${setKey}=${setText} 必须位于 ${minKey} 与 ${maxKey} 之间`);
-      }
-    };
-    validatePowerPair("p");
-    const relationSection = containerRelationCounterKey(fieldName);
-    if (relationSection === "ACGenerator" || relationSection === "ACLoad") {
-      validatePowerPair("q");
     }
     if (relationIssues.length > 0) {
       invalidRelationFields.add(fieldName);
@@ -5511,7 +5619,8 @@ export function normalizeDeviceOperatingLimitsAfterTopology(
       node.name,
       (key) => key,
       inferESection(node.kind, nextParams),
-      options
+      options,
+      updateParam
     ));
     if (!isContainerParams(nextParams)) {
       return nextParams === node.params ? node : { ...node, params: nextParams };
@@ -5540,7 +5649,9 @@ export function normalizeDeviceOperatingLimitsAfterTopology(
         containerAssociatedDeviceName(node, fieldName),
         (key) => containerRelationParamKey(fieldName, key),
         relationSection,
-        options
+        options,
+        updateParam,
+        terminal
       ));
     }
     return nextParams === node.params ? node : { ...node, params: nextParams };

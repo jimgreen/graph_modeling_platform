@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { DeviceGlyph } from "./DeviceGlyph";
@@ -1496,15 +1497,15 @@ test("formats load base power display values without units", () => {
 });
 
 test("formats SOC and efficiency values as percentages while storing decimal ratios", () => {
-  expect(formatPowerBaseDisplayValue("state_of_charge", "0.5")).toBe("50%");
+  expect(formatPowerBaseDisplayValue("soc", "0.5")).toBe("50%");
   expect(formatPowerBaseDisplayValue("soc_upper_limit", "0.99")).toBe("99%");
   expect(formatPowerBaseDisplayValue("module_efficiency", "0.213")).toBe("21.3%");
   expect(formatPowerBaseDisplayValue("generator_efficiency", "98.5")).toBe("98.5%");
   expect(formatPowerBaseDisplayValue("rated_voltage", "10")).toBe("10");
 
-  expect(normalizeRatioParameterInputValue("state_of_charge", "99%")).toBe("0.99");
-  expect(normalizeRatioParameterInputValue("state_of_charge", "99")).toBe("0.99");
-  expect(normalizeRatioParameterInputValue("state_of_charge", "0.99")).toBe("0.99");
+  expect(normalizeRatioParameterInputValue("soc", "99%")).toBe("0.99");
+  expect(normalizeRatioParameterInputValue("soc", "99")).toBe("0.99");
+  expect(normalizeRatioParameterInputValue("soc", "0.99")).toBe("0.99");
   expect(normalizeRatioParameterInputValue("charge_discharge_efficiency", "100%")).toBe("1");
   expect(normalizeRatioParameterInputValue("charge_discharge_efficiency", "101%")).toBeNull();
   expect(normalizeRatioParameterInputValue("rated_voltage", "99%")).toBe("99%");
@@ -1828,7 +1829,9 @@ test("defines 0-1 SOC defaults and limits for AC and DC storage", () => {
       valueType: "float",
       readonly: false
     });
-    expect(node.params.state_of_charge).toBe("0.5");
+    expect(definitions.get("soc")).toMatchObject({ cnName: "SOC", valueType: "float", typicalValue: "0.5" });
+    expect(node.params.soc).toBe("0.5");
+    expect(node.params).not.toHaveProperty("state_of_charge");
     expect(node.params.soc_upper_limit).toBe("0.9");
     expect(node.params.soc_lower_limit).toBe("0.1");
   }
@@ -1986,7 +1989,7 @@ test("defines family-specific electric generation parameters and engineering def
       charge_discharge_efficiency: "float",
       max_charge_power: "float",
       max_discharge_power: "float",
-      state_of_charge: "float",
+      soc: "float",
       soc_upper_limit: "float",
       soc_lower_limit: "float"
     }
@@ -2059,7 +2062,7 @@ test("defines family-specific electric generation parameters and engineering def
     charge_discharge_efficiency: "0.9",
     max_charge_power: "5",
     max_discharge_power: "5",
-    state_of_charge: "0.5",
+    soc: "0.5",
     soc_upper_limit: "0.9",
     soc_lower_limit: "0.1"
   });
@@ -2240,7 +2243,7 @@ test("includes DC electrochemical storage as a single-port DC device", () => {
   expect(node.params).toMatchObject({
     source_type: "储能",
     energy_capacity: "20",
-    state_of_charge: "0.5"
+    soc: "0.5"
   });
   expect(node.params.vbase).toBe("0");
   expect(getDeviceGlyphVariant("dc-storage")).toBe("battery-storage");
@@ -2262,7 +2265,7 @@ test("includes AC electrochemical storage as a single-port AC device", () => {
   expect(node.params).toMatchObject({
     source_type: "储能",
     energy_capacity: "20",
-    state_of_charge: "0.5"
+    soc: "0.5"
   });
   expect(node.params.vbase).toBe("0");
   expect(getDeviceGlyphVariant("ac-storage")).toBe("battery-storage");
@@ -2836,7 +2839,7 @@ test("defines static limits and measurement parameters for every hydrogen tank v
     expect(definitionByName.get("pressure")).toMatchObject({ cnName: "储气压(MPa)", valueType: "float", typicalValue: "1" });
     expect(definitionByName.get("flow")).toMatchObject({ cnName: "流量(Nm3/h)", valueType: "float", typicalValue: "0" });
     expect(definitionByName.get("gas_quantity")).toMatchObject({ cnName: "储气量(Nm3)", valueType: "float", typicalValue: "500" });
-    expect(definitionByName.get("soc")).toMatchObject({ cnName: "soc", valueType: "float", typicalValue: "0.5" });
+    expect(definitionByName.get("soc")).toMatchObject({ cnName: "SOC", valueType: "float", typicalValue: "0.5" });
   }
 });
 
@@ -3690,6 +3693,27 @@ test("keeps only canonical DCAC converter control fields without legacy migratio
   legacyOnly.params.controlType = "ACP";
   legacyOnly.params.acControlType = "PV";
   legacyOnly.params.dcControlType = "I";
+  Object.assign(legacyOnly.params, {
+    p_set: "91",
+    pSet: "92",
+    i_set: "93",
+    iSet: "94",
+    v_set: "95",
+    vSet: "96",
+    ac_v_set: "97",
+    acVSet: "98",
+    dc_v_set: "99",
+    dcVSet: "100"
+  });
+  const storedDefinitions = JSON.parse(legacyOnly.params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]") as DeviceParameterDefinition[];
+  legacyOnly.params[CUSTOM_PARAM_DEFINITIONS_KEY] = JSON.stringify([
+    ...storedDefinitions,
+    { cnName: "旧有功设定值", enName: "p_set", valueType: "float", typicalValue: "91" },
+    { cnName: "旧电流设定值", enName: "i_set", valueType: "float", typicalValue: "93" },
+    { cnName: "旧电压设定值", enName: "v_set", valueType: "float", typicalValue: "95" },
+    { cnName: "旧交流电压设定值", enName: "ac_v_set", valueType: "float", typicalValue: "97" },
+    { cnName: "旧直流电压设定值", enName: "dc_v_set", valueType: "float", typicalValue: "99" }
+  ]);
   delete legacyOnly.params.ac_control_type;
   delete legacyOnly.params.dc_control_type;
 
@@ -3700,6 +3724,12 @@ test("keeps only canonical DCAC converter control fields without legacy migratio
   expect(normalizedLegacyOnly.params).not.toHaveProperty("controlType");
   expect(normalizedLegacyOnly.params).not.toHaveProperty("acControlType");
   expect(normalizedLegacyOnly.params).not.toHaveProperty("dcControlType");
+  for (const legacyKey of ["p_set", "pSet", "i_set", "iSet", "v_set", "vSet", "ac_v_set", "acVSet", "dc_v_set", "dcVSet"]) {
+    expect(normalizedLegacyOnly.params).not.toHaveProperty(legacyKey);
+  }
+  const normalizedStoredFieldNames = (JSON.parse(normalizedLegacyOnly.params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]") as DeviceParameterDefinition[])
+    .map((definition) => definition.enName);
+  expect(normalizedStoredFieldNames).not.toEqual(expect.arrayContaining(["p_set", "i_set", "v_set", "ac_v_set", "dc_v_set"]));
 
   const canonical = createDefaultNode("acdc-converter", { x: 240, y: 100 });
   canonical.params.ac_control_type = "PV";
@@ -3717,6 +3747,11 @@ test("keeps only canonical DCAC converter control fields without legacy migratio
   expect(definitionByName.get("ac_control_type")?.valueType).toBe("stringEnum");
   expect(definitionByName.get("dc_control_type")?.valueType).toBe("stringEnum");
   expect(definitionByName.get("p_dc_set")?.valueType).toBe("float");
+  expect(definitionByName.get("i_dc_set")?.valueType).toBe("float");
+  expect(definitionByName.get("v_dc_set")?.valueType).toBe("float");
+  expect(definitionByName.get("p_ac_set")?.valueType).toBe("float");
+  expect(definitionByName.get("q_ac_set")?.valueType).toBe("float");
+  expect(definitionByName.get("v_ac_set")?.valueType).toBe("float");
   expect(definitionByName.has("control_type")).toBe(false);
 });
 
@@ -3762,6 +3797,58 @@ test("migrates legacy ACAC and DCDC converter controls to endpoint fields", () =
     expect(storedFieldNames).not.toContain("control_type");
     expect(storedFieldNames).not.toContain("source_control_type");
     expect(storedFieldNames).not.toContain("target_control_type");
+  }
+});
+
+test("removes generic ACAC and DCDC setpoints without migrating their values", () => {
+  const persistedLibrary = JSON.parse(readFileSync(new URL("../data/device-library/library.json", import.meta.url), "utf8")) as {
+    deviceDefinitionOverrides?: Record<string, DeviceTemplateDefinitionOverride>;
+  };
+  for (const kind of ["dcdc-converter", "acac-converter"] as const) {
+    const template = DEVICE_LIBRARY.find((candidate) => candidate.kind === kind)!;
+    const expectedEndpointFields = kind === "dcdc-converter"
+      ? ["i_p_set", "j_p_set", "i_i_set", "j_i_set", "i_v_set", "j_v_set"]
+      : ["i_p_set", "j_p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set"];
+    const sharedKey = kind === "dcdc-converter" ? "shared:DCDCConverter" : "shared:ACACConverter";
+    const persistedFieldNames = (persistedLibrary.deviceDefinitionOverrides?.[sharedKey]?.parameterDefinitions ?? [])
+      .map((definition) => definition.enName);
+    expect(persistedFieldNames).toEqual(expect.arrayContaining(expectedEndpointFields));
+    expect(persistedFieldNames).not.toEqual(expect.arrayContaining(["p_set", "i_set", "v_set"]));
+    const node = createDefaultNode(kind, { x: 100, y: 100 });
+    Object.assign(node.params, {
+      p_set: "91",
+      pSet: "92",
+      i_set: "93",
+      iSet: "94",
+      v_set: "95",
+      vSet: "96",
+      i_p_set: "1",
+      j_p_set: "2",
+      i_v_set: "3",
+      j_v_set: "4"
+    });
+    if (kind === "dcdc-converter") {
+      Object.assign(node.params, { i_i_set: "5", j_i_set: "6" });
+    }
+    const storedDefinitions = JSON.parse(node.params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]") as DeviceParameterDefinition[];
+    node.params[CUSTOM_PARAM_DEFINITIONS_KEY] = JSON.stringify([
+      ...storedDefinitions,
+      { cnName: "旧有功设定值", enName: "p_set", valueType: "float", typicalValue: "91" },
+      { cnName: "旧电流设定值", enName: "i_set", valueType: "float", typicalValue: "93" },
+      { cnName: "旧电压设定值", enName: "v_set", valueType: "float", typicalValue: "95" }
+    ]);
+
+    const normalized = normalizeNodeTerminalsWithTemplate(node, template);
+    expect(normalized.params).toMatchObject({ i_p_set: "1", j_p_set: "2", i_v_set: "3", j_v_set: "4" });
+    if (kind === "dcdc-converter") {
+      expect(normalized.params).toMatchObject({ i_i_set: "5", j_i_set: "6" });
+    }
+    for (const legacyKey of ["p_set", "pSet", "i_set", "iSet", "v_set", "vSet"]) {
+      expect(normalized.params).not.toHaveProperty(legacyKey);
+    }
+    const storedFieldNames = (JSON.parse(normalized.params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]") as DeviceParameterDefinition[])
+      .map((definition) => definition.enName);
+    expect(storedFieldNames).not.toEqual(expect.arrayContaining(["p_set", "i_set", "v_set"]));
   }
 });
 

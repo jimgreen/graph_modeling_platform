@@ -1129,10 +1129,15 @@ test("exports hydrogen, heat, and cross-energy devices to E sections and reports
     "rated_capacity",
     "water_volume",
     "initial_soc",
+    "soc",
+    "soc_upper_limit",
+    "soc_lower_limit",
     "pressure_max",
     "pressure_min"
   ]);
-  expect(E_SECTION_COLUMNS.HeatStorage).toEqual(["idx", "name", "node", "run_stat"]);
+  expect(E_SECTION_COLUMNS.HeatStorage).toEqual([
+    "idx", "name", "node", "capacity", "temperature", "soc", "soc_upper_limit", "soc_lower_limit", "run_stat"
+  ]);
   expect(exported.AcE2Hydro.rows).toHaveLength(1);
   expect(exported.ACLoad.rows).toHaveLength(1);
   expect(exported.HydroSource.rows).toHaveLength(1);
@@ -1149,12 +1154,22 @@ test("exports hydrogen, heat, and cross-energy devices to E sections and reports
       pressure: "1",
       rated_capacity: "1000",
       initial_soc: "0.5",
+      soc: "0.5",
+      soc_upper_limit: "0.9",
+      soc_lower_limit: "0.1",
       pressure_max: "45",
       pressure_min: "0.1"
     });
   }
   expect(exported.HydroStorage.rows.map((row) => row.water_volume)).toEqual(["10", "50", "80"]);
   expect(exported.HeatStorage.rows).toHaveLength(1);
+  expect(exported.HeatStorage.rows[0]).toMatchObject({
+    capacity: "100",
+    temperature: "90",
+    soc: "0.5",
+    soc_upper_limit: "0.9",
+    soc_lower_limit: "0.1"
+  });
   expect(Object.keys(exported)).not.toContain("Hydro" + "Tank");
   expect(Object.keys(exported)).not.toContain("Heat" + "Tank");
   expect(inferESection("hydrogen-tank")).toBe("HydroStorage");
@@ -2206,7 +2221,7 @@ test("uses the exact Chinese parameter labels for electric generation definition
     storage: [
       { cnName: "储能技术类型", enName: "storage_technology" },
       { cnName: "储能容量", enName: "energy_capacity" },
-      { cnName: "荷电状态", enName: "state_of_charge" },
+      { cnName: "SOC", enName: "soc" },
       { cnName: "SOC上限", enName: "soc_upper_limit" },
       { cnName: "SOC下限", enName: "soc_lower_limit" }
     ]
@@ -2587,14 +2602,14 @@ test("keeps every built-in device parameter aligned with its semantic type and n
     "design_flow", "design_head", "e2h_coeff", "efficiency", "energy_capacity", "flow", "flow_rate", "flow_set", "flow_max", "flow_min", "frequency", "fuel_tank_capacity",
     "f", "g_set", "gas_quantity", "generator_efficiency", "gt", "gt1", "gt2", "gt3", "head", "heat_demand", "heat_power", "heat_rate",
     "h2e_coeff", "high_i_max", "high_rated_capacity", "high_vbase", "hub_height", "hydrogen_demand", "hydrogen_flow", "impedance", "initial_soc", "inlet_pressure",
-    "i", "i_i_max", "i_max", "input_voltage", "i_p_max", "i_p_min", "i_q_max", "i_q_min", "i_q_set", "i_set", "i_v_max", "i_v_min", "i_v_set", "j_i_max", "j_p_max", "j_p_min", "j_q_max", "j_q_min", "j_q_set", "j_v_max", "j_v_min", "j_v_set", "length", "level", "low_i_max", "low_rated_capacity", "low_vbase", "main_steam_pressure",
+    "i", "i_dc_set", "i_i_max", "i_i_set", "i_max", "input_voltage", "i_p_max", "i_p_min", "i_p_set", "i_q_max", "i_q_min", "i_q_set", "i_set", "i_v_max", "i_v_min", "i_v_set", "j_i_max", "j_i_set", "j_p_max", "j_p_min", "j_p_set", "j_q_max", "j_q_min", "j_q_set", "j_v_max", "j_v_min", "j_v_set", "length", "level", "low_i_max", "low_rated_capacity", "low_vbase", "main_steam_pressure",
     "main_steam_temperature", "max_charge_power", "max_current", "max_discharge_power", "medium_i_max", "medium_rated_capacity",
     "medium_vbase", "module_efficiency", "outlet_pressure", "output_voltage", "p", "p_ac_set", "p_dc_set", "p_max", "p_min", "p_set", "pbase", "power",
     "power_factor", "pressure", "pressure_set", "pressure_max", "pressure_min", "primary_loop_pressure", "pv0", "pv1", "pv2", "q", "q_ac_set", "q_max", "q_min", "q_set", "qbase", "qv0",
     "qv1", "qv2", "r", "r1", "r2", "r3", "rated_capacity", "rated_current", "rated_power", "rated_speed",
     "rated_voltage", "rated_wind_speed", "reactive_power", "reactor_thermal_power", "reference_irradiance", "reference_temperature", "return_temperature", "rotor_diameter",
     "shift", "shift1", "shift2", "shift3", "short_circuit_capacity", "soc", "soc_lower_limit", "soc_upper_limit",
-    "specific_fuel_consumption", "start_time", "state_of_charge", "supply_temperature", "supply_temperature_set", "tap", "tap1", "tap2", "tap3",
+    "specific_fuel_consumption", "start_time", "supply_temperature", "supply_temperature_set", "tap", "tap1", "tap2", "tap3",
     "temperature", "temperature_coefficient", "thermal_efficiency", "u", "v_ac_set", "v_dc_set", "v_max", "v_min", "v_set", "vbase", "voltage", "voltage_level", "water_volume", "x",
     "x1", "x2", "x3", "x_pu"
   ]);
@@ -2729,6 +2744,14 @@ test("exports DCDC converter endpoint control types with supported values", () =
   const invalidConverter = createDefaultNode("dcdc-converter", { x: 520, y: 100 });
   defaultConverter.params.i_control_type = "V";
   defaultConverter.params.j_control_type = "I";
+  Object.assign(defaultConverter.params, {
+    i_p_set: "1.25",
+    i_i_set: "2.5",
+    i_v_set: "750",
+    p_set: "91",
+    i_set: "92",
+    v_set: "93"
+  });
   legacyConverter.params.i_control_type = "";
   legacyConverter.params.j_control_type = "";
   legacyConverter.params.source_control_type = "定P";
@@ -2749,6 +2772,7 @@ test("exports DCDC converter endpoint control types with supported values", () =
   expect(payload.DCDCConverter.columns).toContain("i_control_type");
   expect(payload.DCDCConverter.columns).toContain("j_control_type");
   expect(payload.DCDCConverter.columns).not.toContain("control_type");
+  expect(payload.DCDCConverter.rows[0]).toMatchObject({ p_set: "1.25", i_set: "2.5", v_set: "750" });
   expect(payload.DCDCConverter.rows.map((row) => row.i_control_type)).toEqual(["V", "P", "V", "BAD"]);
   expect(payload.DCDCConverter.rows.map((row) => row.j_control_type)).toEqual(["I", "NONE", "NONE", "V"]);
   expect(getEExportWarnings({
@@ -2759,6 +2783,75 @@ test("exports DCDC converter endpoint control types with supported values", () =
   })).toEqual(expect.arrayContaining([
     expect.objectContaining({ nodeId: invalidConverter.id, reason: expect.stringContaining("BAD") })
   ]));
+});
+
+test("exports converter setpoint columns from canonical endpoint and side fields without legacy fallback", () => {
+  const dcdc = createDefaultNode("dcdc-converter", { x: 100, y: 100 });
+  dcdc.name = "DCDC端侧设定值";
+  delete dcdc.params[CUSTOM_PARAM_DEFINITIONS_KEY];
+  Object.assign(dcdc.params, {
+    i_p_set: "1.1",
+    i_i_set: "2.2",
+    i_v_set: "3.3",
+    p_set: "91",
+    i_set: "92",
+    v_set: "93"
+  });
+
+  const acac = createDefaultNode("acac-converter", { x: 260, y: 100 });
+  acac.name = "ACAC端侧设定值";
+  delete acac.params[CUSTOM_PARAM_DEFINITIONS_KEY];
+  Object.assign(acac.params, {
+    i_p_set: "4.4",
+    i_q_set: "5.5",
+    j_q_set: "6.6",
+    i_v_set: "7.7",
+    j_v_set: "8.8",
+    p_set: "94",
+    v_set: "95"
+  });
+
+  const dcac = createDefaultNode("dcac-converter", { x: 420, y: 100 });
+  dcac.name = "DCAC分侧设定值";
+  delete dcac.params[CUSTOM_PARAM_DEFINITIONS_KEY];
+  Object.assign(dcac.params, {
+    p_ac_set: "9.1",
+    q_ac_set: "9.2",
+    v_ac_set: "9.3",
+    p_dc_set: "9.4",
+    i_dc_set: "9.5",
+    v_dc_set: "9.6",
+    p_set: "96",
+    i_set: "97",
+    v_set: "98",
+    ac_v_set: "99",
+    dc_v_set: "100"
+  });
+
+  const payload = parseESections(buildEDeviceParameterFile({
+    version: 1,
+    name: "变流器端侧设定值",
+    nodes: [dcdc, acac, dcac],
+    edges: []
+  }));
+
+  expect(payload.DCDCConverter.rows[0]).toMatchObject({ p_set: "1.1", i_set: "2.2", v_set: "3.3" });
+  expect(payload.ACACConverter.rows[0]).toMatchObject({
+    p_set: "4.4",
+    i_q_set: "5.5",
+    j_q_set: "6.6",
+    i_v_set: "7.7",
+    j_v_set: "8.8"
+  });
+  expect(payload.DCACConverter.rows[0]).toMatchObject({
+    p_ac_set: "9.1",
+    q_ac_set: "9.2",
+    v_ac_set: "9.3",
+    p_dc_set: "9.4",
+    i_dc_set: "9.5",
+    v_dc_set: "9.6"
+  });
+  expect(payload.DCACConverter.columns).not.toEqual(expect.arrayContaining(["p_set", "i_set", "v_set", "ac_v_set", "dc_v_set"]));
 });
 
 test("preserves an invalid AC generator control_type and reports it", () => {
@@ -2953,6 +3046,8 @@ test("exports ACAC converter endpoint control types with only supported values",
   const legacyEndpointConverter = createDefaultNode("acac-converter", { x: 520, y: 100 });
   explicitConverter.params.i_control_type = "PH";
   explicitConverter.params.j_control_type = "NONE";
+  explicitConverter.params.i_p_set = "4.5";
+  explicitConverter.params.p_set = "94";
   delete legacyCombinedConverter.params.i_control_type;
   delete legacyCombinedConverter.params.j_control_type;
   legacyCombinedConverter.params.control_type = "PQV";
@@ -2996,6 +3091,7 @@ test("exports ACAC converter endpoint control types with only supported values",
     "j_v_min"
   ]));
   expect(payload.ACACConverter.columns).not.toContain("control_type");
+  expect(payload.ACACConverter.rows[1].p_set).toBe("4.5");
   expect(payload.ACACConverter.rows[0]).toMatchObject({
     rated_capacity: "10",
     i_q_max: "10",

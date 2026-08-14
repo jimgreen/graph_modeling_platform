@@ -27,8 +27,8 @@ describe("ratio parameter definition editor", () => {
   test("does not commit an invalid percentage", () => {
     const row: DeviceParameterDefinition & { id: string } = {
       id: "soc",
-      cnName: "荷电状态",
-      enName: "state_of_charge",
+      cnName: "SOC",
+      enName: "soc",
       valueType: "float",
       typicalValue: "0.5"
     };

@@ -660,11 +660,21 @@ function normalizedAssociatedField(value: unknown): string | undefined {
   if (!associatedField) {
     return undefined;
   }
-  return /^(?:gasQuantity|gasquantity)$/.test(associatedField) ? "gas_quantity" : associatedField;
+  if (/^(?:gasQuantity|gasquantity)$/.test(associatedField)) return "gas_quantity";
+  if (/^(?:state_of_charge|stateOfCharge)$/.test(associatedField)) return "soc";
+  return associatedField;
 }
 
 function normalizedMeasurementSourcePoint(value: unknown): string {
-  return String(value ?? "").trim().replace(/(^|\.)(?:gasQuantity|gasquantity)$/u, "$1gas_quantity");
+  return String(value ?? "")
+    .trim()
+    .replace(/(^|\.)(?:gasQuantity|gasquantity)$/u, "$1gas_quantity")
+    .replace(/(^|\.)(?:state_of_charge|stateOfCharge)$/u, "$1soc");
+}
+
+function normalizedMeasurementTypeId(value: unknown): string {
+  const measurementTypeId = String(value ?? "").trim();
+  return /^(?:state_of_charge|stateOfCharge)$/u.test(measurementTypeId) ? "soc" : measurementTypeId;
 }
 
 function baseDeviceKind(kind: string): string {
@@ -850,14 +860,18 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
   }
   const seenTypes = new Set<string>();
   const measurementTypes = rawTypes.flatMap((item) => {
-    const id = String((item as Partial<MeasurementTypeDefinition>)?.id ?? "").trim();
+    const id = normalizedMeasurementTypeId((item as Partial<MeasurementTypeDefinition>)?.id);
     if (!id || seenTypes.has(id)) {
       return [];
     }
     seenTypes.add(id);
     const fallback = defaults.get(id);
     const rawKey = String(item.key ?? fallback?.key ?? id).trim() || id;
-    const key = /^(?:gasQuantity|gasquantity)$/.test(rawKey) ? "gas_quantity" : rawKey;
+    const key = /^(?:gasQuantity|gasquantity)$/.test(rawKey)
+      ? "gas_quantity"
+      : /^(?:state_of_charge|stateOfCharge)$/.test(rawKey)
+        ? "soc"
+        : rawKey;
     const name = String(item.name ?? fallback?.name ?? key).trim() || key;
     return [{
       id,
@@ -893,7 +907,7 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
       const rawMeasurementTypeId = String(item.measurementTypeId ?? "").trim();
       const measurementTypeId = ELECTRIC_STORAGE_MEASUREMENT_PROFILE_KINDS.has(deviceKind) && rawMeasurementTypeId === "level"
         ? "soc"
-        : rawMeasurementTypeId;
+        : normalizedMeasurementTypeId(rawMeasurementTypeId);
       if (!measurementTypeId || !validTypeIds.has(measurementTypeId)) {
         return [];
       }
@@ -919,7 +933,7 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
 }
 
 function normalizeMeasurementItem(item: Partial<MeasurementItemBinding>, validTypeIds?: ReadonlySet<string>): MeasurementItemBinding | null {
-  const measurementTypeId = String(item.measurementTypeId ?? "").trim();
+  const measurementTypeId = normalizedMeasurementTypeId(item.measurementTypeId);
   if (!measurementTypeId || (validTypeIds && !validTypeIds.has(measurementTypeId))) {
     return null;
   }

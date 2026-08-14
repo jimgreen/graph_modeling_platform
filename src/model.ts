@@ -631,8 +631,7 @@ const PERCENTAGE_RATIO_PARAMETER_NAMES = new Set([
   "eta",
   "soc",
   "soc_lower_limit",
-  "soc_upper_limit",
-  "state_of_charge"
+  "soc_upper_limit"
 ]);
 const BOUNDED_NUMERIC_PARAMETER_RANGES: Record<string, readonly [number, number]> = {
   e2h_coeff: [0.1, 0.5],
@@ -2012,7 +2011,9 @@ export type TopologyValidationErrorType =
   | "device-enum-invalid"
   | "device-limit-invalid"
   | "device-setpoint-out-of-range"
+  | "device-setpoint-auto-corrected"
   | "voltage-setpoint-zero"
+  | "storage-soc-parameter-invalid"
   | "hydrogen-storage-parameter-invalid"
   | "hydrogen-coupling-parameter-invalid"
   | "voltage-limit-out-of-range"
@@ -2489,7 +2490,7 @@ export const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = 
       electricGenerationFloatDefinition("充放电效率", "chargeDischargeEfficiency"),
       electricGenerationFloatDefinition("最大充电功率", "maxChargePower"),
       electricGenerationFloatDefinition("最大放电功率", "maxDischargePower"),
-      electricGenerationFloatDefinition("荷电状态", "stateOfCharge"),
+      electricGenerationFloatDefinition("SOC", "soc"),
       electricGenerationFloatDefinition("SOC上限", "socUpperLimit"),
       electricGenerationFloatDefinition("SOC下限", "socLowerLimit")
     ],
@@ -2500,7 +2501,7 @@ export const ELECTRIC_GENERATION_FAMILY_SPECS: ElectricGenerationFamilySpec[] = 
       chargeDischargeEfficiency: "0.9",
       maxChargePower: "5",
       maxDischargePower: "5",
-      stateOfCharge: "0.5",
+      soc: "0.5",
       socUpperLimit: "0.9",
       socLowerLimit: "0.1"
     },
@@ -2797,7 +2798,9 @@ const HYDROGEN_TANK_PARAMETER_DEFINITIONS: DeviceParameterDefinition[] = [
   { cnName: "压力下限(MPa)", enName: "pressure_min", valueType: "float", typicalValue: "0.1", readonly: false },
   { cnName: "流量(Nm3/h)", enName: "flow", valueType: "float", typicalValue: "0", readonly: false },
   { cnName: "储气量(Nm3)", enName: "gas_quantity", valueType: "float", typicalValue: "500", readonly: false },
-  { cnName: "soc", enName: "soc", valueType: "float", typicalValue: "0.5", readonly: false }
+  { cnName: "SOC", enName: "soc", valueType: "float", typicalValue: "0.5", readonly: false },
+  { cnName: "SOC上限", enName: "soc_upper_limit", valueType: "float", typicalValue: "0.9", readonly: false },
+  { cnName: "SOC下限", enName: "soc_lower_limit", valueType: "float", typicalValue: "0.1", readonly: false }
 ];
 
 type HydrogenEndpointDefaults = {
@@ -3335,7 +3338,9 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       pressure_min: "0.1",
       flow: "0",
       gas_quantity: "500",
-      soc: "0.5"
+      soc: "0.5",
+      soc_upper_limit: "0.9",
+      soc_lower_limit: "0.1"
     },
     terminalType: "h2",
     terminalCount: 0,
@@ -3362,7 +3367,9 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       storageType: "horizontal",
       flow: "0",
       gas_quantity: "500",
-      soc: "0.5"
+      soc: "0.5",
+      soc_upper_limit: "0.9",
+      soc_lower_limit: "0.1"
     },
     terminalType: "h2",
     terminalCount: 0,
@@ -3389,7 +3396,9 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
       storageType: "container",
       flow: "0",
       gas_quantity: "500",
-      soc: "0.5"
+      soc: "0.5",
+      soc_upper_limit: "0.9",
+      soc_lower_limit: "0.1"
     },
     terminalType: "h2",
     terminalCount: 0,
@@ -3695,9 +3704,26 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
     label: "储热罐",
     categoryLibrary: "热能设备",
     size: { width: 126, height: 58 },
-    params: { capacity: "100 MWh", temperature: "90 degC" },
+    params: {
+      capacity: "100 MWh",
+      temperature: "90 degC",
+      soc: "0.5",
+      soc_upper_limit: "0.9",
+      soc_lower_limit: "0.1"
+    },
     terminalType: "heat",
-    terminalCount: 0
+    terminalCount: 0,
+    parameterDefinitions: [
+      readonlyIntegerDefinition("序号", "idx"),
+      { cnName: "名称", enName: "name", valueType: "string", typicalValue: "", readonly: true },
+      readonlyIntegerDefinition("热节点号", "node"),
+      { cnName: "工作状态", enName: "run_stat", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"], enumValueType: "number", enumOptions: [{ value: "1", label: "运行" }, { value: "0", label: "停运" }], readonly: false },
+      { cnName: "储热容量(MWh)", enName: "capacity", valueType: "float", typicalValue: "100", readonly: false },
+      { cnName: "温度(°C)", enName: "temperature", valueType: "float", typicalValue: "90", readonly: false },
+      { cnName: "SOC", enName: "soc", valueType: "float", typicalValue: "0.5", readonly: false },
+      { cnName: "SOC上限", enName: "soc_upper_limit", valueType: "float", typicalValue: "0.9", readonly: false },
+      { cnName: "SOC下限", enName: "soc_lower_limit", valueType: "float", typicalValue: "0.1", readonly: false }
+    ]
   },
   {
     kind: "single-port-heat-load",
@@ -4325,7 +4351,9 @@ export function toSnakeCaseDeviceParamName(name: string): string {
     .replace(/_+/g, "_")
     .replace(/^_+|_+$/g, "")
     .toLowerCase();
-  return normalized === "gasquantity" ? "gas_quantity" : normalized;
+  if (normalized === "gasquantity") return "gas_quantity";
+  if (normalized === "state_of_charge") return "soc";
+  return normalized;
 }
 
 function legacyCamelCaseParamName(name: string): string {
@@ -4473,9 +4501,14 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   impedance: "float",
   inlet_pressure: "float",
   input_voltage: "float",
+  i_dc_set: "float",
+  i_i_set: "float",
+  i_p_set: "float",
   i_q_set: "float",
   i_set: "float",
   i_v_set: "float",
+  j_i_set: "float",
+  j_p_set: "float",
   j_q_set: "float",
   j_v_set: "float",
   length: "float",
@@ -4540,7 +4573,6 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   soc_upper_limit: "float",
   specific_fuel_consumption: "float",
   start_time: "float",
-  state_of_charge: "float",
   supply_temperature: "float",
   supply_temperature_set: "float",
   tap: "float",
@@ -4589,6 +4621,9 @@ function normalizeSemanticNumericValue(value: string, valueType: "integer" | "fl
 }
 
 function normalizeSemanticParameterValue(name: string, value: string): string {
+  if (isPercentageRatioParameterName(name)) {
+    return normalizeRatioParameterInputValue(name, value) ?? value;
+  }
   const valueType = semanticParameterValueType(name);
   if (valueType !== "integer" && valueType !== "float") {
     return value;
@@ -4629,11 +4664,13 @@ export function deviceParamValue(params: Record<string, string>, key: string): s
 export function normalizeLegacyGasQuantityDeviceParams(params: Record<string, string>): Record<string, string> {
   const hasCamel = Object.prototype.hasOwnProperty.call(params, "gasQuantity");
   const hasLower = Object.prototype.hasOwnProperty.call(params, "gasquantity");
+  const hasLegacySoc = Object.prototype.hasOwnProperty.call(params, "state_of_charge") ||
+    Object.prototype.hasOwnProperty.call(params, "stateOfCharge");
   const storedDefinitions = params[CUSTOM_PARAM_DEFINITIONS_KEY];
   const normalizedDefinitions = storedDefinitions === undefined
     ? storedDefinitions
     : normalizeStoredDeviceParameterDefinitionNames(storedDefinitions, true);
-  if (!hasCamel && !hasLower && normalizedDefinitions === storedDefinitions) {
+  if (!hasCamel && !hasLower && !hasLegacySoc && normalizedDefinitions === storedDefinitions) {
     return params;
   }
   const next = { ...params };
@@ -4642,6 +4679,12 @@ export function normalizeLegacyGasQuantityDeviceParams(params: Record<string, st
   }
   delete next.gasQuantity;
   delete next.gasquantity;
+  if (!Object.prototype.hasOwnProperty.call(next, "soc")) {
+    const legacySoc = next.state_of_charge ?? next.stateOfCharge;
+    next.soc = normalizeRatioParameterInputValue("soc", legacySoc ?? "") ?? legacySoc;
+  }
+  delete next.state_of_charge;
+  delete next.stateOfCharge;
   if (normalizedDefinitions !== undefined) {
     next[CUSTOM_PARAM_DEFINITIONS_KEY] = normalizedDefinitions;
   }
@@ -4724,6 +4767,9 @@ export function normalizeHydrogenStorageParams<T extends { kind: string; params:
 }
 
 function normalizedDeviceParamKeyPriority(key: string, normalizedKey: string): number {
+  if (normalizedKey === "soc") {
+    return key === "soc" ? 2 : 1;
+  }
   if (normalizedKey !== "gas_quantity") {
     return key === normalizedKey ? 1 : 0;
   }
@@ -4733,34 +4779,57 @@ function normalizedDeviceParamKeyPriority(key: string, normalizedKey: string): n
   return 0;
 }
 
-function normalizeStoredDeviceParameterDefinitionNames(value: string, gasQuantityOnly = false): string {
+function normalizeStoredDeviceParameterDefinitionNames(value: string, legacyAliasesOnly = false): string {
   try {
     const parsed = JSON.parse(value);
     if (!Array.isArray(parsed)) {
       return value;
     }
-    const normalized = parsed.map((definition) => {
+    const normalized: unknown[] = [];
+    let socDefinitionIndex = -1;
+    let socDefinitionIsCanonical = false;
+    for (const definition of parsed) {
       if (!definition || typeof definition !== "object") {
-        return definition;
+        normalized.push(definition);
+        continue;
       }
       const source = definition as DeviceParameterDefinition;
       const rawEnName = String(source.enName ?? "").trim();
       const rawExportName = typeof source.exportName === "string" ? source.exportName.trim() : source.exportName;
-      const normalizeName = (name: string) => gasQuantityOnly
-        ? /^(?:gasQuantity|gasquantity)$/.test(name) ? "gas_quantity" : name
+      const normalizeName = (name: string) => legacyAliasesOnly
+        ? /^(?:gasQuantity|gasquantity)$/.test(name)
+          ? "gas_quantity"
+          : /^(?:state_of_charge|stateOfCharge)$/.test(name)
+            ? "soc"
+            : name
         : toSnakeCaseDeviceParamName(name);
       const enName = normalizeName(rawEnName);
       const exportName = typeof rawExportName === "string" ? normalizeName(rawExportName) : rawExportName;
       const normalizedDefinition = normalizeRunStatParameterDefinition({
         ...source,
         enName,
+        ...(enName === "soc"
+          ? { typicalValue: normalizeRatioParameterInputValue("soc", String(source.typicalValue ?? "")) ?? source.typicalValue }
+          : {}),
         ...(source.exportName !== undefined ? { exportName } : {})
       });
-      const serializedSource = JSON.stringify(source);
-      return JSON.stringify(normalizedDefinition) === serializedSource
+      const canonicalDefinition = JSON.stringify(normalizedDefinition) === JSON.stringify(source)
         ? definition
         : normalizedDefinition;
-    });
+      if (enName !== "soc") {
+        normalized.push(canonicalDefinition);
+        continue;
+      }
+      const sourceIsCanonical = rawEnName === "soc";
+      if (socDefinitionIndex < 0) {
+        socDefinitionIndex = normalized.length;
+        socDefinitionIsCanonical = sourceIsCanonical;
+        normalized.push(canonicalDefinition);
+      } else if (sourceIsCanonical && !socDefinitionIsCanonical) {
+        normalized[socDefinitionIndex] = canonicalDefinition;
+        socDefinitionIsCanonical = true;
+      }
+    }
     const serialized = JSON.stringify(normalized);
     return serialized === value ? value : serialized;
   } catch {
@@ -4810,7 +4879,9 @@ function normalizeDeviceTemplateParameterNames(template: DeviceTemplate): Device
     ...template,
     params: normalizeDeviceParamRecord(template.params) ?? template.params,
     parameterDefinitions: template.parameterDefinitions?.map(normalizeDeviceParameterDefinition),
-    measurementDefinitions: cloneDeviceMeasurementDefinitions(template.measurementDefinitions)
+    measurementDefinitions: template.measurementDefinitions === undefined
+      ? undefined
+      : normalizeDeviceMeasurementDefinitions(template.measurementDefinitions)
   });
 }
 
@@ -4893,7 +4964,8 @@ function builtInMeasurementDefinitionsForTemplate(template: DeviceTemplate): Dev
     return copy([
       { measurementTypeId: "temperature", associatedField: "temperature" },
       { measurementTypeId: "flow", associatedField: "flow" },
-      { measurementTypeId: "level", associatedField: "level" }
+      { measurementTypeId: "level", associatedField: "level" },
+      { measurementTypeId: "soc", associatedField: "soc", unitOverride: "%" }
     ]);
   }
   if (kind.startsWith("heat-") || kind.startsWith("single-port-heat-") || kind.startsWith("two-port-heat-")) {
@@ -5037,7 +5109,13 @@ export function materializeDeviceMeasurementDefinitionFields(templates: readonly
       ? templates.find((candidate) => (
           candidate.kind !== template.kind &&
           !templateDerivedComponentLibraryInfo(candidate) &&
-          String(inferESection(candidate.kind, candidate.params ?? {})).trim().toLowerCase() === derivedInfo.baseComponentLibrary.trim().toLowerCase()
+          String(
+            baseDeviceKind(candidate.kind) === "ac-source"
+              ? "ACGenerator"
+              : baseDeviceKind(candidate.kind) === "dc-source"
+                ? "DCGenerator"
+                : staticComponentLibraryFromParams(candidate.params)
+          ).trim().toLowerCase() === derivedInfo.baseComponentLibrary.trim().toLowerCase()
         ))
       : undefined;
     const inherited = new Set([
@@ -5121,7 +5199,7 @@ function normalizeDcacControlParameterDefinition(
 ): DeviceParameterDefinition | null {
   const rawEnName = definition.enName.trim();
   const enName = toSnakeCaseDeviceParamName(definition.enName);
-  if (enName === "control_type") {
+  if (["control_type", "p_set", "i_set", "v_set", "ac_v_set", "dc_v_set"].includes(enName)) {
     return null;
   }
   if ((enName === "ac_control_type" || enName === "dc_control_type") && rawEnName !== enName) {
@@ -5352,7 +5430,11 @@ function normalizeDcacConverterControlParams(params: Record<string, string>): Re
   const pair = dcacConverterControlTypePairForE(params);
   const nextParams = { ...params };
   let changed = false;
-  for (const legacyKey of ["control_type", "controlType", "acControlType", "dcControlType"]) {
+  for (const legacyKey of [
+    "control_type", "controlType", "acControlType", "dcControlType",
+    "p_set", "pSet", "i_set", "iSet", "v_set", "vSet",
+    "ac_v_set", "acVSet", "dc_v_set", "dcVSet"
+  ]) {
     if (Object.prototype.hasOwnProperty.call(nextParams, legacyKey)) {
       delete nextParams[legacyKey];
       changed = true;
@@ -5467,6 +5549,9 @@ function normalizeEndpointControlParameterDefinitions(
 
   for (const definition of definitions) {
     const enName = toSnakeCaseDeviceParamName(definition.enName);
+    if (["p_set", "i_set", "v_set"].includes(enName)) {
+      continue;
+    }
     if (!["control_type", "source_control_type", "target_control_type", "i_control_type", "j_control_type"].includes(enName)) {
       retained.push(definition);
       continue;
@@ -5537,7 +5622,7 @@ function normalizeEndpointConverterControlParams(
   const pair = endpointConverterControlTypePairForSection(section, params);
   const nextParams = { ...params };
   let changed = false;
-  for (const legacyKey of [
+  const legacyKeys = [
     "control_type",
     "controlType",
     "source_control_type",
@@ -5546,7 +5631,9 @@ function normalizeEndpointConverterControlParams(
     "targetControlType",
     "iControlType",
     "jControlType"
-  ]) {
+  ];
+  legacyKeys.push("p_set", "pSet", "i_set", "iSet", "v_set", "vSet");
+  for (const legacyKey of legacyKeys) {
     if (Object.prototype.hasOwnProperty.call(nextParams, legacyKey)) {
       delete nextParams[legacyKey];
       changed = true;
@@ -6906,7 +6993,11 @@ export function enumSelectOptionsWithCurrentValue(
 
 function normalizeTemplateDefinition(definition: DeviceParameterDefinition): DeviceParameterDefinition | null {
   const rawEnName = String(definition.enName ?? "").trim();
-  const enName = /^(?:gasQuantity|gasquantity)$/.test(rawEnName) ? "gas_quantity" : rawEnName;
+  const enName = /^(?:gasQuantity|gasquantity)$/.test(rawEnName)
+    ? "gas_quantity"
+    : /^(?:state_of_charge|stateOfCharge)$/.test(rawEnName)
+      ? "soc"
+      : rawEnName;
   if (!enName || enName === "is_container" || enName === ALLOW_RESIZE_TRANSFORM_PARAM) {
     return null;
   }
@@ -6914,7 +7005,7 @@ function normalizeTemplateDefinition(definition: DeviceParameterDefinition): Dev
   const valueType = semanticParameterValueType(enName) ?? (["integer", "float", "string", "stringEnum", "numberEnum", "enum"].includes(sourceDefinition.valueType) ? sourceDefinition.valueType : "string");
   const rawTypicalValue = String(sourceDefinition.typicalValue ?? "");
   const typicalValue = valueType === "integer" || valueType === "float"
-    ? normalizeSemanticNumericValue(rawTypicalValue, valueType)
+    ? normalizeSemanticParameterValue(enName, rawTypicalValue)
     : rawTypicalValue;
   const exportSettings = {
     ...(typeof sourceDefinition.exportEnabled === "boolean" ? { exportEnabled: sourceDefinition.exportEnabled } : {}),
@@ -6922,7 +7013,9 @@ function normalizeTemplateDefinition(definition: DeviceParameterDefinition): Dev
       ? {
           exportName: /^(?:gasQuantity|gasquantity)$/.test(sourceDefinition.exportName.trim())
             ? "gas_quantity"
-            : sourceDefinition.exportName.trim()
+            : /^(?:state_of_charge|stateOfCharge)$/.test(sourceDefinition.exportName.trim())
+              ? "soc"
+              : sourceDefinition.exportName.trim()
         }
       : {})
   };

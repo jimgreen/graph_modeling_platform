@@ -1035,6 +1035,38 @@ describe("graph template library filtering", () => {
     expect(definitions[2]).not.toHaveProperty("exportName");
   });
 
+  test("normalizes legacy SOC params, definitions, and measurements in persisted device data", () => {
+    const [template] = normalizeCustomDeviceTemplates([{
+      kind: "custom-legacy-storage",
+      label: "旧储能",
+      categoryLibrary: "交流设备",
+      size: { width: 104, height: 64 },
+      params: { component_type: "LegacyStorage", state_of_charge: "50" },
+      terminalType: "ac",
+      terminalCount: 1,
+      parameterDefinitions: [{ cnName: "荷电状态", enName: "stateOfCharge", valueType: "float", typicalValue: "50" }],
+      measurementDefinitions: [{ measurementTypeId: "state_of_charge", associatedField: "stateOfCharge" }]
+    } as any]);
+    const overrides = normalizeDeviceDefinitionOverrides({
+      "shared:LegacyStorage": {
+        kind: "shared:LegacyStorage",
+        params: { stateOfCharge: "50" },
+        parameterDefinitions: [{ cnName: "荷电状态", enName: "state_of_charge", valueType: "float", typicalValue: "50" }],
+        measurementDefinitions: [{ measurementTypeId: "stateOfCharge", associatedField: "state_of_charge" }]
+      }
+    } as any);
+
+    expect(template.params).toMatchObject({ soc: "0.5" });
+    expect(template.params).not.toHaveProperty("state_of_charge");
+    expect(template.parameterDefinitions).toEqual([expect.objectContaining({ enName: "soc", typicalValue: "0.5" })]);
+    expect(template.measurementDefinitions).toEqual([{ measurementTypeId: "soc", associatedField: "soc" }]);
+    expect(overrides["shared:LegacyStorage"]).toMatchObject({
+      params: { soc: "0.5" },
+      parameterDefinitions: [expect.objectContaining({ enName: "soc", typicalValue: "0.5" })],
+      measurementDefinitions: [{ measurementTypeId: "soc", associatedField: "soc" }]
+    });
+  });
+
   test("renders E export controls only in the centralized E interface definition table", () => {
     const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
 
