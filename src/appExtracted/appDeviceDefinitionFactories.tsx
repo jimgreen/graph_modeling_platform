@@ -6179,7 +6179,7 @@ export function createCancelPendingCustomComponentTemplateLoad(__appScope: Recor
 
 export function createSelectCustomCategoryLibrary(__appScope: Record<string, any>) {
   return (categoryLibraryName: string, options: { expand?: boolean } = {}) => {
-  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, defaultComponentLibraryForCategoryLibrary, ensureCustomComponentTreeExpanded, normalizeCategoryLibraryName, normalizeComponentLibraryName, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceStatePageId, setEditingCustomDeviceKind } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, defaultComponentLibraryForCategoryLibrary, ensureCustomComponentTreeExpanded, normalizeCategoryLibraryName, normalizeComponentLibraryName, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode = () => undefined, setCustomDeviceDraft, setCustomDeviceStatePageId, setEditingCustomDeviceKind, setSelectedDefinitionKind = () => undefined } = __appScope;
     cancelPendingCustomComponentTemplateLoad();
     const group = normalizeCategoryLibraryName(categoryLibraryName);
     const section = defaultComponentLibraryForCategoryLibrary(group);
@@ -6188,7 +6188,9 @@ export function createSelectCustomCategoryLibrary(__appScope: Record<string, any
       ensureCustomComponentTreeExpanded(group);
     }
     setCustomComponentTreeSelection({ kind: "categoryLibrary", categoryLibraryName: group });
+    setCustomDeviceDefinitionMode("edit");
     setEditingCustomDeviceKind("");
+    setSelectedDefinitionKind("");
     setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
     setCustomDeviceDraft((current) => ({
       ...current,
@@ -6305,7 +6307,7 @@ function customDeviceDraftPatchForComponentLibrarySelection(
 
 export function createSelectCustomComponentLibrary(__appScope: Record<string, any>) {
   return (categoryLibraryName: string, sectionName: string, options: { expand?: boolean } = {}) => {
-  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, ensureCustomComponentTreeExpanded, normalizeCategoryLibraryName, normalizeComponentLibraryName, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceStatePageId, setCustomDeviceDialogView, setEditingCustomDeviceKind } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, ensureCustomComponentTreeExpanded, normalizeCategoryLibraryName, normalizeComponentLibraryName, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode = () => undefined, setCustomDeviceDraft, setCustomDeviceStatePageId, setCustomDeviceDialogView, setEditingCustomDeviceKind, setSelectedDefinitionKind = () => undefined } = __appScope;
     cancelPendingCustomComponentTemplateLoad();
     const group = normalizeCategoryLibraryName(categoryLibraryName);
     const section = normalizeComponentLibraryName(sectionName);
@@ -6314,7 +6316,9 @@ export function createSelectCustomComponentLibrary(__appScope: Record<string, an
       ensureCustomComponentTreeExpanded(group, section);
     }
     setCustomComponentTreeSelection({ kind: "componentLibrary", categoryLibraryName: group, section });
+    setCustomDeviceDefinitionMode("edit");
     setEditingCustomDeviceKind("");
+    setSelectedDefinitionKind("");
     setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
     setCustomDeviceDialogView("parameters");
     setCustomDeviceDraft((current) => ({
@@ -6420,7 +6424,7 @@ const CUSTOM_DEVICE_KIND_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_-]*$/;
 
 export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string, any>) {
   return (dialogOverride?: any) => {
-  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, categoryLibraries, componentLibraryOptions, createEmptyCustomDeviceDraft, customComponentLibraries = [], customDeviceDraft, customDeviceTemplates, customLibraryCreateDialog, defaultComponentLibraryForCategoryLibrary, isValidComponentLibraryName, libraryTemplates, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeCustomCategoryLibraries, normalizeCustomComponentLibraries, requireEditMode, setCustomCategoryLibraries, setCustomComponentLibraries, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode, setCustomDeviceDialogView, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceStatePageId, setCustomLibraryCreateDialog, setEditingCustomDeviceKind, setExpandedCategoryLibraries, setSelectedDefinitionKind } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad = () => undefined, categoryLibraries, componentLibraryOptions, createEmptyCustomDeviceDraft, customCategoryLibraries = [], customComponentLibraries = [], customDeviceDraft, customDeviceTemplates, customLibraryCreateDialog, defaultComponentLibraryForCategoryLibrary, isValidComponentLibraryName, libraryTemplates, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeCustomCategoryLibraries, normalizeCustomComponentLibraries, persistDeviceLibraryChange = () => undefined, requireEditMode, setCustomCategoryLibraries, setCustomComponentLibraries, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode = () => undefined, setCustomDeviceDialogView = () => undefined, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage = () => undefined, setCustomDeviceStatePageId = () => undefined, setCustomLibraryCreateDialog, setEditingCustomDeviceKind = () => undefined, setExpandedCategoryLibraries, setSelectedDefinitionKind = () => undefined } = __appScope;
     const dialog = dialogOverride ?? customLibraryCreateDialog;
     if (!dialog) {
       return false;
@@ -6456,19 +6460,36 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
       if (!isValidComponentLibraryName(englishName)) {
         return setDialogError("英文名称只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。");
       }
-      setCustomCategoryLibraries((current: string[]) => normalizeCustomCategoryLibraries([...current, categoryLibraryName]));
+      const nextCustomCategoryLibraries = normalizeCustomCategoryLibraries([...customCategoryLibraries, categoryLibraryName]);
+      setCustomCategoryLibraries(nextCustomCategoryLibraries);
       setExpandedCategoryLibraries((current: string[]) => Array.from(new Set([...current, categoryLibraryName])));
       setCustomComponentTreeSelection({ kind: "categoryLibrary", categoryLibraryName });
-      setCustomDeviceDraft((current: any) => ({
-        ...current,
+      cancelPendingCustomComponentTemplateLoad();
+      setCustomDeviceDefinitionMode("edit");
+      setEditingCustomDeviceKind("");
+      setSelectedDefinitionKind("");
+      setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
+      setCustomDeviceSaveMessage("");
+      setCustomDeviceDialogView("parameters");
+      const nextDraft = {
+        ...customDeviceDraft,
+        ...(typeof createEmptyCustomDeviceDraft === "function" ? createEmptyCustomDeviceDraft(categoryLibraryName) : {}),
         categoryLibraryName,
         componentLibrary: "",
+        componentName: "",
+        componentKind: "",
         isDerivedComponentLibrary: false,
         derivedFromComponentLibrary: "",
         derivedComponentLibrary: "",
         derivedComponentLibraryLabel: "",
         error: ""
-      }));
+      };
+      setCustomDeviceDraft(nextDraft);
+      setCustomDeviceDraftCleanBaseline(nextDraft);
+      persistDeviceLibraryChange({ customCategoryLibraries: nextCustomCategoryLibraries }, {
+        success: `类别库已新建并保存到后台：${categoryLibraryName}`,
+        failure: `类别库已新建到本地，后台保存失败：${categoryLibraryName}`
+      });
       setCustomLibraryCreateDialog(null);
       return true;
     }
@@ -6548,17 +6569,28 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
         isContainer: inheritedMetadata?.isContainer ?? Boolean(dialog.isContainer)
       };
       const definition = componentLibraryDefinitionFromMetadata(metadata);
-      setCustomComponentLibraries((current: any[]) => normalizeCustomComponentLibraries(
-        [...current, definition],
+      const nextCustomComponentLibraries = normalizeCustomComponentLibraries(
+        [...customComponentLibraries, definition],
         undefined,
         libraryTemplates
-      ));
+      );
+      setCustomComponentLibraries(nextCustomComponentLibraries);
       const section = metadata.className;
       setCustomComponentTreeSelection({ kind: "componentLibrary", categoryLibraryName, section });
-      setCustomDeviceDraft((current: any) => ({
-        ...current,
+      cancelPendingCustomComponentTemplateLoad();
+      setCustomDeviceDefinitionMode("edit");
+      setEditingCustomDeviceKind("");
+      setSelectedDefinitionKind("");
+      setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
+      setCustomDeviceSaveMessage("");
+      setCustomDeviceDialogView("parameters");
+      const nextDraft = {
+        ...customDeviceDraft,
+        ...(typeof createEmptyCustomDeviceDraft === "function" ? createEmptyCustomDeviceDraft(categoryLibraryName) : {}),
         categoryLibraryName,
         componentLibrary: metadata.baseComponentLibrary,
+        componentName: "",
+        componentKind: "",
         isDerivedComponentLibrary: metadata.isDerivedComponentLibrary,
         derivedFromComponentLibrary: metadata.isDerivedComponentLibrary ? metadata.baseComponentLibrary : "",
         derivedComponentLibrary: metadata.isDerivedComponentLibrary ? metadata.className : "",
@@ -6570,7 +6602,13 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
         terminalAssociations: Array.from({ length: COMPONENT_LIBRARY_MAX_TERMINALS }, (_, index) => metadata.terminalAssociations[index] ?? defaultTerminalAssociationForClassTerminal(metadata.terminalTypes[index] ?? fallbackTerminalType)),
         isContainer: metadata.isContainer,
         error: ""
-      }));
+      };
+      setCustomDeviceDraft(nextDraft);
+      setCustomDeviceDraftCleanBaseline(nextDraft);
+      persistDeviceLibraryChange({ customComponentLibraries: nextCustomComponentLibraries }, {
+        success: `元件库已新建并保存到后台：${metadata.label}`,
+        failure: `元件库已新建到本地，后台保存失败：${metadata.label}`
+      });
       setCustomLibraryCreateDialog(null);
       return true;
     }
@@ -7719,16 +7757,35 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
 
 export function createSaveCustomDeviceDefinitionDialog(__appScope: Record<string, any>) {
   return (options: { closeAfterSave?: boolean } = {}) => {
-  const { customDeviceDefinitionMode, editingCustomDeviceKind, saveBuiltinDeviceDefinitionFromCustomDraft, saveCustomDeviceTemplate, selectedCustomComponentTemplate, selectedDefinitionKind, selectedDefinitionTemplate } = __appScope;
-    const targetTemplate = selectedDefinitionTemplate && selectedDefinitionTemplate.kind === selectedDefinitionKind
-      ? selectedDefinitionTemplate
-      : selectedCustomComponentTemplate;
-    let saved = false;
-    if (customDeviceDefinitionMode === "edit" && targetTemplate && !targetTemplate.custom && editingCustomDeviceKind === "") {
-      saved = saveBuiltinDeviceDefinitionFromCustomDraft(targetTemplate, options) === true;
-    } else {
-      saved = saveCustomDeviceTemplate(options) === true;
+  const { customComponentTreeSelection, customDeviceDefinitionMode, editingCustomDeviceKind, saveBuiltinDeviceDefinitionFromCustomDraft, saveCustomDeviceTemplate, selectedCustomComponentTemplate, selectedDefinitionTemplate, showGlobalMessage = () => undefined } = __appScope;
+    if (customDeviceDefinitionMode === "create") {
+      return saveCustomDeviceTemplate(options) === true;
     }
+
+    const selectedTemplateKind = customComponentTreeSelection?.kind === "component"
+      ? customComponentTreeSelection.templateKind
+      : "";
+    const targetTemplate = selectedTemplateKind && selectedCustomComponentTemplate?.kind === selectedTemplateKind
+      ? selectedCustomComponentTemplate
+      : selectedTemplateKind && selectedDefinitionTemplate?.kind === selectedTemplateKind
+        ? selectedDefinitionTemplate
+        : undefined;
+    if (!targetTemplate) {
+      showGlobalMessage("当前没有选中可保存的元件。请选择一个元件，或者先执行“新建元件”。");
+      return false;
+    }
+    if (targetTemplate.custom) {
+      if (editingCustomDeviceKind !== targetTemplate.kind) {
+        showGlobalMessage("当前元件的编辑状态已失效，请重新选择该元件后再保存。");
+        return false;
+      }
+      return saveCustomDeviceTemplate(options) === true;
+    }
+    if (editingCustomDeviceKind !== "") {
+      showGlobalMessage("当前元件的编辑状态与选中元件不一致，请重新选择后再保存。");
+      return false;
+    }
+    return saveBuiltinDeviceDefinitionFromCustomDraft(targetTemplate, options) === true;
   };
 }
 

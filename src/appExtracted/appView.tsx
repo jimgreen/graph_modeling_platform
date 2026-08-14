@@ -4860,7 +4860,13 @@ export function renderAppView(__appScope: Record<string, any>) {
             </div>
             <footer className="custom-device-dialog-footer">
               <button type="button" onClick={requestCloseCustomDeviceDialog}>取消</button>
-              <button type="button" className="primary" onClick={() => saveCustomDeviceDefinitionDialog({ closeAfterSave: false })}>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => saveCustomDeviceDefinitionDialog({ closeAfterSave: false })}
+                disabled={customDeviceDefinitionMode === "edit" && customComponentTreeSelection?.kind !== "component"}
+                title={customDeviceDefinitionMode === "edit" && customComponentTreeSelection?.kind !== "component" ? "请先选择或新建一个元件" : undefined}
+              >
                 {customDeviceDefinitionMode === "edit" ? "保存元件定义" : "保存自定义设备"}
               </button>
             </footer>

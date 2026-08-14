@@ -2883,7 +2883,33 @@ function orderedESections(recordsBySection) {
 }
 
 function isBusNode(node) {
-  return node?.kind === "ac-bus" || node?.kind === "dc-bus" || node?.kind === "hydrogen-bus" || node?.kind === "heat-bus";
+  const componentLibraries = [
+    node?.params?.derived_from_component_type,
+    node?.params?.derivedFromComponentLibrary,
+    node?.params?.component_type,
+    node?.params?.componentLibrary,
+    node?.params?.componentType
+  ].map((value) => String(value ?? "").trim().toLowerCase());
+  if (componentLibraries.some((componentLibrary) => [
+    "acrealbs",
+    "dcrealbs",
+    "hydrobus",
+    "hydrostorage",
+    "heatbus",
+    "heatstorage"
+  ].includes(componentLibrary))) {
+    return true;
+  }
+  return [
+    "ac-bus",
+    "dc-bus",
+    "hydrogen-bus",
+    "hydrogen-tank",
+    "hydrogen-tank-horizontal",
+    "hydrogen-tank-container",
+    "heat-bus",
+    "thermal-storage-tank"
+  ].includes(node?.kind);
 }
 
 function isStaticKind(kind) {

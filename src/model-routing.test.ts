@@ -102,6 +102,7 @@ import {
   getTerminalPoint,
   getRouteEndpointNormal,
   getBusTerminalType,
+  isBusNode,
   getMovableRouteSegmentIndexes,
   getNodeScaleX,
   getNodeScaleY,
@@ -325,6 +326,150 @@ function routeIntersectsTestBox(points: Point[], box: TestBox) {
 }
 
 describe("routing", () => {
+  test("recognizes custom bus and storage nodes by component-library identity", () => {
+    const cases = [
+      ["ACRealBs", "ac"],
+      ["DCRealBs", "dc"],
+      ["HydroBus", "h2"],
+      ["HydroStorage", "h2"],
+      ["HeatBus", "heat"],
+      ["HeatStorage", "heat"]
+    ] as const;
+    for (const [componentLibrary, expectedType] of cases) {
+      const node = createNodeFromTemplate({
+        kind: `custom-${componentLibrary}`,
+        label: componentLibrary,
+        categoryLibrary: "自定义设备",
+        size: { width: 120, height: 40 },
+        params: { component_type: componentLibrary },
+        terminalType: expectedType,
+        terminalCount: 0,
+        custom: true
+      }, { x: 200, y: 200 });
+      expect(isBusNode(node), componentLibrary).toBe(true);
+      expect(getBusTerminalType(node), componentLibrary).toBe(expectedType);
+    }
+
+    const derivedHydrogenBus = createNodeFromTemplate({
+      kind: "custom-PlantHydrogenBus",
+      label: "派生氢母线",
+      categoryLibrary: "氢能设备",
+      size: { width: 120, height: 40 },
+      params: {
+        component_type: "PlantHydrogenBus",
+        derived_from_component_type: "HydroBus",
+        derived_component_type: "PlantHydrogenBus"
+      },
+      terminalType: "h2",
+      terminalCount: 0,
+      custom: true
+    }, { x: 200, y: 200 });
+    expect(isBusNode(derivedHydrogenBus)).toBe(true);
+    expect(getBusTerminalType(derivedHydrogenBus)).toBe("h2");
+
+    const ordinaryDevice = createNodeFromTemplate({
+      kind: "custom-OrdinaryDevice",
+      label: "普通自定义设备",
+      categoryLibrary: "交流设备",
+      size: { width: 120, height: 40 },
+      params: { component_type: "ACGenerator" },
+      terminalType: "ac",
+      terminalCount: 0,
+      custom: true
+    }, { x: 200, y: 200 });
+    expect(isBusNode(ordinaryDevice)).toBe(false);
+  });
+
+  test("projects custom storage connections to the tank boundary", () => {
+    const storage = createNodeFromTemplate({
+      kind: "custom-HydroStorage",
+      label: "自定义储氢罐",
+      categoryLibrary: "氢能设备",
+      size: { width: 120, height: 60 },
+      params: { component_type: "HydroStorage" },
+      terminalType: "h2",
+      terminalCount: 0,
+      custom: true
+    }, { x: 200, y: 200 });
+
+    expect(projectPointToBusCenterline(storage, { x: 200, y: 150 })).toEqual({
+      x: storage.position.x,
+      y: storage.position.y - storage.size.height / 2
+    });
+  });
+
+  test("projects custom bus anchors to the outer frame and keeps built-in buses on their centerline", () => {
+    const customBus = createNodeFromTemplate({
+      kind: "custom-ACRealBs",
+      label: "自定义交流母线",
+      categoryLibrary: "交流设备",
+      size: { width: 120, height: 60 },
+      params: {
+        component_type: "PlantBus",
+        derived_from_component_type: "ACRealBs",
+        derived_component_type: "PlantBus"
+      },
+      terminalType: "ac",
+      terminalCount: 0,
+      custom: true
+    }, { x: 200, y: 200 });
+
+    const halfWidth = customBus.size.width * Math.abs(getNodeScaleX(customBus)) / 2;
+    const halfHeight = customBus.size.height * Math.abs(getNodeScaleY(customBus)) / 2;
+    const left = projectPointToBusCenterline(customBus, { x: customBus.position.x - halfWidth / 2, y: customBus.position.y });
+    const right = projectPointToBusCenterline(customBus, { x: customBus.position.x + halfWidth / 2, y: customBus.position.y });
+    const top = projectPointToBusCenterline(customBus, { x: customBus.position.x, y: customBus.position.y - halfHeight / 2 });
+    const bottom = projectPointToBusCenterline(customBus, { x: customBus.position.x, y: customBus.position.y + halfHeight / 2 });
+    expect(left).toEqual({ x: Math.round(customBus.position.x - halfWidth), y: customBus.position.y });
+    expect(right).toEqual({ x: Math.round(customBus.position.x + halfWidth), y: customBus.position.y });
+    expect(top).toEqual({ x: customBus.position.x, y: Math.round(customBus.position.y - halfHeight) });
+    expect(bottom).toEqual({ x: customBus.position.x, y: Math.round(customBus.position.y + halfHeight) });
+    expect(getRouteEndpointNormal(customBus, left, { x: 80, y: 200 })).toEqual({ x: -1, y: 0 });
+    expect(getRouteEndpointNormal(customBus, right, { x: 320, y: 200 })).toEqual({ x: 1, y: 0 });
+    expect(getRouteEndpointNormal(customBus, top, { x: 200, y: 100 })).toEqual({ x: 0, y: -1 });
+    expect(getRouteEndpointNormal(customBus, bottom, { x: 200, y: 300 })).toEqual({ x: 0, y: 1 });
+
+    const rotatedBus = { ...customBus, id: "rotated-custom-bus", rotation: 90 };
+    const rotatedTop = projectPointToBusCenterline(rotatedBus, { x: rotatedBus.position.x, y: rotatedBus.position.y - halfWidth / 2 });
+    expect(rotatedTop).toEqual({ x: rotatedBus.position.x, y: Math.round(rotatedBus.position.y - halfWidth) });
+    const rotatedNormal = getRouteEndpointNormal(rotatedBus, rotatedTop, { x: 200, y: 80 });
+    expect(rotatedNormal.x === 0).toBe(true);
+    expect(rotatedNormal.y).toBe(-1);
+
+    const builtInBus = createDefaultNode("ac-bus", { x: 420, y: 200 });
+    expect(projectPointToBusCenterline(builtInBus, { x: 420, y: 150 })).toEqual({ x: 420, y: 200 });
+  });
+
+  test("routes a custom bus connection away from the contacted outer face", () => {
+    const customBus = createNodeFromTemplate({
+      kind: "custom-ACRealBs",
+      label: "自定义交流母线",
+      categoryLibrary: "交流设备",
+      size: { width: 180, height: 80 },
+      params: { component_type: "ACRealBs" },
+      terminalType: "ac",
+      terminalCount: 0,
+      custom: true
+    }, { x: 480, y: 260 });
+    const source = withHiddenDeviceLabel({ ...createDefaultNode("ac-switch", { x: 140, y: 120 }), id: "custom-bus-source" });
+    const targetPoint = projectPointToBusCenterline(customBus, { x: 360, y: 260 });
+    const edge: Edge = {
+      id: "custom-bus-boundary-route",
+      sourceId: source.id,
+      targetId: customBus.id,
+      sourceTerminalId: "t2",
+      targetTerminalId: "t1",
+      targetPoint
+    };
+
+    const route = routeEdgesForStoredRendering([source, customBus], [edge], { width: 900, height: 600 })[0];
+    const endpoint = route.points[route.points.length - 1];
+    const adjacent = route.points[route.points.length - 2];
+    expect(endpoint).toEqual({ x: customBus.position.x - customBus.size.width / 2, y: customBus.position.y });
+    expect(adjacent.y).toBe(endpoint.y);
+    expect(adjacent.x).toBeLessThan(endpoint.x);
+  });
+
 test("renders large saved model paths without opening-time rerouting", () => {
   const nodes: ModelNode[] = [];
   const edges: Edge[] = [];

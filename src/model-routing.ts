@@ -1552,6 +1552,42 @@ const BUS_TERMINAL_TYPE_BY_KIND: Partial<Record<string, TerminalType>> = {
   "thermal-storage-tank": "heat"
 };
 
+const BUS_TERMINAL_TYPE_BY_COMPONENT_LIBRARY: Readonly<Record<string, TerminalType>> = {
+  acrealbs: "ac",
+  dcrealbs: "dc",
+  hydrobus: "h2",
+  hydrostorage: "h2",
+  heatbus: "heat",
+  heatstorage: "heat"
+};
+
+const BOUNDARY_BUS_COMPONENT_LIBRARIES = new Set(["hydrostorage", "heatstorage"]);
+
+type BusNodeIdentity = Pick<ModelNode, "kind"> & Partial<Pick<ModelNode, "params">>;
+
+function busComponentLibraryCandidates(node: BusNodeIdentity): string[] {
+  const params = node.params ?? {};
+  return [
+    params.derived_from_component_type,
+    params.derivedFromComponentLibrary,
+    params.component_type,
+    params.componentLibrary,
+    params.componentType
+  ]
+    .map((value) => String(value ?? "").trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function busTerminalTypeByNodeIdentity(node: BusNodeIdentity): TerminalType | undefined {
+  for (const componentLibrary of busComponentLibraryCandidates(node)) {
+    const terminalType = BUS_TERMINAL_TYPE_BY_COMPONENT_LIBRARY[componentLibrary];
+    if (terminalType) {
+      return terminalType;
+    }
+  }
+  return busTerminalTypeByKind(node.kind);
+}
+
 const BUS_LEGACY_TERMINAL_ANCHORS: Point[] = [
   { x: -0.5, y: 0 },
   { x: 0.5, y: 0 },
@@ -1571,8 +1607,10 @@ export function busTerminalTypeByKind(kind: string): TerminalType | undefined {
   return BUS_TERMINAL_TYPE_BY_KIND[kind] ?? BUS_TERMINAL_TYPE_BY_KIND[baseDeviceKind(kind)];
 }
 
-export function getBusTerminalType(node: Pick<ModelNode, "kind" | "terminals">): TerminalType | undefined {
-  return node.terminals[0]?.type ?? busTerminalTypeByKind(node.kind);
+export function getBusTerminalType(
+  node: Pick<ModelNode, "kind" | "terminals"> & Partial<Pick<ModelNode, "params">>
+): TerminalType | undefined {
+  return node.terminals[0]?.type ?? busTerminalTypeByNodeIdentity(node);
 }
 
 export function virtualBusTerminal(node: Pick<ModelNode, "kind" | "terminals">, terminalId?: string): Terminal | undefined {
@@ -2494,16 +2532,26 @@ export function reconcileOverlappingTerminalConnections(
 }
 
 export function isBusNode(node: ModelNode): boolean {
-  return Boolean(busTerminalTypeByKind(node.kind));
+  return Boolean(busTerminalTypeByNodeIdentity(node));
 }
 
-function isBoundaryBusNode(node: Pick<ModelNode, "kind">): boolean {
+function isBoundaryBusNode(node: Pick<ModelNode, "kind"> & Partial<Pick<ModelNode, "params">>): boolean {
+  if (busComponentLibraryCandidates(node).some((componentLibrary) => BOUNDARY_BUS_COMPONENT_LIBRARIES.has(componentLibrary))) {
+    return true;
+  }
   return (
     node.kind === "hydrogen-tank" ||
     node.kind === "hydrogen-tank-horizontal" ||
     node.kind === "hydrogen-tank-container" ||
     node.kind === "thermal-storage-tank"
   );
+}
+
+function usesBoundaryBusAnchors(node: Pick<ModelNode, "kind"> & Partial<Pick<ModelNode, "params">>): boolean {
+  if (isBoundaryBusNode(node)) {
+    return true;
+  }
+  return Boolean(busTerminalTypeByNodeIdentity(node)) && !busTerminalTypeByKind(node.kind);
 }
 
 function createDynamicBusTerminal(node: ModelNode, index: number): Terminal {
@@ -2857,7 +2905,7 @@ export function boundaryBusInternalConnectorStrokeWidth(node: ModelNode, segment
 }
 
 export function projectPointToBusCenterline(node: ModelNode, point: Point): Point {
-  if (isBoundaryBusNode(node)) {
+  if (usesBoundaryBusAnchors(node)) {
     return projectPointToNodeBoundary(node, point);
   }
   const radians = degreesToRadians(-node.rotation);
@@ -2935,7 +2983,7 @@ function projectBusEndpointPointToRouteSegmentExtension(
   segmentEnd: Point,
   endpointPoint: Point
 ): Point | null {
-  if (!isBoundaryBusNode(busNode)) {
+  if (!usesBoundaryBusAnchors(busNode)) {
     const rotationRadians = degreesToRadians(busNode.rotation);
     const cos = Math.cos(rotationRadians);
     const sin = Math.sin(rotationRadians);
@@ -3160,7 +3208,7 @@ function getBoundaryNormalAtPoint(node: ModelNode, point: Point): Point {
 }
 
 function getBusEndpointNormal(node: ModelNode, endpointPoint: Point, otherPoint: Point): Point {
-  return isBoundaryBusNode(node) ? getBoundaryNormalAtPoint(node, endpointPoint) : getBusNormalToward(node, otherPoint);
+  return usesBoundaryBusAnchors(node) ? getBoundaryNormalAtPoint(node, endpointPoint) : getBusNormalToward(node, otherPoint);
 }
 
 export function getRouteEndpointNormal(node: ModelNode, endpointPoint: Point, otherPoint: Point, terminalId?: string): Point {
@@ -11291,7 +11339,7 @@ function busEndpointCandidatePoints(bus: ModelNode, preferredPoints: Point[]): P
   if (!isBusNode(bus)) {
     return [];
   }
-  if (isBoundaryBusNode(bus)) {
+  if (usesBoundaryBusAnchors(bus)) {
     return uniquePoints(preferredPoints.map((point) => projectPointToNodeBoundary(bus, point)))
       .slice(0, ROUTE_MAX_BUS_ENDPOINT_POINTS_PER_SIDE);
   }

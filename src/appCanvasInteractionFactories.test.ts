@@ -2,9 +2,116 @@ import { describe, expect, test, vi } from "vitest";
 import {
   createApplyBatchCommonParam,
   createApplyBatchCommonParamPatch,
+  createFindConnectTargetAtPoint,
+  createFindRewireTargetAtPoint,
+  createFindRoutableLineEndpointTargetAtPoint,
   createUpdateParam
 } from "./appExtracted/appCanvasInteractionFactories";
-import { createDefaultNode, normalizeRatioParameterInputValue } from "./model";
+import { pointOnBusForSnap } from "./appExtracted/appCoreCanvasUtilities";
+import {
+  canConnectTerminals,
+  createDefaultNode,
+  createNodeFromTemplate,
+  getBusTerminalType,
+  getTerminalPoint,
+  isBusNode,
+  normalizeRatioParameterInputValue,
+  projectPointToBusCenterline
+} from "./model";
+
+const createCustomZeroTerminalNode = (componentLibrary: string, terminalType: "ac" | "dc" | "h2" | "heat" = "ac") =>
+  createNodeFromTemplate({
+    kind: `custom-${componentLibrary}`,
+    label: `自定义-${componentLibrary}`,
+    categoryLibrary: "交流设备",
+    size: { width: 150, height: 36 },
+    params: { component_type: componentLibrary },
+    terminalType,
+    terminalCount: 0,
+    custom: true
+  }, { x: 300, y: 200 });
+
+describe("custom bus connection targets", () => {
+  test("uses the ACRealBs component library for connect, rewire, and routable-line body targets", () => {
+    const source = createDefaultNode("ac-load", { x: 80, y: 200 });
+    const bus = createCustomZeroTerminalNode("ACRealBs");
+    const point = { x: bus.position.x + 25, y: bus.position.y - bus.size.height / 4 };
+    const boundaryPoint = projectPointToBusCenterline(bus, point);
+    const commonScope = {
+      CONNECT_BUS_SNAP_TOLERANCE: 18,
+      CONNECT_TERMINAL_SNAP_TOLERANCE: 28,
+      busAnchorFromPoint: projectPointToBusCenterline,
+      connectTargetSearchBounds: vi.fn(() => ({ left: 0, right: 600, top: 0, bottom: 400 })),
+      getBusTerminalType,
+      getTerminalPoint,
+      isBusNode,
+      isPointNearBus: (node: typeof bus, targetPoint: typeof point, tolerance: number) =>
+        Boolean(pointOnBusForSnap(node, targetPoint, tolerance)),
+      isRoutableLineDeviceKind: vi.fn(() => false),
+      queryNodeSpatialIndex: vi.fn(() => [bus]),
+      visibleNodeSpatialIndex: {}
+    };
+    const connectTarget = createFindConnectTargetAtPoint({
+      ...commonScope,
+      activeLayerNodeIdSet: new Set([source.id, bus.id]),
+      canConnectTerminals,
+      connectSource: { nodeId: source.id, terminalId: source.terminals[0].id },
+      visibleNodeById: new Map([[source.id, source], [bus.id, bus]])
+    })(point);
+    expect(connectTarget).toMatchObject({
+      node: { id: bus.id },
+      terminalId: "t1",
+      point: boundaryPoint
+    });
+
+    const edge = {
+      id: "rewire-edge",
+      sourceId: source.id,
+      sourceTerminalId: source.terminals[0].id,
+      targetId: "old-target",
+      targetTerminalId: "t1"
+    };
+    const rewireTarget = createFindRewireTargetAtPoint({
+      ...commonScope,
+      activeLayerEdgeIdSet: new Set([edge.id]),
+      canConnectTerminals,
+      edgeById: new Map([[edge.id, edge]]),
+      visibleNodeById: new Map([[source.id, source], [bus.id, bus]])
+    })(point, { edgeId: edge.id, endpoint: "target" } as any);
+    expect(rewireTarget).toMatchObject({ node: { id: bus.id }, terminalId: "t1", point: boundaryPoint });
+
+    const routableLineTarget = createFindRoutableLineEndpointTargetAtPoint({
+      ...commonScope,
+      activeLayerNodeIdSet: new Set([bus.id]),
+      routableLinePlacement: null,
+      routableLineTemplateTerminalType: vi.fn()
+    })(point, { terminalType: "ac" });
+    expect(routableLineTarget).toMatchObject({ node: { id: bus.id }, terminalId: "t1", point: boundaryPoint });
+  });
+
+  test("does not make an ordinary zero-terminal custom device body-connectable", () => {
+    const source = createDefaultNode("ac-load", { x: 80, y: 200 });
+    const ordinaryDevice = createCustomZeroTerminalNode("ACGenerator");
+    const findTarget = createFindConnectTargetAtPoint({
+      CONNECT_BUS_SNAP_TOLERANCE: 18,
+      CONNECT_TERMINAL_SNAP_TOLERANCE: 28,
+      activeLayerNodeIdSet: new Set([source.id, ordinaryDevice.id]),
+      busAnchorFromPoint: projectPointToBusCenterline,
+      canConnectTerminals,
+      connectSource: { nodeId: source.id, terminalId: source.terminals[0].id },
+      connectTargetSearchBounds: vi.fn(() => ({ left: 0, right: 600, top: 0, bottom: 400 })),
+      getTerminalPoint,
+      isBusNode,
+      isPointNearBus: vi.fn(() => true),
+      queryNodeSpatialIndex: vi.fn(() => [ordinaryDevice]),
+      visibleNodeById: new Map([[source.id, source], [ordinaryDevice.id, ordinaryDevice]]),
+      visibleNodeSpatialIndex: {}
+    });
+
+    expect(isBusNode(ordinaryDevice)).toBe(false);
+    expect(findTarget(ordinaryDevice.position)).toBeNull();
+  });
+});
 
 describe("batch common parameter updates", () => {
   test("stores inherited generator fields that are missing from derived wind nodes", () => {
