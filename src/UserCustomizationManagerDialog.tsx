@@ -3,8 +3,7 @@ import {
   Download,
   FileInput,
   RotateCcw,
-  Search,
-  X
+  Search
 } from "lucide-react";
 import type {
   UserCustomizationChangeType,
@@ -14,6 +13,7 @@ import type {
   UserCustomizationInventory,
   UserCustomizationSnapshot
 } from "./userCustomizations";
+import { WindowCloseButton } from "./WindowCloseButton";
 
 export type PendingUserCustomizationImportView = {
   fileName: string;
@@ -73,15 +73,13 @@ function ImportPreviewPanel(props: {
   const { pending } = props;
   return (
     <div className="user-customization-import-shade">
-      <section className="user-customization-import-preview" role="dialog" aria-modal="true" aria-label="导入预览">
+      <section className="user-customization-import-preview window-close-host" role="dialog" aria-modal="true" aria-label="导入预览">
+        <WindowCloseButton label="关闭导入预览" onClick={props.onCancel} disabled={props.busy} />
         <header>
           <div>
             <h3>导入预览</h3>
             <p title={pending.fileName}>{pending.fileName}</p>
           </div>
-          <button type="button" className="icon-button" onClick={props.onCancel} disabled={props.busy} aria-label="关闭导入预览" title="关闭">
-            <X size={16} />
-          </button>
         </header>
         <div className="user-customization-import-modes" role="radiogroup" aria-label="导入方式">
           <label className={pending.mode === "replace" ? "active" : ""}>
@@ -196,7 +194,8 @@ export function UserCustomizationManagerDialog(props: UserCustomizationManagerDi
 
   return (
     <div className="modal-backdrop user-customization-backdrop" role="presentation">
-      <section className="user-customization-dialog" role="dialog" aria-modal="true" aria-label="用户自定义管理">
+      <section className="user-customization-dialog window-close-host" role="dialog" aria-modal="true" aria-label="用户自定义管理">
+        <WindowCloseButton label="关闭用户自定义管理" onClick={props.onClose} disabled={props.busy} />
         <header className="user-customization-header">
           <div>
             <h2>用户自定义管理</h2>
@@ -208,9 +207,6 @@ export function UserCustomizationManagerDialog(props: UserCustomizationManagerDi
             </button>
             <button type="button" className="primary" onClick={props.onChooseImport} disabled={props.busy}>
               <FileInput size={15} aria-hidden="true" /><span>导入配置</span>
-            </button>
-            <button type="button" className="icon-button" onClick={props.onClose} disabled={props.busy} aria-label="关闭用户自定义管理" title="关闭">
-              <X size={17} />
             </button>
           </div>
         </header>

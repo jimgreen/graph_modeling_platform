@@ -4,6 +4,7 @@ import { createPortal, flushSync } from "react-dom";
 import { useTransition } from "react";
 import { apiPath } from "../config";
 import { normalizeDeviceMeasurementDefinitions } from "../measurementDefinitionTypes";
+import { WindowCloseButton } from "../WindowCloseButton";
 import {
   AlignCenter,
   AlignEndHorizontal,
@@ -678,7 +679,10 @@ export function clampCanvasDimension(value: number, min: number, max: number, fa
 
 export async function fetchBackendSchemes(): Promise<SavedSchemeRecord[]> {
   const payload = await fetchBackendJson<BackendSchemesResponse | SavedSchemeRecord[]>(apiPath("/schemes"), "读取后台方案/模型失败。");
-  const schemes = Array.isArray(payload) ? payload : Array.isArray(payload.schemes) ? payload.schemes : [];
+  const schemes = Array.isArray(payload) ? payload : payload && Array.isArray(payload.schemes) ? payload.schemes : null;
+  if (!schemes) {
+    throw new Error("后台方案/模型响应格式无效，已保留当前模型库。");
+  }
   return hydrateSavedSchemeRuntimeIds(schemes.map(normalizeSavedSchemeIndexes));
 }
 
@@ -1948,7 +1952,7 @@ function EnumValuesEditor<T extends DeviceParameterDefinition & { id: string }>(
     ? createPortal(
         <div className="custom-param-enum-dialog-backdrop" onPointerDown={closeDialog}>
           <section
-            className="custom-param-enum-dialog"
+            className="custom-param-enum-dialog window-close-host"
             role="dialog"
             aria-modal="true"
             aria-label={`${parameterName}枚举项详情`}
@@ -1965,14 +1969,12 @@ function EnumValuesEditor<T extends DeviceParameterDefinition & { id: string }>(
               }
             }}
           >
+            <WindowCloseButton label="关闭枚举项详情" onClick={closeDialog} />
             <header className="custom-param-enum-dialog-header">
               <div>
                 <h2>枚举项详情</h2>
                 <p><strong>{parameterName}</strong>{row.enName ? <code>{row.enName}</code> : null}</p>
               </div>
-              <button type="button" className="custom-param-enum-dialog-close" aria-label="关闭枚举项详情" title="关闭" onClick={closeDialog}>
-                <X size={16} aria-hidden="true" />
-              </button>
             </header>
             <div className="custom-param-enum-dialog-body">
               <div className="custom-param-enum-type-row">

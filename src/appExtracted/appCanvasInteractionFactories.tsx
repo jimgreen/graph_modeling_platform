@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { degreesToRadians } from "../formatUtils";
+import { WindowCloseButton } from "../WindowCloseButton";
 
 export function createUpdateSingleNodeDragImperativePreview(__appScope: Record<string, any>) {
   return (dragState: DraggingState, previewDelta: Point) => {
@@ -2872,7 +2873,7 @@ export function createRenderNodeDoubleClickDialog(__appScope: Record<string, any
       <div className="image-picker-backdrop" onPointerDown={cancelNodeDoubleClickDialog}>
         <section
           ref={nodeDoubleClickDialogRef}
-          className={`node-double-click-dialog${dialogLayout ? " floating" : ""}`}
+          className={`node-double-click-dialog window-close-host${dialogLayout ? " floating" : ""}`}
           style={dialogStyle}
           onPointerDown={stopNodeDoubleClickDialogEvent}
           onPointerUp={stopNodeDoubleClickDialogEvent}
@@ -2884,6 +2885,7 @@ export function createRenderNodeDoubleClickDialog(__appScope: Record<string, any
           aria-modal="true"
           aria-labelledby="node-double-click-dialog-title"
         >
+          <WindowCloseButton label={`关闭${title}窗口`} onClick={cancelNodeDoubleClickDialog} />
           <div className="image-picker-title node-double-click-dialog-title" onPointerDown={startNodeDoubleClickDialogDrag}>
             <div>
               <h2 id="node-double-click-dialog-title">{title}</h2>

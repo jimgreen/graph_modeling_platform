@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { canBatchEditParam, PARAM_LABELS } from "./appExtracted/appCoreCanvasUtilities";
 import { enumValuesForRow } from "./appExtracted/appPersistenceLibraryExport";
-import { createAppHookCallback12, createAppHookCallback82, createAppHookCallback100, createAppHookCallback120 } from "./appExtracted/appToolbarHookFactories";
+import { createAppHookCallback12, createAppHookCallback77, createAppHookCallback82, createAppHookCallback100, createAppHookCallback120 } from "./appExtracted/appToolbarHookFactories";
 import {
   applyDeviceTemplateDefinitionOverride,
   createDefaultNode,
@@ -58,6 +58,114 @@ describe("device library persistence hook", () => {
 
     expect(writeLocalDeviceLibraryPersistencePayload).not.toHaveBeenCalled();
     expect(saveBackendDeviceLibraryPayload).not.toHaveBeenCalled();
+    cleanup?.();
+  });
+});
+
+describe("model library backend loading hook", () => {
+  const createScope = (fetchBackendSchemes: ReturnType<typeof vi.fn>) => ({
+    activeSchemeKey: "",
+    backendSchemesLoadTokenRef: { current: 0 },
+    backendSchemesLoadedRef: { current: false },
+    clearActiveProjectDisplay: vi.fn(),
+    fetchBackendSchemes,
+    findSavedProjectByActivePointer: vi.fn(() => null),
+    flattenSavedSchemes: (schemes: Array<{ id: string }>) => schemes,
+    latestActiveProjectPointerRef: { current: null },
+    loadSavedProjectRecord: vi.fn(),
+    rememberPersistedSchemesPayload: vi.fn(),
+    saveRequiredRef: { current: false },
+    serializeSchemesForStorage: JSON.stringify,
+    setExpandedSchemeIds: vi.fn(),
+    setSchemesState: vi.fn(),
+    suppressNextBackendSchemeSyncRef: { current: false }
+  });
+
+  const flushPromises = async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  };
+
+  test("retries a failed initial load and restores schemes without a page refresh", async () => {
+    vi.useFakeTimers();
+    const listeners = new Map<string, EventListener>();
+    vi.stubGlobal("window", {
+      addEventListener: vi.fn((type: string, listener: EventListener) => listeners.set(type, listener)),
+      removeEventListener: vi.fn((type: string) => listeners.delete(type)),
+      setTimeout: globalThis.setTimeout,
+      clearTimeout: globalThis.clearTimeout
+    });
+    const backendSchemes = [{ id: "scheme-1", name: "默认方案", projects: [], children: [] }];
+    const fetchBackendSchemes = vi.fn()
+      .mockRejectedValueOnce(new Error("backend unavailable"))
+      .mockResolvedValueOnce(backendSchemes);
+    const scope = createScope(fetchBackendSchemes);
+
+    const cleanup = createAppHookCallback77(scope)();
+    await flushPromises();
+
+    expect(fetchBackendSchemes).toHaveBeenCalledTimes(1);
+    expect(scope.setSchemesState).toHaveBeenCalledTimes(1);
+    const preserveCurrentSchemes = scope.setSchemesState.mock.calls[0][0];
+    const existingSchemes = [{ id: "existing" }];
+    expect(preserveCurrentSchemes(existingSchemes)).toBe(existingSchemes);
+    expect(preserveCurrentSchemes([])).toEqual([]);
+    expect(scope.backendSchemesLoadedRef.current).toBe(false);
+
+    await vi.runOnlyPendingTimersAsync();
+    await flushPromises();
+
+    expect(fetchBackendSchemes).toHaveBeenCalledTimes(2);
+    expect(scope.setSchemesState).toHaveBeenCalledWith(backendSchemes);
+    expect(scope.backendSchemesLoadedRef.current).toBe(true);
+    cleanup?.();
+  });
+
+  test("preserves loaded schemes when a later online refresh fails", async () => {
+    vi.useFakeTimers();
+    const listeners = new Map<string, EventListener>();
+    vi.stubGlobal("window", {
+      addEventListener: vi.fn((type: string, listener: EventListener) => listeners.set(type, listener)),
+      removeEventListener: vi.fn((type: string) => listeners.delete(type)),
+      setTimeout: globalThis.setTimeout,
+      clearTimeout: globalThis.clearTimeout
+    });
+    const backendSchemes = [{ id: "scheme-1", name: "默认方案", projects: [], children: [] }];
+    const fetchBackendSchemes = vi.fn()
+      .mockResolvedValueOnce(backendSchemes)
+      .mockRejectedValueOnce(new Error("backend unavailable"));
+    const scope = createScope(fetchBackendSchemes);
+
+    const cleanup = createAppHookCallback77(scope)();
+    await flushPromises();
+    listeners.get("online")?.(new Event("online"));
+    await flushPromises();
+
+    expect(fetchBackendSchemes).toHaveBeenCalledTimes(2);
+    expect(scope.setSchemesState).toHaveBeenCalledTimes(2);
+    expect(scope.setSchemesState).toHaveBeenNthCalledWith(1, backendSchemes);
+    const preserveCurrentSchemes = scope.setSchemesState.mock.calls[1][0];
+    expect(preserveCurrentSchemes(backendSchemes)).toBe(backendSchemes);
+    expect(scope.backendSchemesLoadedRef.current).toBe(false);
+    cleanup?.();
+  });
+
+  test("accepts an explicitly successful empty model directory", async () => {
+    const listeners = new Map<string, EventListener>();
+    vi.stubGlobal("window", {
+      addEventListener: vi.fn((type: string, listener: EventListener) => listeners.set(type, listener)),
+      removeEventListener: vi.fn((type: string) => listeners.delete(type)),
+      setTimeout: globalThis.setTimeout,
+      clearTimeout: globalThis.clearTimeout
+    });
+    const scope = createScope(vi.fn().mockResolvedValue([]));
+
+    const cleanup = createAppHookCallback77(scope)();
+    await flushPromises();
+
+    expect(scope.setSchemesState).toHaveBeenCalledWith([]);
+    expect(scope.clearActiveProjectDisplay).toHaveBeenCalledWith("没有可用方案，画布已清空");
+    expect(scope.backendSchemesLoadedRef.current).toBe(true);
     cleanup?.();
   });
 });

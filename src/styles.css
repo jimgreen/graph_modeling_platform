@@ -1422,6 +1422,17 @@ button:disabled {
   gap: 8px;
 }
 
+.layer-management-dropdown .layer-manager-toolbar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.layer-management-dropdown .layer-manager-toolbar button {
+  justify-content: center;
+  width: 100%;
+}
+
 .layer-management-dropdown .layer-list {
   max-height: min(330px, calc(100vh - 166px));
   padding-right: 4px;
@@ -3527,6 +3538,59 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   background: rgba(15, 23, 42, 0.28);
 }
 
+.window-close-host {
+  position: relative;
+}
+
+.window-close-host > .window-close-button {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  min-width: 46px;
+  height: 34px;
+  min-height: 34px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0 7px 0 0;
+  background: transparent;
+  color: #475569;
+  box-shadow: none;
+  cursor: default;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.window-close-host > .window-close-button:hover:not(:disabled) {
+  background: #c42b1c;
+  color: #ffffff;
+}
+
+.window-close-host > .window-close-button:active:not(:disabled) {
+  background: #a9251a;
+  color: #ffffff;
+}
+
+.window-close-host > .window-close-button:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: -3px;
+}
+
+.window-close-host > .window-close-button:disabled {
+  color: #94a3b8;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.window-close-host > :is(.image-picker-title, header, .unsaved-changes-header, .custom-library-create-title, .user-customization-header) {
+  box-sizing: border-box;
+  padding-right: 58px;
+}
+
 .image-picker-dialog {
   display: grid;
   gap: 14px;
@@ -4632,8 +4696,8 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 8px;
   width: min(600px, calc(100vw - 48px));
-  min-height: 800px;
-  max-height: 800px;
+  min-height: 0;
+  max-height: min(680px, calc(100vh - 48px));
   overflow: hidden;
   padding: 12px;
   border-radius: 8px;
@@ -4697,6 +4761,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .color-palette-table {
   display: grid;
+  align-content: start;
   gap: 8px;
   padding: 12px;
 }
@@ -12753,6 +12818,12 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   transition: transform 0.2s;
 }
 
+.global-confirm-dialog > .window-close-button {
+  border-radius: 0 11px 0 0;
+  font-size: 22px;
+  line-height: 1;
+}
+
 .global-confirm-enter .global-confirm-dialog {
   transform: scale(1);
 }
@@ -12767,6 +12838,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   color: #1f2937;
   margin-bottom: 20px;
   word-break: break-word;
+  padding-right: 30px;
 }
 
 .global-confirm-buttons {

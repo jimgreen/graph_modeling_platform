@@ -17,6 +17,7 @@ import { EFileEditor } from "../EFileEditor";
 import { buildUserCustomizationInventory, restoreUserCustomizationItems, type UserCustomizationDomain } from "../userCustomizations";
 import { createMeasurementFieldParameterDefinition } from "../measurementDefinitionTypes";
 import { moveSelectedTableRows, nextTableRowSelection, uniqueCopiedFieldName } from "../definitionTableSelection";
+import { WindowCloseButton } from "../WindowCloseButton";
 
 export type ImagePickerLibraryTab = "image" | "icon";
 
@@ -1996,7 +1997,7 @@ export function renderAppView(__appScope: Record<string, any>) {
     {globalMessage && <div className={`global-message global-message-${globalMessage.type}`} onClick={() => setGlobalMessage(null)} style={{ cursor: "pointer" }} title="点击关闭"><span className="global-message-icon">{globalMessage.type === "success" ? "✓" : globalMessage.type === "error" ? "✕" : "ℹ"}</span>{globalMessage.text}</div>}
     {exportCompletionDialog && (<div className="image-picker-backdrop export-completion-backdrop" onPointerDown={() => setExportCompletionDialog(null)}>
       <section
-        className="unsaved-change-dialog export-completion-dialog"
+        className="unsaved-change-dialog export-completion-dialog window-close-host"
         onPointerDown={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
@@ -2007,6 +2008,7 @@ export function renderAppView(__appScope: Record<string, any>) {
         aria-modal="true"
         aria-labelledby="export-completion-title"
       >
+        <WindowCloseButton label="关闭导出结果" onClick={() => setExportCompletionDialog(null)} />
         <div className="image-picker-title">
           <div>
             <h2 id="export-completion-title">{exportCompletionDialog.title}</h2>
@@ -3460,12 +3462,12 @@ export function renderAppView(__appScope: Record<string, any>) {
       })()}
       {libraryPackageDialogOpen && (
         <div className="image-picker-backdrop library-package-backdrop" onPointerDown={closeLibraryPackageDialog}>
-          <section className="library-package-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="library-package-title">
+          <section className="library-package-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="library-package-title">
+            <WindowCloseButton label="关闭库导入导出窗口" onClick={closeLibraryPackageDialog} />
             <div className="image-picker-title">
               <div>
                 <h2 id="library-package-title">导入/导出库</h2>
               </div>
-              <button type="button" onClick={closeLibraryPackageDialog}>关闭</button>
             </div>
             <div className="library-package-mode-toggle" role="radiogroup" aria-label="选择导入或导出">
               {[
@@ -3532,7 +3534,8 @@ export function renderAppView(__appScope: Record<string, any>) {
       {renderMeasurementConfigDialog()}
       {renderMeasurementEditorDialog()}
       {pendingRecordPasteConflict && (<div className="image-picker-backdrop" onPointerDown={() => resolveRecordPasteConflict("cancel")}>
-          <section className="unsaved-change-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="record-paste-conflict-title">
+          <section className="unsaved-change-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="record-paste-conflict-title">
+            <WindowCloseButton label="关闭名称重复提示" onClick={() => resolveRecordPasteConflict("cancel")} />
             <div className="image-picker-title">
               <div>
                 <h2 id="record-paste-conflict-title">名称重复</h2>
@@ -3549,7 +3552,8 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {pendingModelImportConflict && (<div className="image-picker-backdrop" onPointerDown={() => resolveDuplicateModelImport("cancel")}>
-          <section className="unsaved-change-dialog" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { resolveDuplicateModelImport("cancel"); } }} role="dialog" aria-modal="true" aria-labelledby="model-import-conflict-title">
+          <section className="unsaved-change-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { resolveDuplicateModelImport("cancel"); } }} role="dialog" aria-modal="true" aria-labelledby="model-import-conflict-title">
+            <WindowCloseButton label="关闭模型名称重复提示" onClick={() => resolveDuplicateModelImport("cancel")} />
             <div className="image-picker-title">
               <div>
                 <h2 id="model-import-conflict-title">模型名称重复</h2>
@@ -3566,7 +3570,8 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {pendingSchemeImportConflict && (<div className="image-picker-backdrop" onPointerDown={() => resolveDuplicateSchemeImport("cancel")}>
-          <section className="unsaved-change-dialog" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { resolveDuplicateSchemeImport("cancel"); } }} role="dialog" aria-modal="true" aria-labelledby="scheme-import-conflict-title">
+          <section className="unsaved-change-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { resolveDuplicateSchemeImport("cancel"); } }} role="dialog" aria-modal="true" aria-labelledby="scheme-import-conflict-title">
+            <WindowCloseButton label="关闭方案名称重复提示" onClick={() => resolveDuplicateSchemeImport("cancel")} />
             <div className="image-picker-title">
               <div>
                 <h2 id="scheme-import-conflict-title">方案名称重复</h2>
@@ -3583,7 +3588,8 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {pendingUnsavedAction && (<div className="image-picker-backdrop" onPointerDown={() => resolveUnsavedChangeAction("cancel")}>
-          <section className="unsaved-change-dialog" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { resolveUnsavedChangeAction("cancel"); } }} role="dialog" aria-modal="true" aria-labelledby="unsaved-change-title">
+          <section className="unsaved-change-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { resolveUnsavedChangeAction("cancel"); } }} role="dialog" aria-modal="true" aria-labelledby="unsaved-change-title">
+            <WindowCloseButton label="关闭未保存修改提示" onClick={() => resolveUnsavedChangeAction("cancel")} />
             <div className="image-picker-title">
               <div>
                 <h2 id="unsaved-change-title">当前模型尚未保存</h2>
@@ -3605,10 +3611,10 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {unsavedChangesDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setUnsavedChangesDialogOpen(false)}>
-          <section className="unsaved-changes-dialog" style={{ width: "80vw", height: "80vh" }} onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="unsaved-changes-list-title">
+          <section className="unsaved-changes-dialog window-close-host" style={{ width: "80vw", height: "80vh" }} onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="unsaved-changes-list-title">
+            <WindowCloseButton label="关闭未保存修改列表" onClick={() => setUnsavedChangesDialogOpen(false)} />
             <div className="unsaved-changes-header">
               <h2 id="unsaved-changes-list-title">未保存的修改</h2>
-              <button type="button" onClick={() => setUnsavedChangesDialogOpen(false)}>关闭</button>
             </div>
             <div className="unsaved-changes-body" style={{ overflow: "auto", flex: 1, minHeight: 0 }}>
               {(() => {
@@ -3676,13 +3682,13 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {voltageBaseSetDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setVoltageBaseSetDialogOpen(false)}>
-          <section className="connection-redraw-dialog voltage-base-set-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="voltage-base-set-title">
+          <section className="connection-redraw-dialog voltage-base-set-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="voltage-base-set-title">
+            <WindowCloseButton label="关闭设置电压基值窗口" onClick={() => setVoltageBaseSetDialogOpen(false)} />
             <div className="image-picker-title">
               <div>
                 <h2 id="voltage-base-set-title">设置电压基值</h2>
                 <p>将指定范围内设备端子和电压相关参数中的 vbase、v_base、v_set 等值设为输入值；多端设备可按端子分别设置。</p>
               </div>
-              <button type="button" onClick={() => setVoltageBaseSetDialogOpen(false)}>关闭</button>
             </div>
             <label className="voltage-base-set-value-row">
               <span>设置方式</span>
@@ -3729,13 +3735,13 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {voltageBaseClearDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setVoltageBaseClearDialogOpen(false)}>
-          <section className="connection-redraw-dialog voltage-base-clear-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="voltage-base-clear-title">
+          <section className="connection-redraw-dialog voltage-base-clear-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="voltage-base-clear-title">
+            <WindowCloseButton label="关闭清空电压基值窗口" onClick={() => setVoltageBaseClearDialogOpen(false)} />
             <div className="image-picker-title">
               <div>
                 <h2 id="voltage-base-clear-title">清空电压基值</h2>
                 <p>将指定范围内设备端子和电压相关参数中的 vbase、v_base、v_set 等值统一设为 0.0。</p>
               </div>
-              <button type="button" onClick={() => setVoltageBaseClearDialogOpen(false)}>关闭</button>
             </div>
             <div className="connection-redraw-options voltage-base-clear-options" role="radiogroup" aria-label="清空电压基值范围">
               {VOLTAGE_BASE_CLEAR_SCOPES.map((scope) => {
@@ -3757,13 +3763,13 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {connectionRedrawDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setConnectionRedrawDialogOpen(false)}>
-          <section className="connection-redraw-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="connection-redraw-title">
+          <section className="connection-redraw-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="connection-redraw-title">
+            <WindowCloseButton label="关闭连接线重绘窗口" onClick={() => setConnectionRedrawDialogOpen(false)} />
             <div className="image-picker-title">
               <div>
                 <h2 id="connection-redraw-title">连接线重绘</h2>
                 <p>清除指定连接线的旧路径几何，并按当前端子、母线落点和避障规则重新生成。</p>
               </div>
-              <button type="button" onClick={() => setConnectionRedrawDialogOpen(false)}>关闭</button>
             </div>
             <div className="connection-redraw-options" role="radiogroup" aria-label="连接线重绘范围">
               {(["selected", "viewport", "all"] as const).map((scope) => {
@@ -3784,13 +3790,13 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {groupDeviceDefinitionDialog && (<div className="image-picker-backdrop" onPointerDown={() => setGroupDeviceDefinitionDialog(null)}>
-          <section className="group-device-dialog" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { setGroupDeviceDefinitionDialog(null); } }} role="dialog" aria-modal="true" aria-labelledby="group-device-dialog-title">
+          <section className="group-device-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { setGroupDeviceDefinitionDialog(null); } }} role="dialog" aria-modal="true" aria-labelledby="group-device-dialog-title">
+            <WindowCloseButton label="关闭定义为元件窗口" onClick={() => setGroupDeviceDefinitionDialog(null)} />
             <div className="image-picker-title">
               <div>
                 <h2 id="group-device-dialog-title">定义为元件</h2>
                 <p>把当前图元组合生成新元件图标，或替换已有元件的图标。</p>
               </div>
-              <button type="button" onClick={() => setGroupDeviceDefinitionDialog(null)}>关闭</button>
             </div>
             <div className="group-device-dialog-grid">
               <div className="template-dialog-preview group-device-preview">
@@ -3859,13 +3865,13 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {templateDialog && (<div className="image-picker-backdrop" onPointerDown={cancelTemplateDialog}>
-          <section className="template-dialog" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { cancelTemplateDialog(); } }} role="dialog" aria-modal="true" aria-labelledby="template-dialog-title">
+          <section className="template-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { cancelTemplateDialog(); } }} role="dialog" aria-modal="true" aria-labelledby="template-dialog-title">
+            <WindowCloseButton label="关闭添加模板窗口" onClick={cancelTemplateDialog} />
             <div className="image-picker-title">
               <div>
                 <h2 id="template-dialog-title">添加模板</h2>
                 <p>将当前选中的图元组合保存到模板库，后续可按原始尺寸拖拽生成。</p>
               </div>
-              <button type="button" onClick={cancelTemplateDialog}>关闭</button>
             </div>
             <div className="template-dialog-grid">
               <div className="template-dialog-preview">
@@ -3903,13 +3909,13 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {layerAssignmentDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setLayerAssignmentDialogOpen(false)}>
-          <section className="layer-assignment-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="layer-assignment-title">
+          <section className="layer-assignment-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="layer-assignment-title">
+            <WindowCloseButton label="关闭图层修改窗口" onClick={() => setLayerAssignmentDialogOpen(false)} />
             <div className="image-picker-title">
               <div>
                 <h2 id="layer-assignment-title">图层修改</h2>
                 <p>当前选中 {activeSelectedNodeIds.length} 个图元。选择目标图层后，确认应用到这些图元。</p>
               </div>
-              <button type="button" onClick={() => setLayerAssignmentDialogOpen(false)}>关闭</button>
             </div>
             <label className="layer-assignment-field">
               <span>目标图层</span>
@@ -3929,13 +3935,13 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {filterSelectionDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setFilterSelectionDialogOpen(false)}>
-          <section className="filter-selection-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="filter-selection-title">
+          <section className="filter-selection-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="filter-selection-title">
+            <WindowCloseButton label="关闭过滤选择窗口" onClick={() => setFilterSelectionDialogOpen(false)} />
             <div className="image-picker-title">
               <div>
                 <h2 id="filter-selection-title">过滤选择</h2>
                 <p>元件库列表：{filterSelectionTypeOptions.length} 类，已选择 {filterSelectionTypeKeys.length} 种。</p>
               </div>
-              <button type="button" onClick={() => setFilterSelectionDialogOpen(false)}>关闭</button>
             </div>
             <div className="filter-selection-toolbar">
               <button type="button" onClick={() => setFilterSelectionTypeKeys(filterSelectionTypeOptions.flatMap((option) => option.items.map((item) => item.itemKey)))}>全选</button>
@@ -3976,13 +3982,13 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {ENABLE_REACT_FLOW_PREVIEW && ReactFlowPreview && reactFlowPreviewOpen && (<div className="image-picker-backdrop react-flow-preview-backdrop" onPointerDown={() => setReactFlowPreviewOpen(false)}>
-          <section className="react-flow-preview-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="react-flow-preview-title">
+          <section className="react-flow-preview-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="react-flow-preview-title">
+            <WindowCloseButton label="关闭React Flow预览" onClick={() => setReactFlowPreviewOpen(false)} />
             <div className="image-picker-title">
               <div>
                 <h2 id="react-flow-preview-title">React Flow 预览</h2>
                 <p>开发态验证入口：仅展示当前可见模型，主画布、拓扑、布线和导出逻辑保持不变。</p>
               </div>
-              <button type="button" onClick={() => setReactFlowPreviewOpen(false)}>关闭</button>
             </div>
             <div className="react-flow-preview-stage">
               <Suspense fallback={<div className="react-flow-preview-loading">正在加载 React Flow 预览...</div>}>
@@ -3992,13 +3998,13 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {colorPaletteDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setColorPaletteDialogOpen(false)}>
-          <section className="color-palette-dialog" onPointerDown={(event) => event.stopPropagation()}>
+          <section className="color-palette-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()}>
+            <WindowCloseButton label="关闭配色设置" onClick={() => setColorPaletteDialogOpen(false)} />
             <div className="image-picker-title">
               <div>
                 <h2>配色设置</h2>
                 <p>配置能流类型和电压等级颜色，保存后用于图元、端子、联络线和导出图形。</p>
               </div>
-              <button onClick={() => setColorPaletteDialogOpen(false)}>关闭</button>
             </div>
             <div className="color-palette-tabs" role="tablist" aria-label="配色方式">
               <button className={colorPaletteTab === "energy" ? "active" : ""} onClick={() => {
@@ -4087,13 +4093,13 @@ export function renderAppView(__appScope: Record<string, any>) {
         />
       )}
       {deviceDefinitionDialogOpen && (<div className="image-picker-backdrop" onPointerDown={closeDeviceDefinitionDialog}>
-          <section ref={deviceDefinitionDialogRef} className={`device-definition-dialog${deviceLibraryDialogLayouts.definition ? " floating" : ""}`} style={deviceLibraryDialogStyle("definition")} onPointerDown={stopDeviceLibraryDialogEvent} onPointerUp={stopDeviceLibraryDialogEvent} onPointerCancel={stopDeviceLibraryDialogEvent} onLostPointerCapture={stopDeviceLibraryDialogEvent} onClick={(event) => event.stopPropagation()}>
+          <section ref={deviceDefinitionDialogRef} className={`device-definition-dialog window-close-host${deviceLibraryDialogLayouts.definition ? " floating" : ""}`} style={deviceLibraryDialogStyle("definition")} onPointerDown={stopDeviceLibraryDialogEvent} onPointerUp={stopDeviceLibraryDialogEvent} onPointerCancel={stopDeviceLibraryDialogEvent} onLostPointerCapture={stopDeviceLibraryDialogEvent} onClick={(event) => event.stopPropagation()}>
+            <WindowCloseButton label="关闭元件定义窗口" onClick={closeDeviceDefinitionDialog} />
             <div className="image-picker-title">
               <div className="device-library-dialog-title" onPointerDown={(event) => startDeviceLibraryDialogDrag("definition", event)}>
                 <h2>修改元件</h2>
                 <p>查看内置和自定义元件定义，维护新建图元时使用的设备属性。</p>
               </div>
-              <button onClick={closeDeviceDefinitionDialog}>关闭</button>
             </div>
             <div className="device-definition-layout">
               <aside className="device-definition-list" aria-label="元件定义列表">
@@ -4403,7 +4409,7 @@ export function renderAppView(__appScope: Record<string, any>) {
         </div>)}
       {customLibraryCreateDialog && (<div className="custom-library-create-backdrop" onPointerDown={() => setCustomLibraryCreateDialog(null)}>
           <form
-            className="custom-library-create-dialog"
+            className="custom-library-create-dialog window-close-host"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
             onSubmit={(event) => {
@@ -4411,11 +4417,9 @@ export function renderAppView(__appScope: Record<string, any>) {
               confirmCustomLibraryCreateDialog();
             }}
           >
+            <WindowCloseButton label={`关闭${customLibraryCreateDialog.title}`} onClick={() => setCustomLibraryCreateDialog(null)} />
             <div className="custom-library-create-title">
               <h3>{customLibraryCreateDialog.title}</h3>
-              <button type="button" aria-label="关闭" title="关闭" onClick={() => setCustomLibraryCreateDialog(null)}>
-                <X size={16} aria-hidden="true" />
-              </button>
             </div>
             {customLibraryCreateDialog.error && <p className="custom-library-create-error">{customLibraryCreateDialog.error}</p>}
             <label>
@@ -4511,7 +4515,8 @@ export function renderAppView(__appScope: Record<string, any>) {
           </form>
         </div>)}
       {customDeviceDialogOpen && (<div className="image-picker-backdrop" onPointerDown={requestCloseCustomDeviceDialog}>
-          <section ref={customDeviceDialogRef} className={`custom-device-dialog${deviceLibraryDialogLayouts.custom ? " floating" : ""}`} style={deviceLibraryDialogStyle("custom")} onPointerDown={stopDeviceLibraryDialogEvent} onPointerUp={stopDeviceLibraryDialogEvent} onPointerCancel={stopDeviceLibraryDialogEvent} onLostPointerCapture={stopDeviceLibraryDialogEvent} onClick={(event) => event.stopPropagation()}>
+          <section ref={customDeviceDialogRef} className={`custom-device-dialog window-close-host${deviceLibraryDialogLayouts.custom ? " floating" : ""}`} style={deviceLibraryDialogStyle("custom")} onPointerDown={stopDeviceLibraryDialogEvent} onPointerUp={stopDeviceLibraryDialogEvent} onPointerCancel={stopDeviceLibraryDialogEvent} onLostPointerCapture={stopDeviceLibraryDialogEvent} onClick={(event) => event.stopPropagation()}>
+            <WindowCloseButton label="关闭元件定义编辑窗口" onClick={requestCloseCustomDeviceDialog} />
             <div className="image-picker-title">
               <div className="device-library-dialog-title" onPointerDown={(event) => startDeviceLibraryDialogDrag("custom", event)}>
                 <h2>元件定义</h2>
@@ -4901,15 +4906,13 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {eDeviceDefinitionInterfaceDialogOpen && (<div className="image-picker-backdrop" onPointerDown={requestCloseEDeviceInterfaceDefinition}>
-          <section className="e-device-interface-dialog" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+          <section className="e-device-interface-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+            <WindowCloseButton label="关闭E文件接口定义" onClick={requestCloseEDeviceInterfaceDefinition} />
             <div className="image-picker-title">
               <div>
                 <h2>E文件接口定义</h2>
               </div>
               {eDeviceInterfaceSaveMessage && <div className="e-device-interface-save-toast"><span className="e-device-interface-save-toast-icon">✓</span>{eDeviceInterfaceSaveMessage}</div>}
-              <button type="button" aria-label="关闭E文件接口定义" title="关闭" onClick={requestCloseEDeviceInterfaceDefinition}>
-                <X size={16} />
-              </button>
             </div>
             <div className="e-device-interface-actions">
               {eDeviceInterfaceLoadedTemplateName && (
@@ -5387,7 +5390,8 @@ export function renderAppView(__appScope: Record<string, any>) {
         />
       )}
       {eDeviceInterfaceExitPromptOpen && (<div className="image-picker-backdrop" onPointerDown={() => setEDeviceInterfaceExitPromptOpen(false)}>
-          <section className="unsaved-change-dialog e-device-interface-unsaved-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="e-device-interface-unsaved-title">
+          <section className="unsaved-change-dialog e-device-interface-unsaved-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="e-device-interface-unsaved-title">
+            <WindowCloseButton label="关闭E文件接口未保存提示" onClick={() => setEDeviceInterfaceExitPromptOpen(false)} />
             <div className="image-picker-title">
               <div>
                 <h2 id="e-device-interface-unsaved-title">E文件接口定义尚未保存</h2>
@@ -5402,7 +5406,8 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {eDeviceInterfaceClassSwitchTarget && (<div className="image-picker-backdrop" onPointerDown={() => setEDeviceInterfaceClassSwitchTarget("")}>
-          <section className="unsaved-change-dialog e-device-interface-unsaved-dialog e-device-interface-class-switch-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="e-device-interface-class-switch-title">
+          <section className="unsaved-change-dialog e-device-interface-unsaved-dialog e-device-interface-class-switch-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="e-device-interface-class-switch-title">
+            <WindowCloseButton label="关闭设备类切换提示" onClick={() => setEDeviceInterfaceClassSwitchTarget("")} />
             <div className="image-picker-title">
               <div>
                 <h2 id="e-device-interface-class-switch-title">当前设备类定义尚未保存</h2>
@@ -5420,15 +5425,13 @@ export function renderAppView(__appScope: Record<string, any>) {
           </section>
         </div>)}
       {showImportResultDialog && templateImportResult && (<div className="image-picker-backdrop" onPointerDown={() => setShowImportResultDialog(false)}>
-          <section className="template-import-result-dialog" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+          <section className="template-import-result-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+            <WindowCloseButton label="关闭预定义模板导入结果" onClick={() => setShowImportResultDialog(false)} />
             <div className="image-picker-title">
               <div>
                 <h2>预定义模板导入结果</h2>
                 <p>匹配：{templateImportResult.matched.length} 个，未匹配：{templateImportResult.skipped.length} 个，无需匹配：{(templateImportResult.runtimeGenerated ?? []).length} 个</p>
               </div>
-              <button type="button" onClick={() => setShowImportResultDialog(false)} title="关闭">
-                <X size={16} />
-              </button>
             </div>
             <div className="template-import-result-tabs">
               <button type="button" className={`template-import-result-tab${importResultActiveTab === "matched" ? " active" : ""}`} onClick={() => setImportResultActiveTab("matched")}>
@@ -5619,22 +5622,22 @@ export function renderAppView(__appScope: Record<string, any>) {
           setImagePickerSearchQuery("");
           setImageTarget(null);
         }}>
-          <section className={imagePickerDialogClassName} onPointerDown={(event) => {
+          <section className={`${imagePickerDialogClassName} window-close-host`} onPointerDown={(event) => {
             setImageAssetContextMenu(null);
             event.stopPropagation();
           }}>
+            <WindowCloseButton label="关闭资源选择窗口" onClick={() => {
+              setImageAssetContextMenu(null);
+              setImagePickerSourceFilter("");
+              setImagePickerCategoryFilter("");
+              setImagePickerSearchQuery("");
+              setImageTarget(null);
+            }} />
             <div className="image-picker-title">
               <div>
                 <h2>{imagePickerTitle}</h2>
                 <p>{imagePickerHint}</p>
               </div>
-              <button onClick={() => {
-                setImageAssetContextMenu(null);
-                setImagePickerSourceFilter("");
-                setImagePickerCategoryFilter("");
-                setImagePickerSearchQuery("");
-                setImageTarget(null);
-              }}>关闭</button>
             </div>
             {imagePickerUsesSeparateLibraryTabs && (
               <div className="image-picker-source-tabs" role="tablist" aria-label="资源类型">

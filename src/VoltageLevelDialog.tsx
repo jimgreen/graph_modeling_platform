@@ -1,7 +1,8 @@
 // @ts-nocheck
 import { useEffect, useRef, useState } from "react";
-import { X, Save, RotateCcw, Plus, Trash2 } from "lucide-react";
+import { Save, RotateCcw, Plus, Trash2 } from "lucide-react";
 import { BUILTIN_VOLTAGE_LEVELS, VoltageLevelConfig, VoltageLevelSettings, writeVoltageLevelSettings } from "./model";
+import { WindowCloseButton } from "./WindowCloseButton";
 
 type Props = {
   open: boolean;
@@ -92,12 +93,10 @@ export function VoltageLevelDialog({ open, onClose, settings, onSave }: Props) {
 
   return (
     <div className="image-picker-backdrop" onPointerDown={onClose}>
-      <section className="e-device-interface-dialog" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()} style={{ width: 500, display: "flex", flexDirection: "column", maxHeight: "80vh", fontSize: 12 }}>
-        <div className="image-picker-title" style={{ padding: "8px 12px" }}>
+      <section className="e-device-interface-dialog window-close-host" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()} style={{ width: 500, display: "flex", flexDirection: "column", maxHeight: "80vh", fontSize: 12 }}>
+        <WindowCloseButton label="关闭电压等级设置" onClick={onClose} />
+        <div className="image-picker-title" style={{ padding: "8px 58px 8px 12px" }}>
           <h2 style={{ fontSize: 14, margin: 0 }}>电压等级设置</h2>
-          <button type="button" aria-label="关闭" title="关闭" onClick={onClose} style={{ padding: 4 }}>
-            <X size={14} />
-          </button>
         </div>
         <div className="voltage-level-tabs" style={{ display: "flex", gap: 0, padding: "4px 12px", borderBottom: "1px solid #e2e8f0" }}>
           <button type="button" className={tab === "ac" ? "active" : ""} onClick={() => setTab("ac")} style={{ padding: "4px 12px", border: "none", borderBottom: tab === "ac" ? "2px solid #2563eb" : "2px solid transparent", background: "none", cursor: "pointer", fontSize: 12, fontWeight: tab === "ac" ? 600 : 400, color: tab === "ac" ? "#2563eb" : "#64748b" }}>交流</button>
