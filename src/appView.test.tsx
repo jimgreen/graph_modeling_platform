@@ -748,6 +748,14 @@ describe("app view device definition parameter rows", () => {
     expect(viewSource).toContain(': "保存新建元件"');
   });
 
+  test("shows the derived base class with a jump link in the device definition dialog", () => {
+    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("派生主类");
+    expect(source).toContain("selectedDefinitionDerivedBaseTemplate");
+    expect(source).toMatch(/derived-base-link[^\n]*loadDefinitionTemplateDraft/);
+  });
+
   test("removes the centered transform when device library dialogs become floating", () => {
     const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
     const floatingDialogRule = styles.match(

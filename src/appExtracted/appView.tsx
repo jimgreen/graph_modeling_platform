@@ -1239,6 +1239,13 @@ export function renderAppView(__appScope: Record<string, any>) {
   const selectedDefinitionDerivedInfo = selectedDefinitionTemplate
     ? templateDerivedComponentLibraryInfo(selectedDefinitionTemplate)
     : null;
+  // 派生类主类模板：用于摘要区展示"派生主类"并支持点击跳转
+  const selectedDefinitionDerivedBaseTemplate = selectedDefinitionDerivedInfo
+    ? (Object.values(filteredDeviceDefinitionByComponentLibrary as Record<string, any[]>) as any[])
+      .flatMap((groups) => groups)
+      .flatMap((typeGroup: any) => typeGroup.templates ?? [])
+      .find((template: any) => resolveTemplateComponentLibrary(template) === selectedDefinitionDerivedInfo.baseComponentLibrary)
+    : null;
   const definitionDraftRowsForDisplay = selectedDefinitionTemplate && selectedDefinitionDerivedInfo && typeof __appScope.createDefinitionDraftRows === "function"
     ? resolveDeviceDefinitionParameterRowsForDisplay(definitionDraftRows, __appScope.createDefinitionDraftRows(selectedDefinitionTemplate), {
         baseComponentLibrary: selectedDefinitionDerivedInfo.baseComponentLibrary,
@@ -4182,6 +4189,12 @@ export function renderAppView(__appScope: Record<string, any>) {
                         <span>来源</span>
                         <strong>{selectedDefinitionTemplate.custom ? "自定义" : "内置"}</strong>
                       </div>
+                      {selectedDefinitionDerivedInfo && (<div>
+                          <span>派生主类</span>
+                          {selectedDefinitionDerivedBaseTemplate ? (<button type="button" className="device-definition-summary-value derived-base-link" title={`跳转到主类 ${selectedDefinitionDerivedBaseTemplate.label ?? ""}`} onClick={() => loadDefinitionTemplateDraft(selectedDefinitionDerivedBaseTemplate)}>
+                              {selectedDefinitionDerivedInfo.baseComponentLibrary}
+                            </button>) : (<strong>{selectedDefinitionDerivedInfo.baseComponentLibrary}</strong>)}
+                        </div>)}
                       <div>
                         <span>端子数量</span>
                         <strong>{selectedDefinitionTemplate.terminalCount}</strong>

@@ -904,12 +904,12 @@ describe("electric generation device library classification", () => {
       "design_head",
       "design_flow",
       "rated_speed",
-      "generator_efficiency"
+      "generator_efficiency",
+      "dev_type"
     ]);
     expect(fieldNames).not.toEqual(expect.arrayContaining([
       "idx",
       "name",
-      "dev_type",
       "status",
       "run_stat",
       "source_type",

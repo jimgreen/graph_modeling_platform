@@ -668,7 +668,14 @@ export const isReservedDeviceDefinitionParamName = (enName: string) =>
 
 export function createDefinitionDraftRows(template: DeviceTemplate): DeviceDefinitionDraftRow[] {
   const derivedInfo = modelTemplateDerivedComponentLibraryInfo(template);
-  const editableDefinitions = resolveEffectiveTemplateParameterDefinitionGroups(template).derivedDefinitions;
+  const definitionGroups = resolveEffectiveTemplateParameterDefinitionGroups(template);
+  const editableDefinitions = [
+    ...definitionGroups.derivedDefinitions,
+    // dev_type 例外：派生类参数定义保留主类的设备类型字段
+    ...(derivedInfo && !definitionGroups.derivedDefinitions.some((definition) => definition.enName === "dev_type")
+      ? definitionGroups.baseDefinitions.filter((definition) => definition.enName === "dev_type")
+      : [])
+  ];
   const exportContextParams = derivedInfo
     ? { ...template.params, component_type: derivedInfo.derivedComponentLibrary }
     : template.params;
@@ -727,6 +734,10 @@ const DERIVED_COMPONENT_BASE_PARAM_NAMES = new Set([
 
 export function isDerivedComponentBaseParamName(fieldName: unknown, baseComponentLibrary = "") {
   const enName = String(fieldName ?? "").trim();
+  // dev_type 例外：派生类参数定义中保留设备类型字段
+  if (enName === "dev_type") {
+    return false;
+  }
   if (!enName || enName === "component_type" || isReservedDeviceDefinitionParamName(enName)) {
     return true;
   }
