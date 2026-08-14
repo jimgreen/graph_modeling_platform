@@ -56,7 +56,16 @@ export function showGlobalConfirm(text: string): Promise<boolean> {
     const overlay = document.createElement("div");
     overlay.className = "global-confirm-overlay";
     const dialog = document.createElement("div");
-    dialog.className = "global-confirm-dialog";
+    dialog.className = "global-confirm-dialog window-close-host";
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.setAttribute("aria-label", "确认操作");
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "window-close-button";
+    closeBtn.setAttribute("aria-label", "关闭确认窗口");
+    closeBtn.title = "关闭";
+    closeBtn.textContent = "×";
     // 支持 \n 换行
     const msgEl = document.createElement("div");
     msgEl.className = "global-confirm-message";
@@ -71,6 +80,7 @@ export function showGlobalConfirm(text: string): Promise<boolean> {
     okBtn.textContent = "确定";
     btnRow.appendChild(cancelBtn);
     btnRow.appendChild(okBtn);
+    dialog.appendChild(closeBtn);
     dialog.appendChild(msgEl);
     dialog.appendChild(btnRow);
     overlay.appendChild(dialog);
@@ -78,17 +88,22 @@ export function showGlobalConfirm(text: string): Promise<boolean> {
     // 触发进入动画
     requestAnimationFrame(() => overlay.classList.add("global-confirm-enter"));
 
+    let settled = false;
+    let onKey: ((event: KeyboardEvent) => void) | null = null;
     const close = (result: boolean) => {
+      if (settled) return;
+      settled = true;
+      if (onKey) document.removeEventListener("keydown", onKey);
       overlay.classList.add("global-confirm-leave");
       setTimeout(() => overlay.remove(), 200);
       resolve(result);
     };
+    closeBtn.addEventListener("click", () => close(false));
     cancelBtn.addEventListener("click", () => close(false));
     okBtn.addEventListener("click", () => close(true));
     // ESC 关闭 = 取消
-    const onKey = (e: KeyboardEvent) => {
+    onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        document.removeEventListener("keydown", onKey);
         close(false);
       }
     };

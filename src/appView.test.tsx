@@ -474,7 +474,7 @@ describe("app view device definition parameter rows", () => {
     expect(exportActions).toContain("导出 E、JSON 和 SVG");
     expect(source).not.toContain("exportPointerDownAtRef");
     expect(source).toContain("void doExport()");
-    expect(source).toContain('className="unsaved-change-dialog export-completion-dialog"');
+    expect(source).toContain('className="unsaved-change-dialog export-completion-dialog window-close-host"');
     expect(source).toContain('aria-labelledby="export-completion-title"');
     expect(source).toContain("setExportCompletionDialog(null)");
     expect(source).toContain("确定（{exportCompletionCountdown} 秒）");

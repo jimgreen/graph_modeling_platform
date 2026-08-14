@@ -170,6 +170,7 @@ export function createRenderProjectPanel(__appScope) {
     openBlankProjectLibraryContextMenu,
     projectSearchQuery, setProjectSearchQuery,
     projectListPointerInsideRef,
+    backendSchemesLoadedRef,
     schemes, filteredProjectSchemes, renderProjectSchemeNode
   } = __appScope;
   return () => (
@@ -201,7 +202,9 @@ export function createRenderProjectPanel(__appScope) {
         onContextMenu={openBlankProjectLibraryContextMenu}
       >
         {schemes.length === 0 ? (
-          <p className="project-empty">暂无方案</p>
+          <p className="project-empty">
+            {backendSchemesLoadedRef.current ? "暂无方案" : "正在连接模型库，恢复后将自动加载..."}
+          </p>
         ) : filteredProjectSchemes.length === 0 ? (
           <p className="project-empty project-search-empty">未找到匹配方案或模型</p>
         ) : (

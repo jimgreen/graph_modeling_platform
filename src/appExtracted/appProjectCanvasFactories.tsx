@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { clampNumber } from "../canvasViewport";
 import { DEFAULT_MEASUREMENT_CONFIG } from "../measurements";
+import { WindowCloseButton } from "../WindowCloseButton";
 import { buildEFileExportOptionsFromLibrary, setSkipSaveCheck } from "./appDeviceDefinitionFactories";
 import { moveSelectedTableRows, nextTableRowSelection } from "../definitionTableSelection";
 
@@ -4005,7 +4006,7 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
       <div className="image-picker-backdrop measurement-config-backdrop" onPointerDown={closeMeasurementConfigDialog}>
         <section
           ref={measurementConfigDialogRef}
-          className={`measurement-config-dialog${deviceLibraryDialogLayouts.measurementConfig ? " floating" : ""}`}
+          className={`measurement-config-dialog window-close-host${deviceLibraryDialogLayouts.measurementConfig ? " floating" : ""}`}
           style={deviceLibraryDialogStyle("measurementConfig")}
           onPointerDown={stopDeviceLibraryDialogEvent}
           onPointerUp={stopDeviceLibraryDialogEvent}
@@ -4015,6 +4016,7 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
           aria-modal="true"
           aria-labelledby="measurement-config-title"
         >
+          <WindowCloseButton label="关闭动态量测配置" onClick={closeMeasurementConfigDialog} />
           <header>
             <div className="device-library-dialog-title" onPointerDown={(event) => startDeviceLibraryDialogDrag("measurementConfig", event)}>
               <h2 id="measurement-config-title">动态量测配置</h2>
@@ -4208,7 +4210,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
       <div className="image-picker-backdrop measurement-editor-backdrop" onPointerDown={() => setMeasurementEditorDialog(null)}>
         <section
           ref={measurementEditorDialogRef}
-          className={`measurement-editor-dialog${deviceLibraryDialogLayouts.measurementEditor ? " floating" : ""}`}
+          className={`measurement-editor-dialog window-close-host${deviceLibraryDialogLayouts.measurementEditor ? " floating" : ""}`}
           style={deviceLibraryDialogStyle("measurementEditor")}
           onPointerDown={stopDeviceLibraryDialogEvent}
           onPointerUp={stopDeviceLibraryDialogEvent}
@@ -4219,12 +4221,12 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
           aria-modal="true"
           aria-labelledby="measurement-editor-title"
         >
+          <WindowCloseButton label="关闭量测显示定义" onClick={() => setMeasurementEditorDialog(null)} />
           <header>
             <div className="measurement-editor-dialog-title" onPointerDown={(event) => startDeviceLibraryDialogDrag("measurementEditor", event)}>
               <h2 id="measurement-editor-title">修改量测显示定义</h2>
               <p>{node.name}：共 {measurementEditorRows.length} 项量测，可在同一窗口中修改显示状态、布局、样式、量测名称、位置和测点。</p>
             </div>
-            <button type="button" onClick={() => setMeasurementEditorDialog(null)}>关闭</button>
           </header>
           <div className="measurement-editor-summary">
             <label>

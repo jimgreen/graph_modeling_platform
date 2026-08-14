@@ -1,7 +1,8 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
-import { X, Edit, Eye, ArrowUpRight } from "lucide-react";
+import { Edit, Eye, ArrowUpRight } from "lucide-react";
 import { PARAM_LABELS } from "./appExtracted/appCoreCanvasUtilities";
 import { formatEDeviceRecordColumnValue, E_REFERENCE_FIELD_TABLE_IDS, keyToLong } from "./model-eexport";
+import { WindowCloseButton } from "./WindowCloseButton";
 
 export type EDeviceRecord = {
   id: string;
@@ -294,10 +295,11 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
   return (
     <div className="image-picker-backdrop" onPointerDown={onClose}>
       <section
-        className="e-file-editor-dialog"
+        className="e-file-editor-dialog window-close-host"
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
       >
+        <WindowCloseButton label="关闭E文件编辑窗口" onClick={onClose} />
         <div className="image-picker-title">
           <div>
             <h2>E文件查看与编辑</h2>
@@ -322,9 +324,6 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
               <span>编辑</span>
             </button>
           </div>
-          <button type="button" onClick={onClose} title="关闭">
-            <X size={16} />
-          </button>
         </div>
         {copiedCell !== null && (
           <div className="e-file-editor-copied-toast">已复制到剪切板</div>

@@ -2610,12 +2610,40 @@ export function createAppHookCallback76(__appScope: Record<string, any>) {
 export function createAppHookCallback77(__appScope: Record<string, any>) {
   return () => {
   const { activeSchemeKey, backendSchemesLoadTokenRef, backendSchemesLoadedRef, clearActiveProjectDisplay, fetchBackendSchemes, findSavedProjectByActivePointer, flattenSavedSchemes, latestActiveProjectPointerRef, loadSavedProjectRecord, rememberPersistedSchemesPayload, saveRequiredRef, serializeSchemesForStorage, setExpandedSchemeIds, setSchemesState, suppressNextBackendSchemeSyncRef } = __appScope;
-    const loadToken = ++backendSchemesLoadTokenRef.current;
-    fetchBackendSchemes()
+    let disposed = false;
+    let retryAttempt = 0;
+    let retryTimeoutId: number | null = null;
+
+    const clearRetry = () => {
+      if (retryTimeoutId === null) {
+        return;
+      }
+      window.clearTimeout(retryTimeoutId);
+      retryTimeoutId = null;
+    };
+    const scheduleRetry = () => {
+      if (disposed || retryTimeoutId !== null) {
+        return;
+      }
+      const retryDelay = Math.min(1000 * 2 ** retryAttempt, 10000);
+      retryAttempt += 1;
+      retryTimeoutId = window.setTimeout(() => {
+        retryTimeoutId = null;
+        loadSchemes();
+      }, retryDelay);
+    };
+    const loadSchemes = () => {
+      if (disposed) {
+        return;
+      }
+      const loadToken = ++backendSchemesLoadTokenRef.current;
+      void fetchBackendSchemes()
       .then((backendSchemes) => {
-        if (loadToken !== backendSchemesLoadTokenRef.current) {
+        if (disposed || loadToken !== backendSchemesLoadTokenRef.current) {
           return;
         }
+        clearRetry();
+        retryAttempt = 0;
         backendSchemesLoadedRef.current = true;
         if (backendSchemes.length > 0) {
           const backendPayload = serializeSchemesForStorage(backendSchemes);
@@ -2653,13 +2681,30 @@ export function createAppHookCallback77(__appScope: Record<string, any>) {
         }
       })
       .catch(() => {
-        if (loadToken !== backendSchemesLoadTokenRef.current) {
+        if (disposed || loadToken !== backendSchemesLoadTokenRef.current) {
           return;
         }
         backendSchemesLoadedRef.current = false;
-        // 后台不可用时继续使用浏览器本地保存。
+        setSchemesState((current) => current.length === 0 ? [] : current);
+        // 保留当前模型树，后台恢复后自动重新加载。
+        scheduleRetry();
       });
-    // 仅在启动时从后台拉取一次，避免后台数据刷新打断当前画布。
+    };
+    const handleOnline = () => {
+      clearRetry();
+      retryAttempt = 0;
+      loadSchemes();
+    };
+
+    window.addEventListener("online", handleOnline);
+    loadSchemes();
+    return () => {
+      disposed = true;
+      backendSchemesLoadTokenRef.current += 1;
+      clearRetry();
+      window.removeEventListener("online", handleOnline);
+    };
+    // 启动失败时持续重试，避免后端启动稍晚导致当前标签页永久显示空模型库。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   };
 }

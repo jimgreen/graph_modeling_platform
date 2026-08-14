@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { createElement, isValidElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { apiPath } from "./config";
 import {
   CustomComponentManagerTree,
@@ -27,6 +27,7 @@ import {
   enumEditorOptionsForRow,
   enumEditorValidationMessage,
   enumValuesSummaryText,
+  fetchBackendSchemes,
   renderEnumValuesEditor
 } from "./appExtracted/appPersistenceLibraryExport";
 import { applyDeviceTemplateDefinitionOverride, DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY } from "./model";
@@ -57,6 +58,30 @@ const sampleGraphTemplate = (id: string, typeName: string, name: string) => ({
   },
   createdAt: "2026-06-20T00:00:00.000Z",
   updatedAt: "2026-06-20T00:00:00.000Z"
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("model library backend response", () => {
+  test("accepts an explicitly empty schemes array", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ schemes: [] }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    })));
+
+    await expect(fetchBackendSchemes()).resolves.toEqual([]);
+  });
+
+  test("rejects a malformed success response instead of treating it as an empty library", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    })));
+
+    await expect(fetchBackendSchemes()).rejects.toThrow("后台方案/模型响应格式无效，已保留当前模型库。");
+  });
 });
 
 describe("graph template library filtering", () => {
