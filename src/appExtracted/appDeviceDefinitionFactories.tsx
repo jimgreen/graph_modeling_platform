@@ -16,6 +16,13 @@ import { buildMeasurementProfilePositionDefinitions, materializeNewMeasurementDe
 import { measurementProfileItemsComplianceMessage } from "./appGraphMeasurementFactories";
 import { cloneDeviceMeasurementDefinitions, normalizeDeviceMeasurementDefinitions } from "../measurementDefinitionTypes";
 import {
+  COMPONENT_LIBRARY_MAX_TERMINALS,
+  componentLibraryDefinitionFromMetadata,
+  defaultTerminalAssociationForClassTerminal,
+  defaultTerminalTypeForCategoryLibrary,
+  resolveComponentLibraryClassMetadata
+} from "../componentLibraryMetadata";
+import {
   deviceDefinitionSharedKeyForTemplate,
   deviceTemplatesShareParameterDefinitions,
   migrateSharedDeviceDefinitionOverrideForTemplateChange,
@@ -6175,7 +6182,7 @@ export function createSelectCustomCategoryLibrary(__appScope: Record<string, any
     cancelPendingCustomComponentTemplateLoad();
     const group = normalizeCategoryLibraryName(categoryLibraryName);
     const section = defaultComponentLibraryForCategoryLibrary(group);
-    const libraryDraftPatch = customDeviceDraftPatchForComponentLibrarySelection(__appScope, section);
+    const libraryDraftPatch = customDeviceDraftPatchForComponentLibrarySelection(__appScope, section, group);
     if (options.expand !== false) {
       ensureCustomComponentTreeExpanded(group);
     }
@@ -6189,35 +6196,89 @@ export function createSelectCustomCategoryLibrary(__appScope: Record<string, any
       componentName: "",
       componentKind: "",
       ...libraryDraftPatch,
-      isDerivedComponentLibrary: false,
-      derivedFromComponentLibrary: "",
-      derivedComponentLibrary: "",
-      derivedComponentLibraryLabel: "",
       error: ""
     }));
   };
 }
 
-function customDeviceDraftPatchForComponentLibrarySelection(__appScope: Record<string, any>, sectionName: string) {
+function componentLibraryMetadataDraftPatch(
+  __appScope: Record<string, any>,
+  className: string,
+  categoryLibraryName = ""
+) {
+  const {
+    customComponentLibraries = [],
+    libraryTemplates = [],
+    normalizeCategoryLibraryName = (value: unknown) => String(value ?? "").trim(),
+    normalizeComponentLibraryName = (value: unknown) => String(value ?? "").trim()
+  } = __appScope;
+  const metadata = resolveComponentLibraryClassMetadata(
+    normalizeComponentLibraryName(className),
+    normalizeCategoryLibraryName(categoryLibraryName),
+    customComponentLibraries,
+    libraryTemplates
+  );
+  if (!metadata) return null;
+  const terminalTypes = Array.from(
+    { length: COMPONENT_LIBRARY_MAX_TERMINALS },
+    (_, index) => metadata.terminalTypes[index] ?? defaultTerminalTypeForCategoryLibrary(metadata.categoryLibraryName)
+  );
+  const terminalLabels = Array.from(
+    { length: COMPONENT_LIBRARY_MAX_TERMINALS },
+    (_, index) => metadata.terminalLabels[index] ?? ""
+  );
+  const terminalRoles = Array.from(
+    { length: COMPONENT_LIBRARY_MAX_TERMINALS },
+    (_, index) => metadata.terminalRoles[index] ?? "single-load"
+  );
+  const terminalAssociations = Array.from(
+    { length: COMPONENT_LIBRARY_MAX_TERMINALS },
+    (_, index) => metadata.terminalAssociations[index] ?? defaultTerminalAssociationForClassTerminal(terminalTypes[index])
+  );
+  return {
+    categoryLibraryName: metadata.categoryLibraryName,
+    componentLibrary: metadata.baseComponentLibrary,
+    isDerivedComponentLibrary: metadata.isDerivedComponentLibrary,
+    derivedFromComponentLibrary: metadata.isDerivedComponentLibrary ? metadata.baseComponentLibrary : "",
+    derivedComponentLibrary: metadata.isDerivedComponentLibrary ? metadata.className : "",
+    derivedComponentLibraryLabel: metadata.isDerivedComponentLibrary ? metadata.label : "",
+    terminalCount: metadata.terminalCount,
+    terminalTypes,
+    terminalLabels,
+    terminalRoles,
+    terminalAssociations,
+    isContainer: metadata.isContainer
+  };
+}
+
+function customDeviceDraftPatchForComponentLibrarySelection(
+  __appScope: Record<string, any>,
+  className: string,
+  categoryLibraryName = ""
+) {
   const {
     createCustomDeviceDraftFromTemplate,
     libraryTemplates = [],
     normalizeComponentLibraryName = (value: unknown) => String(value ?? "").trim(),
     resolveTemplateComponentLibrary
   } = __appScope;
-  const section = normalizeComponentLibraryName(sectionName);
+  const section = normalizeComponentLibraryName(className);
+  const classMetadataPatch = componentLibraryMetadataDraftPatch(__appScope, section, categoryLibraryName);
   const matchingTemplates = (libraryTemplates ?? []).filter((template: any) =>
-    normalizeComponentLibraryName(
-      typeof resolveTemplateComponentLibrary === "function"
-        ? resolveTemplateComponentLibrary(template)
-        : inferESection(template.kind, template.params ?? {})
-    ) === section
+    classMetadataPatch?.isDerivedComponentLibrary
+      ? normalizeComponentLibraryName(templateDerivedComponentLibraryInfo(template)?.derivedComponentLibrary) === section
+      : !templateDerivedComponentLibraryInfo(template) && normalizeComponentLibraryName(
+          typeof resolveTemplateComponentLibrary === "function"
+            ? resolveTemplateComponentLibrary(template)
+            : inferESection(template.kind, template.params ?? {})
+        ) === normalizeComponentLibraryName(classMetadataPatch?.componentLibrary || section)
   );
   const representativeTemplate =
     matchingTemplates.find((template: any) => !templateDerivedComponentLibraryInfo(template)) ??
     matchingTemplates[0];
   if (!representativeTemplate || typeof createCustomDeviceDraftFromTemplate !== "function") {
     return {
+      ...(classMetadataPatch ?? {}),
       params: [],
       measurementDefinitions: [],
       stateDefinitions: []
@@ -6225,15 +6286,9 @@ function customDeviceDraftPatchForComponentLibrarySelection(__appScope: Record<s
   }
   const representativeDraft = createCustomDeviceDraftFromTemplate(representativeTemplate, section);
   return {
+    ...classMetadataPatch,
     size: representativeDraft.size,
-    allowResizeTransform: representativeDraft.allowResizeTransform,
-    terminalCount: representativeDraft.terminalCount,
-    terminalTypes: representativeDraft.terminalTypes,
-    terminalLabels: representativeDraft.terminalLabels,
     terminalAnchors: representativeDraft.terminalAnchors,
-    terminalRoles: representativeDraft.terminalRoles,
-    terminalAssociations: representativeDraft.terminalAssociations,
-    isContainer: representativeDraft.isContainer,
     params: representativeDraft.params ?? [],
     measurementDefinitions: cloneDeviceMeasurementDefinitions(representativeDraft.measurementDefinitions) ?? [],
     stateDefinitions: []
@@ -6246,7 +6301,7 @@ export function createSelectCustomComponentLibrary(__appScope: Record<string, an
     cancelPendingCustomComponentTemplateLoad();
     const group = normalizeCategoryLibraryName(categoryLibraryName);
     const section = normalizeComponentLibraryName(sectionName);
-    const libraryDraftPatch = customDeviceDraftPatchForComponentLibrarySelection(__appScope, section);
+    const libraryDraftPatch = customDeviceDraftPatchForComponentLibrarySelection(__appScope, section, group);
     if (options.expand !== false) {
       ensureCustomComponentTreeExpanded(group, section);
     }
@@ -6261,10 +6316,6 @@ export function createSelectCustomComponentLibrary(__appScope: Record<string, an
       componentName: "",
       componentKind: "",
       ...libraryDraftPatch,
-      isDerivedComponentLibrary: false,
-      derivedFromComponentLibrary: "",
-      derivedComponentLibrary: "",
-      derivedComponentLibraryLabel: "",
       error: ""
     }));
   };
@@ -6285,7 +6336,18 @@ export function createSelectCustomComponentTemplate(__appScope: Record<string, a
       window.cancelAnimationFrame(customComponentSelectionFrameRef.current);
       customComponentSelectionFrameRef.current = null;
     }
-    const nextDraft = createCustomDeviceDraftFromTemplate(template, section);
+    const templateClassName = normalizeComponentLibraryName(
+      templateDerivedComponentLibraryInfo(template)?.derivedComponentLibrary || section
+    );
+    const classMetadataPatch = componentLibraryMetadataDraftPatch(
+      __appScope,
+      templateClassName,
+      categoryLibraryName
+    );
+    const templateDraft = createCustomDeviceDraftFromTemplate(template, section);
+    const nextDraft = classMetadataPatch
+      ? { ...templateDraft, ...classMetadataPatch, terminalAnchors: templateDraft.terminalAnchors }
+      : templateDraft;
     const nextStateDefinitions = template.custom || typeof __appScope.createDefinitionStateDraftRows !== "function"
       ? nextDraft.stateDefinitions
       : createDefinitionStateDraftRowsWithDefaultImages(__appScope, template);
@@ -6307,7 +6369,7 @@ export function createSelectCustomComponentTemplate(__appScope: Record<string, a
 
 export function createStartCustomComponentCreate(__appScope: Record<string, any>) {
   return () => {
-  const { customComponentTreeSelection, defaultComponentLibraryForCategoryLibrary, nextCustomTemplateKind, normalizeCategoryLibraryName, normalizeComponentLibraryName = (value: unknown) => String(value ?? "").trim(), requireEditMode, setCustomLibraryCreateDialog } = __appScope;
+  const { customComponentTreeSelection, defaultComponentLibraryForCategoryLibrary, libraryTemplateByKind, nextCustomTemplateKind, normalizeCategoryLibraryName, normalizeComponentLibraryName = (value: unknown) => String(value ?? "").trim(), requireEditMode, setCustomLibraryCreateDialog } = __appScope;
     if (!requireEditMode("新建元件")) {
       return;
     }
@@ -6317,17 +6379,30 @@ export function createStartCustomComponentCreate(__appScope: Record<string, any>
         ? customComponentTreeSelection.section
         : defaultComponentLibraryForCategoryLibrary(categoryLibraryName);
     const baseComponentLibrary = normalizeComponentLibraryName(section);
+    const selectedTemplate = customComponentTreeSelection.kind === "component"
+      ? libraryTemplateByKind?.get(customComponentTreeSelection.templateKind)
+      : undefined;
+    const selectedClassName = normalizeComponentLibraryName(
+      (selectedTemplate ? templateDerivedComponentLibraryInfo(selectedTemplate)?.derivedComponentLibrary : "") || baseComponentLibrary
+    );
+    const classMetadataPatch = componentLibraryMetadataDraftPatch(
+      __appScope,
+      selectedClassName,
+      categoryLibraryName
+    );
     setCustomLibraryCreateDialog({
       kind: "component",
       title: "新建元件",
       cnName: "",
-      enName: nextCustomTemplateKind(baseComponentLibrary),
+      enName: nextCustomTemplateKind(selectedClassName || baseComponentLibrary),
       categoryLibraryName,
-      componentLibrary: baseComponentLibrary,
-      isDerivedComponentLibrary: false,
-      derivedFromComponentLibrary: baseComponentLibrary,
-      derivedComponentLibrary: "",
-      derivedComponentLibraryLabel: "",
+      componentClassName: selectedClassName,
+      componentLibrary: classMetadataPatch?.componentLibrary || baseComponentLibrary,
+      allowResizeTransform: "0",
+      isDerivedComponentLibrary: Boolean(classMetadataPatch?.isDerivedComponentLibrary),
+      derivedFromComponentLibrary: classMetadataPatch?.derivedFromComponentLibrary || "",
+      derivedComponentLibrary: classMetadataPatch?.derivedComponentLibrary || "",
+      derivedComponentLibraryLabel: classMetadataPatch?.derivedComponentLibraryLabel || "",
       error: ""
     });
   };
@@ -6337,7 +6412,7 @@ const CUSTOM_DEVICE_KIND_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_-]*$/;
 
 export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string, any>) {
   return () => {
-  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, categoryLibraries, componentLibraryOptions, createEmptyCustomDeviceDraft, customDeviceDraft, customDeviceTemplates, customLibraryCreateDialog, defaultComponentLibraryForCategoryLibrary, isValidComponentLibraryName, libraryTemplates, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeCustomCategoryLibraries, normalizeCustomComponentLibraries, requireEditMode, setCustomCategoryLibraries, setCustomComponentLibraries, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode, setCustomDeviceDialogView, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceStatePageId, setCustomLibraryCreateDialog, setEditingCustomDeviceKind, setExpandedCategoryLibraries, setSelectedDefinitionKind } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, categoryLibraries, componentLibraryOptions, createEmptyCustomDeviceDraft, customComponentLibraries = [], customDeviceDraft, customDeviceTemplates, customLibraryCreateDialog, defaultComponentLibraryForCategoryLibrary, isValidComponentLibraryName, libraryTemplates, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeCustomCategoryLibraries, normalizeCustomComponentLibraries, requireEditMode, setCustomCategoryLibraries, setCustomComponentLibraries, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode, setCustomDeviceDialogView, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceStatePageId, setCustomLibraryCreateDialog, setEditingCustomDeviceKind, setExpandedCategoryLibraries, setSelectedDefinitionKind } = __appScope;
     const dialog = customLibraryCreateDialog;
     if (!dialog) {
       return false;
@@ -6398,24 +6473,89 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
       if (!isValidComponentLibraryName(englishName)) {
         return setDialogError("英文名称只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。");
       }
-      const existingTypes = new Set(componentLibraryOptions.map((item: string) => item.toLowerCase()));
+      const existingTypes = new Set([
+        ...componentLibraryOptions,
+        ...customComponentLibraries.map((item: any) => item.name),
+        ...(libraryTemplates ?? []).map((template: DeviceTemplate) => templateDerivedComponentLibraryInfo(template)?.derivedComponentLibrary ?? "")
+      ].map((item: string) => item.toLowerCase()).filter(Boolean));
       if (existingTypes.has(englishName.toLowerCase())) {
         return setDialogError("元件库已存在，无法新增同名元件库。");
       }
-      setCustomComponentLibraries((current: any[]) => normalizeCustomComponentLibraries([...current, {
-        name: englishName,
+      const derivedRequested = Boolean(dialog.isDerivedComponentLibrary);
+      const derivedFromComponentLibrary = normalizeComponentLibraryName(dialog.derivedFromComponentLibrary ?? "");
+      if (derivedRequested && !derivedFromComponentLibrary) {
+        return setDialogError("请选择派生基类。");
+      }
+      if (derivedRequested && englishName.toLowerCase() === derivedFromComponentLibrary.toLowerCase()) {
+        return setDialogError("派生类英文名称不能与基类元件库相同。");
+      }
+      const inheritedMetadata = derivedRequested
+        ? resolveComponentLibraryClassMetadata(
+            derivedFromComponentLibrary,
+            categoryLibraryName,
+            customComponentLibraries,
+            libraryTemplates
+          )
+        : null;
+      if (derivedRequested && !inheritedMetadata) {
+        return setDialogError("派生基类的元数据不存在，无法继承端子定义。");
+      }
+      const terminalCount = inheritedMetadata?.terminalCount ?? Number(dialog.terminalCount);
+      if (!Number.isInteger(terminalCount) || terminalCount < 0 || terminalCount > COMPONENT_LIBRARY_MAX_TERMINALS) {
+        return setDialogError(`端子数量必须是 0-${COMPONENT_LIBRARY_MAX_TERMINALS} 之间的整数。`);
+      }
+      const fallbackTerminalType = defaultTerminalTypeForCategoryLibrary(categoryLibraryName);
+      const terminalTypes = Array.from(
+        { length: terminalCount },
+        (_, index) => inheritedMetadata?.terminalTypes[index] ?? dialog.terminalTypes?.[index] ?? fallbackTerminalType
+      );
+      const terminalLabels = Array.from(
+        { length: terminalCount },
+        (_, index) => String(inheritedMetadata?.terminalLabels[index] ?? dialog.terminalLabels?.[index] ?? "").trim()
+      );
+      const terminalRoles = Array.from(
+        { length: terminalCount },
+        (_, index) => inheritedMetadata?.terminalRoles[index] ?? dialog.terminalRoles?.[index] ?? "single-load"
+      );
+      const terminalAssociations = Array.from(
+        { length: terminalCount },
+        (_, index) => inheritedMetadata?.terminalAssociations[index] ?? dialog.terminalAssociations?.[index] ?? defaultTerminalAssociationForClassTerminal(terminalTypes[index])
+      );
+      const metadata = {
+        className: englishName,
         categoryLibraryName,
-        label: chineseName
-      }]));
-      setCustomComponentTreeSelection({ kind: "componentLibrary", categoryLibraryName, section: englishName });
+        label: chineseName,
+        isDerivedComponentLibrary: derivedRequested,
+        baseComponentLibrary: derivedRequested ? derivedFromComponentLibrary : englishName,
+        terminalCount,
+        terminalTypes,
+        terminalLabels,
+        terminalRoles,
+        terminalAssociations,
+        isContainer: inheritedMetadata?.isContainer ?? Boolean(dialog.isContainer)
+      };
+      const definition = componentLibraryDefinitionFromMetadata(metadata);
+      setCustomComponentLibraries((current: any[]) => normalizeCustomComponentLibraries(
+        [...current, definition],
+        undefined,
+        libraryTemplates
+      ));
+      const section = metadata.className;
+      setCustomComponentTreeSelection({ kind: "componentLibrary", categoryLibraryName, section });
       setCustomDeviceDraft((current: any) => ({
         ...current,
         categoryLibraryName,
-        componentLibrary: englishName,
-        isDerivedComponentLibrary: false,
-        derivedFromComponentLibrary: "",
-        derivedComponentLibrary: "",
-        derivedComponentLibraryLabel: "",
+        componentLibrary: metadata.baseComponentLibrary,
+        isDerivedComponentLibrary: metadata.isDerivedComponentLibrary,
+        derivedFromComponentLibrary: metadata.isDerivedComponentLibrary ? metadata.baseComponentLibrary : "",
+        derivedComponentLibrary: metadata.isDerivedComponentLibrary ? metadata.className : "",
+        derivedComponentLibraryLabel: metadata.isDerivedComponentLibrary ? metadata.label : "",
+        terminalCount: metadata.terminalCount,
+        terminalTypes: Array.from({ length: COMPONENT_LIBRARY_MAX_TERMINALS }, (_, index) => metadata.terminalTypes[index] ?? fallbackTerminalType),
+        terminalLabels: Array.from({ length: COMPONENT_LIBRARY_MAX_TERMINALS }, (_, index) => metadata.terminalLabels[index] ?? ""),
+        terminalRoles: Array.from({ length: COMPONENT_LIBRARY_MAX_TERMINALS }, (_, index) => metadata.terminalRoles[index] ?? "single-load"),
+        terminalAssociations: Array.from({ length: COMPONENT_LIBRARY_MAX_TERMINALS }, (_, index) => metadata.terminalAssociations[index] ?? defaultTerminalAssociationForClassTerminal(metadata.terminalTypes[index] ?? fallbackTerminalType)),
+        isContainer: metadata.isContainer,
         error: ""
       }));
       setCustomLibraryCreateDialog(null);
@@ -6423,31 +6563,23 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
     }
 
     const categoryLibraryName = normalizeCategoryLibraryName(dialog.categoryLibraryName || customDeviceDraft.categoryLibraryName);
-    const derivedRequested = Boolean(dialog.isDerivedComponentLibrary);
-    const section = normalizeComponentLibraryName(
-      (derivedRequested ? dialog.derivedFromComponentLibrary : "") ||
-      dialog.componentLibrary ||
-      customDeviceDraft.componentLibrary ||
-      defaultComponentLibraryForCategoryLibrary(categoryLibraryName)
+    const selectedClassName = normalizeComponentLibraryName(
+      dialog.componentClassName || dialog.componentLibrary || defaultComponentLibraryForCategoryLibrary(categoryLibraryName)
     );
+    const libraryDraftPatch = customDeviceDraftPatchForComponentLibrarySelection(
+      __appScope,
+      selectedClassName,
+      categoryLibraryName
+    );
+    if (!libraryDraftPatch?.componentLibrary) {
+      return setDialogError("请选择已有元件类。");
+    }
+    const section = normalizeComponentLibraryName(libraryDraftPatch.componentLibrary);
     if (!section) {
       return setDialogError("请选择元件库。");
     }
     if (!CUSTOM_DEVICE_KIND_NAME_PATTERN.test(englishName)) {
       return setDialogError("元件英文名称只能包含英文字母、数字、下划线和短横线，并且必须以英文字母开头。");
-    }
-    const derivedComponentLibrary = normalizeComponentLibraryName(dialog.derivedComponentLibrary ?? "");
-    const derivedComponentLibraryLabel = String(dialog.derivedComponentLibraryLabel ?? "").trim();
-    if (derivedRequested) {
-      if (!derivedComponentLibrary) {
-        return setDialogError("请输入或选择派生类英文名称。");
-      }
-      if (!isValidComponentLibraryName(derivedComponentLibrary)) {
-        return setDialogError("派生类英文名称只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。");
-      }
-      if (derivedComponentLibrary.toLowerCase() === section.toLowerCase()) {
-        return setDialogError("派生类英文名称不能与基类元件库相同。");
-      }
     }
     const existingKinds = new Set([...(libraryTemplates ?? []), ...(customDeviceTemplates ?? [])].map((template: any) => String(template.kind ?? "").toLowerCase()));
     if (existingKinds.has(englishName.toLowerCase())) {
@@ -6457,20 +6589,16 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
     setCustomDeviceDefinitionMode("create");
     setEditingCustomDeviceKind("");
     setSelectedDefinitionKind("");
-    setCustomComponentTreeSelection({ kind: "componentLibrary", categoryLibraryName, section });
+    setCustomComponentTreeSelection({ kind: "componentLibrary", categoryLibraryName, section: selectedClassName });
     setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
     setCustomDeviceSaveMessage("");
     const emptyDraft = createEmptyCustomDeviceDraft(categoryLibraryName);
     const nextDraft = {
       ...emptyDraft,
-      componentLibrary: section,
+      ...libraryDraftPatch,
       componentName: chineseName,
       componentKind: englishName,
-      isDerivedComponentLibrary: derivedRequested,
-      derivedFromComponentLibrary: derivedRequested ? section : "",
-      derivedComponentLibrary: derivedRequested ? derivedComponentLibrary : "",
-      derivedComponentLibraryLabel: derivedRequested ? derivedComponentLibraryLabel : "",
-      isContainer: emptyDraft.isContainer,
+      allowResizeTransform: String(dialog.allowResizeTransform ?? "0") === "1" ? "1" : "0",
       error: ""
     };
     setCustomDeviceDialogView("icon");
@@ -6618,6 +6746,7 @@ export function createCreateCustomComponentLibrary(__appScope: Record<string, an
       return;
     }
     const categoryLibraryName = normalizeCategoryLibraryName(customDeviceDraft.categoryLibraryName);
+    const terminalType = defaultTerminalTypeForCategoryLibrary(categoryLibraryName);
     setCustomLibraryCreateDialog({
       kind: "componentLibrary",
       title: "新建元件库",
@@ -6625,6 +6754,17 @@ export function createCreateCustomComponentLibrary(__appScope: Record<string, an
       enName: nextCustomComponentLibraryName(),
       categoryLibraryName,
       componentLibrary: "",
+      isDerivedComponentLibrary: false,
+      derivedFromComponentLibrary: "",
+      isContainer: false,
+      terminalCount: 2,
+      terminalTypes: Array.from({ length: COMPONENT_LIBRARY_MAX_TERMINALS }, () => terminalType),
+      terminalLabels: Array.from({ length: COMPONENT_LIBRARY_MAX_TERMINALS }, () => ""),
+      terminalRoles: Array.from({ length: COMPONENT_LIBRARY_MAX_TERMINALS }, () => "single-load"),
+      terminalAssociations: Array.from(
+        { length: COMPONENT_LIBRARY_MAX_TERMINALS },
+        () => defaultTerminalAssociationForClassTerminal(terminalType)
+      ),
       error: ""
     });
   };
@@ -6632,7 +6772,7 @@ export function createCreateCustomComponentLibrary(__appScope: Record<string, an
 
 export function createDeleteCustomComponentLibrary(__appScope: Record<string, any>) {
   return async (targetSection?: string) => {
-  const { E_SECTION_OPTIONS, customComponentTreeSelection, customDeviceDraft, defaultComponentLibraryForCategoryLibrary, libraryTemplates, normalizeCategoryLibraryName, normalizeComponentLibraryName, requireEditMode, resolveTemplateComponentLibrary, setCollapsedCustomComponentTreeTypes, setCustomComponentTreeSelection, setCustomComponentLibraries, setCustomDeviceDraft, setCustomDeviceTemplates, setDefinitionDraftSection, setDeviceDefinitionOverrides, setEditingCustomDeviceKind, setSelectedDefinitionKind } = __appScope;
+  const { E_SECTION_OPTIONS, customComponentLibraries = [], customComponentTreeSelection, customDeviceDraft, defaultComponentLibraryForCategoryLibrary, libraryTemplates, normalizeCategoryLibraryName, normalizeComponentLibraryName, requireEditMode, resolveTemplateComponentLibrary, setCollapsedCustomComponentTreeTypes, setCustomComponentTreeSelection, setCustomComponentLibraries, setCustomDeviceDraft, setCustomDeviceTemplates, setDefinitionDraftSection, setDeviceDefinitionOverrides, setEditingCustomDeviceKind, setSelectedDefinitionKind } = __appScope;
     if (targetSection === undefined) {
       targetSection = customDeviceDraft.componentLibrary;
     }
@@ -6644,7 +6784,20 @@ export function createDeleteCustomComponentLibrary(__appScope: Record<string, an
       showGlobalMessage("内置元件库无法删除。");
       return;
     }
-    const templatesWithType = libraryTemplates.filter((template) => template.custom && resolveTemplateComponentLibrary(template).toLowerCase() === componentLibrary.toLowerCase());
+    const dependentDerivedClasses = customComponentLibraries.filter((definition: any) => (
+      definition.isDerivedComponentLibrary &&
+      normalizeComponentLibraryName(definition.derivedFromComponentLibrary).toLowerCase() === componentLibrary.toLowerCase()
+    ));
+    if (dependentDerivedClasses.length > 0) {
+      const names = dependentDerivedClasses.map((definition: any) => definition.name).join("、");
+      showGlobalMessage(`元件库“${componentLibrary}”仍被派生类 ${names} 使用，请先删除这些派生类。`);
+      return;
+    }
+    const templatesWithType = libraryTemplates.filter((template) => {
+      if (!template.custom) return false;
+      const className = templateDerivedComponentLibraryInfo(template)?.derivedComponentLibrary || resolveTemplateComponentLibrary(template);
+      return normalizeComponentLibraryName(className).toLowerCase() === componentLibrary.toLowerCase();
+    });
     const confirmed = await showGlobalConfirm(
       templatesWithType.length > 0
         ? `元件库“${componentLibrary}”下共有 ${templatesWithType.length} 个自定义元件，删除元件库会同时删除这些元件，是否继续？`
@@ -6694,7 +6847,7 @@ export function createDeleteCustomComponentLibrary(__appScope: Record<string, an
 
 export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<string, any>) {
   return () => {
-  const { PROTECTED_CATEGORY_LIBRARIES, categoryLibraries, componentLibraryOptions, customComponentTreeSelection, customComponentTreeTypeKey, isBuiltInComponentLibrary, isValidComponentLibraryName, libraryTemplateByKind, libraryTemplates, normalizeCategoryLibraryName, normalizeComponentLibraryName, requireEditMode, resolveTemplateComponentLibrary, setCollapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeTypes, setCustomCategoryLibraries, setCustomComponentTreeSelection, setCustomComponentLibraries, setCustomDeviceDraft, setCustomDeviceTemplates, setDefinitionDraftSection, setDeviceDefinitionOverrides, setExpandedCategoryLibraries, setExpandedDefinitionGroups } = __appScope;
+  const { PROTECTED_CATEGORY_LIBRARIES, categoryLibraries, customComponentTreeSelection, libraryTemplateByKind, normalizeCategoryLibraryName, requireEditMode, setCollapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeTypes, setCustomCategoryLibraries, setCustomComponentTreeSelection, setCustomComponentLibraries, setCustomDeviceDraft, setCustomDeviceTemplates, setExpandedCategoryLibraries, setExpandedDefinitionGroups } = __appScope;
     if (!requireEditMode("重命名元件库条目")) {
       return;
     }
@@ -6749,78 +6902,7 @@ export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<stri
       return;
     }
     if (customComponentTreeSelection.kind === "componentLibrary") {
-      const oldSection = normalizeComponentLibraryName(customComponentTreeSelection.section);
-      if (isBuiltInComponentLibrary(oldSection)) {
-        showGlobalMessage("系统内置元件库不能重命名。");
-        return;
-      }
-      const rawName = window.prompt("请输入新的元件库英文名称", oldSection);
-      if (rawName === null) {
-        return;
-      }
-      const newSection = normalizeComponentLibraryName(rawName);
-      if (!isValidComponentLibraryName(newSection)) {
-        showGlobalMessage("元件库必须是英文名称，只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。");
-        return;
-      }
-      if (componentLibraryOptions.some((section) => section.toLowerCase() === newSection.toLowerCase() && section.toLowerCase() !== oldSection.toLowerCase())) {
-        showGlobalMessage("元件库已存在，无法重命名。");
-        return;
-      }
-      const categoryLibraryName = normalizeCategoryLibraryName(customComponentTreeSelection.categoryLibraryName);
-      const affectedKinds = new Set(
-        libraryTemplates
-          .filter((template) => template.custom && normalizeCategoryLibraryName(template.categoryLibrary) === categoryLibraryName && resolveTemplateComponentLibrary(template).toLowerCase() === oldSection.toLowerCase())
-          .map((template) => template.kind)
-      );
-      setCustomComponentLibraries((current) => current.map((componentLibrary) =>
-        componentLibrary.name.toLowerCase() === oldSection.toLowerCase() ? { ...componentLibrary, name: newSection, categoryLibraryName } : componentLibrary
-      ));
-      setCollapsedCustomComponentTreeTypes((current) => {
-        const next = new Set(current);
-        const oldKey = customComponentTreeTypeKey(categoryLibraryName, oldSection);
-        const newKey = customComponentTreeTypeKey(categoryLibraryName, newSection);
-        if (next.has(oldKey)) {
-          next.delete(oldKey);
-          next.add(newKey);
-        }
-        return next;
-      });
-      const nextTemplates = libraryTemplates.map((template) =>
-        affectedKinds.has(template.kind)
-          ? { ...template, params: { ...template.params, component_type: newSection } }
-          : template
-      );
-      setCustomDeviceTemplates((current) => current.map((template) =>
-        nextTemplates.find((candidate) => candidate.kind === template.kind) ?? template
-      ));
-      setDeviceDefinitionOverrides((current) => {
-        let next = { ...current };
-        for (const kind of affectedKinds) {
-          const previousTemplate = libraryTemplates.find((template) => template.kind === kind);
-          const nextTemplate = nextTemplates.find((template) => template.kind === kind);
-          if (!previousTemplate || !nextTemplate) continue;
-          const override = next[kind];
-          if (override) {
-            next[kind] = { ...override, params: { ...(override.params ?? {}), component_type: newSection } };
-          }
-          next = migrateSharedDeviceDefinitionOverrideForTemplateChange(
-            next,
-            previousTemplate,
-            nextTemplate,
-            nextTemplates
-          );
-        }
-        return next;
-      });
-      setCustomComponentTreeSelection({ kind: "componentLibrary", categoryLibraryName, section: newSection });
-      setCustomDeviceDraft((current) => ({
-        ...current,
-        categoryLibraryName,
-        componentLibrary: current.componentLibrary.toLowerCase() === oldSection.toLowerCase() ? newSection : current.componentLibrary,
-        error: ""
-      }));
-      setDefinitionDraftSection((current) => current.toLowerCase() === oldSection.toLowerCase() ? newSection : current);
+      showGlobalMessage("元件库类信息在创建确认后不可修改；如定义错误，请删除该元件库后重新创建。");
       return;
     }
     const template = libraryTemplateByKind.get(customComponentTreeSelection.templateKind);
@@ -6913,15 +6995,31 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       return false;
     }
     setCustomDeviceSaveMessage("");
-    const categoryLibraryName = normalizeCategoryLibraryName(customDeviceDraft.categoryLibraryName);
-    const baseComponentLibrary = normalizeComponentLibraryName(customDeviceDraft.componentLibrary);
-    const derivedRequested = Boolean(customDeviceDraft.isDerivedComponentLibrary);
-    const derivedComponentLibrary = normalizeComponentLibraryName(customDeviceDraft.derivedComponentLibrary ?? "");
-    const derivedComponentLibraryLabel = String(customDeviceDraft.derivedComponentLibraryLabel ?? "").trim();
-    const derivedFromComponentLibrary = normalizeComponentLibraryName(customDeviceDraft.derivedFromComponentLibrary || baseComponentLibrary);
+    const requestedCategoryLibraryName = normalizeCategoryLibraryName(customDeviceDraft.categoryLibraryName);
+    const requestedClassName = normalizeComponentLibraryName(
+      customDeviceDraft.isDerivedComponentLibrary
+        ? customDeviceDraft.derivedComponentLibrary
+        : customDeviceDraft.componentLibrary
+    );
+    const classMetadata = resolveComponentLibraryClassMetadata(
+      requestedClassName,
+      requestedCategoryLibraryName,
+      customComponentLibraries,
+      libraryTemplates
+    );
+    if (!classMetadata) {
+      setCustomDeviceDraft((current) => ({ ...current, error: "所属类不存在，请重新执行新建元件并选择已有类。" }));
+      return false;
+    }
+    const categoryLibraryName = normalizeCategoryLibraryName(classMetadata.categoryLibraryName || requestedCategoryLibraryName);
+    const baseComponentLibrary = normalizeComponentLibraryName(classMetadata.baseComponentLibrary);
+    const derivedRequested = classMetadata.isDerivedComponentLibrary;
+    const derivedComponentLibrary = derivedRequested ? normalizeComponentLibraryName(classMetadata.className) : "";
+    const derivedComponentLibraryLabel = derivedRequested ? String(classMetadata.label ?? "").trim() : "";
+    const derivedFromComponentLibrary = derivedRequested ? baseComponentLibrary : "";
     const componentLibrary = baseComponentLibrary;
     const componentLabel = customDeviceDraft.componentName.trim() || derivedComponentLibraryLabel || componentLibrary;
-    const isContainerComponent = Boolean(customDeviceDraft.isContainer);
+    const isContainerComponent = classMetadata.isContainer;
     if (!baseComponentLibrary) {
       setCustomDeviceDraft((current) => ({ ...current, error: "请选择元件库。" }));
       return false;
@@ -6960,11 +7058,11 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
         return false;
       }
     }
-    const terminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
+    const terminalTypes = [...classMetadata.terminalTypes];
     const terminalAssociations = normalizeContainerTerminalAssociations(
       terminalTypes,
-      customDeviceDraft.terminalAssociations,
-      customDeviceDraft.terminalCount
+      classMetadata.terminalAssociations,
+      classMetadata.terminalCount
     );
     if (isContainerComponent) {
       const terminalAssociationValidation = validateContainerTerminalAssociations(terminalTypes, terminalAssociations);
@@ -7097,6 +7195,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
     const template: DeviceTemplate = {
       kind: customKind,
       label: componentLabel,
+      componentClass: classMetadata.className,
       categoryLibrary: categoryLibraryName,
       size: customDeviceDraft.size,
       params: {
@@ -7119,10 +7218,11 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       terminalCount: terminalTypes.length,
       terminalTypes,
       terminalAssociations: isContainerComponent ? terminalAssociations : undefined,
-      terminalLabels: customDeviceDraft.terminalLabels.slice(0, terminalTypes.length).map(
+      terminalLabels: classMetadata.terminalLabels.slice(0, terminalTypes.length).map(
         (label, index) => label.trim() || `${TERMINAL_TYPE_LIBRARY_LABELS[terminalTypes[index]] ?? terminalTypes[index]}端${index + 1}`
       ),
       terminalAnchors,
+      terminalRoles: classMetadata.terminalRoles.slice(0, terminalTypes.length),
       isContainer: isContainerComponent,
       ...(derivedRequested ? {
         isDerivedComponentLibrary: true,
@@ -7191,13 +7291,20 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       failure: `自定义元件已保存到本地，后台保存失败：${componentLabel}`
     });
     setExpandedCategoryLibraries((current) => Array.from(new Set([...current, categoryLibraryName])));
-    ensureCustomComponentTreeExpanded(categoryLibraryName, componentLibrary);
-    setCustomComponentTreeSelection({ kind: "component", categoryLibraryName, section: componentLibrary, templateKind: customKind });
+    const componentTreeSection = derivedRequested ? derivedComponentLibrary : componentLibrary;
+    ensureCustomComponentTreeExpanded(categoryLibraryName, componentTreeSection);
+    setCustomComponentTreeSelection({ kind: "component", categoryLibraryName, section: componentTreeSection, templateKind: customKind });
     setEditingCustomDeviceKind(customKind);
     const cleanDraft = {
       ...customDeviceDraft,
       componentLibrary: baseComponentLibrary,
       isContainer: isContainerComponent,
+      allowResizeTransform: customDeviceDraft.allowResizeTransform === "1" ? "1" : "0",
+      terminalCount: classMetadata.terminalCount,
+      terminalTypes: Array.from({ length: COMPONENT_LIBRARY_MAX_TERMINALS }, (_, index) => classMetadata.terminalTypes[index] ?? defaultTerminalTypeForCategoryLibrary(categoryLibraryName)),
+      terminalLabels: Array.from({ length: COMPONENT_LIBRARY_MAX_TERMINALS }, (_, index) => classMetadata.terminalLabels[index] ?? ""),
+      terminalRoles: Array.from({ length: COMPONENT_LIBRARY_MAX_TERMINALS }, (_, index) => classMetadata.terminalRoles[index] ?? "single-load"),
+      terminalAssociations: Array.from({ length: COMPONENT_LIBRARY_MAX_TERMINALS }, (_, index) => classMetadata.terminalAssociations[index] ?? defaultTerminalAssociationForClassTerminal(classMetadata.terminalTypes[index] ?? defaultTerminalTypeForCategoryLibrary(categoryLibraryName))),
       isDerivedComponentLibrary: derivedRequested,
       derivedFromComponentLibrary: derivedRequested ? derivedFromComponentLibrary : "",
       derivedComponentLibrary: derivedRequested ? derivedComponentLibrary : "",

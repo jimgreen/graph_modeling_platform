@@ -131,6 +131,46 @@ export function concreteDeviceDefinitionParams(params: Record<string, string> | 
   )));
 }
 
+export function componentClassForConcreteTemplate(template: DeviceTemplate) {
+  const explicitClass = normalizeComponentLibraryName(template.componentClass ?? "");
+  if (explicitClass) return explicitClass;
+  const derivedInfo = modelTemplateDerivedComponentLibraryInfo(template);
+  return normalizeComponentLibraryName(
+    derivedInfo?.derivedComponentLibrary || resolveTemplateComponentLibrary(template)
+  );
+}
+
+export function concreteDeviceTemplateForStorage(template: DeviceTemplate): DeviceTemplate {
+  const {
+    categoryLibrary: _categoryLibrary,
+    terminalType: _terminalType,
+    terminalCount: _terminalCount,
+    terminalTypes: _terminalTypes,
+    terminalLabels: _terminalLabels,
+    terminalRoles: _terminalRoles,
+    terminalAssociations: _terminalAssociations,
+    isContainer: _isContainer,
+    isDerivedComponentLibrary: _isDerivedComponentLibrary,
+    derivedFromComponentLibrary: _derivedFromComponentLibrary,
+    derivedComponentLibrary: _derivedComponentLibrary,
+    derivedComponentLibraryLabel: _derivedComponentLibraryLabel,
+    parameterDefinitions: _parameterDefinitions,
+    parameterDefinitionsIntent: _parameterDefinitionsIntent,
+    parameterDefinitionsComplete: _parameterDefinitionsComplete,
+    measurementDefinitions: _measurementDefinitions,
+    ...visualTemplate
+  } = template;
+  const params = concreteDeviceDefinitionParams(template.params);
+  for (const name of SHARED_DEFINITION_METADATA_PARAM_NAMES) {
+    delete params[name];
+  }
+  return {
+    ...visualTemplate,
+    componentClass: componentClassForConcreteTemplate(template),
+    params
+  } as DeviceTemplate;
+}
+
 function deviceDefinitionSharedIdentityForTemplate(template: DeviceTemplate) {
   const baseKind = baseDeviceKind(template.kind);
   if (modelTemplateDerivedComponentLibraryInfo(template)) {

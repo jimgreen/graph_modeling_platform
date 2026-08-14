@@ -6,6 +6,7 @@ import "fake-indexeddb/auto";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { writeLocalDeviceLibraryPersistencePayload } from "../appExtracted/appPersistenceLibraryExport";
 import { getDBStats, clearDeviceLibraryDB } from "../lib/deviceLibraryDB";
+import { createDefaultNode } from "../model";
 import type { DeviceLibraryPersistencePayload } from "../appExtracted/appCoreCanvasUtilities";
 
 // Mock localStorage
@@ -129,7 +130,7 @@ describe("双写过渡层集成测试", () => {
           typeName: "标准模板",
           name: "测试模板",
           sourceSize: { width: 200, height: 150 },
-          clipboard: { nodes: [], edges: [], groups: [] },
+          clipboard: { nodes: [createDefaultNode("ac-source", { x: 0, y: 0 })], edges: [], groups: [] },
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         }

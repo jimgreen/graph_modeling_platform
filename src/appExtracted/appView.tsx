@@ -18,6 +18,7 @@ import { buildUserCustomizationInventory, restoreUserCustomizationItems, type Us
 import { createMeasurementFieldParameterDefinition } from "../measurementDefinitionTypes";
 import { moveSelectedTableRows, nextTableRowSelection, uniqueCopiedFieldName } from "../definitionTableSelection";
 import { WindowCloseButton } from "../WindowCloseButton";
+import { resolveComponentLibraryClassMetadata } from "../componentLibraryMetadata";
 
 export type ImagePickerLibraryTab = "image" | "icon";
 
@@ -1545,19 +1546,57 @@ export function renderAppView(__appScope: Record<string, any>) {
   const customLibraryCreateDialogCategoryLibraryName = normalizeCategoryLibraryName(
     customLibraryCreateDialog?.categoryLibraryName || customDeviceDraft.categoryLibraryName || ""
   );
-  const customLibraryCreateDialogBaseComponentLibrary = normalizeComponentLibraryName(
-    customLibraryCreateDialog?.derivedFromComponentLibrary || customLibraryCreateDialog?.componentLibrary || customDeviceDerivedBaseLibrary || ""
+  const customLibraryCreateDialogBaseComponentLibraryOptions = (
+    componentLibraryOptionsByCategoryLibrary[customLibraryCreateDialogCategoryLibraryName] ?? currentCategoryLibraryComponentLibraryOptions
+  ).filter((section) => !currentCategoryDerivedComponentLibraryNameSet.has(normalizeComponentLibraryName(section).toLowerCase()));
+  const customLibraryCreateDialogBaseSearchNeedle = String(
+    customLibraryCreateDialog?.baseComponentLibrarySearch ?? ""
+  ).trim().toLowerCase();
+  const customLibraryCreateDialogVisibleBaseComponentLibraryOptions = customLibraryCreateDialogBaseComponentLibraryOptions
+    .filter((section) => {
+      if (!customLibraryCreateDialogBaseSearchNeedle) return true;
+      return componentLibraryDisplayParts(section, customComponentLibraries).title.trim().toLowerCase()
+        .includes(customLibraryCreateDialogBaseSearchNeedle);
+    });
+  const customLibraryCreateDialogClassOptionMap = new Map<string, {
+    className: string;
+    label: string;
+    baseComponentLibrary: string;
+    isDerivedComponentLibrary: boolean;
+  }>();
+  for (const section of customLibraryCreateDialogBaseComponentLibraryOptions) {
+    const className = normalizeComponentLibraryName(section);
+    if (!className) continue;
+    const display = componentLibraryDisplayParts(className, customComponentLibraries);
+    customLibraryCreateDialogClassOptionMap.set(className.toLowerCase(), {
+      className,
+      label: display.title,
+      baseComponentLibrary: className,
+      isDerivedComponentLibrary: false
+    });
+  }
+  for (const option of derivedComponentLibraryOptionsFor(customLibraryCreateDialogCategoryLibraryName, "")) {
+    customLibraryCreateDialogClassOptionMap.set(option.name.toLowerCase(), {
+      className: option.name,
+      label: option.label ? `${option.label} / ${option.name}` : option.name,
+      baseComponentLibrary: option.base,
+      isDerivedComponentLibrary: true
+    });
+  }
+  const customLibraryCreateDialogClassOptions = Array.from(customLibraryCreateDialogClassOptionMap.values())
+    .sort((a, b) => a.className.localeCompare(b.className));
+  const customLibraryCreateDialogSelectedClassName = normalizeComponentLibraryName(
+    customLibraryCreateDialog?.componentClassName ||
+    customLibraryCreateDialog?.derivedComponentLibrary ||
+    customLibraryCreateDialog?.componentLibrary ||
+    ""
   );
-  const customLibraryCreateDialogDerivedOptions = customLibraryCreateDialog?.kind === "component"
-    ? derivedComponentLibraryOptionsFor(customLibraryCreateDialogCategoryLibraryName, customLibraryCreateDialogBaseComponentLibrary)
-    : [];
-  const customLibraryCreateDialogSelectedDerivedComponentLibrary = normalizeComponentLibraryName(
-    customLibraryCreateDialog?.derivedComponentLibrary ?? ""
+  const customDeviceClassName = normalizeComponentLibraryName(
+    customDeviceDraft.isDerivedComponentLibrary
+      ? customDeviceDraft.derivedComponentLibrary
+      : customDeviceDraft.componentLibrary
   );
-  const customLibraryCreateDialogDerivedSelectValue = customLibraryCreateDialogSelectedDerivedComponentLibrary &&
-    customLibraryCreateDialogDerivedOptions.some((item) => item.name.toLowerCase() === customLibraryCreateDialogSelectedDerivedComponentLibrary.toLowerCase())
-    ? customLibraryCreateDialogSelectedDerivedComponentLibrary
-    : "__new__";
+  const customDeviceClassDisplay = componentLibraryDisplayParts(customDeviceClassName, customComponentLibraries);
   const renderCustomDevicePreviewContent = (clipId = "custom-device-preview-clip") => {
     const fallbackPreviewNode = {
       id: "custom-device-preview-fallback",
@@ -4175,17 +4214,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                       </div>
                       <div>
                         <span>元件库</span>
-                        {definitionDraftSectionEditing ? (<select className={sourceSelectClassName(isBuiltInComponentLibrary(definitionDraftSection))} value={definitionDraftSection} autoFocus onBlur={() => setDefinitionDraftSectionEditing(false)} onChange={(event) => {
-                    setDefinitionDraftSection(event.target.value);
-                    setDefinitionDraftError("");
-                    setDefinitionDraftSectionEditing(false);
-                }}>
-                            {definitionCategoryLibraryComponentLibraryOptions.map((section) => (<option key={section} value={section} className={componentLibraryOptionClass(section)} title={isBuiltInComponentLibrary(section) ? "系统内置元件库，无法删除" : "用户自定义元件库，可以删除"}>
-                                {section}
-                              </option>))}
-                          </select>) : (<button type="button" className={`device-definition-summary-value ${isBuiltInComponentLibrary(definitionDraftSection) ? "builtin-source" : "custom-source"}`} title="点击选择元件库" onClick={() => setDefinitionDraftSectionEditing(true)}>
-                            {definitionDraftSection}
-                          </button>)}
+                        <strong title="所属类在创建后不可修改">{definitionDraftSection}</strong>
                       </div>
                       <div>
                         <span>元件名称</span>
@@ -4209,10 +4238,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                       </div>
                       <div>
                         <span>是否允许变形</span>
-                        <select className="device-definition-summary-value" value={templateResizeTransformValue(selectedDefinitionTemplate)} onChange={(event) => updateSelectedDefinitionResizePermission(event.target.value)}>
-                          <option value="0">否</option>
-                          <option value="1">是</option>
-                        </select>
+                        <strong>{templateResizeTransformValue(selectedDefinitionTemplate) === "1" ? "是" : "否"}</strong>
                       </div>
                       <div>
                         <span>能源属性</span>
@@ -4409,7 +4435,7 @@ export function renderAppView(__appScope: Record<string, any>) {
         </div>)}
       {customLibraryCreateDialog && (<div className="custom-library-create-backdrop" onPointerDown={() => setCustomLibraryCreateDialog(null)}>
           <form
-            className="custom-library-create-dialog window-close-host"
+            className={`custom-library-create-dialog custom-library-create-dialog-${customLibraryCreateDialog.kind} window-close-host`}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
             onSubmit={(event) => {
@@ -4422,92 +4448,170 @@ export function renderAppView(__appScope: Record<string, any>) {
               <h3>{customLibraryCreateDialog.title}</h3>
             </div>
             {customLibraryCreateDialog.error && <p className="custom-library-create-error">{customLibraryCreateDialog.error}</p>}
-            <label>
-              <span>{customLibraryCreateDialog.kind === "categoryLibrary" ? "类别中文名称" : customLibraryCreateDialog.kind === "componentLibrary" ? "元件库中文名称" : "元件中文名称"}</span>
-              <input
-                autoFocus
-                value={customLibraryCreateDialog.cnName}
-                onChange={(event) => setCustomLibraryCreateDialog((current) => current ? { ...current, cnName: event.target.value, error: "" } : current)}
-              />
-            </label>
-            <label>
-              <span>{customLibraryCreateDialog.kind === "categoryLibrary" ? "类别英文名称" : customLibraryCreateDialog.kind === "componentLibrary" ? "元件库英文名称" : "元件英文名称"}</span>
-              <input
-                value={customLibraryCreateDialog.enName}
-                onChange={(event) => setCustomLibraryCreateDialog((current) => current ? { ...current, enName: event.target.value, error: "" } : current)}
-              />
-            </label>
-            {customLibraryCreateDialog.kind === "component" && (<>
-              <label className="custom-library-create-derived-field">
-                <span>是否派生类</span>
-                <select value={customLibraryCreateDialog.isDerivedComponentLibrary ? "1" : "0"} onChange={(event) => {
-                  const enabled = event.target.value === "1";
-                  setCustomLibraryCreateDialog((current) => {
-                    if (!current) {
-                      return current;
-                    }
-                    const baseComponentLibrary = normalizeComponentLibraryName(current.derivedFromComponentLibrary || current.componentLibrary || customLibraryCreateDialogBaseComponentLibrary);
-                    return {
-                      ...current,
-                      isDerivedComponentLibrary: enabled,
-                      derivedFromComponentLibrary: baseComponentLibrary,
-                      derivedComponentLibrary: enabled ? (current.derivedComponentLibrary ?? "") : "",
-                      derivedComponentLibraryLabel: enabled ? (current.derivedComponentLibraryLabel ?? "") : "",
-                      error: ""
-                    };
-                  });
-                }}>
-                  <option value="0">否</option>
-                  <option value="1">是</option>
-                </select>
+            <div className="custom-library-create-fields">
+              <label>
+                <span>{customLibraryCreateDialog.kind === "categoryLibrary" ? "类别中文名称" : customLibraryCreateDialog.kind === "componentLibrary" ? "元件库中文名称" : "元件中文名称"}</span>
+                <input
+                  autoFocus
+                  value={customLibraryCreateDialog.cnName}
+                  onChange={(event) => setCustomLibraryCreateDialog((current) => current ? { ...current, cnName: event.target.value, error: "" } : current)}
+                />
               </label>
-              {customLibraryCreateDialog.isDerivedComponentLibrary && (<>
-                <label className="custom-library-create-derived-base-field">
-                  <span>关联原类</span>
-                  <input value={customLibraryCreateDialogBaseComponentLibrary} disabled readOnly />
-                </label>
-                <label className="custom-library-create-derived-select-field">
-                  <span>派生类</span>
-                  <select value={customLibraryCreateDialogDerivedSelectValue} onChange={(event) => {
-                    if (event.target.value === "__new__") {
-                      setCustomLibraryCreateDialog((current) => current ? {
-                        ...current,
-                        derivedFromComponentLibrary: normalizeComponentLibraryName(current.derivedFromComponentLibrary || current.componentLibrary || customLibraryCreateDialogBaseComponentLibrary),
-                        derivedComponentLibrary: "",
-                        derivedComponentLibraryLabel: "",
-                        error: ""
-                      } : current);
-                      return;
-                    }
-                    const selected = customLibraryCreateDialogDerivedOptions.find((item) => item.name === event.target.value);
-                    if (!selected) {
-                      return;
-                    }
+              <label>
+                <span>{customLibraryCreateDialog.kind === "categoryLibrary"
+                  ? "类别英文名称"
+                  : customLibraryCreateDialog.kind === "componentLibrary" && customLibraryCreateDialog.isDerivedComponentLibrary
+                    ? "派生类英文名称"
+                    : customLibraryCreateDialog.kind === "componentLibrary" ? "元件库英文名称" : "元件英文名称"}</span>
+                <input
+                  value={customLibraryCreateDialog.enName}
+                  onChange={(event) => setCustomLibraryCreateDialog((current) => current ? { ...current, enName: event.target.value, error: "" } : current)}
+                />
+              </label>
+              {customLibraryCreateDialog.kind === "componentLibrary" && (<>
+                <label>
+                  <span>是否派生类</span>
+                  <select value={customLibraryCreateDialog.isDerivedComponentLibrary ? "1" : "0"} onChange={(event) => {
+                    const enabled = event.target.value === "1";
+                    const fallbackBase = customLibraryCreateDialogBaseComponentLibraryOptions[0] ?? "";
                     setCustomLibraryCreateDialog((current) => current ? {
                       ...current,
-                      componentLibrary: selected.base,
-                      derivedFromComponentLibrary: selected.base,
-                      derivedComponentLibrary: selected.name,
-                      derivedComponentLibraryLabel: selected.label,
+                      isDerivedComponentLibrary: enabled,
+                      derivedFromComponentLibrary: enabled
+                        ? normalizeComponentLibraryName(current.derivedFromComponentLibrary || fallbackBase)
+                        : "",
                       error: ""
                     } : current);
                   }}>
-                    <option value="__new__">新建派生类</option>
-                    {customLibraryCreateDialogDerivedOptions.map((option) => (<option key={option.name} value={option.name}>
-                      {option.label ? `${option.label} / ${option.name}` : option.name}
-                    </option>))}
+                    <option value="0">否</option>
+                    <option value="1">是</option>
                   </select>
                 </label>
-                <label className="custom-library-create-derived-en-field">
-                  <span>派生类英文名称</span>
+                {customLibraryCreateDialog.isDerivedComponentLibrary && (<label className="custom-library-create-base-class-field">
+                  <span>派生基类</span>
                   <input
-                    value={customLibraryCreateDialog.derivedComponentLibrary ?? ""}
-                    placeholder="例如 ACWindGen"
-                    onChange={(event) => setCustomLibraryCreateDialog((current) => current ? { ...current, derivedComponentLibrary: event.target.value, error: "" } : current)}
+                    type="search"
+                    value={customLibraryCreateDialog.baseComponentLibrarySearch ?? ""}
+                    placeholder="输入中文名或英文名过滤"
+                    onChange={(event) => setCustomLibraryCreateDialog((current) => current ? {
+                      ...current,
+                      baseComponentLibrarySearch: event.target.value,
+                      error: ""
+                    } : current)}
                   />
+                  <select value={customLibraryCreateDialog.derivedFromComponentLibrary ?? ""} onChange={(event) => setCustomLibraryCreateDialog((current) => current ? {
+                    ...current,
+                    derivedFromComponentLibrary: event.target.value,
+                    error: ""
+                  } : current)} aria-label="派生基类选择">
+                    <option value="">请选择基类</option>
+                    {customLibraryCreateDialogVisibleBaseComponentLibraryOptions.map((section) => (<option key={section} value={section}>
+                      {componentLibraryDisplayParts(section, customComponentLibraries).title}
+                    </option>))}
+                  </select>
+                  <small>{customLibraryCreateDialogVisibleBaseComponentLibraryOptions.length} / {customLibraryCreateDialogBaseComponentLibraryOptions.length}</small>
+                </label>)}
+                {!customLibraryCreateDialog.isDerivedComponentLibrary && (<>
+                  <label>
+                    <span>是否容器</span>
+                    <select value={customLibraryCreateDialog.isContainer ? "1" : "0"} onChange={(event) => setCustomLibraryCreateDialog((current) => current ? {
+                      ...current,
+                      isContainer: event.target.value === "1",
+                      error: ""
+                    } : current)}>
+                      <option value="0">否</option>
+                      <option value="1">是</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>端子数量</span>
+                    <input type="number" min="0" max={MAX_CUSTOM_DEVICE_TERMINALS} step="1" value={customLibraryCreateDialog.terminalCount ?? 0} onChange={(event) => setCustomLibraryCreateDialog((current) => current ? {
+                      ...current,
+                      terminalCount: Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, Math.round(Number(event.target.value) || 0))),
+                      error: ""
+                    } : current)} />
+                  </label>
+                  <div className="custom-library-create-terminal-fields">
+                  {Array.from({ length: Math.max(0, Number(customLibraryCreateDialog.terminalCount) || 0) }).map((_, index) => {
+                    const terminalType = customLibraryCreateDialog.terminalTypes?.[index] ?? "ac";
+                    return (<div className="custom-library-create-terminal-row" key={index}>
+                      <strong>{`端子 ${index + 1}`}</strong>
+                      <label>
+                        <span>能源属性</span>
+                        <select value={terminalType} onChange={(event) => setCustomLibraryCreateDialog((current) => {
+                          if (!current) return current;
+                          const terminalTypes = [...(current.terminalTypes ?? [])];
+                          const terminalAssociations = [...(current.terminalAssociations ?? [])];
+                          terminalTypes[index] = event.target.value;
+                          terminalAssociations[index] = defaultContainerAssociationForTerminalType(event.target.value);
+                          return { ...current, terminalTypes, terminalAssociations, error: "" };
+                        })}>
+                          {TERMINAL_TYPE_OPTIONS.map((option) => (<option key={option.value} value={option.value}>{option.label}</option>))}
+                        </select>
+                      </label>
+                      <label>
+                        <span>端子名称</span>
+                        <input value={customLibraryCreateDialog.terminalLabels?.[index] ?? ""} onChange={(event) => setCustomLibraryCreateDialog((current) => {
+                          if (!current) return current;
+                          const terminalLabels = [...(current.terminalLabels ?? [])];
+                          terminalLabels[index] = event.target.value;
+                          return { ...current, terminalLabels, error: "" };
+                        })} />
+                      </label>
+                      {customLibraryCreateDialog.isContainer && (<label>
+                        <span>关联设备</span>
+                        <select value={customLibraryCreateDialog.terminalAssociations?.[index] ?? defaultContainerAssociationForTerminalType(terminalType)} onChange={(event) => setCustomLibraryCreateDialog((current) => {
+                          if (!current) return current;
+                          const terminalAssociations = [...(current.terminalAssociations ?? [])];
+                          terminalAssociations[index] = event.target.value;
+                          return { ...current, terminalAssociations, error: "" };
+                        })}>
+                          {CONTAINER_TERMINAL_ASSOCIATION_OPTIONS[terminalType].map((option) => (<option key={option.value} value={option.value}>{option.label}</option>))}
+                        </select>
+                      </label>)}
+                    </div>);
+                  })}
+                  </div>
+                </>)}
+              </>)}
+              {customLibraryCreateDialog.kind === "component" && (<>
+                <label className="custom-library-create-class-field">
+                  <span>所属类</span>
+                  <select value={customLibraryCreateDialogSelectedClassName} onChange={(event) => {
+                    const metadata = resolveComponentLibraryClassMetadata(
+                      event.target.value,
+                      customLibraryCreateDialogCategoryLibraryName,
+                      customComponentLibraries,
+                      libraryTemplates
+                    );
+                    if (!metadata) return;
+                    setCustomLibraryCreateDialog((current) => current ? {
+                      ...current,
+                      componentClassName: metadata.className,
+                      componentLibrary: metadata.baseComponentLibrary,
+                      isDerivedComponentLibrary: metadata.isDerivedComponentLibrary,
+                      derivedFromComponentLibrary: metadata.isDerivedComponentLibrary ? metadata.baseComponentLibrary : "",
+                      derivedComponentLibrary: metadata.isDerivedComponentLibrary ? metadata.className : "",
+                      derivedComponentLibraryLabel: metadata.isDerivedComponentLibrary ? metadata.label : "",
+                      error: ""
+                    } : current);
+                  }}>
+                    {customLibraryCreateDialogClassOptions.map((option) => (<option key={option.className} value={option.className}>{option.label}</option>))}
+                  </select>
+                </label>
+                <label>
+                  <span>是否允许变形</span>
+                  <select value={customLibraryCreateDialog.allowResizeTransform ?? "0"} onChange={(event) => setCustomLibraryCreateDialog((current) => current ? {
+                    ...current,
+                    allowResizeTransform: event.target.value,
+                    error: ""
+                  } : current)}>
+                    <option value="0">否</option>
+                    <option value="1">是</option>
+                  </select>
                 </label>
               </>)}
-            </>)}
+            </div>
             <div className="custom-library-create-actions">
               <button type="button" onClick={() => setCustomLibraryCreateDialog(null)}>取消</button>
               <button type="submit" className="primary">确定</button>
@@ -4554,97 +4658,35 @@ export function renderAppView(__appScope: Record<string, any>) {
             <div className="custom-device-form-grid">
               <label className="custom-category-library-field">
                 <span>类别库</span>
-                <div className="custom-category-library-select-row single-control">
-                  <select className={sourceSelectClassName(isBuiltInCategoryLibrary(customDeviceDraft.categoryLibraryName))} value={customDeviceDraft.categoryLibraryName} onChange={(event) => selectCustomCategoryLibrary(event.target.value)}>
-                    {selectableCategoryLibraries.map((group) => (<option key={group} value={group} className={categoryLibraryOptionClass(group)} title={isBuiltInCategoryLibrary(group) ? "系统内置类别库，无法删除" : "用户自定义类别库，可以删除"}>
-                        {group}
-                      </option>))}
-                  </select>
-                </div>
+                <input value={customDeviceDraft.categoryLibraryName} disabled readOnly />
               </label>
               <label className="custom-component-library-field">
-                <span>元件库</span>
-                <div className="custom-category-library-select-row single-control">
-                  <select className={sourceSelectClassName(isBuiltInComponentLibrary(customDeviceDraft.componentLibrary))} value={customDeviceDraft.componentLibrary} onChange={(event) => {
-                    if (customDeviceDraft.isDerivedComponentLibrary) {
-                      const base = normalizeComponentLibraryName(event.target.value);
-                      setCustomDeviceDraft((current) => ({
-                        ...current,
-                        componentLibrary: base,
-                        derivedFromComponentLibrary: base,
-                        derivedComponentLibrary: "",
-                        derivedComponentLibraryLabel: "",
-                        error: ""
-                      }));
-                      return;
-                    }
-                    selectCustomComponentLibrary(customDeviceDraft.categoryLibraryName, event.target.value);
-                  }}>
-                    {customDeviceBaseComponentLibraryOptions.map((section) => {
-                      const sectionDisplay = componentLibraryDisplayParts(section, customComponentLibraries);
-                      return (<option key={section} value={section} className={componentLibraryOptionClass(section)} title={isBuiltInComponentLibrary(section) ? "系统内置元件库，无法删除" : "用户自定义元件库，可以删除"}>
-                        {sectionDisplay.title}
-                      </option>);
-                    })}
-                  </select>
-                </div>
+                <span>所属类</span>
+                <input value={customDeviceClassDisplay.title} disabled readOnly />
               </label>
               <label className="custom-device-name-field">
                 元件名称
                 <BufferedTextInput value={customDeviceDraft.componentName} placeholder="例如 水电、核电、风电、光伏" onCommit={(value) => setCustomDeviceDraft((current) => ({ ...current, componentName: value, error: "" }))}/>
               </label>
-              <label className="custom-device-container-field">
-                是否容器
-                <select value={customDeviceDraft.isContainer ? "1" : "0"} onChange={(event) => setCustomDeviceDraft((current) => ({
-            ...current,
-            isContainer: event.target.value === "1",
-            error: ""
-        }))}>
+              <label className="custom-device-resize-field">
+                是否允许变形
+                <select value={customDeviceDraft.allowResizeTransform} onChange={(event) => setCustomDeviceDraft((current) => ({ ...current, allowResizeTransform: event.target.value, error: "" }))}>
                   <option value="0">否</option>
                   <option value="1">是</option>
                 </select>
               </label>
-              <label className="custom-device-resize-field">
-                是否允许变形
-                <select value={customDeviceDraft.allowResizeTransform} onChange={(event) => setCustomDeviceDraft((current) => ({
-            ...current,
-            allowResizeTransform: event.target.value,
-            error: ""
-        }))}>
-                  <option value="0">否</option>
-                  <option value="1">是</option>
-                </select>
+              <label className="custom-device-derived-field">
+                派生关系
+                <input value={customDeviceDraft.isDerivedComponentLibrary ? `派生自 ${customDeviceDraft.derivedFromComponentLibrary}` : "非派生类"} disabled readOnly />
               </label>
               <label className="custom-device-terminal-count-field">
                 端子数量
-                <BufferedTextInput type="number" min="0" max={MAX_CUSTOM_DEVICE_TERMINALS} value={customDeviceDraft.terminalCount} onCommit={(value) => updateCustomDraftTerminalCount(Number(value))}/>
+                <input value={customDeviceDraft.terminalCount} disabled readOnly />
               </label>
-              <label className="custom-device-derived-field">
-                是否派生类
-                <select value={customDeviceDraft.isDerivedComponentLibrary ? "1" : "0"} onChange={(event) => {
-                  const enabled = event.target.value === "1";
-                  setCustomDeviceDraft((current) => {
-                    const base = normalizeComponentLibraryName(current.derivedFromComponentLibrary || current.componentLibrary || customDeviceDerivedBaseLibrary);
-                    return {
-                      ...current,
-                      isDerivedComponentLibrary: enabled,
-                      derivedFromComponentLibrary: enabled ? base : "",
-                      derivedComponentLibrary: enabled ? (current.derivedComponentLibrary ?? "") : "",
-                      derivedComponentLibraryLabel: enabled ? (current.derivedComponentLibraryLabel ?? "") : "",
-                      error: ""
-                    };
-                  });
-                }}>
-                  <option value="0">否</option>
-                  <option value="1">是</option>
-                </select>
+              <label className="custom-device-container-field">
+                是否容器
+                <input value={customDeviceDraft.isContainer ? "是" : "否"} disabled readOnly />
               </label>
-              {customDeviceDraft.isDerivedComponentLibrary && (<>
-                <label className="custom-device-derived-en-field">
-                  派生类英文名称
-                  <BufferedTextInput value={customDeviceDraft.derivedComponentLibrary ?? ""} placeholder="例如 ACWindGen" onCommit={(value) => setCustomDeviceDraft((current) => ({ ...current, derivedComponentLibrary: value, error: "" }))}/>
-                </label>
-              </>)}
             </div>
             <div className="device-definition-tabs custom-device-tabs" role="tablist" aria-label="元件定义内容切换">
               {customComponentTreeSelection?.kind !== "componentLibrary" && (<button type="button" className={visibleCustomDeviceDialogView === "icon" ? "active" : ""} onClick={() => setCustomDeviceDialogView("icon")}>
@@ -4686,23 +4728,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                     const terminalAnchor = customDeviceTerminalAnchors[index] ?? { x: 0, y: 0 };
                     return (<label key={index} className={associationDependent ? "custom-terminal-dependent" : ""}>
                     {`端子${index + 1}能源属性`}
-                    <select value={terminalType} disabled={associationDependent} onChange={(event) => setCustomDeviceDraft((current) => {
-                            const terminalTypes = [...current.terminalTypes];
-                            terminalTypes[index] = event.target.value as TerminalType;
-                            const terminalAssociations = [...current.terminalAssociations];
-                            if (current.isContainer) {
-                                if (isDoubleContainerTerminalAssociation(terminalAssociations[index]) && index + 1 < current.terminalCount) {
-                                    terminalAssociations[index + 1] = defaultContainerAssociationForTerminalType(terminalTypes[index + 1] ?? "ac");
-                                }
-                                terminalAssociations[index] = defaultContainerAssociationForTerminalType(terminalTypes[index]);
-                            }
-                            return {
-                                ...current,
-                                terminalTypes,
-                                terminalAssociations: normalizeContainerTerminalAssociations(terminalTypes.slice(0, current.terminalCount), terminalAssociations, current.terminalCount),
-                                error: ""
-                            };
-                        })}>
+                    <select value={terminalType} disabled title="能源属性由所属类定义">
                       {TERMINAL_TYPE_OPTIONS.map((option) => (<option key={option.value} value={option.value}>
                           {option.label}
                         </option>))}
@@ -4716,31 +4742,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                     </div>
                     {customDeviceDraft.isContainer && (<>
                         <span>关联设备</span>
-                        <select value={associationDependent ? "" : terminalAssociations[index] || defaultContainerAssociationForTerminalType(terminalType)} disabled={associationDependent} onChange={(event) => setCustomDeviceDraft((current) => {
-                                const selectedAssociation = event.target.value as ContainerTerminalAssociationType;
-                                if (isDoubleContainerTerminalAssociation(selectedAssociation) && index + 1 >= current.terminalCount) {
-                                    const message = `端子${index + 1}是最后一个端子，不能设置为双端热源/热荷。`;
-                                    showGlobalMessage(message);
-                                    return { ...current, error: message };
-                                }
-                                const terminalTypes = [...current.terminalTypes];
-                                const terminalAssociations = [...current.terminalAssociations];
-                                const previousAssociation = terminalAssociations[index];
-                                terminalAssociations[index] = selectedAssociation;
-                                if (isDoubleContainerTerminalAssociation(selectedAssociation) && index + 1 < current.terminalCount) {
-                                    terminalTypes[index + 1] = terminalTypes[index] ?? "heat";
-                                    terminalAssociations[index + 1] = "";
-                                }
-                                else if (isDoubleContainerTerminalAssociation(previousAssociation) && index + 1 < current.terminalCount) {
-                                    terminalAssociations[index + 1] = defaultContainerAssociationForTerminalType(terminalTypes[index + 1] ?? "ac");
-                                }
-                                return {
-                                    ...current,
-                                    terminalTypes,
-                                    terminalAssociations: normalizeContainerTerminalAssociations(terminalTypes.slice(0, current.terminalCount), terminalAssociations, current.terminalCount),
-                                    error: ""
-                                };
-                            })}>
+                        <select value={associationDependent ? "" : terminalAssociations[index] || defaultContainerAssociationForTerminalType(terminalType)} disabled title="关联设备由所属类定义">
                           {associationDependent && <option value="">随上一个端子关联同一个双端元件</option>}
                           {associationOptions.map((option) => (<option key={option.value} value={option.value}>
                               {option.label}

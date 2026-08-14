@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   createSyncExistingNodesWithTemplateDefinitions
 } from "./appExtracted/appGraphMeasurementFactories";
-import { normalizeDefinitionRowEnumFields } from "./appExtracted/appPersistenceLibraryExport";
+import { normalizeCustomComponentLibraries, normalizeDefinitionRowEnumFields } from "./appExtracted/appPersistenceLibraryExport";
 import {
   createComputeStateIconDrawingSmartAlignmentSnap,
   createCompleteImportedModelFeedback,
@@ -16,6 +16,7 @@ import {
   createConfirmCustomLibraryCreateDialog,
   createDeleteCustomCategoryLibrary,
   createDeleteCustomComponentLibrary,
+  createRenameSelectedCustomDeviceTreeItem,
   applyEDeviceInterfaceFieldOrder,
   applyEDeviceDefinitionSectionsToLibraryState,
   buildEDeviceInterfaceDefinitionRows,
@@ -1003,6 +1004,17 @@ describe("manual bend interaction helpers", () => {
       ALLOW_RESIZE_TRANSFORM_PARAM: "allowResizeTransform",
       TERMINAL_TYPE_LIBRARY_LABELS: { ac: "交流" },
       closeCustomDeviceDialog: vi.fn(),
+      customComponentLibraries: [{
+        name: "UserLibrary",
+        categoryLibraryName: "用户类别库",
+        terminalCount: 0,
+        terminalTypes: [],
+        terminalLabels: [],
+        terminalRoles: [],
+        terminalAssociations: [],
+        isContainerComponentLibrary: false,
+        allowResizeTransform: false
+      }],
       customDefaultDefinitions: () => [],
       get customDeviceDraft() {
         return customDeviceDraft;
@@ -1077,14 +1089,14 @@ describe("manual bend interaction helpers", () => {
       backgroundImageAssetId: "",
       backgroundImageCleared: "",
       size: { width: 104, height: 64 },
-      allowResizeTransform: "0",
-      terminalCount: 1,
-      terminalTypes: ["ac"],
-      terminalLabels: ["交流发电机端"],
+      allowResizeTransform: "1",
+      terminalCount: 2,
+      terminalTypes: ["dc", "dc"],
+      terminalLabels: ["过期端1", "过期端2"],
       terminalAnchors: [{ x: -0.5, y: 0 }],
-      terminalRoles: ["single-source"],
-      terminalAssociations: ["ac-generator"],
-      isContainer: false,
+      terminalRoles: ["single-load", "single-load"],
+      terminalAssociations: ["dc-load", "dc-load"],
+      isContainer: true,
       params: [
         { id: "base-idx", cnName: "序号", enName: "idx", valueType: "integer", typicalValue: "" },
         { id: "base-status", cnName: "运行状态", enName: "status", valueType: "numberEnum", typicalValue: "1" },
@@ -1106,7 +1118,19 @@ describe("manual bend interaction helpers", () => {
       ALLOW_RESIZE_TRANSFORM_PARAM: "allowResizeTransform",
       TERMINAL_TYPE_LIBRARY_LABELS: { ac: "交流" },
       closeCustomDeviceDialog: vi.fn(),
-      customComponentLibraries: [],
+      customComponentLibraries: [{
+        name: "UserWindGen",
+        categoryLibraryName: "交流设备",
+        label: "用户风电",
+        isDerivedComponentLibrary: true,
+        derivedFromComponentLibrary: "ACGenerator",
+        terminalCount: 1,
+        terminalTypes: ["ac"],
+      terminalLabels: ["交流发电机端"],
+      terminalRoles: ["single-source"],
+      terminalAssociations: ["ac-generator"],
+      isContainerComponentLibrary: false
+      }],
       customDefaultDefinitions,
       get customDeviceDraft() {
         return customDeviceDraft;
@@ -1170,7 +1194,13 @@ describe("manual bend interaction helpers", () => {
     expect(savedTemplates[0]).toMatchObject({
       kind: "custom-user-wind-generator",
       label: "用户风电机组",
+      componentClass: "UserWindGen",
       categoryLibrary: "交流设备",
+      terminalCount: 1,
+      terminalTypes: ["ac"],
+      terminalLabels: ["交流发电机端"],
+      terminalRoles: ["single-source"],
+      allowResizeTransform: true,
       isContainer: false,
       isDerivedComponentLibrary: true,
       derivedFromComponentLibrary: "ACGenerator",
@@ -1181,8 +1211,8 @@ describe("manual bend interaction helpers", () => {
         derived_component_type: "UserWindGen"
       }
     });
-    expect(savedTemplates[0]).not.toHaveProperty("derivedComponentLibraryLabel");
-    expect(savedTemplates[0].params).not.toHaveProperty("derived_component_library_label");
+    expect(savedTemplates[0].derivedComponentLibraryLabel).toBe("用户风电");
+    expect(savedTemplates[0].params.derived_component_library_label).toBe("用户风电");
     expect(savedTemplates[0].parameterDefinitions).toBeUndefined();
     expect(savedTemplates[0].measurementDefinitions).toBeUndefined();
     const sharedOverride = Object.values(savedDefinitionOverrides).find((override: any) =>
@@ -1190,11 +1220,11 @@ describe("manual bend interaction helpers", () => {
     ) as any;
     expect(sharedOverride.parameterDefinitions.map((row: any) => row.enName)).toEqual(["installedCapacity"]);
     expect(setCustomComponentLibraries).not.toHaveBeenCalled();
-    expect(scope.ensureCustomComponentTreeExpanded).toHaveBeenCalledWith("交流设备", "ACGenerator");
+    expect(scope.ensureCustomComponentTreeExpanded).toHaveBeenCalledWith("交流设备", "UserWindGen");
     expect(scope.setCustomComponentTreeSelection).toHaveBeenCalledWith({
       kind: "component",
       categoryLibraryName: "交流设备",
-      section: "ACGenerator",
+      section: "UserWindGen",
       templateKind: "custom-user-wind-generator"
     });
   });
@@ -1232,7 +1262,20 @@ describe("manual bend interaction helpers", () => {
       ALLOW_RESIZE_TRANSFORM_PARAM: "allowResizeTransform",
       TERMINAL_TYPE_LIBRARY_LABELS: { ac: "交流" },
       closeCustomDeviceDialog: vi.fn(),
-      customComponentLibraries: [],
+      customComponentLibraries: [{
+        name: "UserWindGen",
+        categoryLibraryName: "交流设备",
+        label: "用户风电",
+        isDerivedComponentLibrary: true,
+        derivedFromComponentLibrary: "ACGenerator",
+        terminalCount: 1,
+        terminalTypes: ["ac"],
+        terminalLabels: ["交流发电机端"],
+        terminalRoles: ["single-source"],
+        terminalAssociations: ["ac-generator"],
+        isContainerComponentLibrary: false,
+        allowResizeTransform: false
+      }],
       customDefaultDefinitions: vi.fn(() => []),
       get customDeviceDraft() {
         return customDeviceDraft;
@@ -2013,7 +2056,125 @@ describe("manual bend interaction helpers", () => {
     });
   });
 
-  test("creating a component from the dialog initializes derived-class metadata", () => {
+  test("creating a component library persists its complete immutable class metadata", () => {
+    let customComponentLibraries: any[] = [];
+    let customDeviceDraft: any = {
+      categoryLibraryName: "交流设备",
+      componentLibrary: "ACGenerator",
+      error: ""
+    };
+    let customLibraryCreateDialog: any = {
+      kind: "componentLibrary",
+      title: "新建元件库",
+      cnName: "用户风电类",
+      enName: "UserWindGen",
+      categoryLibraryName: "交流设备",
+      isDerivedComponentLibrary: true,
+      derivedFromComponentLibrary: "ACGenerator",
+      terminalCount: 2,
+      terminalTypes: ["ac", "dc"],
+      terminalLabels: ["交流端", "直流端"],
+      terminalRoles: ["single-source", "single-load"],
+      terminalAssociations: ["ac-generator", "dc-load"],
+      isContainer: true,
+      allowResizeTransform: "1",
+      error: ""
+    };
+    const setCustomComponentTreeSelection = vi.fn();
+    const scope = {
+      DEFAULT_STATE_PAGE_ID: "default",
+      cancelPendingCustomComponentTemplateLoad: vi.fn(),
+      categoryLibraries: ["交流设备"],
+      componentLibraryOptions: ["ACGenerator"],
+      createEmptyCustomDeviceDraft: vi.fn(),
+      get customComponentLibraries() {
+        return customComponentLibraries;
+      },
+      get customDeviceDraft() {
+        return customDeviceDraft;
+      },
+      customDeviceTemplates: [],
+      get customLibraryCreateDialog() {
+        return customLibraryCreateDialog;
+      },
+      defaultComponentLibraryForCategoryLibrary: () => "ACGenerator",
+      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
+      libraryTemplates: [{
+        kind: "ac-source",
+        label: "交流电源",
+        categoryLibrary: "交流设备",
+        size: { width: 104, height: 64 },
+        params: { component_type: "ACGenerator" },
+        terminalType: "ac",
+        terminalCount: 1,
+        terminalTypes: ["ac"],
+        terminalLabels: ["交流发电机端"],
+        terminalRoles: ["single-source"],
+        terminalAssociations: ["ac-generator"],
+        isContainer: false
+      }],
+      normalizeCategoryLibraryName: (name: string) => name.trim(),
+      normalizeComponentLibraryName: (name: string) => name.trim(),
+      normalizeCustomCategoryLibraries: (value: unknown) => value as string[],
+      normalizeCustomComponentLibraries,
+      requireEditMode: () => true,
+      setCustomCategoryLibraries: vi.fn(),
+      setCustomComponentLibraries: (updater: any) => {
+        customComponentLibraries = typeof updater === "function" ? updater(customComponentLibraries) : updater;
+      },
+      setCustomComponentTreeSelection,
+      setCustomDeviceDefinitionMode: vi.fn(),
+      setCustomDeviceDialogView: vi.fn(),
+      setCustomDeviceDraft: (updater: any) => {
+        customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
+      },
+      setCustomDeviceDraftCleanBaseline: vi.fn(),
+      setCustomDeviceSaveMessage: vi.fn(),
+      setCustomDeviceStatePageId: vi.fn(),
+      setCustomLibraryCreateDialog: (updater: any) => {
+        customLibraryCreateDialog = typeof updater === "function" ? updater(customLibraryCreateDialog) : updater;
+      },
+      setEditingCustomDeviceKind: vi.fn(),
+      setExpandedCategoryLibraries: vi.fn(),
+      setSelectedDefinitionKind: vi.fn()
+    };
+
+    const created = createConfirmCustomLibraryCreateDialog(scope)();
+
+    expect(created).toBe(true);
+    expect(customComponentLibraries).toEqual([
+      expect.objectContaining({
+        name: "UserWindGen",
+        label: "用户风电类",
+        categoryLibraryName: "交流设备",
+        isDerivedComponentLibrary: true,
+        derivedFromComponentLibrary: "ACGenerator"
+      })
+    ]);
+    expect(customComponentLibraries[0]).not.toHaveProperty("isContainerComponentLibrary");
+    expect(customComponentLibraries[0]).not.toHaveProperty("terminalCount");
+    expect(customComponentLibraries[0]).not.toHaveProperty("terminalTypes");
+    expect(customComponentLibraries[0]).not.toHaveProperty("allowResizeTransform");
+    expect(setCustomComponentTreeSelection).toHaveBeenCalledWith({
+      kind: "componentLibrary",
+      categoryLibraryName: "交流设备",
+      section: "UserWindGen"
+    });
+    expect(customDeviceDraft).toMatchObject({
+      componentLibrary: "ACGenerator",
+      isDerivedComponentLibrary: true,
+      derivedFromComponentLibrary: "ACGenerator",
+      derivedComponentLibrary: "UserWindGen",
+      derivedComponentLibraryLabel: "用户风电类",
+      terminalCount: 1,
+      terminalTypes: expect.arrayContaining(["ac"]),
+      isContainer: false
+    });
+    expect(customDeviceDraft.allowResizeTransform).toBeUndefined();
+    expect(customLibraryCreateDialog).toBeNull();
+  });
+
+  test("creating a component selects an existing derived class and inherits immutable metadata", () => {
     let customDeviceDraft: any = {
       categoryLibraryName: "交流设备",
       componentLibrary: "ACGenerator",
@@ -2026,11 +2187,12 @@ describe("manual bend interaction helpers", () => {
       cnName: "用户风电机组",
       enName: "custom-user-wind-generator",
       categoryLibraryName: "交流设备",
-      componentLibrary: "ACGenerator",
-      isDerivedComponentLibrary: true,
-      derivedFromComponentLibrary: "ACGenerator",
-      derivedComponentLibrary: "UserWindGen",
-      derivedComponentLibraryLabel: "",
+      componentClassName: "UserWindGen",
+      componentLibrary: "stale-class-value",
+      isDerivedComponentLibrary: false,
+      derivedFromComponentLibrary: "",
+      derivedComponentLibrary: "",
+      derivedComponentLibraryLabel: "stale-label",
       error: ""
     };
     const setCustomComponentTreeSelection = vi.fn();
@@ -2044,6 +2206,20 @@ describe("manual bend interaction helpers", () => {
       cancelPendingCustomComponentTemplateLoad: vi.fn(),
       categoryLibraries: ["交流设备"],
       componentLibraryOptions: ["ACGenerator"],
+      customComponentLibraries: [{
+        name: "UserWindGen",
+        categoryLibraryName: "交流设备",
+        label: "用户风电",
+        isDerivedComponentLibrary: true,
+        derivedFromComponentLibrary: "ACGenerator",
+        terminalCount: 1,
+        terminalTypes: ["ac"],
+        terminalLabels: ["交流发电机端"],
+        terminalRoles: ["single-source"],
+        terminalAssociations: ["ac-generator"],
+        isContainerComponentLibrary: false,
+        allowResizeTransform: false
+      }],
       createEmptyCustomDeviceDraft: (categoryLibraryName = "") => ({
         categoryLibraryName,
         componentLibrary: "",
@@ -2101,7 +2277,7 @@ describe("manual bend interaction helpers", () => {
     expect(setCustomComponentTreeSelection).toHaveBeenCalledWith({
       kind: "componentLibrary",
       categoryLibraryName: "交流设备",
-      section: "ACGenerator"
+      section: "UserWindGen"
     });
     expect(customDeviceDraft).toMatchObject({
       categoryLibraryName: "交流设备",
@@ -2111,19 +2287,22 @@ describe("manual bend interaction helpers", () => {
       isDerivedComponentLibrary: true,
       derivedFromComponentLibrary: "ACGenerator",
       derivedComponentLibrary: "UserWindGen",
-      derivedComponentLibraryLabel: "",
+      derivedComponentLibraryLabel: "用户风电",
+      terminalCount: 1,
+      terminalTypes: expect.arrayContaining(["ac"]),
       isContainer: false,
       error: ""
     });
     expect(setCustomDeviceDraftCleanBaseline).toHaveBeenCalledWith(expect.objectContaining({
       isDerivedComponentLibrary: true,
       derivedComponentLibrary: "UserWindGen",
+      derivedComponentLibraryLabel: "用户风电",
       isContainer: false
     }));
     expect(customLibraryCreateDialog).toBeNull();
   });
 
-  test("opening the new component dialog carries derived-class creation defaults", () => {
+  test("opening the new component dialog selects the current existing class", () => {
     let customLibraryCreateDialog: any = null;
     const scope = {
       customComponentTreeSelection: {
@@ -2131,6 +2310,20 @@ describe("manual bend interaction helpers", () => {
         categoryLibraryName: "交流设备",
         section: "ACGenerator"
       },
+      libraryTemplateByKind: new Map(),
+      libraryTemplates: [{
+        kind: "ac-source",
+        label: "交流电源",
+        categoryLibrary: "交流设备",
+        size: { width: 104, height: 64 },
+        params: { component_type: "ACGenerator" },
+        terminalType: "ac",
+        terminalCount: 1,
+        terminalTypes: ["ac"],
+        terminalLabels: ["交流端"],
+        terminalRoles: ["single-source"],
+        terminalAssociations: ["ac-generator"]
+      }],
       defaultComponentLibraryForCategoryLibrary: () => "ACGenerator",
       nextCustomTemplateKind: (section: string) => `custom-${section}`,
       normalizeCategoryLibraryName: (name: string) => name.trim(),
@@ -2146,9 +2339,10 @@ describe("manual bend interaction helpers", () => {
       kind: "component",
       title: "新建元件",
       categoryLibraryName: "交流设备",
+      componentClassName: "ACGenerator",
       componentLibrary: "ACGenerator",
       isDerivedComponentLibrary: false,
-      derivedFromComponentLibrary: "ACGenerator",
+      derivedFromComponentLibrary: "",
       derivedComponentLibrary: "",
       derivedComponentLibraryLabel: ""
     });
@@ -2231,15 +2425,26 @@ describe("manual bend interaction helpers", () => {
     expect(customDeviceDraft.params.map((row: any) => row.enName)).not.toContain("heatRate");
   });
 
-  test("custom-device form exposes only the derived-class english name separately from the container flag", () => {
+  test("class metadata is editable only while creating a class and read-only for concrete components", () => {
     const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
 
-    expect(appViewSource).toContain("custom-library-create-derived-field");
-    expect(appViewSource).toContain("custom-device-derived-field");
-    expect(appViewSource).not.toContain("custom-device-derived-cn-field");
-    expect(appViewSource).toContain("custom-device-derived-en-field");
-    expect(appViewSource).not.toContain("disabled={customDeviceDraft.isDerivedComponentLibrary}");
-    expect(appViewSource).not.toContain("customDeviceDraft.isDerivedComponentLibrary || customDeviceDraft.isContainer");
+    expect(appViewSource).toContain('customLibraryCreateDialog.kind === "componentLibrary"');
+    expect(appViewSource).toContain("<span>是否派生类</span>");
+    expect(appViewSource).toContain("<span>是否容器</span>");
+    expect(appViewSource).toContain("<span>端子数量</span>");
+    expect(appViewSource).toContain('className="custom-library-create-class-field"');
+    expect(appViewSource).toContain("<span>所属类</span>");
+    expect(appViewSource).not.toContain("<span>派生关系</span>");
+    expect(appViewSource).toMatch(/disabled\s+readOnly/);
+    expect(appViewSource).toContain('className="custom-device-derived-field"');
+    expect(appViewSource).toContain('className="custom-device-resize-field"');
+    expect(appViewSource).toContain('!customLibraryCreateDialog.isDerivedComponentLibrary');
+    expect(appViewSource).toContain('placeholder="输入中文名或英文名过滤"');
+    expect(appViewSource).toContain('aria-label="派生基类选择"');
+    expect(appViewSource).not.toContain("customLibraryCreateDialogSelectedClassMetadata");
+    expect(appViewSource).not.toContain('custom-device-terminal-summary-field');
+    expect(appViewSource).toContain('disabled title="能源属性由所属类定义"');
+    expect(appViewSource).toContain('disabled title="关联设备由所属类定义"');
   });
 
   test("asks for confirmation before deleting an empty category library", async () => {
@@ -2332,6 +2537,77 @@ describe("manual bend interaction helpers", () => {
     ]);
   });
 
+  test("blocks deleting a base component library while a derived class still references it", async () => {
+    const showGlobalConfirm = vi.fn();
+    const showGlobalMessage = vi.fn();
+    vi.stubGlobal("showGlobalConfirm", showGlobalConfirm);
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    const setCustomComponentLibraries = vi.fn();
+    const scope = {
+      E_SECTION_OPTIONS: ["ACLoad"],
+      customComponentLibraries: [
+        { name: "UserBase", categoryLibraryName: "用户类别" },
+        {
+          name: "UserDerived",
+          categoryLibraryName: "用户类别",
+          isDerivedComponentLibrary: true,
+          derivedFromComponentLibrary: "UserBase"
+        }
+      ],
+      customComponentTreeSelection: {
+        kind: "componentLibrary",
+        categoryLibraryName: "用户类别",
+        section: "UserBase"
+      },
+      customDeviceDraft: { categoryLibraryName: "用户类别", componentLibrary: "UserBase" },
+      defaultComponentLibraryForCategoryLibrary: () => "ACLoad",
+      libraryTemplates: [],
+      normalizeCategoryLibraryName: (name: string) => name.trim(),
+      normalizeComponentLibraryName: (name: string) => name.trim(),
+      requireEditMode: () => true,
+      resolveTemplateComponentLibrary: (template: any) => template.params?.component_type ?? "",
+      setCollapsedCustomComponentTreeTypes: vi.fn(),
+      setCustomComponentLibraries,
+      setCustomComponentTreeSelection: vi.fn(),
+      setCustomDeviceDraft: vi.fn(),
+      setCustomDeviceTemplates: vi.fn(),
+      setDefinitionDraftSection: vi.fn(),
+      setDeviceDefinitionOverrides: vi.fn(),
+      setEditingCustomDeviceKind: vi.fn(),
+      setSelectedDefinitionKind: vi.fn()
+    };
+
+    await createDeleteCustomComponentLibrary(scope)("UserBase");
+
+    expect(showGlobalMessage).toHaveBeenCalledWith(
+      "元件库“UserBase”仍被派生类 UserDerived 使用，请先删除这些派生类。"
+    );
+    expect(showGlobalConfirm).not.toHaveBeenCalled();
+    expect(setCustomComponentLibraries).not.toHaveBeenCalled();
+  });
+
+  test("does not prompt for renaming immutable component-library class metadata", () => {
+    const prompt = vi.fn();
+    const showGlobalMessage = vi.fn();
+    vi.stubGlobal("window", { prompt });
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    const scope = {
+      customComponentTreeSelection: {
+        kind: "componentLibrary",
+        categoryLibraryName: "用户类别",
+        section: "UserLibrary"
+      },
+      requireEditMode: () => true
+    };
+
+    createRenameSelectedCustomDeviceTreeItem(scope)();
+
+    expect(prompt).not.toHaveBeenCalled();
+    expect(showGlobalMessage).toHaveBeenCalledWith(
+      "元件库类信息在创建确认后不可修改；如定义错误，请删除该元件库后重新创建。"
+    );
+  });
+
   test("saves the active inline default icon drawing as the custom device background", () => {
     let customDeviceDraft = {
       categoryLibraryName: "静态图元",
@@ -2362,6 +2638,17 @@ describe("manual bend interaction helpers", () => {
       DEFAULT_STATE_PAGE_ID: "__default__",
       TERMINAL_TYPE_LIBRARY_LABELS: { ac: "交流" },
       closeCustomDeviceDialog: vi.fn(),
+      customComponentLibraries: [{
+        name: "StaticButton",
+        categoryLibraryName: "静态图元",
+        terminalCount: 0,
+        terminalTypes: [],
+        terminalLabels: [],
+        terminalRoles: [],
+        terminalAssociations: [],
+        isContainerComponentLibrary: false,
+        allowResizeTransform: false
+      }],
       customDefaultDefinitions: () => [],
       get customDeviceDraft() {
         return customDeviceDraft;
@@ -3089,11 +3376,11 @@ describe("buildEDeviceInterfaceDefinitionRows", () => {
       "rated_voltage",
       "v_max",
       "v_min",
+      "regable",
       "p",
       "q",
       "u",
-      "f",
-      "regable"
+      "f"
     ];
 
     const actualOrder = generator?.fields

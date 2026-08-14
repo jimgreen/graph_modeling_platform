@@ -14,8 +14,10 @@ import {
   groupDeviceTemplatesByCategoryLibraryAndComponentLibrary,
   groupGraphTemplatesByType,
   isBuiltInCategoryLibrary,
+  libraryTemplateMatchesSearch,
   normalizeLibraryPackage,
   normalizeDeviceLibraryPersistencePayload,
+  serializeDeviceLibraryForStorage,
   normalizeDeviceDefinitionOverrides,
   migrateDeviceLibraryPersistencePayload,
   DEVICE_LIBRARY_SCHEMA_VERSION,
@@ -441,7 +443,15 @@ describe("graph template library filtering", () => {
     });
 
     expect(normalized.customCategoryLibraries).toEqual(["用户旧库"]);
-    expect(normalized.customComponentLibraries).toEqual([{ name: "LegacyMeter", categoryLibraryName: "用户旧库" }]);
+    expect(normalized.customComponentLibraries).toEqual([
+      expect.objectContaining({
+        name: "LegacyMeter",
+        categoryLibraryName: "用户旧库",
+        terminalCount: 2,
+        terminalTypes: ["ac", "ac"],
+        isContainerComponentLibrary: false
+      })
+    ]);
     expect(normalized.customDeviceTemplates[0]).toMatchObject({
       kind: "legacy-meter",
       categoryLibrary: "用户旧库",
@@ -510,26 +520,34 @@ describe("graph template library filtering", () => {
     ] as any);
 
     expect(normalized).toEqual([
-      { name: "CustomPump", categoryLibraryName: "用户类别库", label: "用户泵库" },
-      { name: "LegacyMeter", categoryLibraryName: "用户旧库", label: "旧量测库" }
+      expect.objectContaining({ name: "CustomPump", categoryLibraryName: "用户类别库", label: "用户泵库", terminalCount: 2 }),
+      expect.objectContaining({ name: "LegacyMeter", categoryLibraryName: "用户旧库", label: "旧量测库", terminalCount: 2 })
     ]);
     expect(componentLibraryDisplayParts("CustomPump", normalized).title).toBe("用户泵库 / CustomPump");
     expect(componentLibraryDisplayParts("LegacyMeter", normalized).chinese).toBe("旧量测库");
   });
 
-  test("normalizes old derived component-library metadata back onto the base component library", () => {
-    const componentLibraries = normalizeCustomComponentLibraries([
-      {
+  test("preserves derived component-library metadata as an independent immutable class", () => {
+    const sourceComponentLibrary = {
+      name: "UserWindGen",
+      categoryLibraryName: "交流设备",
+      label: "用户风电",
+      isDerivedComponentLibrary: true,
+      derivedFromComponentLibrary: "ACGenerator",
+      isContainerComponentLibrary: true
+    };
+    const componentLibraries = normalizeCustomComponentLibraries([sourceComponentLibrary] as any);
+
+    expect(componentLibraries).toEqual([
+      expect.objectContaining({
         name: "UserWindGen",
         categoryLibraryName: "交流设备",
         label: "用户风电",
         isDerivedComponentLibrary: true,
-        derivedFromComponentLibrary: "ACGenerator",
-        isContainerComponentLibrary: true
-      }
-    ] as any);
-
-    expect(componentLibraries).toEqual([]);
+        derivedFromComponentLibrary: "ACGenerator"
+      })
+    ]);
+    expect(componentLibraries[0]).not.toHaveProperty("isContainerComponentLibrary");
 
     const normalized = normalizeDeviceLibraryPersistencePayload({
       customDeviceTemplates: [
@@ -554,13 +572,22 @@ describe("graph template library filtering", () => {
         }
       ],
       customCategoryLibraries: [],
-      customComponentLibraries: componentLibraries,
+      customComponentLibraries: [sourceComponentLibrary],
       deviceDefinitionOverrides: {},
       customGraphTemplateTypes: [],
       customGraphTemplates: []
     } as any);
 
-    expect(normalized.customComponentLibraries).toEqual([]);
+    expect(normalized.customComponentLibraries).toEqual([
+      expect.objectContaining({
+        name: "UserWindGen",
+        isDerivedComponentLibrary: true,
+        derivedFromComponentLibrary: "ACGenerator"
+      })
+    ]);
+    expect(normalized.customComponentLibraries[0]).not.toHaveProperty("isContainerComponentLibrary");
+    expect(normalized.customComponentLibraries[0]).not.toHaveProperty("terminalCount");
+    expect(normalized.customComponentLibraries[0]).not.toHaveProperty("terminalTypes");
     expect(normalized.customDeviceTemplates[0]).toMatchObject({
       isDerivedComponentLibrary: true,
       derivedFromComponentLibrary: "ACGenerator",
@@ -574,6 +601,236 @@ describe("graph template library filtering", () => {
       },
       isContainer: false
     });
+  });
+
+  test("migrates legacy class metadata from one representative and applies it to every concrete icon", () => {
+    const legacy = {
+      schemaVersion: 3,
+      customDeviceTemplates: [
+        {
+          kind: "custom-demo-horizontal",
+          label: "示例横向",
+          categoryLibrary: "交流设备",
+          size: { width: 100, height: 60 },
+          params: { component_type: "DemoClass" },
+          terminalType: "ac",
+          terminalCount: 1,
+          terminalTypes: ["ac"],
+          terminalLabels: ["交流端"],
+          terminalAnchors: [{ x: 0.5, y: 0 }],
+          terminalRoles: ["single-load"],
+          isContainer: false,
+          allowResizeTransform: true,
+          custom: true
+        },
+        {
+          kind: "custom-demo-vertical",
+          label: "示例竖向",
+          categoryLibrary: "交流设备",
+          size: { width: 60, height: 100 },
+          params: { component_type: "DemoClass" },
+          terminalType: "dc",
+          terminalCount: 2,
+          terminalTypes: ["dc", "dc"],
+          terminalLabels: ["旧端1", "旧端2"],
+          terminalAnchors: [{ x: 0, y: -0.5 }, { x: 0, y: 0.5 }],
+          terminalRoles: ["single-source", "single-load"],
+          isContainer: true,
+          allowResizeTransform: false,
+          custom: true
+        }
+      ],
+      customCategoryLibraries: [],
+      customComponentLibraries: [],
+      deviceDefinitionOverrides: {},
+      customGraphTemplateTypes: [],
+      customGraphTemplates: []
+    };
+
+    const normalized = normalizeDeviceLibraryPersistencePayload(legacy as any);
+
+    expect(normalized.schemaVersion).toBe(DEVICE_LIBRARY_SCHEMA_VERSION);
+    expect(normalized.customComponentLibraries).toEqual([
+      expect.objectContaining({
+        name: "DemoClass",
+        label: "示例横向",
+        terminalCount: 1,
+        terminalTypes: ["ac"],
+        terminalLabels: ["交流端"],
+        isContainerComponentLibrary: false
+      })
+    ]);
+    expect(normalized.customDeviceTemplates).toHaveLength(2);
+    for (const template of normalized.customDeviceTemplates) {
+      expect(template).toMatchObject({
+        terminalCount: 1,
+        terminalTypes: ["ac"],
+        terminalLabels: ["交流端"],
+        isContainer: false
+      });
+    }
+    expect(normalized.customDeviceTemplates.map((template: any) => template.allowResizeTransform)).toEqual([true, false]);
+    expect(normalized.customDeviceTemplates[0].terminalAnchors).toEqual([{ x: 0.5, y: 0 }]);
+    expect(normalized.customDeviceTemplates[1].terminalAnchors).toHaveLength(1);
+    expect(normalizeDeviceLibraryPersistencePayload(normalized)).toEqual(normalized);
+  });
+
+  test("stores only class references and visual element data, then rehydrates class metadata", () => {
+    const runtime = normalizeDeviceLibraryPersistencePayload({
+      schemaVersion: 4,
+      customDeviceTemplates: [
+        {
+          kind: "custom-pump-left",
+          label: "左向用户泵",
+          categoryLibrary: "用户设备",
+          size: { width: 100, height: 60 },
+          params: {
+            component_type: "UserPump",
+            backgroundImage: "left.svg",
+            p_set: "12"
+          },
+          terminalType: "ac",
+          terminalCount: 1,
+          terminalTypes: ["ac"],
+          terminalLabels: ["交流端"],
+          terminalAnchors: [{ x: -0.5, y: 0 }],
+          terminalRoles: ["single-load"],
+          terminalAssociations: ["ac-load"],
+          isContainer: false,
+          allowResizeTransform: false,
+          custom: true
+        },
+        {
+          kind: "custom-pump-right",
+          label: "右向用户泵",
+          categoryLibrary: "用户设备",
+          size: { width: 120, height: 70 },
+          params: {
+            component_type: "UserPump",
+            backgroundImage: "right.svg"
+          },
+          terminalType: "ac",
+          terminalCount: 1,
+          terminalTypes: ["ac"],
+          terminalLabels: ["交流端"],
+          terminalAnchors: [{ x: 0.5, y: 0 }],
+          terminalRoles: ["single-load"],
+          terminalAssociations: ["ac-load"],
+          isContainer: false,
+          allowResizeTransform: true,
+          custom: true
+        }
+      ],
+      customCategoryLibraries: ["用户设备"],
+      customComponentLibraries: [{
+        name: "UserPump",
+        categoryLibraryName: "用户设备",
+        label: "用户泵",
+        isDerivedComponentLibrary: false,
+        isContainerComponentLibrary: false,
+        terminalCount: 1,
+        terminalTypes: ["ac"],
+        terminalLabels: ["交流端"],
+        terminalRoles: ["single-load"],
+        terminalAssociations: ["ac-load"]
+      }],
+      deviceDefinitionOverrides: {},
+      customGraphTemplateTypes: [],
+      customGraphTemplates: []
+    } as any);
+
+    const stored = JSON.parse(serializeDeviceLibraryForStorage(runtime));
+    expect(stored.schemaVersion).toBe(DEVICE_LIBRARY_SCHEMA_VERSION);
+    expect(stored.customDeviceTemplates).toEqual([
+      expect.objectContaining({
+        kind: "custom-pump-left",
+        componentClass: "UserPump",
+        terminalAnchors: [{ x: -0.5, y: 0 }],
+        allowResizeTransform: false,
+        params: expect.objectContaining({ backgroundImage: expect.stringContaining("left.svg") })
+      }),
+      expect.objectContaining({
+        kind: "custom-pump-right",
+        componentClass: "UserPump",
+        terminalAnchors: [{ x: 0.5, y: 0 }],
+        allowResizeTransform: true,
+        params: expect.objectContaining({ backgroundImage: expect.stringContaining("right.svg") })
+      })
+    ]);
+    for (const template of stored.customDeviceTemplates) {
+      expect(template).not.toHaveProperty("categoryLibrary");
+      expect(template).not.toHaveProperty("terminalCount");
+      expect(template).not.toHaveProperty("terminalTypes");
+      expect(template).not.toHaveProperty("terminalLabels");
+      expect(template).not.toHaveProperty("terminalRoles");
+      expect(template).not.toHaveProperty("terminalAssociations");
+      expect(template).not.toHaveProperty("isContainer");
+      expect(template).not.toHaveProperty("isDerivedComponentLibrary");
+      expect(template.params).not.toHaveProperty("component_type");
+      expect(template.params).not.toHaveProperty("p_set");
+    }
+
+    const reloaded = normalizeDeviceLibraryPersistencePayload(stored);
+    expect(reloaded.customDeviceTemplates.map((template: any) => template.categoryLibrary)).toEqual(["用户设备", "用户设备"]);
+    expect(reloaded.customDeviceTemplates.map((template: any) => template.terminalCount)).toEqual([1, 1]);
+    expect(reloaded.customDeviceTemplates.map((template: any) => template.terminalLabels)).toEqual([["交流端"], ["交流端"]]);
+    expect(reloaded.customDeviceTemplates.map((template: any) => template.allowResizeTransform)).toEqual([false, true]);
+  });
+
+  test("groups custom derived components under their base class section", () => {
+    const definition = normalizeCustomComponentLibraries([{
+      name: "UserWindGen",
+      categoryLibraryName: "交流设备",
+      label: "用户风电",
+      isDerivedComponentLibrary: true,
+      derivedFromComponentLibrary: "ACGenerator",
+      terminalCount: 1,
+      terminalTypes: ["ac"]
+    }] as any);
+    const grouped = groupDeviceTemplatesByCategoryLibraryAndComponentLibrary([
+      {
+        kind: "custom-user-wind",
+        label: "用户风机",
+        categoryLibrary: "交流设备",
+        size: { width: 96, height: 64 },
+        params: {
+          component_type: "ACGenerator",
+          derived_from_component_type: "ACGenerator",
+          derived_component_type: "UserWindGen",
+          is_derived_component_library: "1"
+        },
+        terminalType: "ac",
+        terminalCount: 1,
+        custom: true,
+        isDerivedComponentLibrary: true,
+        derivedFromComponentLibrary: "ACGenerator",
+        derivedComponentLibrary: "UserWindGen"
+      }
+    ] as any, definition);
+
+    expect(grouped["交流设备"]).toEqual([
+      expect.objectContaining({
+        section: "ACGenerator",
+        templates: [expect.objectContaining({ kind: "custom-user-wind" })]
+      })
+    ]);
+    expect(grouped["交流设备"].some((group) => group.section === "UserWindGen")).toBe(false);
+  });
+
+  test("matches a derived component by its derived class name after grouping under the base class", () => {
+    const template = {
+      kind: "custom-user-wind",
+      label: "用户风机",
+      categoryLibrary: "交流设备",
+      componentClass: "UserWindGen",
+      size: { width: 96, height: 64 },
+      params: { component_type: "ACGenerator" },
+      terminalType: "ac",
+      terminalCount: 1,
+      custom: true
+    } as any;
+
+    expect(libraryTemplateMatchesSearch(template, "交流设备", "ACGenerator", "userwindgen")).toBe(true);
   });
 
   test("migrates legacy derived templates without an explicit derived flag into the base component library", () => {

@@ -8,7 +8,7 @@
 import { initDeviceLibraryDB } from "./deviceLibraryDB";
 import type { DeviceTemplate, DeviceTemplateDefinitionOverride } from "../model";
 import type { GraphTemplate } from "../appExtracted/appCoreCanvasUtilities";
-import { concreteDeviceDefinitionParams } from "../customDeviceUtils";
+import { concreteDeviceDefinitionParams, concreteDeviceTemplateForStorage } from "../customDeviceUtils";
 
 // ============ 设备模板 ============
 
@@ -44,7 +44,7 @@ function normalizeStoredDeviceTemplate(template: LegacyDeviceTemplate): DeviceTe
   } = template;
   const normalized: DeviceTemplate = {
     ...rest,
-    categoryLibrary: template.categoryLibrary ?? attributeLibrary ?? "交流设备",
+    categoryLibrary: template.categoryLibrary ?? attributeLibrary ?? "",
     params: concreteDeviceDefinitionParams(template.params)
   };
   return normalized;
@@ -64,7 +64,9 @@ export async function saveDeviceTemplate(
   const tx = db.transaction(["templates", "templateImages"], "readwrite");
 
   // 保存模板（移除图片 base64）
-  const normalizedTemplate = normalizeStoredDeviceTemplate(template as LegacyDeviceTemplate);
+  const normalizedTemplate = concreteDeviceTemplateForStorage(
+    normalizeStoredDeviceTemplate(template as LegacyDeviceTemplate)
+  );
   const templateWithoutImages = {
     ...normalizedTemplate,
     params: {
@@ -316,7 +318,7 @@ export async function saveDeviceTemplates(templates: DeviceTemplate[]): Promise<
   store.clear();
   for (const template of templates) {
     store.put({
-      ...normalizeStoredDeviceTemplate(template as LegacyDeviceTemplate),
+      ...concreteDeviceTemplateForStorage(normalizeStoredDeviceTemplate(template as LegacyDeviceTemplate)),
       updatedAt: Date.now()
     });
   }

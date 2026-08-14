@@ -57,10 +57,11 @@ describe("deviceLibraryStorage", () => {
       expect(retrieved).not.toBeNull();
       expect(retrieved?.kind).toBe("test-device");
       expect(retrieved?.label).toBe("测试设备");
-      expect(retrieved?.categoryLibrary).toBe("交流设备");
+      expect(retrieved?.categoryLibrary).toBe("");
+      expect(retrieved?.componentClass).toBe("ACLoad");
     });
 
-    it("应该按类别库查询设备模板", async () => {
+    it("具体图元不再持久化类别，类别查询不使用伪造默认值", async () => {
       const template1: DeviceTemplate = { ...mockTemplate, kind: "device-1", categoryLibrary: "交流设备" };
       const template2: DeviceTemplate = { ...mockTemplate, kind: "device-2", categoryLibrary: "直流设备" };
       const template3: DeviceTemplate = { ...mockTemplate, kind: "device-3", categoryLibrary: "交流设备" };
@@ -70,8 +71,7 @@ describe("deviceLibraryStorage", () => {
       await saveDeviceTemplate(template3);
 
       const acTemplates = await queryTemplatesByCategoryLibrary("交流设备");
-      expect(acTemplates).toHaveLength(2);
-      expect(acTemplates.map(t => t.kind).sort()).toEqual(["device-1", "device-3"]);
+      expect(acTemplates).toEqual([]);
     });
 
     it("应该获取所有自定义设备模板", async () => {
@@ -143,8 +143,12 @@ describe("deviceLibraryStorage", () => {
       expect(retrieved?.parameterDefinitions).toBeUndefined();
       expect(retrieved?.measurementDefinitions).toBeUndefined();
       expect(retrieved?.params.p_set).toBeUndefined();
-      expect(retrieved?.params.component_type).toBe("CustomDevice");
+      expect(retrieved?.componentClass).toBe("CustomDevice");
+      expect(retrieved?.params.component_type).toBeUndefined();
       expect(retrieved?.params.backgroundImage).toBe("device.svg");
+      expect(retrieved).not.toHaveProperty("terminalCount");
+      expect(retrieved).not.toHaveProperty("terminalTypes");
+      expect(retrieved).not.toHaveProperty("isContainer");
     });
   });
 
