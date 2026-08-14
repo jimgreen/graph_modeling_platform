@@ -611,6 +611,44 @@ test("resolves custom multi-state visual overrides without changing E export sha
   expect(exported.ACSwitch.rows[0]).toEqual(expect.objectContaining({ status: "1", run_stat: "1" }));
 });
 
+test("derives the same dev_type for vertical device variants as their base devices", () => {
+  const baseNode = createDefaultNode("ac-series-capacitor", { x: 100, y: 100 });
+  const verticalNode = createDefaultNode("ac-series-capacitor-vertical", { x: 260, y: 100 });
+  baseNode.params.dev_type = "";
+  verticalNode.params.dev_type = "";
+  const exported = parseESections(buildEDeviceParameterFile({
+    version: 1,
+    name: "竖向补偿元件测试",
+    nodes: [baseNode, verticalNode],
+    edges: []
+  }));
+  expect(exported.ACSeriCompensator.rows).toHaveLength(2);
+  expect(exported.ACSeriCompensator.rows[0].dev_type).toBe("ac-series-capacitor");
+  expect(exported.ACSeriCompensator.rows[1].dev_type).toBe("ac-series-capacitor");
+});
+
+test("derives the interface dev_type for vertical variants from the base kind", () => {
+  const verticalNode = createDefaultNode("ac-series-capacitor-vertical", { x: 100, y: 100 });
+  verticalNode.params.dev_type = "";
+  const payload = parseESections(buildEFileExport({
+    version: 1,
+    name: "竖向接口测试",
+    nodes: [verticalNode],
+    edges: []
+  }, ["默认方案"], {
+    interfaceDefinitions: [{
+      componentLibrary: "ACSeriCompensator",
+      exportEnabled: true,
+      exportName: "ACSeriCompensator",
+      fields: [
+        { sourceName: "idx", exportEnabled: true, exportName: "idx" },
+        { sourceName: "dev_type", exportEnabled: true, exportName: "dev_type" }
+      ]
+    }]
+  }).text);
+  expect(payload.ACSeriCompensator.rows[0].dev_type).toBe("ac-series-capacitor");
+});
+
 test("includes AC and DC zero-impedance branch elements in the library and E export", () => {
   const acTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-zero-branch");
   const dcTemplate = DEVICE_LIBRARY.find((item) => item.kind === "dc-zero-branch");
@@ -1074,6 +1112,7 @@ test("exports and parses custom derived component library metadata", () => {
   });
   expect(derivedSection?.fields.map((field) => field.exportName)).toEqual([
     "idx",
+    "dev_type",
     "idx_acgenerator",
     "installed_capacity"
   ]);

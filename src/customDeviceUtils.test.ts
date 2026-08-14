@@ -706,7 +706,13 @@ describe("electric generation device library classification", () => {
 
     expect(devTypeRow).toBeDefined();
     expect(devTypeRow?.typicalValue).toBe(template?.kind);
+
     expect(draft.componentKind).toBe(template?.kind);
+    // （竖向）变体与基础元件共用同一 dev_type，剥去 -vertical 后缀
+    const verticalTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-breaker-vertical");
+    const verticalDraft = createCustomDeviceDraftFromTemplate(verticalTemplate!);
+    const verticalDevTypeRow = verticalDraft.params.find((row) => row.enName === "dev_type");
+    expect(verticalDevTypeRow?.typicalValue).toBe("ac-breaker");
   });
 
   test("round-trips editable component Chinese and English display names through an override", () => {
