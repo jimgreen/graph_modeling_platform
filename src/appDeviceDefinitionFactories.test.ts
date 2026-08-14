@@ -1788,7 +1788,7 @@ describe("manual bend interaction helpers", () => {
     };
     let customDeviceDraft = {
       componentLibrary: "ACGenerator",
-      componentName: "柴油发电机",
+      componentName: "用户柴油发电机",
       isDerivedComponentLibrary: true,
       derivedFromComponentLibrary: "ACGenerator",
       derivedComponentLibrary: "UserDieselGen",
@@ -1861,6 +1861,7 @@ describe("manual bend interaction helpers", () => {
     expect(saved).toBe(true);
     expect(savedOverrides["ac-diesel-source"]).toMatchObject({
       kind: "ac-diesel-source",
+      label: "用户柴油发电机",
       isDerivedComponentLibrary: true,
       derivedFromComponentLibrary: "ACGenerator",
       derivedComponentLibrary: "UserDieselGen"
@@ -1875,6 +1876,8 @@ describe("manual bend interaction helpers", () => {
     });
     expect(savedOverrides["ac-diesel-source"]).not.toHaveProperty("derivedComponentLibraryLabel");
     expect(savedOverrides["ac-diesel-source"].params).not.toHaveProperty("derived_component_library_label");
+    expect(applyDeviceTemplateDefinitionOverride(template as any, savedOverrides["ac-diesel-source"]).label)
+      .toBe("用户柴油发电机");
     expect(customDeviceDraft).toMatchObject({
       isDerivedComponentLibrary: true,
       derivedFromComponentLibrary: "ACGenerator",
@@ -2181,7 +2184,7 @@ describe("manual bend interaction helpers", () => {
       componentName: "",
       error: ""
     };
-    let customLibraryCreateDialog: any = {
+    const submittedDialog: any = {
       kind: "component",
       title: "新建元件",
       cnName: "用户风电机组",
@@ -2194,6 +2197,11 @@ describe("manual bend interaction helpers", () => {
       derivedComponentLibrary: "",
       derivedComponentLibraryLabel: "stale-label",
       error: ""
+    };
+    let customLibraryCreateDialog: any = {
+      ...submittedDialog,
+      componentClassName: "ACGenerator",
+      componentLibrary: "ACGenerator"
     };
     const setCustomComponentTreeSelection = vi.fn();
     const setCustomDeviceDefinitionMode = vi.fn();
@@ -2211,14 +2219,7 @@ describe("manual bend interaction helpers", () => {
         categoryLibraryName: "交流设备",
         label: "用户风电",
         isDerivedComponentLibrary: true,
-        derivedFromComponentLibrary: "ACGenerator",
-        terminalCount: 1,
-        terminalTypes: ["ac"],
-        terminalLabels: ["交流发电机端"],
-        terminalRoles: ["single-source"],
-        terminalAssociations: ["ac-generator"],
-        isContainerComponentLibrary: false,
-        allowResizeTransform: false
+        derivedFromComponentLibrary: "ACGenerator"
       }],
       createEmptyCustomDeviceDraft: (categoryLibraryName = "") => ({
         categoryLibraryName,
@@ -2241,9 +2242,36 @@ describe("manual bend interaction helpers", () => {
         return customLibraryCreateDialog;
       },
       isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
-      libraryTemplates: [],
+      libraryTemplates: [{
+        kind: "ac-source",
+        label: "交流电源",
+        componentClass: "ACGenerator",
+        categoryLibrary: "交流设备",
+        params: { component_type: "ACGenerator" },
+        terminalType: "ac",
+        terminalCount: 1,
+        terminalTypes: ["ac"],
+        terminalLabels: ["交流发电机端"],
+        terminalRoles: ["single-source"],
+        terminalAssociations: ["ac-generator"],
+        isContainer: false
+      }, {
+        kind: "existing-user-wind-generator",
+        label: "既有用户风电机组",
+        componentClass: "UserWindGen",
+        categoryLibrary: "交流设备",
+        custom: true,
+        params: { component_type: "ACGenerator" },
+        isDerivedComponentLibrary: true,
+        derivedFromComponentLibrary: "ACGenerator",
+        derivedComponentLibrary: "UserWindGen",
+        derivedComponentLibraryLabel: "用户风电",
+        terminalType: "ac",
+        terminalCount: 1,
+        terminalTypes: ["ac"]
+      }],
       normalizeCategoryLibraryName: (name: string) => name.trim(),
-      normalizeComponentLibraryName: (name: string) => name.trim(),
+      normalizeComponentLibraryName: (name: unknown) => String(name ?? "").trim(),
       normalizeCustomCategoryLibraries: (value: unknown) => value as string[],
       normalizeCustomComponentLibraries: (value: unknown) => value as any[],
       requireEditMode: () => true,
@@ -2268,7 +2296,7 @@ describe("manual bend interaction helpers", () => {
       setSelectedDefinitionKind: vi.fn()
     };
 
-    const created = createConfirmCustomLibraryCreateDialog(scope)();
+    const created = createConfirmCustomLibraryCreateDialog(scope)(submittedDialog);
 
     expect(created).toBe(true);
     expect(setCustomDeviceDefinitionMode).toHaveBeenCalledWith("create");

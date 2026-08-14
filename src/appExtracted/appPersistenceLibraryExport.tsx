@@ -2705,6 +2705,7 @@ export function normalizeDeviceDefinitionOverrides(value: unknown): Record<strin
       ));
       const normalizedOverride: DeviceTemplateDefinitionOverride = {
         kind: normalizedKind,
+        label: String(rawOverride.label ?? "").trim() || undefined,
         params: normalizedParams,
         size: normalizeDefinitionOverrideSize(rawOverride.size),
         terminalType: normalizeDefinitionOverrideTerminalType(rawOverride.terminalType),

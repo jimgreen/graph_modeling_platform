@@ -396,6 +396,7 @@ export type DeviceTemplate = {
 
 export type DeviceTemplateDefinitionOverride = {
   kind: string;
+  label?: string;
   params?: Record<string, string>;
   size?: DeviceTemplate["size"];
   terminalType?: TerminalType;
@@ -7572,6 +7573,7 @@ export function applyDeviceTemplateDefinitionOverride(
   const normalizedParams = normalizeSemanticParameterValues(params);
   const mergedTemplate: DeviceTemplate = {
     ...template,
+    label: String(override.label ?? "").trim() || template.label,
     size: override.size ? { ...override.size } : template.size,
     terminalType,
     terminalCount,
