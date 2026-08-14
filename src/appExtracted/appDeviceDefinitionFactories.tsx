@@ -20,6 +20,7 @@ import {
   componentLibraryDefinitionFromMetadata,
   defaultTerminalAssociationForClassTerminal,
   defaultTerminalTypeForCategoryLibrary,
+  resolveComponentLibraryClassFamilyMetadata,
   resolveComponentLibraryClassMetadata
 } from "../componentLibraryMetadata";
 import {
@@ -6212,12 +6213,19 @@ function componentLibraryMetadataDraftPatch(
     normalizeCategoryLibraryName = (value: unknown) => String(value ?? "").trim(),
     normalizeComponentLibraryName = (value: unknown) => String(value ?? "").trim()
   } = __appScope;
+  const normalizedClassName = normalizeComponentLibraryName(className);
+  const normalizedCategoryLibraryName = normalizeCategoryLibraryName(categoryLibraryName);
   const metadata = resolveComponentLibraryClassMetadata(
-    normalizeComponentLibraryName(className),
-    normalizeCategoryLibraryName(categoryLibraryName),
+    normalizedClassName,
+    normalizedCategoryLibraryName,
     customComponentLibraries,
     libraryTemplates
-  );
+  ) ?? resolveComponentLibraryClassFamilyMetadata(
+    normalizedClassName,
+    normalizedCategoryLibraryName,
+    customComponentLibraries,
+    libraryTemplates
+  ).find((item) => item.className.toLowerCase() === normalizedClassName.toLowerCase());
   if (!metadata) return null;
   const terminalTypes = Array.from(
     { length: COMPONENT_LIBRARY_MAX_TERMINALS },
@@ -6411,9 +6419,9 @@ export function createStartCustomComponentCreate(__appScope: Record<string, any>
 const CUSTOM_DEVICE_KIND_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_-]*$/;
 
 export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string, any>) {
-  return () => {
+  return (dialogOverride?: any) => {
   const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, categoryLibraries, componentLibraryOptions, createEmptyCustomDeviceDraft, customComponentLibraries = [], customDeviceDraft, customDeviceTemplates, customLibraryCreateDialog, defaultComponentLibraryForCategoryLibrary, isValidComponentLibraryName, libraryTemplates, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeCustomCategoryLibraries, normalizeCustomComponentLibraries, requireEditMode, setCustomCategoryLibraries, setCustomComponentLibraries, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode, setCustomDeviceDialogView, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceStatePageId, setCustomLibraryCreateDialog, setEditingCustomDeviceKind, setExpandedCategoryLibraries, setSelectedDefinitionKind } = __appScope;
-    const dialog = customLibraryCreateDialog;
+    const dialog = dialogOverride ?? customLibraryCreateDialog;
     if (!dialog) {
       return false;
     }
@@ -7590,6 +7598,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     const nextTemplateOverride: DeviceTemplateDefinitionOverride = {
       ...existingExactOverride,
       kind: template.kind,
+      label: customDeviceDraft.componentName.trim() || template.label,
       params: {
         ...(existingExactOverride?.params ?? {}),
         backgroundImage,
@@ -7650,9 +7659,10 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       canonicalLibraryTemplates
     );
     setDeviceDefinitionOverrides(normalizedDeviceDefinitionOverrides);
+    const savedComponentLabel = customDeviceDraft.componentName.trim() || template.label;
     persistDeviceLibraryChange({ deviceDefinitionOverrides: normalizedDeviceDefinitionOverrides }, {
-      success: `元件定义已保存到后台：${template.label}`,
-      failure: `元件定义已保存到本地，后台保存失败：${template.label}`
+      success: `元件定义已保存到后台：${savedComponentLabel}`,
+      failure: `元件定义已保存到本地，后台保存失败：${savedComponentLabel}`
     });
     const cleanDraft = {
       ...customDeviceDraft,
@@ -7686,7 +7696,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     }));
     setCustomDeviceDraftCleanBaseline(cleanDraft, terminalAnchors);
     setCustomDeviceSaveMessage("");
-    const toastMessage = `元件定义已保存：${template.label}`;
+    const toastMessage = `元件定义已保存：${savedComponentLabel}`;
     setCustomDeviceSaveToast(toastMessage);
     if (customDeviceSaveToastTimerRef?.current) {
       clearTimeout(customDeviceSaveToastTimerRef.current);
@@ -7694,7 +7704,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     if (customDeviceSaveToastTimerRef) {
       customDeviceSaveToastTimerRef.current = setTimeout(() => setCustomDeviceSaveToast(""), 3000);
     }
-    writeOperationLog(`保存元件定义：${template.label}`);
+    writeOperationLog(`保存元件定义：${savedComponentLabel}`);
     if (options.closeAfterSave) {
       closeCustomDeviceDialog();
     }

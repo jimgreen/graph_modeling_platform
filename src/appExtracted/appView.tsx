@@ -18,7 +18,10 @@ import { buildUserCustomizationInventory, restoreUserCustomizationItems, type Us
 import { createMeasurementFieldParameterDefinition } from "../measurementDefinitionTypes";
 import { moveSelectedTableRows, nextTableRowSelection, uniqueCopiedFieldName } from "../definitionTableSelection";
 import { WindowCloseButton } from "../WindowCloseButton";
-import { resolveComponentLibraryClassMetadata } from "../componentLibraryMetadata";
+import {
+  resolveComponentLibraryClassFamilyMetadata,
+  resolveComponentLibraryClassMetadata
+} from "../componentLibraryMetadata";
 
 export type ImagePickerLibraryTab = "image" | "icon";
 
@@ -1503,52 +1506,25 @@ export function renderAppView(__appScope: Record<string, any>) {
   const selectedCustomEditableParameterCount = displayedVisibleCustomParams.filter(
     (row) => selectedCustomParameterRowIdSet.has(row.id)
   ).length;
-  const customDeviceDerivedBaseLibrary = normalizeComponentLibraryName(
-    customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary || ""
-  );
-  const derivedComponentLibraryOptionMap = new Map<string, { name: string; label: string; base: string; categoryLibraryName: string }>();
-  for (const item of customComponentLibraries ?? []) {
-    const name = normalizeComponentLibraryName(item.name ?? "");
-    const base = normalizeComponentLibraryName(item.derivedFromComponentLibrary ?? "");
-    const categoryLibraryName = normalizeCategoryLibraryName(item.categoryLibraryName ?? "");
-    if (!name || !base || !item.isDerivedComponentLibrary) {
-      continue;
-    }
-    derivedComponentLibraryOptionMap.set(`${categoryLibraryName.toLowerCase()}::${name.toLowerCase()}`, { name, label: String(item.label ?? "").trim(), base, categoryLibraryName });
-  }
-  for (const template of libraryTemplates ?? []) {
-    const info = templateDerivedComponentLibraryInfo(template);
-    if (!info) {
-      continue;
-    }
-    const name = normalizeComponentLibraryName(info.derivedComponentLibrary);
-    const base = normalizeComponentLibraryName(info.componentLibrary || info.baseComponentLibrary);
-    const categoryLibraryName = normalizeCategoryLibraryName(info.categoryLibrary || template.categoryLibrary || "");
-    if (!name || !base) {
-      continue;
-    }
-    const key = `${categoryLibraryName.toLowerCase()}::${name.toLowerCase()}`;
-    if (!derivedComponentLibraryOptionMap.has(key)) {
-      derivedComponentLibraryOptionMap.set(key, { name, label: info.label, base, categoryLibraryName });
-    }
-  }
-  const derivedComponentLibraryOptionsFor = (categoryLibraryName: string, baseComponentLibrary: string) => Array.from(derivedComponentLibraryOptionMap.values())
-    .filter((item) => normalizeCategoryLibraryName(item.categoryLibraryName).toLowerCase() === normalizeCategoryLibraryName(categoryLibraryName).toLowerCase())
-    .filter((item) => !baseComponentLibrary || item.base.toLowerCase() === baseComponentLibrary.toLowerCase())
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const currentCategoryDerivedComponentLibraryNameSet = new Set(
-    derivedComponentLibraryOptionsFor(customDeviceDraft.categoryLibraryName, "")
-      .map((item) => item.name.toLowerCase())
-  );
-  const customDeviceBaseComponentLibraryOptions = customDeviceDraft.isDerivedComponentLibrary
-    ? currentCategoryLibraryComponentLibraryOptions.filter((section) => !currentCategoryDerivedComponentLibraryNameSet.has(normalizeComponentLibraryName(section).toLowerCase()))
-    : currentCategoryLibraryComponentLibraryOptions;
   const customLibraryCreateDialogCategoryLibraryName = normalizeCategoryLibraryName(
     customLibraryCreateDialog?.categoryLibraryName || customDeviceDraft.categoryLibraryName || ""
   );
-  const customLibraryCreateDialogBaseComponentLibraryOptions = (
-    componentLibraryOptionsByCategoryLibrary[customLibraryCreateDialogCategoryLibraryName] ?? currentCategoryLibraryComponentLibraryOptions
-  ).filter((section) => !currentCategoryDerivedComponentLibraryNameSet.has(normalizeComponentLibraryName(section).toLowerCase()));
+  const selectedComponentLibraryFamilyClassName = normalizeComponentLibraryName(
+    customComponentTreeSelection?.kind === "componentLibrary" || customComponentTreeSelection?.kind === "component"
+      ? customComponentTreeSelection.section
+      : customLibraryCreateDialog?.componentClassName ||
+        customDeviceDraft.derivedComponentLibrary ||
+        customDeviceDraft.componentLibrary ||
+        ""
+  );
+  const customLibraryCreateDialogFamilyMetadata = resolveComponentLibraryClassFamilyMetadata(
+    selectedComponentLibraryFamilyClassName,
+    customLibraryCreateDialogCategoryLibraryName,
+    customComponentLibraries,
+    libraryTemplates
+  );
+  const customLibraryCreateDialogBaseComponentLibraryOptions = customLibraryCreateDialogFamilyMetadata
+    .map((metadata) => metadata.className);
   const customLibraryCreateDialogBaseSearchNeedle = String(
     customLibraryCreateDialog?.baseComponentLibrarySearch ?? ""
   ).trim().toLowerCase();
@@ -1558,33 +1534,17 @@ export function renderAppView(__appScope: Record<string, any>) {
       return componentLibraryDisplayParts(section, customComponentLibraries).title.trim().toLowerCase()
         .includes(customLibraryCreateDialogBaseSearchNeedle);
     });
-  const customLibraryCreateDialogClassOptionMap = new Map<string, {
+  const customLibraryCreateDialogClassOptions: Array<{
     className: string;
     label: string;
     baseComponentLibrary: string;
     isDerivedComponentLibrary: boolean;
-  }>();
-  for (const section of customLibraryCreateDialogBaseComponentLibraryOptions) {
-    const className = normalizeComponentLibraryName(section);
-    if (!className) continue;
-    const display = componentLibraryDisplayParts(className, customComponentLibraries);
-    customLibraryCreateDialogClassOptionMap.set(className.toLowerCase(), {
-      className,
-      label: display.title,
-      baseComponentLibrary: className,
-      isDerivedComponentLibrary: false
-    });
-  }
-  for (const option of derivedComponentLibraryOptionsFor(customLibraryCreateDialogCategoryLibraryName, "")) {
-    customLibraryCreateDialogClassOptionMap.set(option.name.toLowerCase(), {
-      className: option.name,
-      label: option.label ? `${option.label} / ${option.name}` : option.name,
-      baseComponentLibrary: option.base,
-      isDerivedComponentLibrary: true
-    });
-  }
-  const customLibraryCreateDialogClassOptions = Array.from(customLibraryCreateDialogClassOptionMap.values())
-    .sort((a, b) => a.className.localeCompare(b.className));
+  }> = customLibraryCreateDialogFamilyMetadata.map((metadata) => ({
+    className: metadata.className,
+    label: componentLibraryDisplayParts(metadata.className, customComponentLibraries).title,
+    baseComponentLibrary: metadata.baseComponentLibrary,
+    isDerivedComponentLibrary: metadata.isDerivedComponentLibrary
+  }));
   const customLibraryCreateDialogSelectedClassName = normalizeComponentLibraryName(
     customLibraryCreateDialog?.componentClassName ||
     customLibraryCreateDialog?.derivedComponentLibrary ||
@@ -4440,7 +4400,7 @@ export function renderAppView(__appScope: Record<string, any>) {
             onClick={(event) => event.stopPropagation()}
             onSubmit={(event) => {
               event.preventDefault();
-              confirmCustomLibraryCreateDialog();
+              confirmCustomLibraryCreateDialog(customLibraryCreateDialog);
             }}
           >
             <WindowCloseButton label={`关闭${customLibraryCreateDialog.title}`} onClick={() => setCustomLibraryCreateDialog(null)} />

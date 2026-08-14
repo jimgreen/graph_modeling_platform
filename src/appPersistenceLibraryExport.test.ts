@@ -217,6 +217,23 @@ describe("graph template library filtering", () => {
     });
   });
 
+  test("preserves and reapplies an edited built-in component label", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-source")!;
+    const overrides = normalizeDeviceDefinitionOverrides({
+      [template.kind]: {
+        kind: template.kind,
+        label: "重命名交流电源"
+      }
+    });
+
+    expect(overrides[template.kind]).toMatchObject({
+      kind: template.kind,
+      label: "重命名交流电源"
+    });
+    expect(applyDeviceTemplateDefinitionOverride(template, overrides[template.kind]).label)
+      .toBe("重命名交流电源");
+  });
+
   test("removes an unmarked historical empty built-in definition table", () => {
     const normalized = normalizeDeviceDefinitionOverrides({
       "dcdc-converter": {

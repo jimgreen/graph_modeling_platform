@@ -197,6 +197,126 @@ export function resolveComponentLibraryClassMetadata(
   );
 }
 
+export function resolveComponentLibraryClassFamilyMetadata(
+  selectedClassNameValue: unknown,
+  categoryLibraryNameValue: unknown,
+  definitions: readonly CustomComponentLibraryDefinition[] = [],
+  templates: readonly DeviceTemplate[] = []
+): ComponentLibraryClassMetadata[] {
+  const selectedClassName = normalizeName(selectedClassNameValue);
+  const categoryLibraryName = normalizeName(categoryLibraryNameValue);
+  if (!selectedClassName) return [];
+
+  const rootAndDepthFor = (metadata: ComponentLibraryClassMetadata) => {
+    let current = metadata;
+    let depth = 0;
+    const visited = new Set<string>();
+    while (current.isDerivedComponentLibrary) {
+      const currentKey = current.className.toLowerCase();
+      if (visited.has(currentKey)) return null;
+      visited.add(currentKey);
+      const parent = resolveComponentLibraryClassMetadata(
+        current.baseComponentLibrary,
+        categoryLibraryName,
+        definitions,
+        templates
+      );
+      if (!parent) {
+        const parentClassName = normalizeName(current.baseComponentLibrary);
+        if (!parentClassName) return null;
+        return {
+          root: {
+            ...current,
+            className: parentClassName,
+            label: "",
+            isDerivedComponentLibrary: false,
+            baseComponentLibrary: parentClassName
+          },
+          depth: depth + 1
+        };
+      }
+      current = parent;
+      depth += 1;
+    }
+    return { root: current, depth };
+  };
+
+  const categoryKey = categoryLibraryName.toLowerCase();
+  const candidateNames = new Map<string, string>();
+  candidateNames.set(selectedClassName.toLowerCase(), selectedClassName);
+  for (const definition of definitions) {
+    const definitionCategoryKey = normalizeName(definition.categoryLibraryName).toLowerCase();
+    const className = normalizeName(definition.name);
+    if (className && (!categoryKey || definitionCategoryKey === categoryKey)) {
+      candidateNames.set(className.toLowerCase(), className);
+    }
+  }
+  for (const template of templates) {
+    const templateCategoryKey = normalizeName(template.categoryLibrary).toLowerCase();
+    const className = templateClassName(template);
+    if (className && (!categoryKey || templateCategoryKey === categoryKey)) {
+      candidateNames.set(className.toLowerCase(), className);
+    }
+  }
+
+  let selectedMetadata = resolveComponentLibraryClassMetadata(
+    selectedClassName,
+    categoryLibraryName,
+    definitions,
+    templates
+  );
+  if (!selectedMetadata) {
+    let recoveredRootScore = -1;
+    for (const candidateName of candidateNames.values()) {
+      const candidateMetadata = resolveComponentLibraryClassMetadata(
+        candidateName,
+        categoryLibraryName,
+        definitions,
+        templates
+      );
+      if (!candidateMetadata) continue;
+      const candidateAncestry = rootAndDepthFor(candidateMetadata);
+      if (candidateAncestry?.root.className.toLowerCase() === selectedClassName.toLowerCase()) {
+        const recoveredRootScoreForCandidate = templateForClass(
+          candidateName,
+          categoryLibraryName,
+          templates
+        ) ? 1 : 0;
+        if (recoveredRootScoreForCandidate > recoveredRootScore) {
+          selectedMetadata = candidateAncestry.root;
+          recoveredRootScore = recoveredRootScoreForCandidate;
+        }
+      }
+    }
+  }
+  if (!selectedMetadata) return [];
+  const selectedAncestry = rootAndDepthFor(selectedMetadata);
+  if (!selectedAncestry) return [];
+  const rootKey = selectedAncestry.root.className.toLowerCase();
+  candidateNames.set(rootKey, selectedAncestry.root.className);
+
+  return Array.from(candidateNames.values())
+    .map((className) => {
+      const metadata = className.toLowerCase() === rootKey
+        ? selectedAncestry.root
+        : resolveComponentLibraryClassMetadata(
+            className,
+            categoryLibraryName,
+            definitions,
+            templates
+          );
+      if (!metadata) return null;
+      const ancestry = rootAndDepthFor(metadata);
+      if (!ancestry || ancestry.root.className.toLowerCase() !== rootKey) return null;
+      return { metadata, depth: ancestry.depth };
+    })
+    .filter((item): item is { metadata: ComponentLibraryClassMetadata; depth: number } => Boolean(item))
+    .sort((left, right) => (
+      left.depth - right.depth || left.metadata.className.localeCompare(right.metadata.className)
+    ))
+    .map((item) => item.metadata);
+}
+
 export function componentLibraryDefinitionFromMetadata(
   metadata: ComponentLibraryClassMetadata
 ): CustomComponentLibraryDefinition {
