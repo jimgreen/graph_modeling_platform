@@ -2012,6 +2012,7 @@ export type TopologyValidationErrorType =
   | "device-enum-invalid"
   | "device-limit-invalid"
   | "device-setpoint-out-of-range"
+  | "voltage-setpoint-zero"
   | "hydrogen-storage-parameter-invalid"
   | "hydrogen-coupling-parameter-invalid"
   | "voltage-limit-out-of-range"

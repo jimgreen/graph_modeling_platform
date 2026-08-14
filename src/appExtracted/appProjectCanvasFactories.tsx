@@ -5028,7 +5028,8 @@ export function createRunTopologyCalculation(__appScope: Record<string, any>) {
       powerUnit,
       voltageUnit,
       currentUnit,
-      skipVoltageNodeIds: invalidVoltageBaseNodeIds
+      skipVoltageNodeIds: invalidVoltageBaseNodeIds,
+      sourceNodes: nodes
     });
     const errors = [...topologyErrors, ...normalizedLimits.warnings];
     const blockingErrors = errors.filter(isBlockingTopologyValidationError);
