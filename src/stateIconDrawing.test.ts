@@ -54,10 +54,9 @@ import {
   createCustomDeviceDefaultStateVisualDraft,
   createDefinitionDefaultStateVisualDraft,
   createLoadDefinitionTemplateDraft,
-  createRenderStateVisualPager,
-  createRenderDeviceDefinitionVisualPanel,
   createSelectCustomComponentTemplate
 } from "./appExtracted/appDeviceDefinitionFactories";
+import { createRenderStateVisualPager, createRenderDeviceDefinitionVisualPanel } from "./appExtracted/appDeviceDefinitionRenderers";
 import { createCustomDeviceDraftFromTemplate, customDeviceImageWithTerminalConnectors, generateCustomDeviceImage, projectCustomDeviceTerminalAnchorToBoundary, resolveTemplateComponentLibrary } from "./customDeviceUtils";
 
 const DEFINITION_MEASUREMENT_DRAFT_SCOPE = {
