@@ -9,6 +9,7 @@ import {
   deviceDefinitionKeyForTemplate,
   deviceDefinitionSharedKeyForTemplate,
   deviceTemplatesShareParameterDefinitions,
+  isConcreteDeviceDefinitionParamName,
   migrateSharedDeviceDefinitionOverrideForTemplateChange,
   normalizeDeviceDefinitionOwnership,
   normalizeSharedDeviceDefinitionOverrides,
@@ -16,6 +17,10 @@ import {
   resolveTemplateComponentLibrary,
   templateDerivedComponentLibraryInfo
 } from "./customDeviceUtils";
+import {
+  DEVICE_DEFINITION_VISUAL_PARAM_KEYS,
+  DEVICE_INSTANCE_GRAPH_PARAM_KEYS
+} from "./deviceVisualParams";
 
 const generationCases = [
   ["ac-wind-source", "交流设备", "ACGenerator", "ACWindGen"],
@@ -35,6 +40,17 @@ const generationCases = [
 ] as const;
 
 describe("electric generation device library classification", () => {
+  test("uses the shared visual ownership registry without capturing instance transforms", () => {
+    for (const key of DEVICE_DEFINITION_VISUAL_PARAM_KEYS) {
+      expect(isConcreteDeviceDefinitionParamName(key), key).toBe(true);
+    }
+    for (const key of DEVICE_INSTANCE_GRAPH_PARAM_KEYS) {
+      expect(isConcreteDeviceDefinitionParamName(key), key).toBe(false);
+    }
+    expect(isConcreteDeviceDefinitionParamName("buttonTargetLayerId")).toBe(true);
+    expect(isConcreteDeviceDefinitionParamName("rated_capacity")).toBe(false);
+  });
+
   test.each(generationCases)(
     "keeps %s in the base component library while exposing its derived class",
     (kind, categoryLibrary, componentLibrary, derivedComponentLibrary) => {
@@ -60,6 +76,35 @@ describe("electric generation device library classification", () => {
     expect(deviceDefinitionKeyForTemplate(acSource!)).toBe("ACGenerator");
     expect(resolveTemplateComponentLibrary(dcSource!)).toBe("DCGenerator");
     expect(deviceDefinitionKeyForTemplate(dcSource!)).toBe("DCGenerator");
+  });
+
+  test.each([
+    ["ac-source", "ACGenerator"],
+    ["dc-source", "DCGenerator"]
+  ] as const)("keeps built-in %s in its canonical class after a polluted shared override", (kind, expectedClass) => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
+    const effectiveTemplate = applyDeviceTemplateDefinitionOverride(
+      template,
+      deviceDefinitionOverrideForTemplate(template, {
+        [sharedKey]: {
+          kind: sharedKey,
+          params: {
+            component_type: "ACRealBs",
+            derived_from_component_type: "ACRealBs",
+            derived_component_type: "WrongDerivedBus",
+            derived_component_library_label: "错误派生母线",
+            is_derived_component_library: "1",
+            rated_capacity: "10"
+          }
+        }
+      }, DEVICE_LIBRARY)
+    );
+
+    expect(templateDerivedComponentLibraryInfo(effectiveTemplate)).toBeNull();
+    expect(resolveTemplateComponentLibrary(effectiveTemplate)).toBe(expectedClass);
+    expect(deviceDefinitionKeyForTemplate(effectiveTemplate)).toBe(expectedClass);
+    expect(effectiveTemplate.params.rated_capacity).toBe("10");
   });
 
   test("does not apply a base-class override to a derived generation template", () => {

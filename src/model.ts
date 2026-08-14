@@ -9,6 +9,7 @@ import type { DeviceMeasurementDefinition } from "./measurementDefinitionTypes";
 import { degreesToRadians } from "./formatUtils";
 import { clampNumber } from "./canvasViewport";
 import { normalizeImageFitMode } from "./imageFit";
+import { isCanonicalDeviceVisualParamName } from "./deviceVisualParams";
 
 // E 文件导出相关代码（从 model.ts 提取到独立模块）
 export * from "./model-eexport";
@@ -4641,7 +4642,7 @@ export function normalizeSemanticParameterValues(params: Record<string, string>)
   let next = params;
   let changed = false;
   for (const [name, value] of Object.entries(params)) {
-    if (name.startsWith("_")) {
+    if (name.startsWith("_") || isCanonicalDeviceVisualParamName(name)) {
       continue;
     }
     const normalizedValue = normalizeSemanticParameterValue(name, value);
@@ -4849,17 +4850,20 @@ export function normalizeDeviceParamRecord(params?: Record<string, string>): Rec
   const normalized: Record<string, string> = {};
   const priorities = new Map<string, number>();
   for (const [key, value] of Object.entries(params)) {
-    const normalizedKey = key.startsWith("_") ? key : toSnakeCaseDeviceParamName(key);
+    const preserveRawValue = key.startsWith("_") || isCanonicalDeviceVisualParamName(key);
+    const normalizedKey = preserveRawValue
+      ? key
+      : toSnakeCaseDeviceParamName(key);
     const priority = normalizedDeviceParamKeyPriority(key, normalizedKey);
     if ((priorities.get(normalizedKey) ?? -1) > priority) {
       continue;
     }
     priorities.set(normalizedKey, priority);
     normalized[normalizedKey] = key === "_customParamDefinitions"
-      ? normalizeStoredDeviceParameterDefinitionNames(value, true)
+        ? normalizeStoredDeviceParameterDefinitionNames(value, true)
       : normalizedKey === "run_stat"
           ? normalizeRunStatValue(value, "1")
-          : key.startsWith("_")
+          : preserveRawValue
             ? value
             : normalizeSemanticParameterValue(normalizedKey, value);
   }

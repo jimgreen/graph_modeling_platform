@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { DeviceGlyph } from "./DeviceGlyph";
 import { createRenderStaticBoxDrawingPreview } from "./appExtracted/appCanvasInteractionFactories";
 import { apiPath } from "./config";
+import { DEVICE_VISUAL_PARAM_KEYS } from "./deviceVisualParams";
 import {
   alignNodes,
   buildTopology,
@@ -509,7 +510,7 @@ test("round-trips project files without losing device parameters", () => {
   expect(loaded.measurements?.groups[0].items[0]).toMatchObject({ measurementTypeId: "active_power" });
 });
 
-test("uses snake_case names for every built-in device class parameter", () => {
+test("uses snake_case names for every built-in business parameter", () => {
   const snakeCasePattern = /^[a-z0-9_]+$/;
   const violations: string[] = [];
   for (const template of DEVICE_LIBRARY) {
@@ -517,6 +518,9 @@ test("uses snake_case names for every built-in device class parameter", () => {
       continue;
     }
     for (const key of Object.keys(template.params ?? {})) {
+      if (DEVICE_VISUAL_PARAM_KEYS.has(key)) {
+        continue;
+      }
       if (!snakeCasePattern.test(key)) {
         violations.push(`${template.kind}.params.${key}`);
       }
@@ -534,7 +538,7 @@ test("uses snake_case names for every built-in device class parameter", () => {
   expect(violations).toEqual([]);
 });
 
-test("creates built-in device default params with snake_case names", () => {
+test("creates built-in device defaults with snake_case business params", () => {
   const snakeCasePattern = /^[a-z0-9_]+$/;
   const violations: string[] = [];
   for (const template of DEVICE_LIBRARY) {
@@ -543,7 +547,7 @@ test("creates built-in device default params with snake_case names", () => {
     }
     const node = createDefaultNode(template.kind, { x: 0, y: 0 });
     for (const key of Object.keys(node.params ?? {})) {
-      if (key.startsWith("_")) {
+      if (key.startsWith("_") || DEVICE_VISUAL_PARAM_KEYS.has(key)) {
         continue;
       }
       if (!snakeCasePattern.test(key)) {

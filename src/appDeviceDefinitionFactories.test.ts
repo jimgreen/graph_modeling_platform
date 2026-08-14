@@ -999,6 +999,21 @@ describe("manual bend interaction helpers", () => {
       stateDefinitions: [],
       error: ""
     };
+    const previousTemplate = {
+      kind: "previous-user-device",
+      label: "原有元件",
+      componentClass: "UserLibrary",
+      categoryLibrary: "用户类别库",
+      size: { width: 80, height: 48 },
+      params: { component_type: "UserLibrary" },
+      terminalType: "ac",
+      terminalCount: 0,
+      terminalTypes: [],
+      terminalLabels: [],
+      terminalAnchors: [],
+      terminalRoles: [],
+      custom: true
+    };
     let savedTemplates: any[] = [];
     let savedDefinitionOverrides: Record<string, any> = {};
     const scope = {
@@ -1022,7 +1037,7 @@ describe("manual bend interaction helpers", () => {
       },
       customDeviceGeneratedDefaultImageCandidates: () => [],
       customDeviceImageWithTerminalConnectors: (image: string) => image,
-      customDeviceTemplates: [],
+      customDeviceTemplates: [previousTemplate],
       customDeviceTerminalAnchors: [],
       defaultComponentLibraryForCategoryLibrary: () => "UserLibrary",
       editingCustomDeviceKind: "",
@@ -1042,6 +1057,7 @@ describe("manual bend interaction helpers", () => {
       persistDeviceLibraryChange: vi.fn(),
       requireEditMode: () => true,
       setCustomComponentTreeSelection: vi.fn(),
+      setCustomDeviceDefinitionMode: vi.fn(),
       setCustomDeviceDraft: (updater: any) => {
         customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
       },
@@ -1067,12 +1083,21 @@ describe("manual bend interaction helpers", () => {
     const saved = createSaveCustomDeviceTemplate(scope)();
 
     expect(saved).toBe(true);
-    expect(savedTemplates[0]).toMatchObject({
+    expect(savedTemplates[0]).toBe(previousTemplate);
+    expect(savedTemplates[1]).toMatchObject({
       kind: "UserDevice",
       label: "测试元件",
       categoryLibrary: "用户类别库",
       params: { component_type: "UserLibrary" }
     });
+    expect(scope.setCustomComponentTreeSelection).toHaveBeenCalledWith({
+      kind: "component",
+      categoryLibraryName: "用户类别库",
+      section: "UserLibrary",
+      templateKind: "UserDevice"
+    });
+    expect(scope.setCustomDeviceDefinitionMode).toHaveBeenCalledWith("edit");
+    expect(scope.setEditingCustomDeviceKind).toHaveBeenCalledWith("UserDevice");
     expect(scope.nextCustomTemplateKind).not.toHaveBeenCalled();
   });
 

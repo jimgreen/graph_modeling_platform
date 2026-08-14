@@ -5,6 +5,51 @@ import { APP_STATIC_SCOPE } from "./appExtracted/appStaticScope";
 import { DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY, createNodeFromTemplate } from "./model";
 
 describe("canvas LOD rendering", () => {
+  test("uses the canonical node fill color for custom-anchor LOD bodies", () => {
+    const baseTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-load");
+    expect(baseTemplate).toBeTruthy();
+    if (!baseTemplate) {
+      return;
+    }
+
+    const template = {
+      ...baseTemplate,
+      kind: "custom-ac-load",
+      custom: true,
+      terminalAnchors: [{ x: 0.5, y: 0 }],
+      params: { ...baseTemplate.params, fillColor: "#123456" }
+    };
+    const node = createNodeFromTemplate(template, { x: 120, y: 80 });
+    node.terminals[0] = { ...node.terminals[0], anchor: { x: 0.25, y: -0.5 } };
+    const scope = {
+      ...APP_STATIC_SCOPE,
+      CANVAS_LOD_MARKUP_CHUNK_SIZE: 64,
+      activeLayerNodeIdSet: new Set([node.id]),
+      colorDisplayMode: "energy",
+      colorPalette: DEFAULT_COLOR_PALETTE,
+      dragGhostRoutableLineNodeIdSet: new Set(),
+      groupTransformPreviewNodeIdSet: new Set(),
+      imageAssets: [],
+      initialCanvasDetailedNodeIdSet: new Set(),
+      isEditMode: true,
+      libraryTemplateByKind: new Map([[template.kind, template]]),
+      lodCanvasNodeChunkCacheRef: { current: { chunks: [] } },
+      nodeLabelDrag: null,
+      nodeLabelRotateDrag: null,
+      resolveNodeStateVisual: () => null,
+      routableLineEndpointDrag: null,
+      transformDrag: null,
+      useSimplifiedCanvasNodes: true,
+      viewportNodes: [node]
+    };
+
+    const chunks = createAppHookCallback134(scope)();
+    const markup = (chunks as Array<{ markup: string }>).map((chunk) => chunk.markup).join("");
+
+    expect(markup).toContain("custom-terminal-lod-node");
+    expect(markup).toContain('fill="#123456"');
+  });
+
   test("renders device glyph markup instead of only a rectangle for regular devices", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-load");
     expect(template).toBeTruthy();

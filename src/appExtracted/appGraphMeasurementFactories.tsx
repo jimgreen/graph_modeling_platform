@@ -563,7 +563,7 @@ export function createBuildMultiNodeDragOverlayPreview(__appScope: Record<string
         const nodeIsBus = isBusNode(node);
         const positionTransform = `translate(${formatSvgNumber(originalPosition.x)} ${formatSvgNumber(originalPosition.y)})`;
         const transform = `${positionTransform} ${nodeGeometryTransform(node)}`;
-        const fill = node.params.backgroundColor || "#ffffff";
+        const fill = node.params.fillColor || node.params.backgroundColor || "#ffffff";
         const stroke = getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
         const strokeWidth = Math.max(2, getDeviceStrokeWidth(node));
         const imageMarkup = buildNodePreviewImageMarkup(node, `multi-node-drag-lite-preview-clip-${node.id}`, { clip: false });

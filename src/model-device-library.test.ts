@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { DeviceGlyph } from "./DeviceGlyph";
 import { createRenderStaticBoxDrawingPreview } from "./appExtracted/appCanvasInteractionFactories";
 import { apiPath } from "./config";
+import { DEVICE_VISUAL_PARAM_KEYS } from "./deviceVisualParams";
 import {
   alignNodes,
   buildTopology,
@@ -22,6 +23,7 @@ import {
   setVoltageBaseValuesForScope,
   calculateModelContentSize,
   canConnectTerminals,
+  buildDefaultParams,
   buildDefaultDeviceParameterDefinitions,
   buildContainerDeviceParameterViews,
   containerAssociatedDeviceIdentityForTerminal,
@@ -446,6 +448,16 @@ const legacyElectricGenerationKinds = new Set<string>([
 
 
 describe("deviceLibrary", () => {
+  test("keeps canonical visual metadata across every built-in template", () => {
+    for (const template of DEVICE_LIBRARY) {
+      const defaults = buildDefaultParams(template);
+      for (const key of DEVICE_VISUAL_PARAM_KEYS) {
+        if (!Object.prototype.hasOwnProperty.call(template.params, key)) continue;
+        expect(defaults[key], `${template.kind}.${key}`).toBe(template.params[key]);
+      }
+    }
+  });
+
 test("creates electric generation parameters with shared rated defaults but without generic control defaults", () => {
   const acWind = createDefaultNode("ac-wind-source", { x: 100, y: 100 });
   const dcPv = createDefaultNode("dc-pv-source", { x: 240, y: 100 });
@@ -1116,7 +1128,7 @@ test("adds routable line-like device variants for electric, hydrogen, and heat n
     expect(points).toHaveLength(2);
     expect(points[0].x).toBeLessThan(points[1].x);
     expect(getDeviceGlyphVariant(kind)).toBe("routable-line");
-    expect(node.params.line_width).toBe(String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH));
+    expect(node.params.lineWidth).toBe(String(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH));
     expect(getDeviceStrokeWidth(node)).toBe(ROUTABLE_LINE_DEFAULT_STROKE_WIDTH);
     expect(inferESection(kind, node.params)).toBe(section);
   }
@@ -2469,7 +2481,14 @@ test("creates user-defined device templates with custom terminal energy types an
     label: "ACUnit",
     categoryLibrary: "自定义类别库",
     size: { width: 104, height: 64 },
-    params: { backgroundImage: "data:image/svg+xml,custom", fillColor: "transparent", strokeColor: "transparent", line_width: "0" },
+    params: {
+      backgroundImage: "data:image/svg+xml,fingerprint",
+      backgroundImageFit: "contain",
+      fillColor: "transparent",
+      strokeColor: "transparent",
+      lineWidth: "0",
+      ratedCapacity: "5 MW"
+    },
     terminalType: "ac",
     terminalCount: 4,
     terminalTypes: ["ac", "dc", "h2", "heat"],
@@ -2483,6 +2502,7 @@ test("creates user-defined device templates with custom terminal energy types an
     ]
   };
 
+  const previewParams = buildDefaultParams(template);
   const node = createNodeFromTemplate(template, { x: 100, y: 120 });
   expect(node.kind).toBe("ACUnit");
   expect(node.terminals.map((terminal) => terminal.type)).toEqual(["ac", "dc", "h2", "heat"]);
@@ -2490,7 +2510,16 @@ test("creates user-defined device templates with custom terminal energy types an
   expect(node.params[CUSTOM_DEVICE_TEMPLATE_KEY]).toBe("1");
   expect(JSON.parse(node.params[CUSTOM_PARAM_DEFINITIONS_KEY])).toHaveLength(4);
   expect(node.params.eta).toBe("0.95");
-  expect(node.params.stroke_color).toBe("transparent");
+  expect(previewParams.backgroundImage).toBe("data:image/svg+xml,fingerprint");
+  expect(previewParams.backgroundImageFit).toBe("contain");
+  expect(node.params.backgroundImage).toBe(previewParams.backgroundImage);
+  expect(node.params.backgroundImageFit).toBe(previewParams.backgroundImageFit);
+  expect(node.params.fillColor).toBe("transparent");
+  expect(node.params.strokeColor).toBe("transparent");
+  expect(node.params.lineWidth).toBe("0");
+  expect(node.params.rated_capacity).toBe("5");
+  expect(node.params).not.toHaveProperty("background_image");
+  expect(node.params).not.toHaveProperty("stroke_color");
   expect(canConnectTerminals(node, "t3", createDefaultNode("hydrogen-pipeline", { x: 240, y: 120 }), "t1")).toBe(true);
   expect(canConnectTerminals(node, "t4", createDefaultNode("hydrogen-pipeline", { x: 300, y: 120 }), "t1")).toBe(false);
 
