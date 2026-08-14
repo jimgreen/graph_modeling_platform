@@ -628,11 +628,16 @@ describe("app view device definition parameter rows", () => {
     expect(source).toMatch(/isDerivedComponentLibrary:\s*customDeviceDraft\.isDerivedComponentLibrary/);
   });
 
-  test("only exposes the derived class english name in create and edit dialogs", () => {
+  test("exposes derivation controls only while creating a component library", () => {
     const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
 
     expect(source).not.toContain("派生类中文名称");
-    expect(source.match(/派生类英文名称/g)).toHaveLength(2);
+    expect(source.match(/派生类英文名称/g)).toHaveLength(1);
+    expect(source).toContain('<span>是否派生类</span>');
+    expect(source).toContain('<span>派生基类</span>');
+    expect(source).not.toContain('<span>派生关系</span>');
+    expect(source).toContain('所属类在创建后不可修改');
+    expect(source).not.toContain('title="点击选择元件库"');
   });
 
   test("removes the centered transform when device library dialogs become floating", () => {
@@ -644,14 +649,14 @@ describe("app view device definition parameter rows", () => {
     expect(floatingDialogRule).toMatch(/transform:\s*none/);
   });
 
-  test("keeps custom device identity and derived fields on one desktop row", () => {
+  test("keeps the seven custom device identity and class metadata fields on one desktop row", () => {
     const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
     const baseGridRule = styles.match(/\.custom-device-form-grid\s*\{([\s\S]*?)\}/)?.[1] ?? "";
     const derivedGridRule = styles.match(
       /\.custom-device-form-grid:has\(\.custom-device-derived-en-field\)\s*\{([\s\S]*?)\}/
     )?.[1] ?? "";
 
-    expect(baseGridRule).toMatch(/repeat\(4,\s*minmax\(/);
+    expect(baseGridRule.match(/minmax\(/g)).toHaveLength(7);
     expect(derivedGridRule).toMatch(/grid-template-columns/);
     expect(styles).not.toMatch(
       /\.custom-device-form-grid \.custom-device-derived-(?:en-)?field\s*\{[^}]*grid-row:\s*2/

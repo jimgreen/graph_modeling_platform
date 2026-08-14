@@ -3,6 +3,10 @@ import { ChangeEvent, DragEvent, Fragment, Suspense, isValidElement, lazy, memo,
 import { createPortal, flushSync } from "react-dom";
 import { useTransition } from "react";
 import { apiPath } from "../config";
+import {
+  componentLibraryDefinitionFromMetadata,
+  resolveComponentLibraryClassMetadata
+} from "../componentLibraryMetadata";
 import { normalizeDeviceMeasurementDefinitions } from "../measurementDefinitionTypes";
 import { WindowCloseButton } from "../WindowCloseButton";
 import {
@@ -87,6 +91,7 @@ import {
   clearVoltageBaseValuesForScope,
   setVoltageBaseTerminalValuesForScope,
   setVoltageBaseValuesForScope,
+  templateDerivedComponentLibraryInfo,
   canConnectTerminals,
   clampNodePositionToBounds,
   clampPointToBounds,
@@ -530,7 +535,7 @@ import { snapSingleTerminalAnchorToNearestSide, projectedProportionalScaleFromHa
 import { DeviceGlyph, MemoDeviceGlyph, SvgMarkupChunk } from "../DeviceGlyph";
 import { buildSvgNodeLabelMarkup, buildSvgNodeLabelTextElementsMarkup, svgDisplayAttribute, exportSvgSafeId, exportSvgLayerId, exportSvgUniqueId, exportSvgLayerScriptMarkup, buildExportDeviceIdMap, exportDeviceMetadataAttributes, exportMeasurementGroupMetadataAttributes, exportMeasurementItemMetadataAttributes, exportMeasurementGroupBackgroundColor, exportMeasurementGroupBorderColor, exportMeasurementGroupBorderWidth, exportMeasurementGroupBorderDashArray, exportMeasurementGroupAnchorPoint, exportMeasurementGroupLocalOffset, exportMeasurementGroupMetrics, buildExportMeasurementGroupMarkup } from "../svgExportUtils";
 import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_PAGE_ID, isDefaultStatePageId, createStateDraftRow, createStateDraftRowFromDefaultVisual, createDefinitionStateDraftRows, normalizeStateDraftRows, validateStateDraftRows, stateVisualFromDraftRow, activeStateDraftRow, normalizeStatePageId, stateDraftImageValue, stateVisualShapeLabel, generateStateVisualShapeImage, stateIconDrawingElementId, visibleStateIconColor, createStateIconDrawingElement, createImportedStateIconElement, svgSourceFromDataUrl, parseStateIconSvgSource, stateIconSvgElementSource, parseSvgStyleAttribute, stateIconSvgReactAttributes, stateIconSvgNodeChildren, stateIconSvgNodeToReact, stateIconSvgSourceToReactNodes, createEditableStateIconElementsFromSvgSource, createStateIconDrawingInitialElements, svgSourceToDataUrl, stateIconDrawingSvgElementMarkup, stateIconDrawingElementMarkup, stateIconDrawingToImage, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "../stateIconDrawing";
-import { fallbackComponentLibraryForCategoryLibrary, resolveTemplateComponentLibrary, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, isReservedDeviceDefinitionParamName, createDefinitionDraftRows, normalizeCustomDeviceTerminalAnchorCoordinate, projectCustomDeviceTerminalAnchorToBoundary, customDeviceTerminalAnchorKey, hasOverlappingCustomDeviceTerminalAnchors, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, createCustomDeviceDraftFromTemplate, createDefinitionVisualDraft, defaultContainerAssociationForTerminalType, isAssociationAllowedForTerminal, normalizeContainerTerminalAssociations, normalizeDeviceDefinitionOwnership, normalizeSharedDeviceDefinitionOverrides, customDefaultDefinitions, generateCustomDeviceImage, customDeviceImageWithTerminalConnectors, customDeviceGeneratedDefaultImageCandidates, syncInheritedCustomDeviceStateVisuals, parseCustomDefinitions, screenToSvgPoint, primaryOrthogonalAxis, constrainPointToOrthogonalAxis } from "../customDeviceUtils";
+import { fallbackComponentLibraryForCategoryLibrary, resolveTemplateComponentLibrary, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, isReservedDeviceDefinitionParamName, createDefinitionDraftRows, normalizeCustomDeviceTerminalAnchorCoordinate, projectCustomDeviceTerminalAnchorToBoundary, customDeviceTerminalAnchorKey, hasOverlappingCustomDeviceTerminalAnchors, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, createCustomDeviceDraftFromTemplate, createDefinitionVisualDraft, defaultContainerAssociationForTerminalType, isAssociationAllowedForTerminal, normalizeContainerTerminalAssociations, normalizeDeviceDefinitionOwnership, normalizeSharedDeviceDefinitionOverrides, concreteDeviceTemplateForStorage, customDefaultDefinitions, generateCustomDeviceImage, customDeviceImageWithTerminalConnectors, customDeviceGeneratedDefaultImageCandidates, syncInheritedCustomDeviceStateVisuals, parseCustomDefinitions, screenToSvgPoint, primaryOrthogonalAxis, constrainPointToOrthogonalAxis } from "../customDeviceUtils";
 import { useBatchEditors } from "../hooks/useBatchEditors";
 import { ENABLE_REACT_FLOW_PREVIEW, ReactFlowPreview, INTERACTION_MODE_STORAGE_KEY, CANVAS_GRAPHIC_CONTEXT_MENU_TARGET_SELECTOR, CANVAS_WHEEL_ZOOM_EXCLUSION_SELECTOR, CANVAS_KEYBOARD_BLOCKING_SELECTOR, CANVAS_KEYBOARD_SURFACE_SELECTOR, normalizeInteractionMode, isCanvasGraphicContextMenuTarget, isCanvasWheelZoomExcludedTarget, canvasWheelTargetIsRenderedCanvas, isCanvasKeyboardBlockingTarget, readStoredInteractionMode, writeStoredInteractionMode, CANVAS_SELECTION_DRAG_THRESHOLD, hasCanvasSelectionModifier, canvasWheelEventHasNoModifier, shouldZoomCanvasFromWheelEvent, isGroupTransformDrag, selectionRectCenter, combineSelectionRects, routeMidpoint, rotatePointAround, snapRotationDeltaToRightAngle, normalizedRotationDelta, transformPointAngle, rotationDeltaFromTransformPoint, rotationDeltaBetweenTransformPoints, rotationTrajectoryArcPath, mirrorPointAcrossAxis, localScaleKindForScreenHandle, groupTransformGeometry, transformGroupPoint, groupTransformSvgTransform, NODE_LABEL_DISPLAY_MODES, CONTEXT_MENU_VIEWPORT_PADDING, CONTEXT_MENU_FALLBACK_WIDTH, CONTEXT_MENU_FALLBACK_HEIGHT, CONTEXT_MENU_SUBMENU_FALLBACK_WIDTH, CONTEXT_MENU_SUBMENU_FALLBACK_HEIGHT, NODE_LABEL_FOOTPRINT_PARAM_KEYS, isMultiNodeMoveState, reuseSetOrCreate, cloneMeasurementGroupForDraft, terminalColor, busEndpointColor, ENERGY_COLOR_ROWS, ELECTRIC_COLOR_TYPES, ELECTRIC_COLOR_TYPE_LABELS, isElectricPaletteType, terminalVbaseFallbackValue, voltageColorKeyForTerminal, DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT, MIN_CANVAS_WIDTH, MIN_CANVAS_HEIGHT, MAX_CANVAS_WIDTH, MAX_CANVAS_HEIGHT, DEFAULT_CANVAS_BACKGROUND, MOVE_BOUNDARY_GUARD, CANVAS_AUTO_EXPAND_PADDING, CANVAS_SCROLLBAR_VISIBILITY_TOLERANCE, CANVAS_RESIZE_HANDLE_SIZE, MAX_ORIGINAL_POSITION_REROUTE_MOVED_NODES, ORIGINAL_POSITION_REROUTE_PADDING, MOVE_ROUTE_LOCAL_SEARCH_PADDING, MAX_DEFERRED_MOVE_REPAIR_MOVED_NODES, MAX_DEFERRED_MOVE_REPAIR_CANDIDATE_EDGES, KEYBOARD_MOVE_COMMIT_DELAY_MS, KEYBOARD_MOVE_REPEAT_RATE_PER_SECOND, KEYBOARD_MOVE_FRAME_INTERVAL_MS, ELEMENT_TREE_INITIAL_ITEM_LIMIT, ELEMENT_TREE_ITEM_LIMIT_STEP, TOPOLOGY_WARNING_PAGE_SIZE, CANVAS_MINIMAP_WIDTH, CANVAS_MINIMAP_HEIGHT, CANVAS_MINIMAP_PADDING, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_WIDTH, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH, NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MARGIN, DEVICE_DEFINITION_DIALOG_DEFAULT_WIDTH, DEVICE_DEFINITION_DIALOG_DEFAULT_HEIGHT, CUSTOM_DEVICE_DIALOG_DEFAULT_WIDTH, CUSTOM_DEVICE_DIALOG_DEFAULT_HEIGHT, MEASUREMENT_CONFIG_DIALOG_DEFAULT_WIDTH, MEASUREMENT_CONFIG_DIALOG_DEFAULT_HEIGHT, DEVICE_LIBRARY_DIALOG_MIN_WIDTH, DEVICE_LIBRARY_DIALOG_MIN_HEIGHT, DEVICE_LIBRARY_DIALOG_MARGIN, DEVICE_LIBRARY_DIALOG_CONFIG, TOPOLOGY_WARNING_PANEL_DEFAULT_WIDTH, TOPOLOGY_WARNING_PANEL_MIN_WIDTH, TOPOLOGY_WARNING_PANEL_MAX_WIDTH, TOPOLOGY_WARNING_PANEL_MARGIN, CANVAS_MINIMAP_MAX_NODE_MARKS, CANVAS_MINIMAP_MAX_ROUTE_MARKS, CANVAS_MINIMAP_DEFER_SAMPLE_THRESHOLD, FIT_SELECTION_MAX_ZOOM_PERCENT, TERMINAL_OVERLAP_DEFER_NODE_THRESHOLD, CANVAS_LOD_NODE_DETAIL_LIMIT, CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT, CANVAS_LOD_MAX_ZOOM_PERCENT, CANVAS_LOD_MAX_NODE_SCREEN_SIZE, CANVAS_LOD_NODE_SCREEN_SAMPLE_LIMIT, CANVAS_LOD_SELECTED_DETAIL_LIMIT, CANVAS_LOD_MARKUP_CHUNK_SIZE, CANVAS_INITIAL_LOD_DETAIL_CHUNK_SIZE, CANVAS_INITIAL_LOD_FIRST_DETAIL_DELAY_MS, CANVAS_INITIAL_LOD_NEXT_DETAIL_DELAY_MS, CONNECTION_HIT_SCREEN_TOLERANCE, CANVAS_MULTI_NODE_DRAG_OVERLAY_DETAIL_LIMIT, CANVAS_MULTI_NODE_DRAG_PREVIEW_EDGE_LIMIT, CANVAS_MULTI_NODE_DRAG_SNAP_NODE_LIMIT, CANVAS_BULK_MOVE_EDGE_THRESHOLD, ROUTE_BULK_TRANSLATE_REBUILD_THRESHOLD, BULK_MOVE_PERF_LOG_THRESHOLD_MS, SMART_ALIGNMENT_SNAP_SCREEN_TOLERANCE, SMART_ALIGNMENT_GUIDE_PADDING, CANVAS_SINGLE_NODE_DRAG_PREVIEW_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_SNAP_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_SYNC_EDGE_LIMIT, CANVAS_SINGLE_NODE_DRAG_PREVIEW_PADDING, CANVAS_FLOATING_TOOLBAR_GAP, NODE_FLOATING_TOOLBAR_WIDTH, NODE_FLOATING_TOOLBAR_HEIGHT, EDGE_FLOATING_TOOLBAR_WIDTH, EDGE_FLOATING_TOOLBAR_HEIGHT, CONTEXT_MENU_AUTO_HIDE_MARGIN, TRANSFORM_ROTATE_STEM_START, TRANSFORM_ROTATE_STEM_END, TRANSFORM_ROTATE_HANDLE_GAP, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, DEFAULT_CURRENT_UNIT, DEFAULT_POWER_BASE_VALUE, EMPTY_TOPOLOGY, INITIAL_TOPOLOGY_STATUS, E_SECTION_OPTIONS, COMPONENT_LIBRARY_LABELS, SCALE_HANDLE_CONFIGS, GROUP_SCALE_HANDLE_CONFIGS, POWER_UNIT_OPTIONS, VOLTAGE_UNIT_OPTIONS, CURRENT_UNIT_OPTIONS, DEFAULT_CATEGORY_LIBRARIES, CUSTOM_CATEGORY_LIBRARY_BASES, PROTECTED_CATEGORY_LIBRARIES, DEVICE_TYPE_NAME_PATTERN, MAX_CUSTOM_DEVICE_TERMINALS, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_LABELS, CUSTOM_DEVICE_TERMINAL_ANCHOR_SNAP_SCREEN_TOLERANCE, CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION, CUSTOM_DEVICE_TERMINAL_PREVIEW_OUTWARD_OFFSET, CUSTOM_DEVICE_TERMINAL_PREVIEW_MARGIN, TERMINAL_TYPE_OPTIONS, CONTAINER_TERMINAL_ASSOCIATION_OPTIONS, PARAM_VALUE_TYPE_OPTIONS, PROJECT_PANEL_MIN_HEIGHT, PROJECT_PANEL_MAX_HEIGHT, PROJECT_PANEL_DEFAULT_HEIGHT, LEFT_PANEL_DEFAULT_WIDTH, RIGHT_PANEL_DEFAULT_WIDTH, SIDE_PANEL_MIN_WIDTH, SIDE_PANEL_MAX_WIDTH, STATUSBAR_DEFAULT_HEIGHT, STATUSBAR_MIN_HEIGHT, STATUSBAR_MAX_HEIGHT, VALIDATION_PANEL_DEFAULT_HEIGHT, VALIDATION_PANEL_MIN_HEIGHT, VALIDATION_PANEL_MAX_HEIGHT, CONNECT_TERMINAL_SNAP_TOLERANCE, CONNECT_BUS_SNAP_TOLERANCE, connectTargetSearchBounds, findNodeTerminalSnapTarget, applyNodeTerminalSnap, pointOnBusForSnap, findNodeBusSnapTarget, SAMPLE_NODES, SAMPLE_EDGES, PROJECT_STORAGE_KEY, SCHEME_STORAGE_KEY, ACTIVE_PROJECT_STORAGE_KEY, DRAFT_PROJECT_STORAGE_KEY, REFRESH_RECOVERY_STORAGE_KEY, EMPTY_VOLTAGE_COLOR_KEY_SET, EMPTY_ID_LIST, EMPTY_EDGE_ID_LIST, EMPTY_MODEL_GROUPS, EMPTY_MODEL_GROUP_BY_ID, EMPTY_CANVAS_LAYOUT_UNITS, EMPTY_CANVAS_SELECTION, IMAGE_STORAGE_KEY, CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, LEGACY_CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, LEGACY_CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, COLOR_DISPLAY_MODE_STORAGE_KEY, COLOR_PALETTE_STORAGE_KEY, MEASUREMENT_CONFIG_STORAGE_KEY, LEFT_PANEL_MODE_STORAGE_KEY, RIGHT_PANEL_MODE_STORAGE_KEY, LEFT_PANEL_WIDTH_STORAGE_KEY, RIGHT_PANEL_WIDTH_STORAGE_KEY, STATUSBAR_HEIGHT_STORAGE_KEY, VALIDATION_PANEL_HEIGHT_STORAGE_KEY, DEFAULT_GRAPH_TEMPLATE_TYPES, scheduleIdleWork, elementTreeCacheSignature, CONNECTION_REDRAW_SCOPE_LABELS, VOLTAGE_BASE_CLEAR_SCOPES, VOLTAGE_BASE_CLEAR_SCOPE_LABELS, VOLTAGE_BASE_SET_SCOPES, VOLTAGE_BASE_SET_SCOPE_LABELS, VOLTAGE_BASE_SET_PRESETS, VIEWPORT_RENDER_PADDING_RATIO, VIEWPORT_RENDER_MIN_PADDING, CANVAS_VIEWPORT_QUERY_SNAP_SIZE, NODE_SPATIAL_BUCKET_SIZE, nextSpatialQueryMark, expandViewBoxForRendering, snapRenderViewportBoundsForQuery, sameCanvasViewBox, canvasFrameHasHorizontalScrollableRange, canvasFrameHasVerticalScrollableRange, canvasFrameHasScrollableRange, renderedCanvasFullyFitsFrame, canvasFrameViewportSizeChanged, visibleCanvasViewBoxFromRects, canvasScrollScaleFromViewBox, estimatedViewportNodeScreenSize, canvasScrollEdgeInset, canvasScrollSurfaceSize, canvasDisplayOffset, canvasFramePaddingOffset, anchoredCanvasScrollPosition, anchoredCanvasNoScrollOffset, initialVisibleCanvasViewBox, fitWholeCanvasViewBox, boxesIntersect, sameRenderViewportBounds, VIEWPORT_RESULT_CACHE_LIMIT, viewportBoundsCacheKey, viewportResultCacheOwnersEqual, resetViewportResultCache, readViewportResultCache, writeViewportResultCache, mergeRenderViewportBounds, smartAlignmentAxisAnchors, bestSmartAlignmentAxisSnap, nodeRenderBounds, nodeIntersectsRenderViewport, spatialBucketKey, spatialBucketRange, buildNodeSpatialIndex, queryNodeSpatialIndex, compactPreviewNodes, PARAM_LABELS, FONT_FAMILY_OPTIONS, FONT_FAMILY_OPTION_LABELS, PARAM_OPTIONS, STATIC_BUTTON_ACTION_LABELS, STATIC_BUTTON_COMMAND_LABELS, PARAM_OPTION_LABELS, parseStaticButtonTargetLayerValues, serializeStaticButtonTargetLayerIds, resolveStaticButtonTargetLayers, paramOptionsForSection, READONLY_E_PARAM_KEYS, BATCH_PARAM_EXCLUDED_KEYS, BATCH_PARAM_EXCLUDED_PREFIXES, canBatchEditParam, BATCH_GRAPH_PARAM_KEYS, BATCH_GRAPH_PARAM_PREFIXES, isBatchGraphCommonParamKey, isRedundantBatchCommonParamRow, COLOR_PARAM_KEY_PATTERN, isColorParamKey, BATCH_MEASUREMENT_GROUP_KEYS, BATCH_MEASUREMENT_GROUP_LABELS, measurementGroupCommonValue, measurementGroupWithCommonSetting, normalizeLegacyPowerSystemLabel, normalizeSavedProjectIndexes, normalizeSavedSchemeIndexes, normalizeStoredDraftProject, readActiveProjectPointer, savedSchemePathForId, findSavedSchemeByPath, findSavedProjectByActivePointer, activeProjectPointerPayload, draftProjectFromSavedSchemes, readRefreshRecoveryProject, writeRefreshRecoveryProject, clearRefreshRecoveryProject, readImageAssets, saveImageAsset, resolveNodeImage, resolveNodeForegroundImage, resolveProjectImage, imageAssetsToMap, localImageAssetsFromStorage, pointsToPreviewPath, backendJsonHeaders, backendErrorMessage, fetchBackendJson, backendJsonRequest, fetchBackendImageFolders, createBackendImageFolder, renameBackendImageFolder, deleteBackendImageFolder, fetchBackendImages, fetchAllBackendImages, uploadBackendImage } from "./appCoreCanvasUtilities";
 
@@ -838,7 +843,7 @@ export async function saveBackendColorConfigPayload(normalizedColorConfigPayload
 }
 
 export function serializeDeviceLibraryForStorage(payload: DeviceLibraryPersistencePayload) {
-  return JSON.stringify(normalizeDeviceLibraryPersistencePayload(payload));
+  return JSON.stringify(projectDeviceLibraryPersistencePayloadForStorage(payload));
 }
 
 export async function fetchBackendDeviceLibrary(): Promise<DeviceLibraryPersistencePayload & {
@@ -847,10 +852,7 @@ export async function fetchBackendDeviceLibrary(): Promise<DeviceLibraryPersiste
 }> {
   const payload = await fetchBackendJson<BackendDeviceLibraryResponse>(apiPath("/device-library"), "读取后台图元库失败。");
   const normalized = normalizeDeviceLibraryPersistencePayload(payload);
-  const comparablePayload = normalizeDeviceLibraryPersistencePayload({
-    ...payload,
-    schemaVersion: DEVICE_LIBRARY_SCHEMA_VERSION
-  });
+  const comparablePayload = projectDeviceLibraryPersistencePayloadForStorage(normalized);
   const rawSharedKeys = payload.deviceDefinitionSharedKeys && typeof payload.deviceDefinitionSharedKeys === "object"
     ? payload.deviceDefinitionSharedKeys
     : {};
@@ -861,6 +863,7 @@ export async function fetchBackendDeviceLibrary(): Promise<DeviceLibraryPersiste
       Number(payload.schemaVersion) !== DEVICE_LIBRARY_SCHEMA_VERSION ||
       JSON.stringify(rawSharedKeys) !== JSON.stringify(normalized.deviceDefinitionSharedKeys) ||
       JSON.stringify(payload.customDeviceTemplates ?? []) !== JSON.stringify(comparablePayload.customDeviceTemplates) ||
+      JSON.stringify(payload.customComponentLibraries ?? []) !== JSON.stringify(comparablePayload.customComponentLibraries) ||
       JSON.stringify(payload.deviceDefinitionOverrides ?? {}) !== JSON.stringify(comparablePayload.deviceDefinitionOverrides)
   };
 }
@@ -895,7 +898,7 @@ export async function saveBackendMeasurementConfigPayload(normalizedMeasurementC
 
 export const LIBRARY_PACKAGE_FORMAT = "graph-modeling-platform-library-package";
 export const LIBRARY_PACKAGE_VERSION = 2;
-export const DEVICE_LIBRARY_SCHEMA_VERSION = 3;
+export const DEVICE_LIBRARY_SCHEMA_VERSION = 5;
 export type SupportedLibraryPackageVersion = 1 | typeof LIBRARY_PACKAGE_VERSION;
 export type LibraryPackageScope = "measurement" | "device-library" | "template-library" | "icon-library" | "component-library" | "all";
 export type IconLibraryPackageAsset = ImageAsset & { dataUrl: string };
@@ -1010,7 +1013,7 @@ export function packageScopedDeviceLibraryPayload(
   payload: Partial<DeviceLibraryPersistencePayload> | undefined,
   scope: LibraryPackageScope
 ): DeviceLibraryPersistencePayload {
-  const normalized = normalizeDeviceLibraryPersistencePayload(payload);
+  const normalized = projectDeviceLibraryPersistencePayloadForStorage(payload);
   if (scope === "template-library") {
     return {
       ...emptyDeviceLibraryPersistencePayload(),
@@ -1192,17 +1195,19 @@ export function groupDeviceTemplatesByCategoryLibraryAndComponentLibrary(
     return { group, section, typeMap };
   };
   for (const template of templates) {
-    const entry = ensureSection(template.categoryLibrary, resolveTemplateComponentLibrary(template));
+    const entry = ensureSection(
+      template.categoryLibrary,
+      resolveTemplateComponentLibrary(template)
+    );
     if (!entry) {
       continue;
     }
     entry.typeMap.set(entry.section, [...(entry.typeMap.get(entry.section) ?? []), { ...template, categoryLibrary: entry.group }]);
   }
   for (const componentLibrary of customComponentLibraries) {
-    if (componentLibrary.isDerivedComponentLibrary) {
-      continue;
+    if (!componentLibrary.isDerivedComponentLibrary) {
+      ensureSection(componentLibrary.categoryLibraryName, componentLibrary.name);
     }
-    ensureSection(componentLibrary.categoryLibraryName, componentLibrary.name);
   }
   return Object.fromEntries(
     Array.from(grouped.entries()).map(([group, typeMap]) => [
@@ -1278,7 +1283,17 @@ export function libraryTemplateMatchesSearch(
   if (!needle) {
     return true;
   }
-  return [group, section, componentLibraryDisplayName(section, customComponentLibraries), template.label, template.kind, template.params?.component_type]
+  const derivedInfo = templateDerivedComponentLibraryInfo(template);
+  return [
+    group,
+    section,
+    componentLibraryDisplayName(section, customComponentLibraries),
+    template.label,
+    template.kind,
+    template.componentClass,
+    derivedInfo?.derivedComponentLibrary,
+    template.params?.component_type
+  ]
     .filter((value): value is string => typeof value === "string")
     .some((value) => normalizeLibrarySearchText(value).includes(needle));
 }
@@ -1521,13 +1536,17 @@ const E_DEVICE_DEFINITION_FIELD_ORDER_STORAGE_KEY = "power-system-e-device-defin
 const E_DEVICE_DEFINITION_TEMPLATE_FIELDS_STORAGE_KEY = "power-system-e-device-definition-template-fields";
 const E_DEVICE_DEFINITION_TABLE_IDS_STORAGE_KEY = "power-system-e-device-definition-table-ids";
 
-export function normalizeCustomComponentLibraries(value: unknown, reservedTypes: readonly string[] = E_SECTION_OPTIONS): CustomComponentLibraryDefinition[] {
+export function normalizeCustomComponentLibraries(
+  value: unknown,
+  reservedTypes: readonly string[] = E_SECTION_OPTIONS,
+  templates: readonly DeviceTemplate[] = []
+): CustomComponentLibraryDefinition[] {
   if (!Array.isArray(value)) {
     return [];
   }
   const reserved = new Set(reservedTypes.map((type) => type.toLowerCase()));
   const seen = new Set<string>();
-  return value
+  const provisionalDefinitions = value
     .map((item) => {
       const raw = item && typeof item === "object"
         ? item as Partial<CustomComponentLibraryDefinition> & {
@@ -1538,6 +1557,12 @@ export function normalizeCustomComponentLibraries(value: unknown, reservedTypes:
           derivedFromComponentLibrary?: unknown;
           isDerivedComponentLibrary?: unknown;
           isContainerComponentLibrary?: unknown;
+          isContainer?: unknown;
+          terminalCount?: unknown;
+          terminalTypes?: unknown;
+          terminalLabels?: unknown;
+          terminalRoles?: unknown;
+          terminalAssociations?: unknown;
         }
         : undefined;
       const name = normalizeComponentLibraryName(String(raw?.name ?? item ?? ""));
@@ -1545,20 +1570,23 @@ export function normalizeCustomComponentLibraries(value: unknown, reservedTypes:
       const label = String(raw?.label ?? raw?.cnName ?? raw?.chineseName ?? raw?.displayName ?? "").trim();
       const derivedFromComponentLibrary = normalizeComponentLibraryName(String(raw?.derivedFromComponentLibrary ?? ""));
       const isDerivedComponentLibrary = persistenceFlagIsYes(raw?.isDerivedComponentLibrary);
-      const isContainerComponentLibrary = persistenceFlagIsYes(raw?.isContainerComponentLibrary);
-      return {
+      const isContainerComponentLibrary = persistenceFlagIsYes(raw?.isContainerComponentLibrary ?? raw?.isContainer);
+      const provisional: CustomComponentLibraryDefinition = {
         name,
         categoryLibraryName,
         ...(label ? { label } : {}),
-        ...(isDerivedComponentLibrary ? { isDerivedComponentLibrary: true } : {}),
+        isDerivedComponentLibrary,
         ...(derivedFromComponentLibrary ? { derivedFromComponentLibrary } : {}),
-        ...(isContainerComponentLibrary ? { isContainerComponentLibrary: true } : {})
+        isContainerComponentLibrary,
+        ...(Number.isFinite(Number(raw?.terminalCount)) ? { terminalCount: Number(raw?.terminalCount) } : {}),
+        ...(Array.isArray(raw?.terminalTypes) ? { terminalTypes: raw.terminalTypes as TerminalType[] } : {}),
+        ...(Array.isArray(raw?.terminalLabels) ? { terminalLabels: raw.terminalLabels.map((item) => String(item ?? "")) } : {}),
+        ...(Array.isArray(raw?.terminalRoles) ? { terminalRoles: raw.terminalRoles as ContainerTerminalRole[] } : {}),
+        ...(Array.isArray(raw?.terminalAssociations) ? { terminalAssociations: raw.terminalAssociations as ContainerTerminalAssociationValue[] } : {})
       };
+      return provisional;
     })
     .filter((componentLibrary) => {
-      if (componentLibrary.isDerivedComponentLibrary) {
-        return false;
-      }
       if (!isValidComponentLibraryName(componentLibrary.name)) {
         return false;
       }
@@ -1569,6 +1597,112 @@ export function normalizeCustomComponentLibraries(value: unknown, reservedTypes:
       seen.add(key);
       return true;
     });
+  return provisionalDefinitions.map((provisional) => {
+    const metadata = resolveComponentLibraryClassMetadata(
+      provisional.name,
+      provisional.categoryLibraryName,
+      provisionalDefinitions,
+      templates
+    );
+    return metadata ? componentLibraryDefinitionFromMetadata(metadata) : provisional;
+  });
+}
+
+function customTemplateClassName(template: DeviceTemplate) {
+  const explicitClassName = normalizeComponentLibraryName(template.componentClass ?? "");
+  if (explicitClassName) return explicitClassName;
+  const derivedInfo = templateDerivedComponentLibraryInfo(template);
+  return normalizeComponentLibraryName(
+    derivedInfo?.derivedComponentLibrary || resolveTemplateComponentLibrary(template)
+  );
+}
+
+function inferMissingCustomComponentLibraryDefinitions(
+  definitions: readonly CustomComponentLibraryDefinition[],
+  templates: readonly DeviceTemplate[]
+) {
+  const next = [...definitions];
+  const seen = new Set(next.map((definition) => definition.name.toLowerCase()));
+  for (const template of templates) {
+    const className = customTemplateClassName(template);
+    if (!className || seen.has(className.toLowerCase())) continue;
+    const categoryLibraryName = normalizeCategoryLibraryName(template.categoryLibrary);
+    const builtInMetadata = resolveComponentLibraryClassMetadata(
+      className,
+      categoryLibraryName,
+      [],
+      DEVICE_LIBRARY
+    );
+    if (builtInMetadata) continue;
+    const metadata = resolveComponentLibraryClassMetadata(
+      className,
+      categoryLibraryName,
+      [],
+      [template]
+    );
+    if (!metadata) continue;
+    next.push(componentLibraryDefinitionFromMetadata({
+      ...metadata,
+      label: metadata.label || template.label
+    }));
+    seen.add(className.toLowerCase());
+  }
+  return next;
+}
+
+function applyComponentLibraryMetadataToCustomTemplates(
+  templates: readonly DeviceTemplate[],
+  definitions: readonly CustomComponentLibraryDefinition[]
+) {
+  const allTemplates = [...DEVICE_LIBRARY, ...templates];
+  return templates.map((template) => {
+    const className = customTemplateClassName(template);
+    const metadata = resolveComponentLibraryClassMetadata(
+      className,
+      template.categoryLibrary,
+      definitions,
+      allTemplates
+    );
+    if (!metadata) return template;
+    const terminalAnchors = createDefaultCustomDeviceTerminalAnchors(
+      metadata.terminalCount,
+      template.terminalAnchors
+    );
+    const params = {
+      ...(template.params ?? {}),
+      component_type: metadata.baseComponentLibrary,
+      ...(metadata.isDerivedComponentLibrary ? {
+        derived_from_component_type: metadata.baseComponentLibrary,
+        derived_component_type: metadata.className,
+        ...(metadata.label ? { derived_component_library_label: metadata.label } : {}),
+        is_derived_component_library: "1"
+      } : {})
+    };
+    if (!metadata.isDerivedComponentLibrary) {
+      delete params.derived_from_component_type;
+      delete params.derived_component_type;
+      delete params.derived_component_library_label;
+      delete params.is_derived_component_library;
+    }
+    return {
+      ...template,
+      componentClass: metadata.className,
+      categoryLibrary: metadata.categoryLibraryName || template.categoryLibrary,
+      params,
+      terminalType: metadata.terminalTypes[0] ?? template.terminalType,
+      terminalCount: metadata.terminalCount,
+      terminalTypes: [...metadata.terminalTypes],
+      terminalLabels: [...metadata.terminalLabels],
+      terminalAnchors,
+      terminalRoles: [...metadata.terminalRoles],
+      terminalAssociations: metadata.isContainer ? [...metadata.terminalAssociations] : undefined,
+      isContainer: metadata.isContainer,
+      isDerivedComponentLibrary: metadata.isDerivedComponentLibrary,
+      derivedFromComponentLibrary: metadata.isDerivedComponentLibrary ? metadata.baseComponentLibrary : undefined,
+      derivedComponentLibrary: metadata.isDerivedComponentLibrary ? metadata.className : undefined,
+      derivedComponentLibraryLabel: metadata.isDerivedComponentLibrary ? metadata.label : undefined
+    };
+  });
 }
 
 export const templateResizeTransformValue = (template: Pick<DeviceTemplate, "kind" | "params" | "allowResizeTransform">) => {
@@ -2122,6 +2256,7 @@ export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[]
       const templateRest = { ...template };
       delete (templateRest as { attributeLibrary?: unknown }).attributeLibrary;
       const rawParams = template.params ?? {};
+      const explicitComponentClass = normalizeComponentLibraryName(String(template.componentClass ?? ""));
       const normalizedComponentLibraryParam = [
         rawParams.component_type,
         (rawParams as { componentLibrary?: unknown }).componentLibrary,
@@ -2130,7 +2265,9 @@ export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[]
         .map((value) => String(value ?? "").trim())
         .find(Boolean);
       const stateDefinitions = normalizeDeviceStateDefinitions(template.stateDefinitions ?? []);
-      const terminalCount = clampNumber(Number(template.terminalCount ?? 0), 0, MAX_CUSTOM_DEVICE_TERMINALS);
+      const terminalCount = clampNumber(Number(
+        template.terminalCount ?? template.terminalAnchors?.length ?? template.terminalTypes?.length ?? 0
+      ), 0, MAX_CUSTOM_DEVICE_TERMINALS);
       const sourceTerminalTypes = (template.terminalTypes ?? []) as TerminalType[];
       const terminalTypes = Array.from(
         { length: MAX_CUSTOM_DEVICE_TERMINALS },
@@ -2183,6 +2320,9 @@ export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[]
       const isDerivedComponentLibrary = persistenceFlagIsYes(template.isDerivedComponentLibrary) ||
         persistenceFlagIsYes(rawParams.is_derived_component_library ?? (rawParams as { isDerivedComponentLibrary?: unknown }).isDerivedComponentLibrary) ||
         Boolean(derivedFromComponentLibrary && migratedDerivedComponentLibrary);
+      const componentClass = explicitComponentClass || (isDerivedComponentLibrary
+        ? migratedDerivedComponentLibrary
+        : normalizedComponentLibraryParam ?? "");
       if (isDerivedComponentLibrary && derivedFromComponentLibrary) {
         normalizedParams.component_type = derivedFromComponentLibrary;
         normalizedParams.derived_from_component_type = derivedFromComponentLibrary;
@@ -2216,7 +2356,10 @@ export function normalizeCustomDeviceTemplates(value: unknown): DeviceTemplate[]
         ...templateRest,
         kind: String(template.kind ?? ""),
         label: String(template.label ?? template.kind ?? ""),
-        categoryLibrary: normalizeCategoryLibraryName(String(template.categoryLibrary ?? template.attributeLibrary ?? "自定义类别库")),
+        componentClass,
+        categoryLibrary: template.categoryLibrary !== undefined || template.attributeLibrary !== undefined
+          ? normalizeCategoryLibraryName(String(template.categoryLibrary ?? template.attributeLibrary ?? ""))
+          : "",
         size: template.size ?? { width: 96, height: 62 },
         params: normalizedParams,
         terminalType: (template.terminalType ?? "ac") as TerminalType,
@@ -2647,6 +2790,14 @@ function migrateDeviceLibraryPayloadV2ToV3(source: MigratableDeviceLibraryPayloa
   return { ...source, schemaVersion: 3 };
 }
 
+function migrateDeviceLibraryPayloadV3ToV4(source: MigratableDeviceLibraryPayload): MigratableDeviceLibraryPayload {
+  return { ...source, schemaVersion: 4 };
+}
+
+function migrateDeviceLibraryPayloadV4ToV5(source: MigratableDeviceLibraryPayload): MigratableDeviceLibraryPayload {
+  return { ...source, schemaVersion: 5 };
+}
+
 export function migrateDeviceLibraryPersistencePayload(value: unknown): MigratableDeviceLibraryPayload {
   let source = value && typeof value === "object" && !Array.isArray(value)
     ? { ...(value as MigratableDeviceLibraryPayload) }
@@ -2662,13 +2813,33 @@ export function migrateDeviceLibraryPersistencePayload(value: unknown): Migratab
   }
   if (version < 3) {
     source = migrateDeviceLibraryPayloadV2ToV3(source);
+    version = 3;
+  }
+  if (version < 4) {
+    source = migrateDeviceLibraryPayloadV3ToV4(source);
+    version = 4;
+  }
+  if (version < 5) {
+    source = migrateDeviceLibraryPayloadV4ToV5(source);
   }
   return { ...source, schemaVersion: DEVICE_LIBRARY_SCHEMA_VERSION };
 }
 
 export function normalizeDeviceLibraryPersistencePayload(value: unknown): DeviceLibraryPersistencePayload {
   const source = migrateDeviceLibraryPersistencePayload(value);
-  const customDeviceTemplates = normalizeCustomDeviceTemplates(source.customDeviceTemplates);
+  const normalizedCustomDeviceTemplates = normalizeCustomDeviceTemplates(source.customDeviceTemplates);
+  const customComponentLibraries = inferMissingCustomComponentLibraryDefinitions(
+    normalizeCustomComponentLibraries(
+      source.customComponentLibraries ?? source.customComponentTypes,
+      E_SECTION_OPTIONS,
+      [...DEVICE_LIBRARY, ...normalizedCustomDeviceTemplates]
+    ),
+    normalizedCustomDeviceTemplates
+  );
+  const customDeviceTemplates = applyComponentLibraryMetadataToCustomTemplates(
+    normalizedCustomDeviceTemplates,
+    customComponentLibraries
+  );
   const ownership = normalizeDeviceDefinitionOwnership(
     [...DEVICE_LIBRARY, ...customDeviceTemplates],
     normalizeDeviceDefinitionOverrides(source.deviceDefinitionOverrides)
@@ -2677,7 +2848,7 @@ export function normalizeDeviceLibraryPersistencePayload(value: unknown): Device
     schemaVersion: DEVICE_LIBRARY_SCHEMA_VERSION,
     customDeviceTemplates: ownership.customDeviceTemplates,
     customCategoryLibraries: normalizeCustomCategoryLibraries(source.customCategoryLibraries ?? source.customAttributeLibraries),
-    customComponentLibraries: normalizeCustomComponentLibraries(source.customComponentLibraries ?? source.customComponentTypes),
+    customComponentLibraries,
     deviceDefinitionOverrides: ownership.deviceDefinitionOverrides,
     deviceDefinitionSharedKeys: ownership.deviceDefinitionSharedKeys,
     eDeviceDefinitionLabels: normalizeStringRecord((source as any).eDeviceDefinitionLabels),
@@ -2687,6 +2858,14 @@ export function normalizeDeviceLibraryPersistencePayload(value: unknown): Device
     eDeviceDefinitionTableIds: normalizeStringRecord((source as any).eDeviceDefinitionTableIds),
     customGraphTemplateTypes: normalizeGraphTemplateTypes(source.customGraphTemplateTypes),
     customGraphTemplates: normalizeGraphTemplates(source.customGraphTemplates)
+  };
+}
+
+export function projectDeviceLibraryPersistencePayloadForStorage(value: unknown): DeviceLibraryPersistencePayload {
+  const normalized = normalizeDeviceLibraryPersistencePayload(value);
+  return {
+    ...normalized,
+    customDeviceTemplates: normalized.customDeviceTemplates.map(concreteDeviceTemplateForStorage)
   };
 }
 
@@ -2810,8 +2989,10 @@ function fallbackToLocalStorage(data: DeviceLibraryPersistencePayload): void {
 }
 
 export function writeLocalDeviceLibraryPersistencePayload(normalizedDeviceLibrary: DeviceLibraryPersistencePayload): void {
-  normalizedDeviceLibrary = normalizeDeviceLibraryPersistencePayload(normalizedDeviceLibrary);
+  normalizedDeviceLibrary = projectDeviceLibraryPersistencePayloadForStorage(normalizedDeviceLibrary);
   try {
+    window.localStorage.setItem(CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customCategoryLibraries));
+    window.localStorage.setItem(CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customComponentLibraries));
     window.localStorage.setItem(E_DEVICE_DEFINITION_LABELS_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionLabels ?? {}));
     window.localStorage.setItem(E_DEVICE_DEFINITION_CLASS_EXPORT_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionClassExportEnabled ?? {}));
     window.localStorage.setItem(E_DEVICE_DEFINITION_FIELD_ORDER_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionFieldOrder ?? {}));

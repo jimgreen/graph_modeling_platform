@@ -363,6 +363,8 @@ export type Terminal = {
 export type DeviceTemplate = {
   kind: DeviceKind;
   label: string;
+  /** Explicit class identity used by persisted concrete elements. */
+  componentClass?: string;
   categoryLibrary: string;
   size: {
     width: number;

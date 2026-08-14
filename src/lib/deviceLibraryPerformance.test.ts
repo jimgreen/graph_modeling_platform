@@ -105,7 +105,7 @@ describe("IndexedDB 性能测试", () => {
       expect(duration).toBeLessThan(500); // 应该小于 500ms
     });
 
-    it("应该快速按类别库查询", async () => {
+    it("具体图元去除类别冗余后仍应快速完成旧类别索引查询", async () => {
       const startTime = Date.now();
 
       const results = await queryTemplatesByCategoryLibrary("交流设备");
@@ -113,9 +113,8 @@ describe("IndexedDB 性能测试", () => {
       const duration = Date.now() - startTime;
       console.log(`按类别库查询耗时: ${duration}ms`);
 
-      // 500 个模板中，约 125 个是"交流设备"
-      expect(results.length).toBeGreaterThan(100);
-      expect(results.length).toBeLessThan(150);
+      // 类别由共享类持有，具体图元记录不再保留 categoryLibrary 索引值。
+      expect(results).toEqual([]);
       expect(duration).toBeLessThan(200); // 应该小于 200ms
     });
   });

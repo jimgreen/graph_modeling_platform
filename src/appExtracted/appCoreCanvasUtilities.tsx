@@ -695,6 +695,11 @@ export type CustomComponentLibraryDefinition = {
   isDerivedComponentLibrary?: boolean;
   derivedFromComponentLibrary?: string;
   isContainerComponentLibrary?: boolean;
+  terminalCount?: number;
+  terminalTypes?: TerminalType[];
+  terminalLabels?: string[];
+  terminalRoles?: ContainerTerminalRole[];
+  terminalAssociations?: ContainerTerminalAssociationValue[];
 };
 
 export type CategoryLibraryComponentLibraryGroup = {
