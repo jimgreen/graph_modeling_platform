@@ -342,6 +342,7 @@
         "q_min": "0",
         "v_max": "1.1",
         "v_min": "0.9",
+        "regable": "0",
         "component_type": "ACGenerator"
       },
       "updatedAt": "2026-07-22T08:25:20.579Z"
