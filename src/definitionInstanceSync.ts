@@ -14,6 +14,10 @@ import {
   type Terminal,
   type TerminalType
 } from "./model";
+import {
+  DEVICE_DEFINITION_VISUAL_PARAM_KEYS,
+  DEVICE_VISUAL_PARAM_PREFIXES
+} from "./deviceVisualParams";
 
 export type DefinitionSyncTemplate = Pick<DeviceTemplate, "parameterDefinitions" | "parameterDefinitionsIntent"> &
   Partial<Pick<
@@ -34,52 +38,10 @@ export type DefinitionSyncTemplate = Pick<DeviceTemplate, "parameterDefinitions"
     | "stateDefinitions"
   >>;
 
-const DEFINITION_OWNED_PARAM_KEYS = new Set([
-  "component_type",
-  "icon",
-  "image",
-  "imageAssetId",
-  "imageFit",
-  "backgroundImage",
-  "backgroundImageAssetId",
-  "backgroundImageCleared",
-  "backgroundImageFit",
-  "foregroundColor",
-  "foregroundImage",
-  "foregroundImageAssetId",
-  "foregroundImageFit",
-  "fillColor",
-  "strokeColor",
-  "textColor",
-  "lineWidth",
-  "fontSize",
-  "fontFamily",
-  "fontWeight",
-  "fontStyle",
-  "textDecoration",
-  "strokeStyle",
-  "text",
-  "cornerRadius",
-  "accentColor",
-  "shadowEnabled",
-  "padding",
-  "textAlign",
-  "verticalAlign",
-  "markerStart",
-  "markerEnd",
-  "arrowSize",
-  "handleColor",
-  "handleSize",
-  "routeAvoidance",
-  "staticWidth",
-  "staticHeight"
-]);
-
-const DEFINITION_OWNED_PARAM_PREFIXES = ["button"];
-
 function isDefinitionOwnedParam(key: string) {
-  return DEFINITION_OWNED_PARAM_KEYS.has(key) ||
-    DEFINITION_OWNED_PARAM_PREFIXES.some((prefix) => key.startsWith(prefix));
+  return key === "component_type" ||
+    DEVICE_DEFINITION_VISUAL_PARAM_KEYS.has(key) ||
+    DEVICE_VISUAL_PARAM_PREFIXES.some((prefix) => key.startsWith(prefix));
 }
 
 function isCompleteTemplate(template: DefinitionSyncTemplate): template is DeviceTemplate {

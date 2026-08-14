@@ -4317,7 +4317,7 @@ export function createAppHookCallback134(__appScope: Record<string, any>) {
       const stateVisual = resolveNodeStateVisual(node);
       const stateText = stateVisualText(stateVisual);
       const stateImageHref = resolveStateVisualImageHref(stateVisual, imageAssets);
-      const fill = stateVisual?.fillColor || node.params.backgroundColor || "#ffffff";
+      const fill = stateVisual?.fillColor || node.params.fillColor || node.params.backgroundColor || "#ffffff";
       const stroke = stateVisual?.strokeColor || stateVisual?.color || getDeviceStrokeColor(node, colorDisplayMode, colorPalette);
       const strokeWidth = Math.max(2, getDeviceStrokeWidth(node));
       const stateImageMarkup = stateImageHref && !nodeIsBus

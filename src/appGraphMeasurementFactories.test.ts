@@ -4,6 +4,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import {
   createBeginMeasurementDrag,
+  createBuildMultiNodeDragOverlayPreview,
   createBuildMeasurementGroupMarkup,
   createMeasurementGroupRenderMetrics,
   createRenderSelectedNodeMeasurementTable,
@@ -25,6 +26,48 @@ import { DEVICE_LIBRARY, getTemplateParameterDefinitions } from "./model";
 import { exportMeasurementItemMetadataAttributes } from "./svgExportUtils";
 
 describe("measurement canvas interactions", () => {
+  test("uses the canonical node fill color in simplified multi-node drag previews", () => {
+    const node = {
+      id: "custom-node-1",
+      kind: "custom-node",
+      name: "自定义图元",
+      position: { x: 120, y: 80 },
+      size: { width: 100, height: 60 },
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1,
+      terminals: [],
+      params: { fillColor: "#123456" }
+    };
+    const buildPreview = createBuildMultiNodeDragOverlayPreview({
+      CANVAS_MULTI_NODE_DRAG_OVERLAY_DETAIL_LIMIT: 0,
+      CANVAS_MULTI_NODE_DRAG_PREVIEW_EDGE_LIMIT: 0,
+      buildMeasurementGroupsMarkup: () => "",
+      buildNodePreviewImageMarkup: () => "",
+      buildRoutableLineDragGhostRoutesForNodeIds: () => [],
+      colorDisplayMode: "energy",
+      colorPalette: {},
+      escapeXml: (value: unknown) => String(value),
+      formatSvgNumber: (value: number) => String(value),
+      getConnectionStrokeColor: () => "#334155",
+      getDeviceStrokeColor: () => "#334155",
+      getDeviceStrokeWidth: () => 2,
+      includeMeasurementGroupBounds: () => undefined,
+      isBusNode: () => false,
+      nodeById: new Map([[node.id, node]]),
+      nodeGeometryTransform: () => "",
+      nodeHasUprightBoundsContent: () => false,
+      nodeVisualInteractionBounds: () => ({ left: 70, right: 170, top: 50, bottom: 110 }),
+      pointsToPreviewPath: () => "",
+      visibleEdgeIdSet: new Set(),
+      visibleNodeIdSet: new Set([node.id])
+    });
+
+    const preview = buildPreview([node.id], [], { [node.id]: node.position }, {});
+
+    expect(preview.simplifiedMarkup).toContain('fill="#123456"');
+  });
+
   test("migrates current measurement instances before saving a new measurement definition", async () => {
     const previousConfig = measurementDefinitions.normalizeMeasurementConfig(measurementDefinitions.DEFAULT_MEASUREMENT_CONFIG);
     const nextConfig = measurementDefinitions.normalizeMeasurementConfig({

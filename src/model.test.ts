@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { DeviceGlyph } from "./DeviceGlyph";
 import { createRenderStaticBoxDrawingPreview } from "./appExtracted/appCanvasInteractionFactories";
 import { apiPath } from "./config";
+import { DEVICE_VISUAL_PARAM_KEYS } from "./deviceVisualParams";
 import {
   alignNodes,
   buildTopology,
@@ -113,6 +114,7 @@ import {
   getTemplateStateDefinitions,
   normalizeDeviceStateDefinitions,
   normalizeDeviceParamRecord,
+  normalizeSemanticParameterValues,
   normalizeDeviceStatusForE,
   resolveDeviceStateVisual,
   nodeAllowsResizeTransform,
@@ -1294,6 +1296,45 @@ describe("power system model", () => {
         { value: "0", label: "停运" }
       ]
     });
+  });
+
+  test("preserves canonical visual metadata while normalizing business parameter names", () => {
+    const normalized = normalizeDeviceParamRecord({
+      backgroundImage: "data:image/svg+xml,fingerprint",
+      backgroundImageAssetId: "fingerprint-asset",
+      backgroundImageFit: "contain",
+      fillColor: "transparent",
+      strokeColor: "#2563eb",
+      lineWidth: "2",
+      ratedCapacity: "5 MW"
+    })!;
+
+    expect(normalized).toMatchObject({
+      backgroundImage: "data:image/svg+xml,fingerprint",
+      backgroundImageAssetId: "fingerprint-asset",
+      backgroundImageFit: "contain",
+      fillColor: "transparent",
+      strokeColor: "#2563eb",
+      lineWidth: "2",
+      rated_capacity: "5"
+    });
+    expect(normalized).not.toHaveProperty("background_image");
+    expect(normalized).not.toHaveProperty("background_image_asset_id");
+    expect(normalized).not.toHaveProperty("fill_color");
+    expect(normalized).not.toHaveProperty("stroke_color");
+
+    const allVisualParams = Object.fromEntries(
+      Array.from(DEVICE_VISUAL_PARAM_KEYS, (key) => [key, `${key}-value`])
+    );
+    const normalizedVisualParams = normalizeDeviceParamRecord(allVisualParams)!;
+    for (const [key, value] of Object.entries(allVisualParams)) {
+      expect(normalizedVisualParams[key], key).toBe(value);
+    }
+
+    const visualValues = Object.fromEntries(
+      Array.from(DEVICE_VISUAL_PARAM_KEYS, (key) => [key, `${key}: 10 MW / 99%`])
+    );
+    expect(normalizeSemanticParameterValues(visualValues)).toBe(visualValues);
   });
 
   test("migrates legacy SOC params and definitions while preferring canonical values", () => {

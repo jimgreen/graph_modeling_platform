@@ -27,6 +27,10 @@ import {
 } from "./model";
 import type { OrthogonalAxis } from "./App";
 import {
+  DEVICE_DEFINITION_VISUAL_PARAM_KEYS,
+  DEVICE_VISUAL_PARAM_PREFIXES
+} from "./deviceVisualParams";
+import {
   CONTAINER_TERMINAL_ASSOCIATION_OPTIONS,
   CUSTOM_DEVICE_TERMINAL_ANCHOR_PRECISION,
   MAX_CUSTOM_DEVICE_TERMINALS,
@@ -53,7 +57,43 @@ export function fallbackComponentLibraryForCategoryLibrary(categoryLibraryName: 
   return "ACLoad";
 }
 
+const BUILT_IN_DEVICE_TEMPLATE_BY_KIND = new Map(
+  DEVICE_LIBRARY.map((template) => [template.kind, template] as const)
+);
+
+function restoreBuiltInTemplateComponentMetadata(
+  template: DeviceTemplate,
+  params: Record<string, string>
+) {
+  const builtInTemplate = template.custom
+    ? undefined
+    : BUILT_IN_DEVICE_TEMPLATE_BY_KIND.get(template.kind);
+  if (!builtInTemplate) return params;
+  const restored = { ...params };
+  for (const name of SHARED_DEFINITION_METADATA_PARAM_NAMES) {
+    delete restored[name];
+    const canonicalValue = builtInTemplate.params?.[name];
+    if (canonicalValue !== undefined) {
+      restored[name] = canonicalValue;
+    }
+  }
+  return restored;
+}
+
 export function resolveTemplateComponentLibrary(template: DeviceTemplate) {
+  const builtInTemplate = template.custom
+    ? undefined
+    : BUILT_IN_DEVICE_TEMPLATE_BY_KIND.get(template.kind);
+  if (builtInTemplate) {
+    const builtInDerivedInfo = modelTemplateDerivedComponentLibraryInfo(builtInTemplate);
+    if (builtInDerivedInfo) {
+      return builtInDerivedInfo.componentLibrary;
+    }
+    const builtInComponentLibrary = inferESection(builtInTemplate.kind, builtInTemplate.params);
+    if (builtInComponentLibrary) {
+      return builtInComponentLibrary;
+    }
+  }
   const derivedInfo = modelTemplateDerivedComponentLibraryInfo(template);
   if (derivedInfo) {
     return derivedInfo.componentLibrary;
@@ -80,49 +120,10 @@ const SHARED_DEFINITION_METADATA_PARAM_NAMES = new Set([
   "is_derived_component_library"
 ]);
 
-const CONCRETE_VISUAL_PARAM_NAMES = new Set([
-  ...SHARED_DEFINITION_METADATA_PARAM_NAMES,
-  "icon",
-  "image",
-  "imageAssetId",
-  "imageFit",
-  "backgroundImage",
-  "backgroundImageAssetId",
-  "backgroundImageCleared",
-  "backgroundImageFit",
-  "foregroundColor",
-  "foregroundImage",
-  "foregroundImageAssetId",
-  "foregroundImageFit",
-  "fillColor",
-  "strokeColor",
-  "textColor",
-  "lineWidth",
-  "fontSize",
-  "fontFamily",
-  "fontWeight",
-  "fontStyle",
-  "textDecoration",
-  "strokeStyle",
-  "text",
-  "cornerRadius",
-  "accentColor",
-  "shadowEnabled",
-  "padding",
-  "textAlign",
-  "verticalAlign",
-  "markerStart",
-  "markerEnd",
-  "arrowSize",
-  "handleColor",
-  "handleSize",
-  "routeAvoidance",
-  "staticWidth",
-  "staticHeight"
-]);
-
 export function isConcreteDeviceDefinitionParamName(name: string) {
-  return CONCRETE_VISUAL_PARAM_NAMES.has(name) || name.startsWith("button");
+  return SHARED_DEFINITION_METADATA_PARAM_NAMES.has(name) ||
+    DEVICE_DEFINITION_VISUAL_PARAM_KEYS.has(name) ||
+    DEVICE_VISUAL_PARAM_PREFIXES.some((prefix) => name.startsWith(prefix));
 }
 
 export function concreteDeviceDefinitionParams(params: Record<string, string> | undefined) {
@@ -303,15 +304,16 @@ export function deviceDefinitionOverrideForTemplate(
       : builtInParameterDefinitions.length > 0
         ? builtInParameterDefinitions
         : undefined;
+  const mergedParams = restoreBuiltInTemplateComponentMetadata(template, {
+    ...sharedDefinitionParams(sharedOverride),
+    ...sharedDefinitionParams(parameterSource),
+    ...sharedDefinitionParams(measurementSource),
+    ...(visualOverride?.params ?? {})
+  });
   return {
     ...(visualOverride ?? {}),
     kind: template.kind,
-    params: {
-      ...sharedDefinitionParams(sharedOverride),
-      ...sharedDefinitionParams(parameterSource),
-      ...sharedDefinitionParams(measurementSource),
-      ...(visualOverride?.params ?? {})
-    },
+    params: mergedParams,
     ...(Array.isArray(parameterDefinitions)
       ? { parameterDefinitions: parameterDefinitions.map((definition) => ({ ...definition })) }
       : {}),

@@ -5,6 +5,10 @@ import { useTransition } from "react";
 import { apiPath } from "../config";
 import { ELEMENT_TREE_COMPONENT_LIBRARY_LABELS } from "../model";
 import {
+  DEVICE_VISUAL_PARAM_KEYS,
+  DEVICE_VISUAL_PARAM_PREFIXES
+} from "../deviceVisualParams";
+import {
   AlignCenter,
   AlignEndHorizontal,
   AlignEndVertical,
@@ -3273,6 +3277,7 @@ export const PARAM_LABELS: Record<string, string> = {
   strokeColor: "线条颜色",
   textColor: "文字颜色",
   line_width: "线条宽度",
+  lineWidth: "线条宽度",
   fontSize: "字号",
   fontFamily: "字体",
   fontWeight: "字重",
@@ -3614,46 +3619,11 @@ export const canBatchEditParam = (key: string) =>
   !/(^|_)node$/i.test(key) &&
   !/_node$/i.test(key);
 
-export const BATCH_GRAPH_PARAM_KEYS = new Set([
-  "layerId",
-  "staticWidth",
-  "staticHeight",
-  "rotation",
-  "scaleX",
-  "scaleY",
-  "backgroundImage",
-  "backgroundImageAssetId",
-  "foregroundColor",
-  "foregroundImage",
-  "foregroundImageAssetId",
-  "fillColor",
-  "strokeColor",
-  "textColor",
-  "lineWidth",
-  "fontSize",
-  "fontFamily",
-  "fontWeight",
-  "fontStyle",
-  "textDecoration",
-  "strokeStyle",
-  "text",
-  "cornerRadius",
-  "accentColor",
-  "shadowEnabled",
-  "padding",
-  "textAlign",
-  "verticalAlign",
-  "markerStart",
-  "markerEnd",
-  "arrowSize",
-  "handleColor",
-  "handleSize",
-  "routeAvoidance"
-]);
+export const BATCH_GRAPH_PARAM_KEYS = new Set(DEVICE_VISUAL_PARAM_KEYS);
 
 export const BATCH_GRAPH_PARAM_PREFIXES = [
   "_label",
-  "button"
+  ...DEVICE_VISUAL_PARAM_PREFIXES
 ];
 
 export const isBatchGraphCommonParamKey = (key: string) =>

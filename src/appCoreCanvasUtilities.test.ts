@@ -1,5 +1,22 @@
 import { describe, expect, test } from "vitest";
-import { PARAM_LABELS, paramOptionsForSection } from "./appExtracted/appCoreCanvasUtilities";
+import {
+  PARAM_LABELS,
+  isBatchGraphCommonParamKey,
+  paramOptionsForSection
+} from "./appExtracted/appCoreCanvasUtilities";
+import { DEVICE_VISUAL_PARAM_KEYS } from "./deviceVisualParams";
+
+describe("graph parameter classification", () => {
+  test("keeps every canonical visual field out of the business parameter group", () => {
+    for (const key of DEVICE_VISUAL_PARAM_KEYS) {
+      expect(isBatchGraphCommonParamKey(key), key).toBe(true);
+    }
+    expect(isBatchGraphCommonParamKey("buttonTargetLayerId")).toBe(true);
+    expect(isBatchGraphCommonParamKey("_labelFontSize")).toBe(true);
+    expect(isBatchGraphCommonParamKey("rated_capacity")).toBe(false);
+    expect(PARAM_LABELS.lineWidth).toBe("线条宽度");
+  });
+});
 
 describe("converter parameter options", () => {
   test("uses independent canonical options for the AC and DC control fields", () => {
