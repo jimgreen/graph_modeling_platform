@@ -6503,7 +6503,12 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
             categoryLibraryName,
             customComponentLibraries,
             libraryTemplates
-          )
+          ) ?? resolveComponentLibraryClassFamilyMetadata(
+            derivedFromComponentLibrary,
+            categoryLibraryName,
+            customComponentLibraries,
+            libraryTemplates
+          ).find((item) => item.className.toLowerCase() === derivedFromComponentLibrary.toLowerCase()) ?? null
         : null;
       if (derivedRequested && !inheritedMetadata) {
         return setDialogError("派生基类的元数据不存在，无法继承端子定义。");
