@@ -2059,7 +2059,7 @@ describe("manual bend interaction helpers", () => {
     });
   });
 
-  test("creating a component library persists its complete immutable class metadata", () => {
+  test("creating a component library recovers inherited metadata when the base template was historically overridden", () => {
     let customComponentLibraries: any[] = [];
     let customDeviceDraft: any = {
       categoryLibraryName: "交流设备",
@@ -2104,10 +2104,26 @@ describe("manual bend interaction helpers", () => {
       isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
       libraryTemplates: [{
         kind: "ac-source",
-        label: "交流电源",
+        label: "被历史覆盖的交流电源",
+        componentClass: "CorruptedDerivedClass",
         categoryLibrary: "交流设备",
         size: { width: 104, height: 64 },
         params: { component_type: "ACGenerator" },
+        isDerivedComponentLibrary: true,
+        derivedFromComponentLibrary: "ACRealBs",
+        derivedComponentLibrary: "CorruptedDerivedClass",
+        terminalType: "ac",
+        terminalCount: 1,
+        terminalTypes: ["ac"]
+      }, {
+        kind: "ac-wind-source",
+        label: "交流风力发电机",
+        componentClass: "ACWindGen",
+        categoryLibrary: "交流设备",
+        params: { component_type: "ACGenerator" },
+        isDerivedComponentLibrary: true,
+        derivedFromComponentLibrary: "ACGenerator",
+        derivedComponentLibrary: "ACWindGen",
         terminalType: "ac",
         terminalCount: 1,
         terminalTypes: ["ac"],
