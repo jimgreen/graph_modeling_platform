@@ -1197,7 +1197,7 @@ function createTemplateDefaultStateIconImage(__appScope: Record<string, any>, te
     `<svg xmlns="http://www.w3.org/2000/svg" width="${formatSvgNumber(drawingWidth)}" height="${formatSvgNumber(drawingHeight)}" viewBox="0 0 ${formatSvgNumber(drawingWidth)} ${formatSvgNumber(drawingHeight)}">` +
     `<g data-state-icon-layer-width="${formatSvgNumber(contentWidth)}" data-state-icon-layer-height="${formatSvgNumber(contentHeight)}"${staticTemplateSizeAttrs} transform="translate(${formatSvgNumber(contentCenterX)} ${formatSvgNumber(contentCenterY)})">` +
     `<svg x="${formatSvgNumber(-contentWidth / 2)}" y="${formatSvgNumber(-contentHeight / 2)}" width="${formatSvgNumber(contentWidth)}" height="${formatSvgNumber(contentHeight)}" data-state-icon-preserve-view-box="true" viewBox="${formatSvgNumber(viewBoxX)} ${formatSvgNumber(viewBoxY)} ${formatSvgNumber(viewBoxWidth)} ${formatSvgNumber(viewBoxHeight)}" preserveAspectRatio="xMidYMid meet" overflow="visible">` +
-    `<g transform="${escapeXml(nodeGeometryTransform(node))}">${glyphMarkup}${glyphTextMarkup}</g>` +
+    `<g data-platform-generated-default="true" transform="${escapeXml(nodeGeometryTransform(node))}">${glyphMarkup}${glyphTextMarkup}</g>` +
     `</svg></g></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
@@ -1211,6 +1211,7 @@ function isGeneratedTemplateDefaultStateIconImage(value: unknown) {
   try {
     const decoded = decodeURIComponent(payload);
     return (
+      decoded.includes('data-platform-generated-default="true"') ||
       decoded.includes("data-state-icon-layer-width") ||
       decoded.includes("data-state-icon-layer-height") ||
       decoded.includes("data-custom-device-persisted-terminal-connectors") ||
@@ -6274,15 +6275,18 @@ function customDeviceDraftPatchForComponentLibrarySelection(
   } = __appScope;
   const section = normalizeComponentLibraryName(className);
   const classMetadataPatch = componentLibraryMetadataDraftPatch(__appScope, section, categoryLibraryName);
-  const matchingTemplates = (libraryTemplates ?? []).filter((template: any) =>
-    classMetadataPatch?.isDerivedComponentLibrary
-      ? normalizeComponentLibraryName(templateDerivedComponentLibraryInfo(template)?.derivedComponentLibrary) === section
-      : !templateDerivedComponentLibraryInfo(template) && normalizeComponentLibraryName(
-          typeof resolveTemplateComponentLibrary === "function"
-            ? resolveTemplateComponentLibrary(template)
-            : inferESection(template.kind, template.params ?? {})
-        ) === normalizeComponentLibraryName(classMetadataPatch?.componentLibrary || section)
-  );
+  const matchingTemplates = (libraryTemplates ?? []).filter((template: any) => {
+    const derivedInfo = templateDerivedComponentLibraryInfo(template);
+    if (classMetadataPatch?.isDerivedComponentLibrary) {
+      return Boolean(derivedInfo) &&
+        normalizeComponentLibraryName(derivedInfo.derivedComponentLibrary) === section;
+    }
+    return !derivedInfo && normalizeComponentLibraryName(
+      typeof resolveTemplateComponentLibrary === "function"
+        ? resolveTemplateComponentLibrary(template)
+        : inferESection(template.kind, template.params ?? {})
+    ) === normalizeComponentLibraryName(classMetadataPatch?.componentLibrary || section);
+  });
   const representativeTemplate =
     matchingTemplates.find((template: any) => !templateDerivedComponentLibraryInfo(template)) ??
     matchingTemplates[0];
