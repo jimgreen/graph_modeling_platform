@@ -31,6 +31,8 @@ import {
   createSaveCustomDeviceTemplate,
   createSaveDeviceDefinitionDraft,
   createSaveDeviceDefinitionVisualDraft,
+  createDefinitionDefaultStateVisualDraft,
+  clearGeneratedDefinitionVisualDraftImage,
   createSelectCustomComponentLibrary,
   createSvgExportReferencedImageHrefById,
   createOpenSvgModelImportFilePicker,
@@ -66,6 +68,8 @@ import {
   buildEDeviceHeaderParameterRecords,
   orderEDeviceRecordsForExport,
   createDefaultNode,
+  createNodeFromTemplate,
+  DEFAULT_COLOR_PALETTE,
   DEVICE_LIBRARY,
   getTemplateParameterDefinitions,
   parseEDeviceDefinitionFile,
@@ -91,6 +95,51 @@ describe("device definition terminal anchors", () => {
 
     expect(createDefinitionVisualDraft(template).terminalAnchors[0]).toEqual({ x: 0.5, y: 0 });
     expect(createCustomDeviceDraftFromTemplate(template).terminalAnchors[0]).toEqual({ x: 0.5, y: 0 });
+  });
+});
+
+describe("built-in default visual persistence", () => {
+  test("marks generated defaults so a drawing-editor round trip is not stored as a custom visual", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-bus-vertical")!;
+    const visual = createDefinitionDefaultStateVisualDraft({
+      definitionVisualDraft: {
+        backgroundImage: "",
+        backgroundImageAssetId: "",
+        backgroundImageCleared: "",
+        backgroundImageFit: "cover",
+        size: template.size,
+        terminalCount: template.terminalCount,
+        terminalTypes: template.terminalTypes ?? [],
+        terminalLabels: template.terminalLabels ?? [],
+        terminalAnchors: template.terminalAnchors ?? []
+      },
+      selectedDefinitionTemplate: template,
+      DeviceGlyph: () => null,
+      MAX_CUSTOM_DEVICE_TERMINALS: 64,
+      createNodeFromTemplate,
+      escapeXml: (value: unknown) => String(value),
+      formatSvgNumber: (value: number) => String(value),
+      nodeGeometryTransform: (node: any) => `rotate(${node.rotation}) scale(1 1)`,
+      renderSvgElementMarkup: () => '<rect class="bus-glyph"/>',
+      colorDisplayMode: "energy",
+      colorPalette: DEFAULT_COLOR_PALETTE
+    })();
+    const generatedSource = decodeURIComponent(String(visual.image).split(",")[1] ?? "");
+    expect(generatedSource).toContain('data-platform-generated-default="true"');
+
+    const roundTrippedImage = `data:image/svg+xml;utf8,${encodeURIComponent(
+      `<svg data-state-icon-drawing="true"><g data-platform-generated-default="true"><rect class="bus-glyph"/></g></svg>`
+    )}`;
+    expect(clearGeneratedDefinitionVisualDraftImage(template, {
+      backgroundImage: roundTrippedImage,
+      backgroundImageAssetId: "stale",
+      backgroundImageFit: "cover",
+      backgroundImageCleared: ""
+    })).toMatchObject({
+      backgroundImage: "",
+      backgroundImageAssetId: "",
+      backgroundImageCleared: ""
+    });
   });
 });
 
@@ -2347,7 +2396,7 @@ describe("manual bend interaction helpers", () => {
         terminalTypes: ["ac"]
       }],
       normalizeCategoryLibraryName: (name: string) => name.trim(),
-      normalizeComponentLibraryName: (name: unknown) => String(name ?? "").trim(),
+      normalizeComponentLibraryName: (name: string) => name.trim(),
       normalizeCustomCategoryLibraries: (value: unknown) => value as string[],
       normalizeCustomComponentLibraries: (value: unknown) => value as any[],
       requireEditMode: () => true,

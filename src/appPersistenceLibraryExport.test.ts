@@ -86,6 +86,43 @@ describe("model library backend response", () => {
   });
 });
 
+describe("built-in vertical bus visual normalization", () => {
+  const legacyGeneratedBusImage = (fill = "#2563eb") => `data:image/svg+xml;utf8,${encodeURIComponent(
+    `<svg data-state-icon-drawing="true"><rect data-state-icon-frame="true" fill="transparent" stroke="transparent" stroke-width="0"/><svg data-state-icon-preserve-view-box="true"><g transform="rotate(90) scale(1 1)"><rect class="bus-glyph" x="-50" y="-4" width="100" height="8" fill="${fill}" stroke="${fill}" stroke-width="0"/></g></svg></svg>`
+  )}`;
+
+  test("removes a legacy generated background that hides the built-in vertical bus glyph", () => {
+    const normalized = normalizeDeviceDefinitionOverrides({
+      "ac-bus-vertical": {
+        kind: "ac-bus-vertical",
+        params: {
+          backgroundImage: legacyGeneratedBusImage(),
+          backgroundImageAssetId: "",
+          backgroundImageFit: "cover",
+          backgroundImageCleared: ""
+        },
+        size: { width: 150, height: 36 }
+      }
+    });
+
+    expect(normalized["ac-bus-vertical"].params).not.toHaveProperty("backgroundImage");
+    expect(normalized["ac-bus-vertical"].size).toEqual({ width: 150, height: 36 });
+  });
+
+  test("keeps an explicitly customized vertical bus image", () => {
+    const customizedImage = legacyGeneratedBusImage("#dc2626");
+    const normalized = normalizeDeviceDefinitionOverrides({
+      "ac-bus-vertical": {
+        kind: "ac-bus-vertical",
+        params: { backgroundImage: customizedImage, backgroundImageFit: "contain" }
+      }
+    });
+
+    expect(normalized["ac-bus-vertical"].params?.backgroundImage).toBe(customizedImage);
+    expect(normalized["ac-bus-vertical"].params?.backgroundImageFit).toBe("contain");
+  });
+});
+
 describe("graph template library filtering", () => {
   test("creates migration packages without mixing device and template libraries", () => {
     const deviceLibrary = {

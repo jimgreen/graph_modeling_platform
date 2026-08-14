@@ -2671,6 +2671,63 @@ export function normalizeDefinitionOverrideTerminalAnchors(value: unknown, count
   return anchors.length > 0 ? anchors : undefined;
 }
 
+const GENERATED_VERTICAL_BUS_TEMPLATE_KINDS = new Set([
+  "ac-bus-vertical",
+  "dc-bus-vertical",
+  "hydrogen-bus-vertical",
+  "heat-bus-vertical"
+]);
+
+function decodedSvgDataUrl(value: unknown) {
+  const image = String(value ?? "").trim();
+  if (!image.startsWith("data:image/svg+xml") || !image.includes(",")) {
+    return "";
+  }
+  try {
+    return decodeURIComponent(image.slice(image.indexOf(",") + 1));
+  } catch {
+    return "";
+  }
+}
+
+function isGeneratedVerticalBusDefaultBackground(kind: string, value: unknown) {
+  if (!GENERATED_VERTICAL_BUS_TEMPLATE_KINDS.has(kind)) {
+    return false;
+  }
+  const source = decodedSvgDataUrl(value);
+  if (!source) {
+    return false;
+  }
+  if (source.includes('data-platform-generated-default="true"')) {
+    return true;
+  }
+  return (
+    source.includes('data-state-icon-drawing="true"') &&
+    source.includes('data-state-icon-preserve-view-box="true"') &&
+    source.includes('data-state-icon-frame="true"') &&
+    source.includes('fill="transparent" stroke="transparent" stroke-width="0"') &&
+    source.includes('transform="rotate(90) scale(1 1)"') &&
+    source.includes('class="bus-glyph"') &&
+    source.includes('x="-50" y="-4" width="100" height="8"') &&
+    source.includes('fill="#2563eb" stroke="#2563eb" stroke-width="0"')
+  );
+}
+
+function removeGeneratedVerticalBusDefaultBackground(
+  kind: string,
+  params: Record<string, string>
+) {
+  if (!isGeneratedVerticalBusDefaultBackground(kind, params.backgroundImage)) {
+    return params;
+  }
+  const next = { ...params };
+  delete next.backgroundImage;
+  delete next.backgroundImageAssetId;
+  delete next.backgroundImageFit;
+  delete next.backgroundImageCleared;
+  return next;
+}
+
 export function normalizeDeviceDefinitionOverrides(value: unknown): Record<string, DeviceTemplateDefinitionOverride> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
@@ -2695,14 +2752,17 @@ export function normalizeDeviceDefinitionOverrides(value: unknown): Record<strin
       const hasDerivedFrom = Object.prototype.hasOwnProperty.call(rawOverride, "derivedFromComponentLibrary");
       const hasDerivedComponent = Object.prototype.hasOwnProperty.call(rawOverride, "derivedComponentLibrary");
       const hasDerivedLabel = Object.prototype.hasOwnProperty.call(rawOverride, "derivedComponentLibraryLabel");
-      const normalizedParams = normalizeLegacyGasQuantityDeviceParams(Object.fromEntries(
-        Object.entries(override.params ?? {})
-          .filter(([key]) => !isReservedDeviceDefinitionParamName(key))
-          .map(([key, val]) => [
-            key,
-            key === "run_stat" ? normalizeRunStatValue(val, "1") : String(val ?? "")
-          ])
-      ));
+      const normalizedParams = removeGeneratedVerticalBusDefaultBackground(
+        normalizedKind,
+        normalizeLegacyGasQuantityDeviceParams(Object.fromEntries(
+          Object.entries(override.params ?? {})
+            .filter(([key]) => !isReservedDeviceDefinitionParamName(key))
+            .map(([key, val]) => [
+              key,
+              key === "run_stat" ? normalizeRunStatValue(val, "1") : String(val ?? "")
+            ])
+        ))
+      );
       const normalizedOverride: DeviceTemplateDefinitionOverride = {
         kind: normalizedKind,
         label: String(rawOverride.label ?? "").trim() || undefined,
