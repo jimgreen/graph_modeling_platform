@@ -609,7 +609,7 @@ describe("topology calculation operating-limit normalization", () => {
     });
     const normalizeDeviceOperatingLimitsAfterTopology = vi.fn((
       _nodes: unknown[],
-      _options: { skipVoltageNodeIds: Set<string> }
+      _options: { skipVoltageNodeIds: Set<string>; sourceNodes: unknown[] }
     ) => {
       calls.push("normalize");
       return { nodes: normalizedNodes, warnings: [], corrections: [] };
@@ -650,7 +650,8 @@ describe("topology calculation operating-limit normalization", () => {
       powerUnit: "kW",
       voltageUnit: "V",
       currentUnit: "A",
-      skipVoltageNodeIds: expect.any(Set)
+      skipVoltageNodeIds: expect.any(Set),
+      sourceNodes
     });
     expect(normalizeDeviceOperatingLimitsAfterTopology.mock.calls[0][1].skipVoltageNodeIds.size).toBe(0);
     expect(setNodes).toHaveBeenCalledWith(normalizedNodes);
@@ -683,7 +684,7 @@ describe("topology calculation operating-limit normalization", () => {
     };
     const normalizeDeviceOperatingLimitsAfterTopology = vi.fn((
       _nodes: unknown[],
-      _options: { skipVoltageNodeIds: Set<string> }
+      _options: { skipVoltageNodeIds: Set<string>; sourceNodes: unknown[] }
     ) => ({
       nodes: [normalizedNode],
       warnings: [{

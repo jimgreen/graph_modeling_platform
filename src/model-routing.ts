@@ -4763,6 +4763,7 @@ export type DeviceOperatingLimitNormalizationOptions = {
   voltageUnit?: string;
   currentUnit?: string;
   skipVoltageNodeIds?: ReadonlySet<string>;
+  sourceNodes?: readonly ModelNode[];
 };
 
 export type DeviceOperatingLimitCorrection = {
@@ -4907,6 +4908,50 @@ function terminalForDeviceLimit(node: ModelNode, selector: DeviceLimitTerminalSe
     return node.terminals[2];
   }
   return node.terminals.find((terminal) => isElectricalTerminalType(terminal.type)) ?? node.terminals[0];
+}
+
+type VoltageSetpointDefaultSpec = {
+  paramKey: string;
+  terminalSelector: DeviceLimitTerminalSelector;
+};
+
+function voltageSetpointDefaultSpecs(node: ModelNode): VoltageSetpointDefaultSpec[] {
+  const section = inferESection(node.kind, node.params);
+  if (section === "ACGenerator") {
+    return [{ paramKey: "v_set", terminalSelector: "ac" }];
+  }
+  if (section === "DCGenerator") {
+    return [{ paramKey: "v_set", terminalSelector: "dc" }];
+  }
+  if (section === "DCDCConverter") {
+    const sourceControl = normalizeDcdcEndpointControlTypeForE(
+      node.params.i_control_type || node.params.sourceControlType || node.params.control_type
+    );
+    const targetControl = normalizeDcdcEndpointControlTypeForE(
+      node.params.j_control_type || node.params.targetControlType
+    );
+    return [{
+      paramKey: "v_set",
+      terminalSelector: targetControl === "V" ? "j" : sourceControl === "V" ? "i" : "i"
+    }];
+  }
+  if (section === "DCACConverter") {
+    return [
+      { paramKey: "v_ac_set", terminalSelector: "ac" },
+      { paramKey: "v_dc_set", terminalSelector: "dc" },
+      { paramKey: "ac_v_set", terminalSelector: "ac" },
+      { paramKey: "dc_v_set", terminalSelector: "dc" },
+      { paramKey: "v_set", terminalSelector: "i" }
+    ];
+  }
+  if (section === "ACACConverter") {
+    return [
+      { paramKey: "i_v_set", terminalSelector: "i" },
+      { paramKey: "j_v_set", terminalSelector: "j" },
+      { paramKey: "v_set", terminalSelector: "i" }
+    ];
+  }
+  return [];
 }
 
 function deviceSetpointLimitSpecs(node: ModelNode, ownerSection: string): DeviceSetpointLimitSpec[] {
@@ -5354,6 +5399,7 @@ export function normalizeDeviceOperatingLimitsAfterTopology(
 ): { nodes: ModelNode[]; warnings: TopologyValidationError[]; corrections: DeviceOperatingLimitCorrection[] } {
   const warnings: TopologyValidationError[] = [];
   const corrections: DeviceOperatingLimitCorrection[] = [];
+  const sourceNodeById = new Map((options.sourceNodes ?? []).map((node) => [node.id, node]));
   const normalizedNodes = nodes.map((node) => {
     if (isStaticNode(node)) {
       return node;
@@ -5369,6 +5415,75 @@ export function normalizeDeviceOperatingLimitsAfterTopology(
       nextParams[paramKey] = value;
       corrections.push({ nodeId: node.id, paramKey, value });
     };
+    const sourceNode = sourceNodeById.get(node.id);
+    if (sourceNode && !options.skipVoltageNodeIds?.has(node.id)) {
+      const recordVoltageSetpointDefaults = (
+        ownerName: string,
+        specs: Array<{ paramKey: string; terminal: Terminal | undefined }>
+      ) => {
+        const correctedSetpoints: Array<{ paramKey: string; previousValue: string; value: string }> = [];
+        for (const spec of specs) {
+          if (!Object.prototype.hasOwnProperty.call(sourceNode.params, spec.paramKey)) {
+            continue;
+          }
+          const previousValue = sourceNode.params[spec.paramKey];
+          if (!shouldAssignVoltageSetpointDefault(previousValue)) {
+            continue;
+          }
+          const baseVoltageText = terminalVoltageTextForDeviceLimit(node, spec.terminal);
+          const baseVoltage = quantityValue(baseVoltageText, "voltage", defaultQuantityUnit("voltage", options));
+          const defaultValue = node.params[spec.paramKey];
+          const defaultVoltage = quantityValue(defaultValue, "voltage", defaultQuantityUnit("voltage", options));
+          if (!baseVoltage || baseVoltage.baseValue <= 0 || !defaultVoltage || defaultVoltage.baseValue <= 0) {
+            continue;
+          }
+          updateParam(spec.paramKey, defaultValue);
+          if (!corrections.some((correction) => correction.nodeId === node.id && correction.paramKey === spec.paramKey)) {
+            corrections.push({ nodeId: node.id, paramKey: spec.paramKey, value: defaultValue });
+          }
+          correctedSetpoints.push({ paramKey: spec.paramKey, previousValue, value: defaultValue });
+        }
+        if (correctedSetpoints.length === 0) {
+          return;
+        }
+        const previousSummary = correctedSetpoints
+          .map(({ paramKey, previousValue }) => `${paramKey}=${previousValue.trim() || "未设置"}`)
+          .join("、");
+        const correctedSummary = correctedSetpoints
+          .map(({ paramKey, value }) => `${paramKey}=${value}`)
+          .join("、");
+        warnings.push({
+          id: `voltage-setpoint-zero:${node.id}:${correctedSetpoints.map(({ paramKey }) => encodeURIComponent(paramKey)).join(":")}`,
+          type: "voltage-setpoint-zero",
+          nodeId: node.id,
+          relatedNodeIds: [node.id],
+          message: `图上拓扑告警：${ownerName} 的 ${previousSummary}，电压设定值不能为0；已根据所在节点电压基值自动修正为 ${correctedSummary}。`
+        });
+      };
+      recordVoltageSetpointDefaults(
+        node.name,
+        voltageSetpointDefaultSpecs(sourceNode).map((spec) => ({
+          paramKey: spec.paramKey,
+          terminal: terminalForDeviceLimit(node, spec.terminalSelector)
+        }))
+      );
+      if (isContainerParams(sourceNode.params)) {
+        for (const fieldName of Object.keys(sourceNode.params)) {
+          const relationSection = containerRelationCounterKey(fieldName);
+          if (relationSection !== "ACGenerator" && relationSection !== "DCGenerator") {
+            continue;
+          }
+          const parsed = parseContainerRelationField(fieldName);
+          if (!parsed) {
+            continue;
+          }
+          recordVoltageSetpointDefaults(containerAssociatedDeviceName(sourceNode, fieldName), [{
+            paramKey: containerRelationParamKey(fieldName, "v_set"),
+            terminal: node.terminals[parsed.terminalNumber - 1]
+          }]);
+        }
+      }
+    }
     const template = DEVICE_LIBRARY_BY_KIND.get(node.kind) ?? DEVICE_LIBRARY_BY_KIND.get(baseDeviceKind(node.kind));
     if (template) {
       const defaultedParams = applyContainerAssociatedDeviceDefaults(nextParams, template);

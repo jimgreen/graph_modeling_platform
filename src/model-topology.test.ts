@@ -1997,6 +1997,106 @@ test("fills zero converter voltage setpoints from the related topology node rate
   expect(byId.get(acac.id)?.params.j_v_set).toBe("10");
 });
 
+test("warns and records topology defaults for zero voltage setpoints on sources and converters", () => {
+  const acSource = createDefaultNode("ac-source", { x: 100, y: 100 });
+  acSource.name = "交流电源";
+  acSource.params.v_set = "0";
+  acSource.terminals[0].vbase = "35 kV";
+
+  const dcSource = createDefaultNode("dc-source", { x: 260, y: 100 });
+  dcSource.name = "直流电源";
+  dcSource.params.v_set = "0.0 V";
+  dcSource.terminals[0].vbase = "750 V";
+
+  const dcdc = createDefaultNode("dcdc-converter", { x: 420, y: 100 });
+  dcdc.name = "直流变换器";
+  dcdc.params.v_set = "0";
+  dcdc.params.i_control_type = "P";
+  dcdc.params.j_control_type = "V";
+  dcdc.terminals[0].vbase = "1500 V";
+  dcdc.terminals[1].vbase = "750 V";
+
+  const dcac = createDefaultNode("dcac-converter", { x: 580, y: 100 });
+  dcac.name = "交直流变换器";
+  dcac.params.v_ac_set = "0";
+  dcac.params.v_dc_set = "0.0";
+  dcac.terminals.find((terminal) => terminal.type === "ac")!.vbase = "10 kV";
+  dcac.terminals.find((terminal) => terminal.type === "dc")!.vbase = "800 V";
+
+  const acac = createDefaultNode("acac-converter", { x: 740, y: 100 });
+  acac.name = "交流变换器";
+  acac.params.i_v_set = "0";
+  acac.params.j_v_set = "0";
+  acac.terminals[0].vbase = "110 kV";
+  acac.terminals[1].vbase = "10 kV";
+
+  const sourceNodes = [acSource, dcSource, dcdc, dcac, acac];
+  const calculatedNodes = calculateElectricalTopology(sourceNodes, []);
+  const result = normalizeDeviceOperatingLimitsAfterTopology(calculatedNodes, { sourceNodes });
+  const byId = new Map(result.nodes.map((node) => [node.id, node]));
+  const warnings = result.warnings.filter((warning) => warning.type === "voltage-setpoint-zero");
+
+  expect(warnings).toHaveLength(5);
+  expect(warnings.every((warning) => !isBlockingTopologyValidationError(warning))).toBe(true);
+  expect(warnings.map((warning) => warning.message)).toEqual(expect.arrayContaining([
+    expect.stringContaining("交流电源 的 v_set=0"),
+    expect.stringContaining("直流电源 的 v_set=0.0 V"),
+    expect.stringContaining("直流变换器 的 v_set=0"),
+    expect.stringContaining("交直流变换器 的 v_ac_set=0、v_dc_set=0.0"),
+    expect.stringContaining("交流变换器 的 i_v_set=0、j_v_set=0")
+  ]));
+  expect(byId.get(acSource.id)?.params.v_set).toBe("35");
+  expect(byId.get(dcSource.id)?.params.v_set).toBe("750");
+  expect(byId.get(dcdc.id)?.params.v_set).toBe("750");
+  expect(byId.get(dcac.id)?.params).toMatchObject({ v_ac_set: "10", v_dc_set: "800" });
+  expect(byId.get(acac.id)?.params).toMatchObject({ i_v_set: "110", j_v_set: "10" });
+  expect(result.corrections).toEqual(expect.arrayContaining([
+    { nodeId: acSource.id, paramKey: "v_set", value: "35" },
+    { nodeId: dcSource.id, paramKey: "v_set", value: "750" },
+    { nodeId: dcdc.id, paramKey: "v_set", value: "750" },
+    { nodeId: dcac.id, paramKey: "v_ac_set", value: "10" },
+    { nodeId: dcac.id, paramKey: "v_dc_set", value: "800" },
+    { nodeId: acac.id, paramKey: "i_v_set", value: "110" },
+    { nodeId: acac.id, paramKey: "j_v_set", value: "10" }
+  ]));
+});
+
+test("keeps non-zero voltage setpoints unchanged without topology warnings", () => {
+  const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+  source.params.v_set = "35";
+  source.terminals[0].vbase = "35 kV";
+  const calculatedNodes = calculateElectricalTopology([source], []);
+
+  const result = normalizeDeviceOperatingLimitsAfterTopology(calculatedNodes, { sourceNodes: [source] });
+
+  expect(result.nodes[0].params.v_set).toBe("35");
+  expect(result.warnings.some((warning) => warning.type === "voltage-setpoint-zero")).toBe(false);
+  expect(result.corrections.some((correction) => correction.paramKey === "v_set")).toBe(false);
+});
+
+test("warns and records topology defaults for zero voltage setpoints on container-associated sources", () => {
+  const fuelCell = assignPermanentDeviceIndex(createDefaultNode("dc-fuel-cell", { x: 100, y: 100 }), {}).node;
+  fuelCell.params.v_set_dc_unit_t1 = "0";
+  fuelCell.terminals[0].vbase = "1500 V";
+  const calculatedNodes = calculateElectricalTopology([fuelCell], []);
+
+  const result = normalizeDeviceOperatingLimitsAfterTopology(calculatedNodes, { sourceNodes: [fuelCell] });
+  const warning = result.warnings.find((candidate) => candidate.type === "voltage-setpoint-zero");
+
+  expect(warning).toMatchObject({
+    nodeId: fuelCell.id,
+    relatedNodeIds: [fuelCell.id],
+    message: expect.stringContaining("v_set_dc_unit_t1=0")
+  });
+  expect(isBlockingTopologyValidationError(warning!)).toBe(false);
+  expect(result.nodes[0].params.v_set_dc_unit_t1).toBe("1500");
+  expect(result.corrections).toContainEqual({
+    nodeId: fuelCell.id,
+    paramKey: "v_set_dc_unit_t1",
+    value: "1500"
+  });
+});
+
 test("checks voltage setpoint deviations after topology fills zero defaults", () => {
   const acBus = createDefaultNode("ac-bus", { x: 160, y: 100 });
   const acdc = createDefaultNode("acdc-converter", { x: 360, y: 100 });
