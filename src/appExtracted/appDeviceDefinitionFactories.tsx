@@ -5333,6 +5333,7 @@ export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>)
         const peerOverride = { ...next[peer.kind] };
         delete peerOverride.parameterDefinitions;
         delete peerOverride.measurementDefinitions;
+        delete peerOverride.measurementDefinitionsIntent;
         next[peer.kind] = peerOverride;
       }
       next[overrideKey] = {
@@ -5345,6 +5346,7 @@ export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>)
         parameterDefinitions: completedRows,
         ...(explicitlyDeletesAllParameters ? { parameterDefinitionsIntent: "delete-all" as const } : {}),
         measurementDefinitions: selectedProfileItems,
+        ...(selectedProfileItems.length === 0 ? { measurementDefinitionsIntent: "delete-all" as const } : {}),
         updatedAt: new Date().toISOString()
       };
       return normalizeSharedDeviceDefinitionOverrides(next, libraryTemplates);
@@ -6217,13 +6219,21 @@ function componentLibraryMetadataDraftPatch(
 ) {
   const {
     customComponentLibraries = [],
+    deviceDefinitionOverrides = {},
     libraryTemplates = [],
     normalizeCategoryLibraryName = (value: unknown) => String(value ?? "").trim(),
     normalizeComponentLibraryName = (value: unknown) => String(value ?? "").trim()
   } = __appScope;
   const normalizedClassName = normalizeComponentLibraryName(className);
   const normalizedCategoryLibraryName = normalizeCategoryLibraryName(categoryLibraryName);
-  const metadata = resolveComponentLibraryClassMetadata(
+  const editableClassDefinition = resolveEditableComponentLibraryDefinition({
+    className: normalizedClassName,
+    categoryLibraryName: normalizedCategoryLibraryName,
+    customComponentLibraries,
+    templates: libraryTemplates,
+    overrides: deviceDefinitionOverrides
+  });
+  const metadata = editableClassDefinition?.metadata ?? resolveComponentLibraryClassMetadata(
     normalizedClassName,
     normalizedCategoryLibraryName,
     customComponentLibraries,
@@ -6656,6 +6666,7 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
             ? { parameterDefinitionsIntent: "delete-all" }
             : {}),
           measurementDefinitions: cloneDeviceMeasurementDefinitions(classMeasurementDefinitions) ?? [],
+          ...(classMeasurementDefinitions.length === 0 ? { measurementDefinitionsIntent: "delete-all" } : {}),
           updatedAt: new Date().toISOString()
         }
       }, libraryTemplates);
@@ -7779,6 +7790,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     const exactVisualOverride = { ...nextTemplateOverride };
     delete exactVisualOverride.parameterDefinitions;
     delete exactVisualOverride.measurementDefinitions;
+    delete exactVisualOverride.measurementDefinitionsIntent;
     const sharedDefinitionOverride: DeviceTemplateDefinitionOverride = {
       kind: sharedOverrideKey,
       params: definitions.reduce<Record<string, string>>((acc, definition) => {
@@ -7790,6 +7802,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       }),
       ...(parameterDefinitionsMatchBuiltIn ? {} : { parameterDefinitions: definitions }),
       measurementDefinitions: cloneDeviceMeasurementDefinitions(profileItems) ?? [],
+      ...(profileItems.length === 0 ? { measurementDefinitionsIntent: "delete-all" } : {}),
       updatedAt: nextTemplateOverride.updatedAt
     };
     const nextDeviceDefinitionOverrides: Record<string, DeviceTemplateDefinitionOverride> = {
@@ -7805,6 +7818,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       const peerOverride = { ...nextDeviceDefinitionOverrides[peer.kind] };
       delete peerOverride.parameterDefinitions;
       delete peerOverride.measurementDefinitions;
+      delete peerOverride.measurementDefinitionsIntent;
       nextDeviceDefinitionOverrides[peer.kind] = peerOverride;
     }
     const normalizedDeviceDefinitionOverrides = normalizeSharedDeviceDefinitionOverrides(
@@ -7912,11 +7926,30 @@ export function createSaveComponentLibraryDefinition(__appScope: Record<string, 
       return false;
     }
     const metadata = editableClassDefinition.metadata;
-    const terminalTypes = metadata.terminalTypes.slice(0, metadata.terminalCount);
+    const terminalCount = metadata.isDerivedComponentLibrary
+      ? metadata.terminalCount
+      : customDeviceDraft.terminalCount;
+    const terminalTypes = (
+      metadata.isDerivedComponentLibrary
+        ? metadata.terminalTypes
+        : customDeviceDraft.terminalTypes
+    ).slice(0, terminalCount);
+    const terminalLabels = (
+      metadata.isDerivedComponentLibrary
+        ? metadata.terminalLabels
+        : customDeviceDraft.terminalLabels
+    ).slice(0, terminalCount);
+    const terminalRoles = (
+      metadata.isDerivedComponentLibrary
+        ? metadata.terminalRoles
+        : customDeviceDraft.terminalRoles
+    ).slice(0, terminalCount);
     const terminalAssociations = normalizeContainerTerminalAssociations(
       terminalTypes,
-      metadata.terminalAssociations,
-      metadata.terminalCount
+      metadata.isDerivedComponentLibrary
+        ? metadata.terminalAssociations
+        : customDeviceDraft.terminalAssociations,
+      terminalCount
     );
     const draftRows = normalizeCustomDeviceDraftParamRows(customDeviceDraft.params, normalizeDefinitionRowEnumFields);
     const inheritedParameterKeys = new Set(
@@ -7934,9 +7967,9 @@ export function createSaveComponentLibraryDefinition(__appScope: Record<string, 
     }
     const defaultRows = metadata.isDerivedComponentLibrary
       ? []
-      : buildComponentLibraryDefaultParameterDefinitions(className, terminalTypes, {
+       : buildComponentLibraryDefaultParameterDefinitions(className, terminalTypes, {
           isContainer: metadata.isContainer,
-          terminalRoles: metadata.terminalRoles.slice(0, metadata.terminalCount),
+          terminalRoles,
           terminalAssociations
         });
     const { definitions, customRows } = mergeDefaultAndCustomDefinitionRows(
@@ -8015,8 +8048,8 @@ export function createSaveComponentLibraryDefinition(__appScope: Record<string, 
       terminalType: terminalTypes[0] ?? "ac",
       terminalCount: terminalTypes.length,
       terminalTypes,
-      terminalLabels: metadata.terminalLabels.slice(0, terminalTypes.length),
-      terminalRoles: metadata.terminalRoles.slice(0, terminalTypes.length),
+      terminalLabels,
+      terminalRoles,
       terminalAssociations: metadata.isContainer ? terminalAssociations : undefined,
       isContainer: metadata.isContainer,
       parameterDefinitions: effectiveDefinitions,
@@ -8051,6 +8084,16 @@ export function createSaveComponentLibraryDefinition(__appScope: Record<string, 
           ? { parameterDefinitionsIntent: "delete-all" }
           : {}),
         measurementDefinitions: cloneDeviceMeasurementDefinitions(profileItems) ?? [],
+        ...(profileItems.length === 0 ? { measurementDefinitionsIntent: "delete-all" } : {}),
+        ...(!metadata.isDerivedComponentLibrary ? {
+          terminalType: terminalTypes[0] ?? "ac",
+          terminalCount: terminalTypes.length,
+          terminalTypes,
+          terminalLabels,
+          terminalRoles,
+          terminalAssociations: metadata.isContainer ? terminalAssociations : undefined,
+          isContainer: metadata.isContainer
+        } : {}),
         updatedAt
       }
     }, libraryTemplates);

@@ -9,6 +9,7 @@ import {
   componentLibraryDefinitionOverrideKey,
   resolveEditableComponentLibraryDefinition
 } from "./componentLibraryDefinitions";
+import { deviceDefinitionSharedKeyForTemplate } from "./customDeviceUtils";
 
 const baseDefinition = {
   name: "BasePump",
@@ -80,6 +81,34 @@ describe("component library editable definitions", () => {
     );
   });
 
+  test("restores built-in class measurements hidden by historical empty shared overrides", () => {
+    const cases = [
+      ["ACGenerator", "ac-source", ["activePower", "reactivePower", "voltage", "frequency"]],
+      ["ACBranch", "ac-line", ["activePower", "reactivePower", "current"]],
+      ["ACTransformer", "ac-transformer", ["activePower", "reactivePower", "voltage", "current"]]
+    ] as const;
+
+    for (const [className, kind, expectedMeasurementTypes] of cases) {
+      const template = DEVICE_LIBRARY.find((candidate) => candidate.kind === kind)!;
+      const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
+      const resolved = resolveEditableComponentLibraryDefinition({
+        className,
+        categoryLibraryName: "交流设备",
+        templates: DEVICE_LIBRARY,
+        overrides: {
+          [sharedKey]: {
+            kind: sharedKey,
+            measurementDefinitions: [],
+            updatedAt: "2026-08-14T17:14:43.814Z"
+          }
+        }
+      });
+
+      expect(resolved?.measurementDefinitions.map((row) => row.measurementTypeId), className)
+        .toEqual(expectedMeasurementTypes);
+    }
+  });
+
   test("uses a persisted class override as the authoritative editable definition", () => {
     const classKey = componentLibraryDefinitionOverrideKey("BasePump");
     const overrides: Record<string, DeviceTemplateDefinitionOverride> = {
@@ -113,6 +142,53 @@ describe("component library editable definitions", () => {
       "pressure_set"
     ]);
     expect(resolved?.measurementDefinitions).toEqual(overrides[classKey].measurementDefinitions);
+  });
+
+  test("applies base-class terminal energy overrides and inherits them into derived classes", () => {
+    const baseKey = componentLibraryDefinitionOverrideKey("BasePump");
+    const derivedKey = componentLibraryDefinitionOverrideKey("DerivedPump");
+    const derivedDefinition = {
+      name: "DerivedPump",
+      label: "派生泵",
+      categoryLibraryName: "交流设备",
+      isDerivedComponentLibrary: true,
+      derivedFromComponentLibrary: "BasePump"
+    } as const;
+    const overrides: Record<string, DeviceTemplateDefinitionOverride> = {
+      [baseKey]: {
+        kind: baseKey,
+        terminalType: "dc",
+        terminalCount: 1,
+        terminalTypes: ["dc"],
+        terminalLabels: ["直流端"]
+      },
+      [derivedKey]: {
+        kind: derivedKey,
+        terminalType: "h2",
+        terminalCount: 1,
+        terminalTypes: ["h2"]
+      }
+    };
+
+    const baseResolved = resolveEditableComponentLibraryDefinition({
+      className: "BasePump",
+      categoryLibraryName: "交流设备",
+      customComponentLibraries: [baseDefinition as any, derivedDefinition as any],
+      templates: [],
+      overrides
+    });
+    const derivedResolved = resolveEditableComponentLibraryDefinition({
+      className: "DerivedPump",
+      categoryLibraryName: "交流设备",
+      customComponentLibraries: [baseDefinition as any, derivedDefinition as any],
+      templates: [],
+      overrides
+    });
+
+    expect(baseResolved?.metadata.terminalTypes).toEqual(["dc"]);
+    expect(baseResolved?.metadata.terminalLabels).toEqual(["直流端"]);
+    expect(derivedResolved?.metadata.terminalTypes).toEqual(["dc"]);
+    expect(derivedResolved?.metadata.terminalLabels).toEqual(["直流端"]);
   });
 
   test("seeds an unpersisted class from all matching template definitions", () => {

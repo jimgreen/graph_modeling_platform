@@ -133,6 +133,34 @@ describe("electric generation device library classification", () => {
     expect(createCustomDeviceDraftFromTemplate(appliedTemplate).params.map((row) => row.enName)).toContain("wind_turbine_model");
   });
 
+  test("applies a base-class terminal energy override to base and derived concrete templates", () => {
+    const base = DEVICE_LIBRARY.find((item) => item.kind === "ac-source")!;
+    const derived = DEVICE_LIBRARY.find((item) => item.kind === "ac-wind-source")!;
+    const overrides = {
+      "class:ACGenerator": {
+        kind: "class:ACGenerator",
+        terminalType: "dc",
+        terminalCount: 1,
+        terminalTypes: ["dc"],
+        terminalLabels: ["直流端"]
+      }
+    } as any;
+
+    const effectiveBase = applyDeviceTemplateDefinitionOverride(
+      base,
+      deviceDefinitionOverrideForTemplate(base, overrides, DEVICE_LIBRARY)
+    );
+    const effectiveDerived = applyDeviceTemplateDefinitionOverride(
+      derived,
+      deviceDefinitionOverrideForTemplate(derived, overrides, DEVICE_LIBRARY)
+    );
+
+    expect(effectiveBase.terminalTypes).toEqual(["dc"]);
+    expect(effectiveBase.terminalLabels).toEqual(["直流端"]);
+    expect(effectiveDerived.terminalTypes).toEqual(["dc"]);
+    expect(effectiveDerived.terminalLabels).toEqual(["直流端"]);
+  });
+
   test("keeps base and derived parameter-definition identities separate while sharing generated directions", () => {
     const base = DEVICE_LIBRARY.find((item) => item.kind === "ac-source")!;
     const derived = DEVICE_LIBRARY.find((item) => item.kind === "ac-wind-source")!;
@@ -709,6 +737,56 @@ describe("electric generation device library classification", () => {
       expect(draft.measurementDefinitions, template.kind).toEqual(template.measurementDefinitions);
       expect(draft.measurementDefinitions, template.kind).not.toBe(template.measurementDefinitions);
     }
+  });
+
+  test("restores every built-in measurement table hidden by an unmarked empty shared override", () => {
+    for (const template of DEVICE_LIBRARY) {
+      if (template.custom || !template.measurementDefinitions?.length) continue;
+
+      const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
+      const normalized = normalizeSharedDeviceDefinitionOverrides({
+        [sharedKey]: {
+          kind: sharedKey,
+          measurementDefinitions: [],
+          updatedAt: "2026-08-14T17:14:43.814Z"
+        }
+      }, DEVICE_LIBRARY);
+      const applied = applyDeviceTemplateDefinitionOverride(
+        template,
+        deviceDefinitionOverrideForTemplate(template, normalized)
+      );
+
+      expect(applied.measurementDefinitions, template.kind).toEqual(template.measurementDefinitions);
+      expect(normalized[sharedKey].measurementDefinitions, template.kind).toBeUndefined();
+      expect(normalized[sharedKey].measurementDefinitionsIntent, template.kind).toBeUndefined();
+    }
+  });
+
+  test("keeps explicit measurement delete-all while dropping stale markers on non-empty tables", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-source")!;
+    const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
+    const explicitlyEmpty = normalizeSharedDeviceDefinitionOverrides({
+      [sharedKey]: {
+        kind: sharedKey,
+        measurementDefinitions: [],
+        measurementDefinitionsIntent: "delete-all"
+      }
+    }, DEVICE_LIBRARY);
+    const explicitTemplate = applyDeviceTemplateDefinitionOverride(
+      template,
+      deviceDefinitionOverrideForTemplate(template, explicitlyEmpty)
+    );
+    expect(explicitTemplate.measurementDefinitions).toEqual([]);
+    expect(explicitTemplate.measurementDefinitionsIntent).toBe("delete-all");
+
+    const nonEmpty = normalizeSharedDeviceDefinitionOverrides({
+      [sharedKey]: {
+        kind: sharedKey,
+        measurementDefinitions: [{ measurementTypeId: "voltage", associatedField: "v" }],
+        measurementDefinitionsIntent: "delete-all"
+      }
+    }, DEVICE_LIBRARY);
+    expect(nonEmpty[sharedKey].measurementDefinitionsIntent).toBeUndefined();
   });
 
   test("keeps every built-in business definition effective after an unmarked empty shared override", () => {

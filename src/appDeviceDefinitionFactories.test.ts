@@ -715,7 +715,9 @@ describe("manual bend interaction helpers", () => {
     const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
     expect(nextOverrides[sharedKey]).toMatchObject({
       parameterDefinitions: [],
-      parameterDefinitionsIntent: "delete-all"
+      parameterDefinitionsIntent: "delete-all",
+      measurementDefinitions: [],
+      measurementDefinitionsIntent: "delete-all"
     });
     expect(deleteAllRef.current).toBe(false);
     expect(setDefinitionDraftError).toHaveBeenLastCalledWith("");
@@ -853,7 +855,9 @@ describe("manual bend interaction helpers", () => {
     const sharedKey = deviceDefinitionSharedKeyForTemplate(template);
     expect(nextOverrides[sharedKey]).toMatchObject({
       parameterDefinitions: [],
-      parameterDefinitionsIntent: "delete-all"
+      parameterDefinitionsIntent: "delete-all",
+      measurementDefinitions: [],
+      measurementDefinitionsIntent: "delete-all"
     });
     expect(deleteAllRef.current).toBe(false);
     expect(setDefinitionDraftError).toHaveBeenLastCalledWith("");
@@ -2570,7 +2574,7 @@ describe("manual bend interaction helpers", () => {
     expect(showGlobalMessage).not.toHaveBeenCalled();
   });
 
-  test("saves class parameter and measurement CRUD rows to the class override", () => {
+  test("saves class terminal energy, parameter and measurement rows to the class override", () => {
     let customDeviceDraft: any = {
       categoryLibraryName: "交流设备",
       componentLibrary: "UserPump",
@@ -2578,10 +2582,10 @@ describe("manual bend interaction helpers", () => {
       componentKind: "",
       isDerivedComponentLibrary: false,
       terminalCount: 1,
-      terminalTypes: ["ac"],
-      terminalLabels: ["交流端"],
+      terminalTypes: ["dc"],
+      terminalLabels: ["直流端"],
       terminalRoles: ["single-load"],
-      terminalAssociations: ["ac-load"],
+      terminalAssociations: ["dc-load"],
       terminalAnchors: [{ x: 0.5, y: 0 }],
       isContainer: false,
       params: [
@@ -2669,7 +2673,11 @@ describe("manual bend interaction helpers", () => {
       ]),
       measurementDefinitions: [
         { measurementTypeId: "pressure", position: "device", associatedField: "pressure_set" }
-      ]
+      ],
+      terminalType: "dc",
+      terminalCount: 1,
+      terminalTypes: ["dc"],
+      terminalLabels: ["直流端"]
     });
     expect(persistDeviceLibraryChange).toHaveBeenCalledWith(
       { deviceDefinitionOverrides },
@@ -2810,7 +2818,9 @@ describe("manual bend interaction helpers", () => {
     expect(appViewSource).toContain('aria-label="派生基类选择"');
     expect(appViewSource).not.toContain("customLibraryCreateDialogSelectedClassMetadata");
     expect(appViewSource).not.toContain('custom-device-terminal-summary-field');
-    expect(appViewSource).toContain('disabled title="能源属性由所属类定义"');
+    expect(appViewSource).not.toContain('disabled title="能源属性由所属类定义"');
+    expect(appViewSource).toContain('aria-label="类端子能源属性配置"');
+    expect(appViewSource).toContain("!customDeviceDraft.isDerivedComponentLibrary &&");
     expect(appViewSource).toContain('disabled title="关联设备由所属类定义"');
     expect(appViewSource).not.toContain('disabled={customDeviceDefinitionMode === "edit" && customComponentTreeSelection?.kind !== "component"}');
     expect(appViewSource).toContain('customComponentTreeSelection?.kind === "componentLibrary" ? "保存类定义"');

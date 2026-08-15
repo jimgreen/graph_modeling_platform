@@ -272,7 +272,7 @@ describe("graph template library filtering", () => {
       .toBe("重命名交流电源");
   });
 
-  test("removes an unmarked historical empty built-in definition table", () => {
+  test("removes unmarked historical empty built-in definition tables", () => {
     const normalized = normalizeDeviceDefinitionOverrides({
       "dcdc-converter": {
         kind: "dcdc-converter",
@@ -282,12 +282,7 @@ describe("graph template library filtering", () => {
       }
     });
 
-    expect(normalized["shared:DCDCConverter"]).toMatchObject({
-      kind: "shared:DCDCConverter",
-      measurementDefinitions: []
-    });
-    expect(normalized["shared:DCDCConverter"].parameterDefinitions).toBeUndefined();
-    expect(normalized["shared:DCDCConverter"].parameterDefinitionsIntent).toBeUndefined();
+    expect(normalized["shared:DCDCConverter"]).toBeUndefined();
     expect(normalized["dcdc-converter"]).toBeUndefined();
   });
 
@@ -315,12 +310,15 @@ describe("graph template library filtering", () => {
         "shared:ACGenerator": {
           kind: "shared:ACGenerator",
           params: { component_type: "ACGenerator" },
-          parameterDefinitions: []
+          parameterDefinitions: [],
+          measurementDefinitions: []
         },
         "shared:DCDCConverter": {
           kind: "shared:DCDCConverter",
           parameterDefinitions: [],
-          parameterDefinitionsIntent: "delete-all"
+          parameterDefinitionsIntent: "delete-all",
+          measurementDefinitions: [],
+          measurementDefinitionsIntent: "delete-all"
         },
         "shared:ACLoad": {
           kind: "shared:ACLoad",
@@ -332,9 +330,12 @@ describe("graph template library filtering", () => {
     const normalized = normalizeDeviceLibraryPersistencePayload(legacy);
     expect(migrated.schemaVersion).toBe(DEVICE_LIBRARY_SCHEMA_VERSION);
     expect(migrated.deviceDefinitionOverrides?.["shared:ACGenerator"]?.parameterDefinitions).toBeUndefined();
+    expect(migrated.deviceDefinitionOverrides?.["shared:ACGenerator"]?.measurementDefinitions).toBeUndefined();
     expect(migrated.deviceDefinitionOverrides?.["shared:DCDCConverter"]).toMatchObject({
       parameterDefinitions: [],
-      parameterDefinitionsIntent: "delete-all"
+      parameterDefinitionsIntent: "delete-all",
+      measurementDefinitions: [],
+      measurementDefinitionsIntent: "delete-all"
     });
     expect(normalized).toMatchObject({
       schemaVersion: DEVICE_LIBRARY_SCHEMA_VERSION,
@@ -362,7 +363,8 @@ describe("graph template library filtering", () => {
           params: { component_type: "DerivedPump" },
           parameterDefinitions: [],
           parameterDefinitionsIntent: "delete-all",
-          measurementDefinitions: []
+          measurementDefinitions: [],
+          measurementDefinitionsIntent: "delete-all"
         }
       }
     });
@@ -377,7 +379,8 @@ describe("graph template library filtering", () => {
     expect(roundTripped.deviceDefinitionOverrides["class:DerivedPump"]).toMatchObject({
       parameterDefinitions: [],
       parameterDefinitionsIntent: "delete-all",
-      measurementDefinitions: []
+      measurementDefinitions: [],
+      measurementDefinitionsIntent: "delete-all"
     });
   });
 

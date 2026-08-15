@@ -91,7 +91,8 @@ describe("device library schema migration", () => {
           params: { component_type: "DerivedPump" },
           parameterDefinitions: [],
           parameterDefinitionsIntent: "delete-all",
-          measurementDefinitions: []
+          measurementDefinitions: [],
+          measurementDefinitionsIntent: "delete-all"
         }
       }
     });
@@ -111,7 +112,8 @@ describe("device library schema migration", () => {
       kind: "class:DerivedPump",
       parameterDefinitions: [],
       parameterDefinitionsIntent: "delete-all",
-      measurementDefinitions: []
+      measurementDefinitions: [],
+      measurementDefinitionsIntent: "delete-all"
     });
     expect(normalizeDeviceLibraryConfig(normalized)).toEqual(normalized);
   });
@@ -119,11 +121,17 @@ describe("device library schema migration", () => {
   test("removes damaged empty overrides while preserving explicit deletion and non-empty definitions", () => {
     const legacy = {
       deviceDefinitionOverrides: {
-        "shared:ACGenerator": { kind: "shared:ACGenerator", parameterDefinitions: [] },
+        "shared:ACGenerator": {
+          kind: "shared:ACGenerator",
+          parameterDefinitions: [],
+          measurementDefinitions: []
+        },
         "shared:DCDCConverter": {
           kind: "shared:DCDCConverter",
           parameterDefinitions: [],
-          parameterDefinitionsIntent: "delete-all"
+          parameterDefinitionsIntent: "delete-all",
+          measurementDefinitions: [],
+          measurementDefinitionsIntent: "delete-all"
         },
         "shared:ACLoad": {
           kind: "shared:ACLoad",
@@ -133,11 +141,14 @@ describe("device library schema migration", () => {
     };
     const migrated = migrateDeviceLibraryConfig(legacy);
     const normalized = normalizeDeviceLibraryConfig(legacy);
-    expect(migrated.schemaVersion).toBe(3);
+    expect(migrated.schemaVersion).toBe(4);
     expect(migrated.deviceDefinitionOverrides["shared:ACGenerator"].parameterDefinitions).toBeUndefined();
+    expect(migrated.deviceDefinitionOverrides["shared:ACGenerator"].measurementDefinitions).toBeUndefined();
     expect(normalized.deviceDefinitionOverrides["shared:DCDCConverter"]).toMatchObject({
       parameterDefinitions: [],
-      parameterDefinitionsIntent: "delete-all"
+      parameterDefinitionsIntent: "delete-all",
+      measurementDefinitions: [],
+      measurementDefinitionsIntent: "delete-all"
     });
     expect(normalized.deviceDefinitionOverrides["shared:ACLoad"].parameterDefinitions).toHaveLength(1);
     expect(normalizeDeviceLibraryConfig(normalized)).toEqual(normalized);
@@ -223,7 +234,7 @@ describe("device library schema migration", () => {
       }
     });
 
-    expect(normalized.schemaVersion).toBe(3);
+    expect(normalized.schemaVersion).toBe(4);
     expect(normalized.deviceDefinitionOverrides["shared:DCDCConverter"]).toMatchObject({
       params: { i_p: "10" },
       parameterDefinitions: [{ enName: "i_p" }],

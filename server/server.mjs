@@ -965,7 +965,7 @@ function sharedDeviceDefinitionParams(params) {
   )));
 }
 
-export const deviceLibrarySchemaVersion = 3;
+export const deviceLibrarySchemaVersion = 4;
 
 function normalizeRunStatValue(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -1106,6 +1106,30 @@ function migrateDeviceLibraryConfigV2ToV3(source) {
   return { ...source, schemaVersion: 3 };
 }
 
+function migrateDeviceLibraryConfigV3ToV4(source) {
+  const rawOverrides = source.deviceDefinitionOverrides && typeof source.deviceDefinitionOverrides === "object" &&
+    !Array.isArray(source.deviceDefinitionOverrides)
+    ? source.deviceDefinitionOverrides
+    : {};
+  const deviceDefinitionOverrides = Object.fromEntries(Object.entries(rawOverrides).map(([kind, rawOverride]) => {
+    if (!rawOverride || typeof rawOverride !== "object" || Array.isArray(rawOverride)) {
+      return [kind, rawOverride];
+    }
+    const override = { ...rawOverride };
+    const explicitlyDeletesAllMeasurements = Array.isArray(override.measurementDefinitions) &&
+      override.measurementDefinitions.length === 0 && override.measurementDefinitionsIntent === "delete-all";
+    if (Array.isArray(override.measurementDefinitions) && override.measurementDefinitions.length === 0 &&
+      !explicitlyDeletesAllMeasurements) {
+      delete override.measurementDefinitions;
+    }
+    if (!explicitlyDeletesAllMeasurements) {
+      delete override.measurementDefinitionsIntent;
+    }
+    return [kind, override];
+  }));
+  return { ...source, deviceDefinitionOverrides, schemaVersion: 4 };
+}
+
 export function migrateDeviceLibraryConfig(payload) {
   let source = payload && typeof payload === "object" && !Array.isArray(payload) ? { ...payload } : {};
   let version = Number.isInteger(Number(source.schemaVersion)) ? Number(source.schemaVersion) : 0;
@@ -1119,6 +1143,10 @@ export function migrateDeviceLibraryConfig(payload) {
   }
   if (version < 3) {
     source = migrateDeviceLibraryConfigV2ToV3(source);
+    version = 3;
+  }
+  if (version < 4) {
+    source = migrateDeviceLibraryConfigV3ToV4(source);
   }
   return { ...source, schemaVersion: deviceLibrarySchemaVersion };
 }
@@ -1127,13 +1155,25 @@ export function normalizeDeviceLibraryConfig(payload) {
   const source = migrateDeviceLibraryConfig(payload);
   const rawCustomDeviceTemplates = (Array.isArray(source.customDeviceTemplates) ? source.customDeviceTemplates : [])
     .filter((template) => template && typeof template === "object" && !Array.isArray(template))
-    .map((template) => ({
-      ...template,
-      categoryLibrary: template.categoryLibrary ?? template.attributeLibrary ?? "交流设备",
-      params: normalizeDeviceLibraryParams(template.params, !String(template.kind ?? "").startsWith("static-")),
-      parameterDefinitions: normalizeDeviceLibraryParameterDefinitions(template.parameterDefinitions),
-      measurementDefinitions: normalizeDeviceLibraryMeasurementDefinitions(template.measurementDefinitions)
-    }));
+    .map((template) => {
+      const measurementDefinitions = Array.isArray(template.measurementDefinitions)
+        ? normalizeDeviceLibraryMeasurementDefinitions(template.measurementDefinitions)
+        : undefined;
+      const explicitlyDeletesAllMeasurements = measurementDefinitions?.length === 0 &&
+        template.measurementDefinitionsIntent === "delete-all";
+      return {
+        ...template,
+        categoryLibrary: template.categoryLibrary ?? template.attributeLibrary ?? "交流设备",
+        params: normalizeDeviceLibraryParams(template.params, !String(template.kind ?? "").startsWith("static-")),
+        parameterDefinitions: normalizeDeviceLibraryParameterDefinitions(template.parameterDefinitions),
+        ...(measurementDefinitions && (measurementDefinitions.length > 0 || explicitlyDeletesAllMeasurements)
+          ? { measurementDefinitions }
+          : { measurementDefinitions: undefined }),
+        ...(explicitlyDeletesAllMeasurements
+          ? { measurementDefinitionsIntent: "delete-all" }
+          : { measurementDefinitionsIntent: undefined })
+      };
+    });
   const customCategoryLibraries = Array.isArray(source.customCategoryLibraries)
     ? source.customCategoryLibraries
     : Array.isArray(source.customAttributeLibraries)
@@ -1167,6 +1207,15 @@ export function normalizeDeviceLibraryConfig(payload) {
         if (!markedDeleteAll) {
           delete override.parameterDefinitionsIntent;
         }
+        const markedDeleteAllMeasurements = Array.isArray(override.measurementDefinitions) &&
+          override.measurementDefinitions.length === 0 && override.measurementDefinitionsIntent === "delete-all";
+        if (Array.isArray(override.measurementDefinitions) && override.measurementDefinitions.length === 0 &&
+          !markedDeleteAllMeasurements) {
+          delete override.measurementDefinitions;
+        }
+        if (!markedDeleteAllMeasurements) {
+          delete override.measurementDefinitionsIntent;
+        }
         return [kind, override];
       }))
       : {};
@@ -1183,16 +1232,23 @@ export function normalizeDeviceLibraryConfig(payload) {
         : undefined;
       const explicitlyDeletesAllParameters = parameterDefinitions?.length === 0 &&
         override.parameterDefinitionsIntent === "delete-all";
+      const explicitlyDeletesAllMeasurements = measurementDefinitions?.length === 0 &&
+        override.measurementDefinitionsIntent === "delete-all";
       return [kind, {
         ...override,
         params: normalizeDeviceLibraryParams(override.params),
         ...(parameterDefinitions && (parameterDefinitions.length > 0 || explicitlyDeletesAllParameters)
           ? { parameterDefinitions }
           : {}),
-        ...(measurementDefinitions ? { measurementDefinitions } : {}),
+        ...(measurementDefinitions && (measurementDefinitions.length > 0 || explicitlyDeletesAllMeasurements)
+          ? { measurementDefinitions }
+          : {}),
         ...(explicitlyDeletesAllParameters
           ? { parameterDefinitionsIntent: "delete-all" }
-          : { parameterDefinitionsIntent: undefined })
+          : { parameterDefinitionsIntent: undefined }),
+        ...(explicitlyDeletesAllMeasurements
+          ? { measurementDefinitionsIntent: "delete-all" }
+          : { measurementDefinitionsIntent: undefined })
       }];
     })
   );
@@ -1229,7 +1285,10 @@ export function normalizeDeviceLibraryConfig(payload) {
         ...(existingConcrete.params ?? {})
       },
       ...(parameterDefinitions ? { parameterDefinitions } : {}),
-      ...(measurementDefinitions ? { measurementDefinitions } : {})
+      ...(measurementDefinitions ? { measurementDefinitions } : {}),
+      ...(template.measurementDefinitionsIntent === "delete-all"
+        ? { measurementDefinitionsIntent: "delete-all" }
+        : {})
     };
   }
   for (const [kind, sharedKey] of Object.entries(deviceDefinitionSharedKeys)) {
@@ -1269,6 +1328,9 @@ export function normalizeDeviceLibraryConfig(payload) {
           ? { parameterDefinitionsIntent: "delete-all" }
           : {}),
         ...(!sharedAlreadyDefinesMeasurements && measurementDefinitions ? { measurementDefinitions } : {}),
+        ...(!sharedAlreadyDefinesMeasurements && concrete?.measurementDefinitionsIntent === "delete-all"
+          ? { measurementDefinitionsIntent: "delete-all" }
+          : {}),
         updatedAt: existingShared.updatedAt ?? concrete?.updatedAt
       };
     }
@@ -1280,6 +1342,7 @@ export function normalizeDeviceLibraryConfig(payload) {
     delete visual.parameterDefinitions;
     delete visual.parameterDefinitionsIntent;
     delete visual.measurementDefinitions;
+    delete visual.measurementDefinitionsIntent;
     const hasVisualContent = Object.entries(visual).some(([key, value]) => (
       !["kind", "updatedAt", "params"].includes(key) && value !== undefined
     )) || Object.keys(visual.params ?? {}).length > 0;
@@ -1298,6 +1361,7 @@ export function normalizeDeviceLibraryConfig(payload) {
     delete next.parameterDefinitionsIntent;
     delete next.parameterDefinitionsComplete;
     delete next.measurementDefinitions;
+    delete next.measurementDefinitionsIntent;
     return next;
   });
   const eDeviceDefinitionLabels =
