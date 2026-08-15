@@ -1188,7 +1188,7 @@ test("exports hydrogen, heat, and cross-energy devices to E sections and reports
   })).toEqual([
     expect.objectContaining({
       nodeId: custom.id,
-      reason: "元件库没有对应的 E 文件段定义。"
+      reason: "类没有对应的 E 文件段定义。"
     })
   ]);
 });
@@ -1375,7 +1375,7 @@ test("returns E export warnings with the generated file", () => {
   expect(file.warnings).toEqual([
     expect.objectContaining({
       nodeId: unsupported.id,
-      reason: "元件库没有对应的 E 文件段定义。"
+      reason: "类没有对应的 E 文件段定义。"
     })
   ]);
 });

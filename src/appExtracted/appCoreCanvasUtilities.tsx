@@ -3320,7 +3320,7 @@ export const PARAM_LABELS: Record<string, string> = {
   section: "母线分段",
   pole: "极性",
   source_file: "参数来源文件",
-  component_type: "元件库",
+  component_type: "类",
   idx: "外部序号",
   node: "节点",
   i_node: "首端节点",

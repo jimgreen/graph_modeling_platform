@@ -1235,7 +1235,7 @@ export function componentLibraryDisplayParts(
 ) {
   const english = normalizeComponentLibraryName(sectionName);
   const customChinese = customComponentLibraryLabel(english, customComponentLibraries);
-  const chinese = COMPONENT_LIBRARY_LABELS[english] ?? (customChinese || "自定义元件库");
+  const chinese = COMPONENT_LIBRARY_LABELS[english] ?? (customChinese || "自定义类");
   return {
     chinese,
     english,
@@ -3707,21 +3707,21 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
 
   const searchNeedle = normalizeLibrarySearchText(searchQuery);
   return (
-    <aside className="custom-component-manager-panel" aria-label="类别库元件库元件管理">
+    <aside className="custom-component-manager-panel" aria-label="类别库类元件管理">
       <div className="custom-component-manager-title">
         <strong>元件结构</strong>
-        <span>类别库 / 元件库 / 元件</span>
+        <span>类别库 / 类 / 元件</span>
       </div>
       <div className="custom-component-manager-actions">
         <button type="button" onClick={onCreateCategoryLibrary} title="新建类别库">
           <Plus size={12} aria-hidden="true" />
           <span>新建类别</span>
         </button>
-        <button type="button" onClick={onCreateComponentLibrary} title="在当前类别库下新建元件库">
+        <button type="button" onClick={onCreateComponentLibrary} title="在当前类别库下新建类">
           <Plus size={12} aria-hidden="true" />
-          <span>新建元件库</span>
+          <span>新建类</span>
         </button>
-        <button type="button" className="custom-component-manager-primary-action" onClick={onCreateComponent} title="在当前元件库下新建元件">
+        <button type="button" className="custom-component-manager-primary-action" onClick={onCreateComponent} title="在当前类下新建元件">
           <Plus size={13} aria-hidden="true" />
           <span>新建元件</span>
         </button>
@@ -3733,7 +3733,7 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
           <Trash2 size={12} aria-hidden="true" />
           <span>删除</span>
         </button>
-        <span className="custom-component-tree-actions-note">先选类别/元件库/元件</span>
+        <span className="custom-component-tree-actions-note">先选类别/类/元件</span>
       </div>
       <div className="custom-component-manager-efile-and-search">
       <div className="custom-component-manager-efile-actions">
@@ -3748,7 +3748,7 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
           <input
             value={searchQuery}
             onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="搜索类别库/元件库/元件"
+            placeholder="搜索类别库/类/元件"
             aria-label="搜索元件结构"
           />
           {searchQuery && (

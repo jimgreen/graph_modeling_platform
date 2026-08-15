@@ -201,7 +201,7 @@ const ENDPOINTS = [
     { label: "保存选中组合为模板", params: { __body__: { name: "组合模板", componentLibrary: "combined_device" } } },
     { label: "指定类别库", params: { __body__: { name: "直流模板", componentLibrary: "dc_device", categoryLibraryName: "直流设备" } } }
   ]},
-  { group: "控制台", method: "POST", path: "/webgrp/v1/control/e-device-definition/export", desc: "导出图元 E 文件定义文本（按元件库分组，含内置+自定义元件）", query: [{ name: "clientId", desc: "可选" }], body: {}, response: "{ok:true,data:{filename,text,mime}}", examples: [
+  { group: "控制台", method: "POST", path: "/webgrp/v1/control/e-device-definition/export", desc: "导出图元 E 文件定义文本（按类分组，含内置+自定义元件）", query: [{ name: "clientId", desc: "可选" }], body: {}, response: "{ok:true,data:{filename,text,mime}}", examples: [
     { label: "导出 E 文件定义", params: { __body__: {} } }
   ]},
   { group: "控制台", method: "POST", path: "/webgrp/v1/control/e-device-definition/import", desc: "导入 E 文件定义（校验匹配，不实际写入；返回 matched/skipped）", query: [{ name: "clientId", desc: "可选" }], body: { text: "<ACLoad ...>...</ACLoad>" }, response: "{ok:true,data:{matched,skipped,matchedCount,skippedCount}}", examples: [

@@ -395,7 +395,7 @@ describe("measurement canvas interactions", () => {
     collectSelects(panel);
 
     expect(elementText(panel)).toContain("有功功率");
-    expect(elementText(panel)).not.toContain("当前元件库还没有默认量测模板");
+    expect(elementText(panel)).not.toContain("当前类还没有默认量测模板");
     const measurementTypeSelect = selects.find((selectElement) => {
       const values = Children.toArray(selectElement.props.children)
         .filter(isValidElement)
@@ -476,7 +476,7 @@ describe("measurement canvas interactions", () => {
     };
     collectEditors(panel);
 
-    expect(text).not.toContain("当前元件库还没有默认量测模板");
+    expect(text).not.toContain("当前类还没有默认量测模板");
     expect(nameInputs.map((inputElement) => inputElement.props.value)).toEqual([
       "",
       "",

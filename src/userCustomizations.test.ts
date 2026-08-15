@@ -117,6 +117,10 @@ describe("user customization inventory", () => {
       "user-assets",
       "color-settings"
     ]));
+    expect(inventory.items).toContainEqual(expect.objectContaining({
+      domain: "component-libraries",
+      summary: "新增类"
+    }));
     expect(inventory.summary.total).toBe(inventory.items.length);
     expect(inventory.summary.assets).toBe(1);
   });

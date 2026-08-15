@@ -44,7 +44,7 @@ export const USER_CUSTOMIZATION_DOMAIN_OPTIONS: Array<{
   label: string;
 }> = [
   { value: "category-libraries", label: "自定义类别库" },
-  { value: "component-libraries", label: "自定义元件库" },
+  { value: "component-libraries", label: "自定义类" },
   { value: "custom-devices", label: "自定义元件" },
   { value: "device-definition-overrides", label: "内置元件定义覆盖" },
   { value: "parameter-definitions", label: "参数定义" },

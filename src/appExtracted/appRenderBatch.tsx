@@ -1408,7 +1408,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const persistTemplateLibraryChange = createPersistTemplateLibraryChange(__appScope); Object.assign(__appScope, { persistTemplateLibraryChange });
   const libraryPackageScopeLabels: Record<LibraryPackageScope, string> = {
     measurement: "量测定义",
-    "device-library": "元件库",
+    "device-library": "类",
     "template-library": "模板库",
     "icon-library": "图标库",
     "component-library": "元件相关库",
@@ -1554,7 +1554,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       if (saved) {
         writeOperationLog(`导出${label}`);
         if (scope === "device-library") {
-          writeOperationLog("元件库导出不包含图标库；若元件引用了自定义图标，请单独导出图标库。");
+          writeOperationLog("类导出不包含图标库；若元件引用了自定义图标，请单独导出图标库。");
         }
       }
     } catch (error) {
@@ -1709,7 +1709,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
           }
           const label = libraryPackageScopeLabels[targetScope] ?? "库";
           const confirmMessage = targetScope === "all"
-            ? "确定导入全部库吗？当前量测定义、元件库、模板库会被导入文件中的对应配置覆盖，同 ID 图标会被覆盖。"
+            ? "确定导入全部库吗？当前量测定义、类、模板库会被导入文件中的对应配置覆盖，同 ID 图标会被覆盖。"
             : targetScope === "component-library"
             ? `确定导入${label}吗？${componentLibraryImportMessage}`
             : targetScope === "icon-library"
@@ -3426,7 +3426,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
           <input
             value={librarySearchQuery}
             onChange={(event) => setLibrarySearchQuery(event.target.value)}
-            placeholder="搜索图元/元件库"
+            placeholder="搜索图元/类"
             aria-label="搜索图元库"
           />
           {librarySearchQuery && (
@@ -3435,11 +3435,11 @@ export function useRenderBatch(__appScope: Record<string, any>) {
             </button>
           )}
         </div>
-        <div className="component-library-actions library-scope-actions" aria-label="元件库导入导出">
+        <div className="component-library-actions library-scope-actions" aria-label="类导入导出">
           <button
             type="button"
             className="library-icon-action"
-            title="导入元件库"
+            title="导入类"
             disabled={isBrowseMode}
             onClick={() => openLibraryPackageImportFilePicker("component-library")}
           >
@@ -3449,7 +3449,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
           <button
             type="button"
             className="library-icon-action"
-            title="导出元件库"
+            title="导出类"
             onClick={() => void exportLibraryPackage("component-library")}
           >
             <Download size={14} aria-hidden="true" />

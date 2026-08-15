@@ -633,6 +633,12 @@ describe("app view device definition parameter rows", () => {
 
     expect(source).not.toContain("派生类中文名称");
     expect(source.match(/派生类英文名称/g)).toHaveLength(1);
+    expect(source).toContain('"类中文名称"');
+    expect(source).toContain('"类英文名称"');
+    expect(source).toContain('<span>类</span>');
+    expect(source).toContain('placeholder="搜索类别库/类/元件"');
+    expect(source).not.toContain("元件库中文名称");
+    expect(source).not.toContain("元件库英文名称");
     expect(source).toContain('<span>是否派生类</span>');
     expect(source).toContain('<span>派生基类</span>');
     expect(source).not.toContain('<span>派生关系</span>');

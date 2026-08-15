@@ -433,7 +433,7 @@ export function buildUserCustomizationInventory(
   });
   snapshot.deviceLibrary.customComponentLibraries.forEach((definition) => {
     const itemId = `${definition.categoryLibraryName}::${definition.name}`;
-    pushItem("component-libraries", itemId, definition.name, definition.categoryLibraryName, "added", "新增元件库");
+    pushItem("component-libraries", itemId, definition.name, definition.categoryLibraryName, "added", "新增类");
   });
   snapshot.deviceLibrary.customDeviceTemplates.forEach((template) => {
     pushItem("custom-devices", template.kind, template.label || template.kind, template.categoryLibrary || "未分类", "added", "新增自定义元件");
