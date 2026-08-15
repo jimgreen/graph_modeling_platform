@@ -30,7 +30,6 @@ import {
   CircleDot,
   Download,
   FileInput,
-  FileJson,
   FlipHorizontal,
   FlipVertical,
   Grid2X2,
@@ -3635,7 +3634,6 @@ export type CustomComponentTreeProps = {
   onSearchChange: (query: string) => void;
   onCollapseChange: (libraries: Set<string>, types: Set<string>) => void;
   onSelectionChange: (selection: CustomComponentTreeSelection) => void;
-  onOpenEDeviceDefinitionInterface: () => void;
 };
 
 function customComponentTreeSelectionsEqual(first: CustomComponentTreeSelection, second: CustomComponentTreeSelection) {
@@ -3907,8 +3905,7 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
   onDeleteSelection,
   onSearchChange,
   onCollapseChange,
-  onSelectionChange,
-  onOpenEDeviceDefinitionInterface
+  onSelectionChange
 }: CustomComponentTreeProps) {
   // 内部管理 collapsed 状态，展开/收缩不触发父组件重渲染
   const [collapsedLibraries, setCollapsedLibraries] = useState<Set<string>>(initialCollapsedLibraries);
@@ -4033,28 +4030,32 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
         key={`${group}-${node.section}`}
         data-tree-depth={depth}
       >
-        <button
-          type="button"
-          className={`custom-component-tree-row type ${depth > 0 ? "derived-type" : ""} ${typeSelected ? "active" : ""}`}
+        <div
+          className={`custom-component-tree-row type ${depth > 0 ? "derived-type" : ""}`}
           role="treeitem"
           aria-selected={typeSelected}
           aria-expanded={hasContent ? !typeCollapsed : undefined}
-          onClick={() => {
-            handleSelectComponentLibrary(group, node.section);
-            if (hasContent) {
-              handleToggleType(group, node.section);
-            }
-          }}
         >
-          {hasContent
-            ? (typeCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />)
-            : <span className="custom-component-tree-chevron-placeholder" aria-hidden="true" />}
-          <span className="dialog-tree-bilingual" title={typeDisplay.title}>
-            <span>{typeDisplay.chinese}</span>
-            <small>{typeDisplay.english}</small>
-          </span>
-          <strong>{customComponentClassTreeTemplateCount(node)}</strong>
-        </button>
+          {hasContent ? <button
+            type="button"
+            className="custom-component-tree-chevron"
+            aria-label={typeCollapsed ? "展开" : "收缩"}
+            onClick={() => handleToggleType(group, node.section)}
+          >
+            {typeCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+          </button> : <span className="custom-component-tree-chevron-placeholder" aria-hidden="true" />}
+          <button
+            type="button"
+            className={`custom-component-tree-row-label ${typeSelected ? "active" : ""}`}
+            onClick={() => handleSelectComponentLibrary(group, node.section)}
+          >
+            <span className="dialog-tree-bilingual" title={typeDisplay.title}>
+              <span>{typeDisplay.chinese}</span>
+              <small>{typeDisplay.english}</small>
+            </span>
+            <strong>{customComponentClassTreeTemplateCount(node)}</strong>
+          </button>
+        </div>
         {!typeCollapsed && hasContent && <div className="custom-component-tree-class-content">
           {node.templates.length > 0 && <div
             className="custom-component-tree-components"
@@ -4134,12 +4135,6 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
         <span className="custom-component-tree-actions-note">先选类别/类/元件</span>
       </div>
       <div className="custom-component-manager-efile-and-search">
-      <div className="custom-component-manager-efile-actions">
-        <button type="button" onClick={onOpenEDeviceDefinitionInterface} title="打开 E 文件接口定义">
-          <FileJson size={12} aria-hidden="true" />
-          <span>E文件接口定义</span>
-        </button>
-      </div>
       <div className="custom-component-tree-search-row">
         <div className="dialog-tree-search">
           <Search size={14} aria-hidden="true" />
@@ -4189,21 +4184,29 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
           const libraryCollapsed = searchNeedle ? false : collapsedLibraries.has(group);
           return (
             <section className="custom-component-tree-library" key={group}>
-              <button
-                type="button"
-                className={`custom-component-tree-row library ${librarySelected ? "active" : ""}`}
+              <div
+                className={`custom-component-tree-row library`}
                 role="treeitem"
                 aria-selected={librarySelected}
                 aria-expanded={!libraryCollapsed}
-                onClick={() => {
-                  handleSelectCategoryLibrary(group);
-                  handleToggleLibrary(group);
-                }}
               >
-                {libraryCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
-                <span>{group}</span>
-                <strong>{classTrees.reduce((sum, node) => sum + customComponentClassTreeTemplateCount(node), 0)}</strong>
-              </button>
+                <button
+                  type="button"
+                  className="custom-component-tree-chevron"
+                  aria-label={libraryCollapsed ? "展开" : "收缩"}
+                  onClick={() => handleToggleLibrary(group)}
+                >
+                  {libraryCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                </button>
+                <button
+                  type="button"
+                  className={`custom-component-tree-row-label ${librarySelected ? "active" : ""}`}
+                  onClick={() => handleSelectCategoryLibrary(group)}
+                >
+                  <span>{group}</span>
+                  <strong>{classTrees.reduce((sum, node) => sum + customComponentClassTreeTemplateCount(node), 0)}</strong>
+                </button>
+              </div>
               {!libraryCollapsed && <div className="custom-component-tree-type-list" role="group">
                 {classTrees.map((node) => renderClassNode(group, node))}
               </div>}

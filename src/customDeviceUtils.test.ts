@@ -874,7 +874,8 @@ describe("electric generation device library classification", () => {
       "rated_wind_speed",
       "cut_out_wind_speed",
       "rotor_diameter",
-      "hub_height"
+      "hub_height",
+      "dev_type"
     ]);
     expect(fieldNames).not.toEqual(expect.arrayContaining([
       "idx",
@@ -1002,11 +1003,17 @@ describe("electric generation device library classification", () => {
     expect(draft.derivedComponentLibrary).toBe("UserWindGen");
     expect(draft.derivedComponentLibraryLabel).toBe("用户风电");
     expect(draft.isContainer).toBe(false);
-    expect(draft.params.map((row) => row.enName)).toEqual(["installedCapacity"]);
+    expect(draft.params.map((row) => row.enName)).toEqual(["installedCapacity", "dev_type"]);
     expect(draft.params[0]).toMatchObject({
       cnName: "装机容量",
       exportEnabled: true,
       exportName: "installed_capacity"
+    });
+    // dev_type 例外：派生类属性列表保留主类的设备类型字段
+    expect(draft.params[1]).toMatchObject({
+      enName: "dev_type",
+      exportEnabled: true,
+      exportName: "dev_type"
     });
   });
 
