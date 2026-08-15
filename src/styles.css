@@ -4945,7 +4945,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   width: 100%;
 }
 
-.library-scope-actions[aria-label="元件库导入导出"] {
+.library-scope-actions[aria-label="类导入导出"] {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 

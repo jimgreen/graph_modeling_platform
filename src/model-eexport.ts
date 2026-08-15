@@ -1827,7 +1827,7 @@ function getEExportWarningsFromRecords(
         nodeId: node.id,
         nodeName: node.name,
         kind: node.kind,
-        reason: isContainerParams(node.params) ? "容器设备没有对应的 E 文件段定义。" : "元件库没有对应的 E 文件段定义。"
+        reason: isContainerParams(node.params) ? "容器设备没有对应的 E 文件段定义。" : "类没有对应的 E 文件段定义。"
       }];
     }
     const interfaceDefinition = interfaceDefinitionBySection.get(section);

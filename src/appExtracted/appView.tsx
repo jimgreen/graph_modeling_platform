@@ -3826,7 +3826,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                       </select>
                     </label>
                     <label>
-                      <span>选择元件库</span>
+                      <span>选择类</span>
                       <select value={groupDeviceDefinitionDialog.componentLibrary} onChange={(event) => setGroupDeviceDefinitionDialog((current) => current ? { ...current, componentLibrary: event.target.value } : current)}>
                         {Array.from(new Set([
                 groupDeviceDefinitionDialog.componentLibrary,
@@ -3939,14 +3939,14 @@ export function renderAppView(__appScope: Record<string, any>) {
             <div className="image-picker-title">
               <div>
                 <h2 id="filter-selection-title">过滤选择</h2>
-                <p>元件库列表：{filterSelectionTypeOptions.length} 类，已选择 {filterSelectionTypeKeys.length} 种。</p>
+                <p>类列表：{filterSelectionTypeOptions.length} 类，已选择 {filterSelectionTypeKeys.length} 种。</p>
               </div>
             </div>
             <div className="filter-selection-toolbar">
               <button type="button" onClick={() => setFilterSelectionTypeKeys(filterSelectionTypeOptions.flatMap((option) => option.items.map((item) => item.itemKey)))}>全选</button>
               <button type="button" onClick={() => setFilterSelectionTypeKeys([])}>清空</button>
             </div>
-            <div className="filter-selection-list" role="group" aria-label="元件库列表">
+            <div className="filter-selection-list" role="group" aria-label="类列表">
               {filterSelectionTypeOptions.map((option) => (<div key={option.typeKey} className="filter-selection-option">
                   <label className="filter-selection-type-row">
                     <input type="checkbox" ref={(input) => {
@@ -3959,7 +3959,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                     </span>
                     <em>{option.count}</em>
                   </label>
-                  <div className="filter-selection-tree" aria-label={`${option.label}元件库树`}>
+                  <div className="filter-selection-tree" aria-label={`${option.label}类树`}>
                     <div className="filter-selection-tree-children">
                       {option.items.map((item) => (<div key={item.itemKey} className="filter-selection-tree-child" title={filterSelectionTreeLabel(item.label, item.typeKey)}>
                           <label className="filter-selection-kind-row">
@@ -4104,7 +4104,7 @@ export function renderAppView(__appScope: Record<string, any>) {
               <aside className="device-definition-list" aria-label="元件定义列表">
                 <div className="dialog-tree-search">
                   <Search size={14} aria-hidden="true"/>
-                  <input value={deviceDefinitionSearchQuery} onChange={(event) => setDeviceDefinitionSearchQuery(event.target.value)} placeholder="搜索类别库/元件库/元件" aria-label="搜索元件定义"/>
+                  <input value={deviceDefinitionSearchQuery} onChange={(event) => setDeviceDefinitionSearchQuery(event.target.value)} placeholder="搜索类别库/类/元件" aria-label="搜索元件定义"/>
                   {deviceDefinitionSearchQuery && (<button type="button" aria-label="清空元件定义搜索" title="清空" onClick={() => setDeviceDefinitionSearchQuery("")}>
                       <X size={13}/>
                     </button>)}
@@ -4136,7 +4136,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                           <span>{group}</span>
                           <strong>{typeGroups.reduce((sum, typeGroup) => sum + typeGroup.templates.length, 0)}</strong>
                         </button>
-                        {expanded && (<div className="component-definition-type-list" role="group" aria-label={`${group}元件库列表`}>
+                        {expanded && (<div className="component-definition-type-list" role="group" aria-label={`${group}类列表`}>
                             {typeGroups.map((typeGroup) => {
                         const typeKey = categoryLibraryComponentLibraryKey(group, typeGroup.section);
                         const typeCollapsed = deviceDefinitionSearchNeedle ? false : collapsedDefinitionComponentLibraries.includes(typeKey);
@@ -4173,7 +4173,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                         <strong>{normalizeCategoryLibraryName(selectedDefinitionTemplate.categoryLibrary)}</strong>
                       </div>
                       <div>
-                        <span>元件库</span>
+                        <span>类</span>
                         <strong title="所属类在创建后不可修改">{definitionDraftSection}</strong>
                       </div>
                       <div>
@@ -4410,7 +4410,7 @@ export function renderAppView(__appScope: Record<string, any>) {
             {customLibraryCreateDialog.error && <p className="custom-library-create-error">{customLibraryCreateDialog.error}</p>}
             <div className="custom-library-create-fields">
               <label>
-                <span>{customLibraryCreateDialog.kind === "categoryLibrary" ? "类别中文名称" : customLibraryCreateDialog.kind === "componentLibrary" ? "元件库中文名称" : "元件中文名称"}</span>
+                <span>{customLibraryCreateDialog.kind === "categoryLibrary" ? "类别中文名称" : customLibraryCreateDialog.kind === "componentLibrary" ? "类中文名称" : "元件中文名称"}</span>
                 <input
                   autoFocus
                   value={customLibraryCreateDialog.cnName}
@@ -4422,7 +4422,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                   ? "类别英文名称"
                   : customLibraryCreateDialog.kind === "componentLibrary" && customLibraryCreateDialog.isDerivedComponentLibrary
                     ? "派生类英文名称"
-                    : customLibraryCreateDialog.kind === "componentLibrary" ? "元件库英文名称" : "元件英文名称"}</span>
+                    : customLibraryCreateDialog.kind === "componentLibrary" ? "类英文名称" : "元件英文名称"}</span>
                 <input
                   value={customLibraryCreateDialog.enName}
                   onChange={(event) => setCustomLibraryCreateDialog((current) => current ? { ...current, enName: event.target.value, error: "" } : current)}
@@ -4716,7 +4716,7 @@ export function renderAppView(__appScope: Record<string, any>) {
               </>) : visibleCustomDeviceDialogView === "parameters" ? (customComponentTreeSelection?.kind === "componentLibrary" ? (
                 <section className="device-definition-component-library-panel">
                   <div className="device-definition-component-library-header">
-                    <h3>元件库：{customComponentTreeSelection?.section}</h3>
+                    <h3>类：{customComponentTreeSelection?.section}</h3>
                     <span className="device-definition-count">{componentLibraryTemplates.length} 个元件</span>
                     <label>
                       <span>E 文件标签</span>
@@ -4756,7 +4756,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                       </tbody>
                     </table>
                   </div>
-                  {componentLibraryCommonParams.length === 0 && <p className="custom-device-error">该元件库下元件无共有参数。</p>}
+                  {componentLibraryCommonParams.length === 0 && <p className="custom-device-error">该类下元件无共有参数。</p>}
                 </section>
               ) : (<>
             <div className="definition-table-toolbar" aria-label="参数定义表格操作">

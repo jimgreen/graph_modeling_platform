@@ -849,7 +849,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     if (!row && nodeSecondaryRows.length === 0) {
       skipped.push({
         section: sectionKind,
-        reason: `未找到对应的元件库设备：${componentLibrary}`
+        reason: `未找到对应的类设备：${componentLibrary}`
       });
       continue;
     }

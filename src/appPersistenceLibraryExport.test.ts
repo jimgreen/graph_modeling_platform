@@ -579,6 +579,7 @@ describe("graph template library filtering", () => {
     ]);
     expect(componentLibraryDisplayParts("CustomPump", normalized).title).toBe("用户泵库 / CustomPump");
     expect(componentLibraryDisplayParts("LegacyMeter", normalized).chinese).toBe("旧量测库");
+    expect(componentLibraryDisplayParts("UnknownCustomClass", normalized).chinese).toBe("自定义类");
   });
 
   test("preserves derived component-library metadata as an independent immutable class", () => {
@@ -1149,8 +1150,8 @@ describe("graph template library filtering", () => {
     expect(appSource).not.toContain("title=\"导出图标库\"");
     expect(appSource).not.toContain("title=\"导入图标库\"");
     const libraryPanelMatch = appSource.match(/const renderLibraryPanel = \(\) => \([\s\S]*?Object\.assign\(__appScope, \{ renderLibraryPanel \}\);/u);
-    expect(libraryPanelMatch?.[0]).toContain('title="导入元件库"');
-    expect(libraryPanelMatch?.[0]).toContain('title="导出元件库"');
+    expect(libraryPanelMatch?.[0]).toContain('title="导入类"');
+    expect(libraryPanelMatch?.[0]).toContain('title="导出类"');
     expect(libraryPanelMatch?.[0]).toContain('openLibraryPackageImportFilePicker("component-library")');
     expect(libraryPanelMatch?.[0]).toContain('exportLibraryPackage("component-library")');
     const templatePanelMatch = appSource.match(/const renderTemplateLibraryPanel = \(\) => \([\s\S]*?Object\.assign\(__appScope, \{ renderTemplateLibraryPanel \}\);/u);
@@ -1158,8 +1159,8 @@ describe("graph template library filtering", () => {
     expect(templatePanelMatch?.[0]).toContain('title="导出模板库"');
     expect(templatePanelMatch?.[0]).toContain('openLibraryPackageImportFilePicker("template-library")');
     expect(templatePanelMatch?.[0]).toContain('exportLibraryPackage("template-library")');
-    expect(appSource.match(/title="导入元件库"/gu)).toHaveLength(1);
-    expect(appSource.match(/title="导出元件库"/gu)).toHaveLength(1);
+    expect(appSource.match(/title="导入类"/gu)).toHaveLength(1);
+    expect(appSource.match(/title="导出类"/gu)).toHaveLength(1);
     expect(appSource.match(/title="导入模板库"/gu)).toHaveLength(1);
     expect(appSource.match(/title="导出模板库"/gu)).toHaveLength(1);
     const measurementToolbarMatch = projectFactorySource.match(/className="measurement-config-toolbar"[\s\S]*?<\/div>/u);
@@ -1502,6 +1503,12 @@ describe("E device interface definition entry", () => {
     }));
 
     expect(html).toContain("E文件接口定义");
+    expect(html).toContain("类别库 / 类 / 元件");
+    expect(html).toContain("新建类");
+    expect(html).toContain('title="在当前类别库下新建类"');
+    expect(html).toContain('title="在当前类下新建元件"');
+    expect(html).toContain('placeholder="搜索类别库/类/元件"');
+    expect(html).not.toContain("新建元件库");
     expect(html).not.toContain("导出E文件定义");
     expect(html).not.toContain("导入E文件定义");
   });

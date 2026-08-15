@@ -4772,7 +4772,7 @@ export function createToggleDefinitionComponentLibrary(__appScope: Record<string
 export function createUpdateDefinitionComponentLibraryCommonParamExport(__appScope: Record<string, any>) {
   return (componentLibrary: string, enName: string, patch: { exportEnabled?: boolean; exportName?: string }) => {
   const { deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, getTemplateParameterDefinitions, libraryTemplates, normalizeComponentLibraryName, requireEditMode, resolveTemplateComponentLibrary, setDeviceDefinitionOverrides, writeOperationLog } = __appScope;
-    if (!requireEditMode("修改元件库共有参数导出")) {
+    if (!requireEditMode("修改类共有参数导出")) {
       return;
     }
     const sectionKey = normalizeComponentLibraryName(componentLibrary);
@@ -4815,7 +4815,7 @@ export function createUpdateDefinitionComponentLibraryCommonParamExport(__appSco
       }
       return next;
     });
-    writeOperationLog(`修改元件库共有参数导出：${componentLibrary} ${enName}`);
+    writeOperationLog(`修改类共有参数导出：${componentLibrary} ${enName}`);
   };
 }
 
@@ -6435,7 +6435,7 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
     }
     const actionName = dialog.kind === "categoryLibrary"
       ? "新建类别库"
-      : dialog.kind === "componentLibrary" ? "新建元件库" : "新建元件";
+      : dialog.kind === "componentLibrary" ? "新建类" : "新建元件";
     if (!requireEditMode(actionName)) {
       return false;
     }
@@ -6512,7 +6512,7 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
         ...(libraryTemplates ?? []).map((template: DeviceTemplate) => templateDerivedComponentLibraryInfo(template)?.derivedComponentLibrary ?? "")
       ].map((item: string) => item.toLowerCase()).filter(Boolean));
       if (existingTypes.has(englishName.toLowerCase())) {
-        return setDialogError("元件库已存在，无法新增同名元件库。");
+        return setDialogError("类已存在，无法新增同名类。");
       }
       const derivedRequested = Boolean(dialog.isDerivedComponentLibrary);
       const derivedFromComponentLibrary = normalizeComponentLibraryName(dialog.derivedFromComponentLibrary ?? "");
@@ -6520,7 +6520,7 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
         return setDialogError("请选择派生基类。");
       }
       if (derivedRequested && englishName.toLowerCase() === derivedFromComponentLibrary.toLowerCase()) {
-        return setDialogError("派生类英文名称不能与基类元件库相同。");
+        return setDialogError("派生类英文名称不能与基类相同。");
       }
       const inheritedMetadata = derivedRequested
         ? resolveComponentLibraryClassMetadata(
@@ -6610,8 +6610,8 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
       setCustomDeviceDraft(nextDraft);
       setCustomDeviceDraftCleanBaseline(nextDraft);
       persistDeviceLibraryChange({ customComponentLibraries: nextCustomComponentLibraries }, {
-        success: `元件库已新建并保存到后台：${metadata.label}`,
-        failure: `元件库已新建到本地，后台保存失败：${metadata.label}`
+        success: `类已新建并保存到后台：${metadata.label}`,
+        failure: `类已新建到本地，后台保存失败：${metadata.label}`
       });
       setCustomLibraryCreateDialog(null);
       return true;
@@ -6631,7 +6631,7 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
     }
     const section = normalizeComponentLibraryName(libraryDraftPatch.componentLibrary);
     if (!section) {
-      return setDialogError("请选择元件库。");
+      return setDialogError("请选择类。");
     }
     if (!CUSTOM_DEVICE_KIND_NAME_PATTERN.test(englishName)) {
       return setDialogError("元件英文名称只能包含英文字母、数字、下划线和短横线，并且必须以英文字母开头。");
@@ -6713,7 +6713,7 @@ export function createDeleteCustomCategoryLibrary(__appScope: Record<string, any
     const templatesInGroup = customDeviceTemplates.filter((template) => normalizeCategoryLibraryName(template.categoryLibrary) === categoryLibraryName);
     const confirmed = await showGlobalConfirm(
       templatesInGroup.length > 0
-        ? `类别库“${categoryLibraryName}”中共有 ${templatesInGroup.length} 个元件，删除类别库会同时删除这些元件及其自定义元件库，是否继续？`
+        ? `类别库“${categoryLibraryName}”中共有 ${templatesInGroup.length} 个元件，删除类别库会同时删除这些元件及其自定义类，是否继续？`
         : `确认删除类别库“${categoryLibraryName}”？`
     );
     if (!confirmed) {
@@ -6797,14 +6797,14 @@ export function createNextCustomComponentLibraryName(__appScope: Record<string, 
 export function createCreateCustomComponentLibrary(__appScope: Record<string, any>) {
   return () => {
   const { customDeviceDraft, nextCustomComponentLibraryName, normalizeCategoryLibraryName, requireEditMode, setCustomLibraryCreateDialog } = __appScope;
-    if (!requireEditMode("新建元件库")) {
+    if (!requireEditMode("新建类")) {
       return;
     }
     const categoryLibraryName = normalizeCategoryLibraryName(customDeviceDraft.categoryLibraryName);
     const terminalType = defaultTerminalTypeForCategoryLibrary(categoryLibraryName);
     setCustomLibraryCreateDialog({
       kind: "componentLibrary",
-      title: "新建元件库",
+      title: "新建类",
       cnName: "",
       enName: nextCustomComponentLibraryName(),
       categoryLibraryName,
@@ -6831,12 +6831,12 @@ export function createDeleteCustomComponentLibrary(__appScope: Record<string, an
     if (targetSection === undefined) {
       targetSection = customDeviceDraft.componentLibrary;
     }
-    if (!requireEditMode("删除元件库")) {
+    if (!requireEditMode("删除类")) {
       return;
     }
     const componentLibrary = normalizeComponentLibraryName(targetSection);
     if (!componentLibrary || E_SECTION_OPTIONS.some((section) => section.toLowerCase() === componentLibrary.toLowerCase())) {
-      showGlobalMessage("内置元件库无法删除。");
+      showGlobalMessage("内置类无法删除。");
       return;
     }
     const dependentDerivedClasses = customComponentLibraries.filter((definition: any) => (
@@ -6845,7 +6845,7 @@ export function createDeleteCustomComponentLibrary(__appScope: Record<string, an
     ));
     if (dependentDerivedClasses.length > 0) {
       const names = dependentDerivedClasses.map((definition: any) => definition.name).join("、");
-      showGlobalMessage(`元件库“${componentLibrary}”仍被派生类 ${names} 使用，请先删除这些派生类。`);
+      showGlobalMessage(`类“${componentLibrary}”仍被派生类 ${names} 使用，请先删除这些派生类。`);
       return;
     }
     const templatesWithType = libraryTemplates.filter((template) => {
@@ -6855,8 +6855,8 @@ export function createDeleteCustomComponentLibrary(__appScope: Record<string, an
     });
     const confirmed = await showGlobalConfirm(
       templatesWithType.length > 0
-        ? `元件库“${componentLibrary}”下共有 ${templatesWithType.length} 个自定义元件，删除元件库会同时删除这些元件，是否继续？`
-        : `确认删除元件库“${componentLibrary}”？`
+        ? `类“${componentLibrary}”下共有 ${templatesWithType.length} 个自定义元件，删除类会同时删除这些元件，是否继续？`
+        : `确认删除类“${componentLibrary}”？`
     );
     if (!confirmed) {
       return;
@@ -6903,7 +6903,7 @@ export function createDeleteCustomComponentLibrary(__appScope: Record<string, an
 export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<string, any>) {
   return () => {
   const { PROTECTED_CATEGORY_LIBRARIES, categoryLibraries, customComponentTreeSelection, libraryTemplateByKind, normalizeCategoryLibraryName, requireEditMode, setCollapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeTypes, setCustomCategoryLibraries, setCustomComponentTreeSelection, setCustomComponentLibraries, setCustomDeviceDraft, setCustomDeviceTemplates, setExpandedCategoryLibraries, setExpandedDefinitionGroups } = __appScope;
-    if (!requireEditMode("重命名元件库条目")) {
+    if (!requireEditMode("重命名类条目")) {
       return;
     }
     if (customComponentTreeSelection.kind === "categoryLibrary") {
@@ -6957,7 +6957,7 @@ export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<stri
       return;
     }
     if (customComponentTreeSelection.kind === "componentLibrary") {
-      showGlobalMessage("元件库类信息在创建确认后不可修改；如定义错误，请删除该元件库后重新创建。");
+      showGlobalMessage("类信息在创建确认后不可修改；如定义错误，请删除该类后重新创建。");
       return;
     }
     const template = libraryTemplateByKind.get(customComponentTreeSelection.templateKind);
@@ -6986,7 +6986,7 @@ export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<stri
 export function createDeleteSelectedCustomDeviceTreeItem(__appScope: Record<string, any>) {
   return async () => {
   const { customComponentTreeSelection, customDeviceTemplates, deleteCustomCategoryLibrary, deleteCustomComponentLibrary, libraryTemplateByKind, libraryTemplates, requireEditMode, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceTemplates, setDeviceDefinitionOverrides, setEditingCustomDeviceKind } = __appScope;
-    if (!requireEditMode("删除元件库条目")) {
+    if (!requireEditMode("删除类条目")) {
       return;
     }
     if (customComponentTreeSelection.kind === "categoryLibrary") {
@@ -7076,11 +7076,11 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
     const componentLabel = customDeviceDraft.componentName.trim() || derivedComponentLibraryLabel || componentLibrary;
     const isContainerComponent = classMetadata.isContainer;
     if (!baseComponentLibrary) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "请选择元件库。" }));
+      setCustomDeviceDraft((current) => ({ ...current, error: "请选择类。" }));
       return false;
     }
     if (!isValidComponentLibraryName(baseComponentLibrary)) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "元件库必须是英文名称，只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。" }));
+      setCustomDeviceDraft((current) => ({ ...current, error: "类英文名称只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。" }));
       return false;
     }
     if (derivedRequested) {
@@ -7097,7 +7097,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
         return false;
       }
       if (derivedComponentLibrary.toLowerCase() === derivedFromComponentLibrary.toLowerCase()) {
-        setCustomDeviceDraft((current) => ({ ...current, error: "派生类英文名称不能与基类元件库相同。" }));
+        setCustomDeviceDraft((current) => ({ ...current, error: "派生类英文名称不能与基类相同。" }));
         return false;
       }
     }
@@ -7400,11 +7400,11 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     setCustomDeviceSaveMessage("");
     const componentLibrary = normalizeComponentLibraryName(customDeviceDraft.componentLibrary);
     if (!componentLibrary) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "请选择元件库。" }));
+      setCustomDeviceDraft((current) => ({ ...current, error: "请选择类。" }));
       return false;
     }
     if (!isValidComponentLibraryName(componentLibrary)) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "元件库必须是英文名称，只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。" }));
+      setCustomDeviceDraft((current) => ({ ...current, error: "类英文名称只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。" }));
       return false;
     }
     const derivedRequested = Boolean(customDeviceDraft.isDerivedComponentLibrary);
@@ -7413,7 +7413,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     const derivedComponentLibraryLabel = String(customDeviceDraft.derivedComponentLibraryLabel ?? "").trim();
     if (derivedRequested) {
       if (!derivedFromComponentLibrary) {
-        setCustomDeviceDraft((current) => ({ ...current, error: "请选择派生类关联的原类元件库。" }));
+        setCustomDeviceDraft((current) => ({ ...current, error: "请选择派生类关联的基类。" }));
         return false;
       }
       if (!derivedComponentLibrary) {
@@ -7425,7 +7425,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
         return false;
       }
       if (derivedComponentLibrary.toLowerCase() === derivedFromComponentLibrary.toLowerCase()) {
-        setCustomDeviceDraft((current) => ({ ...current, error: "派生类英文名称不能与基类元件库相同。" }));
+        setCustomDeviceDraft((current) => ({ ...current, error: "派生类英文名称不能与基类相同。" }));
         return false;
       }
     }

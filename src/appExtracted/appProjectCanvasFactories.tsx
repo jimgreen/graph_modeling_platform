@@ -3837,7 +3837,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
           <button type="button" disabled={isBrowseMode || selectedRowIndexes.length === 0} onClick={() => moveSelectedItems(1)}>下移</button>
           <button type="button" disabled={isBrowseMode || selectedRowIndexes.length === 0} onClick={deleteSelectedItems}>删除</button>
           <span>{selectedRowIndexes.length > 0 ? `已选 ${selectedRowIndexes.length} 行` : "点击行选择，Ctrl/Shift 可多选"}</span>
-          <span>元件库 {selectedKind || "未设置"} / 参考图元 {target.label}</span>
+          <span>类 {selectedKind || "未设置"} / 参考图元 {target.label}</span>
         </div>
         <div className="measurement-table-wrap">
           <table className="measurement-table measurement-profile-table">
@@ -3963,7 +3963,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                 );
               }) : (
                 <tr>
-                  <td colSpan={6}>当前元件库还没有默认量测模板。</td>
+                  <td colSpan={6}>当前类还没有默认量测模板。</td>
                 </tr>
               )}
             </tbody>

@@ -2165,7 +2165,7 @@ describe("manual bend interaction helpers", () => {
     };
     let customLibraryCreateDialog: any = {
       kind: "componentLibrary",
-      title: "新建元件库",
+      title: "新建类",
       cnName: "用户风电类",
       enName: "UserWindGen",
       categoryLibraryName: "交流设备",
@@ -2742,7 +2742,7 @@ describe("manual bend interaction helpers", () => {
 
     await createDeleteCustomComponentLibrary(scope)("UserLibrary");
 
-    expect(showGlobalConfirm).toHaveBeenCalledWith("确认删除元件库“UserLibrary”？");
+    expect(showGlobalConfirm).toHaveBeenCalledWith("确认删除类“UserLibrary”？");
     expect(setCustomComponentLibraries).not.toHaveBeenCalled();
     expect(customComponentLibraries).toEqual([
       { name: "UserLibrary", categoryLibraryName: "用户类别", label: "用户元件库" }
@@ -2792,7 +2792,7 @@ describe("manual bend interaction helpers", () => {
     await createDeleteCustomComponentLibrary(scope)("UserBase");
 
     expect(showGlobalMessage).toHaveBeenCalledWith(
-      "元件库“UserBase”仍被派生类 UserDerived 使用，请先删除这些派生类。"
+      "类“UserBase”仍被派生类 UserDerived 使用，请先删除这些派生类。"
     );
     expect(showGlobalConfirm).not.toHaveBeenCalled();
     expect(setCustomComponentLibraries).not.toHaveBeenCalled();
@@ -2816,7 +2816,7 @@ describe("manual bend interaction helpers", () => {
 
     expect(prompt).not.toHaveBeenCalled();
     expect(showGlobalMessage).toHaveBeenCalledWith(
-      "元件库类信息在创建确认后不可修改；如定义错误，请删除该元件库后重新创建。"
+      "类信息在创建确认后不可修改；如定义错误，请删除该类后重新创建。"
     );
   });
 

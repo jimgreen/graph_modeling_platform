@@ -682,7 +682,7 @@ async function parsePlatformSvg(
       });
       staticNodeCount += 1;
       if (declaredKind && !template) {
-        warnings.push(`设备类型“${declaredKind}”在当前元件库中不存在，已降级为静态 SVG 图元。`);
+        warnings.push(`设备类型“${declaredKind}”在当前类中不存在，已降级为静态 SVG 图元。`);
       }
     } else if (declaredKind) {
       warnings.push(`设备“${rawId}”引用的 SVG symbol 不存在，无法恢复其图形。`);
