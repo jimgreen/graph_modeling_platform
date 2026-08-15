@@ -26,6 +26,7 @@ import {
   normalizeCustomComponentLibraries,
   normalizeCustomDeviceTemplates,
   normalizeDefinitionRows,
+  rootComponentLibraryGroupsForDisplay,
   enumDisplayText,
   enumEditorOptionsForRow,
   enumEditorValidationMessage,
@@ -1087,6 +1088,76 @@ describe("graph template library filtering", () => {
     expect(generator?.templates.some((template) => template.kind === "custom-user-wind")).toBe(false);
   });
 
+  test("shows a deeply derived concrete component inside its root base class in the graphic library", () => {
+    const normalized = normalizeDeviceLibraryPersistencePayload({
+      customComponentLibraries: [
+        {
+          name: "CustomDevice4",
+          categoryLibraryName: "交流设备",
+          label: "CCC",
+          isDerivedComponentLibrary: false,
+          terminalCount: 2,
+          terminalTypes: ["ac", "ac"]
+        },
+        {
+          name: "CustomDevice5",
+          categoryLibraryName: "交流设备",
+          label: "ttt",
+          isDerivedComponentLibrary: true,
+          derivedFromComponentLibrary: "CustomDevice4"
+        },
+        {
+          name: "CustomDevice6",
+          categoryLibraryName: "交流设备",
+          label: "bbbb",
+          isDerivedComponentLibrary: true,
+          derivedFromComponentLibrary: "CustomDevice5"
+        }
+      ],
+      customDeviceTemplates: [
+        {
+          kind: "custom-CustomDevice6",
+          label: "言",
+          componentClass: "CustomDevice6",
+          categoryLibrary: "交流设备",
+          size: { width: 96, height: 64 },
+          params: { backgroundImage: "data:image/svg+xml,%3Csvg%2F%3E" },
+          terminalType: "ac",
+          terminalCount: 2,
+          custom: true
+        }
+      ]
+    });
+    const grouped = groupDeviceTemplatesByCategoryLibraryAndComponentLibrary(
+      normalized.customDeviceTemplates,
+      normalized.customComponentLibraries
+    );
+    const rawSections = grouped["交流设备"] ?? [];
+    const displayGroups = rootComponentLibraryGroupsForDisplay(
+      "交流设备",
+      rawSections,
+      normalized.customComponentLibraries
+    );
+    const searchedGroups = rootComponentLibraryGroupsForDisplay(
+      "交流设备",
+      rawSections,
+      normalized.customComponentLibraries,
+      "CCC"
+    );
+
+    expect(rawSections.find((group) => group.section === "CustomDevice5")?.templates).toEqual([
+      expect.objectContaining({ kind: "custom-CustomDevice6", componentClass: "CustomDevice6" })
+    ]);
+    expect(displayGroups.map((group) => group.section)).toContain("CustomDevice4");
+    expect(displayGroups.map((group) => group.section)).not.toContain("CustomDevice5");
+    expect(displayGroups.find((group) => group.section === "CustomDevice4")?.templates).toEqual([
+      expect.objectContaining({ kind: "custom-CustomDevice6", label: "言" })
+    ]);
+    expect(searchedGroups.find((group) => group.section === "CustomDevice4")?.templates).toEqual([
+      expect.objectContaining({ kind: "custom-CustomDevice6", label: "言" })
+    ]);
+  });
+
   test("creates icon library packages with only user imported assets", () => {
     const iconPackage = createLibraryPackage({
       scope: "icon-library",
@@ -1644,6 +1715,8 @@ describe("E device interface definition entry", () => {
     expect(html.indexOf('aria-label="交流设备/ACGenerator直属元件列表"')).toBeLessThan(
       html.indexOf('aria-label="交流设备/ACGenerator派生类列表"')
     );
+    expect((html.match(/class="custom-component-tree-thumbnail"/g) ?? [])).toHaveLength(templates.length);
+    expect(html).toMatch(/class="custom-component-tree-thumbnail"[\s\S]*?class="dialog-tree-bilingual dialog-tree-component-label"/);
   });
 
   test("shows one merged E interface definition action instead of separate import and export buttons", () => {

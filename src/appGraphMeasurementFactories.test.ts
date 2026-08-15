@@ -3,6 +3,7 @@ import { Children, Fragment, createElement, isValidElement, type ReactElement, t
 import { describe, expect, test, vi } from "vitest";
 
 import {
+  createAddDefaultMeasurementsToNode,
   createBeginMeasurementDrag,
   createBuildMultiNodeDragOverlayPreview,
   createBuildMeasurementGroupMarkup,
@@ -26,6 +27,60 @@ import { DEVICE_LIBRARY, getTemplateParameterDefinitions } from "./model";
 import { exportMeasurementItemMetadataAttributes } from "./svgExportUtils";
 
 describe("measurement canvas interactions", () => {
+  test("uses effective class profiles when adding default measurements", () => {
+    const rawMeasurementConfig = measurementDefinitions.normalizeMeasurementConfig({ deviceProfiles: [] });
+    const runtimeMeasurementConfig = measurementDefinitions.normalizeMeasurementConfig({
+      deviceProfiles: [{
+        deviceKind: "CustomDevice4",
+        items: [{
+          measurementTypeId: "activePower",
+          name: "有功功率",
+          associatedField: "t1_node"
+        }]
+      }]
+    });
+    const node = {
+      id: "custom-device-4-node",
+      kind: "custom-CustomDevice4",
+      name: "ABC-9",
+      params: { component_type: "CustomDevice4" },
+      terminals: [],
+      position: { x: 0, y: 0 },
+      size: { width: 104, height: 64 },
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1
+    } as any;
+    const createDefaultMeasurementGroupsForNode = vi.fn(
+      measurementDefinitions.createDefaultMeasurementGroupsForNode
+    );
+    const upsertMeasurementGroups = vi.fn(measurementDefinitions.upsertMeasurementGroups);
+    const updateProjectMeasurementsWithUndo = vi.fn((updater: any) => updater({ version: 1, groups: [] }));
+    const addDefaultMeasurementsToNode = createAddDefaultMeasurementsToNode({
+      createDefaultMeasurementGroupsForNode,
+      isStaticNode: () => false,
+      measurementConfig: rawMeasurementConfig,
+      runtimeMeasurementConfig,
+      updateProjectMeasurementsWithUndo,
+      upsertMeasurementGroups
+    });
+
+    addDefaultMeasurementsToNode(node);
+
+    expect(createDefaultMeasurementGroupsForNode).toHaveBeenCalledWith(node, runtimeMeasurementConfig);
+    expect(updateProjectMeasurementsWithUndo).toHaveBeenCalledTimes(1);
+    expect(upsertMeasurementGroups).toHaveBeenCalledWith(
+      { version: 1, groups: [] },
+      [expect.objectContaining({
+        nodeId: node.id,
+        items: [expect.objectContaining({
+          measurementTypeId: "activePower",
+          sourcePoint: `${node.id}.t1_node`
+        })]
+      })]
+    );
+  });
+
   test("uses the canonical node fill color in simplified multi-node drag previews", () => {
     const node = {
       id: "custom-node-1",

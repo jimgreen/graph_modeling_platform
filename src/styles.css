@@ -6882,10 +6882,37 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 }
 
 .custom-component-tree-row.component {
+  grid-template-columns: 22px minmax(0, 1fr) auto;
   min-height: 24px;
   padding-left: 8px;
   color: #475569;
   background: var(--dialog-tree-level-3-bg);
+}
+
+.custom-component-tree-thumbnail {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid #d7e0ec;
+  border-radius: 4px;
+  overflow: hidden;
+  color: currentColor;
+  background: #ffffff;
+}
+
+.custom-component-tree-thumbnail svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+  overflow: visible;
+}
+
+.custom-component-tree-row.component.active .custom-component-tree-thumbnail {
+  border-color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.96);
+  color: #1e40af;
 }
 
 .custom-component-tree-row.component span {

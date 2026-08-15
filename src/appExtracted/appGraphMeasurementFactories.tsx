@@ -395,12 +395,13 @@ export function createMeasurementGroupCanvasPosition(__appScope: Record<string, 
 export function createMeasurementGroupRenderMetrics(__appScope: Record<string, any>) {
   return (node: ModelNode, group: MeasurementGroup) => {
   const { formatMeasurementDisplayValue, measurementConfig, measurementFontScaleForNode, resolveMeasurementItemDisplay } = __appScope;
+    const runtimeMeasurementConfig = __appScope.runtimeMeasurementConfig ?? measurementConfig;
     if (!group.visible) {
       return null;
     }
     const measurementFontScale = measurementFontScaleForNode(node);
     const rows = group.items.flatMap((item) => {
-      const display = resolveMeasurementItemDisplay({ config: measurementConfig, node, group, item });
+      const display = resolveMeasurementItemDisplay({ config: runtimeMeasurementConfig, node, group, item });
       if (!display.visible) {
         return [];
       }
@@ -4272,10 +4273,11 @@ export function createUpdateProjectMeasurementsWithUndo(__appScope: Record<strin
 export function createAddDefaultMeasurementsToNode(__appScope: Record<string, any>) {
   return (node: ModelNode) => {
   const { createDefaultMeasurementGroupsForNode, isStaticNode, measurementConfig, updateProjectMeasurementsWithUndo, upsertMeasurementGroups } = __appScope;
+    const runtimeMeasurementConfig = __appScope.runtimeMeasurementConfig ?? measurementConfig;
     if (isStaticNode(node)) {
       return;
     }
-    const groups = createDefaultMeasurementGroupsForNode(node, measurementConfig);
+    const groups = createDefaultMeasurementGroupsForNode(node, runtimeMeasurementConfig);
     if (groups.length === 0) {
       showGlobalMessage("该设备类型还没有绑定默认量测，请先在基础页配置设备类型可用量测。");
       return;

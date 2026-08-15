@@ -1069,7 +1069,7 @@ describe("manual bend interaction helpers", () => {
       custom: true
     };
     let savedTemplates: any[] = [];
-    let savedDefinitionOverrides: Record<string, any> = {};
+    const setDeviceDefinitionOverrides = vi.fn();
     const scope = {
       ALLOW_RESIZE_TRANSFORM_PARAM: "allowResizeTransform",
       TERMINAL_TYPE_LIBRARY_LABELS: { ac: "交流" },
@@ -1122,9 +1122,7 @@ describe("manual bend interaction helpers", () => {
       setCustomDeviceTemplates: (templates: any[]) => {
         savedTemplates = templates;
       },
-      setDeviceDefinitionOverrides: (overrides: Record<string, any>) => {
-        savedDefinitionOverrides = overrides;
-      },
+      setDeviceDefinitionOverrides,
       setEditingCustomDeviceKind: vi.fn(),
       setExpandedCategoryLibraries: vi.fn(),
       syncExistingNodesWithTemplateDefinitions: vi.fn(),
@@ -1153,9 +1151,10 @@ describe("manual bend interaction helpers", () => {
     expect(scope.setCustomDeviceDefinitionMode).toHaveBeenCalledWith("edit");
     expect(scope.setEditingCustomDeviceKind).toHaveBeenCalledWith("UserDevice");
     expect(scope.nextCustomTemplateKind).not.toHaveBeenCalled();
+    expect(setDeviceDefinitionOverrides).not.toHaveBeenCalled();
   });
 
-  test("saves a derived custom device inside the base component library without creating a component library", () => {
+  test("saves only visual and terminal information for a derived custom device", () => {
     let customDeviceDraft = {
       categoryLibraryName: "交流设备",
       componentLibrary: "ACGenerator",
@@ -1187,8 +1186,9 @@ describe("manual bend interaction helpers", () => {
       error: ""
     };
     let savedTemplates: any[] = [];
-    let savedDefinitionOverrides: Record<string, any> = {};
+    let persistedPayload: any = null;
     const setCustomComponentLibraries = vi.fn();
+    const setDeviceDefinitionOverrides = vi.fn();
     const customDefaultDefinitions = vi.fn((_terminalTypes: any[], options?: { isDerivedComponentLibrary?: boolean }) =>
       options?.isDerivedComponentLibrary
         ? []
@@ -1238,7 +1238,9 @@ describe("manual bend interaction helpers", () => {
       normalizeContainerTerminalAssociations: (_terminalTypes: any, values: any[]) => values,
       normalizeCustomComponentLibraries: (value: unknown) => value as any[],
       normalizeDefinitionRowEnumFields: (row: any) => row,
-      persistDeviceLibraryChange: vi.fn(),
+      persistDeviceLibraryChange: vi.fn((payload: any) => {
+        persistedPayload = payload;
+      }),
       requireEditMode: () => true,
       setCustomComponentLibraries,
       setCustomComponentTreeSelection: vi.fn(),
@@ -1252,9 +1254,7 @@ describe("manual bend interaction helpers", () => {
       setCustomDeviceTemplates: (templates: any[]) => {
         savedTemplates = templates;
       },
-      setDeviceDefinitionOverrides: (overrides: Record<string, any>) => {
-        savedDefinitionOverrides = overrides;
-      },
+      setDeviceDefinitionOverrides,
       setEditingCustomDeviceKind: vi.fn(),
       setExpandedCategoryLibraries: vi.fn(),
       showGlobalMessage: vi.fn(),
@@ -1268,9 +1268,7 @@ describe("manual bend interaction helpers", () => {
     const saved = createSaveCustomDeviceTemplate(scope)();
 
     expect(saved).toBe(true);
-    expect(customDefaultDefinitions).toHaveBeenCalledWith(["ac"], expect.objectContaining({
-      isDerivedComponentLibrary: true
-    }));
+    expect(customDefaultDefinitions).not.toHaveBeenCalled();
     expect(savedTemplates[0]).toMatchObject({
       kind: "custom-user-wind-generator",
       label: "用户风电机组",
@@ -1295,10 +1293,8 @@ describe("manual bend interaction helpers", () => {
     expect(savedTemplates[0].params.derived_component_library_label).toBe("用户风电");
     expect(savedTemplates[0].parameterDefinitions).toBeUndefined();
     expect(savedTemplates[0].measurementDefinitions).toBeUndefined();
-    const sharedOverride = Object.values(savedDefinitionOverrides).find((override: any) =>
-      String(override.kind).startsWith("shared:")
-    ) as any;
-    expect(sharedOverride.parameterDefinitions.map((row: any) => row.enName)).toEqual(["installedCapacity"]);
+    expect(persistedPayload).toEqual({ customDeviceTemplates: savedTemplates });
+    expect(setDeviceDefinitionOverrides).not.toHaveBeenCalled();
     expect(setCustomComponentLibraries).not.toHaveBeenCalled();
     expect(scope.ensureCustomComponentTreeExpanded).toHaveBeenCalledWith("交流设备", "UserWindGen");
     expect(scope.setCustomComponentTreeSelection).toHaveBeenCalledWith({
@@ -1309,7 +1305,7 @@ describe("manual bend interaction helpers", () => {
     });
   });
 
-  test("validates blank newly added params in a derived custom device instead of filtering them out", () => {
+  test("ignores class parameter and measurement rows when saving a custom device", () => {
     let customDeviceDraft = {
       categoryLibraryName: "交流设备",
       componentLibrary: "ACGenerator",
@@ -1333,6 +1329,9 @@ describe("manual bend interaction helpers", () => {
       isContainer: false,
       params: [
         { id: "new-blank", cnName: "", enName: "", valueType: "string", typicalValue: "" }
+      ],
+      measurementDefinitions: [
+        { measurementTypeId: "activePower", position: "t1", associatedField: "t1_node" }
       ],
       stateDefinitions: [],
       error: ""
@@ -1375,7 +1374,7 @@ describe("manual bend interaction helpers", () => {
         !String(name ?? "").trim() ||
         ["idx", "name", "status", "run_stat", "node", "ratedPower"].includes(String(name ?? "").trim()),
       isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
-      measurementConfig: { measurementTypes: [], deviceProfiles: [] },
+      measurementConfig: { measurementTypes: [{ id: "activePower", name: "有功功率" }], deviceProfiles: [] },
       measurementConfigDraft: undefined,
       measurementConfigDraftRef: undefined,
       nextCustomTemplateKind: vi.fn(() => "custom-user-wind-generator"),
@@ -1410,10 +1409,11 @@ describe("manual bend interaction helpers", () => {
 
     const saved = createSaveCustomDeviceTemplate(scope)();
 
-    expect(saved).toBe(false);
-    expect(customDeviceDraft.error).toContain("中文名称不能为空");
-    expect(customDeviceDraft.error).toContain("英文名称不能为空");
-    expect(savedTemplates).toEqual([]);
+    expect(saved).toBe(true);
+    expect(customDeviceDraft.error).toBe("");
+    expect(savedTemplates).toHaveLength(1);
+    expect(savedTemplates[0].parameterDefinitions).toBeUndefined();
+    expect(savedTemplates[0].measurementDefinitions).toBeUndefined();
   });
 
   const createBuiltinDeviceDefinitionSaveHarness = ({
@@ -2697,6 +2697,7 @@ describe("manual bend interaction helpers", () => {
 
   test("always routes a confirmed new component to the create path despite stale edit selection", () => {
     const saveBuiltinDeviceDefinitionFromCustomDraft = vi.fn(() => true);
+    const saveComponentLibraryDefinition = vi.fn(() => true);
     const saveCustomDeviceTemplate = vi.fn(() => true);
 
     const saved = createSaveCustomDeviceDefinitionDialog({
@@ -2708,12 +2709,14 @@ describe("manual bend interaction helpers", () => {
       customDeviceDefinitionMode: "create",
       editingCustomDeviceKind: "ac-wind-source",
       saveBuiltinDeviceDefinitionFromCustomDraft,
+      saveComponentLibraryDefinition,
       saveCustomDeviceTemplate,
       selectedDefinitionTemplate: { kind: "ac-wind-source", custom: false }
     })();
 
     expect(saved).toBe(true);
     expect(saveCustomDeviceTemplate).toHaveBeenCalledOnce();
+    expect(saveComponentLibraryDefinition).not.toHaveBeenCalled();
     expect(saveBuiltinDeviceDefinitionFromCustomDraft).not.toHaveBeenCalled();
   });
 

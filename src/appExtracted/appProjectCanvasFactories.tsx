@@ -2611,8 +2611,9 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
     });
     const layeredProject = normalizeProjectLayers(lockedProject);
     const normalizedMeasurements = normalizeProjectMeasurements(layeredProject.measurements, layeredProject.nodes);
-    const reconciledMeasurements = typeof reconcileProjectMeasurementsWithConfig === "function" && measurementConfig
-      ? reconcileProjectMeasurementsWithConfig(normalizedMeasurements, layeredProject.nodes, measurementConfig)
+    const runtimeMeasurementConfig = __appScope.runtimeMeasurementConfig ?? measurementConfig;
+    const reconciledMeasurements = typeof reconcileProjectMeasurementsWithConfig === "function" && runtimeMeasurementConfig
+      ? reconcileProjectMeasurementsWithConfig(normalizedMeasurements, layeredProject.nodes, runtimeMeasurementConfig)
       : normalizedMeasurements;
     const nextCanvasBounds = {
       width: project.project.canvasWidth ?? DEFAULT_CANVAS_WIDTH,

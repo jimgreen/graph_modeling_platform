@@ -2276,6 +2276,76 @@ describe("default device state draft rows", () => {
     });
   });
 
+  test("restores editable text drawing elements after saving and reopening", () => {
+    const textElement = {
+      ...createStateIconDrawingElement("text"),
+      id: "saved-text",
+      x: 116,
+      y: 74,
+      width: 154,
+      height: 62,
+      rotation: 12,
+      strokeWidth: 3,
+      strokeColor: "#7c3aed",
+      fillColor: "#fff7ed",
+      textColor: "#1e293b",
+      text: "可编辑文字",
+      strokeStyle: "dashed" as const,
+      fontFamily: "Microsoft YaHei",
+      fontSize: 28,
+      fontWeight: "700",
+      fontStyle: "italic",
+      terminalIndex: 1
+    };
+    const imageSource = svgSourceFromDataUrl(stateIconDrawingToImage([textElement]));
+
+    const restored = createEditableStateIconElementsFromSvgSource(imageSource, "状态0");
+
+    expect(imageSource).toContain('data-state-icon-kind="text"');
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toMatchObject({
+      kind: "text",
+      x: 116,
+      y: 74,
+      width: 154,
+      height: 62,
+      rotation: 12,
+      strokeWidth: 3,
+      strokeColor: "#7c3aed",
+      fillColor: "#fff7ed",
+      textColor: "#1e293b",
+      text: "可编辑文字",
+      strokeStyle: "dashed",
+      fontFamily: "Microsoft YaHei",
+      fontSize: 28,
+      fontWeight: "700",
+      fontStyle: "italic",
+      terminalIndex: 1
+    });
+  });
+
+  test("recovers legacy saved text-only SVG layers as editable text", () => {
+    const legacySource = '<svg xmlns="http://www.w3.org/2000/svg" data-state-icon-drawing="true" width="240" height="160" viewBox="0 0 240 160"><g transform="translate(120 80) rotate(0)"><svg x="-90" y="-55.38461" width="180" height="110.76923" data-state-icon-preserve-view-box="true" viewBox="-52 -32 104 64" preserveAspectRatio="none"><g data-platform-generated-default="true"><text x="0" y="0" fill="#111827" font-size="24" font-family="Arial" font-weight="400" font-style="normal"><tspan x="0" dy="0">文字</tspan></text></g><g data-custom-device-persisted-terminal-connectors="true"><line x1="0" y1="80" x2="108" y2="80"/></g></svg></g></svg>';
+
+    const restored = createEditableStateIconElementsFromSvgSource(legacySource, "ABC");
+
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toMatchObject({
+      kind: "text",
+      x: 120,
+      y: 80,
+      width: 180,
+      height: 110.76923,
+      rotation: 0,
+      text: "文字",
+      textColor: "#111827",
+      fontFamily: "Arial",
+      fontWeight: "400",
+      fontStyle: "normal"
+    });
+    expect(restored[0].fontSize).toBeCloseTo(41.53846, 4);
+  });
+
   test("applies edited stroke attributes to imported SVG layers", () => {
     const importedElement = {
       ...createImportedStateIconElement(

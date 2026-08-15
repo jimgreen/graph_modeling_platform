@@ -901,6 +901,108 @@ function firstSvgMarkupInGeneratedGroup(markup: string) {
   return /<svg\b[\s\S]*?<\/svg>/i.exec(markup)?.[0] ?? "";
 }
 
+function stateIconDrawingTextElementFromGeneratedGroupMarkup(
+  markup: string,
+  groupOpen: string,
+  transform: { x: number; y: number; rotation: number },
+  terminalOwnership: Pick<StateIconDrawingElement, "terminalIndex"> | Record<string, never>
+): StateIconDrawingElement | null {
+  const declaredKind = readSvgMarkupAttribute(groupOpen, "data-state-icon-kind").trim().toLowerCase();
+  if (declaredKind && declaredKind !== "text") {
+    return null;
+  }
+  const withoutSupportMarkup = markup
+    .replace(/<defs\b[\s\S]*?<\/defs>/giu, "")
+    .replace(/<g\b(?=[^>]*\bdata-custom-device-persisted-terminal-connectors\s*=\s*(?:"true"|'true'|true))[^>]*>[\s\S]*?<\/g>/giu, "");
+  const textMatches = Array.from(withoutSupportMarkup.matchAll(/<text\b([^>]*)>([\s\S]*?)<\/text>/giu));
+  const explicitText = declaredKind === "text";
+  if (textMatches.length !== 1) {
+    return null;
+  }
+  const nonTextGraphicMatches = Array.from(withoutSupportMarkup.matchAll(/<(?:path|line|polyline|polygon|rect|circle|ellipse|image|use)\b[^>]*>/giu));
+  if (!explicitText && nonTextGraphicMatches.length > 0) {
+    return null;
+  }
+  try {
+    const textOpen = `<text${textMatches[0][1]}>`;
+    const text = textMatches[0][2]
+      .replace(/<[^>]+>/gu, "")
+      .replace(/&quot;/giu, "\"")
+      .replace(/&apos;/giu, "'")
+      .replace(/&lt;/giu, "<")
+      .replace(/&gt;/giu, ">")
+      .replace(/&amp;/giu, "&")
+      .trim() || "文字";
+    const style = readSvgMarkupAttribute(textOpen, "style");
+    const styleValue = (name: string) => {
+      const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`(?:^|;)\\s*${escapedName}\\s*:\\s*([^;]+)`, "i").exec(style)?.[1]?.trim() ?? "";
+    };
+    const textAttribute = (name: string) => readSvgMarkupAttribute(textOpen, name).trim() || styleValue(name);
+    const nestedSvgOpen = /<svg\b[^>]*>/iu.exec(markup)?.[0] ?? "";
+    const declaredWidth = readSvgMarkupNumber(groupOpen, "data-state-icon-width", Number.NaN);
+    const declaredHeight = readSvgMarkupNumber(groupOpen, "data-state-icon-height", Number.NaN);
+    const nestedWidth = readSvgMarkupNumber(nestedSvgOpen, "width", Number.NaN);
+    const nestedHeight = readSvgMarkupNumber(nestedSvgOpen, "height", Number.NaN);
+    const rawFontSize = Number.parseFloat(textAttribute("font-size"));
+    const baseFontSize = Number.isFinite(rawFontSize) && rawFontSize > 0 ? rawFontSize : 24;
+    const viewBoxParts = readSvgMarkupAttribute(nestedSvgOpen, "viewBox")
+      .trim()
+      .split(/[\s,]+/u)
+      .map((value) => Number.parseFloat(value));
+    const nestedScaleY = Number.isFinite(nestedHeight) && nestedHeight > 0 && viewBoxParts.length === 4 && Number.isFinite(viewBoxParts[3]) && viewBoxParts[3] > 0
+      ? nestedHeight / viewBoxParts[3]
+      : 1;
+    const fontSize = Math.max(8, baseFontSize * nestedScaleY);
+    const estimatedWidth = Math.max(32, Array.from(text).length * fontSize * 0.9);
+    const estimatedHeight = Math.max(24, fontSize * 1.4);
+    const width = Math.max(1,
+      Number.isFinite(declaredWidth) && declaredWidth > 0
+        ? declaredWidth
+        : Number.isFinite(nestedWidth) && nestedWidth > 0
+          ? nestedWidth
+          : estimatedWidth
+    );
+    const height = Math.max(1,
+      Number.isFinite(declaredHeight) && declaredHeight > 0
+        ? declaredHeight
+        : Number.isFinite(nestedHeight) && nestedHeight > 0
+          ? nestedHeight
+          : estimatedHeight
+    );
+    const backgroundRectOpen = explicitText ? (/<rect\b[^>]*>/iu.exec(withoutSupportMarkup)?.[0] ?? "") : "";
+    const declaredStrokeWidth = readSvgMarkupNumber(groupOpen, "data-state-icon-stroke-width", Number.NaN);
+    const declaredStrokeStyle = readSvgMarkupAttribute(groupOpen, "data-state-icon-stroke-style").trim();
+    return {
+      ...createStateIconDrawingElement("text"),
+      x: transform.x,
+      y: transform.y,
+      width,
+      height,
+      rotation: transform.rotation,
+      strokeWidth: Math.max(0,
+        Number.isFinite(declaredStrokeWidth)
+          ? declaredStrokeWidth
+          : readSvgMarkupNumber(backgroundRectOpen, "stroke-width", 0)
+      ),
+      strokeColor: readSvgMarkupAttribute(groupOpen, "data-state-icon-stroke-color") || readSvgMarkupAttribute(backgroundRectOpen, "stroke") || "#2563eb",
+      fillColor: readSvgMarkupAttribute(groupOpen, "data-state-icon-fill-color") || readSvgMarkupAttribute(backgroundRectOpen, "fill") || "transparent",
+      textColor: textAttribute("fill") || "#111827",
+      text,
+      strokeStyle: declaredStrokeStyle === "dashed" || declaredStrokeStyle === "dotted"
+        ? declaredStrokeStyle
+        : stateIconDrawingStrokeStyleFromMarkup(backgroundRectOpen),
+      fontFamily: textAttribute("font-family") || "Arial, Microsoft YaHei",
+      fontSize,
+      fontWeight: textAttribute("font-weight") || "800",
+      fontStyle: textAttribute("font-style") || "normal",
+      ...terminalOwnership
+    };
+  } catch {
+    return null;
+  }
+}
+
 function generatedStateIconRootOpenMarkup(source: string) {
   const svgOpen = /<svg\b([^>]*)>/i.exec(source)?.[1] ?? "";
   if (!svgOpen) {
@@ -983,6 +1085,10 @@ export function createStateIconDrawingElementFromGeneratedGroupMarkup(
     return null;
   }
   const terminalOwnership = stateIconDrawingTerminalOwnershipFromMarkup(groupOpen);
+  const textElement = stateIconDrawingTextElementFromGeneratedGroupMarkup(trimmed, groupOpen, transform, terminalOwnership);
+  if (textElement) {
+    return textElement;
+  }
   const svgMarkup = firstSvgMarkupInGeneratedGroup(trimmed);
   if (svgMarkup) {
     const svgOpen = /<svg\b([^>]*)>/i.exec(svgMarkup)?.[1] ?? "";
@@ -1687,7 +1793,10 @@ export function stateIconDrawingElementMarkup(
   const polylineAttr = polylinePoints
     ? ` data-polyline-points="${escapeXml(stateIconPolylinePointsAttribute(polylinePoints))}" data-polyline-width="${formatSvgNumber(w)}" data-polyline-height="${formatSvgNumber(h)}" data-start-cap="${escapeXml(normalizeStateIconLineCapKind(element.startCap))}" data-end-cap="${escapeXml(normalizeStateIconLineCapKind(element.endCap))}"`
     : "";
-  return `<g${terminalAttr}${polylineAttr} transform="translate(${formatSvgNumber(element.x)} ${formatSvgNumber(element.y)}) rotate(${formatSvgNumber(element.rotation)})">${body}</g>`;
+  const textAttr = element.kind === "text"
+    ? ` data-state-icon-kind="text" data-state-icon-width="${formatSvgNumber(w)}" data-state-icon-height="${formatSvgNumber(h)}" data-state-icon-stroke-width="${formatSvgNumber(Math.max(0, element.strokeWidth))}" data-state-icon-stroke-color="${stroke}" data-state-icon-fill-color="${fill}" data-state-icon-stroke-style="${escapeXml(element.strokeStyle ?? "solid")}"`
+    : "";
+  return `<g${terminalAttr}${polylineAttr}${textAttr} transform="translate(${formatSvgNumber(element.x)} ${formatSvgNumber(element.y)}) rotate(${formatSvgNumber(element.rotation)})">${body}</g>`;
 }
 
 export function stateIconDrawingToImage(
