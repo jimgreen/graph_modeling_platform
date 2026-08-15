@@ -8,6 +8,7 @@ import {
   buildComponentLibraryDefaultParameterDefinitions,
   componentLibraryDefinitionOverrideKey,
   mergeComponentLibraryMeasurementProfiles,
+  reconcileProjectMeasurementsForRuntimeConfigChange,
   resolveComponentLibraryMeasurementProfiles,
   resolveEditableComponentLibraryDefinition
 } from "./componentLibraryDefinitions";
@@ -427,6 +428,60 @@ describe("component library editable definitions", () => {
         sourcePoint: "custom-device-4-node.t1_node"
       })
     ]);
+  });
+
+  test("reconciles a restored model once when class profiles arrive after it", () => {
+    const previousConfig = normalizeMeasurementConfig({ deviceProfiles: [] });
+    const nextConfig = normalizeMeasurementConfig({
+      deviceProfiles: [{
+        deviceKind: "CustomDevice4",
+        items: [{
+          measurementTypeId: "activePower",
+          name: "有功功率",
+          position: "device",
+          associatedField: "t1_node",
+          defaultVisible: true
+        }]
+      }]
+    });
+    const node = {
+      id: "custom-CustomDevice4-zuxm51x",
+      kind: "custom-CustomDevice4",
+      name: "ABC-9",
+      position: { x: 1024, y: 642 },
+      size: { width: 150, height: 92 },
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1,
+      params: { component_type: "CustomDevice4" },
+      terminals: [
+        { id: "t1", type: "ac", anchor: { x: -0.5, y: 0 } },
+        { id: "t2", type: "ac", anchor: { x: 0.5, y: 0 } }
+      ]
+    } as any;
+    const restoredMeasurements = { version: 1 as const, groups: [] };
+
+    const reconciled = reconcileProjectMeasurementsForRuntimeConfigChange({
+      measurements: restoredMeasurements,
+      nodes: [node],
+      previousConfig,
+      nextConfig
+    });
+
+    expect(reconciled.groups).toEqual([expect.objectContaining({
+      nodeId: node.id,
+      items: [expect.objectContaining({
+        measurementTypeId: "activePower",
+        labelOverride: "有功功率",
+        sourcePoint: `${node.id}.t1_node`
+      })]
+    })]);
+    expect(reconcileProjectMeasurementsForRuntimeConfigChange({
+      measurements: reconciled,
+      nodes: [node],
+      previousConfig: nextConfig,
+      nextConfig
+    })).toBe(reconciled);
   });
 
   test("materializes inherited measurements once for derived classes", () => {
