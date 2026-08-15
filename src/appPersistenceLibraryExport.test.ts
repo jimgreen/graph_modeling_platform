@@ -1679,6 +1679,37 @@ describe("graph template library filtering", () => {
 });
 
 describe("E device interface definition entry", () => {
+  const renderCustomComponentManagerTree = (initialSelection: any) => {
+    const templates = DEVICE_LIBRARY.filter((template) => [
+      "ac-source",
+      "ac-wind-source"
+    ].includes(template.kind));
+    return renderToStaticMarkup(createElement(CustomComponentManagerTree as any, {
+      libraries: ["交流设备"],
+      filteredByComponentLibrary: groupDeviceTemplatesByCategoryLibraryAndComponentLibrary(templates),
+      customComponentLibraries: [],
+      initialCollapsedLibraries: new Set(),
+      initialCollapsedTypes: new Set(),
+      initialSelection,
+      searchQuery: "",
+      onSelectCategoryLibrary: () => undefined,
+      onSelectComponent: () => undefined,
+      onSelectComponentLibrary: () => undefined,
+      onCreateCategoryLibrary: () => undefined,
+      onCreateComponentLibrary: () => undefined,
+      onCreateComponent: () => undefined,
+      onRenameSelection: () => undefined,
+      onDeleteSelection: () => undefined,
+      onSearchChange: () => undefined,
+      onCollapseChange: () => undefined,
+      onSelectionChange: () => undefined,
+      onOpenEDeviceDefinitionInterface: () => undefined
+    }));
+  };
+
+  const actionButtonTag = (html: string, title: string) =>
+    html.match(new RegExp(`<button[^>]*title="${title}"[^>]*>`))?.[0] ?? "";
+
   test("renders derived classes as a second-level branch below the base class", () => {
     const templates = DEVICE_LIBRARY.filter((template) => [
       "ac-source",
@@ -1719,6 +1750,51 @@ describe("E device interface definition entry", () => {
     expect(html).toMatch(/class="custom-component-tree-thumbnail"[\s\S]*?class="dialog-tree-bilingual dialog-tree-component-label"/);
   });
 
+  test("marks only the exactly selected derived class as active", () => {
+    const selectedClassHtml = renderCustomComponentManagerTree({
+      kind: "componentLibrary",
+      categoryLibraryName: "交流设备",
+      section: "ACWindGen"
+    });
+    const selectedChildHtml = renderCustomComponentManagerTree({
+      kind: "component",
+      categoryLibraryName: "交流设备",
+      section: "ACWindGen",
+      templateKind: "ac-wind-source"
+    });
+    const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+
+    expect(selectedClassHtml).toMatch(/class="custom-component-tree-row type derived-type active"[\s\S]*?ACWindGen/);
+    expect(selectedChildHtml).not.toMatch(/class="custom-component-tree-row type derived-type active"[\s\S]*?ACWindGen/);
+    expect(selectedChildHtml).toMatch(/class="custom-component-tree-row component active"[\s\S]*?ac-wind-source/);
+    expect(styles).toMatch(/\.custom-component-tree-row\.type\.derived-type\.active\s*\{[^}]*background:\s*#1e40af/s);
+  });
+
+  test("enables create actions only for the selected tree level", () => {
+    const categoryHtml = renderCustomComponentManagerTree({
+      kind: "categoryLibrary",
+      categoryLibraryName: "交流设备"
+    });
+    const classHtml = renderCustomComponentManagerTree({
+      kind: "componentLibrary",
+      categoryLibraryName: "交流设备",
+      section: "ACGenerator"
+    });
+    const componentHtml = renderCustomComponentManagerTree({
+      kind: "component",
+      categoryLibraryName: "交流设备",
+      section: "ACGenerator",
+      templateKind: "ac-source"
+    });
+
+    expect(actionButtonTag(categoryHtml, "在当前类别库下新建基类")).not.toContain("disabled");
+    expect(actionButtonTag(categoryHtml, "请先选择一个类再新建元件")).toContain("disabled");
+    expect(actionButtonTag(classHtml, "在当前类下新建派生类")).not.toContain("disabled");
+    expect(actionButtonTag(classHtml, "在当前类下新建元件")).not.toContain("disabled");
+    expect(actionButtonTag(componentHtml, "请先选择类别或类再新建类")).toContain("disabled");
+    expect(actionButtonTag(componentHtml, "请先选择一个类再新建元件")).toContain("disabled");
+  });
+
   test("shows one merged E interface definition action instead of separate import and export buttons", () => {
     const html = renderToStaticMarkup(createElement(CustomComponentManagerTree as any, {
       libraries: [],
@@ -1747,8 +1823,8 @@ describe("E device interface definition entry", () => {
     expect(html).toContain("E文件接口定义");
     expect(html).toContain("类别库 / 类 / 元件");
     expect(html).toContain("新建类");
-    expect(html).toContain('title="在当前类别库下新建类"');
-    expect(html).toContain('title="在当前类下新建元件"');
+    expect(html).toContain('title="在当前类别库下新建基类"');
+    expect(html).toContain('title="请先选择一个类再新建元件"');
     expect(html).toContain('placeholder="搜索类别库/类/元件"');
     expect(html).not.toContain(`新建${["元件", "库"].join("")}`);
     expect(html).not.toContain("导出E文件定义");

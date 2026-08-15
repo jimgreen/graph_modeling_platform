@@ -6867,6 +6867,12 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   box-shadow: inset 0 0 0 1px rgba(203, 213, 225, 0.72);
 }
 
+.custom-component-tree-row.type.derived-type.active {
+  color: #ffffff;
+  background: #1e40af;
+  box-shadow: none;
+}
+
 .custom-component-tree-chevron-placeholder {
   display: inline-block;
   width: 13px;

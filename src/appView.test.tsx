@@ -689,6 +689,8 @@ describe("app view device definition parameter rows", () => {
     expect(source).not.toContain('<span>派生关系</span>');
     expect(source).toContain('所属类在创建后不可修改');
     expect(source).not.toContain(`title="点击选择${legacyClassTerm}"`);
+    expect(source).toContain('disabled={Boolean(customLibraryCreateDialog.classCreationMode)}');
+    expect(source).toContain('disabled={customLibraryCreateDialog.componentClassLocked}');
   });
 
   test("renders compact terminal energy controls only for base classes", () => {
