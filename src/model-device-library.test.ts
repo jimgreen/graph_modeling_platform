@@ -3881,6 +3881,62 @@ test("removes generic ACAC and DCDC setpoints without migrating their values", (
   }
 });
 
+test("restores fixed E fields omitted from persisted complete overrides for every base device", () => {
+  const persistedLibrary = JSON.parse(readFileSync(new URL("../data/device-library/library.json", import.meta.url), "utf8")) as {
+    customDeviceTemplates?: DeviceTemplate[];
+    deviceDefinitionOverrides?: Record<string, DeviceTemplateDefinitionOverride>;
+    deviceDefinitionSharedKeys?: Record<string, string>;
+  };
+  const templates = [...DEVICE_LIBRARY, ...(persistedLibrary.customDeviceTemplates ?? [])];
+  const missingByKind: Record<string, string[]> = {};
+
+  for (const template of templates) {
+    if (template.kind.endsWith("-vertical") || templateDerivedComponentLibraryInfo(template)) {
+      continue;
+    }
+    const section = inferESection(template.kind, template.params);
+    const overrideKey = persistedLibrary.deviceDefinitionSharedKeys?.[template.kind] ?? `shared:${section}`;
+    const override = persistedLibrary.deviceDefinitionOverrides?.[overrideKey];
+    if (!override?.parameterDefinitions?.length) {
+      continue;
+    }
+    const fixedFieldNames = new Set([...(E_SECTION_COLUMNS[section] ?? []), "dev_type"]);
+    const expectedFields = getTemplateParameterDefinitions(template)
+      .map((definition) => definition.enName)
+      .filter((name) => fixedFieldNames.has(name));
+    const retainedDefinitions = override.parameterDefinitions.filter(
+      (definition) => !fixedFieldNames.has(definition.enName)
+    );
+    const incompleteOverride = {
+      ...override,
+      parameterDefinitions: retainedDefinitions.length > 0
+        ? retainedDefinitions
+        : override.parameterDefinitions.slice(0, 1)
+    };
+    const reopenedFields = new Set(
+      getTemplateParameterDefinitions(applyDeviceTemplateDefinitionOverride(template, incompleteOverride))
+        .map((definition) => definition.enName)
+    );
+    const missing = expectedFields.filter((name) => !reopenedFields.has(name));
+    if (missing.length > 0) {
+      missingByKind[template.kind] = missing;
+    }
+  }
+
+  expect(missingByKind).toEqual({});
+});
+
+test("keeps explicit delete-all parameter overrides empty for E devices", () => {
+  const template = DEVICE_LIBRARY.find((candidate) => candidate.kind === "ac-source")!;
+  const overridden = applyDeviceTemplateDefinitionOverride(template, {
+    kind: "shared:ACGenerator",
+    parameterDefinitions: [],
+    parameterDefinitionsIntent: "delete-all"
+  });
+
+  expect(getTemplateParameterDefinitions(overridden)).toEqual([]);
+});
+
 test("treats persisted converter parameter definitions as a complete table", () => {
   const template = DEVICE_LIBRARY.find((candidate) => candidate.kind === "dcdc-converter")!;
   const retainedDefinitions = getTemplateParameterDefinitions(template).filter((definition) => (
