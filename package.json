@@ -5,15 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "node server/dev.mjs",
-    "dev:frontend": "vite --host 127.0.0.1",
+    "dev:frontend": "vite --host 127.0.0.1 --config vite.config.ts",
     "server": "node server/server.mjs",
     "backend": "node server/server.mjs",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build --config vite.config.ts",
     "audit:icons": "node scripts/audit-icon-library-quality.mjs",
     "gen:gbk-table": "node scripts/gen-gbk-table.mjs",
     "test": "vitest run",
     "test:e2e": "vitest run --config vite.e2e.config.ts",
-    "preview": "vite preview --host 127.0.0.1"
+    "preview": "vite preview --host 127.0.0.1 --config vite.config.ts"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
