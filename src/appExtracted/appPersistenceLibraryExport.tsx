@@ -3799,12 +3799,95 @@ export function buildCustomComponentClassTree(
     .filter((node): node is CustomComponentClassTreeNode => Boolean(node));
 }
 
+export function rootComponentLibraryGroupsForDisplay(
+  categoryLibraryName: string,
+  typeGroups: readonly CategoryLibraryComponentLibraryGroup[],
+  customComponentLibraries: readonly CustomComponentLibraryDefinition[] = [],
+  searchQuery = ""
+): CategoryLibraryComponentLibraryGroup[] {
+  const roots = buildCustomComponentClassTree(
+    categoryLibraryName,
+    typeGroups,
+    customComponentLibraries
+  );
+  const searchNeedle = normalizeLibrarySearchText(searchQuery);
+  const categoryLibrary = normalizeCategoryLibraryName(categoryLibraryName);
+  const categoryMatchesSearch = Boolean(searchNeedle) && normalizeLibrarySearchText(categoryLibrary).includes(searchNeedle);
+  const classMatchesSearch = (sectionName: string) => {
+    if (!searchNeedle) return true;
+    const display = componentLibraryDisplayParts(sectionName, customComponentLibraries);
+    return [sectionName, display.chinese, display.english, display.title]
+      .some((value) => normalizeLibrarySearchText(value).includes(searchNeedle));
+  };
+  const collectTemplates = (
+    node: CustomComponentClassTreeNode,
+    ancestorMatchesSearch = false
+  ): { matches: boolean; templates: DeviceTemplate[] } => {
+    const classMatches = ancestorMatchesSearch || categoryMatchesSearch || classMatchesSearch(node.section);
+    const ownTemplates = classMatches || !searchNeedle
+      ? node.templates
+      : node.templates.filter((template) => libraryTemplateMatchesSearch(
+          template,
+          categoryLibrary,
+          node.section,
+          searchNeedle,
+          customComponentLibraries
+        ));
+    const derived = node.derivedClasses.map((child) => collectTemplates(child, classMatches));
+    return {
+      matches: classMatches || ownTemplates.length > 0 || derived.some((result) => result.matches),
+      templates: [
+        ...ownTemplates,
+        ...derived.flatMap((result) => result.templates)
+      ]
+    };
+  };
+  return roots.flatMap((node) => {
+    const result = collectTemplates(node);
+    return result.matches
+      ? [{ section: node.section, templates: result.templates }]
+      : [];
+  });
+}
+
 function customComponentClassTreeTemplateCount(node: CustomComponentClassTreeNode): number {
   return node.templates.length + node.derivedClasses.reduce(
     (sum, derivedClass) => sum + customComponentClassTreeTemplateCount(derivedClass),
     0
   );
 }
+
+const CustomComponentTreeTemplateThumbnail = memo(function CustomComponentTreeTemplateThumbnail({
+  template
+}: {
+  template: DeviceTemplate;
+}) {
+  const previewNode = useMemo(() => createNodeFromTemplate(template, { x: 0, y: 0 }), [template]);
+  const width = Math.max(1, Number(previewNode.size.width) || 1);
+  const height = Math.max(1, Number(previewNode.size.height) || 1);
+  const previewScale = 18 / Math.max(width, height);
+  const backgroundImage = String(template.params?.backgroundImage ?? "").trim();
+  return (
+    <span className="custom-component-tree-thumbnail" aria-hidden="true">
+      <svg viewBox="-11 -11 22 22" focusable="false">
+        <g transform={`scale(${previewScale})`}>
+          <MemoDeviceGlyph node={previewNode} mode="geometry" colorDisplayMode="energy" colorPalette={DEFAULT_COLOR_PALETTE} stateVisual={null} />
+          {backgroundImage && (
+            <image
+              href={backgroundImage}
+              x={-width / 2}
+              y={-height / 2}
+              width={width}
+              height={height}
+              preserveAspectRatio="xMidYMid meet"
+            />
+          )}
+          <MemoDeviceGlyph node={previewNode} mode="text" colorDisplayMode="energy" colorPalette={DEFAULT_COLOR_PALETTE} stateVisual={null} />
+        </g>
+      </svg>
+    </span>
+  );
+});
 
 export const CustomComponentManagerTree = memo(function CustomComponentManagerTree({
   libraries,
@@ -3982,6 +4065,7 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
                   title={`${template.label} / ${node.section} / ${template.custom ? "自定义" : "系统内置"}`}
                   onClick={() => handleSelectComponent(template, node.section)}
                 >
+                  <CustomComponentTreeTemplateThumbnail template={template} />
                   <span className="dialog-tree-bilingual dialog-tree-component-label" title={`${template.label} / ${template.kind}`}>
                     <span>{template.label}</span>
                     <small>{template.kind}</small>

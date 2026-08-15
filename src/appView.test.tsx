@@ -310,6 +310,10 @@ describe("app view device definition parameter rows", () => {
 
   test("shows only icon definition for concrete components while classes keep definition tabs", () => {
     expect(customDeviceDefinitionUsesIconOnly(
+      { kind: "componentLibrary", categoryLibraryName: "交流设备", section: "CustomDevice5" },
+      { categoryLibraryName: "交流设备", componentLibrary: "CustomDevice5", componentKind: "new-custom-device" }
+    )).toBe(true);
+    expect(customDeviceDefinitionUsesIconOnly(
       { kind: "component", categoryLibraryName: "静态图元", templateKind: "custom-static-symbol" },
       { categoryLibraryName: "静态图元", componentKind: "custom-static-symbol" }
     )).toBe(true);
@@ -717,9 +721,8 @@ describe("app view device definition parameter rows", () => {
     const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
     const stylesSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 
-    expect(viewSource).toContain('customComponentTreeSelection?.kind !== "componentLibrary" && (<>');
-    expect(viewSource).toMatch(/customComponentTreeSelection\?\.kind !== "componentLibrary" && \(<>[\s\S]*?元件名称[\s\S]*?是否允许变形[\s\S]*?<\/>\)}/);
-    expect(viewSource).toContain('customComponentTreeSelection?.kind === "componentLibrary" ? " component-library-mode" : customComponentTreeSelection?.kind === "component" ? " component-mode" : ""');
+    expect(viewSource).toMatch(/customDeviceDefinitionIconOnly && \(<>[\s\S]*?元件名称[\s\S]*?是否允许变形[\s\S]*?<\/>\)}/);
+    expect(viewSource).toContain('customDeviceDefinitionIconOnly ? " component-mode" : customComponentTreeSelection?.kind === "componentLibrary" ? " component-library-mode" : ""');
     expect(stylesSource).toMatch(/\.custom-device-form-grid\.component-library-mode\s*\{[^}]*grid-template-columns:/s);
   });
 
@@ -727,10 +730,20 @@ describe("app view device definition parameter rows", () => {
     const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
     const stylesSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 
-    expect(viewSource).toMatch(/customComponentTreeSelection\?\.kind !== "component" && \(\s*<label className="custom-category-library-field">/);
-    expect(viewSource).toMatch(/customComponentTreeSelection\?\.kind !== "component" && \(\s*<label className="custom-device-container-field">/);
-    expect(viewSource).toContain('customComponentTreeSelection?.kind === "component" ? " component-mode" : ""');
+    expect(viewSource).toMatch(/!customDeviceDefinitionIconOnly && \(\s*<label className="custom-category-library-field">/);
+    expect(viewSource).toMatch(/!customDeviceDefinitionIconOnly && \(\s*<label className="custom-device-container-field">/);
+    expect(viewSource).toContain('customDeviceDefinitionIconOnly ? " component-mode"');
     expect(stylesSource).toMatch(/\.custom-device-form-grid\.component-mode\s*\{[^}]*grid-template-columns:/s);
+  });
+
+  test("keeps the whole right editor in component mode after confirming a new component", () => {
+    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+
+    expect(viewSource).toContain("!customDeviceDefinitionIconOnly &&\n    customComponentTreeSelection?.kind === \"componentLibrary\" &&\n    !customDeviceDraft.isDerivedComponentLibrary");
+    expect(viewSource).toContain("!customDeviceDefinitionIconOnly &&\n    customComponentTreeSelection?.kind === \"componentLibrary\" &&\n    customDeviceDraft.isDerivedComponentLibrary");
+    expect(viewSource).toContain('(customDeviceDefinitionIconOnly || customComponentTreeSelection?.kind !== "componentLibrary") && (<button');
+    expect(viewSource).toContain('!customDeviceDefinitionIconOnly && (<>');
+    expect(viewSource).toContain(': "保存新建元件"');
   });
 
   test("removes the centered transform when device library dialogs become floating", () => {

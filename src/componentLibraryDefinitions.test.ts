@@ -7,9 +7,15 @@ import {
 import {
   buildComponentLibraryDefaultParameterDefinitions,
   componentLibraryDefinitionOverrideKey,
+  mergeComponentLibraryMeasurementProfiles,
+  resolveComponentLibraryMeasurementProfiles,
   resolveEditableComponentLibraryDefinition
 } from "./componentLibraryDefinitions";
 import { deviceDefinitionSharedKeyForTemplate } from "./customDeviceUtils";
+import {
+  createDefaultMeasurementGroupsForNode,
+  normalizeMeasurementConfig
+} from "./measurements";
 
 const baseDefinition = {
   name: "BasePump",
@@ -342,5 +348,118 @@ describe("component library editable definitions", () => {
       { measurementTypeId: "q", position: "device", associatedField: "derived_bias" }
     ]);
     expect(resolved?.effectiveParameterDefinitions.find((row) => row.enName === "rated_power")?.typicalValue).toBe("10");
+  });
+
+  test("materializes persisted class measurements for existing custom component nodes", () => {
+    const classKey = componentLibraryDefinitionOverrideKey("CustomDevice4");
+    const componentDefinition = {
+      ...baseDefinition,
+      name: "CustomDevice4",
+      label: "CCC",
+      terminalCount: 2,
+      terminalTypes: ["ac", "ac"],
+      terminalLabels: ["", ""],
+      terminalRoles: ["single-load", "single-load"],
+      terminalAssociations: ["ac-load", "ac-load"]
+    } as const;
+    const componentTemplate = {
+      kind: "custom-CustomDevice4",
+      label: "ABC",
+      componentClass: "CustomDevice4",
+      categoryLibrary: "交流设备",
+      terminalType: "ac",
+      terminalCount: 2,
+      terminalTypes: ["ac", "ac"],
+      terminalLabels: ["", ""],
+      size: { width: 104, height: 64 },
+      params: { component_type: "CustomDevice4" },
+      custom: true
+    } as DeviceTemplate;
+    const overrides: Record<string, DeviceTemplateDefinitionOverride> = {
+      [classKey]: {
+        kind: classKey,
+        measurementDefinitions: [{
+          measurementTypeId: "activePower",
+          name: "有功功率",
+          position: "device",
+          associatedField: "t1_node",
+          defaultVisible: true
+        }]
+      }
+    };
+    const classProfiles = resolveComponentLibraryMeasurementProfiles({
+      customComponentLibraries: [componentDefinition as any],
+      templates: [componentTemplate],
+      overrides
+    });
+    const runtimeConfig = mergeComponentLibraryMeasurementProfiles(
+      normalizeMeasurementConfig({ deviceProfiles: [] }),
+      classProfiles
+    );
+    const node = {
+      id: "custom-device-4-node",
+      kind: "custom-CustomDevice4",
+      name: "ABC-9",
+      position: { x: 100, y: 80 },
+      size: { width: 104, height: 64 },
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1,
+      params: { component_type: "CustomDevice4" },
+      terminals: [
+        { id: "t1", type: "ac", anchor: { x: -0.5, y: 0 } },
+        { id: "t2", type: "ac", anchor: { x: 0.5, y: 0 } }
+      ]
+    } as any;
+
+    expect(classProfiles).toEqual([{
+      deviceKind: "CustomDevice4",
+      items: [expect.objectContaining({
+        measurementTypeId: "activePower",
+        associatedField: "t1_node"
+      })]
+    }]);
+    const [group] = createDefaultMeasurementGroupsForNode(node, runtimeConfig);
+    expect(group?.items).toEqual([
+      expect.objectContaining({
+        measurementTypeId: "activePower",
+        labelOverride: "有功功率",
+        sourcePoint: "custom-device-4-node.t1_node"
+      })
+    ]);
+  });
+
+  test("materializes inherited measurements once for derived classes", () => {
+    const baseKey = componentLibraryDefinitionOverrideKey("CustomDevice4");
+    const derivedDefinition = {
+      name: "CustomDevice5",
+      label: "派生 CCC",
+      categoryLibraryName: "交流设备",
+      isDerivedComponentLibrary: true,
+      derivedFromComponentLibrary: "CustomDevice4"
+    } as const;
+    const classProfiles = resolveComponentLibraryMeasurementProfiles({
+      customComponentLibraries: [
+        { ...baseDefinition, name: "CustomDevice4" } as any,
+        derivedDefinition as any
+      ],
+      templates: [],
+      overrides: {
+        [baseKey]: {
+          kind: baseKey,
+          measurementDefinitions: [{
+            measurementTypeId: "activePower",
+            position: "device",
+            associatedField: "t1_node"
+          }]
+        }
+      }
+    });
+
+    expect(classProfiles.find((profile) => profile.deviceKind === "CustomDevice5")?.items).toEqual([{
+      measurementTypeId: "activePower",
+      position: "device",
+      associatedField: "t1_node"
+    }]);
   });
 });

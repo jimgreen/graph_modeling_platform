@@ -21,6 +21,10 @@ import {
   cloneDeviceMeasurementDefinitions,
   type DeviceMeasurementDefinition
 } from "./measurementDefinitionTypes";
+import type {
+  DeviceMeasurementProfile,
+  PlatformMeasurementConfig
+} from "./measurements";
 
 const definitionKey = (value: unknown) => String(value ?? "").trim().toLowerCase();
 
@@ -162,6 +166,65 @@ export type EditableComponentLibraryDefinition = {
   overrideKey: string;
   persisted: boolean;
 };
+
+export function resolveComponentLibraryMeasurementProfiles(options: {
+  customComponentLibraries?: readonly CustomComponentLibraryDefinition[];
+  templates?: readonly DeviceTemplate[];
+  overrides?: Readonly<Record<string, DeviceTemplateDefinitionOverride>>;
+}): DeviceMeasurementProfile[] {
+  const customComponentLibraries = options.customComponentLibraries ?? [];
+  const templates = options.templates ?? [];
+  const overrides = options.overrides ?? {};
+  const classCandidates = new Map<string, { className: string; categoryLibraryName: string }>();
+
+  for (const definition of customComponentLibraries) {
+    const className = String(definition.name ?? "").trim();
+    if (!className) continue;
+    classCandidates.set(definitionKey(className), {
+      className,
+      categoryLibraryName: String(definition.categoryLibraryName ?? "").trim()
+    });
+  }
+  for (const overrideKey of Object.keys(overrides)) {
+    if (!overrideKey.toLowerCase().startsWith("class:")) continue;
+    const className = overrideKey.slice("class:".length).trim();
+    if (!className || classCandidates.has(definitionKey(className))) continue;
+    classCandidates.set(definitionKey(className), { className, categoryLibraryName: "" });
+  }
+
+  return Array.from(classCandidates.values()).flatMap(({ className, categoryLibraryName }) => {
+    const resolved = resolveEditableComponentLibraryDefinition({
+      className,
+      categoryLibraryName,
+      customComponentLibraries,
+      templates,
+      overrides
+    });
+    return resolved
+      ? [{
+          deviceKind: resolved.metadata.className,
+          items: cloneDeviceMeasurementDefinitions(resolved.effectiveMeasurementDefinitions) ?? []
+        }]
+      : [];
+  });
+}
+
+export function mergeComponentLibraryMeasurementProfiles(
+  config: PlatformMeasurementConfig,
+  classProfiles: readonly DeviceMeasurementProfile[]
+): PlatformMeasurementConfig {
+  const classProfileKeys = new Set(classProfiles.map((profile) => definitionKey(profile.deviceKind)));
+  return {
+    ...config,
+    deviceProfiles: [
+      ...config.deviceProfiles.filter((profile) => !classProfileKeys.has(definitionKey(profile.deviceKind))),
+      ...classProfiles.map((profile) => ({
+        deviceKind: profile.deviceKind,
+        items: cloneDeviceMeasurementDefinitions(profile.items) ?? []
+      }))
+    ]
+  };
+}
 
 export function resolveEditableComponentLibraryDefinition(options: {
   className: string;
