@@ -8,8 +8,10 @@ import {
   visibleIconLibraryIcons
 } from "../iconLibraryCatalog";
 import { buildExportDeviceIdMap } from "../svgExportUtils";
-import { E_SECTION_COLUMNS, inferESection, resolveEffectiveTemplateParameterDefinitionGroups, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, applyEReferenceIdValues, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, DEVICE_LIBRARY, type EDeviceExport } from "../model";
+import { E_SECTION_COLUMNS, inferESection, resolveEffectiveTemplateParameterDefinitionGroups, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, applyEReferenceIdValues, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, DEVICE_LIBRARY, type DeviceTemplate, type DeviceTemplateDefinitionOverride, type EDeviceExport } from "../model";
 import { buildEDeviceInterfaceDefinitionRows, orderEDeviceInterfaceFields, applyEDeviceDefinitionSectionsToLibraryState, buildEFileExportOptionsFromLibrary } from "./appDeviceDefinitionFactories";
+import { resolveEditableComponentLibraryDefinition } from "../componentLibraryDefinitions";
+import type { CustomComponentLibraryDefinition } from "./appCoreCanvasUtilities";
 import { decodeAuto } from "../encoding/gbk";
 import { UserCustomizationManagerDialog } from "../UserCustomizationManagerDialog";
 import { VoltageLevelDialog } from "../VoltageLevelDialog";
@@ -84,13 +86,13 @@ export function resolveDeviceModelPanelParameterKeys(
       mergedKeys.push(normalizedKey);
     }
   };
-  eKeys.forEach((key) => appendKey(exportKeyToCustomKey.get(key) ?? key));
   if (usesDefinitionGroups) {
     baseDefinitions.forEach((definition) => appendKey(String(definition.enName ?? "")));
     derivedDefinitions.forEach((definition) => appendKey(String(definition.enName ?? "")));
-  } else {
-    definitionKeys.forEach(appendKey);
+    return mergedKeys;
   }
+  eKeys.forEach((key) => appendKey(exportKeyToCustomKey.get(key) ?? key));
+  definitionKeys.forEach(appendKey);
   if (eKeys.length > 0) {
     const deviceTypeKey = exportKeyToCustomKey.get("dev_type") ?? "dev_type";
     const existingDeviceTypeIndex = mergedKeys.indexOf(deviceTypeKey);
@@ -108,15 +110,39 @@ export function resolveDeviceModelPanelParameterKeys(
   return mergedKeys;
 }
 
-export function resolveDeviceModelPanelDevType(kind: string, params: Record<string, unknown> = {}): string {
-  const explicitValue = String(params.dev_type ?? "").trim();
-  if (explicitValue) {
-    return explicitValue;
+export function resolveDeviceModelPanelDefinitionGroups(
+  selectedTemplate: DeviceTemplate | undefined,
+  libraryTemplates: readonly DeviceTemplate[] = DEVICE_LIBRARY,
+  customComponentLibraries: readonly CustomComponentLibraryDefinition[] = [],
+  deviceDefinitionOverrides: Readonly<Record<string, DeviceTemplateDefinitionOverride>> = {}
+) {
+  if (!selectedTemplate) {
+    return undefined;
   }
-  const componentLibrary = String(
-    params.component_type ?? params.componentType ?? params.componentLibrary ?? ""
-  ).trim();
-  return componentLibrary || inferESection(kind, params as Record<string, string>) || String(kind ?? "").trim();
+  const derivedInfo = templateDerivedComponentLibraryInfo(selectedTemplate);
+  const className = String(selectedTemplate.componentClass ?? "").trim() ||
+    derivedInfo?.derivedComponentLibrary ||
+    inferESection(selectedTemplate.kind, selectedTemplate.params ?? {}) ||
+    String(selectedTemplate.kind ?? "").trim();
+  const editableClassDefinition = resolveEditableComponentLibraryDefinition({
+    className,
+    categoryLibraryName: selectedTemplate.categoryLibrary,
+    customComponentLibraries,
+    templates: libraryTemplates,
+    overrides: deviceDefinitionOverrides
+  });
+  if (editableClassDefinition) {
+    return {
+      baseDefinitions: editableClassDefinition.effectiveParameterDefinitions,
+      derivedDefinitions: []
+    };
+  }
+  return resolveEffectiveTemplateParameterDefinitionGroups(selectedTemplate, libraryTemplates);
+}
+
+export function resolveDeviceModelPanelDevType(kind: string, params: Record<string, unknown> = {}): string {
+  void params;
+  return String(kind ?? "").trim();
 }
 
 export function resolveContainerParameterViewComponentLibrary(
@@ -3036,10 +3062,12 @@ export function renderAppView(__appScope: Record<string, any>) {
                         const eKeys = getEParameterKeys(inspectorSelectedNode.kind, inspectorSelectedNode.params);
                         const customDefinitions = parseCustomDefinitions(inspectorSelectedNode.params);
                         const selectedTemplate = libraryTemplates.find((template) => template.kind === inspectorSelectedNode.kind);
-                        const selectedDerivedInfo = selectedTemplate ? templateDerivedComponentLibraryInfo(selectedTemplate) : null;
-                        const definitionGroups = selectedTemplate && selectedDerivedInfo
-                          ? resolveEffectiveTemplateParameterDefinitionGroups(selectedTemplate, libraryTemplates)
-                          : undefined;
+                        const definitionGroups = resolveDeviceModelPanelDefinitionGroups(
+                          selectedTemplate,
+                          libraryTemplates,
+                          customComponentLibraries,
+                          deviceDefinitionOverrides
+                        );
                         const panelDefinitions = definitionGroups
                           ? [...definitionGroups.baseDefinitions, ...definitionGroups.derivedDefinitions]
                           : customDefinitions;
