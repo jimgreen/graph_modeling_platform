@@ -256,21 +256,24 @@ describe("graph template library filtering", () => {
     });
   });
 
-  test("preserves and reapplies an edited built-in component label", () => {
+  test("preserves and reapplies edited built-in component Chinese and English names", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-source")!;
     const overrides = normalizeDeviceDefinitionOverrides({
       [template.kind]: {
         kind: template.kind,
-        label: "重命名交流电源"
+        label: "重命名交流电源",
+        englishName: "renamed-ac-source"
       }
     });
 
     expect(overrides[template.kind]).toMatchObject({
       kind: template.kind,
-      label: "重命名交流电源"
+      label: "重命名交流电源",
+      englishName: "renamed-ac-source"
     });
-    expect(applyDeviceTemplateDefinitionOverride(template, overrides[template.kind]).label)
-      .toBe("重命名交流电源");
+    const applied = applyDeviceTemplateDefinitionOverride(template, overrides[template.kind]);
+    expect(applied.label).toBe("重命名交流电源");
+    expect(applied.englishName).toBe("renamed-ac-source");
   });
 
   test("removes unmarked historical empty built-in definition tables", () => {
@@ -928,6 +931,21 @@ describe("graph template library filtering", () => {
     } as any;
 
     expect(libraryTemplateMatchesSearch(template, "交流设备", "ACGenerator", "userwindgen")).toBe(true);
+  });
+
+  test("matches a component by its editable English display name", () => {
+    const template = {
+      kind: "ac-load",
+      englishName: "user-ac-load",
+      label: "用户交流负荷",
+      categoryLibrary: "交流设备",
+      size: { width: 96, height: 64 },
+      params: { component_type: "ACLoad" },
+      terminalType: "ac",
+      terminalCount: 1
+    } as any;
+
+    expect(libraryTemplateMatchesSearch(template, "交流设备", "ACLoad", "user-ac-load")).toBe(true);
   });
 
   test("migrates legacy derived templates without an explicit derived flag into the base component library", () => {
@@ -1698,7 +1716,6 @@ describe("E device interface definition entry", () => {
       onCreateCategoryLibrary: () => undefined,
       onCreateComponentLibrary: () => undefined,
       onCreateComponent: () => undefined,
-      onRenameSelection: () => undefined,
       onDeleteSelection: () => undefined,
       onSearchChange: () => undefined,
       onCollapseChange: () => undefined,
@@ -1732,7 +1749,6 @@ describe("E device interface definition entry", () => {
       onCreateCategoryLibrary: () => undefined,
       onCreateComponentLibrary: () => undefined,
       onCreateComponent: () => undefined,
-      onRenameSelection: () => undefined,
       onDeleteSelection: () => undefined,
       onSearchChange: () => undefined,
       onCollapseChange: () => undefined,
@@ -1786,7 +1802,10 @@ describe("E device interface definition entry", () => {
       section: "ACGenerator",
       templateKind: "ac-source"
     });
+    const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 
+    expect(categoryHtml).not.toContain("重命名");
+    expect(styles).toMatch(/\.custom-component-manager-actions\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/s);
     expect(actionButtonTag(categoryHtml, "在当前类别库下新建基类")).not.toContain("disabled");
     expect(actionButtonTag(categoryHtml, "请先选择一个类再新建元件")).toContain("disabled");
     expect(actionButtonTag(classHtml, "在当前类下新建派生类")).not.toContain("disabled");
@@ -1810,7 +1829,6 @@ describe("E device interface definition entry", () => {
       onCreateCategoryLibrary: () => undefined,
       onCreateComponentLibrary: () => undefined,
       onCreateComponent: () => undefined,
-      onRenameSelection: () => undefined,
       onDeleteSelection: () => undefined,
       onSearchChange: () => undefined,
       onCollapseChange: () => undefined,

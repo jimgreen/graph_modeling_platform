@@ -723,7 +723,7 @@ describe("app view device definition parameter rows", () => {
     const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
     const stylesSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 
-    expect(viewSource).toMatch(/customDeviceDefinitionIconOnly && \(<>[\s\S]*?元件名称[\s\S]*?是否允许变形[\s\S]*?<\/>\)}/);
+    expect(viewSource).toMatch(/customDeviceDefinitionIconOnly && \(<>[\s\S]*?元件中文名称[\s\S]*?componentName[\s\S]*?元件英文名称[\s\S]*?componentKind[\s\S]*?是否允许变形[\s\S]*?<\/>\)}/);
     expect(viewSource).toContain('customDeviceDefinitionIconOnly ? " component-mode" : customComponentTreeSelection?.kind === "componentLibrary" ? " component-library-mode" : ""');
     expect(stylesSource).toMatch(/\.custom-device-form-grid\.component-library-mode\s*\{[^}]*grid-template-columns:/s);
   });

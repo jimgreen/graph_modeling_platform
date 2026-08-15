@@ -7215,8 +7215,12 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
     const derivedComponentLibraryLabel = derivedRequested ? String(classMetadata.label ?? "").trim() : "";
     const derivedFromComponentLibrary = derivedRequested ? baseComponentLibrary : "";
     const componentLibrary = baseComponentLibrary;
-    const componentLabel = customDeviceDraft.componentName.trim() || derivedComponentLibraryLabel || componentLibrary;
+    const componentLabel = customDeviceDraft.componentName.trim();
     const isContainerComponent = classMetadata.isContainer;
+    if (!componentLabel) {
+      setCustomDeviceDraft((current) => ({ ...current, error: "元件中文名称不能为空。" }));
+      return false;
+    }
     if (!baseComponentLibrary) {
       setCustomDeviceDraft((current) => ({ ...current, error: "请选择类。" }));
       return false;
@@ -7243,17 +7247,22 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
         return false;
       }
     }
-    const requestedCustomKind = normalizeComponentLibraryName(String(customDeviceDraft.componentKind ?? ""));
-    if (!editingCustomDeviceKind && requestedCustomKind) {
-      if (!CUSTOM_DEVICE_KIND_NAME_PATTERN.test(requestedCustomKind)) {
-        setCustomDeviceDraft((current) => ({ ...current, error: "元件英文名称只能包含英文字母、数字、下划线和短横线，并且必须以英文字母开头。" }));
-        return false;
-      }
-      const existingKinds = new Set((libraryTemplates ?? customDeviceTemplates).map((template: any) => String(template.kind ?? "").toLowerCase()));
-      if (existingKinds.has(requestedCustomKind.toLowerCase())) {
-        setCustomDeviceDraft((current) => ({ ...current, error: "元件英文名称已存在，无法新增同名元件。" }));
-        return false;
-      }
+    const requestedEnglishName = normalizeComponentLibraryName(String(customDeviceDraft.componentKind ?? ""));
+    if (!requestedEnglishName) {
+      setCustomDeviceDraft((current) => ({ ...current, error: "元件英文名称不能为空。" }));
+      return false;
+    }
+    if (!CUSTOM_DEVICE_KIND_NAME_PATTERN.test(requestedEnglishName)) {
+      setCustomDeviceDraft((current) => ({ ...current, error: "元件英文名称只能包含英文字母、数字、下划线和短横线，并且必须以英文字母开头。" }));
+      return false;
+    }
+    const duplicateEnglishName = (libraryTemplates ?? customDeviceTemplates).some((template: any) => (
+      String(template.kind ?? "") !== editingCustomDeviceKind &&
+      String(template.englishName ?? template.kind ?? "").trim().toLowerCase() === requestedEnglishName.toLowerCase()
+    ));
+    if (duplicateEnglishName) {
+      setCustomDeviceDraft((current) => ({ ...current, error: "元件英文名称已存在，无法保存同名元件。" }));
+      return false;
     }
     const terminalTypes = [...classMetadata.terminalTypes];
     const terminalAssociations = normalizeContainerTerminalAssociations(
@@ -7307,10 +7316,11 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       },
       defaultImageCandidates
     );
-    const customKind = editingCustomDeviceKind || requestedCustomKind || nextCustomTemplateKind(componentLibrary);
+    const customKind = editingCustomDeviceKind || requestedEnglishName || nextCustomTemplateKind(componentLibrary);
     const template: DeviceTemplate = {
       kind: customKind,
       label: componentLabel,
+      englishName: requestedEnglishName,
       componentClass: classMetadata.className,
       categoryLibrary: categoryLibraryName,
       size: customDeviceDraft.size,
@@ -7368,6 +7378,8 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
     setEditingCustomDeviceKind(customKind);
     const cleanDraft = {
       ...customDeviceDraft,
+      componentName: componentLabel,
+      componentKind: requestedEnglishName,
       componentLibrary: baseComponentLibrary,
       isContainer: isContainerComponent,
       allowResizeTransform: customDeviceDraft.allowResizeTransform === "1" ? "1" : "0",
@@ -7419,6 +7431,32 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     }
     if (!isValidComponentLibraryName(componentLibrary)) {
       setCustomDeviceDraft((current) => ({ ...current, error: "类英文名称只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。" }));
+      return false;
+    }
+    const componentLabel = String(customDeviceDraft.componentName ?? "").trim();
+    if (!componentLabel) {
+      setCustomDeviceDraft((current) => ({ ...current, error: "元件中文名称不能为空。" }));
+      return false;
+    }
+    const componentEnglishName = normalizeComponentLibraryName(String(
+      customDeviceDraft.componentKind === undefined
+        ? template.englishName ?? template.kind
+        : customDeviceDraft.componentKind
+    ));
+    if (!componentEnglishName) {
+      setCustomDeviceDraft((current) => ({ ...current, error: "元件英文名称不能为空。" }));
+      return false;
+    }
+    if (!CUSTOM_DEVICE_KIND_NAME_PATTERN.test(componentEnglishName)) {
+      setCustomDeviceDraft((current) => ({ ...current, error: "元件英文名称只能包含英文字母、数字、下划线和短横线，并且必须以英文字母开头。" }));
+      return false;
+    }
+    const duplicateEnglishName = libraryTemplates.some((candidate: DeviceTemplate) => (
+      candidate.kind !== template.kind &&
+      String(candidate.englishName ?? candidate.kind).trim().toLowerCase() === componentEnglishName.toLowerCase()
+    ));
+    if (duplicateEnglishName) {
+      setCustomDeviceDraft((current) => ({ ...current, error: "元件英文名称已存在，无法保存同名元件。" }));
       return false;
     }
     const derivedRequested = Boolean(customDeviceDraft.isDerivedComponentLibrary);
@@ -7582,7 +7620,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
         parameterDefinitions: definitions,
         libraryTemplates
       }),
-      targetLabel: customDeviceDraft.componentName.trim() || template.label
+      targetLabel: componentLabel
     });
     if (measurementProfileMessage) {
       setCustomDeviceDraft((current) => ({ ...current, error: measurementProfileMessage }));
@@ -7606,7 +7644,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       ? draftBackgroundImageAssetId
       : "";
     const defaultImageCandidates = customDeviceGeneratedDefaultImageCandidates(
-      customDeviceDraft.componentName.trim() || template.label,
+      componentLabel,
       customDeviceDraft.componentLibrary,
       terminalTypes
     );
@@ -7660,7 +7698,8 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     const nextTemplateOverride: DeviceTemplateDefinitionOverride = {
       ...existingExactOverride,
       kind: template.kind,
-      label: customDeviceDraft.componentName.trim() || template.label,
+      label: componentLabel,
+      englishName: componentEnglishName,
       params: {
         ...(existingExactOverride?.params ?? {}),
         backgroundImage,
@@ -7724,13 +7763,15 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       canonicalLibraryTemplates
     );
     setDeviceDefinitionOverrides(normalizedDeviceDefinitionOverrides);
-    const savedComponentLabel = customDeviceDraft.componentName.trim() || template.label;
+    const savedComponentLabel = componentLabel;
     persistDeviceLibraryChange({ deviceDefinitionOverrides: normalizedDeviceDefinitionOverrides }, {
       success: `元件定义已保存到后台：${savedComponentLabel}`,
       failure: `元件定义已保存到本地，后台保存失败：${savedComponentLabel}`
     });
     const cleanDraft = {
       ...customDeviceDraft,
+      componentName: componentLabel,
+      componentKind: componentEnglishName,
       isDerivedComponentLibrary: derivedRequested,
       derivedFromComponentLibrary: derivedRequested ? derivedFromComponentLibrary : "",
       derivedComponentLibrary: derivedRequested ? derivedComponentLibrary : "",
@@ -7746,6 +7787,8 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     };
     setCustomDeviceDraft((current) => ({
       ...current,
+      componentName: componentLabel,
+      componentKind: componentEnglishName,
       isDerivedComponentLibrary: derivedRequested,
       derivedFromComponentLibrary: derivedRequested ? derivedFromComponentLibrary : "",
       derivedComponentLibrary: derivedRequested ? derivedComponentLibrary : "",
