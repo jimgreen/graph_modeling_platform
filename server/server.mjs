@@ -1368,7 +1368,7 @@ export function normalizeDeviceLibraryConfig(payload) {
         return fields.length > 0 ? [[key, fields]] : [];
       }))
       : {};
-  // 元件库 → 表号 映射（如 ACGenerator -> "00411"），导出 E 文件时
+  // 类 → 表号映射（如 ACGenerator -> "00411"），导出 E 文件时
   // 按 key_to_long(表号, 0, 行号) 计算 id 字段。必须持久化，否则重启
   // 后加载的实时库模板（ems_rtdb.e 等）导出的 id 仍为原值。
   const eDeviceDefinitionTableIds =

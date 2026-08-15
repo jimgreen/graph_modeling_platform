@@ -2693,7 +2693,7 @@ const ELECTRIC_GENERATION_DEVICE_TEMPLATES = ELECTRIC_GENERATION_FAMILY_SPECS.fl
   ELECTRIC_GENERATION_TERMINAL_TYPES.map((terminalType) => createElectricGenerationDeviceTemplate(terminalType, family))
 );
 
-// 元件库标签映射
+// 类标签映射
 export const ELEMENT_TREE_COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   StaticTextSymbol: "静态文本",
   StaticMediaSymbol: "静态媒体",
@@ -2746,7 +2746,7 @@ export const ELEMENT_TREE_COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   HeatBus: "热母线"
 };
 
-// 派生元件库标签从内置图元定义动态生成
+// 派生类标签从内置图元定义动态生成
 for (const family of ELECTRIC_GENERATION_FAMILY_SPECS) {
   for (const terminalType of ELECTRIC_GENERATION_TERMINAL_TYPES) {
     const info = electricGenerationDerivedInfoForFamily(terminalType, family);

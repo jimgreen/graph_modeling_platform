@@ -4763,7 +4763,7 @@ export function createToggleDefinitionComponentLibrary(__appScope: Record<string
     setCollapsedDefinitionComponentLibraries((current) =>
       current.includes(typeKey) ? current.filter((item) => item !== typeKey) : [...current, typeKey]
     );
-    // 选中元件库节点：右侧显示共有参数表格
+    // 选中类节点：右侧显示共有参数表格
     setDefinitionDraftSection(componentLibrary);
     setSelectedDefinitionKind("");
   };

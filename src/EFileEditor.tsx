@@ -23,7 +23,7 @@ export interface EFileEditorProps {
   onSave?: (records: EDeviceRecord[]) => void;
   /** 字段中文名映射：section 内部名 -> 列名(exportName) -> 中文名（来自模板文件中文注释），供表头 tooltip 展示 */
   fieldCnNames?: Record<string, Record<string, string>>;
-  /** 元件库 -> 表号映射（实时库模板下用于 id 计算） */
+  /** 类 -> 表号映射（实时库模板下用于 id 计算） */
   tableIds?: Record<string, string>;
   /** 是否为 XX 实时库模板（ems_rtdb.e / dms_rtdb.e / taiqu_rtdb.e 等） */
   isRealtimeDbTemplate?: boolean;
@@ -69,7 +69,7 @@ const REFERENCE_FIELD_MAP: Record<string, string> = {
   bulk_id: "dms_def_bulk",
   source_id: "dms_def_source",
   // 配网实时库引用：feeder_id → dms_def_feeder；node_id/inode_id/znode_id → dms_def_node
-  // （dms_def_node 元件库映射为 ACNode，内部 section 为 ACNode）
+  // （dms_def_node 类映射为 ACNode，内部 section 为 ACNode）
   feeder_id: "dms_def_feeder",
   node_id: "ACNode",
   inode_id: "ACNode",
@@ -122,7 +122,7 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
   const [highlightedRow, setHighlightedRow] = useState<string | null>(null);
   const resizeRef = useRef<{ colKey: string; startX: number; startWidth: number } | null>(null);
 
-  // 按 section 分组记录：key=元件库内部名（供跳转/保存映射），label=模板输出表名（供展示）
+  // 按 section 分组记录：key=类内部名（供跳转/保存映射），label=模板输出表名（供展示）
   const sections = useMemo(() => {
     const sectionMap = new Map<string, { key: string; label: string; records: EDeviceRecord[] }>();
     for (const record of editedRecords) {
@@ -210,7 +210,7 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
     const targetSection = REFERENCE_FIELD_MAP[fieldName];
     if (!targetSection) return;
 
-    // 找到目标 section（元件库内部名）的索引
+    // 找到目标 section（类内部名）的索引
     const targetSectionIndex = sections.findIndex((section) => section.key === targetSection);
     if (targetSectionIndex === -1) return;
 

@@ -887,6 +887,7 @@ test("round trips the complete configured field order through an interface defin
     ]
   }]);
 
+  expect(file.text).toContain('类="ACGenerator"');
   const [section] = parseEDeviceDefinitionFile(file.text);
 
   expect(section.kind).toBe("GeneratorTable");
@@ -2324,7 +2325,7 @@ test("exports user-defined English device types as custom E sections", () => {
 
   const exported = parseESections(buildEDeviceParameterFile({
     version: 1,
-    name: "自定义元件库导出测试",
+    name: "自定义类导出测试",
     nodes: [node],
     edges: []
   }));
@@ -2337,7 +2338,7 @@ test("exports user-defined English device types as custom E sections", () => {
     run_stat: "1",
     p_set: "3.5"
   });
-  expect(getEExportWarnings({ version: 1, name: "自定义元件库导出测试", nodes: [node], edges: [] })).toEqual([]);
+  expect(getEExportWarnings({ version: 1, name: "自定义类导出测试", nodes: [node], edges: [] })).toEqual([]);
 });
 
 test("uses associated E section columns for every built-in container-associated device view", () => {

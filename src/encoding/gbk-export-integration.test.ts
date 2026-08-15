@@ -8,6 +8,7 @@ import { encodeGbk, decodeGbk } from "./gbk";
 describe("E 文件 GBK 导出链路", () => {
   it("GBK 字节可被 parseEDeviceDefinitionFile 正确解析（经 GBK 解码）", () => {
     const template = fs.readFileSync(join(process.cwd(), "public/e-templates/ems_rtdb.e"), "utf-8");
+    expect(template).toContain('类="交流断路器"');
     // 模拟导出：UTF-8 文本 -> GBK 字节 -> 再读回 -> 解码 -> 解析
     const gbkBytes = encodeGbk(template);
     const decoded = decodeGbk(gbkBytes);
@@ -19,7 +20,7 @@ describe("E 文件 GBK 导出链路", () => {
   });
 
   it("GBK 编码不丢失模板字段中文名", () => {
-    const sample = `<breaker 中文名="断路器" 类别库="交流设备" 元件库="交流断路器">
+    const sample = `<breaker 中文名="断路器" 类别库="交流设备" 类="交流断路器">
 //  标识  英文标识  中文名称  描述  厂站ID
 @  id    code      name      describeb  st_id
 </breaker>`;

@@ -2707,7 +2707,7 @@ describe("manual bend interaction helpers", () => {
     vi.stubGlobal("showGlobalMessage", vi.fn());
     vi.stubGlobal("showGlobalConfirm", showGlobalConfirm);
     let customComponentLibraries = [
-      { name: "UserLibrary", categoryLibraryName: "用户类别", label: "用户元件库" }
+      { name: "UserLibrary", categoryLibraryName: "用户类别", label: "用户类" }
     ];
     const setCustomComponentLibraries = vi.fn((updater: any) => {
       customComponentLibraries = typeof updater === "function" ? updater(customComponentLibraries) : updater;
@@ -2745,7 +2745,7 @@ describe("manual bend interaction helpers", () => {
     expect(showGlobalConfirm).toHaveBeenCalledWith("确认删除类“UserLibrary”？");
     expect(setCustomComponentLibraries).not.toHaveBeenCalled();
     expect(customComponentLibraries).toEqual([
-      { name: "UserLibrary", categoryLibraryName: "用户类别", label: "用户元件库" }
+      { name: "UserLibrary", categoryLibraryName: "用户类别", label: "用户类" }
     ]);
   });
 
@@ -3477,7 +3477,7 @@ describe("applyEDeviceDefinitionSectionsToLibraryState", () => {
     expect(result.skipped).toEqual([]);
   });
 
-  test("派生元件库模板不污染基类 ACGenerator 的 override（储能属性不进交流电源）", () => {
+  test("派生类模板不污染基类 ACGenerator 的 override（储能属性不进交流电源）", () => {
     const libraryTemplates = DEVICE_LIBRARY.filter((template) =>
       template.kind === "ac-source" || template.kind === "ac-storage"
     );
