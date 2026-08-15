@@ -13,6 +13,7 @@ import {
   type ContainerTerminalAssociationValue,
   type ContainerTerminalRole,
   type DeviceParameterDefinition,
+  type ModelNode,
   type DeviceTemplate,
   type DeviceTemplateDefinitionOverride,
   type TerminalType
@@ -21,9 +22,11 @@ import {
   cloneDeviceMeasurementDefinitions,
   type DeviceMeasurementDefinition
 } from "./measurementDefinitionTypes";
-import type {
-  DeviceMeasurementProfile,
-  PlatformMeasurementConfig
+import {
+  reconcileProjectMeasurementsWithConfig,
+  type DeviceMeasurementProfile,
+  type PlatformMeasurementConfig,
+  type ProjectMeasurementConfig
 } from "./measurements";
 
 const definitionKey = (value: unknown) => String(value ?? "").trim().toLowerCase();
@@ -224,6 +227,19 @@ export function mergeComponentLibraryMeasurementProfiles(
       }))
     ]
   };
+}
+
+export function reconcileProjectMeasurementsForRuntimeConfigChange(options: {
+  measurements: ProjectMeasurementConfig;
+  nodes: readonly ModelNode[];
+  previousConfig: PlatformMeasurementConfig;
+  nextConfig: PlatformMeasurementConfig;
+}): ProjectMeasurementConfig {
+  const { measurements, nodes, previousConfig, nextConfig } = options;
+  if (previousConfig === nextConfig || nodes.length === 0) {
+    return measurements;
+  }
+  return reconcileProjectMeasurementsWithConfig(measurements, nodes, nextConfig, previousConfig);
 }
 
 export function resolveEditableComponentLibraryDefinition(options: {

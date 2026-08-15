@@ -428,6 +428,7 @@ import {
 } from "../measurements";
 import {
   mergeComponentLibraryMeasurementProfiles,
+  reconcileProjectMeasurementsForRuntimeConfigChange,
   resolveComponentLibraryMeasurementProfiles
 } from "../componentLibraryDefinitions";
 import {
@@ -723,6 +724,7 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
     setHoveredGraphTemplateType,
     setLibraryFlyoutPositions,
     setMeasurementEditorColumnWidths,
+    setProjectMeasurements,
     singleNodeDragCache,
     stateIconDrawing,
     staticDrawing,
@@ -1175,6 +1177,22 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
       [componentLibraryMeasurementProfiles, measurementConfig]
     );
   Object.assign(__appScope, { runtimeMeasurementConfig });
+  const previousRuntimeMeasurementConfigRef = useRef(runtimeMeasurementConfig);
+  useEffect(() => {
+      const previousConfig = previousRuntimeMeasurementConfigRef.current;
+      if (previousConfig === runtimeMeasurementConfig || nodes.length === 0) {
+        return;
+      }
+      previousRuntimeMeasurementConfigRef.current = runtimeMeasurementConfig;
+      setProjectMeasurements((current: ProjectMeasurementConfig) =>
+        reconcileProjectMeasurementsForRuntimeConfigChange({
+          measurements: current,
+          nodes,
+          previousConfig,
+          nextConfig: runtimeMeasurementConfig
+        })
+      );
+    }, [nodes, runtimeMeasurementConfig, setProjectMeasurements]);
   const libraryTemplateByKind = useMemo(() => new Map(libraryTemplates.map((template) => [template.kind, template])), [libraryTemplates]); Object.assign(__appScope, { libraryTemplateByKind });
   useEffect(() => {
       if (nodes.length === 0 || libraryTemplateByKind.size === 0) {
