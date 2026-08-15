@@ -1508,7 +1508,7 @@ describe("E device interface definition entry", () => {
     expect(html).toContain('title="在当前类别库下新建类"');
     expect(html).toContain('title="在当前类下新建元件"');
     expect(html).toContain('placeholder="搜索类别库/类/元件"');
-    expect(html).not.toContain("新建元件库");
+    expect(html).not.toContain(`新建${["元件", "库"].join("")}`);
     expect(html).not.toContain("导出E文件定义");
     expect(html).not.toContain("导入E文件定义");
   });

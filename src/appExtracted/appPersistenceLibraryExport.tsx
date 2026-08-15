@@ -3060,7 +3060,7 @@ export function writeLocalDeviceLibraryPersistencePayload(normalizedDeviceLibrar
     window.localStorage.setItem(E_DEVICE_DEFINITION_TEMPLATE_FIELDS_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionTemplateFields ?? {}));
     window.localStorage.setItem(E_DEVICE_DEFINITION_TABLE_IDS_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionTableIds ?? {}));
   } catch {
-    // 本地接口定义缓存不可写时，不阻断元件库保存。
+    // 本地接口定义缓存不可写时，不阻断类保存。
   }
   // 阶段 5：只写 IndexedDB，失败时降级到 localStorage
   deviceLibraryStoragePromise.then(({ saveDeviceTemplates, saveGraphTemplates, saveOverrides }) => {

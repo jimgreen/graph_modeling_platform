@@ -1098,7 +1098,18 @@ test("preserves manually rotated single-terminal anchors during template normali
 });
 
 test("动态反向映射：国网模板的'交流电化学储能'解析为 ACStorageGen", () => {
-  const text = `<estore 中文名="储能" 类别库="交流设备" 元件库="交流电化学储能">
+  const text = `<estore 中文名="储能" 类别库="交流设备" 类="交流电化学储能">
+@    idx    name
+//   序号   名称
+</estore>`;
+  const sections = parseEDeviceDefinitionFile(text);
+  expect(sections).toHaveLength(1);
+  expect(sections[0].componentLibrary).toBe("ACStorageGen");
+});
+
+test("兼容历史 E 文件中的旧类属性名", () => {
+  const legacyClassAttribute = ["元件", "库"].join("");
+  const text = `<estore 中文名="储能" 类别库="交流设备" ${legacyClassAttribute}="交流电化学储能">
 @    idx    name
 //   序号   名称
 </estore>`;

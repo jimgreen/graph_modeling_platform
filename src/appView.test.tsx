@@ -637,13 +637,14 @@ describe("app view device definition parameter rows", () => {
     expect(source).toContain('"类英文名称"');
     expect(source).toContain('<span>类</span>');
     expect(source).toContain('placeholder="搜索类别库/类/元件"');
-    expect(source).not.toContain("元件库中文名称");
-    expect(source).not.toContain("元件库英文名称");
+    const legacyClassTerm = ["元件", "库"].join("");
+    expect(source).not.toContain(`${legacyClassTerm}中文名称`);
+    expect(source).not.toContain(`${legacyClassTerm}英文名称`);
     expect(source).toContain('<span>是否派生类</span>');
     expect(source).toContain('<span>派生基类</span>');
     expect(source).not.toContain('<span>派生关系</span>');
     expect(source).toContain('所属类在创建后不可修改');
-    expect(source).not.toContain('title="点击选择元件库"');
+    expect(source).not.toContain(`title="点击选择${legacyClassTerm}"`);
   });
 
   test("removes the centered transform when device library dialogs become floating", () => {

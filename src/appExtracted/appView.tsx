@@ -140,7 +140,7 @@ export function buildEDeviceInterfaceDefinitionTree(rows: readonly any[] = [], l
     categories.set(key, category);
   }
 
-  // 无模板时回退到原逻辑：用派生元件库作为子项
+  // 无模板时回退到原逻辑：用派生类作为子项
   if (!libraryTemplates || libraryTemplates.length === 0) {
     return Array.from(categories.values()).map((category) => {
       const rowByLibrary = new Map(
@@ -500,7 +500,7 @@ export function renderAppView(__appScope: Record<string, any>) {
       }
     }
   }, [unsavedChangesDialogOpen, undoStack, saveRequired, savedUndoStackLengthRef, setHasUnsavedChanges]);
-  // 选中元件库节点（"元件定义"对话框）时：计算该库共有参数（enName 交集，排除 dev_type）+ E 文件标签 key
+  // 选中类节点（“元件定义”对话框）时：计算该类共有参数（enName 交集，排除 dev_type）+ E 文件标签 key
   const componentLibrarySectionKey = customComponentTreeSelection?.kind === "componentLibrary" ? normalizeComponentLibraryName(customComponentTreeSelection?.section ?? "") : "";
   const componentLibraryTemplates = componentLibrarySectionKey
     ? libraryTemplates.filter((template) => normalizeComponentLibraryName(resolveTemplateComponentLibrary(template)) === componentLibrarySectionKey)
@@ -789,7 +789,7 @@ export function renderAppView(__appScope: Record<string, any>) {
           if (measurementFields.length === 0) {
             continue;
           }
-          // 查找该元件库对应的设备 kind
+          // 查找该类对应的设备 kind
           const template = (libraryTemplates ?? []).find((t) => {
             const derivedInfo = templateDerivedComponentLibraryInfo(t);
             const cl = derivedInfo?.componentLibrary ?? (resolveTemplateComponentLibrary ? resolveTemplateComponentLibrary(t) : inferESection(t.kind, t.params ?? {}));
@@ -1698,7 +1698,7 @@ export function renderAppView(__appScope: Record<string, any>) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [libraryTemplates, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTableIds, eDeviceDefinitionTemplateFields, eDeviceInterfaceLoadedTemplateName]
   );
-  // 元件库 -> 模板输出表名（如 ACGenerator -> unit、ACNode -> node），供 E 文件编辑器按模板规格展示
+  // 类 -> 模板输出表名（如 ACGenerator -> unit、ACNode -> node），供 E 文件编辑器按模板规格展示
   const eFileEditorSectionLabels = useMemo(() => {
     const labelBySection = new Map<string, string>();
     for (const [componentLibrary, label] of Object.entries(eDeviceDefinitionLabels ?? {})) {
@@ -1768,7 +1768,7 @@ export function renderAppView(__appScope: Record<string, any>) {
         const sectionLabel = eFileEditorSectionLabels.get(record.section);
         const next: EDeviceExport & { sectionLabel?: string; readonly?: boolean } = { ...record };
         if (sectionLabel && sectionLabel !== record.section) {
-          // section 保持元件库内部名（供跳转/保存反向映射），sectionLabel 为模板输出表名（供展示）
+          // section 保持类内部名（供跳转/保存反向映射），sectionLabel 为模板输出表名（供展示）
           next.sectionLabel = sectionLabel;
         }
         if (headerSectionSet.has(record.section)) {

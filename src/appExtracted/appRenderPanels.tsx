@@ -58,7 +58,7 @@ export function createRenderLayerManager(__appScope) {
   );
 }
 
-// 元件库定义操作按钮
+// 类定义操作按钮
 export function createRenderLibraryDefinitionActions(__appScope) {
   const { isBrowseMode, openMeasurementConfigDialog, openDeviceDefinitionDialog } = __appScope;
   return () => (

@@ -68,7 +68,7 @@ const appendUniqueFields = (target: any[], source: any[]) => {
   }
 };
 
-// 反向解析元件库名：模板 section 的 componentLibrary 可能是导出标签（如 "estore"），映射为元件库名（如 "ACStorageGen"）
+// 反向解析类名：模板 section 的 componentLibrary 可能是导出标签（如 "estore"），映射为类名（如 "ACStorageGen"）
 const resolveComponentLibrary = (section: any, reverseMap: Map<string, string>, rowsByComponentLibrary: Map<string, any>) => {
   const cl = String(section.componentLibrary ?? "").trim();
   if (rowsByComponentLibrary.has(cl)) return cl;
@@ -646,12 +646,12 @@ const RUNTIME_GENERATED_SECTIONS = new Set([
   "aclineend", "dclineend", "transformerwinding",
   // 配网实时库：线段端点表（dms_def_lnseg_dot）由线段派生，等同主网 aclineend；
   // 单行表（dms_def_area/bulk/feeder/source）由头表逻辑构建，不参与元件匹配但需存储模板字段；
-  // 连接节点表（dms_def_node，元件库=ACNode）由拓扑节点生成，模板字段存 ACNode 名下
+  // 连接节点表（dms_def_node，类=ACNode）由拓扑节点生成，模板字段存 ACNode 名下
   "dms_def_lnseg_dot", "dms_def_area", "dms_def_bulk", "dms_def_feeder", "dms_def_source", "dms_def_node"
 ]);
 // 独立导出表：运行时生成的表中，导出代码按 kind 名查找接口定义（如 aclineend/dclineend），
 // 模板字段需存储在 sectionKind 名下。
-// 非 standalone 的运行时表（如 trans/transformerwinding）是元件库的导出别名，
+// 非 standalone 的运行时表（如 trans/transformerwinding）是类的导出别名，
 // 模板字段存储在 componentLibrary 名下（如 ACTransWinding）。
 const RUNTIME_GENERATED_STANDALONE_SECTIONS = new Set(["aclineend", "dclineend", "dms_def_lnseg_dot"]);
 
@@ -699,7 +699,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
   const nextTemplateFields: Record<string, Array<{ sourceName?: string; exportName: string; cnName: string }>> = {};
   const fieldPatchesByComponentLibrary = new Map<string, Map<string, { exportEnabled: boolean; exportName: string }>>();
 
-  // 从模板角度出发，检查每个模板section是否匹配元件库
+  // 从模板角度出发，检查每个模板 section 是否匹配类
   const matched: Array<{ section: string; fields: string[] }> = [];
   const skipped: Array<{ section: string; reason: string; fields?: string[] }> = [];
   const runtimeGenerated: Array<{ section: string; fields?: string[] }> = [];
@@ -733,7 +733,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     }
   }
 
-  // 构建反向映射：导出标签 → 元件库名（如 "estore" → "ACStorageGen"）
+  // 构建反向映射：导出标签 → 类名（如 "estore" → "ACStorageGen"）
   const reverseLabelToComponentLibrary = new Map<string, string>();
   for (const [componentLibraryKey, label] of Object.entries(eDeviceDefinitionLabels)) {
     if (label && label !== componentLibraryKey) {
@@ -745,7 +745,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
   // 补齐后匹配逻辑可识别（解决首次导入时 UI 已显示字段仍判未匹配）
   // 记录本次根据模板新增的设备字段（用于 UI 标记「（新增）」）
   const newlyAddedDeviceFields = new Set<string>();
-  // 从模板 sections 构建「元件库名 -> 模板字段」映射（含反向映射解析）
+  // 从模板 sections 构建「类名 -> 模板字段」映射（含反向映射解析）
   const sectionFieldsByComponentLibrary = new Map<string, any[]>();
   for (const section of mergedSections) {
     const resolved = resolveComponentLibrary(section, reverseLabelToComponentLibrary, rowsByComponentLibrary);
@@ -795,7 +795,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     const componentLibrary = resolveComponentLibrary(section, reverseLabelToComponentLibrary, rowsByComponentLibrary);
     const sectionKind = section.kind;
 
-    // 运行时生成的表，不参与元件匹配（即使 componentLibrary 对应已有元件库行也跳过）
+    // 运行时生成的表，不参与元件匹配（即使 componentLibrary 对应已有类行也跳过）
     // 包括：basevalue/basevoltage/subcontrolarea/substation（基础表）、trans/transformerwinding（绕组表别名）、
     // aclineend/dclineend（线段端点表，导出时从 ACBranch/DCBranch 派生）
     if (RUNTIME_GENERATED_SECTIONS.has(sectionKind)) {
@@ -803,7 +803,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
       const storageKey = isStandalone ? sectionKind : componentLibrary;
 
       // 非 standalone 的运行时表（如 trans→ACTransWinding, transformerwinding→ACTransWinding）
-      // 设置导出标签映射，使导出时元件库行输出为对应的表名
+      // 设置导出标签映射，使导出时类行输出为对应的表名
       if (!isStandalone && componentLibrary && sectionKind && sectionKind !== componentLibrary) {
         nextLabels[componentLibrary] = sectionKind;
       }
@@ -839,7 +839,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
       continue;
     }
 
-    // 查找对应的元件库行（node 表特殊：合并 ACNode+ACRealBs 两行匹配）
+    // 查找对应的类行（node 表特殊：合并 ACNode+ACRealBs 两行匹配）
     const row = rowsByComponentLibrary.get(componentLibrary);
     const isNodeMergedSection = componentLibrary === "node" || sectionKind === "node";
     const nodeSecondaryRows = isNodeMergedSection && !row
@@ -936,7 +936,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     if (sectionMatchedFields.length > 0) {
       const existingMatched = matched.find((m) => m.section === sectionKind && m.device === matchedDeviceLabel);
       if (existingMatched) {
-        // node 表（sgcc.e 的 <node 元件库="ACNode+交流母线">）解析为 ACNode/ACRealBs 两个 section，
+        // node 表（sgcc.e 的 <node 类="ACNode+交流母线">）解析为 ACNode/ACRealBs 两个 section，
         // 两者匹配到同一设备行且表名均为 node，合并字段避免「已匹配」出现重复行
         const seenTemplates = new Set((existingMatched.fields as any[]).map((f: any) => f.template));
         for (const f of sectionMatchedFields) {
@@ -992,7 +992,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     nextFieldOrder[componentLibrary] = eDeviceInterfaceFieldOrderForRow(row ?? candidateRows[0], section);
   }
 
-  // 确保所有元件库都设置导出标志（即使没有匹配的section）
+  // 确保所有类都设置导出标志（即使没有匹配的 section）
   for (const row of rows) {
     const componentLibrary = row.componentLibrary;
     const section = sectionByComponentLibrary.get(componentLibrary);
@@ -1042,7 +1042,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
   });
   const nextDeviceDefinitionOverrides: Record<string, any> = { ...deviceDefinitionOverrides };
   for (const template of libraryTemplates ?? []) {
-    // 派生元件库模板（风电/光伏/储能等）的 definitionKey 塌缩到基类（如 ACGenerator），
+    // 派生类模板（风电/光伏/储能等）的 definitionKey 塌缩到基类（如 ACGenerator），
     // 写入共享 key 会被后遍历的派生模板覆盖，导致基类（交流电源）经 override 合并派生专属参数
     // （如储能的 storage_technology 出现在交流电源下）。派生模板的参数定义与 E 文件导出均走
     // 统一的有效定义解析器（不依赖此 override），故跳过避免污染基类。
@@ -1086,7 +1086,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
 }
 
 /**
- * 从模板 sections 提取「元件库 -> 表号」映射（如 ACGenerator -> "00411"）。
+ * 从模板 sections 提取「类 -> 表号」映射（如 ACGenerator -> "00411"）。
  * 表号用于导出时按 key_to_long(表号, 0, 行号) 计算 id 字段。
  */
 function eDeviceDefinitionTableIdsFromSections(
@@ -1103,7 +1103,7 @@ function eDeviceDefinitionTableIdsFromSections(
     const resolved = componentLibrary
       ? (reverseLabelToComponentLibrary.get(componentLibrary) ?? componentLibrary)
       : "";
-    // 同一元件库映射多个表段（如 交流线路→acline+aclinesegment）时取首个表段（与 labels 先写一致），
+    // 同一类映射多个表段（如 交流线路→acline+aclinesegment）时取首个表段（与 labels 先写一致），
     // 保证「输出段名」与「表号」对应同一张表（如 ACBranch→acline→00413）
     if (resolved && !tableIds[resolved]) {
       tableIds[resolved] = tableId;

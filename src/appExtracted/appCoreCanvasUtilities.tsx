@@ -2188,7 +2188,7 @@ export const COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   HeatPump: "热泵"
 };
 
-// 派生元件库标签复用 model.ts 动态生成（与内置图元定义一致，不维护两套）
+// 派生类标签复用 model.ts 动态生成（与内置图元定义一致，不维护两套）
 for (const [key, value] of Object.entries(ELEMENT_TREE_COMPONENT_LIBRARY_LABELS)) {
   if (!(key in COMPONENT_LIBRARY_LABELS)) {
     COMPONENT_LIBRARY_LABELS[key] = value;

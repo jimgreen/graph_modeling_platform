@@ -53,7 +53,7 @@ describe("XX实时库模板导出规则", () => {
       expect(idField, `${lib} 有 id 字段`).toBeTruthy();
       expect(idField!.sourceName).toBe("idx");
     }
-    // 导出 interfaceDefinitions：模板映射元件库的 idx 字段保留（sourceName=idx），仅导出名为 id
+    // 导出 interfaceDefinitions：模板映射类的 idx 字段保留（sourceName=idx），仅导出名为 id
     const mappedLibraries = Object.keys(result.eDeviceDefinitionTableIds ?? {});
     const problems: string[] = [];
     for (const lib of mappedLibraries) {

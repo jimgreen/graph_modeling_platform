@@ -718,7 +718,7 @@ export type EFileExportOptions = {
   interfaceDefinitions?: readonly EFileInterfaceSectionDefinition[];
   eDeviceDefinitionLabels?: Record<string, string>;
   eDeviceDefinitionTemplateFields?: Record<string, Array<{ sourceName?: string; exportName: string; cnName: string }>>;
-  /** 元件库 -> 表号（如 ACGenerator -> "00411"），用于导出时计算 id */
+  /** 类 -> 表号（如 ACGenerator -> "00411"），用于导出时计算 id */
   eDeviceDefinitionTableIds?: Record<string, string>;
   /** 当前加载的模板名（如 "台区实时库"、"配网实时库"），用于区分模板类型 */
   templateName?: string;
@@ -1650,7 +1650,7 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
   for (const node of topologyNodes) {
     const originalSection = inferESection(node.kind, node.params);
     // 模板模式下 ACRealBs 合并到 node 表（ACNode+交流母线），realbs=1 标识母线。
-    // 仅当模板确实定义了 node/ACNode 表（如 sgcc.e 的 <node 元件库="ACNode+交流母线">）时才合并；
+    // 仅当模板确实定义了 node/ACNode 表（如 sgcc.e 的 <node 类="ACNode+交流母线">）时才合并；
     // 否则（如 ems_rtdb.e 使用独立的 <busbarsection> 表）保持 ACRealBs，避免记录被过滤。
     const section = (originalSection === "ACRealBs" && hasTemplateConfigValue && interfaceDefinitionBySection.has("ACNode"))
       ? "ACNode"
@@ -2150,7 +2150,7 @@ function buildPowerBaseParameterRecord(project: ProjectFile, schemePath: string[
 function looksLikeDmsRtdbTemplate(options: EFileExportOptions): boolean {
   const labels = options.eDeviceDefinitionLabels ?? {};
   // 配网：ACBreak→dms_def_cb，ACBranch→dms_def_lnseg
-  // 台区：无 ABBreak，但 ACBranch→dms_def_lnseg（元件库"交流线路"→dms_def_lnseg）
+  // 台区：无 ABBreak，但 ACBranch→dms_def_lnseg（类“交流线路”→dms_def_lnseg）
   const hasDmsLnseg = labels["ACBranch"] === "dms_def_lnseg" || labels["交流线路"] === "dms_def_lnseg";
   const hasDmsCb = labels["ACBreak"] === "dms_def_cb" || labels["交流断路器"] === "dms_def_cb";
   return hasDmsLnseg || hasDmsCb;
@@ -2665,7 +2665,7 @@ function formatEDeviceDefinitionSection(section: EDeviceDefinitionSection): stri
   const commentRow = ["//", ...comments.map((cell, index) => eFilePadCell(cell, widths[index]))]
     .join(E_FILE_COLUMN_GAP)
     .trimEnd();
-  const libraryAttr = section.originalComponentLibrary ? ` 元件库="${escapeEDefinitionAttr(section.originalComponentLibrary)}"` : "";
+  const libraryAttr = section.originalComponentLibrary ? ` 类="${escapeEDefinitionAttr(section.originalComponentLibrary)}"` : "";
   const derivedAttr = section.isDerivedComponentLibrary ? ` 是否派生新类="是"` : "";
   const derivedBaseAttr = section.derivedFromComponentLibrary ? ` 派生基类="${escapeEDefinitionAttr(section.derivedFromComponentLibrary)}"` : "";
   const containerAttr = section.isContainerComponentLibrary ? ` 是否容器="是"` : "";
@@ -2684,7 +2684,8 @@ function formatEDeviceDefinitionSection(section: EDeviceDefinitionSection): stri
 }
 
 function matchEDefinitionAttr(attrText: string, key: string): string {
-  const match = attrText.match(new RegExp(`${key}="([^"]*)"`));
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = attrText.match(new RegExp(`(?:^|\\s)${escapedKey}="([^"]*)"`));
   return match ? match[1] : "";
 }
 
@@ -2703,7 +2704,7 @@ export function buildEDeviceDefinitionFile(
   eDeviceDefinitionLabels?: Record<string, string>,
   eDeviceDefinitionClassExportEnabled?: Record<string, boolean>
 ): TextFileExport {
-  // 按元件库（E section）分组：同元件库的所有图元合并为一个 section，字段取勾选导出的并集
+  // 按类（E section）分组：同类的所有图元合并为一个 section，字段取勾选导出的并集
   type EDeviceDefinitionGroup = {
     categoryLibrary: string;
     label: string;
@@ -2986,7 +2987,10 @@ export function parseEDeviceDefinitionFile(text: string): EDeviceDefinitionSecti
         });
       }
     }
-    const componentLibraryAttr = matchEDefinitionAttr(attrText, "元件库");
+    const legacyClassAttributeName = ["元件", "库"].join("");
+    const componentLibraryAttr =
+      matchEDefinitionAttr(attrText, "类")
+      || matchEDefinitionAttr(attrText, legacyClassAttributeName);
     const derivedAttr = matchEDefinitionAttr(attrText, "是否派生新类");
     const containerAttr = matchEDefinitionAttr(attrText, "是否容器");
     const exportEnabledAttr = matchEDefinitionAttr(attrText, "是否导出");
@@ -2997,7 +3001,7 @@ export function parseEDeviceDefinitionFile(text: string): EDeviceDefinitionSecti
       : [componentLibraryAttr];
 
     for (const part of componentLibraryParts) {
-      // 如果元件库是中文名，反向映射为英文元件库名
+      // 如果类是中文名，反向映射为英文类名
       const resolvedComponentLibrary = part ? (COMPONENT_LIBRARY_REVERSE_MAPPING[part] ?? part) : kind;
       const normalizedFields = fields.map((field) => ({
         ...field,
