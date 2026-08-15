@@ -6,6 +6,7 @@ import {
   inspectorTabShowsDevicePanel,
   customDeviceDefinitionUsesIconOnly,
   resolveContainerParameterViewComponentLibrary,
+  resolveDeviceModelPanelDefinitionGroups,
   resolveDeviceModelPanelDevType,
   resolveDeviceDefinitionParameterRowsForDisplay,
   resolveDeviceModelPanelParameterKeys,
@@ -17,10 +18,16 @@ import {
 } from "./appExtracted/appView";
 import { paramOptionsForSection } from "./appExtracted/appCoreCanvasUtilities";
 import {
+  componentLibraryDefinitionOverrideKey,
+  resolveEditableComponentLibraryDefinition
+} from "./componentLibraryDefinitions";
+import {
   DEVICE_LIBRARY,
   createDefaultNode,
   getEParameterKeys,
   getTemplateParameterDefinitions,
+  templateDerivedComponentLibraryInfo,
+  type DeviceTemplateDefinitionOverride,
   type Topology
 } from "./model";
 
@@ -86,10 +93,10 @@ describe("app view device model parameter keys", () => {
     ]);
   });
 
-  test("uses the explicit dev_type first and otherwise falls back to the effective device class", () => {
-    expect(resolveDeviceModelPanelDevType("ac-source", { dev_type: "aa" })).toBe("aa");
-    expect(resolveDeviceModelPanelDevType("ac-source", {})).toBe("ACGenerator");
-    expect(resolveDeviceModelPanelDevType("custom-source", { component_type: "CustomGenerator" })).toBe("CustomGenerator");
+  test("always uses the concrete component kind for dev_type", () => {
+    expect(resolveDeviceModelPanelDevType("ac-wind-source", { dev_type: "ACGenerator" })).toBe("ac-wind-source");
+    expect(resolveDeviceModelPanelDevType("ac-source", { dev_type: "aa" })).toBe("ac-source");
+    expect(resolveDeviceModelPanelDevType("custom-source", { component_type: "CustomGenerator" })).toBe("custom-source");
   });
 
   test("shows base class E fields together with derived-specific fields", () => {
@@ -115,61 +122,94 @@ describe("app view device model parameter keys", () => {
     ]);
   });
 
-  test("shows every base-class field before derived fields and ignores stale stored definitions", () => {
+  test("uses exactly the same 28 effective ACGenerator definitions as the class editor", () => {
     const baseTemplate = DEVICE_LIBRARY.find((template) => template.kind === "ac-source")!;
+    const baseNode = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const builtInClassDefinition = resolveEditableComponentLibraryDefinition({
+      className: "ACGenerator",
+      categoryLibraryName: "交流设备",
+      templates: DEVICE_LIBRARY,
+      overrides: {}
+    })!;
+    const classOverrideKey = componentLibraryDefinitionOverrideKey("ACGenerator");
+    const deviceDefinitionOverrides: Record<string, DeviceTemplateDefinitionOverride> = {
+      [classOverrideKey]: {
+        kind: classOverrideKey,
+        parameterDefinitions: [
+          ...builtInClassDefinition.parameterDefinitions,
+          { cnName: "测试2", enName: "test2", valueType: "string", typicalValue: "aaa", readonly: false }
+        ]
+      }
+    };
+    const expectedClassDefinition = resolveEditableComponentLibraryDefinition({
+      className: "ACGenerator",
+      categoryLibraryName: "交流设备",
+      templates: DEVICE_LIBRARY,
+      overrides: deviceDefinitionOverrides
+    })!;
+    const staleStoredDefinitions = getTemplateParameterDefinitions(baseTemplate).filter((definition) => [
+      "idx",
+      "name",
+      "node",
+      "control_type",
+      "p_set"
+    ].includes(definition.enName));
+    const definitionGroups = resolveDeviceModelPanelDefinitionGroups(
+      baseTemplate,
+      DEVICE_LIBRARY,
+      [],
+      deviceDefinitionOverrides
+    )!;
+    const panelDefinitions = [
+      ...definitionGroups.baseDefinitions,
+      ...definitionGroups.derivedDefinitions
+    ];
+
+    const keys = resolveDeviceModelPanelParameterKeys(
+      getEParameterKeys(baseNode.kind, baseNode.params),
+      staleStoredDefinitions,
+      Object.keys(baseNode.params),
+      definitionGroups
+    );
+
+    expect(panelDefinitions.map((definition) => definition.enName)).toEqual(
+      expectedClassDefinition.effectiveParameterDefinitions.map((definition) => definition.enName)
+    );
+    expect(keys).toEqual(expectedClassDefinition.effectiveParameterDefinitions.map((definition) => definition.enName));
+    expect(keys).toHaveLength(28);
+    expect(keys).toContain("status");
+    expect(keys).toContain("test2");
+    expect(panelDefinitions.find((definition) => definition.enName === "test2")?.typicalValue).toBe("aaa");
+  });
+
+  test("shows every base-class field before derived fields and ignores stale stored definitions", () => {
     const derivedTemplate = DEVICE_LIBRARY.find((template) => template.kind === "ac-hydro-source")!;
     const derivedNode = createDefaultNode("ac-hydro-source", { x: 100, y: 100 });
     const staleStoredDefinitions = [
       ...getTemplateParameterDefinitions(derivedTemplate),
       { cnName: "水轮机台数", enName: "turbine_count", valueType: "integer", typicalValue: "1" }
     ];
+    const derivedClassName = templateDerivedComponentLibraryInfo(derivedTemplate)!.derivedComponentLibrary;
+    const expectedClassDefinition = resolveEditableComponentLibraryDefinition({
+      className: derivedClassName,
+      categoryLibraryName: derivedTemplate.categoryLibrary,
+      templates: DEVICE_LIBRARY,
+      overrides: {}
+    })!;
+    const definitionGroups = resolveDeviceModelPanelDefinitionGroups(derivedTemplate, DEVICE_LIBRARY)!;
 
     const keys = resolveDeviceModelPanelParameterKeys(
       getEParameterKeys(derivedNode.kind, derivedNode.params),
       staleStoredDefinitions,
       Object.keys(derivedNode.params),
-      {
-        baseDefinitions: getTemplateParameterDefinitions(baseTemplate),
-        derivedDefinitions: getTemplateParameterDefinitions(derivedTemplate)
-      }
+      definitionGroups
     );
 
-    expect(keys).toEqual([
-      "idx",
-      "name",
-      "dev_type",
-      "node",
-      "rated_capacity",
-      "rated_voltage",
-      "control_type",
-      "p_set",
-      "p_max",
-      "p_min",
-      "q_set",
-      "q_max",
-      "q_min",
-      "v_set",
-      "v_max",
-      "v_min",
-      "alpha",
-      "regable",
-      "run_stat",
-      "p",
-      "q",
-      "u",
-      "f",
-      "rdf_id",
-      "frequency",
-      "short_circuit_capacity",
-      "status",
-      "source_type",
-      "hydro_unit_model",
-      "turbine_type",
-      "design_head",
-      "design_flow",
-      "rated_speed",
-      "generator_efficiency"
-    ]);
+    const expectedKeys = expectedClassDefinition.effectiveParameterDefinitions.map((definition) => definition.enName);
+    expect(keys).toEqual(expectedKeys);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys).not.toContain("turbine_count");
+    expect(keys.indexOf("run_stat")).toBeLessThan(keys.indexOf("hydro_unit_model"));
   });
 });
 
