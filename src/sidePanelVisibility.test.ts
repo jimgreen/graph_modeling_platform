@@ -1,9 +1,11 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
+  createHandleSidePanelPointerLeave,
   createHideAutoPanelsFromWorkspace,
   createUpdateAutoPanelVisibility
 } from "./appExtracted/appCanvasInteractionFactories";
 import {
+  isPointerInsideSidePanelViewportEdgeBridge,
   isSidePanelVisible,
   nextSidePanelAutoVisible,
   normalizeSidePanelMode,
@@ -56,6 +58,51 @@ describe("floating side panel visibility", () => {
     expect(shouldIgnoreWorkspaceAutoHide(true, true)).toBe(true);
     expect(shouldIgnoreWorkspaceAutoHide(false, false, true)).toBe(true);
     expect(shouldIgnoreWorkspaceAutoHide(false, false)).toBe(false);
+  });
+
+  test("viewport-edge bridge covers only the floating panel's outer gap", () => {
+    const panelRect = { top: 70, bottom: 700 };
+
+    expect(isPointerInsideSidePanelViewportEdgeBridge("left", 0, 300, panelRect, 1000)).toBe(true);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("left", 13, 300, panelRect, 1000)).toBe(true);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("left", 14, 300, panelRect, 1000)).toBe(false);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 987, 300, panelRect, 1000)).toBe(true);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("right", 986, 300, panelRect, 1000)).toBe(false);
+    expect(isPointerInsideSidePanelViewportEdgeBridge("left", 6, 68, panelRect, 1000)).toBe(false);
+  });
+
+  test("panel leave does not close an auto panel while the pointer crosses its viewport-edge gap", () => {
+    const visibilityEvents: string[] = [];
+    const currentTarget = {
+      contains: () => false,
+      getBoundingClientRect: () => ({ left: -300, right: -12, top: 70, bottom: 700 })
+    };
+    const handleSidePanelPointerLeave = createHandleSidePanelPointerLeave({
+      isPointerInsideSidePanelViewportEdgeBridge,
+      pointerInsideElementRect: () => false,
+      updateAutoPanelVisibility: (_side: string, event: string) => visibilityEvents.push(event)
+    });
+    vi.stubGlobal("Node", class TestNode {});
+    vi.stubGlobal("window", { innerWidth: 1000 });
+    try {
+      handleSidePanelPointerLeave("left", {
+        clientX: 6,
+        clientY: 300,
+        currentTarget,
+        relatedTarget: null
+      } as any);
+      expect(visibilityEvents).toEqual([]);
+
+      handleSidePanelPointerLeave("left", {
+        clientX: 20,
+        clientY: 300,
+        currentTarget,
+        relatedTarget: null
+      } as any);
+      expect(visibilityEvents).toEqual(["panel-leave"]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   test("left auto panel stays visible while a template context menu is open", () => {

@@ -3136,11 +3136,20 @@ export function createOpenMeasurementEditorForNode(__appScope: Record<string, an
 
 export function createHandleSidePanelPointerLeave(__appScope: Record<string, any>) {
   return (side: SidePanelSide, event: PointerEvent<HTMLElement>) => {
-  const { pointerInsideElementRect, updateAutoPanelVisibility } = __appScope;
+  const { isPointerInsideSidePanelViewportEdgeBridge, pointerInsideElementRect, updateAutoPanelVisibility } = __appScope;
     if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) {
       return;
     }
     if (pointerInsideElementRect(event, event.currentTarget, 1)) {
+      return;
+    }
+    if (isPointerInsideSidePanelViewportEdgeBridge(
+      side,
+      event.clientX,
+      event.clientY,
+      event.currentTarget.getBoundingClientRect(),
+      window.innerWidth
+    )) {
       return;
     }
     updateAutoPanelVisibility(side, "panel-leave");
