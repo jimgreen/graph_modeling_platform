@@ -6438,22 +6438,18 @@ export function createSelectCustomComponentTemplate(__appScope: Record<string, a
 
 export function createStartCustomComponentCreate(__appScope: Record<string, any>) {
   return () => {
-  const { customComponentTreeSelection, defaultComponentLibraryForCategoryLibrary, libraryTemplateByKind, nextCustomTemplateKind, normalizeCategoryLibraryName, normalizeComponentLibraryName = (value: unknown) => String(value ?? "").trim(), requireEditMode, setCustomLibraryCreateDialog } = __appScope;
+  const { customComponentTreeSelection, nextCustomTemplateKind, normalizeCategoryLibraryName, normalizeComponentLibraryName = (value: unknown) => String(value ?? "").trim(), requireEditMode, setCustomLibraryCreateDialog } = __appScope;
     if (!requireEditMode("新建元件")) {
       return;
     }
+    if (customComponentTreeSelection?.kind !== "componentLibrary") {
+      return;
+    }
     const categoryLibraryName = normalizeCategoryLibraryName(customComponentTreeSelection.categoryLibraryName);
-    const section =
-      customComponentTreeSelection.kind === "componentLibrary" || customComponentTreeSelection.kind === "component"
-        ? customComponentTreeSelection.section
-        : defaultComponentLibraryForCategoryLibrary(categoryLibraryName);
-    const baseComponentLibrary = normalizeComponentLibraryName(section);
-    const selectedTemplate = customComponentTreeSelection.kind === "component"
-      ? libraryTemplateByKind?.get(customComponentTreeSelection.templateKind)
-      : undefined;
-    const selectedClassName = normalizeComponentLibraryName(
-      (selectedTemplate ? templateDerivedComponentLibraryInfo(selectedTemplate)?.derivedComponentLibrary : "") || baseComponentLibrary
-    );
+    const selectedClassName = normalizeComponentLibraryName(customComponentTreeSelection.section);
+    if (!categoryLibraryName || !selectedClassName) {
+      return;
+    }
     const classMetadataPatch = componentLibraryMetadataDraftPatch(
       __appScope,
       selectedClassName,
@@ -6463,10 +6459,12 @@ export function createStartCustomComponentCreate(__appScope: Record<string, any>
       kind: "component",
       title: "新建元件",
       cnName: "",
-      enName: nextCustomTemplateKind(selectedClassName || baseComponentLibrary),
+      enName: nextCustomTemplateKind(selectedClassName),
       categoryLibraryName,
       componentClassName: selectedClassName,
-      componentLibrary: classMetadataPatch?.componentLibrary || baseComponentLibrary,
+      lockedComponentClassName: selectedClassName,
+      componentClassLocked: true,
+      componentLibrary: classMetadataPatch?.componentLibrary || selectedClassName,
       allowResizeTransform: "0",
       isDerivedComponentLibrary: Boolean(classMetadataPatch?.isDerivedComponentLibrary),
       derivedFromComponentLibrary: classMetadataPatch?.derivedFromComponentLibrary || "",
@@ -6567,8 +6565,21 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
       if (existingTypes.has(englishName.toLowerCase())) {
         return setDialogError("类已存在，无法新增同名类。");
       }
-      const derivedRequested = Boolean(dialog.isDerivedComponentLibrary);
-      const derivedFromComponentLibrary = normalizeComponentLibraryName(dialog.derivedFromComponentLibrary ?? "");
+      const classCreationMode = dialog.classCreationMode === "base" || dialog.classCreationMode === "derived"
+        ? dialog.classCreationMode
+        : "";
+      const derivedRequested = classCreationMode === "derived"
+        ? true
+        : classCreationMode === "base"
+          ? false
+          : Boolean(dialog.isDerivedComponentLibrary);
+      const derivedFromComponentLibrary = derivedRequested
+        ? normalizeComponentLibraryName(
+            classCreationMode === "derived"
+              ? dialog.lockedBaseComponentLibrary || dialog.derivedFromComponentLibrary || ""
+              : dialog.derivedFromComponentLibrary ?? ""
+          )
+        : "";
       if (derivedRequested && !derivedFromComponentLibrary) {
         return setDialogError("请选择派生基类。");
       }
@@ -6723,7 +6734,10 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
 
     const categoryLibraryName = normalizeCategoryLibraryName(dialog.categoryLibraryName || customDeviceDraft.categoryLibraryName);
     const selectedClassName = normalizeComponentLibraryName(
-      dialog.componentClassName || dialog.componentLibrary || defaultComponentLibraryForCategoryLibrary(categoryLibraryName)
+      (dialog.componentClassLocked ? dialog.lockedComponentClassName : dialog.componentClassName) ||
+      dialog.componentClassName ||
+      dialog.componentLibrary ||
+      defaultComponentLibraryForCategoryLibrary(categoryLibraryName)
     );
     const libraryDraftPatch = customDeviceDraftPatchForComponentLibrarySelection(
       __appScope,
@@ -6912,11 +6926,21 @@ export function createNextCustomComponentLibraryName(__appScope: Record<string, 
 
 export function createCreateCustomComponentLibrary(__appScope: Record<string, any>) {
   return () => {
-  const { customDeviceDraft, nextCustomComponentLibraryName, normalizeCategoryLibraryName, requireEditMode, setCustomLibraryCreateDialog } = __appScope;
+  const { customComponentTreeSelection, nextCustomComponentLibraryName, normalizeCategoryLibraryName, normalizeComponentLibraryName = (value: unknown) => String(value ?? "").trim(), requireEditMode, setCustomLibraryCreateDialog } = __appScope;
     if (!requireEditMode("新建类")) {
       return;
     }
-    const categoryLibraryName = normalizeCategoryLibraryName(customDeviceDraft.categoryLibraryName);
+    if (customComponentTreeSelection?.kind !== "categoryLibrary" && customComponentTreeSelection?.kind !== "componentLibrary") {
+      return;
+    }
+    const categoryLibraryName = normalizeCategoryLibraryName(customComponentTreeSelection.categoryLibraryName);
+    const baseComponentLibrary = customComponentTreeSelection.kind === "componentLibrary"
+      ? normalizeComponentLibraryName(customComponentTreeSelection.section)
+      : "";
+    if (!categoryLibraryName || (customComponentTreeSelection.kind === "componentLibrary" && !baseComponentLibrary)) {
+      return;
+    }
+    const classCreationMode = customComponentTreeSelection.kind === "componentLibrary" ? "derived" : "base";
     const terminalType = defaultTerminalTypeForCategoryLibrary(categoryLibraryName);
     setCustomLibraryCreateDialog({
       kind: "componentLibrary",
@@ -6925,8 +6949,10 @@ export function createCreateCustomComponentLibrary(__appScope: Record<string, an
       enName: nextCustomComponentLibraryName(),
       categoryLibraryName,
       componentLibrary: "",
-      isDerivedComponentLibrary: false,
-      derivedFromComponentLibrary: "",
+      classCreationMode,
+      lockedBaseComponentLibrary: baseComponentLibrary,
+      isDerivedComponentLibrary: classCreationMode === "derived",
+      derivedFromComponentLibrary: baseComponentLibrary,
       isContainer: false,
       terminalCount: 2,
       terminalTypes: Array.from({ length: COMPONENT_LIBRARY_MAX_TERMINALS }, () => terminalType),

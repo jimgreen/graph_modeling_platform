@@ -4435,7 +4435,7 @@ export function renderAppView(__appScope: Record<string, any>) {
               {customLibraryCreateDialog.kind === "componentLibrary" && (<>
                 <label>
                   <span>是否派生类</span>
-                  <select value={customLibraryCreateDialog.isDerivedComponentLibrary ? "1" : "0"} onChange={(event) => {
+                  <select disabled={Boolean(customLibraryCreateDialog.classCreationMode)} value={customLibraryCreateDialog.isDerivedComponentLibrary ? "1" : "0"} onChange={(event) => {
                     const enabled = event.target.value === "1";
                     const fallbackBase = customLibraryCreateDialogBaseComponentLibraryOptions[0] ?? "";
                     setCustomLibraryCreateDialog((current) => current ? {
@@ -4455,6 +4455,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                   <span>派生基类</span>
                   <input
                     type="search"
+                    disabled={Boolean(customLibraryCreateDialog.classCreationMode)}
                     value={customLibraryCreateDialog.baseComponentLibrarySearch ?? ""}
                     placeholder="输入中文名或英文名过滤"
                     onChange={(event) => setCustomLibraryCreateDialog((current) => current ? {
@@ -4463,7 +4464,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                       error: ""
                     } : current)}
                   />
-                  <select value={customLibraryCreateDialog.derivedFromComponentLibrary ?? ""} onChange={(event) => setCustomLibraryCreateDialog((current) => current ? {
+                  <select disabled={Boolean(customLibraryCreateDialog.classCreationMode)} value={customLibraryCreateDialog.derivedFromComponentLibrary ?? ""} onChange={(event) => setCustomLibraryCreateDialog((current) => current ? {
                     ...current,
                     derivedFromComponentLibrary: event.target.value,
                     error: ""
@@ -4541,7 +4542,7 @@ export function renderAppView(__appScope: Record<string, any>) {
               {customLibraryCreateDialog.kind === "component" && (<>
                 <label className="custom-library-create-class-field">
                   <span>所属类</span>
-                  <select value={customLibraryCreateDialogSelectedClassName} onChange={(event) => {
+                  <select disabled={customLibraryCreateDialog.componentClassLocked} value={customLibraryCreateDialogSelectedClassName} onChange={(event) => {
                     const metadata = resolveComponentLibraryClassMetadata(
                       event.target.value,
                       customLibraryCreateDialogCategoryLibraryName,

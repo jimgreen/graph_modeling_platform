@@ -14,6 +14,7 @@ import {
   createApplyIconLibraryCatalogIcon,
   createApplyStateIconDrawingDialog,
   createConfirmCustomLibraryCreateDialog,
+  createCreateCustomComponentLibrary,
   createDeleteCustomCategoryLibrary,
   createDeleteCustomComponentLibrary,
   createRenameSelectedCustomDeviceTreeItem,
@@ -2536,8 +2537,80 @@ describe("manual bend interaction helpers", () => {
       isDerivedComponentLibrary: false,
       derivedFromComponentLibrary: "",
       derivedComponentLibrary: "",
-      derivedComponentLibraryLabel: ""
+      derivedComponentLibraryLabel: "",
+      componentClassLocked: true
     });
+  });
+
+  test("opens new components only from an explicitly selected class", () => {
+    for (const customComponentTreeSelection of [
+      { kind: "categoryLibrary", categoryLibraryName: "交流设备" },
+      {
+        kind: "component",
+        categoryLibraryName: "交流设备",
+        section: "ACGenerator",
+        templateKind: "ac-source"
+      }
+    ]) {
+      const setCustomLibraryCreateDialog = vi.fn();
+      createStartCustomComponentCreate({
+        customComponentTreeSelection,
+        defaultComponentLibraryForCategoryLibrary: () => "ACGenerator",
+        libraryTemplateByKind: new Map(),
+        nextCustomTemplateKind: (section: string) => `custom-${section}`,
+        normalizeCategoryLibraryName: (name: string) => name.trim(),
+        normalizeComponentLibraryName: (name: string) => name.trim(),
+        requireEditMode: () => true,
+        setCustomLibraryCreateDialog
+      })();
+
+      expect(setCustomLibraryCreateDialog).not.toHaveBeenCalled();
+    }
+  });
+
+  test("binds new class inheritance to the selected tree level", () => {
+    const openDialog = (customComponentTreeSelection: any) => {
+      const setCustomLibraryCreateDialog = vi.fn();
+      createCreateCustomComponentLibrary({
+        customComponentTreeSelection,
+        customDeviceDraft: { categoryLibraryName: "过期类别" },
+        nextCustomComponentLibraryName: () => "CustomDevice99",
+        normalizeCategoryLibraryName: (name: string) => name.trim(),
+        normalizeComponentLibraryName: (name: string) => name.trim(),
+        requireEditMode: () => true,
+        setCustomLibraryCreateDialog
+      })();
+      return setCustomLibraryCreateDialog;
+    };
+
+    expect(openDialog({
+      kind: "categoryLibrary",
+      categoryLibraryName: "交流设备"
+    })).toHaveBeenCalledWith(expect.objectContaining({
+      categoryLibraryName: "交流设备",
+      classCreationMode: "base",
+      isDerivedComponentLibrary: false,
+      derivedFromComponentLibrary: ""
+    }));
+
+    expect(openDialog({
+      kind: "componentLibrary",
+      categoryLibraryName: "交流设备",
+      section: "ACGenerator"
+    })).toHaveBeenCalledWith(expect.objectContaining({
+      categoryLibraryName: "交流设备",
+      classCreationMode: "derived",
+      isDerivedComponentLibrary: true,
+      derivedFromComponentLibrary: "ACGenerator",
+      lockedBaseComponentLibrary: "ACGenerator"
+    }));
+
+    expect(openDialog({
+      kind: "component",
+      categoryLibraryName: "交流设备",
+      section: "ACGenerator",
+      templateKind: "ac-source"
+    })).not.toHaveBeenCalled();
   });
 
   test("routes a selected component library to class-definition save instead of a stale component", () => {

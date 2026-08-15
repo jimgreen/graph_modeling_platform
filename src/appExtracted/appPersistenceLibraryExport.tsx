@@ -3976,6 +3976,16 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
   }, [onSelectComponent]);
 
   const searchNeedle = normalizeLibrarySearchText(searchQuery);
+  const canCreateComponentLibrary = selection.kind === "categoryLibrary" || selection.kind === "componentLibrary";
+  const canCreateComponent = selection.kind === "componentLibrary";
+  const createComponentLibraryTitle = selection.kind === "categoryLibrary"
+    ? "在当前类别库下新建基类"
+    : selection.kind === "componentLibrary"
+      ? "在当前类下新建派生类"
+      : "请先选择类别或类再新建类";
+  const createComponentTitle = canCreateComponent
+    ? "在当前类下新建元件"
+    : "请先选择一个类再新建元件";
   const treeLibraries = useMemo(() => {
     if (!searchNeedle) {
       return libraries;
@@ -4097,11 +4107,22 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
           <Plus size={12} aria-hidden="true" />
           <span>新建类别</span>
         </button>
-        <button type="button" onClick={onCreateComponentLibrary} title="在当前类别库下新建类">
+        <button
+          type="button"
+          onClick={onCreateComponentLibrary}
+          disabled={!canCreateComponentLibrary}
+          title={createComponentLibraryTitle}
+        >
           <Plus size={12} aria-hidden="true" />
           <span>新建类</span>
         </button>
-        <button type="button" className="custom-component-manager-primary-action" onClick={onCreateComponent} title="在当前类下新建元件">
+        <button
+          type="button"
+          className="custom-component-manager-primary-action"
+          onClick={onCreateComponent}
+          disabled={!canCreateComponent}
+          title={createComponentTitle}
+        >
           <Plus size={13} aria-hidden="true" />
           <span>新建元件</span>
         </button>
