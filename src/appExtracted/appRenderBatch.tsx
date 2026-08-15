@@ -402,6 +402,7 @@ import {
   type CanvasViewBox,
 } from "../canvasViewport";
 import {
+  isPointerInsideSidePanelViewportEdgeBridge,
   isSidePanelVisible,
   nextSidePanelAutoVisible,
   normalizeSidePanelMode,
@@ -2295,9 +2296,29 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   Object.assign(__appScope, { pointerRelatedTargetInside });
   const pointerClientTargetInside = createPointerClientTargetInside(__appScope); Object.assign(__appScope, { pointerClientTargetInside });
   const pointerInsideElementRect = createPointerInsideElementRect(__appScope); Object.assign(__appScope, { pointerInsideElementRect });
-  const pointerInsideFloatingPanelBounds = (event: PointerEvent<HTMLElement>) =>
-      pointerInsideElementRect(event, leftPanelRef.current, 1) ||
-      pointerInsideElementRect(event, rightPanelRef.current, 1);
+  const pointerInsideFloatingPanelBounds = (event: PointerEvent<HTMLElement>) => {
+    const { leftPanelVisible, rightPanelVisible } = __appScope;
+    return (leftPanelVisible && (
+        pointerInsideElementRect(event, leftPanelRef.current, 1) ||
+        (leftPanelRef.current && isPointerInsideSidePanelViewportEdgeBridge(
+          "left",
+          event.clientX,
+          event.clientY,
+          leftPanelRef.current.getBoundingClientRect(),
+          window.innerWidth
+        ))
+      )) ||
+      (rightPanelVisible && (
+        pointerInsideElementRect(event, rightPanelRef.current, 1) ||
+        (rightPanelRef.current && isPointerInsideSidePanelViewportEdgeBridge(
+          "right",
+          event.clientX,
+          event.clientY,
+          rightPanelRef.current.getBoundingClientRect(),
+          window.innerWidth
+        ))
+      ));
+  };
   Object.assign(__appScope, { pointerInsideFloatingPanelBounds });
   const updateAutoPanelVisibility = createUpdateAutoPanelVisibility(__appScope); Object.assign(__appScope, { updateAutoPanelVisibility });
   const activateInspectorFromCanvas = createActivateInspectorFromCanvas(__appScope); Object.assign(__appScope, { activateInspectorFromCanvas });
