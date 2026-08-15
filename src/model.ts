@@ -7499,13 +7499,44 @@ export function applyDeviceTemplateDefinitionOverride(
         !retiredElectricGenerationParameterNames.has(definition.enName)
       ))
     : normalizedOverrideParameterDefinitions;
-  const parameterDefinitions = explicitlyDeletesAllParameterDefinitions
+  const overriddenParameterDefinitions = explicitlyDeletesAllParameterDefinitions
     ? []
     : hasParameterDefinitionsOverride
     ? (isElectricGenerationBase || electricGenerationDerivedInfo || isCanonicalHydrogenEndpoint
         ? mergeCanonicalParameterDefinitions(template.parameterDefinitions ?? [], canonicalOverrideParameterDefinitions)
         : canonicalOverrideParameterDefinitions)
     : template.parameterDefinitions?.map((definition) => ({ ...definition }));
+  const section = inferESection(template.kind, template.params);
+  const eParameterKeys = getEParameterKeys(template.kind, template.params);
+  const fixedEParameterNames = new Set(eParameterKeys.length > 0 ? [...eParameterKeys, "dev_type"] : []);
+  const existingParameterNames = new Set(
+    (overriddenParameterDefinitions ?? []).map((definition) => definition.enName)
+  );
+  const existingLegacyColumns = new Set(
+    (overriddenParameterDefinitions ?? [])
+      .map((definition) => section ? legacyEColumnForDefinition(section, definition.enName) : "")
+      .filter(Boolean)
+  );
+  const restoredFixedEParameterDefinitions = hasParameterDefinitionsOverride &&
+    !explicitlyDeletesAllParameterDefinitions &&
+    fixedEParameterNames.size > 0
+    ? getTemplateParameterDefinitions(template).filter((definition) => (
+        fixedEParameterNames.has(definition.enName) &&
+        !existingParameterNames.has(definition.enName) &&
+        !existingLegacyColumns.has(definition.enName)
+      ))
+    : [];
+  const parameterDefinitions = restoredFixedEParameterDefinitions.length > 0
+    ? [...(overriddenParameterDefinitions ?? []), ...restoredFixedEParameterDefinitions.map((definition) => ({ ...definition }))]
+    : overriddenParameterDefinitions;
+  if (restoredFixedEParameterDefinitions.some((definition) => definition.enName === "dev_type")) {
+    const devTypeIndex = parameterDefinitions?.findIndex((definition) => definition.enName === "dev_type") ?? -1;
+    const nameIndex = parameterDefinitions?.findIndex((definition) => definition.enName === "name") ?? -1;
+    if (parameterDefinitions && devTypeIndex >= 0 && nameIndex >= 0 && devTypeIndex !== nameIndex + 1) {
+      const [devTypeDefinition] = parameterDefinitions.splice(devTypeIndex, 1);
+      parameterDefinitions.splice(nameIndex + 1, 0, devTypeDefinition);
+    }
+  }
   const hasStateDefinitionsOverride = Array.isArray(override.stateDefinitions);
   const stateDefinitions = hasStateDefinitionsOverride ? normalizeDeviceStateDefinitions(override.stateDefinitions) : template.stateDefinitions?.map(cloneDeviceStateDefinition);
   const hasMeasurementDefinitionsOverride = Array.isArray(override.measurementDefinitions);
@@ -7527,6 +7558,14 @@ export function applyDeviceTemplateDefinitionOverride(
       continue;
     }
     params[definition.enName] = definition.typicalValue;
+  }
+  for (const definition of restoredFixedEParameterDefinitions) {
+    if (
+      definition.enName !== "name" &&
+      !Object.prototype.hasOwnProperty.call(params, definition.enName)
+    ) {
+      params[definition.enName] = definition.typicalValue;
+    }
   }
   for (const key of Object.keys(params)) {
     if (retiredElectricGenerationParameterNames.has(toSnakeCaseDeviceParamName(key))) {
