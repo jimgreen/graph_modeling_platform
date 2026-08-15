@@ -2858,7 +2858,6 @@ export function buildEDeviceDefinitionFile(
     for (const [exportName, cnNames] of group.fields) {
       if (
         exportName === "idx" ||
-        exportName === "dev_type" ||
         (!group.isDerivedComponentLibrary && exportName === "name") ||
         (group.isDerivedComponentLibrary && DERIVED_COMPONENT_COMMON_PARAM_NAMES.has(exportName))
       ) {

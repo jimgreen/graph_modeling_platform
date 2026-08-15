@@ -666,16 +666,24 @@ export function removeDeviceTemplateDefinitionOverrides(
 export const isReservedDeviceDefinitionParamName = (enName: string) =>
   enName.trim() === "is_container" || enName.trim() === ALLOW_RESIZE_TRANSFORM_PARAM;
 
+// 派生类参数定义保留主类的 dev_type 字段，合并到可编辑定义列表
+function buildEditableDefinitionsWithDevTypeFallback(
+  definitionGroups: { baseDefinitions: DeviceParameterDefinition[]; derivedDefinitions: DeviceParameterDefinition[] },
+  derivedInfo: ReturnType<typeof modelTemplateDerivedComponentLibraryInfo>
+): DeviceParameterDefinition[] {
+  if (!derivedInfo || definitionGroups.derivedDefinitions.some((d) => d.enName === "dev_type")) {
+    return definitionGroups.derivedDefinitions;
+  }
+  return [
+    ...definitionGroups.derivedDefinitions,
+    ...definitionGroups.baseDefinitions.filter((d) => d.enName === "dev_type")
+  ];
+}
+
 export function createDefinitionDraftRows(template: DeviceTemplate): DeviceDefinitionDraftRow[] {
   const derivedInfo = modelTemplateDerivedComponentLibraryInfo(template);
   const definitionGroups = resolveEffectiveTemplateParameterDefinitionGroups(template);
-  const editableDefinitions = [
-    ...definitionGroups.derivedDefinitions,
-    // dev_type 例外：派生类参数定义保留主类的设备类型字段
-    ...(derivedInfo && !definitionGroups.derivedDefinitions.some((definition) => definition.enName === "dev_type")
-      ? definitionGroups.baseDefinitions.filter((definition) => definition.enName === "dev_type")
-      : [])
-  ];
+  const editableDefinitions = buildEditableDefinitionsWithDevTypeFallback(definitionGroups, derivedInfo);
   const exportContextParams = derivedInfo
     ? { ...template.params, component_type: derivedInfo.derivedComponentLibrary }
     : template.params;
@@ -872,7 +880,8 @@ export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, se
   );
   const parameterExportComponentLibrary = derivedInfo?.derivedComponentLibrary ?? section;
   const exportContextParams = { ...template.params, component_type: parameterExportComponentLibrary };
-  const editableDefinitions = resolveEffectiveTemplateParameterDefinitionGroups(template).derivedDefinitions;
+  const definitionGroups = resolveEffectiveTemplateParameterDefinitionGroups(template);
+  const editableDefinitions = buildEditableDefinitionsWithDevTypeFallback(definitionGroups, derivedInfo);
   const customParams = editableDefinitions
     .filter((definition) =>
       derivedInfo

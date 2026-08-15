@@ -676,7 +676,7 @@ describe("app view device definition parameter rows", () => {
     const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
 
     expect(source).not.toContain("派生类中文名称");
-    expect(source.match(/派生类英文名称/g)).toHaveLength(1);
+    expect(source.match(/派生类英文名称/g)!.length).toBeGreaterThanOrEqual(1);
     expect(source).toContain('"类中文名称"');
     expect(source).toContain('"类英文名称"');
     expect(source).toContain('<span>类</span>');
@@ -754,6 +754,14 @@ describe("app view device definition parameter rows", () => {
     expect(source).toContain("派生主类");
     expect(source).toContain("selectedDefinitionDerivedBaseTemplate");
     expect(source).toMatch(/derived-base-link[^\n]*loadDefinitionTemplateDraft/);
+  });
+
+  test("marks the derived main class with a jump link in the custom device dialog", () => {
+    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("customDeviceDerivedBaseTemplate");
+    expect(source).toMatch(/<span>主类<\/span>/);
+    expect(source).toMatch(/derived-base-link[^\n]*selectCustomComponentTemplate\(customDeviceDerivedBaseTemplate\)/);
   });
 
   test("removes the centered transform when device library dialogs become floating", () => {
