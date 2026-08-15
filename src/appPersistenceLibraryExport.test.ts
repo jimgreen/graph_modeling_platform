@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { apiPath } from "./config";
 import {
   CustomComponentManagerTree,
+  buildCustomComponentClassTree,
   createLibraryPackage,
   componentLibraryDisplayParts,
   defaultCategoryLibraryForComponentLibrary,
@@ -343,6 +344,43 @@ describe("graph template library filtering", () => {
     expect(normalizeDeviceLibraryPersistencePayload(normalized)).toEqual(normalized);
   });
 
+  test("round-trips class-owned base definitions and incremental derived definitions", () => {
+    const normalized = normalizeDeviceLibraryPersistencePayload({
+      deviceDefinitionOverrides: {
+        "class:BasePump": {
+          kind: "class:BasePump",
+          params: { component_type: "BasePump" },
+          parameterDefinitions: [
+            { cnName: "节点号", enName: "node", valueType: "integer", typicalValue: "", readonly: true }
+          ],
+          measurementDefinitions: [
+            { measurementTypeId: "status", position: "device", associatedField: "run_stat" }
+          ]
+        },
+        "class:DerivedPump": {
+          kind: "class:DerivedPump",
+          params: { component_type: "DerivedPump" },
+          parameterDefinitions: [],
+          parameterDefinitionsIntent: "delete-all",
+          measurementDefinitions: []
+        }
+      }
+    });
+    const roundTripped = normalizeDeviceLibraryPersistencePayload(JSON.parse(JSON.stringify(normalized)));
+
+    expect(roundTripped.deviceDefinitionOverrides["class:BasePump"]).toMatchObject({
+      parameterDefinitions: [expect.objectContaining({ enName: "node" })],
+      measurementDefinitions: [
+        { measurementTypeId: "status", position: "device", associatedField: "run_stat" }
+      ]
+    });
+    expect(roundTripped.deviceDefinitionOverrides["class:DerivedPump"]).toMatchObject({
+      parameterDefinitions: [],
+      parameterDefinitionsIntent: "delete-all",
+      measurementDefinitions: []
+    });
+  });
+
   test("round-trips legacy concrete business definitions as shared class definitions only", () => {
     const legacy = {
       schemaVersion: 2,
@@ -397,7 +435,7 @@ describe("graph template library filtering", () => {
       expect(template.params.p).toBeUndefined();
     }
     for (const [kind, override] of Object.entries(normalized.deviceDefinitionOverrides) as Array<[string, any]>) {
-      if (kind.startsWith("shared:")) continue;
+      if (kind.startsWith("shared:") || kind.startsWith("class:")) continue;
       expect(override.parameterDefinitions, kind).toBeUndefined();
       expect(override.parameterDefinitionsIntent, kind).toBeUndefined();
       expect(override.measurementDefinitions, kind).toBeUndefined();
@@ -431,7 +469,7 @@ describe("graph template library filtering", () => {
       ]))
     });
     for (const [kind, override] of Object.entries(normalized.deviceDefinitionOverrides) as Array<[string, any]>) {
-      if (kind.startsWith("shared:")) continue;
+      if (kind.startsWith("shared:") || kind.startsWith("class:")) continue;
       expect(override.parameterDefinitions, kind).toBeUndefined();
       expect(override.parameterDefinitionsIntent, kind).toBeUndefined();
       expect(override.measurementDefinitions, kind).toBeUndefined();
@@ -956,6 +994,96 @@ describe("graph template library filtering", () => {
     expect(acSections.some((section) => section.section === "ACPVGen")).toBe(false);
   });
 
+  test("builds base-class direct components and derived-class component branches", () => {
+    const templates = DEVICE_LIBRARY.filter((template) => [
+      "ac-source",
+      "ac-wind-source",
+      "ac-pv-source",
+      "ac-diesel-source"
+    ].includes(template.kind));
+    const grouped = groupDeviceTemplatesByCategoryLibraryAndComponentLibrary(templates);
+    const tree = buildCustomComponentClassTree("交流设备", grouped["交流设备"] ?? [], []);
+    const generator = tree.find((node) => node.section === "ACGenerator");
+
+    expect(generator?.templates.map((template) => template.kind)).toEqual(["ac-source"]);
+    expect(generator?.derivedClasses.map((node) => node.section)).toEqual([
+      "ACWindGen",
+      "ACPVGen",
+      "ACDieselGen"
+    ]);
+    expect(generator?.derivedClasses.map((node) => node.templates.map((template) => template.kind))).toEqual([
+      ["ac-wind-source"],
+      ["ac-pv-source"],
+      ["ac-diesel-source"]
+    ]);
+  });
+
+  test("shows custom derived classes under their base class even before they have components", () => {
+    const definitions = normalizeCustomComponentLibraries([
+      {
+        name: "UserWindGen",
+        categoryLibraryName: "交流设备",
+        label: "用户风电",
+        isDerivedComponentLibrary: true,
+        derivedFromComponentLibrary: "ACGenerator",
+        terminalCount: 1,
+        terminalTypes: ["ac"]
+      },
+      {
+        name: "EmptyDerivedGen",
+        categoryLibraryName: "交流设备",
+        label: "空派生类",
+        isDerivedComponentLibrary: true,
+        derivedFromComponentLibrary: "ACGenerator",
+        terminalCount: 1,
+        terminalTypes: ["ac"]
+      }
+    ] as any);
+    const grouped = groupDeviceTemplatesByCategoryLibraryAndComponentLibrary([
+      {
+        kind: "custom-user-wind",
+        label: "用户风机",
+        categoryLibrary: "交流设备",
+        size: { width: 96, height: 64 },
+        params: {
+          component_type: "ACGenerator",
+          derived_from_component_type: "ACGenerator",
+          derived_component_type: "UserWindGen",
+          derived_component_library_label: "用户风电",
+          is_derived_component_library: "1"
+        },
+        terminalType: "ac",
+        terminalCount: 1,
+        custom: true,
+        isDerivedComponentLibrary: true,
+        derivedFromComponentLibrary: "ACGenerator",
+        derivedComponentLibrary: "UserWindGen"
+      },
+      {
+        kind: "custom-base-generator",
+        label: "基类直属机组",
+        categoryLibrary: "交流设备",
+        size: { width: 96, height: 64 },
+        params: { component_type: "ACGenerator" },
+        terminalType: "ac",
+        terminalCount: 1,
+        custom: true
+      }
+    ] as any, definitions);
+    const tree = buildCustomComponentClassTree("交流设备", grouped["交流设备"] ?? [], definitions);
+    const generator = tree.find((node) => node.section === "ACGenerator");
+
+    expect(generator?.templates.map((template) => template.kind)).toEqual(["custom-base-generator"]);
+    expect(generator?.derivedClasses).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        section: "UserWindGen",
+        templates: [expect.objectContaining({ kind: "custom-user-wind" })]
+      }),
+      expect.objectContaining({ section: "EmptyDerivedGen", templates: [] })
+    ]));
+    expect(generator?.templates.some((template) => template.kind === "custom-user-wind")).toBe(false);
+  });
+
   test("creates icon library packages with only user imported assets", () => {
     const iconPackage = createLibraryPackage({
       scope: "icon-library",
@@ -1477,6 +1605,44 @@ describe("graph template library filtering", () => {
 });
 
 describe("E device interface definition entry", () => {
+  test("renders derived classes as a second-level branch below the base class", () => {
+    const templates = DEVICE_LIBRARY.filter((template) => [
+      "ac-source",
+      "ac-wind-source",
+      "ac-pv-source",
+      "ac-diesel-source"
+    ].includes(template.kind));
+    const grouped = groupDeviceTemplatesByCategoryLibraryAndComponentLibrary(templates);
+    const html = renderToStaticMarkup(createElement(CustomComponentManagerTree as any, {
+      libraries: ["交流设备"],
+      filteredByComponentLibrary: grouped,
+      customComponentLibraries: [],
+      initialCollapsedLibraries: new Set(),
+      initialCollapsedTypes: new Set(),
+      initialSelection: { kind: "categoryLibrary", categoryLibraryName: "交流设备" },
+      searchQuery: "",
+      onSelectCategoryLibrary: () => undefined,
+      onSelectComponent: () => undefined,
+      onSelectComponentLibrary: () => undefined,
+      onCreateCategoryLibrary: () => undefined,
+      onCreateComponentLibrary: () => undefined,
+      onCreateComponent: () => undefined,
+      onRenameSelection: () => undefined,
+      onDeleteSelection: () => undefined,
+      onSearchChange: () => undefined,
+      onCollapseChange: () => undefined,
+      onSelectionChange: () => undefined,
+      onOpenEDeviceDefinitionInterface: () => undefined
+    }));
+
+    expect(html).toContain('aria-label="交流设备/ACGenerator直属元件列表"');
+    expect(html).toContain('aria-label="交流设备/ACGenerator派生类列表"');
+    expect(html).toContain('aria-label="交流设备/ACWindGen直属元件列表"');
+    expect(html.indexOf('aria-label="交流设备/ACGenerator直属元件列表"')).toBeLessThan(
+      html.indexOf('aria-label="交流设备/ACGenerator派生类列表"')
+    );
+  });
+
   test("shows one merged E interface definition action instead of separate import and export buttons", () => {
     const html = renderToStaticMarkup(createElement(CustomComponentManagerTree as any, {
       libraries: [],

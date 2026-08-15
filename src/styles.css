@@ -6753,6 +6753,9 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .custom-component-tree-library,
 .custom-component-tree-type,
+.custom-component-tree-derived,
+.custom-component-tree-class-content,
+.custom-component-tree-derived-list,
 .custom-component-tree-type-list,
 .custom-component-tree-components {
   display: grid;
@@ -6770,6 +6773,16 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   margin-left: 6px;
   padding-left: calc(var(--dialog-tree-indent) * 1.7);
   border-left: 1px solid var(--dialog-tree-guide);
+}
+
+.custom-component-tree-derived-list {
+  margin-left: 6px;
+  padding-left: calc(var(--dialog-tree-indent) * 1.7);
+  border-left: 1px solid var(--dialog-tree-guide);
+}
+
+.custom-component-tree-class-content {
+  gap: 3px;
 }
 
 .custom-component-tree-row {
@@ -6832,6 +6845,18 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   grid-template-columns: auto minmax(0, 1fr) auto;
   color: #2f5fd0;
   background: var(--dialog-tree-level-2-bg);
+}
+
+.custom-component-tree-row.type.derived-type {
+  color: #3f5f91;
+  background: #f4f7fb;
+  box-shadow: inset 0 0 0 1px rgba(203, 213, 225, 0.72);
+}
+
+.custom-component-tree-chevron-placeholder {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
 }
 
 .custom-component-tree-row.type span {
