@@ -3619,6 +3619,159 @@ function customComponentTreeSelectionsEqual(first: CustomComponentTreeSelection,
   return true;
 }
 
+export type CustomComponentClassTreeNode = {
+  section: string;
+  templates: DeviceTemplate[];
+  derivedClasses: CustomComponentClassTreeNode[];
+};
+
+export function buildCustomComponentClassTree(
+  categoryLibraryName: string,
+  typeGroups: readonly CategoryLibraryComponentLibraryGroup[],
+  customComponentLibraries: readonly CustomComponentLibraryDefinition[] = [],
+  searchQuery = ""
+): CustomComponentClassTreeNode[] {
+  const categoryLibrary = normalizeCategoryLibraryName(categoryLibraryName);
+  const searchNeedle = normalizeLibrarySearchText(searchQuery);
+  const nodesByKey = new Map<string, CustomComponentClassTreeNode>();
+  const nodesInOrder: CustomComponentClassTreeNode[] = [];
+  const parentByChildKey = new Map<string, string>();
+
+  const sectionKey = (sectionName: string) => normalizeComponentLibraryName(sectionName).toLowerCase();
+  const ensureNode = (sectionName: string) => {
+    const section = normalizeComponentLibraryName(sectionName);
+    if (!section) {
+      return undefined;
+    }
+    const key = sectionKey(section);
+    const existing = nodesByKey.get(key);
+    if (existing) {
+      return existing;
+    }
+    const node: CustomComponentClassTreeNode = { section, templates: [], derivedClasses: [] };
+    nodesByKey.set(key, node);
+    nodesInOrder.push(node);
+    return node;
+  };
+  const setParent = (childSection: string, parentSection: string, overwrite = false) => {
+    const child = ensureNode(childSection);
+    const parent = ensureNode(parentSection);
+    if (!child || !parent) {
+      return;
+    }
+    const childKey = sectionKey(child.section);
+    const parentKey = sectionKey(parent.section);
+    if (childKey === parentKey || (parentByChildKey.has(childKey) && !overwrite)) {
+      return;
+    }
+    const previousParentKey = parentByChildKey.get(childKey);
+    parentByChildKey.delete(childKey);
+    let cursor: string | undefined = parentKey;
+    const visited = new Set<string>();
+    while (cursor && !visited.has(cursor)) {
+      if (cursor === childKey) {
+        if (previousParentKey) {
+          parentByChildKey.set(childKey, previousParentKey);
+        }
+        return;
+      }
+      visited.add(cursor);
+      cursor = parentByChildKey.get(cursor);
+    }
+    parentByChildKey.set(childKey, parentKey);
+  };
+  const nodeMatchesSearch = (sectionName: string) => {
+    if (!searchNeedle) {
+      return true;
+    }
+    const display = componentLibraryDisplayParts(sectionName, customComponentLibraries);
+    return [sectionName, display.chinese, display.english, display.title]
+      .some((value) => normalizeLibrarySearchText(value).includes(searchNeedle));
+  };
+  const categoryMatchesSearch = Boolean(searchNeedle) && normalizeLibrarySearchText(categoryLibrary).includes(searchNeedle);
+  const appendTemplate = (node: CustomComponentClassTreeNode | undefined, template: DeviceTemplate, flatSection: string) => {
+    if (!node || node.templates.some((item) => item.kind === template.kind)) {
+      return;
+    }
+    if (
+      searchNeedle &&
+      !categoryMatchesSearch &&
+      !nodeMatchesSearch(flatSection) &&
+      !nodeMatchesSearch(node.section) &&
+      !libraryTemplateMatchesSearch(template, categoryLibrary, flatSection, searchNeedle, customComponentLibraries)
+    ) {
+      return;
+    }
+    node.templates.push(template);
+  };
+
+  for (const typeGroup of typeGroups) {
+    ensureNode(typeGroup.section);
+  }
+  for (const typeGroup of typeGroups) {
+    for (const template of typeGroup.templates) {
+      const derivedInfo = templateDerivedComponentLibraryInfo(template);
+      if (derivedInfo) {
+        const baseSection = derivedInfo.baseComponentLibrary || typeGroup.section;
+        const derivedSection = derivedInfo.derivedComponentLibrary;
+        setParent(derivedSection, baseSection);
+        appendTemplate(ensureNode(derivedSection), template, typeGroup.section);
+      } else {
+        appendTemplate(ensureNode(typeGroup.section), template, typeGroup.section);
+      }
+    }
+  }
+  for (const definition of customComponentLibraries) {
+    if (normalizeCategoryLibraryName(definition.categoryLibraryName) !== categoryLibrary) {
+      continue;
+    }
+    ensureNode(definition.name);
+    if (definition.isDerivedComponentLibrary && definition.derivedFromComponentLibrary) {
+      setParent(definition.name, definition.derivedFromComponentLibrary, true);
+    }
+  }
+
+  const attachedKeys = new Set<string>();
+  for (const node of nodesInOrder) {
+    const childKey = sectionKey(node.section);
+    const parentKey = parentByChildKey.get(childKey);
+    const parent = parentKey ? nodesByKey.get(parentKey) : undefined;
+    if (!parent || parent === node) {
+      continue;
+    }
+    parent.derivedClasses.push(node);
+    attachedKeys.add(childKey);
+  }
+
+  const pruneNode = (node: CustomComponentClassTreeNode): CustomComponentClassTreeNode | null => {
+    const derivedClasses = node.derivedClasses
+      .map(pruneNode)
+      .filter((item): item is CustomComponentClassTreeNode => Boolean(item));
+    if (
+      !searchNeedle ||
+      categoryMatchesSearch ||
+      nodeMatchesSearch(node.section) ||
+      node.templates.length > 0 ||
+      derivedClasses.length > 0
+    ) {
+      return { ...node, derivedClasses };
+    }
+    return null;
+  };
+
+  return nodesInOrder
+    .filter((node) => !attachedKeys.has(sectionKey(node.section)))
+    .map(pruneNode)
+    .filter((node): node is CustomComponentClassTreeNode => Boolean(node));
+}
+
+function customComponentClassTreeTemplateCount(node: CustomComponentClassTreeNode): number {
+  return node.templates.length + node.derivedClasses.reduce(
+    (sum, derivedClass) => sum + customComponentClassTreeTemplateCount(derivedClass),
+    0
+  );
+}
+
 export const CustomComponentManagerTree = memo(function CustomComponentManagerTree({
   libraries,
   filteredByComponentLibrary,
@@ -3706,6 +3859,115 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
   }, [onSelectComponent]);
 
   const searchNeedle = normalizeLibrarySearchText(searchQuery);
+  const treeLibraries = useMemo(() => {
+    if (!searchNeedle) {
+      return libraries;
+    }
+    const next = [...libraries];
+    const seen = new Set(next.map((item) => normalizeCategoryLibraryName(item).toLowerCase()));
+    for (const definition of customComponentLibraries) {
+      const categoryLibraryName = normalizeCategoryLibraryName(definition.categoryLibraryName);
+      const display = componentLibraryDisplayParts(definition.name, customComponentLibraries);
+      const matches = [categoryLibraryName, definition.name, definition.label, display.chinese, display.english]
+        .filter((value): value is string => typeof value === "string")
+        .some((value) => normalizeLibrarySearchText(value).includes(searchNeedle));
+      const key = categoryLibraryName.toLowerCase();
+      if (matches && categoryLibraryName && !seen.has(key)) {
+        seen.add(key);
+        next.push(categoryLibraryName);
+      }
+    }
+    return next;
+  }, [customComponentLibraries, libraries, searchNeedle]);
+  const classTreesByLibrary = useMemo(
+    () => Object.fromEntries(treeLibraries.map((group) => [
+      group,
+      buildCustomComponentClassTree(
+        group,
+        filteredByComponentLibrary[group] ?? [],
+        customComponentLibraries,
+        searchNeedle
+      )
+    ])),
+    [customComponentLibraries, filteredByComponentLibrary, searchNeedle, treeLibraries]
+  );
+  const renderClassNode = (group: string, node: CustomComponentClassTreeNode, depth = 0): ReactNode => {
+    const typeKey = categoryLibraryComponentLibraryKey(group, node.section);
+    const hasContent = node.templates.length > 0 || node.derivedClasses.length > 0;
+    const typeCollapsed = hasContent && !searchNeedle && collapsedTypes.has(typeKey);
+    const typeDisplay = componentLibraryDisplayParts(node.section, customComponentLibraries);
+    const typeSelected =
+      selection.kind === "componentLibrary" &&
+      selection.categoryLibraryName === group &&
+      selection.section === node.section;
+    return (
+      <section
+        className={depth > 0 ? "custom-component-tree-derived" : "custom-component-tree-type"}
+        key={`${group}-${node.section}`}
+        data-tree-depth={depth}
+      >
+        <button
+          type="button"
+          className={`custom-component-tree-row type ${depth > 0 ? "derived-type" : ""} ${typeSelected ? "active" : ""}`}
+          role="treeitem"
+          aria-selected={typeSelected}
+          aria-expanded={hasContent ? !typeCollapsed : undefined}
+          onClick={() => {
+            handleSelectComponentLibrary(group, node.section);
+            if (hasContent) {
+              handleToggleType(group, node.section);
+            }
+          }}
+        >
+          {hasContent
+            ? (typeCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />)
+            : <span className="custom-component-tree-chevron-placeholder" aria-hidden="true" />}
+          <span className="dialog-tree-bilingual" title={typeDisplay.title}>
+            <span>{typeDisplay.chinese}</span>
+            <small>{typeDisplay.english}</small>
+          </span>
+          <strong>{customComponentClassTreeTemplateCount(node)}</strong>
+        </button>
+        {!typeCollapsed && hasContent && <div className="custom-component-tree-class-content">
+          {node.templates.length > 0 && <div
+            className="custom-component-tree-components"
+            role="group"
+            aria-label={`${group}/${node.section}直属元件列表`}
+          >
+            {node.templates.map((template) => {
+              const componentSelected =
+                selection.kind === "component" &&
+                selection.templateKind === template.kind;
+              return (
+                <button
+                  type="button"
+                  key={template.kind}
+                  className={`custom-component-tree-row component ${componentSelected ? "active" : ""}`}
+                  role="treeitem"
+                  aria-selected={componentSelected}
+                  title={`${template.label} / ${node.section} / ${template.custom ? "自定义" : "系统内置"}`}
+                  onClick={() => handleSelectComponent(template, node.section)}
+                >
+                  <span className="dialog-tree-bilingual dialog-tree-component-label" title={`${template.label} / ${template.kind}`}>
+                    <span>{template.label}</span>
+                    <small>{template.kind}</small>
+                  </span>
+                  <small>{template.custom ? "自定义" : "内置"}</small>
+                </button>
+              );
+            })}
+          </div>}
+          {node.derivedClasses.length > 0 && <div
+            className="custom-component-tree-derived-list"
+            role="group"
+            aria-label={`${group}/${node.section}派生类列表`}
+          >
+            {node.derivedClasses.map((derivedClass) => renderClassNode(group, derivedClass, depth + 1))}
+          </div>}
+        </div>}
+      </section>
+    );
+  };
   return (
     <aside className="custom-component-manager-panel" aria-label="类别库类元件管理">
       <div className="custom-component-manager-title">
@@ -3759,7 +4021,7 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
         </div>
         {(() => {
           // 切换折叠层全部展开/全部收缩
-          const total = libraries.length;
+          const total = treeLibraries.length;
           if (total === 0) return null;
           const allExpanded = collapsedLibraries.size === 0;
           return (
@@ -3770,7 +4032,7 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
               title={allExpanded ? "全部收缩" : "全部展开"}
               onClick={() => {
                 if (allExpanded) {
-                  setCollapsedLibraries(new Set(libraries));
+                  setCollapsedLibraries(new Set(treeLibraries));
                   setCollapsedTypes(new Set());
                 } else {
                   setCollapsedLibraries(new Set());
@@ -3785,8 +4047,8 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
       </div>
       </div>
       <div className="custom-component-manager-tree dialog-compact-tree" role="tree">
-        {libraries.length > 0 ? libraries.map((group) => {
-          const typeGroups = filteredByComponentLibrary[group] ?? [];
+        {treeLibraries.length > 0 ? treeLibraries.map((group) => {
+          const classTrees = classTreesByLibrary[group] ?? [];
           const librarySelected = selection.kind === "categoryLibrary" && selection.categoryLibraryName === group;
           const libraryCollapsed = searchNeedle ? false : collapsedLibraries.has(group);
           return (
@@ -3804,64 +4066,10 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
               >
                 {libraryCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
                 <span>{group}</span>
-                <strong>{typeGroups.reduce((sum, typeGroup) => sum + typeGroup.templates.length, 0)}</strong>
+                <strong>{classTrees.reduce((sum, node) => sum + customComponentClassTreeTemplateCount(node), 0)}</strong>
               </button>
               {!libraryCollapsed && <div className="custom-component-tree-type-list" role="group">
-                {typeGroups.map((typeGroup) => {
-                  const typeKey = `${group}::${typeGroup.section}`;
-                  const typeCollapsed = searchNeedle ? false : collapsedTypes.has(typeKey);
-                  const typeDisplay = componentLibraryDisplayParts(typeGroup.section, customComponentLibraries);
-                  const typeSelected =
-                    selection.kind === "componentLibrary" &&
-                    selection.categoryLibraryName === group &&
-                    selection.section === typeGroup.section;
-                  return (
-                    <section className="custom-component-tree-type" key={`${group}-${typeGroup.section}`}>
-                      <button
-                        type="button"
-                        className={`custom-component-tree-row type ${typeSelected ? "active" : ""}`}
-                        role="treeitem"
-                        aria-selected={typeSelected}
-                        aria-expanded={!typeCollapsed}
-                        onClick={() => {
-                          handleSelectComponentLibrary(group, typeGroup.section);
-                          handleToggleType(group, typeGroup.section);
-                        }}
-                      >
-                        {typeCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
-                        <span className="dialog-tree-bilingual" title={typeDisplay.title}>
-                          <span>{typeDisplay.chinese}</span>
-                          <small>{typeDisplay.english}</small>
-                        </span>
-                        <strong>{typeGroup.templates.length}</strong>
-                      </button>
-                      {!typeCollapsed && <div className="custom-component-tree-components" role="group" aria-label={`${group}/${typeGroup.section}元件列表`}>
-                        {typeGroup.templates.map((template) => {
-                          const componentSelected =
-                            selection.kind === "component" &&
-                            selection.templateKind === template.kind;
-                          return (
-                            <button
-                              type="button"
-                              key={template.kind}
-                              className={`custom-component-tree-row component ${componentSelected ? "active" : ""}`}
-                              role="treeitem"
-                              aria-selected={componentSelected}
-                              title={`${template.label} / ${typeGroup.section} / ${template.custom ? "自定义" : "系统内置"}`}
-                              onClick={() => handleSelectComponent(template, typeGroup.section)}
-                            >
-                              <span className="dialog-tree-bilingual dialog-tree-component-label" title={`${template.label} / ${template.kind}`}>
-                                <span>{template.label}</span>
-                                <small>{template.kind}</small>
-                              </span>
-                              <small>{template.custom ? "自定义" : "内置"}</small>
-                            </button>
-                          );
-                        })}
-                      </div>}
-                    </section>
-                  );
-                })}
+                {classTrees.map((node) => renderClassNode(group, node))}
               </div>}
             </section>
           );

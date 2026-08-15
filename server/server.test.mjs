@@ -72,6 +72,50 @@ const expectEFieldsAlignedWithHeader = (text, section, columns, rowValues) => {
 };
 
 describe("device library schema migration", () => {
+  test("round-trips base and incremental derived class definitions", () => {
+    const normalized = normalizeDeviceLibraryConfig({
+      deviceDefinitionOverrides: {
+        "class:BasePump": {
+          kind: "class:BasePump",
+          params: { component_type: "BasePump", run_stat: "1" },
+          parameterDefinitions: [
+            { cnName: "工作状态", enName: "run_stat", valueType: "numberEnum", typicalValue: "1", enumValues: ["1", "0"] },
+            { cnName: "节点号", enName: "node", valueType: "integer", typicalValue: "", readonly: true }
+          ],
+          measurementDefinitions: [
+            { measurementTypeId: "status", position: "device", associatedField: "run_stat" }
+          ]
+        },
+        "class:DerivedPump": {
+          kind: "class:DerivedPump",
+          params: { component_type: "DerivedPump" },
+          parameterDefinitions: [],
+          parameterDefinitionsIntent: "delete-all",
+          measurementDefinitions: []
+        }
+      }
+    });
+
+    expect(normalized.deviceDefinitionOverrides["class:BasePump"]).toMatchObject({
+      kind: "class:BasePump",
+      params: { component_type: "BasePump", run_stat: "1" },
+      parameterDefinitions: expect.arrayContaining([
+        expect.objectContaining({ enName: "run_stat", valueType: "numberEnum", typicalValue: "1" }),
+        expect.objectContaining({ enName: "node" })
+      ]),
+      measurementDefinitions: [
+        { measurementTypeId: "status", position: "device", associatedField: "run_stat" }
+      ]
+    });
+    expect(normalized.deviceDefinitionOverrides["class:DerivedPump"]).toMatchObject({
+      kind: "class:DerivedPump",
+      parameterDefinitions: [],
+      parameterDefinitionsIntent: "delete-all",
+      measurementDefinitions: []
+    });
+    expect(normalizeDeviceLibraryConfig(normalized)).toEqual(normalized);
+  });
+
   test("removes damaged empty overrides while preserving explicit deletion and non-empty definitions", () => {
     const legacy = {
       deviceDefinitionOverrides: {

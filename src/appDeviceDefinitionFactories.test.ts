@@ -27,6 +27,7 @@ import {
   createRouteSegmentPointerDistance,
   createResolveDuplicateModelImport,
   createSaveBuiltinDeviceDefinitionFromCustomDraft,
+  createSaveComponentLibraryDefinition,
   createSaveCustomDeviceDefinitionDialog,
   createSaveCustomDeviceTemplate,
   createSaveDeviceDefinitionDraft,
@@ -2156,6 +2157,7 @@ describe("manual bend interaction helpers", () => {
 
   test("creating a component library recovers inherited metadata when the base template was historically overridden", () => {
     let customComponentLibraries: any[] = [];
+    let deviceDefinitionOverrides: Record<string, any> = {};
     let customDeviceDraft: any = {
       categoryLibraryName: "交流设备",
       componentLibrary: "ACGenerator",
@@ -2197,6 +2199,9 @@ describe("manual bend interaction helpers", () => {
         return customDeviceDraft;
       },
       customDeviceTemplates: [],
+      get deviceDefinitionOverrides() {
+        return deviceDefinitionOverrides;
+      },
       get customLibraryCreateDialog() {
         return customLibraryCreateDialog;
       },
@@ -2256,6 +2261,9 @@ describe("manual bend interaction helpers", () => {
       },
       setEditingCustomDeviceKind,
       setExpandedCategoryLibraries: vi.fn(),
+      setDeviceDefinitionOverrides: (updater: any) => {
+        deviceDefinitionOverrides = typeof updater === "function" ? updater(deviceDefinitionOverrides) : updater;
+      },
       setSelectedDefinitionKind
     };
 
@@ -2292,11 +2300,18 @@ describe("manual bend interaction helpers", () => {
       terminalTypes: expect.arrayContaining(["ac"]),
       isContainer: false
     });
+    expect(customDeviceDraft.params).toEqual([]);
+    expect(deviceDefinitionOverrides["class:UserWindGen"]).toMatchObject({
+      kind: "class:UserWindGen",
+      params: { component_type: "UserWindGen" },
+      parameterDefinitions: [],
+      parameterDefinitionsIntent: "delete-all"
+    });
     expect(customDeviceDraft.allowResizeTransform).toBeUndefined();
     expect(setEditingCustomDeviceKind).toHaveBeenCalledWith("");
     expect(setSelectedDefinitionKind).toHaveBeenCalledWith("");
     expect(persistDeviceLibraryChange).toHaveBeenCalledWith(
-      { customComponentLibraries },
+      { customComponentLibraries, deviceDefinitionOverrides },
       expect.any(Object)
     );
     expect(customLibraryCreateDialog).toBeNull();
@@ -2359,6 +2374,19 @@ describe("manual bend interaction helpers", () => {
         error: ""
       }),
       customDeviceTemplates: [],
+      deviceDefinitionOverrides: {
+        "class:UserWindGen": {
+          kind: "class:UserWindGen",
+          params: { component_type: "UserWindGen" },
+          parameterDefinitions: [
+            { cnName: "设备类型", enName: "dev_type", valueType: "string", typicalValue: "UserWindGen" },
+            { cnName: "额定功率", enName: "rated_power", valueType: "float", typicalValue: "10" }
+          ],
+          measurementDefinitions: [
+            { measurementTypeId: "p", position: "device", associatedField: "rated_power" }
+          ]
+        }
+      },
       defaultComponentLibraryForCategoryLibrary: () => "ACGenerator",
       get customDeviceDraft() {
         return customDeviceDraft;
@@ -2446,6 +2474,13 @@ describe("manual bend interaction helpers", () => {
       isContainer: false,
       error: ""
     });
+    expect(customDeviceDraft.params).toEqual(expect.arrayContaining([
+      expect.objectContaining({ enName: "dev_type", typicalValue: "custom-user-wind-generator" }),
+      expect.objectContaining({ enName: "rated_power", typicalValue: "10" })
+    ]));
+    expect(customDeviceDraft.measurementDefinitions).toEqual([
+      { measurementTypeId: "p", position: "device", associatedField: "rated_power" }
+    ]);
     expect(setCustomDeviceDraftCleanBaseline).toHaveBeenCalledWith(expect.objectContaining({
       isDerivedComponentLibrary: true,
       derivedComponentLibrary: "UserWindGen",
@@ -2501,13 +2536,14 @@ describe("manual bend interaction helpers", () => {
     });
   });
 
-  test("does not save a stale previously selected component while a component library is selected", () => {
+  test("routes a selected component library to class-definition save instead of a stale component", () => {
     const previousTemplate = {
       kind: "ac-bus-vertical",
       label: "交流母线-派生",
       custom: false
     };
     const saveBuiltinDeviceDefinitionFromCustomDraft = vi.fn(() => true);
+    const saveComponentLibraryDefinition = vi.fn(() => true);
     const saveCustomDeviceTemplate = vi.fn(() => true);
     const showGlobalMessage = vi.fn();
 
@@ -2520,16 +2556,135 @@ describe("manual bend interaction helpers", () => {
       customDeviceDefinitionMode: "edit",
       editingCustomDeviceKind: "",
       saveBuiltinDeviceDefinitionFromCustomDraft,
+      saveComponentLibraryDefinition,
       saveCustomDeviceTemplate,
       selectedCustomComponentTemplate: undefined,
       selectedDefinitionTemplate: previousTemplate,
       showGlobalMessage
     })();
 
-    expect(saved).toBe(false);
+    expect(saved).toBe(true);
+    expect(saveComponentLibraryDefinition).toHaveBeenCalledOnce();
     expect(saveBuiltinDeviceDefinitionFromCustomDraft).not.toHaveBeenCalled();
     expect(saveCustomDeviceTemplate).not.toHaveBeenCalled();
-    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("没有选中可保存的元件"));
+    expect(showGlobalMessage).not.toHaveBeenCalled();
+  });
+
+  test("saves class parameter and measurement CRUD rows to the class override", () => {
+    let customDeviceDraft: any = {
+      categoryLibraryName: "交流设备",
+      componentLibrary: "UserPump",
+      componentName: "",
+      componentKind: "",
+      isDerivedComponentLibrary: false,
+      terminalCount: 1,
+      terminalTypes: ["ac"],
+      terminalLabels: ["交流端"],
+      terminalRoles: ["single-load"],
+      terminalAssociations: ["ac-load"],
+      terminalAnchors: [{ x: 0.5, y: 0 }],
+      isContainer: false,
+      params: [
+        { id: "pressure", cnName: "压力设定", enName: "pressure_set", valueType: "float", typicalValue: "1.2" }
+      ],
+      measurementDefinitions: [
+        { measurementTypeId: "pressure", position: "device", associatedField: "pressure_set" }
+      ],
+      error: ""
+    };
+    let deviceDefinitionOverrides: Record<string, any> = {};
+    const persistDeviceLibraryChange = vi.fn();
+    const setCustomDeviceDraftCleanBaseline = vi.fn();
+    const scope = {
+      ALLOW_RESIZE_TRANSFORM_PARAM: "allow_resize_transform",
+      customComponentLibraries: [{
+        name: "UserPump",
+        label: "用户泵",
+        categoryLibraryName: "交流设备",
+        isDerivedComponentLibrary: false,
+        isContainerComponentLibrary: false,
+        terminalCount: 1,
+        terminalTypes: ["ac"],
+        terminalLabels: ["交流端"],
+        terminalRoles: ["single-load"],
+        terminalAssociations: ["ac-load"]
+      }],
+      customComponentTreeSelection: {
+        kind: "componentLibrary",
+        categoryLibraryName: "交流设备",
+        section: "UserPump"
+      },
+      get customDeviceDraft() {
+        return customDeviceDraft;
+      },
+      get deviceDefinitionOverrides() {
+        return deviceDefinitionOverrides;
+      },
+      isReservedDeviceDefinitionParamName,
+      libraryTemplates: [],
+      measurementConfig: {
+        measurementTypes: [{
+          id: "pressure",
+          name: "压力",
+          key: "pressure",
+          shortLabel: "P",
+          defaultUnit: "MPa",
+          valueType: "number",
+          defaultDecimals: 2,
+          defaultColor: "#000000",
+          defaultFontFamily: "Arial",
+          defaultFontSize: 12,
+          defaultFontWeight: "400",
+          defaultVisible: true
+        }]
+      },
+      normalizeContainerTerminalAssociations,
+      normalizeDefinitionRowEnumFields,
+      persistDeviceLibraryChange,
+      requireEditMode: () => true,
+      setCustomDeviceDraft: (updater: any) => {
+        customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
+      },
+      setCustomDeviceDraftCleanBaseline,
+      setDeviceDefinitionOverrides: (next: any) => {
+        deviceDefinitionOverrides = typeof next === "function" ? next(deviceDefinitionOverrides) : next;
+      },
+      showGlobalMessage: vi.fn(),
+      writeOperationLog: vi.fn()
+    };
+
+    const saved = createSaveComponentLibraryDefinition(scope)();
+
+    expect(saved).toBe(true);
+    expect(deviceDefinitionOverrides["class:UserPump"]).toMatchObject({
+      kind: "class:UserPump",
+      params: {
+        component_type: "UserPump",
+        pressure_set: "1.2"
+      },
+      parameterDefinitions: expect.arrayContaining([
+        expect.objectContaining({ enName: "dev_type", typicalValue: "UserPump" }),
+        expect.objectContaining({ enName: "node" }),
+        expect.objectContaining({ enName: "pressure_set", typicalValue: "1.2" })
+      ]),
+      measurementDefinitions: [
+        { measurementTypeId: "pressure", position: "device", associatedField: "pressure_set" }
+      ]
+    });
+    expect(persistDeviceLibraryChange).toHaveBeenCalledWith(
+      { deviceDefinitionOverrides },
+      expect.any(Object)
+    );
+    expect(customDeviceDraft.params.map((row: any) => row.enName)).toEqual(expect.arrayContaining([
+      "idx",
+      "name",
+      "status",
+      "run_stat",
+      "dev_type",
+      "node",
+      "pressure_set"
+    ]));
+    expect(setCustomDeviceDraftCleanBaseline).toHaveBeenCalled();
   });
 
   test("always routes a confirmed new component to the create path despite stale edit selection", () => {
@@ -2638,6 +2793,7 @@ describe("manual bend interaction helpers", () => {
 
   test("class metadata is editable only while creating a class and read-only for concrete components", () => {
     const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const appRenderBatchSource = readFileSync(new URL("./appExtracted/appRenderBatch.tsx", import.meta.url), "utf8");
 
     expect(appViewSource).toContain('customLibraryCreateDialog.kind === "componentLibrary"');
     expect(appViewSource).toContain("<span>是否派生类</span>");
@@ -2656,7 +2812,11 @@ describe("manual bend interaction helpers", () => {
     expect(appViewSource).not.toContain('custom-device-terminal-summary-field');
     expect(appViewSource).toContain('disabled title="能源属性由所属类定义"');
     expect(appViewSource).toContain('disabled title="关联设备由所属类定义"');
-    expect(appViewSource).toContain('disabled={customDeviceDefinitionMode === "edit" && customComponentTreeSelection?.kind !== "component"}');
+    expect(appViewSource).not.toContain('disabled={customDeviceDefinitionMode === "edit" && customComponentTreeSelection?.kind !== "component"}');
+    expect(appViewSource).toContain('customComponentTreeSelection?.kind === "componentLibrary" ? "保存类定义"');
+    expect(appRenderBatchSource).toMatch(
+      /customComponentLibraries,\s+customComponentTreeSelection,\s+customDeviceDefinitionMode,/
+    );
   });
 
   test("asks for confirmation before deleting an empty category library", async () => {

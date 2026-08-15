@@ -1370,7 +1370,8 @@ export function renderAppView(__appScope: Record<string, any>) {
     (item) => !customDefaultParamKeySet.has(item.enName.trim().toLowerCase())
   );
   const displayedCustomParameterRows = resolveCustomDeviceParameterRowsForDisplay(mergedCustomDefaultParams, visibleCustomParams, {
-    isDerivedComponentLibrary: customDeviceDraft.isDerivedComponentLibrary,
+    isDerivedComponentLibrary:
+      customComponentTreeSelection?.kind !== "componentLibrary" && customDeviceDraft.isDerivedComponentLibrary,
     baseComponentLibrary: customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary,
     isDerivedComponentBaseParamName: __appScope.isDerivedComponentBaseParamName
   });
@@ -4713,8 +4714,9 @@ export function renderAppView(__appScope: Record<string, any>) {
                   </label>);
                 })}
             </div>}
-              </>) : visibleCustomDeviceDialogView === "parameters" ? (customComponentTreeSelection?.kind === "componentLibrary" ? (
-                <section className="device-definition-component-library-panel">
+              </>) : visibleCustomDeviceDialogView === "parameters" ? (<>
+                {customComponentTreeSelection?.kind === "componentLibrary" && (
+                <section className="device-definition-component-library-panel device-definition-component-library-editor-header">
                   <div className="device-definition-component-library-header">
                     <h3>类：{customComponentTreeSelection?.section}</h3>
                     <span className="device-definition-count">{componentLibraryTemplates.length} 个元件</span>
@@ -4740,25 +4742,15 @@ export function renderAppView(__appScope: Record<string, any>) {
                       还原
                     </button>
                   </div>
-                  <div className="custom-param-table-wrap device-definition-table-wrap">
-                    <table className="custom-param-table">
-                      <thead>
-                        <tr>
-                           <th>中文名称</th>
-                           <th>英文名称</th>
-                         </tr>
-                      </thead>
-                      <tbody>
-                        {componentLibraryCommonParams.map((param) => (<tr key={param.enName}>
-                           <td>{param.cnName}</td>
-                           <td><code>{param.enName}</code></td>
-                         </tr>))}
-                      </tbody>
-                    </table>
-                  </div>
-                  {componentLibraryCommonParams.length === 0 && <p className="custom-device-error">该类下元件无共有参数。</p>}
+                  {customDeviceDraft.isDerivedComponentLibrary && (
+                    <p className="device-definition-inheritance-note">
+                      已继承基类 {customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary} 的
+                      {` ${__appScope.customDraftInheritedParameterDefinitions?.length ?? 0} `}个参数和
+                      {` ${__appScope.customDraftInheritedMeasurementDefinitions?.length ?? 0} `}个量测；下表只定义派生类新增字段，无需重复定义基类字段。
+                    </p>
+                  )}
                 </section>
-              ) : (<>
+                )}
             <div className="definition-table-toolbar" aria-label="参数定义表格操作">
               <button type="button" onClick={addCustomParameterRow}>新增参数</button>
               <button type="button" onClick={copySelectedCustomParameterRows} disabled={selectedCustomParameterRowIds.length === 0}>复制</button>
@@ -4854,7 +4846,14 @@ export function renderAppView(__appScope: Record<string, any>) {
                 </tbody>
               </table>
             </div>
-              </>)) : (renderDeviceDefinitionMeasurementPanel(customDeviceMeasurementTarget))}
+              </>) : (<>
+                {customComponentTreeSelection?.kind === "componentLibrary" && customDeviceDraft.isDerivedComponentLibrary && (
+                  <p className="device-definition-inheritance-note">
+                    基类 {customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary} 的量测已自动继承；这里只维护派生类新增量测。
+                  </p>
+                )}
+                {renderDeviceDefinitionMeasurementPanel(customDeviceMeasurementTarget)}
+              </>)}
             </div>
               </div>
             </div>
@@ -4864,10 +4863,12 @@ export function renderAppView(__appScope: Record<string, any>) {
                 type="button"
                 className="primary"
                 onClick={() => saveCustomDeviceDefinitionDialog({ closeAfterSave: false })}
-                disabled={customDeviceDefinitionMode === "edit" && customComponentTreeSelection?.kind !== "component"}
-                title={customDeviceDefinitionMode === "edit" && customComponentTreeSelection?.kind !== "component" ? "请先选择或新建一个元件" : undefined}
+                disabled={customDeviceDefinitionMode === "edit" && customComponentTreeSelection?.kind === "categoryLibrary"}
+                title={customDeviceDefinitionMode === "edit" && customComponentTreeSelection?.kind === "categoryLibrary" ? "请先选择一个类或元件" : undefined}
               >
-                {customDeviceDefinitionMode === "edit" ? "保存元件定义" : "保存自定义设备"}
+                {customDeviceDefinitionMode === "edit"
+                  ? customComponentTreeSelection?.kind === "componentLibrary" ? "保存类定义" : "保存元件定义"
+                  : "保存自定义设备"}
               </button>
             </footer>
             <div className="device-library-dialog-resize" role="separator" aria-orientation="horizontal" aria-label="调整新建元件窗口大小" title="拖拽调整窗口大小" onPointerDown={(event) => startDeviceLibraryDialogResize("custom", event)}/>
