@@ -8,7 +8,7 @@ import {
   visibleIconLibraryIcons
 } from "../iconLibraryCatalog";
 import { buildExportDeviceIdMap } from "../svgExportUtils";
-import { E_SECTION_COLUMNS, inferESection, resolveEffectiveTemplateParameterDefinitions, resolveDeviceParameterDefinitionExportSettings, resolveEffectiveTemplateParameterDefinitionGroups, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, applyEReferenceIdValues, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, DEVICE_LIBRARY, type EDeviceExport } from "../model";
+import { E_SECTION_COLUMNS, inferESection, resolveEffectiveTemplateParameterDefinitionGroups, templateDerivedComponentLibraryInfo, parseEDeviceDefinitionFile, buildEDeviceRecords, buildEDeviceHeaderParameterRecords, orderEDeviceRecordsForExport, applyEReferenceIdValues, enumSelectOptionsWithCurrentValue, invalidEnumOptionLabel, DEVICE_LIBRARY, type EDeviceExport } from "../model";
 import { buildEDeviceInterfaceDefinitionRows, orderEDeviceInterfaceFields, applyEDeviceDefinitionSectionsToLibraryState, buildEFileExportOptionsFromLibrary } from "./appDeviceDefinitionFactories";
 import { decodeAuto } from "../encoding/gbk";
 import { UserCustomizationManagerDialog } from "../UserCustomizationManagerDialog";
@@ -298,12 +298,7 @@ export function eDeviceInterfaceFieldDefinitionMatches(left: any, right: any) {
 }
 
 export function customDeviceDefinitionUsesIconOnly(selection: any, draft: any) {
-  if (selection?.kind !== "component") {
-    return false;
-  }
-  const categoryLibraryName = String(selection?.categoryLibraryName ?? draft?.categoryLibraryName ?? "").trim();
-  const templateKind = String(selection?.templateKind ?? draft?.componentKind ?? "").trim().toLowerCase();
-  return categoryLibraryName === "静态图元" || templateKind.startsWith("static-");
+  return selection?.kind === "component";
 }
 
 export function resolveDeviceDefinitionParameterRowsForDisplay<T extends { enName?: unknown }>(
@@ -500,35 +495,6 @@ export function renderAppView(__appScope: Record<string, any>) {
       }
     }
   }, [unsavedChangesDialogOpen, undoStack, saveRequired, savedUndoStackLengthRef, setHasUnsavedChanges]);
-  // 选中类节点（“元件定义”对话框）时：计算该类共有参数（enName 交集，排除 dev_type）+ E 文件标签 key
-  const componentLibrarySectionKey = customComponentTreeSelection?.kind === "componentLibrary" ? normalizeComponentLibraryName(customComponentTreeSelection?.section ?? "") : "";
-  const componentLibraryTemplates = componentLibrarySectionKey
-    ? libraryTemplates.filter((template) => normalizeComponentLibraryName(resolveTemplateComponentLibrary(template)) === componentLibrarySectionKey)
-    : [];
-  const componentLibraryCommonParams = (() => {
-    if (componentLibraryTemplates.length === 0) {
-      return [];
-    }
-    const perTemplateEnNames = componentLibraryTemplates.map((template) =>
-      new Set(resolveEffectiveTemplateParameterDefinitions(template, libraryTemplates).filter((definition) => definition.enName !== "dev_type").map((definition) => definition.enName))
-    );
-    const intersection = perTemplateEnNames.reduce(
-      (acc, set) => new Set(Array.from(acc).filter((name) => set.has(name))),
-      perTemplateEnNames[0]
-    );
-    const firstTemplate = componentLibraryTemplates[0];
-    const firstDefinitions = resolveEffectiveTemplateParameterDefinitions(firstTemplate, libraryTemplates);
-    return Array.from(intersection).map((enName) => {
-      const definition = firstDefinitions.find((item) => item.enName === enName);
-      const settings = definition ? resolveDeviceParameterDefinitionExportSettings(firstTemplate.kind, firstTemplate.params ?? {}, definition) : { exportEnabled: false, exportName: enName };
-      const rawCn = definition?.cnName ?? enName;
-      return { enName, cnName: rawCn === enName ? PARAM_LABELS[enName] ?? rawCn : rawCn, exportEnabled: Boolean(settings.exportEnabled), exportName: settings.exportName ?? enName };
-    });
-  })();
-  const componentLibraryLabelKey = componentLibraryTemplates.length > 0
-    ? inferESection(componentLibraryTemplates[0].kind, componentLibraryTemplates[0].params ?? {})
-    : componentLibrarySectionKey;
-  const componentLibraryLabelValue = eDeviceDefinitionLabels[componentLibraryLabelKey] ?? componentLibraryLabelKey;
   const deleteAllDefinitionParameters = () => {
     if (!__appScope.requireEditMode("删除全部参数")) return;
     const template = __appScope.selectedDefinitionTemplate;
@@ -1626,6 +1592,12 @@ export function renderAppView(__appScope: Record<string, any>) {
   };
   const customDeviceDefinitionIconOnly = customDeviceDefinitionUsesIconOnly(customComponentTreeSelection, customDeviceDraft);
   const visibleCustomDeviceDialogView = customDeviceDefinitionIconOnly ? "icon" : customDeviceDialogView;
+  const showComponentLibraryTerminalTypes =
+    customComponentTreeSelection?.kind === "componentLibrary" &&
+    !customDeviceDraft.isDerivedComponentLibrary &&
+    customDeviceDraft.terminalCount > 0;
+  const showCustomDeviceInheritanceNote =
+    customComponentTreeSelection?.kind === "componentLibrary" && customDeviceDraft.isDerivedComponentLibrary;
   useEffect(() => {
     if (customDeviceDefinitionIconOnly && customDeviceDialogView !== "icon") {
       setCustomDeviceDialogView("icon");
@@ -4615,27 +4587,31 @@ export function renderAppView(__appScope: Record<string, any>) {
                 onSelectionChange={setCustomComponentTreeSelection}
                 onOpenEDeviceDefinitionInterface={() => setEDeviceDefinitionInterfaceDialogOpen(true)}
               />
-              <div className="custom-device-editor-panel">
-            <div className="custom-device-form-grid">
-              <label className="custom-category-library-field">
-                <span>类别库</span>
-                <input value={customDeviceDraft.categoryLibraryName} disabled readOnly />
-              </label>
+              <div className={`custom-device-editor-panel${showComponentLibraryTerminalTypes ? " has-component-library-terminal-types" : ""}`}>
+            <div className={`custom-device-form-grid${customComponentTreeSelection?.kind === "componentLibrary" ? " component-library-mode" : customComponentTreeSelection?.kind === "component" ? " component-mode" : ""}`}>
+              {customComponentTreeSelection?.kind !== "component" && (
+                <label className="custom-category-library-field">
+                  <span>类别库</span>
+                  <input value={customDeviceDraft.categoryLibraryName} disabled readOnly />
+                </label>
+              )}
               <label className="custom-component-library-field">
                 <span>所属类</span>
                 <input value={customDeviceClassDisplay.title} disabled readOnly />
               </label>
-              <label className="custom-device-name-field">
-                元件名称
-                <BufferedTextInput value={customDeviceDraft.componentName} placeholder="例如 水电、核电、风电、光伏" onCommit={(value) => setCustomDeviceDraft((current) => ({ ...current, componentName: value, error: "" }))}/>
-              </label>
-              <label className="custom-device-resize-field">
-                是否允许变形
-                <select value={customDeviceDraft.allowResizeTransform} onChange={(event) => setCustomDeviceDraft((current) => ({ ...current, allowResizeTransform: event.target.value, error: "" }))}>
-                  <option value="0">否</option>
-                  <option value="1">是</option>
-                </select>
-              </label>
+              {customComponentTreeSelection?.kind !== "componentLibrary" && (<>
+                <label className="custom-device-name-field">
+                  元件名称
+                  <BufferedTextInput value={customDeviceDraft.componentName} placeholder="例如 水电、核电、风电、光伏" onCommit={(value) => setCustomDeviceDraft((current) => ({ ...current, componentName: value, error: "" }))}/>
+                </label>
+                <label className="custom-device-resize-field">
+                  是否允许变形
+                  <select value={customDeviceDraft.allowResizeTransform} onChange={(event) => setCustomDeviceDraft((current) => ({ ...current, allowResizeTransform: event.target.value, error: "" }))}>
+                    <option value="0">否</option>
+                    <option value="1">是</option>
+                  </select>
+                </label>
+              </>)}
               <label className="custom-device-derived-field">
                 派生关系
                 <input value={customDeviceDraft.isDerivedComponentLibrary ? `派生自 ${customDeviceDraft.derivedFromComponentLibrary}` : "非派生类"} disabled readOnly />
@@ -4644,11 +4620,53 @@ export function renderAppView(__appScope: Record<string, any>) {
                 端子数量
                 <input value={customDeviceDraft.terminalCount} disabled readOnly />
               </label>
-              <label className="custom-device-container-field">
-                是否容器
-                <input value={customDeviceDraft.isContainer ? "是" : "否"} disabled readOnly />
-              </label>
+              {customComponentTreeSelection?.kind !== "component" && (
+                <label className="custom-device-container-field">
+                  是否容器
+                  <input value={customDeviceDraft.isContainer ? "是" : "否"} disabled readOnly />
+                </label>
+              )}
             </div>
+            {showComponentLibraryTerminalTypes && (
+                <div className="component-library-terminal-types" aria-label="类端子能源属性配置">
+                  <strong>端子能源属性</strong>
+                  <div>
+                    {Array.from({ length: customDeviceDraft.terminalCount }).map((_, index) => {
+                      const terminalType = customDeviceDraft.terminalTypes[index] ?? "ac";
+                      return (
+                        <label key={index}>
+                          <span>{`端子${index + 1}`}</span>
+                          <select
+                            aria-label={`端子${index + 1}能源属性`}
+                            value={terminalType}
+                            onChange={(event) => {
+                              const nextTerminalType = event.target.value;
+                              setCustomDeviceDraft((current) => {
+                                const terminalTypes = [...current.terminalTypes];
+                                terminalTypes[index] = nextTerminalType;
+                                return {
+                                  ...current,
+                                  terminalTypes,
+                                  terminalAssociations: normalizeContainerTerminalAssociations(
+                                    terminalTypes,
+                                    current.terminalAssociations,
+                                    current.terminalCount
+                                  ),
+                                  error: ""
+                                };
+                              });
+                            }}
+                          >
+                            {TERMINAL_TYPE_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             <div className="device-definition-tabs custom-device-tabs" role="tablist" aria-label="元件定义内容切换">
               {customComponentTreeSelection?.kind !== "componentLibrary" && (<button type="button" className={visibleCustomDeviceDialogView === "icon" ? "active" : ""} onClick={() => setCustomDeviceDialogView("icon")}>
                 图标定义
@@ -4669,7 +4687,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                 还原
               </button>)}
             </div>
-            <div className={`custom-device-tab-panel custom-device-tab-panel-${visibleCustomDeviceDialogView}`}>
+            <div className={`custom-device-tab-panel custom-device-tab-panel-${visibleCustomDeviceDialogView}${showCustomDeviceInheritanceNote ? " has-inheritance-note" : ""}`}>
             {visibleCustomDeviceDialogView === "icon" ? (<>
             {renderStateVisualPager(customDeviceDraft.stateDefinitions, customDeviceStatePageId, setCustomDeviceStatePageId, {
                 update: updateCustomDeviceStateDraftRow,
@@ -4688,12 +4706,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                     const associationOptions = CONTAINER_TERMINAL_ASSOCIATION_OPTIONS[terminalType];
                     const terminalAnchor = customDeviceTerminalAnchors[index] ?? { x: 0, y: 0 };
                     return (<label key={index} className={associationDependent ? "custom-terminal-dependent" : ""}>
-                    {`端子${index + 1}能源属性`}
-                    <select value={terminalType} disabled title="能源属性由所属类定义">
-                      {TERMINAL_TYPE_OPTIONS.map((option) => (<option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>))}
-                    </select>
+                    <strong>{`端子${index + 1}`}</strong>
                     <span>端子位置</span>
                     <div className="custom-terminal-anchor-inputs">
                       <span>X</span>
@@ -4715,42 +4728,13 @@ export function renderAppView(__appScope: Record<string, any>) {
                 })}
             </div>}
               </>) : visibleCustomDeviceDialogView === "parameters" ? (<>
-                {customComponentTreeSelection?.kind === "componentLibrary" && (
-                <section className="device-definition-component-library-panel device-definition-component-library-editor-header">
-                  <div className="device-definition-component-library-header">
-                    <h3>类：{customComponentTreeSelection?.section}</h3>
-                    <span className="device-definition-count">{componentLibraryTemplates.length} 个元件</span>
-                    <label>
-                      <span>E 文件标签</span>
-                      <BufferedTextInput
-                        value={componentLibraryLabelValue}
-                        onCommit={(value) => {
-                          const trimmed = value.trim();
-                          setEDeviceDefinitionLabels((prev) => {
-                            const next = { ...prev };
-                            if (!trimmed || trimmed === componentLibraryLabelKey) {
-                              delete next[componentLibraryLabelKey];
-                            } else {
-                              next[componentLibraryLabelKey] = trimmed;
-                            }
-                            return next;
-                          });
-                        }}
-                      />
-                    </label>
-                    <button type="button" onClick={() => setEDeviceDefinitionLabels((prev) => { const next = { ...prev }; delete next[componentLibraryLabelKey]; return next; })} disabled={eDeviceDefinitionLabels[componentLibraryLabelKey] === undefined}>
-                      还原
-                    </button>
-                  </div>
-                  {customDeviceDraft.isDerivedComponentLibrary && (
+                  {showCustomDeviceInheritanceNote && (
                     <p className="device-definition-inheritance-note">
                       已继承基类 {customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary} 的
                       {` ${__appScope.customDraftInheritedParameterDefinitions?.length ?? 0} `}个参数和
                       {` ${__appScope.customDraftInheritedMeasurementDefinitions?.length ?? 0} `}个量测；下表只定义派生类新增字段，无需重复定义基类字段。
                     </p>
                   )}
-                </section>
-                )}
             <div className="definition-table-toolbar" aria-label="参数定义表格操作">
               <button type="button" onClick={addCustomParameterRow}>新增参数</button>
               <button type="button" onClick={copySelectedCustomParameterRows} disabled={selectedCustomParameterRowIds.length === 0}>复制</button>
@@ -4847,7 +4831,7 @@ export function renderAppView(__appScope: Record<string, any>) {
               </table>
             </div>
               </>) : (<>
-                {customComponentTreeSelection?.kind === "componentLibrary" && customDeviceDraft.isDerivedComponentLibrary && (
+                {showCustomDeviceInheritanceNote && (
                   <p className="device-definition-inheritance-note">
                     基类 {customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary} 的量测已自动继承；这里只维护派生类新增量测。
                   </p>

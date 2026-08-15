@@ -898,7 +898,7 @@ export async function saveBackendMeasurementConfigPayload(normalizedMeasurementC
 
 export const LIBRARY_PACKAGE_FORMAT = "graph-modeling-platform-library-package";
 export const LIBRARY_PACKAGE_VERSION = 2;
-export const DEVICE_LIBRARY_SCHEMA_VERSION = 5;
+export const DEVICE_LIBRARY_SCHEMA_VERSION = 6;
 export type SupportedLibraryPackageVersion = 1 | typeof LIBRARY_PACKAGE_VERSION;
 export type LibraryPackageScope = "measurement" | "device-library" | "template-library" | "icon-library" | "component-library" | "all";
 export type IconLibraryPackageAsset = ImageAsset & { dataUrl: string };
@@ -2797,6 +2797,10 @@ export function normalizeDeviceDefinitionOverrides(value: unknown): Record<strin
         measurementDefinitions: Array.isArray(rawOverride.measurementDefinitions)
           ? normalizeDeviceMeasurementDefinitions(rawOverride.measurementDefinitions)
           : undefined,
+        measurementDefinitionsIntent: rawOverride.measurementDefinitionsIntent === "delete-all" &&
+          Array.isArray(rawOverride.measurementDefinitions) && rawOverride.measurementDefinitions.length === 0
+          ? "delete-all"
+          : undefined,
         stateDefinitions,
         updatedAt: typeof override.updatedAt === "string" ? override.updatedAt : undefined
       };
@@ -2859,6 +2863,32 @@ function migrateDeviceLibraryPayloadV4ToV5(source: MigratableDeviceLibraryPayloa
   return { ...source, schemaVersion: 5 };
 }
 
+function migrateDeviceLibraryPayloadV5ToV6(source: MigratableDeviceLibraryPayload): MigratableDeviceLibraryPayload {
+  const rawOverrides = source.deviceDefinitionOverrides && typeof source.deviceDefinitionOverrides === "object" &&
+    !Array.isArray(source.deviceDefinitionOverrides)
+    ? source.deviceDefinitionOverrides
+    : {};
+  const deviceDefinitionOverrides = Object.fromEntries(
+    Object.entries(rawOverrides).map(([kind, rawOverride]) => {
+      if (!rawOverride || typeof rawOverride !== "object" || Array.isArray(rawOverride)) {
+        return [kind, rawOverride];
+      }
+      const override = { ...rawOverride } as DeviceTemplateDefinitionOverride;
+      const explicitlyDeletesAllMeasurements = Array.isArray(override.measurementDefinitions) &&
+        override.measurementDefinitions.length === 0 && override.measurementDefinitionsIntent === "delete-all";
+      if (Array.isArray(override.measurementDefinitions) && override.measurementDefinitions.length === 0 &&
+        !explicitlyDeletesAllMeasurements) {
+        delete override.measurementDefinitions;
+      }
+      if (!explicitlyDeletesAllMeasurements) {
+        delete override.measurementDefinitionsIntent;
+      }
+      return [kind, override];
+    })
+  );
+  return { ...source, deviceDefinitionOverrides, schemaVersion: 6 };
+}
+
 export function migrateDeviceLibraryPersistencePayload(value: unknown): MigratableDeviceLibraryPayload {
   let source = value && typeof value === "object" && !Array.isArray(value)
     ? { ...(value as MigratableDeviceLibraryPayload) }
@@ -2882,6 +2912,10 @@ export function migrateDeviceLibraryPersistencePayload(value: unknown): Migratab
   }
   if (version < 5) {
     source = migrateDeviceLibraryPayloadV4ToV5(source);
+    version = 5;
+  }
+  if (version < 6) {
+    source = migrateDeviceLibraryPayloadV5ToV6(source);
   }
   return { ...source, schemaVersion: DEVICE_LIBRARY_SCHEMA_VERSION };
 }

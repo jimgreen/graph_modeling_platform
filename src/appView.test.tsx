@@ -268,7 +268,7 @@ describe("app view device definition parameter rows", () => {
     expect(moveEDeviceInterfaceFieldOrder(fields, "idx", 1)).toEqual(["name", "idx", "dev_type", "node"]);
   });
 
-  test("shows only icon definition for concrete static graphics", () => {
+  test("shows only icon definition for concrete components while classes keep definition tabs", () => {
     expect(customDeviceDefinitionUsesIconOnly(
       { kind: "component", categoryLibraryName: "静态图元", templateKind: "custom-static-symbol" },
       { categoryLibraryName: "静态图元", componentKind: "custom-static-symbol" }
@@ -280,7 +280,7 @@ describe("app view device definition parameter rows", () => {
     expect(customDeviceDefinitionUsesIconOnly(
       { kind: "component", categoryLibraryName: "交流设备", templateKind: "ac-breaker" },
       { categoryLibraryName: "交流设备", componentKind: "ac-breaker" }
-    )).toBe(false);
+    )).toBe(true);
     expect(customDeviceDefinitionUsesIconOnly(
       { kind: "componentLibrary", categoryLibraryName: "静态图元", section: "StaticBasicShape" },
       { categoryLibraryName: "静态图元", componentKind: "" }
@@ -645,6 +645,52 @@ describe("app view device definition parameter rows", () => {
     expect(source).not.toContain('<span>派生关系</span>');
     expect(source).toContain('所属类在创建后不可修改');
     expect(source).not.toContain(`title="点击选择${legacyClassTerm}"`);
+  });
+
+  test("renders compact terminal energy controls only for base classes", () => {
+    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const stylesSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+
+    expect(viewSource).toContain('className="component-library-terminal-types" aria-label="类端子能源属性配置"');
+    expect(viewSource).toContain('customComponentTreeSelection?.kind === "componentLibrary" &&');
+    expect(viewSource).toContain("!customDeviceDraft.isDerivedComponentLibrary &&");
+    expect(viewSource).toContain('aria-label={`端子${index + 1}能源属性`}');
+    expect(viewSource).not.toContain('title="能源属性由所属类定义"');
+    expect(viewSource).toContain('showComponentLibraryTerminalTypes ? " has-component-library-terminal-types" : ""');
+    expect(stylesSource).toMatch(/\.component-library-terminal-types\s*\{[^}]*min-height:\s*34px/s);
+    expect(stylesSource).toMatch(/\.custom-device-editor-panel\.has-component-library-terminal-types\s*\{[^}]*grid-template-rows:\s*auto auto auto minmax\(0, 1fr\)/s);
+    expect(stylesSource).toMatch(/\.custom-device-tab-panel-parameters\.has-inheritance-note\s*\{[^}]*grid-template-rows:\s*auto auto minmax\(0, 1fr\)/s);
+  });
+
+  test("removes the redundant class summary row and keeps the definition tabs at one normal row", () => {
+    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const stylesSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+
+    expect(viewSource).not.toContain("device-definition-component-library-editor-header");
+    expect(viewSource).not.toContain("device-definition-component-library-header");
+    expect(viewSource).not.toContain("componentLibraryLabelValue");
+    expect(viewSource).not.toContain("componentLibraryLabelKey");
+    expect(stylesSource).toMatch(/\.custom-device-tabs\s*\{[^}]*align-self:\s*start[^}]*min-height:\s*40px/s);
+  });
+
+  test("hides component-only name and resize controls when editing a class", () => {
+    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const stylesSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+
+    expect(viewSource).toContain('customComponentTreeSelection?.kind !== "componentLibrary" && (<>');
+    expect(viewSource).toMatch(/customComponentTreeSelection\?\.kind !== "componentLibrary" && \(<>[\s\S]*?元件名称[\s\S]*?是否允许变形[\s\S]*?<\/>\)}/);
+    expect(viewSource).toContain('customComponentTreeSelection?.kind === "componentLibrary" ? " component-library-mode" : customComponentTreeSelection?.kind === "component" ? " component-mode" : ""');
+    expect(stylesSource).toMatch(/\.custom-device-form-grid\.component-library-mode\s*\{[^}]*grid-template-columns:/s);
+  });
+
+  test("hides class-only category and container controls when editing a component", () => {
+    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const stylesSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+
+    expect(viewSource).toMatch(/customComponentTreeSelection\?\.kind !== "component" && \(\s*<label className="custom-category-library-field">/);
+    expect(viewSource).toMatch(/customComponentTreeSelection\?\.kind !== "component" && \(\s*<label className="custom-device-container-field">/);
+    expect(viewSource).toContain('customComponentTreeSelection?.kind === "component" ? " component-mode" : ""');
+    expect(stylesSource).toMatch(/\.custom-device-form-grid\.component-mode\s*\{[^}]*grid-template-columns:/s);
   });
 
   test("removes the centered transform when device library dialogs become floating", () => {

@@ -391,6 +391,7 @@ export type DeviceTemplate = {
   /** An applied persisted override is a complete table; omitted fields were explicitly deleted. */
   parameterDefinitionsComplete?: boolean;
   measurementDefinitions?: DeviceMeasurementDefinition[];
+  measurementDefinitionsIntent?: "delete-all";
   stateDefinitions?: DeviceStateDefinition[];
   rotation?: number;
 };
@@ -416,6 +417,7 @@ export type DeviceTemplateDefinitionOverride = {
   parameterDefinitions?: DeviceParameterDefinition[];
   parameterDefinitionsIntent?: "delete-all";
   measurementDefinitions?: DeviceMeasurementDefinition[];
+  measurementDefinitionsIntent?: "delete-all";
   stateDefinitions?: DeviceStateDefinition[];
   updatedAt?: string;
 };
@@ -7539,9 +7541,16 @@ export function applyDeviceTemplateDefinitionOverride(
   }
   const hasStateDefinitionsOverride = Array.isArray(override.stateDefinitions);
   const stateDefinitions = hasStateDefinitionsOverride ? normalizeDeviceStateDefinitions(override.stateDefinitions) : template.stateDefinitions?.map(cloneDeviceStateDefinition);
-  const hasMeasurementDefinitionsOverride = Array.isArray(override.measurementDefinitions);
+  const explicitlyDeletesAllMeasurementDefinitions =
+    override.measurementDefinitionsIntent === "delete-all" &&
+    Array.isArray(override.measurementDefinitions) &&
+    override.measurementDefinitions.length === 0;
+  const hasMeasurementDefinitionsOverride = Array.isArray(override.measurementDefinitions) &&
+    (override.measurementDefinitions.length > 0 || explicitlyDeletesAllMeasurementDefinitions);
   const measurementDefinitions = hasMeasurementDefinitionsOverride
-    ? normalizeDeviceMeasurementDefinitions(override.measurementDefinitions)
+    ? explicitlyDeletesAllMeasurementDefinitions
+      ? []
+      : normalizeDeviceMeasurementDefinitions(override.measurementDefinitions)
     : cloneDeviceMeasurementDefinitions(template.measurementDefinitions);
   const overrideParams = Object.fromEntries(
     Object.entries(override.params ?? {}).filter(([key]) => (
@@ -7636,6 +7645,7 @@ export function applyDeviceTemplateDefinitionOverride(
     parameterDefinitionsIntent: explicitlyDeletesAllParameterDefinitions ? "delete-all" : undefined,
     parameterDefinitionsComplete: hasParameterDefinitionsOverride || template.parameterDefinitionsComplete,
     measurementDefinitions,
+    measurementDefinitionsIntent: explicitlyDeletesAllMeasurementDefinitions ? "delete-all" : undefined,
     ...(stateDefinitions ? { stateDefinitions } : {})
   };
   if (isTwoWindingTransformerTemplateKind(template.kind)) {

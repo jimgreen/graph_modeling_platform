@@ -180,20 +180,55 @@ export function resolveEditableComponentLibraryDefinition(options: {
     if (!definitionKey(className) || resolving.has(recursionKey)) return null;
     resolving.add(recursionKey);
     try {
-      const metadata = classMetadataFor(className, categoryLibraryName, customComponentLibraries, templates);
-      if (!metadata) return null;
-      const overrideKey = componentLibraryDefinitionOverrideKey(metadata.className);
+      const sourceMetadata = classMetadataFor(className, categoryLibraryName, customComponentLibraries, templates);
+      if (!sourceMetadata) return null;
+      const overrideKey = componentLibraryDefinitionOverrideKey(sourceMetadata.className);
       const persistedOverride = overrides[overrideKey];
-      const matchingTemplates = templatesForClass(metadata, templates);
+      const matchingTemplates = templatesForClass(sourceMetadata, templates);
+      const inherited = sourceMetadata.isDerivedComponentLibrary
+        ? resolve(sourceMetadata.baseComponentLibrary, sourceMetadata.categoryLibraryName)
+        : null;
+      const inheritedMetadata = inherited?.metadata;
+      const persistedTerminalTypes = !sourceMetadata.isDerivedComponentLibrary && Array.isArray(persistedOverride?.terminalTypes)
+        ? persistedOverride.terminalTypes
+        : undefined;
+      const metadata: ComponentLibraryClassMetadata = inheritedMetadata
+        ? {
+            ...sourceMetadata,
+            terminalCount: inheritedMetadata.terminalCount,
+            terminalTypes: [...inheritedMetadata.terminalTypes],
+            terminalLabels: [...inheritedMetadata.terminalLabels],
+            terminalRoles: [...inheritedMetadata.terminalRoles],
+            terminalAssociations: [...inheritedMetadata.terminalAssociations],
+            isContainer: inheritedMetadata.isContainer
+          }
+        : persistedTerminalTypes
+          ? {
+              ...sourceMetadata,
+              terminalTypes: Array.from(
+                { length: sourceMetadata.terminalCount },
+                (_, index) => persistedTerminalTypes[index] ?? sourceMetadata.terminalTypes[index]
+              ),
+              terminalLabels: Array.from(
+                { length: sourceMetadata.terminalCount },
+                (_, index) => persistedOverride?.terminalLabels?.[index] ?? sourceMetadata.terminalLabels[index] ?? ""
+              ),
+              terminalRoles: Array.from(
+                { length: sourceMetadata.terminalCount },
+                (_, index) => persistedOverride?.terminalRoles?.[index] ?? sourceMetadata.terminalRoles[index]
+              ),
+              terminalAssociations: Array.from(
+                { length: sourceMetadata.terminalCount },
+                (_, index) => persistedOverride?.terminalAssociations?.[index] ?? sourceMetadata.terminalAssociations[index]
+              )
+            }
+          : sourceMetadata;
       const terminalTypes = metadata.terminalTypes.slice(0, metadata.terminalCount);
       const defaults = metadata.isDerivedComponentLibrary ? [] : buildComponentLibraryDefaultParameterDefinitions(metadata.className, terminalTypes, {
         isContainer: metadata.isContainer,
         terminalRoles: metadata.terminalRoles.slice(0, metadata.terminalCount),
         terminalAssociations: metadata.terminalAssociations.slice(0, metadata.terminalCount)
       });
-      const inherited = metadata.isDerivedComponentLibrary
-        ? resolve(metadata.baseComponentLibrary, metadata.categoryLibraryName)
-        : null;
       const inheritedParameterDefinitions = inherited?.effectiveParameterDefinitions ?? [];
       const inheritedParameterKeys = new Set(
         inheritedParameterDefinitions.map((definition) => definitionKey(definition.enName))

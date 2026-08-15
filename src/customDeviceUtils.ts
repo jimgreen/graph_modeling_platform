@@ -159,6 +159,7 @@ export function concreteDeviceTemplateForStorage(template: DeviceTemplate): Devi
     parameterDefinitionsIntent: _parameterDefinitionsIntent,
     parameterDefinitionsComplete: _parameterDefinitionsComplete,
     measurementDefinitions: _measurementDefinitions,
+    measurementDefinitionsIntent: _measurementDefinitionsIntent,
     ...visualTemplate
   } = template;
   const params = concreteDeviceDefinitionParams(template.params);
@@ -242,6 +243,7 @@ function visualOnlyOverride(
   delete next.parameterDefinitions;
   delete next.parameterDefinitionsIntent;
   delete next.measurementDefinitions;
+  delete next.measurementDefinitionsIntent;
   return next;
 }
 
@@ -272,7 +274,9 @@ function sharedDefinitionSourceForTemplate(
       )
     )),
     measurementSource: preferredDefinitionSource(overrides[sharedKey], candidates, (override) => (
-      Array.isArray(override.measurementDefinitions)
+      Array.isArray(override.measurementDefinitions) && (
+        override.measurementDefinitions.length > 0 || override.measurementDefinitionsIntent === "delete-all"
+      )
     ))
   };
 }
@@ -286,11 +290,21 @@ export function deviceDefinitionOverrideForTemplate(
   const { parameterSource, measurementSource } = sharedDefinitionSourceForTemplate(template, overrides, templates);
   const sharedOverride = parameterSource ?? measurementSource ?? overrides[sharedKey];
   const exactOverride = overrides[template.kind];
+  const derivedInfo = modelTemplateDerivedComponentLibraryInfo(template);
+  const terminalDefinitionClass = normalizeComponentLibraryName(
+    derivedInfo?.baseComponentLibrary || componentClassForConcreteTemplate(template)
+  );
+  const classOverride = terminalDefinitionClass
+    ? overrides[`class:${terminalDefinitionClass}`]
+    : undefined;
+  const classTerminalTypes = Array.isArray(classOverride?.terminalTypes)
+    ? classOverride.terminalTypes.slice(0, classOverride.terminalCount ?? classOverride.terminalTypes.length)
+    : undefined;
   const businessParameterNames = new Set(
     (parameterSource?.parameterDefinitions ?? []).map((definition) => definition.enName)
   );
   const visualOverride = visualOnlyOverride(exactOverride, businessParameterNames);
-  if (!sharedOverride && !visualOverride) return undefined;
+  if (!sharedOverride && !visualOverride && !classTerminalTypes) return undefined;
   const storedParameterDefinitions = parameterSource?.parameterDefinitions;
   const explicitlyDeletesAllParameterDefinitions =
     parameterSource?.parameterDefinitionsIntent === "delete-all" &&
@@ -304,6 +318,11 @@ export function deviceDefinitionOverrideForTemplate(
       : builtInParameterDefinitions.length > 0
         ? builtInParameterDefinitions
         : undefined;
+  const storedMeasurementDefinitions = measurementSource?.measurementDefinitions;
+  const explicitlyDeletesAllMeasurementDefinitions =
+    measurementSource?.measurementDefinitionsIntent === "delete-all" &&
+    Array.isArray(storedMeasurementDefinitions) &&
+    storedMeasurementDefinitions.length === 0;
   const mergedParams = restoreBuiltInTemplateComponentMetadata(template, {
     ...sharedDefinitionParams(sharedOverride),
     ...sharedDefinitionParams(parameterSource),
@@ -314,13 +333,31 @@ export function deviceDefinitionOverrideForTemplate(
     ...(visualOverride ?? {}),
     kind: template.kind,
     params: mergedParams,
+    ...(classTerminalTypes ? {
+      terminalType: classTerminalTypes[0] ?? template.terminalType,
+      terminalCount: classTerminalTypes.length,
+      terminalTypes: [...classTerminalTypes],
+      ...(Array.isArray(classOverride?.terminalLabels)
+        ? { terminalLabels: classOverride.terminalLabels.slice(0, classTerminalTypes.length) }
+        : {}),
+      ...(Array.isArray(classOverride?.terminalRoles)
+        ? { terminalRoles: classOverride.terminalRoles.slice(0, classTerminalTypes.length) }
+        : {}),
+      ...(Array.isArray(classOverride?.terminalAssociations)
+        ? { terminalAssociations: classOverride.terminalAssociations.slice(0, classTerminalTypes.length) }
+        : {}),
+      ...(typeof classOverride?.isContainer === "boolean"
+        ? { isContainer: classOverride.isContainer }
+        : {})
+    } : {}),
     ...(Array.isArray(parameterDefinitions)
       ? { parameterDefinitions: parameterDefinitions.map((definition) => ({ ...definition })) }
       : {}),
     ...(explicitlyDeletesAllParameterDefinitions ? { parameterDefinitionsIntent: "delete-all" as const } : {}),
-    ...(Array.isArray(measurementSource?.measurementDefinitions)
-      ? { measurementDefinitions: cloneDeviceMeasurementDefinitions(measurementSource.measurementDefinitions) }
-      : {})
+    ...(Array.isArray(storedMeasurementDefinitions)
+      ? { measurementDefinitions: cloneDeviceMeasurementDefinitions(storedMeasurementDefinitions) }
+      : {}),
+    ...(explicitlyDeletesAllMeasurementDefinitions ? { measurementDefinitionsIntent: "delete-all" as const } : {})
   };
 }
 
@@ -329,20 +366,31 @@ export function normalizeSharedDeviceDefinitionOverrides(
   templates: readonly DeviceTemplate[]
 ) {
   const next = Object.fromEntries(Object.entries(overrides).map(([key, override]) => {
-    if (!Array.isArray(override.parameterDefinitions)) {
-      return [key, override];
-    }
-    if (override.parameterDefinitions.length > 0) {
-      const sanitized = { ...override };
-      delete sanitized.parameterDefinitionsIntent;
-      return [key, sanitized];
-    }
-    if (override.parameterDefinitionsIntent === "delete-all") {
-      return [key, { ...override, parameterDefinitions: [] }];
-    }
     const sanitized = { ...override };
-    delete sanitized.parameterDefinitions;
-    delete sanitized.parameterDefinitionsIntent;
+    if (Array.isArray(sanitized.parameterDefinitions)) {
+      if (sanitized.parameterDefinitions.length > 0) {
+        delete sanitized.parameterDefinitionsIntent;
+      } else if (sanitized.parameterDefinitionsIntent === "delete-all") {
+        sanitized.parameterDefinitions = [];
+      } else {
+        delete sanitized.parameterDefinitions;
+        delete sanitized.parameterDefinitionsIntent;
+      }
+    } else {
+      delete sanitized.parameterDefinitionsIntent;
+    }
+    if (Array.isArray(sanitized.measurementDefinitions)) {
+      if (sanitized.measurementDefinitions.length > 0) {
+        delete sanitized.measurementDefinitionsIntent;
+      } else if (sanitized.measurementDefinitionsIntent === "delete-all") {
+        sanitized.measurementDefinitions = [];
+      } else {
+        delete sanitized.measurementDefinitions;
+        delete sanitized.measurementDefinitionsIntent;
+      }
+    } else {
+      delete sanitized.measurementDefinitionsIntent;
+    }
     return [key, sanitized];
   })) as Record<string, DeviceTemplateDefinitionOverride>;
   const templatesBySharedIdentity = new Map<string, DeviceTemplate[]>();
@@ -367,7 +415,9 @@ export function normalizeSharedDeviceDefinitionOverrides(
       )
     ));
     const measurementSource = preferredDefinitionSource(next[sharedKey], candidates, (override) => (
-      Array.isArray(override.measurementDefinitions)
+      Array.isArray(override.measurementDefinitions) && (
+        override.measurementDefinitions.length > 0 || override.measurementDefinitionsIntent === "delete-all"
+      )
     ));
     const sharedSource = parameterSource ?? measurementSource;
     const currentShared = next[sharedKey];
@@ -376,7 +426,30 @@ export function normalizeSharedDeviceDefinitionOverrides(
         .filter((candidate) => candidate !== currentShared)
         .flatMap((candidate) => Object.entries(sharedDefinitionParams(candidate)))
     );
-    if (!sharedSource && !currentShared && Object.keys(migratedBusinessParams).length === 0) continue;
+    if (!sharedSource && !currentShared && Object.keys(migratedBusinessParams).length === 0) {
+      for (const peer of peers) {
+        if (!next[peer.kind]) continue;
+        const visual = visualOnlyOverride(next[peer.kind]);
+        const hasVisualContent = visual && Object.keys(visual).some((key) => ![
+          "kind",
+          "updatedAt",
+          "params",
+          "isDerivedComponentLibrary",
+          "derivedFromComponentLibrary",
+          "derivedComponentLibrary",
+          "derivedComponentLibraryLabel"
+        ].includes(key)) || Boolean(visual && Object.keys(visual.params ?? {}).length > 0);
+        if (hasVisualContent) {
+          next[peer.kind] = visual!;
+        } else {
+          delete next[peer.kind];
+        }
+      }
+      if (sharedIdentity !== sharedKey && !peers.some((peer) => peer.kind === sharedIdentity)) {
+        delete next[sharedIdentity];
+      }
+      continue;
+    }
     next[sharedKey] = {
       kind: sharedKey,
       params: {
@@ -393,6 +466,9 @@ export function normalizeSharedDeviceDefinitionOverrides(
         : {}),
       ...(Array.isArray(measurementSource?.measurementDefinitions)
         ? { measurementDefinitions: cloneDeviceMeasurementDefinitions(measurementSource.measurementDefinitions) }
+        : {}),
+      ...(measurementSource?.measurementDefinitionsIntent === "delete-all"
+        ? { measurementDefinitionsIntent: "delete-all" as const }
         : {}),
       updatedAt: latestDefinitionSource(parameterSource, measurementSource)?.updatedAt
     };
@@ -442,7 +518,10 @@ function templateBusinessDefinitionOverride(template: DeviceTemplate): DeviceTem
     ...(template.parameterDefinitionsIntent === "delete-all"
       ? { parameterDefinitionsIntent: "delete-all" as const }
       : {}),
-    ...(measurementDefinitions ? { measurementDefinitions } : {})
+    ...(measurementDefinitions ? { measurementDefinitions } : {}),
+    ...(template.measurementDefinitionsIntent === "delete-all"
+      ? { measurementDefinitionsIntent: "delete-all" as const }
+      : {})
   };
 }
 
@@ -458,6 +537,7 @@ function concreteTemplateWithoutBusinessDefinitions(
   delete next.parameterDefinitionsIntent;
   delete next.parameterDefinitionsComplete;
   delete next.measurementDefinitions;
+  delete next.measurementDefinitionsIntent;
   return next;
 }
 
@@ -495,7 +575,8 @@ export function normalizeDeviceDefinitionOwnership(
       },
       parameterDefinitions: existing?.parameterDefinitions ?? legacyBusinessOverride.parameterDefinitions,
       parameterDefinitionsIntent: existing?.parameterDefinitionsIntent ?? legacyBusinessOverride.parameterDefinitionsIntent,
-      measurementDefinitions: existing?.measurementDefinitions ?? legacyBusinessOverride.measurementDefinitions
+      measurementDefinitions: existing?.measurementDefinitions ?? legacyBusinessOverride.measurementDefinitions,
+      measurementDefinitionsIntent: existing?.measurementDefinitionsIntent ?? legacyBusinessOverride.measurementDefinitionsIntent
     };
   }
   const deviceDefinitionOverrides = normalizeSharedDeviceDefinitionOverrides(migrationOverrides, templates);

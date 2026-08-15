@@ -1038,6 +1038,7 @@ export function applyEDeviceDefinitionSectionsToLibraryState(options: {
     delete next.parameterDefinitions;
     delete next.parameterDefinitionsIntent;
     delete next.measurementDefinitions;
+    delete next.measurementDefinitionsIntent;
     return next;
   });
   const nextDeviceDefinitionOverrides: Record<string, any> = { ...deviceDefinitionOverrides };
