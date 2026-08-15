@@ -706,6 +706,20 @@ describe("electric generation device library classification", () => {
 
     expect(devTypeRow).toBeDefined();
     expect(devTypeRow?.typicalValue).toBe(template?.kind);
+    expect(draft.componentKind).toBe(template?.kind);
+  });
+
+  test("round-trips editable component Chinese and English display names through an override", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-load")!;
+    const applied = applyDeviceTemplateDefinitionOverride(template, {
+      kind: template.kind,
+      label: "用户交流负荷",
+      englishName: "user-ac-load"
+    });
+    const draft = createCustomDeviceDraftFromTemplate(applied);
+
+    expect(draft.componentName).toBe("用户交流负荷");
+    expect(draft.componentKind).toBe("user-ac-load");
   });
 
   test("copies effective shared measurement definitions into an isolated edit draft", () => {

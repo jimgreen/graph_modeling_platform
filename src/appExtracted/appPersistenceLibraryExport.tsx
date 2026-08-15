@@ -1289,6 +1289,7 @@ export function libraryTemplateMatchesSearch(
     section,
     componentLibraryDisplayName(section, customComponentLibraries),
     template.label,
+    template.englishName,
     template.kind,
     template.componentClass,
     derivedInfo?.derivedComponentLibrary,
@@ -2766,6 +2767,7 @@ export function normalizeDeviceDefinitionOverrides(value: unknown): Record<strin
       const normalizedOverride: DeviceTemplateDefinitionOverride = {
         kind: normalizedKind,
         label: String(rawOverride.label ?? "").trim() || undefined,
+        englishName: String(rawOverride.englishName ?? "").trim() || undefined,
         params: normalizedParams,
         size: normalizeDefinitionOverrideSize(rawOverride.size),
         terminalType: normalizeDefinitionOverrideTerminalType(rawOverride.terminalType),
@@ -3629,7 +3631,6 @@ export type CustomComponentTreeProps = {
   onCreateCategoryLibrary: () => void;
   onCreateComponentLibrary: () => void;
   onCreateComponent: () => void;
-  onRenameSelection: () => void;
   onDeleteSelection: () => void;
   onSearchChange: (query: string) => void;
   onCollapseChange: (libraries: Set<string>, types: Set<string>) => void;
@@ -3903,7 +3904,6 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
   onCreateCategoryLibrary,
   onCreateComponentLibrary,
   onCreateComponent,
-  onRenameSelection,
   onDeleteSelection,
   onSearchChange,
   onCollapseChange,
@@ -4065,6 +4065,7 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
               const componentSelected =
                 selection.kind === "component" &&
                 selection.templateKind === template.kind;
+              const componentEnglishName = String(template.englishName ?? template.kind).trim();
               return (
                 <button
                   type="button"
@@ -4072,13 +4073,13 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
                   className={`custom-component-tree-row component ${componentSelected ? "active" : ""}`}
                   role="treeitem"
                   aria-selected={componentSelected}
-                  title={`${template.label} / ${node.section} / ${template.custom ? "自定义" : "系统内置"}`}
+                  title={`${template.label} / ${componentEnglishName} / ${node.section} / ${template.custom ? "自定义" : "系统内置"}`}
                   onClick={() => handleSelectComponent(template, node.section)}
                 >
                   <CustomComponentTreeTemplateThumbnail template={template} />
-                  <span className="dialog-tree-bilingual dialog-tree-component-label" title={`${template.label} / ${template.kind}`}>
+                  <span className="dialog-tree-bilingual dialog-tree-component-label" title={`${template.label} / ${componentEnglishName}`}>
                     <span>{template.label}</span>
-                    <small>{template.kind}</small>
+                    <small>{componentEnglishName}</small>
                   </span>
                   <small>{template.custom ? "自定义" : "内置"}</small>
                 </button>
@@ -4125,10 +4126,6 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
         >
           <Plus size={13} aria-hidden="true" />
           <span>新建元件</span>
-        </button>
-        <button type="button" onClick={onRenameSelection} title="重命名当前选中的自定义条目">
-          <Pencil size={12} aria-hidden="true" />
-          <span>重命名</span>
         </button>
         <button type="button" className="danger" onClick={onDeleteSelection} title="删除当前选中的自定义条目">
           <Trash2 size={12} aria-hidden="true" />

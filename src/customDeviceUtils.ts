@@ -888,7 +888,7 @@ export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, se
     categoryLibraryName,
     componentLibrary: editableComponentLibrary,
     componentName: template.label,
-    componentKind: template.custom ? template.kind : "",
+    componentKind: String(template.englishName ?? template.kind).trim(),
     isDerivedComponentLibrary: Boolean(derivedInfo),
     derivedFromComponentLibrary: baseComponentLibrary,
     derivedComponentLibrary: derivedInfo?.derivedComponentLibrary ?? "",

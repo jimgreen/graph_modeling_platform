@@ -364,6 +364,8 @@ export type Terminal = {
 export type DeviceTemplate = {
   kind: DeviceKind;
   label: string;
+  /** Editable English display name. `kind` remains the stable runtime identity. */
+  englishName?: string;
   /** Explicit class identity used by persisted concrete elements. */
   componentClass?: string;
   categoryLibrary: string;
@@ -399,6 +401,8 @@ export type DeviceTemplate = {
 export type DeviceTemplateDefinitionOverride = {
   kind: string;
   label?: string;
+  /** Editable English display name for built-in and persisted templates. */
+  englishName?: string;
   params?: Record<string, string>;
   size?: DeviceTemplate["size"];
   terminalType?: TerminalType;
@@ -7626,6 +7630,7 @@ export function applyDeviceTemplateDefinitionOverride(
   const mergedTemplate: DeviceTemplate = {
     ...template,
     label: String(override.label ?? "").trim() || template.label,
+    englishName: String(override.englishName ?? "").trim() || template.englishName || template.kind,
     size: override.size ? { ...override.size } : template.size,
     terminalType,
     terminalCount,

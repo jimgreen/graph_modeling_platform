@@ -480,7 +480,6 @@ export function renderAppView(__appScope: Record<string, any>) {
     deleteGraphTemplate,
     deleteGraphTemplateType,
     deleteSelectedCustomDeviceTreeItem,
-    renameSelectedCustomDeviceTreeItem,
     scheduleGraphTemplateFlyoutClose,
     setCustomLibraryCreateDialog,
     setHoveredGraphTemplateType,
@@ -1518,15 +1517,6 @@ export function renderAppView(__appScope: Record<string, any>) {
   );
   const customLibraryCreateDialogBaseComponentLibraryOptions = customLibraryCreateDialogFamilyMetadata
     .map((metadata) => metadata.className);
-  const customLibraryCreateDialogBaseSearchNeedle = String(
-    customLibraryCreateDialog?.baseComponentLibrarySearch ?? ""
-  ).trim().toLowerCase();
-  const customLibraryCreateDialogVisibleBaseComponentLibraryOptions = customLibraryCreateDialogBaseComponentLibraryOptions
-    .filter((section) => {
-      if (!customLibraryCreateDialogBaseSearchNeedle) return true;
-      return componentLibraryDisplayParts(section, customComponentLibraries).title.trim().toLowerCase()
-        .includes(customLibraryCreateDialogBaseSearchNeedle);
-    });
   const customLibraryCreateDialogClassOptions: Array<{
     className: string;
     label: string;
@@ -4453,28 +4443,16 @@ export function renderAppView(__appScope: Record<string, any>) {
                 </label>
                 {customLibraryCreateDialog.isDerivedComponentLibrary && (<label className="custom-library-create-base-class-field">
                   <span>派生基类</span>
-                  <input
-                    type="search"
-                    disabled={Boolean(customLibraryCreateDialog.classCreationMode)}
-                    value={customLibraryCreateDialog.baseComponentLibrarySearch ?? ""}
-                    placeholder="输入中文名或英文名过滤"
-                    onChange={(event) => setCustomLibraryCreateDialog((current) => current ? {
-                      ...current,
-                      baseComponentLibrarySearch: event.target.value,
-                      error: ""
-                    } : current)}
-                  />
                   <select disabled={Boolean(customLibraryCreateDialog.classCreationMode)} value={customLibraryCreateDialog.derivedFromComponentLibrary ?? ""} onChange={(event) => setCustomLibraryCreateDialog((current) => current ? {
                     ...current,
                     derivedFromComponentLibrary: event.target.value,
                     error: ""
                   } : current)} aria-label="派生基类选择">
                     <option value="">请选择基类</option>
-                    {customLibraryCreateDialogVisibleBaseComponentLibraryOptions.map((section) => (<option key={section} value={section}>
+                    {customLibraryCreateDialogBaseComponentLibraryOptions.map((section) => (<option key={section} value={section}>
                       {componentLibraryDisplayParts(section, customComponentLibraries).title}
                     </option>))}
                   </select>
-                  <small>{customLibraryCreateDialogVisibleBaseComponentLibraryOptions.length} / {customLibraryCreateDialogBaseComponentLibraryOptions.length}</small>
                 </label>)}
                 {!customLibraryCreateDialog.isDerivedComponentLibrary && (<>
                   <label>
@@ -4612,7 +4590,6 @@ export function renderAppView(__appScope: Record<string, any>) {
                 onCreateCategoryLibrary={createCustomCategoryLibrary}
                 onCreateComponentLibrary={createCustomComponentLibrary}
                 onCreateComponent={startCustomComponentCreate}
-                onRenameSelection={renameSelectedCustomDeviceTreeItem}
                 onDeleteSelection={deleteSelectedCustomDeviceTreeItem}
                 onSearchChange={setCustomComponentTreeSearchQuery}
                 onCollapseChange={handleTreeCollapseChange}
@@ -4633,8 +4610,12 @@ export function renderAppView(__appScope: Record<string, any>) {
               </label>
               {customDeviceDefinitionIconOnly && (<>
                 <label className="custom-device-name-field">
-                  元件名称
+                  元件中文名称
                   <BufferedTextInput value={customDeviceDraft.componentName} placeholder="例如 水电、核电、风电、光伏" onCommit={(value) => setCustomDeviceDraft((current) => ({ ...current, componentName: value, error: "" }))}/>
+                </label>
+                <label className="custom-device-english-name-field">
+                  元件英文名称
+                  <BufferedTextInput value={customDeviceDraft.componentKind ?? ""} placeholder="例如 two-port-heat-source" onCommit={(value) => setCustomDeviceDraft((current) => ({ ...current, componentKind: value, error: "" }))}/>
                 </label>
                 <label className="custom-device-resize-field">
                   是否允许变形

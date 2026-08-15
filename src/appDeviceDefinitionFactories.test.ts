@@ -1140,6 +1140,7 @@ describe("manual bend interaction helpers", () => {
     expect(savedTemplates[1]).toMatchObject({
       kind: "UserDevice",
       label: "测试元件",
+      englishName: "UserDevice",
       categoryLibrary: "用户类别库",
       params: { component_type: "UserLibrary" }
     });
@@ -1870,6 +1871,7 @@ describe("manual bend interaction helpers", () => {
     let customDeviceDraft = {
       componentLibrary: "ACGenerator",
       componentName: "用户柴油发电机",
+      componentKind: "user-diesel-generator",
       isDerivedComponentLibrary: true,
       derivedFromComponentLibrary: "ACGenerator",
       derivedComponentLibrary: "UserDieselGen",
@@ -1943,6 +1945,7 @@ describe("manual bend interaction helpers", () => {
     expect(savedOverrides["ac-diesel-source"]).toMatchObject({
       kind: "ac-diesel-source",
       label: "用户柴油发电机",
+      englishName: "user-diesel-generator",
       isDerivedComponentLibrary: true,
       derivedFromComponentLibrary: "ACGenerator",
       derivedComponentLibrary: "UserDieselGen"
@@ -1957,9 +1960,12 @@ describe("manual bend interaction helpers", () => {
     });
     expect(savedOverrides["ac-diesel-source"]).not.toHaveProperty("derivedComponentLibraryLabel");
     expect(savedOverrides["ac-diesel-source"].params).not.toHaveProperty("derived_component_library_label");
-    expect(applyDeviceTemplateDefinitionOverride(template as any, savedOverrides["ac-diesel-source"]).label)
-      .toBe("用户柴油发电机");
+    const reopenedTemplate = applyDeviceTemplateDefinitionOverride(template as any, savedOverrides["ac-diesel-source"]);
+    expect(reopenedTemplate.label).toBe("用户柴油发电机");
+    expect(reopenedTemplate.englishName).toBe("user-diesel-generator");
     expect(customDeviceDraft).toMatchObject({
+      componentName: "用户柴油发电机",
+      componentKind: "user-diesel-generator",
       isDerivedComponentLibrary: true,
       derivedFromComponentLibrary: "ACGenerator",
       derivedComponentLibrary: "UserDieselGen",
@@ -2890,7 +2896,9 @@ describe("manual bend interaction helpers", () => {
     expect(appViewSource).toContain('className="custom-device-derived-field"');
     expect(appViewSource).toContain('className="custom-device-resize-field"');
     expect(appViewSource).toContain('!customLibraryCreateDialog.isDerivedComponentLibrary');
-    expect(appViewSource).toContain('placeholder="输入中文名或英文名过滤"');
+    expect(appViewSource).not.toContain('placeholder="输入中文名或英文名过滤"');
+    expect(appViewSource).not.toContain("customLibraryCreateDialogVisibleBaseComponentLibraryOptions");
+    expect(appViewSource).toContain("customLibraryCreateDialogBaseComponentLibraryOptions.map");
     expect(appViewSource).toContain('aria-label="派生基类选择"');
     expect(appViewSource).not.toContain("customLibraryCreateDialogSelectedClassMetadata");
     expect(appViewSource).not.toContain('custom-device-terminal-summary-field');
