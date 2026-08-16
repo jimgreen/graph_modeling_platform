@@ -3845,9 +3845,10 @@ test("removes generic ACAC and DCDC setpoints without migrating their values", (
   };
   for (const kind of ["dcdc-converter", "acac-converter"] as const) {
     const template = DEVICE_LIBRARY.find((candidate) => candidate.kind === kind)!;
+    const fieldNames = getTemplateParameterDefinitions(template).map((definition) => definition.enName);
     const expectedEndpointFields = kind === "dcdc-converter"
       ? ["i_p_set", "j_p_set", "i_i_set", "j_i_set", "i_v_set", "j_v_set"]
-      : ["i_p_set", "j_p_set", "i_q_set", "j_q_set", "i_v_set", "j_v_set"];
+      : ["i_p_set", "j_p_set", "i_q_set", "j_q_set", "i_i_set", "j_i_set", "i_v_set", "j_v_set"];
     const sharedKey = kind === "dcdc-converter" ? "shared:DCDCConverter" : "shared:ACACConverter";
     const persistedFieldNames = (persistedLibrary.deviceDefinitionOverrides?.[sharedKey]?.parameterDefinitions ?? [])
       .map((definition) => definition.enName);
@@ -3864,10 +3865,12 @@ test("removes generic ACAC and DCDC setpoints without migrating their values", (
       i_p_set: "1",
       j_p_set: "2",
       i_v_set: "3",
-      j_v_set: "4"
+      j_v_set: "4",
+      i_i_set: "5",
+      j_i_set: "6"
     });
-    if (kind === "dcdc-converter") {
-      Object.assign(node.params, { i_i_set: "5", j_i_set: "6" });
+    if (kind === "acac-converter") {
+      Object.assign(node.params, { i_q_set: "7", j_q_set: "8" });
     }
     const storedDefinitions = JSON.parse(node.params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]") as DeviceParameterDefinition[];
     node.params[CUSTOM_PARAM_DEFINITIONS_KEY] = JSON.stringify([
@@ -3878,15 +3881,24 @@ test("removes generic ACAC and DCDC setpoints without migrating their values", (
     ]);
 
     const normalized = normalizeNodeTerminalsWithTemplate(node, template);
-    expect(normalized.params).toMatchObject({ i_p_set: "1", j_p_set: "2", i_v_set: "3", j_v_set: "4" });
-    if (kind === "dcdc-converter") {
-      expect(normalized.params).toMatchObject({ i_i_set: "5", j_i_set: "6" });
+    expect(normalized.params).toMatchObject({
+      i_p_set: "1",
+      j_p_set: "2",
+      i_i_set: "5",
+      j_i_set: "6",
+      i_v_set: "3",
+      j_v_set: "4"
+    });
+    if (kind === "acac-converter") {
+      expect(normalized.params).toMatchObject({ i_q_set: "7", j_q_set: "8" });
     }
     for (const legacyKey of ["p_set", "pSet", "i_set", "iSet", "v_set", "vSet"]) {
       expect(normalized.params).not.toHaveProperty(legacyKey);
     }
     const storedFieldNames = (JSON.parse(normalized.params[CUSTOM_PARAM_DEFINITIONS_KEY] ?? "[]") as DeviceParameterDefinition[])
       .map((definition) => definition.enName);
+    expect(fieldNames).toEqual(expect.arrayContaining(expectedEndpointFields));
+    expect(storedFieldNames).toEqual(expect.arrayContaining(expectedEndpointFields));
     expect(storedFieldNames).not.toEqual(expect.arrayContaining(["p_set", "i_set", "v_set"]));
   }
 });
@@ -3947,7 +3959,7 @@ test("keeps explicit delete-all parameter overrides empty for E devices", () => 
   expect(getTemplateParameterDefinitions(overridden)).toEqual([]);
 });
 
-test("treats persisted converter parameter definitions as a complete table", () => {
+test("restores canonical converter endpoint setpoints omitted from persisted complete tables", () => {
   const template = DEVICE_LIBRARY.find((candidate) => candidate.kind === "dcdc-converter")!;
   const retainedDefinitions = getTemplateParameterDefinitions(template).filter((definition) => (
     !["p_set", "i_set", "v_set", "i_p_set", "i_i_set", "i_v_set", "j_p_set", "j_i_set", "j_v_set"].includes(definition.enName)
@@ -3959,7 +3971,10 @@ test("treats persisted converter parameter definitions as a complete table", () 
   });
   const reopenedFields = getTemplateParameterDefinitions(overridden).map((definition) => definition.enName);
 
-  expect(reopenedFields).toEqual(retainedDefinitions.map((definition) => definition.enName));
+  expect(reopenedFields).toEqual(expect.arrayContaining(retainedDefinitions.map((definition) => definition.enName)));
+  expect(reopenedFields).toEqual(expect.arrayContaining([
+    "i_p_set", "j_p_set", "i_i_set", "j_i_set", "i_v_set", "j_v_set"
+  ]));
   expect(reopenedFields).not.toEqual(expect.arrayContaining(["p_set", "i_set", "v_set"]));
 });
 

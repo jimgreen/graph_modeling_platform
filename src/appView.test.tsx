@@ -741,11 +741,24 @@ describe("app view device definition parameter rows", () => {
   test("keeps the whole right editor in component mode after confirming a new component", () => {
     const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
 
-    expect(viewSource).toContain("!customDeviceDefinitionIconOnly &&\n    customComponentTreeSelection?.kind === \"componentLibrary\" &&\n    !customDeviceDraft.isDerivedComponentLibrary");
-    expect(viewSource).toContain("!customDeviceDefinitionIconOnly &&\n    customComponentTreeSelection?.kind === \"componentLibrary\" &&\n    customDeviceDraft.isDerivedComponentLibrary");
-    expect(viewSource).toContain('(customDeviceDefinitionIconOnly || customComponentTreeSelection?.kind !== "componentLibrary") && (<button');
-    expect(viewSource).toContain('!customDeviceDefinitionIconOnly && (<>');
+    expect(viewSource).toMatch(/const visibleCustomDeviceDialogView\s*=\s*customDeviceDefinitionIconOnly\s*\?\s*"icon"\s*:\s*customDeviceDialogView/);
+    expect(viewSource).toMatch(/const showComponentLibraryTerminalTypes\s*=\s*!customDeviceDefinitionIconOnly\s*&&\s*customComponentTreeSelection\?\.kind\s*===\s*"componentLibrary"\s*&&\s*!customDeviceDraft\.isDerivedComponentLibrary/);
+    expect(viewSource).toMatch(/const showCustomDeviceInheritanceNote\s*=\s*!customDeviceDefinitionIconOnly\s*&&\s*customComponentTreeSelection\?\.kind\s*===\s*"componentLibrary"\s*&&\s*customDeviceDraft\.isDerivedComponentLibrary/);
+    expect(viewSource).toMatch(/\(customDeviceDefinitionIconOnly\s*\|\|\s*customComponentTreeSelection\?\.kind\s*!==\s*"componentLibrary"\)\s*&&\s*\(<button/);
+    expect(viewSource).toMatch(/!customDeviceDefinitionIconOnly\s*&&\s*\(<>/);
     expect(viewSource).toContain(': "保存新建元件"');
+  });
+
+  test("wires component copy and repeated paste actions into the component tree", () => {
+    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+
+    expect(viewSource).toContain("copiedCustomComponentTemplate={copiedCustomComponentTemplate}");
+    expect(viewSource).toContain("onCopyComponent={copyCustomComponentTemplate}");
+    expect(viewSource).toContain("onPasteComponent={pasteCustomComponentTemplate}");
+    expect(viewSource).toContain("onExportComponentSvg={exportCustomComponentTemplateSvg}");
+    expect(viewSource).toContain("onImportComponentSvg={openCustomComponentSvgImport}");
+    expect(viewSource).toContain('accept=".svg,image/svg+xml"');
+    expect(viewSource).toContain("onChange={importCustomComponentSvg}");
   });
 
   test("shows the derived base class with a jump link in the device definition dialog", () => {

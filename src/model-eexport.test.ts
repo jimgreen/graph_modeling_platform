@@ -2667,11 +2667,12 @@ test("keeps every built-in device parameter aligned with its semantic type and n
     "ac_control_type", "control_type", "dc_control_type", "fuel_type", "i_control_type", "j_control_type", "reactor_type",
     "storage_technology", "turbine_type"
   ]);
+  const numberEnumNames = new Set(["regable", "run_stat", "status"]);
   const numericText = /^[-+]?(?:\d+(?:\.\d+)?|\.\d+)$/;
   const integerText = /^[-+]?\d+$/;
   const expectedType = (name: string) => {
     const containerBaseName = name.replace(/_(?:ac2|dc2|h22|heat2|ac|dc|h2|heat)_(?:unit|load|transformer)_t\d+$/, "");
-    if (containerBaseName === "status" || containerBaseName === "run_stat") return "numberEnum";
+    if (numberEnumNames.has(containerBaseName)) return "numberEnum";
     if (stringEnumNames.has(containerBaseName)) return "stringEnum";
     if (
       integerNames.has(name) ||
@@ -2703,6 +2704,11 @@ test("keeps every built-in device parameter aligned with its semantic type and n
         const optionValues = (definition.enumOptions ?? []).map((option) => option.value);
         expect(optionValues.length, context).toBeGreaterThan(0);
         expect(optionValues, context).toContain(definition.typicalValue);
+      }
+      if (definition.enName === "regable") {
+        expect(definition.valueType, context).toBe("numberEnum");
+        expect(definition.enumValues, context).toEqual(["0", "1"]);
+        expect(definition.typicalValue, context).toMatch(integerText);
       }
       if (definition.enName === "control_type") {
         const hydrogenCoupling = ["AcE2Hydro", "DcE2Hydro", "Hydro2AcE", "Hydro2DcE"].includes(section ?? "");

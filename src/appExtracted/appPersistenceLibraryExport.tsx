@@ -3616,6 +3616,45 @@ function buildSvgDeviceConnectorMarkup(node: ModelNode, colorDisplayMode: ColorD
   return connectors;
 }
 
+export function buildDeviceTemplateIconSvg(template: DeviceTemplate) {
+  const padding = 36;
+  const templateWidth = Math.max(1, Number(template.size?.width) || 104);
+  const templateHeight = Math.max(1, Number(template.size?.height) || 64);
+  const width = Math.ceil(templateWidth + padding * 2);
+  const height = Math.ceil(templateHeight + padding * 2);
+  const node = createNodeFromTemplate(template, { x: width / 2, y: height / 2 });
+  node.id = `component-svg-${String(template.kind || "component").replace(/[^A-Za-z0-9_-]+/g, "_")}`;
+  node.params = {
+    ...node.params,
+    _labelVisible: "0"
+  };
+  return buildSvgDocument([node], [], {
+    width,
+    height,
+    backgroundColor: "transparent",
+    deviceTemplates: [template]
+  });
+}
+
+export function customComponentTreeContextMenuCapabilities(
+  selection: CustomComponentTreeSelection,
+  hasCopiedComponent: boolean
+) {
+  const isCategoryLibrary = selection.kind === "categoryLibrary";
+  const isComponentLibrary = selection.kind === "componentLibrary";
+  const isComponent = selection.kind === "component";
+  return {
+    createCategoryLibrary: true,
+    createComponentLibrary: isCategoryLibrary || isComponentLibrary,
+    createComponent: isComponentLibrary,
+    deleteSelection: true,
+    copyComponent: isComponent,
+    pasteComponent: hasCopiedComponent && (isComponentLibrary || isComponent),
+    exportComponentSvg: isComponent,
+    importComponentSvg: isComponent
+  };
+}
+
 export type CustomComponentTreeProps = {
   libraries: string[];
   filteredByComponentLibrary: Record<string, { section: string; templates: DeviceTemplate[] }[]>;
@@ -3630,6 +3669,11 @@ export type CustomComponentTreeProps = {
   onCreateCategoryLibrary: () => void;
   onCreateComponentLibrary: () => void;
   onCreateComponent: () => void;
+  copiedCustomComponentTemplate?: DeviceTemplate | null;
+  onCopyComponent: (template: DeviceTemplate) => void;
+  onPasteComponent: (categoryLibraryName: string, sectionName: string) => void;
+  onExportComponentSvg: (template: DeviceTemplate) => void;
+  onImportComponentSvg: (template: DeviceTemplate) => void;
   onDeleteSelection: () => void;
   onSearchChange: (query: string) => void;
   onCollapseChange: (libraries: Set<string>, types: Set<string>) => void;
@@ -3902,6 +3946,11 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
   onCreateCategoryLibrary,
   onCreateComponentLibrary,
   onCreateComponent,
+  copiedCustomComponentTemplate = null,
+  onCopyComponent,
+  onPasteComponent,
+  onExportComponentSvg,
+  onImportComponentSvg,
   onDeleteSelection,
   onSearchChange,
   onCollapseChange,
@@ -3912,6 +3961,11 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
   const [collapsedTypes, setCollapsedTypes] = useState<Set<string>>(initialCollapsedTypes);
   // 内部管理 selection 状态，点击立即显示选中效果
   const [selection, setSelection] = useState<CustomComponentTreeSelection>(initialSelection);
+  const [treeContextMenu, setTreeContextMenu] = useState<{
+    x: number;
+    y: number;
+    selection: CustomComponentTreeSelection;
+  } | null>(null);
 
   // 同步 collapsed 到父组件（用于删除、重命名等操作）
   useEffect(() => {
@@ -3926,6 +3980,24 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
   useEffect(() => {
     setSelection((current) => customComponentTreeSelectionsEqual(current, initialSelection) ? current : initialSelection);
   }, [initialSelection]);
+
+  useEffect(() => {
+    if (!treeContextMenu) return;
+    const close = () => setTreeContextMenu(null);
+    const closeOnKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("blur", close);
+    window.addEventListener("resize", close);
+    window.addEventListener("keydown", closeOnKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("blur", close);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("keydown", closeOnKeyDown);
+    };
+  }, [treeContextMenu]);
 
   const handleToggleLibrary = useCallback((name: string) => {
     setCollapsedLibraries((current) => {
@@ -3973,16 +4045,6 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
   }, [onSelectComponent]);
 
   const searchNeedle = normalizeLibrarySearchText(searchQuery);
-  const canCreateComponentLibrary = selection.kind === "categoryLibrary" || selection.kind === "componentLibrary";
-  const canCreateComponent = selection.kind === "componentLibrary";
-  const createComponentLibraryTitle = selection.kind === "categoryLibrary"
-    ? "在当前类别库下新建基类"
-    : selection.kind === "componentLibrary"
-      ? "在当前类下新建派生类"
-      : "请先选择类别或类再新建类";
-  const createComponentTitle = canCreateComponent
-    ? "在当前类下新建元件"
-    : "请先选择一个类再新建元件";
   const treeLibraries = useMemo(() => {
     if (!searchNeedle) {
       return libraries;
@@ -4015,6 +4077,45 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
     ])),
     [customComponentLibraries, filteredByComponentLibrary, searchNeedle, treeLibraries]
   );
+  const componentTemplateByKind = useMemo(() => {
+    const result = new Map<string, DeviceTemplate>();
+    for (const groups of Object.values(filteredByComponentLibrary)) {
+      for (const group of groups) {
+        for (const template of group.templates) {
+          result.set(template.kind, template);
+        }
+      }
+    }
+    return result;
+  }, [filteredByComponentLibrary]);
+  const openTreeContextMenu = (
+    event: MouseEvent<HTMLElement>,
+    targetSelection: CustomComponentTreeSelection,
+    activateSelection?: () => void
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    activateSelection?.();
+    setTreeContextMenu({
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - 224)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - 342)),
+      selection: targetSelection
+    });
+  };
+  const contextSelection = treeContextMenu?.selection ?? selection;
+  const contextTemplate = contextSelection.kind === "component"
+    ? componentTemplateByKind.get(contextSelection.templateKind)
+    : undefined;
+  const contextCapabilities = customComponentTreeContextMenuCapabilities(
+    contextSelection,
+    Boolean(copiedCustomComponentTemplate)
+  );
+  const contextTargetCategoryLibraryName = contextSelection.categoryLibraryName;
+  const contextTargetSection = contextSelection.kind === "categoryLibrary" ? "" : contextSelection.section;
+  const runTreeContextMenuAction = (action: () => void) => {
+    setTreeContextMenu(null);
+    action();
+  };
   const renderClassNode = (group: string, node: CustomComponentClassTreeNode, depth = 0): ReactNode => {
     const typeKey = categoryLibraryComponentLibraryKey(group, node.section);
     const hasContent = node.templates.length > 0 || node.derivedClasses.length > 0;
@@ -4031,10 +4132,15 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
         data-tree-depth={depth}
       >
         <div
-          className={`custom-component-tree-row type ${depth > 0 ? "derived-type" : ""}`}
+          className={`custom-component-tree-row type ${depth > 0 ? "derived-type" : ""} ${typeSelected ? "active" : ""}`}
           role="treeitem"
           aria-selected={typeSelected}
           aria-expanded={hasContent ? !typeCollapsed : undefined}
+          onContextMenu={(event) => openTreeContextMenu(
+            event,
+            { kind: "componentLibrary", categoryLibraryName: group, section: node.section },
+            () => handleSelectComponentLibrary(group, node.section)
+          )}
         >
           {hasContent ? <button
             type="button"
@@ -4076,6 +4182,16 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
                   aria-selected={componentSelected}
                   title={`${template.label} / ${componentEnglishName} / ${node.section} / ${template.custom ? "自定义" : "系统内置"}`}
                   onClick={() => handleSelectComponent(template, node.section)}
+                  onContextMenu={(event) => openTreeContextMenu(
+                    event,
+                    {
+                      kind: "component",
+                      categoryLibraryName: normalizeCategoryLibraryName(template.categoryLibrary),
+                      section: node.section,
+                      templateKind: template.kind
+                    },
+                    () => handleSelectComponent(template, node.section)
+                  )}
                 >
                   <CustomComponentTreeTemplateThumbnail template={template} />
                   <span className="dialog-tree-bilingual dialog-tree-component-label" title={`${template.label} / ${componentEnglishName}`}>
@@ -4102,37 +4218,7 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
     <aside className="custom-component-manager-panel" aria-label="类别库类元件管理">
       <div className="custom-component-manager-title">
         <strong>元件结构</strong>
-        <span>类别库 / 类 / 元件</span>
-      </div>
-      <div className="custom-component-manager-actions">
-        <button type="button" onClick={onCreateCategoryLibrary} title="新建类别库">
-          <Plus size={12} aria-hidden="true" />
-          <span>新建类别</span>
-        </button>
-        <button
-          type="button"
-          onClick={onCreateComponentLibrary}
-          disabled={!canCreateComponentLibrary}
-          title={createComponentLibraryTitle}
-        >
-          <Plus size={12} aria-hidden="true" />
-          <span>新建类</span>
-        </button>
-        <button
-          type="button"
-          className="custom-component-manager-primary-action"
-          onClick={onCreateComponent}
-          disabled={!canCreateComponent}
-          title={createComponentTitle}
-        >
-          <Plus size={13} aria-hidden="true" />
-          <span>新建元件</span>
-        </button>
-        <button type="button" className="danger" onClick={onDeleteSelection} title="删除当前选中的自定义条目">
-          <Trash2 size={12} aria-hidden="true" />
-          <span>删除</span>
-        </button>
-        <span className="custom-component-tree-actions-note">先选类别/类/元件</span>
+        <span>类别库 / 类 / 元件（右键操作）</span>
       </div>
       <div className="custom-component-manager-efile-and-search">
       <div className="custom-component-tree-search-row">
@@ -4177,7 +4263,11 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
         })()}
       </div>
       </div>
-      <div className="custom-component-manager-tree dialog-compact-tree" role="tree">
+      <div
+        className="custom-component-manager-tree dialog-compact-tree"
+        role="tree"
+        onContextMenu={(event) => openTreeContextMenu(event, selection)}
+      >
         {treeLibraries.length > 0 ? treeLibraries.map((group) => {
           const classTrees = classTreesByLibrary[group] ?? [];
           const librarySelected = selection.kind === "categoryLibrary" && selection.categoryLibraryName === group;
@@ -4189,6 +4279,11 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
                 role="treeitem"
                 aria-selected={librarySelected}
                 aria-expanded={!libraryCollapsed}
+                onContextMenu={(event) => openTreeContextMenu(
+                  event,
+                  { kind: "categoryLibrary", categoryLibraryName: group },
+                  () => handleSelectCategoryLibrary(group)
+                )}
               >
                 <button
                   type="button"
@@ -4216,6 +4311,91 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
           <div className="dialog-tree-empty">未找到匹配元件</div>
         )}
       </div>
+      {treeContextMenu && (
+        <div
+          className="context-menu custom-component-tree-context-menu"
+          role="menu"
+          aria-label="元件结构右键菜单"
+          style={{ left: treeContextMenu.x, top: treeContextMenu.y }}
+          onPointerDown={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <button type="button" role="menuitem" onClick={() => runTreeContextMenuAction(onCreateCategoryLibrary)}>
+            <Plus size={14} aria-hidden="true" />
+            新建类别
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!contextCapabilities.createComponentLibrary}
+            onClick={() => runTreeContextMenuAction(onCreateComponentLibrary)}
+          >
+            <Plus size={14} aria-hidden="true" />
+            {contextSelection.kind === "componentLibrary" ? "新建派生类" : "新建类"}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!contextCapabilities.createComponent}
+            onClick={() => runTreeContextMenuAction(onCreateComponent)}
+          >
+            <Plus size={14} aria-hidden="true" />
+            新建元件
+          </button>
+          <div className="context-menu-separator" />
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!contextCapabilities.copyComponent || !contextTemplate}
+            onClick={() => contextTemplate && runTreeContextMenuAction(() => onCopyComponent(contextTemplate))}
+          >
+            <Copy size={14} aria-hidden="true" />
+            复制元件
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!contextCapabilities.pasteComponent || !contextTargetSection}
+            onClick={() => runTreeContextMenuAction(() => onPasteComponent(
+              contextTargetCategoryLibraryName,
+              contextTargetSection
+            ))}
+          >
+            <Copy size={14} aria-hidden="true" />
+            粘贴为新元件
+          </button>
+          <div className="context-menu-separator" />
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!contextCapabilities.exportComponentSvg || !contextTemplate}
+            onClick={() => contextTemplate && runTreeContextMenuAction(() => onExportComponentSvg(contextTemplate))}
+          >
+            <Download size={14} aria-hidden="true" />
+            导出图元为 SVG
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!contextCapabilities.importComponentSvg || !contextTemplate}
+            onClick={() => contextTemplate && runTreeContextMenuAction(() => onImportComponentSvg(contextTemplate))}
+          >
+            <FileInput size={14} aria-hidden="true" />
+            导入 SVG 为图元
+          </button>
+          <div className="context-menu-separator" />
+          <button
+            type="button"
+            role="menuitem"
+            className="danger"
+            disabled={!contextCapabilities.deleteSelection}
+            onClick={() => runTreeContextMenuAction(onDeleteSelection)}
+          >
+            <Trash2 size={14} aria-hidden="true" />
+            删除
+          </button>
+        </div>
+      )}
     </aside>
   );
 });

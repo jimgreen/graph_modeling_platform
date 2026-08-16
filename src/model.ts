@@ -4570,6 +4570,7 @@ const TEMPLATE_DEFINITION_VALUE_TYPES: Record<string, DeviceParameterValueType> 
   rated_voltage: "float",
   rated_wind_speed: "float",
   reactive_power: "float",
+  regable: "numberEnum",
   reactor_thermal_power: "float",
   reference_irradiance: "float",
   reference_temperature: "float",
@@ -5485,6 +5486,31 @@ export function normalizeDcacConverterNodeControlParams(node: ModelNode): ModelN
 
 type EndpointControlSection = "ACACConverter" | "DCDCConverter";
 
+const ENDPOINT_SETPOINT_NAMES_BY_SECTION: Record<EndpointControlSection, readonly string[]> = {
+  ACACConverter: [
+    "i_p_set", "j_p_set",
+    "i_q_set", "j_q_set",
+    "i_i_set", "j_i_set",
+    "i_v_set", "j_v_set"
+  ],
+  DCDCConverter: [
+    "i_p_set", "j_p_set",
+    "i_i_set", "j_i_set",
+    "i_v_set", "j_v_set"
+  ]
+};
+
+const ENDPOINT_SETPOINT_LABELS: Record<string, string> = {
+  i_p_set: "首端有功设定值",
+  j_p_set: "末端有功设定值",
+  i_q_set: "首端无功设定值",
+  j_q_set: "末端无功设定值",
+  i_i_set: "首端电流设定值",
+  j_i_set: "末端电流设定值",
+  i_v_set: "首端电压设定值",
+  j_v_set: "末端电压设定值"
+};
+
 function endpointControlOptionsForSection(section: EndpointControlSection): readonly string[] {
   return section === "ACACConverter" ? ACAC_SIDE_CONTROL_TYPES : DCDC_CONVERTER_CONTROL_TYPES;
 }
@@ -5595,15 +5621,29 @@ function normalizeEndpointControlParameterDefinitions(
     assignCandidate("j", { definition, typicalValue: definition.typicalValue, rank: 1 });
   }
 
-  if (insertionIndex < 0) {
-    return retained;
+  if (insertionIndex >= 0) {
+    const fallbackDefinition = iCandidate?.definition ?? jCandidate?.definition;
+    const endpointDefinitions = [
+      normalizedEndpointControlDefinition(section, "i", iCandidate?.definition ?? fallbackDefinition, iCandidate?.typicalValue),
+      normalizedEndpointControlDefinition(section, "j", jCandidate?.definition ?? fallbackDefinition, jCandidate?.typicalValue)
+    ];
+    retained.splice(insertionIndex, 0, ...endpointDefinitions);
   }
-  const fallbackDefinition = iCandidate?.definition ?? jCandidate?.definition;
-  const endpointDefinitions = [
-    normalizedEndpointControlDefinition(section, "i", iCandidate?.definition ?? fallbackDefinition, iCandidate?.typicalValue),
-    normalizedEndpointControlDefinition(section, "j", jCandidate?.definition ?? fallbackDefinition, jCandidate?.typicalValue)
-  ];
-  retained.splice(insertionIndex, 0, ...endpointDefinitions);
+
+  const existingNames = new Set(retained.map((definition) => toSnakeCaseDeviceParamName(definition.enName)));
+  const missingSetpointDefinitions = ENDPOINT_SETPOINT_NAMES_BY_SECTION[section]
+    .filter((enName) => !existingNames.has(enName))
+    .map((enName): DeviceParameterDefinition => ({
+      cnName: ENDPOINT_SETPOINT_LABELS[enName] ?? enName,
+      enName,
+      valueType: "float",
+      typicalValue: "",
+      readonly: false
+    }));
+  const runStatIndex = retained.findIndex(
+    (definition) => toSnakeCaseDeviceParamName(definition.enName) === "run_stat"
+  );
+  retained.splice(runStatIndex >= 0 ? runStatIndex : retained.length, 0, ...missingSetpointDefinitions);
   return retained;
 }
 
@@ -6837,11 +6877,16 @@ function inferDefinitionValueType(key: string, value: string): DeviceParameterVa
 }
 
 const DEFAULT_TEMPLATE_ENUM_VALUES: Record<string, string[]> = {
+  regable: ["0", "1"],
   status: ["1", "0"],
   run_stat: [...RUN_STAT_ENUM_VALUES]
 };
 
 const DEFAULT_TEMPLATE_ENUM_OPTIONS: Record<string, DeviceParameterEnumOption[]> = {
+  regable: [
+    { value: "0", label: "不可调" },
+    { value: "1", label: "可调" }
+  ],
   status: [
     { value: "1", label: "闭合" },
     { value: "0", label: "打开/开断" }
@@ -7473,6 +7518,8 @@ export function applyDeviceTemplateDefinitionOverride(
       Boolean(definition) && !isContainerAssociatedParameterName(template, definition?.enName ?? "")
     ));
   const baseKind = baseDeviceKind(template.kind);
+  const section = inferESection(template.kind, template.params);
+  const isEndpointConverter = section === "ACACConverter" || section === "DCDCConverter";
   const electricGenerationDerivedInfo = electricGenerationDerivedComponentLibraryInfo(baseKind);
   const isElectricGenerationBase = baseKind === "ac-source" || baseKind === "dc-source";
   const isElectricGenerationTemplate = isElectricGenerationBase || Boolean(electricGenerationDerivedInfo);
@@ -7505,14 +7552,16 @@ export function applyDeviceTemplateDefinitionOverride(
         !retiredElectricGenerationParameterNames.has(definition.enName)
       ))
     : normalizedOverrideParameterDefinitions;
-  const overriddenParameterDefinitions = explicitlyDeletesAllParameterDefinitions
+  const rawOverriddenParameterDefinitions = explicitlyDeletesAllParameterDefinitions
     ? []
     : hasParameterDefinitionsOverride
     ? (isElectricGenerationBase || electricGenerationDerivedInfo || isCanonicalHydrogenEndpoint
         ? mergeCanonicalParameterDefinitions(template.parameterDefinitions ?? [], canonicalOverrideParameterDefinitions)
         : canonicalOverrideParameterDefinitions)
     : template.parameterDefinitions?.map((definition) => ({ ...definition }));
-  const section = inferESection(template.kind, template.params);
+  const overriddenParameterDefinitions = isEndpointConverter && rawOverriddenParameterDefinitions
+    ? normalizeEndpointControlParameterDefinitions(section, rawOverriddenParameterDefinitions)
+    : rawOverriddenParameterDefinitions;
   const eParameterKeys = getEParameterKeys(template.kind, template.params);
   const fixedEParameterNames = new Set(eParameterKeys.length > 0 ? [...eParameterKeys, "dev_type"] : []);
   const existingParameterNames = new Set(

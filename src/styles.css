@@ -5572,7 +5572,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .custom-component-manager-panel {
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 8px;
   min-height: 0;
   height: 100%;
@@ -5599,41 +5599,31 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   font-weight: 700;
 }
 
-.custom-component-manager-actions {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
+.custom-component-tree-context-menu {
+  z-index: 85;
+  min-width: 196px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
 }
 
-.custom-component-manager-actions button {
+.custom-component-tree-context-menu button {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 3px;
-  min-height: 30px;
-  border: 1px solid #cbd5e1;
-  border-radius: 7px;
+  gap: 8px;
+  width: 100%;
   color: #334155;
-  background: #ffffff;
-  font-size: 11px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 750;
   white-space: nowrap;
 }
 
-.custom-component-manager-actions button:hover,
-.custom-component-manager-actions button:focus-visible {
-  border-color: #93c5fd;
-  background: #eff6ff;
-  outline: none;
+.custom-component-tree-context-menu button.danger {
+  color: #b91c1c;
 }
 
-.custom-component-manager-actions button.danger {
+.custom-component-tree-context-menu button.danger:not(:disabled):hover,
+.custom-component-tree-context-menu button.danger:not(:disabled):focus-visible {
   color: #991b1b;
-}
-
-.custom-component-manager-actions button.danger:hover,
-.custom-component-manager-actions button.danger:focus-visible {
-  border-color: #fca5a5;
   background: #fef2f2;
 }
 
