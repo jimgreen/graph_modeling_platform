@@ -6475,11 +6475,178 @@ export function createStartCustomComponentCreate(__appScope: Record<string, any>
   };
 }
 
+function cloneCustomComponentTemplateSnapshot(template: DeviceTemplate): DeviceTemplate {
+  if (typeof structuredClone === "function") {
+    return structuredClone(template);
+  }
+  return JSON.parse(JSON.stringify(template)) as DeviceTemplate;
+}
+
+export function createCopyCustomComponentTemplate(__appScope: Record<string, any>) {
+  return (template: DeviceTemplate | null | undefined) => {
+    const {
+      setCopiedCustomComponentTemplate,
+      setCustomDeviceSaveMessage = () => undefined,
+      showGlobalMessage = () => undefined
+    } = __appScope;
+    if (!template?.kind) {
+      showGlobalMessage("请先右键选择一个具体元件再复制。");
+      return false;
+    }
+    const snapshot = cloneCustomComponentTemplateSnapshot(template);
+    setCopiedCustomComponentTemplate(snapshot);
+    setCustomDeviceSaveMessage(`已复制元件：${template.label || template.englishName || template.kind}。可在同一类或其他类下重复粘贴。`);
+    return true;
+  };
+}
+
+export function createPasteCustomComponentTemplate(__appScope: Record<string, any>) {
+  return (categoryLibraryNameInput: string, componentClassNameInput: string) => {
+    const {
+      copiedCustomComponentTemplate,
+      nextCustomTemplateKind,
+      normalizeCategoryLibraryName = (value: unknown) => String(value ?? "").trim(),
+      normalizeComponentLibraryName = (value: unknown) => String(value ?? "").trim(),
+      requireEditMode,
+      setCustomLibraryCreateDialog,
+      showGlobalMessage = () => undefined
+    } = __appScope;
+    if (!requireEditMode("粘贴元件")) {
+      return false;
+    }
+    if (!copiedCustomComponentTemplate?.kind) {
+      showGlobalMessage("还没有复制元件，请先右键具体元件执行“复制元件”。");
+      return false;
+    }
+    const categoryLibraryName = normalizeCategoryLibraryName(categoryLibraryNameInput);
+    const componentClassName = normalizeComponentLibraryName(componentClassNameInput);
+    if (!categoryLibraryName || !componentClassName) {
+      showGlobalMessage("请选择粘贴目标类。");
+      return false;
+    }
+    const classMetadataPatch = componentLibraryMetadataDraftPatch(
+      __appScope,
+      componentClassName,
+      categoryLibraryName
+    );
+    const copiedLabel = String(copiedCustomComponentTemplate.label ?? "元件").trim() || "元件";
+    setCustomLibraryCreateDialog({
+      kind: "component",
+      title: "粘贴为新元件",
+      cnName: `${copiedLabel}-副本`,
+      enName: nextCustomTemplateKind(componentClassName),
+      categoryLibraryName,
+      componentClassName,
+      lockedComponentClassName: componentClassName,
+      componentClassLocked: true,
+      componentLibrary: classMetadataPatch?.componentLibrary || componentClassName,
+      allowResizeTransform: copiedCustomComponentTemplate.allowResizeTransform ? "1" : "0",
+      isDerivedComponentLibrary: Boolean(classMetadataPatch?.isDerivedComponentLibrary),
+      derivedFromComponentLibrary: classMetadataPatch?.derivedFromComponentLibrary || "",
+      derivedComponentLibrary: classMetadataPatch?.derivedComponentLibrary || "",
+      derivedComponentLibraryLabel: classMetadataPatch?.derivedComponentLibraryLabel || "",
+      copySourceTemplate: cloneCustomComponentTemplateSnapshot(copiedCustomComponentTemplate),
+      error: ""
+    });
+    return true;
+  };
+}
+
+export function createExportCustomComponentTemplateSvg(__appScope: Record<string, any>) {
+  return (template: DeviceTemplate | null | undefined) => {
+    const {
+      buildDeviceTemplateIconSvg,
+      downloadBlob,
+      setCustomDeviceSaveMessage = () => undefined,
+      showGlobalMessage = () => undefined
+    } = __appScope;
+    if (!template?.kind) {
+      showGlobalMessage("请先右键选择要导出的具体元件。");
+      return false;
+    }
+    const svg = buildDeviceTemplateIconSvg(template);
+    const rawFileName = String(template.englishName ?? template.kind ?? template.label ?? "component").trim();
+    const safeFileName = rawFileName.replace(/[^A-Za-z0-9_-]+/g, "_") || "component";
+    downloadBlob(`${safeFileName}.svg`, new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
+    setCustomDeviceSaveMessage(`已导出元件 SVG：${safeFileName}.svg`);
+    return true;
+  };
+}
+
+export function createOpenCustomComponentSvgImport(__appScope: Record<string, any>) {
+  return (_template?: DeviceTemplate) => {
+    const {
+      customComponentSvgImportInputRef,
+      requireEditMode,
+      showGlobalMessage = () => undefined
+    } = __appScope;
+    if (!requireEditMode("导入元件 SVG")) {
+      return false;
+    }
+    if (!customComponentSvgImportInputRef?.current) {
+      showGlobalMessage("SVG 文件选择器尚未就绪，请稍后重试。");
+      return false;
+    }
+    customComponentSvgImportInputRef.current.click();
+    return true;
+  };
+}
+
+export function createImportCustomComponentSvg(__appScope: Record<string, any>) {
+  return async (event: ChangeEvent<HTMLInputElement>) => {
+    const {
+      requireEditMode,
+      setCustomDeviceDialogView = () => undefined,
+      setCustomDeviceDraft,
+      setCustomDeviceSaveMessage = () => undefined,
+      showGlobalMessage = () => undefined,
+      svgSourceToDataUrl
+    } = __appScope;
+    if (!requireEditMode("导入元件 SVG")) {
+      event.target.value = "";
+      return false;
+    }
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return false;
+    }
+    const isSvgFile = file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg");
+    if (!isSvgFile) {
+      showGlobalMessage("请选择 SVG 文件。");
+      return false;
+    }
+    let svgSource = "";
+    try {
+      svgSource = await file.text();
+    } catch (error) {
+      showGlobalMessage(error instanceof Error ? error.message : "读取 SVG 文件失败。");
+      return false;
+    }
+    if (!/<svg\b[^>]*>/iu.test(svgSource)) {
+      showGlobalMessage("所选文件不是有效的 SVG 图形。");
+      return false;
+    }
+    const backgroundImage = svgSourceToDataUrl(svgSource);
+    setCustomDeviceDialogView("icon");
+    setCustomDeviceDraft((current: CustomDeviceDraft) => ({
+      ...current,
+      backgroundImage,
+      backgroundImageAssetId: "",
+      backgroundImageFit: "contain",
+      backgroundImageCleared: "",
+      error: ""
+    }));
+    setCustomDeviceSaveMessage("SVG 图元已导入，请保存当前元件定义后生效。");
+    return true;
+  };
+}
+
 const CUSTOM_DEVICE_KIND_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_-]*$/;
 
 export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string, any>) {
   return (dialogOverride?: any) => {
-  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad = () => undefined, categoryLibraries, componentLibraryOptions, createEmptyCustomDeviceDraft, customCategoryLibraries = [], customComponentLibraries = [], customDeviceDraft, customDeviceTemplates, customLibraryCreateDialog, defaultComponentLibraryForCategoryLibrary, deviceDefinitionOverrides = {}, isValidComponentLibraryName, libraryTemplates, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeCustomCategoryLibraries, normalizeCustomComponentLibraries, persistDeviceLibraryChange = () => undefined, requireEditMode, setCustomCategoryLibraries, setCustomComponentLibraries, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode = () => undefined, setCustomDeviceDialogView = () => undefined, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage = () => undefined, setCustomDeviceStatePageId = () => undefined, setCustomLibraryCreateDialog, setDeviceDefinitionOverrides = () => undefined, setEditingCustomDeviceKind = () => undefined, setExpandedCategoryLibraries, setSelectedDefinitionKind = () => undefined } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad = () => undefined, categoryLibraries, componentLibraryOptions, createCustomDeviceDraftFromTemplate, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, customCategoryLibraries = [], customComponentLibraries = [], customDeviceDraft, customDeviceTemplates, customLibraryCreateDialog, defaultComponentLibraryForCategoryLibrary, deviceDefinitionOverrides = {}, isValidComponentLibraryName, libraryTemplates, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeCustomCategoryLibraries, normalizeCustomComponentLibraries, persistDeviceLibraryChange = () => undefined, requireEditMode, setCustomCategoryLibraries, setCustomComponentLibraries, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode = () => undefined, setCustomDeviceDialogView = () => undefined, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage = () => undefined, setCustomDeviceStatePageId = () => undefined, setCustomLibraryCreateDialog, setDeviceDefinitionOverrides = () => undefined, setEditingCustomDeviceKind = () => undefined, setExpandedCategoryLibraries, setSelectedDefinitionKind = () => undefined } = __appScope;
     const dialog = dialogOverride ?? customLibraryCreateDialog;
     if (!dialog) {
       return false;
@@ -6767,9 +6934,29 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
     setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
     setCustomDeviceSaveMessage("");
     const emptyDraft = createEmptyCustomDeviceDraft(categoryLibraryName);
+    const copiedSourceDraft = dialog.copySourceTemplate && typeof createCustomDeviceDraftFromTemplate === "function"
+      ? createCustomDeviceDraftFromTemplate(dialog.copySourceTemplate)
+      : null;
+    const copiedVisualPatch = copiedSourceDraft
+      ? {
+          size: { ...copiedSourceDraft.size },
+          backgroundImage: copiedSourceDraft.backgroundImage,
+          backgroundImageAssetId: copiedSourceDraft.backgroundImageAssetId,
+          backgroundImageFit: copiedSourceDraft.backgroundImageFit,
+          backgroundImageCleared: copiedSourceDraft.backgroundImageCleared,
+          terminalAnchors: typeof createDefaultCustomDeviceTerminalAnchors === "function"
+            ? createDefaultCustomDeviceTerminalAnchors(
+                libraryDraftPatch.terminalCount,
+                copiedSourceDraft.terminalAnchors
+              )
+            : copiedSourceDraft.terminalAnchors.slice(0, libraryDraftPatch.terminalCount).map((anchor: any) => ({ ...anchor })),
+          stateDefinitions: JSON.parse(JSON.stringify(copiedSourceDraft.stateDefinitions ?? []))
+        }
+      : {};
     const nextDraft = {
       ...emptyDraft,
       ...libraryDraftPatch,
+      ...copiedVisualPatch,
       componentName: chineseName,
       componentKind: englishName,
       params: (libraryDraftPatch.params ?? []).map((parameter: any) => (

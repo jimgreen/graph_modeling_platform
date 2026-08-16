@@ -13,6 +13,7 @@ import {
   createApplyExistingImage,
   createApplyIconLibraryCatalogIcon,
   createApplyStateIconDrawingDialog,
+  createCopyCustomComponentTemplate,
   createConfirmCustomLibraryCreateDialog,
   createCreateCustomComponentLibrary,
   createDeleteCustomCategoryLibrary,
@@ -25,6 +26,7 @@ import {
   createExportEFile,
   createExportSchemeRecord,
   createExportEDeviceDefinitionFile,
+  createExportCustomComponentTemplateSvg,
   createRouteSegmentPointerDistance,
   createResolveDuplicateModelImport,
   createSaveBuiltinDeviceDefinitionFromCustomDraft,
@@ -39,6 +41,8 @@ import {
   createSvgExportReferencedImageHrefById,
   createOpenSvgModelImportFilePicker,
   createOpenStateIconDrawingDialog,
+  createImportCustomComponentSvg,
+  createPasteCustomComponentTemplate,
   createStartCustomComponentCreate,
   createStateIconDrawingKeyDown,
   createStartStateIconDrawingDrag,
@@ -53,6 +57,8 @@ import {
 import { createSetEdgeManualPoints } from "./appExtracted/appProjectCanvasFactories";
 import {
   createDefinitionVisualDraft,
+  createDefaultCustomDeviceTerminalAnchors,
+  createEmptyCustomDeviceDraft,
   createCustomDeviceDraftFromTemplate,
   customDefaultDefinitions,
   deviceDefinitionKeyForTemplate,
@@ -2572,6 +2578,311 @@ describe("manual bend interaction helpers", () => {
 
       expect(setCustomLibraryCreateDialog).not.toHaveBeenCalled();
     }
+  });
+
+  test("copies only a concrete component as an independent reusable snapshot", () => {
+    const sourceTemplate: any = {
+      kind: "ac-wind-source",
+      englishName: "ac-wind-source",
+      label: "风力发电机",
+      categoryLibrary: "交流设备",
+      componentClass: "ACWindGen",
+      size: { width: 120, height: 72 },
+      params: { component_type: "ACGenerator", backgroundImage: "data:image/svg+xml,wind" },
+      terminalType: "ac",
+      terminalCount: 1,
+      terminalTypes: ["ac"],
+      terminalAnchors: [{ x: 0.5, y: 0 }],
+      stateDefinitions: [{ id: "running", label: "运行", backgroundImage: "data:image/svg+xml,running" }]
+    };
+    let copiedTemplate: any = null;
+    const setCopiedCustomComponentTemplate = vi.fn((template: any) => {
+      copiedTemplate = template;
+    });
+
+    const copied = createCopyCustomComponentTemplate({
+      setCopiedCustomComponentTemplate,
+      setCustomDeviceSaveMessage: vi.fn()
+    })(sourceTemplate);
+
+    expect(copied).toBe(true);
+    expect(setCopiedCustomComponentTemplate).toHaveBeenCalledTimes(1);
+    expect(copiedTemplate).not.toBe(sourceTemplate);
+    expect(copiedTemplate).toMatchObject({
+      kind: "ac-wind-source",
+      label: "风力发电机",
+      size: { width: 120, height: 72 },
+      terminalAnchors: [{ x: 0.5, y: 0 }]
+    });
+    sourceTemplate.size.width = 999;
+    sourceTemplate.params.backgroundImage = "changed";
+    sourceTemplate.terminalAnchors[0].x = -0.5;
+    sourceTemplate.stateDefinitions[0].label = "changed";
+    expect(copiedTemplate.size.width).toBe(120);
+    expect(copiedTemplate.params.backgroundImage).toBe("data:image/svg+xml,wind");
+    expect(copiedTemplate.terminalAnchors[0].x).toBe(0.5);
+    expect(copiedTemplate.stateDefinitions[0].label).toBe("运行");
+  });
+
+  test("one copied component can open the paste-name dialog repeatedly for same or different target classes", () => {
+    const copiedTemplate: any = {
+      kind: "ac-wind-source",
+      englishName: "ac-wind-source",
+      label: "风力发电机",
+      categoryLibrary: "交流设备",
+      componentClass: "ACWindGen",
+      size: { width: 120, height: 72 },
+      params: { component_type: "ACGenerator" },
+      terminalType: "ac",
+      terminalCount: 1,
+      terminalTypes: ["ac"],
+      allowResizeTransform: true
+    };
+    let dialog: any = null;
+    const setCustomLibraryCreateDialog = vi.fn((value: any) => {
+      dialog = value;
+    });
+    const paste = createPasteCustomComponentTemplate({
+      copiedCustomComponentTemplate: copiedTemplate,
+      nextCustomTemplateKind: (section: string) => `custom-${section}`,
+      normalizeCategoryLibraryName: (name: string) => name.trim(),
+      normalizeComponentLibraryName: (name: string) => name.trim(),
+      requireEditMode: () => true,
+      setCustomLibraryCreateDialog
+    });
+
+    expect(paste("交流设备", "ACWindGen")).toBe(true);
+    expect(dialog).toMatchObject({
+      kind: "component",
+      title: "粘贴为新元件",
+      cnName: "风力发电机-副本",
+      enName: "custom-ACWindGen",
+      categoryLibraryName: "交流设备",
+      componentClassName: "ACWindGen",
+      componentClassLocked: true,
+      allowResizeTransform: "1",
+      copySourceTemplate: expect.objectContaining({ kind: "ac-wind-source" })
+    });
+
+    expect(paste("交流负荷", "ACLoad")).toBe(true);
+    expect(dialog).toMatchObject({
+      title: "粘贴为新元件",
+      categoryLibraryName: "交流负荷",
+      componentClassName: "ACLoad",
+      enName: "custom-ACLoad",
+      copySourceTemplate: expect.objectContaining({ kind: "ac-wind-source" })
+    });
+    expect(setCustomLibraryCreateDialog).toHaveBeenCalledTimes(2);
+  });
+
+  test("pasting creates a new component draft with source visuals and target-class definitions", () => {
+    const sourceTemplate: any = {
+      kind: "source-visual-template",
+      englishName: "source-visual-template",
+      label: "源元件",
+      categoryLibrary: "交流设备",
+      componentClass: "ACGenerator",
+      size: { width: 138, height: 86 },
+      params: {
+        component_type: "ACGenerator",
+        backgroundImage: "data:image/svg+xml,source-icon",
+        backgroundImageFit: "contain"
+      },
+      terminalType: "ac",
+      terminalCount: 1,
+      terminalTypes: ["ac"],
+      terminalLabels: ["源端子"],
+      terminalAnchors: [{ x: 0.5, y: 0.25 }],
+      terminalRoles: ["single-source"],
+      stateDefinitions: [{ value: "1", name: "运行", backgroundImage: "data:image/svg+xml,state" }],
+      measurementDefinitions: [{ measurementTypeId: "source-p", associatedField: "source_param" }],
+      parameterDefinitions: [{ cnName: "源参数", enName: "source_param", valueType: "float", typicalValue: "1" }],
+      allowResizeTransform: true
+    };
+    const targetTemplate: any = {
+      kind: "ac-load",
+      englishName: "ac-load",
+      label: "交流负荷",
+      categoryLibrary: "交流设备",
+      componentClass: "ACLoad",
+      size: { width: 104, height: 64 },
+      params: { component_type: "ACLoad" },
+      terminalType: "ac",
+      terminalCount: 1,
+      terminalTypes: ["ac"],
+      terminalLabels: ["负荷端"],
+      terminalAnchors: [{ x: -0.5, y: 0 }],
+      terminalRoles: ["single-load"],
+      terminalAssociations: ["ac-load"],
+      parameterDefinitions: [{ cnName: "目标参数", enName: "target_param", valueType: "float", typicalValue: "2" }],
+      measurementDefinitions: [{ measurementTypeId: "target-p", associatedField: "target_param" }]
+    };
+    let customDeviceDraft: any = createEmptyCustomDeviceDraft("交流设备");
+    let customLibraryCreateDialog: any = {
+      kind: "component",
+      title: "粘贴为新元件",
+      cnName: "跨类复制负荷",
+      enName: "copied-ac-load",
+      categoryLibraryName: "交流设备",
+      componentClassName: "ACLoad",
+      lockedComponentClassName: "ACLoad",
+      componentClassLocked: true,
+      componentLibrary: "ACLoad",
+      allowResizeTransform: "1",
+      copySourceTemplate: sourceTemplate,
+      error: ""
+    };
+    const setCustomDeviceDraftCleanBaseline = vi.fn();
+    const scope: any = {
+      DEFAULT_STATE_PAGE_ID: "default",
+      cancelPendingCustomComponentTemplateLoad: vi.fn(),
+      categoryLibraries: ["交流设备"],
+      componentLibraryOptions: ["ACGenerator", "ACLoad"],
+      createCustomDeviceDraftFromTemplate,
+      createDefaultCustomDeviceTerminalAnchors,
+      createEmptyCustomDeviceDraft,
+      customCategoryLibraries: [],
+      customComponentLibraries: [],
+      customDeviceTemplates: [],
+      get customDeviceDraft() {
+        return customDeviceDraft;
+      },
+      get customLibraryCreateDialog() {
+        return customLibraryCreateDialog;
+      },
+      defaultComponentLibraryForCategoryLibrary: () => "ACGenerator",
+      deviceDefinitionOverrides: {},
+      isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
+      libraryTemplates: [sourceTemplate, targetTemplate],
+      normalizeCategoryLibraryName: (name: string) => name.trim(),
+      normalizeComponentLibraryName: (name: string) => name.trim(),
+      normalizeCustomCategoryLibraries: (value: unknown) => value as string[],
+      normalizeCustomComponentLibraries: (value: unknown) => value as any[],
+      requireEditMode: () => true,
+      resolveTemplateComponentLibrary,
+      setCustomCategoryLibraries: vi.fn(),
+      setCustomComponentLibraries: vi.fn(),
+      setCustomComponentTreeSelection: vi.fn(),
+      setCustomDeviceDefinitionMode: vi.fn(),
+      setCustomDeviceDialogView: vi.fn(),
+      setCustomDeviceDraft: (updater: any) => {
+        customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
+      },
+      setCustomDeviceDraftCleanBaseline,
+      setCustomDeviceSaveMessage: vi.fn(),
+      setCustomDeviceStatePageId: vi.fn(),
+      setCustomLibraryCreateDialog: (updater: any) => {
+        customLibraryCreateDialog = typeof updater === "function" ? updater(customLibraryCreateDialog) : updater;
+      },
+      setDeviceDefinitionOverrides: vi.fn(),
+      setEditingCustomDeviceKind: vi.fn(),
+      setExpandedCategoryLibraries: vi.fn(),
+      setSelectedDefinitionKind: vi.fn()
+    };
+
+    const created = createConfirmCustomLibraryCreateDialog(scope)();
+
+    expect(created).toBe(true);
+    expect(customDeviceDraft).toMatchObject({
+      categoryLibraryName: "交流设备",
+      componentLibrary: "ACLoad",
+      componentName: "跨类复制负荷",
+      componentKind: "copied-ac-load",
+      size: { width: 138, height: 86 },
+      backgroundImage: "data:image/svg+xml,source-icon",
+      backgroundImageFit: "contain",
+      terminalCount: 1,
+      terminalTypes: expect.arrayContaining(["ac"]),
+      terminalLabels: expect.arrayContaining(["负荷端"]),
+      terminalAnchors: [{ x: 0.5, y: 0.25 }],
+      stateDefinitions: [expect.objectContaining({ value: "1", name: "运行", backgroundImage: "data:image/svg+xml,state" })],
+      allowResizeTransform: "1",
+      error: ""
+    });
+    expect(customDeviceDraft.params).toEqual(expect.arrayContaining([
+      expect.objectContaining({ enName: "target_param", typicalValue: "2" })
+    ]));
+    expect(customDeviceDraft.params).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ enName: "source_param" })
+    ]));
+    expect(customDeviceDraft.measurementDefinitions).toEqual([
+      expect.objectContaining({ measurementTypeId: "target-p", associatedField: "target_param" })
+    ]);
+    expect(customDeviceDraft.measurementDefinitions).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ measurementTypeId: "source-p" })
+    ]));
+    expect(setCustomDeviceDraftCleanBaseline).toHaveBeenCalledWith(
+      expect.objectContaining({ componentKind: "copied-ac-load" })
+    );
+    expect(customLibraryCreateDialog).toBeNull();
+  });
+
+  test("exports one concrete component visual as a standalone SVG file", async () => {
+    const template: any = {
+      kind: "ac-source",
+      englishName: "ac-source",
+      label: "交流电源"
+    };
+    const downloadBlob = vi.fn();
+    const exported = createExportCustomComponentTemplateSvg({
+      buildDeviceTemplateIconSvg: (source: any) => `<svg data-kind="${source.kind}"></svg>`,
+      downloadBlob,
+      setCustomDeviceSaveMessage: vi.fn()
+    })(template);
+
+    expect(exported).toBe(true);
+    expect(downloadBlob).toHaveBeenCalledTimes(1);
+    expect(downloadBlob.mock.calls[0][0]).toBe("ac-source.svg");
+    expect(downloadBlob.mock.calls[0][1]).toBeInstanceOf(Blob);
+    expect(await downloadBlob.mock.calls[0][1].text()).toBe('<svg data-kind="ac-source"></svg>');
+  });
+
+  test("imports an SVG as the selected component visual draft without saving class definitions", async () => {
+    let customDeviceDraft: any = {
+      componentName: "交流电源",
+      componentKind: "ac-source",
+      backgroundImage: "",
+      backgroundImageAssetId: "old-asset",
+      backgroundImageFit: "cover",
+      params: [{ enName: "rated_power", typicalValue: "100" }],
+      measurementDefinitions: [{ measurementTypeId: "p" }],
+      error: ""
+    };
+    const setCustomDeviceSaveMessage = vi.fn();
+    const event: any = {
+      target: {
+        value: "C:\\fakepath\\source.svg",
+        files: [{
+          name: "source.svg",
+          type: "image/svg+xml",
+          text: async () => '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0L10 10"/></svg>'
+        }]
+      }
+    };
+
+    const imported = await createImportCustomComponentSvg({
+      requireEditMode: () => true,
+      setCustomDeviceDialogView: vi.fn(),
+      setCustomDeviceDraft: (updater: any) => {
+        customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
+      },
+      setCustomDeviceSaveMessage,
+      showGlobalMessage: vi.fn(),
+      svgSourceToDataUrl: (source: string) => `data:image/svg+xml,${encodeURIComponent(source)}`
+    })(event);
+
+    expect(imported).toBe(true);
+    expect(event.target.value).toBe("");
+    expect(customDeviceDraft).toMatchObject({
+      backgroundImage: expect.stringContaining("data:image/svg+xml,"),
+      backgroundImageAssetId: "",
+      backgroundImageFit: "contain",
+      backgroundImageCleared: "",
+      params: [{ enName: "rated_power", typicalValue: "100" }],
+      measurementDefinitions: [{ measurementTypeId: "p" }],
+      error: ""
+    });
+    expect(setCustomDeviceSaveMessage).toHaveBeenCalledWith("SVG 图元已导入，请保存当前元件定义后生效。");
   });
 
   test("binds new class inheritance to the selected tree level", () => {

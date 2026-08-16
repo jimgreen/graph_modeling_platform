@@ -5,7 +5,9 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { apiPath } from "./config";
 import {
   CustomComponentManagerTree,
+  customComponentTreeContextMenuCapabilities,
   buildCustomComponentClassTree,
+  buildDeviceTemplateIconSvg,
   createLibraryPackage,
   componentLibraryDisplayParts,
   defaultCategoryLibraryForComponentLibrary,
@@ -1724,9 +1726,6 @@ describe("E device interface definition entry", () => {
     }));
   };
 
-  const actionButtonTag = (html: string, title: string) =>
-    html.match(new RegExp(`<button[^>]*title="${title}"[^>]*>`))?.[0] ?? "";
-
   test("renders derived classes as a second-level branch below the base class", () => {
     const templates = DEVICE_LIBRARY.filter((template) => [
       "ac-source",
@@ -1783,10 +1782,10 @@ describe("E device interface definition entry", () => {
     expect(selectedClassHtml).toMatch(/class="custom-component-tree-row type derived-type active"[\s\S]*?ACWindGen/);
     expect(selectedChildHtml).not.toMatch(/class="custom-component-tree-row type derived-type active"[\s\S]*?ACWindGen/);
     expect(selectedChildHtml).toMatch(/class="custom-component-tree-row component active"[\s\S]*?ac-wind-source/);
-    expect(styles).toMatch(/\.custom-component-tree-row\.type\.derived-type\.active\s*\{[^}]*background:\s*#1e40af/s);
+    expect(styles).toMatch(/\.custom-component-tree-row\.type\.derived-type \.custom-component-tree-row-label\.active\s*\{[^}]*background:\s*#1e40af/s);
   });
 
-  test("enables create actions only for the selected tree level", () => {
+  test("moves tree actions into a selection-aware context menu", () => {
     const categoryHtml = renderCustomComponentManagerTree({
       kind: "categoryLibrary",
       categoryLibraryName: "交流设备"
@@ -1802,19 +1801,63 @@ describe("E device interface definition entry", () => {
       section: "ACGenerator",
       templateKind: "ac-source"
     });
-    const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
-
     expect(categoryHtml).not.toContain("重命名");
-    expect(styles).toMatch(/\.custom-component-manager-actions\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/s);
-    expect(actionButtonTag(categoryHtml, "在当前类别库下新建基类")).not.toContain("disabled");
-    expect(actionButtonTag(categoryHtml, "请先选择一个类再新建元件")).toContain("disabled");
-    expect(actionButtonTag(classHtml, "在当前类下新建派生类")).not.toContain("disabled");
-    expect(actionButtonTag(classHtml, "在当前类下新建元件")).not.toContain("disabled");
-    expect(actionButtonTag(componentHtml, "请先选择类别或类再新建类")).toContain("disabled");
-    expect(actionButtonTag(componentHtml, "请先选择一个类再新建元件")).toContain("disabled");
+    expect(categoryHtml).not.toContain("custom-component-manager-actions");
+    expect(classHtml).not.toContain("custom-component-manager-actions");
+    expect(componentHtml).not.toContain("custom-component-manager-actions");
+
+    expect(customComponentTreeContextMenuCapabilities({
+      kind: "categoryLibrary",
+      categoryLibraryName: "交流设备"
+    }, false)).toEqual({
+      createCategoryLibrary: true,
+      createComponentLibrary: true,
+      createComponent: false,
+      deleteSelection: true,
+      copyComponent: false,
+      pasteComponent: false,
+      exportComponentSvg: false,
+      importComponentSvg: false
+    });
+    expect(customComponentTreeContextMenuCapabilities({
+      kind: "componentLibrary",
+      categoryLibraryName: "交流设备",
+      section: "ACGenerator"
+    }, true)).toMatchObject({
+      createComponentLibrary: true,
+      createComponent: true,
+      copyComponent: false,
+      pasteComponent: true,
+      exportComponentSvg: false,
+      importComponentSvg: false
+    });
+    expect(customComponentTreeContextMenuCapabilities({
+      kind: "component",
+      categoryLibraryName: "交流设备",
+      section: "ACGenerator",
+      templateKind: "ac-source"
+    }, true)).toMatchObject({
+      createComponentLibrary: false,
+      createComponent: false,
+      copyComponent: true,
+      pasteComponent: true,
+      exportComponentSvg: true,
+      importComponentSvg: true
+    });
   });
 
-  test("shows one merged E interface definition action instead of separate import and export buttons", () => {
+  test("builds a standalone SVG for one component visual without its instance label", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-source")!;
+    const svg = buildDeviceTemplateIconSvg(template);
+
+    expect(svg).toMatch(/^<svg\b/);
+    expect(svg).toContain('viewBox="0,0,');
+    expect(svg).toContain("symbol_ACGenerator_ac-source");
+    expect(svg).toContain('device-type="ACGenerator"');
+    expect(svg).not.toContain('class="node-label-text"');
+  });
+
+  test("keeps the component tree focused without the retired E interface shortcut", () => {
     const html = renderToStaticMarkup(createElement(CustomComponentManagerTree as any, {
       libraries: [],
       filteredByComponentLibrary: {},
@@ -1838,11 +1881,9 @@ describe("E device interface definition entry", () => {
       onImportEDeviceDefinition: () => undefined
     }));
 
-    expect(html).toContain("E文件接口定义");
+    expect(html).not.toContain("E文件接口定义");
     expect(html).toContain("类别库 / 类 / 元件");
-    expect(html).toContain("新建类");
-    expect(html).toContain('title="在当前类别库下新建基类"');
-    expect(html).toContain('title="请先选择一个类再新建元件"');
+    expect(html).not.toContain("custom-component-manager-actions");
     expect(html).toContain('placeholder="搜索类别库/类/元件"');
     expect(html).not.toContain(`新建${["元件", "库"].join("")}`);
     expect(html).not.toContain("导出E文件定义");
