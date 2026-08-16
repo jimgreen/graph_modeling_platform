@@ -6951,17 +6951,21 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
     if (!CUSTOM_DEVICE_KIND_NAME_PATTERN.test(englishName)) {
       return setDialogError("元件英文名称只能包含英文字母、数字、下划线和短横线，并且必须以英文字母开头。");
     }
-    const existingKinds = new Set([...(libraryTemplates ?? []), ...(customDeviceTemplates ?? [])].map((template: any) => String(template.kind ?? "").toLowerCase()));
-    if (existingKinds.has(englishName.toLowerCase())) {
+    const existingTemplates = [...(libraryTemplates ?? []), ...(customDeviceTemplates ?? [])];
+    const duplicateChineseName = existingTemplates.some((template: any) => (
+      String(template.label ?? "").trim() === chineseName
+    ));
+    if (duplicateChineseName) {
+      return setDialogError("元件中文名称已存在，无法新增同名元件。");
+    }
+    const normalizedEnglishName = englishName.toLowerCase();
+    const duplicateEnglishName = existingTemplates.some((template: any) => (
+      String(template.kind ?? "").trim().toLowerCase() === normalizedEnglishName ||
+      String(template.englishName ?? "").trim().toLowerCase() === normalizedEnglishName
+    ));
+    if (duplicateEnglishName) {
       return setDialogError("元件英文名称已存在，无法新增同名元件。");
     }
-    cancelPendingCustomComponentTemplateLoad();
-    setCustomDeviceDefinitionMode("create");
-    setEditingCustomDeviceKind("");
-    setSelectedDefinitionKind("");
-    setCustomComponentTreeSelection({ kind: "componentLibrary", categoryLibraryName, section: selectedClassName });
-    setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
-    setCustomDeviceSaveMessage("");
     const emptyDraft = createEmptyCustomDeviceDraft(categoryLibraryName);
     const copiedSourceDraft = dialog.copySourceTemplate && typeof createCustomDeviceDraftFromTemplate === "function"
       ? createCustomDeviceDraftFromTemplate(dialog.copySourceTemplate)
@@ -6990,12 +6994,41 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
       componentKind: englishName,
       params: (libraryDraftPatch.params ?? []).map((parameter: any) => (
         String(parameter.enName ?? "").trim().toLowerCase() === "dev_type"
-          ? { ...parameter, typicalValue: englishName }
+          ? { ...parameter, typicalValue: selectedClassName, readonly: false }
           : parameter
       )),
       allowResizeTransform: String(dialog.allowResizeTransform ?? "0") === "1" ? "1" : "0",
       error: ""
     };
+    if (dialog.copySourceTemplate) {
+      const saveCustomDeviceTemplate = __appScope.saveCustomDeviceTemplate;
+      if (typeof saveCustomDeviceTemplate !== "function") {
+        return setDialogError("元件保存功能尚未就绪，请稍后重试。");
+      }
+      cancelPendingCustomComponentTemplateLoad();
+      setSelectedDefinitionKind("");
+      setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
+      setCustomDeviceSaveMessage("");
+      const saved = saveCustomDeviceTemplate({
+        draftOverride: nextDraft,
+        terminalAnchorsOverride: nextDraft.terminalAnchors.slice(0, libraryDraftPatch.terminalCount),
+        editingCustomDeviceKindOverride: "",
+        skipInlineDrawingPatch: true
+      });
+      if (!saved) {
+        return setDialogError("元件保存失败，请检查复制内容后重试。");
+      }
+      setCustomDeviceDialogView("icon");
+      setCustomLibraryCreateDialog(null);
+      return true;
+    }
+    cancelPendingCustomComponentTemplateLoad();
+    setCustomDeviceDefinitionMode("create");
+    setEditingCustomDeviceKind("");
+    setSelectedDefinitionKind("");
+    setCustomComponentTreeSelection({ kind: "componentLibrary", categoryLibraryName, section: selectedClassName });
+    setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
+    setCustomDeviceSaveMessage("");
     setCustomDeviceDialogView("icon");
     setCustomDeviceDraft(nextDraft);
     setCustomDeviceDraftCleanBaseline(nextDraft);
@@ -7402,17 +7435,26 @@ export function createNextCustomTemplateKind(__appScope: Record<string, any>) {
 }
 
 export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) {
-  return (options: { closeAfterSave?: boolean } = {}) => {
+  return (options: {
+    closeAfterSave?: boolean;
+    draftOverride?: any;
+    terminalAnchorsOverride?: any[];
+    editingCustomDeviceKindOverride?: string;
+    skipInlineDrawingPatch?: boolean;
+  } = {}) => {
   const { TERMINAL_TYPE_LIBRARY_LABELS, closeCustomDeviceDialog, customComponentLibraries = [], customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTemplates, customDeviceTerminalAnchors, defaultComponentLibraryForCategoryLibrary, editingCustomDeviceKind, ensureCustomComponentTreeExpanded, generateCustomDeviceImage, hasOverlappingCustomDeviceTerminalAnchors, isValidComponentLibraryName, libraryTemplates = customDeviceTemplates, nextCustomTemplateKind, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, persistDeviceLibraryChange, requireEditMode, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode = () => undefined, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceSaveToast, customDeviceSaveToastTimerRef, setCustomDeviceTemplates, setEditingCustomDeviceKind, setExpandedCategoryLibraries, showGlobalMessage = () => undefined, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
+    const sourceDraft = options.draftOverride ?? customDeviceDraft;
+    const sourceTerminalAnchors = options.terminalAnchorsOverride ?? customDeviceTerminalAnchors;
+    const sourceEditingCustomDeviceKind = options.editingCustomDeviceKindOverride ?? editingCustomDeviceKind;
     if (!requireEditMode("保存元件")) {
       return false;
     }
     setCustomDeviceSaveMessage("");
-    const requestedCategoryLibraryName = normalizeCategoryLibraryName(customDeviceDraft.categoryLibraryName);
+    const requestedCategoryLibraryName = normalizeCategoryLibraryName(sourceDraft.categoryLibraryName);
     const requestedClassName = normalizeComponentLibraryName(
-      customDeviceDraft.isDerivedComponentLibrary
-        ? customDeviceDraft.derivedComponentLibrary
-        : customDeviceDraft.componentLibrary
+      sourceDraft.isDerivedComponentLibrary
+        ? sourceDraft.derivedComponentLibrary
+        : sourceDraft.componentLibrary
     );
     const classMetadata = resolveComponentLibraryClassMetadata(
       requestedClassName,
@@ -7431,7 +7473,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
     const derivedComponentLibraryLabel = derivedRequested ? String(classMetadata.label ?? "").trim() : "";
     const derivedFromComponentLibrary = derivedRequested ? baseComponentLibrary : "";
     const componentLibrary = baseComponentLibrary;
-    const componentLabel = customDeviceDraft.componentName.trim();
+    const componentLabel = String(sourceDraft.componentName ?? "").trim();
     const isContainerComponent = classMetadata.isContainer;
     if (!componentLabel) {
       setCustomDeviceDraft((current) => ({ ...current, error: "元件中文名称不能为空。" }));
@@ -7463,7 +7505,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
         return false;
       }
     }
-    const requestedEnglishName = normalizeComponentLibraryName(String(customDeviceDraft.componentKind ?? ""));
+    const requestedEnglishName = normalizeComponentLibraryName(String(sourceDraft.componentKind ?? ""));
     if (!requestedEnglishName) {
       setCustomDeviceDraft((current) => ({ ...current, error: "元件英文名称不能为空。" }));
       return false;
@@ -7472,9 +7514,23 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       setCustomDeviceDraft((current) => ({ ...current, error: "元件英文名称只能包含英文字母、数字、下划线和短横线，并且必须以英文字母开头。" }));
       return false;
     }
-    const duplicateEnglishName = (libraryTemplates ?? customDeviceTemplates).some((template: any) => (
-      String(template.kind ?? "") !== editingCustomDeviceKind &&
-      String(template.englishName ?? template.kind ?? "").trim().toLowerCase() === requestedEnglishName.toLowerCase()
+    const existingTemplates = [...(libraryTemplates ?? []), ...(customDeviceTemplates ?? [])];
+    const isCurrentTemplate = (template: any) => Boolean(sourceEditingCustomDeviceKind) && (
+      String(template.kind ?? "") === sourceEditingCustomDeviceKind
+    );
+    const duplicateChineseName = existingTemplates.some((template: any) => (
+      !isCurrentTemplate(template) && String(template.label ?? "").trim() === componentLabel
+    ));
+    if (duplicateChineseName) {
+      setCustomDeviceDraft((current) => ({ ...current, error: "元件中文名称已存在，无法保存同名元件。" }));
+      return false;
+    }
+    const normalizedRequestedEnglishName = requestedEnglishName.toLowerCase();
+    const duplicateEnglishName = existingTemplates.some((template: any) => (
+      !isCurrentTemplate(template) && (
+        String(template.kind ?? "").trim().toLowerCase() === normalizedRequestedEnglishName ||
+        String(template.englishName ?? "").trim().toLowerCase() === normalizedRequestedEnglishName
+      )
     ));
     if (duplicateEnglishName) {
       setCustomDeviceDraft((current) => ({ ...current, error: "元件英文名称已存在，无法保存同名元件。" }));
@@ -7494,23 +7550,25 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
         return false;
       }
     }
-    if (hasOverlappingCustomDeviceTerminalAnchors(customDeviceTerminalAnchors)) {
+    if (hasOverlappingCustomDeviceTerminalAnchors(sourceTerminalAnchors)) {
       const message = "不同端子位置不能重叠，请调整端子位置后再保存。";
       showGlobalMessage(message);
       setCustomDeviceDraft((current) => ({ ...current, error: message }));
       return false;
     }
-    const stateValidation = validateStateDraftRows(customDeviceDraft.stateDefinitions);
+    const stateValidation = validateStateDraftRows(sourceDraft.stateDefinitions);
     if (stateValidation.error) {
       setCustomDeviceDraft((current) => ({ ...current, error: stateValidation.error }));
       return false;
     }
-    const terminalAnchors = customDeviceTerminalAnchors.slice(0, terminalTypes.length).map((anchor) => ({ ...anchor }));
-    const inlineBackgroundPatch = inlineDefaultIconBackgroundPatch(__appScope, "custom");
-    const draftBackgroundImage = inlineBackgroundPatch?.backgroundImage ?? customDeviceDraft.backgroundImage;
-    const draftBackgroundImageAssetId = inlineBackgroundPatch?.backgroundImageAssetId ?? customDeviceDraft.backgroundImageAssetId;
-    const draftBackgroundImageFit = customDeviceDraft.backgroundImageFit ?? "cover";
-    const draftBackgroundImageCleared = inlineBackgroundPatch?.backgroundImageCleared ?? customDeviceDraft.backgroundImageCleared;
+    const terminalAnchors = sourceTerminalAnchors.slice(0, terminalTypes.length).map((anchor) => ({ ...anchor }));
+    const inlineBackgroundPatch = options.skipInlineDrawingPatch
+      ? null
+      : inlineDefaultIconBackgroundPatch(__appScope, "custom");
+    const draftBackgroundImage = inlineBackgroundPatch?.backgroundImage ?? sourceDraft.backgroundImage;
+    const draftBackgroundImageAssetId = inlineBackgroundPatch?.backgroundImageAssetId ?? sourceDraft.backgroundImageAssetId;
+    const draftBackgroundImageFit = sourceDraft.backgroundImageFit ?? "cover";
+    const draftBackgroundImageCleared = inlineBackgroundPatch?.backgroundImageCleared ?? sourceDraft.backgroundImageCleared;
     const rawBackgroundImage = draftBackgroundImageCleared
       ? ""
       : draftBackgroundImage || generateCustomDeviceImage(componentLabel, terminalTypes.length > 0 ? terminalTypes : ["ac"]);
@@ -7532,14 +7590,14 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       },
       defaultImageCandidates
     );
-    const customKind = editingCustomDeviceKind || requestedEnglishName || nextCustomTemplateKind(componentLibrary);
+    const customKind = sourceEditingCustomDeviceKind || requestedEnglishName || nextCustomTemplateKind(componentLibrary);
     const template: DeviceTemplate = {
       kind: customKind,
       label: componentLabel,
       englishName: requestedEnglishName,
       componentClass: classMetadata.className,
       categoryLibrary: categoryLibraryName,
-      size: customDeviceDraft.size,
+      size: sourceDraft.size,
       params: {
         component_type: componentLibrary || defaultComponentLibraryForCategoryLibrary(categoryLibraryName),
         ...(derivedRequested ? {
@@ -7572,12 +7630,12 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
         derivedComponentLibrary,
         ...(derivedComponentLibraryLabel ? { derivedComponentLibraryLabel } : {})
       } : {}),
-      allowResizeTransform: customDeviceDraft.allowResizeTransform === "1",
+      allowResizeTransform: sourceDraft.allowResizeTransform === "1",
       custom: true,
       stateDefinitions,
     };
-    const nextTemplates = editingCustomDeviceKind && customDeviceTemplates.some((item) => item.kind === editingCustomDeviceKind)
-      ? customDeviceTemplates.map((item) => item.kind === editingCustomDeviceKind ? template : item)
+    const nextTemplates = sourceEditingCustomDeviceKind && customDeviceTemplates.some((item) => item.kind === sourceEditingCustomDeviceKind)
+      ? customDeviceTemplates.map((item) => item.kind === sourceEditingCustomDeviceKind ? template : item)
       : [...customDeviceTemplates, template];
     setCustomDeviceTemplates(nextTemplates);
     persistDeviceLibraryChange({
@@ -7593,12 +7651,12 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
     setCustomDeviceDefinitionMode("edit");
     setEditingCustomDeviceKind(customKind);
     const cleanDraft = {
-      ...customDeviceDraft,
+      ...sourceDraft,
       componentName: componentLabel,
       componentKind: requestedEnglishName,
       componentLibrary: baseComponentLibrary,
       isContainer: isContainerComponent,
-      allowResizeTransform: customDeviceDraft.allowResizeTransform === "1" ? "1" : "0",
+      allowResizeTransform: sourceDraft.allowResizeTransform === "1" ? "1" : "0",
       terminalCount: classMetadata.terminalCount,
       terminalTypes: Array.from({ length: COMPONENT_LIBRARY_MAX_TERMINALS }, (_, index) => classMetadata.terminalTypes[index] ?? defaultTerminalTypeForCategoryLibrary(categoryLibraryName)),
       terminalLabels: Array.from({ length: COMPONENT_LIBRARY_MAX_TERMINALS }, (_, index) => classMetadata.terminalLabels[index] ?? ""),

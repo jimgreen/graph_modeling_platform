@@ -7788,6 +7788,18 @@ function applyTemplateDefinitionDefaults(
       next[enName] = definition.typicalValue;
     }
   }
+  const devTypeDefinition = parameterDefinitions.find((definition) => definition.enName.trim() === "dev_type");
+  if (devTypeDefinition && !String(next.dev_type ?? "").trim()) {
+    const derivedInfo = templateDerivedComponentLibraryInfo(template);
+    next.dev_type = [
+      template.componentClass,
+      derivedInfo?.derivedComponentLibrary,
+      template.params.derived_component_type,
+      template.params.component_type,
+      inferESection(template.kind, template.params),
+      template.kind
+    ].map((value) => String(value ?? "").trim()).find(Boolean) ?? "";
+  }
   return next;
 }
 

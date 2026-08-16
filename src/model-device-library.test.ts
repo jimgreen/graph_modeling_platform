@@ -3978,6 +3978,37 @@ test("restores canonical converter endpoint setpoints omitted from persisted com
   expect(reopenedFields).not.toEqual(expect.arrayContaining(["p_set", "i_set", "v_set"]));
 });
 
+test("defaults dev_type to the owning class for base, derived, and custom device nodes", () => {
+  const baseTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-load")!;
+  const derivedTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-wind-source")!;
+  const customDerivedTemplate = {
+    kind: "user-wind-source",
+    label: "用户风机",
+    componentClass: "UserWindGen",
+    categoryLibrary: "交流设备",
+    size: { width: 104, height: 64 },
+    params: {
+      component_type: "ACGenerator",
+      derived_from_component_type: "ACGenerator",
+      derived_component_type: "UserWindGen",
+      is_derived_component_library: "1"
+    },
+    terminalType: "ac",
+    terminalCount: 1,
+    terminalTypes: ["ac"],
+    parameterDefinitions: [
+      { cnName: "设备类型", enName: "dev_type", valueType: "string", typicalValue: "", readonly: false }
+    ],
+    custom: true
+  } as DeviceTemplate;
+
+  expect(createNodeFromTemplate(baseTemplate, { x: 0, y: 0 }).params.dev_type).toBe("ACLoad");
+  expect(createNodeFromTemplate(derivedTemplate, { x: 0, y: 0 }).params.dev_type).toBe("ACWindGen");
+  expect(createNodeFromTemplate(customDerivedTemplate, { x: 0, y: 0 }).params.dev_type).toBe("UserWindGen");
+  expect(getTemplateParameterDefinitions(baseTemplate).find((row) => row.enName === "dev_type")?.readonly).toBe(false);
+  expect(getTemplateParameterDefinitions(derivedTemplate).find((row) => row.enName === "dev_type")?.readonly).toBe(false);
+});
+
 test("keeps two-winding and three-winding transformers as separate non-container device types", () => {
   const acTransformer = DEVICE_LIBRARY.find((item) => item.kind === "ac-transformer");
   const twoWinding = DEVICE_LIBRARY.find((item) => item.kind === "ac-two-winding-transformer");

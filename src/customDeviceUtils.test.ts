@@ -699,20 +699,37 @@ describe("electric generation device library classification", () => {
     expect(nonEmpty[sharedKey].parameterDefinitionsIntent).toBeUndefined();
   });
 
-  test("defaults dev_type to the current component english name", () => {
+  test("defaults editable dev_type to the owning base or derived class name", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-load");
     const draft = createCustomDeviceDraftFromTemplate(template!);
     const devTypeRow = draft.params.find((row) => row.enName === "dev_type");
 
     expect(devTypeRow).toBeDefined();
-    expect(devTypeRow?.typicalValue).toBe(template?.kind);
+    expect(devTypeRow).toMatchObject({ typicalValue: "ACLoad", readonly: false });
 
     expect(draft.componentKind).toBe(template?.kind);
-    // （竖向）变体与基础元件共用同一 dev_type，剥去 -vertical 后缀
     const verticalTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-breaker-vertical");
     const verticalDraft = createCustomDeviceDraftFromTemplate(verticalTemplate!);
     const verticalDevTypeRow = verticalDraft.params.find((row) => row.enName === "dev_type");
-    expect(verticalDevTypeRow?.typicalValue).toBe("ac-breaker");
+    expect(verticalDevTypeRow).toMatchObject({ typicalValue: "ACBreak", readonly: false });
+
+    const derivedTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-wind-source");
+    const derivedDraft = createCustomDeviceDraftFromTemplate(derivedTemplate!);
+    const derivedDevTypeRow = derivedDraft.params.find((row) => row.enName === "dev_type");
+    expect(derivedDevTypeRow).toMatchObject({ typicalValue: "ACWindGen", readonly: false });
+  });
+
+  test("keeps an explicitly saved non-empty dev_type editable default", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-load")!;
+    const applied = applyDeviceTemplateDefinitionOverride(template, {
+      kind: template.kind,
+      parameterDefinitions: [
+        { cnName: "设备类型", enName: "dev_type", valueType: "string", typicalValue: "UserEditableType", readonly: false }
+      ]
+    });
+    const devTypeRow = createCustomDeviceDraftFromTemplate(applied).params.find((row) => row.enName === "dev_type");
+
+    expect(devTypeRow).toMatchObject({ typicalValue: "UserEditableType", readonly: false });
   });
 
   test("round-trips editable component Chinese and English display names through an override", () => {

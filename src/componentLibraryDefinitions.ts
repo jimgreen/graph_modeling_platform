@@ -321,9 +321,17 @@ export function resolveEditableComponentLibraryDefinition(options: {
         ? seededDefinitions.filter((definition) => !inheritedParameterKeys.has(definitionKey(definition.enName)))
         : seededDefinitions;
       const parameterDefinitions = mergeParameterDefinitions(defaults, ownSeededDefinitions);
-      if (!persistedOverride && !metadata.isDerivedComponentLibrary) {
-        const devType = parameterDefinitions.find((definition) => definitionKey(definition.enName) === "dev_type");
-        if (devType) devType.typicalValue = metadata.className;
+      const persistedDevTypeValue = Array.isArray(persistedOverride?.parameterDefinitions)
+        ? String(
+            persistedOverride.parameterDefinitions.find((definition) => definitionKey(definition.enName) === "dev_type")?.typicalValue ?? ""
+          ).trim()
+        : "";
+      const ownDevType = parameterDefinitions.find((definition) => definitionKey(definition.enName) === "dev_type");
+      if (ownDevType) {
+        if (!String(ownDevType.typicalValue ?? "").trim()) {
+          ownDevType.typicalValue = metadata.className;
+        }
+        ownDevType.readonly = false;
       }
       const inheritedMeasurementDefinitions = inherited?.effectiveMeasurementDefinitions ?? [];
       const inheritedMeasurementKeys = new Set(inheritedMeasurementDefinitions.map(measurementDefinitionKey));
@@ -336,6 +344,15 @@ export function resolveEditableComponentLibraryDefinition(options: {
       const effectiveParameterDefinitions = metadata.isDerivedComponentLibrary
         ? mergeParameterDefinitions(inheritedParameterDefinitions, parameterDefinitions)
         : parameterDefinitions.map((definition) => ({ ...definition }));
+      const effectiveDevType = effectiveParameterDefinitions.find((definition) => definitionKey(definition.enName) === "dev_type");
+      if (effectiveDevType) {
+        if (metadata.isDerivedComponentLibrary) {
+          effectiveDevType.typicalValue = persistedDevTypeValue || metadata.className;
+        } else if (!String(effectiveDevType.typicalValue ?? "").trim()) {
+          effectiveDevType.typicalValue = metadata.className;
+        }
+        effectiveDevType.readonly = false;
+      }
       const effectiveMeasurementDefinitions = metadata.isDerivedComponentLibrary
         ? mergeMeasurementDefinitions([inheritedMeasurementDefinitions, ownMeasurementDefinitions])
         : cloneDeviceMeasurementDefinitions(ownMeasurementDefinitions) ?? [];
