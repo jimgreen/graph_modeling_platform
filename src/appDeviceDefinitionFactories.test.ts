@@ -2601,8 +2601,10 @@ describe("manual bend interaction helpers", () => {
     });
 
     const copied = createCopyCustomComponentTemplate({
+      buildDeviceTemplateCopyVisualSvg: (template: any) => `<svg data-source-kind="${template.kind}"></svg>`,
       setCopiedCustomComponentTemplate,
-      setCustomDeviceSaveMessage: vi.fn()
+      setCustomDeviceSaveMessage: vi.fn(),
+      svgSourceToDataUrl: (source: string) => `data:image/svg+xml,${encodeURIComponent(source)}`
     })(sourceTemplate);
 
     expect(copied).toBe(true);
@@ -2619,7 +2621,10 @@ describe("manual bend interaction helpers", () => {
     sourceTemplate.terminalAnchors[0].x = -0.5;
     sourceTemplate.stateDefinitions[0].label = "changed";
     expect(copiedTemplate.size.width).toBe(120);
-    expect(copiedTemplate.params.backgroundImage).toBe("data:image/svg+xml,wind");
+    expect(copiedTemplate.params.backgroundImage).toContain("data:image/svg+xml,");
+    expect(decodeURIComponent(copiedTemplate.params.backgroundImage)).toContain('data-source-kind="ac-wind-source"');
+    expect(copiedTemplate.params.backgroundImageAssetId).toBe("");
+    expect(copiedTemplate.params.backgroundImageFit).toBe("contain");
     expect(copiedTemplate.terminalAnchors[0].x).toBe(0.5);
     expect(copiedTemplate.stateDefinitions[0].label).toBe("运行");
   });

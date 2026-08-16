@@ -3636,6 +3636,34 @@ export function buildDeviceTemplateIconSvg(template: DeviceTemplate) {
   });
 }
 
+export function buildDeviceTemplateCopyVisualSvg(template: DeviceTemplate) {
+  const width = Math.ceil(Math.max(1, Number(template.size?.width) || 104));
+  const height = Math.ceil(Math.max(1, Number(template.size?.height) || 64));
+  const visualTemplate: DeviceTemplate = {
+    ...template,
+    params: { ...template.params },
+    terminalCount: 0,
+    terminalTypes: [],
+    terminalLabels: [],
+    terminalAnchors: [],
+    terminalRoles: [],
+    terminalAssociations: []
+  };
+  const node = createNodeFromTemplate(visualTemplate, { x: width / 2, y: height / 2 });
+  node.id = `component-copy-${String(template.kind || "component").replace(/[^A-Za-z0-9_-]+/g, "_")}`;
+  node.terminals = [];
+  node.params = {
+    ...node.params,
+    _labelVisible: "0"
+  };
+  return buildSvgDocument([node], [], {
+    width,
+    height,
+    backgroundColor: "transparent",
+    deviceTemplates: [visualTemplate]
+  });
+}
+
 export function customComponentTreeContextMenuCapabilities(
   selection: CustomComponentTreeSelection,
   hasCopiedComponent: boolean
@@ -3652,6 +3680,40 @@ export function customComponentTreeContextMenuCapabilities(
     pasteComponent: hasCopiedComponent && (isComponentLibrary || isComponent),
     exportComponentSvg: isComponent,
     importComponentSvg: isComponent
+  };
+}
+
+export function placeContextMenuInViewport({
+  clientX,
+  clientY,
+  menuWidth,
+  menuHeight,
+  viewportWidth,
+  viewportHeight,
+  margin = 8
+}: {
+  clientX: number;
+  clientY: number;
+  menuWidth: number;
+  menuHeight: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  margin?: number;
+}) {
+  const safeMargin = Math.max(0, Number(margin) || 0);
+  const safeMenuWidth = Math.max(0, Number(menuWidth) || 0);
+  const safeMenuHeight = Math.max(0, Number(menuHeight) || 0);
+  const maxLeft = Math.max(safeMargin, viewportWidth - safeMenuWidth - safeMargin);
+  const maxTop = Math.max(safeMargin, viewportHeight - safeMenuHeight - safeMargin);
+  const preferredLeft = clientX + safeMenuWidth + safeMargin <= viewportWidth
+    ? clientX
+    : clientX - safeMenuWidth;
+  const preferredTop = clientY + safeMenuHeight + safeMargin <= viewportHeight
+    ? clientY
+    : clientY - safeMenuHeight;
+  return {
+    left: Math.max(safeMargin, Math.min(preferredLeft, maxLeft)),
+    top: Math.max(safeMargin, Math.min(preferredTop, maxTop))
   };
 }
 
@@ -3966,6 +4028,12 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
     y: number;
     selection: CustomComponentTreeSelection;
   } | null>(null);
+  const treeContextMenuRef = useRef<HTMLDivElement | null>(null);
+  const [treeContextMenuPosition, setTreeContextMenuPosition] = useState({
+    left: 0,
+    top: 0,
+    measured: false
+  });
 
   // 同步 collapsed 到父组件（用于删除、重命名等操作）
   useEffect(() => {
@@ -3981,6 +4049,22 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
     setSelection((current) => customComponentTreeSelectionsEqual(current, initialSelection) ? current : initialSelection);
   }, [initialSelection]);
 
+  useLayoutEffect(() => {
+    if (!treeContextMenu || typeof window === "undefined") return;
+    const menu = treeContextMenuRef.current;
+    if (!menu) return;
+    const bounds = menu.getBoundingClientRect();
+    const nextPosition = placeContextMenuInViewport({
+      clientX: treeContextMenu.x,
+      clientY: treeContextMenu.y,
+      menuWidth: bounds.width,
+      menuHeight: bounds.height,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight
+    });
+    setTreeContextMenuPosition({ ...nextPosition, measured: true });
+  }, [treeContextMenu]);
+
   useEffect(() => {
     if (!treeContextMenu) return;
     const close = () => setTreeContextMenu(null);
@@ -3990,11 +4074,13 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
     window.addEventListener("pointerdown", close);
     window.addEventListener("blur", close);
     window.addEventListener("resize", close);
+    window.addEventListener("scroll", close, true);
     window.addEventListener("keydown", closeOnKeyDown);
     return () => {
       window.removeEventListener("pointerdown", close);
       window.removeEventListener("blur", close);
       window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", close, true);
       window.removeEventListener("keydown", closeOnKeyDown);
     };
   }, [treeContextMenu]);
@@ -4096,9 +4182,10 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
     event.preventDefault();
     event.stopPropagation();
     activateSelection?.();
+    setTreeContextMenuPosition({ left: event.clientX, top: event.clientY, measured: false });
     setTreeContextMenu({
-      x: Math.max(8, Math.min(event.clientX, window.innerWidth - 224)),
-      y: Math.max(8, Math.min(event.clientY, window.innerHeight - 342)),
+      x: event.clientX,
+      y: event.clientY,
       selection: targetSelection
     });
   };
@@ -4311,12 +4398,17 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
           <div className="dialog-tree-empty">未找到匹配元件</div>
         )}
       </div>
-      {treeContextMenu && (
+      {treeContextMenu && typeof document !== "undefined" && createPortal(
         <div
+          ref={treeContextMenuRef}
           className="context-menu custom-component-tree-context-menu"
           role="menu"
           aria-label="元件结构右键菜单"
-          style={{ left: treeContextMenu.x, top: treeContextMenu.y }}
+          style={{
+            left: treeContextMenuPosition.left,
+            top: treeContextMenuPosition.top,
+            visibility: treeContextMenuPosition.measured ? "visible" : "hidden"
+          }}
           onPointerDown={(event) => event.stopPropagation()}
           onContextMenu={(event) => event.preventDefault()}
         >
@@ -4394,7 +4486,8 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
             <Trash2 size={14} aria-hidden="true" />
             删除
           </button>
-        </div>
+        </div>,
+        document.body
       )}
     </aside>
   );
