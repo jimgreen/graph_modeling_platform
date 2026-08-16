@@ -7,6 +7,58 @@ import { STATE_ICON_DRAFT_FRAME, STATE_ICON_DRAWING_FRAME_WIDTH, STATE_ICON_DRAW
 
 import type { DeviceDefinitionStateDraftRow } from "../stateIconDrawing";
 
+export function stateIconDrawingContextMenuPosition(
+  clientPoint: { x: number; y: number },
+  options: {
+    hostRect?: { left: number; top: number; right: number; bottom: number; width: number; height: number } | null;
+    hostOffsetWidth?: number;
+    hostOffsetHeight?: number;
+    hostClientLeft?: number;
+    hostClientTop?: number;
+    viewportWidth?: number;
+    viewportHeight?: number;
+    menuWidth?: number;
+    menuHeight?: number;
+    margin?: number;
+  } = {}
+) {
+  const menuWidth = Math.max(1, options.menuWidth ?? 148);
+  const menuHeight = Math.max(1, options.menuHeight ?? 230);
+  const margin = Math.max(0, options.margin ?? 6);
+  const viewportWidth = Math.max(1, options.viewportWidth ?? Number.POSITIVE_INFINITY);
+  const viewportHeight = Math.max(1, options.viewportHeight ?? Number.POSITIVE_INFINITY);
+  const hostRect = options.hostRect ?? null;
+  const visibleLeft = Math.max(0, hostRect?.left ?? 0) + margin;
+  const visibleTop = Math.max(0, hostRect?.top ?? 0) + margin;
+  const visibleRight = Math.min(viewportWidth, hostRect?.right ?? viewportWidth) - margin;
+  const visibleBottom = Math.min(viewportHeight, hostRect?.bottom ?? viewportHeight) - margin;
+  const maxLeft = Math.max(visibleLeft, visibleRight - menuWidth);
+  const maxTop = Math.max(visibleTop, visibleBottom - menuHeight);
+  const preferredLeft = clientPoint.x + menuWidth <= visibleRight
+    ? clientPoint.x
+    : clientPoint.x - menuWidth;
+  const preferredTop = clientPoint.y + menuHeight <= visibleBottom
+    ? clientPoint.y
+    : clientPoint.y - menuHeight;
+  const clientLeft = Math.min(maxLeft, Math.max(visibleLeft, preferredLeft));
+  const clientTop = Math.min(maxTop, Math.max(visibleTop, preferredTop));
+  if (!hostRect) {
+    return { x: clientLeft, y: clientTop };
+  }
+  const scaleX = hostRect.width > 0 && Number(options.hostOffsetWidth) > 0
+    ? hostRect.width / Number(options.hostOffsetWidth)
+    : 1;
+  const scaleY = hostRect.height > 0 && Number(options.hostOffsetHeight) > 0
+    ? hostRect.height / Number(options.hostOffsetHeight)
+    : 1;
+  const hostPaddingLeft = hostRect.left + Math.max(0, Number(options.hostClientLeft) || 0) * scaleX;
+  const hostPaddingTop = hostRect.top + Math.max(0, Number(options.hostClientTop) || 0) * scaleY;
+  return {
+    x: (clientLeft - hostPaddingLeft) / scaleX,
+    y: (clientTop - hostPaddingTop) / scaleY
+  };
+}
+
 export function createRenderStateVisualPager(__appScope: Record<string, any>) {
   return (
     rows: DeviceDefinitionStateDraftRow[],
@@ -1575,7 +1627,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
               onClick={() => setActiveRowId(row.id)}
               onContextMenu={(event) => {
                 event.preventDefault();
-                setStateIconDrawingContextMenu({ x: event.clientX, y: event.clientY, kind: "state", rowId: row.id });
+                openStateIconDrawingContextMenu(event, { kind: "state", rowId: row.id });
               }}
             >
               {row.name.trim() || `状态${index + 1}`}
@@ -1669,6 +1721,35 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
           )}
         </div>
       );
+    };
+    const openStateIconDrawingContextMenu = (
+      event: { clientX: number; clientY: number; currentTarget: EventTarget },
+      menu: Omit<StateIconDrawingContextMenuState, "x" | "y">
+    ) => {
+      const target = event.currentTarget as Element | null;
+      const host = target?.closest?.(".custom-device-dialog") as HTMLElement | null;
+      const hostStyle = host ? getComputedStyle(host) : null;
+      const hostCreatesFixedContainingBlock = Boolean(host && hostStyle && (
+        hostStyle.transform !== "none" ||
+        hostStyle.filter !== "none" ||
+        hostStyle.perspective !== "none" ||
+        hostStyle.contain.includes("paint")
+      ));
+      const hostRect = hostCreatesFixedContainingBlock ? host!.getBoundingClientRect() : null;
+      const point = stateIconDrawingContextMenuPosition(
+        { x: event.clientX, y: event.clientY },
+        {
+          hostRect,
+          hostOffsetWidth: host?.offsetWidth,
+          hostOffsetHeight: host?.offsetHeight,
+          hostClientLeft: host?.clientLeft,
+          hostClientTop: host?.clientTop,
+          viewportWidth: document.documentElement.clientWidth,
+          viewportHeight: document.documentElement.clientHeight,
+          menuHeight: menu.kind === "state" ? 76 : 230
+        }
+      );
+      setStateIconDrawingContextMenu({ ...point, ...menu });
     };
     const renderStateIconDrawingInline = () => {
       if (!activeDrawingTarget) {
@@ -1804,7 +1885,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                       return;
                     }
                     const point = stateIconDrawingPointer(event);
-                    setStateIconDrawingContextMenu({ x: event.clientX, y: event.clientY, kind: "canvas", pastePoint: point });
+                    openStateIconDrawingContextMenu(event, { kind: "canvas", pastePoint: point });
                   }}
                   onPointerDown={(event) => {
                     if (stateIconDrawingDialog.pendingElementKind || stateIconDrawingDialog.pendingStaticTemplate || stateIconDrawingDialog.drawingDraft) {
@@ -2008,7 +2089,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                         onContextMenu={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
-                          setStateIconDrawingContextMenu({ x: event.clientX, y: event.clientY, kind: "element", elementId: element.id });
+                          openStateIconDrawingContextMenu(event, { kind: "element", elementId: element.id });
                         }}
                       >
                         <rect x={formatSvgNumber(hitboxFrame.x)} y={formatSvgNumber(hitboxFrame.y)} width={formatSvgNumber(hitboxFrame.width)} height={formatSvgNumber(hitboxFrame.height)} className="state-icon-drawing-hitbox" />
@@ -2172,7 +2253,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                   const visibleStrokeColor = visibleStateIconColor("#2563eb", selected.strokeColor);
                   const visibleTextColor = visibleStateIconColor("#111827", selected.textColor, selected.strokeColor);
                   const isLineShape = STATE_ICON_LINE_SHAPE_KINDS.has(selected.kind);
-                  const isClosedShape = STATE_ICON_CLOSED_SHAPE_KINDS.has(selected.kind);
+                  const isClosedShape = STATE_ICON_CLOSED_SHAPE_KINDS.has(selected.kind) || selected.kind === "imported-svg";
                   const fontFamilyValue = selected.fontFamily ?? "Arial, Microsoft YaHei";
                   const baseFontFamilyOptions = Array.isArray(FONT_FAMILY_OPTIONS)
                     ? FONT_FAMILY_OPTIONS

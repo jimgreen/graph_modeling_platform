@@ -93,6 +93,19 @@ $dialog.DefaultExt = $env:GRAPH_MODEL_EXPORT_DEFAULT_EXT
 $dialog.AddExtension = $true
 $dialog.OverwritePrompt = $true
 $dialog.RestoreDirectory = $true
+$startIn = $env:GRAPH_MODEL_EXPORT_START_IN
+$initialDirectory = switch ($startIn) {
+  "desktop" { [Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop) }
+  "documents" { [Environment]::GetFolderPath([Environment+SpecialFolder]::MyDocuments) }
+  "downloads" { Join-Path $env:USERPROFILE "Downloads" }
+  "music" { [Environment]::GetFolderPath([Environment+SpecialFolder]::MyMusic) }
+  "pictures" { [Environment]::GetFolderPath([Environment+SpecialFolder]::MyPictures) }
+  "videos" { [Environment]::GetFolderPath([Environment+SpecialFolder]::MyVideos) }
+  default { "" }
+}
+if ($initialDirectory -and (Test-Path -LiteralPath $initialDirectory -PathType Container)) {
+  $dialog.InitialDirectory = $initialDirectory
+}
 
 $dialogThreadId = [NativeDialogPromoter]::GetCurrentThreadId()
 [NativeDialogPromoter]::PromoteNextDialog($dialogThreadId, 10000)
@@ -106,6 +119,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
 `;
 
 const encodedWindowsSaveDialogScript = Buffer.from(WINDOWS_SAVE_DIALOG_SCRIPT, "utf16le").toString("base64");
+const SAVE_DIALOG_START_IN_VALUES = new Set(["desktop", "documents", "downloads", "music", "pictures", "videos"]);
 
 export class NativeExportSaveError extends Error {
   constructor(code, message) {
@@ -141,12 +155,14 @@ export function normalizeNativeExportDialogOptions(value = {}) {
   const filename = safeSuggestedName(value.filename);
   const extensions = normalizedExtensions(value.extensions);
   const description = safeDescription(value.description);
+  const startIn = String(value.startIn ?? "").trim().toLowerCase();
   const patterns = extensions.map((extension) => `*${extension}`).join(";");
   return {
     filename,
     extensions,
     description,
     title: String(value.title ?? "另存为").trim() || "另存为",
+    startIn: SAVE_DIALOG_START_IN_VALUES.has(startIn) ? startIn : "",
     defaultExtension: extensions[0].slice(1),
     filter: `${description} (${patterns})|${patterns}|所有文件 (*.*)|*.*`
   };
@@ -177,7 +193,8 @@ export async function showWindowsSaveFileDialog(options, dependencies = {}) {
     GRAPH_MODEL_EXPORT_TITLE: normalized.title,
     GRAPH_MODEL_EXPORT_FILENAME: normalized.filename,
     GRAPH_MODEL_EXPORT_FILTER: normalized.filter,
-    GRAPH_MODEL_EXPORT_DEFAULT_EXT: normalized.defaultExtension
+    GRAPH_MODEL_EXPORT_DEFAULT_EXT: normalized.defaultExtension,
+    GRAPH_MODEL_EXPORT_START_IN: normalized.startIn
   };
   let stdout;
   try {

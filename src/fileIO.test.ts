@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { saveLazyTextFile, saveTextFile, writeTextFileToDirectory } from "./fileIO";
+import { saveBlobFile, saveLazyTextFile, saveTextFile, writeTextFileToDirectory } from "./fileIO";
 import { encodeGbk } from "./encoding/gbk";
 
 describe("text file output", () => {
@@ -21,13 +21,20 @@ describe("text file output", () => {
       text: "<Model/>",
       mime: "text/plain",
       description: "E model",
-      extensions: [".e"]
+      extensions: [".e"],
+      pickerId: "component-svg-export",
+      startIn: "downloads"
     });
 
     expect(saved).toBe(true);
     expect(write).toHaveBeenCalledWith(new TextEncoder().encode("<Model/>"));
     expect(write.mock.calls[0]?.[0]).not.toBeInstanceOf(Blob);
     expect(close).toHaveBeenCalledOnce();
+    expect(showSaveFilePicker).toHaveBeenCalledWith(expect.objectContaining({
+      id: "component-svg-export",
+      suggestedName: "model.e",
+      startIn: "downloads"
+    }));
   });
 
   test("starts lazy text generation after opening the save picker and before the picker resolves", async () => {
@@ -73,7 +80,7 @@ describe("text file output", () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
-  test("uses the local native save service and starts timing after the save target is confirmed", async () => {
+  test("uses the local native save service regardless of browser user agent and starts timing after confirmation", async () => {
     const order: string[] = [];
     let resolveSelection!: (response: Response) => void;
     const selectionResponse = new Promise<Response>((resolve) => {
@@ -103,7 +110,7 @@ describe("text file output", () => {
       location: { hostname: "127.0.0.1" },
       showSaveFilePicker
     });
-    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" });
+    vi.stubGlobal("navigator", { userAgent: "CodexEmbeddedBrowser/1.0" });
     vi.stubGlobal("fetch", fetchMock);
 
     const savePromise = saveLazyTextFile({
@@ -112,6 +119,7 @@ describe("text file output", () => {
       mime: "text/plain",
       description: "E model",
       extensions: [".e"],
+      startIn: "downloads",
       preferNativeDialog: true,
       onSaveTargetReady
     });
@@ -133,6 +141,10 @@ describe("text file output", () => {
     await expect(savePromise).resolves.toBe(true);
     expect(order).toEqual(["select", "generate", "save-target-ready", "write"]);
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/webgrp/exports/native/select-file");
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      filename: "model.e",
+      startIn: "downloads"
+    });
     expect(fetchMock.mock.calls[1]?.[0]).toBe("/webgrp/exports/native/write-text?token=target-token");
     expect(showSaveFilePicker).not.toHaveBeenCalled();
   });
@@ -157,6 +169,36 @@ describe("text file output", () => {
     expect(saved).toBe(false);
     expect(loadText).toHaveBeenCalledOnce();
     expect(showGlobalMessage).not.toHaveBeenCalled();
+  });
+
+  test("opens blob export in the requested default directory with a suggested filename", async () => {
+    const write = vi.fn(async (_data: Blob | string) => undefined);
+    const close = vi.fn(async () => undefined);
+    const showSaveFilePicker = vi.fn(async () => ({
+      createWritable: async () => ({ write, close })
+    }));
+    vi.stubGlobal("showGlobalMessage", vi.fn());
+    vi.stubGlobal("window", { showSaveFilePicker });
+    const blob = new Blob(["<svg></svg>"], { type: "image/svg+xml" });
+
+    const saved = await saveBlobFile({
+      filename: "ac-source.svg",
+      blob,
+      mime: "image/svg+xml",
+      description: "SVG 图元文件",
+      extensions: [".svg"],
+      pickerId: "custom-component-svg-export",
+      startIn: "downloads"
+    });
+
+    expect(saved).toBe(true);
+    expect(showSaveFilePicker).toHaveBeenCalledWith(expect.objectContaining({
+      id: "custom-component-svg-export",
+      suggestedName: "ac-source.svg",
+      startIn: "downloads"
+    }));
+    expect(write).toHaveBeenCalledWith(blob);
+    expect(close).toHaveBeenCalledOnce();
   });
 
   test("writes directory export text as bytes in the selected encoding", async () => {

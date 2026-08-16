@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { DOMParser as XmlDomParser, XMLSerializer as XmlSerializer } from "@xmldom/xmldom";
 
 import {
   DEFAULT_STATE_ICON_DRAWING_FRAME,
@@ -30,6 +31,7 @@ import {
   stateIconDrawingInitialFrame,
   stateIconDrawingInlineCanPersistDraft,
   stateIconDrawingInlineNeedsDraftReload,
+  stateIconDrawingSvgElementMarkup,
   stateIconDrawingToPersistedImage,
   stateIconDrawingToImage,
   upsertDefaultStateDraftRow,
@@ -57,6 +59,37 @@ import {
   createLoadDefinitionTemplateDraft,
   createSelectCustomComponentTemplate
 } from "./appExtracted/appDeviceDefinitionFactories";
+import { stateIconDrawingContextMenuPosition } from "./appExtracted/appDeviceDefinitionRenderers";
+
+function withXmlDomParser<T>(run: () => T): T {
+  const originalDOMParser = globalThis.DOMParser;
+  const serializer = new XmlSerializer();
+  class TestDOMParser {
+    parseFromString(source: string, mimeType: string) {
+      const document = new XmlDomParser().parseFromString(source, mimeType);
+      const elementPrototype = Object.getPrototypeOf(document.documentElement);
+      if (!Object.getOwnPropertyDescriptor(elementPrototype, "outerHTML")) {
+        Object.defineProperty(elementPrototype, "outerHTML", {
+          configurable: true,
+          get() {
+            return serializer.serializeToString(this);
+          }
+        });
+      }
+      (document as any).querySelector = (selector: string) => {
+        const elements = document.getElementsByTagName(selector);
+        return elements.length > 0 ? elements.item(0) : null;
+      };
+      return document;
+    }
+  }
+  (globalThis as any).DOMParser = TestDOMParser;
+  try {
+    return run();
+  } finally {
+    (globalThis as any).DOMParser = originalDOMParser;
+  }
+}
 import { createRenderStateVisualPager, createRenderDeviceDefinitionVisualPanel } from "./appExtracted/appDeviceDefinitionRenderers";
 import { createCustomDeviceDraftFromTemplate, customDeviceImageWithTerminalConnectors, generateCustomDeviceImage, projectCustomDeviceTerminalAnchorToBoundary, resolveTemplateComponentLibrary } from "./customDeviceUtils";
 
@@ -778,6 +811,47 @@ describe("default device state draft rows", () => {
     expect(svgSource).toContain('y="0"');
     expect(svgSource).toContain('width="240"');
     expect(svgSource).toContain('height="160"');
+  });
+
+  test("converts context-menu viewport coordinates into a transformed dialog coordinate system", () => {
+    const position = stateIconDrawingContextMenuPosition(
+      { x: 688, y: 411 },
+      {
+        hostRect: { left: -110, top: 72, right: 1390, bottom: 648, width: 1500, height: 576 },
+        hostOffsetWidth: 1500,
+        hostOffsetHeight: 576,
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        menuWidth: 148,
+        menuHeight: 230
+      }
+    );
+
+    expect(position).toEqual({ x: 798, y: 339 });
+    expect(-110 + position.x).toBe(688);
+    expect(72 + position.y).toBe(411);
+  });
+
+  test("flips a context menu to the left and above when the pointer is near the viewport edge", () => {
+    const position = stateIconDrawingContextMenuPosition(
+      { x: 1260, y: 700 },
+      {
+        hostRect: { left: -110, top: 72, right: 1390, bottom: 648, width: 1500, height: 576 },
+        hostOffsetWidth: 1500,
+        hostOffsetHeight: 576,
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        menuWidth: 148,
+        menuHeight: 230
+      }
+    );
+
+    const clientLeft = -110 + position.x;
+    const clientTop = 72 + position.y;
+    expect(clientLeft).toBe(1112);
+    expect(clientTop).toBe(412);
+    expect(clientLeft + 148).toBeLessThanOrEqual(1274);
+    expect(clientTop + 230).toBeLessThanOrEqual(642);
   });
 
   test("pressing Enter commits an in-progress state icon polyline drawing", () => {
@@ -2120,6 +2194,28 @@ describe("default device state draft rows", () => {
     expect(restored[0].svgSource).toContain('viewBox="-68 -45 136 90"');
   });
 
+  test("keeps imported SVG strokes visible outside an exact geometry viewBox while remaining editable", () => {
+    const source = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="12" fill="none" stroke="#2563eb" stroke-width="4"/></svg>';
+    const element = {
+      ...createImportedStateIconElement("imported-svg", source, "圆形图元"),
+      x: 120,
+      y: 80,
+      width: 120,
+      height: 120
+    };
+
+    const persistedMarkup = stateIconDrawingSvgElementMarkup(source, -60, -60, 120, 120);
+    expect(persistedMarkup).toContain('viewBox="0 0 24 24"');
+    expect(persistedMarkup).toContain('overflow="visible"');
+
+    const restored = createEditableStateIconElementsFromSvgSource(
+      decodeURIComponent(stateIconDrawingToImage([element]).split(",")[1] ?? ""),
+      "圆形图元"
+    );
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toMatchObject({ kind: "imported-svg", width: 120, height: 120 });
+  });
+
   test("marks generated three-winding transformer SVGs to preserve the model viewport", () => {
     const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-three-winding-transformer");
     expect(template).toBeTruthy();
@@ -2593,21 +2689,116 @@ describe("default device state draft rows", () => {
     });
   });
 
-  test("keeps externally imported SVG as one drawing element", () => {
-    const imported = createEditableStateIconElementsFromSvgSource(
+  test("splits externally imported SVG into independently editable drawing layers", () => {
+    const imported = withXmlDomParser(() => createEditableStateIconElementsFromSvgSource(
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="4" y="4" width="56" height="56"/><circle cx="32" cy="32" r="16"/><text x="32" y="36">A</text></svg>',
       "external.svg",
       { preserveImportedSvg: true }
-    );
+    ));
 
-    expect(imported).toHaveLength(1);
-    expect(imported[0]).toMatchObject({
-      kind: "imported-svg",
-      text: "external.svg"
-    });
+    expect(imported).toHaveLength(3);
+    expect(imported.every((element) => element.kind === "imported-svg")).toBe(true);
+    expect(imported.map((element) => element.text)).toEqual([
+      "external.svg-矩形1",
+      "external.svg-圆1",
+      "external.svg-文字1"
+    ]);
     expect(imported[0].svgSource).toContain("<rect");
+    expect(imported[0].svgSource).not.toContain("<circle");
+    expect(imported[0].svgSource).not.toContain("<text");
+    expect(imported[1].svgSource).toContain("<circle");
+    expect(imported[1].svgSource).not.toContain("<rect");
+    expect(imported[2].svgSource).toContain("<text");
+  });
+
+  test("preserves ordinary SVG transforms and shared definitions while splitting leaf layers", () => {
+    const imported = withXmlDomParser(() => createEditableStateIconElementsFromSvgSource(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80" fill="#ffffff" stroke="#123456"><defs><linearGradient id="paint"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#000"/></linearGradient></defs><g transform="translate(12 8) scale(1.5)"><circle cx="20" cy="20" r="12" fill="url(#paint)"/><path d="M 8 40 H 32"/><text x="20" y="60">SVG</text></g></svg>',
+      "ordinary.svg",
+      { preserveImportedSvg: true }
+    ));
+
+    expect(imported).toHaveLength(3);
+    imported.forEach((element) => {
+      expect(element.svgSource).toContain('<linearGradient id="paint"');
+      expect(element.svgSource).toContain('transform="translate(12 8) scale(1.5)"');
+      expect(element.svgSource).toContain('fill="#ffffff"');
+      expect(element.svgSource).toContain('stroke="#123456"');
+    });
     expect(imported[0].svgSource).toContain("<circle");
-    expect(imported[0].svgSource).toContain("<text");
+    expect(imported[1].svgSource).toContain("<path");
+    expect(imported[2].svgSource).toContain("<text");
+  });
+
+  test("splits built-in generated glyph details while retaining the original layer geometry", () => {
+    const source = '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160"><g data-state-icon-layer-width="180" data-state-icon-layer-height="120" transform="translate(120 80)"><svg x="-90" y="-60" width="180" height="120" data-state-icon-preserve-view-box="true" viewBox="-52 -32 104 64" preserveAspectRatio="xMidYMid meet" overflow="visible"><g data-platform-generated-default="true" transform="rotate(0) scale(1 1)"><g fill="none" stroke="#2563eb" stroke-width="2.5"><circle cx="0" cy="0" r="24" fill="#eff6ff"/><path d="M -14 0 C -8 -10 8 10 14 0"/></g><text x="33" y="-10" fill="#2563eb">AC</text></g></svg></g></svg>';
+
+    const restored = withXmlDomParser(() => createEditableStateIconElementsFromSvgSource(source, "交流电源"));
+
+    expect(restored).toHaveLength(3);
+    expect(restored.map((element) => element.text)).toEqual([
+      "交流电源-圆1",
+      "交流电源-路径2",
+      "AC"
+    ]);
+    restored.slice(0, 2).forEach((element) => {
+      expect(element).toMatchObject({
+        kind: "imported-svg",
+        x: 120,
+        y: 80,
+        width: 180,
+        height: 120
+      });
+      expect(element.svgSource).toContain('viewBox="-52 -32 104 64"');
+    });
+    expect(restored[2]).toMatchObject({
+      kind: "text",
+      x: 120,
+      y: 80,
+      width: 180,
+      height: 120,
+      text: "AC"
+    });
+    expect(restored[0].svgSource).toContain("<circle");
+    expect(restored[0].svgSource).not.toContain("<path");
+    expect(restored[1].svgSource).toContain("<path");
+    expect(restored[1].svgSource).not.toContain("<circle");
+  });
+
+  test("persists fill edits and an explicit zero stroke width for imported SVG layers", () => {
+    const importedElement = {
+      ...createImportedStateIconElement(
+        "imported-svg",
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="#ffffff" stroke="#2563eb" stroke-width="4"/></svg>',
+        "圆"
+      ),
+      fillColor: "#f97316",
+      fillColorEdited: true,
+      strokeWidth: 0,
+      strokeWidthEdited: true
+    };
+
+    const imageSource = decodeURIComponent(stateIconDrawingToImage([importedElement]).split(",")[1] ?? "");
+    expect(imageSource).toContain("fill:#f97316 !important");
+    expect(imageSource).toContain("stroke-width:0 !important");
+
+    const circleElement = {
+      tagName: "circle",
+      attributes: [
+        { name: "fill", value: "#ffffff" },
+        { name: "stroke-width", value: "4" }
+      ]
+    } as any;
+    const props = stateIconSvgReactAttributes(circleElement, {
+      stroke: "#2563eb",
+      strokeWidth: 0,
+      dashArray: "",
+      fill: "#f97316",
+      fillColorEdited: true,
+      strokeWidthEdited: true
+    } as any);
+    expect(props.fill).toBe("#f97316");
+    expect(props.strokeWidth).toBe("0");
   });
 
   test("directly renders state icon previews that contain imported SVG or bitmap image layers", () => {

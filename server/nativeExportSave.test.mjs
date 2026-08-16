@@ -65,11 +65,13 @@ describe("native export save service", () => {
     expect(normalizeNativeExportDialogOptions({
       filename: "../bad:name?.svg ",
       description: "SVG|图形",
-      extensions: ["svg", ".SVG", ".svg", ".bad ext"]
+      extensions: ["svg", ".SVG", ".svg", ".bad ext"],
+      startIn: "downloads"
     })).toMatchObject({
       filename: "bad_name_.svg",
       extensions: [".svg"],
       description: "SVG 图形",
+      startIn: "downloads",
       defaultExtension: "svg"
     });
   });
@@ -97,6 +99,8 @@ describe("native export save service", () => {
     expect(script).toContain("PromoteNextDialog");
     expect(script).toContain("IntPtr hwndTopmost = new IntPtr(-1)");
     expect(script).toContain("SetWindowPos(dialogHandle, hwndTopmost");
+    expect(script).toContain("$dialog.InitialDirectory = $initialDirectory");
+    expect(script).toContain('"downloads" { Join-Path $env:USERPROFILE "Downloads" }');
     expect(script).toContain("$dialog.ShowDialog()");
   });
 
