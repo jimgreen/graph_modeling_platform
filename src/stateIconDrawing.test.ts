@@ -2730,6 +2730,60 @@ describe("default device state draft rows", () => {
     expect(imported[2].svgSource).toContain("<text");
   });
 
+  test("expands exported symbol references into editable nuclear-generator layers", () => {
+    const exportedSvg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid meet" height="100%" width="100%" viewBox="0,0,222,166">
+      <defs id="svg_defs">
+        <symbol id="symbol_ACGenerator_ac-nuclear-source_default" viewBox="-75 -47 150 94" overflow="visible">
+          <title>交流核能发电机</title>
+          <g transform="rotate(0) scale(1 1)">
+            <g transform="scale(1.5)"><g fill="#ffffff" stroke="#2563eb" stroke-width="2.2">
+              <circle cx="0" cy="0" r="22"/>
+              <ellipse cx="0" cy="0" rx="6" ry="20" fill="none" transform="rotate(0)"/>
+              <ellipse cx="0" cy="0" rx="6" ry="20" fill="none" transform="rotate(60)"/>
+              <ellipse cx="0" cy="0" rx="6" ry="20" fill="none" transform="rotate(120)"/>
+              <circle cx="0" cy="0" r="3" fill="#2563eb"/>
+            </g></g>
+            <g transform="translate(79 0)"><line x1="-46" y1="0" x2="0" y2="0" stroke="#2563eb" stroke-width="2.2"/></g>
+          </g>
+        </symbol>
+      </defs>
+      <g id="root_g">
+        <g class="export-layer-definitions" style="display:none"><g layer-id="layer-default"/></g>
+        <g id="Background_Layer"><rect width="100%" height="100%" fill="transparent"/></g>
+        <g id="ACGenerator_Layer" device-type="ACGenerator">
+          <use id="component-svg-ac-nuclear-source" href="#symbol_ACGenerator_ac-nuclear-source_default" x="36" y="36" width="150" height="94"/>
+        </g>
+      </g>
+    </svg>`;
+
+    const imported = withXmlDomParser(() => createEditableStateIconElementsFromSvgSource(
+      exportedSvg,
+      "ac-nuclear-source.svg",
+      { preserveImportedSvg: true }
+    ));
+
+    expect(imported).toHaveLength(6);
+    expect(imported.every((element) => element.kind === "imported-svg")).toBe(true);
+    const editableMarkup = imported.map((element) => (element.svgSource ?? "").replace(/<defs\b[\s\S]*?<\/defs>/iu, ""));
+    expect(editableMarkup.filter((markup) => markup.includes("<circle")).length).toBe(2);
+    expect(editableMarkup.filter((markup) => markup.includes("<ellipse")).length).toBe(3);
+    expect(editableMarkup.filter((markup) => markup.includes("<line")).length).toBe(1);
+    imported.forEach((element) => {
+      expect(element.svgSource).toContain('data-state-icon-preserve-view-box="true"');
+      expect(element.svgSource).not.toContain("<use");
+      expect(element.svgSource).not.toContain('fill="transparent"');
+    });
+
+    const persistedSource = decodeURIComponent(stateIconDrawingToImage(imported).split(",")[1] ?? "");
+    const restored = withXmlDomParser(() => createEditableStateIconElementsFromSvgSource(
+      persistedSource,
+      "ac-nuclear-source.svg"
+    ));
+    expect(restored).toHaveLength(6);
+    expect(restored.every((element) => element.kind === "imported-svg")).toBe(true);
+    expect(restored.every((element) => !(element.svgSource ?? "").includes("<use"))).toBe(true);
+  });
+
   test("splits built-in generated glyph details while retaining the original layer geometry", () => {
     const source = '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160"><g data-state-icon-layer-width="180" data-state-icon-layer-height="120" transform="translate(120 80)"><svg x="-90" y="-60" width="180" height="120" data-state-icon-preserve-view-box="true" viewBox="-52 -32 104 64" preserveAspectRatio="xMidYMid meet" overflow="visible"><g data-platform-generated-default="true" transform="rotate(0) scale(1 1)"><g fill="none" stroke="#2563eb" stroke-width="2.5"><circle cx="0" cy="0" r="24" fill="#eff6ff"/><path d="M -14 0 C -8 -10 8 10 14 0"/></g><text x="33" y="-10" fill="#2563eb">AC</text></g></svg></g></svg>';
 

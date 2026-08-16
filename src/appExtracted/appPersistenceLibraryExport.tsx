@@ -3732,9 +3732,9 @@ export type CustomComponentTreeProps = {
   initialCollapsedTypes: Set<string>;
   initialSelection: CustomComponentTreeSelection;
   searchQuery: string;
-  onSelectCategoryLibrary: (categoryLibraryName: string) => void;
-  onSelectComponent: (template: DeviceTemplate, section: string) => void;
-  onSelectComponentLibrary: (categoryLibraryName: string, sectionName: string, options?: { expand?: boolean }) => void;
+  onSelectCategoryLibrary: (categoryLibraryName: string) => boolean | void;
+  onSelectComponent: (template: DeviceTemplate, section: string) => boolean | void;
+  onSelectComponentLibrary: (categoryLibraryName: string, sectionName: string, options?: { expand?: boolean }) => boolean | void;
   onCreateCategoryLibrary: () => void;
   onCreateComponentLibrary: () => void;
   onCreateComponent: () => void;
@@ -4112,8 +4112,11 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
 
   const handleSelectCategoryLibrary = useCallback((categoryLibraryName: string) => {
     const selection = { kind: "categoryLibrary" as const, categoryLibraryName };
+    if (onSelectCategoryLibrary(categoryLibraryName) === false) {
+      return false;
+    }
     setSelection(selection);
-    onSelectCategoryLibrary(categoryLibraryName);
+    return true;
   }, [onSelectCategoryLibrary]);
 
   const handleToggleType = useCallback((library: string, type: string) => {
@@ -4131,16 +4134,21 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
 
   const handleSelectComponentLibrary = useCallback((categoryLibraryName: string, section: string) => {
     const selection = { kind: "componentLibrary" as const, categoryLibraryName, section };
+    if (onSelectComponentLibrary(categoryLibraryName, section, { expand: false }) === false) {
+      return false;
+    }
     setSelection(selection);
-    onSelectComponentLibrary(categoryLibraryName, section, { expand: false });
+    return true;
   }, [onSelectComponentLibrary]);
 
   const handleSelectComponent = useCallback((template: DeviceTemplate, section: string) => {
     const categoryLibraryName = normalizeCategoryLibraryName(template.categoryLibrary);
+    if (onSelectComponent(template, section) === false) {
+      return false;
+    }
     // 立即更新内部 selection，显示选中效果
     setSelection({ kind: "component", categoryLibraryName, section, templateKind: template.kind });
-    // 调用父组件回调（更新右侧面板，已延迟处理）
-    onSelectComponent(template, section);
+    return true;
   }, [onSelectComponent]);
 
   const searchNeedle = normalizeLibrarySearchText(searchQuery);
@@ -4190,11 +4198,13 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
   const openTreeContextMenu = (
     event: MouseEvent<HTMLElement>,
     targetSelection: CustomComponentTreeSelection,
-    activateSelection?: () => void
+    activateSelection?: () => boolean | void
   ) => {
     event.preventDefault();
     event.stopPropagation();
-    activateSelection?.();
+    if (activateSelection?.() === false) {
+      return;
+    }
     setTreeContextMenuPosition({ left: event.clientX, top: event.clientY, measured: false });
     setTreeContextMenu({
       x: event.clientX,

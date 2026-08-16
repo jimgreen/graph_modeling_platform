@@ -5565,9 +5565,21 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .custom-device-dialog-footer {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
   padding-top: 4px;
+}
+
+.custom-device-dirty-summary {
+  margin-right: auto;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.custom-device-dirty-summary.dirty {
+  color: #b45309;
 }
 
 .custom-component-manager-panel {
@@ -7398,6 +7410,24 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   color: #1d4ed8;
   background: #ffffff;
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.device-definition-tabs .custom-device-tab-dirty {
+  display: inline-flex;
+  align-items: center;
+  min-height: 16px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  color: #92400e;
+  background: #fef3c7;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 16px;
+}
+
+.device-definition-tabs button.dirty {
+  color: #92400e;
 }
 
 .device-definition-measurement-panel {

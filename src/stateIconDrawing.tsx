@@ -1615,6 +1615,181 @@ function stateIconSvgEditableLayerLabel(element: Element, index: number) {
   return `${labels[element.tagName] ?? "图层"}${index + 1}`;
 }
 
+const STATE_ICON_SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+
+function stateIconSvgInlineStyleValue(element: Element, name: string) {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(`(?:^|;)\\s*${escapedName}\\s*:\\s*([^;]+)`, "i").exec(element.getAttribute("style") || "");
+  return (match?.[1] ?? "").replace(/\s*!important\s*$/iu, "").trim();
+}
+
+function stateIconSvgPresentationValue(element: Element, name: string) {
+  return stateIconSvgInlineStyleValue(element, name) || element.getAttribute(name)?.trim() || "";
+}
+
+function stateIconSvgInheritedPresentationValue(element: Element, name: string) {
+  let current: Element | null = element;
+  while (current) {
+    const value = stateIconSvgPresentationValue(current, name);
+    if (value) {
+      return value;
+    }
+    current = current.parentElement;
+  }
+  return "";
+}
+
+function stateIconSvgLeafIsVisible(element: Element) {
+  let current: Element | null = element;
+  while (current) {
+    const display = stateIconSvgPresentationValue(current, "display").toLowerCase();
+    const visibility = stateIconSvgPresentationValue(current, "visibility").toLowerCase();
+    const opacity = Number.parseFloat(stateIconSvgPresentationValue(current, "opacity"));
+    if (display === "none" || visibility === "hidden" || (Number.isFinite(opacity) && opacity <= 0)) {
+      return false;
+    }
+    current = current.parentElement;
+  }
+  if (element.tagName === "image") {
+    return Boolean(element.getAttribute("href") || element.getAttribute("xlink:href"));
+  }
+  const normalizePaint = (value: string) => value.trim().toLowerCase();
+  const fill = normalizePaint(stateIconSvgInheritedPresentationValue(element, "fill"));
+  const stroke = normalizePaint(stateIconSvgInheritedPresentationValue(element, "stroke"));
+  const fillOpacity = Number.parseFloat(stateIconSvgInheritedPresentationValue(element, "fill-opacity"));
+  const strokeOpacity = Number.parseFloat(stateIconSvgInheritedPresentationValue(element, "stroke-opacity"));
+  const strokeWidth = Number.parseFloat(stateIconSvgInheritedPresentationValue(element, "stroke-width"));
+  const transparentPaint = (value: string) => value === "none" || value === "transparent" || value === "rgba(0, 0, 0, 0)";
+  const fillVisible = element.tagName !== "line" &&
+    !transparentPaint(fill) &&
+    !(Number.isFinite(fillOpacity) && fillOpacity <= 0);
+  const strokeVisible = Boolean(stroke) &&
+    !transparentPaint(stroke) &&
+    !(Number.isFinite(strokeOpacity) && strokeOpacity <= 0) &&
+    !(Number.isFinite(strokeWidth) && strokeWidth <= 0);
+  return fillVisible || strokeVisible;
+}
+
+function stateIconSvgReferencedElement(useElement: Element) {
+  const rawHref = useElement.getAttribute("href") || useElement.getAttribute("xlink:href") || "";
+  if (!rawHref.startsWith("#")) {
+    return null;
+  }
+  let referenceId = rawHref.slice(1);
+  try {
+    referenceId = decodeURIComponent(referenceId);
+  } catch {
+    // Keep the literal fragment when it is not URI encoded.
+  }
+  const document = useElement.ownerDocument;
+  if (!document || !referenceId) {
+    return null;
+  }
+  const byId = typeof document.getElementById === "function" ? document.getElementById(referenceId) : null;
+  return byId ?? stateIconSvgDescendantElements(document.documentElement, true).find((element) => element.getAttribute("id") === referenceId) ?? null;
+}
+
+function stateIconSvgCopyPresentationAttributes(source: Element, target: Element) {
+  const names = new Set([
+    "class", "style", "color", "opacity", "fill", "fill-opacity", "fill-rule",
+    "stroke", "stroke-width", "stroke-opacity", "stroke-linecap", "stroke-linejoin",
+    "stroke-dasharray", "stroke-dashoffset", "font-family", "font-size", "font-style",
+    "font-weight", "text-anchor", "dominant-baseline", "filter", "clip-path", "mask"
+  ]);
+  Array.from(source.attributes).forEach((attribute) => {
+    if (names.has(attribute.name)) {
+      target.setAttribute(attribute.name, attribute.value);
+    }
+  });
+}
+
+function stateIconSvgExpandedUseNode(useElement: Element, referenced: Element) {
+  const document = useElement.ownerDocument;
+  if (!document) {
+    return null;
+  }
+  const createElement = (name: string) => document.createElementNS(STATE_ICON_SVG_NAMESPACE, name);
+  const content = createElement("g");
+  stateIconSvgCopyPresentationAttributes(referenced, content);
+  stateIconSvgCopyPresentationAttributes(useElement, content);
+  Array.from(referenced.childNodes).forEach((child) => {
+    if (child.nodeType === 1 && ["title", "desc", "metadata"].includes((child as Element).tagName)) {
+      return;
+    }
+    content.appendChild(child.cloneNode(true));
+  });
+  let replacement: Element;
+  if (["symbol", "svg"].includes(referenced.tagName)) {
+    const nestedSvg = createElement("svg");
+    ["x", "y", "width", "height"].forEach((name) => {
+      const value = useElement.getAttribute(name);
+      if (value) {
+        nestedSvg.setAttribute(name, value);
+      }
+    });
+    const viewBox = referenced.getAttribute("viewBox");
+    if (viewBox) {
+      nestedSvg.setAttribute("viewBox", viewBox);
+    }
+    nestedSvg.setAttribute(
+      "preserveAspectRatio",
+      useElement.getAttribute("preserveAspectRatio") || referenced.getAttribute("preserveAspectRatio") || "xMidYMid meet"
+    );
+    const overflow = useElement.getAttribute("overflow") || referenced.getAttribute("overflow");
+    if (overflow) {
+      nestedSvg.setAttribute("overflow", overflow);
+    }
+    nestedSvg.appendChild(content);
+    replacement = nestedSvg;
+  } else {
+    const group = createElement("g");
+    const x = Number.parseFloat(useElement.getAttribute("x") || "0") || 0;
+    const y = Number.parseFloat(useElement.getAttribute("y") || "0") || 0;
+    if (x || y) {
+      group.setAttribute("transform", `translate(${formatSvgNumber(x)} ${formatSvgNumber(y)})`);
+    }
+    group.appendChild(content);
+    replacement = group;
+  }
+  const transform = useElement.getAttribute("transform");
+  if (!transform) {
+    return replacement;
+  }
+  const transformGroup = createElement("g");
+  transformGroup.setAttribute("transform", transform);
+  transformGroup.appendChild(replacement);
+  return transformGroup;
+}
+
+function stateIconSvgExpandUseReferences(root: Element) {
+  let expandedCount = 0;
+  for (let pass = 0; pass < 32; pass += 1) {
+    const uses = stateIconSvgDescendantElements(root, true).filter((element) => element.tagName === "use");
+    let passExpanded = 0;
+    uses.forEach((useElement) => {
+      const referenced = stateIconSvgReferencedElement(useElement);
+      const replacement = referenced ? stateIconSvgExpandedUseNode(useElement, referenced) : null;
+      if (!replacement || !useElement.parentNode) {
+        return;
+      }
+      useElement.parentNode.replaceChild(replacement, useElement);
+      passExpanded += 1;
+    });
+    expandedCount += passExpanded;
+    if (passExpanded === 0) {
+      break;
+    }
+  }
+  return expandedCount;
+}
+
+function stateIconSvgPreserveImportedLayerViewBox(source: string) {
+  return source.replace(
+    /<svg\b/iu,
+    `<svg ${STATE_ICON_PRESERVE_VIEW_BOX_ATTRIBUTE}="true"`
+  );
+}
+
 function stateIconSvgRootPresentationMarkup(root: Element | null) {
   if (!root) {
     return "";
@@ -1690,7 +1865,6 @@ export function createEditableStateIconElementsFromSvgSource(
   fileName: string,
   options: { preserveImportedSvg?: boolean } = {}
 ) {
-  void options;
   const parsed = parseStateIconSvgSource(source);
   if (!parsed) {
     const generatedElements = createStateIconDrawingElementsFromGeneratedSvgSource(source, fileName);
@@ -1736,25 +1910,40 @@ export function createEditableStateIconElementsFromSvgSource(
   }
   const root = editableChildren[0]?.parentElement ?? null;
   const rootPresentationMarkup = stateIconSvgRootPresentationMarkup(root);
-  const importedLayers = editableChildren.flatMap((child) => {
+  const expandedChildren = editableChildren.map((child) => {
+    const expandedChild = child.cloneNode(true) as Element;
+    return {
+      child: expandedChild,
+      expandedUseCount: stateIconSvgExpandUseReferences(expandedChild)
+    };
+  });
+  const importedLayers = expandedChildren.flatMap(({ child, expandedUseCount }) => {
     const leaves = stateIconSvgEditableLeafElements(child);
     if (leaves.length === 0) {
       return [];
     }
-    return leaves.map((leaf, leafIndex) => ({
-      ...createImportedStateIconElement(
-        "imported-svg",
-        stateIconSvgLayerSource(
+    return leaves.flatMap((leaf, leafIndex) => {
+      if (!stateIconSvgLeafIsVisible(leaf)) {
+        return [];
+      }
+      const layerSource = stateIconSvgLayerSource(
           child,
           leafIndex,
           parsed.viewBox,
           parsed.supportMarkup,
           rootPresentationMarkup
+        );
+      return [{
+        ...createImportedStateIconElement(
+          "imported-svg",
+          options.preserveImportedSvg === true || expandedUseCount > 0
+            ? stateIconSvgPreserveImportedLayerViewBox(layerSource)
+            : layerSource,
+          `${fileName || "SVG"}-${stateIconSvgEditableLayerLabel(leaf, leafIndex)}`
         ),
-        `${fileName || "SVG"}-${stateIconSvgEditableLayerLabel(leaf, leafIndex)}`
-      ),
-      ...stateIconDrawingTerminalOwnershipFromMarkup(child.outerHTML)
-    }));
+        ...stateIconDrawingTerminalOwnershipFromMarkup(child.outerHTML)
+      }];
+    });
   });
   return importedLayers.length > 0
     ? importedLayers
