@@ -5009,8 +5009,8 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   flex-direction: column;
   gap: 14px;
   width: 1500px;
-  height: 80vh;
-  max-height: 80vh;
+  height: min(90vh, calc(100vh - 24px));
+  max-height: calc(100vh - 24px);
   overflow: hidden;
   padding: 18px;
   border-radius: 8px;
@@ -8702,10 +8702,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
     minmax(80px, 0.5fr);
 }
 
-.custom-device-form-grid:has(.custom-device-derived-en-field) {
-  grid-template-columns: repeat(7, auto);
-}
-
 .component-library-terminal-types {
   display: flex;
   align-items: center;
@@ -8856,8 +8852,6 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 
 .custom-device-form-grid .custom-device-container-field,
 .custom-device-form-grid .custom-device-derived-field,
-.custom-device-form-grid .custom-device-derived-base-field,
-.custom-device-form-grid .custom-device-derived-en-field,
 .custom-device-form-grid .custom-device-resize-field,
 .custom-device-form-grid .custom-device-terminal-count-field {
   min-width: 0;
@@ -8874,8 +8868,7 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 @media (max-width: 900px) {
   .custom-device-form-grid,
   .custom-device-form-grid.component-library-mode,
-  .custom-device-form-grid.component-mode,
-  .custom-device-form-grid:has(.custom-device-derived-en-field) {
+  .custom-device-form-grid.component-mode {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 

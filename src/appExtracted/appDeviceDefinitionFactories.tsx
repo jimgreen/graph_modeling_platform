@@ -6411,17 +6411,24 @@ export function createResolveCustomDeviceUnsavedPrompt(__appScope: Record<string
       setCustomDeviceUnsavedPrompt(null);
       return false;
     }
-    if (choice === "save" && saveCustomDeviceDefinitionDialog({ closeAfterSave: false }) !== true) {
-      return false;
+    const finishPendingAction = () => {
+      if (choice === "discard" && customDeviceUnsavedPrompt.kind === "switch-view") {
+        revertCustomDeviceDraftAll();
+      }
+      const pendingAction = customDevicePendingActionRef.current;
+      customDevicePendingActionRef.current = null;
+      setCustomDeviceUnsavedPrompt(null);
+      pendingAction?.();
+      return true;
+    };
+    if (choice !== "save") {
+      return finishPendingAction();
     }
-    if (choice === "discard" && customDeviceUnsavedPrompt.kind === "switch-view") {
-      revertCustomDeviceDraftAll();
+    const saveResult = saveCustomDeviceDefinitionDialog({ closeAfterSave: false });
+    if (saveResult && typeof saveResult.then === "function") {
+      return Promise.resolve(saveResult).then((saved) => saved === true ? finishPendingAction() : false);
     }
-    const pendingAction = customDevicePendingActionRef.current;
-    customDevicePendingActionRef.current = null;
-    setCustomDeviceUnsavedPrompt(null);
-    pendingAction?.();
-    return true;
+    return saveResult === true ? finishPendingAction() : false;
   };
 }
 
@@ -6892,6 +6899,33 @@ export function createImportCustomComponentSvg(__appScope: Record<string, any>) 
       showGlobalMessage("SVG 中没有可编辑的可见图形。请检查图形内容后重试。");
       return false;
     }
+    // Platform-exported component SVGs keep the component's natural size on
+    // the device <use> element (for example, 150×94 for ACGenerator). A new
+    // component draft starts at 104×64, so leaving that default in place makes
+    // an imported component visibly smaller even when its editable layers were
+    // parsed correctly. Preserve the source size for the platform export
+    // shape; ordinary SVG imports keep the user's current draft size.
+    const readSvgAttribute = (markup: string, name: string) => {
+      const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const match = new RegExp(`\\b${escapedName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i").exec(markup);
+      return (match?.[1] ?? match?.[2] ?? match?.[3] ?? "").trim();
+    };
+    const sourceUseMarkup = Array.from(svgSource.matchAll(/<use\b[^>]*>/giu))
+      .map((match) => match[0])
+      .find((markup) => ["dev-kind", "data-export-device-kind", "data-export-node-kind"].some((attribute) => readSvgAttribute(markup, attribute)));
+    const importedSourceSize = sourceUseMarkup
+      ? {
+          width: Number.parseFloat(readSvgAttribute(sourceUseMarkup, "width")),
+          height: Number.parseFloat(readSvgAttribute(sourceUseMarkup, "height"))
+        }
+      : null;
+    const hasImportedSourceSize = Boolean(
+      importedSourceSize &&
+      Number.isFinite(importedSourceSize.width) &&
+      importedSourceSize.width > 0 &&
+      Number.isFinite(importedSourceSize.height) &&
+      importedSourceSize.height > 0
+    );
     const backgroundImage = stateIconDrawingToPersistedImage(editableElements);
     if (!backgroundImage) {
       showGlobalMessage("SVG 可编辑图层生成失败，请检查图形内容后重试。");
@@ -6901,6 +6935,9 @@ export function createImportCustomComponentSvg(__appScope: Record<string, any>) 
     setCustomDeviceDialogView("icon");
     setCustomDeviceDraft((current: CustomDeviceDraft) => ({
       ...current,
+      ...(hasImportedSourceSize
+        ? { size: { width: importedSourceSize!.width, height: importedSourceSize!.height } }
+        : {}),
       backgroundImage,
       backgroundImageAssetId: "",
       backgroundImageFit: "fixed",
@@ -8267,59 +8304,71 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     );
     setDeviceDefinitionOverrides(normalizedDeviceDefinitionOverrides);
     const savedComponentLabel = componentLabel;
-    persistDeviceLibraryChange({ deviceDefinitionOverrides: normalizedDeviceDefinitionOverrides }, {
+    const persistenceResult = persistDeviceLibraryChange({ deviceDefinitionOverrides: normalizedDeviceDefinitionOverrides }, {
       success: `元件定义已保存到后台：${savedComponentLabel}`,
       failure: `元件定义已保存到本地，后台保存失败：${savedComponentLabel}`
     });
-    const cleanDraft = {
-      ...customDeviceDraft,
-      componentName: componentLabel,
-      componentKind: componentEnglishName,
-      isDerivedComponentLibrary: derivedRequested,
-      derivedFromComponentLibrary: derivedRequested ? derivedFromComponentLibrary : "",
-      derivedComponentLibrary: derivedRequested ? derivedComponentLibrary : "",
-      derivedComponentLibraryLabel: derivedRequested ? derivedComponentLibraryLabel : "",
-      backgroundImage,
-      backgroundImageAssetId,
-      backgroundImageFit: draftBackgroundImageFit,
-      backgroundImageCleared: draftBackgroundImageCleared,
-      size,
-      terminalLabels,
-      measurementDefinitions: cloneDeviceMeasurementDefinitions(profileItems) ?? [],
-      error: ""
+    const finishPersistedSave = (persisted: unknown) => {
+      if (persisted === false) {
+        const persistenceError = "内置图元尚未写入后台，请检查服务状态后重试保存。";
+        setCustomDeviceDraft((current) => ({ ...current, error: persistenceError }));
+        showGlobalMessage(persistenceError);
+        return false;
+      }
+      const cleanDraft = {
+        ...customDeviceDraft,
+        componentName: componentLabel,
+        componentKind: componentEnglishName,
+        isDerivedComponentLibrary: derivedRequested,
+        derivedFromComponentLibrary: derivedRequested ? derivedFromComponentLibrary : "",
+        derivedComponentLibrary: derivedRequested ? derivedComponentLibrary : "",
+        derivedComponentLibraryLabel: derivedRequested ? derivedComponentLibraryLabel : "",
+        backgroundImage,
+        backgroundImageAssetId,
+        backgroundImageFit: draftBackgroundImageFit,
+        backgroundImageCleared: draftBackgroundImageCleared,
+        size,
+        terminalLabels,
+        measurementDefinitions: cloneDeviceMeasurementDefinitions(profileItems) ?? [],
+        error: ""
+      };
+      setCustomDeviceDraft((current) => ({
+        ...current,
+        componentName: componentLabel,
+        componentKind: componentEnglishName,
+        isDerivedComponentLibrary: derivedRequested,
+        derivedFromComponentLibrary: derivedRequested ? derivedFromComponentLibrary : "",
+        derivedComponentLibrary: derivedRequested ? derivedComponentLibrary : "",
+        derivedComponentLibraryLabel: derivedRequested ? derivedComponentLibraryLabel : "",
+        backgroundImage,
+        backgroundImageAssetId,
+        backgroundImageFit: draftBackgroundImageFit,
+        backgroundImageCleared: draftBackgroundImageCleared,
+        size,
+        terminalLabels,
+        measurementDefinitions: cloneDeviceMeasurementDefinitions(profileItems) ?? [],
+        error: ""
+      }));
+      setCustomDeviceDraftCleanBaseline(cleanDraft, terminalAnchors);
+      setCustomDeviceSaveMessage("");
+      const toastMessage = `元件定义已保存：${savedComponentLabel}`;
+      setCustomDeviceSaveToast(toastMessage);
+      if (customDeviceSaveToastTimerRef?.current) {
+        clearTimeout(customDeviceSaveToastTimerRef.current);
+      }
+      if (customDeviceSaveToastTimerRef) {
+        customDeviceSaveToastTimerRef.current = setTimeout(() => setCustomDeviceSaveToast(""), 3000);
+      }
+      writeOperationLog(`保存元件定义：${savedComponentLabel}`);
+      if (options.closeAfterSave) {
+        closeCustomDeviceDialog();
+      }
+      return true;
     };
-    setCustomDeviceDraft((current) => ({
-      ...current,
-      componentName: componentLabel,
-      componentKind: componentEnglishName,
-      isDerivedComponentLibrary: derivedRequested,
-      derivedFromComponentLibrary: derivedRequested ? derivedFromComponentLibrary : "",
-      derivedComponentLibrary: derivedRequested ? derivedComponentLibrary : "",
-      derivedComponentLibraryLabel: derivedRequested ? derivedComponentLibraryLabel : "",
-      backgroundImage,
-      backgroundImageAssetId,
-      backgroundImageFit: draftBackgroundImageFit,
-      backgroundImageCleared: draftBackgroundImageCleared,
-      size,
-      terminalLabels,
-      measurementDefinitions: cloneDeviceMeasurementDefinitions(profileItems) ?? [],
-      error: ""
-    }));
-    setCustomDeviceDraftCleanBaseline(cleanDraft, terminalAnchors);
-    setCustomDeviceSaveMessage("");
-    const toastMessage = `元件定义已保存：${savedComponentLabel}`;
-    setCustomDeviceSaveToast(toastMessage);
-    if (customDeviceSaveToastTimerRef?.current) {
-      clearTimeout(customDeviceSaveToastTimerRef.current);
+    if (persistenceResult && typeof persistenceResult.then === "function") {
+      return Promise.resolve(persistenceResult).then(finishPersistedSave, () => finishPersistedSave(false));
     }
-    if (customDeviceSaveToastTimerRef) {
-      customDeviceSaveToastTimerRef.current = setTimeout(() => setCustomDeviceSaveToast(""), 3000);
-    }
-    writeOperationLog(`保存元件定义：${savedComponentLabel}`);
-    if (options.closeAfterSave) {
-      closeCustomDeviceDialog();
-    }
-    return true;
+    return finishPersistedSave(persistenceResult);
   };
 }
 
@@ -8605,7 +8654,10 @@ export function createSaveCustomDeviceDefinitionDialog(__appScope: Record<string
       showGlobalMessage("当前元件的编辑状态与选中元件不一致，请重新选择后再保存。");
       return false;
     }
-    return saveBuiltinDeviceDefinitionFromCustomDraft(targetTemplate, options) === true;
+    const saveResult = saveBuiltinDeviceDefinitionFromCustomDraft(targetTemplate, options);
+    return saveResult && typeof saveResult.then === "function"
+      ? Promise.resolve(saveResult).then((saved) => saved === true)
+      : saveResult === true;
   };
 }
 

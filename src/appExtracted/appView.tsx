@@ -1531,18 +1531,6 @@ export function renderAppView(__appScope: Record<string, any>) {
   const selectedCustomEditableParameterCount = displayedVisibleCustomParams.filter(
     (row) => selectedCustomParameterRowIdSet.has(row.id)
   ).length;
-  const customDeviceDerivedBaseLibrary = normalizeComponentLibraryName(
-    customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary || ""
-  );
-  // 派生类主类模板：用于展示"主类"并支持点击跳转到主类定义（优先非派生模板）
-  const customDeviceDerivedBaseTemplate = customDeviceDraft.isDerivedComponentLibrary && customDeviceDerivedBaseLibrary
-    ? (libraryTemplates ?? []).find((template: any) =>
-        !templateDerivedComponentLibraryInfo(template) &&
-        normalizeComponentLibraryName(resolveTemplateComponentLibrary(template)) === customDeviceDerivedBaseLibrary
-      ) ?? (libraryTemplates ?? []).find((template: any) =>
-        normalizeComponentLibraryName(resolveTemplateComponentLibrary(template)) === customDeviceDerivedBaseLibrary
-      )
-    : null;
   // 当前分类下所有派生元件库名称集合（小写），用于从主类选项中排除已派生的库
   const currentCategoryDerivedComponentLibraryNameSet = new Set<string>();
   const targetCategory = normalizeCategoryLibraryName(customDeviceDraft.categoryLibraryName || "").toLowerCase();
@@ -4759,22 +4747,6 @@ export function renderAppView(__appScope: Record<string, any>) {
                   <input value={customDeviceDraft.isContainer ? "是" : "否"} disabled readOnly />
                 </label>
               )}
-              {customDeviceDraft.isDerivedComponentLibrary && (<>
-                <label className="custom-device-derived-base-field">
-                  <span>主类</span>
-                  {customDeviceDerivedBaseTemplate ? (
-                    <button type="button" className="device-definition-summary-value derived-base-link" title={`跳转到主类 ${customDeviceDerivedBaseTemplate.label ?? ""}`} onClick={() => requestSelectCustomComponentTemplate(customDeviceDerivedBaseTemplate)}>
-                      {customDeviceDerivedBaseLibrary}
-                    </button>
-                  ) : (
-                    <strong>{customDeviceDerivedBaseLibrary}</strong>
-                  )}
-                </label>
-                <label className="custom-device-derived-en-field">
-                  派生类英文名称
-                  <BufferedTextInput value={customDeviceDraft.derivedComponentLibrary ?? ""} placeholder="例如 ACWindGen" onCommit={(value) => setCustomDeviceDraft((current) => ({ ...current, derivedComponentLibrary: value, error: "" }))}/>
-                </label>
-              </>)}
             </div>
             {showComponentLibraryTerminalTypes && (
                 <div className="component-library-terminal-types" aria-label="类端子能源属性配置">

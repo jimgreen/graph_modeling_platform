@@ -225,6 +225,11 @@ export function createRequireEditMode(__appScope: Record<string, any>) {
   };
 }
 
+const pendingDeviceLibraryPersistenceByRef = new WeakMap<
+  object,
+  { payload: string; promise: Promise<boolean> }
+>();
+
 export function createPersistDeviceLibraryChange(__appScope: Record<string, any>) {
   return (
     overrides: Partial<DeviceLibraryPersistencePayload>,
@@ -247,25 +252,48 @@ export function createPersistDeviceLibraryChange(__appScope: Record<string, any>
     const normalizedDeviceLibraryPayload = serializeDeviceLibraryForStorage(normalizedDeviceLibrary);
     writeLocalDeviceLibraryPersistencePayload(normalizedDeviceLibrary);
     if (normalizedDeviceLibraryPayload === lastPersistedDeviceLibraryPayloadRef.current) {
-      return;
+      const pendingPersistence = pendingDeviceLibraryPersistenceByRef.get(lastPersistedDeviceLibraryPayloadRef);
+      return pendingPersistence?.payload === normalizedDeviceLibraryPayload
+        ? pendingPersistence.promise
+        : Promise.resolve(true);
     }
     lastPersistedDeviceLibraryPayloadRef.current = normalizedDeviceLibraryPayload;
     suppressNextBackendDeviceLibrarySyncRef.current = false;
     if (!backendDeviceLibraryLoadedRef.current) {
-      return;
+      lastPersistedDeviceLibraryPayloadRef.current = null;
+      if (messages.failure) {
+        writeOperationLog(messages.failure);
+      }
+      return Promise.resolve(false);
     }
-    void saveBackendDeviceLibraryPayload(normalizedDeviceLibraryPayload)
+    let persistencePromise: Promise<boolean>;
+    persistencePromise = saveBackendDeviceLibraryPayload(normalizedDeviceLibraryPayload)
       .then(() => {
         if (messages.success) {
           writeOperationLog(messages.success);
         }
+        return true;
       })
       .catch(() => {
-        lastPersistedDeviceLibraryPayloadRef.current = null;
+        if (lastPersistedDeviceLibraryPayloadRef.current === normalizedDeviceLibraryPayload) {
+          lastPersistedDeviceLibraryPayloadRef.current = null;
+        }
         if (messages.failure) {
           writeOperationLog(messages.failure);
         }
+        return false;
+      })
+      .finally(() => {
+        const pendingPersistence = pendingDeviceLibraryPersistenceByRef.get(lastPersistedDeviceLibraryPayloadRef);
+        if (pendingPersistence?.promise === persistencePromise) {
+          pendingDeviceLibraryPersistenceByRef.delete(lastPersistedDeviceLibraryPayloadRef);
+        }
       });
+    pendingDeviceLibraryPersistenceByRef.set(lastPersistedDeviceLibraryPayloadRef, {
+      payload: normalizedDeviceLibraryPayload,
+      promise: persistencePromise
+    });
+    return persistencePromise;
   };
 }
 

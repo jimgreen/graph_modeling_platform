@@ -1454,7 +1454,8 @@ describe("manual bend interaction helpers", () => {
     normalizeAssociations = (_terminalTypes: any, values: any[]) => values,
     derivedBasePredicate = () => false,
     reservedPredicate = () => false,
-    baseTemplates
+    baseTemplates,
+    persistenceResult
   }: {
     template: any;
     draftDefinitions: any[];
@@ -1468,6 +1469,7 @@ describe("manual bend interaction helpers", () => {
     derivedBasePredicate?: (fieldName: unknown, baseComponentLibrary?: string) => boolean;
     reservedPredicate?: (fieldName: string) => boolean;
     baseTemplates?: any[];
+    persistenceResult?: unknown;
   }) => {
     let customDeviceDraft = initialDraft ? {
       ...structuredClone(initialDraft),
@@ -1501,6 +1503,7 @@ describe("manual bend interaction helpers", () => {
     const deviceDefinitionOverrides = existingOverrides ?? (existingOverride
       ? { [template.kind]: existingOverride }
       : {});
+    const setCustomDeviceDraftCleanBaseline = vi.fn();
     const scope = {
       ALLOW_RESIZE_TRANSFORM_PARAM: "allowResizeTransform",
       TERMINAL_TYPE_LIBRARY_LABELS: { ac: "交流" },
@@ -1541,12 +1544,12 @@ describe("manual bend interaction helpers", () => {
       normalizeComponentLibraryName: (name: string) => name.trim(),
       normalizeContainerTerminalAssociations: normalizeAssociations,
       normalizeDefinitionRowEnumFields: normalizeDefinition,
-      persistDeviceLibraryChange: vi.fn(),
+      persistDeviceLibraryChange: vi.fn(() => persistenceResult),
       requireEditMode: () => true,
       setCustomDeviceDraft: (updater: any) => {
         customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
       },
-      setCustomDeviceDraftCleanBaseline: vi.fn(),
+      setCustomDeviceDraftCleanBaseline,
       setCustomDeviceSaveMessage: vi.fn(),
       setCustomDeviceSaveToast: vi.fn(),
       customDeviceSaveToastTimerRef: { current: null },
@@ -1568,7 +1571,8 @@ describe("manual bend interaction helpers", () => {
         return savedOverrides[deviceDefinitionSharedKeyForTemplate(baseTemplate)];
       },
       savedOverrides: () => savedOverrides,
-      draft: () => customDeviceDraft
+      draft: () => customDeviceDraft,
+      cleanBaseline: setCustomDeviceDraftCleanBaseline
     };
   };
 
@@ -1605,6 +1609,64 @@ describe("manual bend interaction helpers", () => {
       size: { width: 92, height: 60 }
     });
     expect(harness.savedOverride()).not.toHaveProperty("parameterDefinitions");
+  });
+
+  test("does not mark an edited built-in icon clean until backend persistence finishes", async () => {
+    let finishPersistence: ((persisted: boolean) => void) | undefined;
+    const persistence = new Promise<boolean>((resolve) => {
+      finishPersistence = resolve;
+    });
+    const template = {
+      kind: "ac-source",
+      label: "交流电源",
+      categoryLibrary: "交流设备",
+      params: { component_type: "ACGenerator" },
+      size: { width: 84, height: 56 },
+      terminalType: "ac",
+      terminalCount: 1,
+      terminalTypes: ["ac"],
+      terminalLabels: ["交流端"],
+      terminalAnchors: [{ x: -0.5, y: 0 }],
+      parameterDefinitions: []
+    };
+    const harness = createBuiltinDeviceDefinitionSaveHarness({
+      template,
+      draftDefinitions: [],
+      persistenceResult: persistence
+    });
+
+    const saveResult = harness.save();
+    expect(saveResult).toBeInstanceOf(Promise);
+    expect(harness.cleanBaseline).not.toHaveBeenCalled();
+
+    finishPersistence?.(true);
+    await expect(saveResult).resolves.toBe(true);
+    expect(harness.cleanBaseline).toHaveBeenCalledOnce();
+  });
+
+  test("keeps an edited built-in icon dirty when backend persistence fails", async () => {
+    const template = {
+      kind: "ac-source",
+      label: "交流电源",
+      categoryLibrary: "交流设备",
+      params: { component_type: "ACGenerator" },
+      size: { width: 84, height: 56 },
+      terminalType: "ac",
+      terminalCount: 1,
+      terminalTypes: ["ac"],
+      terminalLabels: ["交流端"],
+      terminalAnchors: [{ x: -0.5, y: 0 }],
+      parameterDefinitions: []
+    };
+    const harness = createBuiltinDeviceDefinitionSaveHarness({
+      template,
+      draftDefinitions: [],
+      persistenceResult: Promise.resolve(false)
+    });
+
+    await expect(harness.save()).resolves.toBe(false);
+    expect(harness.cleanBaseline).not.toHaveBeenCalled();
+    expect(harness.draft().error).toContain("尚未写入后台");
   });
 
   test("omits inferred AC source defaults when the real built-in draft only changes visually", () => {
@@ -2837,6 +2899,46 @@ describe("manual bend interaction helpers", () => {
     expect(prompt).toBeNull();
   });
 
+  test("keeps a pending page switch blocked until an asynchronous built-in save is durable", async () => {
+    let finishSave: ((saved: boolean) => void) | undefined;
+    const savePromise = new Promise<boolean>((resolve) => {
+      finishSave = resolve;
+    });
+    const pendingAction = vi.fn();
+    let prompt: any = null;
+    const scope: any = {
+      customDeviceDialogOpen: true,
+      customDeviceDraftHasUnsavedChanges: vi.fn(() => true),
+      customDevicePendingActionRef: { current: null },
+      customDeviceUnsavedPrompt: null,
+      setCustomDeviceUnsavedPrompt: (next: any) => {
+        prompt = next;
+        scope.customDeviceUnsavedPrompt = next;
+      },
+      revertCustomDeviceDraftAll: vi.fn(),
+      saveCustomDeviceDefinitionDialog: vi.fn(() => savePromise)
+    };
+    const requestAction = createRequestCustomDeviceDraftAction(scope);
+    const resolvePrompt = createResolveCustomDeviceUnsavedPrompt(scope);
+
+    expect(requestAction(pendingAction, {
+      kind: "switch-view",
+      section: "icon",
+      actionLabel: "切换图元",
+      targetLabel: "其他图元"
+    })).toBe(false);
+
+    const saveResolution = resolvePrompt("save");
+    expect(saveResolution).toBeInstanceOf(Promise);
+    expect(pendingAction).not.toHaveBeenCalled();
+    expect(prompt).not.toBeNull();
+
+    finishSave?.(true);
+    await expect(saveResolution).resolves.toBe(true);
+    expect(pendingAction).toHaveBeenCalledOnce();
+    expect(prompt).toBeNull();
+  });
+
   test("one copied component can open the paste-name dialog repeatedly for same or different target classes", () => {
     const copiedTemplate: any = {
       kind: "ac-wind-source",
@@ -3117,6 +3219,7 @@ describe("manual bend interaction helpers", () => {
       backgroundImage: "",
       backgroundImageAssetId: "old-asset",
       backgroundImageFit: "cover",
+      size: { width: 104, height: 64 },
       params: [{ enName: "rated_power", typicalValue: "100" }],
       measurementDefinitions: [{ measurementTypeId: "p" }],
       error: ""
@@ -3155,6 +3258,7 @@ describe("manual bend interaction helpers", () => {
       backgroundImageAssetId: "",
       backgroundImageFit: "fixed",
       backgroundImageCleared: "",
+      size: { width: 104, height: 64 },
       params: [{ enName: "rated_power", typicalValue: "100" }],
       measurementDefinitions: [{ measurementTypeId: "p" }],
       error: ""
@@ -3163,6 +3267,47 @@ describe("manual bend interaction helpers", () => {
     expect(setCustomDeviceDialogView).toHaveBeenCalledWith("icon");
     expect(setCustomDeviceStatePageId).toHaveBeenCalledWith(DEFAULT_STATE_PAGE_ID);
     expect(setCustomDeviceSaveMessage).toHaveBeenCalledWith("SVG 图元已导入为 1 个可编辑图层，请保存当前元件定义后生效。");
+  });
+
+  test("adopts the natural size from a platform-exported SVG device use", async () => {
+    let customDeviceDraft: any = {
+      componentName: "交流核能发电机",
+      componentKind: "ac-nuclear-source",
+      backgroundImage: "",
+      backgroundImageAssetId: "",
+      backgroundImageFit: "cover",
+      size: { width: 104, height: 64 },
+      params: [],
+      measurementDefinitions: [],
+      error: ""
+    };
+    const event: any = {
+      target: {
+        value: "C:\\fakepath\\ac-nuclear-source.svg",
+        files: [{
+          name: "ac-nuclear-source.svg",
+          type: "image/svg+xml",
+          text: async () => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0,0,222,166"><defs><symbol id="symbol" viewBox="-75 -47 150 94"><g transform="translate(79 0)"><line x1="-46" y1="0" x2="0" y2="0" stroke="#2563eb"/></g><circle cx="0" cy="0" r="22"/></symbol></defs><g><use dev-kind="ac-nuclear-source" href="#symbol" x="36" y="36" width="150" height="94"/></g></svg>'
+        }]
+      }
+    };
+
+    const imported = await createImportCustomComponentSvg({
+      DEFAULT_STATE_PAGE_ID,
+      requireEditMode: () => true,
+      setCustomDeviceDialogView: vi.fn(),
+      setCustomDeviceDraft: (updater: any) => {
+        customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
+      },
+      setCustomDeviceSaveMessage: vi.fn(),
+      setCustomDeviceStatePageId: vi.fn(),
+      showGlobalMessage: vi.fn()
+    })(event);
+
+    expect(imported).toBe(true);
+    expect(customDeviceDraft.size).toEqual({ width: 150, height: 94 });
+    const persistedSource = decodeURIComponent(customDeviceDraft.backgroundImage.split(",")[1] ?? "");
+    expect(persistedSource).toContain('data-state-icon-layer-width="180" data-state-icon-layer-height="120"');
   });
 
   test("binds new class inheritance to the selected tree level", () => {
@@ -3242,6 +3387,38 @@ describe("manual bend interaction helpers", () => {
     expect(saveBuiltinDeviceDefinitionFromCustomDraft).not.toHaveBeenCalled();
     expect(saveCustomDeviceTemplate).not.toHaveBeenCalled();
     expect(showGlobalMessage).not.toHaveBeenCalled();
+  });
+
+  test("waits for an asynchronous built-in component save result", async () => {
+    const builtInTemplate = {
+      kind: "ac-source",
+      label: "交流电源",
+      custom: false
+    };
+    const saveBuiltinDeviceDefinitionFromCustomDraft = vi.fn(async () => true);
+    const saveComponentLibraryDefinition = vi.fn(() => true);
+    const saveCustomDeviceTemplate = vi.fn(() => true);
+
+    const saved = createSaveCustomDeviceDefinitionDialog({
+      customComponentTreeSelection: {
+        kind: "component",
+        categoryLibraryName: "交流设备",
+        section: "ACGenerator",
+        templateKind: "ac-source"
+      },
+      customDeviceDefinitionMode: "edit",
+      editingCustomDeviceKind: "",
+      saveBuiltinDeviceDefinitionFromCustomDraft,
+      saveComponentLibraryDefinition,
+      saveCustomDeviceTemplate,
+      selectedCustomComponentTemplate: undefined,
+      selectedDefinitionTemplate: builtInTemplate
+    })();
+
+    await expect(saved).resolves.toBe(true);
+    expect(saveBuiltinDeviceDefinitionFromCustomDraft).toHaveBeenCalledWith(builtInTemplate, {});
+    expect(saveComponentLibraryDefinition).not.toHaveBeenCalled();
+    expect(saveCustomDeviceTemplate).not.toHaveBeenCalled();
   });
 
   test("saves class terminal energy, parameter and measurement rows to the class override", () => {
