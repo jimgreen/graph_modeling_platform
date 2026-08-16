@@ -23,6 +23,7 @@ import {
   stateVisualShapeLabel,
   stateIconSvgElementSource,
   stateIconSvgReactAttributes,
+  stateIconSvgSourceToReactNodes,
   svgSourceFromDataUrl,
   stateIconDrawingPreviewNeedsDirectElementRender,
   stateIconDrawingDraftSourceImage,
@@ -2213,6 +2214,45 @@ describe("default device state draft rows", () => {
     const savedSource = decodeURIComponent(stateIconDrawingToImage([element]).split(",")[1] ?? "");
 
     expect(savedSource).not.toContain("data-state-icon-preserve-view-box");
+  });
+
+  test("keeps defs, symbols, and uses when rendering an imported component SVG", () => {
+    const originalDOMParser = (globalThis as any).DOMParser;
+    const originalNode = (globalThis as any).Node;
+    const element = (tagName: string, attributes: Record<string, string>, children: any[] = [], outerHTML = "") => ({
+      nodeType: 1,
+      tagName,
+      attributes: Object.entries(attributes).map(([name, value]) => ({ name, value })),
+      childNodes: children,
+      children,
+      outerHTML,
+      getAttribute: (name: string) => attributes[name] ?? null
+    });
+    const path = element("path", { d: "M 0 -50 V 50" }, [], '<path d="M 0 -50 V 50"/>');
+    const glyph = element("g", { class: "ac-series-compensator-glyph ac-series-reactor" }, [path], '<g class="ac-series-compensator-glyph ac-series-reactor"><path d="M 0 -50 V 50"/></g>');
+    const symbol = element("symbol", { id: "series-reactor", viewBox: "-75 -36 150 72" }, [glyph], '<symbol id="series-reactor" viewBox="-75 -36 150 72"><g class="ac-series-compensator-glyph ac-series-reactor"><path d="M 0 -50 V 50"/></g></symbol>');
+    const defs = element("defs", {}, [symbol], `<defs>${symbol.outerHTML}</defs>`);
+    const use = element("use", { href: "#series-reactor", x: "0", y: "0", width: "150", height: "72" }, [], '<use href="#series-reactor" x="0" y="0" width="150" height="72"/>');
+    const svg = element("svg", { viewBox: "0 0 150 72" }, [defs, use]);
+    (globalThis as any).Node = { TEXT_NODE: 3, ELEMENT_NODE: 1 };
+    (globalThis as any).DOMParser = class {
+      parseFromString() {
+        return {
+          querySelector: (selector: string) => selector === "svg" ? svg : null
+        };
+      }
+    };
+
+    try {
+      const nodes = stateIconSvgSourceToReactNodes('<svg viewBox="0 0 150 72"/>') as any[];
+
+      expect(nodes.map((node) => node.type)).toEqual(["defs", "use"]);
+      expect(nodes[0].props.children[0].type).toBe("symbol");
+      expect(nodes[1].props.href).toBe("#series-reactor");
+    } finally {
+      (globalThis as any).DOMParser = originalDOMParser;
+      (globalThis as any).Node = originalNode;
+    }
   });
 
   test("does not restore generated frame markup as an editable drawing element", () => {

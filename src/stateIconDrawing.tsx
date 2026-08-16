@@ -1490,6 +1490,10 @@ export function stateIconSvgNodeToReact(element: Element, key: string, override?
       return <tspan key={key} {...props}>{children}</tspan>;
     case "defs":
       return <defs key={key} {...props}>{children}</defs>;
+    case "symbol":
+      return <symbol key={key} {...props}>{children}</symbol>;
+    case "use":
+      return <use key={key} {...props} />;
     case "marker":
       return <marker key={key} {...props}>{children}</marker>;
     case "clipPath":
@@ -1512,7 +1516,22 @@ export function stateIconSvgSourceToReactNodes(source: string, override?: StateI
   if (!parsed) {
     return null;
   }
-  return parsed.editableChildren.map((child, index) => stateIconSvgNodeToReact(child, `svg-node-${index}`, override));
+  let renderChildren = parsed.editableChildren;
+  try {
+    const document = new DOMParser().parseFromString(
+      `<svg xmlns="http://www.w3.org/2000/svg">${parsed.body}</svg>`,
+      "image/svg+xml"
+    );
+    const svg = document.querySelector("svg");
+    if (svg && !document.querySelector("parsererror")) {
+      renderChildren = Array.from(svg.children).filter((child) =>
+        !["script", "foreignObject", "style", "title", "desc", "metadata"].includes(child.tagName)
+      );
+    }
+  } catch {
+    // Keep the already-sanitized editable children when support markup cannot be reparsed.
+  }
+  return renderChildren.map((child, index) => stateIconSvgNodeToReact(child, `svg-node-${index}`, override));
 }
 
 export function createEditableStateIconElementsFromSvgSource(

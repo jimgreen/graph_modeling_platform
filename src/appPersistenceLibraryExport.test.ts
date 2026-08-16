@@ -1905,6 +1905,20 @@ describe("E device interface definition entry", () => {
     expect(svg).not.toContain('class="node-label-text"');
   });
 
+  test.each(["ac-series-reactor", "ac-series-reactor-vertical"])(
+    "solidifies the complete %s visual for component copy",
+    (kind) => {
+      const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
+      const svg = buildDeviceTemplateCopyVisualSvg(template);
+
+      expect(svg).toMatch(/^<svg\b/);
+      expect(svg).toContain(`symbol_ACSeriCompensator_${kind}`);
+      expect(svg).toContain('class="ac-series-compensator-glyph ac-series-reactor"');
+      expect(svg).not.toContain('<g class="export-terminal ');
+      expect(svg).not.toContain('class="node-label-text"');
+    }
+  );
+
   test("keeps the component tree focused without the retired E interface shortcut", () => {
     const html = renderToStaticMarkup(createElement(CustomComponentManagerTree as any, {
       libraries: [],
