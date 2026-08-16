@@ -1706,7 +1706,7 @@ test("uses the current E interface definition instead of stale node export metad
   expect(payload.GeneratorTable.rows[0]).toMatchObject({
     idx: "5",
     name: "generator_1",
-    dev_type: "ac-source",
+    dev_type: "ACGenerator",
     reactive_power: "12.5"
   });
   expect(payload.GeneratorTable.columns).not.toContain("p_set");

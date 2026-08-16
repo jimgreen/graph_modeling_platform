@@ -93,10 +93,11 @@ describe("app view device model parameter keys", () => {
     ]);
   });
 
-  test("always uses the concrete component kind for dev_type", () => {
-    expect(resolveDeviceModelPanelDevType("ac-wind-source", { dev_type: "ACGenerator" })).toBe("ac-wind-source");
-    expect(resolveDeviceModelPanelDevType("ac-source", { dev_type: "aa" })).toBe("ac-source");
-    expect(resolveDeviceModelPanelDevType("custom-source", { component_type: "CustomGenerator" })).toBe("custom-source");
+  test("uses the editable stored dev_type and otherwise defaults to the owning class", () => {
+    expect(resolveDeviceModelPanelDevType("ac-wind-source", { dev_type: "UserEditedType" })).toBe("UserEditedType");
+    expect(resolveDeviceModelPanelDevType("ac-wind-source", {})).toBe("ACWindGen");
+    expect(resolveDeviceModelPanelDevType("ac-source", { component_type: "ACGenerator" })).toBe("ACGenerator");
+    expect(resolveDeviceModelPanelDevType("custom-source", { component_type: "CustomGenerator" })).toBe("CustomGenerator");
   });
 
   test("shows base class E fields together with derived-specific fields", () => {

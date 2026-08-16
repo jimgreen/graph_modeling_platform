@@ -44,6 +44,7 @@ describe("component library editable definitions", () => {
       "node"
     ]);
     expect(rows.find((row) => row.enName === "dev_type")?.typicalValue).toBe("ACRealBs");
+    expect(rows.find((row) => row.enName === "dev_type")?.readonly).toBe(false);
   });
 
   test("builds deterministic topo fields for multi-terminal and container classes", () => {
@@ -149,6 +150,78 @@ describe("component library editable definitions", () => {
       "pressure_set"
     ]);
     expect(resolved?.measurementDefinitions).toEqual(overrides[classKey].measurementDefinitions);
+  });
+
+  test("restores an editable class-name dev_type default for persisted base and derived classes", () => {
+    const baseKey = componentLibraryDefinitionOverrideKey("BasePump");
+    const derivedKey = componentLibraryDefinitionOverrideKey("DerivedPump");
+    const derivedDefinition = {
+      name: "DerivedPump",
+      label: "派生泵",
+      categoryLibraryName: "交流设备",
+      isDerivedComponentLibrary: true,
+      derivedFromComponentLibrary: "BasePump"
+    } as const;
+    const overrides: Record<string, DeviceTemplateDefinitionOverride> = {
+      [baseKey]: {
+        kind: baseKey,
+        parameterDefinitions: [
+          { cnName: "设备类型", enName: "dev_type", valueType: "string", typicalValue: "", readonly: true }
+        ]
+      },
+      [derivedKey]: {
+        kind: derivedKey,
+        parameterDefinitions: []
+      }
+    };
+
+    const baseResolved = resolveEditableComponentLibraryDefinition({
+      className: "BasePump",
+      categoryLibraryName: "交流设备",
+      customComponentLibraries: [baseDefinition as any, derivedDefinition as any],
+      templates: [],
+      overrides
+    });
+    const derivedResolved = resolveEditableComponentLibraryDefinition({
+      className: "DerivedPump",
+      categoryLibraryName: "交流设备",
+      customComponentLibraries: [baseDefinition as any, derivedDefinition as any],
+      templates: [],
+      overrides
+    });
+
+    expect(baseResolved?.effectiveParameterDefinitions.find((row) => row.enName === "dev_type")).toMatchObject({
+      typicalValue: "BasePump",
+      readonly: false
+    });
+    expect(derivedResolved?.parameterDefinitions.map((row) => row.enName)).not.toContain("dev_type");
+    expect(derivedResolved?.effectiveParameterDefinitions.find((row) => row.enName === "dev_type")).toMatchObject({
+      typicalValue: "DerivedPump",
+      readonly: false
+    });
+  });
+
+  test("preserves an explicit non-empty persisted dev_type default", () => {
+    const classKey = componentLibraryDefinitionOverrideKey("BasePump");
+    const resolved = resolveEditableComponentLibraryDefinition({
+      className: "BasePump",
+      categoryLibraryName: "交流设备",
+      customComponentLibraries: [baseDefinition as any],
+      templates: [],
+      overrides: {
+        [classKey]: {
+          kind: classKey,
+          parameterDefinitions: [
+            { cnName: "设备类型", enName: "dev_type", valueType: "string", typicalValue: "UserEditableType", readonly: false }
+          ]
+        }
+      }
+    });
+
+    expect(resolved?.effectiveParameterDefinitions.find((row) => row.enName === "dev_type")).toMatchObject({
+      typicalValue: "UserEditableType",
+      readonly: false
+    });
   });
 
   test("applies base-class terminal energy overrides and inherits them into derived classes", () => {

@@ -141,8 +141,18 @@ export function resolveDeviceModelPanelDefinitionGroups(
 }
 
 export function resolveDeviceModelPanelDevType(kind: string, params: Record<string, unknown> = {}): string {
-  void params;
-  return String(kind ?? "").trim();
+  const storedValue = String(params.dev_type ?? "").trim();
+  if (storedValue) {
+    return storedValue;
+  }
+  const derivedInfo = templateDerivedComponentLibraryInfo({ kind, params: params as Record<string, string> });
+  return [
+    derivedInfo?.derivedComponentLibrary,
+    params.derived_component_type,
+    params.component_type,
+    inferESection(kind, params as Record<string, string>),
+    kind
+  ].map((value) => String(value ?? "").trim()).find(Boolean) ?? "";
 }
 
 export function resolveContainerParameterViewComponentLibrary(

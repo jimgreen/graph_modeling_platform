@@ -897,10 +897,13 @@ export function createCustomDeviceDraftFromTemplate(template: DeviceTemplate, se
         cnName: definition.cnName === definition.enName ? PARAM_LABELS[definition.enName] ?? definition.cnName : definition.cnName,
         id: customParamId()
       };
-      // dev_type（设备类型）默认值取当前元件英文名称（template.kind），仅当图元未预设 dev_type 时填充；
-      // （竖向）变体与基础元件共用同一设备类型，故剥去 -vertical 后缀
-      if (definition.enName === "dev_type" && !String(row.typicalValue ?? "").trim()) {
-        return { ...row, typicalValue: baseDeviceKind(template.kind) };
+      // dev_type 默认取元件实际所属类；已经明确保存的非空默认值仍然保留。
+      if (definition.enName === "dev_type") {
+        return {
+          ...row,
+          typicalValue: String(row.typicalValue ?? "").trim() || componentClassForConcreteTemplate(template),
+          readonly: false
+        };
       }
       return row;
     });

@@ -1038,12 +1038,12 @@ describe("manual bend interaction helpers", () => {
     expect(setImageTarget).toHaveBeenCalledWith(null);
   });
 
-  test("saves a newly created custom device with the requested English name", () => {
+  test("saves a newly created custom device from explicit draft overrides", () => {
     let customDeviceDraft = {
       categoryLibraryName: "用户类别库",
       componentLibrary: "UserLibrary",
-      componentName: "测试元件",
-      componentKind: "UserDevice",
+      componentName: "陈旧草稿",
+      componentKind: "StaleDevice",
       backgroundImage: "",
       backgroundImageAssetId: "",
       backgroundImageCleared: "",
@@ -1139,7 +1139,16 @@ describe("manual bend interaction helpers", () => {
       writeOperationLog: vi.fn()
     };
 
-    const saved = createSaveCustomDeviceTemplate(scope)();
+    const saved = createSaveCustomDeviceTemplate(scope)({
+      draftOverride: {
+        ...customDeviceDraft,
+        componentName: "测试元件",
+        componentKind: "UserDevice"
+      },
+      terminalAnchorsOverride: [],
+      editingCustomDeviceKindOverride: "",
+      skipInlineDrawingPatch: true
+    });
 
     expect(saved).toBe(true);
     expect(savedTemplates[0]).toBe(previousTemplate);
@@ -2492,7 +2501,7 @@ describe("manual bend interaction helpers", () => {
       error: ""
     });
     expect(customDeviceDraft.params).toEqual(expect.arrayContaining([
-      expect.objectContaining({ enName: "dev_type", typicalValue: "custom-user-wind-generator" }),
+      expect.objectContaining({ enName: "dev_type", typicalValue: "UserWindGen", readonly: false }),
       expect.objectContaining({ enName: "rated_power", typicalValue: "10" })
     ]));
     expect(customDeviceDraft.measurementDefinitions).toEqual([
@@ -2700,7 +2709,7 @@ describe("manual bend interaction helpers", () => {
     expect(setCustomLibraryCreateDialog).toHaveBeenCalledTimes(2);
   });
 
-  test("pasting creates a new component draft with source visuals and target-class definitions", () => {
+  test("pasting validates both names and directly saves source visuals with target-class definitions", () => {
     const sourceTemplate: any = {
       kind: "source-visual-template",
       englishName: "source-visual-template",
@@ -2726,7 +2735,7 @@ describe("manual bend interaction helpers", () => {
     };
     const targetTemplate: any = {
       kind: "ac-load",
-      englishName: "ac-load",
+      englishName: "ACLoadDisplay",
       label: "交流负荷",
       categoryLibrary: "交流设备",
       componentClass: "ACLoad",
@@ -2743,7 +2752,7 @@ describe("manual bend interaction helpers", () => {
       measurementDefinitions: [{ measurementTypeId: "target-p", associatedField: "target_param" }]
     };
     let customDeviceDraft: any = createEmptyCustomDeviceDraft("交流设备");
-    let customLibraryCreateDialog: any = {
+    const pasteDialog: any = {
       kind: "component",
       title: "粘贴为新元件",
       cnName: "跨类复制负荷",
@@ -2757,7 +2766,12 @@ describe("manual bend interaction helpers", () => {
       copySourceTemplate: sourceTemplate,
       error: ""
     };
+    let customLibraryCreateDialog: any = {
+      ...pasteDialog,
+      cnName: " 交流负荷 "
+    };
     const setCustomDeviceDraftCleanBaseline = vi.fn();
+    const saveCustomDeviceTemplate = vi.fn((_options: any) => true);
     const scope: any = {
       DEFAULT_STATE_PAGE_ID: "default",
       cancelPendingCustomComponentTemplateLoad: vi.fn(),
@@ -2785,6 +2799,7 @@ describe("manual bend interaction helpers", () => {
       normalizeCustomComponentLibraries: (value: unknown) => value as any[],
       requireEditMode: () => true,
       resolveTemplateComponentLibrary,
+      saveCustomDeviceTemplate,
       setCustomCategoryLibraries: vi.fn(),
       setCustomComponentLibraries: vi.fn(),
       setCustomComponentTreeSelection: vi.fn(),
@@ -2805,40 +2820,68 @@ describe("manual bend interaction helpers", () => {
       setSelectedDefinitionKind: vi.fn()
     };
 
+    expect(createConfirmCustomLibraryCreateDialog(scope)()).toBe(false);
+    expect(customLibraryCreateDialog).toMatchObject({
+      error: "元件中文名称已存在，无法新增同名元件。"
+    });
+    expect(saveCustomDeviceTemplate).not.toHaveBeenCalled();
+
+    customLibraryCreateDialog = { ...pasteDialog, enName: "AC-LOAD" };
+    expect(createConfirmCustomLibraryCreateDialog(scope)()).toBe(false);
+    expect(customLibraryCreateDialog).toMatchObject({
+      error: "元件英文名称已存在，无法新增同名元件。"
+    });
+    expect(saveCustomDeviceTemplate).not.toHaveBeenCalled();
+
+    customLibraryCreateDialog = { ...pasteDialog, enName: "acloaddisplay" };
+    expect(createConfirmCustomLibraryCreateDialog(scope)()).toBe(false);
+    expect(customLibraryCreateDialog).toMatchObject({
+      error: "元件英文名称已存在，无法新增同名元件。"
+    });
+    expect(saveCustomDeviceTemplate).not.toHaveBeenCalled();
+
+    customLibraryCreateDialog = { ...pasteDialog };
     const created = createConfirmCustomLibraryCreateDialog(scope)();
 
     expect(created).toBe(true);
-    expect(customDeviceDraft).toMatchObject({
-      categoryLibraryName: "交流设备",
-      componentLibrary: "ACLoad",
-      componentName: "跨类复制负荷",
-      componentKind: "copied-ac-load",
-      size: { width: 138, height: 86 },
-      backgroundImage: "data:image/svg+xml,source-icon",
-      backgroundImageFit: "contain",
-      terminalCount: 1,
-      terminalTypes: expect.arrayContaining(["ac"]),
-      terminalLabels: expect.arrayContaining(["负荷端"]),
-      terminalAnchors: [{ x: 0.5, y: 0.25 }],
-      stateDefinitions: [expect.objectContaining({ value: "1", name: "运行", backgroundImage: "data:image/svg+xml,state" })],
-      allowResizeTransform: "1",
-      error: ""
-    });
-    expect(customDeviceDraft.params).toEqual(expect.arrayContaining([
-      expect.objectContaining({ enName: "target_param", typicalValue: "2" })
-    ]));
-    expect(customDeviceDraft.params).not.toEqual(expect.arrayContaining([
+    expect(saveCustomDeviceTemplate).toHaveBeenCalledOnce();
+    expect(saveCustomDeviceTemplate).toHaveBeenCalledWith(expect.objectContaining({
+      draftOverride: expect.objectContaining({
+        categoryLibraryName: "交流设备",
+        componentLibrary: "ACLoad",
+        componentName: "跨类复制负荷",
+        componentKind: "copied-ac-load",
+        size: { width: 138, height: 86 },
+        backgroundImage: "data:image/svg+xml,source-icon",
+        backgroundImageFit: "contain",
+        terminalCount: 1,
+        terminalTypes: expect.arrayContaining(["ac"]),
+        terminalLabels: expect.arrayContaining(["负荷端"]),
+        terminalAnchors: [{ x: 0.5, y: 0.25 }],
+        stateDefinitions: [expect.objectContaining({ value: "1", name: "运行", backgroundImage: "data:image/svg+xml,state" })],
+        params: expect.arrayContaining([
+          expect.objectContaining({ enName: "dev_type", typicalValue: "ACLoad", readonly: false }),
+          expect.objectContaining({ enName: "target_param", typicalValue: "2" })
+        ]),
+        measurementDefinitions: [
+          expect.objectContaining({ measurementTypeId: "target-p", associatedField: "target_param" })
+        ],
+        allowResizeTransform: "1",
+        error: ""
+      }),
+      terminalAnchorsOverride: [{ x: 0.5, y: 0.25 }],
+      editingCustomDeviceKindOverride: "",
+      skipInlineDrawingPatch: true
+    }));
+    const savedDraft = saveCustomDeviceTemplate.mock.calls[0]![0].draftOverride;
+    expect(savedDraft.params).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ enName: "source_param" })
     ]));
-    expect(customDeviceDraft.measurementDefinitions).toEqual([
-      expect.objectContaining({ measurementTypeId: "target-p", associatedField: "target_param" })
-    ]);
-    expect(customDeviceDraft.measurementDefinitions).not.toEqual(expect.arrayContaining([
+    expect(savedDraft.measurementDefinitions).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ measurementTypeId: "source-p" })
     ]));
-    expect(setCustomDeviceDraftCleanBaseline).toHaveBeenCalledWith(
-      expect.objectContaining({ componentKind: "copied-ac-load" })
-    );
+    expect(scope.setCustomDeviceDefinitionMode).not.toHaveBeenCalledWith("create");
+    expect(setCustomDeviceDraftCleanBaseline).not.toHaveBeenCalled();
     expect(customLibraryCreateDialog).toBeNull();
   });
 
