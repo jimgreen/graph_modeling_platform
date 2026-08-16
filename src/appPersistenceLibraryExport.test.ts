@@ -7,6 +7,7 @@ import {
   CustomComponentManagerTree,
   customComponentTreeContextMenuCapabilities,
   buildCustomComponentClassTree,
+  buildDeviceTemplateCopyVisualSvg,
   buildDeviceTemplateIconSvg,
   createLibraryPackage,
   componentLibraryDisplayParts,
@@ -28,6 +29,7 @@ import {
   normalizeCustomComponentLibraries,
   normalizeCustomDeviceTemplates,
   normalizeDefinitionRows,
+  placeContextMenuInViewport,
   rootComponentLibraryGroupsForDisplay,
   enumDisplayText,
   enumEditorOptionsForRow,
@@ -1844,6 +1846,41 @@ describe("E device interface definition entry", () => {
       exportComponentSvg: true,
       importComponentSvg: true
     });
+
+    const source = readFileSync(new URL("./appExtracted/appPersistenceLibraryExport.tsx", import.meta.url), "utf8");
+    expect(source).toContain("createPortal(");
+    expect(source).toContain("getBoundingClientRect()");
+    expect(source).not.toContain("window.innerHeight - 342");
+  });
+
+  test("places the measured component context menu beside the pointer and fully inside the viewport", () => {
+    expect(placeContextMenuInViewport({
+      clientX: 240,
+      clientY: 180,
+      menuWidth: 196,
+      menuHeight: 318,
+      viewportWidth: 1200,
+      viewportHeight: 800
+    })).toEqual({ left: 240, top: 180 });
+
+    expect(placeContextMenuInViewport({
+      clientX: 1120,
+      clientY: 760,
+      menuWidth: 196,
+      menuHeight: 318,
+      viewportWidth: 1200,
+      viewportHeight: 800
+    })).toEqual({ left: 924, top: 442 });
+
+    expect(placeContextMenuInViewport({
+      clientX: 2,
+      clientY: 4,
+      menuWidth: 500,
+      menuHeight: 500,
+      viewportWidth: 320,
+      viewportHeight: 240,
+      margin: 8
+    })).toEqual({ left: 8, top: 8 });
   });
 
   test("builds a standalone SVG for one component visual without its instance label", () => {
@@ -1854,6 +1891,17 @@ describe("E device interface definition entry", () => {
     expect(svg).toContain('viewBox="0,0,');
     expect(svg).toContain("symbol_ACGenerator_ac-source");
     expect(svg).toContain('device-type="ACGenerator"');
+    expect(svg).not.toContain('class="node-label-text"');
+  });
+
+  test("solidifies a built-in component visual for copy without source terminals or instance label", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-reactor")!;
+    const svg = buildDeviceTemplateCopyVisualSvg(template);
+
+    expect(svg).toMatch(/^<svg\b/);
+    expect(svg).toContain("symbol_ACCompensator_ac-reactor");
+    expect(svg).toContain('device-type="ACCompensator"');
+    expect(svg).not.toContain('<g class="export-terminal ');
     expect(svg).not.toContain('class="node-label-text"');
   });
 

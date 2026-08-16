@@ -6485,15 +6485,34 @@ function cloneCustomComponentTemplateSnapshot(template: DeviceTemplate): DeviceT
 export function createCopyCustomComponentTemplate(__appScope: Record<string, any>) {
   return (template: DeviceTemplate | null | undefined) => {
     const {
+      buildDeviceTemplateCopyVisualSvg,
       setCopiedCustomComponentTemplate,
       setCustomDeviceSaveMessage = () => undefined,
-      showGlobalMessage = () => undefined
+      showGlobalMessage = () => undefined,
+      svgSourceToDataUrl
     } = __appScope;
     if (!template?.kind) {
       showGlobalMessage("请先右键选择一个具体元件再复制。");
       return false;
     }
     const snapshot = cloneCustomComponentTemplateSnapshot(template);
+    if (typeof buildDeviceTemplateCopyVisualSvg === "function" && typeof svgSourceToDataUrl === "function") {
+      try {
+        const copyVisualSvg = buildDeviceTemplateCopyVisualSvg(snapshot);
+        const copyVisualDataUrl = svgSourceToDataUrl(copyVisualSvg);
+        if (String(copyVisualDataUrl ?? "").trim()) {
+          snapshot.params = {
+            ...snapshot.params,
+            backgroundImage: copyVisualDataUrl,
+            backgroundImageAssetId: "",
+            backgroundImageFit: "contain",
+            backgroundImageCleared: ""
+          };
+        }
+      } catch (error) {
+        console.warn("[custom-component-copy] failed to solidify source visual", error);
+      }
+    }
     setCopiedCustomComponentTemplate(snapshot);
     setCustomDeviceSaveMessage(`已复制元件：${template.label || template.englishName || template.kind}。可在同一类或其他类下重复粘贴。`);
     return true;
