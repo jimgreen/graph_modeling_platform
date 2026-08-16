@@ -10,7 +10,12 @@ import { clampNumber } from "../canvasViewport";
 import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
 import { apiPath } from "../config";
 import { decodeGbk } from "../encoding/gbk";
-import { DEFAULT_STATE_ICON_DRAWING_FRAME, customParamId, stateIconSvgVisibleViewBox } from "../stateIconDrawing";
+import {
+  DEFAULT_STATE_ICON_DRAWING_FRAME,
+  customParamId,
+  stateIconSvgVisibleViewBox,
+  svgSourceToDataUrl as defaultSvgSourceToDataUrl
+} from "../stateIconDrawing";
 import { decodeSvgImageSource } from "../svgUtils";
 import { buildMeasurementProfilePositionDefinitions, materializeNewMeasurementDefinitionFields } from "../measurements";
 import { measurementProfileItemsComplianceMessage } from "./appGraphMeasurementFactories";
@@ -36,6 +41,7 @@ import {
   resolveEditableComponentLibraryDefinition
 } from "../componentLibraryDefinitions";
 import type { TextFileEncoding } from "../fileIO";
+import { buildDeviceTemplateCopyVisualSvg as defaultBuildDeviceTemplateCopyVisualSvg } from "./appPersistenceLibraryExport";
 
 
 
@@ -6485,33 +6491,37 @@ function cloneCustomComponentTemplateSnapshot(template: DeviceTemplate): DeviceT
 export function createCopyCustomComponentTemplate(__appScope: Record<string, any>) {
   return (template: DeviceTemplate | null | undefined) => {
     const {
-      buildDeviceTemplateCopyVisualSvg,
+      buildDeviceTemplateCopyVisualSvg: injectedBuildDeviceTemplateCopyVisualSvg,
       setCopiedCustomComponentTemplate,
       setCustomDeviceSaveMessage = () => undefined,
       showGlobalMessage = () => undefined,
-      svgSourceToDataUrl
+      svgSourceToDataUrl: injectedSvgSourceToDataUrl
     } = __appScope;
     if (!template?.kind) {
       showGlobalMessage("请先右键选择一个具体元件再复制。");
       return false;
     }
     const snapshot = cloneCustomComponentTemplateSnapshot(template);
-    if (typeof buildDeviceTemplateCopyVisualSvg === "function" && typeof svgSourceToDataUrl === "function") {
-      try {
-        const copyVisualSvg = buildDeviceTemplateCopyVisualSvg(snapshot);
-        const copyVisualDataUrl = svgSourceToDataUrl(copyVisualSvg);
-        if (String(copyVisualDataUrl ?? "").trim()) {
-          snapshot.params = {
-            ...snapshot.params,
-            backgroundImage: copyVisualDataUrl,
-            backgroundImageAssetId: "",
-            backgroundImageFit: "contain",
-            backgroundImageCleared: ""
-          };
-        }
-      } catch (error) {
-        console.warn("[custom-component-copy] failed to solidify source visual", error);
+    const buildDeviceTemplateCopyVisualSvg = typeof injectedBuildDeviceTemplateCopyVisualSvg === "function"
+      ? injectedBuildDeviceTemplateCopyVisualSvg
+      : defaultBuildDeviceTemplateCopyVisualSvg;
+    const svgSourceToDataUrl = typeof injectedSvgSourceToDataUrl === "function"
+      ? injectedSvgSourceToDataUrl
+      : defaultSvgSourceToDataUrl;
+    try {
+      const copyVisualSvg = buildDeviceTemplateCopyVisualSvg(snapshot);
+      const copyVisualDataUrl = svgSourceToDataUrl(copyVisualSvg);
+      if (String(copyVisualDataUrl ?? "").trim()) {
+        snapshot.params = {
+          ...snapshot.params,
+          backgroundImage: copyVisualDataUrl,
+          backgroundImageAssetId: "",
+          backgroundImageFit: "contain",
+          backgroundImageCleared: ""
+        };
       }
+    } catch (error) {
+      console.warn("[custom-component-copy] failed to solidify source visual", error);
     }
     setCopiedCustomComponentTemplate(snapshot);
     setCustomDeviceSaveMessage(`已复制元件：${template.label || template.englishName || template.kind}。可在同一类或其他类下重复粘贴。`);

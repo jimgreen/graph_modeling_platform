@@ -2629,6 +2629,26 @@ describe("manual bend interaction helpers", () => {
     expect(copiedTemplate.stateDefinitions[0].label).toBe("运行");
   });
 
+  test("solidifies a built-in series reactor visual even when optional scope helpers are absent", () => {
+    const sourceTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-series-reactor-vertical")!;
+    let copiedTemplate: any = null;
+
+    const copied = createCopyCustomComponentTemplate({
+      setCopiedCustomComponentTemplate: (template: any) => {
+        copiedTemplate = template;
+      },
+      setCustomDeviceSaveMessage: vi.fn()
+    })(sourceTemplate);
+
+    expect(copied).toBe(true);
+    expect(copiedTemplate).not.toBeNull();
+    expect(copiedTemplate.params.backgroundImage).toMatch(/^data:image\/svg\+xml/);
+    expect(decodeURIComponent(copiedTemplate.params.backgroundImage)).toContain(
+      "symbol_ACSeriCompensator_ac-series-reactor-vertical"
+    );
+    expect(copiedTemplate.params.backgroundImageFit).toBe("contain");
+  });
+
   test("one copied component can open the paste-name dialog repeatedly for same or different target classes", () => {
     const copiedTemplate: any = {
       kind: "ac-wind-source",
