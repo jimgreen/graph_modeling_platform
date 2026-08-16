@@ -85,7 +85,11 @@ import {
   templateDerivedComponentLibraryInfo
 } from "./model";
 import { normalizeDeviceLibraryPersistencePayload } from "./appExtracted/appPersistenceLibraryExport";
-import { stateIconDrawingToImage } from "./stateIconDrawing";
+import {
+  createEditableStateIconElementsFromSvgSource,
+  stateIconDrawingToImage,
+  svgSourceFromDataUrl
+} from "./stateIconDrawing";
 import { apiPath } from "./config";
 
 afterEach(() => {
@@ -2589,7 +2593,9 @@ describe("manual bend interaction helpers", () => {
     }
   });
 
-  test("copies only a concrete component as an independent reusable snapshot", () => {
+  test("copies only a concrete component while preserving its editable drawing source", () => {
+    const editableDrawingSource = '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160"><g transform="translate(120 80)"><svg x="-90" y="-60" width="180" height="120" viewBox="-60 -36 120 72" preserveAspectRatio="xMidYMid meet" overflow="visible"><g><circle cx="0" cy="0" r="34" fill="#ffffff" stroke="#2563eb" stroke-width="4"/></g></svg></g></svg>';
+    const editableDrawingImage = `data:image/svg+xml;utf8,${encodeURIComponent(editableDrawingSource)}`;
     const sourceTemplate: any = {
       kind: "ac-wind-source",
       englishName: "ac-wind-source",
@@ -2597,7 +2603,11 @@ describe("manual bend interaction helpers", () => {
       categoryLibrary: "交流设备",
       componentClass: "ACWindGen",
       size: { width: 120, height: 72 },
-      params: { component_type: "ACGenerator", backgroundImage: "data:image/svg+xml,wind" },
+      params: {
+        component_type: "ACGenerator",
+        backgroundImage: editableDrawingImage,
+        backgroundImageFit: "fixed"
+      },
       terminalType: "ac",
       terminalCount: 1,
       terminalTypes: ["ac"],
@@ -2608,16 +2618,23 @@ describe("manual bend interaction helpers", () => {
     const setCopiedCustomComponentTemplate = vi.fn((template: any) => {
       copiedTemplate = template;
     });
+    const showGlobalMessage = vi.fn();
+    const buildDeviceTemplateCopyVisualSvg = vi.fn(() => '<svg data-should-not-be-used="true"></svg>');
 
     const copied = createCopyCustomComponentTemplate({
-      buildDeviceTemplateCopyVisualSvg: (template: any) => `<svg data-source-kind="${template.kind}"></svg>`,
+      buildDeviceTemplateCopyVisualSvg,
       setCopiedCustomComponentTemplate,
       setCustomDeviceSaveMessage: vi.fn(),
+      showGlobalMessage,
       svgSourceToDataUrl: (source: string) => `data:image/svg+xml,${encodeURIComponent(source)}`
     })(sourceTemplate);
 
     expect(copied).toBe(true);
     expect(setCopiedCustomComponentTemplate).toHaveBeenCalledTimes(1);
+    expect(showGlobalMessage).toHaveBeenCalledWith(
+      "已复制元件：风力发电机。可在同一类或其他类下重复粘贴。",
+      "success"
+    );
     expect(copiedTemplate).not.toBe(sourceTemplate);
     expect(copiedTemplate).toMatchObject({
       kind: "ac-wind-source",
@@ -2630,19 +2647,26 @@ describe("manual bend interaction helpers", () => {
     sourceTemplate.terminalAnchors[0].x = -0.5;
     sourceTemplate.stateDefinitions[0].label = "changed";
     expect(copiedTemplate.size.width).toBe(120);
-    expect(copiedTemplate.params.backgroundImage).toContain("data:image/svg+xml,");
-    expect(decodeURIComponent(copiedTemplate.params.backgroundImage)).toContain('data-source-kind="ac-wind-source"');
-    expect(copiedTemplate.params.backgroundImageAssetId).toBe("");
-    expect(copiedTemplate.params.backgroundImageFit).toBe("contain");
+    expect(copiedTemplate.params.backgroundImage).toBe(editableDrawingImage);
+    expect(copiedTemplate.params.backgroundImageFit).toBe("fixed");
+    expect(buildDeviceTemplateCopyVisualSvg).not.toHaveBeenCalled();
+    expect(createEditableStateIconElementsFromSvgSource(
+      svgSourceFromDataUrl(copiedTemplate.params.backgroundImage),
+      "复制图元"
+    )).toHaveLength(1);
     expect(copiedTemplate.terminalAnchors[0].x).toBe(0.5);
     expect(copiedTemplate.stateDefinitions[0].label).toBe("运行");
   });
 
-  test("solidifies a built-in series reactor visual even when optional scope helpers are absent", () => {
+  test("turns a built-in visual into an editable state-icon drawing before paste", () => {
     const sourceTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-series-reactor-vertical")!;
     let copiedTemplate: any = null;
+    const editableDrawingSource = '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160"><g data-state-icon-layer-width="180" data-state-icon-layer-height="120" transform="translate(120 80)"><svg x="-90" y="-60" width="180" height="120" viewBox="-45 -65 90 130" preserveAspectRatio="xMidYMid meet" overflow="visible"><g data-platform-generated-default="true"><path d="M 0 -55 V 55" stroke="#2563eb" stroke-width="3"/></g></svg></g></svg>';
+    const buildDeviceTemplateCopyVisualSvg = vi.fn(() => '<svg data-should-not-be-used="true"></svg>');
 
     const copied = createCopyCustomComponentTemplate({
+      buildDeviceTemplateCopyVisualSvg,
+      createTemplateDefaultStateIconImage: () => `data:image/svg+xml;utf8,${encodeURIComponent(editableDrawingSource)}`,
       setCopiedCustomComponentTemplate: (template: any) => {
         copiedTemplate = template;
       },
@@ -2652,10 +2676,13 @@ describe("manual bend interaction helpers", () => {
     expect(copied).toBe(true);
     expect(copiedTemplate).not.toBeNull();
     expect(copiedTemplate.params.backgroundImage).toMatch(/^data:image\/svg\+xml/);
-    expect(decodeURIComponent(copiedTemplate.params.backgroundImage)).toContain(
-      "symbol_ACSeriCompensator_ac-series-reactor-vertical"
-    );
-    expect(copiedTemplate.params.backgroundImageFit).toBe("contain");
+    expect(decodeURIComponent(copiedTemplate.params.backgroundImage)).toContain("data-platform-generated-default");
+    expect(copiedTemplate.params.backgroundImageFit).toBe("fixed");
+    expect(buildDeviceTemplateCopyVisualSvg).not.toHaveBeenCalled();
+    expect(createEditableStateIconElementsFromSvgSource(
+      svgSourceFromDataUrl(copiedTemplate.params.backgroundImage),
+      "复制图元"
+    )).toHaveLength(1);
   });
 
   test("one copied component can open the paste-name dialog repeatedly for same or different target classes", () => {
@@ -2891,18 +2918,44 @@ describe("manual bend interaction helpers", () => {
       englishName: "ac-source",
       label: "交流电源"
     };
-    const downloadBlob = vi.fn();
-    const exported = createExportCustomComponentTemplateSvg({
+    const saveTextFile = vi.fn(async () => true);
+    const setCustomDeviceSaveMessage = vi.fn();
+    const showGlobalMessage = vi.fn();
+    const exported = await createExportCustomComponentTemplateSvg({
       buildDeviceTemplateIconSvg: (source: any) => `<svg data-kind="${source.kind}"></svg>`,
-      downloadBlob,
-      setCustomDeviceSaveMessage: vi.fn()
+      saveTextFile,
+      setCustomDeviceSaveMessage,
+      showGlobalMessage
     })(template);
 
     expect(exported).toBe(true);
-    expect(downloadBlob).toHaveBeenCalledTimes(1);
-    expect(downloadBlob.mock.calls[0][0]).toBe("ac-source.svg");
-    expect(downloadBlob.mock.calls[0][1]).toBeInstanceOf(Blob);
-    expect(await downloadBlob.mock.calls[0][1].text()).toBe('<svg data-kind="ac-source"></svg>');
+    expect(saveTextFile).toHaveBeenCalledWith(expect.objectContaining({
+      filename: "ac-source.svg",
+      text: '<svg data-kind="ac-source"></svg>',
+      mime: "image/svg+xml",
+      description: "SVG 图元文件",
+      extensions: [".svg"],
+      pickerId: "custom-component-svg-export",
+      startIn: "downloads",
+      preferNativeDialog: true
+    }));
+    expect(setCustomDeviceSaveMessage).toHaveBeenCalledWith("已导出元件 SVG：ac-source.svg");
+    expect(showGlobalMessage).toHaveBeenCalledWith("已导出元件 SVG：ac-source.svg", "success");
+  });
+
+  test("does not report a component SVG export when the save dialog is cancelled", async () => {
+    const setCustomDeviceSaveMessage = vi.fn();
+    const showGlobalMessage = vi.fn();
+    const exported = await createExportCustomComponentTemplateSvg({
+      buildDeviceTemplateIconSvg: () => "<svg></svg>",
+      saveTextFile: vi.fn(async () => false),
+      setCustomDeviceSaveMessage,
+      showGlobalMessage
+    })({ kind: "ac-source", englishName: "ac-source" } as any);
+
+    expect(exported).toBe(false);
+    expect(setCustomDeviceSaveMessage).not.toHaveBeenCalled();
+    expect(showGlobalMessage).not.toHaveBeenCalled();
   });
 
   test("imports an SVG as the selected component visual draft without saving class definitions", async () => {

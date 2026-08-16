@@ -5628,8 +5628,10 @@ export function createUpdateStateIconDrawingElement(__appScope: Record<string, a
   const { setStateIconDrawingDialog, stateIconDrawingHistoryRef } = __appScope;
     const explicitPatch = {
       ...patch,
+      ...(Object.prototype.hasOwnProperty.call(patch, "strokeWidth") ? { strokeWidthEdited: true } : {}),
       ...(Object.prototype.hasOwnProperty.call(patch, "strokeColor") ? { strokeColorEdited: true } : {}),
-      ...(Object.prototype.hasOwnProperty.call(patch, "strokeStyle") ? { strokeStyleEdited: true } : {})
+      ...(Object.prototype.hasOwnProperty.call(patch, "strokeStyle") ? { strokeStyleEdited: true } : {}),
+      ...(Object.prototype.hasOwnProperty.call(patch, "fillColor") ? { fillColorEdited: true } : {})
     };
     setStateIconDrawingDialog((current) =>
       current
@@ -6492,6 +6494,7 @@ export function createCopyCustomComponentTemplate(__appScope: Record<string, any
   return (template: DeviceTemplate | null | undefined) => {
     const {
       buildDeviceTemplateCopyVisualSvg: injectedBuildDeviceTemplateCopyVisualSvg,
+      createTemplateDefaultStateIconImage: injectedCreateTemplateDefaultStateIconImage,
       setCopiedCustomComponentTemplate,
       setCustomDeviceSaveMessage = () => undefined,
       showGlobalMessage = () => undefined,
@@ -6502,29 +6505,60 @@ export function createCopyCustomComponentTemplate(__appScope: Record<string, any
       return false;
     }
     const snapshot = cloneCustomComponentTemplateSnapshot(template);
-    const buildDeviceTemplateCopyVisualSvg = typeof injectedBuildDeviceTemplateCopyVisualSvg === "function"
-      ? injectedBuildDeviceTemplateCopyVisualSvg
-      : defaultBuildDeviceTemplateCopyVisualSvg;
-    const svgSourceToDataUrl = typeof injectedSvgSourceToDataUrl === "function"
-      ? injectedSvgSourceToDataUrl
-      : defaultSvgSourceToDataUrl;
-    try {
-      const copyVisualSvg = buildDeviceTemplateCopyVisualSvg(snapshot);
-      const copyVisualDataUrl = svgSourceToDataUrl(copyVisualSvg);
-      if (String(copyVisualDataUrl ?? "").trim()) {
+    const sourceBackgroundImage = String(snapshot.params?.backgroundImage ?? "").trim();
+    const sourceBackgroundImageAssetId = String(snapshot.params?.backgroundImageAssetId ?? "").trim();
+    const sourceBackgroundImageCleared = String(snapshot.params?.backgroundImageCleared ?? "").trim();
+    const sourceAlreadyHasEditableVisual = Boolean(
+      sourceBackgroundImage || sourceBackgroundImageAssetId || sourceBackgroundImageCleared
+    );
+    if (!sourceAlreadyHasEditableVisual) {
+      const createTemplateDefaultStateIconImage = typeof injectedCreateTemplateDefaultStateIconImage === "function"
+        ? injectedCreateTemplateDefaultStateIconImage
+        : createTemplateDefaultStateIconImage;
+      const editableCopyVisual = createTemplateDefaultStateIconImage(__appScope, snapshot, {
+        label: snapshot.label,
+        size: snapshot.size,
+        terminalCount: snapshot.terminalCount,
+        terminalTypes: snapshot.terminalTypes,
+        terminalLabels: snapshot.terminalLabels,
+        terminalAnchors: snapshot.terminalAnchors
+      });
+      if (String(editableCopyVisual ?? "").trim()) {
         snapshot.params = {
           ...snapshot.params,
-          backgroundImage: copyVisualDataUrl,
+          backgroundImage: editableCopyVisual,
           backgroundImageAssetId: "",
-          backgroundImageFit: "contain",
+          backgroundImageFit: "fixed",
           backgroundImageCleared: ""
         };
+      } else {
+        const buildDeviceTemplateCopyVisualSvg = typeof injectedBuildDeviceTemplateCopyVisualSvg === "function"
+          ? injectedBuildDeviceTemplateCopyVisualSvg
+          : defaultBuildDeviceTemplateCopyVisualSvg;
+        const svgSourceToDataUrl = typeof injectedSvgSourceToDataUrl === "function"
+          ? injectedSvgSourceToDataUrl
+          : defaultSvgSourceToDataUrl;
+        try {
+          const copyVisualSvg = buildDeviceTemplateCopyVisualSvg(snapshot);
+          const copyVisualDataUrl = svgSourceToDataUrl(copyVisualSvg);
+          if (String(copyVisualDataUrl ?? "").trim()) {
+            snapshot.params = {
+              ...snapshot.params,
+              backgroundImage: copyVisualDataUrl,
+              backgroundImageAssetId: "",
+              backgroundImageFit: "contain",
+              backgroundImageCleared: ""
+            };
+          }
+        } catch (error) {
+          console.warn("[custom-component-copy] failed to solidify source visual", error);
+        }
       }
-    } catch (error) {
-      console.warn("[custom-component-copy] failed to solidify source visual", error);
     }
     setCopiedCustomComponentTemplate(snapshot);
-    setCustomDeviceSaveMessage(`已复制元件：${template.label || template.englishName || template.kind}。可在同一类或其他类下重复粘贴。`);
+    const copyMessage = `已复制元件：${template.label || template.englishName || template.kind}。可在同一类或其他类下重复粘贴。`;
+    setCustomDeviceSaveMessage(copyMessage);
+    showGlobalMessage(copyMessage, "success");
     return true;
   };
 }
@@ -6582,10 +6616,11 @@ export function createPasteCustomComponentTemplate(__appScope: Record<string, an
 }
 
 export function createExportCustomComponentTemplateSvg(__appScope: Record<string, any>) {
-  return (template: DeviceTemplate | null | undefined) => {
+  return async (template: DeviceTemplate | null | undefined) => {
     const {
       buildDeviceTemplateIconSvg,
       downloadBlob,
+      saveTextFile,
       setCustomDeviceSaveMessage = () => undefined,
       showGlobalMessage = () => undefined
     } = __appScope;
@@ -6596,8 +6631,28 @@ export function createExportCustomComponentTemplateSvg(__appScope: Record<string
     const svg = buildDeviceTemplateIconSvg(template);
     const rawFileName = String(template.englishName ?? template.kind ?? template.label ?? "component").trim();
     const safeFileName = rawFileName.replace(/[^A-Za-z0-9_-]+/g, "_") || "component";
-    downloadBlob(`${safeFileName}.svg`, new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
-    setCustomDeviceSaveMessage(`已导出元件 SVG：${safeFileName}.svg`);
+    const filename = `${safeFileName}.svg`;
+    const saved = typeof saveTextFile === "function"
+      ? await saveTextFile({
+          filename,
+          text: svg,
+          mime: "image/svg+xml",
+          description: "SVG 图元文件",
+          extensions: [".svg"],
+          pickerId: "custom-component-svg-export",
+          startIn: "downloads",
+          preferNativeDialog: true
+        })
+      : (() => {
+          downloadBlob(filename, new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
+          return true;
+        })();
+    if (!saved) {
+      return false;
+    }
+    const message = `已导出元件 SVG：${filename}`;
+    setCustomDeviceSaveMessage(message);
+    showGlobalMessage(message, "success");
     return true;
   };
 }

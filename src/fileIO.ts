@@ -5,6 +5,7 @@ import { encodeGbk } from "./encoding/gbk";
 
 export type TextFileEncoding = "utf-8" | "gbk";
 export type EFileTextEncoding = TextFileEncoding;
+export type SaveFilePickerStartIn = "desktop" | "documents" | "downloads" | "music" | "pictures" | "videos";
 
 /** 将文本按指定编码转为字节（默认 utf-8；E 文件统一使用 gbk） */
 export function encodeTextAsBytes(text: string, encoding: EFileTextEncoding = "utf-8"): Uint8Array {
@@ -32,6 +33,7 @@ type SaveFilePickerWindow = Window & {
   showSaveFilePicker?: (options?: {
     id?: string;
     suggestedName?: string;
+    startIn?: SaveFilePickerStartIn;
     types?: Array<{
       description?: string;
       accept: Record<string, string[]>;
@@ -65,6 +67,8 @@ export type TextSaveOptions = {
   encoding?: EFileTextEncoding;
   onSaveTargetReady?: () => void;
   preferNativeDialog?: boolean;
+  pickerId?: string;
+  startIn?: SaveFilePickerStartIn;
 };
 export type LazyTextSaveOptions = Omit<TextSaveOptions, "text"> & {
   loadText: () => Promise<string> | string;
@@ -76,6 +80,7 @@ export type BlobSaveOptions = {
   description: string;
   extensions: string[];
   pickerId?: string;
+  startIn?: SaveFilePickerStartIn;
 };
 export type LazyBlobSaveOptions = Omit<BlobSaveOptions, "blob"> & {
   loadBlob: () => Promise<Blob>;
@@ -95,8 +100,7 @@ function canUseNativeExportDialog(options: Pick<TextSaveOptions, "preferNativeDi
     return false;
   }
   const hostname = String(window.location?.hostname ?? "").trim().toLowerCase();
-  const userAgent = typeof navigator === "undefined" ? "" : String(navigator.userAgent ?? "");
-  return LOCAL_NATIVE_EXPORT_HOSTNAMES.has(hostname) && /windows/iu.test(userAgent);
+  return LOCAL_NATIVE_EXPORT_HOSTNAMES.has(hostname);
 }
 
 async function responseErrorMessage(response: Response, fallback: string) {
@@ -120,6 +124,7 @@ async function saveLazyTextFileWithNativeDialog(
       filename: options.filename,
       description: options.description,
       extensions: options.extensions,
+      startIn: options.startIn,
       title: "另存为"
     })
   });
@@ -205,8 +210,9 @@ export async function saveTextFile(options: TextSaveOptions): Promise<boolean> {
   try {
     const handle = await picker.call(window, {
       // Chromium uses this id to reopen the save dialog in the last directory used for this export purpose.
-      id: EXPORT_SAVE_PICKER_ID,
+      id: options.pickerId ?? EXPORT_SAVE_PICKER_ID,
       suggestedName: options.filename,
+      ...(options.startIn ? { startIn: options.startIn } : {}),
       types: [
         {
           description: options.description,
@@ -256,8 +262,9 @@ export async function saveLazyTextFile(options: LazyTextSaveOptions): Promise<bo
     // Keep this call inside the pointer/click activation stack. E text generation starts immediately
     // afterwards and runs while the user is choosing the save target.
     handlePromise = picker.call(window, {
-      id: EXPORT_SAVE_PICKER_ID,
+      id: options.pickerId ?? EXPORT_SAVE_PICKER_ID,
       suggestedName: options.filename,
+      ...(options.startIn ? { startIn: options.startIn } : {}),
       types: [
         {
           description: options.description,
@@ -320,6 +327,7 @@ export async function saveBlobFile(options: BlobSaveOptions): Promise<boolean> {
     description: options.description,
     extensions: options.extensions,
     pickerId: options.pickerId,
+    startIn: options.startIn,
     loadBlob: async () => options.blob
   });
 }
@@ -335,6 +343,7 @@ export async function saveLazyBlobFile(options: LazyBlobSaveOptions): Promise<bo
     handle = await picker.call(window, {
       id: options.pickerId ?? EXPORT_SAVE_PICKER_ID,
       suggestedName: options.filename,
+      ...(options.startIn ? { startIn: options.startIn } : {}),
       types: [
         {
           description: options.description,

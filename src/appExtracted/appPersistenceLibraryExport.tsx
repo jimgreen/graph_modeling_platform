@@ -3717,6 +3717,13 @@ export function placeContextMenuInViewport({
   };
 }
 
+export function treeContextMenuPointerTargetIsInside(
+  menu: Pick<HTMLElement, "contains"> | null,
+  target: EventTarget | null
+) {
+  return Boolean(menu && target && menu.contains(target as Node));
+}
+
 export type CustomComponentTreeProps = {
   libraries: string[];
   filteredByComponentLibrary: Record<string, { section: string; templates: DeviceTemplate[] }[]>;
@@ -4068,16 +4075,22 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
   useEffect(() => {
     if (!treeContextMenu) return;
     const close = () => setTreeContextMenu(null);
+    const closeOnPointerDown = (event: globalThis.PointerEvent) => {
+      if (treeContextMenuPointerTargetIsInside(treeContextMenuRef.current, event.target)) {
+        return;
+      }
+      close();
+    };
     const closeOnKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") close();
     };
-    window.addEventListener("pointerdown", close);
+    window.addEventListener("pointerdown", closeOnPointerDown, true);
     window.addEventListener("blur", close);
     window.addEventListener("resize", close);
     window.addEventListener("scroll", close, true);
     window.addEventListener("keydown", closeOnKeyDown);
     return () => {
-      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("pointerdown", closeOnPointerDown, true);
       window.removeEventListener("blur", close);
       window.removeEventListener("resize", close);
       window.removeEventListener("scroll", close, true);

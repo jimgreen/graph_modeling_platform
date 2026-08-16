@@ -30,6 +30,7 @@ import {
   normalizeCustomDeviceTemplates,
   normalizeDefinitionRows,
   placeContextMenuInViewport,
+  treeContextMenuPointerTargetIsInside,
   rootComponentLibraryGroupsForDisplay,
   enumDisplayText,
   enumEditorOptionsForRow,
@@ -1881,6 +1882,18 @@ describe("E device interface definition entry", () => {
       viewportHeight: 240,
       margin: 8
     })).toEqual({ left: 8, top: 8 });
+  });
+
+  test("keeps pointer actions inside the tree menu and closes for any outside target", () => {
+    const insideTarget = {} as EventTarget;
+    const outsideTarget = {} as EventTarget;
+    const menu = {
+      contains: (target: Node) => target === insideTarget
+    };
+
+    expect(treeContextMenuPointerTargetIsInside(menu, insideTarget)).toBe(true);
+    expect(treeContextMenuPointerTargetIsInside(menu, outsideTarget)).toBe(false);
+    expect(treeContextMenuPointerTargetIsInside(null, outsideTarget)).toBe(false);
   });
 
   test("builds a standalone SVG for one component visual without its instance label", () => {
