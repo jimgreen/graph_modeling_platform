@@ -14,6 +14,9 @@ import {
   createApplyIconLibraryCatalogIcon,
   createApplyStateIconDrawingDialog,
   createCopyCustomComponentTemplate,
+  createCustomDeviceDraftHasUnsavedChanges,
+  createRequestCustomDeviceDraftAction,
+  createResolveCustomDeviceUnsavedPrompt,
   createConfirmCustomLibraryCreateDialog,
   createCreateCustomComponentLibrary,
   createDeleteCustomCategoryLibrary,
@@ -46,6 +49,7 @@ import {
   createStartCustomComponentCreate,
   createStateIconDrawingKeyDown,
   createStartStateIconDrawingDrag,
+  customDeviceDraftDirtyToken,
   deviceParameterDefinitionsComplianceMessage,
   formatStateIconDrawingNumber,
   imageLibraryFileMatchesImportKind,
@@ -86,6 +90,7 @@ import {
 } from "./model";
 import { normalizeDeviceLibraryPersistencePayload } from "./appExtracted/appPersistenceLibraryExport";
 import {
+  DEFAULT_STATE_PAGE_ID,
   createEditableStateIconElementsFromSvgSource,
   stateIconDrawingToImage,
   svgSourceFromDataUrl
@@ -2300,6 +2305,7 @@ describe("manual bend interaction helpers", () => {
     const created = createConfirmCustomLibraryCreateDialog(scope)();
 
     expect(created).toBe(true);
+    expect(scope.setCustomDeviceDefinitionMode).toHaveBeenCalledWith("edit");
     expect(customComponentLibraries).toEqual([
       expect.objectContaining({
         name: "UserWindGen",
@@ -2347,7 +2353,7 @@ describe("manual bend interaction helpers", () => {
     expect(customLibraryCreateDialog).toBeNull();
   });
 
-  test("creating a component selects an existing derived class and inherits immutable metadata", () => {
+  test("confirming a new component immediately persists it, selects it and enters edit mode", () => {
     let customDeviceDraft: any = {
       categoryLibraryName: "交流设备",
       componentLibrary: "ACGenerator",
@@ -2378,9 +2384,13 @@ describe("manual bend interaction helpers", () => {
     const setCustomDeviceDialogView = vi.fn();
     const setCustomDeviceDraftCleanBaseline = vi.fn();
     const setCustomDeviceStatePageId = vi.fn();
+    const setEditingCustomDeviceKind = vi.fn();
+    const persistDeviceLibraryChange = vi.fn();
+    let savedTemplates: any[] = [];
 
-    const scope = {
+    const scope: any = {
       DEFAULT_STATE_PAGE_ID: "default",
+      TERMINAL_TYPE_LIBRARY_LABELS: { ac: "交流" },
       cancelPendingCustomComponentTemplateLoad: vi.fn(),
       categoryLibraries: ["交流设备"],
       componentLibraryOptions: ["ACGenerator"],
@@ -2391,19 +2401,14 @@ describe("manual bend interaction helpers", () => {
         isDerivedComponentLibrary: true,
         derivedFromComponentLibrary: "ACGenerator"
       }],
-      createEmptyCustomDeviceDraft: (categoryLibraryName = "") => ({
-        categoryLibraryName,
-        componentLibrary: "",
-        componentName: "",
-        componentKind: "",
-        isDerivedComponentLibrary: false,
-        derivedFromComponentLibrary: "",
-        derivedComponentLibrary: "",
-        derivedComponentLibraryLabel: "",
-        isContainer: false,
-        error: ""
-      }),
-      customDeviceTemplates: [],
+      createDefaultCustomDeviceTerminalAnchors,
+      createEmptyCustomDeviceDraft,
+      customDeviceGeneratedDefaultImageCandidates: () => [],
+      customDeviceImageWithTerminalConnectors: (image: string) => image,
+      get customDeviceTemplates() {
+        return savedTemplates;
+      },
+      customDeviceTerminalAnchors: [{ x: -0.5, y: 0 }],
       deviceDefinitionOverrides: {
         "class:UserWindGen": {
           kind: "class:UserWindGen",
@@ -2418,12 +2423,16 @@ describe("manual bend interaction helpers", () => {
         }
       },
       defaultComponentLibraryForCategoryLibrary: () => "ACGenerator",
+      editingCustomDeviceKind: "",
+      ensureCustomComponentTreeExpanded: vi.fn(),
+      generateCustomDeviceImage: () => "data:image/svg+xml,%3Csvg%2F%3E",
       get customDeviceDraft() {
         return customDeviceDraft;
       },
       get customLibraryCreateDialog() {
         return customLibraryCreateDialog;
       },
+      hasOverlappingCustomDeviceTerminalAnchors: () => false,
       isValidComponentLibraryName: (name: string) => /^[A-Za-z][A-Za-z0-9_-]*$/.test(name),
       libraryTemplates: [{
         kind: "ac-source",
@@ -2455,8 +2464,10 @@ describe("manual bend interaction helpers", () => {
       }],
       normalizeCategoryLibraryName: (name: string) => name.trim(),
       normalizeComponentLibraryName: (name: string) => name.trim(),
+      normalizeContainerTerminalAssociations,
       normalizeCustomCategoryLibraries: (value: unknown) => value as string[],
       normalizeCustomComponentLibraries: (value: unknown) => value as any[],
+      persistDeviceLibraryChange,
       requireEditMode: () => true,
       setCustomCategoryLibraries: vi.fn(),
       setCustomComponentLibraries: vi.fn(),
@@ -2471,25 +2482,56 @@ describe("manual bend interaction helpers", () => {
       setCustomDeviceSaveToast: vi.fn(),
       customDeviceSaveToastTimerRef: { current: null },
       setCustomDeviceStatePageId,
+      setCustomDeviceTemplates: (templates: any[]) => {
+        savedTemplates = templates;
+      },
       setCustomLibraryCreateDialog: (updater: any) => {
         customLibraryCreateDialog = typeof updater === "function" ? updater(customLibraryCreateDialog) : updater;
       },
-      setEditingCustomDeviceKind: vi.fn(),
+      setEditingCustomDeviceKind,
       setExpandedCategoryLibraries: vi.fn(),
-      setSelectedDefinitionKind: vi.fn()
+      setSelectedDefinitionKind: vi.fn(),
+      showGlobalMessage: vi.fn(),
+      syncInheritedCustomDeviceStateVisuals: (states: any[]) => states,
+      validateContainerTerminalAssociations: () => ({ valid: true }),
+      validateStateDraftRows: (states: any[]) => ({ states, error: "" }),
+      writeOperationLog: vi.fn()
     };
+    scope.saveCustomDeviceTemplate = createSaveCustomDeviceTemplate(scope);
 
     const created = createConfirmCustomLibraryCreateDialog(scope)(submittedDialog);
 
     expect(created).toBe(true);
-    expect(setCustomDeviceDefinitionMode).toHaveBeenCalledWith("create");
+    expect(setCustomDeviceDefinitionMode).toHaveBeenCalledWith("edit");
+    expect(setCustomDeviceDefinitionMode).not.toHaveBeenCalledWith("create");
     expect(setCustomDeviceDialogView).toHaveBeenCalledWith("icon");
     expect(setCustomDeviceStatePageId).toHaveBeenCalledWith("default");
     expect(setCustomComponentTreeSelection).toHaveBeenCalledWith({
-      kind: "componentLibrary",
+      kind: "component",
       categoryLibraryName: "交流设备",
-      section: "UserWindGen"
+      section: "UserWindGen",
+      templateKind: "custom-user-wind-generator"
     });
+    expect(setEditingCustomDeviceKind).toHaveBeenCalledWith("custom-user-wind-generator");
+    expect(savedTemplates).toHaveLength(1);
+    expect(savedTemplates[0]).toMatchObject({
+      kind: "custom-user-wind-generator",
+      label: "用户风电机组",
+      englishName: "custom-user-wind-generator",
+      componentClass: "UserWindGen",
+      categoryLibrary: "交流设备",
+      params: {
+        component_type: "ACGenerator",
+        derived_component_type: "UserWindGen"
+      },
+      custom: true
+    });
+    expect(savedTemplates[0]).not.toHaveProperty("parameterDefinitions");
+    expect(savedTemplates[0]).not.toHaveProperty("measurementDefinitions");
+    expect(persistDeviceLibraryChange).toHaveBeenCalledWith(
+      { customDeviceTemplates: savedTemplates },
+      expect.any(Object)
+    );
     expect(customDeviceDraft).toMatchObject({
       categoryLibraryName: "交流设备",
       componentLibrary: "ACGenerator",
@@ -2516,7 +2558,7 @@ describe("manual bend interaction helpers", () => {
       derivedComponentLibrary: "UserWindGen",
       derivedComponentLibraryLabel: "用户风电",
       isContainer: false
-    }));
+    }), expect.any(Array));
     expect(customLibraryCreateDialog).toBeNull();
   });
 
@@ -2683,6 +2725,116 @@ describe("manual bend interaction helpers", () => {
       svgSourceFromDataUrl(copiedTemplate.params.backgroundImage),
       "复制图元"
     )).toHaveLength(1);
+  });
+
+  test("copies a built-in component through the production default visual builder", () => {
+    const sourceTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-series-capacitor")!;
+    let copiedTemplate: any = null;
+
+    const copied = createCopyCustomComponentTemplate({
+      setCopiedCustomComponentTemplate: (template: any) => {
+        copiedTemplate = template;
+      },
+      setCustomDeviceSaveMessage: vi.fn(),
+      showGlobalMessage: vi.fn()
+    })(sourceTemplate);
+
+    expect(copied).toBe(true);
+    expect(copiedTemplate).not.toBeNull();
+    expect(copiedTemplate.kind).toBe("ac-series-capacitor");
+    expect(copiedTemplate.params.backgroundImage).toMatch(/^data:image\/svg\+xml/);
+    expect(copiedTemplate.params.backgroundImageFit).toBe("contain");
+    expect(createEditableStateIconElementsFromSvgSource(
+      svgSourceFromDataUrl(copiedTemplate.params.backgroundImage),
+      "复制图元"
+    ).length).toBeGreaterThan(0);
+  });
+
+  test("tracks visual, parameter and measurement edits independently from one clean baseline", () => {
+    const baseline: any = {
+      ...createEmptyCustomDeviceDraft(),
+      categoryLibraryName: "交流设备",
+      componentLibrary: "ACGenerator",
+      componentName: "交流电源",
+      componentKind: "ac-source",
+      terminalCount: 1,
+      terminalTypes: ["ac"],
+      terminalLabels: ["端子1"],
+      terminalAnchors: [{ x: 0.5, y: 0 }],
+      terminalRoles: ["single-source"],
+      terminalAssociations: ["ac-source"],
+      params: [{ id: "p", cnName: "有功", enName: "p_set", valueType: "float", typicalValue: "1" }],
+      measurementDefinitions: [{ measurementTypeId: "p", position: "device", associatedField: "p_set" }],
+      stateDefinitions: []
+    };
+    const scope: any = {
+      customDeviceDraft: structuredClone(baseline),
+      customDeviceDraftBaselineRef: { current: structuredClone(baseline) },
+      customDeviceDraftCleanTokenRef: { current: customDeviceDraftDirtyToken(baseline, baseline.terminalAnchors) },
+      customDeviceTerminalAnchors: structuredClone(baseline.terminalAnchors)
+    };
+    const hasUnsavedChanges = createCustomDeviceDraftHasUnsavedChanges(scope);
+
+    expect(hasUnsavedChanges("icon")).toBe(false);
+    expect(hasUnsavedChanges("parameters")).toBe(false);
+    expect(hasUnsavedChanges("measurements")).toBe(false);
+
+    scope.customDeviceDraft = {
+      ...structuredClone(baseline),
+      backgroundImage: "data:image/svg+xml,edited"
+    };
+    expect(hasUnsavedChanges("icon")).toBe(true);
+    expect(hasUnsavedChanges("parameters")).toBe(false);
+    expect(hasUnsavedChanges("measurements")).toBe(false);
+
+    scope.customDeviceDraft = {
+      ...structuredClone(baseline),
+      params: [{ ...baseline.params[0], typicalValue: "2" }]
+    };
+    expect(hasUnsavedChanges("icon")).toBe(false);
+    expect(hasUnsavedChanges("parameters")).toBe(true);
+    expect(hasUnsavedChanges("measurements")).toBe(false);
+
+    scope.customDeviceDraft = {
+      ...structuredClone(baseline),
+      measurementDefinitions: [{ ...baseline.measurementDefinitions[0], associatedField: "q_set" }]
+    };
+    expect(hasUnsavedChanges("icon")).toBe(false);
+    expect(hasUnsavedChanges("parameters")).toBe(false);
+    expect(hasUnsavedChanges("measurements")).toBe(true);
+  });
+
+  test("delays a dirty page switch until the user saves, discards or keeps editing", () => {
+    const pendingAction = vi.fn();
+    let prompt: any = null;
+    const scope: any = {
+      customDeviceDialogOpen: true,
+      customDeviceDraftHasUnsavedChanges: vi.fn(() => true),
+      customDevicePendingActionRef: { current: null },
+      customDeviceUnsavedPrompt: null,
+      setCustomDeviceUnsavedPrompt: (next: any) => {
+        prompt = next;
+        scope.customDeviceUnsavedPrompt = next;
+      },
+      revertCustomDeviceDraftAll: vi.fn(),
+      saveCustomDeviceDefinitionDialog: vi.fn(() => true)
+    };
+    const requestAction = createRequestCustomDeviceDraftAction(scope);
+    const resolvePrompt = createResolveCustomDeviceUnsavedPrompt(scope);
+
+    expect(requestAction(pendingAction, {
+      kind: "switch-view",
+      section: "parameters",
+      actionLabel: "切换到量测定义",
+      targetLabel: "量测定义"
+    })).toBe(false);
+    expect(pendingAction).not.toHaveBeenCalled();
+    expect(prompt).toMatchObject({ kind: "switch-view", section: "parameters" });
+
+    expect(resolvePrompt("discard")).toBe(true);
+    expect(scope.revertCustomDeviceDraftAll).toHaveBeenCalledOnce();
+    expect(pendingAction).toHaveBeenCalledOnce();
+    expect(prompt).toBeNull();
   });
 
   test("one copied component can open the paste-name dialog repeatedly for same or different target classes", () => {
@@ -2970,6 +3122,8 @@ describe("manual bend interaction helpers", () => {
       error: ""
     };
     const setCustomDeviceSaveMessage = vi.fn();
+    const setCustomDeviceDialogView = vi.fn();
+    const setCustomDeviceStatePageId = vi.fn();
     const event: any = {
       target: {
         value: "C:\\fakepath\\source.svg",
@@ -2982,12 +3136,14 @@ describe("manual bend interaction helpers", () => {
     };
 
     const imported = await createImportCustomComponentSvg({
+      DEFAULT_STATE_PAGE_ID,
       requireEditMode: () => true,
-      setCustomDeviceDialogView: vi.fn(),
+      setCustomDeviceDialogView,
       setCustomDeviceDraft: (updater: any) => {
         customDeviceDraft = typeof updater === "function" ? updater(customDeviceDraft) : updater;
       },
       setCustomDeviceSaveMessage,
+      setCustomDeviceStatePageId,
       showGlobalMessage: vi.fn(),
       svgSourceToDataUrl: (source: string) => `data:image/svg+xml,${encodeURIComponent(source)}`
     })(event);
@@ -2995,15 +3151,18 @@ describe("manual bend interaction helpers", () => {
     expect(imported).toBe(true);
     expect(event.target.value).toBe("");
     expect(customDeviceDraft).toMatchObject({
-      backgroundImage: expect.stringContaining("data:image/svg+xml,"),
+      backgroundImage: expect.stringContaining("data:image/svg+xml;utf8,"),
       backgroundImageAssetId: "",
-      backgroundImageFit: "contain",
+      backgroundImageFit: "fixed",
       backgroundImageCleared: "",
       params: [{ enName: "rated_power", typicalValue: "100" }],
       measurementDefinitions: [{ measurementTypeId: "p" }],
       error: ""
     });
-    expect(setCustomDeviceSaveMessage).toHaveBeenCalledWith("SVG 图元已导入，请保存当前元件定义后生效。");
+    expect(decodeURIComponent(customDeviceDraft.backgroundImage.split(",")[1] ?? "")).toContain('data-state-icon-drawing="true"');
+    expect(setCustomDeviceDialogView).toHaveBeenCalledWith("icon");
+    expect(setCustomDeviceStatePageId).toHaveBeenCalledWith(DEFAULT_STATE_PAGE_ID);
+    expect(setCustomDeviceSaveMessage).toHaveBeenCalledWith("SVG 图元已导入为 1 个可编辑图层，请保存当前元件定义后生效。");
   });
 
   test("binds new class inheritance to the selected tree level", () => {
@@ -3206,7 +3365,7 @@ describe("manual bend interaction helpers", () => {
     expect(setCustomDeviceDraftCleanBaseline).toHaveBeenCalled();
   });
 
-  test("always routes a confirmed new component to the create path despite stale edit selection", () => {
+  test("keeps the legacy create-mode save path isolated from stale edit selection", () => {
     const saveBuiltinDeviceDefinitionFromCustomDraft = vi.fn(() => true);
     const saveComponentLibraryDefinition = vi.fn(() => true);
     const saveCustomDeviceTemplate = vi.fn(() => true);

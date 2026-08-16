@@ -1192,6 +1192,18 @@ const customDeviceDraftCleanTokenRef = useRef("");
 Object.assign(__appScope, { customDeviceDraftCleanTokenRef });
 const customDeviceDraftBaselineRef = useRef<CustomDeviceDraft | null>(null);
 Object.assign(__appScope, { customDeviceDraftBaselineRef });
+const [customDeviceUnsavedPrompt, setCustomDeviceUnsavedPrompt] = useState<{
+  kind: "close" | "switch-view" | "switch-selection";
+  section: CustomDeviceDialogView | null;
+  actionLabel: string;
+  targetLabel: string;
+} | null>(null);
+const customDevicePendingActionRef = useRef<(() => void) | null>(null);
+Object.assign(__appScope, {
+  customDeviceUnsavedPrompt,
+  setCustomDeviceUnsavedPrompt,
+  customDevicePendingActionRef
+});
 const [customDeviceSaveMessage, setCustomDeviceSaveMessage] = useState("");
 Object.assign(__appScope, { customDeviceSaveMessage, setCustomDeviceSaveMessage });
 const [globalMessage, setGlobalMessage] = useState<{ text: string; type: "success" | "error" | "info" } | null>(null);

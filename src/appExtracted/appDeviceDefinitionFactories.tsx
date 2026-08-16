@@ -12,7 +12,9 @@ import { apiPath } from "../config";
 import { decodeGbk } from "../encoding/gbk";
 import {
   DEFAULT_STATE_ICON_DRAWING_FRAME,
+  createEditableStateIconElementsFromSvgSource as defaultCreateEditableStateIconElementsFromSvgSource,
   customParamId,
+  stateIconDrawingToPersistedImage as defaultStateIconDrawingToPersistedImage,
   stateIconSvgVisibleViewBox,
   svgSourceToDataUrl as defaultSvgSourceToDataUrl
 } from "../stateIconDrawing";
@@ -366,23 +368,93 @@ export function customDeviceDraftDirtyToken(draft: CustomDeviceDraft, anchors: r
   });
 }
 
+export function customDeviceDraftSectionDirtyToken(
+  draft: CustomDeviceDraft,
+  section: CustomDeviceDialogView,
+  anchors: readonly Point[] = []
+) {
+  const normalizedDraft = JSON.parse(customDeviceDraftDirtyToken(draft, anchors)).draft;
+  if (section === "measurements") {
+    return JSON.stringify({
+      measurementDefinitions: normalizedDraft.measurementDefinitions ?? []
+    });
+  }
+  if (section === "parameters") {
+    return JSON.stringify({
+      categoryLibraryName: normalizedDraft.categoryLibraryName,
+      componentLibrary: normalizedDraft.componentLibrary,
+      isDerivedComponentLibrary: normalizedDraft.isDerivedComponentLibrary,
+      derivedFromComponentLibrary: normalizedDraft.derivedFromComponentLibrary,
+      derivedComponentLibrary: normalizedDraft.derivedComponentLibrary,
+      derivedComponentLibraryLabel: normalizedDraft.derivedComponentLibraryLabel,
+      terminalCount: normalizedDraft.terminalCount,
+      terminalTypes: normalizedDraft.terminalTypes,
+      terminalLabels: normalizedDraft.terminalLabels,
+      terminalAnchors: normalizedDraft.terminalAnchors,
+      terminalRoles: normalizedDraft.terminalRoles,
+      terminalAssociations: normalizedDraft.terminalAssociations,
+      isContainer: normalizedDraft.isContainer,
+      params: normalizedDraft.params
+    });
+  }
+  return JSON.stringify({
+    componentName: normalizedDraft.componentName,
+    componentKind: normalizedDraft.componentKind,
+    backgroundImage: normalizedDraft.backgroundImage,
+    backgroundImageAssetId: normalizedDraft.backgroundImageAssetId,
+    backgroundImageFit: normalizedDraft.backgroundImageFit,
+    backgroundImageCleared: normalizedDraft.backgroundImageCleared,
+    size: normalizedDraft.size,
+    allowResizeTransform: normalizedDraft.allowResizeTransform,
+    terminalCount: normalizedDraft.terminalCount,
+    terminalTypes: normalizedDraft.terminalTypes,
+    terminalLabels: normalizedDraft.terminalLabels,
+    terminalAnchors: normalizedDraft.terminalAnchors,
+    terminalRoles: normalizedDraft.terminalRoles,
+    terminalAssociations: normalizedDraft.terminalAssociations,
+    stateDefinitions: normalizedDraft.stateDefinitions
+  });
+}
+
 export function createSetCustomDeviceDraftCleanBaseline(__appScope: Record<string, any>) {
   return (draft: CustomDeviceDraft, anchors?: readonly Point[]) => {
   const { createDefaultCustomDeviceTerminalAnchors, customDeviceDraftBaselineRef, customDeviceDraftCleanTokenRef } = __appScope;
     const nextAnchors = anchors ?? createDefaultCustomDeviceTerminalAnchors(draft.terminalCount, draft.terminalAnchors);
+    const baselineDraft = {
+      ...draft,
+      terminalAnchors: nextAnchors.slice(0, Math.max(0, Math.round(draft.terminalCount || 0))).map((anchor) => ({
+        x: anchor.x,
+        y: anchor.y
+      }))
+    };
     customDeviceDraftCleanTokenRef.current = customDeviceDraftDirtyToken(
-      draft,
+      baselineDraft,
       nextAnchors
     );
     if (customDeviceDraftBaselineRef) {
-      customDeviceDraftBaselineRef.current = JSON.parse(JSON.stringify(draft));
+      customDeviceDraftBaselineRef.current = JSON.parse(JSON.stringify(baselineDraft));
     }
   };
 }
 
 export function createCustomDeviceDraftHasUnsavedChanges(__appScope: Record<string, any>) {
-  return () => {
-  const { customDeviceDraft, customDeviceDraftCleanTokenRef, customDeviceTerminalAnchors } = __appScope;
+  return (section?: CustomDeviceDialogView) => {
+  const { customDeviceDraft, customDeviceDraftBaselineRef, customDeviceDraftCleanTokenRef, customDeviceTerminalAnchors } = __appScope;
+    if (section) {
+      const baselineDraft: CustomDeviceDraft | null = customDeviceDraftBaselineRef?.current ?? null;
+      if (!baselineDraft) {
+        return false;
+      }
+      return customDeviceDraftSectionDirtyToken(
+        customDeviceDraft,
+        section,
+        customDeviceTerminalAnchors
+      ) !== customDeviceDraftSectionDirtyToken(
+        baselineDraft,
+        section,
+        baselineDraft.terminalAnchors
+      );
+    }
     const currentToken = customDeviceDraftDirtyToken(
       customDeviceDraft,
       customDeviceTerminalAnchors
@@ -4968,8 +5040,14 @@ export function createDeleteDefinitionStateDraftRow(__appScope: Record<string, a
 
 export function createRequestCloseCustomDeviceDialog(__appScope: Record<string, any>) {
   return () => {
-  const { closeCustomDeviceDialog } = __appScope;
-    closeCustomDeviceDialog();
+  const { closeCustomDeviceDialog, requestCustomDeviceDraftAction } = __appScope;
+    return requestCustomDeviceDraftAction(
+      closeCustomDeviceDialog,
+      {
+        kind: "close",
+        actionLabel: "关闭元件定义窗口"
+      }
+    );
   };
 }
 
@@ -6285,6 +6363,95 @@ function componentLibraryMetadataDraftPatch(
   };
 }
 
+export function createRequestCustomDeviceDraftAction(__appScope: Record<string, any>) {
+  return (
+    action: () => void,
+    options: {
+      kind?: "close" | "switch-view" | "switch-selection";
+      section?: CustomDeviceDialogView;
+      actionLabel?: string;
+      targetLabel?: string;
+    } = {}
+  ) => {
+    const {
+      customDeviceDialogOpen,
+      customDeviceDraftHasUnsavedChanges,
+      customDevicePendingActionRef,
+      setCustomDeviceUnsavedPrompt
+    } = __appScope;
+    if (!customDeviceDialogOpen || !customDeviceDraftHasUnsavedChanges(options.section)) {
+      action();
+      return true;
+    }
+    customDevicePendingActionRef.current = action;
+    setCustomDeviceUnsavedPrompt({
+      kind: options.kind ?? "switch-selection",
+      section: options.section ?? null,
+      actionLabel: options.actionLabel ?? "继续操作",
+      targetLabel: options.targetLabel ?? ""
+    });
+    return false;
+  };
+}
+
+export function createResolveCustomDeviceUnsavedPrompt(__appScope: Record<string, any>) {
+  return (choice: "save" | "discard" | "cancel") => {
+    const {
+      customDevicePendingActionRef,
+      customDeviceUnsavedPrompt,
+      revertCustomDeviceDraftAll,
+      saveCustomDeviceDefinitionDialog,
+      setCustomDeviceUnsavedPrompt
+    } = __appScope;
+    if (!customDeviceUnsavedPrompt) {
+      return false;
+    }
+    if (choice === "cancel") {
+      customDevicePendingActionRef.current = null;
+      setCustomDeviceUnsavedPrompt(null);
+      return false;
+    }
+    if (choice === "save" && saveCustomDeviceDefinitionDialog({ closeAfterSave: false }) !== true) {
+      return false;
+    }
+    if (choice === "discard" && customDeviceUnsavedPrompt.kind === "switch-view") {
+      revertCustomDeviceDraftAll();
+    }
+    const pendingAction = customDevicePendingActionRef.current;
+    customDevicePendingActionRef.current = null;
+    setCustomDeviceUnsavedPrompt(null);
+    pendingAction?.();
+    return true;
+  };
+}
+
+export function createRequestCustomDeviceDialogView(__appScope: Record<string, any>) {
+  return (nextView: CustomDeviceDialogView) => {
+    const {
+      customDeviceDialogView,
+      requestCustomDeviceDraftAction,
+      setCustomDeviceDialogView
+    } = __appScope;
+    if (nextView === customDeviceDialogView) {
+      return true;
+    }
+    const viewLabels: Record<CustomDeviceDialogView, string> = {
+      icon: "图元定义",
+      parameters: "参数定义",
+      measurements: "量测定义"
+    };
+    return requestCustomDeviceDraftAction(
+      () => setCustomDeviceDialogView(nextView),
+      {
+        kind: "switch-view",
+        section: customDeviceDialogView,
+        actionLabel: `切换到${viewLabels[nextView]}`,
+        targetLabel: viewLabels[nextView]
+      }
+    );
+  };
+}
+
 function customDeviceDraftPatchForComponentLibrarySelection(
   __appScope: Record<string, any>,
   className: string,
@@ -6512,10 +6679,10 @@ export function createCopyCustomComponentTemplate(__appScope: Record<string, any
       sourceBackgroundImage || sourceBackgroundImageAssetId || sourceBackgroundImageCleared
     );
     if (!sourceAlreadyHasEditableVisual) {
-      const createTemplateDefaultStateIconImage = typeof injectedCreateTemplateDefaultStateIconImage === "function"
+      const buildTemplateDefaultStateIconImage = typeof injectedCreateTemplateDefaultStateIconImage === "function"
         ? injectedCreateTemplateDefaultStateIconImage
         : createTemplateDefaultStateIconImage;
-      const editableCopyVisual = createTemplateDefaultStateIconImage(__appScope, snapshot, {
+      const editableCopyVisual = buildTemplateDefaultStateIconImage(__appScope, snapshot, {
         label: snapshot.label,
         size: snapshot.size,
         terminalCount: snapshot.terminalCount,
@@ -6679,12 +6846,15 @@ export function createOpenCustomComponentSvgImport(__appScope: Record<string, an
 export function createImportCustomComponentSvg(__appScope: Record<string, any>) {
   return async (event: ChangeEvent<HTMLInputElement>) => {
     const {
+      DEFAULT_STATE_PAGE_ID,
+      createEditableStateIconElementsFromSvgSource: injectedCreateEditableStateIconElementsFromSvgSource,
       requireEditMode,
       setCustomDeviceDialogView = () => undefined,
       setCustomDeviceDraft,
       setCustomDeviceSaveMessage = () => undefined,
+      setCustomDeviceStatePageId = () => undefined,
       showGlobalMessage = () => undefined,
-      svgSourceToDataUrl
+      stateIconDrawingToPersistedImage: injectedStateIconDrawingToPersistedImage
     } = __appScope;
     if (!requireEditMode("导入元件 SVG")) {
       event.target.value = "";
@@ -6711,17 +6881,33 @@ export function createImportCustomComponentSvg(__appScope: Record<string, any>) 
       showGlobalMessage("所选文件不是有效的 SVG 图形。");
       return false;
     }
-    const backgroundImage = svgSourceToDataUrl(svgSource);
+    const createEditableElements = typeof injectedCreateEditableStateIconElementsFromSvgSource === "function"
+      ? injectedCreateEditableStateIconElementsFromSvgSource
+      : defaultCreateEditableStateIconElementsFromSvgSource;
+    const stateIconDrawingToPersistedImage = typeof injectedStateIconDrawingToPersistedImage === "function"
+      ? injectedStateIconDrawingToPersistedImage
+      : defaultStateIconDrawingToPersistedImage;
+    const editableElements = createEditableElements(svgSource, file.name, { preserveImportedSvg: true });
+    if (!editableElements.length) {
+      showGlobalMessage("SVG 中没有可编辑的可见图形。请检查图形内容后重试。");
+      return false;
+    }
+    const backgroundImage = stateIconDrawingToPersistedImage(editableElements);
+    if (!backgroundImage) {
+      showGlobalMessage("SVG 可编辑图层生成失败，请检查图形内容后重试。");
+      return false;
+    }
+    setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
     setCustomDeviceDialogView("icon");
     setCustomDeviceDraft((current: CustomDeviceDraft) => ({
       ...current,
       backgroundImage,
       backgroundImageAssetId: "",
-      backgroundImageFit: "contain",
+      backgroundImageFit: "fixed",
       backgroundImageCleared: "",
       error: ""
     }));
-    setCustomDeviceSaveMessage("SVG 图元已导入，请保存当前元件定义后生效。");
+    setCustomDeviceSaveMessage(`SVG 图元已导入为 ${editableElements.length} 个可编辑图层，请保存当前元件定义后生效。`);
     return true;
   };
 }
@@ -7055,38 +7241,26 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
       allowResizeTransform: String(dialog.allowResizeTransform ?? "0") === "1" ? "1" : "0",
       error: ""
     };
-    if (dialog.copySourceTemplate) {
-      const saveCustomDeviceTemplate = __appScope.saveCustomDeviceTemplate;
-      if (typeof saveCustomDeviceTemplate !== "function") {
-        return setDialogError("元件保存功能尚未就绪，请稍后重试。");
-      }
-      cancelPendingCustomComponentTemplateLoad();
-      setSelectedDefinitionKind("");
-      setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
-      setCustomDeviceSaveMessage("");
-      const saved = saveCustomDeviceTemplate({
-        draftOverride: nextDraft,
-        terminalAnchorsOverride: nextDraft.terminalAnchors.slice(0, libraryDraftPatch.terminalCount),
-        editingCustomDeviceKindOverride: "",
-        skipInlineDrawingPatch: true
-      });
-      if (!saved) {
-        return setDialogError("元件保存失败，请检查复制内容后重试。");
-      }
-      setCustomDeviceDialogView("icon");
-      setCustomLibraryCreateDialog(null);
-      return true;
+    const saveCustomDeviceTemplate = __appScope.saveCustomDeviceTemplate;
+    if (typeof saveCustomDeviceTemplate !== "function") {
+      return setDialogError("元件保存功能尚未就绪，请稍后重试。");
     }
     cancelPendingCustomComponentTemplateLoad();
-    setCustomDeviceDefinitionMode("create");
-    setEditingCustomDeviceKind("");
     setSelectedDefinitionKind("");
-    setCustomComponentTreeSelection({ kind: "componentLibrary", categoryLibraryName, section: selectedClassName });
     setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
     setCustomDeviceSaveMessage("");
+    const saved = saveCustomDeviceTemplate({
+      draftOverride: nextDraft,
+      terminalAnchorsOverride: nextDraft.terminalAnchors.slice(0, libraryDraftPatch.terminalCount),
+      editingCustomDeviceKindOverride: "",
+      skipInlineDrawingPatch: true
+    });
+    if (!saved) {
+      return setDialogError(dialog.copySourceTemplate
+        ? "元件保存失败，请检查复制内容后重试。"
+        : "元件保存失败，请检查新建内容后重试。");
+    }
     setCustomDeviceDialogView("icon");
-    setCustomDeviceDraft(nextDraft);
-    setCustomDeviceDraftCleanBaseline(nextDraft);
     setCustomLibraryCreateDialog(null);
     return true;
   };
