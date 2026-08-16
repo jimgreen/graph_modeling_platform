@@ -1896,15 +1896,41 @@ describe("E device interface definition entry", () => {
     expect(treeContextMenuPointerTargetIsInside(null, outsideTarget)).toBe(false);
   });
 
-  test("builds a standalone SVG for one component visual without its instance label", () => {
-    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-source")!;
+  test("builds a standalone SVG for one component visual without terminals or its instance label", () => {
+    const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-nuclear-source")!;
     const svg = buildDeviceTemplateIconSvg(template);
 
     expect(svg).toMatch(/^<svg\b/);
     expect(svg).toContain('viewBox="0,0,');
-    expect(svg).toContain("symbol_ACGenerator_ac-source");
+    expect(svg).toContain("symbol_ACGenerator_ac-nuclear-source");
     expect(svg).toContain('device-type="ACGenerator"');
+    expect(svg).not.toContain("<line");
+    expect(svg).not.toContain('data-terminal-id="');
+    expect(svg).not.toContain('class="export-terminal ');
     expect(svg).not.toContain('class="node-label-text"');
+  });
+
+  test("removes persisted terminal helpers from component and state images during SVG export", () => {
+    const terminalImage = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80"><circle data-component-body="true" cx="50" cy="40" r="20"/><g data-custom-device-persisted-terminal-connectors="true"><line data-terminal-helper="true" x1="0" y1="40" x2="30" y2="40"/></g></svg>'
+    )}`;
+    const source = DEVICE_LIBRARY.find((item) => item.kind === "ac-nuclear-source")!;
+    const template = {
+      ...source,
+      kind: "custom-terminal-export-test",
+      params: { ...source.params, backgroundImage: terminalImage },
+      stateDefinitions: [{
+        value: "1",
+        name: "运行",
+        backgroundImage: terminalImage
+      }]
+    } as typeof source;
+    const svg = buildDeviceTemplateIconSvg(template);
+
+    expect(svg).toContain("data-component-body");
+    expect(svg).not.toContain("data-custom-device-persisted-terminal-connectors");
+    expect(svg).not.toContain("data-terminal-helper");
+    expect(svg).not.toContain('data-terminal-id="');
   });
 
   test("solidifies a built-in component visual for copy without source terminals or instance label", () => {

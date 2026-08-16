@@ -639,6 +639,53 @@ function stateIconSvgFallbackParts(source: string) {
   return { viewBox, body };
 }
 
+function stateIconSvgPlatformExportFallback(source: string) {
+  const useMarkup = Array.from(source.matchAll(/<use\b[^>]*>/giu))
+    .map((match) => match[0])
+    .find((markup) => ["dev-kind", "data-export-device-kind", "data-export-node-kind"]
+      .some((attribute) => readSvgMarkupAttribute(markup, attribute).trim()));
+  if (!useMarkup) {
+    return null;
+  }
+
+  const declaredDeviceKind = readSvgMarkupAttribute(useMarkup, "dev-kind") ||
+    readSvgMarkupAttribute(useMarkup, "data-export-device-kind") ||
+    readSvgMarkupAttribute(useMarkup, "data-export-node-kind");
+  const rawHref = readSvgMarkupAttribute(useMarkup, "href") || readSvgMarkupAttribute(useMarkup, "xlink:href");
+  const symbolId = rawHref.startsWith("#") ? rawHref.slice(1) : "";
+  const symbolMatch = Array.from(source.matchAll(/<symbol\b([^>]*)>([\s\S]*?)<\/symbol>/giu))
+    .map((match) => ({
+      markup: match[0],
+      open: match[1] ?? "",
+      body: match[2] ?? ""
+    }))
+    .find((candidate) => !symbolId || readSvgMarkupAttribute(candidate.open, "id") === symbolId);
+  if (!symbolMatch) {
+    return null;
+  }
+  const symbolOpen = symbolMatch.open;
+  const symbolBody = symbolMatch.body;
+  const symbolViewBox = readSvgMarkupAttribute(symbolOpen, "viewBox").trim();
+  if (!symbolViewBox || !symbolBody.trim()) {
+    return null;
+  }
+
+  // Platform exports use a translated line inside the referenced symbol for a
+  // device terminal. That line is the reliable distinction between the inner
+  // 180×120 terminal frame and the full 240×160 frame in the drawing editor.
+  const hasTerminalConnector = /<g\b[^>]*\btransform\s*=\s*(?:"[^"]*translate\s*\([^"']*"|'[^']*translate\s*\([^"']*')[^>]*>[\s\S]*?<line\b/iu.test(symbolBody);
+  const frame = stateIconDrawingFrameRect(hasTerminalConnector);
+  const defs = Array.from(source.matchAll(/<defs\b[\s\S]*?<\/defs>/giu))
+    .map((match) => match[0])
+    .join("");
+  const normalizedSource = `<svg xmlns="http://www.w3.org/2000/svg" data-state-icon-platform-device="true" data-state-icon-source-dev-kind="${escapeXml(declaredDeviceKind)}" viewBox="${escapeXml(symbolViewBox)}" preserveAspectRatio="xMidYMid meet">${defs}${symbolBody}</svg>`;
+  return {
+    source: normalizedSource,
+    width: frame.width,
+    height: frame.height
+  };
+}
+
 function stateIconLineCapMarkerId(elementId: string, position: "start" | "end", cap: StateIconLineCapKind) {
   return `cap-${elementId.replace(/[^a-zA-Z0-9_-]/g, "")}-${position}-${cap}`;
 }
@@ -815,6 +862,14 @@ function stateIconSvgPreserveViewBoxMarkup(source: string) {
 function readSvgMarkupNumber(markup: string, name: string, fallback: number) {
   const parsed = Number.parseFloat(readSvgMarkupAttribute(markup, name));
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function stateIconSvgPersistedLayerSize(markup: string) {
+  const width = readSvgMarkupNumber(markup, "data-state-icon-layer-width", Number.NaN);
+  const height = readSvgMarkupNumber(markup, "data-state-icon-layer-height", Number.NaN);
+  return Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0
+    ? { width, height }
+    : null;
 }
 
 function stateIconDrawingTerminalOwnershipFromMarkup(markup: string): Pick<StateIconDrawingElement, "terminalIndex"> | Record<string, never> {
@@ -1865,14 +1920,19 @@ function stateIconSvgExpandedUseGeometry(leaf: Element, rootViewBox: string) {
   if (!containerViewBox || !rootRect) {
     return null;
   }
-  const width = Math.max(1, stateIconSvgElementNumber(container, "width", containerViewBox.width));
-  const height = Math.max(1, stateIconSvgElementNumber(container, "height", containerViewBox.height));
+  const sourceWidth = Math.max(1, stateIconSvgElementNumber(container, "width", containerViewBox.width));
+  const sourceHeight = Math.max(1, stateIconSvgElementNumber(container, "height", containerViewBox.height));
+  const platformLayerSize = stateIconSvgPlatformExportLayerSize(container);
+  const width = platformLayerSize?.width ?? sourceWidth;
+  const height = platformLayerSize?.height ?? sourceHeight;
   const x = stateIconSvgElementNumber(container, "x", rootRect.x);
   const y = stateIconSvgElementNumber(container, "y", rootRect.y);
   const rootCenterX = rootRect.x + rootRect.width / 2;
   const rootCenterY = rootRect.y + rootRect.height / 2;
-  const centerX = x + width / 2;
-  const centerY = y + height / 2;
+  // Use the source frame for positioning. Normalizing the layer size must not
+  // move its center away from the center encoded by the imported SVG.
+  const centerX = x + sourceWidth / 2;
+  const centerY = y + sourceHeight / 2;
   const ancestorTransforms: string[] = [];
   let current = container.parentElement;
   while (current) {
@@ -1911,6 +1971,19 @@ function stateIconSvgPlatformExportConnectorLine(element: Element) {
     current = current.parentElement;
   }
   return belongsToPlatformDevice && hasTranslatedAncestor;
+}
+
+function stateIconSvgPlatformExportLayerSize(container: Element) {
+  if (container.getAttribute("data-state-icon-platform-device") !== "true") {
+    return null;
+  }
+  // Platform component SVGs are exported around the same drawing frame used by
+  // the editor. Keep the source viewBox and geometry untouched, but restore the
+  // frame size that the built-in glyph uses so imported layers are not smaller.
+  const hasTerminalConnector = stateIconSvgDescendantElements(container, true)
+    .some(stateIconSvgPlatformExportConnectorLine);
+  const frame = stateIconDrawingFrameRect(hasTerminalConnector);
+  return { width: frame.width, height: frame.height };
 }
 
 function stateIconSvgLayerSource(
@@ -1986,6 +2059,17 @@ export function createEditableStateIconElementsFromSvgSource(
 ) {
   const parsed = parseStateIconSvgSource(source);
   if (!parsed) {
+    const platformFallback = stateIconSvgPlatformExportFallback(source);
+    if (platformFallback) {
+      return [{
+        ...createImportedStateIconElement("imported-svg", platformFallback.source, fileName),
+        x: 120,
+        y: 80,
+        width: platformFallback.width,
+        height: platformFallback.height,
+        rotation: 0
+      }];
+    }
     const generatedElements = createStateIconDrawingElementsFromGeneratedSvgSource(source, fileName);
     if (generatedElements) {
       return generatedElements;
@@ -2017,6 +2101,7 @@ export function createEditableStateIconElementsFromSvgSource(
       `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${escapeXml(parsed.viewBox)}">${parsed.supportMarkup}${child.outerHTML}</svg>`,
       `${fileName || "SVG"}-${index + 1}`
     ),
+    ...(stateIconSvgPersistedLayerSize(child.outerHTML) ?? {}),
     ...stateIconDrawingTerminalOwnershipFromMarkup(child.outerHTML)
   });
   if (editableChildren.length === 0) {
@@ -2046,6 +2131,7 @@ export function createEditableStateIconElementsFromSvgSource(
         return [];
       }
       const importedGeometry = stateIconSvgExpandedUseGeometry(leaf, parsed.viewBox);
+      const persistedLayerSize = stateIconSvgPersistedLayerSize(child.outerHTML);
       const layerSource = stateIconSvgLayerSource(
           child,
           leaf,
@@ -2069,6 +2155,11 @@ export function createEditableStateIconElementsFromSvgSource(
               height: importedGeometry.height,
               rotation: importedGeometry.rotation
             }
+          : persistedLayerSize
+            ? {
+                width: persistedLayerSize.width,
+                height: persistedLayerSize.height
+              }
           : {}),
         ...stateIconDrawingTerminalOwnershipFromMarkup(child.outerHTML)
       }];
@@ -2172,11 +2263,12 @@ export function stateIconDrawingSvgElementMarkup(
 ) {
   const parsed = parseStateIconSvgSource(source);
   const preserveViewBoxMarkup = stateIconSvgPreserveViewBoxMarkup(source);
+  const persistedLayerSizeMarkup = ` data-state-icon-layer-width="${formatSvgNumber(width)}" data-state-icon-layer-height="${formatSvgNumber(height)}"`;
   if (!parsed || !parsed.body) {
     const fallback = stateIconSvgFallbackParts(source);
     if (fallback?.body) {
       const styleOverride = stateIconSvgStyleOverrideMarkup(override);
-      return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}"${preserveViewBoxMarkup} viewBox="${escapeXml(fallback.viewBox)}" preserveAspectRatio="none" overflow="visible">${fallback.body}${styleOverride}</svg>`;
+      return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}"${persistedLayerSizeMarkup}${preserveViewBoxMarkup} viewBox="${escapeXml(fallback.viewBox)}" preserveAspectRatio="none" overflow="visible">${fallback.body}${styleOverride}</svg>`;
     }
     const href = svgSourceToDataUrl(source);
     return href
@@ -2184,7 +2276,7 @@ export function stateIconDrawingSvgElementMarkup(
       : "";
   }
   const styleOverride = stateIconSvgStyleOverrideMarkup(override);
-  return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}"${preserveViewBoxMarkup} viewBox="${escapeXml(stateIconSvgRenderViewBox(source))}" preserveAspectRatio="none" overflow="visible">${parsed.body}${styleOverride}</svg>`;
+  return `<svg x="${formatSvgNumber(x)}" y="${formatSvgNumber(y)}" width="${formatSvgNumber(width)}" height="${formatSvgNumber(height)}"${persistedLayerSizeMarkup}${preserveViewBoxMarkup} viewBox="${escapeXml(stateIconSvgRenderViewBox(source))}" preserveAspectRatio="none" overflow="visible">${parsed.body}${styleOverride}</svg>`;
 }
 
 export function stateIconDrawingElementMarkup(

@@ -3,6 +3,7 @@ import {
   createDeleteGraphTemplate,
   createDeleteGraphTemplateType,
   createLightweightMovedEndpointRoute,
+  createPersistDeviceLibraryChange,
   createRoutePointsForMovedEdgesBlockedByStationaryNodes,
   createShouldRunDeferredMoveOptimization,
   createSwitchInspectorTabForCanvasSelection
@@ -198,6 +199,89 @@ describe("graph template library actions", () => {
     }]);
     expect(templateMenu).toBeNull();
     expect(operationLogs).toContain("删除模板类型：自定义类型（2 个模板）");
+  });
+});
+
+describe("device library durable persistence", () => {
+  const persistenceScope = (overrides: Record<string, unknown> = {}) => ({
+    backendDeviceLibraryLoadedRef: { current: true },
+    customCategoryLibraries: [],
+    customComponentLibraries: [],
+    customDeviceTemplates: [],
+    customGraphTemplateTypes: [],
+    customGraphTemplates: [],
+    deviceDefinitionOverrides: {},
+    eDeviceDefinitionLabels: {},
+    eDeviceDefinitionClassExportEnabled: {},
+    eDeviceDefinitionFieldOrder: {},
+    eDeviceDefinitionTemplateFields: {},
+    lastPersistedDeviceLibraryPayloadRef: { current: null },
+    normalizeDeviceLibraryPersistencePayload: (value: unknown) => value,
+    serializeDeviceLibraryForStorage: (value: unknown) => JSON.stringify(value),
+    suppressNextBackendDeviceLibrarySyncRef: { current: false },
+    writeLocalDeviceLibraryPersistencePayload: () => undefined,
+    writeOperationLog: () => undefined,
+    ...overrides
+  });
+
+  test("waits for the backend file write and reuses the same in-flight save", async () => {
+    let finishBackendSave: (() => void) | undefined;
+    const backendSave = new Promise<void>((resolve) => {
+      finishBackendSave = resolve;
+    });
+    let backendSaveCount = 0;
+    const operationLogs: string[] = [];
+    const scope = persistenceScope({
+      saveBackendDeviceLibraryPayload: () => {
+        backendSaveCount += 1;
+        return backendSave;
+      },
+      writeOperationLog: (message: string) => operationLogs.push(message)
+    });
+    const persist = createPersistDeviceLibraryChange(scope);
+    const override = { "ac-source": { kind: "ac-source", params: { backgroundImage: "data:image/svg+xml,edited" } } };
+
+    const firstSave = persist({ deviceDefinitionOverrides: override }, {
+      success: "后台保存完成",
+      failure: "后台保存失败"
+    });
+    const repeatedSave = persist({ deviceDefinitionOverrides: override }, {
+      success: "后台保存完成",
+      failure: "后台保存失败"
+    });
+    let settled = false;
+    void firstSave.then(() => { settled = true; });
+    await Promise.resolve();
+
+    expect(settled).toBe(false);
+    expect(repeatedSave).toBe(firstSave);
+    expect(backendSaveCount).toBe(1);
+
+    finishBackendSave?.();
+    await expect(firstSave).resolves.toBe(true);
+    expect(operationLogs).toEqual(["后台保存完成"]);
+  });
+
+  test("reports a backend write failure and leaves the payload retryable", async () => {
+    const operationLogs: string[] = [];
+    const scope = persistenceScope({
+      saveBackendDeviceLibraryPayload: async () => {
+        throw new Error("disk unavailable");
+      },
+      writeOperationLog: (message: string) => operationLogs.push(message)
+    });
+    const persist = createPersistDeviceLibraryChange(scope);
+
+    await expect(persist({
+      deviceDefinitionOverrides: {
+        "ac-source": { kind: "ac-source", params: { backgroundImage: "data:image/svg+xml,edited" } }
+      }
+    }, {
+      failure: "后台保存失败"
+    })).resolves.toBe(false);
+
+    expect(scope.lastPersistedDeviceLibraryPayloadRef.current).toBeNull();
+    expect(operationLogs).toEqual(["后台保存失败"]);
   });
 });
 

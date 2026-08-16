@@ -16,7 +16,10 @@ import {
   resolveInspectorGraphId,
   resolveInspectorTopologyEntry
 } from "./appExtracted/appView";
-import { paramOptionsForSection } from "./appExtracted/appCoreCanvasUtilities";
+import {
+  CUSTOM_DEVICE_DIALOG_DEFAULT_HEIGHT,
+  paramOptionsForSection
+} from "./appExtracted/appCoreCanvasUtilities";
 import {
   componentLibraryDefinitionOverrideKey,
   resolveEditableComponentLibraryDefinition
@@ -770,12 +773,13 @@ describe("app view device definition parameter rows", () => {
     expect(source).toMatch(/derived-base-link[^\n]*loadDefinitionTemplateDraft/);
   });
 
-  test("marks the derived main class with a jump link in the custom device dialog", () => {
+  test("removes redundant main-class and derived-English-name controls from class and component editors", () => {
     const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
 
-    expect(source).toContain("customDeviceDerivedBaseTemplate");
-    expect(source).toMatch(/<span>主类<\/span>/);
-    expect(source).toMatch(/derived-base-link[^\n]*selectCustomComponentTemplate\(customDeviceDerivedBaseTemplate\)/);
+    expect(source).not.toContain("customDeviceDerivedBaseTemplate");
+    expect(source).not.toContain("customDeviceDerivedBaseLibrary");
+    expect(source).not.toContain("custom-device-derived-base-field");
+    expect(source).not.toContain("custom-device-derived-en-field");
   });
 
   test("removes the centered transform when device library dialogs become floating", () => {
@@ -787,18 +791,24 @@ describe("app view device definition parameter rows", () => {
     expect(floatingDialogRule).toMatch(/transform:\s*none/);
   });
 
-  test("keeps the seven custom device identity and class metadata fields on one desktop row", () => {
+  test("gives the custom device editor more height without crossing the viewport margin", () => {
     const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
-    const baseGridRule = styles.match(/\.custom-device-form-grid\s*\{([\s\S]*?)\}/)?.[1] ?? "";
-    const derivedGridRule = styles.match(
-      /\.custom-device-form-grid:has\(\.custom-device-derived-en-field\)\s*\{([\s\S]*?)\}/
-    )?.[1] ?? "";
+    const customDialogRule = styles.match(/\.custom-device-dialog\s*\{([\s\S]*?)\}/)?.[1] ?? "";
 
-    expect(baseGridRule.match(/minmax\(/g)).toHaveLength(7);
-    expect(derivedGridRule).toMatch(/grid-template-columns/);
-    expect(styles).not.toMatch(
-      /\.custom-device-form-grid \.custom-device-derived-(?:en-)?field\s*\{[^}]*grid-row:\s*2/
-    );
+    expect(customDialogRule).toMatch(/height:\s*min\(90vh,\s*calc\(100vh\s*-\s*24px\)\)/);
+    expect(customDialogRule).toMatch(/max-height:\s*calc\(100vh\s*-\s*24px\)/);
+    expect(CUSTOM_DEVICE_DIALOG_DEFAULT_HEIGHT).toBe(860);
+  });
+
+  test("keeps the remaining class and component metadata fields on one desktop row", () => {
+    const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+    const classGridRule = styles.match(/\.custom-device-form-grid\.component-library-mode\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+    const componentGridRule = styles.match(/\.custom-device-form-grid\.component-mode\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+
+    expect(classGridRule.match(/minmax\(/g)).toHaveLength(5);
+    expect(componentGridRule.match(/minmax\(/g)).toHaveLength(6);
+    expect(styles).not.toContain("custom-device-derived-base-field");
+    expect(styles).not.toContain("custom-device-derived-en-field");
   });
 
   test("passes derived metadata into custom device measurement positions", () => {

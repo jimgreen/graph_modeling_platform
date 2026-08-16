@@ -3616,14 +3616,61 @@ function buildSvgDeviceConnectorMarkup(node: ModelNode, colorDisplayMode: ColorD
   return connectors;
 }
 
+const CUSTOM_DEVICE_TERMINAL_CONNECTOR_GROUP_PATTERN =
+  /<g\b(?=[^>]*\bdata-custom-device-(?:persisted-terminals|persisted-terminal-connectors|terminal-connectors)\s*=\s*(?:"true"|'true'|true))[^>]*>[\s\S]*?<\/g>/giu;
+
+function componentExportImageWithoutTerminalConnectors(value: unknown) {
+  const href = String(value ?? "").trim();
+  const source = decodeSvgImageSource(href);
+  if (!source) {
+    return href;
+  }
+  const cleanSource = source.replace(CUSTOM_DEVICE_TERMINAL_CONNECTOR_GROUP_PATTERN, "");
+  if (cleanSource === source) {
+    return href;
+  }
+  return href.startsWith("<svg")
+    ? cleanSource
+    : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(cleanSource)}`;
+}
+
 export function buildDeviceTemplateIconSvg(template: DeviceTemplate) {
   const padding = 36;
   const templateWidth = Math.max(1, Number(template.size?.width) || 104);
   const templateHeight = Math.max(1, Number(template.size?.height) || 64);
   const width = Math.ceil(templateWidth + padding * 2);
   const height = Math.ceil(templateHeight + padding * 2);
-  const node = createNodeFromTemplate(template, { x: width / 2, y: height / 2 });
+  const visualParams = { ...template.params };
+  for (const key of ["backgroundImage", "foregroundImage"] as const) {
+    if (typeof visualParams[key] === "string") {
+      visualParams[key] = componentExportImageWithoutTerminalConnectors(visualParams[key]);
+    }
+  }
+  const visualTemplate: DeviceTemplate = {
+    ...template,
+    params: visualParams,
+    stateDefinitions: template.stateDefinitions?.map((state) => ({
+      ...state,
+      ...(typeof state.icon === "string"
+        ? { icon: componentExportImageWithoutTerminalConnectors(state.icon) }
+        : {}),
+      ...(typeof state.image === "string"
+        ? { image: componentExportImageWithoutTerminalConnectors(state.image) }
+        : {}),
+      ...(typeof state.backgroundImage === "string"
+        ? { backgroundImage: componentExportImageWithoutTerminalConnectors(state.backgroundImage) }
+        : {})
+    })),
+    terminalCount: 0,
+    terminalTypes: [],
+    terminalLabels: [],
+    terminalAnchors: [],
+    terminalRoles: [],
+    terminalAssociations: []
+  };
+  const node = createNodeFromTemplate(visualTemplate, { x: width / 2, y: height / 2 });
   node.id = `component-svg-${String(template.kind || "component").replace(/[^A-Za-z0-9_-]+/g, "_")}`;
+  node.terminals = [];
   node.params = {
     ...node.params,
     _labelVisible: "0"
@@ -3632,7 +3679,7 @@ export function buildDeviceTemplateIconSvg(template: DeviceTemplate) {
     width,
     height,
     backgroundColor: "transparent",
-    deviceTemplates: [template]
+    deviceTemplates: [visualTemplate]
   });
 }
 

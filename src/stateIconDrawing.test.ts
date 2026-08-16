@@ -2783,10 +2783,12 @@ describe("default device state draft rows", () => {
       expect(element.svgSource).not.toContain("<use");
       expect(element.svgSource).not.toContain('fill="transparent"');
       expect(element.svgSource).toContain('viewBox="-75 -47 150 94"');
-      expect(element).toMatchObject({ x: 120, y: 80, width: 150, height: 94, rotation: 0 });
+      expect(element).toMatchObject({ x: 120, y: 80, width: 180, height: 120, rotation: 0 });
     });
 
     const persistedSource = decodeURIComponent(stateIconDrawingToImage(imported).split(",")[1] ?? "");
+    expect(persistedSource).toContain('x="-90" y="-60" width="180" height="120"');
+    expect(persistedSource).toContain('data-state-icon-layer-width="180" data-state-icon-layer-height="120"');
     const restored = withXmlDomParser(() => createEditableStateIconElementsFromSvgSource(
       persistedSource,
       "ac-nuclear-source.svg"
@@ -2794,6 +2796,24 @@ describe("default device state draft rows", () => {
     expect(restored).toHaveLength(5);
     expect(restored.every((element) => element.kind === "imported-svg")).toBe(true);
     expect(restored.every((element) => !(element.svgSource ?? "").includes("<use"))).toBe(true);
+    expect(restored.every((element) => element.width === 180 && element.height === 120)).toBe(true);
+  });
+
+  test("uses the full drawing frame for platform SVG layers without terminal connectors", () => {
+    const source = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 186 136"><defs><symbol id="symbol-plain" viewBox="-75 -50 150 100"><circle cx="0" cy="0" r="24" fill="#2563eb"/></symbol></defs><g><use dev-kind="unknown-device" href="#symbol-plain" x="18" y="18" width="150" height="100"/></g></svg>';
+    const imported = withXmlDomParser(() => createEditableStateIconElementsFromSvgSource(source, "plain.svg"));
+
+    expect(imported).toHaveLength(1);
+    expect(imported[0]).toMatchObject({ x: 120, y: 80, width: 240, height: 160 });
+    expect(imported[0].svgSource).toContain('viewBox="-75 -50 150 100"');
+  });
+
+  test("restores persisted imported layer dimensions instead of falling back to the source use size", () => {
+    const persisted = '<svg xmlns="http://www.w3.org/2000/svg" data-state-icon-drawing="true" width="240" height="160" viewBox="0 0 240 160"><svg x="-90" y="-60" width="180" height="120" data-state-icon-layer-width="180" data-state-icon-layer-height="120" data-state-icon-preserve-view-box="true" viewBox="-75 -47 150 94"><circle cx="0" cy="0" r="33" fill="#2563eb"/></svg></svg>';
+    const restored = withXmlDomParser(() => createEditableStateIconElementsFromSvgSource(persisted, "persisted.svg"));
+
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toMatchObject({ width: 180, height: 120 });
   });
 
   test("splits built-in generated glyph details while retaining the original layer geometry", () => {
