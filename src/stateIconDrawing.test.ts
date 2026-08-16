@@ -2730,6 +2730,17 @@ describe("default device state draft rows", () => {
     expect(imported[2].svgSource).toContain("<text");
   });
 
+  test("keeps ordinary SVG lines editable when no platform device metadata is present", () => {
+    const imported = withXmlDomParser(() => createEditableStateIconElementsFromSvgSource(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80"><line x1="10" y1="20" x2="90" y2="20" stroke="#123456" stroke-width="3"/></svg>',
+      "ordinary-line.svg",
+      { preserveImportedSvg: true }
+    ));
+
+    expect(imported).toHaveLength(1);
+    expect(imported[0].svgSource).toContain('<line x1="10" y1="20" x2="90" y2="20"');
+  });
+
   test("expands exported symbol references into editable nuclear-generator layers", () => {
     const exportedSvg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid meet" height="100%" width="100%" viewBox="0,0,222,166">
       <defs id="svg_defs">
@@ -2751,7 +2762,7 @@ describe("default device state draft rows", () => {
         <g class="export-layer-definitions" style="display:none"><g layer-id="layer-default"/></g>
         <g id="Background_Layer"><rect width="100%" height="100%" fill="transparent"/></g>
         <g id="ACGenerator_Layer" device-type="ACGenerator">
-          <use id="component-svg-ac-nuclear-source" href="#symbol_ACGenerator_ac-nuclear-source_default" x="36" y="36" width="150" height="94"/>
+          <use id="component-svg-ac-nuclear-source" dev-kind="ac-nuclear-source" href="#symbol_ACGenerator_ac-nuclear-source_default" x="36" y="36" width="150" height="94"/>
         </g>
       </g>
     </svg>`;
@@ -2761,17 +2772,18 @@ describe("default device state draft rows", () => {
       "ac-nuclear-source.svg",
       { preserveImportedSvg: true }
     ));
-
-    expect(imported).toHaveLength(6);
+    expect(imported).toHaveLength(5);
     expect(imported.every((element) => element.kind === "imported-svg")).toBe(true);
     const editableMarkup = imported.map((element) => (element.svgSource ?? "").replace(/<defs\b[\s\S]*?<\/defs>/iu, ""));
     expect(editableMarkup.filter((markup) => markup.includes("<circle")).length).toBe(2);
     expect(editableMarkup.filter((markup) => markup.includes("<ellipse")).length).toBe(3);
-    expect(editableMarkup.filter((markup) => markup.includes("<line")).length).toBe(1);
+    expect(editableMarkup.filter((markup) => markup.includes("<line")).length).toBe(0);
     imported.forEach((element) => {
       expect(element.svgSource).toContain('data-state-icon-preserve-view-box="true"');
       expect(element.svgSource).not.toContain("<use");
       expect(element.svgSource).not.toContain('fill="transparent"');
+      expect(element.svgSource).toContain('viewBox="-75 -47 150 94"');
+      expect(element).toMatchObject({ x: 120, y: 80, width: 150, height: 94, rotation: 0 });
     });
 
     const persistedSource = decodeURIComponent(stateIconDrawingToImage(imported).split(",")[1] ?? "");
@@ -2779,7 +2791,7 @@ describe("default device state draft rows", () => {
       persistedSource,
       "ac-nuclear-source.svg"
     ));
-    expect(restored).toHaveLength(6);
+    expect(restored).toHaveLength(5);
     expect(restored.every((element) => element.kind === "imported-svg")).toBe(true);
     expect(restored.every((element) => !(element.svgSource ?? "").includes("<use"))).toBe(true);
   });

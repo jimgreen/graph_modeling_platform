@@ -1588,6 +1588,9 @@ function stateIconSvgEditableLeafElements(root: Element) {
     if (!editableTags.has(element.tagName)) {
       return false;
     }
+    if (stateIconSvgPlatformExportConnectorLine(element)) {
+      return false;
+    }
     let ancestor = element.parentElement;
     while (ancestor && ancestor !== root.parentElement) {
       if (supportTags.has(ancestor.tagName)) {
@@ -1721,6 +1724,12 @@ function stateIconSvgExpandedUseNode(useElement: Element, referenced: Element) {
   let replacement: Element;
   if (["symbol", "svg"].includes(referenced.tagName)) {
     const nestedSvg = createElement("svg");
+    const declaredDeviceKind = useElement.getAttribute("dev-kind") || useElement.getAttribute("data-export-device-kind") || "";
+    nestedSvg.setAttribute("data-state-icon-expanded-use", "true");
+    if (declaredDeviceKind) {
+      nestedSvg.setAttribute("data-state-icon-platform-device", "true");
+      nestedSvg.setAttribute("data-state-icon-source-dev-kind", declaredDeviceKind);
+    }
     ["x", "y", "width", "height"].forEach((name) => {
       const value = useElement.getAttribute(name);
       if (value) {
@@ -1806,25 +1815,135 @@ function stateIconSvgRootPresentationMarkup(root: Element | null) {
     .join("");
 }
 
+type StateIconSvgViewBoxRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+function stateIconSvgViewBoxRect(value: string): StateIconSvgViewBoxRect | null {
+  const [x, y, width, height] = value
+    .trim()
+    .split(/[\s,]+/u)
+    .map((part) => Number.parseFloat(part));
+  if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) {
+    return null;
+  }
+  return { x, y, width, height };
+}
+
+function stateIconSvgExpandedUseContainerForLeaf(leaf: Element) {
+  let current = leaf.parentElement;
+  while (current) {
+    if (current.tagName === "svg" && current.getAttribute("data-state-icon-expanded-use") === "true") {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return null;
+}
+
+function stateIconSvgMarkupChildNodes(element: Element) {
+  return Array.from(element.childNodes)
+    .map((child) => child.nodeType === 1 ? stateIconSvgElementOuterMarkup(child as Element) : (child.textContent || ""))
+    .join("");
+}
+
+function stateIconSvgElementNumber(element: Element, name: string, fallback: number) {
+  const parsed = Number.parseFloat(element.getAttribute(name) || "");
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function stateIconSvgExpandedUseGeometry(leaf: Element, rootViewBox: string) {
+  const container = stateIconSvgExpandedUseContainerForLeaf(leaf);
+  if (!container) {
+    return null;
+  }
+  const containerViewBox = stateIconSvgViewBoxRect(container.getAttribute("viewBox") || "");
+  const rootRect = stateIconSvgViewBoxRect(rootViewBox);
+  if (!containerViewBox || !rootRect) {
+    return null;
+  }
+  const width = Math.max(1, stateIconSvgElementNumber(container, "width", containerViewBox.width));
+  const height = Math.max(1, stateIconSvgElementNumber(container, "height", containerViewBox.height));
+  const x = stateIconSvgElementNumber(container, "x", rootRect.x);
+  const y = stateIconSvgElementNumber(container, "y", rootRect.y);
+  const rootCenterX = rootRect.x + rootRect.width / 2;
+  const rootCenterY = rootRect.y + rootRect.height / 2;
+  const centerX = x + width / 2;
+  const centerY = y + height / 2;
+  const ancestorTransforms: string[] = [];
+  let current = container.parentElement;
+  while (current) {
+    const transform = current.getAttribute("transform")?.trim();
+    if (transform) {
+      ancestorTransforms.unshift(transform);
+    }
+    current = current.parentElement;
+  }
+  const rotation = Number.parseFloat(ancestorTransforms.join(" ").match(/rotate\s*\(\s*([-+\d.eE]+)/iu)?.[1] || "0");
+  return {
+    x: 120 + centerX - rootCenterX,
+    y: 80 + centerY - rootCenterY,
+    width,
+    height,
+    rotation: Number.isFinite(rotation) ? rotation : 0,
+    viewBox: container.getAttribute("viewBox") || rootViewBox
+  };
+}
+
+function stateIconSvgPlatformExportConnectorLine(element: Element) {
+  if (element.tagName !== "line") {
+    return false;
+  }
+  let current: Element | null = element;
+  let belongsToPlatformDevice = false;
+  let hasTranslatedAncestor = false;
+  while (current) {
+    if (current.getAttribute("data-state-icon-platform-device") === "true") {
+      belongsToPlatformDevice = true;
+    }
+    const transform = current.getAttribute("transform")?.trim() || "";
+    if (/^translate\s*\(/iu.test(transform)) {
+      hasTranslatedAncestor = true;
+    }
+    current = current.parentElement;
+  }
+  return belongsToPlatformDevice && hasTranslatedAncestor;
+}
+
 function stateIconSvgLayerSource(
   child: Element,
-  leafIndex: number,
+  leaf: Element,
   viewBox: string,
   supportMarkup: string,
   rootPresentationMarkup: string
 ) {
-  const clone = child.cloneNode(true) as Element;
+  const sourceRoot = stateIconSvgExpandedUseContainerForLeaf(leaf) ?? child;
+  const sourceLeaves = stateIconSvgEditableLeafElements(sourceRoot);
+  const leafIndex = sourceLeaves.indexOf(leaf);
+  const clone = sourceRoot.cloneNode(true) as Element;
   stateIconSvgRemoveUnsafeElements(clone);
+  stateIconSvgDescendantElements(clone, true)
+    .filter(stateIconSvgPlatformExportConnectorLine)
+    .forEach(stateIconSvgRemoveElement);
   const clonedLeaves = stateIconSvgEditableLeafElements(clone);
   clonedLeaves.forEach((element, index) => {
     if (index !== leafIndex) {
       stateIconSvgRemoveElement(element);
     }
   });
-  const content = rootPresentationMarkup
-    ? `<g${rootPresentationMarkup}>${stateIconSvgElementOuterMarkup(clone)}</g>`
+  const sourceViewBox = clone.tagName === "svg"
+    ? clone.getAttribute("viewBox") || viewBox
+    : viewBox;
+  const contentMarkup = clone.tagName === "svg"
+    ? stateIconSvgMarkupChildNodes(clone)
     : stateIconSvgElementOuterMarkup(clone);
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${escapeXml(viewBox)}">${supportMarkup}${content}</svg>`;
+  const content = rootPresentationMarkup
+    ? `<g${rootPresentationMarkup}>${contentMarkup}</g>`
+    : contentMarkup;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${escapeXml(sourceViewBox)}">${supportMarkup}${content}</svg>`;
 }
 
 function createPlatformDefaultEditableStateIconElements(
@@ -1926,9 +2045,10 @@ export function createEditableStateIconElementsFromSvgSource(
       if (!stateIconSvgLeafIsVisible(leaf)) {
         return [];
       }
+      const importedGeometry = stateIconSvgExpandedUseGeometry(leaf, parsed.viewBox);
       const layerSource = stateIconSvgLayerSource(
           child,
-          leafIndex,
+          leaf,
           parsed.viewBox,
           parsed.supportMarkup,
           rootPresentationMarkup
@@ -1941,6 +2061,15 @@ export function createEditableStateIconElementsFromSvgSource(
             : layerSource,
           `${fileName || "SVG"}-${stateIconSvgEditableLayerLabel(leaf, leafIndex)}`
         ),
+        ...(importedGeometry
+          ? {
+              x: importedGeometry.x,
+              y: importedGeometry.y,
+              width: importedGeometry.width,
+              height: importedGeometry.height,
+              rotation: importedGeometry.rotation
+            }
+          : {}),
         ...stateIconDrawingTerminalOwnershipFromMarkup(child.outerHTML)
       }];
     });
