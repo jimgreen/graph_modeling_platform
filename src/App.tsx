@@ -191,6 +191,7 @@ import {
   isContainerTerminalAssociationDependent,
   isDoubleContainerTerminalAssociation,
   isBlockingTopologyValidationError,
+  categorizeTopologyErrorType,
   isGeneratorNode,
   isRepeatedEdgePointerClick,
   isStaticButtonCapableNode,

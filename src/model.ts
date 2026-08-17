@@ -2100,6 +2100,19 @@ export type TopologyValidationError = {
   relatedNodeIds: string[];
 };
 
+// 拓扑告警分类：电压 / 容量 / 拓扑 / 其他
+export function categorizeTopologyErrorType(type: TopologyValidationErrorType): "voltage" | "capacity" | "topology" | "other" {
+  if (type === "voltage-mismatch" || type === "missing-island-voltage" || type === "island-voltage-mismatch"
+    || type === "voltage-setpoint-zero" || type === "voltage-limit-out-of-range"
+    || type === "voltage-setpoint-deviation" || type === "voltage-level-out-of-model-range") return "voltage";
+  if (type === "device-limit-invalid" || type === "device-setpoint-out-of-range" || type === "device-setpoint-auto-corrected"
+    || type === "storage-soc-parameter-invalid" || type === "hydrogen-storage-parameter-invalid"
+    || type === "hydrogen-coupling-parameter-invalid") return "capacity";
+  if (type === "floating-terminal" || type === "terminal-type-mismatch" || type === "same-bus-endpoints"
+    || type === "same-topology-node-endpoints" || type === "transformer-island-short") return "topology";
+  return "other";
+}
+
 export function isBlockingTopologyValidationError(error: Pick<TopologyValidationError, "type">): boolean {
   return (
     error.type === "floating-terminal" ||
