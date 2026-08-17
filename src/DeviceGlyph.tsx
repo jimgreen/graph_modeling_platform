@@ -9,6 +9,7 @@ import {
   getDeviceStrokeWidth,
   getSwitchVisualState,
   isLineSegmentBusNode,
+  modelAssociationModelTypeForKind,
   isRoutableLineDeviceKind,
   isStaticGraphicNode,
   staticRenderKindForNode,
@@ -65,10 +66,11 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
   }
   const rawW = miniature ? 58 : node.size.width;
   const rawH = miniature ? 38 : node.size.height;
+  const modelAssociationModelType = modelAssociationModelTypeForKind(node.kind);
   const isStaticGlyph = isStaticGraphicNode(node);
   const isRoutableLineGlyph = isRoutableLineDeviceKind(node.kind);
   const isLineSegmentBusGlyph = isLineSegmentBusNode(node);
-  const glyphContentScale = miniature || isStaticGlyph || isRoutableLineGlyph || isLineSegmentBusGlyph
+  const glyphContentScale = miniature || isStaticGlyph || isRoutableLineGlyph || isLineSegmentBusGlyph || modelAssociationModelType
     ? 1
     : Math.max(1, Math.max(rawW, rawH) / DEVICE_GLYPH_DESIGN_LONGEST_SIDE);
   const w = rawW / glyphContentScale;
@@ -155,6 +157,25 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
           strokeLinejoin="round"
         >
           <path d={pointsToOrthogonalPath(routePoints)} />
+        </g>
+      );
+    }
+    if (modelAssociationModelType) {
+      const associationClass = modelAssociationModelType === "厂站" ? "station" : modelAssociationModelType === "馈线" ? "feeder" : "district";
+      const associationStroke = node.params.strokeColor || stroke;
+      const associationFill = node.params.fillColor || "transparent";
+      const associationLineWidth = Number(node.params.lineWidth || 2);
+      const associationText = miniature ? modelAssociationModelType : staticSymbolTextValue(node, modelAssociationModelType);
+      if (mode === "text") {
+        return uprightText(node, 0, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 12 : Number(node.params.fontSize || 16), textAnchor: "middle", dominantBaseline: "middle" }, associationText);
+      }
+      if (!renderGeometry) {
+        return null;
+      }
+      return (
+        <g className={`model-association-glyph model-association-glyph-${associationClass}`}>
+          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="6" fill={associationFill} stroke={associationStroke} strokeWidth={associationLineWidth} strokeDasharray={svgStrokeDashArray(node.params.strokeStyle)} />
+          {renderText && uprightText(node, 0, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 12 : Number(node.params.fontSize || 16), textAnchor: "middle", dominantBaseline: "middle" }, associationText)}
         </g>
       );
     }
