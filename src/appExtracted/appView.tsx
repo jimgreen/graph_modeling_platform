@@ -444,6 +444,7 @@ function TopologyWarningPanelContent(props: {
 }) {
   const { allErrors, filteredErrors, category, setCategory, status, setStatus, categorize, isBlocking, displayMessage, locateError } = props;
   const [renderedCount, setRenderedCount] = useState(TOPOLOGY_LAZY_BATCH);
+  const listRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   // 筛选条件变化时重置懒加载计数
@@ -477,13 +478,14 @@ function TopologyWarningPanelContent(props: {
     }
   }, [statusCounts.error, statusCounts.warning, status, setStatus]);
 
-  // 懒加载 IntersectionObserver
+  // 懒加载 IntersectionObserver（root 指向滚动容器）
   useEffect(() => {
     const el = sentinelRef.current;
-    if (!el) return;
+    const root = listRef.current;
+    if (!el || !root) return;
     const observer = new IntersectionObserver(
       (entries) => { if (entries[0]?.isIntersecting) setRenderedCount((c) => c + TOPOLOGY_LAZY_BATCH); },
-      { rootMargin: "100px" }
+      { root, rootMargin: "100px" }
     );
     observer.observe(el);
     return () => observer.disconnect();
@@ -510,7 +512,7 @@ function TopologyWarningPanelContent(props: {
             </button>
           ))}
         </div>
-        <div className="topology-warning-list">
+        <div ref={listRef} className="topology-warning-list">
           {renderedItems.length === 0 && <p className="topology-warning-empty">暂无告警</p>}
           {renderedItems.map((error: any, index: number) => {
             const blocking = isBlocking(error);
