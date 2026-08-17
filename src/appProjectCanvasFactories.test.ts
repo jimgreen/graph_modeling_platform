@@ -356,7 +356,9 @@ describe("canvas panning", () => {
 });
 
 describe("line-segment bus pointer resizing", () => {
-  test("commits bus dimensions and position while leaving transform scale unchanged", () => {
+  test.each([false, true])(
+    "commits bus dimensions and position while leaving transform scale unchanged (shift=%s)",
+    (shiftKey) => {
     const node = {
       ...createDefaultNode("ac-bus", { x: 100, y: 100 }),
       size: { width: 120, height: 28 },
@@ -442,7 +444,7 @@ describe("line-segment bus pointer resizing", () => {
       clientX: 214,
       clientY: 100,
       ctrlKey: false,
-      shiftKey: false
+      shiftKey
     } as any);
 
     expect(scope.pushUndoSnapshot).toHaveBeenCalledTimes(1);
@@ -454,7 +456,8 @@ describe("line-segment bus pointer resizing", () => {
     expect(resized.scale).toBe(1.25);
     expect(resized.scaleX).toBe(1);
     expect(resized.scaleY).toBe(1);
-  });
+    }
+  );
 });
 
 describe("automatic canvas layout", () => {

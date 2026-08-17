@@ -213,3 +213,42 @@ describe("DeviceGlyph AC compensators", () => {
     expect(reactorMarkup).toContain("M 0 -50 V -7 M 0 -7 H -18");
   });
 });
+
+describe("DeviceGlyph line-segment buses", () => {
+  it.each([
+    "ac-bus",
+    "dc-bus",
+    "hydrogen-bus",
+    "heat-bus"
+  ] as const)("keeps %s visual thickness unchanged when only its length grows", (kind) => {
+    const original = {
+      ...createDefaultNode(kind, { x: 0, y: 0 }),
+      size: { width: 120, height: 36 }
+    };
+    const lengthened = {
+      ...original,
+      rotation: 90,
+      size: { width: 240, height: 36 }
+    };
+
+    const originalMarkup = renderToStaticMarkup(<svg><DeviceGlyph node={original} /></svg>);
+    const lengthenedMarkup = renderToStaticMarkup(<svg><DeviceGlyph node={lengthened} /></svg>);
+
+    expect(originalMarkup).toContain('<rect class="bus-glyph" x="-60" y="-6" width="120" height="12"');
+    expect(lengthenedMarkup).toContain('<rect class="bus-glyph" x="-120" y="-6" width="240" height="12"');
+    expect(originalMarkup).not.toContain('<g transform="scale(');
+    expect(lengthenedMarkup).not.toContain('<g transform="scale(');
+  });
+
+  it("changes bus visual thickness only when the local thickness dimension changes", () => {
+    const node = {
+      ...createDefaultNode("ac-bus", { x: 0, y: 0 }),
+      size: { width: 240, height: 60 }
+    };
+
+    const markup = renderToStaticMarkup(<svg><DeviceGlyph node={node} /></svg>);
+
+    expect(markup).toContain('<rect class="bus-glyph" x="-120" y="-10" width="240" height="20"');
+    expect(markup).not.toContain('<g transform="scale(');
+  });
+});

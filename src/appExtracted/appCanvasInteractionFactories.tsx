@@ -4233,7 +4233,7 @@ export function createStartSingleTransformDrag(__appScope: Record<string, any>) 
     kind: "rotate" | ScaleHandleKind,
     handle?: ScaleHandleConfig
   ) => {
-  const { TRANSFORM_ROTATE_HANDLE_GAP, TRANSFORM_ROTATE_STEM_END, TRANSFORM_ROTATE_STEM_START, clampPointToCanvas, hasCanvasSelectionModifier, nodeForegroundImage, nodeImage, nodeKindAllowsResizeTransform, nodeRotateHandleControlPoints, nodeUprightRotateHandleControlPoints, nodeUsesUprightStaticSelectionOutline, requireEditMode, screenToSvgPoint, setTransformDrag, snapshotSingleTransformNode, startModifierSelectionPress, svgRef, transformDragChangedRef } = __appScope;
+  const { TRANSFORM_ROTATE_HANDLE_GAP, TRANSFORM_ROTATE_STEM_END, TRANSFORM_ROTATE_STEM_START, clampPointToCanvas, hasCanvasSelectionModifier, isLineSegmentBusNode, nodeForegroundImage, nodeImage, nodeKindAllowsResizeTransform, nodeRotateHandleControlPoints, nodeUprightRotateHandleControlPoints, nodeUsesUprightStaticSelectionOutline, requireEditMode, screenToSvgPoint, setTransformDrag, snapshotSingleTransformNode, startModifierSelectionPress, svgRef, transformDragChangedRef } = __appScope;
     event.stopPropagation();
     if (hasCanvasSelectionModifier(event)) {
       startModifierSelectionPress(event, { kind: "node", nodeId: node.id });
@@ -4242,7 +4242,8 @@ export function createStartSingleTransformDrag(__appScope: Record<string, any>) 
     if (!requireEditMode("拖拽图元")) {
       return;
     }
-    if (kind !== "rotate" && kind !== "scale-both" && !nodeKindAllowsResizeTransform(node.kind)) {
+    const lineSegmentBusResize = isLineSegmentBusNode(node);
+    if (kind !== "rotate" && kind !== "scale-both" && !lineSegmentBusResize && !nodeKindAllowsResizeTransform(node.kind)) {
       return;
     }
     transformDragChangedRef.current = false;
