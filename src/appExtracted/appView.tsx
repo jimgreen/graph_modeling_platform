@@ -468,6 +468,13 @@ function TopologyWarningPanelContent(props: {
     return { all: list.length, error: errors, warning: warnings };
   }, [allErrors, category, categorize, isBlocking]);
 
+  // 错误为0但告警不为0时自动切换到告警
+  useEffect(() => {
+    if (statusCounts.error === 0 && statusCounts.warning > 0 && status !== "warning") {
+      setStatus("warning");
+    }
+  }, [statusCounts.error, statusCounts.warning, status, setStatus]);
+
   // 懒加载 IntersectionObserver
   useEffect(() => {
     const el = sentinelRef.current;
