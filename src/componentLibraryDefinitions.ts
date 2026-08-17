@@ -31,6 +31,28 @@ import {
 
 const definitionKey = (value: unknown) => String(value ?? "").trim().toLowerCase();
 
+const CANONICAL_BRANCH_CLASS_KEYS = new Set(["acbranch", "dcbranch"]);
+const LEGACY_BRANCH_TOPOLOGY_FIELD_KEYS = new Set(["t1_node", "t2_node"]);
+
+function isCanonicalBranchClass(className: unknown) {
+  return CANONICAL_BRANCH_CLASS_KEYS.has(definitionKey(className));
+}
+
+function normalizeBranchTopologyParameterDefinitions(
+  definitions: readonly DeviceParameterDefinition[]
+): DeviceParameterDefinition[] {
+  return definitions.flatMap((definition) => {
+    const enName = definitionKey(definition.enName);
+    if (enName === "t1_node") {
+      return [{ ...definition, cnName: "首端节点号", enName: "i_node" }];
+    }
+    if (enName === "t2_node") {
+      return [{ ...definition, cnName: "末端节点号", enName: "j_node" }];
+    }
+    return [definition];
+  });
+}
+
 export function componentLibraryDefinitionOverrideKey(className: unknown) {
   const normalizedClassName = String(className ?? "").trim();
   return normalizedClassName ? `class:${normalizedClassName}` : "";
@@ -45,7 +67,10 @@ export function buildComponentLibraryDefaultParameterDefinitions(
     terminalAssociations?: readonly ContainerTerminalAssociationValue[];
   } = {}
 ): DeviceParameterDefinition[] {
-  const generated = buildDefaultDeviceParameterDefinitions(terminalTypes, options);
+  const generatedDefaults = buildDefaultDeviceParameterDefinitions(terminalTypes, options);
+  const generated = isCanonicalBranchClass(className)
+    ? normalizeBranchTopologyParameterDefinitions(generatedDefaults)
+    : generatedDefaults;
   const devTypeDefinition: DeviceParameterDefinition = {
     cnName: "设备类型",
     enName: "dev_type",
@@ -317,9 +342,14 @@ export function resolveEditableComponentLibraryDefinition(options: {
         : matchingTemplates.flatMap((template) => (
             resolveEffectiveTemplateParameterDefinitions(template, templates)
           ));
-      const ownSeededDefinitions = metadata.isDerivedComponentLibrary
-        ? seededDefinitions.filter((definition) => !inheritedParameterKeys.has(definitionKey(definition.enName)))
+      const normalizedSeededDefinitions = isCanonicalBranchClass(metadata.className)
+        ? seededDefinitions.filter(
+            (definition) => !LEGACY_BRANCH_TOPOLOGY_FIELD_KEYS.has(definitionKey(definition.enName))
+          )
         : seededDefinitions;
+      const ownSeededDefinitions = metadata.isDerivedComponentLibrary
+        ? normalizedSeededDefinitions.filter((definition) => !inheritedParameterKeys.has(definitionKey(definition.enName)))
+        : normalizedSeededDefinitions;
       const parameterDefinitions = mergeParameterDefinitions(defaults, ownSeededDefinitions);
       const persistedDevTypeValue = Array.isArray(persistedOverride?.parameterDefinitions)
         ? String(

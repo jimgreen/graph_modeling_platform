@@ -5,6 +5,7 @@ import {
   calculateElectricalTopology,
   equivalentBoundaryModelInteractionType,
   isBlockingTopologyValidationError,
+  isModelInteractionNode,
   isRoutableLineDeviceKind,
   normalizeDeviceOperatingLimitsAfterTopology,
   routableLineDeviceEndpointRefs,
@@ -19,14 +20,18 @@ import {
 
 export type AllNetworkTopologyModelType = Extract<ModelType, "厂站" | "馈线" | "台区">;
 
-export type AllNetworkTopologyModel = {
+export type AllNetworkTopologyReferenceModel = {
   projectId: string;
   schemeId: string;
   schemePath: string[];
   name: string;
   idx: number;
-  modelType: AllNetworkTopologyModelType;
+  modelType: ModelType | "";
   record: SavedProjectRecord;
+};
+
+export type AllNetworkTopologyModel = Omit<AllNetworkTopologyReferenceModel, "modelType"> & {
+  modelType: AllNetworkTopologyModelType;
 };
 
 export type AllNetworkTopologyAlert = {
@@ -54,16 +59,15 @@ function normalizedModelIndex(value: unknown) {
   return Number.isSafeInteger(numeric) && numeric > 0 ? numeric : 0;
 }
 
-export function collectAllNetworkTopologyModels(schemes: readonly SavedSchemeRecord[]): AllNetworkTopologyModel[] {
-  const models: AllNetworkTopologyModel[] = [];
+export function collectAllNetworkTopologyReferenceModels(
+  schemes: readonly SavedSchemeRecord[]
+): AllNetworkTopologyReferenceModel[] {
+  const models: AllNetworkTopologyReferenceModel[] = [];
   const visit = (items: readonly SavedSchemeRecord[], parentPath: readonly string[]) => {
     for (const scheme of items) {
       const schemePath = [...parentPath, scheme.name];
       for (const record of scheme.projects ?? []) {
-        const modelType = String(record.project?.modelType ?? "").trim() as AllNetworkTopologyModelType;
-        if (!ALL_NETWORK_MODEL_TYPES.has(modelType)) {
-          continue;
-        }
+        const modelType = String(record.project?.modelType ?? "").trim() as ModelType | "";
         models.push({
           projectId: record.id,
           schemeId: scheme.id,
@@ -82,6 +86,13 @@ export function collectAllNetworkTopologyModels(schemes: readonly SavedSchemeRec
     (left.idx || Number.MAX_SAFE_INTEGER) - (right.idx || Number.MAX_SAFE_INTEGER) ||
     left.name.localeCompare(right.name, "zh-CN") ||
     left.projectId.localeCompare(right.projectId)
+  );
+}
+
+export function collectAllNetworkTopologyModels(schemes: readonly SavedSchemeRecord[]): AllNetworkTopologyModel[] {
+  return collectAllNetworkTopologyReferenceModels(schemes).filter(
+    (model): model is AllNetworkTopologyModel =>
+      ALL_NETWORK_MODEL_TYPES.has(model.modelType as AllNetworkTopologyModelType)
   );
 }
 
@@ -167,16 +178,15 @@ function topologyErrorsForModel(model: AllNetworkTopologyModel): AllNetworkTopol
 
 function selectedTargetKeys(models: readonly AllNetworkTopologyModel[]) {
   const ids = new Set(models.map((model) => model.projectId).filter(Boolean));
-  const names = new Set(models.map((model) => model.name.trim()).filter(Boolean));
-  return { ids, names };
+  return { ids };
 }
 
 function missingModelWarnings(
   selectedModels: readonly AllNetworkTopologyModel[],
-  availableModels: readonly AllNetworkTopologyModel[]
+  availableModels: readonly AllNetworkTopologyReferenceModel[]
 ): AllNetworkTopologyAlert[] {
   const selectedTargets = selectedTargetKeys(selectedModels);
-  const availableTargets = selectedTargetKeys(availableModels);
+  const availableTargetById = new Map(availableModels.map((model) => [model.projectId, model]));
   const warnings: AllNetworkTopologyAlert[] = [];
   for (const model of selectedModels) {
     const nodes = model.record.project.nodes;
@@ -188,29 +198,31 @@ function missingModelWarnings(
       const refs = routableLineDeviceEndpointRefs(line);
       for (const side of ["source", "target"] as const) {
         const boundaryNode = refs[side] ? nodeById.get(refs[side]!.nodeId) : undefined;
-        const boundaryType = boundaryNode ? equivalentBoundaryModelInteractionType(boundaryNode) : "";
+        const equivalentBoundaryType = boundaryNode ? equivalentBoundaryModelInteractionType(boundaryNode) : "";
+        const boundaryType = boundaryNode && isModelInteractionNode(boundaryNode)
+          ? equivalentBoundaryType || String(boundaryNode.params.modelInteractionType ?? "").trim() || "模型交互"
+          : "";
         if (!boundaryNode || !boundaryType) {
           continue;
         }
         const targetProjectId = String(boundaryNode.params.buttonTargetProjectId ?? "").trim();
         const targetProjectName = String(boundaryNode.params.buttonTargetProjectName ?? "").trim();
-        const selected = Boolean(
-          (targetProjectId && selectedTargets.ids.has(targetProjectId)) ||
-          (targetProjectName && selectedTargets.names.has(targetProjectName))
-        );
-        if (selected) {
+        const selfReferenced = Boolean(targetProjectId && targetProjectId === model.projectId);
+        const selected = Boolean(targetProjectId && selectedTargets.ids.has(targetProjectId));
+        const targetModel = targetProjectId ? availableTargetById.get(targetProjectId) : undefined;
+        const endpointLabel = side === "source" ? "首端" : "末端";
+        const message = !targetProjectId
+          ? `线路“${line.name || line.id}”的${endpointLabel}连接到${boundaryType}模型按钮，但该按钮的关联模型字段 buttonTargetProjectId 未定义。`
+          : selfReferenced
+            ? `线路“${line.name || line.id}”的${endpointLabel}连接到${boundaryType}模型按钮，但其 buttonTargetProjectId=${targetProjectId} 与当前模型“${model.name}”的 projectId 相同，不允许关联本模型。`
+          : !targetModel
+            ? `线路“${line.name || line.id}”的${endpointLabel}连接到${boundaryType}模型“${targetProjectName || targetProjectId}”（buttonTargetProjectId=${targetProjectId}），但该模型不存在，无法参与本轮全网拓扑。`
+          : equivalentBoundaryType && !selected
+            ? `线路“${line.name || line.id}”的${endpointLabel}连接到${boundaryType}模型“${targetModel.name}”，但该模型未参与本轮全网拓扑。`
+            : "";
+        if (!message) {
           continue;
         }
-        const configuredTarget = targetProjectName || targetProjectId;
-        const targetExists = Boolean(
-          (targetProjectId && availableTargets.ids.has(targetProjectId)) ||
-          (targetProjectName && availableTargets.names.has(targetProjectName))
-        );
-        const message = !configuredTarget
-          ? `线路“${line.name || line.id}”的${boundaryType}边界按钮尚未指定关联模型。`
-          : targetExists
-            ? `线路“${line.name || line.id}”所关联的${boundaryType}模型“${configuredTarget}”未参与本轮全网拓扑。`
-            : `线路“${line.name || line.id}”所关联的${boundaryType}模型“${configuredTarget}”不存在或未加载。`;
         warnings.push({
           id: `${model.projectId}:missing-related-model:${line.id}:${side}`,
           projectId: model.projectId,
@@ -229,11 +241,12 @@ function missingModelWarnings(
 
 export function analyzeAllNetworkTopology(
   selectedModels: readonly AllNetworkTopologyModel[],
-  availableModels: readonly AllNetworkTopologyModel[] = selectedModels
+  availableModels: readonly AllNetworkTopologyReferenceModel[] = selectedModels
 ): AllNetworkTopologyResult {
   const orderedModels = [...selectedModels].sort((left, right) => left.idx - right.idx);
+  const modelInteractionWarnings = missingModelWarnings(orderedModels, availableModels);
   return {
     errors: orderedModels.flatMap(topologyErrorsForModel),
-    warnings: missingModelWarnings(orderedModels, availableModels)
+    warnings: modelInteractionWarnings
   };
 }

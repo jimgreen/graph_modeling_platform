@@ -2217,7 +2217,13 @@ export function renderAppView(__appScope: Record<string, any>) {
           <button className="topbar-primary-button" onClick={runTopologyCalculation} disabled={isBrowseMode} title="图上拓扑" aria-label="图上拓扑">
             <Grid2X2 size={16}/>
           </button>
-          <button className="topbar-primary-button" onClick={() => __appScope.setAllNetworkTopologyDialogOpen(true)} title="全网拓扑" aria-label="全网拓扑">
+          <button
+            className={`topbar-primary-button ${__appScope.allNetworkTopologyDialogOpen ? "active" : ""}`}
+            onClick={() => __appScope.setAllNetworkTopologyDialogOpen((current: boolean) => !current)}
+            title={__appScope.allNetworkTopologyDialogOpen ? "隐藏全网拓扑窗口" : "显示全网拓扑窗口"}
+            aria-label="全网拓扑"
+            aria-pressed={Boolean(__appScope.allNetworkTopologyDialogOpen)}
+          >
             <Network size={16}/>
           </button>
           <button className={`topbar-primary-button ${topologyErrors.length > 0 && !topologyWarningPanelClosed ? "active" : ""}`} onClick={openTopologyWarningPanel} disabled={topologyErrors.length === 0} title={topologyErrors.length > 0 ? "显示告警窗口" : "当前没有拓扑告警"} aria-label="告警窗口">
@@ -3680,7 +3686,7 @@ export function renderAppView(__appScope: Record<string, any>) {
             </div>
           </section>
         </div>)}
-      {pendingUnsavedAction && (<div className="image-picker-backdrop" onPointerDown={() => resolveUnsavedChangeAction("cancel")}>
+      {pendingUnsavedAction && (<div className="image-picker-backdrop unsaved-change-backdrop" onPointerDown={() => resolveUnsavedChangeAction("cancel")}>
           <section className="unsaved-change-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { resolveUnsavedChangeAction("cancel"); } }} role="dialog" aria-modal="true" aria-labelledby="unsaved-change-title">
             <WindowCloseButton label="关闭未保存修改提示" onClick={() => resolveUnsavedChangeAction("cancel")} />
             <div className="image-picker-title">

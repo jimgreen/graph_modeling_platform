@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Download, Network } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { AlertTriangle, ChevronRight, Download, FolderTree, Network } from "lucide-react";
 
 import {
   analyzeAllNetworkTopology,
   collectAllNetworkTopologyModels,
+  collectAllNetworkTopologyReferenceModels,
   defaultAllNetworkTopologySelection,
   type AllNetworkTopologyAlert,
   type AllNetworkTopologyModel,
@@ -24,7 +25,61 @@ type CompletedTopologyRun = {
   result: AllNetworkTopologyResult;
 };
 
+type FloatingWindowFrame = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type FloatingWindowPointerState = {
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  frame: FloatingWindowFrame;
+};
+
 const MODEL_TYPE_ORDER = ["厂站", "馈线", "台区"] as const;
+const FLOATING_WINDOW_MARGIN = 8;
+const FLOATING_WINDOW_MIN_WIDTH = 760;
+const FLOATING_WINDOW_MIN_HEIGHT = 520;
+
+function viewportSize() {
+  return {
+    width: typeof window === "undefined" ? 1440 : window.innerWidth,
+    height: typeof window === "undefined" ? 900 : window.innerHeight
+  };
+}
+
+function clampFloatingWindowFrame(frame: FloatingWindowFrame): FloatingWindowFrame {
+  const viewport = viewportSize();
+  const maxWidth = Math.max(320, viewport.width - FLOATING_WINDOW_MARGIN * 2);
+  const maxHeight = Math.max(280, viewport.height - FLOATING_WINDOW_MARGIN * 2);
+  const minWidth = Math.min(FLOATING_WINDOW_MIN_WIDTH, maxWidth);
+  const minHeight = Math.min(FLOATING_WINDOW_MIN_HEIGHT, maxHeight);
+  const width = Math.min(maxWidth, Math.max(minWidth, frame.width));
+  const height = Math.min(maxHeight, Math.max(minHeight, frame.height));
+  const maxX = Math.max(FLOATING_WINDOW_MARGIN, viewport.width - width - FLOATING_WINDOW_MARGIN);
+  const maxY = Math.max(FLOATING_WINDOW_MARGIN, viewport.height - height - FLOATING_WINDOW_MARGIN);
+  return {
+    x: Math.min(maxX, Math.max(FLOATING_WINDOW_MARGIN, frame.x)),
+    y: Math.min(maxY, Math.max(FLOATING_WINDOW_MARGIN, frame.y)),
+    width,
+    height
+  };
+}
+
+function defaultFloatingWindowFrame(): FloatingWindowFrame {
+  const viewport = viewportSize();
+  const width = Math.min(1180, Math.max(320, viewport.width - 48));
+  const height = Math.min(760, Math.max(280, viewport.height - 48));
+  return clampFloatingWindowFrame({
+    x: (viewport.width - width) / 2,
+    y: (viewport.height - height) / 2,
+    width,
+    height
+  });
+}
 
 function selectionKey(ids: Iterable<string>) {
   return [...ids].sort().join("|");
@@ -66,23 +121,38 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
     () => collectAllNetworkTopologyModels(scope.schemes ?? []),
     [scope.schemes]
   );
+  const referenceModels = useMemo(
+    () => collectAllNetworkTopologyReferenceModels(scope.schemes ?? []),
+    [scope.schemes]
+  );
   const modelSignature = models.map((model) => `${model.projectId}:${model.idx}:${model.modelType}`).join("|");
   const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(new Set());
+  const [expandedModelTypes, setExpandedModelTypes] = useState<Set<string>>(new Set(MODEL_TYPE_ORDER));
   const [activeTab, setActiveTab] = useState<"errors" | "warnings">("errors");
   const [running, setRunning] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [completedRun, setCompletedRun] = useState<CompletedTopologyRun | null>(null);
+  const [windowFrame, setWindowFrame] = useState<FloatingWindowFrame>(defaultFloatingWindowFrame);
   const selectAllRef = useRef<HTMLInputElement | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const windowDragRef = useRef<FloatingWindowPointerState | null>(null);
+  const windowResizeRef = useRef<FloatingWindowPointerState | null>(null);
 
   useEffect(() => {
-    if (!open) {
-      return;
-    }
     setSelectedProjectIds(new Set(defaultAllNetworkTopologySelection(models)));
+    setExpandedModelTypes(new Set(MODEL_TYPE_ORDER));
     setActiveTab("errors");
     setCompletedRun(null);
     setRunning(false);
-  }, [open, modelSignature]);
+  }, [modelSignature]);
+
+  useEffect(() => {
+    const handleViewportResize = () => {
+      setWindowFrame((current) => clampFloatingWindowFrame(current));
+    };
+    window.addEventListener("resize", handleViewportResize);
+    return () => window.removeEventListener("resize", handleViewportResize);
+  }, []);
 
   const allSelected = models.length > 0 && selectedProjectIds.size === models.length;
   const partiallySelected = selectedProjectIds.size > 0 && !allSelected;
@@ -91,10 +161,6 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
       selectAllRef.current.indeterminate = partiallySelected;
     }
   }, [partiallySelected]);
-
-  if (!open) {
-    return null;
-  }
 
   const currentSelectionKey = selectionKey(selectedProjectIds);
   const resultIsCurrent = completedRun?.selectionKey === currentSelectionKey;
@@ -122,12 +188,110 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
     clearCompletedRun();
   };
 
+  const toggleModelType = (type: (typeof MODEL_TYPE_ORDER)[number]) => {
+    setExpandedModelTypes((current) => {
+      const next = new Set(current);
+      if (next.has(type)) {
+        next.delete(type);
+      } else {
+        next.add(type);
+      }
+      return next;
+    });
+  };
+
   const toggleAll = () => {
     setSelectedProjectIds(allSelected
       ? new Set()
       : new Set(defaultAllNetworkTopologySelection(models))
     );
     clearCompletedRun();
+  };
+
+  const handleWindowDragPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+    const rect = dialogRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return;
+    }
+    windowDragRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      frame: { x: rect.left, y: rect.top, width: rect.width, height: rect.height }
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  };
+
+  const handleWindowDragPointerMove = (event: ReactPointerEvent<HTMLElement>) => {
+    const state = windowDragRef.current;
+    if (!state || state.pointerId !== event.pointerId) {
+      return;
+    }
+    setWindowFrame(clampFloatingWindowFrame({
+      ...state.frame,
+      x: state.frame.x + event.clientX - state.startClientX,
+      y: state.frame.y + event.clientY - state.startClientY
+    }));
+  };
+
+  const finishWindowDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    if (windowDragRef.current?.pointerId !== event.pointerId) {
+      return;
+    }
+    windowDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const handleWindowResizePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+    const rect = dialogRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return;
+    }
+    windowResizeRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      frame: { x: rect.left, y: rect.top, width: rect.width, height: rect.height }
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const handleWindowResizePointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const state = windowResizeRef.current;
+    if (!state || state.pointerId !== event.pointerId) {
+      return;
+    }
+    const viewport = viewportSize();
+    const maxWidth = Math.max(320, viewport.width - state.frame.x - FLOATING_WINDOW_MARGIN);
+    const maxHeight = Math.max(280, viewport.height - state.frame.y - FLOATING_WINDOW_MARGIN);
+    const minWidth = Math.min(FLOATING_WINDOW_MIN_WIDTH, maxWidth);
+    const minHeight = Math.min(FLOATING_WINDOW_MIN_HEIGHT, maxHeight);
+    setWindowFrame({
+      ...state.frame,
+      width: Math.min(maxWidth, Math.max(minWidth, state.frame.width + event.clientX - state.startClientX)),
+      height: Math.min(maxHeight, Math.max(minHeight, state.frame.height + event.clientY - state.startClientY))
+    });
+  };
+
+  const finishWindowResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (windowResizeRef.current?.pointerId !== event.pointerId) {
+      return;
+    }
+    windowResizeRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
   };
 
   const runTopology = async () => {
@@ -146,14 +310,14 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
     const loadedModels = loadResults.flatMap((item) => item.model ? [item.model] : []);
     const loadErrors = loadResults.flatMap((item) => item.error ? [item.error] : []);
     try {
-      const result = analyzeAllNetworkTopology(loadedModels, models);
+      const result = analyzeAllNetworkTopology(loadedModels, referenceModels);
       const nextResult = { ...result, errors: [...loadErrors, ...result.errors] };
       setCompletedRun({
         selectionKey: selectionKey(selectedProjectIds),
         models: loadedModels,
         result: nextResult
       });
-      setActiveTab(nextResult.errors.length > 0 ? "errors" : "warnings");
+      setActiveTab(nextResult.errors.length > 0 || nextResult.warnings.length === 0 ? "errors" : "warnings");
       scope.writeOperationLog?.(
         `全网拓扑完成：${loadedModels.length} 个模型，${nextResult.errors.length} 条错误，${nextResult.warnings.length} 条警告`
       );
@@ -188,14 +352,19 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
             edgeId: alert.edgeId,
             relatedNodeIds: alert.relatedNodeIds
           });
-          latestScope.setAllNetworkTopologyDialogOpen?.(false);
         });
       }
     });
   };
 
   const exportEFile = async () => {
-    if (!completedRun || !resultIsCurrent || exporting || completedRun.models.length === 0) {
+    if (
+      !completedRun ||
+      !resultIsCurrent ||
+      exporting ||
+      completedRun.models.length === 0 ||
+      completedRun.result.errors.length > 0
+    ) {
       return;
     }
     setExporting(true);
@@ -241,12 +410,23 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
   };
 
   return (
-    <div className="all-network-topology-backdrop" role="presentation">
+    <div
+      className={`all-network-topology-window-layer ${open ? "visible" : "hidden"}`}
+      role="presentation"
+      aria-hidden={!open}
+    >
       <section
+        ref={dialogRef}
         className="all-network-topology-dialog window-close-host"
+        style={{
+          left: `${windowFrame.x}px`,
+          top: `${windowFrame.y}px`,
+          width: `${windowFrame.width}px`,
+          height: `${windowFrame.height}px`
+        }}
         role="dialog"
-        aria-modal="true"
         aria-labelledby="all-network-topology-title"
+        aria-describedby="all-network-topology-window-help"
         onKeyDown={(event) => {
           if (event.key === "Escape" && !running && !exporting) {
             scope.setAllNetworkTopologyDialogOpen?.(false);
@@ -258,10 +438,17 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
           onClick={() => scope.setAllNetworkTopologyDialogOpen?.(false)}
           disabled={running || exporting}
         />
-        <header className="all-network-topology-header">
+        <header
+          className="all-network-topology-header"
+          onPointerDown={handleWindowDragPointerDown}
+          onPointerMove={handleWindowDragPointerMove}
+          onPointerUp={finishWindowDrag}
+          onPointerCancel={finishWindowDrag}
+          title="拖拽标题栏移动窗口"
+        >
           <div>
             <h2 id="all-network-topology-title"><Network size={20} aria-hidden="true" />全网拓扑</h2>
-            <p>选择需要联合检查的厂站、馈线和台区模型；模型列表默认全部选中。</p>
+            <p id="all-network-topology-window-help">选择需要联合检查的厂站、馈线和台区模型；模型列表默认全部选中。拖拽标题栏移动窗口，拖拽右下角调整大小。</p>
           </div>
           <span>{selectedProjectIds.size} / {models.length} 个模型</span>
         </header>
@@ -282,32 +469,72 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
             <div className="all-network-topology-model-tree">
               {models.length === 0 ? (
                 <p className="all-network-topology-empty">当前模型库中没有厂站、馈线或台区模型。</p>
-              ) : MODEL_TYPE_ORDER.map((type) => {
-                const group = modelsByType.get(type) ?? [];
-                if (group.length === 0) {
-                  return null;
-                }
-                return (
-                  <section className="all-network-topology-model-group" key={type}>
-                    <h3>{type}<span>{group.length}</span></h3>
-                    {group.map((model) => (
-                      <label className="all-network-topology-model-row" key={model.projectId}>
-                        <input
-                          type="checkbox"
-                          checked={selectedProjectIds.has(model.projectId)}
-                          onChange={() => toggleProject(model.projectId)}
-                          disabled={running}
-                        />
-                        <span className="all-network-topology-model-index">{model.idx || "-"}</span>
-                        <span className="all-network-topology-model-name" title={`${model.schemePath.join(" / ")} / ${model.name}`}>
-                          {model.name}
-                          <small>{model.schemePath.join(" / ")}</small>
-                        </span>
-                      </label>
-                    ))}
-                  </section>
-                );
-              })}
+              ) : (
+                <ul className="all-network-topology-tree-list" role="tree" aria-label="模型类型与模型">
+                  {MODEL_TYPE_ORDER.map((type) => {
+                    const group = modelsByType.get(type) ?? [];
+                    if (group.length === 0) {
+                      return null;
+                    }
+                    const expanded = expandedModelTypes.has(type);
+                    return (
+                      <li
+                        className="all-network-topology-tree-group"
+                        key={type}
+                        role="treeitem"
+                        aria-level={1}
+                        aria-expanded={expanded}
+                      >
+                        <button
+                          type="button"
+                          className="all-network-topology-tree-branch"
+                          onClick={() => toggleModelType(type)}
+                          aria-label={`${expanded ? "收起" : "展开"}${type}模型`}
+                        >
+                          <ChevronRight
+                            className={`all-network-topology-tree-chevron${expanded ? " expanded" : ""}`}
+                            size={15}
+                            aria-hidden="true"
+                          />
+                          <FolderTree size={16} aria-hidden="true" />
+                          <strong>{type}</strong>
+                          <span>{group.length}</span>
+                        </button>
+                        {expanded ? (
+                          <ul className="all-network-topology-tree-children" role="group">
+                            {group.map((model) => {
+                              const selected = selectedProjectIds.has(model.projectId);
+                              return (
+                                <li
+                                  className="all-network-topology-tree-model"
+                                  key={model.projectId}
+                                  role="treeitem"
+                                  aria-level={2}
+                                  aria-selected={selected}
+                                >
+                                  <label className="all-network-topology-model-row">
+                                    <input
+                                      type="checkbox"
+                                      checked={selected}
+                                      onChange={() => toggleProject(model.projectId)}
+                                      disabled={running}
+                                    />
+                                    <span className="all-network-topology-model-index">{model.idx || "-"}</span>
+                                    <span className="all-network-topology-model-name" title={`${model.schemePath.join(" / ")} / ${model.name}`}>
+                                      {model.name}
+                                      <small>{model.schemePath.join(" / ")}</small>
+                                    </span>
+                                  </label>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </div>
             <button
               type="button"
@@ -370,7 +597,7 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
               ) : displayedAlerts.length === 0 ? (
                 <div className="all-network-topology-placeholder success">
                   <AlertTriangle size={28} aria-hidden="true" />
-                  <p>{activeTab === "errors" ? "未发现单模型拓扑错误。" : "未发现关联模型缺失警告。"}</p>
+                  <p>{activeTab === "errors" ? "未发现全网拓扑错误。" : "未发现全网拓扑警告。"}</p>
                 </div>
               ) : null}
             </div>
@@ -379,7 +606,15 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
               <button
                 type="button"
                 onClick={() => void exportEFile()}
-                disabled={!completedRun || !resultIsCurrent || exporting || running || completedRun.models.length === 0}
+                disabled={
+                  !completedRun ||
+                  !resultIsCurrent ||
+                  exporting ||
+                  running ||
+                  completedRun.models.length === 0 ||
+                  completedRun.result.errors.length > 0
+                }
+                title={displayedResult.errors.length > 0 ? "存在错误信息，不能导出 E 文件" : "导出 E 文件"}
               >
                 <Download size={16} aria-hidden="true" />
                 {exporting ? "正在导出..." : "导出 E 文件"}
@@ -387,6 +622,16 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
             </footer>
           </main>
         </div>
+        <button
+          type="button"
+          className="all-network-topology-resize-handle"
+          aria-label="调整全网拓扑窗口大小"
+          title="拖拽调整窗口大小"
+          onPointerDown={handleWindowResizePointerDown}
+          onPointerMove={handleWindowResizePointerMove}
+          onPointerUp={finishWindowResize}
+          onPointerCancel={finishWindowResize}
+        />
       </section>
     </div>
   );

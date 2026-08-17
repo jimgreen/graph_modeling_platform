@@ -139,6 +139,22 @@ describe("app view device model parameter keys", () => {
     expect(resolveDeviceModelPanelDevType("custom-source", { component_type: "CustomGenerator" })).toBe("CustomGenerator");
   });
 
+  test("shows only i_node and j_node for AC and DC branch models", () => {
+    for (const kind of ["ac-line", "dc-line"] as const) {
+      const template = DEVICE_LIBRARY.find((candidate) => candidate.kind === kind)!;
+      const definitionGroups = resolveDeviceModelPanelDefinitionGroups(template, DEVICE_LIBRARY)!;
+      const keys = resolveDeviceModelPanelParameterKeys(
+        getEParameterKeys(template.kind, template.params),
+        getTemplateParameterDefinitions(template),
+        Object.keys(template.params),
+        definitionGroups
+      );
+
+      expect(keys, kind).toEqual(expect.arrayContaining(["i_node", "j_node"]));
+      expect(keys, kind).not.toEqual(expect.arrayContaining(["t1_node", "t2_node"]));
+    }
+  });
+
   test("shows base class E fields together with derived-specific fields", () => {
     const keys = resolveDeviceModelPanelParameterKeys(
       ["idx", "name", "node", "control_type", "p_set", "run_stat"],
