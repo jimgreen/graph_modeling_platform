@@ -2078,7 +2078,10 @@ export function createDeleteRoutableLineBendPoint(__appScope: Record<string, any
 
 export function createStartConnectFromTerminal(__appScope: Record<string, any>) {
   return (node: ModelNode, terminalId: string, point?: Point) => {
-  const { activeLayerNodeIdSet, applyConnectPreviewState, getModelEdgeEndpointPoint, requireEditMode, resetRoutableLinePreviewState, setCanvasSelectionScope, setConnectSource, setMode, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds } = __appScope;
+  const { activeLayerNodeIdSet, applyConnectPreviewState, getModelEdgeEndpointPoint, isModelInteractionNode, requireEditMode, resetRoutableLinePreviewState, setCanvasSelectionScope, setConnectSource, setMode, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds } = __appScope;
+    if (isModelInteractionNode(node)) {
+      return;
+    }
     if (!requireEditMode("建立连接线")) {
       return;
     }

@@ -1012,6 +1012,7 @@ export type UnsavedChangeAction =
       project: SavedProjectRecord;
       schemeId: string;
       label: string;
+      onLoaded?: () => void;
     }
   | {
       kind: "enter-browse";

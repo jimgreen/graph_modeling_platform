@@ -629,6 +629,7 @@ export function App() {
 // __appScope 每帧重建，直接闭包捕获会冻结在首次渲染（activeProjectKey 等永远为旧值）。
 const __appScopeRef = useRef(__appScope);
 __appScopeRef.current = __appScope;
+Object.assign(__appScope, { __appScopeRef });
 Object.assign(__appScope, APP_STATIC_SCOPE);
 Object.assign(__appScope, { stateIconDrawingFrameRect, stateIconDrawingInitialFrame });
 const initialSavedSchemes = useMemo<SavedSchemeRecord[]>(() => [], []); Object.assign(__appScope, { initialSavedSchemes });
@@ -1393,6 +1394,8 @@ const [colorPaletteDraft, setColorPaletteDraft] = useState<ColorPalette>(() => r
 Object.assign(__appScope, { colorPaletteDraft, setColorPaletteDraft });
 const [colorPaletteDialogOpen, setColorPaletteDialogOpen] = useState(false);
 Object.assign(__appScope, { colorPaletteDialogOpen, setColorPaletteDialogOpen });
+const [allNetworkTopologyDialogOpen, setAllNetworkTopologyDialogOpen] = useState(false);
+Object.assign(__appScope, { allNetworkTopologyDialogOpen, setAllNetworkTopologyDialogOpen });
 const [colorPaletteTab, setColorPaletteTab] = useState<ColorDisplayMode>(() => readColorDisplayMode());
 Object.assign(__appScope, { colorPaletteTab, setColorPaletteTab });
 const [voltageLevelSettings, setVoltageLevelSettings] = useState<VoltageLevelSettings>(() => readVoltageLevelSettings());

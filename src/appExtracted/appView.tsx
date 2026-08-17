@@ -20,6 +20,7 @@ import { buildUserCustomizationInventory, restoreUserCustomizationItems, type Us
 import { createMeasurementFieldParameterDefinition } from "../measurementDefinitionTypes";
 import { moveSelectedTableRows, nextTableRowSelection, uniqueCopiedFieldName } from "../definitionTableSelection";
 import { WindowCloseButton } from "../WindowCloseButton";
+import { AllNetworkTopologyDialog } from "../AllNetworkTopologyDialog";
 import {
   resolveComponentLibraryClassFamilyMetadata,
   resolveComponentLibraryClassMetadata
@@ -468,6 +469,7 @@ function RuntimeWsIndicator({ __appScope }: { __appScope: Record<string, any> })
 }
 
 export function renderAppView(__appScope: Record<string, any>) {
+  const Network = __appScope.Network;
   const { confirmLibraryPackageDialog, closeLibraryPackageDialog, libraryPackageDialogMode, libraryPackageDialogOpen, libraryPackageDialogScope, libraryPackageDialogScopeOptions, openLibraryPackageDialog, requestCloseCustomDeviceDialog, setExpandedDefinitionGroups, setCollapsedDefinitionComponentLibraries, setLibraryPackageDialogMode, setLibraryPackageDialogScope } = __appScope;
   const { subcontrolarea, setSubcontrolarea, modelType, setModelType, substation, setSubstation, feeder, setFeeder, taiqu, setTaiqu } = __appScope;
   const { voltageLevelSettings, setVoltageLevelSettings, voltageLevelDialogOpen, setVoltageLevelDialogOpen } = __appScope;
@@ -2214,6 +2216,9 @@ export function renderAppView(__appScope: Record<string, any>) {
           </button>
           <button className="topbar-primary-button" onClick={runTopologyCalculation} disabled={isBrowseMode} title="图上拓扑" aria-label="图上拓扑">
             <Grid2X2 size={16}/>
+          </button>
+          <button className="topbar-primary-button" onClick={() => __appScope.setAllNetworkTopologyDialogOpen(true)} title="全网拓扑" aria-label="全网拓扑">
+            <Network size={16}/>
           </button>
           <button className={`topbar-primary-button ${topologyErrors.length > 0 && !topologyWarningPanelClosed ? "active" : ""}`} onClick={openTopologyWarningPanel} disabled={topologyErrors.length === 0} title={topologyErrors.length > 0 ? "显示告警窗口" : "当前没有拓扑告警"} aria-label="告警窗口">
             <Bell size={16}/>
@@ -6118,5 +6123,6 @@ export function renderAppView(__appScope: Record<string, any>) {
             )}
           </section>
         </div>)}
+      <AllNetworkTopologyDialog scope={__appScope} />
     </div></>);
 }
