@@ -1842,6 +1842,50 @@ test("maps graphical AC and DC buses to real bus sections in E parameter files",
   });
 });
 
+test("marks ACNode and DCNode records backed by real bus devices", () => {
+  const acBus = createDefaultNode("ac-bus", { x: 100, y: 100 });
+  const acBusLoad = createDefaultNode("ac-load", { x: 100, y: 220 });
+  const acPlainLoad = createDefaultNode("ac-load", { x: 320, y: 220 });
+  const dcBus = createDefaultNode("dc-bus", { x: 540, y: 100 });
+  const dcBusLoad = createDefaultNode("dc-load", { x: 540, y: 220 });
+  const dcPlainLoad = createDefaultNode("dc-load", { x: 760, y: 220 });
+  acBus.name = "ac_real_bus";
+  acBusLoad.name = "ac_bus_load";
+  acPlainLoad.name = "ac_plain_node";
+  dcBus.name = "dc_real_bus";
+  dcBusLoad.name = "dc_bus_load";
+  dcPlainLoad.name = "dc_plain_node";
+
+  const nodeInterface = (componentLibrary: "ACNode" | "DCNode") => ({
+    componentLibrary,
+    exportEnabled: true,
+    exportName: componentLibrary,
+    fields: [
+      { sourceName: "idx", exportEnabled: true, exportName: "idx" },
+      { sourceName: "name", exportEnabled: true, exportName: "name" },
+      { sourceName: "realbs", exportEnabled: true, exportName: "realbs" }
+    ]
+  });
+  const records = buildEDeviceRecords({
+    version: 1,
+    name: "真实母线节点标识",
+    nodes: [acBus, acBusLoad, acPlainLoad, dcBus, dcBusLoad, dcPlainLoad],
+    edges: [
+      { id: "ac-bus-load", sourceId: acBus.id, targetId: acBusLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" },
+      { id: "dc-bus-load", sourceId: dcBus.id, targetId: dcBusLoad.id, sourceTerminalId: "t1", targetTerminalId: "t1" }
+    ]
+  }, {
+    interfaceDefinitions: [nodeInterface("ACNode"), nodeInterface("DCNode")]
+  });
+  const acNodes = records.filter((record) => record.section === "ACNode" && record.kind === "ac-node");
+  const dcNodes = records.filter((record) => record.section === "DCNode" && record.kind === "dc-node");
+
+  expect(acNodes.find((record) => record.params.name === "ac_real_bus")?.params.realbs).toBe("1");
+  expect(acNodes.find((record) => record.params.name === "ac_plain_node")?.params.realbs).toBe("0");
+  expect(dcNodes.find((record) => record.params.name === "dc_real_bus")?.params.realbs).toBe("1");
+  expect(dcNodes.find((record) => record.params.name === "dc_plain_node")?.params.realbs).toBe("0");
+});
+
 test("exports a three-winding transformer as one independent device with three-side parameters", () => {
   const highBus = createDefaultNode("ac-bus", { x: 80, y: 80 });
   const mediumBus = createDefaultNode("ac-bus", { x: 80, y: 260 });

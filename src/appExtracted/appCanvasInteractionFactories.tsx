@@ -4259,6 +4259,7 @@ export function createStartSingleTransformDrag(__appScope: Record<string, any>) 
       kind,
       nodeId: node.id,
       originalNode: snapshotSingleTransformNode(node),
+      originalSize: { ...node.size },
       startPoint,
       rotationStartPoint: kind === "rotate"
         ? { x: node.position.x + rotateHandleStart.x, y: node.position.y + rotateHandleStart.y }

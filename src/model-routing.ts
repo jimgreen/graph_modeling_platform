@@ -2547,6 +2547,10 @@ function isBoundaryBusNode(node: Pick<ModelNode, "kind"> & Partial<Pick<ModelNod
   );
 }
 
+export function isLineSegmentBusNode(node: ModelNode): boolean {
+  return isBusNode(node) && !isBoundaryBusNode(node);
+}
+
 function usesBoundaryBusAnchors(node: Pick<ModelNode, "kind"> & Partial<Pick<ModelNode, "params">>): boolean {
   if (isBoundaryBusNode(node)) {
     return true;

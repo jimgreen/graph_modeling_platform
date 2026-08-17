@@ -792,6 +792,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     nodeLabelRotateDrag,
     nodes,
     panning,
+    pointerButtonsPressed,
     pendingNodeDragMoveRef,
     points,
     powerBaseValue,
@@ -3853,6 +3854,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       : null;
   Object.assign(__appScope, { selectedFloatingToolbarBounds });
   const selectedToolbarHidden = Boolean(
+      pointerButtonsPressed ||
       dragging ||
       transformDrag ||
       panning ||

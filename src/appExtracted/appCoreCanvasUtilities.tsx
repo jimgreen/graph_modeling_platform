@@ -523,7 +523,7 @@ import {
   resolveStateVisualImageHref,
   routableLineDeviceRenderLocalPoints,
 } from "../staticRenderUtils";
-import { snapSingleTerminalAnchorToNearestSide, projectedProportionalScaleFromHandleDelta } from "../transformUtils";
+import { snapSingleTerminalAnchorToNearestSide, projectedProportionalScaleFromHandleDelta, resizeLineSegmentBusGeometryFromHandleDrag } from "../transformUtils";
 import { DeviceGlyph, MemoDeviceGlyph, SvgMarkupChunk } from "../DeviceGlyph";
 import { buildSvgNodeLabelMarkup, svgDisplayAttribute, exportSvgSafeId, exportSvgLayerId, exportSvgUniqueId, exportSvgLayerScriptMarkup, exportDeviceMetadataAttributes, exportMeasurementGroupMetadataAttributes, exportMeasurementItemMetadataAttributes, exportMeasurementGroupBackgroundColor, exportMeasurementGroupBorderColor, exportMeasurementGroupBorderWidth, exportMeasurementGroupBorderDashArray, exportMeasurementGroupAnchorPoint, exportMeasurementGroupLocalOffset, exportMeasurementGroupMetrics, buildExportMeasurementGroupMarkup } from "../svgExportUtils";
 import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_PAGE_ID, isDefaultStatePageId, createStateDraftRow, createStateDraftRowFromDefaultVisual, createDefinitionStateDraftRows, normalizeStateDraftRows, validateStateDraftRows, stateVisualFromDraftRow, activeStateDraftRow, normalizeStatePageId, stateDraftImageValue, stateVisualShapeLabel, generateStateVisualShapeImage, stateIconDrawingElementId, visibleStateIconColor, createStateIconDrawingElement, createImportedStateIconElement, svgSourceFromDataUrl, parseStateIconSvgSource, stateIconSvgElementSource, parseSvgStyleAttribute, stateIconSvgReactAttributes, stateIconSvgNodeChildren, stateIconSvgNodeToReact, stateIconSvgSourceToReactNodes, createEditableStateIconElementsFromSvgSource, createStateIconDrawingInitialElements, svgSourceToDataUrl, stateIconDrawingSvgElementMarkup, stateIconDrawingElementMarkup, stateIconDrawingToImage, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "../stateIconDrawing";
@@ -758,6 +758,7 @@ export type SingleTransformDrag = {
   kind: "rotate" | ScaleHandleKind;
   nodeId: string;
   originalNode: GroupTransformNodeSnapshot;
+  originalSize?: ModelNode["size"];
   startPoint: Point;
   rotationStartPoint?: Point;
   previewPoint?: Point;
@@ -898,7 +899,7 @@ export function localScaleKindForScreenHandle(kind: ScaleHandleKind, rotation: n
   return Math.abs(localVector.x) >= Math.abs(localVector.y) ? "scale-x" : "scale-y";
 }
 
-export { snapSingleTerminalAnchorToNearestSide, projectedProportionalScaleFromHandleDelta } from "../transformUtils";
+export { snapSingleTerminalAnchorToNearestSide, projectedProportionalScaleFromHandleDelta, resizeLineSegmentBusGeometryFromHandleDrag } from "../transformUtils";
 
 export function groupTransformGeometry(drag: GroupTransformDrag, point: Point, options?: { snapRotation?: boolean }): GroupTransformGeometry {
   if (drag.kind === "rotate") {

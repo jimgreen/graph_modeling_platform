@@ -9,6 +9,8 @@ import {
   createSaveCurrentProject
 } from "./appExtracted/appProjectCanvasFactories";
 import { clampCanvasNoScrollOffset } from "./canvasViewport";
+import { createDefaultNode, getNodeScaleX, getNodeScaleY, isLineSegmentBusNode } from "./model";
+import { resizeLineSegmentBusGeometryFromHandleDrag } from "./transformUtils";
 
 function createLoadScope(overrides: Record<string, unknown> = {}) {
   const noop = vi.fn();
@@ -350,6 +352,108 @@ describe("canvas panning", () => {
 
     expect(pendingCanvasNoScrollOffsetRef.current).toEqual({ x: 0, y: 0 });
     expect(skipNextCanvasScrollSyncRef.current).toBe(false);
+  });
+});
+
+describe("line-segment bus pointer resizing", () => {
+  test("commits bus dimensions and position while leaving transform scale unchanged", () => {
+    const node = {
+      ...createDefaultNode("ac-bus", { x: 100, y: 100 }),
+      size: { width: 120, height: 28 },
+      scale: 1.25,
+      scaleX: 1,
+      scaleY: 1
+    };
+    const graphStore = {
+      nodeMap: new Map([[node.id, node]]),
+      nodes: [node]
+    };
+    const patchGraphNodes = vi.fn();
+    const setTransformDrag = vi.fn();
+    const transformDrag = {
+      kind: "scale-x",
+      nodeId: node.id,
+      originalNode: {
+        position: { ...node.position },
+        rotation: node.rotation,
+        scale: node.scale,
+        scaleX: node.scaleX,
+        scaleY: node.scaleY
+      },
+      originalSize: { ...node.size },
+      startPoint: { x: 174, y: 100 },
+      handleXDirection: 1,
+      handleYDirection: 0,
+      historyCaptured: false
+    };
+    const scope = {
+      buildRoutableLineEndpointPreviewNodeUpdates: () => [],
+      clampPointToCanvas: (point: unknown) => point,
+      connectSource: null,
+      contextMarqueeSelectionRef: { current: null },
+      draggingRef: { current: null },
+      getNodeScaleX,
+      getNodeScaleY,
+      graphStore,
+      isBusNode: () => true,
+      isGroupTransformDrag: (drag: object) => "groupId" in drag,
+      isLineSegmentBusNode,
+      lastCanvasClientPointerRef: { current: null },
+      lastCanvasPointerRef: { current: null },
+      lastRawCanvasPointerRef: { current: null },
+      latestGraphStoreRef: { current: graphStore },
+      libraryPlacement: null,
+      manualPathDrag: null,
+      marquee: null,
+      modifierSelectionPressRef: { current: null },
+      nodeLabelDrag: null,
+      nodeLabelRotateDrag: null,
+      panning: null,
+      panningRef: { current: null },
+      patchGraphNodes,
+      pushUndoSnapshot: vi.fn(),
+      resizeLineSegmentBusGeometryFromHandleDrag,
+      rewiring: null,
+      routableLineEndpointDrag: null,
+      routableLinePlacement: null,
+      screenToSvgPoint: (_svg: unknown, x: number, y: number) => ({ x, y }),
+      setTransformDrag,
+      signedScaleFromRotatedHandleDelta: vi.fn(),
+      signedScaleFromUprightHandleDelta: vi.fn(),
+      singleTransformBaseNode: (drag: typeof transformDrag, current: typeof node) => ({
+        ...current,
+        position: { ...drag.originalNode.position },
+        rotation: drag.originalNode.rotation,
+        scale: drag.originalNode.scale,
+        scaleX: drag.originalNode.scaleX,
+        scaleY: drag.originalNode.scaleY
+      }),
+      staticButtonPointerRef: { current: null },
+      staticDrawing: null,
+      svgRef: { current: {} },
+      terminalPress: null,
+      transformDrag,
+      transformDragChangedRef: { current: false },
+      updateMeasurementDrag: () => false,
+      updateMouseStatus: vi.fn()
+    };
+
+    createHandlePointerMove(scope as any)({
+      clientX: 214,
+      clientY: 100,
+      ctrlKey: false,
+      shiftKey: false
+    } as any);
+
+    expect(scope.pushUndoSnapshot).toHaveBeenCalledTimes(1);
+    expect(setTransformDrag).toHaveBeenCalledTimes(2);
+    expect(patchGraphNodes).toHaveBeenCalledTimes(1);
+    const resized = patchGraphNodes.mock.calls[0][0][0];
+    expect(resized.position).toEqual({ x: 120, y: 100 });
+    expect(resized.size).toEqual({ width: 160, height: 28 });
+    expect(resized.scale).toBe(1.25);
+    expect(resized.scaleX).toBe(1);
+    expect(resized.scaleY).toBe(1);
   });
 });
 

@@ -671,7 +671,7 @@ export function createHandleRoutableLineNodePathPointerDown(__appScope: Record<s
 
 export function createHandlePointerMove(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGSVGElement>) => {
-  const { CANVAS_SELECTION_DRAG_THRESHOLD, MOVE_BOUNDARY_GUARD, applyCanvasPanningVisualOffset, buildGroupTransformNodeUpdates, buildRoutableLineEndpointPreviewNodeUpdates, canvasBounds, canvasFrameRef, canvasFrameUserScrollRef, canvasNoScrollOffsetRef, clampCanvasNoScrollOffsetPoint, clampNumber, clampPointToCanvas, clampViewBoxToCanvas, connectSource, contextMarqueeSelectionRef, draggingRef, getNodeScaleX, getNodeScaleY, graphStore, isBusNode, isGroupTransformDrag, isRoutableLineDeviceKind, lastCanvasClientPointerRef, lastCanvasPointerRef, lastRawCanvasPointerRef, latestGraphStoreRef, libraryPlacement, manualPathDrag, marquee, modelGeometryInsideCanvasBounds, modifierSelectionPressRef, moveOrthogonalRouteSegment, moveRoutableLineDeviceSegment, nodeById, nodeLabelDrag, nodeLabelRotateDrag, nodeLabelRotationFromPoint, normalizeNodeLabelRotation, normalizeRotationDegrees, panning, panningRef, patchGraphNodes, patchSingleTerminalAnchorFromPoint, pendingCanvasNoScrollOffsetRef, proportionalSignedScaleFromHandleDelta, proportionalSignedScaleFromUprightHandleDelta, pushUndoSnapshot, resolveConnectPreviewPoint, resolveRoutableLinePreviewPoint, rewiring, rotationDeltaBetweenTransformPoints, routableLineDeviceCanvasPoints, routableLineEndpointDrag, routableLinePlacement, sameOptionalPoint, sameOptionalPointList, scheduleConnectPreviewPoint, scheduleNodeDragMove, scheduleRewirePreviewPoint, scheduleRoutableLinePreviewPoint, screenToSvgPoint, setManualPathDrag, setMarquee, setModifierSelectionPress, setNodeLabelDrag, setNodeLabelRotateDrag, setRoutableLineDeviceCanvasPoints, setTerminalPress, setTransformDrag, setViewBox, signedScaleFromRotatedHandleDelta, signedScaleFromUprightHandleDelta, singleTransformBaseNode, skipNextCanvasScrollSyncRef, staticButtonPointerRef, staticDrawing, svgRef, terminalPress, transformDrag, transformDragChangedRef, updateGraphNodeById, updateInteractiveStaticDrawingPreview, updateLibraryPlacementPreview, updateMeasurementDrag, updateMouseStatus, updateRoutableLineEndpointDrag } = __appScope;
+  const { CANVAS_SELECTION_DRAG_THRESHOLD, MOVE_BOUNDARY_GUARD, applyCanvasPanningVisualOffset, buildGroupTransformNodeUpdates, buildRoutableLineEndpointPreviewNodeUpdates, canvasBounds, canvasFrameRef, canvasFrameUserScrollRef, canvasNoScrollOffsetRef, clampCanvasNoScrollOffsetPoint, clampNumber, clampPointToCanvas, clampViewBoxToCanvas, connectSource, contextMarqueeSelectionRef, draggingRef, getNodeScaleX, getNodeScaleY, graphStore, isBusNode, isGroupTransformDrag, isLineSegmentBusNode, isRoutableLineDeviceKind, lastCanvasClientPointerRef, lastCanvasPointerRef, lastRawCanvasPointerRef, latestGraphStoreRef, libraryPlacement, manualPathDrag, marquee, modelGeometryInsideCanvasBounds, modifierSelectionPressRef, moveOrthogonalRouteSegment, moveRoutableLineDeviceSegment, nodeById, nodeLabelDrag, nodeLabelRotateDrag, nodeLabelRotationFromPoint, normalizeNodeLabelRotation, normalizeRotationDegrees, panning, panningRef, patchGraphNodes, patchSingleTerminalAnchorFromPoint, pendingCanvasNoScrollOffsetRef, proportionalSignedScaleFromHandleDelta, proportionalSignedScaleFromUprightHandleDelta, pushUndoSnapshot, resizeLineSegmentBusGeometryFromHandleDrag, resolveConnectPreviewPoint, resolveRoutableLinePreviewPoint, rewiring, rotationDeltaBetweenTransformPoints, routableLineDeviceCanvasPoints, routableLineEndpointDrag, routableLinePlacement, sameOptionalPoint, sameOptionalPointList, scheduleConnectPreviewPoint, scheduleNodeDragMove, scheduleRewirePreviewPoint, scheduleRoutableLinePreviewPoint, screenToSvgPoint, setManualPathDrag, setMarquee, setModifierSelectionPress, setNodeLabelDrag, setNodeLabelRotateDrag, setRoutableLineDeviceCanvasPoints, setTerminalPress, setTransformDrag, setViewBox, signedScaleFromRotatedHandleDelta, signedScaleFromUprightHandleDelta, singleTransformBaseNode, skipNextCanvasScrollSyncRef, staticButtonPointerRef, staticDrawing, svgRef, terminalPress, transformDrag, transformDragChangedRef, updateGraphNodeById, updateInteractiveStaticDrawingPreview, updateLibraryPlacementPreview, updateMeasurementDrag, updateMouseStatus, updateRoutableLineEndpointDrag } = __appScope;
     const staticButtonPointer = staticButtonPointerRef.current;
     if (
       staticButtonPointer &&
@@ -993,10 +993,11 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
       } else {
         const currentSignedScaleX = getNodeScaleX(baseNode);
         const currentSignedScaleY = getNodeScaleY(baseNode);
-        const localScaleKind = event.shiftKey || transformDrag.kind === "scale-both"
+        const lineSegmentBusResize = isLineSegmentBusNode(baseNode);
+        const localScaleKind = !lineSegmentBusResize && (event.shiftKey || transformDrag.kind === "scale-both")
           ? "scale-both"
           : transformDrag.kind;
-        const proportionalScale = localScaleKind === "scale-both";
+        const proportionalScale = !lineSegmentBusResize && localScaleKind === "scale-both";
         const signedScaleFromHandleDelta = transformDrag.uprightStaticSelection
           ? signedScaleFromUprightHandleDelta
           : signedScaleFromRotatedHandleDelta;
@@ -1007,7 +1008,27 @@ export function createHandlePointerMove(__appScope: Record<string, any>) {
               : { ...current, historyCaptured: true, proportionalScale }
             : current
         );
-        if (localScaleKind === "scale-x") {
+        if (lineSegmentBusResize) {
+          const originalSize = transformDrag.originalSize ?? baseNode.size;
+          const resizedNode = resizeLineSegmentBusGeometryFromHandleDrag({
+            node: { ...baseNode, size: { ...originalSize } },
+            startPoint: transformDrag.startPoint,
+            point,
+            handleXDirection: transformDrag.handleXDirection,
+            handleYDirection: transformDrag.handleYDirection,
+            resizeX: localScaleKind === "scale-x" || localScaleKind === "scale-both",
+            resizeY: localScaleKind === "scale-y" || localScaleKind === "scale-both"
+          });
+          nextNode = {
+            ...node,
+            position: resizedNode.position,
+            size: resizedNode.size,
+            rotation: baseNode.rotation,
+            scale: baseNode.scale,
+            scaleX: baseNode.scaleX,
+            scaleY: baseNode.scaleY
+          };
+        } else if (localScaleKind === "scale-x") {
           const nextSignedScaleX = signedScaleFromHandleDelta(transformDrag, point, baseNode, "scale-x");
           nextNode = {
             ...node,

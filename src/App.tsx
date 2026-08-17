@@ -1033,6 +1033,8 @@ const [canvasCenterRequest, setCanvasCenterRequest] = useState(0);
 Object.assign(__appScope, { canvasCenterRequest, setCanvasCenterRequest });
 const [panning, setPanning] = useState<CanvasPanningState>(null);
 Object.assign(__appScope, { panning, setPanning });
+const [pointerButtonsPressed, setPointerButtonsPressed] = useState(false);
+Object.assign(__appScope, { pointerButtonsPressed, setPointerButtonsPressed });
 const panningRef = useRef<CanvasPanningState>(null); Object.assign(__appScope, { panningRef });
 const pendingCanvasNoScrollOffsetRef = useRef<Point | null>(null); Object.assign(__appScope, { pendingCanvasNoScrollOffsetRef });
 const [marquee, setMarquee] = useState<Marquee>(null);
