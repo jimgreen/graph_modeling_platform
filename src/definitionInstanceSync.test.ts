@@ -288,6 +288,36 @@ describe("definition instance node reconciliation", () => {
     });
   });
 
+  test("preserves saved button behavior while synchronizing definition-owned visuals", () => {
+    const template = DEVICE_LIBRARY.find((candidate) => candidate.kind === "static-button")!;
+    const source = createDefaultNode("static-button", { x: 120, y: 80 });
+    const savedParams = {
+      buttonEnabled: "0",
+      buttonActionType: "project",
+      buttonTargetSchemeId: "scheme:example",
+      buttonTargetProjectId: "project:example/target",
+      buttonTargetProjectName: "目标模型",
+      buttonTargetLayerId: "layer-target",
+      buttonTargetLayerName: "目标图层",
+      buttonTargetLayerIds: "layer-target,layer-second",
+      buttonTargetLayerNames: "目标图层,第二图层",
+      buttonCommand: "fitCanvas"
+    };
+    const node = {
+      ...source,
+      params: {
+        ...source.params,
+        ...savedParams,
+        fillColor: "#111111"
+      }
+    };
+
+    const reconciled = reconcileNodeWithDefinition(node, template);
+
+    expect(reconciled.params).toMatchObject(savedParams);
+    expect(reconciled.params.fillColor).toBe(template.params.fillColor);
+  });
+
   test("returns the original node when the latest definition makes no change", () => {
     const template = latestTemplate();
     const source = createDefaultNode("ac-source", { x: 40, y: 60 });
