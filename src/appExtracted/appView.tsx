@@ -4703,6 +4703,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                 onSearchChange={setCustomComponentTreeSearchQuery}
                 onCollapseChange={handleTreeCollapseChange}
                 onSelectionChange={setCustomComponentTreeSelection}
+                onOpenEDeviceDefinitionInterface={() => setEDeviceDefinitionInterfaceDialogOpen(true)}
               />
               <div className={`custom-device-editor-panel${showComponentLibraryTerminalTypes ? " has-component-library-terminal-types" : ""}`}>
             <div className={`custom-device-form-grid${customDeviceDefinitionIconOnly ? " component-mode" : customComponentTreeSelection?.kind === "componentLibrary" ? " component-library-mode" : ""}`}>

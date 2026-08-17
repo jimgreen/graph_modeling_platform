@@ -30,6 +30,7 @@ import {
   CircleDot,
   Download,
   FileInput,
+  FileJson,
   FlipHorizontal,
   FlipVertical,
   Grid2X2,
@@ -3799,6 +3800,7 @@ export type CustomComponentTreeProps = {
   onSearchChange: (query: string) => void;
   onCollapseChange: (libraries: Set<string>, types: Set<string>) => void;
   onSelectionChange: (selection: CustomComponentTreeSelection) => void;
+  onOpenEDeviceDefinitionInterface: () => void;
 };
 
 function customComponentTreeSelectionsEqual(first: CustomComponentTreeSelection, second: CustomComponentTreeSelection) {
@@ -4075,7 +4077,8 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
   onDeleteSelection,
   onSearchChange,
   onCollapseChange,
-  onSelectionChange
+  onSelectionChange,
+  onOpenEDeviceDefinitionInterface
 }: CustomComponentTreeProps) {
   // 内部管理 collapsed 状态，展开/收缩不触发父组件重渲染
   const [collapsedLibraries, setCollapsedLibraries] = useState<Set<string>>(initialCollapsedLibraries);
@@ -4383,6 +4386,12 @@ export const CustomComponentManagerTree = memo(function CustomComponentManagerTr
         <span>类别库 / 类 / 元件（右键操作）</span>
       </div>
       <div className="custom-component-manager-efile-and-search">
+      <div className="custom-component-manager-efile-actions">
+        <button type="button" onClick={onOpenEDeviceDefinitionInterface} title="打开 E 文件接口定义">
+          <FileJson size={12} aria-hidden="true" />
+          <span>E文件接口定义</span>
+        </button>
+      </div>
       <div className="custom-component-tree-search-row">
         <div className="dialog-tree-search">
           <Search size={14} aria-hidden="true" />

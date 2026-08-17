@@ -1976,7 +1976,7 @@ describe("E device interface definition entry", () => {
     }
   );
 
-  test("keeps the component tree focused without the retired E interface shortcut", () => {
+  test("renders the E interface definition shortcut above the component tree search", () => {
     const html = renderToStaticMarkup(createElement(CustomComponentManagerTree as any, {
       libraries: [],
       filteredByComponentLibrary: {},
@@ -2000,7 +2000,9 @@ describe("E device interface definition entry", () => {
       onImportEDeviceDefinition: () => undefined
     }));
 
-    expect(html).not.toContain("E文件接口定义");
+    expect(html).toContain('class="custom-component-manager-efile-actions"');
+    expect(html).toContain('title="打开 E 文件接口定义"');
+    expect(html).toContain("E文件接口定义");
     expect(html).toContain("类别库 / 类 / 元件");
     expect(html).not.toContain("custom-component-manager-actions");
     expect(html).toContain('placeholder="搜索类别库/类/元件"');
