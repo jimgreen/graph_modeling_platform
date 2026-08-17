@@ -87,6 +87,7 @@ export type LazyBlobSaveOptions = Omit<BlobSaveOptions, "blob"> & {
 };
 
 const EXPORT_SAVE_PICKER_ID = "model-export";
+const NATIVE_EXPORT_DIRECTORY_STORAGE_KEY = "graph-modeling-platform.native-export.directory";
 const LOCAL_NATIVE_EXPORT_HOSTNAMES = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 const NATIVE_EXPORT_SELECT_PATH = "/exports/native/select-file";
 const NATIVE_EXPORT_WRITE_PATH = "/exports/native/write-text";
@@ -103,6 +104,26 @@ function canUseNativeExportDialog(options: Pick<TextSaveOptions, "preferNativeDi
   return LOCAL_NATIVE_EXPORT_HOSTNAMES.has(hostname);
 }
 
+function readRememberedNativeExportDirectory() {
+  try {
+    return String(window.localStorage?.getItem(NATIVE_EXPORT_DIRECTORY_STORAGE_KEY) ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function rememberNativeExportDirectory(directory: unknown) {
+  const normalizedDirectory = String(directory ?? "").trim();
+  if (!normalizedDirectory) {
+    return;
+  }
+  try {
+    window.localStorage?.setItem(NATIVE_EXPORT_DIRECTORY_STORAGE_KEY, normalizedDirectory);
+  } catch {
+    // Storage can be unavailable in private/restricted browser contexts. Saving still proceeds.
+  }
+}
+
 async function responseErrorMessage(response: Response, fallback: string) {
   try {
     const payload = await response.json() as { error?: unknown };
@@ -117,6 +138,7 @@ async function saveLazyTextFileWithNativeDialog(
   options: LazyTextSaveOptions,
   notifySaveTargetReady: () => void
 ): Promise<boolean> {
+  const rememberedDirectory = readRememberedNativeExportDirectory();
   const selectPromise = fetch(apiPath(NATIVE_EXPORT_SELECT_PATH), {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -125,6 +147,7 @@ async function saveLazyTextFileWithNativeDialog(
       description: options.description,
       extensions: options.extensions,
       startIn: options.startIn,
+      ...(rememberedDirectory ? { initialDirectory: rememberedDirectory } : {}),
       title: "另存为"
     })
   });
@@ -154,6 +177,7 @@ async function saveLazyTextFileWithNativeDialog(
   const selection = await selectResponse.json() as {
     cancelled?: boolean;
     token?: string;
+    directory?: string;
   };
   if (selection.cancelled) {
     return false;
@@ -162,6 +186,7 @@ async function saveLazyTextFileWithNativeDialog(
   if (!token) {
     return fallbackToBrowserDownload("本地快速保存没有返回有效目标，已改为浏览器下载。");
   }
+  rememberNativeExportDirectory(selection.directory);
 
   notifySaveTargetReady();
   const text = await textPromise;

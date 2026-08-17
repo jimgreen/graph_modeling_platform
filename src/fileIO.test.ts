@@ -149,6 +149,66 @@ describe("text file output", () => {
     expect(showSaveFilePicker).not.toHaveBeenCalled();
   });
 
+  test("opens every native export dialog in the last browser-remembered directory across file types", async () => {
+    const rememberedDirectory = "C:\\exports\\component-svg";
+    const storage = new Map<string, string>();
+    const localStorage = {
+      getItem: vi.fn((key: string) => storage.get(key) ?? null),
+      setItem: vi.fn((key: string, value: string) => {
+        storage.set(key, value);
+      })
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        supported: true,
+        cancelled: false,
+        token: "target-token-1",
+        filename: "model.e",
+        directory: rememberedDirectory
+      }), { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        supported: true,
+        cancelled: false,
+        token: "target-token-2",
+        filename: "dc-source.svg",
+        directory: rememberedDirectory
+      }), { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal("showGlobalMessage", vi.fn());
+    vi.stubGlobal("window", {
+      location: { hostname: "127.0.0.1" },
+      localStorage
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const saveExport = (filename: string, mime: string, pickerId: string) => saveTextFile({
+      filename,
+      text: mime === "image/svg+xml" ? "<svg></svg>" : "<Model/>",
+      mime,
+      description: mime === "image/svg+xml" ? "SVG 图元文件" : "E 模型文件",
+      extensions: [filename.slice(filename.lastIndexOf("."))],
+      pickerId,
+      startIn: "downloads",
+      preferNativeDialog: true
+    });
+
+    await expect(saveExport("model.e", "text/plain", "e-model-export")).resolves.toBe(true);
+    const firstSelectionPayload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(firstSelectionPayload).not.toHaveProperty("initialDirectory");
+    expect(localStorage.setItem).toHaveBeenCalledWith(
+      "graph-modeling-platform.native-export.directory",
+      rememberedDirectory
+    );
+
+    await expect(saveExport("dc-source.svg", "image/svg+xml", "custom-component-svg-export")).resolves.toBe(true);
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/webgrp/exports/native/select-file")).toHaveLength(2);
+    expect(JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body))).toMatchObject({
+      filename: "dc-source.svg",
+      initialDirectory: rememberedDirectory
+    });
+  });
+
   test("does not write or report success when the lazy save picker is cancelled", async () => {
     const showGlobalMessage = vi.fn();
     const loadText = vi.fn(() => "<Model/>");

@@ -670,15 +670,19 @@ function stateIconSvgPlatformExportFallback(source: string) {
     return null;
   }
 
-  // Platform exports use a translated line inside the referenced symbol for a
-  // device terminal. That line is the reliable distinction between the inner
-  // 180×120 terminal frame and the full 240×160 frame in the drawing editor.
-  const hasTerminalConnector = /<g\b[^>]*\btransform\s*=\s*(?:"[^"]*translate\s*\([^"']*"|'[^']*translate\s*\([^"']*')[^>]*>[\s\S]*?<line\b/iu.test(symbolBody);
-  const frame = stateIconDrawingFrameRect(hasTerminalConnector);
+  const sourceTerminalCount = readSvgMarkupAttribute(useMarkup, STATE_ICON_PLATFORM_EXPORT_TERMINAL_COUNT_ATTRIBUTE);
+  const parsedTerminalCount = Number.parseInt(sourceTerminalCount, 10);
+  const hasSourceTerminals = sourceTerminalCount === "" || !Number.isFinite(parsedTerminalCount)
+    ? true
+    : parsedTerminalCount > 0;
+  const frame = stateIconDrawingFrameRect(hasSourceTerminals);
   const defs = Array.from(source.matchAll(/<defs\b[\s\S]*?<\/defs>/giu))
     .map((match) => match[0])
     .join("");
-  const normalizedSource = `<svg xmlns="http://www.w3.org/2000/svg" data-state-icon-platform-device="true" data-state-icon-source-dev-kind="${escapeXml(declaredDeviceKind)}" viewBox="${escapeXml(symbolViewBox)}" preserveAspectRatio="xMidYMid meet">${defs}${symbolBody}</svg>`;
+  const sourceTerminalCountMarkup = sourceTerminalCount === ""
+    ? ""
+    : ` ${STATE_ICON_PLATFORM_EXPORT_TERMINAL_COUNT_ATTRIBUTE}="${escapeXml(sourceTerminalCount)}"`;
+  const normalizedSource = `<svg xmlns="http://www.w3.org/2000/svg" data-state-icon-platform-device="true" data-state-icon-source-dev-kind="${escapeXml(declaredDeviceKind)}"${sourceTerminalCountMarkup} viewBox="${escapeXml(symbolViewBox)}" preserveAspectRatio="xMidYMid meet">${defs}${symbolBody}</svg>`;
   return {
     source: normalizedSource,
     width: frame.width,
@@ -1674,6 +1678,7 @@ function stateIconSvgEditableLayerLabel(element: Element, index: number) {
 }
 
 const STATE_ICON_SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+const STATE_ICON_PLATFORM_EXPORT_TERMINAL_COUNT_ATTRIBUTE = "data-export-source-terminal-count";
 
 function stateIconSvgInlineStyleValue(element: Element, name: string) {
   const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -1784,6 +1789,10 @@ function stateIconSvgExpandedUseNode(useElement: Element, referenced: Element) {
     if (declaredDeviceKind) {
       nestedSvg.setAttribute("data-state-icon-platform-device", "true");
       nestedSvg.setAttribute("data-state-icon-source-dev-kind", declaredDeviceKind);
+    }
+    const sourceTerminalCount = useElement.getAttribute(STATE_ICON_PLATFORM_EXPORT_TERMINAL_COUNT_ATTRIBUTE);
+    if (sourceTerminalCount !== null) {
+      nestedSvg.setAttribute(STATE_ICON_PLATFORM_EXPORT_TERMINAL_COUNT_ATTRIBUTE, sourceTerminalCount);
     }
     ["x", "y", "width", "height"].forEach((name) => {
       const value = useElement.getAttribute(name);
@@ -1977,12 +1986,16 @@ function stateIconSvgPlatformExportLayerSize(container: Element) {
   if (container.getAttribute("data-state-icon-platform-device") !== "true") {
     return null;
   }
-  // Platform component SVGs are exported around the same drawing frame used by
-  // the editor. Keep the source viewBox and geometry untouched, but restore the
-  // frame size that the built-in glyph uses so imported layers are not smaller.
-  const hasTerminalConnector = stateIconSvgDescendantElements(container, true)
-    .some(stateIconSvgPlatformExportConnectorLine);
-  const frame = stateIconDrawingFrameRect(hasTerminalConnector);
+  // Connector lines are intentionally omitted from standalone component SVGs,
+  // so their presence cannot be used to infer the source editor frame. New
+  // exports carry the original terminal count; legacy platform exports default
+  // to the terminal-aware frame used by existing device symbols.
+  const sourceTerminalCount = container.getAttribute(STATE_ICON_PLATFORM_EXPORT_TERMINAL_COUNT_ATTRIBUTE);
+  const parsedTerminalCount = Number.parseInt(sourceTerminalCount ?? "", 10);
+  const hasSourceTerminals = sourceTerminalCount === null || !Number.isFinite(parsedTerminalCount)
+    ? true
+    : parsedTerminalCount > 0;
+  const frame = stateIconDrawingFrameRect(hasSourceTerminals);
   return { width: frame.width, height: frame.height };
 }
 

@@ -1904,10 +1904,28 @@ describe("E device interface definition entry", () => {
     expect(svg).toContain('viewBox="0,0,');
     expect(svg).toContain("symbol_ACGenerator_ac-nuclear-source");
     expect(svg).toContain('device-type="ACGenerator"');
+    expect(svg).toContain(`data-export-source-terminal-count="${template.terminalCount}"`);
     expect(svg).not.toContain("<line");
     expect(svg).not.toContain('data-terminal-id="');
     expect(svg).not.toContain('class="export-terminal ');
     expect(svg).not.toContain('class="node-label-text"');
+  });
+
+  test("records zero source terminals without inferring them from exported connector markup", () => {
+    const source = DEVICE_LIBRARY.find((item) => item.kind === "ac-nuclear-source")!;
+    const svg = buildDeviceTemplateIconSvg({
+      ...source,
+      kind: "custom-no-terminal-source",
+      terminalCount: 0,
+      terminalTypes: [],
+      terminalLabels: [],
+      terminalAnchors: [],
+      terminalRoles: [],
+      terminalAssociations: []
+    });
+
+    expect(svg).toContain('data-export-source-terminal-count="0"');
+    expect(svg).not.toContain("<line");
   });
 
   test("removes persisted terminal helpers from component and state images during SVG export", () => {

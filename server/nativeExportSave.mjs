@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 
 const TARGET_TTL_MS = 10 * 60 * 1000;
 const MAX_SUGGESTED_NAME_LENGTH = 240;
@@ -93,15 +93,18 @@ $dialog.DefaultExt = $env:GRAPH_MODEL_EXPORT_DEFAULT_EXT
 $dialog.AddExtension = $true
 $dialog.OverwritePrompt = $true
 $dialog.RestoreDirectory = $true
-$startIn = $env:GRAPH_MODEL_EXPORT_START_IN
-$initialDirectory = switch ($startIn) {
-  "desktop" { [Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop) }
-  "documents" { [Environment]::GetFolderPath([Environment+SpecialFolder]::MyDocuments) }
-  "downloads" { Join-Path $env:USERPROFILE "Downloads" }
-  "music" { [Environment]::GetFolderPath([Environment+SpecialFolder]::MyMusic) }
-  "pictures" { [Environment]::GetFolderPath([Environment+SpecialFolder]::MyPictures) }
-  "videos" { [Environment]::GetFolderPath([Environment+SpecialFolder]::MyVideos) }
-  default { "" }
+$initialDirectory = $env:GRAPH_MODEL_EXPORT_INITIAL_DIRECTORY
+if (-not ($initialDirectory -and (Test-Path -LiteralPath $initialDirectory -PathType Container))) {
+  $startIn = $env:GRAPH_MODEL_EXPORT_START_IN
+  $initialDirectory = switch ($startIn) {
+    "desktop" { [Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop) }
+    "documents" { [Environment]::GetFolderPath([Environment+SpecialFolder]::MyDocuments) }
+    "downloads" { Join-Path $env:USERPROFILE "Downloads" }
+    "music" { [Environment]::GetFolderPath([Environment+SpecialFolder]::MyMusic) }
+    "pictures" { [Environment]::GetFolderPath([Environment+SpecialFolder]::MyPictures) }
+    "videos" { [Environment]::GetFolderPath([Environment+SpecialFolder]::MyVideos) }
+    default { "" }
+  }
 }
 if ($initialDirectory -and (Test-Path -LiteralPath $initialDirectory -PathType Container)) {
   $dialog.InitialDirectory = $initialDirectory
@@ -151,6 +154,14 @@ function safeDescription(value) {
   return String(value ?? "文件").replace(/\|/gu, " ").trim() || "文件";
 }
 
+function safeInitialDirectory(value) {
+  const candidate = String(value ?? "").trim();
+  if (!candidate || candidate.length > 4096 || !isAbsolute(candidate)) {
+    return "";
+  }
+  return resolve(candidate);
+}
+
 export function normalizeNativeExportDialogOptions(value = {}) {
   const filename = safeSuggestedName(value.filename);
   const extensions = normalizedExtensions(value.extensions);
@@ -163,6 +174,7 @@ export function normalizeNativeExportDialogOptions(value = {}) {
     description,
     title: String(value.title ?? "另存为").trim() || "另存为",
     startIn: SAVE_DIALOG_START_IN_VALUES.has(startIn) ? startIn : "",
+    initialDirectory: safeInitialDirectory(value.initialDirectory),
     defaultExtension: extensions[0].slice(1),
     filter: `${description} (${patterns})|${patterns}|所有文件 (*.*)|*.*`
   };
@@ -194,7 +206,8 @@ export async function showWindowsSaveFileDialog(options, dependencies = {}) {
     GRAPH_MODEL_EXPORT_FILENAME: normalized.filename,
     GRAPH_MODEL_EXPORT_FILTER: normalized.filter,
     GRAPH_MODEL_EXPORT_DEFAULT_EXT: normalized.defaultExtension,
-    GRAPH_MODEL_EXPORT_START_IN: normalized.startIn
+    GRAPH_MODEL_EXPORT_START_IN: normalized.startIn,
+    GRAPH_MODEL_EXPORT_INITIAL_DIRECTORY: normalized.initialDirectory
   };
   let stdout;
   try {
@@ -280,7 +293,8 @@ export function createNativeExportSaveService(dependencies = {}) {
         supported: true,
         cancelled: false,
         token,
-        filename: basename(resolvedPath)
+        filename: basename(resolvedPath),
+        directory: dirname(resolvedPath)
       };
     },
 

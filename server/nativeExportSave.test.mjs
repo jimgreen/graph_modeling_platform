@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import {
   NativeExportSaveError,
   createNativeExportSaveService,
@@ -30,7 +30,8 @@ describe("native export save service", () => {
       supported: true,
       cancelled: false,
       token: "token-1",
-      filename: "模型.e"
+      filename: "模型.e",
+      directory: dirname(selectedPath)
     });
 
     const data = Buffer.from("<Model/>", "utf8");
@@ -62,16 +63,19 @@ describe("native export save service", () => {
   });
 
   test("normalizes unsafe dialog metadata", () => {
+    const rememberedDirectory = resolve("tmp", "svg-exports");
     expect(normalizeNativeExportDialogOptions({
       filename: "../bad:name?.svg ",
       description: "SVG|图形",
       extensions: ["svg", ".SVG", ".svg", ".bad ext"],
-      startIn: "downloads"
+      startIn: "downloads",
+      initialDirectory: rememberedDirectory
     })).toMatchObject({
       filename: "bad_name_.svg",
       extensions: [".svg"],
       description: "SVG 图形",
       startIn: "downloads",
+      initialDirectory: rememberedDirectory,
       defaultExtension: "svg"
     });
   });
@@ -85,13 +89,17 @@ describe("native export save service", () => {
 
   test("promotes the Windows save dialog above the browser window", async () => {
     let encodedCommand = "";
-    const execFileImpl = vi.fn((_command, args, _options, callback) => {
+    let commandOptions;
+    const execFileImpl = vi.fn((_command, args, options, callback) => {
       encodedCommand = args.at(-1) ?? "";
+      commandOptions = options;
       callback(null, "CANCEL", "");
     });
 
+    const rememberedDirectory = resolve("tmp", "svg-exports");
+
     await expect(showWindowsSaveFileDialog(
-      { filename: "model.e", extensions: [".e"] },
+      { filename: "model.e", extensions: [".e"], initialDirectory: rememberedDirectory },
       { platform: "win32", execFileImpl }
     )).resolves.toBeNull();
 
@@ -100,8 +108,10 @@ describe("native export save service", () => {
     expect(script).toContain("IntPtr hwndTopmost = new IntPtr(-1)");
     expect(script).toContain("SetWindowPos(dialogHandle, hwndTopmost");
     expect(script).toContain("$dialog.InitialDirectory = $initialDirectory");
+    expect(script).toContain("GRAPH_MODEL_EXPORT_INITIAL_DIRECTORY");
     expect(script).toContain('"downloads" { Join-Path $env:USERPROFILE "Downloads" }');
     expect(script).toContain("$dialog.ShowDialog()");
+    expect(commandOptions.env.GRAPH_MODEL_EXPORT_INITIAL_DIRECTORY).toBe(rememberedDirectory);
   });
 
   test("exposes a typed invalid-token error", () => {
