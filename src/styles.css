@@ -11593,9 +11593,9 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   position: fixed;
   z-index: 46;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 280px;
-  min-height: 96px;
+  min-height: 250px;
   border: 1px solid #fecaca;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.96);
@@ -11660,77 +11660,135 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 }
 
 .topology-warning-floating-body {
+  display: flex;
   min-height: 0;
-  overflow-x: hidden;
+  overflow: hidden;
+}
+
+.topology-warning-sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 72px;
+  min-width: 72px;
+  border-right: 1px solid #fee2e2;
+  background: #fff7ed;
   overflow-y: auto;
   scrollbar-width: thin;
 }
 
-.topology-warning-table {
-  width: 100%;
+.topology-warning-category-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border: none;
+  border-bottom: 1px solid #fecaca;
+  background: transparent;
+  color: #7f1d1d;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.topology-warning-category-item:hover {
+  background: #fee2e2;
+}
+
+.topology-warning-category-item.active {
+  background: #fecaca;
+  color: #991b1b;
+  font-weight: 700;
+}
+
+.topology-warning-category-label {
+  line-height: 1.2;
+}
+
+.topology-warning-category-count {
+  font-size: 10px;
+  opacity: 0.75;
+  font-weight: 600;
+}
+
+.topology-warning-content {
+  flex: 1;
   min-width: 0;
-  table-layout: fixed;
-  border-collapse: collapse;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.topology-warning-status-tabs {
+  display: flex;
+  border-bottom: 1px solid #fee2e2;
+  background: #fffbf5;
+}
+
+.topology-warning-status-tab {
+  flex: 1;
+  padding: 6px 8px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
   color: #7f1d1d;
   font-size: 12px;
-}
-
-.topology-warning-table th,
-.topology-warning-table td {
-  border-bottom: 1px solid #fee2e2;
-  padding: 7px 9px;
-  text-align: left;
-  vertical-align: top;
-}
-
-.topology-warning-table th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  color: #991b1b;
-  background: #fff7ed;
-  font-weight: 800;
-}
-
-.topology-warning-table th:first-child,
-.topology-warning-table td:first-child {
-  width: 64px;
-  white-space: nowrap;
-}
-
-.topology-warning-table th:nth-child(2),
-.topology-warning-table td:nth-child(2) {
-  width: auto;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.topology-warning-table tr.error td:first-child {
-  color: #991b1b;
-  font-weight: 800;
-}
-
-.topology-warning-table tr.warning td:first-child {
-  color: #b45309;
-  font-weight: 800;
-}
-
-.topology-warning-table tr.topology-warning-row {
   cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
 }
 
-.topology-warning-table tr.topology-warning-row:hover td {
+.topology-warning-status-tab:hover {
+  background: #fee2e2;
+}
+
+.topology-warning-status-tab.active {
+  border-bottom-color: #ef4444;
+  color: #991b1b;
+  font-weight: 700;
   background: #fff1f2;
 }
 
-.topology-warning-table button {
+.topology-warning-tab-count {
+  margin-left: 4px;
+  font-size: 10px;
+  opacity: 0.7;
+  font-weight: 600;
+}
+
+.topology-warning-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.topology-warning-item {
+  border-bottom: 1px solid #fee2e2;
+  padding: 7px 9px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.topology-warning-item:hover {
+  background: #fff1f2;
+}
+
+.topology-warning-item.error {
+  border-left: 3px solid #ef4444;
+}
+
+.topology-warning-item.warning {
+  border-left: 3px solid #f59e0b;
+}
+
+.topology-warning-item button {
   display: block;
   width: 100%;
   max-width: 100%;
   border: 0;
   padding: 0;
-  color: inherit;
+  color: #7f1d1d;
   background: transparent;
   font: inherit;
   line-height: 1.45;
@@ -11741,20 +11799,28 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   cursor: pointer;
 }
 
-.topology-warning-table button:hover,
-.topology-warning-table button:focus-visible {
+.topology-warning-item button:hover,
+.topology-warning-item button:focus-visible {
   color: #1d4ed8;
   text-decoration: underline;
   outline: none;
 }
 
-.topology-warning-floating-pagination {
-  border-top: 1px solid #fee2e2;
-  padding: 6px 8px;
+.topology-warning-empty {
+  padding: 24px 12px;
+  text-align: center;
+  color: #991b1b;
+  opacity: 0.6;
+  font-size: 12px;
+  margin: 0;
 }
 
-.topology-warning-floating-more {
-  margin: 0 8px 8px;
+.topology-warning-sentinel {
+  padding: 8px;
+  text-align: center;
+  color: #991b1b;
+  opacity: 0.5;
+  font-size: 11px;
 }
 
 .topology-warning-floating-resize {

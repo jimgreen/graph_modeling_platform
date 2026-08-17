@@ -189,6 +189,7 @@ import {
   isContainerTerminalAssociationDependent,
   isDoubleContainerTerminalAssociation,
   isBlockingTopologyValidationError,
+  categorizeTopologyErrorType,
   isGeneratorNode,
   isRepeatedEdgePointerClick,
   isStaticButtonCapableNode,
@@ -1053,6 +1054,24 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
   Object.assign(__appScope, { editableMeasurementProfileByKind });
   const inspectorSelectedEdge = selectedEdge; Object.assign(__appScope, { inspectorSelectedEdge });
   const inspectorTopologyErrors = useDeferredValue(topologyErrors); Object.assign(__appScope, { inspectorTopologyErrors });
+  // 拓扑告警分类/状态筛选
+  const [topologyWarningCategory, setTopologyWarningCategory] = useState<"all" | "voltage" | "capacity" | "topology" | "other">("all");
+  const [topologyWarningStatus, setTopologyWarningStatus] = useState<"all" | "error" | "warning">("all");
+  Object.assign(__appScope, { topologyWarningCategory, setTopologyWarningCategory, topologyWarningStatus, setTopologyWarningStatus });
+  Object.assign(__appScope, { isBlockingTopologyValidationError, categorizeTopologyErrorType });
+  const topologyFilteredErrors = useMemo(() => {
+    let list = inspectorTopologyErrors;
+    if (topologyWarningCategory !== "all") {
+      list = list.filter((error: any) => categorizeTopologyErrorType(error.type) === topologyWarningCategory);
+    }
+    if (topologyWarningStatus === "error") {
+      list = list.filter((error: any) => isBlockingTopologyValidationError(error));
+    } else if (topologyWarningStatus === "warning") {
+      list = list.filter((error: any) => !isBlockingTopologyValidationError(error));
+    }
+    return list;
+  }, [inspectorTopologyErrors, topologyWarningCategory, topologyWarningStatus]);
+  Object.assign(__appScope, { topologyFilteredErrors });
   const connectionStrokeColorCacheToken = useMemo(
       () => `${colorDisplayMode}:${JSON.stringify(colorPalette)}`,
       [colorDisplayMode, colorPalette]
