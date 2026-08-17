@@ -1056,7 +1056,7 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
   const inspectorTopologyErrors = useDeferredValue(topologyErrors); Object.assign(__appScope, { inspectorTopologyErrors });
   // 拓扑告警分类/状态筛选
   const [topologyWarningCategory, setTopologyWarningCategory] = useState<"all" | "voltage" | "capacity" | "topology" | "other">("all");
-  const [topologyWarningStatus, setTopologyWarningStatus] = useState<"all" | "error" | "warning">("all");
+  const [topologyWarningStatus, setTopologyWarningStatus] = useState<"error" | "warning">("error");
   Object.assign(__appScope, { topologyWarningCategory, setTopologyWarningCategory, topologyWarningStatus, setTopologyWarningStatus });
   Object.assign(__appScope, { isBlockingTopologyValidationError, categorizeTopologyErrorType });
   const topologyFilteredErrors = useMemo(() => {

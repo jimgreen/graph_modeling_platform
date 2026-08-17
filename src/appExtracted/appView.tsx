@@ -495,7 +495,7 @@ function TopologyWarningPanelContent(props: {
       </nav>
       <div className="topology-warning-content">
         <div className="topology-warning-status-tabs">
-          {([["all", "全部"], ["error", "错误"], ["warning", "告警"]] as const).map(([key, label]) => (
+          {([["error", "错误"], ["warning", "告警"]] as const).map(([key, label]) => (
             <button key={key} type="button" className={`topology-warning-status-tab${status === key ? " active" : ""}`} onClick={() => setStatus(key)}>
               {label} <span className="topology-warning-tab-count">{statusCounts[key] || 0}</span>
             </button>
