@@ -71,3 +71,69 @@ export function projectedProportionalScaleFromHandleDelta({
     (deltaX * projectionVector.x + deltaY * projectionVector.y) / projectionLengthSquared;
   return normalizeScaleValue(Math.max(0, safeCurrentScale + scaleDelta), safeCurrentScale);
 }
+
+/**
+ * Resize a line-segment bus as geometry rather than as a transform.
+ * The dragged side follows the pointer while the opposite side remains fixed;
+ * existing scale values are preserved so resizing does not become bus scaling.
+ */
+export function resizeLineSegmentBusGeometryFromHandleDrag({
+  node,
+  startPoint,
+  point,
+  handleXDirection = 0,
+  handleYDirection = 0,
+  resizeX,
+  resizeY,
+  minDimension = 8
+}: {
+  node: ModelNode;
+  startPoint: Point;
+  point: Point;
+  handleXDirection?: -1 | 0 | 1;
+  handleYDirection?: -1 | 0 | 1;
+  resizeX: boolean;
+  resizeY: boolean;
+  minDimension?: number;
+}): ModelNode {
+  const inverseRadians = (-normalizeRotationDegrees(node.rotation) * Math.PI) / 180;
+  const pointerDelta = {
+    x: point.x - startPoint.x,
+    y: point.y - startPoint.y
+  };
+  const localDelta = {
+    x: pointerDelta.x * Math.cos(inverseRadians) - pointerDelta.y * Math.sin(inverseRadians),
+    y: pointerDelta.x * Math.sin(inverseRadians) + pointerDelta.y * Math.cos(inverseRadians)
+  };
+  const safeScaleX = Math.abs(getNodeScaleX(node)) || 1;
+  const safeScaleY = Math.abs(getNodeScaleY(node)) || 1;
+  const xDirection = handleXDirection || 1;
+  const yDirection = handleYDirection || 1;
+  const nextWidth = resizeX
+    ? Math.max(minDimension, node.size.width + (localDelta.x * xDirection) / safeScaleX)
+    : node.size.width;
+  const nextHeight = resizeY
+    ? Math.max(minDimension, node.size.height + (localDelta.y * yDirection) / safeScaleY)
+    : node.size.height;
+  const localCenterShift = {
+    x: resizeX ? ((nextWidth - node.size.width) * safeScaleX * xDirection) / 2 : 0,
+    y: resizeY ? ((nextHeight - node.size.height) * safeScaleY * yDirection) / 2 : 0
+  };
+  const rotationRadians = (normalizeRotationDegrees(node.rotation) * Math.PI) / 180;
+  const canvasCenterShift = {
+    x: localCenterShift.x * Math.cos(rotationRadians) - localCenterShift.y * Math.sin(rotationRadians),
+    y: localCenterShift.x * Math.sin(rotationRadians) + localCenterShift.y * Math.cos(rotationRadians)
+  };
+
+  return {
+    ...node,
+    position: {
+      x: node.position.x + canvasCenterShift.x,
+      y: node.position.y + canvasCenterShift.y
+    },
+    size: {
+      width: nextWidth,
+      height: nextHeight
+    }
+  };
+}

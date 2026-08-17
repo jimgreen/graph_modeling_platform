@@ -1404,6 +1404,8 @@ function buildTopologyNodeDevices(nodes: ModelNode[]): EDeviceExport[] {
         const vbase = firstText(candidates.map(({ node, terminal }) => terminalVoltageDisplay(node, terminal)));
         const voltage = firstText([representative.voltage, representative.node.params.voltage, vbase]);
         const runStat = normalizeRunStatForE(representative.node.params.run_stat) || "1";
+        const realBus = (section === "ACNode" || section === "DCNode") &&
+          candidates.some(({ node }) => isBusNode(node));
         const numericCandidateParam = (...keys: string[]) => {
           const values = keys
             .flatMap((key) => candidates.map(({ node }) => deviceParamValue(node.params, key)))
@@ -1418,7 +1420,7 @@ function buildTopologyNodeDevices(nodes: ModelNode[]): EDeviceExport[] {
           voltage,
           vltp: vbase,
           ist: "1",
-          realbs: "0",
+          realbs: realBus ? "1" : "0",
           v: "0",
           a: "0",
           vmax: "0",

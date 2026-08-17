@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { canBatchEditParam, PARAM_LABELS } from "./appExtracted/appCoreCanvasUtilities";
 import { enumValuesForRow } from "./appExtracted/appPersistenceLibraryExport";
-import { createAppHookCallback12, createAppHookCallback77, createAppHookCallback82, createAppHookCallback100, createAppHookCallback120 } from "./appExtracted/appToolbarHookFactories";
+import { createAppHookCallback12, createAppHookCallback77, createAppHookCallback82, createAppHookCallback100, createAppHookCallback109, createAppHookCallback120 } from "./appExtracted/appToolbarHookFactories";
 import {
   applyDeviceTemplateDefinitionOverride,
   createDefaultNode,
@@ -205,6 +205,51 @@ describe("side panel resize hook", () => {
     expect(removeEventListener).toHaveBeenCalledWith("pointermove", expect.any(Function), true);
     expect(removeEventListener).toHaveBeenCalledWith("pointerup", expect.any(Function), true);
     expect(removeEventListener).toHaveBeenCalledWith("pointercancel", expect.any(Function), true);
+  });
+});
+
+describe("global pointer button tracking hook", () => {
+  test("keeps the floating toolbar suppressed until every pointer button is released", () => {
+    const listeners = new Map<string, EventListener>();
+    const addEventListener = vi.fn((type: string, listener: EventListener) => {
+      listeners.set(type, listener);
+    });
+    const removeEventListener = vi.fn();
+    vi.stubGlobal("window", { addEventListener, removeEventListener });
+    const lastKeyboardShortcutClientPointerRef = { current: null as { x: number; y: number } | null };
+    const setPointerButtonsPressed = vi.fn();
+    const cleanup = createAppHookCallback109({
+      lastKeyboardShortcutClientPointerRef,
+      setPointerButtonsPressed
+    })();
+
+    listeners.get("pointerdown")?.({ buttons: 1, clientX: 120, clientY: 180 } as PointerEvent);
+    expect(lastKeyboardShortcutClientPointerRef.current).toEqual({ x: 120, y: 180 });
+    expect(setPointerButtonsPressed).toHaveBeenLastCalledWith(true);
+    expect(setPointerButtonsPressed).toHaveBeenCalledTimes(1);
+
+    listeners.get("pointermove")?.({ buttons: 1, clientX: 240, clientY: 300 } as PointerEvent);
+    expect(lastKeyboardShortcutClientPointerRef.current).toEqual({ x: 240, y: 300 });
+    expect(setPointerButtonsPressed).toHaveBeenLastCalledWith(true);
+    expect(setPointerButtonsPressed).toHaveBeenCalledTimes(1);
+
+    listeners.get("pointerup")?.({ buttons: 2 } as PointerEvent);
+    expect(setPointerButtonsPressed).toHaveBeenLastCalledWith(true);
+    expect(setPointerButtonsPressed).toHaveBeenCalledTimes(1);
+
+    listeners.get("pointerup")?.({ buttons: 0 } as PointerEvent);
+    expect(setPointerButtonsPressed).toHaveBeenLastCalledWith(false);
+    expect(setPointerButtonsPressed).toHaveBeenCalledTimes(2);
+
+    listeners.get("blur")?.(new Event("blur"));
+    expect(lastKeyboardShortcutClientPointerRef.current).toBeNull();
+    expect(setPointerButtonsPressed).toHaveBeenLastCalledWith(false);
+    expect(setPointerButtonsPressed).toHaveBeenCalledTimes(2);
+
+    cleanup?.();
+    for (const type of ["pointermove", "pointerdown", "pointerup", "pointercancel", "blur"]) {
+      expect(removeEventListener).toHaveBeenCalledWith(type, expect.any(Function), { capture: true });
+    }
   });
 });
 

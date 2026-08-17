@@ -3650,20 +3650,37 @@ export function createAppHookCallback108(__appScope: Record<string, any>) {
 
 export function createAppHookCallback109(__appScope: Record<string, any>) {
   return () => {
-  const { lastKeyboardShortcutClientPointerRef } = __appScope;
+  const { lastKeyboardShortcutClientPointerRef, setPointerButtonsPressed } = __appScope;
+    let pointerButtonsPressed = false;
+    const syncPointerButtonsPressed = (nextPressed: boolean) => {
+      if (pointerButtonsPressed === nextPressed) {
+        return;
+      }
+      pointerButtonsPressed = nextPressed;
+      setPointerButtonsPressed(nextPressed);
+    };
     const updateKeyboardShortcutPointerPosition = (event: globalThis.PointerEvent) => {
       lastKeyboardShortcutClientPointerRef.current = { x: event.clientX, y: event.clientY };
+      syncPointerButtonsPressed(event.buttons !== 0);
+    };
+    const updatePointerButtonsPressed = (event: globalThis.PointerEvent) => {
+      syncPointerButtonsPressed(event.buttons !== 0);
     };
     const clearKeyboardShortcutPointerPosition = () => {
       lastKeyboardShortcutClientPointerRef.current = null;
+      syncPointerButtonsPressed(false);
     };
     window.addEventListener("pointermove", updateKeyboardShortcutPointerPosition, { capture: true });
     window.addEventListener("pointerdown", updateKeyboardShortcutPointerPosition, { capture: true });
-    window.addEventListener("blur", clearKeyboardShortcutPointerPosition);
+    window.addEventListener("pointerup", updatePointerButtonsPressed, { capture: true });
+    window.addEventListener("pointercancel", clearKeyboardShortcutPointerPosition, { capture: true });
+    window.addEventListener("blur", clearKeyboardShortcutPointerPosition, { capture: true });
     return () => {
       window.removeEventListener("pointermove", updateKeyboardShortcutPointerPosition, { capture: true });
       window.removeEventListener("pointerdown", updateKeyboardShortcutPointerPosition, { capture: true });
-      window.removeEventListener("blur", clearKeyboardShortcutPointerPosition);
+      window.removeEventListener("pointerup", updatePointerButtonsPressed, { capture: true });
+      window.removeEventListener("pointercancel", clearKeyboardShortcutPointerPosition, { capture: true });
+      window.removeEventListener("blur", clearKeyboardShortcutPointerPosition, { capture: true });
     };
   };
 }
