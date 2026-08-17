@@ -15,8 +15,7 @@ import {
   type TerminalType
 } from "./model";
 import {
-  DEVICE_DEFINITION_VISUAL_PARAM_KEYS,
-  DEVICE_VISUAL_PARAM_PREFIXES
+  DEVICE_DEFINITION_VISUAL_PARAM_KEYS
 } from "./deviceVisualParams";
 
 export type DefinitionSyncTemplate = Pick<DeviceTemplate, "parameterDefinitions" | "parameterDefinitionsIntent"> &
@@ -39,9 +38,11 @@ export type DefinitionSyncTemplate = Pick<DeviceTemplate, "parameterDefinitions"
   >>;
 
 function isDefinitionOwnedParam(key: string) {
+  // button* fields configure each instance's action and target. Templates seed
+  // them when a node is created, but definition reconciliation must not reset
+  // the saved behavior when a project is loaded or a definition is updated.
   return key === "component_type" ||
-    DEVICE_DEFINITION_VISUAL_PARAM_KEYS.has(key) ||
-    DEVICE_VISUAL_PARAM_PREFIXES.some((prefix) => key.startsWith(prefix));
+    DEVICE_DEFINITION_VISUAL_PARAM_KEYS.has(key);
 }
 
 function isCompleteTemplate(template: DefinitionSyncTemplate): template is DeviceTemplate {
