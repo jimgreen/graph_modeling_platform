@@ -19,6 +19,7 @@ import {
   containerRelationCounterKey, parseContainerRelationField, isContainerTransformerRelationKey,
   DEFAULT_POWER_BASE_VALUE, DEFAULT_VOLTAGE_UNIT, DEFAULT_POWER_UNIT, DEFAULT_CURRENT_UNIT,
   ELEMENT_TREE_COMPONENT_LIBRARY_LABELS, COMPONENT_LIBRARY_REVERSE_MAPPING,
+  DEVICE_LIBRARY_BY_KIND,
   topologyNodeNumberForEField, normalizeTemplateDefinitionList,
   validateNodeEnumParameters
 } from "./model";
@@ -1171,7 +1172,12 @@ function resolveDerivedComponentParameterFields(
   baseComponentLibrary: string,
   derivedComponentLibrary: string
 ): EParameterField[] {
-  const baseFields = resolveEParameterFields(kind, { ...params, component_type: baseComponentLibrary });
+  const {
+    [CUSTOM_PARAM_DEFINITIONS_KEY]: _storedDefinitions,
+    ...baseParams
+  } = params;
+  void _storedDefinitions;
+  const baseFields = resolveEParameterFields(kind, { ...baseParams, component_type: baseComponentLibrary });
   const baseFieldNames = new Set(
     baseFields.flatMap((field) => [field.sourceName, field.exportName])
   );
@@ -1218,12 +1224,18 @@ function buildDerivedComponentEDeviceRecord(
   const configuredFields = interfaceDefinition
     ? eParameterFieldsFromInterfaceDefinition(derivedInfo.derivedComponentLibrary, interfaceDefinition)
     : null;
+  const builtInTemplate = DEVICE_LIBRARY_BY_KIND.get(node.kind);
+  const builtInDerivedInfo = builtInTemplate ? templateDerivedComponentLibraryInfo(builtInTemplate) : null;
+  const derivedDefinitions = builtInTemplate &&
+    builtInDerivedInfo?.derivedComponentLibrary === derivedInfo.derivedComponentLibrary
+    ? resolveEffectiveTemplateParameterDefinitionGroups(builtInTemplate).derivedDefinitions
+    : customEParameterDefinitions(node.params);
   const fields = configuredFields
     ? configuredFields.filter((field) => field.sourceName !== "idx" && field.sourceName !== relationKey)
     : resolveDerivedComponentParameterFields(
         node.kind,
         node.params,
-        customEParameterDefinitions(node.params),
+        derivedDefinitions,
         derivedInfo.baseComponentLibrary,
         derivedInfo.derivedComponentLibrary
       );
@@ -1702,6 +1714,21 @@ function hasTemplateConfig(options: EFileExportOptions): boolean {
   return Boolean(options.eDeviceDefinitionLabels) && Object.keys(options.eDeviceDefinitionLabels ?? {}).length > 0;
 }
 
+function builtInDerivedSpecificParameterNames(kind: string): Set<string> {
+  const template = DEVICE_LIBRARY_BY_KIND.get(kind);
+  const derivedInfo = template ? templateDerivedComponentLibraryInfo(template) : null;
+  if (!template || !derivedInfo) {
+    return new Set();
+  }
+  return new Set(
+    resolveEffectiveTemplateParameterDefinitionGroups(template).derivedDefinitions.flatMap((definition) => {
+      const enName = String(definition.enName ?? "").trim();
+      const exportName = String(definition.exportName ?? "").trim();
+      return [enName, exportName, toSnakeCaseDeviceParamName(enName), toSnakeCaseDeviceParamName(exportName)].filter(Boolean);
+    })
+  );
+}
+
 export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOptions = {}): EDeviceExport[] {
   const hasTemplateConfigValue = hasTemplateConfig(options);
   const isDms = looksLikeDmsRtdbTemplate(options);
@@ -1729,7 +1756,21 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
     if (!section || originalSection === "ACNode" || originalSection === "DCNode") {
       continue;
     }
-    const fields = resolveEParameterFields(node.kind, node.params, interfaceDefinitionBySection.get(section));
+    const derivedSpecificParameterNames = builtInDerivedSpecificParameterNames(node.kind);
+    const builtInTemplate = DEVICE_LIBRARY_BY_KIND.get(node.kind);
+    const builtInDerivedInfo = builtInTemplate ? templateDerivedComponentLibraryInfo(builtInTemplate) : null;
+    const resolvedFields = resolveEParameterFields(node.kind, node.params, interfaceDefinitionBySection.get(section));
+    if (builtInDerivedInfo && !resolvedFields.some((field) => field.exportName === "dev_type")) {
+      const nameIndex = resolvedFields.findIndex((field) => field.exportName === "name");
+      resolvedFields.splice(nameIndex >= 0 ? nameIndex + 1 : 0, 0, {
+        sourceName: "dev_type",
+        exportName: "dev_type"
+      });
+    }
+    const fields = resolvedFields.filter((field) => (
+        !derivedSpecificParameterNames.has(field.sourceName) &&
+        !derivedSpecificParameterNames.has(field.exportName)
+      ));
     const columns = fields.map((field) => field.exportName);
     if (columns.length === 0) {
       continue;

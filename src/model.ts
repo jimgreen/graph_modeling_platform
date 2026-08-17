@@ -84,6 +84,9 @@ export type DeviceKind =
   | "static-model-interaction-district"
   | "static-model-interaction-other"
   | "ac-source"
+  | "ac-station-source"
+  | "ac-feeder-source"
+  | "ac-district-source"
   | "ac-capacitor"
   | "ac-reactor"
   | "ac-series-capacitor"
@@ -148,12 +151,18 @@ export type DeviceKind =
   | "ac-breaker"
   | "ac-box-breaker"
   | "ac-load"
+  | "ac-station-load"
+  | "ac-feeder-load"
+  | "ac-district-load"
   | "ac-terminal-transformer-load"
   | "ac-transformer"
   | "ac-two-winding-transformer"
   | "ac-three-winding-transformer"
   | "ac-three-winding-transformer-neutral"
   | "dc-source"
+  | "dc-station-source"
+  | "dc-feeder-source"
+  | "dc-district-source"
   | "dc-storage"
   | "dc-line"
   | "dc-routable-line"
@@ -164,6 +173,9 @@ export type DeviceKind =
   | "dc-disconnector"
   | "dc-breaker"
   | "dc-load"
+  | "dc-station-load"
+  | "dc-feeder-load"
+  | "dc-district-load"
   | "dc-transformer"
   | "dcdc-converter"
   | "acdc-converter"
@@ -2714,6 +2726,30 @@ const ELECTRIC_GENERATION_DEVICE_TEMPLATES = ELECTRIC_GENERATION_FAMILY_SPECS.fl
   ELECTRIC_GENERATION_TERMINAL_TYPES.map((terminalType) => createElectricGenerationDeviceTemplate(terminalType, family))
 );
 
+export type ModelAssociationDerivedClassSpec = {
+  kind: DeviceKind;
+  label: string;
+  baseKind: "ac-source" | "dc-source" | "ac-load" | "dc-load";
+  baseComponentLibrary: "ACGenerator" | "DCGenerator" | "ACLoad" | "DCLoad";
+  derivedComponentLibrary: string;
+};
+
+/** 内置的模型层级电源/负荷派生类。派生类只增加 model_id，其他定义继承对应基类。 */
+export const MODEL_ASSOCIATION_DERIVED_CLASS_SPECS: readonly ModelAssociationDerivedClassSpec[] = [
+  { kind: "ac-station-source", label: "交流厂站电源", baseKind: "ac-source", baseComponentLibrary: "ACGenerator", derivedComponentLibrary: "ACStationGen" },
+  { kind: "ac-feeder-source", label: "交流馈线电源", baseKind: "ac-source", baseComponentLibrary: "ACGenerator", derivedComponentLibrary: "ACFeederGen" },
+  { kind: "ac-district-source", label: "交流台区电源", baseKind: "ac-source", baseComponentLibrary: "ACGenerator", derivedComponentLibrary: "ACDistrictGen" },
+  { kind: "dc-station-source", label: "直流厂站电源", baseKind: "dc-source", baseComponentLibrary: "DCGenerator", derivedComponentLibrary: "DCStationGen" },
+  { kind: "dc-feeder-source", label: "直流馈线电源", baseKind: "dc-source", baseComponentLibrary: "DCGenerator", derivedComponentLibrary: "DCFeederGen" },
+  { kind: "dc-district-source", label: "直流台区电源", baseKind: "dc-source", baseComponentLibrary: "DCGenerator", derivedComponentLibrary: "DCDistrictGen" },
+  { kind: "ac-station-load", label: "交流厂站负荷", baseKind: "ac-load", baseComponentLibrary: "ACLoad", derivedComponentLibrary: "ACStationLoad" },
+  { kind: "ac-feeder-load", label: "交流馈线负荷", baseKind: "ac-load", baseComponentLibrary: "ACLoad", derivedComponentLibrary: "ACFeederLoad" },
+  { kind: "ac-district-load", label: "交流台区负载", baseKind: "ac-load", baseComponentLibrary: "ACLoad", derivedComponentLibrary: "ACDistrictLoad" },
+  { kind: "dc-station-load", label: "直流厂站负荷", baseKind: "dc-load", baseComponentLibrary: "DCLoad", derivedComponentLibrary: "DCStationLoad" },
+  { kind: "dc-feeder-load", label: "直流馈线负荷", baseKind: "dc-load", baseComponentLibrary: "DCLoad", derivedComponentLibrary: "DCFeederLoad" },
+  { kind: "dc-district-load", label: "直流台区负载", baseKind: "dc-load", baseComponentLibrary: "DCLoad", derivedComponentLibrary: "DCDistrictLoad" }
+];
+
 // 类标签映射
 export const ELEMENT_TREE_COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   StaticTextSymbol: "静态文本",
@@ -2774,6 +2810,9 @@ for (const family of ELECTRIC_GENERATION_FAMILY_SPECS) {
     const info = electricGenerationDerivedInfoForFamily(terminalType, family);
     ELEMENT_TREE_COMPONENT_LIBRARY_LABELS[info.derivedComponentLibrary] = info.label;
   }
+}
+for (const spec of MODEL_ASSOCIATION_DERIVED_CLASS_SPECS) {
+  ELEMENT_TREE_COMPONENT_LIBRARY_LABELS[spec.derivedComponentLibrary] = spec.label;
 }
 
 // 反向映射表
@@ -4368,6 +4407,70 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
   }
 ];
 
+const MODEL_ASSOCIATION_PARAMETER_DEFINITION: DeviceParameterDefinition = {
+  cnName: "关联模型",
+  enName: "model_id",
+  valueType: "string",
+  typicalValue: "",
+  readonly: false,
+  exportEnabled: true,
+  exportName: "model_id"
+};
+
+function createModelAssociationDerivedDeviceTemplate(
+  baseTemplate: DeviceTemplate,
+  spec: ModelAssociationDerivedClassSpec
+): DeviceTemplate {
+  return {
+    ...baseTemplate,
+    kind: spec.kind,
+    label: spec.label,
+    englishName: spec.derivedComponentLibrary,
+    componentClass: spec.derivedComponentLibrary,
+    size: { ...baseTemplate.size },
+    params: {
+      ...baseTemplate.params,
+      component_type: spec.baseComponentLibrary,
+      derived_from_component_type: spec.baseComponentLibrary,
+      derived_component_type: spec.derivedComponentLibrary,
+      derived_component_library_label: spec.label,
+      is_derived_component_library: "1",
+      model_id: ""
+    },
+    terminalTypes: baseTemplate.terminalTypes ? [...baseTemplate.terminalTypes] : undefined,
+    terminalLabels: baseTemplate.terminalLabels ? [...baseTemplate.terminalLabels] : undefined,
+    terminalAnchors: baseTemplate.terminalAnchors?.map((anchor) => ({ ...anchor })),
+    terminalRoles: baseTemplate.terminalRoles ? [...baseTemplate.terminalRoles] : undefined,
+    terminalAssociations: baseTemplate.terminalAssociations ? [...baseTemplate.terminalAssociations] : undefined,
+    isContainer: false,
+    isDerivedComponentLibrary: true,
+    derivedFromComponentLibrary: spec.baseComponentLibrary,
+    derivedComponentLibrary: spec.derivedComponentLibrary,
+    derivedComponentLibraryLabel: spec.label,
+    parameterDefinitions: [
+      ...(baseTemplate.parameterDefinitions ?? []).map((definition) => ({ ...definition })),
+      { ...MODEL_ASSOCIATION_PARAMETER_DEFINITION }
+    ],
+    measurementDefinitions: builtInMeasurementDefinitionsForTemplate(baseTemplate),
+    stateDefinitions: baseTemplate.stateDefinitions?.map((definition) => ({ ...definition }))
+  };
+}
+
+function insertModelAssociationDerivedDeviceTemplates(templates: readonly DeviceTemplate[]): DeviceTemplate[] {
+  const specsByBaseKind = new Map<string, ModelAssociationDerivedClassSpec[]>();
+  for (const spec of MODEL_ASSOCIATION_DERIVED_CLASS_SPECS) {
+    const specs = specsByBaseKind.get(spec.baseKind) ?? [];
+    specs.push(spec);
+    specsByBaseKind.set(spec.baseKind, specs);
+  }
+  return templates.flatMap((template) => [
+    template,
+    ...(specsByBaseKind.get(template.kind) ?? []).map((spec) =>
+      createModelAssociationDerivedDeviceTemplate(template, spec)
+    )
+  ]);
+}
+
 const VERTICAL_BUS_TEMPLATE_KINDS = new Set<string>(["ac-bus", "dc-bus", "hydrogen-bus", "heat-bus"]);
 
 function shouldCreateVerticalDeviceTemplate(template: DeviceTemplate): boolean {
@@ -5247,7 +5350,7 @@ function withRdfIdParameter(template: DeviceTemplate): DeviceTemplate {
   };
 }
 
-const NORMALIZED_BASE_DEVICE_LIBRARY = materializeDeviceMeasurementDefinitionFields(BASE_DEVICE_LIBRARY
+const NORMALIZED_BASE_DEVICE_LIBRARY = materializeDeviceMeasurementDefinitionFields(insertModelAssociationDerivedDeviceTemplates(BASE_DEVICE_LIBRARY)
   .map(normalizeDeviceTemplateDefaultSize)
   .map(normalizeDeviceTemplateParameterNames)
   .map(attachBuiltInDeviceMeasurementDefinitions)
