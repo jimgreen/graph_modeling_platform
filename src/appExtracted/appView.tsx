@@ -448,79 +448,72 @@ function TopologyWarningPanelContent(props: {
 
   // 保存每个分类+状态组合的滚动位置
   const scrollPositionsRef = useRef<Map<string, number>>(new Map());
-  const getScrollKey = () => `${category}:${status}`;
+  // 用户是否手动选择了状态Tab（防止自动切换覆盖）
+  const explicitStatusRef = useRef(false);
 
-  // 切换分类/状态时重置懒加载计数，但不重置滚动位置（由 restore effect 处理）
+  // 切换分类/状态时重置懒加载计数并恢复滚动位置
   useEffect(() => {
     setRenderedCount(TOPOLOGY_LAZY_BATCH);
-  }, [category, status]);
-
-  // 切换分类/状态时恢复滚动位置
-  useEffect(() => {
-    const key = getScrollKey();
-    const savedPosition = scrollPositionsRef.current.get(key) ?? 0;
+    const key = `${category}:${status}`;
     if (listRef.current) {
-      listRef.current.scrollTop = savedPosition;
+      listRef.current.scrollTop = scrollPositionsRef.current.get(key) ?? 0;
     }
   }, [category, status]);
 
-  // 保存滚动位置的回调
-  const handleScroll = useCallback(() => {
-    if (listRef.current) {
-      const key = getScrollKey();
-      scrollPositionsRef.current.set(key, listRef.current.scrollTop);
-    }
-  }, [category, status]);
-
-  // 分类计数（基于全量数据，不受状态筛选影响）
-  const categoryCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: allErrors.length, voltage: 0, capacity: 0, topology: 0, other: 0 };
+  // 合并：分类计数（全量）+ 状态计数（当前分类下），单次遍历
+  const { categoryCounts, statusCounts } = useMemo(() => {
+    const catCounts: Record<string, number> = { all: allErrors.length, voltage: 0, capacity: 0, topology: 0, other: 0 };
+    let curErrors = 0, curWarnings = 0, curTotal = 0;
     for (const error of allErrors) {
       const cat = categorize(error.type);
-      counts[cat] = (counts[cat] || 0) + 1;
+      catCounts[cat] = (catCounts[cat] || 0) + 1;
+      if (category === "all" || cat === category) {
+        curTotal++;
+        if (isBlocking(error)) curErrors++; else curWarnings++;
+      }
     }
-    return counts;
-  }, [allErrors, categorize]);
-
-  // 状态Tab计数（基于当前分类下的数据）
-  const statusCounts = useMemo(() => {
-    let list = allErrors;
-    if (category !== "all") list = list.filter((e: any) => categorize(e.type) === category);
-    let errors = 0, warnings = 0;
-    for (const e of list) { if (isBlocking(e)) errors++; else warnings++; }
-    return { all: list.length, error: errors, warning: warnings };
+    return { categoryCounts: catCounts, statusCounts: { all: curTotal, error: curErrors, warning: curWarnings } };
   }, [allErrors, category, categorize, isBlocking]);
 
-  // 错误>0 或 都为0 → 错误Tab；错误=0 且 告警>0 → 告警Tab
+  // 自动切换状态Tab：用户未手动选择时生效
   useEffect(() => {
-    if (statusCounts.error > 0 || statusCounts.warning === 0) {
-      if (status !== "error") setStatus("error");
-    } else if (statusCounts.error === 0 && statusCounts.warning > 0) {
-      if (status !== "warning") setStatus("warning");
-    }
+    if (explicitStatusRef.current) return;
+    const target = statusCounts.error > 0 || statusCounts.warning === 0 ? "error" : "warning";
+    if (status !== target) setStatus(target);
   }, [statusCounts.error, statusCounts.warning, status, setStatus]);
 
-  // 懒加载：监听滚动容器的 scroll 事件
+  // 合并：滚动位置保存 + 懒加载，单个 scroll listener
   useEffect(() => {
     const list = listRef.current;
     if (!list) return;
-    const handleLazyScroll = () => {
+    const onScroll = () => {
+      scrollPositionsRef.current.set(`${category}:${status}`, list.scrollTop);
       if (list.scrollTop + list.clientHeight >= list.scrollHeight - 100) {
         setRenderedCount((c) => c + TOPOLOGY_LAZY_BATCH);
       }
     };
-    list.addEventListener("scroll", handleLazyScroll, { passive: true });
-    return () => list.removeEventListener("scroll", handleLazyScroll);
-  }, []);
+    list.addEventListener("scroll", onScroll, { passive: true });
+    return () => list.removeEventListener("scroll", onScroll);
+  }, [category, status]);
 
   const renderedItems = filteredErrors.slice(0, renderedCount);
   const hasMore = renderedCount < filteredErrors.length;
+
+  const handleCategoryChange = (newCategory: string) => {
+    explicitStatusRef.current = false;
+    setCategory(newCategory);
+  };
+
+  const handleStatusChange = (newStatus: string) => {
+    explicitStatusRef.current = true;
+    setStatus(newStatus);
+  };
 
   return (<>
     <div className="topology-warning-floating-body">
       <nav className="topology-warning-sidebar">
         {TOPOLOGY_CATEGORIES.map((cat) => (
-          <button key={cat.key} type="button" className={`topology-warning-category-item${category === cat.key ? " active" : ""}`} onClick={() => setCategory(cat.key)}>
+          <button key={cat.key} type="button" className={`topology-warning-category-item${category === cat.key ? " active" : ""}`} onClick={() => handleCategoryChange(cat.key)}>
             <span className="topology-warning-category-label">{cat.label}</span>
             <span className="topology-warning-category-count">{categoryCounts[cat.key] || 0}</span>
           </button>
@@ -529,12 +522,12 @@ function TopologyWarningPanelContent(props: {
       <div className="topology-warning-content">
         <div className="topology-warning-status-tabs">
           {([["error", "错误"], ["warning", "告警"]] as const).map(([key, label]) => (
-            <button key={key} type="button" className={`topology-warning-status-tab${status === key ? " active" : ""}`} onClick={() => setStatus(key)}>
+            <button key={key} type="button" className={`topology-warning-status-tab${status === key ? " active" : ""}`} onClick={() => handleStatusChange(key)}>
               {label} <span className="topology-warning-tab-count">{statusCounts[key] || 0}</span>
             </button>
           ))}
         </div>
-        <div ref={listRef} className="topology-warning-list" onScroll={handleScroll}>
+        <div ref={listRef} className="topology-warning-list">
           {renderedItems.length === 0 && <p className="topology-warning-empty">暂无告警</p>}
           {renderedItems.map((error: any, index: number) => {
             const blocking = isBlocking(error);
