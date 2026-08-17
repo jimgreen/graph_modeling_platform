@@ -512,10 +512,11 @@ function TopologyWarningPanelContent(props: {
         </div>
         <div className="topology-warning-list">
           {renderedItems.length === 0 && <p className="topology-warning-empty">暂无告警</p>}
-          {renderedItems.map((error: any) => {
+          {renderedItems.map((error: any, index: number) => {
             const blocking = isBlocking(error);
             return (
               <div key={error.id} className={`topology-warning-item${blocking ? " error" : " warning"}`} onClick={() => locateError(error)}>
+                <span className="topology-warning-item-index">{index + 1}</span>
                 <button type="button" onClick={(event) => { event.stopPropagation(); locateError(error); }} onDoubleClick={(event) => { event.stopPropagation(); locateError(error); }}>
                   {displayMessage(error.message)}
                 </button>
