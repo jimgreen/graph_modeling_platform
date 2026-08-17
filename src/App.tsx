@@ -256,6 +256,7 @@ import {
   type ModelGroup,
   type Point,
   type ProjectFile,
+  type ModelType,
   type RoutedEdge,
   type CanvasBounds,
   type ColorPalette,
@@ -889,10 +890,20 @@ const [deviceIndexCounters, setDeviceIndexCounters] = useState<DeviceIndexCounte
 Object.assign(__appScope, { deviceIndexCounters, setDeviceIndexCounters });
 const [projectName, setProjectName] = useState(() => initialDraft?.projectName ?? "");
 Object.assign(__appScope, { projectName, setProjectName });
+const [projectIdx, setProjectIdx] = useState(() => Number((initialDraft as any)?.idx) || 0);
+Object.assign(__appScope, { projectIdx, setProjectIdx });
 const [subcontrolarea, setSubcontrolarea] = useState(() => initialDraft?.subcontrolarea || "默认区域");
 Object.assign(__appScope, { subcontrolarea, setSubcontrolarea });
 const [modelType, setModelType] = useState(() => initialDraft?.modelType ?? "厂站");
 Object.assign(__appScope, { modelType, setModelType });
+const [createModelDialog, setCreateModelDialog] = useState<null | {
+  schemeId: string;
+  name: string;
+  modelType: ModelType;
+  saving: boolean;
+  error: string;
+}>(null);
+Object.assign(__appScope, { createModelDialog, setCreateModelDialog });
 const [substation, setSubstation] = useState(() => initialDraft?.substation || "默认厂站");
 Object.assign(__appScope, { substation, setSubstation });
 const [feeder, setFeeder] = useState(() => initialDraft?.feeder || "默认馈线");
@@ -1502,7 +1513,7 @@ useEffect(() => {
     const scope = __appScopeRef.current as any;
     const dispatch: Record<string, (p: any) => unknown> = {
       "control.scheme.create": (p) => scope.programmaticCreateScheme?.(p.name, p.parentSchemeId),
-      "control.model.create": (p) => scope.programmaticCreateBlankProject?.(p.name, p.schemeId),
+      "control.model.create": (p) => scope.programmaticCreateBlankProject?.(p.name, p.schemeId, p.modelType),
       "control.devices.select": (p) => scope.programmaticSelectDevices?.(p.ids, p.mode),
       "control.devices.group": () => scope.programmaticGroupSelected?.(),
       "control.template.saveFromSelection": (p) => scope.programmaticSaveSelectionAsTemplate?.(p),

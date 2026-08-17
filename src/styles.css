@@ -5571,6 +5571,17 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   padding-top: 4px;
 }
 
+.model-create-dialog {
+  width: min(440px, calc(100vw - 32px));
+}
+
+.model-create-index-note {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 .custom-device-dirty-summary {
   margin-right: auto;
   color: #64748b;

@@ -52,6 +52,7 @@ import {
   deleteSavedScheme,
   deleteSavedProject,
   DEVICE_LIBRARY,
+  DEVICE_LIBRARY_BY_KIND,
   distributeNodes,
   duplicateSavedProject,
   routeOrthogonalEdge,
@@ -174,6 +175,10 @@ import {
   isElectricGenerationContainerKind,
   isStaticKind,
   isStaticNode,
+  isModelInteractionNode,
+  modelInteractionTerminalConnectionLocalPointsByNodeId,
+  MODEL_TYPES,
+  nextGlobalProjectIndex,
   keyboardMoveStepForViewBox,
   viewBoxZoomPercent,
   getSwitchVisualState,
@@ -195,6 +200,8 @@ import {
   normalizeViewBoxToCanvas,
   prepareConnectionEdgeForCommit,
   projectPointToBusCenterline,
+  projectPointToModelInteractionBoundary,
+  projectPointToModelInteractionBoundaryIfInRange,
   reconcileOverlappingTerminalConnections,
   resetDeviceIndexesForPaste,
   terminalRenderLocalPoint,
@@ -611,11 +618,11 @@ test("resolves custom multi-state visual overrides without changing E export sha
   expect(exported.ACSwitch.rows[0]).toEqual(expect.objectContaining({ status: "1", run_stat: "1" }));
 });
 
-test("derives the same dev_type for vertical device variants as their base devices", () => {
+test("exports the owning class name as dev_type for base and vertical device variants", () => {
   const baseNode = createDefaultNode("ac-series-capacitor", { x: 100, y: 100 });
   const verticalNode = createDefaultNode("ac-series-capacitor-vertical", { x: 260, y: 100 });
-  baseNode.params.dev_type = "";
-  verticalNode.params.dev_type = "";
+  baseNode.params.dev_type = "ac-series-capacitor";
+  verticalNode.params.dev_type = "ac-series-capacitor-vertical";
   const exported = parseESections(buildEDeviceParameterFile({
     version: 1,
     name: "竖向补偿元件测试",
@@ -623,13 +630,13 @@ test("derives the same dev_type for vertical device variants as their base devic
     edges: []
   }));
   expect(exported.ACSeriCompensator.rows).toHaveLength(2);
-  expect(exported.ACSeriCompensator.rows[0].dev_type).toBe("ac-series-capacitor");
-  expect(exported.ACSeriCompensator.rows[1].dev_type).toBe("ac-series-capacitor");
+  expect(exported.ACSeriCompensator.rows[0].dev_type).toBe("ACSeriCompensator");
+  expect(exported.ACSeriCompensator.rows[1].dev_type).toBe("ACSeriCompensator");
 });
 
-test("derives the interface dev_type for vertical variants from the base kind", () => {
+test("exports the interface dev_type for vertical variants from the owning class", () => {
   const verticalNode = createDefaultNode("ac-series-capacitor-vertical", { x: 100, y: 100 });
-  verticalNode.params.dev_type = "";
+  verticalNode.params.dev_type = "ac-series-capacitor-vertical";
   const payload = parseESections(buildEFileExport({
     version: 1,
     name: "竖向接口测试",
@@ -646,7 +653,150 @@ test("derives the interface dev_type for vertical variants from the base kind", 
       ]
     }]
   }).text);
-  expect(payload.ACSeriCompensator.rows[0].dev_type).toBe("ac-series-capacitor");
+  expect(payload.ACSeriCompensator.rows[0].dev_type).toBe("ACSeriCompensator");
+});
+
+test("exports class names for dev_type in container-associated heat source records", () => {
+  let counters = {};
+  const kinds = [
+    "heat-boiler",
+    "ac-heater",
+    "dc-heater",
+    "two-port-heat-boiler",
+    "ac-two-port-heater",
+    "dc-two-port-heater"
+  ] as const;
+  const nodes = kinds.map((kind, index) => {
+    const result = assignPermanentDeviceIndex(createDefaultNode(kind, { x: 100 + index * 120, y: 100 }), counters);
+    counters = result.counters;
+    result.node.params.dev_type = kind;
+    return result.node;
+  });
+  const classFields = (doublePort: boolean) => [
+    { sourceName: "idx", exportEnabled: true, exportName: "idx" },
+    { sourceName: "name", exportEnabled: true, exportName: "name" },
+    { sourceName: "dev_type", exportEnabled: true, exportName: "dev_type" },
+    ...(doublePort
+      ? [
+          { sourceName: "i_node", exportEnabled: true, exportName: "i_node" },
+          { sourceName: "j_node", exportEnabled: true, exportName: "j_node" }
+        ]
+      : [{ sourceName: "node", exportEnabled: true, exportName: "node" }]),
+    { sourceName: "supply_temperature_set", exportEnabled: true, exportName: "supply_temperature_set" },
+    { sourceName: "run_stat", exportEnabled: true, exportName: "run_stat" }
+  ];
+  const payload = parseESections(buildEFileExport({
+    version: 1,
+    name: "供热关联设备类名导出测试",
+    nodes,
+    edges: []
+  }, ["默认方案"], {
+    eDeviceDefinitionLabels: {
+      HeatSource: "HeatSource",
+      HeatSource2: "HeatSource2"
+    },
+    interfaceDefinitions: [
+      {
+        componentLibrary: "HeatSource",
+        exportEnabled: true,
+        exportName: "HeatSource",
+        fields: classFields(false)
+      },
+      {
+        componentLibrary: "HeatSource2",
+        exportEnabled: true,
+        exportName: "HeatSource2",
+        fields: classFields(true)
+      }
+    ]
+  }).text);
+
+  expect(payload.HeatSource.rows).toHaveLength(3);
+  expect(payload.HeatSource.rows.map((row) => row.dev_type)).toEqual([
+    "HeatSource",
+    "HeatSource",
+    "HeatSource"
+  ]);
+  expect(payload.HeatSource2.rows).toHaveLength(3);
+  expect(payload.HeatSource2.rows.map((row) => row.dev_type)).toEqual([
+    "HeatSource2",
+    "HeatSource2",
+    "HeatSource2"
+  ]);
+});
+
+test("exports owning class names for dev_type across every built-in E device class", () => {
+  let counters = {};
+  const supportedSections = new Set(Object.keys(E_SECTION_COLUMNS));
+  const knownClassNames = new Set([
+    ...supportedSections,
+    ...DEVICE_LIBRARY.flatMap((template) => {
+      const derivedInfo = templateDerivedComponentLibraryInfo(template);
+      return derivedInfo ? [derivedInfo.derivedComponentLibrary] : [];
+    })
+  ]);
+  const nodes = DEVICE_LIBRARY
+    .filter((template) => {
+      if (isStaticKind(template.kind)) {
+        return false;
+      }
+      return supportedSections.has(inferESection(template.kind, template.params));
+    })
+    .map((template, index) => {
+      const indexed = assignPermanentDeviceIndex(
+        createDefaultNode(template.kind, { x: 100 + (index % 12) * 140, y: 100 + Math.floor(index / 12) * 120 }),
+        counters
+      );
+      counters = indexed.counters;
+      indexed.node.params.dev_type = `legacy-${template.kind}`;
+      return indexed.node;
+    });
+  const interfaceDefinitions = [...supportedSections].map((section) => ({
+    componentLibrary: section,
+    exportEnabled: true,
+    exportName: section,
+    fields: [
+      { sourceName: "idx", exportEnabled: true, exportName: "idx" },
+      { sourceName: "name", exportEnabled: true, exportName: "name" },
+      { sourceName: "dev_type", exportEnabled: true, exportName: "dev_type" }
+    ]
+  }));
+  const exported = parseESections(buildEFileExport({
+    version: 1,
+    name: "全内置类设备类型导出测试",
+    nodes,
+    edges: []
+  }, ["默认方案"], {
+    eDeviceDefinitionLabels: Object.fromEntries([...supportedSections].map((section) => [section, section])),
+    interfaceDefinitions
+  }).text);
+
+  let checkedRows = 0;
+  const checkedSections: string[] = [];
+  const checkedClassNames = new Set<string>();
+  for (const [section, payload] of Object.entries(exported)) {
+    if (!payload.columns.includes("dev_type")) {
+      continue;
+    }
+    checkedSections.push(section);
+    checkedRows += payload.rows.length;
+    for (const row of payload.rows) {
+      checkedClassNames.add(row.dev_type);
+      expect(knownClassNames.has(row.dev_type), `${section}: ${row.dev_type}`).toBe(true);
+      expect(row.dev_type).not.toMatch(/^legacy-/u);
+    }
+  }
+  expect(checkedRows).toBeGreaterThan(50);
+  expect(checkedSections).toEqual(expect.arrayContaining([
+    "ACCompensator",
+    "ACSeriCompensator",
+    "HeatSource",
+    "HeatSource2"
+  ]));
+  expect([...checkedClassNames]).toEqual(expect.arrayContaining([
+    "ACWindGen",
+    "DCPVGen"
+  ]));
 });
 
 test("includes AC and DC zero-impedance branch elements in the library and E export", () => {
@@ -790,7 +940,7 @@ test("exports parallel and series AC compensators with the defined columns and t
   expect(exported.ACCompensator.rows).toEqual([expect.objectContaining({
     idx: "1",
     name: "并联电容器1",
-    dev_type: "CAPACITOR",
+    dev_type: "ACCompensator",
     rated_voltage: "10",
     rated_reactive_power: "1",
     reactance: "100"
@@ -805,7 +955,7 @@ test("exports parallel and series AC compensators with the defined columns and t
   expect(exported.ACSeriCompensator.rows).toEqual([expect.objectContaining({
     idx: "1",
     name: "串联电抗器1",
-    dev_type: "REACTOR",
+    dev_type: "ACSeriCompensator",
     rated_voltage: "10",
     rated_reactive_power: "1",
     reactance: "100"
@@ -3560,5 +3710,189 @@ describe("E 文件查看/编辑展示与导出一致性", () => {
     expect(formatEDeviceRecordColumnValue("ACGenerator", record, "regable", 0)).toBe("1");
     record.params.type = "ac-line";
     expect(formatEDeviceRecordColumnValue("ACGenerator", record, "regable", 0)).toBe("0");
+  });
+});
+
+describe("模型类型、全局序号与模型交互图元", () => {
+  test("支持五种模型类型并跨方案树计算全局下一个模型 idx", () => {
+    expect(MODEL_TYPES).toEqual(["微网", "厂站", "馈线", "台区", "其他"]);
+    const project = (name: string, idx?: number) => createSavedProject(name, {
+      version: 1,
+      name,
+      idx,
+      nodes: [],
+      edges: []
+    });
+    const rootA = createSavedScheme("方案A", [project("模型1", 1)]);
+    rootA.children = [createSavedScheme("子方案", [project("模型9", 9)])];
+    const rootB = createSavedScheme("方案B", [project("模型4", 4)]);
+
+    expect(nextGlobalProjectIndex([])).toBe(1);
+    expect(nextGlobalProjectIndex([rootA, rootB])).toBe(10);
+  });
+
+  test("静态图元库包含模型交互类及五个可关联模型的 AC/DC 多端点按钮", () => {
+    const expected = [
+      ["static-model-interaction-microgrid", "微网", "微网"],
+      ["static-model-interaction-station", "厂站", "厂站"],
+      ["static-model-interaction-feeder", "馈线", "馈线"],
+      ["static-model-interaction-district", "台区", "台区"],
+      ["static-model-interaction-other", "其他", "其他"]
+    ] as const;
+
+    for (const [kind, label, modelType] of expected) {
+      const template = DEVICE_LIBRARY_BY_KIND.get(kind);
+      expect(template, kind).toBeDefined();
+      expect(template).toMatchObject({
+        label,
+        categoryLibrary: "静态图元",
+        terminalCount: 8,
+        terminalTypes: ["ac", "ac", "ac", "ac", "dc", "dc", "dc", "dc"]
+      });
+      const node = createDefaultNode(kind, { x: 100, y: 100 });
+      expect(isModelInteractionNode(node)).toBe(true);
+      expect(isStaticNode(node)).toBe(true);
+      expect(isStaticButtonCapableNode(node)).toBe(true);
+      expect(staticRenderKindForNode(node)).toBe("static-button");
+      expect(node.params).toMatchObject({
+        component_type: "ModelInteraction",
+        modelInteractionType: modelType,
+        buttonEnabled: "1",
+        buttonActionType: "project"
+      });
+    }
+  });
+
+  test("模型交互端子只记录已连接项并保留线路实际边界连接位置", () => {
+    const station = createDefaultNode("static-model-interaction-station", { x: 300, y: 200 });
+    const load = createDefaultNode("ac-load", { x: 560, y: 200 });
+    const pointer = { x: station.position.x + station.size.width, y: station.position.y + 12 };
+    const connectionPoint = projectPointToModelInteractionBoundary(station, pointer);
+    const line = createRoutableLineDeviceFromEndpoints(
+      DEVICE_LIBRARY_BY_KIND.get("ac-routable-line")!,
+      connectionPoint,
+      getTerminalPoint(load, load.terminals[0].id),
+      DEFAULT_MODEL_LAYER_ID,
+      {
+        source: routableLineDeviceEndpointRefForNode(station, "t1", connectionPoint),
+        target: routableLineDeviceEndpointRefForNode(load, load.terminals[0].id)
+      }
+    );
+    const localPointsByNodeId = modelInteractionTerminalConnectionLocalPointsByNodeId([station, load, line]);
+    const stationLocalPoints = localPointsByNodeId.get(station.id)!;
+
+    expect(projectPointToModelInteractionBoundaryIfInRange(station, station.position)).toEqual(
+      projectPointToModelInteractionBoundary(station, station.position)
+    );
+    expect(stationLocalPoints.has("t1")).toBe(true);
+    expect(stationLocalPoints.has("t2")).toBe(false);
+    expect(stationLocalPoints.get("t1")).toEqual(routableLineDeviceEndpointRefs(line).source?.localPoint);
+    expect(modelInteractionTerminalConnectionLocalPointsByNodeId(
+      [station, load, line],
+      { excludedLineNodeId: line.id, excludedEndpoint: "source" }
+    ).get(station.id)).toBeUndefined();
+  });
+});
+
+describe("厂站模型交互端点的拓扑与 E 文件边界设备", () => {
+  const terminalPoint = (node: ModelNode, terminalId: string) => getTerminalPoint(node, terminalId);
+  const connectLine = (
+    kind: "ac-routable-line" | "dc-routable-line",
+    name: string,
+    source: { node: ModelNode; terminalId: string },
+    target: { node: ModelNode; terminalId: string }
+  ) => {
+    const line = createRoutableLineDeviceFromEndpoints(
+      DEVICE_LIBRARY_BY_KIND.get(kind)!,
+      terminalPoint(source.node, source.terminalId),
+      terminalPoint(target.node, target.terminalId),
+      DEFAULT_MODEL_LAYER_ID,
+      {
+        source: { nodeId: source.node.id, terminalId: source.terminalId },
+        target: { nodeId: target.node.id, terminalId: target.terminalId }
+      }
+    );
+    line.name = name;
+    line.terminals = line.terminals.map((terminal) => ({ ...terminal, vbase: kind === "ac-routable-line" ? "10" : "0.75" }));
+    return line;
+  };
+
+  test("同一厂站按钮上的不同线路端子保持独立节点号且不产生悬空错误", () => {
+    const station = createDefaultNode("static-model-interaction-station", { x: 100, y: 160 });
+    station.name = "厂站入口";
+    station.params.buttonTargetProjectName = "东城厂站";
+    station.terminals = station.terminals.map((terminal) => ({
+      ...terminal,
+      vbase: terminal.type === "ac" ? "10" : "0.75"
+    }));
+    const load1 = createDefaultNode("ac-load", { x: 420, y: 80 });
+    const load2 = createDefaultNode("ac-load", { x: 420, y: 240 });
+    load1.terminals[0].vbase = "10";
+    load2.terminals[0].vbase = "10";
+    const line1 = connectLine("ac-routable-line", "甲线", { node: station, terminalId: "t1" }, { node: load1, terminalId: "t1" });
+    const line2 = connectLine("ac-routable-line", "乙线", { node: station, terminalId: "t2" }, { node: load2, terminalId: "t1" });
+    const nodes = [station, load1, load2, line1, line2];
+
+    const calculated = calculateElectricalTopology(nodes, []);
+    const calculatedLine1 = calculated.find((node) => node.id === line1.id)!;
+    const calculatedLine2 = calculated.find((node) => node.id === line2.id)!;
+    expect(calculatedLine1.terminals[0].nodeNumber).toBeTruthy();
+    expect(calculatedLine2.terminals[0].nodeNumber).toBeTruthy();
+    expect(calculatedLine1.terminals[0].nodeNumber).not.toBe(calculatedLine2.terminals[0].nodeNumber);
+
+    const errors = validateTopology(nodes, [], { includeVoltageSetpointDeviations: false });
+    expect(errors.filter((error) => error.type === "floating-terminal")).toEqual([]);
+    expect(errors.filter((error) => error.type === "missing-island-voltage")).toEqual([]);
+  });
+
+  test("按 AC/DC 线路方向生成等值电源或负荷并从相应表最大 idx 继续编号", () => {
+    const station = createDefaultNode("static-model-interaction-station", { x: 260, y: 200 });
+    station.name = "按钮默认名";
+    station.params.buttonTargetProjectName = "东城厂站";
+    station.terminals = station.terminals.map((terminal) => ({
+      ...terminal,
+      vbase: terminal.type === "ac" ? "10" : "0.75"
+    }));
+    const acLoad = createDefaultNode("ac-load", { x: 560, y: 80 });
+    const acSource = createDefaultNode("ac-source", { x: 20, y: 160 });
+    const dcLoad = createDefaultNode("dc-load", { x: 560, y: 280 });
+    const dcSource = createDefaultNode("dc-source", { x: 20, y: 360 });
+    acLoad.terminals[0].vbase = "10";
+    acSource.terminals[0].vbase = "10";
+    dcLoad.terminals[0].vbase = "0.75";
+    dcSource.terminals[0].vbase = "0.75";
+    acSource.params.idx = "7";
+    acLoad.params.idx = "11";
+    dcSource.params.idx = "4";
+    dcLoad.params.idx = "6";
+    const lines = [
+      connectLine("ac-routable-line", "交流送出线", { node: station, terminalId: "t1" }, { node: acLoad, terminalId: "t1" }),
+      connectLine("ac-routable-line", "交流受入线", { node: acSource, terminalId: "t1" }, { node: station, terminalId: "t2" }),
+      connectLine("dc-routable-line", "直流送出线", { node: station, terminalId: "t5" }, { node: dcLoad, terminalId: "t1" }),
+      connectLine("dc-routable-line", "直流受入线", { node: dcSource, terminalId: "t1" }, { node: station, terminalId: "t6" })
+    ];
+    const project: ProjectFile = {
+      version: 1,
+      name: "厂站边界闭环",
+      nodes: [station, acLoad, acSource, dcLoad, dcSource, ...lines],
+      edges: []
+    };
+
+    const records = buildEDeviceRecords(project);
+    const boundaryRecords = records.filter((record) => record.id.includes(":station-boundary:"));
+    expect(boundaryRecords).toHaveLength(4);
+    expect(boundaryRecords.map((record) => [record.section, record.params.idx, record.params.name])).toEqual(expect.arrayContaining([
+      ["ACGenerator", "8", "交流送出线-东城厂站-等值电源"],
+      ["ACLoad", "12", "交流受入线-东城厂站-等值负荷"],
+      ["DCGenerator", "5", "直流送出线-东城厂站-等值电源"],
+      ["DCLoad", "7", "直流受入线-东城厂站-等值负荷"]
+    ]));
+    expect(new Set(boundaryRecords.map((record) => `${record.section.startsWith("AC") ? "ac" : "dc"}:${record.params.node}`)).size).toBe(4);
+
+    const exported = parseESections(buildEDeviceParameterFile(project));
+    expect(exported.ACGenerator.rows.some((row) => row.name === "交流送出线-东城厂站-等值电源")).toBe(true);
+    expect(exported.ACLoad.rows.some((row) => row.name === "交流受入线-东城厂站-等值负荷")).toBe(true);
+    expect(exported.DCGenerator.rows.some((row) => row.name === "直流送出线-东城厂站-等值电源")).toBe(true);
+    expect(exported.DCLoad.rows.some((row) => row.name === "直流受入线-东城厂站-等值负荷")).toBe(true);
   });
 });

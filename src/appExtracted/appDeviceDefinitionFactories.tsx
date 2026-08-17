@@ -4286,9 +4286,24 @@ export function createFinishSchemeRecordDrag(__appScope: Record<string, any>) {
   };
 }
 
+export function projectModelTypeIconName(modelType: unknown) {
+  switch (typeof modelType === "string" ? modelType.trim() : "") {
+    case "微网":
+      return "Network";
+    case "厂站":
+      return "Factory";
+    case "馈线":
+      return "Cable";
+    case "台区":
+      return "HousePlug";
+    default:
+      return "FileJson";
+  }
+}
+
 export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
   return (scheme: SavedSchemeRecord, depth = 0): ReactNode => {
-  const { ChevronDown, ChevronRight, FileJson, FolderOpen, activeProjectKey, div, expandedSchemeIds, finishProjectRecordDrag, finishSchemeRecordDrag, isEditMode, moveProjectRecordToScheme, moveSchemeRecordToScheme, p, projectSearchNeedle, renderProjectSchemeNode, requestLoadSavedProject, selectSingleProject, selectSingleScheme, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, setInspectorTab, setProjectMenu, span, startProjectRecordDrag, startSchemeRecordDrag, toggleProjectSelection, toggleSchemeExpanded, toggleSchemeSelection } = __appScope;
+  const { Cable, ChevronDown, ChevronRight, Factory, FileJson, FolderOpen, HousePlug, Network, activeProjectKey, div, expandedSchemeIds, finishProjectRecordDrag, finishSchemeRecordDrag, isEditMode, moveProjectRecordToScheme, moveSchemeRecordToScheme, p, projectSearchNeedle, renderProjectSchemeNode, requestLoadSavedProject, selectSingleProject, selectSingleScheme, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, setInspectorTab, setProjectMenu, span, startProjectRecordDrag, startSchemeRecordDrag, toggleProjectSelection, toggleSchemeExpanded, toggleSchemeSelection } = __appScope;
     const isExpanded = projectSearchNeedle ? true : expandedSchemeIds.includes(scheme.id);
     const children = scheme.children ?? [];
     const hasContent = scheme.projects.length > 0 || children.length > 0;
@@ -4376,6 +4391,16 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
               <>
                 {scheme.projects.map((project) => {
                   const isProjectSelected = selectedProjectIds.includes(project.id) || project.id === selectedProjectId;
+                  const projectModelType = ["微网", "厂站", "馈线", "台区"].includes(project.project?.modelType)
+                    ? project.project.modelType
+                    : "其他";
+                  const ProjectModelTypeIcon = {
+                    Cable,
+                    Factory,
+                    FileJson,
+                    HousePlug,
+                    Network
+                  }[projectModelTypeIconName(projectModelType)] ?? FileJson;
                   return (
                     <div
                       role="option"
@@ -4424,7 +4449,13 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
                         setProjectMenu({ x: event.clientX, y: event.clientY, schemeId: scheme.id, projectId: project.id });
                       }}
                     >
-                      <FileJson className="project-item-icon" size={14} />
+                      <ProjectModelTypeIcon
+                        aria-label={`${projectModelType}模型`}
+                        className="project-item-icon"
+                        data-model-type={projectModelType}
+                        role="img"
+                        size={14}
+                      />
                       <span className="project-tree-name">{project.name}</span>
                     </div>
                   );

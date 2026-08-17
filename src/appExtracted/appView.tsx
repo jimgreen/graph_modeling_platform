@@ -141,16 +141,12 @@ export function resolveDeviceModelPanelDefinitionGroups(
 }
 
 export function resolveDeviceModelPanelDevType(kind: string, params: Record<string, unknown> = {}): string {
-  const storedValue = String(params.dev_type ?? "").trim();
-  if (storedValue) {
-    return storedValue;
-  }
   const derivedInfo = templateDerivedComponentLibraryInfo({ kind, params: params as Record<string, string> });
   return [
     derivedInfo?.derivedComponentLibrary,
     params.derived_component_type,
-    params.component_type,
     inferESection(kind, params as Record<string, string>),
+    params.component_type,
     kind
   ].map((value) => String(value ?? "").trim()).find(Boolean) ?? "";
 }
@@ -536,6 +532,7 @@ export function renderAppView(__appScope: Record<string, any>) {
     writeOperationLog
   } = __appScope;
   const { globalMessage, setGlobalMessage } = __appScope;
+  const { createModelDialog, setCreateModelDialog } = __appScope;
   const { exportCompletionDialog, exportCompletionCountdown, setExportCompletionDialog } = __appScope;
   const { unsavedChangesDialogOpen, setUnsavedChangesDialogOpen, savedUndoStackLengthRef, setHasUnsavedChanges } = __appScope;
   useEffect(() => {
@@ -4490,6 +4487,74 @@ export function renderAppView(__appScope: Record<string, any>) {
             </div>
             <div className="device-library-dialog-resize" role="separator" aria-orientation="horizontal" aria-label="调整修改元件窗口大小" title="拖拽调整窗口大小" onPointerDown={(event) => startDeviceLibraryDialogResize("definition", event)}/>
           </section>
+        </div>)}
+      {createModelDialog && (<div
+          className="custom-library-create-backdrop"
+          onPointerDown={() => {
+            if (!createModelDialog.saving) setCreateModelDialog(null);
+          }}
+        >
+          <form
+            className="custom-library-create-dialog model-create-dialog window-close-host"
+            aria-label="新建模型"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void createBlankProject(createModelDialog.schemeId, {
+                name: createModelDialog.name,
+                modelType: createModelDialog.modelType
+              });
+            }}
+          >
+            <WindowCloseButton
+              label="关闭新建模型窗口"
+              disabled={createModelDialog.saving}
+              onClick={() => setCreateModelDialog(null)}
+            />
+            <div className="custom-library-create-title">
+              <h3>新建模型</h3>
+            </div>
+            {createModelDialog.error && <p className="custom-library-create-error">{createModelDialog.error}</p>}
+            <div className="custom-library-create-fields">
+              <label>
+                <span>模型名称</span>
+                <input
+                  autoFocus
+                  aria-label="模型名称"
+                  disabled={createModelDialog.saving}
+                  value={createModelDialog.name}
+                  onChange={(event) => setCreateModelDialog((current) => current ? {
+                    ...current,
+                    name: event.target.value,
+                    error: ""
+                  } : current)}
+                />
+              </label>
+              <label>
+                <span>模型类型</span>
+                <select
+                  aria-label="模型类型"
+                  disabled={createModelDialog.saving}
+                  value={createModelDialog.modelType}
+                  onChange={(event) => setCreateModelDialog((current) => current ? {
+                    ...current,
+                    modelType: event.target.value,
+                    error: ""
+                  } : current)}
+                >
+                  {__appScope.MODEL_TYPES.map((modelType) => (<option key={modelType} value={modelType}>{modelType}</option>))}
+                </select>
+              </label>
+              <p className="model-create-index-note">模型序号 idx 将在确认后由后台全局自动分配，并永久保持不变。</p>
+            </div>
+            <div className="custom-library-create-actions">
+              <button type="button" disabled={createModelDialog.saving} onClick={() => setCreateModelDialog(null)}>取消</button>
+              <button type="submit" className="primary" disabled={createModelDialog.saving || !createModelDialog.name.trim()}>
+                {createModelDialog.saving ? "正在创建..." : "确认"}
+              </button>
+            </div>
+          </form>
         </div>)}
       {customLibraryCreateDialog && (<div className="custom-library-create-backdrop" onPointerDown={() => setCustomLibraryCreateDialog(null)}>
           <form

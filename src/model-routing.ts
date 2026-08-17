@@ -78,6 +78,7 @@ import {
   getDeviceStrokeWidth,
   isContainerParams,
   isImplicitTerminalVbaseForType,
+  isModelInteractionNode,
   isRetiredThreeWindingTransformerParameterName,
   isRetiredTwoWindingTransformerParameterName,
   isRoutableLineDeviceKind,
@@ -547,6 +548,47 @@ export function routableLineDeviceEndpointRefs(node: ModelNode): RoutableLineDev
   };
 }
 
+export function modelInteractionTerminalConnectionLocalPointsByNodeId(
+  nodes: Iterable<ModelNode>,
+  options: {
+    excludedLineNodeId?: string;
+    excludedEndpoint?: "source" | "target";
+  } = {}
+): Map<string, Map<string, Point | undefined>> {
+  const nodeList = Array.from(nodes);
+  const modelInteractionNodeIds = new Set(
+    nodeList.filter((node) => isModelInteractionNode(node)).map((node) => node.id)
+  );
+  const localPointsByNodeId = new Map<string, Map<string, Point | undefined>>();
+  const appendEndpoint = (
+    lineNode: ModelNode,
+    endpoint: "source" | "target",
+    ref: RoutableLineDeviceEndpointRef | undefined
+  ) => {
+    if (
+      !ref ||
+      !modelInteractionNodeIds.has(ref.nodeId) ||
+      (lineNode.id === options.excludedLineNodeId && endpoint === options.excludedEndpoint)
+    ) {
+      return;
+    }
+    const localPoints = localPointsByNodeId.get(ref.nodeId) ?? new Map<string, Point | undefined>();
+    if (!localPoints.has(ref.terminalId) || ref.localPoint) {
+      localPoints.set(ref.terminalId, ref.localPoint);
+    }
+    localPointsByNodeId.set(ref.nodeId, localPoints);
+  };
+  for (const node of nodeList) {
+    if (!isRoutableLineDeviceKind(node.kind)) {
+      continue;
+    }
+    const refs = routableLineDeviceEndpointRefs(node);
+    appendEndpoint(node, "source", refs.source);
+    appendEndpoint(node, "target", refs.target);
+  }
+  return localPointsByNodeId;
+}
+
 export function routableLineDeviceEndpointRefForNode(
   node: ModelNode,
   terminalId: string,
@@ -749,6 +791,12 @@ function routableLineEndpointPointFromRef(
     const referencePoint = ref.localPoint ? nodeLocalToPoint(node, ref.localPoint) : currentPoint ?? getTerminalPoint(node, ref.terminalId);
     return projectPointToBusCenterline(node, referencePoint);
   }
+  if (isModelInteractionNode(node)) {
+    const referencePoint = ref.localPoint
+      ? nodeLocalToPoint(node, ref.localPoint)
+      : currentPoint ?? getTerminalPoint(node, ref.terminalId);
+    return projectPointToModelInteractionBoundary(node, referencePoint);
+  }
   return getTerminalPoint(node, ref.terminalId);
 }
 
@@ -774,7 +822,7 @@ function routableLineEndpointRoutingRef(
   return {
     nodeId: ref.nodeId,
     terminalId: ref.terminalId,
-    ...(isBusNode(node) ? { point: endpointPoint } : {})
+    ...(isBusNode(node) || isModelInteractionNode(node) ? { point: endpointPoint } : {})
   };
 }
 
@@ -2819,6 +2867,26 @@ function projectPointToNodeBoundary(node: ModelNode, point: Point): Point {
   return nodeLocalToPoint(node, projected);
 }
 
+export function projectPointToModelInteractionBoundary(node: ModelNode, point: Point): Point {
+  return projectPointToNodeBoundary(node, point);
+}
+
+export function projectPointToModelInteractionBoundaryIfInRange(
+  node: ModelNode,
+  point: Point,
+  tolerance = ROUTABLE_LINE_ENDPOINT_BUS_INFER_TOLERANCE
+): Point | undefined {
+  if (!isModelInteractionNode(node)) {
+    return undefined;
+  }
+  const local = pointToNodeLocal(node, point);
+  const halfWidth = Math.max(1, (node.size.width * Math.abs(getNodeScaleX(node))) / 2);
+  const halfHeight = Math.max(1, (node.size.height * Math.abs(getNodeScaleY(node))) / 2);
+  const inside = Math.abs(local.x) <= halfWidth && Math.abs(local.y) <= halfHeight;
+  const projected = projectPointToModelInteractionBoundary(node, point);
+  return inside || pointDistance(projected, point) <= tolerance ? projected : undefined;
+}
+
 function closestPointOnSegment(point: Point, start: Point, end: Point): Point {
   const dx = end.x - start.x;
   const dy = end.y - start.y;
@@ -3216,7 +3284,13 @@ function getBusEndpointNormal(node: ModelNode, endpointPoint: Point, otherPoint:
 }
 
 export function getRouteEndpointNormal(node: ModelNode, endpointPoint: Point, otherPoint: Point, terminalId?: string): Point {
-  return isBusNode(node) ? getBusEndpointNormal(node, endpointPoint, otherPoint) : getTerminalNormal(node, terminalId);
+  if (isBusNode(node)) {
+    return getBusEndpointNormal(node, endpointPoint, otherPoint);
+  }
+  if (isModelInteractionNode(node)) {
+    return getBoundaryNormalAtPoint(node, endpointPoint);
+  }
+  return getTerminalNormal(node, terminalId);
 }
 
 export function canConnectTerminals(
@@ -5991,6 +6065,12 @@ export function validateTopology(
   const islandVoltageGroups = collectElectricalIslandVoltageGroups(nodes, connectivity);
   for (const [root, group] of islandVoltageGroups) {
     const relatedNodeIds = Array.from(group.relatedNodeIds);
+    const relatedNodes = relatedNodeIds
+      .map((nodeId) => nodes.find((node) => node.id === nodeId))
+      .filter((node): node is ModelNode => Boolean(node));
+    if (relatedNodes.length > 0 && relatedNodes.every((node) => isModelInteractionNode(node))) {
+      continue;
+    }
     if (group.voltages.size === 0) {
       errors.push({
         id: `missing-island-voltage:${root}`,
@@ -6039,7 +6119,7 @@ export function validateTopology(
 
   const topologyTerminalRefs = new Set<string>();
   for (const node of nodes) {
-    if (isStaticNode(node)) {
+    if (isStaticNode(node) && !isModelInteractionNode(node)) {
       continue;
     }
     for (const terminal of node.terminals) {
@@ -6865,6 +6945,14 @@ export function flattenSavedSchemes(schemes: SavedSchemeRecord[]): SavedSchemeRe
 
 export function flattenSavedProjects(schemes: SavedSchemeRecord[]): SavedProjectRecord[] {
   return schemes.flatMap((scheme) => [...scheme.projects, ...flattenSavedProjects(savedSchemeChildren(scheme))]);
+}
+
+export function nextGlobalProjectIndex(schemes: SavedSchemeRecord[]): number {
+  const maxIndex = flattenSavedProjects(schemes).reduce((currentMax, record) => {
+    const value = Number(record.project.idx);
+    return Number.isSafeInteger(value) && value > currentMax ? value : currentMax;
+  }, 0);
+  return maxIndex + 1;
 }
 
 export function nextSavedProjectAfterSchemeDeletion(

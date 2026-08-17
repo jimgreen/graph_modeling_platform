@@ -14,6 +14,20 @@ const STORAGE_BUS_KINDS = new Set([
   "thermal-storage-tank"
 ]);
 
+export function modelInteractionTerminalRenderState(
+  nodeIsModelInteraction: boolean,
+  localPoints: ReadonlyMap<string, { x: number; y: number } | undefined> | undefined,
+  terminalId: string
+) {
+  if (!nodeIsModelInteraction) {
+    return { connected: true, localPoint: undefined };
+  }
+  return {
+    connected: Boolean(localPoints?.has(terminalId)),
+    localPoint: localPoints?.get(terminalId)
+  };
+}
+
 function decodeStateIconSvgDataUrl(value: string) {
   const source = String(value ?? "").trim();
   if (!source.startsWith("data:image/svg+xml")) {
@@ -343,7 +357,8 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     nodeLabelVerticalTokenY, nodeLabelVerticalTokenStyle,
     nodeLabelTextStyle, nodeLabelTransform,
     nodeUsesUprightStaticSelectionOutline, nodeUprightSelectionOutlineRect,
-    isBusNode, isLineSegmentBusNode, isStaticNode, isRoutableLineDeviceKind,
+    isBusNode, isLineSegmentBusNode, isStaticNode, isModelInteractionNode, isRoutableLineDeviceKind,
+    modelInteractionTerminalConnectionLocalPointsByNodeId,
     canConnectTerminals,
     isCanvasGraphicContextMenuTarget,
     isStaticButtonEnabledForNode, isStaticBoxLikeNode,
@@ -446,6 +461,8 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     !terminalPressPreviewEdgeIdSet.has(selectedEdge.id) &&
     rewiring?.edgeId !== selectedEdge.id
   );
+  const modelInteractionTerminalLocalPointsByNodeId =
+    modelInteractionTerminalConnectionLocalPointsByNodeId(nodeById.values());
 
   return (
     <>
@@ -1002,7 +1019,11 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         const inactiveLayerGraphic = isEditMode && !editable;
         const nodeIsBus = isBusNode(node);
         const nodeIsStatic = isStaticNode(node);
+        const nodeIsModelInteraction = isModelInteractionNode(node);
         const nodeIsRoutableLineDevice = isRoutableLineDeviceKind(node.kind);
+        const modelInteractionTerminalLocalPoints = nodeIsModelInteraction
+            ? modelInteractionTerminalLocalPointsByNodeId.get(node.id)
+            : undefined;
         const nodeStateVisual = resolveNodeStateVisual(node);
         if (nodeIsRoutableLineDevice &&
             (dragGhostRoutableLineNodeIdSet.has(node.id) ||
@@ -1220,7 +1241,15 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                         </g>
                       </g>)}
                     {node.terminals.map((terminal) => {
-                const hideFixedTerminal = nodeIsBus || isStaticNode(node) || isRoutableLineDeviceKind(node.kind);
+                const modelInteractionTerminalState = modelInteractionTerminalRenderState(
+                  nodeIsModelInteraction,
+                  modelInteractionTerminalLocalPoints,
+                  terminal.id
+                );
+                const hideFixedTerminal = nodeIsBus ||
+                  (nodeIsStatic && !nodeIsModelInteraction) ||
+                  !modelInteractionTerminalState.connected ||
+                  isRoutableLineDeviceKind(node.kind);
                 const disabled = !hideFixedTerminal &&
                     ((connectTerminalCompatibilityActive &&
                         !canConnectTerminals(connectSourceNode!, connectSource!.terminalId, node, terminal.id)) ||
@@ -1228,11 +1257,26 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                             Boolean(routableLineActiveTerminalType) &&
                             terminal.type !== routableLineActiveTerminalType));
                 const overlapped = isEditMode && overlappedTerminalKeys.has(`${node.id}:${terminal.id}`);
-                const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
+                const connectionLocalPoint = modelInteractionTerminalState.localPoint;
+                const displayTerminal = connectionLocalPoint
+                  ? {
+                      ...terminal,
+                      anchor: {
+                        x: connectionLocalPoint.x / (node.size.width * (nodeScaleX || 1)),
+                        y: connectionLocalPoint.y / (node.size.height * (nodeScaleY || 1))
+                      }
+                    }
+                  : terminal;
+                const renderPoint = connectionLocalPoint
+                  ? {
+                      x: connectionLocalPoint.x / (nodeScaleX || 1),
+                      y: connectionLocalPoint.y / (nodeScaleY || 1)
+                    }
+                  : terminalRenderLocalPoint(displayTerminal, node.size, nodeScaleX, nodeScaleY, node.kind);
                 const stub = adjustGeneratedStateIconTerminalStub(
-                    terminal,
+                    displayTerminal,
                     renderPoint,
-                    terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size),
+                    terminalStubSegment(displayTerminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size),
                     nodeScaleX,
                     nodeScaleY,
                     terminalVisualTransform
@@ -1241,7 +1285,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                 return hideFixedTerminal ? null : (<g key={terminal.id} className={`terminal-control ${terminalDragPreview?.terminalId === terminal.id ? "terminal-drag-active" : ""}`} transform={terminalControlTransform(renderPoint.x, renderPoint.y)}>
                           <line className={`terminal-stub ${terminal.type} ${disabled ? "disabled" : ""}`} strokeDasharray={terminalStubDashArray} style={{
                         "--terminal-stub-color": disabled ? "#cbd5e1" : terminalDisplayColor,
-                        "--terminal-stub-width": terminalStubStrokeWidth(node, terminal)
+                        "--terminal-stub-width": terminalStubStrokeWidth(node, displayTerminal)
                     } as CSSProperties} x1={stub.from.x} y1={stub.from.y} x2={stub.to.x} y2={stub.to.y}/>
                           <circle className={`terminal-dot ${terminal.type} ${overlapped ? "overlapped" : ""} ${disabled ? "disabled" : ""}`} style={{ "--terminal-color": terminalDisplayColor } as CSSProperties} cx="0" cy="0" r={overlapped ? 7.2 : 6} onPointerDown={isEditMode ? (event) => handleTerminalPointerDown(event, node, terminal.id) : undefined}>
                             <title>{`${terminal.label} / ${terminal.type.toUpperCase()}`}</title>

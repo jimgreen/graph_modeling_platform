@@ -696,6 +696,142 @@ describe("scheme enum validation", () => {
   });
 });
 
+describe("station model interaction E-file boundaries", () => {
+  test("adds direction-aware AC/DC equivalent sources and loads with independent topology nodes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-station-boundary-"));
+    try {
+      const filesRoot = join(root, "files");
+      const terminal = (id, type, vbase) => ({ id, type, label: id, vbase, nodeNumber: "" });
+      const endpoint = (id, kind, name, idx, type, vbase) => ({
+        id,
+        kind,
+        name,
+        params: { idx: String(idx), run_stat: "1" },
+        terminals: [terminal("t1", type, vbase)]
+      });
+      const station = {
+        id: "station-button",
+        kind: "static-model-interaction-station",
+        name: "厂站按钮",
+        params: {
+          component_type: "ModelInteraction",
+          modelInteractionType: "厂站",
+          buttonTargetProjectName: "东城厂站"
+        },
+        terminals: [
+          terminal("t1", "ac", "10"), terminal("t2", "ac", "10"),
+          terminal("t5", "dc", "0.75"), terminal("t6", "dc", "0.75")
+        ]
+      };
+      const acLoad = endpoint("ac-load", "ac-load", "交流负荷", 11, "ac", "10");
+      const acSource = endpoint("ac-source", "ac-source", "交流电源", 7, "ac", "10");
+      const dcLoad = endpoint("dc-load", "dc-load", "直流负荷", 6, "dc", "0.75");
+      const dcSource = endpoint("dc-source", "dc-source", "直流电源", 4, "dc", "0.75");
+      const line = (id, kind, name, type, sourceNodeId, sourceTerminalId, targetNodeId, targetTerminalId) => ({
+        id,
+        kind,
+        name,
+        params: {
+          component_type: type === "ac" ? "ACBranch" : "DCBranch",
+          _routableLineSourceNodeId: sourceNodeId,
+          _routableLineSourceTerminalId: sourceTerminalId,
+          _routableLineTargetNodeId: targetNodeId,
+          _routableLineTargetTerminalId: targetTerminalId,
+          run_stat: "1"
+        },
+        terminals: [terminal("t1", type, type === "ac" ? "10" : "0.75"), terminal("t2", type, type === "ac" ? "10" : "0.75")]
+      });
+      const lines = [
+        line("ac-out", "ac-routable-line", "交流送出线", "ac", station.id, "t1", acLoad.id, "t1"),
+        line("ac-in", "ac-routable-line", "交流受入线", "ac", acSource.id, "t1", station.id, "t2"),
+        line("dc-out", "dc-routable-line", "直流送出线", "dc", station.id, "t5", dcLoad.id, "t1"),
+        line("dc-in", "dc-routable-line", "直流受入线", "dc", dcSource.id, "t1", station.id, "t6")
+      ];
+
+      await saveSchemeProjectRecord({
+        filesRoot,
+        schemePath: ["默认方案"],
+        record: {
+          name: "厂站边界闭环",
+          project: {
+            version: 1,
+            name: "厂站边界闭环",
+            nodes: [station, acLoad, acSource, dcLoad, dcSource, ...lines],
+            edges: []
+          }
+        },
+        svg: "<svg/>",
+        measurementConfig: {}
+      });
+
+      const eText = await readEFileText(join(filesRoot, "默认方案", "厂站边界闭环.e"));
+      expect(eText).toContain("交流送出线-东城厂站-等值电源");
+      expect(eText).toContain("交流受入线-东城厂站-等值负荷");
+      expect(eText).toContain("直流送出线-东城厂站-等值电源");
+      expect(eText).toContain("直流受入线-东城厂站-等值负荷");
+      expect(eSectionLines(eText, "ACGenerator").some((line) => line.startsWith("#") && /\s8\s/u.test(line))).toBe(true);
+      expect(eSectionLines(eText, "ACLoad").some((line) => line.startsWith("#") && /\s12\s/u.test(line))).toBe(true);
+      expect(eSectionLines(eText, "DCGenerator").some((line) => line.startsWith("#") && /\s5\s/u.test(line))).toBe(true);
+      expect(eSectionLines(eText, "DCLoad").some((line) => line.startsWith("#") && /\s7\s/u.test(line))).toBe(true);
+      const nodeIds = ["ACGenerator", "ACLoad", "DCGenerator", "DCLoad"].flatMap((section) =>
+        eSectionLines(eText, section)
+          .filter((line) => line.startsWith("#") && line.includes("东城厂站"))
+          .map((row) => `${section.startsWith("AC") ? "ac" : "dc"}:${row.trim().split(/\s+/u)[3]}`)
+      );
+      expect(new Set(nodeIds).size).toBe(4);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("global model indexes", () => {
+  test("allocates persistent non-reusable indexes across scheme folders and exposes them in summaries", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-global-model-index-"));
+    try {
+      const filesRoot = join(root, "files");
+      const save = (schemePath, name, modelType, extra = {}) => saveSchemeProjectRecord({
+        filesRoot,
+        trashRoot: join(root, "trash"),
+        schemePath,
+        record: {
+          name,
+          project: { version: 1, name, modelType, nodes: [], edges: [], ...extra }
+        },
+        svg: "<svg/>",
+        measurementConfig: {}
+      });
+
+      const first = await save(["方案A"], "微网模型", "微网");
+      const second = await save(["方案A", "子方案"], "厂站模型", "厂站");
+      expect(first.project.idx).toBe(1);
+      expect(second.project.idx).toBe(2);
+
+      await deleteSchemeProjectRecord({
+        filesRoot,
+        trashRoot: join(root, "trash"),
+        schemePath: ["方案A", "子方案"],
+        name: "厂站模型"
+      });
+      const third = await save(["方案B"], "馈线模型", "馈线", { idx: 1 });
+      expect(third.project.idx).toBe(3);
+
+      const resavedFirst = await save(["方案A"], "微网模型", "微网", { idx: 999 });
+      expect(resavedFirst.project.idx).toBe(1);
+      expect(JSON.parse(await readFile(join(root, "model-index.json"), "utf-8"))).toEqual({ lastIndex: 3 });
+
+      const summaries = await readSchemesFromFiles({ filesRoot });
+      const projectSummaries = summaries.flatMap((scheme) => scheme.projects);
+      expect(projectSummaries.map((record) => [record.name, record.project.idx, record.project.modelType])).toEqual(expect.arrayContaining([
+        ["微网模型", 1, "微网"],
+        ["馈线模型", 3, "馈线"]
+      ]));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("legacy gas quantity parameter normalization", () => {
   test("persists only gas_quantity and gives the canonical key precedence", async () => {
     const filesRoot = await mkdtemp(join(tmpdir(), "graph-gas-quantity-"));
@@ -878,6 +1014,153 @@ describe("scheme file persistence", () => {
       "idx", "name", "dev_type", "i_node", "j_node", "rated_voltage", "rated_reactive_power", "reactance", "run_stat"
     ]);
     expect(eSectionColumns).not.toHaveProperty("ACShuntCompensator");
+  });
+
+  test("writes owning class names for compensator dev_type in backend-generated E files", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-e-dev-type-class-"));
+    try {
+      const filesRoot = join(root, "files");
+      const trashRoot = join(root, "trash");
+      const node = (id, kind, name, idx, legacyDevType, terminalNumbers) => ({
+        id,
+        kind,
+        name,
+        position: { x: idx * 120, y: 100 },
+        size: { width: 84, height: 68 },
+        params: {
+          idx: String(idx),
+          dev_type: legacyDevType,
+          node: terminalNumbers[0],
+          i_node: terminalNumbers[0],
+          j_node: terminalNumbers[1] ?? terminalNumbers[0],
+          rated_voltage: "10",
+          rated_reactive_power: "1",
+          reactance: "100",
+          run_stat: "1"
+        },
+        terminals: terminalNumbers.map((nodeNumber, index) => ({ id: `t${index + 1}`, type: "ac", nodeNumber }))
+      });
+      await saveSchemeProjectRecord({
+        filesRoot,
+        trashRoot,
+        schemePath: ["默认方案"],
+        record: {
+          name: "补偿设备类名",
+          updatedAt: "2026-08-17T00:00:00.000Z",
+          project: {
+            version: 1,
+            name: "补偿设备类名",
+            nodes: [
+              node("shunt-cap", "ac-capacitor", "并联电容器", 1, "CAPACITOR", ["11"]),
+              node("shunt-reactor", "ac-reactor", "并联电抗器", 2, "ac-reactor", ["12"]),
+              node("series-cap", "ac-series-capacitor", "串联电容器", 1, "CAPACITOR", ["21", "22"]),
+              node("series-reactor", "ac-series-reactor", "串联电抗器", 2, "ac-series-reactor", ["23", "24"])
+            ],
+            edges: []
+          }
+        },
+        measurementConfig: {}
+      });
+
+      const eFile = await readEFileText(join(filesRoot, "默认方案", "补偿设备类名.e"));
+      const rowsForSection = (section) => {
+        const lines = eSectionLines(eFile, section);
+        const columns = lines.find((line) => line.startsWith("@"))?.trim().split(/\s+/u).slice(1) ?? [];
+        return lines
+          .filter((line) => line.startsWith("#"))
+          .map((line) => line.trim().split(/\s+/u).slice(1))
+          .map((values) => Object.fromEntries(columns.map((column, index) => [column, values[index] ?? ""])));
+      };
+      expect(rowsForSection("ACCompensator").map((row) => row.dev_type)).toEqual([
+        "ACCompensator",
+        "ACCompensator"
+      ]);
+      expect(rowsForSection("ACSeriCompensator").map((row) => row.dev_type)).toEqual([
+        "ACSeriCompensator",
+        "ACSeriCompensator"
+      ]);
+      expect(eFile).not.toMatch(/\b(?:CAPACITOR|REACTOR|ac-reactor|ac-series-reactor)\b/u);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("writes owning derived class names for every AC and DC generator family", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-e-derived-dev-type-class-"));
+    try {
+      const filesRoot = join(root, "files");
+      const trashRoot = join(root, "trash");
+      const families = [
+        ["wind-source", "WindGen"],
+        ["pv-source", "PVGen"],
+        ["thermal-source", "ThermalGen"],
+        ["diesel-source", "DieselGen"],
+        ["hydro-source", "HydroGen"],
+        ["nuclear-source", "NuclearGen"],
+        ["storage", "StorageGen"]
+      ];
+      const nodes = ["ac", "dc"].flatMap((terminalType) => families.map(([kindSuffix], index) => {
+        const section = `${terminalType.toUpperCase()}Generator`;
+        return {
+          id: `${terminalType}-${kindSuffix}`,
+          kind: `${terminalType}-${kindSuffix}`,
+          name: `${terminalType}-${kindSuffix}`,
+          position: { x: 100 + index * 100, y: terminalType === "ac" ? 100 : 220 },
+          size: { width: 92, height: 58 },
+          params: {
+            idx: String(index + 1),
+            component_type: section,
+            dev_type: `legacy-${terminalType}-${kindSuffix}`,
+            node: String((terminalType === "ac" ? 100 : 200) + index + 1),
+            rated_capacity: "10",
+            rated_voltage: terminalType === "ac" ? "10" : "0.75",
+            run_stat: "1",
+            _customParamDefinitions: JSON.stringify([
+              {
+                cnName: "设备类型",
+                enName: "dev_type",
+                valueType: "string",
+                typicalValue: `legacy-${terminalType}-${kindSuffix}`,
+                exportEnabled: true,
+                exportName: "dev_type"
+              }
+            ])
+          },
+          terminals: [{
+            id: "t1",
+            type: terminalType,
+            nodeNumber: String((terminalType === "ac" ? 100 : 200) + index + 1)
+          }]
+        };
+      }));
+      await saveSchemeProjectRecord({
+        filesRoot,
+        trashRoot,
+        schemePath: ["默认方案"],
+        record: {
+          name: "派生电源类名",
+          updatedAt: "2026-08-17T00:00:00.000Z",
+          project: { version: 1, name: "派生电源类名", nodes, edges: [] }
+        },
+        measurementConfig: {}
+      });
+
+      const eFile = await readEFileText(join(filesRoot, "默认方案", "派生电源类名.e"));
+      const devTypesForSection = (section) => {
+        const lines = eSectionLines(eFile, section);
+        const columns = lines.find((line) => line.startsWith("@"))?.trim().split(/\s+/u).slice(1) ?? [];
+        const devTypeIndex = columns.indexOf("dev_type");
+        return lines
+          .filter((line) => line.startsWith("#"))
+          .map((line) => line.trim().split(/\s+/u).slice(1)[devTypeIndex] ?? "");
+      };
+      const expectedSuffixes = families.map(([, classSuffix]) => classSuffix);
+      expect(devTypesForSection("ACGenerator")).toEqual(expectedSuffixes.map((suffix) => `AC${suffix}`));
+      expect(devTypesForSection("DCGenerator")).toEqual(expectedSuffixes.map((suffix) => `DC${suffix}`));
+      expect(eFile).not.toMatch(/\blegacy-/u);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   test("renders standard parallel and series compensator symbols in server SVG", () => {

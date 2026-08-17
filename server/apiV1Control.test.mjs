@@ -200,13 +200,13 @@ describe(apiPath("/v1/control/model/create"), () => {
   test("成功新建 → 200 {ok:true,data:{id,name,schemeId}}", async () => {
     const ws = await connectCommandResponder("c1", (name, params) => {
       expect(name).toBe("control.model.create");
-      expect(params).toMatchObject({ name: "模型1", schemeId: "s1" });
-      return { ok: true, data: { id: "m1", name: "模型1", schemeId: "s1" } };
+      expect(params).toMatchObject({ name: "模型1", schemeId: "s1", modelType: "厂站" });
+      return { ok: true, data: { id: "m1", name: "模型1", schemeId: "s1", modelType: "厂站", idx: 1 } };
     });
-    const { status, json } = await postV1(apiPath("/v1/control/model/create"), { name: "模型1", schemeId: "s1" });
+    const { status, json } = await postV1(apiPath("/v1/control/model/create"), { name: "模型1", schemeId: "s1", modelType: "厂站" });
     expect(status).toBe(200);
     expect(json.ok).toBe(true);
-    expect(json.data).toEqual({ id: "m1", name: "模型1", schemeId: "s1" });
+    expect(json.data).toEqual({ id: "m1", name: "模型1", schemeId: "s1", modelType: "厂站", idx: 1 });
     ws.close();
   });
 
@@ -217,8 +217,20 @@ describe(apiPath("/v1/control/model/create"), () => {
     expect(json.error.code).toBe("bad-request");
   });
 
+  test("缺少或非法 modelType → 400 bad-request（不下发指令）", async () => {
+    for (const body of [
+      { name: "模型1", schemeId: "s1" },
+      { name: "模型1", schemeId: "s1", modelType: "未知类型" }
+    ]) {
+      const { status, json } = await postV1(apiPath("/v1/control/model/create"), body);
+      expect(status).toBe(400);
+      expect(json.ok).toBe(false);
+      expect(json.error.code).toBe("bad-request");
+    }
+  });
+
   test("无在线客户端 → 503 no-online-client", async () => {
-    const { status, json } = await postV1(apiPath("/v1/control/model/create"), { name: "模型1" });
+    const { status, json } = await postV1(apiPath("/v1/control/model/create"), { name: "模型1", modelType: "厂站" });
     expect(status).toBe(503);
     expect(json.error.code).toBe("no-online-client");
   });
@@ -228,7 +240,7 @@ describe(apiPath("/v1/control/model/create"), () => {
       ok: false,
       error: { code: "bad-request", message: "无可用方案，请先创建方案" }
     }));
-    const { status, json } = await postV1(apiPath("/v1/control/model/create"), { name: "模型1" });
+    const { status, json } = await postV1(apiPath("/v1/control/model/create"), { name: "模型1", modelType: "厂站" });
     expect(status).toBe(400);
     expect(json.ok).toBe(false);
     expect(json.error.code).toBe("bad-request");

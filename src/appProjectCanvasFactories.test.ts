@@ -86,6 +86,7 @@ function createLoadScope(overrides: Record<string, unknown> = {}) {
     setPowerBaseValue: noop,
     setPowerUnit: noop,
     setProjectMeasurements: noop,
+    setProjectIdx: noop,
     setProjectName: noop,
     setRewiring: noop,
     setRouteRenderingReady: noop,

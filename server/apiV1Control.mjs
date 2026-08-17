@@ -103,7 +103,7 @@ export async function handleControlSchemeCreate({ request, url, response }, ctx)
 }
 
 // /webgrp/v1/control/model/create —— 新建模型
-// body: { name, schemeId? } → 回执 { id, name, schemeId }
+// body: { name, modelType, schemeId? } → 回执 { id, name, schemeId, modelType, idx }
 export async function handleControlModelCreate({ request, url, response }, ctx) {
   let payload;
   try {
@@ -112,12 +112,16 @@ export async function handleControlModelCreate({ request, url, response }, ctx) 
     sendV1Error(response, "bad-request", "请求体须为合法 JSON。");
     return;
   }
-  const { name, schemeId } = payload ?? {};
+  const { name, schemeId, modelType } = payload ?? {};
   if (!name || typeof name !== "string" || !name.trim()) {
     sendV1Error(response, "bad-request", "name 必填。");
     return;
   }
-  const params = { name };
+  if (!["微网", "厂站", "馈线", "台区", "其他"].includes(modelType)) {
+    sendV1Error(response, "bad-request", "modelType 须为微网、厂站、馈线、台区或其他。");
+    return;
+  }
+  const params = { name, modelType };
   if (schemeId !== undefined) {
     params.schemeId = schemeId;
   }

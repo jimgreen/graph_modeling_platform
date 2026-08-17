@@ -25,6 +25,7 @@ const manifestPath = join(imageDataDir, "manifest.json");
 const imageFoldersPath = join(imageDataDir, "folders.json");
 const schemeDataDir = join(dataRoot, "schemes");
 const schemeTrashDir = join(schemeDataDir, "trash");
+const modelTypes = new Set(["微网", "厂站", "馈线", "台区", "其他"]);
 const settingsDataDir = join(dataRoot, "settings");
 const colorConfigPath = join(settingsDataDir, "color-config.json");
 const measurementConfigPath = join(settingsDataDir, "measurement-config.json");
@@ -84,6 +85,11 @@ export const staticComponentLibraryByKind = {
   "static-toolbar-node": "StaticFlowNode",
   "static-input": "StaticFlowNode",
   "static-button": "StaticButton",
+  "static-model-interaction-microgrid": "ModelInteraction",
+  "static-model-interaction-station": "ModelInteraction",
+  "static-model-interaction-feeder": "ModelInteraction",
+  "static-model-interaction-district": "ModelInteraction",
+  "static-model-interaction-other": "ModelInteraction",
   "static-group-box": "StaticContainerSymbol",
   "static-swimlane": "StaticContainerSymbol",
   "static-resizer-frame": "StaticContainerSymbol",
@@ -109,6 +115,7 @@ export const eSectionColumns = {
   StaticBasicShape: [],
   StaticFlowNode: [],
   StaticButton: [],
+  ModelInteraction: [],
   StaticContainerSymbol: [],
   StaticConnectorSymbol: [],
   StaticAnnotationSymbol: [],
@@ -485,13 +492,24 @@ async function readSchemeProjectFile(filePath, fileName) {
 
 async function readSchemeProjectSummaryFile(filePath, fileName) {
   const fileBaseName = fileName.replace(/\.json$/iu, "");
-  const name = storageProjectDisplayName(storedProjectFilePartDisplayName(fileBaseName));
+  let storedProject = {};
+  try {
+    const parsed = JSON.parse(await readFile(filePath, "utf-8"));
+    storedProject = parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    storedProject = {};
+  }
+  const name = storageProjectDisplayName(storedProject.name || storedProjectFilePartDisplayName(fileBaseName));
+  const idx = Number(storedProject.idx);
+  const modelType = String(storedProject.modelType ?? "").trim();
   return {
     name,
     updatedAt: await fileUpdatedAt(filePath),
     project: {
       version: 1,
       name,
+      ...(Number.isSafeInteger(idx) && idx > 0 ? { idx } : {}),
+      ...(modelTypes.has(modelType) ? { modelType } : {}),
       nodes: [],
       edges: [],
       __summaryOnly: true
@@ -2192,6 +2210,36 @@ function inferESection(kind, params = {}) {
   return "";
 }
 
+const electricGenerationDerivedClassSuffixByKindSuffix = new Map([
+  ["wind-source", "WindGen"],
+  ["pv-source", "PVGen"],
+  ["thermal-source", "ThermalGen"],
+  ["diesel-source", "DieselGen"],
+  ["hydro-source", "HydroGen"],
+  ["nuclear-source", "NuclearGen"],
+  ["storage", "StorageGen"]
+]);
+
+function inferEDeviceClass(kind, params = {}) {
+  const explicitDerivedClass = String(
+    params.derived_component_type ?? params.derivedComponentLibrary ?? ""
+  ).trim();
+  if (explicitDerivedClass) {
+    return explicitDerivedClass;
+  }
+  const normalizedKind = String(kind ?? "").endsWith("-vertical")
+    ? String(kind).slice(0, -"-vertical".length)
+    : String(kind ?? "");
+  const derivedKindMatch = /^(ac|dc)-(.+)$/u.exec(normalizedKind);
+  const derivedClassSuffix = derivedKindMatch
+    ? electricGenerationDerivedClassSuffixByKindSuffix.get(derivedKindMatch[2])
+    : undefined;
+  if (derivedKindMatch && derivedClassSuffix) {
+    return `${derivedKindMatch[1].toUpperCase()}${derivedClassSuffix}`;
+  }
+  return inferESection(normalizedKind, params);
+}
+
 function parseDeviceIndex(value) {
   const text = String(value ?? "").trim();
   if (!/^[1-9]\d*$/.test(text)) {
@@ -2515,6 +2563,10 @@ function getRawEParamValue(key, node, options = {}) {
   const params = node?.params ?? {};
   const section = inferESection(node?.kind, params);
   if (key === "name") return node?.name ?? "";
+  if (key === "dev_type") {
+    const kind = String(node?.kind ?? "").trim();
+    return inferEDeviceClass(kind, params) || (kind.endsWith("-vertical") ? kind.slice(0, -"-vertical".length) : kind);
+  }
   if (section === "HydroStorage" && key === "rated_capacity") {
     return params.rated_capacity ?? params.capacity ?? "";
   }
@@ -2984,6 +3036,62 @@ function isStaticNode(node) {
   return isStaticKind(node?.kind);
 }
 
+const routableLineDeviceKinds = new Set([
+  "ac-routable-line",
+  "ac-zero-routable-branch",
+  "dc-routable-line",
+  "dc-zero-routable-branch",
+  "hydrogen-routable-pipeline",
+  "heat-routable-line"
+]);
+
+function isRoutableLineDeviceKind(kind) {
+  return routableLineDeviceKinds.has(String(kind ?? "").replace(/-vertical$/u, ""));
+}
+
+function routableLineEndpointRefs(node) {
+  if (!isRoutableLineDeviceKind(node?.kind)) return {};
+  const endpoint = (side) => {
+    const prefix = side === "source" ? "Source" : "Target";
+    const nodeId = String(node?.params?.[`_routableLine${prefix}NodeId`] ?? "").trim();
+    const terminalId = String(node?.params?.[`_routableLine${prefix}TerminalId`] ?? "").trim();
+    return nodeId && terminalId ? { nodeId, terminalId } : undefined;
+  };
+  return { source: endpoint("source"), target: endpoint("target") };
+}
+
+function routableLineTopologyEdges(nodes) {
+  return nodes.flatMap((node) => {
+    if (!isRoutableLineDeviceKind(node?.kind)) return [];
+    const refs = routableLineEndpointRefs(node);
+    const firstTerminal = node.terminals?.[0];
+    const lastTerminal = node.terminals?.[node.terminals.length - 1];
+    return [
+      refs.source && firstTerminal ? {
+        id: `${node.id}:routable-source`,
+        sourceId: refs.source.nodeId,
+        targetId: node.id,
+        sourceTerminalId: refs.source.terminalId,
+        targetTerminalId: firstTerminal.id
+      } : null,
+      refs.target && lastTerminal ? {
+        id: `${node.id}:routable-target`,
+        sourceId: node.id,
+        targetId: refs.target.nodeId,
+        sourceTerminalId: lastTerminal.id,
+        targetTerminalId: refs.target.terminalId
+      } : null
+    ].filter(Boolean);
+  });
+}
+
+function isStationModelInteractionNode(node) {
+  return node?.kind === "static-model-interaction-station" || (
+    String(node?.params?.component_type ?? "").trim() === "ModelInteraction" &&
+    String(node?.params?.modelInteractionType ?? "").trim() === "厂站"
+  );
+}
+
 function getTerminal(node, terminalId) {
   return node?.terminals?.find((terminal) => terminal.id === terminalId) ?? node?.terminals?.[0];
 }
@@ -2994,6 +3102,7 @@ function shouldAssignVoltageSetpointDefault(value) {
 }
 
 function calculateElectricalTopology(nodes = [], edges = []) {
+  const topologyEdges = [...edges, ...routableLineTopologyEdges(nodes)];
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const terminalKey = (nodeId, terminalId) => `${nodeId}:${terminalId}`;
   const parent = new Map();
@@ -3029,7 +3138,7 @@ function calculateElectricalTopology(nodes = [], edges = []) {
     }
   }
 
-  for (const edge of edges) {
+  for (const edge of topologyEdges) {
     const source = nodeById.get(edge.sourceId);
     const target = nodeById.get(edge.targetId);
     if (!source || !target) continue;
@@ -3115,6 +3224,61 @@ function calculateElectricalTopology(nodes = [], edges = []) {
       terminals
     };
   });
+}
+
+function buildStationBoundaryDeviceRecords(topologyNodes, existingRecords) {
+  const nodeById = new Map(topologyNodes.map((node) => [node.id, node]));
+  const maxIndexBySection = new Map();
+  for (const record of existingRecords) {
+    const idx = Number.parseInt(firstNumericEValue(record?.params?.idx), 10);
+    if (Number.isSafeInteger(idx) && idx > (maxIndexBySection.get(record.section) ?? 0)) {
+      maxIndexBySection.set(record.section, idx);
+    }
+  }
+  const records = [];
+  for (const line of topologyNodes) {
+    if (!isRoutableLineDeviceKind(line?.kind)) continue;
+    const refs = routableLineEndpointRefs(line);
+    const endpoints = [
+      { side: "source", ref: refs.source, terminal: line.terminals?.[0], generator: true },
+      { side: "target", ref: refs.target, terminal: line.terminals?.[line.terminals.length - 1], generator: false }
+    ];
+    for (const endpoint of endpoints) {
+      const station = endpoint.ref ? nodeById.get(endpoint.ref.nodeId) : undefined;
+      if (!station || !endpoint.terminal || !isStationModelInteractionNode(station)) continue;
+      const electricalType = endpoint.terminal.type === "dc" || String(line.kind).startsWith("dc-") ? "DC" : "AC";
+      const section = `${electricalType}${endpoint.generator ? "Generator" : "Load"}`;
+      const idx = (maxIndexBySection.get(section) ?? 0) + 1;
+      maxIndexBySection.set(section, idx);
+      const stationName = String(station.params?.buttonTargetProjectName ?? "").trim() || station.name || "厂站";
+      const roleLabel = endpoint.generator ? "等值电源" : "等值负荷";
+      const vbase = String(endpoint.terminal.vbase ?? line.params?.vbase ?? "").trim();
+      const params = Object.fromEntries((eSectionColumns[section] ?? []).map((column) => [column, defaultEFileColumnValue(column, idx - 1)]));
+      Object.assign(params, {
+        idx: String(idx),
+        name: `${line.name || line.id}-${stationName}-${roleLabel}`,
+        node: String(endpoint.terminal.nodeNumber ?? "").trim(),
+        run_stat: "1",
+        _vbase: vbase
+      });
+      if (!endpoint.generator) {
+        params.pv0 = "1.0";
+        params.qv0 = "1.0";
+      } else {
+        params.control_type = section === "ACGenerator" ? "PV" : "P";
+        params.rated_voltage = vbase || params.rated_voltage;
+        params.v_set = vbase || params.v_set;
+      }
+      records.push({
+        id: `${line.id}:station-boundary:${endpoint.side}`,
+        kind: endpoint.generator ? `${electricalType.toLowerCase()}-source` : `${electricalType.toLowerCase()}-load`,
+        section,
+        params,
+        columns: eSectionColumns[section] ?? []
+      });
+    }
+  }
+  return records;
 }
 
 function firstText(values) {
@@ -3253,8 +3417,12 @@ function buildDeviceParameterFile(project, schemePath = ["默认方案"]) {
       };
     })
     .filter(Boolean);
+  const stationBoundaryDevices = buildStationBoundaryDeviceRecords(
+    topologyNodes,
+    [...topologyNodeDevices, ...deviceRecords]
+  );
   const recordsBySection = new Map();
-  for (const record of [...topologyNodeDevices, ...deviceRecords]) {
+  for (const record of [...topologyNodeDevices, ...deviceRecords, ...stationBoundaryDevices]) {
     const columns = record.columns ?? eSectionColumns[record.section] ?? [];
     if (!columns.length) {
       continue;
@@ -4430,6 +4598,97 @@ async function projectJsonFileForName(schemeDir, name) {
   return null;
 }
 
+let projectIndexAllocationQueue = Promise.resolve();
+
+function withProjectIndexAllocationLock(task) {
+  const run = projectIndexAllocationQueue.then(task, task);
+  projectIndexAllocationQueue = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+function modelIndexCounterPathForFilesRoot(filesRoot) {
+  return join(dirname(resolve(filesRoot)), "model-index.json");
+}
+
+async function readPersistedModelIndex(counterPath) {
+  try {
+    const parsed = JSON.parse(await readFile(counterPath, "utf-8"));
+    const value = Number(parsed?.lastIndex);
+    return Number.isSafeInteger(value) && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function maxStoredProjectIndex(dir) {
+  let entries = [];
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  let maxIndex = 0;
+  for (const entry of entries) {
+    const entryPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      maxIndex = Math.max(maxIndex, await maxStoredProjectIndex(entryPath));
+      continue;
+    }
+    if (!entry.isFile() || !/\.json$/iu.test(entry.name) || entry.name.toLocaleLowerCase() === "scheme.json") {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(await readFile(entryPath, "utf-8"));
+      const idx = Number(parsed?.idx);
+      if (Number.isSafeInteger(idx) && idx > maxIndex) {
+        maxIndex = idx;
+      }
+    } catch {
+      // Ignore damaged legacy files while recovering the highest valid model index.
+    }
+  }
+  return maxIndex;
+}
+
+async function existingStoredProjectIndex(schemeDir, names) {
+  for (const candidateName of names) {
+    if (!candidateName) continue;
+    const projectFile = await projectJsonFileForName(schemeDir, candidateName);
+    if (!projectFile) continue;
+    try {
+      const parsed = JSON.parse(await readFile(projectFile.filePath, "utf-8"));
+      const idx = Number(parsed?.idx);
+      if (Number.isSafeInteger(idx) && idx > 0) {
+        return idx;
+      }
+    } catch {
+      // Treat a missing or invalid legacy index as requiring a one-time allocation.
+    }
+  }
+  return 0;
+}
+
+async function allocateStableProjectIndex({ filesRoot, schemeDir, name, previousName }) {
+  return withProjectIndexAllocationLock(async () => {
+    const counterPath = modelIndexCounterPathForFilesRoot(filesRoot);
+    const existingIndex = await existingStoredProjectIndex(schemeDir, [previousName, name]);
+    const persistedIndex = await readPersistedModelIndex(counterPath);
+    const storedMaxIndex = await maxStoredProjectIndex(filesRoot);
+    if (existingIndex > 0) {
+      const lastIndex = Math.max(persistedIndex, storedMaxIndex, existingIndex);
+      if (lastIndex !== persistedIndex) {
+        await mkdir(dirname(counterPath), { recursive: true });
+        await writeFile(counterPath, `${JSON.stringify({ lastIndex }, null, 2)}\n`, "utf-8");
+      }
+      return existingIndex;
+    }
+    const nextIndex = Math.max(persistedIndex, storedMaxIndex) + 1;
+    await mkdir(dirname(counterPath), { recursive: true });
+    await writeFile(counterPath, `${JSON.stringify({ lastIndex: nextIndex }, null, 2)}\n`, "utf-8");
+    return nextIndex;
+  });
+}
+
 export async function readSchemeProjectRecord(options = {}) {
   const filesRoot = options.filesRoot ?? join(schemeDataDir, "files");
   const schemePath = Array.isArray(options.schemePath) && options.schemePath.length > 0 ? options.schemePath : ["默认方案"];
@@ -4449,9 +4708,18 @@ export async function saveSchemeProjectRecord(options) {
   const record = options.record ?? {};
   const name = storageProjectDisplayName(record.name || record.project?.name);
   const updatedAt = record.updatedAt || new Date().toISOString();
+  const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
+  await mkdir(schemeDir, { recursive: true });
+  const projectIndex = await allocateStableProjectIndex({
+    filesRoot,
+    schemeDir,
+    name,
+    previousName: options.previousName
+  });
   const project = normalizeProjectForStorage({
     ...(record.project ?? {}),
-    name
+    name,
+    idx: projectIndex
   });
   const storedRecord = {
     ...record,
@@ -4470,8 +4738,6 @@ export async function saveSchemeProjectRecord(options) {
     const remaining = invalidEnumParameters.length > details.length ? `；另有 ${invalidEnumParameters.length - details.length} 项未列出` : "";
     throw new Error(`保存失败：模型存在非法枚举参数。${details.join("；")}${remaining}`);
   }
-  const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
-  await mkdir(schemeDir, { recursive: true });
   if (options.previousName && storageProjectNameKey(options.previousName) !== storageProjectNameKey(name)) {
     const previousPaths = projectFilePathsForName(schemeDir, options.previousName);
     await Promise.all(Object.values(previousPaths).map((filePath) => archiveSchemeStoreEntry(filePath, filesRoot, trashRoot, schemeArchiveId())));

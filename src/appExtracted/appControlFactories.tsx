@@ -64,11 +64,11 @@ export function createProgrammaticCreateScheme(__appScope: Record<string, any>) 
   };
 }
 
-// 新建模型：name 必填，schemeId 缺省取 schemes[0]。复用 createSavedProject/upsertSavedProjectInScheme，
-// 绕过 prompt/editMode/落盘（落盘由独立 control.save 指令）。经 WS control.model.create 指令调用。
+// 新建模型：name/modelType 必填，schemeId 缺省取 schemes[0]。确认后直接落盘，
+// 由后台分配全局 idx，再将后台返回的完整记录加入前端方案树。
 export function createProgrammaticCreateBlankProject(__appScope: Record<string, any>) {
-  return (name: string, schemeId?: string) => {
-    const { DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_BACKGROUND, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, DEFAULT_CURRENT_UNIT, DEFAULT_POWER_BASE_VALUE, createSavedProject, findSavedSchemeById, hasSameName, requestLoadSavedProject, schemePathForScheme, schemes, selectSingleProject, setSchemes, upsertSavedProjectInScheme } = __appScope;
+  return async (name: string, schemeId?: string, modelType = "其他") => {
+    const { DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_BACKGROUND, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, DEFAULT_CURRENT_UNIT, DEFAULT_POWER_BASE_VALUE, MODEL_TYPES, createSavedProject, findSavedSchemeById, hasSameName, requestLoadSavedProject, saveBackendProjectRecord, schemePathForScheme, schemes, selectSingleProject, setSchemes, upsertSavedProjectInScheme } = __appScope;
     if (!name || typeof name !== "string" || !name.trim()) {
       const e: any = new Error("name 必填。");
       e.code = "bad-request";
@@ -86,9 +86,15 @@ export function createProgrammaticCreateBlankProject(__appScope: Record<string, 
       e.code = "bad-request";
       throw e;
     }
+    if (!MODEL_TYPES.includes(modelType)) {
+      const e: any = new Error("modelType 须为微网、厂站、馈线、台区或其他。");
+      e.code = "bad-request";
+      throw e;
+    }
     const record = createSavedProject(name, {
       version: 1,
       name,
+      modelType,
       canvasWidth: DEFAULT_CANVAS_WIDTH,
       canvasHeight: DEFAULT_CANVAS_HEIGHT,
       allowAutoExpandCanvas: true,
@@ -102,10 +108,23 @@ export function createProgrammaticCreateBlankProject(__appScope: Record<string, 
       nodes: [],
       edges: []
     });
-    setSchemes((current: any) => upsertSavedProjectInScheme(current, targetScheme.id, record));
-    selectSingleProject(targetScheme.id, record.id);
-    requestLoadSavedProject(record, targetScheme.id);
-    return { id: record.id, name: record.name, schemeId: targetScheme.id };
+    const schemePath = schemePathForScheme(targetScheme.id);
+    if (!Array.isArray(schemePath) || schemePath.length === 0) {
+      const e: any = new Error("无法确定模型所属方案路径。");
+      e.code = "bad-request";
+      throw e;
+    }
+    const savedRecord = await saveBackendProjectRecord(schemePath, record);
+    setSchemes((current: any) => upsertSavedProjectInScheme(current, targetScheme.id, savedRecord));
+    selectSingleProject(targetScheme.id, savedRecord.id);
+    requestLoadSavedProject(savedRecord, targetScheme.id);
+    return {
+      id: savedRecord.id,
+      name: savedRecord.name,
+      schemeId: targetScheme.id,
+      modelType: savedRecord.project.modelType,
+      idx: savedRecord.project.idx
+    };
   };
 }
 
