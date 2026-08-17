@@ -696,7 +696,7 @@ describe("scheme enum validation", () => {
   });
 });
 
-describe("station model interaction E-file boundaries", () => {
+describe("station, feeder, and district model interaction E-file boundaries", () => {
   test("adds direction-aware AC/DC equivalent sources and loads with independent topology nodes", async () => {
     const root = await mkdtemp(join(tmpdir(), "scheme-station-boundary-"));
     try {
@@ -779,6 +779,89 @@ describe("station model interaction E-file boundaries", () => {
           .map((row) => `${section.startsWith("AC") ? "ac" : "dc"}:${row.trim().split(/\s+/u)[3]}`)
       );
       expect(new Set(nodeIds).size).toBe(4);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("extends equivalent boundary devices to feeder and district buttons only", async () => {
+    const root = await mkdtemp(join(tmpdir(), "scheme-model-interaction-boundary-"));
+    try {
+      const filesRoot = join(root, "files");
+      const terminal = (id) => ({ id, type: "ac", label: id, vbase: "10", nodeNumber: "" });
+      const button = (id, kind, modelInteractionType, targetProjectName) => ({
+        id,
+        kind,
+        name: `${modelInteractionType}按钮`,
+        params: {
+          component_type: "ModelInteraction",
+          modelInteractionType,
+          buttonTargetProjectName: targetProjectName
+        },
+        terminals: [terminal("t1"), terminal("t2")]
+      });
+      const endpoint = (id, kind, name, idx) => ({
+        id,
+        kind,
+        name,
+        params: { idx: String(idx), run_stat: "1" },
+        terminals: [terminal("t1")]
+      });
+      const line = (id, name, sourceNodeId, sourceTerminalId, targetNodeId, targetTerminalId) => ({
+        id,
+        kind: "ac-routable-line",
+        name,
+        params: {
+          component_type: "ACBranch",
+          _routableLineSourceNodeId: sourceNodeId,
+          _routableLineSourceTerminalId: sourceTerminalId,
+          _routableLineTargetNodeId: targetNodeId,
+          _routableLineTargetTerminalId: targetTerminalId,
+          run_stat: "1"
+        },
+        terminals: [terminal("t1"), terminal("t2")]
+      });
+      const definitions = [
+        ["feeder", "static-model-interaction-feeder", "馈线", "南城馈线"],
+        ["district", "static-model-interaction-district", "台区", "一号台区"],
+        ["microgrid", "static-model-interaction-microgrid", "微网", "测试微网"],
+        ["other", "static-model-interaction-other", "其他", "其他项目"]
+      ];
+      const nodes = [];
+      let index = 1;
+      for (const [id, kind, modelType, targetName] of definitions) {
+        const interactionButton = button(`${id}-button`, kind, modelType, targetName);
+        const load = endpoint(`${id}-load`, "ac-load", `${modelType}侧负荷`, index++);
+        const source = endpoint(`${id}-source`, "ac-source", `${modelType}侧电源`, index++);
+        nodes.push(
+          interactionButton,
+          load,
+          source,
+          line(`${id}-out`, `${targetName}送出线`, interactionButton.id, "t1", load.id, "t1"),
+          line(`${id}-in`, `${targetName}受入线`, source.id, "t1", interactionButton.id, "t2")
+        );
+      }
+
+      await saveSchemeProjectRecord({
+        filesRoot,
+        schemePath: ["默认方案"],
+        record: {
+          name: "模型交互边界扩展",
+          project: { version: 1, name: "模型交互边界扩展", nodes, edges: [] }
+        },
+        svg: "<svg/>",
+        measurementConfig: {}
+      });
+
+      const eText = await readEFileText(join(filesRoot, "默认方案", "模型交互边界扩展.e"));
+      for (const targetName of ["南城馈线", "一号台区"]) {
+        expect(eText).toContain(`${targetName}送出线-${targetName}-等值电源`);
+        expect(eText).toContain(`${targetName}受入线-${targetName}-等值负荷`);
+      }
+      for (const targetName of ["测试微网", "其他项目"]) {
+        expect(eText).not.toContain(`${targetName}送出线-${targetName}-等值电源`);
+        expect(eText).not.toContain(`${targetName}受入线-${targetName}-等值负荷`);
+      }
     } finally {
       await rm(root, { recursive: true, force: true });
     }

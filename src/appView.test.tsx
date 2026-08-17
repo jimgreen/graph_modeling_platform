@@ -67,6 +67,15 @@ describe("app view topology inspector", () => {
   });
 });
 
+describe("全网拓扑入口", () => {
+  test("在顶栏提供全网拓扑按钮并挂载独立弹窗", () => {
+    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain('aria-label="全网拓扑"');
+    expect(source).toContain("<AllNetworkTopologyDialog");
+  });
+});
+
 describe("model interaction terminal visibility", () => {
   test("hides unused terminals while retaining connected legacy terminals without a saved local point", () => {
     const localPoints = new Map<string, { x: number; y: number } | undefined>([

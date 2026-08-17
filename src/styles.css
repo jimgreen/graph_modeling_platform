@@ -13610,3 +13610,382 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
 .e-file-editor-table .e-file-editor-td-action button:hover {
   background: #fef2f2;
 }
+
+.all-network-topology-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 13000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.48);
+  backdrop-filter: blur(2px);
+}
+
+.all-network-topology-dialog {
+  width: min(1180px, 94vw);
+  height: min(760px, 88vh);
+  min-width: 760px;
+  min-height: 520px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #f8fafc;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.28);
+}
+
+.all-network-topology-header {
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 14px 58px 14px 20px;
+  border-bottom: 1px solid #dbe3ec;
+  background: #fff;
+}
+
+.all-network-topology-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  color: #0f172a;
+  font-size: 19px;
+}
+
+.all-network-topology-header p {
+  margin: 5px 0 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.all-network-topology-header > span {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  border-radius: 999px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.all-network-topology-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(250px, 29%) minmax(0, 1fr);
+}
+
+.all-network-topology-model-panel {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  border-right: 1px solid #dbe3ec;
+  background: #f8fafc;
+}
+
+.all-network-topology-select-all,
+.all-network-topology-model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.all-network-topology-select-all {
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  color: #1e293b;
+  background: #fff;
+}
+
+.all-network-topology-select-all > svg {
+  color: #2563eb;
+}
+
+.all-network-topology-select-all > span:last-child {
+  margin-left: auto;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.all-network-topology-select-all input,
+.all-network-topology-model-row input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #2563eb;
+}
+
+.all-network-topology-model-tree {
+  flex: 1;
+  min-height: 0;
+  margin: 10px 0;
+  overflow: auto;
+}
+
+.all-network-topology-model-group {
+  margin-bottom: 9px;
+  border: 1px solid #dbe3ec;
+  border-radius: 7px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.all-network-topology-model-group h3 {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0 10px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #334155;
+  background: #f1f5f9;
+  font-size: 13px;
+}
+
+.all-network-topology-model-group h3 span {
+  margin-left: auto;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.all-network-topology-model-row {
+  min-height: 42px;
+  padding: 5px 10px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.all-network-topology-model-row:last-child {
+  border-bottom: 0;
+}
+
+.all-network-topology-model-row:hover {
+  background: #f8fbff;
+}
+
+.all-network-topology-model-index {
+  min-width: 27px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: #475569;
+  background: #e2e8f0;
+  font-size: 11px;
+  text-align: center;
+}
+
+.all-network-topology-model-name {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  color: #1e293b;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.all-network-topology-model-name small {
+  overflow: hidden;
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+}
+
+.all-network-topology-run,
+.all-network-topology-footer button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid #1d4ed8;
+  border-radius: 7px;
+  color: #fff;
+  background: #2563eb;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.all-network-topology-run:hover:not(:disabled),
+.all-network-topology-footer button:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.all-network-topology-run:disabled,
+.all-network-topology-footer button:disabled {
+  border-color: #cbd5e1;
+  color: #94a3b8;
+  background: #e2e8f0;
+  cursor: not-allowed;
+}
+
+.all-network-topology-result-panel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px;
+  background: #fff;
+}
+
+.all-network-topology-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid #dbe3ec;
+}
+
+.all-network-topology-tabs button {
+  min-width: 100px;
+  min-height: 37px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: #64748b;
+  background: transparent;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.all-network-topology-tabs button span {
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  font-size: 11px;
+}
+
+.all-network-topology-tabs button.active {
+  border-bottom-color: #2563eb;
+  color: #1d4ed8;
+}
+
+.all-network-topology-tabs button.active span {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.all-network-topology-alert-table-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  margin-top: 10px;
+  overflow: auto;
+  border: 1px solid #dbe3ec;
+  border-radius: 7px;
+}
+
+.all-network-topology-alert-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 12px;
+}
+
+.all-network-topology-alert-table th,
+.all-network-topology-alert-table td {
+  min-height: 38px;
+  padding: 9px 10px;
+  border-right: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.all-network-topology-alert-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: #334155;
+  background: #f1f5f9;
+}
+
+.all-network-topology-alert-table th:nth-child(1) {
+  width: 20%;
+}
+
+.all-network-topology-alert-table th:nth-child(2) {
+  width: 22%;
+}
+
+.all-network-topology-alert-table th:last-child,
+.all-network-topology-alert-table td:last-child {
+  border-right: 0;
+}
+
+.all-network-topology-alert-table tbody tr {
+  cursor: pointer;
+}
+
+.all-network-topology-alert-table tbody tr:hover {
+  background: #fff7ed;
+}
+
+.all-network-topology-placeholder {
+  position: absolute;
+  inset: 42px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  color: #94a3b8;
+  background: #fff;
+  text-align: center;
+}
+
+.all-network-topology-placeholder p,
+.all-network-topology-empty {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.all-network-topology-placeholder.success svg {
+  color: #16a34a;
+}
+
+.all-network-topology-footer {
+  min-height: 52px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.all-network-topology-footer > span {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.all-network-topology-footer button {
+  flex: 0 0 auto;
+  min-width: 126px;
+  min-height: 34px;
+  padding: 0 12px;
+}
+
+@media (max-width: 860px), (max-height: 620px) {
+  .all-network-topology-backdrop {
+    padding: 8px;
+  }
+
+  .all-network-topology-dialog {
+    width: calc(100vw - 16px);
+    height: calc(100vh - 16px);
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .all-network-topology-body {
+    grid-template-columns: minmax(220px, 34%) minmax(0, 1fr);
+  }
+}

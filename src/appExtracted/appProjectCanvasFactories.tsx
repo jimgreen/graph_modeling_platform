@@ -2769,7 +2769,12 @@ export function createRequestUnsavedChangeAction(__appScope: Record<string, any>
   const { enterBrowseMode, loadSavedProjectRecord, saveRequired, setPendingUnsavedAction } = __appScope;
     if (!saveRequired) {
       if (action.kind === "load-project") {
-        void loadSavedProjectRecord(action.project, action.schemeId);
+        void (async () => {
+          const loaded = await loadSavedProjectRecord(action.project, action.schemeId);
+          if (loaded) {
+            action.onLoaded?.();
+          }
+        })();
       } else if (action.kind === "enter-browse") {
         enterBrowseMode();
       } else if (action.kind === "export") {
@@ -2812,7 +2817,10 @@ export function createResolveUnsavedChangeAction(__appScope: Record<string, any>
     }
     setPendingUnsavedAction(null);
     if (action.kind === "load-project") {
-      void loadSavedProjectRecord(action.project, action.schemeId);
+      const loaded = await loadSavedProjectRecord(action.project, action.schemeId);
+      if (loaded) {
+        action.onLoaded?.();
+      }
     } else if (action.kind === "enter-browse") {
       enterBrowseMode();
     } else if (action.kind === "export" && resolution === "save") {

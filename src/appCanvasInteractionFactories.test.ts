@@ -121,6 +121,7 @@ describe("custom bus connection targets", () => {
       connectTargetSearchBounds: vi.fn(() => ({ left: 0, right: 600, top: 0, bottom: 400 })),
       getTerminalPoint,
       isBusNode,
+      isModelInteractionNode,
       isPointNearBus: vi.fn(() => true),
       queryNodeSpatialIndex: vi.fn(() => [ordinaryDevice]),
       visibleNodeById: new Map([[source.id, source], [ordinaryDevice.id, ordinaryDevice]]),
@@ -129,6 +130,58 @@ describe("custom bus connection targets", () => {
 
     expect(isBusNode(ordinaryDevice)).toBe(false);
     expect(findTarget(ordinaryDevice.position)).toBeNull();
+  });
+});
+
+describe("ordinary link model-interaction restrictions", () => {
+  test("does not offer any model-interaction button as a connect or rewire target", () => {
+    const source = createDefaultNode("ac-load", { x: 80, y: 200 });
+    for (const kind of [
+      "static-model-interaction-microgrid",
+      "static-model-interaction-station",
+      "static-model-interaction-feeder",
+      "static-model-interaction-district",
+      "static-model-interaction-other"
+    ] as const) {
+      const button = createDefaultNode(kind, { x: 300, y: 200 });
+      const point = getTerminalPoint(button, button.terminals[0].id);
+      const commonScope = {
+        CONNECT_BUS_SNAP_TOLERANCE: 18,
+        CONNECT_TERMINAL_SNAP_TOLERANCE: 28,
+        busAnchorFromPoint: projectPointToBusCenterline,
+        canConnectTerminals,
+        connectTargetSearchBounds: vi.fn(() => ({ left: 0, right: 600, top: 0, bottom: 400 })),
+        getTerminalPoint,
+        isBusNode,
+        isModelInteractionNode,
+        isPointNearBus: vi.fn(() => false),
+        queryNodeSpatialIndex: vi.fn(() => [button]),
+        visibleNodeSpatialIndex: {}
+      };
+
+      const connectTarget = createFindConnectTargetAtPoint({
+        ...commonScope,
+        activeLayerNodeIdSet: new Set([source.id, button.id]),
+        connectSource: { nodeId: source.id, terminalId: source.terminals[0].id },
+        visibleNodeById: new Map([[source.id, source], [button.id, button]])
+      })(point);
+      expect(connectTarget, kind).toBeNull();
+
+      const edge = {
+        id: `${kind}-edge`,
+        sourceId: source.id,
+        sourceTerminalId: source.terminals[0].id,
+        targetId: "old-target",
+        targetTerminalId: "t1"
+      };
+      const rewireTarget = createFindRewireTargetAtPoint({
+        ...commonScope,
+        activeLayerEdgeIdSet: new Set([edge.id]),
+        edgeById: new Map([[edge.id, edge]]),
+        visibleNodeById: new Map([[source.id, source], [button.id, button]])
+      })(point, { edgeId: edge.id, endpoint: "target" } as any);
+      expect(rewireTarget, kind).toBeNull();
+    }
   });
 });
 

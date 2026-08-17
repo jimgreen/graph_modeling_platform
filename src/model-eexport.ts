@@ -14,7 +14,7 @@ import {
   CUSTOM_PARAM_DEFINITIONS_KEY, deviceParamValue, enumExportValueForDefinition,
   toSnakeCaseDeviceParamName, normalizeVoltageBaseInput, terminalVoltageBaseNumber,
   readVoltageLevelSettings, calculateElectricalTopology, isStaticNode, isBusNode,
-  isRoutableLineDeviceKind, isStationModelInteractionNode, routableLineDeviceEndpointRefs,
+  equivalentBoundaryModelInteractionType, isRoutableLineDeviceKind, routableLineDeviceEndpointRefs,
   resolveEffectiveTemplateParameterDefinitionGroups, associatedNodeColumnValue,
   containerRelationCounterKey, parseContainerRelationField, isContainerTransformerRelationKey,
   DEFAULT_POWER_BASE_VALUE, DEFAULT_VOLTAGE_UNIT, DEFAULT_POWER_UNIT, DEFAULT_CURRENT_UNIT,
@@ -1587,15 +1587,18 @@ function buildStationBoundaryDeviceRecords(
       { side: "target" as const, ref: refs.target, terminal: line.terminals[line.terminals.length - 1], role: "load" as const }
     ];
     for (const { side, ref, terminal, role } of endpointSpecs) {
-      const station = ref ? nodeById.get(ref.nodeId) : undefined;
-      if (!station || !terminal || !isStationModelInteractionNode(station)) {
+      const boundaryNode = ref ? nodeById.get(ref.nodeId) : undefined;
+      const boundaryType = boundaryNode ? equivalentBoundaryModelInteractionType(boundaryNode) : "";
+      if (!boundaryNode || !terminal || !boundaryType) {
         continue;
       }
       const energyType = terminal.type === "dc" || baseDeviceKind(line.kind).startsWith("dc-") ? "DC" : "AC";
       const section = `${energyType}${role === "generator" ? "Generator" : "Load"}`;
       const nextIdx = (nextIndexBySection.get(section) ?? 0) + 1;
       nextIndexBySection.set(section, nextIdx);
-      const stationName = String(station.params.buttonTargetProjectName ?? "").trim() || station.name || "厂站";
+      const boundaryName = String(boundaryNode.params.buttonTargetProjectName ?? "").trim() ||
+        String(boundaryNode.name ?? "").trim() ||
+        boundaryType;
       const roleLabel = role === "generator" ? "等值电源" : "等值负荷";
       const vbase = String(terminal.vbase ?? line.params.vbase ?? "").trim();
       const columns = E_SECTION_COLUMNS[section] ?? [];
@@ -1604,7 +1607,7 @@ function buildStationBoundaryDeviceRecords(
       );
       Object.assign(params, {
         idx: String(nextIdx),
-        name: `${line.name || line.id}-${stationName}-${roleLabel}`,
+        name: `${line.name || line.id}-${boundaryName}-${roleLabel}`,
         node: String(terminal.nodeNumber ?? "").trim(),
         run_stat: "1",
         _vbase: vbase
@@ -2642,7 +2645,8 @@ function buildEDeviceParameterFileFromRecords(
   project: ProjectFile,
   schemePath: string[],
   options: EFileExportOptions,
-  records: readonly EDeviceExport[]
+  records: readonly EDeviceExport[],
+  preserveMergedIndexes = false
 ) {
   // XX实时库模板：将指向其他表 id 的引用字段（st_id/bv_id 等）替换为目标表记录的计算后 id
   applyEReferenceIdValues(project, records, options);
@@ -2676,7 +2680,7 @@ function buildEDeviceParameterFileFromRecords(
     // 合并所有 records
     const allRecords = groups.flatMap((group) => group.records);
     // 只有当有多个 group 合并时（即同名 section），才重排 idx
-    if (groups.length > 1) {
+    if (groups.length > 1 && !preserveMergedIndexes) {
       const columns = eSectionColumns(groups[0].section, allRecords);
       if (columns.includes("idx")) {
         allRecords.forEach((record, index) => {
@@ -2742,6 +2746,147 @@ export function buildEFileExport(
     text: buildEDeviceParameterFileFromRecords(project, schemePath, options, records),
     mime: "text/plain",
     warnings: getEExportWarningsFromRecords(project, records, options)
+  };
+}
+
+export type MultiModelEFileExportInput = {
+  id: string;
+  schemePath: string[];
+  project: ProjectFile;
+};
+
+const MULTI_MODEL_NODE_REFERENCE_COLUMNS = new Set([
+  "node",
+  "i_node",
+  "j_node",
+  "ind",
+  "znd",
+  "nd",
+  "ac_node",
+  "dc_node",
+  "node1",
+  "node2",
+  "node3",
+  "node4",
+  "t1_node",
+  "t2_node",
+  "t3_node",
+  "neutral_node",
+  "node_id",
+  "inode_id",
+  "znode_id"
+]);
+
+const MULTI_MODEL_DEVICE_REFERENCE_COLUMNS = new Set([
+  "aclnseg_id",
+  "dcln_id",
+  "tr_id",
+  "itrfm",
+  "trfm_id"
+]);
+
+function positiveIntegerValue(value: unknown) {
+  const token = firstNumericToken(String(value ?? ""));
+  const numeric = Number.parseInt(token, 10);
+  return Number.isSafeInteger(numeric) && numeric > 0 ? numeric : 0;
+}
+
+function boundaryEquivalentRecordIdsToOmit(
+  project: ProjectFile,
+  includedProjectIds: ReadonlySet<string>,
+  includedProjectNames: ReadonlySet<string>
+) {
+  const omittedIds = new Set<string>();
+  const nodeById = new Map(project.nodes.map((node) => [node.id, node]));
+  for (const line of project.nodes) {
+    if (!isRoutableLineDeviceKind(line.kind)) {
+      continue;
+    }
+    const refs = routableLineDeviceEndpointRefs(line);
+    for (const side of ["source", "target"] as const) {
+      const boundaryNode = refs[side] ? nodeById.get(refs[side]!.nodeId) : undefined;
+      if (!boundaryNode || !equivalentBoundaryModelInteractionType(boundaryNode)) {
+        continue;
+      }
+      const targetProjectId = String(boundaryNode.params.buttonTargetProjectId ?? "").trim();
+      const targetProjectName = String(boundaryNode.params.buttonTargetProjectName ?? "").trim();
+      if (
+        (targetProjectId && includedProjectIds.has(targetProjectId)) ||
+        (targetProjectName && includedProjectNames.has(targetProjectName))
+      ) {
+        omittedIds.add(`${line.id}:station-boundary:${side}`);
+      }
+    }
+  }
+  return omittedIds;
+}
+
+function offsetMultiModelRecordIndexes(records: EDeviceExport[], modelIndex: number) {
+  const offset = modelIndex * 10000;
+  const nextLocalIndexBySection = new Map<string, number>();
+  for (const record of records) {
+    const localIndex = positiveIntegerValue(record.params.idx) ||
+      (nextLocalIndexBySection.get(record.section) ?? 0) + 1;
+    nextLocalIndexBySection.set(
+      record.section,
+      Math.max(nextLocalIndexBySection.get(record.section) ?? 0, localIndex)
+    );
+    record.params.idx = String(offset + localIndex);
+    for (const column of [...MULTI_MODEL_NODE_REFERENCE_COLUMNS, ...MULTI_MODEL_DEVICE_REFERENCE_COLUMNS]) {
+      const localReference = positiveIntegerValue(record.params[column]);
+      if (localReference > 0) {
+        record.params[column] = String(offset + localReference);
+      }
+    }
+  }
+}
+
+export function buildMultiModelEFileExport(
+  inputs: readonly MultiModelEFileExportInput[],
+  options: EFileExportOptions = {}
+): EFileExport {
+  const orderedInputs = [...inputs].sort((left, right) =>
+    positiveIntegerValue(left.project.idx) - positiveIntegerValue(right.project.idx) ||
+    left.project.name.localeCompare(right.project.name, "zh-CN")
+  );
+  const includedProjectIds = new Set(orderedInputs.map((input) => input.id).filter(Boolean));
+  const includedProjectNames = new Set(orderedInputs.map((input) => input.project.name.trim()).filter(Boolean));
+  const records: EDeviceExport[] = [];
+  const warnings: EExportWarning[] = [];
+
+  orderedInputs.forEach((input, inputIndex) => {
+    const modelIndex = positiveIntegerValue(input.project.idx) || inputIndex + 1;
+    const omittedBoundaryRecordIds = boundaryEquivalentRecordIdsToOmit(
+      input.project,
+      includedProjectIds,
+      includedProjectNames
+    );
+    const modelRecords = buildEDeviceRecords(input.project, options)
+      .filter((record) => !omittedBoundaryRecordIds.has(record.id))
+      .map((record) => ({ ...record, params: { ...record.params }, columns: [...(record.columns ?? [])] }));
+    warnings.push(...getEExportWarningsFromRecords(input.project, modelRecords, options));
+    offsetMultiModelRecordIndexes(modelRecords, modelIndex);
+    records.push(...modelRecords);
+  });
+
+  const firstProject = orderedInputs[0]?.project;
+  const aggregateProject: ProjectFile = {
+    version: 1,
+    name: "全网拓扑",
+    idx: 0,
+    modelType: "其他",
+    powerUnit: firstProject?.powerUnit,
+    voltageUnit: firstProject?.voltageUnit,
+    currentUnit: firstProject?.currentUnit,
+    powerBaseValue: firstProject?.powerBaseValue,
+    nodes: [],
+    edges: []
+  };
+  return {
+    filename: "全网拓扑.e",
+    text: buildEDeviceParameterFileFromRecords(aggregateProject, ["全网拓扑"], options, records, true),
+    mime: "text/plain",
+    warnings
   };
 }
 

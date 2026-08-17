@@ -3092,6 +3092,22 @@ function isStationModelInteractionNode(node) {
   );
 }
 
+const equivalentBoundaryModelInteractionTypeByKind = new Map([
+  ["static-model-interaction-station", "厂站"],
+  ["static-model-interaction-feeder", "馈线"],
+  ["static-model-interaction-district", "台区"]
+]);
+
+const equivalentBoundaryModelInteractionTypes = new Set(["厂站", "馈线", "台区"]);
+
+function equivalentBoundaryModelInteractionType(node) {
+  const kindType = equivalentBoundaryModelInteractionTypeByKind.get(String(node?.kind ?? "").trim());
+  if (kindType) return kindType;
+  if (String(node?.params?.component_type ?? "").trim() !== "ModelInteraction") return "";
+  const configuredType = String(node?.params?.modelInteractionType ?? "").trim();
+  return equivalentBoundaryModelInteractionTypes.has(configuredType) ? configuredType : "";
+}
+
 function getTerminal(node, terminalId) {
   return node?.terminals?.find((terminal) => terminal.id === terminalId) ?? node?.terminals?.[0];
 }
@@ -3244,19 +3260,22 @@ function buildStationBoundaryDeviceRecords(topologyNodes, existingRecords) {
       { side: "target", ref: refs.target, terminal: line.terminals?.[line.terminals.length - 1], generator: false }
     ];
     for (const endpoint of endpoints) {
-      const station = endpoint.ref ? nodeById.get(endpoint.ref.nodeId) : undefined;
-      if (!station || !endpoint.terminal || !isStationModelInteractionNode(station)) continue;
+      const boundaryNode = endpoint.ref ? nodeById.get(endpoint.ref.nodeId) : undefined;
+      const boundaryType = equivalentBoundaryModelInteractionType(boundaryNode);
+      if (!boundaryNode || !endpoint.terminal || !boundaryType) continue;
       const electricalType = endpoint.terminal.type === "dc" || String(line.kind).startsWith("dc-") ? "DC" : "AC";
       const section = `${electricalType}${endpoint.generator ? "Generator" : "Load"}`;
       const idx = (maxIndexBySection.get(section) ?? 0) + 1;
       maxIndexBySection.set(section, idx);
-      const stationName = String(station.params?.buttonTargetProjectName ?? "").trim() || station.name || "厂站";
+      const boundaryName = String(boundaryNode.params?.buttonTargetProjectName ?? "").trim() ||
+        String(boundaryNode.name ?? "").trim() ||
+        boundaryType;
       const roleLabel = endpoint.generator ? "等值电源" : "等值负荷";
       const vbase = String(endpoint.terminal.vbase ?? line.params?.vbase ?? "").trim();
       const params = Object.fromEntries((eSectionColumns[section] ?? []).map((column) => [column, defaultEFileColumnValue(column, idx - 1)]));
       Object.assign(params, {
         idx: String(idx),
-        name: `${line.name || line.id}-${stationName}-${roleLabel}`,
+        name: `${line.name || line.id}-${boundaryName}-${roleLabel}`,
         node: String(endpoint.terminal.nodeNumber ?? "").trim(),
         run_stat: "1",
         _vbase: vbase

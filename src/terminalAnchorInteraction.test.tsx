@@ -1,9 +1,10 @@
 import { describe, expect, test, vi } from "vitest";
 import {
   createFinishTerminalPress,
-  createHandleTerminalPointerDown
+  createHandleTerminalPointerDown,
+  createStartConnectFromTerminal
 } from "./appExtracted/appDeviceDefinitionFactories";
-import { createDefaultNode, type ModelNode, type Point } from "./model";
+import { createDefaultNode, isModelInteractionNode, type ModelNode, type Point } from "./model";
 
 function createPointerEvent(pointerId = 7) {
   return {
@@ -36,6 +37,39 @@ function createTerminalPointerScope(node: ModelNode) {
 }
 
 describe("single-terminal pointer interaction", () => {
+  test("does not start an ordinary link from a model-interaction button terminal", () => {
+    for (const kind of [
+      "static-model-interaction-microgrid",
+      "static-model-interaction-station",
+      "static-model-interaction-feeder",
+      "static-model-interaction-district",
+      "static-model-interaction-other"
+    ] as const) {
+      const node = createDefaultNode(kind, { x: 100, y: 100 });
+      const setConnectSource = vi.fn();
+      const requireEditMode = vi.fn(() => true);
+
+      createStartConnectFromTerminal({
+        activeLayerNodeIdSet: new Set([node.id]),
+        applyConnectPreviewState: vi.fn(),
+        getModelEdgeEndpointPoint: vi.fn(() => ({ x: 100, y: 100 })),
+        isModelInteractionNode,
+        requireEditMode,
+        resetRoutableLinePreviewState: vi.fn(),
+        setCanvasSelectionScope: vi.fn(),
+        setConnectSource,
+        setMode: vi.fn(),
+        setRoutableLinePlacement: vi.fn(),
+        setSelectedEdgeId: vi.fn(),
+        setSelectedEdgeIds: vi.fn(),
+        setSelectedNodeIds: vi.fn()
+      })(node, node.terminals[0].id);
+
+      expect(requireEditMode, kind).not.toHaveBeenCalled();
+      expect(setConnectSource, kind).not.toHaveBeenCalled();
+    }
+  });
+
   test("defers connection until pointer-up so dragging can switch the terminal side", () => {
     const node = createDefaultNode("ac-source", { x: 100, y: 100 });
     const scope = createTerminalPointerScope(node);

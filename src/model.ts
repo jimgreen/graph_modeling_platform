@@ -2025,6 +2025,7 @@ export type PreparedConnectionEdgeCommit = ConnectionRouteValidationResult & {
 export type ConnectionEndpointRuleIssueType =
   | "duplicate-terminal-pair"
   | "duplicate-terminal-bus"
+  | "model-interaction-link-forbidden"
   | "same-device-terminals"
   | "same-device-same-bus-endpoints"
   | "shared-opposite-terminal";
@@ -7032,6 +7033,34 @@ export function isStationModelInteractionNode(node: Pick<ModelNode, "kind" | "pa
     baseDeviceKind(node.kind) === "static-model-interaction-station" ||
     String(node.params?.modelInteractionType ?? "").trim() === "厂站"
   );
+}
+
+export type EquivalentBoundaryModelInteractionType = "厂站" | "馈线" | "台区";
+
+const EQUIVALENT_BOUNDARY_MODEL_INTERACTION_TYPE_BY_KIND = new Map<string, EquivalentBoundaryModelInteractionType>([
+  ["static-model-interaction-station", "厂站"],
+  ["static-model-interaction-feeder", "馈线"],
+  ["static-model-interaction-district", "台区"]
+]);
+
+const EQUIVALENT_BOUNDARY_MODEL_INTERACTION_TYPE_SET = new Set<EquivalentBoundaryModelInteractionType>([
+  "厂站",
+  "馈线",
+  "台区"
+]);
+
+export function equivalentBoundaryModelInteractionType(
+  node: Pick<ModelNode, "kind" | "params">
+): EquivalentBoundaryModelInteractionType | "" {
+  if (!isModelInteractionNode(node)) {
+    return "";
+  }
+  const kindType = EQUIVALENT_BOUNDARY_MODEL_INTERACTION_TYPE_BY_KIND.get(baseDeviceKind(node.kind));
+  if (kindType) {
+    return kindType;
+  }
+  const configuredType = String(node.params?.modelInteractionType ?? "").trim() as EquivalentBoundaryModelInteractionType;
+  return EQUIVALENT_BOUNDARY_MODEL_INTERACTION_TYPE_SET.has(configuredType) ? configuredType : "";
 }
 
 const TEMPLATE_DEFINITION_READONLY_KEYS = new Set(["idx", "name", "node", "i_node", "j_node", "ac_node", "dc_node"]);

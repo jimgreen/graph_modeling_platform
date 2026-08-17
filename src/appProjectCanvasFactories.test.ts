@@ -5,12 +5,75 @@ import {
   createCommitLayoutNodePositions,
   createHandlePointerMove,
   createLoadSavedProject,
+  createRequestUnsavedChangeAction,
+  createResolveUnsavedChangeAction,
   createRunTopologyCalculation,
   createSaveCurrentProject
 } from "./appExtracted/appProjectCanvasFactories";
 import { clampCanvasNoScrollOffset } from "./canvasViewport";
 import { createDefaultNode, getNodeScaleX, getNodeScaleY, isLineSegmentBusNode } from "./model";
 import { resizeLineSegmentBusGeometryFromHandleDrag } from "./transformUtils";
+
+describe("跨模型告警定位的未保存修改衔接", () => {
+  test("当前模型无未保存修改时，加载目标模型后执行定位回调", async () => {
+    const onLoaded = vi.fn();
+    const loadSavedProjectRecord = vi.fn().mockResolvedValue(true);
+    const request = createRequestUnsavedChangeAction({
+      enterBrowseMode: vi.fn(),
+      loadSavedProjectRecord,
+      saveRequired: false,
+      setPendingUnsavedAction: vi.fn()
+    });
+    const project = {
+      id: "station-1",
+      name: "中心厂站",
+      updatedAt: "2026-08-17T00:00:00.000Z",
+      project: { version: 1, name: "中心厂站", nodes: [], edges: [] }
+    };
+
+    request({
+      kind: "load-project",
+      project,
+      schemeId: "scheme-1",
+      label: "切换并定位",
+      onLoaded
+    });
+
+    await vi.waitFor(() => expect(onLoaded).toHaveBeenCalledOnce());
+    expect(loadSavedProjectRecord).toHaveBeenCalledWith(project, "scheme-1");
+  });
+
+  test("用户保存或放弃当前修改后，加载目标模型并执行定位回调", async () => {
+    const onLoaded = vi.fn();
+    const loadSavedProjectRecord = vi.fn().mockResolvedValue(true);
+    const action = {
+      kind: "load-project" as const,
+      project: {
+        id: "feeder-1",
+        name: "一号馈线",
+        updatedAt: "2026-08-17T00:00:00.000Z",
+        project: { version: 1 as const, name: "一号馈线", nodes: [], edges: [] }
+      },
+      schemeId: "scheme-1",
+      label: "切换并定位",
+      onLoaded
+    };
+    const setPendingUnsavedAction = vi.fn();
+    const resolve = createResolveUnsavedChangeAction({
+      enterBrowseMode: vi.fn(),
+      loadSavedProjectRecord,
+      pendingUnsavedAction: action,
+      saveCurrentProject: vi.fn().mockResolvedValue(true),
+      setPendingUnsavedAction
+    });
+
+    await resolve("discard");
+
+    expect(loadSavedProjectRecord).toHaveBeenCalledWith(action.project, "scheme-1");
+    expect(onLoaded).toHaveBeenCalledOnce();
+    expect(setPendingUnsavedAction).toHaveBeenCalledWith(null);
+  });
+});
 
 function createLoadScope(overrides: Record<string, unknown> = {}) {
   const noop = vi.fn();

@@ -4597,7 +4597,7 @@ export function createIsPointNearBus(__appScope: Record<string, any>) {
 
 export function createFindRewireTargetAtPoint(__appScope: Record<string, any>) {
   return (point: Point, state: Exclude<RewiringState, null>) => {
-  const { CONNECT_BUS_SNAP_TOLERANCE, CONNECT_TERMINAL_SNAP_TOLERANCE, activeLayerEdgeIdSet, busAnchorFromPoint, canConnectTerminals, connectTargetSearchBounds, edgeById, getTerminalPoint, isBusNode, isPointNearBus, queryNodeSpatialIndex, visibleNodeById, visibleNodeSpatialIndex } = __appScope;
+  const { CONNECT_BUS_SNAP_TOLERANCE, CONNECT_TERMINAL_SNAP_TOLERANCE, activeLayerEdgeIdSet, busAnchorFromPoint, canConnectTerminals, connectTargetSearchBounds, edgeById, getTerminalPoint, isBusNode, isModelInteractionNode, isPointNearBus, queryNodeSpatialIndex, visibleNodeById, visibleNodeSpatialIndex } = __appScope;
     const edge = edgeById.get(state.edgeId);
     if (!edge) {
       return null;
@@ -4607,12 +4607,12 @@ export function createFindRewireTargetAtPoint(__appScope: Record<string, any>) {
     }
     const otherNode = visibleNodeById.get(state.endpoint === "source" ? edge.targetId : edge.sourceId);
     const otherTerminalId = state.endpoint === "source" ? edge.targetTerminalId : edge.sourceTerminalId;
-    if (!otherNode || !otherTerminalId) {
+    if (!otherNode || !otherTerminalId || isModelInteractionNode(otherNode)) {
       return null;
     }
     const searchBounds = connectTargetSearchBounds(point);
     for (const node of queryNodeSpatialIndex(visibleNodeSpatialIndex, searchBounds)) {
-      if (node.id === otherNode.id) {
+      if (node.id === otherNode.id || isModelInteractionNode(node)) {
         continue;
       }
       if (isBusNode(node) && isPointNearBus(node, point, CONNECT_BUS_SNAP_TOLERANCE)) {
@@ -4636,16 +4636,19 @@ export function createFindRewireTargetAtPoint(__appScope: Record<string, any>) {
 
 export function createFindConnectTargetAtPoint(__appScope: Record<string, any>) {
   return (point: Point): ConnectTarget | null => {
-  const { CONNECT_BUS_SNAP_TOLERANCE, CONNECT_TERMINAL_SNAP_TOLERANCE, activeLayerNodeIdSet, busAnchorFromPoint, canConnectTerminals, connectSource, connectTargetSearchBounds, getTerminalPoint, isBusNode, isPointNearBus, queryNodeSpatialIndex, visibleNodeById, visibleNodeSpatialIndex } = __appScope;
+  const { CONNECT_BUS_SNAP_TOLERANCE, CONNECT_TERMINAL_SNAP_TOLERANCE, activeLayerNodeIdSet, busAnchorFromPoint, canConnectTerminals, connectSource, connectTargetSearchBounds, getTerminalPoint, isBusNode, isModelInteractionNode, isPointNearBus, queryNodeSpatialIndex, visibleNodeById, visibleNodeSpatialIndex } = __appScope;
     if (!connectSource) {
       return null;
     }
     const sourceNode = activeLayerNodeIdSet.has(connectSource.nodeId) ? visibleNodeById.get(connectSource.nodeId) : undefined;
-    if (!sourceNode) {
+    if (!sourceNode || isModelInteractionNode(sourceNode)) {
       return null;
     }
     const searchBounds = connectTargetSearchBounds(point);
     for (const node of queryNodeSpatialIndex(visibleNodeSpatialIndex, searchBounds)) {
+      if (isModelInteractionNode(node)) {
+        continue;
+      }
       if (isBusNode(node) && isPointNearBus(node, point, CONNECT_BUS_SNAP_TOLERANCE)) {
         const terminalId = node.terminals[0]?.id ?? "t1";
         if (
