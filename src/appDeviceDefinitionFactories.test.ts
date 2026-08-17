@@ -3269,7 +3269,7 @@ describe("manual bend interaction helpers", () => {
     expect(setCustomDeviceSaveMessage).toHaveBeenCalledWith("SVG 图元已导入为 1 个可编辑图层，请保存当前元件定义后生效。");
   });
 
-  test("adopts the natural size from a platform-exported SVG device use", async () => {
+  test("adopts the natural size and terminal-aware layer frame from a platform SVG without connector lines", async () => {
     let customDeviceDraft: any = {
       componentName: "交流核能发电机",
       componentKind: "ac-nuclear-source",
@@ -3287,7 +3287,7 @@ describe("manual bend interaction helpers", () => {
         files: [{
           name: "ac-nuclear-source.svg",
           type: "image/svg+xml",
-          text: async () => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0,0,222,166"><defs><symbol id="symbol" viewBox="-75 -47 150 94"><g transform="translate(79 0)"><line x1="-46" y1="0" x2="0" y2="0" stroke="#2563eb"/></g><circle cx="0" cy="0" r="22"/></symbol></defs><g><use dev-kind="ac-nuclear-source" href="#symbol" x="36" y="36" width="150" height="94"/></g></svg>'
+          text: async () => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0,0,222,166"><defs><symbol id="symbol" viewBox="-75 -47 150 94"><circle cx="0" cy="0" r="22"/></symbol></defs><g><use dev-kind="ac-nuclear-source" href="#symbol" x="36" y="36" width="150" height="94"/></g></svg>'
         }]
       }
     };

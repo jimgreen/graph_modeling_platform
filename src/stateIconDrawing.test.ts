@@ -2799,13 +2799,34 @@ describe("default device state draft rows", () => {
     expect(restored.every((element) => element.width === 180 && element.height === 120)).toBe(true);
   });
 
-  test("uses the full drawing frame for platform SVG layers without terminal connectors", () => {
+  test("keeps the terminal-aware frame for legacy platform SVG layers without connector lines", () => {
     const source = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 186 136"><defs><symbol id="symbol-plain" viewBox="-75 -50 150 100"><circle cx="0" cy="0" r="24" fill="#2563eb"/></symbol></defs><g><use dev-kind="unknown-device" href="#symbol-plain" x="18" y="18" width="150" height="100"/></g></svg>';
     const imported = withXmlDomParser(() => createEditableStateIconElementsFromSvgSource(source, "plain.svg"));
 
     expect(imported).toHaveLength(1);
-    expect(imported[0]).toMatchObject({ x: 120, y: 80, width: 240, height: 160 });
+    expect(imported[0]).toMatchObject({ x: 120, y: 80, width: 180, height: 120 });
     expect(imported[0].svgSource).toContain('viewBox="-75 -50 150 100"');
+    const persistedSource = decodeURIComponent(stateIconDrawingToImage(imported).split(",")[1] ?? "");
+    expect(persistedSource).toContain('data-state-icon-layer-width="180" data-state-icon-layer-height="120"');
+  });
+
+  test("uses the full drawing frame only when platform export metadata declares zero source terminals", () => {
+    const source = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 186 136"><defs><symbol id="symbol-plain" viewBox="-75 -50 150 100"><circle cx="0" cy="0" r="24" fill="#2563eb"/></symbol></defs><g><use dev-kind="unknown-device" data-export-source-terminal-count="0" href="#symbol-plain" x="18" y="18" width="150" height="100"/></g></svg>';
+    const originalDOMParser = globalThis.DOMParser;
+    (globalThis as any).DOMParser = undefined;
+    try {
+      const fallbackImported = createEditableStateIconElementsFromSvgSource(source, "plain.svg");
+      expect(fallbackImported).toHaveLength(1);
+      expect(fallbackImported[0]).toMatchObject({ x: 120, y: 80, width: 240, height: 160 });
+    } finally {
+      (globalThis as any).DOMParser = originalDOMParser;
+    }
+    const imported = withXmlDomParser(() => createEditableStateIconElementsFromSvgSource(source, "plain.svg"));
+
+    expect(imported).toHaveLength(1);
+    expect(imported[0]).toMatchObject({ x: 120, y: 80, width: 240, height: 160 });
+    const persistedSource = decodeURIComponent(stateIconDrawingToImage(imported).split(",")[1] ?? "");
+    expect(persistedSource).toContain('data-state-icon-layer-width="240" data-state-icon-layer-height="160"');
   });
 
   test("restores persisted imported layer dimensions instead of falling back to the source use size", () => {

@@ -3675,12 +3675,17 @@ export function buildDeviceTemplateIconSvg(template: DeviceTemplate) {
     ...node.params,
     _labelVisible: "0"
   };
-  return buildSvgDocument([node], [], {
+  const svg = buildSvgDocument([node], [], {
     width,
     height,
     backgroundColor: "transparent",
     deviceTemplates: [visualTemplate]
   });
+  const sourceTerminalCount = Math.max(0, Math.floor(Number(template.terminalCount) || 0));
+  return svg.replace(
+    /<use\b(?=[^>]*\bdev-kind\s*=)/u,
+    `<use data-export-source-terminal-count="${sourceTerminalCount}"`
+  );
 }
 
 export function buildDeviceTemplateCopyVisualSvg(template: DeviceTemplate) {
