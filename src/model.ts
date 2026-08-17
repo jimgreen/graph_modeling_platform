@@ -2733,23 +2733,33 @@ export type ModelAssociationDerivedClassSpec = {
   baseKind: "ac-source" | "dc-source" | "ac-load" | "dc-load";
   baseComponentLibrary: "ACGenerator" | "DCGenerator" | "ACLoad" | "DCLoad";
   derivedComponentLibrary: string;
+  modelType: Extract<ModelType, "厂站" | "馈线" | "台区">;
+  visualTemplateKind: "static-model-interaction-station" | "static-model-interaction-feeder" | "static-model-interaction-district";
 };
 
-/** 内置的模型层级电源/负荷派生类。派生类只增加 model_id，其他定义继承对应基类。 */
+/** 内置的模型层级电源/负荷派生类。电气定义继承基类，外观复用对应模型层级图标。 */
 export const MODEL_ASSOCIATION_DERIVED_CLASS_SPECS: readonly ModelAssociationDerivedClassSpec[] = [
-  { kind: "ac-station-source", label: "交流厂站电源", baseKind: "ac-source", baseComponentLibrary: "ACGenerator", derivedComponentLibrary: "ACStationGen" },
-  { kind: "ac-feeder-source", label: "交流馈线电源", baseKind: "ac-source", baseComponentLibrary: "ACGenerator", derivedComponentLibrary: "ACFeederGen" },
-  { kind: "ac-district-source", label: "交流台区电源", baseKind: "ac-source", baseComponentLibrary: "ACGenerator", derivedComponentLibrary: "ACDistrictGen" },
-  { kind: "dc-station-source", label: "直流厂站电源", baseKind: "dc-source", baseComponentLibrary: "DCGenerator", derivedComponentLibrary: "DCStationGen" },
-  { kind: "dc-feeder-source", label: "直流馈线电源", baseKind: "dc-source", baseComponentLibrary: "DCGenerator", derivedComponentLibrary: "DCFeederGen" },
-  { kind: "dc-district-source", label: "直流台区电源", baseKind: "dc-source", baseComponentLibrary: "DCGenerator", derivedComponentLibrary: "DCDistrictGen" },
-  { kind: "ac-station-load", label: "交流厂站负荷", baseKind: "ac-load", baseComponentLibrary: "ACLoad", derivedComponentLibrary: "ACStationLoad" },
-  { kind: "ac-feeder-load", label: "交流馈线负荷", baseKind: "ac-load", baseComponentLibrary: "ACLoad", derivedComponentLibrary: "ACFeederLoad" },
-  { kind: "ac-district-load", label: "交流台区负载", baseKind: "ac-load", baseComponentLibrary: "ACLoad", derivedComponentLibrary: "ACDistrictLoad" },
-  { kind: "dc-station-load", label: "直流厂站负荷", baseKind: "dc-load", baseComponentLibrary: "DCLoad", derivedComponentLibrary: "DCStationLoad" },
-  { kind: "dc-feeder-load", label: "直流馈线负荷", baseKind: "dc-load", baseComponentLibrary: "DCLoad", derivedComponentLibrary: "DCFeederLoad" },
-  { kind: "dc-district-load", label: "直流台区负载", baseKind: "dc-load", baseComponentLibrary: "DCLoad", derivedComponentLibrary: "DCDistrictLoad" }
+  { kind: "ac-station-source", label: "交流厂站电源", baseKind: "ac-source", baseComponentLibrary: "ACGenerator", derivedComponentLibrary: "ACStationGen", modelType: "厂站", visualTemplateKind: "static-model-interaction-station" },
+  { kind: "ac-feeder-source", label: "交流馈线电源", baseKind: "ac-source", baseComponentLibrary: "ACGenerator", derivedComponentLibrary: "ACFeederGen", modelType: "馈线", visualTemplateKind: "static-model-interaction-feeder" },
+  { kind: "ac-district-source", label: "交流台区电源", baseKind: "ac-source", baseComponentLibrary: "ACGenerator", derivedComponentLibrary: "ACDistrictGen", modelType: "台区", visualTemplateKind: "static-model-interaction-district" },
+  { kind: "dc-station-source", label: "直流厂站电源", baseKind: "dc-source", baseComponentLibrary: "DCGenerator", derivedComponentLibrary: "DCStationGen", modelType: "厂站", visualTemplateKind: "static-model-interaction-station" },
+  { kind: "dc-feeder-source", label: "直流馈线电源", baseKind: "dc-source", baseComponentLibrary: "DCGenerator", derivedComponentLibrary: "DCFeederGen", modelType: "馈线", visualTemplateKind: "static-model-interaction-feeder" },
+  { kind: "dc-district-source", label: "直流台区电源", baseKind: "dc-source", baseComponentLibrary: "DCGenerator", derivedComponentLibrary: "DCDistrictGen", modelType: "台区", visualTemplateKind: "static-model-interaction-district" },
+  { kind: "ac-station-load", label: "交流厂站负荷", baseKind: "ac-load", baseComponentLibrary: "ACLoad", derivedComponentLibrary: "ACStationLoad", modelType: "厂站", visualTemplateKind: "static-model-interaction-station" },
+  { kind: "ac-feeder-load", label: "交流馈线负荷", baseKind: "ac-load", baseComponentLibrary: "ACLoad", derivedComponentLibrary: "ACFeederLoad", modelType: "馈线", visualTemplateKind: "static-model-interaction-feeder" },
+  { kind: "ac-district-load", label: "交流台区负载", baseKind: "ac-load", baseComponentLibrary: "ACLoad", derivedComponentLibrary: "ACDistrictLoad", modelType: "台区", visualTemplateKind: "static-model-interaction-district" },
+  { kind: "dc-station-load", label: "直流厂站负荷", baseKind: "dc-load", baseComponentLibrary: "DCLoad", derivedComponentLibrary: "DCStationLoad", modelType: "厂站", visualTemplateKind: "static-model-interaction-station" },
+  { kind: "dc-feeder-load", label: "直流馈线负荷", baseKind: "dc-load", baseComponentLibrary: "DCLoad", derivedComponentLibrary: "DCFeederLoad", modelType: "馈线", visualTemplateKind: "static-model-interaction-feeder" },
+  { kind: "dc-district-load", label: "直流台区负载", baseKind: "dc-load", baseComponentLibrary: "DCLoad", derivedComponentLibrary: "DCDistrictLoad", modelType: "台区", visualTemplateKind: "static-model-interaction-district" }
 ];
+
+const MODEL_ASSOCIATION_DERIVED_CLASS_SPEC_BY_KIND = new Map(
+  MODEL_ASSOCIATION_DERIVED_CLASS_SPECS.map((spec) => [spec.kind, spec] as const)
+);
+
+export function modelAssociationModelTypeForKind(kind: string): Extract<ModelType, "厂站" | "馈线" | "台区"> | "" {
+  return MODEL_ASSOCIATION_DERIVED_CLASS_SPEC_BY_KIND.get(baseDeviceKind(kind) as DeviceKind)?.modelType ?? "";
+}
 
 // 类标签映射
 export const ELEMENT_TREE_COMPONENT_LIBRARY_LABELS: Record<string, string> = {
@@ -4411,16 +4421,51 @@ const BASE_DEVICE_LIBRARY: DeviceTemplate[] = [
 const MODEL_ASSOCIATION_PARAMETER_DEFINITION: DeviceParameterDefinition = {
   cnName: "关联模型",
   enName: "model_id",
-  valueType: "string",
+  valueType: "numberEnum",
   typicalValue: "",
+  enumValues: [],
+  enumValueType: "number",
+  enumOptions: [],
   readonly: false,
   exportEnabled: true,
   exportName: "model_id"
 };
 
+const MODEL_ASSOCIATION_VISUAL_PARAM_KEYS = [
+  "text",
+  "fillColor",
+  "strokeColor",
+  "textColor",
+  "lineWidth",
+  "strokeStyle",
+  "fontSize",
+  "fontFamily",
+  "fontWeight",
+  "fontStyle",
+  "textDecoration",
+  "cornerRadius",
+  "accentColor",
+  "shadowEnabled",
+  "padding",
+  "textAlign",
+  "verticalAlign"
+] as const;
+
+function modelAssociationVisualParams(visualTemplate: DeviceTemplate | undefined): Record<string, string> {
+  if (!visualTemplate) {
+    return {};
+  }
+  return Object.fromEntries(
+    MODEL_ASSOCIATION_VISUAL_PARAM_KEYS.flatMap((key) =>
+      visualTemplate.params[key] === undefined ? [] : [[key, visualTemplate.params[key]]]
+    )
+  );
+}
+
 function createModelAssociationDerivedDeviceTemplate(
   baseTemplate: DeviceTemplate,
-  spec: ModelAssociationDerivedClassSpec
+  spec: ModelAssociationDerivedClassSpec,
+  visualTemplate?: DeviceTemplate
 ): DeviceTemplate {
   return {
     ...baseTemplate,
@@ -4428,9 +4473,10 @@ function createModelAssociationDerivedDeviceTemplate(
     label: spec.label,
     englishName: spec.derivedComponentLibrary,
     componentClass: spec.derivedComponentLibrary,
-    size: { ...baseTemplate.size },
+    size: { ...(visualTemplate?.size ?? baseTemplate.size) },
     params: {
       ...baseTemplate.params,
+      ...modelAssociationVisualParams(visualTemplate),
       component_type: spec.baseComponentLibrary,
       derived_from_component_type: spec.baseComponentLibrary,
       derived_component_type: spec.derivedComponentLibrary,
@@ -4459,6 +4505,7 @@ function createModelAssociationDerivedDeviceTemplate(
 
 function insertModelAssociationDerivedDeviceTemplates(templates: readonly DeviceTemplate[]): DeviceTemplate[] {
   const specsByBaseKind = new Map<string, ModelAssociationDerivedClassSpec[]>();
+  const templateByKind = new Map(templates.map((template) => [template.kind, template] as const));
   for (const spec of MODEL_ASSOCIATION_DERIVED_CLASS_SPECS) {
     const specs = specsByBaseKind.get(spec.baseKind) ?? [];
     specs.push(spec);
@@ -4467,7 +4514,7 @@ function insertModelAssociationDerivedDeviceTemplates(templates: readonly Device
   return templates.flatMap((template) => [
     template,
     ...(specsByBaseKind.get(template.kind) ?? []).map((spec) =>
-      createModelAssociationDerivedDeviceTemplate(template, spec)
+      createModelAssociationDerivedDeviceTemplate(template, spec, templateByKind.get(spec.visualTemplateKind))
     )
   ]);
 }

@@ -177,6 +177,7 @@ import {
   isStaticKind,
   isStaticNode,
   isModelInteractionNode,
+  modelAssociationModelTypeForKind,
   modelInteractionTerminalConnectionLocalPointsByNodeId,
   MODEL_TYPES,
   nextGlobalProjectIndex,
@@ -2865,8 +2866,9 @@ test("keeps every built-in device parameter aligned with its semantic type and n
   const numberEnumNames = new Set(["regable", "run_stat", "status"]);
   const numericText = /^[-+]?(?:\d+(?:\.\d+)?|\.\d+)$/;
   const integerText = /^[-+]?\d+$/;
-  const expectedType = (name: string) => {
+  const expectedType = (name: string, kind: DeviceKind) => {
     const containerBaseName = name.replace(/_(?:ac2|dc2|h22|heat2|ac|dc|h2|heat)_(?:unit|load|transformer)_t\d+$/, "");
+    if (name === "model_id" && modelAssociationModelTypeForKind(kind)) return "numberEnum";
     if (numberEnumNames.has(containerBaseName)) return "numberEnum";
     if (stringEnumNames.has(containerBaseName)) return "stringEnum";
     if (
@@ -2887,7 +2889,7 @@ test("keeps every built-in device parameter aligned with its semantic type and n
       const context = `${template.label}.${definition.enName}`;
       const semanticType = compensatorKinds.has(template.kind) && compensatorFloatNames.has(definition.enName)
         ? "float"
-        : expectedType(definition.enName);
+        : expectedType(definition.enName, template.kind);
       expect(definition.valueType, context).toBe(semanticType);
       if (semanticType === "float" && definition.typicalValue !== "") {
         expect(definition.typicalValue, context).toMatch(numericText);
@@ -2897,8 +2899,13 @@ test("keeps every built-in device parameter aligned with its semantic type and n
       }
       if (semanticType === "stringEnum" || semanticType === "numberEnum") {
         const optionValues = (definition.enumOptions ?? []).map((option) => option.value);
-        expect(optionValues.length, context).toBeGreaterThan(0);
-        expect(optionValues, context).toContain(definition.typicalValue);
+        if (definition.enName === "model_id" && modelAssociationModelTypeForKind(template.kind)) {
+          expect(optionValues, context).toEqual([]);
+          expect(definition.typicalValue, context).toBe("");
+        } else {
+          expect(optionValues.length, context).toBeGreaterThan(0);
+          expect(optionValues, context).toContain(definition.typicalValue);
+        }
       }
       if (definition.enName === "regable") {
         expect(definition.valueType, context).toBe("numberEnum");

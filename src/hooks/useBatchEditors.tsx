@@ -15,6 +15,7 @@ import {
   getTemplateStateDefinitions,
   enumSelectOptionsWithCurrentValue,
   invalidEnumOptionLabel,
+  modelAssociationModelTypeForKind,
   normalizeRatioParameterInputValue,
 } from "../model";
 
@@ -155,6 +156,35 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
   const withCurrentOption = (options: string[] | undefined, value: string): string[] | undefined =>
     options;
 
+  const modelAssociationProjectOptionConfig = (key: string, node: ModelNode | undefined): {
+    options: string[];
+    optionLabels: Record<string, string>;
+  } | undefined => {
+    const targetModelType = key === "model_id" && node ? modelAssociationModelTypeForKind(node.kind) : "";
+    if (!targetModelType) {
+      return undefined;
+    }
+    const optionByValue = new Map<string, string>();
+    flattenSavedSchemes(schemes).forEach((scheme) => {
+      scheme.projects.forEach((project) => {
+        if (project.project.modelType !== targetModelType) {
+          return;
+        }
+        const numericIndex = Number(project.project.idx);
+        if (!Number.isInteger(numericIndex) || numericIndex <= 0) {
+          return;
+        }
+        const value = String(numericIndex);
+        optionByValue.set(value, `${value} / ${project.name}`);
+      });
+    });
+    const options = Array.from(optionByValue.keys()).sort((left, right) => Number(left) - Number(right));
+    return {
+      options,
+      optionLabels: Object.fromEntries(options.map((option) => [option, optionByValue.get(option) ?? option]))
+    };
+  };
+
   const paramOptionsForNode = (key: string, node: ModelNode | undefined, value: string): string[] | undefined => {
     if (key === "status") {
       const options = statusOptionsForNode(node);
@@ -195,6 +225,10 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     value: string,
     definition?: DeviceParameterDefinition
   ): string[] | undefined => {
+    const modelAssociationOptions = modelAssociationProjectOptionConfig(key, node);
+    if (modelAssociationOptions) {
+      return modelAssociationOptions.options;
+    }
     const definitionOptions = key === "status" ? undefined : enumOptionsForDefinition(definition, value);
     return definitionOptions ?? paramOptionsForNode(key, node, value);
   };
@@ -205,6 +239,10 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     value: string,
     definition?: DeviceParameterDefinition
   ): Record<string, string> => {
+    const modelAssociationOptions = modelAssociationProjectOptionConfig(key, node);
+    if (modelAssociationOptions) {
+      return modelAssociationOptions.optionLabels;
+    }
     const definitionOptions = key === "status" ? undefined : enumOptionsForDefinition(definition, value);
     return definitionOptions ? enumOptionLabelsForDefinition(definition, value) ?? {} : paramOptionLabelsForNode(key, node, value);
   };
@@ -249,6 +287,7 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     options: string[] | undefined;
     optionLabels: Record<string, string>;
   } => {
+    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []);
     if (row.key === "status") {
       return {
         options: batchStatusOptions(value),
@@ -256,9 +295,18 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
       };
     }
 
+    if (row.key === "model_id") {
+      const configs = selectedNodes.flatMap((node) => modelAssociationProjectOptionConfig(row.key, node) ?? []);
+      if (configs.length > 0) {
+        return {
+          options: unionOptionRows(configs.map((config) => config.options)) ?? [],
+          optionLabels: Object.assign({}, ...configs.map((config) => config.optionLabels))
+        };
+      }
+    }
+
     const specificOptionRows: string[][] = [];
     const specificOptionLabels: Record<string, string> = {};
-    const selectedNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []);
     selectedNodes.forEach((node, index) => {
       const sectionOptions = paramOptionsForSection(row.key, inferESection(node.kind, node.params));
       // The shared resolver returns the PARAM_OPTIONS entry itself only when it uses the global fallback.
@@ -302,11 +350,12 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     const rawOptions = paramOptionsForDefinition(key, editorNode, value, definition);
     const optionLabels = paramOptionLabelsForDefinition(key, editorNode, value, definition);
     const { options, invalidValue } = selectOptionConfig(rawOptions, value);
+    const modelAssociationPrompt = key === "model_id" && Boolean(modelAssociationModelTypeForKind(editorNode?.kind ?? ""));
     const control: ReactNode = options ? (
       <select value={value} disabled={isBrowseMode} onChange={(event) => updateParam(key, event.target.value)}>
         {options.map((option: string) => (
-          <option key={option} value={option} disabled={option === invalidValue}>
-            {option === invalidValue ? invalidEnumOptionLabel(option) : optionLabels[option] ?? option}
+          <option key={option} value={option} disabled={option === invalidValue && !(modelAssociationPrompt && option === "")}>
+            {modelAssociationPrompt && option === "" ? "请选择关联模型" : option === invalidValue ? invalidEnumOptionLabel(option) : optionLabels[option] ?? option}
           </option>
         ))}
       </select>
@@ -377,11 +426,12 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     const rawOptions = paramOptionsForDefinition(key, node, value, definition);
     const optionLabels = paramOptionLabelsForDefinition(key, node, value, definition);
     const { options, invalidValue } = selectOptionConfig(rawOptions, value);
+    const modelAssociationPrompt = key === "model_id" && Boolean(modelAssociationModelTypeForKind(node.kind));
     const control: ReactNode = options ? (
       <select value={value} disabled={isBrowseMode} onChange={(event) => updateNodeDoubleClickDraftParam(node.id, key, event.target.value)}>
         {options.map((option: string) => (
-          <option key={option} value={option} disabled={option === invalidValue}>
-            {option === invalidValue ? invalidEnumOptionLabel(option) : optionLabels[option] ?? option}
+          <option key={option} value={option} disabled={option === invalidValue && !(modelAssociationPrompt && option === "")}>
+            {modelAssociationPrompt && option === "" ? "请选择关联模型" : option === invalidValue ? invalidEnumOptionLabel(option) : optionLabels[option] ?? option}
           </option>
         ))}
       </select>
@@ -568,13 +618,14 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     const { options, invalidValue } = row.mixed
       ? { options: rawOptions, invalidValue: undefined }
       : selectOptionConfig(rawOptions, value);
+    const modelAssociationPrompt = row.key === "model_id" && activeSelectedNodeIds.some((nodeId) => modelAssociationModelTypeForKind(nodeById.get(nodeId)?.kind ?? ""));
     if (options) {
       return (
         <select value={value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonParam(row.key, event.target.value)}>
           {row.mixed && <option value="">多个不同值</option>}
           {options.map((option: string) => (
-            <option key={option} value={option} disabled={option === invalidValue}>
-              {option === invalidValue ? invalidEnumOptionLabel(option) : optionLabels[option] ?? option}
+            <option key={option} value={option} disabled={option === invalidValue && !(modelAssociationPrompt && option === "")}>
+              {modelAssociationPrompt && option === "" ? "请选择关联模型" : option === invalidValue ? invalidEnumOptionLabel(option) : optionLabels[option] ?? option}
             </option>
           ))}
         </select>

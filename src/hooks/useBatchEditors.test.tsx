@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { describe, expect, test, vi } from "vitest";
 
-import { createDefaultNode, DEVICE_LIBRARY, type DeviceKind, type DeviceParameterDefinition, type DeviceTemplate, type ModelNode } from "../model";
+import { createDefaultNode, DEVICE_LIBRARY, type DeviceKind, type DeviceParameterDefinition, type DeviceTemplate, type ModelNode, type SavedSchemeRecord } from "../model";
 import type { BatchCommonParamRow } from "../App";
 import { useBatchEditors } from "./useBatchEditors";
 
@@ -21,7 +21,8 @@ describe("batch common measurement scope wiring", () => {
 function batchParamHtml(
   nodes: ModelNode[],
   row: BatchCommonParamRow,
-  libraryTemplateByKind = new Map(DEVICE_LIBRARY.map((template) => [template.kind, template]))
+  libraryTemplateByKind = new Map(DEVICE_LIBRARY.map((template) => [template.kind, template])),
+  schemes: SavedSchemeRecord[] = []
 ): string {
   const firstNode = nodes[0]!;
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
@@ -37,7 +38,7 @@ function batchParamHtml(
     batchCommonMeasurementGroupRows: [],
     batchCommonPropertyRowCount: 1,
     layers: [],
-    schemes: [],
+    schemes,
     projectMeasurements: { version: 1, groups: [] },
     nodeDoubleClickDraft: null,
     setNodeDoubleClickDraft: vi.fn(),
@@ -52,6 +53,46 @@ function batchParamHtml(
   });
   return renderToStaticMarkup(createElement("div", null, editors.renderBatchCommonPropertyPanel()));
 }
+
+const modelAssociationSchemes = [{
+  id: "scheme-1",
+  name: "方案一",
+  updatedAt: "2026-08-18T00:00:00.000Z",
+  projects: [
+    { id: "station-11", name: "厂站模型甲", updatedAt: "2026-08-18T00:00:00.000Z", project: { version: 1, name: "厂站模型甲", idx: 11, modelType: "厂站", nodes: [], edges: [] } },
+    { id: "feeder-22", name: "馈线模型乙", updatedAt: "2026-08-18T00:00:00.000Z", project: { version: 1, name: "馈线模型乙", idx: 22, modelType: "馈线", nodes: [], edges: [] } },
+    { id: "district-33", name: "台区模型丙", updatedAt: "2026-08-18T00:00:00.000Z", project: { version: 1, name: "台区模型丙", idx: 33, modelType: "台区", nodes: [], edges: [] } },
+    { id: "other-44", name: "其他模型丁", updatedAt: "2026-08-18T00:00:00.000Z", project: { version: 1, name: "其他模型丁", idx: 44, modelType: "其他", nodes: [], edges: [] } }
+  ],
+  children: []
+}] as SavedSchemeRecord[];
+
+describe("model association model_id editors", () => {
+  test.each([
+    ["ac-station-source", "11", "11 / 厂站模型甲"],
+    ["dc-feeder-load", "22", "22 / 馈线模型乙"],
+    ["ac-district-load", "33", "33 / 台区模型丙"]
+  ] as const)("filters %s model_id number enum by model type", (kind, expectedValue, expectedLabel) => {
+    const node = createDefaultNode(kind, { x: 100, y: 100 });
+    const template = DEVICE_LIBRARY.find((item) => item.kind === kind)!;
+    const definition = template.parameterDefinitions?.find((item) => item.enName === "model_id");
+    const html = batchParamHtml([node], {
+      key: "model_id",
+      label: "关联模型",
+      value: "",
+      mixed: false,
+      definition
+    }, undefined, modelAssociationSchemes);
+
+    expect(definition).toMatchObject({ valueType: "numberEnum", enumValueType: "number" });
+    expect(html).toContain('<option value="" selected="">请选择关联模型</option>');
+    expect(html).toContain(`<option value="${expectedValue}">${expectedLabel}</option>`);
+    expect(html).not.toContain("其他模型丁");
+    for (const unexpectedValue of ["11", "22", "33"].filter((value) => value !== expectedValue)) {
+      expect(html).not.toContain(`<option value="${unexpectedValue}">`);
+    }
+  });
+});
 
 function batchParamOptions(
   nodes: ModelNode[],

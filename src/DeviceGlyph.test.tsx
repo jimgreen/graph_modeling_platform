@@ -93,6 +93,29 @@ describe("DeviceGlyph static nodes", () => {
   });
 });
 
+describe("DeviceGlyph model-association derived devices", () => {
+  it("renders station feeder and district styles without turning electrical devices into model-interaction buttons", () => {
+    const cases = [
+      ["ac-station-source", "厂站", "ACGenerator"],
+      ["dc-feeder-source", "馈线", "DCGenerator"],
+      ["ac-district-load", "台区", "ACLoad"]
+    ] as const;
+
+    for (const [kind, modelType, componentType] of cases) {
+      const node = createDefaultNode(kind, { x: 0, y: 0 });
+      const markup = renderToStaticMarkup(<svg><DeviceGlyph node={node} /></svg>);
+
+      expect(markup).toContain(`class="model-association-glyph model-association-glyph-${kind.includes("station") ? "station" : kind.includes("feeder") ? "feeder" : "district"}"`);
+      expect(markup).toContain(`>${modelType}</text>`);
+      expect(markup).toContain('fill="#eff6ff"');
+      expect(markup).toContain('stroke="#2563eb"');
+      expect(node.params.component_type).toBe(componentType);
+      expect(node.params).not.toHaveProperty("buttonEnabled");
+      expect(node.params).not.toHaveProperty("buttonTargetProjectId");
+    }
+  });
+});
+
 describe("DeviceGlyph custom devices", () => {
   it("keeps terminal reserved area transparent when a visual image is present", () => {
     const node = createDefaultNode("ac-load", { x: 0, y: 0 });
