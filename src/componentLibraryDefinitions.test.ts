@@ -52,6 +52,11 @@ describe("component library editable definitions", () => {
     expect(ordinaryRows.map((row) => row.enName)).toEqual(expect.arrayContaining(["t1_node", "t2_node"]));
     expect(ordinaryRows.map((row) => row.enName)).not.toContain("node");
 
+    const threeTerminalRows = buildComponentLibraryDefaultParameterDefinitions("ThreePortDevice", ["ac", "ac", "ac"]);
+    expect(threeTerminalRows.map((row) => row.enName)).toEqual(
+      expect.arrayContaining(["t1_node", "t2_node", "t3_node"])
+    );
+
     const containerRows = buildComponentLibraryDefaultParameterDefinitions("Plant", ["ac", "dc"], {
       isContainer: true,
       terminalAssociations: ["ac-load", "dc-load"]
@@ -61,6 +66,49 @@ describe("component library editable definitions", () => {
       "idx_ac_load_t1",
       "idx_dc_load_t2"
     ]);
+  });
+
+  test("uses only i_node and j_node for AC and DC branch endpoint fields", () => {
+    for (const className of ["ACBranch", "DCBranch"] as const) {
+      const rows = buildComponentLibraryDefaultParameterDefinitions(
+        className,
+        className === "ACBranch" ? ["ac", "ac"] : ["dc", "dc"]
+      );
+      const nodeFields = rows
+        .map((row) => row.enName)
+        .filter((name) => name.endsWith("_node"));
+
+      expect(nodeFields, className).toEqual(["i_node", "j_node"]);
+    }
+  });
+
+  test("removes historical t1_node and t2_node definitions from persisted AC and DC branch classes", () => {
+    const legacyTopologyDefinitions = [
+      { cnName: "端子1节点号", enName: "t1_node", valueType: "integer", typicalValue: "", readonly: true },
+      { cnName: "端子2节点号", enName: "t2_node", valueType: "integer", typicalValue: "", readonly: true }
+    ] as const;
+
+    for (const [className, categoryLibraryName] of [
+      ["ACBranch", "交流设备"],
+      ["DCBranch", "直流设备"]
+    ] as const) {
+      const overrideKey = componentLibraryDefinitionOverrideKey(className);
+      const resolved = resolveEditableComponentLibraryDefinition({
+        className,
+        categoryLibraryName,
+        templates: DEVICE_LIBRARY,
+        overrides: {
+          [overrideKey]: {
+            kind: overrideKey,
+            parameterDefinitions: legacyTopologyDefinitions.map((definition) => ({ ...definition }))
+          }
+        }
+      });
+      const names = resolved?.effectiveParameterDefinitions.map((definition) => definition.enName) ?? [];
+
+      expect(names, className).toEqual(expect.arrayContaining(["i_node", "j_node"]));
+      expect(names, className).not.toEqual(expect.arrayContaining(["t1_node", "t2_node"]));
+    }
   });
 
   test("exposes the node field for the built-in ACRealBs class", () => {
