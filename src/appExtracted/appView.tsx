@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { lazy, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { MemoizedCanvasArea } from "./appCanvasArea";
 import { AppLeftPanel } from "./appLeftPanel";
 import { AppRightPanel } from "./appRightPanel";
@@ -447,8 +447,31 @@ function TopologyWarningPanelContent(props: {
   const listRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
-  // 筛选条件变化时重置懒加载计数
-  useEffect(() => { setRenderedCount(TOPOLOGY_LAZY_BATCH); }, [category, status]);
+  // 保存每个分类+状态组合的滚动位置
+  const scrollPositionsRef = useRef<Map<string, number>>(new Map());
+  const getScrollKey = () => `${category}:${status}`;
+
+  // 切换分类/状态时重置懒加载计数，但不重置滚动位置（由 restore effect 处理）
+  useEffect(() => {
+    setRenderedCount(TOPOLOGY_LAZY_BATCH);
+  }, [category, status]);
+
+  // 切换分类/状态时恢复滚动位置
+  useEffect(() => {
+    const key = getScrollKey();
+    const savedPosition = scrollPositionsRef.current.get(key) ?? 0;
+    if (listRef.current) {
+      listRef.current.scrollTop = savedPosition;
+    }
+  }, [category, status]);
+
+  // 保存滚动位置的回调
+  const handleScroll = useCallback(() => {
+    if (listRef.current) {
+      const key = getScrollKey();
+      scrollPositionsRef.current.set(key, listRef.current.scrollTop);
+    }
+  }, [category, status]);
 
   // 分类计数（基于全量数据，不受状态筛选影响）
   const categoryCounts = useMemo(() => {
@@ -512,7 +535,7 @@ function TopologyWarningPanelContent(props: {
             </button>
           ))}
         </div>
-        <div ref={listRef} className="topology-warning-list">
+        <div ref={listRef} className="topology-warning-list" onScroll={handleScroll}>
           {renderedItems.length === 0 && <p className="topology-warning-empty">暂无告警</p>}
           {renderedItems.map((error: any, index: number) => {
             const blocking = isBlocking(error);
