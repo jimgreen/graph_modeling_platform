@@ -14,6 +14,7 @@ import {
   DEFAULT_STATE_ICON_DRAWING_FRAME,
   createEditableStateIconElementsFromSvgSource as defaultCreateEditableStateIconElementsFromSvgSource,
   customParamId,
+  stateIconDrawingFrameRect,
   stateIconDrawingToPersistedImage as defaultStateIconDrawingToPersistedImage,
   stateIconSvgVisibleViewBox,
   svgSourceToDataUrl as defaultSvgSourceToDataUrl
@@ -635,27 +636,135 @@ export function createStateIconDrawingElementFromStaticTemplate(__appScope: Reco
   };
 }
 
+function cloneStateIconDrawingElementSnapshot(element: any) {
+  return {
+    ...element,
+    ...(Array.isArray(element?.points)
+      ? { points: element.points.map((point: Point) => ({ ...point })) }
+      : {})
+  };
+}
+
+export function stateIconDrawingGroupId() {
+  return `state-icon-group-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+export function expandStateIconDrawingElementIds(elements: readonly any[] = [], elementIds: readonly string[] = []) {
+  const selectedSet = new Set(elementIds.filter(Boolean));
+  if (selectedSet.size === 0) {
+    return [];
+  }
+  if (elements.length === 0) {
+    return Array.from(selectedSet);
+  }
+  const selectedGroupIds = new Set(
+    elements
+      .filter((element) => selectedSet.has(element.id) && String(element.groupId ?? "").trim())
+      .map((element) => String(element.groupId).trim())
+  );
+  return elements
+    .filter((element) => selectedSet.has(element.id) || selectedGroupIds.has(String(element.groupId ?? "").trim()))
+    .map((element) => element.id);
+}
+
 export function stateIconDrawingSelectedIds(dialog: any) {
-  return dialog?.selectedElementIds?.length > 0
+  const selectedIds = dialog?.selectedElementIds?.length > 0
     ? dialog.selectedElementIds
     : [dialog?.selectedElementId].filter(Boolean);
+  return expandStateIconDrawingElementIds(dialog?.elements ?? [], selectedIds);
+}
+
+export function toggleStateIconDrawingElementSelection(
+  elements: readonly any[],
+  currentIds: readonly string[],
+  elementId: string,
+  append: boolean
+) {
+  const currentSelection = expandStateIconDrawingElementIds(elements, currentIds);
+  const targetSelection = expandStateIconDrawingElementIds(elements, [elementId]);
+  if (!append) {
+    return targetSelection;
+  }
+  const currentSet = new Set(currentSelection);
+  const targetIsSelected = targetSelection.every((id) => currentSet.has(id));
+  if (targetIsSelected) {
+    const targetSet = new Set(targetSelection);
+    return currentSelection.filter((id) => !targetSet.has(id));
+  }
+  return Array.from(new Set([...currentSelection, ...targetSelection]));
+}
+
+export function groupStateIconDrawingSelection(current: any, historyRef: any, createGroupId = stateIconDrawingGroupId) {
+  if (!current) {
+    return current;
+  }
+  const selectedIds = stateIconDrawingSelectedIds(current);
+  if (selectedIds.length < 2) {
+    return current;
+  }
+  const selectedSet = new Set(selectedIds);
+  const groupId = createGroupId();
+  pushStateIconDrawingHistorySnapshot(historyRef, current.elements);
+  return {
+    ...current,
+    elements: current.elements.map((element) => selectedSet.has(element.id) ? { ...element, groupId } : element),
+    selectedElementId: selectedIds[selectedIds.length - 1] ?? "",
+    selectedElementIds: selectedIds
+  };
+}
+
+export function ungroupStateIconDrawingSelection(current: any, historyRef: any) {
+  if (!current) {
+    return current;
+  }
+  const selectedIds = stateIconDrawingSelectedIds(current);
+  const selectedSet = new Set(selectedIds);
+  if (!current.elements.some((element) => selectedSet.has(element.id) && String(element.groupId ?? "").trim())) {
+    return current;
+  }
+  pushStateIconDrawingHistorySnapshot(historyRef, current.elements);
+  return {
+    ...current,
+    elements: current.elements.map((element) => {
+      if (!selectedSet.has(element.id) || !element.groupId) {
+        return element;
+      }
+      const { groupId: _groupId, ...ungroupedElement } = element;
+      return ungroupedElement;
+    }),
+    selectedElementId: selectedIds[selectedIds.length - 1] ?? "",
+    selectedElementIds: selectedIds
+  };
 }
 
 export function pushStateIconDrawingHistorySnapshot(historyRef: any, elements: any[]) {
   if (!historyRef) {
     return;
   }
-  const snapshot = elements.map((element) => ({ ...element }));
+  const snapshot = elements.map(cloneStateIconDrawingElementSnapshot);
   historyRef.current = [...(historyRef.current ?? []), snapshot].slice(-80);
 }
 
-export function cloneStateIconDrawingElements(elements: any[], createId: () => string, offset = { x: 12, y: 12 }) {
-  return elements.map((element) => ({
-    ...element,
-    id: createId(),
-    x: element.x + offset.x,
-    y: element.y + offset.y
-  }));
+export function cloneStateIconDrawingElements(
+  elements: any[],
+  createId: () => string,
+  offset = { x: 12, y: 12 },
+  createGroupId = stateIconDrawingGroupId
+) {
+  const pastedGroupIds = new Map<string, string>();
+  return elements.map((element) => {
+    const sourceGroupId = String(element.groupId ?? "").trim();
+    if (sourceGroupId && !pastedGroupIds.has(sourceGroupId)) {
+      pastedGroupIds.set(sourceGroupId, createGroupId());
+    }
+    return {
+      ...cloneStateIconDrawingElementSnapshot(element),
+      id: createId(),
+      x: element.x + offset.x,
+      y: element.y + offset.y,
+      ...(sourceGroupId ? { groupId: pastedGroupIds.get(sourceGroupId) } : {})
+    };
+  });
 }
 
 export function normalizeStateIconDrawingFontSize(value: unknown, fallback: unknown = STATE_ICON_DRAWING_MIN_FONT_SIZE) {
@@ -699,7 +808,7 @@ export function cutStateIconDrawingSelection(current: any, clipboardRef: any, hi
     return current;
   }
   const selectedSet = new Set(selectedIds);
-  clipboardRef.current = current.elements.filter((element) => selectedSet.has(element.id)).map((element) => ({ ...element }));
+  clipboardRef.current = current.elements.filter((element) => selectedSet.has(element.id)).map(cloneStateIconDrawingElementSnapshot);
   pushStateIconDrawingHistorySnapshot(historyRef, current.elements);
   return {
     ...current,
@@ -740,6 +849,100 @@ export function stateIconDrawingSelectionBounds(elements: any[]) {
     bottom,
     centerX: (left + right) / 2,
     centerY: (top + bottom) / 2
+  };
+}
+
+function stateIconDrawingMovementVisibleFrame(element: any, visibleFrames: any) {
+  const width = Math.max(1, Number(element.width) || 1);
+  const height = Math.max(1, Number(element.height) || 1);
+  let frame: any = null;
+  if (element?.kind === "image") {
+    const key = `${element.id}:${element.imageHref ?? ""}:${element.imageFit ?? "cover"}:${element.imageScale ?? 1}:${element.cropX ?? 0}:${element.cropY ?? 0}`;
+    frame = visibleFrames?.image?.[key] ?? null;
+  } else if (element?.kind === "imported-svg") {
+    const key = `${element.id}:${element.svgSource ?? ""}:${element.strokeWidth}:${element.strokeColor ?? ""}:${element.strokeStyle ?? ""}`;
+    frame = visibleFrames?.svg?.[key] ?? stateIconDrawingImportedSvgSelectionFrame(element);
+  }
+  if (!frame || !(Number(frame.width) > 0) || !(Number(frame.height) > 0)) {
+    return { x: -width / 2, y: -height / 2, width, height };
+  }
+  const basisWidth = Math.max(1, Number(frame.basisWidth) || width);
+  const basisHeight = Math.max(1, Number(frame.basisHeight) || height);
+  const scaleX = width / basisWidth;
+  const scaleY = height / basisHeight;
+  return {
+    x: Number(frame.x) * scaleX,
+    y: Number(frame.y) * scaleY,
+    width: Number(frame.width) * scaleX,
+    height: Number(frame.height) * scaleY
+  };
+}
+
+function stateIconDrawingMovementElementBounds(element: any, visibleFrames: any) {
+  const frame = stateIconDrawingMovementVisibleFrame(element, visibleFrames);
+  const rotation = (Number(element.rotation) || 0) * Math.PI / 180;
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  const corners = [
+    { x: frame.x, y: frame.y },
+    { x: frame.x + frame.width, y: frame.y },
+    { x: frame.x, y: frame.y + frame.height },
+    { x: frame.x + frame.width, y: frame.y + frame.height }
+  ].map((point) => ({
+    x: element.x + point.x * cos - point.y * sin,
+    y: element.y + point.x * sin + point.y * cos
+  }));
+  return {
+    left: Math.min(...corners.map((point) => point.x)),
+    right: Math.max(...corners.map((point) => point.x)),
+    top: Math.min(...corners.map((point) => point.y)),
+    bottom: Math.max(...corners.map((point) => point.y))
+  };
+}
+
+export function clampStateIconDrawingMovementDelta(elements: any[], delta: Point, frameRect: any, visibleFrames: any = {}) {
+  if (elements.length === 0) {
+    return { x: 0, y: 0 };
+  }
+  const elementBounds = elements.map((element) => stateIconDrawingMovementElementBounds(element, visibleFrames));
+  const selectionBounds = {
+    left: Math.min(...elementBounds.map((bounds) => bounds.left)),
+    right: Math.max(...elementBounds.map((bounds) => bounds.right)),
+    top: Math.min(...elementBounds.map((bounds) => bounds.top)),
+    bottom: Math.max(...elementBounds.map((bounds) => bounds.bottom))
+  };
+  const frameLeft = Number(frameRect?.x) || 0;
+  const frameTop = Number(frameRect?.y) || 0;
+  const frameRight = frameLeft + Math.max(0, Number(frameRect?.width) || 0);
+  const frameBottom = frameTop + Math.max(0, Number(frameRect?.height) || 0);
+  const clampAxis = (value: number, start: number, end: number, minimum: number, maximum: number) => {
+    const minimumDelta = minimum - start;
+    const maximumDelta = maximum - end;
+    return minimumDelta <= maximumDelta
+      ? clampNumber(value, minimumDelta, maximumDelta)
+      : 0;
+  };
+  return {
+    x: clampAxis(delta.x, selectionBounds.left, selectionBounds.right, frameLeft, frameRight),
+    y: clampAxis(delta.y, selectionBounds.top, selectionBounds.bottom, frameTop, frameBottom)
+  };
+}
+
+export function stateIconDrawingMovementFrameForDialog(__appScope: Record<string, any>, current: any) {
+  const definitionScope = current?.target?.scope === "definition";
+  const draft = definitionScope ? __appScope.definitionVisualDraft : __appScope.customDeviceDraft;
+  const terminalTypes = definitionScope ? __appScope.definitionVisualTerminalTypes : __appScope.customDraftTerminalTypes;
+  const terminalCount = Math.max(
+    0,
+    Number(draft?.terminalCount) || (Array.isArray(terminalTypes) ? terminalTypes.length : 0) || 0
+  );
+  return stateIconDrawingFrameRect(Boolean(current?.target?.scope && terminalCount > 0));
+}
+
+export function stateIconDrawingMovementVisibleFrames(__appScope: Record<string, any>) {
+  return {
+    image: __appScope.stateIconDrawingImageVisibleFrames ?? {},
+    svg: __appScope.stateIconDrawingSvgVisibleFrames ?? {}
   };
 }
 
@@ -5774,11 +5977,7 @@ export function createStateIconDrawingSelection(__appScope: Record<string, any>)
         return current;
       }
       const currentIds = current.selectedElementIds.length > 0 ? current.selectedElementIds : [current.selectedElementId].filter(Boolean);
-      const selectedElementIds = append
-        ? currentIds.includes(elementId)
-          ? currentIds.filter((id) => id !== elementId)
-          : [...currentIds, elementId]
-        : [elementId];
+      const selectedElementIds = toggleStateIconDrawingElementSelection(current.elements, currentIds, elementId, append);
       return {
         ...current,
         selectedElementId: selectedElementIds[selectedElementIds.length - 1] ?? "",
@@ -5790,7 +5989,7 @@ export function createStateIconDrawingSelection(__appScope: Record<string, any>)
 
 export function createStartStateIconDrawingDrag(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGElement>, elementId: string, mode: StateIconDrawingDragMode, handleOffset?: Point) => {
-  const { setStateIconDrawingContextMenu, setStateIconDrawingDialog, stateIconDrawingDragRef, stateIconDrawingHistoryRef, stateIconDrawingPointer } = __appScope;
+  const { setStateIconDrawingContextMenu, setStateIconDrawingDialog, stateIconDrawingDialog, stateIconDrawingDragRef, stateIconDrawingPointer } = __appScope;
     if (event.button !== 0) {
       return;
     }
@@ -5798,45 +5997,48 @@ export function createStartStateIconDrawingDrag(__appScope: Record<string, any>)
     event.stopPropagation();
     setStateIconDrawingContextMenu(null);
     (event.currentTarget.closest(".state-icon-drawing-inline") as HTMLElement | null)?.focus();
+    if (!stateIconDrawingDialog) {
+      return;
+    }
     const append = event.shiftKey || event.ctrlKey || event.metaKey;
-    let dragIds: string[] = [elementId];
-    let startElements: StateIconDrawingElement[] = [];
-    let center: Point = { x: 0, y: 0 };
-    const start = stateIconDrawingPointer(event);
-    setStateIconDrawingDialog((current) => {
-      if (!current) {
-        return current;
-      }
-      const existingSelection = current.selectedElementIds.length > 0 ? current.selectedElementIds : [current.selectedElementId].filter(Boolean);
-      const selectedElementIds = append
-        ? existingSelection.includes(elementId)
-          ? existingSelection
-          : [...existingSelection, elementId]
-        : existingSelection.includes(elementId)
-          ? existingSelection
-          : [elementId];
-      dragIds = selectedElementIds;
-      startElements = current.elements.filter((element) => selectedElementIds.includes(element.id)).map((element) => ({ ...element }));
-      if (startElements.length > 0) {
-        pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements);
-      }
-      center = startElements.length === 1
-        ? { x: startElements[0].x, y: startElements[0].y }
-        : {
-            x: startElements.reduce((sum, element) => sum + element.x, 0) / Math.max(1, startElements.length),
-            y: startElements.reduce((sum, element) => sum + element.y, 0) / Math.max(1, startElements.length)
-          };
-      return {
-        ...current,
-        selectedElementId: selectedElementIds[selectedElementIds.length - 1] ?? "",
-        selectedElementIds,
-        smartAlignmentGuides: []
-      };
-    });
+    const existingSelection = stateIconDrawingSelectedIds(stateIconDrawingDialog);
+    const clickedSelection = expandStateIconDrawingElementIds(stateIconDrawingDialog.elements, [elementId]);
+    const selectedElementIds = append
+      ? Array.from(new Set([...existingSelection, ...clickedSelection]))
+      : clickedSelection.every((id) => existingSelection.includes(id))
+        ? existingSelection
+        : clickedSelection;
+    const startElements = stateIconDrawingDialog.elements
+      .filter((element) => selectedElementIds.includes(element.id))
+      .map(cloneStateIconDrawingElementSnapshot);
     if (startElements.length === 0) {
       return;
     }
-    stateIconDrawingDragRef.current = { mode, elementIds: dragIds, start, center, startElements, handleOffset };
+    const allStartElements = stateIconDrawingDialog.elements.map(cloneStateIconDrawingElementSnapshot);
+    const selectionBounds = stateIconDrawingSelectionBounds(startElements);
+    const center = selectionBounds
+      ? { x: selectionBounds.centerX, y: selectionBounds.centerY }
+      : { x: 0, y: 0 };
+    const movementFrame = stateIconDrawingMovementFrameForDialog(__appScope, stateIconDrawingDialog);
+    const movementVisibleFrames = stateIconDrawingMovementVisibleFrames(__appScope);
+    const start = stateIconDrawingPointer(event);
+    setStateIconDrawingDialog((current) => current ? {
+      ...current,
+      selectedElementId: selectedElementIds[selectedElementIds.length - 1] ?? "",
+      selectedElementIds,
+      smartAlignmentGuides: []
+    } : current);
+    stateIconDrawingDragRef.current = {
+      mode,
+      elementIds: selectedElementIds,
+      start,
+      center,
+      startElements,
+      allStartElements,
+      movementFrame,
+      movementVisibleFrames,
+      handleOffset
+    };
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
 }
@@ -5858,17 +6060,24 @@ export function createDragStateIconDrawingSelection(__appScope: Record<string, a
     if (drag.mode === "move") {
       const snap = computeStateIconDrawingSmartAlignmentSnap
         ? computeStateIconDrawingSmartAlignmentSnap({
-            elements: drag.startElements,
+            elements: drag.allStartElements ?? drag.startElements,
             selectedIds: drag.elementIds,
             startElements: drag.startElements,
             delta: { x: dx, y: dy }
           })
         : { delta: { x: dx, y: dy }, guides: [] };
+      const boundedDelta = clampStateIconDrawingMovementDelta(
+        drag.startElements,
+        snap.delta,
+        drag.movementFrame ?? stateIconDrawingFrameRect(false),
+        drag.movementVisibleFrames
+      );
+      const movementWasClamped = boundedDelta.x !== snap.delta.x || boundedDelta.y !== snap.delta.y;
       const overrides: Record<string, { x: number; y: number }> = {};
       for (const startElement of drag.startElements) {
-        overrides[startElement.id] = { x: startElement.x + snap.delta.x, y: startElement.y + snap.delta.y };
+        overrides[startElement.id] = { x: startElement.x + boundedDelta.x, y: startElement.y + boundedDelta.y };
       }
-      stateIconDrawingDragDeltaRef.current = { overrides, guides: snap.guides };
+      stateIconDrawingDragDeltaRef.current = { overrides, guides: movementWasClamped ? [] : snap.guides };
       setStateIconDrawingDialog((current) => current ? { ...current, _dragTick: (current._dragTick ?? 0) + 1 } : current);
       return;
     }
@@ -5933,9 +6142,16 @@ export function createDragStateIconDrawingSelection(__appScope: Record<string, a
     const startAngle = Math.atan2(drag.start.y - drag.center.y, drag.start.x - drag.center.x);
     const currentAngle = Math.atan2(point.y - drag.center.y, point.x - drag.center.x);
     const deltaAngle = ((currentAngle - startAngle) * 180) / Math.PI;
-    const overrides: Record<string, { rotation: number }> = {};
+    const overrides: Record<string, { x: number; y: number; rotation: number }> = {};
+    const rotationRad = (deltaAngle * Math.PI) / 180;
     for (const startElement of drag.startElements) {
-      overrides[startElement.id] = { rotation: startElement.rotation + deltaAngle };
+      const relativeX = startElement.x - drag.center.x;
+      const relativeY = startElement.y - drag.center.y;
+      overrides[startElement.id] = {
+        x: drag.center.x + relativeX * Math.cos(rotationRad) - relativeY * Math.sin(rotationRad),
+        y: drag.center.y + relativeX * Math.sin(rotationRad) + relativeY * Math.cos(rotationRad),
+        rotation: startElement.rotation + deltaAngle
+      };
     }
     stateIconDrawingDragDeltaRef.current = { overrides };
     setStateIconDrawingDialog((current) => current ? { ...current, _dragTick: (current._dragTick ?? 0) + 1 } : current);
@@ -5958,7 +6174,7 @@ export function createDragStateIconDrawingSelection(__appScope: Record<string, a
 
 export function createStopStateIconDrawingDrag(__appScope: Record<string, any>) {
   return (event: PointerEvent<SVGSVGElement>) => {
-  const { setStateIconDrawingDialog, stateIconDrawingDragDeltaRef, stateIconDrawingDragRef } = __appScope;
+  const { setStateIconDrawingDialog, stateIconDrawingDragDeltaRef, stateIconDrawingDragRef, stateIconDrawingHistoryRef } = __appScope;
     const delta = stateIconDrawingDragDeltaRef.current;
     stateIconDrawingDragRef.current = null;
     stateIconDrawingDragDeltaRef.current = null;
@@ -5966,6 +6182,7 @@ export function createStopStateIconDrawingDrag(__appScope: Record<string, any>) 
       const overrides = delta.overrides;
       setStateIconDrawingDialog((current: any) => {
         if (!current) return current;
+        pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements);
         return {
           ...current,
           smartAlignmentGuides: [],
@@ -5990,7 +6207,7 @@ export function createDeleteSelectedStateIconDrawingElements(__appScope: Record<
       if (!current) {
         return current;
       }
-      const selectedIds = current.selectedElementIds.length > 0 ? current.selectedElementIds : [current.selectedElementId].filter(Boolean);
+      const selectedIds = stateIconDrawingSelectedIds(current);
       if (selectedIds.length === 0) {
         return current;
       }
@@ -6014,6 +6231,51 @@ export function createStateIconDrawingKeyDown(__appScope: Record<string, any>) {
     if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
       return;
     }
+    const arrowDelta = ({
+      ArrowLeft: { x: -1, y: 0 },
+      ArrowRight: { x: 1, y: 0 },
+      ArrowUp: { x: 0, y: -1 },
+      ArrowDown: { x: 0, y: 1 }
+    } as Record<string, Point>)[event.key];
+    if (arrowDelta) {
+      event.preventDefault();
+      setStateIconDrawingContextMenu(null);
+      const step = event.shiftKey ? 10 : 1;
+      const dx = arrowDelta.x * step;
+      const dy = arrowDelta.y * step;
+      setStateIconDrawingDialog((current) => {
+        if (!current) {
+          return current;
+        }
+        const selectedElementIds = stateIconDrawingSelectedIds(current);
+        if (selectedElementIds.length === 0) {
+          return current;
+        }
+        const selectedSet = new Set(selectedElementIds);
+        const selectedElements = current.elements.filter((element) => selectedSet.has(element.id));
+        const boundedDelta = clampStateIconDrawingMovementDelta(
+          selectedElements,
+          { x: dx, y: dy },
+          stateIconDrawingMovementFrameForDialog(__appScope, current),
+          stateIconDrawingMovementVisibleFrames(__appScope)
+        );
+        if (boundedDelta.x === 0 && boundedDelta.y === 0) {
+          return current.smartAlignmentGuides?.length
+            ? { ...current, smartAlignmentGuides: [] }
+            : current;
+        }
+        pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements);
+        return {
+          ...current,
+          elements: current.elements.map((element) => selectedSet.has(element.id)
+            ? { ...element, x: element.x + boundedDelta.x, y: element.y + boundedDelta.y }
+            : element),
+          selectedElementIds,
+          smartAlignmentGuides: []
+        };
+      });
+      return;
+    }
     if (event.key === "Enter" && stateIconDrawingDialog?.drawingDraft) {
       event.preventDefault();
       setStateIconDrawingContextMenu(null);
@@ -6024,19 +6286,62 @@ export function createStateIconDrawingKeyDown(__appScope: Record<string, any>) {
       event.preventDefault();
       setStateIconDrawingContextMenu(null);
       setStateIconDrawingDialog((current) => {
-        if (!current || !stateIconDrawingHistoryRef.current?.length) {
+        if (!current) {
+          return current;
+        }
+        if (current.drawingDraft) {
+          if (current.drawingDraft.kind === "polyline") {
+            const draftPoints = current.drawingDraft.points?.length
+              ? current.drawingDraft.points
+              : [current.drawingDraft.start];
+            if (draftPoints.length > 1) {
+              const previousPoints = draftPoints.slice(0, -1);
+              const previousPoint = previousPoints[previousPoints.length - 1] ?? current.drawingDraft.start;
+              return {
+                ...current,
+                drawingDraft: {
+                  ...current.drawingDraft,
+                  points: previousPoints,
+                  current: previousPoint,
+                  element: stateIconDrawingPolylineElementFromPoints(current.drawingDraft.element, previousPoints)
+                },
+                smartAlignmentGuides: []
+              };
+            }
+          }
+          return {
+            ...current,
+            drawingDraft: undefined,
+            smartAlignmentGuides: []
+          };
+        }
+        if (!stateIconDrawingHistoryRef.current?.length) {
           return current;
         }
         const previous = stateIconDrawingHistoryRef.current[stateIconDrawingHistoryRef.current.length - 1];
         stateIconDrawingHistoryRef.current = stateIconDrawingHistoryRef.current.slice(0, -1);
         const selectedElementId = previous.some((element) => element.id === current.selectedElementId) ? current.selectedElementId : previous[0]?.id ?? "";
+        const previousElements = previous.map(cloneStateIconDrawingElementSnapshot);
+        const retainedSelectionIds = current.selectedElementIds.filter((id) => previousElements.some((element) => element.id === id));
+        const selectedElementIds = expandStateIconDrawingElementIds(
+          previousElements,
+          retainedSelectionIds.length > 0 ? retainedSelectionIds : [selectedElementId].filter(Boolean)
+        );
         return {
           ...current,
-          elements: previous.map((element) => ({ ...element })),
+          elements: previousElements,
           selectedElementId,
-          selectedElementIds: current.selectedElementIds.filter((id) => previous.some((element) => element.id === id))
+          selectedElementIds
         };
       });
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "g") {
+      event.preventDefault();
+      setStateIconDrawingContextMenu(null);
+      setStateIconDrawingDialog((current) => event.shiftKey
+        ? ungroupStateIconDrawingSelection(current, stateIconDrawingHistoryRef)
+        : groupStateIconDrawingSelection(current, stateIconDrawingHistoryRef));
       return;
     }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
@@ -6046,7 +6351,7 @@ export function createStateIconDrawingKeyDown(__appScope: Record<string, any>) {
           return current;
         }
         const selectedSet = new Set(stateIconDrawingSelectedIds(current));
-        stateIconDrawingClipboardRef.current = current.elements.filter((element) => selectedSet.has(element.id)).map((element) => ({ ...element }));
+        stateIconDrawingClipboardRef.current = current.elements.filter((element) => selectedSet.has(element.id)).map(cloneStateIconDrawingElementSnapshot);
         return current;
       });
       return;
@@ -6122,8 +6427,13 @@ export function createDeleteStateIconDrawingElement(__appScope: Record<string, a
       if (!current) {
         return current;
       }
+      const deleteIds = expandStateIconDrawingElementIds(current.elements, [elementId]);
+      if (deleteIds.length === 0) {
+        return current;
+      }
       pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements);
-      const elements = current.elements.filter((element) => element.id !== elementId);
+      const deleteSet = new Set(deleteIds);
+      const elements = current.elements.filter((element) => !deleteSet.has(element.id));
       return {
         ...current,
         elements,
@@ -6273,7 +6583,7 @@ export function createCancelPendingCustomComponentTemplateLoad(__appScope: Recor
 
 export function createSelectCustomCategoryLibrary(__appScope: Record<string, any>) {
   return (categoryLibraryName: string, options: { expand?: boolean } = {}) => {
-  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, defaultComponentLibraryForCategoryLibrary, ensureCustomComponentTreeExpanded, normalizeCategoryLibraryName, normalizeComponentLibraryName, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode = () => undefined, setCustomDeviceDraft, setCustomDeviceStatePageId, setEditingCustomDeviceKind, setSelectedDefinitionKind = () => undefined } = __appScope;
+  const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, defaultComponentLibraryForCategoryLibrary, ensureCustomComponentTreeExpanded, normalizeCategoryLibraryName, normalizeComponentLibraryName, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode = () => undefined, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceStatePageId, setEditingCustomDeviceKind, setSelectedDefinitionKind = () => undefined } = __appScope;
     cancelPendingCustomComponentTemplateLoad();
     const group = normalizeCategoryLibraryName(categoryLibraryName);
     const section = defaultComponentLibraryForCategoryLibrary(group);
@@ -6286,15 +6596,17 @@ export function createSelectCustomCategoryLibrary(__appScope: Record<string, any
     setEditingCustomDeviceKind("");
     setSelectedDefinitionKind("");
     setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
-    setCustomDeviceDraft((current) => ({
-      ...current,
+    const nextDraft = {
+      ...__appScope.customDeviceDraft,
       categoryLibraryName: group,
       componentLibrary: normalizeComponentLibraryName(section),
       componentName: "",
       componentKind: "",
       ...libraryDraftPatch,
       error: ""
-    }));
+    };
+    setCustomDeviceDraft(nextDraft);
+    setCustomDeviceDraftCleanBaseline(nextDraft, nextDraft.terminalAnchors);
   };
 }
 

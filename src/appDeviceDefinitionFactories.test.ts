@@ -7,6 +7,7 @@ import {
 import { normalizeCustomComponentLibraries, normalizeDefinitionRowEnumFields } from "./appExtracted/appPersistenceLibraryExport";
 import {
   createComputeStateIconDrawingSmartAlignmentSnap,
+  cloneStateIconDrawingElements,
   createCompleteImportedModelFeedback,
   createFindEditableRouteSegmentIndex,
   createImportSvgModelFile,
@@ -15,6 +16,7 @@ import {
   createApplyStateIconDrawingDialog,
   createCopyCustomComponentTemplate,
   createCustomDeviceDraftHasUnsavedChanges,
+  createSetCustomDeviceDraftCleanBaseline,
   createRequestCustomDeviceDraftAction,
   createResolveCustomDeviceUnsavedPrompt,
   createConfirmCustomLibraryCreateDialog,
@@ -41,6 +43,7 @@ import {
   createDefinitionDefaultStateVisualDraft,
   clearGeneratedDefinitionVisualDraftImage,
   createSelectCustomComponentLibrary,
+  createSelectCustomCategoryLibrary,
   createSvgExportReferencedImageHrefById,
   createOpenSvgModelImportFilePicker,
   createOpenStateIconDrawingDialog,
@@ -49,14 +52,21 @@ import {
   createStartCustomComponentCreate,
   createStateIconDrawingKeyDown,
   createStartStateIconDrawingDrag,
+  createDragStateIconDrawingSelection,
+  createStopStateIconDrawingDrag,
+  createDeleteSelectedStateIconDrawingElements,
   customDeviceDraftDirtyToken,
   deviceParameterDefinitionsComplianceMessage,
   formatStateIconDrawingNumber,
+  groupStateIconDrawingSelection,
   imageLibraryFileMatchesImportKind,
   imageLibraryImportKindForInput,
   normalizeStateIconDrawingFontSize,
   normalizeStateIconDrawingStrokeWidth,
-  stateIconDrawingElementIdsInRect
+  stateIconDrawingElementIdsInRect,
+  stateIconDrawingSelectedIds,
+  stateIconDrawingTerminalPointSnap,
+  ungroupStateIconDrawingSelection
 } from "./appExtracted/appDeviceDefinitionFactories";
 import { createSetEdgeManualPoints } from "./appExtracted/appProjectCanvasFactories";
 import {
@@ -2866,6 +2876,60 @@ describe("manual bend interaction helpers", () => {
     expect(hasUnsavedChanges("measurements")).toBe(true);
   });
 
+  test("keeps a category-only selection clean when no definition field was edited", () => {
+    const baseline: any = {
+      ...createEmptyCustomDeviceDraft(),
+      categoryLibraryName: "静态图元",
+      componentLibrary: "StaticTextSymbol",
+      componentName: "文字",
+      componentKind: "static-text",
+      terminalCount: 0,
+      terminalAnchors: [],
+      params: [{ id: "p", cnName: "文本", enName: "text", valueType: "string", typicalValue: "文字" }],
+      measurementDefinitions: [{ measurementTypeId: "text", position: "device", associatedField: "text" }],
+      stateDefinitions: [{ id: "default", name: "默认状态" }]
+    };
+    const scope: any = {
+      DEFAULT_STATE_PAGE_ID,
+      customDeviceDraft: structuredClone(baseline),
+      customDeviceTerminalAnchors: [],
+      customDeviceDraftBaselineRef: { current: structuredClone(baseline) },
+      customDeviceDraftCleanTokenRef: { current: customDeviceDraftDirtyToken(baseline, []) },
+      createDefaultCustomDeviceTerminalAnchors,
+      cancelPendingCustomComponentTemplateLoad: vi.fn(),
+      defaultComponentLibraryForCategoryLibrary: vi.fn(() => "ACGenerator"),
+      ensureCustomComponentTreeExpanded: vi.fn(),
+      normalizeCategoryLibraryName: (value: unknown) => String(value ?? "").trim(),
+      normalizeComponentLibraryName: (value: unknown) => String(value ?? "").trim(),
+      setCustomComponentTreeSelection: vi.fn(),
+      setCustomDeviceDefinitionMode: vi.fn(),
+      setCustomDeviceStatePageId: vi.fn(),
+      setEditingCustomDeviceKind: vi.fn(),
+      setSelectedDefinitionKind: vi.fn(),
+      libraryTemplates: [],
+      customComponentLibraries: [],
+      deviceDefinitionOverrides: {},
+      setCustomDeviceDraft: (next: any) => {
+        scope.customDeviceDraft = typeof next === "function" ? next(scope.customDeviceDraft) : next;
+        scope.customDeviceTerminalAnchors = structuredClone(scope.customDeviceDraft.terminalAnchors ?? []);
+      }
+    };
+    scope.setCustomDeviceDraftCleanBaseline = createSetCustomDeviceDraftCleanBaseline(scope);
+
+    createSelectCustomCategoryLibrary(scope)("交流设备");
+
+    expect(scope.customDeviceDraft).toMatchObject({
+      categoryLibraryName: "交流设备",
+      componentLibrary: "ACGenerator",
+      componentName: "",
+      componentKind: ""
+    });
+    const hasUnsavedChanges = createCustomDeviceDraftHasUnsavedChanges(scope);
+    expect(hasUnsavedChanges("icon")).toBe(false);
+    expect(hasUnsavedChanges("parameters")).toBe(false);
+    expect(hasUnsavedChanges("measurements")).toBe(false);
+  });
+
   test("delays a dirty page switch until the user saves, discards or keeps editing", () => {
     const pendingAction = vi.fn();
     let prompt: any = null;
@@ -4245,6 +4309,18 @@ describe("manual bend interaction helpers", () => {
     expect(result.guides.find((guide) => guide.orientation === "horizontal")?.position).toBe(68);
   });
 
+  test("automatically anchors new drawing points to existing state icon elements", () => {
+    const result = stateIconDrawingTerminalPointSnap({
+      smartAlignmentEnabled: true,
+      stateIconDrawingDialog: {
+        elements: [{ id: "anchor", x: 120, y: 80, width: 40, height: 20 }]
+      }
+    }, { x: 119, y: 79 });
+
+    expect(result.point).toEqual({ x: 120, y: 80 });
+    expect(result.guides.map((guide: any) => guide.orientation).sort()).toEqual(["horizontal", "vertical"]);
+  });
+
   test("selects state icon drawing elements intersecting a marquee rectangle", () => {
     const elements = [
       { id: "inside", x: 40, y: 40, width: 20, height: 20 },
@@ -4301,6 +4377,690 @@ describe("manual bend interaction helpers", () => {
     expect(stopped).toBe(false);
     expect(dialog.selectedElementIds).toEqual(["existing"]);
     expect(dragRef.current).toBeNull();
+  });
+
+  test("starts state icon dragging before an asynchronous React state updater is flushed", () => {
+    const dialog = {
+      elements: [{ id: "target", x: 40, y: 40, width: 20, height: 20, rotation: 0 }],
+      selectedElementId: "target",
+      selectedElementIds: ["target"]
+    };
+    const dragRef = { current: null as any };
+    let queuedUpdater: any = null;
+    const startDrag = createStartStateIconDrawingDrag({
+      setStateIconDrawingContextMenu: () => undefined,
+      setStateIconDrawingDialog: (updater: any) => {
+        queuedUpdater = updater;
+      },
+      stateIconDrawingDialog: dialog,
+      stateIconDrawingDragRef: dragRef,
+      stateIconDrawingPointer: () => ({ x: 40, y: 40 })
+    });
+
+    startDrag({
+      button: 0,
+      shiftKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      pointerId: 1,
+      preventDefault: () => undefined,
+      stopPropagation: () => undefined,
+      currentTarget: {
+        closest: () => ({ focus: () => undefined }),
+        setPointerCapture: () => undefined
+      }
+    } as any, "target", "move");
+
+    expect(typeof queuedUpdater).toBe("function");
+    expect(dragRef.current).toMatchObject({
+      mode: "move",
+      elementIds: ["target"],
+      start: { x: 40, y: 40 }
+    });
+  });
+
+  test("treats grouped state icon elements as one selection and can ungroup them", () => {
+    const historyRef = { current: [] as any[] };
+    const current = {
+      elements: [
+        { id: "first", x: 20, y: 20, width: 10, height: 10 },
+        { id: "second", x: 40, y: 20, width: 10, height: 10 },
+        { id: "outside", x: 90, y: 70, width: 12, height: 12 }
+      ],
+      selectedElementId: "second",
+      selectedElementIds: ["first", "second"]
+    };
+
+    const grouped = groupStateIconDrawingSelection(current, historyRef, () => "group-a");
+
+    expect(grouped.elements.slice(0, 2).map((element: any) => element.groupId)).toEqual(["group-a", "group-a"]);
+    expect(stateIconDrawingSelectedIds({ ...grouped, selectedElementId: "first", selectedElementIds: ["first"] })).toEqual(["first", "second"]);
+    expect(historyRef.current).toHaveLength(1);
+
+    const ungrouped = ungroupStateIconDrawingSelection({ ...grouped, selectedElementIds: ["first"] }, historyRef);
+    expect(ungrouped.elements.slice(0, 2).every((element: any) => !element.groupId)).toBe(true);
+    expect(historyRef.current).toHaveLength(2);
+  });
+
+  test("remaps pasted state icon group ids without joining the source group", () => {
+    let elementIndex = 0;
+    let groupIndex = 0;
+    const pasted = cloneStateIconDrawingElements([
+      { id: "first", groupId: "source-group", x: 20, y: 20, width: 10, height: 10 },
+      { id: "second", groupId: "source-group", x: 40, y: 20, width: 10, height: 10 },
+      { id: "single", x: 70, y: 20, width: 10, height: 10 }
+    ], () => `pasted-${++elementIndex}`, { x: 12, y: 8 }, () => `pasted-group-${++groupIndex}`);
+
+    expect(pasted.map((element: any) => element.id)).toEqual(["pasted-1", "pasted-2", "pasted-3"]);
+    expect(pasted[0].groupId).toBe("pasted-group-1");
+    expect(pasted[1].groupId).toBe("pasted-group-1");
+    expect(pasted[0].groupId).not.toBe("source-group");
+    expect(pasted[2].groupId).toBeUndefined();
+    expect(pasted.map((element: any) => [element.x, element.y])).toEqual([[32, 28], [52, 28], [82, 28]]);
+  });
+
+  test("deletes every member when one grouped state icon element is selected", () => {
+    let dialog: any = {
+      elements: [
+        { id: "first", groupId: "group-a", x: 20, y: 20, width: 10, height: 10 },
+        { id: "second", groupId: "group-a", x: 40, y: 20, width: 10, height: 10 },
+        { id: "outside", x: 90, y: 70, width: 12, height: 12 }
+      ],
+      selectedElementId: "first",
+      selectedElementIds: ["first"]
+    };
+    const historyRef = { current: [] as any[] };
+    const removeSelection = createDeleteSelectedStateIconDrawingElements({
+      setStateIconDrawingContextMenu: () => undefined,
+      setStateIconDrawingDialog: (updater: any) => {
+        dialog = typeof updater === "function" ? updater(dialog) : updater;
+      },
+      stateIconDrawingHistoryRef: historyRef
+    });
+
+    removeSelection();
+
+    expect(dialog.elements.map((element: any) => element.id)).toEqual(["outside"]);
+    expect(historyRef.current).toHaveLength(1);
+  });
+
+  test("records drag history only when geometry actually changes and keeps all alignment candidates", () => {
+    let dialog: any = {
+      elements: [
+        { id: "moving", groupId: "group-a", x: 20, y: 20, width: 10, height: 10, rotation: 0 },
+        { id: "member", groupId: "group-a", x: 40, y: 20, width: 10, height: 10, rotation: 0 },
+        { id: "anchor", x: 100, y: 80, width: 20, height: 20, rotation: 0 }
+      ],
+      selectedElementId: "moving",
+      selectedElementIds: ["moving"]
+    };
+    const historyRef = { current: [] as any[] };
+    const dragRef = { current: null as any };
+    const dragDeltaRef = { current: null as any };
+    const setDialog = (updater: any) => {
+      dialog = typeof updater === "function" ? updater(dialog) : updater;
+    };
+    const pointerTarget = {
+      closest: () => ({ focus: () => undefined }),
+      setPointerCapture: () => undefined
+    };
+    const startDrag = createStartStateIconDrawingDrag({
+      setStateIconDrawingContextMenu: () => undefined,
+      setStateIconDrawingDialog: setDialog,
+      get stateIconDrawingDialog() {
+        return dialog;
+      },
+      stateIconDrawingDragRef: dragRef,
+      stateIconDrawingPointer: () => ({ x: 20, y: 20 })
+    });
+    const stopDrag = createStopStateIconDrawingDrag({
+      setStateIconDrawingDialog: setDialog,
+      stateIconDrawingDragDeltaRef: dragDeltaRef,
+      stateIconDrawingDragRef: dragRef,
+      stateIconDrawingHistoryRef: historyRef
+    });
+    const pointerEvent = {
+      button: 0,
+      shiftKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      pointerId: 1,
+      preventDefault: () => undefined,
+      stopPropagation: () => undefined,
+      currentTarget: pointerTarget
+    } as any;
+
+    startDrag(pointerEvent, "moving", "move");
+    expect(dragRef.current.elementIds).toEqual(["moving", "member"]);
+    expect(dragRef.current.allStartElements.map((element: any) => element.id)).toEqual(["moving", "member", "anchor"]);
+    expect(historyRef.current).toHaveLength(0);
+
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    const computeSnap = vi.fn((_input: any) => ({ delta: { x: 80, y: 60 }, guides: [{ id: "guide" }] }));
+    const dragSelection = createDragStateIconDrawingSelection({
+      computeStateIconDrawingSmartAlignmentSnap: computeSnap,
+      setStateIconDrawingDialog: setDialog,
+      stateIconDrawingDragDeltaRef: dragDeltaRef,
+      stateIconDrawingDragRef: dragRef,
+      stateIconDrawingPointer: () => ({ x: 100, y: 80 })
+    });
+    dragSelection({ preventDefault: () => undefined } as any);
+    expect(computeSnap.mock.calls[0][0].elements.map((element: any) => element.id)).toEqual(["moving", "member", "anchor"]);
+    expect(dragDeltaRef.current.overrides).toMatchObject({
+      moving: { x: 100, y: 80 },
+      member: { x: 120, y: 80 }
+    });
+    dragDeltaRef.current = null;
+    stopDrag({ pointerId: 1, currentTarget: { releasePointerCapture: () => undefined } } as any);
+    expect(historyRef.current).toHaveLength(0);
+
+    startDrag(pointerEvent, "moving", "move");
+    dragDeltaRef.current = {
+      overrides: {
+        moving: { x: 30, y: 25 },
+        member: { x: 50, y: 25 }
+      }
+    };
+    stopDrag({ pointerId: 1, currentTarget: { releasePointerCapture: () => undefined } } as any);
+
+    expect(historyRef.current).toHaveLength(1);
+    expect(dialog.elements.slice(0, 2).map((element: any) => [element.x, element.y])).toEqual([[30, 25], [50, 25]]);
+  });
+
+  test("supports repeated Ctrl+Z undo without no-op selection snapshots", () => {
+    const first = { id: "first", x: 20, y: 20, width: 10, height: 10 };
+    const second = { id: "second", x: 40, y: 20, width: 10, height: 10 };
+    const third = { id: "third", x: 60, y: 20, width: 10, height: 10 };
+    let dialog: any = {
+      elements: [first, second, third],
+      selectedElementId: "third",
+      selectedElementIds: ["third"]
+    };
+    const historyRef = { current: [[first], [first, second]] as any[] };
+    const keyDown = createStateIconDrawingKeyDown({
+      deleteSelectedStateIconDrawingElements: vi.fn(),
+      setStateIconDrawingContextMenu: () => undefined,
+      setStateIconDrawingDialog: (updater: any) => {
+        dialog = typeof updater === "function" ? updater(dialog) : updater;
+      },
+      stateIconDrawingClipboardRef: { current: [] },
+      stateIconDrawingDialog: dialog,
+      stateIconDrawingElementId: () => "new-id",
+      stateIconDrawingHistoryRef: historyRef
+    });
+    const event = {
+      key: "z",
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: false,
+      target: null,
+      preventDefault: vi.fn()
+    } as any;
+
+    keyDown(event);
+    expect(dialog.elements.map((element: any) => element.id)).toEqual(["first", "second"]);
+    keyDown(event);
+    expect(dialog.elements.map((element: any) => element.id)).toEqual(["first"]);
+    expect(historyRef.current).toEqual([]);
+    expect(event.preventDefault).toHaveBeenCalledTimes(2);
+  });
+
+  test("moves selected state icon elements with arrow keys and records undo history", () => {
+    let dialog: any = {
+      elements: [
+        { id: "first", x: 20, y: 30, width: 10, height: 10 },
+        { id: "second", x: 60, y: 70, width: 10, height: 10 }
+      ],
+      selectedElementId: "first",
+      selectedElementIds: ["first"],
+      smartAlignmentGuides: [{ id: "old-guide" }]
+    };
+    const historyRef = { current: [] as any[] };
+    const keyDown = createStateIconDrawingKeyDown({
+      deleteSelectedStateIconDrawingElements: vi.fn(),
+      setStateIconDrawingContextMenu: vi.fn(),
+      setStateIconDrawingDialog: (updater: any) => {
+        dialog = typeof updater === "function" ? updater(dialog) : updater;
+      },
+      stateIconDrawingClipboardRef: { current: [] },
+      stateIconDrawingDialog: dialog,
+      stateIconDrawingElementId: () => "new-id",
+      stateIconDrawingHistoryRef: historyRef
+    });
+    const press = (key: string, shiftKey = false) => {
+      const event = {
+        key,
+        ctrlKey: false,
+        metaKey: false,
+        shiftKey,
+        target: null,
+        preventDefault: vi.fn()
+      } as any;
+      keyDown(event);
+      expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    };
+
+    press("ArrowLeft");
+    press("ArrowUp");
+    press("ArrowRight", true);
+    press("ArrowDown", true);
+
+    expect(dialog.elements.map((element: any) => [element.x, element.y])).toEqual([
+      [29, 39],
+      [60, 70]
+    ]);
+    expect(dialog.smartAlignmentGuides).toEqual([]);
+    expect(historyRef.current).toHaveLength(4);
+
+    keyDown({
+      key: "z",
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: false,
+      target: null,
+      preventDefault: vi.fn()
+    } as any);
+    expect(dialog.elements.map((element: any) => [element.x, element.y])).toEqual([
+      [29, 29],
+      [60, 70]
+    ]);
+  });
+
+  test("moves a state icon group as one unit and ignores arrow keys from inputs", () => {
+    let dialog: any = {
+      elements: [
+        { id: "first", groupId: "group-a", x: 20, y: 30, width: 10, height: 10 },
+        { id: "second", groupId: "group-a", x: 60, y: 70, width: 10, height: 10 },
+        { id: "outside", x: 100, y: 100, width: 10, height: 10 }
+      ],
+      selectedElementId: "first",
+      selectedElementIds: ["first"]
+    };
+    const historyRef = { current: [] as any[] };
+    const keyDown = createStateIconDrawingKeyDown({
+      deleteSelectedStateIconDrawingElements: vi.fn(),
+      setStateIconDrawingContextMenu: vi.fn(),
+      setStateIconDrawingDialog: (updater: any) => {
+        dialog = typeof updater === "function" ? updater(dialog) : updater;
+      },
+      stateIconDrawingClipboardRef: { current: [] },
+      stateIconDrawingDialog: dialog,
+      stateIconDrawingElementId: () => "new-id",
+      stateIconDrawingHistoryRef: historyRef
+    });
+    const inputEvent = {
+      key: "ArrowRight",
+      shiftKey: false,
+      target: { tagName: "INPUT" },
+      preventDefault: vi.fn()
+    } as any;
+
+    keyDown(inputEvent);
+    expect(inputEvent.preventDefault).not.toHaveBeenCalled();
+    expect(historyRef.current).toHaveLength(0);
+
+    keyDown({
+      key: "ArrowRight",
+      shiftKey: false,
+      target: null,
+      preventDefault: vi.fn()
+    } as any);
+
+    expect(dialog.elements.map((element: any) => [element.x, element.y])).toEqual([
+      [21, 30],
+      [61, 70],
+      [100, 100]
+    ]);
+    expect(historyRef.current).toHaveLength(1);
+  });
+
+  test("selects all state icon elements with Ctrl+A and keeps keyboard movement inside the terminal frame", () => {
+    let dialog: any = {
+      target: { scope: "definition", rowId: "default" },
+      elements: [
+        { id: "first", x: 190, y: 40, width: 20, height: 20 },
+        { id: "second", x: 170, y: 80, width: 20, height: 20 }
+      ],
+      selectedElementId: "first",
+      selectedElementIds: ["first"]
+    };
+    const historyRef = { current: [] as any[] };
+    const keyDown = createStateIconDrawingKeyDown({
+      definitionVisualDraft: { terminalCount: 2 },
+      definitionVisualTerminalTypes: ["ac", "ac"],
+      deleteSelectedStateIconDrawingElements: vi.fn(),
+      setStateIconDrawingContextMenu: vi.fn(),
+      setStateIconDrawingDialog: (updater: any) => {
+        dialog = typeof updater === "function" ? updater(dialog) : updater;
+      },
+      stateIconDrawingClipboardRef: { current: [] },
+      stateIconDrawingDialog: dialog,
+      stateIconDrawingElementId: () => "new-id",
+      stateIconDrawingHistoryRef: historyRef
+    });
+
+    keyDown({
+      key: "a",
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: false,
+      target: null,
+      preventDefault: vi.fn()
+    } as any);
+    expect(dialog.selectedElementIds).toEqual(["first", "second"]);
+
+    keyDown({
+      key: "ArrowRight",
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: true,
+      target: null,
+      preventDefault: vi.fn()
+    } as any);
+    expect(dialog.elements.map((element: any) => [element.x, element.y])).toEqual([
+      [200, 40],
+      [180, 80]
+    ]);
+    expect(historyRef.current).toHaveLength(1);
+
+    keyDown({
+      key: "ArrowRight",
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      target: null,
+      preventDefault: vi.fn()
+    } as any);
+    expect(dialog.elements.map((element: any) => [element.x, element.y])).toEqual([
+      [200, 40],
+      [180, 80]
+    ]);
+    expect(historyRef.current).toHaveLength(1);
+  });
+
+  test("keeps a dragged state icon group inside the terminal frame", () => {
+    let dialog: any = {
+      target: { scope: "definition", rowId: "default" },
+      elements: [
+        { id: "first", groupId: "group-a", x: 185, y: 60, width: 10, height: 10, rotation: 0 },
+        { id: "second", groupId: "group-a", x: 195, y: 80, width: 10, height: 10, rotation: 0 }
+      ],
+      selectedElementId: "first",
+      selectedElementIds: ["first"]
+    };
+    const dragRef = { current: null as any };
+    const dragDeltaRef = { current: null as any };
+    const setDialog = (updater: any) => {
+      dialog = typeof updater === "function" ? updater(dialog) : updater;
+    };
+    const startDrag = createStartStateIconDrawingDrag({
+      definitionVisualDraft: { terminalCount: 2 },
+      definitionVisualTerminalTypes: ["ac", "ac"],
+      setStateIconDrawingContextMenu: vi.fn(),
+      setStateIconDrawingDialog: setDialog,
+      get stateIconDrawingDialog() {
+        return dialog;
+      },
+      stateIconDrawingDragRef: dragRef,
+      stateIconDrawingPointer: () => ({ x: 185, y: 60 })
+    });
+    startDrag({
+      button: 0,
+      shiftKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      pointerId: 1,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+      currentTarget: {
+        closest: () => ({ focus: () => undefined }),
+        setPointerCapture: () => undefined
+      }
+    } as any, "first", "move");
+
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    const dragSelection = createDragStateIconDrawingSelection({
+      computeStateIconDrawingSmartAlignmentSnap: () => ({
+        delta: { x: 100, y: 100 },
+        guides: [{ id: "outside-guide" }]
+      }),
+      setStateIconDrawingDialog: setDialog,
+      stateIconDrawingDragDeltaRef: dragDeltaRef,
+      stateIconDrawingDragRef: dragRef,
+      stateIconDrawingPointer: () => ({ x: 285, y: 160 })
+    });
+    dragSelection({ preventDefault: vi.fn() } as any);
+
+    expect(dragDeltaRef.current.overrides).toMatchObject({
+      first: { x: 195, y: 115 },
+      second: { x: 205, y: 135 }
+    });
+    expect(dragDeltaRef.current.guides).toEqual([]);
+  });
+
+  test("uses the visible rotated bounds when clamping keyboard movement", () => {
+    let dialog: any = {
+      target: { scope: "definition", rowId: "default" },
+      elements: [
+        { id: "rotated", x: 200, y: 80, width: 30, height: 10, rotation: 90 }
+      ],
+      selectedElementId: "rotated",
+      selectedElementIds: ["rotated"]
+    };
+    const keyDown = createStateIconDrawingKeyDown({
+      definitionVisualDraft: { terminalCount: 1 },
+      definitionVisualTerminalTypes: ["ac"],
+      deleteSelectedStateIconDrawingElements: vi.fn(),
+      setStateIconDrawingContextMenu: vi.fn(),
+      setStateIconDrawingDialog: (updater: any) => {
+        dialog = typeof updater === "function" ? updater(dialog) : updater;
+      },
+      stateIconDrawingClipboardRef: { current: [] },
+      stateIconDrawingDialog: dialog,
+      stateIconDrawingElementId: () => "new-id",
+      stateIconDrawingHistoryRef: { current: [] }
+    });
+
+    keyDown({
+      key: "ArrowRight",
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: true,
+      target: null,
+      preventDefault: vi.fn()
+    } as any);
+
+    expect(dialog.elements[0].x).toBeCloseTo(205);
+    expect(dialog.elements[0].y).toBe(80);
+  });
+
+  test("allows keyboard movement until an imported SVG visible frame reaches the terminal boundary", () => {
+    const svgSource = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 120"><path d="M80 40h20v40H80z"/></svg>';
+    const element = {
+      id: "imported",
+      kind: "imported-svg",
+      svgSource,
+      x: 100,
+      y: 80,
+      width: 180,
+      height: 120,
+      rotation: 0,
+      strokeWidth: 0,
+      strokeColor: "#2563eb",
+      strokeStyle: "solid"
+    };
+    const visibleFrameKey = `${element.id}:${element.svgSource}:${element.strokeWidth}:${element.strokeColor}:${element.strokeStyle}`;
+    let dialog: any = {
+      target: { scope: "definition", rowId: "default" },
+      elements: [element],
+      selectedElementId: element.id,
+      selectedElementIds: [element.id]
+    };
+    const historyRef = { current: [] as any[] };
+    const keyDown = createStateIconDrawingKeyDown({
+      definitionVisualDraft: { terminalCount: 1 },
+      definitionVisualTerminalTypes: ["ac"],
+      deleteSelectedStateIconDrawingElements: vi.fn(),
+      setStateIconDrawingContextMenu: vi.fn(),
+      setStateIconDrawingDialog: (updater: any) => {
+        dialog = typeof updater === "function" ? updater(dialog) : updater;
+      },
+      stateIconDrawingClipboardRef: { current: [] },
+      stateIconDrawingDialog: dialog,
+      stateIconDrawingElementId: () => "new-id",
+      stateIconDrawingHistoryRef: historyRef,
+      stateIconDrawingSvgVisibleFrames: {
+        [visibleFrameKey]: { x: -10, y: -20, width: 20, height: 40, basisWidth: 180, basisHeight: 120 }
+      }
+    });
+    const arrowLeft = {
+      key: "ArrowLeft",
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: true,
+      target: null,
+      preventDefault: vi.fn()
+    } as any;
+
+    for (let index = 0; index < 7; index += 1) {
+      keyDown(arrowLeft);
+    }
+
+    expect(dialog.elements[0].x).toBe(40);
+    expect(dialog.elements[0].x - 10).toBe(30);
+    expect(historyRef.current).toHaveLength(6);
+  });
+
+  test("clamps imported SVG mouse dragging by its visible frame rather than transparent padding", () => {
+    const svgSource = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 120"><path d="M80 40h20v40H80z"/></svg>';
+    const element = {
+      id: "imported",
+      kind: "imported-svg",
+      svgSource,
+      x: 100,
+      y: 80,
+      width: 180,
+      height: 120,
+      rotation: 0,
+      strokeWidth: 0,
+      strokeColor: "#2563eb",
+      strokeStyle: "solid"
+    };
+    const visibleFrameKey = `${element.id}:${element.svgSource}:${element.strokeWidth}:${element.strokeColor}:${element.strokeStyle}`;
+    let dialog: any = {
+      target: { scope: "definition", rowId: "default" },
+      elements: [element],
+      selectedElementId: element.id,
+      selectedElementIds: [element.id]
+    };
+    const dragRef = { current: null as any };
+    const dragDeltaRef = { current: null as any };
+    const setDialog = (updater: any) => {
+      dialog = typeof updater === "function" ? updater(dialog) : updater;
+    };
+    const startDrag = createStartStateIconDrawingDrag({
+      definitionVisualDraft: { terminalCount: 1 },
+      definitionVisualTerminalTypes: ["ac"],
+      setStateIconDrawingContextMenu: vi.fn(),
+      setStateIconDrawingDialog: setDialog,
+      get stateIconDrawingDialog() {
+        return dialog;
+      },
+      stateIconDrawingDragRef: dragRef,
+      stateIconDrawingPointer: () => ({ x: 100, y: 80 }),
+      stateIconDrawingSvgVisibleFrames: {
+        [visibleFrameKey]: { x: -10, y: -20, width: 20, height: 40, basisWidth: 180, basisHeight: 120 }
+      }
+    });
+    startDrag({
+      button: 0,
+      shiftKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      pointerId: 1,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+      currentTarget: {
+        closest: () => ({ focus: () => undefined }),
+        setPointerCapture: () => undefined
+      }
+    } as any, element.id, "move");
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    const dragSelection = createDragStateIconDrawingSelection({
+      computeStateIconDrawingSmartAlignmentSnap: () => ({ delta: { x: -100, y: 0 }, guides: [] }),
+      setStateIconDrawingDialog: setDialog,
+      stateIconDrawingDragDeltaRef: dragDeltaRef,
+      stateIconDrawingDragRef: dragRef,
+      stateIconDrawingPointer: () => ({ x: 0, y: 80 })
+    });
+
+    dragSelection({ preventDefault: vi.fn() } as any);
+
+    expect(dragDeltaRef.current.overrides.imported.x).toBe(40);
+    expect(dragDeltaRef.current.overrides.imported.y).toBe(80);
+  });
+
+  test("undoes in-progress polyline landing points before older drawing history", () => {
+    const points = [{ x: 20, y: 20 }, { x: 50, y: 30 }, { x: 80, y: 60 }];
+    let dialog: any = {
+      elements: [],
+      selectedElementId: "",
+      selectedElementIds: [],
+      pendingElementKind: "polyline",
+      drawingDraft: {
+        kind: "polyline",
+        start: points[0],
+        current: points[2],
+        points,
+        element: {
+          id: "draft",
+          kind: "polyline",
+          x: 50,
+          y: 40,
+          width: 60,
+          height: 40,
+          rotation: 0,
+          points
+        }
+      }
+    };
+    const historyRef = { current: [[{ id: "older" }]] as any[] };
+    const keyDown = createStateIconDrawingKeyDown({
+      deleteSelectedStateIconDrawingElements: vi.fn(),
+      setStateIconDrawingContextMenu: () => undefined,
+      setStateIconDrawingDialog: (updater: any) => {
+        dialog = typeof updater === "function" ? updater(dialog) : updater;
+      },
+      stateIconDrawingClipboardRef: { current: [] },
+      stateIconDrawingDialog: dialog,
+      stateIconDrawingElementId: () => "new-id",
+      stateIconDrawingHistoryRef: historyRef
+    });
+    const event = {
+      key: "z",
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: false,
+      target: null,
+      preventDefault: vi.fn()
+    } as any;
+
+    keyDown(event);
+    expect(dialog.drawingDraft.points).toEqual(points.slice(0, 2));
+    keyDown(event);
+    expect(dialog.drawingDraft.points).toEqual(points.slice(0, 1));
+    keyDown(event);
+    expect(dialog.drawingDraft).toBeUndefined();
+    expect(historyRef.current).toHaveLength(1);
   });
 
   test("cuts selected state icon drawing elements with Ctrl+X", () => {

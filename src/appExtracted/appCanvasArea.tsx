@@ -259,6 +259,12 @@ export function shouldRenderBaseCanvasEdge(
   return !(selectedEdgeTopmostVisible && edgeId === selectedEdgeId);
 }
 
+export function staticDrawingContextMenuFinalPoint(drawing: {
+  points: Array<{ x: number; y: number }>;
+}) {
+  return drawing.points.length >= 2 ? drawing.points.at(-1) ?? null : null;
+}
+
 /**
  * MemoizedCanvasArea - 接收整个 __appScope，内部解构使用。
  */
@@ -298,7 +304,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     finishMarqueeSelection, finishMarqueeSelectionFromPoints, finishMeasurementDrag,
     finishModifierSelectionPress, finishRewiring, finishRoutableLineEndpointDrag,
     finishRoutableLineToTarget, finishTerminalPress, finishTransformDrag,
-    finishConnectToTarget, finishInteractiveStaticDrawing,
+    finishConnectToTarget, finishInteractiveStaticDrawing, cancelInteractiveStaticDrawing,
     fitWholeCanvasFromBlankDoubleClick,
     selectCanvasGraphics, deleteSelection, copySelection, cutSelection,
     groupSelectedGraphics, ungroupSelectedGraphics, assignSelectedNodesToModelLayer,
@@ -720,7 +726,13 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
             return;
         }
         if (staticDrawing) {
-            finishInteractiveStaticDrawing(pointer);
+            const finalPoint = staticDrawingContextMenuFinalPoint(staticDrawing);
+            if (finalPoint) {
+                finishInteractiveStaticDrawing(finalPoint);
+            }
+            else {
+                cancelInteractiveStaticDrawing();
+            }
             return;
         }
         if (connectSource) {

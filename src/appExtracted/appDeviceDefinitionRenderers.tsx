@@ -1,7 +1,7 @@
 // @ts-nocheck
 import React from "react";
 import { formatStateIconDrawingNumber, normalizeStateIconDrawingFontSize, normalizeStateIconDrawingStrokeWidth } from "./appDeviceDefinitionFactories";
-import { STATE_ICON_DRAWING_MIN_FONT_SIZE, appendDistinctStateIconDrawingPoint, clampStateIconDrawingPoint, clearGeneratedDefinitionVisualDraftImage, cloneStateIconDrawingElements, createDefinitionStateDraftRowsWithDefaultImages, createStateIconDrawingElementFromStaticTemplate, cutStateIconDrawingSelection, finishStateIconDrawingDraft, pushStateIconDrawingHistorySnapshot, stateIconDrawingElementBounds, stateIconDrawingElementFromPoints, stateIconDrawingElementIdsInRect, stateIconDrawingFrameDashArray, stateIconDrawingImportedSvgSelectionFrame, stateIconDrawingPolylineElementFromPoints, stateIconDrawingRectFromPoints, stateIconDrawingSelectedIds, stateIconDrawingSelectionBounds, stateIconDrawingTerminalPointSnap, stateIconStaticTemplateParam } from "./appDeviceDefinitionFactories";
+import { STATE_ICON_DRAWING_MIN_FONT_SIZE, appendDistinctStateIconDrawingPoint, clampStateIconDrawingPoint, clearGeneratedDefinitionVisualDraftImage, cloneStateIconDrawingElements, createDefinitionStateDraftRowsWithDefaultImages, createStateIconDrawingElementFromStaticTemplate, cutStateIconDrawingSelection, expandStateIconDrawingElementIds, finishStateIconDrawingDraft, groupStateIconDrawingSelection, pushStateIconDrawingHistorySnapshot, stateIconDrawingElementBounds, stateIconDrawingElementFromPoints, stateIconDrawingElementIdsInRect, stateIconDrawingFrameDashArray, stateIconDrawingImportedSvgSelectionFrame, stateIconDrawingPolylineElementFromPoints, stateIconDrawingRectFromPoints, stateIconDrawingSelectedIds, stateIconDrawingSelectionBounds, stateIconDrawingTerminalPointSnap, stateIconStaticTemplateParam, ungroupStateIconDrawingSelection } from "./appDeviceDefinitionFactories";
 import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
 import { STATE_ICON_DRAFT_FRAME, STATE_ICON_DRAWING_FRAME_WIDTH, STATE_ICON_DRAWING_FRAME_HEIGHT, STATE_ICON_CLOSED_SHAPE_KINDS, STATE_ICON_LINE_SHAPE_KINDS, STATE_ICON_STATIC_TEMPLATE_SECTIONS_COVERED_BY_BASIC_TOOLS, STATE_ICON_STATIC_TEMPLATE_SECTION_ORDER } from "./appDeviceDefinitionEInterface";
 
@@ -1389,8 +1389,11 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
           return current;
         }
         const rect = stateIconDrawingRectFromPoints(current.marquee.start, point);
-        const selectedByRect = stateIconDrawingElementIdsInRect(current.elements, rect);
-        const currentSelection = current.selectedElementIds.length > 0 ? current.selectedElementIds : [current.selectedElementId].filter(Boolean);
+        const selectedByRect = expandStateIconDrawingElementIds(
+          current.elements,
+          stateIconDrawingElementIdsInRect(current.elements, rect)
+        );
+        const currentSelection = stateIconDrawingSelectedIds(current);
         const selectedElementIds = current.marquee.append
           ? Array.from(new Set([...currentSelection, ...selectedByRect]))
           : selectedByRect;
@@ -1431,11 +1434,24 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         return;
       }
       const selectedSet = new Set(stateIconDrawingSelectedIds(stateIconDrawingDialog));
-      stateIconDrawingClipboardRef.current = stateIconDrawingDialog.elements.filter((element) => selectedSet.has(element.id)).map((element) => ({ ...element }));
+      stateIconDrawingClipboardRef.current = stateIconDrawingDialog.elements
+        .filter((element) => selectedSet.has(element.id))
+        .map((element) => ({
+          ...element,
+          ...(Array.isArray(element.points) ? { points: element.points.map((point) => ({ ...point })) } : {})
+        }));
       setStateIconDrawingContextMenu(null);
     };
     const cutSelectedStateIconElements = () => {
       setStateIconDrawingDialog((current) => cutStateIconDrawingSelection(current, stateIconDrawingClipboardRef, stateIconDrawingHistoryRef));
+      setStateIconDrawingContextMenu(null);
+    };
+    const groupSelectedStateIconElements = () => {
+      setStateIconDrawingDialog((current) => groupStateIconDrawingSelection(current, stateIconDrawingHistoryRef));
+      setStateIconDrawingContextMenu(null);
+    };
+    const ungroupSelectedStateIconElements = () => {
+      setStateIconDrawingDialog((current) => ungroupStateIconDrawingSelection(current, stateIconDrawingHistoryRef));
       setStateIconDrawingContextMenu(null);
     };
     const pasteStateIconElements = (point?: Point) => {
@@ -1642,6 +1658,11 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
         return null;
       }
       const selectedCount = stateIconDrawingSelectedIds(stateIconDrawingDialog).length;
+      const selectedElements = stateIconDrawingDialog.elements.filter((element) => stateIconDrawingSelectedIds(stateIconDrawingDialog).includes(element.id));
+      const selectedGroupIds = new Set(selectedElements.map((element) => String(element.groupId ?? "").trim()).filter(Boolean));
+      const selectedIsSingleGroup = selectedGroupIds.size === 1 && selectedElements.length > 1 && selectedElements.every((element) => String(element.groupId ?? "").trim());
+      const canGroup = selectedCount >= 2 && !selectedIsSingleGroup;
+      const canUngroup = selectedGroupIds.size > 0;
       const clipboardReady = (stateIconDrawingClipboardRef.current ?? []).length > 0;
       const rowIsDefault = stateIconDrawingContextMenu.kind === "state" && isDefaultStatePageId(stateIconDrawingContextMenu.rowId ?? "");
       const menuButton = (label: string, onClick: () => void, disabled = false) => (
@@ -1684,6 +1705,8 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
               {menuButton("剪切", cutSelectedStateIconElements, selectedCount === 0)}
               {menuButton("粘贴", () => pasteStateIconElements(stateIconDrawingContextMenu.pastePoint), !clipboardReady)}
               {menuButton("删除", deleteSelectedStateIconDrawingElements, selectedCount === 0)}
+              {menuButton("组合（Ctrl+G）", groupSelectedStateIconElements, !canGroup)}
+              {menuButton("解除组合（Ctrl+Shift+G）", ungroupSelectedStateIconElements, !canUngroup)}
               {menuSubmenu("层级操作", (
                 <>
                   {menuButton("置顶", () => reorderSelectedStateIconElements("front"))}
@@ -1701,7 +1724,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                   {menuButton("垂直居中", () => alignSelectedStateIconElements("middle"))}
                   {menuButton("下对齐", () => alignSelectedStateIconElements("bottom"))}
                 </>
-              ), selectedCount < 2)}
+              ), selectedCount < 2 || selectedIsSingleGroup)}
               {menuSubmenu("排列操作", (
                 <>
                   {menuButton("水平等距", () => distributeSelectedStateIconElements("x"), selectedCount < 3)}
@@ -1710,7 +1733,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                   {menuButton("同高", () => alignSelectedStateIconElements("same-height"))}
                   {menuButton("同宽高", () => alignSelectedStateIconElements("same-size"))}
                 </>
-              ), selectedCount < 2)}
+              ), selectedCount < 2 || selectedIsSingleGroup)}
               {menuSubmenu("镜像操作", (
                 <>
                   {menuButton("水平镜像", () => mirrorSelectedStateIconElements("x"))}
@@ -1746,7 +1769,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
           hostClientTop: host?.clientTop,
           viewportWidth: document.documentElement.clientWidth,
           viewportHeight: document.documentElement.clientHeight,
-          menuHeight: menu.kind === "state" ? 76 : 230
+          menuHeight: menu.kind === "state" ? 76 : 310
         }
       );
       setStateIconDrawingContextMenu({ ...point, ...menu });
@@ -1762,9 +1785,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
           </div>
         );
       }
-      const selectedIds = stateIconDrawingDialog.selectedElementIds.length > 0
-        ? stateIconDrawingDialog.selectedElementIds
-        : [stateIconDrawingDialog.selectedElementId].filter(Boolean);
+      const selectedIds = stateIconDrawingSelectedIds(stateIconDrawingDialog);
       const sidePanelTab = stateIconDrawingDialog.sidePanelTab === "selected" ? "selected" : "global";
       const frame = { ...STATE_ICON_DRAFT_FRAME, ...(stateIconDrawingDialog.frame ?? {}) };
       const frameBackgroundImageAssetId = String(frame.backgroundImageAssetId ?? "").trim();
@@ -1792,6 +1813,10 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
             return ovr ? { ...element, ...ovr } : element;
           })
         : rawPreviewElements;
+      const selectedPreviewElements = previewElements.filter((element) => selectedIds.includes(element.id));
+      const stateIconDrawingGroupSelectionBounds = selectedPreviewElements.length > 1
+        ? stateIconDrawingSelectionBounds(selectedPreviewElements)
+        : null;
       const directPreviewElements = stateIconDrawingPreviewNeedsDirectElementRender(previewElements);
       const stateIconDrawingSmartGuides = stateIconDrawingDragDeltaRef?.current?.guides ?? stateIconDrawingDialog.smartAlignmentGuides ?? [];
       const stateIconDrawingMarqueeRect = stateIconDrawingDialog.marquee
@@ -2068,6 +2093,9 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                         onDoubleClick={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
+                          if (element.groupId) {
+                            return;
+                          }
                           const aspect = element.width / element.height;
                           const frameAspect = frameRect.width / frameRect.height;
                           let newWidth: number;
@@ -2089,6 +2117,9 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                         onContextMenu={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
+                          if (!stateIconDrawingSelectedIds(stateIconDrawingDialog).includes(element.id)) {
+                            stateIconDrawingSelection(element.id, false);
+                          }
                           openStateIconDrawingContextMenu(event, { kind: "element", elementId: element.id });
                         }}
                       >
@@ -2096,6 +2127,8 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                         {selected && (
                           <>
                             <rect x={formatSvgNumber(selectionFrame.x)} y={formatSvgNumber(selectionFrame.y)} width={formatSvgNumber(selectionFrame.width)} height={formatSvgNumber(selectionFrame.height)} className="state-icon-drawing-selection-box" />
+                            {selectedIds.length === 1 && (
+                              <>
                             <circle cx={formatSvgNumber(selectionFrame.halfWidth)} cy={formatSvgNumber(selectionFrame.halfHeight)} r="5" className="state-icon-drawing-resize-handle" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize")} />
                             <circle cx="0" cy={formatSvgNumber(-selectionFrame.halfHeight)} r="5" className="state-icon-drawing-resize-handle state-icon-drawing-resize-handle-top" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize-top", { x: 0, y: -selectionFrame.halfHeight })} />
                             <circle cx="0" cy={formatSvgNumber(selectionFrame.halfHeight)} r="5" className="state-icon-drawing-resize-handle state-icon-drawing-resize-handle-bottom" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize-bottom", { x: 0, y: selectionFrame.halfHeight })} />
@@ -2103,11 +2136,45 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                             <circle cx={formatSvgNumber(selectionFrame.halfWidth)} cy="0" r="5" className="state-icon-drawing-resize-handle state-icon-drawing-resize-handle-right" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "resize-right", { x: selectionFrame.halfWidth, y: 0 })} />
                             <line x1="0" y1={formatSvgNumber(-selectionFrame.halfHeight)} x2="0" y2={formatSvgNumber(-selectionFrame.halfHeight - 16)} className="state-icon-drawing-rotate-stem" />
                             <circle cx="0" cy={formatSvgNumber(-selectionFrame.halfHeight - 20)} r="5" className="state-icon-drawing-rotate-handle" onPointerDown={(event) => startStateIconDrawingDrag(event, element.id, "rotate")} />
+                              </>
+                            )}
                           </>
                         )}
                       </g>
                     );
                   })}
+                  {stateIconDrawingGroupSelectionBounds && (
+                    <g className="state-icon-drawing-group-selection" data-selection-unit="group">
+                      <rect
+                        x={formatSvgNumber(stateIconDrawingGroupSelectionBounds.left)}
+                        y={formatSvgNumber(stateIconDrawingGroupSelectionBounds.top)}
+                        width={formatSvgNumber(stateIconDrawingGroupSelectionBounds.width)}
+                        height={formatSvgNumber(stateIconDrawingGroupSelectionBounds.height)}
+                        className="state-icon-drawing-selection-box state-icon-drawing-group-selection-box"
+                      />
+                      <circle
+                        cx={formatSvgNumber(stateIconDrawingGroupSelectionBounds.right)}
+                        cy={formatSvgNumber(stateIconDrawingGroupSelectionBounds.bottom)}
+                        r="5"
+                        className="state-icon-drawing-resize-handle"
+                        onPointerDown={(event) => startStateIconDrawingDrag(event, selectedIds[selectedIds.length - 1], "resize")}
+                      />
+                      <line
+                        x1={formatSvgNumber(stateIconDrawingGroupSelectionBounds.centerX)}
+                        y1={formatSvgNumber(stateIconDrawingGroupSelectionBounds.top)}
+                        x2={formatSvgNumber(stateIconDrawingGroupSelectionBounds.centerX)}
+                        y2={formatSvgNumber(stateIconDrawingGroupSelectionBounds.top - 16)}
+                        className="state-icon-drawing-rotate-stem"
+                      />
+                      <circle
+                        cx={formatSvgNumber(stateIconDrawingGroupSelectionBounds.centerX)}
+                        cy={formatSvgNumber(stateIconDrawingGroupSelectionBounds.top - 20)}
+                        r="5"
+                        className="state-icon-drawing-rotate-handle"
+                        onPointerDown={(event) => startStateIconDrawingDrag(event, selectedIds[selectedIds.length - 1], "rotate")}
+                      />
+                    </g>
+                  )}
                 </svg>
               </div>
             </div>
@@ -2246,6 +2313,34 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
               {sidePanelTab === "selected" && (
                 <div className="state-icon-drawing-properties state-icon-drawing-tab-panel" role="tabpanel">
                 {(() => {
+                  const selectedElementIds = stateIconDrawingSelectedIds(stateIconDrawingDialog);
+                  const selectedElements = stateIconDrawingDialog.elements.filter((element) => selectedElementIds.includes(element.id));
+                  const selectedGroupId = String(selectedElements[0]?.groupId ?? "").trim();
+                  const selectedIsGroup = selectedElements.length > 1 && Boolean(selectedGroupId) && selectedElements.every((element) => element.groupId === selectedGroupId);
+                  if (selectedIsGroup) {
+                    return (
+                      <div className="state-icon-drawing-group-properties">
+                        <div className="state-icon-drawing-property-title">
+                          <strong>组合</strong>
+                          <span>{selectedElements.length} 个元素</span>
+                        </div>
+                        <p>当前元素已作为一个组合整体选中。移动、缩放、旋转、删除、复制和粘贴都会作用于整个组合。</p>
+                        <button type="button" onClick={ungroupSelectedStateIconElements}>解除组合</button>
+                      </div>
+                    );
+                  }
+                  if (selectedElements.length > 1) {
+                    return (
+                      <div className="state-icon-drawing-group-properties">
+                        <div className="state-icon-drawing-property-title">
+                          <strong>多选图元</strong>
+                          <span>{selectedElements.length} 个元素</span>
+                        </div>
+                        <p>可将当前选择组合为一个整体操作单元。</p>
+                        <button type="button" onClick={groupSelectedStateIconElements}>组合</button>
+                      </div>
+                    );
+                  }
                   const selected = stateIconDrawingDialog.elements.find((element) => element.id === stateIconDrawingDialog.selectedElementId) ?? null;
                   if (!selected) {
                     return <p>选择一个图案后调整属性。</p>;

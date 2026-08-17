@@ -2,12 +2,18 @@ import { describe, expect, test, vi } from "vitest";
 import {
   createApplyBatchCommonParam,
   createApplyBatchCommonParamPatch,
+  createAppendStaticDrawingPoint,
+  createCommitLibraryPlacementAtPoint,
   createFindConnectTargetAtPoint,
   createFindRewireTargetAtPoint,
   createFindRoutableLineEndpointTargetAtPoint,
+  createFinishInteractiveStaticDrawing,
+  createPlaceLibraryDeviceAtPoint,
+  createUpdateInteractiveStaticDrawingPreview,
+  createUpdateLibraryPlacementPreview,
   createUpdateParam
 } from "./appExtracted/appCanvasInteractionFactories";
-import { pointOnBusForSnap } from "./appExtracted/appCoreCanvasUtilities";
+import { bestSmartAlignmentAxisSnap, pointOnBusForSnap } from "./appExtracted/appCoreCanvasUtilities";
 import {
   canConnectTerminals,
   createDefaultNode,
@@ -261,5 +267,319 @@ describe("single device parameter updates", () => {
     updateParam("soc", "120%");
 
     expect(patchGraphNodes).not.toHaveBeenCalled();
+  });
+});
+
+describe("smart alignment during drawing", () => {
+  const referenceNode = {
+    id: "reference-node",
+    position: { x: 200, y: 300 },
+    size: { width: 40, height: 40 },
+    terminals: []
+  } as any;
+
+  const createSmartAlignmentScope = (updateSmartAlignmentGuides = vi.fn()) => ({
+    SMART_ALIGNMENT_SNAP_SCREEN_TOLERANCE: 12,
+    bestSmartAlignmentAxisSnap,
+    canvasScrollScaleRef: { current: { x: 1, y: 1 } },
+    canvasVisibleViewBoxRef: { current: { x: 0, y: 0, width: 1000, height: 800 } },
+    clampPointToCanvas: (point: any) => point,
+    createNodeFromTemplate: vi.fn((template: any, position: any) => ({
+      id: `preview-${template.kind}`,
+      kind: template.kind,
+      position,
+      size: template.size ?? { width: 40, height: 40 },
+      terminals: []
+    })),
+    emptySmartAlignmentAnchorMap: () => ({ x: [], y: [] }),
+    isEditMode: true,
+    isInteractiveStaticDrawingKind: vi.fn((kind: string) => kind === "static-line"),
+    isStaticBoxLikeTemplate: vi.fn(() => false),
+    nodeHasUprightBoundsContent: vi.fn(() => false),
+    nodeSmartAlignmentBounds: (node: any, position: any) => ({
+      left: position.x - node.size.width / 2,
+      right: position.x + node.size.width / 2,
+      top: position.y - node.size.height / 2,
+      bottom: position.y + node.size.height / 2
+    }),
+    nodeTerminalOutflowSmartAlignmentAnchors: () => ({ x: [], y: [] }),
+    queryNodeSpatialIndex: vi.fn(() => [referenceNode]),
+    smartAlignmentEnabled: true,
+    updateSmartAlignmentGuides,
+    viewBoxRef: { current: { x: 0, y: 0, width: 1000, height: 800 } },
+    visibleNodeSpatialIndex: {}
+  });
+
+  test("uses the same snapped point for a static drawing preview and its committed endpoint", () => {
+    const updateSmartAlignmentGuides = vi.fn();
+    const staticDrawing = {
+      kind: "static-line",
+      template: { kind: "static-line", label: "直线" },
+      points: [{ x: 80, y: 100 }],
+      previewPoint: { x: 80, y: 100 }
+    } as any;
+    let previewState = staticDrawing;
+    const commonScope = createSmartAlignmentScope(updateSmartAlignmentGuides);
+    const updatePreview = createUpdateInteractiveStaticDrawingPreview({
+      ...commonScope,
+      sameOptionalPoint: (left: any, right: any) => left?.x === right?.x && left?.y === right?.y,
+      setStaticDrawing: (updater: any) => {
+        previewState = updater(previewState);
+      }
+    });
+
+    updatePreview({ x: 198, y: 303 });
+
+    expect(previewState.previewPoint).toEqual({ x: 200, y: 300 });
+    expect(updateSmartAlignmentGuides).toHaveBeenLastCalledWith([
+      expect.objectContaining({ orientation: "vertical", position: 200 }),
+      expect.objectContaining({ orientation: "horizontal", position: 300 })
+    ]);
+
+    const finishInteractiveStaticDrawing = vi.fn();
+    const appendPoint = createAppendStaticDrawingPoint({
+      ...commonScope,
+      appendDistinctStaticDrawingPoint: (points: any[], point: any) => [...points, point],
+      finishInteractiveStaticDrawing,
+      interactiveStaticDrawingNeedsExplicitFinish: vi.fn(() => false),
+      setStaticDrawing: vi.fn(),
+      staticDrawing
+    });
+
+    appendPoint({ x: 198, y: 303 });
+
+    expect(finishInteractiveStaticDrawing).toHaveBeenCalledWith({ x: 200, y: 300 });
+  });
+
+  test("commits a library drawing at its snapped preview point and clears the guides", () => {
+    const updateSmartAlignmentGuides = vi.fn();
+    const template = { kind: "static-line", label: "直线", size: { width: 40, height: 40 } } as any;
+    const libraryPlacement = { kind: "device", template, previewPoint: null } as any;
+    let previewState = libraryPlacement;
+    const commonScope = createSmartAlignmentScope(updateSmartAlignmentGuides);
+    const updatePreview = createUpdateLibraryPlacementPreview({
+      ...commonScope,
+      libraryPlacement,
+      sameOptionalPoint: (left: any, right: any) => left?.x === right?.x && left?.y === right?.y,
+      setLibraryPlacement: (updater: any) => {
+        previewState = updater(previewState);
+      }
+    });
+
+    updatePreview({ x: 198, y: 303 });
+
+    expect(previewState.previewPoint).toEqual({ x: 200, y: 300 });
+
+    const placeLibraryDeviceAtPoint = vi.fn();
+    const commitPlacement = createCommitLibraryPlacementAtPoint({
+      ...commonScope,
+      dropGraphTemplate: vi.fn(),
+      libraryPlacement,
+      placeLibraryDeviceAtPoint,
+      requireEditMode: vi.fn(() => true),
+      setLibraryPlacement: vi.fn()
+    });
+
+    commitPlacement({ x: 198, y: 303 });
+
+    expect(placeLibraryDeviceAtPoint).toHaveBeenCalledWith(template, { x: 200, y: 300 });
+    expect(updateSmartAlignmentGuides).toHaveBeenLastCalledWith([]);
+  });
+
+  test("aligns an ordinary placement preview by its node bounds", () => {
+    const updateSmartAlignmentGuides = vi.fn();
+    const template = { kind: "static-edge-label", label: "边标签", size: { width: 40, height: 40 } } as any;
+    const libraryPlacement = { kind: "device", template, previewPoint: null } as any;
+    let previewState = libraryPlacement;
+    const updatePreview = createUpdateLibraryPlacementPreview({
+      ...createSmartAlignmentScope(updateSmartAlignmentGuides),
+      libraryPlacement,
+      sameOptionalPoint: (left: any, right: any) => left?.x === right?.x && left?.y === right?.y,
+      setLibraryPlacement: (updater: any) => {
+        previewState = updater(previewState);
+      }
+    });
+
+    updatePreview({ x: 159, y: 303 });
+
+    expect(previewState.previewPoint).toEqual({ x: 160, y: 300 });
+    expect(updateSmartAlignmentGuides).toHaveBeenLastCalledWith([
+      expect.objectContaining({ orientation: "vertical", position: 180 }),
+      expect.objectContaining({ orientation: "horizontal", position: 300 })
+    ]);
+  });
+
+  test("keeps raw drawing coordinates when smart alignment is disabled", () => {
+    const updateSmartAlignmentGuides = vi.fn();
+    const staticDrawing = {
+      kind: "static-line",
+      template: { kind: "static-line", label: "直线" },
+      points: [{ x: 80, y: 100 }],
+      previewPoint: { x: 80, y: 100 }
+    } as any;
+    let previewState = staticDrawing;
+    const updatePreview = createUpdateInteractiveStaticDrawingPreview({
+      ...createSmartAlignmentScope(updateSmartAlignmentGuides),
+      smartAlignmentEnabled: false,
+      sameOptionalPoint: (left: any, right: any) => left?.x === right?.x && left?.y === right?.y,
+      setStaticDrawing: (updater: any) => {
+        previewState = updater(previewState);
+      }
+    });
+
+    updatePreview({ x: 198, y: 303 });
+
+    expect(previewState.previewPoint).toEqual({ x: 198, y: 303 });
+    expect(updateSmartAlignmentGuides).toHaveBeenLastCalledWith([]);
+  });
+});
+
+describe("single-use static drawing tools", () => {
+  test("does not restore an ordinary connector tool after placing one node", () => {
+    const template = {
+      kind: "custom-static-connector",
+      label: "自定义连接图元",
+      size: { width: 104, height: 86 },
+      params: { component_type: "StaticConnectorSymbol" },
+      terminalType: "ac",
+      terminalCount: 0
+    } as any;
+    const startLibraryDevicePlacement = vi.fn();
+    const canvasBounds = { width: 1200, height: 800 };
+    const createdNode = {
+      id: "custom-static-connector-1",
+      kind: template.kind,
+      name: template.label,
+      position: { x: 200, y: 180 },
+      size: { ...template.size },
+      params: {},
+      terminals: []
+    };
+    const placeLibraryDeviceAtPoint = createPlaceLibraryDeviceAtPoint({
+      CANVAS_AUTO_EXPAND_PADDING: 40,
+      activateInspectorFromCanvas: vi.fn(),
+      activeLayerId: "layer-default",
+      applyCanvasBounds: vi.fn(),
+      assignPermanentDeviceIndex: vi.fn((node) => ({ node, counters: {} })),
+      canvasBounds,
+      canvasBoundsForAutoExpandedGraphContent: vi.fn(() => canvasBounds),
+      canvasBoundsWithOriginShift: vi.fn((bounds) => bounds),
+      clampNodePositionToBounds: vi.fn((_node, _bounds, point) => point),
+      clampPointToBounds: vi.fn((point) => point),
+      createNodeFromTemplate: vi.fn((_template, position) => ({ ...createdNode, position })),
+      deviceIndexCounters: {},
+      edges: [],
+      hasCanvasOriginShift: vi.fn(() => false),
+      isInteractiveStaticDrawingKind: vi.fn(() => false),
+      isRoutableLineDeviceKind: vi.fn(() => false),
+      isStaticBoxLikeTemplate: vi.fn(() => false),
+      lastCanvasPointerRef: { current: null },
+      lastRawCanvasPointerRef: { current: null },
+      leftTopCanvasOriginShiftForContent: vi.fn(() => ({ x: 0, y: 0 })),
+      markBusTerminalSyncDirtyForEdges: vi.fn(),
+      nodes: [],
+      pushUndoSnapshot: vi.fn(),
+      rejectAutoCanvasExpansionForContent: vi.fn(() => false),
+      requireEditMode: vi.fn(() => true),
+      routeRoutableLineDevice: vi.fn((node) => node),
+      setCanvasSelectionScope: vi.fn(),
+      setDeviceIndexCounters: vi.fn(),
+      setGraphArrays: vi.fn(),
+      setLibraryPlacement: vi.fn(),
+      setMode: vi.fn(),
+      setSelectedEdgeId: vi.fn(),
+      setSelectedEdgeIds: vi.fn(),
+      setSelectedNodeIds: vi.fn(),
+      shiftCachedRoutesForCanvasOrigin: vi.fn(),
+      startInteractiveStaticDrawing: vi.fn(),
+      startLibraryDevicePlacement,
+      translateEdgeBy: vi.fn((edge) => edge),
+      translateNodeBy: vi.fn((node) => node),
+      translatePointBy: vi.fn((point) => point),
+      writeOperationLog: vi.fn()
+    });
+
+    placeLibraryDeviceAtPoint(template, { x: 200, y: 180 });
+
+    expect(startLibraryDevicePlacement).not.toHaveBeenCalled();
+  });
+
+  test("exits an interactive connector tool after a normal finish", () => {
+    const template = {
+      kind: "static-line",
+      label: "直线",
+      params: { component_type: "StaticConnectorSymbol" }
+    } as any;
+    const startLibraryDevicePlacement = vi.fn();
+    const setMode = vi.fn();
+    const points = [{ x: 100, y: 120 }, { x: 240, y: 180 }];
+    const finishInteractiveStaticDrawing = createFinishInteractiveStaticDrawing({
+      activateInspectorFromCanvas: vi.fn(),
+      activeLayerId: "layer-default",
+      appendDistinctStaticDrawingPoint: (current: any[], point: any) =>
+        current.at(-1)?.x === point.x && current.at(-1)?.y === point.y ? current : [...current, point],
+      clampPointToCanvas: (point: any) => point,
+      createInteractiveStaticDrawingNode: vi.fn(() => ({ id: "static-line-1", name: "直线" })),
+      createStaticBoxNodeFromDrawing: vi.fn(),
+      edges: [],
+      isStaticBoxLikeTemplate: vi.fn(() => false),
+      nodes: [],
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: vi.fn(() => true),
+      setCanvasSelectionScope: vi.fn(),
+      setGraphArrays: vi.fn(),
+      setMode,
+      setSelectedEdgeId: vi.fn(),
+      setSelectedEdgeIds: vi.fn(),
+      setSelectedNodeIds: vi.fn(),
+      setStaticDrawing: vi.fn(),
+      startLibraryDevicePlacement,
+      staticDrawing: { kind: template.kind, template, points, previewPoint: points.at(-1) },
+      staticDrawingPreviewPoints: () => points,
+      updateSmartAlignmentGuides: vi.fn(),
+      writeOperationLog: vi.fn()
+    });
+
+    finishInteractiveStaticDrawing(points.at(-1));
+
+    expect(startLibraryDevicePlacement).not.toHaveBeenCalled();
+    expect(setMode).toHaveBeenCalledWith("select");
+  });
+
+  test("exits the tool when a right click finishes drawing", () => {
+    const template = { kind: "static-polyline", label: "折线" } as any;
+    const startLibraryDevicePlacement = vi.fn();
+    const setMode = vi.fn();
+    const points = [{ x: 100, y: 120 }, { x: 180, y: 160 }];
+    const finishInteractiveStaticDrawing = createFinishInteractiveStaticDrawing({
+      activateInspectorFromCanvas: vi.fn(),
+      activeLayerId: "layer-default",
+      appendDistinctStaticDrawingPoint: (current: any[]) => current,
+      clampPointToCanvas: (point: any) => point,
+      createInteractiveStaticDrawingNode: vi.fn(() => ({ id: "static-polyline-1", name: "折线" })),
+      createStaticBoxNodeFromDrawing: vi.fn(),
+      edges: [],
+      isStaticBoxLikeTemplate: vi.fn(() => false),
+      nodes: [],
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: vi.fn(() => true),
+      setCanvasSelectionScope: vi.fn(),
+      setGraphArrays: vi.fn(),
+      setMode,
+      setSelectedEdgeId: vi.fn(),
+      setSelectedEdgeIds: vi.fn(),
+      setSelectedNodeIds: vi.fn(),
+      setStaticDrawing: vi.fn(),
+      startLibraryDevicePlacement,
+      staticDrawing: { kind: template.kind, template, points, previewPoint: { x: 260, y: 220 } },
+      staticDrawingPreviewPoints: () => points,
+      updateSmartAlignmentGuides: vi.fn(),
+      writeOperationLog: vi.fn()
+    });
+
+    finishInteractiveStaticDrawing(points.at(-1));
+
+    expect(startLibraryDevicePlacement).not.toHaveBeenCalled();
+    expect(setMode).toHaveBeenCalledWith("select");
   });
 });

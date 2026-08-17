@@ -23,7 +23,8 @@ export const INTERACTIVE_STATIC_DRAWING_KINDS = [
   "static-double-arrow-connector",
   "static-elbow-connector",
   "static-bezier-connector",
-  "static-smoothstep-connector"
+  "static-smoothstep-connector",
+  "static-self-loop"
 ] as const satisfies readonly DeviceKind[];
 
 // ===== getTemplate / createDefaultNode / createNodeFromTemplate =====

@@ -5,7 +5,8 @@ import {
   adjustGeneratedStateIconTerminalStub,
   areCanvasPropsEqual,
   CanvasConnectionPaths,
-  shouldRenderBaseCanvasEdge
+  shouldRenderBaseCanvasEdge,
+  staticDrawingContextMenuFinalPoint
 } from "./appExtracted/appCanvasArea";
 import { createRenderReadonlyBackgroundPage } from "./appExtracted/appToolbarHookFactories";
 
@@ -39,6 +40,24 @@ describe("live canvas edge DOM", () => {
     expect(shouldRenderBaseCanvasEdge("edge-1", "edge-1", true)).toBe(false);
     expect(shouldRenderBaseCanvasEdge("edge-1", "edge-1", false)).toBe(true);
     expect(shouldRenderBaseCanvasEdge("edge-1", "edge-2", true)).toBe(true);
+  });
+
+  test("finishes static polyline drawing at the last confirmed point on right click", () => {
+    const firstPoint = { x: 100, y: 120 };
+    const lastConfirmedPoint = { x: 180, y: 160 };
+    const rightClickPreviewPoint = { x: 260, y: 220 };
+
+    expect(staticDrawingContextMenuFinalPoint({
+      points: [firstPoint, lastConfirmedPoint],
+      previewPoint: rightClickPreviewPoint
+    } as any)).toBe(lastConfirmedPoint);
+  });
+
+  test("cancels an unfinished static drawing that has fewer than two confirmed points", () => {
+    expect(staticDrawingContextMenuFinalPoint({
+      points: [{ x: 100, y: 120 }],
+      previewPoint: { x: 260, y: 220 }
+    } as any)).toBeNull();
   });
 
   test("renders each read-only background edge as a direct path", () => {

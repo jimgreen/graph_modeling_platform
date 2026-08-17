@@ -36,6 +36,7 @@ import {
   uprightText
 } from "./staticRenderUtils";
 import { clampNumber } from "./canvasViewport";
+import { staticConnectorDrawingPath } from "./staticConnectorCurves";
 
 export type DeviceGlyphMode = "full" | "geometry" | "text";
 export type DeviceGlyphProps = {
@@ -758,13 +759,13 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       const points = staticDrawPointsForNode(node, [{ x: -w / 2, y: h / 4 }, { x: w / 2, y: -h / 4 }]);
       const start = points[0];
       const end = points[points.length - 1];
-      const controlDx = Math.max(24, Math.abs(end.x - start.x) * 0.5);
-      const direction = end.x >= start.x ? 1 : -1;
+      const second = points[1] ?? start;
+      const previous = points[points.length - 2] ?? start;
       return (
         <g>
-          <path d={`M ${start.x} ${start.y} C ${start.x + controlDx * direction} ${start.y}, ${end.x - controlDx * direction} ${end.y}, ${end.x} ${end.y}`} fill="none" stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinecap="round" />
-          {staticConnectorMarker(node.params.markerStart || "none", start.x, start.y, -1, 0.4, staticNumericParam(node, "arrowSize", 10, 4), staticStroke, lineWidth)}
-          {staticConnectorMarker(node.params.markerEnd || "none", end.x, end.y, 1, -0.4, staticNumericParam(node, "arrowSize", 10, 4), staticStroke, lineWidth)}
+          <path d={staticConnectorDrawingPath(staticRenderKind, points)} fill="none" stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinecap="round" />
+          {staticConnectorMarker(node.params.markerStart || "none", start.x, start.y, start.x - second.x, start.y - second.y, staticNumericParam(node, "arrowSize", 10, 4), staticStroke, lineWidth)}
+          {staticConnectorMarker(node.params.markerEnd || "none", end.x, end.y, end.x - previous.x, end.y - previous.y, staticNumericParam(node, "arrowSize", 10, 4), staticStroke, lineWidth)}
           {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
         </g>
       );
@@ -779,15 +780,13 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       const points = staticDrawPointsForNode(node, [{ x: -w / 2, y: h / 4 }, { x: w / 2, y: -h / 2 }]);
       const start = points[0];
       const end = points[points.length - 1];
-      const midX = (start.x + end.x) / 2;
-      const path = points.length > 2
-        ? points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ")
-        : `M ${start.x} ${start.y} H ${midX} V ${end.y} H ${end.x}`;
+      const second = points[1] ?? start;
+      const previous = points[points.length - 2] ?? start;
       return (
         <g>
-          <path d={path} fill="none" stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinecap="round" strokeLinejoin="round" />
-          {staticConnectorMarker(node.params.markerStart || "none", start.x, start.y, -1, 0, staticNumericParam(node, "arrowSize", 10, 4), staticStroke, lineWidth)}
-          {staticConnectorMarker(node.params.markerEnd || "none", end.x, end.y, 1, 0, staticNumericParam(node, "arrowSize", 10, 4), staticStroke, lineWidth)}
+          <path d={staticConnectorDrawingPath(staticRenderKind, points)} fill="none" stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinecap="round" strokeLinejoin="round" />
+          {staticConnectorMarker(node.params.markerStart || "none", start.x, start.y, start.x - second.x, start.y - second.y, staticNumericParam(node, "arrowSize", 10, 4), staticStroke, lineWidth)}
+          {staticConnectorMarker(node.params.markerEnd || "none", end.x, end.y, end.x - previous.x, end.y - previous.y, staticNumericParam(node, "arrowSize", 10, 4), staticStroke, lineWidth)}
           {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
         </g>
       );
@@ -799,15 +798,24 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       if (!renderGeometry) {
         return null;
       }
-      const rx = w * 0.32;
-      const ry = h * 0.32;
       const endX = w * 0.18;
       const endY = h * 0.2;
+      const points = staticDrawPointsForNode(node, [
+        { x: -endX, y: endY },
+        { x: -w / 2, y: -h * 0.14 },
+        { x: 0, y: -h / 2 },
+        { x: w / 2, y: -h * 0.14 },
+        { x: endX, y: endY }
+      ]);
+      const start = points[0];
+      const second = points[1] ?? start;
+      const end = points[points.length - 1];
+      const previous = points[points.length - 2] ?? start;
       return (
         <g>
-          <path d={`M ${-endX} ${endY} C ${-w / 2} ${h / 2}, ${-w / 2} ${-h / 2}, 0 ${-h / 2} C ${w / 2} ${-h / 2}, ${w / 2} ${h / 2}, ${endX} ${endY}`} fill="none" stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinecap="round" />
-          <ellipse cx="0" cy="-3" rx={rx} ry={ry} fill="none" stroke={accentColor} strokeWidth="1" opacity="0.16" />
-          {staticConnectorMarker(node.params.markerEnd || "arrow", endX, endY, 0.7, 0.7, staticNumericParam(node, "arrowSize", 10, 4), staticStroke, lineWidth)}
+          <path d={staticConnectorDrawingPath(staticRenderKind, points)} fill="none" stroke={staticStroke} strokeWidth={lineWidth} strokeDasharray={dashArray} strokeLinecap="round" />
+          {staticConnectorMarker(node.params.markerStart || "none", start.x, start.y, start.x - second.x, start.y - second.y, staticNumericParam(node, "arrowSize", 10, 4), staticStroke, lineWidth)}
+          {staticConnectorMarker(node.params.markerEnd || "arrow", end.x, end.y, end.x - previous.x, end.y - previous.y, staticNumericParam(node, "arrowSize", 10, 4), staticStroke, lineWidth)}
           {renderText && hasStaticText && staticShapeText(node, w, h, miniature)}
         </g>
       );
