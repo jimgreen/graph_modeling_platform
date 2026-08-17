@@ -174,8 +174,8 @@ const ENDPOINTS = [
     { label: "新建顶级方案", params: { __body__: { name: "新方案" } } },
     { label: "新建子方案", params: { __body__: { name: "子方案", parentSchemeId: "parent-id" } } }
   ]},
-  { group: "控制台", method: "POST", path: "/webgrp/v1/control/model/create", desc: "新建模型（经 WS 到前端，不压栈不落盘）", query: [{ name: "clientId", desc: "可选" }], body: { name: "新模型", schemeId: "" }, response: "{ok:true,data:{id,name,schemeId}}", examples: [
-    { label: "新建到默认方案", params: { __body__: { name: "新模型" } } }
+  { group: "控制台", method: "POST", path: "/webgrp/v1/control/model/create", desc: "新建模型并立即落盘，由后台分配永久全局 idx", query: [{ name: "clientId", desc: "可选" }], body: { name: "新模型", modelType: "厂站", schemeId: "" }, response: "{ok:true,data:{id,name,schemeId,modelType,idx}}", examples: [
+    { label: "新建到默认方案", params: { __body__: { name: "新模型", modelType: "厂站" } } }
   ]},
   { group: "控制台", method: "POST", path: "/webgrp/v1/control/devices/select", desc: "选中图元（set/add/toggle 三模式，自动过滤不存在的 id）", query: [{ name: "clientId", desc: "可选" }], body: { ids: ["n1", "n2"], mode: "set" }, response: "{ok:true,data:{selectedIds,validIds,invalidIds}}", examples: [
     { label: "替换选中", params: { __body__: { ids: ["n1", "n2"], mode: "set" } } },

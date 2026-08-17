@@ -181,13 +181,18 @@ function createBlankProjectMockScope() {
       DEFAULT_VOLTAGE_UNIT: "kV",
       DEFAULT_CURRENT_UNIT: "A",
       DEFAULT_POWER_BASE_VALUE: 100,
+      MODEL_TYPES: ["微网", "厂站", "馈线", "台区", "其他"],
       createSavedProject,
       findSavedSchemeById: (list: any[], id: string) => list.find((s) => s.id === id) ?? null,
       hasSameName: (name: string, names: string[]) => names.includes(name),
       requestLoadSavedProject: (project: any, schemeId: string) => {
         calls.loaded = { project, schemeId };
       },
-      schemePathForScheme: (_schemes: any[], _schemeId: string) => [],
+      schemePathForScheme: (schemeId: string) => [schemes.find((scheme) => scheme.id === schemeId)?.name ?? "方案A"],
+      saveBackendProjectRecord: async (_path: string[], record: any) => ({
+        ...record,
+        project: { ...record.project, idx: 1 }
+      }),
       schemes,
       selectSingleProject: (schemeId: string, projectId: string) => {
         calls.selected = { schemeId, projectId };
@@ -203,62 +208,52 @@ function createBlankProjectMockScope() {
 }
 
 describe("programmaticCreateBlankProject", () => {
-  test("合法创建返回 {id,name,schemeId}", () => {
+  test("合法创建直接落盘并返回类型和全局 idx", async () => {
     const { scope, calls } = createBlankProjectMockScope();
     const createBlankProject = createProgrammaticCreateBlankProject(scope);
-    const result = createBlankProject("新模型");
+    const result = await createBlankProject("新模型", undefined, "厂站");
     expect(result.id).toBeTruthy();
     expect(result.name).toBe("新模型");
     expect(result.schemeId).toBe("s1");
+    expect(result.modelType).toBe("厂站");
+    expect(result.idx).toBe(1);
     expect(calls.upserted).toBe(true);
     expect(calls.selected).toEqual({ schemeId: "s1", projectId: result.id });
     expect(calls.loaded?.schemeId).toBe("s1");
   });
 
-  test("指定 schemeId 时定位目标方案", () => {
+  test("指定 schemeId 时定位目标方案", async () => {
     const { scope } = createBlankProjectMockScope();
     scope.schemes = [
       { id: "s1", name: "方案A", projects: [], children: [] },
       { id: "s2", name: "方案B", projects: [], children: [] }
     ];
     const createBlankProject = createProgrammaticCreateBlankProject(scope);
-    const result = createBlankProject("模型X", "s2");
+    const result = await createBlankProject("模型X", "s2", "馈线");
     expect(result.schemeId).toBe("s2");
   });
 
-  test("name 空抛 bad-request", () => {
+  test("name 空抛 bad-request", async () => {
     const { scope } = createBlankProjectMockScope();
     const createBlankProject = createProgrammaticCreateBlankProject(scope);
-    expect(() => createBlankProject("")).toThrow(/name 必填/);
-    try {
-      createBlankProject("  ");
-    } catch (e: any) {
-      expect(e.code).toBe("bad-request");
-    }
+    await expect(createBlankProject("")).rejects.toThrow(/name 必填/);
+    await expect(createBlankProject("  ")).rejects.toMatchObject({ code: "bad-request" });
   });
 
-  test("重名抛 bad-request", () => {
+  test("重名抛 bad-request", async () => {
     const { scope } = createBlankProjectMockScope();
     scope.schemes = [{ id: "s1", name: "方案A", projects: [{ name: "已存在模型" }], children: [] }];
     const createBlankProject = createProgrammaticCreateBlankProject(scope);
-    expect(() => createBlankProject("已存在模型")).toThrow(/模型名称重复/);
-    try {
-      createBlankProject("已存在模型");
-    } catch (e: any) {
-      expect(e.code).toBe("bad-request");
-    }
+    await expect(createBlankProject("已存在模型")).rejects.toThrow(/模型名称重复/);
+    await expect(createBlankProject("已存在模型")).rejects.toMatchObject({ code: "bad-request" });
   });
 
-  test("schemes 空抛 bad-request", () => {
+  test("schemes 空抛 bad-request", async () => {
     const { scope } = createBlankProjectMockScope();
     scope.schemes = [];
     const createBlankProject = createProgrammaticCreateBlankProject(scope);
-    expect(() => createBlankProject("模型")).toThrow(/无可用方案/);
-    try {
-      createBlankProject("模型");
-    } catch (e: any) {
-      expect(e.code).toBe("bad-request");
-    }
+    await expect(createBlankProject("模型")).rejects.toThrow(/无可用方案/);
+    await expect(createBlankProject("模型")).rejects.toMatchObject({ code: "bad-request" });
   });
 });
 

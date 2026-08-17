@@ -63,6 +63,7 @@ import {
   imageLibraryImportKindForInput,
   normalizeStateIconDrawingFontSize,
   normalizeStateIconDrawingStrokeWidth,
+  projectModelTypeIconName,
   stateIconDrawingElementIdsInRect,
   stateIconDrawingSelectedIds,
   stateIconDrawingTerminalPointSnap,
@@ -109,6 +110,27 @@ import { apiPath } from "./config";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("project tree model type icons", () => {
+  test("uses a distinct semantic icon for every model type and a safe legacy fallback", () => {
+    expect([
+      projectModelTypeIconName("微网"),
+      projectModelTypeIconName("厂站"),
+      projectModelTypeIconName("馈线"),
+      projectModelTypeIconName("台区"),
+      projectModelTypeIconName("其他")
+    ]).toEqual(["Network", "Factory", "Cable", "HousePlug", "FileJson"]);
+    expect(new Set([
+      projectModelTypeIconName("微网"),
+      projectModelTypeIconName("厂站"),
+      projectModelTypeIconName("馈线"),
+      projectModelTypeIconName("台区"),
+      projectModelTypeIconName("其他")
+    ]).size).toBe(5);
+    expect(projectModelTypeIconName(undefined)).toBe("FileJson");
+    expect(projectModelTypeIconName("历史未知类型")).toBe("FileJson");
+  });
 });
 
 describe("device definition terminal anchors", () => {

@@ -123,7 +123,11 @@ export function createUpdateRoutableLineEndpointDrag(__appScope: Record<string, 
     const terminalIndex = routableLineEndpointDrag.endpoint === "source" ? 0 : 1;
     const terminalType = lineNode.terminals[terminalIndex]?.type ?? lineNode.terminals[0]?.type;
     const target = terminalType
-      ? findRoutableLineEndpointTargetAtPoint(point, { terminalType, excludedNodeId: lineNode.id })
+      ? findRoutableLineEndpointTargetAtPoint(point, {
+          terminalType,
+          excludedNodeId: lineNode.id,
+          excludedEndpoint: routableLineEndpointDrag.endpoint
+        })
       : null;
     const routePoints = routableLineDeviceCanvasPoints(lineNode);
     const alignedPoint =
@@ -2612,7 +2616,7 @@ export function createClearActiveProjectDisplay(__appScope: Record<string, any>)
 
 export function createLoadSavedProject(__appScope: Record<string, any>) {
   return (project: SavedProjectRecord, schemeId?: string) => {
-  const { CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT, DEFAULT_CANVAS_BACKGROUND, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_CURRENT_UNIT, DEFAULT_MODEL_LAYER_ID, DEFAULT_POWER_BASE_VALUE, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, EMPTY_TOPOLOGY, INITIAL_TOPOLOGY_STATUS, assignMissingDeviceIndexes, cachedRoutedEdgesRef, canvasFrameRef, clearNodeDragMoveSchedule, clearRefreshRecoveryProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, dragUndoCapturedRef, draggingRef, findSchemeForProject, fitWholeCanvasViewBox, hideImperativeMultiNodeDragOverlay, lastBusTerminalSyncEndpointRevisionRef, libraryTemplateByKind, lockProjectEdgeTerminals, measurementConfig, normalizeModelGroups, normalizeNodeTerminalsByTemplate, normalizeNodeTerminalsWithTemplate, normalizeProjectLayers, normalizeProjectMeasurements, pendingBusTerminalSyncNodeIdsRef, pendingRouteEdgeIdsRef, pendingStoredRouteEdgeIdsRef, reconcileNodeWithDefinition, reconcileProjectMeasurementsWithConfig, requestCanvasFrameCenter, resetConnectPreviewState, resolveConfiguredBackgroundLayerIds, selectSingleProject, setActiveLayerId, setActiveProjectKey, setActiveSchemeKey, setAllowAutoExpandCanvas, setBackgroundLayerIds, setBackgroundProjectId, setCanvasBackgroundColor, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasHeight, setCanvasPanning, setCanvasSelectionScope, setCanvasVisibleViewBox, setCanvasWidth, setConnectSource, setCurrentUnit, setDeviceIndexCounters, setDragging, setFeeder, setGraphArrays, setGroups, setHasUnsavedChanges, setInitialCanvasDetailHydrationLimit, setInitialCanvasLodActive, setLayers, setManualPathDrag, setMarquee, setModelType, setModifierSelectionPress, setPowerBaseValue, setPowerUnit, setProjectMeasurements, setProjectName, setRewiring, setRouteRenderingReady, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setSubcontrolarea, setSubstation, setTaiqu, setTerminalPress, setTopology, setTopologyErrors, setTopologyStatus, setTransformDrag, setUndoStack, setViewBox, setVoltageUnit, suppressNextGraphDirtyRef, writeOperationLog } = __appScope;
+  const { CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT, DEFAULT_CANVAS_BACKGROUND, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_CURRENT_UNIT, DEFAULT_MODEL_LAYER_ID, DEFAULT_POWER_BASE_VALUE, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, EMPTY_TOPOLOGY, INITIAL_TOPOLOGY_STATUS, assignMissingDeviceIndexes, cachedRoutedEdgesRef, canvasFrameRef, clearNodeDragMoveSchedule, clearRefreshRecoveryProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, dragUndoCapturedRef, draggingRef, findSchemeForProject, fitWholeCanvasViewBox, hideImperativeMultiNodeDragOverlay, lastBusTerminalSyncEndpointRevisionRef, libraryTemplateByKind, lockProjectEdgeTerminals, measurementConfig, normalizeModelGroups, normalizeNodeTerminalsByTemplate, normalizeNodeTerminalsWithTemplate, normalizeProjectLayers, normalizeProjectMeasurements, pendingBusTerminalSyncNodeIdsRef, pendingRouteEdgeIdsRef, pendingStoredRouteEdgeIdsRef, reconcileNodeWithDefinition, reconcileProjectMeasurementsWithConfig, requestCanvasFrameCenter, resetConnectPreviewState, resolveConfiguredBackgroundLayerIds, selectSingleProject, setActiveLayerId, setActiveProjectKey, setActiveSchemeKey, setAllowAutoExpandCanvas, setBackgroundLayerIds, setBackgroundProjectId, setCanvasBackgroundColor, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasHeight, setCanvasPanning, setCanvasSelectionScope, setCanvasVisibleViewBox, setCanvasWidth, setConnectSource, setCurrentUnit, setDeviceIndexCounters, setDragging, setFeeder, setGraphArrays, setGroups, setHasUnsavedChanges, setInitialCanvasDetailHydrationLimit, setInitialCanvasLodActive, setLayers, setManualPathDrag, setMarquee, setModelType, setModifierSelectionPress, setPowerBaseValue, setPowerUnit, setProjectIdx, setProjectMeasurements, setProjectName, setRewiring, setRouteRenderingReady, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setSubcontrolarea, setSubstation, setTaiqu, setTerminalPress, setTopology, setTopologyErrors, setTopologyStatus, setTransformDrag, setUndoStack, setViewBox, setVoltageUnit, suppressNextGraphDirtyRef, writeOperationLog } = __appScope;
     if (schemeId === undefined) {
       schemeId = findSchemeForProject(project.id)?.id ?? "";
     }
@@ -2657,6 +2661,7 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
     suppressNextGraphDirtyRef.current += 1;
     setUndoStack([]);
     setProjectName(project.name);
+    setProjectIdx(Number(project.project.idx) || 0);
     setCanvasWidth(nextCanvasBounds.width);
     setCanvasHeight(nextCanvasBounds.height);
     setAllowAutoExpandCanvas(project.project.allowAutoExpandCanvas ?? true);
@@ -4948,32 +4953,53 @@ export function createDeleteProjectRecord(__appScope: Record<string, any>) {
 }
 
 export function createCreateBlankProject(__appScope: Record<string, any>) {
-  return (preferredSchemeId?: string) => {
-  const { DEFAULT_CANVAS_BACKGROUND, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_CURRENT_UNIT, DEFAULT_POWER_BASE_VALUE, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, activeSchemeKey, createSavedProject, findSavedSchemeById, handleBackendSchemeMutationFailure, hasSameName, requestLoadSavedProject, requireEditMode, saveBackendProjectRecord, schemePathForScheme, schemes, selectSingleProject, selectedSchemeId, setSchemes, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
+  return async (preferredSchemeId?: string, draft?: { name: string; modelType: string }) => {
+  const { DEFAULT_CANVAS_BACKGROUND, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_CURRENT_UNIT, DEFAULT_POWER_BASE_VALUE, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, MODEL_TYPES, activeSchemeKey, createSavedProject, findSavedSchemeById, hasSameName, requestLoadSavedProject, requireEditMode, saveBackendProjectRecord, schemePathForScheme, schemes, selectSingleProject, selectedSchemeId, setCreateModelDialog, setSchemes, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
     if (preferredSchemeId === undefined) {
       preferredSchemeId = selectedSchemeId || activeSchemeKey || schemes[0]?.id || "";
     }
-    if (!requireEditMode("新建模型")) {
-      return;
-    }
     const targetScheme = findSavedSchemeById(schemes, preferredSchemeId) ?? schemes[0];
     const targetSchemeId = targetScheme?.id ?? preferredSchemeId;
-    const inputName = window.prompt("请输入模型名称", "新建模型");
-    if (inputName === null) {
+    if (!draft) {
+      if (!requireEditMode("新建模型")) {
+        return;
+      }
+      if (!targetScheme) {
+        showGlobalMessage("无可用方案，请先创建方案。");
+        return;
+      }
+      setCreateModelDialog({
+        schemeId: targetSchemeId,
+        name: "新建模型",
+        modelType: "厂站",
+        saving: false,
+        error: ""
+      });
       return;
     }
-    const name = inputName.trim();
+    const name = String(draft.name ?? "").trim();
+    const modelType = String(draft.modelType ?? "").trim();
     if (!name) {
-      showGlobalMessage("模型名称不能为空。");
+      setCreateModelDialog((current) => current ? { ...current, error: "模型名称不能为空。" } : current);
+      return;
+    }
+    if (!MODEL_TYPES.includes(modelType)) {
+      setCreateModelDialog((current) => current ? { ...current, error: "请选择有效的模型类型。" } : current);
       return;
     }
     if (targetScheme && hasSameName(name, targetScheme.projects.map((project) => project.name))) {
-      showGlobalMessage("模型名称重复，无法新建模型。");
+      setCreateModelDialog((current) => current ? { ...current, error: "模型名称重复，无法新建模型。" } : current);
+      return;
+    }
+    const targetSchemePath = schemePathForScheme(targetSchemeId || schemes[0]?.id || "");
+    if (!targetScheme || targetSchemePath.length === 0) {
+      setCreateModelDialog((current) => current ? { ...current, error: "无法确定模型所属方案路径。" } : current);
       return;
     }
     const record = createSavedProject(name, {
       version: 1,
       name,
+      modelType,
       canvasWidth: DEFAULT_CANVAS_WIDTH,
       canvasHeight: DEFAULT_CANVAS_HEIGHT,
       allowAutoExpandCanvas: true,
@@ -4987,15 +5013,20 @@ export function createCreateBlankProject(__appScope: Record<string, any>) {
       nodes: [],
       edges: []
     });
-    setSchemes((current) => upsertSavedProjectInScheme(current, targetSchemeId || current[0]?.id || "", record));
-    const targetSchemePath = schemePathForScheme(targetSchemeId || schemes[0]?.id || "");
-    if (targetSchemePath.length > 0) {
-      void saveBackendProjectRecord(targetSchemePath, record)
-        .catch((error) => handleBackendSchemeMutationFailure(`新建模型同步后台：${record.name}`, error));
+    setCreateModelDialog((current) => current ? { ...current, saving: true, error: "" } : current);
+    try {
+      const savedRecord = await saveBackendProjectRecord(targetSchemePath, record);
+      setSchemes((current) => upsertSavedProjectInScheme(current, targetSchemeId, savedRecord));
+      selectSingleProject(targetSchemeId, savedRecord.id);
+      requestLoadSavedProject(savedRecord, targetSchemeId);
+      setCreateModelDialog(null);
+      writeOperationLog(`新建${modelType}模型：${savedRecord.name}（idx=${savedRecord.project.idx}）`);
+      return savedRecord;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "新建模型保存失败。";
+      setCreateModelDialog((current) => current ? { ...current, saving: false, error: message } : current);
+      return;
     }
-    selectSingleProject(targetSchemeId ?? schemes[0]?.id ?? "", record.id);
-    requestLoadSavedProject(record, targetSchemeId ?? schemes[0]?.id ?? "");
-    writeOperationLog(`新建模型：${record.name}`);
   };
 }
 

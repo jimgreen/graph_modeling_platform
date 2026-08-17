@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
-import { areCanvasPropsEqual } from "./appExtracted/appCanvasArea";
+import { areCanvasPropsEqual, modelInteractionTerminalRenderState } from "./appExtracted/appCanvasArea";
 import * as appViewModule from "./appExtracted/appView";
 import {
   inspectorTabShowsDevicePanel,
@@ -67,6 +67,32 @@ describe("app view topology inspector", () => {
   });
 });
 
+describe("model interaction terminal visibility", () => {
+  test("hides unused terminals while retaining connected legacy terminals without a saved local point", () => {
+    const localPoints = new Map<string, { x: number; y: number } | undefined>([
+      ["t1", { x: 60, y: 12 }],
+      ["t2", undefined]
+    ]);
+
+    expect(modelInteractionTerminalRenderState(true, localPoints, "t1")).toEqual({
+      connected: true,
+      localPoint: { x: 60, y: 12 }
+    });
+    expect(modelInteractionTerminalRenderState(true, localPoints, "t2")).toEqual({
+      connected: true,
+      localPoint: undefined
+    });
+    expect(modelInteractionTerminalRenderState(true, localPoints, "t3")).toEqual({
+      connected: false,
+      localPoint: undefined
+    });
+    expect(modelInteractionTerminalRenderState(false, undefined, "t1")).toEqual({
+      connected: true,
+      localPoint: undefined
+    });
+  });
+});
+
 describe("app view inspector tab visibility", () => {
   test("shows device details only on the device tab", () => {
     expect(inspectorTabShowsDevicePanel("model", true)).toBe(false);
@@ -96,8 +122,9 @@ describe("app view device model parameter keys", () => {
     ]);
   });
 
-  test("uses the editable stored dev_type and otherwise defaults to the owning class", () => {
-    expect(resolveDeviceModelPanelDevType("ac-wind-source", { dev_type: "UserEditedType" })).toBe("UserEditedType");
+  test("shows the owning class for dev_type even when the node stores a legacy value", () => {
+    expect(resolveDeviceModelPanelDevType("ac-wind-source", { dev_type: "ac-wind-source" })).toBe("ACWindGen");
+    expect(resolveDeviceModelPanelDevType("ac-series-reactor", { dev_type: "REACTOR" })).toBe("ACSeriCompensator");
     expect(resolveDeviceModelPanelDevType("ac-wind-source", {})).toBe("ACWindGen");
     expect(resolveDeviceModelPanelDevType("ac-source", { component_type: "ACGenerator" })).toBe("ACGenerator");
     expect(resolveDeviceModelPanelDevType("custom-source", { component_type: "CustomGenerator" })).toBe("CustomGenerator");

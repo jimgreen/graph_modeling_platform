@@ -9,6 +9,7 @@ import {
   createFindRoutableLineEndpointTargetAtPoint,
   createFinishInteractiveStaticDrawing,
   createPlaceLibraryDeviceAtPoint,
+  createStartLibraryDevicePlacement,
   createUpdateInteractiveStaticDrawingPreview,
   createUpdateLibraryPlacementPreview,
   createUpdateParam
@@ -18,11 +19,19 @@ import {
   canConnectTerminals,
   createDefaultNode,
   createNodeFromTemplate,
+  createRoutableLineDeviceFromEndpoints,
+  DEFAULT_MODEL_LAYER_ID,
+  DEVICE_LIBRARY_BY_KIND,
   getBusTerminalType,
   getTerminalPoint,
   isBusNode,
+  isModelInteractionNode,
+  modelInteractionTerminalConnectionLocalPointsByNodeId,
   normalizeRatioParameterInputValue,
-  projectPointToBusCenterline
+  projectPointToBusCenterline,
+  projectPointToModelInteractionBoundary,
+  projectPointToModelInteractionBoundaryIfInRange,
+  routableLineDeviceEndpointRefForNode
 } from "./model";
 
 const createCustomZeroTerminalNode = (componentLibrary: string, terminalType: "ac" | "dc" | "h2" | "heat" = "ac") =>
@@ -51,9 +60,13 @@ describe("custom bus connection targets", () => {
       getBusTerminalType,
       getTerminalPoint,
       isBusNode,
+      isModelInteractionNode,
       isPointNearBus: (node: typeof bus, targetPoint: typeof point, tolerance: number) =>
         Boolean(pointOnBusForSnap(node, targetPoint, tolerance)),
       isRoutableLineDeviceKind: vi.fn(() => false),
+      modelInteractionTerminalConnectionLocalPointsByNodeId,
+      nodeById: new Map([[bus.id, bus]]),
+      projectPointToModelInteractionBoundaryIfInRange,
       queryNodeSpatialIndex: vi.fn(() => [bus]),
       visibleNodeSpatialIndex: {}
     };
@@ -116,6 +129,69 @@ describe("custom bus connection targets", () => {
 
     expect(isBusNode(ordinaryDevice)).toBe(false);
     expect(findTarget(ordinaryDevice.position)).toBeNull();
+  });
+});
+
+describe("model interaction routable-line targets", () => {
+  test("snaps anywhere on the button boundary and allocates an unused terminal of the matching type", () => {
+    const station = createDefaultNode("static-model-interaction-station", { x: 300, y: 200 });
+    const load = createDefaultNode("ac-load", { x: 560, y: 200 });
+    const firstConnectionPoint = projectPointToModelInteractionBoundary(station, {
+      x: station.position.x - station.size.width,
+      y: station.position.y - 8
+    });
+    const line = createRoutableLineDeviceFromEndpoints(
+      DEVICE_LIBRARY_BY_KIND.get("ac-routable-line")!,
+      firstConnectionPoint,
+      getTerminalPoint(load, load.terminals[0].id),
+      DEFAULT_MODEL_LAYER_ID,
+      {
+        source: routableLineDeviceEndpointRefForNode(station, station.terminals[0].id, firstConnectionPoint),
+        target: routableLineDeviceEndpointRefForNode(load, load.terminals[0].id)
+      }
+    );
+    const nodeById = new Map([station, load, line].map((node) => [node.id, node]));
+    const pointer = {
+      x: station.position.x + station.size.width / 2,
+      y: station.position.y + 11
+    };
+    const expectedBoundaryPoint = projectPointToModelInteractionBoundary(station, pointer);
+    const findTarget = createFindRoutableLineEndpointTargetAtPoint({
+      CONNECT_BUS_SNAP_TOLERANCE: 18,
+      CONNECT_TERMINAL_SNAP_TOLERANCE: 28,
+      activeLayerNodeIdSet: new Set([station.id, load.id, line.id]),
+      busAnchorFromPoint: projectPointToBusCenterline,
+      connectTargetSearchBounds: vi.fn(() => ({ left: 0, right: 800, top: 0, bottom: 500 })),
+      getBusTerminalType,
+      getTerminalPoint,
+      isBusNode,
+      isModelInteractionNode,
+      isPointNearBus: vi.fn(() => false),
+      isRoutableLineDeviceKind: (kind: string) => kind === "ac-routable-line" || kind === "dc-routable-line",
+      modelInteractionTerminalConnectionLocalPointsByNodeId,
+      nodeById,
+      projectPointToModelInteractionBoundaryIfInRange,
+      queryNodeSpatialIndex: vi.fn(() => [station]),
+      routableLinePlacement: null,
+      routableLineTemplateTerminalType: vi.fn(),
+      visibleNodeSpatialIndex: {}
+    });
+
+    expect(findTarget(pointer, { terminalType: "ac" })).toMatchObject({
+      node: { id: station.id },
+      terminalId: "t2",
+      point: expectedBoundaryPoint
+    });
+    expect(findTarget(pointer, { terminalType: "dc" })).toMatchObject({
+      node: { id: station.id },
+      terminalId: "t5",
+      point: expectedBoundaryPoint
+    });
+    expect(findTarget(pointer, {
+      terminalType: "ac",
+      excludedNodeId: line.id,
+      excludedEndpoint: "source"
+    })).toMatchObject({ terminalId: "t1", point: expectedBoundaryPoint });
   });
 });
 
@@ -431,6 +507,50 @@ describe("smart alignment during drawing", () => {
 
     expect(previewState.previewPoint).toEqual({ x: 198, y: 303 });
     expect(updateSmartAlignmentGuides).toHaveBeenLastCalledWith([]);
+  });
+});
+
+describe("library device placement selection", () => {
+  test("clears the existing canvas selection when entering pending drawing mode", () => {
+    const setCanvasSelectionScope = vi.fn();
+    const setSelectedNodeIds = vi.fn();
+    const setSelectedEdgeId = vi.fn();
+    const setSelectedEdgeIds = vi.fn();
+    const setLibraryPlacement = vi.fn();
+    const setMode = vi.fn();
+    const template = {
+      kind: "ac-load",
+      label: "交流负荷"
+    } as any;
+    const startLibraryDevicePlacement = createStartLibraryDevicePlacement({
+      componentLibraryDisplayMode: "expanded",
+      hideLibraryFlyout: vi.fn(),
+      isRoutableLineDeviceKind: vi.fn(() => false),
+      requireEditMode: vi.fn(() => true),
+      resetConnectPreviewState: vi.fn(),
+      resetRoutableLinePreviewState: vi.fn(),
+      setCanvasSelectionScope,
+      setConnectSource: vi.fn(),
+      setContextMenu: vi.fn(),
+      setLibraryPlacement,
+      setMode,
+      setRewiring: vi.fn(),
+      setRoutableLinePlacement: vi.fn(),
+      setSelectedEdgeId,
+      setSelectedEdgeIds,
+      setSelectedNodeIds,
+      setStaticDrawing: vi.fn(),
+      writeOperationLog: vi.fn()
+    });
+
+    startLibraryDevicePlacement(template);
+
+    expect(setCanvasSelectionScope).toHaveBeenCalledWith("group");
+    expect(setSelectedNodeIds).toHaveBeenCalledWith([]);
+    expect(setSelectedEdgeId).toHaveBeenCalledWith("");
+    expect(setSelectedEdgeIds).toHaveBeenCalledWith([]);
+    expect(setLibraryPlacement).toHaveBeenCalledWith({ kind: "device", template, previewPoint: null });
+    expect(setMode).toHaveBeenCalledWith("select");
   });
 });
 

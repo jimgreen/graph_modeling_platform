@@ -8,10 +8,10 @@ import {
   AlignCenter, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical,
   AlignHorizontalDistributeCenter, AlignStartHorizontal, AlignStartVertical, AlignVerticalDistributeCenter,
   ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bell, Bold, BoxSelect, Bus, Cable, ChevronDown, ChevronRight,
-  ChevronsDown, ChevronsUp, CircleDot, Copy, Delete, Dot, Download, Eye, EyeOff, File, FileInput, FileJson,
-  FlipHorizontal, FlipVertical, FolderOpen, Frame, Grid2X2, Group, Icon, Italic, Layers, Layers2, LocateFixed,
+  ChevronsDown, ChevronsUp, CircleDot, Copy, Delete, Dot, Download, Eye, EyeOff, Factory, File, FileInput, FileJson,
+  FlipHorizontal, FlipVertical, FolderOpen, Frame, Grid2X2, Group, HousePlug, Icon, Italic, Layers, Layers2, LocateFixed,
   Map, MapIcon, Maximize2, Minus, MousePointer2, Paintbrush, Palette, PanelLeftOpen, PanelRightOpen, Pencil,
-  Pin, Plus, Pointer, RotateCcw, RotateCw, Route, Save, ScanSearch, Scissors, Search, Shrink, Sparkles, Terminal,
+  Network, Pin, Plus, Pointer, RotateCcw, RotateCw, Route, Save, ScanSearch, Scissors, Search, Shrink, Sparkles, Terminal,
   Text, Trash2, Type, Underline, Undo2, Ungroup, X, Zap, ZapOff, Settings2
 } from "lucide-react";
 
@@ -19,10 +19,10 @@ const LucideReactScope = {
   AlignCenter, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical,
   AlignHorizontalDistributeCenter, AlignStartHorizontal, AlignStartVertical, AlignVerticalDistributeCenter,
   ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bell, Bold, BoxSelect, Bus, Cable, ChevronDown, ChevronRight,
-  ChevronsDown, ChevronsUp, CircleDot, Copy, Delete, Dot, Download, Eye, EyeOff, File, FileInput, FileJson,
-  FlipHorizontal, FlipVertical, FolderOpen, Frame, Grid2X2, Group, Icon, Italic, Layers, Layers2, LocateFixed,
+  ChevronsDown, ChevronsUp, CircleDot, Copy, Delete, Dot, Download, Eye, EyeOff, Factory, File, FileInput, FileJson,
+  FlipHorizontal, FlipVertical, FolderOpen, Frame, Grid2X2, Group, HousePlug, Icon, Italic, Layers, Layers2, LocateFixed,
   Map, MapIcon, Maximize2, Minus, MousePointer2, Paintbrush, Palette, PanelLeftOpen, PanelRightOpen, Pencil,
-  Pin, Plus, Pointer, RotateCcw, RotateCw, Route, Save, ScanSearch, Scissors, Search, Shrink, Sparkles, Terminal,
+  Network, Pin, Plus, Pointer, RotateCcw, RotateCw, Route, Save, ScanSearch, Scissors, Search, Shrink, Sparkles, Terminal,
   Text, Trash2, Type, Underline, Undo2, Ungroup, X, Zap, ZapOff, Settings2
 };
 import * as ModelScope from "../model";

@@ -14,6 +14,7 @@ import {
   CUSTOM_PARAM_DEFINITIONS_KEY, deviceParamValue, enumExportValueForDefinition,
   toSnakeCaseDeviceParamName, normalizeVoltageBaseInput, terminalVoltageBaseNumber,
   readVoltageLevelSettings, calculateElectricalTopology, isStaticNode, isBusNode,
+  isRoutableLineDeviceKind, isStationModelInteractionNode, routableLineDeviceEndpointRefs,
   resolveEffectiveTemplateParameterDefinitionGroups, associatedNodeColumnValue,
   containerRelationCounterKey, parseContainerRelationField, isContainerTransformerRelationKey,
   DEFAULT_POWER_BASE_VALUE, DEFAULT_VOLTAGE_UNIT, DEFAULT_POWER_UNIT, DEFAULT_CURRENT_UNIT,
@@ -569,7 +570,8 @@ function getRawEParamValue(
     return node.name;
   }
   if (key === "dev_type") {
-    return String(node.params.dev_type ?? "").trim() || baseDeviceKind(node.kind);
+    const derivedInfo = templateDerivedComponentLibraryInfo({ kind: node.kind, params: node.params });
+    return derivedInfo?.derivedComponentLibrary || section || baseDeviceKind(node.kind);
   }
   if (section === "HydroStorage" && key === "rated_capacity") {
     return deviceParamValue(node.params, "rated_capacity") ?? deviceParamValue(node.params, "capacity") ?? "";
@@ -1530,7 +1532,7 @@ function applyEInterfaceDefinitionToRecord(
   const params: Record<string, string> = {};
   for (const field of fields) {
     const sourceValue = field.sourceName === "dev_type"
-      ? String(record.params.dev_type ?? "").trim() || baseDeviceKind(record.kind.split(":", 1)[0]) || record.section
+      ? record.section || baseDeviceKind(record.kind.split(":", 1)[0])
       : record.params[field.sourceName] ?? "";
     const value = field.definition ? enumExportValueForDefinition(field.definition, sourceValue) : sourceValue;
     if (value !== "") {
@@ -1547,6 +1549,69 @@ function applyEInterfaceDefinitionToRecord(
     params,
     columns: fields.map((field) => field.exportName)
   };
+}
+
+function buildStationBoundaryDeviceRecords(
+  topologyNodes: ModelNode[],
+  existingRecords: EDeviceExport[],
+  interfaceDefinitionBySection: Map<string, EFileInterfaceSectionDefinition>
+): EDeviceExport[] {
+  const nodeById = new Map(topologyNodes.map((node) => [node.id, node]));
+  const nextIndexBySection = new Map<string, number>();
+  for (const record of existingRecords) {
+    const idx = Number.parseInt(firstNumericToken(String(record.params.idx ?? "")), 10);
+    if (Number.isSafeInteger(idx) && idx > (nextIndexBySection.get(record.section) ?? 0)) {
+      nextIndexBySection.set(record.section, idx);
+    }
+  }
+  const records: EDeviceExport[] = [];
+  for (const line of topologyNodes) {
+    if (!isRoutableLineDeviceKind(line.kind)) {
+      continue;
+    }
+    const refs = routableLineDeviceEndpointRefs(line);
+    const endpointSpecs = [
+      { side: "source" as const, ref: refs.source, terminal: line.terminals[0], role: "generator" as const },
+      { side: "target" as const, ref: refs.target, terminal: line.terminals[line.terminals.length - 1], role: "load" as const }
+    ];
+    for (const { side, ref, terminal, role } of endpointSpecs) {
+      const station = ref ? nodeById.get(ref.nodeId) : undefined;
+      if (!station || !terminal || !isStationModelInteractionNode(station)) {
+        continue;
+      }
+      const energyType = terminal.type === "dc" || baseDeviceKind(line.kind).startsWith("dc-") ? "DC" : "AC";
+      const section = `${energyType}${role === "generator" ? "Generator" : "Load"}`;
+      const nextIdx = (nextIndexBySection.get(section) ?? 0) + 1;
+      nextIndexBySection.set(section, nextIdx);
+      const stationName = String(station.params.buttonTargetProjectName ?? "").trim() || station.name || "厂站";
+      const roleLabel = role === "generator" ? "等值电源" : "等值负荷";
+      const vbase = String(terminal.vbase ?? line.params.vbase ?? "").trim();
+      const columns = E_SECTION_COLUMNS[section] ?? [];
+      const params: Record<string, string> = Object.fromEntries(
+        columns.map((column) => [column, defaultContainerAssociatedColumnValue(section, column, nextIdx - 1)])
+      );
+      Object.assign(params, {
+        idx: String(nextIdx),
+        name: `${line.name || line.id}-${stationName}-${roleLabel}`,
+        node: String(terminal.nodeNumber ?? "").trim(),
+        run_stat: "1",
+        _vbase: vbase
+      });
+      if (role === "generator") {
+        params.control_type = section === "ACGenerator" ? "PV" : "P";
+        params.rated_voltage = vbase || params.rated_voltage;
+        params.v_set = vbase || params.v_set;
+      }
+      records.push(applyEInterfaceDefinitionToRecord({
+        id: `${line.id}:station-boundary:${side}`,
+        kind: role === "generator" ? `${energyType.toLowerCase()}-source` : `${energyType.toLowerCase()}-load`,
+        section,
+        params,
+        columns
+      }, interfaceDefinitionBySection.get(section)));
+    }
+  }
+  return records;
 }
 
 // aclinesegment/dclinesegment 同时生成 aclineend/dclineend（端点表）：
@@ -1785,11 +1850,18 @@ export function buildEDeviceRecords(project: ProjectFile, options: EFileExportOp
     }
   }
 
+  const stationBoundaryDevices = buildStationBoundaryDeviceRecords(
+    topologyNodes,
+    [...topologyNodeDevices, ...deviceRecords, ...derivedDeviceRecords, ...containerAssociatedDevices],
+    interfaceDefinitionBySection
+  );
+
   return [
     ...topologyNodeDevices,
     ...deviceRecords,
     ...derivedDeviceRecords,
-    ...containerAssociatedDevices
+    ...containerAssociatedDevices,
+    ...stationBoundaryDevices
   ].filter((record) => {
     const definition = interfaceDefinitionBySection.get(record.section);
     // 模板模式：模板未定义的 section 一律不输出（如 ems_rtdb 未定义 ACNode/DCNode）

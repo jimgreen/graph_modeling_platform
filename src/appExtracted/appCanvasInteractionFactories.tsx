@@ -3413,10 +3413,14 @@ export function createRenderInteractiveStaticDrawingPreview(__appScope: Record<s
 
 export function createStartLibraryDevicePlacement(__appScope: Record<string, any>) {
   return (template: DeviceTemplate) => {
-  const { componentLibraryDisplayMode, hideLibraryFlyout, isRoutableLineDeviceKind, requireEditMode, resetConnectPreviewState, resetRoutableLinePreviewState, setConnectSource, setContextMenu, setLibraryPlacement, setMode, setRewiring, setRoutableLinePlacement, setStaticDrawing, writeOperationLog } = __appScope;
+  const { componentLibraryDisplayMode, hideLibraryFlyout, isRoutableLineDeviceKind, requireEditMode, resetConnectPreviewState, resetRoutableLinePreviewState, setCanvasSelectionScope, setConnectSource, setContextMenu, setLibraryPlacement, setMode, setRewiring, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, writeOperationLog } = __appScope;
     if (!requireEditMode("放置图元")) {
       return;
     }
+    setCanvasSelectionScope("group");
+    setSelectedNodeIds([]);
+    setSelectedEdgeId("");
+    setSelectedEdgeIds([]);
     if (isRoutableLineDeviceKind(template.kind)) {
       setRoutableLinePlacement({ template, source: null });
       resetRoutableLinePreviewState();
@@ -4670,17 +4674,41 @@ export function createFindConnectTargetAtPoint(__appScope: Record<string, any>) 
 export function createFindRoutableLineEndpointTargetAtPoint(__appScope: Record<string, any>) {
   return (
     point: Point,
-    options: { terminalType?: TerminalType; source?: ConnectTarget | null; excludedNodeId?: string } = {}
+    options: { terminalType?: TerminalType; source?: ConnectTarget | null; excludedNodeId?: string; excludedEndpoint?: "source" | "target" } = {}
   ): ConnectTarget | null => {
-  const { CONNECT_BUS_SNAP_TOLERANCE, CONNECT_TERMINAL_SNAP_TOLERANCE, activeLayerNodeIdSet, busAnchorFromPoint, connectTargetSearchBounds, getBusTerminalType, getTerminalPoint, isBusNode, isPointNearBus, isRoutableLineDeviceKind, queryNodeSpatialIndex, routableLinePlacement, routableLineTemplateTerminalType, visibleNodeSpatialIndex } = __appScope;
+  const { CONNECT_BUS_SNAP_TOLERANCE, CONNECT_TERMINAL_SNAP_TOLERANCE, activeLayerNodeIdSet, busAnchorFromPoint, connectTargetSearchBounds, getBusTerminalType, getTerminalPoint, isBusNode, isModelInteractionNode, isPointNearBus, isRoutableLineDeviceKind, modelInteractionTerminalConnectionLocalPointsByNodeId, nodeById, projectPointToModelInteractionBoundaryIfInRange, queryNodeSpatialIndex, routableLinePlacement, routableLineTemplateTerminalType, visibleNodeSpatialIndex } = __appScope;
     const terminalType = options.terminalType ?? (routableLinePlacement ? routableLineTemplateTerminalType(routableLinePlacement.template) : undefined);
     if (!terminalType) {
       return null;
     }
     const source = options.source ?? routableLinePlacement?.source ?? null;
     const searchBounds = connectTargetSearchBounds(point);
+    const modelInteractionTerminalLocalPoints = modelInteractionTerminalConnectionLocalPointsByNodeId(
+      nodeById.values(),
+      { excludedLineNodeId: options.excludedNodeId, excludedEndpoint: options.excludedEndpoint }
+    );
     for (const node of queryNodeSpatialIndex(visibleNodeSpatialIndex, searchBounds)) {
       if (!activeLayerNodeIdSet.has(node.id) || node.id === options.excludedNodeId || isRoutableLineDeviceKind(node.kind)) {
+        continue;
+      }
+      if (isModelInteractionNode(node)) {
+        const boundaryPoint = projectPointToModelInteractionBoundaryIfInRange(
+          node,
+          point,
+          CONNECT_BUS_SNAP_TOLERANCE
+        );
+        if (!boundaryPoint) {
+          continue;
+        }
+        const occupiedTerminalIds = modelInteractionTerminalLocalPoints.get(node.id);
+        const availableTerminal = node.terminals.find((terminal) =>
+          terminal.type === terminalType &&
+          !occupiedTerminalIds?.has(terminal.id) &&
+          !(source && source.node.id === node.id && source.terminalId === terminal.id)
+        );
+        if (availableTerminal) {
+          return { node, terminalId: availableTerminal.id, point: boundaryPoint };
+        }
         continue;
       }
       if (isBusNode(node) && isPointNearBus(node, point, CONNECT_BUS_SNAP_TOLERANCE)) {
