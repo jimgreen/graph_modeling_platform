@@ -5244,6 +5244,7 @@ export function createRunTopologyCalculation(__appScope: Record<string, any>) {
     if (!requireEditMode("执行图上拓扑计算")) {
       return;
     }
+    setTopologyWarningPanelClosed(false);
     const calculatedNodes = calculateElectricalTopology(nodes, edges);
     const modelAssociationProjectIndexes = modelAssociationProjectIndexesForSchemes(schemes ?? []);
     const topologyErrors = validateTopology(calculatedNodes, edges, {
