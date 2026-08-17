@@ -445,7 +445,6 @@ function TopologyWarningPanelContent(props: {
   const { allErrors, filteredErrors, category, setCategory, status, setStatus, categorize, isBlocking, displayMessage, locateError } = props;
   const [renderedCount, setRenderedCount] = useState(TOPOLOGY_LAZY_BATCH);
   const listRef = useRef<HTMLDivElement>(null);
-  const sentinelRef = useRef<HTMLDivElement>(null);
 
   // 保存每个分类+状态组合的滚动位置
   const scrollPositionsRef = useRef<Map<string, number>>(new Map());
@@ -501,17 +500,17 @@ function TopologyWarningPanelContent(props: {
     }
   }, [statusCounts.error, statusCounts.warning, status, setStatus]);
 
-  // 懒加载 IntersectionObserver（root 指向滚动容器）
+  // 懒加载：监听滚动容器的 scroll 事件
   useEffect(() => {
-    const el = sentinelRef.current;
-    const root = listRef.current;
-    if (!el || !root) return;
-    const observer = new IntersectionObserver(
-      (entries) => { if (entries[0]?.isIntersecting) setRenderedCount((c) => c + TOPOLOGY_LAZY_BATCH); },
-      { root, rootMargin: "100px" }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
+    const list = listRef.current;
+    if (!list) return;
+    const handleLazyScroll = () => {
+      if (list.scrollTop + list.clientHeight >= list.scrollHeight - 100) {
+        setRenderedCount((c) => c + TOPOLOGY_LAZY_BATCH);
+      }
+    };
+    list.addEventListener("scroll", handleLazyScroll, { passive: true });
+    return () => list.removeEventListener("scroll", handleLazyScroll);
   }, []);
 
   const renderedItems = filteredErrors.slice(0, renderedCount);
@@ -548,7 +547,7 @@ function TopologyWarningPanelContent(props: {
               </div>
             );
           })}
-          {hasMore && <div ref={sentinelRef} className="topology-warning-sentinel">加载中…</div>}
+          {hasMore && <div className="topology-warning-sentinel">加载中…</div>}
         </div>
       </div>
     </div>
