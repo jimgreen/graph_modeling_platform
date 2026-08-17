@@ -88,6 +88,89 @@ describe("line-segment bus handle resizing", () => {
     expect(resized.rotation).toBe(90);
   });
 
+  test("changes only the local height from a horizontal bus side handle", () => {
+    const node = {
+      ...createDefaultNode("dc-bus", { x: 100, y: 100 }),
+      size: { width: 120, height: 28 },
+      scale: 1.4,
+      scaleX: 1.2,
+      scaleY: 1
+    };
+
+    const resized = resizeLineSegmentBusGeometryFromHandleDrag({
+      node,
+      startPoint: { x: 100, y: 86 },
+      point: { x: 100, y: 66 },
+      handleXDirection: 0,
+      handleYDirection: -1,
+      resizeX: false,
+      resizeY: true
+    });
+
+    expect(resized.position).toEqual({ x: 100, y: 90 });
+    expect(resized.size).toEqual({ width: 120, height: 48 });
+    expect(resized.scale).toBe(1.4);
+    expect(resized.scaleX).toBe(1.2);
+    expect(resized.scaleY).toBe(1);
+    expect(resized.position.y + resized.size.height / 2).toBe(114);
+  });
+
+  test("changes width and height together from a corner while keeping the opposite corner fixed", () => {
+    const node = {
+      ...createDefaultNode("ac-bus", { x: 100, y: 100 }),
+      size: { width: 120, height: 28 },
+      scale: 1.3,
+      scaleX: 1,
+      scaleY: 1
+    };
+
+    const resized = resizeLineSegmentBusGeometryFromHandleDrag({
+      node,
+      startPoint: { x: 160, y: 114 },
+      point: { x: 200, y: 134 },
+      handleXDirection: 1,
+      handleYDirection: 1,
+      resizeX: true,
+      resizeY: true
+    });
+
+    expect(resized.position).toEqual({ x: 120, y: 110 });
+    expect(resized.size).toEqual({ width: 160, height: 48 });
+    expect(resized.scale).toBe(1.3);
+    expect(resized.scaleX).toBe(1);
+    expect(resized.scaleY).toBe(1);
+    expect(resized.position.x - resized.size.width / 2).toBe(40);
+    expect(resized.position.y - resized.size.height / 2).toBe(86);
+  });
+
+  test("maps a screen-horizontal side drag to local height for a 90-degree bus", () => {
+    const node = {
+      ...createDefaultNode("dc-bus-vertical", { x: 100, y: 100 }),
+      size: { width: 120, height: 28 },
+      rotation: 90,
+      scale: 1.6,
+      scaleX: 1,
+      scaleY: 1
+    };
+
+    const resized = resizeLineSegmentBusGeometryFromHandleDrag({
+      node,
+      startPoint: { x: 86, y: 100 },
+      point: { x: 66, y: 100 },
+      handleXDirection: 0,
+      handleYDirection: 1,
+      resizeX: false,
+      resizeY: true
+    });
+
+    expect(resized.position.x).toBeCloseTo(90, 8);
+    expect(resized.position.y).toBeCloseTo(100, 8);
+    expect(resized.size).toEqual({ width: 120, height: 48 });
+    expect(resized.scale).toBe(1.6);
+    expect(resized.scaleX).toBe(1);
+    expect(resized.scaleY).toBe(1);
+  });
+
   test("accounts for an existing visual scale while changing the stored size", () => {
     const node = {
       ...createDefaultNode("dc-bus", { x: 100, y: 100 }),

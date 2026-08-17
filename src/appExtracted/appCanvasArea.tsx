@@ -337,7 +337,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
     nodeLabelVerticalTokenY, nodeLabelVerticalTokenStyle,
     nodeLabelTextStyle, nodeLabelTransform,
     nodeUsesUprightStaticSelectionOutline, nodeUprightSelectionOutlineRect,
-    isBusNode, isStaticNode, isRoutableLineDeviceKind,
+    isBusNode, isLineSegmentBusNode, isStaticNode, isRoutableLineDeviceKind,
     canConnectTerminals,
     isCanvasGraphicContextMenuTarget,
     isStaticButtonEnabledForNode, isStaticBoxLikeNode,
@@ -1047,7 +1047,7 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
         const rotateHandlePoints = uprightStaticSelectionOutline
             ? nodeUprightRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap)
             : nodeRotateHandleControlPoints(node, rotateStemStart, rotateStemEnd, rotateHandleGap);
-        const scaleHandleConfigsForNode = nodeKindAllowsResizeTransform(node.kind)
+        const scaleHandleConfigsForNode = isLineSegmentBusNode(node) || nodeKindAllowsResizeTransform(node.kind)
             ? SCALE_HANDLE_CONFIGS
             : SCALE_HANDLE_CONFIGS.filter((handle) => handle.kind === "scale-both");
         const staticButtonEnabled = isBrowseMode && isStaticButtonEnabledForNode(node);

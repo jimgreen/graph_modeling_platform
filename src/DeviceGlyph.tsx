@@ -8,6 +8,7 @@ import {
   getDeviceStrokeColor,
   getDeviceStrokeWidth,
   getSwitchVisualState,
+  isLineSegmentBusNode,
   isRoutableLineDeviceKind,
   isStaticGraphicNode,
   staticRenderKindForNode,
@@ -65,7 +66,8 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
   const rawH = miniature ? 38 : node.size.height;
   const isStaticGlyph = isStaticGraphicNode(node);
   const isRoutableLineGlyph = isRoutableLineDeviceKind(node.kind);
-  const glyphContentScale = miniature || isStaticGlyph || isRoutableLineGlyph
+  const isLineSegmentBusGlyph = isLineSegmentBusNode(node);
+  const glyphContentScale = miniature || isStaticGlyph || isRoutableLineGlyph || isLineSegmentBusGlyph
     ? 1
     : Math.max(1, Math.max(rawW, rawH) / DEVICE_GLYPH_DESIGN_LONGEST_SIDE);
   const w = rawW / glyphContentScale;
