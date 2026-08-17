@@ -468,10 +468,12 @@ function TopologyWarningPanelContent(props: {
     return { all: list.length, error: errors, warning: warnings };
   }, [allErrors, category, categorize, isBlocking]);
 
-  // 错误为0但告警不为0时自动切换到告警
+  // 错误>0 或 都为0 → 错误Tab；错误=0 且 告警>0 → 告警Tab
   useEffect(() => {
-    if (statusCounts.error === 0 && statusCounts.warning > 0 && status !== "warning") {
-      setStatus("warning");
+    if (statusCounts.error > 0 || statusCounts.warning === 0) {
+      if (status !== "error") setStatus("error");
+    } else if (statusCounts.error === 0 && statusCounts.warning > 0) {
+      if (status !== "warning") setStatus("warning");
     }
   }, [statusCounts.error, statusCounts.warning, status, setStatus]);
 
