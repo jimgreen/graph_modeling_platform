@@ -771,6 +771,29 @@ describe("default device state draft rows", () => {
     expect(svgSource).not.toContain('href="' + apiPath('/images/icon-a') + '"');
   });
 
+  test("persists drawing group ids through editable SVG save and reload", () => {
+    const first = {
+      ...createStateIconDrawingElement("circle"),
+      id: "first",
+      groupId: "group-a",
+      x: 60,
+      y: 70
+    };
+    const second = {
+      ...createStateIconDrawingElement("rectangle"),
+      id: "second",
+      groupId: "group-a",
+      x: 120,
+      y: 70
+    };
+    const svgSource = svgSourceFromDataUrl(stateIconDrawingToImage([first, second]));
+
+    expect(svgSource).toContain('data-state-icon-group-id="group-a"');
+    const restored = withXmlDomParser(() => createEditableStateIconElementsFromSvgSource(svgSource, "grouped.svg"));
+    expect(restored).toHaveLength(2);
+    expect(restored.map((element) => element.groupId)).toEqual(["group-a", "group-a"]);
+  });
+
   test("draws frame background and border inside the inner area when terminals exist", () => {
     const element = createStateIconDrawingElement("triangle" as any);
     const image = stateIconDrawingToImage([element], {

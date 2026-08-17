@@ -2,10 +2,39 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { DeviceGlyph } from "./DeviceGlyph";
-import { createDefaultNode, CUSTOM_DEVICE_TEMPLATE_KEY } from "./model";
+import {
+  createDefaultNode,
+  CUSTOM_DEVICE_TEMPLATE_KEY,
+  serializeStaticDrawPoints,
+  STATIC_DRAW_POINTS_PARAM
+} from "./model";
 import { createStateIconDrawingElement, stateIconDrawingToImage } from "./stateIconDrawing";
+import { staticConnectorDrawingPath } from "./staticConnectorCurves";
 
 describe("DeviceGlyph static nodes", () => {
+  it("renders every saved landing point for the three interactive curve kinds", () => {
+    const points = [
+      { x: -90, y: -40 },
+      { x: -30, y: 50 },
+      { x: 35, y: -20 },
+      { x: 95, y: 45 }
+    ];
+    for (const kind of ["static-bezier-connector", "static-smoothstep-connector", "static-self-loop"] as const) {
+      const node = createDefaultNode(kind, { x: 0, y: 0 });
+      const curveNode = {
+        ...node,
+        params: {
+          ...node.params,
+          [STATIC_DRAW_POINTS_PARAM]: serializeStaticDrawPoints(points)
+        }
+      };
+
+      const markup = renderToStaticMarkup(<svg><DeviceGlyph node={curveNode} /></svg>);
+
+      expect(markup).toContain(`d="${staticConnectorDrawingPath(kind, points)}"`);
+    }
+  });
+
   it("renders static text frame style params when they are configured", () => {
     const node = createDefaultNode("static-text", { x: 0, y: 0 });
     const styledNode = {

@@ -49,6 +49,7 @@ export const STATE_ICON_LINE_CAP_OPTIONS: Array<{ value: StateIconLineCapKind; l
 
 export type StateIconDrawingElement = {
   id: string;
+  groupId?: string;
   kind: StateVisualShapeKind;
   x: number;
   y: number;
@@ -1151,10 +1152,12 @@ export function createStateIconDrawingElementFromGeneratedGroupMarkup(
   if (!transform) {
     return null;
   }
+  const persistedGroupId = readSvgMarkupAttribute(groupOpen, "data-state-icon-group-id").trim();
+  const grouping = persistedGroupId ? { groupId: persistedGroupId } : {};
   const terminalOwnership = stateIconDrawingTerminalOwnershipFromMarkup(groupOpen);
   const textElement = stateIconDrawingTextElementFromGeneratedGroupMarkup(trimmed, groupOpen, transform, terminalOwnership);
   if (textElement) {
-    return textElement;
+    return { ...textElement, ...grouping };
   }
   const svgMarkup = firstSvgMarkupInGeneratedGroup(trimmed);
   if (svgMarkup) {
@@ -1178,6 +1181,7 @@ export function createStateIconDrawingElementFromGeneratedGroupMarkup(
       width,
       height,
       rotation: transform.rotation,
+      ...grouping,
       ...terminalOwnership
     };
   }
@@ -1194,6 +1198,7 @@ export function createStateIconDrawingElementFromGeneratedGroupMarkup(
       width,
       height,
       rotation: transform.rotation,
+      ...grouping,
       ...terminalOwnership
     };
   }
@@ -1213,6 +1218,7 @@ export function createStateIconDrawingElementFromGeneratedGroupMarkup(
       points: polylinePoints,
       startCap: normalizeStateIconLineCapKind(readSvgMarkupAttribute(trimmed, "data-start-cap")),
       endCap: normalizeStateIconLineCapKind(readSvgMarkupAttribute(trimmed, "data-end-cap")),
+      ...grouping,
       ...terminalOwnership
     };
   }
@@ -1229,6 +1235,7 @@ export function createStateIconDrawingElementFromGeneratedGroupMarkup(
       strokeWidth: Math.max(0, readSvgMarkupNumber(circleOpen, "stroke-width", 6)),
       strokeColor: readSvgMarkupAttribute(circleOpen, "stroke") || "#2563eb",
       fillColor: readSvgMarkupAttribute(circleOpen, "fill") || "transparent",
+      ...grouping,
       ...terminalOwnership
     };
   }
@@ -1247,6 +1254,7 @@ export function createStateIconDrawingElementFromGeneratedGroupMarkup(
       strokeColor: readSvgMarkupAttribute(rectOpen, "stroke") || "#2563eb",
       fillColor: readSvgMarkupAttribute(rectOpen, "fill") || "transparent",
       strokeStyle: stateIconDrawingStrokeStyleFromMarkup(rectOpen),
+      ...grouping,
       ...terminalOwnership
     };
   }
@@ -2414,7 +2422,10 @@ export function stateIconDrawingElementMarkup(
   const textAttr = element.kind === "text"
     ? ` data-state-icon-kind="text" data-state-icon-width="${formatSvgNumber(w)}" data-state-icon-height="${formatSvgNumber(h)}" data-state-icon-stroke-width="${formatSvgNumber(Math.max(0, element.strokeWidth))}" data-state-icon-stroke-color="${stroke}" data-state-icon-fill-color="${fill}" data-state-icon-stroke-style="${escapeXml(element.strokeStyle ?? "solid")}"`
     : "";
-  return `<g${terminalAttr}${polylineAttr}${textAttr} transform="translate(${formatSvgNumber(element.x)} ${formatSvgNumber(element.y)}) rotate(${formatSvgNumber(element.rotation)})">${body}</g>`;
+  const groupAttr = String(element.groupId ?? "").trim()
+    ? ` data-state-icon-group-id="${escapeXml(String(element.groupId).trim())}"`
+    : "";
+  return `<g${groupAttr}${terminalAttr}${polylineAttr}${textAttr} transform="translate(${formatSvgNumber(element.x)} ${formatSvgNumber(element.y)}) rotate(${formatSvgNumber(element.rotation)})">${body}</g>`;
 }
 
 export function stateIconDrawingToImage(

@@ -729,16 +729,15 @@ export function createTerminalOutflowAnchorsForSmartAlignmentDrag(__appScope: Re
   };
 }
 
-export function createComputeSmartAlignmentSnap(__appScope: Record<string, any>) {
-  return (dragState: DraggingState, movementDelta: Point, axisLocked: boolean) => {
-  const { SMART_ALIGNMENT_SNAP_SCREEN_TOLERANCE, bestSmartAlignmentAxisSnap, canvasScrollScaleRef, canvasVisibleViewBoxRef, dragBoundsForSmartAlignment, isEditMode, nodeHasUprightBoundsContent, nodeSmartAlignmentBounds, nodeTerminalOutflowSmartAlignmentAnchors, queryNodeSpatialIndex, smartAlignmentEnabled, terminalOutflowAnchorsForSmartAlignmentDrag, viewBoxRef, visibleNodeSpatialIndex } = __appScope;
-    // 对齐功能关闭时直接返回无对齐结果
-    if (!smartAlignmentEnabled || axisLocked || !isEditMode || dragState.nodeIds.length === 0 || dragState.wholeLayerMove) {
-      return { delta: movementDelta, guides: [] as SmartAlignmentGuide[] };
-    }
-    const draggedBounds = dragBoundsForSmartAlignment(dragState, movementDelta);
-    if (!draggedBounds) {
-      return { delta: movementDelta, guides: [] as SmartAlignmentGuide[] };
+export function createComputeSmartAlignmentGeometrySnap(__appScope: Record<string, any>) {
+  return (
+    draggedBounds: RenderViewportBounds,
+    draggedAnchors: SmartAlignmentAnchorMap,
+    excludedNodeIds: ReadonlySet<string> = new Set<string>()
+  ) => {
+  const { SMART_ALIGNMENT_SNAP_SCREEN_TOLERANCE, bestSmartAlignmentAxisSnap, canvasScrollScaleRef, canvasVisibleViewBoxRef, isEditMode, nodeHasUprightBoundsContent, nodeSmartAlignmentBounds, nodeTerminalOutflowSmartAlignmentAnchors, queryNodeSpatialIndex, smartAlignmentEnabled, viewBoxRef, visibleNodeSpatialIndex } = __appScope;
+    if (!smartAlignmentEnabled || !isEditMode) {
+      return { adjustment: { x: 0, y: 0 }, guides: [] as SmartAlignmentGuide[] };
     }
     const visible = canvasVisibleViewBoxRef.current.width > 0 && canvasVisibleViewBoxRef.current.height > 0
       ? canvasVisibleViewBoxRef.current
@@ -756,10 +755,9 @@ export function createComputeSmartAlignmentSnap(__appScope: Record<string, any>)
       top: draggedBounds.top - snapThreshold,
       bottom: draggedBounds.bottom + snapThreshold
     };
-    const draggedNodeIds = new Set(dragState.nodeIds);
     const candidatesById = new Map<string, SmartAlignmentAxisCandidate>();
     const includeCandidate = (candidate: ModelNode) => {
-      if (draggedNodeIds.has(candidate.id) || candidatesById.has(candidate.id)) {
+      if (excludedNodeIds.has(candidate.id) || candidatesById.has(candidate.id)) {
         return;
       }
       candidatesById.set(candidate.id, {
@@ -776,18 +774,42 @@ export function createComputeSmartAlignmentSnap(__appScope: Record<string, any>)
     }
     const candidates = Array.from(candidatesById.values());
     if (candidates.length === 0) {
-      return { delta: movementDelta, guides: [] as SmartAlignmentGuide[] };
+      return { adjustment: { x: 0, y: 0 }, guides: [] as SmartAlignmentGuide[] };
     }
-    const draggedTerminalAnchors = terminalOutflowAnchorsForSmartAlignmentDrag(dragState, movementDelta);
-    const xSnap = bestSmartAlignmentAxisSnap("x", draggedBounds, draggedTerminalAnchors.x, candidates, snapThreshold);
-    const ySnap = bestSmartAlignmentAxisSnap("y", draggedBounds, draggedTerminalAnchors.y, candidates, snapThreshold);
+    const xSnap = bestSmartAlignmentAxisSnap("x", draggedBounds, draggedAnchors.x, candidates, snapThreshold);
+    const ySnap = bestSmartAlignmentAxisSnap("y", draggedBounds, draggedAnchors.y, candidates, snapThreshold);
     const guides = [xSnap?.guide, ySnap?.guide].filter((guide): guide is SmartAlignmentGuide => Boolean(guide));
     return {
-      delta: {
-        x: movementDelta.x + (xSnap?.adjustment ?? 0),
-        y: movementDelta.y + (ySnap?.adjustment ?? 0)
+      adjustment: {
+        x: xSnap?.adjustment ?? 0,
+        y: ySnap?.adjustment ?? 0
       },
       guides
+    };
+  };
+}
+
+export function createComputeSmartAlignmentSnap(__appScope: Record<string, any>) {
+  const computeSmartAlignmentGeometrySnap = createComputeSmartAlignmentGeometrySnap(__appScope);
+  return (dragState: DraggingState, movementDelta: Point, axisLocked: boolean) => {
+  const { dragBoundsForSmartAlignment, isEditMode, smartAlignmentEnabled, terminalOutflowAnchorsForSmartAlignmentDrag } = __appScope;
+    // 对齐功能关闭时直接返回无对齐结果
+    if (!smartAlignmentEnabled || axisLocked || !isEditMode || dragState.nodeIds.length === 0 || dragState.wholeLayerMove) {
+      return { delta: movementDelta, guides: [] as SmartAlignmentGuide[] };
+    }
+    const draggedBounds = dragBoundsForSmartAlignment(dragState, movementDelta);
+    if (!draggedBounds) {
+      return { delta: movementDelta, guides: [] as SmartAlignmentGuide[] };
+    }
+    const draggedNodeIds = new Set(dragState.nodeIds);
+    const draggedTerminalAnchors = terminalOutflowAnchorsForSmartAlignmentDrag(dragState, movementDelta);
+    const smartSnap = computeSmartAlignmentGeometrySnap(draggedBounds, draggedTerminalAnchors, draggedNodeIds);
+    return {
+      delta: {
+        x: movementDelta.x + smartSnap.adjustment.x,
+        y: movementDelta.y + smartSnap.adjustment.y
+      },
+      guides: smartSnap.guides
     };
   };
 }
@@ -3268,7 +3290,8 @@ export function createStartInteractiveStaticDrawing(__appScope: Record<string, a
 
 export function createCancelInteractiveStaticDrawing(__appScope: Record<string, any>) {
   return () => {
-  const { setMode, setStaticDrawing, staticDrawing, writeOperationLog } = __appScope;
+  const { setMode, setStaticDrawing, staticDrawing, updateSmartAlignmentGuides, writeOperationLog } = __appScope;
+    updateSmartAlignmentGuides([]);
     if (!staticDrawing) {
       return;
     }
@@ -3280,7 +3303,7 @@ export function createCancelInteractiveStaticDrawing(__appScope: Record<string, 
 
 export function createFinishInteractiveStaticDrawing(__appScope: Record<string, any>) {
   return (finalPoint?: Point) => {
-  const { activateInspectorFromCanvas, activeLayerId, appendDistinctStaticDrawingPoint, clampPointToCanvas, createInteractiveStaticDrawingNode, createStaticBoxNodeFromDrawing, edges, isStaticBoxLikeTemplate, nodes, pushUndoSnapshot, requireEditMode, setCanvasSelectionScope, setGraphArrays, setMode, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, staticDrawing, staticDrawingPreviewPoints, writeOperationLog } = __appScope;
+  const { activateInspectorFromCanvas, activeLayerId, appendDistinctStaticDrawingPoint, clampPointToCanvas, createInteractiveStaticDrawingNode, createStaticBoxNodeFromDrawing, edges, isStaticBoxLikeTemplate, nodes, pushUndoSnapshot, requireEditMode, setCanvasSelectionScope, setGraphArrays, setMode, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, staticDrawing, staticDrawingPreviewPoints, updateSmartAlignmentGuides, writeOperationLog } = __appScope;
     if (!requireEditMode("绘制图元")) {
       return;
     }
@@ -3304,19 +3327,42 @@ export function createFinishInteractiveStaticDrawing(__appScope: Record<string, 
     setSelectedEdgeId("");
     setSelectedEdgeIds([]);
     setStaticDrawing(null);
-    setMode("select");
+    updateSmartAlignmentGuides([]);
     activateInspectorFromCanvas();
     writeOperationLog(`新增图元：${node.name}`);
+    setMode("select");
+  };
+}
+
+export function createResolveStaticDrawingSmartAlignmentPoint(__appScope: Record<string, any>) {
+  const computeSmartAlignmentGeometrySnap = createComputeSmartAlignmentGeometrySnap(__appScope);
+  return (point: Point) => {
+  const { clampPointToCanvas, emptySmartAlignmentAnchorMap, updateSmartAlignmentGuides } = __appScope;
+    const clampedPoint = clampPointToCanvas(point);
+    const draggedBounds: RenderViewportBounds = {
+      left: clampedPoint.x,
+      right: clampedPoint.x,
+      top: clampedPoint.y,
+      bottom: clampedPoint.y
+    };
+    const smartSnap = computeSmartAlignmentGeometrySnap(draggedBounds, emptySmartAlignmentAnchorMap());
+    const snappedPoint = clampPointToCanvas({
+      x: clampedPoint.x + smartSnap.adjustment.x,
+      y: clampedPoint.y + smartSnap.adjustment.y
+    });
+    updateSmartAlignmentGuides(smartSnap.guides);
+    return snappedPoint;
   };
 }
 
 export function createAppendStaticDrawingPoint(__appScope: Record<string, any>) {
+  const resolveStaticDrawingSmartAlignmentPoint = createResolveStaticDrawingSmartAlignmentPoint(__appScope);
   return (point: Point, forceFinish = false) => {
-  const { appendDistinctStaticDrawingPoint, clampPointToCanvas, finishInteractiveStaticDrawing, interactiveStaticDrawingNeedsExplicitFinish, setStaticDrawing, staticDrawing } = __appScope;
+  const { appendDistinctStaticDrawingPoint, finishInteractiveStaticDrawing, interactiveStaticDrawingNeedsExplicitFinish, setStaticDrawing, staticDrawing } = __appScope;
     if (!staticDrawing) {
       return;
     }
-    const nextPoint = clampPointToCanvas(point);
+    const nextPoint = resolveStaticDrawingSmartAlignmentPoint(point);
     const nextPoints = appendDistinctStaticDrawingPoint(staticDrawing.points, nextPoint);
     if (forceFinish || (!interactiveStaticDrawingNeedsExplicitFinish(staticDrawing.kind) && nextPoints.length >= 2)) {
       finishInteractiveStaticDrawing(nextPoint);
@@ -3331,9 +3377,10 @@ export function createAppendStaticDrawingPoint(__appScope: Record<string, any>) 
 }
 
 export function createUpdateInteractiveStaticDrawingPreview(__appScope: Record<string, any>) {
+  const resolveStaticDrawingSmartAlignmentPoint = createResolveStaticDrawingSmartAlignmentPoint(__appScope);
   return (point: Point) => {
-  const { clampPointToCanvas, sameOptionalPoint, setStaticDrawing } = __appScope;
-    const previewPoint = clampPointToCanvas(point);
+  const { sameOptionalPoint, setStaticDrawing } = __appScope;
+    const previewPoint = resolveStaticDrawingSmartAlignmentPoint(point);
     setStaticDrawing((current) => {
       if (!current || sameOptionalPoint(current.previewPoint, previewPoint)) {
         return current;
@@ -3355,7 +3402,7 @@ export function createRenderInteractiveStaticDrawingPreview(__appScope: Record<s
     const points = staticDrawingPreviewPoints(staticDrawing);
     return (
       <g className="static-drawing-preview">
-        {points.length >= 2 && <path d={staticDrawingPathData(points)} className="static-drawing-preview-line" />}
+        {points.length >= 2 && <path d={staticDrawingPathData(staticDrawing.kind, points)} className="static-drawing-preview-line" />}
         {staticDrawing.points.map((point, index) => (
           <circle key={index} className="static-drawing-preview-point" cx={point.x} cy={point.y} r="4.5" />
         ))}
@@ -3421,9 +3468,45 @@ export function createStartLibraryGraphTemplatePlacement(__appScope: Record<stri
   };
 }
 
+export function createResolveLibraryPlacementSmartAlignmentPoint(__appScope: Record<string, any>) {
+  const computeSmartAlignmentGeometrySnap = createComputeSmartAlignmentGeometrySnap(__appScope);
+  return (placement: LibraryPlacementState, point: Point) => {
+  const { clampPointToCanvas, createNodeFromTemplate, emptySmartAlignmentAnchorMap, isInteractiveStaticDrawingKind, isStaticBoxLikeTemplate, nodeHasUprightBoundsContent, nodeSmartAlignmentBounds, nodeTerminalOutflowSmartAlignmentAnchors, updateSmartAlignmentGuides } = __appScope;
+    const clampedPoint = clampPointToCanvas(point);
+    const alignPlacementAsPoint =
+      placement.kind !== "device" ||
+      isInteractiveStaticDrawingKind(placement.template.kind) ||
+      isStaticBoxLikeTemplate(placement.template);
+    let draggedBounds: RenderViewportBounds;
+    let draggedAnchors: SmartAlignmentAnchorMap;
+    if (alignPlacementAsPoint) {
+      draggedBounds = {
+        left: clampedPoint.x,
+        right: clampedPoint.x,
+        top: clampedPoint.y,
+        bottom: clampedPoint.y
+      };
+      draggedAnchors = emptySmartAlignmentAnchorMap();
+    }
+    else {
+      const previewNode = createNodeFromTemplate(placement.template, clampedPoint);
+      draggedBounds = nodeSmartAlignmentBounds(previewNode, clampedPoint, nodeHasUprightBoundsContent(previewNode));
+      draggedAnchors = nodeTerminalOutflowSmartAlignmentAnchors(previewNode, clampedPoint);
+    }
+    const smartSnap = computeSmartAlignmentGeometrySnap(draggedBounds, draggedAnchors);
+    const snappedPoint = clampPointToCanvas({
+      x: clampedPoint.x + smartSnap.adjustment.x,
+      y: clampedPoint.y + smartSnap.adjustment.y
+    });
+    updateSmartAlignmentGuides(smartSnap.guides);
+    return snappedPoint;
+  };
+}
+
 export function createCancelLibraryPlacement(__appScope: Record<string, any>) {
   return () => {
-  const { resetRoutableLinePreviewState, setContextMenu, setLibraryPlacement, setMode, setRoutableLinePlacement } = __appScope;
+  const { resetRoutableLinePreviewState, setContextMenu, setLibraryPlacement, setMode, setRoutableLinePlacement, updateSmartAlignmentGuides } = __appScope;
+    updateSmartAlignmentGuides([]);
     setLibraryPlacement(null);
     setRoutableLinePlacement(null);
     resetRoutableLinePreviewState();
@@ -3433,9 +3516,14 @@ export function createCancelLibraryPlacement(__appScope: Record<string, any>) {
 }
 
 export function createUpdateLibraryPlacementPreview(__appScope: Record<string, any>) {
+  const resolveLibraryPlacementSmartAlignmentPoint = createResolveLibraryPlacementSmartAlignmentPoint(__appScope);
   return (point: Point) => {
-  const { clampPointToCanvas, sameOptionalPoint, setLibraryPlacement } = __appScope;
-    const previewPoint = clampPointToCanvas(point);
+  const { libraryPlacement, sameOptionalPoint, setLibraryPlacement, updateSmartAlignmentGuides } = __appScope;
+    if (!libraryPlacement) {
+      updateSmartAlignmentGuides([]);
+      return;
+    }
+    const previewPoint = resolveLibraryPlacementSmartAlignmentPoint(libraryPlacement, point);
     setLibraryPlacement((current) => {
       if (!current || (current.previewPoint && sameOptionalPoint(current.previewPoint, previewPoint))) {
         return current;
@@ -3447,7 +3535,8 @@ export function createUpdateLibraryPlacementPreview(__appScope: Record<string, a
 
 export function createClearLibraryPlacementPreview(__appScope: Record<string, any>) {
   return () => {
-  const { setLibraryPlacement } = __appScope;
+  const { setLibraryPlacement, updateSmartAlignmentGuides } = __appScope;
+    updateSmartAlignmentGuides([]);
     setLibraryPlacement((current) => current?.previewPoint ? { ...current, previewPoint: null } : current);
   };
 }
@@ -3515,8 +3604,9 @@ export function createPlaceLibraryDeviceAtPoint(__appScope: Record<string, any>)
 }
 
 export function createCommitLibraryPlacementAtPoint(__appScope: Record<string, any>) {
+  const resolveLibraryPlacementSmartAlignmentPoint = createResolveLibraryPlacementSmartAlignmentPoint(__appScope);
   return (point: Point) => {
-  const { dropGraphTemplate, libraryPlacement, placeLibraryDeviceAtPoint, requireEditMode, setLibraryPlacement } = __appScope;
+  const { dropGraphTemplate, libraryPlacement, placeLibraryDeviceAtPoint, requireEditMode, setLibraryPlacement, updateSmartAlignmentGuides } = __appScope;
     if (!requireEditMode("放置图元")) {
       return;
     }
@@ -3524,12 +3614,14 @@ export function createCommitLibraryPlacementAtPoint(__appScope: Record<string, a
       return;
     }
     const placement = libraryPlacement;
+    const placementPoint = resolveLibraryPlacementSmartAlignmentPoint(placement, point);
     setLibraryPlacement(null);
+    updateSmartAlignmentGuides([]);
     if (placement.kind === "graph-template") {
-      dropGraphTemplate(placement.template, point);
+      dropGraphTemplate(placement.template, placementPoint);
       return;
     }
-    placeLibraryDeviceAtPoint(placement.template, point);
+    placeLibraryDeviceAtPoint(placement.template, placementPoint);
   };
 }
 
