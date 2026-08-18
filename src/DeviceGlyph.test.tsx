@@ -94,24 +94,50 @@ describe("DeviceGlyph static nodes", () => {
 });
 
 describe("DeviceGlyph model-association derived devices", () => {
-  it("renders station feeder and district styles without turning electrical devices into model-interaction buttons", () => {
+  it("renders station feeder and district pictograms with distinct source load and AC DC markers", () => {
     const cases = [
-      ["ac-station-source", "厂站", "ACGenerator"],
-      ["dc-feeder-source", "馈线", "DCGenerator"],
-      ["ac-district-load", "台区", "ACLoad"]
+      ["ac-station-source", "station", "source", "ac", "ACGenerator"],
+      ["dc-station-load", "station", "load", "dc", "DCLoad"],
+      ["ac-feeder-source", "feeder", "source", "ac", "ACGenerator"],
+      ["dc-feeder-load", "feeder", "load", "dc", "DCLoad"],
+      ["dc-district-source", "district", "source", "dc", "DCGenerator"],
+      ["ac-district-load", "district", "load", "ac", "ACLoad"]
     ] as const;
 
-    for (const [kind, modelType, componentType] of cases) {
+    for (const [kind, family, role, energyType, componentType] of cases) {
       const node = createDefaultNode(kind, { x: 0, y: 0 });
       const markup = renderToStaticMarkup(<svg><DeviceGlyph node={node} /></svg>);
 
-      expect(markup).toContain(`class="model-association-glyph model-association-glyph-${kind.includes("station") ? "station" : kind.includes("feeder") ? "feeder" : "district"}"`);
-      expect(markup).toContain(`>${modelType}</text>`);
-      expect(markup).toContain('fill="#eff6ff"');
-      expect(markup).toContain('stroke="#2563eb"');
+      expect(markup).toContain("model-hierarchy-glyph");
+      expect(markup).toContain(`model-association-glyph-${family}`);
+      expect(markup).toContain(`model-hierarchy-glyph-role-${role}`);
+      expect(markup).toContain(`model-hierarchy-glyph-energy-${energyType}`);
+      expect(markup).toContain(`model-hierarchy-icon-${family}`);
+      expect(markup).not.toContain(`<rect x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}"`);
       expect(node.params.component_type).toBe(componentType);
       expect(node.params).not.toHaveProperty("buttonEnabled");
       expect(node.params).not.toHaveProperty("buttonTargetProjectId");
+    }
+  });
+
+  it("uses the same three pictogram families for station feeder and district model-interaction buttons", () => {
+    const cases = [
+      ["static-model-interaction-station", "station", "厂站"],
+      ["static-model-interaction-feeder", "feeder", "馈线"],
+      ["static-model-interaction-district", "district", "台区"]
+    ] as const;
+
+    for (const [kind, family, label] of cases) {
+      const node = createDefaultNode(kind, { x: 0, y: 0 });
+      const geometryMarkup = renderToStaticMarkup(<svg><DeviceGlyph node={node} mode="geometry" /></svg>);
+      const textMarkup = renderToStaticMarkup(<svg><DeviceGlyph node={node} mode="text" /></svg>);
+
+      expect(geometryMarkup).toContain("model-interaction-glyph");
+      expect(geometryMarkup).toContain(`model-hierarchy-glyph-${family}`);
+      expect(geometryMarkup).toContain("model-hierarchy-glyph-role-button");
+      expect(geometryMarkup).toContain(`model-hierarchy-icon-${family}`);
+      expect(geometryMarkup).not.toContain(`<rect x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}"`);
+      expect(textMarkup).toContain(`>${label}</text>`);
     }
   });
 });
