@@ -127,7 +127,7 @@ function globalLineReferenceMatchesModel(
   );
 }
 
-function modelForGlobalLineReference(
+export function modelForGlobalLineReference(
   reference: GlobalLineReference | null,
   models: readonly AllNetworkTopologyReferenceModel[]
 ): AllNetworkTopologyReferenceModel | undefined {
