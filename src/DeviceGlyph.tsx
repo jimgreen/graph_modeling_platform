@@ -1,6 +1,7 @@
 import { memo, type ReactNode } from "react";
 import type { ColorDisplayMode, ColorPalette, DeviceStateVisual, ModelNode } from "./model";
 import {
+  baseDeviceKind,
   CONVERTER_GLYPH_BORDER_INSET,
   CUSTOM_DEVICE_TEMPLATE_KEY,
   DEFAULT_COLOR_PALETTE,
@@ -49,6 +50,39 @@ export type DeviceGlyphProps = {
   stateVisual?: DeviceStateVisual | null;
 };
 
+type ModelHierarchyGlyphFamily = "station" | "feeder" | "district";
+type ModelHierarchyGlyphRole = "button" | "source" | "load";
+type ModelHierarchyGlyphEnergy = "mixed" | "ac" | "dc";
+
+const MODEL_INTERACTION_GLYPH_FAMILY_BY_KIND: Record<string, ModelHierarchyGlyphFamily> = {
+  "static-model-interaction-station": "station",
+  "static-model-interaction-feeder": "feeder",
+  "static-model-interaction-district": "district"
+};
+
+function modelHierarchyGlyphFamilyForModelType(modelType: string): ModelHierarchyGlyphFamily | "" {
+  if (modelType === "厂站") return "station";
+  if (modelType === "馈线") return "feeder";
+  if (modelType === "台区") return "district";
+  return "";
+}
+
+function modelInteractionGlyphFamilyForKind(kind: string): ModelHierarchyGlyphFamily | "" {
+  return MODEL_INTERACTION_GLYPH_FAMILY_BY_KIND[baseDeviceKind(kind)] ?? "";
+}
+
+function modelHierarchyGlyphRoleForKind(kind: string, interactionFamily: ModelHierarchyGlyphFamily | ""): ModelHierarchyGlyphRole {
+  if (interactionFamily) return "button";
+  const baseKind = baseDeviceKind(kind).toLowerCase();
+  return baseKind.endsWith("-source") ? "source" : "load";
+}
+
+function modelHierarchyGlyphEnergyForKind(kind: string, role: ModelHierarchyGlyphRole): ModelHierarchyGlyphEnergy {
+  if (role === "button") return "mixed";
+  const baseKind = baseDeviceKind(kind).toLowerCase();
+  return baseKind.startsWith("dc-") ? "dc" : "ac";
+}
+
 function deviceVisualReplacesGlyph(node: ModelNode, stateVisual: DeviceStateVisual | null) {
   if (String(stateVisual?.imageCleared ?? "").trim() === "1" || String(node.params.backgroundImageCleared ?? "").trim() === "1") {
     return true;
@@ -67,6 +101,8 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
   const rawW = miniature ? 58 : node.size.width;
   const rawH = miniature ? 38 : node.size.height;
   const modelAssociationModelType = modelAssociationModelTypeForKind(node.kind);
+  const modelInteractionGlyphFamily = modelInteractionGlyphFamilyForKind(node.kind);
+  const modelHierarchyGlyphFamily = modelHierarchyGlyphFamilyForModelType(modelAssociationModelType) || modelInteractionGlyphFamily;
   const isStaticGlyph = isStaticGraphicNode(node);
   const isRoutableLineGlyph = isRoutableLineDeviceKind(node.kind);
   const isLineSegmentBusGlyph = isLineSegmentBusNode(node);
@@ -160,22 +196,137 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
         </g>
       );
     }
-    if (modelAssociationModelType) {
-      const associationClass = modelAssociationModelType === "厂站" ? "station" : modelAssociationModelType === "馈线" ? "feeder" : "district";
+    if (modelHierarchyGlyphFamily) {
+      const hierarchyRole = modelHierarchyGlyphRoleForKind(node.kind, modelInteractionGlyphFamily);
+      const hierarchyEnergy = modelHierarchyGlyphEnergyForKind(node.kind, hierarchyRole);
+      const isModelInteractionGlyph = hierarchyRole === "button";
       const associationStroke = node.params.strokeColor || stroke;
-      const associationFill = node.params.fillColor || "transparent";
-      const associationLineWidth = Number(node.params.lineWidth || 2);
-      const associationText = miniature ? modelAssociationModelType : staticSymbolTextValue(node, modelAssociationModelType);
+      const associationFill = node.params.fillColor || fill;
+      const associationAccent = node.params.accentColor || associationStroke;
+      const associationLineWidth = clampNumber(Number(node.params.lineWidth || 2), 1, 3.5);
+      const iconAvailableHeight = hierarchyRole === "button" ? Math.max(28, h - 16) : Math.max(30, h - 6);
+      const iconSize = clampNumber(Math.min(w * 0.54, iconAvailableHeight), miniature ? 28 : 34, miniature ? 40 : 52);
+      const iconScale = iconSize / 48;
+      const iconY = hierarchyRole === "button" ? (miniature ? -4 : -5) : 0;
+      const interactionLabel = miniature
+        ? (modelHierarchyGlyphFamily === "station" ? "厂站" : modelHierarchyGlyphFamily === "feeder" ? "馈线" : "台区")
+        : staticSymbolTextValue(node, node.name);
       if (mode === "text") {
-        return uprightText(node, 0, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 12 : Number(node.params.fontSize || 16), textAnchor: "middle", dominantBaseline: "middle" }, associationText);
+        if (!isModelInteractionGlyph) {
+          return null;
+        }
+        return uprightText(
+          node,
+          0,
+          h / 2 - (miniature ? 3 : 5),
+          {
+            fill: node.params.textColor || "#111827",
+            fontSize: miniature ? 9 : clampNumber(Number(node.params.fontSize || 16) * 0.72, 10, 13),
+            fontWeight: "700",
+            textAnchor: "middle",
+            dominantBaseline: "middle"
+          },
+          interactionLabel
+        );
       }
       if (!renderGeometry) {
         return null;
       }
+      const hierarchyClassName = [
+        "model-hierarchy-glyph",
+        `model-hierarchy-glyph-${modelHierarchyGlyphFamily}`,
+        `model-hierarchy-glyph-role-${hierarchyRole}`,
+        `model-hierarchy-glyph-energy-${hierarchyEnergy}`,
+        isModelInteractionGlyph ? "model-interaction-glyph" : "model-association-glyph",
+        isModelInteractionGlyph
+          ? `model-interaction-glyph-${modelHierarchyGlyphFamily}`
+          : `model-association-glyph-${modelHierarchyGlyphFamily}`
+      ].join(" ");
       return (
-        <g className={`model-association-glyph model-association-glyph-${associationClass}`}>
-          <rect x={-w / 2} y={-h / 2} width={w} height={h} rx="6" fill={associationFill} stroke={associationStroke} strokeWidth={associationLineWidth} strokeDasharray={svgStrokeDashArray(node.params.strokeStyle)} />
-          {renderText && uprightText(node, 0, 0, { fill: node.params.textColor || "#111827", fontSize: miniature ? 12 : Number(node.params.fontSize || 16), textAnchor: "middle", dominantBaseline: "middle" }, associationText)}
+        <g
+          className={hierarchyClassName}
+          data-model-hierarchy-family={modelHierarchyGlyphFamily}
+          data-model-hierarchy-role={hierarchyRole}
+          data-model-hierarchy-energy={hierarchyEnergy}
+        >
+          <g transform={`translate(0 ${formatSvgNumber(iconY)}) scale(${formatSvgNumber(iconScale)})`}>
+            <circle
+              className="model-hierarchy-icon-backplate"
+              cx="0"
+              cy="0"
+              r="20.5"
+              fill={associationFill}
+              stroke={associationStroke}
+              strokeWidth={associationLineWidth}
+              strokeDasharray={svgStrokeDashArray(node.params.strokeStyle)}
+            />
+            <g
+              className={`model-hierarchy-icon model-hierarchy-icon-${modelHierarchyGlyphFamily}`}
+              fill="none"
+              stroke={associationStroke}
+              strokeWidth={Math.max(1.8, associationLineWidth)}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              {modelHierarchyGlyphFamily === "station" && (
+                <>
+                  <path d="M -15 -4 L 0 -14 L 15 -4" />
+                  <path d="M -12 -4 V 11 H 12 V -4" />
+                  <path d="M -7 11 V 2 H -2 V 11 M 3 11 V 2 H 8 V 11" />
+                  <path d="M -16 11 H 16" />
+                </>
+              )}
+              {modelHierarchyGlyphFamily === "feeder" && (
+                <>
+                  <path d="M -16 0 H -7 M -7 0 L 4 -11 H 15 M -7 0 H 15 M -7 0 L 4 11 H 15" />
+                  <circle cx="-16" cy="0" r="1.8" fill={associationAccent} stroke="none" />
+                  <circle cx="15" cy="-11" r="1.8" fill={associationAccent} stroke="none" />
+                  <circle cx="15" cy="0" r="1.8" fill={associationAccent} stroke="none" />
+                  <circle cx="15" cy="11" r="1.8" fill={associationAccent} stroke="none" />
+                </>
+              )}
+              {modelHierarchyGlyphFamily === "district" && (
+                <>
+                  <circle cx="-3.5" cy="-9" r="5" />
+                  <circle cx="3.5" cy="-9" r="5" />
+                  <path d="M 0 -4 V 1 M -12 1 H 12 M -10 1 V 7 M 10 1 V 7" />
+                  <path d="M -16 10 L -10 5 L -4 10 V 15 H -16 Z M 4 10 L 10 5 L 16 10 V 15 H 4 Z" />
+                </>
+              )}
+            </g>
+            {hierarchyEnergy !== "mixed" && (
+              <g
+                className={`model-hierarchy-energy-badge model-hierarchy-energy-badge-${hierarchyEnergy}`}
+                fill="#ffffff"
+                stroke={associationAccent}
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              >
+                <circle cx="-17" cy="16" r="6" />
+                {hierarchyEnergy === "ac"
+                  ? <path d="M -21 16 C -19.8 12.8 -18.2 12.8 -17 16 C -15.8 19.2 -14.2 19.2 -13 16" fill="none" />
+                  : <path d="M -20.5 14.5 H -13.5 M -19.5 17.5 H -14.5" fill="none" />}
+              </g>
+            )}
+            {hierarchyRole === "source" && (
+              <g className="model-hierarchy-role-badge model-hierarchy-role-badge-source" fill="#dcfce7" stroke="#16a34a" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="17" cy="-16" r="6" />
+                <path d="M 13.5 -16 H 20.5 M 17.5 -19 L 20.5 -16 L 17.5 -13" fill="none" />
+              </g>
+            )}
+            {hierarchyRole === "load" && (
+              <g className="model-hierarchy-role-badge model-hierarchy-role-badge-load" fill="#fff7ed" stroke="#ea580c" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="17" cy="-16" r="6" />
+                <path d="M 20.5 -16 H 13.5 M 16.5 -19 L 13.5 -16 L 16.5 -13" fill="none" />
+              </g>
+            )}
+            {hierarchyRole === "button" && (
+              <g className="model-hierarchy-role-badge model-hierarchy-role-badge-button" fill="#eef2ff" stroke="#4f46e5" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="17" cy="-16" r="6" />
+                <path d="M 14 -13 L 20 -19 M 16 -19 H 20 V -15" fill="none" />
+              </g>
+            )}
+          </g>
         </g>
       );
     }
