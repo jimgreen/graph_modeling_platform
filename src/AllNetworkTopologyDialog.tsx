@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { AlertTriangle, ChevronRight, Download, FolderTree, Network } from "lucide-react";
+import { AlertTriangle, Cable, ChevronRight, Download, FolderTree, MapPin, Network, RefreshCw } from "lucide-react";
 
 import {
   analyzeAllNetworkTopology,
@@ -7,13 +7,18 @@ import {
   collectAllNetworkTopologyModels,
   collectAllNetworkTopologyReferenceModels,
   defaultAllNetworkTopologySelection,
+  modelForGlobalLineReference,
   referencedModelsForGlobalLines,
   type AllNetworkTopologyAlert,
   type AllNetworkTopologyModel,
   type AllNetworkTopologyReferenceModel,
   type AllNetworkTopologyResult
 } from "./all-network-topology";
-import { type GlobalLineRecord } from "./global-lines";
+import {
+  globalLineEndpointReference,
+  type GlobalLineEndpoint,
+  type GlobalLineRecord
+} from "./global-lines";
 import { buildMultiModelEFileExport } from "./model";
 import { buildEFileExportOptionsFromLibrary } from "./appExtracted/appDeviceDefinitionFactories";
 import { apiPath } from "./config";
@@ -129,6 +134,134 @@ async function loadGlobalLineRecordsForTopology(): Promise<GlobalLineRecord[]> {
   return payload.records as GlobalLineRecord[];
 }
 
+type GlobalLineListWindowProps = {
+  open: boolean;
+  loading: boolean;
+  error: string;
+  records: GlobalLineRecord[];
+  referenceModels: AllNetworkTopologyReferenceModel[];
+  onClose: () => void;
+  onRefresh: () => void;
+  onLocateEndpoint: (record: GlobalLineRecord, endpoint: GlobalLineEndpoint) => void;
+};
+
+function GlobalLineListWindow({
+  open,
+  loading,
+  error,
+  records,
+  referenceModels,
+  onClose,
+  onRefresh,
+  onLocateEndpoint
+}: GlobalLineListWindowProps) {
+  return (
+    <div
+      className={`global-line-list-window-layer ${open ? "visible" : "hidden"}`}
+      role="presentation"
+      aria-hidden={!open}
+    >
+      <section
+        className="global-line-list-dialog window-close-host"
+        role="dialog"
+        aria-labelledby="global-line-list-title"
+        aria-describedby="global-line-list-help"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            onClose();
+          }
+        }}
+      >
+        <WindowCloseButton label="关闭全局线路列表" onClick={onClose} />
+        <header className="global-line-list-header">
+          <div>
+            <h3 id="global-line-list-title"><Cable size={19} aria-hidden="true" />全局线路</h3>
+            <p id="global-line-list-help">集中查看全局线路及其首末端模型；点击首端或末端模型可切换到对应模型界面。</p>
+          </div>
+          <div className="global-line-list-header-actions">
+            <span>{records.length} 条线路</span>
+            <button type="button" onClick={onRefresh} disabled={loading}>
+              <RefreshCw size={15} aria-hidden="true" />
+              {loading ? "刷新中..." : "刷新"}
+            </button>
+          </div>
+        </header>
+
+        <div className="global-line-list-table-wrap">
+          <table className="global-line-list-table">
+            <thead>
+              <tr>
+                <th>idx</th>
+                <th>线路名称</th>
+                <th>首端所在模型</th>
+                <th>末端所在模型</th>
+              </tr>
+            </thead>
+            <tbody>
+              {records.map((record) => {
+                const sourceReference = globalLineEndpointReference(record, "source");
+                const targetReference = globalLineEndpointReference(record, "target");
+                const sourceModel = modelForGlobalLineReference(sourceReference, referenceModels);
+                const targetModel = modelForGlobalLineReference(targetReference, referenceModels);
+                const sourceLabel = sourceModel?.name ?? sourceReference?.projectName ?? "未关联";
+                const targetLabel = targetModel?.name ?? targetReference?.projectName ?? "未关联";
+                return (
+                  <tr key={record.id}>
+                    <td><span className="global-line-list-index">{record.idx || "-"}</span></td>
+                    <td>
+                      <span className="global-line-list-name">{record.name}</span>
+                      <small>{record.energyType === "dc" ? "直流线路" : "交流线路"}</small>
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="global-line-list-endpoint"
+                        aria-label="首端所在模型"
+                        title={sourceModel ? `切换到模型“${sourceModel.name}”` : sourceReference ? "首端对应模型文件不存在" : "首端尚未关联模型"}
+                        disabled={!sourceModel}
+                        onClick={() => onLocateEndpoint(record, "source")}
+                      >
+                        <MapPin size={15} aria-hidden="true" />
+                        <span>
+                          {sourceLabel}
+                          <small>{sourceModel ? sourceModel.schemePath.join(" / ") : sourceReference ? "模型文件不存在" : "首端为空"}</small>
+                        </span>
+                      </button>
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="global-line-list-endpoint"
+                        aria-label="末端所在模型"
+                        title={targetModel ? `切换到模型“${targetModel.name}”` : targetReference ? "末端对应模型文件不存在" : "末端尚未关联模型"}
+                        disabled={!targetModel}
+                        onClick={() => onLocateEndpoint(record, "target")}
+                      >
+                        <MapPin size={15} aria-hidden="true" />
+                        <span>
+                          {targetLabel}
+                          <small>{targetModel ? targetModel.schemePath.join(" / ") : targetReference ? "模型文件不存在" : "末端为空"}</small>
+                        </span>
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {loading && records.length === 0 ? (
+            <div className="global-line-list-placeholder">正在读取全局线路列表...</div>
+          ) : error ? (
+            <div className="global-line-list-placeholder error">{error}</div>
+          ) : records.length === 0 ? (
+            <div className="global-line-list-placeholder">当前还没有全局线路记录。</div>
+          ) : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProps) {
   const open = Boolean(scope.allNetworkTopologyDialogOpen);
   const models = useMemo(
@@ -146,6 +279,10 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
   const [running, setRunning] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [completedRun, setCompletedRun] = useState<CompletedTopologyRun | null>(null);
+  const [globalLineListOpen, setGlobalLineListOpen] = useState(false);
+  const [globalLineListLoading, setGlobalLineListLoading] = useState(false);
+  const [globalLineListError, setGlobalLineListError] = useState("");
+  const [globalLineListRecords, setGlobalLineListRecords] = useState<GlobalLineRecord[]>([]);
   const [windowFrame, setWindowFrame] = useState<FloatingWindowFrame>(defaultFloatingWindowFrame);
   const selectAllRef = useRef<HTMLInputElement | null>(null);
   const dialogRef = useRef<HTMLElement | null>(null);
@@ -391,6 +528,59 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
     });
   };
 
+  const refreshGlobalLineList = async () => {
+    setGlobalLineListLoading(true);
+    setGlobalLineListError("");
+    try {
+      const records = await loadGlobalLineRecordsForTopology();
+      setGlobalLineListRecords([...records].sort((left, right) =>
+        left.idx - right.idx || left.name.localeCompare(right.name, "zh-CN")
+      ));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "读取全局线路列表失败。";
+      setGlobalLineListError(message);
+      scope.showGlobalMessage?.(message, "error");
+    } finally {
+      setGlobalLineListLoading(false);
+    }
+  };
+
+  const openGlobalLineList = () => {
+    const currentRecords = Array.isArray(scope.globalLineRecords)
+      ? scope.globalLineRecords as GlobalLineRecord[]
+      : [];
+    if (currentRecords.length > 0) {
+      setGlobalLineListRecords([...currentRecords].sort((left, right) =>
+        left.idx - right.idx || left.name.localeCompare(right.name, "zh-CN")
+      ));
+    }
+    setGlobalLineListOpen(true);
+    void refreshGlobalLineList();
+  };
+
+  const locateGlobalLineEndpoint = (record: GlobalLineRecord, endpoint: GlobalLineEndpoint) => {
+    const reference = globalLineEndpointReference(record, endpoint);
+    const endpointLabel = endpoint === "source" ? "首端" : "末端";
+    if (!reference) {
+      scope.showGlobalMessage?.(`全局线路“${record.name}”的${endpointLabel}尚未关联模型。`, "warning");
+      return;
+    }
+    const model = modelForGlobalLineReference(reference, referenceModels);
+    if (!model) {
+      scope.showGlobalMessage?.(
+        `全局线路“${record.name}”的${endpointLabel}对应模型“${reference.projectName || reference.modelKey}”不存在。`,
+        "warning"
+      );
+      return;
+    }
+    scope.requestUnsavedChangeAction?.({
+      kind: "load-project",
+      project: model.record,
+      schemeId: model.schemeId,
+      label: `切换到全局线路“${record.name}”${endpointLabel}所在模型“${model.name}”`
+    });
+  };
+
   const exportEFile = async () => {
     if (
       !completedRun ||
@@ -570,15 +760,26 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
                 </ul>
               )}
             </div>
-            <button
-              type="button"
-              className="all-network-topology-run"
-              onClick={() => void runTopology()}
-              disabled={running || selectedProjectIds.size === 0}
-            >
-              <Network size={17} aria-hidden="true" />
-              {running ? "正在拓扑..." : "全网拓扑"}
-            </button>
+            <div className="all-network-topology-actions">
+              <button
+                type="button"
+                className="all-network-topology-global-lines"
+                aria-label="打开全局线路列表"
+                onClick={openGlobalLineList}
+              >
+                <Cable size={17} aria-hidden="true" />
+                全局线路
+              </button>
+              <button
+                type="button"
+                className="all-network-topology-run"
+                onClick={() => void runTopology()}
+                disabled={running || selectedProjectIds.size === 0}
+              >
+                <Network size={17} aria-hidden="true" />
+                {running ? "正在拓扑..." : "全网拓扑"}
+              </button>
+            </div>
           </aside>
 
           <main className="all-network-topology-result-panel">
@@ -667,6 +868,16 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
           onPointerCancel={finishWindowResize}
         />
       </section>
+      <GlobalLineListWindow
+        open={open && globalLineListOpen}
+        loading={globalLineListLoading}
+        error={globalLineListError}
+        records={globalLineListRecords}
+        referenceModels={referenceModels}
+        onClose={() => setGlobalLineListOpen(false)}
+        onRefresh={() => void refreshGlobalLineList()}
+        onLocateEndpoint={locateGlobalLineEndpoint}
+      />
     </div>
   );
 }

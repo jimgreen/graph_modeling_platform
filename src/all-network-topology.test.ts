@@ -7,6 +7,7 @@ import {
   collectAllNetworkTopologyModels,
   collectAllNetworkTopologyReferenceModels,
   defaultAllNetworkTopologySelection,
+  modelForGlobalLineReference,
   referencedModelsForGlobalLines
 } from "./all-network-topology";
 import {
@@ -176,6 +177,52 @@ describe("全网拓扑模型选择", () => {
     expect(dialogSource).toContain("toggleModelType(type)");
     expect(stylesSource).toContain(".all-network-topology-tree-children");
     expect(stylesSource).toContain(".all-network-topology-tree-model::before");
+  });
+
+  test("全局线路端点引用可以解析到对应模型", () => {
+    const station = projectRecord("station-1", "中心厂站", 1, "厂站");
+    const feeder = projectRecord("feeder-1", "十千伏一线", 5, "馈线");
+    const models = collectAllNetworkTopologyReferenceModels([{
+      id: "scheme-root",
+      name: "主方案",
+      updatedAt: "2026-08-17T00:00:00.000Z",
+      projects: [station, feeder]
+    }]);
+
+    expect(modelForGlobalLineReference({
+      modelKey: globalLineModelKey(5, ["主方案"], "十千伏一线"),
+      projectIdx: 5,
+      schemePath: ["主方案"],
+      projectName: "十千伏一线",
+      nodeId: "line-feeder"
+    }, models)?.projectId).toBe("feeder-1");
+    expect(modelForGlobalLineReference(null, models)).toBeUndefined();
+    expect(modelForGlobalLineReference({
+      modelKey: "model:999",
+      projectIdx: 999,
+      schemePath: ["主方案"],
+      projectName: "不存在模型",
+      nodeId: "missing-line"
+    }, models)).toBeUndefined();
+  });
+
+  test("全网拓扑左侧提供全局线路入口和独立列表窗口", () => {
+    const dialogSource = readFileSync(new URL("./AllNetworkTopologyDialog.tsx", import.meta.url), "utf8");
+    const stylesSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+    const globalLineButton = dialogSource.indexOf('aria-label="打开全局线路列表"');
+    const topologyButton = dialogSource.indexOf('onClick={() => void runTopology()}');
+
+    expect(globalLineButton).toBeGreaterThanOrEqual(0);
+    expect(topologyButton).toBeGreaterThan(globalLineButton);
+    expect(dialogSource).toContain("loadGlobalLineRecordsForTopology()");
+    expect(dialogSource).toContain("globalLineEndpointReference(record, endpoint)");
+    expect(dialogSource).toContain("modelForGlobalLineReference(reference, referenceModels)");
+    expect(dialogSource).toContain('aria-label="首端所在模型"');
+    expect(dialogSource).toContain('aria-label="末端所在模型"');
+    expect(dialogSource).toContain("requestUnsavedChangeAction");
+    expect(stylesSource).toContain(".all-network-topology-actions");
+    expect(stylesSource).toContain(".global-line-list-window-layer");
+    expect(stylesSource).toContain(".global-line-list-table");
   });
 
   test("全网拓扑窗口常驻且非阻塞并支持拖动和缩放", () => {
