@@ -83,6 +83,15 @@ describe("全局线路首末端提示", () => {
     expect(source).toContain('globalLinePlacementDialog.boundaryEndpoint === "source" ? "首端" : "末端"');
     expect(source).toContain("请选择一条对应方向槽为空、出线度为1的既有线路");
   });
+
+  test("在渲染批次生成界面前把全局线路弹窗状态注入应用作用域", () => {
+    const source = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+    const globalLineHook = source.indexOf("useGlobalLines(__appScope);");
+    const renderBatchHook = source.indexOf("useRenderBatch(__appScope);");
+
+    expect(globalLineHook).toBeGreaterThanOrEqual(0);
+    expect(renderBatchHook).toBeGreaterThan(globalLineHook);
+  });
 });
 
 describe("model interaction terminal visibility", () => {
@@ -94,19 +103,23 @@ describe("model interaction terminal visibility", () => {
 
     expect(modelInteractionTerminalRenderState(true, localPoints, "t1")).toEqual({
       connected: true,
-      localPoint: { x: 60, y: 12 }
+      localPoint: { x: 60, y: 12 },
+      showStub: false
     });
     expect(modelInteractionTerminalRenderState(true, localPoints, "t2")).toEqual({
       connected: true,
-      localPoint: undefined
+      localPoint: undefined,
+      showStub: false
     });
     expect(modelInteractionTerminalRenderState(true, localPoints, "t3")).toEqual({
       connected: false,
-      localPoint: undefined
+      localPoint: undefined,
+      showStub: false
     });
     expect(modelInteractionTerminalRenderState(false, undefined, "t1")).toEqual({
       connected: true,
-      localPoint: undefined
+      localPoint: undefined,
+      showStub: true
     });
   });
 });

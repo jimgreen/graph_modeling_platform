@@ -121,6 +121,7 @@ import {
   createRoutableLineDeviceFromEndpoints,
   insertRoutableLineDeviceBend,
   moveRoutableLineDeviceSegment,
+  modelInteractionTerminalConnectionLocalPointsByNodeId,
   routableLineDeviceEndpointRefForNode,
   routableLineDeviceEndpointRefs,
   setRoutableLineDeviceEndpoints,
@@ -185,6 +186,7 @@ import {
   normalizeViewBoxToCanvas,
   prepareConnectionEdgeForCommit,
   projectPointToBusCenterline,
+  projectPointToModelInteractionBoundary,
   reconcileOverlappingTerminalConnections,
   resetDeviceIndexesForPaste,
   terminalRenderLocalPoint,
@@ -1619,4 +1621,85 @@ test("redraws manually stored routable line routes by realigning bus endpoints t
   expectOrthogonalSegments(finalRoutePoints);
 });
 
+});
+
+
+test("projects legacy model interaction terminal points onto the button boundary", () => {
+  const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+  const source = { ...createDefaultNode("ac-source", { x: 120, y: 220 }), id: "boundary-source" };
+  const interaction = {
+    ...createDefaultNode("static-model-interaction-station", { x: 520, y: 220 }),
+    id: "station-button",
+    rotation: 90,
+    scaleX: 1.4,
+    scaleY: 0.8
+  };
+  const start = getTerminalPoint(source, "t1");
+  const legacyOutsidePoint = { x: interaction.position.x - 120, y: interaction.position.y + 18 };
+  const boundaryPoint = projectPointToModelInteractionBoundary(interaction, legacyOutsidePoint);
+  const line = createRoutableLineDeviceFromEndpoints(
+    template!,
+    start,
+    legacyOutsidePoint,
+    "layer-a",
+    {
+      source: routableLineDeviceEndpointRefForNode(source, "t1"),
+      target: routableLineDeviceEndpointRefForNode(interaction, "t1", legacyOutsidePoint)
+    }
+  );
+
+  const localPoints = modelInteractionTerminalConnectionLocalPointsByNodeId([source, interaction, line]);
+
+  expect(localPoints.get(interaction.id)?.get("t1")).toEqual(
+    routableLineDeviceEndpointRefForNode(interaction, "t1", boundaryPoint).localPoint
+  );
+});
+
+
+test("repairs a model interaction endpoint route that enters through the opposite side of the button", () => {
+  const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+  const source = { ...createDefaultNode("ac-source", { x: 360, y: 80 }), id: "approach-source" };
+  const interaction = {
+    ...createDefaultNode("static-model-interaction-station", { x: 520, y: 300 }),
+    id: "approach-station"
+  };
+  const start = getTerminalPoint(source, "t1");
+  const end = projectPointToModelInteractionBoundary(interaction, {
+    x: interaction.position.x,
+    y: interaction.position.y + 180
+  });
+  const line = createRoutableLineDeviceFromEndpoints(
+    template!,
+    start,
+    end,
+    "layer-a",
+    {
+      source: routableLineDeviceEndpointRefForNode(source, "t1"),
+      target: routableLineDeviceEndpointRefForNode(interaction, "t1", end)
+    }
+  );
+  const crossingLine = setRoutableLineDeviceCanvasPoints(line, [
+    start,
+    { x: end.x, y: start.y },
+    end
+  ]);
+
+  const routed = routeRoutableLineDevice(
+    crossingLine,
+    [source, interaction, crossingLine],
+    { width: 820, height: 560 }
+  );
+  const points = routableLineDeviceCanvasPoints(routed);
+  const adjacent = points[points.length - 2];
+  const expectedTargetNormal = getRouteEndpointNormal(interaction, end, start, "t1");
+
+  expect(points[points.length - 1]).toEqual(end);
+  expect({
+    x: Math.sign(adjacent.x - end.x),
+    y: Math.sign(adjacent.y - end.y)
+  }).toEqual(expectedTargetNormal);
+  expect(adjacent.y).toBeGreaterThan(end.y);
+  for (let index = 1; index < points.length - 1; index += 1) {
+    expect(segmentIntersectsNodeBody(points[index - 1], points[index], interaction)).toBe(false);
+  }
 });

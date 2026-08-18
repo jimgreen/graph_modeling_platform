@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { degreesToRadians } from "../formatUtils";
 import { WindowCloseButton } from "../WindowCloseButton";
+import { isGlobalLineBoundaryNode, isManagedGlobalLineModelType } from "../global-lines";
 
 export function createUpdateSingleNodeDragImperativePreview(__appScope: Record<string, any>) {
   return (dragState: DraggingState, previewDelta: Point) => {
@@ -4636,7 +4637,7 @@ export function createFindRewireTargetAtPoint(__appScope: Record<string, any>) {
 
 export function createFindConnectTargetAtPoint(__appScope: Record<string, any>) {
   return (point: Point): ConnectTarget | null => {
-  const { CONNECT_BUS_SNAP_TOLERANCE, CONNECT_TERMINAL_SNAP_TOLERANCE, activeLayerNodeIdSet, busAnchorFromPoint, canConnectTerminals, connectSource, connectTargetSearchBounds, getTerminalPoint, isBusNode, isModelInteractionNode, isPointNearBus, queryNodeSpatialIndex, visibleNodeById, visibleNodeSpatialIndex } = __appScope;
+  const { CONNECT_BUS_SNAP_TOLERANCE, CONNECT_TERMINAL_SNAP_TOLERANCE, activeLayerNodeIdSet, busAnchorFromPoint, canConnectTerminals, connectSource, connectTargetSearchBounds, getTerminalPoint, isBusNode, isModelInteractionNode, isPointNearBus, modelInteractionTerminalConnectionLocalPointsByNodeId, modelType, nodeById, projectPointToModelInteractionBoundaryIfInRange, queryNodeSpatialIndex, visibleNodeById, visibleNodeSpatialIndex } = __appScope;
     if (!connectSource) {
       return null;
     }
@@ -4645,8 +4646,33 @@ export function createFindConnectTargetAtPoint(__appScope: Record<string, any>) 
       return null;
     }
     const searchBounds = connectTargetSearchBounds(point);
+    const sourceTerminalType = sourceNode.terminals.find((terminal) => terminal.id === connectSource.terminalId)?.type;
+    const modelInteractionTerminalLocalPoints = isManagedGlobalLineModelType(modelType)
+      ? modelInteractionTerminalConnectionLocalPointsByNodeId((nodeById ?? visibleNodeById).values())
+      : new Map();
     for (const node of queryNodeSpatialIndex(visibleNodeSpatialIndex, searchBounds)) {
       if (isModelInteractionNode(node)) {
+        if (!sourceTerminalType || !isManagedGlobalLineModelType(modelType) || !isGlobalLineBoundaryNode(node)) {
+          continue;
+        }
+        const boundaryPoint = projectPointToModelInteractionBoundaryIfInRange(
+          node,
+          point,
+          CONNECT_BUS_SNAP_TOLERANCE
+        );
+        if (!boundaryPoint) {
+          continue;
+        }
+        const occupiedTerminalIds = modelInteractionTerminalLocalPoints.get(node.id);
+        const availableTerminal = node.terminals.find((terminal) =>
+          terminal.type === sourceTerminalType &&
+          !occupiedTerminalIds?.has(terminal.id) &&
+          !(node.id === sourceNode.id && terminal.id === connectSource.terminalId) &&
+          canConnectTerminals(sourceNode, connectSource.terminalId, node, terminal.id)
+        );
+        if (availableTerminal) {
+          return { node, terminalId: availableTerminal.id, point: boundaryPoint };
+        }
         continue;
       }
       if (isBusNode(node) && isPointNearBus(node, point, CONNECT_BUS_SNAP_TOLERANCE)) {

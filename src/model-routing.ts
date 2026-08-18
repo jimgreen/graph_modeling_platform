@@ -556,8 +556,8 @@ export function modelInteractionTerminalConnectionLocalPointsByNodeId(
   } = {}
 ): Map<string, Map<string, Point | undefined>> {
   const nodeList = Array.from(nodes);
-  const modelInteractionNodeIds = new Set(
-    nodeList.filter((node) => isModelInteractionNode(node)).map((node) => node.id)
+  const modelInteractionNodeById = new Map(
+    nodeList.filter((node) => isModelInteractionNode(node)).map((node) => [node.id, node] as const)
   );
   const localPointsByNodeId = new Map<string, Map<string, Point | undefined>>();
   const appendEndpoint = (
@@ -565,16 +565,28 @@ export function modelInteractionTerminalConnectionLocalPointsByNodeId(
     endpoint: "source" | "target",
     ref: RoutableLineDeviceEndpointRef | undefined
   ) => {
+    const modelInteractionNode = ref ? modelInteractionNodeById.get(ref.nodeId) : undefined;
     if (
       !ref ||
-      !modelInteractionNodeIds.has(ref.nodeId) ||
+      !modelInteractionNode ||
       (lineNode.id === options.excludedLineNodeId && endpoint === options.excludedEndpoint)
     ) {
       return;
     }
+    const routePoints = routableLineDeviceCanvasPoints(lineNode);
+    const routeEndpointPoint = endpoint === "source" ? routePoints[0] : routePoints[routePoints.length - 1];
+    const referencePoint = ref.localPoint
+      ? nodeLocalToPoint(modelInteractionNode, ref.localPoint)
+      : routeEndpointPoint;
+    const localPoint = referencePoint
+      ? pointToNodeLocal(
+          modelInteractionNode,
+          projectPointToModelInteractionBoundary(modelInteractionNode, referencePoint)
+        )
+      : undefined;
     const localPoints = localPointsByNodeId.get(ref.nodeId) ?? new Map<string, Point | undefined>();
-    if (!localPoints.has(ref.terminalId) || ref.localPoint) {
-      localPoints.set(ref.terminalId, ref.localPoint);
+    if (!localPoints.has(ref.terminalId) || localPoint) {
+      localPoints.set(ref.terminalId, localPoint);
     }
     localPointsByNodeId.set(ref.nodeId, localPoints);
   };
@@ -3086,6 +3098,9 @@ function projectBusEndpointPointToRouteSegmentExtension(
 }
 
 export function getEdgeEndpointPoint(node: ModelNode, endpointPoint?: Point, terminalId?: string): Point {
+  if (endpointPoint && isModelInteractionNode(node)) {
+    return projectPointToModelInteractionBoundary(node, endpointPoint);
+  }
   return endpointPoint && isBusNode(node) ? projectPointToBusCenterline(node, endpointPoint) : getTerminalPoint(node, terminalId);
 }
 

@@ -134,7 +134,43 @@ describe("custom bus connection targets", () => {
 });
 
 describe("ordinary link model-interaction restrictions", () => {
-  test("does not offer any model-interaction button as a connect or rewire target", () => {
+  test("厂站模型中把厂站按钮作为普通连线手势转全局线路的吸附目标", () => {
+    const source = createDefaultNode("ac-load", { x: 80, y: 200 });
+    const button = createDefaultNode("static-model-interaction-station", { x: 300, y: 200 });
+    const point = projectPointToModelInteractionBoundary(button, {
+      x: button.position.x + button.size.width / 2,
+      y: button.position.y + 8
+    });
+    const nodeById = new Map([source, button].map((node) => [node.id, node]));
+    const connectTarget = createFindConnectTargetAtPoint({
+      CONNECT_BUS_SNAP_TOLERANCE: 18,
+      CONNECT_TERMINAL_SNAP_TOLERANCE: 28,
+      activeLayerNodeIdSet: new Set([source.id, button.id]),
+      busAnchorFromPoint: projectPointToBusCenterline,
+      canConnectTerminals,
+      connectSource: { nodeId: source.id, terminalId: source.terminals[0].id },
+      connectTargetSearchBounds: vi.fn(() => ({ left: 0, right: 600, top: 0, bottom: 400 })),
+      getTerminalPoint,
+      isBusNode,
+      isModelInteractionNode,
+      isPointNearBus: vi.fn(() => false),
+      modelInteractionTerminalConnectionLocalPointsByNodeId,
+      modelType: "厂站",
+      nodeById,
+      projectPointToModelInteractionBoundaryIfInRange,
+      queryNodeSpatialIndex: vi.fn(() => [button]),
+      visibleNodeById: nodeById,
+      visibleNodeSpatialIndex: {}
+    })(point);
+
+    expect(connectTarget).toMatchObject({
+      node: { id: button.id },
+      terminalId: button.terminals[0].id,
+      point
+    });
+  });
+
+  test("非厂站馈线台区模型不把模型交互按钮作为普通联络线目标", () => {
     const source = createDefaultNode("ac-load", { x: 80, y: 200 });
     for (const kind of [
       "static-model-interaction-microgrid",
@@ -155,6 +191,7 @@ describe("ordinary link model-interaction restrictions", () => {
         isBusNode,
         isModelInteractionNode,
         isPointNearBus: vi.fn(() => false),
+        modelType: "其他",
         queryNodeSpatialIndex: vi.fn(() => [button]),
         visibleNodeSpatialIndex: {}
       };

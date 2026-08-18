@@ -20,11 +20,12 @@ export function modelInteractionTerminalRenderState(
   terminalId: string
 ) {
   if (!nodeIsModelInteraction) {
-    return { connected: true, localPoint: undefined };
+    return { connected: true, localPoint: undefined, showStub: true };
   }
   return {
     connected: Boolean(localPoints?.has(terminalId)),
-    localPoint: localPoints?.get(terminalId)
+    localPoint: localPoints?.get(terminalId),
+    showStub: false
   };
 }
 
@@ -1283,10 +1284,10 @@ export const MemoizedCanvasArea = memo(function CanvasAreaInner({ scope }: { sco
                 );
                 const terminalDisplayColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
                 return hideFixedTerminal ? null : (<g key={terminal.id} className={`terminal-control ${terminalDragPreview?.terminalId === terminal.id ? "terminal-drag-active" : ""}`} transform={terminalControlTransform(renderPoint.x, renderPoint.y)}>
-                          <line className={`terminal-stub ${terminal.type} ${disabled ? "disabled" : ""}`} strokeDasharray={terminalStubDashArray} style={{
+                          {modelInteractionTerminalState.showStub && (<line className={`terminal-stub ${terminal.type} ${disabled ? "disabled" : ""}`} strokeDasharray={terminalStubDashArray} style={{
                         "--terminal-stub-color": disabled ? "#cbd5e1" : terminalDisplayColor,
                         "--terminal-stub-width": terminalStubStrokeWidth(node, displayTerminal)
-                    } as CSSProperties} x1={stub.from.x} y1={stub.from.y} x2={stub.to.x} y2={stub.to.y}/>
+                    } as CSSProperties} x1={stub.from.x} y1={stub.from.y} x2={stub.to.x} y2={stub.to.y}/>)}
                           <circle className={`terminal-dot ${terminal.type} ${overlapped ? "overlapped" : ""} ${disabled ? "disabled" : ""}`} style={{ "--terminal-color": terminalDisplayColor } as CSSProperties} cx="0" cy="0" r={overlapped ? 7.2 : 6} onPointerDown={isEditMode ? (event) => handleTerminalPointerDown(event, node, terminal.id) : undefined}>
                             <title>{`${terminal.label} / ${terminal.type.toUpperCase()}`}</title>
                           </circle>
