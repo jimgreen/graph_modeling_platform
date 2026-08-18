@@ -1498,10 +1498,11 @@ const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
 useAppStateBatch(__appScope);
 // 提取到 useCanvasViewportBatch（原第 2265-3048 行）
 useCanvasViewportBatch(__appScope);
+// 跨厂站/馈线/台区边界的交流、直流线路由后台全局注册表统一维护。
+// 必须在 useRenderBatch 之前注入弹窗状态，否则本轮视图永远只能读到 undefined。
+useGlobalLines(__appScope);
 // 提取到 useRenderBatch（原第 3053-6217 行）
 useRenderBatch(__appScope);
-// 跨厂站/馈线/台区边界的交流、直流线路由后台全局注册表统一维护。
-useGlobalLines(__appScope);
 
 // 运行时态 WS 客户端：连入 server /ws，注册 clientId，响应 server 的 fetch 拉取。
 // 第三方 /webgrp/v1/runtime/* 经此桥接获取前端运行时态（snapshot/tab/selection/model/devices/e-file/svg/screenshot）。

@@ -347,7 +347,7 @@ export function createCommitNewConnectionEdge(__appScope: Record<string, any>) {
 
 export function createFinishConnectToTarget(__appScope: Record<string, any>) {
   return (target: NonNullable<ReturnType<typeof findConnectTargetAtPoint>>, endpointPoint?: Point | null) => {
-  const { busAnchorFromPoint, canConnectTerminals, commitNewConnectionEdge, connectPreviewPointRef, connectSource, getTerminalPoint, isBusNode, visibleNodeById } = __appScope;
+  const { busAnchorFromPoint, canConnectTerminals, commitNewConnectionEdge, connectPreviewPointRef, connectSource, getTerminalPoint, isBusNode, libraryTemplateByKind, modelType, requestGlobalLinePlacement, resetConnectPreviewState, setConnectSource, visibleNodeById, writeOperationLog } = __appScope;
     if (endpointPoint === undefined) {
       endpointPoint = connectPreviewPointRef.current;
     }
@@ -358,6 +358,36 @@ export function createFinishConnectToTarget(__appScope: Record<string, any>) {
     if (!sourceNode || !canConnectTerminals(sourceNode, connectSource.terminalId, target.node, target.terminalId)) {
       return false;
     }
+    const targetPoint = isBusNode(target.node)
+      ? target.point ?? busAnchorFromPoint(target.node, endpointPoint ?? getTerminalPoint(target.node, target.terminalId))
+      : target.point;
+    const sourceTarget: ConnectTarget = {
+      node: sourceNode,
+      terminalId: connectSource.terminalId,
+      point: connectSource.point
+    };
+    const targetWithPoint: ConnectTarget = {
+      node: target.node,
+      terminalId: target.terminalId,
+      point: targetPoint
+    };
+    const sourceTerminalType = sourceNode.terminals.find((terminal) => terminal.id === connectSource.terminalId)?.type;
+    const globalLineTemplateKind = sourceTerminalType === "ac"
+      ? "ac-routable-line"
+      : sourceTerminalType === "dc"
+        ? "dc-routable-line"
+        : "";
+    const globalLineTemplate = globalLineTemplateKind ? libraryTemplateByKind?.get(globalLineTemplateKind) : undefined;
+    if (
+      globalLineTemplate &&
+      shouldUseGlobalLineForEndpoints(modelType, globalLineTemplate.kind, sourceNode, target.node) &&
+      requestGlobalLinePlacement(globalLineTemplate, sourceTarget, targetWithPoint, connectSource.manualPoints)
+    ) {
+      setConnectSource(null);
+      resetConnectPreviewState();
+      writeOperationLog("线路连接跨模型边界，请选择既有全局线路或新建全局线路。");
+      return true;
+    }
     const newEdge: Edge = {
       id: `edge-${Date.now()}`,
       sourceId: sourceNode.id,
@@ -366,9 +396,7 @@ export function createFinishConnectToTarget(__appScope: Record<string, any>) {
       sourcePoint: connectSource.point,
       manualPoints: connectSource.manualPoints,
       targetTerminalId: target.terminalId,
-      targetPoint: isBusNode(target.node)
-        ? target.point ?? busAnchorFromPoint(target.node, endpointPoint ?? getTerminalPoint(target.node, target.terminalId))
-        : target.point
+      targetPoint
     };
     return commitNewConnectionEdge(newEdge, sourceNode.name, target.node.name);
   };

@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   createAutoSpreadCanvasGraphics,
   createCommitLayoutNodePositions,
+  createFinishConnectToTarget,
   createFinishRoutableLineEndpointDrag,
   createHandlePointerMove,
   createLoadSavedProject,
@@ -12,7 +13,7 @@ import {
   createSaveCurrentProject
 } from "./appExtracted/appProjectCanvasFactories";
 import { clampCanvasNoScrollOffset } from "./canvasViewport";
-import { createDefaultNode, getNodeScaleX, getNodeScaleY, isLineSegmentBusNode } from "./model";
+import { DEVICE_LIBRARY_BY_KIND, canConnectTerminals, createDefaultNode, getNodeScaleX, getNodeScaleY, getTerminalPoint, isBusNode, isLineSegmentBusNode } from "./model";
 import { GLOBAL_LINE_ID_PARAM } from "./global-lines";
 import { resizeLineSegmentBusGeometryFromHandleDrag } from "./transformUtils";
 
@@ -198,6 +199,74 @@ describe("线路端点调整的本图/全局维护方式切换", () => {
     expect(showGlobalMessage).toHaveBeenCalledWith(conflictMessage);
     expect(patchGraphNodes).not.toHaveBeenCalled();
     expect(setRoutableLineEndpointDrag).toHaveBeenCalledWith(null);
+  });
+});
+
+describe("普通联络线手势连接全局线路边界", () => {
+  function connectionScope(modelType: "厂站" | "其他") {
+    const source = createDefaultNode("ac-source", { x: 100, y: 200 });
+    const target = createDefaultNode("ac-station-source", { x: 500, y: 200 });
+    const manualPoints = [{ x: 260, y: 140 }, { x: 420, y: 140 }];
+    const commitNewConnectionEdge = vi.fn(() => true);
+    const requestGlobalLinePlacement = vi.fn(() => true);
+    const resetConnectPreviewState = vi.fn();
+    const setConnectSource = vi.fn();
+    const connectSource = {
+      nodeId: source.id,
+      terminalId: source.terminals[0].id,
+      manualPoints
+    };
+    const finish = createFinishConnectToTarget({
+      busAnchorFromPoint: vi.fn(),
+      canConnectTerminals,
+      commitNewConnectionEdge,
+      connectPreviewPointRef: { current: getTerminalPoint(target, target.terminals[0].id) },
+      connectSource,
+      getTerminalPoint,
+      isBusNode,
+      libraryTemplateByKind: DEVICE_LIBRARY_BY_KIND,
+      modelType,
+      requestGlobalLinePlacement,
+      resetConnectPreviewState,
+      setConnectSource,
+      visibleNodeById: new Map([[source.id, source], [target.id, target]]),
+      writeOperationLog: vi.fn()
+    });
+    return {
+      source,
+      target,
+      manualPoints,
+      commitNewConnectionEdge,
+      requestGlobalLinePlacement,
+      resetConnectPreviewState,
+      setConnectSource,
+      finish
+    };
+  }
+
+  test("厂站模型中连接厂站电源时改为创建全局交流线路并弹出配置窗口", () => {
+    const scope = connectionScope("厂站");
+    const target = { node: scope.target, terminalId: scope.target.terminals[0].id };
+
+    expect(scope.finish(target)).toBe(true);
+    expect(scope.requestGlobalLinePlacement).toHaveBeenCalledWith(
+      DEVICE_LIBRARY_BY_KIND.get("ac-routable-line"),
+      expect.objectContaining({ node: scope.source, terminalId: scope.source.terminals[0].id }),
+      expect.objectContaining({ node: scope.target, terminalId: scope.target.terminals[0].id }),
+      scope.manualPoints
+    );
+    expect(scope.commitNewConnectionEdge).not.toHaveBeenCalled();
+    expect(scope.setConnectSource).toHaveBeenCalledWith(null);
+    expect(scope.resetConnectPreviewState).toHaveBeenCalledOnce();
+  });
+
+  test("非厂站馈线台区模型仍保留普通联络线行为", () => {
+    const scope = connectionScope("其他");
+    const target = { node: scope.target, terminalId: scope.target.terminals[0].id };
+
+    expect(scope.finish(target)).toBe(true);
+    expect(scope.requestGlobalLinePlacement).not.toHaveBeenCalled();
+    expect(scope.commitNewConnectionEdge).toHaveBeenCalledOnce();
   });
 });
 
