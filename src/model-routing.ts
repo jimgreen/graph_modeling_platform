@@ -78,6 +78,7 @@ import {
   getDeviceStrokeWidth,
   isContainerParams,
   isImplicitTerminalVbaseForType,
+  modelAssociationModelTypeForKind,
   isModelInteractionNode,
   isRetiredThreeWindingTransformerParameterName,
   isRetiredTwoWindingTransformerParameterName,
@@ -1821,6 +1822,7 @@ const CONVERTER_TERMINAL_OUTWARD_OFFSET = 12;
 export const CONVERTER_GLYPH_BORDER_INSET = 8;
 const PIPELINE_TERMINAL_OUTWARD_OFFSET = 16;
 const DEVICE_GLYPH_DESIGN_LONGEST_SIDE = 100;
+const MODEL_ASSOCIATION_GLYPH_VISIBLE_BOUNDARY = 18;
 const CONVERTER_TERMINAL_KINDS = new Set<DeviceKind>(["dcdc-converter", "acdc-converter", "dcac-converter", "acac-converter"]);
 const LONG_STUB_PIPELINE_TERMINAL_KINDS = new Set<DeviceKind>([
   "hydrogen-pipeline",
@@ -1915,6 +1917,10 @@ function terminalStubVisibleBoundaryDistance(
   const glyphVariant = getDeviceGlyphVariant(baseKind);
   const fullRectDistance = axis === "x" ? size.width / 2 : size.height / 2;
   const scaled = (value: number) => value * glyphScale;
+
+  if (modelAssociationModelTypeForKind(baseKind)) {
+    return MODEL_ASSOCIATION_GLYPH_VISIBLE_BOUNDARY;
+  }
 
   if (axis === "x") {
     if (glyphVariant === "custom-device") {

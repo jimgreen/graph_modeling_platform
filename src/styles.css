@@ -2966,6 +2966,15 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   stroke-width: 3;
 }
 
+.diagram-node:has(.model-association-glyph) .node-hitbox,
+.diagram-node:has(.model-association-glyph):hover .node-hitbox,
+.diagram-node:has(.model-association-glyph).selected .node-hitbox,
+.diagram-node:has(.model-association-glyph).selected.focused .node-hitbox,
+.diagram-node:has(.model-association-glyph).connect-source .node-hitbox {
+  stroke: transparent !important;
+  filter: none !important;
+}
+
 .terminal-stub {
   stroke: var(--terminal-stub-color, #64748b) !important;
   stroke-width: var(--terminal-stub-width, 2) !important;

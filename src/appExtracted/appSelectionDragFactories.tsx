@@ -2066,6 +2066,9 @@ export function createRoutableLineRouteCandidateIdsForMovedNodes(__appScope: Rec
       if ((refs.source && movedIds.has(refs.source.nodeId)) || (refs.target && movedIds.has(refs.target.nodeId))) {
         candidateIds.add(node.id);
       }
+      if (routeTouchesExpandedBoxes(routableLineDeviceCanvasPoints(node), movedRouteBlockerBoxes)) {
+        candidateIds.add(node.id);
+      }
     }
     const addLinesNearBounds = (bounds: ReturnType<typeof boundsForNodeSet>) => {
       if (!bounds) {

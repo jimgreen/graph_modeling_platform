@@ -99,6 +99,12 @@ describe("live canvas edge DOM", () => {
     expect(css).not.toContain(".background-page-edge .connection-line");
   });
 
+  test("keeps model-association source and load hit areas borderless", () => {
+    const css = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+
+    expect(css).toMatch(/\.diagram-node:has\(\.model-association-glyph\)[\s\S]*?\.node-hitbox[\s\S]*?stroke:\s*transparent\s*!important;[\s\S]*?filter:\s*none\s*!important;/);
+  });
+
   test("maps generated state-icon terminal stubs through the inverse signed node scale", () => {
     const source = readFileSync(new URL("./appExtracted/appCanvasArea.tsx", import.meta.url), "utf8");
 

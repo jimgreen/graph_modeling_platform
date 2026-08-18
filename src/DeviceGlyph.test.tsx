@@ -94,7 +94,7 @@ describe("DeviceGlyph static nodes", () => {
 });
 
 describe("DeviceGlyph model-association derived devices", () => {
-  it("renders station feeder and district pictograms with distinct source load and AC DC markers", () => {
+  it("renders station feeder and district pictograms without redundant source load or energy badges", () => {
     const cases = [
       ["ac-station-source", "station", "source", "ac", "ACGenerator"],
       ["dc-station-load", "station", "load", "dc", "DCLoad"],
@@ -113,6 +113,10 @@ describe("DeviceGlyph model-association derived devices", () => {
       expect(markup).toContain(`model-hierarchy-glyph-role-${role}`);
       expect(markup).toContain(`model-hierarchy-glyph-energy-${energyType}`);
       expect(markup).toContain(`model-hierarchy-icon-${family}`);
+      expect(markup).not.toContain("model-hierarchy-icon-backplate");
+      expect(markup).not.toContain("model-hierarchy-energy-badge");
+      expect(markup).not.toContain("model-hierarchy-role-badge-source");
+      expect(markup).not.toContain("model-hierarchy-role-badge-load");
       expect(markup).not.toContain(`<rect x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}"`);
       expect(node.params.component_type).toBe(componentType);
       expect(node.params).not.toHaveProperty("buttonEnabled");
@@ -136,6 +140,8 @@ describe("DeviceGlyph model-association derived devices", () => {
       expect(geometryMarkup).toContain(`model-hierarchy-glyph-${family}`);
       expect(geometryMarkup).toContain("model-hierarchy-glyph-role-button");
       expect(geometryMarkup).toContain(`model-hierarchy-icon-${family}`);
+      expect(geometryMarkup).toContain("model-hierarchy-icon-backplate");
+      expect(geometryMarkup).toContain("model-hierarchy-role-badge-button");
       expect(geometryMarkup).not.toContain(`<rect x="${-node.size.width / 2}" y="${-node.size.height / 2}" width="${node.size.width}" height="${node.size.height}"`);
       expect(textMarkup).toContain(`>${label}</text>`);
     }
