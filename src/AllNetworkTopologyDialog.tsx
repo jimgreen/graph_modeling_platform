@@ -3,15 +3,20 @@ import { AlertTriangle, ChevronRight, Download, FolderTree, Network } from "luci
 
 import {
   analyzeAllNetworkTopology,
+  analyzeGlobalLinesForAllNetworkTopology,
   collectAllNetworkTopologyModels,
   collectAllNetworkTopologyReferenceModels,
   defaultAllNetworkTopologySelection,
+  referencedModelsForGlobalLines,
   type AllNetworkTopologyAlert,
   type AllNetworkTopologyModel,
+  type AllNetworkTopologyReferenceModel,
   type AllNetworkTopologyResult
 } from "./all-network-topology";
+import { type GlobalLineRecord } from "./global-lines";
 import { buildMultiModelEFileExport } from "./model";
 import { buildEFileExportOptionsFromLibrary } from "./appExtracted/appDeviceDefinitionFactories";
+import { apiPath } from "./config";
 import { saveLazyTextFile } from "./fileIO";
 import { WindowCloseButton } from "./WindowCloseButton";
 
@@ -97,7 +102,7 @@ function modelLoadError(model: AllNetworkTopologyModel, error: unknown): AllNetw
   };
 }
 
-async function loadFullModel(scope: Record<string, any>, model: AllNetworkTopologyModel) {
+async function loadFullModel<T extends AllNetworkTopologyReferenceModel>(scope: Record<string, any>, model: T): Promise<T> {
   if (!scope.savedProjectRecordIsSummary?.(model.record)) {
     return model;
   }
@@ -112,7 +117,16 @@ async function loadFullModel(scope: Record<string, any>, model: AllNetworkTopolo
       id: model.projectId,
       name: loadedRecord?.name || model.name
     }
-  } as AllNetworkTopologyModel;
+  } as T;
+}
+
+async function loadGlobalLineRecordsForTopology(): Promise<GlobalLineRecord[]> {
+  const response = await fetch(apiPath("/global-lines"));
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload?.ok || !Array.isArray(payload.records)) {
+    throw new Error(String(payload?.message ?? `读取全局线路列表失败（HTTP ${response.status}）。`));
+  }
+  return payload.records as GlobalLineRecord[];
 }
 
 export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProps) {
@@ -300,18 +314,38 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
     }
     setRunning(true);
     const selectedModels = models.filter((model) => selectedProjectIds.has(model.projectId));
-    const loadResults = await Promise.all(selectedModels.map(async (model) => {
-      try {
-        return { model: await loadFullModel(scope, model) };
-      } catch (error) {
-        return { error: modelLoadError(model, error) };
-      }
-    }));
-    const loadedModels = loadResults.flatMap((item) => item.model ? [item.model] : []);
-    const loadErrors = loadResults.flatMap((item) => item.error ? [item.error] : []);
     try {
+      const loadResults = await Promise.all(selectedModels.map(async (model) => {
+        try {
+          return { model: await loadFullModel(scope, model) };
+        } catch (error) {
+          return { error: modelLoadError(model, error) };
+        }
+      }));
+      const loadedModels = loadResults.flatMap((item) => item.model ? [item.model] : []);
+      const loadErrors = loadResults.flatMap((item) => item.error ? [item.error] : []);
       const result = analyzeAllNetworkTopology(loadedModels, referenceModels);
-      const nextResult = { ...result, errors: [...loadErrors, ...result.errors] };
+
+      const globalLineRecords = await loadGlobalLineRecordsForTopology();
+      const referencedGlobalLineModels = referencedModelsForGlobalLines(globalLineRecords, referenceModels);
+      const loadedGlobalLineModelResults = await Promise.all(referencedGlobalLineModels.map(async (model) => {
+        try {
+          return await loadFullModel(scope, model);
+        } catch {
+          return null;
+        }
+      }));
+      const loadedGlobalLineModels = loadedGlobalLineModelResults.filter(
+        (model): model is AllNetworkTopologyReferenceModel => Boolean(model)
+      );
+      const globalLineResult = analyzeGlobalLinesForAllNetworkTopology(
+        globalLineRecords,
+        loadedGlobalLineModels
+      );
+      const nextResult = {
+        errors: [...loadErrors, ...result.errors, ...globalLineResult.errors],
+        warnings: [...result.warnings, ...globalLineResult.warnings]
+      };
       setCompletedRun({
         selectionKey: selectionKey(selectedProjectIds),
         models: loadedModels,

@@ -76,6 +76,15 @@ describe("全网拓扑入口", () => {
   });
 });
 
+describe("全局线路首末端提示", () => {
+  test("选择窗口明确显示本次占用的首端或末端，并说明只列出对应空槽", () => {
+    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain('globalLinePlacementDialog.boundaryEndpoint === "source" ? "首端" : "末端"');
+    expect(source).toContain("请选择一条对应方向槽为空、出线度为1的既有线路");
+  });
+});
+
 describe("model interaction terminal visibility", () => {
   test("hides unused terminals while retaining connected legacy terminals without a saved local point", () => {
     const localPoints = new Map<string, { x: number; y: number } | undefined>([

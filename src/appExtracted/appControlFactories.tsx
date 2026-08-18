@@ -4,6 +4,7 @@
 // 经 WS control 指令调用（App.tsx commandHandler 分发）。
 import { createDefaultNode, DEVICE_LIBRARY_BY_KIND, deleteNodesWithConnectedEdges } from "../model";
 import { createCanvasGroupFromSelection, removeGraphicsFromGroups } from "../selectionActions";
+import { expandGlobalBoundaryDeletionNodeIds } from "../global-lines";
 
 // 新增图元：kind 限 DeviceKind 枚举，attrs 从 deviceDefinition 取默认（createDefaultNode 内部完成），
 // 调用方可 override（position/params 等）。压 undo 栈（C-5），不落盘（D-3）。
@@ -229,9 +230,11 @@ export function createProgrammaticDeleteDevices(__appScope: Record<string, any>)
       markRouteEdgesDirty, markStoredRouteEdgesDirty, markBusTerminalSyncDirtyForEdges,
       normalizeModelGroups, normalizeProjectMeasurements, removeGraphicsFromGroups,
       pushUndoSnapshot, setGraphArrays, setEdges, setGroups, setProjectMeasurements,
-      setCanvasSelectionScope, setSelectedNodeIds, setSelectedEdgeId, setSelectedEdgeIds
+      setCanvasSelectionScope, setSelectedNodeIds, setSelectedEdgeId, setSelectedEdgeIds,
+      syncGlobalLineProjectNodes
     } = __appScope;
-    const targetNodeIds = ids ?? ((activeSelectedNodeIds as string[]) ?? []);
+    const requestedNodeIds = ids ?? ((activeSelectedNodeIds as string[]) ?? []);
+    const targetNodeIds = expandGlobalBoundaryDeletionNodeIds(nodes, requestedNodeIds);
     if (targetNodeIds.length === 0) {
       const e: any = new Error("无可删除图元。");
       e.code = "control-failed";
@@ -246,6 +249,7 @@ export function createProgrammaticDeleteDevices(__appScope: Record<string, any>)
     const result = deleteNodesWithConnectedEdges(nodes, edges, targetNodeIds);
     const nextEdges = result.edges.filter((edge: any) => !selectedEdgeSet.has(edge.id));
     setGraphArrays(result.nodes, nextEdges);
+    void syncGlobalLineProjectNodes?.(result.nodes, false);
     setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, targetNodeIds, selectedEdgeSet), result.nodes, nextEdges));
     setProjectMeasurements((current: any) => normalizeProjectMeasurements(current, result.nodes));
     setCanvasSelectionScope("group");

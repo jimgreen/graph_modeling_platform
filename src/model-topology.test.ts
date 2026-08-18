@@ -3407,6 +3407,55 @@ test("normalizes generator and storage limits after topology without mutating th
   expect(result.warnings.every((warning) => !isBlockingTopologyValidationError(warning))).toBe(true);
 });
 
+test("keeps positive branch current limits and only defaults zero current limits", () => {
+  const acLine = createDefaultNode("ac-line", { x: 100, y: 100 });
+  acLine.name = "交流线路（自适应）-1";
+  acLine.terminals = acLine.terminals.map((terminal) => ({ ...terminal, vbase: "220 kV" }));
+  acLine.params = {
+    ...acLine.params,
+    rated_capacity: "220 MW",
+    i_max: "199 A"
+  };
+
+  const dcLine = createDefaultNode("dc-line", { x: 300, y: 100 });
+  dcLine.name = "直流线路（自适应）-1";
+  dcLine.terminals = dcLine.terminals.map((terminal) => ({ ...terminal, vbase: "1 kV" }));
+  dcLine.params = {
+    ...dcLine.params,
+    rated_capacity: "10 MW",
+    i_max: "3 A"
+  };
+
+  const zeroCurrentLine = createDefaultNode("ac-line", { x: 500, y: 100 });
+  zeroCurrentLine.name = "零最大电流线路";
+  zeroCurrentLine.terminals = zeroCurrentLine.terminals.map((terminal) => ({ ...terminal, vbase: "220 kV" }));
+  zeroCurrentLine.params = {
+    ...zeroCurrentLine.params,
+    rated_capacity: "220 MW",
+    i_max: "0"
+  };
+
+  const result = normalizeDeviceOperatingLimitsAfterTopology([acLine, dcLine, zeroCurrentLine], {
+    powerUnit: "MW",
+    voltageUnit: "kV",
+    currentUnit: "A"
+  });
+  const byId = new Map(result.nodes.map((node) => [node.id, node]));
+
+  expect(byId.get(acLine.id)!.params.i_max).toBe("199 A");
+  expect(byId.get(dcLine.id)!.params.i_max).toBe("3 A");
+  expect(Number(byId.get(zeroCurrentLine.id)!.params.i_max)).toBeCloseTo(577.367205543, 6);
+  expect(result.corrections.filter((correction) => correction.paramKey === "i_max")).toEqual([
+    expect.objectContaining({ nodeId: zeroCurrentLine.id })
+  ]);
+  expect(result.warnings.filter((warning) => warning.message.includes("最大电流"))).toEqual([
+    expect.objectContaining({
+      nodeId: zeroCurrentLine.id,
+      message: expect.stringContaining("i_max=0")
+    })
+  ]);
+});
+
 test("normalizes converter active, reactive, voltage, and current limits using page units", () => {
   const acdc = createDefaultNode("acdc-converter", { x: 100, y: 100 });
   const dcac = createDefaultNode("dcac-converter", { x: 300, y: 100 });

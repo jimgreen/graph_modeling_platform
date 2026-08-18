@@ -17,6 +17,16 @@ import {
   type SavedSchemeRecord,
   type TopologyValidationError
 } from "./model";
+import {
+  GLOBAL_LINE_ID_PARAM,
+  globalLineEndpointReference,
+  globalLineEnergyTypeForNode,
+  globalLineModelKey,
+  globalLineSharedParamsFromNode,
+  type GlobalLineEndpoint,
+  type GlobalLineRecord,
+  type GlobalLineReference
+} from "./global-lines";
 
 export type AllNetworkTopologyModelType = Extract<ModelType, "厂站" | "馈线" | "台区">;
 
@@ -98,6 +108,190 @@ export function collectAllNetworkTopologyModels(schemes: readonly SavedSchemeRec
 
 export function defaultAllNetworkTopologySelection(models: readonly AllNetworkTopologyModel[]): string[] {
   return models.map((model) => model.projectId);
+}
+
+function globalLineReferenceMatchesModel(
+  reference: GlobalLineReference,
+  model: AllNetworkTopologyReferenceModel
+): boolean {
+  if (reference.modelKey === globalLineModelKey(model.idx, model.schemePath, model.name)) {
+    return true;
+  }
+  if (reference.projectIdx && reference.projectIdx === model.idx) {
+    return true;
+  }
+  return Boolean(
+    reference.projectName &&
+    reference.projectName === model.name &&
+    JSON.stringify(reference.schemePath) === JSON.stringify(model.schemePath)
+  );
+}
+
+function modelForGlobalLineReference(
+  reference: GlobalLineReference | null,
+  models: readonly AllNetworkTopologyReferenceModel[]
+): AllNetworkTopologyReferenceModel | undefined {
+  return reference
+    ? models.find((model) => globalLineReferenceMatchesModel(reference, model))
+    : undefined;
+}
+
+export function referencedModelsForGlobalLines(
+  records: readonly GlobalLineRecord[],
+  models: readonly AllNetworkTopologyReferenceModel[]
+): AllNetworkTopologyReferenceModel[] {
+  const references = records.flatMap((record) => record.references);
+  return models.filter((model) => references.some((reference) => (
+    globalLineReferenceMatchesModel(reference, model)
+  )));
+}
+
+function globalLineEndpointLabel(endpoint: GlobalLineEndpoint) {
+  return endpoint === "source" ? "首端" : "末端";
+}
+
+function normalizedGlobalLineReferenceEndpoint(reference: GlobalLineReference): GlobalLineEndpoint | "" {
+  if (reference.boundaryEndpoint === "source" || reference.boundaryEndpoint === "target") {
+    return reference.boundaryEndpoint;
+  }
+  if (reference.terminalSlot === "i") return "source";
+  if (reference.terminalSlot === "j") return "target";
+  return "";
+}
+
+function differingGlobalLineParamKeys(
+  recordParams: Readonly<Record<string, string>>,
+  modelParams: Readonly<Record<string, string>>
+) {
+  return [...new Set([...Object.keys(recordParams), ...Object.keys(modelParams)])]
+    .filter((key) => String(recordParams[key] ?? "") !== String(modelParams[key] ?? ""))
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function globalLineDefinitionDifferences(
+  record: GlobalLineRecord,
+  reference: GlobalLineReference,
+  endpoint: GlobalLineEndpoint,
+  model: AllNetworkTopologyReferenceModel
+): string[] {
+  const line = model.record.project.nodes.find((node) => node.id === reference.nodeId);
+  if (!line) {
+    return [`模型文件中缺少 nodeId=${reference.nodeId} 的线路记录`];
+  }
+  const differences: string[] = [];
+  const modelGlobalLineId = String(line.params[GLOBAL_LINE_ID_PARAM] ?? "").trim();
+  if (modelGlobalLineId !== record.id) {
+    differences.push(`全局线路ID不一致（模型=${modelGlobalLineId || "空"}，全局=${record.id}）`);
+  }
+  const modelEnergyType = globalLineEnergyTypeForNode(line);
+  if (modelEnergyType !== record.energyType) {
+    differences.push(`能源类型不一致（模型=${modelEnergyType || "未知"}，全局=${record.energyType}）`);
+  }
+  if (line.name !== record.name) {
+    differences.push(`名称不一致（模型=${line.name || "空"}，全局=${record.name}）`);
+  }
+  const modelIndex = String(line.params.idx ?? "").trim();
+  if (modelIndex !== String(record.idx)) {
+    differences.push(`idx不一致（模型=${modelIndex || "空"}，全局=${record.idx}）`);
+  }
+  const differingParams = differingGlobalLineParamKeys(
+    record.params,
+    globalLineSharedParamsFromNode(line)
+  );
+  if (differingParams.length > 0) {
+    differences.push(`共享参数不一致（${differingParams.join("、")}）`);
+  }
+  const modelEndpoint = routableLineDeviceEndpointRefs(line)[endpoint];
+  const referenceEndpoint = normalizedGlobalLineReferenceEndpoint(reference);
+  if (referenceEndpoint !== endpoint) {
+    differences.push(`首末端方向不一致（模型检查=${globalLineEndpointLabel(endpoint)}，全局引用=${referenceEndpoint ? globalLineEndpointLabel(referenceEndpoint) : "未定义"}）`);
+  }
+  if (!modelEndpoint) {
+    differences.push(`模型文件中的${globalLineEndpointLabel(endpoint)}连接定义缺失`);
+  } else {
+    if (modelEndpoint.nodeId !== String(reference.boundaryNodeId ?? "")) {
+      differences.push(`边界设备不一致（模型=${modelEndpoint.nodeId}，全局=${reference.boundaryNodeId || "空"}）`);
+    }
+    if (modelEndpoint.terminalId !== String(reference.boundaryTerminalId ?? "")) {
+      differences.push(`边界端子不一致（模型=${modelEndpoint.terminalId}，全局=${reference.boundaryTerminalId || "空"}）`);
+    }
+  }
+  return differences;
+}
+
+function globalLineTopologyAlert(
+  record: GlobalLineRecord,
+  endpoint: GlobalLineEndpoint,
+  kind: "missing-endpoint" | "missing-model" | "definition-mismatch",
+  message: string,
+  model?: AllNetworkTopologyReferenceModel,
+  reference?: GlobalLineReference | null
+): AllNetworkTopologyAlert {
+  return {
+    id: `global-line:${record.id}:${kind}:${endpoint}`,
+    projectId: model?.projectId ?? "",
+    schemeId: model?.schemeId ?? "",
+    modelName: model?.name || reference?.projectName || "全局线路注册表",
+    deviceName: record.name || record.id,
+    message,
+    ...(reference?.nodeId ? { nodeId: reference.nodeId } : {}),
+    relatedNodeIds: reference?.nodeId ? [reference.nodeId] : []
+  };
+}
+
+export function analyzeGlobalLinesForAllNetworkTopology(
+  records: readonly GlobalLineRecord[],
+  models: readonly AllNetworkTopologyReferenceModel[]
+): AllNetworkTopologyResult {
+  const errors: AllNetworkTopologyAlert[] = [];
+  const warnings: AllNetworkTopologyAlert[] = [];
+  const orderedRecords = [...records].sort((left, right) => (
+    left.idx - right.idx || left.name.localeCompare(right.name, "zh-CN") || left.id.localeCompare(right.id)
+  ));
+  for (const record of orderedRecords) {
+    for (const endpoint of ["source", "target"] as const) {
+      const reference = globalLineEndpointReference(record, endpoint);
+      const endpointLabel = globalLineEndpointLabel(endpoint);
+      if (!reference) {
+        const oppositeEndpoint = endpoint === "source" ? "target" : "source";
+        const oppositeReference = globalLineEndpointReference(record, oppositeEndpoint);
+        const oppositeModel = modelForGlobalLineReference(oppositeReference, models);
+        warnings.push(globalLineTopologyAlert(
+          record,
+          endpoint,
+          "missing-endpoint",
+          `全局线路“${record.name}”的${endpointLabel}为空，请补充该端关联。`,
+          oppositeModel,
+          oppositeReference
+        ));
+        continue;
+      }
+      const model = modelForGlobalLineReference(reference, models);
+      if (!model) {
+        warnings.push(globalLineTopologyAlert(
+          record,
+          endpoint,
+          "missing-model",
+          `全局线路“${record.name}”的${endpointLabel}对应模型“${reference.projectName || reference.modelKey}”的模型文件不存在。`,
+          undefined,
+          reference
+        ));
+        continue;
+      }
+      const differences = globalLineDefinitionDifferences(record, reference, endpoint, model);
+      if (differences.length > 0) {
+        errors.push(globalLineTopologyAlert(
+          record,
+          endpoint,
+          "definition-mismatch",
+          `全局线路“${record.name}”的${endpointLabel}在模型文件“${model.name}”中的定义与全局线路定义不一致：${differences.join("；")}。`,
+          model,
+          reference
+        ));
+      }
+    }
+  }
+  return { errors, warnings };
 }
 
 function deviceNameForTopologyError(

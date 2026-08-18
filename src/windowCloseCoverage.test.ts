@@ -55,7 +55,7 @@ describe("popup window close controls", () => {
     });
     expect(reactDialogSource).toContain("label={`关闭${title}窗口`}");
     expect(reactDialogSource).toContain("label={`关闭${customLibraryCreateDialog.title}`}");
-    expect(reactDialogSource.match(/<WindowCloseButton\b/g)).toHaveLength(32);
+    expect(reactDialogSource.match(/<WindowCloseButton\b/g)).toHaveLength(36);
   });
 
   it("covers the non-React global confirmation window and close-button visuals", () => {

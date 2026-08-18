@@ -3,10 +3,20 @@ import { describe, expect, test } from "vitest";
 
 import {
   analyzeAllNetworkTopology,
+  analyzeGlobalLinesForAllNetworkTopology,
   collectAllNetworkTopologyModels,
   collectAllNetworkTopologyReferenceModels,
-  defaultAllNetworkTopologySelection
+  defaultAllNetworkTopologySelection,
+  referencedModelsForGlobalLines
 } from "./all-network-topology";
+import {
+  GLOBAL_LINE_ID_PARAM,
+  globalLineModelKey,
+  globalLineSharedParamsFromNode,
+  type GlobalLineEndpoint,
+  type GlobalLineRecord,
+  type GlobalLineReference
+} from "./global-lines";
 import {
   DEFAULT_MODEL_LAYER_ID,
   DEVICE_LIBRARY_BY_KIND,
@@ -61,6 +71,53 @@ function connectAcLine(
   line.name = name;
   line.terminals = line.terminals.map((terminal) => ({ ...terminal, vbase: "10" }));
   return line;
+}
+
+function globalLineReference(
+  model: {
+    idx: number;
+    schemePath: string[];
+    name: string;
+  },
+  nodeId: string,
+  boundaryEndpoint: GlobalLineEndpoint,
+  boundaryNodeId: string,
+  boundaryTerminalId: string
+): GlobalLineReference {
+  return {
+    modelKey: globalLineModelKey(model.idx, model.schemePath, model.name),
+    projectIdx: model.idx,
+    schemePath: [...model.schemePath],
+    projectName: model.name,
+    nodeId,
+    terminalSlot: boundaryEndpoint === "source" ? "i" : "j",
+    boundaryEndpoint,
+    boundaryNodeId,
+    boundaryTerminalId
+  };
+}
+
+function globalLineRecord(
+  id: string,
+  idx: number,
+  name: string,
+  line: ModelNode,
+  source: GlobalLineReference | null,
+  target: GlobalLineReference | null
+): GlobalLineRecord {
+  return {
+    id,
+    idx,
+    name,
+    energyType: "ac",
+    params: globalLineSharedParamsFromNode(line),
+    references: [source, target].filter(Boolean) as GlobalLineReference[],
+    endpointSlots: { source, target },
+    terminalSlots: { i: source, j: target },
+    degree: Number(Boolean(source)) + Number(Boolean(target)),
+    createdAt: "2026-08-18T00:00:00.000Z",
+    updatedAt: "2026-08-18T00:00:00.000Z"
+  };
 }
 
 describe("全网拓扑模型选择", () => {
@@ -140,6 +197,162 @@ describe("全网拓扑模型选择", () => {
     expect(stylesSource).toContain(".all-network-topology-resize-handle");
     expect(dialogSource).toContain("completedRun.result.errors.length > 0");
   });
+
+  test("全网拓扑在模型拓扑完成后最后执行全局线路注册表检查", () => {
+    const dialogSource = readFileSync(new URL("./AllNetworkTopologyDialog.tsx", import.meta.url), "utf8");
+    const runStart = dialogSource.indexOf("const runTopology = async () =>");
+    const modelTopologyCheck = dialogSource.indexOf("analyzeAllNetworkTopology(loadedModels", runStart);
+    const globalLineCheck = dialogSource.indexOf("analyzeGlobalLinesForAllNetworkTopology", runStart);
+    const resultMerge = dialogSource.indexOf("const nextResult =", runStart);
+
+    expect(runStart).toBeGreaterThanOrEqual(0);
+    expect(modelTopologyCheck).toBeGreaterThan(runStart);
+    expect(globalLineCheck).toBeGreaterThan(modelTopologyCheck);
+    expect(resultMerge).toBeGreaterThan(globalLineCheck);
+  });
+});
+
+describe("全网拓扑全局线路预检查", () => {
+  test("某一端为空和端点对应模型文件不存在均进入警告分页", () => {
+    const templateLine = createDefaultNode("ac-routable-line", { x: 200, y: 100 });
+    templateLine.name = "跨区交流一线";
+    templateLine.params.idx = "21";
+    templateLine.params[GLOBAL_LINE_ID_PARAM] = "global-line-21";
+    const missingModel = {
+      idx: 12,
+      schemePath: ["主方案"],
+      name: "不存在的馈线"
+    };
+    const sourceReference = globalLineReference(
+      missingModel,
+      "missing-line-node",
+      "source",
+      "missing-boundary-node",
+      "t1"
+    );
+    const record = globalLineRecord(
+      "global-line-21",
+      21,
+      templateLine.name,
+      templateLine,
+      sourceReference,
+      null
+    );
+
+    const result = analyzeGlobalLinesForAllNetworkTopology([record], []);
+
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: expect.stringContaining("missing-endpoint:target"),
+        deviceName: "跨区交流一线",
+        message: expect.stringMatching(/末端.*为空/)
+      }),
+      expect.objectContaining({
+        id: expect.stringContaining("missing-model:source"),
+        modelName: "不存在的馈线",
+        deviceName: "跨区交流一线",
+        message: expect.stringMatching(/首端.*模型文件.*不存在/)
+      })
+    ]));
+  });
+
+  test("模型文件存在但线路定义与全局线路定义不一致时进入错误分页", () => {
+    const sourceBoundary = createDefaultNode("static-model-interaction-station", { x: 100, y: 100 });
+    const sourceLoad = createDefaultNode("ac-load", { x: 420, y: 100 });
+    const targetSource = createDefaultNode("ac-source", { x: 100, y: 260 });
+    const targetBoundary = createDefaultNode("static-model-interaction-feeder", { x: 420, y: 260 });
+    const sourceLine = connectAcLine(
+      "跨区交流二线",
+      { node: sourceBoundary, terminalId: "t1" },
+      { node: sourceLoad, terminalId: sourceLoad.terminals[0].id }
+    );
+    const targetLine = connectAcLine(
+      "跨区交流二线",
+      { node: targetSource, terminalId: targetSource.terminals[0].id },
+      { node: targetBoundary, terminalId: "t1" }
+    );
+    const sourceModel = {
+      projectId: "station-global-source",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "全局线路源厂站",
+      idx: 31,
+      modelType: "厂站" as const,
+      record: projectRecord(
+        "station-global-source",
+        "全局线路源厂站",
+        31,
+        "厂站",
+        [sourceBoundary, sourceLoad, sourceLine]
+      )
+    };
+    const targetModel = {
+      projectId: "feeder-global-target",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "全局线路目标馈线",
+      idx: 32,
+      modelType: "馈线" as const,
+      record: projectRecord(
+        "feeder-global-target",
+        "全局线路目标馈线",
+        32,
+        "馈线",
+        [targetSource, targetBoundary, targetLine]
+      )
+    };
+    for (const line of [sourceLine, targetLine]) {
+      line.params.idx = "22";
+      line.params[GLOBAL_LINE_ID_PARAM] = "global-line-22";
+    }
+    const sourceReference = globalLineReference(
+      sourceModel,
+      sourceLine.id,
+      "source",
+      sourceBoundary.id,
+      "t1"
+    );
+    const targetReference = globalLineReference(
+      targetModel,
+      targetLine.id,
+      "target",
+      targetBoundary.id,
+      "t1"
+    );
+    const record = globalLineRecord(
+      "global-line-22",
+      22,
+      "跨区交流二线",
+      sourceLine,
+      sourceReference,
+      targetReference
+    );
+
+    expect(referencedModelsForGlobalLines([record], [sourceModel, targetModel])).toEqual([
+      sourceModel,
+      targetModel
+    ]);
+    expect(analyzeGlobalLinesForAllNetworkTopology([record], [sourceModel, targetModel])).toEqual({
+      errors: [],
+      warnings: []
+    });
+
+    targetLine.params.r = "9.9";
+    const mismatch = analyzeGlobalLinesForAllNetworkTopology([record], [sourceModel, targetModel]);
+
+    expect(mismatch.warnings).toEqual([]);
+    expect(mismatch.errors).toEqual([
+      expect.objectContaining({
+        id: expect.stringContaining("definition-mismatch:target"),
+        projectId: targetModel.projectId,
+        modelName: targetModel.name,
+        deviceName: "跨区交流二线",
+        nodeId: targetLine.id,
+        message: expect.stringMatching(/模型文件.*全局线路定义不一致.*共享参数.*r/)
+      })
+    ]);
+  });
 });
 
 describe("全网拓扑告警分类", () => {
@@ -177,6 +390,39 @@ describe("全网拓扑告警分类", () => {
     ]));
     expect(result.errors.every((alert) => Boolean(alert.deviceName))).toBe(true);
     expect(result.warnings).toEqual([]);
+  });
+
+  test("全网拓扑接受额定容量和最大电流均为正数的线路参数", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const load = createDefaultNode("ac-load", { x: 440, y: 100 });
+    source.terminals[0].vbase = "10";
+    load.terminals[0].vbase = "10";
+    const line = connectAcLine(
+      "交流线路（自适应）-1",
+      { node: source, terminalId: source.terminals[0].id },
+      { node: load, terminalId: load.terminals[0].id }
+    );
+    line.params = {
+      ...line.params,
+      rated_capacity: "220",
+      i_max: "199"
+    };
+    const model = {
+      projectId: "station-current-limit",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "线路限值厂站",
+      idx: 6,
+      modelType: "厂站" as const,
+      record: projectRecord("station-current-limit", "线路限值厂站", 6, "厂站", [source, load, line])
+    };
+
+    const result = analyzeAllNetworkTopology([model], [model]);
+
+    expect(result.errors.some((alert) => (
+      alert.nodeId === line.id && alert.message.includes("额定容量/基准电压/1.732")
+    ))).toBe(false);
+    expect(result.errors.some((alert) => alert.message.includes("i_max=199"))).toBe(false);
   });
 
   test("线路关联模型未参与本轮拓扑时给出警告，目标模型被选中后警告消失", () => {

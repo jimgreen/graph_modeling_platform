@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { expandGlobalBoundaryDeletionNodeIds } from "../global-lines";
 
 export function createEnsureDraggingUndoSnapshot(__appScope: Record<string, any>) {
   return () => {
@@ -1576,7 +1577,7 @@ export function createFinishMarqueeSelection(__appScope: Record<string, any>) {
 
 export function createDeleteSelection(__appScope: Record<string, any>) {
   return () => {
-  const { activeSelectedEdgeIds, activeSelectedNodeIds, deleteNodesWithConnectedEdges, edgeById, edgeListForNodeIds, edges, groups, markBusTerminalSyncDirtyForEdges, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodes, normalizeModelGroups, normalizeProjectMeasurements, pushUndoSnapshot, removeGraphicsFromGroups, requireEditMode, setCanvasSelectionScope, setEdges, setGraphArrays, setGroups, setProjectMeasurements, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, writeOperationLog } = __appScope;
+  const { activeSelectedEdgeIds, activeSelectedNodeIds, deleteNodesWithConnectedEdges, edgeById, edgeListForNodeIds, edges, groups, markBusTerminalSyncDirtyForEdges, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodes, normalizeModelGroups, normalizeProjectMeasurements, pushUndoSnapshot, removeGraphicsFromGroups, requireEditMode, setCanvasSelectionScope, setEdges, setGraphArrays, setGroups, setProjectMeasurements, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, syncGlobalLineProjectNodes, writeOperationLog } = __appScope;
     if (!requireEditMode("删除图元")) {
       return;
     }
@@ -1602,21 +1603,24 @@ export function createDeleteSelection(__appScope: Record<string, any>) {
       writeOperationLog(`删除 ${selectedEdges.size} 条联络线`);
       return;
     }
+    const expandedNodeIds = expandGlobalBoundaryDeletionNodeIds(nodes, activeSelectedNodeIds);
     pushUndoSnapshot();
-    const deletedEdges = edgeListForNodeIds(activeSelectedNodeIds, selectedEdges);
+    const deletedEdges = edgeListForNodeIds(expandedNodeIds, selectedEdges);
     markRouteEdgesDirty(deletedEdges.map((edge) => edge.id));
     markStoredRouteEdgesDirty(deletedEdges.map((edge) => edge.id));
     markBusTerminalSyncDirtyForEdges(deletedEdges);
-    const result = deleteNodesWithConnectedEdges(nodes, edges, activeSelectedNodeIds);
+    const result = deleteNodesWithConnectedEdges(nodes, edges, expandedNodeIds);
     const nextEdges = result.edges.filter((edge) => !selectedEdges.has(edge.id));
     setGraphArrays(result.nodes, nextEdges);
-    setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, activeSelectedNodeIds, selectedEdges), result.nodes, nextEdges));
+    void syncGlobalLineProjectNodes?.(result.nodes, false);
+    setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, expandedNodeIds, selectedEdges), result.nodes, nextEdges));
     setProjectMeasurements((current) => normalizeProjectMeasurements(current, result.nodes));
     setCanvasSelectionScope("group");
     setSelectedNodeIds([]);
     setSelectedEdgeId("");
     setSelectedEdgeIds([]);
-    writeOperationLog(`删除 ${activeSelectedNodeIds.length} 个图元`);
+    const cascadedLineCount = expandedNodeIds.length - activeSelectedNodeIds.length;
+    writeOperationLog(`删除 ${expandedNodeIds.length} 个图元${cascadedLineCount > 0 ? `（含级联线路 ${cascadedLineCount} 条）` : ""}`);
   };
 }
 
