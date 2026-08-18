@@ -535,6 +535,7 @@ export function renderAppView(__appScope: Record<string, any>) {
   } = __appScope;
   const { globalMessage, setGlobalMessage } = __appScope;
   const { createModelDialog, setCreateModelDialog } = __appScope;
+  const { globalLinePlacementDialog, globalLinePlacementCandidates, globalLineTransitionDialog, setGlobalLinePlacementDialog, confirmGlobalLinePlacement, cancelGlobalLinePlacement, confirmGlobalLineTransition, cancelGlobalLineTransition } = __appScope;
   const { exportCompletionDialog, exportCompletionCountdown, setExportCompletionDialog } = __appScope;
   const { unsavedChangesDialogOpen, setUnsavedChangesDialogOpen, savedUndoStackLengthRef, setHasUnsavedChanges } = __appScope;
   useEffect(() => {
@@ -3610,6 +3611,129 @@ export function renderAppView(__appScope: Record<string, any>) {
               >
                 {libraryPackageDialogMode === "import" ? "导入" : "导出"}
               </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {globalLinePlacementDialog && (
+        <div className="image-picker-backdrop global-line-dialog-backdrop" onPointerDown={cancelGlobalLinePlacement}>
+          <section
+            className="unsaved-change-dialog global-line-dialog window-close-host"
+            onPointerDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => { if (event.key === "Escape") cancelGlobalLinePlacement(); }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="global-line-dialog-title"
+          >
+            <WindowCloseButton label="取消添加全局线路" onClick={cancelGlobalLinePlacement}/>
+            <div className="image-picker-title">
+              <div>
+                <h2 id="global-line-dialog-title">选择或新建全局线路</h2>
+                <p>
+                  当前{globalLinePlacementDialog.energyType === "ac" ? "交流" : "直流"}线路连接了跨模型边界设备。
+                  本次连接占用全局线路的{globalLinePlacementDialog.boundaryEndpoint === "source" ? "首端" : "末端"}。
+                  请选择一条对应方向槽为空、出线度为1的既有线路，或在全局表中新建线路。
+                </p>
+              </div>
+            </div>
+            <div className="global-line-dialog-options">
+              <label className={`global-line-dialog-option${globalLinePlacementDialog.mode === "existing" ? " active" : ""}`}>
+                <span className="global-line-dialog-option-heading">
+                  <input
+                    type="radio"
+                    name="global-line-placement-mode"
+                    checked={globalLinePlacementDialog.mode === "existing"}
+                    disabled={globalLinePlacementDialog.loading || globalLinePlacementCandidates.length === 0}
+                    onChange={() => setGlobalLinePlacementDialog((current) => current ? { ...current, mode: "existing", error: "" } : current)}
+                  />
+                  选择既有全局线路
+                </span>
+                <select
+                  value={globalLinePlacementDialog.selectedGlobalLineId}
+                  disabled={globalLinePlacementDialog.loading || globalLinePlacementDialog.mode !== "existing" || globalLinePlacementCandidates.length === 0}
+                  onChange={(event) => setGlobalLinePlacementDialog((current) => current ? { ...current, selectedGlobalLineId: event.target.value, error: "" } : current)}
+                >
+                  {globalLinePlacementCandidates.map((record) => (
+                    <option key={record.id} value={record.id}>
+                      {record.idx} · {record.name} · 出线度 {record.degree}
+                    </option>
+                  ))}
+                </select>
+                {!globalLinePlacementDialog.loading && globalLinePlacementCandidates.length === 0 && (
+                  <small>
+                    当前没有能源类型一致、{globalLinePlacementDialog.boundaryEndpoint === "source" ? "首端" : "末端"}为空且出线度为1的可选线路。
+                  </small>
+                )}
+              </label>
+              <label className={`global-line-dialog-option${globalLinePlacementDialog.mode === "new" ? " active" : ""}`}>
+                <span className="global-line-dialog-option-heading">
+                  <input
+                    type="radio"
+                    name="global-line-placement-mode"
+                    checked={globalLinePlacementDialog.mode === "new"}
+                    disabled={globalLinePlacementDialog.loading}
+                    onChange={() => setGlobalLinePlacementDialog((current) => current ? { ...current, mode: "new", error: "" } : current)}
+                  />
+                  新建全局线路
+                </span>
+                <input
+                  type="text"
+                  value={globalLinePlacementDialog.name}
+                  disabled={globalLinePlacementDialog.loading || globalLinePlacementDialog.mode !== "new"}
+                  placeholder="请输入全局唯一的线路名称"
+                  onChange={(event) => setGlobalLinePlacementDialog((current) => current ? { ...current, name: event.target.value, error: "" } : current)}
+                />
+              </label>
+            </div>
+            {globalLinePlacementDialog.loading && <p className="global-line-dialog-status">正在读取全局线路表…</p>}
+            {globalLinePlacementDialog.error && <p className="global-line-dialog-error">{globalLinePlacementDialog.error}</p>}
+            <div className="unsaved-change-actions">
+              <button type="button" onClick={cancelGlobalLinePlacement} disabled={globalLinePlacementDialog.saving}>取消</button>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => void confirmGlobalLinePlacement()}
+                disabled={globalLinePlacementDialog.loading || globalLinePlacementDialog.saving}
+              >
+                {globalLinePlacementDialog.saving ? "保存中…" : "确认添加"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {globalLineTransitionDialog && (
+        <div className="image-picker-backdrop global-line-dialog-backdrop" onPointerDown={cancelGlobalLineTransition}>
+          <section
+            className="unsaved-change-dialog global-line-transition-dialog window-close-host"
+            onPointerDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => { if (event.key === "Escape") cancelGlobalLineTransition(); }}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="global-line-transition-title"
+          >
+            <WindowCloseButton label="取消线路维护方式变更" onClick={cancelGlobalLineTransition}/>
+            <div className="image-picker-title">
+              <div>
+                <h2 id="global-line-transition-title">线路维护方式即将变更</h2>
+                <p>
+                  线路“{globalLineTransitionDialog.originalNode.name}”的端点调整会使其从
+                  <strong>{globalLineTransitionDialog.direction === "local-to-global" ? "本图线路" : "全局线路"}</strong>
+                  切换为
+                  <strong>{globalLineTransitionDialog.direction === "local-to-global" ? "全局线路" : "本图线路"}</strong>。
+                </p>
+              </div>
+            </div>
+            <div className="global-line-transition-warning">
+              {globalLineTransitionDialog.direction === "local-to-global" ? (
+                <p>确认后，将删除该线路的本图独立编号关系，并继续让你从全局线路表中选择出线度为1的线路，或新建全局线路。</p>
+              ) : (
+                <p>确认后，将解除该线路的全局引用、把全局出线度减1，并在本图中重新分配独立线路序号。</p>
+              )}
+              <p>取消操作将完整保留原端点连接、线路编号和维护方式。</p>
+            </div>
+            <div className="unsaved-change-actions">
+              <button type="button" onClick={cancelGlobalLineTransition}>取消，保持原连接</button>
+              <button type="button" className="primary" onClick={confirmGlobalLineTransition}>确认并继续</button>
             </div>
           </section>
         </div>

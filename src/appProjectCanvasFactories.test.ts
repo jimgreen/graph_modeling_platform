@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   createAutoSpreadCanvasGraphics,
   createCommitLayoutNodePositions,
+  createFinishRoutableLineEndpointDrag,
   createHandlePointerMove,
   createLoadSavedProject,
   createRequestUnsavedChangeAction,
@@ -12,6 +13,7 @@ import {
 } from "./appExtracted/appProjectCanvasFactories";
 import { clampCanvasNoScrollOffset } from "./canvasViewport";
 import { createDefaultNode, getNodeScaleX, getNodeScaleY, isLineSegmentBusNode } from "./model";
+import { GLOBAL_LINE_ID_PARAM } from "./global-lines";
 import { resizeLineSegmentBusGeometryFromHandleDrag } from "./transformUtils";
 
 describe("跨模型告警定位的未保存修改衔接", () => {
@@ -72,6 +74,130 @@ describe("跨模型告警定位的未保存修改衔接", () => {
     expect(loadSavedProjectRecord).toHaveBeenCalledWith(action.project, "scheme-1");
     expect(onLoaded).toHaveBeenCalledOnce();
     expect(setPendingUnsavedAction).toHaveBeenCalledWith(null);
+  });
+});
+
+describe("线路端点调整的本图/全局维护方式切换", () => {
+  function transitionScope(direction: "local-to-global" | "global-to-local") {
+    const boundary = createDefaultNode("static-model-interaction-station", { x: 300, y: 0 });
+    const ordinaryA = createDefaultNode("ac-source", { x: 0, y: 0 });
+    const ordinaryB = createDefaultNode("ac-load", { x: 200, y: 0 });
+    const target = direction === "local-to-global" ? boundary : ordinaryB;
+    const line = createDefaultNode("ac-routable-line", { x: 100, y: 0 });
+    line.params = {
+      ...line.params,
+      _routableLineSourceNodeId: ordinaryA.id,
+      _routableLineTargetNodeId: direction === "global-to-local" ? boundary.id : ordinaryB.id,
+      ...(direction === "global-to-local" ? { [GLOBAL_LINE_ID_PARAM]: "global-line-1", idx: "8" } : { idx: "2" })
+    };
+    const routedLine = {
+      ...line,
+      params: {
+        ...line.params,
+        _routableLineTargetNodeId: target.id
+      }
+    };
+    const patchGraphNodes = vi.fn();
+    const requestGlobalLineTransition = vi.fn();
+    const setRoutableLineEndpointDrag = vi.fn();
+    const nodes = [ordinaryA, ordinaryB, boundary, line];
+    return {
+      line,
+      routedLine,
+      patchGraphNodes,
+      requestGlobalLineTransition,
+      setRoutableLineEndpointDrag,
+      finish: createFinishRoutableLineEndpointDrag({
+        canvasBounds: { width: 1000, height: 800 },
+        connectTargetPoint: () => ({ x: 200, y: 0 }),
+        modelType: "厂站",
+        nodeById: new Map(nodes.map((node) => [node.id, node])),
+        nodes,
+        patchGraphNodes,
+        pushUndoSnapshot: vi.fn(),
+        requestGlobalLineTransition,
+        routableLineDeviceCanvasPoints: () => [{ x: 0, y: 0 }, { x: 100, y: 0 }],
+        routableLineDeviceEndpointRefForNode: (node: any) => ({ nodeId: node.id }),
+        routableLineDeviceEndpointRefs: () => ({ source: { nodeId: ordinaryA.id }, target: { nodeId: line.params._routableLineTargetNodeId } }),
+        routableLineEndpointDrag: { nodeId: line.id, endpoint: "target", dropTarget: { node: target, terminalId: target.terminals[0]?.id ?? "t1" } },
+        setCanvasSelectionScope: vi.fn(),
+        setRoutableLineDeviceEndpointsPreservingRoute: () => routedLine,
+        setRoutableLineEndpointDrag,
+        setSelectedEdgeId: vi.fn(),
+        setSelectedEdgeIds: vi.fn(),
+        setSelectedNodeIds: vi.fn(),
+        writeOperationLog: vi.fn()
+      })
+    };
+  }
+
+  test("本图线路接到边界设备时暂停提交并请求确认切换为全局维护", () => {
+    const scope = transitionScope("local-to-global");
+    scope.finish();
+    expect(scope.requestGlobalLineTransition).toHaveBeenCalledWith(scope.line, scope.routedLine, "local-to-global");
+    expect(scope.patchGraphNodes).not.toHaveBeenCalled();
+    expect(scope.setRoutableLineEndpointDrag).toHaveBeenCalledWith(null);
+  });
+
+  test("全局线路脱离最后一个边界设备时暂停提交并请求确认切换为本图维护", () => {
+    const scope = transitionScope("global-to-local");
+    scope.finish();
+    expect(scope.requestGlobalLineTransition).toHaveBeenCalledWith(scope.line, scope.routedLine, "global-to-local");
+    expect(scope.patchGraphNodes).not.toHaveBeenCalled();
+    expect(scope.setRoutableLineEndpointDrag).toHaveBeenCalledWith(null);
+  });
+
+  test("全局线路首末端都已关联时禁止把当前边界端改接到另一个边界设备并提示先删除另一端", () => {
+    const boundaryA = createDefaultNode("static-model-interaction-station", { x: 300, y: 0 });
+    const boundaryB = createDefaultNode("static-model-interaction-feeder", { x: 400, y: 0 });
+    const ordinary = createDefaultNode("ac-source", { x: 0, y: 0 });
+    const line = createDefaultNode("ac-routable-line", { x: 100, y: 0 });
+    line.params = {
+      ...line.params,
+      _routableLineSourceNodeId: ordinary.id,
+      _routableLineTargetNodeId: boundaryA.id,
+      [GLOBAL_LINE_ID_PARAM]: "global-line-full",
+      idx: "18"
+    };
+    const routedLine = {
+      ...line,
+      params: { ...line.params, _routableLineTargetNodeId: boundaryB.id }
+    };
+    const nodes = [ordinary, boundaryA, boundaryB, line];
+    const patchGraphNodes = vi.fn();
+    const setRoutableLineEndpointDrag = vi.fn();
+    const conflictMessage = "该全局线路首末端都已关联，请先删除另一端关联，再调整本端。";
+    const globalLineBoundaryAdjustmentConflictMessage = vi.fn(() => conflictMessage);
+    const showGlobalMessage = vi.fn();
+    (globalThis as any).showGlobalMessage = showGlobalMessage;
+
+    createFinishRoutableLineEndpointDrag({
+      canvasBounds: { width: 1000, height: 800 },
+      connectTargetPoint: () => ({ x: 400, y: 0 }),
+      globalLineBoundaryAdjustmentConflictMessage,
+      modelType: "厂站",
+      nodeById: new Map(nodes.map((node) => [node.id, node])),
+      nodes,
+      patchGraphNodes,
+      pushUndoSnapshot: vi.fn(),
+      requestGlobalLineTransition: vi.fn(),
+      routableLineDeviceCanvasPoints: () => [{ x: 0, y: 0 }, { x: 300, y: 0 }],
+      routableLineDeviceEndpointRefForNode: (node: any) => ({ nodeId: node.id }),
+      routableLineDeviceEndpointRefs: () => ({ source: { nodeId: ordinary.id }, target: { nodeId: boundaryA.id } }),
+      routableLineEndpointDrag: { nodeId: line.id, endpoint: "target", dropTarget: { node: boundaryB, terminalId: boundaryB.terminals[0]?.id ?? "t1" } },
+      setCanvasSelectionScope: vi.fn(),
+      setRoutableLineDeviceEndpointsPreservingRoute: () => routedLine,
+      setRoutableLineEndpointDrag,
+      setSelectedEdgeId: vi.fn(),
+      setSelectedEdgeIds: vi.fn(),
+      setSelectedNodeIds: vi.fn(),
+      writeOperationLog: vi.fn()
+    })();
+
+    expect(globalLineBoundaryAdjustmentConflictMessage).toHaveBeenCalledWith(line, routedLine);
+    expect(showGlobalMessage).toHaveBeenCalledWith(conflictMessage);
+    expect(patchGraphNodes).not.toHaveBeenCalled();
+    expect(setRoutableLineEndpointDrag).toHaveBeenCalledWith(null);
   });
 });
 

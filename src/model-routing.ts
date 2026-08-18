@@ -5101,10 +5101,6 @@ function quantityValueInUnit(baseValue: number, quantity: DeviceLimitQuantity, u
   return compactDeviceLimitNumber(baseValue / UNIT_FACTOR_BY_QUANTITY[quantity][unit]);
 }
 
-function quantitiesDiffer(left: number, right: number): boolean {
-  return Math.abs(left - right) > Math.max(1e-9, Math.abs(right) * 1e-6);
-}
-
 function terminalVoltageTextForDeviceLimit(node: ModelNode, terminal: Terminal | undefined): string {
   const rawTerminalVoltage = terminal?.vbase;
   return explicitQuantityUnit("voltage", rawTerminalVoltage)
@@ -5471,7 +5467,7 @@ function validateDeviceLimitPairs(
       const expectedCurrent = capacity.baseValue / baseVoltage.baseValue / THREE_PHASE_CURRENT_DIVISOR;
       const currentText = deviceParamValue(node.params, currentKey);
       const current = quantityValue(currentText, "current", currentUnit);
-      if (current && current.baseValue > 0 && !quantitiesDiffer(current.baseValue, expectedCurrent)) {
+      if (current && current.baseValue > 0) {
         continue;
       }
       const correctedCurrent = quantityValueInUnit(expectedCurrent, "current", currentUnit);
@@ -5481,7 +5477,7 @@ function validateDeviceLimitPairs(
         type: "device-limit-invalid",
         nodeId: node.id,
         relatedNodeIds: [node.id],
-        message: `图上拓扑告警：${ownerName} 的${spec.label} ${currentKey}=${currentText ?? "未设置"} 不满足额定容量/基准电压/1.732，已自动修正为 ${correctedCurrent} ${currentUnit}。`
+        message: `图上拓扑告警：${ownerName} 的${spec.label} ${currentKey}=${currentText ?? "未设置"} 不是正数，已按额定容量/基准电压/1.732补为默认值 ${correctedCurrent} ${currentUnit}。`
       });
     }
   }

@@ -14,6 +14,7 @@ import {
   createNativeExportSaveService,
   isAllowedNativeExportOrigin
 } from "./nativeExportSave.mjs";
+import { GlobalLineRegistryError, createGlobalLineRegistry } from "./globalLineRegistry.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = resolve(__dirname, "..");
@@ -31,6 +32,10 @@ const colorConfigPath = join(settingsDataDir, "color-config.json");
 const measurementConfigPath = join(settingsDataDir, "measurement-config.json");
 const deviceLibraryDataDir = join(dataRoot, "device-library");
 const deviceLibraryPath = join(deviceLibraryDataDir, "library.json");
+const globalLineRegistry = createGlobalLineRegistry({
+  dataRoot,
+  schemeFilesRoot: join(schemeDataDir, "files")
+});
 const maxImageBodyBytes = 16 * 1024 * 1024;
 const maxIconLibraryImportBodyBytes = 128 * 1024 * 1024;
 const maxSchemeBodyBytes = 64 * 1024 * 1024;
@@ -4735,11 +4740,26 @@ export async function saveSchemeProjectRecord(options) {
     name,
     previousName: options.previousName
   });
-  const project = normalizeProjectForStorage({
+  const normalizedProject = normalizeProjectForStorage({
     ...(record.project ?? {}),
     name,
     idx: projectIndex
   });
+  const invalidEnumParameters = invalidProjectEnumParameters(normalizedProject);
+  if (invalidEnumParameters.length > 0) {
+    const details = invalidEnumParameters.slice(0, 20).map(({ node, binding, allowedValues }) =>
+      `设备“${node?.name || node?.id || "未命名"}”的 ${binding.definition?.cnName || binding.paramKey}（${binding.paramKey}）值“${binding.value || "<空>"}”无效，允许值为：${allowedValues.join("、")}`
+    );
+    const remaining = invalidEnumParameters.length > details.length ? `；另有 ${invalidEnumParameters.length - details.length} 项未列出` : "";
+    throw new Error(`保存失败：模型存在非法枚举参数。${details.join("；")}${remaining}`);
+  }
+  const synchronizedGlobalLines = await globalLineRegistry.syncProject({
+    project: normalizedProject,
+    projectIdx: projectIndex,
+    projectName: name,
+    schemePath
+  });
+  const project = synchronizedGlobalLines.project;
   const storedRecord = {
     ...record,
     name,
@@ -4749,14 +4769,6 @@ export async function saveSchemeProjectRecord(options) {
       name
     }
   };
-  const invalidEnumParameters = invalidProjectEnumParameters(storedRecord.project);
-  if (invalidEnumParameters.length > 0) {
-    const details = invalidEnumParameters.slice(0, 20).map(({ node, binding, allowedValues }) =>
-      `设备“${node?.name || node?.id || "未命名"}”的 ${binding.definition?.cnName || binding.paramKey}（${binding.paramKey}）值“${binding.value || "<空>"}”无效，允许值为：${allowedValues.join("、")}`
-    );
-    const remaining = invalidEnumParameters.length > details.length ? `；另有 ${invalidEnumParameters.length - details.length} 项未列出` : "";
-    throw new Error(`保存失败：模型存在非法枚举参数。${details.join("；")}${remaining}`);
-  }
   if (options.previousName && storageProjectNameKey(options.previousName) !== storageProjectNameKey(name)) {
     const previousPaths = projectFilePathsForName(schemeDir, options.previousName);
     await Promise.all(Object.values(previousPaths).map((filePath) => archiveSchemeStoreEntry(filePath, filesRoot, trashRoot, schemeArchiveId())));
@@ -4782,6 +4794,7 @@ export async function deleteSchemeProjectRecord(options) {
   const schemeDir = schemeDirectoryFromPath(filesRoot, schemePath);
   const archiveId = options.archiveId ?? schemeArchiveId();
   const paths = projectFilePathsForName(schemeDir, name);
+  await globalLineRegistry.detachProject({ schemePath, projectName: name });
   await Promise.all(Object.values(paths).map((filePath) => archiveSchemeStoreEntry(filePath, filesRoot, trashRoot, archiveId)));
 }
 
@@ -4827,6 +4840,7 @@ async function writeSchemeFiles(schemes, options = {}) {
   }
   await Promise.all(writeTasks);
   await removeStaleSchemeFiles(filesRoot, expectedFiles, expectedDirs);
+  await globalLineRegistry.rebuildFromStorage();
 }
 
 function publicAsset(item) {
@@ -5350,6 +5364,58 @@ async function handleDeleteImageAsset(id, response) {
   sendJson(response, 200, { ok: true });
 }
 
+async function handleGlobalLineRegistryOperation(response, operation, successStatus = 200) {
+  try {
+    const result = await operation();
+    sendJson(response, successStatus, result);
+  } catch (error) {
+    if (error instanceof GlobalLineRegistryError) {
+      sendError(response, error.statusCode, error.message);
+      return;
+    }
+    throw error;
+  }
+}
+
+async function handleListGlobalLines(response) {
+  await handleGlobalLineRegistryOperation(response, async () => ({
+    ok: true,
+    records: await globalLineRegistry.list()
+  }));
+}
+
+async function handleAttachGlobalLine(request, response) {
+  const payload = await readJsonBody(request, maxMeasurementConfigBodyBytes, "全局线路数据过大，最大支持 1MB。");
+  await handleGlobalLineRegistryOperation(response, async () => ({
+    ok: true,
+    record: await globalLineRegistry.attach(payload)
+  }), 201);
+}
+
+async function handleDetachGlobalLine(request, response) {
+  const payload = await readJsonBody(request, maxMeasurementConfigBodyBytes, "全局线路数据过大，最大支持 1MB。");
+  await handleGlobalLineRegistryOperation(response, async () => ({
+    ok: true,
+    record: await globalLineRegistry.detach(payload)
+  }));
+}
+
+async function handleUpdateGlobalLine(request, response) {
+  const payload = await readJsonBody(request, maxMeasurementConfigBodyBytes, "全局线路数据过大，最大支持 1MB。");
+  await handleGlobalLineRegistryOperation(response, async () => ({
+    ok: true,
+    record: await globalLineRegistry.update(payload)
+  }));
+}
+
+async function handleSyncGlobalLineProject(request, response) {
+  const payload = await readJsonBody(request, maxSchemeBodyBytes, "模型全局线路数据过大，最大支持 64MB。");
+  await handleGlobalLineRegistryOperation(response, async () => ({
+    ok: true,
+    ...(await globalLineRegistry.syncProject(payload))
+  }));
+}
+
 async function handleSaveSchemes(request, response) {
   const payload = await readJsonBody(request, maxSchemeBodyBytes, "方案/模型数据过大，最大支持 64MB。");
   const schemes = Array.isArray(payload) ? payload : payload.schemes;
@@ -5732,6 +5798,21 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
     }],
     [routeKey("DELETE", "/schemes/scheme"), async ({ request, response }) => {
       await handleDeleteSchemeRecord(request, response);
+    }],
+    [routeKey("GET", "/global-lines"), async ({ response }) => {
+      await handleListGlobalLines(response);
+    }],
+    [routeKey("POST", "/global-lines/attach"), async ({ request, response }) => {
+      await handleAttachGlobalLine(request, response);
+    }],
+    [routeKey("POST", "/global-lines/detach"), async ({ request, response }) => {
+      await handleDetachGlobalLine(request, response);
+    }],
+    [routeKey("PUT", "/global-lines/record"), async ({ request, response }) => {
+      await handleUpdateGlobalLine(request, response);
+    }],
+    [routeKey("POST", "/global-lines/sync-project"), async ({ request, response }) => {
+      await handleSyncGlobalLineProject(request, response);
     }],
     [routeKey("GET", "/color-config"), async ({ request, response }) => {
       await sendCachedJsonFile(request, response, colorConfigPath, readColorConfig);

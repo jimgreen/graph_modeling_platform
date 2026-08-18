@@ -4,10 +4,11 @@ import { DEFAULT_MEASUREMENT_CONFIG } from "../measurements";
 import { WindowCloseButton } from "../WindowCloseButton";
 import { buildEFileExportOptionsFromLibrary, setSkipSaveCheck } from "./appDeviceDefinitionFactories";
 import { moveSelectedTableRows, nextTableRowSelection } from "../definitionTableSelection";
+import { GLOBAL_LINE_ID_PARAM, applyGlobalLineRecordToNode, deriveLocalDeviceIndexCounters, shouldManageLineGlobally, shouldUseGlobalLineForEndpoints } from "../global-lines";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
-  return (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget, manualPoints?: Point[]) => {
-  const { CANVAS_AUTO_EXPAND_PADDING, activateInspectorFromCanvas, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, buildManualConnectionPreviewRoute, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, connectTargetPoint, createRoutableLineDeviceFromEndpoints, deviceIndexCounters, edges, hasCanvasOriginShift, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, nodes, pushUndoSnapshot, rejectAutoCanvasExpansionForContent, resetRoutableLinePreviewState, routableLineDeviceEndpointRefForNode, routeRoutableLineDevice, setCanvasSelectionScope, setDeviceIndexCounters, setGraphArrays, setMode, setRoutableLineDeviceCanvasPoints, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, translateEdgeBy, translateNodeBy, writeOperationLog } = __appScope;
+  return async (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget, manualPoints?: Point[], globalLineChoice?: GlobalLineChoice) => {
+  const { CANVAS_AUTO_EXPAND_PADDING, activateInspectorFromCanvas, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, attachGlobalLineForNode, buildManualConnectionPreviewRoute, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, connectTargetPoint, createRoutableLineDeviceFromEndpoints, deviceIndexCounters, edges, hasCanvasOriginShift, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, nodes, pushUndoSnapshot, rejectAutoCanvasExpansionForContent, resetRoutableLinePreviewState, routableLineDeviceEndpointRefForNode, routeRoutableLineDevice, setCanvasSelectionScope, setDeviceIndexCounters, setGraphArrays, setMode, setRoutableLineDeviceCanvasPoints, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, translateEdgeBy, translateNodeBy, writeOperationLog } = __appScope;
     const sourcePoint = connectTargetPoint(source);
     const targetPoint = connectTargetPoint(target);
     const rawLine = createRoutableLineDeviceFromEndpoints(
@@ -49,9 +50,16 @@ export function createCommitRoutableLineDevice(__appScope: Record<string, any>) 
     if (hasCanvasOriginShift(dropOriginShift)) {
       markBusTerminalSyncDirtyForEdges(dropSourceEdges);
     }
-    const indexed = assignPermanentDeviceIndex(shiftedLine, deviceIndexCounters);
+    const indexed = globalLineChoice
+      ? {
+          node: applyGlobalLineRecordToNode(shiftedLine, await attachGlobalLineForNode(shiftedLine, globalLineChoice)),
+          counters: deviceIndexCounters
+        }
+      : assignPermanentDeviceIndex(shiftedLine, deriveLocalDeviceIndexCounters(dropSourceNodes));
     pushUndoSnapshot(true, false, undefined, "添加线路", indexed.node.name);
-    setDeviceIndexCounters(indexed.counters);
+    if (!globalLineChoice) {
+      setDeviceIndexCounters(indexed.counters);
+    }
     setGraphArrays([...dropSourceNodes, indexed.node], dropSourceEdges);
     setCanvasSelectionScope("group");
     setSelectedNodeIds([indexed.node.id]);
@@ -91,8 +99,8 @@ export function createStartRoutableLineFromTerminal(__appScope: Record<string, a
 }
 
 export function createFinishRoutableLineToTarget(__appScope: Record<string, any>) {
-  return (target: ConnectTarget, manualPoints?: Point[]) => {
-  const { commitRoutableLineDevice, connectTargetTerminalType, routableLinePlacement, routableLineTemplateTerminalType, writeOperationLog } = __appScope;
+  return async (target: ConnectTarget, manualPoints?: Point[]) => {
+  const { commitRoutableLineDevice, connectTargetTerminalType, modelType, requestGlobalLinePlacement, routableLinePlacement, routableLineTemplateTerminalType, writeOperationLog } = __appScope;
     if (manualPoints === undefined) {
       manualPoints = routableLinePlacement?.manualPoints;
     }
@@ -102,7 +110,17 @@ export function createFinishRoutableLineToTarget(__appScope: Record<string, any>
     if (connectTargetTerminalType(target) !== routableLineTemplateTerminalType(routableLinePlacement.template)) {
       return false;
     }
-    const committed = commitRoutableLineDevice(routableLinePlacement.template, routableLinePlacement.source, target, manualPoints);
+    if (shouldUseGlobalLineForEndpoints(
+      modelType,
+      routableLinePlacement.template.kind,
+      routableLinePlacement.source.node,
+      target.node
+    )) {
+      requestGlobalLinePlacement(routableLinePlacement.template, routableLinePlacement.source, target, manualPoints);
+      writeOperationLog("线路连接跨模型边界，请选择既有全局线路或新建全局线路。");
+      return true;
+    }
+    const committed = await commitRoutableLineDevice(routableLinePlacement.template, routableLinePlacement.source, target, manualPoints);
     if (committed) {
       writeOperationLog(`线路终点：${target.node.name}`);
     }
@@ -187,7 +205,7 @@ export function createStartRoutableLineEndpointDrag(__appScope: Record<string, a
 
 export function createFinishRoutableLineEndpointDrag(__appScope: Record<string, any>) {
   return () => {
-  const { canvasBounds, connectTargetPoint, nodeById, nodes, patchGraphNodes, pushUndoSnapshot, routableLineDeviceCanvasPoints, routableLineDeviceEndpointRefForNode, routableLineDeviceEndpointRefs, routableLineEndpointDrag, setCanvasSelectionScope, setRoutableLineDeviceEndpointsPreservingRoute, setRoutableLineEndpointDrag, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, writeOperationLog } = __appScope;
+  const { canvasBounds, connectTargetPoint, globalLineBoundaryAdjustmentConflictMessage, modelType, nodeById, nodes, patchGraphNodes, pushUndoSnapshot, requestGlobalLineTransition, routableLineDeviceCanvasPoints, routableLineDeviceEndpointRefForNode, routableLineDeviceEndpointRefs, routableLineEndpointDrag, setCanvasSelectionScope, setRoutableLineDeviceEndpointsPreservingRoute, setRoutableLineEndpointDrag, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, writeOperationLog } = __appScope;
     if (!routableLineEndpointDrag) {
       return;
     }
@@ -222,6 +240,31 @@ export function createFinishRoutableLineEndpointDrag(__appScope: Record<string, 
           commitNodeById,
           canvasBounds
         );
+        const nextNodes = nodes.map((node) => node.id === routedLine.id ? routedLine : node);
+        const wasGlobal = Boolean(String(lineNode.params[GLOBAL_LINE_ID_PARAM] ?? "").trim()) || shouldManageLineGlobally(lineNode, nodes, modelType);
+        const willBeGlobal = shouldManageLineGlobally(routedLine, nextNodes, modelType);
+        if (wasGlobal !== willBeGlobal) {
+          requestGlobalLineTransition(
+            lineNode,
+            routedLine,
+            willBeGlobal ? "local-to-global" : "global-to-local"
+          );
+          writeOperationLog(willBeGlobal
+            ? `线路连接方式拟由本图维护切换为全局维护：${lineNode.name}`
+            : `线路连接方式拟由全局维护切换为本图维护：${lineNode.name}`
+          );
+          setRoutableLineEndpointDrag(null);
+          return;
+        }
+        if (wasGlobal && willBeGlobal) {
+          const conflictMessage = globalLineBoundaryAdjustmentConflictMessage?.(lineNode, routedLine) ?? "";
+          if (conflictMessage) {
+            showGlobalMessage(conflictMessage);
+            writeOperationLog(`全局线路边界端调整失败：${lineNode.name}`);
+            setRoutableLineEndpointDrag(null);
+            return;
+          }
+        }
         pushUndoSnapshot(true, false, undefined, "调整线路端点", routedLine.name);
         patchGraphNodes([routedLine]);
         setCanvasSelectionScope("group");
