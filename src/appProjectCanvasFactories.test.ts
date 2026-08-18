@@ -13,7 +13,7 @@ import {
   createSaveCurrentProject
 } from "./appExtracted/appProjectCanvasFactories";
 import { clampCanvasNoScrollOffset } from "./canvasViewport";
-import { DEVICE_LIBRARY_BY_KIND, canConnectTerminals, createDefaultNode, getNodeScaleX, getNodeScaleY, getTerminalPoint, isBusNode, isLineSegmentBusNode } from "./model";
+import { DEVICE_LIBRARY_BY_KIND, canConnectTerminals, createDefaultNode, getNodeScaleX, getNodeScaleY, getTerminalPoint, isBusNode, isLineSegmentBusNode, isRoutableLineDeviceKind } from "./model";
 import { GLOBAL_LINE_ID_PARAM } from "./global-lines";
 import { resizeLineSegmentBusGeometryFromHandleDrag } from "./transformUtils";
 
@@ -310,6 +310,7 @@ function createLoadScope(overrides: Record<string, unknown> = {}) {
     pendingStoredRouteEdgeIdsRef: { current: new Set() },
     reconcileNodeWithDefinition: (node: unknown) => node,
     reconcileProjectMeasurementsWithConfig: (measurements: unknown) => measurements,
+    rebuildRoutableLineDeviceRouteUpdates: vi.fn(() => []),
     requestCanvasFrameCenter: noop,
     resetConnectPreviewState: noop,
     resolveConfiguredBackgroundLayerIds: () => [],
@@ -365,6 +366,7 @@ function createLoadScope(overrides: Record<string, unknown> = {}) {
     setViewBox: noop,
     setVoltageUnit: noop,
     suppressNextGraphDirtyRef: { current: 0 },
+    isRoutableLineDeviceKind,
     writeOperationLog: noop,
     ...overrides
   };
@@ -453,6 +455,48 @@ describe("save current project E export options", () => {
 });
 
 describe("saved project definition migration", () => {
+  test("repairs an unsafe stored adaptive-line path while loading a model", () => {
+    const station = {
+      ...createDefaultNode("static-model-interaction-station", { x: 500, y: 240 }),
+      id: "loaded-route-station"
+    };
+    const line = {
+      ...createDefaultNode("ac-routable-line", { x: 760, y: 360 }),
+      id: "loaded-unsafe-route"
+    };
+    const repairedLine = {
+      ...line,
+      params: { ...line.params, _routableLinePoints: "120,240;430,240;430,180;570,180;570,240;880,240" }
+    };
+    const rebuildRoutableLineDeviceRouteUpdates = vi.fn(() => [repairedLine]);
+    const setGraphArrays = vi.fn();
+    const scope = createLoadScope({
+      rebuildRoutableLineDeviceRouteUpdates,
+      setGraphArrays
+    });
+
+    createLoadSavedProject(scope as any)({
+      id: "project-with-unsafe-route",
+      name: "含穿越线路的模型",
+      project: {
+        nodes: [station, line],
+        edges: [],
+        groups: [],
+        layers: [],
+        activeLayerId: "layer-default",
+        canvasWidth: 1200,
+        canvasHeight: 800
+      }
+    } as any, "scheme-1");
+
+    expect(rebuildRoutableLineDeviceRouteUpdates).toHaveBeenCalledWith(
+      [station, line],
+      [line.id],
+      { width: 1200, height: 800 }
+    );
+    expect(setGraphArrays).toHaveBeenCalledWith([station, repairedLine], []);
+  });
+
   test("keeps the loaded project clean after automatic definition and measurement migration", () => {
     const knownNode = {
       id: "known-node",

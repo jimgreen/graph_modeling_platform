@@ -511,6 +511,42 @@ test("scales terminal stubs from the visible device boundary toward terminals", 
   });
 });
 
+test("connects model-association source and load terminals to the visible hierarchy pictogram", () => {
+  const kinds = [
+    "ac-station-source",
+    "ac-feeder-source",
+    "ac-district-source",
+    "dc-station-source",
+    "dc-feeder-source",
+    "dc-district-source",
+    "ac-station-load",
+    "ac-feeder-load",
+    "ac-district-load",
+    "dc-station-load",
+    "dc-feeder-load",
+    "dc-district-load"
+  ] as const;
+
+  for (const kind of kinds) {
+    const node = createDefaultNode(kind, { x: 100, y: 100 });
+    const terminal = node.terminals[0];
+    const renderPoint = terminalRenderLocalPoint(terminal, node.size, 1, 1, node.kind);
+    const stub = terminalStubSegment(terminal, 1, 1, 24, node.kind, node.size);
+    const bodyPoint = {
+      x: renderPoint.x + stub.from.x,
+      y: renderPoint.y + stub.from.y
+    };
+
+    if (Math.abs(terminal.anchor.x) >= Math.abs(terminal.anchor.y)) {
+      expect(Math.abs(bodyPoint.x), kind).toBeCloseTo(18);
+      expect(bodyPoint.y, kind).toBeCloseTo(0);
+    } else {
+      expect(bodyPoint.x, kind).toBeCloseTo(0);
+      expect(Math.abs(bodyPoint.y), kind).toBeCloseTo(18);
+    }
+  }
+});
+
 test("extends electric load terminal stubs to the smaller vertical load body", () => {
   const stubStartPoint = (node: ModelNode, terminal = node.terminals[0]) => {
     const renderPoint = terminalRenderLocalPoint(terminal, node.size, 1, 1, node.kind);

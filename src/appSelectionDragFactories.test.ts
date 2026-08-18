@@ -4,6 +4,7 @@ import {
   createDeleteGraphTemplateType,
   createLightweightMovedEndpointRoute,
   createPersistDeviceLibraryChange,
+  createRoutableLineRouteCandidateIdsForMovedNodes,
   createRoutePointsForMovedEdgesBlockedByStationaryNodes,
   createShouldRunDeferredMoveOptimization,
   createSwitchInspectorTabForCanvasSelection
@@ -18,6 +19,7 @@ import {
   getRouteEndpointNormal,
   getTerminalPoint,
   isBusNode,
+  isRoutableLineDeviceKind,
   isStaticGraphicNode,
   pointsToOrthogonalPath,
   preserveDraggedRouteShape,
@@ -29,6 +31,7 @@ import {
   type ModelNode,
   type Point,
   routableLineDeviceCanvasPoints,
+  routableLineDeviceEndpointRefs,
   routeIntersectsSpecificNodes,
   type RoutedEdge,
   setRoutableLineDeviceCanvasPoints,
@@ -460,6 +463,79 @@ describe("selection drag route cache patches", () => {
     );
 
     expect(updates.some((node) => node.id === unsafeLine.id)).toBe(true);
+  });
+
+  test("finds a long routable line whose path crosses a moved model-interaction blocker outside its node index bounds", () => {
+    const previousStation = {
+      ...createDefaultNode("static-model-interaction-station", { x: 500, y: 420 }),
+      id: "moved-station-route-blocker"
+    };
+    const movedStation = {
+      ...previousStation,
+      position: { x: 500, y: 240 }
+    };
+    const line = setRoutableLineDeviceCanvasPoints(
+      {
+        ...createDefaultNode("ac-routable-line", { x: 760, y: 360 }),
+        id: "long-route-outside-node-index"
+      },
+      [
+        { x: 120, y: 240 },
+        { x: 880, y: 240 }
+      ]
+    );
+    const previousNodes = [previousStation, line];
+    const nextNodes = [movedStation, line];
+    const routeCandidateIdsForMovedNodes = createRoutableLineRouteCandidateIdsForMovedNodes({
+      MOVE_ROUTE_LOCAL_SEARCH_PADDING: 28,
+      boundsForNodeSet: (
+        sourceNodes: ModelNode[],
+        movedIds: Set<string>,
+        positions?: Record<string, Point>,
+        padding = 0
+      ) => {
+        const node = sourceNodes.find((candidate) => movedIds.has(candidate.id));
+        if (!node) {
+          return null;
+        }
+        const positionedNode = positions?.[node.id]
+          ? { ...node, position: positions[node.id] }
+          : node;
+        const box = calculateNodeBodyBounds(positionedNode);
+        return {
+          left: box.left - padding,
+          right: box.right + padding,
+          top: box.top - padding,
+          bottom: box.bottom + padding
+        };
+      },
+      expandRouteBox: (box: TestBox, padding: number) => ({
+        left: box.left - padding,
+        right: box.right + padding,
+        top: box.top - padding,
+        bottom: box.bottom + padding
+      }),
+      getRouteBlockingCandidates,
+      isRoutableLineDeviceKind,
+      orderedNodesForIds: (sourceNodes: ModelNode[], ids: Set<string>) =>
+        sourceNodes.filter((node) => ids.has(node.id)),
+      queryNodeSpatialIndex: () => [],
+      routableLineDeviceCanvasPoints,
+      routableLineDeviceEndpointRefs,
+      routableLineNodeIdsByEndpointNodeId: new Map(),
+      routeTouchesExpandedBoxes: (points: Point[], boxes: TestBox[]) =>
+        boxes.some((box) => routeIntersectsTestBox(points, box)),
+      visibleNodeSpatialIndex: {}
+    });
+
+    const candidateIds = routeCandidateIdsForMovedNodes(
+      previousNodes,
+      nextNodes,
+      [movedStation.id],
+      { [movedStation.id]: previousStation.position }
+    );
+
+    expect(candidateIds).toContain(line.id);
   });
 
   test("keeps deferred blocker repair enabled for nearby unrelated routes after multi-connection moves", () => {

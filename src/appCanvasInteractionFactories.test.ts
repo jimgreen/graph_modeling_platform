@@ -26,6 +26,7 @@ import {
   getTerminalPoint,
   isBusNode,
   isModelInteractionNode,
+  isRoutableLineDeviceKind,
   modelInteractionTerminalConnectionLocalPointsByNodeId,
   normalizeRatioParameterInputValue,
   projectPointToBusCenterline,
@@ -642,6 +643,77 @@ describe("library device placement selection", () => {
     expect(setLibraryPlacement).toHaveBeenCalledWith({ kind: "device", template, previewPoint: null });
     expect(setMode).toHaveBeenCalledWith("select");
   });
+
+  test("reroutes an existing adaptive line after placing a model-interaction blocker across its path", () => {
+    const canvasBounds = { width: 1200, height: 800 };
+    const template = DEVICE_LIBRARY_BY_KIND.get("static-model-interaction-station")!;
+    const line = {
+      ...createDefaultNode("ac-routable-line", { x: 720, y: 360 }),
+      id: "placement-obstacle-line"
+    };
+    const repairedLine = {
+      ...line,
+      params: { ...line.params, _routableLinePoints: "120,240;430,240;430,180;570,180;570,240;880,240" }
+    };
+    const rebuildRoutableLineDeviceRouteUpdates = vi.fn(() => [repairedLine]);
+    const setGraphArrays = vi.fn();
+    const placeLibraryDeviceAtPoint = createPlaceLibraryDeviceAtPoint({
+      CANVAS_AUTO_EXPAND_PADDING: 40,
+      activateInspectorFromCanvas: vi.fn(),
+      activeLayerId: "layer-default",
+      applyCanvasBounds: vi.fn(),
+      assignPermanentDeviceIndex: vi.fn((node) => ({ node, counters: {} })),
+      canvasBounds,
+      canvasBoundsForAutoExpandedGraphContent: vi.fn(() => canvasBounds),
+      canvasBoundsWithOriginShift: vi.fn((bounds) => bounds),
+      clampNodePositionToBounds: vi.fn((_node, _bounds, point) => point),
+      clampPointToBounds: vi.fn((point) => point),
+      createNodeFromTemplate,
+      deviceIndexCounters: {},
+      edges: [],
+      hasCanvasOriginShift: vi.fn(() => false),
+      isInteractiveStaticDrawingKind: vi.fn(() => false),
+      isRoutableLineDeviceKind,
+      isStaticBoxLikeTemplate: vi.fn(() => false),
+      lastCanvasPointerRef: { current: null },
+      lastRawCanvasPointerRef: { current: null },
+      leftTopCanvasOriginShiftForContent: vi.fn(() => ({ x: 0, y: 0 })),
+      markBusTerminalSyncDirtyForEdges: vi.fn(),
+      nodes: [line],
+      pushUndoSnapshot: vi.fn(),
+      rebuildRoutableLineDeviceRouteUpdates,
+      rejectAutoCanvasExpansionForContent: vi.fn(() => false),
+      requireEditMode: vi.fn(() => true),
+      routeRoutableLineDevice: vi.fn((node) => node),
+      setCanvasSelectionScope: vi.fn(),
+      setDeviceIndexCounters: vi.fn(),
+      setGraphArrays,
+      setLibraryPlacement: vi.fn(),
+      setMode: vi.fn(),
+      setSelectedEdgeId: vi.fn(),
+      setSelectedEdgeIds: vi.fn(),
+      setSelectedNodeIds: vi.fn(),
+      shiftCachedRoutesForCanvasOrigin: vi.fn(),
+      startInteractiveStaticDrawing: vi.fn(),
+      startLibraryDevicePlacement: vi.fn(),
+      translateEdgeBy: vi.fn((edge) => edge),
+      translateNodeBy: vi.fn((node) => node),
+      translatePointBy: vi.fn((point) => point),
+      writeOperationLog: vi.fn()
+    });
+
+    placeLibraryDeviceAtPoint(template, { x: 500, y: 240 });
+
+    const placedNode = setGraphArrays.mock.calls[0][0].find((node: any) => node.id !== line.id);
+    expect(rebuildRoutableLineDeviceRouteUpdates).toHaveBeenCalledWith(
+      [line, placedNode],
+      [line.id],
+      canvasBounds,
+      [line],
+      { movedNodeIds: [placedNode.id] }
+    );
+    expect(setGraphArrays).toHaveBeenCalledWith([repairedLine, placedNode], []);
+  });
 });
 
 describe("single-use static drawing tools", () => {
@@ -689,6 +761,7 @@ describe("single-use static drawing tools", () => {
       markBusTerminalSyncDirtyForEdges: vi.fn(),
       nodes: [],
       pushUndoSnapshot: vi.fn(),
+      rebuildRoutableLineDeviceRouteUpdates: vi.fn(() => []),
       rejectAutoCanvasExpansionForContent: vi.fn(() => false),
       requireEditMode: vi.fn(() => true),
       routeRoutableLineDevice: vi.fn((node) => node),

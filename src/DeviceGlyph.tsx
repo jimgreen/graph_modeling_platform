@@ -250,16 +250,18 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
           data-model-hierarchy-energy={hierarchyEnergy}
         >
           <g transform={`translate(0 ${formatSvgNumber(iconY)}) scale(${formatSvgNumber(iconScale)})`}>
-            <circle
-              className="model-hierarchy-icon-backplate"
-              cx="0"
-              cy="0"
-              r="20.5"
-              fill={associationFill}
-              stroke={associationStroke}
-              strokeWidth={associationLineWidth}
-              strokeDasharray={svgStrokeDashArray(node.params.strokeStyle)}
-            />
+            {isModelInteractionGlyph && (
+              <circle
+                className="model-hierarchy-icon-backplate"
+                cx="0"
+                cy="0"
+                r="20.5"
+                fill={associationFill}
+                stroke={associationStroke}
+                strokeWidth={associationLineWidth}
+                strokeDasharray={svgStrokeDashArray(node.params.strokeStyle)}
+              />
+            )}
             <g
               className={`model-hierarchy-icon model-hierarchy-icon-${modelHierarchyGlyphFamily}`}
               fill="none"
@@ -294,32 +296,6 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
                 </>
               )}
             </g>
-            {hierarchyEnergy !== "mixed" && (
-              <g
-                className={`model-hierarchy-energy-badge model-hierarchy-energy-badge-${hierarchyEnergy}`}
-                fill="#ffffff"
-                stroke={associationAccent}
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              >
-                <circle cx="-17" cy="16" r="6" />
-                {hierarchyEnergy === "ac"
-                  ? <path d="M -21 16 C -19.8 12.8 -18.2 12.8 -17 16 C -15.8 19.2 -14.2 19.2 -13 16" fill="none" />
-                  : <path d="M -20.5 14.5 H -13.5 M -19.5 17.5 H -14.5" fill="none" />}
-              </g>
-            )}
-            {hierarchyRole === "source" && (
-              <g className="model-hierarchy-role-badge model-hierarchy-role-badge-source" fill="#dcfce7" stroke="#16a34a" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="17" cy="-16" r="6" />
-                <path d="M 13.5 -16 H 20.5 M 17.5 -19 L 20.5 -16 L 17.5 -13" fill="none" />
-              </g>
-            )}
-            {hierarchyRole === "load" && (
-              <g className="model-hierarchy-role-badge model-hierarchy-role-badge-load" fill="#fff7ed" stroke="#ea580c" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="17" cy="-16" r="6" />
-                <path d="M 20.5 -16 H 13.5 M 16.5 -19 L 13.5 -16 L 16.5 -13" fill="none" />
-              </g>
-            )}
             {hierarchyRole === "button" && (
               <g className="model-hierarchy-role-badge model-hierarchy-role-badge-button" fill="#eef2ff" stroke="#4f46e5" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="17" cy="-16" r="6" />

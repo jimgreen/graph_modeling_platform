@@ -3548,7 +3548,7 @@ export function createClearLibraryPlacementPreview(__appScope: Record<string, an
 
 export function createPlaceLibraryDeviceAtPoint(__appScope: Record<string, any>) {
   return (template: DeviceTemplate, pointerPosition: Point) => {
-  const { CANVAS_AUTO_EXPAND_PADDING, activateInspectorFromCanvas, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, clampNodePositionToBounds, clampPointToBounds, createNodeFromTemplate, deviceIndexCounters, edges, hasCanvasOriginShift, isInteractiveStaticDrawingKind, isRoutableLineDeviceKind, isStaticBoxLikeTemplate, lastCanvasPointerRef, lastRawCanvasPointerRef, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, nodes, pushUndoSnapshot, rejectAutoCanvasExpansionForContent, requireEditMode, routeRoutableLineDevice, setCanvasSelectionScope, setDeviceIndexCounters, setGraphArrays, setLibraryPlacement, setMode, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, startInteractiveStaticDrawing, startLibraryDevicePlacement, translateEdgeBy, translateNodeBy, translatePointBy, writeOperationLog } = __appScope;
+  const { CANVAS_AUTO_EXPAND_PADDING, activateInspectorFromCanvas, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, clampNodePositionToBounds, clampPointToBounds, createNodeFromTemplate, deviceIndexCounters, edges, hasCanvasOriginShift, isInteractiveStaticDrawingKind, isRoutableLineDeviceKind, isStaticBoxLikeTemplate, lastCanvasPointerRef, lastRawCanvasPointerRef, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, nodes, pushUndoSnapshot, rebuildRoutableLineDeviceRouteUpdates, rejectAutoCanvasExpansionForContent, requireEditMode, routeRoutableLineDevice, setCanvasSelectionScope, setDeviceIndexCounters, setGraphArrays, setLibraryPlacement, setMode, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, startInteractiveStaticDrawing, startLibraryDevicePlacement, translateEdgeBy, translateNodeBy, translatePointBy, writeOperationLog } = __appScope;
     if (!requireEditMode("放置图元")) {
       return;
     }
@@ -3596,9 +3596,26 @@ export function createPlaceLibraryDeviceAtPoint(__appScope: Record<string, any>)
     lastRawCanvasPointerRef.current = shiftedPointerPosition;
     lastCanvasPointerRef.current = clampPointToBounds(shiftedPointerPosition, dropCanvasBounds);
     const indexed = assignPermanentDeviceIndex(placedNode, deviceIndexCounters);
+    const placedNodes = [...dropSourceNodes, indexed.node];
+    const existingRoutableLineNodeIds = dropSourceNodes
+      .filter((candidate) => isRoutableLineDeviceKind(candidate.kind))
+      .map((candidate) => candidate.id);
+    const repairedLineNodes = existingRoutableLineNodeIds.length > 0
+      ? rebuildRoutableLineDeviceRouteUpdates(
+          placedNodes,
+          existingRoutableLineNodeIds,
+          dropCanvasBounds,
+          dropSourceNodes,
+          { movedNodeIds: [indexed.node.id] }
+        )
+      : [];
+    const repairedLineNodeById = new Map(repairedLineNodes.map((candidate) => [candidate.id, candidate]));
+    const nextNodes = repairedLineNodes.length > 0
+      ? placedNodes.map((candidate) => repairedLineNodeById.get(candidate.id) ?? candidate)
+      : placedNodes;
     pushUndoSnapshot(true, false, undefined, "放置图元", indexed.node.name);
     setDeviceIndexCounters(indexed.counters);
-    setGraphArrays([...dropSourceNodes, indexed.node], dropSourceEdges);
+    setGraphArrays(nextNodes, dropSourceEdges);
     setCanvasSelectionScope("group");
     setSelectedNodeIds([indexed.node.id]);
     setSelectedEdgeId("");
