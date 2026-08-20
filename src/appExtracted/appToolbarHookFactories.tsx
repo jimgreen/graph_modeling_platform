@@ -5,7 +5,38 @@ import { resolveEffectiveTemplateParameterDefinitions } from "../model";
 
 export function createOpenNodeDoubleClickEditor(__appScope: Record<string, any>) {
   return (node: ModelNode) => {
-  const { NODE_DOUBLE_CLICK_DIALOG_DEDUPE_MS, activeLayerNodeIdSet, cloneNodeForDoubleClickDraft, doubleClickDialogKindForNode, flushSync, isEditMode, nodeDoubleClickCloseSuppressUntilRef, nodeDoubleClickDialog, nodeDoubleClickOpenGuardRef, selectCanvasGraphics, setContextMenu, setImageTarget, setNodeDoubleClickDialog, setNodeDoubleClickDraft } = __appScope;
+  const { NODE_DOUBLE_CLICK_DIALOG_DEDUPE_MS, activeLayerNodeIdSet, cloneNodeForDoubleClickDraft, doubleClickDialogKindForNode, flattenSavedSchemes, flushSync, isBrowseMode, isEditMode, modelAssociationModelTypeForKind, nodeDoubleClickCloseSuppressUntilRef, nodeDoubleClickDialog, nodeDoubleClickOpenGuardRef, requestLoadSavedProject, schemes, selectCanvasGraphics, setContextMenu, setImageTarget, setNodeDoubleClickDialog, setNodeDoubleClickDraft, writeOperationLog } = __appScope;
+    if (isBrowseMode) {
+      const targetModelType = modelAssociationModelTypeForKind(node.kind);
+      if (!targetModelType) {
+        return;
+      }
+      const rawModelId = String(node.params?.model_id ?? "").trim();
+      const modelIndex = Number(rawModelId);
+      if (!rawModelId || !Number.isInteger(modelIndex) || modelIndex <= 0) {
+        showGlobalMessage(`“${node.name}”未定义有效的关联模型（model_id），无法切换模型。`);
+        return;
+      }
+      const targets = flattenSavedSchemes(schemes).flatMap((scheme: SavedSchemeRecord) =>
+        scheme.projects
+          .filter((project: SavedProjectRecord) =>
+            project.project.modelType === targetModelType && Number(project.project.idx) === modelIndex
+          )
+          .map((project: SavedProjectRecord) => ({ scheme, project }))
+      );
+      if (targets.length === 0) {
+        showGlobalMessage(`未找到${targetModelType}模型 idx=${modelIndex}；请检查“${node.name}”的关联模型（model_id）。`);
+        return;
+      }
+      if (targets.length > 1) {
+        showGlobalMessage(`找到多个${targetModelType}模型 idx=${modelIndex}，无法确定要切换的模型；请先修正重复的模型编号。`);
+        return;
+      }
+      const target = targets[0];
+      writeOperationLog?.(`关联图元切换模型：${node.name} → ${target.project.name}`);
+      requestLoadSavedProject(target.project, target.scheme.id);
+      return;
+    }
     if (!isEditMode || !activeLayerNodeIdSet.has(node.id)) {
       return;
     }
