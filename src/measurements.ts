@@ -47,6 +47,7 @@ export type MeasurementTypeDefinition = {
   defaultUnit: string;
   valueType: MeasurementValueType;
   defaultDecimals: number;
+  defaultValue: number;
   defaultColor: string;
   defaultFontFamily: string;
   defaultFontSize: number;
@@ -64,6 +65,7 @@ export type DeviceMeasurementProfileItem = {
   labelOverride?: string;
   unitOverride?: string;
   decimalsOverride?: number;
+  defaultValue?: number;
   styleOverride?: MeasurementStyleOverride;
 };
 
@@ -312,6 +314,7 @@ export type MeasurementItemBinding = {
   labelOverride?: string;
   unitOverride?: string;
   decimalsOverride?: number;
+  defaultValue?: number;
   styleOverride?: MeasurementStyleOverride;
 };
 
@@ -369,6 +372,7 @@ const DEFAULT_TYPE_VALUES = {
   defaultUnit: "",
   valueType: "number" as MeasurementValueType,
   defaultDecimals: 3,
+  defaultValue: 0,
   defaultColor: "#334155",
   defaultFontFamily: "Arial",
   defaultFontSize: 14,
@@ -384,6 +388,7 @@ const STORAGE_SOC_MEASUREMENT_TYPE: MeasurementTypeDefinition = {
   defaultUnit: "%",
   valueType: "number",
   defaultDecimals: 1,
+  defaultValue: 0,
   defaultColor: "#334155",
   defaultFontFamily: "Arial",
   defaultFontSize: 14,
@@ -398,6 +403,7 @@ const GAS_QUANTITY_MEASUREMENT_TYPE: MeasurementTypeDefinition = {
   defaultUnit: "Nm3",
   valueType: "number",
   defaultDecimals: 2,
+  defaultValue: 0,
   defaultColor: "#334155",
   defaultFontFamily: "Arial",
   defaultFontSize: 14,
@@ -516,19 +522,19 @@ export const DEFAULT_MEASUREMENT_CONFIG: PlatformMeasurementConfig = {
     borderWidth: DEFAULT_MEASUREMENT_GROUP_BORDER_WIDTH
   },
   measurementTypes: [
-    { id: "activePower", key: "p", name: "有功功率", shortLabel: "P", defaultUnit: "MW", valueType: "number", defaultDecimals: 3, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
-    { id: "reactivePower", key: "q", name: "无功功率", shortLabel: "Q", defaultUnit: "Mvar", valueType: "number", defaultDecimals: 3, defaultColor: "#475569", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
-    { id: "voltage", key: "u", name: "电压", shortLabel: "U", defaultUnit: "kV", valueType: "number", defaultDecimals: 2, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
-    { id: "current", key: "i", name: "电流", shortLabel: "I", defaultUnit: "A", valueType: "number", defaultDecimals: 1, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false },
-    { id: "frequency", key: "f", name: "频率", shortLabel: "f", defaultUnit: "Hz", valueType: "number", defaultDecimals: 2, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false },
-    { id: "pressure", key: "pressure", name: "压力", shortLabel: "压力", defaultUnit: "MPa", valueType: "number", defaultDecimals: 3, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
-    { id: "temperature", key: "temperature", name: "温度", shortLabel: "温度", defaultUnit: "degC", valueType: "number", defaultDecimals: 1, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false },
-    { id: "flow", key: "flow", name: "流量", shortLabel: "流量", defaultUnit: "kg/s", valueType: "number", defaultDecimals: 2, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
-    { id: "level", key: "level", name: "液位", shortLabel: "液位", defaultUnit: "%", valueType: "number", defaultDecimals: 1, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
+    { id: "activePower", key: "p", name: "有功功率", shortLabel: "P", defaultUnit: "MW", valueType: "number", defaultDecimals: 3, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
+    { id: "reactivePower", key: "q", name: "无功功率", shortLabel: "Q", defaultUnit: "Mvar", valueType: "number", defaultDecimals: 3, defaultValue: 0, defaultColor: "#475569", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
+    { id: "voltage", key: "u", name: "电压", shortLabel: "U", defaultUnit: "kV", valueType: "number", defaultDecimals: 2, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
+    { id: "current", key: "i", name: "电流", shortLabel: "I", defaultUnit: "A", valueType: "number", defaultDecimals: 1, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false },
+    { id: "frequency", key: "f", name: "频率", shortLabel: "f", defaultUnit: "Hz", valueType: "number", defaultDecimals: 2, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false },
+    { id: "pressure", key: "pressure", name: "压力", shortLabel: "压力", defaultUnit: "MPa", valueType: "number", defaultDecimals: 3, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
+    { id: "temperature", key: "temperature", name: "温度", shortLabel: "温度", defaultUnit: "degC", valueType: "number", defaultDecimals: 1, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false },
+    { id: "flow", key: "flow", name: "流量", shortLabel: "流量", defaultUnit: "kg/s", valueType: "number", defaultDecimals: 2, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
+    { id: "level", key: "level", name: "液位", shortLabel: "液位", defaultUnit: "%", valueType: "number", defaultDecimals: 1, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: true },
     STORAGE_SOC_MEASUREMENT_TYPE,
     GAS_QUANTITY_MEASUREMENT_TYPE,
     TAP_POSITION_MEASUREMENT_TYPE,
-    { id: "status", key: "status", name: "状态", shortLabel: "状态", defaultUnit: "", valueType: "string", defaultDecimals: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false }
+    { id: "status", key: "status", name: "状态", shortLabel: "状态", defaultUnit: "", valueType: "string", defaultDecimals: 0, defaultValue: 0, defaultColor: "#334155", defaultFontFamily: "Arial", defaultFontSize: 14, defaultFontWeight: "500", defaultVisible: false }
   ],
   deviceProfiles: [
     { deviceKind: "ac-load", items: [{ measurementTypeId: "activePower" }, { measurementTypeId: "reactivePower" }, { measurementTypeId: "voltage" }, { measurementTypeId: "current" }] },
@@ -988,6 +994,7 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
       defaultUnit: String(item.defaultUnit ?? fallback?.defaultUnit ?? DEFAULT_TYPE_VALUES.defaultUnit),
       valueType: normalizedValueType(item.valueType, fallback?.valueType ?? DEFAULT_TYPE_VALUES.valueType),
       defaultDecimals: clampNumber(finiteNumber(item.defaultDecimals, fallback?.defaultDecimals ?? DEFAULT_TYPE_VALUES.defaultDecimals), 0, 8),
+      defaultValue: finiteNumber(item.defaultValue, fallback?.defaultValue ?? DEFAULT_TYPE_VALUES.defaultValue),
       defaultColor: String(item.defaultColor ?? fallback?.defaultColor ?? DEFAULT_TYPE_VALUES.defaultColor),
       defaultFontFamily: String(item.defaultFontFamily ?? fallback?.defaultFontFamily ?? DEFAULT_TYPE_VALUES.defaultFontFamily),
       defaultFontSize: normalizedDefaultMeasurementFontSize(item.defaultFontSize, fallback),
@@ -1031,6 +1038,7 @@ export function normalizeMeasurementConfig(input: PlatformMeasurementConfigInput
         labelOverride: item.labelOverride ? String(item.labelOverride) : undefined,
         unitOverride: item.unitOverride ? String(item.unitOverride) : undefined,
         decimalsOverride: item.decimalsOverride === undefined ? undefined : clampNumber(finiteNumber(item.decimalsOverride, 3), 0, 8),
+        defaultValue: item.defaultValue === undefined ? undefined : finiteNumber(item.defaultValue, 0),
         styleOverride: normalizeStyleOverride(item.styleOverride)
       }];
     });
@@ -1055,6 +1063,7 @@ function normalizeMeasurementItem(item: Partial<MeasurementItemBinding>, validTy
     labelOverride: item.labelOverride !== undefined ? String(item.labelOverride) : undefined,
     unitOverride: item.unitOverride !== undefined ? String(item.unitOverride) : undefined,
     decimalsOverride: item.decimalsOverride === undefined ? undefined : clampNumber(finiteNumber(item.decimalsOverride, 3), 0, 8),
+    defaultValue: item.defaultValue === undefined ? undefined : finiteNumber(item.defaultValue, 0),
     styleOverride: normalizeStyleOverride(item.styleOverride)
   };
 }
@@ -1301,6 +1310,7 @@ export function createDefaultMeasurementGroupsForNode(
         labelOverride: item.name ?? item.labelOverride,
         unitOverride: item.unitOverride,
         decimalsOverride: item.decimalsOverride,
+        defaultValue: item.defaultValue ?? 0,
         styleOverride: item.styleOverride
       }))
     };
@@ -1371,6 +1381,7 @@ function reconcileGeneratedMeasurementItem(
     labelOverride: mergeInheritedMeasurementValue(existing.labelOverride, previousGenerated?.labelOverride, nextGenerated.labelOverride),
     unitOverride: mergeInheritedMeasurementValue(existing.unitOverride, previousGenerated?.unitOverride, nextGenerated.unitOverride),
     decimalsOverride: mergeInheritedMeasurementValue(existing.decimalsOverride, previousGenerated?.decimalsOverride, nextGenerated.decimalsOverride),
+    defaultValue: mergeInheritedMeasurementValue(existing.defaultValue, previousGenerated?.defaultValue, nextGenerated.defaultValue),
     styleOverride: mergeInheritedMeasurementValue(existing.styleOverride, previousGenerated?.styleOverride, nextGenerated.styleOverride)
   };
 }

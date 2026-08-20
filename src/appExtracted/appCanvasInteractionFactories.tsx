@@ -2,6 +2,7 @@
 import { degreesToRadians } from "../formatUtils";
 import { WindowCloseButton } from "../WindowCloseButton";
 import { isLineOnlyConnectionNode, modelAssociationDeviceModelTypeFailureMessage, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage } from "../model";
+import { Button, Input } from "antd";
 
 export function createUpdateSingleNodeDragImperativePreview(__appScope: Record<string, any>) {
   return (dragState: DraggingState, previewDelta: Point) => {
@@ -2720,7 +2721,7 @@ export function createRenderNodeDoubleClickDeviceParamRows(__appScope: Record<st
             {key === "name" ? (
               <BufferedTextInput value={node.name} onCommit={(nextValue) => batchEditors.updateNodeDoubleClickDraftPatch(node.id, { name: nextValue })} />
             ) : READONLY_E_PARAM_KEYS.has(key) || batchEditors.definitionMakesValueReadonly(definition) ? (
-              <input value={displayValue} readOnly />
+              <Input value={displayValue} readOnly />
             ) : (
               batchEditors.renderNodeDoubleClickParamEditor(node, key, displayValue, false, definition)
             )}
@@ -2973,9 +2974,9 @@ export function createRenderNodeDoubleClickDialog(__appScope: Record<string, any
               <>
                 <div className="container-param-tabs node-double-click-container-tabs" role="tablist" aria-label="容器设备参数切换">
                   {containerViews.map((view) => (
-                    <button
+                    <Button
                       key={view.id}
-                      type="button"
+                      htmlType="button"
                       className={activeContainerView.id === view.id ? "active" : ""}
                       onClick={() => {
                         setNodeDoubleClickDialog((current) =>
@@ -2986,7 +2987,7 @@ export function createRenderNodeDoubleClickDialog(__appScope: Record<string, any
                       }}
                     >
                       {view.label}
-                    </button>
+                    </Button>
                   ))}
                 </div>
                 <table className="param-table node-double-click-param-table">
@@ -3000,9 +3001,8 @@ export function createRenderNodeDoubleClickDialog(__appScope: Record<string, any
             )}
           </div>
           <div className="node-double-click-dialog-actions nodeDoubleClickDialogActions">
-            <button
-              type="button"
-              className="primary"
+            <Button
+              type="primary"
               onPointerDown={suppressNodeDoubleClickDialogEvent}
               onDoubleClick={suppressNodeDoubleClickDialogEvent}
               onClick={(event) => {
@@ -3011,9 +3011,9 @@ export function createRenderNodeDoubleClickDialog(__appScope: Record<string, any
               }}
             >
               确定
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              htmlType="button"
               onPointerDown={suppressNodeDoubleClickDialogEvent}
               onDoubleClick={suppressNodeDoubleClickDialogEvent}
               onClick={(event) => {
@@ -3022,7 +3022,7 @@ export function createRenderNodeDoubleClickDialog(__appScope: Record<string, any
               }}
             >
               取消
-            </button>
+            </Button>
           </div>
           <div
             className="node-double-click-dialog-resize"
@@ -3999,8 +3999,8 @@ export function createRenderSidePanelModeControls(__appScope: Record<string, any
         {options.map((option) => {
           const Icon = option.icon;
           return (
-            <button
-              type="button"
+            <Button
+              htmlType="button"
               key={option.mode}
               className={mode === option.mode ? "active" : ""}
               title={option.title}
@@ -4008,7 +4008,7 @@ export function createRenderSidePanelModeControls(__appScope: Record<string, any
               onClick={() => setSidePanelMode(side, option.mode)}
             >
               <Icon size={15} />
-            </button>
+            </Button>
           );
         })}
       </div>
@@ -4031,8 +4031,8 @@ export function createRenderSidePanelEdgeTrigger(__appScope: Record<string, any>
         className={`side-panel-edge-trigger ${side} mode-${mode}`}
         onPointerEnter={() => updateAutoPanelVisibility(side, "edge-enter")}
       >
-        <button
-          type="button"
+        <Button
+          htmlType="button"
           title={mode === "hidden" ? `${label}并切换为永久显示` : label}
           aria-label={label}
           onPointerEnter={() => updateAutoPanelVisibility(side, "edge-enter")}
@@ -4053,7 +4053,7 @@ export function createRenderSidePanelEdgeTrigger(__appScope: Record<string, any>
           }}
         >
           <Icon size={17} />
-        </button>
+        </Button>
       </div>
     );
   };

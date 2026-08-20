@@ -2,6 +2,7 @@
 // 从 App.tsx 第 3053-6217 行提取
 import { useMemo, useEffect, useCallback, useLayoutEffect } from "react";
 import type { LibraryPackageScope } from "./appPersistenceLibraryExport";
+import { Select, Input } from "antd";
 const LIBRARY_PACKAGE_DIALOG_SCOPES: LibraryPackageScope[] = [
   "all",
   "component-library",
@@ -2201,15 +2202,9 @@ export function useRenderBatch(__appScope: Record<string, any>) {
               {row.key === "name" && view.kind === "container" ? (
                 <BufferedTextInput value={node.name} onCommit={(nextValue) => batchEditors.updateNodeDoubleClickDraftPatch(node.id, { name: nextValue })} />
               ) : row.readonly || !row.paramKey ? (
-                <input value={displayValue} readOnly />
+                <Input value={displayValue} readOnly />
               ) : options ? (
-                <select value={displayValue} onChange={(event) => batchEditors.updateNodeDoubleClickDraftParam(node.id, row.paramKey!, event.target.value)}>
-                  {options.map((option) => (
-                    <option key={option} value={option} disabled={option === optionConfig.invalidValue}>
-                      {option === optionConfig.invalidValue ? invalidEnumOptionLabel(option) : option}
-                    </option>
-                  ))}
-                </select>
+                <Select value={displayValue} onChange={(value) => batchEditors.updateNodeDoubleClickDraftParam(node.id, row.paramKey!, value)} options={options.map((option) => ({ value: option, label: option === optionConfig.invalidValue ? invalidEnumOptionLabel(option) : option, disabled: option === optionConfig.invalidValue }))} />
               ) : (
                 <BufferedTextInput value={displayValue} onCommit={(nextValue) => batchEditors.updateNodeDoubleClickDraftParam(node.id, row.paramKey!, nextValue)} />
               )}
@@ -3338,7 +3333,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       <div className="template-library-panel library-panel-stack">
         <div className="library-search">
           <Search size={15} aria-hidden="true" />
-          <input
+          <Input
             value={templateLibrarySearchQuery}
             onChange={(event) => setTemplateLibrarySearchQuery(event.target.value)}
             placeholder="搜索模板/类型"
@@ -3499,7 +3494,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       <div className="library-panel-stack">
         <div className="library-search">
           <Search size={15} aria-hidden="true" />
-          <input
+          <Input
             value={librarySearchQuery}
             onChange={(event) => setLibrarySearchQuery(event.target.value)}
             placeholder="搜索图元/类"

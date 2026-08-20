@@ -3717,15 +3717,15 @@ export const BATCH_MEASUREMENT_GROUP_KEYS: BatchCommonMeasurementGroupKey[] = [
 ];
 
 export const BATCH_MEASUREMENT_GROUP_LABELS: Record<BatchCommonMeasurementGroupKey, string> = {
-  visible: "量测显示",
-  layout: "量测布局",
-  labelVisible: "标签显示",
-  unitVisible: "单位显示",
-  backgroundVisible: "背景显示",
-  backgroundColor: "背景颜色",
-  borderStyle: "边框样式",
-  borderColor: "边框颜色",
-  borderWidth: "边框宽度"
+  visible: "量测",
+  layout: "量测",
+  labelVisible: "标签",
+  unitVisible: "标签",
+  backgroundVisible: "背景",
+  backgroundColor: "背景",
+  borderStyle: "边框",
+  borderColor: "边框",
+  borderWidth: "边框"
 };
 
 export const measurementGroupCommonValue = (group: MeasurementGroup, key: BatchCommonMeasurementGroupKey) => {

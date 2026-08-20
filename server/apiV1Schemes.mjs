@@ -14,8 +14,23 @@ import { sendV1Json, sendV1Error } from "./v1Response.mjs";
 import { parseSchemePathParam, requireSchemePath } from "./schemePath.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
-const schemeDataDir = resolve(__dirname, "..", "data", "schemes");
-const filesRoot = join(schemeDataDir, "files");
+// schemeDataDir 和 filesRoot 从 server.mjs 的 schemeDataDir 派生，跟随 GRAPH_MODEL_DATA_DIR
+// 通过 server.mjs 导出的函数间接使用，此处仅用于 handleV1SchemeExport 的 filesRoot
+// 注意：运行时由 server.mjs 模块初始化时确定的 dataRoot 决定
+let _schemeDataDir;
+function getSchemeDataDir() {
+  if (!_schemeDataDir) {
+    // 复用 server.mjs 的逻辑：GRAPH_MODEL_DATA_DIR 或默认 data/schemes
+    const root = process.env.GRAPH_MODEL_DATA_DIR
+      ? resolve(process.env.GRAPH_MODEL_DATA_DIR)
+      : resolve(__dirname, "..", "data");
+    _schemeDataDir = join(root, "schemes");
+  }
+  return _schemeDataDir;
+}
+function getFilesRoot() {
+  return join(getSchemeDataDir(), "files");
+}
 
 // 方案树轻量化：剥离 project 完整数据，仅留摘要（name/updatedAt/children）
 function schemeTreeSummary(schemes) {
@@ -102,7 +117,7 @@ export async function handleV1SchemeExport({ url, response }) {
     return;
   }
   try {
-    const { buffer, filename } = await createSchemeArchiveBuffer({ filesRoot, schemePath: parts });
+    const { buffer, filename } = await createSchemeArchiveBuffer({ filesRoot: getFilesRoot(), schemePath: parts });
     response.writeHead(200, {
       "content-type": "application/zip",
       "content-length": String(buffer.length),

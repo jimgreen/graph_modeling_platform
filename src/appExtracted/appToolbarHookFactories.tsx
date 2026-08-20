@@ -1671,13 +1671,6 @@ export function createAppHookCallback37(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback38(__appScope: Record<string, any>) {
-  return () => {
-  const { TOPOLOGY_WARNING_PAGE_SIZE, inspectorTopologyErrors, setTopologyWarningPage } = __appScope;
-    setTopologyWarningPage((current) => Math.min(current, Math.max(0, Math.ceil(inspectorTopologyErrors.length / TOPOLOGY_WARNING_PAGE_SIZE) - 1)));
-  };
-}
-
 export function createAppHookCallback39(__appScope: Record<string, any>) {
   return () => {
   const { inspectorTopologyErrors, setTopologyWarningPanelClosed } = __appScope;

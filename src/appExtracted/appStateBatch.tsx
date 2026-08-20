@@ -734,7 +734,6 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
     templateLibrarySearchQuery,
     terminalPress,
     topologyErrors,
-    topologyWarningPage,
     transformDrag,
     tree,
     undoStack,
@@ -1629,14 +1628,6 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
       [activeLayerGroups, activeSelectedEdgeIds, activeSelectedNodeIds, isEditMode]
     );
   Object.assign(__appScope, { canGroupSelectedGraphics });
-  const topologyWarningPageCount = Math.max(1, Math.ceil(inspectorTopologyErrors.length / TOPOLOGY_WARNING_PAGE_SIZE)); Object.assign(__appScope, { topologyWarningPageCount });
-  const normalizedTopologyWarningPage = Math.min(topologyWarningPage, topologyWarningPageCount - 1); Object.assign(__appScope, { normalizedTopologyWarningPage });
-  const visibleTopologyErrors = inspectorTopologyErrors.slice(
-      normalizedTopologyWarningPage * TOPOLOGY_WARNING_PAGE_SIZE,
-      normalizedTopologyWarningPage * TOPOLOGY_WARNING_PAGE_SIZE + TOPOLOGY_WARNING_PAGE_SIZE
-    );
-  Object.assign(__appScope, { visibleTopologyErrors });
-  const hiddenTopologyErrorCount = Math.max(0, inspectorTopologyErrors.length - visibleTopologyErrors.length); Object.assign(__appScope, { hiddenTopologyErrorCount });
   const draggingNodeIdSet = useMemo(() => new Set(dragging?.nodeIds ?? []), [dragging?.nodeIds]); Object.assign(__appScope, { draggingNodeIdSet });
   const draggingNodeKey = useMemo(() => (dragging?.nodeIds ?? []).join("|"), [dragging?.nodeIds]); Object.assign(__appScope, { draggingNodeKey });
   const editHotInteractionActive = isEditMode && Boolean(

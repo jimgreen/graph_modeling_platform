@@ -6,6 +6,7 @@ import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitM
 import { STATE_ICON_DRAFT_FRAME, STATE_ICON_DRAWING_FRAME_WIDTH, STATE_ICON_DRAWING_FRAME_HEIGHT, STATE_ICON_CLOSED_SHAPE_KINDS, STATE_ICON_LINE_SHAPE_KINDS, STATE_ICON_STATIC_TEMPLATE_SECTIONS_COVERED_BY_BASIC_TOOLS, STATE_ICON_STATIC_TEMPLATE_SECTION_ORDER } from "./appDeviceDefinitionEInterface";
 import { modelAssociationDeviceModelTypeFailureMessage, switchingDeviceUsesClosedStatus } from "../model";
 
+import { Select } from "antd";
 import type { DeviceDefinitionStateDraftRow } from "../stateIconDrawing";
 
 export function stateIconDrawingContextMenuPosition(
@@ -2218,17 +2219,14 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                           <tr>
                             <th>图片显示方式</th>
                             <td>
-                              <select
+                              <Select
                                 value={normalizeImageFitMode(selectedStateRow.imageFit ?? selectedStateRow.backgroundImageFit)}
-                                onChange={(event) => handlers.update(selectedStateRowId, {
-                                  imageFit: event.target.value,
-                                  backgroundImageFit: event.target.value
+                                onChange={(value) => handlers.update(selectedStateRowId, {
+                                  imageFit: value,
+                                  backgroundImageFit: value
                                 })}
-                              >
-                                {IMAGE_FIT_MODE_OPTIONS.map((option) => (
-                                  <option key={option.value} value={option.value}>{option.label}</option>
-                                ))}
-                              </select>
+                                options={IMAGE_FIT_MODE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+                              />
                             </td>
                           </tr>
                         </>
@@ -2236,11 +2234,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                       <tr>
                         <th>边框线型</th>
                         <td>
-                          <select value={frame.strokeStyle} onChange={(event) => setStateIconFramePatch({ strokeStyle: event.target.value })}>
-                            <option value="solid">实线</option>
-                            <option value="dashed">虚线</option>
-                            <option value="dotted">点线</option>
-                          </select>
+                          <Select value={frame.strokeStyle} onChange={(value) => setStateIconFramePatch({ strokeStyle: value })} options={[{ value: "solid", label: "实线" }, { value: "dashed", label: "虚线" }, { value: "dotted", label: "点线" }]} />
                         </td>
                       </tr>
                       <tr>
@@ -2300,11 +2294,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                       <tr>
                         <th>显示方式</th>
                         <td>
-                          <select value={normalizeImageFitMode(frame.backgroundImageFit)} onChange={(event) => setStateIconFramePatch({ backgroundImageFit: event.target.value })}>
-                            {IMAGE_FIT_MODE_OPTIONS.map((option) => (
-                              <option key={option.value} value={option.value}>{option.label}</option>
-                            ))}
-                          </select>
+                          <Select value={normalizeImageFitMode(frame.backgroundImageFit)} onChange={(value) => setStateIconFramePatch({ backgroundImageFit: value })} options={IMAGE_FIT_MODE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))} />
                         </td>
                       </tr>
                     </tbody>
@@ -2412,27 +2402,17 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                         <tr>
                           <th>线型</th>
                           <td>
-                            <select value={selected.strokeStyle ?? "solid"} onChange={(event) => updateStateIconDrawingElement(selected.id, { strokeStyle: event.target.value })}>
-                              <option value="solid">实线</option>
-                              <option value="dashed">虚线</option>
-                              <option value="dotted">点线</option>
-                            </select>
+                            <Select value={selected.strokeStyle ?? "solid"} onChange={(value) => updateStateIconDrawingElement(selected.id, { strokeStyle: value })} options={[{ value: "solid", label: "实线" }, { value: "dashed", label: "虚线" }, { value: "dotted", label: "点线" }]} />
                           </td>
                         </tr>
                         <tr>
                           <th>所属端子</th>
                           <td>
-                            <select
+                            <Select
                               value={Number.isInteger(selected.terminalIndex) && selected.terminalIndex >= 0 ? String(selected.terminalIndex) : ""}
-                              onChange={(event) => updateStateIconDrawingElement(selected.id, stateIconDrawingTerminalPatch(event.target.value))}
-                            >
-                              <option value="">无</option>
-                              {stateIconDrawingTerminalOptions.map((option) => (
-                                <option key={option.index} value={option.index}>
-                                  {option.index + 1}. {option.label}
-                                </option>
-                              ))}
-                            </select>
+                              onChange={(value) => updateStateIconDrawingElement(selected.id, stateIconDrawingTerminalPatch(value))}
+                              options={[{ value: "", label: "无" }, ...stateIconDrawingTerminalOptions.map((option) => ({ value: String(option.index), label: `${option.index + 1}. ${option.label}` }))]}
+                            />
                           </td>
                         </tr>
                         <tr>
@@ -2448,17 +2428,13 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                             <tr>
                               <th>起点端型</th>
                               <td>
-                                <select value={selected.startCap ?? "none"} onChange={(event) => updateStateIconDrawingElement(selected.id, { startCap: event.target.value })}>
-                                  {STATE_ICON_LINE_CAP_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                                </select>
+                                <Select value={selected.startCap ?? "none"} onChange={(value) => updateStateIconDrawingElement(selected.id, { startCap: value })} options={STATE_ICON_LINE_CAP_OPTIONS.map((option) => ({ value: option.value, label: option.label }))} />
                               </td>
                             </tr>
                             <tr>
                               <th>终点端型</th>
                               <td>
-                                <select value={selected.endCap ?? "none"} onChange={(event) => updateStateIconDrawingElement(selected.id, { endCap: event.target.value })}>
-                                  {STATE_ICON_LINE_CAP_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                                </select>
+                                <Select value={selected.endCap ?? "none"} onChange={(value) => updateStateIconDrawingElement(selected.id, { endCap: value })} options={STATE_ICON_LINE_CAP_OPTIONS.map((option) => ({ value: option.value, label: option.label }))} />
                               </td>
                             </tr>
                           </>
@@ -2490,13 +2466,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                             <tr>
                               <th>字体</th>
                               <td>
-                                <select value={fontFamilyValue} onChange={(event) => updateStateIconDrawingElement(selected.id, { fontFamily: event.target.value })}>
-                                  {fontFamilyOptions.map((fontFamily) => (
-                                    <option key={fontFamily} value={fontFamily} style={{ fontFamily }}>
-                                      {fontFamilyOptionLabels[fontFamily] ?? fontFamily}
-                                    </option>
-                                  ))}
-                                </select>
+                                <Select value={fontFamilyValue} onChange={(value) => updateStateIconDrawingElement(selected.id, { fontFamily: value })} options={fontFamilyOptions.map((fontFamily) => ({ value: fontFamily, label: fontFamilyOptionLabels[fontFamily] ?? fontFamily }))} />
                               </td>
                             </tr>
                             <tr>
@@ -2522,20 +2492,13 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                             <tr>
                               <th>字重</th>
                               <td>
-                                <select value={String(selected.fontWeight ?? "800")} onChange={(event) => updateStateIconDrawingElement(selected.id, { fontWeight: event.target.value })}>
-                                  <option value="400">常规</option>
-                                  <option value="700">加粗</option>
-                                  <option value="800">特粗</option>
-                                </select>
+                                <Select value={String(selected.fontWeight ?? "800")} onChange={(value) => updateStateIconDrawingElement(selected.id, { fontWeight: value })} options={[{ value: "400", label: "常规" }, { value: "700", label: "加粗" }, { value: "800", label: "特粗" }]} />
                               </td>
                             </tr>
                             <tr>
                               <th>字型</th>
                               <td>
-                                <select value={selected.fontStyle ?? "normal"} onChange={(event) => updateStateIconDrawingElement(selected.id, { fontStyle: event.target.value })}>
-                                  <option value="normal">常规</option>
-                                  <option value="italic">斜体</option>
-                                </select>
+                                <Select value={selected.fontStyle ?? "normal"} onChange={(value) => updateStateIconDrawingElement(selected.id, { fontStyle: value })} options={[{ value: "normal", label: "常规" }, { value: "italic", label: "斜体" }]} />
                               </td>
                             </tr>
                           </>
@@ -2545,11 +2508,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                             <tr>
                               <th>图片显示方式</th>
                               <td>
-                                <select value={normalizeImageFitMode(selected.imageFit)} onChange={(event) => updateStateIconDrawingElement(selected.id, { imageFit: event.target.value })}>
-                                  {IMAGE_FIT_MODE_OPTIONS.map((option) => (
-                                    <option key={option.value} value={option.value}>{option.label}</option>
-                                  ))}
-                                </select>
+                                <Select value={normalizeImageFitMode(selected.imageFit)} onChange={(value) => updateStateIconDrawingElement(selected.id, { imageFit: value })} options={IMAGE_FIT_MODE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))} />
                               </td>
                             </tr>
                             <tr>
@@ -2774,13 +2733,9 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
             </div>
             <div className="custom-device-image-row device-definition-image-row">
               <span>图标显示方式</span>
-              <select value={normalizeImageFitMode(definitionVisualDraft.backgroundImageFit)} onChange={(event) =>
-                setDefinitionVisualDraft((current) => current ? { ...current, backgroundImageFit: event.target.value, error: "" } : current)
-              }>
-                {IMAGE_FIT_MODE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
+              <Select value={normalizeImageFitMode(definitionVisualDraft.backgroundImageFit)} onChange={(value) =>
+                setDefinitionVisualDraft((current) => current ? { ...current, backgroundImageFit: value, error: "" } : current)
+              } options={IMAGE_FIT_MODE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))} />
             </div>
             <div className="device-definition-size-grid">
               <label>

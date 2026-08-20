@@ -3,6 +3,7 @@ import { ChangeEvent, DragEvent, Fragment, Suspense, isValidElement, lazy, memo,
 import { createPortal, flushSync } from "react-dom";
 import { useTransition } from "react";
 import { apiPath } from "../config";
+import { Select, Input, Button } from "antd";
 import {
   componentLibraryDefinitionFromMetadata,
   resolveComponentLibraryClassMetadata
@@ -1916,18 +1917,19 @@ export const renderTypicalValueEditor = <T extends DeviceParameterDefinition & {
     const enumValueType = enumValueTypeForDefinitionRow(row, enumOptions);
     const selectedTypicalValue = enumValueFromOptions(String(row.typicalValue ?? ""), enumOptions);
     return (
-      <select
+      <Select
         value={selectedTypicalValue}
         disabled={disabled}
-        onChange={(event) => updateRow(row.id, { typicalValue: event.target.value } as Partial<T>)}
-      >
-        {enumOptions.length === 0 && <option value="">未设置</option>}
-        {enumOptions.map((option) => (
-          <option key={option.value} value={option.value}>
-            {enumDisplayText(option, enumValueType)}
-          </option>
-        ))}
-      </select>
+        onChange={(value) => updateRow(row.id, { typicalValue: value } as Partial<T>)}
+        options={[
+          ...(enumOptions.length === 0 ? [{ value: "", label: "未设置" }] : []),
+          ...enumOptions.map((option) => ({
+            value: option.value,
+            label: enumDisplayText(option, enumValueType)
+          }))
+        ]}
+        style={{ minWidth: 120 }}
+      />
     );
   }
   return (
@@ -2132,7 +2134,7 @@ function EnumValuesEditor<T extends DeviceParameterDefinition & { id: string }>(
                     {draftOptions.map((option, index) => (
                       <tr key={`${row.id}-enum-dialog-${index}`}>
                         <td>
-                          <input
+                          <Input
                             ref={index === 0 ? firstInputRef : undefined}
                             value={option.value}
                             disabled={disabled}
@@ -2143,7 +2145,7 @@ function EnumValuesEditor<T extends DeviceParameterDefinition & { id: string }>(
                         </td>
                         {showDisplayNames && (
                           <td>
-                            <input
+                            <Input
                               value={option.label ?? ""}
                               disabled={disabled}
                               placeholder="可选"
@@ -2171,8 +2173,7 @@ function EnumValuesEditor<T extends DeviceParameterDefinition & { id: string }>(
                 </table>
               </div>
               {!disabled && (
-                <button
-                  type="button"
+                <Button
                   className="custom-param-enum-dialog-add"
                   onClick={() => {
                     setDraftOptions((current) => [...current, { value: "", label: "" }]);
@@ -2181,19 +2182,19 @@ function EnumValuesEditor<T extends DeviceParameterDefinition & { id: string }>(
                 >
                   <Plus size={14} aria-hidden="true" />
                   新增枚举项
-                </button>
+                </Button>
               )}
               {validationMessage && <p className="custom-param-enum-dialog-error" role="alert">{validationMessage}</p>}
             </div>
             <footer className="custom-param-enum-dialog-footer">
               {disabled ? (
-                <button type="button" className="primary" onClick={closeDialog}>关闭</button>
+                <Button type="primary" onClick={closeDialog}>关闭</Button>
               ) : (<>
-                  <button type="button" onClick={closeDialog}>取消</button>
-                  <button type="button" className="primary" onClick={applyDraftOptions}>
+                  <Button onClick={closeDialog}>取消</Button>
+                  <Button type="primary" onClick={applyDraftOptions}>
                     <Save size={14} aria-hidden="true" />
                     保存
-                  </button>
+                  </Button>
                 </>)}
             </footer>
           </section>

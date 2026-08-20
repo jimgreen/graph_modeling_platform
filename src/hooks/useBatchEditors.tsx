@@ -5,6 +5,7 @@ import type { BatchCommonParamRow, BatchCommonMeasurementGroupRow, BatchCommonMe
 
 import { DeferredColorInput, BufferedTextInput } from "../components/InputComponents";
 import { StaticButtonLayerMultiSelect } from "../components/StaticButtonComponents";
+import { Select, Button } from "antd";
 
 import {
   inferESection,
@@ -158,7 +159,7 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
           disabled={isBrowseMode}
           onCommit={(nextValue: string) => updateParam(key, nextValue === "无颜色" ? "transparent" : nextValue)}
         />
-        <button type="button" disabled={isBrowseMode} onClick={() => updateParam(key, "transparent")}>无颜色</button>
+        <Button disabled={isBrowseMode} onClick={() => updateParam(key, "transparent")}>无颜色</Button>
       </div>
     );
   };
@@ -471,7 +472,7 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
           disabled={isBrowseMode}
           onCommit={(nextValue: string) => updateNodeDoubleClickDraftParam(node.id, key, nextValue === "无颜色" ? "transparent" : nextValue)}
         />
-        <button type="button" disabled={isBrowseMode} onClick={() => updateNodeDoubleClickDraftParam(node.id, key, "transparent")}>无颜色</button>
+        <Button disabled={isBrowseMode} onClick={() => updateNodeDoubleClickDraftParam(node.id, key, "transparent")}>无颜色</Button>
       </div>
     );
   };
@@ -527,7 +528,7 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
           placeholder={row.mixed ? "多个不同值" : undefined}
           onCommit={(nextValue: string) => applyBatchCommonParam(row.key, nextValue === "无颜色" ? "transparent" : nextValue)}
         />
-        <button type="button" disabled={isBrowseMode} onClick={() => applyBatchCommonParam(row.key, "transparent")}>无颜色</button>
+        <Button disabled={isBrowseMode} onClick={() => applyBatchCommonParam(row.key, "transparent")}>无颜色</Button>
       </div>
     );
   };
@@ -557,37 +558,19 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
         ? projectOptions.find((item) => item.project.name === row.value)?.project.id ?? ""
         : row.value;
     return (
-      <select value={selectedProjectId} disabled={isBrowseMode} onChange={(event) => applyBatchStaticButtonTargetProject(event.target.value)}>
-        <option value="">{row.mixed ? "多个不同值" : "请选择目标模型"}</option>
-        {projectOptions.map(({ schemeId, schemeName, project }) => (
-          <option key={`${schemeId}:${project.id}`} value={project.id}>
-            {schemeName} / {project.name}
-          </option>
-        ))}
-      </select>
+      <Select value={selectedProjectId || undefined} disabled={isBrowseMode} onChange={(val) => applyBatchStaticButtonTargetProject(val ?? "")} placeholder={row.mixed ? "多个不同值" : "请选择目标模型"} options={projectOptions.map(({ schemeId, schemeName, project }) => ({ value: project.id, label: `${schemeName} / ${project.name}` }))} />
     );
   };
 
   const renderBatchCommonSchemeSelect = (row: BatchCommonParamRow): ReactNode => (
-    <select value={row.mixed ? "" : row.value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonParam(row.key, event.target.value)}>
-      <option value="">{row.mixed ? "多个不同值" : "请选择目标方案"}</option>
-      {flattenSavedSchemes(schemes).map((scheme) => (
-        <option key={scheme.id} value={scheme.id}>{scheme.name}</option>
-      ))}
-    </select>
+    <Select value={row.mixed ? undefined : (row.value || undefined)} disabled={isBrowseMode} onChange={(val) => applyBatchCommonParam(row.key, val ?? "")} placeholder={row.mixed ? "多个不同值" : "请选择目标方案"} options={flattenSavedSchemes(schemes).map((scheme) => ({ value: scheme.id, label: scheme.name }))} />
   );
 
   const renderBatchCommonModelLayerSelect = (row: BatchCommonParamRow): ReactNode => {
     const currentLayerId = row.mixed ? "" : row.value || DEFAULT_MODEL_LAYER_ID;
     const hasCurrentLayer = !currentLayerId || layers.some((layer) => layer.id === currentLayerId);
     return (
-      <select value={currentLayerId} disabled={isBrowseMode} onChange={(event) => assignSelectedNodesToModelLayer(event.target.value)}>
-        <option value="">{row.mixed ? "多个不同值" : "请选择所属图层"}</option>
-        {!hasCurrentLayer && <option value={currentLayerId}>{currentLayerId}</option>}
-        {layers.map((layer) => (
-          <option key={layer.id} value={layer.id}>{layer.name}</option>
-        ))}
-      </select>
+      <Select value={currentLayerId || undefined} disabled={isBrowseMode} onChange={(val) => assignSelectedNodesToModelLayer(val ?? "")} placeholder={row.mixed ? "多个不同值" : "请选择所属图层"} options={[...(!hasCurrentLayer && currentLayerId ? [{ value: currentLayerId, label: currentLayerId }] : []), ...layers.map((layer) => ({ value: layer.id, label: layer.name }))]} />
     );
   };
 
@@ -621,12 +604,7 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
   const renderBatchCommonLayerSelect = (row: BatchCommonParamRow): ReactNode => {
     const selectedLayerId = row.mixed ? "" : normalizeBatchTargetLayerIds(row.value)[0] ?? "";
     return (
-      <select value={selectedLayerId} disabled={isBrowseMode} onChange={(event) => applyBatchStaticButtonTargetLayers(event.target.value ? [event.target.value] : [])}>
-        <option value="">{row.mixed ? "多个不同值" : "请选择目标图层"}</option>
-        {layers.map((layer) => (
-          <option key={layer.id} value={layer.id}>{layer.name}</option>
-        ))}
-      </select>
+      <Select value={selectedLayerId || undefined} disabled={isBrowseMode} onChange={(val) => applyBatchStaticButtonTargetLayers(val ? [val] : [])} placeholder={row.mixed ? "多个不同值" : "请选择目标图层"} options={layers.map((layer) => ({ value: layer.id, label: layer.name }))} />
     );
   };
 
@@ -772,7 +750,7 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
           placeholder={row.mixed ? "多个不同值" : undefined}
           onCommit={(nextValue: string) => applyBatchCommonMeasurementGroupSetting(row.key, nextValue === "无颜色" ? "transparent" : nextValue)}
         />
-        <button type="button" disabled={isBrowseMode} onClick={() => applyBatchCommonMeasurementGroupSetting(row.key, "transparent")}>无颜色</button>
+        <Button disabled={isBrowseMode} onClick={() => applyBatchCommonMeasurementGroupSetting(row.key, "transparent")}>无颜色</Button>
       </div>
     );
   };
@@ -781,41 +759,22 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     const value = row.mixed ? "" : row.value;
     if (row.key === "visible" || row.key === "labelVisible" || row.key === "unitVisible") {
       return (
-        <select value={value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonMeasurementGroupSetting(row.key, event.target.value)}>
-          {row.mixed && <option value="">多个不同值</option>}
-          <option value="1">显示</option>
-          <option value="0">隐藏</option>
-        </select>
+        <Select value={value || undefined} disabled={isBrowseMode} onChange={(val) => applyBatchCommonMeasurementGroupSetting(row.key, val ?? "")} options={[...(row.mixed ? [{ value: "", label: "多个不同值", disabled: true }] : []), { value: "1", label: "显示" }, { value: "0", label: "隐藏" }]} />
       );
     }
     if (row.key === "backgroundVisible") {
       return (
-        <select value={value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonMeasurementGroupSetting(row.key, event.target.value)}>
-          {row.mixed && <option value="">多个不同值</option>}
-          <option value="1">显示</option>
-          <option value="0">透明</option>
-        </select>
+        <Select value={value || undefined} disabled={isBrowseMode} onChange={(val) => applyBatchCommonMeasurementGroupSetting(row.key, val ?? "")} options={[...(row.mixed ? [{ value: "", label: "多个不同值", disabled: true }] : []), { value: "1", label: "显示" }, { value: "0", label: "透明" }]} />
       );
     }
     if (row.key === "layout") {
       return (
-        <select value={value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonMeasurementGroupSetting(row.key, event.target.value)}>
-          {row.mixed && <option value="">多个不同值</option>}
-          <option value="vertical">竖向</option>
-          <option value="horizontal">横向</option>
-          <option value="grid">两列</option>
-        </select>
+        <Select value={value || undefined} disabled={isBrowseMode} onChange={(val) => applyBatchCommonMeasurementGroupSetting(row.key, val ?? "")} options={[...(row.mixed ? [{ value: "", label: "多个不同值", disabled: true }] : []), { value: "vertical", label: "竖向" }, { value: "horizontal", label: "横向" }, { value: "grid", label: "两列" }]} />
       );
     }
     if (row.key === "borderStyle") {
       return (
-        <select value={value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonMeasurementGroupSetting(row.key, event.target.value)}>
-          {row.mixed && <option value="">多个不同值</option>}
-          <option value="solid">实线</option>
-          <option value="dashed">虚线</option>
-          <option value="dotted">点线</option>
-          <option value="none">无边框</option>
-        </select>
+        <Select value={value || undefined} disabled={isBrowseMode} onChange={(val) => applyBatchCommonMeasurementGroupSetting(row.key, val ?? "")} options={[...(row.mixed ? [{ value: "", label: "多个不同值", disabled: true }] : []), { value: "solid", label: "实线" }, { value: "dashed", label: "虚线" }, { value: "dotted", label: "点线" }, { value: "none", label: "无边框" }]} />
       );
     }
     if (row.key === "backgroundColor" || row.key === "borderColor") {
@@ -923,14 +882,12 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
         <tr>
           {renderChineseParamHeader("buttonEnabled")}
           <td>
-            <select
+            <Select
               value={buttonEnabled ? "1" : "0"}
               disabled={isBrowseMode}
-              onChange={(event) => writeParam("buttonEnabled", event.target.value)}
-            >
-              <option value="1">启用</option>
-              <option value="0">禁用</option>
-            </select>
+              onChange={(val) => writeParam("buttonEnabled", val)}
+              options={[{ value: "1", label: "启用" }, { value: "0", label: "禁用" }]}
+            />
           </td>
         </tr>
         {buttonEnabled && (
@@ -938,22 +895,18 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
             <tr>
               {renderChineseParamHeader("buttonActionType")}
               <td>
-                <select value={actionType} disabled={isBrowseMode} onChange={(event) => writeParam("buttonActionType", event.target.value)}>
-                  {Object.entries(STATIC_BUTTON_ACTION_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
+                <Select value={actionType} disabled={isBrowseMode} onChange={(val) => writeParam("buttonActionType", val)} options={Object.entries(STATIC_BUTTON_ACTION_LABELS).map(([value, label]) => ({ value, label }))} />
               </td>
             </tr>
             {actionType === "project" && (
               <tr>
                 {renderChineseParamHeader("buttonTargetProjectId")}
                 <td>
-                  <select
-                    value={node.params.buttonTargetProjectId || ""}
+                  <Select
+                    value={node.params.buttonTargetProjectId || undefined}
                     disabled={isBrowseMode}
-                    onChange={(event) => {
-                      const selected = projectOptions.find((item) => item.project.id === event.target.value);
+                    onChange={(val) => {
+                      const selected = projectOptions.find((item) => item.project.id === val);
                       writeNode({
                         params: {
                           ...node.params,
@@ -963,14 +916,9 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
                         }
                       });
                     }}
-                  >
-                    <option value="">请选择目标模型</option>
-                    {projectOptions.map(({ schemeId, schemeName, project }) => (
-                      <option key={`${schemeId}:${project.id}`} value={project.id}>
-                        {schemeName} / {project.name}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="请选择目标模型"
+                    options={projectOptions.map(({ schemeId, schemeName, project }) => ({ value: project.id, label: `${schemeName} / ${project.name}` }))}
+                  />
                 </td>
               </tr>
             )}
@@ -994,11 +942,7 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
               <tr>
                 {renderChineseParamHeader("buttonCommand")}
                 <td>
-                  <select value={node.params.buttonCommand || "none"} disabled={isBrowseMode} onChange={(event) => writeParam("buttonCommand", event.target.value)}>
-                    {Object.entries(STATIC_BUTTON_COMMAND_LABELS).map(([value, label]) => (
-                      <option key={value} value={value}>{label}</option>
-                    ))}
-                  </select>
+                  <Select value={node.params.buttonCommand || "none"} disabled={isBrowseMode} onChange={(val) => writeParam("buttonCommand", val)} options={Object.entries(STATIC_BUTTON_COMMAND_LABELS).map(([value, label]) => ({ value, label }))} />
                 </td>
               </tr>
             )}

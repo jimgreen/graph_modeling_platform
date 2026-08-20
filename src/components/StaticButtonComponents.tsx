@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { Button, Checkbox } from "antd";
 import { clampNumber } from "../canvasViewport";
 import type { ModelLayer } from "../model";
 
@@ -159,9 +160,9 @@ export function StaticButtonLayerMultiSelect({
 
   return (
     <div className={`static-button-layer-dropdown ${open ? "open" : ""} ${className} ${disabled ? "disabled" : ""}`}>
-      <button
+      <Button
         ref={triggerRef}
-        type="button"
+        htmlType="button"
         className="static-button-layer-dropdown-trigger"
         aria-label={`${ariaLabel}：${selectedLayerTitle || selectedLayerSummary}`}
         aria-disabled={disabled}
@@ -176,13 +177,12 @@ export function StaticButtonLayerMultiSelect({
         }}
       >
         <span>{selectedLayerSummary}</span>
-      </button>
+      </Button>
       {open && createPortal(
         <div ref={menuRef} className="static-button-layer-dropdown-menu" style={menuStyle} role="menu" aria-label={ariaLabel}>
           {layers.map((layer) => (
             <label key={layer.id} className="static-button-layer-option">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={selectedLayerIdSet.has(layer.id)}
                 disabled={disabled}
                 onChange={(event) => toggleLayer(layer.id, event.target.checked)}
@@ -206,8 +206,8 @@ export type TextStyleToggleButtonProps = {
 
 export function TextStyleToggleButton({ active, label, onClick, children }: TextStyleToggleButtonProps) {
   return (
-    <button
-      type="button"
+    <Button
+      htmlType="button"
       className="text-style-toggle-button"
       aria-label={label}
       aria-pressed={active}
@@ -215,6 +215,6 @@ export function TextStyleToggleButton({ active, label, onClick, children }: Text
       onClick={onClick}
     >
       {children}
-    </button>
+    </Button>
   );
 }

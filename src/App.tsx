@@ -191,7 +191,6 @@ import {
   isContainerTerminalAssociationDependent,
   isDoubleContainerTerminalAssociation,
   isBlockingTopologyValidationError,
-  categorizeTopologyErrorType,
   isGeneratorNode,
   isRepeatedEdgePointerClick,
   isStaticButtonCapableNode,
@@ -1369,8 +1368,6 @@ const [measurementDrag, setMeasurementDrag] = useState<MeasurementDragState>(nul
 Object.assign(__appScope, { measurementDrag, setMeasurementDrag });
 const [topologyErrors, setTopologyErrors] = useState<TopologyValidationError[]>([]);
 Object.assign(__appScope, { topologyErrors, setTopologyErrors });
-const [topologyWarningPage, setTopologyWarningPage] = useState(0);
-Object.assign(__appScope, { topologyWarningPage, setTopologyWarningPage });
 const [topology, setTopology] = useState<Topology>(EMPTY_TOPOLOGY);
 Object.assign(__appScope, { topology, setTopology });
 const [topologyStatus, setTopologyStatus] = useState<TopologyRunStatus>(INITIAL_TOPOLOGY_STATUS);

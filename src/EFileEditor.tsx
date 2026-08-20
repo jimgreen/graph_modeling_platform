@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { Edit, Eye, ArrowUpRight } from "lucide-react";
+import { Button, Input } from "antd";
 import { PARAM_LABELS } from "./appExtracted/appCoreCanvasUtilities";
 import { formatEDeviceRecordColumnValue, E_REFERENCE_FIELD_TABLE_IDS, keyToLong } from "./model-eexport";
 import { WindowCloseButton } from "./WindowCloseButton";
@@ -306,24 +307,24 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
             <h2>E文件查看与编辑</h2>
           </div>
           <div className="e-file-editor-mode-toggle">
-            <button
-              type="button"
+            <Button
+              htmlType="button"
               className={!editMode ? "active" : ""}
               onClick={() => setEditMode(false)}
               title="查看模式"
             >
               <Eye size={14} />
               <span>查看</span>
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              htmlType="button"
               className={editMode ? "active" : ""}
               onClick={() => setEditMode(true)}
               title="编辑模式"
             >
               <Edit size={14} />
               <span>编辑</span>
-            </button>
+            </Button>
           </div>
         </div>
         {copiedCell !== null && (
@@ -348,14 +349,14 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
           {/* Tab 导航 */}
           <div className="e-file-editor-tabs">
             {sections.map((section, index) => (
-              <button
+              <Button
                 key={section.key}
-                type="button"
+                htmlType="button"
                 className={index === activeSection ? "active" : ""}
                 onClick={() => setActiveSection(index)}
               >
                 {section.label}
-              </button>
+              </Button>
             ))}
           </div>
 
@@ -365,12 +366,12 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
               <div className="e-file-editor-table-actions">
                 {editMode && (
                   <>
-                    <button type="button" onClick={handleSave} className="primary">
+                    <Button onClick={handleSave} type="primary">
                       保存
-                    </button>
-                    <button type="button" onClick={handleCancel}>
+                    </Button>
+                    <Button htmlType="button" onClick={handleCancel}>
                       取消
-                    </button>
+                    </Button>
                   </>
                 )}
               </div>
@@ -432,7 +433,7 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
                                       onClick={() => showProtectedToast(col)}
                                     >{value}</span>
                                   ) : (
-                                    <input
+                                    <Input
                                       type="text"
                                       className="e-file-editor-cell-input"
                                       value={value}
@@ -449,8 +450,8 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
                                     title={record.readonly ? displayValue : "双击复制到剪切板"}
                                   >{displayValue}</span>
                                   {isReferenceField && (
-                                    <button
-                                      type="button"
+                                    <Button
+                                      htmlType="button"
                                       className="e-file-editor-jump-btn"
                                       onClick={() => handleJumpToReference(col, value)}
                                       title={`跳转到 ${REFERENCE_FIELD_MAP[col]} 的 ${E_REFERENCE_FIELD_TABLE_IDS[col] ? "行号" : "idx"}=${E_REFERENCE_FIELD_TABLE_IDS[col]
@@ -458,7 +459,7 @@ export function EFileEditor({ open, onClose, records, onSave, fieldCnNames, tabl
                                         : value}`}
                                     >
                                       <ArrowUpRight size={12} />
-                                    </button>
+                                    </Button>
                                   )}
                                 </>
                               )}
