@@ -3,6 +3,7 @@
 // 模式：export function createXxx(__appScope) { ...; return () => <JSX />; }
 
 import { createPortal } from "react-dom";
+import { Input, Button } from "antd";
 
 // 图层管理面板
 export function createRenderLayerManager(__appScope) {
@@ -15,9 +16,9 @@ export function createRenderLayerManager(__appScope) {
   return () => (
     <div className="layer-manager">
       <div className="layer-manager-toolbar">
-        <button type="button" onClick={addModelLayer}>新增图层</button>
-        <button type="button" onClick={() => setAllModelLayersVisibility(true)}>全部显示</button>
-        <button type="button" onClick={() => setAllModelLayersVisibility(false)}>全部隐藏</button>
+        <Button onClick={addModelLayer}>新增图层</Button>
+        <Button onClick={() => setAllModelLayersVisibility(true)}>全部显示</Button>
+        <Button onClick={() => setAllModelLayersVisibility(false)}>全部隐藏</Button>
       </div>
       <div className="layer-list">
         {layers.map((layer, index) => (
@@ -48,9 +49,9 @@ export function createRenderLayerManager(__appScope) {
               onCommit={(nextValue) => commitModelLayerName(layer.id, nextValue)}
               onKeyDown={(event) => event.stopPropagation()}
             />
-            <button type="button" onClick={() => moveModelLayer(layer.id, -1)} disabled={index === 0} title="图层上移">上移</button>
-            <button type="button" onClick={() => moveModelLayer(layer.id, 1)} disabled={index === layers.length - 1} title="图层下移">下移</button>
-            <button type="button" onClick={() => deleteModelLayer(layer.id)} disabled={layers.length <= 1} title="删除图层">删除</button>
+            <Button onClick={() => moveModelLayer(layer.id, -1)} disabled={index === 0} title="图层上移">上移</Button>
+            <Button onClick={() => moveModelLayer(layer.id, 1)} disabled={index === layers.length - 1} title="图层下移">下移</Button>
+            <Button onClick={() => deleteModelLayer(layer.id)} disabled={layers.length <= 1} title="删除图层">删除</Button>
           </div>
         ))}
       </div>
@@ -177,7 +178,7 @@ export function createRenderProjectPanel(__appScope) {
     <section className="project-panel" onContextMenu={openBlankProjectLibraryContextMenu}>
       <div className="library-search project-search">
         <Search size={15} aria-hidden="true" />
-        <input
+        <Input
           value={projectSearchQuery}
           onChange={(event) => setProjectSearchQuery(event.target.value)}
           placeholder="搜索方案/模型"
@@ -241,7 +242,7 @@ export function createRenderElementTreePanel(__appScope) {
     <div className="element-tree" role="tree" aria-label="图元树">
       <div className="element-tree-search" role="presentation">
         <Search size={14} aria-hidden="true" />
-        <input
+        <Input
           value={elementTreeSearchQuery}
           onChange={(event) => setElementTreeSearchQuery(event.target.value)}
           placeholder="搜索图元名称"

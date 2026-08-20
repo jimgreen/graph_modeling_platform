@@ -14,6 +14,7 @@ import type {
   UserCustomizationSnapshot
 } from "./userCustomizations";
 import { WindowCloseButton } from "./WindowCloseButton";
+import { Select, Input, Button } from "antd";
 
 export type PendingUserCustomizationImportView = {
   fileName: string;
@@ -131,8 +132,8 @@ function ImportPreviewPanel(props: {
         <footer>
           <span>执行前会自动导出当前全部自定义内容作为备份。</span>
           <div>
-            <button type="button" onClick={props.onCancel} disabled={props.busy}>取消</button>
-            <button type="button" className="primary" onClick={() => void props.onConfirm()} disabled={props.busy}>确认导入</button>
+            <Button onClick={props.onCancel} disabled={props.busy}>取消</Button>
+            <Button type="primary" onClick={() => void props.onConfirm()} disabled={props.busy}>确认导入</Button>
           </div>
         </footer>
       </section>
@@ -202,12 +203,12 @@ export function UserCustomizationManagerDialog(props: UserCustomizationManagerDi
             <p>显示当前相对于程序内置默认值仍然生效的自定义内容</p>
           </div>
           <div className="user-customization-actions">
-            <button type="button" onClick={() => void props.onExport()} disabled={props.busy}>
+            <Button onClick={() => void props.onExport()} disabled={props.busy}>
               <Download size={15} aria-hidden="true" /><span>导出全部</span>
-            </button>
-            <button type="button" className="primary" onClick={props.onChooseImport} disabled={props.busy}>
+            </Button>
+            <Button type="primary" onClick={props.onChooseImport} disabled={props.busy}>
               <FileInput size={15} aria-hidden="true" /><span>导入配置</span>
-            </button>
+            </Button>
           </div>
         </header>
 
@@ -237,13 +238,13 @@ export function UserCustomizationManagerDialog(props: UserCustomizationManagerDi
             <div className="user-customization-detail-heading">
               <div><h3>{activeDomainLabel}</h3><p>共 {props.inventory.countsByDomain[props.activeDomain]} 项当前有效变更</p></div>
               <div className="user-customization-filter">
-                <label><Search size={15} aria-hidden="true" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索当前分类" /></label>
-                <select value={changeFilter} onChange={(event) => setChangeFilter(event.target.value as typeof changeFilter)} aria-label="筛选变更类型">
-                  <option value="all">全部变更</option>
-                  <option value="added">新增</option>
-                  <option value="modified">修改</option>
-                  <option value="protected">依赖保留</option>
-                </select>
+                <label><Search size={15} aria-hidden="true" /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索当前分类" style={{ width: 180 }} /></label>
+                <Select value={changeFilter} onChange={(value) => setChangeFilter(value as typeof changeFilter)} aria-label="筛选变更类型" options={[
+                  { value: "all", label: "全部变更" },
+                  { value: "added", label: "新增" },
+                  { value: "modified", label: "修改" },
+                  { value: "protected", label: "依赖保留" }
+                ]} style={{ width: 120 }} />
               </div>
             </div>
 
@@ -281,11 +282,11 @@ export function UserCustomizationManagerDialog(props: UserCustomizationManagerDi
         <footer className="user-customization-footer">
           <span>{props.status || "恢复操作不会删除模型画布中已经绘制的设备、线路或量测实例。"}</span>
           <div>
-            <button type="button" disabled={props.busy || selectedRestorableKeys.length === 0} onClick={() => void props.onRestore(selectedRestorableKeys)}>
+            <Button disabled={props.busy || selectedRestorableKeys.length === 0} onClick={() => void props.onRestore(selectedRestorableKeys)}>
               <RotateCcw size={15} aria-hidden="true" />恢复所选
-            </button>
-            <button type="button" disabled={props.busy || restorableDomainKeys.length === 0} onClick={() => void props.onRestore(restorableDomainKeys)}>恢复当前分类</button>
-            <button type="button" className="danger" disabled={props.busy || restorableAllKeys.length === 0} onClick={() => void props.onRestore(restorableAllKeys)}>恢复全部默认</button>
+            </Button>
+            <Button disabled={props.busy || restorableDomainKeys.length === 0} onClick={() => void props.onRestore(restorableDomainKeys)}>恢复当前分类</Button>
+            <Button danger disabled={props.busy || restorableAllKeys.length === 0} onClick={() => void props.onRestore(restorableAllKeys)}>恢复全部默认</Button>
           </div>
         </footer>
 

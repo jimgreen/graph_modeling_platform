@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { Select, Input, Button } from "antd";
 import { clampNumber } from "../canvasViewport";
 import { DEFAULT_MEASUREMENT_CONFIG } from "../measurements";
 import { WindowCloseButton } from "../WindowCloseButton";
@@ -4000,7 +4001,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
     return (
       <section className="device-definition-measurement-panel measurement-config-panel measurement-profile-panel">
         <div className="measurement-profile-toolbar">
-          <button
+          <Button
             type="button"
             disabled={isBrowseMode || draftConfig.measurementTypes.length === 0 || !selectedKind}
             onClick={() => {
@@ -4021,11 +4022,11 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
             }}
           >
             添加量测
-          </button>
-          <button type="button" disabled={isBrowseMode || selectedRowIndexes.length === 0} onClick={copySelectedItems}>复制</button>
-          <button type="button" disabled={isBrowseMode || selectedRowIndexes.length === 0} onClick={() => moveSelectedItems(-1)}>上移</button>
-          <button type="button" disabled={isBrowseMode || selectedRowIndexes.length === 0} onClick={() => moveSelectedItems(1)}>下移</button>
-          <button type="button" disabled={isBrowseMode || selectedRowIndexes.length === 0} onClick={deleteSelectedItems}>删除</button>
+          </Button>
+          <Button disabled={isBrowseMode || selectedRowIndexes.length === 0} onClick={copySelectedItems}>复制</Button>
+          <Button disabled={isBrowseMode || selectedRowIndexes.length === 0} onClick={() => moveSelectedItems(-1)}>上移</Button>
+          <Button disabled={isBrowseMode || selectedRowIndexes.length === 0} onClick={() => moveSelectedItems(1)}>下移</Button>
+          <Button disabled={isBrowseMode || selectedRowIndexes.length === 0} onClick={deleteSelectedItems}>删除</Button>
           <span>{selectedRowIndexes.length > 0 ? `已选 ${selectedRowIndexes.length} 行` : "点击行选择，Ctrl/Shift 可多选"}</span>
           <span>类 {selectedKind || "未设置"} / 参考图元 {target.label}</span>
         </div>
@@ -4039,6 +4040,7 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                 <th>量测位置</th>
                 <th>关联字段</th>
                 <th>默认显示</th>
+                <th>默认值</th>
               </tr>
             </thead>
             <tbody>
@@ -4066,11 +4068,10 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                       />
                     </td>
                     <td>
-                      <select
+                      <Select
                         value={item.measurementTypeId}
                         disabled={isBrowseMode}
-                        onChange={(event) => {
-                          const nextTypeId = event.target.value;
+                        onChange={(nextTypeId) => {
                           const nextType = editableMeasurementTypeById.get(nextTypeId);
                           const previousType = editableMeasurementTypeById.get(item.measurementTypeId);
                           const currentAssociatedField = String(item.associatedField ?? "").trim();
@@ -4087,73 +4088,72 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                           });
                           ensureAssociatedField(itemPosition, nextAssociatedField, nextTypeId);
                         }}
-                      >
-                        {!editableMeasurementTypeById.has(item.measurementTypeId) && (
-                          <option value={item.measurementTypeId}>{item.measurementTypeId}</option>
-                        )}
-                        {draftConfig.measurementTypes.map((type) => (
-                          <option key={type.id} value={type.id}>{type.name}</option>
-                        ))}
-                      </select>
+                        options={[
+                          ...(!editableMeasurementTypeById.has(item.measurementTypeId) ? [{ value: item.measurementTypeId, label: item.measurementTypeId }] : []),
+                          ...draftConfig.measurementTypes.map((type) => ({ value: type.id, label: type.name }))
+                        ]}
+                      />
                     </td>
                     <td>
-                      <select
+                      <Select
                         value={itemPosition}
                         disabled={isBrowseMode}
-                        onChange={(event) => {
-                          const nextPosition = event.target.value;
+                        onChange={(nextPosition) => {
                           const currentAssociatedField = String(item.associatedField ?? "").trim();
                           updateItem(itemIndex, {
                             position: nextPosition
                           });
                           ensureAssociatedField(nextPosition, currentAssociatedField, item.measurementTypeId);
                         }}
-                      >
-                        {measurementProfilePositionOptions.map((option) => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </select>
+                        options={measurementProfilePositionOptions.map((option) => ({ value: option.value, label: option.label }))}
+                      />
                     </td>
                     <td>
-                      <select
+                      <Select
                         value={item.associatedField ?? ""}
                         disabled={isBrowseMode}
                         title={item.associatedField && !associatedFieldOptions.some((option) => option.value === item.associatedField)
                           ? "当前关联字段不在元件属性名称列表中"
                           : "关联到元件属性名称"}
-                        onChange={(event) => {
-                          const nextAssociatedField = event.target.value || undefined;
+                        onChange={(nextValue) => {
+                          const nextAssociatedField = nextValue || undefined;
                           updateItem(itemIndex, { associatedField: nextAssociatedField });
                           ensureAssociatedField(itemPosition, nextAssociatedField, item.measurementTypeId);
                         }}
-                      >
-                        <option value="">未关联（使用量测类型ID）</option>
-                        {item.associatedField && !associatedFieldOptions.some((option) => option.value === item.associatedField) && (
-                          <option value={item.associatedField}>{item.associatedField}（未在属性中）</option>
-                        )}
-                        {associatedFieldOptions.map((option) => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </select>
+                        options={[
+                          { value: "", label: "未关联（使用量测类型ID）" },
+                          ...(item.associatedField && !associatedFieldOptions.some((option) => option.value === item.associatedField) ? [{ value: item.associatedField, label: `${item.associatedField}（未在属性中）` }] : []),
+                          ...associatedFieldOptions.map((option) => ({ value: option.value, label: option.label }))
+                        ]}
+                      />
                     </td>
                     <td>
-                      <select
+                      <Select
                         value={item.defaultVisible === undefined ? "type" : item.defaultVisible ? "1" : "0"}
                         disabled={isBrowseMode}
-                        onChange={(event) => updateItem(itemIndex, {
-                          defaultVisible: event.target.value === "type" ? undefined : event.target.value === "1"
+                        onChange={(value) => updateItem(itemIndex, {
+                          defaultVisible: value === "type" ? undefined : value === "1"
                         })}
-                      >
-                        <option value="type">跟随类型</option>
-                        <option value="1">显示</option>
-                        <option value="0">隐藏</option>
-                      </select>
+                        options={[{ value: "type", label: "跟随类型" }, { value: "1", label: "显示" }, { value: "0", label: "隐藏" }]}
+                      />
+                    </td>
+                    <td>
+                      <BufferedTextInput
+                        type="number"
+                        step="0.01"
+                        value={item.defaultValue ?? 0}
+                        disabled={isBrowseMode}
+                        placeholder="0"
+                        onCommit={(nextValue) => updateItem(itemIndex, {
+                          defaultValue: nextValue === "" ? 0 : Number(nextValue)
+                        })}
+                      />
                     </td>
                   </tr>
                 );
               }) : (
                 <tr>
-                  <td colSpan={6}>当前类还没有默认量测模板。</td>
+                  <td colSpan={7}>当前类还没有默认量测模板。</td>
                 </tr>
               )}
             </tbody>
@@ -4249,20 +4249,16 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
                   </label>
                   <label>
                     <span>默认边框类型</span>
-                    <select
+                    <Select
                       value={groupDefaults.borderStyle}
-                      onChange={(event) => updateGroupDefaults({ borderStyle: event.target.value })}
-                    >
-                      <option value="none">无边框</option>
-                      <option value="solid">实线</option>
-                      <option value="dashed">虚线</option>
-                      <option value="dotted">点线</option>
-                    </select>
+                      onChange={(value) => updateGroupDefaults({ borderStyle: value })}
+                      options={[{ value: "none", label: "无边框" }, { value: "solid", label: "实线" }, { value: "dashed", label: "虚线" }, { value: "dotted", label: "点线" }]}
+                    />
                   </label>
                 </div>
               </section>
               <div className="measurement-config-toolbar">
-                <button type="button" onClick={addMeasurementType}>新增量测类型</button>
+                <Button onClick={addMeasurementType}>新增量测类型</Button>
               </div>
             <div className="measurement-table-wrap">
               <table className="measurement-table">
@@ -4273,6 +4269,7 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
                     <th>标签</th>
                     <th>单位</th>
                     <th>小数</th>
+                    <th>默认值</th>
                     <th>字号</th>
                     <th>颜色</th>
                     <th>默认显示</th>
@@ -4282,7 +4279,7 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
                 <tbody>
                   {draftConfig.measurementTypes.map((type) => (
                     <tr key={type.id}>
-                      <td><input value={type.id} readOnly title="量测类型ID用于保存绑定关系，不能直接修改" /></td>
+                      <td><Input value={type.id} readOnly title="量测类型ID用于保存绑定关系，不能直接修改" /></td>
                       <td><BufferedTextInput value={type.name} onCommit={(nextValue) => updateMeasurementType(type.id, { name: nextValue })} /></td>
                       <td><BufferedTextInput value={type.shortLabel} onCommit={(nextValue) => updateMeasurementType(type.id, { shortLabel: nextValue })} /></td>
                       <td><BufferedTextInput value={type.defaultUnit} onCommit={(nextValue) => updateMeasurementType(type.id, { defaultUnit: nextValue })} /></td>
@@ -4298,6 +4295,14 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
                       <td>
                         <BufferedTextInput
                           type="number"
+                          step="0.01"
+                          value={type.defaultValue}
+                          onCommit={(nextValue) => updateMeasurementType(type.id, { defaultValue: Number(nextValue) })}
+                        />
+                      </td>
+                      <td>
+                        <BufferedTextInput
+                          type="number"
                           min="6"
                           max="96"
                           value={type.defaultFontSize}
@@ -4308,15 +4313,13 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
                         <DeferredColorInput value={type.defaultColor} fallback="#334155" onCommit={(value) => updateMeasurementType(type.id, { defaultColor: value })} />
                       </td>
                       <td>
-                        <select
+                        <Select
                           value={type.defaultVisible ? "1" : "0"}
-                          onChange={(event) => updateMeasurementType(type.id, { defaultVisible: event.target.value === "1" })}
-                        >
-                          <option value="1">显示</option>
-                          <option value="0">隐藏</option>
-                        </select>
+                          onChange={(value) => updateMeasurementType(type.id, { defaultVisible: value === "1" })}
+                          options={[{ value: "1", label: "显示" }, { value: "0", label: "隐藏" }]}
+                        />
                       </td>
-                      <td><button type="button" onClick={() => deleteMeasurementType(type.id)}>删除</button></td>
+                      <td><Button onClick={() => deleteMeasurementType(type.id)}>删除</Button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -4327,8 +4330,8 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
             <span className={`measurement-config-status ${measurementConfigSaveStatus === "error" ? "error" : ""}`}>
               {measurementConfigStatusText}
             </span>
-            <button type="button" onClick={closeMeasurementConfigDialog}>取消</button>
-            <button
+            <Button onClick={closeMeasurementConfigDialog}>取消</Button>
+            <Button
               type="button"
               className="primary"
               disabled={isBrowseMode || measurementConfigSaveStatus === "saving"}
@@ -4337,7 +4340,7 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
             >
               <Save size={14} />
               保存
-            </button>
+            </Button>
           </footer>
           <div
             className="device-library-dialog-resize"
@@ -4385,6 +4388,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
       { key: "label", label: "标签", width: 92 },
       { key: "unit", label: "单位", width: 92 },
       { key: "decimals", label: "小数位", width: 88 },
+      { key: "defaultValue", label: "默认值", width: 88 },
       { key: "color", label: "颜色", width: 88 },
       { key: "fontSize", label: "字号", width: 84 }
     ];
@@ -4421,50 +4425,41 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
           <div className="measurement-editor-summary">
             <label>
               <span>量测组显示</span>
-              <select
+              <Select
                 value={draft.visible ? "1" : "0"}
                 disabled={isBrowseMode}
-                onChange={(event) => updateMeasurementEditorGroupSettings((group) => ({ ...group, visible: event.target.value === "1" }))}
-              >
-                <option value="1">显示</option>
-                <option value="0">隐藏</option>
-              </select>
+                onChange={(value) => updateMeasurementEditorGroupSettings((group) => ({ ...group, visible: value === "1" }))}
+                options={[{ value: "1", label: "显示" }, { value: "0", label: "隐藏" }]}
+              />
             </label>
             <label>
               <span>布局</span>
-              <select
+              <Select
                 value={draft.layout}
                 disabled={isBrowseMode}
-                onChange={(event) => updateMeasurementEditorGroupSettings((group) => ({ ...group, layout: event.target.value as MeasurementGroup["layout"] }))}
-              >
-                <option value="vertical">竖向</option>
-                <option value="horizontal">横向</option>
-                <option value="grid">两列</option>
-              </select>
+                onChange={(value) => updateMeasurementEditorGroupSettings((group) => ({ ...group, layout: value as MeasurementGroup["layout"] }))}
+                options={[{ value: "vertical", label: "竖向" }, { value: "horizontal", label: "横向" }, { value: "grid", label: "两列" }]}
+              />
             </label>
             <label>
               <span>标签显示</span>
-              <select
+              <Select
                 aria-label="量测标签显示"
                 value={draft.labelVisible === false ? "0" : "1"}
                 disabled={isBrowseMode}
-                onChange={(event) => updateMeasurementEditorGroupSettings((group) => ({ ...group, labelVisible: event.target.value === "1" }))}
-              >
-                <option value="1">显示</option>
-                <option value="0">隐藏</option>
-              </select>
+                onChange={(value) => updateMeasurementEditorGroupSettings((group) => ({ ...group, labelVisible: value === "1" }))}
+                options={[{ value: "1", label: "显示" }, { value: "0", label: "隐藏" }]}
+              />
             </label>
             <label>
               <span>单位显示</span>
-              <select
+              <Select
                 aria-label="量测单位显示"
                 value={draft.unitVisible === false ? "0" : "1"}
                 disabled={isBrowseMode}
-                onChange={(event) => updateMeasurementEditorGroupSettings((group) => ({ ...group, unitVisible: event.target.value === "1" }))}
-              >
-                <option value="1">显示</option>
-                <option value="0">隐藏</option>
-              </select>
+                onChange={(value) => updateMeasurementEditorGroupSettings((group) => ({ ...group, unitVisible: value === "1" }))}
+                options={[{ value: "1", label: "显示" }, { value: "0", label: "隐藏" }]}
+              />
             </label>
             <label>
               <span>字体颜色</span>
@@ -4499,19 +4494,17 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
             </label>
             <label>
               <span>背景显示</span>
-              <select
+              <Select
                 value={draftBackgroundHidden ? "0" : "1"}
                 disabled={isBrowseMode}
-                onChange={(event) => updateMeasurementEditorGroupSettings((group) => ({
+                onChange={(value) => updateMeasurementEditorGroupSettings((group) => ({
                   ...group,
-                  backgroundColor: event.target.value === "1"
+                  backgroundColor: value === "1"
                     ? group.backgroundColor === "transparent" ? "#ffffff" : group.backgroundColor ?? "#ffffff"
                     : "transparent"
                 }))}
-              >
-                <option value="1">显示</option>
-                <option value="0">透明</option>
-              </select>
+                options={[{ value: "1", label: "显示" }, { value: "0", label: "透明" }]}
+              />
             </label>
             <label>
               <span>背景颜色</span>
@@ -4524,23 +4517,19 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
             </label>
             <label>
               <span>边框样式</span>
-              <select
+              <Select
                 value={draft.borderStyle ?? "none"}
                 disabled={isBrowseMode}
-                onChange={(event) => {
-                  const borderStyle = event.target.value as MeasurementGroup["borderStyle"];
+                onChange={(borderStyle) => {
+                  const bs = borderStyle as MeasurementGroup["borderStyle"];
                   updateMeasurementEditorGroupSettings((group) => ({
                     ...group,
-                    borderStyle,
-                    borderWidth: borderStyle === "none" ? 0 : Math.max(1, group.borderWidth ?? 0)
+                    borderStyle: bs,
+                    borderWidth: bs === "none" ? 0 : Math.max(1, group.borderWidth ?? 0)
                   }));
                 }}
-              >
-                <option value="solid">实线</option>
-                <option value="dashed">虚线</option>
-                <option value="dotted">点线</option>
-                <option value="none">无边框</option>
-              </select>
+                options={[{ value: "solid", label: "实线" }, { value: "dashed", label: "虚线" }, { value: "dotted", label: "点线" }, { value: "none", label: "无边框" }]}
+              />
             </label>
             <label>
               <span>边框颜色</span>
@@ -4568,13 +4557,13 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
             </label>
           </div>
           <div className="measurement-editor-toolbar">
-            <button
+            <Button
               type="button"
               disabled={isBrowseMode || measurementConfig.measurementTypes.length === 0}
               onClick={() => addMeasurementEditorDraftItem(node)}
             >
               添加一行量测
-            </button>
+            </Button>
           </div>
           <div className="measurement-editor-table-wrap">
             <table className="measurement-editor-table" style={{ width: `${measurementEditorTableWidth}px` }}>
@@ -4612,27 +4601,27 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                       <td>{rowIndex + 1}</td>
                       <td>
                         <div className="measurement-editor-row-actions">
-                          <button
+                          <Button
                             type="button"
                             disabled={isBrowseMode || itemIndex === 0}
                             onClick={() => moveMeasurementEditorDraftItem(row.groupId, item.id, -1)}
                           >
                             上移
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
                             disabled={isBrowseMode || itemIndex === group.items.length - 1}
                             onClick={() => moveMeasurementEditorDraftItem(row.groupId, item.id, 1)}
                           >
                             下移
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
                             disabled={isBrowseMode}
                             onClick={() => removeMeasurementEditorDraftItem(row.groupId, item.id)}
                           >
                             删除
-                          </button>
+                          </Button>
                         </div>
                       </td>
                       <td>
@@ -4647,52 +4636,45 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                         />
                       </td>
                       <td>
-                        <select
+                        <Select
                           value={group.terminalId ?? ""}
                           disabled={isBrowseMode}
                           aria-label="量测位置"
                           title={measurementEditorPositionLabel(group)}
-                          onChange={(event) => updateMeasurementEditorDraftItemPosition(node, row.groupId, item.id, event.target.value)}
-                        >
-                          <option value="">设备层</option>
-                          {node.terminals.map((terminal, terminalIndex) => (
-                            <option key={terminal.id} value={terminal.id}>{terminal.label || `端子${terminalIndex + 1}`}</option>
-                          ))}
-                        </select>
+                          onChange={(value) => updateMeasurementEditorDraftItemPosition(node, row.groupId, item.id, value)}
+                          options={[
+                            { value: "", label: "设备层" },
+                            ...node.terminals.map((terminal, terminalIndex) => ({ value: terminal.id, label: terminal.label || `端子${terminalIndex + 1}` }))
+                          ]}
+                        />
                       </td>
                       <td>
-                        <select
+                        <Select
                           value={item.measurementTypeId}
                           disabled={isBrowseMode}
-                          onChange={(event) => {
-                            const nextTypeId = event.target.value;
+                          onChange={(nextTypeId) => {
                             updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
                               ...current,
                               measurementTypeId: nextTypeId,
                               sourcePoint: current.sourcePoint || `${node.id}.${nextTypeId}`
                             }));
                           }}
-                        >
-                          {!measurementTypeOptions.some((candidate) => candidate.id === item.measurementTypeId) && (
-                            <option value={item.measurementTypeId}>{item.measurementTypeId}</option>
-                          )}
-                          {measurementTypeOptions.map((candidate) => (
-                            <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
-                          ))}
-                        </select>
+                          options={[
+                            ...(!measurementTypeOptions.some((candidate) => candidate.id === item.measurementTypeId) ? [{ value: item.measurementTypeId, label: item.measurementTypeId }] : []),
+                            ...measurementTypeOptions.map((candidate) => ({ value: candidate.id, label: candidate.name }))
+                          ]}
+                        />
                       </td>
                       <td>
-                        <select
+                        <Select
                           value={item.visible === false ? "0" : "1"}
                           disabled={isBrowseMode}
-                          onChange={(event) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                          onChange={(value) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
                             ...current,
-                            visible: event.target.value === "1"
+                            visible: value === "1"
                           }))}
-                        >
-                          <option value="1">显示</option>
-                          <option value="0">隐藏</option>
-                        </select>
+                          options={[{ value: "1", label: "显示" }, { value: "0", label: "隐藏" }]}
+                        />
                       </td>
                       <td>
                         <BufferedTextInput
@@ -4741,6 +4723,19 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                         />
                       </td>
                       <td>
+                        <BufferedTextInput
+                          type="number"
+                          step="0.01"
+                          value={item.defaultValue ?? 0}
+                          disabled={isBrowseMode}
+                          placeholder="0"
+                          onCommit={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                            ...current,
+                            defaultValue: nextValue === "" ? 0 : Number(nextValue)
+                          }))}
+                        />
+                      </td>
+                      <td>
                         <DeferredColorInput
                           value={itemColor}
                           disabled={isBrowseMode}
@@ -4774,14 +4769,14 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
             </table>
           </div>
           <div className="template-dialog-actions">
-            <button
+            <Button
               type="button"
               disabled={isBrowseMode || measurementEditorDialog.drafts.every((group) => group.items.length === 0)}
               onClick={confirmMeasurementEditorDialog}
             >
               保存
-            </button>
-            <button type="button" onClick={() => setMeasurementEditorDialog(null)}>取消</button>
+            </Button>
+            <Button onClick={() => setMeasurementEditorDialog(null)}>取消</Button>
           </div>
         </section>
       </div>

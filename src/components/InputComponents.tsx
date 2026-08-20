@@ -1,6 +1,9 @@
 // 缓冲输入组件 — 延迟提交的表单输入控件
 
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from "react";
+import { ColorPicker, Input, Select, Button } from "antd";
+
+const { TextArea } = Input;
 
 /* 颜色输入 */
 
@@ -40,6 +43,7 @@ export function DeferredColorInput({
   const draftRef = useRef(normalizedValue);
   const committedRef = useRef(normalizedCommittedValue);
   const onCommitRef = useRef(onCommit);
+  const previousColorRef = useRef<string | null>(null);
 
   const commitColor = (nextValue: string) => {
     const nextColor = colorInputValue(nextValue, normalizedFallback);
@@ -56,20 +60,24 @@ export function DeferredColorInput({
       return;
     }
     if (committedRef.current === TRANSPARENT_COLOR_VALUE) {
-      return;
+      // Restore previous color
+      if (previousColorRef.current) {
+        const restoreColor = previousColorRef.current;
+        previousColorRef.current = null;
+        commitColor(restoreColor);
+      }
+    } else {
+      // Save current color and set to transparent
+      previousColorRef.current = committedRef.current;
+      committedRef.current = TRANSPARENT_COLOR_VALUE;
+      onCommitRef.current(TRANSPARENT_COLOR_VALUE);
     }
-    committedRef.current = TRANSPARENT_COLOR_VALUE;
-    onCommitRef.current(TRANSPARENT_COLOR_VALUE);
   };
 
-  const queueDraftCommit = (event: { currentTarget: HTMLInputElement }) => {
-    const nextValue = event.currentTarget.value;
+  const handleColorChange = (color: string) => {
     if (!disabled) {
-      commitColor(nextValue);
-      return;
+      commitColor(color);
     }
-    draftRef.current = nextValue;
-    setDraft(nextValue);
   };
 
   useEffect(() => {
@@ -84,24 +92,12 @@ export function DeferredColorInput({
 
   return (
     <span className={`deferred-color-input ${transparent ? "transparent" : ""} ${disabled ? "disabled" : ""}`}>
-      <input
-        type="color"
+      <ColorPicker
         value={draft}
         disabled={disabled}
         className={className}
-        title={transparent ? "当前为透明色，选择颜色可恢复为实色" : title}
         aria-label={ariaLabel}
-        onInput={queueDraftCommit}
-        onChange={queueDraftCommit}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            commitColor(event.currentTarget.value);
-          } else if (event.key === "Escape") {
-            const restoredValue = committedRef.current === TRANSPARENT_COLOR_VALUE ? normalizedValue : committedRef.current;
-            draftRef.current = restoredValue;
-            setDraft(restoredValue);
-          }
-        }}
+        onChange={(_, hex) => handleColorChange(hex)}
       />
       <button
         type="button"
@@ -177,23 +173,23 @@ export function BufferedTextInput({
   }, [normalizedValue]);
 
   return (
-    <input
+    <Input
       {...inputProps}
       value={draftValue}
       disabled={disabled}
       onChange={(event) => setDraftValue(event.target.value)}
       onBlur={commitDraft}
       onKeyDown={(event) => {
-        inputProps.onKeyDown?.(event);
+        inputProps.onKeyDown?.(event as any);
         if (event.defaultPrevented) {
           return;
         }
         if (event.key === "Enter") {
-          commitValue(event.currentTarget.value);
-          event.currentTarget.blur();
+          commitValue((event.target as HTMLInputElement).value);
+          (event.target as HTMLInputElement).blur();
         } else if (event.key === "Escape") {
           setDraftValue(committedValueRef.current);
-          event.currentTarget.blur();
+          (event.target as HTMLInputElement).blur();
         }
       }}
     />
@@ -252,23 +248,23 @@ export function BufferedTextarea({
   }, [normalizedValue]);
 
   return (
-    <textarea
+    <TextArea
       {...textareaProps}
       value={draftValue}
       disabled={disabled}
       onChange={(event) => setDraftValue(event.target.value)}
       onBlur={commitDraft}
       onKeyDown={(event) => {
-        textareaProps.onKeyDown?.(event);
+        textareaProps.onKeyDown?.(event as any);
         if (event.defaultPrevented) {
           return;
         }
         if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-          commitValue(event.currentTarget.value);
-          event.currentTarget.blur();
+          commitValue((event.target as HTMLTextAreaElement).value);
+          (event.target as HTMLTextAreaElement).blur();
         } else if (event.key === "Escape") {
           setDraftValue(committedValueRef.current);
-          event.currentTarget.blur();
+          (event.target as HTMLTextAreaElement).blur();
         }
       }}
     />

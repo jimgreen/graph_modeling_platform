@@ -26,6 +26,57 @@ import * as measurementDefinitions from "./measurements";
 import { DEVICE_LIBRARY, getTemplateParameterDefinitions } from "./model";
 import { exportMeasurementItemMetadataAttributes } from "./svgExportUtils";
 
+/** Detects native <select> and antd <Select> (which passes options prop). */
+const isSelectLike = (element: ReactElement<any>): boolean =>
+  element.type === "select" || Array.isArray(element.props.options);
+
+/** Extracts option values from native <option> children or antd options prop. */
+const getOptionValues = (selectElement: ReactElement<any>): string[] =>
+  Array.isArray(selectElement.props.options)
+    ? selectElement.props.options.map((opt: any) => String(opt.value ?? ""))
+    : Children.toArray(selectElement.props.children)
+      .filter(isValidElement)
+      .map((option) => String((option as ReactElement<any>).props.value ?? ""));
+
+/** Extracts option labels from native <option> children or antd options prop. */
+const getOptionLabels = (selectElement: ReactElement<any>, elementTextFn: (node: ReactNode) => string): string[] =>
+  Array.isArray(selectElement.props.options)
+    ? selectElement.props.options.map((opt: any) => String(opt.label ?? ""))
+    : Children.toArray(selectElement.props.children)
+      .filter(isValidElement)
+      .map((option) => elementTextFn((option as ReactElement<any>).props.children));
+
+/** Fires onChange in the shape each select variant expects. */
+const fireSelectChange = (selectElement: ReactElement<any>, value: string): void => {
+  if (Array.isArray(selectElement.props.options)) {
+    selectElement.props.onChange(value);
+  } else {
+    selectElement.props.onChange({ target: { value } });
+  }
+};
+
+/** Detects native elements and antd components (function-typed elements with element-like props). */
+const isAntdComponent = (element: ReactElement<any>): boolean =>
+  typeof element.type === "function" && (element.props.onClick !== undefined || element.props.options !== undefined);
+
+/** True for native <button> and antd <Button> (including forwardRef). */
+const isButtonLike = (element: ReactElement<any>): boolean =>
+  element.type === "button"
+  || (typeof element.type === "function" && element.props.onClick !== undefined)
+  || (typeof element.type === "object" && element.type !== null && element.props.onClick !== undefined);
+
+/** Extracts all visible text from a React tree, including antd Select option labels. */
+const extractAllText = (node: ReactNode): string =>
+  Children.toArray(node).map((child) => {
+    if (!isValidElement(child)) return String(child);
+    const el = child as ReactElement<any>;
+    const childText = extractAllText(el.props.children);
+    if (Array.isArray(el.props.options)) {
+      return childText + el.props.options.map((opt: any) => String(opt.label ?? "")).join("");
+    }
+    return childText;
+  }).join("");
+
 describe("measurement canvas interactions", () => {
   test("uses effective class profiles when adding default measurements", () => {
     const rawMeasurementConfig = measurementDefinitions.normalizeMeasurementConfig({ deviceProfiles: [] });
@@ -442,7 +493,7 @@ describe("measurement canvas interactions", () => {
         if (!isValidElement(child)) {
           return;
         }
-        if (child.type === "select") {
+        if (isSelectLike(child as ReactElement<any>)) {
           selects.push(child as ReactElement<any>);
         }
         collectSelects((child as ReactElement<{ children?: ReactNode }>).props.children);
@@ -450,16 +501,14 @@ describe("measurement canvas interactions", () => {
     };
     collectSelects(panel);
 
-    expect(elementText(panel)).toContain("有功功率");
-    expect(elementText(panel)).not.toContain("当前类还没有默认量测模板");
+    expect(extractAllText(panel)).toContain("有功功率");
+    expect(extractAllText(panel)).not.toContain("当前类还没有默认量测模板");
     const measurementTypeSelect = selects.find((selectElement) => {
-      const values = Children.toArray(selectElement.props.children)
-        .filter(isValidElement)
-        .map((option) => String((option as ReactElement<any>).props.value ?? ""));
+      const values = getOptionValues(selectElement);
       return values.includes("activePower") && values.includes("reactivePower");
     });
     expect(measurementTypeSelect).toBeDefined();
-    measurementTypeSelect!.props.onChange({ target: { value: "reactivePower" } });
+    fireSelectChange(measurementTypeSelect!, "reactivePower");
     expect(setItems).toHaveBeenCalledWith([
       expect.objectContaining({ measurementTypeId: "reactivePower", name: "无功功率" }),
       ...(transformer.measurementDefinitions ?? []).slice(1)
@@ -524,7 +573,7 @@ describe("measurement canvas interactions", () => {
         if (child.type === BufferedTextInput) {
           nameInputs.push(child as ReactElement<any>);
         }
-        if (child.type === "select" && String((child as ReactElement<any>).props.title ?? "").includes("关联")) {
+        if (isSelectLike(child as ReactElement<any>) && String((child as ReactElement<any>).props.title ?? "").includes("关联")) {
           associatedFieldSelects.push(child as ReactElement<any>);
         }
         collectEditors((child as ReactElement<{ children?: ReactNode }>).props.children);
@@ -608,7 +657,7 @@ describe("measurement canvas interactions", () => {
         if (!isValidElement(child)) {
           return;
         }
-        if (child.type === "select" && String((child as ReactElement<any>).props.title ?? "").includes("关联")) {
+        if (isSelectLike(child as ReactElement<any>) && String((child as ReactElement<any>).props.title ?? "").includes("关联")) {
           selects.push(child as ReactElement);
         }
         collectAssociatedSelects((child as ReactElement<{ children?: ReactNode }>).props.children);
@@ -623,17 +672,13 @@ describe("measurement canvas interactions", () => {
           ? elementText((child as ReactElement<{ children?: ReactNode }>).props.children)
           : String(child)
       ).join("");
-    const firstOptionText = Children.toArray((selects[0] as ReactElement<{ children: ReactNode }>).props.children)
-      .filter(isValidElement)
-      .map((option) => elementText((option as ReactElement<{ children: ReactNode }>).props.children));
+    const firstOptionText = getOptionLabels(selects[0] as ReactElement<any>, elementText);
     expect(firstOptionText).toContain("有功功率 (activePower)");
     expect(firstOptionText).toContain("额定功率 (ratedPower)");
-    const secondOptionText = Children.toArray((selects[1] as ReactElement<{ children: ReactNode }>).props.children)
-      .filter(isValidElement)
-      .map((option) => elementText((option as ReactElement<{ children: ReactNode }>).props.children));
+    const secondOptionText = getOptionLabels(selects[1] as ReactElement<any>, elementText);
     expect(secondOptionText).toContain("legacyField（未在属性中）");
 
-    (selects[0] as ReactElement<{ onChange: (event: any) => void }>).props.onChange({ target: { value: "ratedPower" } });
+    fireSelectChange(selects[0] as ReactElement<any>, "ratedPower");
 
     expect(setItems).toHaveBeenCalledWith([
       { ...items[0], associatedField: "ratedPower" },
@@ -644,12 +689,12 @@ describe("measurement canvas interactions", () => {
     const collectButtons = (node: ReactNode) => {
       Children.forEach(node, (child) => {
         if (!isValidElement(child)) return;
-        if (child.type === "button") buttons.push(child as ReactElement<any>);
+        if (isButtonLike(child as ReactElement<any>)) buttons.push(child as ReactElement<any>);
         collectButtons((child as ReactElement<{ children?: ReactNode }>).props.children);
       });
     };
     collectButtons(panel);
-    const deleteButtons = buttons.filter((button) => elementText(button.props.children) === "删除");
+    const deleteButtons = buttons.filter((button) => elementText(button.props.children ?? button.props.title ?? "") === "删除");
     expect(deleteButtons).toHaveLength(1);
     deleteButtons[0].props.onClick();
     expect(setItems).toHaveBeenCalledWith([items[1]]);
@@ -697,7 +742,7 @@ describe("measurement canvas interactions", () => {
     const collectButtons = (node: ReactNode) => {
       Children.forEach(node, (child) => {
         if (!isValidElement(child)) return;
-        if (child.type === "button") buttons.push(child as ReactElement<any>);
+        if (isButtonLike(child as ReactElement<any>)) buttons.push(child as ReactElement<any>);
         collectButtons((child as ReactElement<{ children?: ReactNode }>).props.children);
       });
     };
@@ -761,7 +806,7 @@ describe("measurement canvas interactions", () => {
         if (!isValidElement(child)) {
           return;
         }
-        if (child.type === "select") {
+        if (isSelectLike(child as ReactElement<any>)) {
           selects.push(child as ReactElement<any>);
         }
         collectSelects((child as ReactElement<{ children?: ReactNode }>).props.children);
@@ -769,19 +814,14 @@ describe("measurement canvas interactions", () => {
     };
     collectSelects(panel);
     const positionSelects = selects.filter((selectElement) => {
-      const values = Children.toArray(selectElement.props.children)
-        .filter(isValidElement)
-        .map((option) => String((option as ReactElement<any>).props.value ?? ""));
+      const values = getOptionValues(selectElement);
       return ["device", "t1", "t2", "t3"].every((value) => values.includes(value));
     });
 
     expect(positionSelects).toHaveLength(2);
-    const positionOptions = Children.toArray(positionSelects[0].props.children)
-      .filter(isValidElement)
-      .map((option) => ({
-        value: String((option as ReactElement<any>).props.value ?? ""),
-        label: elementText((option as ReactElement<any>).props.children)
-      }));
+    const positionValues = getOptionValues(positionSelects[0]);
+    const positionLabels = getOptionLabels(positionSelects[0], elementText);
+    const positionOptions = positionValues.map((value, index) => ({ value, label: positionLabels[index] ?? "" }));
     expect(positionOptions).toEqual([
       { value: "device", label: "设备本体" },
       { value: "t1", label: "端1（双绕组主变首端）" },
@@ -790,13 +830,11 @@ describe("measurement canvas interactions", () => {
     ]);
     const associatedFieldSelects = selects.filter((selectElement) => String(selectElement.props.title ?? "").includes("关联"));
     expect(associatedFieldSelects).toHaveLength(2);
-    const terminalFieldValues = Children.toArray(associatedFieldSelects[1].props.children)
-      .filter(isValidElement)
-      .map((option) => String((option as ReactElement<any>).props.value ?? ""));
+    const terminalFieldValues = getOptionValues(associatedFieldSelects[1]);
     expect(terminalFieldValues).toContain("r");
     expect(terminalFieldValues).not.toContain("parentOnly");
 
-    positionSelects[0].props.onChange({ target: { value: "t1" } });
+    fireSelectChange(positionSelects[0], "t1");
 
     expect(setItems).toHaveBeenCalledWith([
       { ...items[0], position: "t1" },

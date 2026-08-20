@@ -34,6 +34,53 @@ button:disabled {
   opacity: 0.45;
 }
 
+/* Antd 组件样式覆盖 - 统一高度 */
+.ant-input,
+.ant-select-selector,
+.ant-btn,
+.ant-input-number {
+  font-size: inherit;
+  height: 24px !important;
+  min-height: 24px;
+  border-radius: 4px !important;
+}
+
+.ant-input {
+  padding: 2px 8px !important;
+}
+
+.ant-select-selector {
+  padding: 0 8px !important;
+}
+
+.ant-select {
+  font-size: inherit;
+  height: 24px !important;
+  min-width: fit-content;
+}
+
+.ant-select-dropdown {
+  font-size: 12px;
+}
+
+.ant-input-number {
+  padding: 0 8px !important;
+}
+
+.ant-input-number-input {
+  padding: 0 4px !important;
+  height: 22px !important;
+}
+
+.ant-modal-content {
+  border-radius: 8px;
+}
+
+.ant-message-notice-content {
+  border-radius: 6px;
+  padding: 8px 16px;
+}
+
 .app-shell {
   position: relative;
   display: block;
@@ -11160,6 +11207,18 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   font-weight: 700;
 }
 
+.selected-node-measurement-table th {
+  width: 80px;
+}
+
+.selected-node-measurement-table select,
+.selected-node-measurement-table input[type="number"],
+.selected-node-measurement-table input[type="text"] {
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
 .param-header-bilingual {
   display: grid;
   min-width: 0;
@@ -11216,9 +11275,9 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   line-height: 1.45;
 }
 
-.param-table td:not(:focus-within) input:not([type="color"]):not([type="checkbox"]),
-.param-table td:not(:focus-within) select,
-.param-table td:not(:focus-within) textarea {
+.param-table td:not(:focus-within) input:not([type="color"]):not([type="checkbox"]):not(.ant-input),
+.param-table td:not(:focus-within) select:not(.ant-select-selection-search-input),
+.param-table td:not(:focus-within) textarea:not(.ant-input) {
   border-color: transparent;
   background: transparent;
   box-shadow: none;
@@ -11242,9 +11301,9 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   background: #f8fafc;
 }
 
-.param-table td:focus-within input:not([type="color"]):not([type="checkbox"]),
-.param-table td:focus-within select,
-.param-table td:focus-within textarea {
+.param-table td:focus-within input:not([type="color"]):not([type="checkbox"]):not(.ant-input),
+.param-table td:focus-within select:not(.ant-select-selection-search-input),
+.param-table td:focus-within textarea:not(.ant-input) {
   border-color: transparent;
   background: transparent;
   box-shadow: none;
@@ -11257,7 +11316,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   outline: none;
 }
 
-.param-table input[readonly] {
+.param-table input[readonly]:not(.ant-input) {
   color: #64748b;
   border-color: transparent;
   background: transparent;
@@ -12610,12 +12669,12 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 .measurement-editor-table select,
 .measurement-config-dialog .measurement-table input,
 .measurement-config-dialog .measurement-table select,
-.device-definition-dialog .measurement-table input,
-.device-definition-dialog .measurement-table select,
-.device-definition-dialog .custom-param-table input,
-.device-definition-dialog .custom-param-table select,
-.custom-device-dialog .custom-param-table input,
-.custom-device-dialog .custom-param-table select {
+.device-definition-dialog .measurement-table input:not(.ant-input),
+.device-definition-dialog .measurement-table select:not(.ant-select-selection-search-input),
+.device-definition-dialog .custom-param-table input:not(.ant-input),
+.device-definition-dialog .custom-param-table select:not(.ant-select-selection-search-input),
+.custom-device-dialog .custom-param-table input:not(.ant-input),
+.custom-device-dialog .custom-param-table select:not(.ant-select-selection-search-input) {
   border-color: transparent;
   background: transparent;
   box-shadow: none;
@@ -12838,8 +12897,8 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 }
 
 .measurement-item-display-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(48px, 0.8fr) 58px 36px 58px;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 5px;
 }

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Save, RotateCcw, Plus, Trash2 } from "lucide-react";
 import { BUILTIN_VOLTAGE_LEVELS, VoltageLevelConfig, VoltageLevelSettings, writeVoltageLevelSettings } from "./model";
 import { WindowCloseButton } from "./WindowCloseButton";
+import { Input, Button } from "antd";
 
 type Props = {
   open: boolean;
@@ -118,7 +119,7 @@ export function VoltageLevelDialog({ open, onClose, settings, onSave }: Props) {
                 return (
                   <tr key={index} style={{ borderBottom: "1px solid #f1f5f9", lineHeight: 1.2 }}>
                     <td style={{ padding: "3px 8px" }}>
-                      <input
+                      <Input
                         type="text"
                         value={row.name}
                         disabled={isBuiltin}
@@ -127,7 +128,7 @@ export function VoltageLevelDialog({ open, onClose, settings, onSave }: Props) {
                       />
                     </td>
                     <td style={{ padding: "3px 8px" }}>
-                      <input
+                      <Input
                         type="text"
                         value={row.vltp}
                         onChange={(e) => updateRow(index, "vltp", e.target.value)}
@@ -152,16 +153,16 @@ export function VoltageLevelDialog({ open, onClose, settings, onSave }: Props) {
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 12px", borderTop: "1px solid #e2e8f0", marginTop: "4px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <button type="button" onClick={addRow} style={{ padding: "3px 8px", fontSize: 12 }}>
+            <Button onClick={addRow} style={{ padding: "3px 8px", fontSize: 12 }}>
               <Plus size={12} />
               <span>新增</span>
-            </button>
+            </Button>
             {error && <span style={{ color: "#ef4444", fontSize: 11 }}>{error}</span>}
           </div>
-          <button type="button" className="primary" onClick={handleSave} disabled={!!error} style={{ padding: "3px 10px", fontSize: 12 }}>
+          <Button type="primary" onClick={handleSave} disabled={!!error} style={{ padding: "3px 10px", fontSize: 12 }}>
             <Save size={12} />
             <span>保存</span>
-          </button>
+          </Button>
         </div>
       </section>
     </div>

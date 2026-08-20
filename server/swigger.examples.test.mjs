@@ -182,6 +182,21 @@ beforeEach(async () => {
   } catch {
     // repo 无 schemes 数据则空
   }
+  // 补种子：swagger 示例引用的「默认方案」+ 模型，确保只读示例不 404
+  const seedDir = join(dataDir, "schemes", "files", "默认方案");
+  await mkdir(seedDir, { recursive: true });
+  const seedProject = (name) => writeFile(
+    join(seedDir, `${name}.json`),
+    JSON.stringify({ version: 1, name, nodes: [], edges: [], canvasWidth: 1920, canvasHeight: 1080 })
+  );
+  await seedProject("图元连接");
+  await seedProject("线路");
+  const subDir = join(seedDir, "1-1");
+  await mkdir(subDir, { recursive: true });
+  await writeFile(
+    join(subDir, "子模型.json"),
+    JSON.stringify({ version: 1, name: "子模型", nodes: [], edges: [], canvasWidth: 1920, canvasHeight: 1080 })
+  );
   server = await createImageServer({ port: 0, host: "127.0.0.1" });
   const port = server.address().port;
   baseUrl = `http://127.0.0.1:${port}`;

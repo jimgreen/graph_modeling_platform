@@ -112,6 +112,76 @@ export function showGlobalConfirm(text: string): Promise<boolean> {
   });
 }
 
+/** 全局 prompt 弹出框，替代 window.prompt，返回 Promise<string | null> */
+export function showGlobalPrompt(text: string, defaultValue = ""): Promise<string | null> {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "global-confirm-overlay";
+    const dialog = document.createElement("div");
+    dialog.className = "global-confirm-dialog window-close-host";
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.setAttribute("aria-label", "输入");
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "window-close-button";
+    closeBtn.setAttribute("aria-label", "关闭输入窗口");
+    closeBtn.title = "关闭";
+    closeBtn.textContent = "×";
+    const msgEl = document.createElement("div");
+    msgEl.className = "global-confirm-message";
+    msgEl.innerHTML = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
+    const inputEl = document.createElement("input");
+    inputEl.type = "text";
+    inputEl.className = "global-prompt-input";
+    inputEl.value = defaultValue;
+    inputEl.style.cssText = "width: 100%; padding: 6px 8px; margin: 8px 0; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 14px;";
+    const btnRow = document.createElement("div");
+    btnRow.className = "global-confirm-buttons";
+    const cancelBtn = document.createElement("button");
+    cancelBtn.className = "global-confirm-btn global-confirm-cancel";
+    cancelBtn.textContent = "取消";
+    const okBtn = document.createElement("button");
+    okBtn.className = "global-confirm-btn global-confirm-ok";
+    okBtn.textContent = "确定";
+    btnRow.appendChild(cancelBtn);
+    btnRow.appendChild(okBtn);
+    dialog.appendChild(closeBtn);
+    dialog.appendChild(msgEl);
+    dialog.appendChild(inputEl);
+    dialog.appendChild(btnRow);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => {
+      overlay.classList.add("global-confirm-enter");
+      inputEl.focus();
+      inputEl.select();
+    });
+
+    let settled = false;
+    let onKey: ((event: KeyboardEvent) => void) | null = null;
+    const close = (result: string | null) => {
+      if (settled) return;
+      settled = true;
+      if (onKey) document.removeEventListener("keydown", onKey);
+      overlay.classList.add("global-confirm-leave");
+      setTimeout(() => overlay.remove(), 200);
+      resolve(result);
+    };
+    closeBtn.addEventListener("click", () => close(null));
+    cancelBtn.addEventListener("click", () => close(null));
+    okBtn.addEventListener("click", () => close(inputEl.value));
+    inputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") close(inputEl.value);
+    });
+    onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close(null);
+    };
+    document.addEventListener("keydown", onKey);
+  });
+}
+
 // 挂载到 window 方便全局调用
 (window as any).showGlobalMessage = showGlobalMessage;
 (window as any).showGlobalConfirm = showGlobalConfirm;
+(window as any).showGlobalPrompt = showGlobalPrompt;
