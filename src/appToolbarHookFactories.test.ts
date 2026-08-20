@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { canBatchEditParam, PARAM_LABELS } from "./appExtracted/appCoreCanvasUtilities";
 import { enumValuesForRow } from "./appExtracted/appPersistenceLibraryExport";
-import { createAppHookCallback12, createAppHookCallback77, createAppHookCallback82, createAppHookCallback100, createAppHookCallback109, createAppHookCallback120 } from "./appExtracted/appToolbarHookFactories";
+import { createAppHookCallback12, createAppHookCallback77, createAppHookCallback82, createAppHookCallback100, createAppHookCallback109, createAppHookCallback120, createOpenNodeDoubleClickEditor } from "./appExtracted/appToolbarHookFactories";
 import {
   applyDeviceTemplateDefinitionOverride,
   createDefaultNode,
@@ -12,6 +12,7 @@ import {
   DEVICE_LIBRARY,
   getEParamValue,
   getTemplateParameterDefinitions,
+  modelAssociationModelTypeForKind,
   templateDerivedComponentLibraryInfo,
   type DeviceParameterDefinition,
   type DeviceTemplate
@@ -205,6 +206,126 @@ describe("side panel resize hook", () => {
     expect(removeEventListener).toHaveBeenCalledWith("pointermove", expect.any(Function), true);
     expect(removeEventListener).toHaveBeenCalledWith("pointerup", expect.any(Function), true);
     expect(removeEventListener).toHaveBeenCalledWith("pointercancel", expect.any(Function), true);
+  });
+});
+
+describe("model association node double-click navigation", () => {
+  const associationCases = [
+    ["ac-station-source", "厂站"],
+    ["dc-station-source", "厂站"],
+    ["ac-station-load", "厂站"],
+    ["dc-station-load", "厂站"],
+    ["ac-feeder-source", "馈线"],
+    ["dc-feeder-source", "馈线"],
+    ["ac-feeder-load", "馈线"],
+    ["dc-feeder-load", "馈线"],
+    ["ac-district-source", "台区"],
+    ["dc-district-source", "台区"],
+    ["ac-district-load", "台区"],
+    ["dc-district-load", "台区"]
+  ] as const;
+
+  const createBrowseScope = () => {
+    const requestLoadSavedProject = vi.fn();
+    const writeOperationLog = vi.fn();
+    const projects = associationCases.map(([kind, modelType], index) => ({
+      id: `project-${index + 1}`,
+      name: `${modelType}模型-${index + 1}`,
+      project: { idx: index + 1, modelType }
+    }));
+    const schemes = [{ id: "scheme-1", name: "默认方案", projects, children: [] }];
+    return {
+      flattenSavedSchemes: (items: typeof schemes) => items,
+      isBrowseMode: true,
+      isEditMode: false,
+      modelAssociationModelTypeForKind,
+      requestLoadSavedProject,
+      schemes,
+      writeOperationLog
+    };
+  };
+
+  test.each(associationCases)("browse mode double-click on %s opens its %s model_id target", (kind, modelType) => {
+    const scope = createBrowseScope();
+    const node = createDefaultNode(kind, { x: 100, y: 100 });
+    const targetIndex = associationCases.findIndex(([candidateKind]) => candidateKind === kind) + 1;
+    node.params.model_id = String(targetIndex);
+
+    createOpenNodeDoubleClickEditor(scope)(node);
+
+    expect(scope.requestLoadSavedProject).toHaveBeenCalledWith(
+      expect.objectContaining({ name: `${modelType}模型-${targetIndex}`, project: expect.objectContaining({ modelType }) }),
+      "scheme-1"
+    );
+    expect(scope.writeOperationLog).toHaveBeenCalledWith(expect.stringContaining(`${node.name} → ${modelType}模型-${targetIndex}`));
+  });
+
+  test.each(["", "0", "1.5", "invalid"])("warns and does not navigate for invalid model_id %j", (modelId) => {
+    const showGlobalMessage = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    const scope = createBrowseScope();
+    const node = createDefaultNode("ac-station-source", { x: 100, y: 100 });
+    node.params.model_id = modelId;
+
+    createOpenNodeDoubleClickEditor(scope)(node);
+
+    expect(scope.requestLoadSavedProject).not.toHaveBeenCalled();
+    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringMatching(/未定义有效的关联模型/));
+  });
+
+  test("warns when model_id exists only under a different model type", () => {
+    const showGlobalMessage = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    const scope = createBrowseScope();
+    const node = createDefaultNode("ac-station-load", { x: 100, y: 100 });
+    node.params.model_id = "5";
+
+    createOpenNodeDoubleClickEditor(scope)(node);
+
+    expect(scope.requestLoadSavedProject).not.toHaveBeenCalled();
+    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringMatching(/未找到厂站模型 idx=5/));
+  });
+
+  test("keeps the existing editor behavior for association nodes in edit mode", () => {
+    const node = createDefaultNode("dc-feeder-source", { x: 100, y: 100 });
+    node.params.model_id = "5";
+    const requestLoadSavedProject = vi.fn();
+    const setNodeDoubleClickDialog = vi.fn();
+    const setNodeDoubleClickDraft = vi.fn();
+    const scope = {
+      NODE_DOUBLE_CLICK_DIALOG_DEDUPE_MS: 250,
+      activeLayerNodeIdSet: new Set([node.id]),
+      cloneNodeForDoubleClickDraft: (value: typeof node) => ({ ...value, params: { ...value.params } }),
+      doubleClickDialogKindForNode: () => "device",
+      flushSync: (callback: () => void) => callback(),
+      isBrowseMode: false,
+      isEditMode: true,
+      nodeDoubleClickCloseSuppressUntilRef: { current: 0 },
+      nodeDoubleClickDialog: null,
+      nodeDoubleClickOpenGuardRef: { current: null },
+      requestLoadSavedProject,
+      selectCanvasGraphics: vi.fn(),
+      setContextMenu: vi.fn(),
+      setImageTarget: vi.fn(),
+      setNodeDoubleClickDialog,
+      setNodeDoubleClickDraft
+    };
+
+    createOpenNodeDoubleClickEditor(scope)(node);
+
+    expect(requestLoadSavedProject).not.toHaveBeenCalled();
+    expect(setNodeDoubleClickDraft).toHaveBeenCalledWith(expect.objectContaining({ nodeId: node.id }));
+    expect(setNodeDoubleClickDialog).toHaveBeenLastCalledWith({ kind: "device", nodeId: node.id });
+  });
+
+  test("does nothing for ordinary nodes in browse mode", () => {
+    const scope = createBrowseScope();
+    const node = createDefaultNode("ac-source", { x: 100, y: 100 });
+
+    createOpenNodeDoubleClickEditor(scope)(node);
+
+    expect(scope.requestLoadSavedProject).not.toHaveBeenCalled();
+    expect(scope.writeOperationLog).not.toHaveBeenCalled();
   });
 });
 
