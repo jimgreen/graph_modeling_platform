@@ -4,6 +4,7 @@ import {
   createApplyBatchCommonParamPatch,
   createAppendStaticDrawingPoint,
   createCommitLibraryPlacementAtPoint,
+  createConfirmNodeDoubleClickDialog,
   createFindConnectTargetAtPoint,
   createFindRewireTargetAtPoint,
   createFindRoutableLineEndpointTargetAtPoint,
@@ -135,7 +136,7 @@ describe("custom bus connection targets", () => {
 });
 
 describe("ordinary link model-interaction restrictions", () => {
-  test("厂站模型中把厂站按钮作为普通连线手势转全局线路的吸附目标", () => {
+  test("厂站模型中也不把厂站按钮作为普通连接线的吸附目标", () => {
     const source = createDefaultNode("ac-load", { x: 80, y: 200 });
     const button = createDefaultNode("static-model-interaction-station", { x: 300, y: 200 });
     const point = projectPointToModelInteractionBoundary(button, {
@@ -164,21 +165,29 @@ describe("ordinary link model-interaction restrictions", () => {
       visibleNodeSpatialIndex: {}
     })(point);
 
-    expect(connectTarget).toMatchObject({
-      node: { id: button.id },
-      terminalId: button.terminals[0].id,
-      point
-    });
+    expect(connectTarget).toBeNull();
   });
 
-  test("非厂站馈线台区模型不把模型交互按钮作为普通联络线目标", () => {
+  test("模型交互按钮和十二种厂站馈线台区电源负荷都不能成为普通连接或重接目标", () => {
     const source = createDefaultNode("ac-load", { x: 80, y: 200 });
     for (const kind of [
       "static-model-interaction-microgrid",
       "static-model-interaction-station",
       "static-model-interaction-feeder",
       "static-model-interaction-district",
-      "static-model-interaction-other"
+      "static-model-interaction-other",
+      "ac-station-source",
+      "ac-feeder-source",
+      "ac-district-source",
+      "dc-station-source",
+      "dc-feeder-source",
+      "dc-district-source",
+      "ac-station-load",
+      "ac-feeder-load",
+      "ac-district-load",
+      "dc-station-load",
+      "dc-feeder-load",
+      "dc-district-load"
     ] as const) {
       const button = createDefaultNode(kind, { x: 300, y: 200 });
       const point = getTerminalPoint(button, button.terminals[0].id);
@@ -192,7 +201,7 @@ describe("ordinary link model-interaction restrictions", () => {
         isBusNode,
         isModelInteractionNode,
         isPointNearBus: vi.fn(() => false),
-        modelType: "其他",
+        modelType: "厂站",
         queryNodeSpatialIndex: vi.fn(() => [button]),
         visibleNodeSpatialIndex: {}
       };
@@ -284,9 +293,83 @@ describe("model interaction routable-line targets", () => {
       excludedEndpoint: "source"
     })).toMatchObject({ terminalId: "t1", point: expectedBoundaryPoint });
   });
+
+  test("线路设备仍可吸附到十二种厂站馈线台区电源负荷端子", () => {
+    for (const kind of [
+      "ac-station-source",
+      "ac-feeder-source",
+      "ac-district-source",
+      "dc-station-source",
+      "dc-feeder-source",
+      "dc-district-source",
+      "ac-station-load",
+      "ac-feeder-load",
+      "ac-district-load",
+      "dc-station-load",
+      "dc-feeder-load",
+      "dc-district-load"
+    ] as const) {
+      const boundaryDevice = createDefaultNode(kind, { x: 300, y: 200 });
+      const terminal = boundaryDevice.terminals[0];
+      const point = getTerminalPoint(boundaryDevice, terminal.id);
+      const findTarget = createFindRoutableLineEndpointTargetAtPoint({
+        CONNECT_BUS_SNAP_TOLERANCE: 18,
+        CONNECT_TERMINAL_SNAP_TOLERANCE: 28,
+        activeLayerNodeIdSet: new Set([boundaryDevice.id]),
+        busAnchorFromPoint: projectPointToBusCenterline,
+        connectTargetSearchBounds: vi.fn(() => ({ left: 0, right: 800, top: 0, bottom: 500 })),
+        getBusTerminalType,
+        getTerminalPoint,
+        isBusNode,
+        isModelInteractionNode,
+        isPointNearBus: vi.fn(() => false),
+        isRoutableLineDeviceKind,
+        modelInteractionTerminalConnectionLocalPointsByNodeId,
+        nodeById: new Map([[boundaryDevice.id, boundaryDevice]]),
+        projectPointToModelInteractionBoundaryIfInRange,
+        queryNodeSpatialIndex: vi.fn(() => [boundaryDevice]),
+        routableLinePlacement: null,
+        routableLineTemplateTerminalType: vi.fn(),
+        visibleNodeSpatialIndex: {}
+      });
+
+      expect(findTarget(point, { terminalType: terminal.type }), kind).toMatchObject({
+        node: { id: boundaryDevice.id },
+        terminalId: terminal.id
+      });
+    }
+  });
 });
 
 describe("batch common parameter updates", () => {
+  test("does not change model_id for a model association node that already has a line", () => {
+    const node = createDefaultNode("ac-station-source", { x: 100, y: 100 });
+    node.params.model_id = "11";
+    const line = createDefaultNode("ac-routable-line", { x: 240, y: 100 });
+    line.params._routableLineSourceNodeId = node.id;
+    const patchGraphNodes = vi.fn();
+    const showGlobalMessage = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    const applyBatchCommonParamPatch = createApplyBatchCommonParamPatch({
+      NODE_LABEL_FOOTPRINT_PARAM_KEYS: new Set<string>(),
+      activeSelectedNodeIds: [node.id],
+      canBatchEditParam: vi.fn(() => true),
+      commitNodeFootprintUpdates: vi.fn(),
+      edgeListForNodeIds: vi.fn(() => []),
+      nodeById: new Map([[node.id, node], [line.id, line]]),
+      patchGraphNodes,
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: vi.fn(() => true),
+      undoScopeForGraphPatch: vi.fn(() => ({})),
+      writeOperationLog: vi.fn()
+    });
+
+    applyBatchCommonParamPatch("关联模型", () => ({ model_id: "12" }), ["model_id"]);
+
+    expect(patchGraphNodes).not.toHaveBeenCalled();
+    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("已有线路连接"));
+  });
+
   test("stores inherited generator fields that are missing from derived wind nodes", () => {
     const firstWindNode = createDefaultNode("ac-wind-source", { x: 100, y: 100 });
     const secondWindNode = createDefaultNode("ac-wind-source", { x: 240, y: 100 });
@@ -391,6 +474,68 @@ describe("batch common parameter updates", () => {
 });
 
 describe("single device parameter updates", () => {
+  test("double-click confirmation restores a locked model_id while preserving other draft changes", () => {
+    const node = createDefaultNode("ac-district-load", { x: 100, y: 100 });
+    node.params.model_id = "33";
+    const line = createDefaultNode("ac-routable-line", { x: 240, y: 100 });
+    line.params._routableLineTargetNodeId = node.id;
+    const draftNode = {
+      ...node,
+      params: { ...node.params, model_id: "34", p_set: "8" }
+    };
+    const patchGraphNodes = vi.fn();
+    const showGlobalMessage = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+
+    createConfirmNodeDoubleClickDialog({
+      finishNodeDoubleClickDialogPointerOperation: vi.fn(),
+      nodeById: new Map([[node.id, node], [line.id, line]]),
+      nodeDoubleClickDialog: { nodeId: node.id, kind: "device" },
+      nodeDoubleClickDraft: { nodeId: node.id, node: draftNode },
+      nodeDoubleClickDraftHasModelChanges: (current: typeof node, draft: typeof node) =>
+        current.name !== draft.name || JSON.stringify(current.params) !== JSON.stringify(draft.params),
+      patchGraphNodes,
+      pushNodeOnlyUndoSnapshot: vi.fn(),
+      rememberNodeDoubleClickDialogGuard: vi.fn(),
+      setNodeDoubleClickDialog: vi.fn(),
+      setNodeDoubleClickDraft: vi.fn()
+    })();
+
+    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("已有线路连接"));
+    expect(patchGraphNodes).toHaveBeenCalledOnce();
+    expect(patchGraphNodes.mock.calls[0][0][0].params).toMatchObject({ model_id: "33", p_set: "8" });
+  });
+
+  test("locks model_id after a line is connected and unlocks it after the last line is removed", () => {
+    const node = createDefaultNode("dc-feeder-source", { x: 100, y: 100 });
+    node.params.model_id = "22";
+    const line = createDefaultNode("dc-routable-line", { x: 240, y: 100 });
+    line.params._routableLineTargetNodeId = node.id;
+    const patchGraphNodes = vi.fn();
+    const showGlobalMessage = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    const baseScope = {
+      NODE_LABEL_FOOTPRINT_PARAM_KEYS: new Set<string>(),
+      commitNodeFootprintUpdates: vi.fn(),
+      normalizeNodeLabelDisplayMode: (value: string) => value,
+      normalizeRatioParameterInputValue,
+      patchGraphNodes,
+      pushNodeOnlyUndoSnapshot: vi.fn(),
+      pushUndoSnapshot: vi.fn(),
+      requireEditMode: vi.fn(() => true),
+      selectedNodeId: node.id,
+      undoScopeForNodeFootprintPatch: vi.fn(() => ({}))
+    };
+
+    createUpdateParam({ ...baseScope, nodeById: new Map([[node.id, node], [line.id, line]]) })("model_id", "23");
+    expect(patchGraphNodes).not.toHaveBeenCalled();
+    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("已有线路连接"));
+
+    createUpdateParam({ ...baseScope, nodeById: new Map([[node.id, node]]) })("model_id", "23");
+    expect(patchGraphNodes).toHaveBeenCalledOnce();
+    expect(patchGraphNodes.mock.calls[0][0][0].params.model_id).toBe("23");
+  });
+
   test("stores percentage-form efficiency input as a decimal ratio", () => {
     const node = createDefaultNode("ac-storage", { x: 100, y: 100 });
     const patchGraphNodes = vi.fn();

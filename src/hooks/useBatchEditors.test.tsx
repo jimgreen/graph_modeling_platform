@@ -22,10 +22,11 @@ function batchParamHtml(
   nodes: ModelNode[],
   row: BatchCommonParamRow,
   libraryTemplateByKind = new Map(DEVICE_LIBRARY.map((template) => [template.kind, template])),
-  schemes: SavedSchemeRecord[] = []
+  schemes: SavedSchemeRecord[] = [],
+  graphNodes: ModelNode[] = nodes
 ): string {
   const firstNode = nodes[0]!;
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const nodeById = new Map(graphNodes.map((node) => [node.id, node]));
   const editors = useBatchEditors({
     isBrowseMode: false,
     activeSelectedNodeIds: nodes.map((node) => node.id),
@@ -91,6 +92,25 @@ describe("model association model_id editors", () => {
     for (const unexpectedValue of ["11", "22", "33"].filter((value) => value !== expectedValue)) {
       expect(html).not.toContain(`<option value="${unexpectedValue}">`);
     }
+  });
+
+  test("disables model_id editors while any selected association node has a line connection", () => {
+    const node = createDefaultNode("ac-station-source", { x: 100, y: 100 });
+    node.params.model_id = "11";
+    const line = createDefaultNode("ac-routable-line", { x: 240, y: 100 });
+    line.params._routableLineSourceNodeId = node.id;
+    const template = DEVICE_LIBRARY.find((item) => item.kind === node.kind)!;
+    const definition = template.parameterDefinitions?.find((item) => item.enName === "model_id");
+    const html = batchParamHtml([node], {
+      key: "model_id",
+      label: "关联模型",
+      value: "11",
+      mixed: false,
+      definition
+    }, undefined, modelAssociationSchemes, [node, line]);
+
+    expect(html).toContain("disabled=\"\"");
+    expect(html).toContain("已有线路连接");
   });
 });
 

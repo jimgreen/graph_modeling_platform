@@ -123,7 +123,7 @@ describe("全局线路数据同步", () => {
     expect(Math.max(0, ...Object.values(counters))).toBe(3);
   });
 
-  test("既有线路候选仅包含能源一致、方向互补、出线度为1且尚未用于本模型的记录", () => {
+  test("既有线路候选包含出线度为0或方向互补的出线度为1记录，并排除已满或本模型已用记录", () => {
     const sourceReference = {
       modelKey: "model:3",
       schemePath: [],
@@ -132,6 +132,7 @@ describe("全局线路数据同步", () => {
       boundaryEndpoint: "source" as const
     };
     const records = [
+      record({ id: "empty", idx: 6, references: [], endpointSlots: { source: null, target: null }, degree: 0 }),
       record(),
       record({ id: "same-model", idx: 8, references: [{ modelKey: "model:2", schemePath: [], projectName: "二", nodeId: "x" }] }),
       record({ id: "full", idx: 9, degree: 2 }),
@@ -139,8 +140,8 @@ describe("全局线路数据同步", () => {
       record({ id: "source-occupied", idx: 11, references: [sourceReference], endpointSlots: { source: sourceReference, target: null } })
     ];
 
-    expect(candidateGlobalLines(records, "ac", "model:2", "source").map((item) => item.id)).toEqual(["global-line-1"]);
-    expect(candidateGlobalLines(records, "ac", "model:2", "target").map((item) => item.id)).toEqual(["source-occupied"]);
+    expect(candidateGlobalLines(records, "ac", "model:2", "source").map((item) => item.id)).toEqual(["empty", "global-line-1"]);
+    expect(candidateGlobalLines(records, "ac", "model:2", "target").map((item) => item.id)).toEqual(["empty", "source-occupied"]);
   });
 
   test("首末端都已关联时禁止把本端改接到另一个边界设备，删除另一端后才允许调整", () => {

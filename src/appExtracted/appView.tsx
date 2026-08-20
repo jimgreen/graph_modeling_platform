@@ -2219,6 +2219,15 @@ export function renderAppView(__appScope: Record<string, any>) {
             <Grid2X2 size={16}/>
           </button>
           <button
+            className={`topbar-primary-button ${__appScope.globalLineListOpen ? "active" : ""}`}
+            onClick={() => __appScope.setGlobalLineListOpen((current: boolean) => !current)}
+            title={__appScope.globalLineListOpen ? "隐藏全局线路列表" : "显示全局线路列表"}
+            aria-label="全局线路"
+            aria-pressed={Boolean(__appScope.globalLineListOpen)}
+          >
+            <Cable size={16}/>
+          </button>
+          <button
             className={`topbar-primary-button ${__appScope.allNetworkTopologyDialogOpen ? "active" : ""}`}
             onClick={() => __appScope.setAllNetworkTopologyDialogOpen((current: boolean) => !current)}
             title={__appScope.allNetworkTopologyDialogOpen ? "隐藏全网拓扑窗口" : "显示全网拓扑窗口"}
@@ -3632,7 +3641,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                 <p>
                   当前{globalLinePlacementDialog.energyType === "ac" ? "交流" : "直流"}线路连接了跨模型边界设备。
                   本次连接占用全局线路的{globalLinePlacementDialog.boundaryEndpoint === "source" ? "首端" : "末端"}。
-                  请选择一条对应方向槽为空、出线度为1的既有线路，或在全局表中新建线路。
+                  请选择一条当前端点槽为空、出线度小于2的既有线路，或在全局表中新建线路。
                 </p>
               </div>
             </div>
@@ -3661,7 +3670,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                 </select>
                 {!globalLinePlacementDialog.loading && globalLinePlacementCandidates.length === 0 && (
                   <small>
-                    当前没有能源类型一致、{globalLinePlacementDialog.boundaryEndpoint === "source" ? "首端" : "末端"}为空且出线度为1的可选线路。
+                    当前没有能源类型一致、{globalLinePlacementDialog.boundaryEndpoint === "source" ? "首端" : "末端"}为空且出线度小于2的可选线路。
                   </small>
                 )}
               </label>
@@ -3725,7 +3734,7 @@ export function renderAppView(__appScope: Record<string, any>) {
             </div>
             <div className="global-line-transition-warning">
               {globalLineTransitionDialog.direction === "local-to-global" ? (
-                <p>确认后，将删除该线路的本图独立编号关系，并继续让你从全局线路表中选择出线度为1的线路，或新建全局线路。</p>
+                <p>确认后，将删除该线路的本图独立编号关系，并继续让你从全局线路表中选择出线度小于2的线路，或新建全局线路。</p>
               ) : (
                 <p>确认后，将解除该线路的全局引用、把全局出线度减1，并在本图中重新分配独立线路序号。</p>
               )}

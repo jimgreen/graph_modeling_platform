@@ -78,6 +78,7 @@ import {
   getDeviceStrokeWidth,
   isContainerParams,
   isImplicitTerminalVbaseForType,
+  isLineOnlyConnectionNode,
   modelAssociationModelTypeForKind,
   isModelInteractionNode,
   isRetiredThreeWindingTransformerParameterName,
@@ -3469,11 +3470,11 @@ export function validateConnectionEndpointRules(
     return issues;
   }
   const [candidateSource, candidateTarget] = candidateRefs;
-  if (isModelInteractionNode(candidateSource.node) || isModelInteractionNode(candidateTarget.node)) {
+  if (isLineOnlyConnectionNode(candidateSource.node) || isLineOnlyConnectionNode(candidateTarget.node)) {
     issues.push({
       type: "model-interaction-link-forbidden",
       edgeId: candidateEdge.id,
-      message: "模型交互按钮只能连接线路类设备，不能使用普通联络线。"
+      message: "模型交互边界设备只能连接线路类设备，不能使用普通连接线。"
     });
     return issues;
   }

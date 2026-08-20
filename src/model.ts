@@ -2761,6 +2761,54 @@ export function modelAssociationModelTypeForKind(kind: string): Extract<ModelTyp
   return MODEL_ASSOCIATION_DERIVED_CLASS_SPEC_BY_KIND.get(baseDeviceKind(kind) as DeviceKind)?.modelType ?? "";
 }
 
+/** 模型关联派生设备只有引用正整数模型编号时，才算已经定义关联模型。 */
+export function hasDefinedModelAssociationId(node: Pick<ModelNode, "kind" | "params">): boolean {
+  if (!modelAssociationModelTypeForKind(node.kind)) {
+    return true;
+  }
+  const rawModelId = String(node.params?.model_id ?? "").trim();
+  const numericModelId = Number(rawModelId);
+  return rawModelId !== "" && Number.isInteger(numericModelId) && numericModelId > 0;
+}
+
+export function modelAssociationLineConnectionFailureMessage(
+  node: Pick<ModelNode, "kind" | "params"> & Partial<Pick<ModelNode, "name">>
+): string {
+  if (hasDefinedModelAssociationId(node)) {
+    return "";
+  }
+  const nodeName = String(node.name ?? "该设备").trim() || "该设备";
+  return `“${nodeName}”未定义关联模型（model_id），无法连接线路。`;
+}
+
+/** 实际线路设备引用该节点后，已定义的 model_id 必须保持不变。普通 Link 不在 nodes 中，不会触发锁定。 */
+export function modelAssociationModelIdLocked(
+  node: Pick<ModelNode, "id" | "kind" | "params">,
+  nodes: Iterable<Pick<ModelNode, "kind" | "params">>
+): boolean {
+  if (!modelAssociationModelTypeForKind(node.kind) || !hasDefinedModelAssociationId(node)) {
+    return false;
+  }
+  for (const candidate of nodes) {
+    if (!isRoutableLineDeviceKind(candidate.kind)) {
+      continue;
+    }
+    const sourceNodeId = String(candidate.params?.[ROUTABLE_LINE_SOURCE_NODE_PARAM] ?? "").trim();
+    const targetNodeId = String(candidate.params?.[ROUTABLE_LINE_TARGET_NODE_PARAM] ?? "").trim();
+    if (sourceNodeId === node.id || targetNodeId === node.id) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function modelAssociationModelIdLockMessage(
+  node: Pick<ModelNode, "kind" | "params"> & Partial<Pick<ModelNode, "name">>
+): string {
+  const nodeName = String(node.name ?? "该设备").trim() || "该设备";
+  return `“${nodeName}”已有线路连接，关联模型（model_id）不能修改；请先删除相连线路。`;
+}
+
 // 类标签映射
 export const ELEMENT_TREE_COMPONENT_LIBRARY_LABELS: Record<string, string> = {
   StaticTextSymbol: "静态文本",
@@ -7073,6 +7121,10 @@ const MODEL_INTERACTION_KIND_SET = new Set<string>([
 export function isModelInteractionNode(node: Pick<ModelNode, "kind" | "params">): boolean {
   return MODEL_INTERACTION_KIND_SET.has(baseDeviceKind(node.kind)) ||
     staticComponentLibraryForNodeLike(node.kind, node.params) === "ModelInteraction";
+}
+
+export function isLineOnlyConnectionNode(node: Pick<ModelNode, "kind" | "params">): boolean {
+  return isModelInteractionNode(node) || Boolean(modelAssociationModelTypeForKind(node.kind));
 }
 
 export function isStationModelInteractionNode(node: Pick<ModelNode, "kind" | "params">): boolean {

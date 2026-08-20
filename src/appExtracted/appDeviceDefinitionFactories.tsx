@@ -5,7 +5,7 @@ export * from "./appDeviceDefinitionEInterface";
 // 内部使用已提取的符号
 import { STATE_ICON_DRAFT_FRAME, STATE_ICON_DRAWING_FRAME_WIDTH, STATE_ICON_DRAWING_FRAME_HEIGHT, deviceDefinitionComplianceKey, stateIconDrawingFrameHasPersistedContent, buildEFileExportOptionsFromLibrary, applyEDeviceDefinitionSectionsToLibraryState } from "./appDeviceDefinitionEInterface";
 
-import { buildEDeviceDefinitionFileFromInterfaceDefinitions, E_SECTION_COLUMNS, electricGenerationDerivedComponentLibraryInfo, getTemplateParameterDefinitions, inferESection, parseEDeviceDefinitionFile, resolveDeviceParameterDefinitionExportSettings, resolveEffectiveTemplateParameterDefinitionGroups, resolveEffectiveTemplateParameterDefinitions, templateDerivedComponentLibraryInfo } from "../model";
+import { buildEDeviceDefinitionFileFromInterfaceDefinitions, E_SECTION_COLUMNS, electricGenerationDerivedComponentLibraryInfo, getTemplateParameterDefinitions, inferESection, isLineOnlyConnectionNode, parseEDeviceDefinitionFile, resolveDeviceParameterDefinitionExportSettings, resolveEffectiveTemplateParameterDefinitionGroups, resolveEffectiveTemplateParameterDefinitions, templateDerivedComponentLibraryInfo } from "../model";
 import { clampNumber } from "../canvasViewport";
 import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitMode } from "../imageFit";
 import { apiPath } from "../config";
@@ -2078,8 +2078,8 @@ export function createDeleteRoutableLineBendPoint(__appScope: Record<string, any
 
 export function createStartConnectFromTerminal(__appScope: Record<string, any>) {
   return (node: ModelNode, terminalId: string, point?: Point) => {
-  const { activeLayerNodeIdSet, applyConnectPreviewState, getModelEdgeEndpointPoint, isModelInteractionNode, requireEditMode, resetRoutableLinePreviewState, setCanvasSelectionScope, setConnectSource, setMode, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds } = __appScope;
-    if (isModelInteractionNode(node)) {
+  const { activeLayerNodeIdSet, applyConnectPreviewState, getModelEdgeEndpointPoint, requireEditMode, resetRoutableLinePreviewState, setCanvasSelectionScope, setConnectSource, setMode, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds } = __appScope;
+    if (isLineOnlyConnectionNode(node)) {
       return;
     }
     if (!requireEditMode("建立连接线")) {

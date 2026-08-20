@@ -2,7 +2,7 @@
 // swigger 控制台写操作程序化方法工厂。
 // 与 UI 写方法隔离：参数显式传入，复用底层 setter，绕过 prompt/alert/draft/editMode。
 // 经 WS control 指令调用（App.tsx commandHandler 分发）。
-import { createDefaultNode, DEVICE_LIBRARY_BY_KIND, deleteNodesWithConnectedEdges } from "../model";
+import { createDefaultNode, DEVICE_LIBRARY_BY_KIND, deleteNodesWithConnectedEdges, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage } from "../model";
 import { createCanvasGroupFromSelection, removeGraphicsFromGroups } from "../selectionActions";
 import { expandGlobalBoundaryDeletionNodeIds } from "../global-lines";
 
@@ -277,8 +277,8 @@ export function createProgrammaticUpdateDeviceProperty(__appScope: Record<string
       e.code = "bad-request";
       throw e;
     }
-    const nodeExists = (nodes as any[]).some((n) => n.id === id);
-    if (!nodeExists) {
+    const currentNode = (nodes as any[]).find((node) => node.id === id);
+    if (!currentNode) {
       const e: any = new Error(`图元 ${id} 不存在。`);
       e.code = "not-found";
       throw e;
@@ -291,6 +291,17 @@ export function createProgrammaticUpdateDeviceProperty(__appScope: Record<string
     if (category !== "graphic" && category !== "model") {
       const e: any = new Error(`未知属性类别：${category}`);
       e.code = "bad-request";
+      throw e;
+    }
+    const patchParams = patch.params && typeof patch.params === "object" ? patch.params : undefined;
+    if (
+      patchParams &&
+      Object.prototype.hasOwnProperty.call(patchParams, "model_id") &&
+      String(patchParams.model_id ?? "") !== String(currentNode.params?.model_id ?? "") &&
+      modelAssociationModelIdLocked(currentNode, nodes)
+    ) {
+      const e: any = new Error(modelAssociationModelIdLockMessage(currentNode));
+      e.code = "control-failed";
       throw e;
     }
     pushUndoSnapshot(true, false, undefined, "修改参数", id);

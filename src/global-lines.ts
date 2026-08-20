@@ -262,14 +262,12 @@ export function candidateGlobalLines(
   modelKey: string,
   boundaryEndpoint: GlobalLineEndpoint
 ): GlobalLineRecord[] {
-  const oppositeEndpoint: GlobalLineEndpoint = boundaryEndpoint === "source" ? "target" : "source";
   return records
     .filter((record) => (
       record.energyType === energyType &&
-      record.degree === 1 &&
+      record.degree < 2 &&
       !record.references.some((reference) => reference.modelKey === modelKey) &&
-      globalLineEndpointReference(record, boundaryEndpoint) === null &&
-      globalLineEndpointReference(record, oppositeEndpoint) !== null
+      globalLineEndpointReference(record, boundaryEndpoint) === null
     ))
     .sort((left, right) => left.idx - right.idx || left.name.localeCompare(right.name, "zh-CN"));
 }

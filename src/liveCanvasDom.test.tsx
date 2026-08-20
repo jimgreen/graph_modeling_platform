@@ -208,4 +208,17 @@ describe("live canvas edge DOM", () => {
     expect(css).toMatch(/\.diagram-canvas\.terminal-dragging[\s\S]*cursor:\s*grabbing\s*!important/);
     expect(css).not.toContain(".terminal-drag-trajectory");
   });
+
+  test("keeps the regular arrow over modal popups while canvas drawing mode is active", () => {
+    const css = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+    const drawingCursorRule = "body.canvas-drawing-mode:not(.canvas-connect-drop-ready) *";
+    const popupCursorRule = "body.canvas-drawing-mode .image-picker-backdrop *";
+
+    expect(css).toContain(drawingCursorRule);
+    expect(css).toContain(popupCursorRule);
+    expect(css).toMatch(
+      /body\.canvas-drawing-mode \.image-picker-backdrop,[\s\S]*body\.canvas-drawing-mode \.image-picker-backdrop \*[\s\S]*cursor:\s*default\s*!important/
+    );
+    expect(css.indexOf(popupCursorRule)).toBeGreaterThan(css.indexOf(drawingCursorRule));
+  });
 });
