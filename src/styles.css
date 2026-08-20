@@ -8882,13 +8882,11 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 .custom-param-table input,
 .custom-param-table select {
   width: 100%;
-  min-height: 32px;
   border: 1px solid #cbd5e1;
   border-radius: 7px;
   padding: 0 9px;
   color: #0f172a;
   background: #ffffff;
-  font-size: 13px;
 }
 
 .custom-param-table .custom-param-export-toggle {
