@@ -20,6 +20,7 @@ import {
 } from "./model";
 import {
   GLOBAL_LINE_ID_PARAM,
+  GLOBAL_LINE_MODEL_PAIR_PARAM,
   globalLineEndpointReference,
   globalLineEnergyTypeForNode,
   globalLineModelKey,
@@ -293,6 +294,190 @@ export function analyzeGlobalLinesForAllNetworkTopology(
     }
   }
   return { errors, warnings };
+}
+
+type GlobalLineModelOccurrence = {
+  model: AllNetworkTopologyReferenceModel;
+  line: ModelNode;
+  globalLineId: string;
+  declaredEndpoint: GlobalLineEndpoint | "";
+};
+
+function oppositeGlobalLineEndpoint(endpoint: GlobalLineEndpoint): GlobalLineEndpoint {
+  return endpoint === "source" ? "target" : "source";
+}
+
+function declaredGlobalLineEndpointForModelLine(line: ModelNode): GlobalLineEndpoint | "" {
+  const pairMode = String(line.params[GLOBAL_LINE_MODEL_PAIR_PARAM] ?? "").trim();
+  if (pairMode === "source") return "target";
+  if (pairMode === "target") return "source";
+  return "";
+}
+
+function globalLineModelOccurrenceAlert(
+  occurrence: GlobalLineModelOccurrence,
+  id: string,
+  message: string
+): AllNetworkTopologyAlert {
+  return {
+    id,
+    projectId: occurrence.model.projectId,
+    schemeId: occurrence.model.schemeId,
+    modelName: occurrence.model.name,
+    deviceName: occurrence.line.name || occurrence.line.id,
+    message,
+    nodeId: occurrence.line.id,
+    relatedNodeIds: [occurrence.line.id]
+  };
+}
+
+function globalLineModelOccurrences(
+  models: readonly AllNetworkTopologyReferenceModel[]
+): GlobalLineModelOccurrence[] {
+  return models.flatMap((model) => model.record.project.nodes.flatMap((line) => {
+    const globalLineId = String(line.params[GLOBAL_LINE_ID_PARAM] ?? "").trim();
+    if (!globalLineId || !globalLineEnergyTypeForNode(line)) return [];
+    return [{
+      model,
+      line,
+      globalLineId,
+      declaredEndpoint: declaredGlobalLineEndpointForModelLine(line)
+    }];
+  }));
+}
+
+function setPreferLocatableAlert(
+  alerts: Map<string, AllNetworkTopologyAlert>,
+  alert: AllNetworkTopologyAlert
+) {
+  const current = alerts.get(alert.id);
+  if (!current || (!current.projectId && alert.projectId) || (!current.nodeId && alert.nodeId)) {
+    alerts.set(alert.id, alert);
+  }
+}
+
+/**
+ * Checks the global-line registry in both directions: registry -> model files,
+ * then every managed model line -> registry and the opposite endpoint model.
+ */
+export function analyzeGlobalLineConsistency(
+  records: readonly GlobalLineRecord[],
+  models: readonly AllNetworkTopologyReferenceModel[]
+): AllNetworkTopologyResult {
+  const forward = analyzeGlobalLinesForAllNetworkTopology(records, models);
+  const errors = new Map(forward.errors.map((alert) => [alert.id, alert]));
+  const warnings = new Map(forward.warnings.map((alert) => [alert.id, alert]));
+  const recordById = new Map(records.map((record) => [record.id, record]));
+  const occurrences = globalLineModelOccurrences(models);
+
+  for (const occurrence of occurrences) {
+    const record = recordById.get(occurrence.globalLineId);
+    if (!record) {
+      const alert = globalLineModelOccurrenceAlert(
+        occurrence,
+        `global-line:${occurrence.globalLineId}:missing-record:${occurrence.model.projectId}:${occurrence.line.id}`,
+        `模型“${occurrence.model.name}”中的线路“${occurrence.line.name || occurrence.line.id}”定义了全局线路ID“${occurrence.globalLineId}”，但全局线路表中不存在对应记录。`
+      );
+      errors.set(alert.id, alert);
+      continue;
+    }
+
+    const references = (["source", "target"] as const).map((endpoint) => ({
+      endpoint,
+      reference: globalLineEndpointReference(record, endpoint)
+    }));
+    const modelEndpoints = references
+      .filter(({ reference }) => Boolean(reference && globalLineReferenceMatchesModel(reference, occurrence.model)))
+      .map(({ endpoint }) => endpoint);
+    const exactEndpoints = references
+      .filter(({ reference }) => Boolean(
+        reference &&
+        reference.nodeId === occurrence.line.id &&
+        globalLineReferenceMatchesModel(reference, occurrence.model)
+      ))
+      .map(({ endpoint }) => endpoint);
+
+    if (exactEndpoints.length === 0) {
+      const kind = modelEndpoints.length > 0 ? "model-reference-mismatch" : "model-unreferenced";
+      for (const endpoint of modelEndpoints) {
+        errors.delete(`global-line:${record.id}:definition-mismatch:${endpoint}`);
+      }
+      const alert = globalLineModelOccurrenceAlert(
+        occurrence,
+        `global-line:${record.id}:${kind}:${occurrence.model.projectId}:${occurrence.line.id}`,
+        modelEndpoints.length > 0
+          ? `模型“${occurrence.model.name}”中的全局线路“${occurrence.line.name || occurrence.line.id}”与全局线路表登记的线路节点不一致（表中${modelEndpoints.map(globalLineEndpointLabel).join("、")}引用了其他线路节点）。`
+          : `模型“${occurrence.model.name}”中的全局线路“${occurrence.line.name || occurrence.line.id}”未作为首端或末端引用登记在全局线路表中。`
+      );
+      errors.set(alert.id, alert);
+    } else if (exactEndpoints.length > 1) {
+      const alert = globalLineModelOccurrenceAlert(
+        occurrence,
+        `global-line:${record.id}:model-double-endpoint:${occurrence.model.projectId}:${occurrence.line.id}`,
+        `模型“${occurrence.model.name}”中的同一条全局线路同时被全局线路表登记为首端和末端。`
+      );
+      errors.set(alert.id, alert);
+    }
+
+    if (
+      occurrence.declaredEndpoint &&
+      exactEndpoints.length > 0 &&
+      !exactEndpoints.includes(occurrence.declaredEndpoint)
+    ) {
+      const actualLabels = exactEndpoints.map(globalLineEndpointLabel).join("、");
+      const alert = globalLineModelOccurrenceAlert(
+        occurrence,
+        `global-line:${record.id}:model-direction-mismatch:${occurrence.model.projectId}:${occurrence.line.id}`,
+        `模型“${occurrence.model.name}”中的线路声明自身属于${globalLineEndpointLabel(occurrence.declaredEndpoint)}，但全局线路表登记为${actualLabels}，首末端角色与全局线路表不一致。`
+      );
+      errors.set(alert.id, alert);
+    }
+
+    const currentEndpoint = exactEndpoints.length === 1
+      ? exactEndpoints[0]
+      : occurrence.declaredEndpoint || (modelEndpoints.length === 1 ? modelEndpoints[0] : "");
+    if (!currentEndpoint) continue;
+    const otherEndpoint = oppositeGlobalLineEndpoint(currentEndpoint);
+    const otherReference = globalLineEndpointReference(record, otherEndpoint);
+    if (!otherReference) {
+      const alert = globalLineModelOccurrenceAlert(
+        occurrence,
+        `global-line:${record.id}:missing-endpoint:${otherEndpoint}`,
+        `模型“${occurrence.model.name}”中的全局线路“${record.name}”已登记为${globalLineEndpointLabel(currentEndpoint)}，但另一端${globalLineEndpointLabel(otherEndpoint)}为空。`
+      );
+      setPreferLocatableAlert(warnings, alert);
+      continue;
+    }
+    const otherModel = modelForGlobalLineReference(otherReference, models);
+    if (!otherModel) {
+      const alert = globalLineModelOccurrenceAlert(
+        occurrence,
+        `global-line:${record.id}:missing-model:${otherEndpoint}`,
+        `模型“${occurrence.model.name}”中的全局线路“${record.name}”所登记的另一端${globalLineEndpointLabel(otherEndpoint)}模型“${otherReference.projectName || otherReference.modelKey}”不存在，或未在厂站/馈线/台区模型列表中定义。`
+      );
+      setPreferLocatableAlert(warnings, alert);
+      continue;
+    }
+    const otherLine = otherModel.record.project.nodes.find((line) => (
+      line.id === otherReference.nodeId &&
+      String(line.params[GLOBAL_LINE_ID_PARAM] ?? "").trim() === record.id &&
+      Boolean(globalLineEnergyTypeForNode(line))
+    ));
+    if (!otherLine) {
+      errors.delete(`global-line:${record.id}:definition-mismatch:${otherEndpoint}`);
+      const alert = globalLineModelOccurrenceAlert(
+        occurrence,
+        `global-line:${record.id}:other-model-missing-line:${otherEndpoint}:${occurrence.model.projectId}:${occurrence.line.id}`,
+        `全局线路“${record.name}”的另一端模型“${otherModel.name}”中缺少全局线路ID“${record.id}”对应的线路记录。`
+      );
+      errors.set(alert.id, alert);
+    }
+  }
+
+  return {
+    errors: [...errors.values()],
+    warnings: [...warnings.values()]
+  };
 }
 
 function deviceNameForTopologyError(

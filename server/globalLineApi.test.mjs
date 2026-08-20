@@ -59,6 +59,46 @@ afterEach(async () => {
 });
 
 describe("/webgrp/global-lines", () => {
+  test("DELETE /record 仅允许删除首末端均为空的全局线路", async () => {
+    const lineNode = boundaryLine("line-delete-empty", "station-delete-empty", "待删除空线路", "source");
+    const reference = {
+      projectIdx: 51,
+      schemePath: ["主方案"],
+      projectName: "厂站五十一",
+      nodeId: lineNode.id,
+      boundaryEndpoint: "source",
+      boundaryNodeId: "station-delete-empty",
+      boundaryTerminalId: "t1"
+    };
+    const attached = await fetchJson(apiPath("/global-lines/attach"), jsonRequest("POST", {
+      energyType: "ac",
+      name: lineNode.name,
+      node: lineNode,
+      reference
+    }));
+    expect(attached.status).toBe(201);
+
+    const occupiedDelete = await fetchJson(apiPath("/global-lines/record"), jsonRequest("DELETE", {
+      id: attached.payload.record.id
+    }));
+    expect(occupiedDelete.status).toBe(409);
+
+    const detached = await fetchJson(apiPath("/global-lines/detach"), jsonRequest("POST", {
+      globalLineId: attached.payload.record.id,
+      reference
+    }));
+    expect(detached.status).toBe(200);
+    expect(detached.payload.record.degree).toBe(0);
+
+    const deleted = await fetchJson(apiPath("/global-lines/record"), jsonRequest("DELETE", {
+      id: attached.payload.record.id
+    }));
+    expect(deleted.status).toBe(200);
+    expect(deleted.payload.record).toMatchObject({ id: attached.payload.record.id, degree: 0 });
+    const list = await fetchJson(apiPath("/global-lines"));
+    expect(list.payload.records.some((record) => record.id === attached.payload.record.id)).toBe(false);
+  });
+
   test("首末端互补时允许复用，同向挂接返回409，删除某图线路只清空对应方向槽", async () => {
     const firstNode = boundaryLine("line-a", "station-a");
     const first = await fetchJson(apiPath("/global-lines/attach"), jsonRequest("POST", {

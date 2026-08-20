@@ -536,6 +536,9 @@ export function renderAppView(__appScope: Record<string, any>) {
   const { globalMessage, setGlobalMessage } = __appScope;
   const { createModelDialog, setCreateModelDialog } = __appScope;
   const { globalLinePlacementDialog, globalLinePlacementCandidates, globalLinePlacementConflictMessageForId, globalLineTransitionDialog, setGlobalLinePlacementDialog, confirmGlobalLinePlacement, cancelGlobalLinePlacement, confirmGlobalLineTransition, cancelGlobalLineTransition } = __appScope;
+  const globalLineRepairCandidate = globalLinePlacementDialog?.mode === "existing"
+    ? globalLinePlacementCandidates?.find((record: { id: string }) => record.id === globalLinePlacementDialog.selectedGlobalLineId)
+    : undefined;
   const { exportCompletionDialog, exportCompletionCountdown, setExportCompletionDialog } = __appScope;
   const { unsavedChangesDialogOpen, setUnsavedChangesDialogOpen, savedUndoStackLengthRef, setHasUnsavedChanges } = __appScope;
   useEffect(() => {
@@ -3703,6 +3706,11 @@ export function renderAppView(__appScope: Record<string, any>) {
               </label>
             </div>
             {globalLinePlacementDialog.loading && <p className="global-line-dialog-status">正在读取全局线路表…</p>}
+            {globalLineRepairCandidate && globalLineRepairCandidate.degree <= 1 && (
+              <p className="global-line-dialog-warning">
+                告警：所选全局线路出线度为 0 或 1，说明端点配置为空或存在问题。确认添加后，将使用当前模型关联信息重建该全局线路的首末端；保存页面后才写入全局线路表。
+              </p>
+            )}
             {globalLinePlacementDialog.error && <p className="global-line-dialog-error">{globalLinePlacementDialog.error}</p>}
             <div className="unsaved-change-actions">
               <button type="button" onClick={cancelGlobalLinePlacement} disabled={globalLinePlacementDialog.saving}>取消</button>

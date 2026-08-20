@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { AlertTriangle, Cable, ChevronRight, Download, FolderTree, MapPin, Network, RefreshCw } from "lucide-react";
+import { AlertTriangle, Cable, ChevronRight, Download, FolderTree, MapPin, Network, RefreshCw, Trash2 } from "lucide-react";
 
 import {
   analyzeAllNetworkTopology,
+  analyzeGlobalLineConsistency,
   analyzeGlobalLinesForAllNetworkTopology,
   collectAllNetworkTopologyModels,
   collectAllNetworkTopologyReferenceModels,
@@ -217,10 +218,20 @@ type GlobalLineListWindowProps = {
   error: string;
   records: GlobalLineRecord[];
   referenceModels: AllNetworkTopologyReferenceModel[];
+  consistencyRunning: boolean;
+  consistencyResult: AllNetworkTopologyResult | null;
+  deletingRecordId: string;
   onClose: () => void;
   onRefresh: () => void;
+  onRunConsistency: () => void;
+  onLocateAlert: (alert: AllNetworkTopologyAlert) => void;
   onLocateEndpoint: (record: GlobalLineRecord, endpoint: GlobalLineEndpoint) => void;
+  onDeleteEmptyRecord: (record: GlobalLineRecord) => void;
 };
+
+function globalLineConsistencyAlertSource(alert: AllNetworkTopologyAlert) {
+  return /:(?:missing-record|model-|other-model-)/.test(alert.id) ? "模型反查" : "全局线路表";
+}
 
 function GlobalLineListWindow({
   open,
@@ -228,14 +239,25 @@ function GlobalLineListWindow({
   error,
   records,
   referenceModels,
+  consistencyRunning,
+  consistencyResult,
+  deletingRecordId,
   onClose,
   onRefresh,
-  onLocateEndpoint
+  onRunConsistency,
+  onLocateAlert,
+  onLocateEndpoint,
+  onDeleteEmptyRecord
 }: GlobalLineListWindowProps) {
+  const [activeView, setActiveView] = useState<"lines" | "alerts">("lines");
   const [windowFrame, setWindowFrame] = useState<FloatingWindowFrame>(defaultGlobalLineListWindowFrame);
   const dialogRef = useRef<HTMLElement | null>(null);
   const windowDragRef = useRef<FloatingWindowPointerState | null>(null);
   const windowResizeRef = useRef<GlobalLineWindowResizePointerState | null>(null);
+  const consistencyAlerts = [
+    ...(consistencyResult?.errors ?? []).map((alert) => ({ alert, severity: "错误" as const })),
+    ...(consistencyResult?.warnings ?? []).map((alert) => ({ alert, severity: "警告" as const }))
+  ];
 
   useEffect(() => {
     const handleViewportResize = () => {
@@ -372,27 +394,70 @@ function GlobalLineListWindow({
           </div>
           <div className="global-line-list-header-actions">
             <span>{records.length} 条线路</span>
-            <button type="button" onClick={onRefresh} disabled={loading}>
+            <button
+              type="button"
+              className="global-line-consistency-run"
+              onClick={() => {
+                setActiveView("alerts");
+                onRunConsistency();
+              }}
+              disabled={consistencyRunning}
+            >
+              <AlertTriangle size={15} aria-hidden="true" />
+              {consistencyRunning ? "校验中..." : "一致性校验"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveView("lines");
+                onRefresh();
+              }}
+              disabled={loading || consistencyRunning}
+            >
               <RefreshCw size={15} aria-hidden="true" />
               {loading ? "刷新中..." : "刷新"}
             </button>
           </div>
         </header>
 
-        <div className="global-line-list-table-wrap">
-          <table className="global-line-list-table">
+        <div className="global-line-consistency-tabs" role="tablist" aria-label="全局线路窗口内容">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeView === "lines"}
+            className={activeView === "lines" ? "active" : ""}
+            onClick={() => setActiveView("lines")}
+          >
+            线路列表 <span>{records.length}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeView === "alerts"}
+            className={activeView === "alerts" ? "active" : ""}
+            onClick={() => setActiveView("alerts")}
+          >
+            一致性报警 <span>{consistencyAlerts.length}</span>
+          </button>
+        </div>
+
+        {activeView === "lines" ? (
+          <div className="global-line-list-table-wrap">
+            <table className="global-line-list-table">
             <thead>
               <tr>
                 <th>idx</th>
                 <th>线路名称</th>
                 <th>首端所在模型</th>
                 <th>末端所在模型</th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody>
               {records.map((record) => {
                 const sourceReference = globalLineEndpointReference(record, "source");
                 const targetReference = globalLineEndpointReference(record, "target");
+                const canDelete = !sourceReference && !targetReference;
                 const sourceModel = modelForGlobalLineReference(sourceReference, referenceModels);
                 const targetModel = modelForGlobalLineReference(targetReference, referenceModels);
                 const sourceLabel = sourceModel?.name ?? sourceReference?.projectName ?? "未关联";
@@ -436,19 +501,82 @@ function GlobalLineListWindow({
                         </span>
                       </button>
                     </td>
+                    <td className="global-line-list-operation">
+                      {canDelete ? (
+                        <button
+                          type="button"
+                          className="global-line-list-delete"
+                          aria-label={`删除全局线路“${record.name}”`}
+                          title="删除这条两端均为空的全局线路"
+                          disabled={Boolean(deletingRecordId)}
+                          onClick={() => onDeleteEmptyRecord(record)}
+                        >
+                          <Trash2 size={15} aria-hidden="true" />
+                          {deletingRecordId === record.id ? "删除中" : "删除"}
+                        </button>
+                      ) : null}
+                    </td>
                   </tr>
                 );
               })}
             </tbody>
-          </table>
-          {loading && records.length === 0 ? (
-            <div className="global-line-list-placeholder">正在读取全局线路列表...</div>
-          ) : error ? (
-            <div className="global-line-list-placeholder error">{error}</div>
-          ) : records.length === 0 ? (
-            <div className="global-line-list-placeholder">当前还没有全局线路记录。</div>
-          ) : null}
-        </div>
+            </table>
+            {loading && records.length === 0 ? (
+              <div className="global-line-list-placeholder">正在读取全局线路列表...</div>
+            ) : error ? (
+              <div className="global-line-list-placeholder error">{error}</div>
+            ) : records.length === 0 ? (
+              <div className="global-line-list-placeholder">当前还没有全局线路记录。</div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="global-line-list-table-wrap global-line-consistency-alert-wrap">
+            <table className="global-line-list-table global-line-consistency-alert-table">
+              <thead>
+                <tr>
+                  <th>类型 / 来源</th>
+                  <th>所在模型</th>
+                  <th>线路</th>
+                  <th>报警信息</th>
+                </tr>
+              </thead>
+              <tbody>
+                {consistencyAlerts.map(({ alert, severity }) => {
+                  const canLocate = Boolean(alert.projectId && (alert.nodeId || alert.edgeId || alert.relatedNodeIds.length > 0));
+                  return (
+                    <tr
+                      key={`${severity}:${alert.id}`}
+                      className={canLocate ? "locatable" : ""}
+                      onDoubleClick={() => onLocateAlert(alert)}
+                      title={canLocate ? "双击切换模型并定位线路" : "该报警没有可定位的模型线路"}
+                    >
+                      <td>
+                        <span className={`global-line-consistency-severity ${severity === "错误" ? "error" : "warning"}`}>
+                          {severity}
+                        </span>
+                        <small>{globalLineConsistencyAlertSource(alert)}</small>
+                      </td>
+                      <td>{alert.modelName}</td>
+                      <td>{alert.deviceName}</td>
+                      <td>{alert.message}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {consistencyRunning ? (
+              <div className="global-line-list-placeholder">正在读取全部厂站、馈线和台区模型并执行一致性校验...</div>
+            ) : error ? (
+              <div className="global-line-list-placeholder error">{error}</div>
+            ) : !consistencyResult ? (
+              <div className="global-line-list-placeholder">点击“一致性校验”检查全局线路表和全部模型文件。</div>
+            ) : consistencyAlerts.length === 0 ? (
+              <div className="global-line-list-placeholder success">一致性校验通过，未发现报警。</div>
+            ) : (
+              <div className="global-line-consistency-locate-help">双击定位：可切换到对应模型并居中、选中线路；无模型记录的报警不可定位。</div>
+            )}
+          </div>
+        )}
         {GLOBAL_LINE_WINDOW_RESIZE_DIRECTIONS.map((direction) => (
           <span
             key={direction}
@@ -486,6 +614,10 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
   const [globalLineListLoading, setGlobalLineListLoading] = useState(false);
   const [globalLineListError, setGlobalLineListError] = useState("");
   const [globalLineListRecords, setGlobalLineListRecords] = useState<GlobalLineRecord[]>([]);
+  const [globalLineConsistencyRunning, setGlobalLineConsistencyRunning] = useState(false);
+  const [globalLineConsistencyResult, setGlobalLineConsistencyResult] = useState<AllNetworkTopologyResult | null>(null);
+  const [globalLineConsistencyModels, setGlobalLineConsistencyModels] = useState<AllNetworkTopologyModel[]>([]);
+  const [deletingGlobalLineRecordId, setDeletingGlobalLineRecordId] = useState("");
   const [windowFrame, setWindowFrame] = useState<FloatingWindowFrame>(defaultFloatingWindowFrame);
   const selectAllRef = useRef<HTMLInputElement | null>(null);
   const dialogRef = useRef<HTMLElement | null>(null);
@@ -705,7 +837,8 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
   };
 
   const locateAlert = (alert: AllNetworkTopologyAlert) => {
-    const model = completedRun?.models.find((item) => item.projectId === alert.projectId) ??
+    const model = globalLineConsistencyModels.find((item) => item.projectId === alert.projectId) ??
+      completedRun?.models.find((item) => item.projectId === alert.projectId) ??
       models.find((item) => item.projectId === alert.projectId);
     if (!model) {
       return;
@@ -734,6 +867,8 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
   const refreshGlobalLineList = async () => {
     setGlobalLineListLoading(true);
     setGlobalLineListError("");
+    setGlobalLineConsistencyResult(null);
+    setGlobalLineConsistencyModels([]);
     try {
       const latestScope = scope.__appScopeRef?.current ?? scope;
       const records = typeof latestScope.loadGlobalLineRecords === "function"
@@ -767,6 +902,97 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
       left.idx - right.idx || left.name.localeCompare(right.name, "zh-CN")
     ));
   }, [globalLineListOpen, scope.globalLineRecords]);
+
+  const runGlobalLineConsistency = async () => {
+    if (globalLineConsistencyRunning) return;
+    setGlobalLineConsistencyRunning(true);
+    setGlobalLineListError("");
+    try {
+      const [records, loadResults] = await Promise.all([
+        loadGlobalLineRecordsForTopology(),
+        Promise.all(models.map(async (model) => {
+          try {
+            return { model: await loadFullModel(scope, model) };
+          } catch (error) {
+            return { error: modelLoadError(model, error) };
+          }
+        }))
+      ]);
+      const loadedModels = loadResults.flatMap((item) => item.model ? [item.model] : []);
+      const loadErrors = loadResults.flatMap((item) => item.error ? [item.error] : []);
+      const consistency = analyzeGlobalLineConsistency(records, loadedModels);
+      const result = {
+        errors: [...loadErrors, ...consistency.errors],
+        warnings: consistency.warnings
+      };
+      setGlobalLineListRecords([...records].sort((left, right) =>
+        left.idx - right.idx || left.name.localeCompare(right.name, "zh-CN")
+      ));
+      setGlobalLineConsistencyModels(loadedModels);
+      setGlobalLineConsistencyResult(result);
+      scope.writeOperationLog?.(
+        `全局线路一致性校验完成：${records.length} 条全局线路，${loadedModels.length} 个模型，${result.errors.length} 条错误，${result.warnings.length} 条警告`
+      );
+      scope.showGlobalMessage?.(
+        result.errors.length > 0 || result.warnings.length > 0
+          ? `一致性校验完成：${result.errors.length} 条错误，${result.warnings.length} 条警告。`
+          : "全局线路一致性校验通过。",
+        result.errors.length > 0 ? "error" : result.warnings.length > 0 ? "warning" : "success"
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "全局线路一致性校验失败。";
+      setGlobalLineListError(message);
+      setGlobalLineConsistencyResult(null);
+      setGlobalLineConsistencyModels([]);
+      scope.showGlobalMessage?.(message, "error");
+    } finally {
+      setGlobalLineConsistencyRunning(false);
+    }
+  };
+
+  const deleteEmptyGlobalLineRecord = async (record: GlobalLineRecord) => {
+    if (deletingGlobalLineRecordId) return;
+    const sourceReference = globalLineEndpointReference(record, "source");
+    const targetReference = globalLineEndpointReference(record, "target");
+    if (sourceReference || targetReference) {
+      scope.showGlobalMessage?.("只能删除首末端均为空的全局线路。", "warning");
+      return;
+    }
+    if (!window.confirm(`确认删除两端均为空的全局线路“${record.name}”吗？此操作将立即写入全局线路表。`)) {
+      return;
+    }
+    setDeletingGlobalLineRecordId(record.id);
+    setGlobalLineListError("");
+    try {
+      const response = await fetch(apiPath("/global-lines/record"), {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: record.id })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) {
+        throw new Error(String(payload?.error ?? payload?.message ?? `删除全局线路失败（HTTP ${response.status}）。`));
+      }
+      const latestScope = scope.__appScopeRef?.current ?? scope;
+      const records = typeof latestScope.loadGlobalLineRecords === "function"
+        ? await latestScope.loadGlobalLineRecords()
+        : await loadGlobalLineRecordsForTopology();
+      setGlobalLineListRecords([...records].sort((left, right) =>
+        left.idx - right.idx || left.name.localeCompare(right.name, "zh-CN")
+      ));
+      scope.writeOperationLog?.(`已删除两端均为空的全局线路：${record.name}`);
+      scope.showGlobalMessage?.(`已删除全局线路“${record.name}”。`, "success");
+      if (globalLineConsistencyResult) {
+        await runGlobalLineConsistency();
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "删除全局线路失败。";
+      setGlobalLineListError(message);
+      scope.showGlobalMessage?.(message, "error");
+    } finally {
+      setDeletingGlobalLineRecordId("");
+    }
+  };
 
   const locateGlobalLineEndpoint = (record: GlobalLineRecord, endpoint: GlobalLineEndpoint) => {
     const reference = globalLineEndpointReference(record, endpoint);
@@ -1077,9 +1303,15 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
         error={globalLineListError}
         records={globalLineListRecords}
         referenceModels={referenceModels}
+        consistencyRunning={globalLineConsistencyRunning}
+        consistencyResult={globalLineConsistencyResult}
+        deletingRecordId={deletingGlobalLineRecordId}
         onClose={() => scope.setGlobalLineListOpen?.(false)}
         onRefresh={() => void refreshGlobalLineList()}
+        onRunConsistency={() => void runGlobalLineConsistency()}
+        onLocateAlert={locateAlert}
         onLocateEndpoint={locateGlobalLineEndpoint}
+        onDeleteEmptyRecord={(record) => void deleteEmptyGlobalLineRecord(record)}
       />
     </>
   );

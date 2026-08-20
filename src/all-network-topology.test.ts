@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   analyzeAllNetworkTopology,
+  analyzeGlobalLineConsistency,
   analyzeGlobalLinesForAllNetworkTopology,
   collectAllNetworkTopologyModels,
   collectAllNetworkTopologyReferenceModels,
@@ -12,6 +13,7 @@ import {
 } from "./all-network-topology";
 import {
   GLOBAL_LINE_ID_PARAM,
+  GLOBAL_LINE_MODEL_PAIR_PARAM,
   globalLineModelKey,
   globalLineSharedParamsFromNode,
   type GlobalLineEndpoint,
@@ -121,6 +123,82 @@ function globalLineRecord(
   };
 }
 
+function completeGlobalLineConsistencyFixture(id = "global-line-consistency-1") {
+  const sourceBoundary = createDefaultNode("static-model-interaction-station", { x: 100, y: 100 });
+  const sourceLoad = createDefaultNode("ac-load", { x: 420, y: 100 });
+  const targetSource = createDefaultNode("ac-source", { x: 100, y: 260 });
+  const targetBoundary = createDefaultNode("static-model-interaction-feeder", { x: 420, y: 260 });
+  const sourceLine = connectAcLine(
+    "跨模型一致性线路",
+    { node: sourceBoundary, terminalId: "t1" },
+    { node: sourceLoad, terminalId: sourceLoad.terminals[0].id }
+  );
+  const targetLine = connectAcLine(
+    "跨模型一致性线路",
+    { node: targetSource, terminalId: targetSource.terminals[0].id },
+    { node: targetBoundary, terminalId: "t1" }
+  );
+  for (const line of [sourceLine, targetLine]) {
+    line.params.idx = "71";
+    line.params[GLOBAL_LINE_ID_PARAM] = id;
+  }
+  sourceLine.params[GLOBAL_LINE_MODEL_PAIR_PARAM] = "target";
+  targetLine.params[GLOBAL_LINE_MODEL_PAIR_PARAM] = "source";
+  const sourceModel = {
+    projectId: "consistency-station",
+    schemeId: "scheme-root",
+    schemePath: ["主方案"],
+    name: "一致性源厂站",
+    idx: 71,
+    modelType: "厂站" as const,
+    record: projectRecord(
+      "consistency-station",
+      "一致性源厂站",
+      71,
+      "厂站",
+      [sourceBoundary, sourceLoad, sourceLine]
+    )
+  };
+  const targetModel = {
+    projectId: "consistency-feeder",
+    schemeId: "scheme-root",
+    schemePath: ["主方案"],
+    name: "一致性目标馈线",
+    idx: 72,
+    modelType: "馈线" as const,
+    record: projectRecord(
+      "consistency-feeder",
+      "一致性目标馈线",
+      72,
+      "馈线",
+      [targetSource, targetBoundary, targetLine]
+    )
+  };
+  const sourceReference = globalLineReference(
+    sourceModel,
+    sourceLine.id,
+    "source",
+    sourceBoundary.id,
+    "t1"
+  );
+  const targetReference = globalLineReference(
+    targetModel,
+    targetLine.id,
+    "target",
+    targetBoundary.id,
+    "t1"
+  );
+  const record = globalLineRecord(
+    id,
+    71,
+    sourceLine.name,
+    sourceLine,
+    sourceReference,
+    targetReference
+  );
+  return { record, sourceLine, targetLine, sourceModel, targetModel };
+}
+
 describe("全网拓扑模型选择", () => {
   test("只展示厂站、馈线和台区，并按模型 idx 排序且默认全选", () => {
     const schemes: SavedSchemeRecord[] = [{
@@ -223,10 +301,14 @@ describe("全网拓扑模型选择", () => {
     expect(dialogSource).toContain("modelForGlobalLineReference(reference, referenceModels)");
     expect(dialogSource).toContain('aria-label="首端所在模型"');
     expect(dialogSource).toContain('aria-label="末端所在模型"');
+    expect(dialogSource).toContain("const canDelete = !sourceReference && !targetReference");
+    expect(dialogSource).toContain("onDeleteEmptyRecord(record)");
+    expect(dialogSource).toContain("删除这条两端均为空的全局线路");
     expect(dialogSource).toContain("requestUnsavedChangeAction");
     expect(stylesSource).toContain(".all-network-topology-actions");
     expect(stylesSource).toContain(".global-line-list-window-layer");
     expect(stylesSource).toContain(".global-line-list-table");
+    expect(stylesSource).toContain(".global-line-list-delete");
   });
 
   test("全局线路列表窗口支持标题栏拖动和八方向缩放", () => {
@@ -419,6 +501,197 @@ describe("全网拓扑全局线路预检查", () => {
         message: expect.stringMatching(/模型文件.*全局线路定义不一致.*共享参数.*r/)
       })
     ]);
+  });
+});
+
+describe("全局线路双向一致性校验", () => {
+  test("全局线路表与首末端模型完全一致时不报警", () => {
+    const { record, sourceModel, targetModel } = completeGlobalLineConsistencyFixture();
+
+    expect(analyzeGlobalLineConsistency([record], [sourceModel, targetModel])).toEqual({
+      errors: [],
+      warnings: []
+    });
+  });
+
+  test("模型中定义了全局线路但全局线路表没有对应记录时可定位模型线路", () => {
+    const { sourceLine, sourceModel } = completeGlobalLineConsistencyFixture("missing-record");
+
+    const result = analyzeGlobalLineConsistency([], [sourceModel]);
+
+    expect(result.errors).toEqual([
+      expect.objectContaining({
+        id: expect.stringContaining("missing-record"),
+        projectId: sourceModel.projectId,
+        nodeId: sourceLine.id,
+        message: expect.stringMatching(/模型.*定义.*全局线路.*全局线路表中不存在/)
+      })
+    ]);
+  });
+
+  test("模型线路未被全局线路表任一端引用时报警", () => {
+    const { record, sourceLine, sourceModel, targetModel } = completeGlobalLineConsistencyFixture("unreferenced-model");
+    const unreferencedLine = {
+      ...sourceLine,
+      id: "unreferenced-model-line",
+      params: { ...sourceLine.params }
+    };
+    const unreferencedModel = {
+      projectId: "unreferenced-district",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "未登记台区",
+      idx: 73,
+      modelType: "台区" as const,
+      record: projectRecord(
+        "unreferenced-district",
+        "未登记台区",
+        73,
+        "台区",
+        [unreferencedLine]
+      )
+    };
+
+    const result = analyzeGlobalLineConsistency(
+      [record],
+      [sourceModel, targetModel, unreferencedModel]
+    );
+
+    expect(result.errors).toEqual([
+      expect.objectContaining({
+        id: expect.stringContaining("model-unreferenced"),
+        projectId: unreferencedModel.projectId,
+        nodeId: unreferencedLine.id,
+        message: expect.stringMatching(/未作为首端或末端引用/)
+      })
+    ]);
+  });
+
+  test("另一端为空或另一端模型不存在时报警仍可双击定位本端线路", () => {
+    const { record, sourceLine, sourceModel } = completeGlobalLineConsistencyFixture("missing-opposite");
+    const missingEndpointRecord = {
+      ...record,
+      references: [record.endpointSlots!.source!],
+      endpointSlots: { source: record.endpointSlots!.source!, target: null },
+      terminalSlots: { i: record.endpointSlots!.source!, j: null },
+      degree: 1
+    };
+    const missingEndpoint = analyzeGlobalLineConsistency([missingEndpointRecord], [sourceModel]);
+
+    expect(missingEndpoint.warnings).toEqual([
+      expect.objectContaining({
+        id: expect.stringContaining("missing-endpoint:target"),
+        projectId: sourceModel.projectId,
+        nodeId: sourceLine.id,
+        message: expect.stringMatching(/末端为空/)
+      })
+    ]);
+
+    const missingModelRecord = {
+      ...record,
+      references: [
+        record.endpointSlots!.source!,
+        {
+          ...record.endpointSlots!.target!,
+          modelKey: "model:9999",
+          projectIdx: 9999,
+          projectName: "不存在的另一端模型"
+        }
+      ],
+      endpointSlots: {
+        source: record.endpointSlots!.source!,
+        target: {
+          ...record.endpointSlots!.target!,
+          modelKey: "model:9999",
+          projectIdx: 9999,
+          projectName: "不存在的另一端模型"
+        }
+      }
+    };
+    const missingModel = analyzeGlobalLineConsistency([missingModelRecord], [sourceModel]);
+
+    expect(missingModel.warnings).toEqual([
+      expect.objectContaining({
+        id: expect.stringContaining("missing-model:target"),
+        projectId: sourceModel.projectId,
+        nodeId: sourceLine.id,
+        message: expect.stringMatching(/另一端.*模型.*不存在/)
+      })
+    ]);
+  });
+
+  test("另一端模型缺少同一全局线路时只保留一条可定位本端的根因报警", () => {
+    const { record, sourceLine, sourceModel, targetModel } = completeGlobalLineConsistencyFixture("missing-opposite-line");
+    const targetWithoutLine = {
+      ...targetModel,
+      record: {
+        ...targetModel.record,
+        project: {
+          ...targetModel.record.project,
+          nodes: targetModel.record.project.nodes.filter((node) => node.id !== record.endpointSlots!.target!.nodeId)
+        }
+      }
+    };
+
+    const result = analyzeGlobalLineConsistency([record], [sourceModel, targetWithoutLine]);
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toEqual(expect.objectContaining({
+      id: expect.stringContaining("other-model-missing-line:target"),
+      projectId: sourceModel.projectId,
+      nodeId: sourceLine.id,
+      message: expect.stringMatching(/另一端模型.*缺少.*全局线路/)
+    }));
+  });
+
+  test("模型声明的首末端角色与全局线路表不一致时报警", () => {
+    const { record, sourceLine, sourceModel, targetModel } = completeGlobalLineConsistencyFixture("wrong-direction");
+    sourceLine.params[GLOBAL_LINE_MODEL_PAIR_PARAM] = "source";
+
+    const result = analyzeGlobalLineConsistency([record], [sourceModel, targetModel]);
+
+    expect(result.errors).toEqual([
+      expect.objectContaining({
+        id: expect.stringContaining("model-direction-mismatch"),
+        projectId: sourceModel.projectId,
+        nodeId: sourceLine.id,
+        message: expect.stringMatching(/首末端角色.*全局线路表.*不一致/)
+      })
+    ]);
+  });
+
+  test("全局线路窗口提供校验按钮、报警列表与双击定位入口", () => {
+    const dialogSource = readFileSync(new URL("./AllNetworkTopologyDialog.tsx", import.meta.url), "utf8");
+    const stylesSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+
+    expect(dialogSource).toContain("analyzeGlobalLineConsistency");
+    expect(dialogSource).toContain("一致性校验");
+    expect(dialogSource).toContain("一致性报警");
+    expect(dialogSource).toContain("runGlobalLineConsistency");
+    expect(dialogSource).toContain("onDoubleClick={() => onLocateAlert(alert)}");
+    expect(dialogSource).toContain("双击定位");
+    expect(stylesSource).toContain(".global-line-consistency-tabs");
+    expect(stylesSource).toContain(".global-line-consistency-severity");
+  });
+
+  test("切换当前模型页面时保留一致性报警，仅显式刷新时清空旧结果", () => {
+    const dialogSource = readFileSync(new URL("./AllNetworkTopologyDialog.tsx", import.meta.url), "utf8");
+    const modelSignatureEffectStart = dialogSource.indexOf("setSelectedProjectIds(new Set(defaultAllNetworkTopologySelection(models)))");
+    const modelSignatureEffectEnd = dialogSource.indexOf("}, [modelSignature]);", modelSignatureEffectStart);
+    const modelSignatureEffect = dialogSource.slice(modelSignatureEffectStart, modelSignatureEffectEnd);
+    const globalLineRecordsEffectStart = dialogSource.indexOf("const currentRecords = Array.isArray(scope.globalLineRecords)");
+    const globalLineRecordsEffectEnd = dialogSource.indexOf("}, [globalLineListOpen, scope.globalLineRecords]);", globalLineRecordsEffectStart);
+    const globalLineRecordsEffect = dialogSource.slice(globalLineRecordsEffectStart, globalLineRecordsEffectEnd);
+    const refreshStart = dialogSource.indexOf("const refreshGlobalLineList = async () =>");
+    const refreshEnd = dialogSource.indexOf("useEffect(() =>", refreshStart);
+    const refreshBlock = dialogSource.slice(refreshStart, refreshEnd);
+
+    expect(modelSignatureEffect).not.toContain("setGlobalLineConsistencyResult(null)");
+    expect(modelSignatureEffect).not.toContain("setGlobalLineConsistencyModels([])");
+    expect(globalLineRecordsEffect).not.toContain("setGlobalLineConsistencyResult(null)");
+    expect(globalLineRecordsEffect).not.toContain("setGlobalLineConsistencyModels([])");
+    expect(refreshBlock).toContain("setGlobalLineConsistencyResult(null)");
+    expect(refreshBlock).toContain("setGlobalLineConsistencyModels([])");
   });
 });
 
