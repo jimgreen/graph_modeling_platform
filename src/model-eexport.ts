@@ -15,6 +15,7 @@ import {
   toSnakeCaseDeviceParamName, normalizeVoltageBaseInput, terminalVoltageBaseNumber,
   readVoltageLevelSettings, calculateElectricalTopology, isStaticNode, isBusNode,
   equivalentBoundaryModelInteractionType, isRoutableLineDeviceKind, routableLineDeviceEndpointRefs,
+  modelAssociationModelTypeForKind,
   resolveEffectiveTemplateParameterDefinitionGroups, associatedNodeColumnValue,
   containerRelationCounterKey, parseContainerRelationField, isContainerTransformerRelationKey,
   DEFAULT_POWER_BASE_VALUE, DEFAULT_VOLTAGE_UNIT, DEFAULT_POWER_UNIT, DEFAULT_CURRENT_UNIT,
@@ -25,6 +26,9 @@ import {
 } from "./model";
 
 export const E_SECTION_COLUMNS: Record<string, string[]> = {
+  Station: ["idx", "name"],
+  Feeder: ["idx", "name", "parent"],
+  District: ["idx", "name", "parent"],
   StaticTextSymbol: [],
   StaticMediaSymbol: [],
   StaticBasicShape: [],
@@ -380,6 +384,9 @@ type EParamValueOptions = {
 };
 
 const E_SECTION_OUTPUT_ORDER = [
+  "Station",
+  "Feeder",
+  "District",
   "ACNode",
   "ACRealBs",
   "ACBranch",
@@ -2841,6 +2848,92 @@ function offsetMultiModelRecordIndexes(records: EDeviceExport[], modelIndex: num
   }
 }
 
+type MultiModelHierarchyType = Extract<NonNullable<ProjectFile["modelType"]>, "厂站" | "馈线" | "台区">;
+
+const MULTI_MODEL_HIERARCHY_SECTIONS: ReadonlyArray<{
+  modelType: MultiModelHierarchyType;
+  section: "Station" | "Feeder" | "District";
+}> = [
+  { modelType: "厂站", section: "Station" },
+  { modelType: "馈线", section: "Feeder" },
+  { modelType: "台区", section: "District" }
+];
+
+function buildMultiModelHierarchyRecords(
+  orderedInputs: readonly MultiModelEFileExportInput[]
+): EDeviceExport[] {
+  const modelIndexByInput = new Map<MultiModelEFileExportInput, number>();
+  const inputByProjectId = new Map<string, MultiModelEFileExportInput>();
+  const inputByModelIndex = new Map<number, MultiModelEFileExportInput>();
+  const inputsByName = new Map<string, MultiModelEFileExportInput[]>();
+
+  orderedInputs.forEach((input, inputIndex) => {
+    const modelIndex = positiveIntegerValue(input.project.idx) || inputIndex + 1;
+    modelIndexByInput.set(input, modelIndex);
+    const projectId = String(input.id ?? "").trim();
+    if (projectId) inputByProjectId.set(projectId, input);
+    const persistedModelIndex = positiveIntegerValue(input.project.idx);
+    if (persistedModelIndex > 0) inputByModelIndex.set(persistedModelIndex, input);
+    const name = String(input.project.name ?? "").trim();
+    if (name) inputsByName.set(name, [...(inputsByName.get(name) ?? []), input]);
+  });
+
+  const resolveAssociatedInput = (
+    node: ModelNode,
+    expectedModelType: MultiModelHierarchyType
+  ): MultiModelEFileExportInput | undefined => {
+    const associationModelType = modelAssociationModelTypeForKind(node.kind) ||
+      equivalentBoundaryModelInteractionType(node);
+    if (associationModelType !== expectedModelType) return undefined;
+
+    const modelIndex = positiveIntegerValue(node.params.model_id);
+    const byModelIndex = modelIndex > 0 ? inputByModelIndex.get(modelIndex) : undefined;
+    if (byModelIndex?.project.modelType === expectedModelType) return byModelIndex;
+
+    const projectId = String(node.params.buttonTargetProjectId ?? "").trim();
+    const byProjectId = projectId ? inputByProjectId.get(projectId) : undefined;
+    if (byProjectId?.project.modelType === expectedModelType) return byProjectId;
+
+    const projectName = String(node.params.buttonTargetProjectName ?? "").trim();
+    return (inputsByName.get(projectName) ?? []).find(
+      (input) => input.project.modelType === expectedModelType
+    );
+  };
+
+  const parentIndexByInput = new Map<MultiModelEFileExportInput, number>();
+  for (const parentInput of orderedInputs) {
+    const childModelType = parentInput.project.modelType === "厂站"
+      ? "馈线"
+      : parentInput.project.modelType === "馈线"
+        ? "台区"
+        : "";
+    if (!childModelType) continue;
+    const parentIndex = modelIndexByInput.get(parentInput) ?? 0;
+    for (const node of parentInput.project.nodes) {
+      const childInput = resolveAssociatedInput(node, childModelType);
+      if (childInput && !parentIndexByInput.has(childInput)) {
+        parentIndexByInput.set(childInput, parentIndex);
+      }
+    }
+  }
+
+  return MULTI_MODEL_HIERARCHY_SECTIONS.flatMap(({ modelType, section }) =>
+    orderedInputs
+      .filter((input) => input.project.modelType === modelType)
+      .map((input, rowIndex) => ({
+        id: `model-hierarchy:${section}:${String(input.id ?? "").trim() || rowIndex + 1}`,
+        kind: "model",
+        section,
+        columns: section === "Station" ? ["idx", "name"] : ["idx", "name", "parent"],
+        params: {
+          idx: String(modelIndexByInput.get(input) ?? rowIndex + 1),
+          name: String(input.project.name ?? "").trim() || `${modelType}${rowIndex + 1}`,
+          ...(section === "Station" ? {} : { parent: String(parentIndexByInput.get(input) ?? 0) })
+        }
+      }))
+  );
+}
+
 export function buildMultiModelEFileExport(
   inputs: readonly MultiModelEFileExportInput[],
   options: EFileExportOptions = {}
@@ -2851,7 +2944,7 @@ export function buildMultiModelEFileExport(
   );
   const includedProjectIds = new Set(orderedInputs.map((input) => input.id).filter(Boolean));
   const includedProjectNames = new Set(orderedInputs.map((input) => input.project.name.trim()).filter(Boolean));
-  const records: EDeviceExport[] = [];
+  const records: EDeviceExport[] = buildMultiModelHierarchyRecords(orderedInputs);
   const warnings: EExportWarning[] = [];
 
   orderedInputs.forEach((input, inputIndex) => {

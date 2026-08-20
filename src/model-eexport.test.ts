@@ -4039,6 +4039,98 @@ describe("全网 E 文件导出", () => {
     expect(file.text).not.toContain("十千伏联络线-中心厂站-等值电源");
   });
 
+  test("全网 E 文件分别导出厂站、馈线和台区列表并按模型关联建立 parent", () => {
+    const feederReference = createDefaultNode("ac-feeder-source", { x: 100, y: 100 });
+    feederReference.params.model_id = "12";
+    const duplicateFeederReference = createDefaultNode("dc-feeder-load", { x: 200, y: 100 });
+    duplicateFeederReference.params.model_id = "12";
+    const districtReference = createDefaultNode("ac-district-load", { x: 100, y: 100 });
+    districtReference.params.model_id = "23";
+
+    const file = buildMultiModelEFileExport([
+      {
+        id: "district-23",
+        schemePath: ["主方案"],
+        project: { version: 1, name: "一号台区", idx: 23, modelType: "台区", nodes: [], edges: [] }
+      },
+      {
+        id: "station-5",
+        schemePath: ["主方案"],
+        project: {
+          version: 1,
+          name: "中心厂站",
+          idx: 5,
+          modelType: "厂站",
+          nodes: [feederReference, duplicateFeederReference],
+          edges: []
+        }
+      },
+      {
+        id: "feeder-12",
+        schemePath: ["主方案"],
+        project: {
+          version: 1,
+          name: "十千伏一线",
+          idx: 12,
+          modelType: "馈线",
+          nodes: [districtReference],
+          edges: []
+        }
+      }
+    ]);
+    const payload = parseESections(file.text);
+
+    expect(payload.Station.columns).toEqual(["idx", "name"]);
+    expect(payload.Feeder.columns).toEqual(["idx", "name", "parent"]);
+    expect(payload.District.columns).toEqual(["idx", "name", "parent"]);
+    expect(payload.Station.rows).toEqual([{ idx: "5", name: "中心厂站" }]);
+    expect(payload.Feeder.rows).toEqual([{ idx: "12", name: "十千伏一线", parent: "5" }]);
+    expect(payload.District.rows).toEqual([{ idx: "23", name: "一号台区", parent: "12" }]);
+    expect(file.text.indexOf("<Station>")).toBeLessThan(file.text.indexOf("<ACNode>"));
+    const singleModelFile = buildEFileExport({
+      version: 1,
+      name: "中心厂站",
+      idx: 5,
+      modelType: "厂站",
+      nodes: [feederReference],
+      edges: []
+    });
+    expect(singleModelFile.text).not.toContain("<Station>");
+    expect(singleModelFile.text).not.toContain("<Feeder>");
+    expect(singleModelFile.text).not.toContain("<District>");
+  });
+
+  test("全网 E 文件兼容按项目 ID 或名称配置的历史模型交互按钮层级", () => {
+    const feederButton = createDefaultNode("static-model-interaction-feeder", { x: 100, y: 100 });
+    feederButton.params.buttonTargetProjectId = "feeder-8";
+    feederButton.params.buttonTargetProjectName = "八号馈线";
+    const districtButton = createDefaultNode("static-model-interaction-district", { x: 100, y: 100 });
+    districtButton.params.buttonTargetProjectName = "八号台区";
+
+    const file = buildMultiModelEFileExport([
+      {
+        id: "station-3",
+        schemePath: ["历史方案"],
+        project: { version: 1, name: "三号厂站", idx: 3, modelType: "厂站", nodes: [feederButton], edges: [] }
+      },
+      {
+        id: "feeder-8",
+        schemePath: ["历史方案"],
+        project: { version: 1, name: "八号馈线", idx: 8, modelType: "馈线", nodes: [districtButton], edges: [] }
+      },
+      {
+        id: "district-18",
+        schemePath: ["历史方案"],
+        project: { version: 1, name: "八号台区", idx: 18, modelType: "台区", nodes: [], edges: [] }
+      }
+    ]);
+    const payload = parseESections(file.text);
+
+    expect(payload.Station.rows).toEqual([{ idx: "3", name: "三号厂站" }]);
+    expect(payload.Feeder.rows).toEqual([{ idx: "8", name: "八号馈线", parent: "3" }]);
+    expect(payload.District.rows).toEqual([{ idx: "18", name: "八号台区", parent: "8" }]);
+  });
+
   test("关联模型未纳入导出时在该线路端生成等值设备", () => {
     const stationButton = createDefaultNode("static-model-interaction-station", { x: 120, y: 160 });
     stationButton.params.buttonTargetProjectId = "station-missing";

@@ -7,6 +7,7 @@ import {
   isBlockingTopologyValidationError,
   isModelInteractionNode,
   isRoutableLineDeviceKind,
+  modelAssociationModelTypeForKind,
   normalizeDeviceOperatingLimitsAfterTopology,
   routableLineDeviceEndpointRefs,
   validateTopology,
@@ -433,14 +434,109 @@ function missingModelWarnings(
   return warnings;
 }
 
+type HierarchyAssociationOccurrence = {
+  parent: AllNetworkTopologyModel;
+  child: AllNetworkTopologyReferenceModel;
+  node: ModelNode;
+};
+
+function hierarchyAssociationTarget(
+  node: ModelNode,
+  expectedModelType: Extract<AllNetworkTopologyModelType, "馈线" | "台区">,
+  availableModels: readonly AllNetworkTopologyReferenceModel[]
+): AllNetworkTopologyReferenceModel | undefined {
+  const associationModelType = modelAssociationModelTypeForKind(node.kind) ||
+    equivalentBoundaryModelInteractionType(node);
+  if (associationModelType !== expectedModelType) return undefined;
+
+  const modelIndex = normalizedModelIndex(node.params.model_id);
+  const byModelIndex = modelIndex > 0
+    ? availableModels.find((model) => model.idx === modelIndex)
+    : undefined;
+  if (byModelIndex?.modelType === expectedModelType) return byModelIndex;
+
+  const projectId = String(node.params.buttonTargetProjectId ?? "").trim();
+  const byProjectId = projectId
+    ? availableModels.find((model) => model.projectId === projectId)
+    : undefined;
+  if (byProjectId?.modelType === expectedModelType) return byProjectId;
+
+  const projectName = String(node.params.buttonTargetProjectName ?? "").trim();
+  return projectName
+    ? availableModels.find((model) => model.modelType === expectedModelType && model.name === projectName)
+    : undefined;
+}
+
+function hierarchyModelIdentity(model: AllNetworkTopologyReferenceModel) {
+  const projectId = String(model.projectId ?? "").trim();
+  if (projectId) return `project:${projectId}`;
+  if (model.idx > 0) return `model:${model.idx}`;
+  return `path:${model.schemePath.join("/")}:${model.name}`;
+}
+
+function duplicateHierarchyParentErrors(
+  selectedModels: readonly AllNetworkTopologyModel[],
+  availableModels: readonly AllNetworkTopologyReferenceModel[]
+): AllNetworkTopologyAlert[] {
+  const occurrencesByChild = new Map<string, Map<string, HierarchyAssociationOccurrence>>();
+  for (const parent of selectedModels) {
+    const childModelType = parent.modelType === "厂站"
+      ? "馈线"
+      : parent.modelType === "馈线"
+        ? "台区"
+        : "";
+    if (!childModelType) continue;
+    for (const node of parent.record.project.nodes) {
+      const child = hierarchyAssociationTarget(node, childModelType, availableModels);
+      if (!child) continue;
+      const childKey = hierarchyModelIdentity(child);
+      const parentKey = hierarchyModelIdentity(parent);
+      const parentOccurrences = occurrencesByChild.get(childKey) ?? new Map();
+      if (!parentOccurrences.has(parentKey)) {
+        parentOccurrences.set(parentKey, { parent, child, node });
+        occurrencesByChild.set(childKey, parentOccurrences);
+      }
+    }
+  }
+
+  const errors: AllNetworkTopologyAlert[] = [];
+  for (const [childKey, occurrencesByParent] of occurrencesByChild) {
+    const occurrences = [...occurrencesByParent.values()].sort((left, right) => (
+      left.parent.idx - right.parent.idx ||
+      left.parent.name.localeCompare(right.parent.name, "zh-CN") ||
+      left.parent.projectId.localeCompare(right.parent.projectId)
+    ));
+    if (occurrences.length < 2) continue;
+    const child = occurrences[0]!.child;
+    const parentType = child.modelType === "馈线" ? "厂站" : "馈线";
+    const parentNames = occurrences.map(({ parent }) => `“${parent.name}”`).join("、");
+    const childIndex = child.idx > 0 ? `（idx=${child.idx}）` : "";
+    const message = `${child.modelType}模型“${child.name}”${childIndex}同时出现在多个${parentType}模型中：${parentNames}。同一个${child.modelType}只能归属一个${parentType}，请修正模型关联后重新执行全网拓扑。`;
+    for (const { parent, node } of occurrences) {
+      errors.push({
+        id: `${parent.projectId}:duplicate-hierarchy-parent:${childKey}:${node.id}`,
+        projectId: parent.projectId,
+        schemeId: parent.schemeId,
+        modelName: parent.name,
+        deviceName: node.name || child.name,
+        message,
+        nodeId: node.id,
+        relatedNodeIds: [node.id]
+      });
+    }
+  }
+  return errors;
+}
+
 export function analyzeAllNetworkTopology(
   selectedModels: readonly AllNetworkTopologyModel[],
   availableModels: readonly AllNetworkTopologyReferenceModel[] = selectedModels
 ): AllNetworkTopologyResult {
   const orderedModels = [...selectedModels].sort((left, right) => left.idx - right.idx);
   const modelInteractionWarnings = missingModelWarnings(orderedModels, availableModels);
+  const hierarchyErrors = duplicateHierarchyParentErrors(orderedModels, availableModels);
   return {
-    errors: orderedModels.flatMap(topologyErrorsForModel),
+    errors: [...hierarchyErrors, ...orderedModels.flatMap(topologyErrorsForModel)],
     warnings: modelInteractionWarnings
   };
 }
