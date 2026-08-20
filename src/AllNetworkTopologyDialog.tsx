@@ -864,11 +864,13 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
     });
   };
 
-  const refreshGlobalLineList = async () => {
+  const refreshGlobalLineList = async (clearConsistency: boolean) => {
     setGlobalLineListLoading(true);
     setGlobalLineListError("");
-    setGlobalLineConsistencyResult(null);
-    setGlobalLineConsistencyModels([]);
+    if (clearConsistency) {
+      setGlobalLineConsistencyResult(null);
+      setGlobalLineConsistencyModels([]);
+    }
     try {
       const latestScope = scope.__appScopeRef?.current ?? scope;
       const records = typeof latestScope.loadGlobalLineRecords === "function"
@@ -890,7 +892,7 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
 
   useEffect(() => {
     if (!globalLineListOpen) return;
-    void refreshGlobalLineList();
+    void refreshGlobalLineList(false);
   }, [globalLineListOpen]);
 
   useEffect(() => {
@@ -1307,7 +1309,7 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
         consistencyResult={globalLineConsistencyResult}
         deletingRecordId={deletingGlobalLineRecordId}
         onClose={() => scope.setGlobalLineListOpen?.(false)}
-        onRefresh={() => void refreshGlobalLineList()}
+        onRefresh={() => void refreshGlobalLineList(true)}
         onRunConsistency={() => void runGlobalLineConsistency()}
         onLocateAlert={locateAlert}
         onLocateEndpoint={locateGlobalLineEndpoint}
