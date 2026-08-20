@@ -731,6 +731,107 @@ test("routes routable line-like devices around endpoint device bodies", () => {
 });
 
 
+test("routes a straight line to a right-side model-association terminal without crossing its body", () => {
+  const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+  const source = { ...createDefaultNode("ac-station-source", { x: 140, y: 200 }), id: "station-source" };
+  const target = { ...createDefaultNode("ac-source", { x: 520, y: 200 }), id: "target-source" };
+  const start = getTerminalPoint(source, "t1");
+  const end = getTerminalPoint(target, "t1");
+  const line = createRoutableLineDeviceFromEndpoints(
+    template!,
+    start,
+    end,
+    "layer-a",
+    {
+      source: routableLineDeviceEndpointRefForNode(source, "t1"),
+      target: routableLineDeviceEndpointRefForNode(target, "t1")
+    }
+  );
+
+  const routed = routeRoutableLineDevice(line, [source, target, line], { width: 760, height: 420 });
+  const points = routableLineDeviceCanvasPoints(routed);
+
+  expectOrthogonalSegments(points);
+  expect(points[0]).toEqual(start);
+  expect(points[points.length - 1]).toEqual(end);
+  expect(routeIntersectsEndpointNodeBodies(points, {
+    id: "station-source-line-route",
+    sourceId: source.id,
+    targetId: target.id,
+    sourceTerminalId: "t1",
+    targetTerminalId: "t1"
+  }, [source, target])).toBe(false);
+});
+
+
+test("repairs a saved straight line that crosses a right-side model-association endpoint body", () => {
+  const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+  const source = { ...createDefaultNode("ac-station-source", { x: 140, y: 200 }), id: "saved-station-source" };
+  const target = { ...createDefaultNode("ac-source", { x: 520, y: 200 }), id: "saved-target-source" };
+  const start = getTerminalPoint(source, "t1");
+  const end = getTerminalPoint(target, "t1");
+  const crossingLine = createRoutableLineDeviceFromEndpoints(
+    template!,
+    start,
+    end,
+    "layer-a",
+    {
+      source: routableLineDeviceEndpointRefForNode(source, "t1"),
+      target: routableLineDeviceEndpointRefForNode(target, "t1")
+    }
+  );
+
+  const repairedNodes = repairUnsafeRoutableLineDeviceRoutes(
+    [source, target, crossingLine],
+    { width: 760, height: 420 }
+  );
+  const repairedLine = repairedNodes.find((node) => node.id === crossingLine.id)!;
+  const points = routableLineDeviceCanvasPoints(repairedLine);
+
+  expect(repairedLine).not.toBe(crossingLine);
+  expect(routeIntersectsEndpointNodeBodies(points, {
+    id: "saved-station-source-line-route",
+    sourceId: source.id,
+    targetId: target.id,
+    sourceTerminalId: "t1",
+    targetTerminalId: "t1"
+  }, [source, target])).toBe(false);
+});
+
+
+test("routes a vertical dogleg to a right-side model-association terminal without crossing its body", () => {
+  const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
+  const source = { ...createDefaultNode("ac-station-source", { x: 420, y: 80 }), id: "upper-station-source" };
+  const target = { ...createDefaultNode("ac-station-source", { x: 560, y: 300 }), id: "lower-station-source" };
+  const start = getTerminalPoint(source, "t1");
+  const end = getTerminalPoint(target, "t1");
+  const line = createRoutableLineDeviceFromEndpoints(
+    template!,
+    start,
+    end,
+    "layer-a",
+    {
+      source: routableLineDeviceEndpointRefForNode(source, "t1"),
+      target: routableLineDeviceEndpointRefForNode(target, "t1")
+    }
+  );
+
+  const routed = routeRoutableLineDevice(line, [source, target, line], { width: 900, height: 520 });
+  const points = routableLineDeviceCanvasPoints(routed);
+
+  expectOrthogonalSegments(points);
+  expect(points[0]).toEqual(start);
+  expect(points[points.length - 1]).toEqual(end);
+  expect(routeIntersectsEndpointNodeBodies(points, {
+    id: "vertical-station-source-line-route",
+    sourceId: source.id,
+    targetId: target.id,
+    sourceTerminalId: "t1",
+    targetTerminalId: "t1"
+  }, [source, target])).toBe(false);
+});
+
+
 test("routes routable line-like devices around non-endpoint blockers", () => {
   const template = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line");
   const source = { ...createDefaultNode("ac-box-breaker", { x: 100, y: 200 }), id: "source-node" };
@@ -869,10 +970,12 @@ test("does not bulk-reroute stored routable lines solely for endpoint stub direc
     }
   );
   const yLane = Math.max(start.y, end.y) + 220;
+  const xLane = end.x + 140;
   const storedCanvasPoints = [
     start,
     { x: start.x, y: yLane },
-    { x: end.x, y: yLane },
+    { x: xLane, y: yLane },
+    { x: xLane, y: end.y },
     end
   ];
   const storedLine = {
