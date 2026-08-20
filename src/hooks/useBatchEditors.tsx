@@ -5,7 +5,7 @@ import type { BatchCommonParamRow, BatchCommonMeasurementGroupRow, BatchCommonMe
 
 import { DeferredColorInput, BufferedTextInput } from "../components/InputComponents";
 import { StaticButtonLayerMultiSelect } from "../components/StaticButtonComponents";
-import { Select, Button } from "antd";
+import { Select, Button, InputNumber } from "antd";
 
 import {
   inferESection,
@@ -781,15 +781,14 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
       return renderBatchCommonMeasurementGroupColorEditor(row);
     }
     return (
-      <BufferedTextInput
-        type="number"
-        min="0"
-        max="12"
-        step="0.5"
-        value={value}
+      <InputNumber size="small"
+        min={0}
+        max={12}
+        step={0.5}
+        value={Number(value) || 0}
         disabled={isBrowseMode}
         placeholder={row.mixed ? "多个不同值" : undefined}
-        onCommit={(nextValue: string) => applyBatchCommonMeasurementGroupSetting(row.key, nextValue)}
+        onChange={(nextValue: number | null) => applyBatchCommonMeasurementGroupSetting(row.key, String(nextValue ?? ""))}
       />
     );
   };

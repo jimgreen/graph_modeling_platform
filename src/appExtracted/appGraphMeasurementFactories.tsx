@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { Select, Tooltip } from "antd";
+import { Select, Tooltip, InputNumber } from "antd";
 import { clampNumber } from "../canvasViewport";
 import { reconcileNodeWithDefinition } from "../definitionInstanceSync";
 import { degreesToRadians } from "../formatUtils";
@@ -4867,15 +4867,14 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                     { value: "none", label: "无边框" }
                   ]}
                 />
-                <BufferedTextInput
-                  type="number"
-                  min="0"
-                  max="12"
-                  step="0.5"
+                <InputNumber size="small"
+                  min={0}
+                  max={12}
+                  step={0.5}
                   value={selectedMeasurementGroupCommonDraft.borderWidth ?? 0}
                   disabled={isBrowseMode || (selectedMeasurementGroupCommonDraft.borderStyle ?? "none") === "none"}
                   aria-label="量测组边框宽度"
-                  onCommit={(nextValue) => updateSelectedMeasurementGroups((current) => ({
+                  onChange={(nextValue) => updateSelectedMeasurementGroups((current) => ({
                     ...current,
                     borderWidth: clampNumber(Number(nextValue), 0, 12)
                   }), "修改量测组边框宽度")}
@@ -5004,15 +5003,14 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: Record<stri
                         </div>
                         <div style={{ width: "50%", minWidth: 0 }}>
                           <Tooltip title="默认值" mouseEnterDelay={0} mouseLeaveDelay={0}>
-                            <BufferedTextInput
+                            <InputNumber size="small"
                               style={{ width: "100%" }}
-                              type="number"
-                              step="0.01"
+                              step={0.01}
                               value={item.defaultValue ?? 0}
                               disabled={isBrowseMode}
                               placeholder="默认值"
                               aria-label="量测默认值"
-                              onCommit={(nextValue) => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, defaultValue: nextValue === "" ? 0 : Number(nextValue) }))}
+                              onChange={(nextValue) => updateMeasurementItem(group.id, item.id, (current) => ({ ...current, defaultValue: nextValue === null ? 0 : Number(nextValue) }))}
                             />
                           </Tooltip>
                         </div>

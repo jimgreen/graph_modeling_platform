@@ -2,7 +2,7 @@
 // 从 App.tsx 第 3053-6217 行提取
 import { useMemo, useEffect, useCallback, useLayoutEffect } from "react";
 import type { LibraryPackageScope } from "./appPersistenceLibraryExport";
-import { Select, Input } from "antd";
+import { Select, Input, InputNumber } from "antd";
 const LIBRARY_PACKAGE_DIALOG_SCOPES: LibraryPackageScope[] = [
   "all",
   "component-library",
@@ -2227,7 +2227,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
           </tr>
           <tr>
             {batchEditors.renderChineseParamHeader("fontSize")}
-            <td><BufferedTextInput type="number" min="8" max="160" value={dialogNode.params.fontSize || "24"} onCommit={(nextValue) => batchEditors.updateNodeDoubleClickDraftParam(dialogNode.id, "fontSize", nextValue)} /></td>
+            <td><InputNumber size="small" min={8} max={160} value={dialogNode.params.fontSize || "24"} onChange={(nextValue) => batchEditors.updateNodeDoubleClickDraftParam(dialogNode.id, "fontSize", String(nextValue ?? ""))} /></td>
           </tr>
           <tr>
             {batchEditors.renderChineseParamHeader("textColor")}

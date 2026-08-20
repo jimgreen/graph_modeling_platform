@@ -6,7 +6,7 @@ import { IMAGE_FIT_MODE_OPTIONS, imageFitPreserveAspectRatio, normalizeImageFitM
 import { STATE_ICON_DRAFT_FRAME, STATE_ICON_DRAWING_FRAME_WIDTH, STATE_ICON_DRAWING_FRAME_HEIGHT, STATE_ICON_CLOSED_SHAPE_KINDS, STATE_ICON_LINE_SHAPE_KINDS, STATE_ICON_STATIC_TEMPLATE_SECTIONS_COVERED_BY_BASIC_TOOLS, STATE_ICON_STATIC_TEMPLATE_SECTION_ORDER } from "./appDeviceDefinitionEInterface";
 import { modelAssociationDeviceModelTypeFailureMessage, switchingDeviceUsesClosedStatus } from "../model";
 
-import { Select } from "antd";
+import { Select, InputNumber } from "antd";
 import type { DeviceDefinitionStateDraftRow } from "../stateIconDrawing";
 
 export function stateIconDrawingContextMenuPosition(
@@ -2240,9 +2240,8 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                       <tr>
                         <th>边框线宽</th>
                         <td>
-                          <BufferedTextInput
-                            type="number"
-                            min="0"
+                          <InputNumber size="small"
+                            min={0}
                             step={1}
                             inputMode="numeric"
                             value={normalizeStateIconDrawingStrokeWidth(frame.strokeWidth)}
@@ -2251,7 +2250,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                                 event.preventDefault();
                               }
                             }}
-                            onCommit={(nextValue) => setStateIconFramePatch({ strokeWidth: normalizeStateIconDrawingStrokeWidth(nextValue, frame.strokeWidth) })}
+                            onChange={(nextValue) => setStateIconFramePatch({ strokeWidth: normalizeStateIconDrawingStrokeWidth(String(nextValue ?? ""), frame.strokeWidth) })}
                           />
                         </td>
                       </tr>
@@ -2363,30 +2362,29 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                         <tbody>
                         <tr>
                           <th>X</th>
-                          <td><BufferedTextInput type="number" step="0.01" value={formatStateIconDrawingNumber(selected.x)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { x: Number(nextValue) || 0 })} /></td>
+                          <td><InputNumber size="small" step={0.01} value={formatStateIconDrawingNumber(selected.x)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { x: Number(nextValue ?? 0) || 0 })} /></td>
                         </tr>
                         <tr>
                           <th>Y</th>
-                          <td><BufferedTextInput type="number" step="0.01" value={formatStateIconDrawingNumber(selected.y)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { y: Number(nextValue) || 0 })} /></td>
+                          <td><InputNumber size="small" step={0.01} value={formatStateIconDrawingNumber(selected.y)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { y: Number(nextValue ?? 0) || 0 })} /></td>
                         </tr>
                         <tr>
                           <th>宽</th>
-                          <td><BufferedTextInput type="number" min="1" step="0.01" value={formatStateIconDrawingNumber(selected.width, 1)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { width: Math.max(1, Number(nextValue) || 1) })} /></td>
+                          <td><InputNumber size="small" min={1} step={0.01} value={formatStateIconDrawingNumber(selected.width, 1)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { width: Math.max(1, Number(nextValue ?? 0) || 1) })} /></td>
                         </tr>
                         <tr>
                           <th>高</th>
-                          <td><BufferedTextInput type="number" min="1" step="0.01" value={formatStateIconDrawingNumber(selected.height, 1)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { height: Math.max(1, Number(nextValue) || 1) })} /></td>
+                          <td><InputNumber size="small" min={1} step={0.01} value={formatStateIconDrawingNumber(selected.height, 1)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { height: Math.max(1, Number(nextValue ?? 0) || 1) })} /></td>
                         </tr>
                         <tr>
                           <th>角度</th>
-                          <td><BufferedTextInput type="number" step="0.01" value={formatStateIconDrawingNumber(selected.rotation)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { rotation: Number(nextValue) || 0 })} /></td>
+                          <td><InputNumber size="small" step={0.01} value={formatStateIconDrawingNumber(selected.rotation)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { rotation: Number(nextValue ?? 0) || 0 })} /></td>
                         </tr>
                         <tr>
                           <th>粗细</th>
                           <td>
-                            <BufferedTextInput
-                              type="number"
-                              min="0"
+                            <InputNumber size="small"
+                              min={0}
                               step={1}
                               inputMode="numeric"
                               value={normalizeStateIconDrawingStrokeWidth(selected.strokeWidth)}
@@ -2395,7 +2393,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                                   event.preventDefault();
                                 }
                               }}
-                              onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { strokeWidth: normalizeStateIconDrawingStrokeWidth(nextValue, selected.strokeWidth) })}
+                              onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { strokeWidth: normalizeStateIconDrawingStrokeWidth(String(nextValue ?? ""), selected.strokeWidth) })}
                             />
                           </td>
                         </tr>
@@ -2472,8 +2470,7 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                             <tr>
                               <th>字号</th>
                               <td>
-                                <BufferedTextInput
-                                  type="number"
+                                <InputNumber size="small"
                                   min={STATE_ICON_DRAWING_MIN_FONT_SIZE}
                                   step={1}
                                   inputMode="numeric"
@@ -2483,8 +2480,8 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                                       event.preventDefault();
                                     }
                                   }}
-                                  onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, {
-                                    fontSize: normalizeStateIconDrawingFontSize(nextValue, selected.fontSize ?? selected.height)
+                                  onChange={(nextValue) => updateStateIconDrawingElement(selected.id, {
+                                    fontSize: normalizeStateIconDrawingFontSize(String(nextValue ?? ""), selected.fontSize ?? selected.height)
                                   })}
                                 />
                               </td>
@@ -2513,15 +2510,15 @@ export function createRenderStateVisualPager(__appScope: Record<string, any>) {
                             </tr>
                             <tr>
                               <th>图片缩放</th>
-                              <td><BufferedTextInput type="number" min="0.05" step="0.01" value={formatStateIconDrawingNumber(selected.imageScale ?? 1, 1)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { imageScale: Math.max(0.05, Number(nextValue) || 0.05) })} /></td>
+                              <td><InputNumber size="small" min={0.05} step={0.01} value={formatStateIconDrawingNumber(selected.imageScale ?? 1, 1)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { imageScale: Math.max(0.05, Number(nextValue ?? 0) || 0.05) })} /></td>
                             </tr>
                             <tr>
                               <th>裁剪X</th>
-                              <td><BufferedTextInput type="number" step="0.01" value={formatStateIconDrawingNumber(selected.cropX ?? 0)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { cropX: Number(nextValue) || 0 })} /></td>
+                              <td><InputNumber size="small" step={0.01} value={formatStateIconDrawingNumber(selected.cropX ?? 0)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { cropX: Number(nextValue ?? 0) || 0 })} /></td>
                             </tr>
                             <tr>
                               <th>裁剪Y</th>
-                              <td><BufferedTextInput type="number" step="0.01" value={formatStateIconDrawingNumber(selected.cropY ?? 0)} onCommit={(nextValue) => updateStateIconDrawingElement(selected.id, { cropY: Number(nextValue) || 0 })} /></td>
+                              <td><InputNumber size="small" step={0.01} value={formatStateIconDrawingNumber(selected.cropY ?? 0)} onChange={(nextValue) => updateStateIconDrawingElement(selected.id, { cropY: Number(nextValue ?? 0) || 0 })} /></td>
                             </tr>
                           </>
                         )}
@@ -2740,11 +2737,10 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
             <div className="device-definition-size-grid">
               <label>
                 宽度
-                <BufferedTextInput
-                  type="number"
-                  min="1"
+                <InputNumber size="small"
+                  min={1}
                   value={definitionVisualDraft.size.width}
-                  onCommit={(value) =>
+                  onChange={(value) =>
                     setDefinitionVisualDraft((current) =>
                       current
                         ? {
@@ -2759,11 +2755,10 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
               </label>
               <label>
                 高度
-                <BufferedTextInput
-                  type="number"
-                  min="1"
+                <InputNumber size="small"
+                  min={1}
                   value={definitionVisualDraft.size.height}
-                  onCommit={(value) =>
+                  onChange={(value) =>
                     setDefinitionVisualDraft((current) =>
                       current
                         ? {
@@ -2806,23 +2801,21 @@ export function createRenderDeviceDefinitionVisualPanel(__appScope: Record<strin
                 <span>端子位置</span>
                 <div className="custom-terminal-anchor-inputs">
                   <span>X</span>
-                  <BufferedTextInput
-                    type="number"
-                    min="-0.5"
-                    max="0.5"
-                    step="0.01"
+                  <InputNumber size="small"
+                    min={-0.5}
+                    max={0.5}
+                    step={0.01}
                     value={formatCustomDeviceTerminalAnchorValue(terminalAnchor.x)}
-                    onCommit={(value) => updateDefinitionTerminalAnchor(index, { x: Number(value) })}
+                    onChange={(value) => updateDefinitionTerminalAnchor(index, { x: Number(value) })}
                     aria-label={`修改元件端子${index + 1} X位置`}
                   />
                   <span>Y</span>
-                  <BufferedTextInput
-                    type="number"
-                    min="-0.5"
-                    max="0.5"
-                    step="0.01"
+                  <InputNumber size="small"
+                    min={-0.5}
+                    max={0.5}
+                    step={0.01}
                     value={formatCustomDeviceTerminalAnchorValue(terminalAnchor.y)}
-                    onCommit={(value) => updateDefinitionTerminalAnchor(index, { y: Number(value) })}
+                    onChange={(value) => updateDefinitionTerminalAnchor(index, { y: Number(value) })}
                     aria-label={`修改元件端子${index + 1} Y位置`}
                   />
                 </div>
