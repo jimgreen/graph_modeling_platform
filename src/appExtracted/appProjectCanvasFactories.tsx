@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { Select, Input, Button } from "antd";
+import { Select, Input, Button, InputNumber } from "antd";
 import { clampNumber } from "../canvasViewport";
 import { DEFAULT_MEASUREMENT_CONFIG } from "../measurements";
 import { WindowCloseButton } from "../WindowCloseButton";
@@ -4138,14 +4138,13 @@ export function createRenderDeviceDefinitionMeasurementPanel(__appScope: Record<
                       />
                     </td>
                     <td>
-                      <BufferedTextInput
-                        type="number"
-                        step="0.01"
+                      <InputNumber size="small"
+                        step={0.01}
                         value={item.defaultValue ?? 0}
                         disabled={isBrowseMode}
                         placeholder="0"
-                        onCommit={(nextValue) => updateItem(itemIndex, {
-                          defaultValue: nextValue === "" ? 0 : Number(nextValue)
+                        onChange={(nextValue) => updateItem(itemIndex, {
+                          defaultValue: nextValue === null ? 0 : Number(nextValue)
                         })}
                       />
                     </td>
@@ -4238,13 +4237,12 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
                   </label>
                   <label>
                     <span>默认边框宽度</span>
-                    <BufferedTextInput
-                      type="number"
-                      min="0"
-                      max="12"
-                      step="1"
+                    <InputNumber size="small"
+                      min={0}
+                      max={12}
+                      step={1}
                       value={groupDefaults.borderWidth}
-                      onCommit={(nextValue) => updateGroupDefaults({ borderWidth: Number(nextValue) })}
+                      onChange={(nextValue) => updateGroupDefaults({ borderWidth: Number(nextValue) })}
                     />
                   </label>
                   <label>
@@ -4284,29 +4282,26 @@ export function createRenderMeasurementConfigDialog(__appScope: Record<string, a
                       <td><BufferedTextInput value={type.shortLabel} onCommit={(nextValue) => updateMeasurementType(type.id, { shortLabel: nextValue })} /></td>
                       <td><BufferedTextInput value={type.defaultUnit} onCommit={(nextValue) => updateMeasurementType(type.id, { defaultUnit: nextValue })} /></td>
                       <td>
-                        <BufferedTextInput
-                          type="number"
-                          min="0"
-                          max="8"
+                        <InputNumber size="small"
+                          min={0}
+                          max={8}
                           value={type.defaultDecimals}
-                          onCommit={(nextValue) => updateMeasurementType(type.id, { defaultDecimals: Number(nextValue) })}
+                          onChange={(nextValue) => updateMeasurementType(type.id, { defaultDecimals: Number(nextValue) })}
                         />
                       </td>
                       <td>
-                        <BufferedTextInput
-                          type="number"
-                          step="0.01"
+                        <InputNumber size="small"
+                          step={0.01}
                           value={type.defaultValue}
-                          onCommit={(nextValue) => updateMeasurementType(type.id, { defaultValue: Number(nextValue) })}
+                          onChange={(nextValue) => updateMeasurementType(type.id, { defaultValue: Number(nextValue) })}
                         />
                       </td>
                       <td>
-                        <BufferedTextInput
-                          type="number"
-                          min="6"
-                          max="96"
+                        <InputNumber size="small"
+                          min={6}
+                          max={96}
                           value={type.defaultFontSize}
-                          onCommit={(nextValue) => updateMeasurementType(type.id, { defaultFontSize: Number(nextValue) })}
+                          onChange={(nextValue) => updateMeasurementType(type.id, { defaultFontSize: Number(nextValue) })}
                         />
                       </td>
                       <td>
@@ -4476,14 +4471,13 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
             </label>
             <label>
               <span>字体大小</span>
-              <BufferedTextInput
-                type="number"
-                min="6"
-                max="96"
+              <InputNumber size="small"
+                min={6}
+                max={96}
                 value={draft.groupStyleOverride?.fontSize ?? 14}
                 disabled={isBrowseMode}
                 aria-label="量测组字体大小"
-                onCommit={(nextValue) => updateMeasurementEditorGroupSettings((group) => ({
+                onChange={(nextValue) => updateMeasurementEditorGroupSettings((group) => ({
                   ...group,
                   groupStyleOverride: {
                     ...(group.groupStyleOverride ?? {}),
@@ -4542,14 +4536,13 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
             </label>
             <label>
               <span>边框宽度</span>
-              <BufferedTextInput
-                type="number"
-                min="0"
-                max="12"
-                step="0.5"
+              <InputNumber size="small"
+                min={0}
+                max={12}
+                step={0.5}
                 value={draft.borderWidth ?? 0}
                 disabled={isBrowseMode || draftBorderHidden}
-                onCommit={(nextValue) => updateMeasurementEditorGroupSettings((group) => ({
+                onChange={(nextValue) => updateMeasurementEditorGroupSettings((group) => ({
                   ...group,
                   borderWidth: clampNumber(Number(nextValue), 0, 12)
                 }))}
@@ -4709,29 +4702,27 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                         />
                       </td>
                       <td>
-                        <BufferedTextInput
-                          type="number"
-                          min="0"
-                          max="8"
+                        <InputNumber size="small"
+                          min={0}
+                          max={8}
                           value={item.decimalsOverride ?? ""}
                           disabled={isBrowseMode}
                           placeholder={String(type?.defaultDecimals ?? 3)}
-                          onCommit={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                          onChange={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
                             ...current,
-                            decimalsOverride: nextValue === "" ? undefined : Number(nextValue)
+                            decimalsOverride: nextValue === null ? undefined : Number(nextValue)
                           }))}
                         />
                       </td>
                       <td>
-                        <BufferedTextInput
-                          type="number"
-                          step="0.01"
+                        <InputNumber size="small"
+                          step={0.01}
                           value={item.defaultValue ?? 0}
                           disabled={isBrowseMode}
                           placeholder="0"
-                          onCommit={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                          onChange={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
                             ...current,
-                            defaultValue: nextValue === "" ? 0 : Number(nextValue)
+                            defaultValue: nextValue === null ? 0 : Number(nextValue)
                           }))}
                         />
                       </td>
@@ -4746,13 +4737,12 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
                         />
                       </td>
                       <td>
-                        <BufferedTextInput
-                          type="number"
-                          min="6"
-                          max="96"
+                        <InputNumber size="small"
+                          min={6}
+                          max={96}
                           value={itemFontSize}
                           disabled={isBrowseMode}
-                          onCommit={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
+                          onChange={(nextValue) => updateMeasurementEditorDraftItem(row.groupId, item.id, (current) => ({
                             ...current,
                             styleOverride: { ...(current.styleOverride ?? {}), fontSize: Number(nextValue) }
                           }))}

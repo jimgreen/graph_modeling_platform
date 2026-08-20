@@ -18,27 +18,25 @@ body {
     Inter, "Microsoft YaHei", "PingFang SC", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-button,
-input {
+button:not(.ant-btn),
+input:not(.ant-input) {
   font: inherit;
 }
 
-button {
+button:not(.ant-btn) {
   border: 0;
   cursor: pointer;
   white-space: nowrap;
 }
 
-button:disabled {
+button:not(.ant-btn):disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
 
 /* Antd 组件样式覆盖 - 统一高度 */
-.ant-input,
 .ant-select-selector,
-.ant-btn,
-.ant-input-number {
+.ant-btn {
   font-size: inherit;
   height: 24px !important;
   min-height: 24px;
@@ -46,31 +44,48 @@ button:disabled {
 }
 
 .ant-input {
+  font-size: 14px;
+  height: 24px !important;
+  min-height: 24px;
+  border-radius: 4px !important;
   padding: 2px 8px !important;
 }
 
 .ant-select-selector {
+  font-size: 14px;
   padding: 0 8px !important;
+  line-height: 22px !important;
+}
+
+.ant-select-selection-item {
+  font-size: 14px;
+  line-height: 22px !important;
 }
 
 .ant-select {
-  font-size: inherit;
+  font-size: 14px;
   height: 24px !important;
   min-width: fit-content;
 }
 
 .ant-select-dropdown {
-  font-size: 12px;
+  font-size: 14px;
+}
+
+.ant-select-content {
+  overflow: visible !important;
 }
 
 .ant-input-number {
-  padding: 0 8px !important;
+  font-size: 14px;
+  height: 24px !important;
+  min-height: 24px;
 }
 
 .ant-input-number-input {
-  padding: 0 4px !important;
-  height: 22px !important;
+  font-size: 14px;
 }
+
 
 .ant-modal-content {
   border-radius: 8px;
@@ -3430,13 +3445,11 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .form-stack input {
   width: 100%;
-  height: 36px;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
   padding: 0 10px;
   color: #0f172a;
   background: #ffffff;
-  font-size: 13px;
 }
 
 .form-stack input:focus {
@@ -9829,6 +9842,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 }
 
 .background-page-field button {
+  justify-self: end;
   min-height: 30px;
   border: 1px solid #cbd5e1;
   border-radius: 7px;
@@ -11056,7 +11070,6 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   overflow: hidden;
   table-layout: fixed;
   background: #ffffff;
-  font-size: 12px;
 }
 
 .param-table:has(.static-button-layer-dropdown.open) {
@@ -11201,10 +11214,11 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .param-table th {
   width: 42%;
-  color: #475569;
   background: #f8fafc;
   text-align: left;
   font-weight: 700;
+  font-size: 14px;
+  color: black;
 }
 
 .selected-node-measurement-table th {
@@ -11232,6 +11246,8 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 14px;
+  color: black;
 }
 
 .param-header-bilingual small {
@@ -11243,6 +11259,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .param-table td {
   background: #ffffff;
+  font-size: 14px;
 }
 
 .param-table tr:last-child th,
@@ -11250,9 +11267,9 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   border-bottom: 0;
 }
 
-.param-table input,
-.param-table select,
-.param-table textarea {
+.param-table input:not(.ant-input):not(.ant-input-number-input),
+.param-table select:not(.ant-select-selection-search-input),
+.param-table textarea:not(.ant-input) {
   width: 100%;
   height: var(--param-table-control-height);
   min-height: var(--param-table-control-height);
@@ -11262,7 +11279,6 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   padding: 0 7px;
   background: #ffffff;
   color: #0f172a;
-  font-size: 12px;
   line-height: var(--param-table-control-height);
   transition:
     background-color 120ms ease;
@@ -11281,12 +11297,6 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   border-color: transparent;
   background: transparent;
   box-shadow: none;
-}
-
-.param-table td:not(:focus-within) input:not([type="color"]):not([type="checkbox"]),
-.param-table td:not(:focus-within) select {
-  padding-left: 0;
-  padding-right: 0;
 }
 
 .param-table td:not(:focus-within) textarea {
@@ -11310,9 +11320,9 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   outline: none;
 }
 
-.param-table input:focus,
-.param-table select:focus,
-.param-table textarea:focus {
+.param-table input:focus:not(.ant-input),
+.param-table select:focus:not(.ant-select-selection-search-input),
+.param-table textarea:focus:not(.ant-input) {
   outline: none;
 }
 
@@ -11359,9 +11369,9 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   z-index: 99999;
 }
 
-.param-table input:disabled,
-.param-table select:disabled,
-.param-table textarea:disabled {
+.param-table input:disabled:not(.ant-input),
+.param-table select:disabled:not(.ant-select-selection-search-input),
+.param-table textarea:disabled:not(.ant-input) {
   color: #94a3b8;
   cursor: not-allowed;
 }
