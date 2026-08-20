@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { degreesToRadians } from "../formatUtils";
 import { WindowCloseButton } from "../WindowCloseButton";
-import { isGlobalLineBoundaryNode, isManagedGlobalLineModelType } from "../global-lines";
+import { isLineOnlyConnectionNode, modelAssociationModelIdLocked, modelAssociationModelIdLockMessage } from "../model";
 
 export function createUpdateSingleNodeDragImperativePreview(__appScope: Record<string, any>) {
   return (dragState: DraggingState, previewDelta: Point) => {
@@ -2420,6 +2420,14 @@ export function createUpdateParam(__appScope: Record<string, any>) {
     if (storedValue === null) {
       return;
     }
+    if (
+      key === "model_id" &&
+      currentNode.params.model_id !== storedValue &&
+      modelAssociationModelIdLocked(currentNode, nodeById.values())
+    ) {
+      showGlobalMessage(modelAssociationModelIdLockMessage(currentNode));
+      return;
+    }
     if (key !== "_labelDisplayMode" && currentNode.params[key] === storedValue) {
       return;
     }
@@ -2460,6 +2468,7 @@ export function createApplyBatchCommonParamPatch(__appScope: Record<string, any>
     const allowedMissingParamKeySet = new Set(allowMissingParamKeys);
     const targetNodes = activeSelectedNodeIds.flatMap((nodeId) => nodeById.get(nodeId) ?? []);
     const changedPatchKeys = new Set<string>();
+    let lockedModelAssociationNode: ModelNode | undefined;
     const nextNodes = targetNodes
       .map((node) => {
         const patch = Object.fromEntries(
@@ -2470,6 +2479,14 @@ export function createApplyBatchCommonParamPatch(__appScope: Record<string, any>
               allowedMissingParamKeySet.has(patchKey)
             )
         );
+        if (
+          Object.prototype.hasOwnProperty.call(patch, "model_id") &&
+          patch.model_id !== node.params.model_id &&
+          modelAssociationModelIdLocked(node, nodeById.values())
+        ) {
+          lockedModelAssociationNode ??= node;
+          delete patch.model_id;
+        }
         if (Object.keys(patch).length === 0) {
           return node;
         }
@@ -2480,6 +2497,9 @@ export function createApplyBatchCommonParamPatch(__appScope: Record<string, any>
         return { ...node, params: { ...node.params, ...patch } };
       })
       .filter((node, index) => node !== targetNodes[index]);
+    if (lockedModelAssociationNode) {
+      showGlobalMessage(modelAssociationModelIdLockMessage(lockedModelAssociationNode));
+    }
     if (nextNodes.length === 0) {
       return;
     }
@@ -2843,13 +2863,24 @@ export function createConfirmNodeDoubleClickDialog(__appScope: Record<string, an
     const currentNode = nodeById.get(dialog.nodeId);
     const draftNode =
       nodeDoubleClickDraft?.nodeId === dialog.nodeId ? nodeDoubleClickDraft.node : undefined;
-    if (currentNode && draftNode && nodeDoubleClickDraftHasModelChanges(currentNode, draftNode)) {
+    const committedDraftNode = currentNode && draftNode &&
+      currentNode.params.model_id !== draftNode.params.model_id &&
+      modelAssociationModelIdLocked(currentNode, nodeById.values())
+      ? (() => {
+          showGlobalMessage(modelAssociationModelIdLockMessage(currentNode));
+          return {
+            ...draftNode,
+            params: { ...draftNode.params, model_id: currentNode.params.model_id }
+          };
+        })()
+      : draftNode;
+    if (currentNode && committedDraftNode && nodeDoubleClickDraftHasModelChanges(currentNode, committedDraftNode)) {
       pushNodeOnlyUndoSnapshot(currentNode.id, undefined, currentNode.name);
       patchGraphNodes([
         {
           ...currentNode,
-          name: draftNode.name,
-          params: { ...draftNode.params }
+          name: committedDraftNode.name,
+          params: { ...committedDraftNode.params }
         }
       ]);
     }
@@ -4615,7 +4646,7 @@ export function createIsPointNearBus(__appScope: Record<string, any>) {
 
 export function createFindRewireTargetAtPoint(__appScope: Record<string, any>) {
   return (point: Point, state: Exclude<RewiringState, null>) => {
-  const { CONNECT_BUS_SNAP_TOLERANCE, CONNECT_TERMINAL_SNAP_TOLERANCE, activeLayerEdgeIdSet, busAnchorFromPoint, canConnectTerminals, connectTargetSearchBounds, edgeById, getTerminalPoint, isBusNode, isModelInteractionNode, isPointNearBus, queryNodeSpatialIndex, visibleNodeById, visibleNodeSpatialIndex } = __appScope;
+  const { CONNECT_BUS_SNAP_TOLERANCE, CONNECT_TERMINAL_SNAP_TOLERANCE, activeLayerEdgeIdSet, busAnchorFromPoint, canConnectTerminals, connectTargetSearchBounds, edgeById, getTerminalPoint, isBusNode, isPointNearBus, queryNodeSpatialIndex, visibleNodeById, visibleNodeSpatialIndex } = __appScope;
     const edge = edgeById.get(state.edgeId);
     if (!edge) {
       return null;
@@ -4625,12 +4656,12 @@ export function createFindRewireTargetAtPoint(__appScope: Record<string, any>) {
     }
     const otherNode = visibleNodeById.get(state.endpoint === "source" ? edge.targetId : edge.sourceId);
     const otherTerminalId = state.endpoint === "source" ? edge.targetTerminalId : edge.sourceTerminalId;
-    if (!otherNode || !otherTerminalId || isModelInteractionNode(otherNode)) {
+    if (!otherNode || !otherTerminalId || isLineOnlyConnectionNode(otherNode)) {
       return null;
     }
     const searchBounds = connectTargetSearchBounds(point);
     for (const node of queryNodeSpatialIndex(visibleNodeSpatialIndex, searchBounds)) {
-      if (node.id === otherNode.id || isModelInteractionNode(node)) {
+      if (node.id === otherNode.id || isLineOnlyConnectionNode(node)) {
         continue;
       }
       if (isBusNode(node) && isPointNearBus(node, point, CONNECT_BUS_SNAP_TOLERANCE)) {
@@ -4654,42 +4685,17 @@ export function createFindRewireTargetAtPoint(__appScope: Record<string, any>) {
 
 export function createFindConnectTargetAtPoint(__appScope: Record<string, any>) {
   return (point: Point): ConnectTarget | null => {
-  const { CONNECT_BUS_SNAP_TOLERANCE, CONNECT_TERMINAL_SNAP_TOLERANCE, activeLayerNodeIdSet, busAnchorFromPoint, canConnectTerminals, connectSource, connectTargetSearchBounds, getTerminalPoint, isBusNode, isModelInteractionNode, isPointNearBus, modelInteractionTerminalConnectionLocalPointsByNodeId, modelType, nodeById, projectPointToModelInteractionBoundaryIfInRange, queryNodeSpatialIndex, visibleNodeById, visibleNodeSpatialIndex } = __appScope;
+  const { CONNECT_BUS_SNAP_TOLERANCE, CONNECT_TERMINAL_SNAP_TOLERANCE, activeLayerNodeIdSet, busAnchorFromPoint, canConnectTerminals, connectSource, connectTargetSearchBounds, getTerminalPoint, isBusNode, isPointNearBus, queryNodeSpatialIndex, visibleNodeById, visibleNodeSpatialIndex } = __appScope;
     if (!connectSource) {
       return null;
     }
     const sourceNode = activeLayerNodeIdSet.has(connectSource.nodeId) ? visibleNodeById.get(connectSource.nodeId) : undefined;
-    if (!sourceNode || isModelInteractionNode(sourceNode)) {
+    if (!sourceNode || isLineOnlyConnectionNode(sourceNode)) {
       return null;
     }
     const searchBounds = connectTargetSearchBounds(point);
-    const sourceTerminalType = sourceNode.terminals.find((terminal) => terminal.id === connectSource.terminalId)?.type;
-    const modelInteractionTerminalLocalPoints = isManagedGlobalLineModelType(modelType)
-      ? modelInteractionTerminalConnectionLocalPointsByNodeId((nodeById ?? visibleNodeById).values())
-      : new Map();
     for (const node of queryNodeSpatialIndex(visibleNodeSpatialIndex, searchBounds)) {
-      if (isModelInteractionNode(node)) {
-        if (!sourceTerminalType || !isManagedGlobalLineModelType(modelType) || !isGlobalLineBoundaryNode(node)) {
-          continue;
-        }
-        const boundaryPoint = projectPointToModelInteractionBoundaryIfInRange(
-          node,
-          point,
-          CONNECT_BUS_SNAP_TOLERANCE
-        );
-        if (!boundaryPoint) {
-          continue;
-        }
-        const occupiedTerminalIds = modelInteractionTerminalLocalPoints.get(node.id);
-        const availableTerminal = node.terminals.find((terminal) =>
-          terminal.type === sourceTerminalType &&
-          !occupiedTerminalIds?.has(terminal.id) &&
-          !(node.id === sourceNode.id && terminal.id === connectSource.terminalId) &&
-          canConnectTerminals(sourceNode, connectSource.terminalId, node, terminal.id)
-        );
-        if (availableTerminal) {
-          return { node, terminalId: availableTerminal.id, point: boundaryPoint };
-        }
+      if (isLineOnlyConnectionNode(node)) {
         continue;
       }
       if (isBusNode(node) && isPointNearBus(node, point, CONNECT_BUS_SNAP_TOLERANCE)) {

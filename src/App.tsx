@@ -1397,6 +1397,8 @@ const [colorPaletteDialogOpen, setColorPaletteDialogOpen] = useState(false);
 Object.assign(__appScope, { colorPaletteDialogOpen, setColorPaletteDialogOpen });
 const [allNetworkTopologyDialogOpen, setAllNetworkTopologyDialogOpen] = useState(false);
 Object.assign(__appScope, { allNetworkTopologyDialogOpen, setAllNetworkTopologyDialogOpen });
+const [globalLineListOpen, setGlobalLineListOpen] = useState(false);
+Object.assign(__appScope, { globalLineListOpen, setGlobalLineListOpen });
 const [colorPaletteTab, setColorPaletteTab] = useState<ColorDisplayMode>(() => readColorDisplayMode());
 Object.assign(__appScope, { colorPaletteTab, setColorPaletteTab });
 const [voltageLevelSettings, setVoltageLevelSettings] = useState<VoltageLevelSettings>(() => readVoltageLevelSettings());

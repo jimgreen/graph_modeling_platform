@@ -37,13 +37,25 @@ function createTerminalPointerScope(node: ModelNode) {
 }
 
 describe("single-terminal pointer interaction", () => {
-  test("does not start an ordinary link from a model-interaction button terminal", () => {
+  test("does not start an ordinary link from model-interaction buttons or station feeder district source/load terminals", () => {
     for (const kind of [
       "static-model-interaction-microgrid",
       "static-model-interaction-station",
       "static-model-interaction-feeder",
       "static-model-interaction-district",
-      "static-model-interaction-other"
+      "static-model-interaction-other",
+      "ac-station-source",
+      "ac-feeder-source",
+      "ac-district-source",
+      "dc-station-source",
+      "dc-feeder-source",
+      "dc-district-source",
+      "ac-station-load",
+      "ac-feeder-load",
+      "ac-district-load",
+      "dc-station-load",
+      "dc-feeder-load",
+      "dc-district-load"
     ] as const) {
       const node = createDefaultNode(kind, { x: 100, y: 100 });
       const setConnectSource = vi.fn();

@@ -68,20 +68,31 @@ describe("app view topology inspector", () => {
 });
 
 describe("全网拓扑入口", () => {
-  test("在顶栏提供全网拓扑按钮并挂载独立弹窗", () => {
+  test("在顶栏把仅图标的全局线路按钮放到全网拓扑按钮左侧并挂载独立弹窗", () => {
     const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const globalLineButton = source.indexOf('aria-label="全局线路"');
+    const topologyButton = source.indexOf('aria-label="全网拓扑"');
 
-    expect(source).toContain('aria-label="全网拓扑"');
+    expect(globalLineButton).toBeGreaterThanOrEqual(0);
+    expect(topologyButton).toBeGreaterThan(globalLineButton);
+    expect(source).toMatch(/aria-label="全局线路"[^>]*>\s*<Cable size=\{16\}\/>\s*<\/button>/);
     expect(source).toContain("<AllNetworkTopologyDialog");
+  });
+
+  test("应用作用域提供独立的全局线路列表窗口状态", () => {
+    const source = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("const [globalLineListOpen, setGlobalLineListOpen] = useState(false)");
+    expect(source).toContain("Object.assign(__appScope, { globalLineListOpen, setGlobalLineListOpen })");
   });
 });
 
 describe("全局线路首末端提示", () => {
-  test("选择窗口明确显示本次占用的首端或末端，并说明只列出对应空槽", () => {
+  test("选择窗口明确显示本次占用的首端或末端，并允许选择出线度为0或1的对应空槽", () => {
     const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
 
     expect(source).toContain('globalLinePlacementDialog.boundaryEndpoint === "source" ? "首端" : "末端"');
-    expect(source).toContain("请选择一条对应方向槽为空、出线度为1的既有线路");
+    expect(source).toContain("请选择一条当前端点槽为空、出线度小于2的既有线路");
   });
 
   test("在渲染批次生成界面前把全局线路弹窗状态注入应用作用域", () => {

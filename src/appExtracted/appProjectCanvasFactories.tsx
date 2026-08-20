@@ -5,10 +5,18 @@ import { WindowCloseButton } from "../WindowCloseButton";
 import { buildEFileExportOptionsFromLibrary, setSkipSaveCheck } from "./appDeviceDefinitionFactories";
 import { moveSelectedTableRows, nextTableRowSelection } from "../definitionTableSelection";
 import { GLOBAL_LINE_ID_PARAM, applyGlobalLineRecordToNode, deriveLocalDeviceIndexCounters, shouldManageLineGlobally, shouldUseGlobalLineForEndpoints } from "../global-lines";
+import { isLineOnlyConnectionNode, modelAssociationLineConnectionFailureMessage } from "../model";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
   return async (template: DeviceTemplate, source: ConnectTarget, target: ConnectTarget, manualPoints?: Point[], globalLineChoice?: GlobalLineChoice) => {
   const { CANVAS_AUTO_EXPAND_PADDING, activateInspectorFromCanvas, activeLayerId, applyCanvasBounds, assignPermanentDeviceIndex, attachGlobalLineForNode, buildManualConnectionPreviewRoute, canvasBounds, canvasBoundsForAutoExpandedGraphContent, canvasBoundsWithOriginShift, connectTargetPoint, createRoutableLineDeviceFromEndpoints, deviceIndexCounters, edges, hasCanvasOriginShift, leftTopCanvasOriginShiftForContent, markBusTerminalSyncDirtyForEdges, nodes, pushUndoSnapshot, rejectAutoCanvasExpansionForContent, resetRoutableLinePreviewState, routableLineDeviceEndpointRefForNode, routeRoutableLineDevice, setCanvasSelectionScope, setDeviceIndexCounters, setGraphArrays, setMode, setRoutableLineDeviceCanvasPoints, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, shiftCachedRoutesForCanvasOrigin, translateEdgeBy, translateNodeBy, writeOperationLog } = __appScope;
+    const connectionIssue = modelAssociationLineConnectionFailureMessage(source.node) ||
+      modelAssociationLineConnectionFailureMessage(target.node);
+    if (connectionIssue) {
+      showGlobalMessage(connectionIssue);
+      writeOperationLog?.(`线路绘制失败：${connectionIssue}`);
+      return false;
+    }
     const sourcePoint = connectTargetPoint(source);
     const targetPoint = connectTargetPoint(target);
     const rawLine = createRoutableLineDeviceFromEndpoints(
@@ -80,6 +88,12 @@ export function createStartRoutableLineFromTerminal(__appScope: Record<string, a
     if (!routableLinePlacement || !activeLayerNodeIdSet.has(node.id)) {
       return false;
     }
+    const connectionIssue = modelAssociationLineConnectionFailureMessage(node);
+    if (connectionIssue) {
+      showGlobalMessage(connectionIssue);
+      writeOperationLog(`线路起点设置失败：${connectionIssue}`);
+      return false;
+    }
     const source: ConnectTarget = { node, terminalId, point };
     if (connectTargetTerminalType(source) !== routableLineTemplateTerminalType(routableLinePlacement.template)) {
       return false;
@@ -105,6 +119,13 @@ export function createFinishRoutableLineToTarget(__appScope: Record<string, any>
       manualPoints = routableLinePlacement?.manualPoints;
     }
     if (!routableLinePlacement?.source) {
+      return false;
+    }
+    const connectionIssue = modelAssociationLineConnectionFailureMessage(routableLinePlacement.source.node) ||
+      modelAssociationLineConnectionFailureMessage(target.node);
+    if (connectionIssue) {
+      showGlobalMessage(connectionIssue);
+      writeOperationLog(`线路终点设置失败：${connectionIssue}`);
       return false;
     }
     if (connectTargetTerminalType(target) !== routableLineTemplateTerminalType(routableLinePlacement.template)) {
@@ -212,6 +233,13 @@ export function createFinishRoutableLineEndpointDrag(__appScope: Record<string, 
     const lineNode = nodeById.get(routableLineEndpointDrag.nodeId);
     const target = routableLineEndpointDrag.dropTarget;
     if (lineNode && target) {
+      const connectionIssue = modelAssociationLineConnectionFailureMessage(target.node);
+      if (connectionIssue) {
+        showGlobalMessage(connectionIssue);
+        writeOperationLog(`线路端点调整失败：${connectionIssue}`);
+        setRoutableLineEndpointDrag(null);
+        return;
+      }
       const points = routableLineDeviceCanvasPoints(lineNode);
       const currentStart = points[0];
       const currentEnd = points[points.length - 1];
@@ -347,7 +375,7 @@ export function createCommitNewConnectionEdge(__appScope: Record<string, any>) {
 
 export function createFinishConnectToTarget(__appScope: Record<string, any>) {
   return (target: NonNullable<ReturnType<typeof findConnectTargetAtPoint>>, endpointPoint?: Point | null) => {
-  const { busAnchorFromPoint, canConnectTerminals, commitNewConnectionEdge, connectPreviewPointRef, connectSource, getTerminalPoint, isBusNode, libraryTemplateByKind, modelType, requestGlobalLinePlacement, resetConnectPreviewState, setConnectSource, visibleNodeById, writeOperationLog } = __appScope;
+  const { busAnchorFromPoint, canConnectTerminals, commitNewConnectionEdge, connectPreviewPointRef, connectSource, getTerminalPoint, isBusNode, visibleNodeById } = __appScope;
     if (endpointPoint === undefined) {
       endpointPoint = connectPreviewPointRef.current;
     }
@@ -358,36 +386,12 @@ export function createFinishConnectToTarget(__appScope: Record<string, any>) {
     if (!sourceNode || !canConnectTerminals(sourceNode, connectSource.terminalId, target.node, target.terminalId)) {
       return false;
     }
+    if (isLineOnlyConnectionNode(sourceNode) || isLineOnlyConnectionNode(target.node)) {
+      return false;
+    }
     const targetPoint = isBusNode(target.node)
       ? target.point ?? busAnchorFromPoint(target.node, endpointPoint ?? getTerminalPoint(target.node, target.terminalId))
       : target.point;
-    const sourceTarget: ConnectTarget = {
-      node: sourceNode,
-      terminalId: connectSource.terminalId,
-      point: connectSource.point
-    };
-    const targetWithPoint: ConnectTarget = {
-      node: target.node,
-      terminalId: target.terminalId,
-      point: targetPoint
-    };
-    const sourceTerminalType = sourceNode.terminals.find((terminal) => terminal.id === connectSource.terminalId)?.type;
-    const globalLineTemplateKind = sourceTerminalType === "ac"
-      ? "ac-routable-line"
-      : sourceTerminalType === "dc"
-        ? "dc-routable-line"
-        : "";
-    const globalLineTemplate = globalLineTemplateKind ? libraryTemplateByKind?.get(globalLineTemplateKind) : undefined;
-    if (
-      globalLineTemplate &&
-      shouldUseGlobalLineForEndpoints(modelType, globalLineTemplate.kind, sourceNode, target.node) &&
-      requestGlobalLinePlacement(globalLineTemplate, sourceTarget, targetWithPoint, connectSource.manualPoints)
-    ) {
-      setConnectSource(null);
-      resetConnectPreviewState();
-      writeOperationLog("线路连接跨模型边界，请选择既有全局线路或新建全局线路。");
-      return true;
-    }
     const newEdge: Edge = {
       id: `edge-${Date.now()}`,
       sourceId: sourceNode.id,

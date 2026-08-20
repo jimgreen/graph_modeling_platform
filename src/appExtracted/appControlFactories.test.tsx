@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { createProgrammaticAddDevice, createProgrammaticCreateScheme, createProgrammaticCreateBlankProject, createProgrammaticSelectDevices, createProgrammaticGroupSelected, createProgrammaticDeleteDevices, createProgrammaticUpdateDeviceProperty, createProgrammaticSave, createProgrammaticSaveSelectionAsTemplate } from "./appControlFactories";
-import { DEVICE_LIBRARY_BY_KIND, createSavedScheme, createSavedProject } from "../model";
+import { DEVICE_LIBRARY_BY_KIND, createDefaultNode, createSavedScheme, createSavedProject } from "../model";
 
 // mock __appScope：捕获 pushUndoSnapshot 调用与 setNodes 追加的节点
 function createMockScope() {
@@ -507,6 +507,22 @@ function createUpdateMockScope(nodeIds: string[] = []) {
 }
 
 describe("programmaticUpdateDeviceProperty", () => {
+  test("已有线路连接时拒绝通过控制接口修改 model_id", () => {
+    const node = createDefaultNode("dc-district-load", { x: 100, y: 100 });
+    node.params.model_id = "33";
+    const line = createDefaultNode("dc-routable-line", { x: 240, y: 100 });
+    line.params._routableLineSourceNodeId = node.id;
+    const updateGraphNodeById = vi.fn();
+    const update = createProgrammaticUpdateDeviceProperty({
+      nodes: [node, line],
+      pushUndoSnapshot: vi.fn(),
+      updateGraphNodeById
+    });
+
+    expect(() => update(node.id, "model", { params: { model_id: "34" } })).toThrow(/已有线路连接/);
+    expect(updateGraphNodeById).not.toHaveBeenCalled();
+  });
+
   test("graphic 类别合并字段 → 返回 patched 键列表 + 压栈", () => {
     const { scope, calls } = createUpdateMockScope(["n1"]);
     const update = createProgrammaticUpdateDeviceProperty(scope);

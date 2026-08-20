@@ -301,7 +301,7 @@ export function useGlobalLines(scope: Record<string, any>) {
       ? { mode: "existing", globalLineId: dialog.selectedGlobalLineId }
       : { mode: "new", name: dialog.name.trim() };
     if (choice.mode === "existing" && !choice.globalLineId) {
-      setDialog((current) => current ? { ...current, error: "请选择一条出线度为1的既有线路。" } : current);
+      setDialog((current) => current ? { ...current, error: "请选择一条出线度小于2的既有线路。" } : current);
       return;
     }
     if (choice.mode === "new" && !choice.name) {

@@ -1712,6 +1712,11 @@ body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
   cursor: crosshair !important;
 }
 
+body.canvas-drawing-mode .image-picker-backdrop,
+body.canvas-drawing-mode .image-picker-backdrop * {
+  cursor: default !important;
+}
+
 .diagram-canvas.connect-mode:not(.connect-drop-ready),
 .diagram-canvas.connect-mode:not(.connect-drop-ready) *,
 .diagram-canvas.static-draw-mode,

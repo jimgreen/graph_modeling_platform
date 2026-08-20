@@ -3,9 +3,15 @@ import { describe, expect, test } from "vitest";
 import {
   DEVICE_LIBRARY_BY_KIND,
   ELEMENT_TREE_COMPONENT_LIBRARY_LABELS,
+  ROUTABLE_LINE_SOURCE_NODE_PARAM,
+  ROUTABLE_LINE_TARGET_NODE_PARAM,
   buildEDeviceDefinitionFile,
   buildEDeviceRecords,
   createDefaultNode,
+  hasDefinedModelAssociationId,
+  modelAssociationLineConnectionFailureMessage,
+  modelAssociationModelIdLockMessage,
+  modelAssociationModelIdLocked,
   modelAssociationModelTypeForKind,
   normalizeDefaultDeviceSize,
   parseEDeviceDefinitionFile,
@@ -129,6 +135,47 @@ describe("model association derived power-source and load classes", () => {
       expect(node.terminals).toHaveLength(1);
       expect(node.terminals[0].type).toBe(expected.terminalType);
     }
+  });
+
+  test("treats model_id as defined only when every derived association class has a positive integer reference", () => {
+    for (const expected of modelAssociationDerivedClassCases) {
+      const node = createDefaultNode(expected.kind, { x: 100, y: 100 });
+
+      for (const invalidValue of ["", "   ", "0", "-1", "1.5", "unknown"]) {
+        node.params.model_id = invalidValue;
+        expect(hasDefinedModelAssociationId(node), `${expected.kind}:${invalidValue}`).toBe(false);
+        expect(modelAssociationLineConnectionFailureMessage(node), expected.kind).toContain("未定义关联模型");
+      }
+
+      node.params.model_id = " 12 ";
+      expect(hasDefinedModelAssociationId(node), expected.kind).toBe(true);
+      expect(modelAssociationLineConnectionFailureMessage(node), expected.kind).toBe("");
+    }
+
+    const ordinaryNode = createDefaultNode("ac-source", { x: 100, y: 100 });
+    expect(hasDefinedModelAssociationId(ordinaryNode)).toBe(true);
+    expect(modelAssociationLineConnectionFailureMessage(ordinaryNode)).toBe("");
+  });
+
+  test("locks model_id only while an actual line device references the associated node", () => {
+    const node = createDefaultNode("ac-station-source", { x: 100, y: 100 });
+    node.params.model_id = "11";
+    const line = createDefaultNode("ac-routable-line", { x: 240, y: 100 });
+    line.params = {
+      ...line.params,
+      [ROUTABLE_LINE_SOURCE_NODE_PARAM]: node.id,
+      [ROUTABLE_LINE_TARGET_NODE_PARAM]: "ordinary-target"
+    };
+
+    expect(modelAssociationModelIdLocked(node, [node])).toBe(false);
+    expect(modelAssociationModelIdLocked(node, [node, line])).toBe(true);
+    expect(modelAssociationModelIdLockMessage(node)).toContain("已有线路连接");
+
+    node.params.model_id = "";
+    expect(modelAssociationModelIdLocked(node, [node, line])).toBe(false);
+
+    node.params.model_id = "11";
+    expect(modelAssociationModelIdLocked(node, [node])).toBe(false);
   });
 
   test("exports each node as a base record plus a model-linked derived record", () => {

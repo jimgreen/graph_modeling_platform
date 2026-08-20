@@ -264,6 +264,7 @@ function GlobalLineListWindow({
 
 export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProps) {
   const open = Boolean(scope.allNetworkTopologyDialogOpen);
+  const globalLineListOpen = Boolean(scope.globalLineListOpen);
   const models = useMemo(
     () => collectAllNetworkTopologyModels(scope.schemes ?? []),
     [scope.schemes]
@@ -279,7 +280,6 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
   const [running, setRunning] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [completedRun, setCompletedRun] = useState<CompletedTopologyRun | null>(null);
-  const [globalLineListOpen, setGlobalLineListOpen] = useState(false);
   const [globalLineListLoading, setGlobalLineListLoading] = useState(false);
   const [globalLineListError, setGlobalLineListError] = useState("");
   const [globalLineListRecords, setGlobalLineListRecords] = useState<GlobalLineRecord[]>([]);
@@ -545,7 +545,10 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
     }
   };
 
-  const openGlobalLineList = () => {
+  useEffect(() => {
+    if (!globalLineListOpen) {
+      return;
+    }
     const currentRecords = Array.isArray(scope.globalLineRecords)
       ? scope.globalLineRecords as GlobalLineRecord[]
       : [];
@@ -554,9 +557,8 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
         left.idx - right.idx || left.name.localeCompare(right.name, "zh-CN")
       ));
     }
-    setGlobalLineListOpen(true);
     void refreshGlobalLineList();
-  };
+  }, [globalLineListOpen]);
 
   const locateGlobalLineEndpoint = (record: GlobalLineRecord, endpoint: GlobalLineEndpoint) => {
     const reference = globalLineEndpointReference(record, endpoint);
@@ -634,7 +636,8 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
   };
 
   return (
-    <div
+    <>
+      <div
       className={`all-network-topology-window-layer ${open ? "visible" : "hidden"}`}
       role="presentation"
       aria-hidden={!open}
@@ -763,15 +766,6 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
             <div className="all-network-topology-actions">
               <button
                 type="button"
-                className="all-network-topology-global-lines"
-                aria-label="打开全局线路列表"
-                onClick={openGlobalLineList}
-              >
-                <Cable size={17} aria-hidden="true" />
-                全局线路
-              </button>
-              <button
-                type="button"
                 className="all-network-topology-run"
                 onClick={() => void runTopology()}
                 disabled={running || selectedProjectIds.size === 0}
@@ -868,16 +862,17 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
           onPointerCancel={finishWindowResize}
         />
       </section>
+      </div>
       <GlobalLineListWindow
-        open={open && globalLineListOpen}
+        open={globalLineListOpen}
         loading={globalLineListLoading}
         error={globalLineListError}
         records={globalLineListRecords}
         referenceModels={referenceModels}
-        onClose={() => setGlobalLineListOpen(false)}
+        onClose={() => scope.setGlobalLineListOpen?.(false)}
         onRefresh={() => void refreshGlobalLineList()}
         onLocateEndpoint={locateGlobalLineEndpoint}
       />
-    </div>
+    </>
   );
 }

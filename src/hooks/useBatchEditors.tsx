@@ -15,6 +15,8 @@ import {
   getTemplateStateDefinitions,
   enumSelectOptionsWithCurrentValue,
   invalidEnumOptionLabel,
+  modelAssociationModelIdLocked,
+  modelAssociationModelIdLockMessage,
   modelAssociationModelTypeForKind,
   normalizeRatioParameterInputValue,
 } from "../model";
@@ -250,6 +252,14 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
   const definitionMakesValueReadonly = (definition: DeviceParameterDefinition | undefined): boolean =>
     Boolean(definition?.readonly && !definitionRowIsEnum(definition));
 
+  const lockedModelAssociationNode = (node: ModelNode | undefined): ModelNode | undefined => {
+    if (!node) {
+      return undefined;
+    }
+    const currentNode = nodeById.get(node.id) ?? node;
+    return modelAssociationModelIdLocked(currentNode, nodeById.values()) ? currentNode : undefined;
+  };
+
   const unionOptionRows = (optionRows: Array<readonly string[] | undefined>): string[] | undefined => {
     const seen = new Set<string>();
     const options: string[] = [];
@@ -351,8 +361,11 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     const optionLabels = paramOptionLabelsForDefinition(key, editorNode, value, definition);
     const { options, invalidValue } = selectOptionConfig(rawOptions, value);
     const modelAssociationPrompt = key === "model_id" && Boolean(modelAssociationModelTypeForKind(editorNode?.kind ?? ""));
+    const lockedNode = key === "model_id" ? lockedModelAssociationNode(editorNode) : undefined;
+    const disabled = isBrowseMode || Boolean(lockedNode);
+    const title = lockedNode ? modelAssociationModelIdLockMessage(lockedNode) : undefined;
     const control: ReactNode = options ? (
-      <select value={value} disabled={isBrowseMode} onChange={(event) => updateParam(key, event.target.value)}>
+      <select value={value} disabled={disabled} title={title} onChange={(event) => updateParam(key, event.target.value)}>
         {options.map((option: string) => (
           <option key={option} value={option} disabled={option === invalidValue && !(modelAssociationPrompt && option === "")}>
             {modelAssociationPrompt && option === "" ? "请选择关联模型" : option === invalidValue ? invalidEnumOptionLabel(option) : optionLabels[option] ?? option}
@@ -360,7 +373,7 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
         ))}
       </select>
     ) : (
-      <BufferedTextInput value={value} disabled={isBrowseMode} onCommit={(nextValue: string) => updateParam(key, nextValue)} />
+      <BufferedTextInput value={value} disabled={disabled} title={title} onCommit={(nextValue: string) => updateParam(key, nextValue)} />
     );
     return wrapLabel ? (
       <label key={key}>
@@ -390,6 +403,14 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     updateNodeDoubleClickDraftNode(nodeId, (node) => {
       const storedValue = normalizeRatioParameterInputValue(key, value, inferESection(node.kind, node.params));
       if (storedValue === null) {
+        return node;
+      }
+      const currentNode = nodeById.get(nodeId) ?? node;
+      if (
+        key === "model_id" &&
+        currentNode.params.model_id !== storedValue &&
+        modelAssociationModelIdLocked(currentNode, nodeById.values())
+      ) {
         return node;
       }
       if (key !== "_labelDisplayMode" && node.params[key] === storedValue) {
@@ -427,8 +448,11 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     const optionLabels = paramOptionLabelsForDefinition(key, node, value, definition);
     const { options, invalidValue } = selectOptionConfig(rawOptions, value);
     const modelAssociationPrompt = key === "model_id" && Boolean(modelAssociationModelTypeForKind(node.kind));
+    const lockedNode = key === "model_id" ? lockedModelAssociationNode(node) : undefined;
+    const disabled = isBrowseMode || Boolean(lockedNode);
+    const title = lockedNode ? modelAssociationModelIdLockMessage(lockedNode) : undefined;
     const control: ReactNode = options ? (
-      <select value={value} disabled={isBrowseMode} onChange={(event) => updateNodeDoubleClickDraftParam(node.id, key, event.target.value)}>
+      <select value={value} disabled={disabled} title={title} onChange={(event) => updateNodeDoubleClickDraftParam(node.id, key, event.target.value)}>
         {options.map((option: string) => (
           <option key={option} value={option} disabled={option === invalidValue && !(modelAssociationPrompt && option === "")}>
             {modelAssociationPrompt && option === "" ? "请选择关联模型" : option === invalidValue ? invalidEnumOptionLabel(option) : optionLabels[option] ?? option}
@@ -436,7 +460,7 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
         ))}
       </select>
     ) : (
-      <BufferedTextInput value={value} disabled={isBrowseMode} onCommit={(nextValue: string) => updateNodeDoubleClickDraftParam(node.id, key, nextValue)} />
+      <BufferedTextInput value={value} disabled={disabled} title={title} onCommit={(nextValue: string) => updateNodeDoubleClickDraftParam(node.id, key, nextValue)} />
     );
     return wrapLabel ? (
       <label key={key}>
@@ -619,9 +643,14 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
       ? { options: rawOptions, invalidValue: undefined }
       : selectOptionConfig(rawOptions, value);
     const modelAssociationPrompt = row.key === "model_id" && activeSelectedNodeIds.some((nodeId) => modelAssociationModelTypeForKind(nodeById.get(nodeId)?.kind ?? ""));
+    const lockedNode = row.key === "model_id"
+      ? activeSelectedNodeIds.map((nodeId) => lockedModelAssociationNode(nodeById.get(nodeId))).find(Boolean)
+      : undefined;
+    const disabled = isBrowseMode || Boolean(lockedNode);
+    const title = lockedNode ? modelAssociationModelIdLockMessage(lockedNode) : undefined;
     if (options) {
       return (
-        <select value={value} disabled={isBrowseMode} onChange={(event) => applyBatchCommonParam(row.key, event.target.value)}>
+        <select value={value} disabled={disabled} title={title} onChange={(event) => applyBatchCommonParam(row.key, event.target.value)}>
           {row.mixed && <option value="">多个不同值</option>}
           {options.map((option: string) => (
             <option key={option} value={option} disabled={option === invalidValue && !(modelAssociationPrompt && option === "")}>
@@ -634,7 +663,8 @@ export function useBatchEditors(params: UseBatchEditorsParams): BatchEditorsResu
     return (
       <BufferedTextInput
         value={value}
-        disabled={isBrowseMode}
+        disabled={disabled}
+        title={title}
         placeholder={row.mixed ? "多个不同值" : undefined}
         onCommit={(nextValue: string) => applyBatchCommonParam(row.key, nextValue)}
       />

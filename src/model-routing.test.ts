@@ -1078,14 +1078,26 @@ test("rejects duplicate direct terminal and terminal-to-bus connections", () => 
   }).map((issue) => issue.type)).toEqual(["duplicate-terminal-bus"]);
 });
 
-test("rejects ordinary link edges connected to model-interaction buttons", () => {
+test("rejects ordinary link edges connected to model-interaction buttons or station feeder district source/load devices", () => {
   const target = createDefaultNode("ac-load", { x: 420, y: 100 });
   for (const kind of [
     "static-model-interaction-microgrid",
     "static-model-interaction-station",
     "static-model-interaction-feeder",
     "static-model-interaction-district",
-    "static-model-interaction-other"
+    "static-model-interaction-other",
+    "ac-station-source",
+    "ac-feeder-source",
+    "ac-district-source",
+    "dc-station-source",
+    "dc-feeder-source",
+    "dc-district-source",
+    "ac-station-load",
+    "ac-feeder-load",
+    "ac-district-load",
+    "dc-station-load",
+    "dc-feeder-load",
+    "dc-district-load"
   ] as const) {
     const button = createDefaultNode(kind, { x: 100, y: 100 });
     const issues = validateConnectionEndpointRules([button, target], [], {
@@ -1098,7 +1110,7 @@ test("rejects ordinary link edges connected to model-interaction buttons", () =>
 
     expect(issues, kind).toEqual([expect.objectContaining({
       type: "model-interaction-link-forbidden",
-      message: "模型交互按钮只能连接线路类设备，不能使用普通联络线。"
+      message: "模型交互边界设备只能连接线路类设备，不能使用普通连接线。"
     })]);
   }
 });

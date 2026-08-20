@@ -206,14 +206,18 @@ describe("全网拓扑模型选择", () => {
     }, models)).toBeUndefined();
   });
 
-  test("全网拓扑左侧提供全局线路入口和独立列表窗口", () => {
+  test("顶栏在全网拓扑左侧提供仅图标的全局线路入口和独立列表窗口", () => {
     const dialogSource = readFileSync(new URL("./AllNetworkTopologyDialog.tsx", import.meta.url), "utf8");
+    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
     const stylesSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
-    const globalLineButton = dialogSource.indexOf('aria-label="打开全局线路列表"');
-    const topologyButton = dialogSource.indexOf('onClick={() => void runTopology()}');
+    const globalLineButton = viewSource.indexOf('aria-label="全局线路"');
+    const topologyButton = viewSource.indexOf('aria-label="全网拓扑"');
 
     expect(globalLineButton).toBeGreaterThanOrEqual(0);
     expect(topologyButton).toBeGreaterThan(globalLineButton);
+    expect(viewSource).toMatch(/aria-label="全局线路"[^>]*>\s*<Cable size=\{16\}\/>\s*<\/button>/);
+    expect(dialogSource).not.toContain('aria-label="打开全局线路列表"');
+    expect(dialogSource).toContain("const globalLineListOpen = Boolean(scope.globalLineListOpen)");
     expect(dialogSource).toContain("loadGlobalLineRecordsForTopology()");
     expect(dialogSource).toContain("globalLineEndpointReference(record, endpoint)");
     expect(dialogSource).toContain("modelForGlobalLineReference(reference, referenceModels)");
