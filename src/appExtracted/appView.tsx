@@ -535,7 +535,7 @@ export function renderAppView(__appScope: Record<string, any>) {
   } = __appScope;
   const { globalMessage, setGlobalMessage } = __appScope;
   const { createModelDialog, setCreateModelDialog } = __appScope;
-  const { globalLinePlacementDialog, globalLinePlacementCandidates, globalLineTransitionDialog, setGlobalLinePlacementDialog, confirmGlobalLinePlacement, cancelGlobalLinePlacement, confirmGlobalLineTransition, cancelGlobalLineTransition } = __appScope;
+  const { globalLinePlacementDialog, globalLinePlacementCandidates, globalLinePlacementConflictMessageForId, globalLineTransitionDialog, setGlobalLinePlacementDialog, confirmGlobalLinePlacement, cancelGlobalLinePlacement, confirmGlobalLineTransition, cancelGlobalLineTransition } = __appScope;
   const { exportCompletionDialog, exportCompletionCountdown, setExportCompletionDialog } = __appScope;
   const { unsavedChangesDialogOpen, setUnsavedChangesDialogOpen, savedUndoStackLengthRef, setHasUnsavedChanges } = __appScope;
   useEffect(() => {
@@ -3641,7 +3641,7 @@ export function renderAppView(__appScope: Record<string, any>) {
                 <p>
                   当前{globalLinePlacementDialog.energyType === "ac" ? "交流" : "直流"}线路连接了跨模型边界设备。
                   本次连接占用全局线路的{globalLinePlacementDialog.boundaryEndpoint === "source" ? "首端" : "末端"}。
-                  请选择一条当前端点槽为空、出线度小于2的既有线路，或在全局表中新建线路。
+                  既有线路的能源类型、首端模型和末端模型必须与本次线路完全一致；复用只做一致性校核，不修改已有全局线路的首末端信息。校核不通过时，请重新选择、新建或取消。
                 </p>
               </div>
             </div>
@@ -3653,24 +3653,32 @@ export function renderAppView(__appScope: Record<string, any>) {
                     name="global-line-placement-mode"
                     checked={globalLinePlacementDialog.mode === "existing"}
                     disabled={globalLinePlacementDialog.loading || globalLinePlacementCandidates.length === 0}
-                    onChange={() => setGlobalLinePlacementDialog((current) => current ? { ...current, mode: "existing", error: "" } : current)}
+                    onChange={() => setGlobalLinePlacementDialog((current) => current ? {
+                      ...current,
+                      mode: "existing",
+                      error: globalLinePlacementConflictMessageForId?.(current.selectedGlobalLineId) ?? ""
+                    } : current)}
                   />
                   选择既有全局线路
                 </span>
                 <select
                   value={globalLinePlacementDialog.selectedGlobalLineId}
                   disabled={globalLinePlacementDialog.loading || globalLinePlacementDialog.mode !== "existing" || globalLinePlacementCandidates.length === 0}
-                  onChange={(event) => setGlobalLinePlacementDialog((current) => current ? { ...current, selectedGlobalLineId: event.target.value, error: "" } : current)}
+                  onChange={(event) => setGlobalLinePlacementDialog((current) => current ? {
+                    ...current,
+                    selectedGlobalLineId: event.target.value,
+                    error: globalLinePlacementConflictMessageForId?.(event.target.value) ?? ""
+                  } : current)}
                 >
                   {globalLinePlacementCandidates.map((record) => (
                     <option key={record.id} value={record.id}>
-                      {record.idx} · {record.name} · 出线度 {record.degree}
+                      {record.idx} · {record.name} · 出线度 {record.degree}{globalLinePlacementConflictMessageForId?.(record.id) ? " · ⚠ 端点不一致" : ""}
                     </option>
                   ))}
                 </select>
                 {!globalLinePlacementDialog.loading && globalLinePlacementCandidates.length === 0 && (
                   <small>
-                    当前没有能源类型一致、{globalLinePlacementDialog.boundaryEndpoint === "source" ? "首端" : "末端"}为空且出线度小于2的可选线路。
+                    当前没有能源类型一致的既有线路。
                   </small>
                 )}
               </label>

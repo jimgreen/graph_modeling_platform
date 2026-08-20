@@ -111,6 +111,329 @@ describe("全局线路注册表迁移", () => {
 });
 
 describe("全局线路首末端槽", () => {
+  test("页面保存时才写入模型关联线路，并在同步和服务重建后保持 model_id 端与本地端方向", async () => {
+    const association = node("station-source", "ac-station-source", { model_id: "22" });
+    const localLoad = node("local-load", "ac-load");
+    const createdLine = line("line-directional", "ac-routable-line", association.id, localLoad.id, {
+      [GLOBAL_LINE_ID_PARAM]: "draft-global-line:line-directional",
+      _globalLineModelPair: "1",
+      idx: "8",
+      _routableLineSourceTerminalId: "t-source",
+      _routableLineTargetTerminalId: "t-target"
+    }, "方向线路");
+
+    expect(await registry.list()).toEqual([]);
+
+    const synchronized = await registry.syncProject({
+      projectIdx: 7,
+      schemePath: ["主方案"],
+      projectName: "本地馈线",
+      project: {
+        version: 1,
+        idx: 7,
+        name: "本地馈线",
+        modelType: "馈线",
+        nodes: [association, localLoad, createdLine],
+        edges: []
+      }
+    });
+    const synchronizedRecord = synchronized.records.find((record) => record.name === "方向线路");
+    expect(synchronizedRecord?.id).not.toBe("draft-global-line:line-directional");
+    expect(synchronizedRecord?.degree).toBe(2);
+    expect(synchronizedRecord?.endpointSlots.source).toMatchObject({ projectIdx: 22, boundaryNodeId: association.id });
+    expect(synchronizedRecord?.endpointSlots.target).toMatchObject({ projectIdx: 7, projectName: "本地馈线" });
+    expect(synchronized.project.nodes.find((item) => item.id === createdLine.id)?.params).toMatchObject({
+      [GLOBAL_LINE_ID_PARAM]: synchronizedRecord?.id,
+      idx: String(synchronizedRecord?.idx)
+    });
+
+    const savedProject = synchronized.project;
+    await writeProject("主方案", "本地馈线.json", savedProject);
+
+    await registry.syncProject({
+      projectIdx: 22,
+      schemePath: ["主方案"],
+      projectName: "目标厂站",
+      project: { version: 1, idx: 22, name: "目标厂站", modelType: "厂站", nodes: [], edges: [] }
+    });
+    const afterTargetModelSync = (await registry.list()).find((record) => record.id === synchronizedRecord?.id);
+    expect(afterTargetModelSync?.degree).toBe(2);
+    expect(afterTargetModelSync?.endpointSlots.source).toMatchObject({ projectIdx: 22, boundaryNodeId: association.id });
+
+    const restartedRegistry = createGlobalLineRegistry({ dataRoot, schemeFilesRoot: filesRoot });
+    const rebuilt = (await restartedRegistry.list()).find((record) => record.id === synchronizedRecord?.id);
+    expect(rebuilt?.degree).toBe(2);
+    expect(rebuilt?.endpointSlots.source).toMatchObject({ projectIdx: 22, boundaryNodeId: association.id });
+    expect(rebuilt?.endpointSlots.target).toMatchObject({ projectIdx: 7, projectName: "本地馈线" });
+  });
+
+  test("保存删除线路且另一端模型不存在时删除整条全局线路记录", async () => {
+    const association = node("district-load", "dc-district-load", { model_id: "33" });
+    const localSource = node("local-source", "dc-source");
+    const draftLine = line("line-delete", "dc-routable-line", localSource.id, association.id, {
+      [GLOBAL_LINE_ID_PARAM]: "draft-global-line:line-delete",
+      _globalLineModelPair: "1"
+    }, "待删除线路");
+    const saved = await registry.syncProject({
+      projectIdx: 9,
+      schemePath: ["主方案"],
+      projectName: "本地台区",
+      project: {
+        version: 1,
+        idx: 9,
+        name: "本地台区",
+        modelType: "台区",
+        nodes: [association, localSource, draftLine],
+        edges: []
+      }
+    });
+    const savedRecord = saved.records.find((record) => record.name === "待删除线路");
+    expect(savedRecord?.degree).toBe(2);
+    await writeProject("主方案", "本地台区.json", saved.project);
+
+    const deleted = await registry.syncProject({
+      projectIdx: 9,
+      schemePath: ["主方案"],
+      projectName: "本地台区",
+      project: {
+        version: 1,
+        idx: 9,
+        name: "本地台区",
+        modelType: "台区",
+        nodes: [association, localSource],
+        edges: []
+      }
+    });
+    expect(deleted.records.find((record) => record.id === savedRecord?.id)).toBeUndefined();
+    expect((await registry.list()).find((record) => record.id === savedRecord?.id)).toBeUndefined();
+  });
+
+  test("另一端模型存在且保存有同一全局线路时本端删除不修改全局记录", async () => {
+    const association = node("station-source", "ac-station-source", { model_id: "22" });
+    const localLoad = node("local-load", "ac-load");
+    const draftLine = line("line-local", "ac-routable-line", association.id, localLoad.id, {
+      [GLOBAL_LINE_ID_PARAM]: "draft-global-line:line-local",
+      _globalLineModelPair: "1"
+    }, "双端保留线路");
+    const saved = await registry.syncProject({
+      projectIdx: 7,
+      schemePath: ["主方案"],
+      projectName: "本地馈线",
+      project: {
+        version: 1,
+        idx: 7,
+        name: "本地馈线",
+        modelType: "馈线",
+        nodes: [association, localLoad, draftLine],
+        edges: []
+      }
+    });
+    const savedRecord = saved.records.find((record) => record.name === "双端保留线路");
+    await writeProject("主方案", "本地馈线.json", saved.project);
+    const remoteBoundary = node("remote-feeder-load", "ac-feeder-load", { model_id: "7" });
+    const remoteSource = node("remote-source", "ac-source");
+    const remoteLine = line("line-remote", "ac-routable-line", remoteSource.id, remoteBoundary.id, {
+      [GLOBAL_LINE_ID_PARAM]: savedRecord.id,
+      idx: String(savedRecord.idx),
+      _globalLineModelPair: "target"
+    }, savedRecord.name);
+    await writeProject("主方案", "目标厂站.json", {
+      version: 1,
+      idx: 22,
+      name: "目标厂站",
+      modelType: "厂站",
+      nodes: [remoteBoundary, remoteSource, remoteLine],
+      edges: []
+    });
+    const beforeDelete = (await registry.list()).find((record) => record.id === savedRecord.id);
+
+    const deletedLocally = await registry.syncProject({
+      projectIdx: 7,
+      schemePath: ["主方案"],
+      projectName: "本地馈线",
+      project: {
+        version: 1,
+        idx: 7,
+        name: "本地馈线",
+        modelType: "馈线",
+        nodes: [association, localLoad],
+        edges: []
+      }
+    });
+
+    expect(deletedLocally.records.find((record) => record.id === savedRecord.id)).toEqual(beforeDelete);
+    expect((await registry.list()).find((record) => record.id === savedRecord.id)).toEqual(beforeDelete);
+  });
+
+  test("另一端模型存在但没有同一全局线路时删除整条全局记录", async () => {
+    const association = node("district-load", "dc-district-load", { model_id: "33" });
+    const localSource = node("local-source", "dc-source");
+    const draftLine = line("line-local", "dc-routable-line", localSource.id, association.id, {
+      [GLOBAL_LINE_ID_PARAM]: "draft-global-line:line-local",
+      _globalLineModelPair: "1"
+    }, "远端缺线线路");
+    const saved = await registry.syncProject({
+      projectIdx: 9,
+      schemePath: ["主方案"],
+      projectName: "本地台区",
+      project: {
+        version: 1,
+        idx: 9,
+        name: "本地台区",
+        modelType: "台区",
+        nodes: [association, localSource, draftLine],
+        edges: []
+      }
+    });
+    const savedRecord = saved.records.find((record) => record.name === "远端缺线线路");
+    await writeProject("主方案", "本地台区.json", saved.project);
+    await writeProject("主方案", "目标台区.json", {
+      version: 1,
+      idx: 33,
+      name: "目标台区",
+      modelType: "台区",
+      nodes: [node("unrelated-load", "dc-load")],
+      edges: []
+    });
+
+    const deleted = await registry.syncProject({
+      projectIdx: 9,
+      schemePath: ["主方案"],
+      projectName: "本地台区",
+      project: {
+        version: 1,
+        idx: 9,
+        name: "本地台区",
+        modelType: "台区",
+        nodes: [association, localSource],
+        edges: []
+      }
+    });
+
+    expect(deleted.records.find((record) => record.id === savedRecord.id)).toBeUndefined();
+    expect((await registry.list()).find((record) => record.id === savedRecord.id)).toBeUndefined();
+  });
+
+  test("模型关联设备复用首末端模型一致的既有全局线路时不修改任何已有端子信息", async () => {
+    const sourceAttached = await registry.attach({
+      energyType: "ac",
+      name: "既有共享线路",
+      node: line("remote-line", "ac-routable-line", "remote-source", "remote-target", {}, "既有共享线路"),
+      reference: {
+        projectIdx: 22,
+        schemePath: ["主方案"],
+        projectName: "目标厂站",
+        nodeId: "remote-line",
+        boundaryEndpoint: "source"
+      }
+    });
+    const existing = await registry.attach({
+      globalLineId: sourceAttached.id,
+      energyType: "ac",
+      node: line("existing-local-line", "ac-routable-line", "existing-source", "existing-target", {}, "既有共享线路"),
+      reference: {
+        projectIdx: 7,
+        schemePath: ["主方案"],
+        projectName: "本地馈线",
+        nodeId: "existing-local-line",
+        boundaryEndpoint: "target"
+      }
+    });
+    const beforeReuse = (await registry.list()).find((item) => item.id === existing.id);
+    const association = node("station-source", "ac-station-source", { model_id: "22" });
+    const localLoad = node("local-load", "ac-load");
+    const selectedExistingLine = line("local-line", "ac-routable-line", association.id, localLoad.id, {
+      [GLOBAL_LINE_ID_PARAM]: existing.id,
+      _globalLineModelPair: "source",
+      idx: String(existing.idx)
+    }, existing.name);
+
+    const saved = await registry.syncProject({
+      projectIdx: 7,
+      schemePath: ["主方案"],
+      projectName: "本地馈线",
+      project: {
+        version: 1,
+        idx: 7,
+        name: "本地馈线",
+        modelType: "馈线",
+        nodes: [association, localLoad, selectedExistingLine],
+        edges: []
+      }
+    });
+    const record = saved.records.find((item) => item.id === existing.id);
+    expect(record).toEqual(beforeReuse);
+    expect(record?.endpointSlots.source).toMatchObject({ projectIdx: 22, nodeId: "remote-line" });
+    expect(record?.endpointSlots.target).toMatchObject({ projectIdx: 7, nodeId: "existing-local-line" });
+    expect(saved.project.nodes.find((item) => item.id === selectedExistingLine.id)?.params).toMatchObject({
+      [GLOBAL_LINE_ID_PARAM]: existing.id,
+      _globalLineModelPair: "source"
+    });
+
+    await expect(registry.syncProject({
+      projectIdx: 8,
+      schemePath: ["主方案"],
+      projectName: "其他馈线",
+      project: {
+        version: 1,
+        idx: 8,
+        name: "其他馈线",
+        modelType: "馈线",
+        nodes: [association, localLoad, selectedExistingLine],
+        edges: []
+      }
+    })).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("与本地模型")
+    });
+    expect((await registry.list()).find((item) => item.id === existing.id)).toEqual(beforeReuse);
+
+    await writeProject("主方案", "本地馈线.json", saved.project);
+    const reloaded = (await createGlobalLineRegistry({ dataRoot, schemeFilesRoot: filesRoot }).list())
+      .find((item) => item.id === existing.id);
+    expect(reloaded).toEqual(beforeReuse);
+  });
+
+  test("保存时再次拒绝与 model_id 模型首末端方向不一致的既有全局线路", async () => {
+    const existing = await registry.attach({
+      energyType: "ac",
+      name: "方向不匹配线路",
+      node: line("remote-line", "ac-routable-line", "remote-source", "remote-target", {}, "方向不匹配线路"),
+      reference: {
+        projectIdx: 22,
+        schemePath: ["主方案"],
+        projectName: "目标厂站",
+        nodeId: "remote-line",
+        boundaryEndpoint: "target"
+      }
+    });
+    const association = node("station-source", "ac-station-source", { model_id: "22" });
+    const localLoad = node("local-load", "ac-load");
+    const invalidLine = line("local-line", "ac-routable-line", association.id, localLoad.id, {
+      [GLOBAL_LINE_ID_PARAM]: existing.id,
+      _globalLineModelPair: "source",
+      idx: String(existing.idx)
+    }, existing.name);
+
+    await expect(registry.syncProject({
+      projectIdx: 7,
+      schemePath: ["主方案"],
+      projectName: "本地馈线",
+      project: {
+        version: 1,
+        idx: 7,
+        name: "本地馈线",
+        modelType: "馈线",
+        nodes: [association, localLoad, invalidLine],
+        edges: []
+      }
+    })).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("重新选择已有全局线路")
+    });
+    expect((await registry.list()).find((record) => record.id === existing.id)?.degree).toBe(1);
+  });
+
   test("首端和末端各只能挂接一次，删除引用只清空实际占用槽且主记录保留", async () => {
     const first = await registry.attach({
       energyType: "ac",

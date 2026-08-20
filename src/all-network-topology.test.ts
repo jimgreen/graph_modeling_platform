@@ -229,6 +229,22 @@ describe("全网拓扑模型选择", () => {
     expect(stylesSource).toContain(".global-line-list-table");
   });
 
+  test("全局线路列表窗口支持标题栏拖动和八方向缩放", () => {
+    const dialogSource = readFileSync(new URL("./AllNetworkTopologyDialog.tsx", import.meta.url), "utf8");
+    const stylesSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+
+    expect(dialogSource).toContain("defaultGlobalLineListWindowFrame");
+    expect(dialogSource).toContain("clampGlobalLineListWindowFrame");
+    expect(dialogSource).toContain("handleGlobalLineWindowDragPointerDown");
+    expect(dialogSource).toContain("handleGlobalLineWindowResizePointerDown");
+    expect(dialogSource).toMatch(/GLOBAL_LINE_WINDOW_RESIZE_DIRECTIONS\s*=\s*\["n",\s*"ne",\s*"e",\s*"se",\s*"s",\s*"sw",\s*"w",\s*"nw"\]/);
+    expect(dialogSource).toContain('className={`global-line-list-resize-handle ${direction}`}');
+    expect(stylesSource).toMatch(/\.global-line-list-header\s*\{[\s\S]*?cursor:\s*move[\s\S]*?touch-action:\s*none/);
+    expect(stylesSource).toContain(".global-line-list-resize-handle");
+    expect(stylesSource).toContain(".global-line-list-resize-handle.se");
+    expect(stylesSource).toContain("cursor: nwse-resize");
+  });
+
   test("全网拓扑窗口常驻且非阻塞并支持拖动和缩放", () => {
     const dialogSource = readFileSync(new URL("./AllNetworkTopologyDialog.tsx", import.meta.url), "utf8");
     const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
@@ -403,6 +419,138 @@ describe("全网拓扑全局线路预检查", () => {
         message: expect.stringMatching(/模型文件.*全局线路定义不一致.*共享参数.*r/)
       })
     ]);
+  });
+});
+
+describe("全网拓扑模型层级唯一归属", () => {
+  test("同一馈线出现在不同厂站或同一台区出现在不同馈线时进入错误分页", () => {
+    const feederAssociationByModelId = createDefaultNode("ac-feeder-source", { x: 100, y: 100 });
+    feederAssociationByModelId.name = "一号馈线电源";
+    feederAssociationByModelId.params.model_id = "12";
+    const feederAssociationByProjectId = createDefaultNode("static-model-interaction-feeder", { x: 200, y: 100 });
+    feederAssociationByProjectId.name = "一号馈线按钮";
+    feederAssociationByProjectId.params.buttonTargetProjectId = "feeder-1";
+    feederAssociationByProjectId.params.buttonTargetProjectName = "十千伏一线";
+
+    const districtAssociationByModelId = createDefaultNode("ac-district-load", { x: 100, y: 200 });
+    districtAssociationByModelId.name = "一号台区负荷";
+    districtAssociationByModelId.params.model_id = "23";
+    const districtAssociationByName = createDefaultNode("static-model-interaction-district", { x: 200, y: 200 });
+    districtAssociationByName.name = "一号台区按钮";
+    districtAssociationByName.params.buttonTargetProjectName = "一号台区";
+
+    const stationA = {
+      projectId: "station-a",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "中心厂站",
+      idx: 1,
+      modelType: "厂站" as const,
+      record: projectRecord("station-a", "中心厂站", 1, "厂站", [feederAssociationByModelId])
+    };
+    const stationB = {
+      projectId: "station-b",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "备用厂站",
+      idx: 2,
+      modelType: "厂站" as const,
+      record: projectRecord("station-b", "备用厂站", 2, "厂站", [feederAssociationByProjectId])
+    };
+    const feederA = {
+      projectId: "feeder-1",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "十千伏一线",
+      idx: 12,
+      modelType: "馈线" as const,
+      record: projectRecord("feeder-1", "十千伏一线", 12, "馈线", [districtAssociationByModelId])
+    };
+    const feederB = {
+      projectId: "feeder-2",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "十千伏二线",
+      idx: 13,
+      modelType: "馈线" as const,
+      record: projectRecord("feeder-2", "十千伏二线", 13, "馈线", [districtAssociationByName])
+    };
+    const district = {
+      projectId: "district-1",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "一号台区",
+      idx: 23,
+      modelType: "台区" as const,
+      record: projectRecord("district-1", "一号台区", 23, "台区")
+    };
+
+    const result = analyzeAllNetworkTopology(
+      [stationA, stationB, feederA, feederB, district],
+      [stationA, stationB, feederA, feederB, district]
+    );
+    const conflicts = result.errors.filter((alert) => alert.id.includes("duplicate-hierarchy-parent"));
+
+    expect(conflicts).toHaveLength(4);
+    expect(conflicts.filter((alert) => alert.message.includes("馈线模型“十千伏一线”"))).toEqual([
+      expect.objectContaining({
+        projectId: stationA.projectId,
+        modelName: stationA.name,
+        nodeId: feederAssociationByModelId.id,
+        message: expect.stringMatching(/中心厂站.*备用厂站.*只能归属一个厂站/)
+      }),
+      expect.objectContaining({
+        projectId: stationB.projectId,
+        modelName: stationB.name,
+        nodeId: feederAssociationByProjectId.id,
+        message: expect.stringMatching(/中心厂站.*备用厂站.*只能归属一个厂站/)
+      })
+    ]);
+    expect(conflicts.filter((alert) => alert.message.includes("台区模型“一号台区”"))).toEqual([
+      expect.objectContaining({
+        projectId: feederA.projectId,
+        modelName: feederA.name,
+        nodeId: districtAssociationByModelId.id,
+        message: expect.stringMatching(/十千伏一线.*十千伏二线.*只能归属一个馈线/)
+      }),
+      expect.objectContaining({
+        projectId: feederB.projectId,
+        modelName: feederB.name,
+        nodeId: districtAssociationByName.id,
+        message: expect.stringMatching(/十千伏一线.*十千伏二线.*只能归属一个馈线/)
+      })
+    ]);
+    expect(result.warnings.some((alert) => alert.id.includes("duplicate-hierarchy-parent"))).toBe(false);
+  });
+
+  test("同一子模型在同一个父模型图中出现多次不判为跨模型重复归属", () => {
+    const firstAssociation = createDefaultNode("ac-feeder-source", { x: 100, y: 100 });
+    firstAssociation.params.model_id = "12";
+    const secondAssociation = createDefaultNode("dc-feeder-load", { x: 200, y: 100 });
+    secondAssociation.params.model_id = "12";
+    const station = {
+      projectId: "station-only",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "唯一厂站",
+      idx: 1,
+      modelType: "厂站" as const,
+      record: projectRecord("station-only", "唯一厂站", 1, "厂站", [firstAssociation, secondAssociation])
+    };
+    const feeder = {
+      projectId: "feeder-1",
+      schemeId: "scheme-root",
+      schemePath: ["主方案"],
+      name: "十千伏一线",
+      idx: 12,
+      modelType: "馈线" as const,
+      record: projectRecord("feeder-1", "十千伏一线", 12, "馈线")
+    };
+
+    const result = analyzeAllNetworkTopology([station, feeder], [station, feeder]);
+
+    expect(result.errors.some((alert) => alert.id.includes("duplicate-hierarchy-parent"))).toBe(false);
+    expect(result.warnings.some((alert) => alert.id.includes("duplicate-hierarchy-parent"))).toBe(false);
   });
 });
 

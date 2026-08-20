@@ -49,10 +49,29 @@ type FloatingWindowPointerState = {
   frame: FloatingWindowFrame;
 };
 
+type GlobalLineWindowResizePointerState = FloatingWindowPointerState & {
+  direction: GlobalLineWindowResizeDirection;
+};
+
 const MODEL_TYPE_ORDER = ["厂站", "馈线", "台区"] as const;
 const FLOATING_WINDOW_MARGIN = 8;
 const FLOATING_WINDOW_MIN_WIDTH = 760;
 const FLOATING_WINDOW_MIN_HEIGHT = 520;
+const GLOBAL_LINE_WINDOW_MARGIN = 8;
+const GLOBAL_LINE_WINDOW_MIN_WIDTH = 680;
+const GLOBAL_LINE_WINDOW_MIN_HEIGHT = 380;
+const GLOBAL_LINE_WINDOW_RESIZE_DIRECTIONS = ["n", "ne", "e", "se", "s", "sw", "w", "nw"] as const;
+type GlobalLineWindowResizeDirection = (typeof GLOBAL_LINE_WINDOW_RESIZE_DIRECTIONS)[number];
+const GLOBAL_LINE_WINDOW_RESIZE_LABELS: Record<GlobalLineWindowResizeDirection, string> = {
+  n: "上边缘",
+  ne: "右上角",
+  e: "右边缘",
+  se: "右下角",
+  s: "下边缘",
+  sw: "左下角",
+  w: "左边缘",
+  nw: "左上角"
+};
 
 function viewportSize() {
   return {
@@ -89,6 +108,64 @@ function defaultFloatingWindowFrame(): FloatingWindowFrame {
     width,
     height
   });
+}
+
+function clampGlobalLineListWindowFrame(frame: FloatingWindowFrame): FloatingWindowFrame {
+  const viewport = viewportSize();
+  const maxWidth = Math.max(320, viewport.width - GLOBAL_LINE_WINDOW_MARGIN * 2);
+  const maxHeight = Math.max(280, viewport.height - GLOBAL_LINE_WINDOW_MARGIN * 2);
+  const minWidth = Math.min(GLOBAL_LINE_WINDOW_MIN_WIDTH, maxWidth);
+  const minHeight = Math.min(GLOBAL_LINE_WINDOW_MIN_HEIGHT, maxHeight);
+  const width = Math.min(maxWidth, Math.max(minWidth, frame.width));
+  const height = Math.min(maxHeight, Math.max(minHeight, frame.height));
+  return {
+    x: Math.min(viewport.width - width - GLOBAL_LINE_WINDOW_MARGIN, Math.max(GLOBAL_LINE_WINDOW_MARGIN, frame.x)),
+    y: Math.min(viewport.height - height - GLOBAL_LINE_WINDOW_MARGIN, Math.max(GLOBAL_LINE_WINDOW_MARGIN, frame.y)),
+    width,
+    height
+  };
+}
+
+function defaultGlobalLineListWindowFrame(): FloatingWindowFrame {
+  const viewport = viewportSize();
+  const width = Math.min(920, Math.max(320, viewport.width - 80));
+  const height = Math.min(560, Math.max(280, viewport.height - 80));
+  return clampGlobalLineListWindowFrame({
+    x: (viewport.width - width) / 2,
+    y: (viewport.height - height) / 2,
+    width,
+    height
+  });
+}
+
+function resizeGlobalLineListWindowFrame(
+  frame: FloatingWindowFrame,
+  direction: GlobalLineWindowResizeDirection,
+  deltaX: number,
+  deltaY: number
+): FloatingWindowFrame {
+  const viewport = viewportSize();
+  const minWidth = Math.min(GLOBAL_LINE_WINDOW_MIN_WIDTH, viewport.width - GLOBAL_LINE_WINDOW_MARGIN * 2);
+  const minHeight = Math.min(GLOBAL_LINE_WINDOW_MIN_HEIGHT, viewport.height - GLOBAL_LINE_WINDOW_MARGIN * 2);
+  let left = frame.x;
+  let right = frame.x + frame.width;
+  let top = frame.y;
+  let bottom = frame.y + frame.height;
+
+  if (direction.includes("w")) {
+    left = Math.min(right - minWidth, Math.max(GLOBAL_LINE_WINDOW_MARGIN, left + deltaX));
+  }
+  if (direction.includes("e")) {
+    right = Math.max(left + minWidth, Math.min(viewport.width - GLOBAL_LINE_WINDOW_MARGIN, right + deltaX));
+  }
+  if (direction.includes("n")) {
+    top = Math.min(bottom - minHeight, Math.max(GLOBAL_LINE_WINDOW_MARGIN, top + deltaY));
+  }
+  if (direction.includes("s")) {
+    bottom = Math.max(top + minHeight, Math.min(viewport.height - GLOBAL_LINE_WINDOW_MARGIN, bottom + deltaY));
+  }
+
+  return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
 function selectionKey(ids: Iterable<string>) {
@@ -155,6 +232,107 @@ function GlobalLineListWindow({
   onRefresh,
   onLocateEndpoint
 }: GlobalLineListWindowProps) {
+  const [windowFrame, setWindowFrame] = useState<FloatingWindowFrame>(defaultGlobalLineListWindowFrame);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const windowDragRef = useRef<FloatingWindowPointerState | null>(null);
+  const windowResizeRef = useRef<GlobalLineWindowResizePointerState | null>(null);
+
+  useEffect(() => {
+    const handleViewportResize = () => {
+      setWindowFrame((current) => clampGlobalLineListWindowFrame(current));
+    };
+    window.addEventListener("resize", handleViewportResize);
+    return () => window.removeEventListener("resize", handleViewportResize);
+  }, []);
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const state = windowResizeRef.current;
+      if (!state || state.pointerId !== event.pointerId) return;
+      setWindowFrame(resizeGlobalLineListWindowFrame(
+        state.frame,
+        state.direction,
+        event.clientX - state.startClientX,
+        event.clientY - state.startClientY
+      ));
+    };
+    const finishPointerResize = (event: PointerEvent) => {
+      if (windowResizeRef.current?.pointerId === event.pointerId) {
+        windowResizeRef.current = null;
+      }
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", finishPointerResize);
+    window.addEventListener("pointercancel", finishPointerResize);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", finishPointerResize);
+      window.removeEventListener("pointercancel", finishPointerResize);
+    };
+  }, []);
+
+  const handleGlobalLineWindowDragPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button !== 0 || (event.target instanceof Element && event.target.closest("button, a, input, select, textarea"))) {
+      return;
+    }
+    const rect = dialogRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return;
+    }
+    windowDragRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      frame: { x: rect.left, y: rect.top, width: rect.width, height: rect.height }
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  };
+
+  const handleGlobalLineWindowDragPointerMove = (event: ReactPointerEvent<HTMLElement>) => {
+    const state = windowDragRef.current;
+    if (!state || state.pointerId !== event.pointerId) {
+      return;
+    }
+    setWindowFrame(clampGlobalLineListWindowFrame({
+      ...state.frame,
+      x: state.frame.x + event.clientX - state.startClientX,
+      y: state.frame.y + event.clientY - state.startClientY
+    }));
+  };
+
+  const finishGlobalLineWindowDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    if (windowDragRef.current?.pointerId !== event.pointerId) {
+      return;
+    }
+    windowDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const handleGlobalLineWindowResizePointerDown = (
+    event: ReactPointerEvent<HTMLSpanElement>,
+    direction: GlobalLineWindowResizeDirection
+  ) => {
+    if (event.button !== 0) {
+      return;
+    }
+    const rect = dialogRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return;
+    }
+    windowResizeRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      frame: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+      direction
+    };
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
   return (
     <div
       className={`global-line-list-window-layer ${open ? "visible" : "hidden"}`}
@@ -162,7 +340,14 @@ function GlobalLineListWindow({
       aria-hidden={!open}
     >
       <section
+        ref={dialogRef}
         className="global-line-list-dialog window-close-host"
+        style={{
+          left: `${windowFrame.x}px`,
+          top: `${windowFrame.y}px`,
+          width: `${windowFrame.width}px`,
+          height: `${windowFrame.height}px`
+        }}
         role="dialog"
         aria-labelledby="global-line-list-title"
         aria-describedby="global-line-list-help"
@@ -173,10 +358,17 @@ function GlobalLineListWindow({
         }}
       >
         <WindowCloseButton label="关闭全局线路列表" onClick={onClose} />
-        <header className="global-line-list-header">
+        <header
+          className="global-line-list-header"
+          onPointerDown={handleGlobalLineWindowDragPointerDown}
+          onPointerMove={handleGlobalLineWindowDragPointerMove}
+          onPointerUp={finishGlobalLineWindowDrag}
+          onPointerCancel={finishGlobalLineWindowDrag}
+          title="拖拽标题栏移动窗口"
+        >
           <div>
             <h3 id="global-line-list-title"><Cable size={19} aria-hidden="true" />全局线路</h3>
-            <p id="global-line-list-help">集中查看全局线路及其首末端模型；点击首端或末端模型可切换到对应模型界面。</p>
+            <p id="global-line-list-help">集中查看全局线路及其首末端模型；拖拽标题栏移动窗口，拖拽边缘或角点调整大小。</p>
           </div>
           <div className="global-line-list-header-actions">
             <span>{records.length} 条线路</span>
@@ -257,6 +449,17 @@ function GlobalLineListWindow({
             <div className="global-line-list-placeholder">当前还没有全局线路记录。</div>
           ) : null}
         </div>
+        {GLOBAL_LINE_WINDOW_RESIZE_DIRECTIONS.map((direction) => (
+          <span
+            key={direction}
+            role="separator"
+            className={`global-line-list-resize-handle ${direction}`}
+            data-resize-direction={direction}
+            aria-label={`调整全局线路窗口大小（${GLOBAL_LINE_WINDOW_RESIZE_LABELS[direction]}）`}
+            title={`拖拽${GLOBAL_LINE_WINDOW_RESIZE_LABELS[direction]}调整窗口大小`}
+            onPointerDown={(event) => handleGlobalLineWindowResizePointerDown(event, direction)}
+          />
+        ))}
       </section>
     </div>
   );
@@ -532,7 +735,12 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
     setGlobalLineListLoading(true);
     setGlobalLineListError("");
     try {
-      const records = await loadGlobalLineRecordsForTopology();
+      const latestScope = scope.__appScopeRef?.current ?? scope;
+      const records = typeof latestScope.loadGlobalLineRecords === "function"
+        ? await latestScope.loadGlobalLineRecords()
+        : Array.isArray(latestScope.globalLineRecords)
+          ? latestScope.globalLineRecords as GlobalLineRecord[]
+          : [];
       setGlobalLineListRecords([...records].sort((left, right) =>
         left.idx - right.idx || left.name.localeCompare(right.name, "zh-CN")
       ));
@@ -546,19 +754,19 @@ export function AllNetworkTopologyDialog({ scope }: AllNetworkTopologyDialogProp
   };
 
   useEffect(() => {
-    if (!globalLineListOpen) {
-      return;
-    }
+    if (!globalLineListOpen) return;
+    void refreshGlobalLineList();
+  }, [globalLineListOpen]);
+
+  useEffect(() => {
+    if (!globalLineListOpen) return;
     const currentRecords = Array.isArray(scope.globalLineRecords)
       ? scope.globalLineRecords as GlobalLineRecord[]
       : [];
-    if (currentRecords.length > 0) {
-      setGlobalLineListRecords([...currentRecords].sort((left, right) =>
-        left.idx - right.idx || left.name.localeCompare(right.name, "zh-CN")
-      ));
-    }
-    void refreshGlobalLineList();
-  }, [globalLineListOpen]);
+    setGlobalLineListRecords([...currentRecords].sort((left, right) =>
+      left.idx - right.idx || left.name.localeCompare(right.name, "zh-CN")
+    ));
+  }, [globalLineListOpen, scope.globalLineRecords]);
 
   const locateGlobalLineEndpoint = (record: GlobalLineRecord, endpoint: GlobalLineEndpoint) => {
     const reference = globalLineEndpointReference(record, endpoint);

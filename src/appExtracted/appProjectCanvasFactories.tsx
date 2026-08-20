@@ -4,7 +4,7 @@ import { DEFAULT_MEASUREMENT_CONFIG } from "../measurements";
 import { WindowCloseButton } from "../WindowCloseButton";
 import { buildEFileExportOptionsFromLibrary, setSkipSaveCheck } from "./appDeviceDefinitionFactories";
 import { moveSelectedTableRows, nextTableRowSelection } from "../definitionTableSelection";
-import { GLOBAL_LINE_ID_PARAM, applyGlobalLineRecordToNode, deriveLocalDeviceIndexCounters, shouldManageLineGlobally, shouldUseGlobalLineForEndpoints } from "../global-lines";
+import { GLOBAL_LINE_ID_PARAM, applyGlobalLineRecordToNode, deriveLocalDeviceIndexCounters, globalLineEndpointPlacementFailureMessage, globalLineSourcePlacementFailureMessage, shouldManageLineGlobally, shouldUseGlobalLineForEndpoints } from "../global-lines";
 import { isLineOnlyConnectionNode, modelAssociationLineConnectionFailureMessage } from "../model";
 
 export function createCommitRoutableLineDevice(__appScope: Record<string, any>) {
@@ -15,6 +15,12 @@ export function createCommitRoutableLineDevice(__appScope: Record<string, any>) 
     if (connectionIssue) {
       showGlobalMessage(connectionIssue);
       writeOperationLog?.(`线路绘制失败：${connectionIssue}`);
+      return false;
+    }
+    const endpointIssue = globalLineEndpointPlacementFailureMessage(source.node, target.node);
+    if (endpointIssue) {
+      showGlobalMessage(endpointIssue);
+      writeOperationLog?.(`线路绘制失败：${endpointIssue}`);
       return false;
     }
     const sourcePoint = connectTargetPoint(source);
@@ -94,6 +100,12 @@ export function createStartRoutableLineFromTerminal(__appScope: Record<string, a
       writeOperationLog(`线路起点设置失败：${connectionIssue}`);
       return false;
     }
+    const endpointIssue = globalLineSourcePlacementFailureMessage(node);
+    if (endpointIssue) {
+      showGlobalMessage(endpointIssue);
+      writeOperationLog(`线路起点设置失败：${endpointIssue}`);
+      return false;
+    }
     const source: ConnectTarget = { node, terminalId, point };
     if (connectTargetTerminalType(source) !== routableLineTemplateTerminalType(routableLinePlacement.template)) {
       return false;
@@ -126,6 +138,12 @@ export function createFinishRoutableLineToTarget(__appScope: Record<string, any>
     if (connectionIssue) {
       showGlobalMessage(connectionIssue);
       writeOperationLog(`线路终点设置失败：${connectionIssue}`);
+      return false;
+    }
+    const endpointIssue = globalLineEndpointPlacementFailureMessage(routableLinePlacement.source.node, target.node);
+    if (endpointIssue) {
+      showGlobalMessage(endpointIssue);
+      writeOperationLog(`线路终点设置失败：${endpointIssue}`);
       return false;
     }
     if (connectTargetTerminalType(target) !== routableLineTemplateTerminalType(routableLinePlacement.template)) {
@@ -260,6 +278,17 @@ export function createFinishRoutableLineEndpointDrag(__appScope: Record<string, 
               };
         const commitNodeById = new Map(nodes.map((node) => [node.id, node]));
         commitNodeById.set(target.node.id, target.node);
+        const nextSourceNode = nextRefs.source ? commitNodeById.get(nextRefs.source.nodeId) : undefined;
+        const nextTargetNode = nextRefs.target ? commitNodeById.get(nextRefs.target.nodeId) : undefined;
+        if (nextSourceNode && nextTargetNode) {
+          const endpointIssue = globalLineEndpointPlacementFailureMessage(nextSourceNode, nextTargetNode);
+          if (endpointIssue) {
+            showGlobalMessage(endpointIssue);
+            writeOperationLog(`线路端点调整失败：${endpointIssue}`);
+            setRoutableLineEndpointDrag(null);
+            return;
+          }
+        }
         const routedLine = setRoutableLineDeviceEndpointsPreservingRoute(
           lineNode,
           nextStart,
@@ -4721,7 +4750,7 @@ export function createRenderMeasurementEditorDialog(__appScope: Record<string, a
 
 export function createSaveCurrentProject(__appScope: Record<string, any>) {
   return async (targetId?: string) => {
-  const { activeProjectKey, activeSchemeKey, backgroundPageRender, buildEFileExport, buildSvgDocument, clearRefreshRecoveryProject, colorPalette, createSavedProject, currentGraphDirtyBaseline, currentProject, DEFAULT_CANVAS_BACKGROUND, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionLabels, eDeviceDefinitionTableIds, eDeviceDefinitionTemplateFields, findProjectRecordByNameInScheme, findSavedSchemeById, findSchemeForProject, getEExportWarnings, graphDirtyBaselineRef, libraryTemplates, loadSvgImageExportPathById, measurementConfig, PARAM_LABELS, projectById, projectMeasurements, projectName, rememberPersistedSchemesPayload, requireEditMode, resolveTemplateComponentLibrary, saveActiveProjectPointer, saveBackendProjectRecord, savedSchemePathForId, savedUndoStackLengthRef, schemePathForScheme, schemes, selectedSchemeId, serializeSchemesForStorage, setActiveProjectKey, setActiveSchemeKey, setHasUnsavedChanges, setProjectName, setSchemes, suppressNextGraphDirtyRef, undoStack, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
+  const { activeProjectKey, activeSchemeKey, backgroundPageRender, buildEFileExport, buildSvgDocument, clearRefreshRecoveryProject, colorPalette, createSavedProject, currentGraphDirtyBaseline, currentProject, DEFAULT_CANVAS_BACKGROUND, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionLabels, eDeviceDefinitionTableIds, eDeviceDefinitionTemplateFields, finalizeSavedGlobalLineProjectNodes, findProjectRecordByNameInScheme, findSavedSchemeById, findSchemeForProject, getEExportWarnings, graphDirtyBaselineRef, libraryTemplates, loadSvgImageExportPathById, measurementConfig, PARAM_LABELS, projectById, projectMeasurements, projectName, rememberPersistedSchemesPayload, requireEditMode, resolveTemplateComponentLibrary, saveActiveProjectPointer, saveBackendProjectRecord, savedSchemePathForId, savedUndoStackLengthRef, schemePathForScheme, schemes, selectedSchemeId, serializeSchemesForStorage, setActiveProjectKey, setActiveSchemeKey, setHasUnsavedChanges, setProjectName, setSchemes, suppressNextGraphDirtyRef, undoStack, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
     if (targetId === undefined) {
       targetId = activeProjectKey;
     }
@@ -4780,6 +4809,17 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
         return {};
       }
     };
+    const finalizeSavedGlobalLines = async (savedRecord: SavedProjectRecord): Promise<ModelNode[]> => {
+      const currentNodes = currentGraphDirtyBaseline().nodes as ModelNode[];
+      if (typeof finalizeSavedGlobalLineProjectNodes !== "function") return currentNodes;
+      try {
+        const finalizedNodes = await finalizeSavedGlobalLineProjectNodes(savedRecord.project.nodes ?? []);
+        return Array.isArray(finalizedNodes) ? finalizedNodes : currentNodes;
+      } catch (error) {
+        writeOperationLog(error instanceof Error ? `模型已保存，但刷新全局线路页面状态失败：${error.message}` : "模型已保存，但刷新全局线路页面状态失败。");
+        return currentNodes;
+      }
+    };
     if (targetId && existingTargetProject) {
       const existing = existingTargetProject;
       const record: SavedProjectRecord = {
@@ -4805,6 +4845,7 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
         writeOperationLog(`保存模型到后台失败：${record.name}`);
         return false;
       }
+      const savedGraphNodes = await finalizeSavedGlobalLines(savedRecord);
       const nextSchemes = upsertSavedProjectInScheme(schemes, ownerScheme.id, savedRecord);
       setSchemes(nextSchemes);
       rememberPersistedSchemesPayload(serializeSchemesForStorage(nextSchemes));
@@ -4813,7 +4854,7 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
         suppressNextGraphDirtyRef.current += 1;
         setProjectName(savedRecord.name);
       }
-      graphDirtyBaselineRef.current = currentGraphDirtyBaseline();
+      graphDirtyBaselineRef.current = { ...currentGraphDirtyBaseline(), nodes: savedGraphNodes };
       savedUndoStackLengthRef.current = undoStack.length;
       setHasUnsavedChanges(false);
       saveActiveProjectPointer(targetId, activeSchemeKey || ownerScheme.id || selectedSchemeId, nextSchemes);
@@ -4852,12 +4893,13 @@ export function createSaveCurrentProject(__appScope: Record<string, any>) {
       writeOperationLog(`保存模型到后台失败：${record.name}`);
       return false;
     }
+    const savedGraphNodes = await finalizeSavedGlobalLines(savedRecord);
     const nextSchemes = upsertSavedProjectInScheme(fallbackSchemes, resolvedSchemeId, savedRecord);
     setSchemes(nextSchemes);
     rememberPersistedSchemesPayload(serializeSchemesForStorage(nextSchemes));
     setActiveProjectKey(savedRecord.id);
     setActiveSchemeKey(resolvedSchemeId);
-    graphDirtyBaselineRef.current = currentGraphDirtyBaseline();
+    graphDirtyBaselineRef.current = { ...currentGraphDirtyBaseline(), nodes: savedGraphNodes };
     savedUndoStackLengthRef.current = undoStack.length;
     setHasUnsavedChanges(false);
     saveActiveProjectPointer(savedRecord.id, resolvedSchemeId, nextSchemes);

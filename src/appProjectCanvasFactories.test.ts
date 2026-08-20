@@ -81,6 +81,63 @@ describe("跨模型告警定位的未保存修改衔接", () => {
   });
 });
 
+describe("保存模型后的全局线路正式身份回填", () => {
+  test("后台保存成功后刷新全局线路，再以正式节点建立未修改基线", async () => {
+    const draftNode = createDefaultNode("ac-routable-line", { x: 100, y: 100 });
+    draftNode.params._globalLineId = `draft-global-line:${draftNode.id}`;
+    const savedNode = {
+      ...draftNode,
+      params: { ...draftNode.params, _globalLineId: "global-line-saved", idx: "12" }
+    };
+    const project = { version: 1 as const, name: "本地馈线", modelType: "馈线" as const, nodes: [draftNode], edges: [] };
+    const savedProject = { ...project, nodes: [savedNode] };
+    const record = { id: "project-1", name: "本地馈线", updatedAt: "2026-08-20T00:00:00.000Z", project };
+    const savedRecord = { ...record, project: savedProject };
+    const scheme = { id: "scheme-1", name: "主方案", updatedAt: record.updatedAt, projects: [record], children: [] };
+    const finalizedNodes = [savedNode];
+    const finalizeSavedGlobalLineProjectNodes = vi.fn().mockResolvedValue(finalizedNodes);
+    const graphDirtyBaselineRef = { current: null as any };
+    const save = createSaveCurrentProject({
+      activeProjectKey: record.id,
+      activeSchemeKey: scheme.id,
+      backgroundPageRender: null,
+      clearRefreshRecoveryProject: vi.fn(),
+      colorPalette: {},
+      currentGraphDirtyBaseline: () => ({ nodes: [draftNode] }),
+      currentProject: () => project,
+      deferredMoveOptimizationCancelRef: { current: null },
+      deferredRoutableLineRouteRepairCancelRef: { current: null },
+      finalizeSavedGlobalLineProjectNodes,
+      findSchemeForProject: () => scheme,
+      graphDirtyBaselineRef,
+      projectById: new Map([[record.id, record]]),
+      projectMeasurements: { version: 1, groups: [] },
+      projectName: record.name,
+      rememberPersistedSchemesPayload: vi.fn(),
+      requireEditMode: () => true,
+      saveActiveProjectPointer: vi.fn(),
+      saveBackendProjectRecord: vi.fn().mockResolvedValue(savedRecord),
+      savedSchemePathForId: () => [scheme.name],
+      savedUndoStackLengthRef: { current: 0 },
+      schemes: [scheme],
+      selectedSchemeId: scheme.id,
+      serializeSchemesForStorage: (value: unknown) => value,
+      setActiveProjectKey: vi.fn(),
+      setHasUnsavedChanges: vi.fn(),
+      setProjectName: vi.fn(),
+      setSchemes: vi.fn(),
+      suppressNextGraphDirtyRef: { current: 0 },
+      undoStack: [],
+      upsertSavedProjectInScheme: (value: unknown) => value,
+      writeOperationLog: vi.fn()
+    });
+
+    await expect(save()).resolves.toBe(true);
+    expect(finalizeSavedGlobalLineProjectNodes).toHaveBeenCalledWith([savedNode]);
+    expect(graphDirtyBaselineRef.current?.nodes).toBe(finalizedNodes);
+  });
+});
+
 describe("线路端点调整的本图/全局维护方式切换", () => {
   function transitionScope(direction: "local-to-global" | "global-to-local") {
     const boundary = createDefaultNode("static-model-interaction-station", { x: 300, y: 0 });
@@ -237,6 +294,34 @@ describe("模型关联设备的线路连接前置条件", () => {
     expect(setRoutableLinePlacement).toHaveBeenCalledOnce();
   });
 
+  test("模型关联负荷即使已定义 model_id 也不能作为线路起点", () => {
+    const node = createDefaultNode("ac-feeder-load", { x: 100, y: 100 });
+    node.params.model_id = "22";
+    const showGlobalMessage = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+    const setRoutableLinePlacement = vi.fn();
+    const start = createStartRoutableLineFromTerminal({
+      activeLayerNodeIdSet: new Set([node.id]),
+      applyRoutableLinePreviewState: vi.fn(),
+      connectTargetPoint: vi.fn(),
+      connectTargetTerminalType: () => "ac",
+      routableLinePlacement: { template: createDefaultNode("ac-routable-line", { x: 0, y: 0 }) },
+      routableLineTemplateTerminalType: () => "ac",
+      setCanvasSelectionScope: vi.fn(),
+      setContextMenu: vi.fn(),
+      setMode: vi.fn(),
+      setRoutableLinePlacement,
+      setSelectedEdgeId: vi.fn(),
+      setSelectedEdgeIds: vi.fn(),
+      setSelectedNodeIds: vi.fn(),
+      writeOperationLog: vi.fn()
+    });
+
+    expect(start(node, node.terminals[0].id)).toBe(false);
+    expect(setRoutableLinePlacement).not.toHaveBeenCalled();
+    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("只能位于线路末端"));
+  });
+
   test("model_id 未定义时拒绝作为线路终点，且最终提交入口仍会防御性拒绝", async () => {
     const sourceNode = createDefaultNode("ac-source", { x: 100, y: 100 });
     const targetNode = createDefaultNode("ac-feeder-load", { x: 400, y: 100 });
@@ -275,6 +360,59 @@ describe("模型关联设备的线路连接前置条件", () => {
     expect(requestGlobalLinePlacement).toHaveBeenCalledOnce();
   });
 
+  test("模型关联电源不能作为末端，两端也不能同时为模型关联设备，最终提交入口仍会拒绝", async () => {
+    const ordinarySource = createDefaultNode("ac-source", { x: 100, y: 100 });
+    const stationSource = createDefaultNode("ac-station-source", { x: 400, y: 100 });
+    stationSource.params.model_id = "22";
+    const feederLoad = createDefaultNode("ac-feeder-load", { x: 600, y: 100 });
+    feederLoad.params.model_id = "33";
+    const template = DEVICE_LIBRARY_BY_KIND.get("ac-routable-line")!;
+    const requestGlobalLinePlacement = vi.fn();
+    const showGlobalMessage = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+
+    const finish = createFinishRoutableLineToTarget({
+      commitRoutableLineDevice: vi.fn(),
+      connectTargetTerminalType: () => "ac",
+      modelType: "馈线",
+      requestGlobalLinePlacement,
+      routableLinePlacement: {
+        template,
+        source: { node: ordinarySource, terminalId: ordinarySource.terminals[0].id }
+      },
+      routableLineTemplateTerminalType: () => "ac",
+      writeOperationLog: vi.fn()
+    });
+    await expect(finish({ node: stationSource, terminalId: stationSource.terminals[0].id })).resolves.toBe(false);
+    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("只能位于线路首端"));
+    expect(requestGlobalLinePlacement).not.toHaveBeenCalled();
+
+    showGlobalMessage.mockClear();
+    const finishBoth = createFinishRoutableLineToTarget({
+      commitRoutableLineDevice: vi.fn(),
+      connectTargetTerminalType: () => "ac",
+      modelType: "馈线",
+      requestGlobalLinePlacement,
+      routableLinePlacement: {
+        template,
+        source: { node: stationSource, terminalId: stationSource.terminals[0].id }
+      },
+      routableLineTemplateTerminalType: () => "ac",
+      writeOperationLog: vi.fn()
+    });
+    await expect(finishBoth({ node: feederLoad, terminalId: feederLoad.terminals[0].id })).resolves.toBe(false);
+    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("两端不能同时"));
+
+    showGlobalMessage.mockClear();
+    const defensiveCommit = createCommitRoutableLineDevice({ nodes: [], writeOperationLog: vi.fn() });
+    await expect(defensiveCommit(
+      template,
+      { node: ordinarySource, terminalId: ordinarySource.terminals[0].id },
+      { node: stationSource, terminalId: stationSource.terminals[0].id }
+    )).resolves.toBe(false);
+    expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("只能位于线路首端"));
+  });
+
   test("线路端点重接到 model_id 未定义的模型关联设备时保留原连接", () => {
     const source = createDefaultNode("ac-source", { x: 0, y: 0 });
     const target = createDefaultNode("ac-district-load", { x: 300, y: 0 });
@@ -301,6 +439,116 @@ describe("模型关联设备的线路连接前置条件", () => {
     expect(patchGraphNodes).not.toHaveBeenCalled();
     expect(setRoutableLineEndpointDrag).toHaveBeenCalledWith(null);
     expect(showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("未定义关联模型"));
+  });
+
+  function modelAssociationEndpointRewireScope(
+    endpoint: "source" | "target",
+    currentSource: ReturnType<typeof createDefaultNode>,
+    currentTarget: ReturnType<typeof createDefaultNode>,
+    dropTarget: ReturnType<typeof createDefaultNode>
+  ) {
+    const line = createDefaultNode("ac-routable-line", { x: 100, y: 0 });
+    line.params = {
+      ...line.params,
+      _routableLineSourceNodeId: currentSource.id,
+      _routableLineTargetNodeId: currentTarget.id
+    };
+    const routedLine = {
+      ...line,
+      params: {
+        ...line.params,
+        ...(endpoint === "source"
+          ? { _routableLineSourceNodeId: dropTarget.id }
+          : { _routableLineTargetNodeId: dropTarget.id })
+      }
+    };
+    const nodes = [currentSource, currentTarget, dropTarget, line];
+    const patchGraphNodes = vi.fn();
+    const requestGlobalLineTransition = vi.fn();
+    const setRoutableLineEndpointDrag = vi.fn();
+    const showGlobalMessage = vi.fn();
+    vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+
+    return {
+      patchGraphNodes,
+      requestGlobalLineTransition,
+      setRoutableLineEndpointDrag,
+      showGlobalMessage,
+      finish: createFinishRoutableLineEndpointDrag({
+        canvasBounds: { width: 1000, height: 800 },
+        connectTargetPoint: () => ({ x: 500, y: 0 }),
+        modelType: "馈线",
+        nodeById: new Map(nodes.map((node) => [node.id, node])),
+        nodes,
+        patchGraphNodes,
+        pushUndoSnapshot: vi.fn(),
+        requestGlobalLineTransition,
+        routableLineDeviceCanvasPoints: () => [{ x: 0, y: 0 }, { x: 300, y: 0 }],
+        routableLineDeviceEndpointRefForNode: (node: any) => ({ nodeId: node.id }),
+        routableLineDeviceEndpointRefs: () => ({
+          source: { nodeId: currentSource.id },
+          target: { nodeId: currentTarget.id }
+        }),
+        routableLineEndpointDrag: {
+          nodeId: line.id,
+          endpoint,
+          dropTarget: { node: dropTarget, terminalId: dropTarget.terminals[0].id }
+        },
+        setCanvasSelectionScope: vi.fn(),
+        setRoutableLineDeviceEndpointsPreservingRoute: () => routedLine,
+        setRoutableLineEndpointDrag,
+        setSelectedEdgeId: vi.fn(),
+        setSelectedEdgeIds: vi.fn(),
+        setSelectedNodeIds: vi.fn(),
+        writeOperationLog: vi.fn()
+      })
+    };
+  }
+
+  test("线路首端重接到模型关联负荷时保留原连接", () => {
+    const ordinarySource = createDefaultNode("ac-source", { x: 0, y: 0 });
+    const ordinaryTarget = createDefaultNode("ac-load", { x: 300, y: 0 });
+    const associationLoad = createDefaultNode("ac-district-load", { x: 500, y: 0 });
+    associationLoad.params.model_id = "31";
+    const scope = modelAssociationEndpointRewireScope("source", ordinarySource, ordinaryTarget, associationLoad);
+
+    scope.finish();
+
+    expect(scope.showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("只能位于线路末端"));
+    expect(scope.patchGraphNodes).not.toHaveBeenCalled();
+    expect(scope.requestGlobalLineTransition).not.toHaveBeenCalled();
+    expect(scope.setRoutableLineEndpointDrag).toHaveBeenCalledWith(null);
+  });
+
+  test("线路末端重接到模型关联电源时保留原连接", () => {
+    const ordinarySource = createDefaultNode("ac-source", { x: 0, y: 0 });
+    const ordinaryTarget = createDefaultNode("ac-load", { x: 300, y: 0 });
+    const associationSource = createDefaultNode("ac-feeder-source", { x: 500, y: 0 });
+    associationSource.params.model_id = "32";
+    const scope = modelAssociationEndpointRewireScope("target", ordinarySource, ordinaryTarget, associationSource);
+
+    scope.finish();
+
+    expect(scope.showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("只能位于线路首端"));
+    expect(scope.patchGraphNodes).not.toHaveBeenCalled();
+    expect(scope.requestGlobalLineTransition).not.toHaveBeenCalled();
+    expect(scope.setRoutableLineEndpointDrag).toHaveBeenCalledWith(null);
+  });
+
+  test("端点重接后两端均为模型关联设备时保留原连接", () => {
+    const associationSource = createDefaultNode("ac-station-source", { x: 0, y: 0 });
+    associationSource.params.model_id = "33";
+    const ordinaryTarget = createDefaultNode("ac-load", { x: 300, y: 0 });
+    const associationLoad = createDefaultNode("ac-district-load", { x: 500, y: 0 });
+    associationLoad.params.model_id = "34";
+    const scope = modelAssociationEndpointRewireScope("target", associationSource, ordinaryTarget, associationLoad);
+
+    scope.finish();
+
+    expect(scope.showGlobalMessage).toHaveBeenCalledWith(expect.stringContaining("两端不能同时"));
+    expect(scope.patchGraphNodes).not.toHaveBeenCalled();
+    expect(scope.requestGlobalLineTransition).not.toHaveBeenCalled();
+    expect(scope.setRoutableLineEndpointDrag).toHaveBeenCalledWith(null);
   });
 });
 

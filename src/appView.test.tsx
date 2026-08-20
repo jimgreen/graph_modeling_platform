@@ -88,11 +88,12 @@ describe("全网拓扑入口", () => {
 });
 
 describe("全局线路首末端提示", () => {
-  test("选择窗口明确显示本次占用的首端或末端，并允许选择出线度为0或1的对应空槽", () => {
+  test("选择窗口明确显示首末端校核结果，并说明复用不会改写已有端子", () => {
     const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
 
     expect(source).toContain('globalLinePlacementDialog.boundaryEndpoint === "source" ? "首端" : "末端"');
-    expect(source).toContain("请选择一条当前端点槽为空、出线度小于2的既有线路");
+    expect(source).toContain("复用只做一致性校核，不修改已有全局线路的首末端信息");
+    expect(source).toContain("⚠ 端点不一致");
   });
 
   test("在渲染批次生成界面前把全局线路弹窗状态注入应用作用域", () => {

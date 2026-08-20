@@ -6,12 +6,15 @@ import {
   applyGlobalLineRecordsToNodes,
   candidateGlobalLines,
   deriveLocalDeviceIndexCounters,
+  GLOBAL_LINE_MODEL_PAIR_PARAM,
   globalLineBoundaryAdjustmentConflictMessage as globalLineBoundaryAdjustmentConflictMessageForRecord,
   globalLineEnergyTypeForKind,
+  globalLineEndpointPlacementFailureMessage,
+  globalLineExistingPlacementConflictMessage,
+  globalLineModelAssociationPlacementForEndpoints,
   globalLineModelKey,
-  globalLineSharedParamsFromNode,
-  isManagedGlobalLineModelType,
   isGlobalLineBoundaryNode,
+  previewGlobalLineRecordsForProject,
   removeGlobalLineIdentityForLocalNode,
   type GlobalLineChoice,
   type GlobalLineEndpoint,
@@ -45,8 +48,6 @@ export type GlobalLineTransitionDialogState = {
 type ConnectTarget = { node: ModelNode; terminalId: string; point?: Point };
 
 type GlobalLineListResponse = { ok?: boolean; records?: GlobalLineRecord[] };
-type GlobalLineRecordResponse = { ok?: boolean; record?: GlobalLineRecord; error?: string };
-type GlobalLineSyncResponse = GlobalLineListResponse & { nodes?: ModelNode[]; assignments?: Record<string, string> };
 
 async function responseError(response: Response, fallback: string) {
   const payload = await response.json().catch(() => ({}));
@@ -57,10 +58,6 @@ async function fetchJson<T>(url: string, fallback: string, init?: RequestInit): 
   const response = await fetch(url, init);
   if (!response.ok) throw new Error(await responseError(response, fallback));
   return await response.json() as T;
-}
-
-function jsonRequest(method: "POST" | "PUT", body: unknown): RequestInit {
-  return { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
 }
 
 function schemePathFromScope(scope: Record<string, any>): string[] {
@@ -117,7 +114,6 @@ export function useGlobalLines(scope: Record<string, any>) {
   const [records, setRecords] = useState<GlobalLineRecord[]>([]);
   const [dialog, setDialog] = useState<GlobalLinePlacementDialogState | null>(null);
   const [transitionDialog, setTransitionDialog] = useState<GlobalLineTransitionDialogState | null>(null);
-  const [readyModelKey, setReadyModelKey] = useState("");
   const latestScopeRef = useRef(scope);
   latestScopeRef.current = scope;
 
@@ -127,10 +123,51 @@ export function useGlobalLines(scope: Record<string, any>) {
   const schemePath = schemePathFromScope(scope);
   const modelKey = globalLineModelKey(projectIdx, schemePath, projectName);
   const nodes = Array.isArray(scope.nodes) ? scope.nodes as ModelNode[] : [];
+  const schemePathKey = schemePath.join("\u0000");
+  const localModelReference = useMemo<GlobalLineReference>(() => ({
+    modelKey,
+    ...(Number.isSafeInteger(projectIdx) && projectIdx > 0 ? { projectIdx } : {}),
+    schemePath,
+    projectName,
+    nodeId: ""
+  }), [modelKey, projectIdx, projectName, schemePathKey]);
+  const displayRecords = useMemo(() => previewGlobalLineRecordsForProject(
+    records,
+    nodes,
+    modelType,
+    localModelReference
+  ), [localModelReference, modelType, nodes, records]);
 
   const candidates = useMemo(() => dialog
-    ? candidateGlobalLines(records, dialog.energyType, modelKey, dialog.boundaryEndpoint)
-    : [], [dialog?.boundaryEndpoint, dialog?.energyType, modelKey, records]);
+    ? candidateGlobalLines(
+        records,
+        dialog.energyType,
+        modelKey,
+        dialog.boundaryEndpoint,
+        dialog.source && dialog.target ? { source: dialog.source.node, target: dialog.target.node } : undefined
+      )
+    : [], [dialog?.boundaryEndpoint, dialog?.energyType, dialog?.source?.node, dialog?.target?.node, modelKey, records]);
+
+  function globalLinePlacementConflictMessageForId(
+    globalLineId: string,
+    placementDialog: GlobalLinePlacementDialogState | null = dialog,
+    candidateRecords: readonly GlobalLineRecord[] = records
+  ) {
+    if (!placementDialog?.source || !placementDialog.target) return "";
+    return globalLineExistingPlacementConflictMessage(
+      candidateRecords.find((record) => record.id === globalLineId),
+      placementDialog.source.node,
+      placementDialog.target.node,
+      localModelReference
+    );
+  }
+
+  function previewRecords(baseRecords: readonly GlobalLineRecord[], requestNodes?: readonly ModelNode[]) {
+    const latestNodes = requestNodes ?? (
+      Array.isArray(latestScopeRef.current.nodes) ? latestScopeRef.current.nodes as ModelNode[] : []
+    );
+    return previewGlobalLineRecordsForProject(baseRecords, latestNodes, modelType, localModelReference);
+  }
 
   async function loadRecords() {
     const payload = await fetchJson<GlobalLineListResponse>(apiPath("/global-lines"), "读取全局线路列表失败。");
@@ -139,36 +176,17 @@ export function useGlobalLines(scope: Record<string, any>) {
     return nextRecords;
   }
 
-  async function syncGlobalLineProjectNodes(requestNodes: ModelNode[], applyHydration = true) {
-    if (!isManagedGlobalLineModelType(modelType)) return [] as GlobalLineRecord[];
-    const payload = {
-      projectIdx,
-      projectName,
-      schemePath,
-      modelType,
-      nodes: requestNodes
-    };
-    const result = await fetchJson<GlobalLineSyncResponse>(
-      apiPath("/global-lines/sync-project"),
-      "同步全局线路失败。",
-      jsonRequest("POST", payload)
-    );
-    const nextRecords = Array.isArray(result.records) ? result.records : [];
-    setRecords(nextRecords);
-    if (applyHydration) {
-      const latestScope = latestScopeRef.current;
-      const latestNodes = Array.isArray(latestScope.nodes) ? latestScope.nodes as ModelNode[] : [];
-      if (latestNodes === requestNodes) {
-        const hydratedNodes = applyGlobalLineRecordsToNodes(latestNodes, nextRecords, modelKey);
-        if (hydratedNodes !== latestNodes) latestScope.setNodes?.(hydratedNodes);
-      }
-    }
-    return nextRecords;
+  async function loadGlobalLineRecords() {
+    const nextRecords = await loadRecords();
+    return previewRecords(nextRecords);
+  }
+
+  async function syncGlobalLineProjectNodes(requestNodes: ModelNode[], _applyHydration = true) {
+    return previewRecords(records, requestNodes);
   }
 
   useEffect(() => {
     let cancelled = false;
-    setReadyModelKey("");
     void loadRecords().then((nextRecords) => {
       if (cancelled) return;
       const latestScope = latestScopeRef.current;
@@ -177,10 +195,8 @@ export function useGlobalLines(scope: Record<string, any>) {
       if (hydratedNodes !== latestNodes) {
         latestScope.setNodes?.(hydratedNodes);
       }
-      setReadyModelKey(modelKey);
     }).catch((error) => {
       if (cancelled) return;
-      setReadyModelKey(modelKey);
       const message = error instanceof Error ? error.message : "读取全局线路列表失败。";
       latestScopeRef.current.writeOperationLog?.(message);
     });
@@ -188,18 +204,6 @@ export function useGlobalLines(scope: Record<string, any>) {
       cancelled = true;
     };
   }, [modelKey]);
-
-  useEffect(() => {
-    if (readyModelKey !== modelKey || !isManagedGlobalLineModelType(modelType)) return;
-    const requestNodes = nodes;
-    const timer = window.setTimeout(() => {
-      void syncGlobalLineProjectNodes(requestNodes).catch((error) => {
-        const message = error instanceof Error ? error.message : "同步全局线路失败。";
-        latestScopeRef.current.writeOperationLog?.(message);
-      });
-    }, 450);
-    return () => window.clearTimeout(timer);
-  }, [modelKey, modelType, nodes, projectIdx, projectName, readyModelKey, schemePath.join("\u0000")]);
 
   function requestGlobalLinePlacement(
     template: DeviceTemplate,
@@ -209,10 +213,16 @@ export function useGlobalLines(scope: Record<string, any>) {
   ) {
     const energyType = globalLineEnergyTypeForKind(template.kind);
     if (!energyType) return false;
+    const endpointIssue = globalLineEndpointPlacementFailureMessage(source.node, target.node);
+    if (endpointIssue) {
+      latestScopeRef.current.writeOperationLog?.(`全局线路绘制失败：${endpointIssue}`);
+      return false;
+    }
     const boundaryEndpoint = boundaryEndpointForConnectTargets(source, target);
     if (!boundaryEndpoint) return false;
-    const initialCandidates = candidateGlobalLines(records, energyType, modelKey, boundaryEndpoint);
-    setDialog({
+    const placementNodes = { source: source.node, target: target.node };
+    const initialCandidates = candidateGlobalLines(records, energyType, modelKey, boundaryEndpoint, placementNodes);
+    const initialDialog: GlobalLinePlacementDialogState = {
       template,
       source,
       target,
@@ -223,20 +233,33 @@ export function useGlobalLines(scope: Record<string, any>) {
       saving: false,
       mode: initialCandidates.length > 0 ? "existing" : "new",
       selectedGlobalLineId: initialCandidates[0]?.id ?? "",
-      name: nextDefaultLineName(records, energyType, template),
+      name: nextDefaultLineName(displayRecords, energyType, template),
       error: ""
-    });
+    };
+    initialDialog.error = initialCandidates[0]
+      ? globalLinePlacementConflictMessageForId(initialCandidates[0].id, initialDialog)
+      : "";
+    setDialog(initialDialog);
     void loadRecords().then((nextRecords) => {
-      const nextCandidates = candidateGlobalLines(nextRecords, energyType, modelKey, boundaryEndpoint);
-      setDialog((current) => current ? {
-        ...current,
-        loading: false,
-        mode: current.mode === "existing" && nextCandidates.length === 0 ? "new" : current.mode,
-        selectedGlobalLineId: nextCandidates.some((item) => item.id === current.selectedGlobalLineId)
+      const nextDisplayRecords = previewRecords(nextRecords);
+      const nextCandidates = candidateGlobalLines(nextRecords, energyType, modelKey, boundaryEndpoint, placementNodes);
+      setDialog((current) => {
+        if (!current) return current;
+        const selectedGlobalLineId = nextCandidates.some((item) => item.id === current.selectedGlobalLineId)
           ? current.selectedGlobalLineId
-          : nextCandidates[0]?.id ?? "",
-        name: current.name || nextDefaultLineName(nextRecords, energyType, template)
-      } : current);
+          : nextCandidates[0]?.id ?? "";
+        const mode = current.mode === "existing" && nextCandidates.length === 0 ? "new" : current.mode;
+        return {
+          ...current,
+          loading: false,
+          mode,
+          selectedGlobalLineId,
+          name: current.name || nextDefaultLineName(nextDisplayRecords, energyType, template),
+          error: mode === "existing"
+            ? globalLinePlacementConflictMessageForId(selectedGlobalLineId, current, nextRecords)
+            : ""
+        };
+      });
     }).catch((error) => {
       setDialog((current) => current ? { ...current, loading: false, mode: "new", error: error instanceof Error ? error.message : "读取全局线路列表失败。" } : current);
     });
@@ -257,7 +280,7 @@ export function useGlobalLines(scope: Record<string, any>) {
       saving: false,
       mode: initialCandidates.length > 0 ? "existing" : "new",
       selectedGlobalLineId: initialCandidates[0]?.id ?? "",
-      name: node.name.trim() || nextDefaultLineName(records, energyType),
+      name: node.name.trim() || nextDefaultLineName(displayRecords, energyType),
       error: ""
     });
     void loadRecords().then((nextRecords) => {
@@ -279,20 +302,48 @@ export function useGlobalLines(scope: Record<string, any>) {
   async function attachGlobalLineForNode(node: ModelNode, choice: GlobalLineChoice): Promise<GlobalLineRecord> {
     const energyType = globalLineEnergyTypeForKind(node.kind);
     if (!energyType) throw new Error("仅支持交流或直流线路进入全局线路表。");
-    const payload = {
-      ...(choice.mode === "existing" ? { globalLineId: choice.globalLineId } : { name: choice.name }),
-      energyType,
-      node: { id: node.id, kind: node.kind, name: choice.mode === "new" ? choice.name : node.name, params: globalLineSharedParamsFromNode(node) },
-      reference: modelReferenceFromScope(latestScopeRef.current, node.id, node)
+    const existingRecord = choice.mode === "existing"
+      ? records.find((record) => record.id === choice.globalLineId)
+      : undefined;
+    if (choice.mode === "existing" && !existingRecord) throw new Error("选择的全局线路不存在。");
+    if (existingRecord && existingRecord.energyType !== energyType) throw new Error("选择的全局线路能源类型不一致。");
+    const draftId = existingRecord?.id ?? `draft-global-line:${node.id}`;
+    const draftIndex = existingRecord?.idx ?? Math.max(0, ...displayRecords.map((record) => Number(record.idx) || 0)) + 1;
+    const latestNodes = Array.isArray(latestScopeRef.current.nodes) ? latestScopeRef.current.nodes as ModelNode[] : [];
+    const nodeById = new Map(latestNodes.map((item) => [item.id, item]));
+    const sourceNode = nodeById.get(String(node.params._routableLineSourceNodeId ?? "").trim());
+    const targetNode = nodeById.get(String(node.params._routableLineTargetNodeId ?? "").trim());
+    const associationPlacement = sourceNode && targetNode
+      ? globalLineModelAssociationPlacementForEndpoints(sourceNode, targetNode)
+      : null;
+    if (choice.mode === "existing" && existingRecord && sourceNode && targetNode) {
+      const conflict = globalLineExistingPlacementConflictMessage(existingRecord, sourceNode, targetNode, localModelReference);
+      if (conflict) throw new Error(conflict);
+    }
+    const modelPairMode = choice.mode === "new"
+      ? "1"
+      : associationPlacement
+        ? associationPlacement.endpoint
+        : "";
+    const namedNode = choice.mode === "existing"
+      ? applyGlobalLineRecordToNode(node, existingRecord!)
+      : { ...node, name: choice.name };
+    const draftNode = {
+      ...namedNode,
+      params: {
+        ...namedNode.params,
+        idx: String(draftIndex),
+        _globalLineId: draftId,
+        ...(modelPairMode ? { [GLOBAL_LINE_MODEL_PAIR_PARAM]: modelPairMode } : {})
+      }
     };
-    const result = await fetchJson<GlobalLineRecordResponse>(
-      apiPath("/global-lines/attach"),
-      "保存全局线路失败。",
-      jsonRequest("POST", payload)
-    );
-    if (!result.record) throw new Error("后台没有返回全局线路记录。");
-    setRecords((current) => [...current.filter((item) => item.id !== result.record!.id), result.record!].sort((a, b) => a.idx - b.idx));
-    return result.record;
+    if (!modelPairMode) delete draftNode.params[GLOBAL_LINE_MODEL_PAIR_PARAM];
+    const previewNodes = [...latestNodes.filter((item) => item.id !== node.id), draftNode];
+    const previewRecord = previewRecords(records, previewNodes).find((record) => record.id === draftId);
+    if (!previewRecord || previewRecord.energyType !== energyType) throw new Error("未能生成全局线路页面草稿。");
+    return modelPairMode
+      ? { ...previewRecord, params: { ...previewRecord.params, [GLOBAL_LINE_MODEL_PAIR_PARAM]: modelPairMode } }
+      : previewRecord;
   }
 
   async function confirmGlobalLinePlacement() {
@@ -308,6 +359,13 @@ export function useGlobalLines(scope: Record<string, any>) {
       setDialog((current) => current ? { ...current, error: "请输入新线路名称。" } : current);
       return;
     }
+    if (choice.mode === "existing") {
+      const conflict = globalLinePlacementConflictMessageForId(choice.globalLineId);
+      if (conflict) {
+        setDialog((current) => current ? { ...current, error: conflict } : current);
+        return;
+      }
+    }
     setDialog((current) => current ? { ...current, saving: true, error: "" } : current);
     try {
       if (dialog.transitionNode) {
@@ -322,7 +380,6 @@ export function useGlobalLines(scope: Record<string, any>) {
         latestScope.setSelectedEdgeIds?.([]);
         latestScope.writeOperationLog?.(`线路切换为全局维护：${globalNode.name}`);
         setDialog(null);
-        void loadRecords();
         return;
       }
       if (!dialog.template || !dialog.source || !dialog.target) {
@@ -340,7 +397,6 @@ export function useGlobalLines(scope: Record<string, any>) {
         return;
       }
       setDialog(null);
-      void loadRecords();
     } catch (error) {
       setDialog((current) => current ? { ...current, saving: false, error: error instanceof Error ? error.message : "保存全局线路失败。" } : current);
     }
@@ -361,7 +417,7 @@ export function useGlobalLines(scope: Record<string, any>) {
 
   function globalLineBoundaryAdjustmentConflictMessage(originalNode: ModelNode, nextNode: ModelNode) {
     const globalLineId = String(originalNode.params["_globalLineId"] ?? "").trim();
-    const record = records.find((item) => item.id === globalLineId);
+    const record = displayRecords.find((item) => item.id === globalLineId);
     const currentReference = modelReferenceFromScope(latestScopeRef.current, originalNode.id, originalNode) as GlobalLineReference;
     const nextReference = modelReferenceFromScope(latestScopeRef.current, nextNode.id, nextNode) as GlobalLineReference;
     return globalLineBoundaryAdjustmentConflictMessageForRecord(record, currentReference, nextReference);
@@ -399,8 +455,26 @@ export function useGlobalLines(scope: Record<string, any>) {
     setTransitionDialog(null);
   }
 
+  async function finalizeSavedGlobalLineProjectNodes(savedNodes: ModelNode[]) {
+    const latestScope = latestScopeRef.current;
+    let nextRecords = records;
+    try {
+      nextRecords = await loadRecords();
+    } catch (error) {
+      latestScope.writeOperationLog?.(error instanceof Error ? error.message : "保存后刷新全局线路列表失败。");
+    }
+    const canonicalNodes = applyGlobalLineRecordsToNodes(savedNodes, nextRecords, modelKey);
+    const latestNodes = Array.isArray(latestScope.nodes) ? latestScope.nodes as ModelNode[] : [];
+    if (JSON.stringify(latestNodes) === JSON.stringify(canonicalNodes)) return latestNodes;
+    if (latestScope.suppressNextGraphDirtyRef?.current !== undefined) {
+      latestScope.suppressNextGraphDirtyRef.current += 1;
+    }
+    latestScope.setNodes?.(canonicalNodes);
+    return canonicalNodes;
+  }
+
   Object.assign(scope, {
-    globalLineRecords: records,
+    globalLineRecords: displayRecords,
     globalLinePlacementDialog: dialog,
     globalLinePlacementCandidates: candidates,
     globalLineTransitionDialog: transitionDialog,
@@ -413,8 +487,11 @@ export function useGlobalLines(scope: Record<string, any>) {
     globalLineBoundaryAdjustmentConflictMessage,
     confirmGlobalLineTransition,
     cancelGlobalLineTransition,
-    syncGlobalLineProjectNodes
+    syncGlobalLineProjectNodes,
+    loadGlobalLineRecords,
+    globalLinePlacementConflictMessageForId,
+    finalizeSavedGlobalLineProjectNodes
   });
 
-  return { records, dialog, candidates, transitionDialog };
+  return { records: displayRecords, persistedRecords: records, dialog, candidates, transitionDialog };
 }
