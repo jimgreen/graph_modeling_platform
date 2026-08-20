@@ -79,6 +79,34 @@ describe("跨模型告警定位的未保存修改衔接", () => {
     expect(onLoaded).toHaveBeenCalledOnce();
     expect(setPendingUnsavedAction).toHaveBeenCalledWith(null);
   });
+
+  test("放弃修改进入浏览态时，撤回保存基线后的操作并清除未保存状态", async () => {
+    const enterBrowseMode = vi.fn();
+    const setHasUnsavedChanges = vi.fn();
+    const setPendingUnsavedAction = vi.fn();
+    const undoLastOperation = vi.fn();
+    const resolve = createResolveUnsavedChangeAction({
+      enterBrowseMode,
+      loadSavedProjectRecord: vi.fn(),
+      pendingUnsavedAction: {
+        kind: "enter-browse",
+        label: "切换到浏览模式"
+      },
+      saveCurrentProject: vi.fn().mockResolvedValue(true),
+      savedUndoStackLengthRef: { current: 2 },
+      setHasUnsavedChanges,
+      setPendingUnsavedAction,
+      undoLastOperation,
+      undoStack: [{}, {}, {}, {}, {}]
+    });
+
+    await resolve("discard");
+
+    expect(undoLastOperation).toHaveBeenCalledTimes(3);
+    expect(setHasUnsavedChanges).toHaveBeenCalledWith(false);
+    expect(enterBrowseMode).toHaveBeenCalledOnce();
+    expect(setPendingUnsavedAction).toHaveBeenCalledWith(null);
+  });
 });
 
 describe("保存模型后的全局线路正式身份回填", () => {

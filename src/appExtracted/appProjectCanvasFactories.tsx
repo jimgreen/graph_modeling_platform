@@ -2917,7 +2917,7 @@ export function createRequestLoadSavedProject(__appScope: Record<string, any>) {
 
 export function createResolveUnsavedChangeAction(__appScope: Record<string, any>) {
   return async (resolution: "discard" | "save" | "cancel") => {
-  const { enterBrowseMode, loadSavedProjectRecord, pendingUnsavedAction, saveCurrentProject, setPendingUnsavedAction } = __appScope;
+  const { enterBrowseMode, loadSavedProjectRecord, pendingUnsavedAction, saveCurrentProject, savedUndoStackLengthRef, setHasUnsavedChanges, setPendingUnsavedAction, undoLastOperation, undoStack } = __appScope;
     const action = pendingUnsavedAction;
     if (!action || resolution === "cancel") {
       setPendingUnsavedAction(null);
@@ -2936,6 +2936,14 @@ export function createResolveUnsavedChangeAction(__appScope: Record<string, any>
         action.onLoaded?.();
       }
     } else if (action.kind === "enter-browse") {
+      if (resolution === "discard") {
+        const baseline = savedUndoStackLengthRef?.current ?? 0;
+        const count = Math.max(0, undoStack.length - baseline);
+        for (let index = 0; index < count; index += 1) {
+          undoLastOperation();
+        }
+        setHasUnsavedChanges(false);
+      }
       enterBrowseMode();
     } else if (action.kind === "export" && resolution === "save") {
       // 设置标志跳过保存检查，因为刚刚保存完成
