@@ -111,6 +111,158 @@ describe("全局线路注册表迁移", () => {
 });
 
 describe("全局线路首末端槽", () => {
+  test("复用出线度为0或1的线路时在页面保存阶段用当前模型关联信息重建首末端", async () => {
+    const emptySeedReference = {
+      projectIdx: 998,
+      schemePath: [],
+      projectName: "即将清空的旧模型",
+      nodeId: "empty-seed-line",
+      boundaryEndpoint: "source"
+    };
+    const emptyRecord = await registry.attach({
+      energyType: "ac",
+      name: "待修复空线路",
+      node: line("empty-seed-line", "ac-routable-line", "empty-source", "empty-target"),
+      reference: emptySeedReference
+    });
+    await registry.detach({ globalLineId: emptyRecord.id, reference: emptySeedReference });
+    const singleRecord = await registry.attach({
+      energyType: "ac",
+      name: "待修复单端线路",
+      node: line("single-seed-line", "ac-routable-line", "single-source", "single-target"),
+      reference: {
+        projectIdx: 999,
+        schemePath: [],
+        projectName: "错误旧模型",
+        nodeId: "single-seed-line",
+        boundaryEndpoint: "target"
+      }
+    });
+    expect((await registry.list()).map((record) => record.degree)).toEqual([0, 1]);
+
+    const stationSource = node("station-source-22", "ac-station-source", { model_id: "22" });
+    const feederSource = node("feeder-source-23", "ac-feeder-source", { model_id: "23" });
+    const localLoadA = node("local-load-a", "ac-load");
+    const localLoadB = node("local-load-b", "ac-load");
+    const emptyLine = line("line-repair-empty", "ac-routable-line", stationSource.id, localLoadA.id, {
+      [GLOBAL_LINE_ID_PARAM]: emptyRecord.id,
+      _globalLineModelPair: "source",
+      _routableLineSourceTerminalId: "t-source-a"
+    }, "待修复空线路");
+    const singleLine = line("line-repair-single", "ac-routable-line", feederSource.id, localLoadB.id, {
+      [GLOBAL_LINE_ID_PARAM]: singleRecord.id,
+      _globalLineModelPair: "source",
+      _routableLineSourceTerminalId: "t-source-b"
+    }, "待修复单端线路");
+
+    const synchronized = await registry.syncProject({
+      projectIdx: 7,
+      schemePath: ["主方案"],
+      projectName: "本地馈线",
+      project: {
+        version: 1,
+        idx: 7,
+        name: "本地馈线",
+        modelType: "馈线",
+        nodes: [stationSource, feederSource, localLoadA, localLoadB, emptyLine, singleLine],
+        edges: []
+      }
+    });
+
+    const repairedEmpty = synchronized.records.find((record) => record.id === emptyRecord.id);
+    const repairedSingle = synchronized.records.find((record) => record.id === singleRecord.id);
+    expect(repairedEmpty).toMatchObject({
+      degree: 2,
+      endpointSlots: {
+        source: { projectIdx: 22, nodeId: emptyLine.id, boundaryNodeId: stationSource.id },
+        target: { projectIdx: 7, projectName: "本地馈线", nodeId: emptyLine.id }
+      }
+    });
+    expect(repairedSingle).toMatchObject({
+      degree: 2,
+      endpointSlots: {
+        source: { projectIdx: 23, nodeId: singleLine.id, boundaryNodeId: feederSource.id },
+        target: { projectIdx: 7, projectName: "本地馈线", nodeId: singleLine.id }
+      }
+    });
+  });
+
+  test("只能显式删除首末端均为空的全局线路记录", async () => {
+    const emptyReference = {
+      projectIdx: 1,
+      schemePath: ["主方案"],
+      projectName: "厂站一",
+      nodeId: "line-empty",
+      boundaryEndpoint: "source",
+      boundaryNodeId: "station-one",
+      boundaryTerminalId: "t1"
+    };
+    const empty = await registry.attach({
+      energyType: "ac",
+      name: "可删除空线路",
+      node: line("line-empty", "ac-routable-line", "station-one", "bus-one"),
+      reference: emptyReference
+    });
+    await registry.detach({ globalLineId: empty.id, reference: emptyReference });
+    const occupied = await registry.attach({
+      energyType: "ac",
+      name: "不可删除单端线路",
+      node: line("line-occupied", "ac-routable-line", "station-two", "bus-two"),
+      reference: { ...emptyReference, projectIdx: 2, projectName: "厂站二", nodeId: "line-occupied", boundaryNodeId: "station-two" }
+    });
+
+    await expect(registry.deleteEmpty({ id: occupied.id })).rejects.toMatchObject({ statusCode: 409 });
+    await expect(registry.deleteEmpty({ id: empty.id })).resolves.toMatchObject({ id: empty.id, degree: 0 });
+    expect((await registry.list()).map((record) => record.id)).toEqual([occupied.id]);
+  });
+
+  test("同一模型内拒绝保存两条复用同一全局线路ID的线路", async () => {
+    const reference = {
+      projectIdx: 88,
+      schemePath: ["主方案"],
+      projectName: "临时模型",
+      nodeId: "duplicate-seed",
+      boundaryEndpoint: "source",
+      boundaryNodeId: "duplicate-boundary",
+      boundaryTerminalId: "t1"
+    };
+    const seeded = await registry.attach({
+      energyType: "ac",
+      name: "禁止模型内重复线路",
+      node: line("duplicate-seed", "ac-routable-line", "duplicate-boundary", "duplicate-bus"),
+      reference
+    });
+    await registry.detach({ globalLineId: seeded.id, reference });
+
+    const associationA = node("duplicate-source-a", "ac-station-source", { model_id: "22" });
+    const associationB = node("duplicate-source-b", "ac-station-source", { model_id: "22" });
+    const localLoadA = node("duplicate-load-a", "ac-load");
+    const localLoadB = node("duplicate-load-b", "ac-load");
+    const duplicateA = line("duplicate-line-a", "ac-routable-line", associationA.id, localLoadA.id, {
+      [GLOBAL_LINE_ID_PARAM]: seeded.id,
+      _globalLineModelPair: "source"
+    }, seeded.name);
+    const duplicateB = line("duplicate-line-b", "ac-routable-line", associationB.id, localLoadB.id, {
+      [GLOBAL_LINE_ID_PARAM]: seeded.id,
+      _globalLineModelPair: "source"
+    }, seeded.name);
+
+    await expect(registry.syncProject({
+      projectIdx: 7,
+      schemePath: ["主方案"],
+      projectName: "本地馈线",
+      project: {
+        version: 1,
+        idx: 7,
+        name: "本地馈线",
+        modelType: "馈线",
+        nodes: [associationA, associationB, localLoadA, localLoadB, duplicateA, duplicateB],
+        edges: []
+      }
+    })).rejects.toThrow(/同一模型内.*同一条全局线路只能存在一条/);
+    expect((await registry.list()).find((record) => record.id === seeded.id)?.degree).toBe(0);
+  });
+
   test("页面保存时才写入模型关联线路，并在同步和服务重建后保持 model_id 端与本地端方向", async () => {
     const association = node("station-source", "ac-station-source", { model_id: "22" });
     const localLoad = node("local-load", "ac-load");
@@ -394,7 +546,7 @@ describe("全局线路首末端槽", () => {
     expect(reloaded).toEqual(beforeReuse);
   });
 
-  test("保存时再次拒绝与 model_id 模型首末端方向不一致的既有全局线路", async () => {
+  test("保存时仍拒绝出线度为2且与 model_id 模型首末端方向不一致的既有全局线路", async () => {
     const existing = await registry.attach({
       energyType: "ac",
       name: "方向不匹配线路",
@@ -405,6 +557,18 @@ describe("全局线路首末端槽", () => {
         projectName: "目标厂站",
         nodeId: "remote-line",
         boundaryEndpoint: "target"
+      }
+    });
+    await registry.attach({
+      globalLineId: existing.id,
+      energyType: "ac",
+      node: line("wrong-local-line", "ac-routable-line", "wrong-source", "wrong-target", {}, existing.name),
+      reference: {
+        projectIdx: 7,
+        schemePath: ["主方案"],
+        projectName: "本地馈线",
+        nodeId: "wrong-local-line",
+        boundaryEndpoint: "source"
       }
     });
     const association = node("station-source", "ac-station-source", { model_id: "22" });
@@ -431,7 +595,7 @@ describe("全局线路首末端槽", () => {
       statusCode: 409,
       message: expect.stringContaining("重新选择已有全局线路")
     });
-    expect((await registry.list()).find((record) => record.id === existing.id)?.degree).toBe(1);
+    expect((await registry.list()).find((record) => record.id === existing.id)?.degree).toBe(2);
   });
 
   test("首端和末端各只能挂接一次，删除引用只清空实际占用槽且主记录保留", async () => {

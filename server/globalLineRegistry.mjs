@@ -449,6 +449,7 @@ function existingAssociationReuseConflictMessage(record, node, nodeById, project
   if (boundary.boundaryEndpoint !== pairMode) {
     return `当前模型关联设备要求位于${boundaryEndpointLabel(boundary.boundaryEndpoint)}，但页面提交的复用端点为${boundaryEndpointLabel(pairMode)}，首末端方向不一致。${retry}`;
   }
+  if (record.references.length <= 1) return "";
   const associationReference = record.references.find((reference) => reference.boundaryEndpoint === pairMode);
   const oppositeEndpoint = oppositeBoundaryEndpoint(pairMode);
   const localReference = record.references.find((reference) => reference.boundaryEndpoint === oppositeEndpoint);
@@ -760,6 +761,22 @@ export function createGlobalLineRegistry({ dataRoot, schemeFilesRoot } = {}) {
       });
     },
 
+    async deleteEmpty(payload) {
+      return locked(async () => {
+        const state = await ensureInitialized();
+        const id = String(payload?.id ?? payload?.globalLineId ?? "").trim();
+        const recordIndex = state.records.findIndex((item) => item.id === id);
+        if (recordIndex < 0) throw new GlobalLineRegistryError("全局线路不存在。", 404);
+        const record = state.records[recordIndex];
+        if (record.references.length > 0) {
+          throw new GlobalLineRegistryError(`全局线路“${record.name}”仍有关联端点，只能删除首末端均为空的记录。`, 409);
+        }
+        state.records.splice(recordIndex, 1);
+        await writeState(registryPath, state);
+        return publicRecord(record);
+      });
+    },
+
     async syncProject(payload) {
       return locked(async () => {
         const state = await ensureInitialized();
@@ -780,6 +797,7 @@ export function createGlobalLineRegistry({ dataRoot, schemeFilesRoot } = {}) {
         const activeReferenceKeys = new Set();
         const changedRecordIds = new Set();
         const reuseOnlyRecordIds = new Set();
+        const usedGlobalLineRecordIds = new Set();
         const assignments = {};
         const managedModel = MANAGED_MODEL_TYPES.has(String(project.modelType ?? payload?.modelType ?? ""));
         const nodes = project.nodes.map((node) => {
@@ -805,13 +823,45 @@ export function createGlobalLineRegistry({ dataRoot, schemeFilesRoot } = {}) {
           if (reuseConflict) throw new GlobalLineRegistryError(reuseConflict, 409);
           const pairMode = String(node?.params?.[GLOBAL_LINE_MODEL_PAIR_PARAM] ?? "").trim();
           if (pairMode === "source" || pairMode === "target") {
-            reuseOnlyRecordIds.add(record.id);
+            if (usedGlobalLineRecordIds.has(record.id)) {
+              throw new GlobalLineRegistryError(`同一模型内，同一条全局线路只能存在一条：“${record.name}”。`, 409);
+            }
+            usedGlobalLineRecordIds.add(record.id);
+            if (record.references.length <= 1) {
+              const repairNode = {
+                ...node,
+                params: { ...node.params, [GLOBAL_LINE_MODEL_PAIR_PARAM]: "1" }
+              };
+              const repairReferences = projectReferences(
+                project,
+                { projectIdx, schemePath, projectName },
+                String(node.id ?? ""),
+                repairNode,
+                nodeById
+              );
+              if (repairReferences.length !== 2) {
+                throw new GlobalLineRegistryError("当前模型关联信息不完整，无法修复既有全局线路的首末端。", 409);
+              }
+              record.references = repairReferences.map((reference) => ({
+                ...reference,
+                schemePath: [...reference.schemePath]
+              }));
+              record.updatedAt = new Date().toISOString();
+              for (const reference of record.references) activeReferenceKeys.add(referenceKey(reference));
+              changedRecordIds.add(record.id);
+            } else {
+              reuseOnlyRecordIds.add(record.id);
+            }
             assignments[node.id] = record.id;
             return applyRecordToNode(node, record);
           }
           if (!record || record.energyType !== energyType) {
             record = nextRecord(state, energyType, node);
           }
+          if (usedGlobalLineRecordIds.has(record.id)) {
+            throw new GlobalLineRegistryError(`同一模型内，同一条全局线路只能存在一条：“${record.name}”。`, 409);
+          }
+          usedGlobalLineRecordIds.add(record.id);
           addReferences(record, references);
           const requestedName = String(node?.name ?? "").trim();
           if (requestedName && requestedName !== record.name) {

@@ -5408,6 +5408,14 @@ async function handleUpdateGlobalLine(request, response) {
   }));
 }
 
+async function handleDeleteEmptyGlobalLine(request, response) {
+  const payload = await readJsonBody(request, maxMeasurementConfigBodyBytes, "全局线路数据过大，最大支持 1MB。");
+  await handleGlobalLineRegistryOperation(response, async () => ({
+    ok: true,
+    record: await globalLineRegistry.deleteEmpty(payload)
+  }));
+}
+
 async function handleSyncGlobalLineProject(request, response) {
   const payload = await readJsonBody(request, maxSchemeBodyBytes, "模型全局线路数据过大，最大支持 64MB。");
   await handleGlobalLineRegistryOperation(response, async () => ({
@@ -5810,6 +5818,9 @@ export async function createImageServer({ port = 5174, host = "127.0.0.1", stati
     }],
     [routeKey("PUT", "/global-lines/record"), async ({ request, response }) => {
       await handleUpdateGlobalLine(request, response);
+    }],
+    [routeKey("DELETE", "/global-lines/record"), async ({ request, response }) => {
+      await handleDeleteEmptyGlobalLine(request, response);
     }],
     [routeKey("POST", "/global-lines/sync-project"), async ({ request, response }) => {
       await handleSyncGlobalLineProject(request, response);

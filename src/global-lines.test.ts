@@ -377,6 +377,14 @@ describe("全局线路数据同步", () => {
 
     expect(candidateGlobalLines(records, "ac", "model:2", "source").map((item) => item.id)).toEqual(["empty", "global-line-1"]);
     expect(candidateGlobalLines(records, "ac", "model:2", "target").map((item) => item.id)).toEqual(["empty", "source-occupied"]);
+    expect(candidateGlobalLines(
+      records,
+      "ac",
+      "model:2",
+      "source",
+      undefined,
+      new Set(["empty"])
+    ).map((item) => item.id)).toEqual(["global-line-1"]);
   });
 
   test("模型关联设备复用既有线路时预校核 model_id 与首末端方向", () => {
@@ -411,20 +419,28 @@ describe("全局线路数据同步", () => {
     const wrongModel = { ...matchingSource, modelKey: "model:33", projectIdx: 33, nodeId: "other-source-line" };
     const wrongLocal = { ...matchingTarget, modelKey: "model:9", projectIdx: 9, projectName: "其他馈线", nodeId: "other-local-line" };
     const empty = record({ id: "empty", idx: 6, references: [], endpointSlots: { source: null, target: null }, degree: 0 });
-    const matching = record({ id: "matching", idx: 7, references: [matchingSource, matchingTarget], endpointSlots: { source: matchingSource, target: matchingTarget }, degree: 2 });
-    const wrongDirection = record({ id: "wrong-direction", idx: 8, references: [wrongSource, wrongTarget], endpointSlots: { source: wrongSource, target: wrongTarget }, degree: 2 });
-    const wrongProject = record({ id: "wrong-project", idx: 9, references: [wrongModel, matchingTarget], endpointSlots: { source: wrongModel, target: matchingTarget }, degree: 2 });
-    const wrongLocalProject = record({ id: "wrong-local-project", idx: 10, references: [matchingSource, wrongLocal], endpointSlots: { source: matchingSource, target: wrongLocal }, degree: 2 });
+    const repairableSingle = record({
+      id: "repairable-single",
+      idx: 7,
+      references: [wrongTarget],
+      endpointSlots: { source: null, target: wrongTarget },
+      degree: 1
+    });
+    const matching = record({ id: "matching", idx: 8, references: [matchingSource, matchingTarget], endpointSlots: { source: matchingSource, target: matchingTarget }, degree: 2 });
+    const wrongDirection = record({ id: "wrong-direction", idx: 9, references: [wrongSource, wrongTarget], endpointSlots: { source: wrongSource, target: wrongTarget }, degree: 2 });
+    const wrongProject = record({ id: "wrong-project", idx: 10, references: [wrongModel, matchingTarget], endpointSlots: { source: wrongModel, target: matchingTarget }, degree: 2 });
+    const wrongLocalProject = record({ id: "wrong-local-project", idx: 11, references: [matchingSource, wrongLocal], endpointSlots: { source: matchingSource, target: wrongLocal }, degree: 2 });
 
     const candidates = candidateGlobalLines(
-      [empty, matching, wrongDirection, wrongProject, wrongLocalProject],
+      [empty, repairableSingle, matching, wrongDirection, wrongProject, wrongLocalProject],
       "ac",
       "model:7",
       "source",
       { source: stationSource, target: localLoad }
     );
-    expect(candidates.map((item) => item.id)).toEqual(["empty", "matching", "wrong-direction", "wrong-project", "wrong-local-project"]);
-    expect(globalLineExistingPlacementConflictMessage(empty, stationSource, localLoad, localModel)).toContain("未定义模型");
+    expect(candidates.map((item) => item.id)).toEqual(["empty", "repairable-single", "wrong-local-project"]);
+    expect(globalLineExistingPlacementConflictMessage(empty, stationSource, localLoad, localModel)).toBe("");
+    expect(globalLineExistingPlacementConflictMessage(repairableSingle, stationSource, localLoad, localModel)).toBe("");
     expect(globalLineExistingPlacementConflictMessage(matching, stationSource, localLoad, localModel)).toBe("");
     expect(globalLineExistingPlacementConflictMessage(wrongDirection, stationSource, localLoad, localModel)).toContain("首末端方向不一致");
     expect(globalLineExistingPlacementConflictMessage(wrongProject, stationSource, localLoad, localModel)).toContain("model_id=22");
@@ -448,6 +464,45 @@ describe("全局线路数据同步", () => {
     expect(preview.references).toEqual(matching.references);
     expect(preview.endpointSlots).toEqual(matching.endpointSlots);
     expect(preview.degree).toBe(matching.degree);
+
+    for (const repairable of [empty, repairableSingle]) {
+      const repairingLine = connectLine("ac-routable-line", stationSource.id, localLoad.id);
+      repairingLine.name = repairable.name;
+      repairingLine.params = {
+        ...repairingLine.params,
+        [GLOBAL_LINE_ID_PARAM]: repairable.id,
+        [GLOBAL_LINE_MODEL_PAIR_PARAM]: "source",
+        idx: String(repairable.idx)
+      };
+      const repairedPreview = previewGlobalLineRecordsForProject(
+        [repairable],
+        [stationSource, localLoad, repairingLine],
+        "馈线",
+        localModel
+      )[0];
+      expect(repairedPreview.degree).toBe(2);
+      expect(repairedPreview.endpointSlots?.source).toMatchObject({
+        projectIdx: 22,
+        nodeId: repairingLine.id,
+        boundaryNodeId: stationSource.id
+      });
+      expect(repairedPreview.endpointSlots?.target).toMatchObject({
+        projectIdx: 7,
+        projectName: "本地馈线",
+        nodeId: repairingLine.id
+      });
+    }
+  });
+
+  test("复用出线度为0或1的线路前显示端点将被重建的告警", () => {
+    const hookSource = readFileSync(new URL("./hooks/useGlobalLines.tsx", import.meta.url), "utf8");
+    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const stylesSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+
+    expect(viewSource).toContain("出线度为 0 或 1");
+    expect(viewSource).toContain("将使用当前模型关联信息重建该全局线路的首末端");
+    expect(hookSource).toContain("usedGlobalLineIds");
+    expect(stylesSource).toContain(".global-line-dialog-warning");
   });
 
   test("首末端都已关联时禁止把本端改接到另一个边界设备，删除另一端后才允许调整", () => {

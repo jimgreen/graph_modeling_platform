@@ -6,6 +6,7 @@ import {
   applyGlobalLineRecordsToNodes,
   candidateGlobalLines,
   deriveLocalDeviceIndexCounters,
+  GLOBAL_LINE_ID_PARAM,
   GLOBAL_LINE_MODEL_PAIR_PARAM,
   globalLineBoundaryAdjustmentConflictMessage as globalLineBoundaryAdjustmentConflictMessageForRecord,
   globalLineEnergyTypeForKind,
@@ -123,6 +124,10 @@ export function useGlobalLines(scope: Record<string, any>) {
   const schemePath = schemePathFromScope(scope);
   const modelKey = globalLineModelKey(projectIdx, schemePath, projectName);
   const nodes = Array.isArray(scope.nodes) ? scope.nodes as ModelNode[] : [];
+  const usedGlobalLineIds = useMemo(() => new Set(nodes.flatMap((node) => {
+    const globalLineId = String(node.params[GLOBAL_LINE_ID_PARAM] ?? "").trim();
+    return globalLineId ? [globalLineId] : [];
+  })), [nodes]);
   const schemePathKey = schemePath.join("\u0000");
   const localModelReference = useMemo<GlobalLineReference>(() => ({
     modelKey,
@@ -144,9 +149,10 @@ export function useGlobalLines(scope: Record<string, any>) {
         dialog.energyType,
         modelKey,
         dialog.boundaryEndpoint,
-        dialog.source && dialog.target ? { source: dialog.source.node, target: dialog.target.node } : undefined
+        dialog.source && dialog.target ? { source: dialog.source.node, target: dialog.target.node } : undefined,
+        usedGlobalLineIds
       )
-    : [], [dialog?.boundaryEndpoint, dialog?.energyType, dialog?.source?.node, dialog?.target?.node, modelKey, records]);
+    : [], [dialog?.boundaryEndpoint, dialog?.energyType, dialog?.source?.node, dialog?.target?.node, modelKey, records, usedGlobalLineIds]);
 
   function globalLinePlacementConflictMessageForId(
     globalLineId: string,
@@ -221,7 +227,7 @@ export function useGlobalLines(scope: Record<string, any>) {
     const boundaryEndpoint = boundaryEndpointForConnectTargets(source, target);
     if (!boundaryEndpoint) return false;
     const placementNodes = { source: source.node, target: target.node };
-    const initialCandidates = candidateGlobalLines(records, energyType, modelKey, boundaryEndpoint, placementNodes);
+    const initialCandidates = candidateGlobalLines(records, energyType, modelKey, boundaryEndpoint, placementNodes, usedGlobalLineIds);
     const initialDialog: GlobalLinePlacementDialogState = {
       template,
       source,
@@ -242,7 +248,7 @@ export function useGlobalLines(scope: Record<string, any>) {
     setDialog(initialDialog);
     void loadRecords().then((nextRecords) => {
       const nextDisplayRecords = previewRecords(nextRecords);
-      const nextCandidates = candidateGlobalLines(nextRecords, energyType, modelKey, boundaryEndpoint, placementNodes);
+      const nextCandidates = candidateGlobalLines(nextRecords, energyType, modelKey, boundaryEndpoint, placementNodes, usedGlobalLineIds);
       setDialog((current) => {
         if (!current) return current;
         const selectedGlobalLineId = nextCandidates.some((item) => item.id === current.selectedGlobalLineId)
@@ -271,7 +277,7 @@ export function useGlobalLines(scope: Record<string, any>) {
     if (!energyType) return false;
     const boundaryEndpoint = modelReferenceFromScope(latestScopeRef.current, node.id, node).boundaryEndpoint as GlobalLineEndpoint | undefined;
     if (!boundaryEndpoint) return false;
-    const initialCandidates = candidateGlobalLines(records, energyType, modelKey, boundaryEndpoint);
+    const initialCandidates = candidateGlobalLines(records, energyType, modelKey, boundaryEndpoint, undefined, usedGlobalLineIds);
     setDialog({
       transitionNode: node,
       energyType,
@@ -284,7 +290,7 @@ export function useGlobalLines(scope: Record<string, any>) {
       error: ""
     });
     void loadRecords().then((nextRecords) => {
-      const nextCandidates = candidateGlobalLines(nextRecords, energyType, modelKey, boundaryEndpoint);
+      const nextCandidates = candidateGlobalLines(nextRecords, energyType, modelKey, boundaryEndpoint, undefined, usedGlobalLineIds);
       setDialog((current) => current ? {
         ...current,
         loading: false,

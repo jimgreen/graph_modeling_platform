@@ -13682,6 +13682,16 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   line-height: 1.5;
 }
 
+.global-line-dialog-warning {
+  margin: 0 0 12px;
+  padding: 9px 11px;
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+  color: #92400e;
+  background: #fffbeb;
+  line-height: 1.5;
+}
+
 .global-line-dialog-error {
   margin: 0 0 12px;
   padding: 9px 11px;
@@ -14317,6 +14327,63 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   cursor: wait;
 }
 
+.global-line-list-header-actions > button.global-line-consistency-run {
+  border-color: #f59e0b;
+  color: #92400e;
+  background: #fffbeb;
+}
+
+.global-line-list-header-actions > button.global-line-consistency-run:hover:not(:disabled) {
+  border-color: #d97706;
+  color: #78350f;
+  background: #fef3c7;
+}
+
+.global-line-consistency-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: end;
+  gap: 4px;
+  padding: 8px 14px 0;
+  border-bottom: 1px solid #dbe3ec;
+  background: #f8fafc;
+}
+
+.global-line-consistency-tabs > button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  color: #64748b;
+  background: transparent;
+  cursor: pointer;
+}
+
+.global-line-consistency-tabs > button:hover,
+.global-line-consistency-tabs > button.active {
+  color: #1d4ed8;
+  background: #fff;
+}
+
+.global-line-consistency-tabs > button.active {
+  border-color: #dbe3ec;
+  font-weight: 700;
+}
+
+.global-line-consistency-tabs > button span {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: #475569;
+  background: #e2e8f0;
+  font-size: 11px;
+  text-align: center;
+}
+
 .global-line-list-resize-handle {
   position: absolute;
   z-index: 4;
@@ -14453,6 +14520,10 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   width: 27%;
 }
 
+.global-line-list-table:not(.global-line-consistency-alert-table) th:last-child {
+  width: 86px;
+}
+
 .global-line-list-table th:last-child,
 .global-line-list-table td:last-child {
   border-right: 0;
@@ -14544,6 +14615,37 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   text-overflow: ellipsis;
 }
 
+.global-line-list-operation {
+  text-align: center !important;
+}
+
+.global-line-list-delete {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border: 1px solid #fecaca;
+  border-radius: 5px;
+  color: #b91c1c;
+  background: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.global-line-list-delete:hover:not(:disabled) {
+  border-color: #f87171;
+  background: #fef2f2;
+}
+
+.global-line-list-delete:disabled {
+  color: #94a3b8;
+  border-color: #e2e8f0;
+  background: #f8fafc;
+  cursor: wait;
+}
+
 .global-line-list-placeholder {
   position: absolute;
   inset: 42px 0 0;
@@ -14558,6 +14660,71 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .global-line-list-placeholder.error {
   color: #b91c1c;
+}
+
+.global-line-list-placeholder.success {
+  color: #15803d;
+}
+
+.global-line-consistency-alert-table th:nth-child(1) {
+  width: 116px;
+}
+
+.global-line-consistency-alert-table th:nth-child(2) {
+  width: 19%;
+}
+
+.global-line-consistency-alert-table th:nth-child(3) {
+  width: 19%;
+}
+
+.global-line-consistency-alert-table td {
+  overflow-wrap: anywhere;
+}
+
+.global-line-consistency-alert-table tbody tr.locatable {
+  cursor: pointer;
+}
+
+.global-line-consistency-alert-table tbody tr.locatable:hover {
+  background: #eff6ff;
+}
+
+.global-line-consistency-alert-table td:first-child > small {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 10px;
+}
+
+.global-line-consistency-severity {
+  display: inline-flex;
+  min-width: 42px;
+  justify-content: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.global-line-consistency-severity.error {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
+.global-line-consistency-severity.warning {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.global-line-consistency-locate-help {
+  position: sticky;
+  bottom: 0;
+  padding: 7px 12px;
+  border-top: 1px solid #bfdbfe;
+  color: #1e40af;
+  background: rgba(239, 246, 255, 0.96);
+  font-size: 11px;
 }
 
 @media (max-width: 860px), (max-height: 620px) {

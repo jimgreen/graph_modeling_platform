@@ -472,7 +472,10 @@ export function previewGlobalLineRecordsForProject(
     const persisted = requestedId ? persistedById.get(requestedId) : undefined;
     const id = persisted?.id ?? (requestedId || `draft-global-line:${node.id}`);
     const pairMode = String(node.params[GLOBAL_LINE_MODEL_PAIR_PARAM] ?? "").trim();
-    if (persisted && (pairMode === "source" || pairMode === "target")) {
+    const repairingModelAssociationReuse = Boolean(
+      persisted && persisted.degree <= 1 && (pairMode === "source" || pairMode === "target")
+    );
+    if (persisted && (pairMode === "source" || pairMode === "target") && !repairingModelAssociationReuse) {
       previewById.set(id, globalLineRecordWithReferences(persisted, [...persisted.references]));
       continue;
     }
@@ -502,7 +505,7 @@ export function previewGlobalLineRecordsForProject(
       schemePath: [...localModelReference.schemePath],
       nodeId: node.id
     };
-    const references = pairMode === "1"
+    const references = pairMode === "1" || repairingModelAssociationReuse
       ? globalLineReferencesForPlacement(localReference, endpoints)
       : (() => {
           const boundaryEndpoint = isGlobalLineBoundaryNode(endpoints.source.node)
@@ -517,7 +520,9 @@ export function previewGlobalLineRecordsForProject(
             endpoints[boundaryEndpoint]
           )];
         })();
-    const nextReferences = mergeGlobalLineReferences(preview.references, references);
+    const nextReferences = repairingModelAssociationReuse
+      ? references
+      : mergeGlobalLineReferences(preview.references, references);
     previewById.set(id, globalLineRecordWithReferences({
       ...preview,
       name: node.name,
@@ -615,6 +620,7 @@ export function globalLineExistingPlacementConflictMessage(
 ): string {
   const placement = globalLineModelAssociationPlacementForEndpoints(sourceNode, targetNode);
   if (!record || !placement) return "";
+  if (record.degree <= 1) return "";
   const associationReference = globalLineEndpointReference(record, placement.endpoint);
   const oppositeEndpoint = oppositeGlobalLineEndpoint(placement.endpoint);
   const localReference = globalLineEndpointReference(record, oppositeEndpoint);
@@ -642,7 +648,8 @@ export function candidateGlobalLines(
   placementNodes?: {
     source: Pick<ModelNode, "kind" | "params">;
     target: Pick<ModelNode, "kind" | "params">;
-  }
+  },
+  usedGlobalLineIds: ReadonlySet<string> = new Set()
 ): GlobalLineRecord[] {
   const modelAssociationPlacement = placementNodes
     ? globalLineModelAssociationPlacementForEndpoints(placementNodes.source, placementNodes.target)
@@ -650,9 +657,10 @@ export function candidateGlobalLines(
   return records
     .filter((record) => (
       record.energyType === energyType &&
+      !usedGlobalLineIds.has(record.id) &&
+      !record.references.some((reference) => reference.modelKey === modelKey) &&
       (modelAssociationPlacement !== null || (
         record.degree < 2 &&
-        !record.references.some((reference) => reference.modelKey === modelKey) &&
         globalLineEndpointReference(record, boundaryEndpoint) === null
       ))
     ))
