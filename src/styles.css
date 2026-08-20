@@ -1708,8 +1708,12 @@ button:disabled {
 }
 
 body.canvas-drawing-mode:not(.canvas-connect-drop-ready),
-body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {
+body.canvas-drawing-mode:not(.canvas-connect-drop-ready) *:not([role="dialog"]):not([role="dialog"] *) {
   cursor: crosshair !important;
+}
+
+body.canvas-drawing-mode [role="dialog"] {
+  cursor: default !important;
 }
 
 body.canvas-drawing-mode .image-picker-backdrop,

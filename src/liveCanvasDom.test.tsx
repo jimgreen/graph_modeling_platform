@@ -209,16 +209,24 @@ describe("live canvas edge DOM", () => {
     expect(css).not.toContain(".terminal-drag-trajectory");
   });
 
-  test("keeps the regular arrow over modal popups while canvas drawing mode is active", () => {
+  test("keeps regular cursor behavior over every dialog while canvas drawing mode is active", () => {
     const css = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
-    const drawingCursorRule = "body.canvas-drawing-mode:not(.canvas-connect-drop-ready) *";
+    const drawingCursorRule =
+      'body.canvas-drawing-mode:not(.canvas-connect-drop-ready) *:not([role="dialog"]):not([role="dialog"] *)';
+    const dialogCursorRule = 'body.canvas-drawing-mode [role="dialog"]';
     const popupCursorRule = "body.canvas-drawing-mode .image-picker-backdrop *";
 
     expect(css).toContain(drawingCursorRule);
+    expect(css).not.toContain("body.canvas-drawing-mode:not(.canvas-connect-drop-ready) * {");
+    expect(css).toContain(dialogCursorRule);
+    expect(css).toMatch(
+      /body\.canvas-drawing-mode \[role="dialog"\]\s*\{[\s\S]*?cursor:\s*default\s*!important/
+    );
     expect(css).toContain(popupCursorRule);
     expect(css).toMatch(
       /body\.canvas-drawing-mode \.image-picker-backdrop,[\s\S]*body\.canvas-drawing-mode \.image-picker-backdrop \*[\s\S]*cursor:\s*default\s*!important/
     );
+    expect(css.indexOf(dialogCursorRule)).toBeGreaterThan(css.indexOf(drawingCursorRule));
     expect(css.indexOf(popupCursorRule)).toBeGreaterThan(css.indexOf(drawingCursorRule));
   });
 });
