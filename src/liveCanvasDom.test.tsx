@@ -156,6 +156,23 @@ describe("live canvas edge DOM", () => {
     ).toBe(false);
   });
 
+  test("rerenders the canvas when smart alignment guides change during an imperative node drag", () => {
+    const guide = {
+      id: "vertical-240",
+      orientation: "vertical",
+      position: 240,
+      start: 80,
+      end: 320
+    };
+
+    expect(
+      areCanvasPropsEqual(
+        { scope: { smartAlignmentGuides: [] } },
+        { scope: { smartAlignmentGuides: [guide] } }
+      )
+    ).toBe(false);
+  });
+
   test("maps the live pointer and device-body stub point into terminal-layer coordinates", async () => {
     const canvasModule = await import("./appExtracted/appCanvasArea");
     const previewGeometry = (canvasModule as any).singleTerminalPointerPreviewGeometry;

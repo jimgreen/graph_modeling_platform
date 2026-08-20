@@ -884,6 +884,29 @@ function routableLineRouteHasBlockingIssue(points: Point[], blockers: ModelNode[
   );
 }
 
+function routableLineRouteCrossesEndpointBodyInteriors(points: Point[], edge: Edge, endpointNodes: ModelNode[]) {
+  if (points.length < 2 || endpointNodes.length === 0) {
+    return false;
+  }
+  const lastSegmentIndex = points.length - 2;
+  for (const endpointNode of endpointNodes) {
+    const isSource = endpointNode.id === edge.sourceId;
+    const isTarget = endpointNode.id === edge.targetId;
+    if (!isSource && !isTarget) {
+      continue;
+    }
+    for (let index = 1; index < points.length; index += 1) {
+      const segmentIndex = index - 1;
+      const endpointSegment = (isSource && segmentIndex === 0) || (isTarget && segmentIndex === lastSegmentIndex);
+      const bodyBox = routeBodyBlockerBox(endpointNode, endpointSegment ? 0 : ROUTE_BLOCKER_PADDING);
+      if (segmentIntersectsBox(points[index - 1], points[index], bodyBox)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 function routableLineEndpointNormals(
   points: Point[],
   edge: Edge,
@@ -1296,8 +1319,13 @@ export function routeRoutableLineDevice(
   if (!routePointsForDesign || routePointsForDesign.length < 2) {
     return ensureRoutableLineDevicePathParam(node);
   }
+  const endpointBodyNodes = [nodeById.get(routeEdge.sourceId), nodeById.get(routeEdge.targetId)]
+    .filter((candidate): candidate is ModelNode => Boolean(candidate && !isBusNode(candidate)));
   let routePoints = routePointsForDesign;
-  if (routableLineRouteHasBlockingIssue(routePointsForDesign, blockers, routeEdge)) {
+  if (
+    routableLineRouteHasBlockingIssue(routePointsForDesign, blockers, routeEdge) ||
+    routableLineRouteCrossesEndpointBodyInteriors(routePointsForDesign, routeEdge, endpointBodyNodes)
+  ) {
     const repairedRoutePoints = repairRoutableLineRouteAroundBlockers(routePointsForDesign, blockers, routeEdge, bounds);
     if (routableLineRouteMatchesEndpointNormals(repairedRoutePoints, routeEdge, nodeById)) {
       routePoints = repairedRoutePoints;
@@ -1466,8 +1494,11 @@ function routableLineStoredPathSafety(
     const otherNodes = nodes.filter((candidate) => candidate.id !== node.id);
     blockers = routableLineRoutingBlockers(otherNodes, routeEdge);
   }
+  const endpointBodyNodes = [nodeById.get(routeEdge.sourceId), nodeById.get(routeEdge.targetId)]
+    .filter((candidate): candidate is ModelNode => Boolean(candidate && !isBusNode(candidate)));
   const hasBlockingIssue =
     routableLineRouteHasBlockingIssue(points, blockers, routeEdge) ||
+    routableLineRouteCrossesEndpointBodyInteriors(points, routeEdge, endpointBodyNodes) ||
     routeHasEndpointAwareBlockingIssue(
     points,
     filterBlockersForRoutePoints(points, blockers),

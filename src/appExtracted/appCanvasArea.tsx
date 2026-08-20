@@ -215,7 +215,7 @@ export function areCanvasPropsEqual(prevProps: any, nextProps: any) {
     'visibleNodes', 'visibleEdges', 'selectedNodeIdSet', 'selectedEdgeIds',
     'visibleMeasurementGroups',
     'marquee', 'connectPreviewDom', 'routableLinePreview', 'resizeSizeHint',
-    'draggingDelta', 'connectSource', 'libraryPlacement',
+    'draggingDelta', 'smartAlignmentGuides', 'connectSource', 'libraryPlacement',
     'canvasBackgroundColor', 'canvasBackgroundImageUrl', 'canvasBackgroundImageFit', 'backgroundPageRender',
     'colorDisplayMode', 'colorPalette'
   ];
