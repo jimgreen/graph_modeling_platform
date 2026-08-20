@@ -674,7 +674,7 @@ describe("全局线路双向一致性校验", () => {
     expect(stylesSource).toContain(".global-line-consistency-severity");
   });
 
-  test("切换当前模型页面时保留一致性报警，仅显式刷新时清空旧结果", () => {
+  test("切换当前模型页面或隐藏后重开时保留一致性报警，仅显式刷新时清空旧结果", () => {
     const dialogSource = readFileSync(new URL("./AllNetworkTopologyDialog.tsx", import.meta.url), "utf8");
     const modelSignatureEffectStart = dialogSource.indexOf("setSelectedProjectIds(new Set(defaultAllNetworkTopologySelection(models)))");
     const modelSignatureEffectEnd = dialogSource.indexOf("}, [modelSignature]);", modelSignatureEffectStart);
@@ -682,16 +682,21 @@ describe("全局线路双向一致性校验", () => {
     const globalLineRecordsEffectStart = dialogSource.indexOf("const currentRecords = Array.isArray(scope.globalLineRecords)");
     const globalLineRecordsEffectEnd = dialogSource.indexOf("}, [globalLineListOpen, scope.globalLineRecords]);", globalLineRecordsEffectStart);
     const globalLineRecordsEffect = dialogSource.slice(globalLineRecordsEffectStart, globalLineRecordsEffectEnd);
-    const refreshStart = dialogSource.indexOf("const refreshGlobalLineList = async () =>");
+    const refreshStart = dialogSource.indexOf("const refreshGlobalLineList = async (clearConsistency: boolean) =>");
     const refreshEnd = dialogSource.indexOf("useEffect(() =>", refreshStart);
     const refreshBlock = dialogSource.slice(refreshStart, refreshEnd);
+    const reopenEffectEnd = dialogSource.indexOf("}, [globalLineListOpen]);", refreshEnd);
+    const reopenEffect = dialogSource.slice(refreshEnd, reopenEffectEnd);
 
     expect(modelSignatureEffect).not.toContain("setGlobalLineConsistencyResult(null)");
     expect(modelSignatureEffect).not.toContain("setGlobalLineConsistencyModels([])");
     expect(globalLineRecordsEffect).not.toContain("setGlobalLineConsistencyResult(null)");
     expect(globalLineRecordsEffect).not.toContain("setGlobalLineConsistencyModels([])");
+    expect(refreshBlock).toContain("if (clearConsistency)");
     expect(refreshBlock).toContain("setGlobalLineConsistencyResult(null)");
     expect(refreshBlock).toContain("setGlobalLineConsistencyModels([])");
+    expect(reopenEffect).toContain("refreshGlobalLineList(false)");
+    expect(dialogSource).toContain("onRefresh={() => void refreshGlobalLineList(true)}");
   });
 });
 
