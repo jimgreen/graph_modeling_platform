@@ -689,7 +689,13 @@ describe("power system model", () => {
     expect(node.terminals.map((terminal) => terminal.type)).toEqual(["ac", "ac"]);
     expect(node.terminals.map((terminal) => terminal.anchor)).toEqual([{ x: -0.5, y: 0 }, { x: 0.5, y: 0 }]);
     expect(getDeviceGlyphVariant("ac-box-breaker")).toBe("box-breaker");
-    expect(getEParameterKeys("ac-box-breaker", node.params)).toEqual([...E_SECTION_COLUMNS.ACBreak, "i"]);
+    expect(getEParameterKeys("ac-box-breaker", node.params)).toEqual([
+      "idx",
+      "name",
+      "parent",
+      ...E_SECTION_COLUMNS.ACBreak.slice(2),
+      "i"
+    ]);
 
     const exported = parseESections(buildEDeviceParameterFile({
       version: 1,

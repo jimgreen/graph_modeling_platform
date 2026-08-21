@@ -2750,6 +2750,7 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
       width: project.project.canvasWidth ?? DEFAULT_CANVAS_WIDTH,
       height: project.project.canvasHeight ?? DEFAULT_CANVAS_HEIGHT
     };
+    const nextProjectIdx = Number(project.project.idx) || 0;
     const routableLineNodeIds = layeredProject.nodes
       .filter((node) => isRoutableLineDeviceKind(node.kind))
       .map((node) => node.id);
@@ -2782,7 +2783,7 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
     suppressNextGraphDirtyRef.current += 1;
     setUndoStack([]);
     setProjectName(project.name);
-    setProjectIdx(Number(project.project.idx) || 0);
+    setProjectIdx(nextProjectIdx);
     setCanvasWidth(nextCanvasBounds.width);
     setCanvasHeight(nextCanvasBounds.height);
     setAllowAutoExpandCanvas(project.project.allowAutoExpandCanvas ?? true);
@@ -2805,7 +2806,7 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
     setLayers(layeredProject.layers ?? []);
     setActiveLayerId(layeredProject.activeLayerId ?? DEFAULT_MODEL_LAYER_ID);
     setDeviceIndexCounters(indexed.counters);
-    setGraphArrays(routeSafeNodes, layeredProject.edges);
+    setGraphArrays(routeSafeNodes, layeredProject.edges, nextProjectIdx);
     setGroups(normalizeModelGroups(layeredProject.groups, routeSafeNodes, layeredProject.edges));
     setProjectMeasurements(reconciledMeasurements);
     setTopology(EMPTY_TOPOLOGY);

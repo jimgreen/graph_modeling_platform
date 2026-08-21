@@ -892,6 +892,7 @@ describe("electric generation device library classification", () => {
       "cut_out_wind_speed",
       "rotor_diameter",
       "hub_height",
+      "parent",
       "dev_type"
     ]);
     expect(fieldNames).not.toEqual(expect.arrayContaining([
@@ -923,6 +924,7 @@ describe("electric generation device library classification", () => {
       "design_flow",
       "rated_speed",
       "generator_efficiency",
+      "parent",
       "dev_type"
     ]);
     expect(fieldNames).not.toEqual(expect.arrayContaining([
@@ -957,7 +959,7 @@ describe("electric generation device library classification", () => {
         existingDefinitions: existingNodeNames.map((enName) => ({ enName }))
       } as any);
 
-      expect(rows.map((row) => row.enName)).toEqual(["idx", "name", "status", "run_stat"]);
+      expect(rows.map((row) => row.enName)).toEqual(["idx", "name", "parent", "status", "run_stat"]);
     }
   );
 
@@ -969,6 +971,7 @@ describe("electric generation device library classification", () => {
     expect(rows.map((row) => row.enName)).toEqual([
       "idx",
       "name",
+      "parent",
       "status",
       "run_stat",
       "t1_node",
@@ -1020,14 +1023,22 @@ describe("electric generation device library classification", () => {
     expect(draft.derivedComponentLibrary).toBe("UserWindGen");
     expect(draft.derivedComponentLibraryLabel).toBe("用户风电");
     expect(draft.isContainer).toBe(false);
-    expect(draft.params.map((row) => row.enName)).toEqual(["installedCapacity", "dev_type"]);
+    expect(draft.params.map((row) => row.enName)).toEqual(["installedCapacity", "parent", "dev_type"]);
     expect(draft.params[0]).toMatchObject({
       cnName: "装机容量",
       exportEnabled: true,
       exportName: "installed_capacity"
     });
-    // dev_type 例外：派生类属性列表保留主类的设备类型字段
     expect(draft.params[1]).toMatchObject({
+      enName: "parent",
+      valueType: "numberEnum",
+      enumValueType: "number",
+      readonly: false,
+      exportEnabled: true,
+      exportName: "parent"
+    });
+    // parent/dev_type 例外：派生类属性列表保留主类的所属模型和设备类型字段
+    expect(draft.params[2]).toMatchObject({
       enName: "dev_type",
       exportEnabled: true,
       exportName: "dev_type"

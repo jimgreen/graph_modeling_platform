@@ -32,7 +32,7 @@ const baseDefinition = {
 } as const;
 
 describe("component library editable definitions", () => {
-  test("builds mandatory identity, state, dev_type and single-terminal topo fields", () => {
+  test("builds mandatory identity, state, parent, dev_type and single-terminal topo fields", () => {
     const rows = buildComponentLibraryDefaultParameterDefinitions("ACRealBs", ["ac"]);
 
     expect(rows.map((row) => row.enName)).toEqual([
@@ -40,9 +40,19 @@ describe("component library editable definitions", () => {
       "name",
       "status",
       "run_stat",
+      "parent",
       "dev_type",
       "node"
     ]);
+    expect(rows.find((row) => row.enName === "parent")).toMatchObject({
+      cnName: "所属模型",
+      valueType: "numberEnum",
+      typicalValue: "",
+      enumValueType: "number",
+      readonly: false,
+      exportEnabled: true,
+      exportName: "parent"
+    });
     expect(rows.find((row) => row.enName === "dev_type")?.typicalValue).toBe("ACRealBs");
     expect(rows.find((row) => row.enName === "dev_type")?.readonly).toBe(false);
   });
@@ -193,6 +203,7 @@ describe("component library editable definitions", () => {
       "name",
       "status",
       "run_stat",
+      "parent",
       "dev_type",
       "node",
       "pressure_set"

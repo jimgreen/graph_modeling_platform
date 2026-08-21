@@ -666,17 +666,23 @@ export function removeDeviceTemplateDefinitionOverrides(
 export const isReservedDeviceDefinitionParamName = (enName: string) =>
   enName.trim() === "is_container" || enName.trim() === ALLOW_RESIZE_TRANSFORM_PARAM;
 
-// 派生类参数定义保留主类的 dev_type 字段，合并到可编辑定义列表
+// 派生类参数定义保留主类的 parent/dev_type 固定字段，合并到可编辑定义列表
 function buildEditableDefinitionsWithDevTypeFallback(
   definitionGroups: { baseDefinitions: DeviceParameterDefinition[]; derivedDefinitions: DeviceParameterDefinition[] },
   derivedInfo: ReturnType<typeof modelTemplateDerivedComponentLibraryInfo>
 ): DeviceParameterDefinition[] {
-  if (!derivedInfo || definitionGroups.derivedDefinitions.some((d) => d.enName === "dev_type")) {
+  if (!derivedInfo) {
     return definitionGroups.derivedDefinitions;
   }
+  const fixedFieldNames = ["parent", "dev_type"];
+  const fixedDefinitions = fixedFieldNames.flatMap((fieldName) => {
+    const definition = definitionGroups.derivedDefinitions.find((candidate) => candidate.enName === fieldName)
+      ?? definitionGroups.baseDefinitions.find((candidate) => candidate.enName === fieldName);
+    return definition ? [definition] : [];
+  });
   return [
-    ...definitionGroups.derivedDefinitions,
-    ...definitionGroups.baseDefinitions.filter((d) => d.enName === "dev_type")
+    ...definitionGroups.derivedDefinitions.filter((definition) => !fixedFieldNames.includes(definition.enName)),
+    ...fixedDefinitions
   ];
 }
 
@@ -706,6 +712,7 @@ export function createDefinitionDraftRows(template: DeviceTemplate): DeviceDefin
 const DERIVED_COMPONENT_BASE_PARAM_NAMES = new Set([
   "idx",
   "name",
+  "parent",
   "dev_type",
   "status",
   "run_stat",
@@ -742,8 +749,8 @@ const DERIVED_COMPONENT_BASE_PARAM_NAMES = new Set([
 
 export function isDerivedComponentBaseParamName(fieldName: unknown, baseComponentLibrary = "") {
   const enName = String(fieldName ?? "").trim();
-  // dev_type 例外：派生类参数定义中保留设备类型字段
-  if (enName === "dev_type") {
+  // parent/dev_type 例外：派生类参数定义中保留所属模型和设备类型字段
+  if (enName === "parent" || enName === "dev_type") {
     return false;
   }
   if (!enName || enName === "component_type" || isReservedDeviceDefinitionParamName(enName)) {

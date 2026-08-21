@@ -937,7 +937,7 @@ test("exports parallel and series AC compensators with the defined columns and t
     "idx", "name", "dev_type", "i_node", "j_node", "rated_voltage", "rated_reactive_power", "reactance", "run_stat"
   ]);
   expect(exported.ACCompensator.columns).toEqual([
-    ...E_SECTION_COLUMNS.ACCompensator,
+    "idx", "name", "parent", ...E_SECTION_COLUMNS.ACCompensator.slice(2),
     "q",
     "current"
   ]);
@@ -951,7 +951,7 @@ test("exports parallel and series AC compensators with the defined columns and t
   })]);
   expect(exported.ACCompensator.rows[0].node).toMatch(/^\d+$/);
   expect(exported.ACSeriCompensator.columns).toEqual([
-    ...E_SECTION_COLUMNS.ACSeriCompensator,
+    "idx", "name", "parent", ...E_SECTION_COLUMNS.ACSeriCompensator.slice(2),
     "p",
     "q",
     "current"
@@ -1003,7 +1003,11 @@ test("uses fixed cnName for idx/name and filters enName-only cnName in union", (
   expect(acGen).toBeDefined();
   expect(acGen!.fields.find((f) => f.exportName === "idx")?.cnName).toBe("序号");
   expect(acGen!.fields.find((f) => f.exportName === "name")?.cnName).toBe("名称");
+  expect(acGen!.fields.find((f) => f.exportName === "parent")?.cnName).toBe("所属模型");
   expect(acGen!.fields.find((f) => f.exportName === "dev_type")?.cnName).toBe("设备类型");
+  expect(acGen!.fields.slice(0, 4).map((field) => field.exportName)).toEqual([
+    "idx", "name", "parent", "dev_type"
+  ]);
   expect(acGen!.fields.find((f) => f.exportName === "p_set")?.cnName).toBe("有功设定");
 });
 
@@ -1266,6 +1270,7 @@ test("exports and parses custom derived component library metadata", () => {
   });
   expect(derivedSection?.fields.map((field) => field.exportName)).toEqual([
     "idx",
+    "parent",
     "dev_type",
     "idx_acgenerator",
     "installed_capacity"
@@ -1457,7 +1462,9 @@ test("exports electric-hydrogen controls, directional coefficients, and associat
     }));
     const couplingRow = exported[couplingSection].rows[0];
 
-    expect(exported[couplingSection].columns, couplingSection).toEqual(E_SECTION_COLUMNS[couplingSection]);
+    expect(exported[couplingSection].columns, couplingSection).toEqual([
+      "idx", "name", "parent", ...E_SECTION_COLUMNS[couplingSection].slice(2)
+    ]);
     expect(couplingRow, couplingSection).toMatchObject({
       control_type: controlType,
       [coefficientKey]: coefficientValue
@@ -1536,7 +1543,7 @@ test("exports hydrogen source and load fields in canonical order and defaults mi
     edges: []
   }));
   const expectedColumns = [
-    "idx", "name", "node", "rated_capacity", "control_type",
+    "idx", "name", "parent", "node", "rated_capacity", "control_type",
     "pressure_set", "pressure_max", "pressure_min",
     "flow_set", "flow_max", "flow_min", "run_stat"
   ];
@@ -1587,10 +1594,10 @@ test("exports electric heat containers to AC and DC specific E sections", () => 
     edges: []
   }));
 
-  expect(exported.AcE2Heat.columns).toEqual(["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_ac_load_t1", "idx_heat_unit_t2"]);
-  expect(exported.DcE2Heat.columns).toEqual(["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_dc_load_t1", "idx_heat_unit_t2"]);
-  expect(exported.AcE2Heat2.columns).toEqual(["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_ac_load_t1", "idx_heat2_unit_t2"]);
-  expect(exported.DcE2Heat2.columns).toEqual(["idx", "name", "control_type", "e2h_coeff", "run_stat", "idx_dc_load_t1", "idx_heat2_unit_t2"]);
+  expect(exported.AcE2Heat.columns).toEqual(["idx", "name", "parent", "control_type", "e2h_coeff", "run_stat", "idx_ac_load_t1", "idx_heat_unit_t2"]);
+  expect(exported.DcE2Heat.columns).toEqual(["idx", "name", "parent", "control_type", "e2h_coeff", "run_stat", "idx_dc_load_t1", "idx_heat_unit_t2"]);
+  expect(exported.AcE2Heat2.columns).toEqual(["idx", "name", "parent", "control_type", "e2h_coeff", "run_stat", "idx_ac_load_t1", "idx_heat2_unit_t2"]);
+  expect(exported.DcE2Heat2.columns).toEqual(["idx", "name", "parent", "control_type", "e2h_coeff", "run_stat", "idx_dc_load_t1", "idx_heat2_unit_t2"]);
   expect(exported.AcE2Heat.rows[0]).toMatchObject({ control_type: "P", e2h_coeff: "1.0" });
   expect(exported.DcE2Heat.rows[0]).toMatchObject({ control_type: "P", e2h_coeff: "1.0" });
   expect(exported.AcE2Heat2.rows[0]).toMatchObject({ control_type: "T", e2h_coeff: "1.0" });
@@ -1767,7 +1774,7 @@ test("keeps canonical transformer E fields as export defaults when metadata is a
     exportName: "rated_capacity"
   });
   expect(getEParameterKeys(transformer.kind, transformer.params)).toEqual([
-    ...E_SECTION_COLUMNS.ACTransformer,
+    "idx", "name", "parent", ...E_SECTION_COLUMNS.ACTransformer.slice(2),
     "p",
     "q",
     "u",
@@ -1913,8 +1920,8 @@ test("keeps old custom parameters exported while new explicitly disabled paramet
     edges: []
   }));
 
-  expect(getEParameterKeys(node.kind, node.params)).toEqual(["legacyValue", "external_value"]);
-  expect(payload.CustomExportControl.columns).toEqual(["legacyValue", "external_value"]);
+  expect(getEParameterKeys(node.kind, node.params)).toEqual(["parent", "legacyValue", "external_value"]);
+  expect(payload.CustomExportControl.columns).toEqual(["parent", "legacyValue", "external_value"]);
   expect(payload.CustomExportControl.rows[0]).toMatchObject({
     legacyValue: "legacy",
     external_value: "external"
@@ -1977,6 +1984,7 @@ test("maps graphical AC and DC buses to real bus sections in E parameter files",
   expect(acRealBus).toEqual({
     idx: "21",
     name: "ac_bus",
+    parent: "0",
     node: "1",
     v_max: "1.1",
     v_min: "0.9",
@@ -1987,6 +1995,7 @@ test("maps graphical AC and DC buses to real bus sections in E parameter files",
   expect(dcRealBus).toEqual({
     idx: "1",
     name: "dc_bus",
+    parent: "0",
     node: "1",
     v_max: "1.1",
     v_min: "0.9",
@@ -2108,6 +2117,7 @@ test("exports a three-winding transformer as one independent device with three-s
   expect(payload.ACTransfomer3.columns).toEqual([
     "idx",
     "name",
+    "parent",
     "t1_node",
     "t2_node",
     "t3_node",
@@ -2145,6 +2155,7 @@ test("exports a three-winding transformer as one independent device with three-s
   expect(acTransfomer3).toEqual({
     idx: "1",
     name: "T3",
+    parent: "0",
     t1_node: "1",
     t2_node: "2",
     t3_node: "3",
@@ -2567,7 +2578,7 @@ test("exports user-defined English device types as custom E sections", () => {
     edges: []
   }));
 
-  expect(exported.CustomEnergyUnit.columns).toEqual(["idx", "name", "node", "run_stat", "p_set"]);
+  expect(exported.CustomEnergyUnit.columns).toEqual(["idx", "name", "parent", "node", "run_stat", "p_set"]);
   expect(exported.CustomEnergyUnit.rows[0]).toMatchObject({
     idx: "1",
     name: "custom_unit_1",
@@ -2749,9 +2760,9 @@ test("exports numeric enum codes and string enum values from custom E sections",
       { value: "0", label: "退出" },
       { value: "1", label: "运行" }
     ],
-    enumValues: ["0", "1"]
+    enumValues: ["0", "1"],
+    enumValueType: "number"
   });
-  expect(storedDefinitions.find((definition) => definition.enName === "run_mode")).not.toHaveProperty("enumValueType");
   expect(storedDefinitions.find((definition) => definition.enName === "generator_type")).toMatchObject({
     valueType: "stringEnum",
     typicalValue: "PV",
@@ -2763,7 +2774,7 @@ test("exports numeric enum codes and string enum values from custom E sections",
     enumValues: ["PV", "PQ", "PH"]
   });
   expect(storedDefinitions.find((definition) => definition.enName === "generator_type")).not.toHaveProperty("enumValueType");
-  expect(exported.CustomEnumUnit.columns).toEqual(["idx", "name", "node", "run_mode", "generator_type"]);
+  expect(exported.CustomEnumUnit.columns).toEqual(["idx", "name", "parent", "node", "run_mode", "generator_type"]);
   expect(exported.CustomEnumUnit.rows[0]).toMatchObject({
     idx: "1",
     name: "custom_enum_1",
@@ -2865,7 +2876,7 @@ test("keeps every built-in device parameter aligned with its semantic type and n
     "ac_control_type", "control_type", "dc_control_type", "fuel_type", "i_control_type", "j_control_type", "reactor_type",
     "storage_technology", "turbine_type"
   ]);
-  const numberEnumNames = new Set(["regable", "run_stat", "status"]);
+  const numberEnumNames = new Set(["parent", "regable", "run_stat", "status"]);
   const numericText = /^[-+]?(?:\d+(?:\.\d+)?|\.\d+)$/;
   const integerText = /^[-+]?\d+$/;
   const expectedType = (name: string, kind: DeviceKind) => {
@@ -2901,7 +2912,10 @@ test("keeps every built-in device parameter aligned with its semantic type and n
       }
       if (semanticType === "stringEnum" || semanticType === "numberEnum") {
         const optionValues = (definition.enumOptions ?? []).map((option) => option.value);
-        if (definition.enName === "model_id" && modelAssociationModelTypeForKind(template.kind)) {
+        if (
+          definition.enName === "parent" ||
+          (definition.enName === "model_id" && modelAssociationModelTypeForKind(template.kind))
+        ) {
           expect(optionValues, context).toEqual([]);
           expect(definition.typicalValue, context).toBe("");
         } else {
@@ -4230,6 +4244,55 @@ describe("全网 E 文件导出", () => {
     expect(payload.ACLoad.columns.slice(0, 3)).toEqual(["idx", "name", "parent"]);
     expect(payload.ACLoad.rows.find((row) => row.name === "馈线本地负荷")?.parent).toBe("7");
     expect(payload.ACNode.rows.every((row) => row.parent === "6" || row.parent === "7")).toBe(true);
+  });
+
+  test("全网 E 中所有设备把 parent 固定在 dev_type 之前", () => {
+    const source = createDefaultNode("ac-source", { x: 100, y: 120 });
+    source.name = "顺序校验电源";
+    source.params.idx = "1";
+    source.terminals[0].vbase = "10";
+    const load = createDefaultNode("ac-load", { x: 320, y: 120 });
+    load.name = "顺序校验负荷";
+    load.params.idx = "2";
+    load.terminals[0].vbase = "10";
+    const fields = ["idx", "dev_type", "name", "node"].map((name) => ({
+      sourceName: name,
+      exportName: name,
+      cnName: name,
+      exportEnabled: true
+    }));
+
+    const file = buildMultiModelEFileExport([{
+      id: "station-19",
+      schemePath: ["主方案"],
+      project: {
+        version: 1,
+        name: "顺序校验厂站",
+        idx: 19,
+        modelType: "厂站",
+        nodes: [source, load],
+        edges: []
+      }
+    }], {
+      interfaceDefinitions: [
+        {
+          componentLibrary: "ACGenerator",
+          exportName: "ACGenerator",
+          fields
+        },
+        {
+          componentLibrary: "ACLoad",
+          exportName: "ACLoad",
+          fields
+        }
+      ]
+    });
+    const payload = parseESections(file.text);
+
+    for (const section of ["ACGenerator", "ACLoad"] as const) {
+      expect(payload[section].columns).toEqual(["idx", "name", "parent", "dev_type", "node"]);
+      expect(payload[section].rows.every((row) => row.parent === "19")).toBe(true);
+    }
   });
 
   test("按模型 idx 合并记录并把设备及节点序号重编号为模型 idx * 10000 + 单模型序号", () => {

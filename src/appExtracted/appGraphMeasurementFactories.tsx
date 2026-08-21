@@ -3,13 +3,14 @@ import { clampNumber } from "../canvasViewport";
 import { reconcileNodeWithDefinition } from "../definitionInstanceSync";
 import { degreesToRadians } from "../formatUtils";
 import type { MeasurementProfilePositionDefinition } from "../measurements";
+import { withNodesParentModelId } from "../model";
 
 export function createSetNodes(__appScope: Record<string, any>) {
   return (value: SetStateAction<ModelNode[]>) => {
   const { graphStoreSetNodes, setGraphStore } = __appScope;
     setGraphStore((current) => {
       const nextNodes = typeof value === "function" ? value(current.nodes) : value;
-      return graphStoreSetNodes(current, nextNodes);
+      return graphStoreSetNodes(current, withNodesParentModelId(nextNodes, __appScope.projectIdx));
     });
   };
 }
@@ -25,16 +26,19 @@ export function createSetEdges(__appScope: Record<string, any>) {
 }
 
 export function createSetGraphArrays(__appScope: Record<string, any>) {
-  return (nextNodes: ModelNode[], nextEdges: Edge[]) => {
+  return (nextNodes: ModelNode[], nextEdges: Edge[], parentModelId?: number) => {
   const { graphStoreSetGraph, setGraphStore } = __appScope;
-    setGraphStore((current) => graphStoreSetGraph(current, nextNodes, nextEdges));
+    const resolvedParentModelId = parentModelId === undefined ? __appScope.projectIdx : parentModelId;
+    const normalizedNodes = withNodesParentModelId(nextNodes, resolvedParentModelId);
+    setGraphStore((current) => graphStoreSetGraph(current, normalizedNodes, nextEdges));
   };
 }
 
 export function createPatchGraphNodes(__appScope: Record<string, any>) {
   return (nodeUpdates: Iterable<ModelNode>) => {
   const { graphStorePatchNodes, setGraphStore } = __appScope;
-    setGraphStore((current) => graphStorePatchNodes(current, nodeUpdates));
+    const normalizedUpdates = withNodesParentModelId(Array.from(nodeUpdates), __appScope.projectIdx);
+    setGraphStore((current) => graphStorePatchNodes(current, normalizedUpdates));
   };
 }
 

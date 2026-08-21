@@ -712,7 +712,7 @@ test("adds terminal transformer load as a single-terminal ACLoad device", () => 
   expect(node.terminals[0]).toMatchObject({ type: "ac", label: "交流设备端1", anchor: { x: -0.5, y: 0 } });
   expect(getDeviceGlyphVariant("ac-terminal-transformer-load")).toBe("terminal-transformer-load");
   expect(getEParameterKeys("ac-terminal-transformer-load", node.params)).toEqual([
-    ...E_SECTION_COLUMNS.ACLoad,
+    "idx", "name", "parent", ...E_SECTION_COLUMNS.ACLoad.slice(2),
     "p",
     "q",
     "u",
@@ -1052,14 +1052,14 @@ test("adds an AC grounding disconnector as a single-terminal grounding device", 
   expect(node.terminals[0]).toMatchObject({ type: "ac", label: "交流系统端", anchor: { x: -0.5, y: 0 } });
   expect(getDeviceGlyphVariant("ac-ground-disconnector")).toBe("ground-disconnector");
   expect(getEParameterKeys("ac-ground-disconnector", node.params)).toEqual([
-    ...E_SECTION_COLUMNS.GroundDisconnector,
+    "idx", "name", "parent", ...E_SECTION_COLUMNS.GroundDisconnector.slice(2),
     "i"
   ]);
   expect(verticalNode.terminals).toHaveLength(1);
   expect(verticalNode.terminals[0]).toMatchObject({ type: "ac", label: "交流系统端", anchor: { x: 0, y: -0.5 } });
   expect(getDeviceGlyphVariant("ac-ground-disconnector-vertical")).toBe("ground-disconnector-vertical");
   expect(getEParameterKeys("ac-ground-disconnector-vertical", verticalNode.params)).toEqual([
-    ...E_SECTION_COLUMNS.GroundDisconnector,
+    "idx", "name", "parent", ...E_SECTION_COLUMNS.GroundDisconnector.slice(2),
     "i"
   ]);
 
@@ -1935,13 +1935,13 @@ test("defines electric generation derived classes within the base power-source l
       isDerivedComponentLibrary: true,
       isContainerComponentLibrary: undefined
     });
-    expect(derivedSection?.fields.map((field) => field.exportName).slice(0, 3)).toEqual(["idx", "dev_type", expected.relationKey]);
+    expect(derivedSection?.fields.map((field) => field.exportName).slice(0, 4)).toEqual(["idx", "parent", "dev_type", expected.relationKey]);
     expect(derivedSection?.fields.map((field) => field.exportName)).not.toContain("name");
     expect(derivedSection?.fields.map((field) => field.exportName)).not.toContain("rated_power");
     expect(derivedSection?.fields.map((field) => field.exportName)).not.toContain("rated_voltage");
     const baseFieldNames = new Set(baseSection?.fields.map((field) => field.exportName));
     for (const field of derivedSection?.fields ?? []) {
-      if (field.exportName !== "idx" && field.exportName !== "dev_type" && field.exportName !== expected.relationKey) {
+      if (field.exportName !== "idx" && field.exportName !== "parent" && field.exportName !== "dev_type" && field.exportName !== expected.relationKey) {
         expect(baseFieldNames.has(field.exportName)).toBe(false);
       }
     }
@@ -2518,7 +2518,7 @@ test("creates user-defined device templates with custom terminal energy types an
   expect(node.terminals.map((terminal) => terminal.type)).toEqual(["ac", "dc", "h2", "heat"]);
   expect(node.terminals.map((terminal) => terminal.label)).toEqual(["交流设备端", "直流设备端", "氢能设备端", "热能设备端"]);
   expect(node.params[CUSTOM_DEVICE_TEMPLATE_KEY]).toBe("1");
-  expect(JSON.parse(node.params[CUSTOM_PARAM_DEFINITIONS_KEY])).toHaveLength(4);
+  expect(JSON.parse(node.params[CUSTOM_PARAM_DEFINITIONS_KEY])).toHaveLength(5);
   expect(node.params.eta).toBe("0.95");
   expect(previewParams.backgroundImage).toBe("data:image/svg+xml,fingerprint");
   expect(previewParams.backgroundImageFit).toBe("contain");
@@ -2554,6 +2554,7 @@ test("creates container definitions from explicit terminal association choices",
   expect(definitions.map((definition) => definition.enName)).toEqual([
     "idx",
     "name",
+    "parent",
     "status",
     "run_stat",
     "idx_ac_unit_t1",
@@ -2712,7 +2713,7 @@ test("builds one body view plus associated device views for container parameters
 
 test("defines hydrogen source and load capacities, control modes, limits, and measurements", () => {
   const expectedOrder = [
-    "rdf_id", "idx", "name", "dev_type", "node", "rated_capacity", "control_type",
+    "rdf_id", "idx", "name", "parent", "dev_type", "node", "rated_capacity", "control_type",
     "pressure_set", "pressure_max", "pressure_min",
     "flow_set", "flow_max", "flow_min", "pressure", "flow", "run_stat"
   ];
@@ -3113,6 +3114,7 @@ test("pairs the next terminal with a double-port container association", () => {
   expect(definitions.map((definition) => definition.enName)).toEqual([
     "idx",
     "name",
+    "parent",
     "status",
     "run_stat",
     "idx_heat2_unit_t1",
@@ -3455,7 +3457,9 @@ test("creates static drawing primitives without electrical terminals", () => {
   }
 
   expect(DEVICE_LIBRARY.filter((template) => removedControlKinds.includes(template.kind)).map((template) => template.kind)).toEqual([]);
-  expect(DEVICE_LIBRARY.filter((template) => template.categoryLibrary === "静态图元").map((template) => template.kind)).toEqual([...expected]);
+  expect(DEVICE_LIBRARY.filter((template) => (
+    template.categoryLibrary === "静态图元" && !template.kind.startsWith("static-model-interaction-")
+  )).map((template) => template.kind)).toEqual([...expected]);
 
   const errors = validateTopology([createDefaultNode("static-text", { x: 100, y: 100 })], []);
   expect(errors).toEqual([]);
@@ -4009,6 +4013,31 @@ test("defaults dev_type to the owning class for base, derived, and custom device
   expect(getTemplateParameterDefinitions(derivedTemplate).find((row) => row.enName === "dev_type")?.readonly).toBe(false);
 });
 
+test("keeps one numeric model enum parent definition immediately before dev_type for every built-in device", () => {
+  for (const template of DEVICE_LIBRARY) {
+    const section = inferESection(template.kind, template.params);
+    if (section.startsWith("Static") && (E_SECTION_COLUMNS[section]?.length ?? 0) === 0) {
+      continue;
+    }
+    const definitions = getTemplateParameterDefinitions(template);
+    const parentDefinitions = definitions.filter((definition) => definition.enName === "parent");
+    expect(parentDefinitions, template.kind).toHaveLength(1);
+    expect(parentDefinitions[0], template.kind).toMatchObject({
+      cnName: "所属模型",
+      valueType: "numberEnum",
+      typicalValue: "",
+      enumValueType: "number",
+      readonly: false,
+      exportEnabled: true,
+      exportName: "parent"
+    });
+    const devTypeIndex = definitions.findIndex((definition) => definition.enName === "dev_type");
+    if (devTypeIndex >= 0) {
+      expect(definitions[devTypeIndex - 1]?.enName, template.kind).toBe("parent");
+    }
+  }
+});
+
 test("keeps two-winding and three-winding transformers as separate non-container device types", () => {
   const acTransformer = DEVICE_LIBRARY.find((item) => item.kind === "ac-transformer");
   const twoWinding = DEVICE_LIBRARY.find((item) => item.kind === "ac-two-winding-transformer");
@@ -4075,7 +4104,7 @@ test("keeps two-winding and three-winding transformers as separate non-container
   expect(fieldNames).not.toContain("idx_xf_t2");
   expect(fieldNames).not.toContain("idx_xf_t3");
   expect(getEParameterKeys("ac-three-winding-transformer", createDefaultNode("ac-three-winding-transformer", { x: 100, y: 100 }).params)).toEqual(
-    [...E_SECTION_COLUMNS.ACTransfomer3, "p", "q", "u", "i"]
+    ["idx", "name", "parent", ...E_SECTION_COLUMNS.ACTransfomer3.slice(2), "p", "q", "u", "i"]
   );
 });
 

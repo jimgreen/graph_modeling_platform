@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { describe, expect, test, vi } from "vitest";
 
-import { createDefaultNode, DEVICE_LIBRARY, type DeviceKind, type DeviceParameterDefinition, type DeviceTemplate, type ModelNode, type SavedSchemeRecord } from "../model";
+import { createDefaultNode, DEVICE_LIBRARY, getTemplateParameterDefinitions, type DeviceKind, type DeviceParameterDefinition, type DeviceTemplate, type ModelNode, type SavedSchemeRecord } from "../model";
 import type { BatchCommonParamRow } from "../App";
 import { useBatchEditors } from "./useBatchEditors";
 
@@ -111,6 +111,50 @@ describe("model association model_id editors", () => {
 
     expect(html).toContain("disabled=\"\"");
     expect(html).toContain("已有线路连接");
+  });
+});
+
+describe("device parent model editors", () => {
+  test("uses a numeric enum containing every model idx and name", () => {
+    const node = createDefaultNode("ac-load", { x: 100, y: 100 });
+    node.params.parent = "22";
+    const template = DEVICE_LIBRARY.find((item) => item.kind === node.kind)!;
+    const definition = getTemplateParameterDefinitions(template).find((item) => item.enName === "parent");
+    const html = batchParamHtml([node], {
+      key: "parent",
+      label: "所属模型",
+      value: "22",
+      mixed: false,
+      definition
+    }, undefined, modelAssociationSchemes);
+
+    expect(definition).toMatchObject({
+      valueType: "numberEnum",
+      enumValueType: "number",
+      readonly: false
+    });
+    expect(html).toContain('<option value="11">11 / 厂站模型甲</option>');
+    expect(html).toContain('<option value="22" selected="">22 / 馈线模型乙</option>');
+    expect(html).toContain('<option value="33">33 / 台区模型丙</option>');
+    expect(html).toContain('<option value="44">44 / 其他模型丁</option>');
+  });
+
+  test("keeps global line parent at zero and disables its editor", () => {
+    const node = createDefaultNode("ac-routable-line", { x: 100, y: 100 });
+    node.params.parent = "0";
+    node.params._globalLineId = "global-line-1";
+    const template = DEVICE_LIBRARY.find((item) => item.kind === node.kind)!;
+    const definition = getTemplateParameterDefinitions(template).find((item) => item.enName === "parent");
+    const html = batchParamHtml([node], {
+      key: "parent",
+      label: "所属模型",
+      value: "0",
+      mixed: false,
+      definition
+    }, undefined, modelAssociationSchemes);
+
+    expect(html).toContain('<select disabled="" title="全局线路的所属模型固定为 0。">');
+    expect(html).toContain('<option value="0" selected="">0 / 全局线路</option>');
   });
 });
 

@@ -19,6 +19,8 @@ import {
 } from "./appExtracted/appView";
 import {
   CUSTOM_DEVICE_DIALOG_DEFAULT_HEIGHT,
+  READONLY_E_PARAM_KEYS,
+  canBatchEditParam,
   paramOptionsForSection
 } from "./appExtracted/appCoreCanvasUtilities";
 import {
@@ -36,6 +38,12 @@ import {
 } from "./model";
 
 describe("app view topology inspector", () => {
+  test("keeps parent editable as a model enum while topology indexes remain readonly", () => {
+    expect(READONLY_E_PARAM_KEYS.has("parent")).toBe(false);
+    expect(canBatchEditParam("parent")).toBe(true);
+    expect(READONLY_E_PARAM_KEYS.has("node")).toBe(true);
+  });
+
   test("uses live topology entries instead of stale saved topology entries", () => {
     const staleTopology: Topology = {
       nodes: {
@@ -254,7 +262,7 @@ describe("app view device model parameter keys", () => {
     ]);
   });
 
-  test("uses exactly the same 28 effective ACGenerator definitions as the class editor", () => {
+  test("uses exactly the same 29 effective ACGenerator definitions as the class editor", () => {
     const baseTemplate = DEVICE_LIBRARY.find((template) => template.kind === "ac-source")!;
     const baseNode = createDefaultNode("ac-source", { x: 100, y: 100 });
     const builtInClassDefinition = resolveEditableComponentLibraryDefinition({
@@ -308,7 +316,7 @@ describe("app view device model parameter keys", () => {
       expectedClassDefinition.effectiveParameterDefinitions.map((definition) => definition.enName)
     );
     expect(keys).toEqual(expectedClassDefinition.effectiveParameterDefinitions.map((definition) => definition.enName));
-    expect(keys).toHaveLength(28);
+    expect(keys).toHaveLength(29);
     expect(keys).toContain("status");
     expect(keys).toContain("test2");
     expect(panelDefinitions.find((definition) => definition.enName === "test2")?.typicalValue).toBe("aaa");
