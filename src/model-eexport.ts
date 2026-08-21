@@ -24,6 +24,11 @@ import {
   topologyNodeNumberForEField, normalizeTemplateDefinitionList,
   validateNodeEnumParameters
 } from "./model";
+import type {
+  GlobalLineEndpoint,
+  GlobalLineRecord,
+  GlobalLineReference
+} from "./global-lines";
 
 export const E_SECTION_COLUMNS: Record<string, string[]> = {
   Station: ["idx", "name"],
@@ -2954,9 +2959,284 @@ function buildMultiModelHierarchyRecords(
   );
 }
 
+const MULTI_MODEL_GLOBAL_LINE_ID_PARAM = "_globalLineId";
+const MULTI_MODEL_GLOBAL_LINE_PAIR_PARAM = "_globalLineModelPair";
+
+type MultiModelGlobalLineOccurrence = {
+  globalLineId: string;
+  input: MultiModelEFileExportInput;
+  modelIndex: number;
+  node: ModelNode;
+  records: EDeviceExport[];
+};
+
+type MultiModelGlobalLineEndpointRecord = {
+  occurrence: MultiModelGlobalLineOccurrence;
+  slot: "i" | "j";
+  nodeNumber: string;
+};
+
+function multiModelRecordWithParent(record: EDeviceExport, parent: number): EDeviceExport {
+  const columns = [...(record.columns ?? E_SECTION_COLUMNS[record.section] ?? Object.keys(record.params))]
+    .filter((column) => column !== "parent");
+  const nameIndex = columns.indexOf("name");
+  const idxIndex = columns.indexOf("idx");
+  columns.splice(nameIndex >= 0 ? nameIndex + 1 : idxIndex >= 0 ? idxIndex + 1 : 0, 0, "parent");
+  return {
+    ...record,
+    params: { ...record.params, parent: String(parent) },
+    columns
+  };
+}
+
+function multiModelGlobalLineNodes(project: ProjectFile) {
+  return project.nodes.flatMap((node) => {
+    const globalLineId = String(node.params[MULTI_MODEL_GLOBAL_LINE_ID_PARAM] ?? "").trim();
+    const kind = baseDeviceKind(node.kind);
+    const isGlobalLineKind = kind === "ac-routable-line" || kind === "ac-zero-routable-branch" ||
+      kind === "dc-routable-line" || kind === "dc-zero-routable-branch";
+    return globalLineId && isGlobalLineKind ? [{ globalLineId, node }] : [];
+  });
+}
+
+function multiModelGlobalLineIdForRecord(
+  recordId: string,
+  globalLineNodeIdMap: ReadonlyMap<string, string>
+) {
+  for (const [nodeId, globalLineId] of globalLineNodeIdMap) {
+    if (recordId === nodeId || recordId.startsWith(`${nodeId}:`)) {
+      return globalLineId;
+    }
+  }
+  return "";
+}
+
+function multiModelGlobalLineEndpointReference(
+  record: GlobalLineRecord,
+  endpoint: GlobalLineEndpoint
+): GlobalLineReference | null {
+  const endpointSlot = record.endpointSlots?.[endpoint];
+  if (endpointSlot !== undefined) return endpointSlot;
+  return record.references.find((reference) => (
+    reference.boundaryEndpoint === endpoint ||
+    (!reference.boundaryEndpoint && reference.terminalSlot === (endpoint === "source" ? "i" : "j"))
+  )) ?? null;
+}
+
+const MULTI_MODEL_GLOBAL_LINE_ENDPOINT_COLUMNS = {
+  i: ["i_node", "ind", "inode_id"],
+  j: ["j_node", "znd", "znode_id"]
+} as const;
+
+function multiModelGlobalLineEndpointValue(record: EDeviceExport, slot: "i" | "j") {
+  for (const column of MULTI_MODEL_GLOBAL_LINE_ENDPOINT_COLUMNS[slot]) {
+    const value = positiveIntegerValue(record.params[column]);
+    if (value > 0) return String(value);
+  }
+  return "";
+}
+
+function multiModelGlobalLineOccurrenceForReference(
+  occurrences: readonly MultiModelGlobalLineOccurrence[],
+  reference: GlobalLineReference
+) {
+  const projectIndex = positiveIntegerValue(reference.projectIdx);
+  const modelMatches = occurrences.filter((occurrence) => (
+    (projectIndex > 0 && occurrence.modelIndex === projectIndex) ||
+    reference.modelKey === `model:${occurrence.modelIndex}` ||
+    (
+      reference.projectName === occurrence.input.project.name &&
+      JSON.stringify(reference.schemePath) === JSON.stringify(occurrence.input.schemePath)
+    )
+  ));
+  return modelMatches.find((occurrence) => occurrence.node.id === reference.nodeId) ?? modelMatches[0];
+}
+
+function multiModelGlobalLineBoundaryEndpoint(node: ModelNode): GlobalLineEndpoint | "" {
+  if (!modelAssociationModelTypeForKind(node.kind)) return "";
+  const kind = String(baseDeviceKind(node.kind));
+  if (kind.endsWith("-source")) return "source";
+  if (kind.endsWith("-load")) return "target";
+  return "";
+}
+
+function multiModelGlobalLineFallbackEndpoint(
+  occurrences: readonly MultiModelGlobalLineOccurrence[],
+  endpoint: GlobalLineEndpoint
+): MultiModelGlobalLineEndpointRecord | null {
+  for (const occurrence of occurrences) {
+    const refs = routableLineDeviceEndpointRefs(occurrence.node);
+    const nodeById = new Map(occurrence.input.project.nodes.map((node) => [node.id, node]));
+    const endpoints = [
+      { slot: "i" as const, reference: refs.source },
+      { slot: "j" as const, reference: refs.target }
+    ];
+    for (const candidate of endpoints) {
+      const boundaryNode = candidate.reference ? nodeById.get(candidate.reference.nodeId) : undefined;
+      if (!boundaryNode || !(
+        modelAssociationModelTypeForKind(boundaryNode.kind) ||
+        equivalentBoundaryModelInteractionType(boundaryNode)
+      )) {
+        continue;
+      }
+      const boundaryEndpoint = multiModelGlobalLineBoundaryEndpoint(boundaryNode) ||
+        String(occurrence.node.params[MULTI_MODEL_GLOBAL_LINE_PAIR_PARAM] ?? "").trim();
+      const localEndpoint = boundaryEndpoint === "source" ? "target" : boundaryEndpoint === "target" ? "source" : "";
+      if (localEndpoint !== endpoint) continue;
+      const localSlot = candidate.slot === "i" ? "j" : "i";
+      const lineRecord = occurrence.records.find((record) => record.id === occurrence.node.id);
+      const nodeNumber = lineRecord ? multiModelGlobalLineEndpointValue(lineRecord, localSlot) : "";
+      if (lineRecord && nodeNumber) return { occurrence, slot: localSlot, nodeNumber };
+    }
+  }
+  return null;
+}
+
+function multiModelGlobalLineEndpointRecord(
+  occurrences: readonly MultiModelGlobalLineOccurrence[],
+  globalLineRecord: GlobalLineRecord | undefined,
+  endpoint: GlobalLineEndpoint
+): MultiModelGlobalLineEndpointRecord | null {
+  const reference = globalLineRecord
+    ? multiModelGlobalLineEndpointReference(globalLineRecord, endpoint)
+    : null;
+  if (reference) {
+    const occurrence = multiModelGlobalLineOccurrenceForReference(occurrences, reference);
+    const slot = reference.terminalSlot;
+    const lineRecord = occurrence?.records.find((record) => record.id === occurrence.node.id);
+    if (occurrence && slot && lineRecord) {
+      const nodeNumber = multiModelGlobalLineEndpointValue(lineRecord, slot);
+      if (nodeNumber) return { occurrence, slot, nodeNumber };
+    }
+  }
+  return multiModelGlobalLineFallbackEndpoint(occurrences, endpoint);
+}
+
+function setMultiModelGlobalLineEndpointValue(
+  record: EDeviceExport,
+  slot: "i" | "j",
+  value: string
+) {
+  const candidateColumns = MULTI_MODEL_GLOBAL_LINE_ENDPOINT_COLUMNS[slot];
+  let matched = false;
+  for (const column of candidateColumns) {
+    if (column in record.params || record.columns?.includes(column)) {
+      record.params[column] = value;
+      matched = true;
+    }
+  }
+  if (!matched) {
+    record.params[slot === "i" ? "i_node" : "j_node"] = value;
+  }
+}
+
+function buildMultiModelGlobalLineRecords(
+  occurrences: readonly MultiModelGlobalLineOccurrence[],
+  globalLineRecords: readonly GlobalLineRecord[],
+  regularRecords: readonly EDeviceExport[],
+  options: EFileExportOptions
+) {
+  const recordById = new Map(globalLineRecords.map((record) => [record.id, record]));
+  const interfaceDefinitionBySection = eFileInterfaceDefinitionIndex(options);
+  const occurrencesById = new Map<string, MultiModelGlobalLineOccurrence[]>();
+  for (const occurrence of occurrences) {
+    occurrencesById.set(
+      occurrence.globalLineId,
+      [...(occurrencesById.get(occurrence.globalLineId) ?? []), occurrence]
+    );
+  }
+  const nextIndexBySection = new Map<string, number>();
+  for (const record of regularRecords) {
+    nextIndexBySection.set(
+      record.section,
+      Math.max(nextIndexBySection.get(record.section) ?? 0, positiveIntegerValue(record.params.idx))
+    );
+  }
+  const orderedGlobalLineIds = [...occurrencesById.keys()].sort((left, right) => {
+    const leftRecord = recordById.get(left);
+    const rightRecord = recordById.get(right);
+    return positiveIntegerValue(leftRecord?.idx) - positiveIntegerValue(rightRecord?.idx) ||
+      String(leftRecord?.name ?? left).localeCompare(String(rightRecord?.name ?? right), "zh-CN");
+  });
+
+  return orderedGlobalLineIds.flatMap((globalLineId, globalLineOrder) => {
+    const lineOccurrences = occurrencesById.get(globalLineId) ?? [];
+    const templateOccurrence = lineOccurrences.find((occurrence) =>
+      occurrence.records.some((record) => record.id === occurrence.node.id)
+    );
+    const templateRecord = templateOccurrence?.records.find((record) => record.id === templateOccurrence.node.id);
+    if (!templateOccurrence || !templateRecord) return [];
+
+    const registryRecord = recordById.get(globalLineId);
+    const globalLineIndex = positiveIntegerValue(registryRecord?.idx) ||
+      positiveIntegerValue(templateOccurrence.node.params.idx) || globalLineOrder + 1;
+    const globalLineName = String(registryRecord?.name ?? templateOccurrence.node.name ?? "").trim() ||
+      `全局线路-${globalLineIndex}`;
+    const baseRecord = multiModelRecordWithParent({
+      ...templateRecord,
+      id: `global-line:${globalLineId}`,
+      params: { ...templateRecord.params },
+      columns: [...(templateRecord.columns ?? [])]
+    }, 0);
+    const interfaceFields = interfaceDefinitionBySection.get(baseRecord.section)?.fields ?? [];
+    for (const [key, value] of Object.entries(registryRecord?.params ?? {})) {
+      const exportName = String(interfaceFields.find((field) => (
+        String(field.sourceName ?? field.exportName ?? "").trim() === key
+      ))?.exportName ?? key).trim();
+      if (!key.startsWith("_") && exportName && (
+        exportName in baseRecord.params || baseRecord.columns?.includes(exportName)
+      )) {
+        baseRecord.params[exportName] = String(value ?? "");
+      }
+    }
+    baseRecord.params.idx = String(globalLineIndex);
+    baseRecord.params.name = globalLineName;
+    const source = multiModelGlobalLineEndpointRecord(lineOccurrences, registryRecord, "source");
+    const target = multiModelGlobalLineEndpointRecord(lineOccurrences, registryRecord, "target");
+    if (source) setMultiModelGlobalLineEndpointValue(baseRecord, "i", source.nodeNumber);
+    if (target) setMultiModelGlobalLineEndpointValue(baseRecord, "j", target.nodeNumber);
+
+    const records = [baseRecord];
+    for (const [endpoint, endpointRecord, label] of [
+      ["source", source, "首端"],
+      ["target", target, "末端"]
+    ] as const) {
+      if (!endpointRecord) continue;
+      const side = endpointRecord.slot === "i" ? 0 : 1;
+      const templateEndRecord = endpointRecord.occurrence.records.find(
+        (record) => record.id === `${endpointRecord.occurrence.node.id}:end:${side}`
+      );
+      if (!templateEndRecord) continue;
+      const endRecord = multiModelRecordWithParent({
+        ...templateEndRecord,
+        id: `global-line:${globalLineId}:end:${endpoint}`,
+        params: { ...templateEndRecord.params },
+        columns: [...(templateEndRecord.columns ?? [])]
+      }, 0);
+      const nextEndIndex = (nextIndexBySection.get(endRecord.section) ?? 0) + 1;
+      nextIndexBySection.set(endRecord.section, nextEndIndex);
+      endRecord.params.idx = String(nextEndIndex);
+      endRecord.params.name = `${globalLineName}_${label}`;
+      for (const linkColumn of ["aclnseg_id", "dcln_id"]) {
+        if (linkColumn in endRecord.params || endRecord.columns?.includes(linkColumn)) {
+          endRecord.params[linkColumn] = String(globalLineIndex);
+        }
+      }
+      for (const nodeColumn of ["nd", "node_id"]) {
+        if (nodeColumn in endRecord.params || endRecord.columns?.includes(nodeColumn)) {
+          endRecord.params[nodeColumn] = endpointRecord.nodeNumber;
+        }
+      }
+      records.push(endRecord);
+    }
+    return records;
+  });
+}
+
 export function buildMultiModelEFileExport(
   inputs: readonly MultiModelEFileExportInput[],
-  options: EFileExportOptions = {}
+  options: EFileExportOptions = {},
+  globalLineRecords: readonly GlobalLineRecord[] = []
 ): EFileExport {
   const orderedInputs = [...inputs].sort((left, right) =>
     positiveIntegerValue(left.project.idx) - positiveIntegerValue(right.project.idx) ||
@@ -2966,6 +3246,7 @@ export function buildMultiModelEFileExport(
   const includedProjectNames = new Set(orderedInputs.map((input) => input.project.name.trim()).filter(Boolean));
   const records: EDeviceExport[] = buildMultiModelHierarchyRecords(orderedInputs);
   const warnings: EExportWarning[] = [];
+  const globalLineOccurrences: MultiModelGlobalLineOccurrence[] = [];
 
   orderedInputs.forEach((input, inputIndex) => {
     const modelIndex = positiveIntegerValue(input.project.idx) || inputIndex + 1;
@@ -2975,22 +3256,43 @@ export function buildMultiModelEFileExport(
       includedProjectNames
     );
     const collapsedAssociationNodeIds = collapsedModelAssociationNodeIds(input.project);
-    const modelRecords = buildEDeviceRecords(input.project, options)
+    const globalLineNodes = multiModelGlobalLineNodes(input.project);
+    const globalLineIdByNodeId = new Map(globalLineNodes.map(({ globalLineId, node }) => [node.id, globalLineId]));
+    const allModelRecords = buildEDeviceRecords(input.project, options)
       .filter((record) => (
         !omittedBoundaryRecordIds.has(record.id) &&
         !recordBelongsToCollapsedModelAssociationNode(record.id, collapsedAssociationNodeIds)
       ))
-      .map((record) => ({ ...record, params: { ...record.params }, columns: [...(record.columns ?? [])] }));
-    const warningProject = collapsedAssociationNodeIds.size === 0
+      .map((record) => multiModelRecordWithParent(record, modelIndex));
+    offsetMultiModelRecordIndexes(allModelRecords, modelIndex);
+    for (const { globalLineId, node } of globalLineNodes) {
+      globalLineOccurrences.push({
+        globalLineId,
+        input,
+        modelIndex,
+        node,
+        records: allModelRecords.filter((record) => (
+          record.id === node.id || record.id.startsWith(`${node.id}:`)
+        ))
+      });
+    }
+    const modelRecords = allModelRecords.filter(
+      (record) => !multiModelGlobalLineIdForRecord(record.id, globalLineIdByNodeId)
+    );
+    const intentionallyOmittedNodeIds = new Set([
+      ...collapsedAssociationNodeIds,
+      ...globalLineNodes.map(({ node }) => node.id)
+    ]);
+    const warningProject = intentionallyOmittedNodeIds.size === 0
       ? input.project
       : {
           ...input.project,
-          nodes: input.project.nodes.filter((node) => !collapsedAssociationNodeIds.has(node.id))
+          nodes: input.project.nodes.filter((node) => !intentionallyOmittedNodeIds.has(node.id))
         };
     warnings.push(...getEExportWarningsFromRecords(warningProject, modelRecords, options));
-    offsetMultiModelRecordIndexes(modelRecords, modelIndex);
     records.push(...modelRecords);
   });
+  records.push(...buildMultiModelGlobalLineRecords(globalLineOccurrences, globalLineRecords, records, options));
 
   const firstProject = orderedInputs[0]?.project;
   const aggregateProject: ProjectFile = {
