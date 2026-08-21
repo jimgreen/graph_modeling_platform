@@ -4188,8 +4188,15 @@ export function createAppHookCallback127(__appScope: Record<string, any>) {
 
 export function createAppHookCallback128(__appScope: Record<string, any>) {
   return () => {
-  const { CANVAS_INITIAL_LOD_DETAIL_CHUNK_SIZE, CANVAS_INITIAL_LOD_FIRST_DETAIL_DELAY_MS, CANVAS_INITIAL_LOD_NEXT_DETAIL_DELAY_MS, initialCanvasDetailHydrationLimit, initialCanvasDetailHydrationTarget, initialCanvasLodActive, scheduleIdleWork, setInitialCanvasDetailHydrationLimit, setInitialCanvasLodActive } = __appScope;
+  const { CANVAS_INITIAL_LOD_DETAIL_CHUNK_SIZE, CANVAS_INITIAL_LOD_FIRST_DETAIL_DELAY_MS, CANVAS_INITIAL_LOD_NEXT_DETAIL_DELAY_MS, initialCanvasDetailHydrationLimit, initialCanvasDetailHydrationTarget, initialCanvasLodActive, scheduleIdleWork, setInitialCanvasDetailHydrationLimit, setInitialCanvasLodActive, usePersistentCanvasLod } = __appScope;
     if (!initialCanvasLodActive) {
+      return;
+    }
+    if (usePersistentCanvasLod) {
+      if (initialCanvasDetailHydrationLimit > 0) {
+        setInitialCanvasDetailHydrationLimit(0);
+      }
+      setInitialCanvasLodActive(false);
       return;
     }
     if (initialCanvasDetailHydrationTarget <= 0) {

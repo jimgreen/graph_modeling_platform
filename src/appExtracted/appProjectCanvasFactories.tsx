@@ -2754,7 +2754,10 @@ export function createLoadSavedProject(__appScope: Record<string, any>) {
     const routableLineNodeIds = layeredProject.nodes
       .filter((node) => isRoutableLineDeviceKind(node.kind))
       .map((node) => node.id);
-    const repairedLineNodes = routableLineNodeIds.length > 0
+    const shouldRepairStoredRoutesSynchronously =
+      routableLineNodeIds.length > 0 &&
+      layeredProject.nodes.length <= CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT;
+    const repairedLineNodes = shouldRepairStoredRoutesSynchronously
       ? rebuildRoutableLineDeviceRouteUpdates(layeredProject.nodes, routableLineNodeIds, nextCanvasBounds)
       : [];
     const repairedLineNodeById = new Map(repairedLineNodes.map((node) => [node.id, node]));

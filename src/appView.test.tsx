@@ -37,6 +37,21 @@ import {
   type Topology
 } from "./model";
 
+const readSourceFiles = (...relativePaths: string[]) => relativePaths
+  .map((relativePath) => readFileSync(new URL(relativePath, import.meta.url), "utf8"))
+  .join("\n");
+
+const APP_VIEW_SOURCE_FILES = [
+  "./appExtracted/appView.tsx",
+  "./appExtracted/appContextMenus.tsx",
+  "./appExtracted/appProjectDialogs.tsx",
+  "./appExtracted/appCanvasDialogs.tsx",
+  "./appExtracted/appDeviceDefinitionDialogs.tsx",
+  "./appExtracted/appResourceDialogs.tsx"
+] as const;
+
+const readAppViewSources = () => readSourceFiles(...APP_VIEW_SOURCE_FILES);
+
 describe("app view topology inspector", () => {
   test("keeps parent editable as a model enum while topology indexes remain readonly", () => {
     expect(READONLY_E_PARAM_KEYS.has("parent")).toBe(false);
@@ -88,7 +103,7 @@ describe("voltage base scope counts", () => {
 describe("model-association device containment wiring", () => {
   test("disables forbidden library buttons and blocks incompatible model-type changes before creating undo state", () => {
     const rendererSource = readFileSync(new URL("./appExtracted/appDeviceDefinitionRenderers.tsx", import.meta.url), "utf8");
-    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const viewSource = readFileSync(new URL("./appExtracted/appRightPanel.tsx", import.meta.url), "utf8");
     const modelTypeSelect = viewSource.match(/<select value=\{modelType\}[\s\S]*?<\/select>/)?.[0] ?? "";
 
     expect(rendererSource).toContain("modelAssociationDeviceModelTypeFailureMessage(modelType, item.kind)");
@@ -104,14 +119,15 @@ describe("model-association device containment wiring", () => {
 
 describe("全网拓扑入口", () => {
   test("在顶栏把仅图标的全局线路按钮放到全网拓扑按钮左侧并挂载独立弹窗", () => {
-    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
-    const globalLineButton = source.indexOf('aria-label="全局线路"');
-    const topologyButton = source.indexOf('aria-label="全网拓扑"');
+    const topbarSource = readFileSync(new URL("./appExtracted/appTopbar.tsx", import.meta.url), "utf8");
+    const viewSource = readAppViewSources();
+    const globalLineButton = topbarSource.indexOf('aria-label="全局线路"');
+    const topologyButton = topbarSource.indexOf('aria-label="全网拓扑"');
 
     expect(globalLineButton).toBeGreaterThanOrEqual(0);
     expect(topologyButton).toBeGreaterThan(globalLineButton);
-    expect(source).toMatch(/aria-label="全局线路"[^>]*>\s*<Cable size=\{16\}\/>\s*<\/button>/);
-    expect(source).toContain("<AllNetworkTopologyDialog");
+    expect(topbarSource).toMatch(/aria-label="全局线路"[^>]*>\s*<Cable size=\{16\}\/>\s*<\/button>/);
+    expect(viewSource).toContain("<AllNetworkTopologyDialog");
   });
 
   test("应用作用域提供独立的全局线路列表窗口状态", () => {
@@ -120,11 +136,20 @@ describe("全网拓扑入口", () => {
     expect(source).toContain("const [globalLineListOpen, setGlobalLineListOpen] = useState(false)");
     expect(source).toContain("Object.assign(__appScope, { globalLineListOpen, setGlobalLineListOpen })");
   });
+
+  test("把全局线路窗口纳入资源弹窗渲染激活条件以支持打开和关闭", () => {
+    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const resourceDialogLayerActive = source.match(
+      /const resourceDialogLayerActive = Boolean\([\s\S]*?\);/
+    )?.[0] ?? "";
+
+    expect(resourceDialogLayerActive).toContain("__appScope.globalLineListOpen");
+  });
 });
 
 describe("全局线路首末端提示", () => {
   test("选择窗口明确显示首末端校核结果，并说明复用不会改写已有端子", () => {
-    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const source = readAppViewSources();
 
     expect(source).toContain('globalLinePlacementDialog.boundaryEndpoint === "source" ? "首端" : "末端"');
     expect(source).toContain("复用只做一致性校核，不修改已有全局线路的首末端信息");
@@ -143,7 +168,7 @@ describe("全局线路首末端提示", () => {
 
 describe("未保存模型的保存后切换提示", () => {
   test("保存过程中显示忙碌状态，保存失败信息位于弹窗内且全局提示不被遮罩", () => {
-    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const source = readAppViewSources();
     const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 
     expect(source).toContain("pendingUnsavedAction.resolving");
@@ -477,7 +502,7 @@ describe("app view device definition parameter rows", () => {
   test("tracks the selected E interface class and prompts before switching dirty definitions", () => {
     const classSignatureFor = (appViewModule as any).eDeviceInterfaceClassDefinitionSignature;
     const fieldDefinitionMatches = (appViewModule as any).eDeviceInterfaceFieldDefinitionMatches;
-    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const source = readAppViewSources();
     const row = {
       componentLibrary: "ACGenerator",
       exportEnabled: true,
@@ -553,7 +578,7 @@ describe("app view device definition parameter rows", () => {
   });
 
   test("renders the E interface dialog after the custom device dialog so it is not hidden behind it", () => {
-    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const source = readAppViewSources();
 
     expect(source.indexOf("{customDeviceDialogOpen &&")).toBeLessThan(
       source.indexOf("{eDeviceDefinitionInterfaceDialogOpen &&")
@@ -561,7 +586,7 @@ describe("app view device definition parameter rows", () => {
   });
 
   test("renders the E interface dialog as a left class tree with a right parameter table", () => {
-    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const source = readAppViewSources();
 
     expect(source).toContain("e-device-interface-layout");
     expect(source).toContain("e-device-interface-class-list");
@@ -574,7 +599,7 @@ describe("app view device definition parameter rows", () => {
   });
 
   test("renders explicit save and exit actions with Ctrl+S handling", () => {
-    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const source = readAppViewSources();
 
     expect(source).toContain("e-device-interface-footer");
     expect(source).toContain("saveEDeviceInterfaceDefinition");
@@ -589,7 +614,7 @@ describe("app view device definition parameter rows", () => {
   });
 
   test("keeps the top toolbar compact with icon-only mode and export actions", () => {
-    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const source = readSourceFiles("./appExtracted/appTopbar.tsx", ...APP_VIEW_SOURCE_FILES);
     const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
     const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
     const modeButton = source.match(
@@ -645,7 +670,7 @@ describe("app view device definition parameter rows", () => {
   });
 
   test("combines grouping actions into a borderless popup menu", () => {
-    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const source = readFileSync(new URL("./appExtracted/appTopbar.tsx", import.meta.url), "utf8");
     const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
     const actionCluster = source.match(
       /<div className="action-cluster">[\s\S]*?<input ref=\{imageInputRef\}/
@@ -677,7 +702,7 @@ describe("app view device definition parameter rows", () => {
   });
 
   test("keeps export configuration columns only in the E interface definition dialog", () => {
-    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const source = readAppViewSources();
     const eInterfaceStart = source.indexOf("{eDeviceDefinitionInterfaceDialogOpen &&");
 
     expect(eInterfaceStart).toBeGreaterThan(0);
@@ -732,14 +757,14 @@ describe("app view device definition parameter rows", () => {
   });
 
   test("renders the parameter table from display-filtered rows", () => {
-    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const source = readAppViewSources();
 
     expect(source).toMatch(/definitionDraftRowsForDisplay\.map\(\(row, rowIndex\)/);
     expect(source).not.toMatch(/definitionDraftRows\.map\(\(row\)\s*=>\s*\(<tr key=\{row\.id\}/);
   });
 
   test("renders sequence columns and bulk operation toolbars above definition tables", () => {
-    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const viewSource = readAppViewSources();
     const measurementSource = readFileSync(new URL("./appExtracted/appProjectCanvasFactories.tsx", import.meta.url), "utf8");
     const stylesSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 
@@ -764,7 +789,7 @@ describe("app view device definition parameter rows", () => {
   });
 
   test("passes the published measurement draft into the definition measurement panel", () => {
-    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const source = readAppViewSources();
 
     expect(source).toContain("Array.isArray(__appScope.definitionMeasurementDraft)");
     expect(source).toContain("? __appScope.definitionMeasurementDraft");
@@ -783,7 +808,7 @@ describe("app view device definition parameter rows", () => {
   });
 
   test("exposes derivation controls only while creating a component library", () => {
-    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const source = readAppViewSources();
 
     expect(source).not.toContain("派生类中文名称");
     expect(source.match(/派生类英文名称/g)!.length).toBeGreaterThanOrEqual(1);
@@ -804,7 +829,7 @@ describe("app view device definition parameter rows", () => {
   });
 
   test("renders compact terminal energy controls only for base classes", () => {
-    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const viewSource = readAppViewSources();
     const stylesSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 
     expect(viewSource).toContain('className="component-library-terminal-types" aria-label="类端子能源属性配置"');
@@ -819,7 +844,7 @@ describe("app view device definition parameter rows", () => {
   });
 
   test("removes the redundant class summary row and keeps the definition tabs at one normal row", () => {
-    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const viewSource = readAppViewSources();
     const stylesSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 
     expect(viewSource).not.toContain("device-definition-component-library-editor-header");
@@ -830,7 +855,7 @@ describe("app view device definition parameter rows", () => {
   });
 
   test("hides component-only name and resize controls when editing a class", () => {
-    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const viewSource = readAppViewSources();
     const stylesSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 
     expect(viewSource).toMatch(/customDeviceDefinitionIconOnly && \(<>[\s\S]*?元件中文名称[\s\S]*?componentName[\s\S]*?元件英文名称[\s\S]*?componentKind[\s\S]*?是否允许变形[\s\S]*?<\/>\)}/);
@@ -839,7 +864,7 @@ describe("app view device definition parameter rows", () => {
   });
 
   test("hides class-only category and container controls when editing a component", () => {
-    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const viewSource = readAppViewSources();
     const stylesSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 
     expect(viewSource).toMatch(/!customDeviceDefinitionIconOnly && \(\s*<label className="custom-category-library-field">/);
@@ -849,7 +874,7 @@ describe("app view device definition parameter rows", () => {
   });
 
   test("keeps the whole right editor in component mode after confirming a new component", () => {
-    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const viewSource = readAppViewSources();
 
     expect(viewSource).toMatch(/const visibleCustomDeviceDialogView\s*=\s*customDeviceDefinitionIconOnly\s*\?\s*"icon"\s*:\s*customDeviceDialogView/);
     expect(viewSource).toMatch(/const showComponentLibraryTerminalTypes\s*=\s*!customDeviceDefinitionIconOnly\s*&&\s*customComponentTreeSelection\?\.kind\s*===\s*"componentLibrary"\s*&&\s*!customDeviceDraft\.isDerivedComponentLibrary/);
@@ -860,7 +885,7 @@ describe("app view device definition parameter rows", () => {
   });
 
   test("wires component copy and repeated paste actions into the component tree", () => {
-    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const viewSource = readSourceFiles(...APP_VIEW_SOURCE_FILES, "./appExtracted/appTopbar.tsx");
 
     expect(viewSource).toContain("copiedCustomComponentTemplate={copiedCustomComponentTemplate}");
     expect(viewSource).toContain("onCopyComponent={copyCustomComponentTemplate}");
@@ -872,7 +897,7 @@ describe("app view device definition parameter rows", () => {
   });
 
   test("shows the derived base class with a jump link in the device definition dialog", () => {
-    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const source = readAppViewSources();
 
     expect(source).toContain("派生主类");
     expect(source).toContain("selectedDefinitionDerivedBaseTemplate");
@@ -880,7 +905,7 @@ describe("app view device definition parameter rows", () => {
   });
 
   test("removes redundant main-class and derived-English-name controls from class and component editors", () => {
-    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const source = readAppViewSources();
 
     expect(source).not.toContain("customDeviceDerivedBaseTemplate");
     expect(source).not.toContain("customDeviceDerivedBaseLibrary");
@@ -1049,7 +1074,7 @@ describe("canvas memoization", () => {
 
 describe("user customization manager entry", () => {
   test("keeps the customization manager in the topbar to the left of the save button", () => {
-    const source = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const source = readFileSync(new URL("./appExtracted/appTopbar.tsx", import.meta.url), "utf8");
     const topbarActions = source.match(
       /<div className="topbar-center-actions">[\s\S]*?<\/div>\s*<div className="action-cluster">/
     )?.[0] ?? "";

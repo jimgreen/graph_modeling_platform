@@ -1,6 +1,12 @@
 // @ts-nocheck
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, useEffect, useMemo, useRef, useState } from "react";
 import { MemoizedCanvasArea } from "./appCanvasArea";
+import { AppLeftPanel } from "./appLeftPanel";
+import { AppRightPanel } from "./appRightPanel";
+import { AppStatusbar } from "./appStatusbar";
+import { AppTopbar } from "./appTopbar";
+import { AppResourceDialogs } from "./appResourceDialogs";
+import { MemoizedViewSection } from "./appViewRenderBoundary";
 import { IMAGE_FIT_MODE_OPTIONS, normalizeImageFitMode } from "../imageFit";
 import {
   ICON_LIBRARY_PAGE_SIZE,
@@ -25,6 +31,15 @@ import {
   resolveComponentLibraryClassFamilyMetadata,
   resolveComponentLibraryClassMetadata
 } from "../componentLibraryMetadata";
+
+const LazyAppContextMenus = lazy(() => import("./appContextMenus")
+  .then((module) => ({ default: module.AppContextMenus })));
+const LazyAppProjectDialogs = lazy(() => import("./appProjectDialogs")
+  .then((module) => ({ default: module.AppProjectDialogs })));
+const LazyAppCanvasDialogs = lazy(() => import("./appCanvasDialogs")
+  .then((module) => ({ default: module.AppCanvasDialogs })));
+const LazyAppDeviceDefinitionDialogs = lazy(() => import("./appDeviceDefinitionDialogs")
+  .then((module) => ({ default: module.AppDeviceDefinitionDialogs })));
 
 export type ImagePickerLibraryTab = "image" | "icon";
 
@@ -403,76 +418,6 @@ export function resolveInspectorGraphId(nodes: any[], node: any) {
 // 运行时态 WS 指示灯：open=绿、connecting=黄、closed=灰；收发消息时闪烁一次。
 // runtimeWsBlinkSeq 递增 → key 变化 → 重放 blink 动画。
 // 悬浮提示「点击复制 clientId」，点击复制当前页面 clientId 到剪贴板。
-function RuntimeWsIndicator({ __appScope }: { __appScope: Record<string, any> }) {
-  const status = __appScope.runtimeWsStatus ?? "connecting";
-  const blinkSeq = __appScope.runtimeWsBlinkSeq ?? 0;
-  const clientId = __appScope.runtimeWsClientId ?? "";
-  const [copied, setCopied] = useState(false);
-  const color = status === "open" ? "#22c55e" : status === "connecting" ? "#f59e0b" : "#9ca3af";
-  const label = status === "open" ? "运行时态 WS 已连接" : status === "connecting" ? "运行时态 WS 连接中" : "运行时态 WS 已断开";
-  const copyClientId = async () => {
-    if (!clientId) return;
-    let ok = false;
-    try {
-      await navigator.clipboard.writeText(clientId);
-      ok = true;
-    } catch {
-      // clipboard API 不可用（非 HTTPS/非聚焦），回退选区
-      try {
-        const ta = document.createElement("textarea");
-        ta.value = clientId;
-        ta.style.position = "fixed";
-        ta.style.opacity = "0";
-        document.body.appendChild(ta);
-        ta.select();
-        ok = document.execCommand("copy");
-        document.body.removeChild(ta);
-      } catch {
-        /* 忽略 */
-      }
-    }
-    if (ok) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    }
-  };
-  return (
-    <span
-      style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: 10, padding: "0 8px", fontSize: 12, color: "#6b7280", cursor: clientId ? "pointer" : "default", userSelect: "none", position: "relative" }}
-      title={clientId ? `点击复制 clientId：${clientId}` : label}
-      onClick={copyClientId}
-    >
-      <span key={blinkSeq} style={{
-        display: "inline-block",
-        width: 9,
-        height: 9,
-        borderRadius: "50%",
-        backgroundColor: color,
-        boxShadow: `0 0 6px ${color}`,
-        animation: "runtime-ws-blink 0.6s ease-out"
-      }}/>
-      <span>RT-WS</span>
-      {copied && (
-        <span style={{
-          position: "absolute",
-          top: "100%",
-          right: 0,
-          marginTop: 6,
-          background: "#22c55e",
-          color: "#fff",
-          padding: "3px 10px",
-          borderRadius: 4,
-          fontSize: 12,
-          whiteSpace: "nowrap",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-          zIndex: 1000,
-          pointerEvents: "none"
-        }}>已复制</span>
-      )}
-      <style>{`@keyframes runtime-ws-blink { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.8); opacity: 0.5; } 100% { transform: scale(1); opacity: 1; } }`}</style>
-    </span>
-  );
-}
 
 export function renderAppView(__appScope: Record<string, any>) {
   const Network = __appScope.Network;
@@ -659,6 +604,7 @@ export function renderAppView(__appScope: Record<string, any>) {
     }
     requestExportWithSave(() => doExport(encoding));
   };
+  Object.assign(__appScope, { requestEncodedExport });
   Object.assign(__appScope, { setTemplateImportResult, setShowImportResultDialog, setImportResultActiveTab });
   // 加载预定义模板前，将用户自定义中的 参数定义/量测定义/E文件接口定义 恢复到默认状态
   // （用户自定义管理对话框左侧的 3 个菜单项），使模板从干净基线应用。
@@ -2090,6 +2036,254 @@ export function renderAppView(__appScope: Record<string, any>) {
   const inspectorGraphId = inspectorSelectedNode
     ? resolveInspectorGraphId(nodes, inspectorSelectedNode)
     : "";
+  Object.assign(__appScope, {
+    ALLOW_RESIZE_TRANSFORM_PARAM,
+    CURRENT_UNIT_OPTIONS,
+    DEFAULT_CANVAS_BACKGROUND,
+    DEFAULT_DEVICE_LABEL_FONT_SIZE,
+    DEFAULT_MODEL_LAYER_ID,
+    DEFAULT_POWER_BASE_VALUE,
+    IMAGE_FIT_MODE_OPTIONS,
+    MAX_CANVAS_HEIGHT,
+    MAX_CANVAS_WIDTH,
+    MIN_CANVAS_HEIGHT,
+    MIN_CANVAS_WIDTH,
+    PARAM_LABELS,
+    POWER_UNIT_OPTIONS,
+    READONLY_E_PARAM_KEYS,
+    STATIC_ROUTE_AVOIDANCE_PARAM,
+    VOLTAGE_UNIT_OPTIONS,
+    activeSelectedNodeIds,
+    allowAutoExpandCanvas,
+    backgroundLayerIds,
+    backgroundLayerOptions,
+    backgroundProjectId,
+    backgroundProjectOptions,
+    backgroundProjectRecord,
+    batchEditors,
+    canvasBackgroundColor,
+    canvasBackgroundImage,
+    canvasSizeDraft,
+    clearSelectedImageForNode,
+    colorPalette,
+    commitCanvasSizeDraft,
+    currentModelRecord,
+    currentUnit,
+    customComponentLibraries,
+    defaultBackgroundLayerIdsForProject,
+    deviceDefinitionOverrides,
+    enumSelectOptionsWithCurrentValue,
+    feeder,
+    formatDeviceModelParamDisplayValue,
+    formatInspectorScaleValue,
+    getEParamValue,
+    getEParameterKeys,
+    getNodeScaleX,
+    getNodeScaleY,
+    handleSidePanelPointerLeave,
+    hasBatchCommonPropertyRows,
+    inspectorGraphId,
+    inspectorSelectedEdge,
+    inspectorSelectedNode,
+    inspectorTab,
+    inspectorTabShowsDevicePanel,
+    inspectorTopologyEntry,
+    invalidEnumOptionLabel,
+    isBrowseMode,
+    isBusNode,
+    isStaticBoxLikeNode,
+    layers,
+    libraryTemplates,
+    modelAssociationDevicesModelTypeFailureMessage,
+    modelType,
+    nodeById,
+    nodeKindAllowsResizeTransform,
+    nodeLabelDisplayMode,
+    nodeLabelOffset,
+    nodeLabelTextAnchor,
+    nodes,
+    normalizeImageFitMode,
+    normalizeNodeLabelRotation,
+    normalizeScale,
+    normalizeStaticBoxDimension,
+    paramOptionsForSection,
+    parseCustomDefinitions,
+    powerBaseValue,
+    powerUnit,
+    projectById,
+    projectName,
+    pushUndoSnapshot,
+    renderElementTreePanel,
+    renderSelectedNodeMeasurementTable,
+    renderSidePanelModeControls,
+    resolveContainerParameterViewComponentLibrary,
+    resolveDeviceModelPanelDefinitionGroups,
+    resolveDeviceModelPanelDevType,
+    resolveDeviceModelPanelParameterKeys,
+    rightPanelRef,
+    rightPanelVisible,
+    selectedContainerParameterView,
+    selectedContainerParameterViews,
+    selectedDeviceInfoView,
+    selectedSchemeRecord,
+    setAllowAutoExpandCanvas,
+    setBackgroundLayerIds,
+    setBackgroundProjectId,
+    setCanvasBackgroundColor,
+    setCanvasBackgroundImage,
+    setCanvasBackgroundImageAssetId,
+    setContainerParamViewId,
+    setCurrentUnit,
+    setFeeder,
+    setImageTarget,
+    setInspectorTab,
+    setModelType,
+    setPowerBaseValue,
+    setPowerUnit,
+    setSelectedDeviceInfoView,
+    setSubcontrolarea,
+    setSubstation,
+    setTaiqu,
+    setVoltageUnit,
+    singleSelectedDeviceForInspector,
+    startSidePanelResize,
+    staticNodeParticipatesInRoutingAvoidance,
+    stopSidePanelEventPropagation,
+    subcontrolarea,
+    substation,
+    taiqu,
+    terminalColor,
+    terminalVbaseFallback,
+    terminalVoltageBaseNumber,
+    toggleBackgroundLayer,
+    updateAutoPanelVisibility,
+    updateParam,
+    updateSelectedNode,
+    updateTerminalVbase,
+    voltageUnit
+  });
+  const contextMenuLayerActive = Boolean(contextMenu || projectMenu || templateMenu);
+  const projectDialogLayerActive = Boolean(
+    libraryPackageDialogOpen ||
+    globalLinePlacementDialog ||
+    globalLineTransitionDialog ||
+    __appScope.userCustomizationManagerOpen ||
+    measurementConfigDialogOpen ||
+    __appScope.measurementEditorDialog ||
+    pendingRecordPasteConflict ||
+    pendingModelImportConflict ||
+    pendingSchemeImportConflict ||
+    pendingUnsavedAction ||
+    unsavedChangesDialogOpen
+  );
+  const canvasDialogLayerActive = Boolean(
+    voltageBaseSetDialogOpen ||
+    voltageBaseClearDialogOpen ||
+    connectionRedrawDialogOpen ||
+    groupDeviceDefinitionDialog ||
+    templateDialog ||
+    layerAssignmentDialogOpen ||
+    filterSelectionDialogOpen ||
+    reactFlowPreviewOpen ||
+    colorPaletteDialogOpen ||
+    voltageLevelDialogOpen
+  );
+  const deviceDialogLayerActive = Boolean(
+    deviceDefinitionDialogOpen ||
+    createModelDialog ||
+    customLibraryCreateDialog ||
+    customDeviceDialogOpen ||
+    customDeviceUnsavedPrompt ||
+    eDeviceDefinitionInterfaceDialogOpen ||
+    eFileEditorDialogOpen ||
+    eDeviceInterfaceExitPromptOpen ||
+    eDeviceInterfaceClassSwitchTarget ||
+    showImportResultDialog
+  );
+  const resourceDialogLayerActive = Boolean(
+    __appScope.nodeDoubleClickDialog ||
+    imageTarget ||
+    __appScope.globalLineListOpen ||
+    __appScope.allNetworkTopologyDialogOpen
+  );
+  const overlayLayerActive = contextMenuLayerActive || projectDialogLayerActive ||
+    canvasDialogLayerActive || deviceDialogLayerActive || resourceDialogLayerActive;
+  const overlayLayerRevisionRef = useRef(0);
+  if (overlayLayerActive) {
+    overlayLayerRevisionRef.current += 1;
+  }
+  const overlayInputsFor = (active: boolean) => [
+    active,
+    active ? overlayLayerRevisionRef.current : 0
+  ] as const;
+  const resourceDialogLayerInputs = overlayInputsFor(resourceDialogLayerActive);
+  Object.assign(__appScope, {
+    AlignCenterHorizontal, AllNetworkTopologyDialog, ArrowDown, ArrowUp, BoxSelect, BufferedTextInput, CONNECTION_REDRAW_SCOPE_LABELS, CONTAINER_TERMINAL_ASSOCIATION_OPTIONS,
+    ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, CircleDot, Copy, CustomComponentManagerTree, DEFAULT_COLOR_PALETTE,
+    DeferredColorInput, Download, EFileEditor, ENABLE_REACT_FLOW_PREVIEW, ENERGY_COLOR_ROWS, Eye, FileInput, FolderOpen,
+    Fragment, Grid2X2, Group, ICON_LIBRARY_PAGE_SIZE, Layers, Layers2, MAX_CUSTOM_DEVICE_TERMINALS, PARAM_VALUE_TYPE_OPTIONS,
+    Pencil, Plus, ReactFlowPreview, RotateCcw, Route, Save, ScanSearch, Scissors,
+    Search, Suspense, TERMINAL_TYPE_LIBRARY_LABELS, TERMINAL_TYPE_OPTIONS, Trash2, Type, Undo2, Ungroup,
+    UserCustomizationManagerDialog, VOLTAGE_BASE_CLEAR_SCOPES, VOLTAGE_BASE_CLEAR_SCOPE_LABELS, VOLTAGE_BASE_SET_SCOPES, VOLTAGE_BASE_SET_SCOPE_LABELS, VoltageLevelDialog, WindowCloseButton, X,
+    Zap, ZapOff, activeImageFolderId, activeLayerNodes, activeSelectedNodeIds, activeVoltageBaseTerminalKey, activeVoltageBaseTerminalRow, addCustomDeviceStateDraftRow,
+    addCustomParameterRow, addDefaultMeasurementsToNode, addDefinitionDraftRow, addManualBendFromContextMenu, addRoutableLineBendFromContextMenu, adjustSelectedDisplayLayer, applyExistingImage, applyIconLibraryCatalogIcon,
+    applyLayerAssignmentDialog, autoAlignCanvasGraphics, autoSpreadCanvasGraphics, canAddTemplateFromSelection, canGroupSelectedGraphics, canUngroupSelectedGraphics, cancelGlobalLinePlacement, cancelGlobalLineTransition,
+    cancelTemplateDialog, canvasClipboard, categoryLibraryComponentLibraryKey, clearSelectedImage, closeDeviceDefinitionDialog, closeLibraryPackageDialog, collapsedCustomComponentTreeLibraries, collapsedCustomComponentTreeTypes,
+    collapsedDefinitionComponentLibraries, collapsedEDeviceInterfaceTreeNodes, colorPaletteDialogOpen, colorPaletteDraft, colorPaletteTab, componentLibraryDisplayParts, componentLibraryOptionsByCategoryLibrary, confirmAddGraphTemplate,
+    confirmConnectionRedrawDialog, confirmCreateDeviceFromGroup, confirmCustomLibraryCreateDialog, confirmFilterSelectionDialog, confirmGlobalLinePlacement, confirmGlobalLineTransition, confirmLibraryPackageDialog, confirmReplaceDeviceIconFromGroup,
+    confirmVoltageBaseClearDialog, confirmVoltageBaseSetDialog, connectionRedrawDialogOpen, connectionRedrawScope, connectionRedrawTargetsForScope, contextMeasurementGroup, contextMeasurementNode, contextMenu,
+    contextMenuClassName, contextMenuForEdge, contextMenuForNode, contextMenuForRoutableLine, contextMenuForSelection, contextMenuFromElementTree, contextMenuRef, contextMenuStyle,
+    contextMenuTarget, contextSelectionCount, copiedCustomComponentTemplate, copyCustomComponentTemplate, copyProjectRecord, copySchemeRecord, copySelectedCustomParameterRows, copySelectedDefinitionParameterRows,
+    copySelection, createBlankProject, createCustomCategoryLibrary, createCustomComponentLibrary, createGraphTemplateType, createImageFolder, createMeasurementFieldParameterDefinition, createModelDialog,
+    createSchemeRecord, currentModelVoltageColorKeys, customComponentLibraries, customComponentTreeSearchQuery, customComponentTreeSelection, customDeviceClassDisplay, customDeviceDefinitionIconOnly, customDeviceDefinitionMode,
+    customDeviceDialogOpen, customDeviceDialogRef, customDeviceDraft, customDeviceHasUnsavedChanges, customDeviceIconDirty, customDeviceMeasurementTarget, customDeviceMeasurementsDirty, customDeviceParametersDirty,
+    customDevicePreviewSourceTemplate, customDeviceSaveMessage, customDeviceSaveToast, customDeviceStatePageId, customDeviceTerminalAnchors, customDeviceUnsavedPrompt, customGraphTemplates, customLibraryCreateDialog,
+    customLibraryCreateDialogBaseComponentLibraryOptions, customLibraryCreateDialogCategoryLibraryName, customLibraryCreateDialogClassOptions, customLibraryCreateDialogSelectedClassName, cutSelection, defaultComponentLibraryForCategoryLibrary, defaultContainerAssociationForTerminalType, definitionDraftError,
+    definitionDraftRows, definitionDraftRowsForDisplay, definitionDraftSection, deleteAllDefinitionParameterRows, deleteCustomDeviceStateDraftRow, deleteGraphTemplate, deleteGraphTemplateType, deleteImageAssetFromContextMenu,
+    deleteImageFolder, deleteProjectRecord, deleteSchemeRecord, deleteSelectedCustomDeviceTreeItem, deleteSelectedCustomParameterRows, deleteSelectedDefinitionParameterRows, deleteSelection, deleteVoltageColorRow,
+    deviceDefinitionDialogOpen, deviceDefinitionDialogRef, deviceDefinitionKeyForTemplate, deviceDefinitionSearchNeedle, deviceDefinitionSearchQuery, deviceDefinitionView, deviceLibraryDialogLayouts, deviceLibraryDialogStyle,
+    discardEDeviceInterfaceClassAndSwitch, discardEDeviceInterfaceDefinitionChanges, displayedCustomComponentTreeLibraries, displayedDeviceDefinitionLibraries, displayedMergedCustomDefaultParams, displayedVisibleCustomParams, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionInterfaceDialogOpen,
+    eDeviceDefinitionLabels, eDeviceDefinitionTableIds, eDeviceDefinitionTemplateFields, eDeviceInterfaceClassSwitchTarget, eDeviceInterfaceClassSwitchTargetRow, eDeviceInterfaceDefinitionRows, eDeviceInterfaceDefinitionTree, eDeviceInterfaceExitPromptOpen,
+    eDeviceInterfaceGroupInfo, eDeviceInterfaceHasUnsavedChanges, eDeviceInterfaceLoadedTemplateName, eDeviceInterfaceReadonlyMode, eDeviceInterfaceSaveAndSwitchRef, eDeviceInterfaceSaveMessage, eDeviceInterfaceSelectedGroupKey, eDeviceTemplateDropdownOpen,
+    eFileEditorDialogOpen, eFileEditorExportOptions, eFileEditorFieldCnNames, eFileEditorRecords, editingCustomDeviceKind, expandedDefinitionGroups, expandedImportResultSections, exportCustomComponentTemplateSvg,
+    exportProjectRecordFile, exportSchemeRecord, filterSelectionDialogOpen, filterSelectionTreeLabel, filterSelectionTypeKeys, filterSelectionTypeOptions, filterSelectionTypePartial, filterSelectionTypeSelected,
+    filteredCustomComponentTreeByComponentLibrary, filteredDeviceDefinitionByComponentLibrary, filteredImageAssetList, findSavedSchemeById, formatCustomDeviceTerminalAnchorValue, getContainerTerminalAssociationSourceIndex, globalLinePlacementCandidates, globalLinePlacementConflictMessageForId,
+    globalLinePlacementDialog, globalLineRepairCandidate, globalLineTransitionDialog, graphTemplateTypes, groupDeviceDefinitionDialog, groupDeviceReplacementTemplates, groupSelectedGraphics, handleTreeCollapseChange,
+    iconLibraryCatalog, iconLibraryCategoryOptions, iconLibraryLibraries, iconLibraryLoadedText, iconLibraryPicker, iconLibrarySelectedLibraryId, iconLibraryVisibleResult, imageAssetContextMenu,
+    imageAssetList, imageAssets, imageFolders, imageInputRef, imagePickerActiveCategoryFilter, imagePickerActiveLibraryTab, imagePickerActiveSourceFilter, imagePickerAssetIsBuiltinIcon,
+    imagePickerAssetNoun, imagePickerCanClear, imagePickerCategoryOptions, imagePickerDialogClassName, imagePickerHint, imagePickerRendersCatalogSource, imagePickerSearchQuery, imagePickerShowsLibraryActions,
+    imagePickerSourceLocked, imagePickerTitle, imagePickerUsesIconSources, imagePickerUsesSeparateLibraryTabs, imageTarget, importResultActiveTab, isBrowseMode, isContainerTerminalAssociationDependent,
+    isEditMode, keepTemplateContextMenuFlyoutOpen, layerAssignmentDialogOpen, layerAssignmentTargetId, layerAssignmentUnchanged, layers, libraryPackageDialogMode, libraryPackageDialogOpen,
+    libraryPackageDialogScope, libraryPackageDialogScopeOptions, libraryTemplates, loadDefinitionTemplateDraft, loadPredefinedEDeviceTemplate, moveSelectedCustomParameterRows, moveSelectedDefinitionParameterRows, moveSelectedEDeviceInterfaceField,
+    nodes, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, normalizeDefinitionRowEnumFields, openAddTemplateDialog, openConnectionRedrawDialog, openCustomComponentSvgImport,
+    openFilterSelectionDialog, openGroupDeviceDefinitionDialog, openLayerAssignmentDialog, openMeasurementEditorForNode, openModelImportFilePicker, openSchemeImportFilePicker, openVoltageBaseClearDialog, openVoltageBaseSetDialog,
+    parameterValueTypeLabelForDefinitionRow, pasteCustomComponentTemplate, pasteProjectClipboardRecord, pasteSchemeClipboardRecord, pasteSelection, pendingModelImportConflict, pendingRecordPasteConflict, pendingSchemeImportConflict,
+    pendingUnsavedAction, projectById, projectMenu, projectName, reactFlowPreviewOpen, recordClipboard, removeMeasurementsFromNode, renameImageFolder,
+    renameProjectRecord, renameSchemeRecord, renderDeviceDefinitionMeasurementPanel, renderDeviceDefinitionVisualPanel, renderEnumValuesEditor, renderGraphTemplatePreview, renderMeasurementConfigDialog, renderMeasurementEditorDialog,
+    renderNodeDoubleClickDialog, renderStateVisualPager, renderTypicalValueEditor, requestCloseCustomDeviceDialog, requestCloseEDeviceInterfaceDefinition, requestCustomDeviceDialogView, requestExportEDeviceInterfaceDefinitionFile, requestSaveEDeviceInterfaceDefinition,
+    requestSelectCustomCategoryLibrary, requestSelectCustomComponentLibrary, requestSelectCustomComponentTemplate, requestSelectEDeviceInterfaceComponentLibrary, resetDeviceDefinitionDraft, resetEnergyColors, resetVoltageColors, resolveComponentLibraryClassMetadata,
+    resolveCustomDeviceUnsavedPrompt, resolveDuplicateModelImport, resolveDuplicateSchemeImport, resolveRecordPasteConflict, resolveTemplateComponentLibrary, resolveUnsavedChangeAction, restoreEDeviceInterfaceOriginalDefinition, revertCustomDeviceDraftAll,
+    revertCustomDeviceDraftCurrentTab, runAfterEDeviceInterfaceInputCommit, runContextMenuAction, saveColorPalette, saveCurrentProject, saveCustomDeviceDefinitionDialog, saveDeviceDefinitionDraft, saveRequired,
+    savedUndoStackLengthRef, scheduleGraphTemplateFlyoutClose, schemes, selectCustomParameterRow, selectDefinitionParameterRow, selectableCategoryLibraries, selectedCustomEditableParameterCount, selectedCustomParameterRowIdSet,
+    selectedCustomParameterRowIds, selectedDefinitionBaseTemplate, selectedDefinitionDerivedBaseTemplate, selectedDefinitionDerivedInfo, selectedDefinitionEditableParameterCount, selectedDefinitionParameterRowIdSet, selectedDefinitionParameterRowIds, selectedDefinitionTemplate,
+    selectedDefinitionTerminalAssociations, selectedEDeviceInterfaceFields, selectedEDeviceInterfaceRow, selectedEdge, setActiveImageFolderId, setActiveVoltageBaseTerminalKey, setCollapsedDefinitionComponentLibraries, setColorPaletteDialogOpen,
+    setColorPaletteTab, setConnectionRedrawDialogOpen, setConnectionRedrawScope, setCreateModelDialog, setCustomComponentTreeSearchQuery, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceStatePageId,
+    setCustomLibraryCreateDialog, setDeviceDefinitionSearchQuery, setDeviceDefinitionView, setEDeviceDefinitionClassExportEnabled, setEDeviceDefinitionInterfaceDialogOpen, setEDeviceDefinitionLabels, setEDeviceInterfaceClassSwitchTarget, setEDeviceInterfaceExitPromptOpen,
+    setEDeviceInterfaceLoadedTemplateName, setEDeviceInterfaceReadonlyMode, setEDeviceInterfaceSelectedGroupKey, setEDeviceTemplateDropdownOpen, setEFileEditorDialogOpen, setExpandedDefinitionGroups, setFilterSelectionDialogOpen, setFilterSelectionTypeKeys,
+    setGlobalLinePlacementDialog, setGroupDeviceDefinitionDialog, setHasUnsavedChanges, setIconLibraryPicker, setImageAssetContextMenu, setImagePickerCategoryFilter, setImagePickerSearchQuery, setImagePickerSourceFilter,
+    setImageTarget, setImportResultActiveTab, setLayerAssignmentDialogOpen, setLayerAssignmentTargetId, setLibraryPackageDialogMode, setLibraryPackageDialogScope, setReactFlowPreviewOpen, setSelectedNodeLabelDisplayMode,
+    setShowImportResultDialog, setTemplateDraftName, setTemplateDraftType, setTemplateImportResult, setUnsavedChangesDialogOpen, setVoltageBaseClearDialogOpen, setVoltageBaseClearScope, setVoltageBaseSetDialogOpen,
+    setVoltageBaseSetScope, setVoltageBaseSetValue, setVoltageBaseTerminalValue, setVoltageColorVisibility, setVoltageLevelDialogOpen, setVoltageLevelSettings, setVoltageTab, showComponentLibraryTerminalTypes,
+    showCustomDeviceInheritanceNote, showImportResultDialog, sourceFilteredImageAssetList, startContextMarqueeSelection, startCustomComponentCreate, startDeviceLibraryDialogDrag, startDeviceLibraryDialogResize, stopDeviceLibraryDialogEvent,
+    templateDialog, templateDraftName, templateDraftType, templateImportResult, templateMenu, templateResizeTransformValue, tidyRoutableLineRoute, tidySelectedEdgeRoute,
+    toggleColorDisplayMode, toggleDefinitionComponentLibrary, toggleDefinitionGroup, toggleEDeviceInterfaceTreeNode, toggleFilterSelectionItem, toggleFilterSelectionType, toggleImportResultSection, undoLastOperation,
+    undoStack, ungroupSelectedGraphics, unsavedChangesDialogOpen, updateCustomDefaultParamRow, updateCustomDeviceStateDraftRow, updateCustomDeviceTerminalAnchor, updateDefinitionComponentLibraryCommonParamExport, updateDefinitionDraftRow,
+    updateEnergyColor, updateVoltageColorRow, visibleCustomDeviceDialogView, visibleEdges, visibleNodes, visibleVoltageColorRows, voltageBaseClearDialogOpen, voltageBaseClearResultForScope,
+    voltageBaseClearScope, voltageBaseSetDialogOpen, voltageBaseSetHasUniformTargets, voltageBaseSetMode, voltageBaseSetModeLabel, voltageBaseSetOptions, voltageBaseSetReady, voltageBaseSetResultForScope,
+    voltageBaseSetScope, voltageBaseSetScopeDeviceCount, voltageBaseSetTerminalRows, voltageBaseSetValue, voltageBaseTerminalRowKey, voltageColorVisibility, voltageLevelDialogOpen, voltageLevelSettings,
+    voltageTab
+  });
+
   return (<>
     {globalMessage && <div className={`global-message global-message-${globalMessage.type}`} onClick={() => setGlobalMessage(null)} style={{ cursor: "pointer" }} title="点击关闭"><span className="global-message-icon">{globalMessage.type === "success" ? "✓" : globalMessage.type === "error" ? "✕" : "ℹ"}</span>{globalMessage.text}</div>}
     {exportCompletionDialog && (<div className="image-picker-backdrop export-completion-backdrop" onPointerDown={() => setExportCompletionDialog(null)}>
@@ -2127,301 +2321,61 @@ export function renderAppView(__appScope: Record<string, any>) {
     <div className={`app-shell ${isBrowseMode ? "browse-mode" : "edit-mode"} left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${topologyWarningPanelResize ? "topology-warning-panel-resizing" : ""} ${nodeDoubleClickDialogDrag || nodeDoubleClickDialogResize ? "node-double-click-dialog-moving" : ""} ${deviceLibraryDialogDrag || deviceLibraryDialogResize ? "device-library-dialog-moving" : ""} ${canvasResizeDrag ? "canvas-resizing" : ""}`} style={appShellStyle}>
       {renderSidePanelEdgeTrigger("left")}
       {renderSidePanelEdgeTrigger("right")}
-      <aside ref={leftPanelRef} className={`library-panel floating-side-panel ${leftPanelVisible ? "visible" : "hidden"}`} onPointerDown={stopSidePanelEventPropagation} onPointerMoveCapture={stopSidePanelEventPropagation} onPointerMove={stopSidePanelEventPropagation} onPointerEnter={() => updateAutoPanelVisibility("left", "panel-enter")} onPointerLeave={(event) => handleSidePanelPointerLeave("left", event)} onMouseMoveCapture={stopSidePanelEventPropagation} onMouseMove={stopSidePanelEventPropagation} onClick={stopSidePanelEventPropagation} onDoubleClick={stopSidePanelEventPropagation} onContextMenu={stopSidePanelEventPropagation} onKeyDown={stopSidePanelEventPropagation} onKeyUp={stopSidePanelEventPropagation}>
-        <div className="side-panel-resize-handle right-edge" role="separator" aria-orientation="vertical" aria-label="调整左侧栏宽度" title="拖拽调整左侧栏宽度" onPointerDown={(event) => startSidePanelResize(event, "left")}/>
-        {renderSidePanelModeControls("left")}
-        <div className="left-panel-tabs" role="tablist" aria-label="左侧资源库">
-          <button className={effectiveLeftPanelTab === "projects" ? "active" : ""} onClick={() => setLeftPanelTab("projects")} role="tab" aria-selected={effectiveLeftPanelTab === "projects"}>
-            模型库
-          </button>
-          {isEditMode && (<>
-              <button className={leftPanelTab === "library" ? "active" : ""} onClick={() => setLeftPanelTab("library")} role="tab" aria-selected={leftPanelTab === "library"}>
-                图元库
-              </button>
-              <button className={leftPanelTab === "templates" ? "active" : ""} onClick={() => setLeftPanelTab("templates")} role="tab" aria-selected={leftPanelTab === "templates"}>
-                模板库
-              </button>
-            </>)}
-        </div>
-        <div className="left-panel-content">
-          {leftPanelContent}
-        </div>
-        <div className="left-panel-footer">
-          <span className="left-panel-footer-item">
-            <span className="left-panel-footer-label">方案：</span>
-            <span className="id-copy-cell" title="点击复制方案 ID" onClick={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              const raw = activeSchemeKey || "";
-              const id = raw ? decodeURIComponent(raw.replace(/^[^:]+:/, "")) : "—";
-              navigator.clipboard.writeText(id).then(() => {
-                const toast = document.createElement("span");
-                toast.className = "id-copy-toast";
-                toast.textContent = "已复制";
-                toast.style.position = "fixed";
-                toast.style.left = (rect.left + rect.width / 2) + "px";
-                toast.style.top = (rect.top - 8) + "px";
-                document.body.appendChild(toast);
-                setTimeout(() => toast.remove(), 1000);
-              });
-            }}>{activeSchemeKey ? decodeURIComponent(activeSchemeKey.replace(/^[^:]+:/, "")) : "—"}</span>
-          </span>
-          <span className="left-panel-footer-item">
-            <span className="left-panel-footer-label">模型：</span>
-            <span className="id-copy-cell" title="点击复制模型 ID" onClick={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              const raw = activeProjectKey || "";
-              const stripped = raw.replace(/^[^:]+:/, "").split("/").pop() || "";
-              const id = stripped ? decodeURIComponent(stripped) : "—";
-              navigator.clipboard.writeText(id).then(() => {
-                const toast = document.createElement("span");
-                toast.className = "id-copy-toast";
-                toast.textContent = "已复制";
-                toast.style.position = "fixed";
-                toast.style.left = (rect.left + rect.width / 2) + "px";
-                toast.style.top = (rect.top - 8) + "px";
-                document.body.appendChild(toast);
-                setTimeout(() => toast.remove(), 1000);
-              });
-            }}>{activeProjectKey ? decodeURIComponent((activeProjectKey.replace(/^[^:]+:/, "").split("/").pop() || "")) : "—"}</span>
-          </span>
-        </div>
-      </aside>
+      <AppLeftPanel
+        scope={__appScope}
+        inputs={[
+          leftPanelVisible,
+          leftPanelMode,
+          effectiveLeftPanelTab,
+          leftPanelTab,
+          leftPanelContent,
+          isEditMode,
+          activeSchemeKey,
+          activeProjectKey
+        ]}
+      />
 
       <main className="workspace" onPointerEnter={hideAutoPanelsFromWorkspace}>
-        <header className="topbar">
-          <div className="brand topbar-brand">
-            <div className="brand-mark">PS</div>
-            <div>
-              <h1>电力能源系统图上建模平台</h1>
-              <p>拖拽建模、拓扑关联、参数维护</p>
-            </div>
-          </div>
-          <div className="topbar-model" title={`当前模型：${activeModelPathName}`}>
-            <span>当前模型</span>
-            <strong>{activeModelPathName}</strong>
-          </div>
-          <div ref={layerManagementDropdownRef} className="topbar-dropdown layer-management-dropdown">
-            <button type="button" className="topbar-dropdown-trigger layer-management-trigger" disabled={isBrowseMode} title={`激活图层：${activeLayer?.name ?? "默认图层"}`} aria-label="图层管理">
-              <Layers size={15}/>
-              <span>{activeLayer?.name ?? "默认图层"}</span>
-              <ChevronDown size={13}/>
-            </button>
-            <div className="topbar-dropdown-menu layer-management-dropdown-menu" role="menu" aria-label="图层管理">
-              {renderLayerManager()}
-            </div>
-          </div>
-          <button type="button" className={`topbar-primary-button ${isEditMode ? "active" : "browse-mode-toggle"}`} onClick={toggleInteractionMode} title={isEditMode ? "当前为编辑模式，点击切换到浏览模式" : "当前为浏览模式，点击切换到编辑模式"} aria-label={isEditMode ? "切换到浏览模式" : "切换到编辑模式"}>
-            {isEditMode ? <Pencil size={16}/> : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                <line x1="2" y1="2" x2="22" y2="22"/>
-              </svg>
-            )}
-          </button>
-          <button type="button" className={`topbar-primary-button ${smartAlignmentEnabled ? "active" : ""}`} onClick={() => setSmartAlignmentEnabled((current) => !current)} title={smartAlignmentEnabled ? "对齐到标线已开启，点击关闭" : "对齐到标线已关闭，点击开启"} aria-label={smartAlignmentEnabled ? "关闭对齐到标线" : "开启对齐到标线"}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-              <rect x="2" y="5" width="12" height="6" rx="1"/>
-              <line x1="8" y1="0" x2="8" y2="16" strokeDasharray="2 2"/>
-            </svg>
-          </button>
-          <button className="topbar-primary-button" onClick={runTopologyCalculation} disabled={isBrowseMode} title="图上拓扑" aria-label="图上拓扑">
-            <Grid2X2 size={16}/>
-          </button>
-          <button
-            className={`topbar-primary-button ${__appScope.globalLineListOpen ? "active" : ""}`}
-            onClick={() => __appScope.setGlobalLineListOpen((current: boolean) => !current)}
-            title={__appScope.globalLineListOpen ? "隐藏全局线路列表" : "显示全局线路列表"}
-            aria-label="全局线路"
-            aria-pressed={Boolean(__appScope.globalLineListOpen)}
-          >
-            <Cable size={16}/>
-          </button>
-          <button
-            className={`topbar-primary-button ${__appScope.allNetworkTopologyDialogOpen ? "active" : ""}`}
-            onClick={() => __appScope.setAllNetworkTopologyDialogOpen((current: boolean) => !current)}
-            title={__appScope.allNetworkTopologyDialogOpen ? "隐藏全网拓扑窗口" : "显示全网拓扑窗口"}
-            aria-label="全网拓扑"
-            aria-pressed={Boolean(__appScope.allNetworkTopologyDialogOpen)}
-          >
-            <Network size={16}/>
-          </button>
-          <button className={`topbar-primary-button ${topologyErrors.length > 0 && !topologyWarningPanelClosed ? "active" : ""}`} onClick={openTopologyWarningPanel} disabled={topologyErrors.length === 0} title={topologyErrors.length > 0 ? "显示告警窗口" : "当前没有拓扑告警"} aria-label="告警窗口">
-            <Bell size={16}/>
-          </button>
-          <button className={`topbar-primary-button ${colorDisplayMode === "voltage" ? "active" : ""}`} onClick={() => toggleColorDisplayMode()} title={colorDisplayMode === "voltage" ? "当前交流/直流按电压等级显示，点击切换为按能源类型显示；氢能、热能始终按能源类型显示" : "当前交流/直流按能源类型显示，点击切换为按电压等级显示；氢能、热能始终按能源类型显示"} aria-label="颜色切换">
-            <Paintbrush size={16}/>
-          </button>
-          <button className="topbar-primary-button" onClick={openColorPaletteDialog} disabled={isBrowseMode} title="配色设置" aria-label="配色设置">
-            <Palette size={16}/>
-          </button>
-          <button className="topbar-primary-button" onClick={() => setVoltageLevelDialogOpen(true)} disabled={isBrowseMode} title="电压等级设置" aria-label="电压等级设置">
-            <Zap size={16}/>
-          </button>
-          <button className={`topbar-primary-button ${deviceLabelsVisible ? "active" : ""}`} onClick={() => setDeviceLabelsVisible((current) => !current)} title={deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识"} aria-label={deviceLabelsVisible ? "隐藏设备标识" : "显示设备标识"}>
-            <Type size={16}/>
-          </button>
-          <button className="topbar-primary-button" onClick={() => setImageTarget({ kind: "canvasIcon" })} disabled={isBrowseMode} title="分类图标库" aria-label="分类图标库">
-            <FolderOpen size={16}/>
-          </button>
-          <div className="topbar-center-actions">
-            <button className="topbar-primary-button" onClick={() => void openUserCustomizationManager()} disabled={isBrowseMode} title="用户自定义修改管理" aria-label="用户自定义修改管理">
-              <Settings2 size={16}/>
-            </button>
-            <button className="topbar-primary-button" onClick={() => void saveCurrentProject()} disabled={isBrowseMode || !saveRequired} title={saveRequired ? "保存当前模型" : "当前模型没有新的修改"} aria-label="保存">
-              <Save size={16}/>
-            </button>
-            <button className="topbar-primary-button" onClick={() => setEDeviceDefinitionInterfaceDialogOpen(true)} title="打开 E 文件接口定义" aria-label="打开 E 文件接口定义">
-              <FileJson size={16}/>
-            </button>
-            <div className="topbar-dropdown export-dropdown">
-              <button type="button" className="topbar-primary-button" title="导出文件" aria-label="导出文件" aria-haspopup="menu">
-                <Download size={16}/>
-              </button>
-              <div className="topbar-dropdown-menu" role="menu" aria-label="导出选项">
-                {[
-                  { key: "bundle", label: "导出 E、JSON 和 SVG", icon: <Download size={16}/>, action: exportSvg, validatesEInterface: true },
-                  { key: "e", label: "导出 E 文件", icon: <FileJson size={16}/>, action: exportEFile, validatesEInterface: true },
-                  { key: "svg", label: "导出 SVG", icon: <Download size={16}/>, action: exportSvgFile, validatesEInterface: false },
-                  { key: "json", label: "导出 JSON", icon: <Download size={16}/>, action: exportJsonFile, validatesEInterface: false }
-                ].map((item) => (
-                  <div className="export-menu-item" key={item.key}>
-                    <button type="button" className="export-menu-trigger" title={item.label} aria-label={item.label} aria-haspopup="menu">
-                      {item.icon}
-                      <span>{item.label}</span>
-                      <ChevronRight className="export-submenu-chevron" size={14}/>
-                    </button>
-                    <div className="export-encoding-submenu" role="menu" aria-label={`${item.label}字符编码`}>
-                      <button type="button" role="menuitem" onClick={() => requestEncodedExport(item.action, "utf-8", item.validatesEInterface)} aria-label={`${item.label}，UTF-8 编码`}>UTF-8</button>
-                      <button type="button" role="menuitem" onClick={() => requestEncodedExport(item.action, "gbk", item.validatesEInterface)} aria-label={`${item.label}，GBK 编码`}>GBK</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div className="action-cluster">
-            <div className="topbar-dropdown group-dropdown">
-              <button type="button" className="topbar-dropdown-trigger" disabled={isBrowseMode || (!canGroupSelectedGraphics && !canUngroupSelectedGraphics)} title="组合操作" aria-label="组合操作">
-                <Group size={16}/>
-                <ChevronDown size={13}/>
-              </button>
-              <div className="topbar-dropdown-menu" role="menu" aria-label="组合操作">
-                <button onClick={groupSelectedGraphics} disabled={isBrowseMode || !canGroupSelectedGraphics} title="组合" aria-label="组合">
-                  <Group size={16}/>
-                  <span>组合</span>
-                </button>
-                <button onClick={ungroupSelectedGraphics} disabled={isBrowseMode || !canUngroupSelectedGraphics} title="解除组合" aria-label="解除组合">
-                  <Ungroup size={16}/>
-                  <span>解除组合</span>
-                </button>
-              </div>
-            </div>
-            <div className="topbar-dropdown display-layer-dropdown">
-              <button type="button" className="topbar-dropdown-trigger" disabled={!canAdjustSelectedDisplayLayer} title="显示层级" aria-label="显示层级">
-                <Layers2 size={16}/>
-                <ChevronDown size={13}/>
-              </button>
-              <div className="topbar-dropdown-menu" role="menu" aria-label="显示层级">
-                <button onClick={() => adjustSelectedDisplayLayer("raise")} disabled={!canAdjustSelectedDisplayLayer} title="提升显示层级" aria-label="提升显示层级">
-                  <ArrowUp size={16}/>
-                  <span>提升显示层级</span>
-                </button>
-                <button onClick={() => adjustSelectedDisplayLayer("lower")} disabled={!canAdjustSelectedDisplayLayer} title="降低显示层级" aria-label="降低显示层级">
-                  <ArrowDown size={16}/>
-                  <span>降低显示层级</span>
-                </button>
-                <button onClick={() => adjustSelectedDisplayLayer("front")} disabled={!canAdjustSelectedDisplayLayer} title="顶层显示" aria-label="顶层显示">
-                  <ChevronsUp size={16}/>
-                  <span>顶层显示</span>
-                </button>
-                <button onClick={() => adjustSelectedDisplayLayer("back")} disabled={!canAdjustSelectedDisplayLayer} title="底层显示" aria-label="底层显示">
-                  <ChevronsDown size={16}/>
-                  <span>底层显示</span>
-                </button>
-              </div>
-            </div>
-            <div className="topbar-dropdown align-dropdown">
-              <button type="button" className="topbar-dropdown-trigger" disabled={isBrowseMode} title="对齐操作" aria-label="对齐操作">
-                <AlignCenterHorizontal size={16}/>
-                <ChevronDown size={13}/>
-              </button>
-              <div className="topbar-dropdown-menu" role="menu" aria-label="对齐操作">
-                <button onClick={() => alignSelected("left")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="左对齐" aria-label="左对齐">
-                  <AlignStartVertical size={16}/>
-                  <span>左对齐</span>
-                </button>
-                <button onClick={() => alignSelected("right")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="右对齐" aria-label="右对齐">
-                  <AlignEndVertical size={16}/>
-                  <span>右对齐</span>
-                </button>
-                <button onClick={() => alignSelected("horizontal")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="横向居中" aria-label="横向居中">
-                  <AlignCenterHorizontal size={16}/>
-                  <span>横向居中</span>
-                </button>
-                <button onClick={() => alignSelected("vertical")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="纵向居中" aria-label="纵向居中">
-                  <AlignCenterVertical size={16}/>
-                  <span>纵向居中</span>
-                </button>
-                <button onClick={() => alignSelected("top")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="上对齐" aria-label="上对齐">
-                  <AlignStartHorizontal size={16}/>
-                  <span>上对齐</span>
-                </button>
-                <button onClick={() => alignSelected("bottom")} disabled={isBrowseMode || selectedLayoutUnitCount < 2} title="下对齐" aria-label="下对齐">
-                  <AlignEndHorizontal size={16}/>
-                  <span>下对齐</span>
-                </button>
-                <button onClick={() => distributeSelected("horizontal")} disabled={isBrowseMode || selectedLayoutUnitCount < 3} title="横向分布" aria-label="横向分布">
-                  <AlignHorizontalDistributeCenter size={16}/>
-                  <span>横向分布</span>
-                </button>
-                <button onClick={() => distributeSelected("vertical")} disabled={isBrowseMode || selectedLayoutUnitCount < 3} title="纵向分布" aria-label="纵向分布">
-                  <AlignVerticalDistributeCenter size={16}/>
-                  <span>纵向分布</span>
-                </button>
-              </div>
-            </div>
-            <div className="topbar-dropdown rotate-dropdown">
-              <button type="button" className="topbar-dropdown-trigger" disabled={isBrowseMode} title="旋转操作" aria-label="旋转操作">
-                <RotateCw size={16}/>
-                <ChevronDown size={13}/>
-              </button>
-              <div className="topbar-dropdown-menu" role="menu" aria-label="旋转操作">
-                <button onClick={() => rotateSelectedLayoutUnits("left")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="向左旋转90度" aria-label="向左旋转90度">
-                  <RotateCcw size={16}/>
-                  <span>左转90度</span>
-                </button>
-                <button onClick={() => rotateSelectedLayoutUnits("right")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="向右旋转90度" aria-label="向右旋转90度">
-                  <RotateCw size={16}/>
-                  <span>右转90度</span>
-                </button>
-                <button onClick={() => mirrorSelectedNodes("horizontal")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="水平镜像" aria-label="水平镜像">
-                  <FlipHorizontal size={16}/>
-                  <span>水平镜像</span>
-                </button>
-                <button onClick={() => mirrorSelectedNodes("vertical")} disabled={isBrowseMode || selectedLayoutUnitCount < 1} title="垂直镜像" aria-label="垂直镜像">
-                  <FlipVertical size={16}/>
-                  <span>垂直镜像</span>
-                </button>
-              </div>
-            </div>
-            <input ref={imageInputRef} type="file" accept="image/*,.svg,image/svg+xml" data-image-import-kind="image" hidden multiple onChange={chooseImage}/>
-            <input ref={__appScope.imageArchiveInputRef} type="file" accept=".docx,.docm,.pptx,.pptm,.ppsx,.ppsm,.xlsx,.xlsm,.vsdx,.wps,.dps,.zip" data-image-import-kind="archive" hidden multiple onChange={chooseImage}/>
-            <input ref={customDeviceImageInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseCustomDeviceBackground}/>
-            <input ref={customComponentSvgImportInputRef} type="file" accept=".svg,image/svg+xml" hidden onChange={importCustomComponentSvg}/>
-            <input ref={definitionTemplateIconInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseDefinitionTemplateIcon}/>
-            <input ref={stateVisualImageInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseStateVisualImage}/>
-            <input ref={stateIconDrawingImportInputRef} type="file" accept="image/*,.svg,image/svg+xml" hidden onChange={chooseStateIconDrawingImport}/>
-            <input ref={modelImportInputRef} type="file" accept=".json,application/json" hidden onChange={importModelFile}/>
-            <input ref={__appScope.svgModelImportInputRef} type="file" accept=".svg,image/svg+xml" hidden onChange={__appScope.importSvgModelFile}/>
-            <input ref={schemeImportInputRef} type="file" accept=".zip,application/zip,.json,application/json" hidden onChange={importSchemeFile}/>
-            <input ref={__appScope.libraryPackageImportInputRef} type="file" accept=".json,application/json" hidden onChange={__appScope.importLibraryPackageFile}/>
-            <input ref={__appScope.userCustomizationImportInputRef} type="file" accept=".json,application/json" hidden onChange={__appScope.importUserCustomizationFile}/>
-          </div>
-          <RuntimeWsIndicator __appScope={__appScope}/>
-        </header>
+        <AppTopbar
+          scope={__appScope}
+          inputs={[
+            activeModelPathName,
+            activeLayer,
+            layers,
+            isBrowseMode,
+            isEditMode,
+            smartAlignmentEnabled,
+            topologyErrors,
+            topologyWarningPanelClosed,
+            __appScope.globalLineListOpen,
+            __appScope.allNetworkTopologyDialogOpen,
+            eDeviceDefinitionInterfaceDialogOpen,
+            colorDisplayMode,
+            deviceLabelsVisible,
+            saveRequired,
+            canGroupSelectedGraphics,
+            canUngroupSelectedGraphics,
+            canAdjustSelectedDisplayLayer,
+            selectedLayoutUnitCount,
+            __appScope.runtimeWsStatus,
+            __appScope.runtimeWsBlinkSeq,
+            __appScope.runtimeWsClientId
+          ]}
+        />
 
         <MemoizedCanvasArea scope={__appScope} />
-        {topologyWarningPanelVisible && (<section ref={topologyWarningPanelRef} className="topology-warning-floating-panel" style={topologyWarningPanelStyle} aria-label="拓扑警告信息" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+        <MemoizedViewSection
+          section="topology-warning"
+          inputs={[
+            topologyWarningPanelVisible,
+            topologyWarningPanelStyle,
+            inspectorTopologyErrors,
+            visibleTopologyErrors,
+            normalizedTopologyWarningPage,
+            topologyWarningPageCount,
+            hiddenTopologyErrorCount
+          ]}
+          render={() => topologyWarningPanelVisible ? (<section ref={topologyWarningPanelRef} className="topology-warning-floating-panel" style={topologyWarningPanelStyle} aria-label="拓扑警告信息" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
             <header className="topology-warning-floating-title" onPointerDown={startTopologyWarningPanelDrag}>
               <div>
                 <h2>拓扑警告信息</h2>
@@ -2473,3826 +2427,114 @@ export function renderAppView(__appScope: Record<string, any>) {
               </div>)}
             {hiddenTopologyErrorCount > 0 && (<p className="validation-more topology-warning-floating-more">每页显示 {TOPOLOGY_WARNING_PAGE_SIZE} 条告警，请分页处理或重新拓扑。</p>)}
             <div className="topology-warning-floating-resize" role="separator" aria-orientation="horizontal" title="拖拽调整拓扑警告信息窗口大小" onPointerDown={startTopologyWarningPanelResize}/>
-          </section>)}
-        <footer className="bottom-statusbar" aria-label="运行状态">
-          <div className="statusbar-resize-handle" role="separator" aria-orientation="horizontal" aria-label="调整提示信息栏高度" title="拖拽调整提示信息栏高度" onPointerDown={startStatusbarResize}/>
-          <span className="status-pill">
-            坐标 <span ref={mousePositionTextRef}>X:- Y:-</span>
-          </span>
-          <span className="status-pill" title={`当前视图缩放比 ${currentZoomPercent}%`}>
-            缩放 {currentZoomPercent}%
-          </span>
-          <span className={`status-pill topology-${topologyStatus.state}`} title={topologyStatus.message}>
-            拓扑 {topologyStatus.message}
-          </span>
-          <span className={`status-pill warning-${topologyErrors.length > 0 ? "active" : "idle"}`} title={topologyErrors.length > 0 ? `${warningStatusTitle}；点击打开拓扑告警窗口。` : warningStatusTitle} onClick={() => topologyErrors.length > 0 && setTopologyWarningPanelClosed(false)}>
-            {warningStatusText}
-          </span>
-          <span ref={operationLogStatusRef} className="status-pill status-log" title={operationLogRef.current}>
-            日志 {operationLogRef.current}
-          </span>
-          <span className="status-pill">
-            <Grid2X2 size={15}/>
-            元件 {nodes.length}
-          </span>
-          <span className="status-pill">联络线 {edges.length}</span>
-          <span className="status-pill">选中 {selectedCount}</span>
-          {selectedNodeTransformStatus && (<span className="status-pill status-transform" title={selectedNodeTransformStatus.title}>
-              图元 缩放 {selectedNodeTransformStatus.scaleText} 旋转 {selectedNodeTransformStatus.rotationText}
-            </span>)}
-          {saveRequired && <strong onClick={() => setUnsavedChangesDialogOpen(true)} style={{ cursor: "pointer" }} title="点击查看未保存的修改">未保存</strong>}
-          {mode === "connect" && <strong>{connectSource ? "选择同类型目标端子" : "选择起点端子"}</strong>}
-          {mode === "static-draw" && <strong>点击落点，双击或 Enter 完成，Esc 取消</strong>}
-        </footer>
+          </section>) : null}
+        />
+        <AppStatusbar
+          scope={__appScope}
+          inputs={[
+            currentZoomPercent,
+            topologyStatus,
+            topologyErrors,
+            warningStatusText,
+            warningStatusTitle,
+            operationLogRef.current,
+            nodes.length,
+            edges.length,
+            selectedCount,
+            selectedNodeTransformStatus,
+            saveRequired,
+            mode,
+            connectSource,
+            staticDrawing
+          ]}
+        />
       </main>
 
-      <aside ref={rightPanelRef} className={`inspector-panel floating-side-panel ${rightPanelVisible ? "visible" : "hidden"}`} onPointerDown={stopSidePanelEventPropagation} onPointerMoveCapture={stopSidePanelEventPropagation} onPointerMove={stopSidePanelEventPropagation} onPointerEnter={() => updateAutoPanelVisibility("right", "panel-enter")} onPointerLeave={(event) => handleSidePanelPointerLeave("right", event)} onMouseMoveCapture={stopSidePanelEventPropagation} onMouseMove={stopSidePanelEventPropagation} onClick={stopSidePanelEventPropagation} onDoubleClick={stopSidePanelEventPropagation} onContextMenu={stopSidePanelEventPropagation} onKeyDown={stopSidePanelEventPropagation} onKeyUp={stopSidePanelEventPropagation}>
-        <div className="side-panel-resize-handle left-edge" role="separator" aria-orientation="vertical" aria-label="调整右侧栏宽度" title="拖拽调整右侧栏宽度" onPointerDown={(event) => startSidePanelResize(event, "right")}/>
-        <div className="inspector-title">
-          <div className="inspector-title-actions">
-            {renderSidePanelModeControls("right")}
-          </div>
-        </div>
-        {inspectorSelectedNode || currentModelRecord ? (<div className={`form-stack ${inspectorTab === "tree" ? "graph-form-stack" : ""}`}>
-            <div className="inspector-tabs">
-              <button className={inspectorTab === "model" ? "active" : ""} onClick={() => setInspectorTab("model")} disabled={!currentModelRecord}>
-                基础
-              </button>
-              <button className={inspectorTab === "tree" ? "active" : ""} onClick={() => setInspectorTab("tree")}>
-                图元树
-              </button>
-              <button className={inspectorTab === "graph" || inspectorTab === "device" ? "active" : ""} onClick={() => setInspectorTab("graph")}>
-                图元
-              </button>
-            </div>
-            {currentModelRecord ? <div hidden={inspectorTab !== "model"}><table className="param-table">
-                <tbody>
-                  <tr>
-                    {batchEditors.renderChineseParamHeader("name", "模型名称")}
-                    <td><input value={currentModelRecord.name} readOnly/></td>
-                  </tr>
-                  <tr>
-                    {batchEditors.renderChineseParamHeader("schemeName")}
-                    <td><input value={selectedSchemeRecord?.name ?? "未选择方案"} readOnly/></td>
-                  </tr>
-                  <tr>
-                    {batchEditors.renderChineseParamHeader("updatedAt", "模型更新时间")}
-                    <td><input value={new Date(currentModelRecord.updatedAt).toLocaleString()} readOnly/></td>
-                  </tr>
-                  <tr>
-                    {batchEditors.renderChineseParamHeader("canvasWidth")}
-                    <td>
-                      <BufferedTextInput type="number" min={MIN_CANVAS_WIDTH} max={MAX_CANVAS_WIDTH} step="10" value={canvasSizeDraft.width} disabled={isBrowseMode} onCommit={(nextValue) => commitCanvasSizeDraft({ ...canvasSizeDraft, width: nextValue })}/>
-                    </td>
-                  </tr>
-                  <tr>
-                    {batchEditors.renderChineseParamHeader("canvasHeight")}
-                    <td>
-                      <BufferedTextInput type="number" min={MIN_CANVAS_HEIGHT} max={MAX_CANVAS_HEIGHT} step="10" value={canvasSizeDraft.height} disabled={isBrowseMode} onCommit={(nextValue) => commitCanvasSizeDraft({ ...canvasSizeDraft, height: nextValue })}/>
-                    </td>
-                  </tr>
-                  <tr>
-                    {batchEditors.renderChineseParamHeader("allowAutoExpandCanvas")}
-                    <td>
-                      <select value={allowAutoExpandCanvas ? "allow" : "deny"} disabled={isBrowseMode} onChange={(event) => {
-                pushUndoSnapshot();
-                setAllowAutoExpandCanvas(event.target.value === "allow");
-            }}>
-                        <option value="allow">允许</option>
-                        <option value="deny">不允许</option>
-                      </select>
-                    </td>
-                  </tr>
-                  <tr>
-                    {batchEditors.renderChineseParamHeader("canvasBackgroundColor")}
-                    <td>
-                      <div className="color-field with-clear">
-                        <DeferredColorInput value={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND} fallback={DEFAULT_CANVAS_BACKGROUND} disabled={isBrowseMode} onCommit={(value) => {
-                pushUndoSnapshot();
-                setCanvasBackgroundColor(value);
-            }}/>
-                        <BufferedTextInput value={canvasBackgroundColor || DEFAULT_CANVAS_BACKGROUND} disabled={isBrowseMode} onCommit={(nextValue) => {
-                pushUndoSnapshot();
-                setCanvasBackgroundColor(nextValue || DEFAULT_CANVAS_BACKGROUND);
-            }}/>
-                        <button type="button" onClick={() => {
-                pushUndoSnapshot();
-                setCanvasBackgroundColor("");
-            }} disabled={isBrowseMode || !canvasBackgroundColor || canvasBackgroundColor === DEFAULT_CANVAS_BACKGROUND}>
-                          删除背景色
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    {batchEditors.renderChineseParamHeader("canvasBackgroundImage")}
-                    <td>
-                      <div className="image-field-actions">
-                        <input value={canvasBackgroundImage ? "已设置" : "未设置"} readOnly/>
-                        <button type="button" disabled={isBrowseMode} onClick={() => setImageTarget({ kind: "canvas" })}>选择</button>
-                        <button type="button" onClick={() => {
-                pushUndoSnapshot();
-                setCanvasBackgroundImage("");
-                setCanvasBackgroundImageAssetId("");
-                __appScope.setCanvasBackgroundImageFit?.("cover");
-            }} disabled={isBrowseMode || !canvasBackgroundImage}>
-                          清除
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    {batchEditors.renderChineseParamHeader("canvasBackgroundImageFit")}
-                    <td>
-                      <select value={normalizeImageFitMode(__appScope.canvasBackgroundImageFit)} disabled={isBrowseMode} onChange={(event) => {
-                pushUndoSnapshot();
-                __appScope.setCanvasBackgroundImageFit?.(event.target.value);
-            }}>
-                        {IMAGE_FIT_MODE_OPTIONS.map((option) => (<option key={option.value} value={option.value}>{option.label}</option>))}
-                      </select>
-                    </td>
-                  </tr>
-                  <tr>
-                    {batchEditors.renderChineseParamHeader("backgroundProjectId")}
-                    <td>
-                      <div className="background-page-field">
-                        <select value={backgroundProjectId} disabled={isBrowseMode} onChange={(event) => {
-                pushUndoSnapshot();
-                const nextProjectId = event.target.value;
-                setBackgroundProjectId(nextProjectId);
-                const backgroundProject = projectById.get(nextProjectId);
-                if (backgroundProject) {
-                    setBackgroundLayerIds(defaultBackgroundLayerIdsForProject(backgroundProject.project));
-                }
-                else {
-                    setBackgroundLayerIds([]);
-                }
-            }}>
-                          <option value="">不使用背景页面</option>
-                          {backgroundProjectOptions.map(({ project, label }) => (<option key={project.id} value={project.id}>
-                              {label}
-                            </option>))}
-                        </select>
-                        <button type="button" onClick={() => {
-                pushUndoSnapshot();
-                setBackgroundProjectId("");
-                setBackgroundLayerIds([]);
-            }} disabled={isBrowseMode || !backgroundProjectId}>
-                          清空背景页面
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    {batchEditors.renderChineseParamHeader("backgroundLayerIds")}
-                    <td>
-                      {backgroundProjectRecord ? (<div className="background-layer-checklist">
-                          {backgroundLayerOptions.map((layer) => (<label key={layer.id} className="background-layer-option">
-                              <input type="checkbox" checked={backgroundLayerIds.includes(layer.id)} disabled={isBrowseMode} onChange={() => toggleBackgroundLayer(layer.id)}/>
-                              <span>{layer.name}</span>
-                            </label>))}
-                          {backgroundLayerOptions.length === 0 && <span className="muted-inline-text">背景页面没有可配置图层</span>}
-                        </div>) : (<span className="muted-inline-text">未设置背景页面</span>)}
-                    </td>
-                  </tr>
-                  <tr>
-                    {batchEditors.renderChineseParamHeader("powerUnit")}
-                    <td>
-                      <select value={powerUnit} disabled={isBrowseMode} onChange={(event) => {
-                pushUndoSnapshot();
-                setPowerUnit(event.target.value);
-            }}>
-                        {POWER_UNIT_OPTIONS.map((unit) => (<option key={unit} value={unit}>{unit}</option>))}
-                      </select>
-                    </td>
-                  </tr>
-                  <tr>
-                    {batchEditors.renderChineseParamHeader("voltageUnit")}
-                    <td>
-                      <select value={voltageUnit} disabled={isBrowseMode} onChange={(event) => {
-                pushUndoSnapshot();
-                setVoltageUnit(event.target.value);
-            }}>
-                        {VOLTAGE_UNIT_OPTIONS.map((unit) => (<option key={unit} value={unit}>{unit}</option>))}
-                      </select>
-                    </td>
-                  </tr>
-                  <tr>
-                    {batchEditors.renderChineseParamHeader("currentUnit")}
-                    <td>
-                      <select value={currentUnit} disabled={isBrowseMode} onChange={(event) => {
-                pushUndoSnapshot();
-                setCurrentUnit(event.target.value);
-            }}>
-                        {CURRENT_UNIT_OPTIONS.map((unit) => (<option key={unit} value={unit}>{unit}</option>))}
-                      </select>
-                    </td>
-                  </tr>
-                  <tr>
-                    {batchEditors.renderChineseParamHeader("powerBaseValue")}
-                    <td>
-                      <div className="unit-value-field">
-                        <BufferedTextInput type="number" min="0" step="0.1" value={powerBaseValue} disabled={isBrowseMode} onCommit={(nextValue) => {
-                pushUndoSnapshot();
-                const numericValue = Number(nextValue);
-                setPowerBaseValue(Number.isFinite(numericValue) ? numericValue : DEFAULT_POWER_BASE_VALUE);
-            }}/>
-                        <span>{powerUnit}</span>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    {batchEditors.renderChineseParamHeader("subcontrolarea")}
-                    <td>
-                      <BufferedTextInput type="text" value={subcontrolarea} disabled={isBrowseMode} onCommit={(nextValue) => {
-                pushUndoSnapshot();
-                setSubcontrolarea(nextValue);
-            }}/>
-                    </td>
-                  </tr>
-                  <tr>
-                    {batchEditors.renderChineseParamHeader("modelType")}
-                    <td>
-                      <select value={modelType} disabled={isBrowseMode} onChange={(event) => {
-                const nextType = event.target.value;
-                const modelTypeFailureMessage = modelAssociationDevicesModelTypeFailureMessage(nextType, nodes);
-                if (modelTypeFailureMessage) {
-                  showGlobalMessage(modelTypeFailureMessage);
-                  return;
-                }
-                pushUndoSnapshot();
-                setModelType(nextType);
-                if (nextType === "厂站") {
-                  setSubstation(projectName);
-                } else if (nextType === "馈线") {
-                  setSubstation("默认厂站");
-                  setFeeder(projectName);
-                } else if (nextType === "台区") {
-                  setSubstation("默认厂站");
-                  setFeeder("默认馈线");
-                  setTaiqu(projectName);
-                }
-            }}>
-                        <option value="">请选择</option>
-                        <option value="厂站">厂站</option>
-                        <option value="馈线">馈线</option>
-                        <option value="台区">台区</option>
-                      </select>
-                    </td>
-                  </tr>
-                  {(modelType === "厂站" || modelType === "馈线" || modelType === "台区") && (<tr>
-                    {batchEditors.renderChineseParamHeader("substation")}
-                    <td>
-                      <BufferedTextInput type="text" value={substation} disabled={isBrowseMode} onCommit={(nextValue) => {
-                pushUndoSnapshot();
-                setSubstation(nextValue);
-            }}/>
-                    </td>
-                  </tr>)}
-                  {(modelType === "馈线" || modelType === "台区") && (<tr>
-                    {batchEditors.renderChineseParamHeader("feeder")}
-                    <td>
-                      <BufferedTextInput type="text" value={feeder} disabled={isBrowseMode} onCommit={(nextValue) => {
-                pushUndoSnapshot();
-                setFeeder(nextValue);
-            }}/>
-                    </td>
-                  </tr>)}
-                  {modelType === "台区" && (<tr>
-                    {batchEditors.renderChineseParamHeader("taiqu", "台区")}
-                    <td>
-                      <BufferedTextInput type="text" value={taiqu} disabled={isBrowseMode} onCommit={(nextValue) => {
-                pushUndoSnapshot();
-                setTaiqu(nextValue);
-            }}/>
-                    </td>
-                  </tr>)}
-                </tbody>
-              </table></div> : null}{inspectorTab === "tree" ? (renderElementTreePanel()) : inspectorTab === "graph" ? ((() => {
-            const multiNodeGraphSelection = activeSelectedNodeIds.length > 1;
-            const selectedNodeAllowsIndependentScale = inspectorSelectedNode
-                ? nodeKindAllowsResizeTransform(inspectorSelectedNode.kind)
-                : true;
-            return (<div className="graph-info-panel">
-                <div className="graph-info-toolbar" role="tablist" aria-label="图元属性分类">
-                  <button type="button" className={multiNodeGraphSelection ? "" : "active"} onClick={() => setInspectorTab("graph")} role="tab" aria-selected={!multiNodeGraphSelection} disabled={multiNodeGraphSelection || !inspectorSelectedNode}>
-                    图形
-                  </button>
-                  <button type="button" className="" onClick={() => {
-                    setInspectorTab("device");
-                    setSelectedDeviceInfoView("model");
-                }} role="tab" aria-selected={false} disabled={multiNodeGraphSelection || !inspectorSelectedNode || __appScope.isStaticGraphicNode(inspectorSelectedNode)}>
-                    模型
-                  </button>
-                  <button type="button" className="" onClick={() => {
-                    setInspectorTab("device");
-                    setSelectedDeviceInfoView("measurement");
-                }} role="tab" aria-selected={false} disabled={multiNodeGraphSelection || !inspectorSelectedNode || __appScope.isStaticGraphicNode(inspectorSelectedNode)}>
-                    量测
-                  </button>
-                  {multiNodeGraphSelection && (<button type="button" className="active" role="tab" aria-selected={true}>
-                      共同属性
-                    </button>)}
-                </div>
-                {multiNodeGraphSelection ? (<div className="batch-common-scroll-area">
-                    {hasBatchCommonPropertyRows ? batchEditors.renderBatchCommonPropertyPanel() : (<div className="empty-state compact">
-                        <FileJson size={24}/>
-                        <p>当前选中的图元没有可批量修改的共同属性。</p>
-                      </div>)}
-                  </div>) : inspectorSelectedNode ? (<div className="graph-param-table-wrap">
-                  <table className="param-table">
-                  <tbody>
-                    <tr>
-                      {batchEditors.renderChineseParamHeader("graph_id", "ID")}
-                      <td>
-                        <span
-                          className="id-copy-cell"
-                          title="点击复制 ID"
-                          onClick={(e) => {
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            navigator.clipboard.writeText(inspectorGraphId).then(() => {
-                              const toast = document.createElement("span");
-                              toast.className = "id-copy-toast";
-                              toast.textContent = "已复制";
-                              toast.style.position = "fixed";
-                              toast.style.left = (rect.left + rect.width / 2) + "px";
-                              toast.style.top = (rect.top + rect.height / 2) + "px";
-                              document.body.appendChild(toast);
-                              setTimeout(() => toast.remove(), 1000);
-                            });
-                          }}
-                        >{inspectorGraphId}</span>
-                      </td>
-                    </tr>
-                    <tr>
-                      {batchEditors.renderChineseParamHeader("graph_x", "X坐标")}
-                      <td><BufferedTextInput type="number" value={Math.round(inspectorSelectedNode.position.x)} onCommit={(nextValue) => updateSelectedNode({ position: { ...inspectorSelectedNode.position, x: Number(nextValue) } })}/></td>
-                    </tr>
-                    <tr>
-                      {batchEditors.renderChineseParamHeader("graph_y", "Y坐标")}
-                      <td><BufferedTextInput type="number" value={Math.round(inspectorSelectedNode.position.y)} onCommit={(nextValue) => updateSelectedNode({ position: { ...inspectorSelectedNode.position, y: Number(nextValue) } })}/></td>
-                    </tr>
-                    {isStaticBoxLikeNode(inspectorSelectedNode) && (<>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("staticWidth", "宽度")}
-                          <td>
-                            <BufferedTextInput type="number" min="4" max={MAX_CANVAS_WIDTH} step="1" value={Math.round(inspectorSelectedNode.size.width * 10) / 10} onCommit={(nextValue) => {
-                            const width = normalizeStaticBoxDimension(Number(nextValue), inspectorSelectedNode.size.width, MAX_CANVAS_WIDTH);
-                            updateSelectedNode({ size: { ...inspectorSelectedNode.size, width: width } });
-                        }}/>
-                          </td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("staticHeight", "高度")}
-                          <td>
-                            <BufferedTextInput type="number" min="4" max={MAX_CANVAS_HEIGHT} step="1" value={Math.round(inspectorSelectedNode.size.height * 10) / 10} onCommit={(nextValue) => {
-                            const height = normalizeStaticBoxDimension(Number(nextValue), inspectorSelectedNode.size.height, MAX_CANVAS_HEIGHT);
-                            updateSelectedNode({ size: { ...inspectorSelectedNode.size, height: height } });
-                        }}/>
-                          </td>
-                        </tr>
-                      </>)}
-                    <tr>
-                      {batchEditors.renderChineseParamHeader("rotation")}
-                      <td><BufferedTextInput type="number" value={inspectorSelectedNode.rotation} onCommit={(nextValue) => updateSelectedNode({ rotation: Number(nextValue) })}/></td>
-                    </tr>
-                    <tr>
-                      {batchEditors.renderChineseParamHeader("scaleX")}
-                      <td><BufferedTextInput type="number" step="0.1" value={formatInspectorScaleValue(getNodeScaleX(inspectorSelectedNode))} onCommit={(nextValue) => {
-                        const scaleX = normalizeScale(Number(nextValue), getNodeScaleX(inspectorSelectedNode));
-                        const nextScaleY = selectedNodeAllowsIndependentScale
-                            ? getNodeScaleY(inspectorSelectedNode)
-                            : scaleX;
-                        updateSelectedNode({ scale: Math.max(Math.abs(scaleX), Math.abs(nextScaleY)), scaleX, scaleY: nextScaleY });
-                    }}/></td>
-                    </tr>
-                    <tr>
-                      {batchEditors.renderChineseParamHeader("scaleY")}
-                      <td><BufferedTextInput type="number" step="0.1" value={selectedNodeAllowsIndependentScale ? formatInspectorScaleValue(getNodeScaleY(inspectorSelectedNode)) : formatInspectorScaleValue(getNodeScaleX(inspectorSelectedNode))} disabled={!selectedNodeAllowsIndependentScale} title={!selectedNodeAllowsIndependentScale ? "当前图元不允许变形，纵向倍率跟随横向倍率" : undefined} onCommit={(nextValue) => {
-                        const scaleY = normalizeScale(Number(nextValue), getNodeScaleY(inspectorSelectedNode));
-                        const scaleX = getNodeScaleX(inspectorSelectedNode);
-                        updateSelectedNode({ scale: Math.max(Math.abs(scaleX), Math.abs(scaleY)), scaleX, scaleY });
-                    }}/></td>
-                    </tr>
-                    <tr>
-                      {batchEditors.renderChineseParamHeader("layerId", "所属图层")}
-                      <td>
-                        <select value={inspectorSelectedNode.layerId ?? DEFAULT_MODEL_LAYER_ID} onChange={(event) => updateSelectedNode({ layerId: event.target.value })}>
-                          {layers.map((layer) => (<option key={layer.id} value={layer.id}>{layer.name}</option>))}
-                        </select>
-                      </td>
-                    </tr>
-                    {!__appScope.isStaticGraphicNode(inspectorSelectedNode) && (<>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("_labelDisplayMode")}
-                          <td>
-                            <select value={nodeLabelDisplayMode(inspectorSelectedNode)} onChange={(event) => updateParam("_labelDisplayMode", event.target.value)}>
-                              <option value="always">始终显示</option>
-                              <option value="hidden">始终隐藏</option>
-                              <option value="follow">跟随显示</option>
-                            </select>
-                          </td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("_labelText")}
-                          <td>
-                            <BufferedTextInput value={inspectorSelectedNode.params._labelText ?? inspectorSelectedNode.name} onCommit={(nextValue) => updateParam("_labelText", nextValue)}/>
-                          </td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("_labelColor")}
-                          <td>{batchEditors.renderColorEditor("_labelColor", inspectorSelectedNode.params._labelColor || "#334155", "#334155")}</td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("_labelFontFamily")}
-                          <td>{batchEditors.renderParamEditor("_labelFontFamily", inspectorSelectedNode.params._labelFontFamily || "Arial", false)}</td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("_labelFontSize")}
-                          <td>
-                            <BufferedTextInput type="number" min="6" max="96" value={inspectorSelectedNode.params._labelFontSize || String(DEFAULT_DEVICE_LABEL_FONT_SIZE)} onCommit={(nextValue) => updateParam("_labelFontSize", nextValue)}/>
-                          </td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("_labelRotation")}
-                          <td>
-                            <select value={String(normalizeNodeLabelRotation(inspectorSelectedNode.params._labelRotation))} onChange={(event) => updateParam("_labelRotation", String(normalizeNodeLabelRotation(event.target.value)))}>
-                              <option value="0">0° 横排</option>
-                              <option value="90">90° 纵排</option>
-                              <option value="180">180° 横排</option>
-                              <option value="270">270° 纵排</option>
-                            </select>
-                          </td>
-                        </tr>
-                        <tr>
-                          <th>标识样式</th>
-                          <td>
-                            <div className="device-label-style-actions">
-                              <TextStyleToggleButton active={(inspectorSelectedNode.params._labelFontWeight || "500") !== "400"} label="标识加粗" onClick={() => updateParam("_labelFontWeight", (inspectorSelectedNode.params._labelFontWeight || "500") !== "400" ? "400" : "700")}>
-                                <Bold aria-hidden="true"/>
-                              </TextStyleToggleButton>
-                              <TextStyleToggleButton active={(inspectorSelectedNode.params._labelFontStyle || "normal") === "italic"} label="标识斜体" onClick={() => updateParam("_labelFontStyle", (inspectorSelectedNode.params._labelFontStyle || "normal") === "italic" ? "normal" : "italic")}>
-                                <Italic aria-hidden="true"/>
-                              </TextStyleToggleButton>
-                              <TextStyleToggleButton active={(inspectorSelectedNode.params._labelTextDecoration || "none") === "underline"} label="标识下划线" onClick={() => updateParam("_labelTextDecoration", (inspectorSelectedNode.params._labelTextDecoration || "none") === "underline" ? "none" : "underline")}>
-                                <Underline aria-hidden="true"/>
-                              </TextStyleToggleButton>
-                            </div>
-                          </td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("_labelTextAnchor")}
-                          <td>
-                            <select value={nodeLabelTextAnchor(inspectorSelectedNode)} onChange={(event) => updateParam("_labelTextAnchor", event.target.value)}>
-                              <option value="start">左对齐</option>
-                              <option value="middle">居中</option>
-                              <option value="end">右对齐</option>
-                            </select>
-                          </td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("_labelX")}
-                          <td>
-                            <BufferedTextInput type="number" step="0.1" value={nodeLabelOffset(inspectorSelectedNode).x} onCommit={(nextValue) => updateParam("_labelX", nextValue)}/>
-                          </td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("_labelY")}
-                          <td>
-                            <BufferedTextInput type="number" step="0.1" value={nodeLabelOffset(inspectorSelectedNode).y} onCommit={(nextValue) => updateParam("_labelY", nextValue)}/>
-                          </td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("terminalCount")}
-                          <td>
-                            <span className="graph-readonly-value" title={isBusNode(inspectorSelectedNode) ? "母线端子数量由已连接联络线端点数自动生成" : "端子数量由元件定义决定"}>
-                              {inspectorSelectedNode.terminals.length}
-                            </span>
-                          </td>
-                        </tr>
-                        {inspectorSelectedNode.terminals.map((terminal, terminalIndex) => (<Fragment key={terminal.id}>
-                            <tr>
-                              <th title={terminal.id}>{terminal.label}</th>
-                              <td>{`${terminal.type.toUpperCase()} / ${terminal.nodeNumber}`}</td>
-                            </tr>
-                            {(terminal.type === "ac" || terminal.type === "dc") && (<tr>
-                                <th title={`${terminal.id}:vbase`}>{`${terminal.label}电压基值`}</th>
-                                <td>
-                                  <div className="unit-value-field">
-                                    <BufferedTextInput inputMode="decimal" value={terminalVoltageBaseNumber(terminal.vbase ?? terminalVbaseFallback(inspectorSelectedNode, terminalIndex))} onCommit={(nextValue) => updateTerminalVbase(terminal.id, nextValue)}/>
-                                    <span>{voltageUnit}</span>
-                                  </div>
-                                </td>
-                              </tr>)}
-                          </Fragment>))}
-                      </>)}
-                    {__appScope.isStaticGraphicNode(inspectorSelectedNode) && (<>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader(STATIC_ROUTE_AVOIDANCE_PARAM)}
-                          <td>
-                            <select value={staticNodeParticipatesInRoutingAvoidance(inspectorSelectedNode) ? "1" : "0"} onChange={(event) => updateParam(STATIC_ROUTE_AVOIDANCE_PARAM, event.target.value)}>
-                              <option value="1">参与</option>
-                              <option value="0">不参与</option>
-                            </select>
-                          </td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("text")}
-                          <td><BufferedTextarea rows={4} value={inspectorSelectedNode.params.text || ""} onCommit={(nextValue) => updateParam("text", nextValue)}/></td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("fontFamily")}
-                          <td>{batchEditors.renderParamEditor("fontFamily", inspectorSelectedNode.params.fontFamily || "Arial", false)}</td>
-                        </tr>
-                        <tr>
-                          <th title="fontSize">字体大小（100%）</th>
-                          <td><BufferedTextInput type="number" min="8" max="160" value={inspectorSelectedNode.params.fontSize || "24"} onCommit={(nextValue) => updateParam("fontSize", nextValue)}/></td>
-                        </tr>
-                        <tr>
-                          <th>文字样式</th>
-                          <td>
-                            <div className="text-style-actions">
-                              <TextStyleToggleButton active={(inspectorSelectedNode.params.fontWeight || "400") !== "400"} label="加粗" onClick={() => updateParam("fontWeight", (inspectorSelectedNode.params.fontWeight || "400") !== "400" ? "400" : "700")}>
-                                <Bold aria-hidden="true"/>
-                              </TextStyleToggleButton>
-                              <TextStyleToggleButton active={(inspectorSelectedNode.params.fontStyle || "normal") === "italic"} label="斜体" onClick={() => updateParam("fontStyle", (inspectorSelectedNode.params.fontStyle || "normal") === "italic" ? "normal" : "italic")}>
-                                <Italic aria-hidden="true"/>
-                              </TextStyleToggleButton>
-                              <TextStyleToggleButton active={(inspectorSelectedNode.params.textDecoration || "none") === "underline"} label="下划线" onClick={() => updateParam("textDecoration", (inspectorSelectedNode.params.textDecoration || "none") === "underline" ? "none" : "underline")}>
-                                <Underline aria-hidden="true"/>
-                              </TextStyleToggleButton>
-                            </div>
-                          </td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("fillColor")}
-                          <td>{batchEditors.renderColorEditor("fillColor", inspectorSelectedNode.params.fillColor || "transparent", "#ffffff")}</td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("strokeColor")}
-                          <td>{batchEditors.renderColorEditor("strokeColor", inspectorSelectedNode.params.strokeColor || "transparent", "#334155")}</td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("textColor")}
-                          <td>{batchEditors.renderColorEditor("textColor", inspectorSelectedNode.params.textColor || "#111827", "#111827")}</td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("lineWidth")}
-                          <td><BufferedTextInput type="number" min="0" max="20" value={inspectorSelectedNode.params.lineWidth || "2"} onCommit={(nextValue) => updateParam("lineWidth", nextValue)}/></td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("strokeStyle")}
-                          <td>{batchEditors.renderParamEditor("strokeStyle", inspectorSelectedNode.params.strokeStyle || "solid", false)}</td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("cornerRadius")}
-                          <td><BufferedTextInput type="number" min="0" max="999" value={inspectorSelectedNode.params.cornerRadius || "8"} onCommit={(nextValue) => updateParam("cornerRadius", nextValue)}/></td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("accentColor")}
-                          <td>{batchEditors.renderColorEditor("accentColor", inspectorSelectedNode.params.accentColor || "#2563eb", "#2563eb")}</td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("shadowEnabled")}
-                          <td>{batchEditors.renderParamEditor("shadowEnabled", inspectorSelectedNode.params.shadowEnabled || "0", false)}</td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("padding")}
-                          <td><BufferedTextInput type="number" min="0" max="120" value={inspectorSelectedNode.params.padding || "12"} onCommit={(nextValue) => updateParam("padding", nextValue)}/></td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("textAlign")}
-                          <td>{batchEditors.renderParamEditor("textAlign", inspectorSelectedNode.params.textAlign || "center", false)}</td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("verticalAlign")}
-                          <td>{batchEditors.renderParamEditor("verticalAlign", inspectorSelectedNode.params.verticalAlign || "middle", false)}</td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("markerStart")}
-                          <td>{batchEditors.renderParamEditor("markerStart", inspectorSelectedNode.params.markerStart || "none", false)}</td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("markerEnd")}
-                          <td>{batchEditors.renderParamEditor("markerEnd", inspectorSelectedNode.params.markerEnd || "none", false)}</td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("arrowSize")}
-                          <td><BufferedTextInput type="number" min="4" max="80" value={inspectorSelectedNode.params.arrowSize || "10"} onCommit={(nextValue) => updateParam("arrowSize", nextValue)}/></td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("handleColor")}
-                          <td>{batchEditors.renderColorEditor("handleColor", inspectorSelectedNode.params.handleColor || "#2563eb", "#2563eb")}</td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("handleSize")}
-                          <td><BufferedTextInput type="number" min="3" max="40" value={inspectorSelectedNode.params.handleSize || "8"} onCommit={(nextValue) => updateParam("handleSize", nextValue)}/></td>
-                        </tr>
-                        {batchEditors.renderStaticButtonActionEditor(inspectorSelectedNode)}
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("backgroundImage")}
-                          <td>
-                            <div className="image-field-actions">
-                              <input value={inspectorSelectedNode.params.backgroundImage ? "已设置" : "未设置"} readOnly/>
-                              <button type="button" onClick={() => setImageTarget({ kind: "node", nodeId: inspectorSelectedNode.id })}>选择</button>
-                              <button type="button" onClick={() => clearSelectedImageForNode(inspectorSelectedNode.id, "background")} disabled={!inspectorSelectedNode.params.backgroundImage}>清除</button>
-                            </div>
-                          </td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("backgroundImageFit")}
-                          <td>
-                            <select value={normalizeImageFitMode(inspectorSelectedNode.params.backgroundImageFit)} onChange={(event) => updateParam("backgroundImageFit", event.target.value)}>
-                              {IMAGE_FIT_MODE_OPTIONS.map((option) => (<option key={option.value} value={option.value}>{option.label}</option>))}
-                            </select>
-                          </td>
-                        </tr>
-                      </>)}
-                    {!__appScope.isStaticGraphicNode(inspectorSelectedNode) && (<>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("foregroundColor")}
-                          <td>{batchEditors.renderColorEditor("foregroundColor", inspectorSelectedNode.params.foregroundColor || "", terminalColor(inspectorSelectedNode.terminals[0]?.type, colorPalette))}</td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("foregroundImage")}
-                          <td>
-                            <div className="image-field-actions">
-                              <input value={inspectorSelectedNode.params.foregroundImage ? "已设置" : "未设置"} readOnly/>
-                              <button type="button" onClick={() => setImageTarget({ kind: "nodeForeground", nodeId: inspectorSelectedNode.id })}>选择</button>
-                              <button type="button" onClick={() => clearSelectedImageForNode(inspectorSelectedNode.id, "foreground")} disabled={!inspectorSelectedNode.params.foregroundImage}>清除</button>
-                            </div>
-                          </td>
-                        </tr>
-                        <tr>
-                          {batchEditors.renderChineseParamHeader("foregroundImageFit")}
-                          <td>
-                            <select value={normalizeImageFitMode(inspectorSelectedNode.params.foregroundImageFit)} onChange={(event) => updateParam("foregroundImageFit", event.target.value)}>
-                              {IMAGE_FIT_MODE_OPTIONS.map((option) => (<option key={option.value} value={option.value}>{option.label}</option>))}
-                            </select>
-                          </td>
-                        </tr>
-                      </>)}
-                    </tbody>
-                  </table>
-                  </div>) : (<div className="empty-state compact">
-                    <FileJson size={24}/>
-                    <p>当前没有被选中图元。</p>
-                  </div>)}
-              </div>);
-        })()) : inspectorTabShowsDevicePanel(inspectorTab, Boolean(inspectorSelectedNode)) ? (<div className="device-param-stack">
-                {!__appScope.isStaticGraphicNode(inspectorSelectedNode) && (<div className="device-info-tabs" role="tablist" aria-label="图元属性分类">
-                    <button type="button" className="" onClick={() => setInspectorTab("graph")} role="tab" aria-selected={false}>
-                      图形
-                    </button>
-                    <button type="button" className={selectedDeviceInfoView === "model" ? "active" : ""} onClick={() => setSelectedDeviceInfoView("model")} role="tab" aria-selected={selectedDeviceInfoView === "model"}>
-                      模型
-                    </button>
-                    <button type="button" className={selectedDeviceInfoView === "measurement" ? "active" : ""} onClick={() => setSelectedDeviceInfoView("measurement")} role="tab" aria-selected={selectedDeviceInfoView === "measurement"}>
-                      量测
-                    </button>
-                  </div>)}
-                {selectedDeviceInfoView === "measurement" && !__appScope.isStaticGraphicNode(inspectorSelectedNode) ? (renderSelectedNodeMeasurementTable(inspectorSelectedNode)) : (<>
-                    {selectedContainerParameterViews.length > 0 && (<div className="container-param-tabs" role="tablist" aria-label="容器设备参数切换">
-                        {selectedContainerParameterViews.map((view) => (<button key={view.id} type="button" className={selectedContainerParameterView?.id === view.id ? "active" : ""} onClick={() => setContainerParamViewId(view.id)}>
-                            {view.label}
-                          </button>))}
-                      </div>)}
-                    {selectedContainerParameterView ? (<table className="param-table">
-                        <tbody>
-                          {selectedContainerParameterView.rows.map((row) => {
-                        const componentLibrary = resolveContainerParameterViewComponentLibrary(
-                          inspectorSelectedNode,
-                          selectedContainerParameterView
-                        );
-                        const displayValue = formatDeviceModelParamDisplayValue(row.key, row.value);
-                        const optionConfig = enumSelectOptionsWithCurrentValue(paramOptionsForSection(row.key, componentLibrary), displayValue);
-                        const options = optionConfig.options;
-                        return (<tr key={row.key}>
-                                  {batchEditors.renderParamHeader(row.key, row.label, PARAM_LABELS[row.key] ?? row.label)}
-                                  <td>
-                                    {row.key === "name" && selectedContainerParameterView.kind === "container" ? (<BufferedTextInput value={inspectorSelectedNode.name} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/>) : row.readonly || !row.paramKey ? (<input value={displayValue} readOnly/>) : options ? (<select value={displayValue} onChange={(event) => updateParam(row.paramKey!, event.target.value)}>
-                                      {options.map((option) => (<option key={option} value={option} disabled={option === optionConfig.invalidValue}>
-                                          {option === optionConfig.invalidValue ? invalidEnumOptionLabel(option) : option}
-                                        </option>))}
-                                    </select>) : (<BufferedTextInput value={displayValue} onCommit={(nextValue) => updateParam(row.paramKey!, nextValue)}/>)}
-                                </td>
-                              </tr>);
-                    })}
-                        </tbody>
-                      </table>) : (<table className="param-table">
-                        <tbody>
-                          {(() => {
-                        const eKeys = getEParameterKeys(inspectorSelectedNode.kind, inspectorSelectedNode.params);
-                        const customDefinitions = parseCustomDefinitions(inspectorSelectedNode.params);
-                        const selectedTemplate = libraryTemplates.find((template) => template.kind === inspectorSelectedNode.kind);
-                        const definitionGroups = resolveDeviceModelPanelDefinitionGroups(
-                          selectedTemplate,
-                          libraryTemplates,
-                          customComponentLibraries,
-                          deviceDefinitionOverrides
-                        );
-                        const panelDefinitions = definitionGroups
-                          ? [...definitionGroups.baseDefinitions, ...definitionGroups.derivedDefinitions]
-                          : customDefinitions;
-                        const keys = resolveDeviceModelPanelParameterKeys(
-                            eKeys,
-                            customDefinitions,
-                            Object.keys(inspectorSelectedNode.params).filter((key) => !key.startsWith("_") && key !== "is_container" && key !== ALLOW_RESIZE_TRANSFORM_PARAM),
-                            definitionGroups
-                        );
-                        return keys.map((key) => {
-                            const definition = panelDefinitions.find((item) => item.enName === key);
-                            const resolvedValue = key === "name"
-                              ? inspectorSelectedNode.name
-                              : key === "dev_type"
-                                ? resolveDeviceModelPanelDevType(inspectorSelectedNode.kind, inspectorSelectedNode.params)
-                                : eKeys.length > 0
-                                  ? getEParamValue(key, inspectorSelectedNode)
-                                  : inspectorSelectedNode.params[key] ?? "";
-                            const value = key !== "name" && key !== "dev_type" &&
-                              !Object.prototype.hasOwnProperty.call(inspectorSelectedNode.params, key) &&
-                              resolvedValue === ""
-                                ? definition?.typicalValue ?? ""
-                                : resolvedValue;
-                            const displayValue = formatDeviceModelParamDisplayValue(key, value);
-                            return (<tr key={key}>
-                                  {batchEditors.renderParamHeader(key, key, definition?.cnName === key ? PARAM_LABELS[key] ?? key : (definition?.cnName ?? PARAM_LABELS[key] ?? key))}
-                                  <td>
-                                    {key === "name" ? (<BufferedTextInput value={inspectorSelectedNode.name} onCommit={(nextValue) => updateSelectedNode({ name: nextValue })}/>) : READONLY_E_PARAM_KEYS.has(key) || batchEditors.definitionMakesValueReadonly(definition) ? (<input value={displayValue} readOnly/>) : (batchEditors.renderParamEditor(key, displayValue, false, definition))}
-                                  </td>
-                                </tr>);
-                        });
-                    })()}
-                        </tbody>
-                      </table>)}
-                  </>)}
-              </div>) : inspectorTab === "device" ? (<div className="empty-state">
-                <FileJson size={28}/>
-                <p>选择画布设备后，可切换查看图形、模型和量测。</p>
-              </div>) : null}
-            {singleSelectedDeviceForInspector && inspectorSelectedNode && inspectorTab === "graph" && (<div className="topology-card">
-                <span>连接度</span>
-                <strong>{inspectorTopologyEntry?.degree ?? 0}</strong>
-                <small>
-                  {(inspectorTopologyEntry?.neighbors ?? [])
-                .map((id) => nodeById.get(id)?.name)
-                .filter(Boolean)
-                .join("、") || "暂无相邻元件"}
-                </small>
-              </div>)}
-          </div>) : inspectorSelectedEdge ? (<div className="form-stack">
-            <div className="topology-card">
-              <span>联络线</span>
-              <strong>{inspectorSelectedEdge.id}</strong>
-              <small>
-                {(nodeById.get(inspectorSelectedEdge.sourceId)?.name ?? "未知设备") +
-            " -> " +
-            (nodeById.get(inspectorSelectedEdge.targetId)?.name ?? "未知设备")}
-              </small>
-            </div>
-            <div className="empty-state">
-              <Cable size={28}/>
-              <p>拖拽线两端的圆形控制点到其他同类型端子，可调整联络线首端或末端。</p>
-            </div>
-          </div>) : (<div className="empty-state">
-            <Save size={28}/>
-            <p>从左侧拖入元件，或使用联络线模式点击两个元件建立拓扑关系。</p>
-          </div>)}
-      </aside>
-      {contextMenu && (<div ref={contextMenuRef} className={contextMenuClassName(contextMenu)} data-canvas-context-menu="true" style={contextMenuStyle(contextMenu)}>
-          {isEditMode && contextMenuFromElementTree && contextMenuForSelection && contextSelectionCount > 0 && (<button onClick={() => runContextMenuAction(deleteSelection)}>
-              <Trash2 size={14}/>
-              删除
-            </button>)}
-          {!contextMenuFromElementTree && (<>
-              {isEditMode && contextMenuTarget === "blank" && contextMenu.canvasPoint && (<button onClick={() => runContextMenuAction(startContextMarqueeSelection)}>
-                  <BoxSelect size={14}/>
-                  框选
-                </button>)}
-              {isEditMode && contextMenuTarget === "blank" && activeLayerNodes.length > 0 && (<button onClick={() => runContextMenuAction(openFilterSelectionDialog)}>
-                  <ScanSearch size={14}/>
-                  过滤选择
-                </button>)}
-              {isEditMode && undoStack.length > 0 && (<button onClick={() => runContextMenuAction(undoLastOperation)}>
-                  <Undo2 size={14}/>
-                  撤销
-                </button>)}
-              {contextMenuForSelection && contextSelectionCount > 0 && (<button onClick={() => runContextMenuAction(copySelection)}>
-                  <Copy size={14}/>
-                  复制
-                </button>)}
-              {isEditMode && contextMenuForSelection && contextSelectionCount > 0 && (<button onClick={() => runContextMenuAction(cutSelection)}>
-                  <Scissors size={14}/>
-                  剪切
-                </button>)}
-              {isEditMode && saveRequired && (<button onClick={() => runContextMenuAction(() => { void saveCurrentProject(); })}>
-                  <Save size={14}/>
-                  保存
-                </button>)}
-              {isEditMode && (canvasClipboard.nodes.length > 0 || canvasClipboard.edges.length > 0) && (<button onClick={() => runContextMenuAction(pasteSelection)}>
-                  <FileInput size={14}/>
-                  粘贴
-                </button>)}
-              {isEditMode && nodes.length > 0 && (<div className="context-menu-submenu">
-                  <button type="button" className="context-menu-submenu-trigger">
-                    <Zap size={14}/>
-                    电压基值
-                    <ChevronRight size={14}/>
-                  </button>
-                  <div className="context-menu-submenu-panel">
-                    <button onClick={() => runContextMenuAction(openVoltageBaseSetDialog)}>
-                      <Zap size={14}/>
-                      设置电压基值
-                    </button>
-                    <button onClick={() => runContextMenuAction(openVoltageBaseClearDialog)}>
-                      <ZapOff size={14}/>
-                      清空电压基值
-                    </button>
-                  </div>
-                </div>)}
-              {isEditMode && contextMenuTarget === "blank" && activeLayerNodes.length > 1 && (<button onClick={() => runContextMenuAction(autoAlignCanvasGraphics)}>
-                  <AlignCenterHorizontal size={14}/>
-                  自动对齐
-                </button>)}
-              {isEditMode && contextMenuTarget === "blank" && activeLayerNodes.length > 1 && (<button onClick={() => runContextMenuAction(autoSpreadCanvasGraphics)}>
-                  <ScanSearch size={14}/>
-                  自动散开
-                </button>)}
-              {contextMenuForEdge && selectedEdge && (isEditMode ? (<button onClick={() => runContextMenuAction(tidySelectedEdgeRoute)}>
-                  <Route size={14}/>
-                  整理连接线
-                </button>) : null)}
-              {contextMenuForEdge && contextMenu.edgeId && (isEditMode ? (<button onClick={() => runContextMenuAction(addManualBendFromContextMenu)}>
-                  <Pencil size={14}/>
-                  添加拐点
-                </button>) : null)}
-              {contextMenuForRoutableLine && contextMenu.nodeId && contextMenu.canvasPoint && (isEditMode ? (<>
-                  <button onClick={() => runContextMenuAction(() => tidyRoutableLineRoute(contextMenu.nodeId))}>
-                    <Route size={14}/>
-                    整理连接线
-                  </button>
-                  <button onClick={() => runContextMenuAction(addRoutableLineBendFromContextMenu)}>
-                    <Pencil size={14}/>
-                    添加拐点
-                  </button>
-                </>) : null)}
-              {isEditMode && contextMenuTarget === "blank" && (<button onClick={() => runContextMenuAction(openConnectionRedrawDialog)}>
-                  <Route size={14}/>
-                  连接线重绘
-                </button>)}
-              {contextMenuForNode && canGroupSelectedGraphics && (isEditMode ? (<button onClick={() => runContextMenuAction(groupSelectedGraphics)}>
-                  <Group size={14}/>
-                  组合
-                </button>) : null)}
-              {contextMenuForNode && canUngroupSelectedGraphics && (isEditMode ? (<button onClick={() => runContextMenuAction(ungroupSelectedGraphics)}>
-                  <Ungroup size={14}/>
-                  解散
-                </button>) : null)}
-              {contextMenuForNode && canAddTemplateFromSelection && (isEditMode ? (<button onClick={() => runContextMenuAction(openAddTemplateDialog)}>
-                  <Grid2X2 size={14}/>
-                  添加到模板库
-                </button>) : null)}
-              {contextMenuForNode && canAddTemplateFromSelection && (isEditMode ? (<button onClick={() => runContextMenuAction(openGroupDeviceDefinitionDialog)}>
-                  <Plus size={14}/>
-                  定义为元件
-                </button>) : null)}
-              {isEditMode && contextMeasurementNode && !__appScope.isStaticGraphicNode(contextMeasurementNode) && (<div className="context-menu-submenu">
-                  <button type="button" className="context-menu-submenu-trigger">
-                    <CircleDot size={14}/>
-                    量测显示
-                    <ChevronRight size={14}/>
-                  </button>
-                  <div className="context-menu-submenu-panel">
-                    <button disabled={Boolean(contextMeasurementGroup)} onClick={() => runContextMenuAction(() => addDefaultMeasurementsToNode(contextMeasurementNode))}>
-                      <Plus size={14}/>
-                      添加量测
-                    </button>
-                    <button disabled={!contextMeasurementGroup} onClick={() => runContextMenuAction(() => openMeasurementEditorForNode(contextMeasurementNode))}>
-                      <Pencil size={14}/>
-                      修改量测
-                    </button>
-                    <button disabled={!contextMeasurementGroup} onClick={() => runContextMenuAction(() => removeMeasurementsFromNode(contextMeasurementNode))}>
-                      <Trash2 size={14}/>
-                      删除量测
-                    </button>
-                  </div>
-                </div>)}
-              {contextMenuForNode && activeSelectedNodeIds.length > 0 && (isEditMode ? (<button onClick={() => runContextMenuAction(openLayerAssignmentDialog)}>
-                  <Layers size={14}/>
-                  图层修改
-                </button>) : null)}
-              {contextMenuForNode && activeSelectedNodeIds.length > 0 && (isEditMode ? (<div className="context-menu-submenu">
-                  <button type="button" className="context-menu-submenu-trigger">
-                    <Layers2 size={14}/>
-                    显示层级
-                    <ChevronRight size={14}/>
-                  </button>
-                  <div className="context-menu-submenu-panel">
-                    <button onClick={() => runContextMenuAction(() => adjustSelectedDisplayLayer("raise"))}>
-                      <ArrowUp size={14}/>
-                      提升显示层级
-                    </button>
-                    <button onClick={() => runContextMenuAction(() => adjustSelectedDisplayLayer("lower"))}>
-                      <ArrowDown size={14}/>
-                      降低显示层级
-                    </button>
-                    <button onClick={() => runContextMenuAction(() => adjustSelectedDisplayLayer("front"))}>
-                      <ChevronsUp size={14}/>
-                      顶层显示
-                    </button>
-                    <button onClick={() => runContextMenuAction(() => adjustSelectedDisplayLayer("back"))}>
-                      <ChevronsDown size={14}/>
-                      底层显示
-                    </button>
-                  </div>
-                </div>) : null)}
-              {contextMenuForNode && activeSelectedNodeIds.length > 0 && (isEditMode ? (<div className="context-menu-submenu">
-                  <button type="button" className="context-menu-submenu-trigger">
-                    <Type size={14}/>
-                    标识显示
-                    <ChevronRight size={14}/>
-                  </button>
-                  <div className="context-menu-submenu-panel">
-                    <button onClick={() => runContextMenuAction(() => setSelectedNodeLabelDisplayMode("always"))}>
-                      <Type size={14}/>
-                      标识始终显示
-                    </button>
-                    <button onClick={() => runContextMenuAction(() => setSelectedNodeLabelDisplayMode("hidden"))}>
-                      <Type size={14}/>
-                      标识始终隐藏
-                    </button>
-                    <button onClick={() => runContextMenuAction(() => setSelectedNodeLabelDisplayMode("follow"))}>
-                      <Type size={14}/>
-                      标识跟随显示
-                    </button>
-                  </div>
-                </div>) : null)}
-              {isEditMode && contextMenuForSelection && contextSelectionCount > 0 && (<button onClick={() => runContextMenuAction(deleteSelection)}>
-                  <Trash2 size={14}/>
-                  删除
-                </button>)}
-            </>)}
-        </div>)}
-      {projectMenu && (<div ref={contextMenuRef} className={contextMenuClassName(projectMenu)} style={contextMenuStyle(projectMenu)}>
-          {projectMenu.projectId && (<>
-              {isEditMode && (<button onClick={() => runContextMenuAction(() => {
-                    const project = projectById.get(projectMenu.projectId ?? "");
-                    if (project)
-                        deleteProjectRecord(project);
-                })}>
-                <Trash2 size={14}/>
-                模型删除
-              </button>)}
-              <button onClick={() => runContextMenuAction(() => {
-                const project = projectById.get(projectMenu.projectId ?? "");
-                if (project)
-                    void exportProjectRecordFile(project);
-            })}>
-                <Download size={14}/>
-                模型导出
-              </button>
-              {isEditMode && (<button onClick={() => runContextMenuAction(() => {
-                    const project = projectById.get(projectMenu.projectId ?? "");
-                    if (project)
-                        renameProjectRecord(project);
-                })}>
-                <Pencil size={14}/>
-                模型重命名
-              </button>)}
-              <button onClick={() => runContextMenuAction(() => {
-                const project = projectById.get(projectMenu.projectId ?? "");
-                if (project)
-                    copyProjectRecord(project);
-            })}>
-                <Copy size={14}/>
-                模型复制
-              </button>
-              {recordClipboard?.kind === "project" && projectMenu.projectId && (isEditMode ? (<button onClick={() => runContextMenuAction(() => pasteProjectClipboardRecord(projectMenu.schemeId ?? ""))}>
-                  <FileInput size={14}/>
-                  模型粘贴
-                </button>) : null)}
-            </>)}
-          {!projectMenu.projectId && projectMenu.schemeId && (<>
-              {isEditMode && (<button onClick={() => runContextMenuAction(() => createSchemeRecord(projectMenu.schemeId ?? ""))}>
-                <FolderOpen size={14}/>
-                方案新增
-              </button>)}
-              {isEditMode && (<button onClick={() => runContextMenuAction(() => {
-                    const scheme = findSavedSchemeById(schemes, projectMenu.schemeId ?? "");
-                    if (scheme)
-                        deleteSchemeRecord(scheme);
-                })}>
-                <Trash2 size={14}/>
-                方案删除
-              </button>)}
-              <button onClick={() => runContextMenuAction(() => {
-                const scheme = findSavedSchemeById(schemes, projectMenu.schemeId ?? "");
-                if (scheme)
-                    void exportSchemeRecord(scheme);
-            })}>
-                <Download size={14}/>
-                方案导出
-              </button>
-              {isEditMode && (<button onClick={() => runContextMenuAction(() => openSchemeImportFilePicker(projectMenu.schemeId ?? ""))}>
-                <FileInput size={14}/>
-                方案导入
-              </button>)}
-              {isEditMode && (<button onClick={() => runContextMenuAction(() => {
-                    const scheme = findSavedSchemeById(schemes, projectMenu.schemeId ?? "");
-                    if (scheme)
-                        renameSchemeRecord(scheme);
-                })}>
-                <Pencil size={14}/>
-                方案重命名
-              </button>)}
-              <button onClick={() => runContextMenuAction(() => {
-                const scheme = findSavedSchemeById(schemes, projectMenu.schemeId ?? "");
-                if (scheme)
-                    copySchemeRecord(scheme);
-            })}>
-                <Copy size={14}/>
-                方案复制
-              </button>
-              {recordClipboard?.kind === "scheme" && (isEditMode ? (<button onClick={() => runContextMenuAction(() => pasteSchemeClipboardRecord(projectMenu.schemeId ?? ""))}>
-                  <FileInput size={14}/>
-                  方案粘贴
-                </button>) : null)}
-              {isEditMode && <div className="context-menu-separator" role="separator" aria-label="方案操作和模型操作分隔"/>}
-              {isEditMode && (<button onClick={() => runContextMenuAction(() => createBlankProject(projectMenu.schemeId ?? ""))}>
-                <Plus size={14}/>
-                模型新建
-              </button>)}
-              {isEditMode && (<button onClick={() => runContextMenuAction(() => openModelImportFilePicker(projectMenu.schemeId ?? ""))}>
-                <FileInput size={14}/>
-                模型导入
-              </button>)}
-              {isEditMode && (<button onClick={() => runContextMenuAction(() => __appScope.openSvgModelImportFilePicker(projectMenu.schemeId ?? ""))}>
-                <FileInput size={14}/>
-                从 SVG 生成模型
-              </button>)}
-              {recordClipboard?.kind === "project" && projectMenu.schemeId && (isEditMode ? (<button onClick={() => runContextMenuAction(() => pasteProjectClipboardRecord(projectMenu.schemeId ?? ""))}>
-                  <FileInput size={14}/>
-                  模型粘贴
-                </button>) : null)}
-            </>)}
-          {!projectMenu.projectId && !projectMenu.schemeId && (<>
-              {isEditMode && (<button onClick={() => runContextMenuAction(createSchemeRecord)}>
-                <FolderOpen size={14}/>
-                方案新增
-              </button>)}
-              {recordClipboard?.kind === "scheme" && (isEditMode ? (<button onClick={() => runContextMenuAction(pasteSchemeClipboardRecord)}>
-                  <FileInput size={14}/>
-                  方案粘贴
-                </button>) : null)}
-              {isEditMode && (<button onClick={() => runContextMenuAction(openSchemeImportFilePicker)}>
-                <FileInput size={14}/>
-                方案导入
-              </button>)}
-            </>)}
-        </div>)}
-      {templateMenu && (() => {
-        if ("typeName" in templateMenu) {
-          return (
-            <div
-              ref={contextMenuRef}
-              className={contextMenuClassName(templateMenu)}
-              style={contextMenuStyle(templateMenu)}
-              onMouseEnter={() => keepTemplateContextMenuFlyoutOpen(templateMenu.typeName)}
-              onMouseLeave={() => scheduleGraphTemplateFlyoutClose(templateMenu.typeName)}
-            >
-              {isEditMode && (<button onClick={() => runContextMenuAction(() => deleteGraphTemplateType(templateMenu.typeName))}>
-                <Trash2 size={14}/>
-                删除类型
-              </button>)}
-            </div>
-          );
-        }
-        const template = customGraphTemplates.find((item: any) => item.id === templateMenu.templateId);
-        return template ? (
-          <div
-            ref={contextMenuRef}
-            className={contextMenuClassName(templateMenu)}
-            style={contextMenuStyle(templateMenu)}
-            onMouseEnter={() => keepTemplateContextMenuFlyoutOpen(template.typeName)}
-            onMouseLeave={() => scheduleGraphTemplateFlyoutClose(template.typeName)}
-          >
-            {isEditMode && (<button onClick={() => runContextMenuAction(() => deleteGraphTemplate(template))}>
-              <Trash2 size={14}/>
-              删除
-            </button>)}
-          </div>
-        ) : null;
-      })()}
-      {libraryPackageDialogOpen && (
-        <div className="image-picker-backdrop library-package-backdrop" onPointerDown={closeLibraryPackageDialog}>
-          <section className="library-package-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="library-package-title">
-            <WindowCloseButton label="关闭库导入导出窗口" onClick={closeLibraryPackageDialog} />
-            <div className="image-picker-title">
-              <div>
-                <h2 id="library-package-title">导入/导出库</h2>
-              </div>
-            </div>
-            <div className="library-package-mode-toggle" role="radiogroup" aria-label="选择导入或导出">
-              {[
-                ["export", "导出", Download],
-                ["import", "导入", FileInput]
-              ].map(([mode, label, Icon]) => (
-                <label key={mode} className={libraryPackageDialogMode === mode ? "active" : ""}>
-                  <input
-                    type="radio"
-                    name="library-package-mode"
-                    value={mode}
-                    checked={libraryPackageDialogMode === mode}
-                    onChange={() => setLibraryPackageDialogMode?.(mode)}
-                  />
-                  <Icon size={15}/>
-                  <span>{label}</span>
-                </label>
-              ))}
-            </div>
-            <div className="library-package-scope-grid" role="radiogroup" aria-label="选择库类型">
-              {(libraryPackageDialogScopeOptions ?? []).map((option: any) => (
-                <label key={option.scope} className={libraryPackageDialogScope === option.scope ? "active" : ""}>
-                  <input
-                    type="radio"
-                    name="library-package-scope"
-                    value={option.scope}
-                    checked={libraryPackageDialogScope === option.scope}
-                    onChange={() => setLibraryPackageDialogScope?.(option.scope)}
-                  />
-                  <span>{option.label}</span>
-                </label>
-              ))}
-            </div>
-            <div className="library-package-dialog-actions">
-              <button type="button" onClick={closeLibraryPackageDialog}>取消</button>
-              <button
-                type="button"
-                className="primary"
-                disabled={libraryPackageDialogMode === "import" && isBrowseMode}
-                onClick={() => void confirmLibraryPackageDialog?.()}
-              >
-                {libraryPackageDialogMode === "import" ? "导入" : "导出"}
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
-      {globalLinePlacementDialog && (
-        <div className="image-picker-backdrop global-line-dialog-backdrop" onPointerDown={cancelGlobalLinePlacement}>
-          <section
-            className="unsaved-change-dialog global-line-dialog window-close-host"
-            onPointerDown={(event) => event.stopPropagation()}
-            onKeyDown={(event) => { if (event.key === "Escape") cancelGlobalLinePlacement(); }}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="global-line-dialog-title"
-          >
-            <WindowCloseButton label="取消添加全局线路" onClick={cancelGlobalLinePlacement}/>
-            <div className="image-picker-title">
-              <div>
-                <h2 id="global-line-dialog-title">选择或新建全局线路</h2>
-                <p>
-                  当前{globalLinePlacementDialog.energyType === "ac" ? "交流" : "直流"}线路连接了跨模型边界设备。
-                  本次连接占用全局线路的{globalLinePlacementDialog.boundaryEndpoint === "source" ? "首端" : "末端"}。
-                  既有线路的能源类型、首端模型和末端模型必须与本次线路完全一致；复用只做一致性校核，不修改已有全局线路的首末端信息。校核不通过时，请重新选择、新建或取消。
-                </p>
-              </div>
-            </div>
-            <div className="global-line-dialog-options">
-              <label className={`global-line-dialog-option${globalLinePlacementDialog.mode === "existing" ? " active" : ""}`}>
-                <span className="global-line-dialog-option-heading">
-                  <input
-                    type="radio"
-                    name="global-line-placement-mode"
-                    checked={globalLinePlacementDialog.mode === "existing"}
-                    disabled={globalLinePlacementDialog.loading || globalLinePlacementCandidates.length === 0}
-                    onChange={() => setGlobalLinePlacementDialog((current) => current ? {
-                      ...current,
-                      mode: "existing",
-                      error: globalLinePlacementConflictMessageForId?.(current.selectedGlobalLineId) ?? ""
-                    } : current)}
-                  />
-                  选择既有全局线路
-                </span>
-                <select
-                  value={globalLinePlacementDialog.selectedGlobalLineId}
-                  disabled={globalLinePlacementDialog.loading || globalLinePlacementDialog.mode !== "existing" || globalLinePlacementCandidates.length === 0}
-                  onChange={(event) => setGlobalLinePlacementDialog((current) => current ? {
-                    ...current,
-                    selectedGlobalLineId: event.target.value,
-                    error: globalLinePlacementConflictMessageForId?.(event.target.value) ?? ""
-                  } : current)}
-                >
-                  {globalLinePlacementCandidates.map((record) => (
-                    <option key={record.id} value={record.id}>
-                      {record.idx} · {record.name} · 出线度 {record.degree}{globalLinePlacementConflictMessageForId?.(record.id) ? " · ⚠ 端点不一致" : ""}
-                    </option>
-                  ))}
-                </select>
-                {!globalLinePlacementDialog.loading && globalLinePlacementCandidates.length === 0 && (
-                  <small>
-                    当前没有能源类型一致的既有线路。
-                  </small>
-                )}
-              </label>
-              <label className={`global-line-dialog-option${globalLinePlacementDialog.mode === "new" ? " active" : ""}`}>
-                <span className="global-line-dialog-option-heading">
-                  <input
-                    type="radio"
-                    name="global-line-placement-mode"
-                    checked={globalLinePlacementDialog.mode === "new"}
-                    disabled={globalLinePlacementDialog.loading}
-                    onChange={() => setGlobalLinePlacementDialog((current) => current ? { ...current, mode: "new", error: "" } : current)}
-                  />
-                  新建全局线路
-                </span>
-                <input
-                  type="text"
-                  value={globalLinePlacementDialog.name}
-                  disabled={globalLinePlacementDialog.loading || globalLinePlacementDialog.mode !== "new"}
-                  placeholder="请输入全局唯一的线路名称"
-                  onChange={(event) => setGlobalLinePlacementDialog((current) => current ? { ...current, name: event.target.value, error: "" } : current)}
-                />
-              </label>
-            </div>
-            {globalLinePlacementDialog.loading && <p className="global-line-dialog-status">正在读取全局线路表…</p>}
-            {globalLineRepairCandidate && globalLineRepairCandidate.degree <= 1 && (
-              <p className="global-line-dialog-warning">
-                告警：所选全局线路出线度为 0 或 1，说明端点配置为空或存在问题。确认添加后，将使用当前模型关联信息重建该全局线路的首末端；保存页面后才写入全局线路表。
-              </p>
-            )}
-            {globalLinePlacementDialog.error && <p className="global-line-dialog-error">{globalLinePlacementDialog.error}</p>}
-            <div className="unsaved-change-actions">
-              <button type="button" onClick={cancelGlobalLinePlacement} disabled={globalLinePlacementDialog.saving}>取消</button>
-              <button
-                type="button"
-                className="primary"
-                onClick={() => void confirmGlobalLinePlacement()}
-                disabled={globalLinePlacementDialog.loading || globalLinePlacementDialog.saving}
-              >
-                {globalLinePlacementDialog.saving ? "保存中…" : "确认添加"}
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
-      {globalLineTransitionDialog && (
-        <div className="image-picker-backdrop global-line-dialog-backdrop" onPointerDown={cancelGlobalLineTransition}>
-          <section
-            className="unsaved-change-dialog global-line-transition-dialog window-close-host"
-            onPointerDown={(event) => event.stopPropagation()}
-            onKeyDown={(event) => { if (event.key === "Escape") cancelGlobalLineTransition(); }}
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="global-line-transition-title"
-          >
-            <WindowCloseButton label="取消线路维护方式变更" onClick={cancelGlobalLineTransition}/>
-            <div className="image-picker-title">
-              <div>
-                <h2 id="global-line-transition-title">线路维护方式即将变更</h2>
-                <p>
-                  线路“{globalLineTransitionDialog.originalNode.name}”的端点调整会使其从
-                  <strong>{globalLineTransitionDialog.direction === "local-to-global" ? "本图线路" : "全局线路"}</strong>
-                  切换为
-                  <strong>{globalLineTransitionDialog.direction === "local-to-global" ? "全局线路" : "本图线路"}</strong>。
-                </p>
-              </div>
-            </div>
-            <div className="global-line-transition-warning">
-              {globalLineTransitionDialog.direction === "local-to-global" ? (
-                <p>确认后，将删除该线路的本图独立编号关系，并继续让你从全局线路表中选择出线度小于2的线路，或新建全局线路。</p>
-              ) : (
-                <p>确认后，将解除该线路的全局引用、把全局出线度减1，并在本图中重新分配独立线路序号。</p>
-              )}
-              <p>取消操作将完整保留原端点连接、线路编号和维护方式。</p>
-            </div>
-            <div className="unsaved-change-actions">
-              <button type="button" onClick={cancelGlobalLineTransition}>取消，保持原连接</button>
-              <button type="button" className="primary" onClick={confirmGlobalLineTransition}>确认并继续</button>
-            </div>
-          </section>
-        </div>
-      )}
-      <UserCustomizationManagerDialog
-        open={Boolean(__appScope.userCustomizationManagerOpen)}
-        inventory={__appScope.userCustomizationInventory}
-        activeDomain={__appScope.userCustomizationActiveDomain}
-        busy={Boolean(__appScope.userCustomizationBusy)}
-        status={__appScope.userCustomizationStatus ?? ""}
-        pendingImport={__appScope.pendingUserCustomizationImport}
-        onClose={__appScope.closeUserCustomizationManager}
-        onDomainChange={__appScope.setUserCustomizationActiveDomain}
-        onExport={__appScope.exportAllUserCustomizations}
-        onChooseImport={__appScope.openUserCustomizationImportFilePicker}
-        onImportModeChange={__appScope.changePendingUserCustomizationImportMode}
-        onConfirmImport={__appScope.confirmUserCustomizationImport}
-        onCancelImport={__appScope.cancelPendingUserCustomizationImport}
-        onRestore={__appScope.restoreUserCustomizations}
+      <AppRightPanel
+        scope={__appScope}
+        inputs={[
+          rightPanelVisible,
+          rightPanelMode,
+          inspectorSelectedNode,
+          inspectorSelectedEdge,
+          currentModelRecord,
+          inspectorTab,
+          selectedSchemeRecord,
+          canvasSizeDraft,
+          isBrowseMode,
+          allowAutoExpandCanvas,
+          canvasBackgroundColor,
+          canvasBackgroundImage,
+          __appScope.canvasBackgroundImageFit,
+          backgroundProjectId,
+          backgroundProjectRecord,
+          backgroundProjectOptions,
+          backgroundLayerIds,
+          backgroundLayerOptions,
+          powerUnit,
+          voltageUnit,
+          currentUnit,
+          powerBaseValue,
+          subcontrolarea,
+          modelType,
+          substation,
+          feeder,
+          taiqu,
+          projectName,
+          nodes,
+          __appScope.elementTree,
+          __appScope.filteredElementTree,
+          __appScope.collapsedElementTreeGroups,
+          __appScope.collapsedElementTreeDeviceGroups,
+          __appScope.elementTreeItemLimits,
+          selectedNodeIdSet,
+          activeSelectedEdgeSet,
+          selectedDeviceInfoView,
+          selectedContainerParameterViews,
+          selectedContainerParameterView,
+          libraryTemplates,
+          customComponentLibraries,
+          deviceDefinitionOverrides,
+          topology,
+          inspectorTopologyEntry,
+          inspectorGraphId,
+          nodeById,
+          singleSelectedDeviceForInspector,
+          colorPalette
+        ]}
       />
-      {renderMeasurementConfigDialog()}
-      {renderMeasurementEditorDialog()}
-      {pendingRecordPasteConflict && (<div className="image-picker-backdrop" onPointerDown={() => resolveRecordPasteConflict("cancel")}>
-          <section className="unsaved-change-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="record-paste-conflict-title">
-            <WindowCloseButton label="关闭名称重复提示" onClick={() => resolveRecordPasteConflict("cancel")} />
-            <div className="image-picker-title">
-              <div>
-                <h2 id="record-paste-conflict-title">名称重复</h2>
-                <p>
-                  当前{pendingRecordPasteConflict.kind === "scheme" ? "模型库" : pendingRecordPasteConflict.kind === "scheme-drag" ? "目标方案" : "方案"}中已存在"{pendingRecordPasteConflict.duplicateName}"。请选择{pendingRecordPasteConflict.kind === "project-drag" || pendingRecordPasteConflict.kind === "scheme-drag" ? "拖拽" : "粘贴"}处理方式。
-                </p>
-              </div>
-            </div>
-            <div className="unsaved-change-actions">
-              <button type="button" onClick={() => resolveRecordPasteConflict("overwrite")}>覆盖</button>
-              <button type="button" onClick={() => resolveRecordPasteConflict("rename")}>新命名</button>
-              <button type="button" onClick={() => resolveRecordPasteConflict("cancel")}>{pendingRecordPasteConflict.kind === "project-drag" || pendingRecordPasteConflict.kind === "scheme-drag" ? "取消拖拽" : "取消粘贴"}</button>
-            </div>
-          </section>
-        </div>)}
-      {pendingModelImportConflict && (<div className="image-picker-backdrop" onPointerDown={() => resolveDuplicateModelImport("cancel")}>
-          <section className="unsaved-change-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { resolveDuplicateModelImport("cancel"); } }} role="dialog" aria-modal="true" aria-labelledby="model-import-conflict-title">
-            <WindowCloseButton label="关闭模型名称重复提示" onClick={() => resolveDuplicateModelImport("cancel")} />
-            <div className="image-picker-title">
-              <div>
-                <h2 id="model-import-conflict-title">模型名称重复</h2>
-                <p>
-                  当前方案中已存在模型"{pendingModelImportConflict.duplicateProjectName}"。请选择导入处理方式。
-                </p>
-              </div>
-            </div>
-            <div className="unsaved-change-actions">
-              <button type="button" onClick={() => resolveDuplicateModelImport("overwrite")}>覆盖</button>
-              <button type="button" onClick={() => resolveDuplicateModelImport("rename")}>重命名</button>
-              <button type="button" onClick={() => resolveDuplicateModelImport("cancel")}>不导入</button>
-            </div>
-          </section>
-        </div>)}
-      {pendingSchemeImportConflict && (<div className="image-picker-backdrop" onPointerDown={() => resolveDuplicateSchemeImport("cancel")}>
-          <section className="unsaved-change-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { resolveDuplicateSchemeImport("cancel"); } }} role="dialog" aria-modal="true" aria-labelledby="scheme-import-conflict-title">
-            <WindowCloseButton label="关闭方案名称重复提示" onClick={() => resolveDuplicateSchemeImport("cancel")} />
-            <div className="image-picker-title">
-              <div>
-                <h2 id="scheme-import-conflict-title">方案名称重复</h2>
-                <p>
-                  当前模型库中已存在方案"{pendingSchemeImportConflict.duplicateSchemeName}"。请选择导入处理方式。
-                </p>
-              </div>
-            </div>
-            <div className="unsaved-change-actions">
-              <button type="button" onClick={() => resolveDuplicateSchemeImport("merge")}>合并覆盖</button>
-              <button type="button" onClick={() => resolveDuplicateSchemeImport("rename")}>重新命名</button>
-              <button type="button" onClick={() => resolveDuplicateSchemeImport("cancel")}>不导入</button>
-            </div>
-          </section>
-        </div>)}
-      {pendingUnsavedAction && (() => {
-        const pendingUnsavedActionResolving = Boolean(pendingUnsavedAction.resolving);
-        return (<div className="image-picker-backdrop unsaved-change-backdrop" onPointerDown={() => { if (!pendingUnsavedActionResolving) resolveUnsavedChangeAction("cancel"); }}>
-          <section className="unsaved-change-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape" && !pendingUnsavedActionResolving) { resolveUnsavedChangeAction("cancel"); } }} role="dialog" aria-modal="true" aria-labelledby="unsaved-change-title" aria-busy={pendingUnsavedActionResolving}>
-            <WindowCloseButton label="关闭未保存修改提示" onClick={() => { if (!pendingUnsavedActionResolving) resolveUnsavedChangeAction("cancel"); }} />
-            <div className="image-picker-title">
-              <div>
-                <h2 id="unsaved-change-title">当前模型尚未保存</h2>
-                <p>当前模型"{projectName}"存在未保存修改。{pendingUnsavedAction.label}之前，请选择如何处理这些修改。</p>
-              </div>
-            </div>
-            <div className="unsaved-change-actions">
-              {pendingUnsavedAction.kind !== "export" && (
-                <button type="button" disabled={pendingUnsavedActionResolving} onClick={() => resolveUnsavedChangeAction("discard")}>
-                  {pendingUnsavedAction.kind === "enter-browse" ? "不保存直接浏览" : "不保存继续切换/关闭"}
-                </button>
-              )}
-              <button type="button" disabled={pendingUnsavedActionResolving} onClick={() => resolveUnsavedChangeAction("save")}>
-                {pendingUnsavedActionResolving ? "正在保存..." : pendingUnsavedAction.kind === "enter-browse" ? "保存后浏览" : pendingUnsavedAction.kind === "export" ? "保存后导出" : "保存后切换/关闭"}
-              </button>
-              <button type="button" disabled={pendingUnsavedActionResolving} onClick={() => resolveUnsavedChangeAction("cancel")}>退出操作</button>
-            </div>
-            {pendingUnsavedAction.resolutionError && <p className="unsaved-change-error" role="alert">{pendingUnsavedAction.resolutionError}</p>}
-            <p className="unsaved-change-note">关闭网页时，浏览器也会在离开前提示当前模型未保存。</p>
-          </section>
-        </div>);
-      })()}
-      {unsavedChangesDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setUnsavedChangesDialogOpen(false)}>
-          <section className="unsaved-changes-dialog window-close-host" style={{ width: "80vw", height: "80vh" }} onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="unsaved-changes-list-title">
-            <WindowCloseButton label="关闭未保存修改列表" onClick={() => setUnsavedChangesDialogOpen(false)} />
-            <div className="unsaved-changes-header">
-              <h2 id="unsaved-changes-list-title">未保存的修改</h2>
-            </div>
-            <div className="unsaved-changes-body" style={{ overflow: "auto", flex: 1, minHeight: 0 }}>
-              {(() => {
-                const baseline = savedUndoStackLengthRef?.current ?? 0;
-                const unsavedOps = undoStack.slice(baseline);
-                if (unsavedOps.length === 0) {
-                  return <p className="unsaved-changes-empty">无未保存修改</p>;
-                }
-                const groupCounts = new Map<string, number>();
-                for (const op of unsavedOps) {
-                  const label = op.label || "编辑操作";
-                  groupCounts.set(label, (groupCounts.get(label) ?? 0) + 1);
-                }
-                const groupLabels = Array.from(groupCounts.keys());
-                const totalOps = unsavedOps.length;
-                return (<>
-                  <div className="unsaved-changes-summary">
-                    {groupLabels.map((label) => {
-                      const count = groupCounts.get(label) ?? 0;
-                      const undoGroup = () => {
-                        let remaining = count;
-                        while (remaining > 0) {
-                          undoLastOperation();
-                          remaining -= 1;
-                        }
-                        if (undoStack.length - count <= baseline) {
-                          setHasUnsavedChanges(false);
-                        }
-                      };
-                      return (<div key={label} className="unsaved-changes-group">
-                          <div className="unsaved-changes-group-header">
-                            <span className="unsaved-changes-group-label">{label}</span>
-                            <span className="unsaved-changes-group-count">{count} 次操作</span>
-                            <button type="button" onClick={undoGroup}>撤回该组</button>
-                          </div>
-                        </div>);
-                    })}
-                  </div>
-                  <div className="unsaved-changes-operations">
-                    <h3>操作明细（共 {totalOps} 项）</h3>
-                    {unsavedOps.map((op, index) => {
-                      const label = op.label || "编辑操作";
-                      const target = op.target || "";
-                      const undoOne = () => {
-                        undoLastOperation();
-                        if (undoStack.length - 1 <= baseline) {
-                          setHasUnsavedChanges(false);
-                        }
-                      };
-                      return (<div key={index} className="unsaved-changes-operation">
-                          <span className="unsaved-changes-operation-label">{label}</span>
-                          {target && <span className="unsaved-changes-operation-target">{target}</span>}
-                          <span className="unsaved-changes-operation-index">#{totalOps - index}</span>
-                          <button type="button" onClick={undoOne}>撤回</button>
-                        </div>);
-                    })}
-                  </div>
-                </>);
-              })()}
-            </div>
-            <div className="unsaved-changes-footer">
-              <button type="button" onClick={() => { void saveCurrentProject(); setUnsavedChangesDialogOpen(false); }}>保存</button>
-              <button type="button" onClick={() => { const baseline = savedUndoStackLengthRef?.current ?? 0; const count = undoStack.length - baseline; for (let i = 0; i < count; i++) { undoLastOperation(); } setHasUnsavedChanges(false); }}>全部撤回</button>
-            </div>
-          </section>
-        </div>)}
-      {voltageBaseSetDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setVoltageBaseSetDialogOpen(false)}>
-          <section className="connection-redraw-dialog voltage-base-set-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="voltage-base-set-title">
-            <WindowCloseButton label="关闭设置电压基值窗口" onClick={() => setVoltageBaseSetDialogOpen(false)} />
-            <div className="image-picker-title">
-              <div>
-                <h2 id="voltage-base-set-title">设置电压基值</h2>
-                <p>将指定范围内设备端子和电压相关参数中的 vbase、v_base、v_set 等值设为输入值；多端设备可按端子分别设置。</p>
-              </div>
-            </div>
-            <label className="voltage-base-set-value-row">
-              <span>设置方式</span>
-              <strong>{voltageBaseSetModeLabel}</strong>
-            </label>
-            {(voltageBaseSetMode === "uniform" || voltageBaseSetMode === "byDevice") && voltageBaseSetHasUniformTargets && (<label className="voltage-base-set-value-row">
-                <span>{voltageBaseSetMode === "byDevice" ? "普通设备电压基值" : "电压基值"}</span>
-                <BufferedTextInput type="text" value={voltageBaseSetValue} onCommit={setVoltageBaseSetValue} list="voltage-base-set-options" placeholder="例如 110" autoFocus/>
-              </label>)}
-            {(voltageBaseSetMode === "terminal" || voltageBaseSetMode === "byDevice") && voltageBaseSetTerminalRows.length > 0 && (<div className="voltage-base-terminal-grid" aria-label="按端子设置电压基值">
-                <label className="voltage-base-set-value-row">
-                  <span>端子</span>
-                  <select value={activeVoltageBaseTerminalKey} onChange={(event) => setActiveVoltageBaseTerminalKey(event.target.value)}>
-                    {voltageBaseSetTerminalRows.map((row) => (<option key={voltageBaseTerminalRowKey(row)} value={voltageBaseTerminalRowKey(row)}>
-                        {row.nodeName} / {row.terminalLabel} / {row.terminalType}
-                      </option>))}
-                  </select>
-                </label>
-                {activeVoltageBaseTerminalRow && (<label className="voltage-base-set-value-row">
-                    <span>端子电压基值</span>
-                    <BufferedTextInput type="text" value={activeVoltageBaseTerminalRow.value} onCommit={(nextValue) => setVoltageBaseTerminalValue(activeVoltageBaseTerminalRow.nodeId, activeVoltageBaseTerminalRow.terminalId, nextValue)} list="voltage-base-set-options" placeholder="例如 110" autoFocus={voltageBaseSetMode === "terminal"}/>
-                  </label>)}
-              </div>)}
-            <datalist id="voltage-base-set-options">
-              {voltageBaseSetOptions.map((value) => (<option key={value} value={value}/>))}
-            </datalist>
-            <div className="connection-redraw-options voltage-base-set-options" role="radiogroup" aria-label="设置电压基值范围">
-              {VOLTAGE_BASE_SET_SCOPES.map((scope) => {
-            const result = voltageBaseSetResultForScope(scope);
-            const count = voltageBaseSetScopeDeviceCount(result);
-            const disabled = result.changedNodeIds.length === 0 || !voltageBaseSetReady();
-            return (<button key={scope} type="button" className={voltageBaseSetScope === scope ? "active" : ""} role="radio" aria-checked={voltageBaseSetScope === scope} onClick={() => setVoltageBaseSetScope(scope)} disabled={disabled}>
-                    <span>{VOLTAGE_BASE_SET_SCOPE_LABELS[scope]}</span>
-                    <strong>{count}</strong>
-                  </button>);
-        })}
-            </div>
-            <div className="image-picker-actions connection-redraw-actions">
-              <button type="button" onClick={() => setVoltageBaseSetDialogOpen(false)}>退出</button>
-              <button type="button" onClick={confirmVoltageBaseSetDialog} disabled={!voltageBaseSetReady() || voltageBaseSetResultForScope(voltageBaseSetScope).changedNodeIds.length === 0}>
-                确定
-              </button>
-            </div>
-          </section>
-        </div>)}
-      {voltageBaseClearDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setVoltageBaseClearDialogOpen(false)}>
-          <section className="connection-redraw-dialog voltage-base-clear-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="voltage-base-clear-title">
-            <WindowCloseButton label="关闭清空电压基值窗口" onClick={() => setVoltageBaseClearDialogOpen(false)} />
-            <div className="image-picker-title">
-              <div>
-                <h2 id="voltage-base-clear-title">清空电压基值</h2>
-                <p>将指定范围内设备端子和电压相关参数中的 vbase、v_base、v_set 等值统一设为 0.0。</p>
-              </div>
-            </div>
-            <div className="connection-redraw-options voltage-base-clear-options" role="radiogroup" aria-label="清空电压基值范围">
-              {VOLTAGE_BASE_CLEAR_SCOPES.map((scope) => {
-            const result = voltageBaseClearResultForScope(scope);
-            const count = result.changedNodeIds.length;
-            const disabled = count === 0;
-            return (<button key={scope} type="button" className={voltageBaseClearScope === scope ? "active" : ""} role="radio" aria-checked={voltageBaseClearScope === scope} onClick={() => setVoltageBaseClearScope(scope)} disabled={disabled}>
-                    <span>{VOLTAGE_BASE_CLEAR_SCOPE_LABELS[scope]}</span>
-                    <strong>{count}</strong>
-                  </button>);
-        })}
-            </div>
-            <div className="image-picker-actions connection-redraw-actions">
-              <button type="button" onClick={() => setVoltageBaseClearDialogOpen(false)}>取消</button>
-              <button type="button" onClick={confirmVoltageBaseClearDialog} disabled={voltageBaseClearResultForScope(voltageBaseClearScope).changedNodeIds.length === 0}>
-                确定
-              </button>
-            </div>
-          </section>
-        </div>)}
-      {connectionRedrawDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setConnectionRedrawDialogOpen(false)}>
-          <section className="connection-redraw-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="connection-redraw-title">
-            <WindowCloseButton label="关闭连接线重绘窗口" onClick={() => setConnectionRedrawDialogOpen(false)} />
-            <div className="image-picker-title">
-              <div>
-                <h2 id="connection-redraw-title">连接线重绘</h2>
-                <p>清除指定连接线的旧路径几何，并按当前端子、母线落点和避障规则重新生成。</p>
-              </div>
-            </div>
-            <div className="connection-redraw-options" role="radiogroup" aria-label="连接线重绘范围">
-              {(["selected", "viewport", "all"] as const).map((scope) => {
-            const count = connectionRedrawTargetsForScope(scope).total;
-            const disabled = count === 0;
-            return (<button key={scope} type="button" className={connectionRedrawScope === scope ? "active" : ""} role="radio" aria-checked={connectionRedrawScope === scope} onClick={() => setConnectionRedrawScope(scope)} disabled={disabled}>
-                    <span>{CONNECTION_REDRAW_SCOPE_LABELS[scope]}</span>
-                    <strong>{count}</strong>
-                  </button>);
-        })}
-            </div>
-            <div className="image-picker-actions connection-redraw-actions">
-              <button type="button" onClick={() => setConnectionRedrawDialogOpen(false)}>取消</button>
-              <button type="button" onClick={confirmConnectionRedrawDialog} disabled={connectionRedrawTargetsForScope(connectionRedrawScope).total === 0}>
-                确定
-              </button>
-            </div>
-          </section>
-        </div>)}
-      {groupDeviceDefinitionDialog && (<div className="image-picker-backdrop" onPointerDown={() => setGroupDeviceDefinitionDialog(null)}>
-          <section className="group-device-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { setGroupDeviceDefinitionDialog(null); } }} role="dialog" aria-modal="true" aria-labelledby="group-device-dialog-title">
-            <WindowCloseButton label="关闭定义为元件窗口" onClick={() => setGroupDeviceDefinitionDialog(null)} />
-            <div className="image-picker-title">
-              <div>
-                <h2 id="group-device-dialog-title">定义为元件</h2>
-                <p>把当前图元组合生成新元件图标，或替换已有元件的图标。</p>
-              </div>
-            </div>
-            <div className="group-device-dialog-grid">
-              <div className="template-dialog-preview group-device-preview">
-                <img src={groupDeviceDefinitionDialog.iconImage} alt="图元组合生成的元件图标预览"/>
-                <small>组合尺寸：{groupDeviceDefinitionDialog.sourceSize.width}×{groupDeviceDefinitionDialog.sourceSize.height}</small>
-              </div>
-              <div className="template-dialog-fields group-device-fields">
-                <div className="group-device-mode-options" role="radiogroup" aria-label="定义方式">
-                  {([
-            ["new", "新建元件"],
-            ["replace", "修改已有元件图标"]
-        ] as const).map(([modeValue, label]) => (<button key={modeValue} type="button" className={groupDeviceDefinitionDialog.mode === modeValue ? "active" : ""} role="radio" aria-checked={groupDeviceDefinitionDialog.mode === modeValue} onClick={() => setGroupDeviceDefinitionDialog((current) => current ? { ...current, mode: modeValue } : current)}>
-                      {label}
-                    </button>))}
-                </div>
-                {groupDeviceDefinitionDialog.mode === "new" ? (<>
-                    <label>
-                      <span>类别库</span>
-                      <select value={groupDeviceDefinitionDialog.categoryLibraryName} onChange={(event) => {
-                const categoryLibraryName = normalizeCategoryLibraryName(event.target.value);
-                setGroupDeviceDefinitionDialog((current) => current ? {
-                    ...current,
-                    categoryLibraryName,
-                    componentLibrary: defaultComponentLibraryForCategoryLibrary(categoryLibraryName)
-                } : current);
-            }}>
-                        {selectableCategoryLibraries.map((group) => (<option key={group} value={group}>{group}</option>))}
-                      </select>
-                    </label>
-                    <label>
-                      <span>选择类</span>
-                      <select value={groupDeviceDefinitionDialog.componentLibrary} onChange={(event) => setGroupDeviceDefinitionDialog((current) => current ? { ...current, componentLibrary: event.target.value } : current)}>
-                        {Array.from(new Set([
-                groupDeviceDefinitionDialog.componentLibrary,
-                ...(componentLibraryOptionsByCategoryLibrary[groupDeviceDefinitionDialog.categoryLibraryName] ?? [])
-            ].filter(Boolean))).map((section) => (<option key={section} value={section}>{section}</option>))}
-                      </select>
-                    </label>
-                  </>) : (<label>
-                    <span>已有元件</span>
-                    <select value={groupDeviceDefinitionDialog.targetKind} disabled={groupDeviceReplacementTemplates.length === 0} onChange={(event) => setGroupDeviceDefinitionDialog((current) => current ? { ...current, targetKind: event.target.value } : current)}>
-                      {groupDeviceReplacementTemplates.length === 0 ? (<option value="">暂无元件</option>) : groupDeviceReplacementTemplates.map((template) => (<option key={template.kind} value={template.kind}>
-                          {template.label} / {resolveTemplateComponentLibrary(template)}
-                        </option>))}
-                    </select>
-                  </label>)}
-                <div className="group-device-terminal-summary">
-                  <strong>对外端子</strong>
-                  <span>{groupDeviceDefinitionDialog.terminals.length} 个</span>
-                </div>
-                <div className="group-device-terminal-list">
-                  {groupDeviceDefinitionDialog.terminals.length > 0 ? groupDeviceDefinitionDialog.terminals.map((terminal, index) => (<div key={terminal.id} className="group-device-terminal-row">
-                      <span>{index + 1}</span>
-                      <strong>{terminal.label}</strong>
-                      <em>{TERMINAL_TYPE_LIBRARY_LABELS[terminal.type] ?? terminal.type}</em>
-                    </div>)) : (<p>未识别到对外端子，新元件会按 0 端子创建。</p>)}
-                </div>
-              </div>
-            </div>
-            <div className="template-dialog-actions">
-              <button type="button" onClick={() => setGroupDeviceDefinitionDialog(null)}>取消</button>
-              <button type="button" onClick={groupDeviceDefinitionDialog.mode === "new" ? confirmCreateDeviceFromGroup : confirmReplaceDeviceIconFromGroup}>
-                确定
-              </button>
-            </div>
-          </section>
-        </div>)}
-      {templateDialog && (<div className="image-picker-backdrop" onPointerDown={cancelTemplateDialog}>
-          <section className="template-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { cancelTemplateDialog(); } }} role="dialog" aria-modal="true" aria-labelledby="template-dialog-title">
-            <WindowCloseButton label="关闭添加模板窗口" onClick={cancelTemplateDialog} />
-            <div className="image-picker-title">
-              <div>
-                <h2 id="template-dialog-title">添加模板</h2>
-                <p>将当前选中的图元组合保存到模板库，后续可按原始尺寸拖拽生成。</p>
-              </div>
-            </div>
-            <div className="template-dialog-grid">
-              <div className="template-dialog-preview">
-                {renderGraphTemplatePreview({
-            id: "template-dialog-preview",
-            typeName: templateDraftType,
-            name: templateDraftName || "新模板",
-            sourceSize: templateDialog.sourceSize,
-            clipboard: templateDialog.clipboard,
-            createdAt: "",
-            updatedAt: ""
-        })}
-                <small>真实尺寸：{templateDialog.sourceSize.width}×{templateDialog.sourceSize.height}</small>
-              </div>
-              <div className="template-dialog-fields">
-                <label>
-                  <span>模板类型</span>
-                  <div className="template-type-row">
-                    <select value={templateDraftType} onChange={(event) => setTemplateDraftType(event.target.value)}>
-                      {graphTemplateTypes.map((typeName) => (<option key={typeName} value={typeName}>{typeName}</option>))}
-                    </select>
-                    <button type="button" onClick={createGraphTemplateType}>新增模板类型</button>
-                  </div>
-                </label>
-                <label>
-                  <span>模板名字</span>
-                  <BufferedTextInput value={templateDraftName} onCommit={setTemplateDraftName} placeholder="请输入模板名字" autoFocus/>
-                </label>
-              </div>
-            </div>
-            <div className="template-dialog-actions">
-              <button type="button" onClick={cancelTemplateDialog}>取消</button>
-              <button type="button" onClick={confirmAddGraphTemplate}>确认</button>
-            </div>
-          </section>
-        </div>)}
-      {layerAssignmentDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setLayerAssignmentDialogOpen(false)}>
-          <section className="layer-assignment-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="layer-assignment-title">
-            <WindowCloseButton label="关闭图层修改窗口" onClick={() => setLayerAssignmentDialogOpen(false)} />
-            <div className="image-picker-title">
-              <div>
-                <h2 id="layer-assignment-title">图层修改</h2>
-                <p>当前选中 {activeSelectedNodeIds.length} 个图元。选择目标图层后，确认应用到这些图元。</p>
-              </div>
-            </div>
-            <label className="layer-assignment-field">
-              <span>目标图层</span>
-              <select value={layerAssignmentTargetId} onChange={(event) => setLayerAssignmentTargetId(event.target.value)}>
-                {layers.map((layer) => (<option key={layer.id} value={layer.id}>
-                    {layer.visible ? layer.name : `${layer.name}（隐藏）`}
-                  </option>))}
-              </select>
-            </label>
-            <p className="layer-assignment-note">如果目标图层处于隐藏状态，应用后这些图元会按图层显示规则从画布上隐藏。</p>
-            <div className="image-picker-actions layer-assignment-actions">
-              <button type="button" onClick={() => setLayerAssignmentDialogOpen(false)}>取消</button>
-              <button type="button" onClick={applyLayerAssignmentDialog} disabled={activeSelectedNodeIds.length === 0 || !layers.some((layer) => layer.id === layerAssignmentTargetId) || layerAssignmentUnchanged}>
-                应用
-              </button>
-            </div>
-          </section>
-        </div>)}
-      {filterSelectionDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setFilterSelectionDialogOpen(false)}>
-          <section className="filter-selection-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="filter-selection-title">
-            <WindowCloseButton label="关闭过滤选择窗口" onClick={() => setFilterSelectionDialogOpen(false)} />
-            <div className="image-picker-title">
-              <div>
-                <h2 id="filter-selection-title">过滤选择</h2>
-                <p>类列表：{filterSelectionTypeOptions.length} 类，已选择 {filterSelectionTypeKeys.length} 种。</p>
-              </div>
-            </div>
-            <div className="filter-selection-toolbar">
-              <button type="button" onClick={() => setFilterSelectionTypeKeys(filterSelectionTypeOptions.flatMap((option) => option.items.map((item) => item.itemKey)))}>全选</button>
-              <button type="button" onClick={() => setFilterSelectionTypeKeys([])}>清空</button>
-            </div>
-            <div className="filter-selection-list" role="group" aria-label="类列表">
-              {filterSelectionTypeOptions.map((option) => (<div key={option.typeKey} className="filter-selection-option">
-                  <label className="filter-selection-type-row">
-                    <input type="checkbox" ref={(input) => {
-                if (input) {
-                    input.indeterminate = filterSelectionTypePartial(option);
-                }
-            }} checked={filterSelectionTypeSelected(option)} onChange={() => toggleFilterSelectionType(option.typeKey)}/>
-                    <span>
-                      <strong>{filterSelectionTreeLabel(option.label, option.typeKey)}</strong>
-                    </span>
-                    <em>{option.count}</em>
-                  </label>
-                  <div className="filter-selection-tree" aria-label={`${option.label}类树`}>
-                    <div className="filter-selection-tree-children">
-                      {option.items.map((item) => (<div key={item.itemKey} className="filter-selection-tree-child" title={filterSelectionTreeLabel(item.label, item.typeKey)}>
-                          <label className="filter-selection-kind-row">
-                            <input type="checkbox" checked={filterSelectionTypeKeys.includes(item.itemKey)} onChange={() => toggleFilterSelectionItem(item.itemKey)}/>
-                            <span>
-                              <strong>{filterSelectionTreeLabel(item.label, item.typeKey)}</strong>
-                            </span>
-                            <em>{item.count}</em>
-                          </label>
-                        </div>))}
-                    </div>
-                  </div>
-                </div>))}
-            </div>
-            <div className="template-dialog-actions">
-              <button type="button" onClick={() => setFilterSelectionDialogOpen(false)}>取消</button>
-              <button type="button" disabled={filterSelectionTypeKeys.length === 0} onClick={confirmFilterSelectionDialog}>确认选择</button>
-            </div>
-          </section>
-        </div>)}
-      {ENABLE_REACT_FLOW_PREVIEW && ReactFlowPreview && reactFlowPreviewOpen && (<div className="image-picker-backdrop react-flow-preview-backdrop" onPointerDown={() => setReactFlowPreviewOpen(false)}>
-          <section className="react-flow-preview-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="react-flow-preview-title">
-            <WindowCloseButton label="关闭React Flow预览" onClick={() => setReactFlowPreviewOpen(false)} />
-            <div className="image-picker-title">
-              <div>
-                <h2 id="react-flow-preview-title">React Flow 预览</h2>
-                <p>开发态验证入口：仅展示当前可见模型，主画布、拓扑、布线和导出逻辑保持不变。</p>
-              </div>
-            </div>
-            <div className="react-flow-preview-stage">
-              <Suspense fallback={<div className="react-flow-preview-loading">正在加载 React Flow 预览...</div>}>
-                <ReactFlowPreview nodes={visibleNodes} edges={visibleEdges}/>
-              </Suspense>
-            </div>
-          </section>
-        </div>)}
-      {colorPaletteDialogOpen && (<div className="image-picker-backdrop" onPointerDown={() => setColorPaletteDialogOpen(false)}>
-          <section className="color-palette-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()}>
-            <WindowCloseButton label="关闭配色设置" onClick={() => setColorPaletteDialogOpen(false)} />
-            <div className="image-picker-title">
-              <div>
-                <h2>配色设置</h2>
-                <p>配置能流类型和电压等级颜色，保存后用于图元、端子、联络线和导出图形。</p>
-              </div>
-            </div>
-            <div className="color-palette-tabs" role="tablist" aria-label="配色方式">
-              <button className={colorPaletteTab === "energy" ? "active" : ""} onClick={() => {
-            setColorPaletteTab("energy");
-            toggleColorDisplayMode("energy");
-        }} type="button">
-                按能流类型
-              </button>
-              <button className={colorPaletteTab === "voltage" ? "active" : ""} onClick={() => {
-            setColorPaletteTab("voltage");
-            toggleColorDisplayMode("voltage");
-        }} type="button">
-                按电压等级
-              </button>
-            </div>
-            {colorPaletteTab === "energy" ? (<div className="color-palette-table" aria-label="能流类型配色">
-                {ENERGY_COLOR_ROWS.map((row) => {
-                const color = colorPaletteDraft.energy[row.type] ?? DEFAULT_COLOR_PALETTE.energy[row.type];
-                return (<label className="color-palette-row" key={row.type}>
-                      <span>{row.label}</span>
-                      <DeferredColorInput value={color} fallback={DEFAULT_COLOR_PALETTE.energy[row.type]} onCommit={(value) => updateEnergyColor(row.type, value)} aria-label={`${row.label}颜色`}/>
-                      <BufferedTextInput value={color} onCommit={(nextValue) => updateEnergyColor(row.type, nextValue)} aria-label={`${row.label}颜色值`}/>
-                    </label>);
-            })}
-              </div>) : (<div className="voltage-color-panel">
-                <div className="voltage-color-toolbar" role="group" aria-label="电压等级显示范围">
-                  <button type="button" className={voltageColorVisibility === "all" ? "active" : ""} onClick={() => setVoltageColorVisibility("all")}>
-                    全部电压等级
-                  </button>
-                  <button type="button" className={voltageColorVisibility === "current" ? "active" : ""} onClick={() => setVoltageColorVisibility("current")}>
-                    当前模型电压等级
-                  </button>
-                  <span>{`当前模型 ${currentModelVoltageColorKeys.size} 项`}</span>
-                </div>
-                {(() => {
-                  const filteredRows = visibleVoltageColorRows.filter((row) => row.type === voltageTab);
-                  return (
-                    <>
-                      <div className="voltage-color-tabs" role="tablist" aria-label="电压类型" style={{ display: "flex", gap: 0, marginBottom: 12, borderBottom: "1px solid #e2e8f0" }}>
-                        <button type="button" onClick={() => setVoltageTab("ac")} style={{ padding: "8px 16px", border: "none", borderBottom: voltageTab === "ac" ? "2px solid #2563eb" : "2px solid transparent", background: "none", cursor: "pointer", fontWeight: voltageTab === "ac" ? 600 : 400, color: voltageTab === "ac" ? "#2563eb" : "#64748b" }}>交流</button>
-                        <button type="button" onClick={() => setVoltageTab("dc")} style={{ padding: "8px 16px", border: "none", borderBottom: voltageTab === "dc" ? "2px solid #2563eb" : "2px solid transparent", background: "none", cursor: "pointer", fontWeight: voltageTab === "dc" ? 600 : 400, color: voltageTab === "dc" ? "#2563eb" : "#64748b" }}>直流</button>
-                      </div>
-                      <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
-                        <div className="voltage-color-header" style={{ display: "grid", gridTemplateColumns: "1fr 2fr auto", gap: 12, padding: "6px 12px", borderBottom: "1px solid #e2e8f0", fontWeight: 600, flexShrink: 0 }}>
-                          <span>电压基值</span>
-                          <span>颜色</span>
-                          <span>操作</span>
-                        </div>
-                        <div className="voltage-color-list" style={{ flex: 1, overflowY: "auto" }}>
-                        {filteredRows.length > 0 ? (filteredRows.map((row) => (<div className="voltage-color-row" key={row.key} style={{ display: "grid", gridTemplateColumns: "1fr 2fr auto", gap: 12, padding: "2px 12px", borderBottom: "1px solid #f1f5f9", alignItems: "center" }}>
-                              <BufferedTextInput value={row.voltage} onCommit={(nextValue) => updateVoltageColorRow(row.key, { voltage: nextValue })} aria-label="电压基值"/>
-                              <div className="color-field" style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                                <DeferredColorInput value={row.color} fallback="#64748b" onCommit={(value) => updateVoltageColorRow(row.key, { color: value })} aria-label={`${row.type.toUpperCase()} ${row.voltage}颜色`}/>
-                                <BufferedTextInput value={row.color} onCommit={(nextValue) => updateVoltageColorRow(row.key, { color: nextValue })} aria-label={`${row.type.toUpperCase()} ${row.voltage}颜色值`}/>
-                              </div>
-                              <button type="button" onClick={() => deleteVoltageColorRow(row.key)} style={{ padding: "4px 8px" }}>删除</button>
-                            </div>))) : (<div className="voltage-color-empty" style={{ padding: 12, textAlign: "center", color: "#94a3b8" }}>当前模型暂无{voltageTab === "ac" ? "交流" : "直流"}电压等级。</div>)}
-                        </div>
-                      </div>
-                    </>
-                  );
-                })()}
-                {voltageColorVisibility === "all" && (<div style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}><button type="button" className="secondary-action" onClick={() => setVoltageLevelDialogOpen(true)} style={{ padding: "4px 10px", minWidth: "auto" }}>新增电压等级</button></div>)}
-              </div>)}
-            <div className="image-picker-actions color-palette-actions">
-              <button type="button" onClick={colorPaletteTab === "energy" ? resetEnergyColors : resetVoltageColors}>
-                {colorPaletteTab === "energy" ? "恢复默认能流配色" : "恢复默认电压配色"}
-              </button>
-              <button type="button" onClick={saveColorPalette}>保存</button>
-            </div>
-          </section>
-        </div>)}
-      {voltageLevelDialogOpen && (
-        <VoltageLevelDialog
-          open={voltageLevelDialogOpen}
-          onClose={() => setVoltageLevelDialogOpen(false)}
-          settings={voltageLevelSettings}
-          onSave={(next) => {
-            setVoltageLevelSettings(next);
-            // 更新颜色配置中的电压等级
-            const updatedVoltage: Record<string, string> = {};
-            next.ac.forEach((row) => { updatedVoltage[`ac:${row.name}`] = colorPaletteDraft.voltage[`ac:${row.name}`] ?? "#64748b"; });
-            next.dc.forEach((row) => { updatedVoltage[`dc:${row.name}`] = colorPaletteDraft.voltage[`dc:${row.name}`] ?? "#64748b"; });
-            setColorPaletteDraft({ ...colorPaletteDraft, voltage: updatedVoltage });
-          }}
+      {contextMenuLayerActive && (<Suspense fallback={null}>
+        <LazyAppContextMenus
+          scope={__appScope}
+          section="context-menus"
+          inputs={overlayInputsFor(contextMenuLayerActive)}
         />
-      )}
-      {deviceDefinitionDialogOpen && (<div className="image-picker-backdrop" onPointerDown={closeDeviceDefinitionDialog}>
-          <section ref={deviceDefinitionDialogRef} className={`device-definition-dialog window-close-host${deviceLibraryDialogLayouts.definition ? " floating" : ""}`} style={deviceLibraryDialogStyle("definition")} onPointerDown={stopDeviceLibraryDialogEvent} onPointerUp={stopDeviceLibraryDialogEvent} onPointerCancel={stopDeviceLibraryDialogEvent} onLostPointerCapture={stopDeviceLibraryDialogEvent} onClick={(event) => event.stopPropagation()}>
-            <WindowCloseButton label="关闭元件定义窗口" onClick={closeDeviceDefinitionDialog} />
-            <div className="image-picker-title">
-              <div className="device-library-dialog-title" onPointerDown={(event) => startDeviceLibraryDialogDrag("definition", event)}>
-                <h2>修改元件</h2>
-                <p>查看内置和自定义元件定义，维护新建图元时使用的设备属性。</p>
-              </div>
-            </div>
-            <div className="device-definition-layout">
-              <aside className="device-definition-list" aria-label="元件定义列表">
-                <div className="dialog-tree-search">
-                  <Search size={14} aria-hidden="true"/>
-                  <input value={deviceDefinitionSearchQuery} onChange={(event) => setDeviceDefinitionSearchQuery(event.target.value)} placeholder="搜索类别库/类/元件" aria-label="搜索元件定义"/>
-                  {deviceDefinitionSearchQuery && (<button type="button" aria-label="清空元件定义搜索" title="清空" onClick={() => setDeviceDefinitionSearchQuery("")}>
-                      <X size={13}/>
-                    </button>)}
-                </div>
-                {(() => {
-                  // 切换折叠层全部展开/全部收缩
-                  const total = displayedDeviceDefinitionLibraries.length;
-                  if (total === 0) return null;
-                  const allExpanded = expandedDefinitionGroups.length >= total;
-                  return (<button type="button" className="device-definition-toggle-all" aria-label={allExpanded ? "全部收缩" : "全部展开"} title={allExpanded ? "全部收缩" : "全部展开"} onClick={() => {
-                    if (allExpanded) {
-                      setExpandedDefinitionGroups([]);
-                    } else {
-                      setExpandedDefinitionGroups([...displayedDeviceDefinitionLibraries]);
-                      setCollapsedDefinitionComponentLibraries([]);
-                    }
-                  }}>
-                    {allExpanded ? "全部收缩" : "全部展开"}
-                    {allExpanded ? <ChevronDown size={13}/> : <ChevronRight size={13}/>}
-                  </button>);
-                })()}
-                <div className="device-definition-tree-scroll dialog-compact-tree" role="tree">
-                  {displayedDeviceDefinitionLibraries.length > 0 ? displayedDeviceDefinitionLibraries.map((group) => {
-            const typeGroups = filteredDeviceDefinitionByComponentLibrary[group] ?? [];
-            const expanded = deviceDefinitionSearchNeedle ? true : expandedDefinitionGroups.includes(group);
-            return (<section className="device-definition-group" key={group}>
-                        <button type="button" className="device-definition-group-toggle" role="treeitem" aria-expanded={expanded} onClick={() => toggleDefinitionGroup(group)}>
-                          {expanded ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}
-                          <span>{group}</span>
-                          <strong>{typeGroups.reduce((sum, typeGroup) => sum + typeGroup.templates.length, 0)}</strong>
-                        </button>
-                        {expanded && (<div className="component-definition-type-list" role="group" aria-label={`${group}类列表`}>
-                            {typeGroups.map((typeGroup) => {
-                        const typeKey = categoryLibraryComponentLibraryKey(group, typeGroup.section);
-                        const typeCollapsed = deviceDefinitionSearchNeedle ? false : collapsedDefinitionComponentLibraries.includes(typeKey);
-                        const typeDisplay = componentLibraryDisplayParts(typeGroup.section, customComponentLibraries);
-                        return (<section className="component-definition-type-group" key={`${group}-${typeGroup.section}`}>
-                                  <button type="button" className={`component-definition-type-header ${typeCollapsed ? "" : "active"}`} role="treeitem" aria-expanded={!typeCollapsed} onClick={() => toggleDefinitionComponentLibrary(group, typeGroup.section)}>
-                                    {typeCollapsed ? <ChevronRight size={13}/> : <ChevronDown size={13}/>}
-                                    <span className="dialog-tree-bilingual" title={typeDisplay.title}>
-                                      <span>{typeDisplay.chinese}</span>
-                                      <small>{typeDisplay.english}</small>
-                                    </span>
-                                    <strong>{typeGroup.templates.length}</strong>
-                                  </button>
-                                  {!typeCollapsed && <div className="device-definition-items" role="group" aria-label={`${group}/${typeGroup.section}元件列表`}>
-                                    {typeGroup.templates.map((template) => (<button type="button" key={template.kind} className={`device-definition-item ${selectedDefinitionTemplate?.kind === template.kind ? "active" : ""}`} role="treeitem" aria-selected={selectedDefinitionTemplate?.kind === template.kind} onClick={() => loadDefinitionTemplateDraft(template)}>
-                                        <span className="dialog-tree-bilingual dialog-tree-component-label" title={`${template.label} / ${template.kind}`}>
-                                          <span>{template.label}</span>
-                                          <small>{template.kind}</small>
-                                        </span>
-                                      </button>))}
-                                  </div>}
-                                </section>);
-                    })}
-                          </div>)}
-                      </section>);
-        }) : (<div className="dialog-tree-empty">未找到匹配元件</div>)}
-                </div>
-              </aside>
-              <section className="device-definition-detail">
-                {selectedDefinitionTemplate ? (<>
-                    <div className="device-definition-summary">
-                      <div>
-                        <span>类别库</span>
-                        <strong>{normalizeCategoryLibraryName(selectedDefinitionTemplate.categoryLibrary)}</strong>
-                      </div>
-                      <div>
-                        <span>类</span>
-                        <strong title="所属类在创建后不可修改">{definitionDraftSection}</strong>
-                      </div>
-                      <div>
-                        <span>元件名称</span>
-                        <strong>{selectedDefinitionTemplate.label}</strong>
-                      </div>
-                      <div>
-                        <span>图元类型</span>
-                        <strong>{selectedDefinitionTemplate.kind}</strong>
-                      </div>
-                      <div>
-                        <span>来源</span>
-                        <strong>{selectedDefinitionTemplate.custom ? "自定义" : "内置"}</strong>
-                      </div>
-                      {selectedDefinitionDerivedInfo && (<div>
-                          <span>派生主类</span>
-                          {selectedDefinitionDerivedBaseTemplate ? (<button type="button" className="device-definition-summary-value derived-base-link" title={`跳转到主类 ${selectedDefinitionDerivedBaseTemplate.label ?? ""}`} onClick={() => loadDefinitionTemplateDraft(selectedDefinitionDerivedBaseTemplate)}>
-                              {selectedDefinitionDerivedInfo.baseComponentLibrary}
-                            </button>) : (<strong>{selectedDefinitionDerivedInfo.baseComponentLibrary}</strong>)}
-                        </div>)}
-                      <div>
-                        <span>端子数量</span>
-                        <strong>{selectedDefinitionTemplate.terminalCount}</strong>
-                      </div>
-                      <div>
-                        <span>是否容器</span>
-                        <strong>{selectedDefinitionTemplate.isContainer ? "是" : "否"}</strong>
-                      </div>
-                      <div>
-                        <span>是否允许变形</span>
-                        <strong>{templateResizeTransformValue(selectedDefinitionTemplate) === "1" ? "是" : "否"}</strong>
-                      </div>
-                      <div>
-                        <span>能源属性</span>
-                        <strong>
-                          {(selectedDefinitionTemplate.terminalTypes ?? Array.from({ length: selectedDefinitionTemplate.terminalCount }, () => selectedDefinitionTemplate.terminalType))
-                .map((type) => TERMINAL_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? type)
-                .join(" / ") || "无端子"}
-                        </strong>
-                      </div>
-                    </div>
-                    <div className="device-definition-tabs" role="tablist" aria-label="元件修改内容切换">
-                      <button type="button" className={deviceDefinitionView === "visual" ? "active" : ""} onClick={() => setDeviceDefinitionView("visual")}>
-                        端子定义
-                      </button>
-                      <button type="button" className={deviceDefinitionView === "parameters" ? "active" : ""} onClick={() => setDeviceDefinitionView("parameters")}>
-                        参数定义
-                      </button>
-                      <button type="button" className={deviceDefinitionView === "measurements" ? "active" : ""} onClick={() => setDeviceDefinitionView("measurements")}>
-                        量测定义
-                      </button>
-                    </div>
-                    {deviceDefinitionView === "visual" ? (renderDeviceDefinitionVisualPanel(selectedDefinitionTemplate)) : deviceDefinitionView === "parameters" ? (<>
-                        {selectedDefinitionTemplate.isContainer && selectedDefinitionTerminalAssociations.length > 0 && (<section className="device-definition-associations">
-                            <div className="device-definition-section-title">
-                              <h3>端子关联信息</h3>
-                              <span>{selectedDefinitionTerminalAssociations.length} 个端子</span>
-                            </div>
-                            <div className="custom-param-table-wrap compact-table-wrap">
-                              <table className="custom-param-table">
-                                <thead>
-                                  <tr>
-                                    <th>端子</th>
-                                    <th>能源属性</th>
-                                    <th>关联对象</th>
-                                    <th>关联字段</th>
-                                    <th>说明</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {selectedDefinitionTerminalAssociations.map((association) => (<tr key={`${selectedDefinitionTemplate.kind}-terminal-${association.terminalIndex}`}>
-                                      <td>{association.terminalLabel}</td>
-                                      <td>{TERMINAL_TYPE_OPTIONS.find((option) => option.value === association.terminalType)?.label ?? association.terminalType}</td>
-                                      <td>{association.deviceModel ? `${association.roleLabel} / ${association.deviceModel}` : association.roleLabel}</td>
-                                      <td><code>{association.relationKey || "-"}</code></td>
-                                      <td>
-                                        {association.dependent
-                            ? `随端子${association.sourceTerminalIndex + 1}分配到同一个关联设备`
-                            : association.relationName}
-                                      </td>
-                                    </tr>))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </section>)}
-                        {definitionDraftError && <p className="custom-device-error">{definitionDraftError}</p>}
-                        <div className="definition-table-toolbar" aria-label="参数定义表格操作">
-                          <button type="button" onClick={addDefinitionDraftRow}>新增参数</button>
-                          <button
-                            type="button"
-                            onClick={copySelectedDefinitionParameterRows}
-                            disabled={selectedDefinitionParameterRowIds.length === 0}
-                          >
-                            复制
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => moveSelectedDefinitionParameterRows(-1)}
-                            disabled={selectedDefinitionEditableParameterCount === 0}
-                          >
-                            上移
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => moveSelectedDefinitionParameterRows(1)}
-                            disabled={selectedDefinitionEditableParameterCount === 0}
-                          >
-                            下移
-                          </button>
-                          <button
-                            type="button"
-                            onClick={deleteSelectedDefinitionParameterRows}
-                            disabled={selectedDefinitionEditableParameterCount === 0}
-                          >
-                            删除
-                          </button>
-                          <button
-                            type="button"
-                            onClick={deleteAllDefinitionParameterRows}
-                            disabled={!selectedDefinitionTemplate || selectedDefinitionTemplate.custom || definitionDraftRows.length === 0}
-                          >
-                            删除全部参数
-                          </button>
-                          <span>{selectedDefinitionParameterRowIds.length > 0 ? `已选 ${selectedDefinitionParameterRowIds.length} 行` : "点击行选择，Ctrl/Shift 可多选"}</span>
-                        </div>
-                        <div className="custom-param-table-wrap device-definition-table-wrap">
-                          <table className="custom-param-table">
-                            <thead>
-                              <tr>
-                                <th className="definition-table-sequence">序号</th>
-                                <th>中文名称</th>
-                                <th>英文名称</th>
-                                 <th>取值类型</th>
-                                 <th>默认值</th>
-                                 <th>枚举项</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {definitionDraftRowsForDisplay.map((row, rowIndex) => (<tr
-                                  key={row.id}
-                                  className={`definition-table-row${selectedDefinitionParameterRowIdSet.has(row.id) ? " selected" : ""}${row.readonly ? " readonly-row" : ""}`}
-                                  aria-selected={selectedDefinitionParameterRowIdSet.has(row.id)}
-                                  onClick={(event) => selectDefinitionParameterRow(row.id, event)}
-                                >
-                                  <td className="definition-table-sequence">{rowIndex + 1}</td>
-                                  <td>
-                                    <BufferedTextInput value={row.cnName} disabled={row.readonly} onCommit={(value) => updateDefinitionDraftRow(row.id, { cnName: value })}/>
-                                  </td>
-                                  <td>
-                                    <BufferedTextInput value={row.enName} disabled={row.readonly} onCommit={(value) => updateDefinitionDraftRow(row.id, { enName: value })}/>
-                                  </td>
-                                  <td>
-                                    <select value={row.valueType} disabled={row.readonly} onChange={(event) => {
-                        const nextRow = normalizeDefinitionRowEnumFields({
-                            ...row,
-                            valueType: event.target.value as DeviceParameterValueType
-                        });
-                        updateDefinitionDraftRow(row.id, {
-                            valueType: nextRow.valueType,
-                            typicalValue: nextRow.typicalValue,
-                            enumOptions: nextRow.enumOptions,
-                            enumValues: nextRow.enumValues
-                        });
-                    }}>
-                                      {PARAM_VALUE_TYPE_OPTIONS.map((option) => (<option key={option.value} value={option.value}>
-                                          {option.label}
-                                        </option>))}
-                                    </select>
-                                  </td>
-                                  <td>
-                                    {renderTypicalValueEditor(row, updateDefinitionDraftRow, row.readonly, definitionDraftSection)}
-                                  </td>
-                                  <td>
-                                    {renderEnumValuesEditor(row, updateDefinitionDraftRow, row.readonly)}
-                                  </td>
-                                </tr>))}
-                            </tbody>
-                          </table>
-                        </div>
-                        <div className="custom-device-actions">
-                          <button type="button" onClick={saveDeviceDefinitionDraft}>保存定义</button>
-                          <button type="button" onClick={resetDeviceDefinitionDraft} disabled={!selectedDefinitionBaseTemplate}>
-                            恢复默认
-                          </button>
-                        </div>
-                      </>) : (renderDeviceDefinitionMeasurementPanel({
-                deviceKind: normalizeComponentLibraryName(definitionDraftSection) || deviceDefinitionKeyForTemplate(selectedDefinitionTemplate),
-                label: selectedDefinitionTemplate.label,
-                terminalCount: selectedDefinitionTemplate.terminalCount,
-                terminalLabels: selectedDefinitionTemplate.terminalLabels,
-                parameterDefinitions: definitionDraftRows,
-                positionDefinitions: __appScope.selectedDefinitionMeasurementPositionDefinitions,
-                items: Array.isArray(__appScope.definitionMeasurementDraft)
-                  ? __appScope.definitionMeasurementDraft
-                  : [],
-                setItems: __appScope.setDefinitionMeasurementDraft,
-                selectedRowIndexes: __appScope.selectedDefinitionMeasurementRowIndexes,
-                setSelectedRowIndexes: __appScope.setSelectedDefinitionMeasurementRowIndexes,
-                selectionAnchorIndex: __appScope.definitionMeasurementSelectionAnchorRef.current,
-                setSelectionAnchorIndex: (index) => {
-                  __appScope.definitionMeasurementSelectionAnchorRef.current = index;
-                },
-                ensureAssociatedField: (position, associatedField, measurementTypeId) => {
-                  if (position !== "device") return;
-                  const measurementType = (measurementConfigDraft ?? measurementConfig).measurementTypes
-                    .find((type) => type.id === measurementTypeId);
-                  const definition = createMeasurementFieldParameterDefinition(associatedField, {
-                    cnName: measurementType?.name,
-                    valueType: measurementType?.valueType === "string" || measurementType?.valueType === "boolean" ? "string" : "float"
-                  });
-                  if (!definition) return;
-                  setDefinitionDraftRows((current) => current.some((row) => row.enName.trim().toLowerCase() === definition.enName.toLowerCase())
-                    ? current
-                    : [...current, { ...definition, id: deviceDefinitionRowId() }]);
-                }
-            }))}
-                  </>) : (<div className="empty-state compact">
-                    <Grid2X2 size={24}/>
-                    <p>当前类别库暂无元件。</p>
-                  </div>)}
-              </section>
-            </div>
-            <div className="device-library-dialog-resize" role="separator" aria-orientation="horizontal" aria-label="调整修改元件窗口大小" title="拖拽调整窗口大小" onPointerDown={(event) => startDeviceLibraryDialogResize("definition", event)}/>
-          </section>
-        </div>)}
-      {createModelDialog && (<div
-          className="custom-library-create-backdrop"
-          onPointerDown={() => {
-            if (!createModelDialog.saving) setCreateModelDialog(null);
-          }}
-        >
-          <form
-            className="custom-library-create-dialog model-create-dialog window-close-host"
-            aria-label="新建模型"
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => event.stopPropagation()}
-            onSubmit={(event) => {
-              event.preventDefault();
-              void createBlankProject(createModelDialog.schemeId, {
-                name: createModelDialog.name,
-                modelType: createModelDialog.modelType
-              });
-            }}
-          >
-            <WindowCloseButton
-              label="关闭新建模型窗口"
-              disabled={createModelDialog.saving}
-              onClick={() => setCreateModelDialog(null)}
-            />
-            <div className="custom-library-create-title">
-              <h3>新建模型</h3>
-            </div>
-            {createModelDialog.error && <p className="custom-library-create-error">{createModelDialog.error}</p>}
-            <div className="custom-library-create-fields">
-              <label>
-                <span>模型名称</span>
-                <input
-                  autoFocus
-                  aria-label="模型名称"
-                  disabled={createModelDialog.saving}
-                  value={createModelDialog.name}
-                  onChange={(event) => setCreateModelDialog((current) => current ? {
-                    ...current,
-                    name: event.target.value,
-                    error: ""
-                  } : current)}
-                />
-              </label>
-              <label>
-                <span>模型类型</span>
-                <select
-                  aria-label="模型类型"
-                  disabled={createModelDialog.saving}
-                  value={createModelDialog.modelType}
-                  onChange={(event) => setCreateModelDialog((current) => current ? {
-                    ...current,
-                    modelType: event.target.value,
-                    error: ""
-                  } : current)}
-                >
-                  {__appScope.MODEL_TYPES.map((modelType) => (<option key={modelType} value={modelType}>{modelType}</option>))}
-                </select>
-              </label>
-              <p className="model-create-index-note">模型序号 idx 将在确认后由后台全局自动分配，并永久保持不变。</p>
-            </div>
-            <div className="custom-library-create-actions">
-              <button type="button" disabled={createModelDialog.saving} onClick={() => setCreateModelDialog(null)}>取消</button>
-              <button type="submit" className="primary" disabled={createModelDialog.saving || !createModelDialog.name.trim()}>
-                {createModelDialog.saving ? "正在创建..." : "确认"}
-              </button>
-            </div>
-          </form>
-        </div>)}
-      {customLibraryCreateDialog && (<div className="custom-library-create-backdrop" onPointerDown={() => setCustomLibraryCreateDialog(null)}>
-          <form
-            className={`custom-library-create-dialog custom-library-create-dialog-${customLibraryCreateDialog.kind} window-close-host`}
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => event.stopPropagation()}
-            onSubmit={(event) => {
-              event.preventDefault();
-              confirmCustomLibraryCreateDialog(customLibraryCreateDialog);
-            }}
-          >
-            <WindowCloseButton label={`关闭${customLibraryCreateDialog.title}`} onClick={() => setCustomLibraryCreateDialog(null)} />
-            <div className="custom-library-create-title">
-              <h3>{customLibraryCreateDialog.title}</h3>
-            </div>
-            {customLibraryCreateDialog.error && <p className="custom-library-create-error">{customLibraryCreateDialog.error}</p>}
-            <div className="custom-library-create-fields">
-              <label>
-                <span>{customLibraryCreateDialog.kind === "categoryLibrary" ? "类别中文名称" : customLibraryCreateDialog.kind === "componentLibrary" ? "类中文名称" : "元件中文名称"}</span>
-                <input
-                  autoFocus
-                  value={customLibraryCreateDialog.cnName}
-                  onChange={(event) => setCustomLibraryCreateDialog((current) => current ? { ...current, cnName: event.target.value, error: "" } : current)}
-                />
-              </label>
-              <label>
-                <span>{customLibraryCreateDialog.kind === "categoryLibrary"
-                  ? "类别英文名称"
-                  : customLibraryCreateDialog.kind === "componentLibrary" && customLibraryCreateDialog.isDerivedComponentLibrary
-                    ? "派生类英文名称"
-                    : customLibraryCreateDialog.kind === "componentLibrary" ? "类英文名称" : "元件英文名称"}</span>
-                <input
-                  value={customLibraryCreateDialog.enName}
-                  onChange={(event) => setCustomLibraryCreateDialog((current) => current ? { ...current, enName: event.target.value, error: "" } : current)}
-                />
-              </label>
-              {customLibraryCreateDialog.kind === "componentLibrary" && (<>
-                <label>
-                  <span>是否派生类</span>
-                  <select disabled={Boolean(customLibraryCreateDialog.classCreationMode)} value={customLibraryCreateDialog.isDerivedComponentLibrary ? "1" : "0"} onChange={(event) => {
-                    const enabled = event.target.value === "1";
-                    const fallbackBase = customLibraryCreateDialogBaseComponentLibraryOptions[0] ?? "";
-                    setCustomLibraryCreateDialog((current) => current ? {
-                      ...current,
-                      isDerivedComponentLibrary: enabled,
-                      derivedFromComponentLibrary: enabled
-                        ? normalizeComponentLibraryName(current.derivedFromComponentLibrary || fallbackBase)
-                        : "",
-                      error: ""
-                    } : current);
-                  }}>
-                    <option value="0">否</option>
-                    <option value="1">是</option>
-                  </select>
-                </label>
-                {customLibraryCreateDialog.isDerivedComponentLibrary && (<label className="custom-library-create-base-class-field">
-                  <span>派生基类</span>
-                  <select disabled={Boolean(customLibraryCreateDialog.classCreationMode)} value={customLibraryCreateDialog.derivedFromComponentLibrary ?? ""} onChange={(event) => setCustomLibraryCreateDialog((current) => current ? {
-                    ...current,
-                    derivedFromComponentLibrary: event.target.value,
-                    error: ""
-                  } : current)} aria-label="派生基类选择">
-                    <option value="">请选择基类</option>
-                    {customLibraryCreateDialogBaseComponentLibraryOptions.map((section) => (<option key={section} value={section}>
-                      {componentLibraryDisplayParts(section, customComponentLibraries).title}
-                    </option>))}
-                  </select>
-                </label>)}
-                {!customLibraryCreateDialog.isDerivedComponentLibrary && (<>
-                  <label>
-                    <span>是否容器</span>
-                    <select value={customLibraryCreateDialog.isContainer ? "1" : "0"} onChange={(event) => setCustomLibraryCreateDialog((current) => current ? {
-                      ...current,
-                      isContainer: event.target.value === "1",
-                      error: ""
-                    } : current)}>
-                      <option value="0">否</option>
-                      <option value="1">是</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span>端子数量</span>
-                    <input type="number" min="0" max={MAX_CUSTOM_DEVICE_TERMINALS} step="1" value={customLibraryCreateDialog.terminalCount ?? 0} onChange={(event) => setCustomLibraryCreateDialog((current) => current ? {
-                      ...current,
-                      terminalCount: Math.max(0, Math.min(MAX_CUSTOM_DEVICE_TERMINALS, Math.round(Number(event.target.value) || 0))),
-                      error: ""
-                    } : current)} />
-                  </label>
-                  <div className="custom-library-create-terminal-fields">
-                  {Array.from({ length: Math.max(0, Number(customLibraryCreateDialog.terminalCount) || 0) }).map((_, index) => {
-                    const terminalType = customLibraryCreateDialog.terminalTypes?.[index] ?? "ac";
-                    return (<div className="custom-library-create-terminal-row" key={index}>
-                      <strong>{`端子 ${index + 1}`}</strong>
-                      <label>
-                        <span>能源属性</span>
-                        <select value={terminalType} onChange={(event) => setCustomLibraryCreateDialog((current) => {
-                          if (!current) return current;
-                          const terminalTypes = [...(current.terminalTypes ?? [])];
-                          const terminalAssociations = [...(current.terminalAssociations ?? [])];
-                          terminalTypes[index] = event.target.value;
-                          terminalAssociations[index] = defaultContainerAssociationForTerminalType(event.target.value);
-                          return { ...current, terminalTypes, terminalAssociations, error: "" };
-                        })}>
-                          {TERMINAL_TYPE_OPTIONS.map((option) => (<option key={option.value} value={option.value}>{option.label}</option>))}
-                        </select>
-                      </label>
-                      <label>
-                        <span>端子名称</span>
-                        <input value={customLibraryCreateDialog.terminalLabels?.[index] ?? ""} onChange={(event) => setCustomLibraryCreateDialog((current) => {
-                          if (!current) return current;
-                          const terminalLabels = [...(current.terminalLabels ?? [])];
-                          terminalLabels[index] = event.target.value;
-                          return { ...current, terminalLabels, error: "" };
-                        })} />
-                      </label>
-                      {customLibraryCreateDialog.isContainer && (<label>
-                        <span>关联设备</span>
-                        <select value={customLibraryCreateDialog.terminalAssociations?.[index] ?? defaultContainerAssociationForTerminalType(terminalType)} onChange={(event) => setCustomLibraryCreateDialog((current) => {
-                          if (!current) return current;
-                          const terminalAssociations = [...(current.terminalAssociations ?? [])];
-                          terminalAssociations[index] = event.target.value;
-                          return { ...current, terminalAssociations, error: "" };
-                        })}>
-                          {CONTAINER_TERMINAL_ASSOCIATION_OPTIONS[terminalType].map((option) => (<option key={option.value} value={option.value}>{option.label}</option>))}
-                        </select>
-                      </label>)}
-                    </div>);
-                  })}
-                  </div>
-                </>)}
-              </>)}
-              {customLibraryCreateDialog.kind === "component" && (<>
-                <label className="custom-library-create-class-field">
-                  <span>所属类</span>
-                  <select disabled={customLibraryCreateDialog.componentClassLocked} value={customLibraryCreateDialogSelectedClassName} onChange={(event) => {
-                    const metadata = resolveComponentLibraryClassMetadata(
-                      event.target.value,
-                      customLibraryCreateDialogCategoryLibraryName,
-                      customComponentLibraries,
-                      libraryTemplates
-                    );
-                    if (!metadata) return;
-                    setCustomLibraryCreateDialog((current) => current ? {
-                      ...current,
-                      componentClassName: metadata.className,
-                      componentLibrary: metadata.baseComponentLibrary,
-                      isDerivedComponentLibrary: metadata.isDerivedComponentLibrary,
-                      derivedFromComponentLibrary: metadata.isDerivedComponentLibrary ? metadata.baseComponentLibrary : "",
-                      derivedComponentLibrary: metadata.isDerivedComponentLibrary ? metadata.className : "",
-                      derivedComponentLibraryLabel: metadata.isDerivedComponentLibrary ? metadata.label : "",
-                      error: ""
-                    } : current);
-                  }}>
-                    {customLibraryCreateDialogClassOptions.map((option) => (<option key={option.className} value={option.className}>{option.label}</option>))}
-                  </select>
-                </label>
-                <label>
-                  <span>是否允许变形</span>
-                  <select value={customLibraryCreateDialog.allowResizeTransform ?? "0"} onChange={(event) => setCustomLibraryCreateDialog((current) => current ? {
-                    ...current,
-                    allowResizeTransform: event.target.value,
-                    error: ""
-                  } : current)}>
-                    <option value="0">否</option>
-                    <option value="1">是</option>
-                  </select>
-                </label>
-              </>)}
-            </div>
-            <div className="custom-library-create-actions">
-              <button type="button" onClick={() => setCustomLibraryCreateDialog(null)}>取消</button>
-              <button type="submit" className="primary">确定</button>
-            </div>
-          </form>
-        </div>)}
-      {customDeviceDialogOpen && (<div className="image-picker-backdrop" onPointerDown={requestCloseCustomDeviceDialog}>
-          <section ref={customDeviceDialogRef} className={`custom-device-dialog window-close-host${deviceLibraryDialogLayouts.custom ? " floating" : ""}`} style={deviceLibraryDialogStyle("custom")} onPointerDown={stopDeviceLibraryDialogEvent} onPointerUp={stopDeviceLibraryDialogEvent} onPointerCancel={stopDeviceLibraryDialogEvent} onLostPointerCapture={stopDeviceLibraryDialogEvent} onClick={(event) => event.stopPropagation()}>
-            <WindowCloseButton label="关闭元件定义编辑窗口" onClick={requestCloseCustomDeviceDialog} />
-            <div className="image-picker-title">
-              <div className="device-library-dialog-title" onPointerDown={(event) => startDeviceLibraryDialogDrag("custom", event)}>
-                <h2>元件定义</h2>
-              </div>
-              {customDeviceSaveToast && <div className="e-device-interface-save-toast"><span className="e-device-interface-save-toast-icon">✓</span>{customDeviceSaveToast}</div>}
-              {customDeviceDraft.error && (<div className="custom-device-title-error">
-                <span>{customDeviceDraft.error}</span>
-                <button type="button" className="custom-device-title-error-close" onClick={() => setCustomDeviceDraft((current: CustomDeviceDraft) => ({ ...current, error: "" }))} title="关闭提示"><X /></button>
-              </div>)}
-            </div>
-            {customDeviceSaveMessage && <p className="custom-device-save-status">{customDeviceSaveMessage}</p>}
-            <div className="custom-device-dialog-layout">
-              <CustomComponentManagerTree
-                libraries={displayedCustomComponentTreeLibraries}
-                filteredByComponentLibrary={filteredCustomComponentTreeByComponentLibrary}
-                customComponentLibraries={customComponentLibraries}
-                initialCollapsedLibraries={collapsedCustomComponentTreeLibraries}
-                initialCollapsedTypes={collapsedCustomComponentTreeTypes}
-                initialSelection={customComponentTreeSelection}
-                searchQuery={customComponentTreeSearchQuery}
-                onSelectCategoryLibrary={requestSelectCustomCategoryLibrary}
-                onSelectComponent={requestSelectCustomComponentTemplate}
-                onSelectComponentLibrary={requestSelectCustomComponentLibrary}
-                onCreateCategoryLibrary={createCustomCategoryLibrary}
-                onCreateComponentLibrary={createCustomComponentLibrary}
-                onCreateComponent={startCustomComponentCreate}
-                copiedCustomComponentTemplate={copiedCustomComponentTemplate}
-                onCopyComponent={copyCustomComponentTemplate}
-                onPasteComponent={pasteCustomComponentTemplate}
-                onExportComponentSvg={exportCustomComponentTemplateSvg}
-                onImportComponentSvg={openCustomComponentSvgImport}
-                onDeleteSelection={deleteSelectedCustomDeviceTreeItem}
-                onSearchChange={setCustomComponentTreeSearchQuery}
-                onCollapseChange={handleTreeCollapseChange}
-                onSelectionChange={setCustomComponentTreeSelection}
-                onOpenEDeviceDefinitionInterface={() => setEDeviceDefinitionInterfaceDialogOpen(true)}
-              />
-              <div className={`custom-device-editor-panel${showComponentLibraryTerminalTypes ? " has-component-library-terminal-types" : ""}`}>
-            <div className={`custom-device-form-grid${customDeviceDefinitionIconOnly ? " component-mode" : customComponentTreeSelection?.kind === "componentLibrary" ? " component-library-mode" : ""}`}>
-              {!customDeviceDefinitionIconOnly && (
-                <label className="custom-category-library-field">
-                  <span>类别库</span>
-                  <input value={customDeviceDraft.categoryLibraryName} disabled readOnly />
-                </label>
-              )}
-              <label className="custom-component-library-field">
-                <span>所属类</span>
-                <input value={customDeviceClassDisplay.title} disabled readOnly />
-              </label>
-              {customDeviceDefinitionIconOnly && (<>
-                <label className="custom-device-name-field">
-                  元件中文名称
-                  <BufferedTextInput value={customDeviceDraft.componentName} placeholder="例如 水电、核电、风电、光伏" onCommit={(value) => setCustomDeviceDraft((current) => ({ ...current, componentName: value, error: "" }))}/>
-                </label>
-                <label className="custom-device-english-name-field">
-                  元件英文名称
-                  <BufferedTextInput value={customDeviceDraft.componentKind ?? ""} placeholder="例如 two-port-heat-source" onCommit={(value) => setCustomDeviceDraft((current) => ({ ...current, componentKind: value, error: "" }))}/>
-                </label>
-                <label className="custom-device-resize-field">
-                  是否允许变形
-                  <select value={customDeviceDraft.allowResizeTransform} onChange={(event) => setCustomDeviceDraft((current) => ({ ...current, allowResizeTransform: event.target.value, error: "" }))}>
-                    <option value="0">否</option>
-                    <option value="1">是</option>
-                  </select>
-                </label>
-              </>)}
-              <label className="custom-device-derived-field">
-                派生关系
-                <input value={customDeviceDraft.isDerivedComponentLibrary ? `派生自 ${customDeviceDraft.derivedFromComponentLibrary}` : "非派生类"} disabled readOnly />
-              </label>
-              <label className="custom-device-terminal-count-field">
-                端子数量
-                <input value={customDeviceDraft.terminalCount} disabled readOnly />
-              </label>
-              {!customDeviceDefinitionIconOnly && (
-                <label className="custom-device-container-field">
-                  是否容器
-                  <input value={customDeviceDraft.isContainer ? "是" : "否"} disabled readOnly />
-                </label>
-              )}
-            </div>
-            {showComponentLibraryTerminalTypes && (
-                <div className="component-library-terminal-types" aria-label="类端子能源属性配置">
-                  <strong>端子能源属性</strong>
-                  <div>
-                    {Array.from({ length: customDeviceDraft.terminalCount }).map((_, index) => {
-                      const terminalType = customDeviceDraft.terminalTypes[index] ?? "ac";
-                      return (
-                        <label key={index}>
-                          <span>{`端子${index + 1}`}</span>
-                          <select
-                            aria-label={`端子${index + 1}能源属性`}
-                            value={terminalType}
-                            onChange={(event) => {
-                              const nextTerminalType = event.target.value;
-                              setCustomDeviceDraft((current) => {
-                                const terminalTypes = [...current.terminalTypes];
-                                terminalTypes[index] = nextTerminalType;
-                                return {
-                                  ...current,
-                                  terminalTypes,
-                                  terminalAssociations: normalizeContainerTerminalAssociations(
-                                    terminalTypes,
-                                    current.terminalAssociations,
-                                    current.terminalCount
-                                  ),
-                                  error: ""
-                                };
-                              });
-                            }}
-                          >
-                            {TERMINAL_TYPE_OPTIONS.map((option) => (
-                              <option key={option.value} value={option.value}>{option.label}</option>
-                            ))}
-                          </select>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            <div className="device-definition-tabs custom-device-tabs" role="tablist" aria-label="元件定义内容切换">
-              {(customDeviceDefinitionIconOnly || customComponentTreeSelection?.kind !== "componentLibrary") && (<button type="button" className={`${visibleCustomDeviceDialogView === "icon" ? "active" : ""}${customDeviceIconDirty ? " dirty" : ""}`} onClick={() => requestCustomDeviceDialogView("icon")} title={customDeviceIconDirty ? "图元定义有未保存修改" : undefined}>
-                图元定义{customDeviceIconDirty && <span className="custom-device-tab-dirty">已编辑</span>}
-              </button>)}
-              {!customDeviceDefinitionIconOnly && (<>
-                  <button type="button" className={`${visibleCustomDeviceDialogView === "parameters" ? "active" : ""}${customDeviceParametersDirty ? " dirty" : ""}`} onClick={() => requestCustomDeviceDialogView("parameters")} title={customDeviceParametersDirty ? "参数定义有未保存修改" : undefined}>
-                    参数定义{customDeviceParametersDirty && <span className="custom-device-tab-dirty">已编辑</span>}
-                  </button>
-                  <button type="button" className={`${visibleCustomDeviceDialogView === "measurements" ? "active" : ""}${customDeviceMeasurementsDirty ? " dirty" : ""}`} onClick={() => requestCustomDeviceDialogView("measurements")} title={customDeviceMeasurementsDirty ? "量测定义有未保存修改" : undefined}>
-                    量测定义{customDeviceMeasurementsDirty && <span className="custom-device-tab-dirty">已编辑</span>}
-                  </button>
-                </>)}
-              <span className="device-definition-tabs-spacer" />
-              <button type="button" className="device-definition-tab-action" onClick={revertCustomDeviceDraftCurrentTab} title="撤销当前分页的修改回到预设定义">
-                撤销修改
-              </button>
-              {customDeviceDefinitionMode === "edit" && !editingCustomDeviceKind && (<button type="button" className="device-definition-tab-action" onClick={revertCustomDeviceDraftAll} title="从源码原始定义还原到初始状态">
-                还原
-              </button>)}
-            </div>
-            <div className={`custom-device-tab-panel custom-device-tab-panel-${visibleCustomDeviceDialogView}${showCustomDeviceInheritanceNote ? " has-inheritance-note" : ""}`}>
-            {visibleCustomDeviceDialogView === "icon" ? (<>
-            {renderStateVisualPager(customDeviceDraft.stateDefinitions, customDeviceStatePageId, setCustomDeviceStatePageId, {
-                update: updateCustomDeviceStateDraftRow,
-                add: addCustomDeviceStateDraftRow,
-                remove: deleteCustomDeviceStateDraftRow,
-                drawingScope: "custom",
-                terminalGeometryTemplate: customDevicePreviewSourceTemplate
-            })}
-            {customDeviceDraft.terminalCount > 0 && <div className="custom-terminal-grid" style={{ "--custom-terminal-count": Math.max(1, customDeviceDraft.terminalCount) } as CSSProperties}>
-              {Array.from({ length: customDeviceDraft.terminalCount }).map((_, index) => {
-                    const terminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
-                    const terminalAssociations = normalizeContainerTerminalAssociations(terminalTypes, customDeviceDraft.terminalAssociations, customDeviceDraft.terminalCount);
-                    const associationSourceIndex = getContainerTerminalAssociationSourceIndex(terminalAssociations, index);
-                    const associationDependent = customDeviceDraft.isContainer && isContainerTerminalAssociationDependent(terminalAssociations, index);
-                    const terminalType = customDeviceDraft.terminalTypes[index] ?? "ac";
-                    const associationOptions = CONTAINER_TERMINAL_ASSOCIATION_OPTIONS[terminalType];
-                    const terminalAnchor = customDeviceTerminalAnchors[index] ?? { x: 0, y: 0 };
-                    return (<label key={index} className={associationDependent ? "custom-terminal-dependent" : ""}>
-                    <strong>{`端子${index + 1}`}</strong>
-                    <span>端子位置</span>
-                    <div className="custom-terminal-anchor-inputs">
-                      <span>X</span>
-                      <BufferedTextInput type="number" min="-0.5" max="0.5" step="0.01" value={formatCustomDeviceTerminalAnchorValue(terminalAnchor.x)} onCommit={(value) => updateCustomDeviceTerminalAnchor(index, { x: Number(value) })} aria-label={`端子${index + 1} X位置`}/>
-                      <span>Y</span>
-                      <BufferedTextInput type="number" min="-0.5" max="0.5" step="0.01" value={formatCustomDeviceTerminalAnchorValue(terminalAnchor.y)} onCommit={(value) => updateCustomDeviceTerminalAnchor(index, { y: Number(value) })} aria-label={`端子${index + 1} Y位置`}/>
-                    </div>
-                    {customDeviceDraft.isContainer && (<>
-                        <span>关联设备</span>
-                        <select value={associationDependent ? "" : terminalAssociations[index] || defaultContainerAssociationForTerminalType(terminalType)} disabled title="关联设备由所属类定义">
-                          {associationDependent && <option value="">随上一个端子关联同一个双端元件</option>}
-                          {associationOptions.map((option) => (<option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>))}
-                        </select>
-                        {associationDependent && <small>{`随端子${associationSourceIndex + 1}分配到同一个双端元件，关联属性为空。`}</small>}
-                      </>)}
-                  </label>);
-                })}
-            </div>}
-              </>) : visibleCustomDeviceDialogView === "parameters" ? (<>
-                  {showCustomDeviceInheritanceNote && (
-                    <p className="device-definition-inheritance-note">
-                      已继承基类 {customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary} 的
-                      {` ${__appScope.customDraftInheritedParameterDefinitions?.length ?? 0} `}个参数和
-                      {` ${__appScope.customDraftInheritedMeasurementDefinitions?.length ?? 0} `}个量测；下表只定义派生类新增字段，无需重复定义基类字段。
-                    </p>
-                  )}
-            <div className="definition-table-toolbar" aria-label="参数定义表格操作">
-              <button type="button" onClick={addCustomParameterRow}>新增参数</button>
-              <button type="button" onClick={copySelectedCustomParameterRows} disabled={selectedCustomParameterRowIds.length === 0}>复制</button>
-              <button type="button" onClick={() => moveSelectedCustomParameterRows(-1)} disabled={selectedCustomEditableParameterCount === 0}>上移</button>
-              <button type="button" onClick={() => moveSelectedCustomParameterRows(1)} disabled={selectedCustomEditableParameterCount === 0}>下移</button>
-              <button type="button" onClick={deleteSelectedCustomParameterRows} disabled={selectedCustomEditableParameterCount === 0}>删除</button>
-              <span>{selectedCustomParameterRowIds.length > 0 ? `已选 ${selectedCustomParameterRowIds.length} 行` : "点击行选择，Ctrl/Shift 可多选"}</span>
-            </div>
-            <div className="custom-param-table-wrap">
-              <table className="custom-param-table">
-                <thead>
-                  <tr>
-                    <th className="definition-table-sequence">序号</th>
-                    <th>中文名称</th>
-                    <th>英文名称</th>
-                     <th>取值类型</th>
-                     <th>默认值</th>
-                     <th>枚举项</th>
-                  </tr>
-                </thead>
-                <tbody>
-                    {displayedMergedCustomDefaultParams.map((row, rowIndex) => {
-                        const defaultRow: CustomParamDraft = { ...row, id: `default-${row.enName}` };
-                        const defaultRowDisabled = Boolean(row.readonly);
-                        return (<tr
-                            key={`default-${row.enName}`}
-                            className={`definition-table-row${selectedCustomParameterRowIdSet.has(defaultRow.id) ? " selected" : ""}${defaultRowDisabled ? " readonly-row" : ""}`}
-                            aria-selected={selectedCustomParameterRowIdSet.has(defaultRow.id)}
-                            onClick={(event) => selectCustomParameterRow(defaultRow.id, event)}
-                          >
-                            <td className="definition-table-sequence">{rowIndex + 1}</td>
-                            <td>{row.cnName}</td>
-                            <td>{row.enName}</td>
-                             <td>{parameterValueTypeLabelForDefinitionRow(row)}</td>
-                             <td>{renderTypicalValueEditor(defaultRow, updateCustomDefaultParamRow, defaultRowDisabled, customDeviceDraft.componentLibrary)}</td>
-                             <td>{renderEnumValuesEditor(defaultRow, updateCustomDefaultParamRow, defaultRowDisabled)}</td>
-                           </tr>);
-                    })}
-                    {displayedVisibleCustomParams.map((row, index) => (<tr
-                      key={row.id}
-                      className={`definition-table-row${selectedCustomParameterRowIdSet.has(row.id) ? " selected" : ""}`}
-                      aria-selected={selectedCustomParameterRowIdSet.has(row.id)}
-                      onClick={(event) => selectCustomParameterRow(row.id, event)}
-                    >
-                      <td className="definition-table-sequence">{displayedMergedCustomDefaultParams.length + index + 1}</td>
-                      <td>
-                        <BufferedTextInput value={row.cnName} onCommit={(value) => setCustomDeviceDraft((current) => ({
-                    ...current,
-                    params: current.params.map((item) => (item.id === row.id ? { ...item, cnName: value } : item)),
-                    error: ""
-                }))}/>
-                      </td>
-                      <td>
-                        <BufferedTextInput value={row.enName} onCommit={(value) => setCustomDeviceDraft((current) => ({
-                    ...current,
-                    params: current.params.map((item) => (item.id === row.id ? { ...item, enName: value } : item)),
-                    error: ""
-                }))}/>
-                      </td>
-                      <td>
-                        <select value={row.valueType} onChange={(event) => setCustomDeviceDraft((current) => ({
-                    ...current,
-                    params: current.params.map((item) => item.id === row.id
-                        ? normalizeDefinitionRowEnumFields({ ...item, valueType: event.target.value as DeviceParameterValueType })
-                        : item),
-                    error: ""
-                }))}>
-                          {PARAM_VALUE_TYPE_OPTIONS.map((option) => (<option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>))}
-                        </select>
-                      </td>
-                      <td>
-                        {renderTypicalValueEditor(
-                          row,
-                          (rowId, patch) => setCustomDeviceDraft((current) => ({
-                            ...current,
-                            params: current.params.map((item) => (item.id === rowId ? { ...item, ...patch } : item)),
-                            error: ""
-                          })),
-                          false,
-                          customDeviceDraft.componentLibrary
-                        )}
-                      </td>
-                      <td>
-                        {renderEnumValuesEditor(row, (rowId, patch) => setCustomDeviceDraft((current) => ({
-                          ...current,
-                          params: current.params.map((item) => (item.id === rowId ? { ...item, ...patch } : item)),
-                          error: ""
-                        })))}
-                      </td>
-                    </tr>))}
-                </tbody>
-              </table>
-            </div>
-              </>) : (<>
-                {showCustomDeviceInheritanceNote && (
-                  <p className="device-definition-inheritance-note">
-                    基类 {customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary} 的量测已自动继承；这里只维护派生类新增量测。
-                  </p>
-                )}
-                {renderDeviceDefinitionMeasurementPanel(customDeviceMeasurementTarget)}
-              </>)}
-            </div>
-              </div>
-            </div>
-            <footer className="custom-device-dialog-footer">
-              <span className={`custom-device-dirty-summary${customDeviceHasUnsavedChanges ? " dirty" : ""}`} aria-live="polite">
-                {customDeviceHasUnsavedChanges ? "有未保存修改" : "当前无未保存修改"}
-              </span>
-              <button type="button" onClick={requestCloseCustomDeviceDialog}>取消</button>
-              <button
-                type="button"
-                className="primary"
-                onClick={() => saveCustomDeviceDefinitionDialog({ closeAfterSave: false })}
-                disabled={customDeviceDefinitionMode === "edit" && customComponentTreeSelection?.kind === "categoryLibrary"}
-                title={customDeviceDefinitionMode === "edit" && customComponentTreeSelection?.kind === "categoryLibrary" ? "请先选择一个类或元件" : undefined}
-              >
-                {customDeviceDefinitionMode === "edit"
-                  ? customComponentTreeSelection?.kind === "componentLibrary" ? "保存类定义" : "保存元件定义"
-                  : "保存新建元件"}
-              </button>
-            </footer>
-            <div className="device-library-dialog-resize" role="separator" aria-orientation="horizontal" aria-label="调整新建元件窗口大小" title="拖拽调整窗口大小" onPointerDown={(event) => startDeviceLibraryDialogResize("custom", event)}/>
-          </section>
-        </div>)}
-      {customDeviceUnsavedPrompt && (<div className="image-picker-backdrop" onPointerDown={() => resolveCustomDeviceUnsavedPrompt("cancel")}>
-          <section className="unsaved-change-dialog custom-device-unsaved-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="custom-device-unsaved-title">
-            <WindowCloseButton label="关闭元件定义未保存提示" onClick={() => resolveCustomDeviceUnsavedPrompt("cancel")} />
-            <div className="image-picker-title">
-              <div>
-                <h2 id="custom-device-unsaved-title">元件定义尚未保存</h2>
-                <p>
-                  当前{customDeviceUnsavedPrompt.section === "icon" ? "图元定义" : customDeviceUnsavedPrompt.section === "parameters" ? "参数定义" : customDeviceUnsavedPrompt.section === "measurements" ? "量测定义" : "元件定义"}存在未保存修改。
-                  {customDeviceUnsavedPrompt.actionLabel}之前，请选择如何处理这些修改。
-                </p>
-              </div>
-            </div>
-            <div className="unsaved-change-actions">
-              <button type="button" onClick={() => resolveCustomDeviceUnsavedPrompt("discard")}>不保存继续</button>
-              <button type="button" onClick={() => resolveCustomDeviceUnsavedPrompt("save")}>保存后继续</button>
-              <button type="button" onClick={() => resolveCustomDeviceUnsavedPrompt("cancel")}>继续编辑</button>
-            </div>
-          </section>
-        </div>)}
-      {eDeviceDefinitionInterfaceDialogOpen && (<div className="image-picker-backdrop" onPointerDown={requestCloseEDeviceInterfaceDefinition}>
-          <section className="e-device-interface-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
-            <WindowCloseButton label="关闭E文件接口定义" onClick={requestCloseEDeviceInterfaceDefinition} />
-            <div className="image-picker-title">
-              <div>
-                <h2>E文件接口定义</h2>
-              </div>
-              {eDeviceInterfaceSaveMessage && <div className="e-device-interface-save-toast"><span className="e-device-interface-save-toast-icon">✓</span>{eDeviceInterfaceSaveMessage}</div>}
-            </div>
-            <div className="e-device-interface-actions">
-              {eDeviceInterfaceLoadedTemplateName && (
-                <div className="e-device-interface-template-info">
-                  <span className="e-device-interface-template-name">{eDeviceInterfaceLoadedTemplateName}</span>
-                  {eDeviceInterfaceReadonlyMode && (
-                    <button type="button" className="e-device-interface-convert-button" onClick={() => {
-                      setEDeviceInterfaceReadonlyMode(false);
-                      setEDeviceInterfaceLoadedTemplateName("自定义");
-                      setTemplateImportResult(null);
-                      try {
-                        localStorage.setItem("eDeviceInterfaceReadonlyMode", "false");
-                        localStorage.setItem("eDeviceInterfaceLoadedTemplateName", "自定义");
-                        localStorage.removeItem("eDeviceTemplateImportResult");
-                      } catch { /* ignore */ }
-                    }}>
-                      转为自定义配置
-                    </button>
-                  )}
-                  {templateImportResult && (
-                    <button type="button" className="e-device-interface-convert-button" onClick={() => setShowImportResultDialog(true)}>
-                      查看导入结果
-                    </button>
-                  )}
-                </div>
-              )}
-              <button type="button" onClick={() => setEFileEditorDialogOpen(true)}>
-                <Eye size={14} aria-hidden="true" />
-                <span>查看/编辑E文件</span>
-              </button>
-              <button type="button" onClick={requestExportEDeviceInterfaceDefinitionFile}>
-                <Download size={14} aria-hidden="true" />
-                <span>保存成文件</span>
-              </button>
-              <label className="e-device-interface-file-button">
-                <FileInput size={14} aria-hidden="true" />
-                <span>从文件加载</span>
-                <input type="file" accept=".e,text/plain" hidden onChange={__appScope.importEDeviceDefinitionFile} />
-              </label>
-              <div className="e-device-template-dropdown" onMouseEnter={() => setEDeviceTemplateDropdownOpen(true)} onMouseLeave={() => setEDeviceTemplateDropdownOpen(false)}>
-                <button type="button" onClick={() => setEDeviceTemplateDropdownOpen(!eDeviceTemplateDropdownOpen)}>
-                  <ChevronDown size={14} aria-hidden="true" />
-                  <span>加载预定义模板</span>
-                </button>
-                {eDeviceTemplateDropdownOpen && (
-                  <div className="e-device-template-dropdown-menu">
-                    <button type="button" onClick={async () => {
-                      setEDeviceTemplateDropdownOpen(false);
-                      await loadPredefinedEDeviceTemplate("sgcc.e");
-                    }}>国网E格式</button>
-                    <button type="button" onClick={async () => {
-                      setEDeviceTemplateDropdownOpen(false);
-                      await loadPredefinedEDeviceTemplate("ems_rtdb.e");
-                    }}>主网实时库</button>
-                    <button type="button" onClick={async () => {
-                      setEDeviceTemplateDropdownOpen(false);
-                      await loadPredefinedEDeviceTemplate("dms_rtdb.e");
-                    }}>配网实时库</button>
-                    <button type="button" onClick={async () => {
-                      setEDeviceTemplateDropdownOpen(false);
-                      await loadPredefinedEDeviceTemplate("taiqu_rtdb.e");
-                    }}>台区实时库</button>
-                  </div>
-                )}
-              </div>
-              <button type="button" onClick={() => void restoreEDeviceInterfaceOriginalDefinition()}>
-                <RotateCcw size={14} aria-hidden="true" />
-                <span>原始定义</span>
-              </button>
-            </div>
-            <div className="e-device-interface-layout">
-              <aside className="e-device-interface-class-list" aria-label="设备类树" role="tree">
-                {eDeviceInterfaceDefinitionTree.map((category) => {
-                  const categoryCollapsed = Boolean(collapsedEDeviceInterfaceTreeNodes[category.key]);
-                  return (
-                    <div className="e-device-interface-tree-category" key={category.key}>
-                      <button
-                        type="button"
-                        className={`e-device-interface-tree-category-toggle${eDeviceInterfaceSelectedGroupKey === category.key ? " active" : ""}`}
-                        role="treeitem"
-                        aria-level={1}
-                        aria-expanded={!categoryCollapsed}
-                        onClick={() => {
-                          toggleEDeviceInterfaceTreeNode(category.key);
-                          setEDeviceInterfaceSelectedGroupKey(category.key);
-                        }}
-                      >
-                        {categoryCollapsed ? <ChevronRight size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
-                        <FolderOpen size={14} aria-hidden="true" />
-                        <span>{category.label}</span>
-                        <small>{category.classCount} 类</small>
-                      </button>
-                      {!categoryCollapsed ? (
-                        <div className="e-device-interface-tree-category-children" role="group">
-                          {category.items.map((item) => {
-                            const classRow = item.row;
-                            const branchKey = `class:${classRow.componentLibrary}`;
-                            const branchCollapsed = Boolean(collapsedEDeviceInterfaceTreeNodes[branchKey]);
-                            const active = eDeviceInterfaceSelectedGroupKey === branchKey || (eDeviceInterfaceSelectedGroupKey !== category.key && classRow.componentLibrary === selectedEDeviceInterfaceRow?.componentLibrary);
-                            return (
-                              <div className="e-device-interface-tree-branch" key={classRow.componentLibrary}>
-                                <div className="e-device-interface-tree-node-row">
-                                  {item.children.length > 0 ? (
-                                    <button
-                                      type="button"
-                                      className="e-device-interface-tree-toggle"
-                                      aria-label={`${branchCollapsed ? "展开" : "收起"}${classRow.label || classRow.componentLibrary}`}
-                                      aria-expanded={!branchCollapsed}
-                                      onClick={() => toggleEDeviceInterfaceTreeNode(branchKey)}
-                                    >
-                                      {branchCollapsed ? <ChevronRight size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}
-                                    </button>
-                                  ) : (
-                                    <span className="e-device-interface-tree-toggle-spacer" aria-hidden="true" />
-                                  )}
-                                  <button
-                                    type="button"
-                                    className={`e-device-interface-class-option${active ? " active" : ""}`}
-                                    role="treeitem"
-                                    aria-level={2}
-                                    aria-selected={active}
-                                    aria-expanded={item.children.length > 0 ? !branchCollapsed : undefined}
-                                    onClick={() => {
-                                      if (item.children.length > 0) {
-                                        setEDeviceInterfaceSelectedGroupKey(branchKey);
-                                      } else {
-                                        setEDeviceInterfaceSelectedGroupKey(null);
-                                        requestSelectEDeviceInterfaceComponentLibrary(classRow.componentLibrary);
-                                      }
-                                    }}
-                                  >
-                                    <span className="e-device-interface-class-label">{classRow.label || classRow.componentLibrary}</span>
-                                    <span className="e-device-interface-class-meta">
-                                      <code>{classRow.componentLibrary}</code>
-                                      <small>{classRow.fields.length} 参数</small>
-                                    </span>
-                                  </button>
-                                </div>
-                                {item.children.length > 0 && !branchCollapsed ? (
-                                  <div className="e-device-interface-tree-children" role="group">
-                                    {item.children.map((child) => {
-                                      const childRow = child.row;
-                                      const childActive = eDeviceInterfaceSelectedGroupKey !== branchKey && eDeviceInterfaceSelectedGroupKey !== category.key && childRow.componentLibrary === selectedEDeviceInterfaceRow?.componentLibrary;
-                                      return (
-                                        <button
-                                          type="button"
-                                          key={childRow.componentLibrary}
-                                          className={`e-device-interface-class-option e-device-interface-tree-derived${childActive ? " active" : ""}`}
-                                          role="treeitem"
-                                          aria-level={3}
-                                          aria-selected={childActive}
-                                          onClick={() => {
-                                            setEDeviceInterfaceSelectedGroupKey(null);
-                                            requestSelectEDeviceInterfaceComponentLibrary(childRow.componentLibrary);
-                                          }}
-                                        >
-                                          <span className="e-device-interface-class-label">{child.templateLabel || childRow.label || childRow.componentLibrary}</span>
-                                          <span className="e-device-interface-class-meta">
-                                            <code>{childRow.componentLibrary}</code>
-                                            <small>{childRow.fields.length} 参数</small>
-                                          </span>
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                ) : null}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })}
-                {eDeviceInterfaceDefinitionRows.length === 0 ? <p className="e-device-interface-empty">暂无可配置设备类</p> : null}
-              </aside>
-              <div className="e-device-interface-detail">
-                {eDeviceInterfaceGroupInfo ? (<>
-                  {(() => {
-                    const groupRows = eDeviceInterfaceGroupInfo.rows;
-                    const isExportOn = (r: any) => {
-                      const lib = String(r.componentLibrary ?? "").trim();
-                      return Boolean(eDeviceDefinitionClassExportEnabled[lib] ?? r.exportEnabled);
-                    };
-                    const allOn = groupRows.length > 0 && groupRows.every(isExportOn);
-                    const someOn = !allOn && groupRows.some(isExportOn);
-                    return (<>
-                  <div className="e-device-interface-group-header">
-                    <span>子设备类</span>
-                    <strong>{eDeviceInterfaceGroupInfo.label}</strong>
-                    <small>{groupRows.length} 项</small>
-                  </div>
-                  <div className="e-device-interface-table-wrap">
-                    <table className="custom-param-table e-device-interface-table e-device-interface-group-table">
-                      <thead>
-                        <tr>
-                          <th>设备类</th>
-                          <th>标识</th>
-                          <th className="e-device-interface-group-export-all">
-                            <span>是否导出</span>
-                            <input
-                              className="custom-param-export-checkbox"
-                              type="checkbox"
-                              checked={allOn}
-                              disabled={eDeviceInterfaceReadonlyMode}
-                              ref={(el) => { if (el) el.indeterminate = someOn; }}
-                              aria-label="全部选中或取消"
-                              onChange={(event) => {
-                                const checked = event.target.checked;
-                                setEDeviceDefinitionClassExportEnabled((current) => {
-                                  const next = { ...current };
-                                  for (const r of groupRows) {
-                                    const lib = String(r.componentLibrary ?? "").trim();
-                                    if (lib) next[lib] = checked;
-                                  }
-                                  return next;
-                                });
-                              }}
-                            />
-                          </th>
-                          <th>导出名称</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {eDeviceInterfaceGroupInfo.rows.map((groupRow: any) => {
-                          const lib = String(groupRow.componentLibrary ?? "").trim();
-                          const rowExportEnabled = Boolean(eDeviceDefinitionClassExportEnabled[lib] ?? groupRow.exportEnabled);
-                          const rowExportName = eDeviceDefinitionLabels[lib] ?? lib;
-                          return (
-                            <tr key={lib}>
-                              <td className="e-device-interface-param-name">{groupRow.label || lib}</td>
-                              <td><code>{lib}</code></td>
-                              <td className="custom-param-export-toggle">
-                                <input
-                                  className="custom-param-export-checkbox"
-                                  type="checkbox"
-                                  checked={rowExportEnabled}
-                                  disabled={eDeviceInterfaceReadonlyMode}
-                                  aria-label={`${lib}是否导出`}
-                                  onChange={(event) => setEDeviceDefinitionClassExportEnabled((current) => ({
-                                    ...current,
-                                    [lib]: event.target.checked
-                                  }))}
-                                />
-                              </td>
-                              <td>
-                                <BufferedTextInput
-                                  value={rowExportName}
-                                  disabled={eDeviceInterfaceReadonlyMode}
-                                  onCommit={(value) => {
-                                    const trimmed = value.trim();
-                                    setEDeviceDefinitionLabels((prev) => {
-                                      const next = { ...prev };
-                                      if (!trimmed || trimmed === lib) {
-                                        delete next[lib];
-                                      } else {
-                                        next[lib] = trimmed;
-                                      }
-                                      return next;
-                                    });
-                                  }}
-                                />
-                              </td>
-                            </tr>
-                          );
-                        })}
-                        {eDeviceInterfaceGroupInfo.rows.length === 0 ? (<tr>
-                          <td colSpan={4}>该分组暂无子设备类</td>
-                        </tr>) : null}
-                      </tbody>
-                    </table>
-                  </div>
-                  </>);})()}
-                </>) : selectedEDeviceInterfaceRow ? (<>
-                  <div className="e-device-interface-class-form">
-                    <div className="e-device-interface-selected-class">
-                      <span>当前设备类</span>
-                      <strong>{selectedEDeviceInterfaceRow.label || selectedEDeviceInterfaceRow.componentLibrary}</strong>
-                      <code>{selectedEDeviceInterfaceRow.componentLibrary}</code>
-                    </div>
-                    <label className="e-device-interface-export-switch">
-                      <input
-                        className="custom-param-export-checkbox"
-                        type="checkbox"
-                        checked={selectedEDeviceInterfaceRow.exportEnabled}
-                        disabled={eDeviceInterfaceReadonlyMode}
-                        aria-label={`${selectedEDeviceInterfaceRow.componentLibrary}是否导出`}
-                        onChange={(event) => setEDeviceDefinitionClassExportEnabled((current) => ({
-                          ...current,
-                          [selectedEDeviceInterfaceRow.componentLibrary]: event.target.checked
-                        }))}
-                      />
-                      <span>是否导出</span>
-                    </label>
-                    <label className="e-device-interface-export-name">
-                      <span>导出名称</span>
-                      <BufferedTextInput
-                        value={selectedEDeviceInterfaceRow.exportName ?? selectedEDeviceInterfaceRow.componentLibrary}
-                        disabled={eDeviceInterfaceReadonlyMode}
-                        onCommit={(value) => {
-                          const trimmed = value.trim();
-                          setEDeviceDefinitionLabels((prev) => {
-                            const next = { ...prev };
-                            if (!trimmed || trimmed === selectedEDeviceInterfaceRow.componentLibrary) {
-                              delete next[selectedEDeviceInterfaceRow.componentLibrary];
-                            } else {
-                              next[selectedEDeviceInterfaceRow.componentLibrary] = trimmed;
-                            }
-                            return next;
-                          });
-                        }}
-                      />
-                    </label>
-                  </div>
-                  <div className="e-device-interface-table-wrap">
-                    <table className="custom-param-table e-device-interface-table">
-                      <thead>
-                        <tr>
-                          <th>顺序</th>
-                          <th>参数</th>
-                          <th>英文名称</th>
-                          <th>是否导出</th>
-                          <th>导出名称</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {selectedEDeviceInterfaceFields.map((field, fieldIndex) => (<tr key={`${selectedEDeviceInterfaceRow.componentLibrary}:${field.sourceName}`} className={selectedEDeviceInterfaceRow.exportEnabled ? "" : "disabled"}>
-                          <td className="e-device-interface-order-cell">
-                            <span className="e-device-interface-order-index" aria-label={`当前顺序${fieldIndex + 1}`}>{fieldIndex + 1}</span>
-                            <span className="e-device-interface-order-actions">
-                              <button
-                                type="button"
-                                className="e-device-interface-order-button"
-                                aria-label={`上移${field.cnName || field.sourceName}`}
-                                title="上移"
-                                disabled={eDeviceInterfaceReadonlyMode || fieldIndex === 0}
-                                onClick={() => moveSelectedEDeviceInterfaceField(field.sourceName, -1)}
-                              >
-                                <ArrowUp size={13} aria-hidden="true" />
-                              </button>
-                              <button
-                                type="button"
-                                className="e-device-interface-order-button"
-                                aria-label={`下移${field.cnName || field.sourceName}`}
-                                title="下移"
-                                disabled={eDeviceInterfaceReadonlyMode || fieldIndex === selectedEDeviceInterfaceFields.length - 1}
-                                onClick={() => moveSelectedEDeviceInterfaceField(field.sourceName, 1)}
-                              >
-                                <ArrowDown size={13} aria-hidden="true" />
-                              </button>
-                            </span>
-                          </td>
-                          <td className="e-device-interface-param-name">{field.cnName || field.sourceName}</td>
-                          <td><code>{field.sourceName}</code></td>
-                          <td className="custom-param-export-toggle">
-                            <input
-                              className="custom-param-export-checkbox"
-                              type="checkbox"
-                              checked={Boolean(field.exportEnabled)}
-                              disabled={eDeviceInterfaceReadonlyMode || !selectedEDeviceInterfaceRow.exportEnabled || field.readonly}
-                              aria-label={`${field.cnName || field.sourceName}是否导出`}
-                              onChange={(event) => updateDefinitionComponentLibraryCommonParamExport(selectedEDeviceInterfaceRow.componentLibrary, field.sourceName, { exportEnabled: event.target.checked, exportName: field.exportName?.trim() || field.sourceName })}
-                            />
-                          </td>
-                          <td>
-                            <BufferedTextInput
-                              value={field.exportName ?? ""}
-                              disabled={eDeviceInterfaceReadonlyMode || !selectedEDeviceInterfaceRow.exportEnabled || !field.exportEnabled || field.readonly}
-                              onCommit={(value) => updateDefinitionComponentLibraryCommonParamExport(selectedEDeviceInterfaceRow.componentLibrary, field.sourceName, { exportName: value })}
-                            />
-                          </td>
-                        </tr>))}
-                        {selectedEDeviceInterfaceRow.fields.length === 0 ? (<tr>
-                          <td colSpan={5}>该设备类暂无可配置参数</td>
-                        </tr>) : null}
-                      </tbody>
-                    </table>
-                  </div>
-                </>) : (
-                  <div className="e-device-interface-empty e-device-interface-empty-detail">暂无可配置设备类</div>
-                )}
-              </div>
-            </div>
-            <footer className="e-device-interface-footer">
-              <span className={eDeviceInterfaceHasUnsavedChanges ? "dirty" : ""} aria-live="polite">
-                {eDeviceInterfaceHasUnsavedChanges ? "有未保存修改" : "当前无未保存修改"}
-              </span>
-              <div className="e-device-interface-footer-actions">
-                <button type="button" onClick={requestCloseEDeviceInterfaceDefinition}>退出</button>
-                <button
-                  type="button"
-                  className="primary"
-                  onClick={() => requestSaveEDeviceInterfaceDefinition()}
-                >
-                  <Save size={14} aria-hidden="true" />
-                  保存
-                </button>
-              </div>
-            </footer>
-          </section>
-        </div>)}
-      {eFileEditorDialogOpen && (
-        <EFileEditor
-          open={eFileEditorDialogOpen}
-          onClose={() => setEFileEditorDialogOpen(false)}
-          records={eFileEditorRecords}
-          fieldCnNames={eFileEditorFieldCnNames}
-          tableIds={eDeviceDefinitionTableIds}
-          isRealtimeDbTemplate={/实时库$|_rtdb\.e$/i.test(eDeviceInterfaceLoadedTemplateName ?? "")}
-          onSave={(editedRecords) => {
-            const currentNodes = __appScope.nodes ?? [];
-            const setNodes = __appScope.setNodes;
-            const pushUndoSnapshot = __appScope.pushUndoSnapshot;
-            if (!setNodes) return;
-            // 反向映射：exportName(模板列名) -> sourceName(设备参数名)。
-            // 模板模式下展示/编辑的是模板规格的 E 文件列名，保存时需写回设备参数名，
-            // 否则编辑结果在重新导出时无法被读取，破坏「导出与内网完全一致」。
-            const sourceNameByExport = new Map<string, string>(); // key = `${section}\0${exportName}`
-            for (const definition of eFileEditorExportOptions.interfaceDefinitions ?? []) {
-              const section = String(definition.componentLibrary ?? "").trim();
-              if (!section) continue;
-              for (const field of definition.fields ?? []) {
-                if (field.exportEnabled === false) continue;
-                const exportName = String(field.exportName ?? field.sourceName ?? "").trim();
-                const sourceName = String(field.sourceName ?? exportName).trim();
-                if (exportName && sourceName) sourceNameByExport.set(`${section}\0${exportName}`, sourceName);
-              }
-            }
-            // 运行时生成表（ACNode/ACRealBs 等）的字段定义仅存于 eDeviceDefinitionTemplateFields
-            for (const [componentLibrary, templateFields] of Object.entries(eDeviceDefinitionTemplateFields ?? {})) {
-              if (!componentLibrary || !Array.isArray(templateFields)) continue;
-              for (const field of templateFields) {
-                const exportName = String(field.exportName ?? "").trim();
-                const sourceName = String(field.sourceName ?? exportName).trim();
-                if (exportName && sourceName) sourceNameByExport.set(`${componentLibrary}\0${exportName}`, sourceName);
-              }
-            }
-            // 构建 id -> params 映射（跳过拓扑生成的记录）
-            const editedMap = new Map<string, Record<string, string>>();
-            for (const record of editedRecords) {
-              if (!record.id || record.id.includes(":derived:") || record.id.includes(":winding:") || record.id.includes("-")) {
-                // 只处理真实节点 id（格式如 "node-xxx"）
-                if (!record.id.startsWith("node-")) continue;
-              }
-              const section = record.section;
-              const params: Record<string, string> = {};
-              for (const [exportName, value] of Object.entries(record.params)) {
-                if (exportName === "name") {
-                  params.name = value;
-                  continue;
-                }
-                const sourceName = sourceNameByExport.get(`${section}\0${exportName}`) ?? exportName;
-                params[sourceName] = value;
-              }
-              editedMap.set(record.id, params);
-            }
-            if (editedMap.size === 0) return;
-            let changed = false;
-            const nextNodes = currentNodes.map((node: any) => {
-              const edited = editedMap.get(node.id);
-              if (!edited) return node;
-              changed = true;
-              const newName = edited.name ?? node.name;
-              const newParams = { ...node.params };
-              for (const [key, val] of Object.entries(edited)) {
-                if (key === "name") continue;
-                newParams[key] = val;
-              }
-              return { ...node, name: newName, params: newParams };
-            });
-            if (!changed) return;
-            if (pushUndoSnapshot) pushUndoSnapshot();
-            setNodes(nextNodes);
-          }}
+      </Suspense>)}
+      {projectDialogLayerActive && (<Suspense fallback={null}>
+        <LazyAppProjectDialogs
+          scope={__appScope}
+          section="project-dialogs"
+          inputs={overlayInputsFor(projectDialogLayerActive)}
         />
-      )}
-      {eDeviceInterfaceExitPromptOpen && (<div className="image-picker-backdrop" onPointerDown={() => setEDeviceInterfaceExitPromptOpen(false)}>
-          <section className="unsaved-change-dialog e-device-interface-unsaved-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="e-device-interface-unsaved-title">
-            <WindowCloseButton label="关闭E文件接口未保存提示" onClick={() => setEDeviceInterfaceExitPromptOpen(false)} />
-            <div className="image-picker-title">
-              <div>
-                <h2 id="e-device-interface-unsaved-title">E文件接口定义尚未保存</h2>
-                <p>当前接口定义存在未保存修改。退出之前，请选择如何处理这些修改。</p>
-              </div>
-            </div>
-            <div className="unsaved-change-actions">
-              <button type="button" onClick={discardEDeviceInterfaceDefinitionChanges}>不保存直接退出</button>
-              <button type="button" onClick={() => requestSaveEDeviceInterfaceDefinition({ closeAfterSave: true })}>保存后退出</button>
-              <button type="button" onClick={() => setEDeviceInterfaceExitPromptOpen(false)}>继续编辑</button>
-            </div>
-          </section>
-        </div>)}
-      {eDeviceInterfaceClassSwitchTarget && (<div className="image-picker-backdrop" onPointerDown={() => setEDeviceInterfaceClassSwitchTarget("")}>
-          <section className="unsaved-change-dialog e-device-interface-unsaved-dialog e-device-interface-class-switch-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="e-device-interface-class-switch-title">
-            <WindowCloseButton label="关闭设备类切换提示" onClick={() => setEDeviceInterfaceClassSwitchTarget("")} />
-            <div className="image-picker-title">
-              <div>
-                <h2 id="e-device-interface-class-switch-title">当前设备类定义尚未保存</h2>
-                <p>
-                  "{selectedEDeviceInterfaceRow?.label || selectedEDeviceInterfaceRow?.componentLibrary}"存在未保存修改。
-                  切换到"{eDeviceInterfaceClassSwitchTargetRow?.label || eDeviceInterfaceClassSwitchTarget}"之前，请选择如何处理这些修改。
-                </p>
-              </div>
-            </div>
-            <div className="unsaved-change-actions">
-              <button type="button" onClick={discardEDeviceInterfaceClassAndSwitch}>不保存并切换</button>
-              <button type="button" onClick={() => runAfterEDeviceInterfaceInputCommit(() => eDeviceInterfaceSaveAndSwitchRef.current())}>保存并切换</button>
-              <button type="button" onClick={() => setEDeviceInterfaceClassSwitchTarget("")}>继续编辑</button>
-            </div>
-          </section>
-        </div>)}
-      {showImportResultDialog && templateImportResult && (<div className="image-picker-backdrop" onPointerDown={() => setShowImportResultDialog(false)}>
-          <section className="template-import-result-dialog window-close-host" onPointerDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
-            <WindowCloseButton label="关闭预定义模板导入结果" onClick={() => setShowImportResultDialog(false)} />
-            <div className="image-picker-title">
-              <div>
-                <h2>预定义模板导入结果</h2>
-                <p>匹配：{templateImportResult.matched.length} 个，未匹配：{templateImportResult.skipped.length} 个，无需匹配：{(templateImportResult.runtimeGenerated ?? []).length} 个</p>
-              </div>
-            </div>
-            <div className="template-import-result-tabs">
-              <button type="button" className={`template-import-result-tab${importResultActiveTab === "matched" ? " active" : ""}`} onClick={() => setImportResultActiveTab("matched")}>
-                已匹配 ({templateImportResult.matched.length})
-              </button>
-              <button type="button" className={`template-import-result-tab${importResultActiveTab === "skipped" ? " active" : ""}`} onClick={() => setImportResultActiveTab("skipped")}>
-                未匹配 ({templateImportResult.skipped.length})
-              </button>
-              <button type="button" className={`template-import-result-tab${importResultActiveTab === "runtimeGenerated" ? " active" : ""}`} onClick={() => setImportResultActiveTab("runtimeGenerated")}>
-                无需匹配 ({(templateImportResult.runtimeGenerated ?? []).length})
-              </button>
-            </div>
-            <div className="template-import-result-content">
-              {importResultActiveTab === "matched" && (<div className="template-import-result-section">
-                {templateImportResult.matched.length > 0 ? (
-                  <table className="template-import-result-table">
-                    <thead>
-                      <tr>
-                        <th>模板表名</th>
-                        <th>匹配设备</th>
-                        <th>模板字段</th>
-                        <th>设备属性</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {templateImportResult.matched.map((item, idx) => {
-                        const fields = item.fields && item.fields.length > 0 ? item.fields : [{ template: "", device: "" }];
-                        const sectionKey = `matched:${item.section}`;
-                        const expanded = expandedImportResultSections.has(sectionKey);
-                        // 设备属性统计：匹配 / 新增 / 拓扑生成
-                        let matchedFieldCount = 0;
-                        let newlyAddedFieldCount = 0;
-                        let topologyGeneratedFieldCount = 0;
-                        for (const f of fields) {
-                          const deviceValue = f.device ?? "";
-                          if (deviceValue.endsWith("（新增）")) {
-                            newlyAddedFieldCount += 1;
-                          } else if (deviceValue === "（拓扑生成）") {
-                            topologyGeneratedFieldCount += 1;
-                          } else if (deviceValue) {
-                            matchedFieldCount += 1;
-                          }
-                        }
-                        return (
-                          <Fragment key={idx}>
-                            <tr className="template-import-result-section-row" onClick={() => toggleImportResultSection(sectionKey)}>
-                              <td className="template-import-result-cell-section">
-                                <span className="template-import-result-expand-icon">
-                                  {expanded ? (<ChevronDown size={13}/>) : (<ChevronRight size={13}/>)}
-                                </span>
-                                {item.section}
-                              </td>
-                              <td className="template-import-result-cell-device">{item.device}</td>
-                              <td className="template-import-result-cell-fields">
-                                <span className="template-import-result-cell-empty">{fields.length} 个模板字段</span>
-                              </td>
-                              <td className="template-import-result-cell-fields">
-                                <span className="template-import-result-stat">{matchedFieldCount}个匹配</span>
-                                <span className="template-import-result-stat template-import-result-stat-new">{newlyAddedFieldCount}个新增</span>
-                                <span className="template-import-result-stat template-import-result-stat-topology">{topologyGeneratedFieldCount}个拓扑生成</span>
-                              </td>
-                            </tr>
-                            {expanded && fields.map((f, fi) => {
-                              const deviceValue = f.device ?? "";
-                              const isNewlyAdded = deviceValue.endsWith("（新增）");
-                              return (
-                                <tr key={`${idx}-${fi}`}>
-                                  <td colSpan={2} className="template-import-result-cell-fields"/>
-                                  <td className="template-import-result-cell-fields">
-                                    {f.template ? (<span className="template-import-result-field-tag">{f.template}</span>) : (<span className="template-import-result-cell-empty">-</span>)}
-                                  </td>
-                                  <td className="template-import-result-cell-fields">
-                                    {deviceValue ? (
-                                      <span className={`template-import-result-field-tag template-import-result-field-tag-device${isNewlyAdded ? " template-import-result-field-tag-added" : ""}`}>{deviceValue}</span>
-                                    ) : (<span className="template-import-result-cell-empty">未匹配</span>)}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p className="template-import-result-empty">无匹配表/字段</p>
-                )}
-              </div>)}
-              {importResultActiveTab === "skipped" && (<div className="template-import-result-section">
-                {templateImportResult.skipped.length > 0 ? (
-                  <table className="template-import-result-table">
-                    <thead>
-                      <tr>
-                        <th>模板表名</th>
-                        <th>未匹配字段</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {templateImportResult.skipped.map((item, idx) => {
-                        const fields = item.fields && item.fields.length > 0 ? item.fields : [""];
-                        const sectionKey = `skipped:${item.section}`;
-                        const expanded = expandedImportResultSections.has(sectionKey);
-                        return (
-                          <Fragment key={idx}>
-                            <tr className="template-import-result-section-row" onClick={() => toggleImportResultSection(sectionKey)}>
-                              <td className="template-import-result-cell-section">
-                                <span className="template-import-result-expand-icon">
-                                  {expanded ? (<ChevronDown size={13}/>) : (<ChevronRight size={13}/>)}
-                                </span>
-                                {item.section}
-                              </td>
-                              <td className="template-import-result-cell-fields">
-                                <span className="template-import-result-cell-empty">{fields.length} 个未匹配字段，点击展开</span>
-                              </td>
-                            </tr>
-                            {expanded && fields.map((f, fi) => (
-                              <tr key={`${idx}-${fi}`} className="template-import-result-row-skipped">
-                                <td className="template-import-result-cell-section"/>
-                                <td className="template-import-result-cell-fields">
-                                  {f ? (<span className="template-import-result-field-tag template-import-result-field-tag-skipped">{f}</span>) : (<span className="template-import-result-cell-empty">-</span>)}
-                                </td>
-                              </tr>
-                            ))}
-                          </Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p className="template-import-result-empty">所有表/字段均已匹配</p>
-                )}
-              </div>)}
-              {importResultActiveTab === "runtimeGenerated" && (<div className="template-import-result-section">
-                {(templateImportResult.runtimeGenerated ?? []).length > 0 ? (
-                  <table className="template-import-result-table">
-                    <thead>
-                      <tr>
-                        <th>模板表名</th>
-                        <th>字段</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(templateImportResult.runtimeGenerated ?? []).map((item, idx) => {
-                        const fields = item.fields && item.fields.length > 0 ? item.fields : [""];
-                        const sectionKey = `runtimeGenerated:${item.section}`;
-                        const expanded = expandedImportResultSections.has(sectionKey);
-                        return (
-                          <Fragment key={idx}>
-                            <tr className="template-import-result-section-row" onClick={() => toggleImportResultSection(sectionKey)}>
-                              <td className="template-import-result-cell-section">
-                                <span className="template-import-result-expand-icon">
-                                  {expanded ? (<ChevronDown size={13}/>) : (<ChevronRight size={13}/>)}
-                                </span>
-                                {item.section}
-                              </td>
-                              <td className="template-import-result-cell-fields">
-                                <span className="template-import-result-cell-empty">{fields.length} 个字段，点击展开</span>
-                              </td>
-                            </tr>
-                            {expanded && fields.map((f, fi) => (
-                              <tr key={`${idx}-${fi}`} className="template-import-result-row-runtime">
-                                <td className="template-import-result-cell-section"/>
-                                <td className="template-import-result-cell-fields">
-                                  {f ? (<span className="template-import-result-field-tag template-import-result-field-tag-runtime">{f}</span>) : (<span className="template-import-result-cell-empty">-</span>)}
-                                </td>
-                              </tr>
-                            ))}
-                          </Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p className="template-import-result-empty">无运行时生成表</p>
-                )}
-              </div>)}
-            </div>
-            <div className="template-import-result-footer">
-              <button type="button" onClick={() => setShowImportResultDialog(false)}>关闭</button>
-            </div>
-          </section>
-        </div>)}
-      {renderNodeDoubleClickDialog()}
-      {imageTarget && (<div className="image-picker-backdrop" onPointerDown={() => {
-          setImageAssetContextMenu(null);
-          setImagePickerSourceFilter("");
-          setImagePickerCategoryFilter("");
-          setImagePickerSearchQuery("");
-          setImageTarget(null);
-        }}>
-          <section className={`${imagePickerDialogClassName} window-close-host`} onPointerDown={(event) => {
-            setImageAssetContextMenu(null);
-            event.stopPropagation();
-          }}>
-            <WindowCloseButton label="关闭资源选择窗口" onClick={() => {
-              setImageAssetContextMenu(null);
-              setImagePickerSourceFilter("");
-              setImagePickerCategoryFilter("");
-              setImagePickerSearchQuery("");
-              setImageTarget(null);
-            }} />
-            <div className="image-picker-title">
-              <div>
-                <h2>{imagePickerTitle}</h2>
-                <p>{imagePickerHint}</p>
-              </div>
-            </div>
-            {imagePickerUsesSeparateLibraryTabs && (
-              <div className="image-picker-source-tabs" role="tablist" aria-label="资源类型">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={imagePickerActiveLibraryTab === "image"}
-                  className={imagePickerActiveLibraryTab === "image" ? "active" : ""}
-                  onClick={() => {
-                    setImageAssetContextMenu(null);
-                    setImagePickerSourceFilter("");
-                    setImagePickerCategoryFilter("");
-                    setImagePickerSearchQuery("");
-                  }}
-                >
-                  图片(含SVG)
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={imagePickerActiveLibraryTab === "icon"}
-                  className={imagePickerActiveLibraryTab === "icon" ? "active" : ""}
-                  onClick={() => {
-                    setImageAssetContextMenu(null);
-                    setImagePickerSourceFilter("icon-library");
-                    setImagePickerCategoryFilter("");
-                    setImagePickerSearchQuery("");
-                    setIconLibraryPicker((current: any) => ({
-                      ...current,
-                      selectedCategoryKey: "",
-                      searchQuery: "",
-                      visibleCount: ICON_LIBRARY_PAGE_SIZE
-                    }));
-                  }}
-                >
-                  图标
-                </button>
-              </div>
-            )}
-            {imagePickerShowsLibraryActions && (
-              <div className="image-picker-actions">
-                <select value={activeImageFolderId} onChange={(event) => setActiveImageFolderId(event.target.value)}>
-                  {imageFolders.map((folder) => (<option key={folder.id} value={folder.id}>
-                      {folder.name}{typeof folder.imageCount === "number" ? ` (${folder.imageCount})` : ""}
-                    </option>))}
-                </select>
-                <button onClick={createImageFolder} disabled={isBrowseMode}>新建文件夹</button>
-                <button onClick={renameImageFolder} disabled={isBrowseMode || activeImageFolderId === "root"}>重命名</button>
-                <button onClick={deleteImageFolder} disabled={isBrowseMode || activeImageFolderId === "root"}>删除文件夹</button>
-                <button onClick={() => {
-                  setImagePickerSourceFilter("external");
-                  imageInputRef.current?.click();
-                }} disabled={isBrowseMode}>导入外部 SVG/PNG</button>
-                <button onClick={() => {
-                  setImagePickerSourceFilter("external");
-                  __appScope.imageArchiveInputRef.current?.click();
-                }} disabled={isBrowseMode}>导入文档图片/图标</button>
-                {imagePickerCanClear && <button onClick={clearSelectedImage} disabled={isBrowseMode}>取消当前图片</button>}
-              </div>
-            )}
-            {imagePickerRendersCatalogSource ? (
-              <div className="icon-library-browser">
-                <div className="image-picker-filters icon-library-browser-filters" role="search" aria-label="分类图标筛选检索">
-                  <label>
-                    图库
-                    <select
-                      value={iconLibrarySelectedLibraryId}
-                      onChange={(event) => {
-                        const nextLibraryId = event.target.value;
-                        setIconLibraryPicker((current: any) => ({
-                          ...current,
-                          selectedLibraryId: nextLibraryId,
-                          selectedCategoryKey: "",
-                          visibleCount: ICON_LIBRARY_PAGE_SIZE
-                        }));
-                      }}
-                      disabled={!iconLibraryCatalog}
-                    >
-                      <option value="">全部图库</option>
-                      <option value="builtin-svg">内置SVG</option>
-                      {iconLibraryLibraries.map((library: any) => (
-                        <option key={library.id} value={library.id}>
-                          {library.label}{typeof library.totalIcons === "number" ? ` (${library.totalIcons})` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    分类
-                    <select
-                      value={iconLibraryPicker?.selectedCategoryKey ?? ""}
-                      onChange={(event) => {
-                        setIconLibraryPicker((current: any) => ({
-                          ...current,
-                          selectedCategoryKey: event.target.value,
-                          visibleCount: ICON_LIBRARY_PAGE_SIZE
-                        }));
-                      }}
-                      disabled={!iconLibraryCatalog}
-                    >
-                      <option value="">全部分类</option>
-                      {iconLibraryCategoryOptions.map((category: any) => (
-                        <option key={category.key} value={category.key}>
-                          {category.label}{typeof category.count === "number" ? ` (${category.count})` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    检索
-                    <input
-                      type="search"
-                      value={iconLibraryPicker?.searchQuery ?? ""}
-                      placeholder="搜索名称/标签/来源"
-                      onChange={(event) => {
-                        const nextQuery = event.target.value;
-                        setIconLibraryPicker((current: any) => ({
-                          ...current,
-                          searchQuery: nextQuery,
-                          visibleCount: ICON_LIBRARY_PAGE_SIZE
-                        }));
-                      }}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIconLibraryPicker((current: any) => ({
-                        ...current,
-                        selectedLibraryId: current.catalog?.libraries?.[0]?.id ?? "",
-                        selectedCategoryKey: "",
-                        searchQuery: "",
-                        visibleCount: ICON_LIBRARY_PAGE_SIZE
-                      }));
-                    }}
-                    disabled={!iconLibrarySelectedLibraryId && !(iconLibraryPicker?.selectedCategoryKey) && !(iconLibraryPicker?.searchQuery)}
-                  >
-                    清空
-                  </button>
-                  <span>{iconLibraryLoadedText}</span>
-                </div>
-                {iconLibrarySelectedLibraryId === "builtin-svg" ? (
-                  (() => {
-                    const builtinIcons = (imageAssetList ?? []).filter(imagePickerAssetIsBuiltinIcon);
-                    const query = (iconLibraryPicker?.searchQuery ?? "").toLowerCase();
-                    const filtered = query
-                      ? builtinIcons.filter((asset: any) => {
-                          const name = String(asset?.name ?? "").toLowerCase();
-                          return name.includes(query);
-                        })
-                      : builtinIcons;
-                    if (filtered.length === 0) {
-                      return <p className="image-empty">{query ? "没有匹配的内置SVG图标。" : "没有内置SVG图标。"}</p>;
-                    }
-                    return (
-                      <div className="image-asset-list icon-library-catalog-list">
-                        {filtered.map((asset: any, index: number) => (
-                          <button
-                            key={asset.id || index}
-                            className="image-asset-option icon-library-catalog-option"
-                            disabled={isBrowseMode}
-                            onClick={() => applyImageAsset && applyImageAsset(asset)}
-                            title={asset.name || `内置图标 ${index + 1}`}
-                          >
-                            <img src={asset.url} alt={asset.name || `内置图标 ${index + 1}`} loading="lazy"/>
-                            <span>{asset.name || `内置图标 ${index + 1}`}</span>
-                          </button>
-                        ))}
-                      </div>
-                    );
-                  })()
-                ) : iconLibraryPicker?.status === "error" ? (
-                  <p className="image-empty">{iconLibraryPicker.error || "读取分类图标库失败。"}</p>
-                ) : !iconLibraryCatalog ? (
-                  <p className="image-empty">正在加载分类图标库目录...</p>
-                ) : iconLibraryPicker?.status === "loading" && iconLibraryVisibleResult.visible.length === 0 ? (
-                  <p className="image-empty">正在按需加载图标清单...</p>
-                ) : iconLibraryVisibleResult.visible.length === 0 ? (
-                  <p className="image-empty">没有匹配的分类图标，请调整图库、分类或搜索关键字。</p>
-                ) : (
-                  <>
-                    <div className="image-asset-list icon-library-catalog-list">
-                      {iconLibraryVisibleResult.visible.map((icon: any, index: number) => (
-                        <button
-                          key={icon.id}
-                          className="image-asset-option icon-library-catalog-option"
-                          disabled={isBrowseMode}
-                          onClick={() => applyIconLibraryCatalogIcon(icon.id)}
-                          title={`${icon.libraryLabel} / ${icon.categoryLabel} / ${icon.name}`}
-                        >
-                          <img src={icon.url} alt={icon.name || `分类图标 ${index + 1}`} loading="lazy"/>
-                          <span>{icon.name || `分类图标 ${index + 1}`}</span>
-                          <small>{icon.categoryLabel}</small>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="icon-library-load-more">
-                      <span>
-                        已显示 {iconLibraryVisibleResult.visible.length} / {iconLibraryVisibleResult.total}
-                        {iconLibraryPicker?.status === "loading" ? "，正在加载..." : ""}
-                      </span>
-                      {iconLibraryVisibleResult.hasMore && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIconLibraryPicker((current: any) => ({
-                              ...current,
-                              visibleCount: (current.visibleCount || ICON_LIBRARY_PAGE_SIZE) + ICON_LIBRARY_PAGE_SIZE
-                            }));
-                          }}
-                        >
-                          加载更多
-                        </button>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-            ) : imageAssetList.length > 0 && (
-              <div className={`image-picker-filters ${imagePickerSourceLocked ? "source-locked" : ""}`} role="search" aria-label={`${imagePickerAssetNoun}筛选检索`}>
-                {!imagePickerSourceLocked && imagePickerUsesIconSources && (
-                    <label>
-                      来源
-                      <select value={imagePickerActiveSourceFilter} onChange={(event) => {
-                        const nextSource = event.target.value;
-                        setImagePickerSourceFilter(nextSource);
-                        setImagePickerCategoryFilter("");
-                        // 切换到开源SVG综合图标库时，重置分页为默认值
-                        if (nextSource === "catalog") {
-                          setIconLibraryPicker((current: any) => ({
-                            ...current,
-                            visibleCount: ICON_LIBRARY_PAGE_SIZE
-                          }));
-                        }
-                      }}>
-                        <option value="builtin">内置 SVG</option>
-                        <option value="catalog">开源SVG综合图标库</option>
-                        <option value="external">外部导入</option>
-                      </select>
-                    </label>
-                  )}
-                <label>
-                  分类
-                  <select value={imagePickerActiveCategoryFilter} onChange={(event) => setImagePickerCategoryFilter(event.target.value)}>
-                    <option value="">全部分类</option>
-                    {imagePickerCategoryOptions.map((category) => (
-                      <option key={category} value={category}>
-                        {category}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {!imagePickerSourceLocked && (
-                  <>
-                    <label>
-                      检索
-                      <input
-                        type="search"
-                        value={imagePickerSearchQuery}
-                        placeholder="搜索名称/文件名/分类"
-                        onChange={(event) => setImagePickerSearchQuery(event.target.value)}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setImagePickerSourceFilter("");
-                        setImagePickerCategoryFilter("");
-                        setImagePickerSearchQuery("");
-                      }}
-                      disabled={(!imagePickerUsesIconSources || imagePickerActiveSourceFilter === "builtin") && !imagePickerActiveCategoryFilter && !imagePickerSearchQuery}
-                    >
-                      清空
-                    </button>
-                  </>
-                )}
-                <span>{filteredImageAssetList.length} / {sourceFilteredImageAssetList.length}</span>
-              </div>
-            )}
-            {!imagePickerRendersCatalogSource && (<div className="image-asset-list">
-              {imageAssetList.length === 0 || (imagePickerUsesSeparateLibraryTabs && imagePickerActiveLibraryTab === "image" && sourceFilteredImageAssetList.length === 0) ? (<p className="image-empty">后台暂无图片，请先加载本地图片。</p>) : sourceFilteredImageAssetList.length === 0 ? (<p className="image-empty">{imagePickerUsesIconSources && imagePickerActiveSourceFilter === "external" ? "暂无外部导入图标，请使用上方外部导入按钮。" : `暂无可用${imagePickerAssetNoun}。`}</p>) : filteredImageAssetList.length === 0 ? (<p className="image-empty">{`没有匹配的${imagePickerAssetNoun}，请调整来源、分类或搜索关键字。`}</p>) : (filteredImageAssetList.map((asset, index) => {
-                const canDeleteImageAsset = !isBrowseMode && !imagePickerAssetIsBuiltinIcon(asset) && (!imagePickerUsesIconSources || imagePickerActiveSourceFilter === "external");
-                return (<button key={asset.id} className="image-asset-option" disabled={isBrowseMode} onClick={() => {
-                    setImageAssetContextMenu(null);
-                    applyExistingImage(asset.id);
-                  }} onContextMenu={(event) => {
-                    if (!canDeleteImageAsset) {
-                      return;
-                    }
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setImageAssetContextMenu({
-                      assetId: asset.id,
-                      x: Math.max(8, Math.min(event.clientX, window.innerWidth - 148)),
-                      y: Math.max(8, Math.min(event.clientY, window.innerHeight - 52))
-                    });
-                  }} title={asset.name || asset.filename || `后台图片 ${index + 1}`}>
-                    <img src={imageAssets[asset.id] ?? asset.url} alt={asset.name || `后台图片 ${index + 1}`}/>
-                    <span>{asset.name || `后台图片 ${index + 1}`}</span>
-                </button>);
-              }))}
-            </div>)}
-            {!imagePickerRendersCatalogSource && imageAssetContextMenu && (
-              <div
-                className="context-menu image-asset-context-menu"
-                role="menu"
-                style={{ left: imageAssetContextMenu.x, top: imageAssetContextMenu.y }}
-                onPointerDown={(event) => event.stopPropagation()}
-                onContextMenu={(event) => event.preventDefault()}
-              >
-                <button type="button" role="menuitem" onClick={deleteImageAssetFromContextMenu} disabled={isBrowseMode}>
-                  <Trash2 size={14} aria-hidden="true"/>
-                  删除
-                </button>
-              </div>
-            )}
-          </section>
-        </div>)}
-      <AllNetworkTopologyDialog scope={__appScope} />
+      </Suspense>)}
+      {canvasDialogLayerActive && (<Suspense fallback={null}>
+        <LazyAppCanvasDialogs
+          scope={__appScope}
+          section="canvas-dialogs"
+          inputs={overlayInputsFor(canvasDialogLayerActive)}
+        />
+      </Suspense>)}
+      {deviceDialogLayerActive && (<Suspense fallback={null}>
+        <LazyAppDeviceDefinitionDialogs
+          scope={__appScope}
+          section="device-definition-dialogs"
+          inputs={overlayInputsFor(deviceDialogLayerActive)}
+        />
+      </Suspense>)}
+      <AppResourceDialogs
+        scope={__appScope}
+        section="resource-dialogs"
+        inputs={resourceDialogLayerInputs}
+      />
     </div></>);
 }

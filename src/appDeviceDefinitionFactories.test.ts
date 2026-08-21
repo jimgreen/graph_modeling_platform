@@ -3736,7 +3736,8 @@ describe("manual bend interaction helpers", () => {
   });
 
   test("class metadata is editable only while creating a class and read-only for concrete components", () => {
-    const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const appViewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appDeviceDefinitionDialogs.tsx", import.meta.url), "utf8");
     const appRenderBatchSource = readFileSync(new URL("./appExtracted/appRenderBatch.tsx", import.meta.url), "utf8");
 
     expect(appViewSource).toContain('customLibraryCreateDialog.kind === "componentLibrary"');

@@ -549,7 +549,7 @@ describe("全局线路数据同步", () => {
 
   test("复用出线度为0或1的线路前显示端点将被重建的告警", () => {
     const hookSource = readFileSync(new URL("./hooks/useGlobalLines.tsx", import.meta.url), "utf8");
-    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const viewSource = readFileSync(new URL("./appExtracted/appProjectDialogs.tsx", import.meta.url), "utf8");
     const stylesSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 
     expect(viewSource).toContain("出线度为 0 或 1");

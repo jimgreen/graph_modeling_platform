@@ -295,7 +295,7 @@ describe("全网拓扑模型选择", () => {
 
   test("顶栏在全网拓扑左侧提供仅图标的全局线路入口和独立列表窗口", () => {
     const dialogSource = readFileSync(new URL("./AllNetworkTopologyDialog.tsx", import.meta.url), "utf8");
-    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const viewSource = readFileSync(new URL("./appExtracted/appTopbar.tsx", import.meta.url), "utf8");
     const stylesSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
     const globalLineButton = viewSource.indexOf('aria-label="全局线路"');
     const topologyButton = viewSource.indexOf('aria-label="全网拓扑"');
@@ -338,7 +338,8 @@ describe("全网拓扑模型选择", () => {
 
   test("全网拓扑窗口常驻且非阻塞并支持拖动和缩放", () => {
     const dialogSource = readFileSync(new URL("./AllNetworkTopologyDialog.tsx", import.meta.url), "utf8");
-    const viewSource = readFileSync(new URL("./appExtracted/appView.tsx", import.meta.url), "utf8");
+    const viewSource = readFileSync(new URL("./appExtracted/appTopbar.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("./appExtracted/appProjectDialogs.tsx", import.meta.url), "utf8");
     const stylesSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 
     expect(dialogSource).not.toMatch(/if \(!open\) \{\s*return null;\s*\}/);

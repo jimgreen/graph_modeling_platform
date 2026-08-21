@@ -3734,7 +3734,8 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       activeProjectKey,
       initialCanvasDetailHydrationLimit,
       initialCanvasDetailHydrationTarget,
-      initialCanvasLodActive
+      initialCanvasLodActive,
+      usePersistentCanvasLod
     ]);
   const initialCanvasDetailedNodeIdSet = useMemo(createAppHookCallback129(__appScope), [
       groupTransformPreviewNodeIdSet,
@@ -4149,9 +4150,26 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       ]
     );
   Object.assign(__appScope, { templateLibraryPanelContent });
+  const projectPanelContent = useMemo(
+      () => renderProjectPanel(),
+      [
+        activeProjectKey,
+        __appScope.expandedSchemeIds,
+        __appScope.filteredProjectSchemes,
+        isEditMode,
+        __appScope.projectSearchNeedle,
+        __appScope.projectSearchQuery,
+        schemes,
+        selectedProjectId,
+        selectedProjectIds,
+        selectedSchemeId,
+        selectedSchemeIds
+      ]
+    );
+  Object.assign(__appScope, { projectPanelContent });
   const effectiveLeftPanelTab = isBrowseMode ? "projects" : leftPanelTab; Object.assign(__appScope, { effectiveLeftPanelTab });
   const leftPanelContent = effectiveLeftPanelTab === "projects"
-      ? renderProjectPanel()
+      ? projectPanelContent
       : effectiveLeftPanelTab === "templates"
         ? templateLibraryPanelContent
         : libraryPanelContent;
