@@ -62,8 +62,21 @@ describe("全局线路注册表迁移", () => {
     expect(records.map((record) => record.energyType)).toEqual(["ac", "dc"]);
     expect(records.every((record) => record.degree === 1)).toBe(true);
     const stored = JSON.parse(await readFile(projectPath, "utf-8"));
-    expect(stored.nodes.find((item) => item.id === "global-ac").params[GLOBAL_LINE_ID_PARAM]).toBe(records[0].id);
-    expect(stored.nodes.find((item) => item.id === "global-dc").params.idx).toBe("2");
+    const storedGlobalAc = stored.nodes.find((item) => item.id === "global-ac");
+    const storedGlobalDc = stored.nodes.find((item) => item.id === "global-dc");
+    expect(storedGlobalAc.params[GLOBAL_LINE_ID_PARAM]).toBeUndefined();
+    expect(storedGlobalAc.params.idx).toBe("1");
+    expect(storedGlobalDc.params.idx).toBe("2");
+    expect(storedGlobalAc).not.toHaveProperty("name");
+    expect(storedGlobalAc.params).not.toHaveProperty("rated_capacity");
+    expect(storedGlobalAc.params).not.toHaveProperty("r");
+    expect(storedGlobalAc.params).toMatchObject({
+      idx: "1",
+      i_node: "1",
+      j_node: "2",
+      _routableLineSourceNodeId: bus.id,
+      _routableLineTargetNodeId: boundary.id
+    });
     expect(stored.nodes.find((item) => item.id === "local-ac").params[GLOBAL_LINE_ID_PARAM]).toBeUndefined();
   });
 
@@ -105,8 +118,10 @@ describe("全局线路注册表迁移", () => {
     expect(records.every((record) => record.degree === 1 && record.endpointSlots.target && !record.endpointSlots.source)).toBe(true);
     const storedA = JSON.parse(await readFile(join(filesRoot, "历史方案", "厂站一.json"), "utf-8"));
     const storedB = JSON.parse(await readFile(join(filesRoot, "历史方案", "馈线二.json"), "utf-8"));
-    expect(storedA.nodes.find((item) => item.id === "line-1").params[GLOBAL_LINE_ID_PARAM])
-      .not.toBe(storedB.nodes.find((item) => item.id === "line-2").params[GLOBAL_LINE_ID_PARAM]);
+    expect(storedA.nodes.find((item) => item.id === "line-1").params.idx)
+      .not.toBe(storedB.nodes.find((item) => item.id === "line-2").params.idx);
+    expect(storedA.nodes.find((item) => item.id === "line-1").params[GLOBAL_LINE_ID_PARAM]).toBeUndefined();
+    expect(storedB.nodes.find((item) => item.id === "line-2").params[GLOBAL_LINE_ID_PARAM]).toBeUndefined();
   });
 });
 
@@ -749,8 +764,8 @@ describe("全局线路首末端槽", () => {
   });
 });
 
-describe("全局线路参数一致性", () => {
-  test("任一模型修改线路名称和参数后更新全局记录并覆盖其他已保存模型", async () => {
+describe("全局线路表是名称和参数的唯一来源", () => {
+  test("页面保存把名称和参数写入全局表，但模型文件只保留引用和本地字段", async () => {
     const boundaryA = node("station-a", "static-model-interaction-station");
     const boundaryB = node("station-b", "static-model-interaction-feeder");
     const lineA = line("line-a", "ac-routable-line", "bus-a", boundaryA.id, {}, "共享线路");
@@ -772,6 +787,11 @@ describe("全局线路参数一致性", () => {
     const pathA = await writeProject("方案", "模型一.json", { version: 1, idx: 1, name: "模型一", modelType: "厂站", nodes: [boundaryA, node("bus-a", "ac-bus"), lineA], edges: [] });
     const pathB = await writeProject("方案", "模型二.json", { version: 1, idx: 2, name: "模型二", modelType: "馈线", nodes: [boundaryB, node("bus-b", "ac-bus"), lineB], edges: [] });
 
+    // 模拟服务重启后的 schema v3 迁移：既有模型中的名称和全局参数被收敛到注册表。
+    registry = createGlobalLineRegistry({ dataRoot, schemeFilesRoot: filesRoot });
+    await registry.list();
+    const storedOtherBefore = await readFile(pathB, "utf-8");
+
     const editedLineA = { ...lineA, name: "共享线路改名", params: { ...lineA.params, rated_capacity: "500", r: "0.25" } };
     const result = await registry.syncProject({
       projectIdx: 1,
@@ -782,11 +802,31 @@ describe("全局线路参数一致性", () => {
 
     const updatedRecord = result.records.find((record) => record.id === first.id);
     expect(updatedRecord).toMatchObject({ name: "共享线路改名", params: expect.objectContaining({ rated_capacity: "500", r: "0.25" }), degree: 2 });
-    const storedOther = JSON.parse(await readFile(pathB, "utf-8"));
-    expect(storedOther.nodes.find((item) => item.id === "line-b")).toMatchObject({
+    const storedCurrentLine = result.storageProject.nodes.find((item) => item.id === "line-a");
+    expect(storedCurrentLine).not.toHaveProperty("name");
+    expect(storedCurrentLine.params).toMatchObject({
+      idx: String(first.idx),
+      i_node: "1",
+      j_node: "2"
+    });
+    expect(storedCurrentLine.params).not.toHaveProperty(GLOBAL_LINE_ID_PARAM);
+    expect(storedCurrentLine.params).not.toHaveProperty("rated_capacity");
+    expect(storedCurrentLine.params).not.toHaveProperty("r");
+
+    // 修改全局表不能反向改写另一端模型文件。
+    expect(await readFile(pathB, "utf-8")).toBe(storedOtherBefore);
+    const storedOther = JSON.parse(storedOtherBefore).nodes.find((item) => item.id === "line-b");
+    expect(storedOther).not.toHaveProperty("name");
+    expect(storedOther.params).not.toHaveProperty("rated_capacity");
+    expect(storedOther.params).not.toHaveProperty("r");
+
+    const hydrated = await registry.hydrateProject({ project: result.storageProject });
+    expect(hydrated.project.nodes.find((item) => item.id === "line-a")).toMatchObject({
       name: "共享线路改名",
       params: expect.objectContaining({ rated_capacity: "500", r: "0.25", i_node: "1", j_node: "2" })
     });
-    expect(JSON.parse(await readFile(pathA, "utf-8")).nodes.find((item) => item.id === "line-a").name).toBe("共享线路改名");
+
+    // registry.syncProject 只返回待落盘模型，不自行写当前模型文件；真正保存由模型保存接口完成。
+    expect(JSON.parse(await readFile(pathA, "utf-8")).nodes.find((item) => item.id === "line-a")).not.toHaveProperty("name");
   });
 });

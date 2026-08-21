@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
@@ -165,7 +165,7 @@ describe("/webgrp/global-lines", () => {
     expect(retained).toMatchObject({ id: first.payload.record.id, idx: first.payload.record.idx, degree: 1, endpointSlots: { source: null, target: { nodeId: "line-a" } } });
   });
 
-  test("保存厂站模型时自动把边界线路迁入后台全局表并把全局身份写回模型", async () => {
+  test("保存厂站模型时全局表独占名称和参数，读取接口按idx投影完整运行态", async () => {
     const boundary = { id: "station-x", kind: "static-model-interaction-station", name: "厂站X", params: {}, terminals: [] };
     const bus = { id: "bus-x", kind: "ac-bus", name: "母线X", params: {}, terminals: [] };
     const line = boundaryLine("line-x", boundary.id, "厂站X出线");
@@ -179,11 +179,71 @@ describe("/webgrp/global-lines", () => {
     const storedLine = saved.payload.project.project.nodes.find((node) => node.id === line.id);
     expect(storedLine.params._globalLineId).toMatch(/^global-line-/u);
     expect(Number(storedLine.params.idx)).toBeGreaterThan(0);
+    expect(storedLine).toMatchObject({
+      name: "厂站X出线",
+      params: expect.objectContaining({ rated_capacity: "220", r: "0.1" })
+    });
+
+    const storedProject = JSON.parse(await readFile(
+      join(dataDir, "schemes", "files", "主方案", "厂站X.json"),
+      "utf-8"
+    ));
+    const persistedLine = storedProject.nodes.find((node) => node.id === line.id);
+    expect(persistedLine).not.toHaveProperty("name");
+    expect(persistedLine.params).toMatchObject({
+      idx: storedLine.params.idx,
+      _routableLineSourceNodeId: line.params._routableLineSourceNodeId,
+      _routableLineTargetNodeId: line.params._routableLineTargetNodeId
+    });
+    expect(persistedLine.params).not.toHaveProperty("_globalLineId");
+    expect(persistedLine.params).not.toHaveProperty("rated_capacity");
+    expect(persistedLine.params).not.toHaveProperty("r");
+
+    const loaded = await fetchJson(
+      `${apiPath("/schemes/project")}?schemePath=${encodeURIComponent(JSON.stringify(["主方案"]))}&name=${encodeURIComponent("厂站X")}`
+    );
+    expect(loaded.status).toBe(200);
+    expect(loaded.payload.project.project.nodes.find((node) => node.id === line.id)).toMatchObject({
+      name: "厂站X出线",
+      params: expect.objectContaining({
+        _globalLineId: storedLine.params._globalLineId,
+        idx: storedLine.params.idx,
+        rated_capacity: "220",
+        r: "0.1"
+      })
+    });
 
     const list = await fetchJson(apiPath("/global-lines"));
     expect(list.status).toBe(200);
     expect(list.payload.records).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: storedLine.params._globalLineId, name: "厂站X出线", degree: 1 })
     ]));
+
+    const storedTextBeforeTableUpdate = await readFile(
+      join(dataDir, "schemes", "files", "主方案", "厂站X.json"),
+      "utf-8"
+    );
+    const updated = await fetchJson(apiPath("/global-lines/record"), jsonRequest("PUT", {
+      id: storedLine.params._globalLineId,
+      name: "厂站X出线-仅改全局表",
+      params: { rated_capacity: "500", r: "0.25" }
+    }));
+    expect(updated.status).toBe(200);
+    expect(updated.payload.record).toMatchObject({
+      name: "厂站X出线-仅改全局表",
+      params: { rated_capacity: "500", r: "0.25" }
+    });
+    expect(await readFile(
+      join(dataDir, "schemes", "files", "主方案", "厂站X.json"),
+      "utf-8"
+    )).toBe(storedTextBeforeTableUpdate);
+
+    const reloaded = await fetchJson(
+      `${apiPath("/schemes/project")}?schemePath=${encodeURIComponent(JSON.stringify(["主方案"]))}&name=${encodeURIComponent("厂站X")}`
+    );
+    expect(reloaded.payload.project.project.nodes.find((node) => node.id === line.id)).toMatchObject({
+      name: "厂站X出线-仅改全局表",
+      params: expect.objectContaining({ rated_capacity: "500", r: "0.25" })
+    });
   });
 });

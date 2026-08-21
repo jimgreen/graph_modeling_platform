@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+
+import { loadFullModel } from "./AllNetworkTopologyDialog";
 
 import {
   analyzeAllNetworkTopology,
@@ -489,20 +491,16 @@ describe("全网拓扑全局线路预检查", () => {
       warnings: []
     });
 
+    targetLine.name = "模型文件中的旧显示名";
     targetLine.params.r = "9.9";
-    const mismatch = analyzeGlobalLinesForAllNetworkTopology([record], [sourceModel, targetModel]);
+    targetLine.params.stale_global_param = "旧模型残留";
 
-    expect(mismatch.warnings).toEqual([]);
-    expect(mismatch.errors).toEqual([
-      expect.objectContaining({
-        id: expect.stringContaining("definition-mismatch:target"),
-        projectId: targetModel.projectId,
-        modelName: targetModel.name,
-        deviceName: "跨区交流二线",
-        nodeId: targetLine.id,
-        message: expect.stringMatching(/模型文件.*全局线路定义不一致.*共享参数.*r/)
-      })
-    ]);
+    // 名称和全局业务参数的唯一来源是全局线路表；模型中的残留值不再属于
+    // 一致性校验范围，加载时会被注册表运行态投影覆盖。
+    expect(analyzeGlobalLinesForAllNetworkTopology([record], [sourceModel, targetModel])).toEqual({
+      errors: [],
+      warnings: []
+    });
   });
 });
 
@@ -545,6 +543,62 @@ describe("全局线路双向一致性校验", () => {
       errors: [],
       warnings: []
     });
+  });
+
+  test("全局线路名称和参数只属于全局表，身份ID与设备idx一致时模型残留值不报警", () => {
+    const { record, sourceModel, targetModel } = completeGlobalLineConsistencyFixture(
+      "mutable-global-line-name"
+    );
+    const renamedRecord = {
+      ...record,
+      name: `${record.name}-new`,
+      params: { ...record.params, r: "8.8", table_only_param: "全局表" }
+    };
+
+    expect(sourceModel.record.project.nodes.some((node) => node.name === record.name)).toBe(true);
+    expect(analyzeGlobalLineConsistency([renamedRecord], [sourceModel, targetModel])).toEqual({
+      errors: [],
+      warnings: []
+    });
+
+    const sourceLine = sourceModel.record.project.nodes.find((node) => (
+      node.params[GLOBAL_LINE_ID_PARAM] === record.id
+    ));
+    expect(sourceLine).toBeDefined();
+    sourceLine!.params.idx = String(record.idx + 1);
+    expect(analyzeGlobalLineConsistency([renamedRecord], [sourceModel, targetModel]).errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: expect.stringContaining("definition-mismatch:source"),
+          message: expect.stringMatching(/idx不一致/)
+        })
+      ])
+    );
+  });
+
+  test("一致性校验可强制绕过完整但陈旧的内存模型并读取后端最新文件", async () => {
+    const { sourceModel } = completeGlobalLineConsistencyFixture("force-fresh-consistency-model");
+    const staleRecord = sourceModel.record;
+    const freshRecord = {
+      ...staleRecord,
+      project: {
+        ...staleRecord.project,
+        nodes: staleRecord.project.nodes.map((node) => ({ ...node, name: `${node.name}-fresh` }))
+      }
+    };
+    const fetchBackendProjectRecord = vi.fn().mockResolvedValue(freshRecord);
+    const scope = {
+      savedProjectRecordIsSummary: vi.fn(() => false),
+      fetchBackendProjectRecord
+    };
+
+    await expect(loadFullModel(scope, sourceModel)).resolves.toBe(sourceModel);
+    expect(fetchBackendProjectRecord).not.toHaveBeenCalled();
+
+    const reloaded = await loadFullModel(scope, sourceModel, true);
+    expect(fetchBackendProjectRecord).toHaveBeenCalledWith(sourceModel.schemePath, sourceModel.name);
+    expect(reloaded.record.project.nodes[0].name).toBe(freshRecord.project.nodes[0].name);
+    expect(reloaded.record).not.toBe(staleRecord);
   });
 
   test("线路端点连接模型关联图元时按其model_id校验全局线路端点模型", () => {

@@ -1207,6 +1207,25 @@ test("measures the displayed model content size from nodes and connection paths"
 });
 
 
+test("builds visual bounds before a persisted global-line name is hydrated", () => {
+  const base = createDefaultNode("ac-source", { x: 160, y: 120 });
+  const persistedGlobalLineProjection = {
+    ...base,
+    name: undefined as unknown as string,
+    params: {
+      ...base.params,
+      idx: "11"
+    }
+  };
+
+  const bounds = calculateNodeVisualBounds(persistedGlobalLineProjection);
+
+  expect(bounds.left).toBeLessThan(bounds.right);
+  expect(bounds.top).toBeLessThan(bounds.bottom);
+  expect(Object.values(bounds).every(Number.isFinite)).toBe(true);
+});
+
+
 test("checks display boundary clearance with both graphics and connection paths", () => {
   const node = createDefaultNode("ac-source", { x: 120, y: 90 });
   const routeNearBoundary = [{ edgeId: "edge-near", points: [{ x: 4, y: 80 }, { x: 160, y: 80 }], path: "" }];

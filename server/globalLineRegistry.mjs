@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 export const GLOBAL_LINE_ID_PARAM = "_globalLineId";
 const GLOBAL_LINE_MODEL_PAIR_PARAM = "_globalLineModelPair";
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const MANAGED_MODEL_TYPES = new Set(["厂站", "馈线", "台区"]);
 const AC_LINE_KINDS = new Set(["ac-routable-line", "ac-zero-routable-branch"]);
 const DC_LINE_KINDS = new Set(["dc-routable-line", "dc-zero-routable-branch"]);
@@ -67,6 +67,13 @@ function sharedParams(node) {
     key !== GLOBAL_LINE_ID_PARAM &&
     !key.startsWith("_") &&
     !LOCAL_PARAM_KEYS.has(key)
+  )));
+}
+
+function localParams(node) {
+  return Object.fromEntries(Object.entries(node?.params ?? {}).filter(([key, value]) => (
+    typeof value === "string" &&
+    (key.startsWith("_") || LOCAL_PARAM_KEYS.has(key))
   )));
 }
 
@@ -274,6 +281,21 @@ function nextRecord(state, energyType, node) {
   return record;
 }
 
+function recordForNode(state, node) {
+  const storedId = String(node?.params?.[GLOBAL_LINE_ID_PARAM] ?? "").trim();
+  if (storedId) {
+    const byId = state.records.find((record) => record.id === storedId);
+    if (byId) return byId;
+    // A draft uses a provisional idx for display only. It must never attach to an
+    // unrelated record that was concurrently assigned the same authoritative idx.
+    if (storedId.startsWith("draft-global-line:")) return undefined;
+  }
+  const storedIndex = positiveInteger(node?.params?.idx);
+  return storedIndex > 0
+    ? state.records.find((record) => record.idx === storedIndex)
+    : undefined;
+}
+
 function assertUniqueName(state, name, excludedId = "") {
   const key = String(name ?? "").trim().toLocaleLowerCase();
   if (!key) throw new GlobalLineRegistryError("全局线路名称不能为空。", 400);
@@ -319,15 +341,71 @@ function addReference(record, reference) {
 }
 
 function applyRecordToNode(node, record) {
+  const params = {
+    ...record.params,
+    ...localParams(node),
+    idx: String(record.idx),
+    [GLOBAL_LINE_ID_PARAM]: record.id
+  };
   return {
     ...node,
     name: record.name,
+    params
+  };
+}
+
+function globalLineNodeForStorage(node, record) {
+  const { name: _runtimeGlobalLineName, ...nodeWithoutRuntimeName } = node ?? {};
+  const params = localParams(node);
+  delete params[GLOBAL_LINE_ID_PARAM];
+  return {
+    ...nodeWithoutRuntimeName,
     params: {
-      ...(node?.params ?? {}),
-      ...record.params,
-      idx: String(record.idx),
-      [GLOBAL_LINE_ID_PARAM]: record.id
+      ...params,
+      idx: String(record.idx)
     }
+  };
+}
+
+function projectWithStoredGlobalLineReferences(project, state) {
+  if (!project || !Array.isArray(project.nodes) || !MANAGED_MODEL_TYPES.has(String(project.modelType ?? ""))) {
+    return project;
+  }
+  const nodeById = new Map(project.nodes.map((node) => [String(node?.id ?? ""), node]));
+  return {
+    ...project,
+    nodes: project.nodes.map((node) => {
+      const record = recordForNode(state, node);
+      if (
+        !record ||
+        energyTypeForKind(node?.kind) !== record.energyType ||
+        !lineTouchesBoundary(node, nodeById)
+      ) {
+        return node;
+      }
+      return globalLineNodeForStorage(node, record);
+    })
+  };
+}
+
+function projectWithHydratedGlobalLines(project, state) {
+  if (!project || !Array.isArray(project.nodes) || !MANAGED_MODEL_TYPES.has(String(project.modelType ?? ""))) {
+    return project;
+  }
+  const nodeById = new Map(project.nodes.map((node) => [String(node?.id ?? ""), node]));
+  return {
+    ...project,
+    nodes: project.nodes.map((node) => {
+      const record = recordForNode(state, node);
+      if (
+        !record ||
+        energyTypeForKind(node?.kind) !== record.energyType ||
+        !lineTouchesBoundary(node, nodeById)
+      ) {
+        return node;
+      }
+      return applyRecordToNode(node, record);
+    })
   };
 }
 
@@ -544,10 +622,10 @@ function storedProjectMatchesReference(storedProject, reference) {
     JSON.stringify(normalizedStringArray(reference?.schemePath)) === JSON.stringify(storedProject.schemePath);
 }
 
-function globalLineIdsInProject(project) {
+function globalLineIdsInProject(project, state) {
   return new Set((Array.isArray(project?.nodes) ? project.nodes : []).flatMap((node) => {
-    const globalLineId = String(node?.params?.[GLOBAL_LINE_ID_PARAM] ?? "").trim();
-    return globalLineId && energyTypeForKind(node?.kind) ? [globalLineId] : [];
+    const record = recordForNode(state, node);
+    return record && energyTypeForKind(node?.kind) === record.energyType ? [record.id] : [];
   }));
 }
 
@@ -563,7 +641,7 @@ function otherStoredEndpointRetainsGlobalLine(record, storedProjects, projectIdx
     ));
     if (!otherProject) continue;
     const matchingLine = otherProject.project.nodes.some((node) => (
-      String(node?.params?.[GLOBAL_LINE_ID_PARAM] ?? "").trim() === record.id &&
+      recordForNode({ records: [record] }, node)?.id === record.id &&
       energyTypeForKind(node?.kind) === record.energyType
     ));
     if (matchingLine) return true;
@@ -592,8 +670,8 @@ export function createGlobalLineRegistry({ dataRoot, schemeFilesRoot } = {}) {
         const project = JSON.parse(await readFile(filePath, "utf-8"));
         for (const node of Array.isArray(project?.nodes) ? project.nodes : []) {
           const pairMode = String(node?.params?.[GLOBAL_LINE_MODEL_PAIR_PARAM] ?? "").trim();
-          const storedId = String(node?.params?.[GLOBAL_LINE_ID_PARAM] ?? "").trim();
-          if (storedId && (pairMode === "source" || pairMode === "target")) reuseOnlyRecordIds.add(storedId);
+          const record = recordForNode(state, node);
+          if (record && (pairMode === "source" || pairMode === "target")) reuseOnlyRecordIds.add(record.id);
         }
       } catch {
         // The normal migration pass below ignores unreadable project files too.
@@ -626,8 +704,8 @@ export function createGlobalLineRegistry({ dataRoot, schemeFilesRoot } = {}) {
           return localNode;
         }
         const references = projectReferences(project, { schemePath }, String(node.id ?? ""), node, nodeById);
-        const storedId = String(node?.params?.[GLOBAL_LINE_ID_PARAM] ?? "").trim();
-        let record = (storedId && recordById.get(storedId)) || references
+        const storedRecord = recordForNode(state, node);
+        let record = (storedRecord && recordById.get(storedRecord.id)) || references
           .map((reference) => recordByReferenceKey.get(referenceKey(reference)))
           .find(Boolean);
         if (!record || record.energyType !== energyType) {
@@ -653,7 +731,7 @@ export function createGlobalLineRegistry({ dataRoot, schemeFilesRoot } = {}) {
           }
         }
         for (const reference of references) recordByReferenceKey.set(referenceKey(reference), record);
-        const nextNode = applyRecordToNode(node, record);
+        const nextNode = globalLineNodeForStorage(node, record);
         changed ||= JSON.stringify(nextNode) !== JSON.stringify(node);
         return nextNode;
       });
@@ -672,36 +750,23 @@ export function createGlobalLineRegistry({ dataRoot, schemeFilesRoot } = {}) {
     return state;
   }
 
-  async function synchronizeRecordsToStoredProjects(state, recordIds) {
-    const selectedIds = new Set(recordIds);
-    if (selectedIds.size === 0) return;
-    const recordById = new Map(state.records.filter((record) => selectedIds.has(record.id)).map((record) => [record.id, record]));
-    for (const filePath of await listProjectJsonFiles(filesRoot)) {
-      let originalText;
-      let project;
-      try {
-        originalText = await readFile(filePath, "utf-8");
-        project = JSON.parse(originalText);
-      } catch {
-        continue;
-      }
-      if (!project || !Array.isArray(project.nodes)) continue;
-      let changed = false;
-      const nodes = project.nodes.map((node) => {
-        const record = recordById.get(String(node?.params?.[GLOBAL_LINE_ID_PARAM] ?? ""));
-        if (!record || energyTypeForKind(node.kind) !== record.energyType) return node;
-        const nextNode = applyRecordToNode(node, record);
-        changed ||= JSON.stringify(nextNode) !== JSON.stringify(node);
-        return nextNode;
-      });
-      if (changed) await writeProjectIfChanged(filePath, originalText, { ...project, nodes });
-    }
-  }
-
   return {
     registryPath,
     async list() {
       return locked(async () => (await ensureInitialized()).records.map(publicRecord).sort((a, b) => a.idx - b.idx));
+    },
+
+    async hydrateProject(payload) {
+      return locked(async () => {
+        const state = await ensureInitialized();
+        const project = payload?.project ?? payload;
+        const hydratedProject = projectWithHydratedGlobalLines(project, state);
+        return {
+          project: hydratedProject,
+          nodes: Array.isArray(hydratedProject?.nodes) ? hydratedProject.nodes : [],
+          records: state.records.map(publicRecord).sort((a, b) => a.idx - b.idx)
+        };
+      });
     },
 
     async attach(payload) {
@@ -756,7 +821,6 @@ export function createGlobalLineRegistry({ dataRoot, schemeFilesRoot } = {}) {
         }
         record.updatedAt = new Date().toISOString();
         await writeState(registryPath, state);
-        await synchronizeRecordsToStoredProjects(state, [record.id]);
         return publicRecord(record);
       });
     },
@@ -791,11 +855,10 @@ export function createGlobalLineRegistry({ dataRoot, schemeFilesRoot } = {}) {
           storedProjectMatchesCurrentModel(candidate, projectIdx, modelKey)
         ));
         const previouslySavedGlobalLineIds = storedCurrentProject
-          ? globalLineIdsInProject(storedCurrentProject.project)
+          ? globalLineIdsInProject(storedCurrentProject.project, state)
           : new Set();
         const nodeById = new Map(project.nodes.map((node) => [String(node?.id ?? ""), node]));
         const activeReferenceKeys = new Set();
-        const changedRecordIds = new Set();
         const reuseOnlyRecordIds = new Set();
         const usedGlobalLineRecordIds = new Set();
         const assignments = {};
@@ -806,8 +869,7 @@ export function createGlobalLineRegistry({ dataRoot, schemeFilesRoot } = {}) {
             return removeGlobalId(node);
           }
           const references = projectReferences(project, { projectIdx, schemePath, projectName }, String(node.id ?? ""), node, nodeById);
-          const storedId = String(node?.params?.[GLOBAL_LINE_ID_PARAM] ?? "").trim();
-          let record = state.records.find((item) => item.id === storedId);
+          let record = recordForNode(state, node);
           if (!record) {
             record = state.records.find((item) => references.some((reference) => (
               item.references.some((itemReference) => referenceKey(itemReference) === referenceKey(reference))
@@ -848,7 +910,6 @@ export function createGlobalLineRegistry({ dataRoot, schemeFilesRoot } = {}) {
               }));
               record.updatedAt = new Date().toISOString();
               for (const reference of record.references) activeReferenceKeys.add(referenceKey(reference));
-              changedRecordIds.add(record.id);
             } else {
               reuseOnlyRecordIds.add(record.id);
             }
@@ -872,11 +933,10 @@ export function createGlobalLineRegistry({ dataRoot, schemeFilesRoot } = {}) {
           if (JSON.stringify(nextParams) !== JSON.stringify(record.params)) record.params = nextParams;
           record.updatedAt = new Date().toISOString();
           for (const reference of references) activeReferenceKeys.add(referenceKey(reference));
-          changedRecordIds.add(record.id);
           assignments[node.id] = record.id;
           return applyRecordToNode(node, record);
         });
-        const activeGlobalLineIds = globalLineIdsInProject({ nodes });
+        const activeGlobalLineIds = globalLineIdsInProject({ nodes }, state);
         const removedGlobalLineIds = new Set(
           [...previouslySavedGlobalLineIds].filter((globalLineId) => !activeGlobalLineIds.has(globalLineId))
         );
@@ -895,17 +955,17 @@ export function createGlobalLineRegistry({ dataRoot, schemeFilesRoot } = {}) {
           ));
           if (record.references.length !== before) {
             record.updatedAt = new Date().toISOString();
-            changedRecordIds.add(record.id);
           }
         }
         if (deletedRecordIds.size > 0) {
           state.records = state.records.filter((record) => !deletedRecordIds.has(record.id));
-          for (const recordId of deletedRecordIds) changedRecordIds.delete(recordId);
         }
         await writeState(registryPath, state);
-        await synchronizeRecordsToStoredProjects(state, changedRecordIds);
+        const runtimeProject = { ...project, nodes };
+        const storageProject = projectWithStoredGlobalLineReferences(runtimeProject, state);
         return {
-          project: { ...project, nodes },
+          project: runtimeProject,
+          storageProject,
           nodes,
           assignments,
           records: state.records.map(publicRecord).sort((a, b) => a.idx - b.idx)
